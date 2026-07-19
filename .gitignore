@@ -1,0 +1,13 @@
+# Credentials
+bq_key.json
+.env
+
+# Virtual Environment
+venv/
+env/
+
+# Logs & Cache
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/

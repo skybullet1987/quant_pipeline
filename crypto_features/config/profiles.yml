@@ -1,0 +1,13 @@
+crypto_features:
+  outputs:
+    prod:
+      type: bigquery
+      method: service-account
+      project: parnasa-498503
+      dataset: market_data
+      threads: 4
+      keyfile: /home/skybullet1987/quant_pipeline/bq_key.json
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1
+  target: prod

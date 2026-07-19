@@ -1,0 +1,8 @@
+name: 'crypto_features'
+version: '1.0.0'
+config-version: 2
+profile: 'crypto_features'
+model-paths: ["models"]
+models:
+  crypto_features:
+    +materialized: table

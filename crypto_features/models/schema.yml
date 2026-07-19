@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: market_data
+    database: parnasa-498503
+    schema: market_data
+    tables:
+      - name: raw_ohlcv
