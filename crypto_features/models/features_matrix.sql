@@ -17,9 +17,7 @@ WITH raw_bars AS (
     low,
     close,
     volume,
-    -- 1-minute log return
     LOG(SAFE_DIVIDE(close, LAG(close, 1) OVER w_asset)) AS ret_1m,
-    -- Dollar volume proxy
     close * volume AS dollar_volume
   FROM {{ source('market_data', 'raw_ohlcv') }}
   WINDOW w_asset AS (PARTITION BY ticker ORDER BY timestamp)
@@ -30,7 +28,6 @@ market_basket AS (
     timestamp,
     ticker,
     open, high, low, close, volume, ret_1m, dollar_volume,
-    -- Cross-Sectional Market Basket Mean Return (Beta component)
     AVG(ret_1m) OVER (PARTITION BY timestamp) AS market_ret_1m
   FROM raw_bars
 ),
@@ -43,11 +40,9 @@ microstructure_and_vol AS (
     volume,
     dollar_volume,
     
-    -- Idiosyncratic Return (Alpha component = Raw Return - Market Beta Return)
     (ret_1m - market_ret_1m) AS alpha_ret_1m,
 
     -- 1. Normalized Order Flow Imbalance (NOFI) Proxy
-    -- CLV = [(Close - Low) - (High - Close)] / (High - Low)
     SAFE_DIVIDE(
       SAFE_DIVIDE((close - low) - (high - close), NULLIF(high - low, 0)) * volume,
       NULLIF(AVG(volume) OVER w_rolling_60, 0)
@@ -65,7 +60,7 @@ microstructure_and_vol AS (
       NULLIF(SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_240), 0)
     ) AS vol_term_structure,
 
-    -- 4. VWAP Deviations (60m and 240m)
+    -- 4. VWAP Deviations (60m)
     SAFE_DIVIDE(
       close - (SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0)),
       NULLIF(SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0), 0)
@@ -100,7 +95,6 @@ ranked_features AS (
     IF(EXTRACT(DAYOFWEEK FROM timestamp) IN (1, 7), 1, 0) AS is_weekend,
 
     -- Cross-Sectional Rank Normalization (PERCENT_RANK per timestamp)
-    -- Eliminates non-stationarity and covariate shift across market regimes
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY nofi_proxy ASC) AS rank_nofi,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY garman_klass_vol_60m ASC) AS rank_gk_vol,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_term_structure ASC) AS rank_vol_term_structure,
@@ -108,11 +102,9 @@ ranked_features AS (
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_15m ASC) AS rank_alpha_mom_15m,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_60m ASC) AS rank_alpha_mom_60m,
 
-    -- Volatility-Adjusted Dynamic Triple Barrier Labeling
-    -- Upper Barrier = Entry + (2.0 * Volatility)
-    -- Lower Barrier = Entry - (1.0 * Volatility)
+    -- Dynamic Triple Barrier Labeling: Upper barrier clamped to minimum +2.0% to clear 80 bps fee hurdle
     CASE 
-      WHEN future_max_60m >= close * (1.0 + 2.0 * COALESCE(garman_klass_vol_60m, 0.01))
+      WHEN future_max_60m >= close * (1.0 + GREATEST(0.020, 2.0 * COALESCE(garman_klass_vol_60m, 0.01)))
        AND future_min_60m > close * (1.0 - 1.0 * COALESCE(garman_klass_vol_60m, 0.01)) THEN 1
       ELSE 0
     END AS target_tp_hit

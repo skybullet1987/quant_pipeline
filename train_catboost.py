@@ -6,7 +6,30 @@ import os
 
 PROJECT_ID = "parnasa-498503"
 MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
-PURGE_BARS = 60  # 60-minute purge gap matching the Triple Barrier forward window
+PURGE_BARS = 60 
+
+class GMADLLoss(object):
+    """Custom GMADL Objective for CatBoost optimizing for return magnitude."""
+    def __init__(self, a=10.0, b=2.0):
+        self.a = a
+        self.b = b
+
+    def calc_ders_range(self, approxes, targets, weights):
+        approxes = np.array(approxes)
+        targets = np.array(targets)
+        
+        sig = 1.0 / (1.0 + np.exp(-self.a * targets * approxes))
+        abs_target_b = np.abs(targets) ** self.b
+        
+        der1 = self.a * targets * (1.0 - sig) * sig * abs_target_b
+        der2 = (self.a ** 2) * (targets ** 2) * sig * (1.0 - sig) * (1.0 - 2.0 * sig) * abs_target_b
+        der2 = np.maximum(der2, 1e-6)
+        
+        if weights is not None:
+            der1 *= weights
+            der2 *= weights
+            
+        return list(zip(-der1, der2))
 
 def train_production_model():
     print("1. Ingesting Cross-Sectionally Rank-Normalized Feature Store...")
@@ -34,18 +57,14 @@ def train_production_model():
     df = client.query(query).to_dataframe(create_bqstorage_client=True)
     print(f"   Loaded {len(df):,} rows.")
 
-    # Convert timestamps for chronological splitting
     timestamps = df['timestamp'].unique()
     n = len(timestamps)
     
-    # Chronological Split Points
     train_end_idx = int(n * 0.70)
     eval_end_idx = int(n * 0.85)
 
     train_ts = timestamps[:train_end_idx]
-    # Apply Purge Gap between Train and Eval
     eval_ts = timestamps[train_end_idx + PURGE_BARS : eval_end_idx]
-    # Apply Purge Gap between Eval and Test
     test_ts = timestamps[eval_end_idx + PURGE_BARS :]
 
     train_df = df[df['timestamp'].isin(train_ts)]
@@ -64,13 +83,14 @@ def train_production_model():
     eval_pool = Pool(eval_df[feature_cols + cat_cols], label=eval_df['target_tp_hit'], cat_features=cat_cols)
     test_pool = Pool(test_df[feature_cols + cat_cols], label=test_df['target_tp_hit'], cat_features=cat_cols)
 
-    print("2. Training Regularized CatBoost Model...")
+    print("2. Training Regularized CatBoost Model with GMADL Loss...")
     model = CatBoostClassifier(
         iterations=1200,
         learning_rate=0.03,
-        depth=5,                       # Shallow depth prevents noise memorization
-        l2_leaf_reg=10.0,              # High L2 penalty for low signal-to-noise ratio
-        bagging_temperature=0.3,       # Controlled Bayesian bootstrap sampling
+        depth=5,
+        l2_leaf_reg=10.0,
+        bagging_temperature=0.3,
+        loss_function=GMADLLoss(a=10.0, b=2.0),
         eval_metric='Logloss',
         od_type='Iter',
         od_wait=50,
@@ -80,7 +100,6 @@ def train_production_model():
     model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
 
     print("\n3. Evaluating on Purged Out-of-Sample Test Set...")
-    test_preds = model.predict_proba(test_pool)[:, 1]
     test_auc = model.eval_metrics(test_pool, metrics=['AUC'])['AUC'][-1]
     print(f"   >>> Out-of-Sample Test AUC: {test_auc:.4f}")
 

@@ -21,10 +21,9 @@ COIN_UNIVERSE = [
     "dashusd", "zecusd", "xmrusd"
 ]
 
-# Modern timezone-aware dates
 END_DATE = datetime.now(timezone.utc)
 START_DATE = END_DATE - timedelta(days=180)
-CHUNK_DAYS = 5  # Pulling 5 days at a time bypasses Tiingo's row limits
+CHUNK_DAYS = 5  
 
 def fetch_and_load():
     client = bigquery.Client(project=GCP_PROJECT)
@@ -35,6 +34,7 @@ def fetch_and_load():
     }
 
     print(f"Initiating chunked Tiingo ingestion for {len(COIN_UNIVERSE)} assets...")
+    print(f"Time range: {START_DATE.date()} to {END_DATE.date()}")
     
     for coin in COIN_UNIVERSE:
         print(f"\nFetching 1-min data for {coin}...")
@@ -42,17 +42,16 @@ def fetch_and_load():
         current_start = START_DATE
         total_rows_for_coin = 0
         
-        # Paginate through time in 5-day chunks
         while current_start < END_DATE:
             current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
             
             url = "https://api.tiingo.com/tiingo/crypto/prices"
             params = {
                 'tickers': coin,
-                'startDate': current_start.strftime('%Y-%m-%d'),
-                'endDate': current_end.strftime('%Y-%m-%d'),
-                'resampleFreq': '1min',
-                'exchanges': 'kraken' # Lowercase is safer for Tiingo's backend
+                'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'resampleFreq': '1min'
+                # 'exchanges' parameter intentionally omitted to use Tiingo's robust aggregated feed
             }
             
             try:
@@ -60,13 +59,18 @@ def fetch_and_load():
                 response.raise_for_status()
                 data = response.json()
                 
-                # Check if API returned an error dictionary instead of a list
                 if isinstance(data, dict) and 'detail' in data:
                     print(f"  -> API Error: {data['detail']}")
                     break
                 
-                # If no data in this chunk, move to the next window
-                if not data or len(data) == 0 or 'priceData' not in data[0]:
+                if not data or len(data) == 0:
+                    print(f"  -> [WARNING] Empty response for {coin} between {current_start.date()} and {current_end.date()}.")
+                    current_start = current_end
+                    time.sleep(1)
+                    continue
+                    
+                if 'priceData' not in data[0] or len(data[0]['priceData']) == 0:
+                    print(f"  -> [WARNING] No priceData found for {coin} at {current_start.date()}.")
                     current_start = current_end
                     time.sleep(1)
                     continue
@@ -86,6 +90,9 @@ def fetch_and_load():
                 df['ticker'] = coin.upper()
                 
                 # Ensure structure matches BigQuery perfectly
+                if 'volume' not in df.columns:
+                    df['volume'] = 0.0
+                    
                 df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
                 df['timestamp'] = pd.to_datetime(df['timestamp'])
                 
@@ -94,7 +101,9 @@ def fetch_and_load():
                 job = client.load_table_from_dataframe(df, BQ_TABLE, job_config=job_config)
                 job.result()
                 
-                total_rows_for_coin += len(df)
+                rows_in_chunk = len(df)
+                total_rows_for_coin += rows_in_chunk
+                print(f"  -> Loaded {rows_in_chunk:,} rows for {current_start.date()} to {current_end.date()}")
                 
             except Exception as e:
                 print(f"  -> Chunk failed ({current_start.date()}): {str(e)}")
@@ -103,7 +112,7 @@ def fetch_and_load():
             current_start = current_end
             time.sleep(1.5)
             
-        print(f"*** Successfully loaded {total_rows_for_coin} total rows for {coin} ***")
+        print(f"*** Successfully loaded {total_rows_for_coin:,} total rows for {coin} ***")
 
 if __name__ == "__main__":
     fetch_and_load()

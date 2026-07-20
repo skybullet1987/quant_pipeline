@@ -11,3 +11,9 @@ env/
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# dbt artifacts
+crypto_features/target/
+crypto_features/dbt_packages/
+crypto_features/logs/
+crypto_features/config/.user.yml

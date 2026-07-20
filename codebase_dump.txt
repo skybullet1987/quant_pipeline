@@ -1,0 +1,792 @@
+
+
+=== ./tiingo_daily_increment.py ===
+import time
+import requests
+from datetime import datetime, timedelta
+from google.cloud import bigquery
+
+# --- CONFIGURATION ---
+TIINGO_API_KEY = "895c0cc1087f3e2d1e60c9f3689903d08981cb26"
+PROJECT_ID = "parnasa-498503"
+FULL_TABLE_REF = f"{PROJECT_ID}.market_data.raw_ohlcv"
+TICKERS = [
+    "btcusd", "ethusd", "solusd", "xrpusd", "adausd", 
+    "dogeusd", "linkusd", "dotusd", "maticusd", "avaxusd"
+]
+
+bq_client = bigquery.Client(project=PROJECT_ID)
+
+# Dynamic 24-hour window
+END_DATE = datetime.utcnow()
+START_DATE = END_DATE - timedelta(days=1)
+
+def run_daily_increment():
+    start_str = START_DATE.strftime("%Y-%m-%d")
+    end_str = END_DATE.strftime("%Y-%m-%d")
+    
+    print(f"\n--- Running Daily Increment: {start_str} to {end_str} ---")
+    
+    for ticker in TICKERS:
+        url = "https://api.tiingo.com/tiingo/crypto/prices"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Token {TIINGO_API_KEY}"
+        }
+        params = {
+            "tickers": ticker,
+            "resampleFreq": "1min",
+            "startDate": start_str,
+            "endDate": end_str
+        }
+        
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200 and response.json():
+                data = response.json()
+                price_data = data[0].get("priceData", [])
+                
+                rows = [{
+                    "timestamp": r["date"],
+                    "ticker": ticker,
+                    "open": float(r["open"]),
+                    "high": float(r["high"]),
+                    "low": float(r["low"]),
+                    "close": float(r["close"]),
+                    "volume": float(r["volume"]),
+                    "volume_notional": float(r.get("volumeNotional")) if r.get("volumeNotional") is not None else None
+                } for r in price_data]
+                
+                if rows:
+                    bq_client.insert_rows_json(FULL_TABLE_REF, rows)
+                    print(f"Inserted {len(rows)} daily rows for {ticker.upper()}.")
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"Error fetching {ticker}: {e}")
+
+if __name__ == "__main__":
+    run_daily_increment()
+
+
+=== ./crypto_features/models/features_matrix.sql ===
+WITH step_1_minute_returns AS (
+  SELECT
+    timestamp,
+    ticker,
+    close,
+    -- Calculate the 1-minute backward log return for the volatility calculation
+    LOG(close / LAG(close, 1) OVER (PARTITION BY ticker ORDER BY timestamp)) as backward_return_1m,
+    
+    -- Calculate 15-minute backward return for the momentum alpha
+    LOG(close / LAG(close, 15) OVER (PARTITION BY ticker ORDER BY timestamp)) as backward_return_15m,
+    
+    -- Target Variable: Forward 15-minute return (strictly shifted to T-15)
+    LOG(LEAD(close, 15) OVER (PARTITION BY ticker ORDER BY timestamp) / close) as target_forward_return_15m
+  FROM {{ source('market_data', 'raw_ohlcv') }}
+),
+
+step_2_rolling_vol AS (
+  SELECT
+    timestamp,
+    ticker,
+    target_forward_return_15m,
+    backward_return_15m,
+    -- Now calculate the 60-minute rolling volatility on the pre-calculated 1m return
+    STDDEV(backward_return_1m) OVER (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 60 PRECEDING AND CURRENT ROW) as realized_vol_60m
+  FROM step_1_minute_returns
+),
+
+normalized_features AS (
+  SELECT
+    timestamp,
+    ticker,
+    target_forward_return_15m,
+    -- Volatility Normalization: Strip out absolute variance bias
+    SAFE_DIVIDE(backward_return_15m, realized_vol_60m) as vol_norm_momentum_15m
+  FROM step_2_rolling_vol
+  WHERE realized_vol_60m IS NOT NULL 
+    AND realized_vol_60m > 0
+)
+
+SELECT
+  timestamp,
+  ticker,
+  vol_norm_momentum_15m,
+  target_forward_return_15m,
+  -- Cross-Sectional Ranking: Rank tokens against each other per individual minute bar
+  PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_norm_momentum_15m DESC) as cross_sectional_momentum_rank
+FROM normalized_features
+
+
+=== ./crypto_features/models/schema.yml ===
+version: 2
+
+sources:
+  - name: market_data
+    database: parnasa-498503
+    schema: market_data
+    tables:
+      - name: raw_ohlcv
+
+
+=== ./crypto_features/dbt_project.yml ===
+name: 'crypto_features'
+version: '1.0.0'
+config-version: 2
+profile: 'crypto_features'
+model-paths: ["models"]
+models:
+  crypto_features:
+    +materialized: table
+
+
+=== ./crypto_features/config/.user.yml ===
+id: d3e62f50-9703-472c-a1a2-d5bc20eb26d7
+
+
+=== ./crypto_features/config/profiles.yml ===
+crypto_features:
+  outputs:
+    prod:
+      type: bigquery
+      method: service-account
+      project: parnasa-498503
+      dataset: market_data
+      threads: 4
+      keyfile: /home/skybullet1987/quant_pipeline/bq_key.json
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1
+  target: prod
+
+
+=== ./tiingo_to_bq_backfill.py ===
+import os
+import time
+import requests
+from datetime import datetime, timedelta
+from google.cloud import bigquery
+from google.api_core.exceptions import GoogleAPIError
+
+# --- CONFIGURATION ---
+TIINGO_API_KEY = "895c0cc1087f3e2d1e60c9f3689903d08981cb26"
+PROJECT_ID = "parnasa-498503"
+DATASET_ID = "market_data"
+TABLE_ID = "raw_ohlcv"
+FULL_TABLE_REF = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+
+# 9-month rolling window (October 19, 2025 to July 19, 2026)
+START_DATE = datetime(2025, 10, 19)
+END_DATE = datetime(2026, 7, 19)
+
+# Initial Kraken target universe mapped to Tiingo
+TICKERS = [
+    "btcusd", "ethusd", "solusd", "xrpusd", "adausd", 
+    "dogeusd", "linkusd", "dotusd", "maticusd", "avaxusd"
+]
+
+bq_client = bigquery.Client(project=PROJECT_ID)
+
+def initialize_table():
+    """Creates the BigQuery table with time partitioning and ticker clustering."""
+    schema = [
+        bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("ticker", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("open", "FLOAT64", mode="REQUIRED"),
+        bigquery.SchemaField("high", "FLOAT64", mode="REQUIRED"),
+        bigquery.SchemaField("low", "FLOAT64", mode="REQUIRED"),
+        bigquery.SchemaField("close", "FLOAT64", mode="REQUIRED"),
+        bigquery.SchemaField("volume", "FLOAT64", mode="REQUIRED"),
+        bigquery.SchemaField("volume_notional", "FLOAT64", mode="NULLABLE"),
+    ]
+    
+    table = bigquery.Table(FULL_TABLE_REF, schema=schema)
+    table.time_partitioning = bigquery.TimePartitioning(
+        type_=bigquery.TimePartitioningType.DAY,
+        field="timestamp"
+    )
+    table.clustering_fields = ["ticker"]
+    
+    try:
+        bq_client.get_table(FULL_TABLE_REF)
+        print(f"Table {FULL_TABLE_REF} exists. Starting backfill.")
+    except Exception:
+        print(f"Creating optimized table: {FULL_TABLE_REF}")
+        bq_client.create_table(table)
+
+def fetch_tiingo_chunk(ticker, start_str, end_str):
+    """Fetches a 7-day 1-minute OHLCV slice to respect API payload limits."""
+    url = f"https://api.tiingo.com/tiingo/crypto/prices"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Token {TIINGO_API_KEY}"
+    }
+    params = {
+        "tickers": ticker,
+        "resampleFreq": "1min",
+        "startDate": start_str,
+        "endDate": end_str
+    }
+    
+    for attempt in range(3):
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            elif response.status_code == 429:
+                print(" Rate limit hit. Sleeping 10s...")
+                time.sleep(10)
+            else:
+                print(f" HTTP {response.status_code} for {ticker}: {response.text}")
+                time.sleep(2)
+        except requests.exceptions.RequestException as e:
+            print(f" Connection error: {e}. Retrying...")
+            time.sleep(5)
+    return None
+
+def process_and_upload(data):
+    """Transforms the payload and streams directly into BigQuery."""
+    if not data or not isinstance(data, list) or len(data) == 0:
+        return
+    
+    ticker_entry = data[0]
+    ticker = ticker_entry.get("ticker").lower()
+    price_data = ticker_entry.get("priceData", [])
+    
+    rows = [{
+        "timestamp": r["date"],
+        "ticker": ticker,
+        "open": float(r["open"]),
+        "high": float(r["high"]),
+        "low": float(r["low"]),
+        "close": float(r["close"]),
+        "volume": float(r["volume"]),
+        "volume_notional": float(r.get("volumeNotional")) if r.get("volumeNotional") is not None else None
+    } for r in price_data]
+        
+    if not rows:
+        return
+
+    errors = bq_client.insert_rows_json(FULL_TABLE_REF, rows)
+    if errors:
+        raise GoogleAPIError(f"BQ insertion errors: {errors}")
+    else:
+        print(f"   Inserted {len(rows)} rows into {TABLE_ID}.")
+
+def run_backfill():
+    initialize_table()
+    
+    for ticker in TICKERS:
+        print(f"\n--- Backfilling: {ticker.upper()} ---")
+        current_start = START_DATE
+        
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=7), END_DATE)
+            start_str = current_start.strftime("%Y-%m-%d")
+            end_str = current_end.strftime("%Y-%m-%d")
+            
+            print(f" Fetching {start_str} to {end_str}...")
+            payload = fetch_tiingo_chunk(ticker, start_str, end_str)
+            
+            if payload:
+                process_and_upload(payload)
+            
+            current_start = current_end
+            time.sleep(0.5)
+
+if __name__ == "__main__":
+    run_backfill()
+
+
+=== ./tiingo_gap_filler.py ===
+import time
+import requests
+import pandas as pd
+from datetime import datetime, timedelta
+from google.cloud import bigquery
+
+PROJECT_ID = "parnasa-498503"
+TABLE_ID = f"{PROJECT_ID}.market_data.raw_kraken_history"
+TIINGO_API_KEY = "895c0cc1087f3e2d1e60c9f3689903d08981cb26"
+
+bq_client = bigquery.Client(project=PROJECT_ID)
+
+# Complete 50-coin liquid Kraken universe (Tiingo format)
+SYMBOLS = [
+    "btcusd", "ethusd", "solusd", "xrpusd", "adausd", "dogeusd", "dotusd", "avaxusd", "linkusd", "shibusd",
+    "ltcusd", "unicusdt", "bchusd", "hbarusd", "xlmusd", "filusd", "aptusd", "nearusd", "imxusd", "injusd",
+    "opusd", "grtusd", "stxusd", "rndrusd", "galausd", "mkrusd", "fetusd", "ltdusd", "wbuusd", "suinusd",
+    "arbusd", "ldousd", "atomusd", "tiausd", "algousd", "qntusd", "flowusd", "egldusd", "manausd", "sandusd",
+    "axsusd", "chzusd", "minausd", "eosusd", "crvusd", "ftmusd", "aaveusd", "thetausd", "xmrusd", "zecusd"
+]
+
+START_DATE = datetime(2020, 1, 1)
+END_DATE = datetime(2026, 7, 17)
+
+def fetch_tiingo_history_chunk(symbol, start_str, end_str):
+    url = "https://api.tiingo.com/tiingo/crypto/prices"
+    headers = {'Content-Type': 'application/json', 'Authorization': f'Token {TIINGO_API_KEY}'}
+    params = {
+        'tickers': symbol,
+        'startDate': start_str,
+        'endDate': end_str,
+        'resampleFreq': '1min',
+        'exchanges': 'kraken'
+    }
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=30)
+        if response.status_code != 200:
+            return None
+        data = response.json()
+        if not data or 'priceData' not in data[0] or not data[0]['priceData']:
+            return None
+        return pd.DataFrame(data[0]['priceData'])
+    except Exception:
+        return None
+
+def process_and_load(symbol):
+    print(f"--- Starting backfill for {symbol} ---")
+    current_start = START_DATE
+    while current_start < END_DATE:
+        current_end = min(current_start + timedelta(days=5), END_DATE)
+        start_str = current_start.strftime('%Y-%m-%d')
+        end_str = current_end.strftime('%Y-%m-%d')
+        
+        df = fetch_tiingo_history_chunk(symbol, start_str, end_str)
+        
+        if df is not None and not df.empty:
+            df['timestamp'] = pd.to_datetime(df['date'], utc=True)
+            
+            # Normalizing asset naming conventions to match Kraken system targets
+            db_symbol_map = {"btcusd": "XXBTZUSD", "ethusd": "XETHZUSD"}
+            df['symbol'] = db_symbol_map.get(symbol, symbol.upper())
+            
+            df['trades'] = df['tradesCount'].fillna(0).astype(int)
+            df['volume'] = df['volume'].astype(float)
+            df = df[['timestamp', 'symbol', 'open', 'high', 'low', 'close', 'volume', 'trades']]
+            
+            job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+            job = bq_client.load_table_from_dataframe(df, TABLE_ID, job_config=job_config)
+            job.result()
+            print(f"[{symbol.upper()}] Loaded rows for segment {start_str} to {end_str}")
+            
+        current_start = current_end + timedelta(days=1)
+        time.sleep(0.1)
+
+if __name__ == "__main__":
+    for ticker in SYMBOLS:
+        process_and_load(ticker)
+
+
+=== ./train_catboost.py ===
+import pandas as pd
+from google.cloud import bigquery
+from catboost import CatBoostRanker, Pool
+
+# --- Configuration ---
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
+
+print("1. Fetching Feature Matrix from BigQuery...")
+bq_client = bigquery.Client(project=PROJECT_ID)
+
+# We pull the data, sorting by timestamp to ensure chronological grouping for the Ranker
+query = f"""
+    SELECT 
+        timestamp,
+        ticker,
+        vol_norm_momentum_15m,
+        cross_sectional_momentum_rank,
+        target_forward_return_15m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE target_forward_return_15m IS NOT NULL
+    ORDER BY timestamp ASC
+"""
+df = bq_client.query(query).to_dataframe()
+
+print(f"   Successfully loaded {len(df)} rows.")
+
+print("2. Preparing Data for YetiRank...")
+# CatBoost requires groups to be sequential. 
+# We map timestamps to a group ID.
+group_ids = df.groupby('timestamp').ngroup()
+
+# Define features (X) and target (y)
+X = df[['vol_norm_momentum_15m', 'cross_sectional_momentum_rank']]
+y = df['target_forward_return_15m']
+
+# Create the CatBoost Pool
+train_pool = Pool(
+    data=X,
+    label=y,
+    group_id=group_ids
+)
+
+print("3. Initializing CatBoostRanker...")
+# YetiRank optimizes the ranking quality.
+# We use a modest iteration count and learning rate to prevent overfitting the noisy crypto data.
+model = CatBoostRanker(
+    loss_function='YetiRank',
+    iterations=500,
+    learning_rate=0.05,
+    depth=6,
+    train_dir='/tmp/catboost_info',
+    verbose=50
+)
+
+print("4. Training Model (This may take a few minutes)...")
+model.fit(train_pool)
+
+print(f"5. Saving production model to {MODEL_PATH}")
+model.save_model(MODEL_PATH)
+print("Training Complete. Model is ready for live execution.")
+
+
+=== ./train_ranker.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostRanker, Pool
+from google.cloud import bigquery
+import warnings
+
+# Suppress pandas fragmentation warnings from extensive rolling metrics
+warnings.filterwarnings('ignore')
+
+def fetch_data():
+    print("1. Fetching Wide Universe Matrix from BigQuery...")
+    client = bigquery.Client()
+    
+    # Pulling 50+ coins from your historical data warehouse
+    query = """
+        SELECT timestamp, symbol, open, high, low, close, volume 
+        FROM `your_gcp_project.your_dataset.kraken_ohlcv`
+        ORDER BY symbol, timestamp
+    """
+    
+    # create_bqstorage_client=True leverages the gRPC protocol for massive speed
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    print(f"Successfully loaded {len(df)} rows.")
+    return df
+
+def engineer_advanced_features(df, window=60):
+    print(f"2. Engineering Full Advanced Feature Matrix (Window: {window} periods)...")
+    df = df.sort_values(['symbol', 'timestamp']).copy()
+    
+    # --- TARGET VARIABLE ---
+    df['target_forward_ret'] = df.groupby('symbol')['close'].shift(-1) / df['close'] - 1
+    
+    # Log transforms for range volatility math
+    log_o = np.log(df['open'])
+    log_h = np.log(df['high'])
+    log_l = np.log(df['low'])
+    log_c = np.log(df['close'])
+    
+    # --- 1. ADVANCED VOLATILITY REGIMES ---
+    # Yang-Zhang Volatility (Captures overnight gap risk and intraday drift)
+    df['log_oc_prev'] = log_o - df.groupby('symbol')['close'].shift(1).apply(np.log)
+    df['log_co'] = log_c - log_o
+    df['rs'] = (log_h - log_o) * (log_h - log_c) + (log_l - log_o) * (log_l - log_c)
+    
+    var_o = df.groupby('symbol')['log_oc_prev'].transform(lambda x: x.rolling(window).var())
+    var_c = df.groupby('symbol')['log_co'].transform(lambda x: x.rolling(window).var())
+    var_rs = df.groupby('symbol')['rs'].transform(lambda x: x.rolling(window).mean())
+    
+    k = 0.34 / (1.34 + (window + 1) / (window - 1))
+    df['yang_zhang_vol'] = np.sqrt(var_o + k * var_c + (1 - k) * var_rs)
+    
+    # Garman-Klass Volatility (7.4x more efficient than close-to-close metrics)
+    df['gk_element'] = 0.5 * (log_h - log_l)**2 - (2 * np.log(2) - 1) * (log_co)**2
+    df['garman_klass_vol'] = np.sqrt(df.groupby('symbol')['gk_element'].transform(lambda x: x.rolling(window).mean()))
+    
+    # --- 2. MULTI-HORIZON MOMENTUM & MARKET BETA ---
+    df['ret_1m'] = df.groupby('symbol')['close'].pct_change(1)
+    df['ret_5m'] = df.groupby('symbol')['close'].pct_change(5)
+    df['ret_15m'] = df.groupby('symbol')['close'].pct_change(15)
+    df['ret_60m'] = df.groupby('symbol')['close'].pct_change(60)
+    
+    # Rolling Market Beta against cross-sectional baseline index
+    df['market_ret'] = df.groupby('timestamp')['ret_1m'].transform('mean')
+    def calc_beta(group):
+        cov = group['ret_1m'].rolling(window).cov(group['market_ret'])
+        var = group['market_ret'].rolling(window).var()
+        return cov / var
+    df['market_beta'] = df.groupby('symbol', group_keys=False).apply(calc_beta)
+    
+    # --- 3. CLASSIC STRUCTURAL MOMENTUM & OSCILLATORS ---
+    # Vectorized Relative Strength Index (RSI-14)
+    delta = df.groupby('symbol')['close'].diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    
+    ema_gain = df.groupby('symbol', group_keys=False).apply(lambda x: x['close'].diff().clip(lower=0).ewm(com=13, adjust=False).mean())
+    ema_loss = df.groupby('symbol', group_keys=False).apply(lambda x: (-x['close'].diff().clip(upper=0)).ewm(com=13, adjust=False).mean())
+    rs = ema_gain / (ema_loss + 1e-8)
+    df['rsi_14'] = 100 - (100 / (1 + rs))
+    
+    # Moving Average Convergence Divergence (MACD 12, 26, 9)
+    ema_12 = df.groupby('symbol')['close'].transform(lambda x: x.ewm(span=12, adjust=False).mean())
+    ema_26 = df.groupby('symbol')['close'].transform(lambda x: x.ewm(span=26, adjust=False).mean())
+    df['macd_line'] = ema_12 - ema_26
+    df['macd_signal'] = df.groupby('symbol')['macd_line'].transform(lambda x: x.ewm(span=9, adjust=False).mean())
+    df['macd_hist'] = df['macd_line'] - df['macd_signal']
+    
+    # --- 4. VOLUME FACTOR SIZES (24-Hour Horizon) ---
+    vol_24h_mean = df.groupby('symbol')['volume'].transform(lambda x: x.rolling(1440).mean())
+    df['volume_multiple'] = df['volume'] / (vol_24h_mean + 1e-8)
+    
+    # --- 5. CRYPTO-VALUE CENTERS (Distance from VWAP) ---
+    df['typ_price'] = (df['high'] + df['low'] + df['close']) / 3
+    df['pv'] = df['typ_price'] * df['volume']
+    rolling_pv = df.groupby('symbol')['pv'].transform(lambda x: x.rolling(window).sum())
+    rolling_vol = df.groupby('symbol')['volume'].transform(lambda x: x.rolling(window).sum())
+    df['vwap'] = rolling_pv / (rolling_vol + 1e-8)
+    df['dist_from_vwap'] = (df['close'] - df['vwap']) / df['vwap']
+    
+    # --- 6. CYCLICAL CATEGORICAL REGIMES ---
+    dt_series = pd.to_datetime(df['timestamp'])
+    df['hour_of_day'] = dt_series.dt.hour.astype(str)
+    df['day_of_week'] = dt_series.dt.dayofweek.astype(str)
+    df['is_weekend'] = dt_series.dt.dayofweek.isin([5, 6]).astype(int).astype(str)
+    
+    # Drop intermediate processing filters and clear all rolling NaNs
+    clean_cols = [
+        'log_oc_prev', 'log_co', 'rs', 'gk_element', 
+        'market_ret', 'typ_price', 'pv', 'vwap'
+    ]
+    df = df.drop(columns=clean_cols).dropna().copy()
+    return df
+
+def prepare_pools(df):
+    print("3. Preparing Cross-Sectional Groups & Splitting Dataset...")
+    df = df.sort_values(['timestamp', 'symbol'])
+    df['group_id'] = df.groupby('timestamp').ngroup()
+    
+    timestamps = df['timestamp'].unique()
+    n = len(timestamps)
+    
+    # Chronological out-of-sample data split (70/15/15)
+    train_ts = timestamps[:int(n * 0.70)]
+    eval_ts = timestamps[int(n * 0.70):int(n * 0.85)]
+    test_ts = timestamps[int(n * 0.85):]
+    
+    train_df = df[df['timestamp'].isin(train_ts)]
+    eval_df = df[df['timestamp'].isin(eval_ts)]
+    test_df = df[df['timestamp'].isin(test_ts)]
+    
+    drop_cols = ['timestamp', 'open', 'high', 'low', 'close', 'volume', 'target_forward_ret', 'group_id']
+    features = [col for col in df.columns if col not in drop_cols]
+    cat_features = ['symbol', 'hour_of_day', 'day_of_week', 'is_weekend']
+    
+    print(f"Training blocks: {len(train_ts)} | Validation blocks: {len(eval_ts)} | Test blocks: {len(test_ts)}")
+    
+    train_pool = Pool(data=train_df[features], label=train_df['target_forward_ret'], 
+                      group_id=train_df['group_id'], cat_features=cat_features)
+    
+    eval_pool = Pool(data=eval_df[features], label=eval_df['target_forward_ret'], 
+                     group_id=eval_df['group_id'], cat_features=cat_features)
+    
+    test_pool = Pool(data=test_df[features], label=test_df['target_forward_ret'], 
+                     group_id=test_df['group_id'], cat_features=cat_features)
+                     
+    return train_pool, eval_pool, test_pool
+
+def train_and_test():
+    df = fetch_data()
+    df = engineer_advanced_features(df)
+    train_pool, eval_pool, test_pool = prepare_pools(df)
+    
+    print("4. Initializing CatBoostRanker Decisions Engine...")
+    model = CatBoostRanker(
+        iterations=1500,
+        loss_function='YetiRank',
+        eval_metric='NDCG',
+        learning_rate=0.03,
+        depth=6,
+        od_type='Iter',
+        od_wait=50,
+        verbose=50
+    )
+    
+    print("5. Launching Optimization Engine (In-Sample Training)...")
+    model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+    
+    print("\n6. Executing Unseen Out-of-Sample Test Evaluation...")
+    test_metrics = model.eval_metrics(test_pool, metrics=['NDCG'])
+    final_ndcg = test_metrics['NDCG'][-1]
+    print(f"\n>>> Out-of-Sample Final Model NDCG Score: {final_ndcg:.4f}")
+    
+    model.save_model('kraken_ranker_v1.cbm')
+    print("Production matrix saved successfully to kraken_ranker_v1.cbm. Engine active.")
+
+if __name__ == "__main__":
+    train_and_test()
+
+
+=== ./update_tiingo_hourly.py ===
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from datetime import datetime, timedelta, timezone
+
+TIINGO_API_KEY = "895c0cc1087f3e2d1e60c9f3689903d08981cb26"
+GCP_PROJECT = "parnasa-498503"
+BQ_TABLE = f"{GCP_PROJECT}.market_data.raw_ohlcv"
+
+COIN_UNIVERSE = [
+    "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
+    "avaxusd", "linkusd", "maticusd", "ltcusd", "bchusd", "algousd", "xlmusd", 
+    "atomusd", "uniusd", "filusd", "trxusd", "xtzusd", "eosusd", "aaveusd",
+    "mkrusd", "snxusd", "compusd", "grtusd", "batusd", "enjusd", "manausd",
+    "chzusd", "zrxusd", "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd",
+    "icxusd", "kavausd", "balusd", "bntusd", "renusd", "kncusd", "bandusd",
+    "scusd", "storjusd", "oceanusd", "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    "dashusd", "zecusd", "xmrusd"
+]
+
+END_DATE = datetime.now(timezone.utc)
+START_DATE = END_DATE - timedelta(hours=2)
+
+def fetch_incremental():
+    client = bigquery.Client(project=GCP_PROJECT)
+    headers = {'Content-Type': 'application/json', 'Authorization': f'Token {TIINGO_API_KEY}'}
+
+    for coin in COIN_UNIVERSE:
+        url = "https://api.tiingo.com/tiingo/crypto/prices"
+        params = {
+            'tickers': coin,
+            'startDate': START_DATE.strftime('%Y-%m-%d'),
+            'endDate': END_DATE.strftime('%Y-%m-%d'),
+            'resampleFreq': '1min',
+            'exchanges': 'kraken'
+        }
+        try:
+            response = requests.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                if data and 'priceData' in data[0]:
+                    df = pd.DataFrame(data[0]['priceData']).rename(columns={'date': 'timestamp', 'tradesDone': 'trades'})
+                    if not df.empty:
+                        df['ticker'] = coin.upper()
+                        df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
+                        df['timestamp'] = pd.to_datetime(df['timestamp'])
+                        job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+                        client.load_table_from_dataframe(df, BQ_TABLE, job_config=job_config).result()
+        except Exception:
+            pass
+        time.sleep(1)
+
+if __name__ == "__main__":
+    fetch_incremental()
+
+
+=== ./fetch_tiingo_universe.py ===
+import os
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from datetime import datetime, timedelta, timezone
+
+# --- CONFIGURATION ---
+TIINGO_API_KEY = "895c0cc1087f3e2d1e60c9f3689903d08981cb26"
+GCP_PROJECT = "parnasa-498503"
+BQ_TABLE = f"{GCP_PROJECT}.market_data.raw_ohlcv"
+
+COIN_UNIVERSE = [
+    "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
+    "avaxusd", "linkusd", "maticusd", "ltcusd", "bchusd", "algousd", "xlmusd", 
+    "atomusd", "uniusd", "filusd", "trxusd", "xtzusd", "eosusd", "aaveusd",
+    "mkrusd", "snxusd", "compusd", "grtusd", "batusd", "enjusd", "manausd",
+    "chzusd", "zrxusd", "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd",
+    "icxusd", "kavausd", "balusd", "bntusd", "renusd", "kncusd", "bandusd",
+    "scusd", "storjusd", "oceanusd", "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    "dashusd", "zecusd", "xmrusd"
+]
+
+# Modern timezone-aware dates
+END_DATE = datetime.now(timezone.utc)
+START_DATE = END_DATE - timedelta(days=180)
+CHUNK_DAYS = 5  # Pulling 5 days at a time bypasses Tiingo's row limits
+
+def fetch_and_load():
+    client = bigquery.Client(project=GCP_PROJECT)
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Token {TIINGO_API_KEY}'
+    }
+
+    print(f"Initiating chunked Tiingo ingestion for {len(COIN_UNIVERSE)} assets...")
+    
+    for coin in COIN_UNIVERSE:
+        print(f"\nFetching 1-min data for {coin}...")
+        
+        current_start = START_DATE
+        total_rows_for_coin = 0
+        
+        # Paginate through time in 5-day chunks
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
+            
+            url = "https://api.tiingo.com/tiingo/crypto/prices"
+            params = {
+                'tickers': coin,
+                'startDate': current_start.strftime('%Y-%m-%d'),
+                'endDate': current_end.strftime('%Y-%m-%d'),
+                'resampleFreq': '1min',
+                'exchanges': 'kraken' # Lowercase is safer for Tiingo's backend
+            }
+            
+            try:
+                response = requests.get(url, headers=headers, params=params)
+                response.raise_for_status()
+                data = response.json()
+                
+                # Check if API returned an error dictionary instead of a list
+                if isinstance(data, dict) and 'detail' in data:
+                    print(f"  -> API Error: {data['detail']}")
+                    break
+                
+                # If no data in this chunk, move to the next window
+                if not data or len(data) == 0 or 'priceData' not in data[0]:
+                    current_start = current_end
+                    time.sleep(1)
+                    continue
+                    
+                price_data = data[0]['priceData']
+                df = pd.DataFrame(price_data)
+                
+                if df.empty:
+                    current_start = current_end
+                    time.sleep(1)
+                    continue
+                
+                df = df.rename(columns={
+                    'date': 'timestamp',
+                    'tradesDone': 'trades'
+                })
+                df['ticker'] = coin.upper()
+                
+                # Ensure structure matches BigQuery perfectly
+                df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
+                df['timestamp'] = pd.to_datetime(df['timestamp'])
+                
+                # Stream directly to BigQuery
+                job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+                job = client.load_table_from_dataframe(df, BQ_TABLE, job_config=job_config)
+                job.result()
+                
+                total_rows_for_coin += len(df)
+                
+            except Exception as e:
+                print(f"  -> Chunk failed ({current_start.date()}): {str(e)}")
+            
+            # Step the window forward and respect rate limits
+            current_start = current_end
+            time.sleep(1.5)
+            
+        print(f"*** Successfully loaded {total_rows_for_coin} total rows for {coin} ***")
+
+if __name__ == "__main__":
+    fetch_and_load()
