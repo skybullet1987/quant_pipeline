@@ -72,7 +72,10 @@ microstructure_and_vol AS (
 
     -- Forward 60m High/Low path for Triple-Barrier Target
     MAX(high) OVER w_forward_60 AS future_max_60m,
-    MIN(low) OVER w_forward_60 AS future_min_60m
+    MIN(low) OVER w_forward_60 AS future_min_60m,
+    
+    -- Continuous 60-minute forward close price for continuous PnL
+    LEAD(close, 60) OVER (PARTITION BY ticker ORDER BY timestamp) AS future_close_60m
 
   FROM market_basket
   WINDOW 
@@ -102,12 +105,15 @@ ranked_features AS (
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_15m ASC) AS rank_alpha_mom_15m,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_60m ASC) AS rank_alpha_mom_60m,
 
-    -- Dynamic Triple Barrier Labeling: Upper barrier clamped to minimum +2.0% to clear 80 bps fee hurdle
+    -- Dynamic Triple Barrier Labeling: Upper barrier clamped to minimum +2.0%
     CASE 
       WHEN future_max_60m >= close * (1.0 + GREATEST(0.020, 2.0 * COALESCE(garman_klass_vol_60m, 0.01)))
        AND future_min_60m > close * (1.0 - 1.0 * COALESCE(garman_klass_vol_60m, 0.01)) THEN 1
       ELSE 0
-    END AS target_tp_hit
+    END AS target_tp_hit,
+    
+    -- Calculate continuous percentage return
+    SAFE_DIVIDE(future_close_60m - close, close) AS target_ret_60m
 
   FROM microstructure_and_vol
 )

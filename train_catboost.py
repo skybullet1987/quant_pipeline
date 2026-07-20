@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 from catboost import CatBoostClassifier, Pool
 from google.cloud import bigquery
 import os
@@ -7,29 +6,6 @@ import os
 PROJECT_ID = "parnasa-498503"
 MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
 PURGE_BARS = 60 
-
-class GMADLLoss(object):
-    """Custom GMADL Objective for CatBoost optimizing for return magnitude."""
-    def __init__(self, a=10.0, b=2.0):
-        self.a = a
-        self.b = b
-
-    def calc_ders_range(self, approxes, targets, weights):
-        approxes = np.array(approxes)
-        targets = np.array(targets)
-        
-        sig = 1.0 / (1.0 + np.exp(-self.a * targets * approxes))
-        abs_target_b = np.abs(targets) ** self.b
-        
-        der1 = self.a * targets * (1.0 - sig) * sig * abs_target_b
-        der2 = (self.a ** 2) * (targets ** 2) * sig * (1.0 - sig) * (1.0 - 2.0 * sig) * abs_target_b
-        der2 = np.maximum(der2, 1e-6)
-        
-        if weights is not None:
-            der1 *= weights
-            der2 *= weights
-            
-        return list(zip(-der1, der2))
 
 def train_production_model():
     print("1. Ingesting Cross-Sectionally Rank-Normalized Feature Store...")
@@ -83,15 +59,15 @@ def train_production_model():
     eval_pool = Pool(eval_df[feature_cols + cat_cols], label=eval_df['target_tp_hit'], cat_features=cat_cols)
     test_pool = Pool(test_df[feature_cols + cat_cols], label=test_df['target_tp_hit'], cat_features=cat_cols)
 
-    print("2. Training Regularized CatBoost Model with GMADL Loss...")
+    print("2. Training Regularized CatBoost Model...")
     model = CatBoostClassifier(
-        iterations=1200,
+        iterations=1500,
         learning_rate=0.03,
         depth=5,
         l2_leaf_reg=10.0,
-        bagging_temperature=0.3,
-        loss_function=GMADLLoss(a=10.0, b=2.0),
-        eval_metric='Logloss',
+        loss_function='Logloss',
+        eval_metric='AUC',
+        auto_class_weights='Balanced', # Automatically handles the rarity of the +2.0% hits
         od_type='Iter',
         od_wait=50,
         verbose=100
