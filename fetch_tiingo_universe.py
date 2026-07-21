@@ -11,14 +11,20 @@ GCP_PROJECT = "parnasa-498503"
 BQ_TABLE = f"{GCP_PROJECT}.market_data.raw_ohlcv"
 
 COIN_UNIVERSE = [
+    # Core Layer 1s & Majors
     "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
-    "avaxusd", "linkusd", "maticusd", "ltcusd", "bchusd", "algousd", "xlmusd", 
-    "atomusd", "uniusd", "filusd", "trxusd", "xtzusd", "eosusd", "aaveusd",
-    "mkrusd", "snxusd", "compusd", "grtusd", "batusd", "enjusd", "manausd",
-    "chzusd", "zrxusd", "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd",
-    "icxusd", "kavausd", "balusd", "bntusd", "renusd", "kncusd", "bandusd",
-    "scusd", "storjusd", "oceanusd", "lrcusd", "keepusd", "oxtusd", "nmrusd",
-    "dashusd", "zecusd", "xmrusd"
+    "avaxusd", "ltcusd", "bchusd", "algousd", "xlmusd", "atomusd", "trxusd", 
+    "xtzusd", "eosusd", 
+    
+    # Core DeFi & Web3 (Compliant subset)
+    "linkusd", "maticusd", "uniusd", "filusd", "aaveusd", "mkrusd", "snxusd", 
+    "compusd", "grtusd", "batusd", "enjusd", "manausd", "chzusd", "zrxusd", 
+    "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd", "icxusd", "kavausd", 
+    "balusd", "bntusd", "renusd", "kncusd", "bandusd", "scusd", "storjusd", 
+    "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    
+    # Highly Liquid Modern Additions (Great for Momentum Strategies)
+    "ldousd", "rndrusd", "arbusd", "opusd", "injusd", "tiausd", "fetusd"
 ]
 
 END_DATE = datetime.now(timezone.utc)
@@ -51,7 +57,6 @@ def fetch_and_load():
                 'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'resampleFreq': '1min'
-                # 'exchanges' parameter intentionally omitted to use Tiingo's robust aggregated feed
             }
             
             try:

@@ -1,5 +1,136 @@
 
 
+=== ./parameter_sweep.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import itertools
+import warnings
+warnings.filterwarnings('ignore')
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
+PURGE_BARS = 60
+MAX_CONCURRENT_TRADES = 3
+
+print("1. Fetching Full Dataset & Generating HMM Regimes...")
+client = bigquery.Client(project=PROJECT_ID)
+
+query = f"""
+    SELECT 
+        timestamp, ticker, hour_of_day, day_of_week, is_weekend,
+        rank_nofi, rank_gk_vol, rank_vol_term_structure,
+        rank_vwap_dev_60m, rank_alpha_mom_15m, rank_alpha_mom_60m,
+        target_tp_hit, target_ret_60m, close, garman_klass_vol_60m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE target_tp_hit IS NOT NULL 
+      AND target_ret_60m IS NOT NULL
+    ORDER BY timestamp ASC
+"""
+df = client.query(query).to_dataframe(create_bqstorage_client=True)
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+timestamps = df['timestamp'].sort_values().unique()
+n = len(timestamps)
+train_end_idx = int(n * 0.70)
+eval_end_idx = int(n * 0.85)
+
+train_ts = timestamps[:train_end_idx]
+test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+# HMM Macro Filter
+btc_df = df[df['ticker'] == 'BTCUSD'].sort_values('timestamp').copy()
+btc_df['btc_ret_24h'] = btc_df['close'].pct_change(1440).fillna(0)
+btc_df['btc_vol_24h_avg'] = btc_df['garman_klass_vol_60m'].rolling(1440).mean().fillna(0)
+
+btc_train = btc_df[btc_df['timestamp'].isin(train_ts)].copy()
+btc_test = btc_df[btc_df['timestamp'].isin(test_ts)].copy()
+
+hmm_model = GaussianHMM(n_components=2, covariance_type="diag", n_iter=200, random_state=42)
+hmm_features = ['btc_ret_24h', 'btc_vol_24h_avg']
+hmm_model.fit(btc_train[hmm_features])
+
+regime_stats = btc_train.groupby(hmm_model.predict(btc_train[hmm_features]))['btc_ret_24h'].mean()
+SAFE_REGIME = regime_stats.idxmax()
+DANGER_REGIME = regime_stats.idxmin()
+
+btc_test['regime'] = hmm_model.predict(btc_test[hmm_features])
+regime_map = btc_test[['timestamp', 'regime']].set_index('timestamp')
+test_df = test_df.join(regime_map, on='timestamp')
+test_df['regime'] = test_df['regime'].ffill().fillna(DANGER_REGIME) 
+
+print("2. Generating CatBoost Predictions...")
+model = CatBoostClassifier()
+model.load_model(MODEL_PATH)
+feature_cols = ['rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure', 'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m']
+cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
+test_df['prob'] = model.predict_proba(test_df[feature_cols + cat_cols])[:, 1]
+
+print("\n3. Executing Parameter Sweep Matrix...")
+print("=" * 80)
+print(f"{'Percentile':<12} | {'Daily Cap':<9} | {'Trades':<6} | {'Win Rate':<8} | {'EV / Trade':<10} | {'Sharpe':<6} | {'Max DD':<8}")
+print("-" * 80)
+
+percentiles_to_test = [98.0, 98.5, 99.0, 99.5, 99.9]
+caps_to_test = [1, 2, 3]
+
+def calculate_triple_barrier_pnl(row):
+    if row['target_tp_hit'] == 1.0: return 0.012 
+    raw_return = row['target_ret_60m']
+    return -0.018 if raw_return <= -0.018 else raw_return - 0.0016 
+
+for pct, cap in itertools.product(percentiles_to_test, caps_to_test):
+    dynamic_threshold = np.percentile(test_df['prob'], pct)
+    
+    signals = test_df[(test_df['prob'] >= dynamic_threshold) & (test_df['regime'] == SAFE_REGIME)].copy()
+    signals = signals.sort_values(by=['timestamp', 'prob'], ascending=[True, False])
+
+    valid_trades = []
+    active_cooldowns = {} 
+    daily_coin_counts = {}
+
+    for idx, row in signals.iterrows():
+        tstamp = row['timestamp']
+        ticker = row['ticker']
+        date_str = tstamp.date()
+        
+        if date_str not in daily_coin_counts: daily_coin_counts[date_str] = {}
+        
+        expired = [t for t, entry_time in active_cooldowns.items() if (tstamp - entry_time).total_seconds() >= (PURGE_BARS * 60)]
+        for t in expired: del active_cooldowns[t]
+            
+        if ticker in active_cooldowns or len(active_cooldowns) >= MAX_CONCURRENT_TRADES or daily_coin_counts[date_str].get(ticker, 0) >= cap:
+            continue
+            
+        valid_trades.append(row)
+        active_cooldowns[ticker] = tstamp
+        daily_coin_counts[date_str][ticker] = daily_coin_counts[date_str].get(ticker, 0) + 1
+
+    if not valid_trades:
+        print(f"{pct:<12.1f} | {cap:<9} | {'0':<6} | {'N/A':<8} | {'N/A':<10} | {'N/A':<6} | {'N/A':<8}")
+        continue
+
+    trades = pd.DataFrame(valid_trades)
+    trades['pnl_pct'] = trades.apply(calculate_triple_barrier_pnl, axis=1)
+    trades['cumulative_pnl'] = trades['pnl_pct'].cumsum()
+    
+    total_trades = len(trades)
+    win_rate = len(trades[trades['pnl_pct'] > 0]) / total_trades
+    ev = trades['pnl_pct'].mean()
+    max_drawdown = (trades['cumulative_pnl'] - trades['cumulative_pnl'].cummax()).min()
+    
+    trades['date'] = trades['timestamp'].dt.date
+    daily_pnl = trades.groupby('date')['pnl_pct'].sum()
+    sharpe = (daily_pnl.mean() / daily_pnl.std()) * np.sqrt(365) if daily_pnl.std() > 0 else 0
+    
+    print(f"{pct:<12.1f} | {cap:<9} | {total_trades:<6} | {win_rate*100:>7.2f}% | {ev*100:>9.3f}% | {sharpe:>6.2f} | {max_drawdown*100:>7.2f}%")
+
+print("=" * 80)
+
+
 === ./crypto_features/models/features_matrix.sql ===
 {{ config(
     materialized='table',
@@ -13,13 +144,7 @@
 
 WITH raw_bars AS (
   SELECT
-    timestamp,
-    ticker,
-    open,
-    high,
-    low,
-    close,
-    volume,
+    timestamp, ticker, open, high, low, close, volume,
     LOG(SAFE_DIVIDE(close, LAG(close, 1) OVER w_asset)) AS ret_1m,
     close * volume AS dollar_volume
   FROM {{ source('market_data', 'raw_ohlcv') }}
@@ -27,77 +152,59 @@ WITH raw_bars AS (
 ),
 
 market_basket AS (
-  SELECT
-    timestamp,
-    ticker,
-    open, high, low, close, volume, ret_1m, dollar_volume,
-    AVG(ret_1m) OVER (PARTITION BY timestamp) AS market_ret_1m
+  SELECT *, AVG(ret_1m) OVER (PARTITION BY timestamp) AS market_ret_1m
   FROM raw_bars
 ),
 
 microstructure_and_vol AS (
-  SELECT
-    timestamp,
-    ticker,
-    close,
-    volume,
-    dollar_volume,
-    
+  SELECT *,
     (ret_1m - market_ret_1m) AS alpha_ret_1m,
 
-    -- 1. Normalized Order Flow Imbalance (NOFI) Proxy
     SAFE_DIVIDE(
       SAFE_DIVIDE((close - low) - (high - close), NULLIF(high - low, 0)) * volume,
       NULLIF(AVG(volume) OVER w_rolling_60, 0)
     ) AS nofi_proxy,
 
-    -- 2. Volatility: Garman-Klass (60-minute rolling)
-    SQRT(AVG(
-      0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - 
-      (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)
-    ) OVER w_rolling_60) AS garman_klass_vol_60m,
+    SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_60) AS garman_klass_vol_60m,
 
-    -- 3. Volatility Term Structure Ratio (15m Vol / 240m Vol)
     SAFE_DIVIDE(
       SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_15),
       NULLIF(SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_240), 0)
     ) AS vol_term_structure,
 
-    -- 4. VWAP Deviations (60m)
     SAFE_DIVIDE(
       close - (SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0)),
       NULLIF(SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0), 0)
     ) AS vwap_dev_60m,
 
-    -- 5. Multi-Horizon Idiosyncratic Momentum
     SUM(ret_1m - market_ret_1m) OVER w_rolling_15 AS alpha_mom_15m,
     SUM(ret_1m - market_ret_1m) OVER w_rolling_60 AS alpha_mom_60m,
 
-    -- Forward 60m High/Low path for Triple-Barrier Target
-    MAX(high) OVER w_forward_60 AS future_max_60m,
-    MIN(low) OVER w_forward_60 AS future_min_60m
+    -- Forward Windows for Targets
+    MAX(high) OVER w_forward_120 AS max_120m,
+    MIN(low) OVER w_forward_120 AS min_120m,
+    LEAD(close, 120) OVER (PARTITION BY ticker ORDER BY timestamp) AS close_120m,
+    
+    MAX(high) OVER w_forward_180 AS max_180m,
+    MIN(low) OVER w_forward_180 AS min_180m,
+    LEAD(close, 180) OVER (PARTITION BY ticker ORDER BY timestamp) AS close_180m
 
   FROM market_basket
   WINDOW 
     w_rolling_15 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW),
     w_rolling_60 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 59 PRECEDING AND CURRENT ROW),
     w_rolling_240 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 239 PRECEDING AND CURRENT ROW),
-    w_forward_60 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 60 FOLLOWING)
+    w_forward_120 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 120 FOLLOWING),
+    w_forward_180 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 180 FOLLOWING)
 ),
 
 ranked_features AS (
   SELECT
-    timestamp,
-    ticker,
-    close,
-    garman_klass_vol_60m,
-
-    -- Time Categoricals
+    timestamp, ticker, close, garman_klass_vol_60m,
     EXTRACT(HOUR FROM timestamp) AS hour_of_day,
     EXTRACT(DAYOFWEEK FROM timestamp) AS day_of_week,
     IF(EXTRACT(DAYOFWEEK FROM timestamp) IN (1, 7), 1, 0) AS is_weekend,
 
-    -- Cross-Sectional Rank Normalization (PERCENT_RANK per timestamp)
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY nofi_proxy ASC) AS rank_nofi,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY garman_klass_vol_60m ASC) AS rank_gk_vol,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_term_structure ASC) AS rank_vol_term_structure,
@@ -105,18 +212,22 @@ ranked_features AS (
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_15m ASC) AS rank_alpha_mom_15m,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_60m ASC) AS rank_alpha_mom_60m,
 
-    -- Dynamic Triple Barrier Labeling: Upper barrier clamped to minimum +2.0% to clear 80 bps fee hurdle
-    CASE 
-      WHEN future_max_60m >= close * (1.0 + GREATEST(0.020, 2.0 * COALESCE(garman_klass_vol_60m, 0.01)))
-       AND future_min_60m > close * (1.0 - 1.0 * COALESCE(garman_klass_vol_60m, 0.01)) THEN 1
-      ELSE 0
-    END AS target_tp_hit
+    -- TARGET A: 2.0% TP / -2.0% SL (120m Horizon)
+    CASE WHEN max_120m >= close * 1.020 AND min_120m > close * 0.980 THEN 1 ELSE 0 END AS target_20_hit,
+    
+    -- TARGET B: 2.5% TP / -2.5% SL (120m Horizon)
+    CASE WHEN max_120m >= close * 1.025 AND min_120m > close * 0.975 THEN 1 ELSE 0 END AS target_25_hit,
+    
+    -- TARGET C: 3.0% TP / -3.0% SL (180m Horizon)
+    CASE WHEN max_180m >= close * 1.030 AND min_180m > close * 0.970 THEN 1 ELSE 0 END AS target_30_hit,
+
+    SAFE_DIVIDE(close_120m - close, close) AS ret_120m,
+    SAFE_DIVIDE(close_180m - close, close) AS ret_180m
 
   FROM microstructure_and_vol
 )
 
-SELECT * FROM ranked_features
-WHERE timestamp IS NOT NULL
+SELECT * FROM ranked_features WHERE timestamp IS NOT NULL
 
 
 === ./crypto_features/models/schema.yml ===
@@ -161,9 +272,334 @@ crypto_features:
   target: prod
 
 
-=== ./train_catboost.py ===
+=== ./hmm_backtest.py ===
 import pandas as pd
 import numpy as np
+from catboost import CatBoostClassifier
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+warnings.filterwarnings('ignore')
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
+PURGE_BARS = 60
+TARGET_PERCENTILE = 99.0  # Optimal Plateau Threshold (Top 1.0% signals)
+MAX_CONCURRENT_TRADES = 3 
+MAX_DAILY_TRADES_PER_COIN = 2 # Optimal Falling-Knife Breaker
+
+print("1. Fetching Full Dataset & Macro Features...")
+client = bigquery.Client(project=PROJECT_ID)
+
+query = f"""
+    SELECT 
+        timestamp, ticker, hour_of_day, day_of_week, is_weekend,
+        rank_nofi, rank_gk_vol, rank_vol_term_structure,
+        rank_vwap_dev_60m, rank_alpha_mom_15m, rank_alpha_mom_60m,
+        target_tp_hit, target_ret_60m, close, garman_klass_vol_60m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE target_tp_hit IS NOT NULL 
+      AND target_ret_60m IS NOT NULL
+    ORDER BY timestamp ASC
+"""
+df = client.query(query).to_dataframe(create_bqstorage_client=True)
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+timestamps = df['timestamp'].sort_values().unique()
+n = len(timestamps)
+train_end_idx = int(n * 0.70)
+eval_end_idx = int(n * 0.85)
+
+train_ts = timestamps[:train_end_idx]
+test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+print("2. Training Convergence-Optimized Macro HMM on BTCUSD...")
+btc_df = df[df['ticker'] == 'BTCUSD'].sort_values('timestamp').copy()
+btc_df['btc_ret_24h'] = btc_df['close'].pct_change(1440).fillna(0)
+btc_df['btc_vol_24h_avg'] = btc_df['garman_klass_vol_60m'].rolling(1440).mean().fillna(0)
+
+btc_train = btc_df[btc_df['timestamp'].isin(train_ts)].copy()
+btc_test = btc_df[btc_df['timestamp'].isin(test_ts)].copy()
+
+# Add tol=1e-2 and n_iter=500 for clean convergence
+hmm_model = GaussianHMM(n_components=2, covariance_type="diag", n_iter=500, tol=1e-2, random_state=42)
+hmm_features = ['btc_ret_24h', 'btc_vol_24h_avg']
+hmm_model.fit(btc_train[hmm_features])
+
+regime_stats = btc_train.groupby(hmm_model.predict(btc_train[hmm_features]))['btc_ret_24h'].mean()
+SAFE_REGIME = regime_stats.idxmax()
+DANGER_REGIME = regime_stats.idxmin()
+
+btc_test['regime'] = hmm_model.predict(btc_test[hmm_features])
+regime_map = btc_test[['timestamp', 'regime']].set_index('timestamp')
+test_df = test_df.join(regime_map, on='timestamp')
+test_df['regime'] = test_df['regime'].ffill().fillna(DANGER_REGIME) 
+
+print("3. Generating CatBoost Predictions...")
+model = CatBoostClassifier()
+model.load_model(MODEL_PATH)
+
+feature_cols = [
+    'rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure',
+    'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m'
+]
+cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
+
+test_df['prob'] = model.predict_proba(test_df[feature_cols + cat_cols])[:, 1]
+dynamic_threshold = np.percentile(test_df['prob'], TARGET_PERCENTILE)
+print(f"4. Simulating Execution (Threshold >= {dynamic_threshold:.4f} | Top 1.0%)...")
+
+signals = test_df[(test_df['prob'] >= dynamic_threshold) & (test_df['regime'] == SAFE_REGIME)].copy()
+signals = signals.sort_values(by=['timestamp', 'prob'], ascending=[True, False])
+
+valid_trades = []
+active_cooldowns = {} 
+daily_coin_counts = {}
+
+for idx, row in signals.iterrows():
+    tstamp = row['timestamp']
+    ticker = row['ticker']
+    date_str = tstamp.date()
+    
+    if date_str not in daily_coin_counts:
+        daily_coin_counts[date_str] = {}
+    
+    expired = [t for t, entry_time in active_cooldowns.items() if (tstamp - entry_time).total_seconds() >= (PURGE_BARS * 60)]
+    for t in expired:
+        del active_cooldowns[t]
+        
+    if ticker in active_cooldowns:
+        continue
+    if len(active_cooldowns) >= MAX_CONCURRENT_TRADES:
+        continue
+    if daily_coin_counts[date_str].get(ticker, 0) >= MAX_DAILY_TRADES_PER_COIN:
+        continue
+        
+    valid_trades.append(row)
+    active_cooldowns[ticker] = tstamp
+    daily_coin_counts[date_str][ticker] = daily_coin_counts[date_str].get(ticker, 0) + 1
+
+trades = pd.DataFrame(valid_trades)
+
+def calculate_triple_barrier_pnl(row):
+    if row['target_tp_hit'] == 1.0:
+        return 0.012  # +1.2% Net Gain (after fees/slippage)
+    else:
+        raw_return = row['target_ret_60m']
+        if raw_return <= -0.018:
+            return -0.018 # Hard Stop Loss
+        else:
+            return raw_return - 0.0016 # Time exit minus fee hurdle
+
+trades['pnl_pct'] = trades.apply(calculate_triple_barrier_pnl, axis=1)
+trades['cumulative_pnl'] = trades['pnl_pct'].cumsum()
+
+total_trades = len(trades)
+winners = len(trades[trades['pnl_pct'] > 0])
+win_rate = winners / total_trades
+max_drawdown = (trades['cumulative_pnl'] - trades['cumulative_pnl'].cummax()).min()
+
+trades['date'] = trades['timestamp'].dt.date
+daily_pnl = trades.groupby('date')['pnl_pct'].sum()
+daily_sharpe = (daily_pnl.mean() / daily_pnl.std()) * np.sqrt(365) if daily_pnl.std() > 0 else 0
+
+print("\n==================================================")
+print("     FINAL PRODUCTION BACKTEST REPORT (OPTIMIZED)")
+print("==================================================")
+print(f"Total Trades Executed: {total_trades:,}")
+print(f"Win Rate (> 0% PnL):   {win_rate*100:.2f}%")
+print(f"Expected Value (EV):   {trades['pnl_pct'].mean()*100:.3f}% per trade")
+print(f"Total Net Return:      {trades['cumulative_pnl'].iloc[-1]*100:.2f}%")
+print(f"Max Drawdown:          {max_drawdown*100:.2f}%")
+print(f"Daily Sharpe Ratio:    {daily_sharpe:.2f}")
+
+print("\n--- Top 5 Most Profitable Coins ---")
+coin_pnl = trades.groupby('ticker')['pnl_pct'].sum().sort_values(ascending=False)
+for coin, pnl in coin_pnl.head(5).items():
+    count = len(trades[trades['ticker'] == coin])
+    print(f" {coin:<8}: +{pnl*100:>5.2f}% ({count} trades)")
+
+print("\n--- Top 5 Worst Performing Coins ---")
+for coin, pnl in coin_pnl.tail(5).sort_values().items():
+    count = len(trades[trades['ticker'] == coin])
+    print(f" {coin:<8}: {pnl*100:>6.2f}% ({count} trades)")
+print("==================================================")
+
+
+=== ./real_friction_backtest.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+warnings.filterwarnings('ignore')
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
+PURGE_BARS = 60
+TARGET_PERCENTILE = 99.0  
+MAX_CONCURRENT_TRADES = 3 
+MAX_DAILY_TRADES_PER_COIN = 2 
+
+# --- EQUITY SIMULATOR PARAMS ---
+STARTING_CAPITAL = 1000.0
+ALLOCATION_PCT = 0.33  # Risking 33% of current equity per trade
+
+print("1. Fetching Full Dataset & Macro Features...")
+client = bigquery.Client(project=PROJECT_ID)
+
+query = f"""
+    SELECT 
+        timestamp, ticker, hour_of_day, day_of_week, is_weekend,
+        rank_nofi, rank_gk_vol, rank_vol_term_structure,
+        rank_vwap_dev_60m, rank_alpha_mom_15m, rank_alpha_mom_60m,
+        target_tp_hit, target_ret_60m, close, garman_klass_vol_60m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE target_tp_hit IS NOT NULL 
+      AND target_ret_60m IS NOT NULL
+    ORDER BY timestamp ASC
+"""
+df = client.query(query).to_dataframe(create_bqstorage_client=True)
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+timestamps = df['timestamp'].sort_values().unique()
+n = len(timestamps)
+train_end_idx = int(n * 0.70)
+eval_end_idx = int(n * 0.85)
+
+train_ts = timestamps[:train_end_idx]
+test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+print("2. Training Macro HMM on BTCUSD...")
+btc_df = df[df['ticker'] == 'BTCUSD'].sort_values('timestamp').copy()
+btc_df['btc_ret_24h'] = btc_df['close'].pct_change(1440).fillna(0)
+btc_df['btc_vol_24h_avg'] = btc_df['garman_klass_vol_60m'].rolling(1440).mean().fillna(0)
+
+btc_train = btc_df[btc_df['timestamp'].isin(train_ts)].copy()
+btc_test = btc_df[btc_df['timestamp'].isin(test_ts)].copy()
+
+hmm_model = GaussianHMM(n_components=2, covariance_type="diag", n_iter=500, tol=1e-2, random_state=42)
+hmm_features = ['btc_ret_24h', 'btc_vol_24h_avg']
+hmm_model.fit(btc_train[hmm_features])
+
+regime_stats = btc_train.groupby(hmm_model.predict(btc_train[hmm_features]))['btc_ret_24h'].mean()
+SAFE_REGIME = regime_stats.idxmax()
+DANGER_REGIME = regime_stats.idxmin()
+
+btc_test['regime'] = hmm_model.predict(btc_test[hmm_features])
+regime_map = btc_test[['timestamp', 'regime']].set_index('timestamp')
+test_df = test_df.join(regime_map, on='timestamp')
+test_df['regime'] = test_df['regime'].ffill().fillna(DANGER_REGIME) 
+
+print("3. Generating CatBoost Predictions...")
+model = CatBoostClassifier()
+model.load_model(MODEL_PATH)
+feature_cols = ['rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure', 'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m']
+cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
+test_df['prob'] = model.predict_proba(test_df[feature_cols + cat_cols])[:, 1]
+dynamic_threshold = np.percentile(test_df['prob'], TARGET_PERCENTILE)
+
+print("4. Simulating Account Equity with 33% Sizing & Real Friction...")
+
+signals = test_df[(test_df['prob'] >= dynamic_threshold) & (test_df['regime'] == SAFE_REGIME)].copy()
+signals = signals.sort_values(by=['timestamp', 'prob'], ascending=[True, False])
+
+valid_trades = []
+active_cooldowns = {} 
+daily_coin_counts = {}
+
+for idx, row in signals.iterrows():
+    tstamp = row['timestamp']
+    ticker = row['ticker']
+    date_str = tstamp.date()
+    
+    if date_str not in daily_coin_counts: daily_coin_counts[date_str] = {}
+    
+    expired = [t for t, entry_time in active_cooldowns.items() if (tstamp - entry_time).total_seconds() >= (PURGE_BARS * 60)]
+    for t in expired: del active_cooldowns[t]
+        
+    if ticker in active_cooldowns or len(active_cooldowns) >= MAX_CONCURRENT_TRADES or daily_coin_counts[date_str].get(ticker, 0) >= MAX_DAILY_TRADES_PER_COIN:
+        continue
+        
+    valid_trades.append(row)
+    active_cooldowns[ticker] = tstamp
+    daily_coin_counts[date_str][ticker] = daily_coin_counts[date_str].get(ticker, 0) + 1
+
+trades = pd.DataFrame(valid_trades)
+
+def calculate_real_friction_pnl(row):
+    TAKER_FEE = 0.0040
+    MAKER_FEE = 0.0025
+    ENTRY_SLIPPAGE = 0.0010
+    EXIT_MARKET_SLIPPAGE = 0.0010
+    STOP_SLIPPAGE = 0.0020
+
+    if row['target_tp_hit'] == 1.0:
+        friction = TAKER_FEE + MAKER_FEE + ENTRY_SLIPPAGE
+        return 0.012 - friction
+    else:
+        raw_return = row['target_ret_60m']
+        if raw_return <= -0.018:
+            friction = (TAKER_FEE * 2) + ENTRY_SLIPPAGE + STOP_SLIPPAGE
+            return -0.018 - friction
+        else:
+            friction = (TAKER_FEE * 2) + ENTRY_SLIPPAGE + EXIT_MARKET_SLIPPAGE
+            return raw_return - friction
+
+trades['pnl_pct'] = trades.apply(calculate_real_friction_pnl, axis=1)
+
+# --- 5. COMPOUNDING EQUITY LOOP ---
+equity = STARTING_CAPITAL
+equity_curve = []
+peak_equity = STARTING_CAPITAL
+max_dd_usd = 0
+max_dd_pct = 0
+
+for idx, row in trades.iterrows():
+    trade_size_usd = equity * ALLOCATION_PCT
+    dollar_pnl = trade_size_usd * row['pnl_pct']
+    equity += dollar_pnl
+    
+    if equity > peak_equity:
+        peak_equity = equity
+        
+    current_dd_usd = equity - peak_equity
+    current_dd_pct = current_dd_usd / peak_equity
+    
+    if current_dd_pct < max_dd_pct:
+        max_dd_pct = current_dd_pct
+        max_dd_usd = current_dd_usd
+        
+    equity_curve.append(equity)
+
+trades['account_equity'] = equity_curve
+
+total_trades = len(trades)
+winners = len(trades[trades['pnl_pct'] > 0])
+win_rate = winners / total_trades
+final_equity = trades['account_equity'].iloc[-1]
+net_profit_usd = final_equity - STARTING_CAPITAL
+
+print("\n==================================================")
+print("  TRUE COMPOUNDED EQUITY REPORT ($1,000 START)")
+print("==================================================")
+print(f"Position Sizing:       {ALLOCATION_PCT*100:.0f}% of Account Balance")
+print(f"Total Trades Executed: {total_trades:,}")
+print(f"Win Rate:              {win_rate*100:.2f}%")
+print(f"Average PnL per Trade: {trades['pnl_pct'].mean()*100:.3f}% (After Fees)")
+print("-" * 50)
+print(f"Starting Balance:      ${STARTING_CAPITAL:,.2f}")
+print(f"Final Balance:         ${final_equity:,.2f}")
+print(f"Net Dollar Profit:     ${net_profit_usd:,.2f} ({(net_profit_usd/STARTING_CAPITAL)*100:.2f}%)")
+print(f"Maximum Drawdown:      {max_dd_pct*100:.2f}% (${abs(max_dd_usd):.2f})")
+print("==================================================")
+
+
+=== ./train_catboost.py ===
+import pandas as pd
 from catboost import CatBoostClassifier, Pool
 from google.cloud import bigquery
 import os
@@ -171,29 +607,6 @@ import os
 PROJECT_ID = "parnasa-498503"
 MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
 PURGE_BARS = 60 
-
-class GMADLLoss(object):
-    """Custom GMADL Objective for CatBoost optimizing for return magnitude."""
-    def __init__(self, a=10.0, b=2.0):
-        self.a = a
-        self.b = b
-
-    def calc_ders_range(self, approxes, targets, weights):
-        approxes = np.array(approxes)
-        targets = np.array(targets)
-        
-        sig = 1.0 / (1.0 + np.exp(-self.a * targets * approxes))
-        abs_target_b = np.abs(targets) ** self.b
-        
-        der1 = self.a * targets * (1.0 - sig) * sig * abs_target_b
-        der2 = (self.a ** 2) * (targets ** 2) * sig * (1.0 - sig) * (1.0 - 2.0 * sig) * abs_target_b
-        der2 = np.maximum(der2, 1e-6)
-        
-        if weights is not None:
-            der1 *= weights
-            der2 *= weights
-            
-        return list(zip(-der1, der2))
 
 def train_production_model():
     print("1. Ingesting Cross-Sectionally Rank-Normalized Feature Store...")
@@ -247,15 +660,15 @@ def train_production_model():
     eval_pool = Pool(eval_df[feature_cols + cat_cols], label=eval_df['target_tp_hit'], cat_features=cat_cols)
     test_pool = Pool(test_df[feature_cols + cat_cols], label=test_df['target_tp_hit'], cat_features=cat_cols)
 
-    print("2. Training Regularized CatBoost Model with GMADL Loss...")
+    print("2. Training Regularized CatBoost Model...")
     model = CatBoostClassifier(
-        iterations=1200,
+        iterations=1500,
         learning_rate=0.03,
         depth=5,
         l2_leaf_reg=10.0,
-        bagging_temperature=0.3,
-        loss_function=GMADLLoss(a=10.0, b=2.0),
-        eval_metric='Logloss',
+        loss_function='Logloss',
+        eval_metric='AUC',
+        auto_class_weights='Balanced', # Automatically handles the rarity of the +2.0% hits
         od_type='Iter',
         od_wait=50,
         verbose=100
@@ -330,6 +743,136 @@ def fetch_incremental():
 
 if __name__ == "__main__":
     fetch_incremental()
+
+
+=== ./backtest_metrics.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier
+from google.cloud import bigquery
+import warnings
+warnings.filterwarnings('ignore')
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
+PURGE_BARS = 60
+TARGET_PERCENTILE = 99.9  # Only trade top 0.1% signals
+MAX_CONCURRENT_TRADES = 3 # K=3 cap
+
+print("1. Fetching Out-of-Sample Test Data with Continuous Returns...")
+client = bigquery.Client(project=PROJECT_ID)
+
+query = f"""
+    SELECT 
+        timestamp, ticker, hour_of_day, day_of_week, is_weekend,
+        rank_nofi, rank_gk_vol, rank_vol_term_structure,
+        rank_vwap_dev_60m, rank_alpha_mom_15m, rank_alpha_mom_60m,
+        target_tp_hit, target_ret_60m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE target_tp_hit IS NOT NULL 
+      AND target_ret_60m IS NOT NULL
+    ORDER BY timestamp ASC
+"""
+df = client.query(query).to_dataframe(create_bqstorage_client=True)
+df['timestamp'] = pd.to_datetime(df['timestamp'])
+
+timestamps = df['timestamp'].sort_values().unique()
+n = len(timestamps)
+train_end_idx = int(n * 0.70)
+eval_end_idx = int(n * 0.85)
+test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+print(f"   Test dataset isolated: {len(test_df):,} rows.")
+
+print("2. Loading Model & Generating Predictions...")
+model = CatBoostClassifier()
+model.load_model(MODEL_PATH)
+
+feature_cols = [
+    'rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure',
+    'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m'
+]
+cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
+
+test_df['prob'] = model.predict_proba(test_df[feature_cols + cat_cols])[:, 1]
+dynamic_threshold = np.percentile(test_df['prob'], TARGET_PERCENTILE)
+print(f"3. Simulating Path-Dependent Execution Engine (Threshold >= {dynamic_threshold:.4f})...")
+
+signals = test_df[test_df['prob'] >= dynamic_threshold].copy()
+signals = signals.sort_values(by=['timestamp', 'prob'], ascending=[True, False])
+
+valid_trades = []
+active_cooldowns = {} 
+
+for idx, row in signals.iterrows():
+    tstamp = row['timestamp']
+    ticker = row['ticker']
+    
+    expired = [t for t, entry_time in active_cooldowns.items() if (tstamp - entry_time).total_seconds() >= (PURGE_BARS * 60)]
+    for t in expired:
+        del active_cooldowns[t]
+        
+    if ticker in active_cooldowns:
+        continue
+    if len(active_cooldowns) >= MAX_CONCURRENT_TRADES:
+        continue
+        
+    valid_trades.append(row)
+    active_cooldowns[ticker] = tstamp
+
+trades = pd.DataFrame(valid_trades)
+
+if len(trades) == 0:
+    print("\nNo trades generated.")
+    exit()
+
+def calculate_triple_barrier_pnl(row):
+    if row['target_tp_hit'] == 1.0:
+        return 0.012  # +1.2% Net Gain (after friction)
+    else:
+        raw_return = row['target_ret_60m']
+        if raw_return <= -0.018:
+            return -0.018 # Hard Stop Loss Hit
+        else:
+            return raw_return - 0.0016 # Time exit minus slippage/fees
+
+trades['pnl_pct'] = trades.apply(calculate_triple_barrier_pnl, axis=1)
+trades['cumulative_pnl'] = trades['pnl_pct'].cumsum()
+
+total_trades = len(trades)
+winners = len(trades[trades['pnl_pct'] > 0])
+win_rate = winners / total_trades
+
+cumulative_max = trades['cumulative_pnl'].cummax()
+drawdown = trades['cumulative_pnl'] - cumulative_max
+max_drawdown = drawdown.min()
+
+trades['date'] = trades['timestamp'].dt.date
+daily_pnl = trades.groupby('date')['pnl_pct'].sum()
+daily_sharpe = (daily_pnl.mean() / daily_pnl.std()) * np.sqrt(365) if daily_pnl.std() > 0 else 0
+
+print("\n==================================================")
+print("      OUT-OF-SAMPLE BACKTEST REPORT (UNLEVERAGED) ")
+print("==================================================")
+print(f"Total Trades Executed: {total_trades:,}")
+print(f"Win Rate (> 0% PnL):   {win_rate*100:.2f}%")
+print(f"Expected Value (EV):   {trades['pnl_pct'].mean()*100:.3f}% per trade")
+print(f"Total Net Return:      {trades['cumulative_pnl'].iloc[-1]*100:.2f}%")
+print(f"Max Drawdown:          {max_drawdown*100:.2f}%")
+print(f"Daily Sharpe Ratio:    {daily_sharpe:.2f}")
+
+print("\n--- Top 5 Most Profitable Coins ---")
+coin_pnl = trades.groupby('ticker')['pnl_pct'].sum().sort_values(ascending=False)
+for coin, pnl in coin_pnl.head(5).items():
+    count = len(trades[trades['ticker'] == coin])
+    print(f" {coin:<8}: +{pnl*100:>5.2f}% ({count} trades)")
+
+print("\n--- Top 5 Worst Performing Coins ---")
+for coin, pnl in coin_pnl.tail(5).sort_values().items():
+    count = len(trades[trades['ticker'] == coin])
+    print(f" {coin:<8}: {pnl*100:>6.2f}% ({count} trades)")
+print("==================================================")
 
 
 === ./fetch_tiingo_universe.py ===

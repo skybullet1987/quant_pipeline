@@ -1,0 +1,17 @@
+{
+"meta":{"test_sets":["eval_dataset"],"test_metrics":[{"best_value":"Max","name":"AUC"}],"learn_metrics":[],"launch_mode":"Eval","parameters":"","iteration_count":13,"learn_sets":[],"name":""},
+"iterations":[
+{"iteration":0,"eval_dataset":[0.6113159553]},
+{"iteration":1,"eval_dataset":[0.6088808727]},
+{"iteration":2,"eval_dataset":[0.6139046687]},
+{"iteration":3,"eval_dataset":[0.6142619434]},
+{"iteration":4,"eval_dataset":[0.6180497968]},
+{"iteration":5,"eval_dataset":[0.6157559912]},
+{"iteration":6,"eval_dataset":[0.6124998471]},
+{"iteration":7,"eval_dataset":[0.6139796321]},
+{"iteration":8,"eval_dataset":[0.6160570452]},
+{"iteration":9,"eval_dataset":[0.6194085398]},
+{"iteration":10,"eval_dataset":[0.6197863949]},
+{"iteration":11,"eval_dataset":[0.6206673441]},
+{"iteration":12,"eval_dataset":[0.6209789539]}
+]}
