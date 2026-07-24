@@ -13,7 +13,7 @@ WITH raw_data AS (
     timestamp,
     UPPER(ticker) AS ticker,
     open, high, low, close, volume
-  FROM {{ source('market_data', 'raw_ohlcv') }}
+  FROM {{ source('market_data', 'raw_1m_ohlcv') }}
   WHERE timestamp IS NOT NULL
 ),
 
@@ -39,10 +39,25 @@ bounds AS (
   FROM raw_data
 ),
 
-time_spine AS (
-  SELECT timestamp
+-- Bypassing BigQuery Array Limits via Cross-Joined Generators
+date_spine AS (
+  SELECT day
   FROM bounds,
-  UNNEST(GENERATE_TIMESTAMP_ARRAY(min_ts, max_ts, INTERVAL 1 MINUTE)) AS timestamp
+  UNNEST(GENERATE_DATE_ARRAY(DATE(min_ts), DATE(max_ts), INTERVAL 1 DAY)) AS day
+),
+
+minute_spine AS (
+  SELECT minute_offset
+  FROM UNNEST(GENERATE_ARRAY(0, 1439)) AS minute_offset
+),
+
+time_spine AS (
+  SELECT TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) AS timestamp
+  FROM date_spine d
+  CROSS JOIN minute_spine m
+  CROSS JOIN bounds b
+  WHERE TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) >= b.min_ts
+    AND TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) <= b.max_ts
 ),
 
 full_grid AS (

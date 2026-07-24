@@ -6,3 +6,5 @@ sources:
     schema: market_data
     tables:
       - name: raw_ohlcv
+      - name: raw_1h_ohlcv
+      - name: raw_1m_ohlcv

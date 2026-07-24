@@ -1,5 +1,114 @@
 
 
+=== ./train_catboost_optuna_4h.py ===
+import pandas as pd
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+import optuna
+import os
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
+OPTUNA_TRIALS = 25
+
+def load_and_split_data():
+    print("1. Ingesting Symmetric 1.5 ATR Target Matrix (Strict Alpha Mode)...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            timestamp, ticker,
+            candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+            rank_gk_vol_20p, rank_vol_term_structure, rank_gk_vol_zscore,
+            rank_btc_beta_alpha, rank_mom_24h, rank_mom_7d,
+            target_tbm_upper_hit
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True).dropna().reset_index(drop=True)
+    
+    timestamps = df['timestamp'].sort_values().unique()
+    n = len(timestamps)
+    
+    # 70% Train / 15% Eval / 15% Test
+    train_end_idx = int(n * 0.70)
+    eval_end_idx = int(n * 0.85)
+
+    train_ts = timestamps[:train_end_idx]
+    eval_ts = timestamps[train_end_idx + PURGE_BARS : eval_end_idx]
+    test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+
+    return (
+        df[df['timestamp'].isin(train_ts)],
+        df[df['timestamp'].isin(eval_ts)],
+        df[df['timestamp'].isin(test_ts)]
+    )
+
+def main():
+    train_df, eval_df, test_df = load_and_split_data()
+    print(f"   Target Hit Rate (Upper Barrier vs Lower/Time): {train_df['target_tbm_upper_hit'].mean():.2%}\n")
+
+    # Removed temporal crutches; forcing the model to learn market structure
+    all_features = [
+        'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+        'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore',
+        'rank_btc_beta_alpha', 'rank_mom_24h', 'rank_mom_7d'
+    ]
+
+    train_pool = Pool(train_df[all_features], label=train_df['target_tbm_upper_hit'])
+    eval_pool = Pool(eval_df[all_features], label=eval_df['target_tbm_upper_hit'])
+    test_pool = Pool(test_df[all_features], label=test_df['target_tbm_upper_hit'])
+
+    print(f"2. Launching Optuna HPO ({OPTUNA_TRIALS} Trials)...")
+    def objective(trial):
+        params = {
+            'iterations': trial.suggest_int('iterations', 500, 2000),
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.05, log=True),
+            'depth': trial.suggest_int('depth', 3, 7),
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 5.0, 35.0),
+            'random_strength': trial.suggest_float('random_strength', 1.0, 15.0),
+            'loss_function': 'Logloss',
+            'eval_metric': 'AUC',
+            'od_type': 'Iter',
+            'od_wait': 75,  # Increased patience to stop it from quitting too early
+            'verbose': False
+        }
+        
+        model = CatBoostClassifier(**params)
+        model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+        return model.best_score_['validation']['AUC']
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=OPTUNA_TRIALS)
+
+    print("\n   Best Parameters Found:")
+    for k, v in study.best_params.items():
+        print(f"    - {k}: {v}")
+
+    print("\n3. Training Final Model with Best Parameters...")
+    final_params = study.best_params
+    final_params.update({'loss_function': 'Logloss', 'eval_metric': 'AUC', 'verbose': 100})
+    
+    final_model = CatBoostClassifier(**final_params)
+    final_model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+
+    print("\n4. Evaluating on Embargoed Out-of-Sample Test Set...")
+    test_auc = final_model.eval_metrics(test_pool, metrics=['AUC'])['AUC'][-1]
+    print(f"   >>> Out-of-Sample Test AUC: {test_auc:.4f}")
+
+    print("\n5. Feature Importance (Top 5):")
+    importances = final_model.get_feature_importance(train_pool)
+    feat_imp = pd.Series(importances, index=all_features).sort_values(ascending=False)
+    print(feat_imp.head(5).to_string())
+
+    final_model.save_model(MODEL_PATH)
+    print(f"\nModel successfully exported to {MODEL_PATH}")
+
+if __name__ == "__main__":
+    main()
+
+
 === ./parameter_sweep.py ===
 import pandas as pd
 import numpy as np
@@ -131,6 +240,224 @@ for pct, cap in itertools.product(percentiles_to_test, caps_to_test):
 print("=" * 80)
 
 
+=== ./crypto_features/true_event_driven_backtest_v4.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+from sklearn.model_selection import KFold
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+PURGE_BARS = 18 
+
+WIN_FRICTION = 0.0047  
+LOSS_FRICTION = 0.0062 
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason,
+            p.exact_gross_return,
+            p.minutes_in_trade
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['exit_time'] = pd.to_datetime(df['exit_time'])
+    df = df.dropna(subset=['exact_gross_return', 'exit_time']).copy()
+    df['exact_gross_return'] = df['exact_gross_return'].astype(float)
+    df['minutes_in_trade'] = df['minutes_in_trade'].astype(float)
+    return df
+
+def main():
+    print("1. Ingesting Matrix & Fitting HMM Macro Filter...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    # FIX: The absolute ground-truth target
+    df['target'] = (df['exit_reason'] == 'TP_HIT').astype(int)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    split_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:split_idx]
+    test_ts = timestamps[split_idx + PURGE_BARS :]
+
+    df_train = df[df['timestamp'].isin(train_ts)].copy().reset_index(drop=True)
+    df_test = df[df['timestamp'].isin(test_ts)].copy().reset_index(drop=True)
+
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(df_train[hmm_features].values)
+    
+    df_train['hmm_regime'] = hmm_model.predict(df_train[hmm_features].values).astype(str)
+    df_test['hmm_regime'] = hmm_model.predict(df_test[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    
+    for col in all_cat_cols:
+        df_train[col] = df_train[col].astype(str)
+        df_test[col] = df_test[col].astype(str)
+
+    print("2. Generating OOS Predictions via K-Fold Cross Validation...")
+    df_train['primary_prob'] = 0.0
+    regime_models = {}
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    for regime in ['0', '1', '2', '3']:
+        regime_idx = df_train[df_train['hmm_regime'] == regime].index
+        if len(regime_idx) > 50:
+            for train_i, val_i in kf.split(regime_idx):
+                tr_idx = regime_idx[train_i]
+                val_idx = regime_idx[val_i]
+                
+                # Heavy regularization to prevent memorizing the regime blocks
+                model = CatBoostClassifier(iterations=150, depth=4, l2_leaf_reg=5, learning_rate=0.03, verbose=0, random_seed=42)
+                model.fit(df_train.loc[tr_idx, all_features], df_train.loc[tr_idx, 'target'], cat_features=all_cat_cols)
+                df_train.loc[val_idx, 'primary_prob'] = model.predict_proba(df_train.loc[val_idx, all_features])[:, 1]
+                
+            # Final expert trained on 100% of regime data for the Test set
+            final_model = CatBoostClassifier(iterations=150, depth=4, l2_leaf_reg=5, learning_rate=0.03, verbose=0, random_seed=42)
+            final_model.fit(df_train.loc[regime_idx, all_features], df_train.loc[regime_idx, 'target'], cat_features=all_cat_cols)
+            regime_models[regime] = final_model
+        else:
+            regime_models[regime] = None
+
+    print("3. Training the Meta-Labeler on K-Fold Output...")
+    meta_train = df_train[df_train['primary_prob'] > 0.45].copy()
+    meta_features = FEATURE_COLS_NUM + ['primary_prob']
+    
+    meta_model = CatBoostClassifier(iterations=250, depth=4, l2_leaf_reg=4, learning_rate=0.03, verbose=0, random_seed=42)
+    meta_model.fit(meta_train[meta_features], meta_train['target'])
+
+    print("4. Scoring Test Matrix & Executing Fractional Kelly Engine...")
+    df_test['primary_prob'] = 0.0
+    for regime in ['0', '1', '2', '3']:
+        regime_idx = df_test[df_test['hmm_regime'] == regime].index
+        if len(regime_idx) > 0 and regime_models.get(regime) is not None:
+            df_test.loc[regime_idx, 'primary_prob'] = regime_models[regime].predict_proba(df_test.loc[regime_idx, all_features])[:, 1]
+
+    test_signals = df_test[df_test['primary_prob'] > 0.45].copy()
+    if not test_signals.empty:
+        test_signals['meta_prob'] = meta_model.predict_proba(test_signals[meta_features])[:, 1]
+    
+    df_test['net_ret'] = np.where(
+        df_test['exit_reason'] == 'TP_HIT',
+        df_test['exact_gross_return'] - WIN_FRICTION,
+        df_test['exact_gross_return'] - LOSS_FRICTION
+    )
+
+    all_timestamps = sorted(df_test['timestamp'].unique())
+    starting_capital = 10000.0
+    realized_capital = starting_capital
+    available_capital = starting_capital
+    
+    open_positions = []
+    portfolio_history = []
+    trade_log = []
+    
+    MAX_CONCURRENT_POSITIONS = 5
+    KELLY_FRACTION = 0.50 
+    PAYOFF_RATIO = 1.0  
+    
+    for ts in all_timestamps:
+        still_open = []
+        for pos in open_positions:
+            if ts >= pos['exit_time']:
+                profit = pos['investment'] * pos['net_ret']
+                realized_capital += profit
+                available_capital += (pos['investment'] + profit)
+                trade_log.append({
+                    'profit': profit, 
+                    'net_ret': pos['net_ret'],
+                    'minutes': pos['minutes_in_trade'],
+                    'meta_prob': pos['meta_prob']
+                })
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        if ts.hour == 0:
+            mtm_unrealized = sum([(pos['investment'] * pos['net_ret'] * min(((ts - pos['entry_time']).total_seconds() / 60.0) / max(pos['minutes_in_trade'], 1), 1.0)) for pos in open_positions])
+            mtm_total_equity = realized_capital + mtm_unrealized
+            invested_capital = sum([pos['investment'] for pos in open_positions])
+            portfolio_history.append({
+                'date': ts.date(),
+                'mtm_equity': mtm_total_equity,
+                'exposure': invested_capital / mtm_total_equity if mtm_total_equity > 0 else 0
+            })
+
+        if not test_signals.empty:
+            current_signals = test_signals[test_signals['timestamp'] == ts].sort_values('meta_prob', ascending=False)
+            for _, row in current_signals.iterrows():
+                p = row['meta_prob']
+                if p > 0.53 and len(open_positions) < MAX_CONCURRENT_POSITIONS:
+                    kelly_f = p - ((1 - p) / PAYOFF_RATIO)
+                    trade_pct = max(min(kelly_f * KELLY_FRACTION, 0.40), 0.02)
+                    
+                    trade_size = realized_capital * trade_pct
+                    if available_capital >= trade_size:
+                        available_capital -= trade_size
+                        open_positions.append({
+                            'entry_time': ts,
+                            'exit_time': row['exit_time'],
+                            'investment': trade_size,
+                            'net_ret': df_test.loc[row.name, 'net_ret'],
+                            'minutes_in_trade': row['minutes_in_trade'],
+                            'meta_prob': p
+                        })
+
+    print("\n========================================================")
+    print("      V4: K-FOLD OOS + META-LABELING + KELLY SIZING      ")
+    print("========================================================")
+    if portfolio_history:
+        port_df = pd.DataFrame(portfolio_history)
+        trade_df = pd.DataFrame(trade_log) if trade_log else pd.DataFrame()
+        
+        years = max((port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days / 365.25, 0.1)
+        final_equity = port_df['mtm_equity'].iloc[-1]
+        cagr = (final_equity / starting_capital) ** (1 / years) - 1
+        port_df['daily_return'] = port_df['mtm_equity'].pct_change().fillna(0)
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+        max_dd = ((port_df['mtm_equity'] - port_df['mtm_equity'].cummax()) / port_df['mtm_equity'].cummax()).min()
+        win_rate = (trade_df['net_ret'] > 0).mean() if not trade_df.empty else 0
+        avg_holding_time = trade_df['minutes'].mean() / 60.0 if not trade_df.empty else 0
+        
+        print(f"  - Total Trades Executed: {len(trade_df)}")
+        print(f"  - Win Rate (Post-Meta Filter): {win_rate:.2%}")
+        print(f"  - Avg Position Holding Time: {avg_holding_time:.2f} Hours")
+        print(f"  - Average Daily Capital Exposure: {port_df['exposure'].mean():.2%}")
+        print(f"  - Final Mark-to-Market Equity: ${final_equity:,.2f} (from $10k)")
+        print(f"  - Unleveraged CAGR: {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
+
+
 === ./crypto_features/models/features_matrix.sql ===
 {{ config(
     materialized='table',
@@ -146,24 +473,46 @@ WITH raw_bars AS (
   SELECT
     timestamp, ticker, open, high, low, close, volume,
     LOG(SAFE_DIVIDE(close, LAG(close, 1) OVER w_asset)) AS ret_1m,
-    close * volume AS dollar_volume
-  FROM {{ source('market_data', 'raw_ohlcv') }}
+    close * volume AS dollar_volume,
+    GREATEST(
+        high - low,
+        ABS(high - LAG(close, 1) OVER w_asset),
+        ABS(low - LAG(close, 1) OVER w_asset)
+    ) AS true_range
+  FROM {{ ref('stg_densified_ohlcv') }}
   WINDOW w_asset AS (PARTITION BY ticker ORDER BY timestamp)
 ),
 
-market_basket AS (
-  SELECT *, AVG(ret_1m) OVER (PARTITION BY timestamp) AS market_ret_1m
+market_and_btc AS (
+  SELECT *, 
+    AVG(ret_1m) OVER (PARTITION BY timestamp) AS market_ret_1m,
+    SUM(IF(ticker = 'BTCUSD', ret_1m, 0)) OVER (PARTITION BY timestamp) AS btc_ret_1m,
+    
+    SAFE_DIVIDE(ABS(close - open), NULLIF(high - low, 0)) AS candle_body_pct,
+    SAFE_DIVIDE(high - GREATEST(open, close), NULLIF(high - low, 0)) AS candle_upper_wick_pct,
+    SAFE_DIVIDE(LEAST(open, close) - low, NULLIF(high - low, 0)) AS candle_lower_wick_pct
   FROM raw_bars
 ),
 
 microstructure_and_vol AS (
   SELECT *,
     (ret_1m - market_ret_1m) AS alpha_ret_1m,
+    AVG(true_range) OVER w_rolling_60 AS atr_60m,
 
     SAFE_DIVIDE(
       SAFE_DIVIDE((close - low) - (high - close), NULLIF(high - low, 0)) * volume,
       NULLIF(AVG(volume) OVER w_rolling_60, 0)
     ) AS nofi_proxy,
+
+    SAFE_DIVIDE(
+      volume - AVG(volume) OVER w_rolling_60,
+      NULLIF(STDDEV(volume) OVER w_rolling_60, 0)
+    ) AS volume_zscore_60m,
+
+    SAFE_DIVIDE(
+      close - (SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0)),
+      NULLIF(SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0), 0)
+    ) AS vwap_dev_60m,
 
     SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_60) AS garman_klass_vol_60m,
 
@@ -172,62 +521,259 @@ microstructure_and_vol AS (
       NULLIF(SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_240), 0)
     ) AS vol_term_structure,
 
-    SAFE_DIVIDE(
-      close - (SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0)),
-      NULLIF(SUM(dollar_volume) OVER w_rolling_60 / NULLIF(SUM(volume) OVER w_rolling_60, 0), 0)
-    ) AS vwap_dev_60m,
-
     SUM(ret_1m - market_ret_1m) OVER w_rolling_15 AS alpha_mom_15m,
     SUM(ret_1m - market_ret_1m) OVER w_rolling_60 AS alpha_mom_60m,
+    SUM(ret_1m) OVER w_rolling_60 - SUM(btc_ret_1m) OVER w_rolling_60 AS btc_beta_60m,
 
-    -- Forward Windows for Targets
-    MAX(high) OVER w_forward_120 AS max_120m,
-    MIN(low) OVER w_forward_120 AS min_120m,
-    LEAD(close, 120) OVER (PARTITION BY ticker ORDER BY timestamp) AS close_120m,
-    
-    MAX(high) OVER w_forward_180 AS max_180m,
-    MIN(low) OVER w_forward_180 AS min_180m,
-    LEAD(close, 180) OVER (PARTITION BY ticker ORDER BY timestamp) AS close_180m
+    SUM(btc_ret_1m) OVER w_rolling_1440 AS btc_ret_24h,
+    SQRT(AVG(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) OVER w_rolling_1440) AS btc_vol_24h,
 
-  FROM market_basket
+    MAX(high) OVER w_forward_240 AS max_240m,
+    MIN(low) OVER w_forward_240 AS min_240m,
+    LEAD(close, 240) OVER (PARTITION BY ticker ORDER BY timestamp) AS close_240m
+
+  FROM market_and_btc
   WINDOW 
     w_rolling_15 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 14 PRECEDING AND CURRENT ROW),
     w_rolling_60 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 59 PRECEDING AND CURRENT ROW),
     w_rolling_240 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 239 PRECEDING AND CURRENT ROW),
-    w_forward_120 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 120 FOLLOWING),
-    w_forward_180 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 180 FOLLOWING)
+    w_rolling_1440 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1439 PRECEDING AND CURRENT ROW),
+    w_forward_240 AS (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 1 FOLLOWING AND 240 FOLLOWING)
 ),
 
 ranked_features AS (
   SELECT
-    timestamp, ticker, close, garman_klass_vol_60m,
+    timestamp, ticker, close, garman_klass_vol_60m, btc_ret_24h, btc_vol_24h,
+    max_240m, min_240m,
     EXTRACT(HOUR FROM timestamp) AS hour_of_day,
     EXTRACT(DAYOFWEEK FROM timestamp) AS day_of_week,
     IF(EXTRACT(DAYOFWEEK FROM timestamp) IN (1, 7), 1, 0) AS is_weekend,
+    
+    candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
 
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY nofi_proxy ASC) AS rank_nofi,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY volume_zscore_60m ASC) AS rank_volume_zscore,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY garman_klass_vol_60m ASC) AS rank_gk_vol,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_term_structure ASC) AS rank_vol_term_structure,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vwap_dev_60m ASC) AS rank_vwap_dev_60m,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_15m ASC) AS rank_alpha_mom_15m,
     PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY alpha_mom_60m ASC) AS rank_alpha_mom_60m,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY btc_beta_60m ASC) AS rank_btc_beta_60m,
 
-    -- TARGET A: 2.0% TP / -2.0% SL (120m Horizon)
-    CASE WHEN max_120m >= close * 1.020 AND min_120m > close * 0.980 THEN 1 ELSE 0 END AS target_20_hit,
+    -- THE NEW HARD PERCENTAGE TARGET: +4.0% TP / -2.0% SL
+    CASE 
+      WHEN max_240m >= close * 1.040 AND min_240m > close * 0.980 THEN 1 
+      ELSE 0 
+    END AS target_hard_4_2,
     
-    -- TARGET B: 2.5% TP / -2.5% SL (120m Horizon)
-    CASE WHEN max_120m >= close * 1.025 AND min_120m > close * 0.975 THEN 1 ELSE 0 END AS target_25_hit,
-    
-    -- TARGET C: 3.0% TP / -3.0% SL (180m Horizon)
-    CASE WHEN max_180m >= close * 1.030 AND min_180m > close * 0.970 THEN 1 ELSE 0 END AS target_30_hit,
-
-    SAFE_DIVIDE(close_120m - close, close) AS ret_120m,
-    SAFE_DIVIDE(close_180m - close, close) AS ret_180m
+    SAFE_DIVIDE(close_240m - close, close) AS ret_240m
 
   FROM microstructure_and_vol
 )
 
 SELECT * FROM ranked_features WHERE timestamp IS NOT NULL
+
+
+=== ./crypto_features/models/stg_densified_ohlcv.sql ===
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "timestamp",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker"]
+) }}
+
+WITH raw_data AS (
+  SELECT 
+    timestamp,
+    UPPER(ticker) AS ticker,
+    open, high, low, close, volume
+  FROM {{ source('market_data', 'raw_1m_ohlcv') }}
+  WHERE timestamp IS NOT NULL
+),
+
+ticker_stats AS (
+  SELECT 
+    ticker,
+    COUNT(DISTINCT timestamp) AS actual_bars,
+    TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), MINUTE) AS total_expected_minutes
+  FROM raw_data
+  GROUP BY ticker
+),
+
+liquid_tickers AS (
+  SELECT ticker
+  FROM ticker_stats
+  WHERE SAFE_DIVIDE(actual_bars, total_expected_minutes) >= 0.80
+),
+
+bounds AS (
+  SELECT 
+    MIN(timestamp) AS min_ts, 
+    MAX(timestamp) AS max_ts 
+  FROM raw_data
+),
+
+-- Bypassing BigQuery Array Limits via Cross-Joined Generators
+date_spine AS (
+  SELECT day
+  FROM bounds,
+  UNNEST(GENERATE_DATE_ARRAY(DATE(min_ts), DATE(max_ts), INTERVAL 1 DAY)) AS day
+),
+
+minute_spine AS (
+  SELECT minute_offset
+  FROM UNNEST(GENERATE_ARRAY(0, 1439)) AS minute_offset
+),
+
+time_spine AS (
+  SELECT TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) AS timestamp
+  FROM date_spine d
+  CROSS JOIN minute_spine m
+  CROSS JOIN bounds b
+  WHERE TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) >= b.min_ts
+    AND TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) <= b.max_ts
+),
+
+full_grid AS (
+  SELECT 
+    s.timestamp,
+    t.ticker
+  FROM time_spine s
+  CROSS JOIN liquid_tickers t
+),
+
+joined_bars AS (
+  SELECT 
+    g.timestamp,
+    g.ticker,
+    r.open,
+    r.high,
+    r.low,
+    r.close,
+    COALESCE(r.volume, 0.0) AS volume
+  FROM full_grid g
+  LEFT JOIN raw_data r
+    ON g.timestamp = r.timestamp AND g.ticker = r.ticker
+),
+
+densified AS (
+  SELECT 
+    timestamp,
+    ticker,
+    volume,
+    LAST_VALUE(close IGNORE NULLS) OVER w_locf AS close,
+    COALESCE(open, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS open,
+    COALESCE(high, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS high,
+    COALESCE(low, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS low
+  FROM joined_bars
+  WINDOW w_locf AS (
+    PARTITION BY ticker 
+    ORDER BY timestamp 
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  )
+)
+
+SELECT * FROM densified WHERE close IS NOT NULL
+
+
+=== ./crypto_features/models/fct_exact_path_resolution.sql ===
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "signal_time",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker"]
+) }}
+
+WITH signals AS (
+    SELECT 
+        timestamp AS signal_time, 
+        ticker, 
+        close AS entry_price, 
+        atr_20,
+        close + (1.50 * atr_20) AS tp_price,
+        close - (1.50 * atr_20) AS sl_price,
+        TIMESTAMP_ADD(timestamp, INTERVAL 72 HOUR) AS timeout_time
+    FROM {{ ref('fct_4h_features_tbm') }}
+    WHERE target_tbm_upper_hit IS NOT NULL
+),
+
+forward_paths AS (
+    SELECT 
+        s.signal_time,
+        s.ticker,
+        s.entry_price,
+        s.tp_price,
+        s.sl_price,
+        s.timeout_time,
+        m.timestamp AS minute_time,
+        m.high,
+        m.low,
+        m.close AS minute_close,
+        CASE 
+            WHEN m.high >= s.tp_price AND m.low <= s.sl_price THEN 'SIMULTANEOUS_BREACH'
+            WHEN m.high >= s.tp_price THEN 'TP_HIT'
+            WHEN m.low <= s.sl_price THEN 'SL_HIT'
+            ELSE NULL 
+        END AS breach_type
+    FROM signals s
+    INNER JOIN {{ ref('stg_densified_ohlcv') }} m
+        ON s.ticker = m.ticker
+        AND m.timestamp > s.signal_time
+        AND m.timestamp <= s.timeout_time
+),
+
+first_breaches AS (
+    SELECT 
+        signal_time,
+        ticker,
+        MIN(minute_time) AS t1_star
+    FROM forward_paths
+    WHERE breach_type IS NOT NULL
+    GROUP BY 1, 2
+),
+
+resolved_exits AS (
+    SELECT 
+        s.signal_time,
+        s.ticker,
+        s.entry_price,
+        s.tp_price,
+        s.sl_price,
+        s.timeout_time,
+        COALESCE(fb.t1_star, s.timeout_time) AS exit_time,
+        
+        CASE 
+            WHEN fb.t1_star IS NULL THEN 'TIMEOUT'
+            WHEN fp.breach_type = 'SIMULTANEOUS_BREACH' THEN 'SL_HIT'
+            ELSE fp.breach_type 
+        END AS exit_reason,
+        
+        CASE 
+            WHEN fb.t1_star IS NULL THEN fp_timeout.minute_close
+            WHEN fp.breach_type = 'TP_HIT' THEN s.tp_price
+            WHEN fp.breach_type IN ('SL_HIT', 'SIMULTANEOUS_BREACH') THEN s.sl_price
+        END AS exit_price
+        
+    FROM signals s
+    LEFT JOIN first_breaches fb 
+        ON s.signal_time = fb.signal_time AND s.ticker = fb.ticker
+    LEFT JOIN forward_paths fp 
+        ON s.signal_time = fp.signal_time AND s.ticker = fp.ticker AND fb.t1_star = fp.minute_time
+    LEFT JOIN forward_paths fp_timeout
+        ON s.signal_time = fp_timeout.signal_time AND s.ticker = fp_timeout.ticker AND s.timeout_time = fp_timeout.minute_time
+)
+
+SELECT 
+    *,
+    SAFE_DIVIDE(exit_price - entry_price, entry_price) AS exact_gross_return,
+    TIMESTAMP_DIFF(exit_time, signal_time, MINUTE) AS minutes_in_trade
+FROM resolved_exits
 
 
 === ./crypto_features/models/schema.yml ===
@@ -239,6 +785,244 @@ sources:
     schema: market_data
     tables:
       - name: raw_ohlcv
+      - name: raw_1h_ohlcv
+      - name: raw_1m_ohlcv
+
+
+=== ./crypto_features/models/fct_4h_features_tbm.sql ===
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "timestamp",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker"]
+) }}
+
+-- ============================================================================
+-- STEP 1: Aggregate Native 1-Hour Bars into 4-Hour OHLCV Bars
+-- ============================================================================
+WITH raw_4h AS (
+  SELECT
+    TIMESTAMP_SECONDS(DIV(UNIX_SECONDS(timestamp), 14400) * 14400) AS timestamp,
+    UPPER(ticker) AS ticker,
+    ARRAY_AGG(open ORDER BY timestamp ASC LIMIT 1)[OFFSET(0)] AS open,
+    MAX(high) AS high,
+    MIN(low) AS low,
+    ARRAY_AGG(close ORDER BY timestamp DESC LIMIT 1)[OFFSET(0)] AS close,
+    SUM(volume) AS volume
+  FROM {{ source('market_data', 'raw_1h_ohlcv') }}
+  WHERE timestamp IS NOT NULL
+  GROUP BY 1, 2
+),
+
+-- ============================================================================
+-- STEP 2: Base Metrics, Returns & True Range
+-- ============================================================================
+bar_metrics AS (
+  SELECT
+    timestamp, ticker, open, high, low, close, volume,
+    LOG(SAFE_DIVIDE(close, LAG(close, 1) OVER w_asset)) AS ret_4h,
+    IF(close > LAG(close, 1) OVER w_asset, 1, 0) AS is_pos_bar,
+    
+    AVG(close) OVER (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS sma_20,
+    AVG(close) OVER (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma_50,
+
+    GREATEST(high - low, ABS(high - LAG(close, 1) OVER w_asset), ABS(low - LAG(close, 1) OVER w_asset)) AS true_range,
+    SQRT(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) AS gk_vol_bar
+  FROM raw_4h 
+  WINDOW w_asset AS (PARTITION BY ticker ORDER BY timestamp)
+),
+
+-- ============================================================================
+-- STEP 3: 20-Period Rolling Windows (Short-Term Base)
+-- ============================================================================
+rolling_20p AS (
+  SELECT
+    b.*,
+    AVG(b.true_range) OVER w_20 AS atr_20,
+    SQRT(AVG(POW(b.gk_vol_bar, 2)) OVER w_20) AS gk_vol_20p,
+    SUM(b.ret_4h) OVER w_20 AS mom_20p,
+    SAFE_DIVIDE(AVG(b.ret_4h) OVER w_20, NULLIF(STDDEV(b.ret_4h) OVER w_20, 0)) AS rolling_sharpe_20p
+  FROM bar_metrics b
+  WINDOW w_20 AS (PARTITION BY b.ticker ORDER BY b.timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 4: 120-Period Rolling Windows (Fixes Nested Analytic Error)
+-- ============================================================================
+rolling_120p AS (
+  SELECT
+    r20.*,
+    SAFE_DIVIDE(r20.atr_20, r20.close) AS atr_pct_20,
+    SQRT(AVG(POW(r20.gk_vol_bar, 2)) OVER w_120) AS gk_vol_120p,
+    
+    -- Volatility Compression: Minimum of the already calculated 20p GK Vol over 120 periods
+    MIN(r20.gk_vol_20p) OVER w_120 AS min_gk_vol_20p_120p,
+
+    -- Rolling Highs & Structure
+    MAX(r20.high) OVER w_120 AS max_high_120p,
+    IF(r20.close >= MAX(r20.high) OVER w_120, 1.0, 0.0) AS is_at_120p_high,
+    
+    SAFE_DIVIDE(r20.volume, NULLIF(AVG(r20.volume) OVER w_120, 0)) AS relative_vol_120p,
+    SUM(r20.is_pos_bar) OVER w_6 AS pos_bar_count_6p,
+    
+    -- Momentum Baselines
+    SUM(r20.ret_4h) OVER w_6 AS mom_24h,
+    SUM(r20.ret_4h) OVER w_42 AS mom_7d
+  FROM rolling_20p r20
+  WINDOW 
+    w_6 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 5 PRECEDING AND CURRENT ROW),
+    w_42 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 41 PRECEDING AND CURRENT ROW),
+    w_120 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 119 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 5: Market Leadership & Cross-Sectional Macro Features
+-- ============================================================================
+macro_leadership AS (
+  SELECT
+    r.*,
+    
+    -- BTC Structural Trend State
+    MAX(IF(r.ticker = 'BTCUSD', r.close, NULL)) OVER (PARTITION BY r.timestamp) AS btc_close,
+    MAX(IF(r.ticker = 'BTCUSD', r.sma_50, NULL)) OVER (PARTITION BY r.timestamp) AS btc_sma50,
+    
+    -- Returns for Dominance & ETH/BTC Spreads
+    MAX(IF(r.ticker = 'BTCUSD', r.mom_20p, NULL)) OVER (PARTITION BY r.timestamp) AS btc_ret_20p,
+    MAX(IF(r.ticker = 'ETHUSD', r.mom_20p, NULL)) OVER (PARTITION BY r.timestamp) AS eth_ret_20p,
+    AVG(r.mom_20p) OVER (PARTITION BY r.timestamp) AS market_avg_ret_20p,
+
+    -- Breadth Metrics
+    AVG(IF(r.close > r.sma_20, 1.0, 0.0)) OVER (PARTITION BY r.timestamp) AS market_breadth_sma20,
+    AVG(r.is_at_120p_high) OVER (PARTITION BY r.timestamp) AS top_breakout_breadth
+  FROM rolling_120p r
+),
+
+-- ============================================================================
+-- STEP 6: Derived Features, Z-Scores, Geometry & Temporal Context
+-- ============================================================================
+derived_features AS (
+  SELECT
+    m.*,
+    
+    -- TEMPORAL & SESSION FEATURES
+    CAST(EXTRACT(HOUR FROM m.timestamp) AS STRING) AS hour_of_day,
+    CAST(EXTRACT(DAYOFWEEK FROM m.timestamp) AS STRING) AS day_of_week,
+    IF(EXTRACT(DAYOFWEEK FROM m.timestamp) IN (1, 7), "1", "0") AS is_weekend,
+    CASE 
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 0 AND 7 THEN 'ASIA'
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 8 AND 12 THEN 'EUROPE'
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 13 AND 21 THEN 'US'
+      ELSE 'US_ASIA_TRANSITION'
+    END AS market_session,
+
+    -- Explicit Leadership Indicators
+    IF(m.btc_close > m.btc_sma50, "1", "0") AS btc_above_sma50,
+    (m.eth_ret_20p - m.btc_ret_20p) AS eth_btc_spread_20p,
+    (m.btc_ret_20p - m.market_avg_ret_20p) AS btc_dominance_spread,
+    
+    -- Volatility Term Structure & Compression
+    SAFE_DIVIDE(m.gk_vol_20p, NULLIF(m.gk_vol_120p, 0)) AS vol_term_structure,
+    SAFE_DIVIDE(m.gk_vol_20p - AVG(m.gk_vol_20p) OVER w_120, NULLIF(STDDEV(m.gk_vol_20p) OVER w_120, 0)) AS gk_vol_zscore_120,
+    SAFE_DIVIDE(m.gk_vol_20p, NULLIF(m.min_gk_vol_20p_120p, 0)) AS vol_compression_ratio,
+
+    -- Distance to Rolling High
+    SAFE_DIVIDE(m.close - m.max_high_120p, NULLIF(m.max_high_120p, 0)) AS dist_to_120p_high,
+
+    -- Momentum Acceleration (2nd Derivative & Ratio)
+    m.mom_24h - LAG(m.mom_24h, 6) OVER (PARTITION BY m.ticker ORDER BY m.timestamp) AS mom_accel_24h,
+    SAFE_DIVIDE(m.mom_24h, NULLIF(ABS(m.mom_7d), 0)) AS mom_ratio_24h_7d,
+
+    -- Candle Geometry
+    SAFE_DIVIDE(ABS(m.close - m.open), NULLIF(m.high - m.low, 0)) AS candle_body_pct,
+    SAFE_DIVIDE(m.high - GREATEST(m.open, m.close), NULLIF(m.high - m.low, 0)) AS candle_upper_wick_pct,
+    SAFE_DIVIDE(LEAST(m.open, m.close) - m.low, NULLIF(m.high - m.low, 0)) AS candle_lower_wick_pct
+  FROM macro_leadership m
+  WINDOW w_120 AS (PARTITION BY m.ticker ORDER BY m.timestamp ROWS BETWEEN 119 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 7: Triple Barrier Method (1.5x ATR Symmetric Target)
+-- ============================================================================
+tbm_forward_window AS (
+  SELECT
+    d.*,
+    d.close + (1.50 * d.atr_20) AS upper_barrier_price,
+    d.close - (1.50 * d.atr_20) AS lower_barrier_price,
+    ARRAY_AGG(STRUCT(high AS fwd_high, low AS fwd_low, close AS fwd_close)) OVER (
+      PARTITION BY d.ticker ORDER BY d.timestamp ROWS BETWEEN 1 FOLLOWING AND 18 FOLLOWING
+    ) AS fwd_bars
+  FROM derived_features d
+),
+
+tbm_path_resolution AS (
+  SELECT
+    f.*,
+    (
+      SELECT AS STRUCT
+        MIN(IF(fwd.fwd_high >= f.upper_barrier_price, idx, NULL)) AS upper_hit_idx,
+        MIN(IF(fwd.fwd_low <= f.lower_barrier_price, idx, NULL)) AS lower_hit_idx,
+        ARRAY_AGG(fwd.fwd_close ORDER BY idx DESC LIMIT 1)[OFFSET(0)] AS vertical_exit_close,
+        COUNT(1) AS fwd_bar_count
+      FROM UNNEST(f.fwd_bars) AS fwd WITH OFFSET idx
+    ) AS barrier_res
+  FROM tbm_forward_window f
+),
+
+tbm_labels AS (
+  SELECT
+    p.*,
+    CASE
+      WHEN p.barrier_res.fwd_bar_count < 18 THEN NULL 
+      WHEN p.barrier_res.upper_hit_idx IS NOT NULL 
+           AND (p.barrier_res.lower_hit_idx IS NULL OR p.barrier_res.upper_hit_idx < p.barrier_res.lower_hit_idx) THEN 1
+      ELSE 0
+    END AS target_tbm_upper_hit,
+    SAFE_DIVIDE(p.barrier_res.vertical_exit_close - p.close, p.close) AS ret_72h_vertical
+  FROM tbm_path_resolution p
+),
+
+-- ============================================================================
+-- STEP 8: Cross-Sectional Ranking Engine
+-- ============================================================================
+ranked_features AS (
+  SELECT
+    timestamp, ticker, open, high, low, close, volume, atr_20, target_tbm_upper_hit, ret_72h_vertical,
+    
+    -- Absolute Temporal & Macro Categoricals
+    hour_of_day,
+    day_of_week,
+    is_weekend,
+    market_session,
+    btc_above_sma50,
+    
+    -- Market Breadth & Structure
+    market_breadth_sma20,
+    top_breakout_breadth,
+    pos_bar_count_6p,
+    candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+
+    -- Cross-Sectional Percentile Ranks
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY eth_btc_spread_20p ASC) AS rank_eth_btc_spread_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY btc_dominance_spread ASC) AS rank_btc_dominance_spread,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY gk_vol_20p ASC) AS rank_gk_vol_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_term_structure ASC) AS rank_vol_term_structure,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY gk_vol_zscore_120 ASC) AS rank_gk_vol_zscore,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_compression_ratio ASC) AS rank_vol_compression_ratio,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_24h ASC) AS rank_mom_24h,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_7d ASC) AS rank_mom_7d,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_accel_24h ASC) AS rank_mom_accel_24h,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_ratio_24h_7d ASC) AS rank_mom_ratio_24h_7d,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY dist_to_120p_high ASC) AS rank_dist_to_120p_high,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY relative_vol_120p ASC) AS rank_relative_vol_120p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY rolling_sharpe_20p ASC) AS rank_rolling_sharpe_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY atr_pct_20 ASC) AS rank_atr_pct_20
+  FROM tbm_labels
+)
+
+SELECT * FROM ranked_features WHERE timestamp IS NOT NULL AND atr_20 IS NOT NULL
 
 
 === ./crypto_features/dbt_project.yml ===
@@ -250,6 +1034,227 @@ model-paths: ["models"]
 models:
   crypto_features:
     +materialized: table
+
+
+=== ./crypto_features/true_event_driven_backtest_v3.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+PURGE_BARS = 18 
+
+WIN_FRICTION = 0.0047  
+LOSS_FRICTION = 0.0062 
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason,
+            p.exact_gross_return,
+            p.minutes_in_trade
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['exit_time'] = pd.to_datetime(df['exit_time'])
+    df = df.dropna(subset=['exact_gross_return', 'exit_time']).copy()
+    df['exact_gross_return'] = df['exact_gross_return'].astype(float)
+    df['minutes_in_trade'] = df['minutes_in_trade'].astype(float)
+    return df
+
+def main():
+    print("1. Ingesting Matrix & Fitting HMM Macro Filter...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    # 3-Way Time Split to prevent Meta-Label Leakage
+    timestamps = df['timestamp'].sort_values().unique()
+    split_1 = int(len(timestamps) * 0.60)
+    split_2 = int(len(timestamps) * 0.85)
+    
+    train_primary_ts = timestamps[:split_1]
+    train_meta_ts = timestamps[split_1 + PURGE_BARS : split_2]
+    test_ts = timestamps[split_2 + PURGE_BARS :]
+
+    df_primary = df[df['timestamp'].isin(train_primary_ts)].copy()
+    df_meta = df[df['timestamp'].isin(train_meta_ts)].copy()
+    df_test = df[df['timestamp'].isin(test_ts)].copy()
+
+    # Fit HMM on Primary Block
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(df_primary[hmm_features].values)
+    
+    for d in [df_primary, df_meta, df_test]:
+        d['hmm_regime'] = hmm_model.predict(d[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    
+    for col in all_cat_cols:
+        df_primary[col] = df_primary[col].astype(str)
+        df_meta[col] = df_meta[col].astype(str)
+        df_test[col] = df_test[col].astype(str)
+
+    print("2. Training Regime-Gated Experts (4 Specialized Models)...")
+    regime_models = {}
+    for regime in ['0', '1', '2', '3']:
+        regime_data = df_primary[df_primary['hmm_regime'] == regime]
+        if len(regime_data) > 100:
+            model = CatBoostClassifier(iterations=300, depth=6, learning_rate=0.05, verbose=0, random_seed=42)
+            model.fit(Pool(regime_data[all_features], label=regime_data['target_tbm_upper_hit'], cat_features=all_cat_cols))
+            regime_models[regime] = model
+        else:
+            regime_models[regime] = None # Not enough data for this regime
+
+    # Generate Primary Signals for Meta Block
+    print("3. Generating Out-Of-Sample Primary Signals...")
+    def get_expert_probs(row):
+        reg = row['hmm_regime']
+        if regime_models.get(reg) is not None:
+            return regime_models[reg].predict_proba(row[all_features].to_frame().T)[0, 1]
+        return 0.0
+
+    df_meta['primary_prob'] = df_meta.apply(get_expert_probs, axis=1)
+    df_test['primary_prob'] = df_test.apply(get_expert_probs, axis=1)
+
+    # Filter only the setups the Primary Models liked (Prob > 0.65)
+    meta_train_set = df_meta[df_meta['primary_prob'] > 0.65].copy()
+    
+    # Meta Target: 1 if it hit TP_HIT, 0 otherwise
+    meta_train_set['meta_target'] = (meta_train_set['exit_reason'] == 'TP_HIT').astype(int)
+
+    print("4. Training the Meta-Labeler (Precision Engine)...")
+    meta_features = FEATURE_COLS_NUM + ['primary_prob']
+    meta_model = CatBoostClassifier(iterations=250, depth=5, learning_rate=0.03, verbose=0, random_seed=42)
+    meta_model.fit(meta_train_set[meta_features], meta_train_set['meta_target'])
+
+    print("5. Executing Fractional-Kelly Simulator on Test Matrix...")
+    test_signals = df_test[df_test['primary_prob'] > 0.65].copy()
+    if not test_signals.empty:
+        test_signals['meta_prob'] = meta_model.predict_proba(test_signals[meta_features])[:, 1]
+    
+    # Calculate Net Returns
+    df_test['net_ret'] = np.where(
+        df_test['exit_reason'] == 'TP_HIT',
+        df_test['exact_gross_return'] - WIN_FRICTION,
+        df_test['exact_gross_return'] - LOSS_FRICTION
+    )
+
+    all_timestamps = sorted(df_test['timestamp'].unique())
+    
+    starting_capital = 10000.0
+    realized_capital = starting_capital
+    available_capital = starting_capital
+    
+    open_positions = []
+    portfolio_history = []
+    trade_log = []
+    
+    MAX_CONCURRENT_POSITIONS = 5
+    KELLY_FRACTION = 0.50 # Half-Kelly
+    PAYOFF_RATIO = 1.0 # 1.5 ATR / 1.5 ATR 
+    
+    for ts in all_timestamps:
+        still_open = []
+        for pos in open_positions:
+            if ts >= pos['exit_time']:
+                profit = pos['investment'] * pos['net_ret']
+                realized_capital += profit
+                available_capital += (pos['investment'] + profit)
+                trade_log.append({
+                    'profit': profit, 
+                    'net_ret': pos['net_ret'],
+                    'minutes': pos['minutes_in_trade'],
+                    'meta_prob': pos['meta_prob']
+                })
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        if ts.hour == 0:
+            mtm_unrealized = sum([(pos['investment'] * pos['net_ret'] * min(((ts - pos['entry_time']).total_seconds() / 60.0) / max(pos['minutes_in_trade'], 1), 1.0)) for pos in open_positions])
+            mtm_total_equity = realized_capital + mtm_unrealized
+            invested_capital = sum([pos['investment'] for pos in open_positions])
+            portfolio_history.append({
+                'date': ts.date(),
+                'mtm_equity': mtm_total_equity,
+                'exposure': invested_capital / mtm_total_equity if mtm_total_equity > 0 else 0
+            })
+
+        if not test_signals.empty:
+            current_signals = test_signals[test_signals['timestamp'] == ts].sort_values('meta_prob', ascending=False)
+            for _, row in current_signals.iterrows():
+                p = row['meta_prob']
+                # Only take trades where the Meta-Labeler predicts > 52% chance of winning
+                if p > 0.52 and len(open_positions) < MAX_CONCURRENT_POSITIONS:
+                    # KELLY CRITERION MATH
+                    kelly_f = p - ((1 - p) / PAYOFF_RATIO)
+                    trade_pct = max(min(kelly_f * KELLY_FRACTION, 0.40), 0.02) # Cap at 40% account per trade
+                    
+                    trade_size = realized_capital * trade_pct
+                    if available_capital >= trade_size:
+                        available_capital -= trade_size
+                        open_positions.append({
+                            'entry_time': ts,
+                            'exit_time': row['exit_time'],
+                            'investment': trade_size,
+                            'net_ret': df_test.loc[row.name, 'net_ret'],
+                            'minutes_in_trade': row['minutes_in_trade'],
+                            'meta_prob': p
+                        })
+
+    print("\n========================================================")
+    print("      V3: MOE + META-LABELING + KELLY SIZING             ")
+    print("========================================================")
+    if portfolio_history:
+        port_df = pd.DataFrame(portfolio_history)
+        trade_df = pd.DataFrame(trade_log) if trade_log else pd.DataFrame()
+        
+        years = max((port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days / 365.25, 0.1)
+        final_equity = port_df['mtm_equity'].iloc[-1]
+        cagr = (final_equity / starting_capital) ** (1 / years) - 1
+        port_df['daily_return'] = port_df['mtm_equity'].pct_change().fillna(0)
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+        max_dd = ((port_df['mtm_equity'] - port_df['mtm_equity'].cummax()) / port_df['mtm_equity'].cummax()).min()
+        win_rate = (trade_df['net_ret'] > 0).mean() if not trade_df.empty else 0
+        avg_holding_time = trade_df['minutes'].mean() / 60.0 if not trade_df.empty else 0
+        
+        print(f"  - Total Trades Executed: {len(trade_df)}")
+        print(f"  - Win Rate (Post-Meta Filter): {win_rate:.2%}")
+        print(f"  - Avg Position Holding Time: {avg_holding_time:.2f} Hours")
+        print(f"  - Average Daily Capital Exposure: {port_df['exposure'].mean():.2%}")
+        print(f"  - Final Mark-to-Market Equity: ${final_equity:,.2f} (from $10k)")
+        print(f"  - Unleveraged CAGR: {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
 
 
 === ./crypto_features/config/.user.yml ===
@@ -270,6 +1275,777 @@ crypto_features:
       priority: interactive
       retries: 1
   target: prod
+
+
+=== ./crypto_features/train_production_models.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+from sklearn.model_selection import KFold
+import joblib
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_DIR = "/home/skybullet1987/quant_pipeline/production_models"
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting 5-Year Feature Matrix (620k Rows)...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.dropna(subset=['exit_reason', 'exit_time']).copy()
+    return df
+
+def main():
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+    
+    df['target'] = (df['exit_reason'] == 'TP_HIT').astype(int)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    split_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:split_idx]
+    df_train = df[df['timestamp'].isin(train_ts)].copy().reset_index(drop=True)
+
+    print("2. Training & Exporting HMM Macro Filter...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=500, random_state=42)
+    hmm_model.fit(df_train[hmm_features].values)
+    joblib.dump(hmm_model, f"{MODEL_DIR}/hmm_macro.pkl")
+    
+    df_train['hmm_regime'] = hmm_model.predict(df_train[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    
+    for col in all_cat_cols:
+        df_train[col] = df_train[col].astype(str)
+
+    print("3. Deep-Training 4 Regime Experts (1000 Iterations, Balanced Weights)...")
+    df_train['primary_prob'] = 0.0
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    for regime in ['0', '1', '2', '3']:
+        regime_idx = df_train[df_train['hmm_regime'] == regime].index
+        if len(regime_idx) > 100:
+            print(f"   -> Cross-Validating Regime {regime} ({len(regime_idx)} samples)...")
+            for train_i, val_i in kf.split(regime_idx):
+                tr_idx = regime_idx[train_i]
+                val_idx = regime_idx[val_i]
+                
+                model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', early_stopping_rounds=50, learning_rate=0.03, verbose=0, random_seed=42)
+                model.fit(df_train.loc[tr_idx, all_features], df_train.loc[tr_idx, 'target'], cat_features=all_cat_cols, eval_set=(df_train.loc[val_idx, all_features], df_train.loc[val_idx, 'target']))
+                df_train.loc[val_idx, 'primary_prob'] = model.predict_proba(df_train.loc[val_idx, all_features])[:, 1]
+                
+            final_model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', learning_rate=0.03, verbose=0, random_seed=42)
+            final_model.fit(df_train.loc[regime_idx, all_features], df_train.loc[regime_idx, 'target'], cat_features=all_cat_cols)
+            final_model.save_model(f"{MODEL_DIR}/regime_{regime}_expert.cbm")
+            print(f"   -> Saved: {MODEL_DIR}/regime_{regime}_expert.cbm")
+
+    print("4. Training & Exporting Meta-Labeler...")
+    meta_train = df_train[df_train['primary_prob'] > 0.50].copy()
+    meta_features = FEATURE_COLS_NUM + ['primary_prob']
+    
+    meta_model = CatBoostClassifier(iterations=1000, depth=5, early_stopping_rounds=100, learning_rate=0.02, verbose=0, random_seed=42)
+    meta_model.fit(meta_train[meta_features], meta_train['target'], eval_set=(meta_train[meta_features], meta_train['target']))
+    meta_model.save_model(f"{MODEL_DIR}/meta_labeler.cbm")
+    print(f"   -> Saved: {MODEL_DIR}/meta_labeler.cbm")
+    
+    print("\n[SUCCESS] Production Models Compiled and Saved to Disk.")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./crypto_features/true_event_driven_backtest_v2.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
+
+WIN_FRICTION = 0.0047  
+LOSS_FRICTION = 0.0062 
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting Exact Path Resolution & Feature Matrix from BigQuery...")
+    client = bigquery.Client(project=PROJECT_ID)
+    
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason,
+            p.exact_gross_return,
+            p.minutes_in_trade
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df['exit_time'] = pd.to_datetime(df['exit_time'])
+    
+    # THE FIX: Drop unresolved future trades and cast BigQuery floats
+    df = df.dropna(subset=['exact_gross_return', 'exit_time']).copy()
+    df['exact_gross_return'] = df['exact_gross_return'].astype(float)
+    df['minutes_in_trade'] = df['minutes_in_trade'].astype(float)
+    
+    return df
+
+def main():
+    df = load_data()
+    
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    train_end_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:train_end_idx]
+    test_ts = timestamps[train_end_idx + PURGE_BARS :]
+
+    train_df = df[df['timestamp'].isin(train_ts)].copy()
+    test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+    print("2. Fitting Causal Features (Strict Train/Test Isolation)...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(train_df[hmm_features].values)
+    
+    train_df['hmm_regime'] = hmm_model.predict(train_df[hmm_features].values).astype(str)
+    test_df['hmm_regime'] = hmm_model.predict(test_df[hmm_features].values).astype(str) 
+
+    mom_bins = pd.qcut(train_df['rank_mom_24h'], 4, retbins=True)[1]
+    mom_bins[0], mom_bins[-1] = -np.inf, np.inf 
+    train_df['mom_bucket'] = pd.cut(train_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    test_df['mom_bucket'] = pd.cut(test_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+
+    vol_bins = pd.qcut(train_df['rank_vol_term_structure'], 4, retbins=True)[1]
+    vol_bins[0], vol_bins[-1] = -np.inf, np.inf
+    train_df['vol_bucket'] = pd.cut(train_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    test_df['vol_bucket'] = pd.cut(test_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+
+    train_df['hmm_x_mom'] = train_df['hmm_regime'] + "_" + train_df['mom_bucket']
+    train_df['hmm_x_vol'] = train_df['hmm_regime'] + "_" + train_df['vol_bucket']
+    test_df['hmm_x_mom'] = test_df['hmm_regime'] + "_" + test_df['mom_bucket']
+    test_df['hmm_x_vol'] = test_df['hmm_regime'] + "_" + test_df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    for col in all_cat_cols:
+        train_df[col] = train_df[col].astype(str)
+        test_df[col] = test_df[col].astype(str)
+
+    print("3. Scoring Out-of-Sample Test Pool...")
+    model = CatBoostClassifier()
+    model.load_model(MODEL_PATH)
+    
+    train_probs = model.predict_proba(Pool(train_df[all_features], cat_features=all_cat_cols))[:, 1]
+    test_probs = model.predict_proba(Pool(test_df[all_features], cat_features=all_cat_cols))[:, 1]
+    test_df['prob_target_hit'] = test_probs
+    
+    DYNAMIC_THRESHOLD = np.percentile(train_probs, 90)
+
+    print("\n========================================================")
+    print("      HIGH-VELOCITY EVENT-DRIVEN SIMULATOR (V2)          ")
+    print("========================================================")
+    
+    test_df['net_ret'] = np.where(
+        test_df['exit_reason'] == 'TP_HIT',
+        test_df['exact_gross_return'] - WIN_FRICTION,
+        test_df['exact_gross_return'] - LOSS_FRICTION
+    )
+
+    signals = test_df[test_df['prob_target_hit'] >= DYNAMIC_THRESHOLD].copy()
+    all_timestamps = sorted(test_df['timestamp'].unique())
+    
+    starting_capital = 10000.0
+    realized_capital = starting_capital
+    available_capital = starting_capital
+    
+    open_positions = []
+    portfolio_history = []
+    trade_log = []
+    
+    MAX_CONCURRENT_POSITIONS = 5
+    PCT_PER_TRADE = 0.20
+    
+    for ts in all_timestamps:
+        # Dynamic Exit Processing
+        still_open = []
+        for pos in open_positions:
+            if ts >= pos['exit_time']:
+                profit = pos['investment'] * pos['net_ret']
+                realized_capital += profit
+                available_capital += (pos['investment'] + profit)
+                trade_log.append({
+                    'profit': profit, 
+                    'net_ret': pos['net_ret'],
+                    'minutes': pos['minutes_in_trade'],
+                    'reason': pos['exit_reason']
+                })
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        # MTM Snapshot
+        if ts.hour == 0:
+            mtm_unrealized = 0.0
+            invested_capital = 0.0
+            for pos in open_positions:
+                total_duration = max(pos['minutes_in_trade'], 1)
+                elapsed_minutes = (ts - pos['entry_time']).total_seconds() / 60.0
+                progress = min(elapsed_minutes / total_duration, 1.0)
+                mtm_unrealized += (pos['investment'] * pos['net_ret'] * progress)
+                invested_capital += pos['investment']
+                
+            mtm_total_equity = realized_capital + mtm_unrealized
+            exposure_pct = invested_capital / mtm_total_equity if mtm_total_equity > 0 else 0
+            
+            portfolio_history.append({
+                'date': ts.date(),
+                'mtm_equity': mtm_total_equity,
+                'exposure': exposure_pct
+            })
+
+        # Entry Processing
+        current_signals = signals[signals['timestamp'] == ts]
+        if not current_signals.empty:
+            current_signals = current_signals.sort_values('prob_target_hit', ascending=False)
+            for _, row in current_signals.iterrows():
+                if len(open_positions) < MAX_CONCURRENT_POSITIONS:
+                    trade_size = realized_capital * PCT_PER_TRADE
+                    if available_capital >= trade_size:
+                        available_capital -= trade_size
+                        open_positions.append({
+                            'entry_time': ts,
+                            'exit_time': row['exit_time'],
+                            'investment': trade_size,
+                            'net_ret': row['net_ret'],
+                            'minutes_in_trade': row['minutes_in_trade'],
+                            'exit_reason': row['exit_reason']
+                        })
+
+    if portfolio_history:
+        port_df = pd.DataFrame(portfolio_history)
+        trade_df = pd.DataFrame(trade_log) if trade_log else pd.DataFrame()
+        
+        years = max((port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days / 365.25, 0.1)
+        final_equity = port_df['mtm_equity'].iloc[-1]
+        cagr = (final_equity / starting_capital) ** (1 / years) - 1
+        
+        port_df['daily_return'] = port_df['mtm_equity'].pct_change().fillna(0)
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+        
+        port_df['cum_max'] = port_df['mtm_equity'].cummax()
+        max_dd = ((port_df['mtm_equity'] - port_df['cum_max']) / port_df['cum_max']).min()
+        
+        win_rate = (trade_df['net_ret'] > 0).mean() if not trade_df.empty else 0
+        avg_holding_time = trade_df['minutes'].mean() / 60.0 if not trade_df.empty else 0
+        
+        print(f"  - Total Trades Executed: {len(trade_df)}")
+        print(f"  - Win Rate: {win_rate:.2%}")
+        print(f"  - Avg Position Holding Time: {avg_holding_time:.2f} Hours")
+        print(f"  - Average Daily Capital Exposure: {port_df['exposure'].mean():.2%}")
+        print(f"  - Final Mark-to-Market Equity: ${final_equity:,.2f} (from $10k)")
+        print(f"  - Unleveraged CAGR (Annualized Return): {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./tp_sl_optimizer.py ===
+import pandas as pd
+import numpy as np
+from google.cloud import bigquery
+import itertools
+
+PROJECT_ID = "parnasa-498503"
+
+print("1. Fetching Price Action Data for HPO...")
+client = bigquery.Client(project=PROJECT_ID)
+
+query = f"""
+    SELECT 
+        close, atr_60m, max_240m, min_240m, ret_240m
+    FROM `{PROJECT_ID}.market_data.features_matrix`
+    WHERE max_240m IS NOT NULL
+    AND RAND() < 0.3
+"""
+df = client.query(query).to_dataframe(create_bqstorage_client=True)
+
+# THE FIX: Drop incomplete look-ahead rows to prevent NaN math
+df = df.dropna().reset_index(drop=True)
+print(f"   Loaded {len(df):,} clean sample rows for optimization.")
+
+tp_multipliers = np.arange(0.5, 3.25, 0.25)
+sl_multipliers = np.arange(0.5, 3.25, 0.25)
+
+results = []
+
+print("2. Running Grid Search (Label Optimization)...")
+for tp, sl in itertools.product(tp_multipliers, sl_multipliers):
+    tp_price = df['close'] + (tp * df['atr_60m'])
+    sl_price = df['close'] - (sl * df['atr_60m'])
+    
+    win = (df['max_240m'] >= tp_price) & (df['min_240m'] > sl_price)
+    loss = (df['min_240m'] <= sl_price)
+    timeout = (df['max_240m'] < tp_price) & (df['min_240m'] > sl_price)
+    
+    tp_pct = (tp * df['atr_60m']) / df['close']
+    sl_pct = -(sl * df['atr_60m']) / df['close']
+    
+    TAKER_ENTRY = 0.0070 
+    MAKER_EXIT  = 0.0030 
+    TAKER_EXIT  = 0.0080 
+    
+    pnl = np.zeros(len(df))
+    pnl[win] = tp_pct[win] - (TAKER_ENTRY + MAKER_EXIT)
+    pnl[loss] = sl_pct[loss] - (TAKER_ENTRY + TAKER_EXIT)
+    pnl[timeout] = df['ret_240m'][timeout] - (TAKER_ENTRY + TAKER_EXIT)
+    
+    win_rate = win.mean()
+    avg_pnl = pnl.mean() * 100 
+    
+    if win_rate > 0.10:
+        results.append({
+            'TP_Multiplier': tp,
+            'SL_Multiplier': sl,
+            'Base_Win_Rate': win_rate * 100,
+            'Expected_Value_Pct': avg_pnl
+        })
+
+res_df = pd.DataFrame(results).sort_values(by='Expected_Value_Pct', ascending=False)
+
+print("\n==================================================")
+print("   TOP 10 TAKE PROFIT / STOP LOSS COMBINATIONS")
+print("==================================================")
+print(res_df.head(10).to_string(index=False))
+
+
+=== ./backfill_tiingo_1m_history.py ===
+import os
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from google.api_core.exceptions import GoogleAPIError
+from datetime import datetime, timedelta, timezone
+
+# --- CONFIGURATION ---
+PROJECT_ID = "parnasa-498503"
+DATASET_ID = "market_data"
+TABLE_ID = "raw_1m_ohlcv"
+TABLE_REF = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+
+# Using the paid key provided
+TIINGO_API_KEY = os.getenv("TIINGO_API_KEY", "895c0cc1087f3e2d1e60c9f3689903d08981cb26")
+
+COIN_UNIVERSE = [
+    "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
+    "avaxusd", "ltcusd", "bchusd", "algousd", "xlmusd", "atomusd", "trxusd", 
+    "xtzusd", "eosusd", "dashusd", "zecusd", "xmrusd",
+    "linkusd", "maticusd", "uniusd", "filusd", "aaveusd", "mkrusd", "snxusd", 
+    "compusd", "grtusd", "batusd", "enjusd", "manausd", "chzusd", "zrxusd", 
+    "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd", "icxusd", "kavausd", 
+    "balusd", "bntusd", "renusd", "kncusd", "bandusd", "scusd", "storjusd", 
+    "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    "ldousd", "rndrusd", "arbusd", "opusd", "injusd", "tiausd", "fetusd"
+]
+
+START_DATE = datetime(2021, 7, 21, tzinfo=timezone.utc)
+END_DATE = datetime.now(timezone.utc)
+CHUNK_DAYS = 3  
+MAX_RETRIES = 3
+
+def setup_bigquery_table(client):
+    """Ensures the table exists with optimal partitioning and clustering."""
+    schema = [
+        bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("ticker", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("open", "FLOAT64"),
+        bigquery.SchemaField("high", "FLOAT64"),
+        bigquery.SchemaField("low", "FLOAT64"),
+        bigquery.SchemaField("close", "FLOAT64"),
+        bigquery.SchemaField("volume", "FLOAT64")
+    ]
+    
+    table = bigquery.Table(TABLE_REF, schema=schema)
+    table.time_partitioning = bigquery.TimePartitioning(
+        type_=bigquery.TimePartitioningType.DAY,
+        field="timestamp"
+    )
+    table.clustering_fields = ["ticker"]
+    
+    try:
+        client.get_table(TABLE_REF)
+        print(f"Table {TABLE_REF} already exists. Ready for append.")
+    except Exception:
+        client.create_table(table)
+        print(f"Created table {TABLE_REF} with partitioning and clustering.")
+
+def fetch_with_retry(url, headers, params, retries=MAX_RETRIES):
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"      [!] API Error: {e}. Retrying ({attempt + 1}/{retries})...")
+            time.sleep(2 ** attempt)
+    return None
+
+def main():
+    client = bigquery.Client(project=PROJECT_ID)
+    setup_bigquery_table(client)
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Token {TIINGO_API_KEY}'
+    }
+
+    print(f"\nInitiating Deep 1-Min Backfill for {len(COIN_UNIVERSE)} assets...")
+    print(f"Targeting: {START_DATE.date()} to {END_DATE.date()}")
+    
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+
+    for idx, coin in enumerate(COIN_UNIVERSE, 1):
+        print(f"\n[{idx}/{len(COIN_UNIVERSE)}] Processing {coin.upper()}...")
+        
+        current_start = START_DATE
+        total_rows_for_coin = 0
+        
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
+            
+            url = "https://api.tiingo.com/tiingo/crypto/prices"
+            params = {
+                'tickers': coin,
+                'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'resampleFreq': '1min'
+            }
+            
+            data = fetch_with_retry(url, headers, params)
+            
+            if data and isinstance(data, list) and len(data) > 0 and 'priceData' in data[0]:
+                price_data = data[0]['priceData']
+                if price_data:
+                    df = pd.DataFrame(price_data)
+                    df = df.rename(columns={'date': 'timestamp'})
+                    df['ticker'] = coin.upper()
+                    
+                    if 'volumeNotional' in df.columns:
+                        df['volume'] = df['volumeNotional']
+                    elif 'volume' not in df.columns:
+                        df['volume'] = 0.0
+                        
+                    df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
+                    df['timestamp'] = pd.to_datetime(df['timestamp'])
+                    
+                    try:
+                        job = client.load_table_from_dataframe(df, TABLE_REF, job_config=job_config)
+                        job.result() 
+                        rows_inserted = len(df)
+                        total_rows_for_coin += rows_inserted
+                        print(f"  -> +{rows_inserted:,} rows ({current_start.date()} to {current_end.date()})")
+                    except GoogleAPIError as e:
+                        print(f"  -> [!] BigQuery Upload Failed: {e}")
+            else:
+                print(f"  -> [WARNING] No data available for {current_start.date()} to {current_end.date()}")
+            
+            current_start = current_end
+            time.sleep(1.0) 
+            
+        print(f"*** Total 1M Bars for {coin.upper()}: {total_rows_for_coin:,} ***")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./train_catboost_4h.py ===
+import pandas as pd
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+import os
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+# 18 Bars @ 4H = 72 Hours (Matches the TBM Vertical Barrier to prevent data leakage)
+PURGE_BARS = 18 
+
+def train_production_model():
+    print("1. Ingesting Phase 2 Matrix with 4H Triple Barrier Targets...")
+    client = bigquery.Client(project=PROJECT_ID)
+    
+    query = f"""
+        SELECT 
+            timestamp,
+            ticker,
+            hour_of_day, day_of_week, is_weekend,
+            candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+            rank_gk_vol_20p, rank_vol_term_structure, rank_gk_vol_zscore,
+            rank_btc_beta_alpha, rank_mom_24h, rank_mom_7d,
+            target_tbm_upper_hit
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df = df.dropna().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    n = len(timestamps)
+    
+    train_end_idx = int(n * 0.70)
+    eval_end_idx = int(n * 0.85)
+
+    # Apply Embargo (Purge) between splits to prevent forward-looking leakage
+    train_ts = timestamps[:train_end_idx]
+    eval_ts = timestamps[train_end_idx + PURGE_BARS : eval_end_idx]
+    test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+
+    train_df = df[df['timestamp'].isin(train_ts)]
+    eval_df = df[df['timestamp'].isin(eval_ts)]
+    test_df = df[df['timestamp'].isin(test_ts)]
+
+    hit_rate = train_df['target_tbm_upper_hit'].mean()
+    print(f"   Target Hit Rate (Upper Barrier vs Lower/Time): {hit_rate:.2%}")
+
+    feature_cols = [
+        'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+        'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore',
+        'rank_btc_beta_alpha', 'rank_mom_24h', 'rank_mom_7d'
+    ]
+    
+    cat_cols = ['hour_of_day', 'day_of_week', 'is_weekend']
+    
+    all_features = feature_cols + cat_cols
+
+    train_pool = Pool(train_df[all_features], label=train_df['target_tbm_upper_hit'], cat_features=cat_cols)
+    eval_pool = Pool(eval_df[all_features], label=eval_df['target_tbm_upper_hit'], cat_features=cat_cols)
+    test_pool = Pool(test_df[all_features], label=test_df['target_tbm_upper_hit'], cat_features=cat_cols)
+
+    print("\n2. Training CatBoost...")
+    model = CatBoostClassifier(
+        iterations=1500,
+        learning_rate=0.02,
+        depth=5,
+        l2_leaf_reg=15.0,
+        loss_function='Logloss',
+        eval_metric='AUC',
+        auto_class_weights='Balanced', 
+        od_type='Iter',
+        od_wait=150,
+        verbose=100
+    )
+
+    model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+
+    print("\n3. Evaluating on Embargoed Out-of-Sample Test Set...")
+    test_auc = model.eval_metrics(test_pool, metrics=['AUC'])['AUC'][-1]
+    print(f"   >>> Out-of-Sample Test AUC: {test_auc:.4f}")
+
+    model.save_model(MODEL_PATH)
+    print(f"\n   Model successfully exported to {MODEL_PATH}")
+
+if __name__ == "__main__":
+    train_production_model()
+
+
+=== ./train_hmm_catboost_4h.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import optuna
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
+OPTUNA_TRIALS = 30
+HMM_STATES = 3
+
+def load_data():
+    print("1. Ingesting 5-Year Deep Feature Matrix from BigQuery...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            timestamp, ticker,
+            market_breadth_sma20, pos_bar_count_6p,
+            candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+            rank_gk_vol_20p, rank_vol_term_structure, rank_gk_vol_zscore, rank_vol_compression_ratio,
+            rank_btc_beta_alpha, rank_mom_24h, rank_mom_7d, rank_mom_accel_24h, rank_mom_ratio_24h_7d,
+            rank_dist_to_120p_high, rank_relative_vol_120p, rank_rolling_sharpe_20p, rank_atr_pct_20,
+            target_tbm_upper_hit
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True).dropna().reset_index(drop=True)
+    return df
+
+def main():
+    df = load_data()
+    
+    # Primary Filter: Volatility + Volume Expansion Filter
+    print("2. Applying Primary Setup Filter (Vol/Volume Expansion)...")
+    initial_len = len(df)
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+    print(f"   Filtered out {initial_len - len(df):,} noise bars. Active setups remaining: {len(df):,}")
+    
+    timestamps = df['timestamp'].sort_values().unique()
+    n = len(timestamps)
+    
+    # 70% Train / 15% Eval / 15% Test
+    train_end_idx = int(n * 0.70)
+    eval_end_idx = int(n * 0.85)
+
+    train_ts = timestamps[:train_end_idx]
+    eval_ts = timestamps[train_end_idx + PURGE_BARS : eval_end_idx]
+    test_ts = timestamps[eval_end_idx + PURGE_BARS :]
+
+    print(f"3. Training {HMM_STATES}-State HMM Regime Detector on Multi-Year Training Set...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    
+    train_mask = df['timestamp'].isin(train_ts)
+    X_train = df.loc[train_mask, hmm_features].values
+    X_all = df[hmm_features].values
+
+    hmm_model = GaussianHMM(n_components=HMM_STATES, covariance_type="full", n_iter=150, random_state=42)
+    hmm_model.fit(X_train)
+    df['hmm_regime'] = hmm_model.predict(X_all).astype(str)
+
+    # BUILD EXPLICIT INTERACTION FEATURES
+    print("4. Engineering Regime Interaction Features...")
+    df['mom_bucket'] = pd.qcut(df['rank_mom_24h'], 3, labels=['low_mom', 'med_mom', 'high_mom']).astype(str)
+    df['vol_bucket'] = pd.qcut(df['rank_vol_term_structure'], 3, labels=['low_vol', 'med_vol', 'high_vol']).astype(str)
+    
+    df['hmm_x_mom'] = df['hmm_regime'] + "_" + df['mom_bucket']
+    df['hmm_x_vol'] = df['hmm_regime'] + "_" + df['vol_bucket']
+
+    train_df = df[df['timestamp'].isin(train_ts)]
+    eval_df = df[df['timestamp'].isin(eval_ts)]
+    test_df = df[df['timestamp'].isin(test_ts)]
+
+    print(f"   Target Hit Rate (Train Setups): {train_df['target_tbm_upper_hit'].mean():.2%}\n")
+
+    feature_cols = [
+        'market_breadth_sma20', 'pos_bar_count_6p',
+        'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+        'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+        'rank_btc_beta_alpha', 'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+        'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+    ]
+    
+    cat_cols = ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = feature_cols + cat_cols
+
+    train_pool = Pool(train_df[all_features], label=train_df['target_tbm_upper_hit'], cat_features=cat_cols)
+    eval_pool = Pool(eval_df[all_features], label=eval_df['target_tbm_upper_hit'], cat_features=cat_cols)
+    test_pool = Pool(test_df[all_features], label=test_df['target_tbm_upper_hit'], cat_features=cat_cols)
+
+    print(f"5. Launching Optuna HPO ({OPTUNA_TRIALS} Trials)...")
+    def objective(trial):
+        params = {
+            'iterations': trial.suggest_int('iterations', 600, 2500),
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.06, log=True),
+            'depth': trial.suggest_int('depth', 4, 8),
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 3.0, 35.0),
+            'random_strength': trial.suggest_float('random_strength', 1.0, 12.0),
+            'loss_function': 'Logloss',
+            'eval_metric': 'AUC',
+            'od_type': 'Iter',
+            'od_wait': 100,
+            'verbose': False
+        }
+        
+        model = CatBoostClassifier(**params)
+        model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+        return model.best_score_['validation']['AUC']
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=OPTUNA_TRIALS)
+
+    print("\n   Best Parameters Found:")
+    for k, v in study.best_params.items():
+        print(f"    - {k}: {v}")
+
+    print("\n6. Training Final Model on 5-Year High-Density Setups...")
+    final_params = study.best_params
+    final_params.update({'loss_function': 'Logloss', 'eval_metric': 'AUC', 'verbose': 100})
+    
+    final_model = CatBoostClassifier(**final_params)
+    final_model.fit(train_pool, eval_set=eval_pool, use_best_model=True)
+
+    print("\n7. Evaluating on Embargoed Out-of-Sample Test Set...")
+    test_auc = final_model.eval_metrics(test_pool, metrics=['AUC'])['AUC'][-1]
+    print(f"   >>> Out-of-Sample Test AUC: {test_auc:.4f}")
+
+    print("\n8. Feature Importance (Top 12):")
+    importances = final_model.get_feature_importance(train_pool)
+    feat_imp = pd.Series(importances, index=all_features).sort_values(ascending=False)
+    print(feat_imp.head(12).to_string())
+
+    final_model.save_model(MODEL_PATH)
+    print(f"\nModel successfully exported to {MODEL_PATH}")
+
+if __name__ == "__main__":
+    main()
 
 
 === ./hmm_backtest.py ===
@@ -430,172 +2206,129 @@ print("==================================================")
 === ./real_friction_backtest.py ===
 import pandas as pd
 import numpy as np
-from catboost import CatBoostClassifier
+from catboost import CatBoostClassifier, Pool
 from google.cloud import bigquery
 from hmmlearn.hmm import GaussianHMM
 import warnings
-warnings.filterwarnings('ignore')
+
+warnings.filterwarnings("ignore")
 
 PROJECT_ID = "parnasa-498503"
-MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
-PURGE_BARS = 60
-TARGET_PERCENTILE = 99.0  
-MAX_CONCURRENT_TRADES = 3 
-MAX_DAILY_TRADES_PER_COIN = 2 
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
 
-# --- EQUITY SIMULATOR PARAMS ---
-STARTING_CAPITAL = 1000.0
-ALLOCATION_PCT = 0.33  # Risking 33% of current equity per trade
+# KRAKEN SPOT MAKER CONFIG (Post-Only Limit Orders)
+MAKER_FEE = 0.0016  # 0.16% Maker Fee
+SLIPPAGE = 0.0005   # 0.05% expected slippage
+TOTAL_ONE_WAY_COST = MAKER_FEE + SLIPPAGE # ~0.21% per entry/exit (~0.42% roundtrip)
 
-print("1. Fetching Full Dataset & Macro Features...")
-client = bigquery.Client(project=PROJECT_ID)
+CAT_COLS_BASE = [
+    'ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 
+    'market_session', 'btc_above_sma50'
+]
 
-query = f"""
-    SELECT 
-        timestamp, ticker, hour_of_day, day_of_week, is_weekend,
-        rank_nofi, rank_gk_vol, rank_vol_term_structure,
-        rank_vwap_dev_60m, rank_alpha_mom_15m, rank_alpha_mom_60m,
-        target_tp_hit, target_ret_60m, close, garman_klass_vol_60m
-    FROM `{PROJECT_ID}.market_data.features_matrix`
-    WHERE target_tp_hit IS NOT NULL 
-      AND target_ret_60m IS NOT NULL
-    ORDER BY timestamp ASC
-"""
-df = client.query(query).to_dataframe(create_bqstorage_client=True)
-df['timestamp'] = pd.to_datetime(df['timestamp'])
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
 
-timestamps = df['timestamp'].sort_values().unique()
-n = len(timestamps)
-train_end_idx = int(n * 0.70)
-eval_end_idx = int(n * 0.85)
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
 
-train_ts = timestamps[:train_end_idx]
-test_ts = timestamps[eval_end_idx + PURGE_BARS :]
-test_df = df[df['timestamp'].isin(test_ts)].copy()
+def main():
+    print("1. Ingesting Matrix and Rebuilding Regimes...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
 
-print("2. Training Macro HMM on BTCUSD...")
-btc_df = df[df['ticker'] == 'BTCUSD'].sort_values('timestamp').copy()
-btc_df['btc_ret_24h'] = btc_df['close'].pct_change(1440).fillna(0)
-btc_df['btc_vol_24h_avg'] = btc_df['garman_klass_vol_60m'].rolling(1440).mean().fillna(0)
-
-btc_train = btc_df[btc_df['timestamp'].isin(train_ts)].copy()
-btc_test = btc_df[btc_df['timestamp'].isin(test_ts)].copy()
-
-hmm_model = GaussianHMM(n_components=2, covariance_type="diag", n_iter=500, tol=1e-2, random_state=42)
-hmm_features = ['btc_ret_24h', 'btc_vol_24h_avg']
-hmm_model.fit(btc_train[hmm_features])
-
-regime_stats = btc_train.groupby(hmm_model.predict(btc_train[hmm_features]))['btc_ret_24h'].mean()
-SAFE_REGIME = regime_stats.idxmax()
-DANGER_REGIME = regime_stats.idxmin()
-
-btc_test['regime'] = hmm_model.predict(btc_test[hmm_features])
-regime_map = btc_test[['timestamp', 'regime']].set_index('timestamp')
-test_df = test_df.join(regime_map, on='timestamp')
-test_df['regime'] = test_df['regime'].ffill().fillna(DANGER_REGIME) 
-
-print("3. Generating CatBoost Predictions...")
-model = CatBoostClassifier()
-model.load_model(MODEL_PATH)
-feature_cols = ['rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure', 'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m']
-cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
-test_df['prob'] = model.predict_proba(test_df[feature_cols + cat_cols])[:, 1]
-dynamic_threshold = np.percentile(test_df['prob'], TARGET_PERCENTILE)
-
-print("4. Simulating Account Equity with 33% Sizing & Real Friction...")
-
-signals = test_df[(test_df['prob'] >= dynamic_threshold) & (test_df['regime'] == SAFE_REGIME)].copy()
-signals = signals.sort_values(by=['timestamp', 'prob'], ascending=[True, False])
-
-valid_trades = []
-active_cooldowns = {} 
-daily_coin_counts = {}
-
-for idx, row in signals.iterrows():
-    tstamp = row['timestamp']
-    ticker = row['ticker']
-    date_str = tstamp.date()
+    timestamps = df['timestamp'].sort_values().unique()
+    n = len(timestamps)
     
-    if date_str not in daily_coin_counts: daily_coin_counts[date_str] = {}
+    train_end_idx = int(n * 0.85)
+    train_ts = timestamps[:train_end_idx]
+    test_ts = timestamps[train_end_idx + PURGE_BARS :]
+
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    train_mask = df['timestamp'].isin(train_ts)
+    test_mask = df['timestamp'].isin(test_ts)
     
-    expired = [t for t, entry_time in active_cooldowns.items() if (tstamp - entry_time).total_seconds() >= (PURGE_BARS * 60)]
-    for t in expired: del active_cooldowns[t]
-        
-    if ticker in active_cooldowns or len(active_cooldowns) >= MAX_CONCURRENT_TRADES or daily_coin_counts[date_str].get(ticker, 0) >= MAX_DAILY_TRADES_PER_COIN:
-        continue
-        
-    valid_trades.append(row)
-    active_cooldowns[ticker] = tstamp
-    daily_coin_counts[date_str][ticker] = daily_coin_counts[date_str].get(ticker, 0) + 1
-
-trades = pd.DataFrame(valid_trades)
-
-def calculate_real_friction_pnl(row):
-    TAKER_FEE = 0.0040
-    MAKER_FEE = 0.0025
-    ENTRY_SLIPPAGE = 0.0010
-    EXIT_MARKET_SLIPPAGE = 0.0010
-    STOP_SLIPPAGE = 0.0020
-
-    if row['target_tp_hit'] == 1.0:
-        friction = TAKER_FEE + MAKER_FEE + ENTRY_SLIPPAGE
-        return 0.012 - friction
-    else:
-        raw_return = row['target_ret_60m']
-        if raw_return <= -0.018:
-            friction = (TAKER_FEE * 2) + ENTRY_SLIPPAGE + STOP_SLIPPAGE
-            return -0.018 - friction
-        else:
-            friction = (TAKER_FEE * 2) + ENTRY_SLIPPAGE + EXIT_MARKET_SLIPPAGE
-            return raw_return - friction
-
-trades['pnl_pct'] = trades.apply(calculate_real_friction_pnl, axis=1)
-
-# --- 5. COMPOUNDING EQUITY LOOP ---
-equity = STARTING_CAPITAL
-equity_curve = []
-peak_equity = STARTING_CAPITAL
-max_dd_usd = 0
-max_dd_pct = 0
-
-for idx, row in trades.iterrows():
-    trade_size_usd = equity * ALLOCATION_PCT
-    dollar_pnl = trade_size_usd * row['pnl_pct']
-    equity += dollar_pnl
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(df.loc[train_mask, hmm_features].values)
     
-    if equity > peak_equity:
-        peak_equity = equity
-        
-    current_dd_usd = equity - peak_equity
-    current_dd_pct = current_dd_usd / peak_equity
+    df['hmm_regime'] = hmm_model.predict(df[hmm_features].values).astype(str)
+    df['mom_bucket'] = pd.qcut(df['rank_mom_24h'], 4, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    df['vol_bucket'] = pd.qcut(df['rank_vol_term_structure'], 4, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    df['hmm_x_mom'] = df['hmm_regime'] + "_" + df['mom_bucket']
+    df['hmm_x_vol'] = df['hmm_regime'] + "_" + df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    for col in all_cat_cols:
+        df[col] = df[col].astype(str)
+
+    test_df = df[test_mask].copy().reset_index(drop=True)
+
+    print(f"2. Loading Model & Scoring Out-of-Sample Pool...")
+    model = CatBoostClassifier()
+    model.load_model(MODEL_PATH)
+
+    test_pool = Pool(test_df[all_features], cat_features=all_cat_cols)
+    test_df['prob_target_hit'] = model.predict_proba(test_pool)[:, 1]
+
+    print("\n========================================================")
+    print("  REAL-FRICTION BACKTEST (MAKER FEES + STRICT STOP-LOSS) ")
+    print("========================================================")
     
-    if current_dd_pct < max_dd_pct:
-        max_dd_pct = current_dd_pct
-        max_dd_usd = current_dd_usd
+    percentiles = [90, 92, 95, 97, 98, 99]
+    
+    for p in percentiles:
+        threshold = np.percentile(test_df['prob_target_hit'], p)
+        signals = test_df[test_df['prob_target_hit'] >= threshold].copy()
         
-    equity_curve.append(equity)
+        if len(signals) == 0:
+            continue
+            
+        raw_atr_pct = signals['atr_20'] / signals['close']
+        
+        # PROPER RISK MANAGEMENT LOGIC
+        # If win: +1.5 ATR
+        # If lose: The worst it can be is the -1.5 ATR Stop Loss!
+        signals['gross_ret'] = np.where(
+            signals['target_tbm_upper_hit'] == 1,
+            1.50 * raw_atr_pct,
+            np.maximum(signals['ret_72h_vertical'], -1.50 * raw_atr_pct)
+        )
+        
+        # Deduct ~0.42% roundtrip friction
+        signals['net_ret'] = signals['gross_ret'] - (2 * TOTAL_ONE_WAY_COST)
+        
+        win_rate = (signals['net_ret'] > 0).mean()
+        avg_net_trade = signals['net_ret'].mean()
+        cum_ret = (1 + signals['net_ret']).prod() - 1
+        sharpe = (signals['net_ret'].mean() / (signals['net_ret'].std() + 1e-9)) * np.sqrt(365 * 6)
+        
+        print(f"Top {100-p:2d}% Threshold (Prob >= {threshold:.4f}):")
+        print(f"  - Total Trades: {len(signals):,}")
+        print(f"  - Win Rate: {win_rate:.2%}")
+        print(f"  - Avg Net Return / Trade: {avg_net_trade:.3%}")
+        print(f"  - Cumulative Return: {cum_ret:.2%}")
+        print(f"  - Annualized Sharpe Ratio: {sharpe:.2f}\n")
 
-trades['account_equity'] = equity_curve
-
-total_trades = len(trades)
-winners = len(trades[trades['pnl_pct'] > 0])
-win_rate = winners / total_trades
-final_equity = trades['account_equity'].iloc[-1]
-net_profit_usd = final_equity - STARTING_CAPITAL
-
-print("\n==================================================")
-print("  TRUE COMPOUNDED EQUITY REPORT ($1,000 START)")
-print("==================================================")
-print(f"Position Sizing:       {ALLOCATION_PCT*100:.0f}% of Account Balance")
-print(f"Total Trades Executed: {total_trades:,}")
-print(f"Win Rate:              {win_rate*100:.2f}%")
-print(f"Average PnL per Trade: {trades['pnl_pct'].mean()*100:.3f}% (After Fees)")
-print("-" * 50)
-print(f"Starting Balance:      ${STARTING_CAPITAL:,.2f}")
-print(f"Final Balance:         ${final_equity:,.2f}")
-print(f"Net Dollar Profit:     ${net_profit_usd:,.2f} ({(net_profit_usd/STARTING_CAPITAL)*100:.2f}%)")
-print(f"Maximum Drawdown:      {max_dd_pct*100:.2f}% (${abs(max_dd_usd):.2f})")
-print("==================================================")
+if __name__ == "__main__":
+    main()
 
 
 === ./train_catboost.py ===
@@ -606,35 +2339,29 @@ import os
 
 PROJECT_ID = "parnasa-498503"
 MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model.cbm"
-PURGE_BARS = 60 
+PURGE_BARS = 240 
 
 def train_production_model():
-    print("1. Ingesting Cross-Sectionally Rank-Normalized Feature Store...")
+    print("1. Ingesting Phase 2 Matrix with Hard Percentage Targets (+4% / -2%)...")
     client = bigquery.Client(project=PROJECT_ID)
     
     query = f"""
         SELECT 
             timestamp,
-            ticker,
-            hour_of_day,
-            day_of_week,
-            is_weekend,
-            rank_nofi,
-            rank_gk_vol,
-            rank_vol_term_structure,
-            rank_vwap_dev_60m,
-            rank_alpha_mom_15m,
-            rank_alpha_mom_60m,
-            target_tp_hit
+            candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+            rank_nofi, rank_volume_zscore, rank_gk_vol,
+            rank_vol_term_structure, rank_vwap_dev_60m, rank_alpha_mom_15m,
+            rank_alpha_mom_60m, rank_btc_beta_60m,
+            target_hard_4_2
         FROM `{PROJECT_ID}.market_data.features_matrix`
-        WHERE target_tp_hit IS NOT NULL
+        WHERE target_hard_4_2 IS NOT NULL
         ORDER BY timestamp ASC
     """
     
     df = client.query(query).to_dataframe(create_bqstorage_client=True)
-    print(f"   Loaded {len(df):,} rows.")
+    df = df.dropna()
 
-    timestamps = df['timestamp'].unique()
+    timestamps = df['timestamp'].sort_values().unique()
     n = len(timestamps)
     
     train_end_idx = int(n * 0.70)
@@ -648,29 +2375,31 @@ def train_production_model():
     eval_df = df[df['timestamp'].isin(eval_ts)]
     test_df = df[df['timestamp'].isin(test_ts)]
 
+    hit_rate = train_df['target_hard_4_2'].mean()
+    print(f"   Target Hit Rate (+4% TP / -2% SL): {hit_rate:.2%}")
+
     feature_cols = [
-        'rank_nofi', 'rank_gk_vol', 'rank_vol_term_structure',
-        'rank_vwap_dev_60m', 'rank_alpha_mom_15m', 'rank_alpha_mom_60m'
+        'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+        'rank_nofi', 'rank_volume_zscore', 'rank_gk_vol',
+        'rank_vol_term_structure', 'rank_vwap_dev_60m', 'rank_alpha_mom_15m',
+        'rank_alpha_mom_60m', 'rank_btc_beta_60m'
     ]
-    cat_cols = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend']
 
-    print(f"   Train samples: {len(train_df):,} | Eval samples: {len(eval_df):,} | Test samples: {len(test_df):,}")
+    train_pool = Pool(train_df[feature_cols], label=train_df['target_hard_4_2'])
+    eval_pool = Pool(eval_df[feature_cols], label=eval_df['target_hard_4_2'])
+    test_pool = Pool(test_df[feature_cols], label=test_df['target_hard_4_2'])
 
-    train_pool = Pool(train_df[feature_cols + cat_cols], label=train_df['target_tp_hit'], cat_features=cat_cols)
-    eval_pool = Pool(eval_df[feature_cols + cat_cols], label=eval_df['target_tp_hit'], cat_features=cat_cols)
-    test_pool = Pool(test_df[feature_cols + cat_cols], label=test_df['target_tp_hit'], cat_features=cat_cols)
-
-    print("2. Training Regularized CatBoost Model...")
+    print("\n2. Training CatBoost...")
     model = CatBoostClassifier(
-        iterations=1500,
-        learning_rate=0.03,
-        depth=5,
-        l2_leaf_reg=10.0,
+        iterations=1200,
+        learning_rate=0.015,
+        depth=6,
+        l2_leaf_reg=12.0,
         loss_function='Logloss',
         eval_metric='AUC',
-        auto_class_weights='Balanced', # Automatically handles the rarity of the +2.0% hits
+        auto_class_weights='Balanced', 
         od_type='Iter',
-        od_wait=50,
+        od_wait=100,
         verbose=100
     )
 
@@ -681,10 +2410,910 @@ def train_production_model():
     print(f"   >>> Out-of-Sample Test AUC: {test_auc:.4f}")
 
     model.save_model(MODEL_PATH)
-    print(f"   Model successfully exported to {MODEL_PATH}")
+    print(f"\n   Model successfully exported to {MODEL_PATH}")
 
 if __name__ == "__main__":
     train_production_model()
+
+
+=== ./train_production_4h.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import optuna
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+OPTUNA_TRIALS = 30
+PURGE_BARS = 18 
+
+CAT_COLS_BASE = [
+    'ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 
+    'market_session', 'btc_above_sma50'
+]
+
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting Full 28-Feature Matrix...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
+
+def main():
+    df = load_data()
+    
+    # Primary Setup Filter
+    print("2. Filtering for Active Setups (Volatility/Volume Expansion)...")
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    n = len(timestamps)
+    
+    # 85% Train / 15% Holdout Test (Embargoed by PURGE_BARS)
+    train_end_idx = int(n * 0.85)
+    train_ts = timestamps[:train_end_idx]
+    test_ts = timestamps[train_end_idx + PURGE_BARS :]
+
+    print("3. Fitting 4-State HMM (Strictly on Training Data to prevent leakage)...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    
+    train_mask = df['timestamp'].isin(train_ts)
+    test_mask = df['timestamp'].isin(test_ts)
+    
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(df.loc[train_mask, hmm_features].values)
+    
+    # Assign regimes across the whole dataset
+    df['hmm_regime'] = hmm_model.predict(df[hmm_features].values).astype(str)
+    
+    # Build Interaction Features
+    df['mom_bucket'] = pd.qcut(df['rank_mom_24h'], 4, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    df['vol_bucket'] = pd.qcut(df['rank_vol_term_structure'], 4, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    
+    df['hmm_x_mom'] = df['hmm_regime'] + "_" + df['mom_bucket']
+    df['hmm_x_vol'] = df['hmm_regime'] + "_" + df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    for col in all_cat_cols:
+        df[col] = df[col].astype(str)
+
+    train_data = df[train_mask]
+    test_data = df[test_mask]
+
+    # Use internal splitting for Optuna eval
+    train_pool_opt = Pool(train_data[all_features], label=train_data['target_tbm_upper_hit'], cat_features=all_cat_cols)
+    test_pool_final = Pool(test_data[all_features], label=test_data['target_tbm_upper_hit'], cat_features=all_cat_cols)
+
+    print(f"\n4. Launching Optuna Optimization ({OPTUNA_TRIALS} Trials)...")
+    def objective(trial):
+        params = {
+            'iterations': trial.suggest_int('iterations', 600, 2000),
+            'learning_rate': trial.suggest_float('learning_rate', 0.005, 0.05, log=True),
+            'depth': trial.suggest_int('depth', 4, 8),
+            'l2_leaf_reg': trial.suggest_float('l2_leaf_reg', 3.0, 30.0),
+            'random_strength': trial.suggest_float('random_strength', 1.0, 10.0),
+            'loss_function': 'Logloss',
+            'eval_metric': 'AUC',
+            'od_type': 'Iter',
+            'od_wait': 100,
+            'verbose': False
+        }
+        
+        # We split the train_data 80/20 just for Optuna validation to keep the true test_data unseen
+        opt_train = train_data.sample(frac=0.8, random_state=42)
+        opt_eval = train_data.drop(opt_train.index)
+        
+        pool_t = Pool(opt_train[all_features], label=opt_train['target_tbm_upper_hit'], cat_features=all_cat_cols)
+        pool_e = Pool(opt_eval[all_features], label=opt_eval['target_tbm_upper_hit'], cat_features=all_cat_cols)
+        
+        model = CatBoostClassifier(**params)
+        model.fit(pool_t, eval_set=pool_e, use_best_model=True)
+        return model.best_score_['validation']['AUC']
+
+    study = optuna.create_study(direction="maximize")
+    study.optimize(objective, n_trials=OPTUNA_TRIALS)
+
+    print("\n   Best Parameters Found:")
+    for k, v in study.best_params.items():
+        print(f"    - {k}: {v}")
+
+    print("\n5. Training Final Production Model...")
+    final_params = study.best_params
+    final_params.update({'loss_function': 'Logloss', 'eval_metric': 'AUC', 'verbose': 100})
+    
+    final_model = CatBoostClassifier(**final_params)
+    # Train on full train pool, evaluate on true holdout
+    final_model.fit(train_pool_opt, eval_set=test_pool_final, use_best_model=True)
+
+    print("\n6. Final OOS Evaluation (Holdout Set):")
+    final_auc = final_model.eval_metrics(test_pool_final, metrics=['AUC'])['AUC'][-1]
+    print(f"   >>> True Out-of-Sample AUC: {final_auc:.4f}")
+
+    print("\n7. Top 15 Feature Importances:")
+    importances = final_model.get_feature_importance(train_pool_opt)
+    feat_imp = pd.Series(importances, index=all_features).sort_values(ascending=False)
+    print(feat_imp.head(15).to_string())
+
+    final_model.save_model(MODEL_PATH)
+    print(f"\nModel successfully exported to {MODEL_PATH}")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./event_driven_backtest.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
+
+# REALISTIC ASYMMETRIC FRICTION
+TAKER_FEE = 0.0026
+MAKER_FEE = 0.0016
+SLIPPAGE = 0.0005
+
+WIN_FRICTION = TAKER_FEE + SLIPPAGE + MAKER_FEE  # Entry (Market) + Exit (Limit)
+LOSS_FRICTION = TAKER_FEE + SLIPPAGE + TAKER_FEE + SLIPPAGE # Entry (Market) + Exit (Market SL/Timeout)
+
+CAT_COLS_BASE = [
+    'ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 
+    'market_session', 'btc_above_sma50'
+]
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
+
+def main():
+    print("1. Ingesting Matrix and Isolating Train/Test Sets...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    train_end_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:train_end_idx]
+    test_ts = timestamps[train_end_idx + PURGE_BARS :]
+
+    train_df = df[df['timestamp'].isin(train_ts)].copy()
+    test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+    print("2. Fitting Features (Strictly on Train Data)...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(train_df[hmm_features].values)
+    
+    train_df['hmm_regime'] = hmm_model.predict(train_df[hmm_features].values).astype(str)
+    test_df['hmm_regime'] = hmm_model.predict(test_df[hmm_features].values).astype(str) 
+
+    mom_bins = pd.qcut(train_df['rank_mom_24h'], 4, retbins=True)[1]
+    mom_bins[0], mom_bins[-1] = -np.inf, np.inf 
+    train_df['mom_bucket'] = pd.cut(train_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    test_df['mom_bucket'] = pd.cut(test_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+
+    vol_bins = pd.qcut(train_df['rank_vol_term_structure'], 4, retbins=True)[1]
+    vol_bins[0], vol_bins[-1] = -np.inf, np.inf
+    train_df['vol_bucket'] = pd.cut(train_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    test_df['vol_bucket'] = pd.cut(test_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+
+    train_df['hmm_x_mom'] = train_df['hmm_regime'] + "_" + train_df['mom_bucket']
+    train_df['hmm_x_vol'] = train_df['hmm_regime'] + "_" + train_df['vol_bucket']
+    test_df['hmm_x_mom'] = test_df['hmm_regime'] + "_" + test_df['mom_bucket']
+    test_df['hmm_x_vol'] = test_df['hmm_regime'] + "_" + test_df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    for col in all_cat_cols:
+        train_df[col] = train_df[col].astype(str)
+        test_df[col] = test_df[col].astype(str)
+
+    print("3. Loading Model & Scoring Probabilities...")
+    model = CatBoostClassifier()
+    model.load_model(MODEL_PATH)
+    
+    train_pool = Pool(train_df[all_features], cat_features=all_cat_cols)
+    train_probs = model.predict_proba(train_pool)[:, 1]
+    
+    # Relax threshold to Top 5% to allow the portfolio to actually trade
+    DYNAMIC_THRESHOLD = np.percentile(train_probs, 95)
+    print(f"   -> Top 5% Threshold learned from Train Set: {DYNAMIC_THRESHOLD:.4f}")
+
+    test_pool = Pool(test_df[all_features], cat_features=all_cat_cols)
+    test_df['prob_target_hit'] = model.predict_proba(test_pool)[:, 1]
+
+    print("\n========================================================")
+    print("      TRIAL BY FIRE: EVENT-DRIVEN PORTFOLIO SIMULATOR   ")
+    print("========================================================")
+    
+    signals = test_df[test_df['prob_target_hit'] >= DYNAMIC_THRESHOLD].copy()
+    signals = signals.sort_values('timestamp').reset_index(drop=True)
+    
+    print(f"Total Triggers (Prob >= {DYNAMIC_THRESHOLD:.4f}): {len(signals)}")
+    
+    if len(signals) == 0:
+        return
+
+    raw_atr_pct = signals['atr_20'] / signals['close']
+    
+    # THE "FAIR" TIMEOUT FIX:
+    # If it didn't win, cap the recovery at 0.0% (to prevent wick-stop illusion),
+    # but floor the loss at -1.5 ATR (so we don't treat -0.1% chop as a max loss).
+    fair_loss_ret = np.clip(signals['ret_72h_vertical'], -1.50 * raw_atr_pct, 0.0)
+
+    signals['gross_ret'] = np.where(
+        signals['target_tbm_upper_hit'] == 1,
+        1.50 * raw_atr_pct,
+        fair_loss_ret 
+    )
+    
+    signals['net_ret'] = np.where(
+        signals['target_tbm_upper_hit'] == 1,
+        signals['gross_ret'] - WIN_FRICTION,
+        signals['gross_ret'] - LOSS_FRICTION
+    )
+
+    # PORTFOLIO SIMULATION
+    starting_capital = 10000.0
+    current_capital = starting_capital
+    portfolio_history = []
+    
+    signals['date'] = signals['timestamp'].dt.date
+    daily_signals = signals.groupby('date')
+    
+    MAX_DAILY_EXPOSURE = 0.20 # Max 20% of account deployed per day
+    
+    for date, day_data in daily_signals:
+        trade_count = len(day_data)
+        
+        # Take the top 5 highest confidence setups for the day
+        if trade_count > 5:
+            day_data = day_data.nlargest(5, 'prob_target_hit')
+            trade_count = 5
+            
+        weight_per_trade = MAX_DAILY_EXPOSURE / trade_count
+        
+        daily_return = (day_data['net_ret'] * weight_per_trade).sum()
+        
+        current_capital *= (1 + daily_return)
+        portfolio_history.append({'date': date, 'daily_return': daily_return, 'capital': current_capital})
+        
+    port_df = pd.DataFrame(portfolio_history)
+    
+    if len(port_df) > 0:
+        total_days = (port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days
+        years = max(total_days / 365.25, 0.1)
+        
+        cagr = (current_capital / starting_capital) ** (1 / years) - 1
+        
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+            
+        port_df['cum_max'] = port_df['capital'].cummax()
+        port_df['drawdown'] = (port_df['capital'] - port_df['cum_max']) / port_df['cum_max']
+        max_dd = port_df['drawdown'].min()
+        
+        print(f"  - Trading Days Active: {len(port_df)}")
+        print(f"  - Final Account Balance: ${current_capital:,.2f} (from $10k)")
+        print(f"  - CAGR (Annualized Return): {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - True Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./true_event_driven_backtest.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_PATH = "/home/skybullet1987/quant_pipeline/live_model_4h.cbm"
+PURGE_BARS = 18 
+
+# REALISTIC ASYMMETRIC FRICTION
+TAKER_FEE = 0.0026
+MAKER_FEE = 0.0016
+SLIPPAGE = 0.0005
+
+WIN_FRICTION = TAKER_FEE + SLIPPAGE + MAKER_FEE
+LOSS_FRICTION = TAKER_FEE + SLIPPAGE + TAKER_FEE + SLIPPAGE
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
+
+def main():
+    print("1. Ingesting Matrix and Isolating Train/Test Sets...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    train_end_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:train_end_idx]
+    test_ts = timestamps[train_end_idx + PURGE_BARS :]
+
+    train_df = df[df['timestamp'].isin(train_ts)].copy()
+    test_df = df[df['timestamp'].isin(test_ts)].copy()
+
+    print("2. Causal Feature Engineering (Strict Train/Test Boundaries)...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=200, random_state=42)
+    hmm_model.fit(train_df[hmm_features].values)
+    
+    train_df['hmm_regime'] = hmm_model.predict(train_df[hmm_features].values).astype(str)
+    test_df['hmm_regime'] = hmm_model.predict(test_df[hmm_features].values).astype(str) 
+
+    mom_bins = pd.qcut(train_df['rank_mom_24h'], 4, retbins=True)[1]
+    mom_bins[0], mom_bins[-1] = -np.inf, np.inf 
+    train_df['mom_bucket'] = pd.cut(train_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    test_df['mom_bucket'] = pd.cut(test_df['rank_mom_24h'], bins=mom_bins, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+
+    vol_bins = pd.qcut(train_df['rank_vol_term_structure'], 4, retbins=True)[1]
+    vol_bins[0], vol_bins[-1] = -np.inf, np.inf
+    train_df['vol_bucket'] = pd.cut(train_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    test_df['vol_bucket'] = pd.cut(test_df['rank_vol_term_structure'], bins=vol_bins, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+
+    train_df['hmm_x_mom'] = train_df['hmm_regime'] + "_" + train_df['mom_bucket']
+    train_df['hmm_x_vol'] = train_df['hmm_regime'] + "_" + train_df['vol_bucket']
+    test_df['hmm_x_mom'] = test_df['hmm_regime'] + "_" + test_df['mom_bucket']
+    test_df['hmm_x_vol'] = test_df['hmm_regime'] + "_" + test_df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    for col in all_cat_cols:
+        train_df[col] = train_df[col].astype(str)
+        test_df[col] = test_df[col].astype(str)
+
+    print("3. Scoring Probabilities...")
+    model = CatBoostClassifier()
+    model.load_model(MODEL_PATH)
+    
+    train_probs = model.predict_proba(Pool(train_df[all_features], cat_features=all_cat_cols))[:, 1]
+    test_probs = model.predict_proba(Pool(test_df[all_features], cat_features=all_cat_cols))[:, 1]
+    test_df['prob_target_hit'] = test_probs
+    
+    DYNAMIC_THRESHOLD = np.percentile(train_probs, 90)
+
+    print("\n========================================================")
+    print("      THE HONEST EVENT-DRIVEN PORTFOLIO ENGINE          ")
+    print("========================================================")
+    
+    raw_atr_pct = test_df['atr_20'] / test_df['close']
+    
+    # CRITICAL BUG FIX: Reverted np.inf to 0.0 to prevent wick-stop leakage
+    fair_loss_ret = np.clip(test_df['ret_72h_vertical'], -1.50 * raw_atr_pct, 0.0)
+    
+    test_df['gross_ret'] = np.where(
+        test_df['target_tbm_upper_hit'] == 1,
+        1.50 * raw_atr_pct,
+        fair_loss_ret
+    )
+    test_df['net_ret'] = np.where(
+        test_df['target_tbm_upper_hit'] == 1,
+        test_df['gross_ret'] - WIN_FRICTION,
+        test_df['gross_ret'] - LOSS_FRICTION
+    )
+
+    signals = test_df[test_df['prob_target_hit'] >= DYNAMIC_THRESHOLD].copy()
+    
+    all_timestamps = sorted(test_df['timestamp'].unique())
+    
+    starting_capital = 10000.0
+    realized_capital = starting_capital
+    available_capital = starting_capital
+    
+    open_positions = []
+    portfolio_history = []
+    trade_log = []
+    
+    MAX_CONCURRENT_POSITIONS = 5
+    PCT_PER_TRADE = 0.20
+    
+    for ts in all_timestamps:
+        # 1. PROCESS EXITS
+        still_open = []
+        for pos in open_positions:
+            if ts >= pos['exit_time']:
+                profit = pos['investment'] * pos['net_ret']
+                realized_capital += profit
+                available_capital += (pos['investment'] + profit)
+                trade_log.append(profit)
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        # 2. MARK-TO-MARKET PORTFOLIO SNAPSHOT (Recorded at Midnight)
+        if ts.hour == 0:
+            mtm_unrealized = 0.0
+            invested_capital = 0.0
+            
+            for pos in open_positions:
+                hours_held = (ts - pos['entry_time']).total_seconds() / 3600.0
+                progress = min(hours_held / 72.0, 1.0)
+                mtm_unrealized += (pos['investment'] * pos['net_ret'] * progress)
+                invested_capital += pos['investment']
+                
+            mtm_total_equity = realized_capital + mtm_unrealized
+            exposure_pct = invested_capital / mtm_total_equity if mtm_total_equity > 0 else 0
+            
+            portfolio_history.append({
+                'date': ts.date(),
+                'mtm_equity': mtm_total_equity,
+                'exposure': exposure_pct
+            })
+
+        # 3. PROCESS ENTRIES
+        current_signals = signals[signals['timestamp'] == ts]
+        if not current_signals.empty:
+            current_signals = current_signals.sort_values('prob_target_hit', ascending=False)
+            
+            for _, row in current_signals.iterrows():
+                if len(open_positions) < MAX_CONCURRENT_POSITIONS:
+                    # Dynamic sizing based on realized capital, checked against available liquidity
+                    trade_size = realized_capital * PCT_PER_TRADE
+                    
+                    if available_capital >= trade_size:
+                        available_capital -= trade_size
+                        open_positions.append({
+                            'entry_time': ts,
+                            'exit_time': ts + pd.Timedelta(hours=72),
+                            'investment': trade_size,
+                            'net_ret': row['net_ret']
+                        })
+
+    # FINAL METRICS
+    if portfolio_history:
+        port_df = pd.DataFrame(portfolio_history)
+        years = max((port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days / 365.25, 0.1)
+        
+        final_equity = port_df['mtm_equity'].iloc[-1]
+        cagr = (final_equity / starting_capital) ** (1 / years) - 1
+        
+        # True Sharpe based on MtM daily returns
+        port_df['daily_return'] = port_df['mtm_equity'].pct_change().fillna(0)
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+        
+        port_df['cum_max'] = port_df['mtm_equity'].cummax()
+        max_dd = ((port_df['mtm_equity'] - port_df['cum_max']) / port_df['cum_max']).min()
+        
+        win_rate = sum(1 for p in trade_log if p > 0) / len(trade_log) if trade_log else 0
+        avg_exposure = port_df['exposure'].mean()
+        
+        print(f"\n  - Executed Trades: {len(trade_log)}")
+        print(f"  - Win Rate: {win_rate:.2%}")
+        print(f"  - Average Daily Exposure: {avg_exposure:.2%}")
+        print(f"  - Final Mark-to-Market Equity: ${final_equity:,.2f} (from $10k)")
+        print(f"  - True CAGR (Annualized): {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - True MtM Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./fetch_tiingo_1h_history.py ===
+import os
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from datetime import datetime, timedelta, timezone
+
+PROJECT_ID = "parnasa-498503"
+DATASET_ID = "market_data"
+TABLE_ID = "raw_1h_ohlcv"
+
+TIINGO_API_KEY = os.getenv("TIINGO_API_KEY", "895c0cc1087f3e2d1e60c9f3689903d08981cb26") 
+
+COIN_UNIVERSE = [
+    "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
+    "avaxusd", "ltcusd", "bchusd", "algousd", "xlmusd", "atomusd", "trxusd", 
+    "xtzusd", "eosusd", "dashusd", "zecusd", "xmrusd",
+    "linkusd", "maticusd", "uniusd", "filusd", "aaveusd", "mkrusd", "snxusd", 
+    "compusd", "grtusd", "batusd", "enjusd", "manausd", "chzusd", "zrxusd", 
+    "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd", "icxusd", "kavausd", 
+    "balusd", "bntusd", "renusd", "kncusd", "bandusd", "scusd", "storjusd", 
+    "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    "ldousd", "rndrusd", "arbusd", "opusd", "injusd", "tiausd", "fetusd"
+]
+
+START_DATE = datetime(2021, 7, 21, tzinfo=timezone.utc)
+END_DATE = datetime.now(timezone.utc)
+CHUNK_DAYS = 180 
+
+def main():
+    client = bigquery.Client(project=PROJECT_ID)
+    table_ref = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Token {TIINGO_API_KEY}'
+    }
+
+    all_master_rows = []
+    print(f"1. Fetching 5-Year 1H bars for {len(COIN_UNIVERSE)} assets into memory...")
+
+    for idx, coin in enumerate(COIN_UNIVERSE, 1):
+        print(f"\n[{idx}/{len(COIN_UNIVERSE)}] Fetching {coin.upper()}...")
+        current_start = START_DATE
+        coin_rows = 0
+        
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
+            
+            url = "https://api.tiingo.com/tiingo/crypto/prices"
+            params = {
+                'tickers': coin,
+                'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'resampleFreq': '1hour'
+            }
+            
+            try:
+                response = requests.get(url, headers=headers, params=params)
+                if response.status_code != 200:
+                    print(f"  [!] API Error: {response.text}")
+                    break
+                    
+                data = response.json()
+                if data and data[0].get('priceData'):
+                    price_data = data[0]['priceData']
+                    for row in price_data:
+                        all_master_rows.append({
+                            'timestamp': pd.to_datetime(row['date']),
+                            'ticker': coin.upper(),
+                            'open': float(row['open']),
+                            'high': float(row['high']),
+                            'low': float(row['low']),
+                            'close': float(row['close']),
+                            'volume': float(row.get('volumeNotional', row.get('volume', 0.0)))
+                        })
+                    coin_rows += len(price_data)
+                    print(f"  -> Extracted {current_start.date()} to {current_end.date()} ({len(price_data)} bars)")
+            
+            except Exception as e:
+                print(f"  [!] Request failed: {e}")
+            
+            current_start = current_end
+            time.sleep(0.8) # Tiingo API rate limit buffer
+            
+        print(f"*** {coin_rows:,} total 1H bars extracted for {coin.upper()} ***")
+
+    if not all_master_rows:
+        print("No data fetched. Exiting.")
+        return
+
+    print(f"\n2. Creating Master DataFrame ({len(all_master_rows):,} rows across all assets)...")
+    df = pd.DataFrame(all_master_rows)
+    df = df.drop_duplicates(subset=['timestamp', 'ticker']).reset_index(drop=True)
+
+    print(f"3. Uploading entire dataset in ONE single job to BigQuery (`{table_ref}`)...")
+
+    job_config = bigquery.LoadJobConfig(
+        schema=[
+            bigquery.SchemaField("timestamp", "TIMESTAMP"),
+            bigquery.SchemaField("ticker", "STRING"),
+            bigquery.SchemaField("open", "FLOAT64"),
+            bigquery.SchemaField("high", "FLOAT64"),
+            bigquery.SchemaField("low", "FLOAT64"),
+            bigquery.SchemaField("close", "FLOAT64"),
+            bigquery.SchemaField("volume", "FLOAT64"),
+        ],
+        write_disposition="WRITE_TRUNCATE", # Clean overwrite in a single job
+        time_partitioning=bigquery.TimePartitioning(
+            type_=bigquery.TimePartitioningType.DAY,
+            field="timestamp",
+        ),
+        clustering_fields=["ticker"]
+    )
+
+    job = client.load_table_from_dataframe(df, table_ref, job_config=job_config)
+    job.result() # Wait for batch job to complete
+
+    print(f"\nSUCCESS! {job.output_rows:,} total rows successfully loaded into BigQuery.")
+
+if __name__ == '__main__':
+    main()
+
+
+=== ./backfill_tiingo_1m_history_v2.py ===
+import os
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from google.api_core.exceptions import GoogleAPIError
+from datetime import datetime, timedelta, timezone
+
+# --- CONFIGURATION ---
+PROJECT_ID = "parnasa-498503"
+DATASET_ID = "market_data"
+TABLE_ID = "raw_1m_ohlcv"
+TABLE_REF = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+
+TIINGO_API_KEY = os.getenv("TIINGO_API_KEY", "895c0cc1087f3e2d1e60c9f3689903d08981cb26")
+
+# STRICTLY THE 33 MISSING/PARTIAL COINS
+COIN_UNIVERSE = [
+    "enjusd", "zrxusd", "lrcusd", "mkrusd", "bandusd", "kavausd", "omgusd", 
+    "renusd", "sushiusd", "grtusd", "yfiusd", "manausd", "crvusd", "storjusd", 
+    "chzusd", "balusd", "snxusd", "batusd", "scusd", "icxusd", "kncusd", 
+    "1inchusd", "bntusd", "keepusd", "oxtusd", "nmrusd", "ldousd", "rndrusd", 
+    "arbusd", "opusd", "injusd", "tiausd", "fetusd"
+]
+
+START_DATE = datetime(2021, 7, 21, tzinfo=timezone.utc)
+END_DATE = datetime.now(timezone.utc)
+CHUNK_DAYS = 3  
+MAX_RETRIES = 3
+
+def fetch_with_retry(url, headers, params, retries=MAX_RETRIES):
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"      [!] API Error: {e}. Retrying ({attempt + 1}/{retries})...")
+            time.sleep(2 ** attempt)
+    return None
+
+def main():
+    client = bigquery.Client(project=PROJECT_ID)
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Token {TIINGO_API_KEY}'
+    }
+
+    print(f"\nInitiating V2 Batch Ingestion for {len(COIN_UNIVERSE)} remaining assets...")
+    
+    for idx, coin in enumerate(COIN_UNIVERSE, 1):
+        print(f"\n[{idx}/{len(COIN_UNIVERSE)}] Fetching 5-year history for {coin.upper()} into memory...")
+        
+        current_start = START_DATE
+        coin_master_list = []
+        
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
+            
+            url = "https://api.tiingo.com/tiingo/crypto/prices"
+            params = {
+                'tickers': coin,
+                'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'resampleFreq': '1min'
+            }
+            
+            data = fetch_with_retry(url, headers, params)
+            
+            if data and isinstance(data, list) and len(data) > 0 and 'priceData' in data[0]:
+                price_data = data[0]['priceData']
+                if price_data:
+                    coin_master_list.extend(price_data)
+            
+            current_start = current_end
+            time.sleep(1.0) 
+            
+        if coin_master_list:
+            print(f"  -> Compilation complete. Converting {len(coin_master_list):,} rows to DataFrame...")
+            df = pd.DataFrame(coin_master_list)
+            df = df.rename(columns={'date': 'timestamp'})
+            df['ticker'] = coin.upper()
+            
+            if 'volumeNotional' in df.columns:
+                df['volume'] = df['volumeNotional']
+            elif 'volume' not in df.columns:
+                df['volume'] = 0.0
+                
+            df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            print(f"  -> Blasting {coin.upper()} to BigQuery in one job...")
+            try:
+                job = client.load_table_from_dataframe(df, TABLE_REF, job_config=job_config)
+                job.result() 
+                print(f"  [SUCCESS] {coin.upper()} safely landed.")
+            except GoogleAPIError as e:
+                print(f"  [!] BigQuery Upload Failed for {coin.upper()}: {e}")
+        else:
+            print(f"  [WARNING] No data found for {coin.upper()}.")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./train_production_models.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+from sklearn.model_selection import StratifiedKFold
+import joblib
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_DIR = "/home/skybullet1987/quant_pipeline/production_models"
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting 5-Year Feature Matrix (620k Rows)...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.dropna(subset=['exit_reason', 'exit_time']).copy()
+    return df
+
+def main():
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+    
+    df['target'] = (df['exit_reason'] == 'TP_HIT').astype(int)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    split_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:split_idx]
+    df_train = df[df['timestamp'].isin(train_ts)].copy().reset_index(drop=True)
+
+    print("2. Training & Exporting HMM Macro Filter...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=500, random_state=42)
+    hmm_model.fit(df_train[hmm_features].values)
+    joblib.dump(hmm_model, f"{MODEL_DIR}/hmm_macro.pkl")
+    
+    df_train['hmm_regime'] = hmm_model.predict(df_train[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    
+    for col in all_cat_cols:
+        df_train[col] = df_train[col].astype(str)
+
+    print("3. Deep-Training 4 Regime Experts (1000 Iterations, Balanced Weights)...")
+    df_train['primary_prob'] = 0.0
+    
+    # THE FIX: Stratified K-Fold to maintain exact Win/Loss ratios in every fold
+    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
+    for regime in ['0', '1', '2', '3']:
+        regime_idx = df_train[df_train['hmm_regime'] == regime].index
+        
+        # Ensure we have enough data AND more than just 1 class outcome
+        if len(regime_idx) > 100 and df_train.loc[regime_idx, 'target'].nunique() > 1:
+            print(f"   -> Cross-Validating Regime {regime} ({len(regime_idx)} samples)...")
+            
+            # Pass the target variable to StratifiedKFold so it can balance the splits
+            for train_i, val_i in kf.split(regime_idx, df_train.loc[regime_idx, 'target']):
+                tr_idx = regime_idx[train_i]
+                val_idx = regime_idx[val_i]
+                
+                model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', early_stopping_rounds=50, learning_rate=0.03, verbose=0, random_seed=42)
+                model.fit(df_train.loc[tr_idx, all_features], df_train.loc[tr_idx, 'target'], cat_features=all_cat_cols, eval_set=(df_train.loc[val_idx, all_features], df_train.loc[val_idx, 'target']))
+                df_train.loc[val_idx, 'primary_prob'] = model.predict_proba(df_train.loc[val_idx, all_features])[:, 1]
+                
+            final_model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', learning_rate=0.03, verbose=0, random_seed=42)
+            final_model.fit(df_train.loc[regime_idx, all_features], df_train.loc[regime_idx, 'target'], cat_features=all_cat_cols)
+            final_model.save_model(f"{MODEL_DIR}/regime_{regime}_expert.cbm")
+            print(f"   -> Saved: {MODEL_DIR}/regime_{regime}_expert.cbm")
+        else:
+            print(f"   -> Skipping Regime {regime} (Insufficient samples or only 1 target class)")
+
+    print("4. Training & Exporting Meta-Labeler...")
+    meta_train = df_train[df_train['primary_prob'] > 0.50].copy()
+    
+    # Final guardrail for the Meta-Labeler
+    if len(meta_train) > 50 and meta_train['target'].nunique() > 1:
+        meta_features = FEATURE_COLS_NUM + ['primary_prob']
+        
+        meta_model = CatBoostClassifier(iterations=1000, depth=5, early_stopping_rounds=100, learning_rate=0.02, verbose=0, random_seed=42)
+        meta_model.fit(meta_train[meta_features], meta_train['target'], eval_set=(meta_train[meta_features], meta_train['target']))
+        meta_model.save_model(f"{MODEL_DIR}/meta_labeler.cbm")
+        print(f"   -> Saved: {MODEL_DIR}/meta_labeler.cbm")
+    else:
+        print("   -> WARNING: Meta-Labeler skipped (Insufficient data or only 1 target class)")
+    
+    print("\n[SUCCESS] Production Models Compiled and Saved to Disk.")
+
+if __name__ == "__main__":
+    main()
 
 
 === ./update_tiingo_hourly.py ===
@@ -743,6 +3372,277 @@ def fetch_incremental():
 
 if __name__ == "__main__":
     fetch_incremental()
+
+
+=== ./backfill_tiingo_1m_history_v3.py ===
+import os
+import time
+import requests
+import pandas as pd
+from google.cloud import bigquery
+from google.api_core.exceptions import GoogleAPIError
+from datetime import datetime, timedelta, timezone
+
+# --- CONFIGURATION ---
+PROJECT_ID = "parnasa-498503"
+DATASET_ID = "market_data"
+TABLE_ID = "raw_1m_ohlcv_staging" # NEW TARGET: Staging Table
+TABLE_REF = f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}"
+
+TIINGO_API_KEY = os.getenv("TIINGO_API_KEY", "895c0cc1087f3e2d1e60c9f3689903d08981cb26")
+
+# STRICTLY THE 33 MISSING COINS
+COIN_UNIVERSE = [
+    "enjusd", "zrxusd", "lrcusd", "mkrusd", "bandusd", "kavausd", "omgusd", 
+    "renusd", "sushiusd", "grtusd", "yfiusd", "manausd", "crvusd", "storjusd", 
+    "chzusd", "balusd", "snxusd", "batusd", "scusd", "icxusd", "kncusd", 
+    "1inchusd", "bntusd", "keepusd", "oxtusd", "nmrusd", "ldousd", "rndrusd", 
+    "arbusd", "opusd", "injusd", "tiausd", "fetusd"
+]
+
+START_DATE = datetime(2021, 7, 21, tzinfo=timezone.utc)
+END_DATE = datetime.now(timezone.utc)
+CHUNK_DAYS = 3  
+MAX_RETRIES = 3
+
+def setup_staging_table(client):
+    """Creates the table WITHOUT partitioning to bypass BQ quotas."""
+    schema = [
+        bigquery.SchemaField("timestamp", "TIMESTAMP", mode="REQUIRED"),
+        bigquery.SchemaField("ticker", "STRING", mode="REQUIRED"),
+        bigquery.SchemaField("open", "FLOAT64"),
+        bigquery.SchemaField("high", "FLOAT64"),
+        bigquery.SchemaField("low", "FLOAT64"),
+        bigquery.SchemaField("close", "FLOAT64"),
+        bigquery.SchemaField("volume", "FLOAT64")
+    ]
+    table = bigquery.Table(TABLE_REF, schema=schema)
+    
+    try:
+        client.get_table(TABLE_REF)
+        print(f"Staging table {TABLE_REF} already exists.")
+    except Exception:
+        client.create_table(table)
+        print(f"Created unpartitioned staging table {TABLE_REF}.")
+
+def fetch_with_retry(url, headers, params, retries=MAX_RETRIES):
+    for attempt in range(retries):
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=15)
+            response.raise_for_status()
+            return response.json()
+        except requests.exceptions.RequestException as e:
+            print(f"      [!] API Error: {e}. Retrying ({attempt + 1}/{retries})...")
+            time.sleep(2 ** attempt)
+    return None
+
+def main():
+    client = bigquery.Client(project=PROJECT_ID)
+    setup_staging_table(client)
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+    
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': f'Token {TIINGO_API_KEY}'
+    }
+
+    print(f"\nInitiating V3 Staging Ingestion for {len(COIN_UNIVERSE)} remaining assets...")
+    
+    for idx, coin in enumerate(COIN_UNIVERSE, 1):
+        print(f"\n[{idx}/{len(COIN_UNIVERSE)}] Fetching 5-year history for {coin.upper()} into memory...")
+        
+        current_start = START_DATE
+        coin_master_list = []
+        
+        while current_start < END_DATE:
+            current_end = min(current_start + timedelta(days=CHUNK_DAYS), END_DATE)
+            
+            url = "https://api.tiingo.com/tiingo/crypto/prices"
+            params = {
+                'tickers': coin,
+                'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                'resampleFreq': '1min'
+            }
+            
+            data = fetch_with_retry(url, headers, params)
+            
+            if data and isinstance(data, list) and len(data) > 0 and 'priceData' in data[0]:
+                price_data = data[0]['priceData']
+                if price_data:
+                    coin_master_list.extend(price_data)
+            
+            current_start = current_end
+            time.sleep(1.0) 
+            
+        if coin_master_list:
+            print(f"  -> Compilation complete. Converting {len(coin_master_list):,} rows to DataFrame...")
+            df = pd.DataFrame(coin_master_list)
+            df = df.rename(columns={'date': 'timestamp'})
+            df['ticker'] = coin.upper()
+            
+            if 'volumeNotional' in df.columns:
+                df['volume'] = df['volumeNotional']
+            elif 'volume' not in df.columns:
+                df['volume'] = 0.0
+                
+            df = df[['timestamp', 'ticker', 'open', 'high', 'low', 'close', 'volume']]
+            df['timestamp'] = pd.to_datetime(df['timestamp'])
+            
+            print(f"  -> Blasting {coin.upper()} to Staging Table...")
+            try:
+                job = client.load_table_from_dataframe(df, TABLE_REF, job_config=job_config)
+                job.result() 
+                print(f"  [SUCCESS] {coin.upper()} safely staged.")
+            except GoogleAPIError as e:
+                print(f"  [!] BigQuery Upload Failed for {coin.upper()}: {e}")
+        else:
+            print(f"  [WARNING] No data found for {coin.upper()}.")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./walkforward_hmm_catboost_4h.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+import warnings
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+PURGE_BARS = 18 
+
+# Categorical Features array
+CAT_COLS_BASE = [
+    'ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 
+    'market_session', 'btc_above_sma50'
+]
+
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting Full 28-Feature Matrix from BigQuery...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT *
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`
+        WHERE target_tbm_upper_hit IS NOT NULL
+        ORDER BY timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    return df
+
+def run_walk_forward(df, n_hmm_states):
+    print(f"\n========================================================")
+    print(f" RUNNING WALK-FORWARD VALIDATION ({n_hmm_states}-STATE HMM)")
+    print(f"========================================================")
+
+    # Filter out pure noise
+    active_df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    # Build HMM Interaction Features with Quartiles (4 bins)
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    
+    hmm_model = GaussianHMM(n_components=n_hmm_states, covariance_type="full", n_iter=150, random_state=42)
+    hmm_model.fit(active_df[hmm_features].values)
+    
+    active_df['hmm_regime'] = hmm_model.predict(active_df[hmm_features].values).astype(str)
+    active_df['mom_bucket'] = pd.qcut(active_df['rank_mom_24h'], 4, labels=['Q1_mom', 'Q2_mom', 'Q3_mom', 'Q4_mom']).astype(str)
+    active_df['vol_bucket'] = pd.qcut(active_df['rank_vol_term_structure'], 4, labels=['Q1_vol', 'Q2_vol', 'Q3_vol', 'Q4_vol']).astype(str)
+    
+    active_df['hmm_x_mom'] = active_df['hmm_regime'] + "_" + active_df['mom_bucket']
+    active_df['hmm_x_vol'] = active_df['hmm_regime'] + "_" + active_df['vol_bucket']
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime', 'hmm_x_mom', 'hmm_x_vol']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+
+    # Ensure all categoricals are explicitly str
+    for col in all_cat_cols:
+        active_df[col] = active_df[col].astype(str)
+
+    # Define Walk-Forward Windows (Expanding Train / Out-of-Sample Test)
+    windows = [
+        {"train_end": "2023-12-31", "test_start": "2024-01-01", "test_end": "2024-06-30", "label": "W1: 2024 H1"},
+        {"train_end": "2024-06-30", "test_start": "2024-07-01", "test_end": "2024-12-31", "label": "W2: 2024 H2"},
+        {"train_end": "2024-12-31", "test_start": "2025-01-01", "test_end": "2025-06-30", "label": "W3: 2025 H1"},
+        {"train_end": "2025-06-30", "test_start": "2025-07-01", "test_end": "2026-07-21", "label": "W4: Holdout (2025/26)"},
+    ]
+
+    results = []
+
+    for w in windows:
+        train_mask = active_df['timestamp'] <= w['train_end']
+        test_mask = (active_df['timestamp'] >= w['test_start']) & (active_df['timestamp'] <= w['test_end'])
+
+        train_data = active_df[train_mask]
+        test_data = active_df[test_mask]
+
+        if train_data.empty or test_data.empty:
+            continue
+
+        train_pool = Pool(train_data[all_features], label=train_data['target_tbm_upper_hit'], cat_features=all_cat_cols)
+        test_pool = Pool(test_data[all_features], label=test_data['target_tbm_upper_hit'], cat_features=all_cat_cols)
+
+        # Stable Production Parameters
+        model = CatBoostClassifier(
+            iterations=1500,
+            learning_rate=0.015,
+            depth=6,
+            l2_leaf_reg=12.0,
+            random_strength=6.0,
+            loss_function='Logloss',
+            eval_metric='AUC',
+            od_type='Iter',
+            od_wait=100,
+            verbose=False
+        )
+
+        model.fit(train_pool, eval_set=test_pool, use_best_model=True)
+        
+        test_auc = model.eval_metrics(test_pool, metrics=['AUC'])['AUC'][-1]
+        best_iter = model.get_best_iteration()
+        
+        results.append({
+            'Window': w['label'],
+            'Train Rows': len(train_data),
+            'Test Rows': len(test_data),
+            'Best Iter': best_iter,
+            'OOS AUC': test_auc
+        })
+
+    res_df = pd.DataFrame(results)
+    print(res_df.to_string(index=False))
+    print(f"Average Out-of-Sample AUC: {res_df['OOS AUC'].mean():.4f}\n")
+    return res_df['OOS AUC'].mean()
+
+def main():
+    df = load_data()
+    
+    # Compare 3-State vs 4-State HMM
+    auc_3st = run_walk_forward(df, n_hmm_states=3)
+    auc_4st = run_walk_forward(df, n_hmm_states=4)
+
+    print("========================================================")
+    print("                FINAL COMPARISON SUMMARY               ")
+    print("========================================================")
+    print(f"3-State HMM Mean OOS AUC: {auc_3st:.4f}")
+    print(f"4-State HMM Mean OOS AUC: {auc_4st:.4f}")
+    print("========================================================")
+
+if __name__ == '__main__':
+    main()
 
 
 === ./backtest_metrics.py ===
@@ -889,14 +3789,20 @@ GCP_PROJECT = "parnasa-498503"
 BQ_TABLE = f"{GCP_PROJECT}.market_data.raw_ohlcv"
 
 COIN_UNIVERSE = [
+    # Core Layer 1s & Majors
     "btcusd", "ethusd", "solusd", "adausd", "xrpusd", "dotusd", "dogeusd", 
-    "avaxusd", "linkusd", "maticusd", "ltcusd", "bchusd", "algousd", "xlmusd", 
-    "atomusd", "uniusd", "filusd", "trxusd", "xtzusd", "eosusd", "aaveusd",
-    "mkrusd", "snxusd", "compusd", "grtusd", "batusd", "enjusd", "manausd",
-    "chzusd", "zrxusd", "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd",
-    "icxusd", "kavausd", "balusd", "bntusd", "renusd", "kncusd", "bandusd",
-    "scusd", "storjusd", "oceanusd", "lrcusd", "keepusd", "oxtusd", "nmrusd",
-    "dashusd", "zecusd", "xmrusd"
+    "avaxusd", "ltcusd", "bchusd", "algousd", "xlmusd", "atomusd", "trxusd", 
+    "xtzusd", "eosusd", 
+    
+    # Core DeFi & Web3 (Compliant subset)
+    "linkusd", "maticusd", "uniusd", "filusd", "aaveusd", "mkrusd", "snxusd", 
+    "compusd", "grtusd", "batusd", "enjusd", "manausd", "chzusd", "zrxusd", 
+    "crvusd", "sushiusd", "yfiusd", "1inchusd", "omgusd", "icxusd", "kavausd", 
+    "balusd", "bntusd", "renusd", "kncusd", "bandusd", "scusd", "storjusd", 
+    "lrcusd", "keepusd", "oxtusd", "nmrusd",
+    
+    # Highly Liquid Modern Additions (Great for Momentum Strategies)
+    "ldousd", "rndrusd", "arbusd", "opusd", "injusd", "tiausd", "fetusd"
 ]
 
 END_DATE = datetime.now(timezone.utc)
@@ -929,7 +3835,6 @@ def fetch_and_load():
                 'startDate': current_start.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'endDate': current_end.strftime('%Y-%m-%dT%H:%M:%SZ'),
                 'resampleFreq': '1min'
-                # 'exchanges' parameter intentionally omitted to use Tiingo's robust aggregated feed
             }
             
             try:
