@@ -1,19 +1,23 @@
-# Credentials
-bq_key.json
-.env
-
-# Virtual Environment
+# Python environments & caches
 venv/
-env/
-
-# Logs & Cache
-*.log
 __pycache__/
 *.pyc
-.pytest_cache/
 
-# dbt artifacts
-crypto_features/target/
-crypto_features/dbt_packages/
-crypto_features/logs/
-crypto_features/config/.user.yml
+# Model Binaries & Data
+production_models/
+*.pkl
+*.csv
+*.json
+*.parquet
+
+# Build Artifacts & Logs
+target/
+*.log
+
+# Reports
+*.html
+*.pdf
+
+# Environment Secrets
+.env
+*.key

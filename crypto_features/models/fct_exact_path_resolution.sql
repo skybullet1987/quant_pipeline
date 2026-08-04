@@ -1,3 +1,4 @@
+SELECT * FROM (
 {{ config(
     materialized='table',
     partition_by={
@@ -5,90 +6,97 @@
       "data_type": "timestamp",
       "granularity": "day"
     },
-    cluster_by=["ticker"]
+    cluster_by=["ticker", "exit_reason"]
 ) }}
 
 WITH signals AS (
     SELECT 
-        timestamp AS signal_time, 
-        ticker, 
-        close AS entry_price, 
+        ticker,
+        timestamp AS signal_time,
+        close AS entry_price,
         atr_20,
-        close + (1.50 * atr_20) AS tp_price,
-        close - (1.50 * atr_20) AS sl_price,
-        TIMESTAMP_ADD(timestamp, INTERVAL 72 HOUR) AS timeout_time
+        -- Fixed: Perfectly symmetric +1.5 / -1.5 ATR barriers
+        close + (1.5 * atr_20) AS target_price_1_5_atr,
+        close - (1.5 * atr_20) AS stop_loss_1_5_atr,
+        TIMESTAMP_ADD(timestamp, INTERVAL 72 HOUR) AS timeout_limit
     FROM {{ ref('fct_4h_features_tbm') }}
-    WHERE target_tbm_upper_hit IS NOT NULL
+    WHERE atr_20 IS NOT NULL
 ),
 
-forward_paths AS (
+path_mapping AS (
     SELECT 
-        s.signal_time,
         s.ticker,
+        s.signal_time,
         s.entry_price,
-        s.tp_price,
-        s.sl_price,
-        s.timeout_time,
-        m.timestamp AS minute_time,
-        m.high,
-        m.low,
-        m.close AS minute_close,
-        CASE 
-            WHEN m.high >= s.tp_price AND m.low <= s.sl_price THEN 'SIMULTANEOUS_BREACH'
-            WHEN m.high >= s.tp_price THEN 'TP_HIT'
-            WHEN m.low <= s.sl_price THEN 'SL_HIT'
-            ELSE NULL 
-        END AS breach_type
+        s.target_price_1_5_atr,
+        s.stop_loss_1_5_atr,
+        
+        -- Scan the 1-minute forward path
+        MIN(CASE WHEN m.high >= s.target_price_1_5_atr THEN m.timestamp END) AS tp_hit_time,
+        MIN(CASE WHEN m.low <= s.stop_loss_1_5_atr THEN m.timestamp END) AS sl_hit_time,
+        
+        -- Flag DATA_ERROR if both barriers are breached on the exact same minute AND the candle is an anomaly
+        LOGICAL_OR(CASE WHEN m.high >= s.target_price_1_5_atr AND m.low <= s.stop_loss_1_5_atr AND m.is_price_anomaly THEN TRUE ELSE FALSE END) AS has_data_error,
+        
+        -- Fetch exact close price at the 72-hour timeout mark
+        ARRAY_AGG(m.close ORDER BY m.timestamp DESC LIMIT 1)[OFFSET(0)] AS timeout_close_price
     FROM signals s
-    INNER JOIN {{ ref('stg_densified_ohlcv') }} m
+    INNER JOIN {{ ref('stg_1m_cleaned') }} m
         ON s.ticker = m.ticker
         AND m.timestamp > s.signal_time
-        AND m.timestamp <= s.timeout_time
+        AND m.timestamp <= s.timeout_limit
+    GROUP BY 
+        1, 2, 3, 4, 5
 ),
 
-first_breaches AS (
-    SELECT 
-        signal_time,
+final_resolution AS (
+    SELECT
         ticker,
-        MIN(minute_time) AS t1_star
-    FROM forward_paths
-    WHERE breach_type IS NOT NULL
-    GROUP BY 1, 2
-),
-
-resolved_exits AS (
-    SELECT 
-        s.signal_time,
-        s.ticker,
-        s.entry_price,
-        s.tp_price,
-        s.sl_price,
-        s.timeout_time,
-        COALESCE(fb.t1_star, s.timeout_time) AS exit_time,
+        signal_time,
+        entry_price,
+        target_price_1_5_atr,
+        stop_loss_1_5_atr,
+        tp_hit_time,
+        sl_hit_time,
+        timeout_close_price,
         
+        -- Strict path resolution routing
         CASE 
-            WHEN fb.t1_star IS NULL THEN 'TIMEOUT'
-            WHEN fp.breach_type = 'SIMULTANEOUS_BREACH' THEN 'SL_HIT'
-            ELSE fp.breach_type 
+            WHEN has_data_error THEN 'DATA_ERROR'
+            WHEN tp_hit_time IS NOT NULL AND (sl_hit_time IS NULL OR tp_hit_time < sl_hit_time) THEN 'TP_HIT'
+            WHEN sl_hit_time IS NOT NULL AND (tp_hit_time IS NULL OR sl_hit_time < tp_hit_time) THEN 'SL_HIT'
+            -- Same-bar collision fallback (assume SL hit first for conservative backtesting if not anomalous)
+            WHEN tp_hit_time IS NOT NULL AND sl_hit_time IS NOT NULL AND tp_hit_time = sl_hit_time THEN 'SL_HIT'
+            ELSE 'TIMEOUT'
         END AS exit_reason,
-        
+
         CASE 
-            WHEN fb.t1_star IS NULL THEN fp_timeout.minute_close
-            WHEN fp.breach_type = 'TP_HIT' THEN s.tp_price
-            WHEN fp.breach_type IN ('SL_HIT', 'SIMULTANEOUS_BREACH') THEN s.sl_price
-        END AS exit_price
-        
-    FROM signals s
-    LEFT JOIN first_breaches fb 
-        ON s.signal_time = fb.signal_time AND s.ticker = fb.ticker
-    LEFT JOIN forward_paths fp 
-        ON s.signal_time = fp.signal_time AND s.ticker = fp.ticker AND fb.t1_star = fp.minute_time
-    LEFT JOIN forward_paths fp_timeout
-        ON s.signal_time = fp_timeout.signal_time AND s.ticker = fp_timeout.ticker AND s.timeout_time = fp_timeout.minute_time
+            WHEN has_data_error THEN COALESCE(tp_hit_time, sl_hit_time)
+            WHEN tp_hit_time IS NOT NULL AND (sl_hit_time IS NULL OR tp_hit_time < sl_hit_time) THEN tp_hit_time
+            WHEN sl_hit_time IS NOT NULL AND (tp_hit_time IS NULL OR sl_hit_time < tp_hit_time) THEN sl_hit_time
+            WHEN tp_hit_time IS NOT NULL AND sl_hit_time IS NOT NULL AND tp_hit_time = sl_hit_time THEN sl_hit_time
+            ELSE TIMESTAMP_ADD(signal_time, INTERVAL 72 HOUR)
+        END AS exit_time
+
+    FROM path_mapping
 )
 
 SELECT 
     *,
-    SAFE_DIVIDE(exit_price - entry_price, entry_price) AS exact_gross_return,
+    -- Fixed: Calculate exact gross return dynamically for TIMEOUT states instead of silently defaulting to 0.0 or MAX LOSS
+    CASE 
+        WHEN exit_reason = 'DATA_ERROR' THEN 0.0
+        WHEN exit_reason = 'TP_HIT' THEN (target_price_1_5_atr - entry_price) / entry_price
+        WHEN exit_reason = 'SL_HIT' THEN (stop_loss_1_5_atr - entry_price) / entry_price
+        WHEN exit_reason = 'TIMEOUT' THEN (timeout_close_price - entry_price) / entry_price
+        ELSE 0.0 
+    END AS exact_gross_return,
+    
     TIMESTAMP_DIFF(exit_time, signal_time, MINUTE) AS minutes_in_trade
-FROM resolved_exits
+FROM final_resolution
+
+) AS base_query
+WHERE entry_price > 0.000001
+  AND stop_loss_1_5_atr > 0
+  AND exact_gross_return BETWEEN -0.99 AND 2.0
+  AND exit_reason != 'DATA_ERROR' -- Explicitly purge ML poisoning from the downstream dataset

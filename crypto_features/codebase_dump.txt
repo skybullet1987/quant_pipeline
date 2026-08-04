@@ -1,0 +1,777 @@
+
+
+=== ./models/stg_densified_ohlcv.sql ===
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "timestamp",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker"]
+) }}
+
+WITH raw_data AS (
+  SELECT 
+    timestamp,
+    UPPER(ticker) AS ticker,
+    open, high, low, close, volume
+  FROM {{ source('market_data', 'raw_1m_ohlcv') }}
+  WHERE timestamp IS NOT NULL
+),
+
+ticker_stats AS (
+  SELECT 
+    ticker,
+    COUNT(DISTINCT timestamp) AS actual_bars,
+    TIMESTAMP_DIFF(MAX(timestamp), MIN(timestamp), MINUTE) AS total_expected_minutes
+  FROM raw_data
+  GROUP BY ticker
+),
+
+liquid_tickers AS (
+  SELECT ticker
+  FROM ticker_stats
+  WHERE SAFE_DIVIDE(actual_bars, total_expected_minutes) >= 0.80
+),
+
+bounds AS (
+  SELECT 
+    MIN(timestamp) AS min_ts, 
+    MAX(timestamp) AS max_ts 
+  FROM raw_data
+),
+
+-- Bypassing BigQuery Array Limits via Cross-Joined Generators
+date_spine AS (
+  SELECT day
+  FROM bounds,
+  UNNEST(GENERATE_DATE_ARRAY(DATE(min_ts), DATE(max_ts), INTERVAL 1 DAY)) AS day
+),
+
+minute_spine AS (
+  SELECT minute_offset
+  FROM UNNEST(GENERATE_ARRAY(0, 1439)) AS minute_offset
+),
+
+time_spine AS (
+  SELECT TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) AS timestamp
+  FROM date_spine d
+  CROSS JOIN minute_spine m
+  CROSS JOIN bounds b
+  WHERE TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) >= b.min_ts
+    AND TIMESTAMP_ADD(CAST(d.day AS TIMESTAMP), INTERVAL m.minute_offset MINUTE) <= b.max_ts
+),
+
+full_grid AS (
+  SELECT 
+    s.timestamp,
+    t.ticker
+  FROM time_spine s
+  CROSS JOIN liquid_tickers t
+),
+
+joined_bars AS (
+  SELECT 
+    g.timestamp,
+    g.ticker,
+    r.open,
+    r.high,
+    r.low,
+    r.close,
+    COALESCE(r.volume, 0.0) AS volume
+  FROM full_grid g
+  LEFT JOIN raw_data r
+    ON g.timestamp = r.timestamp AND g.ticker = r.ticker
+),
+
+densified AS (
+  SELECT 
+    timestamp,
+    ticker,
+    volume,
+    LAST_VALUE(close IGNORE NULLS) OVER w_locf AS close,
+    COALESCE(open, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS open,
+    COALESCE(high, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS high,
+    COALESCE(low, LAST_VALUE(close IGNORE NULLS) OVER w_locf) AS low
+  FROM joined_bars
+  WINDOW w_locf AS (
+    PARTITION BY ticker 
+    ORDER BY timestamp 
+    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+  )
+)
+
+SELECT * FROM densified WHERE close IS NOT NULL
+
+
+=== ./models/fct_exact_path_resolution.sql ===
+SELECT * FROM (
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "signal_time",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker", "exit_reason"]
+) }}
+
+WITH signals AS (
+    SELECT 
+        ticker,
+        timestamp AS signal_time,
+        close AS entry_price,
+        atr_20,
+        -- The Mechanical Upgrade: 3.0 ATR Target vs 1.5 ATR Stop (Absolute Values)
+        close + (3.0 * atr_20) AS target_price_3_atr,
+        close - (1.5 * atr_20) AS stop_loss_1_5_atr,
+        TIMESTAMP_ADD(timestamp, INTERVAL 72 HOUR) AS timeout_limit
+    FROM {{ ref('fct_4h_features_tbm') }}
+    WHERE atr_20 IS NOT NULL
+),
+
+path_mapping AS (
+    SELECT 
+        s.ticker,
+        s.signal_time,
+        s.entry_price,
+        s.target_price_3_atr,
+        s.stop_loss_1_5_atr,
+        -- Scan the 1-minute forward path for the FIRST intersection
+        MIN(CASE WHEN m.high >= s.target_price_3_atr THEN m.timestamp END) AS tp_hit_time,
+        MIN(CASE WHEN m.low <= s.stop_loss_1_5_atr THEN m.timestamp END) AS sl_hit_time
+    FROM signals s
+    INNER JOIN {{ ref('stg_densified_ohlcv') }} m
+        ON s.ticker = m.ticker
+        AND m.timestamp > s.signal_time
+        AND m.timestamp <= s.timeout_limit
+    GROUP BY 
+        1, 2, 3, 4, 5
+),
+
+final_resolution AS (
+    SELECT
+        ticker,
+        signal_time,
+        entry_price,
+        target_price_3_atr,
+        stop_loss_1_5_atr,
+        tp_hit_time,
+        sl_hit_time,
+        
+        -- Determine which barrier was hit first, or if the trade timed out
+        CASE 
+            WHEN tp_hit_time IS NOT NULL AND (sl_hit_time IS NULL OR tp_hit_time < sl_hit_time) THEN 'TP_HIT'
+            WHEN sl_hit_time IS NOT NULL AND (tp_hit_time IS NULL OR sl_hit_time < tp_hit_time) THEN 'SL_HIT'
+            ELSE 'TIMEOUT'
+        END AS exit_reason,
+
+        CASE 
+            WHEN tp_hit_time IS NOT NULL AND (sl_hit_time IS NULL OR tp_hit_time < sl_hit_time) THEN tp_hit_time
+            WHEN sl_hit_time IS NOT NULL AND (tp_hit_time IS NULL OR sl_hit_time < tp_hit_time) THEN sl_hit_time
+            ELSE TIMESTAMP_ADD(signal_time, INTERVAL 72 HOUR)
+        END AS exit_time
+
+    FROM path_mapping
+)
+
+SELECT 
+    *,
+    -- Calculate exact gross return based on the exit reason
+    CASE 
+        WHEN exit_reason = 'TP_HIT' THEN (target_price_3_atr - entry_price) / entry_price
+        WHEN exit_reason = 'SL_HIT' THEN (stop_loss_1_5_atr - entry_price) / entry_price
+        ELSE 0.0 
+    END AS exact_gross_return,
+    
+    -- Track total holding time for dynamic purge calculation
+    TIMESTAMP_DIFF(exit_time, signal_time, MINUTE) AS minutes_in_trade
+FROM final_resolution
+
+) AS base_query
+WHERE entry_price > 0.000001
+  AND stop_loss_1_5_atr > 0
+  AND exact_gross_return BETWEEN -0.99 AND 2.0
+
+
+=== ./models/schema.yml ===
+version: 2
+
+sources:
+  - name: market_data
+    database: parnasa-498503
+    schema: market_data
+    tables:
+      - name: raw_ohlcv
+      - name: raw_1h_ohlcv
+      - name: raw_1m_ohlcv
+
+
+=== ./models/fct_4h_features_tbm.sql ===
+SELECT * FROM (
+{{ config(
+    materialized='table',
+    partition_by={
+      "field": "timestamp",
+      "data_type": "timestamp",
+      "granularity": "day"
+    },
+    cluster_by=["ticker"]
+) }}
+
+-- ============================================================================
+-- STEP 1: Aggregate Native 1-Hour Bars into 4-Hour OHLCV Bars
+-- ============================================================================
+WITH raw_4h AS (
+  SELECT
+    TIMESTAMP_SECONDS(DIV(UNIX_SECONDS(timestamp), 14400) * 14400) AS timestamp,
+    UPPER(ticker) AS ticker,
+    ARRAY_AGG(open ORDER BY timestamp ASC LIMIT 1)[OFFSET(0)] AS open,
+    MAX(high) AS high,
+    MIN(low) AS low,
+    ARRAY_AGG(close ORDER BY timestamp DESC LIMIT 1)[OFFSET(0)] AS close,
+    SUM(volume) AS volume
+  FROM {{ source('market_data', 'raw_1h_ohlcv') }}
+  WHERE timestamp IS NOT NULL
+  GROUP BY 1, 2
+),
+
+-- ============================================================================
+-- STEP 2: Base Metrics, Returns & True Range
+-- ============================================================================
+bar_metrics AS (
+  SELECT
+    timestamp, ticker, open, high, low, close, volume,
+    LOG(SAFE_DIVIDE(close, LAG(close, 1) OVER w_asset)) AS ret_4h,
+    IF(close > LAG(close, 1) OVER w_asset, 1, 0) AS is_pos_bar,
+    
+    AVG(close) OVER (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW) AS sma_20,
+    AVG(close) OVER (PARTITION BY ticker ORDER BY timestamp ROWS BETWEEN 49 PRECEDING AND CURRENT ROW) AS sma_50,
+
+    GREATEST(high - low, ABS(high - LAG(close, 1) OVER w_asset), ABS(low - LAG(close, 1) OVER w_asset)) AS true_range,
+    SQRT(0.5 * POW(LOG(SAFE_DIVIDE(high, low)), 2) - (2 * LOG(2) - 1) * POW(LOG(SAFE_DIVIDE(close, open)), 2)) AS gk_vol_bar
+  FROM raw_4h 
+  WINDOW w_asset AS (PARTITION BY ticker ORDER BY timestamp)
+),
+
+-- ============================================================================
+-- STEP 3: 20-Period Rolling Windows (Short-Term Base)
+-- ============================================================================
+rolling_20p AS (
+  SELECT
+    b.*,
+    AVG(b.true_range) OVER w_20 AS atr_20,
+    SQRT(AVG(POW(b.gk_vol_bar, 2)) OVER w_20) AS gk_vol_20p,
+    SUM(b.ret_4h) OVER w_20 AS mom_20p,
+    SAFE_DIVIDE(AVG(b.ret_4h) OVER w_20, NULLIF(STDDEV(b.ret_4h) OVER w_20, 0)) AS rolling_sharpe_20p
+  FROM bar_metrics b
+  WINDOW w_20 AS (PARTITION BY b.ticker ORDER BY b.timestamp ROWS BETWEEN 19 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 4: 120-Period Rolling Windows (Fixes Nested Analytic Error)
+-- ============================================================================
+rolling_120p AS (
+  SELECT
+    r20.*,
+    SAFE_DIVIDE(r20.atr_20, r20.close) AS atr_pct_20,
+    SQRT(AVG(POW(r20.gk_vol_bar, 2)) OVER w_120) AS gk_vol_120p,
+    
+    -- Volatility Compression: Minimum of the already calculated 20p GK Vol over 120 periods
+    MIN(r20.gk_vol_20p) OVER w_120 AS min_gk_vol_20p_120p,
+
+    -- Rolling Highs & Structure
+    MAX(r20.high) OVER w_120 AS max_high_120p,
+    IF(r20.close >= MAX(r20.high) OVER w_120, 1.0, 0.0) AS is_at_120p_high,
+    
+    SAFE_DIVIDE(r20.volume, NULLIF(AVG(r20.volume) OVER w_120, 0)) AS relative_vol_120p,
+    SUM(r20.is_pos_bar) OVER w_6 AS pos_bar_count_6p,
+    
+    -- Momentum Baselines
+    SUM(r20.ret_4h) OVER w_6 AS mom_24h,
+    SUM(r20.ret_4h) OVER w_42 AS mom_7d
+  FROM rolling_20p r20
+  WINDOW 
+    w_6 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 5 PRECEDING AND CURRENT ROW),
+    w_42 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 41 PRECEDING AND CURRENT ROW),
+    w_120 AS (PARTITION BY r20.ticker ORDER BY r20.timestamp ROWS BETWEEN 119 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 5: Market Leadership & Cross-Sectional Macro Features
+-- ============================================================================
+macro_leadership AS (
+  SELECT
+    r.*,
+    
+    -- BTC Structural Trend State
+    MAX(IF(r.ticker = 'BTCUSD', r.close, NULL)) OVER (PARTITION BY r.timestamp) AS btc_close,
+    MAX(IF(r.ticker = 'BTCUSD', r.sma_50, NULL)) OVER (PARTITION BY r.timestamp) AS btc_sma50,
+    
+    -- Returns for Dominance & ETH/BTC Spreads
+    MAX(IF(r.ticker = 'BTCUSD', r.mom_20p, NULL)) OVER (PARTITION BY r.timestamp) AS btc_ret_20p,
+    MAX(IF(r.ticker = 'ETHUSD', r.mom_20p, NULL)) OVER (PARTITION BY r.timestamp) AS eth_ret_20p,
+    AVG(r.mom_20p) OVER (PARTITION BY r.timestamp) AS market_avg_ret_20p,
+
+    -- Breadth Metrics
+    AVG(IF(r.close > r.sma_20, 1.0, 0.0)) OVER (PARTITION BY r.timestamp) AS market_breadth_sma20,
+    AVG(r.is_at_120p_high) OVER (PARTITION BY r.timestamp) AS top_breakout_breadth
+  FROM rolling_120p r
+),
+
+-- ============================================================================
+-- STEP 6: Derived Features, Z-Scores, Geometry & Temporal Context
+-- ============================================================================
+derived_features AS (
+  SELECT
+    m.*,
+    
+    -- TEMPORAL & SESSION FEATURES
+    CAST(EXTRACT(HOUR FROM m.timestamp) AS STRING) AS hour_of_day,
+    CAST(EXTRACT(DAYOFWEEK FROM m.timestamp) AS STRING) AS day_of_week,
+    IF(EXTRACT(DAYOFWEEK FROM m.timestamp) IN (1, 7), "1", "0") AS is_weekend,
+    CASE 
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 0 AND 7 THEN 'ASIA'
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 8 AND 12 THEN 'EUROPE'
+      WHEN EXTRACT(HOUR FROM m.timestamp) BETWEEN 13 AND 21 THEN 'US'
+      ELSE 'US_ASIA_TRANSITION'
+    END AS market_session,
+
+    -- Explicit Leadership Indicators
+    IF(m.btc_close > m.btc_sma50, "1", "0") AS btc_above_sma50,
+    (m.eth_ret_20p - m.btc_ret_20p) AS eth_btc_spread_20p,
+    (m.btc_ret_20p - m.market_avg_ret_20p) AS btc_dominance_spread,
+    
+    -- Volatility Term Structure & Compression
+    SAFE_DIVIDE(m.gk_vol_20p, NULLIF(m.gk_vol_120p, 0)) AS vol_term_structure,
+    SAFE_DIVIDE(m.gk_vol_20p - AVG(m.gk_vol_20p) OVER w_120, NULLIF(STDDEV(m.gk_vol_20p) OVER w_120, 0)) AS gk_vol_zscore_120,
+    SAFE_DIVIDE(m.gk_vol_20p, NULLIF(m.min_gk_vol_20p_120p, 0)) AS vol_compression_ratio,
+
+    -- Distance to Rolling High
+    SAFE_DIVIDE(m.close - m.max_high_120p, NULLIF(m.max_high_120p, 0)) AS dist_to_120p_high,
+
+    -- Momentum Acceleration (2nd Derivative & Ratio)
+    m.mom_24h - LAG(m.mom_24h, 6) OVER (PARTITION BY m.ticker ORDER BY m.timestamp) AS mom_accel_24h,
+    SAFE_DIVIDE(m.mom_24h, NULLIF(ABS(m.mom_7d), 0)) AS mom_ratio_24h_7d,
+
+    -- Candle Geometry
+    SAFE_DIVIDE(ABS(m.close - m.open), NULLIF(m.high - m.low, 0)) AS candle_body_pct,
+    SAFE_DIVIDE(m.high - GREATEST(m.open, m.close), NULLIF(m.high - m.low, 0)) AS candle_upper_wick_pct,
+    SAFE_DIVIDE(LEAST(m.open, m.close) - m.low, NULLIF(m.high - m.low, 0)) AS candle_lower_wick_pct
+  FROM macro_leadership m
+  WINDOW w_120 AS (PARTITION BY m.ticker ORDER BY m.timestamp ROWS BETWEEN 119 PRECEDING AND CURRENT ROW)
+),
+
+-- ============================================================================
+-- STEP 7: Triple Barrier Method (1.5x ATR Symmetric Target)
+-- ============================================================================
+tbm_forward_window AS (
+  SELECT
+    d.*,
+    d.close + (1.50 * d.atr_20) AS upper_barrier_price,
+    d.close - (1.50 * d.atr_20) AS lower_barrier_price,
+    ARRAY_AGG(STRUCT(high AS fwd_high, low AS fwd_low, close AS fwd_close)) OVER (
+      PARTITION BY d.ticker ORDER BY d.timestamp ROWS BETWEEN 1 FOLLOWING AND 18 FOLLOWING
+    ) AS fwd_bars
+  FROM derived_features d
+),
+
+tbm_path_resolution AS (
+  SELECT
+    f.*,
+    (
+      SELECT AS STRUCT
+        MIN(IF(fwd.fwd_high >= f.upper_barrier_price, idx, NULL)) AS upper_hit_idx,
+        MIN(IF(fwd.fwd_low <= f.lower_barrier_price, idx, NULL)) AS lower_hit_idx,
+        ARRAY_AGG(fwd.fwd_close ORDER BY idx DESC LIMIT 1)[OFFSET(0)] AS vertical_exit_close,
+        COUNT(1) AS fwd_bar_count
+      FROM UNNEST(f.fwd_bars) AS fwd WITH OFFSET idx
+    ) AS barrier_res
+  FROM tbm_forward_window f
+),
+
+tbm_labels AS (
+  SELECT
+    p.*,
+    CASE
+      WHEN p.barrier_res.fwd_bar_count < 18 THEN NULL 
+      WHEN p.barrier_res.upper_hit_idx IS NOT NULL 
+           AND (p.barrier_res.lower_hit_idx IS NULL OR p.barrier_res.upper_hit_idx < p.barrier_res.lower_hit_idx) THEN 1
+      ELSE 0
+    END AS target_tbm_upper_hit,
+    SAFE_DIVIDE(p.barrier_res.vertical_exit_close - p.close, p.close) AS ret_72h_vertical
+  FROM tbm_path_resolution p
+),
+
+-- ============================================================================
+-- STEP 8: Cross-Sectional Ranking Engine
+-- ============================================================================
+ranked_features AS (
+  SELECT
+    timestamp, ticker, open, high, low, close, volume, atr_20, target_tbm_upper_hit, ret_72h_vertical,
+    
+    -- Absolute Temporal & Macro Categoricals
+    hour_of_day,
+    day_of_week,
+    is_weekend,
+    market_session,
+    btc_above_sma50,
+    
+    -- Market Breadth & Structure
+    market_breadth_sma20,
+    top_breakout_breadth,
+    pos_bar_count_6p,
+    candle_body_pct, candle_upper_wick_pct, candle_lower_wick_pct,
+
+    -- Cross-Sectional Percentile Ranks
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY eth_btc_spread_20p ASC) AS rank_eth_btc_spread_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY btc_dominance_spread ASC) AS rank_btc_dominance_spread,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY gk_vol_20p ASC) AS rank_gk_vol_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_term_structure ASC) AS rank_vol_term_structure,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY gk_vol_zscore_120 ASC) AS rank_gk_vol_zscore,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY vol_compression_ratio ASC) AS rank_vol_compression_ratio,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_24h ASC) AS rank_mom_24h,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_7d ASC) AS rank_mom_7d,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_accel_24h ASC) AS rank_mom_accel_24h,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY mom_ratio_24h_7d ASC) AS rank_mom_ratio_24h_7d,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY dist_to_120p_high ASC) AS rank_dist_to_120p_high,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY relative_vol_120p ASC) AS rank_relative_vol_120p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY rolling_sharpe_20p ASC) AS rank_rolling_sharpe_20p,
+    PERCENT_RANK() OVER (PARTITION BY timestamp ORDER BY atr_pct_20 ASC) AS rank_atr_pct_20
+  FROM tbm_labels
+)
+
+SELECT * FROM ranked_features WHERE timestamp IS NOT NULL AND atr_20 IS NOT NULL
+
+) AS base_query
+WHERE close > 0.000001
+  AND atr_20 < (close * 0.5)
+
+
+=== ./dbt_project.yml ===
+name: 'crypto_features'
+version: '1.0.0'
+config-version: 2
+profile: 'crypto_features'
+model-paths: ["models"]
+models:
+  crypto_features:
+    +materialized: table
+
+
+=== ./simulate_production_engine.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+import joblib
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_DIR = "/home/skybullet1987/quant_pipeline/production_models"
+PURGE_BARS = 18 
+
+WIN_FRICTION = 0.0047  
+LOSS_FRICTION = 0.0062 
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason,
+            p.exact_gross_return,
+            p.minutes_in_trade
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.dropna(subset=['exact_gross_return', 'exit_time']).copy()
+    df['exact_gross_return'] = df['exact_gross_return'].astype(float)
+    df['minutes_in_trade'] = df['minutes_in_trade'].astype(float)
+    return df
+
+def main():
+    print("1. Ingesting Matrix and Isolating OOS Test Block...")
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    split_idx = int(len(timestamps) * 0.85)
+    test_ts = timestamps[split_idx + PURGE_BARS :]
+    df_test = df[df['timestamp'].isin(test_ts)].copy().reset_index(drop=True)
+
+    print("2. Loading HMM Macro Filter from Disk...")
+    hmm_model = joblib.load(f"{MODEL_DIR}/hmm_macro.pkl")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    df_test['hmm_regime'] = hmm_model.predict(df_test[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    for col in all_cat_cols:
+        df_test[col] = df_test[col].astype(str)
+
+    print("3. Generating Primary Expert Predictions...")
+    df_test['primary_prob'] = 0.0
+    for regime in ['0', '1', '2', '3']:
+        model_path = f"{MODEL_DIR}/regime_{regime}_expert.cbm"
+        if os.path.exists(model_path):
+            expert = CatBoostClassifier()
+            expert.load_model(model_path)
+            regime_idx = df_test[df_test['hmm_regime'] == regime].index
+            if len(regime_idx) > 0:
+                df_test.loc[regime_idx, 'primary_prob'] = expert.predict_proba(df_test.loc[regime_idx, all_features])[:, 1]
+
+    print("4. Applying Meta-Labeler Precision Filter...")
+    test_signals = df_test[df_test['primary_prob'] > 0.45].copy()
+    meta_model_path = f"{MODEL_DIR}/meta_labeler.cbm"
+    
+    if not test_signals.empty and os.path.exists(meta_model_path):
+        meta_model = CatBoostClassifier()
+        meta_model.load_model(meta_model_path)
+        meta_features = FEATURE_COLS_NUM + ['primary_prob']
+        test_signals['meta_prob'] = meta_model.predict_proba(test_signals[meta_features])[:, 1]
+    else:
+        test_signals['meta_prob'] = 0.0
+
+    print("5. Executing Production Kelly Simulator...")
+    df_test['net_ret'] = np.where(
+        df_test['exit_reason'] == 'TP_HIT',
+        df_test['exact_gross_return'] - WIN_FRICTION,
+        df_test['exact_gross_return'] - LOSS_FRICTION
+    )
+
+    all_timestamps = sorted(df_test['timestamp'].unique())
+    starting_capital = 10000.0
+    realized_capital = starting_capital
+    available_capital = starting_capital
+    
+    open_positions = []
+    portfolio_history = []
+    trade_log = []
+    
+    MAX_CONCURRENT_POSITIONS = 5
+    KELLY_FRACTION = 0.50 
+    PAYOFF_RATIO = 1.0  
+    
+    for ts in all_timestamps:
+        still_open = []
+        for pos in open_positions:
+            if ts >= pos['exit_time']:
+                profit = pos['investment'] * pos['net_ret']
+                realized_capital += profit
+                available_capital += (pos['investment'] + profit)
+                trade_log.append({
+                    'profit': profit, 
+                    'net_ret': pos['net_ret'],
+                    'minutes': pos['minutes_in_trade'],
+                    'meta_prob': pos['meta_prob']
+                })
+            else:
+                still_open.append(pos)
+        open_positions = still_open
+
+        if ts.hour == 0:
+            mtm_unrealized = sum([(pos['investment'] * pos['net_ret'] * min(((ts - pos['entry_time']).total_seconds() / 60.0) / max(pos['minutes_in_trade'], 1), 1.0)) for pos in open_positions])
+            mtm_total_equity = realized_capital + mtm_unrealized
+            invested_capital = sum([pos['investment'] for pos in open_positions])
+            portfolio_history.append({
+                'date': ts.date(),
+                'mtm_equity': mtm_total_equity,
+                'exposure': invested_capital / mtm_total_equity if mtm_total_equity > 0 else 0
+            })
+
+        if not test_signals.empty:
+            current_signals = test_signals[test_signals['timestamp'] == ts].sort_values('meta_prob', ascending=False)
+            for _, row in current_signals.iterrows():
+                p = row['meta_prob']
+                if p > 0.53 and len(open_positions) < MAX_CONCURRENT_POSITIONS:
+                    kelly_f = p - ((1 - p) / PAYOFF_RATIO)
+                    trade_pct = max(min(kelly_f * KELLY_FRACTION, 0.40), 0.02)
+                    
+                    trade_size = realized_capital * trade_pct
+                    if available_capital >= trade_size:
+                        available_capital -= trade_size
+                        open_positions.append({
+                            'entry_time': ts,
+                            'exit_time': row['exit_time'],
+                            'investment': trade_size,
+                            'net_ret': df_test.loc[row.name, 'net_ret'],
+                            'minutes_in_trade': row['minutes_in_trade'],
+                            'meta_prob': p
+                        })
+
+    print("\n========================================================")
+    print("      LIVE PRODUCTION ENGINE: KELLY + OOS ARTIFACTS      ")
+    print("========================================================")
+    if portfolio_history:
+        port_df = pd.DataFrame(portfolio_history)
+        trade_df = pd.DataFrame(trade_log) if trade_log else pd.DataFrame()
+        
+        years = max((port_df['date'].iloc[-1] - port_df['date'].iloc[0]).days / 365.25, 0.1)
+        final_equity = port_df['mtm_equity'].iloc[-1]
+        cagr = (final_equity / starting_capital) ** (1 / years) - 1
+        port_df['daily_return'] = port_df['mtm_equity'].pct_change().fillna(0)
+        daily_std = port_df['daily_return'].std()
+        sharpe = (port_df['daily_return'].mean() / daily_std) * np.sqrt(365) if daily_std > 0 else 0.0
+        max_dd = ((port_df['mtm_equity'] - port_df['mtm_equity'].cummax()) / port_df['mtm_equity'].cummax()).min()
+        win_rate = (trade_df['net_ret'] > 0).mean() if not trade_df.empty else 0
+        avg_holding_time = trade_df['minutes'].mean() / 60.0 if not trade_df.empty else 0
+        
+        print(f"  - Total Trades Executed: {len(trade_df)}")
+        print(f"  - Win Rate (Post-Meta Filter): {win_rate:.2%}")
+        print(f"  - Avg Position Holding Time: {avg_holding_time:.2f} Hours")
+        print(f"  - Average Daily Capital Exposure: {port_df['exposure'].mean():.2%}")
+        print(f"  - Final Mark-to-Market Equity: ${final_equity:,.2f} (from $10k)")
+        print(f"  - True Compound Annual Growth Rate (CAGR): {cagr:.2%}")
+        print(f"  - Maximum Drawdown: {max_dd:.2%}")
+        print(f"  - Annualized Sharpe Ratio: {sharpe:.2f}")
+
+if __name__ == "__main__":
+    main()
+
+
+=== ./config/.user.yml ===
+id: d3e62f50-9703-472c-a1a2-d5bc20eb26d7
+
+
+=== ./config/profiles.yml ===
+crypto_features:
+  outputs:
+    prod:
+      type: bigquery
+      method: service-account
+      project: parnasa-498503
+      dataset: market_data
+      threads: 4
+      keyfile: /home/skybullet1987/quant_pipeline/bq_key.json
+      timeout_seconds: 300
+      priority: interactive
+      retries: 1
+  target: prod
+
+
+=== ./train_production_models.py ===
+import pandas as pd
+import numpy as np
+from catboost import CatBoostClassifier, Pool
+from google.cloud import bigquery
+from hmmlearn.hmm import GaussianHMM
+from sklearn.model_selection import KFold
+import joblib
+import warnings
+import os
+
+warnings.filterwarnings("ignore")
+
+PROJECT_ID = "parnasa-498503"
+MODEL_DIR = "/home/skybullet1987/quant_pipeline/production_models"
+os.makedirs(MODEL_DIR, exist_ok=True)
+
+CAT_COLS_BASE = ['ticker', 'hour_of_day', 'day_of_week', 'is_weekend', 'market_session', 'btc_above_sma50']
+FEATURE_COLS_NUM = [
+    'market_breadth_sma20', 'top_breakout_breadth', 'pos_bar_count_6p',
+    'candle_body_pct', 'candle_upper_wick_pct', 'candle_lower_wick_pct',
+    'rank_eth_btc_spread_20p', 'rank_btc_dominance_spread',
+    'rank_gk_vol_20p', 'rank_vol_term_structure', 'rank_gk_vol_zscore', 'rank_vol_compression_ratio',
+    'rank_mom_24h', 'rank_mom_7d', 'rank_mom_accel_24h', 'rank_mom_ratio_24h_7d',
+    'rank_dist_to_120p_high', 'rank_relative_vol_120p', 'rank_rolling_sharpe_20p', 'rank_atr_pct_20'
+]
+
+def load_data():
+    print("1. Ingesting 5-Year Feature Matrix (620k Rows)...")
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*,
+            p.exit_time,
+            p.exit_reason
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+            ON f.timestamp = p.signal_time AND f.ticker = p.ticker
+        WHERE f.target_tbm_upper_hit IS NOT NULL
+        ORDER BY f.timestamp ASC
+    """
+    df = client.query(query).to_dataframe(create_bqstorage_client=True)
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.dropna(subset=['exit_reason', 'exit_time']).copy()
+    return df
+
+def main():
+    df = load_data()
+    df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
+    
+    df['target'] = (df['exit_reason'] == 'TP_HIT').astype(int)
+
+    timestamps = df['timestamp'].sort_values().unique()
+    split_idx = int(len(timestamps) * 0.85)
+    train_ts = timestamps[:split_idx]
+    df_train = df[df['timestamp'].isin(train_ts)].copy().reset_index(drop=True)
+
+    print("2. Training & Exporting HMM Macro Filter...")
+    hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
+    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=500, random_state=42)
+    hmm_model.fit(df_train[hmm_features].values)
+    joblib.dump(hmm_model, f"{MODEL_DIR}/hmm_macro.pkl")
+    
+    df_train['hmm_regime'] = hmm_model.predict(df_train[hmm_features].values).astype(str)
+
+    all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
+    all_features = FEATURE_COLS_NUM + all_cat_cols
+    
+    for col in all_cat_cols:
+        df_train[col] = df_train[col].astype(str)
+
+    print("3. Deep-Training 4 Regime Experts (1000 Iterations, Balanced Weights)...")
+    df_train['primary_prob'] = 0.0
+    kf = KFold(n_splits=5, shuffle=True, random_state=42)
+
+    for regime in ['0', '1', '2', '3']:
+        regime_idx = df_train[df_train['hmm_regime'] == regime].index
+        if len(regime_idx) > 100:
+            print(f"   -> Cross-Validating Regime {regime} ({len(regime_idx)} samples)...")
+            for train_i, val_i in kf.split(regime_idx):
+                tr_idx = regime_idx[train_i]
+                val_idx = regime_idx[val_i]
+                
+                model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', early_stopping_rounds=50, learning_rate=0.03, verbose=0, random_seed=42)
+                model.fit(df_train.loc[tr_idx, all_features], df_train.loc[tr_idx, 'target'], cat_features=all_cat_cols, eval_set=(df_train.loc[val_idx, all_features], df_train.loc[val_idx, 'target']))
+                df_train.loc[val_idx, 'primary_prob'] = model.predict_proba(df_train.loc[val_idx, all_features])[:, 1]
+                
+            final_model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', learning_rate=0.03, verbose=0, random_seed=42)
+            final_model.fit(df_train.loc[regime_idx, all_features], df_train.loc[regime_idx, 'target'], cat_features=all_cat_cols)
+            final_model.save_model(f"{MODEL_DIR}/regime_{regime}_expert.cbm")
+            print(f"   -> Saved: {MODEL_DIR}/regime_{regime}_expert.cbm")
+
+    print("4. Training & Exporting Meta-Labeler...")
+    meta_train = df_train[df_train['primary_prob'] > 0.50].copy()
+    meta_features = FEATURE_COLS_NUM + ['primary_prob']
+    
+    meta_model = CatBoostClassifier(iterations=1000, depth=5, early_stopping_rounds=100, learning_rate=0.02, verbose=0, random_seed=42)
+    meta_model.fit(meta_train[meta_features], meta_train['target'], eval_set=(meta_train[meta_features], meta_train['target']))
+    meta_model.save_model(f"{MODEL_DIR}/meta_labeler.cbm")
+    print(f"   -> Saved: {MODEL_DIR}/meta_labeler.cbm")
+    
+    print("\n[SUCCESS] Production Models Compiled and Saved to Disk.")
+
+if __name__ == "__main__":
+    main()

@@ -1,10 +1,11 @@
 import pandas as pd
 import numpy as np
-from catboost import CatBoostClassifier, Pool
+from catboost import CatBoostClassifier
 from google.cloud import bigquery
 from hmmlearn.hmm import GaussianHMM
-from sklearn.model_selection import StratifiedKFold
+from sklearn.isotonic import IsotonicRegression
 import joblib
+import json
 import warnings
 import os
 
@@ -25,13 +26,11 @@ FEATURE_COLS_NUM = [
 ]
 
 def load_data():
-    print("1. Ingesting 5-Year Feature Matrix (620k Rows)...")
+    print("1. Ingesting 5-Year Feature Matrix...")
     client = bigquery.Client(project=PROJECT_ID)
     query = f"""
         SELECT 
-            f.*,
-            p.exit_time,
-            p.exit_reason
+            f.*, p.exit_time, p.exit_reason, p.minutes_in_trade
         FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
         INNER JOIN `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
             ON f.timestamp = p.signal_time AND f.ticker = p.ticker
@@ -40,78 +39,95 @@ def load_data():
     """
     df = client.query(query).to_dataframe(create_bqstorage_client=True)
     df['timestamp'] = pd.to_datetime(df['timestamp'])
-    df = df.dropna(subset=['exit_reason', 'exit_time']).copy()
-    return df
+    return df.dropna(subset=['exit_reason', 'exit_time', 'minutes_in_trade']).copy()
 
 def main():
+    param_path = f"{MODEL_DIR}/optimal_params.json"
+    if not os.path.exists(param_path):
+        print("ERROR: optimal_params.json not found.")
+        return
+        
+    with open(param_path, "r") as f:
+        optimal_params = json.load(f)
+        
     df = load_data()
     df = df[(df['rank_gk_vol_zscore'] >= 0.40) | (df['rank_relative_vol_120p'] >= 0.50)].copy().reset_index(drop=True)
-    
     df['target'] = (df['exit_reason'] == 'TP_HIT').astype(int)
+
+    # Dynamic Purge Calculation (Assuming 4H/240m bars)
+    max_minutes = df['minutes_in_trade'].max()
+    purge_bars = int(np.ceil(max_minutes / 240.0))
+    print(f"-> Dynamic Purge Set: {purge_bars} Bars (Max Hold: {max_minutes/60:.1f} Hours)")
 
     timestamps = df['timestamp'].sort_values().unique()
     split_idx = int(len(timestamps) * 0.85)
     train_ts = timestamps[:split_idx]
     df_train = df[df['timestamp'].isin(train_ts)].copy().reset_index(drop=True)
 
-    print("2. Training & Exporting HMM Macro Filter...")
+    print("\n2. Training & Exporting HMM Macro Filter...")
     hmm_features = ['rank_gk_vol_zscore', 'rank_mom_7d', 'market_breadth_sma20']
-    hmm_model = GaussianHMM(n_components=4, covariance_type="full", n_iter=500, random_state=42)
+    hmm_params = optimal_params.get("hmm_macro", {'n_components': 4, 'covariance_type': 'full'})
+    hmm_model = GaussianHMM(n_components=3, covariance_type="full", n_iter=500, random_state=42)
     hmm_model.fit(df_train[hmm_features].values)
     joblib.dump(hmm_model, f"{MODEL_DIR}/hmm_macro.pkl")
-    
     df_train['hmm_regime'] = hmm_model.predict(df_train[hmm_features].values).astype(str)
 
     all_cat_cols = CAT_COLS_BASE + ['hmm_regime']
     all_features = FEATURE_COLS_NUM + all_cat_cols
-    
-    for col in all_cat_cols:
-        df_train[col] = df_train[col].astype(str)
+    for col in all_cat_cols: df_train[col] = df_train[col].astype(str)
 
-    print("3. Deep-Training 4 Regime Experts (1000 Iterations, Balanced Weights)...")
+    print("\n3. Deep-Training Regime Experts (Purged Walk-Forward)...")
     df_train['primary_prob'] = 0.0
     
-    # THE FIX: Stratified K-Fold to maintain exact Win/Loss ratios in every fold
-    kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-    for regime in ['0', '1', '2', '3']:
+    unique_regimes = df_train['hmm_regime'].unique()
+    for regime in unique_regimes:
         regime_idx = df_train[df_train['hmm_regime'] == regime].index
+        expert_params = optimal_params.get(f"regime_{regime}")
         
-        # Ensure we have enough data AND more than just 1 class outcome
-        if len(regime_idx) > 100 and df_train.loc[regime_idx, 'target'].nunique() > 1:
-            print(f"   -> Cross-Validating Regime {regime} ({len(regime_idx)} samples)...")
+        if expert_params and len(regime_idx) > 200:
+            print(f"   -> Processing Regime {regime}...")
+            expert_params.update({'auto_class_weights': 'Balanced', 'verbose': 0, 'random_seed': 42})
             
-            # Pass the target variable to StratifiedKFold so it can balance the splits
-            for train_i, val_i in kf.split(regime_idx, df_train.loc[regime_idx, 'target']):
-                tr_idx = regime_idx[train_i]
-                val_idx = regime_idx[val_i]
+            # Simple chronological split to generate out-of-sample probabilities for the Meta-Labeler
+            r_timestamps = df_train.loc[regime_idx, 'timestamp'].sort_values().unique()
+            for i in range(1, 4):
+                split_point = int(len(r_timestamps) * (i / 4.0))
+                train_t = r_timestamps[:split_point]
+                test_t = r_timestamps[split_point + purge_bars : int(len(r_timestamps) * ((i+1) / 4.0))]
                 
-                model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', early_stopping_rounds=50, learning_rate=0.03, verbose=0, random_seed=42)
-                model.fit(df_train.loc[tr_idx, all_features], df_train.loc[tr_idx, 'target'], cat_features=all_cat_cols, eval_set=(df_train.loc[val_idx, all_features], df_train.loc[val_idx, 'target']))
-                df_train.loc[val_idx, 'primary_prob'] = model.predict_proba(df_train.loc[val_idx, all_features])[:, 1]
+                tr_mask = df_train['timestamp'].isin(train_t) & (df_train['hmm_regime'] == regime)
+                te_mask = df_train['timestamp'].isin(test_t) & (df_train['hmm_regime'] == regime)
                 
-            final_model = CatBoostClassifier(iterations=1000, depth=5, auto_class_weights='Balanced', learning_rate=0.03, verbose=0, random_seed=42)
+                if tr_mask.sum() > 50 and te_mask.sum() > 10:
+                    model = CatBoostClassifier(**expert_params)
+                    model.fit(df_train.loc[tr_mask, all_features], df_train.loc[tr_mask, 'target'], cat_features=all_cat_cols)
+                    df_train.loc[te_mask, 'primary_prob'] = model.predict_proba(df_train.loc[te_mask, all_features])[:, 1]
+            
+            # Train final production model on 100% of the training block
+            final_model = CatBoostClassifier(**expert_params)
             final_model.fit(df_train.loc[regime_idx, all_features], df_train.loc[regime_idx, 'target'], cat_features=all_cat_cols)
             final_model.save_model(f"{MODEL_DIR}/regime_{regime}_expert.cbm")
-            print(f"   -> Saved: {MODEL_DIR}/regime_{regime}_expert.cbm")
-        else:
-            print(f"   -> Skipping Regime {regime} (Insufficient samples or only 1 target class)")
-
-    print("4. Training & Exporting Meta-Labeler...")
-    meta_train = df_train[df_train['primary_prob'] > 0.50].copy()
+            
+    print("\n4. Training Meta-Labeler & Probability Calibration...")
+    meta_train = df_train[df_train['primary_prob'] > 0.50].copy().dropna(subset=['primary_prob'])
+    meta_params = optimal_params.get("meta_labeler")
     
-    # Final guardrail for the Meta-Labeler
-    if len(meta_train) > 50 and meta_train['target'].nunique() > 1:
+    if meta_params and len(meta_train) > 100:
         meta_features = FEATURE_COLS_NUM + ['primary_prob']
+        meta_params.update({'verbose': 0, 'random_seed': 42})
         
-        meta_model = CatBoostClassifier(iterations=1000, depth=5, early_stopping_rounds=100, learning_rate=0.02, verbose=0, random_seed=42)
-        meta_model.fit(meta_train[meta_features], meta_train['target'], eval_set=(meta_train[meta_features], meta_train['target']))
+        meta_model = CatBoostClassifier(**meta_params)
+        meta_model.fit(meta_train[meta_features], meta_train['target'])
         meta_model.save_model(f"{MODEL_DIR}/meta_labeler.cbm")
-        print(f"   -> Saved: {MODEL_DIR}/meta_labeler.cbm")
-    else:
-        print("   -> WARNING: Meta-Labeler skipped (Insufficient data or only 1 target class)")
+        
+        # Fit Isotonic Regression to map raw scores to true probabilities
+        raw_preds = meta_model.predict_proba(meta_train[meta_features])[:, 1]
+        calibrator = IsotonicRegression(out_of_bounds='clip')
+        calibrator.fit(raw_preds, meta_train['target'])
+        joblib.dump(calibrator, f"{MODEL_DIR}/meta_calibrator.pkl")
+        print(f"   -> Calibrator saved to {MODEL_DIR}/meta_calibrator.pkl")
     
-    print("\n[SUCCESS] Production Models Compiled and Saved to Disk.")
+    print("\n[SUCCESS] Fully Calibrated Production Models Exported.")
 
 if __name__ == "__main__":
     main()

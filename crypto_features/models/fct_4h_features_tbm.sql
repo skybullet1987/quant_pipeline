@@ -1,3 +1,4 @@
+SELECT * FROM (
 {{ config(
     materialized='table',
     partition_by={
@@ -231,3 +232,7 @@ ranked_features AS (
 )
 
 SELECT * FROM ranked_features WHERE timestamp IS NOT NULL AND atr_20 IS NOT NULL
+
+) AS base_query
+WHERE close > 0.000001
+  AND atr_20 < (close * 0.5)

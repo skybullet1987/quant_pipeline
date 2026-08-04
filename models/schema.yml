@@ -1,0 +1,51 @@
+version: 2
+
+sources:
+  - name: market_data
+    database: parnasa-498503
+    schema: market_data
+    tables:
+      - name: raw_1m_ohlcv_v1
+      - name: raw_open_interest
+      - name: raw_funding_rate
+
+models:
+  - name: stg_ohlcv
+    description: "Cleaned and cast 1-minute OHLCV price action."
+    columns:
+      - name: timestamp
+        tests:
+          - not_null
+      - name: ticker
+        tests:
+          - not_null
+
+  - name: stg_open_interest
+    description: "Cleaned open interest and derivatives metrics."
+    columns:
+      - name: timestamp
+        tests:
+          - not_null
+
+  - name: fct_systemic_stress
+    description: "Ecosystem-wide leverage acceleration and funding dispersion."
+    columns:
+      - name: timestamp
+        tests:
+          - not_null
+          - unique
+
+  - name: fct_synthetic_liquidations
+    description: "Synthetic liquidation cascade flags and classifications."
+    columns:
+      - name: timestamp
+        tests:
+          - not_null
+      - name: ticker
+        tests:
+          - not_null
+      - name: cascade_type
+        tests:
+          - accepted_values:
+              arguments:
+                values: ['LONG_FLUSH', 'SHORT_SQUEEZE', 'NONE']
