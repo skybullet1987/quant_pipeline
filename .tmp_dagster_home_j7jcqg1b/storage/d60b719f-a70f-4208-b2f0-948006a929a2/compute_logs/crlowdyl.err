@@ -1,0 +1,9 @@
+[32m2026-08-10 23:02:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - LOGS_CAPTURED - Capturing logs for process (pid: 148012).
+[32m2026-08-10 23:02:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - crypto_features_dbt - STEP_START - Started execution of step "crypto_features_dbt".
+/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/sqlglot/tokens.py:21: UserWarning: sqlglot[rs] is deprecated and no longer compatible with sqlglot. Please use sqlglotc instead for faster parsing: pip install sqlglot[c]
+  warnings.warn(
+[32m2026-08-10 23:02:58 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - crypto_features_dbt - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-08-10 23:02:58 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - crypto_features_dbt - Writing file at: /home/skybullet1987/quant_pipeline/.tmp_dagster_home_j7jcqg1b/storage/crypto_features_dbt using PickledObjectFilesystemIOManager...
+[32m2026-08-10 23:02:58 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - crypto_features_dbt - ASSET_MATERIALIZATION - Materialized value crypto_features_dbt.
+[32m2026-08-10 23:02:58 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - crypto_features_dbt - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+[32m2026-08-10 23:02:58 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148012 - crypto_features_dbt - STEP_SUCCESS - Finished execution of step "crypto_features_dbt" in 40.79s.

@@ -1,0 +1,24 @@
+[0m23:32:04  Running with dbt=1.12.0
+[0m23:32:06  Registered adapter: bigquery=1.12.0
+[0m23:32:07  Found 7 models, 3 sources, 561 macros
+[0m23:32:07  
+[0m23:32:07  Concurrency: 4 threads (target='prod')
+[0m23:32:07  
+[0m23:32:07  2 of 6 START sql table model market_data.fct_timesfm_features .................. [RUN]
+[0m23:32:07  1 of 6 START sql table model market_data.fct_4h_features_tbm ................... [RUN]
+[0m23:32:07  4 of 6 START sql view model market_data.stg_ohlcv .............................. [RUN]
+[0m23:32:07  3 of 6 START sql view model market_data.stg_densified_ohlcv .................... [RUN]
+[0m23:32:09  3 of 6 OK created sql view model market_data.stg_densified_ohlcv ............... [[32mCREATE VIEW (0 processed)[0m in 1.29s]
+[0m23:32:09  5 of 6 START sql view model market_data.fct_liquidation_features ............... [RUN]
+[0m23:32:09  4 of 6 OK created sql view model market_data.stg_ohlcv ......................... [[32mCREATE VIEW (0 processed)[0m in 1.32s]
+[0m23:32:09  6 of 6 START sql view model market_data.stg_1m_cleaned ......................... [RUN]
+[0m23:32:10  5 of 6 OK created sql view model market_data.fct_liquidation_features .......... [[32mCREATE VIEW (0 processed)[0m in 1.04s]
+[0m23:32:10  6 of 6 OK created sql view model market_data.stg_1m_cleaned .................... [[32mCREATE VIEW (0 processed)[0m in 1.05s]
+[0m23:32:11  2 of 6 OK created sql table model market_data.fct_timesfm_features ............. [[32mCREATE TABLE (13.0k rows, 517.9 KiB processed)[0m in 3.46s]
+[0m23:32:40  1 of 6 OK created sql table model market_data.fct_4h_features_tbm .............. [[32mCREATE TABLE (620.3k rows, 131.9 MiB processed)[0m in 32.93s]
+[0m23:32:40  
+[0m23:32:40  Finished running 2 table models, 4 view models in 0 hours 0 minutes and 33.85 seconds (33.85s).
+[0m23:32:41  
+[0m23:32:41  [32mCompleted successfully[0m
+[0m23:32:41  
+[0m23:32:41  Done. PASS=6 WARN=0 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6

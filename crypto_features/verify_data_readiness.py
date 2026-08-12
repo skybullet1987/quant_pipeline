@@ -67,40 +67,38 @@ def run_suite():
             print(f"  -> FAILED: Invalid exit states or NULL values detected! ({invalid_reasons})\n")
             passed_all = False
 
-        # Check TIMEOUT return dynamics
-        timeout_row = df_states[df_states['exit_reason'] == 'TIMEOUT']
-        if not timeout_row.empty:
-            avg_timeout_ret = timeout_row['avg_return'].values[0]
-            if abs(avg_timeout_ret) > 0.0001:
-                print(f"  -> TIMEOUT Check: Valid dynamic path evaluation (Avg Yield: {avg_timeout_ret:.4%}).\n")
-            else:
-                print("  -> WARNING: TIMEOUT returns appear static or uncalculated!\n")
-
     except Exception as e:
         print(f"  -> FAILED: Could not query fct_exact_path_resolution: {e}\n")
         passed_all = False
 
     # ------------------------------------------------------------------------
-    # ASSERTION 3: Target Barrier Symmetry Check
+    # ASSERTION 3: Target Barrier ATR Symmetry Check
     # ------------------------------------------------------------------------
+    q_atr_sym = f"""
+        SELECT 
+            AVG(ABS(target_price_1_5_atr - entry_price) / NULLIF(atr_20, 0)) AS avg_tp_atr_multiple,
+            AVG(ABS(entry_price - stop_loss_1_5_atr) / NULLIF(atr_20, 0)) AS avg_sl_atr_multiple
+        FROM `{PROJECT_ID}.market_data.fct_exact_path_resolution` p
+        INNER JOIN `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+            ON p.signal_time = f.timestamp AND p.ticker = f.ticker
+        WHERE p.exit_reason IN ('TP_HIT', 'SL_HIT')
+    """
     try:
-        tp_ret = df_states[df_states['exit_reason'] == 'TP_HIT']['avg_return'].values
-        sl_ret = df_states[df_states['exit_reason'] == 'SL_HIT']['avg_return'].values
+        df_sym = client.query(q_atr_sym).to_dataframe()
+        tp_mult = df_sym['avg_tp_atr_multiple'].iloc[0]
+        sl_mult = df_sym['avg_sl_atr_multiple'].iloc[0]
+        delta_mult = abs(tp_mult - sl_mult)
 
-        print("[ASSERTION 3] Barrier Symmetry Test (+1.5 / -1.5 ATR):")
-        if len(tp_ret) > 0 and len(sl_ret) > 0:
-            tp_val = abs(tp_ret[0])
-            sl_val = abs(sl_ret[0])
-            delta = abs(tp_val - sl_val)
-            print(f"  - Avg TP Gross Return: {tp_ret[0]:.4%}")
-            print(f"  - Avg SL Gross Return: {sl_ret[0]:.4%}")
-            print(f"  - Delta: {delta:.4%}")
+        print("[ASSERTION 3] Barrier ATR Multiple Symmetry Test (Target: 1.5x ATR):")
+        print(f"  - Avg TP ATR Multiple: {tp_mult:.4f}x")
+        print(f"  - Avg SL ATR Multiple: {sl_mult:.4f}x")
+        print(f"  - Multiple Delta: {delta_mult:.4f}")
 
-            if delta <= 0.0005:
-                print("  -> PASSED: Targets are strictly symmetric within 0.05% tolerance.\n")
-            else:
-                print("  -> FAILED: Asymmetry detected between upper/lower barriers!\n")
-                passed_all = False
+        if delta_mult <= 0.01:
+            print("  -> PASSED: ATR barriers are mathematically symmetric (1.5x / 1.5x).\n")
+        else:
+            print("  -> FAILED: Asymmetry detected in ATR barrier construction!\n")
+            passed_all = False
     except Exception as e:
         print(f"  -> FAILED: Symmetry evaluation error: {e}\n")
         passed_all = False

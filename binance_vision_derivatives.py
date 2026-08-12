@@ -211,7 +211,7 @@ def main():
     if not universe:
         return
         
-    for dataset in ['fundingRate', 'metrics', 'liquidationSnapshot']:
+    for dataset in ['liquidationSnapshot']:
         process_dataset(client, universe, dataset)
 
 if __name__ == "__main__":

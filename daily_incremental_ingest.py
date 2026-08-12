@@ -61,7 +61,8 @@ def main():
 
     try:
         # STEP 1: Sync latest market data from Binance API
-        run_command_live(f"{PYTHON_EXEC} sync_latest_ohlcv.py", "Incremental Market Data Sync")
+        run_command_live(f"{PYTHON_EXEC} sync_latest_ohlcv.py"
+        run_command_live(f"{PYTHON_EXEC} sync_1h_ohlcv.py", "1H Market Data Sync")", "Incremental Market Data Sync")
 
         # STEP 2: Execute dbt transformation models (Includes BQML TimesFM 2.5)
         crypto_features_dir = os.path.join(PIPELINE_DIR, "crypto_features")

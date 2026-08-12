@@ -1,0 +1,18 @@
+[32m2026-08-11 01:32:46 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - LOGS_CAPTURED - Capturing logs for process (pid: 297821).
+[32m2026-08-11 01:32:46 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - hyperliquid_execution - STEP_START - Started execution of step "hyperliquid_execution".
+2026-08-11 01:32:48,161 [INFO] [HYPERLIQUID] Executing Decoupled Alpha/Execution Scan Cycle with Basis Telemetry...
+2026-08-11 01:32:50,649 [INFO] [HYPERLIQUID] Agent Wallet: 0xA426209CFb39A3040aE9316d25f5875584236955
+2026-08-11 01:32:50,649 [INFO] [HYPERLIQUID] Master Account (Equity/Positions): 0x9703B71686219D34869e8FB89a93263f9e0d50A5
+2026-08-11 01:32:50,649 [INFO] [HYPERLIQUID] Target Endpoint: TESTNET (https://api.hyperliquid-testnet.xyz)
+2026-08-11 01:32:52,595 [INFO] [HYPERLIQUID] Loaded metadata for 210 Hyperliquid assets.
+2026-08-11 01:32:53,322 [INFO] [HYPERLIQUID] Equity: $25.63 | Open Positions: 0 | DD Multiplier: 1.0x
+2026-08-11 01:32:53,563 [INFO] [HYPERLIQUID] [GARBAGE COLLECTOR] No resting orders found on exchange.
+2026-08-11 01:33:41,668 [WARNING] [HYPERLIQUID] Coin 'XTZ' not supported on Hyperliquid. Skipping order.
+2026-08-11 01:33:41,911 [WARNING] [HYPERLIQUID] Coin 'BAND' not supported on Hyperliquid. Skipping order.
+2026-08-11 01:33:42,636 [WARNING] [HYPERLIQUID] Coin '1INCH' not supported on Hyperliquid. Skipping order.
+2026-08-11 01:33:42,881 [INFO] [HYPERLIQUID] Pass completed cleanly. Trades submitted: 0
+[32m2026-08-11 01:33:43 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - hyperliquid_execution - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-08-11 01:33:43 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - hyperliquid_execution - Writing file at: /home/skybullet1987/quant_pipeline/.tmp_dagster_home_3qy_b1ks/storage/hyperliquid_execution using PickledObjectFilesystemIOManager...
+[32m2026-08-11 01:33:43 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - hyperliquid_execution - ASSET_MATERIALIZATION - Materialized value hyperliquid_execution.
+[32m2026-08-11 01:33:43 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - hyperliquid_execution - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+[32m2026-08-11 01:33:43 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - 04f35ca7-4932-41c9-b4a5-89a2be2cec2e - 297821 - hyperliquid_execution - STEP_SUCCESS - Finished execution of step "hyperliquid_execution" in 57.38s.

@@ -1,0 +1,37 @@
+[32m2026-08-11 01:17:16 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - e7a6685d-2333-401a-adc0-3e83b3fc8a8d - 282663 - LOGS_CAPTURED - Capturing logs for process (pid: 282663).
+[32m2026-08-11 01:17:16 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - e7a6685d-2333-401a-adc0-3e83b3fc8a8d - 282663 - crypto_features_dbt - STEP_START - Started execution of step "crypto_features_dbt".
+/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/sqlglot/tokens.py:21: UserWarning: sqlglot[rs] is deprecated and no longer compatible with sqlglot. Please use sqlglotc instead for faster parsing: pip install sqlglot[c]
+  warnings.warn(
+[32m2026-08-11 01:17:28 +0000[0m - dagster - [34mERROR[0m - [31mtrading_pipeline_job - e7a6685d-2333-401a-adc0-3e83b3fc8a8d - 282663 - crypto_features_dbt - STEP_FAILURE - Execution of step "crypto_features_dbt" failed.
+
+dagster._core.errors.DagsterExecutionStepExecutionError: Error occurred while executing op "crypto_features_dbt"::
+
+subprocess.CalledProcessError: Command '['dbt', 'run', '--exclude', 'fct_exact_path_resolution', '--project-dir', '/home/skybullet1987/quant_pipeline/crypto_features']' returned non-zero exit status 1.
+
+Stack Trace:
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/utils.py", line 57, in op_execution_error_boundary
+    yield
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_utils/__init__.py", line 394, in iterate_with_context
+    next_output = next(iterator)
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/compute_generator.py", line 136, in _coerce_op_compute_fn_to_iterator
+    result = invoke_compute_fn(
+        fn, context, kwargs, context_arg_provided, config_arg_class, resource_arg_mapping
+    )
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/compute_generator.py", line 116, in invoke_compute_fn
+    return fn(context, **args_to_pass) if context_arg_provided else fn(**args_to_pass)
+                                                                    ~~^^^^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/dagster_pipeline.py", line 37, in crypto_features_dbt
+    subprocess.run([
+    ~~~~~~~~~~~~~~^^
+        "dbt", "run",
+        ^^^^^^^^^^^^^
+        "--exclude", "fct_exact_path_resolution",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        "--project-dir", DBT_PROJECT_DIR
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ], check=True)
+    ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+[0m

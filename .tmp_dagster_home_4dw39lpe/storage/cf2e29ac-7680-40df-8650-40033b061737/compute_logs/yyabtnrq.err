@@ -1,0 +1,103 @@
+[32m2026-08-10 22:46:55 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - cf2e29ac-7680-40df-8650-40033b061737 - 132560 - LOGS_CAPTURED - Capturing logs for process (pid: 132560).
+[32m2026-08-10 22:46:55 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - cf2e29ac-7680-40df-8650-40033b061737 - 132560 - crypto_features_dbt - STEP_START - Started execution of step "crypto_features_dbt".
+Traceback (most recent call last):
+  File "/home/skybullet1987/quant_pipeline/venv/bin/dbt", line 5, in <module>
+    from dbt.cli.main import cli
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt/cli/__init__.py", line 1, in <module>
+    from .main import cli as dbt_cli  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt/cli/main.py", line 11, in <module>
+    from dbt.adapters.factory import register_adapter
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt/adapters/factory.py", line 9, in <module>
+    from dbt_common.events.functions import fire_event
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/events/__init__.py", line 2, in <module>
+    from dbt_common.events.event_manager_client import get_event_manager
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/events/event_manager_client.py", line 5, in <module>
+    from dbt_common.events.event_manager import IEventManager, EventManager
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/events/event_manager.py", line 13, in <module>
+    from dbt_common.events.logger import LoggerConfig, _Logger, _TextLogger, _JsonLogger, LineFormat
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/events/logger.py", line 14, in <module>
+    from dbt_common.utils.encoding import ForgivingJSONEncoder
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/utils/__init__.py", line 9, in <module>
+    from dbt_common.utils.dict import (
+    ...<6 lines>...
+    )
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/utils/dict.py", line 5, in <module>
+    from dbt_common.exceptions import DbtConfigError, RecursionError
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/exceptions/__init__.py", line 1, in <module>
+    from dbt_common.exceptions.base import *  # noqa
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/exceptions/base.py", line 6, in <module>
+    from dbt_common.dataclass_schema import ValidationError
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dbt_common/dataclass_schema.py", line 15, in <module>
+    from mashumaro.jsonschema import build_json_schema
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/jsonschema/__init__.py", line 1, in <module>
+    from .builder import JSONSchemaBuilder, build_json_schema
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/jsonschema/builder.py", line 5, in <module>
+    from mashumaro.jsonschema.models import Context, JSONSchema
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/jsonschema/models.py", line 178, in <module>
+    class JSONObjectSchema(JSONSchema):
+        type: Optional[JSONSchemaInstanceType] = JSONSchemaInstanceType.OBJECT
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/mixins/dict.py", line 25, in __init_subclass__
+    compile_mixin_unpacker(cls, **builder_params["unpacker"])
+    ~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/core/meta/mixin.py", line 49, in compile_mixin_unpacker
+    builder.add_unpack_method()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/core/meta/code/builder.py", line 586, in add_unpack_method
+    self._add_unpack_method_lines(method_name)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/core/meta/code/builder.py", line 491, in _add_unpack_method_lines
+    ).build(
+      ~~~~~^
+        fname=fname,
+        ^^^^^^^^^^^^
+    ...<2 lines>...
+        alias=alias,
+        ^^^^^^^^^^^^
+    )
+    ^
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/core/meta/code/builder.py", line 1332, in build
+    unpacked_value = UnpackerRegistry.get(
+        ValueSpec(
+    ...<8 lines>...
+        )
+    )
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/mashumaro/core/meta/types/common.py", line 241, in get
+    raise UnserializableField(
+        spec.field_ctx.name, spec.type, spec.builder.cls
+    )
+mashumaro.exceptions.UnserializableField: Field "schema" of type Optional[str] in JSONObjectSchema is not serializable
+[32m2026-08-10 22:46:56 +0000[0m - dagster - [34mERROR[0m - [31mtrading_pipeline_job - cf2e29ac-7680-40df-8650-40033b061737 - 132560 - crypto_features_dbt - STEP_FAILURE - Execution of step "crypto_features_dbt" failed.
+
+dagster._core.errors.DagsterExecutionStepExecutionError: Error occurred while executing op "crypto_features_dbt"::
+
+subprocess.CalledProcessError: Command '['dbt', 'run', '--exclude', 'fct_exact_path_resolution', '--project-dir', '/home/skybullet1987/quant_pipeline/crypto_features']' returned non-zero exit status 1.
+
+Stack Trace:
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/utils.py", line 57, in op_execution_error_boundary
+    yield
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_utils/__init__.py", line 394, in iterate_with_context
+    next_output = next(iterator)
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/compute_generator.py", line 136, in _coerce_op_compute_fn_to_iterator
+    result = invoke_compute_fn(
+        fn, context, kwargs, context_arg_provided, config_arg_class, resource_arg_mapping
+    )
+  File "/home/skybullet1987/quant_pipeline/venv/lib/python3.14/site-packages/dagster/_core/execution/plan/compute_generator.py", line 116, in invoke_compute_fn
+    return fn(context, **args_to_pass) if context_arg_provided else fn(**args_to_pass)
+                                                                    ~~^^^^^^^^^^^^^^^^
+  File "/home/skybullet1987/quant_pipeline/dagster_pipeline.py", line 37, in crypto_features_dbt
+    subprocess.run([
+    ~~~~~~~~~~~~~~^^
+        "dbt", "run",
+        ^^^^^^^^^^^^^
+        "--exclude", "fct_exact_path_resolution",
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+        "--project-dir", DBT_PROJECT_DIR
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ], check=True)
+    ^^^^^^^^^^^^^^
+  File "/usr/lib/python3.14/subprocess.py", line 578, in run
+    raise CalledProcessError(retcode, process.args,
+                             output=stdout, stderr=stderr)
+[0m

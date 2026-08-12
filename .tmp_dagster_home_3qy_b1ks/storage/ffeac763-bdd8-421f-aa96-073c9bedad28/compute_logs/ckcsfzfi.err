@@ -1,0 +1,9 @@
+[32m2026-08-11 01:00:55 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - LOGS_CAPTURED - Capturing logs for process (pid: 266355).
+[32m2026-08-11 01:00:55 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - timesfm_forecast - STEP_START - Started execution of step "timesfm_forecast".
+2026-08-11 01:00:57,143 [INFO] Executing daily TimesFM 2.5 batch forecast...
+2026-08-11 01:02:31,833 [INFO] Daily TimesFM forecast successfully appended!
+[32m2026-08-11 01:02:32 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - timesfm_forecast - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-08-11 01:02:32 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - timesfm_forecast - Writing file at: /home/skybullet1987/quant_pipeline/.tmp_dagster_home_3qy_b1ks/storage/timesfm_forecast using PickledObjectFilesystemIOManager...
+[32m2026-08-11 01:02:32 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - timesfm_forecast - ASSET_MATERIALIZATION - Materialized value timesfm_forecast.
+[32m2026-08-11 01:02:32 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - timesfm_forecast - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+[32m2026-08-11 01:02:32 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - ffeac763-bdd8-421f-aa96-073c9bedad28 - 266355 - timesfm_forecast - STEP_SUCCESS - Finished execution of step "timesfm_forecast" in 1m36s.

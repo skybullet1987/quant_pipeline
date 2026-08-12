@@ -1,0 +1,32 @@
+[0m01:17:19  Running with dbt=1.12.0
+[0m01:17:21  Registered adapter: bigquery=1.12.0
+[0m01:17:22  Found 7 models, 3 sources, 561 macros
+[0m01:17:22  
+[0m01:17:22  Concurrency: 4 threads (target='prod')
+[0m01:17:22  
+[0m01:17:23  4 of 6 START sql view model market_data.stg_ohlcv .............................. [RUN]
+[0m01:17:23  1 of 6 START sql table model market_data.fct_4h_features_tbm ................... [RUN]
+[0m01:17:23  3 of 6 START sql view model market_data.stg_densified_ohlcv .................... [RUN]
+[0m01:17:23  2 of 6 START sql table model market_data.fct_timesfm_features .................. [RUN]
+[0m01:17:24  BigQuery adapter: https://console.cloud.google.com/bigquery?project=parnasa-498503&j=bq:EU:8be67bff-5638-4d5f-ab0b-2a87fc0ab5eb&page=queryresults
+[0m01:17:24  3 of 6 OK created sql view model market_data.stg_densified_ohlcv ............... [[32mCREATE VIEW (0 processed)[0m in 1.17s]
+[0m01:17:24  5 of 6 START sql view model market_data.fct_liquidation_features ............... [RUN]
+[0m01:17:24  4 of 6 OK created sql view model market_data.stg_ohlcv ......................... [[32mCREATE VIEW (0 processed)[0m in 1.30s]
+[0m01:17:24  6 of 6 START sql view model market_data.stg_1m_cleaned ......................... [RUN]
+[0m01:17:24  1 of 6 ERROR creating sql table model market_data.fct_4h_features_tbm .......... [[31mERROR[0m in 1.31s]
+[0m01:17:25  5 of 6 OK created sql view model market_data.fct_liquidation_features .......... [[32mCREATE VIEW (0 processed)[0m in 1.15s]
+[0m01:17:25  6 of 6 OK created sql view model market_data.stg_1m_cleaned .................... [[32mCREATE VIEW (0 processed)[0m in 1.08s]
+[0m01:17:26  2 of 6 OK created sql table model market_data.fct_timesfm_features ............. [[32mCREATE TABLE (30.4k rows, 1.2 MiB processed)[0m in 3.70s]
+[0m01:17:26  
+[0m01:17:26  Finished running 2 table models, 4 view models in 0 hours 0 minutes and 4.65 seconds (4.65s).
+[0m01:17:26  
+[0m01:17:26  [31mCompleted with 1 error, 0 partial successes, and 0 warnings:[0m
+[0m01:17:26  
+[0m01:17:26  [[31mERROR[0m]: in model fct_4h_features_tbm (models/fct_4h_features_tbm.sql)
+[0m01:17:26    Database Error in model fct_4h_features_tbm (models/fct_4h_features_tbm.sql)
+  Quota exceeded: Your table exceeded quota for Number of partition modifications to a column partitioned table. For more information, see https://cloud.google.com/bigquery/docs/troubleshoot-quotas
+  compiled code at target/run/crypto_features/models/fct_4h_features_tbm.sql
+[0m01:17:26  
+[0m01:17:26    compiled code at target/compiled/crypto_features/models/fct_4h_features_tbm.sql
+[0m01:17:26  
+[0m01:17:26  Done. PASS=5 WARN=0 ERROR=1 SKIP=0 NO-OP=0 REUSED=0 TOTAL=6

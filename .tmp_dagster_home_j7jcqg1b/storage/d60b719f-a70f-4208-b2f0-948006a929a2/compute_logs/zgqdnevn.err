@@ -1,0 +1,24 @@
+[32m2026-08-10 23:03:01 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - LOGS_CAPTURED - Capturing logs for process (pid: 148767).
+[32m2026-08-10 23:03:01 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - hyperliquid_execution - STEP_START - Started execution of step "hyperliquid_execution".
+2026-08-10 23:03:03,964 [INFO] [HYPERLIQUID] Executing Decoupled Alpha/Execution Scan Cycle with Basis Telemetry...
+2026-08-10 23:03:07,436 [INFO] [HYPERLIQUID] Agent Wallet: 0xA426209CFb39A3040aE9316d25f5875584236955
+2026-08-10 23:03:07,437 [INFO] [HYPERLIQUID] Master Account (Equity/Positions): 0x9703B71686219D34869e8FB89a93263f9e0d50A5
+2026-08-10 23:03:07,437 [INFO] [HYPERLIQUID] Target Endpoint: TESTNET (https://api.hyperliquid-testnet.xyz)
+2026-08-10 23:03:09,633 [INFO] [HYPERLIQUID] Loaded metadata for 210 Hyperliquid assets.
+2026-08-10 23:03:10,847 [INFO] [HYPERLIQUID] Equity: $936.63 | Open Positions: 0 | DD Multiplier: 1.0x
+2026-08-10 23:03:11,088 [INFO] [HYPERLIQUID] [GARBAGE COLLECTOR] No resting orders found on exchange.
+2026-08-10 23:04:08,715 [WARNING] [HYPERLIQUID] Coin 'BAND' not supported on Hyperliquid. Skipping order.
+2026-08-10 23:04:09,199 [WARNING] [HYPERLIQUID] Coin 'ICX' not supported on Hyperliquid. Skipping order.
+2026-08-10 23:04:09,685 [WARNING] [HYPERLIQUID] Coin 'NMR' not supported on Hyperliquid. Skipping order.
+2026-08-10 23:04:12,404 [INFO] [HYPERLIQUID] Placing Order: [SELL] SOL | Sz: 3.3 ($250.61) @ $76.1655
+2026-08-10 23:04:13,363 [ERROR] [HYPERLIQUID] Hyperliquid Order Rejected for SOL: Price must be divisible by tick size. asset=0
+2026-08-10 23:04:15,048 [INFO] [HYPERLIQUID] Placing Order: [SELL] CHZ | Sz: 3690.0 ($164.39) @ $0.0152
+2026-08-10 23:04:15,987 [ERROR] [HYPERLIQUID] Hyperliquid Order Rejected for CHZ: Trading is halted.
+2026-08-10 23:04:16,523 [WARNING] [HYPERLIQUID] Coin 'XTZ' not supported on Hyperliquid. Skipping order.
+2026-08-10 23:04:17,005 [WARNING] [HYPERLIQUID] Coin '1INCH' not supported on Hyperliquid. Skipping order.
+2026-08-10 23:04:17,006 [INFO] [HYPERLIQUID] Pass completed cleanly. Trades submitted: 0
+[32m2026-08-10 23:04:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - hyperliquid_execution - STEP_OUTPUT - Yielded output "result" of type "Any". (Type check passed).
+[32m2026-08-10 23:04:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - hyperliquid_execution - Writing file at: /home/skybullet1987/quant_pipeline/.tmp_dagster_home_j7jcqg1b/storage/hyperliquid_execution using PickledObjectFilesystemIOManager...
+[32m2026-08-10 23:04:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - hyperliquid_execution - ASSET_MATERIALIZATION - Materialized value hyperliquid_execution.
+[32m2026-08-10 23:04:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - hyperliquid_execution - HANDLED_OUTPUT - Handled output "result" using IO manager "io_manager"
+[32m2026-08-10 23:04:17 +0000[0m - dagster - [34mDEBUG[0m - trading_pipeline_job - d60b719f-a70f-4208-b2f0-948006a929a2 - 148767 - hyperliquid_execution - STEP_SUCCESS - Finished execution of step "hyperliquid_execution" in 1m16s.

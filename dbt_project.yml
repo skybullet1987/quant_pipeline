@@ -19,3 +19,5 @@ models:
   quant_pipeline:
     features:
       +materialized: table
+    fct_4h_features_tbm:
+      +materialized: table
