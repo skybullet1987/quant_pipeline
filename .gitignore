@@ -1,23 +1,25 @@
-# Python environments & caches
-venv/
-__pycache__/
-*.pyc
-
-# Model Binaries & Data
-production_models/
-*.pkl
-*.csv
-*.json
-*.parquet
 
 # Build Artifacts & Logs
-target/
-*.log
-
-# Reports
-*.html
-*.pdf
-
+# Data marts & local scratchpads
 # Environment Secrets
-.env
+# Model Binaries & Data
+# Python environments & caches
+# Reports
+# Security & Credentials
+*.csv
+*.html
+*.json
 *.key
+*.log
+*.parquet
+*.pdf
+*.pem
+*.pkl
+*.pyc
+.env
+.pytest_cache/
+__pycache__/
+data/*.parquet
+production_models/
+target/
+venv/
