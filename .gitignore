@@ -23,3 +23,12 @@ data/*.parquet
 production_models/
 target/
 venv/
+.env
+*.lock
+*.db
+*.parquet
+*.cbm
+*.pkl
+venv/
+__pycache__/
+.pytest_cache/
