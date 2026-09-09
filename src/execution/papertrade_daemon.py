@@ -195,9 +195,13 @@ def _compute_delta_dispersion(df: pl.DataFrame) -> float:
         return float(val) if val is not None else 0.005
 
     ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
-    liquid = df.filter(
-        (pl.col("dollar_volume_1h") > 25_000) & pl.col("ret_72h").is_not_null()
+    # 4H panel dollar volume calculation: close * volume > $100k (equiv to 25k/h)
+    vol_expr = (
+        (pl.col("close") * pl.col("volume") > 100_000)
+        if "dollar_volume_1h" not in df.columns
+        else ((pl.col("close") * pl.col("volume")) > 25_000)
     )
+    liquid = df.filter(vol_expr & pl.col("ret_72h").is_not_null())
     disp = (
         liquid.group_by(ts_col)
         .agg(
@@ -323,7 +327,7 @@ class PaperTradeDaemon:
         ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
         latest_ts = df[ts_col].max()
         panel = df.filter(pl.col(ts_col) == latest_ts).filter(
-            (pl.col("dollar_volume_1h") >= VOL_FLOOR_USD)
+            (((pl.col("close") * pl.col("volume")) >= VOL_FLOOR_USD if "dollar_volume_1h" not in df.columns else (pl.col("close") * pl.col("volume")) >= VOL_FLOOR_USD))
             & pl.col("vol_yang_zhang").is_not_null()
         )
         n_avail = panel.height
