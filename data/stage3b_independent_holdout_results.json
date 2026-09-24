@@ -1,0 +1,199 @@
+{
+  "timestamp_utc": "2026-09-24T11:45:00Z",
+  "total_available_eval_bars": 2284,
+  "holdout_tail_bars": 94,
+  "summary": [
+    {
+      "name": "A0_Baseline",
+      "canonical_2190": {
+        "start_equity": 10000.0,
+        "end_equity": 64169.183487330316,
+        "multiple": 6.416918348733032,
+        "net_return_pct": 541.6918348733032,
+        "annualized_cagr_pct": 541.6918348733032,
+        "sharpe_ratio": 2.4310388005705947,
+        "max_drawdown_pct": 63.498895980166395,
+        "calmar_ratio": 8.530728393175501
+      },
+      "holdout_tail_94b": {
+        "start_equity": 64169.183487330316,
+        "end_equity": 33513.81648053948,
+        "multiple": 0.522272758654573,
+        "net_return_pct": -47.7727241345427,
+        "annualized_cagr_pct": -99.9999732324248,
+        "sharpe_ratio": -15.846422310702058,
+        "max_drawdown_pct": 50.732976051693925,
+        "calmar_ratio": -1.971104023752336
+      },
+      "full_extended_2284": {
+        "start_equity": 10000.0,
+        "end_equity": 33513.81648053948,
+        "multiple": 3.351381648053948,
+        "net_return_pct": 235.13816480539478,
+        "annualized_cagr_pct": 218.86572756955417,
+        "sharpe_ratio": 1.6922923788704636,
+        "max_drawdown_pct": 67.8475981744939,
+        "calmar_ratio": 3.2258434116807524
+      }
+    },
+    {
+      "name": "20d_t15_fl0_Alpha",
+      "canonical_2190": {
+        "start_equity": 10000.0,
+        "end_equity": 54224.75847565516,
+        "multiple": 5.422475847565516,
+        "net_return_pct": 442.2475847565516,
+        "annualized_cagr_pct": 442.2475847565516,
+        "sharpe_ratio": 2.3870927675232485,
+        "max_drawdown_pct": 56.84049187255788,
+        "calmar_ratio": 7.780502423309695
+      },
+      "holdout_tail_94b": {
+        "start_equity": 54224.75847565516,
+        "end_equity": 28315.011217214495,
+        "multiple": 0.5221786507343661,
+        "net_return_pct": -47.782134926563394,
+        "annualized_cagr_pct": -99.9999733445703,
+        "sharpe_ratio": -15.823847602964745,
+        "max_drawdown_pct": 50.797615242457375,
+        "calmar_ratio": -1.9685958261479346
+      },
+      "full_extended_2284": {
+        "start_equity": 10000.0,
+        "end_equity": 28315.011217214495,
+        "multiple": 2.8315011217214496,
+        "net_return_pct": 183.15011217214496,
+        "annualized_cagr_pct": 171.2773893297506,
+        "sharpe_ratio": 1.5799471375994656,
+        "max_drawdown_pct": 67.01053623738676,
+        "calmar_ratio": 2.5559769992437533
+      }
+    },
+    {
+      "name": "10d_t20_fl0_Risk",
+      "canonical_2190": {
+        "start_equity": 10000.0,
+        "end_equity": 33400.70578799282,
+        "multiple": 3.3400705787992817,
+        "net_return_pct": 234.00705787992817,
+        "annualized_cagr_pct": 234.00705787992817,
+        "sharpe_ratio": 1.8728199407282573,
+        "max_drawdown_pct": 53.66158815142401,
+        "calmar_ratio": 4.36079262543627
+      },
+      "holdout_tail_94b": {
+        "start_equity": 33400.70578799282,
+        "end_equity": 23052.446033058648,
+        "multiple": 0.6901784105815436,
+        "net_return_pct": -30.98215894184564,
+        "annualized_cagr_pct": -99.9822930990788,
+        "sharpe_ratio": -13.306383838382855,
+        "max_drawdown_pct": 35.12138342983139,
+        "calmar_ratio": -2.8467640888586376
+      },
+      "full_extended_2284": {
+        "start_equity": 10000.0,
+        "end_equity": 23052.446033058648,
+        "multiple": 2.305244603305865,
+        "net_return_pct": 130.5244603305865,
+        "annualized_cagr_pct": 122.73531517478614,
+        "sharpe_ratio": 1.3849603391959402,
+        "max_drawdown_pct": 53.66158815142401,
+        "calmar_ratio": 2.2872098907778806
+      }
+    },
+    {
+      "name": "Composite_TV_Rho",
+      "canonical_2190": {
+        "start_equity": 10000.0,
+        "end_equity": 54159.53650367669,
+        "multiple": 5.415953650367669,
+        "net_return_pct": 441.5953650367669,
+        "annualized_cagr_pct": 441.5953650367669,
+        "sharpe_ratio": 2.4620396741655948,
+        "max_drawdown_pct": 44.77256055322425,
+        "calmar_ratio": 9.863080413098372
+      },
+      "holdout_tail_94b": {
+        "start_equity": 54159.53650367669,
+        "end_equity": 33508.676374060386,
+        "multiple": 0.6187031599095315,
+        "net_return_pct": -38.12968400904685,
+        "annualized_cagr_pct": -99.99861330152099,
+        "sharpe_ratio": -12.535827131088714,
+        "max_drawdown_pct": 41.06790620581435,
+        "calmar_ratio": -2.434957672309169
+      },
+      "full_extended_2284": {
+        "start_equity": 10000.0,
+        "end_equity": 33508.676374060386,
+        "multiple": 3.3508676374060387,
+        "net_return_pct": 235.08676374060386,
+        "annualized_cagr_pct": 218.81883484602764,
+        "sharpe_ratio": 1.8135159424483456,
+        "max_drawdown_pct": 48.59871236848358,
+        "calmar_ratio": 4.502564454525185
+      }
+    }
+  ],
+  "topology_a_60d_folds": {
+    "A0_Baseline": {
+      "fold1": 2.271282121775339,
+      "fold2": 3.822908756235762,
+      "fold3": -0.22475907179148127,
+      "fold4": 1.032626224554449,
+      "holdout_tail": -15.846422310702058
+    },
+    "20d_t15_fl0_Alpha": {
+      "fold1": 2.7193893723656792,
+      "fold2": 3.731028300325674,
+      "fold3": -0.642238077994642,
+      "fold4": 1.5589725019632594,
+      "holdout_tail": -15.823847602964745
+    },
+    "10d_t20_fl0_Risk": {
+      "fold1": 2.524212754508811,
+      "fold2": 3.026967468658972,
+      "fold3": -0.2952292259457752,
+      "fold4": 1.7273693590569836,
+      "holdout_tail": -13.306383838382855
+    },
+    "Composite_TV_Rho": {
+      "fold1": 2.043012719696176,
+      "fold2": 3.3863746357310895,
+      "fold3": 0.5111504971447494,
+      "fold4": 1.9544061457566397,
+      "holdout_tail": -12.535827131088714
+    }
+  },
+  "topology_c_45d_folds": {
+    "A0_Baseline": {
+      "f1": 3.383955764058226,
+      "f2": 4.128981175219294,
+      "f3": -5.243905273307175,
+      "f4": 2.7405800746963505,
+      "tail": -11.175080447284516
+    },
+    "20d_t15_fl0_Alpha": {
+      "f1": 3.246974087910872,
+      "f2": 4.049588049400193,
+      "f3": -5.414934338224958,
+      "f4": 2.963193290196168,
+      "tail": -10.743074727193395
+    },
+    "10d_t20_fl0_Risk": {
+      "f1": 2.973309492628237,
+      "f2": 2.955535891181303,
+      "f3": -4.730588083808937,
+      "f4": 3.0797568646734774,
+      "tail": -7.396328073486537
+    },
+    "Composite_TV_Rho": {
+      "f1": 3.2481406930899555,
+      "f2": 3.3899566682771036,
+      "f3": -3.306544481187459,
+      "f4": 2.963202585628336,
+      "tail": -8.341093316691635
+    }
+  }
+}

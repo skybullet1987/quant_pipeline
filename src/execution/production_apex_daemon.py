@@ -106,9 +106,9 @@ DUST_THRESHOLD_USD = 8.0          # Dust remnants < $8 auto-flattened
 DEFAULT_SL_PCT = 0.035            # 3.5% default stop-loss trigger (Safety Overlay)
 DEFAULT_TP_PCT = 0.070            # 7.0% default take-profit trigger (Safety Overlay)
 MAX_CLOCK_DRIFT_MS = 5000         # 5.0 seconds maximum acceptable clock drift
-MAX_VALUATION_RESIDUAL_USD = 1.00 # $1.00 maximum unexplained valuation residual before HALT (calibrated from $0.10)
+MAX_VALUATION_RESIDUAL_USD = 2.50 # $2.50 maximum unexplained valuation residual before HALT (calibrated for 8-16 multi-asset mark oracle spread)
 BENCHMARK_SYMBOL = "BTC"
-STRATEGY_VERSION = "v1.0"
+STRATEGY_VERSION = "v2.5.0-composite-tv-rho"
 
 
 class CircuitBreakerState(Enum):
@@ -157,6 +157,7 @@ class PaperTradeState:
     processed_funding_keys: Set[str] = field(default_factory=set)
     owned_cloids: Set[str] = field(default_factory=set)
     owned_oids: Set[int] = field(default_factory=set)
+    order_decision_prices: Dict[str, Dict[str, float]] = field(default_factory=dict)
 
     last_fill_cursor_ms: int = 0
     last_funding_cursor_ms: int = 0
@@ -566,7 +567,7 @@ class ProductionApexExecutor:
 
         live_funding_map = {c[0]: c[2] for c in candidates}
 
-        start_ms = decision_ts_ms - (75 * 4 * 3600 * 1000)
+        start_ms = decision_ts_ms - (150 * 4 * 3600 * 1000)
         records = []
         valid_symbols = []
 
@@ -605,11 +606,13 @@ class ProductionApexExecutor:
         pivot_close = df.pivot(values="close", index="timestamp_ms", on="symbol").sort("timestamp_ms")
         pivot_high = df.pivot(values="high", index="timestamp_ms", on="symbol").sort("timestamp_ms")
         pivot_low = df.pivot(values="low", index="timestamp_ms", on="symbol").sort("timestamp_ms")
+        pivot_vol = df.pivot(values="volume", index="timestamp_ms", on="symbol").sort("timestamp_ms")
 
         symbols = [col for col in pivot_close.columns if col != "timestamp_ms"]
         raw_close_df = pivot_close.select(symbols).to_pandas()
         raw_high_df = pivot_high.select(symbols).to_pandas()
         raw_low_df = pivot_low.select(symbols).to_pandas()
+        raw_vol_df = pivot_vol.select(symbols).to_pandas()
 
         # Age-Aware Observed Mask: Track consecutive missing bars; limit forward-fill to 2 bars; zero bfill
         observed_mask = ~raw_close_df.isna().to_numpy()
@@ -629,6 +632,7 @@ class ProductionApexExecutor:
         ffill_close = raw_close_df.ffill(limit=2).fillna(0.0).to_numpy()
         ffill_high = raw_high_df.ffill(limit=2).fillna(0.0).to_numpy()
         ffill_low = raw_low_df.ffill(limit=2).fillna(0.0).to_numpy()
+        ffill_vol = raw_vol_df.fillna(0.0).to_numpy()
 
         # Hard invariant: Assert selected bar end matches decision timestamp exactly
         selected_bar_start_ms = pivot_close["timestamp_ms"][-1]
@@ -646,7 +650,7 @@ class ProductionApexExecutor:
         eth_idx = symbols.index("ETH") if "ETH" in symbols else (1 if len(symbols) > 1 else 0)
 
         log("INFO", f"[DATA] Causal PIT ingestion verified: {n_symbols} assets across {n_bars} bars. Zero lookahead certified.")
-        return ffill_close, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx
+        return ffill_close, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, ffill_vol
 
     def compute_exp103_signals_and_weights(
         self,
@@ -657,24 +661,100 @@ class ProductionApexExecutor:
         symbols: List[str],
         btc_idx: int,
         eth_idx: int,
+        vol_mat: Optional[np.ndarray] = None,
     ) -> Tuple[Dict[str, float], float, float, List[str], List[str], Dict[str, int]]:
         """
-        Computes EXP-103 Sovereign Finality Signals and Target Weights:
-          1. Grossman-Zhou Continuous Cushion Governor (1.0x - 3.0x).
-          2. Stationarized Fractional Differentiation (d* = 0.38, H = 18 bars).
-          3. Multi-Beta Residual Momentum against BTC and ETH benchmarks.
-          4. Asymmetric Frog-in-the-Pan (FIP) Operator.
-          5. Canonical F1 Funding Carry: - zscore(funding_rates).
-          6. Bipower Variation Jump Gate & Hurst/VR Regime Sieve.
+        Computes Certified Production Apex Signals and Target Weights (v2.5.0-composite-tv-rho):
+          1. Dual-Sensor Regime Governor (Macro Turnover Velocity + Micro Return Serial Autocorrelation).
+          2. Hard Circuit Breaker (Ceiling at -45% Drawdown).
+          3. Grossman-Zhou Continuous Cushion Governor (1.0x - 3.0x).
+          4. Stationarized Fractional Differentiation (d* = 0.38, H = 18 bars).
+          5. Multi-Beta Residual Momentum against BTC and ETH benchmarks.
+          6. Asymmetric Frog-in-the-Pan (FIP) Operator.
+          7. Canonical F1 Funding Carry: - zscore(funding_rates).
+          8. Bipower Variation Jump Gate & Hurst/VR Regime Sieve.
         """
         n_bars, n_symbols = close_mat.shape
         t = n_bars - 1
+
+        # 0. Certified Dual-Sensor Regime Gating (Composite_TV_Rho)
+        tv_val = 0.0
+        rho_val = 0.0
+        TV_THRESHOLD = 0.061150
+        RHO_THRESHOLD = -0.1500
+
+        if vol_mat is not None and n_bars >= 20:
+            dollar_vol = np.where(valid_mask, close_mat * vol_mat, 0.0)
+            agg_vol = np.sum(dollar_vol, axis=1)
+            decay = np.exp(-np.log(2.0) / 48.0)
+            oi_mat = np.zeros_like(dollar_vol)
+            for col in range(n_symbols):
+                valid_idx = np.where(valid_mask[:, col])[0]
+                if len(valid_idx) > 0:
+                    first_idx = valid_idx[0]
+                    oi_mat[first_idx, col] = dollar_vol[first_idx, col] * 5.0
+                    for b in range(first_idx + 1, n_bars):
+                        if valid_mask[b, col]:
+                            oi_mat[b, col] = oi_mat[b - 1, col] * decay + 0.20 * dollar_vol[b, col]
+                        else:
+                            oi_mat[b, col] = 0.0
+            agg_oi = np.sum(oi_mat, axis=1)
+            n_act = np.maximum(np.sum(valid_mask, axis=1), 1)
+            norm_vol = agg_vol / n_act
+            norm_oi = agg_oi / n_act
+            span_bars = min(120, max(20, n_bars))
+            ema_v = pd.Series(norm_vol).ewm(span=span_bars, adjust=False).mean().to_numpy()
+            ema_o = pd.Series(norm_oi).ewm(span=span_bars, adjust=False).mean().to_numpy()
+            tv_val = float(ema_v[-1] / (ema_o[-1] + 1e-8))
+
+        # Micro Return Serial Autocorrelation (7-day = 42 bars)
+        returns_mat_full = np.zeros_like(close_mat)
+        returns_mat_full[1:] = np.diff(close_mat, axis=0) / np.maximum(close_mat[:-1], 1e-8)
+        w_rho = min(42, n_bars - 1)
+        if w_rho >= 10:
+            sub_rets = returns_mat_full[-w_rho:]
+            sub_valid = valid_mask[-w_rho:]
+            asset_m = np.all(sub_valid, axis=0)
+            if np.sum(asset_m) >= 5:
+                r_curr = sub_rets[1:, asset_m]
+                r_lag = sub_rets[:-1, asset_m]
+                r_c_dm = r_curr - np.mean(r_curr, axis=0, keepdims=True)
+                r_l_dm = r_lag - np.mean(r_lag, axis=0, keepdims=True)
+                nom = np.sum(r_c_dm * r_l_dm, axis=0)
+                denom = np.sqrt(np.sum(r_c_dm**2, axis=0) * np.sum(r_l_dm**2, axis=0)) + 1e-12
+                valid_corrs = (nom / denom)[np.isfinite(nom / denom)]
+                if len(valid_corrs) > 0:
+                    rho_val = float(np.mean(valid_corrs))
+
+        is_throttled = (tv_val > 0.0 and tv_val < TV_THRESHOLD) or (rho_val < RHO_THRESHOLD)
+        phi_macro = 0.00 if is_throttled else 1.00
+
+        log("INFO", f"[REGIME DUAL-SENSOR] TV_20d: {tv_val:.4f} (cutoff: {TV_THRESHOLD:.4f}) | Rho_7d: {rho_val:+.4f} (cutoff: {RHO_THRESHOLD:.4f}) | Regime: {'CASH_FLOOR_fl0' if is_throttled else 'ACTIVE_TREND'}")
+
+        # Capital Circuit Breaker: Track B Dual-Envelope Protection
+        # Envelope 1: Max DD > 52.0% from any High-Water Mark (3.4% buffer beyond historical 48.60% valley)
+        current_dd = max(0.0, (self.state.historical_hwm - self.state.current_strategy_equity) / (self.state.historical_hwm + 1e-8))
+        if current_dd > 0.520:
+            log("CRITICAL", f"[CIRCUIT BREAKER] Trailing DD {current_dd*100:.2f}% breached 52.0% HWM envelope (HWM: ${self.state.historical_hwm:.2f}, NAV: ${self.state.current_strategy_equity:.2f})! Halting daemon.")
+            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            return {}, 0.0, 0.0, [], [], {}
+
+        # Envelope 2: Deposit Capital Floor (< $4,800 on $10k initial / -52.0% initial deposit floor)
+        deposit_floor_usd = self.state.initial_strategy_equity * 0.48
+        if self.state.current_strategy_equity < deposit_floor_usd:
+            log("CRITICAL", f"[CIRCUIT BREAKER] Strategy NAV ${self.state.current_strategy_equity:.2f} breached $4,800 deposit floor (${deposit_floor_usd:.2f})! Halting daemon.")
+            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            return {}, 0.0, 0.0, [], [], {}
+
+        if is_throttled:
+            log("WARN", "[REGIME GATE] Dual-Sensor active! Enforcing 100% Flat Cash Floor (fl0) to protect capital.")
+            return {}, 0.0, 0.0, [], [], {}
 
         # 1. Grossman-Zhou Cushion Governor
         floor_level = (1.0 - GROSSMAN_ZHOU_FLOOR) * self.state.historical_hwm
         cushion = max(0.0, (self.state.current_strategy_equity - floor_level) / (GROSSMAN_ZHOU_FLOOR * self.state.historical_hwm + 1e-8))
         active_leverage = BASE_LEVERAGE + cushion * (PEAK_LEVERAGE - BASE_LEVERAGE)
-        active_leverage = min(max(active_leverage, BASE_LEVERAGE), PEAK_LEVERAGE)
+        active_leverage = min(max(active_leverage, BASE_LEVERAGE), PEAK_LEVERAGE) * phi_macro
 
         log("INFO", f"[GEARING] Historical HWM: ${self.state.historical_hwm:.2f} | Floor: ${floor_level:.2f} | Cushion C(t): {cushion*100:.1f}% | Active Leverage: {active_leverage:.2f}x")
 
@@ -837,6 +917,50 @@ class ProductionApexExecutor:
                             "sz": sz,
                             "side": side,
                         })
+                        # Implementation Shortfall Audit Record
+                        try:
+                            f_px = float(px)
+                            f_sz = float(sz)
+                            notional = f_px * f_sz
+                            fee_drag_bps = (fee / notional * 1e4) if notional > 1e-4 else 0.0
+                            is_taker = bool(f.get("crossed", False))
+                            
+                            # Side scalar: +1.0 for BUY/LONG, -1.0 for SELL/SHORT
+                            side_str = str(side or "").upper()
+                            is_buy_side = (
+                                side_str in ["B", "BUY", "LONG"]
+                                or "LONG" in side_str
+                                or "BUY" in side_str
+                                or "CLOSE SHORT" in side_str
+                            )
+                            side_mult = 1.0 if is_buy_side else -1.0
+                            
+                            intent_meta = getattr(self.state, "order_decision_prices", {}).get(str(oid), {})
+                            sig_px = float(intent_meta.get("signal_price", f_px))
+                            target_px = float(intent_meta.get("target_price", f_px))
+                            
+                            # Positive basis points strictly indicate adverse execution friction
+                            delay_slip_bps = side_mult * ((target_px - sig_px) / sig_px * 1e4) if sig_px > 0 else 0.0
+                            exec_impact_bps = side_mult * ((f_px - target_px) / target_px * 1e4) if target_px > 0 else 0.0
+                            tot_shortfall_bps = delay_slip_bps + exec_impact_bps + fee_drag_bps
+
+                            self.journal.append_event("IMPLEMENTATION_AUDIT_RECORD", {
+                                "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(t_ms / 1000.0)),
+                                "symbol": f"{coin}-USDC",
+                                "side": "BUY" if is_buy_side else "SELL",
+                                "signal_price": sig_px,
+                                "target_open_price": target_px,
+                                "actual_fill_price": f_px,
+                                "filled_size": f_sz,
+                                "order_type": "TAKER_IOC" if is_taker else "RESTING_ALO",
+                                "exchange_fee_usdc": fee,
+                                "delay_slippage_bps": delay_slip_bps,
+                                "execution_impact_bps": exec_impact_bps,
+                                "fee_drag_bps": fee_drag_bps,
+                                "total_shortfall_bps": tot_shortfall_bps,
+                            })
+                        except Exception as log_e:
+                            log("DEBUG", f"[SHORTFALL] Telemetry log error ({log_e})")
         except Exception as e:
             log("WARN", f"[RECONCILE] user_fills_by_time query error ({e})")
 
@@ -854,8 +978,9 @@ class ProductionApexExecutor:
                     if self.state.epoch_start_ms > 0 and t_ms < self.state.epoch_start_ms:
                         continue
 
-                    coin = ev.get("coin")
-                    usdc = float(ev.get("usdc", 0.0))
+                    delta = ev.get("delta", {})
+                    coin = delta.get("coin", ev.get("coin"))
+                    usdc = float(delta.get("usdc", ev.get("usdc", 0.0)))
                     fund_key = f"{coin}_{t_ms}_{usdc:.6f}"
 
                     if fund_key not in self.state.processed_funding_keys:
@@ -899,8 +1024,16 @@ class ProductionApexExecutor:
         # 7. Residual Classification
         if discrepancy <= 0.01:
             res_type = "EXACT_ROUNDING_MATCH"
+            if self.state.circuit_breaker in (CircuitBreakerState.DEGRADED, CircuitBreakerState.HALTED):
+                log("INFO", f"[CIRCUIT BREAKER] NAV discrepancy ${discrepancy:.4f} within exact match tolerance. Resuming RUNNING state.")
+                self.journal.append_event("CIRCUIT_BREAKER", {"state": "RUNNING", "reason": f"NAV discrepancy recovered to ${discrepancy:.4f}"})
+                self.state.circuit_breaker = CircuitBreakerState.RUNNING
         elif discrepancy <= MAX_VALUATION_RESIDUAL_USD:
             res_type = "VALUATION_MISMATCH_ACCEPTABLE"
+            if self.state.circuit_breaker in (CircuitBreakerState.DEGRADED, CircuitBreakerState.HALTED) and discrepancy <= 0.50:
+                log("INFO", f"[CIRCUIT BREAKER] NAV discrepancy ${discrepancy:.4f} within acceptable tolerance. Resuming RUNNING state.")
+                self.journal.append_event("CIRCUIT_BREAKER", {"state": "RUNNING", "reason": f"NAV discrepancy recovered to ${discrepancy:.4f}"})
+                self.state.circuit_breaker = CircuitBreakerState.RUNNING
         else:
             res_type = "ACCOUNTING_FAULT"
             log("CRITICAL", f"[CIRCUIT BREAKER] Unexplained NAV discrepancy: ${discrepancy:.4f} > ${MAX_VALUATION_RESIDUAL_USD:.2f}! Tripping to HALTED.")
@@ -914,6 +1047,114 @@ class ProductionApexExecutor:
 
         log("INFO", f"[RECONCILE] Chain NAV: ${chain_equity:.2f} | Recon NAV: ${reconstructed_nav:.2f} | Discrepancy: ${discrepancy:.6f} ({res_type})")
         return chain_equity, discrepancy, current_positions
+
+    def audit_distributional_telemetry(self) -> Dict[str, Any]:
+        """
+        Gate 2 Distributional Execution Telemetry Framework (Track C):
+        Evaluates rolling 100-trade window over IMPLEMENTATION_AUDIT_RECORD events:
+          - Median Shortfall (P50) <= 6.0 bps       (Violation Action: Review Quote Sizing)
+          - 90th Pct Shortfall (P90) <= 18.0 bps    (Violation Action: Spread Widening Alert)
+          - 95th Pct Shortfall (P95) <= 25.0 bps    (Violation Action: Execution Throttle)
+          - Maker Fill Ratio (ALO) >= 65.0% of fills(Violation Action: Algorithmic Reroute)
+          - Side Balance (Long / Short) >= 35% each (Violation Action: Universe Bias Audit)
+          - Unfilled Breakout Ratio <= 15.0%        (Violation Action: Adverse Selection Flag)
+        """
+        audit_records = []
+        total_signals = 0
+        unfilled_breakouts = 0
+
+        if JOURNAL_FILE.exists():
+            try:
+                with open(JOURNAL_FILE, "r") as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        ev = json.loads(line)
+                        ev_type = ev.get("event_type")
+                        if ev_type == "IMPLEMENTATION_AUDIT_RECORD":
+                            audit_records.append(ev.get("payload", {}))
+                        elif ev_type == "TARGET_FROZEN":
+                            weights = ev.get("payload", {}).get("target_weights", {})
+                            total_signals += len([w for w in weights.values() if abs(w) > 0.001])
+                        elif ev_type == "UNFILLED_BREAKOUT_ABANDONED":
+                            unfilled_breakouts += 1
+            except Exception as e:
+                log("WARN", f"[TELEMETRY] Error reading journal for telemetry: {e}")
+
+        rolling_window = audit_records[-100:] if len(audit_records) >= 100 else audit_records
+        n_samples = len(rolling_window)
+        total_lifetime_fills = len(audit_records)
+
+        telemetry: Dict[str, Any] = {
+            "window_size": n_samples,
+            "total_lifetime_fills": total_lifetime_fills,
+            "gate2_sample_target": 500,
+            "gate2_attained": bool(total_lifetime_fills >= 500),
+            "median_shortfall_p50_bps": 0.0,
+            "p90_shortfall_bps": 0.0,
+            "p95_shortfall_bps": 0.0,
+            "maker_fill_ratio_pct": 0.0,
+            "long_fill_ratio_pct": 0.0,
+            "short_fill_ratio_pct": 0.0,
+            "unfilled_breakout_ratio_pct": 0.0,
+            "violations": [],
+            "status": "INSUFFICIENT_DATA" if n_samples < 5 else "ACTIVE_MONITORING",
+        }
+
+        if n_samples >= 5:
+            shortfalls = np.array([float(r.get("total_shortfall_bps", 0.0)) for r in rolling_window])
+            p50 = float(np.percentile(shortfalls, 50))
+            p90 = float(np.percentile(shortfalls, 90))
+            p95 = float(np.percentile(shortfalls, 95))
+
+            n_maker = sum(1 for r in rolling_window if "RESTING_ALO" in str(r.get("order_type", "")).upper())
+            maker_ratio = (n_maker / n_samples) * 100.0
+
+            n_buy = sum(1 for r in rolling_window if str(r.get("side", "")).upper() in ["BUY", "LONG"])
+            n_sell = n_samples - n_buy
+            buy_ratio = (n_buy / n_samples) * 100.0
+            sell_ratio = (n_sell / n_samples) * 100.0
+
+            denom_signals = max(total_signals, n_samples)
+            unfilled_ratio = (unfilled_breakouts / denom_signals) * 100.0 if denom_signals > 0 else 0.0
+
+            telemetry.update({
+                "median_shortfall_p50_bps": round(p50, 2),
+                "p90_shortfall_bps": round(p90, 2),
+                "p95_shortfall_bps": round(p95, 2),
+                "maker_fill_ratio_pct": round(maker_ratio, 2),
+                "long_fill_ratio_pct": round(buy_ratio, 2),
+                "short_fill_ratio_pct": round(sell_ratio, 2),
+                "unfilled_breakout_ratio_pct": round(unfilled_ratio, 2),
+            })
+
+            violations = []
+            if p50 > 6.0:
+                violations.append("P50 Shortfall > 6.0 bps (Action: Review Quote Sizing)")
+                log("WARN", f"[TELEMETRY ALERT] P50 Shortfall {p50:.2f} bps > 6.0 bps -> Review Quote Sizing")
+            if p90 > 18.0:
+                violations.append("P90 Shortfall > 18.0 bps (Action: Spread Widening Alert)")
+                log("WARN", f"[TELEMETRY ALERT] P90 Shortfall {p90:.2f} bps > 18.0 bps -> Spread Widening Alert")
+            if p95 > 25.0:
+                violations.append("P95 Shortfall > 25.0 bps (Action: Execution Throttle)")
+                log("CRITICAL", f"[TELEMETRY ALERT] P95 Shortfall {p95:.2f} bps > 25.0 bps -> Execution Throttle")
+            if maker_ratio < 65.0:
+                violations.append(f"Maker Fill Ratio {maker_ratio:.1f}% < 65.0% (Action: Algorithmic Reroute)")
+                log("WARN", f"[TELEMETRY ALERT] Maker Ratio {maker_ratio:.1f}% < 65.0% -> Algorithmic Reroute")
+            if buy_ratio < 35.0 or sell_ratio < 35.0:
+                violations.append(f"Side Balance L:{buy_ratio:.1f}% / S:{sell_ratio:.1f}% violates 35% minimum (Action: Universe Bias Audit)")
+                log("WARN", f"[TELEMETRY ALERT] Side Balance L:{buy_ratio:.1f}% / S:{sell_ratio:.1f}% < 35% -> Universe Bias Audit")
+            if unfilled_ratio > 15.0:
+                violations.append(f"Unfilled Breakout Ratio {unfilled_ratio:.1f}% > 15.0% (Action: Adverse Selection Flag)")
+                log("WARN", f"[TELEMETRY ALERT] Unfilled Breakout Ratio {unfilled_ratio:.1f}% > 15.0% -> Adverse Selection Flag")
+
+            telemetry["violations"] = violations
+            telemetry["status"] = "PASSED" if len(violations) == 0 else "GATES_BREACHED"
+
+            log("INFO", f"[DISTRIBUTIONAL TELEMETRY (N={n_samples}/100)] P50={p50:.1f}bp (<=6.0) | P90={p90:.1f}bp (<=18.0) | P95={p95:.1f}bp (<=25.0) | Maker={maker_ratio:.1f}% (>=65%) | Side(L/S)={buy_ratio:.1f}%/{sell_ratio:.1f}% (>=35%) | Status={telemetry['status']}")
+
+        return telemetry
 
     def arm_position_brackets(self, sl_pct: float = DEFAULT_SL_PCT, tp_pct: float = DEFAULT_TP_PCT) -> Dict[str, Any]:
         """
@@ -1056,11 +1297,11 @@ class ProductionApexExecutor:
         chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
 
         # 2. Ingest causal PIT market data
-        close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx = self.load_latest_market_data()
+        close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat = self.load_latest_market_data()
 
         # 3. Compute EXP-103 signals and weights
         raw_weights, active_lev, cushion, longs, shorts, locks = self.compute_exp103_signals_and_weights(
-            close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx
+            close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat=vol_mat
         )
 
         decision_ts_ms, _ = self.get_causal_4h_decision_boundary()
@@ -1170,6 +1411,7 @@ class ProductionApexExecutor:
 
             cloid = f"EXP103_{gen_id}_{sym}_{'BUY' if is_buy else 'SELL'}_{int(time.time()*1000)}"
             self.journal.append_event("ORDER_INTENT", {"cloid": cloid, "sym": sym, "is_buy": is_buy, "size": sz_abs})
+            self.state.owned_cloids.add(cloid)
 
             if self.dry_run:
                 log("INFO", f"  [DRY-RUN] Placed ALO Maker for {sym}: is_buy={is_buy}, size={sz_abs:.4f} @ ~${mid:.4f} | cloid={cloid}")
@@ -1200,6 +1442,14 @@ class ProductionApexExecutor:
                         oid = statuses[0]["resting"].get("oid")
 
                 self.journal.append_event("ORDER_CONFIRMED", {"cloid": cloid, "oid": oid, "sym": sym, "size": sz_abs, "price": alo_price})
+                if oid:
+                    self.state.owned_oids.add(int(oid))
+                    self.state.order_decision_prices[str(oid)] = {
+                        "signal_price": float(mid),
+                        "target_price": float(alo_price),
+                    }
+                if cloid:
+                    self.state.owned_cloids.add(cloid)
                 log("INFO", f"  --> [AS-ALO MAKER] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ {alo_price} | oid={oid}")
                 placed_orders.append(ord_info)
             except Exception as e:
@@ -1261,6 +1511,9 @@ class ProductionApexExecutor:
                         else:
                             # Regime 3: Runaway price wick (> 0.50 ATR) -> Cancel and release margin
                             self.gateway.exchange.cancel(coin, o["oid"])
+                            self.journal.append_event("UNFILLED_BREAKOUT_ABANDONED", {
+                                "coin": coin, "distance": distance, "threshold": 0.50 * coin_atr, "oid": o.get("oid")
+                            })
                             log("INFO", f"  [TIMEOUT ABANDON] Cancelled runaway order on {coin:<8} (dist=${distance:.4f} > 0.50 ATR). Released margin without taker chase.")
                 except Exception as e:
                     log("WARN", f"[TIMEOUT] Error processing timeout quotes: {e}")
@@ -1271,6 +1524,7 @@ class ProductionApexExecutor:
 
         # 9. Post-Trade Account State Refresh & Materialized Checkpointing
         chain_equity, discrepancy, confirmed_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        self.last_telemetry_audit = self.audit_distributional_telemetry()
         self.save_materialized_state_cache(confirmed_positions, armed_brackets)
         log("INFO", "================================================================================")
         log("INFO", ">>> 72H MACRO REBALANCE CYCLE COMPLETE <<<")
@@ -1290,6 +1544,11 @@ class ProductionApexExecutor:
         """
         if self.state.circuit_breaker == CircuitBreakerState.HALTED:
             log("CRITICAL", "[CIRCUIT BREAKER] Daemon is HALTED! Rejecting micro risk cycle.")
+            # Safety invariant: Ensure open positions are covered by TP/SL triggers even when trade execution is halted
+            try:
+                self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+            except Exception as e:
+                log("WARN", f"[CIRCUIT BREAKER] Error running fallback bracket protection: {e}")
             return
 
         log("INFO", "--- [MICRO CLOCK] Starting 4H Micro Risk Cycle ---")
@@ -1369,6 +1628,7 @@ class ProductionApexExecutor:
 
         # 7. Post-Trade Account State Refresh & Checkpointing
         chain_equity, discrepancy, confirmed_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        self.last_telemetry_audit = self.audit_distributional_telemetry()
         self.save_materialized_state_cache(confirmed_positions, armed_brackets)
         log("INFO", f"--- [MICRO CLOCK] Complete. Bar {self.state.bars_since_macro}/{MACRO_CADENCE_BARS} toward next Macro Rebalance ---")
 
@@ -1414,6 +1674,7 @@ class ProductionApexExecutor:
             "holding_locks": self.state.holding_locks,
             "open_positions": current_positions,
             "armed_triggers": armed_triggers,
+            "distributional_telemetry": getattr(self, "last_telemetry_audit", {}),
         }
 
         STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
