@@ -26,7 +26,6 @@ def run_command_live(command, step_name, cwd=PIPELINE_DIR):
     env = os.environ.copy()
     env["PATH"] = f"{VENV_BIN}:" + env.get("PATH", "")
 
-    # Stream output live to terminal while recording to log
     process = subprocess.Popen(
         command, 
         shell=True, 
@@ -61,26 +60,17 @@ def main():
 
     try:
         # STEP 1: Sync latest market data from Binance API
-        run_command_live(f"{PYTHON_EXEC} sync_latest_ohlcv.py"
-        run_command_live(f"{PYTHON_EXEC} sync_1h_ohlcv.py", "1H Market Data Sync")", "Incremental Market Data Sync")
+        run_command_live(f"{PYTHON_EXEC} sync_latest_ohlcv.py", "Incremental Market Data Sync")
+        run_command_live(f"{PYTHON_EXEC} sync_1h_ohlcv.py", "1H Market Data Sync")
 
-        # STEP 2: Execute dbt transformation models (Includes BQML TimesFM 2.5)
+        # STEP 2: Execute dbt transformation models (Excluding path resolution backtest table)
         crypto_features_dir = os.path.join(PIPELINE_DIR, "crypto_features")
-        run_command_live(f"{DBT_EXEC} run", "dbt Transformation Suite", cwd=crypto_features_dir)
+        run_command_live(f"{DBT_EXEC} run --exclude fct_exact_path_resolution", "dbt Transformation Suite", cwd=crypto_features_dir)
 
         # STEP 3: Run dbt data quality tests
         run_command_live(f"{DBT_EXEC} test", "dbt Data Integrity Tests", cwd=crypto_features_dir)
 
-        # STEP 4: Relabel TBM and regenerate feature_matrix_symmetric.parquet
-        run_command_live(f"{PYTHON_EXEC} relabel_tbm.py", "Relabel TBM & Parquet Update")
-
-        # STEP 5: Monthly Retraining Check (Runs on 1st of every month)
-        today = datetime.datetime.now(datetime.timezone.utc)
-        if today.day == 1:
-            logging.info("--- 1ST OF THE MONTH DETECTED: TRIGGERING MODEL RETRAINING ---")
-            run_command_live(f"{PYTHON_EXEC} build_model_bundle.py", "Monthly Production Model Retraining")
-
-        print("\n[SUCCESS] Entire Pipeline Executed and Auto-Healed Cleanly!")
+        print("\n[SUCCESS] Daily Incremental Ingest Executed Cleanly!")
 
     except Exception as e:
         print(f"\n[CRITICAL ERROR] Pipeline failed: {e}")

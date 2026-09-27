@@ -1,0 +1,651 @@
+#!/usr/bin/env python3
+"""
+Hyperliquid Autonomous Quant Execution Daemon (High-Octane Compounding Engine)
+"""
+
+import os
+import math
+import json
+import logging
+import sqlite3
+import joblib
+import numpy as np
+import pandas as pd
+
+def compute_position_size(
+    entry_px: float,
+    sl_px: float,
+    unified_equity: float,
+    total_margin_used: float,
+    sz_decimals: int,
+    risk_target_pct: float = 0.010,       # 1.0% equity risk budget
+    min_sl_distance_pct: float = 0.020,   # 2.0% floor to prevent oversized leverage
+    max_position_equity_pct: float = 0.35,# 35% max single-asset allocation
+    max_account_leverage: float = 3.0,    # 3x maximum nominal account leverage
+    margin_cap_pct: float = 0.85,         # 85% unified margin ceiling
+    min_notional_usd: float = 15.0        # Hyperliquid exchange min order size
+) -> tuple[float, float, float]:
+    """
+    Risk-budget position sizing with strict hierarchical constraint waterfall:
+    Risk Budget -> Effective SL -> Notional -> Hard Position/Margin/Leverage Caps.
+    Returns: (size_tokens, final_notional, modeled_dollar_risk)
+    """
+    if unified_equity <= 0 or entry_px <= 0 or sl_px <= 0:
+        return 0.0, 0.0, 0.0
+
+    # 1. Calculate actual distance to stop trigger with safety floor
+    raw_sl_distance = abs(entry_px - sl_px) / entry_px
+    effective_sl_distance = max(raw_sl_distance, min_sl_distance_pct)
+
+    # 2. Unconstrained dollar risk budget & notional
+    risk_budget_usd = unified_equity * risk_target_pct
+    risk_based_notional = risk_budget_usd / effective_sl_distance
+
+    # 3. Hard Safety Ceilings
+    max_notional_by_position = unified_equity * max_position_equity_pct
+    max_notional_by_leverage = unified_equity * max_account_leverage
+    available_margin = max(0.0, (unified_equity * margin_cap_pct) - total_margin_used)
+
+    # 4. Hierarchical min() clamping
+    final_notional = min(
+        risk_based_notional,
+        max_notional_by_position,
+        max_notional_by_leverage,
+        available_margin
+    )
+
+    # 5. Min Notional Gate
+    if final_notional < min_notional_usd:
+        return 0.0, 0.0, 0.0
+
+    # 6. Apply Lot Precision
+    raw_tokens = final_notional / entry_px
+    size_tokens = round(raw_tokens, sz_decimals) if sz_decimals > 0 else float(int(raw_tokens))
+    realized_notional = size_tokens * entry_px
+    modeled_risk = realized_notional * raw_sl_distance
+
+    return size_tokens, realized_notional, modeled_risk
+from datetime import datetime, timezone
+from google.cloud import bigquery
+from catboost import CatBoostClassifier, Pool
+from eth_account import Account
+from hyperliquid.info import Info
+from hyperliquid.exchange import Exchange
+from dotenv import load_dotenv
+
+load_dotenv()
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+
+# ============================================================================
+# 1. HIGH-OCTANE SYSTEM & RISK CONFIGURATION
+# ============================================================================
+PROJECT_ID = os.getenv("GCP_PROJECT_ID", "parnasa-498503")
+API_URL = os.getenv("HYPERLIQUID_API_URL", "https://api.hyperliquid-testnet.xyz")
+DB_PATH = "execution_telemetry.db"
+HALT_LOCKFILE = "HALT_TRADING.lock"
+DRAWDOWN_LOCKFILE = "DRAWDOWN_CIRCUIT_BREAKER.lock"
+PEAK_EQUITY_FILE = ".peak_equity.txt"
+
+DRY_RUN = os.getenv("DRY_RUN", "False").lower() in ("true", "1")
+MAX_POSITIONS = 5
+MAX_TRADES_PER_CYCLE = 2
+MAX_TOTAL_MARGIN_UTILIZATION = 0.85
+HARD_LIQUIDITY_CAP_USD = 150000.0
+FEE_SLIPPAGE_BPS = 15.0
+MAX_HOLD_HOURS = 72
+
+# Aggressive Compounding Parameters
+ENTRY_THRESHOLD_LONG = 0.61
+ENTRY_THRESHOLD_SHORT = 0.61
+KELLY_FRACTION_LONG = 0.25
+KELLY_FRACTION_SHORT = 0.55
+LEVERAGE_LONG = 3.0
+LEVERAGE_SHORT = 10.0
+
+
+# ============================================================================
+# 2. PRECISION & DB AUTO-MIGRATION
+# ============================================================================
+def format_hl_price(px: float, sz_decimals: int) -> float:
+    if px == 0 or px is None or math.isnan(px):
+        return 0.0
+    max_price_decimals = max(0, 6 - sz_decimals)
+    formatted = float(f"{px:.5g}")
+    return round(formatted, max_price_decimals)
+
+
+def init_telemetry_db():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    
+    # Auto-migrate legacy execution_telemetry table if column layout is old
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='execution_telemetry'")
+    if c.fetchone():
+        c.execute("PRAGMA table_info(execution_telemetry)")
+        cols = [r[1] for r in c.fetchall()]
+        if "size_tokens" not in cols:
+            logging.info("[DB MIGRATION] Migrating legacy execution_telemetry schema...")
+            c.execute("ALTER TABLE execution_telemetry RENAME TO execution_telemetry_old")
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS execution_telemetry (
+            timestamp TEXT,
+            symbol TEXT,
+            order_side TEXT,
+            status TEXT,
+            size_notional REAL,
+            size_tokens REAL,
+            signal_px REAL,
+            ref_px REAL,
+            fill_px REAL,
+            slippage_bps REAL,
+            tp_px REAL,
+            sl_px REAL,
+            margin_used REAL,
+            entry_time TEXT
+        )
+    """)
+
+    # Auto-migrate candidate_evaluations table
+    c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='candidate_evaluations'")
+    if c.fetchone():
+        c.execute("PRAGMA table_info(candidate_evaluations)")
+        cols = [r[1] for r in c.fetchall()]
+        if "reason_code" not in cols:
+            logging.info("[DB MIGRATION] Migrating legacy candidate_evaluations schema...")
+            c.execute("ALTER TABLE candidate_evaluations RENAME TO candidate_evaluations_old")
+
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS candidate_evaluations (
+            timestamp TEXT,
+            symbol TEXT,
+            p_long REAL,
+            p_short REAL,
+            p_chop REAL,
+            regime TEXT,
+            ev_bps REAL,
+            status TEXT,
+            reason_code TEXT,
+            reason TEXT
+        )
+    """)
+    conn.commit()
+    conn.close()
+
+
+def get_active_model_dir() -> str:
+    manifest_path = "models/manifest.json"
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, "r") as f:
+                data = json.load(f)
+                active_ver = data.get("active_version", "v2026_08_01")
+                release_dir = os.path.join("models", "releases", active_ver)
+                if os.path.exists(release_dir):
+                    return release_dir
+        except Exception:
+            pass
+    return "production_models" if os.path.exists("production_models") else "."
+
+PROD_MODELS_DIR = get_active_model_dir()
+
+# ============================================================================
+# 3. ACCOUNT STATE, TIMEOUTS & DRAWDOWN LADDER
+# ============================================================================
+def calculate_drawdown_multiplier(drawdown: float) -> float:
+    if drawdown >= 0.30:
+        return 0.0
+    elif drawdown >= 0.25:
+        return 0.10
+    elif drawdown >= 0.20:
+        return 0.25
+    elif drawdown >= 0.15:
+        return 0.50
+    elif drawdown >= 0.10:
+        return 0.75
+    return 1.00
+
+
+def get_unified_account_state(info: Info, address: str):
+    user_state = info.user_state(address)
+    spot_state = info.spot_user_state(address)
+
+    margin_summary = user_state.get("marginSummary", {})
+    perp_equity = float(margin_summary.get("accountValue", 0.0))
+    margin_used = float(margin_summary.get("totalMarginUsed", 0.0))
+
+    spot_usdc = sum(float(b.get("total", 0.0)) for b in spot_state.get("balances", []) if b.get("coin") == "USDC")
+    total_equity = perp_equity + spot_usdc
+
+    peak_equity = total_equity
+    if os.path.exists(PEAK_EQUITY_FILE):
+        try:
+            with open(PEAK_EQUITY_FILE, "r") as f:
+                peak_equity = max(float(f.read().strip()), total_equity)
+        except Exception:
+            peak_equity = total_equity
+
+    with open(PEAK_EQUITY_FILE, "w") as f:
+        f.write(str(peak_equity))
+
+    drawdown = (peak_equity - total_equity) / peak_equity if peak_equity > 0 else 0.0
+    dd_mult = calculate_drawdown_multiplier(drawdown)
+
+    if dd_mult == 0.0:
+        logging.critical(f"[CIRCUIT BREAKER] Max Drawdown breached ({drawdown*100:.2f}% >= 30%). Tripping lockfile.")
+        with open(DRAWDOWN_LOCKFILE, "w") as f:
+            f.write(f"Halted at {datetime.now(timezone.utc).isoformat()} due to {drawdown*100:.2f}% drawdown.")
+
+    return total_equity, margin_used, peak_equity, drawdown, dd_mult, user_state
+
+
+def manage_existing_positions(info: Info, exchange: Exchange, address: str):
+    user_state = info.user_state(address)
+    active_positions = [p["position"] for p in user_state.get("assetPositions", []) if float(p["position"]["szi"]) != 0]
+    if not active_positions:
+        return
+
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    now = datetime.now(timezone.utc)
+
+    for p in active_positions:
+        coin = p["coin"]
+        c.execute("""
+            SELECT entry_time FROM execution_telemetry 
+            WHERE symbol = ? AND status IN ('FILLED', 'FILLED_WITH_BRACKET')
+            ORDER BY timestamp DESC LIMIT 1
+        """, (coin,))
+        row = c.fetchone()
+
+        if row:
+            try:
+                entry_dt = datetime.fromisoformat(row[0])
+                if entry_dt.tzinfo is None:
+                    entry_dt = entry_dt.replace(tzinfo=timezone.utc)
+                age_hours = (now - entry_dt).total_seconds() / 3600.0
+
+                if age_hours >= MAX_HOLD_HOURS:
+                    logging.info(f"[TIMEOUT CLOSE] {coin} held for {age_hours:.1f}h (limit {MAX_HOLD_HOURS}h). Market closing...")
+                    if not DRY_RUN:
+                        for o in info.open_orders(address):
+                            if o["coin"] == coin:
+                                exchange.cancel(coin, o["oid"])
+                        exchange.market_close(coin)
+                        c.execute("""
+                            INSERT INTO execution_telemetry 
+                            (timestamp, symbol, order_side, status, size_notional, size_tokens, signal_px, ref_px, fill_px, slippage_bps, tp_px, sl_px, margin_used, entry_time)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """, (now.isoformat(), coin, "CLOSE_TIMEOUT", "CLOSED", 0, 0, 0, 0, 0, 0, 0, 0, 0, now.isoformat()))
+                        conn.commit()
+            except Exception as e:
+                logging.warning(f"Error managing timeout for {coin}: {e}")
+    conn.close()
+
+# ============================================================================
+# 4. BIGQUERY FEATURE INGESTION & MODEL SCORING
+# ============================================================================
+def fetch_latest_model_scores() -> pd.DataFrame:
+    client = bigquery.Client(project=PROJECT_ID)
+    query = f"""
+        SELECT 
+            f.*, 
+            COALESCE(t.tfm_ret_24h, 0.0) AS tfm_ret_24h, 
+            COALESCE(t.tfm_ret_72h, 0.0) AS tfm_ret_72h, 
+            COALESCE(t.tfm_slope, 0.0) AS tfm_slope, 
+            COALESCE(t.tfm_uncertainty, 0.0) AS tfm_uncertainty, 
+            COALESCE(t.tfm_residual_24h, 0.0) AS tfm_residual_24h, 
+            COALESCE(t.tfm_conviction_delta, 0.0) AS tfm_conviction_delta,
+            COALESCE(l.total_liq_usd, 0) AS total_liq_usd,
+            COALESCE(l.liq_imbalance_ratio, 0) AS liq_imbalance_ratio,
+            COALESCE(l.long_liq_accel, 0) AS long_liq_accel,
+            COALESCE(l.short_liq_accel, 0) AS short_liq_accel,
+            COALESCE(l.rank_liq_intensity, 0) AS rank_liq_intensity
+        FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm` f
+        LEFT JOIN `{PROJECT_ID}.market_data.fct_timesfm_features` t 
+            ON f.timestamp = t.timestamp AND f.ticker = t.ticker
+        LEFT JOIN `{PROJECT_ID}.market_data.fct_liquidation_features` l 
+            ON f.timestamp = l.timestamp AND f.ticker = l.ticker
+        WHERE f.timestamp = (SELECT MAX(timestamp) FROM `{PROJECT_ID}.market_data.fct_4h_features_tbm`)
+    """
+    df = client.query(query).to_dataframe()
+    if df.empty:
+        return df
+
+    # 1. HMM Inference
+    try:
+        hmm_model = joblib.load(f"{PROD_MODELS_DIR}/hmm_macro.pkl")
+        hmm_scaler = joblib.load(f"{PROD_MODELS_DIR}/hmm_scaler.pkl")
+        hmm_feats = joblib.load(f"{PROD_MODELS_DIR}/hmm_feature_names.pkl")
+        canonical_order = joblib.load(f"{PROD_MODELS_DIR}/hmm_canonical_order.pkl")
+
+        for c in hmm_feats:
+            df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0) if c in df.columns else 0.0
+
+        scaled_x = hmm_scaler.transform(df[hmm_feats])
+        probs = hmm_model.predict_proba(scaled_x)[:, canonical_order]
+        df["p_chop"] = probs[:, 0]
+        df["regime"] = probs.argmax(axis=1).astype(str)
+    except Exception as e:
+        logging.warning(f"HMM inference fallback: {e}")
+        df["regime"] = "1"
+        df["p_chop"] = 0.0
+
+    # 2. CatBoost Primary & Meta-Inference
+    try:
+        cb_long = CatBoostClassifier().load_model(f"{PROD_MODELS_DIR}/regime_1_long_expert.cbm")
+        cb_short = CatBoostClassifier().load_model(f"{PROD_MODELS_DIR}/regime_2_short_expert.cbm")
+        all_cat_cols = joblib.load(f"{PROD_MODELS_DIR}/cat_cols.pkl") if os.path.exists(f"{PROD_MODELS_DIR}/cat_cols.pkl") else []
+        cat_set = set(all_cat_cols)
+
+        feats_l = cb_long.feature_names_
+        feats_s = cb_short.feature_names_
+
+        for c in set(feats_l + feats_s):
+            if c not in df.columns:
+                df[c] = "missing" if c in cat_set else 0.0
+            elif c in cat_set:
+                df[c] = df[c].astype(str).fillna("missing")
+            else:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
+
+        pool_l = Pool(df[feats_l], cat_features=[c for c in feats_l if c in cat_set])
+        pool_s = Pool(df[feats_s], cat_features=[c for c in feats_s if c in cat_set])
+
+        raw_pl = cb_long.predict_proba(pool_l)[:, 1]
+        raw_ps = cb_short.predict_proba(pool_s)[:, 1]
+
+        cal_l = joblib.load(f"{PROD_MODELS_DIR}/meta_calibrator_long.pkl") if os.path.exists(f"{PROD_MODELS_DIR}/meta_calibrator_long.pkl") else None
+        cal_s = joblib.load(f"{PROD_MODELS_DIR}/meta_calibrator_short.pkl") if os.path.exists(f"{PROD_MODELS_DIR}/meta_calibrator_short.pkl") else None
+
+        df["p_long"] = cal_l.predict(raw_pl) if cal_l and hasattr(cal_l, "predict") else raw_pl
+        df["p_short"] = cal_s.predict(raw_ps) if cal_s and hasattr(cal_s, "predict") else raw_ps
+    except Exception as e:
+        logging.warning(f"CatBoost inference fallback: {e}")
+        df["p_long"] = 0.45
+        df["p_short"] = 0.45
+
+    return df
+
+# ============================================================================
+# 5. CORE EXECUTION ENGINE (HIGH-OCTANE TWO-PASS COMPOUNDER)
+# ============================================================================
+def execute_trading_cycle():
+    init_telemetry_db()
+    if os.path.exists(HALT_LOCKFILE) or os.path.exists(DRAWDOWN_LOCKFILE):
+        logging.critical("[HALT] Lockfile active. Aborting trading cycle.")
+        return
+
+    pk = os.getenv("HYPERLIQUID_PRIVATE_KEY")
+    addr = os.getenv("HYPERLIQUID_MASTER_ADDRESS")
+    if not pk or not addr:
+        logging.critical("Missing credentials in .env")
+        return
+
+    acct = Account.from_key(pk)
+    info = Info(API_URL, skip_ws=True)
+    exchange = Exchange(acct, API_URL, account_address=addr)
+
+    manage_existing_positions(info, exchange, addr)
+
+    equity, margin_used, peak_eq, dd, dd_mult, user_state = get_unified_account_state(info, addr)
+    logging.info("=" * 85)
+    logging.info(f"HIGH-OCTANE DAEMON | Equity: ${equity:,.2f} | Peak: ${peak_eq:,.2f} | DD: -{dd*100:.2f}% | Multiplier: {dd_mult:.2f}x")
+    logging.info(f"Margin In Use: ${margin_used:,.2f} / ${equity * MAX_TOTAL_MARGIN_UTILIZATION:,.2f} (Max Cap: 85%)")
+    logging.info("=" * 85)
+
+    if dd_mult == 0.0:
+        logging.critical("[HALT] Trading halted due to 30% drawdown breaker.")
+        return
+
+    active_pos = user_state.get("assetPositions", [])
+    open_syms = {p["position"]["coin"] for p in active_pos if float(p["position"]["szi"]) != 0}
+    available_slots = MAX_POSITIONS - len(open_syms)
+
+    if available_slots <= 0:
+        logging.info(f"[SLOT CAP] Maximum positions active ({len(open_syms)}/{MAX_POSITIONS}). Skipping entry.")
+        return
+
+    df_scores = fetch_latest_model_scores()
+    if df_scores.empty:
+        logging.info("No fresh scoring rows returned from BigQuery.")
+        return
+
+    try:
+        live_mids = info.all_mids()
+    except Exception as e:
+        logging.error(f"Failed to fetch live mids: {e}")
+        return
+
+    meta = info.meta()
+    sz_decimals_map = {asset["name"]: asset["szDecimals"] for asset in meta.get("universe", [])}
+    max_lev_map = {asset["name"]: asset["maxLeverage"] for asset in meta.get("universe", [])}
+
+    candidate_evals = []
+    eligible_candidates = []
+
+    # ------------------------------------------------------------------------
+    # PASS 1: CANDIDATE FILTERING & NET EV EVALUATION
+    # ------------------------------------------------------------------------
+    for _, row in df_scores.iterrows():
+        coin = str(row["ticker"]).replace("USDT", "").replace("USD", "").upper()
+        pl, ps, pc = float(row.get("p_long", 0.0)), float(row.get("p_short", 0.0)), float(row.get("p_chop", 0.0))
+        reg = str(row.get("regime", "1"))
+        signal_px = float(row.get("close_price", row.get("close", 0.0)))
+        atr = float(row.get("atr_14", row.get("atr_20", signal_px * 0.02)))
+
+        live_px = float(live_mids.get(coin, signal_px))
+        if live_px <= 0 or atr <= 0:
+            continue
+
+        l_pass = (pl >= ENTRY_THRESHOLD_LONG and reg != "2")
+        s_pass = (ps >= ENTRY_THRESHOLD_SHORT and reg != "1")
+        chop_pass = (pc < 0.50)
+
+        # 1.5x ATR TP / 1.5x ATR SL
+        r_dist = (1.50 * atr) / live_px
+        fee_cut = FEE_SLIPPAGE_BPS / 10000.0
+
+        long_ev = (((2.0 * pl) - 1.0) * r_dist) - fee_cut
+        short_ev = (((2.0 * ps) - 1.0) * r_dist) - fee_cut
+
+        rec = {
+            "coin": coin, "p_l": pl, "p_s": ps, "p_c": pc, "regime": reg,
+            "max_p": max(pl, ps), "status": "REJECTED", "reason_code": "NONE",
+            "reason": "", "ev_bps": 0.0
+        }
+
+        if coin not in sz_decimals_map:
+            rec["reason_code"] = "UNIVERSE_EXCLUDED"
+            rec["reason"] = "Asset not in Hyperliquid universe"
+        elif coin in open_syms:
+            rec["reason_code"] = "POSITION_EXISTS"
+            rec["reason"] = "Active position already open"
+        elif not l_pass and not s_pass:
+            rec["reason_code"] = "PROBABILITY_FAIL"
+            rec["reason"] = f"Probability below hurdle (L:{pl:.2f}, S:{ps:.2f})"
+        elif not chop_pass:
+            rec["reason_code"] = "CHOP_FAIL"
+            rec["reason"] = f"Chop filter active (p_chop: {pc:.2f} >= 0.50)"
+        elif pl >= ENTRY_THRESHOLD_LONG and reg == "2":
+            rec["reason_code"] = "REGIME_CASCADE_BLOCK"
+            rec["reason"] = "Long blocked in Cascade regime (R2)"
+        elif ps >= ENTRY_THRESHOLD_SHORT and reg == "1":
+            rec["reason_code"] = "REGIME_TREND_BLOCK"
+            rec["reason"] = "Short blocked in Bull Trend regime (R1)"
+        else:
+            is_buy = l_pass and (not s_pass or pl >= ps)
+            side, p_win, ev_val = ("BUY", pl, long_ev) if is_buy else ("SELL", ps, short_ev)
+            k_frac = KELLY_FRACTION_LONG if is_buy else KELLY_FRACTION_SHORT
+            base_lev = LEVERAGE_LONG if is_buy else LEVERAGE_SHORT
+            rec["ev_bps"] = ev_val * 10000.0
+
+            if ev_val <= 0:
+                rec["reason_code"] = "NEGATIVE_EV"
+                rec["reason"] = f"Negative Net EV ({rec['ev_bps']:+.1f} bps)"
+            else:
+                rec["status"] = "ELIGIBLE"
+                rec["reason_code"] = "PASSED_GATES"
+                rec["reason"] = f"Passed all gates ({side} {rec['ev_bps']:+.1f} bps)"
+                eligible_candidates.append({
+                    "coin": coin, "is_buy": is_buy, "side": side, "ev": ev_val,
+                    "ev_bps": rec["ev_bps"], "p_win": p_win, "k_frac": k_frac,
+                    "base_lev": base_lev, "signal_px": signal_px, "live_px": live_px,
+                    "atr": atr, "r_dist": r_dist
+                })
+
+        candidate_evals.append(rec)
+
+    # Persist Rejection Waterfall to SQLite
+    now_ts = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    for ce in candidate_evals:
+        c.execute("""
+            INSERT INTO candidate_evaluations 
+            (timestamp, symbol, p_long, p_short, p_chop, regime, ev_bps, status, reason_code, reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (now_ts, ce["coin"], ce["p_l"], ce["p_s"], ce["p_c"], ce["regime"], ce["ev_bps"], ce["status"], ce["reason_code"], ce["reason"]))
+    conn.commit()
+    conn.close()
+
+    logging.info("=== CANDIDATE EVALUATION WATERFALL (TOP 8) ===")
+    for ce in sorted(candidate_evals, key=lambda x: x["max_p"], reverse=True)[:8]:
+        logging.info(f"{ce['coin']:<8} | L:{ce['p_l']:.2f}/S:{ce['p_s']:.2f} | Chop:{ce['p_c']:.2f} | R:{ce['regime']} | EV:{ce['ev_bps']:>+6.1f} bps | [{ce['reason_code']}] {ce['reason']}")
+
+    if not eligible_candidates:
+        logging.info("[CYCLE COMPLETE] No candidate passed alpha and regime gates.")
+        return
+
+    # ------------------------------------------------------------------------
+    # PASS 2: GLOBAL EV RANKING & HIGH-OCTANE KELLY ALLOCATION
+    # ------------------------------------------------------------------------
+    ranked_candidates = sorted(eligible_candidates, key=lambda x: x["ev"], reverse=True)
+    max_executions = min(MAX_TRADES_PER_CYCLE, available_slots)
+    approved_orders = []
+
+    available_margin_pool = max(0.0, (equity * MAX_TOTAL_MARGIN_UTILIZATION) - margin_used)
+
+    for cand in ranked_candidates:
+        if len(approved_orders) >= max_executions:
+            break
+
+        coin = cand["coin"]
+        live_px = cand["live_px"]
+        p_win = cand["p_win"]
+        k_frac = cand["k_frac"]
+        is_buy = cand["is_buy"]
+
+        kelly_f = p_win - ((1.0 - p_win) / 1.0)
+        coin_max_lev = float(max_lev_map.get(coin, cand["base_lev"]))
+        applied_lev = min(coin_max_lev, cand["base_lev"])
+
+        trade_notional_pct = min(kelly_f * k_frac * applied_lev * dd_mult, 2.0)
+        ideal_notional = equity * trade_notional_pct
+
+        max_margin_notional = available_margin_pool * applied_lev
+        target_notional = min(ideal_notional, max_margin_notional, HARD_LIQUIDITY_CAP_USD)
+        required_margin = target_notional / applied_lev
+
+        if required_margin > available_margin_pool or target_notional < 10.0:
+            logging.info(f"[MARGIN CAP] {coin} rejected (Requires ${required_margin:.2f}, Avail: ${available_margin_pool:.2f})")
+            continue
+
+        sz_dec = sz_decimals_map.get(coin, 2)
+        raw_sz = target_notional / live_px
+        sz = int(round(raw_sz)) if sz_dec == 0 else round(raw_sz, sz_dec)
+
+        if sz <= 0:
+            logging.warning(f"[PRECISION] {coin} size rounded to zero at notional ${target_notional:.2f}")
+            continue
+
+        tp_px = format_hl_price(live_px + (1.50 * cand["atr"]) if is_buy else live_px - (1.50 * cand["atr"]), sz_dec)
+        sl_px = format_hl_price(live_px - (1.50 * cand["atr"]) if is_buy else live_px + (1.50 * cand["atr"]), sz_dec)
+
+        approved_orders.append({
+            "coin": coin, "is_buy": is_buy, "side": cand["side"], "ev_bps": cand["ev_bps"],
+            "notional": target_notional, "margin": required_margin, "sz": sz, "sz_dec": sz_dec,
+            "lev": applied_lev, "signal_px": cand["signal_px"], "ref_px": live_px,
+            "tp_px": tp_px, "sl_px": sl_px
+        })
+        available_margin_pool -= required_margin
+
+    # ------------------------------------------------------------------------
+    # PASS 3: ON-CHAIN EXECUTION & FAIL-SAFE BRACKETING
+    # ------------------------------------------------------------------------
+    for o in approved_orders:
+        coin = o["coin"]
+        logging.info(f"[ORDER ROUTE] {o['side']} {o['sz']} {coin} @ Ref ${o['ref_px']:.4f} | TP: ${o['tp_px']} | SL: ${o['sl_px']} (Notional: ${o['notional']:,.2f} | Lev: {o['lev']}x)")
+
+        if DRY_RUN:
+            continue
+
+        try:
+            exchange.update_leverage(int(o["lev"]), coin)
+            entry_res = exchange.market_open(coin, o["is_buy"], o["sz"], o["ref_px"], 0.01)
+            logging.info(f"[ENTRY RESPONSE] {coin} -> {entry_res}")
+
+            if entry_res.get("status") != "ok":
+                logging.error(f"[EXECUTION REJECTED] {coin} entry failed: {entry_res}")
+                continue
+
+            actual_sz = 0.0
+            fill_px = o["ref_px"]
+            try:
+                statuses = entry_res.get("response", {}).get("data", {}).get("statuses", [])
+                if statuses and "filled" in statuses[0]:
+                    actual_sz = float(statuses[0]["filled"]["totalSz"])
+                    fill_px = float(statuses[0]["filled"]["avgPx"])
+            except Exception:
+                pass
+
+            if actual_sz <= 0:
+                logging.warning(f"[FILL VERIFICATION] Querying on-chain state for {coin}...")
+                verified_state = info.user_state(addr)
+                for p in verified_state.get("assetPositions", []):
+                    if p["position"]["coin"] == coin:
+                        actual_sz = abs(float(p["position"]["szi"]))
+                        fill_px = float(p["position"]["entryPx"])
+                        break
+
+            if actual_sz <= 0:
+                logging.critical(f"[FAIL-SAFE TRIGGERED] Could not confirm position on {coin}. Brackets aborted.")
+                continue
+
+            tp_res = exchange.order(
+                coin, not o["is_buy"], actual_sz, o["tp_px"],
+                {"trigger": {"isMarket": True, "triggerPx": o["tp_px"], "tpsl": "tp"}},
+                reduce_only=True
+            )
+            logging.info(f"[TP BRACKET] {coin} ({actual_sz}) -> {tp_res}")
+
+            sl_res = exchange.order(
+                coin, not o["is_buy"], actual_sz, o["sl_px"],
+                {"trigger": {"isMarket": True, "triggerPx": o["sl_px"], "tpsl": "sl"}},
+                reduce_only=True
+            )
+            logging.info(f"[SL BRACKET] {coin} ({actual_sz}) -> {sl_res}")
+
+            slippage_bps = ((fill_px - o["ref_px"]) / o["ref_px"] * 10000.0) if o["is_buy"] else ((o["ref_px"] - fill_px) / o["ref_px"] * 10000.0)
+
+            conn = sqlite3.connect(DB_PATH)
+            c = conn.cursor()
+            c.execute("""
+                INSERT INTO execution_telemetry 
+                (timestamp, symbol, order_side, status, size_notional, size_tokens, signal_px, ref_px, fill_px, slippage_bps, tp_px, sl_px, margin_used, entry_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                datetime.now(timezone.utc).isoformat(), coin, o["side"], "FILLED_WITH_BRACKET",
+                o["notional"], actual_sz, o["signal_px"], o["ref_px"], fill_px, slippage_bps,
+                o["tp_px"], o["sl_px"], o["margin"], datetime.now(timezone.utc).isoformat()
+            ))
+            conn.commit()
+            conn.close()
+
+        except Exception as e:
+            logging.error(f"[EXECUTION ERROR] {coin}: {e}")
+
+
+if __name__ == "__main__":
+    execute_trading_cycle()

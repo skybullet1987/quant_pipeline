@@ -1,0 +1,18 @@
+[Unit]
+Description=Master Apex (EXP-37B) Hyperliquid L1 Execution Daemon
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 -u /home/skybullet1987/quant_pipeline/src/execution/master_apex_daemon.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/home/skybullet1987/quant_pipeline/execution_daemon.log
+StandardError=append:/home/skybullet1987/quant_pipeline/execution_daemon.log
+Environment=PYTHONPATH=/home/skybullet1987/quant_pipeline
+Environment=PYTHONUNBUFFERED=1
+Environment=IS_PAPER=true
+
+[Install]
+WantedBy=default.target

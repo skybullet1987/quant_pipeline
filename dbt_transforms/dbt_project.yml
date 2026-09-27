@@ -1,0 +1,20 @@
+name: 'quant_pipeline_marts'
+version: '1.0.0'
+config-version: 2
+
+profile: 'quant_bigquery'
+
+model-paths: ["models"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  quant_pipeline_marts:
+    staging:
+      +materialized: incremental
+    intermediate:
+      +materialized: incremental
+    marts:
+      +materialized: incremental

@@ -15,7 +15,11 @@ from pathlib import Path
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PIPELINE_ROOT))
 
-from src.execution.papertrade_daemon import HyperliquidPaperTrader
+try:
+    from src.execution.papertrade_daemon import PaperTradeDaemon as HyperliquidPaperTrader
+except ImportError:
+    from src.execution.papertrade_daemon import PaperTradeDaemon
+    HyperliquidPaperTrader = PaperTradeDaemon
 from src.execution.live_executor import DynamicHyperliquidExecutor
 
 
@@ -36,8 +40,11 @@ def seconds_until_next_6h_bar() -> int:
 
 
 def execute_cycle(trader: HyperliquidPaperTrader, executor: DynamicHyperliquidExecutor):
-    # 1. Compute Apex Tri-Alpha and update paper ledger state
-    trader.run_rebalance_cycle()
+    # 1. Compute macro cycle and update paper ledger state
+    if hasattr(trader, "run_rebalance_cycle"):
+        trader.run_rebalance_cycle()
+    elif hasattr(trader, "_run_macro_cycle"):
+        trader._run_macro_cycle()
 
     # 2. If live execution is confirmed, dispatch orders to Hyperliquid
     if os.getenv("EXECUTION_LIVE_CONFIRMED", "false").lower() == "true":

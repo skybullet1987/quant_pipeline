@@ -1,21 +1,18 @@
 Metadata-Version: 2.4
-Name: quant-pipeline
-Version: 3.0.0
-Summary: Institutional Cross-Sectional Dollar-Neutral Crypto Engine
-Author: Anton Kiselev
-Requires-Python: >=3.12
-Requires-Dist: polars>=1.6.0
-Requires-Dist: pyarrow>=17.0.0
-Requires-Dist: numpy>=1.26.0
-Requires-Dist: scipy>=1.13.0
-Requires-Dist: lightgbm>=4.4.0
-Requires-Dist: catboost>=1.2.0
-Requires-Dist: google-cloud-bigquery>=3.25.0
-Requires-Dist: google-cloud-bigquery-storage>=2.26.0
-Requires-Dist: pydantic>=2.8.0
-Requires-Dist: pydantic-settings>=2.4.0
-Requires-Dist: hyperliquid-python-sdk>=0.6.0
-Requires-Dist: eth-account>=0.13.0
-Requires-Dist: typer>=0.12.0
-Requires-Dist: rich>=13.7.0
+Name: quant_pipeline
+Version: 0.1.0
+Summary: Production Data and Research Fabric for Hyperliquid/Binance Quant Pipeline
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: polars>=0.20.0
+Requires-Dist: pyarrow>=14.0.0
+Requires-Dist: websockets>=12.0
+Requires-Dist: httpx>=0.27.0
+Requires-Dist: google-cloud-storage>=2.14.0
+Requires-Dist: google-cloud-bigquery>=3.17.0
+Requires-Dist: dagster>=1.6.0
+Requires-Dist: dagster-webserver>=1.6.0
+Requires-Dist: dbt-bigquery>=1.7.0
+Requires-Dist: nautilus_trader>=1.200.0
+Requires-Dist: mlflow>=2.10.0
 Requires-Dist: pytest>=8.0.0

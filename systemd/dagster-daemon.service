@@ -1,0 +1,16 @@
+[Unit]
+Description=Dagster Background Daemon (Schedules, Sensors, Auto-Materialization)
+After=network.target
+
+[Service]
+Type=simple
+User=skybullet1987
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/dagster-daemon run -w /home/skybullet1987/dagster_home/workspace.yaml
+Restart=always
+RestartSec=10
+Environment=PYTHONPATH=/home/skybullet1987/quant_pipeline
+Environment=DAGSTER_HOME=/home/skybullet1987/dagster_home
+
+[Install]
+WantedBy=multi-user.target

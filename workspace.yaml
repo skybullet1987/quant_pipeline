@@ -1,0 +1,5 @@
+load_from:
+  - python_file:
+      relative_path: /home/skybullet1987/quant_pipeline/src/orchestration/dagster_pipeline.py
+      working_directory: /home/skybullet1987/quant_pipeline
+      location_name: quant_pipeline

@@ -20,6 +20,14 @@
 .pytest_cache/
 __pycache__/
 data/*.parquet
+data/
+*.jsonl
+*.npy
+*.pid
+catboost_info/
+mlruns/
+scratch/
+crypto_features/logs/
 production_models/
 target/
 venv/

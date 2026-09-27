@@ -1,0 +1,15 @@
+[Unit]
+Description=Hyperliquid Dead Mans Switch Heartbeat Daemon (cancelAllOrdersAfter)
+After=network.target
+
+[Service]
+Type=simple
+User=skybullet1987
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python -m pipeline.live.dead_mans_switch
+Restart=always
+RestartSec=3
+Environment=PYTHONPATH=/home/skybullet1987/quant_pipeline
+
+[Install]
+WantedBy=multi-user.target

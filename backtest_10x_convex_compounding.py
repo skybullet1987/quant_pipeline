@@ -106,8 +106,11 @@ class Position:
     tranche_a_closed: bool = False
     tranche_b_closed: bool = False
     pyramided: bool = False
+    pending_pyramid: bool = False
     pyramid_bar: int = -1
     last_pyramid_size: float = 0.0
+    pyramid_allocated_capital: float = 0.0
+    pyramid_net_pnl: float = 0.0
     entry_bar: int = 0
     cum_funding_usd: float = 0.0
     highest_high: float = 0.0
@@ -304,6 +307,7 @@ class InstitutionalCompoundingEngine:
         mode_layer: str = "D",
         exclude_symbols: Optional[List[str]] = None,
         pyramid_ratio: float = 0.0,            # Certified causal default: zero pyramiding (prevents intra-bar touch fill leakage)
+        pyramid_causal_mode: str = "next_bar_open", # Options: "next_bar_open", "intrabar_touch" (audit only)
         fixed_leverage: Optional[float] = None,
         shuffle_alpha: bool = False,
         enforce_pyramid_risk_caps: bool = False,
@@ -331,8 +335,17 @@ class InstitutionalCompoundingEngine:
         dynamic_chandelier: bool = False,
         selective_leverage: Optional[float] = None,
         selective_adx_threshold: float = 25.0,
+        volatility_target: Optional[float] = None,
+        vol_lookback_bars: int = 120,
+        vol_lambda_min: float = 0.25,
+        vol_lambda_max: float = 1.00,
+        regime_governor_scalars: Optional[np.ndarray] = None,
+        total_eval_bars: Optional[int] = None,
+        eval_end_ts: Optional[int] = None,
         seed: int = 42,
     ):
+        self.total_eval_bars = total_eval_bars
+        self.eval_end_ts = eval_end_ts
         self.cost_mult = cost_multiplier
         self.exec_delay = execution_delay_bars
         self.adverse_stop_gap = adverse_stop_gap_mult
@@ -341,10 +354,16 @@ class InstitutionalCompoundingEngine:
         self.mode_layer = mode_layer
         self.exclude_symbols = set(exclude_symbols) if exclude_symbols else set()
         self.pyramid_ratio = pyramid_ratio
+        self.pyramid_causal_mode = pyramid_causal_mode
         self.fixed_leverage = fixed_leverage
         self.shuffle_alpha = shuffle_alpha
         self.enforce_pyramid_risk_caps = enforce_pyramid_risk_caps
         self.turnover_lambda = turnover_lambda
+        self.volatility_target = volatility_target
+        self.vol_lookback_bars = vol_lookback_bars
+        self.vol_lambda_min = vol_lambda_min
+        self.vol_lambda_max = vol_lambda_max
+        self.regime_governor_scalars = regime_governor_scalars
 
         self.rd_ace_mode = rd_ace_mode
         self.lev_shock = lev_shock
@@ -376,15 +395,16 @@ class InstitutionalCompoundingEngine:
         self.taker_fee = TAKER_FEE_BASE * self.cost_mult
         self.rebalance_fee = (REBALANCE_MAKER_RATIO * self.maker_fee) + (REBALANCE_TAKER_RATIO * self.taker_fee)
 
-    def load_and_preprocess_data(self) -> Tuple[List[int], List[str], Dict]:
+    def load_and_preprocess_data(self, eval_end_ts: Optional[int] = None) -> Tuple[List[int], List[str], Dict]:
         if not DATA_LAKE_PATH.exists():
             raise FileNotFoundError(f"Data lake file not found at {DATA_LAKE_PATH}")
 
+        end_ts = eval_end_ts or self.eval_end_ts or EVAL_END_TS
         df = pl.read_parquet(DATA_LAKE_PATH)
         eval_timestamps, symbols, market_data = PointInTimeUniverseManager.load_pit_market_matrices(
             df=df,
             eval_start_ts=EVAL_START_TS,
-            eval_end_ts=EVAL_END_TS,
+            eval_end_ts=end_ts,
             benchmark_symbol=BENCHMARK_SYMBOL,
         )
 
@@ -409,10 +429,11 @@ class InstitutionalCompoundingEngine:
         return eval_timestamps, symbols, market_data
 
     def run(self, cached_market_data: Optional[Dict] = None) -> Dict:
+        eval_bars = self.total_eval_bars if self.total_eval_bars is not None else TOTAL_EVAL_BARS
         if cached_market_data is not None:
             data = cached_market_data
             symbols = data["symbols"]
-            eval_timestamps = data["timestamps"][data["eval_start_idx"] : data["eval_start_idx"] + TOTAL_EVAL_BARS + 1]
+            eval_timestamps = data["timestamps"][data["eval_start_idx"] : data["eval_start_idx"] + eval_bars + 1]
         else:
             eval_timestamps, symbols, data = self.load_and_preprocess_data()
 
@@ -515,6 +536,9 @@ class InstitutionalCompoundingEngine:
             "gross_trading_pnl_usd": 0.0,
             "beta_pnl_usd": 0.0,
             "btc_residual_pnl_usd": 0.0,
+            "pyramid_allocated_capital_usd": 0.0,
+            "pyramid_net_pnl_usd": 0.0,
+            "pyramid_count": 0,
         }
 
         qp_solver = ConvexQPSolver(symbols=symbols, gamma=1.0, lambda_turnover=self.turnover_lambda)
@@ -531,7 +555,7 @@ class InstitutionalCompoundingEngine:
 
         pit_manager = PointInTimeUniverseManager(symbols=symbols)
 
-        for bar_count in range(TOTAL_EVAL_BARS):
+        for bar_count in range(eval_bars):
             t_idx = eval_start_idx + bar_count
             next_t_idx = min(t_idx + 1, len(timestamps) - 1)
             regime_data_ts = timestamps[t_idx]
@@ -727,6 +751,25 @@ class InstitutionalCompoundingEngine:
                     gross_target = raw_gross_target
             elif self.fixed_leverage is not None:
                 gross_target = self.fixed_leverage
+                if self.volatility_target is not None:
+                    if len(portfolio_returns) >= 20:
+                        window = portfolio_returns[-self.vol_lookback_bars:] if len(portfolio_returns) >= self.vol_lookback_bars else portfolio_returns
+                        realized_vol = float(np.std(window) * math.sqrt(2190))
+                        if realized_vol > 1e-4:
+                            raw_scalar = self.volatility_target / realized_vol
+                            vol_scalar = max(self.vol_lambda_min, min(self.vol_lambda_max, raw_scalar))
+                        else:
+                            vol_scalar = 1.00
+                    else:
+                        vol_scalar = 1.00
+                    gross_target = min(self.fixed_leverage, self.fixed_leverage * vol_scalar)
+                elif self.regime_governor_scalars is not None:
+                    if len(self.regime_governor_scalars) == len(timestamps):
+                        phi_t = float(self.regime_governor_scalars[t_idx])
+                    else:
+                        phi_t = float(self.regime_governor_scalars[bar_count]) if bar_count < len(self.regime_governor_scalars) else 1.0
+                    gross_target = min(self.fixed_leverage, self.fixed_leverage * phi_t)
+
                 lambda_alt = 0.05 if regime_state == STATE_EXPANSION else 2.5
                 scale = min(1.0, gross_target / 2.0) if gross_target > 0 else 0.0
                 eff_beta_min = 0.8 * scale if regime_state == STATE_EXPANSION else -0.05
@@ -780,6 +823,7 @@ class InstitutionalCompoundingEngine:
                 delayed_weights_queue.append(target_weights_opt)
                 if len(delayed_weights_queue) > self.exec_delay:
                     target_weights = delayed_weights_queue.pop(0)
+                    target_weights = np.where(tradable_mask, target_weights, 0.0)
                 else:
                     target_weights = np.zeros(n_symbols)
             else:
@@ -929,6 +973,49 @@ class InstitutionalCompoundingEngine:
                             "return_pct": ((px / current_pos.entry_price) - 1.0) * current_pos.direction * 100.0,
                         })
                         del active_positions[sym]
+
+            # Execute pending causal pyramids at open of next_t_idx
+            if self.pyramid_ratio > 0.0 and self.pyramid_causal_mode == "next_bar_open":
+                for p_sym, p_pos in list(active_positions.items()):
+                    if p_pos.pending_pyramid and not p_pos.pyramided:
+                        p_col = symbols.index(p_sym)
+                        p_open_p = open_mat[next_t_idx, p_col]
+                        if np.isnan(p_open_p) or p_open_p <= 0.0:
+                            p_open_p = close_mat[t_idx, p_col]
+                        p_slip = SLIPPAGE_BASE * self.cost_mult
+                        p_fill_px = p_open_p * (1.0 + p_slip) if p_pos.direction == 1 else p_open_p * (1.0 - p_slip)
+
+                        p_base_tranche = p_pos.tranche_b_size if self.two_tranche_enabled else p_pos.size_base
+                        p_add_size = self.pyramid_ratio * p_base_tranche
+                        if self.enforce_pyramid_risk_caps:
+                            p_max_size = (0.25 * equity) / p_fill_px
+                            if p_pos.current_size + p_add_size > p_max_size:
+                                p_add_size = max(0.0, p_max_size - p_pos.current_size)
+
+                        if p_add_size > 1e-6:
+                            p_notional = p_add_size * p_fill_px
+                            cost_breakdown["total_traded_volume_usd"] += p_notional
+                            p_fee = (p_notional * REBALANCE_MAKER_RATIO) * self.maker_fee + (p_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
+                            p_slip_usd = p_notional * p_slip
+                            p_imp_usd = p_notional * (SLIPPAGE_IMPACT_COEFF * math.sqrt(p_notional / SLIPPAGE_REF_NOTIONAL)) * self.cost_mult
+                            p_fric = p_fee + p_slip_usd + p_imp_usd
+
+                            cost_breakdown["maker_fees_usd"] += (p_notional * REBALANCE_MAKER_RATIO) * self.maker_fee
+                            cost_breakdown["taker_fees_usd"] += (p_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
+                            cost_breakdown["base_slippage_usd"] += p_slip_usd
+                            cost_breakdown["market_impact_usd"] += p_imp_usd
+                            cost_breakdown["total_execution_friction_usd"] += p_fric
+
+                            cost_breakdown["pyramid_allocated_capital_usd"] += p_notional
+                            cost_breakdown["pyramid_count"] += 1
+
+                            equity -= p_fric
+
+                            p_pos.current_size += p_add_size
+                            p_pos.pyramided = True
+                            p_pos.pending_pyramid = False
+                            p_pos.last_pyramid_size = p_add_size
+                            p_pos.pyramid_bar = bar_count
 
             # Bar execution: Stops, Tranche Exits, Pyramiding, Funding
             same_bar_stop_checked_first = True
@@ -1117,7 +1204,7 @@ class InstitutionalCompoundingEngine:
                 pos.peak_open_pnl = max(pos.peak_open_pnl, bar_peak)
 
                 # 3. Trailing Ratchet / Chandelier Runner for SUBSEQUENT Bar (t+2)
-                if pos.tranche_a_closed:
+                if pos.tranche_a_closed or not self.two_tranche_enabled:
                     if self.chandelier_k > 0:
                         k_val = self.chandelier_k
                         if getattr(self, "dynamic_chandelier", False):
@@ -1145,55 +1232,68 @@ class InstitutionalCompoundingEngine:
 
                 # 4. Pyramiding on Tranche B
                 if self.pyramid_ratio > 0.0 and not pos.pyramided:
-                    should_pyr = False
-                    if self.two_tranche_enabled:
-                        if pos.tranche_a_closed:
-                            if pos.direction == 1 and next_high >= (pos.entry_price + 2.5 * pos.atr_0):
-                                should_pyr = True
-                                pyr_fill_px = pos.entry_price + 2.5 * pos.atr_0
-                            elif pos.direction == -1 and next_low <= (pos.entry_price - 2.5 * pos.atr_0):
-                                should_pyr = True
-                                pyr_fill_px = pos.entry_price - 2.5 * pos.atr_0
+                    if self.pyramid_causal_mode == "next_bar_open":
+                        # Causal E3 Standard: Breakout confirmed on bar close -> queue pending pyramid for next_t_idx open
+                        if not pos.pending_pyramid:
+                            if self.two_tranche_enabled:
+                                if pos.tranche_a_closed:
+                                    if (pos.direction == 1 and next_close >= (pos.entry_price + 2.5 * pos.atr_0)) or \
+                                       (pos.direction == -1 and next_close <= (pos.entry_price - 2.5 * pos.atr_0)):
+                                        pos.pending_pyramid = True
+                            else:
+                                if (pos.direction == 1 and next_close >= (pos.entry_price + 2.0 * pos.atr_0)) or \
+                                   (pos.direction == -1 and next_close <= (pos.entry_price - 2.0 * pos.atr_0)):
+                                    pos.pending_pyramid = True
                     else:
-                        if pos.direction == 1 and next_high >= (pos.entry_price + 2.0 * pos.atr_0):
-                            should_pyr = True
-                            pyr_fill_px = pos.entry_price + 2.0 * pos.atr_0
-                        elif pos.direction == -1 and next_low <= (pos.entry_price - 2.0 * pos.atr_0):
-                            should_pyr = True
-                            pyr_fill_px = pos.entry_price - 2.0 * pos.atr_0
+                        should_pyr = False
+                        if self.two_tranche_enabled:
+                            if pos.tranche_a_closed:
+                                if pos.direction == 1 and next_high >= (pos.entry_price + 2.5 * pos.atr_0):
+                                    should_pyr = True
+                                    pyr_fill_px = pos.entry_price + 2.5 * pos.atr_0
+                                elif pos.direction == -1 and next_low <= (pos.entry_price - 2.5 * pos.atr_0):
+                                    should_pyr = True
+                                    pyr_fill_px = pos.entry_price - 2.5 * pos.atr_0
+                        else:
+                            if pos.direction == 1 and next_high >= (pos.entry_price + 2.0 * pos.atr_0):
+                                should_pyr = True
+                                pyr_fill_px = pos.entry_price + 2.0 * pos.atr_0
+                            elif pos.direction == -1 and next_low <= (pos.entry_price - 2.0 * pos.atr_0):
+                                should_pyr = True
+                                pyr_fill_px = pos.entry_price - 2.0 * pos.atr_0
 
-                    if should_pyr:
-                        base_tranche = pos.tranche_b_size if self.two_tranche_enabled else pos.size_base
-                        add_size = self.pyramid_ratio * base_tranche
-                        if self.enforce_pyramid_risk_caps:
-                            max_allowed_size = (0.25 * equity) / pyr_fill_px
-                            if pos.current_size + add_size > max_allowed_size:
-                                add_size = max(0.0, max_allowed_size - pos.current_size)
+                        if should_pyr:
+                            base_tranche = pos.tranche_b_size if self.two_tranche_enabled else pos.size_base
+                            add_size = self.pyramid_ratio * base_tranche
+                            if self.enforce_pyramid_risk_caps:
+                                max_allowed_size = (0.25 * equity) / pyr_fill_px
+                                if pos.current_size + add_size > max_allowed_size:
+                                    add_size = max(0.0, max_allowed_size - pos.current_size)
 
-                        if add_size > 1e-6:
-                            add_notional = add_size * pyr_fill_px
-                            cost_breakdown["total_traded_volume_usd"] += add_notional
+                            if add_size > 1e-6:
+                                add_notional = add_size * pyr_fill_px
+                                cost_breakdown["total_traded_volume_usd"] += add_notional
 
-                            p_fee = (add_notional * REBALANCE_MAKER_RATIO) * self.maker_fee + (add_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
-                            p_slip = add_notional * SLIPPAGE_BASE * self.cost_mult
-                            p_imp = add_notional * (SLIPPAGE_IMPACT_COEFF * math.sqrt(add_notional / SLIPPAGE_REF_NOTIONAL)) * self.cost_mult
-                            p_fric = p_fee + p_slip + p_imp
+                                p_fee = (add_notional * REBALANCE_MAKER_RATIO) * self.maker_fee + (add_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
+                                p_slip = add_notional * SLIPPAGE_BASE * self.cost_mult
+                                p_imp = add_notional * (SLIPPAGE_IMPACT_COEFF * math.sqrt(add_notional / SLIPPAGE_REF_NOTIONAL)) * self.cost_mult
+                                p_fric = p_fee + p_slip + p_imp
 
-                            cost_breakdown["maker_fees_usd"] += (add_notional * REBALANCE_MAKER_RATIO) * self.maker_fee
-                            cost_breakdown["taker_fees_usd"] += (add_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
-                            cost_breakdown["base_slippage_usd"] += p_slip
-                            cost_breakdown["market_impact_usd"] += p_imp
-                            cost_breakdown["total_execution_friction_usd"] += p_fric
+                                cost_breakdown["maker_fees_usd"] += (add_notional * REBALANCE_MAKER_RATIO) * self.maker_fee
+                                cost_breakdown["taker_fees_usd"] += (add_notional * REBALANCE_TAKER_RATIO) * self.taker_fee
+                                cost_breakdown["base_slippage_usd"] += p_slip
+                                cost_breakdown["market_impact_usd"] += p_imp
+                                cost_breakdown["total_execution_friction_usd"] += p_fric
 
-                            pyr_incremental_pnl = add_size * (next_close - pyr_fill_px) * pos.direction
-                            cost_breakdown["gross_trading_pnl_usd"] += pyr_incremental_pnl
-                            bar_realized_trade_pnl += (pyr_incremental_pnl - p_fric)
-                            asset_pnl_accumulator[sym] += (pyr_incremental_pnl - p_fric)
+                                pyr_incremental_pnl = add_size * (next_close - pyr_fill_px) * pos.direction
+                                cost_breakdown["gross_trading_pnl_usd"] += pyr_incremental_pnl
+                                bar_realized_trade_pnl += (pyr_incremental_pnl - p_fric)
+                                asset_pnl_accumulator[sym] += (pyr_incremental_pnl - p_fric)
 
-                            pos.current_size += add_size
-                            pos.pyramided = True
-                            pos.pyramid_bar = bar_count
-                            pos.last_pyramid_size = add_size
+                                pos.current_size += add_size
+                                pos.pyramided = True
+                                pos.pyramid_bar = bar_count
+                                pos.last_pyramid_size = add_size
 
             for s in closed_positions_this_bar:
                 if s in active_positions:
@@ -1326,15 +1426,16 @@ class InstitutionalCompoundingEngine:
 
             target_weights_prev = target_weights
 
-        self.auditor.audit_completion(TOTAL_EVAL_BARS)
+        self.auditor.audit_completion(eval_bars)
 
         # Dynamic audit row count assertion
-        assert len(per_bar_audit_log) == TOTAL_EVAL_BARS, f"Audit row count mismatch: {len(per_bar_audit_log)} != {TOTAL_EVAL_BARS}"
-        assert len(set([r["timestamp"] for r in per_bar_audit_log])) == TOTAL_EVAL_BARS, "Duplicate timestamps detected"
+        assert len(per_bar_audit_log) == eval_bars, f"Audit row count mismatch: {len(per_bar_audit_log)} != {eval_bars}"
+        assert len(set([r["timestamp"] for r in per_bar_audit_log])) == eval_bars, "Duplicate timestamps detected"
 
         eq_arr = np.array(equity_curve)
         final_equity = equity
-        net_cagr = ((final_equity / self.initial_capital) - 1.0) * 100.0
+        years_elapsed = eval_bars / 2190.0
+        net_cagr = (((final_equity / self.initial_capital) ** (1.0 / years_elapsed)) - 1.0) * 100.0 if years_elapsed > 0 and final_equity > 0 else -100.0
 
         running_max = np.maximum.accumulate(eq_arr)
         drawdowns = (running_max - eq_arr) / running_max
@@ -1350,7 +1451,7 @@ class InstitutionalCompoundingEngine:
         calmar_ratio = (net_cagr / max_drawdown_pct) if max_drawdown_pct > 0 else 0.0
 
         total_turnover_nav = sum(turnover_history)
-        avg_turnover_per_bar = (total_turnover_nav / TOTAL_EVAL_BARS) * 100.0
+        avg_turnover_per_bar = (total_turnover_nav / eval_bars) * 100.0
         sorted_asset_pnl = sorted(asset_pnl_accumulator.items(), key=lambda x: x[1], reverse=True)
 
         # Exact mathematical reconciliation assertion ($0.000000 discrepancy)
@@ -1423,6 +1524,7 @@ class InstitutionalCompoundingEngine:
             "max_drawdown": max_drawdown_pct,
             "max_drawdown_pct": max_drawdown_pct,
             "total_turnover_nav": total_turnover_nav,
+            "turnover_history": turnover_history,
             "avg_turnover_per_bar": avg_turnover_per_bar,
             "cost_breakdown": cost_breakdown,
             "top_5_assets": sorted_asset_pnl[:5],

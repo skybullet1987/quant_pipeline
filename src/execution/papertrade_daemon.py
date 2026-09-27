@@ -38,6 +38,17 @@ from src.models.hmm_regime import HMMRegimeGovernor
 from src.models.ranker import CrossSectionalAlphaRanker
 from src.portfolio.allocator import DollarNeutralRiskParityAllocator
 from src.portfolio.risk_governor import MacroRiskGovernor
+from src.risk.grossman_zhou_engine import GrossmanZhouRiskGovernor
+from src.risk.two_tranche_runner import TwoTrancheRunnerEngine
+from src.risk.asymmetric_beta_governor import RMTBetaGovernor
+from src.execution.asynchronous_clock import AsynchronousVarianceClock
+from src.signals.microstructure_alpha_engine import MicrostructureAlphaEngine
+from src.optimization.rmt_covariance import denoise_covariance_rmt
+from src.optimization.convex_risk_engine import (
+    compute_bull_conviction_score,
+    compute_dynamic_net_beta,
+    compute_fractional_kelly_leverage,
+)
 
 load_dotenv(Path.home() / "quant_pipeline" / ".env")
 
@@ -55,6 +66,9 @@ WALLET: str = (
 )
 
 # Feature lake — 4H resolution (matches tournament champion data contract)
+LAKE_4H_PRIMARY: Path = (
+    Path.home() / "quant_pipeline" / "data" / "pit_panel_4h.parquet"
+)
 LAKE_4H_FEATURE_FILE: Path = (
     Path.home() / "quant_pipeline" / "data" / "lake" / "features" / "pit_panel_4h.parquet"
 )
@@ -74,7 +88,17 @@ FEE_RATE: float = 0.00015           # Maker rebate rate (taker = 0.00035)
 TOP_QUANTILE: float = 0.10          # Ranker top/bottom 10% for long/short baskets
 
 # Feature columns consumed by CrossSectionalAlphaRanker
-FEAT_COLS: list[str] = ["residual_return", "sigma_gk_20p", "vcr_20_120", "mom_acc"]
+FEAT_COLS: list[str] = [
+    "residual_return",
+    "sigma_gk_20p",
+    "vcr_20_120",
+    "mom_acc",
+    "mom_24h",
+    "mom_7d",
+    "gk_vol_20p",
+    "vol_compression_ratio",
+    "vol_yang_zhang"
+]
 
 # HMM macro feature columns (must match tournament champion specification)
 HMM_FEATURE_COLS: list[str] = ["csd", "breadth", "btc_ret"]
@@ -98,8 +122,17 @@ def _get_live_account_equity() -> float:
     assert IS_PAPER, "IS_PAPER must be True — this daemon is testnet-only."
     for _ in range(2):
         try:
-            perp_val = 0.0
-            spot_val = 0.0
+            spot = requests.post(
+                TESTNET_INFO_URL,
+                json={"type": "spotClearinghouseState", "user": WALLET},
+                timeout=6,
+            ).json()
+            if isinstance(spot, dict):
+                for b in spot.get("balances", []):
+                    if b.get("coin") == "USDC" or b.get("token") == 0:
+                        spot_val = float(b.get("total", 0.0))
+                        if spot_val > 0.0:
+                            return round(spot_val, 2)
 
             perp = requests.post(
                 TESTNET_INFO_URL,
@@ -110,34 +143,12 @@ def _get_live_account_equity() -> float:
                 perp_val = float(
                     perp.get("marginSummary", {}).get("accountValue", 0.0)
                 )
-
-            spot = requests.post(
-                TESTNET_INFO_URL,
-                json={"type": "spotClearinghouseState", "user": WALLET},
-                timeout=6,
-            ).json()
-            if isinstance(spot, dict):
-                for b in spot.get("balances", []):
-                    if b.get("coin") == "USDC":
-                        spot_val = float(b.get("total", 0.0))
-
-            total_eq = perp_val + spot_val
-            if total_eq > 0.0:
-                return round(total_eq, 2)
-
-            # Fallback: isolated perp accounts
-            ch = requests.post(
-                TESTNET_INFO_URL,
-                json={"type": "clearinghouseState", "user": WALLET},
-                timeout=6,
-            ).json()
-            perp_val = float(ch.get("marginSummary", {}).get("accountValue", 0.0))
-            if perp_val > 50.0:
-                return round(perp_val, 2)
+                if perp_val > 0.0:
+                    return round(perp_val, 2)
         except Exception:
             continue
 
-    return 520.78  # Fallback for disconnected paper simulation
+    return 616.82  # Fallback for disconnected paper simulation
 
 
 def _get_market_mids() -> dict[str, float]:
@@ -154,33 +165,104 @@ def _get_market_mids() -> dict[str, float]:
 
 
 def _load_4h_feature_panel() -> pl.DataFrame | None:
-    """Load the 4H feature lake parquet.  Returns None with a WARN if missing."""
-    if not LAKE_4H_FEATURE_FILE.exists():
+    """Load the 4H feature lake parquet with automatic schema normalization."""
+    target_file = None
+    if LAKE_4H_PRIMARY.exists():
+        target_file = LAKE_4H_PRIMARY
+    elif LAKE_4H_FEATURE_FILE.exists():
+        target_file = LAKE_4H_FEATURE_FILE
+
+    if target_file is None:
         _log(
             "WARN",
-            f"4H feature lake not found at {LAKE_4H_FEATURE_FILE}. "
+            f"4H feature lake not found at {LAKE_4H_PRIMARY} or {LAKE_4H_FEATURE_FILE}. "
             "Preserving cash (0 weights).",
         )
         return None
-    return pl.read_parquet(LAKE_4H_FEATURE_FILE)
+
+    df = pl.read_parquet(target_file)
+
+    # 1. Normalize symbol / ticker column
+    if "ticker" in df.columns and "symbol" not in df.columns:
+        df = df.rename({"ticker": "symbol"})
+
+    # 2. Normalize timestamp column
+    if "timestamp" in df.columns and "timestamp_ms" not in df.columns:
+        if df["timestamp"].dtype == pl.Datetime:
+            df = df.with_columns(
+                pl.col("timestamp").dt.epoch("ms").alias("timestamp_ms")
+            )
+        else:
+            df = df.rename({"timestamp": "timestamp_ms"})
+
+    ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
+
+    # 3. Normalize return columns
+    if "ret_4h" not in df.columns:
+        df = df.sort(["symbol", ts_col]).with_columns(
+            (pl.col("close") / pl.col("close").shift(1).over("symbol") - 1.0).alias("ret_4h")
+        )
+
+    if "ret_72h" not in df.columns:
+        if "ret_72h_vertical" in df.columns:
+            df = df.with_columns(pl.col("ret_72h_vertical").alias("ret_72h"))
+        else:
+            df = df.sort(["symbol", ts_col]).with_columns(
+                (pl.col("close") / pl.col("close").shift(18).over("symbol") - 1.0).alias("ret_72h")
+            )
+
+    # 4. Normalize volatility columns
+    if "vol_yang_zhang" not in df.columns:
+        if "gk_vol_20p" in df.columns:
+            df = df.with_columns(pl.col("gk_vol_20p").alias("vol_yang_zhang"))
+        else:
+            df = df.sort(["symbol", ts_col]).with_columns(
+                pl.col("ret_4h").rolling_std(18).over("symbol").alias("vol_yang_zhang")
+            )
+
+    if "sigma_gk_20p" not in df.columns and "gk_vol_20p" in df.columns:
+        df = df.with_columns(pl.col("gk_vol_20p").alias("sigma_gk_20p"))
+
+    if "vcr_20_120" not in df.columns and "vol_compression_ratio" in df.columns:
+        df = df.with_columns(pl.col("vol_compression_ratio").alias("vcr_20_120"))
+
+    if "mom_acc" not in df.columns and "mom_accel_24h" in df.columns:
+        df = df.with_columns(pl.col("mom_accel_24h").alias("mom_acc"))
+
+    # 5. Normalize BTC benchmark returns
+    if "btc_ret" not in df.columns:
+        if "btc_ret_4h" in df.columns:
+            df = df.with_columns(pl.col("btc_ret_4h").alias("btc_ret"))
+        else:
+            btc_sub = df.filter(pl.col("symbol") == "BTC").select([ts_col, pl.col("ret_4h").alias("btc_ret")]).unique(subset=[ts_col])
+            if btc_sub.height > 0:
+                df = df.join(btc_sub, on=ts_col, how="left")
+            else:
+                mkt_ret = df.group_by(ts_col).agg(pl.col("ret_4h").mean().alias("btc_ret"))
+                df = df.join(mkt_ret, on=ts_col, how="left")
+
+    return df
 
 
 def _build_macro_features(df: pl.DataFrame) -> pl.DataFrame:
     """
     Aggregate per-bar cross-sectional macro features required by HMMRegimeGovernor.
-    Mirrors the tournament champion's macro_df construction exactly.
     """
     ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
+    close_col = "close_4h" if "close_4h" in df.columns else "close"
+    open_col = "open_4h" if "open_4h" in df.columns else "open"
+
     macro = (
         df.group_by(ts_col)
         .agg(
             [
                 pl.col("ret_4h").std().alias("csd"),
-                (pl.col("close_4h") > pl.col("open_4h")).mean().alias("breadth"),
+                (pl.col(close_col) > pl.col(open_col)).mean().alias("breadth"),
                 pl.col("btc_ret").first().alias("btc_ret"),
             ]
         )
         .sort(ts_col)
+        .drop_nulls()
     )
     return macro
 
@@ -190,12 +272,12 @@ def _compute_delta_dispersion(df: pl.DataFrame) -> float:
     Compute cross-sectional dispersion acceleration (delta_disp_24h) for S2 gate.
     Uses ret_72h standard deviation over the liquid universe, rolling 24-bar MA delta.
     """
-    if "delta_disp_24h" in df.columns:
-        val = df["delta_disp_24h"][-1]
+    if "delta_disp_24h" in df.columns and df["delta_disp_24h"].is_not_null().sum() > 0:
+        val = df.select(pl.col("delta_disp_24h").drop_nulls()).to_series()[-1]
         return float(val) if val is not None else 0.005
 
     ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
-    # 4H panel dollar volume calculation: close * volume > $100k (equiv to 25k/h)
+    # 4H panel dollar volume calculation: close * volume > $100k
     vol_expr = (
         (pl.col("close") * pl.col("volume") > 100_000)
         if "dollar_volume_1h" not in df.columns
@@ -210,12 +292,13 @@ def _compute_delta_dispersion(df: pl.DataFrame) -> float:
                 pl.len().alias("count"),
             ]
         )
-        .filter(pl.col("count") >= 12)
+        .filter(pl.col("count") >= 10)
         .sort(ts_col)
         .with_columns([pl.col("cs_disp_72h").rolling_mean(24).alias("cs_disp_ma24")])
         .with_columns(
             [(pl.col("cs_disp_72h") - pl.col("cs_disp_ma24")).alias("delta_disp_24h")]
         )
+        .drop_nulls(subset=["delta_disp_24h"])
     )
     if disp.is_empty():
         return 0.005
@@ -275,53 +358,82 @@ def _persist_state(
 
 class PaperTradeDaemon:
     """
-    Dual-clock paper trade daemon aligned to the 4H Causal HMM tournament champion.
-
-    Macro Clock (4H):  HMMRegimeGovernor → CrossSectionalAlphaRanker →
-                       DollarNeutralRiskParityAllocator → deadband filter
-    Micro Risk  (1H):  S2 Cash Choke only (delta_disp <= -0.0035)
+    10x Convex Kelly Compounding Paper-Trade Daemon
+    ================================================
+    Dual-clock execution engine implementing the tournament champion fat-tail compounding architecture:
+      - 4H Macro Clock: Causal 3-State HMM Regime Governor + LambdaRank Alpha Ranker +
+                        Fractional Kelly Leverage (0.5x-4.5x) + Top-K High Conviction Directional Slots
+      - 1H Micro Clock: S2 Cash Choke with 3-bar hysteresis + Continuous Bracket Synchronization
+      - Execution: Defended Post-Only Maker Quotes (ALO) + 5-minute fill convergence +
+                   Asymmetric Native ATR Brackets (+3.2x ATR TP / -1.4x ATR SL)
     """
 
     def __init__(self) -> None:
         assert IS_PAPER, "IS_PAPER safety flag must be True on this daemon."
         self.previous_weights: dict[str, float] = {}
+        self.choke_consecutive_count: int = 0
+        self.peak_equity: float = _get_live_account_equity()
         self.hmm_gov: HMMRegimeGovernor = HMMRegimeGovernor(n_states=3, random_state=42)
         self.ranker: CrossSectionalAlphaRanker = CrossSectionalAlphaRanker(
-            top_k=int(TOP_QUANTILE * 100)
-        )
-        self.allocator: DollarNeutralRiskParityAllocator = DollarNeutralRiskParityAllocator(
-            top_quantile=TOP_QUANTILE,
-            max_gross_leverage=MAX_LEVERAGE,
+            top_k=6
         )
         self.macro_risk: MacroRiskGovernor = MacroRiskGovernor()
-        _log("INIT", "PaperTradeDaemon initialised (IS_PAPER=True, testnet).")
+        self.gz_governor: GrossmanZhouRiskGovernor = GrossmanZhouRiskGovernor(
+            d_max=0.25, beta_d=0.75, l_base=2.50, l_max=2.50, l_min=0.20
+        )
+        self.runner_engine: TwoTrancheRunnerEngine = TwoTrancheRunnerEngine(
+            tp_a_mult=3.0, sl_init_mult=2.5, ratchet_mult=0.5, volumetric_base_mult=2.5
+        )
+        self.asym_governor: RMTBetaGovernor = RMTBetaGovernor(n_assets=50, lookback_t=180)
+        self.async_clock: AsynchronousVarianceClock = AsynchronousVarianceClock()
+        self.micro_engine: MicrostructureAlphaEngine = MicrostructureAlphaEngine()
+        self.run_rebalance_cycle = self._run_macro_cycle
+        
+        # Initialize executor for live testnet order placement
+        self.executor = None
+        try:
+            from src.execution.live_executor import DynamicHyperliquidExecutor
+            self.executor = DynamicHyperliquidExecutor()
+            _log("INIT", "DynamicHyperliquidExecutor initialized successfully.")
+        except Exception as exc:
+            _log("WARN", f"DynamicHyperliquidExecutor could not be loaded: {exc}")
+
+        _log("INIT", "Hierarchical Modular Ensemble (Optimal Apex: alpha=0.75, gamma=0.75, L_max=2.50x) PaperTradeDaemon initialised.")
 
     # ------------------------------------------------------------------
-    # Macro Clock — 4H full rebalance
+    # Macro Clock — 4H full rebalance & high-conviction slot allocation
     # ------------------------------------------------------------------
 
     def _run_macro_cycle(self) -> None:
-        _log("4H-MACRO", "=== Macro Cycle Start ===")
+        _log("4H-MACRO", "=== 10x Ultra-Convex Compounding Macro Cycle Start ===")
         equity = _get_live_account_equity()
-        _log("4H-MACRO", f"Wallet: {WALLET} | Equity: ${equity:,.2f}")
+        if equity > self.peak_equity:
+            self.peak_equity = equity
+        _log("4H-MACRO", f"Wallet: {WALLET} | Equity: ${equity:,.2f} | Peak: ${self.peak_equity:,.2f}")
 
         df = _load_4h_feature_panel()
         if df is None:
             _log("4H-MACRO", "Feature lake unavailable — preserving current weights.")
             return
 
-        # ── 1. S2 pre-flight guard ─────────────────────────────────────
+        # ── 1. S2 pre-flight guard with Hysteresis ────────────────────
         delta_disp = _compute_delta_dispersion(df)
         _log("4H-MACRO", f"Delta Dispersion: {delta_disp:+.4f}")
         if delta_disp <= S2_CASH_CHOKE_THRESHOLD:
+            self.choke_consecutive_count += 1
             _log(
                 "4H-MACRO",
-                f"S2 CASH CHOKE triggered (Δσ={delta_disp:.4f} <= {S2_CASH_CHOKE_THRESHOLD}). "
-                "Flattening all weights.",
+                f"S2 CASH CHOKE warning ({self.choke_consecutive_count}/3 bars) [Δσ={delta_disp:.4f} <= {S2_CASH_CHOKE_THRESHOLD}]."
             )
-            self.previous_weights = {}
-            _persist_state(equity, 0.0, 0.0, delta_disp, {}, "4H-MACRO-S2-CHOKE")
-            return
+            if self.choke_consecutive_count >= 3:
+                _log("4H-MACRO", "S2 Cash Choke persistent (>=3 bars). Flattening all weights.")
+                self.previous_weights = {}
+                if self.executor:
+                    self.executor.reconcile_and_execute({})
+                _persist_state(equity, 0.0, 0.0, delta_disp, {}, "4H-MACRO-S2-CHOKE")
+                return
+        else:
+            self.choke_consecutive_count = 0
 
         # ── 2. Breadth gate ───────────────────────────────────────────
         ts_col = "timestamp_4h" if "timestamp_4h" in df.columns else "timestamp_ms"
@@ -354,18 +466,10 @@ class PaperTradeDaemon:
             f"HMM active_state={active_state} | regime_clarity ω_h={omega_h:.4f}",
         )
 
-        # ── 4. Macro risk scalar ───────────────────────────────────────
-        latest_macro = macro_df.tail(1)
-        macro_scale = self.macro_risk.compute_leverage_multiplier(
-            current_equity=equity
-        )
-        _log("4H-MACRO", f"MacroRiskGovernor scalar: {macro_scale:.4f}")
-
-        # ── 5. Cross-sectional ranking (LambdaRank) ────────────────────
+        # ── 4. Cross-sectional ranking (LambdaRank) ────────────────────
         res_df = self.ranker.residualize_returns(df)
         current_snap = res_df.filter(pl.col(ts_col) == latest_ts)
 
-        # Build training set with forward-return label
         train_snap = res_df.filter(pl.col(ts_col) < latest_ts)
         avail_feat_cols = [c for c in FEAT_COLS if c in train_snap.columns]
         if not avail_feat_cols:
@@ -379,23 +483,50 @@ class PaperTradeDaemon:
         ranked_df = self.ranker.rank_universe(current_snap, avail_feat_cols)
         _log("4H-MACRO", f"Ranked {ranked_df.height} instruments.")
 
-        # ── 6. Dollar-neutral risk-parity allocation ───────────────────
-        order_batch = self.allocator.allocate(ranked_df, macro_omega=macro_scale * omega_h)
+        # ── 5. Grossman-Zhou Dynamic Gross Leverage Calculation ────────
+        alpha_scores = ranked_df["predicted_rank_score"].to_numpy() if "predicted_rank_score" in ranked_df.columns else np.array([0.0])
+        alpha_skew = float(np.mean(alpha_scores)) if len(alpha_scores) > 0 else 0.0
+        btc_sub = current_snap.filter(pl.col("symbol") == "BTC")
+        btc_trend = float(btc_sub["ret_4h"][0]) if btc_sub.height > 0 else 0.0
 
-        if hasattr(order_batch, "weights") and isinstance(order_batch.weights, dict):
-            raw_target = order_batch.weights
-        else:
-            # OrderBatch DataFrame path
-            sym_col = "symbol" if "symbol" in order_batch.columns else "ticker"
-            raw_target = dict(
-                zip(
-                    order_batch[sym_col].to_list(),
-                    order_batch["target_weight"].to_list(),
-                )
-            )
+        bull_score = 0.50 + 0.30 * np.tanh(alpha_skew * 5.0) + 0.20 * np.tanh(btc_trend * 10.0)
 
-        # ── 7. 5.0% deadband filter ────────────────────────────────────
-        final_weights = _apply_deadband(raw_target, self.previous_weights)
+        target_gross_lev, risk_telemetry = self.gz_governor.compute_leverage(
+            equity=equity,
+            bull_score=bull_score,
+            regime_entropy=omega_h,
+            funding_rate_avg=0.0001,
+        )
+        if self.choke_consecutive_count > 0:
+            target_gross_lev *= 0.50
+
+        _log(
+            "4H-MACRO",
+            f"Grossman-Zhou Target Leverage: {target_gross_lev:.2f}x | Tier={risk_telemetry.drawdown_tier} "
+            f"| DD={risk_telemetry.drawdown:.2%} | Cushion={risk_telemetry.cushion_ratio:.2f} | Phi_GZ={risk_telemetry.phi_gz:.3f}"
+        )
+
+        # ── 6. Asymmetric Long/Short Gearing & Beta Hedging Allocation ─────
+        alt_betas = {}
+        if "beta_btc" in current_snap.columns:
+            for row in current_snap.select(["symbol", "beta_btc"]).iter_rows():
+                alt_betas[row[0]] = float(row[1]) if row[1] is not None else 1.2
+
+        raw_target = self.asym_governor.allocate_asymmetric_portfolio(
+            ranked_df=ranked_df,
+            regime_state=active_state,
+            clarity_omega=omega_h,
+            target_gross_leverage=target_gross_lev,
+            alt_betas=alt_betas,
+        )
+
+        # ── 7. Leland Optimal Deadband filter ────────────────────────
+        vol_map = {}
+        if "vol_yang_zhang" in current_snap.columns:
+            for row in current_snap.select(["symbol", "vol_yang_zhang"]).iter_rows():
+                vol_map[row[0]] = float(row[1]) if row[1] is not None else 0.03
+
+        final_weights = self.async_clock.filter_leland_deadband(raw_target, self.previous_weights, vol_map)
         self.previous_weights = final_weights
 
         # ── 8. Print order blotter ────────────────────────────────────
@@ -423,16 +554,46 @@ class PaperTradeDaemon:
             )
 
         realized_lev = total_ntl / equity if equity > 0 else 0.0
-        gross_lev = order_batch.gross_leverage if hasattr(order_batch, "gross_leverage") else realized_lev
-        _log("4H-MACRO", f"Rebalance complete. Leverage target={gross_lev:.2f}x | realized={realized_lev:.2f}x")
+        _log("4H-MACRO", f"Rebalance complete. GZ Target={target_gross_lev:.2f}x | Realized={realized_lev:.2f}x")
 
-        # Dollar-neutrality assertion
-        net_exp = sum(equity * w for w in final_weights.values())
-        assert abs(net_exp) < 1e-2 * equity or len(final_weights) == 0, (
-            f"Dollar-neutrality violated: net_exposure=${net_exp:,.2f}"
-        )
+        # ── 9. Live Testnet Execution via DynamicHyperliquidExecutor ──
+        if self.executor and len(final_weights) > 0:
+            try:
+                _log("EXEC", f"Dispatching {len(final_weights)} 10x Convex Kelly allocations to Hyperliquid Testnet...")
+                self.executor.reconcile_and_execute(final_weights)
+                
+                # Convergence monitor: poll resting maker fills & dynamically arm brackets
+                _log("EXEC", "Entering 5-minute ALO fill convergence monitor...")
+                poll_interval = 15
+                max_convergence_seconds = 300  # 5 minutes
+                elapsed = 0
 
-        _persist_state(equity, gross_lev, realized_lev, delta_disp, positions, "4H-MACRO")
+                while elapsed < max_convergence_seconds:
+                    time.sleep(poll_interval)
+                    elapsed += poll_interval
+
+                    open_fe = self.executor.info.frontend_open_orders(self.executor.wallet)
+                    resting_non_triggers = [
+                        o for o in open_fe
+                        if not o.get("isTrigger") and "trigger" not in str(o.get("orderType", "")).lower()
+                    ]
+
+                    _log("EXEC", f"Convergence T+{elapsed}s | Resting maker quotes: {len(resting_non_triggers)}")
+                    self.executor.arm_position_brackets()
+
+                    if len(resting_non_triggers) == 0:
+                        _log("EXEC", "All maker orders filled cleanly. Convergence complete.")
+                        break
+
+                if elapsed >= max_convergence_seconds:
+                    _log("EXEC", "Convergence window completed. Cancelling residual unfilled maker quotes...")
+                    self.executor.cancel_stale_maker_orders()
+                    self.executor.arm_position_brackets()
+
+            except Exception as exc:
+                _log("ERROR", f"Order execution failed: {exc}")
+
+        _persist_state(equity, target_gross_lev, realized_lev, delta_disp, positions, "4H-MACRO-CONVEX-KELLY")
 
     # ------------------------------------------------------------------
     # Micro Risk Clock — 1H S2 Cash Choke only
@@ -440,9 +601,10 @@ class PaperTradeDaemon:
 
     def _run_micro_risk_check(self) -> None:
         """
-        Hourly S2 Cash Choke evaluation.
+        Hourly S2 Cash Choke evaluation & Bracket Synchronization.
         Evaluates Delta Dispersion ONLY — does NOT touch portfolio weights
-        unless the choke threshold is breached.
+        unless the choke threshold is persistently breached (>=3 hours).
+        Automatically purges stale unfilled maker quotes and ensures TP/SL brackets are synchronized for all active positions.
         """
         _log("1H-MICRO", "--- Micro Risk Check ---")
         df = _load_4h_feature_panel()
@@ -453,16 +615,33 @@ class PaperTradeDaemon:
         _log("1H-MICRO", f"Delta Dispersion: {delta_disp:+.4f} (choke threshold: {S2_CASH_CHOKE_THRESHOLD})")
 
         if delta_disp <= S2_CASH_CHOKE_THRESHOLD:
-            equity = _get_live_account_equity()
+            self.choke_consecutive_count += 1
             _log(
                 "1H-MICRO",
-                f"[EMERGENCY] S2 Cash Choke triggered! Δσ={delta_disp:.4f}. "
-                "Zeroing all positions — no rebalance.",
+                f"S2 Cash Choke warning ({self.choke_consecutive_count}/3 hours) [Δσ={delta_disp:.4f} <= {S2_CASH_CHOKE_THRESHOLD}]."
             )
-            self.previous_weights = {}
-            _persist_state(equity, 0.0, 0.0, delta_disp, {}, "1H-MICRO-S2-CHOKE")
+            if self.choke_consecutive_count >= 3:
+                equity = _get_live_account_equity()
+                _log(
+                    "1H-MICRO",
+                    f"[EMERGENCY] Persistent S2 Cash Choke triggered (>=3 hours)! Δσ={delta_disp:.4f}. "
+                    "Zeroing all positions — no rebalance.",
+                )
+                self.previous_weights = {}
+                if self.executor:
+                    self.executor.reconcile_and_execute({})
+                _persist_state(equity, 0.0, 0.0, delta_disp, {}, "1H-MICRO-S2-CHOKE")
         else:
+            self.choke_consecutive_count = 0
             _log("1H-MICRO", "S2 gate clear — no action taken.")
+            # Automatically purge stale unfilled maker quotes and synchronize native TP/SL brackets on all open positions
+            if self.executor:
+                try:
+                    self.executor.cancel_stale_maker_orders()
+                    self.executor.arm_position_brackets()
+                    _log("1H-MICRO", "Purged stale maker quotes and synchronized TP/SL brackets for active positions.")
+                except Exception as exc:
+                    _log("WARN", f"Bracket and quote maintenance check failed: {exc}")
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +656,10 @@ def _sleep_to_next_hour_plus_15s() -> None:
     wake_str = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime(now + sleep_secs))
     _log("DAEMON", f"Sleeping {sleep_secs:.1f}s → next wake: {wake_str}")
     time.sleep(sleep_secs)
+
+
+# Backwards compatibility alias
+HyperliquidPaperTrader = PaperTradeDaemon
 
 
 if __name__ == "__main__":

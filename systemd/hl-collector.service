@@ -1,0 +1,15 @@
+[Unit]
+Description=Hyperliquid Real-Time L2 Book & Trade Ingestion Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=skybullet1987
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python -m pipeline.ingestion.hyperliquid_collector
+Restart=always
+RestartSec=5
+Environment=PYTHONPATH=/home/skybullet1987/quant_pipeline
+
+[Install]
+WantedBy=multi-user.target

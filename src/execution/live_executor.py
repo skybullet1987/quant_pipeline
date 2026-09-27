@@ -70,12 +70,25 @@ class DynamicHyperliquidExecutor:
         except Exception as e:
             print(f"[EXECUTOR] Error cancelling resting orders: {e}")
 
+    def cancel_stale_maker_orders(self):
+        """Cancels all resting non-trigger maker limit orders (entry/rebalance quotes)."""
+        if DRY_RUN:
+            return
+
+        try:
+            for o in self.info.frontend_open_orders(self.wallet):
+                if not o.get("isTrigger") and "trigger" not in str(o.get("orderType", "")).lower():
+                    try:
+                        self.exchange.cancel(o["coin"], o["oid"])
+                        print(f"[EXECUTOR] Cancelled stale resting maker quote for {o['coin']} (OID: {o['oid']})")
+                    except Exception:
+                        pass
+        except Exception as e:
+            print(f"[EXECUTOR] Error cancelling stale maker orders: {e}")
+
 
     def get_live_account_state(self):
-        """Calculates Unified Portfolio Value (Perps Margin + Spot USDC)."""
-        ch = self.info.user_state(self.wallet)
-        perp_equity = float(ch.get("marginSummary", {}).get("accountValue", 0.0))
-
+        """Calculates Unified Portfolio Value (Perps Margin + Available Spot USDC)."""
         spot = self.info.spot_user_state(self.wallet)
         spot_usdc = sum(
             float(b.get("total", 0.0))
@@ -83,6 +96,10 @@ class DynamicHyperliquidExecutor:
             if b.get("coin") == "USDC" or b.get("token") == 0
         )
 
+        ch = self.info.user_state(self.wallet)
+        perp_equity = float(ch.get("marginSummary", {}).get("accountValue", 0.0))
+
+        # On Hyperliquid, spot total USDC is the unified account balance. If 0, fallback to isolated perp equity.
         total_equity = spot_usdc if spot_usdc > 0 else perp_equity
 
         current_positions = {}
@@ -188,6 +205,8 @@ class DynamicHyperliquidExecutor:
                 ntl = equity * weight
                 decimals = sz_decimals_map.get(coin, 4)
                 target_positions[coin] = self.round_sz(ntl / px, decimals)
+            else:
+                print(f"[EXECUTOR WARN] Symbol {coin} has no active mark/mid price on Hyperliquid testnet; excluded.")
 
         all_coins = sorted(list(set(current_positions.keys()).union(set(target_positions.keys()))))
         actions = []
@@ -243,12 +262,17 @@ class DynamicHyperliquidExecutor:
                 print(f"{coin:<10} {curr_sz:<10.4f} {tgt_sz:<10.4f} {delta:<10.4f} {action_str:<18} {'UNALLOC_CLOSE':<18} {status}")
                 actions.append({"coin": coin, "action": "CLOSE", "result": res})
 
-            # 2. Defended ALO Maker Entry with 5% Turnover Deadband
+            # 2. Defended ALO Maker Entry with Leland Optimal Deadband
             elif abs(delta_usd) >= STRATEGY_CONFIG.execution.min_delta_usd:
                 curr_w = (curr_sz * px) / equity if equity > 0 else 0.0
                 tgt_w = target_weights.get(coin, 0.0)
-                if abs(tgt_w - curr_w) < STRATEGY_CONFIG.execution.min_turnover_deadband and tgt_w != 0.0:
-                    continue
+                is_new_entry = abs(curr_sz) < 1e-5
+                is_direction_flip = (curr_sz * delta < 0) and (abs(curr_sz) > 1e-5)
+                # Only apply deadband to existing positions being adjusted in the same direction
+                if not is_new_entry and not is_direction_flip:
+                    deadband_threshold = min(STRATEGY_CONFIG.execution.min_turnover_deadband, max(0.02, 0.25 * abs(tgt_w)))
+                    if abs(tgt_w - curr_w) < deadband_threshold and tgt_w != 0.0:
+                        continue
 
                 is_buy = delta > 0
                 sz = abs(delta)

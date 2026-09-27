@@ -1,101 +1,83 @@
-import typer
-from rich.console import Console
-from rich.table import Table
+import argparse
+import os
+from dotenv import load_dotenv
 import polars as pl
+from google.cloud import bigquery
 
-from src.config import settings
-from src.data.bq_loader import BigQueryDataLoader
-from src.features.engine import FeatureEngineeringEngine
-from src.models.ranker import CrossSectionalLambdaRanker
-from src.models.validation import PurgedWalkForwardCV
-from src.portfolio.risk_governor import ContinuousRiskGovernor
-from src.portfolio.allocator import DollarNeutralPortfolioAllocator
-from src.execution.hyperliquid_executor import HyperliquidMakerExecutor
+from src.models.hmm_regime import HMMRegimeGovernor
+from src.models.ranker import CrossSectionalAlphaRanker
+from src.portfolio.risk_governor import MacroRiskGovernor
+from src.portfolio.allocator import DollarNeutralRiskParityAllocator
+from src.execution.hyperliquid_executor import HyperliquidExecutionEngine
 
-app = typer.Typer(help="Institutional Crypto Quant Engine CLI")
-console = Console()
+load_dotenv()
 
-FEATURE_COLS = [
-    "mom_24h", "mom_7d", "gk_vol_20p", "vol_compression_ratio",
-    "dist_to_120p_high", "residual_momentum_zscore", "beta_btc"
-]
+def run_pipeline():
+    client = bigquery.Client(project=os.getenv("GCP_PROJECT"))
+    query = """
+        SELECT * FROM `quant_marts.fct_4h_features_production`
+        WHERE timestamp_4h >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 14 DAY)
+        ORDER BY timestamp_4h ASC
+    """
+    df_pd = client.query(query).to_dataframe()
+    features_df = pl.from_pandas(df_pd)
 
-@app.command()
-def backtest(days: int = 365):
-    """Runs Purged Walk-Forward Cross-Validation across historical 4H dataset."""
-    console.print(f"[bold blue]--> Loading {days} days from BigQuery ({settings.bq_dataset})...[/bold blue]")
-    loader = BigQueryDataLoader()
-    df_raw = loader.load_ohlcv_universe(days=days)
+    macro_df = features_df.group_by("timestamp_4h").agg([
+        pl.col("ret_4h").std().alias("csd"),
+        (pl.col("close_4h") > pl.col("open_4h")).mean().alias("breadth"),
+        pl.col("btc_ret").first().alias("btc_ret")
+    ]).sort("timestamp_4h")
     
-    console.print("[bold yellow]--> Engineering Vectorized Polars Features & Residuals...[/bold yellow]")
-    engine = FeatureEngineeringEngine(forward_horizon_bars=settings.forward_horizon_bars)
-    df_feat = engine.compute_ohlcv_features(df_raw)
-    df_res = engine.residualize_against_market(df_feat)
-    df_target = engine.construct_ranking_targets(df_res)
+    hmm_features = macro_df.select(["csd", "breadth", "btc_ret"]).to_numpy()
+    hmm_gov = HMMRegimeGovernor().fit(hmm_features[:-1])
+    active_state, omega_h = hmm_gov.compute_regime_entropy(hmm_features[-1])
 
-    console.print("[bold green]--> Executing 4-Fold Purged Walk-Forward Cross-Validation...[/bold green]")
-    cv = PurgedWalkForwardCV(n_splits=4, purge_bars=settings.purge_embargo_bars)
-    
-    table = Table(title="Purged Walk-Forward Ranking Performance")
-    table.add_column("Fold", style="cyan")
-    table.add_column("Train Bars", justify="right")
-    table.add_column("Test Bars", justify="right")
-    table.add_column("Top/Bottom Spread (Ann. bps)", justify="right", style="green")
-
-    for idx, (train_df, test_df) in enumerate(cv.split(df_target), 1):
-        ranker = CrossSectionalLambdaRanker(feature_names=FEATURE_COLS)
-        ranker.fit(train_df, test_df)
-        test_scored = test_df.with_columns(ranker.predict_ranks(test_df))
-        
-        test_clean = test_scored.drop_nulls(subset=["fwd_residual_ret", "ranking_target"])
-        q4_ret = test_clean.filter(pl.col("ranking_target") == 4)["fwd_residual_ret"].mean() or 0.0
-        q0_ret = test_clean.filter(pl.col("ranking_target") == 0)["fwd_residual_ret"].mean() or 0.0
-        spread_bps = (q4_ret - q0_ret) * 10000.0
-
-        table.add_row(f"Fold {idx}", f"{len(train_df):,}", f"{len(test_df):,}", f"{spread_bps:+.1f} bps")
-
-    console.print(table)
-
-@app.command()
-def execute(dry_run: bool = True):
-    """Executes live 4H portfolio cycle on Hyperliquid."""
-    console.print("[bold magenta]--> Pulling live universe state & computing targets...[/bold magenta]")
-    loader = BigQueryDataLoader()
-    df_raw = loader.load_ohlcv_universe(days=30)
-    
-    engine = FeatureEngineeringEngine(forward_horizon_bars=settings.forward_horizon_bars)
-    df_feat = engine.compute_ohlcv_features(df_raw)
-    df_res = engine.residualize_against_market(df_feat)
-    
-    latest_ts = df_res["timestamp"].max()
-    bar_df = df_res.filter(pl.col("timestamp") == latest_ts)
-
-    ranker = CrossSectionalLambdaRanker(feature_names=FEATURE_COLS)
-    ranker.fit(engine.construct_ranking_targets(df_res))
-    bar_scored = bar_df.with_columns(ranker.predict_ranks(bar_df))
-
-    macro_omega = ContinuousRiskGovernor.compute_exposure_scalar(bar_scored)
-    allocator = DollarNeutralPortfolioAllocator(
-        top_quantile=settings.top_quantile_selection,
-        max_gross_leverage=settings.max_gross_leverage
+    latest_macro = macro_df.tail(1)
+    macro_risk = MacroRiskGovernor()
+    macro_scale = macro_risk.compute_macro_governor(
+        breadth=float(latest_macro["breadth"][0]),
+        cross_sectional_dispersion=float(latest_macro["csd"][0]),
+        volatility_zscore=0.0,
+        omega_h=omega_h
     )
 
-    orders = allocator.generate_orders(bar_scored, equity_usd=1000.0, macro_omega=macro_omega)
+    ranker = CrossSectionalAlphaRanker()
+    res_df = ranker.residualize_returns(features_df)
+    latest_ts = res_df["timestamp_4h"].max()
+    current_snapshot = res_df.filter(pl.col("timestamp_4h") == latest_ts)
+    feat_cols = ["residual_return", "sigma_gk_20p", "vcr_20_120", "mom_acc"]
 
-    console.print(f"\n[bold]Macro Risk Governor Omega:[/] {macro_omega:.2f}")
-    console.print(f"[bold]Target Gross Leverage:[/] {orders['effective_gross_leverage']:.2f}x")
-    console.print(f"[bold]Net Dollar Imbalance:[/] ${orders['net_dollar_exposure']:.2f}\n")
+    train_snapshot = res_df.filter(pl.col("timestamp_4h") < latest_ts).with_columns(
+        (pl.col("residual_return") > 0).cast(pl.Int32).alias("forward_res_decile")
+    )
+    ranker.train_lambdarank(train_snapshot, feat_cols)
+    ranked = ranker.rank_universe(current_snapshot, feat_cols)
 
-    if dry_run:
-        console.print("[yellow][DRY RUN] Generated Long Basket:[/yellow]")
-        for o in orders["long_basket"]:
-            console.print(f"  • BUY  {o['ticker']:<8} | ${o['notional_usd']:>7.2f} @ ${o['price']:.4f}")
-        console.print("[yellow][DRY RUN] Generated Short Basket:[/yellow]")
-        for o in orders["short_basket"]:
-            console.print(f"  • SELL {o['ticker']:<8} | ${o['notional_usd']:>7.2f} @ ${o['price']:.4f}")
-    else:
-        executor = HyperliquidMakerExecutor()
-        executor.execute_post_only_rebalance(orders["long_basket"] + orders["short_basket"])
+    allocator = DollarNeutralRiskParityAllocator()
+    total_nav = float(os.getenv("ACCOUNT_NAV_USD", "100000"))
+    allocated_orders = allocator.allocate(ranked, total_nav_usd=total_nav, macro_scalar=macro_scale)
+    
+    print(allocated_orders.select(["symbol", "basket_assignment", "order_side", "target_notional_usd", "target_qty"]))
+
+    executor = HyperliquidExecutionEngine(
+        base_url=os.getenv("HYPERLIQUID_API_URL", "https://api.hyperliquid.xyz"),
+        master_vault_address=os.getenv("HYPERLIQUID_VAULT_ADDRESS"),
+        agent_private_key=os.getenv("HYPERLIQUID_AGENT_KEY")
+    )
+    order_list = []
+    for row in allocated_orders.iter_rows(named=True):
+        order_list.append({
+            "asset_idx": row.get("asset_idx", 0),
+            "is_buy": (row["order_side"] == "BUY"),
+            "limit_price": row["close_4h"],
+            "size_qty": row["target_qty"]
+        })
+    res = executor.dispatch_batch_alo_orders(order_list)
+    print("Execution Result:", res)
 
 if __name__ == "__main__":
-    app()
+    parser = argparse.ArgumentParser(description="Run 4H Rebalance Engine")
+    parser.add_argument("--execute", action="store_true", help="Execute orders on Hyperliquid")
+    args = parser.parse_args()
+    if args.execute:
+        run_pipeline()

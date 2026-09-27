@@ -141,7 +141,7 @@ def run_forensic_analysis():
 
     for t in dd_trades:
         sym = t.get("symbol", "UNKNOWN")
-        pnl = t.get("realized_pnl", 0.0)
+        pnl = t.get("total_realized_pnl", t.get("pnl_usd", 0.0))
         direction = t.get("direction", 1)
         bars_held = t.get("bars_held", 0)
 
@@ -160,11 +160,9 @@ def run_forensic_analysis():
     audit_log = res["audit_log"]
     dd_audits = audit_log[p_idx:t_idx + 1]
 
-    dd_fees = sum(b.get("cost_maker_fee", 0.0) + b.get("cost_taker_fee", 0.0) for b in dd_audits)
-    dd_slip = sum(b.get("cost_base_slippage", 0.0) for b in dd_audits)
-    dd_impact = sum(b.get("cost_impact_slippage", 0.0) for b in dd_audits)
-    dd_funding = sum(b.get("funding_pnl", 0.0) for b in dd_audits)
-    total_friction = dd_fees + dd_slip + dd_impact - dd_funding
+    dd_friction = sum(b.get("rebal_friction_usd", 0.0) for b in dd_audits)
+    dd_funding = sum(b.get("funding_usd", 0.0) for b in dd_audits)
+    total_friction = dd_friction - dd_funding
 
     friction_pct_of_loss = (total_friction / total_drop) * 100.0 if total_drop > 0 else 0.0
 
@@ -172,10 +170,8 @@ def run_forensic_analysis():
     print(f"  Total Equity Decline:           -${total_drop:,.2f}")
     print(f"  Gross Trading Loss:             -${(total_drop - total_friction):,.2f} ({(100.0 - friction_pct_of_loss):.1f}% of drop)")
     print(f"  Total Microstructure Drag:      -${total_friction:,.2f} ({friction_pct_of_loss:.1f}% of drop)")
-    print(f"    - Exchange Fees (Maker/Taker): ${dd_fees:,.2f}")
-    print(f"    - Base Slippage:               ${dd_slip:,.2f}")
-    print(f"    - Market Impact:               ${dd_impact:,.2f}")
-    print(f"    - Net Funding Drag:            ${-dd_funding:,.2f}")
+    print(f"    - Execution Friction (Fee/Slip/Imp): ${dd_friction:,.2f}")
+    print(f"    - Net Funding Drag:                  ${-dd_funding:,.2f}")
     print(f"  Long PnL vs Short PnL:          Longs: ${long_pnl:,.2f} | Shorts: ${short_pnl:,.2f}")
 
     print("\n  Top 5 Detractor Assets (Largest Losses):")
@@ -215,12 +211,12 @@ def run_forensic_analysis():
 
     # C. Trade Pathology
     total_trades_dd = len(dd_trades)
-    winning_trades = [t for t in dd_trades if t.get("realized_pnl", 0.0) > 0]
-    losing_trades = [t for t in dd_trades if t.get("realized_pnl", 0.0) <= 0]
+    winning_trades = [t for t in dd_trades if t.get("total_realized_pnl", t.get("pnl_usd", 0.0)) > 0]
+    losing_trades = [t for t in dd_trades if t.get("total_realized_pnl", t.get("pnl_usd", 0.0)) <= 0]
     win_rate = (len(winning_trades) / total_trades_dd) * 100.0 if total_trades_dd > 0 else 0.0
 
-    gross_wins = sum(t["realized_pnl"] for t in winning_trades)
-    gross_losses = abs(sum(t["realized_pnl"] for t in losing_trades))
+    gross_wins = sum(t.get("total_realized_pnl", t.get("pnl_usd", 0.0)) for t in winning_trades)
+    gross_losses = abs(sum(t.get("total_realized_pnl", t.get("pnl_usd", 0.0)) for t in losing_trades))
     profit_factor = (gross_wins / gross_losses) if gross_losses > 0 else 0.0
     whipsaw_rate = (whipsaw_count / total_trades_dd) * 100.0 if total_trades_dd > 0 else 0.0
 
@@ -253,9 +249,7 @@ def run_forensic_analysis():
             "total_drop_usd": total_drop,
             "gross_trading_loss_usd": total_drop - total_friction,
             "total_friction_usd": total_friction,
-            "fees_usd": dd_fees,
-            "slippage_usd": dd_slip,
-            "impact_usd": dd_impact,
+            "rebal_friction_usd": dd_friction,
             "funding_usd": dd_funding,
             "friction_pct": friction_pct_of_loss,
             "long_pnl": long_pnl,

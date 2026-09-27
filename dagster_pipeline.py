@@ -1,11 +1,19 @@
 import os
+import sqlite3
 import subprocess
 from dagster import (
     asset,
+    define_asset_job,
+    AssetSelection,
     ScheduleDefinition,
     DefaultScheduleStatus,
-    define_asset_job,
     Definitions,
+    op,
+    Out,
+    Nothing,
+    job,
+    MaterializeResult,
+    MetadataValue,
 )
 
 # ------------------------------------------------------------------------------
@@ -21,31 +29,91 @@ DBT_PROJECT_DIR = os.path.join(os.getcwd(), "crypto_features")
 @asset
 def market_data_sync():
     """Pulls latest 15m OHLCV and Derivatives directly from Binance."""
-    subprocess.run(["python3", "sync_latest_ohlcv.py"], check=True)
+    result = subprocess.run(
+        ["python3", "sync_latest_ohlcv.py"],
+        check=True, capture_output=True, text=True
+    )
     subprocess.run(["python3", "sync_latest_derivatives.py"], check=True)
-    return True
+    
+    return MaterializeResult(
+        metadata={
+            "status": MetadataValue.text("Success"),
+            "log_snippet": MetadataValue.text(result.stdout[-300:])
+        }
+    )
 
 @asset(deps=[market_data_sync])
 def timesfm_forecast():
     """Generates live ML predictions after market data is updated."""
-    subprocess.run(["python3", "forecast_timesfm.py"], check=True)
-    return True
+    result = subprocess.run(
+        ["python3", "forecast_timesfm.py"],
+        check=True, capture_output=True, text=True
+    )
+    return MaterializeResult(
+        metadata={
+            "status": MetadataValue.text("Forecast Appended"),
+            "log_snippet": MetadataValue.text(result.stdout[-300:])
+        }
+    )
 
 @asset(deps=[timesfm_forecast])
 def crypto_features_dbt():
     """Rebuilds dbt feature store matrices with freshly joined predictions."""
-    subprocess.run([
+    result = subprocess.run([
         "dbt", "run",
         "--exclude", "fct_exact_path_resolution",
         "--project-dir", DBT_PROJECT_DIR
-    ], check=True)
-    return True
+    ], check=True, capture_output=True, text=True)
+    
+    return MaterializeResult(
+        metadata={
+            "dbt_status": MetadataValue.text("Build Complete"),
+            "dbt_output": MetadataValue.text(result.stdout[-600:])
+        }
+    )
 
 @asset(deps=[crypto_features_dbt])
 def hyperliquid_execution():
-    """Routes limit orders to exchange ONLY if feature build succeeds."""
-    subprocess.run(["python3", "execute_hyperliquid_testnet.py"], check=True)
-    return True
+    """Routes limit orders to exchange and logs rich telemetry metadata into Dagster."""
+    result = subprocess.run(
+        ["python3", "execute_hyperliquid_testnet.py"],
+        check=True, capture_output=True, text=True
+    )
+
+    # Read latest snapshot from SQLite execution telemetry
+    table_md = "No intents logged in telemetry database."
+    intents_count = 0
+    db_path = "/home/skybullet1987/quant_pipeline/live_execution_telemetry.db"
+    
+    if os.path.exists(db_path):
+        try:
+            conn = sqlite3.connect(db_path)
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT symbol, order_side, status, size_notional, entry_time 
+                FROM execution_telemetry 
+                ORDER BY entry_time DESC LIMIT 5
+            """)
+            rows = cursor.fetchall()
+            conn.close()
+            
+            if rows:
+                intents_count = len(rows)
+                table_md = "| Symbol | Side | Status | Size ($) | Time |\n|---|---|---|---|---|\n"
+                for r in rows:
+                    size_val = f"${float(r[3]):.2f}" if r[3] is not None else "$0.00"
+                    table_md += f"| {r[0]} | {r[1]} | {r[2]} | {size_val} | {r[4]} |\n"
+        except Exception:
+            pass
+
+    return MaterializeResult(
+        metadata={
+            "execution_mode": MetadataValue.text("TESTNET"),
+            "log_output": MetadataValue.text(result.stdout[-1000:]),
+            "recent_intents_count": MetadataValue.int(intents_count),
+            "recent_intents_table": MetadataValue.md(table_md)
+        }
+    )
 
 # ==============================================================================
 # 2. DAILY MAINTENANCE & INGESTION TASKS
@@ -58,17 +126,7 @@ def daily_incremental_ingest():
     return True
 
 # ==============================================================================
-# 3. WEEKLY OPTUNA MODEL RETRAINING
-# ==============================================================================
-
-@asset
-def optuna_model_retraining():
-    """Weekly hyperparameter & model sweep."""
-    subprocess.run(["python3", "run_optuna_sweep.py"], check=True)
-    return True
-
-# ==============================================================================
-# 4. JOBS AND SCHEDULE DEFINITIONS
+# 3. JOBS AND SCHEDULE DEFINITIONS
 # ==============================================================================
 
 trading_job = define_asset_job(
@@ -93,20 +151,31 @@ daily_schedule = ScheduleDefinition(
     default_status=DefaultScheduleStatus.RUNNING
 )
 
-optuna_job = define_asset_job(
-    name="weekly_optuna_job",
-    selection=[optuna_model_retraining]
-)
+# ==============================================================================
+# 4. DAGSTER DEFINITIONS REGISTRY
+# ==============================================================================
 
-optuna_schedule = ScheduleDefinition(
-    job=optuna_job,
-    cron_schedule="30 2 * * 0",
-    default_status=DefaultScheduleStatus.RUNNING
-)
 
 # ==============================================================================
-# 5. DAGSTER DEFINITIONS REGISTRY
+# MONTHLY MODEL GOVERNANCE & RETRAINING JOB
 # ==============================================================================
+@op(out=Out(Nothing))
+def model_governance_op():
+    import subprocess
+    cmd = "/home/skybullet1987/quant_pipeline/venv/bin/python3 evaluate_and_promote_challenger.py"
+    res = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+    if res.returncode != 0:
+        raise Exception(f"Model governance failed: {res.stderr}")
+    print(res.stdout)
+
+@job
+def monthly_model_governance_job():
+    model_governance_op()
+
+monthly_model_governance_schedule = ScheduleDefinition(
+    job=monthly_model_governance_job,
+    cron_schedule="0 0 1 * *",  # Midnight UTC on the 1st of every month
+)
 
 defs = Definitions(
     assets=[
@@ -115,11 +184,9 @@ defs = Definitions(
         crypto_features_dbt,
         hyperliquid_execution,
         daily_incremental_ingest,
-        optuna_model_retraining,
     ],
-    schedules=[
+    schedules=[monthly_model_governance_schedule, 
         trading_schedule,
         daily_schedule,
-        optuna_schedule,
     ],
 )

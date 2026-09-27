@@ -1,0 +1,42 @@
+# Production Strategy Configuration - 10x Ultra-Convex Compounding Architecture
+# Single source of truth for portfolio, execution, and risk bounds
+
+portfolio:
+  target_gross_leverage: 2.50     # Grossman-Zhou base leverage (User Target Apex)
+  max_bull_leverage: 2.50         # 2.50x Grossman-Zhou frontier ceiling
+  max_drawdown_limit: 0.25        # D_max = 25% hard drawdown ceiling (alpha = 0.75)
+  grossman_zhou_curvature: 0.75   # Convex dampener exponent gamma = 0.75
+  s0_short_multiplier: 0.50       # 50% short hedge allocation
+  top_k_conviction: 6             # Top 6 long / 6 short positions
+  max_individual_weight: 0.50     # Max individual slot weight (0.50x NAV)
+  min_weight_threshold: 0.020     # Negligible position cutoff
+
+execution:
+  min_turnover_deadband: 0.050    # 5.0% deadband to eliminate churn
+  min_delta_usd: 11.0             # Minimum trade notional in USD
+  min_margin_buffer: 0.15         # 15% maintenance margin floor
+  post_only_alo: true             # Enforce ALO maker orders to earn rebates
+  dry_run: false                  # Live execution enabled
+
+two_tranche_runner:
+  tranche_a_tp_atr_mult: 3.00     # +3.0x ATR profit harvest barrier
+  initial_sl_atr_mult: 2.50       # -2.50x ATR structural stop
+  tranche_b_ratchet_mult: 0.50    # Entry + 0.5x ATR break-even lock
+  volumetric_chandelier_mult: 2.5 # Volumetric dynamic trailing multiplier
+  max_horizon_holding_bars: 18    # 72 hours max holding timeout
+
+regime_model:
+  rmt_denoising: true             # Marchenko-Pastur RMT spectral filtering
+  market_detoning: true           # Dominant crypto beta mode extraction
+  covariance_lookback_bars: 240   # 40 days of 4H bars for RMT filtering
+  retrain_step_bars: 18           # 3 days of 4H bars for HMM retraining window
+  min_universe_depth: 15          # Minimum liquid assets required to trade
+
+universe:
+  min_adv_usd: 300000.0           # $300k microstructure floor for $1,000 canary account
+  min_order_notional: 12.0        # Hyperliquid minimum order size ($10-$12)
+  max_participation_pct: 0.01     # Max 1% of hourly volume (ADV_target = OrderSize / 0.01 * 24)
+  target_positions: 20            # Breadth target for F5 cross-sectional ranking
+  testnet_top_n: 20               # Top 20 testnet assets by volume
+  testnet_min_adv: 5000.0         # Simulated testnet volume floor
+

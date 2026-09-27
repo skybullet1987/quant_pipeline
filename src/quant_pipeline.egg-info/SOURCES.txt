@@ -8,9 +8,11 @@ src/data/__init__.py
 src/data/bq_loader.py
 src/execution/__init__.py
 src/execution/hyperliquid_executor.py
+src/execution/trailing_stops.py
 src/features/__init__.py
 src/features/engine.py
 src/models/__init__.py
+src/models/hmm_regime.py
 src/models/ranker.py
 src/models/validation.py
 src/portfolio/__init__.py
@@ -21,5 +23,13 @@ src/quant_pipeline.egg-info/SOURCES.txt
 src/quant_pipeline.egg-info/dependency_links.txt
 src/quant_pipeline.egg-info/requires.txt
 src/quant_pipeline.egg-info/top_level.txt
+tests/test_assets_integration.py
+tests/test_dqg_and_transforms.py
+tests/test_execution_policy.py
 tests/test_features.py
+tests/test_live_node.py
 tests/test_portfolio.py
+tests/test_regime.py
+tests/test_stacking.py
+tests/test_strategy_core.py
+tests/test_validation.py

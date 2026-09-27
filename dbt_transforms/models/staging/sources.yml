@@ -1,0 +1,14 @@
+version: 2
+
+sources:
+  - name: hyperliquid_raw
+    database: parnasa-498503
+    schema: hyperliquid_raw
+    tables:
+      - name: trades
+
+  - name: warehouse_historical
+    database: parnasa-498503
+    schema: dbt_marts
+    tables:
+      - name: stg_market_candles_1m_historical

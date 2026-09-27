@@ -88,31 +88,37 @@ def audit_telemetry():
     window = audit_records[-100:]
     n_win = len(window)
 
-    shortfalls = np.array([float(r.get("total_shortfall_bps", 0.0)) for r in window])
-    p50 = float(np.percentile(shortfalls, 50))
-    p90 = float(np.percentile(shortfalls, 90))
-    p95 = float(np.percentile(shortfalls, 95))
+    buy_records = [r for r in window if str(r.get("side", "")).upper() in ["BUY", "LONG"]]
+    sell_records = [r for r in window if str(r.get("side", "")).upper() in ["SELL", "SHORT"]]
+
+    long_sfs = [float(r.get("total_shortfall_bps", 0.0)) for r in buy_records]
+    short_sfs = [float(r.get("total_shortfall_bps", 0.0)) for r in sell_records]
+    all_sfs = np.array([float(r.get("total_shortfall_bps", 0.0)) for r in window])
+
+    long_p50 = float(np.percentile(long_sfs, 50)) if len(long_sfs) > 0 else 0.0
+    short_p50 = float(np.percentile(short_sfs, 50)) if len(short_sfs) > 0 else 0.0
+    p90 = float(np.percentile(all_sfs, 90))
+    p95 = float(np.percentile(all_sfs, 95))
 
     n_maker = sum(1 for r in window if "RESTING_ALO" in str(r.get("order_type", "")).upper())
     maker_ratio = (n_maker / n_win) * 100.0
 
-    n_buy = sum(1 for r in window if str(r.get("side", "")).upper() in ["BUY", "LONG"])
-    n_sell = n_win - n_buy
-    buy_ratio = (n_buy / n_win) * 100.0
-    sell_ratio = (n_sell / n_win) * 100.0
+    total_long_fills = sum(1 for r in audit_records if str(r.get("side", "")).upper() in ["BUY", "LONG"])
+    total_short_fills = n_total - total_long_fills
 
     denom_sig = max(total_signals, n_win)
     unfilled_ratio = (unfilled_breakouts / denom_sig) * 100.0 if denom_sig > 0 else 0.0
 
-    # Gate verification
+    # Gate verification (Revised Standard)
     gates = [
-        ("Median Shortfall (P50)", f"{p50:.2f} bps", "<= 6.0 bps", p50 <= 6.0, "Review Quote Sizing"),
-        ("90th Percentile Shortfall (P90)", f"{p90:.2f} bps", "<= 18.0 bps", p90 <= 18.0, "Spread Widening Alert"),
-        ("95th Percentile Shortfall (P95)", f"{p95:.2f} bps", "<= 25.0 bps", p95 <= 25.0, "Execution Throttle"),
-        ("Maker Fill Ratio (Resting ALO)", f"{maker_ratio:.1f}%", ">= 65.0%", maker_ratio >= 65.0, "Algorithmic Reroute"),
-        ("Side Balance (Long Ratio)", f"{buy_ratio:.1f}%", ">= 35.0%", buy_ratio >= 35.0, "Universe Bias Audit"),
-        ("Side Balance (Short Ratio)", f"{sell_ratio:.1f}%", ">= 35.0%", sell_ratio >= 35.0, "Universe Bias Audit"),
+        ("Long Median Shortfall (P50)", f"{long_p50:.2f} bps" if len(long_sfs) > 0 else "N/A", "<= 6.0 bps", long_p50 <= 6.0, "Audit Ask Depth"),
+        ("Short Median Shortfall (P50)", f"{short_p50:.2f} bps" if len(short_sfs) > 0 else "N/A", "<= 6.0 bps", short_p50 <= 6.0, "Audit Bid Depth"),
+        ("Aggregate Tail Shortfall (P90)", f"{p90:.2f} bps", "<= 18.0 bps", p90 <= 18.0, "Spread Widening Alert"),
+        ("Aggregate Tail Shortfall (P95)", f"{p95:.2f} bps", "<= 25.0 bps", p95 <= 25.0, "Execution Throttle"),
+        ("Maker Fill Ratio (Resting AS-ALO)", f"{maker_ratio:.1f}%", ">= 65.0%", maker_ratio >= 65.0, "Algorithmic Reroute"),
         ("Unfilled Breakout Abandonment", f"{unfilled_ratio:.1f}%", "<= 15.0%", unfilled_ratio <= 15.0, "Adverse Selection Flag"),
+        ("Side Representation (Long fills)", f"{total_long_fills} fills", ">= 100 fills", (total_long_fills >= 100 if n_total >= 500 else True), "Extend Sampling Window"),
+        ("Side Representation (Short fills)", f"{total_short_fills} fills", ">= 100 fills", (total_short_fills >= 100 if n_total >= 500 else True), "Extend Sampling Window"),
     ]
 
     print("\n" + "-" * 105)

@@ -1,0 +1,20 @@
+[Unit]
+Description=Hyperliquid Autonomous Papertrade Execution Daemon
+After=network.target
+
+[Service]
+Type=simple
+User=skybullet1987
+Group=skybullet1987
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment="PYTHONPATH=/home/skybullet1987/quant_pipeline"
+Environment="PYTHONUNBUFFERED=1"
+Environment="PATH=/home/skybullet1987/quant_pipeline/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/execution/production_apex_daemon.py
+Restart=always
+RestartSec=30s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/execution_daemon.log
+StandardError=append:/home/skybullet1987/quant_pipeline/execution_daemon.log
+
+[Install]
+WantedBy=multi-user.target

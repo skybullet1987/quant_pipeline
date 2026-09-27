@@ -108,7 +108,8 @@ DEFAULT_TP_PCT = 0.070            # 7.0% default take-profit trigger (Safety Ove
 MAX_CLOCK_DRIFT_MS = 5000         # 5.0 seconds maximum acceptable clock drift
 MAX_VALUATION_RESIDUAL_USD = 2.50 # $2.50 maximum unexplained valuation residual before HALT (calibrated for 8-16 multi-asset mark oracle spread)
 BENCHMARK_SYMBOL = "BTC"
-STRATEGY_VERSION = "v2.5.0-composite-tv-rho"
+STRATEGY_VERSION = "v2.5.0-candidate-a-rho-only"
+PYRAMID_RATIO = 0.0  # Strictly zero pyramiding invariant
 
 
 class CircuitBreakerState(Enum):
@@ -677,11 +678,11 @@ class ProductionApexExecutor:
         n_bars, n_symbols = close_mat.shape
         t = n_bars - 1
 
-        # 0. Certified Dual-Sensor Regime Gating (Composite_TV_Rho)
+        # 0. Candidate A Frozen Macro Regime Gating (Pure Rho_1 <= -0.1000 fl0)
         tv_val = 0.0
         rho_val = 0.0
-        TV_THRESHOLD = 0.061150
-        RHO_THRESHOLD = -0.1500
+        TV_THRESHOLD = 0.061150  # Retained for auxiliary telemetry
+        RHO_THRESHOLD = -0.1000  # Frozen Candidate A Regime Boundary
 
         if vol_mat is not None and n_bars >= 20:
             dollar_vol = np.where(valid_mask, close_mat * vol_mat, 0.0)
@@ -726,10 +727,10 @@ class ProductionApexExecutor:
                 if len(valid_corrs) > 0:
                     rho_val = float(np.mean(valid_corrs))
 
-        is_throttled = (tv_val > 0.0 and tv_val < TV_THRESHOLD) or (rho_val < RHO_THRESHOLD)
+        is_throttled = (rho_val <= RHO_THRESHOLD)
         phi_macro = 0.00 if is_throttled else 1.00
 
-        log("INFO", f"[REGIME DUAL-SENSOR] TV_20d: {tv_val:.4f} (cutoff: {TV_THRESHOLD:.4f}) | Rho_7d: {rho_val:+.4f} (cutoff: {RHO_THRESHOLD:.4f}) | Regime: {'CASH_FLOOR_fl0' if is_throttled else 'ACTIVE_TREND'}")
+        log("INFO", f"[REGIME CANDIDATE A] Rho_7d: {rho_val:+.4f} (cutoff: {RHO_THRESHOLD:.4f}) | TV_20d: {tv_val:.4f} (aux telemetry) | Regime: {'CASH_FLOOR_fl0' if is_throttled else 'ACTIVE_TREND'}")
 
         # Capital Circuit Breaker: Track B Dual-Envelope Protection
         # Envelope 1: Max DD > 52.0% from any High-Water Mark (3.4% buffer beyond historical 48.60% valley)
@@ -1050,14 +1051,15 @@ class ProductionApexExecutor:
 
     def audit_distributional_telemetry(self) -> Dict[str, Any]:
         """
-        Gate 2 Distributional Execution Telemetry Framework (Track C):
+        Gate 2 Distributional Execution Telemetry Framework (Revised Standard):
         Evaluates rolling 100-trade window over IMPLEMENTATION_AUDIT_RECORD events:
-          - Median Shortfall (P50) <= 6.0 bps       (Violation Action: Review Quote Sizing)
-          - 90th Pct Shortfall (P90) <= 18.0 bps    (Violation Action: Spread Widening Alert)
-          - 95th Pct Shortfall (P95) <= 25.0 bps    (Violation Action: Execution Throttle)
-          - Maker Fill Ratio (ALO) >= 65.0% of fills(Violation Action: Algorithmic Reroute)
-          - Side Balance (Long / Short) >= 35% each (Violation Action: Universe Bias Audit)
-          - Unfilled Breakout Ratio <= 15.0%        (Violation Action: Adverse Selection Flag)
+          - Long Median Shortfall (P50) <= 6.0 bps     (Action: Audit Ask Depth)
+          - Short Median Shortfall (P50) <= 6.0 bps    (Action: Audit Bid Depth)
+          - Aggregate Tail Shortfall (P90) <= 18.0 bps (Action: Spread Widening Alert)
+          - Aggregate Tail Shortfall (P95) <= 25.0 bps (Action: Execution Throttle)
+          - Maker Fill Ratio (AS-ALO) >= 65.0%         (Action: Algorithmic Reroute)
+          - Unfilled Breakout Ratio <= 15.0%           (Action: Adverse Selection Flag)
+          - Side Sample Representation: Min 100/side   (Action: Extend Sampling Window)
         """
         audit_records = []
         total_signals = 0
@@ -1086,73 +1088,81 @@ class ProductionApexExecutor:
         n_samples = len(rolling_window)
         total_lifetime_fills = len(audit_records)
 
+        total_long_fills = sum(1 for r in audit_records if str(r.get("side", "")).upper() in ["BUY", "LONG"])
+        total_short_fills = total_lifetime_fills - total_long_fills
+
         telemetry: Dict[str, Any] = {
             "window_size": n_samples,
             "total_lifetime_fills": total_lifetime_fills,
+            "total_long_fills": total_long_fills,
+            "total_short_fills": total_short_fills,
             "gate2_sample_target": 500,
-            "gate2_attained": bool(total_lifetime_fills >= 500),
-            "median_shortfall_p50_bps": 0.0,
-            "p90_shortfall_bps": 0.0,
-            "p95_shortfall_bps": 0.0,
+            "gate2_attained": bool(total_lifetime_fills >= 500 and total_long_fills >= 100 and total_short_fills >= 100),
+            "long_median_shortfall_p50_bps": 0.0,
+            "short_median_shortfall_p50_bps": 0.0,
+            "aggregate_shortfall_p90_bps": 0.0,
+            "aggregate_shortfall_p95_bps": 0.0,
             "maker_fill_ratio_pct": 0.0,
-            "long_fill_ratio_pct": 0.0,
-            "short_fill_ratio_pct": 0.0,
             "unfilled_breakout_ratio_pct": 0.0,
             "violations": [],
             "status": "INSUFFICIENT_DATA" if n_samples < 5 else "ACTIVE_MONITORING",
         }
 
         if n_samples >= 5:
-            shortfalls = np.array([float(r.get("total_shortfall_bps", 0.0)) for r in rolling_window])
-            p50 = float(np.percentile(shortfalls, 50))
-            p90 = float(np.percentile(shortfalls, 90))
-            p95 = float(np.percentile(shortfalls, 95))
+            buy_records = [r for r in rolling_window if str(r.get("side", "")).upper() in ["BUY", "LONG"]]
+            sell_records = [r for r in rolling_window if str(r.get("side", "")).upper() in ["SELL", "SHORT"]]
+
+            long_sfs = [float(r.get("total_shortfall_bps", 0.0)) for r in buy_records]
+            short_sfs = [float(r.get("total_shortfall_bps", 0.0)) for r in sell_records]
+            all_sfs = np.array([float(r.get("total_shortfall_bps", 0.0)) for r in rolling_window])
+
+            long_p50 = float(np.percentile(long_sfs, 50)) if len(long_sfs) > 0 else 0.0
+            short_p50 = float(np.percentile(short_sfs, 50)) if len(short_sfs) > 0 else 0.0
+            p90 = float(np.percentile(all_sfs, 90))
+            p95 = float(np.percentile(all_sfs, 95))
 
             n_maker = sum(1 for r in rolling_window if "RESTING_ALO" in str(r.get("order_type", "")).upper())
             maker_ratio = (n_maker / n_samples) * 100.0
-
-            n_buy = sum(1 for r in rolling_window if str(r.get("side", "")).upper() in ["BUY", "LONG"])
-            n_sell = n_samples - n_buy
-            buy_ratio = (n_buy / n_samples) * 100.0
-            sell_ratio = (n_sell / n_samples) * 100.0
 
             denom_signals = max(total_signals, n_samples)
             unfilled_ratio = (unfilled_breakouts / denom_signals) * 100.0 if denom_signals > 0 else 0.0
 
             telemetry.update({
-                "median_shortfall_p50_bps": round(p50, 2),
-                "p90_shortfall_bps": round(p90, 2),
-                "p95_shortfall_bps": round(p95, 2),
+                "long_median_shortfall_p50_bps": round(long_p50, 2),
+                "short_median_shortfall_p50_bps": round(short_p50, 2),
+                "aggregate_shortfall_p90_bps": round(p90, 2),
+                "aggregate_shortfall_p95_bps": round(p95, 2),
                 "maker_fill_ratio_pct": round(maker_ratio, 2),
-                "long_fill_ratio_pct": round(buy_ratio, 2),
-                "short_fill_ratio_pct": round(sell_ratio, 2),
                 "unfilled_breakout_ratio_pct": round(unfilled_ratio, 2),
             })
 
             violations = []
-            if p50 > 6.0:
-                violations.append("P50 Shortfall > 6.0 bps (Action: Review Quote Sizing)")
-                log("WARN", f"[TELEMETRY ALERT] P50 Shortfall {p50:.2f} bps > 6.0 bps -> Review Quote Sizing")
+            if len(long_sfs) >= 5 and long_p50 > 6.0:
+                violations.append(f"Long P50 Shortfall {long_p50:.2f} bps > 6.0 bps (Action: Audit Ask Depth)")
+                log("WARN", f"[TELEMETRY ALERT] Long P50 Shortfall {long_p50:.2f} bps > 6.0 bps -> Audit Ask Depth")
+            if len(short_sfs) >= 5 and short_p50 > 6.0:
+                violations.append(f"Short P50 Shortfall {short_p50:.2f} bps > 6.0 bps (Action: Audit Bid Depth)")
+                log("WARN", f"[TELEMETRY ALERT] Short P50 Shortfall {short_p50:.2f} bps > 6.0 bps -> Audit Bid Depth")
             if p90 > 18.0:
-                violations.append("P90 Shortfall > 18.0 bps (Action: Spread Widening Alert)")
-                log("WARN", f"[TELEMETRY ALERT] P90 Shortfall {p90:.2f} bps > 18.0 bps -> Spread Widening Alert")
+                violations.append(f"Aggregate P90 Shortfall {p90:.2f} bps > 18.0 bps (Action: Spread Widening Alert)")
+                log("WARN", f"[TELEMETRY ALERT] Aggregate P90 Shortfall {p90:.2f} bps > 18.0 bps -> Spread Widening Alert")
             if p95 > 25.0:
-                violations.append("P95 Shortfall > 25.0 bps (Action: Execution Throttle)")
-                log("CRITICAL", f"[TELEMETRY ALERT] P95 Shortfall {p95:.2f} bps > 25.0 bps -> Execution Throttle")
+                violations.append(f"Aggregate P95 Shortfall {p95:.2f} bps > 25.0 bps (Action: Execution Throttle)")
+                log("CRITICAL", f"[TELEMETRY ALERT] Aggregate P95 Shortfall {p95:.2f} bps > 25.0 bps -> Execution Throttle")
             if maker_ratio < 65.0:
                 violations.append(f"Maker Fill Ratio {maker_ratio:.1f}% < 65.0% (Action: Algorithmic Reroute)")
                 log("WARN", f"[TELEMETRY ALERT] Maker Ratio {maker_ratio:.1f}% < 65.0% -> Algorithmic Reroute")
-            if buy_ratio < 35.0 or sell_ratio < 35.0:
-                violations.append(f"Side Balance L:{buy_ratio:.1f}% / S:{sell_ratio:.1f}% violates 35% minimum (Action: Universe Bias Audit)")
-                log("WARN", f"[TELEMETRY ALERT] Side Balance L:{buy_ratio:.1f}% / S:{sell_ratio:.1f}% < 35% -> Universe Bias Audit")
             if unfilled_ratio > 15.0:
                 violations.append(f"Unfilled Breakout Ratio {unfilled_ratio:.1f}% > 15.0% (Action: Adverse Selection Flag)")
                 log("WARN", f"[TELEMETRY ALERT] Unfilled Breakout Ratio {unfilled_ratio:.1f}% > 15.0% -> Adverse Selection Flag")
+            if total_lifetime_fills >= 500 and (total_long_fills < 100 or total_short_fills < 100):
+                violations.append(f"Side representation L:{total_long_fills} / S:{total_short_fills} < 100 min (Action: Extend Sampling Window)")
+                log("WARN", f"[TELEMETRY ALERT] Side representation L:{total_long_fills} / S:{total_short_fills} < 100 min -> Extend Sampling Window")
 
             telemetry["violations"] = violations
             telemetry["status"] = "PASSED" if len(violations) == 0 else "GATES_BREACHED"
 
-            log("INFO", f"[DISTRIBUTIONAL TELEMETRY (N={n_samples}/100)] P50={p50:.1f}bp (<=6.0) | P90={p90:.1f}bp (<=18.0) | P95={p95:.1f}bp (<=25.0) | Maker={maker_ratio:.1f}% (>=65%) | Side(L/S)={buy_ratio:.1f}%/{sell_ratio:.1f}% (>=35%) | Status={telemetry['status']}")
+            log("INFO", f"[DISTRIBUTIONAL TELEMETRY (N={n_samples}/100)] LongP50={long_p50:.1f}bp | ShortP50={short_p50:.1f}bp | P90={p90:.1f}bp | P95={p95:.1f}bp | Maker={maker_ratio:.1f}% | Status={telemetry['status']}")
 
         return telemetry
 

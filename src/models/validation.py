@@ -1,29 +1,33 @@
-from typing import Generator, Tuple
+from typing import Generator
 import polars as pl
 
 class PurgedWalkForwardCV:
-    def __init__(self, n_splits: int = 4, purge_bars: int = 18):
+    def __init__(self, n_splits: int = 5, embargo_hours: int = 72, step_hours: int = 4):
         self.n_splits = n_splits
-        self.purge_bars = purge_bars
+        self.embargo_periods = embargo_hours // step_hours
 
-    def split(self, df: pl.DataFrame) -> Generator[Tuple[pl.DataFrame, pl.DataFrame], None, None]:
-        timestamps = df.select("timestamp").unique().sort("timestamp")["timestamp"].to_list()
-        n_bars = len(timestamps)
-        chunk_size = n_bars // (self.n_splits + 1)
-
+    def split(self, df: pl.DataFrame) -> Generator[tuple[pl.DataFrame, pl.DataFrame], None, None]:
+        timestamps = df.select("timestamp_4h").unique().sort("timestamp_4h")["timestamp_4h"].to_list()
+        n_times = len(timestamps)
+        
+        test_size = (n_times - self.embargo_periods) // (self.n_splits + 1)
+        
         for i in range(1, self.n_splits + 1):
-            train_end_idx = i * chunk_size
-            test_start_idx = train_end_idx + self.purge_bars
-            test_end_idx = min((i + 1) * chunk_size, n_bars - 1)
-
-            if test_start_idx >= test_end_idx:
+            train_end_idx = test_size * i
+            test_start_idx = train_end_idx + self.embargo_periods
+            test_end_idx = test_start_idx + test_size
+            
+            if test_end_idx > n_times:
                 break
-
-            train_ts_max = timestamps[train_end_idx]
-            test_ts_min = timestamps[test_start_idx]
-            test_ts_max = timestamps[test_end_idx]
-
-            train_df = df.filter(pl.col("timestamp") <= train_ts_max)
-            test_df = df.filter((pl.col("timestamp") >= test_ts_min) & (pl.col("timestamp") <= test_ts_max))
-
+                
+            train_cutoff = timestamps[train_end_idx]
+            test_start = timestamps[test_start_idx]
+            test_end = timestamps[test_end_idx - 1]
+            
+            train_df = df.filter(pl.col("timestamp_4h") <= train_cutoff)
+            test_df = df.filter(
+                (pl.col("timestamp_4h") >= test_start) & 
+                (pl.col("timestamp_4h") <= test_end)
+            )
+            
             yield train_df, test_df

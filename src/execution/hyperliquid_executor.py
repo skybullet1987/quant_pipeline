@@ -1,51 +1,112 @@
+import time
+import hmac
+import json
 import logging
+import requests
 from eth_account import Account
-from hyperliquid.info import Info
-from hyperliquid.exchange import Exchange
-from src.config import settings
+from eth_account.messages import encode_typed_data
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("HyperliquidExecutor")
 
-class HyperliquidMakerExecutor:
-    def __init__(self):
-        self.account = Account.from_key(settings.hyperliquid_private_key)
-        self.info = Info(settings.hyperliquid_api_url, skip_ws=True)
-        self.exchange = Exchange(
-            self.account,
-            settings.hyperliquid_api_url,
-            account_address=settings.hyperliquid_master_address or self.account.address
+class HyperliquidExecutionEngine:
+    def __init__(
+        self,
+        base_url: str,
+        master_vault_address: str,
+        agent_private_key: str,
+        is_mainnet: bool = True
+    ):
+        self.base_url = base_url
+        self.vault_address = master_vault_address
+        self.agent_account = Account.from_key(agent_private_key)
+        self.chain_id = 1337 if is_mainnet else 421614
+        self.session = requests.Session()
+        self.session.headers.update({"Content-Type": "application/json"})
+
+    def _get_eip712_domain(self) -> dict:
+        return {
+            "name": "Exchange",
+            "version": "1",
+            "chainId": self.chain_id,
+            "verifyingContract": "0x0000000000000000000000000000000000000000"
+        }
+
+    def sign_agent_action(self, action: dict, nonce: int) -> dict:
+        domain = self._get_eip712_domain()
+        types = {
+            "Agent": [
+                {"name": "source", "type": "string"},
+                {"name": "connectionId", "type": "bytes32"}
+            ],
+            "EIP712Domain": [
+                {"name": "name", "type": "string"},
+                {"name": "version", "type": "string"},
+                {"name": "chainId", "type": "uint256"},
+                {"name": "verifyingContract", "type": "address"}
+            ]
+        }
+        
+        action_hash = hmac.new(
+            b"hyperliquid_action",
+            json.dumps(action, sort_keys=True).encode(),
+            "sha256"
+        ).digest()
+        
+        message = {
+            "source": "a",
+            "connectionId": action_hash
+        }
+        
+        signable_msg = encode_typed_data(
+            domain_data=domain,
+            message_types=types,
+            primary_type="Agent",
+            message_data=message
         )
-        self.meta = self.info.meta()
-        self.sz_decimals_map = {a["name"]: a["szDecimals"] for a in self.meta.get("universe", [])}
+        
+        signed = self.agent_account.sign_message(signable_msg)
+        return {
+            "r": hex(signed.r),
+            "s": hex(signed.s),
+            "v": signed.v
+        }
 
-    def format_size(self, coin: str, size: float) -> float:
-        decimals = self.sz_decimals_map.get(coin, 2)
-        return round(size, decimals)
+    def dispatch_batch_alo_orders(self, orders: list[dict]) -> dict:
+        nonce = int(time.time() * 1000)
+        formatted_orders = []
+        for o in orders:
+            formatted_orders.append({
+                "a": int(o["asset_idx"]),
+                "b": bool(o["is_buy"]),
+                "p": str(round(float(o["limit_price"]), 5)),
+                "s": str(round(float(o["size_qty"]), 4)),
+                "r": False,
+                "t": {"limit": {"tif": "Alo"}}
+            })
+            
+        action = {
+            "type": "order",
+            "orders": formatted_orders,
+            "grouping": "na"
+        }
+        
+        signature = self.sign_agent_action(action, nonce)
+        payload = {
+            "action": action,
+            "nonce": nonce,
+            "signature": signature,
+            "vaultAddress": self.vault_address
+        }
+        
+        resp = self.session.post(f"{self.base_url}/exchange", json=payload, timeout=10)
+        resp.raise_for_status()
+        return resp.json()
 
-    def execute_post_only_rebalance(self, target_basket: list):
-        for order in target_basket:
-            coin = order["ticker"].replace("USDT", "").replace("USD", "").upper()
-            is_buy = order["side"] == "BUY"
-            notional = order["notional_usd"]
-            ref_px = order["price"]
-
-            if notional < 15.0:
-                continue
-
-            maker_px = round(ref_px * 0.9998 if is_buy else ref_px * 1.0002, 4)
-            sz = self.format_size(coin, notional / maker_px)
-
-            logger.info(f"Posting Maker Limit: {coin} {'BUY' if is_buy else 'SELL'} {sz} @ ${maker_px}")
-
-            try:
-                res = self.exchange.order(
-                    name=coin,
-                    is_buy=is_buy,
-                    sz=sz,
-                    limit_px=maker_px,
-                    order_type={"limit": {"tif": "Alo"}},
-                    reduce_only=False
-                )
-                logger.info(f"HL Order Response: {res}")
-            except Exception as e:
-                logger.error(f"Execution failed for {coin}: {e}")
+    def get_clearinghouse_state(self) -> dict:
+        payload = {
+            "type": "clearinghouseState",
+            "user": self.vault_address
+        }
+        resp = self.session.post(f"{self.base_url}/info", json=payload, timeout=5)
+        resp.raise_for_status()
+        return resp.json()

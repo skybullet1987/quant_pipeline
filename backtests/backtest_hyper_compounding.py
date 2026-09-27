@@ -50,7 +50,12 @@ T_len = len(X_all)
 alpha = np.zeros((T_len, 3))
 B = np.zeros((T_len, 3))
 for j in range(3):
-    B[:, j] = multivariate_normal.pdf(X_all, mean=hmm.means_[j], cov=np.diag(hmm.covars_[j]) + np.eye(2) * 1e-4)
+    cov_raw = hmm.covars_[j]
+    if cov_raw.ndim == 1:
+        cov_j = np.diag(np.maximum(cov_raw, 1e-4)) + np.eye(2) * 1e-4
+    else:
+        cov_j = cov_raw + np.eye(2) * 1e-4
+    B[:, j] = multivariate_normal.pdf(X_all, mean=hmm.means_[j], cov=cov_j)
 
 alpha[0] = hmm.startprob_ * B[0]
 alpha[0] /= np.sum(alpha[0]) + 1e-8
