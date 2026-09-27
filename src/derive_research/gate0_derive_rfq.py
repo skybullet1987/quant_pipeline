@@ -287,6 +287,56 @@ def audit_currency(currency: str = "ETH"):
     else:
         print("[-] GATE 0 FALSIFICATION TEST: FAIL (No spreads exceeded 8.0x hurdle)")
 
+    # 5. Quantitative Scorecard for D2 & D3 Benchmarks
+    print("\n--- QUANTITATIVE SCORECARD & ACCEPTANCE GATES (D2 & D3 BENCHMARKS) ---")
+    print("\n[PROBE SCORECARD: BUCKET D2 (Intraday Acceleration / T ~ 4.0h)]")
+    otm_candidates = [s for s in call_spreads if s["width"] in [1000, 1500, 2000]]
+    target_k1 = 1.005 * index_px
+    otm_candidates.sort(key=lambda s: abs(int(s["name"].split("/")[0]) - target_k1))
+    
+    d2_spread = otm_candidates[0] if otm_candidates else (call_spreads[0] if call_spreads else None)
+    if d2_spread:
+        d = d2_spread["synth_debit"]
+        d_mid = d2_spread["mid_debit"]
+        markup_pct = d2_spread["friction_pct"]
+        profit_mult = d2_spread["profit_mult"]
+        
+        gate1_pass = markup_pct <= 28.0
+        gate2_pass = profit_mult >= 15.0
+        
+        print(f"  Target Spread: {d2_spread['name']} (Width: ${d2_spread['width']:.0f})")
+        print(f"  1. Synthetic Debit (D)    : ${d:.2f}")
+        print(f"  2. Mid Debit (D_mid)      : ${d_mid:.2f}")
+        print(f"  3. Execution Markup       : {markup_pct:.2f}% (Gate 1 Hurdle: <= 28.0%) -> [{'PASS' if gate1_pass else 'FAIL'}]")
+        print(f"  4. Net Profit Multiplier  : {profit_mult:.2f}x (Gate 2 Hurdle: >= 15.0x) -> [{'PASS' if gate2_pass else 'FAIL'}]")
+        print(f"  --> Bucket D2 Acceptance : {'PASS' if (gate1_pass and gate2_pass) else 'FAIL'}")
+    else:
+        print("  [-] No qualifying OTM spreads found for D2 evaluation.")
+
+    print("\n[PROBE SCORECARD: BUCKET D3 (Terminal 0DTE / T ~ 1.0h)]")
+    low_15 = 0.985 * index_px
+    high_15 = 1.015 * index_px
+    near_contracts = [c for c in calls + puts if low_15 <= c["strike"] <= high_15]
+    
+    spot_1k_contracts = [c for c in calls + puts if abs(c["strike"] - index_px) <= 1000.0]
+    total_depth_1k = sum(c["bid"] * c["bid_sz"] + c["ask"] * c["ask_sz"] for c in spot_1k_contracts)
+    
+    total_near = len(near_contracts)
+    nonzero_bids = sum(1 for c in near_contracts if c["bid"] > 0)
+    bid_continuity_pct = (nonzero_bids / total_near * 100.0) if total_near > 0 else 0.0
+    
+    w1000_spreads = [s for s in call_spreads if s["width"] == 1000]
+    min_d1k = min([s["synth_debit"] for s in w1000_spreads]) if w1000_spreads else 0.0
+    
+    d3_gate1_pass = total_depth_1k >= 25000.0
+    d3_gate2_pass = bid_continuity_pct >= 70.0
+    
+    print(f"  1. Quoted Depth (within $1,000 of Spot): ${total_depth_1k:,.2f} (Gate 1 Hurdle: >= $25,000) -> [{'PASS' if d3_gate1_pass else 'FAIL'}]")
+    print(f"  2. Short-Leg Bid Continuity (within +-1.5%): {nonzero_bids}/{total_near} ({bid_continuity_pct:.1f}%) -> [{'PASS' if d3_gate2_pass else 'FAIL'}]")
+    print(f"  3. Min Synthetic Debit on $1,000 Width: ${min_d1k:.2f}")
+    print(f"  --> Bucket D3 Acceptance : {'PASS' if (d3_gate1_pass and d3_gate2_pass) else 'FAIL'}")
+    print("-" * 80)
+
     print(f"[*] Total audit runtime: {time.time() - t0:.2f}s")
     print("===============================================================================\n")
 
