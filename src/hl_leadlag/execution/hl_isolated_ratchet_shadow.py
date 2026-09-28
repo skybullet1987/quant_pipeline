@@ -29,7 +29,7 @@ import websockets
 import aiohttp
 
 # --- Microstructure & Venue Constraints ---
-BINANCE_WS_URL = "wss://fstream.binance.com/ws/btcusdt@aggTrade"
+BINANCE_WS_URL = "wss://fstream.binance.com/market/ws/btcusdt@aggTrade"
 HYPERLIQUID_WS_URL = "wss://api.hyperliquid.xyz/ws"
 
 SHOCK_VOLUME_USD = 1500000.0   # >= $1.5M aggressive sweep
