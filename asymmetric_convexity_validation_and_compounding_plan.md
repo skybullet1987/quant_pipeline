@@ -1,4 +1,4 @@
-# Asymmetric Convexity Validation & Compounding Plan: Multi-Track Blueprint (v2.6 Forensic-Grade Specification Complete)
+# Asymmetric Convexity Validation & Compounding Plan: Multi-Track Blueprint (v2.7 Forensic-Grade Specification Complete)
 
 ---
 
@@ -7,14 +7,18 @@
 ```
 [PHASE A: Reconnaissance] ──> [PHASE B1: Engineering] ──> [PHASE B2: Alpha Gate] ──> [PHASE C: Micro-Canary]
     (Tonight: D2 & D3)           (Tomorrow: 30-50 setups)    (Frozen: Several Hundred)    (1 Active Sprint: $20-$60)
-       [APPROVED]                      [APPROVED]                     [LOCKED]                   [LOCKED]
+        [APPROVED]                      [APPROVED]                     [LOCKED]                   [LOCKED]
 ```
 
-* **Core/Satellite Structural Separation**: Preserved and formalized. Core engine ([`production_apex_daemon.py`](file:///home/skybullet1987/quant_pipeline/src/execution/production_apex_daemon.py), $\$642.10\text{ USDC NAV}$) remains strictly unmutated.
+* **Core/Satellite Structural Separation**: Preserved and formalized. Core engine ([`production_apex_daemon.py`](file:///home/skybullet1987/quant_pipeline/src/execution/production_apex_daemon.py)) remains strictly unmutated.
+  * $\text{NAV}_{\text{core, current}} = \mathbf{\$622.72\text{ USDC}}$
+  * $\text{HWM}_{\text{core}} = \mathbf{\$642.10\text{ USDC}}$
+  * $\text{NAV}_{\text{satellite}} = \mathbf{\$0.00\text{ USDC}}$ (Phase B1 is running in isolated shadow simulation)
+  * $\text{NAV}_{\text{combined}} = \mathbf{\$622.72\text{ USDC}}$
 * **Accounting Model**: Strictly canonical fill-level accounting. Realized PnL is separated from execution shortfall attribution; slippage is never double-counted.
 * **Gate Hierarchy**:
   * **Phase A (Derive Options)**: **APPROVED** for *Market Microstructure Reconnaissance* (04:00 and 07:00 UTC probes).
-  * **Phase B1 (Hyperliquid Engineering Shadow)**: **APPROVED TO BUILD** using the corrected $N_1 = \$380–\$400 / N_2 = \$100$ architecture.
+  * **Phase B1 (Hyperliquid Engineering Shadow)**: **APPROVED TO BUILD** with pre-registered Primary $N_1 = \$400.00 / N_2 = \$100.00$, $C_{\text{friction}} = 25\text{ bps}$.
   * **Phase B2 (Pre-Registered Block Alpha Certification)**: **LOCKED** pending B1 pass.
   * **Phase C (Live Micro-Canary)**: **LOCKED** pending B2 certification.
 
@@ -167,11 +171,16 @@ Rather than assuming deterministic fills, the shadow engine records:
 * **Sandbox Modes**:
   1. **Native Subaccount Sandbox**: Account/margin isolation under master authority (requires $\$100,000$ historical volume).
   2. **Independent Wallet Sandbox**: Complete cryptographic key firewall (separate EVM address).
-* **Transfer & NAV Accounting**:
-  Transferring capital from master to satellite explicitly updates core NAV:
-  $$\text{NAV}_{\text{core}} = C_{\text{master}} - C_{\text{satellite}} = \$642.10 - \$20.00 = \mathbf{\$622.10}$$
-  $$\text{NAV}_{\text{satellite}} = \mathbf{\$20.00}$$
-  $$\text{NAV}_{\text{combined}} = \text{NAV}_{\text{core}} + \text{NAV}_{\text{satellite}} = \mathbf{\$642.10}$$
+* **Transfer & NAV Accounting (Point 13 Reconciliation)**:
+  * Current Live Paper Accounting:
+    $$\text{NAV}_{\text{core, current}} = \mathbf{\$622.72\text{ USDC}}$$
+    $$\text{HWM}_{\text{core}} = \mathbf{\$642.10\text{ USDC}}$$
+    $$\text{NAV}_{\text{satellite}} = \mathbf{\$0.00\text{ USDC}} \quad (\text{Phase B1 is running in isolated shadow simulation; zero live capital allocated})$$
+    $$\text{NAV}_{\text{combined}} = \mathbf{\$622.72\text{ USDC}}$$
+  * Prospective Phase C Live Funding Accounting (if authorized):
+    $$\text{NAV}_{\text{core}} = \text{NAV}_{\text{core, current}} - C_{\text{satellite}} = \$622.72 - \$20.00 = \mathbf{\$602.72\text{ USDC}}$$
+    $$\text{NAV}_{\text{satellite}} = \mathbf{\$20.00\text{ USDC}}$$
+    $$\text{NAV}_{\text{combined}} = \mathbf{\$622.72\text{ USDC}}$$
 
 ---
 
@@ -182,7 +191,7 @@ Rather than assuming deterministic fills, the shadow engine records:
    * To support **SIX consecutive full-size attempts**, the required minimum bankroll is:
      $$C_{\min} = \$20.00 + 5 \times \$7.80 = \mathbf{\$59.00 \text{ (before operational buffer)}}$$
    * Sizing policy: $C_{\text{series}} = \$60.00$ fixed, with zero replenishment until formal review.
-3. **Combined-Account Stress Test**: 20 hypothetical modeled full-stop losses ($20 \times -\$7.80 = -\$156.00$) reduce combined NAV from $\$642.10$ to $\$486.10$, **assuming an external replenishment mechanism permits all 20 attempts**. Core NAV itself remains $\$622.10$ if no additional capital is transferred from Core.
+3. **Combined-Account Stress Test**: 20 hypothetical modeled full-stop losses ($20 \times -\$7.80 = -\$156.00$) from peak HWM would reduce combined NAV from $\$642.10$ to $\$486.10$, **assuming an external replenishment mechanism permits all 20 attempts**. Core NAV itself remains protected in its own isolated account.
 
 ---
 
@@ -194,17 +203,17 @@ To prevent multiple-testing data dredging, Phase B2 freezes **both the trigger a
 > **Pre-Registered Primary Endpoint**:
 > * **Asset**: SOL
 > * **Trigger**: Binance Volume Sweep $\ge \$1.5\text{M}$ in $100\text{ms}$ with directional $Z_{\text{OFI}} \ge 2.58$.
-> * **Initial Sizing**: $N_1 = \$400.00$ (or $\$380.00$ canary).
+> * **Primary Sizing**: $N_1 = \$400.00$ exactly ($N_1 = \$380.00$ is designated strictly as operational canary sensitivity).
+> * **Primary Friction Hurdle**: $C_{\text{friction}} = 25\text{ bps}$ exactly ($40\text{ bps}$ and $60\text{ bps}$ are robustness checks).
 > * **Initial Stop**: Nominal $-1.80\%$ mark-triggered order.
 > * **Pyramid Rule**: $+1.50\%$ spot move triggers $N_2 = \$100.00$ secondary fill.
 > * **Breakeven Rule**: Stop updated to dynamic $P_{\text{net\_BE}} = \text{VWAE} + \text{costs}$.
 > * **Profit Lock Rule**: $+3.50\%$ spot move locks $+1.80\%$ above entry.
 > * **Trailing Rule**: $1.0\%$ dynamic trailing stop distance from HWM.
 > * **Max Holding Horizon**: $45\text{ minutes}$ hard time exit.
-> * **Cost Stress**: Evaluated under $\ge 25\text{ bps}$ round-trip execution friction.
-> * **Primary Gate Hurdle**:
->   $$\mathbf{LCB_{95\%,\text{cluster}}\left(\mathbb{E}[R_{\text{net}}]\right) > 0}$$
->   evaluated via cluster/block bootstrap resampling grouped at the shock episode/day level.
+> * **Conjunctive Certification Gate (Mandatory Pass Condition)**:
+>   $$\mathbf{LCB_{95\%,\text{cluster}}\left(\mathbb{E}[R_{\text{net}}]\right) > 0 \quad \land \quad p_{\text{placebo}} < 0.01}$$
+>   Both conditions must be met simultaneously; failure on either aborts live Phase C authorization. Resampling grouped via shock-episode block bootstrap.
 
 ---
 
@@ -289,21 +298,23 @@ def verify_pre_trade_invariants(order: OrderRequest, context: AccountContext) ->
   └── Follow-up: Automated re-probe scheduled for Sep 29 04:00/07:00 UTC to confirm cross-session persistence
 
 [TRACK 4: ROUTE 3 POLYMARKET 1-HOUR DUAL-FEED DATA LAB (PASSIVE READ-ONLY BENCHMARK)]
-  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 1995992, polymarket_terminal_recorder.py v2.6)
+  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 2004573, polymarket_terminal_recorder.py v2.7)
   ├── Dual Feeds: Binance Spot (Settlement Ref) + Binance Futures (Routed /market Flow Antenna)
   ├── Invariants: OBI & q_micro Reconciled + Assertions Enforced + Book Consistency Checks
   ├── Quote Ages: Tripartite Decomposition (Age_book, Age_bid, Age_ask)
-  ├── Real-Time Metrics: Basis_t0 (signed USD & bps), |Basis|, Delta_Basis_100ms, Cross-Correlation Grid
+  ├── Clock Sync: Cristian's Algorithm Calibrated Offset (Tokyo <-> Binance: -17.62ms +/- 21.59ms)
+  ├── Real-Time Metrics: Basis_t0 (signed USD & bps), |Basis|, Delta_Basis_100ms, Flow Innovation Correlation
   ├── Causal Boundary: Strict t0 anchor at shock window end (predictors t <= t0, response t > t0)
   ├── Models: 4 Pre-Registered Econometric Models (A: Spot, B: Fut, C: Joint, D: Incremental H0: beta_{F|S}=0)
-  ├── Capacity Surface: EV(C) across [$1, $5, $20, $50, $100]
+  ├── Model Invariant: T_train_end < t0 strictly enforced for out-of-sample probability p_OOS
+  ├── Capacity Surface: Fill-Level Fees & CrossingCost(C) across [$1, $5, $20, $50, $100]
   ├── Ground Truth: Binance Spot 1H Candle Finalized Open & Close (Y = 1[Close >= Open])
   └── Compliance: Read-Only (Does not attempt to circumvent geographic restrictions)
 ```
 
 ---
 
-## Section 6: Route 3 — Futures/Spot $\to$ Polymarket Information-Flow Experiment (v2.6 Forensic Specification)
+## Section 6: Route 3 — Futures/Spot $\to$ Polymarket Information-Flow Experiment (v2.7 Forensic Specification)
 
 ### 1. The Dual-Feed Information Transmission Hypothesis (Point 16 & Point 2)
 Polymarket's hourly BTC market explicitly resolves against the finalized **Binance Spot BTC/USDT** 1-hour candle. However, aggressive institutional order flow and price discovery in crypto markets frequently originate in the **USDⓈ-M perpetual futures market**.
@@ -317,38 +328,37 @@ $$\boxed{ \text{Hypothesis: } X^{\text{futures}}_t \longrightarrow X^{\text{spot
 * **Binance Futures**: `wss://fstream.binance.com:443/market/ws/btcusdt@aggTrade` (Routed 2026 `/market` order flow antenna).
 * **Polymarket CLOB WebSocket L2**: `wss://ws-subscriptions-clob.polymarket.com/ws/market` (Continuous binary probability book).
 
-#### Pre-Registered Lead/Lag Cross-Correlation Grid (Point 2)
-The daemon estimates the empirical cross-correlation between Futures flow $X_F(t)$ and Spot flow $X_S(t + \Delta)$:
-$$\text{Corr}(X_F(t), X_S(t + \Delta)) \quad \text{and} \quad \text{Corr}(X_F(t), \Delta q(t + \Delta))$$
+#### Flow Innovations & Null Hypothesis Testing (Point 2)
+High-frequency flow variables exhibit significant autocorrelation and shared market volatility. Therefore, lead/lag estimation is conducted on **de-autocorrelated flow innovations** ($\epsilon_t = \Delta \text{flow}_t$ or AR(1) residuals), not raw price levels:
+$$\text{Corr}(\epsilon_F(t), \epsilon_S(t + \Delta)) \quad \text{and} \quad \text{Corr}(\epsilon_F(t), \Delta q(t + \Delta))$$
 across the pre-registered millisecond lag grid:
 $$\Delta \in \{-1000, -500, -250, -100, -50, 0, +50, +100, +250, +500, +1000\}\text{ ms}$$
-Logged continuously to `data/polymarket/leadlag_cross_correlations.jsonl` to establish whether Futures lead Spot, Spot leads Futures, or flow is contemporaneous before making causal claims.
+$$\boxed{ \text{Pre-Registered Null Hypothesis: } H_0: \text{no stable lead/lag structure across grid} }$$
+*Telemetry Standard*: Individual five-minute rolling cross-correlations are classified as **illustrative live telemetry, not evidence of persistent lead/lag**, until pooled across shock episodes with block/permutation testing.
 
 ---
 
-### 2. Multi-Clock Latency & Microsecond-Resolution Timestamps (Points 11 & 12)
-To avoid conflating exchange matching latency, network transit, and local CPU scheduling, every observation stores five distinct clocks:
+### 2. Multi-Clock Latency & Calibrated Clock Offsets (Points 11, 12, & 3)
+To avoid conflating exchange matching latency, network transit, and unmeasured clock skew between remote Binance servers and local Tokyo infrastructure:
 1. $t_{\text{binance\_event}}$ ($E$, Binance matching engine event timestamp in microsecond/millisecond units)
 2. $t_{\text{binance\_trade}}$ ($T$, Binance trade execution timestamp)
 3. $t_{\text{receive\_local}}$ (Tokyo GCP local monotonic nanosecond and unix timestamp)
 4. $t_{\text{polymarket\_event}}$ (Polymarket CLOB message timestamp)
 5. $t_{\text{receive\_polymarket}}$ (Tokyo GCP local receive timestamp of Polymarket L2 update)
 
-This enables empirical decomposition of:
-$$\Delta t_{\text{exchange}} = E - T, \quad \Delta t_{\text{network}} = t_{\text{receive\_local}} - E, \quad \Delta t_{\text{processing}} = t_{\text{record}} - t_{\text{receive\_local}}$$
-*Standard Terminology*: Re-phrased as **microsecond-resolution timestamps** rather than proof of end-to-end causal precision.
+#### Cristian's Algorithm Clock Synchronization
+The recorder runs periodic clock calibration against Binance REST server time (`/api/v3/time`):
+$$\widehat{\text{Offset}} = \frac{t_{\text{req}} + t_{\text{resp}}}{2} - t_{\text{server}}, \quad \text{Uncertainty} = \pm \frac{\text{RTT}}{2}$$
+$$\text{Latency}_{\text{calibrated}} = t_{\text{local\_receive}} - (t_{\text{exchange}} + \widehat{\text{Offset}})$$
+* **Empirical Live Calibration**: $\widehat{\text{Offset}} = -17.62\text{ ms} \pm 21.59\text{ ms}$ ($\text{RTT} = 43.19\text{ ms}$).
+* **Standard Terminology**: Raw differences without offset calibration are strictly designated as **"exchange-to-local timestamp delta"** rather than "network latency."
 
 ---
 
 ### 3. Mathematical Reconciliation of OBI and Microprice (Point 1 & Point 13)
 
-#### The Root Cause of the Snapshot Discrepancy
-The previous apparent contradiction ($q_{\text{mid}} = 0.014$, $q_{\text{micro}} = 0.0117$, $\text{OBI} = +0.160$) arose from an aggregation mismatch:
-* $q_{\text{micro}}$ was computed strictly at **Level 1** where ask size exceeded bid size ($Q_{\text{ask}, 1} = 62.89 \gg Q_{\text{bid}, 1} = 8.98$), pulling Level 1 microprice down toward the bid ($0.0117 < 0.014$).
-* $\text{OBI}$ was summed across **Top 5 levels**, where deep bids at $0.010$ created net positive aggregate depth.
-
 #### Reconciled Mathematical Formulation
-Route 3 v2.6 explicitly decouples Level 1 OBI from Depth OBI:
+Route 3 explicitly decouples Level 1 OBI from Depth OBI:
 $$\text{OBI}_{\text{L1}} = \frac{Q_{\text{bid}, 1} - Q_{\text{ask}, 1}}{Q_{\text{bid}, 1} + Q_{\text{ask}, 1}} \in [-1, +1]$$
 $$q_{\text{micro}} = \frac{P_{\text{ask}, 1} \cdot Q_{\text{bid}, 1} + P_{\text{bid}, 1} \cdot Q_{\text{ask}, 1}}{Q_{\text{bid}, 1} + Q_{\text{ask}, 1}} = q_{\text{mid}} + \frac{1}{2}(P_{\text{ask}, 1} - P_{\text{bid}, 1}) \cdot \text{OBI}_{\text{L1}}$$
 $$\text{OBI}_{\text{depth}} = \frac{\sum_{i=1}^5 Q_{\text{bid}, i} - \sum_{i=1}^5 Q_{\text{ask}, i}}{\sum_{i=1}^5 Q_{\text{bid}, i} + \sum_{i=1}^5 Q_{\text{ask}, i}}$$
@@ -367,14 +377,12 @@ elif obi_l1 < -1e-4:
 * Depth $Q_i \ge 0$ for all levels
 * $q_{\text{mid}} = \frac{P_{\text{best\_bid}} + P_{\text{best\_ask}}}{2}$
 * $\text{VWAP}(C) \ge P_{\text{best\_ask}}$ for any buy sweep
-
-#### Mandatory Metadata Logged Per Observation
-`obi_depth_levels = 5`, `microprice_formula`, `book_sequence_id`, `book_timestamp`.
+* Mandatory logged metadata: `obi_depth_levels = 5`, `microprice_formula`, `book_sequence_id`, `book_timestamp`.
 
 ---
 
 ### 4. Tripartite Quote Age Decomposition (Point 6)
-To identify genuine stale executable quotes versus general depth churn, the quote age is decomposed into three distinct durations:
+To identify genuine stale executable quotes versus general depth churn, quote age is decomposed into three distinct durations:
 * $\text{Age}_{\text{book}} = t_{\text{obs}} - t_{\text{last\_l2\_message}}$ (Elapsed time since any L2 update: snapshot or depth amendment).
 * $\text{Age}_{\text{bid}} = t_{\text{obs}} - t_{\text{last\_best\_bid\_change}}$ (Elapsed time since best bid price or size changed).
 * $\text{Age}_{\text{ask}} = t_{\text{obs}} - t_{\text{last\_best\_ask\_change}}$ (Elapsed time since best ask price or size changed).
@@ -402,50 +410,55 @@ $$\boxed{ t_0 \equiv \text{exact timestamp at the end of the qualifying 100-ms s
 
 ---
 
-### 7. Four Pre-Registered Econometric Models (Point 4)
-Rather than simply showing Model C fits better, Route 3 pre-registers four nested models to test for incremental futures information:
-* **Model A (Spot Baseline)**:
-  $$Y = f(q_{\text{mid}, t_0}, X^{\text{spot}}_{t_0}, \text{TTE}, \text{dist}_{\text{open}})$$
-* **Model B (Futures Baseline)**:
-  $$Y = f(q_{\text{mid}, t_0}, X^{\text{futures}}_{t_0}, \text{TTE}, \text{dist}_{\text{open}})$$
-* **Model C (Joint Lead/Lag Specification)**:
-  $$Y = f(q_{\text{mid}, t_0}, X^{\text{spot}}_{t_0}, X^{\text{futures}}_{t_0}, \text{Basis}_{t_0}, \Delta \text{Basis}_{100\text{ms}}, \text{TTE}, \text{dist}_{\text{open}})$$
+### 7. Four Pre-Registered Econometric Models & Strict OOS Training Invariant (Points 4 & 12)
+Route 3 pre-registers four nested models to test for incremental futures information:
+* **Model A (Spot Baseline)**: $Y = f(q_{\text{mid}, t_0}, X^{\text{spot}}_{t_0}, \text{TTE}, \text{dist}_{\text{open}})$
+* **Model B (Futures Baseline)**: $Y = f(q_{\text{mid}, t_0}, X^{\text{futures}}_{t_0}, \text{TTE}, \text{dist}_{\text{open}})$
+* **Model C (Joint Lead/Lag Specification)**: $Y = f(q_{\text{mid}, t_0}, X^{\text{spot}}_{t_0}, X^{\text{futures}}_{t_0}, \text{Basis}_{t_0}, \Delta \text{Basis}_{100\text{ms}}, \text{TTE}, \text{dist}_{\text{open}})$
 * **Model D (Futures Incremental Information Model)**:
   $$Y = f(q_{\text{mid}, t_0}, X^{\text{spot}}_{t_0}, \text{TTE}, \text{dist}_{\text{open}}) + g(X^{\text{futures}}_{t_0} \mid X^{\text{spot}}_{t_0})$$
+  $$\boxed{ \text{Primary Null Hypothesis: } H_0: \beta_{F|S} = 0 }$$
 
-$$\boxed{ \text{Primary Null Hypothesis: } H_0: \beta_{F|S} = 0 }$$
-Testing whether Futures order flow provides statistically significant incremental predictive power after conditioning on Spot flow and existing Polymarket implied probability.
-
----
-
-### 8. Dynamic Contract Fee Architecture (Point 8)
-Polymarket's fee structure is dynamically queried from contract metadata rather than permanently hardcoded:
-* **Metadata Fields Logged Per Market**:
-  * `fee_rate_market`: Dynamically parsed from Gamma API `feeSchedule.rate` (currently $0.07 = 7.0\%$).
-  * `fee_source`: Source identifier (`gamma_feeSchedule_crypto_fees_v2`).
-  * `fee_enabled`: Boolean flag.
-  * `fee_formula_version`: `crypto_fees_v2` ($C \times \text{feeRate} \times p(1 - p)$).
-* **Makers Pay Zero**: Confirmed by `takerOnly: true`.
+#### Hard Model Training Invariant (Point 12)
+$$\boxed{ T_{\text{train\_end}} < t_0 }$$
+Every probability model $p_{\text{model}}$ predicting resolution $Y$ must be trained strictly on **completed prior markets**, strictly time-ordered, frozen before the test event, walk-forward. Training on data from the currently active market hour is an econometric violation.
 
 ---
 
-### 9. Strategy Dichotomy: Terminal Hold vs. Momentum Repricing (Point 9)
+### 8. Dynamic Contract Fee Architecture & Fill-Level Fees (Points 8 & 1)
+Polymarket's fee structure is dynamically queried from contract metadata:
+* `fee_rate_market`: Dynamically parsed from Gamma API `feeSchedule.rate` ($0.07 = 7.0\%$).
+* `fee_source`: Source identifier (`gamma_feeSchedule_crypto_fees_v2`).
+* `fee_enabled`: Boolean flag.
+* `fee_formula_version`: `crypto_fees_v2` ($C \times \text{feeRate} \times p(1 - p)$).
+* `takerOnly`: `true` (makers pay zero).
+
+#### Exact Fill-Level Fee Accumulation (Point 8)
+Because $f(\bar{p}) \neq \overline{f(p)}$ in nonlinear fee schedules, fees are accumulated across each individual book level $i$ consumed:
+$$\text{Fee}(C) = \sum_i Q_i \cdot \text{feeRate} \cdot p_i(1 - p_i)$$
+$$\text{TotalCost}(C) = \sum_i Q_i p_i + \text{Fee}(C), \quad \text{EffectivePrice}(C) = \frac{\text{TotalCost}(C)}{\sum_i Q_i}$$
+
+---
+
+### 9. Decoupling Crossing Cost from Expected Terminal Value (Point 1)
+To prevent mathematical conflation of immediate execution markup with terminal expected value:
+* **Crossing Cost (Immediate Execution Markup over Midpoint)**:
+  $$\boxed{ \text{CrossingCost}(C) = \text{EffectivePrice}(C) - q_{\text{mid}} }$$
+  Measures the cost to cross the spread and sweep depth for notional $C$.
+* **Expected Terminal Value (Reserved for Out-of-Sample Models)**:
+  $$\boxed{ \text{EV}_{\text{terminal}}(C) = p_{\text{OOS}} - \text{EffectivePrice}(C) }$$
+  Evaluated strictly using an out-of-sample conditioned statistical probability $p_{\text{OOS}}$, never $q_{\text{mid}}$.
+
+---
+
+### 10. Strategy Dichotomy: Terminal Hold vs. Momentum Repricing (Point 9)
 Two distinct economic strategies are separated in the analysis:
 * **Strategy R3-A — Terminal Hold (Primary Scientific Experiment)**:
-  $$\text{Buy}(q_t) \longrightarrow Y \in \{0, 1\}$$
-  $$\text{EV}_{\text{terminal}} = p_{\text{model}} - q_{\text{ask}} - \text{Fee}(q_{\text{ask}})$$
+  $$\text{Buy}(q_t) \longrightarrow Y \in \{0, 1\}, \quad \text{EV}_{\text{terminal}} = p_{\text{OOS}} - \text{EffectivePrice}(C)$$
   Single execution leg, held to Binance 1H candle settlement.
 * **Strategy R3-B — Momentum Repricing Capture (Secondary Execution Study)**:
-  $$\text{Buy}(q_t) \longrightarrow \text{Sell}(q_{t+\Delta t})$$
-  $$\mathbb{E}[\text{PnL}_{\text{repricing}}] = \mathbb{E}[q_{\text{sell}} - q_{\text{buy}} - \text{Fee}_{\text{buy}} - \text{Fee}_{\text{sell}} - \text{Spread/Slippage}]$$
+  $$\text{Buy}(q_t) \longrightarrow \text{Sell}(q_{t+\Delta t}), \quad \mathbb{E}[\text{PnL}] = \mathbb{E}[q_{\text{sell}} - q_{\text{buy}} - \text{Fee}_{\text{buy}} - \text{Fee}_{\text{sell}} - \text{Spread/Slippage}]$$
   Two execution legs and double taker fees.
-
----
-
-### 10. Executable Capacity Surface (Point 7)
-Order book sweeps are evaluated across multiple ticket sizes:
-$$\text{EV}(C) = p - \text{VWAP}(C) - \text{Fee}(\text{VWAP}(C)) \quad \text{for } C \in \{\$1, \$5, \$20, \$50, \$100\}$$
-> **Capacity Insight**: Finding positive EV at $\$1$ but negative EV at $\$50$ represents an empirical **capacity constraint**, not a failure of the predictive signal.
 
 ---
 
@@ -456,28 +469,28 @@ At candle expiry ($T_{\text{expiry}}$), the recorder automatically queries Binan
 
 ---
 
-### 12. Statistical Inference, Clustering, and Impulse Curves (Points 14 & 15)
+### 12. Statistical Inference, Clustering, and Cautious Wording (Points 14, 15, & 5)
 
-#### Cluster-Robust Standard Errors (Point 14)
-Because thousands of snapshots and multiple ladder steps are recorded per hour ($N_{\text{rows}} \gg N_{\text{events}}$), ordinary regression standard errors would be severely downward biased. Standard errors are pre-registered to cluster at:
-1. **Market-Hour Level**: $\text{Cluster}_{\text{market}} = \text{market\_id}$
-2. **Shock-Episode Level**: $\text{Cluster}_{\text{episode}} = \text{market\_id} \times \text{shock\_id}$
+#### Variance Estimator Specification (Point 10)
+Because shock episodes are nested inside market hours:
+1. **For Cross-Sectional Regressions (Models A, B, C, D)**: **Market-hour cluster-robust standard errors** (hierarchical clustering at the market-hour level to conservatively account for within-hour shock correlations).
+2. **For Impulse-Response Curves ($\text{IRF}(\tau)$)**: **Shock-episode block bootstrap** across the entire response curve $\text{IRF}(\tau) = \mathbb{E}[\Delta q(\tau)]$.
 
-#### Single Microstructure Object (Point 15)
-The response ladder ($\Delta q_{100\text{ms}}, \dots, \Delta q_{30\text{s}}$) is treated as a **single impulse-response function**:
-$$\text{IRF}(\tau) = \mathbb{E}[\Delta q(\tau)]$$
-Standard error confidence bands are generated via **block bootstrap at the shock-event level**, avoiding multiple hypothesis testing inflation across individual ladder delays.
+#### Forensic Episode Phrasing Standard (Point 5)
+* **Standard Phrasing**:
+  *"This episode exhibited no measured Polymarket ask repricing through 1 second, followed by a +8¢ repricing at 5 seconds. Structural repricing lag $\mathbb{P}(\Delta q(\tau) > 0)$ and $\mathbb{E}[\Delta q(\tau)]$ will be established only after pooling hundreds of shock events with shock-episode block bootstrap confidence bands."*
 
 ---
 
 ### 13. Operational State & Telemetry Log
-* **Daemon Status**: Running under PID `1995992` on Tokyo GCP node (`kraken-execution-worker-tyo`).
+* **Daemon Status**: Running under PID `2004573` on Tokyo GCP node (`kraken-execution-worker-tyo`).
 * **Active Stream Files**:
   * Telemetry: `data/polymarket/polymarket_hourly_telemetry.jsonl`
   * Shocks: `data/polymarket/shock_responses.jsonl`
   * Resolutions: `data/polymarket/finalized_market_resolutions.jsonl`
   * Cross-Correlations: `data/polymarket/leadlag_cross_correlations.jsonl`
 * **Operational Boundary**: Strictly read-only; zero orders, zero private keys, zero geo-restriction circumvention.
+
 
 
 

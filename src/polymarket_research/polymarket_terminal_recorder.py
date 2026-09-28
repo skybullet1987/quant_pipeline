@@ -224,30 +224,39 @@ class L2OrderBook:
         taker_fee = calculate_taker_fee(best_ask, fee_rate)
         executable_hurdle = best_ask + taker_fee
 
-        # VWAP Capacity Surface for research ticket sizes
-        vwaps = {}
-        ev_surface = {}
+        # Crossing Cost & Execution Surface across research ticket sizes (Points 1 & 8)
+        # Note: EV_terminal(C) = p_OOS - EffectivePrice(C). Using q_mid measures CrossingCost(C) = EffectivePrice(C) - q_mid.
+        execution_surface = {}
         for notional in TICKET_CAPACITY_LEVELS:
-            cost = 0.0
+            dollar_spent = 0.0
             shares_bought = 0.0
+            total_fees = 0.0
             for px, sz in sorted_asks:
-                fill_dollars = min(notional - cost, px * sz)
+                fill_dollars = min(notional - dollar_spent, px * sz)
                 shares = fill_dollars / px
-                cost += fill_dollars
+                # Exact fill-level fee per consumed level: C_i * feeRate * p_i * (1 - p_i)
+                level_fee = shares * fee_rate * px * (1.0 - px)
+                dollar_spent += fill_dollars
                 shares_bought += shares
-                if cost >= notional - 1e-6:
+                total_fees += level_fee
+                if dollar_spent >= notional - 1e-6:
                     break
-            vwap_val = round(cost / shares_bought, 4) if shares_bought > 0 else None
-            vwaps[f"vwap_${int(notional)}"] = vwap_val
-            
-            # Enforce VWAP buy sweep invariant: VWAP >= best_ask
-            if vwap_val is not None:
+
+            if shares_bought > 0:
+                vwap_val = round(dollar_spent / shares_bought, 4)
+                effective_px = round((dollar_spent + total_fees) / shares_bought, 4)
+                crossing_cost = round(effective_px - q_mid, 4)
+                # Enforce VWAP buy sweep invariant: VWAP >= best_ask
                 assert vwap_val >= best_ask - 1e-4, f"Invariant violated: VWAP=${vwap_val:.4f} < best_ask=${best_ask:.4f}"
-                fee_at_vwap = calculate_taker_fee(vwap_val, fee_rate)
-                # Strategy R3-A Terminal EV: p - VWAP - Fee (evaluated against q_mid calibration)
-                ev_surface[f"ev_${int(notional)}"] = round(q_mid - vwap_val - fee_at_vwap, 4)
+                execution_surface[f"vwap_${int(notional)}"] = vwap_val
+                execution_surface[f"effective_price_${int(notional)}"] = effective_px
+                execution_surface[f"crossing_cost_${int(notional)}"] = crossing_cost
+                execution_surface[f"fill_fees_${int(notional)}"] = round(total_fees, 5)
             else:
-                ev_surface[f"ev_${int(notional)}"] = None
+                execution_surface[f"vwap_${int(notional)}"] = None
+                execution_surface[f"effective_price_${int(notional)}"] = None
+                execution_surface[f"crossing_cost_${int(notional)}"] = None
+                execution_surface[f"fill_fees_${int(notional)}"] = None
 
         # Tripartite Quote Ages (in milliseconds)
         age_book_ms = round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else 0.0
@@ -274,8 +283,7 @@ class L2OrderBook:
             "age_ask_ms": age_ask_ms,
             "taker_fee": round(taker_fee, 5),
             "executable_hurdle": round(executable_hurdle, 5),
-            **vwaps,
-            **ev_surface,
+            **execution_surface,
             "raw_top_bids": sorted_bids[:5],
             "raw_top_asks": sorted_asks[:5]
         }
@@ -305,6 +313,11 @@ class PolymarketDualFeed1HRecorder:
         self.fee_enabled: bool = True
         self.fee_formula_version: str = "taker_fee_c_times_rate_times_p_one_minus_p"
 
+        # Clock synchronization and offset estimation (Point 3)
+        self.clock_offset_ms: float = 0.0
+        self.clock_uncertainty_ms: float = 0.0
+        self.last_clock_sync_ts: float = 0.0
+
         self.last_shock_ts: float = 0.0
         self.shock_threshold_usd: float = 1_500_000.0  # $1.5M in 100ms
         self.last_cross_corr_ts: float = 0.0
@@ -314,9 +327,33 @@ class PolymarketDualFeed1HRecorder:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=10),
-                headers={"User-Agent": "PolymarketDualFeedRecorder/2.6"}
+                headers={"User-Agent": "PolymarketDualFeedRecorder/2.7"}
             )
         return self.session
+
+    async def calibrate_binance_clock_offset(self):
+        """
+        Calibrates local Tokyo clock offset against Binance server time using Cristian's algorithm.
+        Offset = (t_req + t_resp)/2 - t_server
+        Uncertainty = RTT / 2
+        """
+        session = await self.get_session()
+        try:
+            t0 = time.time() * 1000.0
+            async with session.get(f"{BINANCE_REST_URL}/api/v3/time") as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    server_time_ms = float(data["serverTime"])
+                    t1 = time.time() * 1000.0
+                    rtt = t1 - t0
+                    t_mid = (t0 + t1) / 2.0
+                    self.clock_offset_ms = round(t_mid - server_time_ms, 2)
+                    self.clock_uncertainty_ms = round(rtt / 2.0, 2)
+                    self.last_clock_sync_ts = time.time()
+                    logger.info(f"[CLOCK CALIBRATION] Tokyo <-> Binance Offset: {self.clock_offset_ms:+.2f}ms "
+                                f"(Uncertainty: +/-{self.clock_uncertainty_ms:.2f}ms, RTT: {rtt:.2f}ms)")
+        except Exception as e:
+            logger.warning(f"Clock calibration failed: {e}")
 
     async def discover_nearest_1h_market(self) -> Optional[Dict[str, Any]]:
         """Enforces: series_slug == 'btc-up-or-down-hourly' and market_duration == 3600s."""
@@ -668,11 +705,18 @@ class PolymarketDualFeed1HRecorder:
                 "model_a_spot": "Y = f(q_mid, X_spot, TTE, dist)",
                 "model_b_futures": "Y = f(q_mid, X_futures, TTE, dist)",
                 "model_c_joint": "Y = f(q_mid, X_spot, X_futures, basis, delta_basis, TTE, dist)",
-                "model_d_incremental": "Y = f(q_mid, X_spot, TTE, dist) + g(X_futures | X_spot) -> test beta_{F|S} = 0"
+                "model_d_incremental": "Y = f(q_mid, X_spot, TTE, dist) + g(X_futures | X_spot) -> test beta_{F|S} = 0",
+                "oos_training_invariant": "T_train_end < t0 (model trained strictly on completed prior markets)"
+            },
+            "clock_metadata": {
+                "clock_offset_ms": self.clock_offset_ms,
+                "clock_uncertainty_ms": self.clock_uncertainty_ms,
+                "timestamp_designation": "exchange_to_local_delta_with_calibrated_offset"
             },
             "statistical_clustering": {
                 "cluster_market_hour": self.current_market["market_id"],
-                "cluster_shock_episode": f"{self.current_market['market_id']}_{int(t0)}"
+                "cluster_shock_episode": f"{self.current_market['market_id']}_{int(t0)}",
+                "variance_estimator": "IRF: shock-episode block bootstrap | Regressions: market-hour cluster-robust SE"
             }
         }
 
@@ -680,9 +724,9 @@ class PolymarketDualFeed1HRecorder:
             f.write(json.dumps(shock_record) + "\n")
 
         up_30s_delta = response_snapshots["30s"]["up_delta_q_ask"]
-        logger.info(f"[IMPULSE-RESPONSE RECORDED] Market {self.current_market['market_id']} | Source={source} | "
+        logger.info(f"[SHOCK BURST CAPTURED] Market {self.current_market['market_id']} | Source={source} | "
                     f"AgeAsk(UP)={pre_shock_up['age_ask_ms']:.0f}ms | UP ask={pre_shock_up['best_ask']:.3f} -> 30s Delta: {up_30s_delta:+.3f} | "
-                    f"Basis={pre_shock_basis_signed:+.1f}bps")
+                    f"Basis={pre_shock_basis_signed:+.1f}bps (Observational episode, not yet evidence of persistent structural lag)")
 
     async def stream_polymarket_clob(self):
         """Streams real-time L2 orderbook updates from Polymarket CLOB WebSocket."""
@@ -741,7 +785,8 @@ class PolymarketDualFeed1HRecorder:
     def compute_leadlag_cross_correlation(self):
         """
         Pre-registered Lead/Lag cross-correlation estimation:
-          Estimates Corr(X_F(t), X_S(t + Delta)) over Delta in CORRELATION_LAGS_MS.
+          Estimates Corr(epsilon_F(t), epsilon_S(t + Delta)) over Delta in CORRELATION_LAGS_MS
+          using flow innovations (Point 2: do not perform primary lead/lag on raw levels).
         """
         if len(self.spot_trades) < 200 or len(self.futures_trades) < 200:
             return
@@ -750,7 +795,7 @@ class PolymarketDualFeed1HRecorder:
         window_ns = 300_000_000_000  # 5-minute rolling analysis window
         t_start_ns = now_ns - window_ns
 
-        # Bin order flows into 25ms time buckets
+        # Bin signed order flow into 25ms time buckets
         bucket_size_ns = 25_000_000
         num_buckets = int(window_ns // bucket_size_ns)
         spot_bins = np.zeros(num_buckets, dtype=np.float64)
@@ -766,19 +811,23 @@ class PolymarketDualFeed1HRecorder:
                 idx = min(int((t_mono - t_start_ns) // bucket_size_ns), num_buckets - 1)
                 fut_bins[idx] += (ntl if buyer else -ntl)
 
+        # De-autocorrelate: compute first-difference flow innovations epsilon_t = flow_t - flow_{t-1}
+        spot_innovations = np.diff(spot_bins)
+        fut_innovations = np.diff(fut_bins)
+
         corrs = {}
         for lag_ms in CORRELATION_LAGS_MS:
             shift_buckets = int(lag_ms * 1_000_000 / bucket_size_ns)
             if shift_buckets == 0:
-                s = spot_bins
-                f = fut_bins
+                s = spot_innovations
+                f = fut_innovations
             elif shift_buckets > 0:
-                f = fut_bins[:-shift_buckets]
-                s = spot_bins[shift_buckets:]
+                f = fut_innovations[:-shift_buckets]
+                s = spot_innovations[shift_buckets:]
             else:
                 shift = abs(shift_buckets)
-                f = fut_bins[shift:]
-                s = spot_bins[:-shift]
+                f = fut_innovations[shift:]
+                s = spot_innovations[:-shift]
 
             if len(s) > 10 and np.std(s) > 1e-6 and np.std(f) > 1e-6:
                 corr_val = float(np.corrcoef(f, s)[0, 1])
@@ -795,13 +844,15 @@ class PolymarketDualFeed1HRecorder:
             "correlation_grid_lags_ms": corrs,
             "peak_correlation_lag_ms": int(max_lag[0]),
             "peak_correlation_val": max_lag[1],
-            "empirical_inference": "Futures leads Spot" if int(max_lag[0]) > 0 else ("Spot leads Futures" if int(max_lag[0]) < 0 else "Contemporaneous")
+            "metric_evaluated": "flow_innovations_cross_correlation (diff(signed_dollar_flow_25ms))",
+            "telemetry_classification": "illustrative live telemetry, not evidence of persistent lead/lag",
+            "null_hypothesis": "H0: no stable lead/lag structure across pre-registered grid"
         }
 
         with open(CORRELATIONS_FILE, "a") as f:
             f.write(json.dumps(record) + "\n")
 
-        logger.info(f"[LEAD/LAG CORRELATION GRID] Peak Lag: {max_lag[0]}ms (r={max_lag[1]:+.3f}) | Status: {record['empirical_inference']}")
+        logger.info(f"[LEAD/LAG INNOVATION TELEMETRY] Peak Lag: {max_lag[0]}ms (r={max_lag[1]:+.3f}) | Status: Illustrative telemetry (H0: no stable lead/lag)")
 
     async def telemetry_logger_loop(self):
         """Periodic 10s baseline telemetry logger, cross-correlation estimator, and rollover manager."""
@@ -850,6 +901,11 @@ class PolymarketDualFeed1HRecorder:
                         "delta_basis_100ms": delta_basis_100ms,
                         "binance_1h_open": self.finalized_1h_open,
                         "candle_distance_pct": round(dist_pct, 4),
+                        "clock_metadata": {
+                            "clock_offset_ms": self.clock_offset_ms,
+                            "clock_uncertainty_ms": self.clock_uncertainty_ms,
+                            "timestamp_designation": "exchange_to_local_delta_with_calibrated_offset"
+                        },
                         "fee_metadata": self.current_market.get("fee_metadata", {}),
                         "UP": up_metrics,
                         "DOWN": down_metrics
@@ -864,10 +920,14 @@ class PolymarketDualFeed1HRecorder:
                         f"Spot=${self.spot_price:,.1f} | Fut=${self.futures_price:,.1f} | Basis={self.basis_bps:+.1f}bp | dist={dist_pct:+.2f}%"
                     )
 
-                # Periodic 60s cross-correlation estimation
+                # Periodic 60s cross-correlation estimation on flow innovations
                 if time.time() - self.last_cross_corr_ts > 60.0:
                     self.last_cross_corr_ts = time.time()
                     self.compute_leadlag_cross_correlation()
+
+                # Periodic 300s clock synchronization
+                if time.time() - self.last_clock_sync_ts > 300.0:
+                    asyncio.create_task(self.calibrate_binance_clock_offset())
 
                 await asyncio.sleep(10.0)
             except Exception as e:
@@ -876,18 +936,22 @@ class PolymarketDualFeed1HRecorder:
 
     async def run(self):
         logger.info("===============================================================================")
-        logger.info("   ROUTE 3: FUTURES/SPOT -> POLYMARKET INFORMATION-FLOW EXPERIMENT (v2.6)     ")
+        logger.info("   ROUTE 3: FUTURES/SPOT -> POLYMARKET INFORMATION-FLOW EXPERIMENT (v2.7)     ")
         logger.info("   Dual Feeds: Binance Spot (Settlement Ref) + Futures (Routed /market)        ")
         logger.info("   Invariants: OBI/q_micro Reconciled + Invariant Assertions Enforced          ")
         logger.info("   Quote Ages: Tripartite (Age_book, Age_bid, Age_ask)                         ")
-        logger.info("   Econometrics: Strict Causal t0 Anchor + Lead/Lag Cross-Correlation Grid     ")
-        logger.info("   Capacity Surface: EV(C) across [$1, $5, $20, $50, $100]                     ")
+        logger.info("   Clock Sync: Cristian's Algorithm Calibrated Offset (Tokyo <-> Binance)      ")
+        logger.info("   Econometrics: Strict Causal t0 Anchor + Lead/Lag Innovation Grid            ")
+        logger.info("   Capacity Surface: Fill-Level Fees & Crossing Cost [$1, $5, $20, $50, $100]  ")
         logger.info("   Resolution Truth: Finalized Binance Spot 1H Candle Open & Close             ")
         logger.info("   Operational: Read-Only (Does not circumvent geographic restrictions)        ")
         logger.info("===============================================================================")
 
         with open(PID_FILE, "w") as f:
             f.write(str(os.getpid()))
+
+        # Initial clock offset calibration
+        await self.calibrate_binance_clock_offset()
 
         await asyncio.gather(
             self.stream_binance_spot(),
