@@ -846,7 +846,12 @@ class PolymarketDualFeed1HRecorder:
             "peak_correlation_val": max_lag[1],
             "metric_evaluated": "flow_innovations_cross_correlation (diff(signed_dollar_flow_25ms))",
             "telemetry_classification": "illustrative live telemetry, not evidence of persistent lead/lag",
-            "null_hypothesis": "H0: no stable lead/lag structure across pre-registered grid"
+            "null_hypothesis": "H0: no stable lead/lag structure across pre-registered grid",
+            "clock_metadata": {
+                "calibrated_offset_ms": self.clock_offset_ms,
+                "clock_uncertainty_ms": self.clock_uncertainty_ms,
+                "resolution_caveat": "Lags <= 50ms are within RTT uncertainty (+/-21.6ms) and must be evaluated strictly under pooled bootstrap bands."
+            }
         }
 
         with open(CORRELATIONS_FILE, "a") as f:

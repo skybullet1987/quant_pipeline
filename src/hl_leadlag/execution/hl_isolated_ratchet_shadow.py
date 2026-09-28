@@ -372,11 +372,12 @@ class RatchetShadowEngine:
 
         # 3. STAGE 1 RATCHET: Advance >= +1.50%
         if pos.fsm_state == "INITIAL_ANCHORED" and move_from_entry_pct >= PYRAMID_TRIGGER_DIST:
-            # Check free usable margin before pyramiding
-            if pos.free_usable_margin >= (CANARY_PYRAMID_NOTIONAL * cfg["initial_margin_rate"]):
+            # Check free usable margin before pyramiding (support partial fill sizing)
+            max_allowed_pyramid = pos.free_usable_margin / cfg["initial_margin_rate"]
+            pyramid_notional = min(CANARY_PYRAMID_NOTIONAL, max_allowed_pyramid)
+            if pyramid_notional >= 10.0:  # Minimum viable ticket $10
                 pyramid_bench_px = current_ask
                 pyramid_fill_px = pyramid_bench_px * (1.0 + 0.0001)
-                pyramid_notional = CANARY_PYRAMID_NOTIONAL
                 pyramid_qty = pyramid_notional / pyramid_fill_px
                 pyramid_fee = pyramid_notional * cfg["base_taker_fee"]
                 pyramid_shortfall = pyramid_qty * (pyramid_fill_px - pyramid_bench_px)
