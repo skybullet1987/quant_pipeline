@@ -20,10 +20,15 @@ import subprocess
 OUTPUT_DIR = "/home/skybullet1987/quant_pipeline/data/derive"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-TARGET_SCHEDULE = [
-    ("D2_4h_acceleration", "2026-09-28 04:00:00"),
-    ("D3_1h_terminal_0dte", "2026-09-28 07:00:00")
-]
+def get_next_schedule():
+    now = datetime.datetime.now(datetime.timezone.utc)
+    base_date = now.date() if now.hour < 4 else (now + datetime.timedelta(days=1)).date()
+    d2_dt = datetime.datetime.combine(base_date, datetime.time(4, 0, 0), tzinfo=datetime.timezone.utc)
+    d3_dt = datetime.datetime.combine(base_date, datetime.time(7, 0, 0), tzinfo=datetime.timezone.utc)
+    return [
+        ("D2_4h_acceleration", d2_dt),
+        ("D3_1h_terminal_0dte", d3_dt)
+    ]
 
 def run_probe(label: str):
     timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -63,9 +68,10 @@ def main():
     print("   DERIVE TENOR PROBE AUTONOMOUS SCHEDULER (Bucket D2 & Bucket D3)", flush=True)
     print("===============================================================================", flush=True)
     
-    for label, target_time_str in TARGET_SCHEDULE:
-        target_dt = datetime.datetime.strptime(target_time_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=datetime.timezone.utc)
+    schedule = get_next_schedule()
+    for label, target_dt in schedule:
         target_ts = target_dt.timestamp()
+        target_time_str = target_dt.strftime("%Y-%m-%d %H:%M:%S")
         
         now_ts = time.time()
         delay = target_ts - now_ts
