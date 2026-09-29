@@ -130,12 +130,14 @@ where **$\text{FundingCashflow} > 0$ denotes net cash received by the account**.
 
 ---
 
-### 5. Dynamic Fee Architecture
-Hardcoded assumptions of $4.5\text{ bps}$ taker and $1.5\text{ bps}$ maker fees are removed from production invariants. The engine dynamically queries the account's fee tier:
+### 5. Dynamic Fee Architecture vs. B1 Simulation Invariants
+To maintain scientific separation between simulation modeling and production execution:
+* **Phase B1 Shadow Simulation**: Employs fixed, frozen friction parameters (**$4.5\text{ bps}$ base taker fee**, **$1.5\text{ bps}$ base maker fee**, and **$3.2\text{ ms}$ simulated transit latency**). These are formally designated as **modeled baseline friction assumptions**, not empirical execution telemetry.
+* **Phase C Canary & Production**: The execution gateway dynamically queries the account's actual Hyperliquid fee tier:
 
 $$\text{FeeRate}_{\text{effective}} = f(\text{account\_tier}, \ \text{order\_type}, \ \text{maker\_rebate})$$
 
-Realized fees are recorded directly from transaction receipts (`observed_fee_rate(fill)`).
+Realized fees and exchange-ack latencies are recorded directly from live transaction receipts (`observed_fee_rate(fill)`, `delta_t_observed`).
 
 ---
 
@@ -168,23 +170,33 @@ $$\mathbf{p_{\text{routing}} < 0.01}$$
 
 ---
 
-### 2. Counterfactual Policy Benchmarking & Deterministic Randomness
-To eliminate winner's selection bias, the shadow engine evaluates **four concurrent routing policies** on every qualifying shock episode:
+### 2. Parallel Virtual Policy Execution Engine & Counterfactual Ledger
+To eliminate winner's selection bias and satisfy the confirmatory routing condition ($p_{\text{routing}} = \max(p_{\text{MOS}}, p_{\text{MOR}}) < 0.01$), the shadow engine does **not merely label** the four choices—it maintains **four parallel virtual positions** executed concurrently across the 6-state Ratchet FSM on every episode:
 
-| Policy Identifier | Policy Description | Scientific Purpose | Deterministic Invariant |
-| :--- | :--- | :--- | :--- |
-| **Policy 1: SOL-Only** | Always dispatches to SOL regardless of other books | Pre-specified primary baseline | Fixed ticker: `SOL` |
-| **Policy 2: Random Eligible** | Dispatches to a randomly chosen eligible asset | Null hypothesis for asset selection | `random_policy_seed = hash(episode_id, salt)`, logged deterministically |
-| **Policy 3: Round-Robin** | Cycles deterministically across SOL $\to$ HYPE $\to$ SUI $\to$ DOGE | Exposure-control baseline | Deterministic counter modulo eligible count |
-| **Policy 4: Max-OBI Router** | Dispatches to highest positive $\text{OBI}_{\text{top}}$ | Candidate active strategy | $\text{argmax}_{c} \text{OBI}_c$ |
+| Policy Identifier | Policy Description | Scientific Purpose | Deterministic Invariant | Execution Mode |
+| :--- | :--- | :--- | :--- | :--- |
+| **Policy 1: SOL-Only** | Always dispatches to SOL regardless of other books | Pre-specified primary baseline | Fixed ticker: `SOL` | Parallel Virtual FSM Position |
+| **Policy 2: Random Eligible** | Dispatches to a randomly chosen eligible asset | Null hypothesis for asset selection | `random_policy_seed = hash(episode_id, salt)`, logged deterministically | Parallel Virtual FSM Position |
+| **Policy 3: Round-Robin** | Cycles deterministically across SOL $\to$ HYPE $\to$ SUI $\to$ DOGE | Exposure-control baseline | Indexed strictly by `(independent_episode_index - 1) % 4` | Parallel Virtual FSM Position |
+| **Policy 4: Max-OBI Router** | Dispatches to highest positive $\text{OBI}_{\text{top}}$ | Candidate active strategy | $\text{argmax}_{c} \text{OBI}_c$ at $t_0$ | Primary Sprint & Parallel Virtual Position |
+
+* **Counterfactual Episode Ledger (`counterfactual_episode_ledger.jsonl`)**:
+  Each completed episode logs:
+  $$\{\text{episode\_id}, \ \text{episode\_index}, \ \text{L2\_snapshot}_{t_0}, \ \text{OBI\_by\_asset}, \ \text{outcomes}(\text{SOL}, \text{RANDOM}, \text{ROUND\_ROBIN}, \text{MAX\_OBI}), \ \Delta_{\text{MOS}}, \ \Delta_{\text{MOR}}\}$$
+  enabling paired, un-confounded statistical testing.
 
 ---
 
-### 3. Machine-Enforced "Independent Episode" Linking Rule
-To prevent double-counting liquidation cascades as multiple independent statistical observations, the event detector enforces an immutable episode-linking rule:
-* An episode initiates at qualifying shock timestamp $t_0$.
-* Any subsequent qualifying sweep occurring within a cooldown window of **$\tau_{\text{cooldown}} = 300\text{ seconds}$ (5 minutes)** or while a sprint is actively open belongs to the **SAME episode**:
-  $$\text{EpisodeID}_{t+1} = \text{EpisodeID}_t \quad \text{if } (t_{k+1} - t_k < 300\text{s}) \lor (\text{ActiveSprint} = \text{True})$$
+### 3. Decoupled Shock Ingestion Architecture (Zero State-Dependent Censoring)
+To ensure the empirical shock sample is statistically unbiased and representative of the true flow distribution:
+* **Shock Detection Decoupled from Trade Eligibility**: Every qualifying sweep ($V_{100\text{ms}} \ge \$1.5\text{M}, Z_{\text{OFI}} \ge 2.58$) is admitted into the episode stream unconditionally. Episode detection is **never conditional on `active_sprint is None`**.
+* **Episode Linking Rule ($\tau_{\text{cooldown}} = 300\text{s}$)**:
+  * The first shock after $\ge 300\text{s}$ initiates a new independent episode: $\text{EpisodeID}_k = \text{EPISODE\_}k\_t_0$.
+  * Subsequent shocks occurring within $300\text{s}$ of the previous shock in that cluster are assigned to the **SAME episode** as subsequent flow impulses ($\text{subsequent\_shocks}$ list).
+  * If a primary sprint is already open, live sandbox dispatch is flagged as blocked by the concurrency cap ($N_{\text{max}} = 1$), while all 4 counterfactual policy positions continue their virtual evaluation without interruption.
+  * This guarantees:
+    $$P(\text{recorded shock}) = P(\text{qualifying shock})$$
+    eliminating state-dependent censoring of persistent or clustered shock cascades.
 * **Statistical Reporting Requirements for $N \ge 100$**:
   1. Count of independent episodes $N_{\text{episodes}}$
   2. Distinct UTC trading days ($\ge 14$)
@@ -206,6 +218,8 @@ To prevent forensic ambiguity between data windows and code commits, the Phase B
 
 ### 5. Empirical Liquidation Safety & Stop Integrity (Factual Protocol Correction)
 Hyperliquid's official documentation explicitly confirms that **there is no clearance fee on liquidations**; liquidations are executed via market orders on the order book and backstop liquidator vault. The wider buffer on $10\times$ assets (`HYPE`, `SUI`, `DOGE`) is properly designated as **providing additional distance from forced liquidation and backstop-liquidation risk during fast adverse moves**.
+
+> **Execution Parity Note**: In Phase B1 shadow simulation, liquidation and stop-loss triggering are evaluated via **local L2 mid/bid proxy simulation**. Hyperliquid's official exchange-level mark-price margining and mark-triggered TP/SL execution are reserved for Phase C live execution telemetry.
 
 #### Signed Liquidation Distance Metric:
 For long positions, the shadow engine logs the signed normalized distance:
@@ -230,8 +244,9 @@ The execution gateway rejects order generation if $B_{\text{remaining}} \le 0$, 
 
 ### 1. Capital Carrying Value & Grossman-Zhou Drawdown Control
 * **Current Core NAV**: **$620.51 USDC** ($610.92 cash balance earning baseline margin safety).
-* **Grossman-Zhou (1993) Optimal Drawdown Control Cushion**:
-  Under the Grossman-Zhou optimal portfolio drawdown framework, the safe floor parameter $\alpha = 0.8255$ defines the dynamic capital floor $F_t = \alpha \cdot \text{HWM}_t = 0.8255 \times \$642.10 = \$530.05$.
+* **Grossman-Zhou-Style Stochastic Drawdown Floor with Preselected $\alpha = 0.8255$**:
+  Under a Grossman-Zhou-style stochastic drawdown control framework where the portfolio floor $W_t \ge \alpha M_t$ is enforced conditional on an exogenous drawdown design parameter $\alpha = 0.8255$, the dynamic capital floor is $F_t = \alpha \cdot \text{HWM}_t = 0.8255 \times \$642.10 = \$530.05$.
+  *(Clarification: Grossman and Zhou formulate $\alpha$ as an exogenous drawdown parameter and derive an optimal policy conditional on that constraint; $0.8255$ is therefore our chosen sovereign design parameter, not an endogenous identity derived by their paper.)*
   Current portfolio cushion is:
   $$C_t = \frac{\text{NAV}_t - F_t}{\text{NAV}_t} = \frac{620.51 - 530.05}{620.51} = \mathbf{14.58\% > 0}$$
   Drawdown from peak is $-3.36\%$, well within the acceptable cushion.
@@ -298,16 +313,32 @@ Because the historical sample consists of approximately 20 finalized market hour
 
 ---
 
-### 6. Explicit Out-of-Sample Freeze Boundary
-* **`R3_DEV`**: Everything observed prior to **`2026-09-29T18:11:34.000Z`** (commit [`08d50e8`](https://github.com/skybullet1987/quant_pipeline/commit/08d50e8)). The 7 settled trades (6W / 1L, +$113.44 PnL) are classified strictly as **internal development calibration data**.
-* **`R3_VALIDATION_START_UTC = 2026-09-29T18:11:34.000Z`**: Begins the clean, frozen forward out-of-sample ledger.
+### 6. Machine-Enforced Out-of-Sample Freeze Boundary & Ledger Partitioning
+* **`R3_DEV`**: Everything observed prior to **`2026-09-29T18:11:34.000Z`** (`1790705494.0` unix, commit [`08d50e8`](https://github.com/skybullet1987/quant_pipeline/commit/08d50e8)). The canonical 15 historical settled trades (9W / 6L, +$113.80 PnL) are partitioned strictly into `data/polymarket/paper_trading_dev_ledger.jsonl` as **internal development calibration data**.
+* **`R3_VALIDATION_START_UTC = 2026-09-29T18:11:34.000Z`**: Hard machine-enforced boundary. All incoming trades on or after this timestamp are routed strictly to the frozen forward validation ledger: `data/polymarket/paper_trading_validation_ledger.jsonl`. Pre-freeze historical shocks are programmatically barred from ever entering the validation ledger.
 
 ---
 
-### 7. Executable Depth Ratio Guard ($K_{\text{depth}} \ge 1.50$)
-The arbitrary $\$50.00$ dollar threshold is upgraded to an **Executable Depth Ratio**:
-$$\text{DepthRatio} = \frac{D_{\text{executable}}(P_{\text{eff}} \le 0.85)}{C_{\text{ticket}}} \ge K_{\text{depth}} \quad (K_{\text{depth}} = 1.50)$$
-Requiring at least $\$75.00$ in resting executable depth inside the price boundary for a $\$50.00$ ticket.
+### 7. Fail-Closed Executable Depth Ratio Guard ($K_{\text{depth}} \ge 1.50$)
+The liquidity check is enforced as a strict **FAIL-CLOSED** machine invariant:
+```python
+raw_asks = token_features.get("raw_top_asks", [])
+if not raw_asks:
+    return  # FAIL-CLOSED: No resting book depth; order rejected immediately
+
+executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= 0.85)
+depth_ratio = executable_depth_usd / TICKET_NOTIONAL
+if depth_ratio < 1.50:
+    return  # FAIL-CLOSED: Rejects ticket if executable depth < $75.00 for $50.00 notional
+```
+If the resting book is empty or missing, execution fails closed; the check is never bypassed.
+
+---
+
+### 8. Restart Idempotency & Mandatory Fee Metadata Enforcement
+* **Idempotent State Recovery**: On daemon startup, the engine ingests `DEV_LEDGER_FILE` and `VALIDATION_LEDGER_FILE`, restoring exact cash balances, realized PnLs, and the set of settled trade IDs. Replaying historical shock logs never creates duplicate trades.
+* **Hourly Cap Tracking Across Epochs**: The engine enforces `MAX_TRADES_PER_HOUR = 2` by tracking both settled and active open trades per market hour (`trades_per_market[m_id] + len(open_trades[m_id]) < 2`), preventing re-execution of historical shock clusters upon restart.
+* **Mandatory Venue Fee Metadata**: The paper trader rejects any shock payload lacking explicit `fee_metadata.fee_rate_market`, refusing to execute on uncertified or defaulted fee schedules.
 
 ---
 
