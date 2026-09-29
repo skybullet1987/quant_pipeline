@@ -370,6 +370,14 @@ class RatchetShadowEngine:
         if hold_sec >= MAX_HOLD_SECONDS:
             return self._close_sprint(pos, exit_price=current_bid, reason=f"MAX_TIME_HORIZON_REACHED (45 min)")
 
+        # 2b. EARLY MICRO-BREAKEVEN RATCHET: Advance >= +0.70% locks dynamic net breakeven stop
+        if pos.fsm_state == "INITIAL_ANCHORED" and move_from_entry_pct >= 0.0070:
+            if pos.current_stop_price < pos.expected_net_break_even_price:
+                pos.current_stop_price = pos.expected_net_break_even_price
+                self.last_stop_amendment_ts = now_wall
+                self.stop_amendments_count += 1
+                print(f"  [+] MICRO-BREAKEVEN LOCKED: Advance {move_from_entry_pct*100:+.2f}% >= +0.70% | Stop moved to Net BE: ${pos.current_stop_price:.3f}", flush=True)
+
         # 3. STAGE 1 RATCHET: Advance >= +1.50%
         if pos.fsm_state == "INITIAL_ANCHORED" and move_from_entry_pct >= PYRAMID_TRIGGER_DIST:
             # Check free usable margin before pyramiding (support partial fill sizing)
