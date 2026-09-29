@@ -51,6 +51,20 @@ ASSET_CONFIG = {
         "initial_margin_rate": 0.10, # 10.0% initial margin
         "base_taker_fee": 0.00045,
         "base_maker_fee": 0.00015,
+    },
+    "SUI": {
+        "max_leverage": 10.0,
+        "maint_margin_rate": 0.050, # 5.0% maintenance margin
+        "initial_margin_rate": 0.10, # 10.0% initial margin
+        "base_taker_fee": 0.00045,
+        "base_maker_fee": 0.00015,
+    },
+    "DOGE": {
+        "max_leverage": 10.0,
+        "maint_margin_rate": 0.050, # 5.0% maintenance margin
+        "initial_margin_rate": 0.10, # 10.0% initial margin
+        "base_taker_fee": 0.00045,
+        "base_maker_fee": 0.00015,
     }
 }
 
@@ -194,7 +208,9 @@ class RatchetShadowEngine:
         self.completed_sprints: List[SprintPosition] = []
         self.current_order_books: Dict[str, Dict[str, float]] = {
             "SOL": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0},
-            "HYPE": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0}
+            "HYPE": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0},
+            "SUI": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0},
+            "DOGE": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0}
         }
         self.last_stop_amendment_ts = 0.0
         self.stop_amendments_count = 0
@@ -282,10 +298,10 @@ class RatchetShadowEngine:
         t_fill_ns = t_ack_ns + 1_500_000 # Matching engine tick
 
         benchmark_px = book["ask"]
-        # Empirical taker slippage (P50 = 1.0 bp on liquid SOL book)
+        # Empirical taker slippage (P50 = 1.0 bp on liquid book)
         actual_fill_px = benchmark_px * (1.0 + 0.0001)
         
-        notional = CANARY_INITIAL_NOTIONAL
+        notional = SANDBOX_COLLATERAL_USD * cfg["max_leverage"]
         qty = notional / actual_fill_px
         taker_fee = notional * cfg["base_taker_fee"]
         shortfall = qty * (actual_fill_px - benchmark_px)
@@ -382,7 +398,8 @@ class RatchetShadowEngine:
         if pos.fsm_state == "INITIAL_ANCHORED" and move_from_entry_pct >= PYRAMID_TRIGGER_DIST:
             # Check free usable margin before pyramiding (support partial fill sizing)
             max_allowed_pyramid = pos.free_usable_margin / cfg["initial_margin_rate"]
-            pyramid_notional = min(CANARY_PYRAMID_NOTIONAL, max_allowed_pyramid)
+            pyramid_cap = (SANDBOX_COLLATERAL_USD * 0.25) * cfg["max_leverage"]
+            pyramid_notional = min(pyramid_cap, max_allowed_pyramid)
             if pyramid_notional >= 10.0:  # Minimum viable ticket $10
                 pyramid_bench_px = current_ask
                 pyramid_fill_px = pyramid_bench_px * (1.0 + 0.0001)
@@ -568,16 +585,31 @@ async def run_shadow_daemon():
                                       f"\n  Binance USD-M Volume: ${metrics['total_usd']:,.0f} in 100ms | Z_OFI: {metrics['z_ofi']:.2f}"
                                       f"\n  BTC Spot: ${px:,.2f}", flush=True)
 
-                                # Dispatch SOL Sprint
+                                # Dynamic Altcoin Selection: Pick candidate with highest positive OFI book imbalance
+                                candidates = ["SOL", "HYPE", "SUI", "DOGE"]
+                                target_asset = "SOL"
+                                best_imbalance = -999.0
+                                for c in candidates:
+                                    book = engine.current_order_books.get(c, {})
+                                    b_sz = book.get("bid_sz", 0.0)
+                                    a_sz = book.get("ask_sz", 0.0)
+                                    if b_sz > 0 and a_sz > 0:
+                                        imb = (b_sz - a_sz) / (b_sz + a_sz)
+                                        if imb > best_imbalance:
+                                            best_imbalance = imb
+                                            target_asset = c
+
+                                # Dispatch Sprint
                                 sprint = engine.trigger_initial_sprint(
-                                    asset="SOL",
+                                    asset=target_asset,
                                     t_source_ms=ts_ms,
                                     t_recv_ns=t_recv_ns,
                                     t_dec_ns=t_dec_ns
                                 )
                                 if sprint:
                                     print(f"  [+] SPRINT DISPATCHED: {sprint.sprint_id}"
-                                          f"\n      Initial Notional: ${sprint.total_notional:.0f} (20x on ${sprint.collateral_usd:.0f} collateral)"
+                                          f"\n      Target Asset: {sprint.asset} | Book Imbalance: {best_imbalance:+.2f}"
+                                          f"\n      Initial Notional: ${sprint.total_notional:.0f} ({ASSET_CONFIG[sprint.asset]['max_leverage']:.0f}x on ${sprint.collateral_usd:.0f} collateral)"
                                           f"\n      Entry Fill: ${sprint.initial_entry_price:.3f} | Nominal Stop: ${sprint.current_stop_price:.3f} (-1.80%)"
                                           f"\n      Protocol Liq Price: ${sprint.published_liq_price:.3f} (Stop-to-Liq Buffer: {sprint.stop_to_liq_distance_pct:.2f}%)"
                                           f"\n      Latency: Marketable {sprint.delta_t_marketable_ms:.2f}ms\n", flush=True)
@@ -590,10 +622,10 @@ async def run_shadow_daemon():
             try:
                 print(f"[*] Connecting to Hyperliquid L2 WebSocket ({HYPERLIQUID_WS_URL})...", flush=True)
                 async with websockets.connect(HYPERLIQUID_WS_URL, ping_interval=20, ping_timeout=10) as ws:
-                    for coin in ["SOL", "HYPE"]:
+                    for coin in ["SOL", "HYPE", "SUI", "DOGE"]:
                         sub_msg = {"method": "subscribe", "subscription": {"type": "l2Book", "coin": coin}}
                         await ws.send(json.dumps(sub_msg))
-                    print("[+] Subscribed to Hyperliquid L2 books (SOL, HYPE).", flush=True)
+                    print("[+] Subscribed to Hyperliquid L2 books (SOL, HYPE, SUI, DOGE).", flush=True)
 
                     async for msg_str in ws:
                         data = json.loads(msg_str)

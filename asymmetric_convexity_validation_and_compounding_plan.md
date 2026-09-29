@@ -17,11 +17,11 @@
   * $\text{NAV}_{\text{combined}} = \mathbf{\$620.51\text{ USDC}}$
 * **Accounting Model**: Strictly canonical fill-level accounting. Realized PnL is separated from execution shortfall attribution; slippage is never double-counted.
 * **Gate Hierarchy**:
-  * **Phase A (Derive Options)**: **FALSIFIED** for systematic execution. Consecutive Day 1 and Day 2 probes confirmed that market makers systematically withdraw bids ($0.00 bid) and depth falls below $25k in terminal 0DTE (<1h to expiry). Capital preserved; zero funds deployed.
-  * **Phase B1 (Hyperliquid Engineering Shadow)**: **ACTIVE SHADOW** under PID `2855306`. 4 live sprints logged; calibrated with Early Micro-Breakeven at $+0.70\%$ to prevent scratch decay.
+  * **Phase A (Derive Options)**: **FALSIFIED & TERMINATED**. Consecutive probes confirmed that market makers systematically withdraw bids ($0.00 bid) and depth falls below $25k in terminal 0DTE (<1h to expiry). All background probe processes stopped, `data/derive/` archived to `data/archive/`, and sockets closed. Capital preserved; zero funds deployed.
+  * **Phase B1 (Hyperliquid Engineering Shadow)**: **ACTIVE SHADOW** under PID `2885020`. 4 live sprints logged; calibrated with Early Micro-Breakeven at $+0.70\%$ and expanded to 4 liquid altcoins (`SOL`, `HYPE`, `SUI`, `DOGE`) with dynamic OFI book imbalance routing.
   * **Phase B2 (Pre-Registered Block Alpha Certification)**: **LOCKED** pending B1 pass (targeting 30–50 shocks).
   * **Phase C (Live Micro-Canary)**: **LOCKED** pending B2 certification.
-  * **Track 4 (Polymarket Forward Paper Trader)**: **ACTIVE SHADOW** under PID `2851129`. Replayed 19 hourly markets, yielding **8 Wins / 5 Losses (61.5% WR)** and **+$147.43 net PnL** on $1,000 paper capital.
+  * **Track 4 (Polymarket Forward Paper Trader)**: **ACTIVE SHADOW** under PID `2851129`. 15 settled hourly trades, yielding **9 Wins / 6 Losses (60.0% WR)** and **+$113.79 net PnL** on $1,000 paper capital.
   * **Core Shadow Tracker (EXP-104 Macro Hedge)**: **ACTIVE SHADOW** under PID `2851516`. Tracking side-by-side forward performance leading into October 1 rebalance.
 
 ---
@@ -502,13 +502,13 @@ To test real monetization without risking capital or violating jurisdictional bo
   * Direction congruent with distance from candle open ($P_{\text{spot}} > P_{\text{open}}$ for UP, $P_{\text{spot}} < P_{\text{open}}$ for DOWN).
   * Effective price bounds: $\$0.15 \le P_{\text{eff}} \le \$0.85$.
   * Size: $\$50.00$ notional per ticket; max 2 concurrent tickets per market.
-* **Empirical Replay Results (Past 19 Hourly Markets)**:
+* **Empirical Replay Results (Past 20 Hourly Markets)**:
   * **Starting Paper Capital**: $\$1,000.00\text{ USDC}$
-  * **Settled Trades**: $13$
-  * **Wins**: $8 / 13$ ($\mathbf{61.54\% \text{ Win Rate}}$)
-  * **Total Fees Paid**: $\$10.20\text{ USDC}$ (7% crypto taker schedule)
-  * **Net Realized PnL**: $\mathbf{+\$147.43\text{ USDC}}$ ($\mathbf{+14.74\%}$ return in 18 hours)
-  * **Current Paper Equity**: $\mathbf{\$1,147.43\text{ USDC}}$
+  * **Settled Trades**: $15$
+  * **Wins**: $9 / 15$ ($\mathbf{60.00\% \text{ Win Rate}}$)
+  * **Total Fees Paid**: $\$11.68\text{ USDC}$ (7% crypto taker schedule)
+  * **Net Realized PnL**: $\mathbf{+\$113.79\text{ USDC}}$ ($\mathbf{+11.38\%}$ return in 19 hours)
+  * **Current Paper Equity**: $\mathbf{\$1,113.79\text{ USDC}}$
   * **Output Ledger**: `data/polymarket/paper_trading_ledger.jsonl` and `data/polymarket/paper_trader_state.json`.
 
 ---
@@ -527,9 +527,15 @@ To test real monetization without risking capital or violating jurisdictional bo
   * Deepen Avellaneda-Stoikov quote offset: $0.5\text{ bps} \longrightarrow 1.0\text{ bps}$.
   * Projected Impact: Lifts maker fill ratio to $>72\%$, saving $\sim 15\text{ bps}$ in turnover fees.
 
-### 3. Route 2 Ratchet Calibration
+### 3. Route 2 Ratchet Calibration & Universe Expansion
 * **Live Sprint Audit**: 4 live sprints exited at 45m with minor scratches (avg $-\$1.40$) because breakouts peaked at $+0.75\%$ without reaching $+1.50\%$.
-* **Calibration Implemented**: Added early dynamic Net-Breakeven lock at $+0.70\%$ to prevent profitable runner decay. Sizing trigger retained at $+1.50\%$ for secondary $N_2 = \$100$.
+* **Micro-Breakeven Implemented**: Added early dynamic Net-Breakeven lock at $+0.70\%$ to prevent profitable runner decay. Sizing trigger retained at $+1.50\%$ for secondary $N_2 = \$100$.
+* **Universe Expansion**: Expanded ingestion universe to 4 liquid, high-beta altcoins (`SOL`, `HYPE`, `SUI`, `DOGE`) under PID `2885020`.
+* **Dynamic OFI Dispatch**: On institutional BTC volume sweeps ($\ge \$1.5\text{M}$ in $100\text{ms}$), the engine dispatches to the altcoin with the strongest positive order book imbalance ($(\text{bid\_sz} - \text{ask\_sz})/(\text{bid\_sz} + \text{ask\_sz})$).
+
+### 4. Decommissioning & Archival of Track 1 (Derive 0DTE Options)
+* **Status**: **FALSIFIED & TERMINATED** (Insufficient Terminal Depth & Market Maker Quote Withdrawal).
+* **Execution**: Stopped all background probe schedulers, closed network sockets, and archived `data/derive/` into `data/archive/derive_experiment_d_falsified_*.tar.gz`. Zero real capital allocated. Concentration shifted 100% to Track 2 (HL Ratchet) and Track 4 (Polymarket Data Lab).
 
 
 
