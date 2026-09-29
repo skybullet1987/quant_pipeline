@@ -109,12 +109,13 @@ class PolymarketForwardPaperTrader:
             return
 
         token_features = shock.get("pre_shock_features_t0", {}).get(target_token, {})
-        # Depth Assertion Guard: Verify resting depth can absorb $50 notional
+        # Executable Depth Ratio Guard (v3.1 Specification: DepthRatio >= 1.50)
         raw_asks = token_features.get("raw_top_asks", [])
         if raw_asks:
-            total_ask_depth_usd = sum(px * sz for px, sz in raw_asks)
-            if total_ask_depth_usd < TICKET_NOTIONAL:
-                return  # Insufficient resting depth: top book has < $50 notional
+            executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= 0.85)
+            depth_ratio = executable_depth_usd / TICKET_NOTIONAL
+            if depth_ratio < 1.50:
+                return  # Rejects ticket: Executable depth ratio < 1.50 (requires >= $75 executable depth for $50 ticket)
 
         eff_px = token_features.get("effective_price_$50")
         if not eff_px or eff_px < 0.15 or eff_px > 0.85:

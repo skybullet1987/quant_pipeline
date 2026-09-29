@@ -587,14 +587,27 @@ async def run_shadow_daemon():
                         if metrics["total_usd"] >= SHOCK_VOLUME_USD and metrics["z_ofi"] >= Z_OFI_HURDLE:
                             t_dec_ns = time.monotonic_ns()
                             now_sec = time.time()
-                            if now_sec - last_trigger_ts >= 15.0: # 15s debounce
+                            # Machine-Enforced Independent Episode Cooldown (tau = 300s = 5 min)
+                            INDEPENDENT_EPISODE_COOLDOWN_SEC = 300.0
+                            if now_sec - last_trigger_ts >= INDEPENDENT_EPISODE_COOLDOWN_SEC and engine.active_sprint is None:
                                 last_trigger_ts = now_sec
-                                print(f"\n[>>> INSTITUTIONAL SHOCK DETECTED <<<]"
+                                episode_id = f"EPISODE_{int(now_sec)}"
+                                print(f"\n[>>> INDEPENDENT HIGH-VALUE SWEEP DETECTED ({episode_id}) <<<]"
                                       f"\n  Binance USD-M Volume: ${metrics['total_usd']:,.0f} in 100ms | Z_OFI: {metrics['z_ofi']:.2f}"
                                       f"\n  BTC Spot: ${px:,.2f}", flush=True)
 
-                                # Dynamic Altcoin Selection: Pick candidate with highest positive OFI book imbalance
+                                # Evaluate 4 Counterfactual Policies
                                 candidates = ["SOL", "HYPE", "SUI", "DOGE"]
+                                # Policy 1: SOL-Only
+                                policy1_sol = "SOL"
+                                # Policy 2: Random Eligible (Deterministic seed from episode_id)
+                                import hashlib
+                                seed_val = int(hashlib.sha256(f"{episode_id}_seed_v31".encode()).hexdigest(), 16) % (2**32)
+                                policy2_random = candidates[seed_val % len(candidates)]
+                                # Policy 3: Round-Robin
+                                round_robin_idx = len(engine.completed_sprints) % len(candidates)
+                                policy3_rr = candidates[round_robin_idx]
+                                # Policy 4: Max-OBI Router
                                 target_asset = "SOL"
                                 best_imbalance = -999.0
                                 for c in candidates:
@@ -606,8 +619,15 @@ async def run_shadow_daemon():
                                         if imb > best_imbalance:
                                             best_imbalance = imb
                                             target_asset = c
+                                policy4_max_obi = target_asset
 
-                                # Dispatch Sprint
+                                print(f"  [COUNTERFACTUAL AUDIT] {episode_id}:"
+                                      f"\n    Policy 1 (SOL-Only): {policy1_sol}"
+                                      f"\n    Policy 2 (Random Eligible, seed={seed_val}): {policy2_random}"
+                                      f"\n    Policy 3 (Round-Robin, idx={round_robin_idx}): {policy3_rr}"
+                                      f"\n    Policy 4 (Max-OBI, imb={best_imbalance:+.2f}): {policy4_max_obi}", flush=True)
+
+                                # Dispatch Active Sprint under Policy 4
                                 sprint = engine.trigger_initial_sprint(
                                     asset=target_asset,
                                     t_source_ms=ts_ms,
@@ -615,11 +635,12 @@ async def run_shadow_daemon():
                                     t_dec_ns=t_dec_ns
                                 )
                                 if sprint:
+                                    signed_liq_buf = (sprint.initial_entry_price - sprint.published_liq_price) / sprint.initial_entry_price
                                     print(f"  [+] SPRINT DISPATCHED: {sprint.sprint_id}"
                                           f"\n      Target Asset: {sprint.asset} | Book Imbalance: {best_imbalance:+.2f}"
                                           f"\n      Initial Notional: ${sprint.total_notional:.0f} ({ASSET_CONFIG[sprint.asset]['max_leverage']:.0f}x on ${sprint.collateral_usd:.0f} collateral)"
                                           f"\n      Entry Fill: ${sprint.initial_entry_price:.3f} | Nominal Stop: ${sprint.current_stop_price:.3f} (-1.80%)"
-                                          f"\n      Protocol Liq Price: ${sprint.published_liq_price:.3f} (Stop-to-Liq Buffer: {sprint.stop_to_liq_distance_pct:.2f}%)"
+                                          f"\n      Protocol Liq Price: ${sprint.published_liq_price:.3f} (Signed Buffer: {signed_liq_buf*100:+.2f}%)"
                                           f"\n      Latency: Marketable {sprint.delta_t_marketable_ms:.2f}ms\n", flush=True)
             except Exception as e:
                 print(f"[-] Binance feed disconnected: {e}. Reconnecting in 3s...", flush=True)
