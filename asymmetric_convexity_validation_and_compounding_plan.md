@@ -1,28 +1,50 @@
-# Asymmetric Convexity Validation & Compounding Plan: Multi-Track Blueprint (v2.8 Live Multi-Daemon State)
+# Asymmetric Convexity Validation & Compounding Plan: Tri-Engine Blueprint (v2.9 Tri-Engine Sovereign Production State)
 
 ---
 
-## Executive Status & Gate Classification
+## Executive Status & Tri-Engine Architecture
 
 ```
-[PHASE A: Options Recon] ──> [PHASE B1: Engineering] ──> [PHASE B2: Alpha Gate] ──> [PHASE C: Micro-Canary]
- (Day 1 & Day 2 Probes)        (Active Shadow: 4 fills)   (Frozen: Several Hundred)    (1 Active Sprint: $20-$60)
-      [FALSIFIED]                    [APPROVED]                   [LOCKED]                   [LOCKED]
+========================================================================================================
+                     TRI-ENGINE SOVEREIGN PRODUCTION PIPELINE (v2.9)
+========================================================================================================
+[ENGINE 1: CORE COMPOUNDING PERPETUAL] ──> 85% Capital Allocation ($620.51 NAV, $610.92 Cash)
+  ├── Live Daemon : production_apex_daemon.py (PID 16797, systemd active, 0-Mutation Invariant)
+  ├── Micro Cycle : Bar 7/18 Complete -> Bar 8/18 at 20:00:14 UTC (4H Micro Risk Audit)
+  ├── Macro Cycle : Bar 18/18 at 2026-10-01 12:00:00 UTC (72H Macro Rebalance, 240s ALO Window)
+  └── Shadow Engine: exp104_macro_hedge_shadow.py (PID 2851516, Dynamic Ratchet Floor $577.89)
+
+[ENGINE 2: ROUTE 2 HL RATCHET MOMENTUM] ──> Isolated Subaccount ($20-$50 Sandbox)
+  ├── Shadow Daemon : hl_isolated_ratchet_shadow.py (PID 2885020, Phase B1 Active)
+  ├── Asset Universe: SOL (20x), HYPE (10x), SUI (10x), DOGE (10x)
+  ├── Order Flow    : Binance USD-M aggTrade (>= $1.5M/100ms) + Tokyo Hyperliquid L2 WebSocket
+  └── Enhancements  : Dynamic OFI Routing, +0.70% Early Net-BE Lock, +1.50% Pyramid Sizing
+
+[ENGINE 3: ROUTE 3 POLYMARKET DATA LAB] ──> Read-Only Paper Sandbox ($1,000 Paper NAV)
+  ├── Paper Trader : polymarket_paper_trader.py (PID 2851129, Late-Candle TTE <= 15m Sweet Spot)
+  ├── Data Recorder: polymarket_terminal_recorder.py (PID 2037196, Dual-Feed Telemetry Antenna)
+  └── Live Ledger  : 15 Settled Trades | 9 Wins / 6 Losses (60.0% WR) | +$113.79 PnL ($1,113.79 Equity)
+
+[TRACK 1: DERIVE 0DTE OPTIONS] ──> [FALSIFIED & PERMANENTLY TERMINATED]
+  ├── Verdict: Insufficient Terminal Depth (<$9k) & Systematic MM Bid Withdrawal ($0.00 Bids)
+  └── Action : Background probes terminated, sockets closed, data archived to data/archive/
+========================================================================================================
 ```
 
 * **Core/Satellite Structural Separation**: Preserved and formalized. Core engine ([`production_apex_daemon.py`](file:///home/skybullet1987/quant_pipeline/src/execution/production_apex_daemon.py)) remains strictly unmutated.
-  * $\text{NAV}_{\text{core, current}} = \mathbf{\$620.51\text{ USDC}}$ (Holding ETH 10x, +$1.21 ROE, +$3.13 funding carry)
-  * $\text{HWM}_{\text{core}} = \mathbf{\$642.10\text{ USDC}}$
-  * $\text{NAV}_{\text{satellite}} = \mathbf{\$0.00\text{ USDC}}$ (Phase B1 is running in isolated shadow simulation)
+  * $\text{NAV}_{\text{core, current}} = \mathbf{\$620.51\text{ USDC}}$ (Holding 1 position: ETH 10x @ $2,685.70, +$1.21 ROE, +$3.13 funding carry earned)
+  * $\text{Cash}_{\text{core}} = \mathbf{\$610.92\text{ USDC}}$ (Unallocated capital earning margin safety, waiting for Oct 1 Bar 18/18 rebalance)
+  * $\text{HWM}_{\text{core}} = \mathbf{\$642.10\text{ USDC}}$ (Drawdown from peak is $-3.36\%$, well within expected 4H rebalancing drift)
+  * $\text{NAV}_{\text{satellite}} = \mathbf{\$0.00\text{ USDC}}$ (Phase B1 is running in isolated shadow simulation; zero live capital allocated)
   * $\text{NAV}_{\text{combined}} = \mathbf{\$620.51\text{ USDC}}$
 * **Accounting Model**: Strictly canonical fill-level accounting. Realized PnL is separated from execution shortfall attribution; slippage is never double-counted.
 * **Gate Hierarchy**:
-  * **Phase A (Derive Options)**: **FALSIFIED & TERMINATED**. Consecutive probes confirmed that market makers systematically withdraw bids ($0.00 bid) and depth falls below $25k in terminal 0DTE (<1h to expiry). All background probe processes stopped, `data/derive/` archived to `data/archive/`, and sockets closed. Capital preserved; zero funds deployed.
+  * **Phase A (Derive Options)**: **FALSIFIED & PERMANENTLY TERMINATED**. Consecutive empirical probes confirmed that market makers withdraw bids ($0.00 bid) and book depth falls below $9k in terminal 0DTE (<1h to expiry). All background probe processes stopped, `data/derive/` archived, and sockets closed. Capital preserved; zero funds deployed.
   * **Phase B1 (Hyperliquid Engineering Shadow)**: **ACTIVE SHADOW** under PID `2885020`. 4 live sprints logged; calibrated with Early Micro-Breakeven at $+0.70\%$ and expanded to 4 liquid altcoins (`SOL`, `HYPE`, `SUI`, `DOGE`) with dynamic OFI book imbalance routing.
   * **Phase B2 (Pre-Registered Block Alpha Certification)**: **LOCKED** pending B1 pass (targeting 30–50 shocks).
   * **Phase C (Live Micro-Canary)**: **LOCKED** pending B2 certification.
-  * **Track 4 (Polymarket Forward Paper Trader)**: **ACTIVE SHADOW** under PID `2851129`. 15 settled hourly trades, yielding **9 Wins / 6 Losses (60.0% WR)** and **+$113.79 net PnL** on $1,000 paper capital.
-  * **Core Shadow Tracker (EXP-104 Macro Hedge)**: **ACTIVE SHADOW** under PID `2851516`. Tracking side-by-side forward performance leading into October 1 rebalance.
+  * **Engine 3 (Polymarket Forward Paper Trader)**: **ACTIVE SHADOW** under PID `2851129`. 15 settled hourly trades, yielding **9 Wins / 6 Losses (60.0% WR)** and **+$113.79 net PnL** on $1,000 paper capital ($1,113.79 equity).
+  * **Engine 1 Shadow Tracker (EXP-104 Macro Hedge)**: **ACTIVE SHADOW** under PID `2851516`. Tracking side-by-side forward performance leading into October 1 rebalance.
 
 ---
 
@@ -99,10 +121,17 @@ where:
 
 ### 1. Leverage Reality & Operational Headroom
 
-#### Hyperliquid Protocol Constraints
-* **SOL**: Max $20\times$ leverage ($5.0\%$ initial margin requirement, $2.5\%$ maintenance margin rate).
-* **HYPE**: Max $10\times$ leverage ($10.0\%$ initial margin, $5.0\%$ maintenance margin).
-* **BTC**: Max $40\times$ leverage ($2.5\%$ initial margin, $1.25\%$ maintenance margin).
+#### Hyperliquid Protocol Constraints & Asset Universe
+* **SOL**: Max $20\times$ leverage ($5.0\%$ initial margin requirement, $2.5\%$ maintenance margin rate). Sizing: $N_1 = \$400.00$, $N_2 = \$100.00$.
+* **HYPE**: Max $10\times$ leverage ($10.0\%$ initial margin, $5.0\%$ maintenance margin). Sizing: $N_1 = \$200.00$, $N_2 = \$50.00$.
+* **SUI**: Max $10\times$ leverage ($10.0\%$ initial margin, $5.0\%$ maintenance margin). Sizing: $N_1 = \$200.00$, $N_2 = \$50.00$.
+* **DOGE**: Max $10\times$ leverage ($10.0\%$ initial margin, $5.0\%$ maintenance margin). Sizing: $N_1 = \$200.00$, $N_2 = \$50.00$.
+* **BTC**: Reference lead instrument (Max $40\times$ leverage). Used strictly as macro antenna for $\ge \$1.5\text{M}$ volume sweeps.
+
+#### Dynamic Order Book Imbalance (OFI) Routing
+On detecting a qualifying institutional BTC sweep ($\ge \$1.5\text{M}$ in $100\text{ms}, Z_{\text{OFI}} \ge 2.58$), the shadow engine polls resting L2 books across all 4 candidate altcoins and computes instantaneous top-of-book imbalance:
+$$\text{OBI}_{\text{top}} = \frac{Q_{\text{bid}} - Q_{\text{ask}}}{Q_{\text{bid}} + Q_{\text{ask}}}$$
+The sprint is dispatched directly into the asset exhibiting the strongest positive resting bid support, maximizing initial momentum transmission and minimizing adverse execution slippage.
 
 #### All-In Sizing Equation Including Frictions
 To ensure dollar risk targets reflect true net execution:
@@ -111,7 +140,7 @@ where $c_{\text{all-in}} = d_{\text{slip}} + d_{\text{entry\_fee}} + d_{\text{ex
 * For $d_{\text{stop}} = 180\text{ bps}$, $d_{\text{slip}} = 7\text{ bps}$, $d_{\text{fees}} = 9\text{ bps}$, $d_{\text{funding}} = 0.5\text{ bps} \implies c_{\text{all-in}} = 16.5\text{ bps}$:
   $$N_1 = \min \left( \frac{18.00}{0.0180 + 0.00165}, \ 50 \times 20 \right) = \min(\$916.03, \ \$1,000.00) = \mathbf{\$916.03 \text{ notional}}$$
 
-#### Operational Margin Headroom ($N_1 = \$380.00–\$400.00$):
+#### Operational Margin Headroom ($N_1 = \$380.00–\$400.00$ on SOL):
 * Operating at $100\%$ margin utilization ($N_1 = \$400$ on $C = \$20$) is a theoretical boundary that risks exchange margin rejection (`perpMarginRejected` / `marginCanceled`) after the $\$0.18$ entry fee.
 * **Canary Recommendation**:
   * **Simulation Boundary**: $N_1 = \$400.00$ (consumed margin: $\$20.00$).
@@ -175,14 +204,15 @@ Rather than assuming deterministic fills, the shadow engine records:
   2. **Independent Wallet Sandbox**: Complete cryptographic key firewall (separate EVM address).
 * **Transfer & NAV Accounting (Point 13 Reconciliation)**:
   * Current Live Paper Accounting:
-    $$\text{NAV}_{\text{core, current}} = \mathbf{\$622.72\text{ USDC}}$$
+    $$\text{NAV}_{\text{core, current}} = \mathbf{\$620.51\text{ USDC}}$$
+    $$\text{Cash}_{\text{core}} = \mathbf{\$610.92\text{ USDC}}$$
     $$\text{HWM}_{\text{core}} = \mathbf{\$642.10\text{ USDC}}$$
     $$\text{NAV}_{\text{satellite}} = \mathbf{\$0.00\text{ USDC}} \quad (\text{Phase B1 is running in isolated shadow simulation; zero live capital allocated})$$
-    $$\text{NAV}_{\text{combined}} = \mathbf{\$622.72\text{ USDC}}$$
+    $$\text{NAV}_{\text{combined}} = \mathbf{\$620.51\text{ USDC}}$$
   * Prospective Phase C Live Funding Accounting (if authorized):
-    $$\text{NAV}_{\text{core}} = \text{NAV}_{\text{core, current}} - C_{\text{satellite}} = \$622.72 - \$20.00 = \mathbf{\$602.72\text{ USDC}}$$
+    $$\text{NAV}_{\text{core}} = \text{NAV}_{\text{core, current}} - C_{\text{satellite}} = \$620.51 - \$20.00 = \mathbf{\$600.51\text{ USDC}}$$
     $$\text{NAV}_{\text{satellite}} = \mathbf{\$20.00\text{ USDC}}$$
-    $$\text{NAV}_{\text{combined}} = \mathbf{\$622.72\text{ USDC}}$$
+    $$\text{NAV}_{\text{combined}} = \mathbf{\$620.51\text{ USDC}}$$
 
 ---
 
@@ -282,36 +312,38 @@ def verify_pre_trade_invariants(order: OrderRequest, context: AccountContext) ->
 ## Section 5: Implementation Roadmap & Live Deployment State
 
 ```
-[TRACK 1: CORE COMPOUNDING ENGINE (EXP-103)]
+[ENGINE 1: CORE COMPOUNDING PERPETUAL (EXP-103 & EXP-104 SHADOW)]
   ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 16797, production_apex_daemon.py)
-  ├── Equity: Started $559.31 -> Current $622.72 -> Peak HWM $642.10 (0.00% Leakage)
-  ├── Micro Cycle: 4H Risk Audits (Next: Bar 3/18 at 00:00:14 UTC)
-  └── Macro Cycle: 72H Macro Rebalance Bar 18/18 (Next: Oct 1, 12:00:00 UTC)
+  ├── Capital: Initial $559.31 -> Current $620.51 NAV ($610.92 cash balance, 1 ETH 10x position)
+  ├── Funding Carry: +$3.13 earned holding ETH inventory (paid to hold positive trend carry)
+  ├── Micro Cycle: 4H Risk Audits (Bar 7/18 passed; Next: Bar 8/18 at 20:00:14 UTC)
+  ├── Macro Cycle: 72H Macro Rebalance Bar 18/18 (Next: 2026-10-01 12:00:00 UTC)
+  └── Shadow Overlay: EXP-104 active (PID 2851516, logging 60s side-by-side forward equity against EXP-103)
 
-[TRACK 2: ROUTE 2 HYPERLIQUID RATCHET SHADOW (PHASE B1)]
-  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 1998153, hl_isolated_ratchet_shadow.py)
-  ├── Streams: Tokyo Binance Futures aggTrade (routed /market) + Hyperliquid L2 WebSocket (SOL, HYPE)
-  ├── Accounting: Multi-Fill Canonical Ledger with Runtime VWAE and Dynamic Breakeven
+[ENGINE 2: ROUTE 2 HYPERLIQUID RATCHET SHADOW (PHASE B1)]
+  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 2885020, hl_isolated_ratchet_shadow.py)
+  ├── Streams: Tokyo Binance Futures aggTrade (routed /market) + Tokyo Hyperliquid L2 WebSocket
+  ├── 4-Asset Universe: SOL (20x), HYPE (10x), SUI (10x), DOGE (10x)
+  ├── Routing Mechanism: Dynamic OFI selection (dispatches to asset with highest positive book imbalance)
+  ├── Upgrades: Early Dynamic Net-BE Lock (+0.70%) + Stage 1 Pyramid (+1.50%) + Profit Lock (+3.50%)
   └── Target Sample: 30-50 institutional volatility shocks ($1.5M/100ms) for Phase B1 Pass
 
-[TRACK 3: ROUTE 1 DERIVE 0DTE OPTIONS RECONNAISSANCE (PHASE A)]
-  ├── Status: PROBES EXECUTED & AUDITED (04:00 & 07:00 UTC)
-  ├── Finding: Severe liquidity withdrawal by MMs in final 1-4 hours (OTM bids $0.00, spreads 999%)
-  └── Follow-up: Automated re-probe scheduled for Sep 29 04:00/07:00 UTC to confirm cross-session persistence
+[ENGINE 3: ROUTE 3 POLYMARKET DATA LAB & FORWARD PAPER TRADER]
+  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (Recorder: PID 2037196 | Paper Trader: PID 2851129)
+  ├── Telemetry: 7,500+ records, 490+ shock bursts, 20 finalized hourly candle resolutions
+  ├── Strategy: Late-Candle Filter (TTE <= 15m, Spot-to-Open Candle Distance Congruence)
+  ├── Paper Ledger: $1,000 Initial -> $1,113.79 NAV (+$113.79 Net PnL, +11.38% Return)
+  ├── Track Record: 15 Settled Contracts | 9 Wins / 6 Losses (60.00% Win Rate) | $11.68 Taker Fees Paid
+  └── Compliance Boundary: Strictly Read-Only telemetry & forward paper simulation; zero geo-breach
 
-[TRACK 4: ROUTE 3 POLYMARKET 1-HOUR DUAL-FEED DATA LAB (PASSIVE READ-ONLY BENCHMARK)]
-  ├── Status: ACTIVE & HEALTHY on Tokyo GCP (PID 2004573, polymarket_terminal_recorder.py v2.7)
-  ├── Dual Feeds: Binance Spot (Settlement Ref) + Binance Futures (Routed /market Flow Antenna)
-  ├── Invariants: OBI & q_micro Reconciled + Assertions Enforced + Book Consistency Checks
-  ├── Quote Ages: Tripartite Decomposition (Age_book, Age_bid, Age_ask)
-  ├── Clock Sync: Cristian's Algorithm Calibrated Offset (Tokyo <-> Binance: -17.62ms +/- 21.59ms)
-  ├── Real-Time Metrics: Basis_t0 (signed USD & bps), |Basis|, Delta_Basis_100ms, Flow Innovation Correlation
-  ├── Causal Boundary: Strict t0 anchor at shock window end (predictors t <= t0, response t > t0)
-  ├── Models: 4 Pre-Registered Econometric Models (A: Spot, B: Fut, C: Joint, D: Incremental H0: beta_{F|S}=0)
-  ├── Model Invariant: T_train_end < t0 strictly enforced for out-of-sample probability p_OOS
-  ├── Capacity Surface: Fill-Level Fees & CrossingCost(C) across [$1, $5, $20, $50, $100]
-  ├── Ground Truth: Binance Spot 1H Candle Finalized Open & Close (Y = 1[Close >= Open])
-  └── Compliance: Read-Only (Does not attempt to circumvent geographic restrictions)
+[TRACK 1: ROUTE 1 DERIVE 0DTE OPTIONS (EXPERIMENT D) — DECOMMISSIONED & ARCHIVED]
+  ├── Status: FALSIFIED & PERMANENTLY TERMINATED
+  ├── Falsification Evidence:
+  │     ├── Day 1 Probe (Sep 28 07:00 UTC): Depth $21.8k < $25k hurdle, Bid continuity 33.3% < 70%
+  │     ├── Day 2 Probe (Sep 29 07:00 UTC): Depth $21.8k < $25k hurdle, Bid continuity 33.3% < 70%
+  │     └── Sep 29 17:31 UTC Probe: BTC Quoted Depth $8,857.31 < $25k hurdle, MM bids withdrawn to $0.00
+  ├── Forensic Autopsy: AMMs/CLOBs on L2 face toxic gamma adverse selection; quote withdrawal is structural
+  └── Decommissioning: Harvester & scheduler stopped, sockets closed, data archived to data/archive/
 ```
 
 ---
@@ -536,6 +568,16 @@ To test real monetization without risking capital or violating jurisdictional bo
 ### 4. Decommissioning & Archival of Track 1 (Derive 0DTE Options)
 * **Status**: **FALSIFIED & TERMINATED** (Insufficient Terminal Depth & Market Maker Quote Withdrawal).
 * **Execution**: Stopped all background probe schedulers, closed network sockets, and archived `data/derive/` into `data/archive/derive_experiment_d_falsified_*.tar.gz`. Zero real capital allocated. Concentration shifted 100% to Track 2 (HL Ratchet) and Track 4 (Polymarket Data Lab).
+
+### 5. Autonomous Milestones & Production Chronology
+
+| Checkpoint (UTC) | Horizon | Target Module | Objective & Metric to Inspect |
+| :--- | :--- | :--- | :--- |
+| **2026-09-29 19:00:00 UTC** | ~50 min | Engine 3 (Polymarket) | 1-Hour contract resolution (2PM ET candle close against Binance Spot). |
+| **2026-09-29 20:00:14 UTC** | ~1.9 hrs | Engine 1 (EXP-103 Apex) | **Bar 8 of 18 Micro Risk Audit**: Reconcile NAV ($620.51), ETH 10x carry (+>$3.13), and stop buffer. |
+| **2026-09-29 23:15:00 UTC** | ~5.1 hrs | Engine 3 (Polymarket) | **First Full 24-Hour Paper Ledger Report**: 24 consecutive contracts, net PnL, fee drag, Brier score. |
+| **2026-09-30 08:00:00 UTC** | ~14 hrs | Engine 1 (EXP-103 Apex) | Bar 11 of 18 Micro Risk Audit. |
+| **2026-10-01 12:00:00 UTC** | ~42 hrs | **Core Macro Rebalance** | **Bar 18 of 18 Macro Cycle**: Redeploy $610+ cash into 16-asset basket, activate 240s ALO window, and evaluate EXP-104 hedge overlay. |
 
 
 
