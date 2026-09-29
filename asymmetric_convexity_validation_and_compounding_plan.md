@@ -44,7 +44,7 @@ To eliminate observer bias, multiple-testing contamination, and retroactive para
 | **Engine 1 (EXP-103 Apex)** | **STAGE 6: PRODUCTION ALLOCATION** | **Frozen Core Daemon** ([`production_apex_daemon.py`](file:///home/skybullet1987/quant_pipeline/src/execution/production_apex_daemon.py), PID `16797`). NAV: **$620.51 USDC**, Cash: **$610.92 USDC**, Peak HWM: **$642.10 USDC**. Holding 1 ETH 10x position (+$3.13 funding carry earned). Bar 7/18 complete; Bar 8/18 audit at **20:00:14 UTC**. |
 | **Engine 1 Shadow (EXP-104)** | **STAGE 1: DEVELOPMENT (Shadow)** | Shadow Daemon ([`src/execution/exp104_macro_hedge_shadow.py`](file:///home/skybullet1987/quant_pipeline/src/execution/exp104_macro_hedge_shadow.py), PID `2851516`). Logging 60s comparative forward equity against EXP-103; designated strictly as a **performance measurement checkpoint** on October 1 (minimum 30-day forward window required before live consideration). |
 | **Engine 2 (HL Ratchet)** | **STAGE 2: FROZEN VALIDATION** | Shadow Daemon ([`src/hl_leadlag/execution/hl_isolated_ratchet_shadow.py`](file:///home/skybullet1987/quant_pipeline/src/hl_leadlag/execution/hl_isolated_ratchet_shadow.py), PID `2894894`). Phase B1 engineering screen across 4 assets (`SOL`, `HYPE`, `SUI`, `DOGE`) with dynamic OFI routing, +0.70% Net-BE lock, and per-asset slippage logging. |
-| **Engine 3 (Polymarket Lab)** | **STAGE 1: DEVELOPMENT (Data Lab)** | Recorder ([`src/polymarket_research/polymarket_terminal_recorder.py`](file:///home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_terminal_recorder.py), PID `2037196`) & Paper Trader ([`src/polymarket_research/polymarket_paper_trader.py`](file:///home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_paper_trader.py), PID `2894914`). 15 settled trades: **9 Wins / 6 Losses (60.0% WR)**, **+$113.79 net PnL**, **$1,113.79 paper equity**. |
+| **Engine 3 (Polymarket Lab)** | **STAGE 1: DEVELOPMENT (Data Lab)** | Recorder ([`src/polymarket_research/polymarket_terminal_recorder.py`](file:///home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_terminal_recorder.py), PID `2037196`) & Paper Trader ([`src/polymarket_research/polymarket_paper_trader.py`](file:///home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_paper_trader.py), PID `2894914`). 7 settled trades: **6 Wins / 1 Loss (85.71% WR)**, **+$113.44 net PnL**, **$1,113.44 paper equity**. |
 | **Track 1 (Derive Options)** | **PERMANENTLY TERMINATED & ARCHIVED** | Falsified at Gate 1 (depth <$9k, MM bids $0.00). Sockets closed, background processes killed, data archived to `data/archive/derive_experiment_d_falsified_20260929.tar.gz`. |
 
 ```
@@ -66,7 +66,7 @@ To eliminate observer bias, multiple-testing contamination, and retroactive para
 [ENGINE 3: ROUTE 3 POLYMARKET DATA LAB] ──> Read-Only Paper Sandbox ($1,000 Paper NAV)
   ├── Paper Trader : polymarket_paper_trader.py (PID 2894914, Late-Candle TTE <= 15m Sweet Spot)
   ├── Data Recorder: polymarket_terminal_recorder.py (PID 2037196, Dual-Feed Telemetry Antenna)
-  └── Live Ledger  : 15 Settled Trades | 9 Wins / 6 Losses (60.0% WR) | +$113.79 PnL ($1,113.79 Equity)
+  └── Live Ledger  : 7 Settled Trades | 6 Wins / 1 Loss (85.71% WR) | +$113.44 PnL ($1,113.44 Equity)
 
 [TRACK 1: DERIVE 0DTE OPTIONS] ──> [FALSIFIED & PERMANENTLY TERMINATED]
   ├── Verdict: Insufficient Terminal Depth (<$9k) & Systematic MM Bid Withdrawal ($0.00 Bids)
@@ -292,7 +292,7 @@ The relationship between Binance Futures and Polymarket hourly markets is classi
 * **Filter Rule**: $\text{TTE} \le 15\text{ minutes}$ (eliminating early-hour mean-reverting noise).
 * **Noise Whipsaw Buffer**: Minimum distance buffer $|\text{dist}| \ge 0.05\%$ from candle open to prevent whipsaw losses near the open.
 * **Book Depth Assertion**: Resting depth must have at least $\$50.00$ cumulative notional before generating an entry ticket.
-* **Current Forward Ledger**: 15 Settled Contracts | **9 Wins / 6 Losses (60.0% WR)** | **+$113.79 Net Realized PnL** | **$1,113.79 Paper Equity** | **$11.68 Taker Fees Paid**.
+* **Current Forward Ledger**: 7 Settled Contracts | **6 Wins / 1 Loss (85.71% WR)** | **+$113.44 Net Realized PnL** | **$1,113.44 Paper Equity** | **$5.27 Taker Fees Paid**.
 
 ---
 
