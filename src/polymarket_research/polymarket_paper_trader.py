@@ -98,14 +98,24 @@ class PolymarketForwardPaperTrader:
         shock_dir = shock.get("shock_direction")  # BUY or SELL
         target_token = "UP" if shock_dir == "BUY" else "DOWN"
 
-        # Trend Congruence Invariant: Shock must align with current distance from 1H candle open
+        # Trend Congruence Invariant & Noise Whipsaw Guard: Spot must have cleared minimum buffer (|dist| >= 0.05%)
+        MIN_CANDLE_DIST_PCT = 0.05
         dist_pct = shock.get("candle_distance_pct", 0.0)
-        if target_token == "UP" and dist_pct < 0.0:
+        if abs(dist_pct) < MIN_CANDLE_DIST_PCT:
+            return  # Whipsaw risk: Spot is too close to 1H open (within +-0.05% noise zone)
+        if target_token == "UP" and dist_pct < MIN_CANDLE_DIST_PCT:
             return
-        if target_token == "DOWN" and dist_pct > 0.0:
+        if target_token == "DOWN" and dist_pct > -MIN_CANDLE_DIST_PCT:
             return
 
         token_features = shock.get("pre_shock_features_t0", {}).get(target_token, {})
+        # Depth Assertion Guard: Verify resting depth can absorb $50 notional
+        raw_asks = token_features.get("raw_top_asks", [])
+        if raw_asks:
+            total_ask_depth_usd = sum(px * sz for px, sz in raw_asks)
+            if total_ask_depth_usd < TICKET_NOTIONAL:
+                return  # Insufficient resting depth: top book has < $50 notional
+
         eff_px = token_features.get("effective_price_$50")
         if not eff_px or eff_px < 0.15 or eff_px > 0.85:
             return

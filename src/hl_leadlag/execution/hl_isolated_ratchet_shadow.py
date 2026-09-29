@@ -215,6 +215,7 @@ class RatchetShadowEngine:
         self.last_stop_amendment_ts = 0.0
         self.stop_amendments_count = 0
         self.btc_trend_window = deque(maxlen=300) # BTC prices for trend state control
+        self.asset_slippage_tracker: Dict[str, List[float]] = {"SOL": [], "HYPE": [], "SUI": [], "DOGE": []}
 
     def update_book(self, coin: str, bid: float, ask: float, bid_sz: float, ask_sz: float):
         if coin in self.current_order_books and bid > 0 and ask > 0:
@@ -345,6 +346,13 @@ class RatchetShadowEngine:
         self.recompute_position_state(pos, actual_fill_px)
         self.active_sprint = pos
         self.stop_amendments_count = 0
+
+        # Independent per-asset slippage audit (Watchpoint 1: Hurdle <= 10.0 bps)
+        slip_bps = ((actual_fill_px - benchmark_px) / benchmark_px) * 10000.0
+        self.asset_slippage_tracker.setdefault(asset, []).append(slip_bps)
+        cum_avg_slip = sum(self.asset_slippage_tracker[asset]) / len(self.asset_slippage_tracker[asset])
+        print(f"  [SLIPPAGE AUDIT] {asset}: Entry Slip = {slip_bps:+.2f} bps | Cumulative Avg = {cum_avg_slip:+.2f} bps (Watchpoint Hurdle <= 10.0 bps)", flush=True)
+
         return pos
 
     def evaluate_active_sprint(self) -> Optional[Dict[str, Any]]:
