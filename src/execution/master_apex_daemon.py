@@ -25,7 +25,7 @@ import math
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -93,8 +93,7 @@ class MasterApexExecutor:
         current_hour = now.hour
         next_hour = ((current_hour // 4) + 1) * 4
         if next_hour == 24:
-            target = now.replace(hour=0, minute=0, second=15, microsecond=0)
-            target = target.replace(day=now.day + 1)
+            target = (now + timedelta(days=1)).replace(hour=0, minute=0, second=15, microsecond=0)
         else:
             target = now.replace(hour=next_hour, minute=0, second=15, microsecond=0)
         diff = (target - now).total_seconds()

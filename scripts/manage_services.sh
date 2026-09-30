@@ -12,6 +12,11 @@ SERVICES=(
     "exp201a-telemetry"
     "polymarket-recorder"
     "polymarket-trader"
+    "exp202-telemetry"
+    "exp303-polymarket-unwind"
+    "exp103b-maker"
+    "exp401-basis"
+    "exp103c-risk-parity"
 )
 
 SYSTEMD_USER_DIR="${HOME}/.config/systemd/user"

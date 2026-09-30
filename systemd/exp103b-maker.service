@@ -1,0 +1,17 @@
+[Unit]
+Description=EXP-103B Adaptive Maker Pegging & Adverse Selection Shadow Engine
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 /home/skybullet1987/quant_pipeline/src/execution/exp103b_adaptive_maker_shadow.py
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=10s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/exp103b_stdout.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/exp103b_error.log
+
+[Install]
+WantedBy=default.target

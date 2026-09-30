@@ -1,0 +1,17 @@
+[Unit]
+Description=EXP-103C Inverse-Volatility Risk Parity & Factor Exposure Shadow Engine
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 /home/skybullet1987/quant_pipeline/src/execution/exp103c_risk_parity_shadow.py
+Restart=on-failure
+RestartSec=10s
+KillMode=mixed
+TimeoutStopSec=10s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/exp103c_stdout.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/exp103c_error.log
+
+[Install]
+WantedBy=default.target

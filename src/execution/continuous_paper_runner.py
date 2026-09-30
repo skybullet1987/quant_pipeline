@@ -9,7 +9,7 @@ import os
 import sys
 import time
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
@@ -30,8 +30,7 @@ def seconds_until_next_6h_bar() -> int:
     next_hour = ((current_hour // 6) + 1) * 6
     
     if next_hour == 24:
-        target = now.replace(hour=0, minute=0, second=19, microsecond=0)
-        target = target.replace(day=now.day + 1)
+        target = (now + timedelta(days=1)).replace(hour=0, minute=0, second=19, microsecond=0)
     else:
         target = now.replace(hour=next_hour, minute=0, second=19, microsecond=0)
         

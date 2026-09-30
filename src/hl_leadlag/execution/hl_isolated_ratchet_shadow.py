@@ -603,6 +603,20 @@ class RatchetShadowEngine:
             # Policy 4: Max-OBI Router
             p4_asset = max(candidates, key=lambda c: obi_by_asset[c])
 
+            # Policy 5: Standardized Composite Recovery Router (EXP-201C)
+            # S_i = 0.5 * Z(OBI_i) + 0.5 * Z(R_i)
+            mean_obi = float(np.mean(list(obi_by_asset.values())))
+            std_obi = float(np.std(list(obi_by_asset.values()))) if float(np.std(list(obi_by_asset.values()))) > 1e-6 else 1.0
+            replenish_ratios = {c: (l2_snapshot[c].get("bid_sz", 0.0) / max(l2_snapshot[c].get("ask_sz", 1.0), 0.001)) for c in candidates}
+            mean_r = float(np.mean(list(replenish_ratios.values())))
+            std_r = float(np.std(list(replenish_ratios.values()))) if float(np.std(list(replenish_ratios.values()))) > 1e-6 else 1.0
+
+            composite_scores = {
+                c: (0.5 * ((obi_by_asset[c] - mean_obi) / std_obi) + 0.5 * ((replenish_ratios[c] - mean_r) / std_r))
+                for c in candidates
+            }
+            p5_asset = max(candidates, key=lambda c: composite_scores[c])
+
             print(f"\n[>>> INDEPENDENT HIGH-VALUE SWEEP DETECTED ({ep_id}) <<<]"
                   f"\n  Binance USD-M Volume: ${metrics['total_usd']:,.0f} in 100ms | Z_OFI: {metrics['z_ofi']:.2f}"
                   f"\n  BTC Spot: ${px:,.2f}"
@@ -610,15 +624,17 @@ class RatchetShadowEngine:
                   f"\n    Policy 1 (SOL-Only): {p1_asset}"
                   f"\n    Policy 2 (Random Eligible, seed={seed_val}): {p2_asset}"
                   f"\n    Policy 3 (Round-Robin, ep_idx={ep_idx}): {p3_asset}"
-                  f"\n    Policy 4 (Max-OBI, imb={obi_by_asset[p4_asset]:+.2f}): {p4_asset}", flush=True)
+                  f"\n    Policy 4 (Max-OBI, imb={obi_by_asset[p4_asset]:+.2f}): {p4_asset}"
+                  f"\n    Policy 5 (Composite Recovery, score={composite_scores[p5_asset]:+.2f}): {p5_asset}", flush=True)
 
-            # 3. Instantiate the 4 Virtual Counterfactual Sprints
+            # 3. Instantiate the 5 Virtual Counterfactual Sprints
             policy_positions: Dict[str, SprintPosition] = {}
             for pname, passet in [
                 ("SOL", p1_asset),
                 ("RANDOM", p2_asset),
                 ("ROUND_ROBIN", p3_asset),
-                ("MAX_OBI", p4_asset)
+                ("MAX_OBI", p4_asset),
+                ("COMPOSITE_RECOVERY", p5_asset)
             ]:
                 vpos = self.create_sprint_instance(
                     asset=passet,
@@ -794,11 +810,13 @@ class RatchetShadowEngine:
         p2_pnls = [ep["outcomes"]["RANDOM"]["net_realized_pnl"] for ep in self.completed_episodes_history]
         p3_pnls = [ep["outcomes"]["ROUND_ROBIN"]["net_realized_pnl"] for ep in self.completed_episodes_history]
         p4_pnls = [ep["outcomes"]["MAX_OBI"]["net_realized_pnl"] for ep in self.completed_episodes_history]
+        p5_pnls = [ep["outcomes"].get("COMPOSITE_RECOVERY", {}).get("net_realized_pnl", 0.0) for ep in self.completed_episodes_history if "COMPOSITE_RECOVERY" in ep.get("outcomes", {})]
 
         mu_sol = sum(p1_pnls) / total_eps
         mu_rand = sum(p2_pnls) / total_eps
         mu_rr = sum(p3_pnls) / total_eps
         mu_max_obi = sum(p4_pnls) / total_eps
+        mu_composite = sum(p5_pnls) / len(p5_pnls) if p5_pnls else 0.0
 
         delta_mos_vals = [p4 - p1 for p4, p1 in zip(p4_pnls, p1_pnls)]
         delta_mor_vals = [p4 - p2 for p4, p2 in zip(p4_pnls, p2_pnls)]
@@ -872,6 +890,12 @@ class RatchetShadowEngine:
                     "cumulative_net_pnl_usd": round(sum(p4_pnls), 2),
                     "mean_net_pnl_usd": round(mu_max_obi, 4),
                     "win_rate_pct": round(sum(1 for x in p4_pnls if x > 0) / total_eps * 100.0, 2)
+                },
+                "COMPOSITE_RECOVERY_router": {
+                    "cumulative_net_pnl_usd": round(sum(p5_pnls), 2),
+                    "mean_net_pnl_usd": round(mu_composite, 4),
+                    "win_rate_pct": round(sum(1 for x in p5_pnls if x > 0) / len(p5_pnls) * 100.0, 2) if p5_pnls else 0.0,
+                    "episodes_count": len(p5_pnls)
                 }
             },
             "routing_increments": {
