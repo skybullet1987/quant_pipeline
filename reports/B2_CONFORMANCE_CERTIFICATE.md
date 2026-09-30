@@ -1,6 +1,6 @@
 # Phase B2 Conformance Certificate
-**Certificate ID**: `CERT-B2-V3.1-2d6c14a-1790721350`  
-**Timestamp**: `2026-09-29T22:35:50.953625+00:00`  
+**Certificate ID**: `CERT-B2-V3.1-14f6429-1790721390`  
+**Timestamp**: `2026-09-29T22:36:30.266575+00:00`  
 **Status**: **CERTIFIED_CONFORMANT**  
 
 $$\boxed{ \text{Spec}_{\text{v3.1}} \equiv \text{Implementation} \equiv \text{Ledger} \implies \mathbf{CERTIFIED_CONFORMANT} }$$
@@ -10,11 +10,11 @@ $$\boxed{ \text{Spec}_{\text{v3.1}} \equiv \text{Implementation} \equiv \text{Le
 ### 1. Cryptographic & Version Control Identity
 | Parameter | Value | Verification Status |
 | :--- | :--- | :--- |
-| **Code SHA** | [`2d6c14ad3a6438e81a2b27b60d6aedbf8dfd432d`](https://github.com/skybullet1987/quant_pipeline/commit/2d6c14ad3a6438e81a2b27b60d6aedbf8dfd432d) | Verified |
+| **Code SHA** | [`14f64294c1727c6a8e123f8426d06f3c81803822`](https://github.com/skybullet1987/quant_pipeline/commit/14f64294c1727c6a8e123f8426d06f3c81803822) | Verified |
 | **Schema SHA** | [`08d50e8`](https://github.com/skybullet1987/quant_pipeline/commit/08d50e8) | Frozen |
 | **B2 Data Start UTC** | `2026-09-29T17:32:15.000Z` | Immutable |
 | **R3 Validation Start UTC** | `2026-09-29T18:11:34.000Z` | Machine-Enforced (`1790705494.0`) |
-| **Working Tree Clean** | `False` | Verified |
+| **Working Tree Clean** | `True` | Verified |
 
 ---
 

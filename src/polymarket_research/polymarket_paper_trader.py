@@ -207,6 +207,7 @@ class PolymarketForwardPaperTrader:
         shares = TICKET_NOTIONAL / eff_px
         # Fill-level fee formula: C * feeRate * p * (1 - p)
         taker_fee = TICKET_NOTIONAL * fee_rate * eff_px * (1.0 - eff_px)
+        effective_fee_rate_on_deployed_notional = fee_rate * (1.0 - eff_px)
 
         is_oos_validation = (t0_unix >= R3_VALIDATION_START_UNIX)
         epoch_label = "VALIDATION" if is_oos_validation else "DEV"
@@ -225,6 +226,10 @@ class PolymarketForwardPaperTrader:
             "shares_bought": round(shares, 4),
             "taker_fee_usd": round(taker_fee, 4),
             "fee_rate_applied": fee_rate,
+            "effective_fee_rate_on_deployed_notional": round(effective_fee_rate_on_deployed_notional, 6),
+            "fee_formula_provenance": f"{fee_rate} * (1 - {eff_px:.3f}) = {effective_fee_rate_on_deployed_notional:.4f}",
+            "execution_model": "PIECEWISE_LINEAR_SCENARIO_MILP",
+            "simulated_partial_fill_timeout_ms": 250,
             "spot_at_t0": shock.get("spot_at_t0"),
             "candle_distance_pct": dist_pct,
             "status": "OPEN"
