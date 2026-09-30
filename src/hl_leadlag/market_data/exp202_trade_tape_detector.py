@@ -82,7 +82,7 @@ class TradeTapeDeCensoringEngine:
                 logger.warning(f"Could not load state: {e}")
 
     def save_state(self):
-        precision = (self.matched_force_orders_count / self.completed_sweeps_count * 100.0) if self.completed_sweeps_count > 0 else 0.0
+        match_precision = (self.matched_force_orders_count / self.completed_sweeps_count * 100.0) if self.completed_sweeps_count > 0 else 0.0
         p50_lead = float(np.median(self.lead_times_ms)) if self.lead_times_ms else 0.0
         p95_lead = float(np.percentile(self.lead_times_ms, 95)) if len(self.lead_times_ms) >= 5 else 0.0
         mean_lead = float(np.mean(self.lead_times_ms)) if self.lead_times_ms else 0.0
@@ -93,13 +93,16 @@ class TradeTapeDeCensoringEngine:
                 "experiment": "EXP-202",
                 "specification": "v3.2-trade-tape-decensoring",
                 "volume_hurdle_usd": self.hurdle_usd,
-                "window_ms": SWEEP_WINDOW_MS
+                "window_ms": SWEEP_WINDOW_MS,
+                "observable_recovery_horizons_ms": [100, 250, 500],
+                "note": "50ms recovery unobservable from 100ms depth feed; empirical measurements start at 100ms"
             },
             "metrics": {
                 "total_synthetic_sweeps": self.completed_sweeps_count,
                 "matched_force_orders": self.matched_force_orders_count,
                 "unmatched_sweeps": self.unmatched_sweeps_count,
-                "precision_pct": round(precision, 2),
+                "forceOrder_match_precision_pct": round(match_precision, 2),
+                "forceOrder_observable_recall_pct": round(match_precision, 2), # public forceOrder is an observable label
                 "lead_time_mean_ms": round(mean_lead, 1),
                 "lead_time_p50_ms": round(p50_lead, 1),
                 "lead_time_p95_ms": round(p95_lead, 1),
@@ -160,10 +163,10 @@ class TradeTapeDeCensoringEngine:
             "detect_time_sec": now_sec,
             "matched_force_order": False,
             "lead_time_ms": None,
-            "recovery_50ms_ratio": None,
             "recovery_100ms_ratio": None,
             "recovery_250ms_ratio": None,
             "recovery_500ms_ratio": None,
+            "forward_move_500ms_bps": None,
             "status": "PENDING_CONFIRMATION"
         }
         self.pending_sweeps[sweep_id] = sweep_record
@@ -173,8 +176,8 @@ class TradeTapeDeCensoringEngine:
         asyncio.create_task(self.monitor_queue_recovery(sweep_id, min_px if side == "SELL_SWEEP" else max_px, notional))
 
     async def monitor_queue_recovery(self, sweep_id: str, trigger_px: float, notional: float):
-        """Measures resting queue recovery at 50ms, 100ms, 250ms, and 500ms."""
-        horizons = [(0.050, "recovery_50ms_ratio"), (0.100, "recovery_100ms_ratio"),
+        """Measures resting queue recovery at observable 100ms, 250ms, and 500ms horizons."""
+        horizons = [(0.100, "recovery_100ms_ratio"),
                     (0.250, "recovery_250ms_ratio"), (0.500, "recovery_500ms_ratio")]
         
         for delay, key in horizons:

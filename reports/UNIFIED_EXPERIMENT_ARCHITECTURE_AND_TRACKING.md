@@ -574,14 +574,21 @@ To systematically resolve empirical bottlenecks identified during live testing w
 
 | Track ID | Description | Systemd Unit | Primary Metrics / Findings |
 | :--- | :--- | :--- | :--- |
-| **EXP-202** | **Binance Trade-Tape De-Censoring** | `exp202-telemetry.service` | Detects synthetic sweeps ($\ge \$1.5\text{M}$ in $100\text{ms}$); empirical lead time vs. $1000\text{ms}$ delayed `!forceOrder@arr`; recovery at $50\text{ms}, 100\text{ms}, 250\text{ms}, 500\text{ms}$. |
-| **EXP-103B** | **Adaptive Maker Pegging & Adverse Selection** | `exp103b-maker.service` | Evaluates 4 discrete models (Static 240s ALO, Adaptive 60s Repricer, Queue-Priority Peg, Native Chase); models queue ahead and post-fill adverse selection at $1\text{s}$ and $5\text{s}$. |
-| **EXP-303** | **Polymarket Fast Unwind vs Maturity** | `exp303-polymarket-unwind.service` | **Policy B1 (Taker Unwind)**: $\$253.61/\text{cap-hr}$ vs. **Policy A (Maturity)**: $\$82.27/\text{cap-hr}$ (**3.08x capital efficiency**); holding time drops from $697\text{s}$ to $90\text{s}$, completely avoiding final-minute gap risk. |
-| **EXP-201C** | **Composite Recovery & Toxicity Routing** | `ratchet-shadow.service` | Adds Policy 5 to ratchet shadow using standardized score: $\mathcal{S}_i = 0.5 Z(\text{OBI}_i) + 0.5 Z(R_i) - \text{Toxicity}_i$; paired permutation hypothesis testing. |
-| **EXP-401** | **Cross-Venue Basis & Horizon Carry** | `exp401-basis.service` | Multi-horizon cashflow model ($H \in \{1\text{h}, 4\text{h}, 8\text{h}, 24\text{h}\}$); proved that normal funding carry ($0.1$ to $1.0\text{ bps}$) cannot clear $21.5\text{ bps}$ roundtrip taker friction. |
-| **EXP-103C** | **Inverse-Vol Risk Parity Sizing** | `exp103c-risk-parity.service` | **Arm C (Risk Parity)** reduces portfolio volatility by **-20.27 pp** ($175.2\% \rightarrow 154.9\%$) and $10\text{d}$ $\text{CVaR}_{99}$ by **-8.94 pp** while preserving $+35.31\%$ annualized funding yield. |
+| **EXP-202** | **Binance Trade-Tape De-Censoring** | `exp202-telemetry.service` | Detects synthetic sweeps ($\ge \$1.5\text{M}$ in $100\text{ms}$); empirical lead time vs. $1000\text{ms}$ delayed `!forceOrder@arr`; recovery evaluated at observable horizons: $100\text{ms}, 250\text{ms}, 500\text{ms}$ ($50\text{ms}$ unobservable on $100\text{ms}$ depth feed). Measures `forceOrder-match precision` and forward move predictive content. |
+| **EXP-103B** | **Adaptive Maker Pegging & Adverse Selection** | `exp103b-maker.service` | Evaluates 4 discrete models (Static 240s ALO, Adaptive 60s Repricer, Queue-Priority Peg, Native Chase) under exact Hyperliquid base VIP-0 fees (+1.5 bps maker fee cost / +4.5 bps taker fee cost; no unearned rebates). Measures queue ahead, $\mathbb{E}[\text{Net Edge} \mid \text{Fill}]$, and $\mathbb{E}[\text{PnL} / \text{attempt}]$. |
+| **EXP-303** | **Polymarket Fast Unwind vs Maturity** | `exp303-polymarket-unwind.service` | **Exploratory ($N=5$)**: Hold-to-maturity yields higher per-event expectancy ($EV_A = +\$16.24$ vs $EV_{B1} = +\$6.15$); fast unwind yields higher capital turnover ($3.08\times$ higher PnL/capital-hour) and eliminates post-exit final-resolution exposure, but leaves $\$50.45$ forgone opportunity on the table. Requires large $N$ to test conditional redeployment advantage. |
+| **EXP-201C** | **Composite Recovery & Toxicity Routing** | `ratchet-shadow.service` | Adds Policy 5 to ratchet shadow using standardized score: $\mathcal{S}_i = 0.40 Z(\text{OBI}_i) + 0.40 Z(R_i) - 0.20 Z(\text{Toxicity}_i)$; paired differential $D_e = PnL_{\text{composite}, e} - PnL_{\text{baseline}, e}$ tracking $\text{Median}(D), \text{Mean}(D), P(D > 0)$. |
+| **EXP-401** | **Cross-Venue Basis & Horizon Carry** | `exp401-basis.service` | Conclusive negative result for funding-only carry at ordinary differentials (8h carry of $+0.1$ to $+1.0\text{ bps}$ cannot clear $21.5\text{ bps}$ hurdle). Separately decomposes basis convergence ($\sim +0.6$ to $+7.1\text{ bps}$) vs funding carry. |
+| **EXP-103C** | **Inverse-Vol Risk Parity Sizing** | `exp103c-risk-parity.service` | **Descriptive finding**: Simple idiosyncratic inverse-vol (Arm B) currently beats shrunk covariance (Arm C) across vol ($153.1\%$ vs $154.9\%$), $10\text{d}$ $\text{CVaR}_{99}$ ($67.5\%$ vs $68.3\%$), and extrapolated funding yield ($35.5\%$ vs $35.3\%$). Both materially outperform equal weight ($175.2\%$ vol). |
 
-### 10.2 Operational Commands & Live Monitor
+### 10.2 Three-State Research & Promotion Governance Protocol
+
+Every shadow experiment operates strictly within three decoupled lifecycle stages:
+1. **`OBSERVATION`**: Ingests raw, uncalibrated live exchange data with verified causal wire timestamps.
+2. **`COUNTERFACTUAL`**: Simulates what alternative execution/routing/exit policies would have achieved against executable liquidity.
+3. **`PROMOTION`**: Requires satisfying pre-registered statistical gates (e.g. out-of-sample persistence, confidence intervals, adverse selection bounds). **Zero strategies are promoted based on cumulative shadow PnL alone.**
+
+### 10.3 Operational Commands & Live Monitor
 
 ```bash
 # Real-time multi-track shadow dashboard

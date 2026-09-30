@@ -604,15 +604,23 @@ class RatchetShadowEngine:
             p4_asset = max(candidates, key=lambda c: obi_by_asset[c])
 
             # Policy 5: Standardized Composite Recovery Router (EXP-201C)
-            # S_i = 0.5 * Z(OBI_i) + 0.5 * Z(R_i)
+            # S_i = 0.40 * Z(OBI_i) + 0.40 * Z(R_i) - 0.20 * Z(Toxicity_i)
             mean_obi = float(np.mean(list(obi_by_asset.values())))
             std_obi = float(np.std(list(obi_by_asset.values()))) if float(np.std(list(obi_by_asset.values()))) > 1e-6 else 1.0
+            
             replenish_ratios = {c: (l2_snapshot[c].get("bid_sz", 0.0) / max(l2_snapshot[c].get("ask_sz", 1.0), 0.001)) for c in candidates}
             mean_r = float(np.mean(list(replenish_ratios.values())))
             std_r = float(np.std(list(replenish_ratios.values()))) if float(np.std(list(replenish_ratios.values()))) > 1e-6 else 1.0
 
+            # Toxicity: relative sell pressure on the book
+            toxicity_ratios = {c: (l2_snapshot[c].get("ask_sz", 0.0) / max(l2_snapshot[c].get("bid_sz", 1.0), 0.001)) for c in candidates}
+            mean_tox = float(np.mean(list(toxicity_ratios.values())))
+            std_tox = float(np.std(list(toxicity_ratios.values()))) if float(np.std(list(toxicity_ratios.values()))) > 1e-6 else 1.0
+
             composite_scores = {
-                c: (0.5 * ((obi_by_asset[c] - mean_obi) / std_obi) + 0.5 * ((replenish_ratios[c] - mean_r) / std_r))
+                c: (0.40 * ((obi_by_asset[c] - mean_obi) / std_obi) +
+                    0.40 * ((replenish_ratios[c] - mean_r) / std_r) -
+                    0.20 * ((toxicity_ratios[c] - mean_tox) / std_tox))
                 for c in candidates
             }
             p5_asset = max(candidates, key=lambda c: composite_scores[c])
@@ -851,6 +859,11 @@ class RatchetShadowEngine:
 
         p_routing = max(p_mos, p_mor)
 
+        delta_mcr_vals = [p5 - p2 for p5, p2 in zip(p5_pnls, p2_pnls[:len(p5_pnls)])] if p5_pnls else []
+        mean_delta_mcr = float(np.mean(delta_mcr_vals)) if delta_mcr_vals else 0.0
+        median_delta_mcr = float(np.median(delta_mcr_vals)) if delta_mcr_vals else 0.0
+        p_mcr_gt_0 = (sum(1 for x in delta_mcr_vals if x > 0) / len(delta_mcr_vals) * 100.0) if delta_mcr_vals else 0.0
+
         summary = {
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "governance": {
@@ -868,7 +881,7 @@ class RatchetShadowEngine:
             "sample_size": {
                 "total_independent_episodes": total_eps,
                 "target_episodes_required": 100,
-                "progress_pct": round(total_eps / 100.0 * 100.0, 2)
+                "progress_pct": round(total_eps / 100.0 * 100.0, 1)
             },
             "policy_performance": {
                 "SOL_only": {
@@ -900,7 +913,10 @@ class RatchetShadowEngine:
             },
             "routing_increments": {
                 "delta_mos_mean_usd": round(mean_delta_mos, 4),
-                "delta_mor_mean_usd": round(mean_delta_mor, 4)
+                "delta_mor_mean_usd": round(mean_delta_mor, 4),
+                "delta_composite_vs_random_mean_usd": round(mean_delta_mcr, 4),
+                "delta_composite_vs_random_median_usd": round(median_delta_mcr, 4),
+                "p_composite_outperforms_random_pct": round(p_mcr_gt_0, 1)
             },
             "confirmatory_routing_p_values": {
                 "p_MOS": round(p_mos, 6),

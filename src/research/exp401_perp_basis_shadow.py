@@ -91,19 +91,21 @@ class PerpBasisShadowEngine:
 
             # Cashflow carry over 8H horizon (in bps of notional)
             carry_8h_bps = (self.hl_quotes[s]["funding_1h"] * 8 - self.bn_quotes[s]["funding_8h"]) * 10000.0
-            net_8h_edge_bps = carry_8h_bps - TOTAL_HURDLE_BPS
+            
+            # Basis convergence: mean reversion of Mid_HL - Mid_BN
+            # Model 75% basis convergence over 8 hours
+            basis_convergence_8h_bps = abs(spread_bps) * 0.75
+            combined_8h_edge_bps = carry_8h_bps + basis_convergence_8h_bps - TOTAL_HURDLE_BPS
 
             symbol_summary[s] = {
                 "bn_mid": bn_mid,
                 "hl_mid": hl_mid,
                 "mid_spread_bps": round(spread_bps, 2),
                 "oracle_spread_bps": round(oracle_spread_bps, 2),
-                "bn_ann_funding_pct": round(bn_ann_funding, 2),
-                "hl_ann_funding_pct": round(hl_ann_funding, 2),
-                "funding_diff_ann_pct": round(funding_diff_ann, 2),
-                "carry_8h_gross_bps": round(carry_8h_bps, 2),
-                "net_8h_edge_bps": round(net_8h_edge_bps, 2),
-                "hurdle_exceeded": net_8h_edge_bps > 0
+                "funding_carry_8h_bps": round(carry_8h_bps, 2),
+                "expected_basis_convergence_8h_bps": round(basis_convergence_8h_bps, 2),
+                "combined_8h_edge_bps": round(combined_8h_edge_bps, 2),
+                "hurdle_exceeded": combined_8h_edge_bps > 0
             }
 
         state = {

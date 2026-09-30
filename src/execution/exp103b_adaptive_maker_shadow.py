@@ -47,8 +47,8 @@ TICK_SIZES = {
     "BTC": 1.00,
     "SOL": 0.01
 }
-MAKER_REBATE_BPS = 1.5   # +1.5 bps rebate
-TAKER_FEE_BPS = 4.5      # 4.5 bps taker fee
+MAKER_FEE_BPS = 1.5     # +1.5 bps fee (cost to trader on VIP-0)
+TAKER_FEE_BPS = 4.5     # +4.5 bps fee (cost to trader on VIP-0)
 
 
 class AdaptiveMakerShadowEngine:
@@ -96,14 +96,20 @@ class AdaptiveMakerShadowEngine:
             adv_1s = [f.get("adverse_selection_1s_bps", 0.0) for f in fills]
             net_pnls = [f.get("net_pnl_usd", 0.0) for f in fills]
 
+            net_edges = [f.get("net_edge_bps", 0.0) for f in fills]
+            expected_pnl_attempt = (sum(net_pnls) / m_total) if m_total > 0 else 0.0
+            mean_net_edge = float(np.mean(net_edges)) if net_edges else 0.0
+
             stats[m] = {
                 "total_orders": m_total,
                 "fills_count": len(fills),
                 "fill_rate_pct": round(fill_rate, 2),
                 "mean_adverse_selection_1s_bps": round(float(np.mean(adv_1s)), 2) if adv_1s else 0.0,
                 "mean_adverse_selection_5s_bps": round(float(np.mean([f.get("adverse_selection_5s_bps", 0.0) for f in fills])), 2) if fills else 0.0,
+                "expected_net_edge_per_fill_bps": round(mean_net_edge, 2),
+                "expected_pnl_per_order_attempt_usd": round(expected_pnl_attempt, 4),
                 "cumulative_net_pnl_usd": round(sum(net_pnls), 2),
-                "effective_rebate_earned_usd": round(sum(f.get("rebate_usd", 0.0) for f in fills), 4)
+                "maker_fee_paid_usd": round(sum(f.get("maker_fee_usd", 0.0) for f in fills), 4)
             }
 
         state = {
@@ -111,8 +117,8 @@ class AdaptiveMakerShadowEngine:
             "governance": {
                 "experiment": "EXP-103B",
                 "specification": "v3.2-adaptive-maker-shadow",
-                "target_fill_hurdle_pct": 65.0,
-                "maker_rebate_bps": MAKER_REBATE_BPS,
+                "promotion_criterion": "NetPnL(adaptive) > NetPnL(static) with adverse selection within bounds",
+                "maker_fee_bps": MAKER_FEE_BPS,
                 "taker_fee_bps": TAKER_FEE_BPS
             },
             "models_comparison": stats
@@ -207,7 +213,7 @@ class AdaptiveMakerShadowEngine:
                     o["status"] = "FILLED"
                     o["fill_price"] = o["target_price"]
                     o["fill_time_sec"] = now_sec
-                    o["rebate_usd"] = o["size_usd"] * (MAKER_REBATE_BPS / 10000.0)
+                    o["maker_fee_usd"] = o["size_usd"] * (MAKER_FEE_BPS / 10000.0)
                     
                     # Schedule post-fill adverse selection markout
                     asyncio.create_task(self.markout_adverse_selection(o))
@@ -226,9 +232,11 @@ class AdaptiveMakerShadowEngine:
         mid_5s = self.orderbooks[symbol].get("mid", fill_px)
         order["adverse_selection_5s_bps"] = round((fill_px - mid_5s) / fill_px * 10000.0, 2)
         
-        # Net economic return: (Mid_5s - Fill_Px) / Fill_Px + Maker Rebate
+        # Net economic return: (Mid_5s - Fill_Px) / Fill_Px - Maker Fee
         pnl_pct = (mid_5s - fill_px) / fill_px
-        order["net_pnl_usd"] = round(order["size_usd"] * pnl_pct + order["rebate_usd"], 4)
+        maker_fee = order.get("maker_fee_usd", order["size_usd"] * (MAKER_FEE_BPS / 10000.0))
+        order["net_pnl_usd"] = round(order["size_usd"] * pnl_pct - maker_fee, 4)
+        order["net_edge_bps"] = round((pnl_pct - (MAKER_FEE_BPS / 10000.0)) * 10000.0, 2)
 
         self.completed_virtual_orders.append(order)
         with open(LEDGER_FILE, "a") as f:

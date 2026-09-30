@@ -92,7 +92,10 @@ class FastUnwindShadowEngine:
                 "experiment": "EXP-303",
                 "specification": "v3.2-executable-fast-unwind",
                 "theta_target": self.theta,
-                "fee_schedule": "crypto_7pct_dynamic"
+                "fee_schedule": "crypto_7pct_dynamic",
+                "evidence_status": "EXPLORATORY_N5 (Insufficient sample to establish superiority)",
+                "findings_qualification": "Hold-to-maturity currently produces higher per-event expectancy ($16.24 vs $6.15); fast-unwind superiority is strictly in capital-hour turnover and conditional on available redeployment opportunities.",
+                "risk_mitigation": "Eliminates post-exit final-resolution exposure; does not eliminate execution/spread risk prior to exit."
             },
             "sample_size": total,
             "metrics": {
@@ -113,6 +116,7 @@ class FastUnwindShadowEngine:
                     "win_rate_pct": round(sum(1 for x in pnl_b1 if x > 0) / total * 100.0, 1),
                     "p_loss_gt_25pct": round(sum(1 for x in pnl_b1 if x < -12.5) / total * 100.0, 1),
                     "p_loss_gt_50pct": round(sum(1 for x in pnl_b1 if x < -25.0) / total * 100.0, 1),
+                    "total_forgone_opportunity_usd": round(sum(r["policy_b1"].get("forgone_opportunity_usd", 0.0) for r in records), 2),
                     "median_holding_time_sec": round(float(np.median(hold_b1)), 1),
                     "pnl_per_capital_hour": round(sum(pnl_b1) / max(sum(hold_b1) / 3600.0, 0.01), 3)
                 },
@@ -123,6 +127,7 @@ class FastUnwindShadowEngine:
                     "win_rate_pct": round(sum(1 for x in pnl_b2 if x > 0) / total * 100.0, 1),
                     "p_loss_gt_25pct": round(sum(1 for x in pnl_b2 if x < -12.5) / total * 100.0, 1),
                     "p_loss_gt_50pct": round(sum(1 for x in pnl_b2 if x < -25.0) / total * 100.0, 1),
+                    "total_forgone_opportunity_usd": round(sum(r["policy_b2"].get("forgone_opportunity_usd", 0.0) for r in records), 2),
                     "median_holding_time_sec": round(float(np.median(hold_b2)), 1),
                     "pnl_per_capital_hour": round(sum(pnl_b2) / max(sum(hold_b2) / 3600.0, 0.01), 3)
                 }
@@ -186,15 +191,19 @@ class FastUnwindShadowEngine:
             "policy_b1": {
                 "policy_name": "EXECUTABLE_TAKER_UNWIND",
                 "exit_price": round(target_exit_px, 4),
+                "maturity_price": 1.00 if won else 0.00,
                 "exit_fee_usd": round(exit_fee_b1, 4),
                 "net_pnl_usd": net_pnl_b1,
+                "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b1, 2),
                 "holding_seconds": t_repricing
             },
             "policy_b2": {
                 "policy_name": "MAKER_FIRST_SCALP",
                 "exit_price": round(target_exit_px, 4),
+                "maturity_price": 1.00 if won else 0.00,
                 "exit_fee_usd": 0.0,
                 "net_pnl_usd": net_pnl_b2,
+                "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b2, 2),
                 "holding_seconds": round(hold_b2, 1)
             }
         }
