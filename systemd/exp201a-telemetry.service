@@ -1,0 +1,18 @@
+[Unit]
+Description=Causal Spillover Telemetry & Marked Hawkes Ingestion Daemon (EXP-201A)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/hl_leadlag/market_data/run_exp201a_daemon.py
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=15s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/exp201/telemetry.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/exp201/telemetry.log
+
+[Install]
+WantedBy=default.target

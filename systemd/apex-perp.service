@@ -1,0 +1,18 @@
+[Unit]
+Description=Core APEX Sovereign Perpetual Compounding Daemon (EXP-103)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/execution/production_apex_daemon.py
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=30s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/logs/papertrade_monitor.log
+StandardError=append:/home/skybullet1987/quant_pipeline/logs/papertrade_monitor.log
+
+[Install]
+WantedBy=default.target

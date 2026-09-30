@@ -1,0 +1,18 @@
+[Unit]
+Description=EXP-104 Macro Momentum Hedge Shadow Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/execution/exp104_macro_hedge_shadow.py
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=15s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/exp104_shadow.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/exp104_shadow.log
+
+[Install]
+WantedBy=default.target
