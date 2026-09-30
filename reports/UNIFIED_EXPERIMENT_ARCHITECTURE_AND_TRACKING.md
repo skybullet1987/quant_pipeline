@@ -375,17 +375,17 @@ Across active tracks on the Tokyo host, performance telemetry tracks capital dep
 |                              | (EXP-103 / EXP-104)       | (EXP-201B SHADOW)         | (EXP-302 FORWARD OOS)    |
 +=================================================================================================================+
 | Deployment Mode              | Live Paper Execution      | Counterfactual Shadow     | Forward Out-Of-Sample    |
-| Current Portfolio NAV        | $620.95 USDC              | $50.00 base per episode   | $1,053.12 USDC           |
+| Current Portfolio NAV        | $621.60 USDC              | $50.00 base per episode   | $1,069.34 USDC           |
 | Initial Capital Allocation   | $559.31 USDC              | $50.00 base               | $1,000.00 USDC           |
-| Cumulative Net Realized PnL  | +$61.64 USDC (+11.02%)    | +$0.45 to +$0.69 USDC (E1)| +$53.12 USDC (+5.31%)    |
-| Cumulative Funding Harvest   | +$12.81 USDC (Carry)      | $0.00 USDC (Short Horizon)| N/A                      |
-| Cumulative Exchange Fees     | $1.63 USDC (Maker ALO)    | $0.36 USDC (Taker Sprint) | $1.97 USDC (Dynamic)     |
-| Historical High-Water Mark   | $642.10 USDC              | $0.69 USDC peak gain      | $1,053.12 USDC           |
-| Current Strategy Drawdown    | 3.29% from HWM            | 0.00%                     | 0.00%                    |
-| Operational Capital Cushion  | +$43.06 USDC (Audited:6.9%)| Independent Episode Margin| Hard Floor at $900.00    |
-| Win / Trade Accuracy Ratio   | Market-Neutral Basket     | 100.0% (1/1 episodes)     | 100.0% (3/3 settled)     |
-| Progress vs. Target Sample   | Bar 9 of 18 (50% of 72H)  | 1 of 100 Episodes (1.0%)  | 3 of 10 Required Trades  |
-| Operational Track Status     | Healthy (Maker ratio 58.6%)| Accumulating Shadow Telemetry| Statistically Outperforming|
+| Cumulative Net Realized PnL  | +$62.29 USDC (+11.14%)    | +$1.6551 (MAX_OBI Router) | +$69.34 USDC (+6.93%)    |
+| Cumulative Funding Harvest   | +$12.94 USDC (Carry)      | $0.00 USDC (Short Horizon)| N/A                      |
+| Cumulative Exchange Fees     | $1.63 USDC (Maker ALO)    | $0.36 USDC (Taker Sprint) | $2.62 USDC (Dynamic)     |
+| Historical High-Water Mark   | $642.10 USDC              | $4.24 USDC peak episode   | $1,069.34 USDC           |
+| Current Strategy Drawdown    | 3.19% from HWM            | 0.00%                     | 0.00%                    |
+| Operational Capital Cushion  | +$43.71 USDC (Audited:7.0)| Independent Episode Margin| Hard Floor at $900.00    |
+| Win / Trade Accuracy Ratio   | Market-Neutral Basket     | 50.0% (2W / 2L on sweeps) | 100.0% (4/4 settled)     |
+| Progress vs. Target Sample   | Bar 12 of 18 (66.7% of 72H| 4 of 100 Episodes (4.0%)  | 4 of 10 Required Trades  |
+| Operational Track Status     | Healthy (NAV: $621.60)    | MAX_OBI Outperforming     | Statistically Outperform |
 +=================================================================================================================+
 ```
 
