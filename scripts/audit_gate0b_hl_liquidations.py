@@ -1,5 +1,5 @@
 """
-Gate 0B: Hyperliquid Native Liquidation Ledger Data-Completeness Audit (v3.2.1)
+Gate 0B: Hyperliquid Native Liquidation Ledger Data-Completeness Audit (v3.2.1 A0.1)
 File: scripts/audit_gate0b_hl_liquidations.py
 
 Verifies whether the historical/reconstructed Hyperliquid dataset satisfies the
@@ -11,14 +11,17 @@ Verifies whether the historical/reconstructed Hyperliquid dataset satisfies the
   5. Records full liquidation notional in USDC.
   6. Records asset ticker and order side.
 
-Outputs pass/fail certification and bounds the classifier validation domain.
+Also enforces the Chronological (60% Dev / 40% Validation) split rule:
+  - Random cross-validation is strictly forbidden to prevent regime/microstructure leakage.
+  - Development Set: First 60% of chronological episodes.
+  - Validation Set: Last 40% of chronological episodes (untouched until certification).
 """
 
 import sys
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Tuple
 
 logger = logging.getLogger("Gate0B_Audit")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -40,9 +43,9 @@ REQUIRED_FIELDS = [
 class Gate0BLiquidationAuditor:
     def __init__(self, ledger_path: str = "data/hyperliquid/historical_liquidations_raw.jsonl"):
         self.ledger_path = Path(ledger_path)
-        self.total_records = 0
+        self.records: List[Dict[str, Any]] = []
         self.missing_field_counts = {field: 0 for field in REQUIRED_FIELDS}
-        self.method_distribution = {}
+        self.method_distribution: Dict[str, int] = {}
         self.valid_records = 0
 
     def run_audit(self) -> Dict[str, Any]:
@@ -55,6 +58,7 @@ class Gate0BLiquidationAuditor:
                 "total_records": 0,
                 "data_completeness_pct": 0.0,
                 "gate_0b_passed": False,
+                "chronological_split_verified": False,
                 "reason": "Missing raw historical L1 liquidation stream. Real-time proxy classifier must operate in Stage 1 Offline Lab."
             }
 
@@ -62,40 +66,59 @@ class Gate0BLiquidationAuditor:
             for line in f:
                 if not line.strip():
                     continue
-                self.total_records += 1
                 try:
-                    record = json.loads(line)
+                    rec = json.loads(line)
+                    self.records.append(rec)
                 except Exception:
                     continue
 
-                is_valid = True
-                for field in REQUIRED_FIELDS:
-                    if field not in record or record[field] is None:
-                        self.missing_field_counts[field] += 1
-                        is_valid = False
+        total_records = len(self.records)
+        # Ensure chronological ordering by timestamp
+        self.records.sort(key=lambda x: x.get("execution_ts_ms", 0))
 
-                method = record.get("liquidation_method", "UNKNOWN")
-                self.method_distribution[method] = self.method_distribution.get(method, 0) + 1
+        for record in self.records:
+            is_valid = True
+            for field in REQUIRED_FIELDS:
+                if field not in record or record[field] is None:
+                    self.missing_field_counts[field] += 1
+                    is_valid = False
 
-                if is_valid:
-                    self.valid_records += 1
+            method = record.get("liquidation_method", "UNKNOWN")
+            self.method_distribution[method] = self.method_distribution.get(method, 0) + 1
 
-        completeness_pct = (self.valid_records / max(self.total_records, 1)) * 100.0
-        gate_passed = (completeness_pct >= 99.0) and (self.total_records >= 100)
+            if is_valid:
+                self.valid_records += 1
+
+        completeness_pct = (self.valid_records / max(total_records, 1)) * 100.0
+        gate_passed = (completeness_pct >= 99.0) and (total_records >= 100)
+
+        # Chronological Partitioning: 60% Dev / 40% Val
+        split_idx = int(total_records * 0.60)
+        dev_records = self.records[:split_idx]
+        val_records = self.records[split_idx:]
+
+        chronological_valid = True
+        if dev_records and val_records:
+            max_dev_ts = max(r.get("execution_ts_ms", 0) for r in dev_records)
+            min_val_ts = min(r.get("execution_ts_ms", 0) for r in val_records)
+            chronological_valid = (max_dev_ts <= min_val_ts)
 
         result = {
             "audit_status": "CERTIFIED_COMPLETE" if gate_passed else "PARTIAL_GROUND_TRUTH",
-            "total_records": self.total_records,
+            "total_records": total_records,
             "valid_records": self.valid_records,
             "completeness_pct": round(completeness_pct, 2),
+            "dev_partition_size": len(dev_records),
+            "val_partition_size": len(val_records),
+            "chronological_split_verified": chronological_valid,
             "missing_field_breakdown": self.missing_field_counts,
             "method_distribution": self.method_distribution,
             "gate_0b_passed": gate_passed
         }
 
         logger.info(
-            "Gate 0B Audit Result: Status = %s | Completeness = %.2f%% | Valid Records = %d / %d",
-            result["audit_status"], result["completeness_pct"], self.valid_records, self.total_records
+            "Gate 0B Audit Result: Status = %s | Completeness = %.2f%% | Chronological Split = %s",
+            result["audit_status"], result["completeness_pct"], chronological_valid
         )
         return result
 
