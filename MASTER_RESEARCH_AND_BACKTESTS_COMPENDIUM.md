@@ -19367,8 +19367,8 @@ All system components are continuously tested against machine-enforced invariant
 # SECTION 15: ORTHOGONAL SATELLITE ALPHA ARCHITECTURE & CAPITAL RECYCLING SPECIFICATION (EXP-105 TO EXP-112)
 
 **Specification Date:** October 1, 2026 UTC  
-**Governing Standard:** Three-State Promotion Protocol & Capital Recycling Governance  
-**Strategic Objective:** Maximize portfolio capital utilization during EXP-103 inactive/defensive regimes (`CASH_FLOOR_fl0`) without increasing core turnover or violating macro drawdown constraints.
+**Governing Standard:** Three-State Promotion Protocol, Family-Wise Multiple Testing Governance & Capital Recycling Architecture  
+**Strategic Objective:** Maximize portfolio capital utilization during EXP-103 inactive/defensive regimes (`CASH_FLOOR_fl0`) without increasing core turnover, introducing leverage stacking, or violating macro drawdown constraints.
 
 ---
 
@@ -19391,10 +19391,12 @@ The quantitative frontier is therefore **NOT** to find "another better momentum 
                       │                                               │
            Trend Expansion Active?                                    │
            ├── YES: Deploy 100% Macro Risk                            │
-           └── NO:  CASH_FLOOR_fl0 (0% Risk) ─────────────────────────┼─────────────────────────┐
+           │        (Satellites = 0% Risk;                            │
+           │         EXP-111 Execution Overlay Active)                │
+           └── NO:  CASH_FLOOR_fl0 (0% Core Risk) ────────────────────┼─────────────────────────┐
                                                                       ▼                         ▼                         ▼
-                                                           [Event Alpha Sleeve]       [Chop / RV Sleeve]       [Microstructure Timing]
-                                                           (EXP-105, 108, 109)            (EXP-107)                 (EXP-110, 111)
+                                                           [Tier 1: Idle Capital]    [Tier 2: Asymmetric Skew]    [Tier 3: Micro Lead-Lag]
+                                                           (EXP-105, 106, 107)           (EXP-108, 109)                  (EXP-110)
 ```
 
 **The Iron Rule of Satellites:**  
@@ -19429,113 +19431,163 @@ Every future test, backtest run, and shadow ledger record MUST explicitly persis
 
 ---
 
-### 15.3 The Capital Recycling Governor (EXP-112)
+### 15.3 Two-Tier Drawdown Floor Architecture & EXP-112 Governance
 
-The Capital Recycling Governor is the portfolio-level risk engine governing how idle capital flows between the macro anchor and satellite sleeves.
+To prevent confusion between core macro risk limits and satellite risk limits, the risk architecture enforces a formal **Two-Tier Drawdown Floor**:
 
-#### Mathematical Risk Budget Specification:
-$$R_{\text{available, } t} = R_{\text{portfolio cap}} - R_{\text{EXP103, } t}$$
+1. **Core EXP-103 Grossman-Zhou Floor ($W_{\text{floor, core}} = 0.80 \times \text{HWM}$):**  
+   The canonical 20% hard drawdown bound governing the macro perpetual compounding engine.
+2. **Portfolio Satellite Emergency Kill Floor ($W_{\text{floor, sat}} = 0.90 \times \text{HWM}$):**  
+   If total portfolio NAV experiences a 10% trailing drawdown from its historical high-water mark, **ALL active satellite sleeves are instantly liquidated to cash and locked out**. This reserves the remaining 10% drawdown buffer exclusively for the core macro engine.
+   *(Note: This two-tier floor represents a new portfolio risk architecture and is subject to its own rigorous stress-testing under EXP-112).*
 
-#### State Allocation Matrix:
+#### The Role of EXP-112: Portfolio Combination Experiment (Tier 4)
+EXP-112 is **NOT** an individual alpha strategy; it is a **Tier 4 Portfolio-Combination Experiment**. 
+
+Under our governance protocol:
+- **Question A (Individual Edge):** Does each satellite sleeve possess a statistically and economically significant positive net edge ($EV_{\text{net}} > 0$ after full friction)?
+- **Question B (Combination Sizing):** How much satellite risk can be safely combined with EXP-103 without compromising portfolio survival?
+
+**Rule:** Question A must be answered affirmatively for an individual satellite before EXP-112 is permitted to allocate capital to it.
+
+#### EXP-112 State Allocation Hypothesis Matrix:
 | EXP-103 Core State | Core Macro Allocation | Maximum Aggregate Satellite Risk Budget | Permitted Satellite Sleeves |
 | :--- | :---: | :---: | :--- |
 | **Active Trend Expansion** | **100%** | **0%** | None (All satellite risk locked out; zero leverage stacking) |
-| **Partial Gearing / De-risking** | **50%** | **10%** | Microstructure Execution Timing (EXP-111) only |
-| **CASH_FLOOR_fl0 (Defensive)** | **0%** | **20%** | Liquidation Sniper (EXP-105), Chop RV (EXP-107), Breakout (EXP-108), Squeeze (EXP-109) |
-
-#### Governance Invariants:
-1. **Zero Leverage Stacking:** Total portfolio gross exposure across all sleeves $\le \text{Grossman-Zhou Max Leverage}$ ($3.0\times$ absolute ceiling).
-2. **Zero Correlated Satellite Overlap:** No two satellites may hold directional positions in the same asset simultaneously.
-3. **Single Global Drawdown Floor:** If total portfolio NAV touches the Grossman-Zhou trailing 10% floor ($W_{\text{floor}} = 0.90 \times \text{HWM}$), ALL satellites are instantly liquidated to cash alongside core positions.
-4. **Emergency Kill Switch:** Single-call kill switch terminating all satellite daemons and canceling all open orders within 500ms.
+| **Partial Gearing / De-risking** | **50%** | **10%** | Only approved Tier 1 sleeves |
+| **CASH_FLOOR_fl0 (Defensive)** | **0%** | **20%** | Approved Tier 1 & Tier 2 sleeves (EXP-105, 106, 107, 108, 109) |
 
 ---
 
-### 15.4 The Seven Orthogonal Satellite Specifications (EXP-105 through EXP-111)
+### 15.4 Execution Timing Overlay: EXP-111 (Not a Satellite)
 
-#### 1. EXP-105: Liquidation Continuation vs. Rebound Sniper
-* **Objective:** Replace naive dip-buying with two-state classification across liquidation cascades.
-* **The Problem Identified:** Ratchet Episodes 13 and 14 proved that buying every cascade is negative expectancy when cascades cluster (22 follow-up shocks over 45 minutes).
-* **The Two-State Formulation:**
-  $$\text{State 1 (Recovery): } R_{250\text{ms}} > 1.20 \;\land\; T_{250\text{ms}} < 0.80 \implies \mathbf{LONG \; REBOUND}$$
-  $$\text{State 2 (Continuation): } R_{250\text{ms}} < 0.60 \;\land\; T_{250\text{ms}} > 1.50 \implies \mathbf{SHORT \; CONTINUATION}$$
-  $$\text{State 3 (Ambiguous): } \text{Otherwise} \implies \mathbf{DO \; NOTHING \; (FLAT)}$$
-* **Tested Horizons:** 250ms, 1s, 5s, 30s, 90s, 5m.
-* **Capital Role:** Operates exclusively during sharp market dislocations when EXP-103 is sitting flat in cash.
-
-#### 2. EXP-106: Regime Transition Detector (Level + Velocity)
-* **Objective:** Monetize market recoveries earlier without catching falling knives.
-* **The Current Inefficiency:** Static level cutoff ($\rho_{7d} < -0.10 \implies \text{cash floor}$) is deliberately late, missing the initial thrust of genuine bull turns.
-* **The Dual Level-Velocity Specification:**
-  $$\text{If } \rho_{7d} < -0.10 \quad \text{BUT} \quad \frac{d\rho_{7d}}{dt} > 0 \quad \text{AND} \quad \text{Breadth}_{\text{positive}} > 55\% \quad \text{AND} \quad \Delta OI_{\text{stabilizing}} > 0$$
-  $$\implies \mathbf{REGIME: \; fl0\text{-}RECOVERY}$$
-* **Allocation Rule:** Grants an initial **10%–20% risk budget** to EXP-103 during `fl0-recovery`, unlocking convex participation before full expansion.
-
-#### 3. EXP-107: Chop Relative-Value Sleeve
-* **Objective:** Monetize sideways, non-trending consolidation when EXP-103 finds zero directional momentum.
-* **Model:** Market-neutral pair and basket residuals:
-  $$z_t = \frac{\epsilon_t - \mu_\epsilon}{\sigma_\epsilon}, \quad \text{where } \epsilon_t = r_{\text{asset}, t} - \beta_t r_{\text{benchmark}, t}$$
-* **Entry Trigger:** Trade only when $|z_t| > 2.0$, trend score is weak, and cross-sectional dispersion is in the top quintile.
-* **Execution:** Dollar-neutral long/short pairs (e.g., Long SUI / Short SOL residual) with hard 24H holding caps and tight 1.5% stop-losses.
-
-#### 4. EXP-108: Volatility Compression $\to$ Breakout
-* **Objective:** Capture rare, violent explosive moves with asymmetric risk-to-reward ratios.
-* **Compression Filter:** Bollinger Band Width (BBW) percentile $< 10\%$ AND Realized Volatility percentile $< 20\%$.
-* **Asymmetric Execution:** Conditional OCO (One-Cancels-the-Other) stop-market breakout orders above/below compression range:
-  $$\text{Risk} = 1R, \quad \text{Partial Exit (50\%)} = 2R, \quad \text{Runner Exit (50\%)} = 4R+$$
-* **Payoff Profile:** Positive skew strategy ($E[R] = pW - (1-p)L$) designed to deliver high expectancy with a 35%–45% win rate.
-
-#### 5. EXP-109: Funding / Open Interest Squeeze Engine
-* **Objective:** Front-run mechanical liquidations driven by extreme funding rate imbalances.
-* **Ingestion:** Leverages continuous historical funding `/info` API endpoint.
-* **Trigger Conditions:**
-  * **Long Squeeze:** $z(F) \ll -2.0 \;\land\; z(\Delta F) < -1.5 \;\land\; \Delta OI > 0 \;\land\; P > \text{EMA}_{20}$
-  * **Short / Long-Unwind:** $z(F) \gg +2.0 \;\land\; z(\Delta F) > +1.5 \;\land\; \Delta OI > 0 \;\land\; P < \text{EMA}_{20}$
-* **Key Innovation:** Uses rate of change in funding $z(\Delta F)$ to detect positioning build-up *before* extreme funding prints.
-
-#### 6. EXP-110: Binance $\to$ Hyperliquid Directional Lead-Lag
-* **Objective:** Test whether external Binance orderflow contains 3–10 bps of predictive directional lead on Hyperliquid over 50ms to 15s horizons.
-* **Model:**
-  $$\Delta P_{\text{HL}, t+\tau} = \alpha + \beta_1 \Delta P_{\text{Binance}, t} + \beta_2 \text{OFI}_{\text{Binance}, t} + \beta_3 Z_{\text{sweep}, t} + \epsilon_t$$
-* **Horizons Tested:** 50ms, 100ms, 250ms, 500ms, 1s, 5s, 15s.
-* **Hurdle:** Must demonstrate net positive edge after deducting full VIP-0 Hyperliquid taker friction (4.5 bps fee + 1.0 bps modeled slippage = 5.5 bps hurdle).
-
-#### 7. EXP-111: Implementation Shortfall Taker Crossing Timing
-* **Objective:** Pivot from passive maker queue modeling (which yielded 0 fills in EXP-103B) to optimal crossing time for active rebalancing orders.
-* **Execution Logic:** When EXP-103 issues a rebalance order, evaluate 5 crossing policies:
+EXP-111 (**Optimal Taker Crossing Timing**) is formally classified as an **EXP-103 Execution Overlay**, not an independent return stream or satellite sleeve:
+- **Zero Risk Budget:** Consumes 0% satellite risk budget.
+- **Zero Additional Exposure:** Generates zero standalone directional positions; only modifies orders emitted by EXP-103.
+- **Core Hypothesis:** Microstructure orderflow information (OFI, queue exhaustion, spread compression) can reduce taker implementation shortfall below immediate aggressive crossing.
+- **Tested Policies:**
   * **Policy A:** Cross spread immediately (baseline taker).
-  * **Policy B:** Delay 100ms conditioned on micro-OFI.
-  * **Policy C:** Delay 250ms conditioned on queue exhaustion.
-  * **Policy D:** Delay 500ms conditioned on spread compression.
+  * **Policy B:** Delay up to 100ms conditioned on micro-OFI.
+  * **Policy C:** Delay up to 250ms conditioned on queue exhaustion.
+  * **Policy D:** Delay up to 500ms conditioned on spread compression.
   * **Policy E:** Wait for OFI reversal before crossing.
-* **Primary Optimization Metric:** **Implementation Shortfall (bps)** rather than passive maker fill rate.
+- **Evaluation Metric:** Comparative Implementation Shortfall (bps), realized spread, adverse selection, and fill probability against baseline immediate taker execution.
 
 ---
 
-### 15.5 Adaptive Scale-Normalized Sweep Telemetry (EXP-202 Upgrade)
+### 15.5 The Six Orthogonal Satellite Specifications (EXP-105 to EXP-110)
 
-The fixed $\$1.5\text{M}$ absolute volume threshold in EXP-202 proved too sparse during low-volatility Asian/European morning sessions. The detector is upgraded with an adaptive scale-normalized statistic:
+#### 1. EXP-105: Liquidation Continuation vs. Rebound Classifier (Tier 1)
+* **Objective:** Replace naive dip-buying with a predictive two-state liquidation regime classifier.
+* **Hypothesis Governance Notice:** The observed parameters ($R_{250} > 1.20, T_{250} < 0.80$ vs $R_{250} < 0.60, T_{250} > 1.50$) derived from Episodes 13 & 14 are strictly **hypothesis-generating observations**, not established constants.
+* **Preregistered Specification:**
+  * **Hypothesis H1:** Replenishment velocity ($R$) and aggressive flow toxicity ($T$) jointly discriminate between cascade continuation and cascade rebound.
+  * **Primary Evaluation Horizon:** 250ms.
+  * **Secondary Diagnostics:** 1s, 5s, 30s, 90s, 5m.
+  * **Threshold Calibration:** Classifier cutoffs must be calibrated strictly on a designated development sample ($N_{\text{dev}} \ge 30$) and frozen prior to confirmatory evaluation on an out-of-sample sample ($N_{\text{conf}} \ge 70$).
+  * **Directional Mapping:**
+    $$\text{State 1 (High } R \land \text{Low } T\text{):} \implies \mathbf{LONG \; REBOUND}$$
+    $$\text{State 2 (Low } R \land \text{High } T\text{):} \implies \mathbf{SHORT \; CONTINUATION}$$
+    $$\text{State 3 (Ambiguous):} \implies \mathbf{DO \; NOTHING \; (FLAT)}$$
 
-$$Z_{\text{sweep}} = \frac{\text{SweepNotional}_{\text{USD}, 100\text{ms}}}{\sqrt{\text{ADV}_{100\text{ms}}} \cdot \sigma_{\text{realized}, 1\text{h}}^{1/2}}$$
+#### 2. EXP-106: Regime Transition Detector (Level + Velocity) (Tier 1)
+* **Objective:** Safely capture the initial thrust of market recoveries without waiting for the slow $\rho_{7d} > -0.10$ level trigger.
+* **Formal Formulation (Avoiding Noisy 1-Bar Chatter):**
+  $$\text{Level Condition: } \rho_{7d} < -0.10$$
+  $$\text{Velocity Condition: } \text{Slope}_{K=6}(\rho_{7d}) > 0 \quad (\text{positive 24-hour linear regression slope})$$
+  $$\text{Breadth Condition: } \text{Fraction of Universe with } r_{24\text{h}} > 0 \ge 55\%$$
+  $$\text{OI Stabilization: } z(\Delta OI_{\text{market}}) > 0 \quad (\text{open interest expansion confirms capital re-entry})$$
+* **State Transition:** Introduces a formal 3-state regime machine:
+  $$\text{BEAR (fl0, 0\% risk)} \longrightarrow \mathbf{RECOVERY \; (fl0\text{-}recovery, \; 10\%\text{–}20\% \; risk)} \longrightarrow \text{EXPANSION (100\% risk)}$$
 
-- **Adaptive Gate:** Fires when $Z_{\text{sweep}} \ge 3.0$ (3-sigma volume shock relative to prevailing session liquidity and volatility).
-- **Benefit:** Dynamically detects institutional sweeps during calm weekend markets ($500K can be a 3-sigma shock) while filtering out false alarms during high-volume US market opens.
+#### 3. EXP-107: Chop Relative-Value Sleeve (Tier 1)
+* **Objective:** Monetize market-neutral relative-value spreads exclusively when EXP-103 is in `CASH_FLOOR_fl0` and cross-sectional dispersion is elevated.
+* **Rigorous Market Neutrality Standard:** Dollar neutrality ($\sum w_i = 0$) is formally disqualified as insufficient. The sleeve strictly enforces multi-factor beta neutrality:
+  $$\beta_{\text{BTC, portfolio}} \approx 0 \quad \text{AND} \quad \beta_{\text{ETH, portfolio}} \approx 0$$
+  using continuous Kalman-filtered factor betas.
+* **Spread Model:** Evaluates residualized pairs and sector baskets ($z_t = \frac{\epsilon_t - \mu_\epsilon}{\sigma_\epsilon}$) with $|z_t| > 2.0$ entry trigger.
+* **Accounting Invariant:** All PnL accounting strictly incorporates continuous 1-hour periodic funding payments and borrow costs.
+
+#### 4. EXP-108: Volatility Compression $\to$ Breakout (Tier 2)
+* **Objective:** Harvest rare explosive moves with strictly positive-skew, asymmetric payoff geometry.
+* **Compression Filter:** Bollinger Band Width (BBW) percentile $< 10\%$ AND Realized Volatility percentile $< 20\%$.
+* **Governance Notice:** Arbitrary design targets (e.g., "35%–45% win rate") are formally removed. Evaluation is governed strictly by empirical expectancy:
+  $$\text{Primary Hurdle: } \mathbb{E}[R] = p W - (1-p) L > 0 \quad \text{after full friction}$$
+  $$\text{Secondary Metrics: } \text{Skewness} > +1.0, \quad \frac{\text{Median Winner}}{\text{Median Loser}} \ge 2.5, \quad \text{Tail Contribution}$$
+* **Causal Friction Guard:** Conditional OCO breakout orders must enforce strict adverse gap slippage and zero intra-bar touch-fill assumptions.
+
+#### 5. EXP-109: Funding / Open Interest Squeeze Engine (Tier 2)
+* **Objective:** Distinguish true funding-rate alpha from generic price trend and market crowding.
+* **Factorial Hypothesis Matrix:**
+  * **Factor A:** Funding level $z(F)$
+  * **Factor B:** Funding velocity $z(\Delta F)$
+  * **Factor C:** Open interest delta $\Delta OI$
+  * **Factor D:** Price trend $P > \text{EMA}_{20}$
+* **Evaluation Protocol:** Tests 4 nested models (`A only`, `A + C`, `A + D`, `A + B + C + D`) to formally isolate whether funding dynamics provide incremental predictive power beyond momentum proxies.
+
+#### 6. EXP-110: Binance $\to$ Hyperliquid Directional Lead-Lag (Tier 3)
+* **Objective:** Determine whether external Binance flow contains actionable predictive information for Hyperliquid pricing.
+* **Two-Stage Evaluation Standard:**
+  * **Stage A (Information Coefficient):** Measure linear and rank correlation:
+    $$\operatorname{Corr}(\Delta P_{\text{Binance}, t}, \; \Delta P_{\text{HL}, t+\tau}) \quad \text{across } \tau \in \{50\text{ms}, 100\text{ms}, 250\text{ms}, 500\text{ms}, 1\text{s}, 5\text{s}, 15\text{s}\}$$
+    conditioned on prevailing OFI, spread, and realized volatility.
+  * **Stage B (Executable Net Edge):** Only if Stage A confirms statistically significant predictive lead ($\text{IC} > 0.05, p < 0.01$), evaluate live executable edge after deducting full VIP-0 taker friction:
+    $$EV_{\text{net}} = EV_{\text{gross}} - \text{Fees (4.5 bps)} - \text{Spread (2.0 bps)} - \text{Adverse Slippage (1.0 bps)} > 0$$
 
 ---
 
-### 15.6 Realistic Invariant-Driven 30-Day Operational Scorecard (Oct 5 $\to$ Nov 5)
+### 15.6 Adaptive Dimensionless Sweep Telemetry (EXP-202 Upgrade)
 
-Rather than anchoring on speculative profit targets or claiming theoretical zero-loss mathematical bounds, operational success over the initial 30 days is measured strictly by **engineering invariants, causal compliance, and risk discipline**:
+The previously proposed formula contained a dimensional flaw (USD numerator vs $\sqrt{\text{USD}}$ denominator). It is formally replaced by a **dimensionless, standardized flow shock statistic**:
 
+$$Z_{\text{flow}} = \frac{V_{\text{sweep}, 100\text{ms}} - \mu_{V \mid \text{TOD}, \sigma}}{\sigma_{V \mid \text{TOD}, \sigma}}$$
+
+where $\mu_{V \mid \text{TOD}, \sigma}$ and $\sigma_{V \mid \text{TOD}, \sigma}$ represent the rolling expectation and standard deviation of 100ms volume conditioned on Time-of-Day (TOD) and 1-hour realized volatility.
+
+- **Trigger Gate:** $Z_{\text{flow}} \ge 3.0$ (a genuine 3-sigma volume shock relative to prevailing liquidity).
+- **Secondary Metric:** Relative volume fraction $q_{\text{sweep}} = \frac{V_{\text{sweep}, 100\text{ms}}}{V_{\text{market}, 100\text{ms}}} \ge 0.40$.
+
+---
+
+### 15.7 Corrected Invariant-Driven 30-Day Operational Scorecard (Oct 5 $\to$ Nov 5)
+
+#### 1. Multiple-Testing Correction for Satellite Promotion
+Testing 7 satellite hypotheses at an unadjusted $\alpha = 0.05$ creates a family-wise false positive rate of $1 - (0.95)^7 \approx 30.2\%$. 
+
+**The Promotion Rule:**  
+A satellite sleeve is promoted to live capital candidacy if and only if it satisfies **Holm-Bonferroni Family-Wise Error Rate Control**:
+
+$$p_{\text{Holm}} < 0.05 \quad \text{AND} \quad CI_{99\%}(\text{Net Edge}) > H_{\text{economic}}$$
+
+#### 2. Comprehensive Execution Friction Budget
+Rather than tracking taker fees in isolation, the risk budget tracks **Total Execution Friction**:
+
+$$F_{\text{total}} = F_{\text{fees}} + F_{\text{spread}} + F_{\text{impact}} + F_{\text{adverse}} + F_{\text{slippage}} \le 35\text{ bps/month}$$
+
+#### 3. Formal Month-1 Operational Scorecard:
 | Operational Metric | Minimum Acceptable Threshold | Target Benchmark | Failure Condition |
 | :--- | :--- | :--- | :--- |
 | **Causal Invariant Adherence** | 100% Zero-Lookahead | 100% Zero-Lookahead | Any leak of future candle/oracle data |
 | **Valuation Residual Reconcile** | Residual $\le \$0.50$ USDC | Residual $\le \$0.05$ USDC | Valuation error $> \$2.50$ (triggers HALT) |
-| **Grossman-Zhou Floor Defense** | Zero floor breaches | Cushion remains positive | NAV drops below $0.90 \times \text{HWM}$ |
-| **Friction Budget Tracking** | Taker fees $\le 20\text{ bps/month}$ | Taker fees $\le 10\text{ bps/month}$ | Fee churn $> 45\text{ bps/month}$ |
+| **Two-Tier Floor Defense** | Zero breaches of $0.80 \times \text{HWM}$ | Zero breaches of $0.90 \times \text{HWM}$ | Core floor or satellite kill floor breached |
+| **Total Friction Budget** | $F_{\text{total}} \le 35\text{ bps/month}$ | $F_{\text{total}} \le 20\text{ bps/month}$ | Total friction $> 50\text{ bps/month}$ |
 | **Polymarket OOS Sample Growth** | $N \ge 25$ settled trades | $N \ge 35$ settled trades | Sample size $< 20$ trades |
 | **Ratchet Episode Maturation** | $N \ge 40$ episodes logged | $N \ge 60$ episodes logged | Sample size $< 30$ episodes |
-| **Orthogonal Sleeve Edge** | At least 1 sleeve with $p < 0.05$ | 2 sleeves passing promotion gate | All sleeves fail economic hurdle |
+| **Orthogonal Sleeve Promotion** | At least 1 sleeve passing $p_{\text{Holm}} < 0.05$ | 2 sleeves passing promotion gate | All sleeves fail economic hurdle |
 | **Turnover Discipline** | Zero forced rebalances | 72H cadence strictly preserved | Increasing turnover to generate activity |
 
-Through this governance framework, the portfolio combines the **patience of an institutional macro trend engine** with the **responsiveness of event-driven, orthogonal satellite sleeves**.
+---
+
+### 15.8 Campaign Execution Priorities
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        RESEARCH CAMPAIGN EXECUTION PRIORITY                            │
+│                                                                                        │
+│  [TIER 1: Idle-Capital Alpha] ──► EXP-106 (Transition) > EXP-107 (RV) > EXP-105 (Liq)│
+│  [TIER 2: Asymmetric Skew]    ──► EXP-108 (Breakout)   > EXP-109 (Squeeze)             │
+│  [TIER 3: Microstructure]     ──► EXP-110 (Lead-Lag)   > EXP-111 (Execution Overlay)  │
+│  [TIER 4: Combination Engine] ──► EXP-112 (Governor; post individual sleeve promotion)│
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+Through this methodologically hardened architecture, the pipeline maintains the **impenetrable friction discipline of EXP-103** while methodically unlocking orthogonal returns from idle capital.
