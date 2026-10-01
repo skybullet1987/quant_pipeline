@@ -5087,7 +5087,7 @@
       "completed_at_utc": "2026-10-01T14:51:56Z",
       "signal_version": "v3.5.0",
       "research_family": "TIER_A2_SATELLITE",
-      "hypothesis": "Funding / Open Interest Squeeze Engine (Extreme Funding Mean Reversion M1)",
+      "hypothesis": "Funding-Extreme Anti-Crowding Reversal (M1): Extreme funding dislocation contains forward price reversal information",
       "portfolio_spec": "FUNDING_DISLOCATION_REVERSION",
       "training_spec": "CANONICAL_POINT_IN_TIME_365D",
       "parent_experiment_id": "EXP-103",
@@ -5099,8 +5099,14 @@
         "win_rate_pct": 58.6,
         "information_coefficient": 0.253,
         "trades_count": 239,
-        "holm_p_value": 0.0077
-      }
+        "holm_p_value": 0.0077,
+        "economic_decomposition": {
+          "price_reversal_share_pct": 110.1,
+          "realized_funding_carry_share_pct": 2.1,
+          "net_edge_bps": 122.7
+        }
+      },
+      "canonical_name": "EXP-109: Funding-Extreme Anti-Crowding Reversal"
     },
     "EXP-112": {
       "experiment_id": "EXP-112",
@@ -5123,6 +5129,14 @@
         "calmar": 0.23,
         "net_cagr_lift_pct": 7.6,
         "idle_cash_days_monetized": 33.3
+      },
+      "provenance": {
+        "baseline_return_change_reason": "Rebalance cadence variation: +3.43% reflects strict 72H discrete holding (18-bar rebalance with deadband), whereas +6.04% reflects continuous 4H bar-by-bar top-quintile momentum tracking.",
+        "unconstrained_cagr_pct": 11.03,
+        "governed_cagr_pct": 6.82,
+        "additivity_ratio": 0.688,
+        "governed_discrete_max_dd_pct": 10.54,
+        "discrete_floor_semantics": "10% close-based satellite trigger with 10.54% realized discrete-bar maximum in the audit."
       }
     },
     "EXP-110": {
@@ -5179,6 +5193,12 @@
       "results": {
         "status_reason": "Preregistered out-of-sample forward verification. All parameters frozen: EXP-103 Core, EXP-109 M1, EXP-106, EXP-105, Two-Tier Floor (0.90/0.80 HWM). Zero retuning permitted.",
         "target_sample_period": "2026-10-05T00:00:00Z to 2026-11-05T00:00:00Z"
+      },
+      "acceptance_hurdles": {
+        "exp109_sleeve_ci": "CI_95_block_bootstrap(E[R_109]) > +25 bps",
+        "exp109_portfolio_delta": "CI_95(Delta_PnL_portfolio_109) > 0",
+        "two_tier_floor_defense": "Zero breaches of 0.80 HWM; max discrete DD <= 12.0%",
+        "governance_mandate": "Zero parameter modifications during Oct 5 - Nov 5, 2026"
       }
     }
   },

@@ -19685,4 +19685,56 @@ To determine whether portfolio returns stem from genuine multi-sleeve orthogonal
 At the audited post-forensic baseline (+6.82% to +11.03% CAGR), static geometric compounding to 10x requires **22 to 35 years**. 
 A2 successfully solves **defensive capital idleness** and **orthogonal return generation**, but it does NOT claim to have solved 10x compounding. High-velocity compounding requires capacity scaling, dynamic gearing, and systematic execution improvements, which must be certified under strict causal discipline without retroactively inflating risk.
 
+---
+
+### 15.11 Preregistered Specification: EXP-113 (A2 Additivity & Out-of-Sample Certification)
+
+**Operational Period:** October 5, 2026 at 00:00:00 UTC $\longrightarrow$ November 5, 2026 at 00:00:00 UTC  
+**Research Mandate:** **ALL ALPHA DISCOVERY IS OFFICIALLY FROZEN.**  
+The pipeline moves from discovery to strict prospective measurement. Zero parameter retuning, zero cadence modifications, zero new indicators, and zero threshold sweeps are permitted during the 30-day forward evaluation.
+
+#### 1. Baseline Provenance Reconciliation:
+To maintain mathematical integrity across research iterations, baseline metrics carry explicit provenance and execution mode labels:
+* `BASELINE_RETURN_CHANGE_REASON`: Rebalance cadence variation. The $+3.43\%$ CAGR reflects strict **72H discrete holding** ($18$-bar rebalance with turnover deadband), whereas $+6.04\%$ reflects **continuous 4H bar-by-bar top-quintile momentum tracking**.
+* **Canonical Mode Labels:**
+  * `EXP-112 Unconstrained CAGR = +11.03%` (Unconstrained diagnostic benchmark, floors disabled).
+  * `EXP-112 Governed CAGR = +6.82%` (Two-tier governed executable portfolio, 10% satellite trigger).
+  * `Core Baseline Governed CAGR = +6.04%` (Governed mode) / `+3.43%` (72H discrete mode).
+
+#### 2. Discrete Floor Semantics:
+The $10.54\%$ maximum drawdown observed in the audit is formally documented as:
+> **"A 10% close-based satellite trigger with a 10.54% realized discrete-bar maximum under 4H discrete enforcement."**
+Because the satellite kill switch activates on the close of bar $t$ for execution on bar $t+1$, an adverse intra-bar or gap move can overshoot the $10.00\%$ trigger before exposure is fully eliminated. Core $0.80 \times \text{HWM}$ floor remained 100% unbreached (0 bars).
+
+#### 3. EXP-109 Production Re-Classification:
+* **Canonical Name:** **EXP-109: Funding-Extreme Anti-Crowding Reversal** (replaces "Funding Squeeze Engine").
+* **Core Causal Hypothesis:** *"Does extreme funding contain forward price information?"* (verified: price reversal accounts for $110.1\%$ of net edge; funding carry accounts for $2.1\%$).
+* **Sign Convention Hardening:** 1-day 99% $\text{CVaR}$ is frozen under the return convention: $+0.22\%$ represents **expected positive tail return** during cash floor regimes (equivalent to $-0.22\%$ tail loss under the loss convention; zero negative tail loss).
+* **Two-Dimensional Acceptance Standard:**
+  1. *Sleeve-Level Edge:* $\boxed{CI_{OOS}(\mathbb{E}[R_{109}]) > H_{\text{economic}} = +25\text{ bps/trade}}$
+  2. *Portfolio-Level Edge:* $\boxed{CI_{OOS}(\Delta PnL_{\text{portfolio}, 109}) > 0}$ (resolving the Config 2 paradox where standalone alpha must overcome satellite kill and capital allocation constraints).
+
+#### 4. Statistical Dependence & Bootstrap Architecture:
+To prevent inflated $t$-statistics from overlapping holding periods, cross-sectional clustering, and regime persistence, all forward confidence intervals in EXP-113 must be calculated using:
+$$\text{Block Bootstrap / Event-Clustered Bootstrap with HAC Variance-Covariance Matrix}$$
+rather than assuming IID trade returns.
+
+#### 5. Portfolio Orthogonality Invariants:
+EXP-113 will track the following empirical co-movement metrics continuously:
+* $\beta_{109, \text{BTC}}$ and $\beta_{109, \text{market}}$ across all bars, cash floor bars, active core bars, and tail-loss regimes.
+* True portfolio tail contribution: $\Delta \text{CVaR}_{99}(\text{Core} + 109)$ relative to Core alone.
+* Sub-additivity tracking: confirming whether the empirical interaction ratio remains near $0.688x$.
+
+#### 6. Formal Month-1 EXP-113 Acceptance Scorecard:
+| Evaluation Dimension | Metric Target | Minimum Hurdle | Invalidation Criterion |
+| :--- | :--- | :--- | :--- |
+| **EXP-109 Standalone** | Block-Bootstrap $CI_{95\%}(\mathbb{E}[R_{109}])$ | $> +25\text{ bps}$ | $CI_{95\%} \le 0$ (Alpha decay) |
+| **EXP-109 Portfolio** | Marginal $\Delta PnL_{\text{portfolio}}$ | $> \$0.00\text{ USDC}$ | $\Delta PnL < -\$10.00$ (Drag) |
+| **EXP-106 Reproduction** | Recovery Cash Monetization | $\ge 2\text{ recovery bars}$ | Negative delta vs flat cash |
+| **EXP-105 Maturation** | Live Liquidation Sprints | $N \ge 15\text{ episodes}$ | Classifier PnL $<$ Fade PnL |
+| **Two-Tier Floor Defense** | Discrete Drawdown from HWM | $\le 12.00\%$ | Breach of $0.80 \times \text{HWM}$ |
+| **Friction Discipline** | Total Realized Friction | $\le 35\text{ bps/month}$ | Friction $> 50\text{ bps/month}$ |
+| **Governance Freeze** | Pipeline Code Modifications | **0 changes to alpha** | Any retuning or cadence change |
+
+
 
