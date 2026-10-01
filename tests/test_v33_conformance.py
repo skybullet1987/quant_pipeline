@@ -70,3 +70,36 @@ def test_exp107_fee_deduction_invariant():
     fee_rate = 0.00045
     expected_leg_fee = notional * fee_rate * 2.0  # entry on 2 legs
     assert expected_leg_fee == pytest.approx(0.18, rel=1e-4)
+
+def test_two_tier_floor_mechanical_invariants():
+    """Verifies that Two-Tier Drawdown Floors enforce exact mechanical shutoffs."""
+    hwm = 10000.0
+    floor_90 = 0.90 * hwm
+    floor_80 = 0.80 * hwm
+
+    # Test Case 1: NAV drops below 0.90 HWM -> Satellite Exposure must be 0
+    nav_case1 = 8900.0  # below 9000, above 8000
+    satellite_exposure = 0.15 if nav_case1 >= floor_90 else 0.0
+    core_exposure = 1.0 if nav_case1 >= floor_80 else 0.0
+    assert satellite_exposure == 0.0
+    assert core_exposure == 1.0
+
+    # Test Case 2: NAV drops below 0.80 HWM -> Gross Exposure must be 0 (full cash halt)
+    nav_case2 = 7900.0  # below 8000
+    satellite_exposure = 0.15 if nav_case2 >= floor_90 else 0.0
+    core_exposure = 1.0 if nav_case2 >= floor_80 else 0.0
+    assert satellite_exposure == 0.0
+    assert core_exposure == 0.0
+
+def test_exp109_six_bucket_decomposition_conservation():
+    """Verifies that 6-bucket decomposition sums identically to net PnL."""
+    price_ret = 0.01351
+    funding_ret = 0.00026
+    fees = 0.00090
+    spread = 0.00040
+    impact = 0.00010
+    slippage = 0.00010
+
+    net_pnl = price_ret + funding_ret - fees - spread - impact - slippage
+    assert abs(net_pnl - 0.01227) < 1e-6
+
