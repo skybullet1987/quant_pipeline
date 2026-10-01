@@ -8,9 +8,13 @@ synthetic aggressive sweeps, validating them causally against the 1,000ms delaye
 
 Causal Invariants:
   1. Never assume an aggressive sweep is a liquidation until verified by !forceOrder.
-  2. Measure empirical lead time: Delta_T = T_recv(forceOrder) - T_synth(sweep).
-  3. Measure multi-horizon queue recovery: 50ms, 100ms, 250ms, 500ms.
-  4. Track Precision, Recall, False Positive Rate (FPR), and Lead-Time distributions.
+  2. Measure dual lead times:
+       Lead_event = T_exchange(forceOrder) - T_exchange(sweep)
+       Lead_actionable = T_recv(forceOrder) - T_detect(sweep)
+  3. Separate precision and recall:
+       Precision = matches / synthetic_sweeps
+       ObservableRecall = matches / eligible_forceOrders
+  4. Measure proxy depth recovery (resting depth near trigger relative to 10% sweep notional).
 """
 
 import os
@@ -64,7 +68,9 @@ class TradeTapeDeCensoringEngine:
         self.completed_sweeps_count = 0
         self.matched_force_orders_count = 0
         self.unmatched_sweeps_count = 0
-        self.lead_times_ms: List[float] = []
+        self.eligible_force_orders_count = 0
+        self.actionable_lead_times_ms: List[float] = []
+        self.event_lead_times_ms: List[float] = []
         
         # Load state if present
         self.load_state()
@@ -74,41 +80,61 @@ class TradeTapeDeCensoringEngine:
             try:
                 with open(STATE_FILE, "r") as f:
                     data = json.load(f)
-                    self.completed_sweeps_count = data.get("total_synthetic_sweeps", 0)
-                    self.matched_force_orders_count = data.get("matched_force_orders", 0)
-                    self.unmatched_sweeps_count = data.get("unmatched_sweeps", 0)
-                    self.lead_times_ms = data.get("lead_times_sample", [])[-500:]
+                    m = data.get("metrics", data)
+                    self.completed_sweeps_count = m.get("total_synthetic_sweeps", 0)
+                    self.matched_force_orders_count = m.get("matched_force_orders", 0)
+                    self.unmatched_sweeps_count = m.get("unmatched_sweeps", 0)
+                    self.eligible_force_orders_count = m.get("eligible_force_orders_seen", 0)
+                    self.actionable_lead_times_ms = data.get("actionable_lead_times_sample", data.get("lead_times_sample", []))[-500:]
+                    self.event_lead_times_ms = data.get("event_lead_times_sample", [])[-500:]
             except Exception as e:
                 logger.warning(f"Could not load state: {e}")
 
     def save_state(self):
+        # Precision: Matched sweeps / Total synthetic sweeps detected
         match_precision = (self.matched_force_orders_count / self.completed_sweeps_count * 100.0) if self.completed_sweeps_count > 0 else 0.0
-        p50_lead = float(np.median(self.lead_times_ms)) if self.lead_times_ms else 0.0
-        p95_lead = float(np.percentile(self.lead_times_ms, 95)) if len(self.lead_times_ms) >= 5 else 0.0
-        mean_lead = float(np.mean(self.lead_times_ms)) if self.lead_times_ms else 0.0
+        # Recall: Matched sweeps / Eligible observed forceOrder broadcasts
+        observable_recall = (self.matched_force_orders_count / self.eligible_force_orders_count * 100.0) if self.eligible_force_orders_count > 0 else 0.0
+
+        p50_act = float(np.median(self.actionable_lead_times_ms)) if self.actionable_lead_times_ms else 0.0
+        p95_act = float(np.percentile(self.actionable_lead_times_ms, 95)) if len(self.actionable_lead_times_ms) >= 5 else 0.0
+        mean_act = float(np.mean(self.actionable_lead_times_ms)) if self.actionable_lead_times_ms else 0.0
+
+        p50_evt = float(np.median(self.event_lead_times_ms)) if self.event_lead_times_ms else 0.0
+        p95_evt = float(np.percentile(self.event_lead_times_ms, 95)) if len(self.event_lead_times_ms) >= 5 else 0.0
+        mean_evt = float(np.mean(self.event_lead_times_ms)) if self.event_lead_times_ms else 0.0
 
         state = {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "governance": {
                 "experiment": "EXP-202",
-                "specification": "v3.2-trade-tape-decensoring",
+                "specification": "v3.3-trade-tape-decensoring-recalled",
                 "volume_hurdle_usd": self.hurdle_usd,
                 "window_ms": SWEEP_WINDOW_MS,
                 "observable_recovery_horizons_ms": [100, 250, 500],
-                "note": "50ms recovery unobservable from 100ms depth feed; empirical measurements start at 100ms"
+                "lead_time_definitions": {
+                    "actionable": "T_local_recv(forceOrder) - T_local_detect(synthetic_sweep)",
+                    "event": "T_exchange(forceOrder) - T_exchange(sweep_trade)"
+                },
+                "recovery_metric_definition": "proxy_depth_recovery: resting depth near trigger relative to 10% sweep notional (proxy, not true replenishment flow)"
             },
             "metrics": {
                 "total_synthetic_sweeps": self.completed_sweeps_count,
                 "matched_force_orders": self.matched_force_orders_count,
                 "unmatched_sweeps": self.unmatched_sweeps_count,
+                "eligible_force_orders_seen": self.eligible_force_orders_count,
                 "forceOrder_match_precision_pct": round(match_precision, 2),
-                "forceOrder_observable_recall_pct": round(match_precision, 2), # public forceOrder is an observable label
-                "lead_time_mean_ms": round(mean_lead, 1),
-                "lead_time_p50_ms": round(p50_lead, 1),
-                "lead_time_p95_ms": round(p95_lead, 1),
-                "lead_times_count": len(self.lead_times_ms)
+                "forceOrder_observable_recall_pct": round(observable_recall, 2),
+                "lead_time_actionable_mean_ms": round(mean_act, 1),
+                "lead_time_actionable_p50_ms": round(p50_act, 1),
+                "lead_time_actionable_p95_ms": round(p95_act, 1),
+                "lead_time_event_mean_ms": round(mean_evt, 1),
+                "lead_time_event_p50_ms": round(p50_evt, 1),
+                "lead_time_event_p95_ms": round(p95_evt, 1),
+                "matched_samples_count": len(self.actionable_lead_times_ms)
             },
-            "lead_times_sample": self.lead_times_ms[-100:]
+            "actionable_lead_times_sample": self.actionable_lead_times_ms[-100:],
+            "event_lead_times_sample": self.event_lead_times_ms[-100:]
         }
         with open(STATE_FILE, "w") as f:
             json.dump(state, f, indent=2)
@@ -162,10 +188,11 @@ class TradeTapeDeCensoringEngine:
             "detect_time_ns": recv_ns,
             "detect_time_sec": now_sec,
             "matched_force_order": False,
-            "lead_time_ms": None,
-            "recovery_100ms_ratio": None,
-            "recovery_250ms_ratio": None,
-            "recovery_500ms_ratio": None,
+            "lead_time_actionable_ms": None,
+            "lead_time_event_ms": None,
+            "proxy_depth_recovery_100ms_ratio": None,
+            "proxy_depth_recovery_250ms_ratio": None,
+            "proxy_depth_recovery_500ms_ratio": None,
             "forward_move_500ms_bps": None,
             "status": "PENDING_CONFIRMATION"
         }
@@ -173,12 +200,17 @@ class TradeTapeDeCensoringEngine:
         logger.info(f"[SYNTHETIC SWEEP DETECTED] {side} | Notional: ${notional:,.0f} | Ticks: {ticks} | Waiting for !forceOrder...")
 
         # Schedule recovery check in background
-        asyncio.create_task(self.monitor_queue_recovery(sweep_id, min_px if side == "SELL_SWEEP" else max_px, notional))
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self.monitor_queue_recovery(sweep_id, min_px if side == "SELL_SWEEP" else max_px, notional))
+        except RuntimeError:
+            pass
 
     async def monitor_queue_recovery(self, sweep_id: str, trigger_px: float, notional: float):
-        """Measures resting queue recovery at observable 100ms, 250ms, and 500ms horizons."""
-        horizons = [(0.100, "recovery_100ms_ratio"),
-                    (0.250, "recovery_250ms_ratio"), (0.500, "recovery_500ms_ratio")]
+        """Measures resting queue recovery proxy at observable 100ms, 250ms, and 500ms horizons."""
+        horizons = [(0.100, "proxy_depth_recovery_100ms_ratio"),
+                    (0.250, "proxy_depth_recovery_250ms_ratio"),
+                    (0.500, "proxy_depth_recovery_500ms_ratio")]
         
         for delay, key in horizons:
             await asyncio.sleep(delay)
@@ -207,6 +239,9 @@ class TradeTapeDeCensoringEngine:
         sym = order.get("s")
         if sym != "BTCUSDT":
             return
+
+        # Track every eligible observed liquidation broadcast on BTCUSDT for true recall denominator
+        self.eligible_force_orders_count += 1
         
         force_side = order.get("S") # SELL (liquidating long) or BUY (liquidating short)
         force_ts_ms = order.get("T", 0)
@@ -220,21 +255,28 @@ class TradeTapeDeCensoringEngine:
                 # Check confirmation window (within 2 seconds)
                 time_delta_sec = recv_sec - sweep["detect_time_sec"]
                 if 0.0 <= time_delta_sec <= CONFIRMATION_WINDOW_SEC:
-                    lead_time_ms = (recv_ns - sweep["detect_time_ns"]) / 1_000_000.0
+                    lead_actionable_ms = (recv_ns - sweep["detect_time_ns"]) / 1_000_000.0
+                    lead_event_ms = float(force_ts_ms - sweep["exchange_ts_ms"])
                     sweep["matched_force_order"] = True
-                    sweep["lead_time_ms"] = round(lead_time_ms, 2)
+                    sweep["lead_time_actionable_ms"] = round(lead_actionable_ms, 2)
+                    sweep["lead_time_event_ms"] = round(lead_event_ms, 2)
                     sweep["force_order_recv_ns"] = recv_ns
                     sweep["force_order_ts_ms"] = force_ts_ms
                     sweep["status"] = "CONFIRMED_BY_FORCE_ORDER"
                     
                     self.matched_force_orders_count += 1
-                    self.lead_times_ms.append(lead_time_ms)
+                    self.actionable_lead_times_ms.append(lead_actionable_ms)
+                    self.event_lead_times_ms.append(lead_event_ms)
                     matched_id = s_id
                     
                     logger.info(f"[CONFIRMATION MATCHED] Sweep {s_id} verified by !forceOrder! "
-                                f"Empirical Lead Time: {lead_time_ms:.1f} ms")
+                                f"Actionable Lead: {lead_actionable_ms:.1f}ms | Exchange Event Lead: {lead_event_ms:.1f}ms")
                     self.finalize_sweep(sweep)
                     break
+        
+        # Save state periodically on force orders to keep recall updated
+        if self.eligible_force_orders_count % 5 == 0:
+            self.save_state()
 
     def finalize_sweep(self, sweep: Dict[str, Any]):
         s_id = sweep["sweep_id"]

@@ -41,13 +41,17 @@ def main():
     if exp202:
         m = exp202.get("metrics", {})
         print(f"  Total Sweeps Detected: {m.get('total_synthetic_sweeps', 0)} | "
-              f"Matched Force Orders: {m.get('matched_force_orders', 0)}")
-        print(f"  forceOrder-Match Precision: {m.get('forceOrder_match_precision_pct', 0.0):.1f}% | "
-              f"forceOrder-Observable Recall: {m.get('forceOrder_observable_recall_pct', 0.0):.1f}%")
-        print(f"  Lead Time: Mean = {m.get('lead_time_mean_ms', 0.0):.1f} ms | "
-              f"P50 = {m.get('lead_time_p50_ms', 0.0):.1f} ms | "
-              f"P95 = {m.get('lead_time_p95_ms', 0.0):.1f} ms")
-        print("  Observable Queue Recovery Horizons: [100ms, 250ms, 500ms] (50ms unobservable on 100ms feed)")
+              f"Matched Force Orders: {m.get('matched_force_orders', 0)} | "
+              f"Eligible forceOrders Seen: {m.get('eligible_force_orders_seen', 0)}")
+        print(f"  Precision (matches/sweeps): {m.get('forceOrder_match_precision_pct', 0.0):.1f}% | "
+              f"Observable Recall (matches/eligible): {m.get('forceOrder_observable_recall_pct', 0.0):.1f}%")
+        print(f"  Actionable Lead (T_recv - T_detect): Mean = {m.get('lead_time_actionable_mean_ms', 0.0):.1f} ms | "
+              f"P50 = {m.get('lead_time_actionable_p50_ms', 0.0):.1f} ms | "
+              f"P95 = {m.get('lead_time_actionable_p95_ms', 0.0):.1f} ms")
+        print(f"  Exchange Event Lead (T_exch_fo - T_exch_sw): Mean = {m.get('lead_time_event_mean_ms', 0.0):.1f} ms | "
+              f"P50 = {m.get('lead_time_event_p50_ms', 0.0):.1f} ms | "
+              f"P95 = {m.get('lead_time_event_p95_ms', 0.0):.1f} ms")
+        print("  Depth Recovery Proxy: [100ms, 250ms, 500ms] (proxy resting depth near trigger; not flow replenishment)")
     else:
         print("  State initializing...")
 
@@ -68,23 +72,23 @@ def main():
 
     # 3. EXP-303
     exp303 = load_json(DATA_DIR / "polymarket" / "shadow_fast_unwind_state.json")
-    print("\n[3] EXP-303: POLYMARKET EXECUTABLE FAST-UNWIND VS MATURITY (EXPLORATORY N=5)")
+    print("\n[3] EXP-303: POLYMARKET FAST-UNWIND COUNTERFACTUAL MODEL (N=6)")
     if exp303:
         m = exp303.get("metrics", {})
         pa = m.get("policy_a_hold_to_maturity", {})
         pb1 = m.get("policy_b1_taker_unwind", {})
         pb2 = m.get("policy_b2_maker_first_scalp", {})
-        print(f"  Sample: {exp303.get('sample_size', 0)} settled forward trades (Insufficent N to establish superiority)")
-        print(f"  Policy A (Maturity):   PnL = ${pa.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
+        print(f"  Sample: {exp303.get('sample_size', 0)} settled forward trades (All PnL net of entry/exit fees)")
+        print(f"  Policy A (Maturity):   Net PnL = ${pa.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
               f"EV/evt = ${pa.get('ev_per_event_usd', 0.0):+.2f} | "
               f"Hold: {pa.get('median_holding_time_sec', 0.0):.0f}s | "
               f"PnL/Cap-Hr: ${pa.get('pnl_per_capital_hour', 0.0):.1f}")
-        print(f"  Policy B1 (Taker Cut): PnL = ${pb1.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
+        print(f"  Policy B1 (Taker Cut): Net PnL = ${pb1.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
               f"EV/evt = ${pb1.get('ev_per_event_usd', 0.0):+.2f} | "
               f"Forgone: ${pb1.get('total_forgone_opportunity_usd', 0.0):.2f} | "
               f"Hold: {pb1.get('median_holding_time_sec', 0.0):.0f}s | "
               f"PnL/Cap-Hr: ${pb1.get('pnl_per_capital_hour', 0.0):.1f}")
-        print(f"  Policy B2 (Maker Cut): PnL = ${pb2.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
+        print(f"  Policy B2 (Maker Cut): Net PnL = ${pb2.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
               f"EV/evt = ${pb2.get('ev_per_event_usd', 0.0):+.2f} | "
               f"Forgone: ${pb2.get('total_forgone_opportunity_usd', 0.0):.2f} | "
               f"Hold: {pb2.get('median_holding_time_sec', 0.0):.0f}s | "
@@ -98,6 +102,7 @@ def main():
     if ratchet:
         p = ratchet.get("policy_performance", {})
         r_inc = ratchet.get("routing_increments", {})
+        p_vals = ratchet.get("confirmatory_routing_p_values", {})
         total_eps = ratchet.get("sample_size", {}).get("total_independent_episodes", 0)
         print(f"  Total Independent Episodes: {total_eps}")
         for pol, d in p.items():
@@ -107,6 +112,10 @@ def main():
         print(f"  Paired D (Composite vs Random): Mean = ${r_inc.get('delta_composite_vs_random_mean_usd', 0.0):+.4f} | "
               f"Median = ${r_inc.get('delta_composite_vs_random_median_usd', 0.0):+.4f} | "
               f"P(D > 0) = {r_inc.get('p_composite_outperforms_random_pct', 0.0):.1f}%")
+        print(f"  Composite Gate: p_perm = {p_vals.get('p_composite_paired_permutation', 1.0):.4f} | "
+              f"CI_99_lower = ${p_vals.get('ci_99_lower_composite_usd', 0.0):+.4f} | "
+              f"H_economic = ${p_vals.get('h_economic_hurdle_usd', 0.05):.2f} | "
+              f"Hurdle Met: {p_vals.get('composite_effect_size_passed', False)}")
     else:
         print("  State initializing...")
 
@@ -117,10 +126,10 @@ def main():
         symbols = exp401.get("symbols", {})
         for sym, d in symbols.items():
             print(f"  {sym:4} | Mid Spread: {d.get('mid_spread_bps', 0.0):+5.1f} bps | "
+                  f"Exec Entry (Short HL): {d.get('executable_entry_short_hl_bps', 0.0):+5.1f} bps | "
                   f"8H Carry: {d.get('funding_carry_8h_bps', 0.0):+5.2f} bps | "
-                  f"Basis Convergence (8h): {d.get('expected_basis_convergence_8h_bps', 0.0):+5.2f} bps | "
-                  f"Combined Edge (vs 21.5bp hurdle): {d.get('combined_8h_edge_bps', 0.0):+5.2f} bps | "
-                  f"Exceeded: {d.get('hurdle_exceeded')}")
+                  f"Modeled 75% Conv: {d.get('modeled_75pct_basis_convergence_scenario_bps', 0.0):+5.2f} bps | "
+                  f"Combined Edge: {d.get('combined_8h_edge_bps', 0.0):+5.2f} bps")
     else:
         print("  State initializing...")
 

@@ -90,11 +90,12 @@ class FastUnwindShadowEngine:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             "governance": {
                 "experiment": "EXP-303",
-                "specification": "v3.2-executable-fast-unwind",
+                "specification": "v3.3-counterfactual-unwind-model",
                 "theta_target": self.theta,
                 "fee_schedule": "crypto_7pct_dynamic",
-                "evidence_status": "EXPLORATORY_N5 (Insufficient sample to establish superiority)",
-                "findings_qualification": "Hold-to-maturity currently produces higher per-event expectancy ($16.24 vs $6.15); fast-unwind superiority is strictly in capital-hour turnover and conditional on available redeployment opportunities.",
+                "evidence_status": "COUNTERFACTUAL_PRICE_PATH_MODEL_N6 (Model-based counterfactual; pending live L2 VWAP bid matching)",
+                "findings_qualification": "B1/B2 are price-path counterfactuals with modeled repricing latency (0.15*TTE) and zero-spread maker assumptions in B2. Entry and exit dynamic crypto fees are strictly deducted across all arms.",
+                "fee_accounting": "All policies deduct entry taker fee (7% dynamic schedule) and exit fees where applicable",
                 "risk_mitigation": "Eliminates post-exit final-resolution exposure; does not eliminate execution/spread risk prior to exit."
             },
             "sample_size": total,
@@ -152,23 +153,22 @@ class FastUnwindShadowEngine:
         won = trade.get("won", False)
         tte = trade.get("seconds_to_expiry", 600.0)
 
-        # Policy A: Hold to maturity
+        # Policy A: Hold to maturity (Strict net PnL subtracting entry fee)
         entry_fee = trade.get("taker_fee_usd", notional * FEE_RATE_CRYPTO * entry_px * (1.0 - entry_px))
         payout_a = shares * 1.0 if won else 0.0
-        net_pnl_a = payout_a - notional
+        net_pnl_a = round(payout_a - notional - entry_fee, 2)
 
-        # Policy B1: Taker Unwind at Target
-        # Under B1, position exits as soon as executable bid >= entry_px + theta
+        # Policy B1: Taker Unwind at Target (Strict net PnL subtracting entry fee AND exit fee)
         target_exit_px = min(entry_px + self.theta, 0.98)
         exit_notional_b1 = shares * target_exit_px
         exit_fee_b1 = exit_notional_b1 * FEE_RATE_CRYPTO * target_exit_px * (1.0 - target_exit_px)
-        net_pnl_b1 = round(exit_notional_b1 - notional - exit_fee_b1, 2)
+        net_pnl_b1 = round(exit_notional_b1 - notional - entry_fee - exit_fee_b1, 2)
         
         # Empirical repricing latency modeled from spot lead-lag
         t_repricing = min(max(tte * 0.15, 12.0), 90.0)
 
-        # Policy B2: Maker-First Scalp (zero exit fee)
-        net_pnl_b2 = round(exit_notional_b1 - notional, 2)
+        # Policy B2: Maker-First Scalp (zero exit fee, strictly subtracting entry fee)
+        net_pnl_b2 = round(exit_notional_b1 - notional - entry_fee, 2)
         hold_b2 = t_repricing + 0.50
 
         record = {
@@ -185,13 +185,15 @@ class FastUnwindShadowEngine:
                 "policy_name": "HOLD_TO_MATURITY",
                 "exit_price": 1.00 if won else 0.00,
                 "won": won,
-                "net_pnl_usd": round(net_pnl_a, 2),
+                "entry_fee_usd": round(entry_fee, 4),
+                "net_pnl_usd": net_pnl_a,
                 "holding_seconds": tte
             },
             "policy_b1": {
                 "policy_name": "EXECUTABLE_TAKER_UNWIND",
                 "exit_price": round(target_exit_px, 4),
                 "maturity_price": 1.00 if won else 0.00,
+                "entry_fee_usd": round(entry_fee, 4),
                 "exit_fee_usd": round(exit_fee_b1, 4),
                 "net_pnl_usd": net_pnl_b1,
                 "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b1, 2),
@@ -201,6 +203,7 @@ class FastUnwindShadowEngine:
                 "policy_name": "MAKER_FIRST_SCALP",
                 "exit_price": round(target_exit_px, 4),
                 "maturity_price": 1.00 if won else 0.00,
+                "entry_fee_usd": round(entry_fee, 4),
                 "exit_fee_usd": 0.0,
                 "net_pnl_usd": net_pnl_b2,
                 "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b2, 2),

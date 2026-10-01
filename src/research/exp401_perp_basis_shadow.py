@@ -80,10 +80,20 @@ class PerpBasisShadowEngine:
             bn_mid = self.bn_quotes[s]["mid"]
             hl_mid = self.hl_quotes[s]["mid"]
             hl_oracle = self.hl_quotes[s]["oracle"]
+            bn_bid = self.bn_quotes[s]["bid"]
+            bn_ask = self.bn_quotes[s]["ask"]
+            hl_bid = self.hl_quotes[s]["bid"]
+            hl_ask = self.hl_quotes[s]["ask"]
             
             spread_bps = ((hl_mid - bn_mid) / bn_mid * 10000.0) if bn_mid > 0 else 0.0
             oracle_spread_bps = ((hl_oracle - bn_mid) / bn_mid * 10000.0) if bn_mid > 0 else 0.0
             
+            # Executable cross-venue entry spreads (accounting for discrete two-leg spread)
+            # Scenario 1: Short HL (sell at hl_bid), Long BN (buy at bn_ask)
+            exec_spread_short_hl_bps = ((hl_bid - bn_ask) / bn_ask * 10000.0) if (bn_ask > 0 and hl_bid > 0) else 0.0
+            # Scenario 2: Long HL (buy at hl_ask), Short BN (sell at bn_bid)
+            exec_spread_long_hl_bps = ((bn_bid - hl_ask) / hl_ask * 10000.0) if (hl_ask > 0 and bn_bid > 0) else 0.0
+
             # Annualized funding rates
             bn_ann_funding = self.bn_quotes[s]["funding_8h"] * 3 * 365 * 100.0
             hl_ann_funding = self.hl_quotes[s]["funding_1h"] * 24 * 365 * 100.0
@@ -92,18 +102,19 @@ class PerpBasisShadowEngine:
             # Cashflow carry over 8H horizon (in bps of notional)
             carry_8h_bps = (self.hl_quotes[s]["funding_1h"] * 8 - self.bn_quotes[s]["funding_8h"]) * 10000.0
             
-            # Basis convergence: mean reversion of Mid_HL - Mid_BN
-            # Model 75% basis convergence over 8 hours
-            basis_convergence_8h_bps = abs(spread_bps) * 0.75
-            combined_8h_edge_bps = carry_8h_bps + basis_convergence_8h_bps - TOTAL_HURDLE_BPS
+            # Basis convergence: Modeled 75% convergence scenario assumption (Stress Test, NOT empirical finding)
+            modeled_75pct_convergence_8h_bps = abs(spread_bps) * 0.75
+            combined_8h_edge_bps = carry_8h_bps + modeled_75pct_convergence_8h_bps - TOTAL_HURDLE_BPS
 
             symbol_summary[s] = {
                 "bn_mid": bn_mid,
                 "hl_mid": hl_mid,
                 "mid_spread_bps": round(spread_bps, 2),
                 "oracle_spread_bps": round(oracle_spread_bps, 2),
+                "executable_entry_short_hl_bps": round(exec_spread_short_hl_bps, 2),
+                "executable_entry_long_hl_bps": round(exec_spread_long_hl_bps, 2),
                 "funding_carry_8h_bps": round(carry_8h_bps, 2),
-                "expected_basis_convergence_8h_bps": round(basis_convergence_8h_bps, 2),
+                "modeled_75pct_basis_convergence_scenario_bps": round(modeled_75pct_convergence_8h_bps, 2),
                 "combined_8h_edge_bps": round(combined_8h_edge_bps, 2),
                 "hurdle_exceeded": combined_8h_edge_bps > 0
             }
@@ -112,9 +123,11 @@ class PerpBasisShadowEngine:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             "governance": {
                 "experiment": "EXP-401",
-                "specification": "v3.2-cross-venue-basis-carry",
+                "specification": "v3.3-cross-venue-basis-carry-modeled",
                 "friction_hurdle_bps": TOTAL_HURDLE_BPS,
-                "venues": ["Binance_USDM", "Hyperliquid_L1"]
+                "venues": ["Binance_USDM", "Hyperliquid_L1"],
+                "convergence_assumption": "modeled_75pct_basis_convergence_scenario (Stress-test scenario assumption, NOT empirical finding)",
+                "executable_spread_note": "Mid-price spread (3-9 bps) collapses inside bid/ask spreads. Executable arbitrage requires Bid_rich - Ask_cheap exceeding the 21.5 bps hurdle."
             },
             "metrics": {
                 "total_samples": self.samples_count,

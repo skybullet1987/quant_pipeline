@@ -97,9 +97,9 @@ class TestV31Route2Conformance(unittest.TestCase):
         self.assertIsNotNone(self.engine.current_episode_id)
         current_ep = self.engine.active_episodes[self.engine.current_episode_id]
         
-        # Invariant 2: 4 parallel virtual positions were created for the counterfactuals
-        self.assertEqual(len(current_ep["positions"]), 4)
-        self.assertEqual(len(self.engine.active_virtual_positions), initial_virtual_pos_count + 4)
+        # Invariant 2: 5 parallel virtual positions were created for the counterfactuals (SOL, RANDOM, ROUND_ROBIN, MAX_OBI, COMPOSITE_RECOVERY)
+        self.assertEqual(len(current_ep["positions"]), 5)
+        self.assertEqual(len(self.engine.active_virtual_positions), initial_virtual_pos_count + 5)
         
         # Invariant 3: Primary dispatch was blocked to protect live sandbox, but virtual simulation proceeded
         self.assertFalse(current_ep["primary_dispatched"])
@@ -122,7 +122,7 @@ class TestV31Route2Conformance(unittest.TestCase):
         self.assertEqual(len(ep["subsequent_shocks"]), 1)
 
     def test_03_four_actual_policy_outcomes_evaluated(self):
-        """P0 Gate: Every episode must compute realized outcomes for SOL, RANDOM, ROUND_ROBIN, and MAX_OBI."""
+        """P0 Gate: Every episode must compute realized outcomes for SOL, RANDOM, ROUND_ROBIN, MAX_OBI, and COMPOSITE_RECOVERY."""
         metrics = {"total_usd": 2000000.0, "z_ofi": 3.00}
         now_ns = time.monotonic_ns()
         self.engine.handle_incoming_shock(time.time() * 1000.0, 83500.0, metrics, now_ns, now_ns + 10000)
@@ -130,7 +130,7 @@ class TestV31Route2Conformance(unittest.TestCase):
         ep = self.engine.active_episodes[ep_id]
 
         policy_keys = set(ep["positions"].keys())
-        expected_keys = {"SOL", "RANDOM", "ROUND_ROBIN", "MAX_OBI"}
+        expected_keys = {"SOL", "RANDOM", "ROUND_ROBIN", "MAX_OBI", "COMPOSITE_RECOVERY"}
         self.assertEqual(policy_keys, expected_keys)
 
         # Simulate price movement that triggers stops on all positions

@@ -40,6 +40,7 @@ from dataclasses import dataclass, field, asdict
 from typing import Dict, Any, List, Optional
 import websockets
 import aiohttp
+import numpy as np
 
 try:
     from scipy import stats as sp_stats
@@ -260,6 +261,12 @@ class RatchetShadowEngine:
             "SUI": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0},
             "DOGE": {"bid": 0.0, "ask": 0.0, "mid": 0.0, "bid_sz": 0.0, "ask_sz": 0.0}
         }
+        # Event-Relative Microstructure Flow State Machine (EXP-201C True Replenishment & Toxicity)
+        self.rolling_bid_additions: Dict[str, deque] = {c: deque() for c in ["SOL", "HYPE", "SUI", "DOGE"]}
+        self.rolling_bid_removals: Dict[str, deque] = {c: deque() for c in ["SOL", "HYPE", "SUI", "DOGE"]}
+        self.rolling_agg_sells: Dict[str, deque] = {c: deque() for c in ["SOL", "HYPE", "SUI", "DOGE"]}
+        self.last_book_snapshots: Dict[str, Dict[str, float]] = {c: {"bid": 0.0, "bid_sz": 0.0} for c in ["SOL", "HYPE", "SUI", "DOGE"]}
+
         self.btc_trend_window = deque(maxlen=300)
         self.last_stop_amendment_ts = 0.0
         self.stop_amendments_count = 0
@@ -283,6 +290,34 @@ class RatchetShadowEngine:
 
     def update_book(self, coin: str, bid: float, ask: float, bid_sz: float, ask_sz: float):
         if coin in self.current_order_books and bid > 0 and ask > 0:
+            now_sec = time.time()
+            prev = self.last_book_snapshots.get(coin, {"bid": 0.0, "bid_sz": 0.0})
+            prev_bid = prev["bid"]
+            prev_bid_sz = prev["bid_sz"]
+
+            # Event-Relative Bid Addition and Removal Tracking:
+            # 1. If bid price improved: new liquidity posted at higher price level (addition)
+            if prev_bid > 0:
+                if bid > prev_bid:
+                    self.rolling_bid_additions[coin].append((now_sec, bid_sz))
+                elif bid == prev_bid:
+                    delta_sz = bid_sz - prev_bid_sz
+                    if delta_sz > 0:
+                        self.rolling_bid_additions[coin].append((now_sec, delta_sz))
+                    elif delta_sz < 0:
+                        self.rolling_bid_removals[coin].append((now_sec, abs(delta_sz)))
+                elif bid < prev_bid:
+                    # Best bid dropped: previous resting depth was consumed or cancelled
+                    self.rolling_bid_removals[coin].append((now_sec, prev_bid_sz))
+
+            # Evict flow older than 5.0 seconds
+            cutoff = now_sec - 5.0
+            while self.rolling_bid_additions[coin] and self.rolling_bid_additions[coin][0][0] < cutoff:
+                self.rolling_bid_additions[coin].popleft()
+            while self.rolling_bid_removals[coin] and self.rolling_bid_removals[coin][0][0] < cutoff:
+                self.rolling_bid_removals[coin].popleft()
+
+            self.last_book_snapshots[coin] = {"bid": bid, "bid_sz": bid_sz}
             self.current_order_books[coin] = {
                 "bid": bid,
                 "ask": ask,
@@ -290,6 +325,69 @@ class RatchetShadowEngine:
                 "bid_sz": bid_sz,
                 "ask_sz": ask_sz
             }
+
+    def record_hyperliquid_trade(self, coin: str, px: float, sz: float, side: str):
+        """Records public trades on Hyperliquid to measure aggressive sell flow."""
+        if coin in self.rolling_agg_sells:
+            now_sec = time.time()
+            if side == "SELL": # Aggressive sell hitting bids
+                self.rolling_agg_sells[coin].append((now_sec, sz))
+            cutoff = now_sec - 5.0
+            while self.rolling_agg_sells[coin] and self.rolling_agg_sells[coin][0][0] < cutoff:
+                self.rolling_agg_sells[coin].popleft()
+
+    def get_replenishment_and_toxicity(self, coin: str, now_sec: float) -> Tuple[float, float]:
+        """
+        Computes rolling empirical replenishment velocity and trade toxicity over the last 5s:
+          R_i = V_bid,replenished / max(V_bid,removed, 1.0)
+          Toxicity_i = V_agg_sell / (V_bid,replenished + 0.01)
+        """
+        cutoff_5s = now_sec - 5.0
+        new_bids = sum(x[1] for x in self.rolling_bid_additions[coin] if x[0] >= cutoff_5s)
+        removed_bids = sum(x[1] for x in self.rolling_bid_removals[coin] if x[0] >= cutoff_5s)
+        agg_sells = sum(x[1] for x in self.rolling_agg_sells[coin] if x[0] >= cutoff_5s)
+
+        if removed_bids > 0:
+            r_i = new_bids / removed_bids
+        elif new_bids > 0:
+            r_i = new_bids
+        else:
+            r_i = self.current_order_books[coin]["bid_sz"] / max(self.current_order_books[coin]["ask_sz"], 0.001)
+
+        t_i = agg_sells / (new_bids + 0.01)
+        return r_i, t_i
+
+    async def monitor_episode_microstructure_trajectory(self, ep_id: str, candidates: List[str], t0_sec: float, pre_bids: Dict[str, float]):
+        """
+        Event-relative post-sweep state machine:
+        Samples bid replenishment additions and continued aggressive selling at 100ms, 250ms, 500ms.
+        """
+        horizons = [0.100, 0.250, 0.500]
+        trajectory = {}
+        for h in horizons:
+            elapsed = time.time() - t0_sec
+            if elapsed < h:
+                await asyncio.sleep(h - elapsed)
+            h_ms = int(h * 1000)
+            h_data = {}
+            for c in candidates:
+                added_h = sum(x[1] for x in self.rolling_bid_additions[c] if x[0] >= t0_sec)
+                removed_h = sum(x[1] for x in self.rolling_bid_removals[c] if x[0] >= t0_sec)
+                sells_h = sum(x[1] for x in self.rolling_agg_sells[c] if x[0] >= t0_sec)
+                r_h = round(added_h / max(removed_h, 1.0), 3) if removed_h > 0 else round(added_h, 3)
+                tox_h = round(sells_h / (added_h + 0.01), 3)
+                h_data[c] = {
+                    "pre_bid_sz": round(pre_bids.get(c, 0.0), 2),
+                    "new_bids_added": round(added_h, 2),
+                    "bids_removed": round(removed_h, 2),
+                    "agg_sells": round(sells_h, 2),
+                    "r_replenish": r_h,
+                    "toxicity": tox_h
+                }
+            trajectory[f"{h_ms}ms"] = h_data
+
+        if ep_id in self.active_episodes:
+            self.active_episodes[ep_id]["microstructure_trajectory"] = trajectory
 
     def recompute_position_state(self, pos: SprintPosition, current_px: float):
         """
@@ -605,25 +703,38 @@ class RatchetShadowEngine:
 
             # Policy 5: Standardized Composite Recovery Router (EXP-201C)
             # S_i = 0.40 * Z(OBI_i) + 0.40 * Z(R_i) - 0.20 * Z(Toxicity_i)
+            # CAUSAL INVARIANT: R_i is true flow replenishment velocity; Toxicity_i is aggressive sell flow
             mean_obi = float(np.mean(list(obi_by_asset.values())))
             std_obi = float(np.std(list(obi_by_asset.values()))) if float(np.std(list(obi_by_asset.values()))) > 1e-6 else 1.0
-            
-            replenish_ratios = {c: (l2_snapshot[c].get("bid_sz", 0.0) / max(l2_snapshot[c].get("ask_sz", 1.0), 0.001)) for c in candidates}
-            mean_r = float(np.mean(list(replenish_ratios.values())))
-            std_r = float(np.std(list(replenish_ratios.values()))) if float(np.std(list(replenish_ratios.values()))) > 1e-6 else 1.0
 
-            # Toxicity: relative sell pressure on the book
-            toxicity_ratios = {c: (l2_snapshot[c].get("ask_sz", 0.0) / max(l2_snapshot[c].get("bid_sz", 1.0), 0.001)) for c in candidates}
-            mean_tox = float(np.mean(list(toxicity_ratios.values())))
-            std_tox = float(np.std(list(toxicity_ratios.values()))) if float(np.std(list(toxicity_ratios.values()))) > 1e-6 else 1.0
+            replenish_by_asset = {}
+            toxicity_by_asset = {}
+            for c in candidates:
+                r_c, tox_c = self.get_replenishment_and_toxicity(c, now_sec)
+                replenish_by_asset[c] = r_c
+                toxicity_by_asset[c] = tox_c
+
+            mean_r = float(np.mean(list(replenish_by_asset.values())))
+            std_r = float(np.std(list(replenish_by_asset.values()))) if float(np.std(list(replenish_by_asset.values()))) > 1e-6 else 1.0
+
+            mean_tox = float(np.mean(list(toxicity_by_asset.values())))
+            std_tox = float(np.std(list(toxicity_by_asset.values()))) if float(np.std(list(toxicity_by_asset.values()))) > 1e-6 else 1.0
 
             composite_scores = {
                 c: (0.40 * ((obi_by_asset[c] - mean_obi) / std_obi) +
-                    0.40 * ((replenish_ratios[c] - mean_r) / std_r) -
-                    0.20 * ((toxicity_ratios[c] - mean_tox) / std_tox))
+                    0.40 * ((replenish_by_asset[c] - mean_r) / std_r) -
+                    0.20 * ((toxicity_by_asset[c] - mean_tox) / std_tox))
                 for c in candidates
             }
             p5_asset = max(candidates, key=lambda c: composite_scores[c])
+
+            # Launch async event-relative state machine tracker for this episode
+            pre_bids = {c: l2_snapshot[c].get("bid_sz", 0.0) for c in candidates}
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(self.monitor_episode_microstructure_trajectory(ep_id, candidates, now_sec, pre_bids))
+            except RuntimeError:
+                pass  # Running in synchronous unit test environment
 
             print(f"\n[>>> INDEPENDENT HIGH-VALUE SWEEP DETECTED ({ep_id}) <<<]"
                   f"\n  Binance USD-M Volume: ${metrics['total_usd']:,.0f} in 100ms | Z_OFI: {metrics['z_ofi']:.2f}"
@@ -633,7 +744,7 @@ class RatchetShadowEngine:
                   f"\n    Policy 2 (Random Eligible, seed={seed_val}): {p2_asset}"
                   f"\n    Policy 3 (Round-Robin, ep_idx={ep_idx}): {p3_asset}"
                   f"\n    Policy 4 (Max-OBI, imb={obi_by_asset[p4_asset]:+.2f}): {p4_asset}"
-                  f"\n    Policy 5 (Composite Recovery, score={composite_scores[p5_asset]:+.2f}): {p5_asset}", flush=True)
+                  f"\n    Policy 5 (Composite Flow Recovery, score={composite_scores[p5_asset]:+.2f}, R={replenish_by_asset[p5_asset]:.2f}, Tox={toxicity_by_asset[p5_asset]:.2f}): {p5_asset}", flush=True)
 
             # 3. Instantiate the 5 Virtual Counterfactual Sprints
             policy_positions: Dict[str, SprintPosition] = {}
@@ -864,6 +975,34 @@ class RatchetShadowEngine:
         median_delta_mcr = float(np.median(delta_mcr_vals)) if delta_mcr_vals else 0.0
         p_mcr_gt_0 = (sum(1 for x in delta_mcr_vals if x > 0) / len(delta_mcr_vals) * 100.0) if delta_mcr_vals else 0.0
 
+        # Paired Permutation Test & 99% Effect Size Confidence Interval (EXP-201C Governance)
+        H_ECONOMIC_USD = 0.05  # $0.05 per episode minimum worthwhile edge (25 bps on $20 capital)
+        p_composite_perm = 1.0
+        ci_99_lower_composite = 0.0
+        n_mcr = len(delta_mcr_vals)
+
+        if n_mcr >= 3:
+            np.random.seed(42)
+            n_perm = 5000
+            diffs = np.array(delta_mcr_vals)
+            obs_stat = float(np.mean(diffs))
+            # Permutation under null hypothesis of exchangeable signs: H0: mean(Delta) <= 0
+            signs = np.random.choice([-1.0, 1.0], size=(n_perm, n_mcr))
+            perm_means = np.mean(signs * diffs, axis=1)
+            p_composite_perm = float(np.mean(perm_means >= obs_stat))
+
+            # Bootstrap 99% confidence interval lower bound
+            boot_means = np.mean(np.random.choice(diffs, size=(n_perm, n_mcr), replace=True), axis=1)
+            ci_99_lower_composite = float(np.percentile(boot_means, 1.0))
+        elif n_mcr > 0:
+            ci_99_lower_composite = float(mean_delta_mcr)
+
+        composite_gate_passed = bool(
+            p_composite_perm < 0.01 and
+            ci_99_lower_composite > H_ECONOMIC_USD and
+            n_mcr >= 100
+        )
+
         summary = {
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "governance": {
@@ -922,8 +1061,12 @@ class RatchetShadowEngine:
                 "p_MOS": round(p_mos, 6),
                 "p_MOR": round(p_mor, 6),
                 "p_routing_max": round(p_routing, 6),
-                "conformance_hurdle": "p_routing < 0.01",
-                "gate_passed": (p_routing < 0.01 and total_eps >= 100)
+                "p_composite_paired_permutation": round(p_composite_perm, 6),
+                "ci_99_lower_composite_usd": round(ci_99_lower_composite, 4),
+                "h_economic_hurdle_usd": H_ECONOMIC_USD,
+                "composite_effect_size_passed": bool(ci_99_lower_composite > H_ECONOMIC_USD),
+                "conformance_hurdle": "p_routing < 0.01 AND p_composite < 0.01 AND CI_99_lower > $0.05 AND N >= 100",
+                "gate_passed": composite_gate_passed
             },
             "primary_sprint_summary": {
                 "total_completed": len(self.completed_sprints),
@@ -989,13 +1132,14 @@ async def run_shadow_daemon():
                 print(f"[*] Connecting to Hyperliquid L2 WebSocket ({HYPERLIQUID_WS_URL})...", flush=True)
                 async with websockets.connect(HYPERLIQUID_WS_URL, ping_interval=20, ping_timeout=10) as ws:
                     for coin in ["SOL", "HYPE", "SUI", "DOGE"]:
-                        sub_msg = {"method": "subscribe", "subscription": {"type": "l2Book", "coin": coin}}
-                        await ws.send(json.dumps(sub_msg))
-                    print("[+] Subscribed to Hyperliquid L2 books (SOL, HYPE, SUI, DOGE).", flush=True)
+                        await ws.send(json.dumps({"method": "subscribe", "subscription": {"type": "l2Book", "coin": coin}}))
+                        await ws.send(json.dumps({"method": "subscribe", "subscription": {"type": "trades", "coin": coin}}))
+                    print("[+] Subscribed to Hyperliquid L2 books & trades (SOL, HYPE, SUI, DOGE).", flush=True)
 
                     async for msg_str in ws:
                         data = json.loads(msg_str)
-                        if data.get("channel") == "l2Book":
+                        channel = data.get("channel")
+                        if channel == "l2Book":
                             book_data = data.get("data", {})
                             coin = book_data.get("coin")
                             levels = book_data.get("levels", [[], []])
@@ -1009,6 +1153,16 @@ async def run_shadow_daemon():
 
                                 # Evaluate primary sprint and all active virtual policy positions
                                 engine.evaluate_all_positions()
+
+                        elif channel == "trades":
+                            trades_data = data.get("data", [])
+                            for t in trades_data:
+                                coin = t.get("coin")
+                                if coin in engine.current_order_books:
+                                    px = float(t.get("px", 0.0))
+                                    sz = float(t.get("sz", 0.0))
+                                    side = t.get("side", "BUY")
+                                    engine.record_hyperliquid_trade(coin, px, sz, side)
 
             except Exception as e:
                 print(f"[-] Hyperliquid feed disconnected: {e}. Reconnecting in 3s...", flush=True)
