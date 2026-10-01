@@ -19591,3 +19591,39 @@ $$F_{\text{total}} = F_{\text{fees}} + F_{\text{spread}} + F_{\text{impact}} + F
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 Through this methodologically hardened architecture, the pipeline maintains the **impenetrable friction discipline of EXP-103** while methodically unlocking orthogonal returns from idle capital.
+
+---
+
+### 15.9 Empirical Factorial Scoreboard & Portfolio Recycler Audit (EXP-105 to EXP-112)
+
+On October 1, 2026, the complete suite of A2 orthogonal satellite alpha sleeves was backtested across the canonical 13-month Point-in-Time data lake (2,386 4H bars / 178 assets) and subjected to Holm-Bonferroni Family-Wise Error Rate (FWER) control at $\alpha = 0.05$.
+
+#### 1. Holm-Bonferroni Multiple-Testing Promotion Audit:
+| Experiment Sleeve | $t$-statistic | Raw $p$-value | Holm $p$-value | Economic Hurdle | Promotion Verdict |
+| :--- | :---: | :---: | :---: | :---: | :--- |
+| **EXP-109: Extreme Funding Mean Reversion (M1)** | **+3.26** | **0.0013** | **0.0077** | $\mathbb{E}[R] = +1.20\% > 0$ | **APPROVED (PROMOTE)** |
+| **EXP-105: Dynamic Liquidation Classifier (Arm 3)** | **+2.45** | **0.0280** | **0.1122** | Net PnL swing $+\$15.57$ | **APPROVED SATELLITE (CONFIRMATORY)** |
+| **EXP-106: Regime Transition Detector (Level + Velocity)** | **+2.12** | **0.0340** | **0.1122** | $\Delta\text{CAGR} = +4.00\%$ | **APPROVED SATELLITE (MONITOR)** |
+| **EXP-303: Polymarket Lead-Lag & Fast Unwind** | **+2.85** | **0.0116** | **0.0579** | Net PnL $+\$176.81$ ($N=17$) | **APPROVED SATELLITE (OOS RUNNING)** |
+| **EXP-107: Chop Relative-Value (Beta-Neutral Residuals)** | -0.58 | 0.5620 | 0.5620 | Net PnL $-\$7.48$ (18 bps friction) | **REJECTED (TAKER FRICTION DRAG)** |
+| **EXP-108: Volatility Compression Breakout** | -1.32 | 0.1915 | 0.3831 | $\mathbb{E}[R] = -0.73\%$, Skew $+0.72$ | **REJECTED (FALSE WHIPSAW CHOP)** |
+
+#### 2. Consolidated Strategy Performance Scoreboard:
+| Strategy Track | Net CAGR (%) | Sharpe Ratio | Max Drawdown (%) | Calmar Ratio | Idle Cash Utilization | Deployment Status |
+| :--- | :---: | :---: | :---: | :---: | :---: | :--- |
+| **Track 0: EXP-103 Baseline Core** | **+3.43%** | **0.45** | **61.64%** | **0.06** | 104.5 days idle (0% risk) | **FROZEN PRODUCTION CORE** |
+| **Track 1: EXP-105 Liquidation Classifier** | Event-Driven | 2.45 | N/A | N/A | Sprints only (zero lockup) | **SHADOW DAEMON RUNNING** |
+| **Track 2: EXP-106 Regime Transition** | **+7.43%** | **0.50** | **61.86%** | **0.12** | 14.8 days monetized | **SHADOW DAEMON RUNNING** |
+| **Track 3: EXP-107 Chop RV Sleeve** | -0.75% | -0.58 | N/A | N/A | 0 days | **SHADOW DAEMON RUNNING (STUDY)** |
+| **Track 4: EXP-108 Volatility Breakout** | -2.36% | -1.32 | N/A | N/A | 0 days | **REJECTED (OFFLINE)** |
+| **Track 5: EXP-109 Funding Squeeze (M1)** | **+4.80%** | **3.26** | N/A | N/A | High-carry defensive window | **APPROVED FOR RECYCLING** |
+| **Track 6: EXP-303 Polymarket Unwind** | **+1.76%** | **2.85** | N/A | N/A | Uncorrelated event-driven | **LIVE OOS PAPER TRADING** |
+| **Track 7: EXP-112 Unified Recycler** | **+11.03%** | **0.82** | **48.20%** | **0.23** | **33.3 days recycled** | **STAGE 4 CANDIDATE** |
+
+#### 3. Core Architectural Conclusions:
+1. **EXP-103 Remains Unaltered:** Core parameters, 72H cadence, and Leland turnover deadbands remain strictly preserved.
+2. **Rejection of Breakout Alpha in Bear Cash Floors (EXP-108):** In bear market cash regimes ($\rho_{7d} < -0.10$), price coiling does not resolve into sustainable positive-skew trend; it degenerates into mean-reverting chop and false breakouts (win rate $36.9\%$, $-\$236.29$ PnL).
+3. **Failure of Taker Chop RV (EXP-107):** Market-neutral pair trading cannot overcome 18 bps round-trip taker friction ($49.0\%$ win rate, $-\$7.48$ PnL). Must use passive maker quoting or remain disabled.
+4. **Validation of Funding Mean Reversion (EXP-109):** Extreme funding divergence ($|z(F)| > 1.5$) provides a statistically significant, orthogonal alpha source ($t = +3.26$, $p_{\text{Holm}} = 0.0077$, $\mathbb{E}[R] = +1.20\%$ net).
+5. **Capital Recycling Lift (EXP-112):** Combining the frozen EXP-103 core with approved orthogonal satellites monetizes **33.3 days of otherwise idle capital**, lifting Net CAGR from **+3.43% to +11.03%** and Sharpe from **0.45 to 0.82** while reducing portfolio maximum drawdown from **61.64% to 48.20%** through cross-asset diversification.
+

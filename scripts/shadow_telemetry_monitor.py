@@ -171,7 +171,46 @@ def main():
     else:
         print("  State initializing...")
 
+    # 7. EXP-105
+    exp105 = load_json(DATA_DIR / "exp105" / "continuation_shadow_state.json")
+    print("\n[7] EXP-105: LIQUIDATION CONTINUATION VS REBOUND CLASSIFIER")
+    if exp105:
+        m = exp105.get("metrics", {})
+        m1 = m.get("arm_1_fade_long", {})
+        m2 = m.get("arm_2_follow_short", {})
+        m3 = m.get("arm_3_dynamic_classifier", {})
+        print(f"  Arm 1 (Fade Long):       Trades={m1.get('total_trades', 0)} | WinRate={m1.get('win_rate_pct', 0.0):.1f}% | NetPnL=${m1.get('cumulative_net_pnl_usd', 0.0):+.2f} | Mean=${m1.get('mean_pnl_usd', 0.0):+.2f}")
+        print(f"  Arm 2 (Follow Short):    Trades={m2.get('total_trades', 0)} | WinRate={m2.get('win_rate_pct', 0.0):.1f}% | NetPnL=${m2.get('cumulative_net_pnl_usd', 0.0):+.2f} | Mean=${m2.get('mean_pnl_usd', 0.0):+.2f}")
+        print(f"  Arm 3 (Dynamic Class):   Trades={m3.get('total_trades', 0)} (Flat={m3.get('flat_avoided', 0)}) | WinRate={m3.get('win_rate_pct', 0.0):.1f}% | NetPnL=${m3.get('cumulative_net_pnl_usd', 0.0):+.2f} | Delta vs Fade: ${m3.get('delta_vs_fade_usd', 0.0):+.2f}")
+    else:
+        print("  State initializing...")
+
+    # 8. EXP-106
+    exp106 = load_json(DATA_DIR / "exp106" / "regime_transition_state.json")
+    print("\n[8] EXP-106: REGIME TRANSITION DETECTOR (LEVEL + VELOCITY)")
+    if exp106:
+        reg = exp106.get("current_regime", {})
+        track = exp106.get("cumulative_shadow_tracking", {})
+        print(f"  Current Regime: {reg.get('diagnosed_state', 'UNKNOWN')} | Rho_7d = {reg.get('rho_7d', 0.0):+.4f} | Slope_24h = {reg.get('rho_slope_24h', 0.0):+.6f} | Breadth = {reg.get('market_breadth_pct', 0.0):.1f}%")
+        print(f"  Candidate Allocation: {reg.get('candidate_allocation_pct', 0.0):.1f}% (vs Baseline: {0.0 if reg.get('core_apex_state') == 'CASH_FLOOR_fl0' else 100.0}%)")
+        print(f"  Bars Logged: Cash fl0={track.get('fl0_cash_bars', 0)} | Recovery fl0={track.get('fl0_recovery_bars', 0)} | Expansion={track.get('expansion_bars', 0)}")
+    else:
+        print("  State initializing...")
+
+    # 9. EXP-107
+    exp107 = load_json(DATA_DIR / "exp107" / "chop_rv_state.json")
+    print("\n[9] EXP-107: CHOP RELATIVE-VALUE SLEEVE (BETA-NEUTRAL RESIDUALS)")
+    if exp107:
+        gov = exp107.get("governance", {})
+        m = exp107.get("metrics", {})
+        active = exp107.get("active_pairs", {})
+        print(f"  Status: {gov.get('status', 'DORMANT')} | Active Pairs: {len(active)}/2 | Risk Budget: ${gov.get('risk_budget_usd', 200.0):.0f}")
+        print(f"  Total Trades: {m.get('total_trades', 0)} | WinRate = {m.get('win_rate_pct', 0.0):.1f}% | NetPnL = ${m.get('cumulative_net_pnl_usd', 0.0):+.2f} | Fees Paid = ${m.get('fees_paid_usd', 0.0):.2f}")
+    else:
+        print("  State initializing...")
+
     print("\n" + "=" * 80 + "\n")
 
 if __name__ == "__main__":
     main()
+

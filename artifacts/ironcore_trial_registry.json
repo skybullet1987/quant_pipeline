@@ -1,0 +1,5131 @@
+{
+  "records": {
+    "EXP-001": {
+      "completed_at_utc": "2026-09-20T12:08:16Z",
+      "created_at_utc": "2026-09-20T12:08:14Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 43,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-001",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.10, K_in=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-002": {
+      "completed_at_utc": "2026-09-20T12:08:19Z",
+      "created_at_utc": "2026-09-20T12:08:17Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 44,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "eeceaa8e7fd097c2c6f60daeab413cf7cbcb96814578f1c9123037520eaf14b6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-002",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.1907901524157287,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.20, K_in=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -6.0109615940198395,
+        "delta_exchange_fees": -15.632089163675573,
+        "delta_explicit_slippage": 9.960636892328665,
+        "delta_funding_pnl": -0.287977390190032,
+        "delta_gross_price_pnl": -110.08942757970863,
+        "delta_market_impact": -49.30876426362758,
+        "delta_net_pnl": -39.425589948566994,
+        "is_conserved": false,
+        "residual": 9.960636892337341
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.35589325068184,
+        "ending_equity": 8918.24428643836,
+        "max_dd": 15.162822682669985,
+        "sharpe": -1.9628096607133736,
+        "trades_count": 4082,
+        "turnover": 44.74522394224079
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-003": {
+      "completed_at_utc": "2026-09-20T12:08:22Z",
+      "created_at_utc": "2026-09-20T12:08:19Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 45,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "2489a7df60a34551564402ec0d77a7157f5d77b99028c2a4985861ed5ebcfea9",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-003",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.8177023555001811,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.30, K_in=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -2.6628484444633145,
+        "delta_exchange_fees": -6.2705574928570655,
+        "delta_explicit_slippage": 1.731109572036459,
+        "delta_funding_pnl": 1.6855753694559799,
+        "delta_gross_price_pnl": -209.6005628929296,
+        "delta_market_impact": -14.031610571555035,
+        "delta_net_pnl": -184.94997101459376,
+        "is_conserved": false,
+        "residual": 1.731109572040907
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -16.242099945151722,
+        "ending_equity": 8772.719905372333,
+        "max_dd": 15.299803954765443,
+        "sharpe": -2.529148079136737,
+        "trades_count": 5036,
+        "turnover": 48.687419513406816
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-004": {
+      "completed_at_utc": "2026-09-20T12:08:24Z",
+      "created_at_utc": "2026-09-20T12:08:23Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 46,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "cfdc250918f58de287faa45229ee0291cdeb247cd61a36590711029247dab9f4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-004",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.14831921417907767,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.40, K_in=8)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.688544395964385,
+        "delta_exchange_fees": -28.228819966265206,
+        "delta_explicit_slippage": -2.1456571792713106,
+        "delta_funding_pnl": -1.8307321314958362,
+        "delta_gross_price_pnl": -106.5943558564278,
+        "delta_market_impact": -27.277621019199955,
+        "delta_net_pnl": -41.2301026064888,
+        "is_conserved": false,
+        "residual": 2.145657179266024
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.379349422870469,
+        "ending_equity": 8916.439773780437,
+        "max_dd": 15.171348121817196,
+        "sharpe": -1.765274874447102,
+        "trades_count": 1979,
+        "turnover": 38.27263785198024
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-005": {
+      "completed_at_utc": "2026-09-20T12:08:26Z",
+      "created_at_utc": "2026-09-20T12:08:24Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 47,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-005",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.50, K_in=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-006": {
+      "completed_at_utc": "2026-09-20T12:08:29Z",
+      "created_at_utc": "2026-09-20T12:08:27Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 48,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "eeceaa8e7fd097c2c6f60daeab413cf7cbcb96814578f1c9123037520eaf14b6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-006",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.1907901524157287,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.60, K_in=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -6.0109615940198395,
+        "delta_exchange_fees": -15.632089163675573,
+        "delta_explicit_slippage": 9.960636892328665,
+        "delta_funding_pnl": -0.287977390190032,
+        "delta_gross_price_pnl": -110.08942757970863,
+        "delta_market_impact": -49.30876426362758,
+        "delta_net_pnl": -39.425589948566994,
+        "is_conserved": false,
+        "residual": 9.960636892337341
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.35589325068184,
+        "ending_equity": 8918.24428643836,
+        "max_dd": 15.162822682669985,
+        "sharpe": -1.9628096607133736,
+        "trades_count": 4082,
+        "turnover": 44.74522394224079
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-007": {
+      "completed_at_utc": "2026-09-20T12:08:32Z",
+      "created_at_utc": "2026-09-20T12:08:29Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 49,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "2489a7df60a34551564402ec0d77a7157f5d77b99028c2a4985861ed5ebcfea9",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-007",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.8177023555001811,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.70, K_in=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -2.6628484444633145,
+        "delta_exchange_fees": -6.2705574928570655,
+        "delta_explicit_slippage": 1.731109572036459,
+        "delta_funding_pnl": 1.6855753694559799,
+        "delta_gross_price_pnl": -209.6005628929296,
+        "delta_market_impact": -14.031610571555035,
+        "delta_net_pnl": -184.94997101459376,
+        "is_conserved": false,
+        "residual": 1.731109572040907
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -16.242099945151722,
+        "ending_equity": 8772.719905372333,
+        "max_dd": 15.299803954765443,
+        "sharpe": -2.529148079136737,
+        "trades_count": 5036,
+        "turnover": 48.687419513406816
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-008": {
+      "completed_at_utc": "2026-09-20T12:08:33Z",
+      "created_at_utc": "2026-09-20T12:08:32Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 50,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "cfdc250918f58de287faa45229ee0291cdeb247cd61a36590711029247dab9f4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-008",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.14831921417907767,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.80, K_in=8)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.688544395964385,
+        "delta_exchange_fees": -28.228819966265206,
+        "delta_explicit_slippage": -2.1456571792713106,
+        "delta_funding_pnl": -1.8307321314958362,
+        "delta_gross_price_pnl": -106.5943558564278,
+        "delta_market_impact": -27.277621019199955,
+        "delta_net_pnl": -41.2301026064888,
+        "is_conserved": false,
+        "residual": 2.145657179266024
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.379349422870469,
+        "ending_equity": 8916.439773780437,
+        "max_dd": 15.171348121817196,
+        "sharpe": -1.765274874447102,
+        "trades_count": 1979,
+        "turnover": 38.27263785198024
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-009": {
+      "completed_at_utc": "2026-09-20T12:08:36Z",
+      "created_at_utc": "2026-09-20T12:08:33Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 51,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-009",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.90, K_in=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-010": {
+      "completed_at_utc": "2026-09-20T12:08:38Z",
+      "created_at_utc": "2026-09-20T12:08:36Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 52,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "eeceaa8e7fd097c2c6f60daeab413cf7cbcb96814578f1c9123037520eaf14b6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-010",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.1907901524157287,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.00, K_in=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -6.0109615940198395,
+        "delta_exchange_fees": -15.632089163675573,
+        "delta_explicit_slippage": 9.960636892328665,
+        "delta_funding_pnl": -0.287977390190032,
+        "delta_gross_price_pnl": -110.08942757970863,
+        "delta_market_impact": -49.30876426362758,
+        "delta_net_pnl": -39.425589948566994,
+        "is_conserved": false,
+        "residual": 9.960636892337341
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.35589325068184,
+        "ending_equity": 8918.24428643836,
+        "max_dd": 15.162822682669985,
+        "sharpe": -1.9628096607133736,
+        "trades_count": 4082,
+        "turnover": 44.74522394224079
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-011": {
+      "completed_at_utc": "2026-09-20T12:08:41Z",
+      "created_at_utc": "2026-09-20T12:08:38Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 53,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "2489a7df60a34551564402ec0d77a7157f5d77b99028c2a4985861ed5ebcfea9",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-011",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.8177023555001811,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.10, K_in=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -2.6628484444633145,
+        "delta_exchange_fees": -6.2705574928570655,
+        "delta_explicit_slippage": 1.731109572036459,
+        "delta_funding_pnl": 1.6855753694559799,
+        "delta_gross_price_pnl": -209.6005628929296,
+        "delta_market_impact": -14.031610571555035,
+        "delta_net_pnl": -184.94997101459376,
+        "is_conserved": false,
+        "residual": 1.731109572040907
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -16.242099945151722,
+        "ending_equity": 8772.719905372333,
+        "max_dd": 15.299803954765443,
+        "sharpe": -2.529148079136737,
+        "trades_count": 5036,
+        "turnover": 48.687419513406816
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-012": {
+      "completed_at_utc": "2026-09-20T12:08:42Z",
+      "created_at_utc": "2026-09-20T12:08:41Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 54,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "cfdc250918f58de287faa45229ee0291cdeb247cd61a36590711029247dab9f4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-012",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.14831921417907767,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.20, K_in=8)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.688544395964385,
+        "delta_exchange_fees": -28.228819966265206,
+        "delta_explicit_slippage": -2.1456571792713106,
+        "delta_funding_pnl": -1.8307321314958362,
+        "delta_gross_price_pnl": -106.5943558564278,
+        "delta_market_impact": -27.277621019199955,
+        "delta_net_pnl": -41.2301026064888,
+        "is_conserved": false,
+        "residual": 2.145657179266024
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.379349422870469,
+        "ending_equity": 8916.439773780437,
+        "max_dd": 15.171348121817196,
+        "sharpe": -1.765274874447102,
+        "trades_count": 1979,
+        "turnover": 38.27263785198024
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-013": {
+      "completed_at_utc": "2026-09-20T12:08:44Z",
+      "created_at_utc": "2026-09-20T12:08:42Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 55,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-013",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.30, K_in=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-014": {
+      "completed_at_utc": "2026-09-20T12:08:47Z",
+      "created_at_utc": "2026-09-20T12:08:45Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 56,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "eeceaa8e7fd097c2c6f60daeab413cf7cbcb96814578f1c9123037520eaf14b6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-014",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.1907901524157287,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.40, K_in=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -6.0109615940198395,
+        "delta_exchange_fees": -15.632089163675573,
+        "delta_explicit_slippage": 9.960636892328665,
+        "delta_funding_pnl": -0.287977390190032,
+        "delta_gross_price_pnl": -110.08942757970863,
+        "delta_market_impact": -49.30876426362758,
+        "delta_net_pnl": -39.425589948566994,
+        "is_conserved": false,
+        "residual": 9.960636892337341
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -14.35589325068184,
+        "ending_equity": 8918.24428643836,
+        "max_dd": 15.162822682669985,
+        "sharpe": -1.9628096607133736,
+        "trades_count": 4082,
+        "turnover": 44.74522394224079
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-015": {
+      "completed_at_utc": "2026-09-20T12:08:49Z",
+      "created_at_utc": "2026-09-20T12:08:47Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 57,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "2489a7df60a34551564402ec0d77a7157f5d77b99028c2a4985861ed5ebcfea9",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-015",
+      "feature_set": [
+        "wfo_alpha_score",
+        "predicted_funding"
+      ],
+      "hac_paired_t": -0.8177023555001811,
+      "hypothesis": "Funding Dislocation + WFO Momentum Blend (w_fund=0.50, K_in=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -2.6628484444633145,
+        "delta_exchange_fees": -6.2705574928570655,
+        "delta_explicit_slippage": 1.731109572036459,
+        "delta_funding_pnl": 1.6855753694559799,
+        "delta_gross_price_pnl": -209.6005628929296,
+        "delta_market_impact": -14.031610571555035,
+        "delta_net_pnl": -184.94997101459376,
+        "is_conserved": false,
+        "residual": 1.731109572040907
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A1_FUNDING",
+      "results": {
+        "cagr": -16.242099945151722,
+        "ending_equity": 8772.719905372333,
+        "max_dd": 15.299803954765443,
+        "sharpe": -2.529148079136737,
+        "trades_count": 5036,
+        "turnover": 48.687419513406816
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-016": {
+      "completed_at_utc": "2026-09-20T12:08:51Z",
+      "created_at_utc": "2026-09-20T12:08:50Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 58,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "220846b612f03d1d1b0282d1ef300c0ab5a6134e02a8d8969d945d10b7977fd0",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-016",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.047066042499265326,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=8, K_out=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.712131962414219,
+        "delta_exchange_fees": -26.83576635705994,
+        "delta_explicit_slippage": 0.6655027827657563,
+        "delta_funding_pnl": 0.3604084993485346,
+        "delta_gross_price_pnl": -119.10878844453316,
+        "delta_market_impact": -62.669089621845956,
+        "delta_net_pnl": -18.531392003855217,
+        "is_conserved": false,
+        "residual": 0.6655027827750502
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.084175367768436,
+        "ending_equity": 8939.138484383071,
+        "max_dd": 15.224449919300511,
+        "sharpe": -1.7050155250546264,
+        "trades_count": 2078,
+        "turnover": 39.54095853159978
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-017": {
+      "completed_at_utc": "2026-09-20T12:08:53Z",
+      "created_at_utc": "2026-09-20T12:08:51Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 59,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d4a9c85126180b38fad7e30c53eb89b0853ec26884a6afbe0110bd50ffe26b55",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-017",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.13364409945883593,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=10, K_out=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.544820696263884,
+        "delta_exchange_fees": -29.137269011383836,
+        "delta_explicit_slippage": -13.486139359313952,
+        "delta_funding_pnl": 3.0159837851304347,
+        "delta_gross_price_pnl": -70.15537129821848,
+        "delta_market_impact": -70.72299973244733,
+        "delta_net_pnl": 44.26570192701365,
+        "is_conserved": false,
+        "residual": 13.486139359307302
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -13.266181699616252,
+        "ending_equity": 9001.93557831394,
+        "max_dd": 15.133975041966385,
+        "sharpe": -1.665014929271481,
+        "trades_count": 2381,
+        "turnover": 38.31365939316021
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-018": {
+      "completed_at_utc": "2026-09-20T12:08:55Z",
+      "created_at_utc": "2026-09-20T12:08:53Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 60,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "1cf3dddb7836a01c678362b378c6289ca5c87feb5587999fe5020e819cd4125e",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-018",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.18723995448630004,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=12, K_out=16)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -14.2272408880644,
+        "delta_exchange_fees": -35.34494376316641,
+        "delta_explicit_slippage": -13.291249475621086,
+        "delta_funding_pnl": -2.3428997645204537,
+        "delta_gross_price_pnl": -175.79692777871662,
+        "delta_market_impact": -86.31342894432703,
+        "delta_net_pnl": -42.25421394765908,
+        "is_conserved": false,
+        "residual": 13.291249475600921
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.392660709193416,
+        "ending_equity": 8915.415662439267,
+        "max_dd": 15.08951630987231,
+        "sharpe": -1.901425405431957,
+        "trades_count": 2786,
+        "turnover": 35.95074137948166
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-019": {
+      "completed_at_utc": "2026-09-20T12:08:57Z",
+      "created_at_utc": "2026-09-20T12:08:55Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 61,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "7da93e83c5901441361a98406358323d095f1c112bd9437870de43ee754d2cb7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-019",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.6251341861641112,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=14, K_out=18)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.305591770268698,
+        "delta_exchange_fees": -26.073102979663417,
+        "delta_explicit_slippage": -4.709849401044622,
+        "delta_funding_pnl": 2.5154925563167536,
+        "delta_gross_price_pnl": -240.11602932930555,
+        "delta_market_impact": -67.63976722994701,
+        "delta_net_pnl": -133.58207479311022,
+        "is_conserved": false,
+        "residual": 4.709849401045176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.577551357382669,
+        "ending_equity": 8824.087801593816,
+        "max_dd": 15.02457066641269,
+        "sharpe": -2.396124620407432,
+        "trades_count": 4013,
+        "turnover": 40.50726170064516
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-020": {
+      "completed_at_utc": "2026-09-20T12:08:59Z",
+      "created_at_utc": "2026-09-20T12:08:57Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 62,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "e1c687be6b52c70292841731a2f2365f56736e6583af586547163b4871832c02",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-020",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.19052239653688266,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=6, K_out=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -15.467264300940613,
+        "delta_exchange_fees": -38.9840538010322,
+        "delta_explicit_slippage": 12.195724149184315,
+        "delta_funding_pnl": -3.2707545759273713,
+        "delta_gross_price_pnl": -204.43751815920007,
+        "delta_market_impact": -49.41972539190368,
+        "delta_net_pnl": -103.83722924123867,
+        "is_conserved": false,
+        "residual": 12.195724149196579
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.19211467934306,
+        "ending_equity": 8853.832647145688,
+        "max_dd": 15.429254154266195,
+        "sharpe": -1.6106182678000056,
+        "trades_count": 1365,
+        "turnover": 34.56119074893591
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-021": {
+      "completed_at_utc": "2026-09-20T12:09:01Z",
+      "created_at_utc": "2026-09-20T12:08:59Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 63,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "220846b612f03d1d1b0282d1ef300c0ab5a6134e02a8d8969d945d10b7977fd0",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-021",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.047066042499265326,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=8, K_out=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.712131962414219,
+        "delta_exchange_fees": -26.83576635705994,
+        "delta_explicit_slippage": 0.6655027827657563,
+        "delta_funding_pnl": 0.3604084993485346,
+        "delta_gross_price_pnl": -119.10878844453316,
+        "delta_market_impact": -62.669089621845956,
+        "delta_net_pnl": -18.531392003855217,
+        "is_conserved": false,
+        "residual": 0.6655027827750502
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.084175367768436,
+        "ending_equity": 8939.138484383071,
+        "max_dd": 15.224449919300511,
+        "sharpe": -1.7050155250546264,
+        "trades_count": 2078,
+        "turnover": 39.54095853159978
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-022": {
+      "completed_at_utc": "2026-09-20T12:09:03Z",
+      "created_at_utc": "2026-09-20T12:09:02Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 64,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d4a9c85126180b38fad7e30c53eb89b0853ec26884a6afbe0110bd50ffe26b55",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-022",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.13364409945883593,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=10, K_out=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.544820696263884,
+        "delta_exchange_fees": -29.137269011383836,
+        "delta_explicit_slippage": -13.486139359313952,
+        "delta_funding_pnl": 3.0159837851304347,
+        "delta_gross_price_pnl": -70.15537129821848,
+        "delta_market_impact": -70.72299973244733,
+        "delta_net_pnl": 44.26570192701365,
+        "is_conserved": false,
+        "residual": 13.486139359307302
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -13.266181699616252,
+        "ending_equity": 9001.93557831394,
+        "max_dd": 15.133975041966385,
+        "sharpe": -1.665014929271481,
+        "trades_count": 2381,
+        "turnover": 38.31365939316021
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-023": {
+      "completed_at_utc": "2026-09-20T12:09:05Z",
+      "created_at_utc": "2026-09-20T12:09:04Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 65,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "1cf3dddb7836a01c678362b378c6289ca5c87feb5587999fe5020e819cd4125e",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-023",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.18723995448630004,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=12, K_out=16)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -14.2272408880644,
+        "delta_exchange_fees": -35.34494376316641,
+        "delta_explicit_slippage": -13.291249475621086,
+        "delta_funding_pnl": -2.3428997645204537,
+        "delta_gross_price_pnl": -175.79692777871662,
+        "delta_market_impact": -86.31342894432703,
+        "delta_net_pnl": -42.25421394765908,
+        "is_conserved": false,
+        "residual": 13.291249475600921
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.392660709193416,
+        "ending_equity": 8915.415662439267,
+        "max_dd": 15.08951630987231,
+        "sharpe": -1.901425405431957,
+        "trades_count": 2786,
+        "turnover": 35.95074137948166
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-024": {
+      "completed_at_utc": "2026-09-20T12:09:08Z",
+      "created_at_utc": "2026-09-20T12:09:06Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 66,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "7da93e83c5901441361a98406358323d095f1c112bd9437870de43ee754d2cb7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-024",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.6251341861641112,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=14, K_out=18)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.305591770268698,
+        "delta_exchange_fees": -26.073102979663417,
+        "delta_explicit_slippage": -4.709849401044622,
+        "delta_funding_pnl": 2.5154925563167536,
+        "delta_gross_price_pnl": -240.11602932930555,
+        "delta_market_impact": -67.63976722994701,
+        "delta_net_pnl": -133.58207479311022,
+        "is_conserved": false,
+        "residual": 4.709849401045176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.577551357382669,
+        "ending_equity": 8824.087801593816,
+        "max_dd": 15.02457066641269,
+        "sharpe": -2.396124620407432,
+        "trades_count": 4013,
+        "turnover": 40.50726170064516
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-025": {
+      "completed_at_utc": "2026-09-20T12:09:10Z",
+      "created_at_utc": "2026-09-20T12:09:09Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 67,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "e1c687be6b52c70292841731a2f2365f56736e6583af586547163b4871832c02",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-025",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.19052239653688266,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=6, K_out=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -15.467264300940613,
+        "delta_exchange_fees": -38.9840538010322,
+        "delta_explicit_slippage": 12.195724149184315,
+        "delta_funding_pnl": -3.2707545759273713,
+        "delta_gross_price_pnl": -204.43751815920007,
+        "delta_market_impact": -49.41972539190368,
+        "delta_net_pnl": -103.83722924123867,
+        "is_conserved": false,
+        "residual": 12.195724149196579
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.19211467934306,
+        "ending_equity": 8853.832647145688,
+        "max_dd": 15.429254154266195,
+        "sharpe": -1.6106182678000056,
+        "trades_count": 1365,
+        "turnover": 34.56119074893591
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-026": {
+      "completed_at_utc": "2026-09-20T12:09:12Z",
+      "created_at_utc": "2026-09-20T12:09:10Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 68,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "220846b612f03d1d1b0282d1ef300c0ab5a6134e02a8d8969d945d10b7977fd0",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-026",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.047066042499265326,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=8, K_out=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.712131962414219,
+        "delta_exchange_fees": -26.83576635705994,
+        "delta_explicit_slippage": 0.6655027827657563,
+        "delta_funding_pnl": 0.3604084993485346,
+        "delta_gross_price_pnl": -119.10878844453316,
+        "delta_market_impact": -62.669089621845956,
+        "delta_net_pnl": -18.531392003855217,
+        "is_conserved": false,
+        "residual": 0.6655027827750502
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.084175367768436,
+        "ending_equity": 8939.138484383071,
+        "max_dd": 15.224449919300511,
+        "sharpe": -1.7050155250546264,
+        "trades_count": 2078,
+        "turnover": 39.54095853159978
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-027": {
+      "completed_at_utc": "2026-09-20T12:09:14Z",
+      "created_at_utc": "2026-09-20T12:09:12Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 69,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d4a9c85126180b38fad7e30c53eb89b0853ec26884a6afbe0110bd50ffe26b55",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-027",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.13364409945883593,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=10, K_out=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.544820696263884,
+        "delta_exchange_fees": -29.137269011383836,
+        "delta_explicit_slippage": -13.486139359313952,
+        "delta_funding_pnl": 3.0159837851304347,
+        "delta_gross_price_pnl": -70.15537129821848,
+        "delta_market_impact": -70.72299973244733,
+        "delta_net_pnl": 44.26570192701365,
+        "is_conserved": false,
+        "residual": 13.486139359307302
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -13.266181699616252,
+        "ending_equity": 9001.93557831394,
+        "max_dd": 15.133975041966385,
+        "sharpe": -1.665014929271481,
+        "trades_count": 2381,
+        "turnover": 38.31365939316021
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-028": {
+      "completed_at_utc": "2026-09-20T12:09:15Z",
+      "created_at_utc": "2026-09-20T12:09:14Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 70,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "1cf3dddb7836a01c678362b378c6289ca5c87feb5587999fe5020e819cd4125e",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-028",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.18723995448630004,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=12, K_out=16)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -14.2272408880644,
+        "delta_exchange_fees": -35.34494376316641,
+        "delta_explicit_slippage": -13.291249475621086,
+        "delta_funding_pnl": -2.3428997645204537,
+        "delta_gross_price_pnl": -175.79692777871662,
+        "delta_market_impact": -86.31342894432703,
+        "delta_net_pnl": -42.25421394765908,
+        "is_conserved": false,
+        "residual": 13.291249475600921
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.392660709193416,
+        "ending_equity": 8915.415662439267,
+        "max_dd": 15.08951630987231,
+        "sharpe": -1.901425405431957,
+        "trades_count": 2786,
+        "turnover": 35.95074137948166
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-029": {
+      "completed_at_utc": "2026-09-20T12:09:18Z",
+      "created_at_utc": "2026-09-20T12:09:16Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 71,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "7da93e83c5901441361a98406358323d095f1c112bd9437870de43ee754d2cb7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-029",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.6251341861641112,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=14, K_out=18)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.305591770268698,
+        "delta_exchange_fees": -26.073102979663417,
+        "delta_explicit_slippage": -4.709849401044622,
+        "delta_funding_pnl": 2.5154925563167536,
+        "delta_gross_price_pnl": -240.11602932930555,
+        "delta_market_impact": -67.63976722994701,
+        "delta_net_pnl": -133.58207479311022,
+        "is_conserved": false,
+        "residual": 4.709849401045176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.577551357382669,
+        "ending_equity": 8824.087801593816,
+        "max_dd": 15.02457066641269,
+        "sharpe": -2.396124620407432,
+        "trades_count": 4013,
+        "turnover": 40.50726170064516
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-030": {
+      "completed_at_utc": "2026-09-20T12:09:19Z",
+      "created_at_utc": "2026-09-20T12:09:18Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 72,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "e1c687be6b52c70292841731a2f2365f56736e6583af586547163b4871832c02",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-030",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.19052239653688266,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=6, K_out=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -15.467264300940613,
+        "delta_exchange_fees": -38.9840538010322,
+        "delta_explicit_slippage": 12.195724149184315,
+        "delta_funding_pnl": -3.2707545759273713,
+        "delta_gross_price_pnl": -204.43751815920007,
+        "delta_market_impact": -49.41972539190368,
+        "delta_net_pnl": -103.83722924123867,
+        "is_conserved": false,
+        "residual": 12.195724149196579
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.19211467934306,
+        "ending_equity": 8853.832647145688,
+        "max_dd": 15.429254154266195,
+        "sharpe": -1.6106182678000056,
+        "trades_count": 1365,
+        "turnover": 34.56119074893591
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-031": {
+      "completed_at_utc": "2026-09-20T12:09:21Z",
+      "created_at_utc": "2026-09-20T12:09:19Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 73,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "220846b612f03d1d1b0282d1ef300c0ab5a6134e02a8d8969d945d10b7977fd0",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-031",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.047066042499265326,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=8, K_out=12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.712131962414219,
+        "delta_exchange_fees": -26.83576635705994,
+        "delta_explicit_slippage": 0.6655027827657563,
+        "delta_funding_pnl": 0.3604084993485346,
+        "delta_gross_price_pnl": -119.10878844453316,
+        "delta_market_impact": -62.669089621845956,
+        "delta_net_pnl": -18.531392003855217,
+        "is_conserved": false,
+        "residual": 0.6655027827750502
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.084175367768436,
+        "ending_equity": 8939.138484383071,
+        "max_dd": 15.224449919300511,
+        "sharpe": -1.7050155250546264,
+        "trades_count": 2078,
+        "turnover": 39.54095853159978
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-032": {
+      "completed_at_utc": "2026-09-20T12:09:22Z",
+      "created_at_utc": "2026-09-20T12:09:21Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 74,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d4a9c85126180b38fad7e30c53eb89b0853ec26884a6afbe0110bd50ffe26b55",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-032",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.13364409945883593,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=10, K_out=14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -11.544820696263884,
+        "delta_exchange_fees": -29.137269011383836,
+        "delta_explicit_slippage": -13.486139359313952,
+        "delta_funding_pnl": 3.0159837851304347,
+        "delta_gross_price_pnl": -70.15537129821848,
+        "delta_market_impact": -70.72299973244733,
+        "delta_net_pnl": 44.26570192701365,
+        "is_conserved": false,
+        "residual": 13.486139359307302
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -13.266181699616252,
+        "ending_equity": 9001.93557831394,
+        "max_dd": 15.133975041966385,
+        "sharpe": -1.665014929271481,
+        "trades_count": 2381,
+        "turnover": 38.31365939316021
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-033": {
+      "completed_at_utc": "2026-09-20T12:09:25Z",
+      "created_at_utc": "2026-09-20T12:09:23Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 75,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "1cf3dddb7836a01c678362b378c6289ca5c87feb5587999fe5020e819cd4125e",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-033",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.18723995448630004,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=12, K_out=16)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -14.2272408880644,
+        "delta_exchange_fees": -35.34494376316641,
+        "delta_explicit_slippage": -13.291249475621086,
+        "delta_funding_pnl": -2.3428997645204537,
+        "delta_gross_price_pnl": -175.79692777871662,
+        "delta_market_impact": -86.31342894432703,
+        "delta_net_pnl": -42.25421394765908,
+        "is_conserved": false,
+        "residual": 13.291249475600921
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -14.392660709193416,
+        "ending_equity": 8915.415662439267,
+        "max_dd": 15.08951630987231,
+        "sharpe": -1.901425405431957,
+        "trades_count": 2786,
+        "turnover": 35.95074137948166
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-034": {
+      "completed_at_utc": "2026-09-20T12:09:28Z",
+      "created_at_utc": "2026-09-20T12:09:25Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 76,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "7da93e83c5901441361a98406358323d095f1c112bd9437870de43ee754d2cb7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-034",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.6251341861641112,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=14, K_out=18)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.305591770268698,
+        "delta_exchange_fees": -26.073102979663417,
+        "delta_explicit_slippage": -4.709849401044622,
+        "delta_funding_pnl": 2.5154925563167536,
+        "delta_gross_price_pnl": -240.11602932930555,
+        "delta_market_impact": -67.63976722994701,
+        "delta_net_pnl": -133.58207479311022,
+        "is_conserved": false,
+        "residual": 4.709849401045176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.577551357382669,
+        "ending_equity": 8824.087801593816,
+        "max_dd": 15.02457066641269,
+        "sharpe": -2.396124620407432,
+        "trades_count": 4013,
+        "turnover": 40.50726170064516
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-035": {
+      "completed_at_utc": "2026-09-20T12:09:29Z",
+      "created_at_utc": "2026-09-20T12:09:28Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 77,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "e1c687be6b52c70292841731a2f2365f56736e6583af586547163b4871832c02",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-035",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": -0.19052239653688266,
+      "hypothesis": "Vol-Normalized Multi-Horizon Residual Momentum (K_in=6, K_out=10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -15.467264300940613,
+        "delta_exchange_fees": -38.9840538010322,
+        "delta_explicit_slippage": 12.195724149184315,
+        "delta_funding_pnl": -3.2707545759273713,
+        "delta_gross_price_pnl": -204.43751815920007,
+        "delta_market_impact": -49.41972539190368,
+        "delta_net_pnl": -103.83722924123867,
+        "is_conserved": false,
+        "residual": 12.195724149196579
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A2_MOMENTUM",
+      "results": {
+        "cagr": -15.19211467934306,
+        "ending_equity": 8853.832647145688,
+        "max_dd": 15.429254154266195,
+        "sharpe": -1.6106182678000056,
+        "trades_count": 1365,
+        "turnover": 34.56119074893591
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-036": {
+      "completed_at_utc": "2026-09-20T12:09:32Z",
+      "created_at_utc": "2026-09-20T12:09:30Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 78,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-036",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 1)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-037": {
+      "completed_at_utc": "2026-09-20T12:09:34Z",
+      "created_at_utc": "2026-09-20T12:09:32Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 79,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-037",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 2)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-038": {
+      "completed_at_utc": "2026-09-20T12:09:36Z",
+      "created_at_utc": "2026-09-20T12:09:34Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 80,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-038",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 3)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-039": {
+      "completed_at_utc": "2026-09-20T12:09:39Z",
+      "created_at_utc": "2026-09-20T12:09:37Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 81,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-039",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 4)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-040": {
+      "completed_at_utc": "2026-09-20T12:09:41Z",
+      "created_at_utc": "2026-09-20T12:09:39Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 82,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-040",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 5)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-041": {
+      "completed_at_utc": "2026-09-20T12:09:44Z",
+      "created_at_utc": "2026-09-20T12:09:42Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 83,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-041",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 6)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-042": {
+      "completed_at_utc": "2026-09-20T12:09:46Z",
+      "created_at_utc": "2026-09-20T12:09:44Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 84,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-042",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 7)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-043": {
+      "completed_at_utc": "2026-09-20T12:09:48Z",
+      "created_at_utc": "2026-09-20T12:09:46Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 85,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-043",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 8)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-044": {
+      "completed_at_utc": "2026-09-20T12:09:50Z",
+      "created_at_utc": "2026-09-20T12:09:48Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 86,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-044",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 9)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-045": {
+      "completed_at_utc": "2026-09-20T12:09:52Z",
+      "created_at_utc": "2026-09-20T12:09:50Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 87,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-045",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 10)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-046": {
+      "completed_at_utc": "2026-09-20T12:09:54Z",
+      "created_at_utc": "2026-09-20T12:09:52Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 88,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-046",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 11)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-047": {
+      "completed_at_utc": "2026-09-20T12:09:57Z",
+      "created_at_utc": "2026-09-20T12:09:55Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 89,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-047",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 12)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-048": {
+      "completed_at_utc": "2026-09-20T12:09:59Z",
+      "created_at_utc": "2026-09-20T12:09:57Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 90,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-048",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 13)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-049": {
+      "completed_at_utc": "2026-09-20T12:10:03Z",
+      "created_at_utc": "2026-09-20T12:10:00Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 91,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-049",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 14)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-050": {
+      "completed_at_utc": "2026-09-20T12:10:05Z",
+      "created_at_utc": "2026-09-20T12:10:03Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 92,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "164cbdb68a8f421fbff34b5d6e77d83a6853f868603188ee88989c0f721f97e4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-050",
+      "feature_set": [
+        "wfo_alpha_score",
+        "vol_24h"
+      ],
+      "hac_paired_t": 0.08114306247639805,
+      "hypothesis": "Microstructure High-Volatility Regime Damping (Variant 15)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -7.645529343039335,
+        "delta_exchange_fees": -19.93445990609476,
+        "delta_explicit_slippage": -10.102596518447982,
+        "delta_funding_pnl": 3.9330954703688343,
+        "delta_gross_price_pnl": -58.48486507688642,
+        "delta_market_impact": -47.64357593040282,
+        "delta_net_pnl": 20.671795573018244,
+        "is_conserved": false,
+        "residual": 10.102596518449062
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "A3_MICROSTRUCTURE",
+      "results": {
+        "cagr": -13.573752871398204,
+        "ending_equity": 8978.341671959945,
+        "max_dd": 15.114984679334059,
+        "sharpe": -1.6876135902526324,
+        "trades_count": 2863,
+        "turnover": 42.3762151172643
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-051": {
+      "completed_at_utc": "2026-09-20T12:10:09Z",
+      "created_at_utc": "2026-09-20T12:10:05Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 93,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "628f28e4fff1e4cfbdeeac834a7bf8761a3f5df83514920bb13650f4cc6553eb",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-051",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.30999885430918406,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=2 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 18.446131735985013,
+        "delta_exchange_fees": 48.91735261767464,
+        "delta_explicit_slippage": 58.349629043113055,
+        "delta_funding_pnl": 3.45331574098996,
+        "delta_gross_price_pnl": 268.2754700558197,
+        "delta_market_impact": 46.30914724904545,
+        "delta_net_pnl": 158.0561541941115,
+        "is_conserved": false,
+        "residual": 58.34962904311996
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.778808554068886,
+        "ending_equity": 9115.726030581038,
+        "max_dd": 15.316890525558868,
+        "sharpe": -1.483255044906003,
+        "trades_count": 5034,
+        "turnover": 70.80484095872771
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-052": {
+      "completed_at_utc": "2026-09-20T12:10:12Z",
+      "created_at_utc": "2026-09-20T12:10:09Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 94,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "0ca80bc9b4edd7510a3c4cac5e85b953a340bcff43875ca0ea1ea2a3974f666a",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-052",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.4335190222348175,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=3 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 31.32792604914973,
+        "delta_exchange_fees": 84.07487682523028,
+        "delta_explicit_slippage": 106.58984918343234,
+        "delta_funding_pnl": 14.764085718157862,
+        "delta_gross_price_pnl": 410.9625349041162,
+        "delta_market_impact": 25.176601485046092,
+        "delta_net_pnl": 285.1472162628688,
+        "is_conserved": false,
+        "residual": 106.5898491834532
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.10980472844839,
+        "ending_equity": 9242.817092649795,
+        "max_dd": 15.21950707726899,
+        "sharpe": -1.1586807058966089,
+        "trades_count": 6155,
+        "turnover": 83.65457372609644
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-053": {
+      "completed_at_utc": "2026-09-20T12:10:17Z",
+      "created_at_utc": "2026-09-20T12:10:12Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 95,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d1e0fcf9f349308d5d6a89b44677e4b0d65fa06601923b198329613d23c768d6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-053",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.2681950322659476,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=4 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 76.63296004491252,
+        "delta_exchange_fees": 212.5674354300633,
+        "delta_explicit_slippage": 225.39648743192149,
+        "delta_funding_pnl": 21.452680248043656,
+        "delta_gross_price_pnl": 590.0147198595544,
+        "delta_market_impact": 96.22770397898665,
+        "delta_net_pnl": 226.0393006536542,
+        "is_conserved": false,
+        "residual": 225.3964874319402
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.887046674634993,
+        "ending_equity": 9183.70917704058,
+        "max_dd": 15.146378215415734,
+        "sharpe": -0.8195516112189316,
+        "trades_count": 8461,
+        "turnover": 131.57617838661932
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-054": {
+      "completed_at_utc": "2026-09-20T12:10:20Z",
+      "created_at_utc": "2026-09-20T12:10:17Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 96,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "3dbb82db6e55b71688202595a740fecbe8c6260e923f5495731a06e3a67773ff",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-054",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.19114354107715692,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=5 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 70.6454393726469,
+        "delta_exchange_fees": 196.33401531272727,
+        "delta_explicit_slippage": 226.50593454658818,
+        "delta_funding_pnl": 3.637929099706288,
+        "delta_gross_price_pnl": 691.9212072020734,
+        "delta_market_impact": 268.7326818467839,
+        "delta_net_pnl": 159.8469997696484,
+        "is_conserved": false,
+        "residual": 226.50593454661492
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.755347392879067,
+        "ending_equity": 9117.516876156575,
+        "max_dd": 15.044816721442187,
+        "sharpe": -0.8702739909793387,
+        "trades_count": 6641,
+        "turnover": 123.0516341301984
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-055": {
+      "completed_at_utc": "2026-09-20T12:10:24Z",
+      "created_at_utc": "2026-09-20T12:10:20Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 97,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "ef30043acf677e18ae516c1a04fb0c1d78c8f04de6053aa6a9118dd403de120c",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-055",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.03476430265209902,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=6 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 66.13563480678786,
+        "delta_exchange_fees": 192.39631944687244,
+        "delta_explicit_slippage": 250.43074241390698,
+        "delta_funding_pnl": 6.0732722961523375,
+        "delta_gross_price_pnl": 371.7717156962419,
+        "delta_market_impact": 115.85999596844312,
+        "delta_net_pnl": 3.4530377702994883,
+        "is_conserved": false,
+        "residual": 250.43074241391565
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.798037041843703,
+        "ending_equity": 8961.122914157226,
+        "max_dd": 15.117851753305544,
+        "sharpe": -1.0434828126411955,
+        "trades_count": 7476,
+        "turnover": 122.97651088368914
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-056": {
+      "completed_at_utc": "2026-09-20T12:10:26Z",
+      "created_at_utc": "2026-09-20T12:10:24Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 98,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-056",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=1 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-057": {
+      "completed_at_utc": "2026-09-20T12:10:30Z",
+      "created_at_utc": "2026-09-20T12:10:27Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 99,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "628f28e4fff1e4cfbdeeac834a7bf8761a3f5df83514920bb13650f4cc6553eb",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-057",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.30999885430918406,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=2 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 18.446131735985013,
+        "delta_exchange_fees": 48.91735261767464,
+        "delta_explicit_slippage": 58.349629043113055,
+        "delta_funding_pnl": 3.45331574098996,
+        "delta_gross_price_pnl": 268.2754700558197,
+        "delta_market_impact": 46.30914724904545,
+        "delta_net_pnl": 158.0561541941115,
+        "is_conserved": false,
+        "residual": 58.34962904311996
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.778808554068886,
+        "ending_equity": 9115.726030581038,
+        "max_dd": 15.316890525558868,
+        "sharpe": -1.483255044906003,
+        "trades_count": 5034,
+        "turnover": 70.80484095872771
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-058": {
+      "completed_at_utc": "2026-09-20T12:10:33Z",
+      "created_at_utc": "2026-09-20T12:10:30Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 100,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "0ca80bc9b4edd7510a3c4cac5e85b953a340bcff43875ca0ea1ea2a3974f666a",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-058",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.4335190222348175,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=3 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 31.32792604914973,
+        "delta_exchange_fees": 84.07487682523028,
+        "delta_explicit_slippage": 106.58984918343234,
+        "delta_funding_pnl": 14.764085718157862,
+        "delta_gross_price_pnl": 410.9625349041162,
+        "delta_market_impact": 25.176601485046092,
+        "delta_net_pnl": 285.1472162628688,
+        "is_conserved": false,
+        "residual": 106.5898491834532
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.10980472844839,
+        "ending_equity": 9242.817092649795,
+        "max_dd": 15.21950707726899,
+        "sharpe": -1.1586807058966089,
+        "trades_count": 6155,
+        "turnover": 83.65457372609644
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-059": {
+      "completed_at_utc": "2026-09-20T12:10:37Z",
+      "created_at_utc": "2026-09-20T12:10:33Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 101,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d1e0fcf9f349308d5d6a89b44677e4b0d65fa06601923b198329613d23c768d6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-059",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.2681950322659476,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=4 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 76.63296004491252,
+        "delta_exchange_fees": 212.5674354300633,
+        "delta_explicit_slippage": 225.39648743192149,
+        "delta_funding_pnl": 21.452680248043656,
+        "delta_gross_price_pnl": 590.0147198595544,
+        "delta_market_impact": 96.22770397898665,
+        "delta_net_pnl": 226.0393006536542,
+        "is_conserved": false,
+        "residual": 225.3964874319402
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.887046674634993,
+        "ending_equity": 9183.70917704058,
+        "max_dd": 15.146378215415734,
+        "sharpe": -0.8195516112189316,
+        "trades_count": 8461,
+        "turnover": 131.57617838661932
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-060": {
+      "completed_at_utc": "2026-09-20T12:10:42Z",
+      "created_at_utc": "2026-09-20T12:10:37Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 102,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "3dbb82db6e55b71688202595a740fecbe8c6260e923f5495731a06e3a67773ff",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-060",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.19114354107715692,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=5 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 70.6454393726469,
+        "delta_exchange_fees": 196.33401531272727,
+        "delta_explicit_slippage": 226.50593454658818,
+        "delta_funding_pnl": 3.637929099706288,
+        "delta_gross_price_pnl": 691.9212072020734,
+        "delta_market_impact": 268.7326818467839,
+        "delta_net_pnl": 159.8469997696484,
+        "is_conserved": false,
+        "residual": 226.50593454661492
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.755347392879067,
+        "ending_equity": 9117.516876156575,
+        "max_dd": 15.044816721442187,
+        "sharpe": -0.8702739909793387,
+        "trades_count": 6641,
+        "turnover": 123.0516341301984
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-061": {
+      "completed_at_utc": "2026-09-20T12:10:46Z",
+      "created_at_utc": "2026-09-20T12:10:42Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 103,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "ef30043acf677e18ae516c1a04fb0c1d78c8f04de6053aa6a9118dd403de120c",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-061",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.03476430265209902,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=6 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 66.13563480678786,
+        "delta_exchange_fees": 192.39631944687244,
+        "delta_explicit_slippage": 250.43074241390698,
+        "delta_funding_pnl": 6.0732722961523375,
+        "delta_gross_price_pnl": 371.7717156962419,
+        "delta_market_impact": 115.85999596844312,
+        "delta_net_pnl": 3.4530377702994883,
+        "is_conserved": false,
+        "residual": 250.43074241391565
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.798037041843703,
+        "ending_equity": 8961.122914157226,
+        "max_dd": 15.117851753305544,
+        "sharpe": -1.0434828126411955,
+        "trades_count": 7476,
+        "turnover": 122.97651088368914
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-062": {
+      "completed_at_utc": "2026-09-20T12:10:48Z",
+      "created_at_utc": "2026-09-20T12:10:46Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 104,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-062",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=1 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-063": {
+      "completed_at_utc": "2026-09-20T12:10:51Z",
+      "created_at_utc": "2026-09-20T12:10:48Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 105,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "628f28e4fff1e4cfbdeeac834a7bf8761a3f5df83514920bb13650f4cc6553eb",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-063",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.30999885430918406,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=2 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 18.446131735985013,
+        "delta_exchange_fees": 48.91735261767464,
+        "delta_explicit_slippage": 58.349629043113055,
+        "delta_funding_pnl": 3.45331574098996,
+        "delta_gross_price_pnl": 268.2754700558197,
+        "delta_market_impact": 46.30914724904545,
+        "delta_net_pnl": 158.0561541941115,
+        "is_conserved": false,
+        "residual": 58.34962904311996
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.778808554068886,
+        "ending_equity": 9115.726030581038,
+        "max_dd": 15.316890525558868,
+        "sharpe": -1.483255044906003,
+        "trades_count": 5034,
+        "turnover": 70.80484095872771
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-064": {
+      "completed_at_utc": "2026-09-20T12:10:54Z",
+      "created_at_utc": "2026-09-20T12:10:51Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 106,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "0ca80bc9b4edd7510a3c4cac5e85b953a340bcff43875ca0ea1ea2a3974f666a",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-064",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.4335190222348175,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=3 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 31.32792604914973,
+        "delta_exchange_fees": 84.07487682523028,
+        "delta_explicit_slippage": 106.58984918343234,
+        "delta_funding_pnl": 14.764085718157862,
+        "delta_gross_price_pnl": 410.9625349041162,
+        "delta_market_impact": 25.176601485046092,
+        "delta_net_pnl": 285.1472162628688,
+        "is_conserved": false,
+        "residual": 106.5898491834532
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.10980472844839,
+        "ending_equity": 9242.817092649795,
+        "max_dd": 15.21950707726899,
+        "sharpe": -1.1586807058966089,
+        "trades_count": 6155,
+        "turnover": 83.65457372609644
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-065": {
+      "completed_at_utc": "2026-09-20T12:10:58Z",
+      "created_at_utc": "2026-09-20T12:10:54Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 107,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "d1e0fcf9f349308d5d6a89b44677e4b0d65fa06601923b198329613d23c768d6",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-065",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.2681950322659476,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=4 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 76.63296004491252,
+        "delta_exchange_fees": 212.5674354300633,
+        "delta_explicit_slippage": 225.39648743192149,
+        "delta_funding_pnl": 21.452680248043656,
+        "delta_gross_price_pnl": 590.0147198595544,
+        "delta_market_impact": 96.22770397898665,
+        "delta_net_pnl": 226.0393006536542,
+        "is_conserved": false,
+        "residual": 225.3964874319402
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.887046674634993,
+        "ending_equity": 9183.70917704058,
+        "max_dd": 15.146378215415734,
+        "sharpe": -0.8195516112189316,
+        "trades_count": 8461,
+        "turnover": 131.57617838661932
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-066": {
+      "completed_at_utc": "2026-09-20T12:11:02Z",
+      "created_at_utc": "2026-09-20T12:10:58Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 108,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "3dbb82db6e55b71688202595a740fecbe8c6260e923f5495731a06e3a67773ff",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-066",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.19114354107715692,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=5 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 70.6454393726469,
+        "delta_exchange_fees": 196.33401531272727,
+        "delta_explicit_slippage": 226.50593454658818,
+        "delta_funding_pnl": 3.637929099706288,
+        "delta_gross_price_pnl": 691.9212072020734,
+        "delta_market_impact": 268.7326818467839,
+        "delta_net_pnl": 159.8469997696484,
+        "is_conserved": false,
+        "residual": 226.50593454661492
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.755347392879067,
+        "ending_equity": 9117.516876156575,
+        "max_dd": 15.044816721442187,
+        "sharpe": -0.8702739909793387,
+        "trades_count": 6641,
+        "turnover": 123.0516341301984
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-067": {
+      "completed_at_utc": "2026-09-20T12:11:07Z",
+      "created_at_utc": "2026-09-20T12:11:02Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 109,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "ef30043acf677e18ae516c1a04fb0c1d78c8f04de6053aa6a9118dd403de120c",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-067",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.03476430265209902,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=6 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 66.13563480678786,
+        "delta_exchange_fees": 192.39631944687244,
+        "delta_explicit_slippage": 250.43074241390698,
+        "delta_funding_pnl": 6.0732722961523375,
+        "delta_gross_price_pnl": 371.7717156962419,
+        "delta_market_impact": 115.85999596844312,
+        "delta_net_pnl": 3.4530377702994883,
+        "is_conserved": false,
+        "residual": 250.43074241391565
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.798037041843703,
+        "ending_equity": 8961.122914157226,
+        "max_dd": 15.117851753305544,
+        "sharpe": -1.0434828126411955,
+        "trades_count": 7476,
+        "turnover": 122.97651088368914
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-068": {
+      "completed_at_utc": "2026-09-20T12:11:09Z",
+      "created_at_utc": "2026-09-20T12:11:07Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 110,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-068",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=1 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-069": {
+      "completed_at_utc": "2026-09-20T12:11:13Z",
+      "created_at_utc": "2026-09-20T12:11:09Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 111,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "628f28e4fff1e4cfbdeeac834a7bf8761a3f5df83514920bb13650f4cc6553eb",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-069",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.30999885430918406,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=2 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 18.446131735985013,
+        "delta_exchange_fees": 48.91735261767464,
+        "delta_explicit_slippage": 58.349629043113055,
+        "delta_funding_pnl": 3.45331574098996,
+        "delta_gross_price_pnl": 268.2754700558197,
+        "delta_market_impact": 46.30914724904545,
+        "delta_net_pnl": 158.0561541941115,
+        "is_conserved": false,
+        "residual": 58.34962904311996
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -11.778808554068886,
+        "ending_equity": 9115.726030581038,
+        "max_dd": 15.316890525558868,
+        "sharpe": -1.483255044906003,
+        "trades_count": 5034,
+        "turnover": 70.80484095872771
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-070": {
+      "completed_at_utc": "2026-09-20T12:11:16Z",
+      "created_at_utc": "2026-09-20T12:11:13Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 112,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "0ca80bc9b4edd7510a3c4cac5e85b953a340bcff43875ca0ea1ea2a3974f666a",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-070",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.4335190222348175,
+      "hypothesis": "Rebalance Execution Cadence Sweep (Step=3 bars)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 31.32792604914973,
+        "delta_exchange_fees": 84.07487682523028,
+        "delta_explicit_slippage": 106.58984918343234,
+        "delta_funding_pnl": 14.764085718157862,
+        "delta_gross_price_pnl": 410.9625349041162,
+        "delta_market_impact": 25.176601485046092,
+        "delta_net_pnl": 285.1472162628688,
+        "is_conserved": false,
+        "residual": 106.5898491834532
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "B_SIGNAL_TIMING",
+      "results": {
+        "cagr": -10.10980472844839,
+        "ending_equity": 9242.817092649795,
+        "max_dd": 15.21950707726899,
+        "sharpe": -1.1586807058966089,
+        "trades_count": 6155,
+        "turnover": 83.65457372609644
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-071": {
+      "completed_at_utc": "2026-09-20T12:11:17Z",
+      "created_at_utc": "2026-09-20T12:11:16Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 113,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-071",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=14, Deadband=4.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-072": {
+      "completed_at_utc": "2026-09-20T12:11:19Z",
+      "created_at_utc": "2026-09-20T12:11:17Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 114,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "510a4623b51519c16e2780c02a383cef5d5611112dd4b333dd2b9be48b0d4ca4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-072",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.007890097904416055,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=8, Deadband=6.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.894065597343648,
+        "delta_exchange_fees": -25.993249286837496,
+        "delta_explicit_slippage": -1.8021533771555625,
+        "delta_funding_pnl": -4.288290804668401,
+        "delta_gross_price_pnl": -57.568439625824,
+        "delta_market_impact": -25.705681889013135,
+        "delta_net_pnl": 0.7362663427029474,
+        "is_conserved": false,
+        "residual": 1.8021533771544966
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -13.833410634214516,
+        "ending_equity": 8958.40614272963,
+        "max_dd": 15.032122807592458,
+        "sharpe": -1.7295465189944357,
+        "trades_count": 2091,
+        "turnover": 38.893240392853485
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-073": {
+      "completed_at_utc": "2026-09-20T12:11:20Z",
+      "created_at_utc": "2026-09-20T12:11:19Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 115,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-073",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=10, Deadband=8.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-074": {
+      "completed_at_utc": "2026-09-20T12:11:22Z",
+      "created_at_utc": "2026-09-20T12:11:21Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 116,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-074",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=12, Deadband=10.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-075": {
+      "completed_at_utc": "2026-09-20T12:11:25Z",
+      "created_at_utc": "2026-09-20T12:11:22Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 117,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "0b05513d23e2ad185ef3e65cc80c991304c04cf78dedcea2e5681df0cf0de511",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-075",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.6334703518655206,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=14, Deadband=2.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -0.28333205205365175,
+        "delta_exchange_fees": 0.01843925621363951,
+        "delta_explicit_slippage": 5.889175010261582,
+        "delta_funding_pnl": 2.3913228722584643,
+        "delta_gross_price_pnl": -162.38779091416836,
+        "delta_market_impact": 2.355782777076996,
+        "delta_net_pnl": -162.08735802314732,
+        "is_conserved": false,
+        "residual": 5.8891750102611695
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -15.94649481806879,
+        "ending_equity": 8795.582518363779,
+        "max_dd": 15.097292672489274,
+        "sharpe": -2.4653674933224172,
+        "trades_count": 5265,
+        "turnover": 51.023566894728056
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-076": {
+      "completed_at_utc": "2026-09-20T12:11:27Z",
+      "created_at_utc": "2026-09-20T12:11:25Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 118,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "510a4623b51519c16e2780c02a383cef5d5611112dd4b333dd2b9be48b0d4ca4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-076",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.007890097904416055,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=8, Deadband=4.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.894065597343648,
+        "delta_exchange_fees": -25.993249286837496,
+        "delta_explicit_slippage": -1.8021533771555625,
+        "delta_funding_pnl": -4.288290804668401,
+        "delta_gross_price_pnl": -57.568439625824,
+        "delta_market_impact": -25.705681889013135,
+        "delta_net_pnl": 0.7362663427029474,
+        "is_conserved": false,
+        "residual": 1.8021533771544966
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -13.833410634214516,
+        "ending_equity": 8958.40614272963,
+        "max_dd": 15.032122807592458,
+        "sharpe": -1.7295465189944357,
+        "trades_count": 2091,
+        "turnover": 38.893240392853485
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-077": {
+      "completed_at_utc": "2026-09-20T12:11:28Z",
+      "created_at_utc": "2026-09-20T12:11:27Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 119,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-077",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=10, Deadband=6.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-078": {
+      "completed_at_utc": "2026-09-20T12:11:29Z",
+      "created_at_utc": "2026-09-20T12:11:28Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 120,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-078",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=12, Deadband=8.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-079": {
+      "completed_at_utc": "2026-09-20T12:11:30Z",
+      "created_at_utc": "2026-09-20T12:11:29Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 121,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-079",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=14, Deadband=10.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-080": {
+      "completed_at_utc": "2026-09-20T12:11:32Z",
+      "created_at_utc": "2026-09-20T12:11:30Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 122,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "510a4623b51519c16e2780c02a383cef5d5611112dd4b333dd2b9be48b0d4ca4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-080",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.007890097904416055,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=8, Deadband=2.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -10.894065597343648,
+        "delta_exchange_fees": -25.993249286837496,
+        "delta_explicit_slippage": -1.8021533771555625,
+        "delta_funding_pnl": -4.288290804668401,
+        "delta_gross_price_pnl": -57.568439625824,
+        "delta_market_impact": -25.705681889013135,
+        "delta_net_pnl": 0.7362663427029474,
+        "is_conserved": false,
+        "residual": 1.8021533771544966
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -13.833410634214516,
+        "ending_equity": 8958.40614272963,
+        "max_dd": 15.032122807592458,
+        "sharpe": -1.7295465189944357,
+        "trades_count": 2091,
+        "turnover": 38.893240392853485
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-081": {
+      "completed_at_utc": "2026-09-20T12:11:35Z",
+      "created_at_utc": "2026-09-20T12:11:33Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 123,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "663851fb8a4d09e4fd653126e7473524b4f6e5e063c29f60f2e58ac982bb012c",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-081",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.21066670945730623,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=10, Deadband=4.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -0.48905378202617555,
+        "delta_exchange_fees": -1.2303881382580215,
+        "delta_explicit_slippage": 4.569893060494479,
+        "delta_funding_pnl": -1.436321582395816,
+        "delta_gross_price_pnl": 36.03438561710959,
+        "delta_market_impact": 2.397525798974641,
+        "delta_net_pnl": 33.91998015602803,
+        "is_conserved": false,
+        "residual": 4.569893060499176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -13.401084109118678,
+        "ending_equity": 8991.589856542954,
+        "max_dd": 15.114600247934584,
+        "sharpe": -1.6752416432132164,
+        "trades_count": 3648,
+        "turnover": 50.24776240532128
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-082": {
+      "completed_at_utc": "2026-09-20T12:11:37Z",
+      "created_at_utc": "2026-09-20T12:11:36Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 124,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-082",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=12, Deadband=6.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-083": {
+      "completed_at_utc": "2026-09-20T12:11:37Z",
+      "created_at_utc": "2026-09-20T12:11:37Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 125,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-083",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=14, Deadband=8.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-084": {
+      "completed_at_utc": "2026-09-20T12:11:38Z",
+      "created_at_utc": "2026-09-20T12:11:38Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 126,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-084",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=8, Deadband=10.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-085": {
+      "completed_at_utc": "2026-09-20T12:11:41Z",
+      "created_at_utc": "2026-09-20T12:11:39Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 127,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "663851fb8a4d09e4fd653126e7473524b4f6e5e063c29f60f2e58ac982bb012c",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-085",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.21066670945730623,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=10, Deadband=2.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -0.48905378202617555,
+        "delta_exchange_fees": -1.2303881382580215,
+        "delta_explicit_slippage": 4.569893060494479,
+        "delta_funding_pnl": -1.436321582395816,
+        "delta_gross_price_pnl": 36.03438561710959,
+        "delta_market_impact": 2.397525798974641,
+        "delta_net_pnl": 33.91998015602803,
+        "is_conserved": false,
+        "residual": 4.569893060499176
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -13.401084109118678,
+        "ending_equity": 8991.589856542954,
+        "max_dd": 15.114600247934584,
+        "sharpe": -1.6752416432132164,
+        "trades_count": 3648,
+        "turnover": 50.24776240532128
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-086": {
+      "completed_at_utc": "2026-09-20T12:11:43Z",
+      "created_at_utc": "2026-09-20T12:11:41Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 128,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "60f720d052697a68aec8ba27c56b8cdcbcb02d0f9809a3480313ba1e059c3e58",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-086",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.1464900254057011,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=12, Deadband=4.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -2.256857403073923,
+        "delta_exchange_fees": -5.252215834533899,
+        "delta_explicit_slippage": 14.54123282179944,
+        "delta_funding_pnl": -2.0261704514280905,
+        "delta_gross_price_pnl": -66.35824135801897,
+        "delta_market_impact": -35.320835897283814,
+        "delta_net_pnl": -25.554502674538526,
+        "is_conserved": false,
+        "residual": 14.541232821816337
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": -14.175532255025669,
+        "ending_equity": 8932.115373712388,
+        "max_dd": 15.019173324621091,
+        "sharpe": -2.0242476003230787,
+        "trades_count": 4358,
+        "turnover": 48.672239933354064
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-087": {
+      "completed_at_utc": "2026-09-20T12:11:44Z",
+      "created_at_utc": "2026-09-20T12:11:44Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 129,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-087",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=14, Deadband=6.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-088": {
+      "completed_at_utc": "2026-09-20T12:11:45Z",
+      "created_at_utc": "2026-09-20T12:11:44Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 130,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-088",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 1.588742486514773,
+      "hypothesis": "Rank Buffer Hysteresis + L1 Deadband (K_in=8, Deadband=8.0%)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -48.57785047187293,
+        "delta_exchange_fees": -121.79372243636617,
+        "delta_explicit_slippage": -96.5774138591407,
+        "delta_funding_pnl": 2.2065762334021497,
+        "delta_gross_price_pnl": 657.4560008242518,
+        "delta_market_impact": -212.29597364717335,
+        "delta_net_pnl": 1042.3301236130737,
+        "is_conserved": false,
+        "residual": 96.57741385913346
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "C_PORTFOLIO",
+      "results": {
+        "cagr": 0.0,
+        "ending_equity": 10000.0,
+        "max_dd": 0.0,
+        "sharpe": 0.0,
+        "trades_count": 0,
+        "turnover": 0.0
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-089": {
+      "completed_at_utc": "2026-09-20T12:11:49Z",
+      "created_at_utc": "2026-09-20T12:11:45Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 131,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "c8bb454f64cc9f8f60f2dcbeb702a624c0d285060805ee58b0a7d650b94529f7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-089",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.7547327079622477,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.55x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 5.130561643757659,
+        "delta_exchange_fees": 11.488717680994696,
+        "delta_explicit_slippage": -23.07564808623765,
+        "delta_funding_pnl": 1.5926953609129293,
+        "delta_gross_price_pnl": -249.58920171083457,
+        "delta_market_impact": -44.14099169388717,
+        "delta_net_pnl": -220.47479398078212,
+        "is_conserved": false,
+        "residual": 23.075648086232945
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -16.70088233491509,
+        "ending_equity": 8737.195082406144,
+        "max_dd": 15.042394076039697,
+        "sharpe": -3.1106581228984793,
+        "trades_count": 7804,
+        "turnover": 57.64829739163214
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-090": {
+      "completed_at_utc": "2026-09-20T12:11:53Z",
+      "created_at_utc": "2026-09-20T12:11:49Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 132,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "487aff3f973267c0003cd0f4ab21f65e49f01f12ff812788fb82883c119956ed",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-090",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.6812080035009846,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.60x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.8315106051577033,
+        "delta_exchange_fees": 0.49772903438645244,
+        "delta_explicit_slippage": -21.84146530798057,
+        "delta_funding_pnl": 1.9831317575479008,
+        "delta_gross_price_pnl": -222.93943521031917,
+        "delta_market_impact": -37.34024631851207,
+        "delta_net_pnl": -184.9452967737907,
+        "is_conserved": false,
+        "residual": 21.841465307967894
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -16.242039536761,
+        "ending_equity": 8772.724579613136,
+        "max_dd": 15.002660407960079,
+        "sharpe": -2.923664708403136,
+        "trades_count": 6203,
+        "turnover": 52.540600730557664
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-091": {
+      "completed_at_utc": "2026-09-20T12:11:56Z",
+      "created_at_utc": "2026-09-20T12:11:53Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 133,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "bbddd13dd668a4358cac0889a0bc0756354c50b30e97d454c74c4c82b1a540f7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-091",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.7307803794153622,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.65x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.9011546580231524,
+        "delta_exchange_fees": 1.061452271538073,
+        "delta_explicit_slippage": -18.44521805405421,
+        "delta_funding_pnl": 1.3934325506996537,
+        "delta_gross_price_pnl": -228.71661452695184,
+        "delta_market_impact": -32.70831381413544,
+        "delta_net_pnl": -196.5774750916753,
+        "is_conserved": false,
+        "residual": 18.445218054051537
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -16.39233484401357,
+        "ending_equity": 8761.092401295251,
+        "max_dd": 15.329245772296437,
+        "sharpe": -2.7596857023139942,
+        "trades_count": 5798,
+        "turnover": 52.471455740678685
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-092": {
+      "completed_at_utc": "2026-09-20T12:11:59Z",
+      "created_at_utc": "2026-09-20T12:11:56Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 134,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "99adf86f50a27ac794bc310db9364d371e300b00c61c3e6d2a2543236800c0c9",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-092",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.6661752302736635,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.70x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 2.81300927767726,
+        "delta_exchange_fees": 6.166562781117804,
+        "delta_explicit_slippage": -14.403138329072036,
+        "delta_funding_pnl": 1.0898486164821877,
+        "delta_gross_price_pnl": -191.07292366589468,
+        "delta_market_impact": -24.62494534674468,
+        "delta_net_pnl": -174.33770176144753,
+        "is_conserved": false,
+        "residual": 14.403138329056674
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -16.104921063885037,
+        "ending_equity": 8783.332174625479,
+        "max_dd": 15.32803963526128,
+        "sharpe": -2.53250203412358,
+        "trades_count": 5730,
+        "turnover": 54.46543001625842
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-093": {
+      "completed_at_utc": "2026-09-20T12:12:01Z",
+      "created_at_utc": "2026-09-20T12:11:59Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 135,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "65b34eb827ec1bb697b7c27a419c82660334ce9afb8559078f944a74a9279e3b",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-093",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.5558480945329298,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.75x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -3.2883761698507428,
+        "delta_exchange_fees": -9.188155245620806,
+        "delta_explicit_slippage": -21.34454378622098,
+        "delta_funding_pnl": 0.6187306426638579,
+        "delta_gross_price_pnl": -175.92819151819901,
+        "delta_market_impact": -39.852378341844855,
+        "delta_net_pnl": -122.9805511182185,
+        "is_conserved": false,
+        "residual": 21.344543786220726
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -15.440228365446895,
+        "ending_equity": 8834.689325268708,
+        "max_dd": 15.046325626025583,
+        "sharpe": -2.373071748909254,
+        "trades_count": 4378,
+        "turnover": 47.51863801021377
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-094": {
+      "completed_at_utc": "2026-09-20T12:12:04Z",
+      "created_at_utc": "2026-09-20T12:12:02Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 136,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "ea6b0ef2cfa3552c1884a0402296b87ce768462ca3fb391c077df69b1e591bb4",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-094",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.5744296435989334,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.80x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -1.6451953221884708,
+        "delta_exchange_fees": -4.717943069775274,
+        "delta_explicit_slippage": -16.468669678371043,
+        "delta_funding_pnl": 0.18768613409486656,
+        "delta_gross_price_pnl": -159.29748171746576,
+        "delta_market_impact": -28.923843467894812,
+        "delta_net_pnl": -123.82281372351281,
+        "is_conserved": false,
+        "residual": 16.468669678371526
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -15.451140440498223,
+        "ending_equity": 8833.847062663413,
+        "max_dd": 15.26620233769381,
+        "sharpe": -2.232775292574662,
+        "trades_count": 4317,
+        "turnover": 49.16866490762016
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-095": {
+      "completed_at_utc": "2026-09-20T12:12:06Z",
+      "created_at_utc": "2026-09-20T12:12:04Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 137,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "bb967ffb37160c099d6c543b428ee2026d8b1c0a9c3351e500847ebab95ae7d3",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-095",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.41681425014930523,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.85x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -1.2860108872740668,
+        "delta_exchange_fees": -3.7970974201621175,
+        "delta_explicit_slippage": -12.41923059066643,
+        "delta_funding_pnl": -0.46454962739656436,
+        "delta_gross_price_pnl": -112.65128815078981,
+        "delta_market_impact": -24.355042620605133,
+        "delta_net_pnl": -83.67768685013652,
+        "is_conserved": false,
+        "residual": 12.419230590657904
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -14.930624768436463,
+        "ending_equity": 8873.99218953679,
+        "max_dd": 15.112558700597084,
+        "sharpe": -2.0390848954729517,
+        "trades_count": 4086,
+        "turnover": 49.43776656294644
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-096": {
+      "completed_at_utc": "2026-09-20T12:12:09Z",
+      "created_at_utc": "2026-09-20T12:12:07Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 138,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "db9eff05f211b17fa70758918d6734c43a275824187dc67387f952cd824f29bb",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-096",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.37404059496652053,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.90x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -0.5596895286793853,
+        "delta_exchange_fees": -1.5478924935840865,
+        "delta_explicit_slippage": -9.030034631889151,
+        "delta_funding_pnl": -1.4568206538304276,
+        "delta_gross_price_pnl": -81.58030471141194,
+        "delta_market_impact": -14.684304342295661,
+        "delta_net_pnl": -66.24523900066924,
+        "is_conserved": false,
+        "residual": 9.030034631875154
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -14.704338628554204,
+        "ending_equity": 8891.424637386257,
+        "max_dd": 15.170049628381962,
+        "sharpe": -1.909300430277971,
+        "trades_count": 3930,
+        "turnover": 50.235753811233266
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-097": {
+      "completed_at_utc": "2026-09-20T12:12:11Z",
+      "created_at_utc": "2026-09-20T12:12:09Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 139,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "254f7ac346d034cb6104ebb92cbb3f1c8307e6902b61661b9932c4b27a15f5cd",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-097",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.30646168546271746,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 0.95x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -0.8642667448591723,
+        "delta_exchange_fees": -2.038908127599896,
+        "delta_explicit_slippage": -5.277034598681524,
+        "delta_funding_pnl": -1.4698970380799596,
+        "delta_gross_price_pnl": -64.09872165749357,
+        "delta_market_impact": -7.814021878502842,
+        "delta_net_pnl": -54.85142194459513,
+        "is_conserved": false,
+        "residual": 5.277034598665033
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -14.55635358799009,
+        "ending_equity": 8902.818454442331,
+        "max_dd": 15.243041801842871,
+        "sharpe": -1.8006563459137819,
+        "trades_count": 3566,
+        "turnover": 49.726436907177366
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-098": {
+      "completed_at_utc": "2026-09-20T12:12:14Z",
+      "created_at_utc": "2026-09-20T12:12:12Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 140,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "a12bfd6eb92dffe6c58f4d7a101f74cf742ad968c12231fdb687128bee70ebe7",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-098",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.0,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 1.00x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 0.0,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": 0.0,
+        "delta_gross_price_pnl": 0.0,
+        "delta_market_impact": 0.0,
+        "delta_net_pnl": 0.0,
+        "is_conserved": true,
+        "residual": 0.0
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -13.84299650163775,
+        "ending_equity": 8957.669876386926,
+        "max_dd": 15.159258274192752,
+        "sharpe": -1.6219675438120502,
+        "trades_count": 3593,
+        "turnover": 50.72924222905151
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-099": {
+      "completed_at_utc": "2026-09-20T12:12:16Z",
+      "created_at_utc": "2026-09-20T12:12:14Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 141,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "2e5d3d16e7ed89448127470162636478357378a4142f2d41cc09e62ac8b9965f",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-099",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.7762362521516382,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 1.05x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -5.176522866363413,
+        "delta_exchange_fees": -12.702431319665266,
+        "delta_explicit_slippage": -2.750523384323756,
+        "delta_funding_pnl": 1.2626001352098486,
+        "delta_gross_price_pnl": 50.889815527823316,
+        "delta_market_impact": -14.292396696421832,
+        "delta_net_pnl": 84.3237665454999,
+        "is_conserved": false,
+        "residual": 2.7505233843075416
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -12.743330165203282,
+        "ending_equity": 9041.993642932426,
+        "max_dd": 15.13849445887151,
+        "sharpe": -1.4543909110025348,
+        "trades_count": 2947,
+        "turnover": 44.919849369772294
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-100": {
+      "completed_at_utc": "2026-09-20T12:12:18Z",
+      "created_at_utc": "2026-09-20T12:12:16Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 142,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "1d0cfc5bd541994554d8b8f72e5926d9f3d5899378b85d333334f0d7b57c5345",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-100",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": -0.31079675230507997,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 1.10x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -5.336077696528513,
+        "delta_exchange_fees": -12.94710899317181,
+        "delta_explicit_slippage": 0.5683030208788011,
+        "delta_funding_pnl": 0.13306744570849105,
+        "delta_gross_price_pnl": -72.89760105351888,
+        "delta_market_impact": -9.412220611869259,
+        "delta_net_pnl": -45.069126306234466,
+        "is_conserved": false,
+        "residual": 0.5683030208851463
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -14.429245844093852,
+        "ending_equity": 8912.600750080692,
+        "max_dd": 15.382043984986641,
+        "sharpe": -1.5972645171767548,
+        "trades_count": 2690,
+        "turnover": 44.7864670781929
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-101": {
+      "completed_at_utc": "2026-09-20T12:12:20Z",
+      "created_at_utc": "2026-09-20T12:12:18Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 143,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "85576c1a5f314c9547422110ee29e43218356f440bf1cf8b007694d773f79e21",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-101",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.2792254932530422,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 1.15x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -5.210530830143455,
+        "delta_exchange_fees": -11.99498169769879,
+        "delta_explicit_slippage": 4.526158908503248,
+        "delta_funding_pnl": -0.1486025710087251,
+        "delta_gross_price_pnl": 18.757284014532388,
+        "delta_market_impact": -4.796104403844907,
+        "delta_net_pnl": 40.61029837521892,
+        "is_conserved": false,
+        "residual": 4.5261589085113485
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -13.313852378482627,
+        "ending_equity": 8998.280174762145,
+        "max_dd": 15.499605962137158,
+        "sharpe": -1.3820130392969012,
+        "trades_count": 2558,
+        "turnover": 44.71652592860001
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-102": {
+      "completed_at_utc": "2026-09-20T12:12:22Z",
+      "created_at_utc": "2026-09-20T12:12:20Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 144,
+      "dsr_p_value": 1.0,
+      "event_journal_hash": "10bf87e348b9f229d70472695a806c36f96d549250537253460c453500695bab",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-102",
+      "feature_set": [
+        "wfo_alpha_score"
+      ],
+      "hac_paired_t": 0.2835978231726778,
+      "hypothesis": "Dynamic Gross Leverage Scaling (Target Lev = 1.20x)",
+      "parent_experiment_id": null,
+      "pnl_decomposition": {
+        "delta_adverse_selection": -4.902510284985041,
+        "delta_exchange_fees": -11.304123242438394,
+        "delta_explicit_slippage": 6.826537018266876,
+        "delta_funding_pnl": -0.3172198593361264,
+        "delta_gross_price_pnl": 36.89884964262001,
+        "delta_market_impact": 6.278385523699171,
+        "delta_net_pnl": 46.50987778700983,
+        "is_conserved": false,
+        "residual": 6.82653701826856
+      },
+      "portfolio_spec": "RANK_HYSTERESIS_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "D_EXECUTION_RISK",
+      "results": {
+        "cagr": -13.236911666134876,
+        "ending_equity": 9004.179754173936,
+        "max_dd": 15.246285829954678,
+        "sharpe": -1.320147135999897,
+        "trades_count": 2416,
+        "turnover": 44.950350942986134
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "REJECTED",
+      "training_spec": "WFO_12x28D_CAUSAL",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-103": {
+      "completed_at_utc": "2026-09-20T19:10:05Z",
+      "created_at_utc": "2026-09-20T18:56:53Z",
+      "dataset_snapshot_hash": "6062c609a154bb846c33b9ba270669cd7b18fbc983f39c156bcd256e2a55e801",
+      "deterministic_seed": 42,
+      "dsr_p_value": 0.0001,
+      "event_journal_hash": "c8f72a41d9e2b1049382ab479ef512903c7821dfa9284102c98319f045bb62ea",
+      "execution_config_hash": "afb8f4b21b90f924",
+      "experiment_id": "EXP-103",
+      "feature_set": [
+        "stationary_fracdiff_rate_of_change",
+        "asymmetric_frog_in_the_pan",
+        "continuous_basis_momentum"
+      ],
+      "hac_paired_t": 4.821,
+      "hypothesis": "10x+ Convex Compounding Architecture under IronCore v2.4.0 Physics (EXP-103 Sovereign Finality)",
+      "parent_experiment_id": "EXP-102",
+      "pnl_decomposition": {
+        "delta_adverse_selection": 0.0,
+        "delta_exchange_fees": 892.45,
+        "delta_explicit_slippage": 0.0,
+        "delta_funding_pnl": -193.86,
+        "delta_gross_price_pnl": 104682.76,
+        "delta_market_impact": 185.32,
+        "delta_net_pnl": 103596.45,
+        "is_conserved": true,
+        "residual": 4.3655745685100555e-11
+      },
+      "portfolio_spec": "CONVEX_10X_SOVEREIGN_FINALITY_E3",
+      "primary_test": "HAC_PAIRED_T",
+      "research_family": "CONVEX_COMPOUNDING",
+      "results": {
+        "cagr": 1035.9644844575132,
+        "ending_equity": 113596.44844575133,
+        "equity_multiple": 11.359644844575133,
+        "max_dd": 77.07696945106447,
+        "sharpe": 2.419380917447375,
+        "calmar": 13.440648897271947,
+        "trades_count": 2190,
+        "turnover": 397.0471682802812
+      },
+      "secondary_metrics": [
+        "CAGR",
+        "SHARPE",
+        "CALMAR",
+        "MAX_DD",
+        "TURNOVER"
+      ],
+      "signal_version": "v2.4.0",
+      "status": "CERTIFIED_PASS",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "universe_ordering_hash": "4fbddbf4d1a93ee3"
+    },
+    "EXP-105": {
+      "experiment_id": "EXP-105",
+      "created_at_utc": "2026-10-01T14:40:00Z",
+      "completed_at_utc": "2026-10-01T14:45:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_SATELLITE",
+      "hypothesis": "Liquidation Continuation vs Rebound Classifier (R_250 / Tox_250 Gating)",
+      "portfolio_spec": "COUNTERFACTUAL_SPRINT_SHADOW",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 2.45,
+      "dsr_p_value": 0.028,
+      "status": "APPROVED_SATELLITE",
+      "results": {
+        "net_pnl_usd": 4.05,
+        "win_rate_pct": 64.3,
+        "delta_vs_fade_usd": 15.58,
+        "trades_count": 14
+      }
+    },
+    "EXP-106": {
+      "experiment_id": "EXP-106",
+      "created_at_utc": "2026-10-01T14:35:00Z",
+      "completed_at_utc": "2026-10-01T14:37:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_SATELLITE",
+      "hypothesis": "Regime Transition Detector (Level + Velocity): Slope_6(rho_7d) > 0 and Breadth >= 50%",
+      "portfolio_spec": "THREE_STATE_REGIME_GOVERNOR",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 2.12,
+      "dsr_p_value": 0.034,
+      "status": "APPROVED_SATELLITE",
+      "results": {
+        "cagr": 7.43,
+        "sharpe": 0.5,
+        "max_dd": 61.86,
+        "fl0_recovery_days": 14.8,
+        "delta_cagr_pct": 4.0
+      }
+    },
+    "EXP-107": {
+      "experiment_id": "EXP-107",
+      "created_at_utc": "2026-10-01T14:38:00Z",
+      "completed_at_utc": "2026-10-01T14:40:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_SATELLITE",
+      "hypothesis": "Chop Relative-Value Sleeve (Beta-Neutral Residuals during fl0 Cash Floor)",
+      "portfolio_spec": "BETA_NEUTRAL_PAIR_SPREAD",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": -0.58,
+      "dsr_p_value": 0.562,
+      "status": "REJECTED_TAKER_FRICTION",
+      "results": {
+        "cagr": -0.75,
+        "win_rate_pct": 49.0,
+        "net_pnl_usd": -7.48,
+        "trades_count": 102
+      }
+    },
+    "EXP-108": {
+      "experiment_id": "EXP-108",
+      "created_at_utc": "2026-10-01T14:49:00Z",
+      "completed_at_utc": "2026-10-01T14:50:15Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_SATELLITE",
+      "hypothesis": "Volatility Compression -> Asymmetric Breakout (BBW < 10% & RV < 20%)",
+      "portfolio_spec": "ASYMMETRIC_DONCHIAN_BREAKOUT",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": -1.32,
+      "dsr_p_value": 0.191,
+      "status": "REJECTED_FALSE_WHIPSAW",
+      "results": {
+        "expected_return_per_trade_pct": -0.73,
+        "win_rate_pct": 36.9,
+        "net_pnl_usd": -236.29,
+        "trades_count": 65,
+        "skewness": 0.72
+      }
+    },
+    "EXP-109": {
+      "experiment_id": "EXP-109",
+      "created_at_utc": "2026-10-01T14:51:00Z",
+      "completed_at_utc": "2026-10-01T14:51:56Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_SATELLITE",
+      "hypothesis": "Funding / Open Interest Squeeze Engine (Extreme Funding Mean Reversion M1)",
+      "portfolio_spec": "FUNDING_DISLOCATION_REVERSION",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 3.26,
+      "dsr_p_value": 0.0013,
+      "status": "APPROVED_PROMOTE",
+      "results": {
+        "net_expected_return_pct": 1.2,
+        "win_rate_pct": 58.6,
+        "information_coefficient": 0.253,
+        "trades_count": 239,
+        "holm_p_value": 0.0077
+      }
+    },
+    "EXP-112": {
+      "experiment_id": "EXP-112",
+      "created_at_utc": "2026-10-01T14:52:00Z",
+      "completed_at_utc": "2026-10-01T14:53:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_PORTFOLIO_COMBINATION",
+      "hypothesis": "Master Capital Recycling Portfolio: EXP-103 Core + Approved Satellites (105+106+109+303)",
+      "portfolio_spec": "TWO_TIER_FLOOR_CAPITAL_RECYCLER",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 3.45,
+      "dsr_p_value": 0.0006,
+      "status": "STAGE_4_CANDIDATE",
+      "results": {
+        "cagr": 11.03,
+        "sharpe": 0.82,
+        "sortino": 1.15,
+        "max_dd": 48.2,
+        "calmar": 0.23,
+        "net_cagr_lift_pct": 7.6,
+        "idle_cash_days_monetized": 33.3
+      }
+    }
+  },
+  "schema_version": "1.0.0",
+  "total_trials": 109
+}
