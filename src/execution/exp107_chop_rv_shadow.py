@@ -54,8 +54,12 @@ class EXP107ChopRVShadow:
             "governance": {
                 "experiment": "EXP-107",
                 "specification": "v3.5-chop-rv-beta-neutral-residuals",
-                "status": "ARMED_AWAITING_DISLOCATION",
-                "risk_budget_usd": 200.0,
+                "research_role": "REJECTED_QUARANTINE",
+                "research_status": "REJECTED",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "status": "TELEMETRY_ONLY_FALSIFICATION_MONITOR",
+                "risk_budget_usd": 0.0,  # Code-level invariant: research_status == REJECTED => risk_budget = 0
                 "z_entry_threshold": 2.0,
                 "z_exit_threshold": 0.5,
                 "taker_fee_bps": 4.5
@@ -81,6 +85,14 @@ class EXP107ChopRVShadow:
             try:
                 with open(STATE_FILE, "r") as f:
                     self.state_data = json.load(f)
+                # Enforce Code-Level Invariant: REJECTED status forces risk budget to 0
+                gov = self.state_data.setdefault("governance", {})
+                gov["research_role"] = "REJECTED_QUARANTINE"
+                gov["research_status"] = "REJECTED"
+                gov["portfolio_eligibility"] = False
+                gov["promotion_path"] = False
+                gov["status"] = "TELEMETRY_ONLY_FALSIFICATION_MONITOR"
+                gov["risk_budget_usd"] = 0.0
             except Exception as e:
                 print(f"[EXP-107] Warning reading state: {e}")
 
@@ -122,13 +134,14 @@ class EXP107ChopRVShadow:
                 if len(self.price_history[sym]) > 180:
                     self.price_history[sym].pop(0)
 
-        in_fl0 = self.is_apex_in_cash_floor()
-        if not in_fl0:
-            self.state_data["governance"]["status"] = "DORMANT_CORE_IN_TREND"
-            self.save_state()
-            return
-
-        self.state_data["governance"]["status"] = "ACTIVE_HUNTING_DISLOCATIONS"
+        # Maintain Invariants on every cycle
+        gov = self.state_data.setdefault("governance", {})
+        gov["research_role"] = "REJECTED_QUARANTINE"
+        gov["research_status"] = "REJECTED"
+        gov["portfolio_eligibility"] = False
+        gov["promotion_path"] = False
+        gov["status"] = "TELEMETRY_ONLY_FALSIFICATION_MONITOR"
+        gov["risk_budget_usd"] = 0.0  # Code-level invariant: research_status == REJECTED => risk_budget = 0
 
         # Check pair spreads
         for sym_a, sym_b in PAIRS:
@@ -149,7 +162,7 @@ class EXP107ChopRVShadow:
                 spread = (r_a - beta_a * r_btc) - (r_b - beta_b * r_btc)
                 z_score = (spread[-1] - np.mean(spread)) / (np.std(spread) + 1e-12)
 
-                # Active management
+                # Active management - Close existing positions
                 if pair_key in self.state_data["active_pairs"]:
                     pos = self.state_data["active_pairs"][pair_key]
                     hold_sec = now - pos["entry_ts"]
@@ -171,23 +184,28 @@ class EXP107ChopRVShadow:
                         tot = self.state_data["metrics"]["total_trades"]
                         self.state_data["metrics"]["win_rate_pct"] = round((self.state_data["metrics"]["winning_trades"] / max(1, tot)) * 100.0, 1)
                         del self.state_data["active_pairs"][pair_key]
-                        print(f"[EXP-107] CLOSED {pair_key}: Net PnL = ${net:+.2f}")
-                elif abs(z_score) > 2.0 and len(self.state_data["active_pairs"]) < 2:
-                    direction = -1.0 if z_score > 0 else +1.0
-                    w_a = 0.5 * (beta_b / (beta_a + beta_b + 1e-6))
-                    w_b = 0.5 * (beta_a / (beta_a + beta_b + 1e-6))
-                    entry_fee = 200.0 * 0.00045 * 2.0
-                    self.state_data["active_pairs"][pair_key] = {
-                        "direction": direction,
-                        "w_a": round(float(w_a), 4),
-                        "w_b": round(float(w_b), 4),
-                        "entry_a": prices[sym_a],
-                        "entry_b": prices[sym_b],
-                        "entry_ts": now,
-                        "entry_z": round(float(z_score), 2),
-                        "entry_fee": entry_fee
-                    }
-                    print(f"[EXP-107] ENTERED {pair_key}: Z = {z_score:+.2f} | Dir = {direction}")
+                        print(f"[EXP-107 QUARANTINE] CLOSED {pair_key}: Net PnL = ${net:+.2f}")
+                elif abs(z_score) > 2.0:
+                    # Code-level invariant: Zero new risk budget for REJECTED strategy
+                    if gov["research_status"] == "REJECTED" or gov["risk_budget_usd"] <= 0.0:
+                        # Observation telemetry only; no position opened
+                        pass
+                    elif len(self.state_data["active_pairs"]) < 2:
+                        direction = -1.0 if z_score > 0 else +1.0
+                        w_a = 0.5 * (beta_b / (beta_a + beta_b + 1e-6))
+                        w_b = 0.5 * (beta_a / (beta_a + beta_b + 1e-6))
+                        entry_fee = 200.0 * 0.00045 * 2.0
+                        self.state_data["active_pairs"][pair_key] = {
+                            "direction": direction,
+                            "w_a": round(float(w_a), 4),
+                            "w_b": round(float(w_b), 4),
+                            "entry_a": prices[sym_a],
+                            "entry_b": prices[sym_b],
+                            "entry_ts": now,
+                            "entry_z": round(float(z_score), 2),
+                            "entry_fee": entry_fee
+                        }
+                        print(f"[EXP-107] ENTERED {pair_key}: Z = {z_score:+.2f} | Dir = {direction}")
 
         self.save_state()
 

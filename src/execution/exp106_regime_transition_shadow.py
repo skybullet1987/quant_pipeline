@@ -29,6 +29,7 @@ EXP106_DIR = DATA_DIR / "exp106"
 EXP106_DIR.mkdir(parents=True, exist_ok=True)
 
 STATE_FILE = EXP106_DIR / "regime_transition_state.json"
+TRANSITIONS_LOG = EXP106_DIR / "regime_transitions.jsonl"
 APEX_STATE_FILE = DATA_DIR / "papertrade_state.json"
 LAKE_CANDLES = DATA_DIR / "lake" / "raw_candles_4h.parquet"
 
@@ -42,14 +43,23 @@ class EXP106RegimeShadow:
             "governance": {
                 "experiment": "EXP-106",
                 "specification": "v3.5-regime-transition-level-velocity",
+                "research_role": "CONFIRMATORY_SHADOW",
+                "research_status": "FROZEN_SHADOW",
+                "portfolio_eligibility": True,
+                "promotion_path": "CONFIRMATORY_SHADOW",
                 "rho_cutoff": RHO_THRESHOLD,
                 "recovery_allocation_pct": 15.0
+            },
+            "transition_state_machine": {
+                "current_state": "CASH_FLOOR",
+                "previous_state": "CASH_FLOOR",
+                "transition_history": []
             },
             "current_regime": {
                 "rho_7d": -0.1254,
                 "rho_slope_24h": 0.0,
                 "market_breadth_pct": 50.0,
-                "diagnosed_state": "BEAR_fl0",
+                "diagnosed_state": "CASH_FLOOR",
                 "core_apex_state": "CASH_FLOOR_fl0",
                 "candidate_allocation_pct": 0.0
             },
@@ -70,6 +80,17 @@ class EXP106RegimeShadow:
             try:
                 with open(STATE_FILE, "r") as f:
                     self.state_data = json.load(f)
+                gov = self.state_data.setdefault("governance", {})
+                gov["research_role"] = "CONFIRMATORY_SHADOW"
+                gov["research_status"] = "FROZEN_SHADOW"
+                gov["portfolio_eligibility"] = True
+                gov["promotion_path"] = "CONFIRMATORY_SHADOW"
+                if "transition_state_machine" not in self.state_data:
+                    self.state_data["transition_state_machine"] = {
+                        "current_state": self.state_data.get("current_regime", {}).get("diagnosed_state", "CASH_FLOOR"),
+                        "previous_state": "CASH_FLOOR",
+                        "transition_history": []
+                    }
             except Exception as e:
                 print(f"[EXP-106] Warning reading state: {e}")
 
@@ -129,19 +150,53 @@ class EXP106RegimeShadow:
             except Exception as e:
                 print(f"[EXP-106] Error computing regime: {e}")
 
-        # 3. 3-State Classification
+        prev_state = self.state_data["transition_state_machine"].get("current_state", "CASH_FLOOR")
+
+        # 3. 3-State Classification & Pathway Logging (CASH_FLOOR -> RECOVERY candidate -> NORMAL / EXPANSION)
         if rho_val > RHO_THRESHOLD:
-            regime = "EXPANSION"
+            regime = "NORMAL / EXPANSION"
             cand_alloc = 100.0
+            trigger_reason = f"rho_7d ({rho_val:+.4f}) > {RHO_THRESHOLD:+.4f} (Exited Defensive Cash Floor)"
             self.state_data["cumulative_shadow_tracking"]["expansion_bars"] += 1
         elif slope_val > 0.0 and breadth_val >= 50.0:
             regime = "fl0-RECOVERY"
             cand_alloc = 15.0
+            trigger_reason = f"rho_7d ({rho_val:+.4f}) <= {RHO_THRESHOLD:+.4f} but Slope ({slope_val:+.6f}) > 0 and Breadth ({breadth_val:.1f}%) >= 50%"
             self.state_data["cumulative_shadow_tracking"]["fl0_recovery_bars"] += 1
         else:
-            regime = "BEAR_fl0"
+            regime = "CASH_FLOOR"
             cand_alloc = 0.0
+            trigger_reason = f"rho_7d ({rho_val:+.4f}) <= {RHO_THRESHOLD:+.4f} (In Cash Floor; Recovery criteria unmet)"
             self.state_data["cumulative_shadow_tracking"]["fl0_cash_bars"] += 1
+
+        # Check for state transition
+        if regime != prev_state:
+            trans_evt = {
+                "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
+                "from_state": prev_state,
+                "to_state": regime,
+                "rho_7d": round(rho_val, 4),
+                "rho_slope_24h": round(slope_val, 6),
+                "market_breadth_pct": round(breadth_val, 1),
+                "trigger_reason": trigger_reason
+            }
+            try:
+                with open(TRANSITIONS_LOG, "a") as f:
+                    f.write(json.dumps(trans_evt) + "\n")
+            except Exception as e:
+                print(f"[EXP-106] Warning writing transition log: {e}")
+
+            history = self.state_data["transition_state_machine"].setdefault("transition_history", [])
+            history.append(trans_evt)
+            if len(history) > 30:
+                history.pop(0)
+
+            self.state_data["transition_state_machine"]["previous_state"] = prev_state
+            self.state_data["transition_state_machine"]["current_state"] = regime
+            print(f"\n[EXP-106 REGIME TRANSITION] >>> {prev_state}  ==>  {regime} <<<")
+            print(f"  Trigger: {trigger_reason}\n")
+        else:
+            self.state_data["transition_state_machine"]["current_state"] = regime
 
         self.state_data["cumulative_shadow_tracking"]["total_evaluations"] += 1
         self.state_data["cumulative_shadow_tracking"]["baseline_equity_usd"] = core_nav
@@ -160,7 +215,7 @@ class EXP106RegimeShadow:
         }
 
         self.save_state()
-        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S UTC')}] [EXP-106] Rho: {rho_val:+.4f} | Slope_24h: {slope_val:+.6f} | Breadth: {breadth_val:.1f}% => Regime: {regime} (Alloc: {cand_alloc}%)")
+        print(f"[{time.strftime('%Y-%m-%d %H:%M:%S UTC')}] [EXP-106] State: {regime} | Rho: {rho_val:+.4f} | Slope_24h: {slope_val:+.6f} | Breadth: {breadth_val:.1f}% => Alloc: {cand_alloc}%")
 
     def run_daemon(self):
         print(f"[{time.strftime('%Y-%m-%d %H:%M:%S UTC')}] >>> EXP-106 Regime Transition Shadow Daemon Started <<<")

@@ -124,6 +124,12 @@ class PerpBasisShadowEngine:
             "governance": {
                 "experiment": "EXP-401",
                 "specification": "v3.3-cross-venue-basis-carry-modeled",
+                "research_role": "TELEMETRY_ONLY",
+                "research_status": "OBSERVATION_ONLY",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "status": "OBSERVATION_ONLY",
+                "note": "Falsified basis hypothesis — observation and regime monitoring telemetry only. Not an active strategy.",
                 "friction_hurdle_bps": TOTAL_HURDLE_BPS,
                 "venues": ["Binance_USDM", "Hyperliquid_L1"],
                 "convergence_assumption": "modeled_75pct_basis_convergence_scenario (Stress-test scenario assumption, NOT empirical finding)",

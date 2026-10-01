@@ -1030,7 +1030,13 @@ class RatchetShadowEngine:
         summary = {
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "governance": {
+                "experiment": "EXP-201C",
                 "specification_version": "v3.4",
+                "research_role": "TELEMETRY_ONLY",
+                "research_status": "OBSERVATION_ONLY",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "note": "Supporting liquidation telemetry & latency routing telemetry only.",
                 "execution_model": EXECUTION_MODEL_TYPE,
                 "composite_designation": "Standardized three-factor composite (OBI, R_250, Toxicity_250); primary confirmatory horizon at 250ms",
                 "friction_assumptions": {

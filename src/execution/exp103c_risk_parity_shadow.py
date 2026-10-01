@@ -126,6 +126,11 @@ class RiskParityShadowEngine:
             "governance": {
                 "experiment": "EXP-103C",
                 "specification": "v3.2-risk-parity-factor-exposure",
+                "research_role": "TELEMETRY_ONLY",
+                "research_status": "OBSERVATION_ONLY",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "note": "Telemetric artifact only. Invariant: No A1 production parameter change during EXP-113.",
                 "gross_leverage_target": GROSS_LEVERAGE_TARGET,
                 "weight_bounds": [WEIGHT_MIN, WEIGHT_MAX],
                 "universe": UNIVERSE

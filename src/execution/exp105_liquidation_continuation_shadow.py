@@ -100,6 +100,11 @@ class EXP105ShadowDaemon:
             "governance": {
                 "experiment": "EXP-105",
                 "specification": "v3.5-liquidation-continuation-classifier",
+                "research_role": "CONFIRMATORY_SHADOW",
+                "research_status": "FROZEN_SHADOW",
+                "portfolio_eligibility": False,
+                "promotion_path": "CONFIRMATORY_SHADOW",
+                "note": "A2 prospective confirmation. Maintained frozen; directional sanity check under tiny live sample.",
                 "notional_usd": NOTIONAL_USD,
                 "taker_fee_bps": 4.5,
                 "assets": TRACKED_ASSETS

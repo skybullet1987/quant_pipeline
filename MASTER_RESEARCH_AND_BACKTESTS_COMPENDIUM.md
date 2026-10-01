@@ -19744,6 +19744,61 @@ On November 5, 2026, EXP-113 will deliver an audit answering exactly five empiri
 | **4. Does EXP-112 benefit?** | Positive incremental portfolio PnL versus frozen A1 baseline ($+3.43\%$) | Portfolio $\Delta PnL \le \$0.00\text{ USDC}$ |
 | **5. Does system remain causal?** | Zero invariant violations, exact residual conservation ($\le \$0.05$), zero 0.80 HWM breaches | Any breach of Core 0.80 HWM floor |
 
+---
+
+### 15.12 EXP-113 Operational Governance Map, Machine-Readable Roles, and Live Attribution
+
+Ahead of the October 5, 2026 virgin out-of-sample window, the 12 live running daemons across the Tokyo infrastructure have been formally classified into a machine-readable governance taxonomy. This prevents future auditors from mistakenly treating diagnostic telemetry feeds as capital-competing alpha strategies.
+
+#### 1. Machine-Readable Research Role Taxonomy:
+Every subsystem state file now contains an immutable `research_role` and `portfolio_eligibility` tag:
+
+| Subsystem | Research Role | Research Status | Portfolio Eligibility | Operational Role / Purpose |
+| :--- | :--- | :--- | :---: | :--- |
+| **EXP-103** | `PRODUCTION_CORE` | `PRODUCTION_FROZEN` | **Yes (100%)** | Canonical A1 Core (100% Cash Floor $fl_0$, macro boundary Oct 3). Untouched. |
+| **EXP-105** | `CONFIRMATORY_SHADOW` | `FROZEN_SHADOW` | No (Solo) | Liquidation continuation vs rebound classifier. Directional check (N=31). Frozen. |
+| **EXP-106** | `CONFIRMATORY_SHADOW` | `FROZEN_SHADOW` | Yes (in 112) | Macro regime transition detector (Level + Velocity). Pathway-logged state machine. |
+| **EXP-109** | `CONFIRMATORY_SHADOW` | `PROMOTED_CANDIDATE` | Yes (in 112) | Funding-Extreme Anti-Crowding Reversal. Preregistered OOS hurdle ($CI > +25\text{ bps}$). |
+| **EXP-112** | `PORTFOLIO_HYPOTHESIS` | `PAPER_DIAGNOSTIC` | N/A | Two-Tier Governed Recycler (Mode B). Frozen portfolio hypothesis, not standalone strategy. |
+| **EXP-303** | `PARALLEL_STRATEGY` | `SEPARATE_OOS_STREAM`| No (A2 Isolated) | Polymarket Fast-Unwind & Spread Capture. Separate venue/settlement/payoff family. |
+| **EXP-103B**| `TELEMETRY_ONLY` | `OBSERVATION_ONLY` | No | Maker queue economics & adverse selection instrumentation (504 attempts). |
+| **EXP-103C**| `TELEMETRY_ONLY` | `OBSERVATION_ONLY` | No | Inverse-volatility risk parity sizing telemetry. Zero A1 parameter mutation allowed. |
+| **EXP-104** | `TELEMETRY_ONLY` | `BENCHMARK_ONLY` | No | Counterfactual macro hedge benchmark. Strictly non-promotable during EXP-113. |
+| **EXP-201A**| `INFRASTRUCTURE` | `INFRASTRUCTURE` | No | Binance/Hyperliquid wire timestamp decomposition & pre-treatment matched controls. |
+| **EXP-201C**| `TELEMETRY_ONLY` | `OBSERVATION_ONLY` | No | HL Ratchet standardized 3-factor composite routing telemetry. |
+| **EXP-202** | `INFRASTRUCTURE` | `INFRASTRUCTURE` | No | Binance trade-tape de-censoring & aggressive sweep detection engine. |
+| **EXP-107** | `REJECTED_QUARANTINE` | `REJECTED` | **No ($0.00 Budget)** | Falsified Chop RV residual cointegration. Code-level invariant enforced: $\text{Budget} = 0$. |
+| **EXP-401** | `TELEMETRY_ONLY` | `OBSERVATION_ONLY` | **No** | Falsified cross-venue basis carry. Feed maintained purely for macro dislocation telemetry. |
+| **EXP-108** | `OFFLINE` | `FALSIFIED_KILLED` | **No** | Volatility breakout during bear cash floor. Falsified in research and killed. |
+
+#### 2. Code-Level Invariant: Rejected Status Enforces Zero Risk Budget:
+To ensure quarantined strategies cannot inadvertently deploy execution capital or distort prospective portfolio statistics, `src/execution/exp107_chop_rv_shadow.py` enforces the code-level invariant:
+$$\boxed{ \text{research\_status} = \text{REJECTED} \implies \text{risk\_budget\_usd} = \$0.00 }$$
+Under this invariant, new entries are strictly suppressed. The daemon operates purely as a telemetry monitor tracking whether live execution friction continues to confirm the offline falsification (86 trades, $0\%$ win rate, $-\$15.34$ PnL, $\$30.96$ taker fees paid).
+
+#### 3. EXP-106 Explicit Transition Pathway Logging:
+Rather than recording static state snapshots, `src/execution/exp106_regime_transition_shadow.py` logs all discrete state transitions to an append-only ledger (`data/exp106/regime_transitions.jsonl`):
+$$\mathbf{CASH\_FLOOR} \quad \longrightarrow \quad \mathbf{fl0\text{-}RECOVERY \text{ candidate}} \quad \longrightarrow \quad \mathbf{NORMAL / EXPANSION}$$
+* Current live reading ($\rho_{7d} = -0.0804 > -0.1000$ with $20.1\%$ breadth) correctly transitions to `NORMAL / EXPANSION` (100% allocation), verifying that the state machine exits the cash-floor condition when systemic correlation uncouples.
+
+#### 4. Primary Live Audit Metric: Eligible Risk-Budget Utilization ($U_t$):
+For the October 5 – November 5 campaign, PnL is subordinated to **Risk-Budget Utilization**, answering: *"Did we actually monetize the defensive capital left idle by EXP-103?"*
+$$\boxed{ U_t = \frac{\text{Actual Satellite Risk Deployed}_t}{\text{Maximum Permitted Satellite Risk}_t} }$$
+* **During Cash Floor ($fl_0$):** Maximum permitted satellite risk is $15.0\%$ of portfolio equity.
+* **During Active Trend ($fl_{\text{off}}$):** Core APEX deploys $100.0\%$, satellite budget cap is $0.0\%$.
+* **During Satellite Kill Floor:** Satellite budget cap is $0.0\%$ (8 bars observed in audit).
+* **Tracked Sub-Metrics:** Mean utilization $\bar{U}$, cash-floor utilization $\bar{U}_{fl_0}$, recovery utilization $\bar{U}_{\text{recovery}}$, and per-sleeve utilization ($U_{105}, U_{106}, U_{109}$).
+
+#### 5. Live Portfolio Attribution Accounting:
+Every 4H rebalance bar computes the exact additive decomposition of portfolio return:
+$$\Delta NAV_t = \Delta PnL_{103, t} + \Delta PnL_{105, t} + \Delta PnL_{106, t} + \Delta PnL_{109, t} - \text{Friction}_t$$
+$$\boxed{ \text{Incremental A2 Alpha} = \Delta NAV_{\text{actual}} - \Delta NAV_{\text{A1 counterfactual}} }$$
+This measures precisely what A2 contributed over the frozen production baseline ($+3.43\%$ CAGR), isolating execution frictions and resolving standalone sleeve versus portfolio interaction.
+
+#### 6. Isolation of Parallel Strategy Families (EXP-303):
+Polymarket event trading possesses distinct economic venues, non-perpetual settlement, discrete binary payoff structures, and unique capital recycling profiles. EXP-303 is governed as a **Parallel Strategy Family** with its own confirmatory sample (25 forward trades, Policy B1 $= +\$141.55$, Policy B2 $= +\$154.08$) and is strictly excluded from Hyperliquid A2 satellite statistical inference.
+
+
 
 
 

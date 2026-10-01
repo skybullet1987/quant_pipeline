@@ -140,6 +140,15 @@ class Exp104MacroHedgeShadow:
                 delta_pnl = self.exp104_equity - self.core_current_equity
                 record = {
                     "timestamp": now_str,
+                    "governance": {
+                        "experiment": "EXP-104",
+                        "specification": "v3.2-macro-hedge-overlay",
+                        "research_role": "TELEMETRY_ONLY",
+                        "research_status": "COUNTERFACTUAL_BENCHMARK_ONLY",
+                        "portfolio_eligibility": False,
+                        "promotion_path": False,
+                        "note": "Counterfactual hedge benchmark — non-promotable during EXP-113."
+                    },
                     "core_exp103_equity": round(self.core_current_equity, 2),
                     "shadow_exp104_equity": round(self.exp104_equity, 2),
                     "delta_exp104_vs_exp103_usd": round(delta_pnl, 2),

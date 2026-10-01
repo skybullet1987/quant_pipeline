@@ -73,7 +73,13 @@ class EXP201ATelemetryDaemon:
             "pending_markouts_count": len(self.engine.pending_treatments),
             "ledger_file": str(self.engine.ledger_file),
             "governance": {
+                "experiment": "EXP-201A",
                 "specification": "v3.2.1-A0.1-tokyo",
+                "research_role": "INFRASTRUCTURE",
+                "research_status": "INFRASTRUCTURE",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "note": "Market-data spillover telemetry infrastructure.",
                 "estimator": "PRE_TREATMENT_RESIDUALIZED_MATCHED_EVENT_ESTIMATOR",
                 "primary_endpoint": "30s_markout",
                 "execution_friction_bps": EXECUTION_FRICTION_BPS,

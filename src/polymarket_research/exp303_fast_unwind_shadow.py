@@ -91,6 +91,11 @@ class FastUnwindShadowEngine:
             "governance": {
                 "experiment": "EXP-303",
                 "specification": "v3.3-counterfactual-unwind-model",
+                "research_role": "PARALLEL_STRATEGY",
+                "research_status": "SEPARATE_OOS_EVENT_STRATEGY",
+                "portfolio_eligibility": False,
+                "promotion_path": "SEPARATE_PARALLEL_STREAM",
+                "note": "Parallel Strategy Family (Polymarket venue/settlement). Isolated from Hyperliquid A2 satellite portfolio inference.",
                 "theta_target": self.theta,
                 "fee_schedule": "crypto_7pct_dynamic",
                 "evidence_status": "COUNTERFACTUAL_PRICE_PATH_MODEL_N6 (Model-based counterfactual; pending live L2 VWAP bid matching)",

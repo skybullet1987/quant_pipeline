@@ -109,6 +109,11 @@ class TradeTapeDeCensoringEngine:
             "governance": {
                 "experiment": "EXP-202",
                 "specification": "v3.4-trade-tape-decensoring-recalled",
+                "research_role": "INFRASTRUCTURE",
+                "research_status": "INFRASTRUCTURE",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "note": "Market-data telemetry and de-censoring infrastructure.",
                 "volume_hurdle_usd": self.hurdle_usd,
                 "window_ms": SWEEP_WINDOW_MS,
                 "matching_policy": "Strict 1-to-1 bijection (one forceOrder <-> at most one synthetic sweep)",

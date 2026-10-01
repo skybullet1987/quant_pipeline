@@ -144,6 +144,12 @@ class AdaptiveMakerShadowEngine:
             "governance": {
                 "experiment": "EXP-103B",
                 "specification": "v3.4-adaptive-maker-preregistered",
+                "research_role": "TELEMETRY_ONLY",
+                "research_status": "OBSERVATION_ONLY",
+                "purpose": "EXECUTION_MODEL_DISCOVERY",
+                "portfolio_eligibility": False,
+                "promotion_path": False,
+                "note": "Execution instrumentation only. Discovery of maker-fill and queue dynamics; no new alpha discovery.",
                 "promotion_criterion": "NetPnL(adaptive) > NetPnL(static) with adverse selection within bounds",
                 "maker_fee_bps": MAKER_FEE_BPS,
                 "taker_fee_bps": TAKER_FEE_BPS,
