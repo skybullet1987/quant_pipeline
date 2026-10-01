@@ -121,34 +121,49 @@ def main():
     print(f"  Causal Research Question:   'Did A2 actually monetize the defensive capital left idle by EXP-103?'")
 
     # -------------------------------------------------------------------------------------------------
-    # SECTION 2: LIVE PORTFOLIO ATTRIBUTION (4H BAR CADENCE)
+    # SECTION 2: MULTI-TIER PORTFOLIO ATTRIBUTION & PRODUCTION ELIGIBILITY TABLE
     # -------------------------------------------------------------------------------------------------
-    print("\n" + "-" * 92)
-    print("  [2] LIVE PORTFOLIO ATTRIBUTION REPORT  [ΔNAV = ΔPnL_103 + ΔPnL_A2 - All Friction]")
-    print("-" * 92)
+    print("\n" + "-" * 96)
+    print("  [2] MULTI-TIER PORTFOLIO ATTRIBUTION & PRODUCTION ELIGIBILITY TABLE")
+    print("-" * 96)
 
     pnl_103 = apex_state.get("accounting_ledger", {}).get("cumulative_realized_trade_pnl", 54.34) if apex_state else 54.34
     funding_103 = apex_state.get("accounting_ledger", {}).get("cumulative_funding_pnl", 12.90) if apex_state else 12.90
     fees_103 = apex_state.get("accounting_ledger", {}).get("cumulative_exchange_fees", 1.63) if apex_state else 1.63
     net_103 = pnl_103 + funding_103 - fees_103
 
-    pnl_105_classifier = exp105.get("metrics", {}).get("arm_3_dynamic_classifier", {}).get("cumulative_net_pnl_usd", -1.02) if exp105 else -1.02
+    pnl_105_classifier = exp105.get("metrics", {}).get("arm_3_dynamic_classifier", {}).get("cumulative_net_pnl_usd", -6.45) if exp105 else -6.45
     pnl_106 = exp106.get("cumulative_shadow_tracking", {}).get("delta_exp106_vs_exp103_usd", 0.00) if exp106 else 0.00
     pnl_109 = 0.00  # Shadow forward tracking
-    pnl_303 = exp303.get("metrics", {}).get("policy_b1_taker_unwind", {}).get("cumulative_net_pnl_usd", 105.96) if exp303 else 105.96
+    pnl_303 = exp303.get("metrics", {}).get("policy_b1_taker_unwind", {}).get("cumulative_net_pnl_usd", 141.55) if exp303 else 141.55
 
-    # Incremental A2 Alpha (Hyperliquid Satellites only; EXP-303 is isolated parallel family)
-    delta_nav_a2 = pnl_105_classifier + pnl_106 + pnl_109
-    nav_actual = core_eq + delta_nav_a2
-    nav_a1_counterfactual = core_eq
-    incremental_a2_alpha = nav_actual - nav_a1_counterfactual
+    # STRICT ACCOUNTING INVARIANT:
+    # Actual Governed Portfolio contains ONLY active production strategies (A1 EXP-103).
+    # Since EXP-105 is NOT portfolio eligible, its shadow PnL is strictly excluded from actual NAV!
+    actual_a1_pnl = net_103
+    actual_a2_realized_pnl = 0.00  # No satellites currently deployed in live production capital
+    nav_actual = core_eq
+    incremental_a2_actual = 0.00   # ΔNAV(actual) - ΔNAV(A1) == $0.00
 
-    print(f"  Production Core (A1 EXP-103):  Net PnL = ${net_103:+.2f} (Realized: ${pnl_103:+.2f}, Carry: ${funding_103:+.2f}, Fees: ${fees_103:.2f})")
-    print(f"  Satellite Sleeve 105 (Arm 3):  Net PnL = ${pnl_105_classifier:+.2f} (7 live sprints; vs Fade delta: +$0.69)")
-    print(f"  Satellite Sleeve 106 (Trans):  Net PnL = ${pnl_106:+.2f} (31 bars evaluated; 0 cash drag)")
-    print(f"  Satellite Sleeve 109 (Fund):   Net PnL = ${pnl_109:+.2f} (Preregistered gate: CI_95 > +25 bps/trade)")
-    print(f"  Incremental A2 Value-Add:      ΔNAV(actual) - ΔNAV(A1) = \033[1m${incremental_a2_alpha:+.2f}\033[0m USDC")
-    print(f"  Parallel Strategy (EXP-303):   Net PnL = ${pnl_303:+.2f} (Polymarket venue; strictly isolated from A2 inference)")
+    # Counterfactual Shadow PnL (for prospective evaluation)
+    shadow_105 = pnl_105_classifier
+    shadow_106 = pnl_106
+    shadow_109 = pnl_109
+    shadow_a2_total = shadow_105 + shadow_106 + shadow_109
+
+    # Print 3-column table
+    print(f"  {'Sleeve':10} | {'Realized Portfolio PnL':24} | {'Shadow Counterfactual PnL':26} | {'Production Eligibility':24}")
+    print("  " + "-" * 92)
+    print(f"  {'EXP-103':10} | {f'${actual_a1_pnl:+.2f}':24} | {'— (Active Production)':26} | {'YES (A1 Production Core)':24}")
+    print(f"  {'EXP-105':10} | {'$0.00 (Zero Realized)':24} | {f'${shadow_105:+.2f} (Arm 3 N=31)':26} | {'NO (Shadow Only / Solo Gate)':24}")
+    print(f"  {'EXP-106':10} | {'$0.00 (Zero Realized)':24} | {f'${shadow_106:+.2f} (31 bars)':26} | {'YES via EXP-112 (Defensive)':24}")
+    print(f"  {'EXP-109':10} | {'$0.00 (Zero Realized)':24} | {f'${shadow_109:+.2f} (Awaiting OOS)':26} | {'YES via EXP-112 (Promoted)':24}")
+    print(f"  {'EXP-112':10} | {'$0.00 (Zero Realized)':24} | {'Mode B Packaging (+6.82%)':26} | {'NO (Portfolio Hypothesis)':24}")
+    print(f"  {'EXP-303':10} | {f'${pnl_303:+.2f} (Venue Isolated)':24} | {'Separate Settlement':26} | {'NO (Parallel Strategy Family)':24}")
+    print("  " + "-" * 92)
+    print(f"  Governed Actual NAV:          ${nav_actual:.2f} USDC (A1 Production Realized: ${actual_a1_pnl:+.2f})")
+    print(f"  Actual Incremental A2 Alpha:  ΔNAV(actual) - ΔNAV(A1) = \033[1m${incremental_a2_actual:+.2f}\033[0m USDC (Zero capital deployed)")
+    print(f"  Shadow Counterfactual Delta:  Synthetic A2 ΔNAV = ${shadow_a2_total:+.2f} USDC (Diagnostic only; ZERO portfolio impact)")
 
     # -------------------------------------------------------------------------------------------------
     # SECTION 3: COMPLETE 12-DAEMON OPERATIONAL INVENTORY & RESEARCH ROLES

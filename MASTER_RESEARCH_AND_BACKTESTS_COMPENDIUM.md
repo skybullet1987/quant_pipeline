@@ -19789,11 +19789,29 @@ $$\boxed{ U_t = \frac{\text{Actual Satellite Risk Deployed}_t}{\text{Maximum Per
 * **During Satellite Kill Floor:** Satellite budget cap is $0.0\%$ (8 bars observed in audit).
 * **Tracked Sub-Metrics:** Mean utilization $\bar{U}$, cash-floor utilization $\bar{U}_{fl_0}$, recovery utilization $\bar{U}_{\text{recovery}}$, and per-sleeve utilization ($U_{105}, U_{106}, U_{109}$).
 
-#### 5. Live Portfolio Attribution Accounting:
-Every 4H rebalance bar computes the exact additive decomposition of portfolio return:
-$$\Delta NAV_t = \Delta PnL_{103, t} + \Delta PnL_{105, t} + \Delta PnL_{106, t} + \Delta PnL_{109, t} - \text{Friction}_t$$
-$$\boxed{ \text{Incremental A2 Alpha} = \Delta NAV_{\text{actual}} - \Delta NAV_{\text{A1 counterfactual}} }$$
-This measures precisely what A2 contributed over the frozen production baseline ($+3.43\%$ CAGR), isolating execution frictions and resolving standalone sleeve versus portfolio interaction.
+#### 5. Live Portfolio Attribution Accounting (Three-Tier Actual vs Counterfactual Separation):
+To ensure shadow diagnostic tracking is never conflated with actual portfolio capital, live attribution maintains an unmistakable separation between **Realized Governed Portfolio PnL** and **Counterfactual Shadow PnL**:
+
+$$\Delta NAV_{\text{actual}} = \Delta NAV_{\text{A1 actual}} + \Delta NAV_{\text{A2 realized}} = +\$65.62 + \$0.00 = \mathbf{+\$65.62}$$
+$$\boxed{ \text{Actual Incremental Realized A2 Alpha} = \Delta NAV_{\text{actual}} - \Delta NAV_{\text{A1 actual}} = \mathbf{\$0.00} }$$
+
+| Sleeve | Realized Portfolio PnL | Shadow Counterfactual PnL | Prospective Production Eligibility |
+| :--- | :--- | :--- | :--- |
+| **EXP-103** | **+$65.62** | — (Active Production) | **YES (A1 Production Core / 100%)** |
+| **EXP-105** | **$0.00** | -$6.45 (Arm 3, N=31) | **NO (Confirmatory Shadow Only)** |
+| **EXP-106** | **$0.00** | +$0.00 (31 bars) | **YES via EXP-112 (Defensive Only)** |
+| **EXP-109** | **$0.00** | +$0.00 (Awaiting OOS) | **YES via EXP-112 (Promoted Candidate)** |
+| **EXP-112** | **$0.00** | Mode B Packaging (+6.82%) | **NO (Frozen Portfolio Hypothesis)** |
+| **EXP-303** | **+$141.55** (Venue Isolated) | Separate Settlement | **NO (Parallel Strategy Family)** |
+
+##### The EXP-105 Sanity-Check Warning:
+Live sprint tracking for EXP-105 ($N=31$ sprints) logged:
+* Arm 1 (Fade Long): $-\$7.91$ ($19.4\%$ win rate)
+* Arm 2 (Follow Short): $-\$5.54$ ($32.3\%$ win rate)
+* Arm 3 (Dynamic Classifier): $-\$6.45$ ($22.6\%$ win rate)
+* Relative delta vs Fade: $+\$1.46$
+
+This provides a vital methodological lesson: **a classifier can show positive relative delta versus a deliberately bad benchmark while still exhibiting negative absolute expectancy after taker fees**. This reinforces why the EXP-113 acceptance gate requires an **absolute economic hurdle** ($CI_{95\%} > +25\text{ bps/trade}$ net), rather than relative outperformance against Arm 1. Because EXP-105 has `portfolio_eligibility = False`, its $-\$6.45$ loss remains strictly shadow counterfactual and has zero impact on actual portfolio NAV.
 
 #### 6. Isolation of Parallel Strategy Families (EXP-303):
 Polymarket event trading possesses distinct economic venues, non-perpetual settlement, discrete binary payoff structures, and unique capital recycling profiles. EXP-303 is governed as a **Parallel Strategy Family** with its own confirmatory sample (25 forward trades, Policy B1 $= +\$141.55$, Policy B2 $= +\$154.08$) and is strictly excluded from Hyperliquid A2 satellite statistical inference.
