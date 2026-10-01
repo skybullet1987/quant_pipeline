@@ -70,6 +70,7 @@
 11. [Institutional System Architecture: ELT Ingestion, IronCore v2.4.0 Execution Physics, and Papertrade Parity Manual](#11-institutional-system-architecture-elt-ingestion-ironcore-v240-execution-physics-and-papertrade-parity-manual)
 12. [Deep Research Directive: The 10x+ Convex Compounding Frontier](#12-deep-research-directive-the-10x-convex-compounding-frontier)
 13. [EXP-103: The 10x+ Convex Compounding Architecture under IronCore v2.4.0 Sovereign Finality Standard](#13-institutional-quantitative-strategy-specification-the-10x-convex-compounding-architecture-exp-102-sovereign-finality-standard)
+14. [Live Production Deployment, Conformance Testing & Causal Shadow Trading Governance (EXP-103B through EXP-401)](#14-live-production-deployment-conformance-testing--causal-shadow-trading-governance)
 
 ---
 
@@ -19307,5 +19308,59 @@ For live paper execution parity with Hyperliquid L1, the following operational i
 - **Unit Invariant Test Suite:** [`tests/test_convex_engine_invariants.py`](file:///home/skybullet1987/quant_pipeline/tests/test_convex_engine_invariants.py)
 - **Trial Registry Certification:** [`artifacts/ironcore_trial_registry.json`](file:///home/skybullet1987/quant_pipeline/artifacts/ironcore_trial_registry.json) (EXP-103)
 - **Audited Metrics Artifact:** [`artifacts/convex_10x_metrics.json`](file:///home/skybullet1987/quant_pipeline/artifacts/convex_10x_metrics.json)
+
+---
+
+## 14. Live Production Deployment, Conformance Testing & Causal Shadow Trading Governance
+**Audit Date:** October 1, 2026 UTC  
+**Target Environment:** Tokyo GCP Compute Instance (`asia-northeast1-b`)  
+**Supervision Topology:** Dual Production Daemons (Live Capital APEX & Polymarket OOS Fast-Loop) + 6 Causal Shadow Daemons  
+**Governance Standard:** Three-State Promotion Protocol (`Observation` $\rightarrow$ `Counterfactual` $\rightarrow$ `Promotion`) requiring dual Statistical Significance ($p_{\text{perm}} < 0.01$) and Economic Significance ($CI_{99\%}(\Delta PnL) > H_{\text{economic}}$).  
+**Methodology Status:** **FROZEN / CERTIFIED** (Parameter search and specification drift prohibited until statistical power hurdles are met).
+
+### 14.1 Production Core APEX Live Deployment (Track 1)
+The primary live production system runs continuous perpetual macro compounding on Hyperliquid L1:
+- **Supervising Daemon:** `src/execution/production_apex_daemon.py` (PID 68938, uninterrupted active execution since Sep 30)
+- **Starting Capital Base:** $559.31 USDC
+- **Current Portfolio NAV:** $621.39 USDC (+11.10% net gain above capital base)
+- **Historical High-Water Mark (HWM):** $641.87 USDC
+- **Grossman-Zhou Drawdown Floor (10% trailing):** $577.68 USDC
+- **Audited Capital Cushion:** +$43.71 USDC (7.03% of NAV)
+- **Macro Cycle Cadence:** 72-hour reallocation cycle (18 $\times$ 4H bars) with Leland turnover deadband ($|\Delta w| < 10\%$) suppressing execution churn.
+
+### 14.2 Polymarket Fast-Loop Data Lab Live Deployment (Track 3)
+Evaluates high-frequency crypto price-shock latency arbitrage on Polymarket CLOB:
+- **Supervising Daemon:** `src/polymarket_research/polymarket_paper_trader.py` (PID 2932204)
+- **Hard Out-of-Sample (OOS) Boundary:** Strictly enforced at `2026-09-29T18:11:34.000Z`
+- **Dynamic Fee Schedule:** Dynamic crypto taker fee ($C_{\text{fee}} = \text{FeeRate} \cdot p \cdot (1-p)$)
+- **Current OOS Status:** 7 settled validation trades, 100% win rate ($7/7$), Cumulative Net Realized PnL = +$96.18 USDC.
+
+### 14.3 Causal Microstructure Shadow Experimentation Suite (Tracks 1–6)
+To systematically answer empirical execution questions without risking live capital, six targeted shadow daemons run in parallel:
+
+| Track ID | Experiment Name | Supervising Daemon | Core Specification & Causal Invariants | Empirical Status (As of Oct 1, 2026 UTC) |
+| :--- | :--- | :--- | :--- | :--- |
+| **EXP-202** | **Binance Trade-Tape De-Censoring Telemetry** | `src/hl_leadlag/market_data/exp202_trade_tape_detector.py` | Detects high-value aggressive sweeps ($\ge \$1.5\text{M}$ within $100\text{ms}$) on BTCUSDT aggTrade and matches against `!forceOrder@arr` liquidation events. **Decoupled Precision & Observable Recall**: $\text{Precision} = \frac{\text{matches}}{\text{sweeps}}$, $\text{Recall} = \frac{\text{matches}}{\text{eligible forceOrders}}$. **Strict 1-to-1 Matching of Observed Pairs**: FIFO matching constrained by symbol, direction, $\le 2000\text{ms}$ latency window, and $\le 25\text{ bps}$ price proximity. **Dual Latency Clocks**: Actionable Lead ($T_{\text{recv}} - T_{\text{detect}}$) vs Exchange Event Lead ($T_{\text{exch,fo}} - T_{\text{exch,sw}}$). Queue recovery correctly labeled as **proxy depth recovery** at $100\text{ms}, 250\text{ms}, 500\text{ms}$. | 0 sweeps detected / 0 forceOrders seen (immature observation window; matching protocol locked down prior to first event). |
+| **EXP-103B** | **Adaptive Maker Pegging & Queue Economics** | `src/execution/exp103b_adaptive_maker_shadow.py` | Evaluates 5 discrete counterfactual models on Hyperliquid: `MODEL_1_STATIC_240S`, `MODEL_2_60S_STATIC_BBO` (unadapted baseline), `MODEL_2A_ADAPTIVE_OFI` (true OFI-conditioned re-pegging with $> 5\text{ bps}$ adverse drift pause), `MODEL_3_QUEUE_PRIORITY` (1-tick inside spread), and `MODEL_4_NATIVE_CHASE` (BBO tracker). **Execution Model Qualification**: Trade-level execution shadow with improved queue-consumption semantics ($\sum \text{Size}_{\text{agg}} \cdot \mathbf{1}[\text{tradePrice} = P]$). Directional signed returns ($s \cdot \frac{Mid - Fill}{Fill}$), VIP-0 fee schedule (+1.5 bps maker / +4.5 bps taker), and dimensional PnL/attempt: $\mathbb{E}[\text{PnL}/\text{attempt}] = \frac{\text{FillRate}}{100} \times \frac{\mathbb{E}[\text{NetEdge}_{bps} \mid \text{Fill}]}{10,000} \times \overline{\text{Size}}_{\text{USD}}$ (assuming fixed \$20 tickets). | 0 fills across 103-110 attempts per model (no fills yet under strict target-price queue consumption rules; capacity finding rather than execution failure). |
+| **EXP-303** | **Polymarket Fast Unwind vs Maturity Hold** | `src/polymarket_research/exp303_fast_unwind_shadow.py` | **Model-Based Counterfactual ($N=7$)**: Evaluates Hold-to-Maturity (Policy A) vs Executable Taker Unwind (Policy B1) vs Maker-First Scalp (Policy B2). **Strict Fee Accounting**: Deducts 7% dynamic taker entry fee across all policies plus exit fees for B1. Current Net PnL: Policy A = $+\$96.18$ ($EV = +\$13.74/\text{trade}$, hold: $697\text{s}$, $\$73.3/\text{cap-hr}$), Policy B1 = $+\$38.11$ ($EV = +\$5.44/\text{trade}$, hold: $90\text{s}$, $\$232.2/\text{cap-hr}$), Policy B2 = $+\$40.92$ ($EV = +\$5.85/\text{trade}$, hold: $90\text{s}$, $\$247.9/\text{cap-hr}$). Incremental maturity payoff foregone: $\$58.07$ (B1) and $\$55.26$ (B2) (not generic opportunity cost; dependent on capital redeployment yield). | Maturity currently exhibits higher per-event payout, while modeled early exits exhibit 3.2x higher capital turnover. (Counterfactual price-path model, not full queue simulation). |
+| **EXP-201C** | **Standardized Composite Recovery & Toxicity Routing** | `src/hl_leadlag/execution/hl_isolated_ratchet_shadow.py` | Evaluates Policy 5 against random eligible, round-robin, and Max-OBI routing across liquidation cascades on Hyperliquid (`SOL`, `HYPE`, `SUI`, `DOGE`). Uses **event-relative flow variables**: Replenishment velocity $R_i = \frac{V_{\text{bid,replenished}}}{V_{\text{bid,removed}}}$ and Aggressive flow toxicity $T_i = \frac{V_{\text{agg,sell}}}{V_{\text{bid,replenished}} + \epsilon}$ with $R_{250\text{ms}}, T_{250\text{ms}}$ preregistered as the primary confirmatory horizon pair (100ms and 500ms as secondary diagnostics). **Promotion Gate**: Requires paired permutation $p_{\text{composite}} < 0.01$ AND $CI_{99\%}(\Delta PnL) > H_{\text{economic}} = \$0.05/\text{episode}$ with $N \ge 100$. | 12 baseline episodes completed (evaluating 4 legacy policies). Policy 5 armed post-activation ($N=0$ composite episodes); pending first live liquidation cascade to evaluate paired differential. |
+| **EXP-401** | **Cross-Venue Perpetual Basis & Horizon Carry** | `src/research/exp401_perp_basis_shadow.py` | Evaluates Binance USD-M vs Hyperliquid perpetual basis and 8-hour funding carry. **Methodology Hardening**: 75% basis convergence explicitly qualified as a **modeled scenario assumption** (stress test, not empirical finding). Incorporates discrete two-leg executable entry spreads ($\text{Bid}_{\text{rich}} - \text{Ask}_{\text{cheap}}$). | Mid spreads ($+3.7$ to $+8.9\text{ bps}$) collapse inside two-leg executable spreads; combined net edge remains deeply negative ($-14.3$ to $-18.2\text{ bps}$), far below the $21.5\text{ bps}$ hurdle. |
+| **EXP-103C** | **Inverse-Volatility Risk Parity & Factor Exposure** | `src/execution/exp103c_risk_parity_shadow.py` | Evaluates Equal Weight (Arm A) vs Idiosyncratic Inverse-Vol (Arm B) vs Shrunk Covariance Risk Parity (Arm C) across Hyperliquid perpetual universe. | **Descriptive Finding**: Arm B exhibits lower observed volatility ($153.1\%$ vs $154.9\%$) and $10\text{d}$ $\text{CVaR}_{99}$ ($67.5\%$ vs $68.3\%$) with slightly higher observed funding yield ($35.5\%$ vs $35.3\%$) relative to Arm C. Both exhibit lower risk than equal weight ($175.2\%$). |
+
+### 14.4 Three-State Research & Promotion Governance Protocol
+Every quantitative strategy and shadow experiment is governed by strict stage separation:
+1. **State 1: Passive Observation:** Real-time ingestion of exchange order-book and trade-tape feeds with dual physical latency clocks.
+2. **State 2: Counterfactual Shadow:** Live execution against resting L1/CLOB order books with verified fee, slippage, and queue invariants. Cumulative shadow PnL alone is formally disqualified as a promotion justification.
+3. **State 3: Live Capital Promotion:** Strictly conditioned on joint statistical and economic hurdles:
+   $$\boxed{ H_0: \Delta PnL \le 0 \implies p_{\text{perm}} < 0.01 } \quad \text{AND} \quad \boxed{ CI_{99\%}(\Delta PnL) > H_{\text{economic}} }$$
+   where $H_{\text{economic}}$ represents the minimum worthwhile net edge after capacity and operational frictions ($H_{\text{economic}} = \$0.05/\text{episode}$ for Route 2 Ratchet).
+
+### 14.5 Unit Test Suite & Audit Invariant Verification
+All system components are continuously tested against machine-enforced invariants:
+- **`tests/test_v31_conformance.py`:** 12/12 tests passed (shock admission decoupling, cluster linkage, 5-policy evaluation, round-robin indexing, deterministic hashing, funding sign convention, fee friction parameters).
+- **`tests/test_v321_conformance.py`:** 8/8 tests passed (Grossman-Zhou cushion governor, Leland turnover deadband, multi-cadence clock, Avellaneda-Stoikov ALO reservation).
+- **`tests/test_polymarket_executor.py`:** 3/3 tests passed (OOS boundary enforcement, dynamic crypto taker fees, execution shortfall tracking).
+- **Audit Certification:** **All 23 listed conformance and executor unit tests passed cleanly.**
+
 
 

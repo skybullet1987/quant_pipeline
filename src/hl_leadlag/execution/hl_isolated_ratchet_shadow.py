@@ -288,6 +288,8 @@ class RatchetShadowEngine:
                     self.completed_episodes_history.append(rec)
         self.independent_episode_index = count
         print(f"[*] Restored {count} completed counterfactual episodes from {EPISODE_LEDGER_FILE}.", flush=True)
+        if count > 0:
+            self._update_shadow_summary()
 
     def update_book(self, coin: str, bid: float, ask: float, bid_sz: float, ask_sz: float):
         if coin in self.current_order_books and bid > 0 and ask > 0:

@@ -111,19 +111,24 @@ def main():
             print(f"  {pol:25} | Net PnL: ${d.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
                   f"Mean: ${d.get('mean_net_pnl_usd', 0.0):+.4f} | "
                   f"WinRate: {d.get('win_rate_pct', 0.0):.1f}%")
-        print(f"  Paired D (Composite vs Random): Mean = ${r_inc.get('delta_composite_vs_random_mean_usd', 0.0):+.4f} | "
-              f"Median = ${r_inc.get('delta_composite_vs_random_median_usd', 0.0):+.4f} | "
-              f"P(D > 0) = {r_inc.get('p_composite_outperforms_random_pct', 0.0):.1f}%")
+        n_comp = p.get("COMPOSITE_RECOVERY_router", {}).get("episodes_count", 0)
+        if n_comp > 0:
+            print(f"  Paired D (Composite vs Random): Mean = ${r_inc.get('delta_composite_vs_random_mean_usd', 0.0):+.4f} | "
+                  f"Median = ${r_inc.get('delta_composite_vs_random_median_usd', 0.0):+.4f} | "
+                  f"P(D > 0) = {r_inc.get('p_composite_outperforms_random_pct', 0.0):.1f}% (N={n_comp})")
+            print(f"  Composite Gate: p_perm = {p_vals.get('p_composite_paired_permutation', 1.0):.4f} | "
+                  f"CI_99_lower = ${p_vals.get('ci_99_lower_composite_usd', 0.0):+.4f} | "
+                  f"H_economic = ${p_vals.get('h_economic_hurdle_usd', 0.05):.2f} | "
+                  f"Hurdle Met: {p_vals.get('composite_effect_size_passed', False)}")
+        else:
+            print(f"  Paired D (Composite vs Random): N=0 post-activation (Awaiting next live shock; prior 12 episodes evaluated 4 baseline policies)")
+            print(f"  Composite Gate: Pending N >= 100 post-activation episodes (Hurdle: p < 0.01, CI_99 > $0.05)")
         f_matrix = ratchet.get("factor_correlation_matrix", {})
         if f_matrix:
             print(f"  Factor Correlations (OBI / R_250 / Tox_250): "
                   f"Corr(OBI, R) = {f_matrix.get('corr_obi_vs_r250', 0.0):+.3f} | "
                   f"Corr(OBI, Tox) = {f_matrix.get('corr_obi_vs_tox250', 0.0):+.3f} | "
                   f"Corr(R, Tox) = {f_matrix.get('corr_r250_vs_tox250', 0.0):+.3f}")
-        print(f"  Composite Gate: p_perm = {p_vals.get('p_composite_paired_permutation', 1.0):.4f} | "
-              f"CI_99_lower = ${p_vals.get('ci_99_lower_composite_usd', 0.0):+.4f} | "
-              f"H_economic = ${p_vals.get('h_economic_hurdle_usd', 0.05):.2f} | "
-              f"Hurdle Met: {p_vals.get('composite_effect_size_passed', False)}")
     else:
         print("  State initializing...")
 
