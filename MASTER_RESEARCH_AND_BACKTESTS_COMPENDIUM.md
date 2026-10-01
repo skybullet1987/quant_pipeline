@@ -19693,13 +19693,16 @@ A2 successfully solves **defensive capital idleness** and **orthogonal return ge
 **Research Mandate:** **ALL ALPHA DISCOVERY IS OFFICIALLY FROZEN.**  
 The pipeline moves from discovery to strict prospective measurement. Zero parameter retuning, zero cadence modifications, zero new indicators, and zero threshold sweeps are permitted during the 30-day forward evaluation.
 
-#### 1. Baseline Provenance Reconciliation:
+#### 1. Baseline Provenance & Canonical Comparison Hierarchy:
 To maintain mathematical integrity across research iterations, baseline metrics carry explicit provenance and execution mode labels:
-* `BASELINE_RETURN_CHANGE_REASON`: Rebalance cadence variation. The $+3.43\%$ CAGR reflects strict **72H discrete holding** ($18$-bar rebalance with turnover deadband), whereas $+6.04\%$ reflects **continuous 4H bar-by-bar top-quintile momentum tracking**.
-* **Canonical Mode Labels:**
+* **The Canonical A1 Benchmark:**
+  $$\mathbf{A1 \text{ EXP-103 Frozen Production Core}} = \mathbf{+3.43\% \text{ Governed CAGR}} \quad (\text{72H Discrete Holding, Leland Deadband})$$
+* **Diagnostic Counterfactual (Strictly Non-Benchmark):**
+  The $+6.04\%$ CAGR reflects continuous 4H bar-by-bar top-quintile momentum tracking. It is preserved strictly as an unconstrained diagnostic reference, **never as the A1 benchmark**. All incremental portfolio value added by A2 satellites must be measured against the **$+3.43\%$ canonical core**.
+* **Mode Labels:**
   * `EXP-112 Unconstrained CAGR = +11.03%` (Unconstrained diagnostic benchmark, floors disabled).
   * `EXP-112 Governed CAGR = +6.82%` (Two-tier governed executable portfolio, 10% satellite trigger).
-  * `Core Baseline Governed CAGR = +6.04%` (Governed mode) / `+3.43%` (72H discrete mode).
+  * `Core Baseline A1 Governed CAGR = +3.43%` (Canonical production anchor).
 
 #### 2. Discrete Floor Semantics:
 The $10.54\%$ maximum drawdown observed in the audit is formally documented as:
@@ -19711,13 +19714,13 @@ Because the satellite kill switch activates on the close of bar $t$ for executio
 * **Core Causal Hypothesis:** *"Does extreme funding contain forward price information?"* (verified: price reversal accounts for $110.1\%$ of net edge; funding carry accounts for $2.1\%$).
 * **Sign Convention Hardening:** 1-day 99% $\text{CVaR}$ is frozen under the return convention: $+0.22\%$ represents **expected positive tail return** during cash floor regimes (equivalent to $-0.22\%$ tail loss under the loss convention; zero negative tail loss).
 * **Two-Dimensional Acceptance Standard:**
-  1. *Sleeve-Level Edge:* $\boxed{CI_{OOS}(\mathbb{E}[R_{109}]) > H_{\text{economic}} = +25\text{ bps/trade}}$
+  1. *Sleeve-Level Edge:* $\boxed{CI_{OOS}(\mathbb{E}[R_{109}]) > H_{\text{economic}} = +25\text{ bps/trade}}$ (Frozen hurdle).
   2. *Portfolio-Level Edge:* $\boxed{CI_{OOS}(\Delta PnL_{\text{portfolio}, 109}) > 0}$ (resolving the Config 2 paradox where standalone alpha must overcome satellite kill and capital allocation constraints).
 
-#### 4. Statistical Dependence & Bootstrap Architecture:
+#### 4. Event-Clustered Bootstrap Resampling Architecture:
 To prevent inflated $t$-statistics from overlapping holding periods, cross-sectional clustering, and regime persistence, all forward confidence intervals in EXP-113 must be calculated using:
-$$\text{Block Bootstrap / Event-Clustered Bootstrap with HAC Variance-Covariance Matrix}$$
-rather than assuming IID trade returns.
+$$\text{Event-Clustered / Episode-Level Bootstrap with HAC Variance-Covariance Matrix}$$
+The resampling unit is strictly the **event cluster / episode** (grouping all concurrent trades belonging to the same funding dislocation or shock wave), rather than individual trade tickets, eliminating pseudo-replication.
 
 #### 5. Portfolio Orthogonality Invariants:
 EXP-113 will track the following empirical co-movement metrics continuously:
@@ -19725,16 +19728,22 @@ EXP-113 will track the following empirical co-movement metrics continuously:
 * True portfolio tail contribution: $\Delta \text{CVaR}_{99}(\text{Core} + 109)$ relative to Core alone.
 * Sub-additivity tracking: confirming whether the empirical interaction ratio remains near $0.688x$.
 
-#### 6. Formal Month-1 EXP-113 Acceptance Scorecard:
-| Evaluation Dimension | Metric Target | Minimum Hurdle | Invalidation Criterion |
-| :--- | :--- | :--- | :--- |
-| **EXP-109 Standalone** | Block-Bootstrap $CI_{95\%}(\mathbb{E}[R_{109}])$ | $> +25\text{ bps}$ | $CI_{95\%} \le 0$ (Alpha decay) |
-| **EXP-109 Portfolio** | Marginal $\Delta PnL_{\text{portfolio}}$ | $> \$0.00\text{ USDC}$ | $\Delta PnL < -\$10.00$ (Drag) |
-| **EXP-106 Reproduction** | Recovery Cash Monetization | $\ge 2\text{ recovery bars}$ | Negative delta vs flat cash |
-| **EXP-105 Maturation** | Live Liquidation Sprints | $N \ge 15\text{ episodes}$ | Classifier PnL $<$ Fade PnL |
-| **Two-Tier Floor Defense** | Discrete Drawdown from HWM | $\le 12.00\%$ | Breach of $0.80 \times \text{HWM}$ |
-| **Friction Discipline** | Total Realized Friction | $\le 35\text{ bps/month}$ | Friction $> 50\text{ bps/month}$ |
-| **Governance Freeze** | Pipeline Code Modifications | **0 changes to alpha** | Any retuning or cadence change |
+#### 6. The Capital Utilization Diagnostic:
+To ensure satellites provide practical economic utility during cash floor regimes, EXP-113 introduces the **Capital Utilization Ratio**:
+$$\boxed{ \text{Capital Utilization} = \frac{\text{Risk-Budget-Hours Actually Monetized}}{\text{Eligible Defensive Risk-Budget-Hours}} }$$
+Prevents an edge from being declared useful if it only deploys a trivial fraction of the available defensive capacity.
+
+#### 7. Formal November 5 Deliverable & Acceptance Scorecard:
+On November 5, 2026, EXP-113 will deliver an audit answering exactly five empirical questions with zero new research attached:
+
+| Core Evaluation Question | Required Acceptance Result | Failure / Invalidation Threshold |
+| :--- | :--- | :--- |
+| **1. Does EXP-109 survive?** | Event-clustered $95\%$ CI lower bound $> +25\text{ bps/trade}$ | Lower bound $\le 0\text{ bps}$ |
+| **2. Does EXP-105 reproduce?** | Reproduction of directional classifier edge without parameter tuning | Classifier PnL $\le$ Fade Long PnL |
+| **3. Does EXP-106 survive?** | Positive return contribution during predefined recovery states | Underperforms flat cash floor |
+| **4. Does EXP-112 benefit?** | Positive incremental portfolio PnL versus frozen A1 baseline ($+3.43\%$) | Portfolio $\Delta PnL \le \$0.00\text{ USDC}$ |
+| **5. Does system remain causal?** | Zero invariant violations, exact residual conservation ($\le \$0.05$), zero 0.80 HWM breaches | Any breach of Core 0.80 HWM floor |
+
 
 
 
