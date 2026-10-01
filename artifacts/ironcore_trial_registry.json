@@ -5124,8 +5124,64 @@
         "net_cagr_lift_pct": 7.6,
         "idle_cash_days_monetized": 33.3
       }
+    },
+    "EXP-110": {
+      "experiment_id": "EXP-110",
+      "created_at_utc": "2026-10-01T15:20:00Z",
+      "completed_at_utc": "2026-10-01T15:21:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_MICROSTRUCTURE",
+      "hypothesis": "Binance -> Hyperliquid Directional Lead-Lag (Two-Stage Evaluation Standard: Stage A IC vs Stage B Executable Net Edge)",
+      "portfolio_spec": "CROSS_VENUE_LATENCY_ARBITRAGE",
+      "training_spec": "TOKYO_COLOCATED_STREAM_LAKE",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 0.0,
+      "dsr_p_value": 1.0,
+      "status": "TIER_3_DEFERRED_INCONCLUSIVE",
+      "results": {
+        "status_reason": "Stage A IC test requires millisecond order book tick-level capture; executable edge under 7.5 bps VIP-0 taker friction unproven on coarse 4H data. Deferred pending mature microstructure capture.",
+        "executable_net_edge_bps": 0.0,
+        "trades_count": 0
+      }
+    },
+    "EXP-111": {
+      "experiment_id": "EXP-111",
+      "created_at_utc": "2026-10-01T15:20:00Z",
+      "completed_at_utc": "2026-10-01T15:21:00Z",
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A1_EXECUTION_OVERLAY",
+      "hypothesis": "Implementation Shortfall Timing & Optimal Taker Crossing Window for EXP-103 Macro Orders",
+      "portfolio_spec": "ZERO_EXPOSURE_EXECUTION_POLICY",
+      "training_spec": "CANONICAL_POINT_IN_TIME_365D",
+      "parent_experiment_id": "EXP-103",
+      "hac_paired_t": 0.0,
+      "dsr_p_value": 1.0,
+      "status": "EXECUTION_OVERLAY_ONLY",
+      "results": {
+        "status_reason": "Zero standalone risk budget (0% satellite allocation). Modifies EXP-103 macro rebalance order emission timing to minimize adverse drift at 72H bar boundaries.",
+        "risk_budget_pct": 0.0,
+        "trades_count": 0
+      }
+    },
+    "EXP-113": {
+      "experiment_id": "EXP-113",
+      "created_at_utc": "2026-10-01T15:21:00Z",
+      "completed_at_utc": null,
+      "signal_version": "v3.5.0",
+      "research_family": "TIER_A2_PORTFOLIO_CERTIFICATION",
+      "hypothesis": "A2 Additivity & Out-of-Sample Portfolio Certification (Freeze All Alpha Discovery)",
+      "portfolio_spec": "FROZEN_TWO_TIER_RECYCLER_OOS",
+      "training_spec": "PROSPECTIVE_FORWARD_30D (Oct 5 - Nov 5, 2026)",
+      "parent_experiment_id": "EXP-112",
+      "hac_paired_t": 0.0,
+      "dsr_p_value": 1.0,
+      "status": "PREREGISTERED_FROZEN_CAMPAIGN",
+      "results": {
+        "status_reason": "Preregistered out-of-sample forward verification. All parameters frozen: EXP-103 Core, EXP-109 M1, EXP-106, EXP-105, Two-Tier Floor (0.90/0.80 HWM). Zero retuning permitted.",
+        "target_sample_period": "2026-10-05T00:00:00Z to 2026-11-05T00:00:00Z"
+      }
     }
   },
   "schema_version": "1.0.0",
-  "total_trials": 109
+  "total_trials": 112
 }

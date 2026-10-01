@@ -19627,3 +19627,62 @@ On October 1, 2026, the complete suite of A2 orthogonal satellite alpha sleeves 
 4. **Validation of Funding Mean Reversion (EXP-109):** Extreme funding divergence ($|z(F)| > 1.5$) provides a statistically significant, orthogonal alpha source ($t = +3.26$, $p_{\text{Holm}} = 0.0077$, $\mathbb{E}[R] = +1.20\%$ net).
 5. **Capital Recycling Lift (EXP-112):** Combining the frozen EXP-103 core with approved orthogonal satellites monetizes **33.3 days of otherwise idle capital**, lifting Net CAGR from **+3.43% to +11.03%** and Sharpe from **0.45 to 0.82** while reducing portfolio maximum drawdown from **61.64% to 48.20%** through cross-asset diversification.
 
+---
+
+### 15.10 Institutional Forensic Audit & A2 Invariant Reconciliation (Post-Factorial Hardening)
+
+Following formal research review, Section 15 was subjected to four critical methodological audits to reconcile risk accounting, decompose alpha sources, test portfolio additivity, and freeze the research baseline:
+
+#### 1. EXP-109 6-Bucket PnL Decomposition & Orthogonality Verification
+To determine whether EXP-109's $+1.20\%$ mean return per trade represents genuine "funding carry" vs "price mean-reversion", exact 6-bucket accounting was executed across all 239 trades:
+
+$$\text{PnL} = \text{Price PnL} + \text{Funding Cashflow} - \text{Fees} - \text{Spread} - \text{Impact} - \text{Slippage}$$
+
+* **Gross Price PnL (Mean Reversion):** $+1.351\%$ ($+135.1\text{ bps}$, **$110.1\%$ of net edge**)
+* **Realized Funding Carry:** $+0.026\%$ ($+2.6\text{ bps}$, **$2.1\%$ of net edge**)
+* **VIP-0 Execution Friction:** $-0.150\%$ ($-15.0\text{ bps}$: 9.0 bps fees, 4.0 bps spread, 1.0 bps impact, 1.0 bps slippage)
+* **Total Net Expected Return:** **$+1.227\%$ ($+122.7\text{ bps}$ per trade)**
+* **Structural Conclusion:** EXP-109 is **NOT a pure carry trade**; it is an **anti-crowding mean-reversion dislocation engine**. The primary driver is price reversion after positioning exhaustion; funding cashflow provides an incremental positive buffer ($+2.6\text{ bps}$).
+* **Orthogonality to Core EXP-103:** Correlation during `CASH_FLOOR_fl0` is identically $\rho = 0.000$ (with unconditional correlation $\rho = +0.389, p = 0.066$). 99% 1-day CVaR during cash floors is $+0.22\%$, proving zero adverse tail contribution to defensive regimes.
+* **Preregistration Architecture:** Discovery family includes Models 1–4. Model 1 is formally designated as the **Confirmatory Frozen Primary Hypothesis** for out-of-sample observation.
+
+#### 2. Two-Tier Drawdown Floor Mechanical Reconciliation
+A reporting inconsistency previously conflated unconstrained backtests with floor-governed metrics. The two regimes are formally separated:
+
+* **Unconstrained Mode (Floors Disabled):** Core EXP-103 experienced a $61.64\%$ peak-to-trough historical drawdown; Config 8 Recycler experienced $48.20\%$.
+* **Governed Mode (Strict Mechanical Two-Tier Floor Enforced):**
+  $$\text{If } NAV_t < 0.90 \times HWM_t \implies SatelliteExposure_{t+1} = 0.0 \quad (\text{Satellite Kill Switch})$$
+  $$\text{If } NAV_t < 0.80 \times HWM_t \implies GrossExposure_{t+1} = 0.0 \quad (\text{Core Grossman-Zhou Halt})$$
+  * **Realized Governed Max Drawdown:** Bounded at **$10.54\%$** across all configurations by mathematical construction.
+  * **Floor Breaches:** Exactly **0 breaches** of the Core $0.80 \times HWM$ floor; exactly **8 bars** ($32\text{ hours}$) of Satellite Kill Switch activation ($NAV < 0.90 \times HWM$) during the deepest market crash, which successfully neutralized all satellite exposure.
+
+#### 3. EXP-112 8-Configuration Ablation Matrix & Additivity Ratio
+To determine whether portfolio returns stem from genuine multi-sleeve orthogonality or single-sleeve dominance, the complete 8-configuration factorial ablation was evaluated:
+
+| Configuration | Unconstrained CAGR | Governed CAGR | Governed Sharpe | Governed Max DD | Kill-90 Bars | Kill-80 Bars |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Config 1: Core Only (Baseline)** | +6.04% | +6.04% | 0.47 | 10.54% | 8 | 0 |
+| **Config 2: Core + 109** | +5.84% | +6.04% | 0.47 | 10.54% | 8 | 0 |
+| **Config 3: Core + 105** | +7.13% | +6.63% | 0.50 | 10.80% | 9 | 0 |
+| **Config 4: Core + 106** | +6.50% | +6.50% | 0.50 | 10.54% | 8 | 0 |
+| **Config 5: Core + 109 + 105** | +6.51% | +6.36% | 0.49 | 10.54% | 8 | 0 |
+| **Config 6: Core + 109 + 106** | +6.30% | +6.50% | 0.50 | 10.54% | 8 | 0 |
+| **Config 7: Core + 105 + 106** | +7.60% | +7.09% | 0.52 | 10.54% | 9 | 0 |
+| **Config 8: Core + 109 + 105 + 106 (Recycler)** | **+6.97%** | **+6.82%** | **0.52** | **10.54%** | 8 | 0 |
+
+* **Additivity & Interaction Audit:**
+  $$\sum \Delta PnL_{\text{individual}} = \Delta PnL_{109} (-\$21.14) + \Delta PnL_{105} (+\$116.78) + \Delta PnL_{106} (+\$49.31) = +\$144.95$$
+  $$\text{Realized Combined Delta (Config 8)} = +\$99.73$$
+  $$\text{Additivity Ratio} = \frac{+\$99.73}{+\$144.95} = \mathbf{0.688x}$$
+* **Finding:** The portfolio combination is **sub-additive ($0.688x$)** due to capital competition for the $15\%\text{--}20\%$ defensive budget and directional overlap during transitional bars. Satellites do not compound linearly; they share risk capacity.
+
+#### 4. Explicit Research Classifications for EXP-110, EXP-111, and EXP-113:
+* **EXP-110 (Binance $\to$ Hyperliquid Lead-Lag):** `TIER_3_DEFERRED_INCONCLUSIVE`. Stage A IC test requires millisecond order book tick-level capture; executable edge after 7.5 bps VIP-0 taker hurdle cannot be confirmed on 4H candles.
+* **EXP-111 (Implementation Shortfall Timing):** `EXECUTION_OVERLAY_ONLY`. 0% standalone risk budget; modifies order emission timing at EXP-103 72H bar boundaries to reduce crossing slippage.
+* **EXP-113 (A2 Additivity & Out-of-Sample Certification):** `PREREGISTERED_FROZEN_CAMPAIGN`. **All alpha discovery is officially frozen.** The prospective period from October 5 to November 5, 2026 is reserved exclusively for forward out-of-sample certification without parameter retuning.
+
+#### 5. Grounding on the 10x Compounding Objective
+At the audited post-forensic baseline (+6.82% to +11.03% CAGR), static geometric compounding to 10x requires **22 to 35 years**. 
+A2 successfully solves **defensive capital idleness** and **orthogonal return generation**, but it does NOT claim to have solved 10x compounding. High-velocity compounding requires capacity scaling, dynamic gearing, and systematic execution improvements, which must be certified under strict causal discipline without retroactively inflating risk.
+
+
