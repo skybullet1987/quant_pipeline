@@ -270,6 +270,7 @@ class RatchetShadowEngine:
         self.btc_trend_window = deque(maxlen=300)
         self.last_stop_amendment_ts = 0.0
         self.stop_amendments_count = 0
+        self.factor_observations: List[Tuple[float, float, float]] = []
         
         # Load existing completed episodes for idempotent index recovery
         self.load_persisted_episodes()
@@ -728,6 +729,10 @@ class RatchetShadowEngine:
             }
             p5_asset = max(candidates, key=lambda c: composite_scores[c])
 
+            # Record empirical factor triples (OBI, R_250ms, Toxicity_250ms) for continuous correlation logging
+            for c in candidates:
+                self.factor_observations.append((obi_by_asset[c], replenish_by_asset[c], toxicity_by_asset[c]))
+
             # Launch async event-relative state machine tracker for this episode
             pre_bids = {c: l2_snapshot[c].get("bid_sz", 0.0) for c in candidates}
             try:
@@ -1003,11 +1008,29 @@ class RatchetShadowEngine:
             n_mcr >= 100
         )
 
+        # Continuous Factor Correlation Matrix (Standardized Three-Factor Composite)
+        corr_obi_r = 0.0
+        corr_obi_tox = 0.0
+        corr_r_tox = 0.0
+        if len(self.factor_observations) >= 4:
+            f_arr = np.array(self.factor_observations)
+            obis = f_arr[:, 0]
+            rs = f_arr[:, 1]
+            toxs = f_arr[:, 2]
+            def safe_corr(x, y):
+                if float(np.std(x)) > 1e-6 and float(np.std(y)) > 1e-6:
+                    return float(np.corrcoef(x, y)[0, 1])
+                return 0.0
+            corr_obi_r = safe_corr(obis, rs)
+            corr_obi_tox = safe_corr(obis, toxs)
+            corr_r_tox = safe_corr(rs, toxs)
+
         summary = {
             "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "governance": {
-                "specification_version": "v3.1",
+                "specification_version": "v3.4",
                 "execution_model": EXECUTION_MODEL_TYPE,
+                "composite_designation": "Standardized three-factor composite (OBI, R_250, Toxicity_250); primary confirmatory horizon at 250ms",
                 "friction_assumptions": {
                     "base_taker_fee": BASE_TAKER_FEE_MODELED,
                     "modeled_entry_slippage_bps": MODELED_ENTRY_SLIPPAGE_BPS,
@@ -1067,6 +1090,13 @@ class RatchetShadowEngine:
                 "composite_effect_size_passed": bool(ci_99_lower_composite > H_ECONOMIC_USD),
                 "conformance_hurdle": "p_routing < 0.01 AND p_composite < 0.01 AND CI_99_lower > $0.05 AND N >= 100",
                 "gate_passed": composite_gate_passed
+            },
+            "factor_correlation_matrix": {
+                "confirmatory_primary_pair": "R_250ms, Toxicity_250ms (100ms and 500ms are secondary exploratory diagnostics)",
+                "corr_obi_vs_r250": round(corr_obi_r, 4),
+                "corr_obi_vs_tox250": round(corr_obi_tox, 4),
+                "corr_r250_vs_tox250": round(corr_r_tox, 4),
+                "note": "Standardized three-factor composite. Z-scoring normalizes location/scale but does not imply orthogonality."
             },
             "primary_sprint_summary": {
                 "total_completed": len(self.completed_sprints),

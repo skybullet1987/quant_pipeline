@@ -116,7 +116,7 @@ class FastUnwindShadowEngine:
                     "cvar_95_usd": round(compute_cvar95(pnl_b1), 3),
                     "win_rate_pct": round(sum(1 for x in pnl_b1 if x > 0) / total * 100.0, 1),
                     "p_loss_gt_25pct": round(sum(1 for x in pnl_b1 if x < -12.5) / total * 100.0, 1),
-                    "p_loss_gt_50pct": round(sum(1 for x in pnl_b1 if x < -25.0) / total * 100.0, 1),
+                    "incremental_maturity_payoff_foregone_usd": round(sum(r["policy_b1"].get("incremental_maturity_payoff_foregone_usd", r["policy_b1"].get("forgone_opportunity_usd", 0.0)) for r in records), 2),
                     "total_forgone_opportunity_usd": round(sum(r["policy_b1"].get("forgone_opportunity_usd", 0.0) for r in records), 2),
                     "median_holding_time_sec": round(float(np.median(hold_b1)), 1),
                     "pnl_per_capital_hour": round(sum(pnl_b1) / max(sum(hold_b1) / 3600.0, 0.01), 3)
@@ -128,6 +128,7 @@ class FastUnwindShadowEngine:
                     "win_rate_pct": round(sum(1 for x in pnl_b2 if x > 0) / total * 100.0, 1),
                     "p_loss_gt_25pct": round(sum(1 for x in pnl_b2 if x < -12.5) / total * 100.0, 1),
                     "p_loss_gt_50pct": round(sum(1 for x in pnl_b2 if x < -25.0) / total * 100.0, 1),
+                    "incremental_maturity_payoff_foregone_usd": round(sum(r["policy_b2"].get("incremental_maturity_payoff_foregone_usd", r["policy_b2"].get("forgone_opportunity_usd", 0.0)) for r in records), 2),
                     "total_forgone_opportunity_usd": round(sum(r["policy_b2"].get("forgone_opportunity_usd", 0.0) for r in records), 2),
                     "median_holding_time_sec": round(float(np.median(hold_b2)), 1),
                     "pnl_per_capital_hour": round(sum(pnl_b2) / max(sum(hold_b2) / 3600.0, 0.01), 3)
@@ -196,6 +197,7 @@ class FastUnwindShadowEngine:
                 "entry_fee_usd": round(entry_fee, 4),
                 "exit_fee_usd": round(exit_fee_b1, 4),
                 "net_pnl_usd": net_pnl_b1,
+                "incremental_maturity_payoff_foregone_usd": round(net_pnl_a - net_pnl_b1, 2),
                 "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b1, 2),
                 "holding_seconds": t_repricing
             },
@@ -206,6 +208,7 @@ class FastUnwindShadowEngine:
                 "entry_fee_usd": round(entry_fee, 4),
                 "exit_fee_usd": 0.0,
                 "net_pnl_usd": net_pnl_b2,
+                "incremental_maturity_payoff_foregone_usd": round(net_pnl_a - net_pnl_b2, 2),
                 "forgone_opportunity_usd": round(net_pnl_a - net_pnl_b2, 2),
                 "holding_seconds": round(hold_b2, 1)
             }

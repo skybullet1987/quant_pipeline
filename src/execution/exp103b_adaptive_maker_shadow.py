@@ -11,7 +11,9 @@ Evaluates 5 counterfactual maker execution models on Hyperliquid Layer 1 Derivat
 
 Causal Invariants:
   1. Enforce discrete price grid: Integer tick multiples (never 0.5 ticks).
-  2. Model price-time queue ahead: QueueAhead(p, t) consumed strictly by aggressive trades at target price (sum Size_aggressive * 1[tradePrice == P]).
+  2. Queue Realism Qualification: Trade-level execution shadow with improved queue-consumption semantics.
+     QueueAhead(p, t) consumed strictly by aggressive trades at target price (sum Size_aggressive * 1[tradePrice == P]).
+     Does not observe cancellations_ahead or full queue-position dynamics.
   3. Directional signed return: r = s * (Mid - Fill) / Fill where s = +1 (BUY), -1 (SELL).
   4. True VIP-0 fee accounting: +1.5 bps maker fee vs 4.5 bps taker fee.
 """
@@ -119,8 +121,11 @@ class AdaptiveMakerShadowEngine:
             net_pnls = [f.get("net_pnl_usd", 0.0) for f in fills]
             net_edges = [f.get("net_edge_bps", 0.0) for f in fills]
 
-            expected_pnl_attempt = (sum(net_pnls) / m_total) if m_total > 0 else 0.0
+            # Dimensional correction:
+            # E[PnL/attempt] = (FillRate / 100) * (E[NetEdge_bps | Fill] / 10000) * MeanSize_USD
+            mean_size_usd = float(np.mean([o.get("size_usd", 20.0) for o in m_orders])) if m_orders else 20.0
             mean_net_edge = float(np.mean(net_edges)) if net_edges else 0.0
+            expected_pnl_attempt = (len(fills) / m_total) * (mean_net_edge / 10000.0) * mean_size_usd if m_total > 0 else 0.0
 
             stats[m] = {
                 "total_orders": m_total,
@@ -138,11 +143,13 @@ class AdaptiveMakerShadowEngine:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
             "governance": {
                 "experiment": "EXP-103B",
-                "specification": "v3.3-adaptive-maker-preregistered",
+                "specification": "v3.4-adaptive-maker-preregistered",
                 "promotion_criterion": "NetPnL(adaptive) > NetPnL(static) with adverse selection within bounds",
                 "maker_fee_bps": MAKER_FEE_BPS,
                 "taker_fee_bps": TAKER_FEE_BPS,
-                "queue_consumption_invariant": "Strict trades_at_price == target_price (sum Size_aggressive * 1[tradePrice = targetPrice])",
+                "execution_model_qualification": "Trade-level execution shadow with improved queue-consumption semantics (not full queue-position simulation; Q_ahead does not track cancellations_ahead)",
+                "expected_pnl_per_attempt_formula": "E[PnL/attempt] = (FillRate/100) * (E[NetEdge_bps | Fill]/10000) * MeanSize_USD",
+                "queue_consumption_invariant": "Strict trades_at_price == target_price (sum Size_aggressive * 1[tradePrice == targetPrice])",
                 "directional_return_invariant": "Signed markout r = s * (Mid - Fill) / Fill"
             },
             "models_comparison": stats

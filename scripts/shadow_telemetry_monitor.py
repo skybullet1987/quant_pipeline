@@ -83,14 +83,16 @@ def main():
               f"EV/evt = ${pa.get('ev_per_event_usd', 0.0):+.2f} | "
               f"Hold: {pa.get('median_holding_time_sec', 0.0):.0f}s | "
               f"PnL/Cap-Hr: ${pa.get('pnl_per_capital_hour', 0.0):.1f}")
+        pb1_forgone = pb1.get('incremental_maturity_payoff_foregone_usd', pb1.get('total_forgone_opportunity_usd', 0.0))
+        pb2_forgone = pb2.get('incremental_maturity_payoff_foregone_usd', pb2.get('total_forgone_opportunity_usd', 0.0))
         print(f"  Policy B1 (Taker Cut): Net PnL = ${pb1.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
               f"EV/evt = ${pb1.get('ev_per_event_usd', 0.0):+.2f} | "
-              f"Forgone: ${pb1.get('total_forgone_opportunity_usd', 0.0):.2f} | "
+              f"Maturity Payoff Foregone: ${pb1_forgone:.2f} | "
               f"Hold: {pb1.get('median_holding_time_sec', 0.0):.0f}s | "
               f"PnL/Cap-Hr: ${pb1.get('pnl_per_capital_hour', 0.0):.1f}")
         print(f"  Policy B2 (Maker Cut): Net PnL = ${pb2.get('cumulative_net_pnl_usd', 0.0):+.2f} | "
               f"EV/evt = ${pb2.get('ev_per_event_usd', 0.0):+.2f} | "
-              f"Forgone: ${pb2.get('total_forgone_opportunity_usd', 0.0):.2f} | "
+              f"Maturity Payoff Foregone: ${pb2_forgone:.2f} | "
               f"Hold: {pb2.get('median_holding_time_sec', 0.0):.0f}s | "
               f"PnL/Cap-Hr: ${pb2.get('pnl_per_capital_hour', 0.0):.1f}")
     else:
@@ -112,6 +114,12 @@ def main():
         print(f"  Paired D (Composite vs Random): Mean = ${r_inc.get('delta_composite_vs_random_mean_usd', 0.0):+.4f} | "
               f"Median = ${r_inc.get('delta_composite_vs_random_median_usd', 0.0):+.4f} | "
               f"P(D > 0) = {r_inc.get('p_composite_outperforms_random_pct', 0.0):.1f}%")
+        f_matrix = ratchet.get("factor_correlation_matrix", {})
+        if f_matrix:
+            print(f"  Factor Correlations (OBI / R_250 / Tox_250): "
+                  f"Corr(OBI, R) = {f_matrix.get('corr_obi_vs_r250', 0.0):+.3f} | "
+                  f"Corr(OBI, Tox) = {f_matrix.get('corr_obi_vs_tox250', 0.0):+.3f} | "
+                  f"Corr(R, Tox) = {f_matrix.get('corr_r250_vs_tox250', 0.0):+.3f}")
         print(f"  Composite Gate: p_perm = {p_vals.get('p_composite_paired_permutation', 1.0):.4f} | "
               f"CI_99_lower = ${p_vals.get('ci_99_lower_composite_usd', 0.0):+.4f} | "
               f"H_economic = ${p_vals.get('h_economic_hurdle_usd', 0.05):.2f} | "
@@ -154,7 +162,7 @@ def main():
               f"BTC Beta = {ec.get('btc_factor_exposure', 0.0):.2f} | "
               f"10d CVaR_99 = {ec.get('cvar_99_10d_pct', 0.0):.1f}% | "
               f"Extrapolated Yield = {ec.get('annualized_funding_yield_pct', 0.0):.1f}%")
-        print(f"  -> Descriptive Finding: Arm B beats Arm C on Vol (153.1% vs 154.9%), CVaR (67.5% vs 68.3%), and Yield (35.5% vs 35.3%)")
+        print(f"  -> Descriptive Finding: Arm B exhibits lower observed volatility (153.1% vs 154.9%) and CVaR (67.5% vs 68.3%) with slightly higher observed funding yield (35.5% vs 35.3%) relative to Arm C")
     else:
         print("  State initializing...")
 

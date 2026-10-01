@@ -108,9 +108,17 @@ class TradeTapeDeCensoringEngine:
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "governance": {
                 "experiment": "EXP-202",
-                "specification": "v3.3-trade-tape-decensoring-recalled",
+                "specification": "v3.4-trade-tape-decensoring-recalled",
                 "volume_hurdle_usd": self.hurdle_usd,
                 "window_ms": SWEEP_WINDOW_MS,
+                "matching_policy": "Strict 1-to-1 bijection (one forceOrder <-> at most one synthetic sweep)",
+                "matching_constraints": {
+                    "symbol": "BTCUSDT",
+                    "direction": "SELL forceOrder <-> SELL_SWEEP; BUY forceOrder <-> BUY_SWEEP",
+                    "max_temporal_distance_sec": CONFIRMATION_WINDOW_SEC,
+                    "max_price_distance_bps": 25.0,
+                    "selection_rule": "Earliest eligible pending sweep (FIFO)"
+                },
                 "observable_recovery_horizons_ms": [100, 250, 500],
                 "lead_time_definitions": {
                     "actionable": "T_local_recv(forceOrder) - T_local_detect(synthetic_sweep)",
@@ -243,36 +251,50 @@ class TradeTapeDeCensoringEngine:
         # Track every eligible observed liquidation broadcast on BTCUSDT for true recall denominator
         self.eligible_force_orders_count += 1
         
-        force_side = order.get("S") # SELL (liquidating long) or BUY (liquidating short)
-        force_ts_ms = order.get("T", 0)
-        recv_sec = time.time()
+        # Strict 1-to-1 Event Matching Policy:
+        # Constraint 1: Same symbol (BTCUSDT)
+        # Constraint 2: Same direction (SELL forceOrder <-> SELL_SWEEP; BUY forceOrder <-> BUY_SWEEP)
+        # Constraint 3: Maximum temporal distance (0.0 <= time_delta <= CONFIRMATION_WINDOW_SEC)
+        # Constraint 4: Maximum price distance (<= 25 bps between forceOrder price and sweep trigger price)
+        # Constraint 5: Bijection: Each forceOrder matches at most one sweep; matched sweep is immediately pruned
+        force_px = float(order.get("p", 0.0))
+        expected_side = "SELL_SWEEP" if force_side == "SELL" else "BUY_SWEEP"
 
-        # Match against pending synthetic sweeps
-        matched_id = None
-        for s_id, sweep in list(self.pending_sweeps.items()):
-            expected_side = "SELL_SWEEP" if force_side == "SELL" else "BUY_SWEEP"
+        eligible_sweeps = []
+        for s_id, sweep in self.pending_sweeps.items():
             if sweep["side"] == expected_side:
-                # Check confirmation window (within 2 seconds)
                 time_delta_sec = recv_sec - sweep["detect_time_sec"]
                 if 0.0 <= time_delta_sec <= CONFIRMATION_WINDOW_SEC:
-                    lead_actionable_ms = (recv_ns - sweep["detect_time_ns"]) / 1_000_000.0
-                    lead_event_ms = float(force_ts_ms - sweep["exchange_ts_ms"])
-                    sweep["matched_force_order"] = True
-                    sweep["lead_time_actionable_ms"] = round(lead_actionable_ms, 2)
-                    sweep["lead_time_event_ms"] = round(lead_event_ms, 2)
-                    sweep["force_order_recv_ns"] = recv_ns
-                    sweep["force_order_ts_ms"] = force_ts_ms
-                    sweep["status"] = "CONFIRMED_BY_FORCE_ORDER"
-                    
-                    self.matched_force_orders_count += 1
-                    self.actionable_lead_times_ms.append(lead_actionable_ms)
-                    self.event_lead_times_ms.append(lead_event_ms)
-                    matched_id = s_id
-                    
-                    logger.info(f"[CONFIRMATION MATCHED] Sweep {s_id} verified by !forceOrder! "
-                                f"Actionable Lead: {lead_actionable_ms:.1f}ms | Exchange Event Lead: {lead_event_ms:.1f}ms")
-                    self.finalize_sweep(sweep)
-                    break
+                    # Check price distance if both prices available
+                    trigger_px = sweep.get("trigger_price", 0.0)
+                    if force_px > 0 and trigger_px > 0:
+                        px_dist_bps = abs(force_px - trigger_px) / trigger_px * 10000.0
+                        if px_dist_bps > 25.0:
+                            continue  # Exceeds max price distance hurdle (25 bps)
+                    eligible_sweeps.append((sweep["detect_time_ns"], s_id, sweep))
+
+        # Select earliest pending sweep (FIFO selection rule)
+        if eligible_sweeps:
+            eligible_sweeps.sort(key=lambda x: x[0])
+            _, matched_s_id, sweep = eligible_sweeps[0]
+
+            lead_actionable_ms = (recv_ns - sweep["detect_time_ns"]) / 1_000_000.0
+            lead_event_ms = float(force_ts_ms - sweep["exchange_ts_ms"])
+            sweep["matched_force_order"] = True
+            sweep["lead_time_actionable_ms"] = round(lead_actionable_ms, 2)
+            sweep["lead_time_event_ms"] = round(lead_event_ms, 2)
+            sweep["force_order_recv_ns"] = recv_ns
+            sweep["force_order_ts_ms"] = force_ts_ms
+            sweep["force_order_price"] = force_px
+            sweep["status"] = "CONFIRMED_BY_FORCE_ORDER"
+            
+            self.matched_force_orders_count += 1
+            self.actionable_lead_times_ms.append(lead_actionable_ms)
+            self.event_lead_times_ms.append(lead_event_ms)
+            
+            logger.info(f"[CONFIRMATION MATCHED 1-to-1] Sweep {matched_s_id} verified by !forceOrder! "
+                        f"Actionable Lead: {lead_actionable_ms:.1f}ms | Exchange Event Lead: {lead_event_ms:.1f}ms")
+            self.finalize_sweep(sweep)
         
         # Save state periodically on force orders to keep recall updated
         if self.eligible_force_orders_count % 5 == 0:
