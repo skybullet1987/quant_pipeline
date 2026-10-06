@@ -36,12 +36,16 @@ if str(PIPELINE_ROOT) not in sys.path:
 load_dotenv(PIPELINE_ROOT / ".env")
 
 try:
-    from py_clob_client.client import ClobClient
-    from py_clob_client.clob_types import ApiCreds, OrderArgs, OrderType
-    from py_clob_client.constants import POLYGON
+    from py_clob_client_v2.client import ClobClient
+    from py_clob_client_v2.clob_types import ApiCreds, OrderArgsV2, OrderType
     PY_CLOB_AVAILABLE = True
 except ImportError:
-    PY_CLOB_AVAILABLE = False
+    try:
+        from py_clob_client.client import ClobClient
+        from py_clob_client.clob_types import ApiCreds, OrderArgs as OrderArgsV2, OrderType
+        PY_CLOB_AVAILABLE = True
+    except ImportError:
+        PY_CLOB_AVAILABLE = False
 
 
 # Setup module logger
@@ -111,22 +115,26 @@ class PolymarketLiveExecutor:
 
         try:
             t0 = time.perf_counter()
-            # Initialize L1 client
+            # Initialize L1 client with EOA signature type (0)
             self.client = ClobClient(
                 host=self.CLOB_HOST,
                 key=self.private_key,
                 chain_id=self.CHAIN_ID,
+                signature_type=0,
                 funder=self.funder_address if self.funder_address else None,
             )
 
             # Derive or create L2 API credentials
-            api_creds = self.client.create_or_derive_api_creds()
+            if hasattr(self.client, "create_or_derive_api_key"):
+                api_creds = self.client.create_or_derive_api_key()
+            else:
+                api_creds = self.client.create_or_derive_api_creds()
             self.client.set_api_creds(api_creds)
 
             latency_ms = (time.perf_counter() - t0) * 1000.0
             self.is_authenticated = True
             self.auth_mode = "AUTHENTICATED_L2"
-            logger.info(f"Successfully authenticated with Polymarket CLOB L2 in {latency_ms:.2f} ms.")
+            logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client) in {latency_ms:.2f} ms.")
 
         except Exception as e:
             self.auth_mode = "AUTH_FAILED"
@@ -269,9 +277,9 @@ class PolymarketLiveExecutor:
 
         # 4. Live CLOB Order Dispatch Branch
         try:
-            # Create and sign EIP-712 order via py-clob-client
+            # Create and sign EIP-712 order via py-clob-client-v2
             # Uses FOK (Fill-Or-Kill) to guarantee immediate atomic fill without resting open exposure
-            order_args = OrderArgs(
+            order_args = OrderArgsV2(
                 price=best_px,
                 size=shares_to_buy,
                 side=side,
@@ -282,6 +290,28 @@ class PolymarketLiveExecutor:
 
             latency_ms = (time.perf_counter() - t0) * 1000.0
             order_id = post_resp.get("orderID") or post_resp.get("id")
+
+            if not order_id or post_resp.get("errorMsg"):
+                err_msg = post_resp.get("errorMsg") or "No orderID returned from CLOB matching engine"
+                logger.error(f"[{trade_id}] Order rejected by CLOB: {err_msg} | raw={post_resp}")
+                res = OrderResult(
+                    success=False,
+                    order_id=order_id,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=best_px,
+                    size=shares_to_buy,
+                    notional_usd=notional_usd,
+                    fee_usd=fee_usd,
+                    latency_ms=latency_ms,
+                    mode="LIVE_CLOB_ERROR",
+                    error=err_msg,
+                    details={"raw_response": post_resp, "depth_ratio": depth_ratio, "timestamp_utc": now_utc},
+                )
+                self._log_order(res)
+                return res
 
             logger.info(
                 f"[LIVE CLOB FILL] {trade_id} -> OID: {order_id} | {target_token} | Shares={shares_to_buy:.2f} "

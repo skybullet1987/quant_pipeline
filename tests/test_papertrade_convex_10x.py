@@ -524,3 +524,64 @@ def test_state_persistence_and_6bucket_identity(mock_executor):
         assert new_executor.bars_since_macro == 6
         assert new_executor.ledger["gross_price_pnl"] == 180.0
         assert new_executor.ledger["valuation_residual_usd"] == 0.0
+
+
+def test_round_sz_preserves_negative_sign_for_exits():
+    """Regression test: verifies round_sz preserves sign for closing short/long positions."""
+    # Closing long position requires negative target_sz
+    long_exit_sz = -0.0423
+    rounded_exit = round_sz(long_exit_sz, sz_decimals=4)
+    assert rounded_exit == -0.0423
+    assert abs(rounded_exit) == 0.0423
+
+    # Closing short position requires positive target_sz
+    short_exit_sz = 125.75
+    rounded_short_exit = round_sz(short_exit_sz, sz_decimals=2)
+    assert rounded_short_exit == 125.75
+
+    # Truncation down to szDecimals precision
+    assert round_sz(-0.042399, sz_decimals=4) == -0.0423
+    assert round_sz(0.042399, sz_decimals=4) == 0.0423
+
+    # Zero handling
+    assert round_sz(0.0, sz_decimals=4) == 0.0
+    assert round_sz(-0.0, sz_decimals=4) == 0.0
+
+
+def test_month_end_seconds_until_next_4h_bar(mock_executor):
+    """Regression test: verifies get_seconds_until_next_4h_bar handles month-end rollover without ValueError."""
+    executor, _, _ = mock_executor
+    from datetime import datetime, timezone
+
+    # Simulate September 30 at 22:30:00 UTC (day 30 of a 30-day month)
+    mock_now = datetime(2026, 9, 30, 22, 30, 0, tzinfo=timezone.utc)
+    with patch("src.execution.production_apex_daemon.datetime") as mock_dt:
+        mock_dt.now.return_value = mock_now
+        mock_dt.side_effect = lambda *args, **kw: datetime(*args, **kw)
+        secs = executor.get_seconds_until_next_4h_bar()
+        # Next 4H bar is Oct 1, 00:00:15 UTC -> 1 hr 30 min 15 sec = 5415 seconds
+        assert secs == 5415
+
+
+def test_full_exit_l1_order_validation():
+    """Regression test: verifies that a full position exit passes validate_l1_order with reduce_only=True."""
+    sym = "ETH"
+    mid_px = 2685.70
+    open_sz = 0.0423
+    sz_dec = 4
+
+    target_sz = -open_sz
+    rounded_sz = round_sz(target_sz, sz_dec)
+    assert rounded_sz == -0.0423
+    sz_abs = abs(rounded_sz)
+
+    val_ok, err_msg, q_px, q_sz = validate_l1_order(
+        symbol=sym,
+        price=mid_px,
+        size=sz_abs,
+        sz_decimals=sz_dec,
+        is_reduce_only=True
+    )
+    assert val_ok is True
+    assert err_msg == "VALID"
+    assert q_sz == 0.0423

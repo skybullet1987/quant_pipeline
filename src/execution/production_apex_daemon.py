@@ -1228,6 +1228,9 @@ class ProductionApexExecutor:
                 has_valid_tp = False
                 sym_triggers = [o for o in active_triggers if o.get("coin") == sym]
 
+                mark_px = pos.get("mark_px", entry)
+                is_breached = (is_long and mark_px <= sl_px) or (not is_long and mark_px >= sl_px)
+
                 for o in sym_triggers:
                     otype = str(o.get("orderType", "")).lower()
                     t_sz = float(o.get("sz", 0))
@@ -1235,7 +1238,7 @@ class ProductionApexExecutor:
                     sz_match = abs(t_sz - rounded_sz) < 1e-5
 
                     if "stop" in otype or o.get("tpsl") == "sl":
-                        if sz_match and abs(t_px - sl_px) / (sl_px + 1e-8) < 0.005:
+                        if sz_match and abs(t_px - sl_px) / (sl_px + 1e-8) < 0.005 and not is_breached:
                             has_valid_sl = True
                         else:
                             try:
@@ -1253,17 +1256,27 @@ class ProductionApexExecutor:
 
                 # Arm missing SL
                 if not has_valid_sl:
-                    val_ok, err, _, _ = validate_l1_order(symbol=sym, price=sl_px, size=rounded_sz, sz_decimals=sz_dec, is_reduce_only=True)
-                    if val_ok or "notional" in err.lower():
+                    mark_px = pos.get("mark_px", entry)
+                    is_breached = (is_long and mark_px <= sl_px) or (not is_long and mark_px >= sl_px)
+                    if is_breached:
+                        log("WARN", f"[BRACKETS] Position {sym} ALREADY BREACHED SL (Mark: {mark_px:.4f} vs SL: {sl_px:.4f})! Executing immediate emergency exit.")
                         try:
-                            res_sl = self.gateway.exchange.order(
-                                sym, is_buy_exit, rounded_sz, sl_px,
-                                order_type={"trigger": {"isMarket": True, "triggerPx": float(sl_px), "tpsl": "sl"}},
-                                reduce_only=True
-                            )
-                            log("INFO", f"[BRACKETS] Armed SL on {sym}: sz={rounded_sz} @ {sl_px} | res={res_sl.get('status')}")
+                            res_close = self.gateway.close_position(sym, rounded_sz, is_long)
+                            log("INFO", f"[BRACKETS] Breached SL emergency exit for {sym}: {res_close}")
                         except Exception as e:
-                            log("WARN", f"[BRACKETS] Error arming SL on {sym}: {e}")
+                            log("ERROR", f"[BRACKETS] Failed to exit breached SL position on {sym}: {e}")
+                    else:
+                        val_ok, err, _, _ = validate_l1_order(symbol=sym, price=sl_px, size=rounded_sz, sz_decimals=sz_dec, is_reduce_only=True)
+                        if val_ok or "notional" in err.lower():
+                            try:
+                                res_sl = self.gateway.exchange.order(
+                                    sym, is_buy_exit, rounded_sz, sl_px,
+                                    order_type={"trigger": {"isMarket": True, "triggerPx": float(sl_px), "tpsl": "sl"}},
+                                    reduce_only=True
+                                )
+                                log("INFO", f"[BRACKETS] Armed SL on {sym}: sz={rounded_sz} @ {sl_px} | res={res_sl.get('status')}")
+                            except Exception as e:
+                                log("WARN", f"[BRACKETS] Error arming SL on {sym}: {e}")
 
                 # Arm missing TP
                 if not has_valid_tp:
@@ -1718,10 +1731,19 @@ class ProductionApexExecutor:
             next_time = datetime.fromtimestamp(time.time() + secs_to_wait, timezone.utc)
             log("INFO", f"[SLEEP] Next 4H boundary in {secs_to_wait//3600}h {(secs_to_wait%3600)//60}m {secs_to_wait%60}s (at {next_time.strftime('%Y-%m-%d %H:%M:%S UTC')})")
 
+            last_bracket_sweep = time.time()
             while secs_to_wait > 0:
                 sleep_chunk = min(secs_to_wait, 60)
                 time.sleep(sleep_chunk)
                 secs_to_wait -= sleep_chunk
+
+                # Continuous Safety Overlay: Heartbeat sweep for any newly filled resting orders
+                if time.time() - last_bracket_sweep >= 60:
+                    try:
+                        self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+                    except Exception as e:
+                        log("WARN", f"[HEARTBEAT] Error in background bracket sweep: {e}")
+                    last_bracket_sweep = time.time()
 
             # Check clock drift before boundary execution
             self.check_clock_drift()

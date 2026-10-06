@@ -59,12 +59,13 @@ class PositionRecord:
 def round_sz(size: float, sz_decimals: int) -> float:
     """
     Enforces Hyperliquid L1 size quantization:
-    Rounds down (floor) strictly to szDecimals decimal places.
+    Rounds down (floor) strictly to szDecimals decimal places, preserving sign.
     """
-    if size <= 0.0 or sz_decimals < 0:
+    if sz_decimals < 0 or abs(size) <= 0.0:
         return 0.0
     factor = 10 ** sz_decimals
-    return math.floor(size * factor) / factor
+    truncated = math.floor(abs(size) * factor) / factor
+    return round(truncated, sz_decimals) * (1 if size >= 0 else -1)
 
 
 def round_px(price: float, sz_decimals: int) -> float:

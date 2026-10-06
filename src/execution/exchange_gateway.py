@@ -49,9 +49,12 @@ class HyperliquidGateway:
             upnl = float(p.get("unrealizedPnl", 0.0))
             if abs(sz) > 0:
                 total_unrealized += upnl
+                pos_val = float(p.get("positionValue", 0.0))
+                mark_px = pos_val / abs(sz) if abs(sz) > 0 and pos_val > 0 else float(p["entryPx"])
                 positions[s] = {
                     "size": sz,
                     "entry_px": float(p["entryPx"]),
+                    "mark_px": mark_px,
                     "unrealized_pnl": upnl,
                     "leverage": float(p.get("leverage", {}).get("value", 1.0))
                 }
@@ -89,7 +92,17 @@ class HyperliquidGateway:
             is_buy_to_close = sz < 0
             rounded_sz = abs(self.round_sz(sym, sz))
             mid = self.get_mid_price(sym)
-            slip_px = self.round_px(mid * 1.05 if is_buy_to_close else mid * 0.95)
+            raw_slip = mid * 1.05 if is_buy_to_close else mid * 0.95
+            
+            # Oracle collar clamp (+/- 4.5%) to avoid exchange rejection
+            oracle_px = self.get_oracle_price(sym)
+            if oracle_px > 0:
+                if is_buy_to_close:
+                    raw_slip = min(raw_slip, oracle_px * 1.045)
+                else:
+                    raw_slip = max(raw_slip, oracle_px * 0.955)
+
+            slip_px = self.round_px(sym, raw_slip)
             
             res = self.exchange.order(
                 sym, is_buy_to_close, rounded_sz, slip_px,
@@ -231,6 +244,20 @@ class HyperliquidGateway:
             print(f"--> [Gateway Warning] Failed to place trigger stop for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
+    def get_oracle_price(self, symbol: str) -> float:
+        try:
+            ctxs = self.info.meta_and_asset_ctxs()[1]
+            universe = [t["name"] for t in self.meta["universe"]]
+            if symbol in universe:
+                idx = universe.index(symbol)
+                return float(ctxs[idx].get("oraclePx", 0.0))
+        except Exception:
+            pass
+        try:
+            return self.get_mid_price(symbol)
+        except Exception:
+            return 0.0
+
     def close_position(self, symbol: str, size: float, is_long: bool) -> Dict[str, Any]:
         if not self.exchange:
             return {}
@@ -238,7 +265,17 @@ class HyperliquidGateway:
             is_buy_to_close = not is_long
             rounded_sz = abs(self.round_sz(symbol, size))
             mid = self.get_mid_price(symbol)
-            slip_px = self.round_px(symbol, mid * 1.05 if is_buy_to_close else mid * 0.95)
+            raw_slip = mid * 1.05 if is_buy_to_close else mid * 0.95
+
+            # Oracle collar clamp (+/- 4.5%) to avoid exchange rejection
+            oracle_px = self.get_oracle_price(symbol)
+            if oracle_px > 0:
+                if is_buy_to_close:
+                    raw_slip = min(raw_slip, oracle_px * 1.045)
+                else:
+                    raw_slip = max(raw_slip, oracle_px * 0.955)
+
+            slip_px = self.round_px(symbol, raw_slip)
             return self.exchange.order(
                 symbol, is_buy_to_close, rounded_sz, slip_px,
                 order_type={"limit": {"tif": "Ioc"}}, reduce_only=True
