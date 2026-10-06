@@ -86,12 +86,23 @@ class PolymarketLiveExecutor:
         self,
         private_key: Optional[str] = None,
         funder_address: Optional[str] = None,
+        signature_type: Optional[int] = None,
         dry_run: bool = False,
         ledger_path: Optional[str] = None,
     ):
         self.dry_run = dry_run
         self.private_key = private_key or os.getenv("POLYGON_PRIVATE_KEY", "").strip()
-        self.funder_address = funder_address or os.getenv("POLYGON_FUNDER_ADDRESS", "").strip()
+        self.funder_address = (
+            funder_address
+            or os.getenv("POLYGON_FUNDER_ADDRESS", "").strip()
+            or os.getenv("POLYGON_PROXY_ADDRESS", "").strip()
+        )
+        sig_env = os.getenv("POLYGON_SIGNATURE_TYPE", "").strip()
+        self.signature_type = (
+            signature_type
+            if signature_type is not None
+            else (int(sig_env) if sig_env else 3)
+        )
         self.ledger_path = Path(ledger_path or PIPELINE_ROOT / "data/polymarket/live_orders.jsonl")
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -115,12 +126,12 @@ class PolymarketLiveExecutor:
 
         try:
             t0 = time.perf_counter()
-            # Initialize L1 client with EOA signature type (0)
+            # Initialize L1 client with configured signature type (3 for Polymarket deposit proxy wallet)
             self.client = ClobClient(
                 host=self.CLOB_HOST,
                 key=self.private_key,
                 chain_id=self.CHAIN_ID,
-                signature_type=0,
+                signature_type=self.signature_type,
                 funder=self.funder_address if self.funder_address else None,
             )
 
