@@ -1,0 +1,18 @@
+[Unit]
+Description=Polymarket Live CLOB Real-Money Harvester ($100 Lot Size, Policy B2)
+After=network-online.target polymarket-recorder.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_live_harvester.py --lot-size 100
+Restart=on-failure
+RestartSec=5s
+KillMode=process
+TimeoutStopSec=15s
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/polymarket/live_harvester.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/polymarket/live_harvester.log
+
+[Install]
+WantedBy=default.target
