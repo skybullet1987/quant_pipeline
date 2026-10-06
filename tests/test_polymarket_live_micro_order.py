@@ -99,7 +99,7 @@ def test_live_clob_order_flow():
 
     # Step 4: Immediately cancel the order
     print("\n[STEP 4] Instantly cancelling test order to leave zero open exposure...")
-    cancel_resp = executor.client.cancel(order_id)
+    cancel_resp = executor.client.cancel_orders([order_id])
     print(f"  Cancellation Response: {cancel_resp}")
     print("\n" + "=" * 70)
     print("      LIVE REAL-MONEY PIPELINE 100% VERIFIED & CONFIRMED!")
