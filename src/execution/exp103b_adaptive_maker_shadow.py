@@ -78,11 +78,14 @@ class AdaptiveMakerShadowEngine:
             with open(LEDGER_FILE, "r") as f:
                 for line in f:
                     if line.strip():
-                        rec = json.loads(line)
-                        # Backwards compatibility: accurately map previous static 60s BBO observations
-                        if rec.get("model") == "MODEL_2_ADAPTIVE_60S":
-                            rec["model"] = "MODEL_2_60S_STATIC_BBO"
-                        self.completed_virtual_orders.append(rec)
+                        try:
+                            rec = json.loads(line)
+                            # Backwards compatibility: accurately map previous static 60s BBO observations
+                            if rec.get("model") == "MODEL_2_ADAPTIVE_60S":
+                                rec["model"] = "MODEL_2_60S_STATIC_BBO"
+                            self.completed_virtual_orders.append(rec)
+                        except Exception as parse_err:
+                            logger.warning(f"Skipping malformed ledger line: {parse_err}")
         logger.info(f"Loaded {len(self.completed_virtual_orders)} completed counterfactual orders.")
 
     def save_state(self):
