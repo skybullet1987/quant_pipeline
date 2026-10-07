@@ -133,6 +133,11 @@ def run_qa_suite():
         qa_ledger.unlink()
         
     dry_run_executor = PolymarketLiveExecutor(dry_run=True, ledger_path=str(qa_ledger))
+    # Provide deep book at $0.78 target price
+    dry_run_executor.get_market_book = lambda tid: {
+        "asks": [{"price": "0.78", "size": "250.0"}],
+        "bids": [{"price": "0.77", "size": "250.0"}]
+    }
     sim_result = dry_run_executor.execute_snipe_order(
         trade_id="QA_TRADE_001",
         token_id=sample_token,
