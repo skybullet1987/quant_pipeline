@@ -647,8 +647,10 @@ class PolymarketDualFeed1HRecorder:
         pre_shock_basis_signed = self.basis_bps
         pre_shock_basis_abs = abs(self.basis_bps)
 
-        secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
-        dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
+        t0_secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
+        t0_dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
+        t0_spot = self.spot_price
+        t0_futures = self.futures_price
 
         # ZERO-LATENCY TRIGGER DISPATCH: Write immediate t0 event for live execution (<1ms from shock detection)
         immediate_trigger = {
@@ -658,18 +660,18 @@ class PolymarketDualFeed1HRecorder:
             "shock_source": source,
             "market_id": self.current_market["market_id"],
             "title": self.current_market["title"],
-            "seconds_to_expiry": round(secs_left, 1),
+            "seconds_to_expiry": round(t0_secs_left, 1),
             "shock_volume_100ms": round(shock_vol, 0),
             "shock_direction": shock_dir,
             "shock_ofi": round(ofi, 3),
             "trigger_price": trigger_px,
-            "spot_at_t0": self.spot_price,
-            "futures_at_t0": self.futures_price,
+            "spot_at_t0": t0_spot,
+            "futures_at_t0": t0_futures,
             "basis_signed_bps_t0": round(pre_shock_basis_signed, 2),
             "basis_abs_bps_t0": round(pre_shock_basis_abs, 2),
             "delta_basis_100ms": delta_basis_100ms,
             "finalized_1h_open": self.finalized_1h_open,
-            "candle_distance_pct": round(dist_pct, 4),
+            "candle_distance_pct": round(t0_dist_pct, 4),
             "fee_metadata": self.current_market.get("fee_metadata", {}),
             "pre_shock_features_t0": {
                 "UP": pre_shock_up,
@@ -710,9 +712,6 @@ class PolymarketDualFeed1HRecorder:
                 "delta_basis_bps": round(self.basis_bps - pre_shock_basis_signed, 2)
             }
 
-        secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
-        dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
-
         shock_record = {
             "timestamp": datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "t0_unix": t0,
@@ -720,18 +719,18 @@ class PolymarketDualFeed1HRecorder:
             "shock_source": source,
             "market_id": self.current_market["market_id"],
             "title": self.current_market["title"],
-            "seconds_to_expiry": round(secs_left, 1),
+            "seconds_to_expiry": round(t0_secs_left, 1),
             "shock_volume_100ms": round(shock_vol, 0),
             "shock_direction": shock_dir,
             "shock_ofi": round(ofi, 3),
             "trigger_price": trigger_px,
-            "spot_at_t0": self.spot_price,
-            "futures_at_t0": self.futures_price,
+            "spot_at_t0": t0_spot,
+            "futures_at_t0": t0_futures,
             "basis_signed_bps_t0": round(pre_shock_basis_signed, 2),
             "basis_abs_bps_t0": round(pre_shock_basis_abs, 2),
             "delta_basis_100ms": delta_basis_100ms,
             "finalized_1h_open": self.finalized_1h_open,
-            "candle_distance_pct": round(dist_pct, 4),
+            "candle_distance_pct": round(t0_dist_pct, 4),
             "fee_metadata": self.current_market.get("fee_metadata", {}),
             "pre_shock_features_t0": {
                 "UP": pre_shock_up,
