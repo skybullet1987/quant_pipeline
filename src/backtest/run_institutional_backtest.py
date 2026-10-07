@@ -78,20 +78,21 @@ def run_backtest():
     print(f"Loading PIT Dataset from: {LAKE_FILE}")
     df = pl.read_parquet(LAKE_FILE).sort(["timestamp_ms", "symbol"])
     timestamps = df.select("timestamp_ms").unique().sort("timestamp_ms").to_series().to_list()
+    ts_to_grp = {ts: idx for idx, ts in enumerate(timestamps)}
+    df = df.with_columns(pl.col("timestamp_ms").replace(ts_to_grp).alias("group_id"))
     
     features = [
         "ret_4h", "ret_24h", "ret_72h", "ret_168h",
-        "vol_yang_zhang", "vol_ratio_24_168", "volume_zscore_72h",
-        "basis_spread", "spillover_alpha", "cs_rank_72h"
+        "volume_zscore_72h", "basis_spread", "vol_yang_zhang", "beta_btc"
     ]
     
     epoch_step = 18       # 72H holding period
-    min_train_bars = 720  # 120 days warm-up
-    embargo_bars = 42     # 7-day structural embargo
+    min_train_bars = min(720, max(120, int(len(timestamps) * 0.40)))  # Scalable warm-up
+    embargo_bars = min(42, int(min_train_bars * 0.15))                 # Structural embargo
     
     rebalance_indices = list(range(min_train_bars, len(timestamps) - epoch_step, epoch_step))
     total_epochs = len(rebalance_indices)
-    print(f"Total 4H Bars: {len(timestamps)} | Evaluated OOS Epochs: {total_epochs}\n")
+    print(f"Total 4H Bars: {len(timestamps)} | Warm-up Bars: {min_train_bars} | Evaluated OOS Epochs: {total_epochs}\n")
     
     equity = 1.0
     equity_curve = [equity]
@@ -130,7 +131,7 @@ def run_backtest():
         # 2. YetiRank Alpha Retraining
         train_pool = Pool(
             data=train_df.select(features).to_pandas(),
-            label=train_df.select("target_residual_alpha_72h").to_pandas().values.ravel(),
+            label=train_df.select("target_residual_drift").to_pandas().values.ravel(),
             group_id=train_df.select("group_id").to_pandas().values.ravel()
         )
         
@@ -186,7 +187,8 @@ def run_backtest():
                 
             p_entry = float(sym_bars.select("open").to_series()[0])
             p_exit = float(sym_bars.select("close").to_series()[-1])
-            atr = float(sym_bars.select("atr_14").to_series()[0])
+            vol_yz = float(sym_bars.select("vol_yang_zhang").to_series()[0])
+            atr = p_entry * max(vol_yz, 0.01)
             
             is_long = (w > 0)
             stop_px = (p_entry - 2.5 * atr) if is_long else (p_entry + 2.5 * atr)
@@ -219,6 +221,10 @@ def run_backtest():
         print(f"[{step_num:02d}/{total_epochs:02d}] Regime: {state_names[dominant_state]:<9} | PnL: {epoch_pnl * 100:>+6.2f}% | Equity: {equity:.2f}x | Lev: {dyn_leverage:.2f}x")
         sys.stdout.flush()
         
+    if not epoch_returns:
+        print("[BACKTEST] Warning: No epoch returns generated.")
+        return
+
     ann_sharpe, psr, dsr = calc_deflated_sharpe(np.array(epoch_returns))
     cagr = (equity ** (121.67 / len(epoch_returns))) - 1.0
     vol = np.std(epoch_returns) * np.sqrt(121.67)

@@ -333,7 +333,7 @@ class RatchetShadowEngine:
         """Records public trades on Hyperliquid to measure aggressive sell flow."""
         if coin in self.rolling_agg_sells:
             now_sec = time.time()
-            if side == "SELL": # Aggressive sell hitting bids
+            if side in ("SELL", "A"): # Aggressive sell hitting bids
                 self.rolling_agg_sells[coin].append((now_sec, sz))
             cutoff = now_sec - 5.0
             while self.rolling_agg_sells[coin] and self.rolling_agg_sells[coin][0][0] < cutoff:
@@ -1199,7 +1199,8 @@ async def run_shadow_daemon():
                                 if coin in engine.current_order_books:
                                     px = float(t.get("px", 0.0))
                                     sz = float(t.get("sz", 0.0))
-                                    side = t.get("side", "BUY")
+                                    raw_side = t.get("side", "BUY")
+                                    side = "SELL" if raw_side in ("A", "SELL") else "BUY" # Normalize HL 'A'/'B' aggressor
                                     engine.record_hyperliquid_trade(coin, px, sz, side)
 
             except Exception as e:

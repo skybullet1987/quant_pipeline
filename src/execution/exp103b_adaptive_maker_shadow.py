@@ -248,8 +248,8 @@ class AdaptiveMakerShadowEngine:
         """Computes Order Flow Imbalance over the last 5 seconds from recent trades."""
         trades = self.recent_trades.get(symbol, [])
         cutoff = now_sec - 5.0
-        buy_vol = sum(t[2] for t in trades if t[0] >= cutoff and t[3] == "BUY")
-        sell_vol = sum(t[2] for t in trades if t[0] >= cutoff and t[3] == "SELL")
+        buy_vol = sum(t[2] for t in trades if t[0] >= cutoff and t[3] in ("BUY", "B"))
+        sell_vol = sum(t[2] for t in trades if t[0] >= cutoff and t[3] in ("SELL", "A"))
         total_vol = buy_vol + sell_vol
         return (buy_vol - sell_vol) / total_vol if total_vol > 0 else 0.0
 
@@ -306,9 +306,11 @@ class AdaptiveMakerShadowEngine:
             # QueueConsumed(P, t) = sum Size_aggressive * 1[tradePrice == P]
             if not o.get("paused", False):
                 is_fill_trade = False
-                if o["side"] == "BUY" and side == "SELL" and math.isclose(price, o["target_price"], abs_tol=1e-5):
+                # Passive BUY limit filled by aggressive SELL trade at or below target price
+                if o["side"] == "BUY" and side in ("SELL", "A") and price <= (o["target_price"] + 1e-5):
                     is_fill_trade = True
-                elif o["side"] == "SELL" and side == "BUY" and math.isclose(price, o["target_price"], abs_tol=1e-5):
+                # Passive SELL limit filled by aggressive BUY trade at or above target price
+                elif o["side"] == "SELL" and side in ("BUY", "B") and price >= (o["target_price"] - 1e-5):
                     is_fill_trade = True
 
                 if is_fill_trade:
@@ -409,7 +411,8 @@ async def stream_hyperliquid(engine: AdaptiveMakerShadowEngine):
                             if coin in engine.symbols:
                                 px = float(t.get("px", 0.0))
                                 sz = float(t.get("sz", 0.0))
-                                side = t.get("side", "BUY") # side of aggressor
+                                raw_side = t.get("side", "BUY")
+                                side = "BUY" if raw_side in ("B", "BUY") else "SELL" # Normalize HL 'B'/'A' aggressor
                                 engine.process_trade_update(coin, px, sz, side)
 
                     # Trigger regular rebalance benchmark scenario every 120s
