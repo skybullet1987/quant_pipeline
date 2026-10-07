@@ -184,7 +184,12 @@ class PolymarketLiveHarvester:
         if depth_ratio < 1.50:
             return
 
-        eff_px = token_features.get("effective_price_$50") or (raw_asks[0][0] if raw_asks else None)
+        eff_px = (
+            token_features.get(f"effective_price_${int(self.ticket_notional)}")
+            or token_features.get("effective_price_$20")
+            or token_features.get("effective_price_$50")
+            or (raw_asks[0][0] if raw_asks else None)
+        )
         if not eff_px or eff_px < 0.15 or eff_px > 0.85:
             return
 
