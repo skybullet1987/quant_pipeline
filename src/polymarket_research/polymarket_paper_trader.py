@@ -24,6 +24,7 @@ from collections import defaultdict
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PIPELINE_ROOT / "data" / "polymarket"
+TRIGGER_FILE = DATA_DIR / "live_shock_triggers.jsonl"
 SHOCK_FILE = DATA_DIR / "shock_responses.jsonl"
 RESOLUTIONS_FILE = DATA_DIR / "finalized_market_resolutions.jsonl"
 DEV_LEDGER_FILE = DATA_DIR / "paper_trading_dev_ledger.jsonl"
@@ -66,6 +67,7 @@ class PolymarketForwardPaperTrader:
         # In-Flight Open Positions: market_id -> list of open positions
         self.open_trades: Dict[str, List[Dict[str, Any]]] = {}
         
+        self.last_trigger_file_pos: int = 0
         self.last_shock_file_pos: int = 0
         self.last_res_file_pos: int = 0
 
@@ -135,6 +137,21 @@ class PolymarketForwardPaperTrader:
                 shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
                 self.seen_shock_ids.add(shock_id)
                 self.evaluate_shock_signal(s, historical=True)
+
+        if TRIGGER_FILE.exists():
+            with open(TRIGGER_FILE, "r") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    s = json.loads(line)
+                    shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                    if shock_id not in self.seen_shock_ids:
+                        self.seen_shock_ids.add(shock_id)
+                        self.evaluate_shock_signal(s, historical=True)
+            self.last_trigger_file_pos = TRIGGER_FILE.stat().st_size
+
+        if SHOCK_FILE.exists():
+            self.last_shock_file_pos = SHOCK_FILE.stat().st_size
 
         # Settle any open historical markets against finalized resolutions
         for m_id, res in resolutions.items():
@@ -360,43 +377,65 @@ class PolymarketForwardPaperTrader:
 
         while True:
             try:
-                # 1. Ingest new shock events
-                if SHOCK_FILE.exists():
-                    with open(SHOCK_FILE, "r") as f:
-                        f.seek(self.last_shock_file_pos)
-                        new_lines = f.readlines()
-                        self.last_shock_file_pos = f.tell()
+                # 1. Ingest new zero-latency shock triggers (<1ms from recorder detection)
+                if TRIGGER_FILE.exists():
+                    current_trig_size = TRIGGER_FILE.stat().st_size
+                    if current_trig_size > self.last_trigger_file_pos:
+                        with open(TRIGGER_FILE, "r") as f:
+                            f.seek(self.last_trigger_file_pos)
+                            new_lines = f.readlines()
+                            self.last_trigger_file_pos = f.tell()
 
-                    for line in new_lines:
-                        if not line.strip():
-                            continue
-                        s = json.loads(line)
-                        shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
-                        if shock_id not in self.seen_shock_ids:
-                            self.seen_shock_ids.add(shock_id)
-                            self.evaluate_shock_signal(s, historical=False)
+                        for line in new_lines:
+                            if not line.strip():
+                                continue
+                            s = json.loads(line)
+                            shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                            if shock_id not in self.seen_shock_ids:
+                                self.seen_shock_ids.add(shock_id)
+                                self.evaluate_shock_signal(s, historical=False)
+
+                # Fallback to shock_responses if trigger file is absent
+                elif SHOCK_FILE.exists():
+                    current_shock_size = SHOCK_FILE.stat().st_size
+                    if current_shock_size > self.last_shock_file_pos:
+                        with open(SHOCK_FILE, "r") as f:
+                            f.seek(self.last_shock_file_pos)
+                            new_lines = f.readlines()
+                            self.last_shock_file_pos = f.tell()
+
+                        for line in new_lines:
+                            if not line.strip():
+                                continue
+                            s = json.loads(line)
+                            shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                            if shock_id not in self.seen_shock_ids:
+                                self.seen_shock_ids.add(shock_id)
+                                self.evaluate_shock_signal(s, historical=False)
 
                 # 2. Check for newly finalized market resolutions
                 if RESOLUTIONS_FILE.exists():
-                    with open(RESOLUTIONS_FILE, "r") as f:
-                        f.seek(self.last_res_file_pos)
-                        new_res_lines = f.readlines()
-                        self.last_res_file_pos = f.tell()
+                    current_res_size = RESOLUTIONS_FILE.stat().st_size
+                    if current_res_size > self.last_res_file_pos:
+                        with open(RESOLUTIONS_FILE, "r") as f:
+                            f.seek(self.last_res_file_pos)
+                            new_res_lines = f.readlines()
+                            self.last_res_file_pos = f.tell()
 
-                    for line in new_res_lines:
-                        if not line.strip():
-                            continue
-                        res = json.loads(line)
-                        m_id = res.get("market_id")
-                        if m_id not in self.seen_resolution_ids:
-                            self.seen_resolution_ids.add(m_id)
-                            self.settle_market(m_id, res, historical=False)
+                        for line in new_res_lines:
+                            if not line.strip():
+                                continue
+                            res = json.loads(line)
+                            m_id = res.get("market_id")
+                            if m_id not in self.seen_resolution_ids:
+                                self.seen_resolution_ids.add(m_id)
+                                self.settle_market(m_id, res, historical=False)
 
                 self.save_state()
-                await asyncio.sleep(5)
+                await asyncio.sleep(0.1)
             except Exception as e:
                 print(f"[-] Error in paper trader loop: {e}", flush=True)
-                await asyncio.sleep(5)
+                await asyncio.sleep(1.0)
 
 
 if __name__ == "__main__":
