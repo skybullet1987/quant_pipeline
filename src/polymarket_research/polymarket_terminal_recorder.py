@@ -76,6 +76,7 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 
 TELEMETRY_FILE = DATA_DIR / "polymarket_hourly_telemetry.jsonl"
 SHOCK_FILE = DATA_DIR / "shock_responses.jsonl"
+TRIGGER_FILE = DATA_DIR / "live_shock_triggers.jsonl"
 RESOLUTIONS_FILE = DATA_DIR / "finalized_market_resolutions.jsonl"
 CORRELATIONS_FILE = DATA_DIR / "leadlag_cross_correlations.jsonl"
 LOG_FILE = DATA_DIR / "recorder.log"
@@ -645,6 +646,42 @@ class PolymarketDualFeed1HRecorder:
         pre_shock_down = down_book.get_metrics(obs_ts=t0, fee_rate=self.fee_rate_market)
         pre_shock_basis_signed = self.basis_bps
         pre_shock_basis_abs = abs(self.basis_bps)
+
+        secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
+        dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
+
+        # ZERO-LATENCY TRIGGER DISPATCH: Write immediate t0 event for live execution (<1ms from shock detection)
+        immediate_trigger = {
+            "timestamp": datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "t0_unix": t0,
+            "t0_mono_ns": t0_mono_ns,
+            "shock_source": source,
+            "market_id": self.current_market["market_id"],
+            "title": self.current_market["title"],
+            "seconds_to_expiry": round(secs_left, 1),
+            "shock_volume_100ms": round(shock_vol, 0),
+            "shock_direction": shock_dir,
+            "shock_ofi": round(ofi, 3),
+            "trigger_price": trigger_px,
+            "spot_at_t0": self.spot_price,
+            "futures_at_t0": self.futures_price,
+            "basis_signed_bps_t0": round(pre_shock_basis_signed, 2),
+            "basis_abs_bps_t0": round(pre_shock_basis_abs, 2),
+            "delta_basis_100ms": delta_basis_100ms,
+            "finalized_1h_open": self.finalized_1h_open,
+            "candle_distance_pct": round(dist_pct, 4),
+            "fee_metadata": self.current_market.get("fee_metadata", {}),
+            "pre_shock_features_t0": {
+                "UP": pre_shock_up,
+                "DOWN": pre_shock_down
+            }
+        }
+        try:
+            with open(TRIGGER_FILE, "a") as f:
+                f.write(json.dumps(immediate_trigger) + "\n")
+                f.flush()
+        except Exception as trig_err:
+            logger.error(f"Failed to persist zero-latency trigger: {trig_err}")
 
         ladder_delays = [0.10, 0.15, 0.25, 0.50, 4.0, 25.0]
         ladder_labels = ["100ms", "250ms", "500ms", "1s", "5s", "30s"]

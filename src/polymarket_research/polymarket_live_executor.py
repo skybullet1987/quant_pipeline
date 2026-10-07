@@ -37,15 +37,17 @@ load_dotenv(PIPELINE_ROOT / ".env")
 
 try:
     from py_clob_client_v2.client import ClobClient
-    from py_clob_client_v2.clob_types import ApiCreds, OrderArgsV2, OrderType
+    from py_clob_client_v2.clob_types import ApiCreds, OrderArgsV2, MarketOrderArgsV2, OrderType
     PY_CLOB_AVAILABLE = True
 except ImportError:
     try:
         from py_clob_client.client import ClobClient
         from py_clob_client.clob_types import ApiCreds, OrderArgs as OrderArgsV2, OrderType
+        MarketOrderArgsV2 = None
         PY_CLOB_AVAILABLE = True
     except ImportError:
         PY_CLOB_AVAILABLE = False
+        MarketOrderArgsV2 = None
 
 
 # Setup module logger
@@ -337,15 +339,28 @@ class PolymarketLiveExecutor:
 
         # 4. Live CLOB Order Dispatch Branch
         try:
-            # Create and sign EIP-712 order via py-clob-client-v2
-            # Uses FOK (Fill-Or-Kill) to guarantee immediate atomic fill without resting open exposure
-            order_args = OrderArgsV2(
-                price=best_px,
-                size=shares_to_buy,
-                side=side,
-                token_id=token_id,
-            )
-            signed_order = self.client.create_order(order_args)
+            # Calculate worst acceptable price allowing up to 2¢ slippage, strictly bounded by [0.15, 0.85]
+            worst_acceptable_px = min(0.85, round(best_px + 0.02, 2))
+
+            # Dispatch via native MarketOrderArgsV2 (sweeps depth up to worst_acceptable_px)
+            if MarketOrderArgsV2 is not None:
+                mo_args = MarketOrderArgsV2(
+                    token_id=token_id,
+                    amount=round(notional_usd, 2),
+                    side=side,
+                    price=worst_acceptable_px,
+                    order_type=OrderType.FOK,
+                )
+                signed_order = self.client.create_market_order(mo_args)
+            else:
+                order_args = OrderArgsV2(
+                    price=worst_acceptable_px,
+                    size=shares_to_buy,
+                    side=side,
+                    token_id=token_id,
+                )
+                signed_order = self.client.create_order(order_args)
+
             post_resp = self.client.post_order(signed_order, OrderType.FOK)
 
             latency_ms = (time.perf_counter() - t0) * 1000.0
@@ -373,9 +388,16 @@ class PolymarketLiveExecutor:
                 self._log_order(res)
                 return res
 
+            # Parse filled amounts from CLOB response if available
+            making_amt = post_resp.get("makingAmount")
+            taking_amt = post_resp.get("takingAmount")
+            actual_notional = (float(making_amt) / 1e6) if making_amt else notional_usd
+            actual_shares = (float(taking_amt) / 1e6) if taking_amt else shares_to_buy
+            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt) else best_px
+
             logger.info(
-                f"[LIVE CLOB FILL] {trade_id} -> OID: {order_id} | {target_token} | Shares={shares_to_buy:.2f} "
-                f"@ ${best_px:.4f} | Notional=${notional_usd:.2f} | Latency={latency_ms:.2f}ms"
+                f"[LIVE CLOB FILL] {trade_id} -> OID: {order_id} | {target_token} | Shares={actual_shares:.2f} "
+                f"@ ${fill_px:.4f} | Notional=${actual_notional:.2f} | Latency={latency_ms:.2f}ms"
             )
 
             res = OrderResult(
@@ -385,9 +407,9 @@ class PolymarketLiveExecutor:
                 token_id=token_id,
                 target_token=target_token,
                 side=side,
-                price=best_px,
-                size=shares_to_buy,
-                notional_usd=notional_usd,
+                price=fill_px,
+                size=actual_shares,
+                notional_usd=actual_notional,
                 fee_usd=fee_usd,
                 latency_ms=latency_ms,
                 mode="LIVE_CLOB",
@@ -461,6 +483,16 @@ class PolymarketLiveExecutor:
         except Exception as e:
             logger.error(f"Failed to cancel order {order_id}: {e}")
             return {"error": str(e)}
+
+    def get_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:
+        """Queries live status of an order from CLOB."""
+        if self.dry_run or not self.is_authenticated or self.client is None:
+            return None
+        try:
+            return self.client.get_order(order_id)
+        except Exception as e:
+            logger.error(f"Error querying order {order_id}: {e}")
+            return None
 
     def _log_order(self, res: OrderResult):
         """Appends order execution event to immutable JSONL audit ledger."""

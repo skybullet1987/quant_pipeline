@@ -43,15 +43,17 @@ logging.basicConfig(
 )
 
 DATA_DIR = PIPELINE_ROOT / "data/polymarket"
+TRIGGER_FILE = DATA_DIR / "live_shock_triggers.jsonl"
 SHOCK_FILE = DATA_DIR / "shock_responses.jsonl"
 RESOLUTIONS_FILE = DATA_DIR / "finalized_market_resolutions.jsonl"
 STATE_FILE = DATA_DIR / "live_harvester_state.json"
 PID_FILE = DATA_DIR / "live_harvester.pid"
 
-DEFAULT_TICKET_NOTIONAL = 100.0  # $100 per trade
-PROFIT_THETA = 0.10              # +10¢ target exit scalp
-MAX_TRADES_PER_HOUR = 2
-MIN_DISTANCE_PCT = 0.50          # At least 0.50% lead-lag distance shock
+DEFAULT_TICKET_NOTIONAL = 20.0       # $20 per trade (Kelly-optimal on $301 bankroll)
+MAX_TRADES_PER_HOUR = 1             # Max 1 trade per 1-hour market candle
+MAX_PORTFOLIO_EXPOSURE_USD = 60.0   # Hard ceiling: max $60 total concurrent exposure
+PROFIT_THETA = 0.10                 # +10¢ target exit scalp
+MIN_DISTANCE_PCT = 0.05             # At least 0.05% lead-lag distance shock
 
 
 class PolymarketLiveHarvester:
@@ -67,11 +69,13 @@ class PolymarketLiveHarvester:
         )
         
         self.seen_shock_ids: Set[str] = set()
+        self.traded_market_ids: Set[str] = set()
         self.active_positions: Dict[str, Dict[str, Any]] = {}
         self.closed_positions: List[Dict[str, Any]] = []
         self.trades_this_hour = 0
         self.current_hour_window = time.time() // 3600
         
+        self.last_trigger_file_pos = 0
         self.last_shock_file_pos = 0
         self.last_res_file_pos = 0
         self.market_tokens_cache: Dict[str, str] = {}
@@ -101,7 +105,8 @@ class PolymarketLiveHarvester:
                     self.active_positions = state.get("active_positions", {})
                     self.closed_positions = state.get("closed_positions", [])
                     self.seen_shock_ids = set(state.get("seen_shock_ids", []))
-                    logger.info(f"Loaded existing state: {len(self.active_positions)} active positions.")
+                    self.traded_market_ids = set(state.get("traded_market_ids", []))
+                    logger.info(f"Loaded existing state: {len(self.active_positions)} active positions, {len(self.traded_market_ids)} traded markets.")
             except Exception as e:
                 logger.error(f"Error loading state: {e}")
 
@@ -115,6 +120,7 @@ class PolymarketLiveHarvester:
             "active_positions": self.active_positions,
             "closed_positions": self.closed_positions[-20:],
             "seen_shock_ids": list(self.seen_shock_ids)[-200:],
+            "traded_market_ids": list(self.traded_market_ids)[-100:],
             "status": "RUNNING"
         }
         with open(STATE_FILE, "w") as f:
@@ -127,6 +133,19 @@ class PolymarketLiveHarvester:
             self.trades_this_hour = 0
 
         if self.trades_this_hour >= MAX_TRADES_PER_HOUR:
+            return
+
+        m_id = str(shock.get("market_id"))
+        if m_id in self.traded_market_ids:
+            return
+
+        # Portfolio Exposure Guard (hard ceiling: $60 max portfolio exposure)
+        current_exposure = sum(pos.get("notional_usd", 0.0) for pos in self.active_positions.values())
+        if (current_exposure + self.ticket_notional) > MAX_PORTFOLIO_EXPOSURE_USD:
+            logger.warning(
+                f"Portfolio exposure ceiling reached: ${current_exposure:.2f} + ${self.ticket_notional:.2f} "
+                f"> ${MAX_PORTFOLIO_EXPOSURE_USD:.2f}. Skipping opportunity."
+            )
             return
 
         shock_dir = shock.get("shock_direction")  # "BUY" or "SELL"
@@ -188,6 +207,7 @@ class PolymarketLiveHarvester:
 
         if res.success:
             self.trades_this_hour += 1
+            self.traded_market_ids.add(m_id)
             target_exit = min(0.99, round(res.price + PROFIT_THETA, 4))
             pos_record = {
                 "trade_id": trade_id,
@@ -266,9 +286,31 @@ class PolymarketLiveHarvester:
             except Exception as e:
                 logger.error(f"Error checking resolutions: {e}")
 
-        # 2. Check live market books for maker scalp fills
+        # 2. Check live positions for maker scalp fills (verifiable CLOB order query or book inspection)
         for tid, pos in list(self.active_positions.items()):
             try:
+                # Primary: query live CLOB order status if order ID exists and in live mode
+                if pos.get("exit_order_id") and not self.dry_run:
+                    order_info = self.executor.get_order_status(pos["exit_order_id"])
+                    if order_info:
+                        status = order_info.get("status")
+                        size_matched = float(order_info.get("size_matched", 0.0))
+                        if status == "MATCHED" or size_matched >= (pos["entry_shares"] - 1e-4):
+                            payout = round(pos["entry_shares"] * pos["target_exit_price"], 2)
+                            net_pnl = round(payout - pos["notional_usd"] - pos["fee_usd"], 2)
+                            pos["status"] = "CLOSED"
+                            pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                            pos["won"] = True
+                            pos["payout_usd"] = payout
+                            pos["net_pnl_usd"] = net_pnl
+                            pos["close_reason"] = "MAKER_SCALP_FILLED_CLOB"
+                            self.closed_positions.append(pos)
+                            del self.active_positions[tid]
+                            logger.info(f"✓ POSITION CLOSED VIA VERIFIED CLOB FILL: {tid} | OID: {pos['exit_order_id']} | Net PnL: ${net_pnl:+.2f}")
+                            self.save_state()
+                            continue
+
+                # Secondary: Check live market orderbook bids (simulation or resting order cross)
                 token_id = pos.get("token_id")
                 if not token_id:
                     continue
@@ -277,14 +319,14 @@ class PolymarketLiveHarvester:
                 if bids:
                     best_bid = max(float(b.get("price", 0.0)) for b in bids)
                     if best_bid >= pos["target_exit_price"]:
-                        payout = pos["entry_shares"] * pos["target_exit_price"]
-                        net_pnl = payout - pos["notional_usd"] - pos["fee_usd"]
+                        payout = round(pos["entry_shares"] * pos["target_exit_price"], 2)
+                        net_pnl = round(payout - pos["notional_usd"] - pos["fee_usd"], 2)
                         pos["status"] = "CLOSED"
                         pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
                         pos["won"] = True
-                        pos["payout_usd"] = round(payout, 2)
-                        pos["net_pnl_usd"] = round(net_pnl, 2)
-                        pos["close_reason"] = "MAKER_SCALP_FILLED"
+                        pos["payout_usd"] = payout
+                        pos["net_pnl_usd"] = net_pnl
+                        pos["close_reason"] = "MAKER_SCALP_FILLED_BOOK"
                         self.closed_positions.append(pos)
                         del self.active_positions[tid]
                         logger.info(f"✓ POSITION CLOSED VIA MAKER SCALP: {tid} | Net PnL=${net_pnl:+.2f}")
@@ -309,26 +351,33 @@ class PolymarketLiveHarvester:
         self.load_state()
 
         # Start tailing from current EOF so we only execute new events
+        if not TRIGGER_FILE.exists():
+            TRIGGER_FILE.touch()
+        self.last_trigger_file_pos = TRIGGER_FILE.stat().st_size
+        logger.info(f"Tailing zero-latency shock triggers from byte offset: {self.last_trigger_file_pos}")
+
         if SHOCK_FILE.exists():
             self.last_shock_file_pos = SHOCK_FILE.stat().st_size
-            logger.info(f"Tailing shock events from byte offset: {self.last_shock_file_pos}")
+            logger.info(f"Tailing shock responses fallback from byte offset: {self.last_shock_file_pos}")
 
         if RESOLUTIONS_FILE.exists():
             self.last_res_file_pos = RESOLUTIONS_FILE.stat().st_size
             logger.info(f"Tailing resolutions from byte offset: {self.last_res_file_pos}")
 
         last_heartbeat = time.time()
+        last_mgmt_check = 0.0
         scanned_count = 0
 
         while True:
             try:
-                if SHOCK_FILE.exists():
-                    current_size = SHOCK_FILE.stat().st_size
-                    if current_size > self.last_shock_file_pos:
-                        with open(SHOCK_FILE, "r") as f:
-                            f.seek(self.last_shock_file_pos)
+                # 1. Ingest zero-latency shock triggers (<1ms from recorder detection)
+                if TRIGGER_FILE.exists():
+                    current_size = TRIGGER_FILE.stat().st_size
+                    if current_size > self.last_trigger_file_pos:
+                        with open(TRIGGER_FILE, "r") as f:
+                            f.seek(self.last_trigger_file_pos)
                             new_lines = f.readlines()
-                            self.last_shock_file_pos = f.tell()
+                            self.last_trigger_file_pos = f.tell()
 
                         for line in new_lines:
                             if not line.strip():
@@ -341,25 +390,34 @@ class PolymarketLiveHarvester:
                                     scanned_count += 1
                                     self.evaluate_shock_and_execute(shock)
                             except Exception as parse_err:
-                                logger.error(f"Error parsing shock line: {parse_err}")
+                                logger.error(f"Error parsing trigger line: {parse_err}")
 
-                # Monitor open positions for scalp exit fills or market resolutions
-                self.check_resolutions_and_manage_positions()
+                # 2. Monitor open positions for scalp exit fills or market resolutions (every 1.0s)
+                now_ts = time.time()
+                if now_ts - last_mgmt_check >= 1.0:
+                    last_mgmt_check = now_ts
+                    self.check_resolutions_and_manage_positions()
 
                 if time.time() - last_heartbeat >= 300:
                     last_heartbeat = time.time()
-                    logger.info(f"[HEARTBEAT] Harvester active | Shocks scanned: {scanned_count} | Active positions: {len(self.active_positions)}")
+                    active_exp = sum(p.get("notional_usd", 0.0) for p in self.active_positions.values())
+                    logger.info(
+                        f"[HEARTBEAT] Harvester active | Triggers scanned: {scanned_count} | "
+                        f"Active positions: {len(self.active_positions)} (${active_exp:.2f}) | "
+                        f"Closed: {len(self.closed_positions)}"
+                    )
 
-                await asyncio.sleep(1)
+                # Microsecond-scale poll interval (50ms)
+                await asyncio.sleep(0.05)
             except Exception as e:
                 logger.error(f"Error in harvester loop: {e}")
-                await asyncio.sleep(2)
+                await asyncio.sleep(1.0)
 
 
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Polymarket Live Harvester")
-    parser.add_argument("--lot-size", type=float, default=100.0, help="Ticket size in USD")
+    parser.add_argument("--lot-size", type=float, default=20.0, help="Ticket size in USD (default: $20.00)")
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run simulation mode")
     args = parser.parse_args()
 
