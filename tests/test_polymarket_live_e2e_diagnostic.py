@@ -79,6 +79,7 @@ def run_diagnostics():
     # TEST 4: Full Pipeline End-to-End Simulation with Qualified Shock
     print("\n[TEST 4] Testing Full Live Harvester Pipeline Replay...")
     harvester = PolymarketLiveHarvester(ticket_notional=100.0, dry_run=True)
+    harvester.save_state = lambda: None  # Keep production state file untouched
     
     # Mock orderbook fetch so the historical shock has resting asks in test
     harvester.executor.get_market_book = lambda token_id: {

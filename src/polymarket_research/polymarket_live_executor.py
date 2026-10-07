@@ -169,13 +169,22 @@ class PolymarketLiveExecutor:
     ) -> Tuple[bool, float, float]:
         """
         Validates the fail-closed depth guard across the top 2 price ticks:
-          DepthRatio = Sum(Ask_1..2 volume) / TargetNotional >= 1.50
+          For BUY: Sorts asks ascending (lowest price first) to inspect best executable asks.
+          For SELL: Sorts bids descending (highest price first) to inspect best executable bids.
+          DepthRatio = Sum(Level_1..2 volume * price) / TargetNotional >= 1.50
         """
         levels = orderbook.get("asks" if side == "BUY" else "bids", [])
         if not levels:
             return False, 0.0, 0.0
 
-        top_levels = levels[:2]
+        # Polymarket CLOB book: 'asks' are returned descending, 'bids' ascending.
+        # We must explicitly sort to guarantee top_levels are the best marketable prices!
+        if side == "BUY":
+            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 1.0)))
+        else:
+            sorted_levels = sorted(levels, key=lambda lvl: float(lvl.get("price", 0.0)), reverse=True)
+
+        top_levels = sorted_levels[:2]
         available_vol = sum(float(lvl.get("size", 0.0)) for lvl in top_levels)
         best_price = float(top_levels[0].get("price", 0.0))
         available_notional = available_vol * best_price
@@ -238,6 +247,46 @@ class PolymarketLiveExecutor:
 
         if not passed_depth:
             err = f"DepthGuard Rejected: Ratio {depth_ratio:.2f}x < {depth_hurdle:.2f}x requirement."
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False,
+                order_id=None,
+                trade_id=trade_id,
+                token_id=token_id,
+                target_token=target_token,
+                side=side,
+                price=best_px,
+                size=0.0,
+                notional_usd=notional_usd,
+                fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                mode=self.auth_mode,
+                error=err,
+            )
+
+        # Strict Pre-Trade Price Sanity Guard: Never buy outside [0.15, 0.85]
+        if best_px < 0.15 or best_px > 0.85:
+            err = f"PriceGuard Rejected: Best price ${best_px:.4f} outside valid boundary [0.15, 0.85]."
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False,
+                order_id=None,
+                trade_id=trade_id,
+                token_id=token_id,
+                target_token=target_token,
+                side=side,
+                price=best_px,
+                size=0.0,
+                notional_usd=notional_usd,
+                fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                mode=self.auth_mode,
+                error=err,
+            )
+
+        # Slippage Guard: Do not execute if book best price has slipped above target_price by > 3¢
+        if target_price > 0 and (best_px - target_price) > 0.03:
+            err = f"SlippageGuard Rejected: Best price ${best_px:.4f} exceeds target ${target_price:.4f} by > 3¢."
             logger.warning(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
@@ -368,6 +417,50 @@ class PolymarketLiveExecutor:
             )
             self._log_order(res)
             return res
+
+    def post_maker_exit_order(
+        self,
+        token_id: str,
+        price: float,
+        size: float,
+        side: str = "SELL",
+    ) -> Dict[str, Any]:
+        """
+        Posts a resting maker scalp limit order (e.g. GTC SELL) at target exit price.
+        """
+        if self.dry_run or not self.is_authenticated or self.client is None:
+            mock_id = f"MOCK_EXIT_{int(time.time()*1000)}"
+            logger.info(f"[DRY-RUN EXIT] Resting {side} limit order: {size:.2f} shares @ ${price:.4f} (ID: {mock_id})")
+            return {"success": True, "orderID": mock_id, "mode": "DRY_RUN"}
+
+        try:
+            order_args = OrderArgsV2(
+                price=round(price, 4),
+                size=round(size, 4),
+                side=side,
+                token_id=token_id,
+            )
+            signed_order = self.client.create_order(order_args)
+            resp = self.client.post_order(signed_order, OrderType.GTC)
+            order_id = resp.get("orderID") or resp.get("id")
+            if order_id:
+                logger.info(f"[LIVE MAKER EXIT POSTED] OID: {order_id} | {side} {size:.2f} shares @ ${price:.4f}")
+                return {"success": True, "orderID": order_id, "raw": resp}
+            logger.error(f"Failed to post maker exit order: {resp}")
+            return {"success": False, "orderID": None, "raw": resp}
+        except Exception as e:
+            logger.error(f"Exception posting maker exit order: {e}")
+            return {"success": False, "orderID": None, "error": str(e)}
+
+    def cancel_order(self, order_id: str) -> Dict[str, Any]:
+        """Cancels an active order by ID."""
+        if self.dry_run or not self.is_authenticated or self.client is None:
+            return {"canceled": [order_id]}
+        try:
+            return self.client.cancel_orders([order_id])
+        except Exception as e:
+            logger.error(f"Failed to cancel order {order_id}: {e}")
+            return {"error": str(e)}
 
     def _log_order(self, res: OrderResult):
         """Appends order execution event to immutable JSONL audit ledger."""

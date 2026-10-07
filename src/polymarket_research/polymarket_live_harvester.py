@@ -188,22 +188,109 @@ class PolymarketLiveHarvester:
 
         if res.success:
             self.trades_this_hour += 1
+            target_exit = min(0.99, round(res.price + PROFIT_THETA, 4))
             pos_record = {
                 "trade_id": trade_id,
-                "market_id": shock.get("market_id"),
+                "market_id": str(shock.get("market_id")),
                 "token_id": token_id,
                 "target_token": target_token,
                 "entry_price": res.price,
                 "entry_shares": res.size,
                 "notional_usd": res.notional_usd,
                 "fee_usd": res.fee_usd,
-                "target_exit_price": min(0.99, round(res.price + PROFIT_THETA, 4)),
+                "target_exit_price": target_exit,
                 "entry_time_utc": datetime.now(timezone.utc).isoformat(),
                 "status": "OPEN",
+                "exit_order_id": None,
             }
+            # Post resting maker scalp limit order (Policy B2)
+            exit_res = self.executor.post_maker_exit_order(
+                token_id=token_id,
+                price=target_exit,
+                size=res.size,
+                side="SELL",
+            )
+            if exit_res.get("success"):
+                pos_record["exit_order_id"] = exit_res.get("orderID")
+                logger.info(f"✓ MAKER SCALP ORDER POSTED: {pos_record['exit_order_id']} | {res.size:.2f} shares @ ${target_exit:.4f}")
+
             self.active_positions[trade_id] = pos_record
-            logger.info(f"✓ POSITION OPENED: {trade_id} | Shares={res.size:.2f} @ ${res.price:.4f} | Target Exit: ${pos_record['target_exit_price']:.4f}")
+            logger.info(f"✓ POSITION OPENED: {trade_id} | Shares={res.size:.2f} @ ${res.price:.4f} | Target Exit: ${target_exit:.4f}")
             self.save_state()
+
+    def check_resolutions_and_manage_positions(self):
+        """Monitors active positions for maker scalp fills or finalized market resolutions."""
+        if not self.active_positions:
+            return
+
+        # 1. Check finalized candle resolutions from stream
+        if RESOLUTIONS_FILE.exists():
+            try:
+                current_res_size = RESOLUTIONS_FILE.stat().st_size
+                if current_res_size > self.last_res_file_pos:
+                    with open(RESOLUTIONS_FILE, "r") as f:
+                        f.seek(self.last_res_file_pos)
+                        new_lines = f.readlines()
+                        self.last_res_file_pos = f.tell()
+
+                    for line in new_lines:
+                        if not line.strip():
+                            continue
+                        try:
+                            res = json.loads(line)
+                            res_m_id = str(res.get("market_id"))
+                            winning_outcome = res.get("winning_outcome")
+
+                            for tid, pos in list(self.active_positions.items()):
+                                if str(pos.get("market_id")) == res_m_id:
+                                    won = (pos.get("target_token") == winning_outcome)
+                                    payout = pos["entry_shares"] * 1.0 if won else 0.0
+                                    net_pnl = payout - pos["notional_usd"] - pos["fee_usd"]
+
+                                    # Cancel resting exit order if still open
+                                    if pos.get("exit_order_id"):
+                                        self.executor.cancel_order(pos["exit_order_id"])
+
+                                    pos["status"] = "CLOSED"
+                                    pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                                    pos["won"] = won
+                                    pos["payout_usd"] = round(payout, 2)
+                                    pos["net_pnl_usd"] = round(net_pnl, 2)
+                                    pos["close_reason"] = "MARKET_RESOLVED"
+                                    self.closed_positions.append(pos)
+                                    del self.active_positions[tid]
+                                    logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={won} | Net PnL=${net_pnl:+.2f}")
+                                    self.save_state()
+                        except Exception as e:
+                            logger.error(f"Error parsing resolution line: {e}")
+            except Exception as e:
+                logger.error(f"Error checking resolutions: {e}")
+
+        # 2. Check live market books for maker scalp fills
+        for tid, pos in list(self.active_positions.items()):
+            try:
+                token_id = pos.get("token_id")
+                if not token_id:
+                    continue
+                book = self.executor.get_market_book(token_id)
+                bids = book.get("bids", [])
+                if bids:
+                    best_bid = max(float(b.get("price", 0.0)) for b in bids)
+                    if best_bid >= pos["target_exit_price"]:
+                        payout = pos["entry_shares"] * pos["target_exit_price"]
+                        net_pnl = payout - pos["notional_usd"] - pos["fee_usd"]
+                        pos["status"] = "CLOSED"
+                        pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                        pos["won"] = True
+                        pos["payout_usd"] = round(payout, 2)
+                        pos["net_pnl_usd"] = round(net_pnl, 2)
+                        pos["close_reason"] = "MAKER_SCALP_FILLED"
+                        self.closed_positions.append(pos)
+                        del self.active_positions[tid]
+                        logger.info(f"✓ POSITION CLOSED VIA MAKER SCALP: {tid} | Net PnL=${net_pnl:+.2f}")
+                        self.save_state()
+            except Exception as e:
+                logger.debug(f"Error checking book for position {tid}: {e}")
 
     async def run(self):
         logger.info("=====================================================================")
@@ -225,6 +312,10 @@ class PolymarketLiveHarvester:
         if SHOCK_FILE.exists():
             self.last_shock_file_pos = SHOCK_FILE.stat().st_size
             logger.info(f"Tailing shock events from byte offset: {self.last_shock_file_pos}")
+
+        if RESOLUTIONS_FILE.exists():
+            self.last_res_file_pos = RESOLUTIONS_FILE.stat().st_size
+            logger.info(f"Tailing resolutions from byte offset: {self.last_res_file_pos}")
 
         last_heartbeat = time.time()
         scanned_count = 0
@@ -251,6 +342,9 @@ class PolymarketLiveHarvester:
                                     self.evaluate_shock_and_execute(shock)
                             except Exception as parse_err:
                                 logger.error(f"Error parsing shock line: {parse_err}")
+
+                # Monitor open positions for scalp exit fills or market resolutions
+                self.check_resolutions_and_manage_positions()
 
                 if time.time() - last_heartbeat >= 300:
                     last_heartbeat = time.time()
