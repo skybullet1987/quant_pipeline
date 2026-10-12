@@ -1527,6 +1527,16 @@ class PolymarketLiveExecutor:
 
             # P0 #2: Invariant Check: Available conditional balance >= exit size
             avail_bal = self.get_conditional_balance(token_id)
+            if avail_bal is None:
+                err = f"UNKNOWN_CONDITIONAL_BALANCE: Balance query failed for {token_id}. Refusing unverified exit order submission."
+                logger.warning(f"[PM-EXEC] {err}")
+                return {
+                    "success": False,
+                    "orderID": None,
+                    "error": err,
+                    "available_balance": None,
+                    "retryable": True,
+                }
             if avail_bal < (size - 0.05):
                 err = f"INSUFFICIENT_CONDITIONAL_BALANCE: On-chain balance {avail_bal:.4f} < exit size {size:.4f}"
                 logger.warning(f"[PM-EXEC] {err}")
@@ -1598,14 +1608,24 @@ class PolymarketLiveExecutor:
             # Dynamically quantize price to token-specific tick size (floor rounding for aggressive sell)
             quantized_price = self.quantize_order_price(min_price, token_id, rounding=ROUND_FLOOR)
 
+            # Polymarket conditional tokens on CLOB trade in 2-decimal lot increments (0.01)
+            # Quantize order size to 2 decimal places using floor rounding to never order more than held
+            quantized_size = float(Decimal(str(size)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
+            if quantized_size <= 0.0:
+                logger.warning(f"[UNWIND SKIPPED] Size {size} rounds to 0.00 lots.")
+                return {"success": True, "orderID": None, "matched_size": 0.0, "taking_amount": 0.0, "fee_usd": 0.0}
+
             order_args = OrderArgsV2(
                 price=quantized_price,
-                size=round(size, 4),
+                size=quantized_size,
                 side=side,
                 token_id=token_id,
             )
             signed_order = self.client.create_order(order_args)
-            resp = self.client.post_order(signed_order, OrderType.FOK, post_only=False, defer_exec=False)
+            # Default to FAK (Fill-and-Kill / IOC) for aggressive unwinds to match available book depth
+            # and cancel remainder, or FOK if strictly required
+            selected_order_type = getattr(OrderType, "FAK", OrderType.FOK)
+            resp = self.client.post_order(signed_order, selected_order_type, post_only=False, defer_exec=False)
             order_id = resp.get("orderID") or resp.get("id")
             status = resp.get("status")
             taking_amount = resp.get("takingAmount") or resp.get("taking_amount")
@@ -1615,16 +1635,29 @@ class PolymarketLiveExecutor:
             is_matched = bool(order_id) and matched_status and raw_matched is not None
             if is_matched:
                 matched_size = float(raw_matched)
-                if matched_size < size - self.calculate_balance_epsilon(0.001):
+                taking_amt = float(taking_amount) if taking_amount else matched_size * quantized_price
+                
+                # Exact Exchange-Compatible Decimal Arithmetic (No permissive 0.01 tolerance)
+                target_dec = Decimal(str(quantized_size)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR)
+                matched_dec = Decimal(str(matched_size)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR)
+                if matched_dec < target_dec:
+                    unfilled_dec = target_dec - matched_dec
+                    unfilled_size = float(unfilled_dec)
+                    logger.warning(
+                        f"[PARTIAL UNWIND FILL] Order {order_id}: matched {matched_size:.2f} of {quantized_size:.2f} shares. "
+                        f"Proceeds: ${taking_amt:.2f}. Residual: {unfilled_size:.2f} shares remain open."
+                    )
                     return {
                         "success": False,
                         "orderID": order_id,
                         "matched_size": matched_size,
+                        "unfilled_size": unfilled_size,
+                        "taking_amount": taking_amt,
                         "partial": True,
                         "retryable": True,
+                        "error": f"PARTIAL_FILL: Matched {matched_size:.2f} of {quantized_size:.2f} shares (residual: {unfilled_size:.2f})",
                         "raw": resp,
                     }
-                taking_amt = float(taking_amount) if taking_amount else matched_size * quantized_price
                 average_price = min(
                     0.999,
                     max(0.001, taking_amt / max(matched_size, 1e-9)),
@@ -1646,10 +1679,25 @@ class PolymarketLiveExecutor:
                 }
             else:
                 logger.warning(f"[LIVE UNWIND REJECTED/UNMATCHED] Response: {resp}")
-                return {"success": False, "orderID": order_id, "error": f"Status: {status}", "raw": resp}
+                return {
+                    "success": False,
+                    "orderID": order_id,
+                    "matched_size": 0.0,
+                    "retryable": True,
+                    "outcome_unknown": False,
+                    "error": f"Status: {status}",
+                    "raw": resp,
+                }
         except Exception as e:
             logger.error(f"[LIVE UNWIND EXCEPTION] Error executing unwind order: {e}")
-            return {"success": False, "error": str(e)}
+            return {
+                "success": False,
+                "orderID": None,
+                "matched_size": 0.0,
+                "retryable": True,
+                "outcome_unknown": True,
+                "error": str(e),
+            }
 
     def post_heartbeat(self, heartbeat_id: Optional[str] = None) -> Dict[str, Any]:
         """Maintains active CLOB session so resting GTC orders are not canceled."""
@@ -1723,37 +1771,53 @@ class PolymarketLiveExecutor:
             logger.error(f"Error querying order {order_id}: {e}")
             return None
 
-    def get_collateral_balance(self) -> float:
+    def get_collateral_balance(self) -> Optional[float]:
         """
         Queries CLOB L2 for authoritative collateral balance in human USD units.
         Avoids 1,000,000x confusion by dividing 6-decimal integer base units explicitly.
+        FAIL-CLOSED INVARIANT: Returns None (UNKNOWN) if unauthenticated or on API error.
+        NEVER returns 0.0 on error in live mode.
         """
-        if self.dry_run or not self.is_authenticated or self.client is None or BalanceAllowanceParams is None:
+        if self.dry_run:
             return 0.0
+        if not self.is_authenticated or self.client is None or BalanceAllowanceParams is None:
+            logger.warning("[PM-EXEC] Cannot query collateral balance: unauthenticated or client unavailable")
+            return None
         try:
             params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=self.signature_type)
             res = self.client.get_balance_allowance(params)
+            if not isinstance(res, dict) or "balance" not in res:
+                logger.error(f"[PM-EXEC] Unexpected response querying collateral balance: {res}")
+                return None
             raw = float(res.get("balance", "0"))
             return raw / 1e6
         except Exception as e:
             logger.error(f"[PM-EXEC] Failed to query CLOB collateral balance: {e}")
-            return 0.0
+            return None
 
-    def get_conditional_balance(self, token_id: str) -> float:
+    def get_conditional_balance(self, token_id: str) -> Optional[float]:
         """
         Queries CLOB L2 for conditional token (ERC-1155) balance for a specific token_id.
         Avoids 1,000,000x confusion by dividing 6-decimal integer base units explicitly.
+        FAIL-CLOSED INVARIANT: Returns None (UNKNOWN) if unauthenticated, client unavailable,
+        or an exception occurs. NEVER returns 0.0 on error to prevent false-closure bugs.
         """
-        if self.dry_run or not self.is_authenticated or self.client is None or BalanceAllowanceParams is None:
+        if self.dry_run:
             return 0.0
+        if not self.is_authenticated or self.client is None or BalanceAllowanceParams is None:
+            logger.warning(f"[PM-EXEC] Cannot query conditional balance for {token_id}: unauthenticated or client unavailable")
+            return None
         try:
             params = BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=token_id, signature_type=self.signature_type)
             res = self.client.get_balance_allowance(params)
+            if not isinstance(res, dict) or "balance" not in res:
+                logger.error(f"[PM-EXEC] Unexpected response querying conditional balance for {token_id}: {res}")
+                return None
             raw = float(res.get("balance", "0"))
             return raw / 1e6
         except Exception as e:
             logger.error(f"[PM-EXEC] Failed to query CLOB conditional balance for {token_id}: {e}")
-            return 0.0
+            return None
 
     def get_onchain_erc1155_balance(self, token_id: str, account_address: Optional[str] = None) -> Optional[float]:
         """

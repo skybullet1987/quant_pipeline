@@ -944,27 +944,30 @@ class PolymarketLiveHarvester:
                 # If position has no active exit order (crash after entry or failed post), recover it:
                 if token_id:
                     cond_bal = self.executor.get_conditional_balance(token_id)
-                    pre_bal = pos.get("pre_token_balance", 0.0)
-                    delta = cond_bal - pre_bal
-                    epsilon = self.executor.calculate_balance_epsilon(0.001)
-                    rec_shares = pos.get("remaining_shares", pos.get("remaining_exit_shares", pos["entry_shares"]))
-                    if delta >= (rec_shares - epsilon):
-                        logger.info(f"[RECONCILIATION RECOVERY] Active position {tid} has {delta:.4f} verified tokens on-chain without exit order. Recreating maker exit for {rec_shares:.2f} shares...")
-                        exit_res = self.executor.post_maker_exit_order(
-                            token_id=token_id,
-                            price=pos["target_exit_price"],
-                            size=rec_shares,
-                            side="SELL"
-                        )
-                        if exit_res.get("success"):
-                            pos["exit_order_id"] = exit_res.get("orderID")
-                            pos["exit_order_status"] = "RESTING"
-                            pos["status"] = ExecutionStatus.EXIT_RESTING
-                            logger.info(f"[RECONCILIATION RECOVERY] Recreated exit order {pos['exit_order_id']} for {tid}")
-                        else:
-                            pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
-                    elif cond_bal < 0.05:
-                        logger.warning(f"[RECONCILIATION] Position {tid} has near-zero token balance ({cond_bal:.4f}).")
+                    if cond_bal is None:
+                        logger.warning(f"[RECONCILIATION] Balance query for {token_id} returned UNKNOWN (API/auth failure). Retaining position state.")
+                    else:
+                        pre_bal = pos.get("pre_token_balance", 0.0)
+                        delta = cond_bal - pre_bal
+                        epsilon = self.executor.calculate_balance_epsilon(0.001)
+                        rec_shares = pos.get("remaining_shares", pos.get("remaining_exit_shares", pos["entry_shares"]))
+                        if delta >= (rec_shares - epsilon):
+                            logger.info(f"[RECONCILIATION RECOVERY] Active position {tid} has {delta:.4f} verified tokens on-chain without exit order. Recreating maker exit for {rec_shares:.2f} shares...")
+                            exit_res = self.executor.post_maker_exit_order(
+                                token_id=token_id,
+                                price=pos["target_exit_price"],
+                                size=rec_shares,
+                                side="SELL"
+                            )
+                            if exit_res.get("success"):
+                                pos["exit_order_id"] = exit_res.get("orderID")
+                                pos["exit_order_status"] = "RESTING"
+                                pos["status"] = ExecutionStatus.EXIT_RESTING
+                                logger.info(f"[RECONCILIATION RECOVERY] Recreated exit order {pos['exit_order_id']} for {tid}")
+                            else:
+                                pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+                        elif cond_bal < 0.05:
+                            logger.warning(f"[RECONCILIATION] Position {tid} has near-zero token balance ({cond_bal:.4f}).")
 
             # 2. Cancel any orphan orders on CLOB not associated with tracked positions
             tracked_exit_oids = {pos.get("exit_order_id") for pos in self.active_positions.values() if pos.get("exit_order_id")}
@@ -1012,7 +1015,14 @@ class PolymarketLiveHarvester:
                                 if str(pos.get("market_id")) == res_m_id:
                                     won = (pos.get("target_token") == winning_outcome)
                                     rem_shares = pos.get("remaining_shares", pos.get("remaining_exit_shares", pos["entry_shares"]))
-                                    payout = rem_shares * 1.0 if won else 0.0
+                                    if not self.dry_run and pos.get("token_id"):
+                                        try:
+                                            actual_bal = await asyncio.to_thread(self.executor.get_conditional_balance, pos["token_id"])
+                                            if actual_bal is not None:
+                                                rem_shares = min(float(rem_shares), float(actual_bal))
+                                        except Exception as bal_err:
+                                            logger.debug(f"Could not verify token balance at maturity: {bal_err}")
+                                    payout = rem_shares * 1.0 if (won and rem_shares >= 0.01) else 0.0
                                     total_cash = pos.get("realized_exit_cash", 0.0) + payout
                                     total_fees = pos["fee_usd"] + pos.get("realized_exit_fee", 0.0)
                                     net_pnl = total_cash - pos["notional_usd"] - total_fees
@@ -1023,14 +1033,14 @@ class PolymarketLiveHarvester:
 
                                     pos["status"] = ExecutionStatus.SETTLED
                                     pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
-                                    pos["won"] = won
+                                    pos["won"] = (net_pnl > 0.0)
                                     pos["payout_usd"] = round(total_cash, 2)
                                     pos["net_pnl_usd"] = round(net_pnl, 2)
                                     pos["close_reason"] = "MARKET_RESOLVED"
                                     self.closed_positions.append(pos)
                                     self.risk_controller.record_trade_pnl(net_pnl)
                                     del self.active_positions[tid]
-                                    logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={won} | RemShares={rem_shares:.2f} | Net PnL=${net_pnl:+.2f}")
+                                    logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={pos['won']} | RemShares={rem_shares:.2f} | Payout=${total_cash:.2f} | Net PnL=${net_pnl:+.2f}")
                                     self.save_state()
                         except Exception as e:
                             logger.error(f"Error parsing resolution line: {e}")
@@ -1101,7 +1111,7 @@ class PolymarketLiveHarvester:
                     expiry_ts = pos.get("candle_expiry_ts", now_ts + 600.0)
                     tte_rem = max(0.0, expiry_ts - now_ts)
                     is_terminal_or_held = (
-                        pos.get("exit_order_status") in ["CANCELED_FOR_EXPIRY_HOLD", "CANCELED_FOR_STOP_LOSS", "UNWIND_RETRY_REQUIRED"]
+                        pos.get("exit_order_status") in ["CANCELED_FOR_EXPIRY_HOLD", "CANCELED_FOR_STOP_LOSS", "UNWIND_RETRY_REQUIRED", "OUTCOME_UNKNOWN"]
                         or pos.get("is_liquidating")
                         or (tte_rem < self.tte_cancel_window)
                     )
@@ -1166,6 +1176,13 @@ class PolymarketLiveHarvester:
                             else:
                                 cond_bal = await asyncio.to_thread(self.executor.get_conditional_balance, token_id)
                                 bal_source = "CLOB_ALLOWANCE_API"
+
+                            if cond_bal is None:
+                                logger.warning(
+                                    f"[FAIL-CLOSED] Both on-chain and CLOB balance reads unavailable for {token_id}. "
+                                    f"Delaying exit posting for {tid} until balance can be authoritatively verified."
+                                )
+                                continue
 
                             pre_bal = pos.get("pre_token_balance", 0.0)
                             delta = cond_bal - pre_bal
@@ -1232,7 +1249,7 @@ class PolymarketLiveHarvester:
                         clob_sl_triggered = (best_b > 0.0 and (best_b <= (entry_px - 0.15) or best_b <= 0.20))
 
                         # Trigger 2: Pre-Expiry Out-Of-The-Money Salvage (TTE <= 300s / 5min and OTM)
-                        pre_expiry_otm_salvage = (tte_rem <= 300.0 and is_otm and best_b >= 0.05)
+                        pre_expiry_otm_salvage = (tte_rem <= 300.0 and is_otm and best_b >= 0.01)
 
                         # Trigger 3: Spot-Delta Structural Crash (K*sigma reversal OR hard max adverse move cap)
                         spot_disp = 0.0
@@ -1292,8 +1309,8 @@ class PolymarketLiveHarvester:
                                     self.save_state()
                                     continue
                                 canceled_confirmed = (
-                                    exit_oid in canceled_ids
-                                    or status in {"CANCELED", "CANCELLED", "EXPIRED"}
+                                    exit_oid not in open_oids
+                                    and (exit_oid in canceled_ids or status in {"CANCELED", "CANCELLED", "EXPIRED"})
                                 )
                                 if not canceled_confirmed:
                                     pos["exit_order_status"] = "STOP_CANCEL_PENDING"
@@ -1303,6 +1320,25 @@ class PolymarketLiveHarvester:
                                 pos["exit_order_id"] = None
                             pos["exit_order_status"] = "CANCELED_FOR_STOP_LOSS"
 
+                            # Refresh verified remaining quantity after cancellation and fill reconciliation
+                            rem_shrs = pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs))
+                            if rem_shrs < 0.01:
+                                logger.info(f"✓ [STOP-LOSS RECONCILED] {tid} already fully matched on resting exit before unwind.")
+                                p_out = round(pos.get("realized_exit_cash", 0.0), 2)
+                                exit_fee = float(pos.get("realized_exit_fee", 0.0))
+                                net_pnl = round(p_out - pos["notional_usd"] - pos["fee_usd"] - exit_fee, 2)
+                                pos["status"] = ExecutionStatus.SETTLED
+                                pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                                pos["won"] = (net_pnl > 0.0)
+                                pos["payout_usd"] = p_out
+                                pos["net_pnl_usd"] = net_pnl
+                                pos["close_reason"] = "MAKER_SCALP_FILLED_CLOB"
+                                self.closed_positions.append(pos)
+                                self.risk_controller.record_trade_pnl(net_pnl)
+                                del self.active_positions[tid]
+                                self.save_state()
+                                continue
+
                             # Aggressive FOK unwind at best bid (min price 0.01) to lock in capital recovery
                             unwind_res = await asyncio.to_thread(
                                 self.executor.execute_unwind_order,
@@ -1311,11 +1347,13 @@ class PolymarketLiveHarvester:
                                 side="SELL",
                                 min_price=max(0.01, best_b - 0.02)
                             )
+                            unwind_res = unwind_res or {}
                             if unwind_res.get("success"):
                                 matched_sz = float(unwind_res.get("matched_size", rem_shrs))
-                                taking_usd = float(unwind_res.get("taking_amount", matched_sz * best_b))
-                                p_out = round(taking_usd, 2)
-                                exit_fee = float(unwind_res.get("fee_usd", 0.0))
+                                raw_taking = unwind_res.get("taking_amount")
+                                taking_usd = float(raw_taking) if raw_taking else (matched_sz * best_b)
+                                p_out = round(pos.get("realized_exit_cash", 0.0) + taking_usd, 2)
+                                exit_fee = float(unwind_res.get("fee_usd", 0.0)) + float(pos.get("realized_exit_fee", 0.0))
                                 net_pnl = round(p_out - pos["notional_usd"] - pos["fee_usd"] - exit_fee, 2)
                                 pos["status"] = ExecutionStatus.SETTLED
                                 pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
@@ -1332,47 +1370,236 @@ class PolymarketLiveHarvester:
                             else:
                                 logger.error(
                                     f"Immediate FOK unwind failed for {tid}: "
-                                    f"{unwind_res.get('error')}. Scheduling retry."
+                                    f"{unwind_res.get('error')}. Reconciling partial fills and balance..."
                                 )
+                                # 1. Reconcile partial fills if any shares matched
+                                if unwind_res.get("partial"):
+                                    matched_p = float(unwind_res.get("matched_size", 0.0))
+                                    taking_p = float(unwind_res.get("taking_amount", 0.0))
+                                    pos["filled_exit_shares"] = pos.get("filled_exit_shares", 0.0) + matched_p
+                                    rem_shrs = max(0.0, round(float(pos["entry_shares"]) - pos["filled_exit_shares"], 4))
+                                    pos["remaining_shares"] = rem_shrs
+                                    pos["remaining_exit_shares"] = rem_shrs
+                                    pos["realized_exit_cash"] = pos.get("realized_exit_cash", 0.0) + taking_p
+                                    logger.warning(f"[PARTIAL UNWIND RECORDED] {tid}: matched {matched_p:.2f} shrs (${taking_p:.2f}). Remaining: {rem_shrs:.2f}")
+
+                                # 2. Fail-closed balance query: check actual token balance
+                                reconciled_closed = False
+                                if not self.dry_run and token_id:
+                                    try:
+                                        actual_bal = await asyncio.to_thread(self.executor.get_conditional_balance, token_id)
+                                        if actual_bal is None:
+                                            logger.warning(
+                                                f"[FAIL-CLOSED] Balance query for {token_id} returned UNKNOWN (API/auth failure). "
+                                                f"Retaining open position {tid} in UNWIND_RETRY_REQUIRED."
+                                            )
+                                        elif actual_bal < 0.05:
+                                            # Verified near-zero balance from successful API read
+                                            taking_usd = pos.get("realized_exit_cash", 0.0) + float(unwind_res.get("taking_amount", 0.0))
+                                            has_verified_fill = (taking_usd > 0.0) or (pos.get("filled_exit_shares", 0.0) >= (float(pos["entry_shares"]) - 0.05))
+                                            if has_verified_fill:
+                                                logger.warning(
+                                                    f"✓ [UNWIND RECONCILED] {tid} conditional balance is {actual_bal:.4f} (~0) "
+                                                    f"with verified fill proceeds ${taking_usd:.2f}. Settling position..."
+                                                )
+                                                p_out = round(taking_usd, 2)
+                                                exit_fee = float(unwind_res.get("fee_usd", 0.0)) + float(pos.get("realized_exit_fee", 0.0))
+                                                net_pnl = round(p_out - pos["notional_usd"] - pos["fee_usd"] - exit_fee, 2)
+                                                pos["status"] = ExecutionStatus.SETTLED
+                                                pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                                                pos["won"] = False
+                                                pos["payout_usd"] = p_out
+                                                pos["net_pnl_usd"] = net_pnl
+                                                pos["close_reason"] = "ADVERSE_STOP_LOSS_UNWIND"
+                                                pos["remaining_shares"] = 0.0
+                                                pos["remaining_exit_shares"] = 0.0
+                                                self.closed_positions.append(pos)
+                                                self.risk_controller.record_trade_pnl(net_pnl)
+                                                del self.active_positions[tid]
+                                                self.save_state()
+                                                reconciled_closed = True
+                                            else:
+                                                logger.critical(
+                                                    f"[FAIL-CLOSED ANOMALY] {tid} balance is {actual_bal:.4f} but taking_usd is 0 and no fill recorded! "
+                                                    "Retaining position in UNRESOLVED_BALANCE_DISCREPANCY without closing."
+                                                )
+                                                pos["exit_order_status"] = "UNRESOLVED_BALANCE_DISCREPANCY"
+                                                self.save_state()
+                                    except Exception as bal_chk_err:
+                                        logger.debug(f"Balance check error for {tid}: {bal_chk_err}")
+                                if reconciled_closed:
+                                    continue
+
+                                # 3. Retain position under bounded escalation retry policy
                                 pos["is_liquidating"] = False
-                                pos["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
-                                attempts = int(
-                                    pos.get("unwind_retry_count", 0)
-                                ) + 1
+                                attempts = int(pos.get("unwind_retry_count", 0)) + 1
                                 pos["unwind_retry_count"] = attempts
-                                backoff_seconds = min(
-                                    30.0,
-                                    2.0 ** min(attempts, 5),
-                                )
-                                pos["next_unwind_retry_ts"] = (
-                                    now_ts + backoff_seconds
-                                )
-                                pos["unwind_last_error"] = str(
-                                    unwind_res.get("error", "unknown")
-                                )
+                                backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
+                                pos["next_unwind_retry_ts"] = now_ts + backoff_seconds
+                                pos["unwind_last_error"] = str(unwind_res.get("error", "unknown"))
                                 pos["unwind_last_attempt_ts"] = now_ts
-                                if attempts in {3, 6, 10}:
+                                if attempts >= 10:
+                                    pos["exit_order_status"] = "TERMINAL_UNWIND_FAILED_SUPERVISED"
                                     logger.critical(
-                                        "[UNWIND ESCALATION] %s: %d consecutive "
-                                        "failed FOK attempts; position remains "
-                                        "exposed and requires continued supervision.",
-                                        tid, attempts,
+                                        f"[UNWIND ESCALATION TERMINAL] {tid}: {attempts} consecutive failed FOK attempts. "
+                                        "Position remains exposed and requires active supervisor intervention."
                                     )
+                                else:
+                                    pos["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
+                                    if attempts in {3, 6}:
+                                        logger.critical(
+                                            f"[UNWIND ESCALATION] {tid}: {attempts} consecutive failed FOK attempts. "
+                                            "Position remains exposed."
+                                        )
                                 self.save_state()
                                 continue
 
-                    # Pre-Expiry Hold for In-The-Money Positions (TTE < 180s)
-                    if exit_oid and exit_oid in open_oids and tte_rem < self.tte_cancel_window:
-                        logger.info(
-                            f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. Canceling resting maker scalp ask {exit_oid} for {tid} "
-                            "to prevent toxic late fills into market expiry. Position In-The-Money; holding to $1.00 terminal settlement."
+                    # Pre-Expiry Handling for Open Positions (TTE < 180s)
+                    if exit_oid and tte_rem < self.tte_cancel_window:
+                        if exit_oid in open_oids:
+                            logger.info(
+                                f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                f"Initiating cancellation of resting maker scalp ask {exit_oid} for {tid}."
+                            )
+                            await asyncio.to_thread(self.executor.cancel_order, exit_oid)
+                            pos["exit_order_status"] = "PRE_EXPIRY_CANCEL_PENDING"
+                            pos["cancel_pending_order_id"] = exit_oid
+                            self.save_state()
+                            continue
+
+                        # Confirm cancellation and reconcile any partial fills before replacement order
+                        status_info = await asyncio.to_thread(self.executor.get_order_status, exit_oid) or {}
+                        status = str(status_info.get("status", "UNKNOWN")).upper()
+                        matched = float(status_info.get("size_matched", 0.0) or 0.0)
+                        if matched > float(pos.get("filled_exit_shares", 0.0)) + 1e-6:
+                            matched = min(max(0.0, matched), float(pos["entry_shares"]))
+                            pos["filled_exit_shares"] = matched
+                            rem_after_fill = max(0.0, round(float(pos["entry_shares"]) - matched, 4))
+                            pos["remaining_shares"] = rem_after_fill
+                            pos["remaining_exit_shares"] = rem_after_fill
+                            raw_taking = status_info.get("taking_amount") or status_info.get("takingAmount")
+                            if raw_taking is not None:
+                                pos["realized_exit_cash"] = float(raw_taking)
+                            self.save_state()
+
+                        canceled_confirmed = (
+                            exit_oid not in open_oids
+                            and status in {"CANCELED", "CANCELLED", "EXPIRED"}
                         )
-                        await asyncio.to_thread(self.executor.cancel_order, exit_oid)
+                        if not canceled_confirmed:
+                            logger.warning(f"[REGIME 4] Awaiting verified cancellation of {exit_oid} before unwinding {tid}.")
+                            pos["exit_order_status"] = "PRE_EXPIRY_CANCEL_PENDING"
+                            self.save_state()
+                            continue
+
                         pos["exit_order_id"] = None
-                        pos["exit_order_status"] = "CANCELED_FOR_EXPIRY_HOLD"
-                        pos["status"] = ExecutionStatus.POSITION_CONFIRMED
-                        self.save_state()
-                        continue
+                        rem_shrs = pos.get("remaining_shares", pos.get("remaining_exit_shares", 0.0))
+
+                        # If maker scalp completely filled prior to cancellation, settle immediately:
+                        if rem_shrs < 0.01:
+                            logger.info(f"✓ [MAKER SCALP FILLED PRE-EXPIRY] {tid} fully matched on resting ask before cancellation.")
+                            p_out = round(pos.get("realized_exit_cash", 0.0), 2)
+                            exit_fee = float(pos.get("realized_exit_fee", 0.0))
+                            net_pnl = round(p_out - pos["notional_usd"] - pos["fee_usd"] - exit_fee, 2)
+                            pos["status"] = ExecutionStatus.SETTLED
+                            pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                            pos["won"] = True
+                            pos["payout_usd"] = p_out
+                            pos["net_pnl_usd"] = net_pnl
+                            pos["close_reason"] = "MAKER_SCALP_FILLED_CLOB"
+                            self.closed_positions.append(pos)
+                            self.risk_controller.record_trade_pnl(net_pnl)
+                            del self.active_positions[tid]
+                            self.save_state()
+                            continue
+
+                        # Outcome-aware evaluation with resolution pin-risk buffer
+                        pin_threshold = open_spot * 0.0005 if open_spot > 0 else 0.0
+
+                        if not spot_valid:
+                            logger.critical(
+                                f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                f"Position {tid} spot price UNAVAILABLE/INVALID (ref={current_spot}, open={open_spot}). "
+                                f"Outcome classification is UNKNOWN; refusing assumption of ITM. "
+                                f"Retaining open exposure under supervised terminal resolution."
+                            )
+                            pos["exit_order_status"] = "OUTCOME_UNKNOWN"
+                            pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                            self.save_state()
+                            continue
+                        elif spot_disp < -pin_threshold:
+                            # OUT-OF-THE-MONEY: holding to expiry guarantees a $0.00 wipeout! Unwind to salvage capital!
+                            logger.warning(
+                                f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                f"Position {tid} is strictly OUT-OF-THE-MONEY (delta={spot_disp:+.2f} vs open={open_spot:.2f}). "
+                                f"Dispatching emergency salvage unwind for {rem_shrs:.2f} shares."
+                            )
+                            pos["exit_order_status"] = "EMERGENCY_SALVAGE_UNWIND"
+                            unwind_res = await asyncio.to_thread(
+                                self.executor.execute_unwind_order,
+                                token_id=token_id,
+                                size=rem_shrs,
+                                side="SELL",
+                                min_price=0.01,
+                            )
+                            if unwind_res.get("success"):
+                                matched_sz = float(unwind_res.get("matched_size", rem_shrs))
+                                raw_taking = unwind_res.get("taking_amount")
+                                taking_usd = float(raw_taking) if raw_taking else (matched_sz * max(0.01, best_b))
+                                p_out = round(pos.get("realized_exit_cash", 0.0) + taking_usd, 2)
+                                exit_fee = float(unwind_res.get("fee_usd", 0.0)) + float(pos.get("realized_exit_fee", 0.0))
+                                net_pnl = round(p_out - pos["notional_usd"] - pos["fee_usd"] - exit_fee, 2)
+                                pos["status"] = ExecutionStatus.SETTLED
+                                pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
+                                pos["won"] = False
+                                pos["payout_usd"] = p_out
+                                pos["net_pnl_usd"] = net_pnl
+                                pos["close_reason"] = "PRE_EXPIRY_OTM_SALVAGE_UNWIND"
+                                self.closed_positions.append(pos)
+                                self.risk_controller.record_trade_pnl(net_pnl)
+                                del self.active_positions[tid]
+                                logger.warning(f"✓ [EMERGENCY SALVAGE EXECUTED] {tid} unwound @ proceeds ${p_out:.2f} | Net PnL: ${net_pnl:+.2f}")
+                                self.save_state()
+                                continue
+                            else:
+                                if unwind_res.get("partial"):
+                                    matched_p = float(unwind_res.get("matched_size", 0.0))
+                                    pos["filled_exit_shares"] = pos.get("filled_exit_shares", 0.0) + matched_p
+                                    rem_shrs = max(0.0, round(float(pos["entry_shares"]) - pos["filled_exit_shares"], 4))
+                                    pos["remaining_shares"] = rem_shrs
+                                    pos["remaining_exit_shares"] = rem_shrs
+                                    pos["realized_exit_cash"] = pos.get("realized_exit_cash", 0.0) + float(unwind_res.get("taking_amount", 0.0))
+                                    logger.warning(f"[PARTIAL SALVAGE] {tid}: matched {matched_p:.2f} shares. Remaining: {rem_shrs:.2f}")
+
+                                logger.error(
+                                    f"[EMERGENCY SALVAGE FAILED] {tid}: {unwind_res.get('error')}. "
+                                    f"Fail-closed: Retaining open exposure for terminal resolution supervision."
+                                )
+                                pos["exit_order_status"] = "SALVAGE_FAILED_TERMINAL_HOLD"
+                                pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                                self.save_state()
+                                continue
+                        elif abs(spot_disp) <= pin_threshold:
+                            logger.warning(
+                                f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                f"Position {tid} is in PIN-RISK UNCERTAINTY ZONE (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f}). "
+                                "Holding with supervisor awareness to terminal market resolution."
+                            )
+                            pos["exit_order_status"] = "PIN_RISK_EXPIRY_HOLD"
+                            pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                            self.save_state()
+                            continue
+                        else:
+                            # Strictly IN-THE-MONEY (spot_disp > pin_threshold): hold to $1.00 terminal settlement!
+                            logger.info(
+                                f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                f"Position {tid} is strictly IN-THE-MONEY (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f} > threshold={pin_threshold:.2f}). "
+                                "Holding to $1.00 terminal settlement."
+                            )
+                            pos["exit_order_status"] = "CANCELED_FOR_EXPIRY_HOLD"
+                            pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                            self.save_state()
+                            continue
 
                     # 3. Manage active passive liquidation order queue
                     if pos.get("is_liquidating") and pos.get("unwind_order_id"):

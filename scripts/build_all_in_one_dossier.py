@@ -36,7 +36,8 @@ FILES = [
     ("tests/test_audit_remediation_v2.py", "18. AUDIT REMEDIATION V2 REGRESSION TEST SUITE", "6 tests certifying per-token tick-size quantization across all SDK sizes, direct Polygon on-chain ERC-1155 reads, schema normalization, authoritative category fee rates, and copula bounds."),
     ("tests/test_boundary_and_monotonicity.py", "19. BOUNDARY CONVERGENCE & MONOTONICITY TEST SUITE", "10 unit tests certifying 4-sigma TWAP envelopes, discrete jump barriers, merge arbitrage math, and carry costs."),
     ("tests/test_institutional_expansion_sandbox.py", "20. INSTITUTIONAL EXPANSION TEST SUITE", "5 tests certifying binary option Greeks, fee scaling, regime viability, and hurdle rate solvers."),
-    ("tests/test_audit_remediation_full_suite.py", "21. FULL AUDIT REMEDIATION REGRESSION SUITE (ROUND 1 VERIFICATION)", "17 comprehensive regression tests certifying all 24 adversarial audit findings and accounting remediations.")
+    ("tests/test_audit_remediation_full_suite.py", "21. FULL AUDIT REMEDIATION REGRESSION SUITE (ROUND 1 VERIFICATION)", "17 comprehensive regression tests certifying all 24 adversarial audit findings and accounting remediations."),
+    ("tests/test_unwind_salvage_reconciliation.py", "22. UNWIND, PRE-EXPIRY SALVAGE & FAIL-CLOSED RECONCILIATION TEST SUITE", "9 comprehensive unit tests certifying lot-aware quantization, partial fill proceeds, fail-closed balance reads, order cancellation confirmation before replacement orders, and pin-risk zone classification.")
 ]
 
 def build_dossier():
@@ -48,15 +49,15 @@ def build_dossier():
     sections.append(f"""# Polymarket Quantitative Alpha Architecture & Complete Trading Dossier
 
 **Document Classification**: Institutional Algorithmic Trading Architecture & Master Source Dossier  
-**Release Version**: Production Hardened 2.2.0 (Post-Audit Round 2 Review Package)  
+**Release Version**: Production Hardened 2.3.0 (Post-Audit Round 2 Verified Package)  
 **Generated At**: {now_utc}  
 **Repository**: `/home/skybullet1987/quant_pipeline`  
 **Execution Node**: `quant-pipeline-finland` (`europe-north1-b`)  
 **Network**: Polygon Mainnet (Chain ID: 137)  
 **Execution Gateway**: Tokyo CLOB API Gateway (`https://clob.polymarket.com`)  
 **Funder Wallet**: `0x013A2474454fBd8738cff6a7f204eF1bc377F4e9`  
-**CLOB Collateral**: **$273.23 USD** (L2 Verified)  
-**Test Suite Coverage**: 63 / 63 Passing Polymarket Unit & Integration Tests  
+**CLOB Collateral**: **$249.24 USD** (L2 Verified)  
+**Test Suite Coverage**: 72 / 72 Passing Polymarket Unit & Integration Tests (294 / 294 Repo-Wide Tests)  
 
 ---
 
