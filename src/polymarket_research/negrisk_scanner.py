@@ -64,8 +64,71 @@ NEGRISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
 NEGRISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a"
 CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"
 
-STANDARD_TAKER_FEE_KAPPA = 0.07  # Standard political / macro dynamic taker fee parameter
+# Authoritative Polymarket Taker Fee Rate Schedule by Market Category
+# Source: Polymarket Documentation & CLOB Specifications
+CATEGORY_TAKER_FEE_RATES = {
+    "crypto": 0.07,
+    "cryptocurrency": 0.07,
+    "sports": 0.05,
+    "economics": 0.05,
+    "economy": 0.05,
+    "finance": 0.04,
+    "politics": 0.04,
+    "geopolitics": 0.00,
+}
+STANDARD_TAKER_FEE_KAPPA = 0.07  # Conservative upper bound fallback
 ESTIMATED_GAS_USD = 0.02         # Polygon sub-cent gas fee
+
+
+import re
+import requests
+
+
+def resolve_market_category_fee(market_data: Optional[Dict[str, Any]] = None, event_category: Optional[str] = None) -> Optional[float]:
+    """
+    Authoritative Polymarket category taker fee rate lookup.
+    Schedule:
+      - Crypto: 0.07
+      - Sports: 0.05
+      - Economics: 0.05
+      - Politics / Finance: 0.04
+      - Geopolitics: 0.00
+    Returns None if category cannot be resolved (fail-closed for arbitrage profitability).
+    """
+    text_corpus = ""
+    if event_category:
+        text_corpus += " " + str(event_category).lower()
+    if market_data:
+        text_corpus += " " + str(market_data.get("category", "")).lower()
+        text_corpus += " " + str(market_data.get("groupItemTitle", "")).lower()
+        text_corpus += " " + str(market_data.get("question", "")).lower()
+        tags = market_data.get("tags")
+        if isinstance(tags, list):
+            text_corpus += " " + " ".join(str(t).lower() for t in tags)
+
+    words = set(re.findall(r"[a-z0-9]+", text_corpus))
+
+    # Geopolitics priority (0.00 fee)
+    if words & {"war", "ceasefire", "treaty", "nato", "geopolitics"}:
+        return 0.00
+
+    # Crypto (0.07 fee)
+    if words & {"bitcoin", "btc", "eth", "ethereum", "crypto", "cryptocurrency", "solana"}:
+        return 0.07
+
+    # Sports (0.05 fee)
+    if words & {"nfl", "nba", "uefa", "mlb", "sports", "soccer", "football"}:
+        return 0.05
+
+    # Economics & FOMC (0.05 fee)
+    if words & {"fed", "fomc", "cpi", "gdp", "inflation", "economics", "economy"} or "rate cut" in text_corpus:
+        return 0.05
+
+    # Politics & Finance (0.04 fee)
+    if words & {"election", "president", "senate", "governor", "congress", "vote", "politics", "finance"}:
+        return 0.04
+
+    return None
 
 
 @dataclass
@@ -77,6 +140,7 @@ class BasketCandidate:
     best_ask: float
     bid_depth_usd: float
     ask_depth_usd: float
+    fee_rate: float = STANDARD_TAKER_FEE_KAPPA
 
 
 @dataclass
@@ -146,6 +210,7 @@ class NegRiskScanner:
         min_bid_depth = float("inf")
         min_ask_depth = float("inf")
 
+        unresolved_fee_count = 0
         for m in markets:
             m_id = str(m.get("id"))
             outcome_name = m.get("groupItemTitle") or m.get("question") or "Candidate"
@@ -161,6 +226,12 @@ class NegRiskScanner:
 
             yes_token_id = clob_token_ids[0]  # YES token for candidate
 
+            # Authoritative category fee resolution per leg
+            leg_fee_rate = resolve_market_category_fee(m, event.get("category"))
+            if leg_fee_rate is None:
+                unresolved_fee_count += 1
+                leg_fee_rate = STANDARD_TAKER_FEE_KAPPA
+
             # Fetch CLOB top of book
             try:
                 b_url = f"{CLOB_API_BASE}/book?token_id={yes_token_id}"
@@ -171,18 +242,21 @@ class NegRiskScanner:
                 bids = book.get("bids", [])
                 asks = book.get("asks", [])
 
-                best_bid = float(bids[0]["price"]) if bids else 0.0
-                best_ask = float(asks[0]["price"]) if asks else 1.0
-                bid_size = float(bids[0]["size"]) if bids else 0.0
-                ask_size = float(asks[0]["size"]) if asks else 0.0
+                sorted_bids = sorted([(float(b["price"]), float(b["size"])) for b in bids], key=lambda x: x[0], reverse=True) if bids else []
+                sorted_asks = sorted([(float(a["price"]), float(a["size"])) for a in asks], key=lambda x: x[0]) if asks else []
+
+                best_bid = sorted_bids[0][0] if sorted_bids else 0.0
+                best_ask = sorted_asks[0][0] if sorted_asks else 1.0
+                bid_size = sorted_bids[0][1] if sorted_bids else 0.0
+                ask_size = sorted_asks[0][1] if sorted_asks else 0.0
 
                 bid_depth_usd = best_bid * bid_size
                 ask_depth_usd = best_ask * ask_size
 
                 total_bid_sum += best_bid
                 total_ask_sum += best_ask
-                total_bid_fees += compute_taker_fee(best_bid)
-                total_ask_fees += compute_taker_fee(best_ask)
+                total_bid_fees += compute_taker_fee(best_bid, kappa=leg_fee_rate)
+                total_ask_fees += compute_taker_fee(best_ask, kappa=leg_fee_rate)
 
                 if bid_depth_usd > 0 and bid_depth_usd < min_bid_depth:
                     min_bid_depth = bid_depth_usd
@@ -198,12 +272,21 @@ class NegRiskScanner:
                         best_ask=best_ask,
                         bid_depth_usd=bid_depth_usd,
                         ask_depth_usd=ask_depth_usd,
+                        fee_rate=leg_fee_rate,
                     )
                 )
             except Exception:
                 continue
 
         if len(candidates) < 3:
+            return None
+
+        # Fail-closed invariant: If category fee metadata cannot be resolved, refuse to label profitable
+        if unresolved_fee_count > 0:
+            logger.warning(
+                f"[UNRESOLVED FEE REJECT] Event {event_id} has {unresolved_fee_count} legs with unresolvable category metadata. "
+                "Refusing to label opportunity profitable."
+            )
             return None
 
         # Check Overround Regime: Sum P_bid > 1.00 + fees + gas
@@ -225,22 +308,28 @@ class NegRiskScanner:
             return opp
 
         # Check Underround Regime: 1.00 - Sum P_ask - fees - gas > 0
-        net_underround_profit = 1.00 - total_ask_sum - total_ask_fees - ESTIMATED_GAS_USD
-        if net_underround_profit >= self.min_spread_hurdle and min_ask_depth > 20.0:
-            opp = NegRiskOpportunity(
-                event_id=event_id,
-                event_title=event_title,
-                n_outcomes=len(candidates),
-                regime="UNDERROUND",
-                gross_sum=total_ask_sum,
-                net_spread_pct=net_underround_profit * 100.0,
-                expected_profit_per_share=net_underround_profit,
-                bottleneck_depth_usd=min_ask_depth if min_ask_depth != float("inf") else 0.0,
-                max_executable_shares=min_ask_depth / max(total_ask_sum, 1.0),
-                pre_mint_required=False,  # Underround executes directly with liquid pUSD
-            )
-            self._log_opportunity(opp)
-            return opp
+        # CRITICAL AUDIT P1 FIX: Underround requires an exhaustive, complete basket!
+        # If any market in the event was skipped, failed to fetch, or is missing,
+        # treating the partial sum of asks as the full basket manufactures false-positive underrounds!
+        if len(candidates) == len(markets) and len(candidates) >= 3:
+            net_underround_profit = 1.00 - total_ask_sum - total_ask_fees - ESTIMATED_GAS_USD
+            if net_underround_profit >= self.min_spread_hurdle and min_ask_depth > 20.0:
+                opp = NegRiskOpportunity(
+                    event_id=event_id,
+                    event_title=event_title,
+                    n_outcomes=len(candidates),
+                    regime="UNDERROUND",
+                    gross_sum=total_ask_sum,
+                    net_spread_pct=net_underround_profit * 100.0,
+                    expected_profit_per_share=net_underround_profit,
+                    bottleneck_depth_usd=min_ask_depth if min_ask_depth != float("inf") else 0.0,
+                    max_executable_shares=min_ask_depth / max(total_ask_sum, 1.0),
+                    pre_mint_required=False,  # Underround executes directly with liquid pUSD
+                )
+                self._log_opportunity(opp)
+                return opp
+        elif len(candidates) < len(markets):
+            logger.debug(f"[INCOMPLETE_BASKET] Event {event_id} ({event_title}): {len(candidates)}/{len(markets)} fetched. Skipping underround evaluation.")
 
         return None
 

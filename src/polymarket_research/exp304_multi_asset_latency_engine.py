@@ -68,8 +68,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("EXP304Engine")
 
-# Binance multi-stream endpoint
-BINANCE_MULTI_WS_URL = "wss://fstream.binance.com/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade/solusdt@aggTrade"
+# Binance multi-stream endpoint (Spot multi-stream on stream.binance.com:443)
+BINANCE_MULTI_WS_URL = "wss://stream.binance.com:443/stream?streams=btcusdt@aggTrade/ethusdt@aggTrade/solusdt@aggTrade"
 GAMMA_API_BASE = "https://gamma-api.polymarket.com"
 CLOB_API_BASE = "https://clob.polymarket.com"
 
@@ -77,26 +77,26 @@ ASSET_CONFIGS = {
     "BTC": {
         "symbol": "BTCUSDT",
         "stream_name": "btcusdt@aggTrade",
-        "min_velocity_shock_pct": 0.12,
-        "min_resting_depth_usd": 1500.0,
+        "min_velocity_shock_pct": 0.05,  # 5 bps move over 1.0s window (~$42 on $84k BTC)
+        "min_resting_depth_usd": 50.0,    # Realistic canary shadow threshold
         "default_annual_vol": 0.55,
-        "slippage_penalty": 0.005,
+        "slippage_penalty": 0.003,
     },
     "ETH": {
         "symbol": "ETHUSDT",
         "stream_name": "ethusdt@aggTrade",
-        "min_velocity_shock_pct": 0.16,
-        "min_resting_depth_usd": 1000.0,
+        "min_velocity_shock_pct": 0.07,  # 7 bps move over 1.0s window (~$1.8 on $2.5k ETH)
+        "min_resting_depth_usd": 25.0,    # Realistic canary shadow threshold
         "default_annual_vol": 0.65,
-        "slippage_penalty": 0.008,
+        "slippage_penalty": 0.005,
     },
     "SOL": {
         "symbol": "SOLUSDT",
         "stream_name": "solusdt@aggTrade",
-        "min_velocity_shock_pct": 0.22,
-        "min_resting_depth_usd": 400.0,
+        "min_velocity_shock_pct": 0.10,  # 10 bps move over 1.0s window
+        "min_resting_depth_usd": 20.0,    # Realistic canary shadow threshold
         "default_annual_vol": 0.85,
-        "slippage_penalty": 0.012,
+        "slippage_penalty": 0.008,
     },
 }
 
@@ -161,15 +161,15 @@ def compute_dynamic_taker_fee(price: float, horizon: str = "15m") -> float:
     return kappa * p * (1.0 - p)
 
 
-def validate_regime_viability(price: float) -> Tuple[bool, str]:
+def validate_regime_viability(price: float, horizon: str = "1h") -> Tuple[bool, str]:
     if (0.15 <= price <= 0.35) or (0.65 <= price <= 0.85):
         return True, "OPTIMAL_SWEET_SPOT"
     elif 0.45 <= price <= 0.55:
         return False, "REJECT_PEEK_FEE_ATM"
-    elif price < 0.10 or price > 0.90:
+    elif price < 0.15 or price > 0.85:
         return False, "REJECT_DEEP_TAIL"
     else:
-        return False, "REJECT_INTERMEDIATE_ZONE"
+        return True, "VIABLE_TRADING_BAND"
 
 
 def evaluate_hurdle(
@@ -227,7 +227,13 @@ class MultiAssetLatencyEngine:
         self.last_market_scan_ts = 0.0
         self.last_heartbeat_ts = time.time()
         self.seen_shock_keys = set()
+        self.session: Optional[aiohttp.ClientSession] = None
         logger.info(f"Initialized EXP-304 Multi-Asset Engine [DryRun={self.dry_run}]")
+
+    async def get_session(self) -> aiohttp.ClientSession:
+        if self.session is None or self.session.closed:
+            self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=4.0))
+        return self.session
 
     def _save_pid(self):
         try:
@@ -257,24 +263,24 @@ class MultiAssetLatencyEngine:
                 self.active_markets[a].clear()
 
             slug_map = {
-                "BTC": ["btc-up-or-down-hourly", "btc-15m"],
-                "ETH": ["eth-up-or-down-hourly", "eth-15m"],
-                "SOL": ["sol-up-or-down-hourly", "sol-15m"],
+                "BTC": ["btc-up-or-down-hourly", "btc-15m", "bitcoin-up-or-down"],
+                "ETH": ["eth-up-or-down-hourly", "eth-15m", "ethereum-up-or-down"],
+                "SOL": ["sol-up-or-down-hourly", "sol-15m", "solana-up-or-down"],
             }
-            async with aiohttp.ClientSession() as session:
-                for asset, slugs in slug_map.items():
-                    for slug in slugs:
-                        url = f"{GAMMA_API_BASE}/events?series_slug={slug}&limit=5&closed=false"
-                        try:
-                            async with session.get(url, timeout=aiohttp.ClientTimeout(total=4.0)) as resp:
-                                if resp.status == 200:
-                                    events = await resp.json()
-                                    for ev in events:
-                                        for m in ev.get("markets", []):
-                                            if not m.get("closed", False):
-                                                self.active_markets[asset].append(m)
-                        except Exception:
-                            pass
+            session = await self.get_session()
+            for asset, slugs in slug_map.items():
+                for slug in slugs:
+                    url = f"{GAMMA_API_BASE}/events?series_slug={slug}&limit=5&closed=false"
+                    try:
+                        async with session.get(url) as resp:
+                            if resp.status == 200:
+                                events = await resp.json()
+                                for ev in events:
+                                    for m in ev.get("markets", []):
+                                        if not m.get("closed", False):
+                                            self.active_markets[asset].append(m)
+                    except Exception:
+                        pass
 
             self.last_market_scan_ts = time.time()
             total_active = sum(len(v) for v in self.active_markets.values())
@@ -289,8 +295,8 @@ class MultiAssetLatencyEngine:
         win = self.trade_windows[asset]
         win.append((now_s, price, sz))
 
-        # Maintain 100ms rolling window
-        while win and (now_s - win[0][0]) > 0.100:
+        # Maintain 1.0s rolling window (calibrated for crypto lead-lag velocity)
+        while win and (now_s - win[0][0]) > 1.000:
             win.popleft()
 
         if len(win) < 2:
@@ -341,39 +347,63 @@ class MultiAssetLatencyEngine:
                 target_name = f"{direction}"
 
                 # Query CLOB orderbook
-                async with aiohttp.ClientSession() as session:
-                    book_url = f"{CLOB_API_BASE}/book?token_id={token_id}"
-                    async with session.get(book_url, timeout=aiohttp.ClientTimeout(total=2.0)) as b_resp:
-                        if b_resp.status != 200:
-                            continue
-                        book = await b_resp.json()
+                session = await self.get_session()
+                book_url = f"{CLOB_API_BASE}/book?token_id={token_id}"
+                async with session.get(book_url, timeout=aiohttp.ClientTimeout(total=2.0)) as b_resp:
+                    if b_resp.status != 200:
+                        continue
+                    book = await b_resp.json()
 
                 asks = book.get("asks", [])
                 bids = book.get("bids", [])
                 if not asks or not bids:
                     continue
 
-                best_ask = float(asks[0]["price"])
-                best_bid = float(bids[0]["price"])
-                spread = best_ask - best_bid
+                sorted_bids = sorted([(float(b["price"]), float(b["size"])) for b in bids], key=lambda x: x[0], reverse=True) if bids else []
+                sorted_asks = sorted([(float(a["price"]), float(a["size"])) for a in asks], key=lambda x: x[0]) if asks else []
+                if not sorted_asks or not sorted_bids:
+                    continue
 
-                # Check DepthGuard
-                top2_notional = sum(float(a["size"]) * float(a["price"]) for a in asks[:2])
+                best_ask = sorted_asks[0][0]
+                best_bid = sorted_bids[0][0]
+                spread = max(0.0, round(best_ask - best_bid, 4))
+
+                # Check DepthGuard on actual top-2 sorted resting ask levels
+                top2_notional = sum(px * sz for px, sz in sorted_asks[:2])
                 if top2_notional < cfg["min_resting_depth_usd"]:
                     continue
 
+                horizon = "15m" if "15m" in title.lower() else "1h"
+
+                # Derive true remaining time to expiry from endDate
+                end_date_str = m.get("endDate")
+                tau_s = 900.0 if horizon == "15m" else 3600.0
+                if end_date_str:
+                    try:
+                        exp_dt = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
+                        now_utc = datetime.now(timezone.utc)
+                        rem_s = (exp_dt - now_utc).total_seconds()
+                        if rem_s > 0:
+                            tau_s = max(10.0, rem_s)
+                    except Exception:
+                        pass
+
+                # Derive actual market reference strike price
+                raw_strike = m.get("strikePrice") or m.get("strike") or m.get("startingPrice") or m.get("priceToBeat")
+                try:
+                    strike_px = float(raw_strike) if raw_strike is not None and float(raw_strike) > 0 else current_spot
+                except (ValueError, TypeError):
+                    strike_px = current_spot
+
                 # Check regime viability
-                regime_ok, regime_reason = validate_regime_viability(best_ask)
+                regime_ok, regime_reason = validate_regime_viability(best_ask, horizon=horizon)
                 if not regime_ok:
                     continue
 
-                horizon = "15m" if "15m" in title.lower() else "1h"
-                tau_s = 900.0 if horizon == "15m" else 3600.0
-
-                # Compute Greeks
+                # Compute Greeks with actual reference strike and true remaining duration
                 greeks = compute_binary_option_greeks(
                     spot=current_spot,
-                    strike=current_spot,
+                    strike=strike_px,
                     tau_seconds=tau_s,
                     vol_annual=cfg["default_annual_vol"],
                 )
@@ -397,7 +427,7 @@ class MultiAssetLatencyEngine:
                         token_id=token_id,
                         target_token=target_name,
                         spot_at_t0=current_spot,
-                        strike_price=current_spot,
+                        strike_price=strike_px,
                         tte_seconds=tau_s,
                         delta_spot_abs=delta_spot,
                         binary_delta=greeks.binary_delta,
@@ -458,8 +488,8 @@ class MultiAssetLatencyEngine:
                         if time.time() - self.last_market_scan_ts > 60.0:
                             await self.scan_gamma_markets()
 
-                        # Periodic Heartbeat (every 5 min)
-                        if time.time() - self.last_heartbeat_ts > 300.0:
+                        # Periodic Heartbeat (every 60s)
+                        if time.time() - self.last_heartbeat_ts > 60.0:
                             self.last_heartbeat_ts = time.time()
                             self._persist_state()
                             logger.info(
@@ -469,6 +499,8 @@ class MultiAssetLatencyEngine:
             except Exception as e:
                 logger.error(f"WebSocket error in EXP-304: {e}. Reconnecting in 3s...")
                 await asyncio.sleep(3.0)
+        if self.session and not self.session.closed:
+            await self.session.close()
 
 
 def main():

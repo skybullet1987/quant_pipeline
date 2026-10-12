@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Dict, Any, List, Set, Optional
 from collections import defaultdict
 
+from src.polymarket_research.polymarket_live_executor import calculate_taker_fee
+
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PIPELINE_ROOT / "data" / "polymarket"
 TRIGGER_FILE = DATA_DIR / "live_shock_triggers.jsonl"
@@ -34,9 +36,13 @@ PID_FILE = DATA_DIR / "paper_trader.pid"
 
 INITIAL_PAPER_CAPITAL = 1000.0
 TICKET_NOTIONAL = 50.0
-MAX_TTE_SECONDS = 900.0   # 15 minutes
+MAX_TTE_SECONDS = 1500.0  # 25 minutes (aligned with live harvester)
 MIN_TTE_SECONDS = 60.0    # 1 minute (avoid unexecutable settlement lock)
-MAX_TRADES_PER_HOUR = 2
+MAX_TRADES_PER_HOUR = 4   # match live service's global portfolio-hour cap
+MAX_TRADES_PER_MARKET = 1
+MAX_ALLOWED_SPREAD = 0.030
+MAX_PRICE_CEILING = 0.88  # Aligned with live executor PriceGuard (0.88)
+MIN_PRICE_FLOOR = 0.15    # Minimum entry price floor
 
 # v3.1 Frozen Out-of-Sample Boundary
 R3_VALIDATION_START_UTC = "2026-09-29T18:11:34.000Z"
@@ -66,6 +72,8 @@ class PolymarketForwardPaperTrader:
         
         # In-Flight Open Positions: market_id -> list of open positions
         self.open_trades: Dict[str, List[Dict[str, Any]]] = {}
+        self.current_hour_window = int(time.time() // 3600)
+        self.trades_this_hour = 0
         
         self.last_trigger_file_pos: int = 0
         self.last_shock_file_pos: int = 0
@@ -73,6 +81,13 @@ class PolymarketForwardPaperTrader:
 
         # Load existing ledgers idempotently
         self.load_persisted_ledgers()
+        if STATE_FILE.exists():
+            try:
+                saved = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                if int(saved.get("current_hour_window", -1)) == self.current_hour_window:
+                    self.trades_this_hour = int(saved.get("trades_this_hour", 0))
+            except Exception as exc:
+                print(f"[WARN] Could not restore hourly cap state: {exc}", flush=True)
 
     def load_persisted_ledgers(self):
         """Loads DEV and VALIDATION ledgers to restore state idempotently without duplication."""
@@ -180,8 +195,12 @@ class PolymarketForwardPaperTrader:
             return
 
         # Check total trades per market hour cap (settled + open)
+        hour_now = int(time.time() // 3600)
+        if hour_now != self.current_hour_window:
+            self.current_hour_window = hour_now
+            self.trades_this_hour = 0
         total_market_trades = self.trades_per_market.get(m_id, 0) + len(current_market_open)
-        if total_market_trades >= MAX_TRADES_PER_HOUR:
+        if total_market_trades >= MAX_TRADES_PER_MARKET or self.trades_this_hour >= MAX_TRADES_PER_HOUR:
             return
 
         # Time to Expiry (TTE) Guard: 60s <= TTE <= 900s
@@ -206,13 +225,20 @@ class PolymarketForwardPaperTrader:
         raw_asks = token_features.get("raw_top_asks", [])
         if not raw_asks:
             return  # FAIL-CLOSED: No resting book depth
-        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= 0.85)
+        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= MAX_PRICE_CEILING)
         depth_ratio = executable_depth_usd / TICKET_NOTIONAL
         if depth_ratio < 1.50:
             return  # FAIL-CLOSED: Executable depth ratio < 1.50 (requires >= $75 executable depth for $50 ticket)
 
         eff_px = token_features.get("effective_price_$50")
-        if not eff_px or eff_px < 0.15 or eff_px > 0.85:
+        raw_vwap = token_features.get("vwap_$50")
+        fill_fee = token_features.get("fill_fees_$50")
+        spread = float(token_features.get("spread", 0.01) or 0.01)
+        if spread > MAX_ALLOWED_SPREAD or not eff_px:
+            return
+        if raw_vwap is None:
+            raw_vwap = eff_px
+        if raw_vwap < MIN_PRICE_FLOOR or raw_vwap > MAX_PRICE_CEILING:
             return
 
         # Explicit Fee Metadata Enforcement (STRICT FAIL-CLOSED)
@@ -221,10 +247,13 @@ class PolymarketForwardPaperTrader:
         if fee_rate is None or fee_rate <= 0.0:
             return  # FAIL-CLOSED: Missing explicit fee metadata in shock payload
 
-        shares = TICKET_NOTIONAL / eff_px
-        # Fill-level fee formula: C * feeRate * p * (1 - p)
-        taker_fee = TICKET_NOTIONAL * fee_rate * eff_px * (1.0 - eff_px)
-        effective_fee_rate_on_deployed_notional = fee_rate * (1.0 - eff_px)
+        fee_exponent = float(fee_meta.get("fee_exponent", 1.0))
+        shares = TICKET_NOTIONAL / float(raw_vwap)
+        if fill_fee is not None:
+            taker_fee = float(fill_fee)
+        else:
+            _, taker_fee = calculate_taker_fee(TICKET_NOTIONAL, float(raw_vwap), fee_rate, fee_exponent)
+        effective_fee_rate_on_deployed_notional = taker_fee / TICKET_NOTIONAL
 
         is_oos_validation = (t0_unix >= R3_VALIDATION_START_UNIX)
         epoch_label = "VALIDATION" if is_oos_validation else "DEV"
@@ -243,8 +272,9 @@ class PolymarketForwardPaperTrader:
             "shares_bought": round(shares, 4),
             "taker_fee_usd": round(taker_fee, 4),
             "fee_rate_applied": fee_rate,
+            "fee_exponent_applied": fee_exponent,
             "effective_fee_rate_on_deployed_notional": round(effective_fee_rate_on_deployed_notional, 6),
-            "fee_formula_provenance": f"{fee_rate} * (1 - {eff_px:.3f}) = {effective_fee_rate_on_deployed_notional:.4f}",
+            "fee_formula_provenance": f"calculate_taker_fee(notional={TICKET_NOTIONAL}, price={eff_px:.3f}, fee_rate={fee_rate}, fee_exponent={fee_exponent})",
             "execution_model": "PIECEWISE_LINEAR_SCENARIO_MILP",
             "simulated_partial_fill_timeout_ms": 250,
             "spot_at_t0": shock.get("spot_at_t0"),
@@ -255,6 +285,8 @@ class PolymarketForwardPaperTrader:
         if m_id not in self.open_trades:
             self.open_trades[m_id] = []
         self.open_trades[m_id].append(trade)
+        if int(float(t0_unix) // 3600) == self.current_hour_window:
+            self.trades_this_hour += 1
 
         if not historical:
             print(f"\n[PAPER ORDER FILLED - {epoch_label}] {shock.get('title')} | Target: {target_token} | "
@@ -274,7 +306,8 @@ class PolymarketForwardPaperTrader:
 
             won = (trade["target_token"] == winning)
             payout = trade["shares_bought"] * 1.0 if won else 0.0
-            net_pnl = payout - trade["notional_usd"]
+            taker_fee = trade.get("taker_fee_usd", 0.0)
+            net_pnl = payout - trade["notional_usd"] - taker_fee
 
             trade["settle_time"] = resolution.get("timestamp_resolved", "")
             trade["winning_outcome"] = winning
@@ -357,10 +390,23 @@ class PolymarketForwardPaperTrader:
             },
             "active_open_positions_count": sum(len(v) for v in self.open_trades.values()),
             "total_settled_trade_ids_tracked": len(self.settled_trade_ids),
+            "current_hour_window": self.current_hour_window,
+            "trades_this_hour": self.trades_this_hour,
             "status": "RUNNING"
         }
-        with open(STATE_FILE, "w") as f:
-            json.dump(state, f, indent=2)
+        tmp_file = STATE_FILE.with_suffix(f".tmp.{os.getpid()}")
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, STATE_FILE)
+        except Exception:
+            if tmp_file.exists():
+                try:
+                    tmp_file.unlink()
+                except Exception:
+                    pass
 
     async def live_loop(self):
         print("===============================================================================", flush=True)
@@ -381,55 +427,61 @@ class PolymarketForwardPaperTrader:
                 if TRIGGER_FILE.exists():
                     current_trig_size = TRIGGER_FILE.stat().st_size
                     if current_trig_size > self.last_trigger_file_pos:
-                        with open(TRIGGER_FILE, "r") as f:
+                        with open(TRIGGER_FILE, "rb") as f:
                             f.seek(self.last_trigger_file_pos)
-                            new_lines = f.readlines()
-                            self.last_trigger_file_pos = f.tell()
-
-                        for line in new_lines:
-                            if not line.strip():
-                                continue
-                            s = json.loads(line)
-                            shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
-                            if shock_id not in self.seen_shock_ids:
-                                self.seen_shock_ids.add(shock_id)
-                                self.evaluate_shock_signal(s, historical=False)
+                            chunk = f.read()
+                        complete_end = chunk.rfind(b"\n") + 1
+                        if complete_end:
+                            new_lines = chunk[:complete_end].decode("utf-8").splitlines()
+                            self.last_trigger_file_pos += complete_end
+                            for line in new_lines:
+                                if not line.strip():
+                                    continue
+                                s = json.loads(line)
+                                shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                                if shock_id not in self.seen_shock_ids:
+                                    self.seen_shock_ids.add(shock_id)
+                                    self.evaluate_shock_signal(s, historical=False)
 
                 # Fallback to shock_responses if trigger file is absent
                 elif SHOCK_FILE.exists():
                     current_shock_size = SHOCK_FILE.stat().st_size
                     if current_shock_size > self.last_shock_file_pos:
-                        with open(SHOCK_FILE, "r") as f:
+                        with open(SHOCK_FILE, "rb") as f:
                             f.seek(self.last_shock_file_pos)
-                            new_lines = f.readlines()
-                            self.last_shock_file_pos = f.tell()
-
-                        for line in new_lines:
-                            if not line.strip():
-                                continue
-                            s = json.loads(line)
-                            shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
-                            if shock_id not in self.seen_shock_ids:
-                                self.seen_shock_ids.add(shock_id)
-                                self.evaluate_shock_signal(s, historical=False)
+                            chunk = f.read()
+                        complete_end = chunk.rfind(b"\n") + 1
+                        if complete_end:
+                            new_lines = chunk[:complete_end].decode("utf-8").splitlines()
+                            self.last_shock_file_pos += complete_end
+                            for line in new_lines:
+                                if not line.strip():
+                                    continue
+                                s = json.loads(line)
+                                shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                                if shock_id not in self.seen_shock_ids:
+                                    self.seen_shock_ids.add(shock_id)
+                                    self.evaluate_shock_signal(s, historical=False)
 
                 # 2. Check for newly finalized market resolutions
                 if RESOLUTIONS_FILE.exists():
                     current_res_size = RESOLUTIONS_FILE.stat().st_size
                     if current_res_size > self.last_res_file_pos:
-                        with open(RESOLUTIONS_FILE, "r") as f:
+                        with open(RESOLUTIONS_FILE, "rb") as f:
                             f.seek(self.last_res_file_pos)
-                            new_res_lines = f.readlines()
-                            self.last_res_file_pos = f.tell()
-
-                        for line in new_res_lines:
-                            if not line.strip():
-                                continue
-                            res = json.loads(line)
-                            m_id = res.get("market_id")
-                            if m_id not in self.seen_resolution_ids:
-                                self.seen_resolution_ids.add(m_id)
-                                self.settle_market(m_id, res, historical=False)
+                            chunk = f.read()
+                        complete_end = chunk.rfind(b"\n") + 1
+                        if complete_end:
+                            new_res_lines = chunk[:complete_end].decode("utf-8").splitlines()
+                            self.last_res_file_pos += complete_end
+                            for line in new_res_lines:
+                                if not line.strip():
+                                    continue
+                                res = json.loads(line)
+                                m_id = res.get("market_id")
+                                if m_id not in self.seen_resolution_ids:
+                                    self.seen_resolution_ids.add(m_id)
+                                    self.settle_market(m_id, res, historical=False)
 
                 self.save_state()
                 await asyncio.sleep(0.1)

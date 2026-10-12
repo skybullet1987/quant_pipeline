@@ -41,7 +41,9 @@ DATA_DIR = PIPELINE_ROOT / "data/polymarket"
 STATE_FILE = DATA_DIR / "live_harvester_state.json"
 
 
-def get_token_balance_onchain(funder_address: str, token_id: str) -> float:
+from typing import Optional
+
+def get_token_balance_onchain(funder_address: str, token_id: str) -> Optional[float]:
     """Queries ERC-1155 balanceOf(account, tokenId) via Polygon RPC."""
     try:
         # ERC1155 balanceOf(address,uint256) selector: 0x00fdd58e
@@ -55,13 +57,17 @@ def get_token_balance_onchain(funder_address: str, token_id: str) -> float:
             "params": [{"to": CTF_CONTRACT, "data": call_data}, "latest"],
             "id": 1,
         }
-        resp = requests.post(POLYGON_RPC, json=payload, timeout=5).json()
-        result_hex = resp.get("result", "0x0")
+        response = requests.post(POLYGON_RPC, json=payload, timeout=5)
+        response.raise_for_status()
+        resp = response.json()
+        if resp.get("error") or not isinstance(resp.get("result"), str):
+            raise RuntimeError(f"Invalid eth_call response: {resp}")
+        result_hex = resp["result"]
         raw_balance = int(result_hex, 16)
         return raw_balance / 1e6
     except Exception as e:
         logger.error(f"Error querying on-chain balance for {token_id}: {e}")
-        return 0.0
+        return None
 
 
 def audit_positions_and_redemptions():
@@ -91,6 +97,7 @@ def audit_positions_and_redemptions():
 
     unredeemed_shares = 0.0
     estimated_claimable_usd = 0.0
+    has_unknown = False
 
     print("\n--- POSITION AUDIT TABLE ---")
     for pos in closed_positions:
@@ -104,6 +111,10 @@ def audit_positions_and_redemptions():
         # If position won at market resolution, check on-chain token balance
         if won and close_reason == "MARKET_RESOLVED" and token_id:
             onchain_bal = get_token_balance_onchain(funder_address, token_id)
+            if onchain_bal is None:
+                has_unknown = True
+                print(f"  [UNKNOWN / RETRY] {tid}: Polygon balance query failed; cannot classify redemption state")
+                continue
             if onchain_bal > 0.01:
                 unredeemed_shares += onchain_bal
                 estimated_claimable_usd += onchain_bal * 1.0
@@ -126,6 +137,8 @@ def audit_positions_and_redemptions():
         print("  2. Navigate to Portfolio -> History / Positions.")
         print("  3. Click 'Claim All' / 'Redeem' (Polymarket's relayer pays Polygon gas automatically).")
         print("  4. USDC.e will be instantly credited to your collateral balance.")
+    elif has_unknown:
+        print("\n[WARNING] One or more positions could not be queried on-chain. Reconciliation incomplete - retry required.")
     else:
         print("\nAll winning positions are reconciled. No unredeemed tokens pending.")
 

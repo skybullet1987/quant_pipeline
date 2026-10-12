@@ -173,17 +173,17 @@ class CryptoMarketRegistryBuilder:
         asks = book.get("asks", [])
         bids = book.get("bids", [])
 
-        best_bid = float(bids[0]["price"]) if bids else 0.0
-        best_ask = float(asks[0]["price"]) if asks else 1.0
+        sorted_bids = sorted([(float(b["price"]), float(b["size"])) for b in bids], key=lambda x: x[0], reverse=True) if bids else []
+        sorted_asks = sorted([(float(a["price"]), float(a["size"])) for a in asks], key=lambda x: x[0]) if asks else []
+
+        best_bid = sorted_bids[0][0] if sorted_bids else 0.0
+        best_ask = sorted_asks[0][0] if sorted_asks else 1.0
 
         spread = round(max(0.0, best_ask - best_bid), 4)
 
         # Top 2 ticks executable depth
-        top_asks = asks[:2]
-        depth_usd = sum(
-            float(lvl.get("size", 0.0)) * float(lvl.get("price", 0.0))
-            for lvl in top_asks
-        )
+        top_asks = sorted_asks[:2]
+        depth_usd = sum(px * sz for px, sz in top_asks)
 
         return best_bid, best_ask, spread, round(depth_usd, 2)
 

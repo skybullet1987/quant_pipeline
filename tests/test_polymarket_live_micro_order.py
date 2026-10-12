@@ -15,16 +15,22 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 import requests
 
 PIPELINE_ROOT = Path("/home/skybullet1987/quant_pipeline")
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
+# P0 #4: HARD SAFETY GATE: Never execute real-money orders during normal pytest discovery
+if os.getenv("POLYMARKET_LIVE_TEST") != "1":
+    pytest.skip("Skipping live real-money test. Set POLYMARKET_LIVE_TEST=1 to enable.", allow_module_level=True)
+
 from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
 from py_clob_client_v2.clob_types import AssetType, BalanceAllowanceParams, OrderArgsV2, OrderType
 
 
+@pytest.mark.live_money
 def test_live_clob_order_flow():
     print("=" * 70)
     print("       POLYMARKET LIVE REAL-MONEY CLOB ORDER TEST")
@@ -36,23 +42,14 @@ def test_live_clob_order_flow():
     print(f"Signature Type:  {executor.signature_type}")
     print(f"Authenticated:   {executor.is_authenticated}")
 
-    if not executor.is_authenticated:
-        print("[FAIL] Executor failed to authenticate with CLOB L2.")
-        return False
+    assert executor.is_authenticated, "Executor failed to authenticate with CLOB L2."
 
     # Check CLOB collateral balance
     print("\n[STEP 1] Querying Polymarket CLOB Collateral Balance...")
-    params = BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=executor.signature_type)
-    bal_res = executor.client.get_balance_allowance(params)
-    raw_bal = float(bal_res.get("balance", "0"))
-    bal_usdc = raw_bal / 1e6
-    print(f"  Collateral Balance: ${bal_usdc:.4f} USDC.e (Raw: {raw_bal})")
+    bal_pusd = executor.get_collateral_balance()
+    print(f"  Collateral Balance: ${bal_pusd:.4f} pUSD (V2 Collateral)")
 
-    if bal_usdc < 0.05:
-        print("\n[BLOCKED] Collateral balance in Polymarket Proxy Wallet is $0.00!")
-        print("  Funds must be deposited to the Polymarket Proxy Wallet before live orders can execute.")
-        print(f"  Proxy Wallet Address: {executor.funder_address}")
-        return False
+    assert bal_pusd >= 0.05, f"Insufficient collateral in Polymarket wallet: ${bal_pusd:.4f} (minimum $0.05 required)"
 
     # Find active market token
     print("\n[STEP 2] Resolving active market token for deep-book limit smoke test...")
@@ -71,14 +68,12 @@ def test_live_clob_order_flow():
             target_title = m.get("question")
             break
 
-    if not target_token:
-        print("[FAIL] Could not resolve an active token ID.")
-        return False
+    assert target_token is not None, "Could not resolve an active token ID from Gamma API."
 
     print(f"  Target Market: {target_title}")
     print(f"  Target Token:  {target_token[:16]}...{target_token[-8:]}")
 
-    # Step 3: Create, post, and cancel micro-order
+    # Step 3: Create, post micro-order deep in book ($0.001)
     print("\n[STEP 3] Placing 5-share deep limit BUY order @ $0.001 (Notional: $0.005)...")
     order_args = OrderArgsV2(
         price=0.001,
@@ -87,24 +82,45 @@ def test_live_clob_order_flow():
         token_id=target_token,
     )
     signed_order = executor.client.create_order(order_args)
-    resp = executor.client.post_order(signed_order, OrderType.GTC)
+    resp = executor.client.post_order(signed_order, OrderType.GTC, defer_exec=True)
     print(f"  CLOB Response: {resp}")
 
     order_id = resp.get("orderID") or resp.get("id")
-    if not order_id:
-        print(f"[FAIL] Order rejected by CLOB: {resp}")
-        return False
-
+    assert order_id is not None, f"Order rejected by CLOB matching engine: {resp}"
     print(f"  [SUCCESS] Live Order Placed! Order ID: {order_id}")
 
-    # Step 4: Immediately cancel the order
-    print("\n[STEP 4] Instantly cancelling test order to leave zero open exposure...")
+    # Step 4: Verify order is active in open orders (allow 0.5s for CLOB indexer sync)
+    print("\n[STEP 4] Verifying order presence in open orders...")
+    time.sleep(0.5)
+    open_orders = executor.get_open_orders()
+    order_found = any(o.get("id") == order_id or o.get("orderID") == order_id for o in open_orders)
+    assert order_found, f"Order {order_id} was submitted but not found in CLOB open orders: {open_orders}"
+    print(f"  ✓ Confirmed order {order_id} active in open orderbook")
+
+    # Step 5: Cancel the order
+    print("\n[STEP 5] Instantly cancelling test order to leave zero open exposure...")
     cancel_resp = executor.client.cancel_orders([order_id])
     print(f"  Cancellation Response: {cancel_resp}")
+    canceled_ids = cancel_resp.get("canceled", [])
+    assert order_id in canceled_ids or order_id in str(cancel_resp), f"Cancellation failed for {order_id}: {cancel_resp}"
+
+    # Step 6: Verify order is removed from open orders
+    time.sleep(0.5)
+    open_orders_after = executor.get_open_orders()
+    still_open = any(o.get("id") == order_id or o.get("orderID") == order_id for o in open_orders_after)
+    assert not still_open, f"Order {order_id} still present in open orders after cancellation: {open_orders_after}"
+    print(f"  ✓ Confirmed order {order_id} removed from open orders")
+
+    # Step 7: Verify zero unintended fills occurred
+    order_status = executor.get_order_status(order_id)
+    if order_status:
+        matched = float(order_status.get("size_matched", "0"))
+        assert matched == 0.0, f"Unintended fill detected on smoke test order! Matched={matched}"
+        print(f"  ✓ Confirmed zero shares filled on test order (matched={matched})")
+
     print("\n" + "=" * 70)
     print("      LIVE REAL-MONEY PIPELINE 100% VERIFIED & CONFIRMED!")
     print("=" * 70)
-    return True
 
 
 if __name__ == "__main__":

@@ -81,37 +81,44 @@ def run_diagnostics():
     harvester = PolymarketLiveHarvester(ticket_notional=20.0, dry_run=True)
     harvester.save_state = lambda: None  # Keep production state file untouched
     
-    # Mock orderbook fetch so the historical shock has resting asks in test
-    harvester.executor.get_market_book = lambda token_id: {
-        "bids": [{"price": "0.74", "size": "300.0"}],
-        "asks": [{"price": "0.76", "size": "300.0"}, {"price": "0.77", "size": "500.0"}]
+    mock_book = {
+        "bids": [{"price": "0.63", "size": "300.0"}],
+        "asks": [{"price": "0.65", "size": "300.0"}, {"price": "0.66", "size": "500.0"}]
     }
+    harvester.executor.get_market_book = lambda token_id: mock_book
+    harvester.executor.get_market_book_async = lambda token_id: asyncio.sleep(0, result=mock_book)
+
+    import asyncio
 
     sample_shock = {
+        "event_id": "DIAG_TEST_001",
         "timestamp": "2026-10-06 09:51:22 UTC",
         "market_id": "5281085",
         "title": "Bitcoin Up or Down - October 6, 10AM ET",
         "seconds_to_expiry": 518.0,
         "shock_direction": "BUY",
         "candle_distance_pct": 0.152,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
         "pre_shock_features_t0": {
             "UP": {
-                "raw_top_asks": [[0.76, 300.0], [0.77, 500.0]],
-                "effective_price_$50": 0.76
+                "token_id": token_up,
+                "raw_top_asks": [[0.65, 300.0], [0.66, 500.0]],
+                "effective_price_$20": 0.65,
+                "effective_price_$50": 0.65
             }
         }
     }
     
     initial_trades = len(harvester.active_positions)
-    harvester.evaluate_shock_and_execute(sample_shock)
+    asyncio.run(harvester.evaluate_shock_and_execute(sample_shock))
     
     assert len(harvester.active_positions) == initial_trades + 1, "Failed to create position from qualified shock!"
     pos = list(harvester.active_positions.values())[-1]
-    print(f"  ? Synthetic Order Processed Successfully!")
-    print(f"  ? Position Created: {pos['trade_id']}")
-    print(f"  ? Token Resolved:   {pos['token_id'][:16]}...{pos['token_id'][-8:]}")
-    print(f"  ? Entry Shares:     {pos['entry_shares']:.2f} @ ${pos['entry_price']:.4f}")
-    print(f"  ? Target Exit:      ${pos['target_exit_price']:.4f} (+10? scalp)")
+    print(f"  ✓ Synthetic Order Processed Successfully!")
+    print(f"  ✓ Position Created: {pos['trade_id']}")
+    print(f"  ✓ Token Resolved:   {pos['token_id'][:16]}...{pos['token_id'][-8:]}")
+    print(f"  ✓ Entry Shares:     {pos['entry_shares']:.2f} @ ${pos['entry_price']:.4f}")
+    print(f"  ✓ Target Exit:      ${pos['target_exit_price']:.4f} (+9¢ scalp)")
 
     print("\n" + "=" * 70)
     print("      ALL 4 DIAGNOSTIC SUITES PASSED WITH 100% SUCCESS!")

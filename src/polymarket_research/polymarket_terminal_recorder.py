@@ -56,6 +56,8 @@ Microstructure, Econometric, and Invariant Foundations:
 
 import asyncio
 import collections
+from collections import defaultdict, deque
+import copy
 import json
 import logging
 import math
@@ -74,36 +76,73 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "polymarket"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-TELEMETRY_FILE = DATA_DIR / "polymarket_hourly_telemetry.jsonl"
-SHOCK_FILE = DATA_DIR / "shock_responses.jsonl"
 TRIGGER_FILE = DATA_DIR / "live_shock_triggers.jsonl"
 RESOLUTIONS_FILE = DATA_DIR / "finalized_market_resolutions.jsonl"
-CORRELATIONS_FILE = DATA_DIR / "leadlag_cross_correlations.jsonl"
-LOG_FILE = DATA_DIR / "recorder.log"
-PID_FILE = DATA_DIR / "recorder.pid"
+
+GAMMA_API_URL = "https://gamma-api.polymarket.com"
+CLOB_API_URL = "https://clob.polymarket.com"
+CLOB_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+BINANCE_REST_URL = "https://api.binance.com"
+BINANCE_FUTURES_REST_URL = "https://fapi.binance.com"
+
+ASSET_CONFIGS = {
+    "BTC": {
+        "series_slug": "btc-up-or-down-hourly",
+        "binance_symbol": "BTCUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/btcusdt@aggTrade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/btcusdt@aggTrade",
+        "default_shock_threshold": 1_500_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry.jsonl",
+        "shock_file": DATA_DIR / "shock_responses.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations.jsonl",
+        "log_file": DATA_DIR / "recorder.log",
+        "pid_file": DATA_DIR / "recorder.pid",
+    },
+    "ETH": {
+        "series_slug": "eth-up-or-down-hourly",
+        "binance_symbol": "ETHUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/ethusdt@aggTrade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/ethusdt@aggTrade",
+        "default_shock_threshold": 500_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_eth.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_eth.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_eth.jsonl",
+        "log_file": DATA_DIR / "recorder_eth.log",
+        "pid_file": DATA_DIR / "recorder_eth.pid",
+    }
+}
 
 logging.basicConfig(
     level=logging.INFO,
-    format="[%(asctime)s UTC] [%(levelname)s] %(message)s",
+    format="[%(asctime)s UTC] [%(levelname)s] [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler(LOG_FILE),
+        logging.FileHandler(DATA_DIR / "recorder.log"),
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger("PolymarketDualFeed1H")
 
-GAMMA_API_URL = "https://gamma-api.polymarket.com"
-CLOB_API_URL = "https://clob.polymarket.com"
-CLOB_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
-
-BINANCE_SPOT_WS_URL = "wss://stream.binance.com:443/ws/btcusdt@aggTrade"
-BINANCE_FUTURES_WS_URL = "wss://fstream.binance.com:443/market/ws/btcusdt@aggTrade"
-BINANCE_REST_URL = "https://api.binance.com"
-BINANCE_FUTURES_REST_URL = "https://fapi.binance.com"
+def setup_logging(asset: str = "BTC"):
+    cfg = ASSET_CONFIGS.get(asset.upper(), ASSET_CONFIGS["BTC"])
+    log_file = cfg["log_file"]
+    root = logging.getLogger()
+    for h in list(root.handlers):
+        root.removeHandler(h)
+    logging.basicConfig(
+        level=logging.INFO,
+        format="[%(asctime)s UTC] [%(levelname)s] [%(name)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[
+            logging.FileHandler(log_file),
+            logging.StreamHandler(sys.stdout)
+        ]
+    )
+    global logger
+    logger = logging.getLogger(f"PolymarketDualFeed1H-{asset.upper()}")
 
 DEFAULT_FEE_RATE = 0.07  # Documented Polymarket crypto fee parameter
-TICKET_CAPACITY_LEVELS = [1.0, 5.0, 20.0, 50.0, 100.0]  # USD Notional capacity surface
+TICKET_CAPACITY_LEVELS = [1.0, 5.0, 20.0, 25.0, 50.0, 100.0]  # USD Notional capacity surface
 CORRELATION_LAGS_MS = [-1000, -500, -250, -100, -50, 0, 50, 100, 250, 500, 1000]
 
 
@@ -291,7 +330,23 @@ class L2OrderBook:
 
 
 class PolymarketDualFeed1HRecorder:
-    def __init__(self):
+    def __init__(self, asset: str = "BTC", shock_threshold: Optional[float] = None):
+        self.asset = asset.upper()
+        if self.asset not in ASSET_CONFIGS:
+            raise ValueError(f"Unsupported asset {self.asset}. Must be one of: {list(ASSET_CONFIGS.keys())}")
+        self.cfg = ASSET_CONFIGS[self.asset]
+        self.series_slug = self.cfg["series_slug"]
+        self.binance_symbol = self.cfg["binance_symbol"]
+        self.binance_spot_ws = self.cfg["binance_spot_ws"]
+        self.binance_futures_ws = self.cfg["binance_futures_ws"]
+        self.shock_threshold_usd = shock_threshold if shock_threshold is not None else self.cfg["default_shock_threshold"]
+        
+        self.telemetry_file = self.cfg["telemetry_file"]
+        self.shock_file = self.cfg["shock_file"]
+        self.correlations_file = self.cfg["correlations_file"]
+        self.pid_file = self.cfg["pid_file"]
+        self.log_file = self.cfg["log_file"]
+
         self.session: Optional[aiohttp.ClientSession] = None
         self.current_market: Optional[Dict[str, Any]] = None
         self.books: Dict[str, L2OrderBook] = {}
@@ -320,8 +375,9 @@ class PolymarketDualFeed1HRecorder:
         self.last_clock_sync_ts: float = 0.0
 
         self.last_shock_ts: float = 0.0
-        self.shock_threshold_usd: float = 1_500_000.0  # $1.5M in 100ms
+        self.last_shock_ts_by_source: Dict[str, float] = defaultdict(float)
         self.last_cross_corr_ts: float = 0.0
+        self.active_burst_tasks: Set[asyncio.Task] = set()
         self.running: bool = True
 
     async def get_session(self) -> aiohttp.ClientSession:
@@ -357,10 +413,10 @@ class PolymarketDualFeed1HRecorder:
             logger.warning(f"Clock calibration failed: {e}")
 
     async def discover_nearest_1h_market(self) -> Optional[Dict[str, Any]]:
-        """Enforces: series_slug == 'btc-up-or-down-hourly' and market_duration == 3600s."""
+        """Enforces: series_slug == self.series_slug and market_duration == 3600s."""
         session = await self.get_session()
         try:
-            url = f"{GAMMA_API_URL}/events?series_slug=btc-up-or-down-hourly&limit=20&closed=false"
+            url = f"{GAMMA_API_URL}/events?series_slug={self.series_slug}&limit=20&closed=false"
             async with session.get(url) as resp:
                 if resp.status == 200:
                     events = await resp.json()
@@ -386,6 +442,7 @@ class PolymarketDualFeed1HRecorder:
                     secs_left, event, m, end_dt, m_end_str = candidates[0]
 
                     m_id = str(m.get("id"))
+                    condition_id = str(m.get("conditionId") or "")
                     tokens_raw = m.get("clobTokenIds")
                     tokens = json.loads(tokens_raw) if isinstance(tokens_raw, str) else tokens_raw
                     outcomes_raw = m.get("outcomes", '["Up", "Down"]')
@@ -411,8 +468,8 @@ class PolymarketDualFeed1HRecorder:
                     self.fee_formula_version = str(m.get("feeType", "crypto_fees_v2"))
 
                     # Pre-populate spot and futures price via REST
-                    url_spot = f"{BINANCE_REST_URL}/api/v3/ticker/price?symbol=BTCUSDT"
-                    url_fut = f"{BINANCE_FUTURES_REST_URL}/fapi/v1/ticker/price?symbol=BTCUSDT"
+                    url_spot = f"{BINANCE_REST_URL}/api/v3/ticker/price?symbol={self.binance_symbol}"
+                    url_fut = f"{BINANCE_FUTURES_REST_URL}/fapi/v1/ticker/price?symbol={self.binance_symbol}"
                     try:
                         async with session.get(url_spot) as resp_spot:
                             if resp_spot.status == 200:
@@ -428,6 +485,7 @@ class PolymarketDualFeed1HRecorder:
 
                     return {
                         "market_id": m_id,
+                        "condition_id": condition_id,
                         "title": event.get("title"),
                         "question": m.get("question"),
                         "slug": event.get("slug"),
@@ -456,7 +514,7 @@ class PolymarketDualFeed1HRecorder:
         session = await self.get_session()
         try:
             start_ms = candle_open_ts * 1000
-            url = f"{BINANCE_REST_URL}/api/v3/klines?symbol=BTCUSDT&interval=1h&startTime={start_ms}&limit=1"
+            url = f"{BINANCE_REST_URL}/api/v3/klines?symbol={self.binance_symbol}&interval=1h&startTime={start_ms}&limit=1"
             async with session.get(url) as resp:
                 if resp.status == 200:
                     data = await resp.json()
@@ -465,7 +523,7 @@ class PolymarketDualFeed1HRecorder:
                         close_px = float(data[0][4])
                         return open_px, close_px
         except Exception as e:
-            logger.error(f"Failed to fetch Binance Spot 1H candle: {e}")
+            logger.error(f"Failed to fetch Binance Spot 1H candle for {self.binance_symbol}: {e}")
         return 0.0, 0.0
 
     async def verify_and_log_resolution(self, market: Dict[str, Any]):
@@ -484,6 +542,7 @@ class PolymarketDualFeed1HRecorder:
 
             res_record = {
                 "timestamp_resolved": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "asset": self.asset,
                 "market_id": market["market_id"],
                 "title": market["title"],
                 "candle_open_ts": market["candle_open_ts"],
@@ -494,7 +553,7 @@ class PolymarketDualFeed1HRecorder:
                 "Y_UP": y_up,
                 "Y_DOWN": y_down,
                 "winning_outcome": "UP" if y_up == 1 else "DOWN",
-                "ground_truth_rule": "Polymarket 1H Rule: Y = 1[Close_1H >= Open_1H] on Binance Spot BTC/USDT"
+                "ground_truth_rule": f"Polymarket 1H Rule: Y = 1[Close_1H >= Open_1H] on Binance Spot {self.binance_symbol}"
             }
 
             with open(RESOLUTIONS_FILE, "a") as f:
@@ -525,9 +584,9 @@ class PolymarketDualFeed1HRecorder:
         """Tokyo-latency microsecond Binance Spot aggTrade stream (Polymarket Settlement Ref)."""
         while self.running:
             try:
-                logger.info(f"Connecting to Binance Spot aggTrade ({BINANCE_SPOT_WS_URL})...")
-                async with websockets.connect(BINANCE_SPOT_WS_URL, ping_interval=20, ping_timeout=10) as ws:
-                    logger.info("[+] Subscribed to Binance Spot aggTrade stream.")
+                logger.info(f"Connecting to Binance Spot aggTrade ({self.binance_spot_ws})...")
+                async with websockets.connect(self.binance_spot_ws, ping_interval=20, ping_timeout=10) as ws:
+                    logger.info(f"[+] Subscribed to Binance Spot aggTrade stream ({self.binance_symbol}).")
                     async for msg_str in ws:
                         if not self.running:
                             break
@@ -554,9 +613,9 @@ class PolymarketDualFeed1HRecorder:
         """Tokyo-latency microsecond Binance USDⓈ-M Futures aggTrade stream (Routed /market endpoint)."""
         while self.running:
             try:
-                logger.info(f"Connecting to Binance Futures aggTrade ({BINANCE_FUTURES_WS_URL})...")
-                async with websockets.connect(BINANCE_FUTURES_WS_URL, ping_interval=20, ping_timeout=10) as ws:
-                    logger.info("[+] Subscribed to Binance Futures aggTrade stream (routed /market).")
+                logger.info(f"Connecting to Binance Futures aggTrade ({self.binance_futures_ws})...")
+                async with websockets.connect(self.binance_futures_ws, ping_interval=20, ping_timeout=10) as ws:
+                    logger.info(f"[+] Subscribed to Binance Futures aggTrade stream ({self.binance_symbol} routed /market).")
                     async for msg_str in ws:
                         if not self.running:
                             break
@@ -600,7 +659,8 @@ class PolymarketDualFeed1HRecorder:
                 sell_vol += ntl
 
         now_sec = time.time()
-        if vol_100ms >= self.shock_threshold_usd and (now_sec - self.last_shock_ts > 15.0):
+        if vol_100ms >= self.shock_threshold_usd and (now_sec - self.last_shock_ts_by_source[source] > 15.0):
+            self.last_shock_ts_by_source[source] = now_sec
             self.last_shock_ts = now_sec
             shock_dir = "BUY" if buy_vol >= sell_vol else "SELL"
             ofi = (buy_vol - sell_vol) / vol_100ms if vol_100ms > 0 else 0.0
@@ -611,13 +671,81 @@ class PolymarketDualFeed1HRecorder:
             t0_mono_ns = recv_mono_ns
             delta_basis_100ms = self.get_delta_basis_100ms()
 
+            up_book = self.books.get("UP")
+            down_book = self.books.get("DOWN")
+            if not up_book or not down_book or not self.current_market:
+                return
+
+            # SYNCHRONOUS IMMUTABLE CAUSAL SNAPSHOT AT t0 (Strict zero post-t0 leakage)
+            pre_shock_up = copy.deepcopy(up_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market))
+            pre_shock_down = copy.deepcopy(down_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market))
+            if self.current_market and "tokens" in self.current_market:
+                pre_shock_up["token_id"] = self.current_market["tokens"].get("UP")
+                pre_shock_down["token_id"] = self.current_market["tokens"].get("DOWN")
+            pre_shock_basis_signed = self.basis_bps
+            pre_shock_basis_abs = abs(self.basis_bps)
+
+            t0_secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
+            t0_dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
+            t0_spot = self.spot_price
+            t0_futures = self.futures_price
+            m_id = self.current_market["market_id"]
+            condition_id = self.current_market.get("condition_id", "")
+            m_title = self.current_market["title"]
+            fee_meta = copy.deepcopy(self.current_market.get("fee_metadata", {}))
+
+            # SYNCHRONOUS TRIGGER DISPATCH: Writes frozen t0 features instantly (<0.1ms from shock boundary)
+            # Causal anchor is explicitly defined as information-available-at-local-receipt boundary
+            immediate_trigger = {
+                "timestamp": datetime.fromtimestamp(t0_sec, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "t0_unix": t0_sec,
+                "t0_mono_ns": t0_mono_ns,
+                "t0_definition": "local_receipt_boundary",
+                "exchange_event_ts_ms": event_ts_ms,
+                "shock_source": source,
+                "asset": self.asset,
+                "market_id": m_id,
+                "condition_id": condition_id,
+                "title": m_title,
+                "seconds_to_expiry": round(t0_secs_left, 1),
+                "shock_volume_100ms": round(vol_100ms, 0),
+                "shock_direction": shock_dir,
+                "shock_ofi": round(ofi, 3),
+                "trigger_price": trigger_px,
+                "spot_at_t0": t0_spot,
+                "futures_at_t0": t0_futures,
+                "basis_signed_bps_t0": round(pre_shock_basis_signed, 2),
+                "basis_abs_bps_t0": round(pre_shock_basis_abs, 2),
+                "delta_basis_100ms": delta_basis_100ms,
+                "finalized_1h_open": self.finalized_1h_open,
+                "candle_distance_pct": round(t0_dist_pct, 4),
+                "fee_metadata": fee_meta,
+                "pre_shock_features_t0": {
+                    "UP": pre_shock_up,
+                    "DOWN": pre_shock_down
+                }
+            }
+            try:
+                with open(TRIGGER_FILE, "a") as f:
+                    f.write(json.dumps(immediate_trigger) + "\n")
+                    f.flush()
+            except Exception as trig_err:
+                logger.error(f"Failed to persist zero-latency trigger: {trig_err}")
+
             logger.info(f"\n[!!! {source} SHOCK TRIGGERED !!!] 100ms Vol=${vol_100ms:,.0f} | Dir={shock_dir} | "
                         f"OFI={ofi:+.2f} | Spot=${self.spot_price:,.1f} | Fut=${self.futures_price:,.1f} | "
                         f"Basis={self.basis_bps:+.1f}bps | DeltaBasis100ms={delta_basis_100ms:+.1f}bps")
 
-            asyncio.create_task(self.capture_shock_burst(
-                t0_sec, t0_mono_ns, source, vol_100ms, shock_dir, ofi, trigger_px, delta_basis_100ms
-            ))
+            if len(self.active_burst_tasks) < 5:
+                task = asyncio.create_task(self.capture_shock_burst(
+                    t0_sec, t0_mono_ns, source, vol_100ms, shock_dir, ofi, trigger_px, delta_basis_100ms,
+                    pre_shock_up, pre_shock_down, pre_shock_basis_signed, pre_shock_basis_abs,
+                    t0_secs_left, t0_dist_pct, t0_spot, t0_futures, m_id, m_title, fee_meta
+                ))
+                self.active_burst_tasks.add(task)
+                task.add_done_callback(self.active_burst_tasks.discard)
+            else:
+                logger.warning(f"Concurrent burst tasks throttle reached ({len(self.active_burst_tasks)}). Skipping telemetry capture.")
 
     async def capture_shock_burst(
         self,
@@ -628,62 +756,29 @@ class PolymarketDualFeed1HRecorder:
         shock_dir: str,
         ofi: float,
         trigger_px: float,
-        delta_basis_100ms: float
+        delta_basis_100ms: float,
+        pre_shock_up: Dict[str, Any],
+        pre_shock_down: Dict[str, Any],
+        pre_shock_basis_signed: float,
+        pre_shock_basis_abs: float,
+        t0_secs_left: float,
+        t0_dist_pct: float,
+        t0_spot: float,
+        t0_futures: float,
+        m_id: str,
+        m_title: str,
+        fee_meta: Dict[str, Any]
     ):
         """
         Captures the Probability Repricing Impulse-Response Function IRF(tau) = E[Delta_q(tau)].
         Strict Causal Separation:
-          - Predictor features frozen strictly at t <= t0.
+          - Predictor features frozen strictly at t <= t0 via deep-copied synchronous snapshot.
           - Repricing measurements occur strictly after t0 + epsilon.
         """
         up_book = self.books.get("UP")
         down_book = self.books.get("DOWN")
         if not up_book or not down_book or not self.current_market:
             return
-
-        # Snapshot predictor features strictly at t0
-        pre_shock_up = up_book.get_metrics(obs_ts=t0, fee_rate=self.fee_rate_market)
-        pre_shock_down = down_book.get_metrics(obs_ts=t0, fee_rate=self.fee_rate_market)
-        pre_shock_basis_signed = self.basis_bps
-        pre_shock_basis_abs = abs(self.basis_bps)
-
-        t0_secs_left = (self.current_market["end_dt"] - datetime.now(timezone.utc)).total_seconds()
-        t0_dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
-        t0_spot = self.spot_price
-        t0_futures = self.futures_price
-
-        # ZERO-LATENCY TRIGGER DISPATCH: Write immediate t0 event for live execution (<1ms from shock detection)
-        immediate_trigger = {
-            "timestamp": datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-            "t0_unix": t0,
-            "t0_mono_ns": t0_mono_ns,
-            "shock_source": source,
-            "market_id": self.current_market["market_id"],
-            "title": self.current_market["title"],
-            "seconds_to_expiry": round(t0_secs_left, 1),
-            "shock_volume_100ms": round(shock_vol, 0),
-            "shock_direction": shock_dir,
-            "shock_ofi": round(ofi, 3),
-            "trigger_price": trigger_px,
-            "spot_at_t0": t0_spot,
-            "futures_at_t0": t0_futures,
-            "basis_signed_bps_t0": round(pre_shock_basis_signed, 2),
-            "basis_abs_bps_t0": round(pre_shock_basis_abs, 2),
-            "delta_basis_100ms": delta_basis_100ms,
-            "finalized_1h_open": self.finalized_1h_open,
-            "candle_distance_pct": round(t0_dist_pct, 4),
-            "fee_metadata": self.current_market.get("fee_metadata", {}),
-            "pre_shock_features_t0": {
-                "UP": pre_shock_up,
-                "DOWN": pre_shock_down
-            }
-        }
-        try:
-            with open(TRIGGER_FILE, "a") as f:
-                f.write(json.dumps(immediate_trigger) + "\n")
-                f.flush()
-        except Exception as trig_err:
-            logger.error(f"Failed to persist zero-latency trigger: {trig_err}")
 
         ladder_delays = [0.10, 0.15, 0.25, 0.50, 4.0, 25.0]
         ladder_labels = ["100ms", "250ms", "500ms", "1s", "5s", "30s"]
@@ -712,13 +807,15 @@ class PolymarketDualFeed1HRecorder:
                 "delta_basis_bps": round(self.basis_bps - pre_shock_basis_signed, 2)
             }
 
+        cond_id = self.current_market.get("condition_id", "") if self.current_market else ""
         shock_record = {
             "timestamp": datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "t0_unix": t0,
             "t0_mono_ns": t0_mono_ns,
             "shock_source": source,
-            "market_id": self.current_market["market_id"],
-            "title": self.current_market["title"],
+            "market_id": m_id,
+            "condition_id": cond_id,
+            "title": m_title,
             "seconds_to_expiry": round(t0_secs_left, 1),
             "shock_volume_100ms": round(shock_vol, 0),
             "shock_direction": shock_dir,
@@ -731,7 +828,7 @@ class PolymarketDualFeed1HRecorder:
             "delta_basis_100ms": delta_basis_100ms,
             "finalized_1h_open": self.finalized_1h_open,
             "candle_distance_pct": round(t0_dist_pct, 4),
-            "fee_metadata": self.current_market.get("fee_metadata", {}),
+            "fee_metadata": fee_meta,
             "pre_shock_features_t0": {
                 "UP": pre_shock_up,
                 "DOWN": pre_shock_down
@@ -756,7 +853,7 @@ class PolymarketDualFeed1HRecorder:
             }
         }
 
-        with open(SHOCK_FILE, "a") as f:
+        with open(self.shock_file, "a") as f:
             f.write(json.dumps(shock_record) + "\n")
 
         up_30s_delta = response_snapshots["30s"]["up_delta_q_ask"]
@@ -890,7 +987,7 @@ class PolymarketDualFeed1HRecorder:
             }
         }
 
-        with open(CORRELATIONS_FILE, "a") as f:
+        with open(self.correlations_file, "a") as f:
             f.write(json.dumps(record) + "\n")
 
         logger.info(f"[LEAD/LAG INNOVATION TELEMETRY] Peak Lag: {max_lag[0]}ms (r={max_lag[1]:+.3f}) | Status: Illustrative telemetry (H0: no stable lead/lag)")
@@ -912,7 +1009,7 @@ class PolymarketDualFeed1HRecorder:
                         open_px, _ = await self.fetch_finalized_binance_candle(market["candle_open_ts"])
                         self.finalized_1h_open = open_px
                         logger.info(f"\n==============================================================================="
-                                    f"\n[ACTIVE 1H PRODUCT LOADED] {market['title']}"
+                                    f"\n[ACTIVE 1H PRODUCT LOADED: {self.asset}] {market['title']}"
                                     f"\n  Market ID: {market['market_id']} | End: {market['end_date_iso']}"
                                     f"\n  UP Token: {market['tokens']['UP']}"
                                     f"\n  DOWN Token: {market['tokens']['DOWN']}"
@@ -931,6 +1028,7 @@ class PolymarketDualFeed1HRecorder:
                     record = {
                         "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
                         "timestamp_unix": now.timestamp(),
+                        "asset": self.asset,
                         "market_id": self.current_market["market_id"],
                         "title": self.current_market["title"],
                         "seconds_to_expiry": round(secs_left, 1),
@@ -952,11 +1050,11 @@ class PolymarketDualFeed1HRecorder:
                         "DOWN": down_metrics
                     }
 
-                    with open(TELEMETRY_FILE, "a") as f:
+                    with open(self.telemetry_file, "a") as f:
                         f.write(json.dumps(record) + "\n")
 
                     logger.info(
-                        f"[1H TELEMETRY] {self.current_market['title'][:32]} | Tau: {secs_left/60.0:.1f}m ({secs_left:.0f}s) | "
+                        f"[1H TELEMETRY: {self.asset}] {self.current_market['title'][:32]} | Tau: {secs_left/60.0:.1f}m ({secs_left:.0f}s) | "
                         f"UP ask={up_metrics['best_ask']:.3f} (mid={up_metrics['q_mid']:.3f}, hurdle={up_metrics['executable_hurdle']:.4f}) | "
                         f"Spot=${self.spot_price:,.1f} | Fut=${self.futures_price:,.1f} | Basis={self.basis_bps:+.1f}bp | dist={dist_pct:+.2f}%"
                     )
@@ -977,7 +1075,8 @@ class PolymarketDualFeed1HRecorder:
 
     async def run(self):
         logger.info("===============================================================================")
-        logger.info("   ROUTE 3: FUTURES/SPOT -> POLYMARKET INFORMATION-FLOW EXPERIMENT (v2.7)     ")
+        logger.info(f"   ROUTE 3: FUTURES/SPOT -> POLYMARKET 1H RECORDER ({self.asset}) (v2.8)       ")
+        logger.info(f"   Asset: {self.asset} | Binance: {self.binance_symbol} | Shock: ${self.shock_threshold_usd:,.0f} ")
         logger.info("   Dual Feeds: Binance Spot (Settlement Ref) + Futures (Routed /market)        ")
         logger.info("   Invariants: OBI/q_micro Reconciled + Invariant Assertions Enforced          ")
         logger.info("   Quote Ages: Tripartite (Age_book, Age_bid, Age_ask)                         ")
@@ -988,7 +1087,7 @@ class PolymarketDualFeed1HRecorder:
         logger.info("   Operational: Read-Only (Does not circumvent geographic restrictions)        ")
         logger.info("===============================================================================")
 
-        with open(PID_FILE, "w") as f:
+        with open(self.pid_file, "w") as f:
             f.write(str(os.getpid()))
 
         # Initial clock offset calibration
@@ -1003,7 +1102,14 @@ class PolymarketDualFeed1HRecorder:
 
 
 if __name__ == "__main__":
-    recorder = PolymarketDualFeed1HRecorder()
+    import argparse
+    parser = argparse.ArgumentParser(description="Polymarket Dual Feed 1H Telemetry Recorder")
+    parser.add_argument("--asset", choices=["BTC", "ETH"], default="BTC", help="Asset to record (BTC or ETH, default: BTC)")
+    parser.add_argument("--shock-threshold", type=float, default=None, help="Volume shock threshold in USD over 100ms")
+    args = parser.parse_args()
+
+    setup_logging(args.asset)
+    recorder = PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold)
     try:
         asyncio.run(recorder.run())
     except KeyboardInterrupt:
