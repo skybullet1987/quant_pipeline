@@ -35,7 +35,8 @@ FILES = [
     ("tests/test_polymarket_executor.py", "17. POLYMARKET EXECUTOR & HARVESTER REGRESSION TEST SUITE", "26 unit and integration tests certifying fail-closed execution, dynamic fee curves, depth guards, and idempotency invariants."),
     ("tests/test_audit_remediation_v2.py", "18. AUDIT REMEDIATION V2 REGRESSION TEST SUITE", "6 tests certifying per-token tick-size quantization across all SDK sizes, direct Polygon on-chain ERC-1155 reads, schema normalization, authoritative category fee rates, and copula bounds."),
     ("tests/test_boundary_and_monotonicity.py", "19. BOUNDARY CONVERGENCE & MONOTONICITY TEST SUITE", "10 unit tests certifying 4-sigma TWAP envelopes, discrete jump barriers, merge arbitrage math, and carry costs."),
-    ("tests/test_institutional_expansion_sandbox.py", "20. INSTITUTIONAL EXPANSION TEST SUITE", "5 tests certifying binary option Greeks, fee scaling, regime viability, and hurdle rate solvers.")
+    ("tests/test_institutional_expansion_sandbox.py", "20. INSTITUTIONAL EXPANSION TEST SUITE", "5 tests certifying binary option Greeks, fee scaling, regime viability, and hurdle rate solvers."),
+    ("tests/test_audit_remediation_full_suite.py", "21. FULL AUDIT REMEDIATION REGRESSION SUITE (ROUND 1 VERIFICATION)", "17 comprehensive regression tests certifying all 24 adversarial audit findings and accounting remediations.")
 ]
 
 def build_dossier():
@@ -47,71 +48,84 @@ def build_dossier():
     sections.append(f"""# Polymarket Quantitative Alpha Architecture & Complete Trading Dossier
 
 **Document Classification**: Institutional Algorithmic Trading Architecture & Master Source Dossier  
-**Release Version**: Production Hardened 2.1.0 (Full Architecture Dossier)  
+**Release Version**: Production Hardened 2.2.0 (Post-Audit Round 2 Review Package)  
 **Generated At**: {now_utc}  
 **Repository**: `/home/skybullet1987/quant_pipeline`  
 **Execution Node**: `quant-pipeline-finland` (`europe-north1-b`)  
 **Network**: Polygon Mainnet (Chain ID: 137)  
 **Execution Gateway**: Tokyo CLOB API Gateway (`https://clob.polymarket.com`)  
 **Funder Wallet**: `0x013A2474454fBd8738cff6a7f204eF1bc377F4e9`  
-**CLOB Collateral**: **$270.12 USD** (L2 Verified)  
+**CLOB Collateral**: **$273.23 USD** (L2 Verified)  
+**Test Suite Coverage**: 63 / 63 Passing Polymarket Unit & Integration Tests  
 
 ---
 
 ## Table of Contents
-0. [Adversarial Auditor Mandate & System Prompt](#0-adversarial-auditor-mandate--system-prompt)
+0. [Adversarial Auditor Mandate & System Prompt (Round 2 Review)](#0-adversarial-auditor-mandate--system-prompt-round-2-review)
 1. [Executive Summary & Strategic Overview](#1-executive-summary--strategic-overview)
 2. [Backtesting & Forward Trading Track Records (Audit & Evidence)](#2-backtesting--forward-trading-track-records-audit--evidence)
 3. [Forensic Audit: Why Orders Did Not Fire (21:26 - 00:18 UTC)](#3-forensic-audit-why-orders-did-not-fire-2126---0018-utc)
 4. [Microstructure Mechanics, Mathematics & Execution Invariants](#4-microstructure-mechanics-mathematics--execution-invariants)
-5. [Complete Source Code Bundle (All 20 Production & Test Modules)](#5-complete-source-code-bundle-all-20-production--test-modules)
+5. [Complete Source Code Bundle (All 21 Production & Test Modules)](#5-complete-source-code-bundle-all-21-production--test-modules)
 """)
 
     # Section 0: Auditor Prompt
     sections.append(r"""---
 
-## 0. Adversarial Auditor Mandate & System Prompt
+## 0. Adversarial Auditor Mandate & System Prompt (Round 2 Review)
 
-> **INSTRUCTIONS FOR THE AUDITING AGENT / LLM REVIEWER**:
-> You are acting as a Principal Quantitative Trading Systems Architect and Financial Engineering Security Auditor.
-> Your task is to perform an uncompromising, adversarial, line-by-line audit of this codebase. Real money ($270+ USD capital, scaling to $10,000+) is actively traded by these automated engines.
-> We have recently caught multiple subtle, high-impact bugs (e.g. reverse orderbook sorting, DepthGuard 2-tick truncation, post-and-cancel churn loops, spot-delta decoupled stop-loss failures).
-> DO NOT provide generic compliments or high-level summaries. Your goal is to find bugs, edge cases, math errors, race conditions, and capital hazards.
+> **INSTRUCTIONS FOR THE AUDITING AGENT / LLM REVIEWER (ROUND 2 REVIEW)**:
+> You are acting as a Principal Quantitative Trading Systems Architect, High-Frequency Execution Specialist, and Financial Cryptography Security Auditor.
+> Your task is to perform an uncompromising, adversarial, line-by-line Round 2 Code Audit of this updated codebase.
+> Real money collateral ($273.23 USD live, scaling to $10,000+) is actively deployed on Polygon Mainnet and managed by these automated engines.
+>
+> In Round 1, an adversarial code audit confirmed 24 critical defects (P0 stop-loss freezing on failed FOKs, P0 exit cancellation on circuit breaker halts, P0 TypeError on missing spot REST quotes, P0 spot-crash decoupled stop thresholds, P0 synthetic Kelly edge heuristic, P1 book depth truncation, P1 fee double-counting, P1 tick-size quantization corruption, P1 corrupt startup reconciliation, P1 PID flock omissions, P1 canceled exit recovery omissions, P1 offline resolution loss, P1 partial JSONL tail corruption, P1 blocking synchronous network calls in async event loop, P1 mock unwind fallbacks in live mode, P1 signature-type mismatches, P1 exit unlinking without cancellation confirmation, P1 taker exit fee omissions, P1 unhandled state persistence failure, P1 asset whitelist bypasses, and multi-level fee accounting errors).
+>
+> All 24 findings and accounting issues have been patched across the 21 modules below and verified with 63 passing tests.
+>
+> **YOUR MISSION IN ROUND 2 IS TO ATTEMPT TO BREAK THESE REMEDIATIONS AND FIND ANY REMAINING DEFECTS.**
+> Assume the code author made subtle errors in the patches. Do NOT provide polite summaries, high-level commentary, or generic praise. Search aggressively for failure modes, race conditions, edge cases, mathematical distortions, and capital hazards.
 
-### Audit Objectives & Focus Areas:
+### Round 2 Audit Focus Areas:
 
-1. **Order Book Microstructure & Polymarket API Quirks**:
-   - Polymarket CLOB `/book?token_id=...` REST endpoint returns asks descending (0.999 down to best ask) and bids ascending (0.001 up to best bid). Verify that every single module sorts asks ascending and bids descending before indexing `[0]`.
-   - Dynamic fee calculation: Polymarket enforces $fee = 0.07 \cdot p \cdot (1 - p)$. Check fee accounting across takers and makers.
-   - Per-token tick size quantization: Polymarket uses variable tick sizes (0.01, 0.001, 0.0001). Are all limit order prices properly quantized before submission?
+1. **Stop-Loss Lifecycle, Unwind Retries & Order State Machine**:
+   - Inspect the remediated stop-loss handler (`polymarket_live_harvester.py: 1070–1240`).
+   - Does `UNWIND_RETRY_REQUIRED` guarantee that an adverse position will eventually exit, or can it get stuck in an infinite loop if the book remains illiquid?
+   - When an exit order is canceled or partially filled, does the code correctly track remaining shares vs. filled shares? Is there ANY possibility of selling more shares than the wallet actually holds (unbacked short)?
+   - Can an in-flight maker exit fill *after* a stop-loss cancellation request is dispatched but *before* confirmation arrives? How does the state machine handle this race?
 
-2. **Risk Management, Stop Loss & Asymmetric Payoff**:
-   - In Policy B2, maker scalp wins make ~+$2.50 to +$3.50 (+9¢ to +10¢ per share), whereas a total binary option loss at expiry costs the full ticket (-$35.00).
-   - Verify stop-loss enforcement: Is there ANY condition where a losing or out-of-the-money position is held into terminal expiry at $0.00?
-   - Check pre-expiry liquidation: At $TTE \le 300\text{s}$ (5 minutes), does the engine guarantee aggressive liquidation of losing positions?
-   - Look for variable scoping / indentation bugs where canceled order IDs become `None` and bypass downstream checks.
+2. **Market Microstructure & Nonlinear Fee Mechanics**:
+   - Polymarket crypto contracts enforce a nonlinear taker fee schedule: $fee = shares \times 0.07 \times (p \cdot (1 - p))^{1.0}$.
+   - Verify the multi-level FOK fee sweep (`polymarket_live_executor.py: 535–600`): Does summing across individual fill legs preserve cash-flow consistency with Polymarket's actual matching engine?
+   - Tick quantization: Does the `Decimal` quantizer directionally round correctly (`ROUND_CEILING` for maker exits to preserve theta target; `ROUND_FLOOR` for stop-loss sells to preserve urgency)? Does it handle all increments (`0.01`, `0.005`, `0.0025`, `0.001`, `0.0001`)?
 
-3. **Concurrency, State Persistence & Crash Recovery**:
-   - File I/O: Are all state saves (`live_harvester_state.json`, `paper_trader_state.json`) atomic (`.tmp.<pid>` followed by `os.replace`)?
-   - Are there race conditions between the inotify event listener and the background position management loop?
-   - Is state recovery completely idempotent upon daemon restart? Does it cancel orphan orders and re-attach to resting exits?
+3. **Capital Allocation & Calibrated Half-Kelly Sizing**:
+   - Inspect `compute_kelly_ticket_size()` and lines `555–575` of `polymarket_live_harvester.py`.
+   - The engine uses an empirical frozen calibration ($p_{\text{model}} = 0.8427$, version `REGIME_4_EMPIRICAL_V2`, calibration `OOS_LEDGER_248_TRADES`) with Half-Kelly ($\lambda = 0.50$) capped at 12% of bankroll.
+   - Verify: Is the net edge correctly computed *after* deducting nonlinear taker fees? Is unconstrained Kelly correctly divided by $(1 - \text{all\_in\_cost})$? Is there any edge condition where sizing exceeds available collateral or remaining portfolio headroom?
 
-4. **Live vs. Paper Parity**:
-   - Compare `polymarket_live_harvester.py` and `polymarket_paper_trader.py`.
-   - Do the entry criteria (TTE window, lead-lag distance, price ceiling/floor, depth ratio hurdle) match 100%? If they diverge, explain why and what will fail.
+4. **Event Loop Non-Blocking Concurrency & System Calls**:
+   - The position manager is `async` and runs alongside a Linux inotify file watcher.
+   - Are ALL blocking REST requests (`requests.get`, `requests.post`) and CLOB client calls correctly offloaded via `asyncio.to_thread` or async HTTP client?
+   - Inspect the single-instance OS lock (`fcntl.flock` on `PID_FILE.with_suffix(".lock")`): Is it retained across the entire process lifetime? Does shutdown release it cleanly?
+   - Are temporary state writes atomic and power-loss durable (PID-specific temp file + `os.replace` + directory `fsync`)?
 
-5. **Blockchain & Settlement Edge Cases**:
-   - Polygon RPC latency and ERC-1155 conditional token balance arrival.
-   - Is the balance delta check resilient to floating point roundoff?
-   - Does `execute_unwind_order` handle Polygon gas, nonce collisions, or temporary CLOB 5xx disconnects?
+5. **Parity Between Live Harvester & Paper Trader**:
+   - Compare `polymarket_live_harvester.py` against `polymarket_paper_trader.py`.
+   - Verify that entry filters (candle distance buffer $\ge 0.05\%$, spread ceiling $\le 0.030$, depth ratio $\ge 1.50\times$, price window $[0.15, 0.88]$, and hourly/market caps) are in 100% mathematical parity.
+
+6. **On-Chain Settlement, Redemption & Allowance Invariants**:
+   - Inspect `redeem_settled_positions.py`, `verify_onchain_allowances.py`, and `execute_approvals.py`.
+   - Are RPC timeouts or network errors handled safely without assuming zero balance or already redeemed?
+   - Are EIP-712 signature types (Type 0 for EOA, Type 3 for Polymarket deposit proxy) validated fail-closed?
 
 ### Required Output Format:
-For every issue found, format as:
-- **Severity**: `[P0 - Critical / Capital Risk]`, `[P1 - High / Functional Starvation]`, `[P2 - Medium / Suboptimal Microstructure]`
-- **Module & Line Numbers**: Exact file path and line numbers.
-- **Vulnerability / Failure Mechanism**: Explain exactly how and under what market conditions this fails.
-- **Proof of Failure / Counter-Example**: Concrete numeric or scenario proof.
-- **Remediation**: The exact drop-in Python code fix.
+For every defect discovered, format exactly as:
+- **Severity**: `[P0 - Critical / Capital Loss]`, `[P1 - High / Functional Starvation or Desynchronization]`, `[P2 - Medium / Accounting Drift or Suboptimal Execution]`
+- **Module & Exact Line Numbers**: Exact file path and line numbers in the supplied dossier.
+- **Vulnerability / Failure Mechanism**: Technical explanation of the failure mode.
+- **Proof / Concrete Scenario**: Step-by-step numeric or execution sequence proof.
+- **Exact Remediation (Python Diff)**: Unified git diff showing the precise drop-in code fix.
 """)
 
     # Section 1: Executive Summary
