@@ -1186,6 +1186,7 @@ class PolymarketLiveHarvester:
 
                             pre_bal = pos.get("pre_token_balance", 0.0)
                             delta = cond_bal - pre_bal
+                            delta_reconciled = delta >= (float(pos["entry_shares"]) - epsilon)
                             if self.dry_run:
                                 delta_reconciled = True
                                 finality_ok = True
