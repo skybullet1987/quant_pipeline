@@ -72,11 +72,9 @@ for name, addr in spenders:
 
 print("\n[CTF Operator Approvals]")
 operators = [
-    ("CTF Exchange V1", EXCHANGE_V1),
     ("CTF Exchange V2", EXCHANGE_V2),
-    ("CTF Exchange V3", EXCHANGE_V3),
     ("NegRisk Exchange V2", NEGRISK_V2),
-    ("NegRisk Adapter", NEGRISK_ADAPTER),
+    ("Exchange V3", EXCHANGE_V3),
 ]
 
 for name, addr in operators:

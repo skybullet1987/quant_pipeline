@@ -73,6 +73,18 @@ sig_type = int(raw_sig)
 if sig_type not in (0, 1, 2, 3):
     raise RuntimeError(f"Unsupported POLYGON_SIGNATURE_TYPE={sig_type}")
 
+if sig_type == 0 and funder_addr.lower() != signer_addr.lower():
+    raise RuntimeError(
+        "LIVE APPROVAL REFUSED: Type 0 requires signer and funder to match."
+    )
+if sig_type == 3 and not (
+    os.getenv("POLYGON_FUNDER_ADDRESS", "").strip()
+    or os.getenv("POLYGON_PROXY_ADDRESS", "").strip()
+):
+    raise RuntimeError(
+        "LIVE APPROVAL REFUSED: Type 3 requires an explicit deposit-wallet funder."
+    )
+
 SIG_TYPE_LABELS = {
     0: "0 (EOA - Direct Externally Owned Account)",
     1: "1 (Polymarket Proxy Wallet)",
@@ -145,6 +157,8 @@ except Exception as e:
     print(f"  [WARN] Failed to query on-chain balances: {e}")
 
 missing_onchain_pusd = []
+allowance_query_errors = []
+
 for name, spender in V2_SPENDERS:
     try:
         cur_allowance = pusd.functions.allowance(funder_addr, spender).call()
@@ -155,7 +169,9 @@ for name, spender in V2_SPENDERS:
             missing_onchain_pusd.append((name, spender))
     except Exception as e:
         print(f"  - pUSD -> {name}: Query error ({e})")
-        missing_onchain_pusd.append((name, spender))
+        allowance_query_errors.append(
+            f"pUSD allowance {name}: {e}"
+        )
 
 # ==============================================================================
 # 6. VERIFY CTF OPERATOR APPROVALS (ERC-1155)
@@ -170,7 +186,9 @@ for name, spender in V2_SPENDERS:
             missing_ctf_operators.append((name, spender))
     except Exception as e:
         print(f"  - CTF Operator to {name}: Query error ({e})")
-        missing_ctf_operators.append((name, spender))
+        allowance_query_errors.append(
+            f"CTF operator {name}: {e}"
+        )
 
 # ==============================================================================
 # 7. VERIFY CLOB L2 BALANCE & ALLOWANCE (via py_clob_client_v2)
@@ -210,6 +228,13 @@ except Exception as e:
 # ==============================================================================
 # 8. EXECUTION & FAIL-CLOSED POLICY DECISION
 # ==============================================================================
+if allowance_query_errors:
+    for error in allowance_query_errors:
+        print(f"[FATAL] Allowance state UNKNOWN: {error}")
+    raise SystemExit(
+        "Refusing approval broadcasts because allowance state is unknown."
+    )
+
 print("\n" + "=" * 80)
 print("APPROVAL VERIFICATION & EXECUTION DISPOSITION:")
 print("=" * 80)
@@ -236,6 +261,10 @@ if sig_type == 0:
             h = w3.eth.send_raw_transaction(signed.raw_transaction)
             rcpt = w3.eth.wait_for_transaction_receipt(h, timeout=60)
             print(f"    Receipt Status: {rcpt.status} (Block: {rcpt.blockNumber})")
+            if rcpt.status != 1:
+                raise RuntimeError(
+                    f"Approval transaction reverted for {name}: {h.hex()}"
+                )
             time.sleep(1)
 
         for name, spender in missing_ctf_operators:
@@ -253,6 +282,10 @@ if sig_type == 0:
             h = w3.eth.send_raw_transaction(signed.raw_transaction)
             rcpt = w3.eth.wait_for_transaction_receipt(h, timeout=60)
             print(f"    Receipt Status: {rcpt.status} (Block: {rcpt.blockNumber})")
+            if rcpt.status != 1:
+                raise RuntimeError(
+                    f"CTF approval transaction reverted for {name}: {h.hex()}"
+                )
             time.sleep(1)
 
     print("✓ EOA on-chain setup verified.")

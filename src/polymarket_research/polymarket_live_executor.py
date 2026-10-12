@@ -181,6 +181,30 @@ class PolymarketLiveExecutor:
         )
         if self.signature_type not in (0, 1, 2, 3):
             raise RuntimeError(f"Unsupported POLYGON_SIGNATURE_TYPE={self.signature_type}")
+
+        if not self.dry_run and self.private_key:
+            from eth_account import Account
+            try:
+                signer_address = Account.from_key(self.private_key).address
+            except Exception:
+                signer_address = None
+
+            if self.signature_type == 0:
+                if (
+                    signer_address
+                    and self.funder_address
+                    and self.funder_address.lower() != signer_address.lower()
+                ):
+                    raise RuntimeError(
+                        "LIVE MODE REFUSED: Type 0 requires the EOA funder "
+                        "to equal the signing address."
+                    )
+            elif self.signature_type == 3:
+                if not self.funder_address:
+                    raise RuntimeError(
+                        "LIVE MODE REFUSED: Type 3 requires an explicitly "
+                        "configured Polymarket deposit-wallet funder."
+                    )
         self.ledger_path = Path(ledger_path or PIPELINE_ROOT / "data/polymarket/live_orders.jsonl")
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -1557,7 +1581,10 @@ class PolymarketLiveExecutor:
         if self.dry_run:
             mock_id = f"MOCK_UNWIND_{int(time.time()*1000)}"
             logger.info(f"[DRY-RUN UNWIND] Executed simulated {side} unwind: {size:.2f} shares @ min ${min_price:.4f}")
-            return {"success": True, "orderID": mock_id, "matched_size": size, "taking_amount": size * min_price}
+            taking_amt = size * min_price
+            avg_px = min(0.999, max(0.001, min_price))
+            fee_usd = round(size * 0.07 * (avg_px * (1.0 - avg_px)), 5)
+            return {"success": True, "orderID": mock_id, "matched_size": size, "taking_amount": taking_amt, "fee_usd": fee_usd}
         if not self.is_authenticated or self.client is None:
             return {
                 "success": False,
@@ -1598,12 +1625,23 @@ class PolymarketLiveExecutor:
                         "raw": resp,
                     }
                 taking_amt = float(taking_amount) if taking_amount else matched_size * quantized_price
+                average_price = min(
+                    0.999,
+                    max(0.001, taking_amt / max(matched_size, 1e-9)),
+                )
+                fee_usd = round(
+                    matched_size
+                    * 0.07
+                    * (average_price * (1.0 - average_price)),
+                    5,
+                )
                 logger.info(f"[LIVE UNWIND EXECUTED] OID: {order_id} | Sold {matched_size:.2f} shares @ min ${quantized_price:.4f} (Proceeds: ${taking_amt:.2f})")
                 return {
                     "success": True,
                     "orderID": order_id,
                     "matched_size": matched_size,
                     "taking_amount": taking_amt,
+                    "fee_usd": fee_usd,
                     "raw": resp,
                 }
             else:

@@ -509,3 +509,340 @@ def test_multi_level_fok_fee_computation():
     assert len(fill_legs) == 2
     # Exact multi-level fee: 50 * 0.07 * 0.1 * 0.9 + 50 * 0.07 * 0.9 * 0.1 = 0.315 + 0.315 = $0.63000
     assert pytest.approx(fok_fee, 1e-4) == 0.63
+
+
+# ==============================================================================
+# ROUND 2 ADVERSARIAL AUDIT FINDINGS (FINDINGS 1 - 14)
+# ==============================================================================
+def test_finding_01_kelly_rejection_halts_entry():
+    """Finding 1 (P0): Kelly calculation returning 0 or nonpositive collateral halts entry without fallback to fixed ticket."""
+    harvester = PolymarketLiveHarvester(ticket_notional=35.0, dry_run=False)
+    harvester.save_state = lambda: None
+    executed = []
+    harvester.executor.execute_snipe_order_async = lambda **kwargs: executed.append(kwargs)
+
+    # 1. Non-positive bankroll halts entry
+    harvester.executor.get_collateral_balance = lambda: 0.0
+    shock = {
+        "event_id": "EVT_KELLY_HALT_01",
+        "market_id": "5399991",
+        "title": "BTC Price Up",
+        "shock_direction": "BUY",
+        "seconds_to_expiry": 300.0,
+        "candle_distance_pct": 0.10,
+        "p_model": 0.53,
+        "probability_model": {"model_version": "v1.0", "calibration_id": "calib_001"},
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
+        "pre_shock_features_t0": {
+            "UP": {"token_id": "0xTOK1", "raw_top_asks": [[0.50, 200.0]]}
+        }
+    }
+    asyncio.run(harvester.evaluate_shock_and_execute(shock))
+    assert len(executed) == 0, "Zero bankroll must halt entry!"
+
+    # 2. Bankroll positive, but fee-adjusted edge gives 0 Kelly ticket
+    harvester.executor.get_collateral_balance = lambda: 200.0
+    harvester.compute_kelly_ticket_size = lambda p, ask, bankroll: 0.0
+    shock["event_id"] = "EVT_KELLY_HALT_02"
+    asyncio.run(harvester.evaluate_shock_and_execute(shock))
+    assert len(executed) == 0, "Kelly rejection (0.0 USD ticket) must reject entry and not fall back to $35!"
+
+
+def test_finding_02_vwap_kelly_recomputation():
+    """Finding 2 (P0): Kelly is recomputed at executable VWAP, rejecting sweeps with negative EV."""
+    harvester = PolymarketLiveHarvester(ticket_notional=35.0, dry_run=False)
+    harvester.save_state = lambda: None
+    executed = []
+    harvester.executor.execute_snipe_order_async = lambda **kwargs: executed.append(kwargs)
+    harvester.executor.get_collateral_balance = lambda: 273.0
+
+    shock = {
+        "event_id": "EVT_VWAP_KELLY_01",
+        "market_id": "5399992",
+        "title": "BTC Price Up",
+        "shock_direction": "BUY",
+        "seconds_to_expiry": 300.0,
+        "candle_distance_pct": 0.10,
+        "p_model": 0.80,
+        "probability_model": {"model_version": "v1.0", "calibration_id": "calib_001"},
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "0xTOK1",
+                # Best ask 0.75 passes, but second level 0.82 raises VWAP
+                "raw_top_asks": [[0.75, 10.0], [0.82, 100.0]]
+            }
+        }
+    }
+    # First ask Kelly returns $25, but VWAP Kelly returns 0 (below min lot)
+    def mock_kelly(p, price, bankroll):
+        if price <= 0.76:
+            return 25.0
+        return 0.0  # At VWAP (~0.794), edge is negative
+
+    harvester.compute_kelly_ticket_size = mock_kelly
+    asyncio.run(harvester.evaluate_shock_and_execute(shock))
+    assert len(executed) == 0, "Order must be rejected when executable VWAP does not support minimum Kelly ticket!"
+
+
+def test_finding_03_orphaned_liquidation_migration(tmp_path, monkeypatch):
+    """Finding 3 (P0): load_state migrates orphaned is_liquidating flags without unwind_order_id to UNWIND_RETRY_REQUIRED."""
+    state_file = tmp_path / "orphan_state.json"
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", state_file)
+
+    orphan_state = {
+        "active_positions": {
+            "POS_ORPHAN": {
+                "trade_id": "POS_ORPHAN",
+                "entry_shares": 50.0,
+                "is_liquidating": True,
+                "unwind_order_id": None,
+                "exit_order_status": "CANCELED_FOR_STOP_LOSS",
+            }
+        }
+    }
+    with open(state_file, "w") as f:
+        json.dump(orphan_state, f)
+
+    harvester = PolymarketLiveHarvester(dry_run=True)
+    harvester.load_state()
+
+    migrated = harvester.active_positions["POS_ORPHAN"]
+    assert migrated["is_liquidating"] is False
+    assert migrated["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    assert migrated["next_unwind_retry_ts"] == 0.0
+    assert migrated["unwind_last_error"] == "MIGRATED_ORPHANED_LIQUIDATION_FLAG"
+
+
+def test_finding_04_reconciliation_accounting_updates_baseline():
+    """Finding 4 (P0): Maker-fill/cancel race updates filled_exit_shares and remaining basis before continue."""
+    harvester = PolymarketLiveHarvester(dry_run=True)
+    harvester.save_state = lambda: None
+
+    pos = {
+        "trade_id": "POS_RACE_001",
+        "entry_shares": 100.0,
+        "remaining_shares": 100.0,
+        "remaining_exit_shares": 100.0,
+        "notional_usd": 50.0,
+        "fee_usd": 0.50,
+        "exit_order_id": "0xEXIT_RACE",
+        "exit_order_status": "RESTING",
+        "filled_exit_shares": 0.0,
+        "candle_expiry_ts": time.time() + 600.0,
+        "token_id": "0xTOK",
+    }
+    harvester.active_positions["POS_RACE_001"] = pos
+    harvester.executor.get_open_orders = lambda **kwargs: [{"id": "0xEXIT_RACE"}]
+    harvester.executor.get_market_book_async = lambda tid: asyncio.sleep(0, result={"bids": [{"price": "0.20", "size": "100.0"}]})
+    harvester.executor.cancel_order = lambda oid: {"canceled": [oid]}
+    # Exchange returns matched = 30.0 shares
+    harvester.executor.get_order_status = lambda oid: {"status": "CANCELED", "size_matched": 30.0, "taking_amount": 15.0}
+
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+
+    reconciled = harvester.active_positions["POS_RACE_001"]
+    assert reconciled["exit_order_status"] == "FILL_RECONCILIATION_REQUIRED"
+    assert reconciled["filled_exit_shares"] == 30.0
+    assert reconciled["remaining_shares"] == 70.0
+    assert reconciled["remaining_exit_shares"] == 70.0
+    assert reconciled["remaining_cost_basis"] == 35.0
+    assert reconciled["realized_exit_cash"] == 15.0
+
+
+def test_finding_05_absence_from_open_orders_not_assumed_filled():
+    """Finding 5 (P0): Absence from open_orders is not treated as fill; queries order_status authoritatively."""
+    harvester = PolymarketLiveHarvester(dry_run=True)
+    harvester.save_state = lambda: None
+
+    pos = {
+        "trade_id": "POS_PASSIVE_001",
+        "is_liquidating": True,
+        "unwind_order_id": "0xU123",
+        "entry_shares": 50.0,
+        "remaining_shares": 50.0,
+        "notional_usd": 25.0,
+        "fee_usd": 0.25,
+        "unwind_order_size": 50.0,
+        "unwind_start_time": time.time(),
+        "token_id": "0xTOK",
+    }
+    harvester.active_positions["POS_PASSIVE_001"] = pos
+    # u_oid is not in open_orders
+    harvester.executor.get_open_orders = lambda **kwargs: []
+    # But get_order_status reveals it is CANCELED, not matched!
+    harvester.executor.get_order_status = lambda oid: {"status": "CANCELED", "size_matched": 0.0}
+
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+
+    # Must NOT be marked settled or removed from active_positions!
+    assert "POS_PASSIVE_001" in harvester.active_positions
+    assert pos["exit_order_status"] == "UNWIND_RECONCILIATION_REQUIRED"
+
+
+def test_finding_06_timeout_unwind_replacement_confirms_cancellation():
+    """Finding 6 (P0): Timed-out unwind order confirms cancellation and reconciles fills before replacement."""
+    harvester = PolymarketLiveHarvester(dry_run=True)
+    harvester.save_state = lambda: None
+    harvester.passive_unwind_timeout = 5.0
+
+    pos = {
+        "trade_id": "POS_TIMEOUT_001",
+        "is_liquidating": True,
+        "unwind_order_id": "0xU_TIMEOUT",
+        "entry_shares": 100.0,
+        "remaining_shares": 100.0,
+        "notional_usd": 50.0,
+        "fee_usd": 0.50,
+        "unwind_start_time": time.time() - 10.0,  # Timed out
+        "token_id": "0xTOK",
+    }
+    harvester.active_positions["POS_TIMEOUT_001"] = pos
+    harvester.executor.get_open_orders = lambda **kwargs: [{"id": "0xU_TIMEOUT"}]
+    harvester.executor.cancel_order = lambda oid: None
+    # 40 shares matched before cancel
+    harvester.executor.get_order_status = lambda oid: {"status": "CANCELED", "size_matched": 40.0, "taking_amount": 20.0}
+
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+
+    assert pos["exit_order_status"] == "FILL_RECONCILIATION_REQUIRED"
+    assert pos["filled_exit_shares"] == 40.0
+    assert pos["remaining_shares"] == 60.0
+
+
+def test_finding_07_unwind_retry_exponential_backoff():
+    """Finding 7 (P1): Failed FOK unwind applies exponential backoff instead of flat 1-second retry."""
+    harvester = PolymarketLiveHarvester(dry_run=True)
+    harvester.save_state = lambda: None
+
+    pos = {
+        "trade_id": "POS_RETRY_001",
+        "token_id": "0xTOK",
+        "entry_shares": 100.0,
+        "remaining_shares": 100.0,
+        "entry_price": 0.50,
+        "target_exit_price": 0.60,
+        "exit_order_status": "RESTING",
+        "exit_order_id": "0xEXIT_MOCK",
+        "is_liquidating": False,
+        "candle_expiry_ts": time.time() + 600.0,
+    }
+    harvester.active_positions["POS_RETRY_001"] = pos
+    harvester.executor.get_open_orders = lambda **kwargs: []
+    # Trigger stop-loss with bid 0.20
+    harvester.executor.get_market_book_async = lambda tid: asyncio.sleep(0, result={"bids": [{"price": "0.20", "size": "100.0"}]})
+    harvester.executor.execute_unwind_order = lambda **kwargs: {"success": False, "error": "BOOK_EMPTY"}
+
+    t_before = time.time()
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+
+    assert pos["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    assert pos["unwind_retry_count"] == 1
+    # 2^1 = 2 seconds backoff
+    assert pos["next_unwind_retry_ts"] >= t_before + 1.9
+
+    # Trigger second failure
+    pos["next_unwind_retry_ts"] = 0.0  # make due
+    t_before = time.time()
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+    assert pos["unwind_retry_count"] == 2
+    # 2^2 = 4 seconds backoff
+    assert pos["next_unwind_retry_ts"] >= t_before + 3.8
+
+
+def test_finding_08_unwind_fee_usd_computation():
+    """Finding 8 (P2): execute_unwind_order calculates and returns fee_usd in success response."""
+    executor = PolymarketLiveExecutor(dry_run=True)
+    res = executor.execute_unwind_order("0xTOK", 100.0, "SELL", 0.50)
+    assert res["success"] is True
+    assert "fee_usd" in res
+    # 100 * 0.07 * (0.5 * 0.5) = $1.75
+    assert pytest.approx(res["fee_usd"], 1e-4) == 1.75
+
+
+def test_finding_10_live_paper_depth_parity_gate():
+    """Finding 10 (P1): Live engine enforces $50 reference-ticket depth gate and fee metadata."""
+    harvester = PolymarketLiveHarvester(ticket_notional=35.0, dry_run=False)
+    harvester.save_state = lambda: None
+    executed = []
+    harvester.executor.execute_snipe_order_async = lambda **kwargs: executed.append(kwargs)
+    harvester.executor.get_collateral_balance = lambda: 500.0
+    harvester.compute_kelly_ticket_size = lambda p, px, b: 35.0
+
+    # Book with only $30 depth (< 1.50 * 50 = $75)
+    shock = {
+        "event_id": "EVT_PARITY_001",
+        "market_id": "5399993",
+        "title": "BTC Depth Parity Test",
+        "shock_direction": "BUY",
+        "seconds_to_expiry": 300.0,
+        "candle_distance_pct": 0.10,
+        "p_model": 0.70,
+        "probability_model": {"model_version": "v1.0", "calibration_id": "calib_001"},
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
+        "pre_shock_features_t0": {
+            "UP": {"token_id": "0xTOK1", "raw_top_asks": [[0.50, 60.0]]}  # 30.0 USD depth
+        }
+    }
+    asyncio.run(harvester.evaluate_shock_and_execute(shock))
+    assert len(executed) == 0, "Book with < $75 depth must be rejected by $50 reference gate!"
+
+    # Missing fee_metadata must be rejected in live mode
+    shock["event_id"] = "EVT_PARITY_002"
+    shock["pre_shock_features_t0"]["UP"]["raw_top_asks"] = [[0.50, 200.0]]  # $100 depth
+    shock["fee_metadata"] = {}
+    asyncio.run(harvester.evaluate_shock_and_execute(shock))
+    assert len(executed) == 0, "Missing fee_metadata must reject entry in live mode!"
+
+
+def test_finding_11_verify_onchain_allowances_operators():
+    """Finding 11 (P1): verify_onchain_allowances defines only valid operators (no NameError)."""
+    from src.polymarket_research.verify_onchain_allowances import operators
+    names = [name for name, _ in operators]
+    assert "CTF Exchange V1" not in names
+    assert "NegRisk Adapter" not in names
+    assert "CTF Exchange V2" in names
+    assert "NegRisk Exchange V2" in names
+    assert "Exchange V3" in names
+
+
+def test_finding_13_signature_type_validation():
+    """Finding 13 (P1): Enforces funder/signer relationships for signature types 0 and 3."""
+    from eth_account import Account
+    test_key = "0x4f3edf983ac636a65a842ce7c78d9aa706d3b113bce9c46f30d7e22d318b2059"
+    signer_addr = Account.from_key(test_key).address
+
+    # Type 0 with mismatched funder must raise RuntimeError
+    with pytest.raises(RuntimeError, match="Type 0 requires the EOA funder to equal"):
+        PolymarketLiveExecutor(
+            private_key=test_key,
+            funder_address="0x000000000000000000000000000000000000dEaD",
+            signature_type=0,
+            dry_run=False,
+        )
+
+    # Type 3 without funder address must raise RuntimeError
+    with pytest.raises(RuntimeError, match="Type 3 requires an explicitly configured"):
+        PolymarketLiveExecutor(
+            private_key=test_key,
+            funder_address="",
+            signature_type=3,
+            dry_run=False,
+        )
+
+
+def test_finding_14_directory_fsync_failure_raises(monkeypatch, tmp_path):
+    """Finding 14 (P1): Directory fsync failure propagates as StatePersistenceError."""
+    from src.polymarket_research.polymarket_live_harvester import StatePersistenceError
+    state_file = tmp_path / "fsync_test_state.json"
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", state_file)
+
+    harvester = PolymarketLiveHarvester(dry_run=True)
+
+    def mock_fsync_fail(fd):
+        raise OSError("Simulated disk error during directory fsync")
+
+    monkeypatch.setattr("os.fsync", mock_fsync_fail)
+    with pytest.raises(StatePersistenceError, match="Critical live state save failed"):
+        harvester.save_state()
+
