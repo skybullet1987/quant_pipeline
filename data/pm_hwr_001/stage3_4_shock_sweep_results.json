@@ -1,0 +1,592 @@
+{
+  "CONTROL_EXP302_BASELINE": {
+    "config": {
+      "candidate_id": "CONTROL_EXP302_BASELINE",
+      "min_dist_pct": 0.05,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.0,
+      "min_volume_usd": 500000.0,
+      "min_price": 0.15,
+      "max_price": 0.88,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 15,
+        "wins": 12,
+        "losses": 3,
+        "win_rate_pct": 80.0,
+        "win_rate_95ci": [
+          54.81,
+          92.95
+        ],
+        "total_net_pnl": -6.65,
+        "ev_per_trade": -0.44,
+        "avg_win": 7.12,
+        "avg_loss": -30.7,
+        "profit_factor": 0.93
+      },
+      "HOLDOUT": {
+        "n_trades": 22,
+        "wins": 17,
+        "losses": 5,
+        "win_rate_pct": 77.27,
+        "win_rate_95ci": [
+          56.56,
+          89.88
+        ],
+        "total_net_pnl": -26.51,
+        "ev_per_trade": -1.2,
+        "avg_win": 7.57,
+        "avg_loss": -31.02,
+        "profit_factor": 0.83
+      }
+    },
+    "total_qualifying_trades": 37
+  },
+  "CAND_B1_DIST_0.10": {
+    "config": {
+      "candidate_id": "CAND_B1_DIST_0.10",
+      "min_dist_pct": 0.1,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.5,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.4,
+      "max_price": 0.88,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 7,
+        "wins": 7,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          64.57,
+          100.0
+        ],
+        "total_net_pnl": 43.29,
+        "ev_per_trade": 6.18,
+        "avg_win": 6.18,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          20.65,
+          100.0
+        ],
+        "total_net_pnl": 4.92,
+        "ev_per_trade": 4.92,
+        "avg_win": 4.92,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      }
+    },
+    "total_qualifying_trades": 8
+  },
+  "CAND_B2_DIST_0.15": {
+    "config": {
+      "candidate_id": "CAND_B2_DIST_0.15",
+      "min_dist_pct": 0.15,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.5,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.4,
+      "max_price": 0.88,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 3,
+        "wins": 3,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          43.85,
+          100.0
+        ],
+        "total_net_pnl": 22.11,
+        "ev_per_trade": 7.37,
+        "avg_win": 7.37,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 3
+  },
+  "CAND_B3_DIST_0.20": {
+    "config": {
+      "candidate_id": "CAND_B3_DIST_0.20",
+      "min_dist_pct": 0.2,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.7,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.4,
+      "max_price": 0.88,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 2,
+        "wins": 2,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          34.24,
+          100.0
+        ],
+        "total_net_pnl": 11.75,
+        "ev_per_trade": 5.87,
+        "avg_win": 5.87,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 2
+  },
+  "CAND_B4_DIST_0.25": {
+    "config": {
+      "candidate_id": "CAND_B4_DIST_0.25",
+      "min_dist_pct": 0.25,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.85,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.4,
+      "max_price": 0.88,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          20.65,
+          100.0
+        ],
+        "total_net_pnl": 5.62,
+        "ev_per_trade": 5.62,
+        "avg_win": 5.62,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 1
+  },
+  "CAND_B5_DIST_0.30": {
+    "config": {
+      "candidate_id": "CAND_B5_DIST_0.30",
+      "min_dist_pct": 0.3,
+      "max_tte": 900.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.85,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.4,
+      "max_price": 0.9,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 1,
+        "wins": 1,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          20.65,
+          100.0
+        ],
+        "total_net_pnl": 5.62,
+        "ev_per_trade": 5.62,
+        "avg_win": 5.62,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 1
+  },
+  "CAND_B6_TTE_300S_DIST_0.15": {
+    "config": {
+      "candidate_id": "CAND_B6_TTE_300S_DIST_0.15",
+      "min_dist_pct": 0.15,
+      "max_tte": 300.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.7,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.5,
+      "max_price": 0.92,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 2,
+        "wins": 2,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          34.24,
+          100.0
+        ],
+        "total_net_pnl": 7.64,
+        "ev_per_trade": 3.82,
+        "avg_win": 3.82,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 2
+  },
+  "CAND_B7_TTE_300S_DIST_0.25": {
+    "config": {
+      "candidate_id": "CAND_B7_TTE_300S_DIST_0.25",
+      "min_dist_pct": 0.25,
+      "max_tte": 300.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.85,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.5,
+      "max_price": 0.94,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 0
+  },
+  "CAND_B8_TTE_600S_DIST_0.20": {
+    "config": {
+      "candidate_id": "CAND_B8_TTE_600S_DIST_0.20",
+      "min_dist_pct": 0.2,
+      "max_tte": 600.0,
+      "min_tte": 60.0,
+      "min_ofi": 0.8,
+      "min_volume_usd": 1000000.0,
+      "min_price": 0.5,
+      "max_price": 0.9,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 2,
+        "wins": 2,
+        "losses": 0,
+        "win_rate_pct": 100.0,
+        "win_rate_95ci": [
+          34.24,
+          100.0
+        ],
+        "total_net_pnl": 11.75,
+        "ev_per_trade": 5.87,
+        "avg_win": 5.87,
+        "avg_loss": 0.0,
+        "profit_factor": "inf"
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 2
+  },
+  "CAND_B9_ULTRA_DIST_0.35_OFI_1.0": {
+    "config": {
+      "candidate_id": "CAND_B9_ULTRA_DIST_0.35_OFI_1.0",
+      "min_dist_pct": 0.35,
+      "max_tte": 600.0,
+      "min_tte": 60.0,
+      "min_ofi": 1.0,
+      "min_volume_usd": 1500000.0,
+      "min_price": 0.5,
+      "max_price": 0.94,
+      "max_spread": 0.03,
+      "min_depth_ratio": 1.5,
+      "one_trade_per_market": true
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0
+      }
+    },
+    "total_qualifying_trades": 0
+  }
+}

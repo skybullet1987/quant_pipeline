@@ -1,0 +1,782 @@
+{
+  "CONTROL_BASELINE": {
+    "config": {
+      "candidate_id": "CONTROL_BASELINE",
+      "family": "CONTROL",
+      "max_tte": 600.0,
+      "min_tte": 60.0,
+      "min_z_score": 1.15,
+      "max_entry_price": 0.88,
+      "min_model_prob": 0.75,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A1_SNIPER_60S_Z2.5": {
+    "config": {
+      "candidate_id": "CAND_A1_SNIPER_60S_Z2.5",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 60.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.5,
+      "max_entry_price": 0.94,
+      "min_model_prob": 0.95,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A2_SNIPER_120S_Z2.5": {
+    "config": {
+      "candidate_id": "CAND_A2_SNIPER_120S_Z2.5",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 120.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.5,
+      "max_entry_price": 0.94,
+      "min_model_prob": 0.95,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A3_SNIPER_180S_Z2.5": {
+    "config": {
+      "candidate_id": "CAND_A3_SNIPER_180S_Z2.5",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 180.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.5,
+      "max_entry_price": 0.94,
+      "min_model_prob": 0.95,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A4_SNIPER_300S_Z2.5": {
+    "config": {
+      "candidate_id": "CAND_A4_SNIPER_300S_Z2.5",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 300.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.5,
+      "max_entry_price": 0.92,
+      "min_model_prob": 0.95,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A5_EXTREME_60S_Z3.0": {
+    "config": {
+      "candidate_id": "CAND_A5_EXTREME_60S_Z3.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 60.0,
+      "min_tte": 10.0,
+      "min_z_score": 3.0,
+      "max_entry_price": 0.95,
+      "min_model_prob": 0.98,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A6_EXTREME_120S_Z3.0": {
+    "config": {
+      "candidate_id": "CAND_A6_EXTREME_120S_Z3.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 120.0,
+      "min_tte": 10.0,
+      "min_z_score": 3.0,
+      "max_entry_price": 0.95,
+      "min_model_prob": 0.98,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A7_EXTREME_180S_Z3.0": {
+    "config": {
+      "candidate_id": "CAND_A7_EXTREME_180S_Z3.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 180.0,
+      "min_tte": 10.0,
+      "min_z_score": 3.0,
+      "max_entry_price": 0.95,
+      "min_model_prob": 0.98,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A8_MODERATE_180S_Z2.0": {
+    "config": {
+      "candidate_id": "CAND_A8_MODERATE_180S_Z2.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 180.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.0,
+      "max_entry_price": 0.9,
+      "min_model_prob": 0.9,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A9_MODERATE_300S_Z2.0": {
+    "config": {
+      "candidate_id": "CAND_A9_MODERATE_300S_Z2.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 300.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.0,
+      "max_entry_price": 0.9,
+      "min_model_prob": 0.9,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_A10_WIDE_600S_Z2.0": {
+    "config": {
+      "candidate_id": "CAND_A10_WIDE_600S_Z2.0",
+      "family": "FAMILY_A_LATE_CANDLE",
+      "max_tte": 600.0,
+      "min_tte": 60.0,
+      "min_z_score": 2.0,
+      "max_entry_price": 0.88,
+      "min_model_prob": 0.9,
+      "vol_regime": null,
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_C1_REGIME_LOW_VOL_180S": {
+    "config": {
+      "candidate_id": "CAND_C1_REGIME_LOW_VOL_180S",
+      "family": "FAMILY_C_REGIME",
+      "max_tte": 180.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.0,
+      "max_entry_price": 0.92,
+      "min_model_prob": 0.92,
+      "vol_regime": "LOW_VOL",
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  },
+  "CAND_C2_REGIME_HIGH_VOL_180S": {
+    "config": {
+      "candidate_id": "CAND_C2_REGIME_HIGH_VOL_180S",
+      "family": "FAMILY_C_REGIME",
+      "max_tte": 180.0,
+      "min_tte": 10.0,
+      "min_z_score": 2.5,
+      "max_entry_price": 0.92,
+      "min_model_prob": 0.95,
+      "vol_regime": "HIGH_VOL",
+      "require_trend_aligned": false,
+      "stop_loss_enabled": false,
+      "stop_loss_threshold": 0.55
+    },
+    "folds": {
+      "TRAIN": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "VALIDATION": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      },
+      "HOLDOUT": {
+        "n_trades": 0,
+        "win_rate_pct": 0.0,
+        "win_rate_95ci": [
+          0.0,
+          0.0
+        ],
+        "total_net_pnl": 0.0,
+        "ev_per_trade": 0.0,
+        "avg_win": 0.0,
+        "avg_loss": 0.0,
+        "profit_factor": 0.0,
+        "max_drawdown": 0.0
+      }
+    },
+    "total_qualifying_markets": 0
+  }
+}

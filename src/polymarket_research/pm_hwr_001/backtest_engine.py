@@ -36,9 +36,9 @@ def normal_cdf(x: float) -> float:
 
 
 def polymarket_crypto_fee_v2(price: float, fee_rate: float = 0.07) -> float:
-    """Polymarket crypto dynamic fee schedule v2: fee = fee_rate * min(p, 1 - p)."""
+    """Polymarket crypto dynamic fee schedule: fee = fee_rate * p * (1 - p)."""
     p = max(0.001, min(0.999, price))
-    return fee_rate * min(p, 1.0 - p)
+    return fee_rate * p * (1.0 - p)
 
 
 @dataclass

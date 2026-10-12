@@ -28,18 +28,21 @@ from src.polymarket_research.pm_hwr_001.statistical_evaluation import (
 
 class TestPMHWR001Invariants(unittest.TestCase):
     def test_polymarket_crypto_fee_v2_symmetry_and_bounds(self):
-        """Fee formula must be symmetric around 0.50 and non-negative."""
+        """Fee formula must be quadratic C * fee_rate * p * (1 - p) and symmetric around 0.50."""
         fee_rate = 0.07
-        # At 0.50, fee is 0.07 * 0.50 = 0.035
-        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.50, fee_rate), 0.035, places=5)
-        # Symmetry: fee(0.20) == fee(0.80)
+        # At 0.50, fee is 0.07 * 0.50 * 0.50 = 0.0175 per share
+        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.50, fee_rate), 0.0175, places=5)
+        # At 0.30, fee is 0.07 * 0.30 * 0.70 = 0.0147 per share
+        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.30, fee_rate), 0.0147, places=5)
+        # Symmetry: fee(0.20) == fee(0.80) == 0.07 * 0.20 * 0.80 = 0.0112
         self.assertAlmostEqual(
             polymarket_crypto_fee_v2(0.20, fee_rate),
             polymarket_crypto_fee_v2(0.80, fee_rate),
             places=5,
         )
-        # At 0.95, fee is 0.07 * 0.05 = 0.0035
-        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.95, fee_rate), 0.0035, places=5)
+        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.20, fee_rate), 0.0112, places=5)
+        # At 0.95, fee is 0.07 * 0.95 * 0.05 = 0.003325 per share
+        self.assertAlmostEqual(polymarket_crypto_fee_v2(0.95, fee_rate), 0.003325, places=5)
         # Bounded at extreme prices
         self.assertGreater(polymarket_crypto_fee_v2(0.999, fee_rate), 0.0)
         self.assertGreater(polymarket_crypto_fee_v2(0.001, fee_rate), 0.0)

@@ -1,0 +1,153 @@
+{
+  "campaign_id": "PM-HWR-001",
+  "stage": "STAGE_1_AND_2_AUDIT_AND_BASELINE",
+  "timestamp_utc": "2026-10-12T14:31:59.670456+00:00",
+  "audit": {
+    "files": {
+      "finalized_market_resolutions.jsonl": {
+        "exists": true,
+        "size_bytes": 168503,
+        "size_mb": 0.16,
+        "line_count": 392,
+        "sha256": "8f08029af6475e6b6ba3c9c63061009ffab63aa1ffecbbe0217c294919ecd19d"
+      },
+      "polymarket_hourly_telemetry.jsonl": {
+        "exists": true,
+        "size_bytes": 364944074,
+        "size_mb": 348.04,
+        "line_count": 117717,
+        "sha256": "2883198c2382c47a74412cf893fbd21998e3307ca09b11d3e6b325b5c6c2fee9"
+      },
+      "polymarket_hourly_telemetry_eth.jsonl": {
+        "exists": true,
+        "size_bytes": 78081911,
+        "size_mb": 74.46,
+        "line_count": 23910,
+        "sha256": "364eadd8cfb2b5e324e2e95d8dc5e939ee4915f6f063554f5d8b0359a9c28cc5"
+      },
+      "live_shock_triggers.jsonl": {
+        "exists": true,
+        "size_bytes": 17153680,
+        "size_mb": 16.36,
+        "line_count": 4905,
+        "sha256": "7dcba9dcceb9cd97d6fd2022ed49600687e84542e0706536ee5ed947087fa2a0"
+      },
+      "paper_trading_validation_ledger.jsonl": {
+        "exists": true,
+        "size_bytes": 220042,
+        "size_mb": 0.21,
+        "line_count": 272,
+        "sha256": "fa47dcabaf40bcf0b2ef0cb3a4786d24cbe3e0291eb1bce9d4a42c7c9a526aed"
+      },
+      "shadow_fast_unwind_ledger.jsonl": {
+        "exists": true,
+        "size_bytes": 258946,
+        "size_mb": 0.25,
+        "line_count": 272,
+        "sha256": "f4e920bc0525d5863f873ad016ceddc5f13d9fd5e8f624e9c86e909b8eeab6e8"
+      },
+      "live_harvester_state.json": {
+        "exists": true,
+        "size_bytes": 71851,
+        "size_mb": 0.07,
+        "line_count": 1,
+        "sha256": "b7d4e9b7dcc2742886232169a57f57660a922c2868857428d518c208b0ea16bb"
+      }
+    },
+    "market_universe": {
+      "total_finalized_markets": 392,
+      "unique_market_ids": 392,
+      "asset_distribution": {
+        "BTC": 325,
+        "ETH": 67
+      },
+      "outcome_distribution": {
+        "UP": 203,
+        "DOWN": 189
+      },
+      "date_range": {
+        "start": "2026-09-28",
+        "end": "2026-10-12",
+        "distinct_calendar_days": 15,
+        "daily_market_counts": {
+          "2026-09-28": 1,
+          "2026-09-29": 24,
+          "2026-09-30": 24,
+          "2026-10-01": 24,
+          "2026-10-02": 24,
+          "2026-10-03": 24,
+          "2026-10-04": 24,
+          "2026-10-05": 24,
+          "2026-10-06": 22,
+          "2026-10-07": 24,
+          "2026-10-08": 24,
+          "2026-10-09": 27,
+          "2026-10-10": 48,
+          "2026-10-11": 48,
+          "2026-10-12": 30
+        }
+      },
+      "ground_truth_contract_duration_seconds": 3600.0,
+      "independent_event_clusters": 392
+    }
+  },
+  "baseline": {
+    "exp302_paper_validation": {
+      "n_trades": 272,
+      "settled_wins": 226,
+      "settlement_accuracy_pct": 83.09,
+      "settlement_accuracy_95ci": [
+        78.18,
+        87.08
+      ],
+      "net_profitable_count": 226,
+      "net_loss_count": 46,
+      "net_profitable_rate_pct": 83.09,
+      "total_net_pnl_usd": 1488.36,
+      "avg_win_usd": 16.92,
+      "avg_loss_usd": -50.77,
+      "profit_factor": 1.64,
+      "max_drawdown_usd": 286.62,
+      "worst_single_loss_usd": -52.0,
+      "total_fees_usd": 214.32
+    },
+    "exp303_policy_b2_shadow": {
+      "n_trades": 272,
+      "settled_wins": 272,
+      "settlement_accuracy_pct": 100.0,
+      "settlement_accuracy_95ci": [
+        98.61,
+        100.0
+      ],
+      "net_profitable_count": 272,
+      "net_loss_count": 0,
+      "net_profitable_rate_pct": 100.0,
+      "total_net_pnl_usd": 1653.49,
+      "avg_win_usd": 6.08,
+      "avg_loss_usd": 0.0,
+      "profit_factor": "inf",
+      "max_drawdown_usd": 0.0,
+      "worst_single_loss_usd": 5.26,
+      "total_fees_usd": 214.32
+    },
+    "live_production_harvester": {
+      "n_trades": 20,
+      "settled_wins": 13,
+      "settlement_accuracy_pct": 65.0,
+      "settlement_accuracy_95ci": [
+        43.29,
+        81.88
+      ],
+      "net_profitable_count": 13,
+      "net_loss_count": 7,
+      "net_profitable_rate_pct": 65.0,
+      "total_net_pnl_usd": -42.35,
+      "avg_win_usd": 3.0,
+      "avg_loss_usd": -11.62,
+      "profit_factor": 0.48,
+      "max_drawdown_usd": 49.97,
+      "worst_single_loss_usd": -36.14,
+      "total_fees_usd": 9.93
+    }
+  }
+}

@@ -1,0 +1,269 @@
+{
+  "campaign_id": "PM-HWR-001",
+  "evaluation_timestamp_utc": "2026-10-12T14:36:00Z",
+  "market_universe_sample_size": {
+    "total_recorded_markets": 392,
+    "holdout_window_markets": 126,
+    "gate_required_holdout_trades": 300,
+    "sample_deficit": 174,
+    "verdict_implication": "Even if 100% of holdout markets qualified, max achievable N is 126. Therefore, the dataset mathematically cannot support the pre-registered N >= 300 gate."
+  },
+  "campaign_verdict": "INSUFFICIENT_EVIDENCE",
+  "key_findings": [
+    {
+      "finding_id": "FINDING_1_LATE_CANDLE_MARKET_MAKER_PRICING",
+      "finding": "In the late candle (TTE <= 300s), when z >= 2.0 (true prob >= 97.7%), Polymarket orderbook asks are already trading at 0.98 - 0.999 (avg: 0.9993). Buying at 99.9c yields only +$0.028 win while an adverse jump costs -$30.00, requiring a 99.91% break-even win rate. Realized EV is negative.",
+      "status": "HYPOTHESIS_REFUTED_BY_ORDERBOOK_DEPTH"
+    },
+    {
+      "finding_id": "FINDING_2_SHOCK_SAMPLE_SIZE_LIMITATION",
+      "finding": "High-conviction shock filtering (|dist| >= 0.10%) yields 100% win rate on Validation (7/7) and Holdout (1/1), but holdout sample (N=1 to 22) is far below the pre-registered N >= 300 requirement. 95% CI lower bound is 20.7%.",
+      "status": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "finding_id": "FINDING_3_BASELINE_HOLDOUT_DECAY",
+      "finding": "The baseline EXP-302 strategy fell from 83.09% overall to 77.27% in holdout (n=22), yielding EV of -$1.20/trade without Policy B2 early stops.",
+      "status": "CONFIRMED_BASELINE_RISK"
+    }
+  ],
+  "candidates": [
+    {
+      "candidate_id": "CONTROL_EXP302_BASELINE",
+      "holdout_trades_n": 22,
+      "holdout_wins": 17,
+      "holdout_win_rate_pct": 77.27,
+      "holdout_95ci_pct": [
+        56.56,
+        89.88
+      ],
+      "holdout_ev_usd": -1.2,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 77.3% < 95%",
+        "Holdout N=22 < 300 required",
+        "95% CI lower 56.6% < 90%",
+        "Holdout EV $-1.20 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B1_DIST_0.10",
+      "holdout_trades_n": 1,
+      "holdout_wins": 1,
+      "holdout_win_rate_pct": 100.0,
+      "holdout_95ci_pct": [
+        20.65,
+        100.0
+      ],
+      "holdout_ev_usd": 4.92,
+      "gates_passed": {
+        "win_rate_ge_95": true,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": true
+      },
+      "failure_reasons": [
+        "Holdout N=1 < 300 required",
+        "95% CI lower 20.7% < 90%"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B2_DIST_0.15",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B3_DIST_0.20",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B4_DIST_0.25",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B5_DIST_0.30",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B6_TTE_300S_DIST_0.15",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B7_TTE_300S_DIST_0.25",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B8_TTE_600S_DIST_0.20",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    },
+    {
+      "candidate_id": "CAND_B9_ULTRA_DIST_0.35_OFI_1.0",
+      "holdout_trades_n": 0,
+      "holdout_wins": 0,
+      "holdout_win_rate_pct": 0.0,
+      "holdout_95ci_pct": [
+        0.0,
+        0.0
+      ],
+      "holdout_ev_usd": 0.0,
+      "gates_passed": {
+        "win_rate_ge_95": false,
+        "sample_ge_300": false,
+        "ci_lower_ge_90": false,
+        "net_ev_positive": false
+      },
+      "failure_reasons": [
+        "Holdout WR 0.0% < 95%",
+        "Holdout N=0 < 300 required",
+        "95% CI lower 0.0% < 90%",
+        "Holdout EV $0.00 <= 0"
+      ],
+      "verdict": "INSUFFICIENT_EVIDENCE"
+    }
+  ]
+}

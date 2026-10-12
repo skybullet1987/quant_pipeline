@@ -30,8 +30,9 @@ RESOLUTIONS_FILE = DATA_DIR / "finalized_market_resolutions.jsonl"
 
 
 def polymarket_crypto_fee_v2(price: float, fee_rate: float = 0.07) -> float:
+    """Polymarket crypto dynamic fee schedule: fee = fee_rate * p * (1 - p)."""
     p = max(0.001, min(0.999, price))
-    return fee_rate * min(p, 1.0 - p)
+    return fee_rate * p * (1.0 - p)
 
 
 def get_fold(candle_close_ts: float) -> str:

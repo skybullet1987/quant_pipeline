@@ -1,0 +1,51 @@
+{
+  "audit_name": "EXP-303_ADVERSARIAL_SIMULATION_AUDIT",
+  "sample_size": 272,
+  "underlying_ground_truth": {
+    "settled_winning_events": 226,
+    "settled_losing_events": 46,
+    "actual_settlement_accuracy_pct": 83.09
+  },
+  "simulation_models": {
+    "original_exp303_policy_b2": {
+      "description": "Original counterfactual simulation in shadow_fast_unwind_ledger.jsonl",
+      "flaw_identified": "Unconditionally assigned exit_price = entry_px + 0.10 regardless of market outcome (won=True or False)",
+      "wins": 272,
+      "losses": 0,
+      "win_rate_pct": 100.0,
+      "total_net_pnl": 1653.49,
+      "ev_per_trade": 6.08,
+      "max_drawdown": 0.0
+    },
+    "adversarial_model_1_unconditional_loss": {
+      "description": "Losing candles (won=False) held to expiry wipeout ($0.00) without stop-loss",
+      "wins": 226,
+      "losses": 46,
+      "win_rate_pct": 83.09,
+      "total_net_pnl": -988.63,
+      "ev_per_trade": -3.63,
+      "avg_win": 6.0,
+      "avg_loss": -50.96
+    },
+    "adversarial_model_2_with_spot_delta_stop": {
+      "description": "Losing candles caught by Policy B2 Spot-Delta Stop-Loss (unwind @ 0.58)",
+      "wins": 226,
+      "losses": 46,
+      "win_rate_pct": 83.09,
+      "total_net_pnl": 995.2,
+      "ev_per_trade": 3.66,
+      "avg_win": 6.2,
+      "avg_loss": -8.8
+    },
+    "adversarial_model_3_queue_friction_and_stop": {
+      "description": "Realistic queue friction (14% missed maker scalp fallback to taker) + spot-delta stop",
+      "wins": 226,
+      "losses": 46,
+      "win_rate_pct": 83.09,
+      "total_net_pnl": 985.55,
+      "ev_per_trade": 3.62,
+      "avg_win": 6.15,
+      "avg_loss": -8.8
+    }
+  }
+}
