@@ -2183,6 +2183,10 @@ class PolymarketLiveHarvester:
             ):
                 return
 
+            if self.risk_controller.max_daily_loss_usd in (75.0, 13.11):
+                self.risk_controller.max_daily_loss_usd = round(max(13.0, float(live_bankroll) * 0.06), 2)
+            if self.risk_controller.max_daily_loss_usd == 75.0:
+                self.risk_controller.max_daily_loss_usd = round(max(13.0, float(live_bankroll) * 0.06), 2)
             kelly_ticket = _calc_kelly(
                 p_model_for_sizing, first_ask, live_bankroll
             )
