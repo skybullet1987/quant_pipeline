@@ -248,7 +248,7 @@ if sig_type == 0:
         print(f"Broadcasting on-chain approvals from EOA {signer_addr}...")
         for name, spender in missing_onchain_pusd:
             nonce = w3.eth.get_transaction_count(signer_addr, "pending")
-            gas_price = max(int(w3.eth.gas_price * 1.5), 60 * 10**9)
+            gas_price = min(max(int(w3.eth.gas_price * 1.5), 60 * 10**9), 300 * 10**9)
             print(f"  Broadcasting pUSD approve for {name} with nonce {nonce}...")
             tx = pusd.functions.approve(spender, max_uint256).build_transaction({
                 "from": signer_addr,
@@ -269,7 +269,7 @@ if sig_type == 0:
 
         for name, spender in missing_ctf_operators:
             nonce = w3.eth.get_transaction_count(signer_addr, "pending")
-            gas_price = max(int(w3.eth.gas_price * 1.5), 60 * 10**9)
+            gas_price = min(max(int(w3.eth.gas_price * 1.5), 60 * 10**9), 300 * 10**9)
             print(f"  Broadcasting CTF setApprovalForAll for {name} with nonce {nonce}...")
             tx = ctf.functions.setApprovalForAll(spender, True).build_transaction({
                 "from": signer_addr,

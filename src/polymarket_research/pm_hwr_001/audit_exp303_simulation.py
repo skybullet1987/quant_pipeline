@@ -13,6 +13,7 @@ Exposes the counterfactual assumptions and simulates realistic adverse scenarios
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -23,10 +24,77 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 SHADOW_LEDGER = DATA_DIR / "shadow_fast_unwind_ledger.jsonl"
 VALIDATION_LEDGER = DATA_DIR / "paper_trading_validation_ledger.jsonl"
 
+VALID_EXECUTION_TYPES = {
+    "MAKER_LIMIT",
+    "TAKER_IOC",
+    "TAKER_FOK",
+    "TAKER_FAK",
+    "MARKET_RESOLVED_PAYOUT",
+}
 
-def run_exp303_adversarial_audit() -> Dict[str, Any]:
+
+def validate_causal_execution_contract(shadow_records: List[Dict[str, Any]]) -> None:
+    """
+    R3-14 Invariant: Prohibits certifying executable edge without chronological observable exit records.
+    Requires empirical execution evidence (timestamps, observed bid depth, fees).
+    Enforces finite, bounded, and positive numerical evidence and recognized execution types.
+    """
+    required_execution_fields = {
+        "entry_ts",
+        "exit_trigger_ts",
+        "observed_exit_price",
+        "observed_executable_shares",
+        "observed_exit_fee_usd",
+        "exit_execution_type",
+    }
+    for record in shadow_records:
+        tid = record.get("trade_id", "UNKNOWN")
+        missing = required_execution_fields - record.keys()
+        if missing:
+            raise RuntimeError(
+                f"INSUFFICIENT_EXECUTION_EVIDENCE: {tid} missing {sorted(missing)}"
+            )
+
+        try:
+            entry_ts = float(record["entry_ts"])
+            exit_ts = float(record["exit_trigger_ts"])
+            price = float(record["observed_exit_price"])
+            shares = float(record["observed_executable_shares"])
+            fee = float(record["observed_exit_fee_usd"])
+        except (ValueError, TypeError) as e:
+            raise RuntimeError(
+                f"INVALID_EXECUTION_EVIDENCE: Non-numeric field in record {tid}: {e}"
+            )
+
+        if not (math.isfinite(entry_ts) and entry_ts > 0):
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Non-finite or non-positive entry_ts {entry_ts} in {tid}")
+
+        if not (math.isfinite(exit_ts) and exit_ts > 0):
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Non-finite or non-positive exit_trigger_ts {exit_ts} in {tid}")
+
+        if exit_ts < entry_ts:
+            raise RuntimeError("CAUSALITY_ERROR: exit precedes entry")
+
+        if not (math.isfinite(price) and 0.001 <= price <= 0.999):
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Price {price} out of bounds [0.001, 0.999] in {tid}")
+
+        if not (math.isfinite(shares) and shares > 0.0):
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Non-positive or non-finite shares {shares} in {tid}")
+
+        if not (math.isfinite(fee) and fee >= 0.0):
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Negative or non-finite fee {fee} in {tid}")
+
+        exec_type = str(record.get("exit_execution_type", ""))
+        if exec_type not in VALID_EXECUTION_TYPES:
+            raise RuntimeError(f"INVALID_EXECUTION_EVIDENCE: Unrecognized exit_execution_type '{exec_type}' in {tid}")
+
+
+def run_exp303_adversarial_audit(enforce_causal_contract: bool = True) -> Dict[str, Any]:
     with open(SHADOW_LEDGER, "r") as f:
         shadow_records = [json.loads(line) for line in f if line.strip()]
+
+    if enforce_causal_contract:
+        validate_causal_execution_contract(shadow_records)
 
     with open(VALIDATION_LEDGER, "r") as f:
         val_records = {json.loads(line)["trade_id"]: json.loads(line) for line in f if line.strip()}
@@ -167,6 +235,14 @@ def run_exp303_adversarial_audit() -> Dict[str, Any]:
                 "avg_win": round(sum(p for p in m3_pnls if p > 0) / m3_wins, 2),
                 "avg_loss": round(sum(p for p in m3_pnls if p < 0) / m3_losses, 2),
             },
+        },
+        "causal_execution_qualification": {
+            "status": "UNVERIFIED_COUNTERFACTUAL_SENSITIVITY_BOUNDS",
+            "finding_r3_14_note": (
+                "Models 1, 2, and 3 condition on final candle outcome (won=True/False) or synthetic queue miss "
+                "rather than causal chronological tick-level exit evidence. They provide stress-test sensitivity bounds, "
+                "NOT certified executable strategy alpha. Full production certification requires verifiable execution fields."
+            ),
         },
     }
 

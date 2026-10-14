@@ -17,6 +17,7 @@ def test_unwind_quantization_and_tolerance():
     executor = PolymarketLiveExecutor(dry_run=False)
     executor.is_authenticated = True
     executor.client = MagicMock()
+    executor.get_conditional_balance = MagicMock(return_value=100.0)
 
     # Exchange matching engine returns 35.21 for an order size of 35.211268
     executor.client.create_order = MagicMock(return_value={"signed": "ORDER"})
@@ -48,6 +49,7 @@ def test_unwind_partial_fill_returns_partial_status():
     executor = PolymarketLiveExecutor(dry_run=False)
     executor.is_authenticated = True
     executor.client = MagicMock()
+    executor.get_conditional_balance = MagicMock(return_value=100.0)
 
     executor.client.create_order = MagicMock(return_value={"signed": "ORDER"})
     executor.client.post_order = MagicMock(return_value={
@@ -312,7 +314,12 @@ def test_pre_expiry_pin_risk_zone_classification():
 
 
 def test_unwind_balance_reconciliation_when_already_sold():
-    """Verifies that when unwind fails with an error but conditional balance is ~0 with fill proceeds, position settles."""
+    """
+    Round 10 P0-03: a failed unwind with a dust wallet balance proves only that inventory is absent,
+    never the sale proceeds. The position must NOT be settled from `taking_amount` of a failed response;
+    it stays supervised under UNRESOLVED_BALANCE_DISCREPANCY with new entries halted until exchange
+    fill history reconciles it.
+    """
     harvester = PolymarketLiveHarvester(dry_run=False)
     tid = "LIVE_TEST_BALANCE_RECONCILE"
     now = time.time()
@@ -355,12 +362,14 @@ def test_unwind_balance_reconciliation_when_already_sold():
 
     asyncio.run(harvester.check_resolutions_and_manage_positions())
 
-    # Position must be immediately reconciled as settled instead of looping into 365 retries!
-    assert tid not in harvester.active_positions
-    closed = next(p for p in harvester.closed_positions if p["trade_id"] == tid)
-    assert closed["close_reason"] == "ADVERSE_STOP_LOSS_UNWIND"
-    assert closed["payout_usd"] == 19.81
-    assert closed["net_pnl_usd"] == round(19.81 - 28.77 - 0.79, 2)
+    # No synthetic settlement and no phantom cash from a FAILED unwind response.
+    assert tid in harvester.active_positions
+    pos = harvester.active_positions[tid]
+    assert pos["exit_order_status"] == "UNRESOLVED_BALANCE_DISCREPANCY"
+    assert pos.get("status") != ExecutionStatus.SETTLED
+    assert "payout_usd" not in pos and "net_pnl_usd" not in pos
+    assert not any(p["trade_id"] == tid for p in harvester.closed_positions)
+    assert harvester.can_enter_new_position() is False
 
 
 def test_pre_expiry_missing_spot_classified_as_outcome_unknown():
@@ -423,6 +432,7 @@ def test_unwind_exact_decimal_shortfall_is_strictly_partial():
     executor = PolymarketLiveExecutor(dry_run=False)
     executor.is_authenticated = True
     executor.client = MagicMock()
+    executor.get_conditional_balance = MagicMock(return_value=100.0)
 
     # Case A: Exactly 0.01 shortfall (requested 47.16, matched 47.15)
     executor.client.create_order = MagicMock(return_value={"signed": "ORDER"})

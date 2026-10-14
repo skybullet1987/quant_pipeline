@@ -263,6 +263,8 @@ class BoundaryConvergenceEngine:
 
         if not is_deterministic_winner:
             return None
+        if not (0.84 <= clob_best_ask <= 0.96):
+            return None
 
         # Closed-form dynamic taker fee in dollars per share
         fee_per_share = self.fee_usd_per_share(clob_best_ask)
@@ -381,6 +383,9 @@ class EXP306BoundaryDaemon:
         self.active_markets: Dict[str, Dict[str, Any]] = {}
         self.boundary_engines: Dict[str, BoundaryConvergenceEngine] = {}
         self.clob_books: Dict[str, Dict[str, Any]] = {}
+        self.strike_cache: Dict[str, float] = {}
+        self.executed_boundary_markets: set[str] = set()
+        self.binance_backoff_until: float = 0.0
         self.stats = {
             "boundary_triggers": 0,
             "merge_triggers": 0,
@@ -393,19 +398,22 @@ class EXP306BoundaryDaemon:
         now = time.time()
         feed = self.spot_feeds[asset]
         feed[venue] = price
+        feed[f"{venue}_ts"] = now
         feed["updated"] = now
 
         b_px = feed["binance"]
         c_px = feed["coinbase"]
+        b_fresh = (now - float(feed.get("binance_ts", 0.0) or 0.0)) <= 3.0
+        c_fresh = (now - float(feed.get("coinbase_ts", 0.0) or 0.0)) <= 3.0
 
-        if b_px > 0 and c_px > 0:
+        if b_px > 0 and c_px > 0 and b_fresh and c_fresh:
             feed["composite"] = (b_px + c_px) / 2.0
             diff = abs(b_px - c_px)
             if diff > (b_px * 0.001):  # > 10 bps divergence
                 logger.debug(f"[BASIS-ALERT] {asset} Binance vs Coinbase spread: ${diff:.2f}")
-        elif b_px > 0:
+        elif b_px > 0 and b_fresh:
             feed["composite"] = b_px
-        elif c_px > 0:
+        elif c_px > 0 and c_fresh:
             feed["composite"] = c_px
 
         comp_price = feed["composite"]
@@ -516,12 +524,33 @@ class EXP306BoundaryDaemon:
                                                     continue
 
                                                 mid = str(m.get("id"))
-                                                raw_strike = m.get("strikePrice")
-                                                strike = float(raw_strike) if raw_strike else 0.0
-                                                # If strikePrice is missing, parse open price or default to current spot
-                                                if strike <= 0 and self.spot_feeds[asset]["composite"] > 0:
-                                                    strike = self.spot_feeds[asset]["composite"]
+                                                raw_strike = m.get("strikePrice") or m.get("priceToBeat") or m.get("startingPrice")
+                                                strike = float(raw_strike) if raw_strike else self.strike_cache.get(mid, 0.0)
+                                                # AUDIT-01 / AUDIT-13-01 / AUDIT-13-08 Fix: Cache resolved strikes & handle HTTP 429/418 backoff
+                                                if strike <= 0 and time.time() >= self.binance_backoff_until:
+                                                    duration_s = 300 if "5m" in slug else (900 if "15m" in slug else 3600)
+                                                    candle_open_ms = int((t_exp - duration_s) * 1000)
+                                                    interval_str = "5m" if duration_s == 300 else ("15m" if duration_s == 900 else "1h")
+                                                    try:
+                                                        kline_url = f"https://api.binance.com/api/v3/klines?symbol={asset}USDT&interval={interval_str}&startTime={candle_open_ms}&limit=1"
+                                                        async with session.get(kline_url, timeout=aiohttp.ClientTimeout(total=1.5)) as k_resp:
+                                                            if k_resp.status == 200:
+                                                                k_data = await k_resp.json()
+                                                                if k_data and len(k_data[0]) > 1:
+                                                                    strike = float(k_data[0][1])
+                                                                    self.strike_cache[mid] = strike
+                                                            elif k_resp.status in (429, 418):
+                                                                retry_after = float(k_resp.headers.get("Retry-After", 60.0))
+                                                                self.binance_backoff_until = time.time() + max(30.0, retry_after)
+                                                                logger.error(f"[BINANCE_RATE_LIMIT] HTTP {k_resp.status} on kline lookup. Backing off for {retry_after:.0f}s.")
+                                                    except Exception as k_err:
+                                                        logger.warning(f"Failed to resolve authoritative candle open strike for {mid}: {k_err}")
+                                                if strike <= 0:
+                                                    logger.warning(f"[STRIKE_UNRESOLVED] Skipping market {mid} ({slug}): authoritative strike unavailable.")
+                                                    continue
 
+                                                is_subhourly = ("5m" in slug or "15m" in slug)
+                                                oracle_src = str(m.get("resolutionSource") or m.get("oracle") or ("CHAINLINK" if is_subhourly else "BINANCE")).upper()
                                                 res_type = "TWAP" if "twap" in m.get("description", "").lower() else "DISCRETE_CLOSE"
 
                                                 self.active_markets[mid] = {
@@ -533,7 +562,8 @@ class EXP306BoundaryDaemon:
                                                     "resolution_type": res_type,
                                                     "token_up": clob_tokens[0],
                                                     "token_down": clob_tokens[1],
-                                                    "oracle": m.get("oracle", "CHAINLINK"),
+                                                    "oracle": oracle_src,
+                                                    "basis_buffer_bps": 12.0 if "CHAINLINK" in oracle_src else 0.0,
                                                 }
 
                                                 if mid not in self.boundary_engines:
@@ -543,6 +573,7 @@ class EXP306BoundaryDaemon:
                                                         resolution_type=res_type,
                                                         twap_window_seconds=30.0,
                                                         min_hurdle_profit=0.02,
+                                                        discrete_jump_threshold=4.0 if "CHAINLINK" in oracle_src else 3.5,
                                                     )
                             except Exception:
                                 pass
@@ -563,10 +594,12 @@ class EXP306BoundaryDaemon:
                 for mid in expired:
                     self.active_markets.pop(mid, None)
                     self.boundary_engines.pop(mid, None)
+                    self.strike_cache.pop(mid, None)
+                    self.executed_boundary_markets.discard(mid)
 
                 for mid, m_data in list(self.active_markets.items()):
                     tte = m_data["t_exp"] - now
-                    if tte > 120.0 or tte <= 0:
+                    if tte > 120.0 or tte <= 0 or mid in self.executed_boundary_markets:
                         continue
 
                     token_up = m_data["token_up"]
@@ -604,6 +637,7 @@ class EXP306BoundaryDaemon:
                         )
                         if merge_opp:
                             self.stats["merge_triggers"] += 1
+                            self.executed_boundary_markets.add(mid)
                             self._log_shadow_trade({
                                 "strategy": "INSTANT_CTF_MERGE",
                                 "market_id": mid,
@@ -613,12 +647,18 @@ class EXP306BoundaryDaemon:
                                 "executable_shares": merge_opp.max_executable_shares,
                                 "notional_usd": merge_opp.gross_cost * merge_opp.max_executable_shares,
                             })
+                            continue
+
+                        # Enforce 12 bps Chainlink-to-Binance oracle basis buffer on sub-hourly contracts
+                        comp_spot = self.spot_feeds[m_data["asset"]]["composite"]
+                        basis_buf = m_data["strike"] * (float(m_data.get("basis_buffer_bps", 0.0)) / 10000.0)
 
                         # Check 2: Deterministic Boundary Convergence (UP)
-                        if best_ask_up > 0:
+                        if best_ask_up > 0 and (comp_spot - m_data["strike"]) > basis_buf:
                             entry_up = engine.evaluate_execution_entry("UP", best_ask_up, depth_up, now)
                             if entry_up:
                                 self.stats["boundary_triggers"] += 1
+                                self.executed_boundary_markets.add(mid)
                                 self._log_shadow_trade({
                                     "strategy": "BOUNDARY_CONVERGENCE",
                                     "side": "UP",
@@ -635,12 +675,14 @@ class EXP306BoundaryDaemon:
                                     "spot_coinbase": self.spot_feeds[m_data["asset"]]["coinbase"],
                                     "strike": m_data["strike"],
                                 })
+                                continue
 
                         # Check 3: Deterministic Boundary Convergence (DOWN)
-                        if best_ask_down > 0:
+                        if best_ask_down > 0 and (m_data["strike"] - comp_spot) > basis_buf:
                             entry_down = engine.evaluate_execution_entry("DOWN", best_ask_down, depth_down, now)
                             if entry_down:
                                 self.stats["boundary_triggers"] += 1
+                                self.executed_boundary_markets.add(mid)
                                 self._log_shadow_trade({
                                     "strategy": "BOUNDARY_CONVERGENCE",
                                     "side": "DOWN",
@@ -657,6 +699,7 @@ class EXP306BoundaryDaemon:
                                     "spot_coinbase": self.spot_feeds[m_data["asset"]]["coinbase"],
                                     "strike": m_data["strike"],
                                 })
+                                continue
 
                     except Exception as e:
                         logger.debug(f"Evaluation error for {mid}: {e}")

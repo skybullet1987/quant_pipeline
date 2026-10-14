@@ -1,9 +1,12 @@
 import math
+import hashlib
+import time
 from typing import Dict, Any, Tuple, List, Optional
 from eth_account import Account
 from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
 from hyperliquid.utils import constants
+from hyperliquid.utils.types import Cloid
 
 class HyperliquidGateway:
     def __init__(self, secret_key: str = None, account_address: str = None, testnet: bool = True):
@@ -165,16 +168,20 @@ class HyperliquidGateway:
             res = self.info.post("/info", {"type": "frontendOpenOrders", "user": self.account_address})
             if isinstance(res, list):
                 return res
-            return []
+            raise RuntimeError(f"Unexpected non-list response for frontendOpenOrders: {res}")
         except Exception as e:
             print(f"--> [Gateway Warning] Failed to fetch frontend open orders: {e}", flush=True)
-            return []
+            raise RuntimeError(f"Exchange query frontendOpenOrders failed: {e}") from e
 
     def cancel_stale_maker_orders(self) -> int:
         """Cancels only resting non-trigger limit orders, strictly preserving active TP/SL brackets."""
         if not self.exchange:
             return 0
-        fe_orders = self.get_frontend_open_orders()
+        try:
+            fe_orders = self.get_frontend_open_orders()
+        except Exception as e:
+            print(f"--> [Gateway Warning] Skipping cancel_stale_maker_orders due to query error: {e}", flush=True)
+            return 0
         canceled_count = 0
         for o in fe_orders:
             if not o.get("isTrigger") and "trigger" not in str(o.get("orderType", "")).lower():
@@ -190,7 +197,11 @@ class HyperliquidGateway:
         """Cancels all active TP/SL trigger orders cleanly so exact fresh brackets can be armed."""
         if not self.exchange:
             return 0
-        fe_orders = self.get_frontend_open_orders()
+        try:
+            fe_orders = self.get_frontend_open_orders()
+        except Exception as e:
+            print(f"--> [Gateway Warning] Skipping cancel_all_trigger_orders due to query error: {e}", flush=True)
+            return 0
         canceled_count = 0
         for o in fe_orders:
             if o.get("isTrigger") or "trigger" in str(o.get("orderType", "")).lower():
@@ -211,7 +222,7 @@ class HyperliquidGateway:
         best_ask = float(asks[0]["px"])
         return (best_bid + best_ask) / 2.0
 
-    def place_alo_order(self, symbol: str, is_buy: bool, size: float, price: float) -> Dict[str, Any]:
+    def place_alo_order(self, symbol: str, is_buy: bool, size: float, price: float, cloid: Optional[str] = None) -> Dict[str, Any]:
         if not self.exchange:
             return {}
         try:
@@ -219,15 +230,20 @@ class HyperliquidGateway:
             rounded_px = self.round_px(symbol, price)
             if rounded_sz <= 0 or rounded_px <= 0:
                 return {}
+            cloid_obj = None
+            if cloid:
+                hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
+                cloid_obj = Cloid.from_str(hex_str)
             return self.exchange.order(
                 symbol, is_buy, rounded_sz, rounded_px,
-                order_type={"limit": {"tif": "Alo"}}, reduce_only=False
+                order_type={"limit": {"tif": "Alo"}}, reduce_only=False,
+                cloid=cloid_obj
             )
         except Exception as e:
             print(f"--> [Gateway Warning] Failed to place ALO order for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
-    def place_trigger_stop(self, symbol: str, is_buy_to_close: bool, size: float, trigger_price: float) -> Dict[str, Any]:
+    def place_trigger_stop(self, symbol: str, is_buy_to_close: bool, size: float, trigger_price: float, cloid: Optional[str] = None) -> Dict[str, Any]:
         if not self.exchange:
             return {}
         try:
@@ -235,13 +251,40 @@ class HyperliquidGateway:
             rounded_px = self.round_px(symbol, trigger_price)
             if rounded_sz <= 0 or rounded_px <= 0:
                 return {}
+            cloid_obj = None
+            if cloid:
+                hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
+                cloid_obj = Cloid.from_str(hex_str)
             return self.exchange.order(
                 symbol, is_buy_to_close, rounded_sz, rounded_px,
                 order_type={"trigger": {"isMarket": True, "triggerPx": float(rounded_px), "tpsl": "sl"}},
-                reduce_only=True
+                reduce_only=True,
+                cloid=cloid_obj
             )
         except Exception as e:
             print(f"--> [Gateway Warning] Failed to place trigger stop for {symbol}: {e}", flush=True)
+            return {"error": str(e)}
+
+    def place_trigger_tp(self, symbol: str, is_buy_to_close: bool, size: float, trigger_price: float, cloid: Optional[str] = None) -> Dict[str, Any]:
+        if not self.exchange:
+            return {}
+        try:
+            rounded_sz = abs(self.round_sz(symbol, size))
+            rounded_px = self.round_px(symbol, trigger_price)
+            if rounded_sz <= 0 or rounded_px <= 0:
+                return {}
+            cloid_obj = None
+            if cloid:
+                hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
+                cloid_obj = Cloid.from_str(hex_str)
+            return self.exchange.order(
+                symbol, is_buy_to_close, rounded_sz, rounded_px,
+                order_type={"trigger": {"isMarket": True, "triggerPx": float(rounded_px), "tpsl": "tp"}},
+                reduce_only=True,
+                cloid=cloid_obj
+            )
+        except Exception as e:
+            print(f"--> [Gateway Warning] Failed to place trigger TP for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
     def get_oracle_price(self, symbol: str) -> float:

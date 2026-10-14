@@ -47,6 +47,7 @@ import fcntl
 import hashlib
 import json
 import math
+import hmac
 import os
 import sys
 import time
@@ -67,6 +68,10 @@ if str(PIPELINE_ROOT) not in sys.path:
 
 load_dotenv(PIPELINE_ROOT / ".env")
 
+import urllib.request
+from email.utils import parsedate_to_datetime
+from hyperliquid.utils.types import Cloid
+
 from src.strategy.convex_10x_engine import (
     IronCoreEngine,
     MachineState,
@@ -75,6 +80,7 @@ from src.strategy.convex_10x_engine import (
     round_px,
     validate_l1_order,
     compute_continuous_bipower_variation,
+    compute_bipower_variation_stats,
     compute_hurst_exponent,
     compute_variance_ratio,
     determine_holding_lock_duration,
@@ -106,7 +112,9 @@ DUST_THRESHOLD_USD = 8.0          # Dust remnants < $8 auto-flattened
 DEFAULT_SL_PCT = 0.035            # 3.5% default stop-loss trigger (Safety Overlay)
 DEFAULT_TP_PCT = 0.070            # 7.0% default take-profit trigger (Safety Overlay)
 MAX_CLOCK_DRIFT_MS = 5000         # 5.0 seconds maximum acceptable clock drift
-MAX_VALUATION_RESIDUAL_USD = 2.50 # $2.50 maximum unexplained valuation residual before HALT (calibrated for 8-16 multi-asset mark oracle spread)
+MAX_WARNING_RESIDUAL_USD = 0.05   # $0.05 acceptable mismatch before DEGRADED valuation drift warning
+MAX_VALUATION_RESIDUAL_USD = 0.10 # $0.10 maximum unexplained valuation residual before hard ACCOUNTING_FAULT HALT
+ADMIN_RESET_TOKEN = os.getenv("APEX_ADMIN_RESET_TOKEN", "APEX_OPERATOR_AUTHORIZED_EMERGENCY_RESET_2026")
 BENCHMARK_SYMBOL = "BTC"
 STRATEGY_VERSION = "v2.5.0-candidate-a-rho-only"
 PYRAMID_RATIO = 0.0  # Strictly zero pyramiding invariant
@@ -165,12 +173,101 @@ class PaperTradeState:
     circuit_breaker: CircuitBreakerState = CircuitBreakerState.RUNNING
     last_event_id: int = 0
     last_hash: str = "0" * 64
+    unverified_protection: bool = False
+
+
+def parse_order_response(res: Dict[str, Any]) -> Tuple[bool, Optional[int], str]:
+    """
+    Strictly verifies Hyperliquid order placement response schemas.
+    Returns: (is_accepted: bool, oid: Optional[int], error_or_status: str)
+    Guarantees:
+      - Embedded order errors (e.g. {"error": "..."} inside statuses) are identified as REJECTED.
+      - Top-level failure responses (status != "ok") are identified as REJECTED.
+      - Requires confirmed resting or filled status with confirmed integer oid to be accepted.
+    """
+    if not isinstance(res, dict):
+        return False, None, f"Non-dict response: {res}"
+    if res.get("status") != "ok":
+        return False, None, str(res.get("response", res))
+
+    resp_obj = res.get("response", {})
+    if not isinstance(resp_obj, dict):
+        return False, None, f"Non-dict inner response: {resp_obj}"
+
+    data = resp_obj.get("data", {})
+    if not isinstance(data, dict):
+        return False, None, f"Non-dict data payload: {data}"
+
+    statuses = data.get("statuses", [])
+    if not statuses or not isinstance(statuses, list):
+        return False, None, f"Missing statuses in data: {data}"
+
+    first_status = statuses[0]
+    if isinstance(first_status, dict):
+        if "error" in first_status:
+            return False, None, f"Embedded order error: {first_status.get('error')}"
+        if "resting" in first_status:
+            resting = first_status.get("resting")
+            if isinstance(resting, dict) and "oid" in resting:
+                try:
+                    return True, int(resting["oid"]), "RESTING"
+                except (ValueError, TypeError):
+                    return False, None, f"Invalid resting oid type: {resting.get('oid')}"
+            return False, None, "Resting status missing oid"
+        if "filled" in first_status:
+            filled = first_status.get("filled")
+            if isinstance(filled, dict) and "oid" in filled:
+                try:
+                    return True, int(filled["oid"]), "FILLED"
+                except (ValueError, TypeError):
+                    return False, None, f"Invalid filled oid type: {filled.get('oid')}"
+            return False, None, "Filled status missing oid"
+
+    return False, None, f"Unrecognized order status payload: {first_status}"
+
+
+def parse_cancel_response(res: Any) -> Tuple[bool, str]:
+    """
+    Strictly verifies Hyperliquid order cancellation responses.
+    Returns: (is_confirmed: bool, status_msg: str)
+    Guarantees:
+      - Embedded cancel errors (e.g. {"error": "..."} inside statuses) return False.
+      - Top-level failure returns False.
+      - Requires explicit 'success' status to be confirmed.
+    """
+    if not isinstance(res, dict):
+        return False, f"Non-dict cancel response: {res}"
+    if res.get("status") != "ok":
+        return False, str(res.get("response", res))
+
+    resp_obj = res.get("response", {})
+    if not isinstance(resp_obj, dict):
+        return False, f"Non-dict inner response: {resp_obj}"
+
+    data = resp_obj.get("data", {})
+    if not isinstance(data, dict):
+        return False, f"Non-dict cancel data: {data}"
+
+    statuses = data.get("statuses", [])
+    if not statuses or not isinstance(statuses, list):
+        return False, f"Missing statuses in cancel response: {data}"
+
+    first_status = statuses[0]
+    if first_status == "success":
+        return True, "SUCCESS"
+    if isinstance(first_status, dict):
+        if "error" in first_status:
+            return False, f"Embedded cancel error: {first_status.get('error')}"
+    if isinstance(first_status, str) and "error" in first_status.lower():
+        return False, f"Cancel error string: {first_status}"
+    return False, f"Unrecognized cancel status: {first_status}"
 
 
 class EventJournal:
     """
     Append-only authoritative event journal with cryptographic SHA-256 hash chaining.
     All state modifications are committed here first via fsync before state projection.
+    Authenticates entire canonical event envelopes (event_id, event_type, timestamp_ms, payload, prev_hash, schema_version).
     """
 
     def __init__(self, journal_path: Path = JOURNAL_FILE):
@@ -178,24 +275,44 @@ class EventJournal:
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.last_event_id = 0
         self.last_hash = "0" * 64
+        self._sync_tail()
+
+    def _sync_tail(self):
+        """Initializes last_event_id and last_hash from existing journal file to preserve unbroken sequence."""
+        if not self.path.exists() or self.path.stat().st_size == 0:
+            return
+        try:
+            with open(self.path, "r") as f:
+                last_line = ""
+                for line in f:
+                    line_s = line.strip()
+                    if line_s:
+                        last_line = line_s
+                if last_line:
+                    last_entry = json.loads(last_line)
+                    self.last_event_id = int(last_entry.get("event_id", 0))
+                    self.last_hash = str(last_entry.get("hash", "0" * 64))
+        except Exception:
+            pass
 
     def append_event(self, event_type: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        """Atomically appends an immutable event line to the journal with fsync."""
+        """Atomically appends an immutable event line to the journal with whole-envelope SHA-256 authentication and fsync."""
         now_ms = int(time.time() * 1000)
         self.last_event_id += 1
 
-        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
-        hasher = hashlib.sha256()
-        hasher.update(self.last_hash.encode("utf-8"))
-        hasher.update(payload_bytes)
-        event_hash = hasher.hexdigest()
-
-        event_entry = {
+        envelope = {
             "event_id": self.last_event_id,
             "event_type": event_type,
             "timestamp_ms": now_ms,
             "payload": payload,
             "prev_hash": self.last_hash,
+            "schema_version": 2,
+        }
+        envelope_bytes = json.dumps(envelope, sort_keys=True).encode("utf-8")
+        event_hash = hashlib.sha256(envelope_bytes).hexdigest()
+
+        event_entry = {
+            **envelope,
             "hash": event_hash,
         }
 
@@ -208,14 +325,15 @@ class EventJournal:
         self.last_hash = event_hash
         return event_entry
 
-    def replay_and_project(self) -> PaperTradeState:
-        """Deterministically replays all journal events to project current state."""
+    def replay_and_project(self, strict: bool = True) -> PaperTradeState:
+        """Deterministically replays all journal events to project current state with cryptographic SHA-256 verification."""
         state = PaperTradeState()
         if not self.path.exists():
             return state
 
         self.last_event_id = 0
         self.last_hash = "0" * 64
+        seen_v2_migration = False
 
         with open(self.path, "r") as f:
             for line_no, raw_line in enumerate(f, 1):
@@ -224,68 +342,133 @@ class EventJournal:
                     continue
                 try:
                     entry = json.loads(raw_line)
-                    ev_type = entry.get("event_type")
-                    payload = entry.get("payload", {})
-
-                    self.last_event_id = entry.get("event_id", self.last_event_id)
-                    self.last_hash = entry.get("hash", self.last_hash)
-
-                    if ev_type == "EPOCH_INIT":
-                        state.initial_strategy_equity = float(payload.get("initial_equity", state.initial_strategy_equity))
-                        state.opening_unrealized_pnl = float(payload.get("opening_unrealized_pnl", 0.0))
-                        state.epoch_start_ms = int(payload.get("epoch_start_ms", payload.get("timestamp_ms", 0)))
-                        state.current_strategy_equity = state.initial_strategy_equity
-                        state.historical_hwm = float(payload.get("hwm", state.initial_strategy_equity))
-                    elif ev_type == "TARGET_FROZEN":
-                        state.frozen_target_generation_id = str(payload.get("generation_id", ""))
-                        state.frozen_target_signal_bar_ts = str(payload.get("signal_bar_ts", ""))
-                        state.frozen_target_weights = payload.get("target_weights", {})
-                        state.active_leverage = float(payload.get("active_leverage", state.active_leverage))
-                        state.cushion = float(payload.get("cushion", state.cushion))
-                        state.holding_locks = payload.get("holding_locks", {})
-                        state.bars_since_macro = 0
-                        state.last_macro_ts = payload.get("timestamp", "")
-                    elif ev_type == "ORDER_INTENT":
-                        cloid = payload.get("cloid")
-                        if cloid:
-                            state.owned_cloids.add(cloid)
-                    elif ev_type == "ORDER_CONFIRMED":
-                        oid = payload.get("oid")
-                        cloid = payload.get("cloid")
-                        if oid:
-                            state.owned_oids.add(int(oid))
-                        if cloid:
-                            state.owned_cloids.add(cloid)
-                    elif ev_type == "FILL_RECONCILED":
-                        f_key = payload.get("fill_key")
-                        if f_key:
-                            state.processed_fill_keys.add(f_key)
-                        state.cumulative_realized_pnl += float(payload.get("closed_pnl", 0.0))
-                        state.cumulative_exchange_fees += float(payload.get("fee", 0.0))
-                        t_ms = int(payload.get("time_ms", 0))
-                        if t_ms > state.last_fill_cursor_ms:
-                            state.last_fill_cursor_ms = t_ms
-                    elif ev_type == "FUNDING_RECONCILED":
-                        fund_key = payload.get("funding_key")
-                        if fund_key:
-                            state.processed_funding_keys.add(fund_key)
-                        state.cumulative_funding_pnl += float(payload.get("usdc", 0.0))
-                        t_ms = int(payload.get("time_ms", 0))
-                        if t_ms > state.last_funding_cursor_ms:
-                            state.last_funding_cursor_ms = t_ms
-                    elif ev_type == "CASH_FLOW":
-                        state.external_cash_flows += float(payload.get("amount", 0.0))
-                    elif ev_type == "HWM_UPDATE":
-                        new_hwm = float(payload.get("hwm", state.historical_hwm))
-                        if new_hwm > state.historical_hwm:
-                            state.historical_hwm = new_hwm
-                    elif ev_type == "CIRCUIT_BREAKER":
-                        state.circuit_breaker = CircuitBreakerState(payload.get("state", "RUNNING"))
-                    elif ev_type == "MICRO_BAR_COMPLETED":
-                        state.total_micro_bars = int(payload.get("total_micro_bars", state.total_micro_bars))
-                        state.bars_since_macro = int(payload.get("bars_since_macro", state.bars_since_macro))
                 except Exception as e:
+                    if strict:
+                        raise ValueError(f"Malformed JSON at journal line {line_no}: {e}")
                     log("WARN", f"[JOURNAL] Corrupted journal line {line_no} skipped ({e})")
+                    continue
+
+                ev_id = entry.get("event_id")
+                ev_type = entry.get("event_type")
+                payload = entry.get("payload", {})
+                prev_hash = entry.get("prev_hash")
+                stored_hash = entry.get("hash")
+                schema_ver = entry.get("schema_version", 1)
+
+                if strict:
+                    if ev_id != self.last_event_id + 1:
+                        raise ValueError(f"Journal sequencing fault at line {line_no}: expected event_id {self.last_event_id + 1}, got {ev_id}")
+                    if prev_hash != self.last_hash:
+                        raise ValueError(f"Cryptographic hash chain broken at line {line_no}: prev_hash mismatch!")
+
+                    if schema_ver >= 2:
+                        seen_v2_migration = True
+                        # Full canonical envelope authentication: guarantees event_type, timestamp_ms, event_id cannot be tampered
+                        envelope = {
+                            "event_id": ev_id,
+                            "event_type": ev_type,
+                            "timestamp_ms": entry.get("timestamp_ms"),
+                            "payload": payload,
+                            "prev_hash": prev_hash,
+                            "schema_version": schema_ver,
+                        }
+                        envelope_bytes = json.dumps(envelope, sort_keys=True).encode("utf-8")
+                        computed_hash = hashlib.sha256(envelope_bytes).hexdigest()
+                    else:
+                        if seen_v2_migration:
+                            raise ValueError(f"Schema downgrade detected at journal line {line_no}: legacy v{schema_ver} event encountered after Schema v2 migration boundary!")
+                        # Legacy v1 historical migration boundary (preserves verification across 2,802 historical journal events)
+                        payload_bytes = json.dumps(payload, sort_keys=True).encode("utf-8")
+                        hasher = hashlib.sha256()
+                        hasher.update(self.last_hash.encode("utf-8"))
+                        hasher.update(payload_bytes)
+                        computed_hash = hasher.hexdigest()
+
+                    if stored_hash != computed_hash:
+                        raise ValueError(f"Cryptographic tampering or payload corruption at line {line_no}: stored hash != computed hash!")
+                    self.last_hash = computed_hash
+                else:
+                    self.last_hash = stored_hash or self.last_hash
+
+                self.last_event_id = ev_id
+
+                if ev_type == "EPOCH_INIT":
+                    state.initial_strategy_equity = float(payload.get("initial_equity", state.initial_strategy_equity))
+                    state.opening_unrealized_pnl = float(payload.get("opening_unrealized_pnl", 0.0))
+                    state.epoch_start_ms = int(payload.get("epoch_start_ms", payload.get("timestamp_ms", 0)))
+                    state.current_strategy_equity = state.initial_strategy_equity
+                    state.historical_hwm = float(payload.get("hwm", state.initial_strategy_equity))
+                elif ev_type == "TARGET_FROZEN":
+                    state.frozen_target_generation_id = str(payload.get("generation_id", ""))
+                    state.frozen_target_signal_bar_ts = str(payload.get("signal_bar_ts", ""))
+                    state.frozen_target_weights = payload.get("target_weights", {})
+                    state.active_leverage = float(payload.get("active_leverage", state.active_leverage))
+                    state.cushion = float(payload.get("cushion", state.cushion))
+                    state.holding_locks = payload.get("holding_locks", {})
+                    state.bars_since_macro = 0
+                    state.last_macro_ts = payload.get("timestamp", "")
+                elif ev_type == "ORDER_INTENT":
+                    cloid = payload.get("cloid")
+                    if cloid:
+                        state.owned_cloids.add(cloid)
+                elif ev_type == "ORDER_CONFIRMED":
+                    oid = payload.get("oid")
+                    cloid = payload.get("cloid")
+                    if oid:
+                        state.owned_oids.add(int(oid))
+                        if "signal_price" in payload and "target_price" in payload:
+                            state.order_decision_prices[str(oid)] = {
+                                "signal_price": float(payload["signal_price"]),
+                                "target_price": float(payload["target_price"]),
+                            }
+                    if cloid:
+                        state.owned_cloids.add(cloid)
+                elif ev_type == "FILL_RECONCILED":
+                    f_key = payload.get("fill_key")
+                    if f_key:
+                        state.processed_fill_keys.add(f_key)
+                    state.cumulative_realized_pnl += float(payload.get("closed_pnl", 0.0))
+                    state.cumulative_exchange_fees += float(payload.get("fee", 0.0))
+                    t_ms = int(payload.get("time_ms", 0))
+                    if t_ms > state.last_fill_cursor_ms:
+                        state.last_fill_cursor_ms = t_ms
+                elif ev_type == "FUNDING_RECONCILED":
+                    fund_key = payload.get("funding_key")
+                    if fund_key:
+                        state.processed_funding_keys.add(fund_key)
+                    state.cumulative_funding_pnl += float(payload.get("usdc", 0.0))
+                    t_ms = int(payload.get("time_ms", 0))
+                    if t_ms > state.last_funding_cursor_ms:
+                        state.last_funding_cursor_ms = t_ms
+                elif ev_type == "CASH_FLOW":
+                    state.external_cash_flows += float(payload.get("amount", 0.0))
+                elif ev_type == "HWM_UPDATE":
+                    new_hwm = float(payload.get("hwm", state.historical_hwm))
+                    if new_hwm > state.historical_hwm:
+                        state.historical_hwm = new_hwm
+                elif ev_type == "CIRCUIT_BREAKER":
+                    new_breaker = CircuitBreakerState(payload.get("state", "RUNNING"))
+                    # Monotonic terminal latch: once HALTED, cannot unhalt without authenticated manual override
+                    if state.circuit_breaker == CircuitBreakerState.HALTED and new_breaker != CircuitBreakerState.HALTED:
+                        admin_auth = payload.get("auth_token") or payload.get("admin_signature")
+                        is_authenticated = (
+                            schema_ver >= 2
+                            and payload.get("manual_override_reset") is True
+                            and admin_auth is not None
+                            and hmac.compare_digest(str(admin_auth), ADMIN_RESET_TOKEN)
+                        )
+                        if is_authenticated:
+                            log("INFO", f"[JOURNAL] Authenticated administrative reset accepted at line {line_no}. Resuming {new_breaker.value}.")
+                            state.circuit_breaker = new_breaker
+                        else:
+                            log("WARN", f"[JOURNAL] Ignored unauthorized or unauthenticated circuit breaker transition at line {line_no}: daemon remains latched in HALTED state.")
+                    else:
+                        state.circuit_breaker = new_breaker
+                elif ev_type == "MICRO_BAR_COMPLETED":
+                    state.total_micro_bars = int(payload.get("total_micro_bars", state.total_micro_bars))
+                    state.bars_since_macro = int(payload.get("bars_since_macro", state.bars_since_macro))
+                    if "holding_locks" in payload:
+                        state.holding_locks = payload.get("holding_locks", {})
 
         state.last_event_id = self.last_event_id
         state.last_hash = self.last_hash
@@ -299,26 +482,51 @@ class EventJournal:
 class ProductionApexExecutor:
     """Production Autonomous Sovereign Finality Executor."""
 
-    def __init__(self, testnet: bool = True, dry_run: bool = False, force_macro: bool = False, acquire_lock: bool = True):
+    def __init__(
+        self,
+        testnet: bool = True,
+        dry_run: bool = False,
+        force_macro: bool = False,
+        acquire_lock: bool = True,
+        journal_path: Optional[Path] = None,
+        state_path: Optional[Path] = None,
+    ):
         self.testnet = testnet
         self.dry_run = dry_run
         self.force_macro = force_macro
 
         # 1. Process Singleton Enforcement
         self._lock_file_handle = None
-        if acquire_lock:
+        if acquire_lock and not dry_run:
             self._acquire_process_singleton_lock()
 
-        # 2. Gateway Initialization
+        # 2. Journal File Selection (Dry-Run isolation prevents mutating live state)
+        if journal_path is not None:
+            self.journal_file = journal_path
+            self.state_file = state_path or (journal_path.parent / "papertrade_state.json")
+        elif self.dry_run:
+            self.journal_file = PIPELINE_ROOT / "data" / "dry_run_journal.jsonl"
+            self.state_file = PIPELINE_ROOT / "data" / "dry_run_state.json"
+        else:
+            self.journal_file = JOURNAL_FILE
+            self.state_file = STATE_FILE
+
+        # 3. Gateway Initialization
         secret = os.getenv("HYPERLIQUID_PRIVATE_KEY") or os.getenv("HYPERLIQUID_API_KEY")
         addr = os.getenv("HYPERLIQUID_ACCOUNT_ADDRESS")
         self.gateway = HyperliquidGateway(secret_key=secret, account_address=addr, testnet=testnet)
 
-        # 3. Event Journal & State Projection
-        self.journal = EventJournal(JOURNAL_FILE)
+        # 4. Event Journal & State Projection
+        self.latch_file = self.journal_file.parent / (self.journal_file.stem + "_emergency_halt.latch")
+        self.journal = EventJournal(self.journal_file)
         self.state = self.journal.replay_and_project()
 
-        # 4. First-Boot Epoch Initialization
+        # Check out-of-band persistent emergency latch (survives journal append failure or crash)
+        if self.latch_file.exists():
+            log("CRITICAL", f"[RESTART GATE] Active emergency latch found at {self.latch_file}! Latching state to HALTED.")
+            self.state.circuit_breaker = CircuitBreakerState.HALTED
+
+        # 5. First-Boot Epoch Initialization
         if self.state.last_event_id == 0:
             log("INFO", "[EPOCH] Clean journal detected. Initializing first strategy epoch from on-chain truth...")
             try:
@@ -331,11 +539,22 @@ class ProductionApexExecutor:
                     open_unrealized += float(p.get("unrealizedPnl", 0.0))
 
                 now_ms = int(time.time() * 1000)
+                hwm_val = init_eq
+                if self.state_file.exists():
+                    try:
+                        with open(self.state_file, "r") as sf:
+                            prev_state = json.load(sf)
+                            prev_hwm = float(prev_state.get("equity", {}).get("historical_hwm", 0.0))
+                            if prev_hwm > hwm_val:
+                                hwm_val = prev_hwm
+                    except Exception:
+                        pass
+
                 self.journal.append_event("EPOCH_INIT", {
                     "initial_equity": init_eq,
                     "opening_unrealized_pnl": open_unrealized,
                     "epoch_start_ms": now_ms,
-                    "hwm": init_eq,
+                    "hwm": hwm_val,
                     "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                 })
                 self.state = self.journal.replay_and_project()
@@ -347,8 +566,50 @@ class ProductionApexExecutor:
                 self.save_materialized_state_cache({}, {})
             except Exception as e:
                 log("ERROR", f"[EPOCH] Failed to initialize epoch from on-chain state: {e}")
-        elif not STATE_FILE.exists():
+        elif not self.state_file.exists():
             self.save_materialized_state_cache({}, {})
+
+    def _write_emergency_latch(self, reason: str):
+        """Atomically writes an out-of-band crash-resilient emergency HALT latch file."""
+        try:
+            self.latch_file.parent.mkdir(parents=True, exist_ok=True)
+            latch_data = {
+                "state": "HALTED",
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                "pid": os.getpid(),
+            }
+            tmp_latch = self.latch_file.with_suffix(".tmp")
+            with open(tmp_latch, "w") as f:
+                f.write(json.dumps(latch_data) + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            tmp_latch.replace(self.latch_file)
+        except Exception as e:
+            log("CRITICAL", f"[EMERGENCY LATCH] Failed to write latch file: {e}")
+
+    def trip_halt(self, reason: str):
+        """
+        Durable, monotonic, fail-closed circuit breaker latch.
+        Persists emergency latch to disk FIRST, then appends to immutable journal,
+        guaranteeing crash recovery even under disk-full or journal append failure.
+        """
+        log("CRITICAL", f"[CIRCUIT BREAKER LATCHED] {reason}")
+        self._write_emergency_latch(reason)
+        journal_err = None
+        try:
+            self.journal.append_event("CIRCUIT_BREAKER", {
+                "state": "HALTED",
+                "reason": reason,
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            })
+        except Exception as e:
+            journal_err = e
+            log("CRITICAL", f"[CIRCUIT BREAKER] Journal append failed ({e}), but persistent latch is locked on disk!")
+        
+        self.state.circuit_breaker = CircuitBreakerState.HALTED
+        if journal_err is not None:
+            raise RuntimeError(f"Journal append failed during HALT ({journal_err}), persistent latch active on disk.") from journal_err
 
     def release_lock(self):
         """Releases process singleton lock if held."""
@@ -445,9 +706,9 @@ class ProductionApexExecutor:
 
     def load_state(self):
         """Reloads materialized state cache or replays journal."""
-        if STATE_FILE.exists():
+        if self.state_file.exists():
             try:
-                with open(STATE_FILE, "r") as f:
+                with open(self.state_file, "r") as f:
                     data = json.load(f)
                 eq = data.get("equity", {})
                 self.state.initial_strategy_equity = float(eq.get("initial_strategy_equity", self.state.initial_strategy_equity))
@@ -495,17 +756,36 @@ class ProductionApexExecutor:
             sys.exit(1)
 
     def check_clock_drift(self) -> bool:
-        """Verifies local system clock against Hyperliquid Layer 1 server time."""
+        """Verifies local system clock against Hyperliquid Layer 1 server time via HTTP Date header."""
         try:
+            url = f"{self.gateway.base_url}/info"
+            req = urllib.request.Request(url, data=b'{"type":"meta"}', headers={'Content-Type': 'application/json'})
             t0 = time.time()
-            _ = self.gateway.info.user_state(self.gateway.account_address)
-            rtt_ms = int((time.time() - t0) * 1000)
-            if rtt_ms > MAX_CLOCK_DRIFT_MS:
-                log("WARN", f"[CLOCK] High network latency detected ({rtt_ms}ms > {MAX_CLOCK_DRIFT_MS}ms).")
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                date_header = resp.headers.get("Date")
+            t1 = time.time()
+
+            if not date_header:
+                log("CRITICAL", "[CLOCK] Exchange response missing Date header; cannot verify clock offset.")
+                self.trip_halt("Exchange response missing Date header; clock offset unverified")
+                return False
+
+            server_dt = parsedate_to_datetime(date_header)
+            server_ts = server_dt.timestamp()
+            local_mid = (t0 + t1) / 2.0
+            drift_ms = abs(server_ts - local_mid) * 1000.0
+
+            if drift_ms > MAX_CLOCK_DRIFT_MS:
+                log("CRITICAL", f"[CLOCK DRIFT EXCEEDED] Local system clock drift {drift_ms:.1f}ms > {MAX_CLOCK_DRIFT_MS}ms max! Tripping fail-closed.")
+                self.trip_halt(f"Local system clock drift {drift_ms:.1f}ms > {MAX_CLOCK_DRIFT_MS}ms max")
+                return False
+
+            log("INFO", f"[CLOCK] Server clock synchronization verified (offset: {drift_ms:.1f}ms <= {MAX_CLOCK_DRIFT_MS}ms).")
             return True
         except Exception as e:
-            log("WARN", f"[CLOCK] Could not verify server clock offset: {e}")
-            return True
+            log("CRITICAL", f"[CLOCK FAIL-CLOSED] Failed to verify exchange server clock offset: {e}")
+            self.trip_halt(f"Exchange server clock verification HTTP error: {e}")
+            return False
 
     def get_causal_4h_decision_boundary(self) -> Tuple[int, int]:
         """
@@ -735,15 +1015,13 @@ class ProductionApexExecutor:
         # Envelope 1: Max DD > 52.0% from any High-Water Mark (3.4% buffer beyond historical 48.60% valley)
         current_dd = max(0.0, (self.state.historical_hwm - self.state.current_strategy_equity) / (self.state.historical_hwm + 1e-8))
         if current_dd > 0.520:
-            log("CRITICAL", f"[CIRCUIT BREAKER] Trailing DD {current_dd*100:.2f}% breached 52.0% HWM envelope (HWM: ${self.state.historical_hwm:.2f}, NAV: ${self.state.current_strategy_equity:.2f})! Halting daemon.")
-            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            self.trip_halt(f"Trailing DD {current_dd*100:.2f}% breached 52.0% HWM envelope (HWM: ${self.state.historical_hwm:.2f}, NAV: ${self.state.current_strategy_equity:.2f})")
             return {}, 0.0, 0.0, [], [], {}
 
         # Envelope 2: Deposit Capital Floor (< $4,800 on $10k initial / -52.0% initial deposit floor)
         deposit_floor_usd = self.state.initial_strategy_equity * 0.48
         if self.state.current_strategy_equity < deposit_floor_usd:
-            log("CRITICAL", f"[CIRCUIT BREAKER] Strategy NAV ${self.state.current_strategy_equity:.2f} breached $4,800 deposit floor (${deposit_floor_usd:.2f})! Halting daemon.")
-            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            self.trip_halt(f"Strategy NAV ${self.state.current_strategy_equity:.2f} breached $4,800 deposit floor (${deposit_floor_usd:.2f})")
             return {}, 0.0, 0.0, [], [], {}
 
         if is_throttled:
@@ -815,20 +1093,24 @@ class ProductionApexExecutor:
         for i in valid_indices:
             sym = symbols[i]
             p_slice = close_mat[max(0, t - 36):t + 1, i]
-            if len(p_slice) < 18:
+            if len(p_slice) < 18 or np.any(p_slice <= 0):
                 continue
 
-            bv, rv = compute_continuous_bipower_variation(p_slice)
-            jump_ratio = (rv - bv) / (rv + 1e-8)
-            hurst = compute_hurst_exponent(p_slice)
-            vr = compute_variance_ratio(p_slice, q=4)
+            ret_slice = np.diff(np.log(p_slice))
+            if len(ret_slice) < 12:
+                continue
+
+            bv, rv, jump_ratio = compute_bipower_variation_stats(ret_slice)
+            hurst = compute_hurst_exponent(ret_slice)
+            vr = compute_variance_ratio(ret_slice, q=4)
 
             # Jump Gate: Exclude assets dominated by jump discontinuities (jump_ratio > 0.40)
             if jump_ratio > 0.40:
                 continue
 
             lock_bars = determine_holding_lock_duration(hurst, vr)
-            holding_locks[sym] = lock_bars
+            # Store absolute target expiry micro-bar index (immune to replay wipes)
+            holding_locks[sym] = self.state.total_micro_bars + lock_bars
 
             score = composite_alpha[i]
             if score > 0 and hurst > 0.52 and vr > 0.95:
@@ -877,9 +1159,10 @@ class ProductionApexExecutor:
             user_state = self.gateway.info.user_state(self.gateway.account_address)
         except Exception as e:
             log("CRITICAL", f"[FAIL-CLOSED] Could not retrieve account state from Hyperliquid: {e}")
-            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            self.trip_halt(f"Exchange state query failed: {e}")
             raise RuntimeError(f"Exchange state query failed: {e}")
 
+        inputs_incomplete: List[str] = []
         now_ms = int(time.time() * 1000)
         safety_overlap_ms = 24 * 3600 * 1000
 
@@ -962,7 +1245,8 @@ class ProductionApexExecutor:
                         except Exception as log_e:
                             log("DEBUG", f"[SHORTFALL] Telemetry log error ({log_e})")
         except Exception as e:
-            log("WARN", f"[RECONCILE] user_fills_by_time query error ({e})")
+            inputs_incomplete.append(f"user_fills_by_time: {e}")
+            log("CRITICAL", f"[RECONCILE] user_fills_by_time query error ({e}); accounting inputs incomplete")
 
         # 3. Reconcile Funding Cashflows
         fund_query_start = max(self.state.epoch_start_ms, self.state.last_funding_cursor_ms - safety_overlap_ms)
@@ -992,10 +1276,18 @@ class ProductionApexExecutor:
                             "usdc": usdc,
                         })
         except Exception as e:
-            log("WARN", f"[RECONCILE] userFunding query error ({e})")
+            inputs_incomplete.append(f"userFunding: {e}")
+            log("CRITICAL", f"[RECONCILE] userFunding query error ({e}); accounting inputs incomplete")
 
         # 4. Replay state projection to materialize updated cumulative totals
+        halted_before = self.state.circuit_breaker == CircuitBreakerState.HALTED or self.latch_file.exists()
         self.state = self.journal.replay_and_project()
+        if halted_before:
+            self.state.circuit_breaker = CircuitBreakerState.HALTED
+
+        if inputs_incomplete:
+            # Fail closed: never classify NAV (nor resume from DEGRADED) on partial accounting inputs.
+            raise RuntimeError(f"Reconciliation inputs incomplete, cycle aborted: {inputs_incomplete}")
 
         # 5. Extract Exchange Mark-Price Unrealized PnL
         unrealized_mark_pnl = 0.0
@@ -1024,21 +1316,25 @@ class ProductionApexExecutor:
         # 7. Residual Classification
         if discrepancy <= 0.01:
             res_type = "EXACT_ROUNDING_MATCH"
-            if self.state.circuit_breaker in (CircuitBreakerState.DEGRADED, CircuitBreakerState.HALTED):
+            if self.state.circuit_breaker == CircuitBreakerState.DEGRADED:
                 log("INFO", f"[CIRCUIT BREAKER] NAV discrepancy ${discrepancy:.4f} within exact match tolerance. Resuming RUNNING state.")
                 self.journal.append_event("CIRCUIT_BREAKER", {"state": "RUNNING", "reason": f"NAV discrepancy recovered to ${discrepancy:.4f}"})
                 self.state.circuit_breaker = CircuitBreakerState.RUNNING
-        elif discrepancy <= MAX_VALUATION_RESIDUAL_USD:
+        elif discrepancy <= MAX_WARNING_RESIDUAL_USD:
             res_type = "VALUATION_MISMATCH_ACCEPTABLE"
-            if self.state.circuit_breaker in (CircuitBreakerState.DEGRADED, CircuitBreakerState.HALTED) and discrepancy <= 0.50:
+            if self.state.circuit_breaker == CircuitBreakerState.DEGRADED:
                 log("INFO", f"[CIRCUIT BREAKER] NAV discrepancy ${discrepancy:.4f} within acceptable tolerance. Resuming RUNNING state.")
                 self.journal.append_event("CIRCUIT_BREAKER", {"state": "RUNNING", "reason": f"NAV discrepancy recovered to ${discrepancy:.4f}"})
                 self.state.circuit_breaker = CircuitBreakerState.RUNNING
+        elif discrepancy <= MAX_VALUATION_RESIDUAL_USD:
+            res_type = "VALUATION_DRIFT_WARNING"
+            if self.state.circuit_breaker == CircuitBreakerState.RUNNING:
+                log("WARN", f"[CIRCUIT BREAKER] NAV discrepancy ${discrepancy:.4f} > ${MAX_WARNING_RESIDUAL_USD:.2f}. Setting DEGRADED state.")
+                self.journal.append_event("CIRCUIT_BREAKER", {"state": "DEGRADED", "reason": f"NAV discrepancy drift: ${discrepancy:.4f}"})
+                self.state.circuit_breaker = CircuitBreakerState.DEGRADED
         else:
             res_type = "ACCOUNTING_FAULT"
-            log("CRITICAL", f"[CIRCUIT BREAKER] Unexplained NAV discrepancy: ${discrepancy:.4f} > ${MAX_VALUATION_RESIDUAL_USD:.2f}! Tripping to HALTED.")
-            self.journal.append_event("CIRCUIT_BREAKER", {"state": "HALTED", "reason": f"NAV discrepancy: ${discrepancy:.4f}"})
-            self.state.circuit_breaker = CircuitBreakerState.HALTED
+            self.trip_halt(f"Unexplained NAV discrepancy: ${discrepancy:.4f} > ${MAX_VALUATION_RESIDUAL_USD:.2f}")
 
         # Update HWM
         if chain_equity > self.state.historical_hwm:
@@ -1204,7 +1500,9 @@ class ProductionApexExecutor:
 
             for sym, pos in positions.items():
                 sz = abs(pos["size"])
-                entry = pos["entry_px"]
+                entry = float(pos.get("entry_px") or pos.get("entry_price") or pos.get("entryPx") or 0.0)
+                if entry <= 0:
+                    entry = float(self.gateway.get_mid_price(sym))
                 is_long = pos["size"] > 0
                 sz_dec = self.gateway.sz_decimals.get(sym, 2)
                 rounded_sz = abs(round_sz(sz, sz_dec))
@@ -1222,7 +1520,6 @@ class ProductionApexExecutor:
 
                 sl_px = round_px(raw_sl, sz_dec)
                 tp_px = round_px(raw_tp, sz_dec)
-                armed_summary[sym] = {"sl_px": sl_px, "tp_px": tp_px, "size": rounded_sz}
 
                 has_valid_sl = False
                 has_valid_tp = False
@@ -1254,46 +1551,94 @@ class ProductionApexExecutor:
                             except Exception:
                                 pass
 
+                sl_armed = has_valid_sl
+                tp_armed = has_valid_tp
+
                 # Arm missing SL
-                if not has_valid_sl:
-                    mark_px = pos.get("mark_px", entry)
-                    is_breached = (is_long and mark_px <= sl_px) or (not is_long and mark_px >= sl_px)
+                if not sl_armed:
                     if is_breached:
-                        log("WARN", f"[BRACKETS] Position {sym} ALREADY BREACHED SL (Mark: {mark_px:.4f} vs SL: {sl_px:.4f})! Executing immediate emergency exit.")
+                        log("CRITICAL", f"[BRACKETS] Position {sym} ALREADY BREACHED SL (Mark: {mark_px:.4f} vs SL: {sl_px:.4f})! Executing immediate emergency exit.")
                         try:
                             res_close = self.gateway.close_position(sym, rounded_sz, is_long)
-                            log("INFO", f"[BRACKETS] Breached SL emergency exit for {sym}: {res_close}")
+                            ok_close, _, close_err = parse_order_response(res_close)
+                            if ok_close:
+                                log("INFO", f"[BRACKETS] Breached SL emergency exit for {sym} accepted: {res_close}")
+                            else:
+                                log("CRITICAL", f"[BRACKETS] Emergency exit order on {sym} rejected or unconfirmed: {close_err} ({res_close})")
                         except Exception as e:
-                            log("ERROR", f"[BRACKETS] Failed to exit breached SL position on {sym}: {e}")
+                            log("CRITICAL", f"[BRACKETS] Failed to exit breached SL position on {sym}: {e}")
                     else:
                         val_ok, err, _, _ = validate_l1_order(symbol=sym, price=sl_px, size=rounded_sz, sz_decimals=sz_dec, is_reduce_only=True)
                         if val_ok or "notional" in err.lower():
                             try:
-                                res_sl = self.gateway.exchange.order(
-                                    sym, is_buy_exit, rounded_sz, sl_px,
-                                    order_type={"trigger": {"isMarket": True, "triggerPx": float(sl_px), "tpsl": "sl"}},
-                                    reduce_only=True
-                                )
-                                log("INFO", f"[BRACKETS] Armed SL on {sym}: sz={rounded_sz} @ {sl_px} | res={res_sl.get('status')}")
+                                cloid_sl = f"APEX-SL-{sym}-{int(time.time())}"
+                                res_sl = self.gateway.place_trigger_stop(sym, is_buy_exit, rounded_sz, sl_px, cloid=cloid_sl)
+                                ok_sl, sl_oid, sl_err = parse_order_response(res_sl)
+                                if ok_sl and sl_oid:
+                                    sl_armed = True
+                                    log("INFO", f"[BRACKETS] Armed SL on {sym}: sz={rounded_sz} @ {sl_px} | oid={sl_oid}")
+                                else:
+                                    sl_armed = False
+                                    log("CRITICAL", f"[BRACKETS] Exchange rejected SL order on {sym}: {sl_err}. Position remains UNPROTECTED!")
                             except Exception as e:
-                                log("WARN", f"[BRACKETS] Error arming SL on {sym}: {e}")
+                                sl_armed = False
+                                log("CRITICAL", f"[BRACKETS] Exception placing SL order on {sym}: {e}. Position remains UNPROTECTED!")
+                        else:
+                            sl_armed = False
+                            log("CRITICAL", f"[BRACKETS] SL order validation failed on {sym}: {err}. Position remains UNPROTECTED!")
 
                 # Arm missing TP
-                if not has_valid_tp:
+                if not tp_armed:
                     val_ok, err, _, _ = validate_l1_order(symbol=sym, price=tp_px, size=rounded_sz, sz_decimals=sz_dec, is_reduce_only=True)
                     if val_ok or "notional" in err.lower():
                         try:
-                            res_tp = self.gateway.exchange.order(
-                                sym, is_buy_exit, rounded_sz, tp_px,
-                                order_type={"trigger": {"isMarket": True, "triggerPx": float(tp_px), "tpsl": "tp"}},
-                                reduce_only=True
-                            )
-                            log("INFO", f"[BRACKETS] Armed TP on {sym}: sz={rounded_sz} @ {tp_px} | res={res_tp.get('status')}")
+                            cloid_tp = f"APEX-TP-{sym}-{int(time.time())}"
+                            res_tp = self.gateway.place_trigger_tp(sym, is_buy_exit, rounded_sz, tp_px, cloid=cloid_tp)
+                            ok_tp, tp_oid, tp_err = parse_order_response(res_tp)
+                            if ok_tp and tp_oid:
+                                tp_armed = True
+                                log("INFO", f"[BRACKETS] Armed TP on {sym}: sz={rounded_sz} @ {tp_px} | oid={tp_oid}")
+                            else:
+                                tp_armed = False
+                                log("WARN", f"[BRACKETS] Exchange rejected TP order on {sym}: {tp_err}")
                         except Exception as e:
+                            tp_armed = False
                             log("WARN", f"[BRACKETS] Error arming TP on {sym}: {e}")
 
+                armed_summary[sym] = {
+                    "sl_px": sl_px,
+                    "tp_px": tp_px,
+                    "size": rounded_sz,
+                    "sl_armed": sl_armed,
+                    "tp_armed": tp_armed,
+                    "unhedged": not sl_armed,
+                }
+                if not sl_armed:
+                    log("CRITICAL", f"[BRACKETS] UNHEDGED POSITION DETECTED: {sym} has no active stop loss protection!")
+
+            # CRITICAL SAFETY INVARIANT: If any active position has unhedged = True, trip HALT immediately!
+            unhedged_syms = [s for s, inf in armed_summary.items() if not s.startswith("_") and inf.get("unhedged")]
+            if unhedged_syms:
+                self.state.unverified_protection = True
+                log("CRITICAL", f"[BRACKETS] UNHEDGED POSITIONS DETECTED: {unhedged_syms} have no active stop loss protection! Tripping HALT.")
+                self.trip_halt(f"UNHEDGED POSITIONS DETECTED: {unhedged_syms} have no active stop loss protection on exchange")
+
         except Exception as e:
-            log("ERROR", f"[BRACKETS] Error arming trigger brackets: {e}")
+            log("CRITICAL", f"[BRACKETS] Error arming trigger brackets: {e}")
+            self.state.unverified_protection = True
+            self.trip_halt(f"Trigger bracket verification failed: {e}")
+            if 'positions' in locals() and positions:
+                for sym, pos in positions.items():
+                    sz = abs(pos["size"])
+                    sz_dec = self.gateway.sz_decimals.get(sym, 2)
+                    armed_summary[sym] = {
+                        "sl_px": 0.0, "tp_px": 0.0, "size": abs(round_sz(sz, sz_dec)),
+                        "sl_armed": False, "tp_armed": False, "unhedged": True, "error": str(e)
+                    }
+            armed_summary["_error"] = str(e)
+            armed_summary["_unverified_protection"] = True
+            armed_summary["_halted"] = True
+            return armed_summary
 
         return armed_summary
 
@@ -1307,6 +1652,11 @@ class ProductionApexExecutor:
           5. Enforces 3-regime stale order timeout evaluator.
           6. Post-trade account state refresh & atomic checkpointing.
         """
+        # 0. Safety Invariant: Enforce clock verification before any risk-increasing cycle
+        if not self.check_clock_drift():
+            log("CRITICAL", "[SAFETY GATE] Clock drift verification failed. Halting macro rebalance cycle.")
+            return
+
         if self.state.circuit_breaker == CircuitBreakerState.HALTED:
             log("CRITICAL", "[CIRCUIT BREAKER] Daemon is HALTED! Rejecting macro rebalance cycle.")
             return
@@ -1316,7 +1666,18 @@ class ProductionApexExecutor:
         log("INFO", "================================================================================")
 
         # 1. Reconcile ledger and verify NAV invariant
-        chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        try:
+            chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        except Exception as e:
+            log("CRITICAL", f"[SAFETY GATE] Reconciliation failed ({e}). Macro rebalance aborted; no new risk this cycle.")
+            try:
+                self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+            except Exception as e_b:
+                log("CRITICAL", f"[SAFETY GATE] Bracket verification also failed: {e_b}")
+            return
+        if self.state.circuit_breaker == CircuitBreakerState.HALTED:
+            log("CRITICAL", "[CIRCUIT BREAKER] Macro rebalance aborted: Reconciliation detected accounting fault (HALTED).")
+            return
 
         # 2. Ingest causal PIT market data
         close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat = self.load_latest_market_data()
@@ -1325,6 +1686,18 @@ class ProductionApexExecutor:
         raw_weights, active_lev, cushion, longs, shorts, locks = self.compute_exp103_signals_and_weights(
             close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat=vol_mat
         )
+
+        if self.state.circuit_breaker == CircuitBreakerState.HALTED:
+            log("CRITICAL", "[CIRCUIT BREAKER] Macro rebalance aborted: Drawdown circuit breaker triggered (HALTED).")
+            return
+
+        # Carry forward unexpired holding locks across target generations
+        merged_locks = {
+            s: exp for s, exp in self.state.holding_locks.items()
+            if exp > self.state.total_micro_bars
+        }
+        for s, new_exp in locks.items():
+            merged_locks[s] = max(merged_locks.get(s, 0), new_exp)
 
         decision_ts_ms, _ = self.get_causal_4h_decision_boundary()
         gen_id = f"EXP103_GEN_{decision_ts_ms}"
@@ -1336,7 +1709,7 @@ class ProductionApexExecutor:
             "target_weights": raw_weights,
             "active_leverage": active_lev,
             "cushion": cushion,
-            "holding_locks": locks,
+            "holding_locks": merged_locks,
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         })
         self.state = self.journal.replay_and_project()
@@ -1375,8 +1748,8 @@ class ProductionApexExecutor:
                     log("INFO", f"  [DEADBAND] Suppressed active {sym:<8}: |Delta w|={abs_delta_w:.4f} <= {LELAND_DEADBAND:.3f}")
                     continue
 
-            # Respect Active Holding Lock
-            remaining_lock = self.state.holding_locks.get(sym, 0)
+            # Respect Active Holding Lock against absolute micro-bar index
+            remaining_lock = max(0, self.state.holding_locks.get(sym, 0) - self.state.total_micro_bars)
             if tgt_w == 0.0 and cur_w != 0.0 and remaining_lock > 0:
                 log("INFO", f"  [LOCK ACTIVE] Retaining {sym:<8} (holding lock active for {remaining_lock} more bars)")
                 continue
@@ -1431,7 +1804,7 @@ class ProductionApexExecutor:
             sz_dec = ord_info["sz_dec"]
             is_reduce_only = ord_info["is_reduce_only"]
 
-            cloid = f"EXP103_{gen_id}_{sym}_{'BUY' if is_buy else 'SELL'}_{int(time.time()*1000)}"
+            cloid = f"EXP103_{gen_id}_{sym}_{'BUY' if is_buy else 'SELL'}_ENTRY"
             self.journal.append_event("ORDER_INTENT", {"cloid": cloid, "sym": sym, "is_buy": is_buy, "size": sz_abs})
             self.state.owned_cloids.add(cloid)
 
@@ -1452,28 +1825,40 @@ class ProductionApexExecutor:
             alo_price = round_px(raw_alo_px, sz_dec)
 
             try:
+                cloid_obj = Cloid.from_str("0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()) if cloid else None
                 if is_reduce_only:
-                    res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Alo"}}, reduce_only=True)
+                    res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Alo"}}, reduce_only=True, cloid=cloid_obj)
                 else:
-                    res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price)
+                    res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price, cloid=cloid)
 
-                oid = None
-                if res.get("status") == "ok":
-                    statuses = res.get("response", {}).get("data", {}).get("statuses", [])
-                    if statuses and "resting" in statuses[0]:
-                        oid = statuses[0]["resting"].get("oid")
-
-                self.journal.append_event("ORDER_CONFIRMED", {"cloid": cloid, "oid": oid, "sym": sym, "size": sz_abs, "price": alo_price})
-                if oid:
+                ok, oid, status_detail = parse_order_response(res)
+                if ok and oid is not None:
+                    self.journal.append_event("ORDER_CONFIRMED", {
+                        "cloid": cloid,
+                        "oid": oid,
+                        "sym": sym,
+                        "size": sz_abs,
+                        "price": alo_price,
+                        "signal_price": float(mid),
+                        "target_price": float(alo_price),
+                        "status": status_detail,
+                    })
                     self.state.owned_oids.add(int(oid))
                     self.state.order_decision_prices[str(oid)] = {
                         "signal_price": float(mid),
                         "target_price": float(alo_price),
                     }
-                if cloid:
-                    self.state.owned_cloids.add(cloid)
-                log("INFO", f"  --> [AS-ALO MAKER] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ {alo_price} | oid={oid}")
-                placed_orders.append(ord_info)
+                    if cloid:
+                        self.state.owned_cloids.add(cloid)
+                    log("INFO", f"  --> [AS-ALO MAKER] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ {alo_price} | oid={oid}")
+                    placed_orders.append(ord_info)
+                else:
+                    self.journal.append_event("ORDER_REJECTED", {
+                        "cloid": cloid,
+                        "sym": sym,
+                        "reason": status_detail,
+                    })
+                    log("WARN", f"  --> [AS-ALO REJECT] Order rejected for {sym}: {status_detail}")
             except Exception as e:
                 log("WARN", f"  --> Error submitting ALO order for {sym}: {e}")
 
@@ -1484,6 +1869,12 @@ class ProductionApexExecutor:
             while elapsed < CONVERGENCE_TIMEOUT_SECONDS:
                 time.sleep(CONVERGENCE_POLL_INTERVAL)
                 elapsed += CONVERGENCE_POLL_INTERVAL
+
+                # CONTINUOUS BRACKET INVARIANT: Arm brackets on newly filled positions immediately
+                self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+                if self.state.circuit_breaker == CircuitBreakerState.HALTED:
+                    log("CRITICAL", "[CONVERGENCE] Protection failure tripped HALT. Aborting convergence loop.")
+                    return
 
                 try:
                     fe_orders = self.gateway.get_frontend_open_orders()
@@ -1522,17 +1913,71 @@ class ProductionApexExecutor:
                         # Three-Regime Timeout Policy
                         if distance <= 0.25 * coin_atr:
                             # Regime 1: Re-quote at inside quote
-                            self.gateway.exchange.cancel(coin, o["oid"])
+                            try:
+                                cancel_res = self.gateway.exchange.cancel(coin, o["oid"])
+                                ok_cancel, cancel_msg = parse_cancel_response(cancel_res)
+                            except Exception as e_c:
+                                ok_cancel, cancel_msg = False, str(e_c)
+                                log("WARN", f"  [TIMEOUT CANCEL] Error cancelling {coin} oid={o['oid']}: {e_c}")
+
+                            if not ok_cancel:
+                                # An unconfirmed cancel may mean the order was filled (or is still live);
+                                # either way a replacement would risk duplicate exposure. Fill accounting
+                                # and the next cycle reconcile the true remaining size.
+                                log("CRITICAL", f"  [TIMEOUT RE-QUOTE ABORT] Cancellation not confirmed for {coin} oid={o['oid']} ({cancel_msg}). Suppressing replacement; deferring to reconciliation.")
+                                continue
+
+                            # Cancel confirmed: independently verify the order is terminal on the exchange
+                            try:
+                                current_fe = self.gateway.get_frontend_open_orders()
+                                is_still_open = any(int(co.get("oid", 0)) == int(o["oid"]) for co in current_fe)
+                            except Exception as e_fe:
+                                log("CRITICAL", f"  [ORDER LIFECYCLE REJECT] Could not verify terminal state of {o['oid']} ({e_fe}). Suppressing replacement.")
+                                continue
+                            if is_still_open:
+                                log("CRITICAL", f"  [ORDER LIFECYCLE REJECT] Order {o['oid']} still open after confirmed cancel! Suppressing replacement.")
+                                continue
+
                             sz_dec = self.gateway.sz_decimals.get(coin, 2)
                             re_px = round_px(current_mid, sz_dec)
-                            res_req = self.gateway.place_alo_order(coin, is_buy, sz, re_px)
-                            log("INFO", f"  [TIMEOUT RE-QUOTE] Re-quoted {coin:<8} (dist=${distance:.4f} <= 0.25 ATR): sz={sz} @ {re_px}")
+                            cloid_req = f"EXP103_{gen_id}_{coin}_REQUOTE_1"
+                            self.journal.append_event("ORDER_INTENT", {"cloid": cloid_req, "sym": coin, "requote": True})
+                            res_req = self.gateway.place_alo_order(coin, is_buy, sz, re_px, cloid=cloid_req)
+                            ok_req, oid_req, status_req = parse_order_response(res_req)
+                            if ok_req and oid_req is not None:
+                                self.journal.append_event("ORDER_CONFIRMED", {
+                                    "cloid": cloid_req,
+                                    "oid": oid_req,
+                                    "sym": coin,
+                                    "size": sz,
+                                    "price": re_px,
+                                    "signal_price": float(current_mid),
+                                    "target_price": float(re_px),
+                                    "status": status_req,
+                                })
+                                self.state.owned_oids.add(int(oid_req))
+                                self.state.owned_cloids.add(cloid_req)
+                                self.state.order_decision_prices[str(oid_req)] = {
+                                    "signal_price": float(current_mid),
+                                    "target_price": float(re_px),
+                                }
+                                log("INFO", f"  [TIMEOUT RE-QUOTE] Re-quoted {coin:<8} (dist=${distance:.4f} <= 0.25 ATR): sz={sz} @ {re_px} | oid={oid_req}")
+                            else:
+                                self.journal.append_event("ORDER_REJECTED", {
+                                    "cloid": cloid_req,
+                                    "sym": coin,
+                                    "reason": status_req,
+                                })
+                                log("WARN", f"  [TIMEOUT RE-QUOTE REJECT] Re-quote rejected for {coin}: {status_req}")
                         elif distance <= 0.50 * coin_atr:
                             # Regime 2: Maintain resting quote in book (middle regime)
                             log("INFO", f"  [TIMEOUT HOLD] Retained resting quote on {coin:<8} (0.25 ATR < dist=${distance:.4f} <= 0.50 ATR)")
                         else:
                             # Regime 3: Runaway price wick (> 0.50 ATR) -> Cancel and release margin
-                            self.gateway.exchange.cancel(coin, o["oid"])
+                            try:
+                                self.gateway.exchange.cancel(coin, o["oid"])
+                            except Exception:
+                                pass
                             self.journal.append_event("UNFILLED_BREAKOUT_ABANDONED", {
                                 "coin": coin, "distance": distance, "threshold": 0.50 * coin_atr, "oid": o.get("oid")
                             })
@@ -1564,6 +2009,11 @@ class ProductionApexExecutor:
           5. Synchronizes on-chain TP/SL trigger brackets.
           6. Updates materialized checkpoint.
         """
+        # 0. Safety Invariant: Enforce clock verification before any risk-increasing cycle
+        if not self.check_clock_drift():
+            log("CRITICAL", "[SAFETY GATE] Clock drift verification failed. Halting micro risk cycle.")
+            return
+
         if self.state.circuit_breaker == CircuitBreakerState.HALTED:
             log("CRITICAL", "[CIRCUIT BREAKER] Daemon is HALTED! Rejecting micro risk cycle.")
             # Safety invariant: Ensure open positions are covered by TP/SL triggers even when trade execution is halted
@@ -1576,14 +2026,27 @@ class ProductionApexExecutor:
         log("INFO", "--- [MICRO CLOCK] Starting 4H Micro Risk Cycle ---")
 
         # 1. Reconcile ledger events & NAV invariant
-        chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        try:
+            chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        except Exception as e:
+            log("CRITICAL", f"[SAFETY GATE] Reconciliation failed ({e}). Micro cycle aborted; no new risk this cycle.")
+            try:
+                self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+            except Exception as e_b:
+                log("CRITICAL", f"[SAFETY GATE] Bracket verification also failed: {e_b}")
+            return
+        if self.state.circuit_breaker == CircuitBreakerState.HALTED:
+            log("CRITICAL", "[CIRCUIT BREAKER] Micro cycle aborted: Reconciliation detected accounting fault (HALTED).")
+            try:
+                self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+            except Exception:
+                pass
+            return
 
-        # 2. Decay holding locks
+        # 2. Prune expired holding locks against absolute micro-bar index
         for sym in list(self.state.holding_locks.keys()):
-            if sym not in current_positions:
+            if sym not in current_positions or self.state.holding_locks[sym] <= self.state.total_micro_bars:
                 del self.state.holding_locks[sym]
-            else:
-                self.state.holding_locks[sym] = max(0, self.state.holding_locks[sym] - 1)
 
         # 3. 4H Execution Repair vs Frozen 72H Target
         frozen_targets = self.state.frozen_target_weights
@@ -1599,7 +2062,21 @@ class ProductionApexExecutor:
                 except Exception:
                     curr_weights[sym] = 0.0
 
+            try:
+                open_now = self.gateway.get_frontend_open_orders()
+                resting_owned_coins = {
+                    o.get("coin") for o in open_now
+                    if not o.get("isTrigger") and int(o.get("oid", 0)) in self.state.owned_oids
+                }
+            except Exception as e:
+                log("CRITICAL", f"[REPAIR] Cannot query open orders ({e}); skipping all repairs this bar to avoid duplicate exposure.")
+                frozen_targets = {}
+                resting_owned_coins = set()
+
             for sym, tgt_w in frozen_targets.items():
+                if sym in resting_owned_coins:
+                    log("INFO", f"  [REPAIR] Skipping {sym}: owned order still resting on exchange.")
+                    continue
                 cur_w = curr_weights.get(sym, 0.0)
                 dw = tgt_w - cur_w
                 abs_delta_w = abs(dw)
@@ -1617,10 +2094,42 @@ class ProductionApexExecutor:
                         if abs(rounded_sz) > 0 and (abs(rounded_sz) * mid) >= MIN_NOTIONAL_L1:
                             is_buy = rounded_sz > 0
                             sz_abs = abs(rounded_sz)
-                            cloid = f"EXP103_{frozen_gen_id}_REPAIR_{sym}_{int(time.time()*1000)}"
-                            self.journal.append_event("ORDER_INTENT", {"cloid": cloid, "sym": sym, "repair": True})
-                            res = self.gateway.place_alo_order(sym, is_buy, sz_abs, round_px(mid, sz_dec))
-                            log("INFO", f"  [REPAIR SLICE] Reconciled {sym:<8} (dw={dw:+.4f} > {LELAND_DEADBAND:.3f}): sz={sz_abs} @ {mid:.4f}")
+                            cloid = f"EXP103_{frozen_gen_id}_REPAIR_{self.state.total_micro_bars}_{sym}"
+                            re_px = round_px(mid, sz_dec)
+                            # Durable pre-submission intent journaled before sending order
+                            self.journal.append_event("ORDER_INTENT", {
+                                "cloid": cloid,
+                                "sym": sym,
+                                "action": "MICRO_REPAIR",
+                                "is_buy": is_buy,
+                                "size": sz_abs,
+                                "price": re_px,
+                                "micro_bar": self.state.total_micro_bars,
+                            })
+                            self.state.owned_cloids.add(cloid)
+                            res = self.gateway.place_alo_order(sym, is_buy, sz_abs, re_px, cloid=cloid)
+                            ok, oid, status_detail = parse_order_response(res)
+                            if ok and oid is not None:
+                                self.journal.append_event("ORDER_CONFIRMED", {
+                                    "cloid": cloid,
+                                    "oid": oid,
+                                    "sym": sym,
+                                    "size": sz_abs,
+                                    "price": round_px(mid, sz_dec),
+                                    "signal_price": float(mid),
+                                    "target_price": float(round_px(mid, sz_dec)),
+                                    "status": status_detail,
+                                })
+                                self.state.owned_oids.add(int(oid))
+                                self.state.owned_cloids.add(cloid)
+                                log("INFO", f"  [REPAIR SLICE] Reconciled {sym:<8} (dw={dw:+.4f} > {LELAND_DEADBAND:.3f}): sz={sz_abs} @ {mid:.4f} | oid={oid}")
+                            else:
+                                self.journal.append_event("ORDER_REJECTED", {
+                                    "cloid": cloid,
+                                    "sym": sym,
+                                    "reason": status_detail,
+                                })
+                                log("WARN", f"  [REPAIR REJECT] Repair slice rejected for {sym}: {status_detail}")
                     except Exception as e:
                         log("WARN", f"  [REPAIR] Error routing repair slice for {sym}: {e}")
 
@@ -1645,6 +2154,7 @@ class ProductionApexExecutor:
         self.journal.append_event("MICRO_BAR_COMPLETED", {
             "total_micro_bars": self.state.total_micro_bars,
             "bars_since_macro": self.state.bars_since_macro,
+            "holding_locks": dict(self.state.holding_locks),
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
         })
 
@@ -1691,7 +2201,12 @@ class ProductionApexExecutor:
                 "unrealized_mark_pnl": round(self.state.unrealized_mark_pnl, 4),
                 "external_cash_flows": round(self.state.external_cash_flows, 4),
                 "valuation_residual_usd": round(self.state.valuation_residual_usd, 6),
-                "reconciliation_status": "EXACT" if self.state.valuation_residual_usd <= 0.01 else "ACCEPTABLE",
+                "reconciliation_status": (
+                    "EXACT" if self.state.valuation_residual_usd <= 0.01
+                    else ("ACCEPTABLE" if self.state.valuation_residual_usd <= MAX_WARNING_RESIDUAL_USD
+                    else ("DEGRADED" if self.state.valuation_residual_usd <= MAX_VALUATION_RESIDUAL_USD
+                    else "ACCOUNTING_FAULT"))
+                ),
             },
             "holding_locks": self.state.holding_locks,
             "open_positions": current_positions,
@@ -1699,11 +2214,11 @@ class ProductionApexExecutor:
             "distributional_telemetry": getattr(self, "last_telemetry_audit", {}),
         }
 
-        STATE_FILE.parent.mkdir(parents=True, exist_ok=True)
-        temp_file = STATE_FILE.with_suffix(".tmp")
+        self.state_file.parent.mkdir(parents=True, exist_ok=True)
+        temp_file = self.state_file.with_suffix(".tmp")
         with open(temp_file, "w") as f:
             json.dump(payload, f, indent=2)
-        temp_file.replace(STATE_FILE)
+        temp_file.replace(self.state_file)
 
     def run_continuous_daemon(self):
         """Autonomous continuous daemon loop synchronized to 4-hour UTC boundaries."""
@@ -1713,8 +2228,11 @@ class ProductionApexExecutor:
         log("INFO", f"Initial Strategy Equity: ${self.state.initial_strategy_equity:.2f} USDC | HWM: ${self.state.historical_hwm:.2f} USDC")
         log("INFO", "================================================================================")
 
-        # Boot Cycle
+        # Boot Cycle with Clock Synchronization Gate
         try:
+            if not self.check_clock_drift():
+                log("CRITICAL", "[SAFETY GATE] Boot clock verification failed. Halting daemon initialization.")
+                return
             _, _, pos = self.gateway.get_account_state()
             if self.force_macro or len(pos) == 0 or self.state.bars_since_macro >= MACRO_CADENCE_BARS:
                 log("INFO", "[BOOT] Triggering Initial Macro Rebalance Cycle...")
@@ -1745,8 +2263,11 @@ class ProductionApexExecutor:
                         log("WARN", f"[HEARTBEAT] Error in background bracket sweep: {e}")
                     last_bracket_sweep = time.time()
 
-            # Check clock drift before boundary execution
-            self.check_clock_drift()
+            # Check clock drift before boundary execution; abort cycle if drift gate fails
+            if not self.check_clock_drift():
+                log("CRITICAL", "[SAFETY GATE] Scheduled clock check failed. Aborting cycles until synchronized.")
+                time.sleep(30)
+                continue
 
             # 4H Micro Risk Cycle
             try:
@@ -1777,6 +2298,9 @@ def main():
     )
 
     if args.once:
+        if not executor.check_clock_drift():
+            log("CRITICAL", "[SAFETY GATE] Clock verification failed on boot/once. Execution aborted.")
+            sys.exit(1)
         if args.macro:
             executor.execute_macro_rebalance()
         else:

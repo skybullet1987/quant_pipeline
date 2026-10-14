@@ -68,15 +68,14 @@ def log(level: str, msg: str):
 
 
 class MasterApexExecutor:
-    """Production Autonomous Executor for EXP-37B."""
+    """Production Autonomous Executor for EXP-37B (DECOMMISSIONED)."""
 
     def __init__(self, testnet: bool = True, dry_run: bool = False):
-        self.testnet = testnet
-        self.dry_run = dry_run
-
-        secret = os.getenv("HYPERLIQUID_PRIVATE_KEY") or os.getenv("HYPERLIQUID_API_KEY")
-        addr = os.getenv("HYPERLIQUID_ACCOUNT_ADDRESS")
-        self.gateway = HyperliquidGateway(secret_key=secret, account_address=addr, testnet=testnet)
+        raise RuntimeError(
+            "DEPRECATED_ENTRYPOINT: MasterApexExecutor (EXP-37B) is retired and strictly decommissioned "
+            "to prevent dual-writer race conditions and bracket cancellation conflicts on the exchange account. "
+            "Use src.execution.production_apex_daemon (EXP-103 Sovereign Finality Master)."
+        )
 
         # Quantitative Components
         self.allocator_base = DeadbandExecutionAllocator(deadband_base=0.030)
@@ -458,18 +457,10 @@ class MasterApexExecutor:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Master Apex (EXP-37B) Production Daemon")
-    parser.add_argument("--once", action="store_true", help="Run a single rebalance cycle and exit")
-    parser.add_argument("--dry-run", action="store_true", help="Simulate orders without exchange execution")
-    parser.add_argument("--mainnet", action="store_true", help="Target mainnet instead of testnet")
-    args = parser.parse_args()
-
-    executor = MasterApexExecutor(testnet=not args.mainnet, dry_run=args.dry_run)
-
-    if args.once:
-        executor.execute_rebalance_cycle()
-    else:
-        executor.run_continuous_daemon()
+    sys.exit(
+        "FATAL: master_apex_daemon.py is permanently decommissioned to prevent dual-writer "
+        "order conflicts. Run src/execution/production_apex_daemon.py instead."
+    )
 
 
 if __name__ == "__main__":

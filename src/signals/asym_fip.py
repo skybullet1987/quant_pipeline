@@ -57,6 +57,10 @@ def compute_asymmetric_fip_scores(
 
             asym_scores = np.where(scores_t > 0, scores_t * long_mult, scores_t * short_mult)
             f_asym[t, v_idx] = asym_scores
+        else:
+            f_asym[t, v_idx] = raw_f5_scores[t, v_idx]
 
-    f_asym[:lookback] = f_asym[lookback]
+    # Causal warmup: preserve raw momentum without future lookahead
+    f_asym[:lookback] = raw_f5_scores[:lookback]
     return f_asym
+

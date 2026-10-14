@@ -72,6 +72,7 @@ def mock_executor(tmp_path):
          patch("src.execution.production_apex_daemon.HyperliquidGateway") as mock_gw_cls:
 
         mock_gw = MagicMock()
+        mock_gw.base_url = "https://api.hyperliquid-testnet.xyz"
         mock_gw.sz_decimals = {"BTC": 4, "ETH": 3, "SOL": 2, "DOGE": 0, "ARB": 1}
         mock_gw.get_account_state.return_value = (1000.0, 1000.0, {})
         mock_gw.get_mid_price.side_effect = lambda sym: 60000.0 if sym == "BTC" else (3000.0 if sym == "ETH" else 150.0)
@@ -81,8 +82,15 @@ def mock_executor(tmp_path):
         mock_gw.info.post.return_value = []
         mock_gw_cls.return_value = mock_gw
 
-        executor = ProductionApexExecutor(testnet=True, dry_run=True, acquire_lock=False)
+        executor = ProductionApexExecutor(
+            testnet=True,
+            dry_run=False,
+            acquire_lock=False,
+            journal_path=journal_file,
+            state_path=state_file,
+        )
         executor.gateway = mock_gw
+        executor.check_clock_drift = MagicMock(return_value=True)
         yield executor, state_file, journal_file
 
 
@@ -211,9 +219,16 @@ def test_event_journal_append_and_sha256_hash_chain(tmp_path):
     assert ev2["event_id"] == 2
     assert ev2["prev_hash"] == ev1["hash"]
 
-    # Verify cryptographic link
-    payload_bytes = json.dumps(ev2["payload"], sort_keys=True).encode("utf-8")
-    expected_hash = hashlib.sha256(ev1["hash"].encode("utf-8") + payload_bytes).hexdigest()
+    # Verify cryptographic link under Schema v2 canonical envelope authentication
+    envelope = {
+        "event_id": ev2["event_id"],
+        "event_type": ev2["event_type"],
+        "timestamp_ms": ev2["timestamp_ms"],
+        "payload": ev2["payload"],
+        "prev_hash": ev2["prev_hash"],
+        "schema_version": 2,
+    }
+    expected_hash = hashlib.sha256(json.dumps(envelope, sort_keys=True).encode("utf-8")).hexdigest()
     assert ev2["hash"] == expected_hash
 
 
@@ -512,7 +527,13 @@ def test_state_persistence_and_6bucket_identity(mock_executor):
 
     with patch("src.execution.production_apex_daemon.STATE_FILE", state_file), \
          patch("src.execution.production_apex_daemon.JOURNAL_FILE", journal_file):
-        new_executor = ProductionApexExecutor(testnet=True, dry_run=True, acquire_lock=False)
+        new_executor = ProductionApexExecutor(
+            testnet=True,
+            dry_run=True,
+            acquire_lock=False,
+            journal_path=journal_file,
+            state_path=state_file,
+        )
         new_executor.gateway = executor.gateway
         new_executor.load_state()
 

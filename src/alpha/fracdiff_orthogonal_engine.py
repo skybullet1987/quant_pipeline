@@ -32,13 +32,14 @@ def compute_fracdiff_weights(d: float = 0.38, max_len: int = 120, threshold: flo
 def apply_fractional_differentiation(
     price_matrix: np.ndarray,
     d: float = 0.38,
-    max_len: int = 60,
+    max_len: int = 18,
     threshold: float = 1e-4
 ) -> np.ndarray:
     """
     Applies memory-preserving fractional differentiation along the time axis (axis 0).
     Input: price_matrix (n_bars x n_symbols) in natural log space.
     Returns: fracdiff_matrix (n_bars x n_symbols).
+    Enforces certified H=18 maximum memory horizon with strictly causal warmup.
     """
     weights = compute_fracdiff_weights(d=d, max_len=max_len, threshold=threshold)
     k_len = len(weights)
@@ -47,13 +48,17 @@ def apply_fractional_differentiation(
     log_px = np.log(np.maximum(price_matrix, 1e-8))
     fracdiff_mat = np.zeros_like(log_px)
     
+    # Strictly causal warmup for t < k_len - 1 using available lags
+    for t in range(min(k_len - 1, n_bars)):
+        w_sub = weights[:t + 1]
+        window = log_px[:t + 1][::-1]
+        fracdiff_mat[t] = np.sum(window * w_sub[:, np.newaxis], axis=0)
+
     for t in range(k_len - 1, n_bars):
         # dot product across lookback window: sum_{k=0}^{K-1} w_k * log_px[t - k]
         window = log_px[t - k_len + 1 : t + 1][::-1]  # shape: (k_len, n_symbols), index 0 is lag 0
         fracdiff_mat[t] = np.sum(window * weights[:, np.newaxis], axis=0)
         
-    # Forward-fill initial warmup
-    fracdiff_mat[:k_len - 1] = fracdiff_mat[k_len - 1]
     return fracdiff_mat
 
 

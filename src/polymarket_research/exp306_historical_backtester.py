@@ -84,6 +84,7 @@ def run_historical_backtest(ticket_size_usd: float = 10.0) -> Dict[str, Any]:
     # 2. Replay telemetry frames
     trades: List[BacktestTrade] = []
     seen_markets = set()
+    engines_by_market: Dict[str, BoundaryConvergenceEngine] = {}
     frames_scanned = 0
 
     with open(TELEMETRY_FILE, "r") as f:
@@ -98,35 +99,37 @@ def run_historical_backtest(ticket_size_usd: float = 10.0) -> Dict[str, Any]:
                     continue
 
                 tte = float(frame.get("seconds_to_expiry", 9999.0))
-                # Only evaluate in terminal boundary window (10s to 90s before expiry)
-                if not (10.0 <= tte <= 90.0):
-                    continue
-
                 spot = float(frame.get("binance_spot", 0.0))
                 open_px = float(frame.get("binance_1h_open", 0.0))
+                ts_unix = float(frame.get("timestamp_unix", 0.0))
                 if spot <= 0 or open_px <= 0:
+                    continue
+
+                if mid not in engines_by_market:
+                    engines_by_market[mid] = BoundaryConvergenceEngine(
+                        strike_price=open_px,
+                        expiry_timestamp=ts_unix + tte,
+                        resolution_type="DISCRETE_CLOSE",
+                        discrete_jump_threshold=3.5,
+                    )
+                engine = engines_by_market[mid]
+                engine.record_composite_tick(spot, ts_unix)
+
+                # Evaluate in terminal boundary window (10s to 600s before expiry)
+                if not (10.0 <= tte <= 600.0):
                     continue
 
                 res = resolutions[mid]
                 winning_side = res.get("winning_outcome")  # "UP" or "DOWN"
 
-                # Hourly contracts settle on whether spot >= open_px (strike = open_px)
-                engine = BoundaryConvergenceEngine(
-                    strike_price=open_px,
-                    expiry_timestamp=frame.get("timestamp_unix", 0.0) + tte,
-                    resolution_type="DISCRETE_CLOSE",
-                    discrete_jump_threshold=3.5,
-                )
-                engine.record_composite_tick(spot, frame.get("timestamp_unix", 0.0))
-
                 book_up = frame.get("UP", {})
                 book_down = frame.get("DOWN", {})
 
                 best_ask_up = float(book_up.get("best_ask", 0.0))
-                depth_up = float(book_up.get("ask_size", 0.0))
+                depth_up = float(book_up.get("ask_size_l1") or book_up.get("ask_size") or 0.0)
 
                 best_ask_down = float(book_down.get("best_ask", 0.0))
-                depth_down = float(book_down.get("ask_size", 0.0))
+                depth_down = float(book_down.get("ask_size_l1") or book_down.get("ask_size") or 0.0)
 
                 # Evaluate UP
                 entry_up = engine.evaluate_execution_entry(

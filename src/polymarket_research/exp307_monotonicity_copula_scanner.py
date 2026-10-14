@@ -387,7 +387,7 @@ class EXP307MonotonicityDaemon:
 
                             # Capital carry deduction per share over holding period
                             carry_cost = compute_capital_carry_cost(
-                                notional_usd=best_bid_a + best_ask_b,
+                                notional_usd=(1.0 - best_bid_a) + best_ask_b,
                                 tau_days=pair.tau_days,
                             )
 

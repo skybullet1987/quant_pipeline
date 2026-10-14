@@ -365,6 +365,7 @@ class PolymarketDualFeed1HRecorder:
         
         # Fee configuration parameters
         self.fee_rate_market: float = DEFAULT_FEE_RATE
+        self.fee_exponent: float = 1.0
         self.fee_source: str = "polymarket_crypto_schedule_v1"
         self.fee_enabled: bool = True
         self.fee_formula_version: str = "taker_fee_c_times_rate_times_p_one_minus_p"
@@ -455,13 +456,16 @@ class PolymarketDualFeed1HRecorder:
                     fee_schedule = m.get("feeSchedule", {})
                     if isinstance(fee_schedule, dict) and "rate" in fee_schedule:
                         self.fee_rate_market = float(fee_schedule["rate"])
+                        self.fee_exponent = float(fee_schedule.get("exponent", 1.0))
                         self.fee_source = f"gamma_feeSchedule_{m.get('feeType', 'crypto_fees_v2')}"
                     elif m.get("takerBaseFee") is not None:
                         raw_taker = float(m.get("takerBaseFee"))
                         self.fee_rate_market = raw_taker / 10000.0 if raw_taker > 1.0 else raw_taker
+                        self.fee_exponent = 1.0
                         self.fee_source = "gamma_takerBaseFee"
                     else:
                         self.fee_rate_market = DEFAULT_FEE_RATE
+                        self.fee_exponent = 1.0
                         self.fee_source = "polymarket_crypto_schedule_v1"
 
                     self.fee_enabled = bool(m.get("feesEnabled", True))
@@ -500,9 +504,12 @@ class PolymarketDualFeed1HRecorder:
                         "outcomes": outcomes,
                         "fee_metadata": {
                             "fee_rate_market": self.fee_rate_market,
+                            "fee_exponent": self.fee_exponent,
                             "fee_source": self.fee_source,
                             "fee_enabled": self.fee_enabled,
-                            "fee_formula_version": self.fee_formula_version
+                            "fee_formula_version": self.fee_formula_version,
+                            "condition_id": condition_id,
+                            "timestamp_utc": time.time(),
                         }
                     }
         except Exception as e:
@@ -677,8 +684,8 @@ class PolymarketDualFeed1HRecorder:
                 return
 
             # SYNCHRONOUS IMMUTABLE CAUSAL SNAPSHOT AT t0 (Strict zero post-t0 leakage)
-            pre_shock_up = copy.deepcopy(up_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market))
-            pre_shock_down = copy.deepcopy(down_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market))
+            pre_shock_up = up_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market)
+            pre_shock_down = down_book.get_metrics(obs_ts=t0_sec, fee_rate=self.fee_rate_market)
             if self.current_market and "tokens" in self.current_market:
                 pre_shock_up["token_id"] = self.current_market["tokens"].get("UP")
                 pre_shock_down["token_id"] = self.current_market["tokens"].get("DOWN")
@@ -692,7 +699,7 @@ class PolymarketDualFeed1HRecorder:
             m_id = self.current_market["market_id"]
             condition_id = self.current_market.get("condition_id", "")
             m_title = self.current_market["title"]
-            fee_meta = copy.deepcopy(self.current_market.get("fee_metadata", {}))
+            fee_meta = dict(self.current_market.get("fee_metadata", {}))
 
             # SYNCHRONOUS TRIGGER DISPATCH: Writes frozen t0 features instantly (<0.1ms from shock boundary)
             # Causal anchor is explicitly defined as information-available-at-local-receipt boundary
@@ -894,12 +901,18 @@ class PolymarketDualFeed1HRecorder:
                         elif isinstance(data, dict):
                             event_type = data.get("event_type")
                             if event_type == "price_change":
+                                pcs_up = []
+                                pcs_down = []
                                 for pc in data.get("price_changes", []):
                                     asset_id = pc.get("asset_id")
                                     if asset_id == up_token:
-                                        self.books["UP"].apply_price_changes([pc])
+                                        pcs_up.append(pc)
                                     elif asset_id == down_token:
-                                        self.books["DOWN"].apply_price_changes([pc])
+                                        pcs_down.append(pc)
+                                if pcs_up:
+                                    self.books["UP"].apply_price_changes(pcs_up)
+                                if pcs_down:
+                                    self.books["DOWN"].apply_price_changes(pcs_down)
                             elif event_type == "book":
                                 asset_id = data.get("asset_id")
                                 if asset_id == up_token:

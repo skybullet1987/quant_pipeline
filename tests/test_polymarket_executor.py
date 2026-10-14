@@ -79,7 +79,7 @@ def test_dry_run_snipe_execution(tmp_path):
         trade_id="TEST_TRADE_001",
         token_id="12345",
         target_token="UP",
-        notional_usd=50.0,
+        notional_usd=20.0,
         target_price=0.80,
     )
 
@@ -87,10 +87,10 @@ def test_dry_run_snipe_execution(tmp_path):
     assert res.mode == "DRY_RUN_SIMULATION"
     assert res.execution_status == ExecutionStatus.POSITION_CONFIRMED
     assert res.confirmed_onchain is True
-    assert res.size == 62.5
+    assert res.size == 25.0
     assert res.fee_usd > 0
     assert res.details["pre_token_balance"] == 0.0
-    assert res.details["post_token_balance"] == 62.5
+    assert res.details["post_token_balance"] == 25.0
     assert ledger.exists()
 
 

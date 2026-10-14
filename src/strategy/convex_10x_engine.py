@@ -135,12 +135,32 @@ def compute_continuous_bipower_variation(return_subbars: np.ndarray) -> Tuple[fl
     return cont_vol_ann, jump_vol_ann
 
 
+def compute_bipower_variation_stats(returns: np.ndarray) -> Tuple[float, float, float]:
+    """
+    Computes Realized Variance (RV), Continuous Bipower Variation (BV), and Jump Ratio
+    over return series (Barndorff-Nielsen & Shephard 2004).
+    All outputs in variance units:
+      RV = sum(r_i^2)
+      BV = (pi / 2) * (M / (M - 1)) * sum(|r_i| * |r_{i-1}|)
+      Jump Ratio = max(0.0, RV - BV) / (RV + 1e-8)
+    """
+    M = len(returns)
+    if M < 12:
+        return 0.0, 0.0, 0.0
+    rv = float(np.sum(returns ** 2))
+    bv = float((math.pi / 2.0) * (M / (M - 1.0)) * np.sum(np.abs(returns[1:]) * np.abs(returns[:-1])))
+    jump_var = max(0.0, rv - bv)
+    jump_ratio = float(jump_var / (rv + 1e-8)) if rv > 1e-12 else 0.0
+    return bv, rv, jump_ratio
+
+
 def compute_hurst_exponent(returns: np.ndarray, min_window: int = 10) -> float:
     """
     Evaluates rolling local Hurst exponent H using Rescaled Range (R/S) trajectory.
     H > 0.50: Persistent / Trending
     H = 0.50: Pure Brownian Motion
     H < 0.50: Mean-Reverting
+    Must be called with return series, NOT absolute price levels.
     """
     n = len(returns)
     if n < min_window:
@@ -164,6 +184,7 @@ def compute_variance_ratio(returns: np.ndarray, q: int = 6) -> float:
     Lo-MacKinlay Variance Ratio test statistic VR(q) evaluated at lag aggregation q.
     q = 6 corresponds to 24 hours of 4-hour bars.
     VR > 1.0 indicates positive autocorrelation and trend persistence.
+    Must be called with return series, NOT absolute price levels.
     """
     n = len(returns)
     if n < q * 4:
@@ -218,6 +239,7 @@ def compute_canonical_wilder_atr(
       ATR_0 = mean(TR_{0:window})
       ATR_t = (1/window) * TR_t + ((window - 1)/window) * ATR_{t-1}
     Supports 1D (time,) or 2D (time, symbols) matrices.
+    Warmup bars use progressive expanding window mean to eliminate backward lookahead.
     """
     high = np.asarray(high, dtype=float)
     low = np.asarray(low, dtype=float)
@@ -241,14 +263,16 @@ def compute_canonical_wilder_atr(
 
     atr = np.zeros_like(tr)
     if n_bars <= window:
-        atr[:] = np.mean(tr, axis=0, keepdims=True)
+        for t in range(n_bars):
+            atr[t] = np.mean(tr[:t + 1], axis=0)
     else:
+        # Causal warmup: progressive expanding mean (strictly zero lookahead)
+        for t in range(window - 1):
+            atr[t] = np.mean(tr[:t + 1], axis=0)
         atr[window - 1] = np.mean(tr[:window], axis=0)
         alpha = 1.0 / float(window)
         for t in range(window, n_bars):
             atr[t] = alpha * tr[t] + (1.0 - alpha) * atr[t - 1]
-        for t in range(window - 1):
-            atr[t] = atr[window - 1]
 
     return atr[:, 0] if is_1d else atr
 

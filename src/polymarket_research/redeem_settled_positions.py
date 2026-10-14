@@ -48,7 +48,8 @@ def get_token_balance_onchain(funder_address: str, token_id: str) -> Optional[fl
     try:
         # ERC1155 balanceOf(address,uint256) selector: 0x00fdd58e
         addr_padded = funder_address.lower().replace("0x", "").zfill(64)
-        token_hex = hex(int(token_id))[2:].zfill(64)
+        token_int = int(token_id, 16) if str(token_id).startswith("0x") else int(token_id)
+        token_hex = hex(token_int)[2:].zfill(64)
         call_data = f"0x00fdd58e{addr_padded}{token_hex}"
 
         payload = {

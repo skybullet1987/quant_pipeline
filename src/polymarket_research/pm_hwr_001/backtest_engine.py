@@ -216,7 +216,7 @@ def run_candidate_sweep(
                 continue
 
             # Check available ask depth (must be >= $20 to support $30 ticket)
-            ask_size = float(book.get("ask_size", 0.0) or 0.0)
+            ask_size = float(book.get("ask_size_l1") or book.get("ask_size") or 0.0)
             if ask_size * exec_price < 15.0:
                 continue
 

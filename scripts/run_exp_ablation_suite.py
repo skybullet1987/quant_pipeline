@@ -68,7 +68,7 @@ def build_ablation_experiment_matrices(
     governor = AsymmetricBarbellGovernor(initial_capital=10000.0)
 
     print("  [1/4] Computing Fractional Differentiation (d* = 0.38)...")
-    frac_px = apply_fractional_differentiation(close_mat, d=0.38)
+    frac_px = apply_fractional_differentiation(close_mat, d=0.38, max_len=18)
 
     print("  [2/4] Extracting Multi-Beta Residual Momentum (F5) against BTC & ETH...")
     btc_rets = returns_mat[:, btc_idx]
