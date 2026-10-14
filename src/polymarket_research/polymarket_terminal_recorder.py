@@ -666,7 +666,30 @@ class PolymarketDualFeed1HRecorder:
                 sell_vol += ntl
 
         now_sec = time.time()
-        if vol_100ms >= self.shock_threshold_usd and (now_sec - self.last_shock_ts_by_source[source] > 15.0):
+        # Single-feed shock qualification or combined cross-feed qualification
+        qualified = (vol_100ms >= self.shock_threshold_usd)
+        if not qualified:
+            other_queue = self.futures_trades if source == "SPOT" else self.spot_trades
+            other_vol = 0.0
+            other_buy = 0.0
+            other_sell = 0.0
+            for t_mono, _, _, ntl, buyer, _ in reversed(other_queue):
+                if t_mono < cutoff_ns:
+                    break
+                other_vol += ntl
+                if buyer:
+                    other_buy += ntl
+                else:
+                    other_sell += ntl
+            spot_vol = vol_100ms if source == "SPOT" else other_vol
+            fut_vol = other_vol if source == "SPOT" else vol_100ms
+            if (spot_vol + 0.75 * fut_vol) >= 1_800_000.0:
+                qualified = True
+                vol_100ms = spot_vol + fut_vol
+                buy_vol += other_buy
+                sell_vol += other_sell
+
+        if qualified and (now_sec - self.last_shock_ts_by_source[source] > 2.0):
             self.last_shock_ts_by_source[source] = now_sec
             self.last_shock_ts = now_sec
             shock_dir = "BUY" if buy_vol >= sell_vol else "SELL"

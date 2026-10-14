@@ -384,18 +384,18 @@ class PolymarketLiveHarvester:
     def _calculate_target_exit(self, price: float, tte: float) -> float:
         """
         EXP-315: Computes profit target exit price based on volatility and time-decay regime.
-        - When dynamic_theta=True and TTE > 900s: theta = 0.06 (fast scalp before mean-reversion)
-        - When dynamic_theta=True and 300s < TTE <= 900s: default profit_theta (0.09)
-        - When dynamic_theta=True and TTE <= 300s: hold near settlement (min(0.99, 1.00 - fee))
+        - When dynamic_theta=True and TTE > 900s: theta = 0.08 (fast scalp before mean-reversion)
+        - When dynamic_theta=True and 300s < TTE <= 900s: theta = 0.10 (standard scalp)
+        - When dynamic_theta=True and TTE <= 300s: theta = 0.18 (ride terminal gamma up to 0.99)
         - Otherwise: standard static profit_theta (+0.09)
         """
         if getattr(self, "dynamic_theta", False):
             if tte > 900.0:
-                eff_theta = min(self.profit_theta, 0.06)
+                eff_theta = 0.08
             elif tte <= 300.0:
-                eff_theta = max(self.profit_theta, round(0.99 - price, 4))
+                eff_theta = 0.18
             else:
-                eff_theta = self.profit_theta
+                eff_theta = 0.10
         else:
             eff_theta = self.profit_theta
         return min(0.99, round(price + eff_theta, 4))
@@ -1867,6 +1867,13 @@ class PolymarketLiveHarvester:
         shock_dir = shock.get("shock_direction")  # "BUY" or "SELL"
         if not shock_dir:
             return
+
+        # Order Flow Imbalance (OFI) Filter: require strong one-sided institutional conviction (|ofi| >= 0.60)
+        # Filters out 50/50 two-way chop; defaults to 1.0 if not provided (test fixtures / legacy triggers)
+        if abs(float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)) < 0.60:
+            logger.debug(f"[OFI CHOP REJECT] Shock OFI {shock.get('shock_ofi')} < 0.60 threshold. Rejecting two-way battle.")
+            return
+
         target_token = "UP" if shock_dir == "BUY" else "DOWN"
 
         # Time-to-Expiry (TTE) Guard: Must be in sweet spot (60s <= TTE <= max_tte)
@@ -3333,6 +3340,45 @@ class PolymarketLiveHarvester:
                                 self._refresh_global_halt()
                             continue
 
+                        # Handle in-flight passive maker stop unwind (5-second maker window)
+                        if pos.get("exit_order_status") == "PASSIVE_STOP_RESTING":
+                            elapsed_passive = now_ts - float(pos.get("passive_stop_start_ts", now_ts))
+                            if spot_crash_triggered or elapsed_passive >= 5.0:
+                                reason_str = "Spot structural crash" if spot_crash_triggered else f"5.0s passive window expired ({elapsed_passive:.1f}s)"
+                                logger.info(f"[PASSIVE STOP ESCALATION] {tid}: {reason_str}. Cancelling maker stop and escalating to aggressive FAK.")
+                                if exit_oid:
+                                    await asyncio.to_thread(self.executor.cancel_order, exit_oid)
+                                    summary = await asyncio.to_thread(self.executor.get_order_fill_summary, exit_oid, token_id)
+                                    if summary is not None:
+                                        self._record_order_summary(pos, summary, float(pos.get("target_exit_price", 0.0) or 0.0), taker=False)
+                                    self.executor.release_inventory(reservation_id=exit_oid)
+                                    pos["exit_order_id"] = None
+                                    exit_oid = None
+                                pos["exit_order_status"] = "CANCELED_FOR_STOP_LOSS"
+                                rem_shrs = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs)) or 0.0)
+                                if rem_shrs <= 0.01:
+                                    self._close_position(tid, pos, ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB", won=None)
+                                    continue
+                                # Fall through to aggressive FAK taker unwind below!
+                                limit_px = max(0.01, best_b - 0.02)
+                                unwind_res = await asyncio.to_thread(
+                                    self.executor.execute_unwind_order,
+                                    token_id=token_id,
+                                    size=rem_shrs,
+                                    side="SELL",
+                                    min_price=limit_px,
+                                )
+                                outcome = self._handle_unwind_response(
+                                    tid, pos, unwind_res, rem_shrs,
+                                    "ADVERSE_STOP_LOSS_UNWIND", "PARTIAL_UNWIND_REMAINING", limit_px,
+                                )
+                                if outcome != "FAILED":
+                                    continue
+                            else:
+                                # Still resting within 5s passive maker window, let Phase D monitor fills
+                                logger.debug(f"[PASSIVE STOP RESTING] {tid}: Resting maker stop {exit_oid} active ({elapsed_passive:.1f}s/5.0s).")
+                                continue
+
                         # Hybrid Risk Engine for CLOB stops (Priority C)
                         clob_sl_triggered = False
                         is_low_bid = bool(best_b > 0.0 and (best_b <= (entry_px - 0.15) or best_b <= 0.20))
@@ -3428,6 +3474,41 @@ class PolymarketLiveHarvester:
                             if rem_shrs < 0.01:
                                 self._close_position(tid, pos, ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB", won=None)
                                 continue
+
+                            # Soft CLOB Stop Optimization:
+                            # When low bid persisted >= 1.5s while BTC spot hasn't crashed > 0.40%,
+                            # post a post_only=True Maker Sell at best_bid + 1¢ for 5 seconds first.
+                            # Captures 0% maker fee and better exit price!
+                            is_soft_stop = (
+                                clob_sl_triggered
+                                and not spot_crash_triggered
+                                and not pre_expiry_otm_salvage
+                                and not retry_due
+                                and not pos.get("passive_stop_unwind_attempted", False)
+                            )
+                            if is_soft_stop:
+                                passive_stop_px = min(0.99, max(0.01, round(best_b + 0.01, 4)))
+                                logger.info(
+                                    f"[PASSIVE STOP-LOSS] Position {tid}: Posting 5s maker exit at ${passive_stop_px:.4f} "
+                                    f"(best_bid=${best_b:.4f}) to capture 0% maker fee before aggressive FAK."
+                                )
+                                exit_res = await asyncio.to_thread(
+                                    self.executor.post_maker_exit_order,
+                                    token_id=token_id,
+                                    price=passive_stop_px,
+                                    size=rem_shrs,
+                                    side="SELL",
+                                )
+                                posted = self._apply_exit_post_result(pos, exit_res, rem_shrs)
+                                if posted:
+                                    pos["exit_order_status"] = "PASSIVE_STOP_RESTING"
+                                    pos["target_exit_price"] = passive_stop_px
+                                    pos["passive_stop_start_ts"] = now_ts
+                                    pos["passive_stop_unwind_attempted"] = True
+                                    self.save_state()
+                                    continue
+                                else:
+                                    logger.warning(f"[PASSIVE STOP POST FAILED] {tid}: Could not post maker stop. Falling back to aggressive FAK.")
 
                             # Aggressive FAK unwind at best bid (min price 0.01) to lock in capital recovery
                             limit_px = max(0.01, best_b - 0.02)
