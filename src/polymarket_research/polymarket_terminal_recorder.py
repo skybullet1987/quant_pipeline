@@ -656,40 +656,39 @@ class PolymarketDualFeed1HRecorder:
         buy_vol = 0.0
         sell_vol = 0.0
 
+        vol_250ms = 0.0
+        buy_250ms = 0.0
+        sell_250ms = 0.0
+        cutoff_250_ns = recv_mono_ns - 250_000_000  # 250ms institutional sweep window
         for t_mono, _, _, ntl, buyer, _ in reversed(trade_queue):
-            if t_mono < cutoff_ns:
+            if t_mono < cutoff_250_ns:
                 break
-            vol_100ms += ntl
+            vol_250ms += ntl
             if buyer:
-                buy_vol += ntl
+                buy_250ms += ntl
             else:
-                sell_vol += ntl
+                sell_250ms += ntl
+            if t_mono >= cutoff_ns:
+                vol_100ms += ntl
+                if buyer:
+                    buy_vol += ntl
+                else:
+                    sell_vol += ntl
+
+        # Cross-venue 100ms synchronized flow check (Spot + Futures)
+        other_queue = self.futures_trades if source == "SPOT" else self.spot_trades
+        other_100ms = sum(ntl for t_m, _, _, ntl, _, _ in reversed(other_queue) if t_m >= cutoff_ns)
+        combined_100ms = vol_100ms + 0.75 * other_100ms
+
+        if vol_100ms < self.shock_threshold_usd and vol_250ms >= (self.shock_threshold_usd * 1.45):
+            vol_100ms, buy_vol, sell_vol = vol_250ms, buy_250ms, sell_250ms
 
         now_sec = time.time()
-        # Single-feed shock qualification or combined cross-feed qualification
-        qualified = (vol_100ms >= self.shock_threshold_usd)
-        if not qualified:
-            other_queue = self.futures_trades if source == "SPOT" else self.spot_trades
-            other_vol = 0.0
-            other_buy = 0.0
-            other_sell = 0.0
-            for t_mono, _, _, ntl, buyer, _ in reversed(other_queue):
-                if t_mono < cutoff_ns:
-                    break
-                other_vol += ntl
-                if buyer:
-                    other_buy += ntl
-                else:
-                    other_sell += ntl
-            spot_vol = vol_100ms if source == "SPOT" else other_vol
-            fut_vol = other_vol if source == "SPOT" else vol_100ms
-            if (spot_vol + 0.75 * fut_vol) >= 1_800_000.0:
-                qualified = True
-                vol_100ms = spot_vol + fut_vol
-                buy_vol += other_buy
-                sell_vol += other_sell
-
-        if qualified and (now_sec - self.last_shock_ts_by_source[source] > 2.0):
+        shock_qualified = (
+            vol_100ms >= self.shock_threshold_usd
+            or combined_100ms >= (self.shock_threshold_usd * 1.20)
+        )
+        if shock_qualified and (now_sec - self.last_shock_ts_by_source[source] > 2.5):
             self.last_shock_ts_by_source[source] = now_sec
             self.last_shock_ts = now_sec
             shock_dir = "BUY" if buy_vol >= sell_vol else "SELL"

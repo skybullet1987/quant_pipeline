@@ -2288,9 +2288,24 @@ class PolymarketLiveExecutor:
             self.reserve_inventory(token_id, quantized_size, reservation_id=res_id)
             return {"success": False, "orderID": None, "outcome_unknown": True, "retryable": False, "reservation_id": res_id, "error": "MISSING_ORDER_ID_IN_MAKER_POST", "raw": resp}
         except Exception as e:
-            if not order_submitted:
-                logger.error(f"Maker exit order failed before submission (no exchange exposure): {e}")
-                return {"success": False, "orderID": None, "outcome_unknown": False, "retryable": True, "error": str(e)}
+            # Check if this is an explicit exchange client rejection (e.g. 400 Bad Request, not enough balance)
+            is_client_err = False
+            status_code = getattr(e, "status_code", None)
+            err_msg = str(getattr(e, "error_message", "") or str(e))
+            if status_code and 400 <= int(status_code) < 500:
+                is_client_err = True
+            elif "not enough balance" in err_msg.lower() or "allowance" in err_msg.lower() or "invalid order" in err_msg.lower():
+                is_client_err = True
+
+            if not order_submitted or is_client_err:
+                logger.warning(f"Maker exit order rejected by exchange before matching (no open order): {e}")
+                return {
+                    "success": False,
+                    "orderID": None,
+                    "outcome_unknown": False,
+                    "retryable": True,
+                    "error": err_msg,
+                }
             logger.critical(f"Exception posting maker exit order (outcome unknown): {e}")
             res_id = f"EXCEPTION_POST_{int(time.time()*1000)}"
             self.reserve_inventory(token_id, quantized_size, reservation_id=res_id)

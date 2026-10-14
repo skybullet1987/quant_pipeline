@@ -1,12 +1,12 @@
 [Unit]
-Description=Polymarket Live CLOB Real-Money Harvester ($27.80 Half-Kelly, Dual-Asset BTC+ETH, Hybrid Scalp+Hold)
+Description=Polymarket Live CLOB Real-Money Harvester (Release 2.5.0: Cost-Anchored 60/40 Split, Dynamic Gamma, Unconstrained Half-Kelly)
 After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
 Wants=network-online.target
 
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
-ExecStart=/bin/bash /home/skybullet1987/quant_pipeline/scripts/run_polymarket_harvester.sh --lot-size 25.00 --dynamic-sizing --unconstrained-kelly --max-ticket-cap 85.0 --max-exposure 100.0 --max-concurrent 3 --max-trades-per-market 3 --min-price-floor 0.58 --dynamic-theta
+ExecStart=/bin/bash /home/skybullet1987/quant_pipeline/scripts/run_polymarket_harvester.sh --lot-size 25.00 --dynamic-sizing --unconstrained-kelly --max-ticket-cap 85.0 --max-exposure 100.0 --max-concurrent 3 --max-trades-per-market 3 --max-trades-per-hour 6 --min-price-floor 0.58 --max-price-ceiling 0.85 --dynamic-theta
 Restart=no
 KillMode=mixed
 TimeoutStopSec=15s
