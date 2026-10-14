@@ -620,6 +620,12 @@ class PolymarketLiveHarvester:
             pos["remaining_shares"] = net
             pos["remaining_exit_shares"] = net
             pos["filled_exit_shares"] = 0.0
+            pos["remaining_cost_basis"] = pos.get("notional_usd", 0.0)
+            if net > 0 and float(pos.get("notional_usd", 0.0) or 0.0) > 0:
+                true_cost_per_share = round(float(pos["notional_usd"]) / net, 4)
+                if true_cost_per_share > float(pos.get("entry_price", 0.0) or 0.0):
+                    pos["entry_price"] = true_cost_per_share
+                    pos["target_exit_price"] = self._calculate_target_exit(true_cost_per_share, float(pos.get("candle_expiry_ts", time.time() + 600.0)) - time.time())
             pos["inventory_reconciled"] = True
             pos["entry_inventory_source"] = cls.get("source")
         if evidence.get("shares", 0.0) > 0.0:
@@ -1124,6 +1130,12 @@ class PolymarketLiveHarvester:
                 pos["entry_shares"] = net
                 pos["remaining_shares"] = net
                 pos["remaining_exit_shares"] = net
+                pos["remaining_cost_basis"] = pos.get("notional_usd", 0.0)
+                if net > 0 and float(pos.get("notional_usd", 0.0) or 0.0) > 0:
+                    true_cost_per_share = round(float(pos["notional_usd"]) / net, 4)
+                    if true_cost_per_share > float(pos.get("entry_price", 0.0) or 0.0):
+                        pos["entry_price"] = true_cost_per_share
+                        pos["target_exit_price"] = self._calculate_target_exit(true_cost_per_share, expiry - now)
                 pos["inventory_reconciled"] = True
         else:
             final, reverted = self._verify_entry_finality(pos)
@@ -1165,6 +1177,11 @@ class PolymarketLiveHarvester:
                 pos["remaining_shares"] = net
                 pos["remaining_exit_shares"] = net
                 pos["remaining_cost_basis"] = pos.get("notional_usd", 0.0)
+                if net > 0 and float(pos.get("notional_usd", 0.0) or 0.0) > 0:
+                    true_cost_per_share = round(float(pos["notional_usd"]) / net, 4)
+                    if true_cost_per_share > float(pos.get("entry_price", 0.0) or 0.0):
+                        pos["entry_price"] = true_cost_per_share
+                        pos["target_exit_price"] = self._calculate_target_exit(true_cost_per_share, expiry - now)
                 pos["inventory_reconciled"] = True
                 pos.setdefault("entry_inventory_source", src)
             else:

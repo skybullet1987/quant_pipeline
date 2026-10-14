@@ -1590,7 +1590,7 @@ class PolymarketLiveExecutor:
             else:
                 actual_shares = shares_to_buy
 
-            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else best_px
+            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else exec_price
 
             trade_ids = post_resp.get("tradeIDs", [])
             tx_hashes = post_resp.get("transactionsHashes", [])
@@ -2076,7 +2076,7 @@ class PolymarketLiveExecutor:
             taking_amt = post_resp.get("takingAmount")
             actual_notional = float(making_amt) if making_amt is not None else notional_usd
             actual_shares = float(taking_amt) if taking_amt is not None else shares_to_buy
-            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else best_px
+            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else exec_price
 
             trade_ids = post_resp.get("tradeIDs", [])
             tx_hashes = post_resp.get("transactionsHashes", [])
