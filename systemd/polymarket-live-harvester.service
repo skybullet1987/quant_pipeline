@@ -6,7 +6,7 @@ Wants=network-online.target
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
-ExecStart=/bin/bash /home/skybullet1987/quant_pipeline/scripts/run_polymarket_harvester.sh --lot-size 27.80 --dynamic-sizing --max-exposure 100.0 --max-concurrent 3
+ExecStart=/bin/bash /home/skybullet1987/quant_pipeline/scripts/run_polymarket_harvester.sh --lot-size 27.80 --dynamic-sizing --max-exposure 100.0 --max-concurrent 3 --max-trades-per-market 3 --min-price-floor 0.58 --dynamic-theta
 Restart=no
 KillMode=mixed
 TimeoutStopSec=15s

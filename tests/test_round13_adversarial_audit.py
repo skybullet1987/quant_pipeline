@@ -507,7 +507,7 @@ def test_sequential_iceberg_tranche_stepping():
         "entry_shares": 100.0,
         "remaining_shares": 100.0,
         "notional_usd": 70.0,  # > $50.00
-        "target_exit_price": 0.76,
+        "target_exit_price": 0.78,
         "inventory_reconciled": True,
         "candle_expiry_ts": time.time() + 1800.0,
         "exit_order_status": "PENDING_CONFIRMATION",
@@ -528,14 +528,14 @@ def test_sequential_iceberg_tranche_stepping():
     tranches = pos.get("exit_tranches", [])
     assert len(tranches) == 2
     assert tranches[0]["size"] == 60.0
-    assert tranches[0]["price"] == 0.76  # +6¢
+    assert tranches[0]["price"] == 0.78  # +8¢
     assert tranches[0]["status"] == "POSTED"
     assert tranches[1]["size"] == 40.0
-    assert tranches[1]["price"] == 0.80  # +10¢
+    assert tranches[1]["price"] == 0.84  # +14¢
     assert tranches[1]["status"] == "PENDING"
 
     # Only Tranche 1 was posted to the CLOB
     assert len(posted_args) == 1
     assert posted_args[0]["size"] == 60.0
-    assert posted_args[0]["price"] == 0.76
+    assert posted_args[0]["price"] == 0.78
     assert pos["exit_order_id"] == "0xTRANCHE_1_OID"

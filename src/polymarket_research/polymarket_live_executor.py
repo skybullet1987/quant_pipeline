@@ -1291,8 +1291,8 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        # Calculate worst acceptable price allowing up to 3¢ slippage, quantized to token tick
-        raw_worst_px = max(target_price + 0.03, best_px + 0.03)
+        # Calculate worst acceptable price allowing up to 1¢ slippage, quantized to token tick
+        raw_worst_px = max(target_price + 0.01, best_px + 0.01)
         worst_acceptable_px = self.quantize_order_price(raw_worst_px, token_id, rounding=ROUND_CEILING)
         if worst_acceptable_px > max_price_ceiling + 1e-9:
             err = f"No valid token tick at or below configured entry ceiling (${max_price_ceiling:.4f})"
@@ -1788,7 +1788,8 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        raw_worst_px = max(target_price + 0.03, best_px + 0.03)
+        # Calculate worst acceptable price allowing up to 1¢ slippage, quantized to token tick
+        raw_worst_px = max(target_price + 0.01, best_px + 0.01)
         if token_id not in self._tick_size_cache and not self.dry_run:
             await asyncio.to_thread(self.get_token_tick_size, token_id)
         worst_acceptable_px = self.quantize_order_price(raw_worst_px, token_id, rounding=ROUND_CEILING)

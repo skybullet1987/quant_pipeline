@@ -118,8 +118,8 @@ PID_FILE = DATA_DIR / "live_harvester.pid"
 COUNTERFACTUAL_CANDIDATES_FILE = DATA_DIR / "counterfactual_candidates.jsonl"
 
 DEFAULT_TICKET_NOTIONAL = 25.0       # Fallback ticket floor
-DEFAULT_MAX_TRADES_PER_MARKET = 1     # Hard cap: Max 1 trade per 1-hour market candle (prevents duplicate fills on same shock)
-DEFAULT_MAX_TRADES_PER_HOUR = 4       # Max 4 total portfolio trades per hour (supports BTC + ETH dual asset)
+DEFAULT_MAX_TRADES_PER_MARKET = 3     # Hard cap: Max 3 sequential trades per 1-hour candle (only 1 active at a time)
+DEFAULT_MAX_TRADES_PER_HOUR = 6       # Max 6 total portfolio trades per hour (supports multi-trade scalps)
 HARD_PORTFOLIO_EXPOSURE_CEILING = 100.0  # Immutable hard ceiling: max $100 total concurrent exposure (Round 11 P1-11)
 MAX_PORTFOLIO_EXPOSURE_USD = HARD_PORTFOLIO_EXPOSURE_CEILING
 MIN_LOT_SIZE_USD = 5.0              # Minimum viable execution ticket floor
@@ -129,7 +129,7 @@ MIN_DISTANCE_PCT = 0.05             # At least 0.05% lead-lag distance shock
 MAX_TTE_SECONDS = 1500.0            # 25 minutes (widened from 15 min sweet spot to capture early pre-shock moves)
 MIN_TTE_SECONDS = 60.0              # 1 minute (avoid unexecutable settlement lock)
 MAX_PRICE_CEILING = 0.88            # Restored high-conviction momentum breakout ceiling (matches OOS paper parity)
-MIN_PRICE_FLOOR = 0.15              # Restored minimum entry price floor (matches OOS paper parity)
+MIN_PRICE_FLOOR = 0.15              # Baseline entry price floor (allows unit test fixtures; CLI defaults to 0.58)
 MAX_ALLOWED_SPREAD = 0.030          # Hard cap: Reject entries if spread > 3¢ (guards against thin/distorted books)
 ALLOWED_ASSETS = {"BTC"}          # Tier 1 Core: Strictly BTC for live entries; ETH evaluated in shadow mode
 
@@ -1199,15 +1199,17 @@ class PolymarketLiveHarvester:
         if size < 0.01:
             return False
 
-        # Drop-in sequential iceberg tranche stepping for tickets > $50
+        # Drop-in sequential iceberg tranche stepping for tickets >= $20 (60% fast scalp, 40% runner @ +14¢)
         rem_total = size
-        if float(pos.get("notional_usd", 0.0) or 0.0) > 50.0 and "exit_tranches" not in pos and rem_total >= 10.0:
+        if float(pos.get("notional_usd", 0.0) or 0.0) >= 20.0 and "exit_tranches" not in pos and rem_total >= 10.0:
             t1_sz = float((Decimal(str(rem_total)) * Decimal("0.60")).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
             t2_sz = float((Decimal(str(rem_total)) - Decimal(str(t1_sz))).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
             entry_px = float(pos.get("entry_price", 0.70))
+            t1_px = float(pos.get("target_exit_price") or round(entry_px + 0.08, 4))
+            t2_px = min(0.99, round(max(t1_px + 0.04, entry_px + 0.14), 4))
             pos["exit_tranches"] = [
-                {"idx": 1, "size": t1_sz, "price": min(0.99, round(entry_px + 0.06, 4)), "status": "PENDING"},
-                {"idx": 2, "size": t2_sz, "price": min(0.99, round(entry_px + 0.10, 4)), "status": "PENDING"},
+                {"idx": 1, "size": t1_sz, "price": min(0.99, t1_px), "status": "PENDING"},
+                {"idx": 2, "size": t2_sz, "price": t2_px, "status": "PENDING"},
             ]
 
         active_tranche = None
@@ -2107,10 +2109,8 @@ class PolymarketLiveHarvester:
 
         executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= self.max_price_ceiling)
 
-        # Match the paper trader's declared $50 reference-ticket depth gate.
-        # Dynamic down-sizing must not turn an otherwise rejected book into
-        # an accepted signal if strict live/paper policy parity is required.
-        PAPER_REFERENCE_TICKET_USD = 50.0
+        # Dynamic reference-ticket depth gate scaled to actual ticket floor (min $25)
+        PAPER_REFERENCE_TICKET_USD = max(float(self.ticket_notional), 25.0)
         if not self.dry_run and (
             executable_depth_usd / PAPER_REFERENCE_TICKET_USD
             < 1.50
@@ -2350,6 +2350,11 @@ class PolymarketLiveHarvester:
         )
 
         m_id = str(shock.get("market_id"))
+
+        # Sequential Re-entry Guard: Only enter if no position is currently active or pending in this market
+        if any(str(p.get("market_id")) == m_id for p in self.active_positions.values()) or any(str(i.get("market_id")) == m_id for i in self.pending_entry_intents.values()):
+            logger.debug(f"[MARKET ALREADY ACTIVE] Position already active/pending for market {m_id}. Refusing concurrent re-entry.")
+            return
 
         # Hourly Cap Guard: Log Candidate #3, #4, etc. for sample analysis
         if self.trades_this_hour >= self.max_trades_per_hour or self.trades_per_market[m_id] >= self.max_trades_per_market:
@@ -3937,11 +3942,11 @@ if __name__ == "__main__":
     parser.add_argument("--no-dynamic-sizing", dest="dynamic_sizing", action="store_false", help="Disable dynamic sizing and use fixed lot size")
     parser.add_argument("--max-exposure", type=float, default=100.0, help="Maximum concurrent portfolio exposure in USD (default: $100.00)")
     parser.add_argument("--max-concurrent", type=int, default=3, help="Maximum concurrent open positions (default: 3)")
-    parser.add_argument("--max-trades-per-market", type=int, default=DEFAULT_MAX_TRADES_PER_MARKET, help="Max trades per market candle (default: 1)")
-    parser.add_argument("--max-trades-per-hour", type=int, default=DEFAULT_MAX_TRADES_PER_HOUR, help="Max total portfolio trades per hour (default: 4)")
+    parser.add_argument("--max-trades-per-market", type=int, default=DEFAULT_MAX_TRADES_PER_MARKET, help="Max trades per market candle (default: 3)")
+    parser.add_argument("--max-trades-per-hour", type=int, default=DEFAULT_MAX_TRADES_PER_HOUR, help="Max total portfolio trades per hour (default: 6)")
     parser.add_argument("--max-tte", type=float, default=MAX_TTE_SECONDS, help="Max TTE in seconds (default: 1500.0)")
     parser.add_argument("--max-price-ceiling", type=float, default=MAX_PRICE_CEILING, help="Maximum entry price ceiling (default: 0.88)")
-    parser.add_argument("--min-price-floor", type=float, default=MIN_PRICE_FLOOR, help="Minimum entry price floor (default: 0.15)")
+    parser.add_argument("--min-price-floor", type=float, default=0.58, help="Minimum entry price floor (default: 0.58, avoids 0.42-0.58 peak-fee chop)")
     parser.add_argument("--unconstrained-kelly", action="store_true", default=False, help="Allow Half-Kelly position sizing to compound proportionally (12 percent of bankroll) beyond $37.50 cap")
     parser.add_argument("--max-ticket-cap", type=float, default=None, help="Explicit maximum dollar cap for single ticket (optional)")
     parser.add_argument("--dynamic-theta", action="store_true", default=False, help="Enable EXP-315 regime-dependent profit target (0.06 when TTE>900s, 0.09 standard, hold-to-expiry when TTE<=300s)")
