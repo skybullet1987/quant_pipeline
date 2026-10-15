@@ -675,20 +675,30 @@ class PolymarketDualFeed1HRecorder:
                 else:
                     sell_vol += ntl
 
-        # Cross-venue 100ms synchronized flow check (Spot + Futures)
+        # Cross-venue 100ms synchronized flow check (Spot + Futures) with early break & directional aggregation
         other_queue = self.futures_trades if source == "SPOT" else self.spot_trades
-        other_100ms = sum(ntl for t_m, _, _, ntl, _, _ in reversed(other_queue) if t_m >= cutoff_ns)
+        other_100ms = 0.0
+        other_buy_100ms = 0.0
+        other_sell_100ms = 0.0
+        for t_m, _, _, ntl, buyer, _ in reversed(other_queue):
+            if t_m < cutoff_ns:
+                break
+            other_100ms += ntl
+            if buyer:
+                other_buy_100ms += ntl
+            else:
+                other_sell_100ms += ntl
         combined_100ms = vol_100ms + 0.75 * other_100ms
 
         if vol_100ms < self.shock_threshold_usd and vol_250ms >= (self.shock_threshold_usd * 1.45):
             vol_100ms, buy_vol, sell_vol = vol_250ms, buy_250ms, sell_250ms
+        elif vol_100ms < self.shock_threshold_usd and combined_100ms >= (self.shock_threshold_usd * 1.20):
+            vol_100ms = vol_100ms + other_100ms
+            buy_vol = buy_vol + other_buy_100ms
+            sell_vol = sell_vol + other_sell_100ms
 
         now_sec = time.time()
-        shock_qualified = (
-            vol_100ms >= self.shock_threshold_usd
-            or combined_100ms >= (self.shock_threshold_usd * 1.20)
-        )
-        if shock_qualified and (now_sec - self.last_shock_ts_by_source[source] > 2.5):
+        if vol_100ms >= self.shock_threshold_usd and (now_sec - self.last_shock_ts > 2.5):
             self.last_shock_ts_by_source[source] = now_sec
             self.last_shock_ts = now_sec
             shock_dir = "BUY" if buy_vol >= sell_vol else "SELL"

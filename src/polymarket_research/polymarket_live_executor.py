@@ -2271,7 +2271,7 @@ class PolymarketLiveExecutor:
                 }
             if has_err:
                 logger.error(f"Failed to post maker exit order (rejected): {resp}")
-                return {"success": False, "orderID": None, "outcome_unknown": False, "retryable": False, "error": str(has_err), "raw": resp}
+                return {"success": False, "orderID": None, "outcome_unknown": False, "retryable": True, "error": str(has_err), "raw": resp}
             if order_id:
                 logger.info(f"[LIVE MAKER EXIT POSTED (POST-ONLY)] OID: {order_id} | {side} {size:.2f} shares @ ${quantized_price:.4f}")
                 # Round 10 P1-03: reserve verified remaining size (quantized_size - size_matched), not gross size
@@ -2292,9 +2292,9 @@ class PolymarketLiveExecutor:
             is_client_err = False
             status_code = getattr(e, "status_code", None)
             err_msg = str(getattr(e, "error_message", "") or str(e))
-            if status_code and 400 <= int(status_code) < 500:
+            if status_code and int(status_code) in {400, 401, 403, 404, 422}:
                 is_client_err = True
-            elif "not enough balance" in err_msg.lower() or "allowance" in err_msg.lower() or "invalid order" in err_msg.lower():
+            elif "not enough balance" in err_msg.lower() or "allowance" in err_msg.lower() or "invalid order" in err_msg.lower() or "crosses book" in err_msg.lower():
                 is_client_err = True
 
             if not order_submitted or is_client_err:

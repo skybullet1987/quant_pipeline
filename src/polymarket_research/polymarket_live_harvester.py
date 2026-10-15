@@ -1225,6 +1225,24 @@ class PolymarketLiveHarvester:
         exit_res = self.executor.post_maker_exit_order(
             token_id=token_id, price=pos["target_exit_price"], size=size, side="SELL",
         )
+        # Reprice maker ask up to best_bid + 0.01 if post_only rejected due to crossing book (FINDING-15-03c)
+        if not (exit_res or {}).get("success") and "crosses book" in str((exit_res or {}).get("error", "")).lower():
+            try:
+                book = self.executor.get_market_book(token_id) if hasattr(self.executor, "get_market_book") else None
+                bids = (book or {}).get("bids", [])
+                if bids:
+                    best_bid = float(bids[0].get("price", 0.0) or 0.0)
+                    repriced = min(0.99, round(best_bid + 0.01, 4))
+                    if repriced > float(pos["target_exit_price"]):
+                        logger.info(f"[MAKER REPRICE] {tid}: post_only crossed book (bid={best_bid:.4f}). Repricing ask to ${repriced:.4f}.")
+                        pos["target_exit_price"] = repriced
+                        if active_tranche is not None:
+                            active_tranche["price"] = repriced
+                        exit_res = self.executor.post_maker_exit_order(
+                            token_id=token_id, price=repriced, size=size, side="SELL",
+                        )
+            except Exception as e:
+                logger.debug(f"Reprice query failed for {tid}: {e}")
         posted = self._apply_exit_post_result(pos, exit_res, size)
         if active_tranche is not None and posted:
             active_tranche["status"] = "POSTED"
@@ -2682,13 +2700,15 @@ class PolymarketLiveHarvester:
                 rem_total = float(res.size)
                 exit_size = rem_total
                 exit_price = target_exit
-                if float(pos_record.get("notional_usd", 0.0) or 0.0) > 50.0 and rem_total >= 10.0:
+                if float(pos_record.get("notional_usd", 0.0) or 0.0) >= 20.0 and rem_total >= 10.0:
                     t1_sz = float((Decimal(str(rem_total)) * Decimal("0.60")).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
                     t2_sz = float((Decimal(str(rem_total)) - Decimal(str(t1_sz))).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
                     entry_px = float(pos_record.get("entry_price", 0.70))
+                    t1_px = float(target_exit or round(entry_px + 0.08, 4))
+                    t2_px = min(0.99, round(max(t1_px + 0.04, entry_px + 0.14), 4))
                     pos_record["exit_tranches"] = [
-                        {"idx": 1, "size": t1_sz, "price": min(0.99, round(entry_px + 0.06, 4)), "status": "PENDING"},
-                        {"idx": 2, "size": t2_sz, "price": min(0.99, round(entry_px + 0.10, 4)), "status": "PENDING"},
+                        {"idx": 1, "size": t1_sz, "price": min(0.99, t1_px), "status": "PENDING"},
+                        {"idx": 2, "size": t2_sz, "price": t2_px, "status": "PENDING"},
                     ]
                     exit_size = t1_sz
                     exit_price = pos_record["exit_tranches"][0]["price"]
@@ -3346,37 +3366,16 @@ class PolymarketLiveHarvester:
                             if spot_crash_triggered or elapsed_passive >= 5.0:
                                 reason_str = "Spot structural crash" if spot_crash_triggered else f"5.0s passive window expired ({elapsed_passive:.1f}s)"
                                 logger.info(f"[PASSIVE STOP ESCALATION] {tid}: {reason_str}. Cancelling maker stop and escalating to aggressive FAK.")
+                                retry_due = True
+                            else:
+                                # Still resting within 5s passive maker window: poll Phase D for fills
+                                logger.debug(f"[PASSIVE STOP RESTING] {tid}: Resting maker stop {exit_oid} active ({elapsed_passive:.1f}s/5.0s).")
                                 if exit_oid:
-                                    await asyncio.to_thread(self.executor.cancel_order, exit_oid)
                                     summary = await asyncio.to_thread(self.executor.get_order_fill_summary, exit_oid, token_id)
                                     if summary is not None:
                                         self._record_order_summary(pos, summary, float(pos.get("target_exit_price", 0.0) or 0.0), taker=False)
-                                    self.executor.release_inventory(reservation_id=exit_oid)
-                                    pos["exit_order_id"] = None
-                                    exit_oid = None
-                                pos["exit_order_status"] = "CANCELED_FOR_STOP_LOSS"
-                                rem_shrs = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs)) or 0.0)
-                                if rem_shrs <= 0.01:
-                                    self._close_position(tid, pos, ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB", won=None)
-                                    continue
-                                # Fall through to aggressive FAK taker unwind below!
-                                limit_px = max(0.01, best_b - 0.02)
-                                unwind_res = await asyncio.to_thread(
-                                    self.executor.execute_unwind_order,
-                                    token_id=token_id,
-                                    size=rem_shrs,
-                                    side="SELL",
-                                    min_price=limit_px,
-                                )
-                                outcome = self._handle_unwind_response(
-                                    tid, pos, unwind_res, rem_shrs,
-                                    "ADVERSE_STOP_LOSS_UNWIND", "PARTIAL_UNWIND_REMAINING", limit_px,
-                                )
-                                if outcome != "FAILED":
-                                    continue
-                            else:
-                                # Still resting within 5s passive maker window, let Phase D monitor fills
-                                logger.debug(f"[PASSIVE STOP RESTING] {tid}: Resting maker stop {exit_oid} active ({elapsed_passive:.1f}s/5.0s).")
+                                        if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
+                                            self._close_position(tid, pos, ExecutionStatus.FILLED, "PASSIVE_STOP_MAKER_FILLED", won=None)
                                 continue
 
                         # Hybrid Risk Engine for CLOB stops (Priority C)
@@ -3699,21 +3698,17 @@ class PolymarketLiveHarvester:
                                 self.save_state()
                                 continue
                             elif abs(spot_disp) <= pin_threshold:
-                                logger.warning(
-                                    f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
-                                    f"Position {tid} is in PIN-RISK UNCERTAINTY ZONE (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f}). "
-                                    "Holding with supervisor awareness to terminal market resolution."
-                                )
-                                pos["exit_order_status"] = "PIN_RISK_EXPIRY_HOLD"
-                                pos["status"] = ExecutionStatus.POSITION_CONFIRMED
-                                self.save_state()
+                                if pos.get("exit_order_status") != "PIN_RISK_EXPIRY_HOLD":
+                                    logger.warning(
+                                        f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                        f"Position {tid} is in PIN-RISK UNCERTAINTY ZONE (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f}). "
+                                        "Holding with supervisor awareness to terminal market resolution."
+                                    )
+                                    pos["exit_order_status"] = "PIN_RISK_EXPIRY_HOLD"
+                                    pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                                    self.save_state()
                                 continue
                             else:
-                                logger.info(
-                                    f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
-                                    f"Position {tid} is strictly IN-THE-MONEY (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f} > threshold={pin_threshold:.2f}). "
-                                    "Posting $0.99 capital-recycling maker exit (or holding to $1.00 settlement)."
-                                )
                                 # AUDIT-13-07 / AUDIT-04 Fix: Post $0.99 passive maker exit when deep ITM (Z >= 3.0) and TTE >= 30s
                                 deep_itm_threshold = 1.5 * pin_threshold  # 3.0 sigma
                                 if spot_disp >= deep_itm_threshold and tte_rem >= 30.0 and not pos.get("recycle_099_attempted"):
@@ -3727,9 +3722,15 @@ class PolymarketLiveHarvester:
                                         pos["exit_order_status"] = "RESTING_099_CAPITAL_RECYCLE"
                                         self.save_state()
                                         continue
-                                pos["exit_order_status"] = "CANCELED_FOR_EXPIRY_HOLD"
-                                pos["status"] = ExecutionStatus.POSITION_CONFIRMED
-                                self.save_state()
+                                if pos.get("exit_order_status") != "CANCELED_FOR_EXPIRY_HOLD":
+                                    logger.info(
+                                        f"[REGIME 4 TTE < {self.tte_cancel_window:.0f}s] TTE={tte_rem:.0f}s. "
+                                        f"Position {tid} is strictly IN-THE-MONEY (spot={current_spot:.2f} vs open={open_spot:.2f}, delta={spot_disp:+.2f} > threshold={pin_threshold:.2f}). "
+                                        "Holding to $1.00 settlement."
+                                    )
+                                    pos["exit_order_status"] = "CANCELED_FOR_EXPIRY_HOLD"
+                                    pos["status"] = ExecutionStatus.POSITION_CONFIRMED
+                                    self.save_state()
                                 continue
 
                     # 3. Legacy passive (resting) liquidation order: reconciled from exchange records only
@@ -3965,7 +3966,7 @@ class PolymarketLiveHarvester:
 
                 # 3. Monitor open positions (fast 0.20s cadence when a stop/cancel confirmation is armed, else 1.0s)
                 urgent_supervision = any(
-                    p.get("low_bid_detected_ts") or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED"}
+                    p.get("low_bid_detected_ts") or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING"}
                     for p in self.active_positions.values()
                 )
                 mgmt_interval = 0.20 if urgent_supervision else 1.0
