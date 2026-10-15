@@ -655,15 +655,20 @@ class PolymarketLiveExecutor:
         except Exception:
             return 0.0
 
-    def extract_account_fills(self, trades: List[Dict[str, Any]], token_id: str) -> List[Dict[str, Any]]:
+    def extract_account_fills(
+        self,
+        trades: List[Dict[str, Any]],
+        token_id: str,
+        target_order_id: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Converts raw CLOB trade records into this account's own fills for `token_id`.
-        Each fill: {fill_id, trade_id, order_id, side, size, price, cash, transaction_hash, status, match_ts, role}.
-        A trade can include our taker leg or one/more of our maker legs; each is its own fill.
+        Supports both direct matches and complementary-token mint/merge matches.
         """
         fills: List[Dict[str, Any]] = []
         me = str(self.funder_address or "").lower()
         api_owner = str(getattr(getattr(self.client, "creds", None), "api_key", "") or "")
+        target_oid_str = str(target_order_id) if target_order_id else None
         for raw in trades or []:
             t = self.normalize_trade_record(raw)
             if not t:
@@ -674,23 +679,29 @@ class PolymarketLiveExecutor:
             match_ts = self._iso_or_unix_to_ts(t.get("match_time") or t.get("last_update") or 0)
             role = str(t.get("trader_side", "")).upper()
             t_asset = str(t.get("asset_id", ""))
-            if role == "TAKER" and t_asset == str(token_id):
+            taker_oid = str(t.get("taker_order_id") or "")
+            if role == "TAKER" and (t_asset == str(token_id) or (target_oid_str and taker_oid == target_oid_str)):
                 size = float(t.get("size", 0.0) or 0.0)
                 price = float(t.get("price", 0.0) or 0.0)
                 fills.append({
-                    "fill_id": f"{trade_id}:{t.get('taker_order_id')}",
-                    "trade_id": trade_id, "order_id": str(t.get("taker_order_id") or ""),
+                    "fill_id": f"{trade_id}:{taker_oid}",
+                    "trade_id": trade_id, "order_id": taker_oid,
                     "side": str(t.get("side", "")).upper(), "size": size, "price": price,
                     "cash": round(size * price, 6), "transaction_hash": tx, "status": status,
                     "match_ts": match_ts, "role": "TAKER",
                 })
                 continue
             for mo in t.get("maker_orders", []) or []:
+                mo_oid = str(mo.get("order_id") or "")
+                exact_oid_match = bool(target_oid_str and mo_oid == target_oid_str)
                 owner_match = (
-                    (me and str(mo.get("maker_address", "")).lower() == me)
+                    exact_oid_match
+                    or (me and str(mo.get("maker_address", "")).lower() == me)
                     or (api_owner and str(mo.get("owner", "")) == api_owner)
                 )
-                if not owner_match or str(mo.get("asset_id", t_asset)) != str(token_id):
+                mo_asset = str(mo.get("asset_id") or "")
+                asset_match = (mo_asset == str(token_id)) or (not mo_asset and t_asset == str(token_id)) or exact_oid_match
+                if not owner_match or not asset_match:
                     continue
                 size = float(mo.get("matched_amount", 0.0) or 0.0)
                 price = float(mo.get("price", 0.0) or 0.0)
@@ -730,7 +741,12 @@ class PolymarketLiveExecutor:
             raw = self.client.get_trades(params=params) if params is not None else self.client.get_trades()
             if not isinstance(raw, list):
                 return None
-            fills = self.extract_account_fills(raw, token_id)
+            fills = self.extract_account_fills(raw, token_id, target_order_id=order_id)
+            if order_id and not any(f["order_id"] == str(order_id) for f in fills):
+                # Fallback unfiltered query for complementary-token matches where parent trade asset_id is opposite token
+                raw_all = self.client.get_trades()
+                if isinstance(raw_all, list):
+                    fills = self.extract_account_fills(raw_all, token_id, target_order_id=order_id)
         except Exception as e:
             logger.error(f"[PM-EXEC] Trade history unavailable for {token_id}: {e}")
             return None
@@ -826,6 +842,27 @@ class PolymarketLiveExecutor:
         elif is_settled and (status in {"FILLED", "CONFIRMED", "MINED"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
             terminal = True
             estimated = False
+        elif (
+            not self.dry_run
+            and self.is_authenticated
+            and self.client is not None
+            and status in {"MATCHED", "FILLED", "CONFIRMED", "MINED"}
+            and orig_size > 0
+            and matched >= orig_size - 1e-4
+            and limit_px > 0.0
+            and tok
+        ):
+            # Live fallback when CLOB /trades lags behind on-chain settlement: verify ERC-1155 wallet deduction
+            onchain_bal = self.get_onchain_erc1155_balance(tok)
+            if onchain_bal is not None and onchain_bal <= max(0.0, orig_size - matched) + 0.01:
+                is_settled = True
+                terminal = True
+                estimated = False
+                if cash is None:
+                    cash = round(matched * limit_px, 6)
+            else:
+                terminal = False
+                estimated = True
         else:
             terminal = False
             estimated = True
@@ -2270,6 +2307,25 @@ class PolymarketLiveExecutor:
                     "raw": resp,
                 }
             if has_err:
+                if "crosses book" in str(has_err).lower() or "post only" in str(has_err).lower() or "post-only" in str(has_err).lower():
+                    try:
+                        bk = self.get_market_book(token_id)
+                        b_list = bk.get("bids", []) if isinstance(bk, dict) else []
+                        best_b = max((float(b.get("price", 0.0)) for b in b_list if float(b.get("size", 0.0)) > 0), default=0.0)
+                        tick_sz = self.get_token_tick_size(token_id)
+                        if best_b >= quantized_price:
+                            improved_px = self.quantize_order_price(min(0.99, best_b + tick_sz), token_id, rounding=ROUND_CEILING)
+                            if improved_px > quantized_price:
+                                logger.info(f"[POST-ONLY PRICE IMPROVEMENT] Best bid ${best_b:.4f} >= target ${quantized_price:.4f}. Repricing maker sell to ${improved_px:.4f}!")
+                                order_args_2 = OrderArgsV2(price=improved_px, size=quantized_size, side=side, token_id=token_id)
+                                signed_2 = self.client.create_order(order_args_2)
+                                resp_2 = self.client.post_order(signed_2, OrderType.GTC, post_only=True, defer_exec=True)
+                                oid_2 = resp_2.get("orderID") or resp_2.get("id")
+                                if oid_2 and not (resp_2.get("errorMsg") or resp_2.get("error")):
+                                    self.reserve_inventory(token_id, quantized_size, reservation_id=oid_2)
+                                    return {"success": True, "orderID": oid_2, "post_only": True, "price": improved_px, "raw": resp_2, "matched_size": 0.0}
+                    except Exception as repr_err:
+                        logger.debug(f"Post-only price improvement notice: {repr_err}")
                 logger.error(f"Failed to post maker exit order (rejected): {resp}")
                 return {"success": False, "orderID": None, "outcome_unknown": False, "retryable": True, "error": str(has_err), "raw": resp}
             if order_id:
@@ -2294,7 +2350,7 @@ class PolymarketLiveExecutor:
             err_msg = str(getattr(e, "error_message", "") or str(e))
             if status_code and int(status_code) in {400, 401, 403, 404, 422}:
                 is_client_err = True
-            elif "not enough balance" in err_msg.lower() or "allowance" in err_msg.lower() or "invalid order" in err_msg.lower() or "crosses book" in err_msg.lower():
+            elif any(k in err_msg.lower() for k in ("not enough balance", "allowance", "invalid order", "crosses book", "post only", "post-only")):
                 is_client_err = True
 
             if not order_submitted or is_client_err:

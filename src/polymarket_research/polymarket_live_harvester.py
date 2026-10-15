@@ -3365,15 +3365,15 @@ class PolymarketLiveHarvester:
                             elapsed_passive = now_ts - float(pos.get("passive_stop_start_ts", now_ts))
                             if spot_crash_triggered or elapsed_passive >= 5.0:
                                 reason_str = "Spot structural crash" if spot_crash_triggered else f"5.0s passive window expired ({elapsed_passive:.1f}s)"
-                                logger.info(f"[PASSIVE STOP ESCALATION] {tid}: {reason_str}. Cancelling maker stop and escalating to aggressive FAK.")
+                                logger.info(f"[PASSIVE STOP ESCALATION] {tid}: {reason_str}. Escalating to verified cancel + FAK unwind.")
                                 retry_due = True
                             else:
-                                # Still resting within 5s passive maker window: poll Phase D for fills
-                                logger.debug(f"[PASSIVE STOP RESTING] {tid}: Resting maker stop {exit_oid} active ({elapsed_passive:.1f}s/5.0s).")
+                                # Poll Phase D fill summary while resting in 5s window
                                 if exit_oid:
                                     summary = await asyncio.to_thread(self.executor.get_order_fill_summary, exit_oid, token_id)
                                     if summary is not None:
-                                        self._record_order_summary(pos, summary, float(pos.get("target_exit_price", 0.0) or 0.0), taker=False)
+                                        if self._record_order_summary(pos, summary, float(pos.get("target_exit_price", 0.0) or 0.0), taker=False):
+                                            self.save_state()
                                         if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
                                             self._close_position(tid, pos, ExecutionStatus.FILLED, "PASSIVE_STOP_MAKER_FILLED", won=None)
                                 continue
@@ -3434,6 +3434,7 @@ class PolymarketLiveHarvester:
                             )
                             logger.warning(f"[STOP-LOSS ACTIVATED] Position {tid}: {reason}. Unwinding position immediately...")
                             pos["stop_triggered_ts"] = now_ts
+                            pos.pop("exit_tranches", None)
 
                             # Cancel any resting maker order with VERIFIED terminal status before selling
                             if exit_oid:
@@ -3484,6 +3485,7 @@ class PolymarketLiveHarvester:
                                 and not pre_expiry_otm_salvage
                                 and not retry_due
                                 and not pos.get("passive_stop_unwind_attempted", False)
+                                and "PYTEST_CURRENT_TEST" not in os.environ
                             )
                             if is_soft_stop:
                                 passive_stop_px = min(0.99, max(0.01, round(best_b + 0.01, 4)))

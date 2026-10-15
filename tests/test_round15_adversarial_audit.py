@@ -115,6 +115,8 @@ class TestRound15AuditRemediation:
             private_key="0x" + "1" * 64,
             dry_run=False,
         )
+        executor._save_durable_reservations = MagicMock()
+        executor._load_durable_reservations = MagicMock()
         executor.client = MagicMock()
         executor.auth_mode = "LIVE"
         executor.is_authenticated = True
@@ -141,6 +143,8 @@ class TestRound15AuditRemediation:
             private_key="0x" + "1" * 64,
             dry_run=False,
         )
+        executor._save_durable_reservations = MagicMock()
+        executor._load_durable_reservations = MagicMock()
         executor.client = MagicMock()
         executor.auth_mode = "LIVE"
         executor.is_authenticated = True
