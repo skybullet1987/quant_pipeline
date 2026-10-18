@@ -1048,7 +1048,11 @@ class PolymarketDualFeed1HRecorder:
                         # Ground truth verification of finalized candle
                         asyncio.create_task(self.verify_and_log_resolution(expired_market))
 
-                    market = await self.discover_nearest_1h_market()
+                    market = getattr(self, "_cached_next_market", None)
+                    if not market or (expired_market and market.get("market_id") == expired_market.get("market_id")):
+                        market = await self.discover_nearest_1h_market()
+                    self._cached_next_market = None
+
                     if market:
                         self.current_market = market
                         open_px, _ = await self.fetch_finalized_binance_candle(market["candle_open_ts"])
@@ -1066,6 +1070,18 @@ class PolymarketDualFeed1HRecorder:
                     up_metrics = self.books["UP"].get_metrics(fee_rate=self.fee_rate_market)
                     down_metrics = self.books["DOWN"].get_metrics(fee_rate=self.fee_rate_market)
                     secs_left = (self.current_market["end_dt"] - now).total_seconds()
+
+                    # Upgrade 4: Proactive pre-warming at TTE <= 120s: pre-fetch next candle market
+                    if 0 < secs_left <= 120.0 and getattr(self, "_prewarmed_market_id", None) != self.current_market["market_id"]:
+                        self._prewarmed_market_id = self.current_market["market_id"]
+                        logger.info(f"[PREWARM TTE={secs_left:.0f}s] Pre-fetching next 1H market from Gamma API to eliminate :00 open delay...")
+                        try:
+                            prewarmed = await self.discover_nearest_1h_market()
+                            if prewarmed and prewarmed["market_id"] != self.current_market["market_id"]:
+                                self._cached_next_market = prewarmed
+                                logger.info(f"[PREWARM READY] Next market pre-cached: {prewarmed['title']} ({prewarmed['market_id']}).")
+                        except Exception as e:
+                            logger.debug(f"Prewarm error: {e}")
                     dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
 
                     delta_basis_100ms = self.get_delta_basis_100ms()

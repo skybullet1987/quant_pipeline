@@ -17,6 +17,7 @@ class HyperliquidGateway:
         self.wallet = None
         self.exchange = None
         self.account_address = account_address
+        self.last_user_state: Dict[str, Any] = {}
 
         if secret_key:
             self.wallet = Account.from_key(secret_key)
@@ -35,6 +36,7 @@ class HyperliquidGateway:
             raise ValueError("Account address required to fetch state.")
         
         user_state = self.info.user_state(self.account_address)
+        self.last_user_state = user_state
         spot_state = self.info.spot_user_state(self.account_address)
 
         # 1. Total base collateral from Unified Spot Pool
@@ -63,10 +65,31 @@ class HyperliquidGateway:
                 }
 
         # In Hyperliquid unified spot/perp accounts, spot USDC total already dynamically tracks unified mark equity
-        total_equity = usdc_total if usdc_total > 0 else float(user_state["marginSummary"]["accountValue"])
+        margin_acct_val = float(user_state.get("marginSummary", {}).get("accountValue", 0.0))
+        total_equity = usdc_total if usdc_total > 0 else margin_acct_val
         available_cash = max(0.0, usdc_total - usdc_hold)
 
         return total_equity, available_cash, positions
+
+    def get_bbo_and_mid(self, symbol: str) -> Tuple[float, float, float]:
+        """Returns (best_bid, best_ask, mid_price) from live L2 orderbook snapshot."""
+        l2 = self.info.l2_snapshot(symbol)
+        bids, asks = l2.get("levels", [[], []])
+        if not bids or not asks:
+            raise ValueError(f"Orderbook empty for {symbol}")
+        best_bid = float(bids[0]["px"])
+        best_ask = float(asks[0]["px"])
+        return best_bid, best_ask, (best_bid + best_ask) / 2.0
+
+    def get_tick_size(self, symbol: str, ref_price: float) -> float:
+        """Computes exact Hyperliquid L1 tick size for a symbol at ref_price."""
+        if ref_price <= 0:
+            return 1e-4
+        sz_dec = self.sz_decimals.get(symbol, 2)
+        max_decimals = max(0, 6 - sz_dec)
+        scale = 5 - int(math.floor(math.log10(abs(ref_price)))) - 1
+        target_decimals = min(max_decimals, scale) if scale >= 0 else scale
+        return float(10.0 ** (-target_decimals))
 
     def get_open_orders(self) -> List[Dict[str, Any]]:
         if not self.account_address:
@@ -251,12 +274,15 @@ class HyperliquidGateway:
             rounded_px = self.round_px(symbol, trigger_price)
             if rounded_sz <= 0 or rounded_px <= 0:
                 return {}
+            # Protective 3.0% limit slippage collar once trigger fires so thin books still match
+            raw_limit_px = rounded_px * 1.030 if is_buy_to_close else rounded_px * 0.970
+            limit_px = self.round_px(symbol, raw_limit_px)
             cloid_obj = None
             if cloid:
                 hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
                 cloid_obj = Cloid.from_str(hex_str)
             return self.exchange.order(
-                symbol, is_buy_to_close, rounded_sz, rounded_px,
+                symbol, is_buy_to_close, rounded_sz, limit_px,
                 order_type={"trigger": {"isMarket": True, "triggerPx": float(rounded_px), "tpsl": "sl"}},
                 reduce_only=True,
                 cloid=cloid_obj
@@ -273,12 +299,14 @@ class HyperliquidGateway:
             rounded_px = self.round_px(symbol, trigger_price)
             if rounded_sz <= 0 or rounded_px <= 0:
                 return {}
+            raw_limit_px = rounded_px * 0.970 if is_buy_to_close else rounded_px * 1.030
+            limit_px = self.round_px(symbol, raw_limit_px)
             cloid_obj = None
             if cloid:
                 hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
                 cloid_obj = Cloid.from_str(hex_str)
             return self.exchange.order(
-                symbol, is_buy_to_close, rounded_sz, rounded_px,
+                symbol, is_buy_to_close, rounded_sz, limit_px,
                 order_type={"trigger": {"isMarket": True, "triggerPx": float(rounded_px), "tpsl": "tp"}},
                 reduce_only=True,
                 cloid=cloid_obj
@@ -302,28 +330,69 @@ class HyperliquidGateway:
             return 0.0
 
     def close_position(self, symbol: str, size: float, is_long: bool) -> Dict[str, Any]:
+        """
+        Multi-Stage Emergency Position Exit:
+          Stage 1: 5-Tick Marketable Limit IOC Sweep anchored to live L2 BBO.
+          Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep.
+          Stage 3: Resting GTC Reduce-Only Marketable Limit fallback if book has zero resting liquidity.
+        """
         if not self.exchange:
             return {}
         try:
             is_buy_to_close = not is_long
             rounded_sz = abs(self.round_sz(symbol, size))
-            mid = self.get_mid_price(symbol)
-            raw_slip = mid * 1.05 if is_buy_to_close else mid * 0.95
+            if rounded_sz <= 0:
+                return {}
 
-            # Oracle collar clamp (+/- 4.5%) to avoid exchange rejection
+            mid = self.get_mid_price(symbol)
+            try:
+                best_bid, best_ask, _ = self.get_bbo_and_mid(symbol)
+            except Exception:
+                best_bid, best_ask = mid * 0.999, mid * 1.001
+
+            tick_sz = self.get_tick_size(symbol, mid)
             oracle_px = self.get_oracle_price(symbol)
+
+            # Stage 1: 5-Tick Marketable Limit Sweep across opposing BBO
+            stage1_raw = (best_ask + 5.0 * tick_sz) if is_buy_to_close else max(tick_sz, best_bid - 5.0 * tick_sz)
             if oracle_px > 0:
                 if is_buy_to_close:
-                    raw_slip = min(raw_slip, oracle_px * 1.045)
+                    stage1_raw = min(stage1_raw, max(best_ask, oracle_px * 1.045))
                 else:
-                    raw_slip = max(raw_slip, oracle_px * 0.955)
+                    stage1_raw = max(stage1_raw, min(best_bid, oracle_px * 0.955))
+            stage1_px = self.round_px(symbol, stage1_raw)
+
+            res1 = self.exchange.order(
+                symbol, is_buy_to_close, rounded_sz, stage1_px,
+                order_type={"limit": {"tif": "Ioc"}}, reduce_only=True
+            )
+            statuses1 = res1.get("response", {}).get("data", {}).get("statuses", [{}]) if isinstance(res1, dict) else [{}]
+            first1 = statuses1[0] if statuses1 else {}
+            if isinstance(first1, dict) and ("filled" in first1 or "resting" in first1):
+                return res1
+
+            # Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep
+            raw_slip = mid * 1.05 if is_buy_to_close else mid * 0.95
+            if oracle_px > 0:
+                if is_buy_to_close:
+                    raw_slip = min(max(raw_slip, best_ask), oracle_px * 1.045)
+                else:
+                    raw_slip = max(min(raw_slip, best_bid), oracle_px * 0.955)
 
             slip_px = self.round_px(symbol, raw_slip)
-            return self.exchange.order(
+            res2 = self.exchange.order(
                 symbol, is_buy_to_close, rounded_sz, slip_px,
                 order_type={"limit": {"tif": "Ioc"}}, reduce_only=True
             )
+            statuses2 = res2.get("response", {}).get("data", {}).get("statuses", [{}]) if isinstance(res2, dict) else [{}]
+            first2 = statuses2[0] if statuses2 else {}
+            if isinstance(first2, dict) and "error" in first2 and "match against any resting" in str(first2.get("error", "")):
+                # Stage 3: Book has no matching resting liquidity -> place GTC reduce-only at collar to guarantee fill
+                return self.exchange.order(
+                    symbol, is_buy_to_close, rounded_sz, slip_px,
+                    order_type={"limit": {"tif": "Gtc"}}, reduce_only=True
+                )
+            return res2
         except Exception as e:
             print(f"--> [Gateway Warning] Failed to close position for {symbol}: {e}", flush=True)
             return {"error": str(e)}
-

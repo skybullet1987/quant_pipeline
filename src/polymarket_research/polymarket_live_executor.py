@@ -55,6 +55,8 @@ try:
         AssetType,
         BalanceAllowanceParams,
         TradeParams,
+        PartialCreateOrderOptions,
+        FeeInfo,
     )
     PY_CLOB_AVAILABLE = True
     PY_CLOB_VERSION = getattr(py_clob_client_v2, "__version__", "1.2.0")
@@ -69,16 +71,36 @@ except ImportError:
     AssetType = None
     BalanceAllowanceParams = None
     TradeParams = None
+    PartialCreateOrderOptions = None
+    FeeInfo = None
 
 # Institutional SDK Hard Pin Requirement
 EXPECTED_CLOB_V2 = "1.2.0"
 CLOB_ALLOWED_TICK_SIZES = (0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001)
 
 # Execution & Risk Boundaries
-MAX_PRICE_CEILING = 0.8800
+MAX_PRICE_CEILING = 0.8900  # Capped at 0.89 to eliminate >0.89 crumbs while capturing 0.82-0.89 sweet spot
 MIN_PRICE_FLOOR = 0.1500
 MIN_LOT_SIZE_USD = 5.00
 DEFAULT_DEPTH_HURDLE = 1.25
+
+# Institutional Dual-Sleeve Production Architecture (Full-Throttle Multi-Market)
+SLEEVE_1_MIN_PRICE = 0.8200  # Late conviction sweet spot (0.82 <= p <= 0.89)
+SLEEVE_1_MAX_PRICE = 0.8900  # Eliminates >0.89 low-payoff crumbs
+SLEEVE_2_ENABLED = True      # EXP-304/EXP-315 Early/Mid ETH 1h + 15m momentum engine
+SLEEVE_2_MIN_PRICE = 0.7200  # Sweet spot entry band (0.72 <= p <= 0.85)
+SLEEVE_2_MAX_PRICE = 0.8500  # Early 1h ceiling (1350s < TTE <= 3300s)
+SLEEVE_2_SUBHOURLY_MAX_PRICE = 0.8800  # 15m sub-hourly momentum ceiling
+SLEEVE_2_MIN_TTE = 1350.0    # 22.5m past the hour for 1h
+SLEEVE_2_MAX_TTE = 3300.0    # 55m past the hour for 1h
+SLEEVE_2_MIN_SPOT_CUSHION = 0.0015  # 0.15% spot cushion
+CIRCUIT_BREAKER_EQUITY_FLOOR = 95.00  # Circuit breaker floor on $159.69 bankroll
+DYNAMIC_EQUITY_RISK_PCT = 0.25        # 25% dynamic auto-compounding equity sizing
+MIN_TICKET_USD = 25.00
+MAX_TICKET_CAP_USD = 250.00           # Orderbook depth cap
+MAX_CONCURRENT_POSITIONS = 3          # Parallel multi-market execution (up to 3 simultaneous contracts)
+MAX_POSITIONS_PER_MARKET_ID = 1       # Strict per-market mutual exclusion (never 2 on same market_id)
+
 
 
 # Setup module logger
@@ -125,6 +147,73 @@ def calculate_taker_fee(
     fee_usd = float(Decimal(str(shares * per_share_fee)).quantize(Decimal("0.00001"), rounding=ROUND_HALF_UP))
     effective_rate = round(fee_usd / max(notional_usd, 1e-6), 8)
     return effective_rate, fee_usd
+
+
+def is_fak_killed_no_match(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Polymarket CLOB Semantics:
+    When a FAK (Fill-And-Kill) order finds no matching liquidity, the matching engine
+    synchronously rejects the order with HTTP 400 Bad Request:
+      {"error": "no orders found to match with FAK order. FAK orders are partially filled or killed if no match is found.", "orderID": "0x..."}
+    Even though an orderID hash is returned, exactly zero shares were matched and no resting order remains.
+    This is a deterministic terminal rejection, NOT an ambiguous submission.
+    """
+    pattern = "no orders found to match with fak order"
+    if err is not None:
+        err_msg_field = getattr(err, "error_message", None) or getattr(err, "error_msg", None)
+        if err_msg_field and pattern in str(err_msg_field).lower():
+            return True
+        if pattern in str(getattr(err, "error_msg", "")).lower():
+            return True
+        if pattern in str(err).lower():
+            return True
+    if raw_resp and isinstance(raw_resp, dict):
+        err_msg = str(raw_resp.get("errorMsg") or raw_resp.get("error") or raw_resp.get("error_message") or "")
+        if pattern in err_msg.lower():
+            return True
+    return False
+
+
+def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
+    """
+    Polymarket CLOB HTTP 400 Rejections:
+    Synchronous rejection by the CLOB matching engine or gateway before matching.
+    Includes FAK zero-liquidity kill, 'invalid amounts', 'invalid signature', etc.
+    0 shares are filled and no order rests on the book.
+    Deterministic terminal rejection (NOT an ambiguous in-flight state).
+    """
+    if is_fak_killed_no_match(err, raw_resp):
+        return True
+    if err is not None:
+        sc = getattr(err, "status_code", None)
+        if sc == 400 or sc == "400":
+            return True
+        err_str = str(err).lower()
+        if "status_code=400" in err_str or "status=400" in err_str or "invalid amounts" in err_str:
+            return True
+        err_msg_field = getattr(err, "error_message", None) or getattr(err, "error_msg", None)
+        if err_msg_field:
+            field_str = str(err_msg_field).lower()
+            if "invalid amounts" in field_str or "400" in field_str or "supports a max accuracy" in field_str:
+                return True
+    if raw_resp and isinstance(raw_resp, dict):
+        status = raw_resp.get("status") or raw_resp.get("statusCode") or raw_resp.get("status_code")
+        if status == 400 or status == "400":
+            return True
+        err_str = str(raw_resp.get("error") or raw_resp.get("errorMsg") or raw_resp.get("error_message") or "").lower()
+        if "invalid amounts" in err_str or "supports a max accuracy" in err_str or "bad request" in err_str:
+            return True
+    return False
+
+
+def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
+    """Invokes order creation with PartialCreateOrderOptions, falling back if client does not accept options."""
+    if options is not None:
+        try:
+            return client_fn(args, options)
+        except TypeError:
+            return client_fn(args)
+    return client_fn(args)
 
 
 @dataclass
@@ -335,6 +424,12 @@ class PolymarketLiveExecutor:
             else:
                 api_creds = self.client.create_or_derive_api_creds()
             self.client.set_api_creds(api_creds)
+            # Proactively cache version=2 to prevent synchronous GET /version on the hot path
+            try:
+                if hasattr(self.client, "_ClobClient__cached_version"):
+                    self.client._ClobClient__cached_version = 2
+            except Exception:
+                pass
 
             latency_ms = (time.perf_counter() - t0) * 1000.0
             self.is_authenticated = True
@@ -360,6 +455,80 @@ class PolymarketLiveExecutor:
         elif market_version.upper() in ("V2_POSITION", "PROTOCOL_V2", "EXCHANGE_V3"):
             if not (isinstance(asset_id, str) and asset_id.startswith("0x") and len(asset_id) >= 42):
                 raise ValueError(f"ASSET ROUTING ERROR: Invalid position_id '{asset_id}' for Exchange V3 route.")
+
+    def prewarm_token_market_cache(
+        self,
+        token_id: str,
+        tick_size: Union[str, float] = "0.01",
+        neg_risk: bool = False,
+        fee_rate_bps: int = 0,
+        condition_id: Optional[str] = None,
+        fee_rate: float = 0.07,
+        fee_exponent: float = 1.0,
+    ) -> None:
+        """
+        Pre-warms py-clob-client internal cache dictionaries (_ClobClient__tick_sizes,
+        _ClobClient__tick_size_timestamps, _ClobClient__neg_risk, _ClobClient__fee_rates,
+        _ClobClient__cached_version, _ClobClient__token_condition_map, _ClobClient__fee_infos)
+        so that subsequent calls to create_order / create_market_order execute with ZERO
+        synchronous HTTP GET roundtrips prior to EIP-712 signing.
+        """
+        if not token_id:
+            return
+        tick_size_str = str(tick_size)
+        try:
+            self._tick_size_cache[token_id] = float(tick_size_str)
+        except Exception:
+            self._tick_size_cache[token_id] = 0.01
+
+        cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
+        if cond:
+            self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
+
+        if self.client is not None:
+            try:
+                # 1. Authoritative tick size
+                if hasattr(self.client, "_ClobClient__tick_sizes"):
+                    self.client._ClobClient__tick_sizes[token_id] = tick_size_str
+                
+                # 2. Negative risk flag (False for 1h/15m crypto)
+                if hasattr(self.client, "_ClobClient__neg_risk"):
+                    self.client._ClobClient__neg_risk[token_id] = bool(neg_risk)
+                
+                # 3. Fee rate in basis points
+                if hasattr(self.client, "_ClobClient__fee_rates"):
+                    self.client._ClobClient__fee_rates[token_id] = int(fee_rate_bps)
+
+                # 4. Proactively cache version=2 to prevent synchronous GET /version
+                if hasattr(self.client, "_ClobClient__cached_version"):
+                    self.client._ClobClient__cached_version = 2
+
+                # 5. Condition ID map and FeeInfo to prevent GET /markets-by-token and GET /clob-markets
+                cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
+                if hasattr(self.client, "_ClobClient__token_condition_map"):
+                    self.client._ClobClient__token_condition_map[token_id] = cond
+
+                if hasattr(self.client, "_ClobClient__fee_infos"):
+                    if FeeInfo is not None:
+                        fi = FeeInfo(rate=float(fee_rate), exponent=float(fee_exponent))
+                    else:
+                        fi = type("FeeInfoObj", (), {"rate": float(fee_rate), "exponent": float(fee_exponent)})()
+                    self.client._ClobClient__fee_infos[token_id] = fi
+                self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
+            except Exception as e:
+                logger.debug(f"[CACHE PREWARM] Warning pre-warming py-clob-client for {token_id}: {e}")
+
+    def ping_clob_keepalive(self) -> None:
+        """Lightweight GET ping to ensure persistent HTTP keep-alive connection remains warm."""
+        if self.dry_run or not self.client:
+            return
+        try:
+            t0 = time.perf_counter()
+            self.client.get_server_time()
+            elapsed_ms = (time.perf_counter() - t0) * 1000.0
+            logger.debug(f"[KEEPALIVE] CLOB HTTP keepalive ping: {elapsed_ms:.1f}ms")
+        except Exception as e:
+            logger.debug(f"[KEEPALIVE] CLOB ping notice: {e}")
 
     def get_async_client(self) -> httpx.AsyncClient:
         """P2: Returns persistent httpx.AsyncClient to preserve HTTP connection pooling / keep-alive."""
@@ -1108,11 +1277,13 @@ class PolymarketLiveExecutor:
         min_price_floor: float = MIN_PRICE_FLOOR,
         return_adjusted: bool = False,
         min_lot_size: float = MIN_LOT_SIZE_USD,
+        max_ticket_size: float = 75.0,
     ) -> Union[Tuple[bool, float, float], Tuple[bool, float, float, float]]:
         """
         Validates executable orderbook depth across all qualifying price levels up to max_price_ceiling.
-        Supports dynamic down-sizing: if the book has liquidity below the hurdle, scales order size
-        to fit available liquidity (down to min_lot_size) rather than rejecting profitable setups.
+        Supports dynamic elastic book-depth sizing: scales ticket size proportionally to available liquidity:
+          ticket_size = clip(executable_ask_depth / depth_hurdle_ratio, min=$25.00, max=$75.00)
+        rather than rejecting profitable setups on thinner books or under-allocating on deep books.
 
         For BUY:
           Sorts asks ascending (lowest price first).
@@ -1164,20 +1335,291 @@ class PolymarketLiveExecutor:
             passed = ratio >= depth_hurdle_ratio
             return passed, ratio, best_price
 
-        # With dynamic down-sizing (return_adjusted=True):
-        if ratio >= depth_hurdle_ratio:
-            adjusted_notional = target_notional_usd
-            passed = True
+        # Dynamic Elastic Book-Depth Sizing (return_adjusted=True):
+        # ticket_size = clip(available_notional / depth_hurdle_ratio, min=min_lot_size, max=max_ticket_size)
+        raw_elastic_ticket = available_notional / max(depth_hurdle_ratio, 1.0)
+        if raw_elastic_ticket < min_lot_size:
+            passed = False
+            adjusted_notional = 0.0
         else:
-            # Scale down order size to fit available liquidity with the safety hurdle
-            adjusted_notional = round(available_notional / max(depth_hurdle_ratio, 1.0), 2)
-            if adjusted_notional >= min_lot_size:
-                passed = True
-            else:
-                passed = False
-                adjusted_notional = 0.0
+            passed = True
+            max_ceiling = min(target_notional_usd, max_ticket_size)
+            adjusted_notional = round(min(max_ceiling, max(min_lot_size, raw_elastic_ticket)), 2)
 
         return passed, ratio, best_price, adjusted_notional
+
+    @staticmethod
+    def calculate_elastic_ticket_size(
+        executable_depth_usd: float,
+        depth_hurdle_ratio: float = 1.50,
+        min_ticket_usd: float = 25.0,
+        max_ticket_usd: float = 75.0,
+    ) -> Tuple[bool, float]:
+        """
+        Dynamic book-proportional elastic sizing:
+          ticket_size = clip(executable_ask_depth / depth_hurdle_ratio, min=min_ticket, max=max_ticket)
+        Fails closed (returns False, 0.0) if available depth cannot support min_ticket at depth_hurdle_ratio.
+        """
+        if not math.isfinite(executable_depth_usd) or executable_depth_usd <= 0:
+            return False, 0.0
+        raw_ticket = executable_depth_usd / max(depth_hurdle_ratio, 1.0)
+        if raw_ticket < min_ticket_usd:
+            return False, 0.0
+        ticket_size = min(max_ticket_usd, max(min_ticket_usd, round(raw_ticket, 2)))
+        return True, ticket_size
+
+    @staticmethod
+    def validate_btc_signal(
+        z_btc: float,
+        min_z_score: float = 1.645,
+    ) -> Tuple[bool, str]:
+        """
+        Validates BTC shock signal against the critical threshold |z_BTC| >= 1.645.
+        """
+        if abs(z_btc) < min_z_score:
+            return False, f"REJECT_BTC_Z_TOO_LOW (|z|={abs(z_btc):.3f} < {min_z_score})"
+        return True, "BTC_SIGNAL_CONFIRMED"
+
+    @staticmethod
+    def validate_cross_asset_lead_lag(
+        target_asset: str,
+        target_direction: str,
+        btc_direction: Optional[str] = None,
+        z_alt: float = 0.0,
+        z_btc: float = 0.0,
+    ) -> Tuple[bool, float, str]:
+        """
+        Cross-asset lead-lag confirmation filter for altcoin contracts (e.g. ETH).
+        Computes joint signal: z_joint = 0.70 * z_ETH + 0.30 * z_BTC.
+        Enforces sign(z_ETH) == sign(z_BTC) and blocks ETH triggers when BTC spot velocity is counter-trending (filters out 18.4% of whipsaw entries).
+        """
+        if target_asset.upper() != "ETH":
+            return True, z_alt, "NON_ALT_ASSET_PASSED"
+        if btc_direction is not None and btc_direction.upper() != target_direction.upper():
+            return False, z_alt, f"REJECT_BTC_COUNTER_TREND (ETH {target_direction} vs BTC {btc_direction})"
+        if z_alt != 0.0 and z_btc != 0.0:
+            if (z_alt > 0 and z_btc < 0) or (z_alt < 0 and z_btc > 0):
+                return False, z_alt, "REJECT_BTC_ETH_SIGN_DIVERGENCE (sign(z_ETH) != sign(z_BTC))"
+        z_joint = 0.70 * z_alt + 0.30 * z_btc
+        return True, z_joint, "CROSS_ASSET_CONFIRMED"
+
+    @staticmethod
+    def validate_cross_asset_directional_conflict(
+        candidate_asset: str,
+        candidate_direction: str,
+        candidate_expiry_ts: float,
+        active_positions: List[Dict[str, Any]],
+        max_expiry_window_delta: float = 900.0,
+    ) -> Tuple[bool, str]:
+        """
+        Cross-Asset Directional Conflict Guard (BTC vs. ETH Same-Candle Lock):
+        Prevents self-hedging between highly correlated assets (BTC & ETH).
+        Blocks any entry if an active or pending position in the other asset has an opposing
+        direction (UP vs DOWN) for an overlapping expiry window (within max_expiry_window_delta).
+        """
+        cand_asset = candidate_asset.upper().strip()
+        cand_dir = candidate_direction.upper().strip()
+
+        for pos in active_positions:
+            pos_asset = str(pos.get("asset", "")).upper().strip()
+            pos_dir = str(pos.get("target_token", "")).upper().strip()
+            pos_expiry = float(pos.get("candle_expiry_ts", 0.0) or 0.0)
+
+            is_core_pair = (cand_asset in ("BTC", "ETH") and pos_asset in ("BTC", "ETH"))
+            is_same_window = (
+                abs(pos_expiry - candidate_expiry_ts) <= max_expiry_window_delta
+                if (pos_expiry > 0 and candidate_expiry_ts > 0)
+                else True
+            )
+
+            if is_core_pair and is_same_window:
+                if pos_dir and cand_dir and pos_dir != cand_dir:
+                    return (
+                        False,
+                        f"REJECT_CROSS_ASSET_CONFLICT ({cand_asset} {cand_dir} opposes active {pos_asset} {pos_dir} "
+                        f"with expiry delta {abs(pos_expiry - candidate_expiry_ts):.0f}s)"
+                    )
+        return True, "CROSS_ASSET_DIRECTION_ALIGNED"
+
+    @staticmethod
+    def validate_market_universe(
+        asset: str,
+        title: str = "",
+        horizon: str = "",
+        slug: str = "",
+        tte_seconds: Optional[float] = None,
+        max_tte_seconds: float = 1500.0,
+    ) -> Tuple[bool, str]:
+        """
+        Enforces Production Golden Universe restrictions:
+        1. Zero SOL polling/execution (dead venue on Gamma API).
+        2. Zero 1-hour BTC strikes (negative EV: -$751.38 under Hold, -$711.24 under Scalp).
+        3. Restricts execution strictly to 5m and 15m BTC and ETH markets (and final 25m [120s, 1500s] of 1h strikes).
+        """
+        asset_clean = (asset or "").upper().strip()
+        title_lower = (title or "").lower().strip()
+        slug_lower = (slug or "").lower().strip()
+        horizon_lower = (horizon or "").lower().strip()
+
+        # 1. Fail-closed SOL rejection
+        if asset_clean == "SOL" or "sol" in title_lower or "solana" in title_lower or "sol" in slug_lower:
+            return False, "REJECT_SOL_MARKET (Dead venue on Polymarket)"
+
+        # 2. Check asset eligibility (must be BTC or ETH if specified)
+        is_btc = (asset_clean == "BTC" or "btc" in title_lower or "bitcoin" in title_lower or "btc" in slug_lower)
+        is_eth = (asset_clean == "ETH" or "eth" in title_lower or "ethereum" in title_lower or "eth" in slug_lower)
+
+        if asset_clean and not (is_btc or is_eth):
+            return False, f"REJECT_UNAPPROVED_ASSET ({asset_clean} not in 5m/15m BTC/ETH universe)"
+
+        # 3. Disallow 1-hour BTC strikes unless within sweet spot
+        if is_btc:
+            is_subhourly = (
+                "5m" in horizon_lower or "15m" in horizon_lower or
+                "5m" in slug_lower or "15m" in slug_lower or
+                "5m" in title_lower or "15m" in title_lower or
+                (tte_seconds is not None and tte_seconds <= max_tte_seconds)
+            )
+            is_1h = (
+                "1h" in horizon_lower or "hourly" in horizon_lower or "60m" in horizon_lower or
+                "1h" in slug_lower or "hourly" in slug_lower or
+                "1h" in title_lower or "hourly" in title_lower or
+                (("pm et" in title_lower or "am et" in title_lower) and not is_subhourly)
+            )
+            if is_1h and not is_subhourly:
+                return False, "REJECT_1H_BTC_MARKET (Negative EV macro mean-reversion)"
+
+        # 4. Strict 1-hour candle sweet-spot gate (only final 25m: 120s <= TTE <= max_tte_seconds allowed)
+        is_subhourly_any = (
+            "5m" in horizon_lower or "15m" in horizon_lower or
+            "5m" in slug_lower or "15m" in slug_lower or
+            "5m" in title_lower or "15m" in title_lower
+        )
+        is_1h_any = not is_subhourly_any and (
+            "1h" in horizon_lower or "hourly" in horizon_lower or "60m" in horizon_lower or
+            "1h" in slug_lower or "hourly" in slug_lower or
+            "1h" in title_lower or "hourly" in title_lower or
+            ("pm et" in title_lower or "am et" in title_lower)
+        )
+        if is_1h_any and tte_seconds is not None and (tte_seconds > max_tte_seconds or tte_seconds < 120.0):
+            return False, f"REJECT_1H_MARKET_OUTSIDE_SWEETSPOT (TTE={tte_seconds:.1f}s not in [120s, {max_tte_seconds:.0f}s])"
+
+        return True, "MARKET_UNIVERSE_APPROVED"
+
+    @staticmethod
+    def calculate_relative_stop_price(
+        entry_price: float,
+        stop_delta: float = 0.12,
+        price_floor: float = 0.02,
+    ) -> float:
+        """
+        EXP-302 relative spot-delta stop price anchored strictly below entry:
+          stop_exit_px = max(floor, round(entry_price - stop_delta, 4))
+        Prevents counterfactual salvage bug where losing trades were exited at artificial $0.58.
+        """
+        return max(price_floor, round(entry_price - stop_delta, 4))
+
+    @staticmethod
+    def evaluate_exp302_exit_policy(
+        entry_price: float,
+        current_bid: float,
+        current_ask: float,
+        spot_reversal_atr_multiple: float = 0.0,
+        free_usdc: float = 1000.0,
+        higher_score_trigger_pending: bool = False,
+        stop_delta: float = 0.12,
+        maker_tp_price: float = 0.95,
+        min_free_usdc_threshold: float = 25.0,
+        signed_candle_distance_pct: Optional[float] = None,
+        tte_seconds: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Evaluates the Golden Production EXP-302 exit policy:
+        1. Primary Exit: Hold to $1.00 maturity while resting 0%-fee Maker take-profit sell @ $0.95 ($0.985 for entries >= 0.80).
+        2. Strike-Retrace Stop: If signed candle distance drops below +0.03% with TTE > 60s, exit immediately at bid (~45c-50c salvage).
+        3. Spot-Delta Stop: Relative -12c / 0.50*ATR adverse reversal -> aggressive CLOB unwind at bid.
+        4. Capital-Starvation Override: Only trigger mid-candle unwind if free_usdc < $25.00 AND higher-scoring shock arrives.
+        """
+        stop_px = max(0.02, round(entry_price - stop_delta, 4))
+
+        # Determine effective Maker TP price: gate at 0.95 for entries < 0.80, and 0.985 for entries >= 0.80
+        effective_maker_tp = maker_tp_price
+        if maker_tp_price == 0.95 and entry_price >= 0.80:
+            effective_maker_tp = 0.985
+
+        # Check Maker Limit TP (passively executed when bid/price reaches effective_maker_tp)
+        if current_bid >= effective_maker_tp:
+            return {
+                "action": "MAKER_TAKE_PROFIT",
+                "price": effective_maker_tp,
+                "is_maker": True,
+                "fee_schedule": "0% Maker Fee",
+                "reason": f"Resting maker limit swept at ${effective_maker_tp:.3f} (captures terminal value without payoff compression)"
+            }
+
+        # Check Strike-Retrace Stop Loss (signed candle distance drops below +0.03% with TTE > 60s)
+        # Prevents riding spot retrace drift back across hourly open strike to $0.00 wipeout
+        if (
+            signed_candle_distance_pct is not None
+            and signed_candle_distance_pct < 0.03
+            and (tte_seconds is None or tte_seconds > 60.0)
+        ):
+            return {
+                "action": "STRIKE_RETRACE_STOP_LOSS",
+                "price": max(0.02, current_bid),
+                "is_maker": False,
+                "fee_schedule": "Taker Fee",
+                "reason": (
+                    f"Strike-retrace stop triggered: signed candle distance {signed_candle_distance_pct:+.4f}% < +0.03% "
+                    f"with TTE={tte_seconds if tte_seconds is not None else 0.0:.1f}s > 60s. Salvaging position at bid ${current_bid:.3f}."
+                ),
+            }
+
+        # Check Spot-Delta Stop Loss (0.50 * ATR adverse spot reversal or CLOB bid <= stop_px)
+        if spot_reversal_atr_multiple >= 0.50 or current_bid <= stop_px:
+            return {
+                "action": "SPOT_DELTA_STOP_LOSS",
+                "price": max(0.02, current_bid),
+                "is_maker": False,
+                "fee_schedule": "Taker Fee",
+                "reason": f"Relative spot-delta stop triggered (bid={current_bid:.3f} <= stop_px={stop_px:.3f} or ATR multiple={spot_reversal_atr_multiple:.2f} >= 0.50)"
+            }
+
+        # Check Capital-Starvation Override (ONLY when free_usdc < $25.00 AND higher-scoring trigger arrives AND position in green)
+        if free_usdc < min_free_usdc_threshold and higher_score_trigger_pending and current_bid > entry_price:
+            return {
+                "action": "CAPITAL_STARVATION_UNWIND",
+                "price": max(0.02, current_bid),
+                "is_maker": False,
+                "fee_schedule": "Taker Fee",
+                "reason": f"Capital-Starvation Override: free_usdc (${free_usdc:.2f}) < ${min_free_usdc_threshold:.2f} with superior shock pending. Unwinding green position early at bid."
+            }
+
+        # Default: Hold to Maturity (settle at $1.00 or $0.00)
+        return {
+            "action": "HOLD_TO_MATURITY",
+            "price": 1.00,
+            "is_maker": True,
+            "fee_schedule": "0% Settlement",
+            "reason": "EXP-302 Hold-to-Maturity with resting $0.95 Maker limit and Relative Spot-Delta Stop active."
+        }
+
+    @staticmethod
+    def rank_concurrent_shock_candidates(
+        candidates: List[Dict[str, Any]],
+        window_seconds: float = 5.0,
+    ) -> List[Dict[str, Any]]:
+        """
+        5-Second Shock Window Priority Selector:
+          score = abs(z) / ask_price
+        Ranks concurrent candidates by delta-per-dollar efficiency.
+        """
+        def _score(c):
+            z = abs(float(c.get("z_val", c.get("z_score", c.get("expected_prob_shift", 0.0)))))
+            ask_px = max(float(c.get("clob_price", c.get("price", c.get("effective_price_$50", 0.50)))), 0.01)
+            return z / ask_px
+
+        return sorted(candidates, key=_score, reverse=True)
 
     def calculate_dynamic_crypto_fee(
         self,
@@ -1205,6 +1647,9 @@ class PolymarketLiveExecutor:
         max_price_ceiling: float = MAX_PRICE_CEILING,
         sizing_fn: Optional[Any] = None,
         max_ticket_cap: Optional[float] = None,
+        min_price_floor: float = MIN_PRICE_FLOOR,
+        prefetched_pre_balance: Optional[float] = None,
+        prefetched_book: Optional[Dict[str, Any]] = None,
     ) -> OrderResult:
         """
         Executes a directional latency snipe with pre-trade risk and depth assertions.
@@ -1224,26 +1669,29 @@ class PolymarketLiveExecutor:
         notional_usd = min(notional_usd, ticket_ceiling)
 
         # 1. Fetch live order book & verify depth
-        try:
-            book = self.get_market_book(token_id)
-        except Exception as e:
-            return OrderResult(
-                success=False,
-                order_id=None,
-                trade_id=trade_id,
-                token_id=token_id,
-                target_token=target_token,
-                side=side,
-                price=target_price,
-                size=0.0,
-                notional_usd=notional_usd,
-                fee_usd=0.0,
-                latency_ms=(time.perf_counter() - t0) * 1000.0,
-                mode=self.auth_mode,
-                execution_status=ExecutionStatus.REJECTED,
-                confirmed_onchain=False,
-                error=f"Orderbook fetch error: {e}",
-            )
+        if prefetched_book is not None and isinstance(prefetched_book, dict):
+            book = prefetched_book
+        else:
+            try:
+                book = self.get_market_book(token_id)
+            except Exception as e:
+                return OrderResult(
+                    success=False,
+                    order_id=None,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=target_price,
+                    size=0.0,
+                    notional_usd=notional_usd,
+                    fee_usd=0.0,
+                    latency_ms=(time.perf_counter() - t0) * 1000.0,
+                    mode=self.auth_mode,
+                    execution_status=ExecutionStatus.REJECTED,
+                    confirmed_onchain=False,
+                    error=f"Orderbook fetch error: {e}",
+                )
 
         passed_depth, depth_ratio, best_px, adjusted_notional = self.verify_pre_trade_depth(
             book,
@@ -1284,9 +1732,9 @@ class PolymarketLiveExecutor:
             )
             notional_usd = adjusted_notional
 
-        # Strict Pre-Trade Price Sanity Guard: Never buy outside [0.15, 0.88]
-        if best_px < 0.15 or best_px > 0.88:
-            err = f"PriceGuard Rejected: Best price ${best_px:.4f} outside valid boundary [0.15, 0.88]."
+        # Strict Pre-Trade Price Sanity Guard: Never buy outside [min_price_floor, max_price_ceiling]
+        if best_px < min_price_floor or best_px > max_price_ceiling:
+            err = f"PriceGuard Rejected: Best price ${best_px:.4f} outside valid boundary [{min_price_floor:.2f}, {max_price_ceiling:.2f}]."
             logger.warning(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
@@ -1328,11 +1776,19 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        # Calculate worst acceptable price allowing up to 1¢ slippage, quantized to token tick
-        raw_worst_px = max(target_price + 0.01, best_px + 0.01)
-        worst_acceptable_px = self.quantize_order_price(raw_worst_px, token_id, rounding=ROUND_CEILING)
+        # Smart FAK Price Buffer:
+        # limit_px = round(min(observed_vwap_ask + 0.02, sleeve_max_price), 2)
+        # Polymarket CLOB grants price improvement, so +2c protects against minor 1c-2c transit ticks
+        # while strictly capping at max_price_ceiling (sleeve_max_price).
+        observed_ref = target_price if target_price > 0 else best_px
+        limit_px = round(min(observed_ref + 0.02, max_price_ceiling), 2)
+        worst_acceptable_px = self.quantize_order_price(
+            limit_px, token_id, rounding=ROUND_FLOOR if limit_px >= max_price_ceiling - 1e-9 else ROUND_CEILING
+        )
         if worst_acceptable_px > max_price_ceiling + 1e-9:
-            err = f"No valid token tick at or below configured entry ceiling (${max_price_ceiling:.4f})"
+            worst_acceptable_px = self.quantize_order_price(max_price_ceiling, token_id, rounding=ROUND_FLOOR)
+        if worst_acceptable_px < best_px - 1e-9:
+            err = f"Worst acceptable price (${worst_acceptable_px:.4f}) below best ask (${best_px:.4f}) after capping at ceiling (${max_price_ceiling:.4f})"
             logger.warning(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
@@ -1415,21 +1871,60 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        shares_to_buy = float(Decimal(str(sweep_shares)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
+        # Whole-integer shares: Round down to integer shares (1 share precision)
+        # Because worst_acceptable_px has 2 decimals (e.g. 0.67) and shares_to_buy is an integer (e.g. 62.0),
+        # makerAmount = shares * price is mathematically guaranteed to have at most 2 decimals in USDC
+        # (% 10000 == 0 in 1e6 units) and takerAmount has 0 decimals (% 1000000 == 0) for EVERY price in [0.01, 0.99]!
+        shares_to_buy = float(math.floor(sweep_shares))
+        # Authoritative sizing cap: ensure shares_to_buy at worst_acceptable_px never exceeds notional_usd
+        if side == "BUY" and worst_acceptable_px > 0:
+            max_shares_for_limit = float(math.floor(notional_usd / worst_acceptable_px))
+            shares_to_buy = min(shares_to_buy, max_shares_for_limit)
+
+        if shares_to_buy <= 0:
+            err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False,
+                order_id=None,
+                trade_id=trade_id,
+                token_id=token_id,
+                target_token=target_token,
+                side=side,
+                price=worst_acceptable_px,
+                size=0.0,
+                notional_usd=notional_usd,
+                fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                mode=self.auth_mode,
+                execution_status=ExecutionStatus.REJECTED,
+                confirmed_onchain=False,
+                error=err,
+            )
+
         exec_price = round(vwap, 4)
 
-        # Authoritative CLOB fee resolution (P1 Fix)
+        # Authoritative CLOB fee resolution: Use caller-provided verified fees directly
+        # to avoid blocking synchronous REST round-trips in the execution hot path.
         cid = condition_id or market_id
-        if cid:
+        if market_fee_rate is not None and market_fee_exponent is not None:
+            f_rate = float(market_fee_rate)
+            f_exp = float(market_fee_exponent)
+            if cid:
+                self._fee_cache[str(cid)] = (f_rate, f_exp)
+            if condition_id:
+                self._fee_cache[str(condition_id)] = (f_rate, f_exp)
+            if market_id:
+                self._fee_cache[str(market_id)] = (f_rate, f_exp)
+        elif cid and (str(cid) in self._fee_cache or str(cid).lower() in self._fee_cache):
+            f_rate, f_exp = self._fee_cache.get(str(cid)) or self._fee_cache[str(cid).lower()]
+        elif cid:
             try:
-                f_rate, f_exp = self.get_market_fee_params(cid, token_id=token_id)
+                f_rate, f_exp = self.get_market_fee_params(str(cid), token_id=token_id)
             except Exception as e:
-                logger.warning(f"Authoritative CLOB fee query notice for {cid}: {e}; using verified payload fee.")
+                logger.warning(f"Authoritative CLOB fee query notice for {cid}: {e}; using fallback fee.")
                 f_rate = float(market_fee_rate) if market_fee_rate is not None else 0.07
                 f_exp = float(market_fee_exponent or 1.0)
-        elif market_fee_rate is not None:
-            f_rate = float(market_fee_rate)
-            f_exp = float(market_fee_exponent or 1.0)
         else:
             f_rate, f_exp = 0.07, 1.0
 
@@ -1509,7 +2004,9 @@ class PolymarketLiveExecutor:
         order_submitted = False
         try:
             # Pre-trade on-chain ERC-1155 balance snapshot for delta-aware settlement verification
-            if not self.dry_run:
+            if prefetched_pre_balance is not None:
+                pre_token_bal = float(prefetched_pre_balance)
+            elif not self.dry_run:
                 pre_token_bal = self.get_onchain_erc1155_balance(token_id)
                 if pre_token_bal is None:
                     pre_token_bal = self.get_conditional_balance(token_id)
@@ -1518,31 +2015,104 @@ class PolymarketLiveExecutor:
             else:
                 pre_token_bal = 0.0
 
-            # Dispatch via native MarketOrderArgsV2 (sweeps depth up to worst_acceptable_px)
-            if MarketOrderArgsV2 is not None:
-                mo_args = MarketOrderArgsV2(
-                    token_id=token_id,
-                    amount=round(notional_usd, 2),
-                    side=side,
-                    price=worst_acceptable_px,
-                    order_type=OrderType.FOK,
-                )
-                signed_order = self.client.create_market_order(mo_args)
+            # Dispatch via native MarketOrderArgsV2 / OrderArgsV2 (sweeps depth up to worst_acceptable_px)
+            entry_order_type = getattr(OrderType, "FAK", OrderType.FOK)
+            t_qualify_end = time.perf_counter()
+            qualify_ms = (t_qualify_end - t0) * 1000.0
+
+            # Fast hot-path tick size resolution: NEVER make synchronous REST GET calls during a shock
+            if token_id in self._tick_size_cache:
+                tick_size_str = str(self._tick_size_cache[token_id])
             else:
-                order_args = OrderArgsV2(
-                    price=worst_acceptable_px,
-                    size=shares_to_buy,
-                    side=side,
-                    token_id=token_id,
-                )
-                signed_order = self.client.create_order(order_args)
+                tick_size_str = "0.01"
+                self._tick_size_cache[token_id] = 0.01
+
+            fee_rate_bps_val = int(fee_rate * 10000) if fee_rate else 0
+            self.prewarm_token_market_cache(
+                token_id=token_id,
+                tick_size=tick_size_str,
+                neg_risk=False,
+                fee_rate_bps=fee_rate_bps_val,
+                condition_id=condition_id,
+                fee_rate=fee_rate,
+                fee_exponent=market_fee_exponent if market_fee_exponent is not None else 1.0,
+            )
+            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+
+            t_sign_start = time.perf_counter()
+            # Fast hot-path signing: strictly use OrderArgsV2 with create_order to guarantee pure in-memory
+            # EIP-712 signing (<5ms) and valid CLOB decimal precision (2-decimal size, 4-decimal max makerAmount),
+            # eliminating py_clob_client_v2 create_market_order REST checks and decimal precision mismatches.
+            if OrderArgsV2 is None:
+                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+
+            order_args = OrderArgsV2(
+                price=worst_acceptable_px,
+                size=shares_to_buy,
+                side=side,
+                token_id=token_id,
+            )
+            if hasattr(order_args, "fee_rate_bps"):
+                order_args.fee_rate_bps = fee_rate_bps_val
+            signed_order = _safe_create_order(self.client.create_order, order_args, create_options)
+            t_sign_end = time.perf_counter()
+            sign_ms = (t_sign_end - t_sign_start) * 1000.0
 
             # P0: Pass defer_exec=True to bypass py_clob_client_v2 internal synchronous settlement polling
+            t_post_start = time.perf_counter()
             order_submitted = True
-            post_resp = self.client.post_order(signed_order, OrderType.FOK, defer_exec=True)
+            post_resp = self.client.post_order(signed_order, entry_order_type, defer_exec=True)
+            t_post_end = time.perf_counter()
+            clob_http_post_ms = (t_post_end - t_post_start) * 1000.0
+            total_trigger_to_ack_ms = (t_post_end - t0) * 1000.0
 
-            latency_ms = (time.perf_counter() - t0) * 1000.0
+            logger.info(
+                f"[{trade_id}] LATENCY TELEMETRY: qualify_ms={qualify_ms:.2f} | sign_ms={sign_ms:.2f} | "
+                f"clob_http_post_ms={clob_http_post_ms:.2f} | total_trigger_to_ack_ms={total_trigger_to_ack_ms:.2f}"
+            )
+
+            latency_ms = (t_post_end - t0) * 1000.0
             order_id = post_resp.get("orderID") or post_resp.get("id")
+
+            # Deterministic FAK zero-match rejection check:
+            if is_fak_killed_no_match(None, post_resp):
+                err_msg = post_resp.get("error") or post_resp.get("errorMsg") or "FAK order killed with zero match"
+                logger.warning(f"[{trade_id}] FAK order deterministically killed by CLOB (zero match): {err_msg} | orderID={order_id}")
+                res = OrderResult(
+                    success=False,
+                    order_id=order_id,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=best_px,
+                    size=0.0,
+                    notional_usd=0.0,
+                    fee_usd=0.0,
+                    latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH",
+                    execution_status=ExecutionStatus.REJECTED,
+                    confirmed_onchain=False,
+                    error=err_msg,
+                    details={
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "fak_killed": True,
+                        "raw_response": post_resp,
+                        "depth_ratio": depth_ratio,
+                        "timestamp_utc": now_utc,
+                        "pre_token_balance": pre_token_bal,
+                        "intended_notional_usd": notional_usd,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
+                    },
+                )
+                self._log_order(res)
+                return res
 
             # Ambiguous: no order id without an explicit rejection, or contradictory id + error.
             if (not order_id and not post_resp.get("errorMsg")) or (order_id and post_resp.get("errorMsg")):
@@ -1571,6 +2141,12 @@ class PolymarketLiveExecutor:
                         "entry_order_id": order_id,
                         "pre_token_balance": pre_token_bal,
                         "intended_notional_usd": notional_usd,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
                     },
                 )
                 self._log_order(res)
@@ -1600,14 +2176,20 @@ class PolymarketLiveExecutor:
                         "depth_ratio": depth_ratio,
                         "timestamp_utc": now_utc,
                         "pre_token_balance": pre_token_bal,
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
                     },
                 )
                 self._log_order(res)
                 return res
 
             # Authoritative V2 fill amount parsing (P1 Fix):
-            # CLOB order responses expose human-readable values directly (e.g. makingAmount="20.0", takingAmount="41.6666").
-            # Strictly parse as human units without heuristic guessing. Fail closed if malformed.
             making_amt = post_resp.get("makingAmount")
             taking_amt = post_resp.get("takingAmount")
 
@@ -1637,8 +2219,6 @@ class PolymarketLiveExecutor:
                 f"@ ${fill_px:.4f} | Notional=${actual_notional:.2f} | Latency={latency_ms:.2f}ms | Trades={trade_ids}"
             )
 
-            # P0: Non-blocking return: Record MATCHED_PENDING_SETTLEMENT immediately.
-            # Do NOT block the event loop or trigger synchronous settlement polling.
             exec_status = ExecutionStatus.MATCHED_PENDING_SETTLEMENT
             confirmed_onchain = False
 
@@ -1665,14 +2245,74 @@ class PolymarketLiveExecutor:
                     "pre_token_balance": pre_token_bal,
                     "trade_ids": trade_ids,
                     "transactions_hashes": tx_hashes,
+                    "latency_telemetry": {
+                        "qualify_ms": qualify_ms,
+                        "sign_ms": sign_ms,
+                        "clob_http_post_ms": clob_http_post_ms,
+                        "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                    },
                 },
             )
             self._log_order(res)
             return res
 
         except Exception as e:
-            latency_ms = (time.perf_counter() - t0) * 1000.0
+            t_exc = time.perf_counter()
+            latency_ms = (t_exc - t0) * 1000.0
+            clob_http_post_ms = (t_exc - locals().get("t_post_start", t_exc)) * 1000.0 if locals().get("t_post_start") else 0.0
+            total_trigger_to_ack_ms = (t_exc - t0) * 1000.0
             err_msg = f"CLOB order submission failed: {e}"
+
+            # Check deterministic FAK kill or HTTP 400 rejection (e.g. PolyApiException HTTP 400)
+            if is_clob_400_rejection(e):
+                extracted_oid = None
+                err_dict = getattr(e, "error_message", None) or getattr(e, "error_msg", None)
+                if isinstance(err_dict, dict):
+                    extracted_oid = err_dict.get("orderID") or err_dict.get("id")
+                elif isinstance(err_dict, str):
+                    try:
+                        parsed = json.loads(err_dict)
+                        if isinstance(parsed, dict):
+                            extracted_oid = parsed.get("orderID") or parsed.get("id")
+                    except Exception:
+                        pass
+                logger.warning(f"[{trade_id}] Order deterministically rejected by CLOB (HTTP 400 / 0 match): {e} | orderID={extracted_oid}")
+                res = OrderResult(
+                    success=False,
+                    order_id=extracted_oid,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=best_px,
+                    size=0.0,
+                    notional_usd=0.0,
+                    fee_usd=0.0,
+                    latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH" if is_fak_killed_no_match(e) else "CLOB_HTTP_400_REJECTION",
+                    execution_status=ExecutionStatus.REJECTED,
+                    confirmed_onchain=False,
+                    error=str(e),
+                    details={
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "fak_killed": True,
+                        "clob_400_rejection": True,
+                        "raw_exception": str(e),
+                        "status_code": getattr(e, "status_code", 400),
+                        "pre_token_balance": locals().get("pre_token_bal"),
+                        "intended_notional_usd": notional_usd,
+                        "latency_telemetry": {
+                            "qualify_ms": locals().get("qualify_ms", 0.0),
+                            "sign_ms": locals().get("sign_ms", 0.0),
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
+                    },
+                )
+                self._log_order(res)
+                return res
+
             logger.error(f"[{trade_id}] {err_msg}")
             res = OrderResult(
                 success=False,
@@ -1696,6 +2336,12 @@ class PolymarketLiveExecutor:
                     "requires_exchange_reconciliation": bool(order_submitted),
                     "pre_token_balance": locals().get("pre_token_bal"),
                     "intended_notional_usd": notional_usd,
+                    "latency_telemetry": {
+                        "qualify_ms": locals().get("qualify_ms", 0.0),
+                        "sign_ms": locals().get("sign_ms", 0.0),
+                        "clob_http_post_ms": clob_http_post_ms,
+                        "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                    },
                 },
             )
             self._log_order(res)
@@ -1719,6 +2365,7 @@ class PolymarketLiveExecutor:
         max_ticket_cap: Optional[float] = None,
         prefetched_book: Optional[Dict[str, Any]] = None,
         prefetched_pre_balance: Optional[float] = None,
+        min_price_floor: float = MIN_PRICE_FLOOR,
     ) -> OrderResult:
         """
         P0: Fully asynchronous, non-blocking EIP-712 order dispatcher.
@@ -1825,13 +2472,21 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        # Calculate worst acceptable price allowing up to 1¢ slippage, quantized to token tick
-        raw_worst_px = max(target_price + 0.01, best_px + 0.01)
+        # Smart FAK Price Buffer:
+        # limit_px = round(min(observed_vwap_ask + 0.02, sleeve_max_price), 2)
+        # Polymarket CLOB grants price improvement, so +2c protects against minor 1c-2c transit ticks
+        # while strictly capping at max_price_ceiling (sleeve_max_price).
+        observed_ref = target_price if target_price > 0 else best_px
+        limit_px = round(min(observed_ref + 0.02, max_price_ceiling), 2)
         if token_id not in self._tick_size_cache and not self.dry_run:
             await asyncio.to_thread(self.get_token_tick_size, token_id)
-        worst_acceptable_px = self.quantize_order_price(raw_worst_px, token_id, rounding=ROUND_CEILING)
+        worst_acceptable_px = self.quantize_order_price(
+            limit_px, token_id, rounding=ROUND_FLOOR if limit_px >= max_price_ceiling - 1e-9 else ROUND_CEILING
+        )
         if worst_acceptable_px > max_price_ceiling + 1e-9:
-            err = f"No valid token tick at or below configured entry ceiling (${max_price_ceiling:.4f})"
+            worst_acceptable_px = self.quantize_order_price(max_price_ceiling, token_id, rounding=ROUND_FLOOR)
+        if worst_acceptable_px < best_px - 1e-9:
+            err = f"Worst acceptable price (${worst_acceptable_px:.4f}) below best ask (${best_px:.4f}) after capping at ceiling (${max_price_ceiling:.4f})"
             logger.warning(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
@@ -1913,21 +2568,60 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
-        shares_to_buy = float(Decimal(str(sweep_shares)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
+        # Whole-integer shares: Round down to integer shares (1 share precision)
+        # Because worst_acceptable_px has 2 decimals (e.g. 0.67) and shares_to_buy is an integer (e.g. 62.0),
+        # makerAmount = shares * price is mathematically guaranteed to have at most 2 decimals in USDC
+        # (% 10000 == 0 in 1e6 units) and takerAmount has 0 decimals (% 1000000 == 0) for EVERY price in [0.01, 0.99]!
+        shares_to_buy = float(math.floor(sweep_shares))
+        # Authoritative sizing cap: ensure shares_to_buy at worst_acceptable_px never exceeds notional_usd
+        if side == "BUY" and worst_acceptable_px > 0:
+            max_shares_for_limit = float(math.floor(notional_usd / worst_acceptable_px))
+            shares_to_buy = min(shares_to_buy, max_shares_for_limit)
+
+        if shares_to_buy <= 0:
+            err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False,
+                order_id=None,
+                trade_id=trade_id,
+                token_id=token_id,
+                target_token=target_token,
+                side=side,
+                price=worst_acceptable_px,
+                size=0.0,
+                notional_usd=notional_usd,
+                fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0,
+                mode=self.auth_mode,
+                execution_status=ExecutionStatus.REJECTED,
+                confirmed_onchain=False,
+                error=err,
+            )
+
         exec_price = round(vwap, 4)
 
-        # Authoritative CLOB fee resolution (P1 Fix)
+        # Authoritative CLOB fee resolution: Use caller-provided verified fees directly
+        # to avoid blocking synchronous REST round-trips in the execution hot path.
         cid = condition_id or market_id
-        if cid:
+        if market_fee_rate is not None and market_fee_exponent is not None:
+            f_rate = float(market_fee_rate)
+            f_exp = float(market_fee_exponent)
+            if cid:
+                self._fee_cache[str(cid)] = (f_rate, f_exp)
+            if condition_id:
+                self._fee_cache[str(condition_id)] = (f_rate, f_exp)
+            if market_id:
+                self._fee_cache[str(market_id)] = (f_rate, f_exp)
+        elif cid and (str(cid) in self._fee_cache or str(cid).lower() in self._fee_cache):
+            f_rate, f_exp = self._fee_cache.get(str(cid)) or self._fee_cache[str(cid).lower()]
+        elif cid:
             try:
-                f_rate, f_exp = await asyncio.to_thread(self.get_market_fee_params, cid, token_id)
+                f_rate, f_exp = await asyncio.to_thread(self.get_market_fee_params, str(cid), token_id)
             except Exception as e:
-                logger.warning(f"Authoritative CLOB fee query notice for {cid}: {e}; using verified payload fee.")
+                logger.warning(f"Authoritative CLOB fee query notice for {cid}: {e}; using fallback fee.")
                 f_rate = float(market_fee_rate) if market_fee_rate is not None else 0.07
                 f_exp = float(market_fee_exponent or 1.0)
-        elif market_fee_rate is not None:
-            f_rate = float(market_fee_rate)
-            f_exp = float(market_fee_exponent or 1.0)
         else:
             f_rate, f_exp = 0.07, 1.0
 
@@ -2004,6 +2698,9 @@ class PolymarketLiveExecutor:
             if not self.dry_run:
                 if prefetched_pre_balance is not None and math.isfinite(float(prefetched_pre_balance)):
                     pre_token_bal = float(prefetched_pre_balance)
+                elif side == "BUY":
+                    # Fast hot-path: BUY entry starts with 0.0 outcome tokens; avoid blocking Polygon RPC calls
+                    pre_token_bal = 0.0
                 else:
                     pre_token_bal = await asyncio.to_thread(self.get_onchain_erc1155_balance, token_id)
                     if pre_token_bal is None:
@@ -2013,36 +2710,104 @@ class PolymarketLiveExecutor:
             else:
                 pre_token_bal = 0.0
 
-            if MarketOrderArgsV2 is not None:
-                mo_args = MarketOrderArgsV2(
-                    token_id=token_id,
-                    amount=round(notional_usd, 2),
-                    side=side,
-                    price=worst_acceptable_px,
-                    order_type=OrderType.FOK,
-                )
-                signed_order = await asyncio.to_thread(self.client.create_market_order, mo_args)
-            else:
-                order_args = OrderArgsV2(
-                    price=worst_acceptable_px,
-                    size=shares_to_buy,
-                    side=side,
-                    token_id=token_id,
-                )
-                signed_order = await asyncio.to_thread(self.client.create_order, order_args)
+            entry_order_type = getattr(OrderType, "FAK", OrderType.FOK)
+            t_qualify_end = time.perf_counter()
+            qualify_ms = (t_qualify_end - t0) * 1000.0
+
+            t_sign_start = time.perf_counter()
+            tick_size_str = str(self.get_token_tick_size(token_id) or "0.01")
+            fee_rate_bps_val = int(fee_rate * 10000) if fee_rate else 0
+            self.prewarm_token_market_cache(
+                token_id=token_id,
+                tick_size=tick_size_str,
+                neg_risk=False,
+                fee_rate_bps=fee_rate_bps_val,
+                condition_id=condition_id,
+                fee_rate=fee_rate,
+                fee_exponent=market_fee_exponent if market_fee_exponent is not None else 1.0,
+            )
+            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+
+            t_sign_start = time.perf_counter()
+            # Fast hot-path signing: strictly use OrderArgsV2 with create_order to guarantee pure in-memory
+            # EIP-712 signing (<15ms) and valid CLOB decimal precision (2-decimal size, 4-decimal max makerAmount),
+            # eliminating py_clob_client_v2 create_market_order REST checks and decimal precision mismatches.
+            if OrderArgsV2 is None:
+                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+
+            order_args = OrderArgsV2(
+                price=worst_acceptable_px,
+                size=shares_to_buy,
+                side=side,
+                token_id=token_id,
+            )
+            if hasattr(order_args, "fee_rate_bps"):
+                order_args.fee_rate_bps = fee_rate_bps_val
+            signed_order = await asyncio.to_thread(_safe_create_order, self.client.create_order, order_args, create_options)
+            t_sign_end = time.perf_counter()
+            sign_ms = (t_sign_end - t_sign_start) * 1000.0
 
             # Post order with defer_exec=True in thread to prevent any blocking
+            t_post_start = time.perf_counter()
             order_submitted = True
             post_resp = await asyncio.to_thread(
                 self.client.post_order,
                 signed_order,
-                OrderType.FOK,
+                entry_order_type,
                 False,
                 True,  # defer_exec=True
             )
+            t_post_end = time.perf_counter()
+            clob_http_post_ms = (t_post_end - t_post_start) * 1000.0
+            total_trigger_to_ack_ms = (t_post_end - t0) * 1000.0
 
-            latency_ms = (time.perf_counter() - t0) * 1000.0
+            logger.info(
+                f"[{trade_id}] LATENCY TELEMETRY: qualify_ms={qualify_ms:.2f} | sign_ms={sign_ms:.2f} | "
+                f"clob_http_post_ms={clob_http_post_ms:.2f} | total_trigger_to_ack_ms={total_trigger_to_ack_ms:.2f}"
+            )
+
+            latency_ms = (t_post_end - t0) * 1000.0
             order_id = post_resp.get("orderID") or post_resp.get("id")
+
+            # Deterministic FAK zero-match rejection check:
+            if is_fak_killed_no_match(None, post_resp):
+                err_msg = post_resp.get("error") or post_resp.get("errorMsg") or "FAK order killed with zero match"
+                logger.warning(f"[{trade_id}] FAK order deterministically killed by CLOB (zero match): {err_msg} | orderID={order_id}")
+                res = OrderResult(
+                    success=False,
+                    order_id=order_id,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=best_px,
+                    size=0.0,
+                    notional_usd=0.0,
+                    fee_usd=0.0,
+                    latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH",
+                    execution_status=ExecutionStatus.REJECTED,
+                    confirmed_onchain=False,
+                    error=err_msg,
+                    details={
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "fak_killed": True,
+                        "raw_response": post_resp,
+                        "depth_ratio": depth_ratio,
+                        "timestamp_utc": now_utc,
+                        "pre_token_balance": pre_token_bal,
+                        "intended_notional_usd": notional_usd,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
+                    },
+                )
+                self._log_order(res)
+                return res
 
             if post_resp.get("errorMsg") and not order_id:
                 err_msg = post_resp.get("errorMsg")
@@ -2068,6 +2833,14 @@ class PolymarketLiveExecutor:
                         "depth_ratio": depth_ratio,
                         "timestamp_utc": now_utc,
                         "pre_token_balance": pre_token_bal,
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
                     },
                 )
                 self._log_order(res)
@@ -2105,6 +2878,12 @@ class PolymarketLiveExecutor:
                         "pre_token_balance": pre_token_bal,
                         "intended_notional_usd": notional_usd,
                         "entry_order_id": order_id,
+                        "latency_telemetry": {
+                            "qualify_ms": qualify_ms,
+                            "sign_ms": sign_ms,
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
                     },
                 )
                 self._log_order(res)
@@ -2147,14 +2926,74 @@ class PolymarketLiveExecutor:
                     "pre_token_balance": pre_token_bal,
                     "trade_ids": trade_ids,
                     "transactions_hashes": tx_hashes,
+                    "latency_telemetry": {
+                        "qualify_ms": qualify_ms,
+                        "sign_ms": sign_ms,
+                        "clob_http_post_ms": clob_http_post_ms,
+                        "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                    },
                 },
             )
             self._log_order(res)
             return res
 
         except Exception as e:
-            latency_ms = (time.perf_counter() - t0) * 1000.0
+            t_exc = time.perf_counter()
+            latency_ms = (t_exc - t0) * 1000.0
+            clob_http_post_ms = (t_exc - locals().get("t_post_start", t_exc)) * 1000.0 if locals().get("t_post_start") else 0.0
+            total_trigger_to_ack_ms = (t_exc - t0) * 1000.0
             err_msg = f"CLOB order submission failed: {e}"
+
+            # Check deterministic FAK kill or HTTP 400 rejection (e.g. PolyApiException HTTP 400)
+            if is_clob_400_rejection(e):
+                extracted_oid = None
+                err_dict = getattr(e, "error_message", None) or getattr(e, "error_msg", None)
+                if isinstance(err_dict, dict):
+                    extracted_oid = err_dict.get("orderID") or err_dict.get("id")
+                elif isinstance(err_dict, str):
+                    try:
+                        parsed = json.loads(err_dict)
+                        if isinstance(parsed, dict):
+                            extracted_oid = parsed.get("orderID") or parsed.get("id")
+                    except Exception:
+                        pass
+                logger.warning(f"[{trade_id}] Order deterministically rejected by CLOB (HTTP 400 / 0 match): {e} | orderID={extracted_oid}")
+                res = OrderResult(
+                    success=False,
+                    order_id=extracted_oid,
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    side=side,
+                    price=best_px,
+                    size=0.0,
+                    notional_usd=0.0,
+                    fee_usd=0.0,
+                    latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH" if is_fak_killed_no_match(e) else "CLOB_HTTP_400_REJECTION",
+                    execution_status=ExecutionStatus.REJECTED,
+                    confirmed_onchain=False,
+                    error=str(e),
+                    details={
+                        "outcome_unknown": False,
+                        "requires_exchange_reconciliation": False,
+                        "fak_killed": True,
+                        "clob_400_rejection": True,
+                        "raw_exception": str(e),
+                        "status_code": getattr(e, "status_code", 400),
+                        "pre_token_balance": locals().get("pre_token_bal"),
+                        "intended_notional_usd": notional_usd,
+                        "latency_telemetry": {
+                            "qualify_ms": locals().get("qualify_ms", 0.0),
+                            "sign_ms": locals().get("sign_ms", 0.0),
+                            "clob_http_post_ms": clob_http_post_ms,
+                            "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                        },
+                    },
+                )
+                self._log_order(res)
+                return res
+
             logger.error(f"[{trade_id}] {err_msg}")
             res = OrderResult(
                 success=False,
@@ -2178,6 +3017,12 @@ class PolymarketLiveExecutor:
                     "requires_exchange_reconciliation": bool(order_submitted),
                     "pre_token_balance": locals().get("pre_token_bal"),
                     "intended_notional_usd": notional_usd,
+                    "latency_telemetry": {
+                        "qualify_ms": locals().get("qualify_ms", 0.0),
+                        "sign_ms": locals().get("sign_ms", 0.0),
+                        "clob_http_post_ms": clob_http_post_ms,
+                        "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
+                    },
                 },
             )
             self._log_order(res)
@@ -2700,17 +3545,20 @@ class PolymarketLiveExecutor:
             logger.error(f"Error querying order {order_id}: {e}")
             return None
 
-    def get_collateral_balance(self, max_cache_age_s: float = 15.0) -> Optional[float]:
+    def get_collateral_balance(self, max_cache_age_s: float = 15.0, hot_path: bool = False) -> Optional[float]:
         """
         Queries CLOB L2 for authoritative collateral balance in human USD units.
         Avoids 1,000,000x confusion by dividing 6-decimal integer base units explicitly.
         FAIL-CLOSED INVARIANT: Returns None (UNKNOWN) if unauthenticated or on API error.
         NEVER returns 0.0 on error in live mode.
+        If hot_path is True, immediately returns cached balance without network I/O.
         """
-        if self.dry_run:
-            return 0.0
         now = time.time()
         cached_bal, cached_ts = getattr(self, "_collateral_cache", (None, 0.0))
+        if hot_path and cached_bal is not None and isinstance(cached_bal, (int, float)) and cached_bal > 0:
+            return cached_bal
+        if self.dry_run:
+            return cached_bal if (cached_bal is not None and cached_bal > 0) else 0.0
         if max_cache_age_s > 0.0 and cached_bal is not None and (now - cached_ts) <= max_cache_age_s:
             return cached_bal
 
@@ -2730,6 +3578,11 @@ class PolymarketLiveExecutor:
         except Exception as e:
             logger.error(f"[PM-EXEC] Failed to query CLOB collateral balance: {e}")
             return None
+
+    def set_cached_collateral(self, balance: float) -> None:
+        """Sets the cached collateral balance in memory (0ms access)."""
+        if isinstance(balance, (int, float)) and math.isfinite(balance) and balance > 0:
+            self._collateral_cache = (float(balance), time.time())
 
     def invalidate_collateral_cache(self):
         """Invalidates cached collateral balance on order state transitions."""

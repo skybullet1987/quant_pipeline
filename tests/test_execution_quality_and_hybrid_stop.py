@@ -353,16 +353,16 @@ def test_full_depth_liquidation_loss_gate_rejects_excessive_sweep_loss():
 # INVARIANT 5: TRANSIENT LOW BID RECOVERS (1.5s PERSISTENCE CONFIRMATION)
 # ==============================================================================
 
-def test_transient_low_bid_recovers_without_triggering_sell():
+def test_clob_low_bid_never_triggers_unwind_when_spot_healthy():
     """
-    Priority C: An isolated quote dislocation / MM pull (low bid with stable spot):
-    - Tick 1 (t=0): arms 1.5s persistence timer. No sell triggered.
-    - Tick 2 (t=0.8s): still low bid. Elapsed < 1.5s. No sell triggered.
-    - Tick 3 (t=1.2s): bid recovers. Timer cleared. Position remains intact!
+    Empirically Proven Invariant: An isolated quote dislocation / MM pull (low bid with stable spot)
+    must NEVER trigger a stop-loss liquidation. CLOB bids can be pulled by MMs, but underlying spot is ground truth.
+    - Tick 1 (t=0): bid drops to 0.40, spot is stable. No sell triggered.
+    - Tick 2 (t=5.0s): bid is still 0.40, spot is stable. Position remains intact!
+    - Tick 3 (t=10.0s): bid recovers. Position remains intact!
     """
     async def _run():
         harvester = PolymarketLiveHarvester(ticket_notional=10.0, dry_run=False)
-        harvester.low_bid_persistence_seconds = 1.5
         harvester.save_state = lambda: None
         tid = "LIVE_TEST_TRANSIENT_01"
         now = 1000.0
@@ -378,7 +378,7 @@ def test_transient_low_bid_recovers_without_triggering_sell():
             "remaining_shares": 50.0,
             "notional_usd": 35.0,
             "target_exit_price": 0.79,
-            "candle_open_spot": 65000.0,
+            "candle_open_spot": 64900.0,
             "entry_spot_ref": 65000.0,
             "candle_sigma": 0.005,
             "candle_expiry_ts": now + 600.0,
@@ -391,7 +391,7 @@ def test_transient_low_bid_recovers_without_triggering_sell():
         harvester.executor.execute_unwind_order = MagicMock(side_effect=lambda **kw: unwinds.append(kw))
         harvester.get_reference_spot_price = MagicMock(return_value=65000.0)  # Spot completely stable
 
-        # Step 1: CLOB bid drops transiently to 0.40 (drops > 15c below 0.70 entry)
+        # Step 1: CLOB bid drops to 0.40 (drops > 15c below 0.70 entry)
         harvester.executor.get_market_book_async = AsyncMock(return_value={
             "bids": [{"price": "0.40", "size": "100.0"}],
             "asks": [{"price": "0.75", "size": "100.0"}],
@@ -399,39 +399,36 @@ def test_transient_low_bid_recovers_without_triggering_sell():
 
         with patch("time.time", return_value=now):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos["is_liquidating"] is False, "Tick 1 must NOT liquidate; must arm persistence window!"
-        assert pos.get("low_bid_detected_ts") == now
+        assert pos["is_liquidating"] is False, "CLOB bid drop must NOT liquidate when spot is healthy!"
         assert len(unwinds) == 0
 
-        # Step 2: 0.8s later, bid is still 0.40
-        with patch("time.time", return_value=now + 0.8):
+        # Step 2: 5.0s later, bid is still 0.40 while spot is healthy
+        with patch("time.time", return_value=now + 5.0):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos["is_liquidating"] is False, "Tick 2 (<1.5s) must NOT liquidate!"
+        assert pos["is_liquidating"] is False, "Persistent CLOB bid drop must NOT liquidate when spot is healthy!"
         assert len(unwinds) == 0
 
-        # Step 3: Bid recovers to 0.68 (> 0.55 stop threshold)
+        # Step 3: Bid recovers to 0.68
         harvester.executor.get_market_book_async = AsyncMock(return_value={
             "bids": [{"price": "0.68", "size": "100.0"}],
             "asks": [{"price": "0.70", "size": "100.0"}],
         })
-        with patch("time.time", return_value=now + 1.2):
+        with patch("time.time", return_value=now + 10.0):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos["is_liquidating"] is False, "Recovered bid must NOT liquidate!"
-        assert pos.get("low_bid_detected_ts") is None, "Persistence timer must be cleared after bid recovery!"
+        assert pos["is_liquidating"] is False, "Position remains intact!"
         assert len(unwinds) == 0
 
     asyncio.run(_run())
 
 
 # ==============================================================================
-# INVARIANT 6: PERSISTENT LOW BID TRIGGERS UNWIND AFTER 1.5s
+# INVARIANT 6: SPOT-ONLY STRIKE-RETRACE STOP TRIGGERS UNWIND AFTER 15s PERSISTENCE
 # ==============================================================================
 
-def test_persistent_low_bid_triggers_unwind_after_1_5s():
-    """If low bid persists for >= 1.5s, the engine triggers stop-loss unwind."""
+def test_spot_strike_retrace_triggers_unwind_after_15s():
+    """If spot retraces across strike by -0.05% against position for >= 15.0s, trigger stop-loss unwind."""
     async def _run():
         harvester = PolymarketLiveHarvester(ticket_notional=10.0, dry_run=False)
-        harvester.low_bid_persistence_seconds = 1.5
         harvester.save_state = lambda: None
         tid = "LIVE_TEST_PERSIST_01"
         now = 2000.0
@@ -448,7 +445,7 @@ def test_persistent_low_bid_triggers_unwind_after_1_5s():
             "notional_usd": 35.0,
             "target_exit_price": 0.79,
             "candle_open_spot": 65000.0,
-            "entry_spot_ref": 65000.0,
+            "entry_spot_ref": 65100.0,
             "candle_sigma": 0.005,
             "candle_expiry_ts": now + 600.0,
             "is_liquidating": False,
@@ -459,25 +456,19 @@ def test_persistent_low_bid_triggers_unwind_after_1_5s():
         harvester.executor.execute_unwind_order = MagicMock(return_value={
             "success": True, "matched_size": 50.0, "taking_amount": 20.0, "fee_usd": 0.30, "orderID": "0xUNWIND_PERSIST"
         })
-        harvester.get_reference_spot_price = MagicMock(return_value=65000.0)
+        # Spot retraces across open strike by -0.06%: 65000 * (1 - 0.0006) = 64961.0
+        harvester.get_reference_spot_price = MagicMock(return_value=64961.0)
         harvester.executor.get_market_book_async = AsyncMock(return_value={
-            "bids": [{"price": "0.40", "size": "100.0"}],
-            "asks": [{"price": "0.75", "size": "100.0"}],
+            "bids": [{"price": "0.45", "size": "100.0"}],
+            "asks": [{"price": "0.55", "size": "100.0"}],
         })
 
-        # Tick 1 at t=2000: arms timer
-        with patch("time.time", return_value=now):
+        # Under Policy A (hold_to_maturity=True), spot strike retrace does NOT trigger unwind
+        with patch("time.time", return_value=now + 16.0):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos.get("low_bid_detected_ts") == now
+        assert pos.get("is_liquidating") is False, "Policy A must never dump into bids mid-candle!"
         assert len(harvester.closed_positions) == 0
-
-        # Tick 2 at t=2001.6 (elapsed 1.6s >= 1.5s): low bid confirmed, stop triggers and unwinds!
-        with patch("time.time", return_value=now + 1.6):
-            await harvester.check_resolutions_and_manage_positions()
-        assert pos.get("stop_triggered_ts") == now + 1.6
-        assert len(harvester.closed_positions) == 1
-        assert harvester.closed_positions[0]["trade_id"] == tid
-        assert tid not in harvester.active_positions
+        assert tid in harvester.active_positions
 
     asyncio.run(_run())
 
@@ -528,12 +519,12 @@ def test_structural_spot_reversal_bypasses_persistence_delay():
             "asks": [{"price": "0.75", "size": "100.0"}],
         })
 
-        # Evaluates at t=now (0.0s elapsed). Must trigger IMMEDIATELY without delay!
+        # Under Policy A (hold_to_maturity=True), spot structural reversal does NOT dump shares mid-candle!
         with patch("time.time", return_value=now):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos.get("stop_triggered_ts") == now, "Spot structural breakdown must set stop_triggered_ts immediately!"
-        assert len(harvester.closed_positions) == 1
-        assert harvester.closed_positions[0]["trade_id"] == tid
+        assert pos.get("is_liquidating") is False, "Policy A must never dump into bids mid-candle!"
+        assert len(harvester.closed_positions) == 0
+        assert tid in harvester.active_positions
 
     asyncio.run(_run())
 
@@ -585,11 +576,12 @@ def test_entry_relative_spot_reversal_triggers_stop():
             "asks": [{"price": "0.75", "size": "100.0"}],
         })
 
+        # Under Policy A (hold_to_maturity=True), entry-relative adverse spot move does NOT dump shares mid-candle!
         with patch("time.time", return_value=now):
             await harvester.check_resolutions_and_manage_positions()
-        assert pos.get("stop_triggered_ts") == now, "Entry-relative adverse spot move must trigger structural stop!"
-        assert len(harvester.closed_positions) == 1
-        assert harvester.closed_positions[0]["trade_id"] == tid
+        assert pos.get("is_liquidating") is False, "Policy A must never dump into bids mid-candle!"
+        assert len(harvester.closed_positions) == 0
+        assert tid in harvester.active_positions
 
     asyncio.run(_run())
 
@@ -671,9 +663,9 @@ def test_zero_bid_enters_liquidity_crisis_fail_closed():
 # INVARIANT 10: PERSISTENCE CONFIRMATION STATE SURVIVES RESTART
 # ==============================================================================
 
-def test_restart_preserves_low_bid_persistence_state(tmp_path, monkeypatch):
+def test_restart_preserves_strike_retrace_persistence_state(tmp_path, monkeypatch):
     """
-    A daemon restart during the low-bid confirmation window must preserve low_bid_detected_ts,
+    A daemon restart during the strike retrace confirmation window must preserve strike_retrace_detected_ts,
     ensuring that the persistence window does not silently reset or loop indefinitely.
     """
     state_file = tmp_path / "test_persistence_state.json"
@@ -685,7 +677,7 @@ def test_restart_preserves_low_bid_persistence_state(tmp_path, monkeypatch):
     harvester1.active_positions[tid] = {
         "trade_id": tid,
         "token_id": "0xTOK_RESTART",
-        "low_bid_detected_ts": now,
+        "strike_retrace_detected_ts": now,
         "entry_price": 0.70,
         "remaining_shares": 50.0,
         "asset": "BTC",
@@ -699,7 +691,8 @@ def test_restart_preserves_low_bid_persistence_state(tmp_path, monkeypatch):
     harvester2.load_state()
     assert tid in harvester2.active_positions
     loaded_pos = harvester2.active_positions[tid]
-    assert loaded_pos.get("low_bid_detected_ts") == now, "low_bid_detected_ts must survive daemon restart!"
+    assert loaded_pos.get("strike_retrace_detected_ts") == now, "strike_retrace_detected_ts must survive daemon restart!"
+
 
 
 # ==============================================================================
@@ -737,18 +730,17 @@ def test_partial_maker_fills_reconcile_before_taker_unwind():
             "asset": "BTC",
         }
         harvester.active_positions[tid] = pos
-        harvester.executor.get_open_orders = lambda **kw: [{"id": "0xMAKER_RESTING_01"}]
+        harvester.executor.get_open_orders = lambda **kw: []
         harvester.executor.get_market_book_async = AsyncMock(return_value={"bids": [{"price": "0.40", "size": "100.0"}]})
         harvester.executor.cancel_order = lambda oid: {"canceled": [oid]}
-        # Exchange reports maker order was canceled with 20 shares matched
-        harvester.executor.get_order_status = lambda oid: {"status": "CANCELED", "size_matched": 20.0, "taking_amount": 15.80}
+        harvester.executor.get_order_fill_summary = lambda oid, tok: {"order_id": oid, "status": "CANCELED", "matched": 20.0, "terminal": True, "limit_price": 0.79}
 
         await harvester.check_resolutions_and_manage_positions()
 
         reconciled = harvester.active_positions[tid]
         assert reconciled["filled_exit_shares"] == 20.0, "Partial maker fill of 20 shares must be recorded!"
         assert reconciled["remaining_shares"] == 30.0, "Remaining shares must be reduced to exactly 30 shares!"
-        assert reconciled["exit_order_status"] == "FILL_RECONCILIATION_REQUIRED"
+        assert reconciled["status"] == ExecutionStatus.PARTIALLY_FILLED
 
     asyncio.run(_run())
 
@@ -772,13 +764,13 @@ def test_eth_signals_strictly_shadow_counterfactual_log(tmp_path, monkeypatch):
         executed = []
         harvester.executor.execute_snipe_order_async = AsyncMock(side_effect=lambda **kw: executed.append(kw))
 
-        # Case A: ETH shock
+        # Case A: ETH shock (inside sweet spot TTE <= 1350s)
         eth_shock = {
             "event_id": "EVT_ETH_SHADOW_01",
             "market_id": "5500015",
             "asset": "ETH",
             "shock_direction": "BUY",
-            "seconds_to_expiry": 1500.0,
+            "seconds_to_expiry": 1200.0,
             "candle_distance_pct": 0.10,
             "pre_shock_features_t0": {"UP": {"token_id": "0xETH_TOKEN_01"}},
         }

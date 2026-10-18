@@ -334,7 +334,8 @@ class TestV31Route3Conformance(unittest.TestCase):
 
     def test_11_restart_idempotency_zero_duplication(self):
         """P0 Gate: Daemon restart must restore exact state without duplicating historical records."""
-        # Initial state
+        # Initial state (replayed fresh to avoid race condition with live background daemon)
+        self.trader.replay_existing_data()
         dev_count_1 = len(self.trader.dev_trades)
         dev_pnl_1 = self.trader.dev_realized_pnl
         val_count_1 = len(self.trader.val_trades)

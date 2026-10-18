@@ -135,7 +135,7 @@ def test_balance_query_failure_does_not_falsely_settle_position():
 
 def test_pre_expiry_cancellation_confirmation_before_unwind():
     """Invariant: Pre-expiry logic must confirm resting maker ask is canceled before dispatching unwind."""
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_CANCEL_CONFIRM"
     now = time.time()
 
@@ -181,7 +181,7 @@ def test_pre_expiry_cancellation_confirmation_before_unwind():
 
 def test_pre_expiry_otm_salvage_triggers_unwind_after_cancellation():
     """Verifies that an OTM position executes salvage unwind after maker ask cancellation is confirmed."""
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_OTM_SALVAGE"
     now = time.time()
 
@@ -232,7 +232,7 @@ def test_pre_expiry_otm_salvage_triggers_unwind_after_cancellation():
 
 def test_pre_expiry_itm_holds_to_terminal_resolution():
     """Verifies that a strictly in-the-money position at TTE < 180s cancels maker order and holds to $1.00."""
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_ITM_HOLD"
     now = time.time()
 
@@ -273,7 +273,7 @@ def test_pre_expiry_itm_holds_to_terminal_resolution():
 
 def test_pre_expiry_pin_risk_zone_classification():
     """Verifies that a position within 0.05% of open spot is classified as PIN_RISK_EXPIRY_HOLD."""
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_PIN_RISK"
     now = time.time()
 
@@ -292,7 +292,7 @@ def test_pre_expiry_pin_risk_zone_classification():
         "target_exit_price": 0.69,
         "candle_open_spot": 2500.0,
         "candle_sigma": 0.005,
-        "candle_expiry_ts": now + 120.0,
+        "candle_expiry_ts": now + 50.0,
         "is_liquidating": False,
         "exit_order_id": "0xRESTING_MAKER_ASK_PIN",
         "exit_order_status": "PRE_EXPIRY_CANCEL_PENDING",
@@ -320,7 +320,7 @@ def test_unwind_balance_reconciliation_when_already_sold():
     it stays supervised under UNRESOLVED_BALANCE_DISCREPANCY with new entries halted until exchange
     fill history reconciles it.
     """
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_BALANCE_RECONCILE"
     now = time.time()
 
@@ -380,7 +380,7 @@ def test_pre_expiry_missing_spot_classified_as_outcome_unknown():
     2. Bot does NOT book a $1.00 payout based on missing data.
     3. Position remains active, persisted, and supervised.
     """
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_MISSING_SPOT"
     now = time.time()
 
@@ -494,7 +494,7 @@ def test_multi_cycle_cancellation_race_and_crash_recovery():
              Harvester confirms cancellation and dispatches unwind order.
     Cycle 3: Daemon restart between cycles safely reattaches without losing exposure or double-unwinding.
     """
-    harvester = PolymarketLiveHarvester(dry_run=False)
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=False)
     tid = "LIVE_TEST_MULTI_CYCLE_RACE"
     now = time.time()
 
@@ -513,7 +513,8 @@ def test_multi_cycle_cancellation_race_and_crash_recovery():
         "candle_open_spot": 65000.0,
         "candle_sigma": 0.005,
         "candle_expiry_ts": now + 600.0,
-        "is_liquidating": False,
+        "is_liquidating": True,
+        "stop_triggered_ts": now - 1.0,
         "exit_order_id": "0xMAKER_RESTING_001",
         "exit_order_status": "RESTING",
         "status": ExecutionStatus.EXIT_RESTING,
@@ -555,3 +556,47 @@ def test_multi_cycle_cancellation_race_and_crash_recovery():
     closed = next(p for p in harvester.closed_positions if p["trade_id"] == tid)
     assert closed["close_reason"] == "ADVERSE_STOP_LOSS_UNWIND"
     assert closed["payout_usd"] == 16.00
+
+
+def test_policy_a_pre_expiry_never_cancels_maker_exit():
+    """Policy A Invariant (Bug 1): Resting 99c Maker exit order is NEVER canceled at TTE < 180s."""
+    harvester = PolymarketLiveHarvester(dry_run=False, hold_to_maturity=True)
+    tid = "LIVE_TEST_POLICY_A_TTE180"
+    now = time.time()
+
+    harvester.active_positions[tid] = {
+        "trade_id": tid,
+        "market_id": "TEST_MKT_POLICY_A",
+        "token_id": "0xTOK_099",
+        "target_token": "UP",
+        "asset": "BTC",
+        "entry_price": 0.80,
+        "entry_shares": 50.0,
+        "remaining_shares": 50.0,
+        "notional_usd": 40.0,
+        "target_exit_price": 0.99,
+        "candle_open_spot": 65000.0,
+        "candle_sigma": 0.005,
+        "candle_expiry_ts": now + 120.0,  # TTE = 120s < 180s
+        "is_liquidating": False,
+        "exit_order_id": "0xRESTING_99C_MAKER",
+        "exit_order_status": "RESTING",
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+    }
+    harvester.save_state = lambda: None
+    harvester.get_reference_spot_price = lambda sym: 64000.0  # Adverse spot disp < -pin_threshold
+    harvester.executor.get_market_book_async = lambda tid: asyncio.sleep(0, result={"bids": [{"price": "0.01", "size": "100.0"}]})
+    harvester.executor.get_open_orders = lambda **kw: [{"id": "0xRESTING_99C_MAKER"}]
+    cancel_dispatched = []
+    harvester.executor.cancel_order = lambda oid: cancel_dispatched.append(oid)
+    unwinds_dispatched = []
+    harvester.executor.execute_unwind_order = lambda **kw: unwinds_dispatched.append(kw)
+
+    asyncio.run(harvester.check_resolutions_and_manage_positions())
+
+    # Policy A Invariant: 99c Maker exit order is NOT canceled, and EMERGENCY_SALVAGE_UNWIND is NEVER dispatched!
+    assert len(cancel_dispatched) == 0, "Policy A must NEVER cancel resting 99c maker order in final 3 minutes!"
+    assert len(unwinds_dispatched) == 0, "Policy A must NEVER dispatch emergency salvage unwind!"
+    assert tid in harvester.active_positions
+    assert harvester.active_positions[tid]["exit_order_id"] == "0xRESTING_99C_MAKER"
+

@@ -87,10 +87,10 @@ def test_dry_run_snipe_execution(tmp_path):
     assert res.mode == "DRY_RUN_SIMULATION"
     assert res.execution_status == ExecutionStatus.POSITION_CONFIRMED
     assert res.confirmed_onchain is True
-    assert res.size == 25.0
+    assert res.size == 24.0
     assert res.fee_usd > 0
     assert res.details["pre_token_balance"] == 0.0
-    assert res.details["post_token_balance"] == 25.0
+    assert res.details["post_token_balance"] == 24.0
     assert ledger.exists()
 
 

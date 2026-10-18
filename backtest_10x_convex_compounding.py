@@ -53,7 +53,8 @@ from src.data.pit_universe_manager import PointInTimeUniverseManager, AssetStatu
 # ------------------------------------------------------------------------------
 # 1. CONSTANTS & HYPERPARAMETERS
 # ------------------------------------------------------------------------------
-DATA_LAKE_PATH = Path("data/lake/raw_candles_4h.parquet")
+PIPELINE_ROOT = Path(__file__).resolve().parent
+DATA_LAKE_PATH = PIPELINE_ROOT / "data" / "lake" / "raw_candles_4h.parquet"
 ARTIFACTS_DIR = Path("artifacts")
 RESULTS_FILE = ARTIFACTS_DIR / "backtest_results.md"
 AUDIT_LOG_PARQUET = ARTIFACTS_DIR / "per_bar_audit_log.parquet"

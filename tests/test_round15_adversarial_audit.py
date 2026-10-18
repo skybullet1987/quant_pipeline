@@ -220,7 +220,7 @@ class TestRound15AuditRemediation:
         FINDING-15-04: Tickets with notional >= $20.0 must configure sequential
         iceberg tranches (60% / 40%) with t1_px and t2_px.
         """
-        harvester = PolymarketLiveHarvester(dry_run=True)
+        harvester = PolymarketLiveHarvester(dry_run=True, hold_to_maturity=False)
         tid = "LIVE_TEST_TRANCHE_ALIGN"
         pos = {
             "trade_id": tid,

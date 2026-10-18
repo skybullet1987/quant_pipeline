@@ -263,9 +263,10 @@ class MultiAssetLatencyEngine:
                 self.active_markets[a].clear()
 
             slug_map = {
-                "BTC": ["btc-up-or-down-hourly", "btc-15m", "bitcoin-up-or-down"],
-                "ETH": ["eth-up-or-down-hourly", "eth-15m", "ethereum-up-or-down"],
-                "SOL": ["sol-up-or-down-hourly", "sol-15m", "solana-up-or-down"],
+                "BTC": ["btc-15m", "btc-up-or-down-5m"],
+                "ETH": ["eth-15m", "eth-up-or-down-5m"],
+                # SOL disabled: Zero active sub-hourly markets exist on Polymarket Gamma API
+                # 1-hour BTC disabled: Negative EV macro mean-reversion
             }
             session = await self.get_session()
             for asset, slugs in slug_map.items():
