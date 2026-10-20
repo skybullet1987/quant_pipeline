@@ -101,7 +101,7 @@ def audit_positions_and_redemptions():
     has_unknown = False
 
     print("\n--- POSITION AUDIT TABLE ---")
-    for pos in closed_positions:
+    for pos in list(active_positions.values()) + list(closed_positions):
         tid = pos.get("trade_id", "N/A")
         token_id = pos.get("token_id")
         won = pos.get("won", False)
@@ -109,8 +109,14 @@ def audit_positions_and_redemptions():
         close_reason = pos.get("close_reason", "UNKNOWN")
         net_pnl = pos.get("net_pnl_usd", 0.0)
 
+        # Candidate if awaiting on-chain settlement, holding winning shares, or a confirmed winning resolution.
+        is_candidate = (
+            pos.get("status") == "AWAITING_ONCHAIN_SETTLEMENT"
+            or float(pos.get("winning_shares_held", 0.0) or 0.0) > 0.0
+            or (bool(won) and close_reason in {"MARKET_RESOLVED", "ONCHAIN_REDEMPTION_CONFIRMED"})
+        )
         # If position won at market resolution, check on-chain token balance
-        if won and close_reason == "MARKET_RESOLVED" and token_id:
+        if is_candidate and token_id:
             onchain_bal = get_token_balance_onchain(funder_address, token_id)
             if onchain_bal is None:
                 has_unknown = True

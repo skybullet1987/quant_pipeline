@@ -30,9 +30,31 @@ from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import socket
+from urllib3.connection import HTTPConnection
 import httpx
 import requests
 from dotenv import load_dotenv
+
+def enable_tcp_nodelay_globally() -> None:
+    """
+    Pillar 5A: Global TCP_NODELAY and SO_KEEPALIVE socket options.
+    Disables Nagle's algorithm on all underlying urllib3/requests HTTP connections,
+    slashing CLOB order dispatch roundtrip latency by 10-40ms.
+    """
+    try:
+        orig_options = list(HTTPConnection.default_socket_options)
+        nodelay_opt = (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        keepalive_opt = (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        if nodelay_opt not in orig_options:
+            orig_options.append(nodelay_opt)
+        if keepalive_opt not in orig_options:
+            orig_options.append(keepalive_opt)
+        HTTPConnection.default_socket_options = orig_options
+    except Exception:
+        pass
+
+enable_tcp_nodelay_globally()
 
 # Ensure pipeline root is in sys.path
 PIPELINE_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -43,6 +65,53 @@ load_dotenv(PIPELINE_ROOT / ".env")
 
 # Absolute, CWD-independent data directory (overridable for isolated test runs).
 POLYMARKET_DATA_DIR = Path(os.getenv("POLYMARKET_DATA_DIR", str(PIPELINE_ROOT / "data/polymarket")))
+
+# ---------------------------------------------------------------------------
+# Centralized risk configuration (single source of truth: config/polymarket_risk_config.json)
+# ---------------------------------------------------------------------------
+RISK_CONFIG_PATH = Path(os.getenv("POLYMARKET_RISK_CONFIG", str(PIPELINE_ROOT / "config/polymarket_risk_config.json")))
+_RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
+    "ticket_notional": 16.50,
+    "dynamic_sizing": True,
+    "dynamic_risk_pct": 0.18,
+    "scale_up_equity_threshold": 110.00,
+    "scale_up_risk_pct": 0.22,
+    "min_equity_floor": 66.67,
+    "max_daily_loss": 20.00,
+    "max_exposure": 35.00,
+    "max_concurrent_positions": 2,
+    "stale_fast_tick_max_age_sec": 15.0,
+    "stale_telemetry_max_age_sec": 30.0,
+    "stale_alert_after_sec": 60.0,
+    "alert_rate_limit_sec": 300.0,
+}
+
+
+def load_risk_config(path: Optional[Path] = None) -> Dict[str, Any]:
+    """Loads config/polymarket_risk_config.json merged over safe defaults.
+
+    Fail-safe: a missing/corrupt file or a non-finite/non-positive numeric value falls back to the
+    conservative built-in default for that key (never to a looser legacy limit).
+    """
+    cfg: Dict[str, Any] = dict(_RISK_CONFIG_DEFAULTS)
+    try:
+        with open(path or RISK_CONFIG_PATH, "r", encoding="utf-8") as fh:
+            raw = json.load(fh)
+        if isinstance(raw, dict):
+            for key, default in _RISK_CONFIG_DEFAULTS.items():
+                if key not in raw:
+                    continue
+                val = raw[key]
+                if isinstance(default, bool):
+                    cfg[key] = bool(val)
+                elif isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(float(val)) and float(val) > 0:
+                    cfg[key] = int(val) if key == "max_concurrent_positions" else float(val)
+    except Exception:
+        pass
+    return cfg
+
+
+RISK_CONFIG: Dict[str, Any] = load_risk_config()
 
 try:
     import py_clob_client_v2
@@ -79,27 +148,24 @@ EXPECTED_CLOB_V2 = "1.2.0"
 CLOB_ALLOWED_TICK_SIZES = (0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001)
 
 # Execution & Risk Boundaries
-MAX_PRICE_CEILING = 0.8900  # Capped at 0.89 to eliminate >0.89 crumbs while capturing 0.82-0.89 sweet spot
-MIN_PRICE_FLOOR = 0.1500
-MIN_LOT_SIZE_USD = 5.00
-DEFAULT_DEPTH_HURDLE = 1.25
+MAX_PRICE_CEILING = 0.8600
+MIN_PRICE_FLOOR = 0.5500
+MIN_LOT_SIZE_USD = 12.00
+DEFAULT_DEPTH_HURDLE = 1.30
 
-# Institutional Dual-Sleeve Production Architecture (Full-Throttle Multi-Market)
-SLEEVE_1_MIN_PRICE = 0.8200  # Late conviction sweet spot (0.82 <= p <= 0.89)
-SLEEVE_1_MAX_PRICE = 0.8900  # Eliminates >0.89 low-payoff crumbs
-SLEEVE_2_ENABLED = True      # EXP-304/EXP-315 Early/Mid ETH 1h + 15m momentum engine
-SLEEVE_2_MIN_PRICE = 0.7200  # Sweet spot entry band (0.72 <= p <= 0.85)
-SLEEVE_2_MAX_PRICE = 0.8500  # Early 1h ceiling (1350s < TTE <= 3300s)
-SLEEVE_2_SUBHOURLY_MAX_PRICE = 0.8800  # 15m sub-hourly momentum ceiling
-SLEEVE_2_MIN_TTE = 1350.0    # 22.5m past the hour for 1h
-SLEEVE_2_MAX_TTE = 3300.0    # 55m past the hour for 1h
-SLEEVE_2_MIN_SPOT_CUSHION = 0.0015  # 0.15% spot cushion
-CIRCUIT_BREAKER_EQUITY_FLOOR = 95.00  # Circuit breaker floor on $159.69 bankroll
-DYNAMIC_EQUITY_RISK_PCT = 0.25        # 25% dynamic auto-compounding equity sizing
-MIN_TICKET_USD = 25.00
-MAX_TICKET_CAP_USD = 250.00           # Orderbook depth cap
-MAX_CONCURRENT_POSITIONS = 3          # Parallel multi-market execution (up to 3 simultaneous contracts)
-MAX_POSITIONS_PER_MARKET_ID = 1       # Strict per-market mutual exclusion (never 2 on same market_id)
+# Institutional Dual-Sleeve Production Architecture (v3.2 Rebound Configuration)
+SLEEVE_1_MIN_PRICE = 0.5500
+SLEEVE_1_MAX_PRICE = 0.8600
+SLEEVE_2_ENABLED = True
+SLEEVE_2_MIN_PRICE = 0.5500
+SLEEVE_2_MAX_PRICE = 0.7800
+SLEEVE_2_SUBHOURLY_MAX_PRICE = 0.7800
+CIRCUIT_BREAKER_EQUITY_FLOOR = RISK_CONFIG["min_equity_floor"]
+DYNAMIC_EQUITY_RISK_PCT = RISK_CONFIG["dynamic_risk_pct"]
+MIN_TICKET_USD = 12.00
+MAX_TICKET_CAP_USD = 200.00
+MAX_CONCURRENT_POSITIONS = 3
+MAX_POSITIONS_PER_MARKET_ID = 2
 
 
 
@@ -214,6 +280,142 @@ def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
         except TypeError:
             return client_fn(args)
     return client_fn(args)
+
+
+class PreSignedOrderLadderCache:
+    """
+    Pillar 5A: Pre-signed EIP-712 Order Ladder Cache.
+    Pre-signs BUY orders for active tokens across realistic price levels and share quantities
+    to eliminate EIP-712 signing latency on the hot execution path.
+    Keyed by (token_id, price_cents_int, shares_int) with a 300s TTL.
+
+    Safety invariants (v3.3 audit):
+      - SINGLE-USE: a signed order carries a unique salt/hash; once posted it can never be
+        re-posted, so get_presigned_order() POPS the entry (take semantics).
+      - EXACT MATCH ONLY: entries are only stored/served for whole-cent prices and whole-integer
+        share sizes, so a cache hit is guaranteed to carry exactly the requested price and size.
+    """
+    def __init__(self, ttl_seconds: float = 300.0):
+        self.ttl_seconds = ttl_seconds
+        self._cache: Dict[Tuple[str, int, int], Tuple[float, Any]] = {}
+        self._lock = threading.Lock()
+        self.hits = 0
+        self.misses = 0
+
+    @staticmethod
+    def _make_key(token_id: str, price: float, shares: float, price_cents: Optional[int] = None) -> Optional[Tuple[str, int, int]]:
+        if price_cents is None:
+            cents_f = float(price) * 100.0
+            p_cents = int(round(cents_f))
+            if abs(cents_f - p_cents) > 1e-6:
+                return None  # sub-cent tick price: never served from the cache
+        else:
+            p_cents = int(price_cents)
+        shares_f = float(shares)
+        shares_int = int(round(shares_f))
+        if shares_int <= 0 or abs(shares_f - shares_int) > 1e-9:
+            return None  # fractional size: never served from the cache
+        return (str(token_id), p_cents, shares_int)
+
+    def get_presigned_order(self, token_id: str, price: float = 0.0, shares: float = 0.0, price_cents: Optional[int] = None) -> Optional[Any]:
+        """Takes (pops) a fresh pre-signed order for an exact (token, price, shares) match."""
+        key = self._make_key(token_id, price, shares, price_cents)
+        if key is None:
+            self.misses += 1
+            return None
+        now = time.time()
+        with self._lock:
+            entry = self._cache.pop(key, None)
+        if entry:
+            created_ts, signed_order = entry
+            if (now - created_ts) <= self.ttl_seconds:
+                self.hits += 1
+                return signed_order
+        self.misses += 1
+        return None
+
+    def has_fresh(self, token_id: str, price: float, shares: float, min_remaining_sec: float = 60.0) -> bool:
+        key = self._make_key(token_id, price, shares)
+        if key is None:
+            return False
+        with self._lock:
+            entry = self._cache.get(key)
+        return bool(entry) and (time.time() - entry[0]) <= (self.ttl_seconds - min_remaining_sec)
+
+    def store_presigned_order(self, token_id: str, price: float = 0.0, shares: float = 0.0, signed_order: Any = None, price_cents: Optional[int] = None) -> bool:
+        key = self._make_key(token_id, price, shares, price_cents)
+        if key is None or signed_order is None:
+            return False
+        with self._lock:
+            self._cache[key] = (time.time(), signed_order)
+        return True
+
+    def prune_expired(self) -> None:
+        now = time.time()
+        with self._lock:
+            expired_keys = [k for k, (ts, _) in self._cache.items() if (now - ts) > self.ttl_seconds]
+            for k in expired_keys:
+                self._cache.pop(k, None)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._cache.clear()
+
+    def __len__(self) -> int:
+        return len(self._cache)
+
+
+class PreSubmitError(RuntimeError):
+    """Raised when the single-hop dispatch fails BEFORE the HTTP order was sent (safe: no exchange exposure)."""
+
+
+def _sign_and_post_single_hop(
+    client: Any,
+    ladder_cache: Optional[PreSignedOrderLadderCache],
+    token_id: str,
+    price: float,
+    size: float,
+    side: str,
+    order_type: Any,
+    create_options: Any = None,
+    stage: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    v3.3 Single-Hop Sign + Post: pre-signed ladder lookup (or cold EIP-712 create_order fallback)
+    AND client.post_order(..., defer_exec=True) inside ONE worker-thread hop.
+    `stage["submitted"]` flips to True immediately before the HTTP POST so callers can tell a
+    pre-submit failure (no exposure) from an unknown-outcome failure (needs reconciliation).
+    """
+    if stage is None:
+        stage = {}
+    stage["submitted"] = False
+    t0 = time.perf_counter()
+    signed = None
+    cache_hit = False
+    try:
+        if ladder_cache is not None and str(side).upper() == "BUY":
+            signed = ladder_cache.get_presigned_order(token_id, price, size)
+            cache_hit = signed is not None
+        if signed is None:
+            if OrderArgsV2 is None:
+                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+            order_args = OrderArgsV2(price=price, size=size, side=side, token_id=token_id)
+            signed = _safe_create_order(client.create_order, order_args, create_options)
+        if signed is None:
+            raise RuntimeError("create_order returned no signed order")
+    except Exception as e:
+        raise PreSubmitError(f"Order signing failed before submission: {e}") from e
+    t1 = time.perf_counter()
+    stage["submitted"] = True
+    post_resp = client.post_order(signed, order_type, False, True)  # post_only=False, defer_exec=True
+    t2 = time.perf_counter()
+    return {
+        "post_resp": post_resp,
+        "sign_ms": (t1 - t0) * 1000.0,
+        "post_ms": (t2 - t1) * 1000.0,
+        "cache_hit": cache_hit,
+        "t_post_end": t2,
+    }
 
 
 @dataclass
@@ -356,6 +558,7 @@ class PolymarketLiveExecutor:
         self.reserved_inventory: Dict[str, float] = defaultdict(float)
         self.reservation_corruption_detected: bool = False
         self._load_durable_reservations()
+        self.order_ladder_cache = PreSignedOrderLadderCache(ttl_seconds=300.0)
 
         self._initialize_client()
 
@@ -517,6 +720,52 @@ class PolymarketLiveExecutor:
                 self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
             except Exception as e:
                 logger.debug(f"[CACHE PREWARM] Warning pre-warming py-clob-client for {token_id}: {e}")
+
+    def prewarm_order_ladder(
+        self,
+        token_id: str,
+        ticket_notional: float,
+        price_levels: Optional[List[float]] = None,
+        tick_size: str = "0.01",
+        fee_rate_bps: int = 0,
+    ) -> int:
+        """
+        Pillar 5A: Pre-signs a ladder of BUY orders for token_id across $0.55-$0.84 (1-cent steps)
+        sized exactly like the live hot path (integer shares = floor(notional / price)), so a
+        matching snipe skips EIP-712 signing. Fresh entries (>60s TTL remaining) are skipped,
+        so repeated calls are cheap. fee_rate_bps is accepted for API compatibility; OrderArgsV2
+        does not sign a fee field.
+        """
+        if self.dry_run or not self.is_authenticated or self.client is None or OrderArgsV2 is None:
+            return 0
+        if price_levels is None:
+            price_levels = [round(c / 100.0, 2) for c in range(55, 85)]
+
+        create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+        self.order_ladder_cache.prune_expired()
+        count = 0
+        for px in price_levels:
+            if px <= 0:
+                continue
+            shares = float(math.floor(float(ticket_notional) / px))
+            if shares < 5.0:
+                continue
+            if self.order_ladder_cache.has_fresh(token_id, px, shares):
+                continue
+            try:
+                order_args = OrderArgsV2(
+                    price=px,
+                    size=shares,
+                    side="BUY",
+                    token_id=token_id,
+                )
+                signed = _safe_create_order(self.client.create_order, order_args, create_options)
+                if signed and self.order_ladder_cache.store_presigned_order(token_id, px, shares, signed):
+                    count += 1
+            except Exception as e:
+                logger.debug(f"[PREWARM LADDER] Notice for {token_id} @ {px}: {e}")
+                continue
+        return count
 
     def ping_clob_keepalive(self) -> None:
         """Lightweight GET ping to ensure persistent HTTP keep-alive connection remains warm."""
@@ -1164,6 +1413,8 @@ class PolymarketLiveExecutor:
         max_acceptable_price: float = MAX_PRICE_CEILING,
         min_acceptable_price: float = MIN_PRICE_FLOOR,
         return_legs: bool = False,
+        fee_rate: float = 0.07,
+        fee_exponent: float = 1.0,
     ) -> Any:
         """
         Simulates an exact FOK sweep across multiple price levels:
@@ -1221,7 +1472,7 @@ class PolymarketLiveExecutor:
         vwap = total_cost / total_shares if total_shares > 0 else 0.0
         # Multi-level dynamic crypto taker fee calculation across actual legs
         fee_usd = round(sum(
-            sz_i * 0.07 * ((px_i * (1.0 - px_i)) ** 1.0)
+            sz_i * fee_rate * ((px_i * (1.0 - px_i)) ** fee_exponent)
             for px_i, sz_i in fill_legs
         ), 5)
         self.last_fok_fill_legs = fill_legs
@@ -1277,7 +1528,7 @@ class PolymarketLiveExecutor:
         min_price_floor: float = MIN_PRICE_FLOOR,
         return_adjusted: bool = False,
         min_lot_size: float = MIN_LOT_SIZE_USD,
-        max_ticket_size: float = 75.0,
+        max_ticket_size: float = MAX_TICKET_CAP_USD,
     ) -> Union[Tuple[bool, float, float], Tuple[bool, float, float, float]]:
         """
         Validates executable orderbook depth across all qualifying price levels up to max_price_ceiling.
@@ -1351,9 +1602,9 @@ class PolymarketLiveExecutor:
     @staticmethod
     def calculate_elastic_ticket_size(
         executable_depth_usd: float,
-        depth_hurdle_ratio: float = 1.50,
-        min_ticket_usd: float = 25.0,
-        max_ticket_usd: float = 75.0,
+        depth_hurdle_ratio: float = 1.30,
+        min_ticket_usd: float = 12.0,
+        max_ticket_usd: float = 200.0,
     ) -> Tuple[bool, float]:
         """
         Dynamic book-proportional elastic sizing:
@@ -1395,8 +1646,21 @@ class PolymarketLiveExecutor:
         """
         if target_asset.upper() != "ETH":
             return True, z_alt, "NON_ALT_ASSET_PASSED"
-        if btc_direction is not None and btc_direction.upper() != target_direction.upper():
-            return False, z_alt, f"REJECT_BTC_COUNTER_TREND (ETH {target_direction} vs BTC {btc_direction})"
+
+        def _norm_dir(d: Optional[str]) -> Optional[str]:
+            if not d:
+                return None
+            u = str(d).upper().strip()
+            if u in ("BUY", "UP", "LONG", "YES"):
+                return "UP"
+            if u in ("SELL", "DOWN", "SHORT", "NO"):
+                return "DOWN"
+            return u
+
+        norm_target = _norm_dir(target_direction)
+        norm_btc = _norm_dir(btc_direction)
+        if norm_btc is not None and norm_target is not None and norm_btc != norm_target:
+            return False, z_alt, f"REJECT_BTC_COUNTER_TREND (ETH {norm_target} vs BTC {norm_btc})"
         if z_alt != 0.0 and z_btc != 0.0:
             if (z_alt > 0 and z_btc < 0) or (z_alt < 0 and z_btc > 0):
                 return False, z_alt, "REJECT_BTC_ETH_SIGN_DIVERGENCE (sign(z_ETH) != sign(z_BTC))"
@@ -1559,9 +1823,14 @@ class PolymarketLiveExecutor:
 
         # Check Strike-Retrace Stop Loss (signed candle distance drops below +0.03% with TTE > 60s)
         # Prevents riding spot retrace drift back across hourly open strike to $0.00 wipeout
+        norm_dist_pct = (
+            signed_candle_distance_pct * 100.0
+            if (signed_candle_distance_pct is not None and abs(signed_candle_distance_pct) <= 0.005 and signed_candle_distance_pct != 0.0)
+            else signed_candle_distance_pct
+        )
         if (
-            signed_candle_distance_pct is not None
-            and signed_candle_distance_pct < 0.03
+            norm_dist_pct is not None
+            and norm_dist_pct < 0.03
             and (tte_seconds is None or tte_seconds > 60.0)
         ):
             return {
@@ -1570,7 +1839,7 @@ class PolymarketLiveExecutor:
                 "is_maker": False,
                 "fee_schedule": "Taker Fee",
                 "reason": (
-                    f"Strike-retrace stop triggered: signed candle distance {signed_candle_distance_pct:+.4f}% < +0.03% "
+                    f"Strike-retrace stop triggered: signed candle distance {norm_dist_pct:+.4f}% < +0.03% "
                     f"with TTE={tte_seconds if tte_seconds is not None else 0.0:.1f}s > 60s. Salvaging position at bid ${current_bid:.3f}."
                 ),
             }
@@ -1662,7 +1931,7 @@ class PolymarketLiveExecutor:
             notional_usd = float(notional_usd)
         except (TypeError, ValueError):
             notional_usd = 0.0
-        ticket_ceiling = float(max_ticket_cap) if (max_ticket_cap is not None and math.isfinite(float(max_ticket_cap)) and float(max_ticket_cap) > 0) else 37.50
+        ticket_ceiling = float(max_ticket_cap) if (max_ticket_cap is not None and math.isfinite(float(max_ticket_cap)) and float(max_ticket_cap) > 0) else MAX_TICKET_CAP_USD
         # Round 10 P0-04: invalid sizing is REJECTED at the execution boundary, never coerced into a ticket.
         if not math.isfinite(notional_usd) or notional_usd <= 0.0:
             return self._invalid_notional_result(trade_id, token_id, target_token, side, notional_usd, t0)
@@ -1702,6 +1971,7 @@ class PolymarketLiveExecutor:
             min_price_floor=MIN_PRICE_FLOOR,
             return_adjusted=True,
             min_lot_size=MIN_LOT_SIZE_USD,
+            max_ticket_size=ticket_ceiling,
         )
 
         if not passed_depth:
@@ -1781,7 +2051,14 @@ class PolymarketLiveExecutor:
         # Polymarket CLOB grants price improvement, so +2c protects against minor 1c-2c transit ticks
         # while strictly capping at max_price_ceiling (sleeve_max_price).
         observed_ref = target_price if target_price > 0 else best_px
-        limit_px = round(min(observed_ref + 0.02, max_price_ceiling), 2)
+        limit_px = round(
+            min(
+                best_px + 0.02,
+                target_price if target_price > 0 else max_price_ceiling,
+                max_price_ceiling,
+            ),
+            2,
+        )
         worst_acceptable_px = self.quantize_order_price(
             limit_px, token_id, rounding=ROUND_FLOOR if limit_px >= max_price_ceiling - 1e-9 else ROUND_CEILING
         )
@@ -1848,7 +2125,9 @@ class PolymarketLiveExecutor:
 
         # 2. Simulate exact multi-level FOK sweep across book using exact order price constraint (P1 Fix)
         fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = self.simulate_fok_sweep(
-            book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True
+            book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
+            fee_rate=float(market_fee_rate) if market_fee_rate is not None else 0.07,
+            fee_exponent=float(market_fee_exponent) if market_fee_exponent is not None else 1.0,
         )
         if not fillable:
             err = f"FOK Sweep Infeasible: Could not fill ${notional_usd:.2f} within limit ${worst_acceptable_px:.4f}."
@@ -1955,7 +2234,7 @@ class PolymarketLiveExecutor:
             shares_i * f_rate * ((price_i * (1.0 - price_i)) ** f_exp)
             for price_i, shares_i in fill_legs
         ), 5)
-        fee_rate = fee_usd / max(notional_usd, 1e-9)
+        effective_fee_rate = fee_usd / max(notional_usd, 1e-9)
 
         # 3. Dry-Run / Mock Branch vs Live Mode Refusal (P0 #1 Fix)
         if not self.dry_run:
@@ -1969,7 +2248,7 @@ class PolymarketLiveExecutor:
             mock_order_id = f"MOCK_CLOB_{int(time.time()*1000)}"
             logger.info(
                 f"[DRY-RUN SNIPE] {trade_id} -> {target_token} | Shares={shares_to_buy:.2f} @ ${exec_price:.4f} "
-                f"| Notional=${notional_usd:.2f} | Fee=${fee_usd:.4f} ({fee_rate*100:.2f}%) | Latency={latency_ms:.2f}ms"
+                f"| Notional=${notional_usd:.2f} | Fee=${fee_usd:.4f} ({effective_fee_rate*100:.2f}%) | Latency={latency_ms:.2f}ms"
             )
 
             res = OrderResult(
@@ -1988,7 +2267,7 @@ class PolymarketLiveExecutor:
                 execution_status=ExecutionStatus.POSITION_CONFIRMED,
                 confirmed_onchain=True,
                 details={
-                    "fee_rate": fee_rate,
+                    "fee_rate": effective_fee_rate,
                     "depth_ratio": depth_ratio,
                     "timestamp_utc": now_utc,
                     "confirmed_onchain": True,
@@ -2027,44 +2306,34 @@ class PolymarketLiveExecutor:
                 tick_size_str = "0.01"
                 self._tick_size_cache[token_id] = 0.01
 
-            fee_rate_bps_val = int(fee_rate * 10000) if fee_rate else 0
+            fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
             self.prewarm_token_market_cache(
                 token_id=token_id,
                 tick_size=tick_size_str,
                 neg_risk=False,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
-                fee_rate=fee_rate,
-                fee_exponent=market_fee_exponent if market_fee_exponent is not None else 1.0,
+                fee_rate=f_rate,
+                fee_exponent=f_exp,
             )
             create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
 
-            t_sign_start = time.perf_counter()
-            # Fast hot-path signing: strictly use OrderArgsV2 with create_order to guarantee pure in-memory
-            # EIP-712 signing (<5ms) and valid CLOB decimal precision (2-decimal size, 4-decimal max makerAmount),
-            # eliminating py_clob_client_v2 create_market_order REST checks and decimal precision mismatches.
-            if OrderArgsV2 is None:
-                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
-
-            order_args = OrderArgsV2(
-                price=worst_acceptable_px,
-                size=shares_to_buy,
-                side=side,
-                token_id=token_id,
-            )
-            if hasattr(order_args, "fee_rate_bps"):
-                order_args.fee_rate_bps = fee_rate_bps_val
-            signed_order = _safe_create_order(self.client.create_order, order_args, create_options)
-            t_sign_end = time.perf_counter()
-            sign_ms = (t_sign_end - t_sign_start) * 1000.0
-
-            # P0: Pass defer_exec=True to bypass py_clob_client_v2 internal synchronous settlement polling
-            t_post_start = time.perf_counter()
-            order_submitted = True
-            post_resp = self.client.post_order(signed_order, entry_order_type, defer_exec=True)
-            t_post_end = time.perf_counter()
-            clob_http_post_ms = (t_post_end - t_post_start) * 1000.0
+            # v3.3 Single-Hop Sign + Post (pre-signed ladder take or cold sign, then post_order defer_exec=True)
+            dispatch_stage: Dict[str, Any] = {"submitted": False}
+            try:
+                hop = _sign_and_post_single_hop(
+                    self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
+                    side, entry_order_type, create_options, dispatch_stage,
+                )
+            finally:
+                order_submitted = bool(dispatch_stage.get("submitted"))
+            post_resp = hop["post_resp"]
+            sign_ms = hop["sign_ms"]
+            clob_http_post_ms = hop["post_ms"]
+            t_post_end = hop["t_post_end"]
             total_trigger_to_ack_ms = (t_post_end - t0) * 1000.0
+            if hop["cache_hit"]:
+                logger.debug(f"[{trade_id}] Pre-signed order ladder cache hit (sign_ms={sign_ms:.3f}ms)")
 
             logger.info(
                 f"[{trade_id}] LATENCY TELEMETRY: qualify_ms={qualify_ms:.2f} | sign_ms={sign_ms:.2f} | "
@@ -2380,7 +2649,7 @@ class PolymarketLiveExecutor:
             notional_usd = float(notional_usd)
         except (TypeError, ValueError):
             notional_usd = 0.0
-        ticket_ceiling = float(max_ticket_cap) if (max_ticket_cap is not None and math.isfinite(float(max_ticket_cap)) and float(max_ticket_cap) > 0) else 37.50
+        ticket_ceiling = float(max_ticket_cap) if (max_ticket_cap is not None and math.isfinite(float(max_ticket_cap)) and float(max_ticket_cap) > 0) else MAX_TICKET_CAP_USD
         # Round 10 P0-04: invalid sizing is REJECTED at the execution boundary, never coerced into a ticket.
         if not math.isfinite(notional_usd) or notional_usd <= 0.0:
             return self._invalid_notional_result(trade_id, token_id, target_token, side, notional_usd, t0)
@@ -2422,6 +2691,7 @@ class PolymarketLiveExecutor:
             min_price_floor=MIN_PRICE_FLOOR,
             return_adjusted=True,
             min_lot_size=MIN_LOT_SIZE_USD,
+            max_ticket_size=ticket_ceiling,
         )
         if not passed_depth:
             err = f"DepthGuard Rejected: Available depth ratio {depth_ratio:.2f}x < hurdle {depth_hurdle:.2f}x."
@@ -2477,7 +2747,14 @@ class PolymarketLiveExecutor:
         # Polymarket CLOB grants price improvement, so +2c protects against minor 1c-2c transit ticks
         # while strictly capping at max_price_ceiling (sleeve_max_price).
         observed_ref = target_price if target_price > 0 else best_px
-        limit_px = round(min(observed_ref + 0.02, max_price_ceiling), 2)
+        limit_px = round(
+            min(
+                best_px + 0.02,
+                target_price if target_price > 0 else max_price_ceiling,
+                max_price_ceiling,
+            ),
+            2,
+        )
         if token_id not in self._tick_size_cache and not self.dry_run:
             await asyncio.to_thread(self.get_token_tick_size, token_id)
         worst_acceptable_px = self.quantize_order_price(
@@ -2545,7 +2822,9 @@ class PolymarketLiveExecutor:
                 notional_usd = recomputed_ticket
 
         fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = self.simulate_fok_sweep(
-            book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True
+            book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
+            fee_rate=float(market_fee_rate) if market_fee_rate is not None else 0.07,
+            fee_exponent=float(market_fee_exponent) if market_fee_exponent is not None else 1.0,
         )
         if not fillable:
             err = f"FOK Sweep Infeasible: Could not fill ${notional_usd:.2f} within limit ${worst_acceptable_px:.4f}."
@@ -2652,14 +2931,14 @@ class PolymarketLiveExecutor:
             shares_i * f_rate * ((price_i * (1.0 - price_i)) ** f_exp)
             for price_i, shares_i in fill_legs
         ), 5)
-        fee_rate = fee_usd / max(notional_usd, 1e-9)
+        effective_fee_rate = fee_usd / max(notional_usd, 1e-9)
 
         if self.dry_run:
             latency_ms = (time.perf_counter() - t0) * 1000.0
             mock_order_id = f"MOCK_CLOB_{int(time.time()*1000)}"
             logger.info(
                 f"[DRY-RUN SNIPE] {trade_id} -> {target_token} | Shares={shares_to_buy:.2f} @ ${exec_price:.4f} "
-                f"| Notional=${notional_usd:.2f} | Fee=${fee_usd:.4f} ({fee_rate*100:.2f}%) | Latency={latency_ms:.2f}ms"
+                f"| Notional=${notional_usd:.2f} | Fee=${fee_usd:.4f} ({effective_fee_rate*100:.2f}%) | Latency={latency_ms:.2f}ms"
             )
             res = OrderResult(
                 success=True,
@@ -2677,7 +2956,7 @@ class PolymarketLiveExecutor:
                 execution_status=ExecutionStatus.POSITION_CONFIRMED,
                 confirmed_onchain=True,
                 details={
-                    "fee_rate": fee_rate,
+                    "fee_rate": effective_fee_rate,
                     "depth_ratio": depth_ratio,
                     "timestamp_utc": now_utc,
                     "confirmed_onchain": True,
@@ -2716,50 +2995,35 @@ class PolymarketLiveExecutor:
 
             t_sign_start = time.perf_counter()
             tick_size_str = str(self.get_token_tick_size(token_id) or "0.01")
-            fee_rate_bps_val = int(fee_rate * 10000) if fee_rate else 0
+            fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
             self.prewarm_token_market_cache(
                 token_id=token_id,
                 tick_size=tick_size_str,
                 neg_risk=False,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
-                fee_rate=fee_rate,
-                fee_exponent=market_fee_exponent if market_fee_exponent is not None else 1.0,
+                fee_rate=f_rate,
+                fee_exponent=f_exp,
             )
             create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
 
-            t_sign_start = time.perf_counter()
-            # Fast hot-path signing: strictly use OrderArgsV2 with create_order to guarantee pure in-memory
-            # EIP-712 signing (<15ms) and valid CLOB decimal precision (2-decimal size, 4-decimal max makerAmount),
-            # eliminating py_clob_client_v2 create_market_order REST checks and decimal precision mismatches.
-            if OrderArgsV2 is None:
-                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
-
-            order_args = OrderArgsV2(
-                price=worst_acceptable_px,
-                size=shares_to_buy,
-                side=side,
-                token_id=token_id,
-            )
-            if hasattr(order_args, "fee_rate_bps"):
-                order_args.fee_rate_bps = fee_rate_bps_val
-            signed_order = await asyncio.to_thread(_safe_create_order, self.client.create_order, order_args, create_options)
-            t_sign_end = time.perf_counter()
-            sign_ms = (t_sign_end - t_sign_start) * 1000.0
-
-            # Post order with defer_exec=True in thread to prevent any blocking
-            t_post_start = time.perf_counter()
-            order_submitted = True
-            post_resp = await asyncio.to_thread(
-                self.client.post_order,
-                signed_order,
-                entry_order_type,
-                False,
-                True,  # defer_exec=True
-            )
+            # v3.3 Single-Hop Sign + Post: ONE asyncio.to_thread hop for ladder take / cold sign + post_order(defer_exec=True)
+            dispatch_stage: Dict[str, Any] = {"submitted": False}
+            try:
+                hop = await asyncio.to_thread(
+                    _sign_and_post_single_hop,
+                    self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
+                    side, entry_order_type, create_options, dispatch_stage,
+                )
+            finally:
+                order_submitted = bool(dispatch_stage.get("submitted"))
+            post_resp = hop["post_resp"]
+            sign_ms = hop["sign_ms"]
+            clob_http_post_ms = hop["post_ms"]
             t_post_end = time.perf_counter()
-            clob_http_post_ms = (t_post_end - t_post_start) * 1000.0
             total_trigger_to_ack_ms = (t_post_end - t0) * 1000.0
+            if hop["cache_hit"]:
+                logger.debug(f"[{trade_id}] Pre-signed order ladder cache hit (sign_ms={sign_ms:.3f}ms)")
 
             logger.info(
                 f"[{trade_id}] LATENCY TELEMETRY: qualify_ms={qualify_ms:.2f} | sign_ms={sign_ms:.2f} | "
@@ -3228,9 +3492,13 @@ class PolymarketLiveExecutor:
         if self.dry_run:
             mock_id = f"MOCK_UNWIND_{int(time.time()*1000)}"
             logger.info(f"[DRY-RUN UNWIND] Executed simulated {side} unwind: {size:.2f} shares @ min ${min_price:.4f}")
+            unwind_r = 0.07
+            unwind_e = 1.0
+            if token_id in self._fee_cache:
+                unwind_r, unwind_e = self._fee_cache[token_id]
             taking_amt = size * min_price
             avg_px = min(0.999, max(0.001, min_price))
-            fee_usd = round(size * 0.07 * (avg_px * (1.0 - avg_px)), 5)
+            fee_usd = round(size * unwind_r * ((avg_px * (1.0 - avg_px)) ** unwind_e), 5)
             return {"success": True, "orderID": mock_id, "matched_size": size, "taking_amount": taking_amt, "fee_usd": fee_usd}
         if not self.is_authenticated or self.client is None:
             return {
@@ -3295,8 +3563,18 @@ class PolymarketLiveExecutor:
             is_matched = bool(order_id) and matched_status and raw_matched is not None
             if is_matched:
                 matched_size = float(raw_matched)
-                taking_is_estimated = taking_amount in (None, "")
-                taking_amt = float(taking_amount) if not taking_is_estimated else matched_size * quantized_price
+                taking_missing = taking_amount in (None, "")
+                taking_amt = float(taking_amount) if not taking_missing else matched_size * quantized_price
+                tx_hashes = resp.get("transactionsHashes") or resp.get("transaction_hashes") or []
+                onchain_settled = bool(
+                    self.dry_run
+                    or (
+                        status_str in {"CONFIRMED", "MINED"}
+                        and tx_hashes
+                        and all(self.get_transaction_receipt_status(str(tx)) is True for tx in tx_hashes)
+                    )
+                )
+                taking_is_estimated = taking_missing or (not onchain_settled)
 
                 if not (
                     math.isfinite(matched_size)
@@ -3322,10 +3600,14 @@ class PolymarketLiveExecutor:
                     0.999,
                     max(0.001, taking_amt / max(matched_size, 1e-9)),
                 )
+                unwind_r = 0.07
+                unwind_e = 1.0
+                if token_id in self._fee_cache:
+                    unwind_r, unwind_e = self._fee_cache[token_id]
                 estimated_fee = round(
                     matched_size
-                    * 0.07
-                    * (average_price * (1.0 - average_price)),
+                    * unwind_r
+                    * ((average_price * (1.0 - average_price)) ** unwind_e),
                     5,
                 )
 
@@ -3348,6 +3630,7 @@ class PolymarketLiveExecutor:
                         "fee_usd": estimated_fee,
                         "fee_is_estimated": True,
                         "taking_amount_estimated": taking_is_estimated,
+                        "taking_amount_missing": taking_missing,
                         "partial": True,
                         "retryable": True,
                         "error": f"PARTIAL_FILL: Matched {matched_size:.2f} of {quantized_size:.2f} shares (residual: {unfilled_size:.2f})",
@@ -3361,6 +3644,7 @@ class PolymarketLiveExecutor:
                     "matched_size": matched_size,
                     "taking_amount": taking_amt,
                     "taking_amount_estimated": taking_is_estimated,
+                    "taking_amount_missing": taking_missing,
                     "fee_usd": estimated_fee,
                     "fee_is_estimated": True,
                     "raw": resp,

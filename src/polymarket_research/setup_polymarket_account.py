@@ -17,20 +17,28 @@ PIPELINE_ROOT = Path(__file__).resolve().parent.parent.parent
 load_dotenv(PIPELINE_ROOT / ".env")
 
 try:
-    from py_clob_client.client import ClobClient
-    from py_clob_client.constants import POLYGON
     from web3 import Web3
     from web3.middleware import ExtraDataToPOAMiddleware
 except ImportError as e:
     print(f"[ERROR] Required library missing: {e}")
     sys.exit(1)
 
+try:
+    from py_clob_client_v2.client import ClobClient  # CLOB V2 (primary)
+except ImportError:
+    try:
+        from py_clob_client.client import ClobClient  # legacy fallback
+    except ImportError as e:
+        print(f"[ERROR] No CLOB client library installed (py_clob_client_v2 / py_clob_client): {e}")
+        sys.exit(1)
+
 # Contract Addresses on Polygon (Chain ID 137)
 POLYGON_RPC = "https://polygon-bor-rpc.publicnode.com"
-USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # Bridged USDC.e (Polymarket Collateral)
-CTF_EXCHANGE = "0x4bFb41d5B3570DeFd03C39a9A4D8dE6Bd8B8982E"    # Main Polymarket CTF Exchange
-NEGRISK_EXCHANGE = "0xC5d563A36AE78145C45a50134d48A1215220f80a"# NegRisk CTF Exchange
-NEGRISK_ADAPTER = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296" # NegRisk Adapter
+USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"  # Legacy bridged USDC.e
+PUSD_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"      # CLOB V2 primary collateral (pUSD)
+CTF_EXCHANGE = "0xE111180000d2663C0091e4f400237545B87B996B"     # CTF Exchange V2
+NEGRISK_EXCHANGE = "0xe2222d279d744050d28e00520010520000310F59"  # NegRisk Exchange V2
+NEGRISK_ADAPTER = "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"   # Exchange V3
 CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"     # Conditional Tokens Framework (ERC1155)
 
 ERC20_ABI = [
@@ -111,10 +119,10 @@ def main():
     pol_bal = pol_wei / 1e18
     print(f"      Native POL Gas:   {pol_bal:.4f} POL")
 
-    usdc_contract = w3.eth.contract(address=Web3.to_checksum_address(USDC_E_ADDRESS), abi=ERC20_ABI)
+    usdc_contract = w3.eth.contract(address=Web3.to_checksum_address(PUSD_ADDRESS), abi=ERC20_ABI)
     usdc_raw = usdc_contract.functions.balanceOf(wallet_addr).call()
     usdc_bal = usdc_raw / 1e6
-    print(f"      USDC.e Balance:   ${usdc_bal:,.2f} USDC.e")
+    print(f"      pUSD Balance:     ${usdc_bal:,.2f} pUSD")
 
     if usdc_bal < 10.0:
         print("      [WARN] Low USDC.e balance. Please ensure Kraken withdrawal has arrived.")
@@ -158,7 +166,7 @@ def main():
     # Check and set CTF approvals for selling outcome tokens
     print("\n[3b/5] Verifying Conditional Tokens (CTF) Operator Approvals...")
     ctf_contract = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=ERC1155_ABI)
-    for label, spender_addr in [("CTF Exchange", CTF_EXCHANGE), ("NegRisk Adapter", NEGRISK_ADAPTER)]:
+    for label, spender_addr in [("CTF Exchange V2", CTF_EXCHANGE), ("NegRisk Exchange V2", NEGRISK_EXCHANGE), ("Exchange V3", NEGRISK_ADAPTER)]:
         is_approved = ctf_contract.functions.isApprovedForAll(wallet_addr, Web3.to_checksum_address(spender_addr)).call()
         if not is_approved:
             print(f"      Approving CTF for {label} ({spender_addr[:10]}...)...")
@@ -186,22 +194,13 @@ def main():
     # Connect to Polymarket CLOB from Tokyo
     host = "https://clob.polymarket.com"
     print(f"\n[4/5] Connecting to Polymarket CLOB at {host} from Tokyo...")
-    try:
-        from py_clob_client_v2.client import ClobClient as ClobClientV2
-        client = ClobClientV2(
-            host=host,
-            key=pk,
-            chain_id=137,
-            signature_type=0,
-            funder=wallet_addr
-        )
-    except ImportError:
-        client = ClobClient(
-            host=host,
-            key=pk,
-            chain_id=137,
-            funder=wallet_addr
-        )
+    client = ClobClient(
+        host=host,
+        key=pk,
+        chain_id=137,
+        signature_type=0,
+        funder=wallet_addr
+    )
     server_time = client.get_server_time()
     print(f"      ✓ Connection established! Server Time: {server_time}")
 

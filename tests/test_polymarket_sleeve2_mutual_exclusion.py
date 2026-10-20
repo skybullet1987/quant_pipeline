@@ -21,6 +21,7 @@ def clean_trader(tmp_path):
          patch("src.polymarket_research.polymarket_paper_trader.DEV_LEDGER_FILE", tmp_path / "dev.jsonl"), \
          patch("src.polymarket_research.polymarket_paper_trader.VALIDATION_LEDGER_FILE", tmp_path / "val.jsonl"), \
          patch("src.polymarket_research.polymarket_paper_trader.STATE_FILE", tmp_path / "state.json"), \
+         patch("src.polymarket_research.polymarket_paper_trader.ENABLE_SLEEVE_304_315", True), \
          patch.object(PolymarketForwardPaperTrader, "replay_existing_data", lambda self: None):
         trader = PolymarketForwardPaperTrader()
         trader.paper_latency_ms = 0
@@ -30,12 +31,13 @@ def clean_trader(tmp_path):
         trader.sleeve2_settled_ids = set()
         trader.sleeve2_realized_pnl = 0.0
         trader.sleeve2_total_fees = 0.0
+        trader.hourly_candle_opens.clear()
         yield trader, ledger2, state2
 
 def test_sleeve2_mutual_exclusion_sleeve1_priority(clean_trader):
     trader, ledger2, _ = clean_trader
 
-    # A shock in Sleeve 1 domain (TTE <= 1350s, 0.84 <= p <= 0.88, dist >= 0.15)
+    # A shock in Sleeve 1 domain (TTE <= 1200s, 0.52 <= p <= 0.76, dist >= 0.18)
     shock = {
         "market_id": "M_OVERLAP",
         "t0_unix": time.time(),
@@ -43,17 +45,17 @@ def test_sleeve2_mutual_exclusion_sleeve1_priority(clean_trader):
         "asset": "ETH",
         "candle_interval": "1h",
         "seconds_to_expiry": 1000.0,
-        "candle_distance_pct": 0.25,
+        "candle_distance_pct": 0.60,
         "shock_direction": "BUY",
         "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
         "pre_shock_features_t0": {
             "UP": {
-                "best_ask": 0.85,
-                "best_bid": 0.84,
-                "effective_price_$50": 0.85,
-                "vwap_$50": 0.85,
+                "best_ask": 0.65,
+                "best_bid": 0.64,
+                "effective_price_$50": 0.65,
+                "vwap_$50": 0.65,
                 "depth_ratio_ask": 2.0,
-                "raw_top_asks": [[0.85, 200.0]],
+                "raw_top_asks": [[0.65, 200.0]],
             }
         }
     }

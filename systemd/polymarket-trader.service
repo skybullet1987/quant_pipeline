@@ -1,6 +1,6 @@
 [Unit]
-Description=Polymarket Fast-Loop Latency Execution Engine (EXP-302 OOS Trader)
-After=network-online.target
+Description=Polymarket Forward Paper Trader (v3.5 parity simulation)
+After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
 Wants=network-online.target
 
 [Service]
@@ -8,11 +8,12 @@ Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_paper_trader.py
 Restart=on-failure
-RestartSec=5s
+RestartSec=3
+KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=15s
-StandardOutput=append:/home/skybullet1987/quant_pipeline/data/polymarket/paper_trader.log
-StandardError=append:/home/skybullet1987/quant_pipeline/data/polymarket/paper_trader.log
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/polymarket/paper_trader_stdout.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/polymarket/paper_trader_stdout.log
 
 [Install]
 WantedBy=default.target

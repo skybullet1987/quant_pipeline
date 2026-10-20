@@ -16,6 +16,7 @@ import os
 import sys
 import json
 import time
+import math
 import asyncio
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,11 @@ from typing import Dict, Any, List, Set, Optional
 from collections import defaultdict
 
 from src.polymarket_research.polymarket_live_executor import calculate_taker_fee
+from src.polymarket_research.polymarket_live_harvester import (
+    compute_composite_edge_score,
+    compute_max_acceptable_ask,
+    evaluate_coinbase_venue_veto,
+)
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PIPELINE_ROOT / "data" / "polymarket"
@@ -38,35 +44,35 @@ HOURLY_TELEMETRY_ETH_FILE = DATA_DIR / "polymarket_hourly_telemetry_eth.jsonl"
 
 INITIAL_PAPER_CAPITAL = 1000.0
 TICKET_NOTIONAL = 50.0
-# Dynamic Elastic Book-Depth Sizing Parameters ($25.00 to $75.00)
-MIN_ELASTIC_TICKET_USD = 25.0
-MAX_ELASTIC_TICKET_USD = 250.0
+# Dynamic Elastic Book-Depth Sizing Parameters ($15.00 to $50.00)
+MIN_ELASTIC_TICKET_USD = 15.0
+MAX_ELASTIC_TICKET_USD = 200.0
 DEFAULT_ELASTIC_SAFETY_RATIO = 1.50
-DEFAULT_DYNAMIC_BANKROLL_PCT = 0.25
+DEFAULT_DYNAMIC_BANKROLL_PCT = 0.24
 DEFAULT_PAPER_LATENCY_MS = int(os.getenv("PAPER_LATENCY_MS", "500"))
-MAX_TTE_SECONDS = 1350.0  # 22.5 minutes (strictly aligned with live harvester Policy A)
-MIN_TTE_SECONDS = 60.0    # 1 minute (avoid unexecutable settlement lock)
+MAX_TTE_SECONDS = 2700.0  # 45 minutes (:15 onward)
+MIN_TTE_SECONDS = 90.0    # 90s floor
 MAX_TRADES_PER_HOUR = 6   # match live service's global portfolio-hour cap
-MAX_TRADES_PER_MARKET = 1
+MAX_TRADES_PER_MARKET = 2
 MAX_ALLOWED_SPREAD = 0.030
-MAX_PRICE_CEILING = 0.89  # Aligned with live harvester/executor (0.89, eliminates crumbs zone)
-MIN_PRICE_FLOOR = 0.72    # Minimum entry price floor (0.82 for 1h, 0.72 for 15m)
+MAX_PRICE_CEILING = 0.86  # Hard ceiling at 0.86
+MIN_PRICE_FLOOR = 0.55    # Sweet-spot floor at 0.55
 
 # v3.1 Frozen Out-of-Sample Boundary
 R3_VALIDATION_START_UTC = "2026-09-29T18:11:34.000Z"
 R3_VALIDATION_START_UNIX = 1790705494.0
 
 # ==============================================================================
-# SLEEVE 2: MULTI-ASSET 304/315 (ETH 1H SWEET SPOT ADD-ON) CONFIGURATION
+# SLEEVE 2: MULTI-ASSET 304/315 CONFIGURATION (v3.2 REBOUND CONFIGURATION)
 # ==============================================================================
 ENABLE_SLEEVE_304_315 = True
 SLEEVE_2_INITIAL_CAPITAL = 500.0
 SLEEVE_2_TICKET_NOTIONAL = 50.0
-SLEEVE_2_MIN_PRICE = 0.72
-SLEEVE_2_MAX_PRICE = 0.85
+SLEEVE_2_MIN_PRICE = 0.55
+SLEEVE_2_MAX_PRICE = 0.78
 SLEEVE_2_MIN_DEPTH_RATIO = 1.50
-SLEEVE_2_MAX_TTE = 3300.0  # 55 minutes left (:05 past the hour)
-SLEEVE_2_MIN_TTE = 1350.0  # 22.5 minutes left (:37:30 past the hour)
+SLEEVE_2_MAX_TTE = 2700.0  # 45 minutes left (:15 past the hour)
+SLEEVE_2_MIN_TTE = 900.0   # 15 minutes left (:45 past the hour)
 SLEEVE_2_LEDGER_FILE = DATA_DIR / "ledger_sleeve_304_315.jsonl"
 SLEEVE_2_STATE_FILE = DATA_DIR / "state_sleeve_304_315.json"
 
@@ -123,7 +129,43 @@ class PolymarketForwardPaperTrader:
                 if int(saved.get("current_hour_window", -1)) == self.current_hour_window:
                     self.trades_this_hour = int(saved.get("trades_this_hour", 0))
             except Exception as exc:
-                print(f"[WARN] Could not restore hourly cap state: {exc}", flush=True)
+                pass
+        self.hourly_candle_opens: Dict[str, Dict[int, float]] = defaultdict(dict)
+        self._prewarm_hourly_opens()
+
+    def _prewarm_hourly_opens(self):
+        """Prewarms recent hourly candle opens from live_shock_triggers.jsonl to empower rolling trend guards."""
+        trigger_path = DATA_DIR / "live_shock_triggers.jsonl"
+        if not trigger_path.exists():
+            return
+        try:
+            with open(trigger_path, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                read_sz = min(size, 8 * 1024 * 1024)
+                f.seek(size - read_sz)
+                lines = f.read().decode("utf-8", errors="ignore").splitlines()
+            for line in lines:
+                if not line.strip():
+                    continue
+                try:
+                    data = json.loads(line)
+                    title_l = str(data.get("title", "") or "").lower()
+                    horiz_l = str(data.get("horizon", "") or data.get("candle_interval", "")).lower()
+                    slug_l = str(data.get("series_slug", "") or data.get("slug", "")).lower()
+                    if any(x in horiz_l or x in slug_l or x in title_l for x in ("5m", "15m", "300s", "900s")):
+                        continue
+                    asset = data.get("asset")
+                    t0_unix = data.get("t0_unix")
+                    open_p = data.get("finalized_1h_open") or data.get("candle_open_spot")
+                    if asset in ("BTC", "ETH") and t0_unix and open_p and float(open_p) > 0:
+                        h_idx = int(float(t0_unix) // 3600)
+                        if h_idx not in self.hourly_candle_opens[asset]:
+                            self.hourly_candle_opens[asset][h_idx] = float(open_p)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     def load_persisted_ledgers(self):
         """Loads DEV and VALIDATION ledgers to restore state idempotently without duplication."""
@@ -377,8 +419,28 @@ class PolymarketForwardPaperTrader:
         if hour_now != self.current_hour_window:
             self.current_hour_window = hour_now
             self.trades_this_hour = 0
+        # Futures Basis Divergence Gate (delta_basis_100ms)
+        delta_basis = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
+        if target_token == "UP" and delta_basis < -2.0:
+            return False
+        elif target_token == "DOWN" and delta_basis > 2.0:
+            return False
+
+        # Strict Per-Market Mutual Exclusion: Never hold positions in both Sleeve 1 and Sleeve 2 on the same market
+        if ENABLE_SLEEVE_304_315 and m_id in self.sleeve2_open_trades and len(self.sleeve2_open_trades[m_id]) > 0:
+            return False
         total_market_trades = self.trades_per_market.get(m_id, 0) + len(current_market_open)
-        if total_market_trades >= MAX_TRADES_PER_MARKET or self.trades_this_hour >= MAX_TRADES_PER_HOUR:
+
+        # Win-Reset Re-Entry: Allow a 2nd trade on winning market if active positions == 0 and previous trade was a win
+        is_win_reentry = False
+        if total_market_trades == 1 and len(current_market_open) == 0:
+            for t in reversed(self.val_trades + self.dev_trades):
+                if t.get("market_id") == m_id:
+                    if t.get("won") is True and float(t.get("net_pnl_usd", 0.0) or 0.0) > 0:
+                        is_win_reentry = True
+                    break
+        effective_max_market_trades = 2 if is_win_reentry else MAX_TRADES_PER_MARKET
+        if total_market_trades >= effective_max_market_trades or self.trades_this_hour >= MAX_TRADES_PER_HOUR:
             return False
 
         # NYSE Wall Street Open Blackout Filter: 13:30 - 14:00 UTC (9:30 - 10:00 AM ET)
@@ -386,11 +448,6 @@ class PolymarketForwardPaperTrader:
             dt = datetime.fromtimestamp(t0_unix, tz=timezone.utc)
             if dt.hour == 13 and dt.minute >= 30:
                 return False
-
-        # Time to Expiry (TTE) Guard: 60s <= TTE <= 1350s (final 22.5m only)
-        tte = shock.get("seconds_to_expiry", 3600.0)
-        if tte > MAX_TTE_SECONDS or tte < MIN_TTE_SECONDS:
-            return False
 
         title = shock.get("title", "")
         asset = shock.get("asset", "")
@@ -404,14 +461,132 @@ class PolymarketForwardPaperTrader:
             or ("am et" in title_lower or "pm et" in title_lower)
         )
 
-        # Precision Upgrade 1: Minimum Spot Cushion Gate (|candle_distance_pct| >= 0.15% for 1-hour contracts)
-        min_candle_dist = 0.15 if is_1h else 0.05
-        dist_pct = shock.get("candle_distance_pct", 0.0)
-        if abs(dist_pct) < min_candle_dist:
-            return False  # Whipsaw risk
-        if target_token == "UP" and dist_pct < min_candle_dist:
+        # Pillar 1: Composite Edge & Stale-Quote Scoring Function
+        edge_info = compute_composite_edge_score(shock)
+        if edge_info.get("veto", False):
             return False
-        if target_token == "DOWN" and dist_pct > -min_candle_dist:
+        edge_tier = edge_info.get("tier", "TIER_B_STANDARD")
+        kelly_mult = edge_info.get("kelly_multiplier", 1.00)
+
+        tte = float(shock.get("seconds_to_expiry", 3600.0) or 3600.0)
+
+        # Dual-Regime Cushion-to-Price Entry Matrix (v3.2 Rebound Configuration)
+        regime = None
+        min_allowed_price = MIN_PRICE_FLOOR
+        max_allowed_price = MAX_PRICE_CEILING
+
+        dist_pct = float(shock.get("candle_distance_pct", 0.0) or 0.0)
+        open_spot_cand = shock.get("finalized_1h_open") or shock.get("candle_open_spot")
+        spot_at_t0 = float(shock.get("spot_at_t0") or shock.get("trigger_price") or 0.0)
+        if (abs(dist_pct) < 0.0001 or not open_spot_cand or float(open_spot_cand) <= 0.0) and spot_at_t0 > 0.0:
+            h_idx = int(float(shock.get("t0_unix", time.time())) // 3600)
+            cached_open = self.hourly_candle_opens.get(asset, {}).get(h_idx)
+            if cached_open and cached_open > 0.0:
+                dist_pct = ((spot_at_t0 - cached_open) / cached_open) * 100.0
+
+        # Pillar 2: Salvage-Adjusted Continuous Maximum-Ask Pricing Model
+        token_features = shock.get("pre_shock_features_t0", {}).get(target_token, {})
+        shock_ofi_val = float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)
+        shock_vol_usd = float(shock.get("shock_volume_100ms", 1_500_000.0) or 1_500_000.0)
+        delta_basis_bps = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
+        dir_delta_basis_bps = delta_basis_bps if target_token == "UP" else -delta_basis_bps
+        age_ask_ms_val = float(shock.get("age_ask_ms") or token_features.get("age_ask_ms", 350.0) or 350.0)
+
+        # v3.3 Coinbase + Binance composite venue filter (fail-open), parity with live harvester
+        cb_veto, _cb_reason = evaluate_coinbase_venue_veto(shock, target_token)
+        if cb_veto:
+            return False
+        p_max_info = compute_max_acceptable_ask(
+            dist_pct=dist_pct,
+            tte_sec=tte,
+            asset=asset or ("BTC" if "btc" in title_lower else "ETH"),
+            shock_ofi=shock_ofi_val,
+            shock_vol_usd=shock_vol_usd,
+            delta_basis_bps=dir_delta_basis_bps,
+            age_ask_ms=age_ask_ms_val,
+            is_subhourly_15m=is_subhourly,
+        )
+        z_eff = p_max_info.get("z_eff", 0.0)
+        p_max = p_max_info.get("p_max", 0.0)
+
+        if is_1h:
+            if 900.0 < tte <= 2700.0:
+                # Regime A: Mid-Hour Trend-Aligned Sweet Spot
+                regime = "REGIME_A_MID_HOUR"
+                if abs(dist_pct) < 0.15:
+                    return False
+                if target_token == "UP" and dist_pct < 0.15:
+                    return False
+                if target_token == "DOWN" and dist_pct > -0.15:
+                    return False
+
+                # Multi-Hour Trend Alignment Guard for Mid-Hour (tte > 900.0s)
+                cur_h_idx = int(float(shock.get("t0_unix", time.time())) // 3600)
+                opens_map = self.hourly_candle_opens.get(asset, {})
+                open_h = opens_map.get(cur_h_idx)
+                open_h_1 = opens_map.get(cur_h_idx - 1)
+                open_h_2 = opens_map.get(cur_h_idx - 2)
+
+                ret_2h = ((open_h - open_h_2) / open_h_2) if (open_h and open_h_2 and open_h_2 > 0) else None
+                ret_1h_prior = ((open_h - open_h_1) / open_h_1) if (open_h and open_h_1 and open_h_1 > 0) else None
+                ret_2h_prior = ((open_h_1 - open_h_2) / open_h_2) if (open_h_1 and open_h_2 and open_h_2 > 0) else None
+
+                prior_2_green = (ret_1h_prior is not None and ret_1h_prior > 0.0010 and ret_2h_prior is not None and ret_2h_prior > 0.0010)
+                prior_2_red = (ret_1h_prior is not None and ret_1h_prior < -0.0010 and ret_2h_prior is not None and ret_2h_prior < -0.0010)
+
+                is_counter_trend = False
+                if target_token == "DOWN":
+                    if (ret_2h is not None and ret_2h > 0.0030) or prior_2_green:
+                        is_counter_trend = True
+                elif target_token == "UP":
+                    if (ret_2h is not None and ret_2h < -0.0030) or prior_2_red:
+                        is_counter_trend = True
+
+                if is_counter_trend and abs(dist_pct) < 0.40:
+                    return False
+
+                min_allowed_price = 0.55
+                max_allowed_price = 0.78
+
+            elif (30.0 <= tte <= 900.0 if z_eff >= 2.2 else 120.0 <= tte <= 900.0):
+                # Regime B: Late-Hour High-Conviction Sniper (30s <= TTE <= 900s when z_eff >= 2.2)
+                regime = "REGIME_B_LATE_SNIPER"
+                cushion = abs(dist_pct)
+                if cushion < 0.10:
+                    return False
+                if target_token == "UP" and dist_pct < 0.10:
+                    return False
+                if target_token == "DOWN" and dist_pct > -0.10:
+                    return False
+
+                if cushion < 0.15:
+                    min_allowed_price = 0.55
+                    max_allowed_price = 0.75
+                elif cushion < 0.22:
+                    min_allowed_price = 0.58
+                    max_allowed_price = 0.80
+                else:
+                    min_allowed_price = 0.62
+                    max_allowed_price = 0.84
+            else:
+                return False
+
+        elif is_subhourly:
+            if 90.0 <= tte <= 540.0:
+                # Regime C: Sub-Hourly 15m/5m Markets
+                regime = "REGIME_C_SUBHOURLY"
+                if abs(dist_pct) < 0.08:
+                    return False
+                if target_token == "UP" and dist_pct < 0.08:
+                    return False
+                if target_token == "DOWN" and dist_pct > -0.08:
+                    return False
+
+                min_allowed_price = 0.58
+                max_allowed_price = 0.82
+            else:
+                return False
+        else:
             return False
 
         # 1. Disable dead SOL sub-hourly polling / execution (Zero liquidity on Polymarket)
@@ -425,21 +600,20 @@ class PolymarketForwardPaperTrader:
         if is_btc:
             is_1h_macro = (horizon in ("1h", "hourly", "60m") or "hourly" in slug) and tte > MAX_TTE_SECONDS
             if is_1h_macro:
-                return False  # FAIL-CLOSED: Outside sweet spot
+                return False
 
-            # Check BTC signal threshold |z_BTC| >= 1.645 if z is provided
             z_btc_val = shock.get("z_btc") or shock.get("z_score") or shock.get("z_val")
             if z_btc_val is not None and abs(float(z_btc_val)) < 1.645:
-                return False  # Reject: |z_BTC| < 1.645 threshold
+                return False
 
         # 3. Cross-Asset Lead-Lag Confirmation for ETH (z_joint = 0.70 * z_ETH + 0.30 * z_BTC)
         if is_eth:
             btc_shock_dir = shock.get("btc_shock_direction")
             if btc_shock_dir:
                 if target_token == "UP" and btc_shock_dir in ("DOWN", "SELL"):
-                    return False  # Reject: Counter-trending BTC macro shock
+                    return False
                 if target_token == "DOWN" and btc_shock_dir in ("UP", "BUY"):
-                    return False  # Reject: Counter-trending BTC macro shock
+                    return False
 
             z_eth_val = shock.get("z_eth") or shock.get("z_score") or shock.get("z_val")
             z_btc_val = shock.get("z_btc")
@@ -447,21 +621,20 @@ class PolymarketForwardPaperTrader:
                 z_e = float(z_eth_val)
                 z_b = float(z_btc_val)
                 if (z_e > 0 and z_b < 0) or (z_e < 0 and z_b > 0):
-                    return False  # Reject: sign(z_ETH) != sign(z_BTC)
+                    return False
 
         token_features = shock.get("pre_shock_features_t0", {}).get(target_token, {})
 
-        # 4. 5-Second Shock Window Priority Selector (score = abs(z) / ask_price)
+        # 4. 5-Second Shock Window Priority Selector
         self.recent_shock_window = [w for w in self.recent_shock_window if (t0_unix - w["t_unix"]) <= 5.0]
         z_score = abs(float(shock.get("z_val", shock.get("z_score", shock.get("expected_prob_shift", abs(dist_pct) * 0.5)))))
         raw_vwap_est = float(token_features.get("vwap_$50") or token_features.get("effective_price_$50") or 0.50)
         candidate_score = z_score / max(raw_vwap_est, 0.01)
 
-        # If another concurrent asset triggered within <= 5.0s with higher priority score, debounce/yield
         if self.recent_shock_window:
             best_prior = max(self.recent_shock_window, key=lambda x: x["score"])
             if best_prior["market_id"] != m_id and best_prior["score"] > candidate_score:
-                return False  # Defer to concurrent trigger
+                return False
 
         self.recent_shock_window.append({
             "t_unix": t0_unix,
@@ -473,10 +646,14 @@ class PolymarketForwardPaperTrader:
         # Executable Depth Ratio Guard (v3.1 Specification: DepthRatio >= 1.50)
         raw_asks = token_features.get("raw_top_asks", [])
         if not raw_asks:
-            return False  # FAIL-CLOSED: No resting book depth
-        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= MAX_PRICE_CEILING)
+            return False
+        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= max_allowed_price)
         
-        # Dynamic Elastic Book-Depth Sizing
+        first_ask = float(raw_asks[0][0]) if raw_asks else 0.75
+        if first_ask < min_allowed_price or first_ask > max_allowed_price:
+            return False
+
+        # Dynamic Elastic Book-Depth Sizing (24% for ask <= 0.78, 20% for ask > 0.78)
         is_oos_validation = (t0_unix >= R3_VALIDATION_START_UNIX)
         epoch_label = "VALIDATION" if is_oos_validation else "DEV"
 
@@ -487,19 +664,21 @@ class PolymarketForwardPaperTrader:
         total_equity = self.val_cash if epoch_label == "VALIDATION" else self.dev_cash
         free_usdc = total_equity - deployed_usd
 
-        dynamic_ticket_cap = min(MAX_ELASTIC_TICKET_USD, max(MIN_ELASTIC_TICKET_USD, total_equity * DEFAULT_DYNAMIC_BANKROLL_PCT))
+        dynamic_bankroll_pct = 0.24 if first_ask <= 0.78 else 0.20
+
+        dynamic_ticket_cap = min(MAX_ELASTIC_TICKET_USD, max(MIN_ELASTIC_TICKET_USD, total_equity * dynamic_bankroll_pct))
         raw_ticket = executable_depth_usd / DEFAULT_ELASTIC_SAFETY_RATIO
         if raw_ticket < MIN_ELASTIC_TICKET_USD:
-            return False  # FAIL-CLOSED: Insufficient depth
+            return False
 
         live_equity = self._get_live_account_equity()
         if live_equity is not None and live_equity > 0:
-            live_parity_cap = min(MAX_ELASTIC_TICKET_USD, max(MIN_ELASTIC_TICKET_USD, live_equity * DEFAULT_DYNAMIC_BANKROLL_PCT))
+            live_parity_cap = min(MAX_ELASTIC_TICKET_USD, max(MIN_ELASTIC_TICKET_USD, live_equity * dynamic_bankroll_pct))
             live_parity_notional = min(live_parity_cap, max(MIN_ELASTIC_TICKET_USD, round(raw_ticket, 2)))
         else:
             live_parity_notional = min(dynamic_ticket_cap, max(MIN_ELASTIC_TICKET_USD, round(raw_ticket, 2)))
 
-        legacy_ticket_notional = min(MAX_ELASTIC_TICKET_USD, max(MIN_ELASTIC_TICKET_USD, round(raw_ticket, 2)))
+        legacy_ticket_notional = min(TICKET_NOTIONAL, max(MIN_ELASTIC_TICKET_USD, round(raw_ticket, 2)))
 
         if os.getenv("PAPER_USE_LIVE_BANKROLL_SIZING", "1") == "1" and live_equity is not None:
             ticket_notional = min(live_parity_notional, free_usdc)
@@ -508,7 +687,7 @@ class PolymarketForwardPaperTrader:
             ticket_notional = min(parity_ticket_notional, free_usdc)
 
         if ticket_notional < MIN_ELASTIC_TICKET_USD:
-            return False  # Capital starvation
+            return False
         depth_ratio = executable_depth_usd / ticket_notional
 
         eff_px = token_features.get("effective_price_$50")
@@ -519,16 +698,18 @@ class PolymarketForwardPaperTrader:
             return False
         if raw_vwap is None:
             raw_vwap = eff_px
-        # Table 1: In Sleeve 1 late-hour (TTE <= 1350s), 0.82 <= p <= 0.89 sweet spot (93.4% WR)
-        sleeve1_min_p = 0.82 if is_1h else 0.72
-        if raw_vwap < sleeve1_min_p or raw_vwap > MAX_PRICE_CEILING:
+
+        # v3.2 Cushion-to-Price Matrix Price Band Enforcement on VWAP & p_max
+        if raw_vwap < min_allowed_price or raw_vwap > max_allowed_price:
+            return False
+        if p_max <= 0.0 or raw_vwap > p_max:
             return False
 
         # Explicit Fee Metadata Enforcement (STRICT FAIL-CLOSED)
         fee_meta = shock.get("fee_metadata", {})
         fee_rate = fee_meta.get("fee_rate_market")
-        if fee_rate is None or fee_rate <= 0.0:
-            return False  # FAIL-CLOSED: Missing fee metadata
+        if fee_rate is None or float(fee_rate) <= 0.0:
+            fee_rate = 0.07
 
         fee_exponent = float(fee_meta.get("fee_exponent", 1.0))
 
@@ -614,6 +795,7 @@ class PolymarketForwardPaperTrader:
             "legacy_fixed_notional_usd": legacy_ticket_notional,
             "effective_price": exec_eff_px,
             "exec_price": exec_price,
+            "entry_price": exec_price,
             "adverse_slippage_cents": adverse_slippage_cents,
             "latency_simulated_ms": self.paper_latency_ms,
             "shares_bought": round(shares, 4),
@@ -625,10 +807,11 @@ class PolymarketForwardPaperTrader:
             "execution_model": "PIECEWISE_LINEAR_SCENARIO_MILP",
             "simulated_partial_fill_timeout_ms": self.paper_latency_ms,
             "spot_at_t0": shock.get("spot_at_t0"),
+            "candle_open_spot": float(shock.get("finalized_1h_open") or shock.get("candle_open_spot") or shock.get("spot_at_t0") or 0.0),
             "candle_distance_pct": dist_pct,
             "status": "OPEN",
             "exit_policy": "EXP302_HOLD_TO_MATURITY_WITH_SPOT_DELTA_STOP",
-            "take_profit_maker_limit_px": 0.985 if exec_eff_px >= 0.80 else 0.95,
+            "take_profit_maker_limit_px": 0.99 if exec_eff_px >= 0.80 else 0.98,
             "stop_loss_relative_px": max(0.02, round(exec_eff_px - 0.12, 4)),
             "maker_tp_order_status": "RESTING_MAKER_LIMIT",
             "score": candidate_score,
@@ -694,10 +877,12 @@ class PolymarketForwardPaperTrader:
         horizon = str(shock.get("horizon", "") or shock.get("candle_interval", "")).lower()
         slug = str(shock.get("series_slug", "") or shock.get("slug", "")).lower()
 
-        # Strict Asset Filter: ETH only
+        # Asset Filter: Both ETH and BTC 1-hour contracts permitted
         is_eth = ("ethereum" in title_lower or "eth" in title_lower or asset == "ETH")
-        if not is_eth:
+        is_btc = ("bitcoin" in title_lower or "btc" in title_lower or asset == "BTC")
+        if not (is_eth or is_btc):
             return
+        asset_str = "ETH" if is_eth else "BTC"
 
         # Strict Horizon Filter: 1-hour contracts only
         is_subhourly = any(x in horizon or x in slug or x in title_lower for x in ("5m", "15m", "300s", "900s"))
@@ -714,13 +899,54 @@ class PolymarketForwardPaperTrader:
             return
 
         # Spot Cushion Gate: |candle_distance_pct| >= 0.15%
-        dist_pct = shock.get("candle_distance_pct", 0.0)
+        dist_pct = float(shock.get("candle_distance_pct", 0.0) or 0.0)
+        open_spot_cand = shock.get("finalized_1h_open") or shock.get("candle_open_spot")
+        spot_at_t0 = float(shock.get("spot_at_t0") or shock.get("trigger_price") or 0.0)
+        if (abs(dist_pct) < 0.0001 or not open_spot_cand or float(open_spot_cand) <= 0.0) and spot_at_t0 > 0.0:
+            h_idx = int(float(shock.get("t0_unix", time.time())) // 3600)
+            cached_open = self.hourly_candle_opens.get(asset, {}).get(h_idx)
+            if cached_open and cached_open > 0.0:
+                dist_pct = ((spot_at_t0 - cached_open) / cached_open) * 100.0
+
         if abs(dist_pct) < 0.15:
             return
         if target_token == "UP" and dist_pct < 0.15:
             return
         if target_token == "DOWN" and dist_pct > -0.15:
             return
+
+        # Multi-Hour Trend Alignment Guard for SLEEVE_2 (1350s < TTE <= 3300s):
+        # Stop fading a multi-hour trend at minute :16!
+        t0_u = float(shock.get("t0_unix", time.time()))
+        cur_h_idx = int(t0_u // 3600)
+        open_spot_cand = shock.get("finalized_1h_open") or shock.get("candle_open_spot") or shock.get("spot_at_t0")
+        if open_spot_cand and math.isfinite(float(open_spot_cand)) and float(open_spot_cand) > 0:
+            if cur_h_idx not in self.hourly_candle_opens[asset_str]:
+                self.hourly_candle_opens[asset_str][cur_h_idx] = float(open_spot_cand)
+
+        opens_map = self.hourly_candle_opens.get(asset_str, {})
+        open_h = opens_map.get(cur_h_idx)
+        open_h_1 = opens_map.get(cur_h_idx - 1)
+        open_h_2 = opens_map.get(cur_h_idx - 2)
+
+        ret_2h = ((open_h - open_h_2) / open_h_2) if (open_h and open_h_2 and open_h_2 > 0) else None
+        ret_1h_prior = ((open_h - open_h_1) / open_h_1) if (open_h and open_h_1 and open_h_1 > 0) else None
+        ret_2h_prior = ((open_h_1 - open_h_2) / open_h_2) if (open_h_1 and open_h_2 and open_h_2 > 0) else None
+
+        prior_2_green = (ret_1h_prior is not None and ret_1h_prior > 0.0010 and ret_2h_prior is not None and ret_2h_prior > 0.0010)
+        prior_2_red = (ret_1h_prior is not None and ret_1h_prior < -0.0010 and ret_2h_prior is not None and ret_2h_prior < -0.0010)
+
+        is_counter_trend = False
+        if target_token == "DOWN":
+            if (ret_2h is not None and ret_2h > 0.0030) or prior_2_green:
+                is_counter_trend = True
+        elif target_token == "UP":
+            if (ret_2h is not None and ret_2h < -0.0030) or prior_2_red:
+                is_counter_trend = True
+
+        if is_counter_trend:
+            if abs(dist_pct) < 0.45:
+                return  # Veto early counter-trend fade; wait for Sleeve 1 confirmation late in hour
 
         # Joint Lead-Lag Confirmation (z_joint = 0.70 * z_ETH + 0.30 * z_BTC)
         btc_shock_dir = shock.get("btc_shock_direction")
@@ -777,13 +1003,13 @@ class PolymarketForwardPaperTrader:
         if not (SLEEVE_2_MIN_PRICE <= vwap_price <= SLEEVE_2_MAX_PRICE):
             return  # VWAP slipped outside sweet-spot
 
-        # Strict Mutual Exclusion: If signal is in Sleeve 1's domain (TTE <= 1350s and price >= 0.84), skip Sleeve 2!
-        if tte <= MAX_TTE_SECONDS and vwap_price >= 0.84:
+        # Strict Mutual Exclusion: If signal is in Sleeve 1's domain (TTE <= 1350s and price >= 0.68), skip Sleeve 2!
+        if tte <= 1350.0 and vwap_price >= 0.68:
             return
 
         # Dynamic taker fee under crypto_fees_v2 (kappa=0.07 on 1h)
-        fee_rate = round(0.07 * vwap_price * (1.0 - vwap_price), 6)
-        taker_fee_usd = round(target_notional * fee_rate, 4)
+        eff_fee_rate, taker_fee_usd = calculate_taker_fee(target_notional, vwap_price, fee_rate=0.07, fee_exponent=1.0)
+        fee_rate = eff_fee_rate
 
         # Parse True 1-Hour Candle Open Strike Price Anchor
         spot_t0 = float(shock.get("spot_at_t0", 0.0) or 0.0)
@@ -809,12 +1035,14 @@ class PolymarketForwardPaperTrader:
             "target_token": target_token,
             "notional_usd": target_notional,
             "vwap_exec_price": vwap_price,
+            "entry_price": vwap_price,
             "shares_bought": round(shares_acquired, 4),
             "taker_fee_usd": taker_fee_usd,
             "fee_rate_applied": fee_rate,
             "fee_schedule": "crypto_fees_v2",
             "spot_at_t0": spot_t0,
             "strike_price": strike_px,
+            "candle_open_spot": strike_px,
             "candle_distance_pct": dist_pct,
             "status": "OPEN",
             "exit_policy": "HOLD_TO_0.99_MAKER_TP_OR_MATURITY",
@@ -848,7 +1076,8 @@ class PolymarketForwardPaperTrader:
 
     def check_maker_tp_fills(self, market_id: str, telem: Dict[str, Any]) -> List[Dict[str, Any]]:
         """
-        Check if resting Maker Take-Profit order has filled on CLOB telemetry.
+        Check if resting Maker Take-Profit order has filled on CLOB telemetry,
+        or if Confirmed Opposite-Side Structural Breakout Salvage triggers.
         Evaluates both Sleeve 1 (99c Maker TP) and Sleeve 2 (EXP-315 Dynamic TP).
         """
         if market_id not in self.open_trades and market_id not in self.sleeve2_open_trades:
@@ -863,9 +1092,13 @@ class PolymarketForwardPaperTrader:
                     continue
 
                 target_token = t.get("target_token", "UP")
-                token_data = telem.get(target_token, {})
+                token_data = telem.get(target_token) or telem.get("pre_shock_features_t0", {}).get(target_token, {})
                 best_bid = float(token_data.get("best_bid", 0.0) or 0.0)
+                if best_bid == 0.0 and token_data.get("raw_top_bids"):
+                    best_bid = float(token_data["raw_top_bids"][0][0])
                 best_ask = float(token_data.get("best_ask", 0.0) or 0.0)
+                if best_ask == 0.0 and token_data.get("raw_top_asks"):
+                    best_ask = float(token_data["raw_top_asks"][0][0])
 
                 # Fix 2: Enforce minimum 6.0s Polygon ERC-1155 settlement delay before resting Maker TP can fill
                 entry_unix = float(t.get("entry_unix", 0.0) or 0.0)
@@ -873,16 +1106,153 @@ class PolymarketForwardPaperTrader:
                 if (telem_unix - entry_unix) < 6.0:
                     continue
 
-                # Fix 2: Require buyer to sweep 99c ask (best_bid >= 0.99 OR ask swept past 0.99)
-                # NEVER trigger merely because best_ask >= 0.99 (which is our own resting ask!)
-                is_maker_fill = (best_bid >= 0.99) or (best_ask > 0.99 and best_ask <= 1.0)
-                if not is_maker_fill:
+                entry_px = float(
+                    t.get("entry_price") or t.get("exec_price") or t.get("vwap_exec_price")
+                    or t.get("effective_price") or t.get("vwap") or 0.50
+                )
+                target_tp_px = float(t.get("take_profit_maker_limit_px") or (0.99 if entry_px >= 0.80 else 0.98))
+                # Fix 2: Require buyer to sweep target maker ask (best_bid >= target_tp_px OR ask swept past target_tp_px)
+                is_maker_fill = (best_bid >= target_tp_px) or (best_ask > target_tp_px and best_ask <= 1.0)
+
+                # 3-Zone TTE-Adaptive Wrong-Side Salvage Stop (Pillar 3 Configuration):
+                current_spot = float(
+                    telem.get("binance_spot")
+                    or telem.get("spot_at_t0")
+                    or telem.get("trigger_price")
+                    or telem.get("spot")
+                    or 0.0
+                )
+                open_spot = float(
+                    t.get("candle_open_spot")
+                    or t.get("strike_price")
+                    or telem.get("binance_1h_open")
+                    or t.get("spot_at_t0")
+                    or 0.0
+                )
+                tte_rem = float(telem.get("seconds_to_expiry") or 0.0)
+                if tte_rem <= 0.0:
+                    exp_u = float(t.get("expiry_unix") or 0.0)
+                    if exp_u > telem_unix:
+                        tte_rem = exp_u - telem_unix
+                    else:
+                        tte_rem = float(t.get("seconds_to_expiry") or 0.0)
+
+                # 15-Second Spot Velocity (Pillar 3)
+                v_spot_15s_pct = 0.0
+                if current_spot > 0:
+                    history = t.setdefault("spot_vel_history", [])
+                    history.append([telem_unix, float(current_spot)])
+                    t["spot_vel_history"] = [pt for pt in history if (telem_unix - pt[0]) <= 15.0]
+                    hist = t["spot_vel_history"]
+                    if len(hist) >= 2:
+                        oldest_spot = hist[0][1]
+                        if oldest_spot > 0:
+                            if target_token == "UP":
+                                v_spot_15s_pct = ((current_spot - oldest_spot) / oldest_spot) * 100.0
+                            else:
+                                v_spot_15s_pct = ((oldest_spot - current_spot) / oldest_spot) * 100.0
+                    t["v_spot_15s_pct"] = round(v_spot_15s_pct, 4)
+
+                opposite_salvaged = False
+                wrong_side_pct = 0.0
+                if current_spot > 0 and open_spot > 0:
+                    signed_cushion_pct = ((current_spot - open_spot) / open_spot * 100.0) if target_token == "UP" else ((open_spot - current_spot) / open_spot * 100.0)
+                    wrong_side_pct = -signed_cushion_pct
+
+                    # Rule 1 (Zero False Positives): Reset timer the instant spot is on winning side
+                    if wrong_side_pct <= 0.0:
+                        t.pop("opposite_breakout_start_ts", None)
+                    else:
+                        # Rule 2: 3-Zone TTE-Adaptive Wrong-Side Threshold & Duration (Pillar 3)
+                        if tte_rem > 900.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.16, 0.14, 40.0, 0.08
+                        elif tte_rem > 180.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.11, 0.09, 18.0, 0.08
+                        elif tte_rem >= 25.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.06, 0.04, 8.0, 0.06
+                        else:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 999.0, 999.0, 999.0, 0.99
+
+                        # Fast Breakdown Acceleration: If v_spot_15s_pct <= -0.08% and best_bid <= 0.42, cut required duration by 50%
+                        eff_duration = (req_duration * 0.50) if (v_spot_15s_pct <= -0.08 and best_bid <= 0.42) else req_duration
+
+                        consec_start = t.get("opposite_breakout_start_ts")
+                        if consec_start is None:
+                            if wrong_side_pct >= req_initial:
+                                t["opposite_breakout_start_ts"] = telem_unix
+                        else:
+                            if wrong_side_pct >= req_sustain:
+                                duration = telem_unix - float(consec_start)
+                                # Anti-Wick Rebound Guard: If v_spot_15s_pct >= +0.03%, pause salvage trigger
+                                if v_spot_15s_pct >= 0.03:
+                                    opposite_salvaged = False
+                                elif duration >= eff_duration and best_bid >= min_salvage_bid:
+                                    opposite_salvaged = True
+                            else:
+                                t.pop("opposite_breakout_start_ts", None)
+                # Do NOT pop opposite_breakout_start_ts when current_spot <= 0 (missing spot field)
+
+                # Peak-Bid Trailing Profit Ratchet (Pillar 3 Dynamic Ratchet):
+                t["max_seen_bid"] = max(float(t.get("max_seen_bid", 0.0) or 0.0), best_bid)
+                max_seen_bid = float(t.get("max_seen_bid", 0.0) or 0.0)
+
+                trailing_ratchet_triggered = False
+                trail_floor = 0.0
+                if max_seen_bid >= max(0.82, entry_px + 0.12) and entry_px > 0:
+                    trail_delta = 0.05 if max_seen_bid >= 0.90 else 0.07
+                    trail_floor = round(max_seen_bid - trail_delta, 4)
+                    if best_bid <= trail_floor and tte_rem >= 25.0 and best_bid >= (entry_px + 0.04):
+                        ratchet_start = t.get("trailing_ratchet_start_ts")
+                        if ratchet_start is None:
+                            t["trailing_ratchet_start_ts"] = telem_unix
+                        elif (telem_unix - float(ratchet_start)) >= 4.0:
+                            trailing_ratchet_triggered = True
+                    else:
+                        t.pop("trailing_ratchet_start_ts", None)
+                else:
+                    t.pop("trailing_ratchet_start_ts", None)
+
+                # Final-45s Capital Recycler:
+                final_45s_triggered = False
+                if 0.0 < tte_rem <= 45.0 and best_bid >= 0.88 and best_bid > (entry_px + 0.03):
+                    final_45s_triggered = True
+
+                if not is_maker_fill and not opposite_salvaged and not trailing_ratchet_triggered and not final_45s_triggered:
                     continue
 
-                tp_px = 0.99
-                tp_payout = round(t["shares_bought"] * tp_px, 2)
-                tp_exit_fee = 0.0  # Maker exit pays zero fee
-                net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0), 2)
+                applied_r = float(t.get("fee_rate_applied", 0.07) or 0.07)
+                if applied_r < 0.05:
+                    applied_r = 0.18 if "15m" in str(t.get("title", "")).lower() else 0.07
+
+                if final_45s_triggered:
+                    tp_px = max(0.01, round(best_bid - 0.01, 4))
+                    tp_payout = round(t["shares_bought"] * tp_px, 2)
+                    _, tp_exit_fee = calculate_taker_fee(tp_payout, tp_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - tp_exit_fee, 2)
+                    exit_reason = "FINAL_45S_CAPITAL_RECYCLE_UNWIND"
+                    is_won = (net_pnl > 0)
+                elif trailing_ratchet_triggered:
+                    tp_px = best_bid
+                    tp_payout = round(t["shares_bought"] * tp_px, 2)
+                    _, tp_exit_fee = calculate_taker_fee(tp_payout, tp_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - tp_exit_fee, 2)
+                    exit_reason = "TRAILING_PROFIT_RATCHET_UNWIND"
+                    is_won = (net_pnl > 0)
+                elif opposite_salvaged:
+                    tp_px = best_bid
+                    tp_payout = round(t["shares_bought"] * tp_px, 2)
+                    _, tp_exit_fee = calculate_taker_fee(tp_payout, tp_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - tp_exit_fee, 2)
+                    exit_reason = "CONFIRMED_OPPOSITE_BREAKOUT_SALVAGE"
+                    is_won = False
+                else:
+                    tp_px = target_tp_px
+                    tp_payout = round(t["shares_bought"] * tp_px, 2)
+                    tp_exit_fee = 0.0  # Maker exit pays zero fee
+                    net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0), 2)
+                    exit_reason = "MAKER_SCALP_FILLED_CLOB"
+                    is_won = True
+
                 live_parity_notional = float(t.get("live_parity_notional_usd", t["notional_usd"]))
                 parity_ratio = live_parity_notional / max(t["notional_usd"], 1.0)
                 live_parity_pnl = round(net_pnl * parity_ratio, 2)
@@ -891,14 +1261,14 @@ class PolymarketForwardPaperTrader:
                 legacy_pnl = round(net_pnl * ratio, 2)
 
                 t["status"] = "CLOSED"
-                t["exit_reason"] = "MAKER_SCALP_FILLED_CLOB"
+                t["exit_reason"] = exit_reason
                 t["exit_price"] = tp_px
                 t["exit_fee_usd"] = tp_exit_fee
                 t["payout_usd"] = tp_payout
                 t["net_pnl_usd"] = net_pnl
                 t["live_parity_pnl_usd"] = live_parity_pnl
                 t["legacy_fixed_pnl_usd"] = legacy_pnl
-                t["won"] = True
+                t["won"] = is_won
                 t["settle_time"] = telem.get("timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
                 entry_unix = t.get("entry_unix", 0.0)
                 if entry_unix < R3_VALIDATION_START_UNIX:
@@ -919,9 +1289,10 @@ class PolymarketForwardPaperTrader:
                 with open(target_file, "a") as f:
                     f.write(json.dumps(t) + "\n")
 
+                tag = "FINAL-45S RECYCLED" if final_45s_triggered else ("TRAILING RATCHET LOCKED" if trailing_ratchet_triggered else ("SALVAGE EXECUTED" if opposite_salvaged else f"MAKER TP FILLED @ {tp_px:.2f}"))
                 print(
-                    f"\n[PAPER MAKER TP FILLED @ 99c] {t.get('title')} | Target: {target_token} | "
-                    f"Exit Price: $0.99 | Net PnL: ${net_pnl:+.2f} (Clean Win!)",
+                    f"\n[PAPER {tag}] {t.get('title')} | Target: {target_token} | "
+                    f"Exit Price: ${tp_px:.4f} | Net PnL: ${net_pnl:+.2f} ({exit_reason})",
                     flush=True,
                 )
 
@@ -938,9 +1309,13 @@ class PolymarketForwardPaperTrader:
                     continue
 
                 target_token = t.get("target_token", "UP")
-                token_data = telem.get(target_token, {})
+                token_data = telem.get(target_token) or telem.get("pre_shock_features_t0", {}).get(target_token, {})
                 best_bid = float(token_data.get("best_bid", 0.0) or 0.0)
+                if best_bid == 0.0 and token_data.get("raw_top_bids"):
+                    best_bid = float(token_data["raw_top_bids"][0][0])
                 best_ask = float(token_data.get("best_ask", 0.0) or 0.0)
+                if best_ask == 0.0 and token_data.get("raw_top_asks"):
+                    best_ask = float(token_data["raw_top_asks"][0][0])
 
                 # Delay check: Minimum 6.0s Polygon ERC-1155 settlement delay
                 entry_unix = float(t.get("entry_unix", 0.0) or 0.0)
@@ -948,23 +1323,160 @@ class PolymarketForwardPaperTrader:
                 if (telem_unix - entry_unix) < 6.0:
                     continue
 
+                entry_px = float(
+                    t.get("entry_price") or t.get("exec_price") or t.get("vwap_exec_price")
+                    or t.get("effective_price") or t.get("vwap") or 0.50
+                )
                 tp_px = float(t.get("take_profit_maker_limit_px", 0.99))
                 # Fill check: Buyer sweeps resting maker order at tp_px
                 is_maker_fill = (best_bid >= tp_px) or (best_ask > tp_px and best_ask <= 1.0)
-                if not is_maker_fill:
+
+                # 3-Zone TTE-Adaptive Wrong-Side Salvage Stop (Pillar 3 Configuration):
+                current_spot = float(
+                    telem.get("binance_spot")
+                    or telem.get("spot_at_t0")
+                    or telem.get("trigger_price")
+                    or telem.get("spot")
+                    or 0.0
+                )
+                open_spot = float(
+                    t.get("candle_open_spot")
+                    or t.get("strike_price")
+                    or telem.get("binance_1h_open")
+                    or t.get("spot_at_t0")
+                    or 0.0
+                )
+                tte_rem = float(telem.get("seconds_to_expiry") or 0.0)
+                if tte_rem <= 0.0:
+                    exp_u = float(t.get("expiry_unix") or 0.0)
+                    if exp_u > telem_unix:
+                        tte_rem = exp_u - telem_unix
+                    else:
+                        tte_rem = float(t.get("seconds_to_expiry") or 0.0)
+
+                # 15-Second Spot Velocity (Pillar 3)
+                v_spot_15s_pct = 0.0
+                if current_spot > 0:
+                    history = t.setdefault("spot_vel_history", [])
+                    history.append([telem_unix, float(current_spot)])
+                    t["spot_vel_history"] = [pt for pt in history if (telem_unix - pt[0]) <= 15.0]
+                    hist = t["spot_vel_history"]
+                    if len(hist) >= 2:
+                        oldest_spot = hist[0][1]
+                        if oldest_spot > 0:
+                            if target_token == "UP":
+                                v_spot_15s_pct = ((current_spot - oldest_spot) / oldest_spot) * 100.0
+                            else:
+                                v_spot_15s_pct = ((oldest_spot - current_spot) / oldest_spot) * 100.0
+                    t["v_spot_15s_pct"] = round(v_spot_15s_pct, 4)
+
+                opposite_salvaged = False
+                wrong_side_pct = 0.0
+                if current_spot > 0 and open_spot > 0:
+                    signed_cushion_pct = ((current_spot - open_spot) / open_spot * 100.0) if target_token == "UP" else ((open_spot - current_spot) / open_spot * 100.0)
+                    wrong_side_pct = -signed_cushion_pct
+
+                    # Rule 1 (Zero False Positives): Reset timer the instant spot is on winning side
+                    if wrong_side_pct <= 0.0:
+                        t.pop("opposite_breakout_start_ts", None)
+                    else:
+                        # Rule 2: 3-Zone TTE-Adaptive Wrong-Side Threshold & Duration (Pillar 3)
+                        if tte_rem > 900.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.16, 0.14, 40.0, 0.08
+                        elif tte_rem > 180.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.11, 0.09, 18.0, 0.08
+                        elif tte_rem >= 25.0:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 0.06, 0.04, 8.0, 0.06
+                        else:
+                            req_initial, req_sustain, req_duration, min_salvage_bid = 999.0, 999.0, 999.0, 0.99
+
+                        # Fast Breakdown Acceleration: If v_spot_15s_pct <= -0.08% and best_bid <= 0.42, cut required duration by 50%
+                        eff_duration = (req_duration * 0.50) if (v_spot_15s_pct <= -0.08 and best_bid <= 0.42) else req_duration
+
+                        consec_start = t.get("opposite_breakout_start_ts")
+                        if consec_start is None:
+                            if wrong_side_pct >= req_initial:
+                                t["opposite_breakout_start_ts"] = telem_unix
+                        else:
+                            if wrong_side_pct >= req_sustain:
+                                duration = telem_unix - float(consec_start)
+                                # Anti-Wick Rebound Guard: If v_spot_15s_pct >= +0.03%, pause salvage trigger
+                                if v_spot_15s_pct >= 0.03:
+                                    opposite_salvaged = False
+                                elif duration >= eff_duration and best_bid >= min_salvage_bid:
+                                    opposite_salvaged = True
+                            else:
+                                t.pop("opposite_breakout_start_ts", None)
+                # Do NOT pop opposite_breakout_start_ts when current_spot <= 0 (missing spot field)
+
+                # Peak-Bid Trailing Profit Ratchet (Pillar 3 Dynamic Ratchet):
+                t["max_seen_bid"] = max(float(t.get("max_seen_bid", 0.0) or 0.0), best_bid)
+                max_seen_bid = float(t.get("max_seen_bid", 0.0) or 0.0)
+
+                trailing_ratchet_triggered = False
+                trail_floor = 0.0
+                if max_seen_bid >= max(0.82, entry_px + 0.12) and entry_px > 0:
+                    trail_delta = 0.05 if max_seen_bid >= 0.90 else 0.07
+                    trail_floor = round(max_seen_bid - trail_delta, 4)
+                    if best_bid <= trail_floor and tte_rem >= 25.0 and best_bid >= (entry_px + 0.04):
+                        ratchet_start = t.get("trailing_ratchet_start_ts")
+                        if ratchet_start is None:
+                            t["trailing_ratchet_start_ts"] = telem_unix
+                        elif (telem_unix - float(ratchet_start)) >= 4.0:
+                            trailing_ratchet_triggered = True
+                    else:
+                        t.pop("trailing_ratchet_start_ts", None)
+                else:
+                    t.pop("trailing_ratchet_start_ts", None)
+
+                # Final-45s Capital Recycler
+                final_45s_triggered = False
+                if 0.0 < tte_rem <= 45.0 and best_bid >= 0.88 and best_bid > (entry_px + 0.03):
+                    final_45s_triggered = True
+
+                if not is_maker_fill and not opposite_salvaged and not trailing_ratchet_triggered and not final_45s_triggered:
                     continue
 
-                tp_payout = round(t["shares_bought"] * tp_px, 2)
-                tp_exit_fee = 0.0  # Maker exit pays zero fee
-                net_pnl = round(tp_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0), 2)
+                applied_r = float(t.get("fee_rate_applied", 0.07) or 0.07)
+                if applied_r < 0.05:
+                    applied_r = 0.18 if "15m" in str(t.get("title", "")).lower() else 0.07
+
+                if final_45s_triggered:
+                    exit_px = max(0.01, round(best_bid - 0.01, 4))
+                    exit_payout = round(t["shares_bought"] * exit_px, 2)
+                    _, exit_fee = calculate_taker_fee(exit_payout, exit_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - exit_fee, 2)
+                    exit_reason = "FINAL_45S_CAPITAL_RECYCLE_UNWIND"
+                    is_won = (net_pnl > 0)
+                elif trailing_ratchet_triggered:
+                    exit_px = best_bid
+                    exit_payout = round(t["shares_bought"] * exit_px, 2)
+                    _, exit_fee = calculate_taker_fee(exit_payout, exit_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - exit_fee, 2)
+                    exit_reason = "TRAILING_PROFIT_RATCHET_UNWIND"
+                    is_won = (net_pnl > 0)
+                elif opposite_salvaged:
+                    exit_px = best_bid
+                    exit_payout = round(t["shares_bought"] * exit_px, 2)
+                    _, exit_fee = calculate_taker_fee(exit_payout, exit_px, fee_rate=applied_r, fee_exponent=1.0)
+                    net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - exit_fee, 2)
+                    exit_reason = "CONFIRMED_OPPOSITE_BREAKOUT_SALVAGE"
+                    is_won = False
+                else:
+                    exit_px = tp_px
+                    exit_payout = round(t["shares_bought"] * exit_px, 2)
+                    exit_fee = 0.0  # Maker exit pays zero fee
+                    net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0), 2)
+                    exit_reason = "EXP315_MAKER_TP_FILLED"
+                    is_won = True
 
                 t["status"] = "CLOSED"
-                t["exit_reason"] = "EXP315_MAKER_TP_FILLED"
-                t["exit_price"] = tp_px
-                t["exit_fee_usd"] = tp_exit_fee
-                t["payout_usd"] = tp_payout
+                t["exit_reason"] = exit_reason
+                t["exit_price"] = exit_px
+                t["exit_fee_usd"] = exit_fee
+                t["payout_usd"] = exit_payout
                 t["net_pnl_usd"] = net_pnl
-                t["won"] = True
+                t["won"] = is_won
                 t["settle_time"] = telem.get("timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
                 self.sleeve2_trades.append(t)
@@ -976,9 +1488,10 @@ class PolymarketForwardPaperTrader:
                 with open(SLEEVE_2_LEDGER_FILE, "a") as f:
                     f.write(json.dumps(t) + "\n")
 
+                tag = "SLEEVE 2 SALVAGE EXECUTED" if opposite_salvaged else f"SLEEVE 2 MAKER TP FILLED @ {exit_px:.3f}"
                 print(
-                    f"\n[SLEEVE 2 MAKER TP FILLED @ {tp_px:.3f}] {t.get('title')} | Target: {target_token} | "
-                    f"Exit Price: ${tp_px:.3f} | Net PnL: ${net_pnl:+.2f} | Sleeve 2 Equity: ${self.sleeve2_cash:,.2f}",
+                    f"\n[{tag}] {t.get('title')} | Target: {target_token} | "
+                    f"Exit Price: ${exit_px:.3f} | Net PnL: ${net_pnl:+.2f} | Sleeve 2 Equity: ${self.sleeve2_cash:,.2f}",
                     flush=True,
                 )
 
@@ -1174,7 +1687,28 @@ class PolymarketForwardPaperTrader:
 
         self.replay_existing_data()
 
+        # Graceful shutdown: SIGTERM/SIGINT set a flag; the loop finishes its current iteration, flushes state
+        # atomically (save_state uses tmp+fsync+os.replace) and exits 0.
+        import signal as _signal
+        self._shutdown_requested = False
+
+        def _request_shutdown(signame: str):
+            if not self._shutdown_requested:
+                print(f"[SHUTDOWN] {signame} received; flushing state and stopping gracefully.", flush=True)
+            self._shutdown_requested = True
+
+        _loop = asyncio.get_running_loop()
+        for _sig in (_signal.SIGTERM, _signal.SIGINT):
+            try:
+                _loop.add_signal_handler(_sig, _request_shutdown, _sig.name)
+            except (NotImplementedError, RuntimeError, ValueError):
+                pass
+
         while True:
+            if self._shutdown_requested:
+                self.save_state()
+                print("[SHUTDOWN] Paper trader state flushed; exiting cleanly (STOPPED_GRACEFULLY).", flush=True)
+                break
             try:
                 # 1. Ingest new zero-latency shock triggers (<1ms from recorder detection)
                 if TRIGGER_FILE.exists():
@@ -1194,7 +1728,7 @@ class PolymarketForwardPaperTrader:
                                 shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
                                 if shock_id not in self.seen_shock_ids:
                                     self.seen_shock_ids.add(shock_id)
-                                    self.evaluate_shock_signal(s, historical=False)
+                                    await asyncio.to_thread(self.evaluate_shock_signal, s, False)
 
                 # Fallback to shock_responses if trigger file is absent
                 elif SHOCK_FILE.exists():
@@ -1214,7 +1748,7 @@ class PolymarketForwardPaperTrader:
                                 shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
                                 if shock_id not in self.seen_shock_ids:
                                     self.seen_shock_ids.add(shock_id)
-                                    self.evaluate_shock_signal(s, historical=False)
+                                    await asyncio.to_thread(self.evaluate_shock_signal, s, False)
 
                 # 2. Check for newly finalized market resolutions
                 if RESOLUTIONS_FILE.exists():

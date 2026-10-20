@@ -287,10 +287,12 @@ async def run_profiler_daemon():
             if trigger_file.exists():
                 cur_size = trigger_file.stat().st_size
                 if cur_size > last_pos:
-                    with open(trigger_file, "r") as f:
+                    with open(trigger_file, "rb") as f:
                         f.seek(last_pos)
-                        lines = f.readlines()
-                        last_pos = f.tell()
+                        chunk = f.read()
+                    complete_end = chunk.rfind(b"\n") + 1
+                    lines = chunk[:complete_end].decode("utf-8", errors="ignore").splitlines() if complete_end else []
+                    last_pos += complete_end
 
                     for line in lines:
                         if not line.strip():
@@ -301,6 +303,8 @@ async def run_profiler_daemon():
                             if eid in seen_events:
                                 continue
                             seen_events.add(eid)
+                            if len(seen_events) > 5000:
+                                seen_events = set(list(seen_events)[-2500:])
 
                             target = "UP" if shock.get("shock_direction") == "BUY" else "DOWN"
                             features = shock.get("pre_shock_features_t0", {}).get(target, {})

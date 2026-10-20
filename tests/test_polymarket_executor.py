@@ -87,10 +87,10 @@ def test_dry_run_snipe_execution(tmp_path):
     assert res.mode == "DRY_RUN_SIMULATION"
     assert res.execution_status == ExecutionStatus.POSITION_CONFIRMED
     assert res.confirmed_onchain is True
-    assert res.size == 24.0
+    assert res.size == 25.0
     assert res.fee_usd > 0
     assert res.details["pre_token_balance"] == 0.0
-    assert res.details["post_token_balance"] == 24.0
+    assert res.details["post_token_balance"] == 25.0
     assert ledger.exists()
 
 
@@ -702,8 +702,8 @@ def test_trigger_event_idempotency_and_canary_single_position_guard(tmp_path, mo
         harvester.active_positions.clear()
         harvester.seen_shock_ids.clear()
         harvester.executor.get_market_book_async = lambda tid: asyncio.sleep(0, result={
-            "asks": [{"price": "0.50", "size": "100.0"}, {"price": "0.51", "size": "100.0"}],
-            "bids": [{"price": "0.49", "size": "100.0"}],
+            "asks": [{"price": "0.65", "size": "100.0"}, {"price": "0.66", "size": "100.0"}],
+            "bids": [{"price": "0.64", "size": "100.0"}],
         })
 
         shock_event = {
@@ -717,8 +717,8 @@ def test_trigger_event_idempotency_and_canary_single_position_guard(tmp_path, mo
             "pre_shock_features_t0": {
                 "UP": {
                     "token_id": "0x1234567890abcdef1234567890abcdef12345678",
-                    "raw_top_asks": [[0.50, 100.0]],
-                    "effective_price_$5": 0.50,
+                    "raw_top_asks": [[0.65, 100.0]],
+                    "effective_price_$5": 0.65,
                 }
             }
         }
@@ -812,12 +812,16 @@ def test_harvester_ingestion_does_not_short_circuit_idempotency():
             )
 
         harvester.executor.execute_snipe_order_async = mock_snipe
+        harvester.executor.get_market_book_async = lambda tid: asyncio.sleep(0, result={
+            "asks": [{"price": "0.65", "size": "100.0"}],
+            "bids": [{"price": "0.64", "size": "100.0"}],
+        })
 
         shock_line = json.dumps({
             "event_id": "EVT_INGESTION_REGRESSION_TEST",
             "market_id": "5399111",
             "t0_unix": 1700000000.123,
-            "title": "BTC Ingestion Test Market",
+            "title": "BTC 1h Ingestion Test Market",
             "shock_direction": "BUY",
             "seconds_to_expiry": 300.0,
             "candle_distance_pct": 0.10,
@@ -825,8 +829,10 @@ def test_harvester_ingestion_does_not_short_circuit_idempotency():
             "pre_shock_features_t0": {
                 "UP": {
                     "token_id": "0xTOK_UP_TEST",
-                    "raw_top_asks": [[0.50, 100.0]],
-                    "effective_price_$5": 0.50,
+                    "raw_top_asks": [[0.65, 100.0]],
+                    "raw_top_bids": [[0.64, 100.0]],
+                    "age_book_ms": 10.0,
+                    "effective_price_$5": 0.65,
                 }
             }
         })

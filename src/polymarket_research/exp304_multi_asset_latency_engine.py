@@ -227,6 +227,11 @@ class MultiAssetLatencyEngine:
         self.last_market_scan_ts = 0.0
         self.last_heartbeat_ts = time.time()
         self.seen_shock_keys = set()
+        # MED-06: first-seen spot per market startDate (candle-open proxy) used as fallback strike
+        # when Gamma omits strikePrice, and a hard bound on concurrent evaluation tasks.
+        self.candle_open_cache: Dict[str, float] = {}
+        self.active_eval_tasks: set = set()
+        self.max_active_eval_tasks = 5
         self.session: Optional[aiohttp.ClientSession] = None
         logger.info(f"Initialized EXP-304 Multi-Asset Engine [DryRun={self.dry_run}]")
 
@@ -326,7 +331,12 @@ class MultiAssetLatencyEngine:
             )
 
             # Evaluate matching Polymarket contracts
-            asyncio.create_task(self.evaluate_shock_on_polymarket(asset, p_curr, abs(p_curr - p_start), direction))
+            if len(self.active_eval_tasks) >= self.max_active_eval_tasks:
+                logger.debug(f"[EXP-304] eval task bound reached ({self.max_active_eval_tasks}); skipping shock evaluation")
+                return
+            task = asyncio.create_task(self.evaluate_shock_on_polymarket(asset, p_curr, abs(p_curr - p_start), direction))
+            self.active_eval_tasks.add(task)
+            task.add_done_callback(self.active_eval_tasks.discard)
 
     async def evaluate_shock_on_polymarket(self, asset: str, current_spot: float, delta_spot: float, direction: str):
         markets = self.active_markets.get(asset, [])
@@ -391,10 +401,17 @@ class MultiAssetLatencyEngine:
 
                 # Derive actual market reference strike price
                 raw_strike = m.get("strikePrice") or m.get("strike") or m.get("startingPrice") or m.get("priceToBeat")
+                cache_key = f"{asset}|{m.get('startDate') or m.get('id') or m.get('conditionId') or title}"
                 try:
-                    strike_px = float(raw_strike) if raw_strike is not None and float(raw_strike) > 0 else current_spot
+                    if raw_strike is not None and float(raw_strike) > 0:
+                        strike_px = float(raw_strike)
+                        self.candle_open_cache[cache_key] = strike_px
+                    else:
+                        strike_px = self.candle_open_cache.setdefault(cache_key, current_spot)
                 except (ValueError, TypeError):
-                    strike_px = current_spot
+                    strike_px = self.candle_open_cache.setdefault(cache_key, current_spot)
+                if len(self.candle_open_cache) > 500:
+                    self.candle_open_cache.pop(next(iter(self.candle_open_cache)), None)
 
                 # Check regime viability
                 regime_ok, regime_reason = validate_regime_viability(best_ask, horizon=horizon)

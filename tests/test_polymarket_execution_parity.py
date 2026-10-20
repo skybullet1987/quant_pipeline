@@ -76,10 +76,11 @@ def test_fak_killed_no_match_order_submission(tmp_path):
     executor.dry_run = False
     executor.is_authenticated = True
     executor.client = MagicMock()
+    executor._tick_size_cache["111222333"] = 0.01
 
-    # Mock order book with sufficient depth
+    # Mock order book with sufficient depth within v3.0 sweet-spot
     executor.get_market_book = lambda tid: {
-        "asks": [{"price": "0.860", "size": "100"}]
+        "asks": [{"price": "0.680", "size": "100"}]
     }
     # Mock pre-token balance
     executor.get_token_balance = lambda tid: 0.0
@@ -102,7 +103,7 @@ def test_fak_killed_no_match_order_submission(tmp_path):
         token_id="111222333",
         target_token="UP",
         notional_usd=45.0,
-        target_price=0.860,
+        target_price=0.680,
     )
 
     assert res.success is False
@@ -287,9 +288,9 @@ def test_hot_path_zero_auxiliary_http_get_calls():
     assert mock_client._ClobClient__neg_risk[token_id] is False
     assert mock_client._ClobClient__fee_rates[token_id] == 0
 
-    # Mock orderbook and balance
+    # Mock orderbook and balance within v3.0 ceiling
     executor.get_market_book = lambda tid: {
-        "asks": [{"price": "0.85", "size": "100"}]
+        "asks": [{"price": "0.68", "size": "100"}]
     }
     executor.get_token_balance = lambda tid: 0.0
 
@@ -307,7 +308,7 @@ def test_hot_path_zero_auxiliary_http_get_calls():
         token_id=token_id,
         target_token="UP",
         notional_usd=25.0,
-        target_price=0.85,
+        target_price=0.68,
     )
 
     # Ensure zero auxiliary HTTP GET calls on hot path
@@ -337,9 +338,9 @@ def test_paper_trader_parity_depth_sizing(tmp_path, monkeypatch):
 
     paper = PolymarketForwardPaperTrader(paper_latency_ms=500)
     paper.live_state_file = tmp_path / "no_live.json"
-    paper.dev_cash = 200.0  # Set cash to $200 -> dynamic cap = min(75, 200 * 0.35) = $70.00
+    paper.dev_cash = 200.0  # Set cash to $200 -> dynamic cap = min(50.0, max(15.0, 200 * 0.24)) = $48.00
 
-    # Case 1: Ample depth ($150 resting depth -> allowable raw ticket $100 -> clamped to dynamic cap $70)
+    # Case 1: Ample depth ($150 resting depth -> allowable raw ticket $100 -> clamped to dynamic cap $48.00)
     shock_ample = {
         "event_id": "EVT_AMPLE",
         "market_id": "MKT_AMPLE",
@@ -349,7 +350,7 @@ def test_paper_trader_parity_depth_sizing(tmp_path, monkeypatch):
         "target_token": "UP",
         "t0_unix": 1700000000.0,  # 22:13:20 UTC (valid hour)
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.25,
+        "candle_distance_pct": 0.35,
         "z_val": 2.50,
         "fee_metadata": {
             "fee_rate_market": 0.07,
@@ -357,23 +358,23 @@ def test_paper_trader_parity_depth_sizing(tmp_path, monkeypatch):
         },
         "pre_shock_features_t0": {
             "UP": {
-                "vwap_$50": 0.85,
-                "effective_price_$50": 0.85,
-                "raw_top_asks": [[0.85, 200.0]],  # depth = 170.0 USD
+                "vwap_$50": 0.65,
+                "effective_price_$50": 0.65,
+                "raw_top_asks": [[0.65, 230.77]],  # depth = 150.0 USD
                 "spread": 0.01,
             }
         },
         "impulse_response": {
-            "500ms": {"up_ask": 0.85, "depth_usd": 170.0}
+            "500ms": {"up_ask": 0.65, "depth_usd": 150.0}
         }
     }
 
     paper.evaluate_shock_signal(shock_ample)
     trade_ample = paper.open_trades["MKT_AMPLE"][-1]
-    assert trade_ample["live_parity_notional_usd"] == 50.0  # Capped at 25% of $200 equity ($50.00)
-    assert trade_ample["legacy_fixed_notional_usd"] == 113.33  # Raw ticket $113.33 supported by $170 depth (cap $250)
+    assert abs(trade_ample["live_parity_notional_usd"] - 48.0) <= 0.01  # Clamped to dynamic cap $48.00
+    assert trade_ample["legacy_fixed_notional_usd"] == 50.0
 
-    # Case 2: Constrained depth ($45 resting depth -> allowable raw ticket $45 / 1.50 = $30.00)
+    # Case 2: Constrained depth ($30 resting depth -> allowable raw ticket $30 / 1.50 = $20.00)
     shock_thin = {
         "event_id": "EVT_THIN",
         "market_id": "MKT_THIN",
@@ -383,7 +384,7 @@ def test_paper_trader_parity_depth_sizing(tmp_path, monkeypatch):
         "target_token": "UP",
         "t0_unix": 1700000001.0,
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.25,
+        "candle_distance_pct": 0.35,
         "z_val": 2.50,
         "fee_metadata": {
             "fee_rate_market": 0.07,
@@ -391,21 +392,21 @@ def test_paper_trader_parity_depth_sizing(tmp_path, monkeypatch):
         },
         "pre_shock_features_t0": {
             "UP": {
-                "vwap_$50": 0.85,
-                "effective_price_$50": 0.85,
-                "raw_top_asks": [[0.85, 52.94]],  # depth = 45.0 USD
+                "vwap_$50": 0.65,
+                "effective_price_$50": 0.65,
+                "raw_top_asks": [[0.65, 46.15]],  # depth = 30.0 USD
                 "spread": 0.01,
             }
         },
         "impulse_response": {
-            "500ms": {"up_ask": 0.85, "depth_usd": 45.0}
+            "500ms": {"up_ask": 0.65, "depth_usd": 30.0}
         }
     }
 
     paper.evaluate_shock_signal(shock_thin)
     trade_thin = paper.open_trades["MKT_THIN"][-1]
-    assert trade_thin["live_parity_notional_usd"] == 30.0  # Scaled down to maintain >1.50x depth buffer
-    assert trade_thin["notional_usd"] == 30.0
+    assert trade_thin["live_parity_notional_usd"] == 20.0  # Scaled down to maintain >1.50x depth buffer
+    assert trade_thin["notional_usd"] == 20.0
 
 
 def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch):
@@ -421,7 +422,7 @@ def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch
     paper = PolymarketForwardPaperTrader(paper_latency_ms=500)
     paper.dev_cash = 200.0
 
-    # Signal with post-latency surge beyond ceiling (0.9200) -> e.g. 0.9350
+    # Signal with post-latency surge beyond ceiling (0.8600) -> e.g. 0.8800
     shock_spike = {
         "event_id": "EVT_SPIKE",
         "market_id": "MKT_SPIKE",
@@ -431,7 +432,7 @@ def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch
         "target_token": "UP",
         "t0_unix": 1700000000.0,
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.25,
+        "candle_distance_pct": 0.35,
         "z_val": 2.50,
         "fee_metadata": {
             "fee_rate_market": 0.07,
@@ -439,22 +440,22 @@ def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch
         },
         "pre_shock_features_t0": {
             "UP": {
-                "vwap_$50": 0.86,
-                "effective_price_$50": 0.86,
-                "raw_top_asks": [[0.86, 100.0]],
+                "vwap_$50": 0.68,
+                "effective_price_$50": 0.68,
+                "raw_top_asks": [[0.68, 100.0]],
                 "spread": 0.01,
             }
         },
         "impulse_response": {
-            "500ms": {"up_ask": 0.895, "depth_usd": 100.0}
+            "500ms": {"up_ask": 0.880, "depth_usd": 100.0}
         }
     }
 
-    # Evaluate shock -> should be killed due to ceiling breach
+    # Evaluate shock -> should be killed due to ceiling breach (0.880 > 0.8600)
     paper.evaluate_shock_signal(shock_spike)
     assert "MKT_SPIKE" not in paper.open_trades or len(paper.open_trades.get("MKT_SPIKE", [])) == 0
 
-    # Signal with adverse slippage within ceiling: 0.850 -> 0.862 (+1.20 cents)
+    # Signal with adverse slippage within ceiling: 0.650 -> 0.662 (+1.20 cents)
     shock_slip = {
         "event_id": "EVT_SLIP",
         "market_id": "MKT_SLIP",
@@ -464,7 +465,7 @@ def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch
         "target_token": "UP",
         "t0_unix": 1700000010.0,
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.25,
+        "candle_distance_pct": 0.35,
         "z_val": 2.50,
         "fee_metadata": {
             "fee_rate_market": 0.07,
@@ -472,21 +473,21 @@ def test_paper_trader_latency_simulation_slippage_and_kill(tmp_path, monkeypatch
         },
         "pre_shock_features_t0": {
             "UP": {
-                "vwap_$50": 0.850,
-                "effective_price_$50": 0.850,
-                "raw_top_asks": [[0.850, 120.0]],
+                "vwap_$50": 0.650,
+                "effective_price_$50": 0.650,
+                "raw_top_asks": [[0.650, 120.0]],
                 "spread": 0.01,
             }
         },
         "impulse_response": {
-            "500ms": {"up_ask": 0.862, "depth_usd": 120.0}
+            "500ms": {"up_ask": 0.662, "depth_usd": 120.0}
         }
     }
 
     paper.evaluate_shock_signal(shock_slip)
     assert "MKT_SLIP" in paper.open_trades
     trade_slip = paper.open_trades["MKT_SLIP"][-1]
-    assert trade_slip["exec_price"] == 0.862
+    assert trade_slip["exec_price"] == 0.662
     assert trade_slip["adverse_slippage_cents"] == 1.2
     assert trade_slip["latency_simulated_ms"] == 500
 
@@ -520,9 +521,9 @@ def test_fix1_event_id_dedup_does_not_poison_subsequent_shocks(tmp_path, monkeyp
             token_id=kwargs.get("token_id", "TOK"),
             target_token="UP",
             side="BUY",
-            price=0.85,
+            price=0.65,
             size=10.0,
-            notional_usd=8.5,
+            notional_usd=6.5,
             fee_usd=0.05,
             latency_ms=1.0,
             mode="DRY_RUN_SIMULATION",
@@ -540,10 +541,10 @@ def test_fix1_event_id_dedup_does_not_poison_subsequent_shocks(tmp_path, monkeyp
         "title": "ETH 1H Up",
         "shock_direction": "BUY",
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.20,
+        "candle_distance_pct": 0.35,
         "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
         "pre_shock_features_t0": {
-            "UP": {"token_id": "tok_up_1", "raw_top_asks": [[0.85, 100.0]], "effective_price_$50": 0.85, "vwap_$50": 0.85}
+            "UP": {"token_id": "tok_up_1", "raw_top_asks": [[0.65, 100.0]], "effective_price_$50": 0.65, "vwap_$50": 0.65}
         }
     }
 
@@ -591,6 +592,10 @@ def test_fix2_paper_maker_tp_fills_rejects_premature_ask_and_enforces_settlement
         "legacy_fixed_notional_usd": 50.0,
         "shares_bought": 58.82,
         "taker_fee_usd": 0.25,
+        "seconds_to_expiry": 600.0,
+        "expiry_unix": entry_ts + 600.0,
+        "entry_price": 0.82,
+        "take_profit_maker_limit_px": 0.99,
         "status": "OPEN",
     }
     paper.open_trades[m_id] = [trade]
@@ -641,17 +646,17 @@ def test_fix3_paper_live_latency_simulation_reads_telemetry_file(tmp_path, monke
     telem_file = tmp_path / "polymarket_hourly_telemetry.jsonl"
     monkeypatch.setattr("src.polymarket_research.polymarket_paper_trader.HOURLY_TELEMETRY_FILE", telem_file)
 
-    # Write post-latency telemetry line with ask slipped to 0.865
+    # Write post-latency telemetry line with ask slipped to 0.665
     telem_record = {
         "market_id": m_id,
         "timestamp_unix": 1700000000.5,
         "asset": "BTC",
         "UP": {
-            "best_bid": 0.85,
-            "best_ask": 0.865,
-            "vwap_$50": 0.865,
-            "effective_price_$50": 0.865,
-            "raw_top_asks": [[0.865, 100.0]],
+            "best_bid": 0.65,
+            "best_ask": 0.665,
+            "vwap_$50": 0.665,
+            "effective_price_$50": 0.665,
+            "raw_top_asks": [[0.665, 100.0]],
             "spread": 0.015,
         }
     }
@@ -660,7 +665,7 @@ def test_fix3_paper_live_latency_simulation_reads_telemetry_file(tmp_path, monke
     # Paper trader with 50ms latency (fast for test)
     paper = PolymarketForwardPaperTrader(paper_latency_ms=50)
 
-    # Shock at t0 with initial ask 0.850 and NO impulse_response dict
+    # Shock at t0 with initial ask 0.650 and NO impulse_response dict
     shock = {
         "event_id": "EVT_LIVE_SHOCK",
         "market_id": m_id,
@@ -670,10 +675,10 @@ def test_fix3_paper_live_latency_simulation_reads_telemetry_file(tmp_path, monke
         "target_token": "UP",
         "t0_unix": 1700000000.0,
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.20,
+        "candle_distance_pct": 0.35,
         "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
         "pre_shock_features_t0": {
-            "UP": {"token_id": "tok_up_live", "raw_top_asks": [[0.850, 100.0]], "effective_price_$50": 0.850, "vwap_$50": 0.850, "spread": 0.01}
+            "UP": {"token_id": "tok_up_live", "raw_top_asks": [[0.650, 100.0]], "effective_price_$50": 0.650, "vwap_$50": 0.650, "spread": 0.01}
         },
         # NOTE: impulse_response is deliberately empty (simulating t0 live trigger)
         "impulse_response": {}
@@ -682,7 +687,7 @@ def test_fix3_paper_live_latency_simulation_reads_telemetry_file(tmp_path, monke
     paper.evaluate_shock_signal(shock, historical=False)
     assert m_id in paper.open_trades
     t = paper.open_trades[m_id][-1]
-    assert t["exec_price"] == 0.865, "Paper trader must read actual post-latency ask from telemetry file!"
+    assert t["exec_price"] == 0.665, "Paper trader must read actual post-latency ask from telemetry file!"
     assert t["adverse_slippage_cents"] == 1.5, "Adverse slippage must be computed against post-latency telemetry!"
 
 
@@ -720,7 +725,7 @@ def test_fix4_paper_parity_bankroll_sizing_from_live_state(tmp_path, monkeypatch
         "target_token": "UP",
         "t0_unix": 1700000000.0,
         "seconds_to_expiry": 600.0,
-        "candle_distance_pct": 0.20,
+        "candle_distance_pct": 0.35,
         "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0},
         "pre_shock_features_t0": {
             "UP": {"token_id": "tok_up_size", "raw_top_asks": [[0.86, 1000.0]], "effective_price_$50": 0.86, "vwap_$50": 0.86, "spread": 0.01}
@@ -728,11 +733,20 @@ def test_fix4_paper_parity_bankroll_sizing_from_live_state(tmp_path, monkeypatch
         "impulse_response": {}
     }
 
+    # Step A: 0.86 ask is REJECTED by 0.84 ceiling
     paper.evaluate_shock_signal(shock, historical=True)
+    assert "MKT_PARITY_SIZE" not in paper.open_trades
+
+    # Step B: 0.64 ask is ACCEPTED and dynamically sized against live equity ($155.76 * 0.24 = $37.38)
+    shock_pass = dict(shock)
+    shock_pass["pre_shock_features_t0"] = {
+        "UP": {"token_id": "tok_up_size", "raw_top_asks": [[0.64, 1000.0]], "effective_price_$50": 0.64, "vwap_$50": 0.64, "spread": 0.01}
+    }
+    paper.evaluate_shock_signal(shock_pass, historical=True)
     assert "MKT_PARITY_SIZE" in paper.open_trades
     t = paper.open_trades["MKT_PARITY_SIZE"][-1]
-    # 155.76 * 0.25 = 38.94 -> rounded/clipped to 38.94
-    assert abs(t["live_parity_notional_usd"] - 38.94) <= 0.01, f"Expected ~$38.94 but got {t['live_parity_notional_usd']}"
+    # 155.76 * 0.24 = 37.38 -> rounded/clipped to 37.38
+    assert abs(t["live_parity_notional_usd"] - 37.38) <= 0.01, f"Expected ~$37.38 but got {t['live_parity_notional_usd']}"
 
 
 def test_fix5_prewarm_caches_condition_fee_and_version():
