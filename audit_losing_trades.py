@@ -204,6 +204,8 @@ def mark_audited(trade_id: str, verdict: str, notes: str) -> None:
         audit_st["stats"]["expected_losses_ok"] = audit_st["stats"].get("expected_losses_ok", 0) + 1
     elif verdict == "BUG_FIXED":
         audit_st["stats"]["bugs_fixed_and_redeployed"] = audit_st["stats"].get("bugs_fixed_and_redeployed", 0) + 1
+    elif verdict == "PARAM_WFO_REQUIRED":
+        audit_st["stats"]["param_wfo_queued"] = audit_st["stats"].get("param_wfo_queued", 0) + 1
 
     recent = audit_st.setdefault("recent_verdicts", [])
     recent.append(entry)
@@ -213,7 +215,16 @@ def mark_audited(trade_id: str, verdict: str, notes: str) -> None:
     print(json.dumps({"ok": True, "recorded": entry}, indent=2))
 
 
-def redeploy_daemon() -> None:
+def redeploy_daemon(force: bool = False) -> None:
+    if not force:
+        pre = fetch_kraken_live_state()["state"]
+        open_cnt = int(pre.get("active_positions_count", 0) or 0)
+        if open_cnt > 0:
+            raise RuntimeError(
+                f"Refusing to restart live harvester with {open_cnt} open position(s): "
+                f"{pre.get('active_position_ids', [])}. Wait until flat."
+            )
+
     cmd = [
         "ssh", "-n", "kraken-finland",
         (
@@ -223,10 +234,14 @@ def redeploy_daemon() -> None:
             "systemctl --user daemon-reload && "
             "systemctl --user reset-failed polymarket-live-harvester.service || true && "
             "systemctl --user restart polymarket-live-harvester.service && "
-            "sleep 12 && systemctl --user is-active polymarket-live-harvester.service"
+            "for i in 1 2 3 4 5 6 7 8 9 10; do "
+            "sleep 2; "
+            "if grep -q '\"status\": \"RUNNING\"' /home/skybullet1987/quant_pipeline/data/polymarket/live_harvester_state.json 2>/dev/null; then break; fi; "
+            "done && "
+            "systemctl --user is-active polymarket-live-harvester.service"
         ),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=35.0)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=45.0)
     if res.returncode != 0:
         raise RuntimeError(f"Redeploy on kraken-finland failed: {res.stderr or res.stdout}")
 
@@ -241,15 +256,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Autonomous Post-Trade Forensic Auditor (Real-Money Live Harvester)")
     parser.add_argument("--check", action="store_true", help="Scan for uninspected real-money losing trades and live harvester health")
     parser.add_argument("--mark-audited", type=str, help="Trade ID to mark as audited")
-    parser.add_argument("--verdict", type=str, choices=["EXPECTED_LOSS", "BUG_FIXED", "PROFIT_OK"], default="EXPECTED_LOSS")
+    parser.add_argument("--verdict", type=str, choices=["EXPECTED_LOSS", "BUG_FIXED", "PARAM_WFO_REQUIRED", "PROFIT_OK"], default="EXPECTED_LOSS")
     parser.add_argument("--notes", type=str, default="", help="Forensic explanation or patch summary")
     parser.add_argument("--redeploy", action="store_true", help="Compile-check and restart polymarket-live-harvester.service on kraken-finland")
+    parser.add_argument("--force-redeploy", action="store_true", help="Override open-position safety lock during emergency recovery")
     args = parser.parse_args()
 
     if args.mark_audited:
         mark_audited(args.mark_audited, args.verdict, args.notes)
     elif args.redeploy:
-        redeploy_daemon()
+        redeploy_daemon(force=args.force_redeploy)
     else:
         res = scan_trades()
         print(json.dumps(res, indent=2))

@@ -1,7 +1,7 @@
 """
 ================================================================================
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-25 14:19:01 UTC
+Generated: 2026-10-25 15:09:34 UTC
 Version: 3.9.0 Purged-WFO, Genuine Refit CPCV & Second-Pass Audit Hardened Release
 Repository: C:/Users/Anton/source/repos/Dominus
 
@@ -16,7 +16,7 @@ tools, post-trade forensic auditor, and Purged Walk-Forward / CPCV Optimizer:
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 34 - 64 | 586 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 65 - 102 | 1,633 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 103 - 6,722 | 445,399 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 103 - 6,722 | 445,194 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,723 - 10,684 | 227,806 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
   - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,685 - 12,870 | 136,200 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,871 - 13,195 | 14,568 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
@@ -25,8 +25,8 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [src/polymarket_research/verify_onchain_allowances.py] (Lines 15,224 - 15,325 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
   - [src/polymarket_research/redeem_settled_positions.py] (Lines 15,326 - 15,467 | 7,450 B) :: CTF Settled Position Redemption Engine
   - [src/polymarket_research/setup_polymarket_account.py] (Lines 15,468 - 15,693 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  - [audit_losing_trades.py] (Lines 15,694 - 15,915 | 10,687 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,916 - 17,437 | 79,683 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [audit_losing_trades.py] (Lines 15,694 - 15,930 | 11,636 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,931 - 17,452 | 79,683 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 
 from __future__ import annotations
@@ -3702,10 +3702,12 @@ class PolymarketLiveHarvester:
             p_max = max(p_max, 0.94)
         elif is_1h:
             if _is_live_real:
-                if 120.0 <= tte <= 1200.0:
+                _min_1h_tte = 150.0
+                _max_1h_tte = 600.0 if asset_str == "ETH" else 1200.0
+                if _min_1h_tte <= tte <= _max_1h_tte:
                     regime = "REGIME_B_LATE_SNIPER"
                     cushion = abs(dist_pct)
-                    _min_reg_b_cush = (0.15 if tte > 600.0 else 0.08) if asset_str == "ETH" else 0.04
+                    _min_reg_b_cush = 0.04
                     if cushion < _min_reg_b_cush:
                         logger.info(
                             f"[REGIME_B_REJECT] {shock.get('title')!r}: abs(dist_pct)={cushion:.4f}% < {_min_reg_b_cush:.2f}% min threshold (TTE={tte:.0f}s)."
@@ -3719,7 +3721,7 @@ class PolymarketLiveHarvester:
                     max_allowed_price = 0.85
                 else:
                     logger.info(
-                        f"[1H HORIZON TTE REJECT] 1-hour market {shock.get('title')!r} TTE={tte:.1f}s outside WFO [120s, 1200s] window. Rejecting."
+                        f"[1H HORIZON TTE REJECT] 1-hour market {shock.get('title')!r} TTE={tte:.1f}s outside WFO [{_min_1h_tte:.0f}s, {_max_1h_tte:.0f}s] window. Rejecting."
                     )
                     return
             elif 900.0 < tte <= 2700.0:
@@ -3811,8 +3813,6 @@ class PolymarketLiveHarvester:
             return
         rec_sig = float(shock.get("candle_sigma") or 0.0)
         sigma_1h = (rec_sig * 2.0 if is_subhourly else rec_sig) if rec_sig > 0.0 else (0.0050 if asset_str == "BTC" else 0.0068)
-        if _is_live_real and asset_str == "ETH":
-            sigma_1h = max(sigma_1h, 0.0048)
         sigma_rem = max(0.00025, sigma_1h * math.sqrt(max(tte, 30.0) / 3600.0))
         signed_dist_frac = (dist_pct / 100.0) if target_token == "UP" else (-dist_pct / 100.0)
         z_strike = signed_dist_frac / max(sigma_rem, 1e-6)
@@ -3820,9 +3820,9 @@ class PolymarketLiveHarvester:
         z_effective = z_strike + (0.35 * shock_ofi_abs)
         p_fair = 0.5 * (1.0 + math.erf(z_effective / math.sqrt(2.0)))
         if _is_live_real and regime in ("REGIME_B_LATE_SNIPER", "REGIME_C_SUBHOURLY"):
-            if z_strike < 0.50:
+            if z_strike < 0.65:
                 logger.info(
-                    f"[WFO Z-CUSHION REJECT] {shock.get('title')!r} {target_token}: z_strike={z_strike:.3f} < 0.50 WFO floor "
+                    f"[WFO Z-CUSHION REJECT] {shock.get('title')!r} {target_token}: z_strike={z_strike:.3f} < 0.65 WFO optimal floor "
                     f"(z_eff={z_effective:.3f}, dist={dist_pct:+.4f}%, TTE={tte:.0f}s). Rejecting."
                 )
                 return
@@ -15867,13 +15867,23 @@ def mark_audited(trade_id: str, verdict: str, notes: str) -> None:
         audit_st["stats"]["expected_losses_ok"] = audit_st["stats"].get("expected_losses_ok", 0) + 1
     elif verdict == "BUG_FIXED":
         audit_st["stats"]["bugs_fixed_and_redeployed"] = audit_st["stats"].get("bugs_fixed_and_redeployed", 0) + 1
+    elif verdict == "PARAM_WFO_REQUIRED":
+        audit_st["stats"]["param_wfo_queued"] = audit_st["stats"].get("param_wfo_queued", 0) + 1
     recent = audit_st.setdefault("recent_verdicts", [])
     recent.append(entry)
     audit_st["recent_verdicts"] = recent[-30:]
     save_audit_state(audit_st)
     append_audit_ledger(entry)
     print(json.dumps({"ok": True, "recorded": entry}, indent=2))
-def redeploy_daemon() -> None:
+def redeploy_daemon(force: bool = False) -> None:
+    if not force:
+        pre = fetch_kraken_live_state()["state"]
+        open_cnt = int(pre.get("active_positions_count", 0) or 0)
+        if open_cnt > 0:
+            raise RuntimeError(
+                f"Refusing to restart live harvester with {open_cnt} open position(s): "
+                f"{pre.get('active_position_ids', [])}. Wait until flat."
+            )
     cmd = [
         "ssh", "-n", "kraken-finland",
         (
@@ -15883,10 +15893,14 @@ def redeploy_daemon() -> None:
             "systemctl --user daemon-reload && "
             "systemctl --user reset-failed polymarket-live-harvester.service || true && "
             "systemctl --user restart polymarket-live-harvester.service && "
-            "sleep 12 && systemctl --user is-active polymarket-live-harvester.service"
+            "for i in 1 2 3 4 5 6 7 8 9 10; do "
+            "sleep 2; "
+            "if grep -q '\"status\": \"RUNNING\"' /home/skybullet1987/quant_pipeline/data/polymarket/live_harvester_state.json 2>/dev/null; then break; fi; "
+            "done && "
+            "systemctl --user is-active polymarket-live-harvester.service"
         ),
     ]
-    res = subprocess.run(cmd, capture_output=True, text=True, timeout=35.0)
+    res = subprocess.run(cmd, capture_output=True, text=True, timeout=45.0)
     if res.returncode != 0:
         raise RuntimeError(f"Redeploy on kraken-finland failed: {res.stderr or res.stdout}")
     audit_st = load_audit_state()
@@ -15898,14 +15912,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Autonomous Post-Trade Forensic Auditor (Real-Money Live Harvester)")
     parser.add_argument("--check", action="store_true", help="Scan for uninspected real-money losing trades and live harvester health")
     parser.add_argument("--mark-audited", type=str, help="Trade ID to mark as audited")
-    parser.add_argument("--verdict", type=str, choices=["EXPECTED_LOSS", "BUG_FIXED", "PROFIT_OK"], default="EXPECTED_LOSS")
+    parser.add_argument("--verdict", type=str, choices=["EXPECTED_LOSS", "BUG_FIXED", "PARAM_WFO_REQUIRED", "PROFIT_OK"], default="EXPECTED_LOSS")
     parser.add_argument("--notes", type=str, default="", help="Forensic explanation or patch summary")
     parser.add_argument("--redeploy", action="store_true", help="Compile-check and restart polymarket-live-harvester.service on kraken-finland")
+    parser.add_argument("--force-redeploy", action="store_true", help="Override open-position safety lock during emergency recovery")
     args = parser.parse_args()
     if args.mark_audited:
         mark_audited(args.mark_audited, args.verdict, args.notes)
     elif args.redeploy:
-        redeploy_daemon()
+        redeploy_daemon(force=args.force_redeploy)
     else:
         res = scan_trades()
         print(json.dumps(res, indent=2))

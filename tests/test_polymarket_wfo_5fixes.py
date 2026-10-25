@@ -1329,9 +1329,9 @@ def test_fix16_xrp_and_sol_shadow_sleeves_and_exp316(tmp_path):
 
 def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
     """
-    Verifies v3.9.3 Forensic Remediation of LIVE_6081501_1792935724_UP (ETH 9AM ET -$6.80 loss):
-      1. Thin-cushion ETH 1h whipsaw (dist=+0.1285% < 0.15% at TTE=1075.4s, sigma=0.00405) is rejected,
-         while historical WFO ETH 1h setups (dist=+0.2286% >= 0.15%) continue to qualify.
+    Verifies v3.9.4 WFO-Validated Forensic Remediation of LIVE_6081501_1792935724_UP (ETH 9AM ET -$6.80 loss):
+      1. WFO Policy 4 rejects ETH 1h > 600s (TTE=1075.4s) AND z_strike < 0.65 (z_strike=0.58), while leaving
+         ETH 15m (92.4% WR, PF=3.06) and ETH 1h Late (<= 600s, 100% WR) 100% unchoked with zero ad-hoc sigma floor.
       2. Salvage unwind evicts exit_oid from pre-cancel open_oids once BOTH cancel_order(is_canceled=True)
          and post-cancel summary(terminal=True) confirm cancellation, unwinding immediately on Pass #1
          with a 4c sweep floor (best_b - 0.04) and 0.35s fast retry on 400 FAK zero-match rejections.
@@ -1416,7 +1416,40 @@ def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
         },
     }
     asyncio.run(h.evaluate_shock_and_execute(losing_shock))
-    assert len(submitted) == 0, "Thin +0.1285% ETH 1h bounce at TTE=1075s must be rejected!"
+    assert len(submitted) == 0, "Early ETH 1h whipsaw (TTE=1075s > 600s, z=0.58 < 0.65) must be rejected!"
+
+    # Verify WFO Policy 4 leaves ETH 15m (even with quiet rec_sig=0.0020 -> sigma_1h=0.0040 < 0.0048) 100% unchoked!
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+    h.check_recorder_freshness = lambda asset, now_t: (True, 0.1, "OK")
+    sniped_15m = []
+
+    async def _fake_snipe_15m(**kw):
+        sniped_15m.append(kw)
+        return type("FakeRes", (), {
+            "success": False, "order_id": None, "tx_hashes": [], "filled_size": 0.0, "avg_price": 0.0,
+            "size": 0.0, "price": 0.0, "fee_paid_usd": 0.0, "latency_ms": 1.0, "error_msg": "SIM", "error": "SIM",
+            "mode": "FAK_KILLED_NO_MATCH", "details": {"fak_killed": True}, "execution_status": ExecutionStatus.REJECTED,
+        })()
+
+    h.executor.execute_snipe_order_async = _fake_snipe_15m
+    eth_15m_winner = dict(
+        losing_shock,
+        shock_id="eth_15m_unchoked",
+        market_id="6081599",
+        title="Ethereum Up or Down - October 25, 9:00AM-9:15AM ET",
+        horizon="15m",
+        resolution_source="https://data.chain.link/streams/eth-usd-twap-60s-streams",
+        seconds_to_expiry=300.0,
+        expiry_ts=now_u + 300.0,
+        candle_sigma=0.0020,  # sigma_1h = 0.0040 (previously choked by ad-hoc 0.0048 floor -> z=0.60 < 0.65; now z=0.72 >= 0.65!)
+        spot_at_t0=2336.85,
+        candle_open_spot=2334.90,
+        twap_60s_open=2334.90,
+        candle_distance_pct=0.0835,
+        fee_metadata={"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": losing_shock["condition_id"]},
+    )
+    asyncio.run(h.evaluate_shock_and_execute(eth_15m_winner))
+    assert len(sniped_15m) >= 1, "Unchoked ETH 15m winner (z=0.72 >= 0.65) must NOT be blocked by an ad-hoc sigma floor!"
 
     # 3. Single-pass verified cancel + 4c sweep floor + 0.35s fast retry on 400 FAK zero-match
     exit_oid = "0x0f37be121c4a7bde2e0439b44244fa35c6cb29287923724a23529481d3ad0a24"

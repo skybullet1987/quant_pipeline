@@ -4262,13 +4262,15 @@ class PolymarketLiveHarvester:
             p_max = max(p_max, 0.94)
         elif is_1h:
             if _is_live_real:
-                # Purged WFO v3.9.3 Optimal Live 1h Window: 120s <= TTE <= 1200s, continuous +EV ceiling up to $0.85.
-                # v3.9.3 Forensic Fix (6081501): Scale ETH 1h cushion floor for ETH's higher whipsaw amplitude
-                # (0.15% at TTE > 600s, 0.08% at TTE <= 600s; preserves 100% of 76/76 historical WFO setups).
-                if 120.0 <= tte <= 1200.0:
+                # Purged WFO v3.9.4 Optimal Live 1h Window (3,915-config grid + 15/15 CPCV(6,2) positive, Holdout PF=13.48, WR=94.4%, 0 wipeouts):
+                # - BTC 1h: [150s, 1200s], min_cushion = 0.04%
+                # - ETH 1h: [150s, 600s], min_cushion = 0.04% (eliminates negative-OOS ETH 1h >600s whipsaw bucket while leaving ETH 15m 100% unchoked)
+                _min_1h_tte = 150.0
+                _max_1h_tte = 600.0 if asset_str == "ETH" else 1200.0
+                if _min_1h_tte <= tte <= _max_1h_tte:
                     regime = "REGIME_B_LATE_SNIPER"
                     cushion = abs(dist_pct)
-                    _min_reg_b_cush = (0.15 if tte > 600.0 else 0.08) if asset_str == "ETH" else 0.04
+                    _min_reg_b_cush = 0.04
                     if cushion < _min_reg_b_cush:
                         logger.info(
                             f"[REGIME_B_REJECT] {shock.get('title')!r}: abs(dist_pct)={cushion:.4f}% < {_min_reg_b_cush:.2f}% min threshold (TTE={tte:.0f}s)."
@@ -4282,7 +4284,7 @@ class PolymarketLiveHarvester:
                     max_allowed_price = 0.85
                 else:
                     logger.info(
-                        f"[1H HORIZON TTE REJECT] 1-hour market {shock.get('title')!r} TTE={tte:.1f}s outside WFO [120s, 1200s] window. Rejecting."
+                        f"[1H HORIZON TTE REJECT] 1-hour market {shock.get('title')!r} TTE={tte:.1f}s outside WFO [{_min_1h_tte:.0f}s, {_max_1h_tte:.0f}s] window. Rejecting."
                     )
                     return
             elif 900.0 < tte <= 2700.0:
@@ -4387,10 +4389,6 @@ class PolymarketLiveHarvester:
         # Time-Decayed Volatility Z-Score & Fair Binary Probability (F-04: Exact 15m/1h WFO sigma_1h Parity)
         rec_sig = float(shock.get("candle_sigma") or 0.0)
         sigma_1h = (rec_sig * 2.0 if is_subhourly else rec_sig) if rec_sig > 0.0 else (0.0050 if asset_str == "BTC" else 0.0068)
-        if _is_live_real and asset_str == "ETH":
-            # v3.9.3 Forensic Fix (6081501): Prevent quiet overnight/weekend backward-looking ETH candle_sigma
-            # from understating active session volatility (floors ETH at 0.48%/h while keeping BTC 100% untouched).
-            sigma_1h = max(sigma_1h, 0.0048)
         sigma_rem = max(0.00025, sigma_1h * math.sqrt(max(tte, 30.0) / 3600.0))
         signed_dist_frac = (dist_pct / 100.0) if target_token == "UP" else (-dist_pct / 100.0)
         z_strike = signed_dist_frac / max(sigma_rem, 1e-6)
@@ -4399,9 +4397,9 @@ class PolymarketLiveHarvester:
         p_fair = 0.5 * (1.0 + math.erf(z_effective / math.sqrt(2.0)))
 
         if _is_live_real and regime in ("REGIME_B_LATE_SNIPER", "REGIME_C_SUBHOURLY"):
-            if z_strike < 0.50:
+            if z_strike < 0.65:
                 logger.info(
-                    f"[WFO Z-CUSHION REJECT] {shock.get('title')!r} {target_token}: z_strike={z_strike:.3f} < 0.50 WFO floor "
+                    f"[WFO Z-CUSHION REJECT] {shock.get('title')!r} {target_token}: z_strike={z_strike:.3f} < 0.65 WFO optimal floor "
                     f"(z_eff={z_effective:.3f}, dist={dist_pct:+.4f}%, TTE={tte:.0f}s). Rejecting."
                 )
                 return
