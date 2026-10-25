@@ -1280,6 +1280,54 @@ def test_fix15_v392_shadow_graduation_upgrades(tmp_path, monkeypatch):
         assert pt.sol_shadow_trades[0]["won"] is True
 
 
+def test_fix16_xrp_and_sol_shadow_sleeves_and_exp316(tmp_path):
+    """Verify XRP & SOL end-to-end shadow support across recorder, paper trader, and EXP-316."""
+    import json
+    from src.polymarket_research import polymarket_terminal_recorder as rec_mod
+    from src.polymarket_research import exp316_macro_strike_shadow as e316_mod
+    from src.polymarket_research import polymarket_paper_trader as pt_mod
+    from src.polymarket_research.polymarket_live_harvester import ALLOWED_ASSETS
+    from unittest.mock import patch
+
+    # 1. Recorder supports XRP & SOL without touching live BTC/ETH ALLOWED_ASSETS
+    assert "XRP" in rec_mod.ASSET_CONFIGS
+    assert "SOL" in rec_mod.ASSET_CONFIGS
+    assert rec_mod.ASSET_CONFIGS["XRP"]["series_slug"] == "xrp-up-or-down-hourly"
+    assert ALLOWED_ASSETS == {"BTC", "ETH"}
+
+    # 2. EXP-316 monitors XRP & SOL Daily/Weekly strike ladders and parses decimal XRP strikes
+    series_assets = {a for a, _, _ in e316_mod.MONITORED_SERIES}
+    assert {"BTC", "ETH", "SOL", "XRP"} <= series_assets
+    assert e316_mod.extract_strike_price("Will the price of XRP be above $0.85 on October 25?", None) == pytest.approx(0.85)
+    assert e316_mod.extract_strike_price("Will XRP reach $2.10 October 19-25?", None) == pytest.approx(2.10)
+
+    # 3. Paper Trader runs isolated SLEEVE_XRP_V392_SHADOW alongside SLEEVE_SOL_V392_SHADOW
+    now_u = time.time()
+    with patch.object(pt_mod, "SOL_SHADOW_LEDGER_FILE", tmp_path / "sol_led.jsonl"), \
+         patch.object(pt_mod, "SOL_SHADOW_STATE_FILE", tmp_path / "sol_st.json"), \
+         patch.object(pt_mod, "XRP_SHADOW_LEDGER_FILE", tmp_path / "xrp_led.jsonl"), \
+         patch.object(pt_mod, "XRP_SHADOW_STATE_FILE", tmp_path / "xrp_st.json"), \
+         patch.object(pt_mod, "DEV_LEDGER_FILE", tmp_path / "dev.jsonl"), \
+         patch.object(pt_mod, "VALIDATION_LEDGER_FILE", tmp_path / "val.jsonl"), \
+         patch.object(pt_mod, "STATE_FILE", tmp_path / "pt_st.json"):
+        pt = pt_mod.PolymarketForwardPaperTrader()
+        pt.evaluate_shock_signal({
+            "market_id": "990001", "title": "XRP Up or Down - Oct 25, 9AM ET", "asset": "XRP", "horizon": "1h",
+            "t0_unix": now_u, "seconds_to_expiry": 720.0, "shock_direction": "BUY", "shock_ofi": 0.85,
+            "shock_volume_100ms": 95000.0, "spot_at_t0": 0.9045, "finalized_1h_open": 0.9000,
+            "pre_shock_features_t0": {"UP": {"best_ask": 0.74, "best_bid": 0.70, "raw_top_asks": [[0.74, 40.0]], "raw_top_bids": [[0.70, 40.0]]}},
+        })
+        assert "990001" in pt.xrp_shadow_open_trades
+        assert "990001" not in pt.open_trades
+        pt.check_maker_tp_fills("990001", {"timestamp_unix": now_u + 15.0, "UP": {"best_bid": 0.97, "best_ask": 0.98}})
+        assert len(pt.xrp_shadow_trades) == 1
+        assert pt.xrp_shadow_trades[0]["won"] is True
+        xrp_state = json.loads((tmp_path / "xrp_st.json").read_text(encoding="utf-8"))
+        assert xrp_state["sleeve_id"] == "SLEEVE_XRP_V392_SHADOW"
+        assert xrp_state["winning_trades"] == 1
+
+
+
 
 
 

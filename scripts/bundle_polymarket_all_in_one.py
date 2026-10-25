@@ -41,7 +41,7 @@ MODULES = [
 ]
 
 _FUTURE_RE = re.compile(r"^(from\s+__future__\s+import\s+[^\n]+)$", flags=re.MULTILINE)
-_KEEP_COMMENT_RE = re.compile(r"v3\.8|v3\.9|R0[1-9]|R1[0-2]|Patch|Upgrade|Lifted|^#!")
+_KEEP_COMMENT_RE = re.compile(r"Lifted|^#!")
 
 
 def transform_module(rel_path: str, code: str) -> str:
@@ -52,13 +52,24 @@ def transform_module(rel_path: str, code: str) -> str:
     clean_code = _FUTURE_RE.sub(r"# \1  # (Lifted to top of consolidated bundle)", code)
     lines = clean_code.splitlines(keepends=True)
     drop_lines = set()
+    inline_strip: dict[int, int] = {}
     for tok in tokenize.generate_tokens(io.StringIO(clean_code).readline):
         if tok.type == tokenize.COMMENT:
             idx = tok.start[0] - 1
             ln = lines[idx]
-            if ln.lstrip().startswith("#") and not _KEEP_COMMENT_RE.search(ln):
-                drop_lines.add(idx)
-    compacted = "".join(ln for i, ln in enumerate(lines) if i not in drop_lines)
+            if ln.lstrip().startswith("#"):
+                if not _KEEP_COMMENT_RE.search(ln):
+                    drop_lines.add(idx)
+            elif not _KEEP_COMMENT_RE.search(tok.string):
+                inline_strip[idx] = tok.start[1]
+    out_lines = []
+    for i, ln in enumerate(lines):
+        if i in drop_lines:
+            continue
+        if i in inline_strip:
+            ln = ln[: inline_strip[i]].rstrip() + "\n"
+        out_lines.append(ln)
+    compacted = re.sub(r"\n(?:[ \t]*\n)+", "\n", "".join(out_lines))
     return compacted + "\n\n"
 
 

@@ -43,6 +43,10 @@ HOURLY_TELEMETRY_FILE = DATA_DIR / "polymarket_hourly_telemetry.jsonl"
 HOURLY_TELEMETRY_ETH_FILE = DATA_DIR / "polymarket_hourly_telemetry_eth.jsonl"
 HOURLY_TELEMETRY_SOL_FILE = DATA_DIR / "polymarket_hourly_telemetry_sol.jsonl"
 SUBHOURLY_TELEMETRY_SOL_FILE = DATA_DIR / "polymarket_15m_telemetry_sol.jsonl"
+HOURLY_TELEMETRY_XRP_FILE = DATA_DIR / "polymarket_hourly_telemetry_xrp.jsonl"
+SUBHOURLY_TELEMETRY_XRP_FILE = DATA_DIR / "polymarket_15m_telemetry_xrp.jsonl"
+SHOCK_SOL_FILE = DATA_DIR / "shock_responses_sol.jsonl"
+SHOCK_XRP_FILE = DATA_DIR / "shock_responses_xrp.jsonl"
 
 INITIAL_PAPER_CAPITAL = 1000.0
 TICKET_NOTIONAL = 50.0
@@ -79,13 +83,19 @@ SLEEVE_2_LEDGER_FILE = DATA_DIR / "ledger_sleeve_304_315.jsonl"
 SLEEVE_2_STATE_FILE = DATA_DIR / "state_sleeve_304_315.json"
 
 # ==============================================================================
-# SLEEVE SOL SHADOW (v3.9.2 Volatility-Normalized 15m/1h Graduation Tracker)
+# SLEEVE SOL & XRP SHADOW (v3.9.2 Volatility-Normalized 15m/1h Graduation Trackers)
 # ==============================================================================
 ENABLE_SOL_SHADOW_SLEEVE = True
 SOL_SHADOW_INITIAL_CAPITAL = 500.0
 SOL_SHADOW_TICKET_NOTIONAL = 12.0
 SOL_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_sol_v392.jsonl"
 SOL_SHADOW_STATE_FILE = DATA_DIR / "state_shadow_sol_v392.json"
+
+ENABLE_XRP_SHADOW_SLEEVE = True
+XRP_SHADOW_INITIAL_CAPITAL = 500.0
+XRP_SHADOW_TICKET_NOTIONAL = 12.0
+XRP_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_xrp_v392.jsonl"
+XRP_SHADOW_STATE_FILE = DATA_DIR / "state_shadow_xrp_v392.json"
 
 
 
@@ -123,6 +133,10 @@ class PolymarketForwardPaperTrader:
         self.last_telemetry_eth_file_pos: int = 0
         self.last_telemetry_sol_file_pos: int = 0
         self.last_telemetry_sol_15m_file_pos: int = 0
+        self.last_telemetry_xrp_file_pos: int = 0
+        self.last_telemetry_xrp_15m_file_pos: int = 0
+        self.last_shock_sol_file_pos: int = 0
+        self.last_shock_xrp_file_pos: int = 0
         self.recent_shock_window: List[Dict[str, Any]] = []
 
         # SLEEVE 2 State (EXP-304/EXP-315 ETH 1h Sweet-Spot Add-On)
@@ -141,10 +155,19 @@ class PolymarketForwardPaperTrader:
         self.sol_shadow_open_trades: Dict[str, List[Dict[str, Any]]] = {}
         self.sol_shadow_settled_ids: Set[str] = set()
 
+        # SLEEVE XRP SHADOW State (v3.9.2 Volatility-Normalized Graduation Tracker)
+        self.xrp_shadow_cash: float = XRP_SHADOW_INITIAL_CAPITAL
+        self.xrp_shadow_realized_pnl: float = 0.0
+        self.xrp_shadow_total_fees: float = 0.0
+        self.xrp_shadow_trades: List[Dict[str, Any]] = []
+        self.xrp_shadow_open_trades: Dict[str, List[Dict[str, Any]]] = {}
+        self.xrp_shadow_settled_ids: Set[str] = set()
+
         # Load existing ledgers idempotently
         self.load_persisted_ledgers()
         self.load_persisted_sleeve2_ledger()
         self.load_persisted_sol_shadow_ledger()
+        self.load_persisted_xrp_shadow_ledger()
         if STATE_FILE.exists():
             try:
                 saved = json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -180,7 +203,7 @@ class PolymarketForwardPaperTrader:
                     asset = data.get("asset")
                     t0_unix = data.get("t0_unix")
                     open_p = data.get("finalized_1h_open") or data.get("candle_open_spot")
-                    if asset in ("BTC", "ETH") and t0_unix and open_p and float(open_p) > 0:
+                    if asset in ("BTC", "ETH", "SOL", "XRP") and t0_unix and open_p and float(open_p) > 0:
                         h_idx = int(float(t0_unix) // 3600)
                         if h_idx not in self.hourly_candle_opens[asset]:
                             self.hourly_candle_opens[asset][h_idx] = float(open_p)
@@ -310,7 +333,7 @@ class PolymarketForwardPaperTrader:
         state = {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "sleeve_id": "SLEEVE_SOL_V392_SHADOW",
-            "strategy": "SOL 15m/1h Volatility-Normalized Sniper (dist>=0.14%, z>=0.75, L1>=$25, 95c/98c TP + 3-Zone Salvage)",
+            "strategy": "SOL 15m/1h Volatility-Normalized Sniper (dist>=0.12%, z>=0.70, band_L2>=$15, spread<=6c, 95c/98c TP + 3-Zone Salvage)",
             "graduation_criteria": "trades >= 30 and profit_factor >= 2.0 and win_rate_pct >= 85.0",
             "ready_for_live_graduation": bool(total_trades >= 30 and pf >= 2.0 and wr >= 85.0),
             "initial_capital": SOL_SHADOW_INITIAL_CAPITAL,
@@ -333,6 +356,63 @@ class PolymarketForwardPaperTrader:
                 f.flush()
                 os.fsync(f.fileno())
             os.replace(tmp_file, SOL_SHADOW_STATE_FILE)
+        except Exception:
+            if tmp_file.exists():
+                try:
+                    tmp_file.unlink()
+                except Exception:
+                    pass
+
+    def load_persisted_xrp_shadow_ledger(self):
+        """Loads XRP_SHADOW_LEDGER_FILE idempotently."""
+        if XRP_SHADOW_LEDGER_FILE.exists():
+            with open(XRP_SHADOW_LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                for line in f:
+                    if not line.strip():
+                        continue
+                    t = json.loads(line)
+                    tid = t.get("trade_id")
+                    if tid and tid not in self.xrp_shadow_settled_ids:
+                        self.xrp_shadow_settled_ids.add(tid)
+                        self.xrp_shadow_trades.append(t)
+                        self.xrp_shadow_realized_pnl += float(t.get("net_pnl_usd", 0.0))
+                        self.xrp_shadow_total_fees += float(t.get("taker_fee_usd", 0.0)) + float(t.get("exit_fee_usd", 0.0))
+            self.xrp_shadow_cash = XRP_SHADOW_INITIAL_CAPITAL + self.xrp_shadow_realized_pnl
+
+    def save_xrp_shadow_state(self):
+        """Saves isolated graduation state for SLEEVE_XRP_V392_SHADOW."""
+        total_trades = len(self.xrp_shadow_trades)
+        wins = sum(1 for t in self.xrp_shadow_trades if t.get("won"))
+        wr = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
+        gross_win = sum(float(t.get("net_pnl_usd", 0.0)) for t in self.xrp_shadow_trades if float(t.get("net_pnl_usd", 0.0)) > 0)
+        gross_loss = abs(sum(float(t.get("net_pnl_usd", 0.0)) for t in self.xrp_shadow_trades if float(t.get("net_pnl_usd", 0.0)) < 0))
+        pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0)
+        state = {
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            "sleeve_id": "SLEEVE_XRP_V392_SHADOW",
+            "strategy": "XRP 15m/1h Volatility-Normalized Sniper (dist>=0.12%, z>=0.70, band_L2>=$15, spread<=6c, 95c/98c TP + 3-Zone Salvage)",
+            "graduation_criteria": "trades >= 30 and profit_factor >= 2.0 and win_rate_pct >= 85.0",
+            "ready_for_live_graduation": bool(total_trades >= 30 and pf >= 2.0 and wr >= 85.0),
+            "initial_capital": XRP_SHADOW_INITIAL_CAPITAL,
+            "current_equity": round(self.xrp_shadow_cash, 2),
+            "realized_pnl": round(self.xrp_shadow_realized_pnl, 2),
+            "profit_factor": pf,
+            "total_fees_paid": round(self.xrp_shadow_total_fees, 2),
+            "total_trades_settled": total_trades,
+            "winning_trades": wins,
+            "losing_trades": total_trades - wins,
+            "win_rate_pct": round(wr, 2),
+            "active_open_positions_count": sum(len(v) for v in self.xrp_shadow_open_trades.values()),
+            "status": "RUNNING" if ENABLE_XRP_SHADOW_SLEEVE else "DISABLED",
+            "ledger_file": str(XRP_SHADOW_LEDGER_FILE),
+        }
+        tmp_file = XRP_SHADOW_STATE_FILE.with_suffix(f".tmp.{os.getpid()}")
+        try:
+            with open(tmp_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_file, XRP_SHADOW_STATE_FILE)
         except Exception:
             if tmp_file.exists():
                 try:
@@ -364,10 +444,17 @@ class PolymarketForwardPaperTrader:
         If min_timestamp_unix > 0 and poll_timeout_sec > 0, polls until a snapshot with
         timestamp_unix >= min_timestamp_unix is written to disk (up to poll_timeout_sec).
         """
-        asset_clean = "ETH" if str(asset).upper() == "ETH" else "BTC"
+        asset_up = str(asset).upper()
+        asset_clean = asset_up if asset_up in ("BTC", "ETH", "SOL", "XRP") else "BTC"
         shm_dir = os.environ.get("PM_FAST_TICK_DIR", "/dev/shm")
         shm_file = Path(shm_dir) / f"pm_fast_tick_{asset_clean}.json" if shm_dir else None
-        target_file = HOURLY_TELEMETRY_ETH_FILE if asset_clean == "ETH" else HOURLY_TELEMETRY_FILE
+        telem_map = {
+            "BTC": HOURLY_TELEMETRY_FILE,
+            "ETH": HOURLY_TELEMETRY_ETH_FILE,
+            "SOL": HOURLY_TELEMETRY_SOL_FILE,
+            "XRP": HOURLY_TELEMETRY_XRP_FILE,
+        }
+        target_file = telem_map.get(asset_clean, HOURLY_TELEMETRY_FILE)
 
         deadline = time.time() + max(0.0, poll_timeout_sec)
         while True:
@@ -476,11 +563,16 @@ class PolymarketForwardPaperTrader:
         print(f"[REPLAY SYNCHRONIZED] Open in-flight markets: {len(self.open_trades)}", flush=True)
 
     def evaluate_shock_signal(self, shock: Dict[str, Any], historical: bool = False):
-        # 0. Evaluate Isolated SOL v3.9.2 Graduation Shadow Sleeve if asset == SOL
+        # 0. Evaluate Isolated SOL / XRP v3.9.2 Graduation Shadow Sleeves
         asset_up = str(shock.get("asset", "") or "").upper()
         title_l = str(shock.get("title", "") or "").lower()
         if ENABLE_SOL_SHADOW_SLEEVE and (asset_up == "SOL" or "solana" in title_l):
             self._evaluate_sol_shadow_sleeve(shock, historical=historical)
+            return
+        if ENABLE_XRP_SHADOW_SLEEVE and (asset_up == "XRP" or "xrp" in title_l or "ripple" in title_l):
+            self._evaluate_xrp_shadow_sleeve(shock, historical=historical)
+            return
+        if asset_up not in ("", "BTC", "ETH") and "bitcoin" not in title_l and "btc" not in title_l and "ethereum" not in title_l and "eth" not in title_l:
             return
 
         # 1. Evaluate Core Sleeve 1 (EXP-302 Baseline)
@@ -493,54 +585,70 @@ class PolymarketForwardPaperTrader:
             self._evaluate_sleeve_2(shock, historical=historical)
 
     def _evaluate_sol_shadow_sleeve(self, shock: Dict[str, Any], historical: bool = False) -> bool:
-        """Evaluates SOL 15m/1h setups using 2x-volatility gates (dist>=0.14%, z>=0.75, L1>=$25, vol>=$200k)."""
+        return self._evaluate_alt_shadow_sleeve(shock, asset_sym="SOL", historical=historical)
+
+    def _evaluate_xrp_shadow_sleeve(self, shock: Dict[str, Any], historical: bool = False) -> bool:
+        return self._evaluate_alt_shadow_sleeve(shock, asset_sym="XRP", historical=historical)
+
+    def _evaluate_alt_shadow_sleeve(self, shock: Dict[str, Any], asset_sym: str = "SOL", historical: bool = False) -> bool:
+        """Evaluates isolated SOL / XRP 15m/1h setups (dist>=0.12%, z>=0.70, band_L2>=$15, spread<=6c)."""
+        if historical:
+            return False
         m_id = str(shock.get("market_id") or "")
         if not m_id:
             return False
+        is_sol = (asset_sym == "SOL")
+        settled_ids = self.sol_shadow_settled_ids if is_sol else self.xrp_shadow_settled_ids
+        open_map = self.sol_shadow_open_trades if is_sol else self.xrp_shadow_open_trades
+        closed_list = self.sol_shadow_trades if is_sol else self.xrp_shadow_trades
+        ticket_usd = SOL_SHADOW_TICKET_NOTIONAL if is_sol else XRP_SHADOW_TICKET_NOTIONAL
+
         t0_unix = float(shock.get("t0_unix", time.time()) or time.time())
         shock_dir = shock.get("shock_direction")
         target_token = "UP" if shock_dir == "BUY" else "DOWN"
-        trade_id = f"SOL_SHDW_{m_id}_{int(t0_unix)}_{target_token}"
-        if trade_id in self.sol_shadow_settled_ids:
+        trade_id = f"{asset_sym}_SHDW_{m_id}_{int(t0_unix)}_{target_token}"
+        if trade_id in settled_ids:
             return False
-        if m_id in self.sol_shadow_open_trades and self.sol_shadow_open_trades[m_id]:
+        if m_id in open_map and open_map[m_id]:
             self.check_maker_tp_fills(m_id, shock.get("pre_shock_features_t0", {}))
-            if m_id in self.sol_shadow_open_trades and self.sol_shadow_open_trades[m_id]:
+            if m_id in open_map and open_map[m_id]:
                 return False
-        if any(t.get("market_id") == m_id for t in self.sol_shadow_trades):
+        if any(t.get("market_id") == m_id for t in closed_list):
             return False
 
         title_lower = str(shock.get("title", "") or "").lower()
         horizon = str(shock.get("horizon", "") or shock.get("candle_interval", "")).lower()
         is_subhourly = any(x in horizon or x in title_lower for x in ("15m", "900s", "am-", "pm-"))
         tte = float(shock.get("seconds_to_expiry", 3600.0) or 3600.0)
-        if is_subhourly and not (90.0 <= tte <= 480.0):
+        if is_subhourly and not (90.0 <= tte <= 540.0):
             return False
-        if not is_subhourly and not (120.0 <= tte <= 1200.0):
+        if not is_subhourly and not (90.0 <= tte <= 2400.0):
             return False
 
-        # Oracle-exact cushion (15m Chainlink SOL/USD 60s TWAP vs 1h Binance SOL/USDT)
         spot_t0 = float(shock.get("chainlink_twap_60s") or shock.get("spot_at_t0") or 0.0) if is_subhourly else float(shock.get("spot_at_t0") or 0.0)
         open_sp = float((shock.get("twap_60s_open") or shock.get("candle_open_spot") or 0.0) if is_subhourly else (shock.get("finalized_1h_open") or shock.get("candle_open_spot") or 0.0))
         if spot_t0 <= 0.0 or open_sp <= 0.0:
             return False
         if is_subhourly and shock.get("twap_60s_open") and shock.get("candle_open_spot"):
-            if abs(float(shock["twap_60s_open"]) - float(shock["candle_open_spot"])) / open_sp * 100.0 >= 0.08:
+            if abs(float(shock["twap_60s_open"]) - float(shock["candle_open_spot"])) / open_sp * 100.0 >= 0.09:
                 return False
         dist_pct = ((spot_t0 - open_sp) / open_sp) * 100.0
         signed_cush = dist_pct if target_token == "UP" else -dist_pct
-        if signed_cush < 0.14:
+        if signed_cush < 0.12:
             return False
 
         shock_vol = float(shock.get("shock_volume_100ms") or 0.0)
         shock_ofi = abs(float(shock.get("shock_ofi") or 0.0))
-        if shock_vol < 200_000.0 or shock_ofi < 0.65:
+        min_shock_vol = 120_000.0 if is_sol else 75_000.0
+        if shock_vol < min_shock_vol or shock_ofi < 0.60:
             return False
 
-        sigma_1h = 0.0095
+        default_sigma = 0.0068 if is_sol else 0.0072
+        sigma_1h = float(shock.get("candle_sigma") or default_sigma)
+        sigma_1h = max(0.0040, min(0.0120, sigma_1h))
         sigma_rem = sigma_1h * math.sqrt(max(tte, 15.0) / 3600.0) * 100.0
         z_strike = signed_cush / max(sigma_rem, 0.01)
-        if z_strike < 0.75:
+        if z_strike < 0.70:
             return False
 
         tf = (shock.get("pre_shock_features_t0") or {}).get(target_token) or {}
@@ -548,27 +656,26 @@ class PolymarketForwardPaperTrader:
         raw_bids = [(float(px), float(sz)) for px, sz in (tf.get("raw_top_bids") or []) if float(px) > 0 and float(sz) > 0]
         first_ask = raw_asks[0][0] if raw_asks else float(tf.get("best_ask") or 0.0)
         first_bid = raw_bids[0][0] if raw_bids else float(tf.get("best_bid") or 0.0)
-        if not (0.58 <= first_ask <= 0.84) or first_bid <= 0.0 or (first_ask - first_bid) > 0.03:
+        if not (0.56 <= first_ask <= 0.85) or first_bid <= 0.0 or (first_ask - first_bid) > 0.06:
             return False
-        l1_usd = (raw_asks[0][0] * raw_asks[0][1]) if raw_asks else float(tf.get("l1_ask_usd") or 30.0)
-        if l1_usd < 25.0:
+        band_usd = sum(px * sz for px, sz in raw_asks if px <= first_ask + 0.02) if raw_asks else float(tf.get("l1_ask_usd") or 20.0)
+        if band_usd < 15.0:
             return False
 
-        p_fair = 0.5 * (1.0 + math.erf((z_strike + 0.12) / math.sqrt(2.0)))
+        p_fair = 0.5 * (1.0 + math.erf((z_strike + 0.14) / math.sqrt(2.0)))
         exp_pay = (p_fair * 0.965) + ((1.0 - p_fair) * 0.90 * 0.35)
-        p_max_sol = min(0.84, round(exp_pay / 1.055, 4))
-        if first_ask > p_max_sol:
+        p_max_alt = min(0.85, round(exp_pay / 1.04, 4))
+        if first_ask > p_max_alt:
             return False
 
-        ticket_usd = SOL_SHADOW_TICKET_NOTIONAL
         shares = round(ticket_usd / first_ask, 4)
         _, taker_fee = calculate_taker_fee(ticket_usd, first_ask, fee_rate=0.07, fee_exponent=1.0)
         pos = {
             "trade_id": trade_id,
-            "sleeve": "SLEEVE_SOL_V392_SHADOW",
+            "sleeve": f"SLEEVE_{asset_sym}_V392_SHADOW",
             "market_id": m_id,
             "title": shock.get("title"),
-            "asset": "SOL",
+            "asset": asset_sym,
             "horizon": "15m" if is_subhourly else "1h",
             "target_token": target_token,
             "entry_unix": t0_unix,
@@ -586,8 +693,11 @@ class PolymarketForwardPaperTrader:
             "take_profit_maker_limit_px": 0.965,  # Blended 50% @ $0.95 + 50% @ $0.98
             "status": "OPEN",
         }
-        self.sol_shadow_open_trades.setdefault(m_id, []).append(pos)
-        self.save_sol_shadow_state()
+        open_map.setdefault(m_id, []).append(pos)
+        if is_sol:
+            self.save_sol_shadow_state()
+        else:
+            self.save_xrp_shadow_state()
         return True
 
     def _evaluate_sleeve_1(self, shock: Dict[str, Any], historical: bool = False) -> bool:
@@ -1288,6 +1398,7 @@ class PolymarketForwardPaperTrader:
             market_id not in self.open_trades
             and market_id not in self.sleeve2_open_trades
             and market_id not in self.sol_shadow_open_trades
+            and market_id not in self.xrp_shadow_open_trades
         ):
             return []
 
@@ -1709,101 +1820,110 @@ class PolymarketForwardPaperTrader:
                     del self.sleeve2_open_trades[market_id]
                 self.save_sleeve2_state()
 
-        # 3. Check Isolated SOL v3.9.2 Shadow Sleeve (95c/98c Maker TP + 0.93 Ratchet + 3-Zone Spot Salvage)
-        if ENABLE_SOL_SHADOW_SLEEVE and market_id in self.sol_shadow_open_trades:
-            sol_closed = []
-            for t in list(self.sol_shadow_open_trades[market_id]):
-                if t.get("status") != "OPEN":
-                    continue
-                target_token = t.get("target_token", "UP")
-                token_data = telem.get(target_token) or telem.get("pre_shock_features_t0", {}).get(target_token, {})
-                best_bid = float(token_data.get("best_bid", 0.0) or 0.0)
-                if best_bid == 0.0 and token_data.get("raw_top_bids"):
-                    best_bid = float(token_data["raw_top_bids"][0][0])
-                telem_unix = float(telem.get("timestamp_unix") or telem.get("t0_unix") or time.time())
-                if (telem_unix - float(t.get("entry_unix", 0.0) or 0.0)) < 6.0:
-                    continue
-                entry_px = float(t.get("entry_price") or 0.70)
-                tp_px = float(t.get("take_profit_maker_limit_px", 0.965))
-                is_maker_fill = best_bid >= tp_px
+        # 3. Check Isolated SOL & XRP v3.9.2 Shadow Sleeves (95c/98c Maker TP + 0.93 Ratchet + 3-Zone Spot Salvage)
+        for asset_sym, enabled_flag, open_map, trades_list, settled_set, ledger_path, init_cap, cash_attr, pnl_attr, fees_attr, save_fn in (
+            ("SOL", ENABLE_SOL_SHADOW_SLEEVE, self.sol_shadow_open_trades, self.sol_shadow_trades, self.sol_shadow_settled_ids, SOL_SHADOW_LEDGER_FILE, SOL_SHADOW_INITIAL_CAPITAL, "sol_shadow_cash", "sol_shadow_realized_pnl", "sol_shadow_total_fees", self.save_sol_shadow_state),
+            ("XRP", ENABLE_XRP_SHADOW_SLEEVE, self.xrp_shadow_open_trades, self.xrp_shadow_trades, self.xrp_shadow_settled_ids, XRP_SHADOW_LEDGER_FILE, XRP_SHADOW_INITIAL_CAPITAL, "xrp_shadow_cash", "xrp_shadow_realized_pnl", "xrp_shadow_total_fees", self.save_xrp_shadow_state),
+        ):
+            if enabled_flag and market_id in open_map:
+                alt_closed = []
+                for t in list(open_map[market_id]):
+                    if t.get("status") != "OPEN":
+                        continue
+                    target_token = t.get("target_token", "UP")
+                    token_data = telem.get(target_token) or telem.get("pre_shock_features_t0", {}).get(target_token, {})
+                    best_bid = float(token_data.get("best_bid", 0.0) or 0.0)
+                    if best_bid == 0.0 and token_data.get("raw_top_bids"):
+                        best_bid = float(token_data["raw_top_bids"][0][0])
+                    telem_unix = float(telem.get("timestamp_unix") or telem.get("t0_unix") or time.time())
+                    if (telem_unix - float(t.get("entry_unix", 0.0) or 0.0)) < 6.0:
+                        continue
+                    entry_px = float(t.get("entry_price") or 0.70)
+                    tp_px = float(t.get("take_profit_maker_limit_px", 0.965))
+                    is_maker_fill = best_bid >= tp_px
 
-                is_sub = t.get("horizon") == "15m"
-                current_spot = float((telem.get("chainlink_twap_60s") if is_sub else 0.0) or telem.get("binance_spot") or telem.get("spot_at_t0") or telem.get("spot") or 0.0)
-                open_spot = float(t.get("candle_open_spot") or 0.0)
-                tte_rem = float(telem.get("seconds_to_expiry") or max(0.0, float(t.get("expiry_unix", 0.0)) - telem_unix))
+                    is_sub = t.get("horizon") == "15m"
+                    current_spot = float((telem.get("chainlink_twap_60s") if is_sub else 0.0) or telem.get("binance_spot") or telem.get("spot_at_t0") or telem.get("spot") or 0.0)
+                    open_spot = float(t.get("candle_open_spot") or 0.0)
+                    tte_rem = float(telem.get("seconds_to_expiry") or max(0.0, float(t.get("expiry_unix", 0.0)) - telem_unix))
 
-                opposite_salvaged = False
-                if current_spot > 0.0 and open_spot > 0.0 and tte_rem >= 25.0:
-                    s_cush = ((current_spot - open_spot) / open_spot * 100.0) if target_token == "UP" else ((open_spot - current_spot) / open_spot * 100.0)
-                    wrong_pct = -s_cush
-                    if wrong_pct <= 0.0:
-                        t.pop("opposite_breakout_start_ts", None)
-                    else:
-                        req_w = 0.22 if tte_rem > 900.0 else (0.15 if tte_rem > 180.0 else 0.09)
-                        req_d = 35.0 if tte_rem > 900.0 else (18.0 if tte_rem > 180.0 else 8.0)
-                        if wrong_pct >= req_w:
-                            cs = t.get("opposite_breakout_start_ts")
-                            if cs is None:
-                                t["opposite_breakout_start_ts"] = telem_unix
-                            elif (telem_unix - float(cs)) >= req_d and best_bid >= 0.15:
-                                opposite_salvaged = True
-                        else:
+                    opposite_salvaged = False
+                    if current_spot > 0.0 and open_spot > 0.0 and tte_rem >= 25.0:
+                        s_cush = ((current_spot - open_spot) / open_spot * 100.0) if target_token == "UP" else ((open_spot - current_spot) / open_spot * 100.0)
+                        wrong_pct = -s_cush
+                        if wrong_pct <= 0.0:
                             t.pop("opposite_breakout_start_ts", None)
+                        else:
+                            req_w = 0.22 if tte_rem > 900.0 else (0.15 if tte_rem > 180.0 else 0.09)
+                            req_d = 35.0 if tte_rem > 900.0 else (18.0 if tte_rem > 180.0 else 8.0)
+                            if wrong_pct >= req_w:
+                                cs = t.get("opposite_breakout_start_ts")
+                                if cs is None:
+                                    t["opposite_breakout_start_ts"] = telem_unix
+                                elif (telem_unix - float(cs)) >= req_d and best_bid >= 0.15:
+                                    opposite_salvaged = True
+                            else:
+                                t.pop("opposite_breakout_start_ts", None)
 
-                t["max_seen_bid"] = max(float(t.get("max_seen_bid", 0.0) or 0.0), best_bid)
-                max_seen_bid = float(t["max_seen_bid"])
-                trailing_ratchet_triggered = False
-                if max_seen_bid >= 0.93 and best_bid <= round(max_seen_bid - 0.05, 4) and tte_rem >= 25.0 and best_bid >= (entry_px + 0.04):
-                    rs = t.get("trailing_ratchet_start_ts")
-                    if rs is None:
-                        t["trailing_ratchet_start_ts"] = telem_unix
-                    elif (telem_unix - float(rs)) >= 4.0:
-                        trailing_ratchet_triggered = True
-                else:
-                    t.pop("trailing_ratchet_start_ts", None)
+                    t["max_seen_bid"] = max(float(t.get("max_seen_bid", 0.0) or 0.0), best_bid)
+                    max_seen_bid = float(t["max_seen_bid"])
+                    trailing_ratchet_triggered = False
+                    if max_seen_bid >= 0.93 and best_bid <= round(max_seen_bid - 0.05, 4) and tte_rem >= 25.0 and best_bid >= (entry_px + 0.04):
+                        rs = t.get("trailing_ratchet_start_ts")
+                        if rs is None:
+                            t["trailing_ratchet_start_ts"] = telem_unix
+                        elif (telem_unix - float(rs)) >= 4.0:
+                            trailing_ratchet_triggered = True
+                    else:
+                        t.pop("trailing_ratchet_start_ts", None)
 
-                if not is_maker_fill and not opposite_salvaged and not trailing_ratchet_triggered:
-                    continue
+                    if not is_maker_fill and not opposite_salvaged and not trailing_ratchet_triggered:
+                        continue
 
-                if is_maker_fill:
-                    exit_px, exit_fee, exit_reason = tp_px, 0.0, "SOL_SHADOW_MAKER_TP_95_98"
-                    exit_payout = round(t["shares_bought"] * exit_px, 2)
-                else:
-                    exit_px = best_bid
-                    exit_payout = round(t["shares_bought"] * exit_px, 2)
-                    _, exit_fee = calculate_taker_fee(exit_payout, exit_px, fee_rate=0.07, fee_exponent=1.0)
-                    exit_reason = "SOL_SHADOW_RATCHET_93" if trailing_ratchet_triggered else "SOL_SHADOW_3ZONE_SALVAGE"
+                    if is_maker_fill:
+                        exit_px, exit_fee, exit_reason = tp_px, 0.0, f"{asset_sym}_SHADOW_MAKER_TP_95_98"
+                        exit_payout = round(t["shares_bought"] * exit_px, 2)
+                    else:
+                        exit_px = best_bid
+                        exit_payout = round(t["shares_bought"] * exit_px, 2)
+                        _, exit_fee = calculate_taker_fee(exit_payout, exit_px, fee_rate=0.07, fee_exponent=1.0)
+                        exit_reason = f"{asset_sym}_SHADOW_RATCHET_93" if trailing_ratchet_triggered else f"{asset_sym}_SHADOW_3ZONE_SALVAGE"
 
-                net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - exit_fee, 2)
-                t.update({
-                    "status": "CLOSED",
-                    "exit_reason": exit_reason,
-                    "exit_price": exit_px,
-                    "exit_fee_usd": round(exit_fee, 4),
-                    "payout_usd": exit_payout,
-                    "net_pnl_usd": net_pnl,
-                    "won": bool(net_pnl > 0),
-                    "settle_time": telem.get("timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                })
-                self.sol_shadow_trades.append(t)
-                self.sol_shadow_realized_pnl += net_pnl
-                self.sol_shadow_total_fees += float(t.get("taker_fee_usd", 0.0)) + exit_fee
-                self.sol_shadow_cash = SOL_SHADOW_INITIAL_CAPITAL + self.sol_shadow_realized_pnl
-                self.sol_shadow_settled_ids.add(t["trade_id"])
-                sol_closed.append(t)
-                with open(SOL_SHADOW_LEDGER_FILE, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(t) + "\n")
+                    net_pnl = round(exit_payout - t["notional_usd"] - t.get("taker_fee_usd", 0.0) - exit_fee, 2)
+                    t.update({
+                        "status": "CLOSED",
+                        "exit_reason": exit_reason,
+                        "exit_price": exit_px,
+                        "exit_fee_usd": round(exit_fee, 4),
+                        "payout_usd": exit_payout,
+                        "net_pnl_usd": net_pnl,
+                        "won": bool(net_pnl > 0),
+                        "settle_time": telem.get("timestamp") or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    })
+                    trades_list.append(t)
+                    setattr(self, pnl_attr, getattr(self, pnl_attr) + net_pnl)
+                    setattr(self, fees_attr, getattr(self, fees_attr) + float(t.get("taker_fee_usd", 0.0)) + exit_fee)
+                    setattr(self, cash_attr, init_cap + getattr(self, pnl_attr))
+                    settled_set.add(t["trade_id"])
+                    alt_closed.append(t)
+                    with open(ledger_path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(t) + "\n")
 
-            if sol_closed:
-                self.sol_shadow_open_trades[market_id] = [t for t in self.sol_shadow_open_trades[market_id] if t.get("status") == "OPEN"]
-                if not self.sol_shadow_open_trades[market_id]:
-                    del self.sol_shadow_open_trades[market_id]
-                self.save_sol_shadow_state()
+                if alt_closed:
+                    open_map[market_id] = [t for t in open_map[market_id] if t.get("status") == "OPEN"]
+                    if not open_map[market_id]:
+                        del open_map[market_id]
+                    save_fn()
 
         return closed_trades
 
     def settle_market(self, m_id: str, resolution: Dict[str, Any], historical: bool = False):
-        if m_id not in self.open_trades and m_id not in self.sleeve2_open_trades and m_id not in self.sol_shadow_open_trades:
+        if (
+            m_id not in self.open_trades
+            and m_id not in self.sleeve2_open_trades
+            and m_id not in self.sol_shadow_open_trades
+            and m_id not in self.xrp_shadow_open_trades
+        ):
             return
 
         winning = resolution.get("winning_outcome")  # UP or DOWN
@@ -1907,36 +2027,40 @@ class PolymarketForwardPaperTrader:
             del self.sleeve2_open_trades[m_id]
             self.save_sleeve2_state()
 
-        # 3. Settle Isolated SOL v3.9.2 Graduation Shadow Sleeve
-        if ENABLE_SOL_SHADOW_SLEEVE and m_id in self.sol_shadow_open_trades:
-            for trade in list(self.sol_shadow_open_trades[m_id]):
-                tid = trade["trade_id"]
-                if tid in self.sol_shadow_settled_ids or trade.get("status") == "CLOSED":
-                    continue
-                won = (trade["target_token"] == winning)
-                payout = trade["shares_bought"] * 1.0 if won else 0.0
-                taker_fee = float(trade.get("taker_fee_usd", 0.0))
-                net_pnl = round(payout - trade["notional_usd"] - taker_fee, 2)
-                trade.update({
-                    "settle_time": resolution.get("timestamp_resolved", ""),
-                    "winning_outcome": winning,
-                    "won": won,
-                    "payout_usd": round(payout, 2),
-                    "net_pnl_usd": net_pnl,
-                    "status": "CLOSED",
-                    "exit_reason": "SOL_SHADOW_HOLD_TO_MATURITY_SETTLEMENT",
-                    "exit_price": 1.0 if won else 0.0,
-                    "exit_fee_usd": 0.0,
-                })
-                self.sol_shadow_trades.append(trade)
-                self.sol_shadow_realized_pnl += net_pnl
-                self.sol_shadow_total_fees += taker_fee
-                self.sol_shadow_cash = SOL_SHADOW_INITIAL_CAPITAL + self.sol_shadow_realized_pnl
-                self.sol_shadow_settled_ids.add(tid)
-                with open(SOL_SHADOW_LEDGER_FILE, "a", encoding="utf-8") as f:
-                    f.write(json.dumps(trade) + "\n")
-            del self.sol_shadow_open_trades[m_id]
-            self.save_sol_shadow_state()
+        # 3. Settle Isolated SOL & XRP v3.9.2 Graduation Shadow Sleeves
+        for asset_sym, enabled_flag, open_map, trades_list, settled_set, ledger_path, init_cap, cash_attr, pnl_attr, fees_attr, save_fn in (
+            ("SOL", ENABLE_SOL_SHADOW_SLEEVE, self.sol_shadow_open_trades, self.sol_shadow_trades, self.sol_shadow_settled_ids, SOL_SHADOW_LEDGER_FILE, SOL_SHADOW_INITIAL_CAPITAL, "sol_shadow_cash", "sol_shadow_realized_pnl", "sol_shadow_total_fees", self.save_sol_shadow_state),
+            ("XRP", ENABLE_XRP_SHADOW_SLEEVE, self.xrp_shadow_open_trades, self.xrp_shadow_trades, self.xrp_shadow_settled_ids, XRP_SHADOW_LEDGER_FILE, XRP_SHADOW_INITIAL_CAPITAL, "xrp_shadow_cash", "xrp_shadow_realized_pnl", "xrp_shadow_total_fees", self.save_xrp_shadow_state),
+        ):
+            if enabled_flag and m_id in open_map:
+                for trade in list(open_map[m_id]):
+                    tid = trade["trade_id"]
+                    if tid in settled_set or trade.get("status") == "CLOSED":
+                        continue
+                    won = (trade["target_token"] == winning)
+                    payout = trade["shares_bought"] * 1.0 if won else 0.0
+                    taker_fee = float(trade.get("taker_fee_usd", 0.0))
+                    net_pnl = round(payout - trade["notional_usd"] - taker_fee, 2)
+                    trade.update({
+                        "settle_time": resolution.get("timestamp_resolved", ""),
+                        "winning_outcome": winning,
+                        "won": won,
+                        "payout_usd": round(payout, 2),
+                        "net_pnl_usd": net_pnl,
+                        "status": "CLOSED",
+                        "exit_reason": f"{asset_sym}_SHADOW_HOLD_TO_MATURITY_SETTLEMENT",
+                        "exit_price": 1.0 if won else 0.0,
+                        "exit_fee_usd": 0.0,
+                    })
+                    trades_list.append(trade)
+                    setattr(self, pnl_attr, getattr(self, pnl_attr) + net_pnl)
+                    setattr(self, fees_attr, getattr(self, fees_attr) + taker_fee)
+                    setattr(self, cash_attr, init_cap + getattr(self, pnl_attr))
+                    settled_set.add(tid)
+                    with open(ledger_path, "a", encoding="utf-8") as f:
+                        f.write(json.dumps(trade) + "\n")
+                del open_map[m_id]
+                save_fn()
 
     def save_state(self):
         val_total = len(self.val_trades)
@@ -2000,6 +2124,8 @@ class PolymarketForwardPaperTrader:
                     pass
         if ENABLE_SOL_SHADOW_SLEEVE:
             self.save_sol_shadow_state()
+        if ENABLE_XRP_SHADOW_SLEEVE:
+            self.save_xrp_shadow_state()
 
     async def live_loop(self):
         print("===============================================================================", flush=True)
@@ -2007,6 +2133,7 @@ class PolymarketForwardPaperTrader:
         print(f"   Frozen OOS Boundary: {R3_VALIDATION_START_UTC}                             ", flush=True)
         print("   Depth Guard: Fail-Closed (Ratio >= 1.50) | Fee Schedule: crypto_fees_v2    ", flush=True)
         print("   Ticket Size: $50.00 Notional | Initial Capital: $1,000.00                  ", flush=True)
+        print("   Isolated Shadow Sleeves: SOL v3.9.2 ($500) + XRP v3.9.2 ($500)             ", flush=True)
         print("===============================================================================", flush=True)
 
         with open(PID_FILE, "w") as f:
@@ -2020,6 +2147,14 @@ class PolymarketForwardPaperTrader:
             self.last_telemetry_sol_file_pos = HOURLY_TELEMETRY_SOL_FILE.stat().st_size
         if SUBHOURLY_TELEMETRY_SOL_FILE.exists():
             self.last_telemetry_sol_15m_file_pos = SUBHOURLY_TELEMETRY_SOL_FILE.stat().st_size
+        if HOURLY_TELEMETRY_XRP_FILE.exists():
+            self.last_telemetry_xrp_file_pos = HOURLY_TELEMETRY_XRP_FILE.stat().st_size
+        if SUBHOURLY_TELEMETRY_XRP_FILE.exists():
+            self.last_telemetry_xrp_15m_file_pos = SUBHOURLY_TELEMETRY_XRP_FILE.stat().st_size
+        if SHOCK_SOL_FILE.exists():
+            self.last_shock_sol_file_pos = SHOCK_SOL_FILE.stat().st_size
+        if SHOCK_XRP_FILE.exists():
+            self.last_shock_xrp_file_pos = SHOCK_XRP_FILE.stat().st_size
 
         self.replay_existing_data()
 
@@ -2086,6 +2221,32 @@ class PolymarketForwardPaperTrader:
                                     self.seen_shock_ids.add(shock_id)
                                     await asyncio.to_thread(self.evaluate_shock_signal, s, False)
 
+                # 1B. Also tail dedicated SOL/XRP shock files as redundancy (deduped via seen_shock_ids)
+                for alt_shock_file, alt_pos_attr, alt_sym in (
+                    (SHOCK_SOL_FILE, "last_shock_sol_file_pos", "SOL"),
+                    (SHOCK_XRP_FILE, "last_shock_xrp_file_pos", "XRP"),
+                ):
+                    if alt_shock_file.exists():
+                        cur_alt_sz = alt_shock_file.stat().st_size
+                        last_alt_pos = getattr(self, alt_pos_attr)
+                        if cur_alt_sz > last_alt_pos:
+                            with open(alt_shock_file, "rb") as f:
+                                f.seek(last_alt_pos)
+                                chunk = f.read()
+                            complete_end = chunk.rfind(b"\n") + 1
+                            if complete_end:
+                                new_alt_lines = chunk[:complete_end].decode("utf-8", errors="ignore").splitlines()
+                                setattr(self, alt_pos_attr, last_alt_pos + complete_end)
+                                for line in new_alt_lines:
+                                    if not line.strip():
+                                        continue
+                                    s = json.loads(line)
+                                    s.setdefault("asset", alt_sym)
+                                    shock_id = f"{s.get('market_id')}_{s.get('t0_unix')}"
+                                    if shock_id not in self.seen_shock_ids:
+                                        self.seen_shock_ids.add(shock_id)
+                                        await asyncio.to_thread(self.evaluate_shock_signal, s, False)
+
                 # 2. Check for newly finalized market resolutions
                 if RESOLUTIONS_FILE.exists():
                     current_res_size = RESOLUTIONS_FILE.stat().st_size
@@ -2107,12 +2268,19 @@ class PolymarketForwardPaperTrader:
                                     self.settle_market(m_id, res, historical=False)
 
                 # 3. Check live telemetry for Maker TP fills on open positions across sleeves
-                if self.open_trades or (ENABLE_SLEEVE_304_315 and self.sleeve2_open_trades) or (ENABLE_SOL_SHADOW_SLEEVE and self.sol_shadow_open_trades):
+                if (
+                    self.open_trades
+                    or (ENABLE_SLEEVE_304_315 and self.sleeve2_open_trades)
+                    or (ENABLE_SOL_SHADOW_SLEEVE and self.sol_shadow_open_trades)
+                    or (ENABLE_XRP_SHADOW_SLEEVE and self.xrp_shadow_open_trades)
+                ):
                     for telem_path, pos_attr in (
                         (HOURLY_TELEMETRY_FILE, "last_telemetry_file_pos"),
                         (HOURLY_TELEMETRY_ETH_FILE, "last_telemetry_eth_file_pos"),
                         (HOURLY_TELEMETRY_SOL_FILE, "last_telemetry_sol_file_pos"),
                         (SUBHOURLY_TELEMETRY_SOL_FILE, "last_telemetry_sol_15m_file_pos"),
+                        (HOURLY_TELEMETRY_XRP_FILE, "last_telemetry_xrp_file_pos"),
+                        (SUBHOURLY_TELEMETRY_XRP_FILE, "last_telemetry_xrp_15m_file_pos"),
                     ):
                         if telem_path.exists():
                             cur_sz = telem_path.stat().st_size
@@ -2135,6 +2303,7 @@ class PolymarketForwardPaperTrader:
                                                 t_m_id in self.open_trades
                                                 or (ENABLE_SLEEVE_304_315 and t_m_id in self.sleeve2_open_trades)
                                                 or (ENABLE_SOL_SHADOW_SLEEVE and t_m_id in self.sol_shadow_open_trades)
+                                                or (ENABLE_XRP_SHADOW_SLEEVE and t_m_id in self.xrp_shadow_open_trades)
                                             ):
                                                 self.check_maker_tp_fills(t_m_id, telem)
                                         except Exception:

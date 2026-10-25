@@ -79,7 +79,7 @@ logger = logging.getLogger("EXP316Shadow")
 
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 CLOB_API_URL = "https://clob.polymarket.com"
-BINANCE_WS_URL = "wss://stream.binance.com:9443/ws/btcusdt@trade/ethusdt@trade/solusdt@trade"
+BINANCE_WS_URL = "wss://stream.binance.com:9443/ws/btcusdt@trade/ethusdt@trade/solusdt@trade/xrpusdt@trade"
 BINANCE_REST_URL = "https://api.binance.com/api/v3/ticker/price"
 
 # Series configurations
@@ -88,14 +88,17 @@ MONITORED_SERIES = [
     ("BTC", "DAILY", "btc-up-or-down-daily"),
     ("ETH", "DAILY", "eth-up-or-down-daily"),
     ("SOL", "DAILY", "solana-up-or-down-daily"),
+    ("XRP", "DAILY", "xrp-up-or-down-daily"),
     ("BTC", "DAILY", "bitcoin-hit-price-daily"),
     # Weekly Strike Ladders
     ("BTC", "WEEKLY", "btc-multi-strikes-weekly"),
     ("ETH", "WEEKLY", "ethereum-multi-strikes-weekly"),
     ("SOL", "WEEKLY", "solana-multi-strikes-weekly"),
+    ("XRP", "WEEKLY", "xrp-multi-strikes-weekly"),
     ("BTC", "WEEKLY", "bitcoin-hit-price-weekly"),
     ("ETH", "WEEKLY", "ethereum-hit-price-weekly"),
     ("SOL", "WEEKLY", "solana-hit-price-weekly"),
+    ("XRP", "WEEKLY", "xrp-hit-price-weekly"),
 ]
 
 
@@ -435,8 +438,9 @@ class Exp316MacroStrikeEngine:
             "BTC": collections.deque(maxlen=7200),
             "ETH": collections.deque(maxlen=7200),
             "SOL": collections.deque(maxlen=7200),
+            "XRP": collections.deque(maxlen=7200),
         }
-        self.last_history_sample_ts: Dict[str, float] = {"BTC": 0.0, "ETH": 0.0, "SOL": 0.0}
+        self.last_history_sample_ts: Dict[str, float] = {"BTC": 0.0, "ETH": 0.0, "SOL": 0.0, "XRP": 0.0}
         self.latest_spot: Dict[str, float] = {}
 
         # Market registry: token_id -> MarketTokenMeta
@@ -505,9 +509,10 @@ class Exp316MacroStrikeEngine:
             logger.error(f"Failed to append to ledger: {e}")
 
     def _write_state_summary(self) -> None:
-        """Writes per-tier ($25/$50/$250/$1k/$2.5k) graduation metrics to data/exp316/exp316_shadow_state.json."""
+        """Writes per-tier ($25/$50/$250/$1k/$2.5k) and per-asset (BTC/ETH/SOL/XRP) graduation metrics."""
         try:
             by_tier: Dict[str, List[float]] = collections.defaultdict(list)
+            by_asset_t250: Dict[str, List[float]] = collections.defaultdict(list)
             if LEDGER_FILE.exists():
                 with open(LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
@@ -517,7 +522,12 @@ class Exp316MacroStrikeEngine:
                         if r.get("event_type") in ("TRACK_A_TP_MAKER_FILLED", "TRACK_A_TRAILING_RATCHET_EXIT", "TRACK_A_SALVAGE_STOP", "TRACK_A_SETTLED"):
                             tid = str(r.get("trade_id", ""))
                             tier_k = tid.split("_")[-1] if "_T" in tid else "OTHER"
-                            by_tier[tier_k].append(float(r.get("net_pnl_usd", 0.0)))
+                            pnl_val = float(r.get("net_pnl_usd", 0.0))
+                            by_tier[tier_k].append(pnl_val)
+                            if tier_k in ("T50", "T250"):
+                                asset_k = str(r.get("asset") or tid.split("_")[0] or "OTHER").upper()
+                                if tier_k == "T250":
+                                    by_asset_t250[asset_k].append(pnl_val)
             tiers_summary = {}
             for tk, pnls in sorted(by_tier.items()):
                 wins = sum(1 for x in pnls if x > 0)
@@ -530,6 +540,19 @@ class Exp316MacroStrikeEngine:
                     "net_pnl_usd": round(sum(pnls), 2),
                     "profit_factor": round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0),
                 }
+            assets_summary = {}
+            for ak in ("BTC", "ETH", "SOL", "XRP"):
+                pnls = by_asset_t250.get(ak, [])
+                wins = sum(1 for x in pnls if x > 0)
+                gross_win = sum(x for x in pnls if x > 0)
+                gross_loss = abs(sum(x for x in pnls if x < 0))
+                assets_summary[ak] = {
+                    "trades": len(pnls),
+                    "wins": wins,
+                    "win_rate_pct": round(100.0 * wins / max(1, len(pnls)), 2) if pnls else 0.0,
+                    "net_pnl_usd": round(sum(pnls), 2),
+                    "profit_factor": round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0),
+                }
             state_path = DATA_DIR / "exp316_shadow_state.json"
             tmp_path = state_path.with_suffix(".tmp")
             tmp_path.write_text(
@@ -537,8 +560,10 @@ class Exp316MacroStrikeEngine:
                     {
                         "updated_at_utc": datetime.now(timezone.utc).isoformat(),
                         "mode": "SHADOW_ISOLATED_NO_LIVE_TRIGGERS" if not self.emit_live_triggers else "LIVE_EMIT",
+                        "monitored_assets": ["BTC", "ETH", "SOL", "XRP"],
                         "active_positions": len(self.active_track_a),
                         "tiers": tiers_summary,
+                        "by_asset_t250": assets_summary,
                     },
                     indent=2,
                 ),
@@ -801,6 +826,8 @@ class Exp316MacroStrikeEngine:
                             self._record_spot_tick("ETH", now, px)
                         elif sym == "SOLUSDT":
                             self._record_spot_tick("SOL", now, px)
+                        elif sym == "XRPUSDT":
+                            self._record_spot_tick("XRP", now, px)
             except asyncio.CancelledError:
                 break
             except Exception as e:
@@ -810,7 +837,7 @@ class Exp316MacroStrikeEngine:
     async def poll_binance_rest_fallback(self) -> None:
         """Fallback REST polling for Binance spot prices."""
         session = await self.get_session()
-        for sym, asset in [("BTCUSDT", "BTC"), ("ETHUSDT", "ETH"), ("SOLUSDT", "SOL")]:
+        for sym, asset in [("BTCUSDT", "BTC"), ("ETHUSDT", "ETH"), ("SOLUSDT", "SOL"), ("XRPUSDT", "XRP")]:
             try:
                 async with session.get(f"{BINANCE_REST_URL}?symbol={sym}", timeout=aiohttp.ClientTimeout(total=2.0)) as r:
                     if r.status == 200:
@@ -846,7 +873,7 @@ class Exp316MacroStrikeEngine:
         """Computes rolling 1-hour realized volatility (sigma_1h)."""
         hist = self.price_history.get(asset)
         if not hist or len(hist) < 5:
-            defaults = {"BTC": 0.0050, "ETH": 0.0075, "SOL": 0.0100}
+            defaults = {"BTC": 0.0050, "ETH": 0.0075, "SOL": 0.0095, "XRP": 0.0100}
             return defaults.get(asset, 0.0060)
 
         prices = [p for _, p in hist]
@@ -856,7 +883,7 @@ class Exp316MacroStrikeEngine:
             if prices[i - 1] > 0 and prices[i] > 0
         ]
         if len(log_rets) < 3:
-            defaults = {"BTC": 0.0050, "ETH": 0.0075, "SOL": 0.0100}
+            defaults = {"BTC": 0.0050, "ETH": 0.0075, "SOL": 0.0095, "XRP": 0.0100}
             return defaults.get(asset, 0.0060)
 
         mean_ret = sum(log_rets) / len(log_rets)
@@ -1609,7 +1636,11 @@ class Exp316MacroStrikeEngine:
         # Initial spot price fallback
         await self.poll_binance_rest_fallback()
 
-        logger.info(f"Initial Spot Prices: BTC=${self.latest_spot.get('BTC', 0):,.1f} | ETH=${self.latest_spot.get('ETH', 0):,.1f} | SOL=${self.latest_spot.get('SOL', 0):,.1f}")
+        logger.info(
+            f"Initial Spot Prices: BTC=${self.latest_spot.get('BTC', 0):,.1f} | "
+            f"ETH=${self.latest_spot.get('ETH', 0):,.1f} | SOL=${self.latest_spot.get('SOL', 0):,.2f} | "
+            f"XRP=${self.latest_spot.get('XRP', 0):,.4f}"
+        )
 
         try:
             loop_count = 0

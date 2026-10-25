@@ -281,7 +281,19 @@ ASSET_CONFIGS = {
         "correlations_file": DATA_DIR / "leadlag_cross_correlations_sol.jsonl",
         "log_file": DATA_DIR / "recorder_sol.log",
         "pid_file": DATA_DIR / "recorder_sol.pid",
-    }
+    },
+    "XRP": {
+        "series_slug": "xrp-up-or-down-hourly",
+        "binance_symbol": "XRPUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/xrpusdt@aggTrade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/xrpusdt@aggTrade",
+        "default_shock_threshold": 100_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_xrp.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_xrp.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_xrp.jsonl",
+        "log_file": DATA_DIR / "recorder_xrp.log",
+        "pid_file": DATA_DIR / "recorder_xrp.pid",
+    },
 }
 
 logger = logging.getLogger("PolymarketDualFeed1H")
@@ -696,7 +708,9 @@ class PolymarketDualFeed1HRecorder:
         self.telemetry_15m_file: Path = DATA_DIR / f"polymarket_15m_telemetry_{self.asset.lower()}.jsonl"
         self._spot_1m_bucket: int = 0
         self._last_1m_spot: float = 0.0
-        self._rolling_sigma_1h: float = 0.0050 if self.asset == "BTC" else (0.0095 if self.asset == "SOL" else 0.0068)
+        self._rolling_sigma_1h: float = (
+            0.0050 if self.asset == "BTC" else (0.0075 if self.asset == "SOL" else (0.0080 if self.asset == "XRP" else 0.0068))
+        )
 
         # v3.3 Coinbase composite venue feed (fail-open) + /dev/shm fast tick bus
         self.coinbase_product = f"{self.asset}-USD"
@@ -1648,7 +1662,7 @@ class PolymarketDualFeed1HRecorder:
         ofi_raw_100ms = (buy_vol - sell_vol) / vol_100ms if vol_100ms > 0 else 0.0
         lead = None
         sympathy = False
-        if self.asset in ("ETH", "SOL"):
+        if self.asset in ("ETH", "SOL", "XRP"):
             lead = read_lead_state(self.lead_state_file, max_age_ms=LEAD_STATE_MAX_AGE_MS)
             if lead is not None:
                 tgt_book = self.books.get("UP" if flow_dir == "BUY" else "DOWN")
@@ -1706,7 +1720,7 @@ class PolymarketDualFeed1HRecorder:
                 "btc_shock_direction": None,
                 "z_btc": None,
             }
-            if self.asset in ("ETH", "SOL"):
+            if self.asset in ("ETH", "SOL", "XRP"):
                 cross_fields["shock_z"] = round(shock_z, 4)
                 cross_fields["sympathy_trigger"] = bool(sympathy)
                 if lead is not None:
@@ -1749,7 +1763,7 @@ class PolymarketDualFeed1HRecorder:
 
             btc_lead_dir = cross_fields.get("btc_shock_direction")
             z_btc_val = cross_fields.get("z_btc")
-            z_eth_val = round(signed_z, 4) if self.asset in ("ETH", "SOL") else None
+            z_eth_val = round(signed_z, 4) if self.asset in ("ETH", "SOL", "XRP") else None
 
             shock_id_str = f"{m_id}_{t0_sec:.6f}"
             immediate_trigger = {
@@ -2566,7 +2580,7 @@ class PolymarketDualFeed1HRecorder:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Polymarket Dual Feed 1H Telemetry Recorder")
-    parser.add_argument("--asset", choices=["BTC", "ETH", "SOL"], default="BTC", help="Asset to record (BTC, ETH, or SOL, default: BTC)")
+    parser.add_argument("--asset", choices=["BTC", "ETH", "SOL", "XRP"], default="BTC", help="Asset to record (BTC, ETH, SOL, or XRP, default: BTC)")
     parser.add_argument("--shock-threshold", type=float, default=None, help="Volume shock threshold in USD over 100ms")
     args = parser.parse_args()
 
