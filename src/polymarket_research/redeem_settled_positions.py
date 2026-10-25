@@ -34,8 +34,13 @@ logging.basicConfig(
 logger = logging.getLogger("CTFRedemption")
 
 CTF_CONTRACT = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+PUSD_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
 USDC_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
-POLYGON_RPC = "https://polygon-bor-rpc.publicnode.com"
+POLYGON_RPCS = [
+    os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"),
+    "https://polygon-rpc.com",
+    "https://1rpc.io/matic",
+]
 
 DATA_DIR = PIPELINE_ROOT / "data/polymarket"
 STATE_FILE = DATA_DIR / "live_harvester_state.json"
@@ -58,20 +63,26 @@ def get_token_balance_onchain(funder_address: str, token_id: str) -> Optional[fl
             "params": [{"to": CTF_CONTRACT, "data": call_data}, "latest"],
             "id": 1,
         }
-        response = requests.post(POLYGON_RPC, json=payload, timeout=5)
-        response.raise_for_status()
-        resp = response.json()
-        if resp.get("error") or not isinstance(resp.get("result"), str):
-            raise RuntimeError(f"Invalid eth_call response: {resp}")
-        result_hex = resp["result"]
-        raw_balance = int(result_hex, 16)
-        return raw_balance / 1e6
+        last_err = None
+        for rpc_url in POLYGON_RPCS:
+            try:
+                response = requests.post(rpc_url, json=payload, timeout=5)
+                response.raise_for_status()
+                resp = response.json()
+                if resp.get("error") or not isinstance(resp.get("result"), str):
+                    raise RuntimeError(f"Invalid eth_call response: {resp}")
+                result_hex = resp["result"]
+                raw_balance = int(result_hex, 16)
+                return raw_balance / 1e6
+            except Exception as rpc_e:
+                last_err = rpc_e
+        raise RuntimeError(f"All Polygon RPCs failed: {last_err}")
     except Exception as e:
         logger.error(f"Error querying on-chain balance for {token_id}: {e}")
         return None
 
 
-def audit_positions_and_redemptions():
+def audit_positions_and_redemptions(execute: bool = False):
     funder_address = os.getenv("POLYGON_FUNDER_ADDRESS", "").strip() or os.getenv("POLYGON_PROXY_ADDRESS", "").strip()
     if not funder_address:
         logger.error("No funder/proxy address configured in .env!")
@@ -82,6 +93,7 @@ def audit_positions_and_redemptions():
     print("=" * 80)
     print(f"Proxy Wallet: {funder_address}")
     print(f"CTF Contract: {CTF_CONTRACT}")
+    print(f"Collateral:   pUSD ({PUSD_ADDRESS}) / USDC.e ({USDC_ADDRESS})")
 
     if not STATE_FILE.exists():
         print(f"\nNo state file found at {STATE_FILE}. Zero recorded positions.")
@@ -99,13 +111,13 @@ def audit_positions_and_redemptions():
     unredeemed_shares = 0.0
     estimated_claimable_usd = 0.0
     has_unknown = False
+    claimable_conditions: List[str] = []
 
     print("\n--- POSITION AUDIT TABLE ---")
     for pos in list(active_positions.values()) + list(closed_positions):
         tid = pos.get("trade_id", "N/A")
         token_id = pos.get("token_id")
         won = pos.get("won", False)
-        shares = pos.get("entry_shares", 0.0)
         close_reason = pos.get("close_reason", "UNKNOWN")
         net_pnl = pos.get("net_pnl_usd", 0.0)
 
@@ -125,7 +137,10 @@ def audit_positions_and_redemptions():
             if onchain_bal > 0.01:
                 unredeemed_shares += onchain_bal
                 estimated_claimable_usd += onchain_bal * 1.0
-                print(f"  [CLAIMABLE] {tid}: {onchain_bal:.2f} shares held on-chain -> ${onchain_bal:.2f} USDC.e claimable")
+                cid = str(pos.get("condition_id") or "").strip()
+                if cid and cid not in claimable_conditions:
+                    claimable_conditions.append(cid)
+                print(f"  [CLAIMABLE] {tid}: {onchain_bal:.2f} shares held on-chain -> ${onchain_bal:.2f} pUSD/USDC.e claimable")
             else:
                 print(f"  [REDEEMED/EMPTY] {tid}: 0.00 shares held on-chain (already redeemed)")
         else:
@@ -133,17 +148,23 @@ def audit_positions_and_redemptions():
 
     print("\n" + "=" * 80)
     print(f"Total Claimable Winning Shares: {unredeemed_shares:.2f}")
-    print(f"Estimated Claimable Collateral:   ${estimated_claimable_usd:.2f} USDC.e")
+    print(f"Estimated Claimable Collateral:   ${estimated_claimable_usd:.2f} pUSD/USDC.e")
     print("=" * 80)
+
+    if execute and claimable_conditions:
+        from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+        executor = PolymarketLiveExecutor(dry_run=False)
+        for cid in claimable_conditions:
+            tx_h = executor.attempt_onchain_redemption(cid)
+            print(f"  [EXECUTE REDEMPTION] condition={cid} -> tx_hash={tx_h or 'SKIPPED (insufficient EOA POL gas or non-1of1 proxy)'}")
 
     if estimated_claimable_usd > 0:
         print("\n[ACTION REQUIRED: REDEMPTION GUIDANCE]")
-        print("Because the Proxy Wallet holds 0 POL, direct on-chain contract calls require gas.")
-        print("To redeem winning shares gaslessly:")
+        print("If EOA holds >= 0.05 POL, run with --execute for Safe/EOA on-chain redemption, or redeem gaslessly:")
         print("  1. Log into https://polymarket.com using your funder wallet.")
         print("  2. Navigate to Portfolio -> History / Positions.")
         print("  3. Click 'Claim All' / 'Redeem' (Polymarket's relayer pays Polygon gas automatically).")
-        print("  4. USDC.e will be instantly credited to your collateral balance.")
+        print("  4. Collateral (pUSD / USDC.e) will be credited to your trading balance.")
     elif has_unknown:
         print("\n[WARNING] One or more positions could not be queried on-chain. Reconciliation incomplete - retry required.")
     else:
@@ -151,4 +172,4 @@ def audit_positions_and_redemptions():
 
 
 if __name__ == "__main__":
-    audit_positions_and_redemptions()
+    audit_positions_and_redemptions(execute="--execute" in sys.argv)

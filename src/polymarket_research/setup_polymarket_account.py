@@ -109,97 +109,99 @@ def main():
 
     account = w3.eth.account.from_key(pk)
     wallet_addr = account.address
-    print(f"\n[1/5] Verified Local Wallet Address: {wallet_addr}")
-    if funder and funder.lower() != wallet_addr.lower():
-        print(f"      [WARN] POLYGON_FUNDER_ADDRESS ({funder}) differs from PK address ({wallet_addr}). Using PK address.")
+    sig_type = int(os.getenv("POLYGON_SIGNATURE_TYPE", "0") or "0")
+    effective_funder = Web3.to_checksum_address(funder) if (sig_type in (1, 2, 3) and funder) else wallet_addr
+    print(f"\n[1/5] Signer EOA: {wallet_addr} | Effective Funder (sig_type={sig_type}): {effective_funder}")
 
-    # Check on-chain balances
+    # Check on-chain balances on effective_funder
     print("\n[2/5] Checking On-Chain Balances on Polygon...")
     pol_wei = w3.eth.get_balance(wallet_addr)
     pol_bal = pol_wei / 1e18
-    print(f"      Native POL Gas:   {pol_bal:.4f} POL")
+    print(f"      Signer POL Gas:   {pol_bal:.4f} POL")
 
     usdc_contract = w3.eth.contract(address=Web3.to_checksum_address(PUSD_ADDRESS), abi=ERC20_ABI)
-    usdc_raw = usdc_contract.functions.balanceOf(wallet_addr).call()
+    usdc_raw = usdc_contract.functions.balanceOf(effective_funder).call()
     usdc_bal = usdc_raw / 1e6
-    print(f"      pUSD Balance:     ${usdc_bal:,.2f} pUSD")
+    print(f"      Funder pUSD Bal:  ${usdc_bal:,.2f} pUSD")
 
     if usdc_bal < 10.0:
-        print("      [WARN] Low USDC.e balance. Please ensure Kraken withdrawal has arrived.")
+        print("      [WARN] Low pUSD balance on funder wallet.")
 
-    # Check and set on-chain allowances for Polymarket contracts
+    # Check and set on-chain allowances ONLY for direct EOA mode (sig_type == 0)
     print("\n[3/5] Verifying On-Chain Exchange Approvals...")
     spenders = [
-        ("CTF Exchange", CTF_EXCHANGE),
-        ("NegRisk Exchange", NEGRISK_EXCHANGE),
-        ("NegRisk Adapter", NEGRISK_ADAPTER),
+        ("CTF Exchange V2", CTF_EXCHANGE),
+        ("NegRisk Exchange V2", NEGRISK_EXCHANGE),
+        ("Exchange V3", NEGRISK_ADAPTER),
     ]
 
     max_uint256 = 2**256 - 1
 
-    for label, spender_addr in spenders:
-        current_allowance = usdc_contract.functions.allowance(wallet_addr, Web3.to_checksum_address(spender_addr)).call()
-        allowance_usd = current_allowance / 1e6
-        if allowance_usd < 300.0:
-            print(f"      Approving {label} ({spender_addr[:10]}...)...")
-            time.sleep(2)
-            nonce = w3.eth.get_transaction_count(wallet_addr, "pending")
-            gas_price = int(w3.eth.gas_price * 1.5)
-            tx = usdc_contract.functions.approve(
-                Web3.to_checksum_address(spender_addr),
-                max_uint256
-            ).build_transaction({
-                "from": wallet_addr,
-                "nonce": nonce,
-                "gas": 80000,
-                "gasPrice": gas_price,
-                "chainId": 137,
-            })
-            signed_tx = w3.eth.account.sign_transaction(tx, private_key=pk)
-            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            print(f"      ✓ {label} Approval tx broadcast: {tx_hash.hex()[:18]}... Waiting for receipt...")
-            w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-            print(f"      ✓ {label} Approved successfully!")
-        else:
-            print(f"      ✓ {label}: Already Approved (${allowance_usd:,.0f})")
+    if sig_type == 0:
+        for label, spender_addr in spenders:
+            current_allowance = usdc_contract.functions.allowance(wallet_addr, Web3.to_checksum_address(spender_addr)).call()
+            allowance_usd = current_allowance / 1e6
+            if allowance_usd < 300.0:
+                print(f"      Approving {label} ({spender_addr[:10]}...)...")
+                time.sleep(2)
+                nonce = w3.eth.get_transaction_count(wallet_addr, "pending")
+                gas_price = int(w3.eth.gas_price * 1.5)
+                tx = usdc_contract.functions.approve(
+                    Web3.to_checksum_address(spender_addr),
+                    max_uint256
+                ).build_transaction({
+                    "from": wallet_addr,
+                    "nonce": nonce,
+                    "gas": 80000,
+                    "gasPrice": gas_price,
+                    "chainId": 137,
+                })
+                signed_tx = w3.eth.account.sign_transaction(tx, private_key=pk)
+                tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                print(f"      ✓ {label} Approval tx broadcast: {tx_hash.hex()[:18]}... Waiting for receipt...")
+                w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                print(f"      ✓ {label} Approved successfully!")
+            else:
+                print(f"      ✓ {label}: Already Approved (${allowance_usd:,.0f})")
 
-    # Check and set CTF approvals for selling outcome tokens
-    print("\n[3b/5] Verifying Conditional Tokens (CTF) Operator Approvals...")
-    ctf_contract = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=ERC1155_ABI)
-    for label, spender_addr in [("CTF Exchange V2", CTF_EXCHANGE), ("NegRisk Exchange V2", NEGRISK_EXCHANGE), ("Exchange V3", NEGRISK_ADAPTER)]:
-        is_approved = ctf_contract.functions.isApprovedForAll(wallet_addr, Web3.to_checksum_address(spender_addr)).call()
-        if not is_approved:
-            print(f"      Approving CTF for {label} ({spender_addr[:10]}...)...")
-            time.sleep(3)
-            nonce = w3.eth.get_transaction_count(wallet_addr, "pending")
-            gas_price = int(w3.eth.gas_price * 1.5)
-            tx = ctf_contract.functions.setApprovalForAll(
-                Web3.to_checksum_address(spender_addr),
-                True
-            ).build_transaction({
-                "from": wallet_addr,
-                "nonce": nonce,
-                "gas": 80000,
-                "gasPrice": gas_price,
-                "chainId": 137,
-            })
-            signed_tx = w3.eth.account.sign_transaction(tx, private_key=pk)
-            tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-            print(f"      ✓ CTF {label} Approval tx: {tx_hash.hex()[:18]}... Waiting for receipt...")
-            w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
-            print(f"      ✓ CTF {label} Approved successfully!")
-        else:
-            print(f"      ✓ CTF {label}: Already Approved (True)")
+        print("\n[3b/5] Verifying Conditional Tokens (CTF) Operator Approvals...")
+        ctf_contract = w3.eth.contract(address=Web3.to_checksum_address(CTF_ADDRESS), abi=ERC1155_ABI)
+        for label, spender_addr in spenders:
+            is_approved = ctf_contract.functions.isApprovedForAll(wallet_addr, Web3.to_checksum_address(spender_addr)).call()
+            if not is_approved:
+                print(f"      Approving CTF for {label} ({spender_addr[:10]}...)...")
+                time.sleep(3)
+                nonce = w3.eth.get_transaction_count(wallet_addr, "pending")
+                gas_price = int(w3.eth.gas_price * 1.5)
+                tx = ctf_contract.functions.setApprovalForAll(
+                    Web3.to_checksum_address(spender_addr),
+                    True
+                ).build_transaction({
+                    "from": wallet_addr,
+                    "nonce": nonce,
+                    "gas": 80000,
+                    "gasPrice": gas_price,
+                    "chainId": 137,
+                })
+                signed_tx = w3.eth.account.sign_transaction(tx, private_key=pk)
+                tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+                print(f"      ✓ CTF {label} Approval tx: {tx_hash.hex()[:18]}... Waiting for receipt...")
+                w3.eth.wait_for_transaction_receipt(tx_hash, timeout=60)
+                print(f"      ✓ CTF {label} Approved successfully!")
+            else:
+                print(f"      ✓ CTF {label}: Already Approved (True)")
+    else:
+        print(f"      [Proxy/Deposit Wallet Mode sig_type={sig_type}] Skipping direct EOA on-chain approve() broadcasts (managed via CLOB L2 relayer).")
 
-    # Connect to Polymarket CLOB from Tokyo
+    # Connect to Polymarket CLOB
     host = "https://clob.polymarket.com"
-    print(f"\n[4/5] Connecting to Polymarket CLOB at {host} from Tokyo...")
+    print(f"\n[4/5] Connecting to Polymarket CLOB at {host}...")
     client = ClobClient(
         host=host,
         key=pk,
         chain_id=137,
-        signature_type=0,
-        funder=wallet_addr
+        signature_type=sig_type,
+        funder=effective_funder
     )
     server_time = client.get_server_time()
     print(f"      ✓ Connection established! Server Time: {server_time}")
@@ -221,9 +223,12 @@ def main():
                 "api_key": creds.api_key,
                 "api_secret": creds.api_secret,
                 "api_passphrase": creds.api_passphrase,
-                "funder_address": wallet_addr,
+                "signer_address": wallet_addr,
+                "funder_address": effective_funder,
+                "signature_type": sig_type,
                 "derived_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
             }, f, indent=2)
+        os.chmod(creds_path, 0o600)
         print(f"      ✓ Credentials cached to: data/polymarket/clob_creds.json")
 
         # Notify Polymarket relayer of balance & allowance
@@ -241,17 +246,13 @@ def main():
     print("\n" + "=" * 75)
     print("                 ACCOUNT ONBOARDING 100% COMPLETE")
     print("=" * 75)
-    print(f"Wallet:             {wallet_addr}")
-    print(f"USDC.e Available:   ${usdc_bal:,.2f}")
-    print(f"L2 Credentials:     ACTIVE & CACHED")
-    print(f"Exchange Contracts: ALL APPROVED")
+    print(f"Signer EOA:         {wallet_addr}")
+    print(f"Effective Funder:   {effective_funder} (sig_type={sig_type})")
+    print(f"pUSD Available:     ${usdc_bal:,.2f}")
+    print(f"L2 Credentials:     ACTIVE & CACHED (0600)")
     print("=" * 75)
-    print("\nYou can now launch the live execution daemon whenever you are ready!")
-    print("Command:")
-    print("  nohup /home/skybullet1987/quant_pipeline/venv/bin/python3 \\")
-    print("    src/polymarket_research/polymarket_live_executor.py \\")
-    print("    --live --lot-size 100 \\")
-    print("    >> data/polymarket/live_polymarket.log 2>&1 &")
+    print("\nLaunch the live harvester daemon via systemd:")
+    print("  systemctl --user start polymarket-live-harvester.service")
     print("=" * 75)
 
 

@@ -1,18 +1,19 @@
 [Unit]
-Description=Polymarket Live CLOB Real-Money Harvester (v3.5; risk limits from config/polymarket_risk_config.json)
+Description=Polymarket Live CLOB Real-Money Harvester (v3.9 Purged-WFO Validated; risk limits from config/polymarket_risk_config.json)
 After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
 Wants=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
-# Crash-loop protection (replaces the legacy bash supervisor): >5 failures in 10 min => stay down.
+# Crash-loop protection: >5 non-zero crashes in 10 min => stay down.
 StartLimitIntervalSec=600
 StartLimitBurst=5
 
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
-# Sizing / exposure / daily-loss / equity-floor are NOT hardcoded here: they come from
-# config/polymarket_risk_config.json (CLI flags would override them). No --reset-risk: an auto-restart
-# must never silently clear a tripped circuit breaker (reload_production_daemons.py drops a one-shot marker instead).
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --max-ticket-cap 200.0 --max-trades-per-market 2 --max-trades-per-hour 6 --min-price-floor 0.55 --max-price-ceiling 0.86 --max-tte 2700.0 --allowed-assets BTC ETH
+# Sizing / exposure / daily-loss / equity-floor come from config/polymarket_risk_config.json.
+# --no-hold-to-maturity activates Purged-WFO resting Maker GTC take-profits (50/50 $0.95 & $0.98),
+# --max-tte 1200.0 unlocks the full WFO-optimal [120s, 1200s] 1h window + [90s, 480s] 15m window,
+# and --max-trades-per-market 2 enables Win-Reset Compounding (2nd trade ONLY if Trade #1 closed in profit).
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --max-ticket-cap 200.0 --max-trades-per-market 2 --max-trades-per-hour 8 --min-price-floor 0.55 --max-price-ceiling 0.85 --max-tte 1200.0 --allowed-assets BTC ETH
 # Exit 0 (circuit breaker / graceful SIGTERM) stays down; non-zero (crash) restarts after 3s.
 Restart=on-failure
 RestartSec=3

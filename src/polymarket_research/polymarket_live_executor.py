@@ -66,9 +66,9 @@ load_dotenv(PIPELINE_ROOT / ".env")
 # Absolute, CWD-independent data directory (overridable for isolated test runs).
 POLYMARKET_DATA_DIR = Path(os.getenv("POLYMARKET_DATA_DIR", str(PIPELINE_ROOT / "data/polymarket")))
 
-# ---------------------------------------------------------------------------
+# ------------------------------------
 # Centralized risk configuration (single source of truth: config/polymarket_risk_config.json)
-# ---------------------------------------------------------------------------
+# ------------------------------------
 RISK_CONFIG_PATH = Path(os.getenv("POLYMARKET_RISK_CONFIG", str(PIPELINE_ROOT / "config/polymarket_risk_config.json")))
 _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "ticket_notional": 16.50,
@@ -85,7 +85,6 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "stale_alert_after_sec": 60.0,
     "alert_rate_limit_sec": 300.0,
 }
-
 
 def load_risk_config(path: Optional[Path] = None) -> Dict[str, Any]:
     """Loads config/polymarket_risk_config.json merged over safe defaults.
@@ -109,7 +108,6 @@ def load_risk_config(path: Optional[Path] = None) -> Dict[str, Any]:
     except Exception:
         pass
     return cfg
-
 
 RISK_CONFIG: Dict[str, Any] = load_risk_config()
 
@@ -167,8 +165,6 @@ MAX_TICKET_CAP_USD = 200.00
 MAX_CONCURRENT_POSITIONS = 3
 MAX_POSITIONS_PER_MARKET_ID = 2
 
-
-
 # Setup module logger
 logger = logging.getLogger("PolymarketLiveExecutor")
 if not logger.handlers:
@@ -176,7 +172,6 @@ if not logger.handlers:
     handler.setFormatter(logging.Formatter("[%(asctime)s UTC] [%(levelname)s] [PM-EXEC] %(message)s"))
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
-
 
 class ExecutionStatus:
     """Explicit lifecycle states for Polymarket CLOB order execution."""
@@ -189,7 +184,6 @@ class ExecutionStatus:
     PARTIALLY_FILLED = "PARTIALLY_FILLED"
     FILLED = "FILLED"
     SETTLED = "SETTLED"
-
 
 def calculate_taker_fee(
     notional_usd: float,
@@ -214,7 +208,6 @@ def calculate_taker_fee(
     effective_rate = round(fee_usd / max(notional_usd, 1e-6), 8)
     return effective_rate, fee_usd
 
-
 def is_fak_killed_no_match(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
     """
     Polymarket CLOB Semantics:
@@ -238,7 +231,6 @@ def is_fak_killed_no_match(err: Any = None, raw_resp: Optional[Dict[str, Any]] =
         if pattern in err_msg.lower():
             return True
     return False
-
 
 def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
     """
@@ -271,7 +263,6 @@ def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = 
             return True
     return False
 
-
 def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
     """Invokes order creation with PartialCreateOrderOptions, falling back if client does not accept options."""
     if options is not None:
@@ -280,7 +271,6 @@ def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
         except TypeError:
             return client_fn(args)
     return client_fn(args)
-
 
 class PreSignedOrderLadderCache:
     """
@@ -320,18 +310,55 @@ class PreSignedOrderLadderCache:
     def get_presigned_order(self, token_id: str, price: float = 0.0, shares: float = 0.0, price_cents: Optional[int] = None) -> Optional[Any]:
         """Takes (pops) a fresh pre-signed order for an exact (token, price, shares) match."""
         key = self._make_key(token_id, price, shares, price_cents)
-        if key is None:
-            self.misses += 1
-            return None
         now = time.time()
         with self._lock:
+            if key is None:
+                self.misses += 1
+                return None
             entry = self._cache.pop(key, None)
-        if entry:
-            created_ts, signed_order = entry
-            if (now - created_ts) <= self.ttl_seconds:
-                self.hits += 1
-                return signed_order
-        self.misses += 1
+            if entry:
+                created_ts, signed_order = entry
+                if (now - created_ts) <= self.ttl_seconds:
+                    self.hits += 1
+                    return signed_order
+            self.misses += 1
+            return None
+
+    def get_presigned_order_near(
+        self,
+        token_id: str,
+        price: float,
+        shares: float,
+        max_share_delta: int = 2,
+        max_notional_usd: Optional[float] = None,
+    ) -> Optional[Tuple[Any, int]]:
+        """
+        Live hot-path fallback when elastic/Kelly sizing differs by 1-2 shares from the pre-signed rung.
+        Checks deltas (-1, +1, -2, +2) at the exact whole-cent price and pops if fresh, strictly
+        respecting max_notional_usd when provided so risk caps are never exceeded.
+        """
+        base_key = self._make_key(token_id, price, shares)
+        if base_key is None:
+            return None
+        tok_s, p_cents, base_shares = base_key
+        px_exact = p_cents / 100.0
+        now = time.time()
+        with self._lock:
+            for delta in (-1, 1, -2, 2):
+                if abs(delta) > max_share_delta:
+                    continue
+                cand_shares = base_shares + delta
+                if cand_shares < 5:
+                    continue
+                if max_notional_usd is not None and (cand_shares * px_exact) > float(max_notional_usd) + 1e-6:
+                    continue
+                cand_key = (tok_s, p_cents, cand_shares)
+                entry = self._cache.pop(cand_key, None)
+                if entry:
+                    created_ts, signed_order = entry
+                    if (now - created_ts) <= self.ttl_seconds:
+                        self.hits += 1
+                        return signed_order, cand_shares
         return None
 
     def has_fresh(self, token_id: str, price: float, shares: float, min_remaining_sec: float = 60.0) -> bool:
@@ -362,12 +389,37 @@ class PreSignedOrderLadderCache:
             self._cache.clear()
 
     def __len__(self) -> int:
-        return len(self._cache)
+        with self._lock:
+            return len(self._cache)
 
+_CLOB_CLIENT_SIGN_LOCK = threading.Lock()
+_CLOB_HTTP_LOCK = threading.RLock()
+_HOT_DISPATCH_ACTIVE = threading.Event()
+_URGENT_SIGN_COUNTER_LOCK = threading.Lock()
+_URGENT_SIGN_WAITERS = 0
+
+
+class _UrgentSignPriority:
+    """R08 (v3.9): Signals background ladder pre-warming to yield _CLOB_CLIENT_SIGN_LOCK immediately."""
+
+    def __enter__(self):
+        global _URGENT_SIGN_WAITERS
+        with _URGENT_SIGN_COUNTER_LOCK:
+            _URGENT_SIGN_WAITERS += 1
+        _CLOB_CLIENT_SIGN_LOCK.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        global _URGENT_SIGN_WAITERS
+        try:
+            _CLOB_CLIENT_SIGN_LOCK.release()
+        finally:
+            with _URGENT_SIGN_COUNTER_LOCK:
+                _URGENT_SIGN_WAITERS = max(0, _URGENT_SIGN_WAITERS - 1)
+        return False
 
 class PreSubmitError(RuntimeError):
     """Raised when the single-hop dispatch fails BEFORE the HTTP order was sent (safe: no exchange exposure)."""
-
 
 def _sign_and_post_single_hop(
     client: Any,
@@ -379,6 +431,7 @@ def _sign_and_post_single_hop(
     order_type: Any,
     create_options: Any = None,
     stage: Optional[Dict[str, Any]] = None,
+    max_notional_usd: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     v3.3 Single-Hop Sign + Post: pre-signed ladder lookup (or cold EIP-712 create_order fallback)
@@ -386,37 +439,58 @@ def _sign_and_post_single_hop(
     `stage["submitted"]` flips to True immediately before the HTTP POST so callers can tell a
     pre-submit failure (no exposure) from an unknown-outcome failure (needs reconciliation).
     """
+    import gc
+
     if stage is None:
         stage = {}
     stage["submitted"] = False
+    _HOT_DISPATCH_ACTIVE.set()
+    gc_was_enabled = gc.isenabled()
+    if gc_was_enabled:
+        gc.disable()
     t0 = time.perf_counter()
     signed = None
     cache_hit = False
+    actual_signed_shares = float(size)
     try:
-        if ladder_cache is not None and str(side).upper() == "BUY":
-            signed = ladder_cache.get_presigned_order(token_id, price, size)
-            cache_hit = signed is not None
-        if signed is None:
-            if OrderArgsV2 is None:
-                raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
-            order_args = OrderArgsV2(price=price, size=size, side=side, token_id=token_id)
-            signed = _safe_create_order(client.create_order, order_args, create_options)
-        if signed is None:
-            raise RuntimeError("create_order returned no signed order")
-    except Exception as e:
-        raise PreSubmitError(f"Order signing failed before submission: {e}") from e
-    t1 = time.perf_counter()
-    stage["submitted"] = True
-    post_resp = client.post_order(signed, order_type, False, True)  # post_only=False, defer_exec=True
-    t2 = time.perf_counter()
-    return {
-        "post_resp": post_resp,
-        "sign_ms": (t1 - t0) * 1000.0,
-        "post_ms": (t2 - t1) * 1000.0,
-        "cache_hit": cache_hit,
-        "t_post_end": t2,
-    }
-
+        try:
+            if ladder_cache is not None and str(side).upper() == "BUY":
+                signed = ladder_cache.get_presigned_order(token_id, price, size)
+                cache_hit = signed is not None
+                if signed is None:
+                    near_hit = ladder_cache.get_presigned_order_near(
+                        token_id, price, size, max_share_delta=3, max_notional_usd=max_notional_usd
+                    )
+                    if near_hit is not None:
+                        signed, near_shares = near_hit
+                        actual_signed_shares = float(near_shares)
+                        cache_hit = True
+            if signed is None:
+                if OrderArgsV2 is None:
+                    raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+                order_args = OrderArgsV2(price=price, size=size, side=side, token_id=token_id)
+                with _UrgentSignPriority():
+                    signed = _safe_create_order(client.create_order, order_args, create_options)
+            if signed is None:
+                raise RuntimeError("create_order returned no signed order")
+        except Exception as e:
+            raise PreSubmitError(f"Order signing failed before submission: {e}") from e
+        t1 = time.perf_counter()
+        stage["submitted"] = True
+        post_resp = client.post_order(signed, order_type, False, True)  # post_only=False, defer_exec=True
+        t2 = time.perf_counter()
+        return {
+            "post_resp": post_resp,
+            "sign_ms": (t1 - t0) * 1000.0,
+            "post_ms": (t2 - t1) * 1000.0,
+            "cache_hit": cache_hit,
+            "signed_shares": actual_signed_shares,
+            "t_post_end": t2,
+        }
+    finally:
+        _HOT_DISPATCH_ACTIVE.clear()
+        if gc_was_enabled:
+            gc.enable()
 
 @dataclass
 class OrderResult:
@@ -436,7 +510,6 @@ class OrderResult:
     confirmed_onchain: bool = False
     details: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
-
 
 class CancelOrderResult(dict):
     """
@@ -477,14 +550,12 @@ class CancelOrderResult(dict):
         combined.update(self._extra)
         return repr(combined)
 
-
 class PolymarketLiveExecutor:
     """
     Production-grade execution interface for Polymarket CLOB.
     """
     CLOB_HOST = "https://clob.polymarket.com"
     CHAIN_ID = 137  # Polygon Mainnet
-
 
     def __init__(
         self,
@@ -541,7 +612,15 @@ class PolymarketLiveExecutor:
                         "LIVE MODE REFUSED: Type 3 requires an explicitly "
                         "configured Polymarket deposit-wallet funder."
                     )
-        self.ledger_path = Path(ledger_path or POLYMARKET_DATA_DIR / "live_orders.jsonl")
+        env_ledger = os.getenv("POLYMARKET_LEDGER_PATH", "").strip()
+        if ledger_path is not None:
+            self.ledger_path = Path(ledger_path)
+        elif env_ledger:
+            self.ledger_path = Path(env_ledger)
+        elif self.dry_run:
+            self.ledger_path = Path(POLYMARKET_DATA_DIR / "dry_run_orders.jsonl")
+        else:
+            self.ledger_path = Path(POLYMARKET_DATA_DIR / "live_orders.jsonl")
         self.ledger_path.parent.mkdir(parents=True, exist_ok=True)
 
         self.client: Optional[Any] = None
@@ -557,8 +636,9 @@ class PolymarketLiveExecutor:
         self.reservation_records: Dict[str, Dict[str, Any]] = {}
         self.reserved_inventory: Dict[str, float] = defaultdict(float)
         self.reservation_corruption_detected: bool = False
+        self._reservations_lock = threading.RLock()
         self._load_durable_reservations()
-        self.order_ladder_cache = PreSignedOrderLadderCache(ttl_seconds=300.0)
+        self.order_ladder_cache = PreSignedOrderLadderCache(ttl_seconds=1800.0)
 
         self._initialize_client()
 
@@ -718,6 +798,7 @@ class PolymarketLiveExecutor:
                         fi = type("FeeInfoObj", (), {"rate": float(fee_rate), "exponent": float(fee_exponent)})()
                     self.client._ClobClient__fee_infos[token_id] = fi
                 self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
+                self._fee_cache[str(token_id)] = (float(fee_rate), float(fee_exponent))
             except Exception as e:
                 logger.debug(f"[CACHE PREWARM] Warning pre-warming py-clob-client for {token_id}: {e}")
 
@@ -728,18 +809,19 @@ class PolymarketLiveExecutor:
         price_levels: Optional[List[float]] = None,
         tick_size: str = "0.01",
         fee_rate_bps: int = 0,
+        share_deltas: Tuple[int, ...] = (0,),
+        exact_shares: Optional[List[int]] = None,
     ) -> int:
         """
-        Pillar 5A: Pre-signs a ladder of BUY orders for token_id across $0.55-$0.84 (1-cent steps)
-        sized exactly like the live hot path (integer shares = floor(notional / price)), so a
-        matching snipe skips EIP-712 signing. Fresh entries (>60s TTL remaining) are skipped,
-        so repeated calls are cheap. fee_rate_bps is accepted for API compatibility; OrderArgsV2
-        does not sign a fee field.
+        Pillar 5A / v3.8 Blueprint 4: Pre-signs a ladder of BUY orders for token_id across $0.55-$0.88
+        (1-cent steps). Supports either a dense integer share grid (`exact_shares`, e.g. 8..32 shares
+        for 100.0% O(1) hit rate across all elastic/downscaled tickets) or ticket_notional + share_deltas.
+        Fresh entries (>60s TTL remaining) are skipped, so repeated calls are cheap.
         """
         if self.dry_run or not self.is_authenticated or self.client is None or OrderArgsV2 is None:
             return 0
         if price_levels is None:
-            price_levels = [round(c / 100.0, 2) for c in range(55, 85)]
+            price_levels = [round(c / 100.0, 2) for c in range(55, 89)]
 
         create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=False, version=2) if PartialCreateOrderOptions else None
         self.order_ladder_cache.prune_expired()
@@ -747,29 +829,41 @@ class PolymarketLiveExecutor:
         for px in price_levels:
             if px <= 0:
                 continue
-            shares = float(math.floor(float(ticket_notional) / px))
-            if shares < 5.0:
-                continue
-            if self.order_ladder_cache.has_fresh(token_id, px, shares):
-                continue
-            try:
-                order_args = OrderArgsV2(
-                    price=px,
-                    size=shares,
-                    side="BUY",
-                    token_id=token_id,
-                )
-                signed = _safe_create_order(self.client.create_order, order_args, create_options)
-                if signed and self.order_ladder_cache.store_presigned_order(token_id, px, shares, signed):
-                    count += 1
-            except Exception as e:
-                logger.debug(f"[PREWARM LADDER] Notice for {token_id} @ {px}: {e}")
-                continue
+            if exact_shares is not None:
+                candidate_shares = [float(s) for s in exact_shares if s >= 5]
+            else:
+                base_shares = float(math.floor(float(ticket_notional) / px))
+                candidate_shares = [base_shares + float(delta) for delta in share_deltas if (base_shares + float(delta)) >= 5.0]
+            for shares in candidate_shares:
+                if self.order_ladder_cache.has_fresh(token_id, px, shares):
+                    continue
+                wait_loops = 0
+                while (_HOT_DISPATCH_ACTIVE.is_set() or _URGENT_SIGN_WAITERS > 0) and wait_loops < 8:
+                    time.sleep(0.025)
+                    wait_loops += 1
+                if _URGENT_SIGN_WAITERS > 0:
+                    return count
+                try:
+                    order_args = OrderArgsV2(
+                        price=px,
+                        size=shares,
+                        side="BUY",
+                        token_id=token_id,
+                    )
+                    with _CLOB_CLIENT_SIGN_LOCK:
+                        signed = _safe_create_order(self.client.create_order, order_args, create_options)
+                    if signed and self.order_ladder_cache.store_presigned_order(token_id, px, shares, signed):
+                        count += 1
+                except Exception as e:
+                    logger.debug(f"[PREWARM LADDER] Notice for {token_id} @ {px} ({shares}): {e}")
+                    continue
         return count
 
     def ping_clob_keepalive(self) -> None:
         """Lightweight GET ping to ensure persistent HTTP keep-alive connection remains warm."""
-        if self.dry_run or not self.client:
+        if self.dry_run or not self.client or _HOT_DISPATCH_ACTIVE.is_set():
+            return
+        if not _CLOB_HTTP_LOCK.acquire(blocking=False):
             return
         try:
             t0 = time.perf_counter()
@@ -778,14 +872,25 @@ class PolymarketLiveExecutor:
             logger.debug(f"[KEEPALIVE] CLOB HTTP keepalive ping: {elapsed_ms:.1f}ms")
         except Exception as e:
             logger.debug(f"[KEEPALIVE] CLOB ping notice: {e}")
+        finally:
+            _CLOB_HTTP_LOCK.release()
 
     def get_async_client(self) -> httpx.AsyncClient:
-        """P2: Returns persistent httpx.AsyncClient to preserve HTTP connection pooling / keep-alive."""
-        if self._async_client is None or self._async_client.is_closed:
+        """P2: Returns persistent httpx.AsyncClient bound to the current running event loop."""
+        try:
+            cur_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            cur_loop = None
+        if (
+            self._async_client is None
+            or self._async_client.is_closed
+            or (cur_loop is not None and getattr(self, "_async_client_loop", None) is not cur_loop)
+        ):
             self._async_client = httpx.AsyncClient(
                 timeout=3.0,
                 limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
             )
+            self._async_client_loop = cur_loop
         return self._async_client
 
     async def close_async(self):
@@ -822,15 +927,29 @@ class PolymarketLiveExecutor:
         Returns: (fee_rate, fee_exponent)
         """
         if condition_id in self._fee_cache:
-            return self._fee_cache[condition_id]
+            res_fee = self._fee_cache[condition_id]
+            if token_id:
+                self._fee_cache[str(token_id)] = res_fee
+            return res_fee
+        if token_id and str(token_id) in self._fee_cache:
+            res_fee = self._fee_cache[str(token_id)]
+            self._fee_cache[condition_id] = res_fee
+            return res_fee
 
+        def _store_fee(r_val: float, e_val: float) -> Tuple[float, float]:
+            pair = (float(r_val), float(e_val))
+            self._fee_cache[condition_id] = pair
+            if real_cid:
+                self._fee_cache[real_cid] = pair
+            if token_id:
+                self._fee_cache[str(token_id)] = pair
+            return pair
+
+        real_cid = condition_id
         if self.dry_run or self.client is None:
-            rate, exp = 0.07, 1.0
-            self._fee_cache[condition_id] = (rate, exp)
-            return rate, exp
+            return _store_fee(0.07, 1.0)
 
         # Resolve real hex condition_id if numeric market_id was supplied
-        real_cid = condition_id
         if not condition_id.startswith("0x"):
             try:
                 get_fn = requests.get if hasattr(requests.get, "mock_calls") else getattr(self, "_sync_session", requests).get
@@ -850,19 +969,13 @@ class PolymarketLiveExecutor:
                     raw_r = fd.get("r")
                     raw_e = fd.get("e")
                     if raw_r is not None and raw_e is not None:
-                        fee_rate = float(raw_r)
-                        fee_exponent = float(raw_e)
-                        self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-                        return fee_rate, fee_exponent
+                        return _store_fee(float(raw_r), float(raw_e))
 
             # 2. Token-level SDK fallback if token_id is available
             if token_id and hasattr(self.client, "get_fee_rate_bps") and hasattr(self.client, "get_fee_exponent"):
                 bps = self.client.get_fee_rate_bps(token_id)
                 exp = self.client.get_fee_exponent(token_id)
-                fee_rate = float(bps) / 10000.0
-                fee_exponent = float(exp)
-                self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-                return fee_rate, fee_exponent
+                return _store_fee(float(bps) / 10000.0, float(exp))
 
             # 3. Market dict path
             if hasattr(self.client, "get_market"):
@@ -870,25 +983,19 @@ class PolymarketLiveExecutor:
                 if isinstance(m_info, dict):
                     fd = m_info.get("fd") or {}
                     if "r" in fd and "e" in fd:
-                        fee_rate = float(fd["r"])
-                        fee_exponent = float(fd["e"])
-                        self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-                        return fee_rate, fee_exponent
+                        return _store_fee(float(fd["r"]), float(fd["e"]))
                     raw_taker = m_info.get("taker_base_fee")
                     if raw_taker is not None:
                         fee_rate = float(raw_taker) / 10000.0 if float(raw_taker) > 1.0 else float(raw_taker)
                         fee_exponent = float(m_info.get("fee_exponent", 1.0))
-                        self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-                        return fee_rate, fee_exponent
+                        return _store_fee(fee_rate, fee_exponent)
 
             if not self.dry_run and self.is_authenticated:
                 raise RuntimeError(f"AUTHORITATIVE_FEE_METADATA_UNAVAILABLE: CLOB returned no fee metadata for {real_cid}")
 
             # Fallback to standard crypto fee rate
             logger.warning(f"CLOB returned no specific fee schedule for {real_cid}; applying standard 0.07 crypto rate.")
-            fee_rate, fee_exponent = 0.07, 1.0
-            self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-            return fee_rate, fee_exponent
+            return _store_fee(0.07, 1.0)
 
         except RuntimeError:
             raise
@@ -896,9 +1003,7 @@ class PolymarketLiveExecutor:
             if not self.dry_run and self.is_authenticated:
                 raise RuntimeError(f"AUTHORITATIVE_FEE_METADATA_UNAVAILABLE: {e}")
             logger.warning(f"Notice fetching authoritative CLOB fee metadata for {condition_id} ({real_cid}): {e}. Applying default 0.07.")
-            fee_rate, fee_exponent = 0.07, 1.0
-            self._fee_cache[condition_id] = (fee_rate, fee_exponent)
-            return fee_rate, fee_exponent
+            return _store_fee(0.07, 1.0)
 
     async def get_market_book_async(self, token_id: str) -> Dict[str, Any]:
         """P0/P2: Asynchronously queries the live L2 orderbook using persistent connection pool."""
@@ -908,6 +1013,8 @@ class PolymarketLiveExecutor:
             resp = await client.get(url)
             if resp.status_code == 200:
                 return resp.json()
+            if resp.status_code == 404:
+                return {"bids": [], "asks": [], "closed": True}
         except Exception:
             if self.dry_run:
                 return {"bids": [], "asks": []}
@@ -993,6 +1100,8 @@ class PolymarketLiveExecutor:
             resp = get_fn(url, timeout=3.0)
             if resp.status_code == 200:
                 return resp.json()
+            if resp.status_code == 404:
+                return {"bids": [], "asks": [], "closed": True}
         except Exception:
             if self.dry_run:
                 return {"bids": [], "asks": []}
@@ -1058,9 +1167,9 @@ class PolymarketLiveExecutor:
             logger.debug(f"Trade query exception for {trade_id}: {e}")
             return {"status": "UNKNOWN", "error": str(e)}
 
-    # ------------------------------------------------------------------
+    # ------------------------------------
     # Round 9: authoritative fill history (entry recovery / unknown unwinds)
-    # ------------------------------------------------------------------
+    # ------------------------------------
     @staticmethod
     def _iso_or_unix_to_ts(val: Any) -> float:
         try:
@@ -1208,26 +1317,27 @@ class PolymarketLiveExecutor:
         fill_ids: List[str] = []
         is_settled = False
 
+        fills = []
+        cash_from_authoritative_fills = False
         if matched > 0.0 and tok:
-            fills = self.get_account_fills(tok, order_id=order_id)
+            fills = self.get_account_fills(tok, order_id=order_id) or []
             if fills:
                 fill_ids = sorted({str(f["fill_id"]) for f in fills if f.get("fill_id")})
+                trade_ids = sorted({str(f["trade_id"]) for f in fills if f.get("trade_id")})
+                tx_hashes = sorted({str(f["transaction_hash"]) for f in fills if f.get("transaction_hash")})
                 fill_size = sum(f["size"] for f in fills)
                 if abs(fill_size - matched) <= 0.011:
                     cash = round(sum(f["cash"] for f in fills), 6)
-                    trade_ids = sorted({f["trade_id"] for f in fills})
-                    tx_hashes = sorted({f["transaction_hash"] for f in fills if f.get("transaction_hash")})
-                    # Round 11 P0-13: A fill is only settled if it has a confirmed tx hash
-                    # or if trade status is MINED/CONFIRMED.
+                    cash_from_authoritative_fills = True
                     all_fills_settled = all(
-                        (f.get("status") in {"MINED", "CONFIRMED"} and bool(f.get("transaction_hash")))
-                        or (bool(f.get("transaction_hash")))
+                        f.get("status") in {"MINED", "CONFIRMED"} and bool(f.get("transaction_hash"))
                         for f in fills
                     )
                     if all_fills_settled and tx_hashes:
                         is_settled = True
 
         estimated = cash is None
+        cash_from_reported_taking = False
         if cash is None:
             raw_t = info.get("taking_amount")
             if raw_t in (None, ""):
@@ -1238,6 +1348,7 @@ class PolymarketLiveExecutor:
                 reported = None
             if reported is not None and math.isfinite(reported) and reported >= 0.0:
                 cash = round(reported, 6)
+                cash_from_reported_taking = True
                 if status in {"CONFIRMED", "MINED"} and tx_hashes:
                     estimated = False
                     is_settled = True
@@ -1254,19 +1365,22 @@ class PolymarketLiveExecutor:
 
         # Terminal status requires either cancellation/expiration/rejection OR authoritative settlement finality
         is_canceled = status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}
+        order_type_str = str(info.get("order_type") or info.get("type") or "GTC").upper()
         if is_canceled:
             terminal = True if (matched <= 1e-6 or is_settled) else False
             estimated = False if (matched <= 1e-6 or (cash is not None and is_settled)) else True
-        elif is_settled and (status in {"FILLED", "CONFIRMED", "MINED"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
+        elif is_settled and (status in {"MATCHED", "FILLED", "CONFIRMED", "MINED"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
             terminal = True
             estimated = False
         elif (
             not self.dry_run
             and self.is_authenticated
             and self.client is not None
+            and str(info.get("side", "SELL")).upper() == "SELL"
+            and not any(str(f.get("status", "")).upper() in {"FAILED", "RETRYING"} for f in fills)
             and status in {"MATCHED", "FILLED", "CONFIRMED", "MINED"}
             and orig_size > 0
-            and matched >= orig_size - 1e-4
+            and matched >= orig_size - 0.01
             and limit_px > 0.0
             and tok
         ):
@@ -1275,9 +1389,11 @@ class PolymarketLiveExecutor:
             if onchain_bal is not None and onchain_bal <= max(0.0, orig_size - matched) + 0.01:
                 is_settled = True
                 terminal = True
-                estimated = False
                 if cash is None:
                     cash = round(matched * limit_px, 6)
+                # Only certify limit_px * matched as final cash on resting GTC maker exits (fill_px == limit_px);
+                # aggressive FAK/FOK orders keep cash_is_estimated=True unless cash came from fills or takingAmount.
+                estimated = not (cash_from_authoritative_fills or cash_from_reported_taking or order_type_str == "GTC")
             else:
                 terminal = False
                 estimated = True
@@ -1303,9 +1419,9 @@ class PolymarketLiveExecutor:
             "raw": info,
         }
 
-    # ------------------------------------------------------------------
+    # ------------------------------------
     # Round 9: verified on-chain redemption receipts (cash conservation)
-    # ------------------------------------------------------------------
+    # ------------------------------------
     CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
 
     @staticmethod
@@ -1387,12 +1503,14 @@ class PolymarketLiveExecutor:
         head = self.get_current_block_number()
         if head is None:
             return None
-        start = int(from_block) if from_block else max(0, head - max_span)
+        lookback = max(int(max_span), 3000)
+        chunk_span = min(int(max_span), 1000) if int(max_span) > 0 else 1000
+        start = int(from_block) if from_block else max(0, head - lookback)
         found: List[Dict[str, Any]] = []
         me_topic = "0x" + str(self.funder_address).lower().replace("0x", "").rjust(64, "0")
         cursor = start
         while cursor <= head:
-            end = min(head, cursor + max_span)
+            end = min(head, cursor + chunk_span)
             logs = self._rpc("eth_getLogs", [{
                 "address": self.CTF_ADDRESS,
                 "fromBlock": hex(cursor),
@@ -1404,6 +1522,93 @@ class PolymarketLiveExecutor:
             found.extend(self.parse_payout_redemption_logs(logs, condition_id))
             cursor = end + 1
         return found
+
+    def attempt_onchain_redemption(self, condition_id: str) -> Optional[str]:
+        """Attempts CTF redeemPositions via EOA (sig_type=0) or 1-of-1 Gnosis Safe execTransaction (sig_type in 2,3) when EOA holds >=0.05 POL."""
+        sig_type = int(getattr(self, "signature_type", 1) or 1)
+        if self.dry_run or not condition_id or sig_type not in (0, 2, 3):
+            return None
+        if sig_type in (2, 3) and getattr(self, "_funder_is_gnosis_safe", None) is False:
+            return None
+        pk = os.getenv("POLYGON_PRIVATE_KEY", "").strip()
+        if not pk or not self.funder_address:
+            return None
+        try:
+            from web3 import Web3
+            w3 = Web3(Web3.HTTPProvider(os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"), request_kwargs={"timeout": 5}))
+            funder_cs = Web3.to_checksum_address(self.funder_address)
+            signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
+            gas_payer_cs = funder_cs if sig_type == 0 else signer_cs
+            if w3.eth.get_balance(gas_payer_cs) < int(0.05 * 1e18):
+                return None
+            cond_bytes = bytes.fromhex(condition_id.lower().replace("0x", "").rjust(64, "0"))
+            ctf_abi = [
+                {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSets", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+                {"inputs": [{"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSet", "type": "uint256"}], "name": "getCollectionId", "outputs": [{"name": "", "type": "bytes32"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "collectionId", "type": "bytes32"}], "name": "getPositionId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "pure", "type": "function"},
+                {"inputs": [{"name": "owner", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+            ]
+            ctf_cs = Web3.to_checksum_address(self.CTF_ADDRESS)
+            ctf = w3.eth.contract(address=ctf_cs, abi=ctf_abi)
+            safe = None
+            preval_sig = b""
+            zero_cs = Web3.to_checksum_address("0x" + "00" * 20)
+            if sig_type in (2, 3):
+                safe_abi = [
+                    {"inputs": [], "name": "getThreshold", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                    {"inputs": [], "name": "getOwners", "outputs": [{"name": "", "type": "address[]"}], "stateMutability": "view", "type": "function"},
+                    {"inputs": [{"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}, {"name": "data", "type": "bytes"}, {"name": "operation", "type": "uint8"}, {"name": "safeTxGas", "type": "uint256"}, {"name": "baseGas", "type": "uint256"}, {"name": "gasPrice", "type": "uint256"}, {"name": "gasToken", "type": "address"}, {"name": "refundReceiver", "type": "address"}, {"name": "signatures", "type": "bytes"}], "name": "execTransaction", "outputs": [{"name": "success", "type": "bool"}], "stateMutability": "payable", "type": "function"},
+                ]
+                safe = w3.eth.contract(address=funder_cs, abi=safe_abi)
+                try:
+                    owners = [Web3.to_checksum_address(o) for o in safe.functions.getOwners().call()]
+                    threshold_val = int(safe.functions.getThreshold().call())
+                except Exception:
+                    # R01 / Patch F (v3.9): Custom Polymarket Deposit Beacon Proxy (sig_type=3) is not a Gnosis Safe;
+                    # cache False so we never spam revert RPCs and rely on Polymarket's relayer sweep.
+                    self._funder_is_gnosis_safe = False
+                    logger.debug(f"[REDEMPTION] Funder {funder_cs} is a non-Safe proxy (sig_type={sig_type}); skipping direct Safe execTransaction.")
+                    return None
+                self._funder_is_gnosis_safe = True
+                if threshold_val != 1 or signer_cs not in owners:
+                    return None
+                preval_sig = b"\x00" * 12 + bytes.fromhex(signer_cs[2:].lower()) + b"\x00" * 32 + b"\x01"
+            for col_hex in (
+                "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",  # Polymarket V2 Wrapped Collateral (pUSD)
+                "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # Legacy Polygon Bridged USDC.e
+            ):
+                col_cs = Web3.to_checksum_address(col_hex)
+                try:
+                    has_bal = any(
+                        int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, idx).call()).call()).call()) > 0
+                        for idx in (1, 2)
+                    )
+                    if not has_bal:
+                        continue
+                    if sig_type == 0:
+                        ctf.functions.redeemPositions(col_cs, b"\x00" * 32, cond_bytes, [1, 2]).call({"from": funder_cs})
+                        tx = ctf.functions.redeemPositions(col_cs, b"\x00" * 32, cond_bytes, [1, 2]).build_transaction({
+                            "from": funder_cs, "nonce": w3.eth.get_transaction_count(funder_cs, "pending"),
+                            "gas": 220000, "gasPrice": w3.eth.gas_price, "chainId": 137,
+                        })
+                    else:
+                        inner_hex = ctf.encode_abi("redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
+                        inner_bytes = bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex)
+                        if not safe.functions.execTransaction(ctf_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).call({"from": signer_cs}):
+                            continue
+                        tx = safe.functions.execTransaction(ctf_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).build_transaction({
+                            "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
+                            "gas": 280000, "gasPrice": w3.eth.gas_price, "chainId": 137,
+                        })
+                    signed = w3.eth.account.sign_transaction(tx, private_key=pk)
+                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
+                    return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+                except Exception:
+                    continue
+            return None
+        except Exception as e:
+            logger.debug(f"On-chain redemption skipped for {condition_id}: {e}")
+            return None
 
     def simulate_fok_sweep(
         self,
@@ -1602,9 +1807,9 @@ class PolymarketLiveExecutor:
     @staticmethod
     def calculate_elastic_ticket_size(
         executable_depth_usd: float,
-        depth_hurdle_ratio: float = 1.30,
-        min_ticket_usd: float = 12.0,
-        max_ticket_usd: float = 200.0,
+        depth_hurdle_ratio: float = DEFAULT_DEPTH_HURDLE,
+        min_ticket_usd: float = MIN_TICKET_USD,
+        max_ticket_usd: float = MAX_TICKET_CAP_USD,
     ) -> Tuple[bool, float]:
         """
         Dynamic book-proportional elastic sizing:
@@ -2195,6 +2400,8 @@ class PolymarketLiveExecutor:
                 self._fee_cache[str(condition_id)] = (f_rate, f_exp)
             if market_id:
                 self._fee_cache[str(market_id)] = (f_rate, f_exp)
+            if token_id:
+                self._fee_cache[str(token_id)] = (f_rate, f_exp)
         elif cid and (str(cid) in self._fee_cache or str(cid).lower() in self._fee_cache):
             f_rate, f_exp = self._fee_cache.get(str(cid)) or self._fee_cache[str(cid).lower()]
         elif cid:
@@ -2208,7 +2415,7 @@ class PolymarketLiveExecutor:
             f_rate, f_exp = 0.07, 1.0
 
         if not self.dry_run:
-            if not (math.isfinite(f_rate) and f_rate > 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
+            if not (math.isfinite(f_rate) and f_rate >= 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
                 err = f"AuthoritativeFeeGuard Rejected: Non-finite or non-positive fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
                 logger.error(f"[{trade_id}] {err}")
                 return OrderResult(
@@ -2323,10 +2530,11 @@ class PolymarketLiveExecutor:
             try:
                 hop = _sign_and_post_single_hop(
                     self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
-                    side, entry_order_type, create_options, dispatch_stage,
+                    side, entry_order_type, create_options, dispatch_stage, notional_usd,
                 )
             finally:
                 order_submitted = bool(dispatch_stage.get("submitted"))
+            shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
             post_resp = hop["post_resp"]
             sign_ms = hop["sign_ms"]
             clob_http_post_ms = hop["post_ms"]
@@ -2459,18 +2667,44 @@ class PolymarketLiveExecutor:
                 return res
 
             # Authoritative V2 fill amount parsing (P1 Fix):
+            resp_status = str(post_resp.get("status") or "").upper()
             making_amt = post_resp.get("makingAmount")
             taking_amt = post_resp.get("takingAmount")
 
-            if making_amt is not None:
+            if resp_status in {"UNMATCHED", "CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}:
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False,
+                    error=f"CLOB order returned terminal non-fill status={resp_status}",
+                    details={"outcome_unknown": False, "requires_exchange_reconciliation": False, "fak_killed": True, "raw_response": post_resp},
+                )
+                self._log_order(res)
+                return res
+
+            if resp_status in {"DELAYED", "LIVE"} and making_amt in (None, "") and taking_amt in (None, ""):
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=shares_to_buy, notional_usd=notional_usd, fee_usd=fee_usd, latency_ms=latency_ms,
+                    mode="LIVE_AMBIGUOUS_SUBMISSION", execution_status=ExecutionStatus.SUBMITTED, confirmed_onchain=False,
+                    error=f"CLOB order returned non-immediate status={resp_status} without fill amounts",
+                    details={
+                        "outcome_unknown": True, "requires_exchange_reconciliation": True, "raw_response": post_resp,
+                        "entry_order_id": order_id, "pre_token_balance": pre_token_bal, "intended_notional_usd": notional_usd,
+                    },
+                )
+                self._log_order(res)
+                return res
+
+            if making_amt not in (None, ""):
                 try:
                     actual_notional = float(making_amt)
                 except (ValueError, TypeError) as parse_err:
                     raise RuntimeError(f"MALFORMED_CLOB_RESPONSE: Invalid makingAmount={making_amt}: {parse_err}")
             else:
-                actual_notional = notional_usd
+                actual_notional = round(shares_to_buy * exec_price, 4)
 
-            if taking_amt is not None:
+            if taking_amt not in (None, ""):
                 try:
                     actual_shares = float(taking_amt)
                 except (ValueError, TypeError) as parse_err:
@@ -2478,7 +2712,21 @@ class PolymarketLiveExecutor:
             else:
                 actual_shares = shares_to_buy
 
-            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else exec_price
+            if (making_amt not in (None, "") or taking_amt not in (None, "")) and actual_shares <= 0.0:
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False,
+                    error="FAK order matched 0 shares",
+                    details={"outcome_unknown": False, "requires_exchange_reconciliation": False, "fak_killed": True, "raw_response": post_resp},
+                )
+                self._log_order(res)
+                return res
+
+            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt not in (None, "") and taking_amt not in (None, "") and actual_shares > 0) else exec_price
+            if making_amt not in (None, "") and taking_amt not in (None, "") and actual_shares > 0:
+                p_clamped = max(0.001, min(0.999, fill_px))
+                fee_usd = round(actual_shares * f_rate * ((p_clamped * (1.0 - p_clamped)) ** f_exp), 5)
 
             trade_ids = post_resp.get("tradeIDs", [])
             tx_hashes = post_resp.get("transactionsHashes", [])
@@ -2721,6 +2969,16 @@ class PolymarketLiveExecutor:
             )
             notional_usd = adjusted_notional
 
+        if best_px < min_price_floor or best_px > max_price_ceiling:
+            err = f"PriceGuard Rejected: Best price ${best_px:.4f} outside valid boundary [{min_price_floor:.2f}, {max_price_ceiling:.2f}]."
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False, order_id=None, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side=side, price=best_px, size=0.0, notional_usd=notional_usd, fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0, mode=self.auth_mode,
+                execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False, error=err,
+            )
+
         if target_price > 0 and (best_px - target_price) > 0.04:
             err = f"SlippageGuard Rejected: Best price ${best_px:.4f} exceeds target ${target_price:.4f} by > 4¢."
             logger.warning(f"[{trade_id}] {err}")
@@ -2892,6 +3150,8 @@ class PolymarketLiveExecutor:
                 self._fee_cache[str(condition_id)] = (f_rate, f_exp)
             if market_id:
                 self._fee_cache[str(market_id)] = (f_rate, f_exp)
+            if token_id:
+                self._fee_cache[str(token_id)] = (f_rate, f_exp)
         elif cid and (str(cid) in self._fee_cache or str(cid).lower() in self._fee_cache):
             f_rate, f_exp = self._fee_cache.get(str(cid)) or self._fee_cache[str(cid).lower()]
         elif cid:
@@ -2905,7 +3165,7 @@ class PolymarketLiveExecutor:
             f_rate, f_exp = 0.07, 1.0
 
         if not self.dry_run:
-            if not (math.isfinite(f_rate) and f_rate > 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
+            if not (math.isfinite(f_rate) and f_rate >= 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
                 err = f"AuthoritativeFeeGuard Rejected: Non-finite or non-positive fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
                 logger.error(f"[{trade_id}] {err}")
                 return OrderResult(
@@ -3013,10 +3273,11 @@ class PolymarketLiveExecutor:
                 hop = await asyncio.to_thread(
                     _sign_and_post_single_hop,
                     self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
-                    side, entry_order_type, create_options, dispatch_stage,
+                    side, entry_order_type, create_options, dispatch_stage, notional_usd,
                 )
             finally:
                 order_submitted = bool(dispatch_stage.get("submitted"))
+            shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
             post_resp = hop["post_resp"]
             sign_ms = hop["sign_ms"]
             clob_http_post_ms = hop["post_ms"]
@@ -3153,11 +3414,60 @@ class PolymarketLiveExecutor:
                 self._log_order(res)
                 return res
 
+            resp_status = str(post_resp.get("status") or "").upper()
             making_amt = post_resp.get("makingAmount")
             taking_amt = post_resp.get("takingAmount")
-            actual_notional = float(making_amt) if making_amt is not None else notional_usd
-            actual_shares = float(taking_amt) if taking_amt is not None else shares_to_buy
-            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt and taking_amt and actual_shares > 0) else exec_price
+            if resp_status in {"UNMATCHED", "CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}:
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False,
+                    error=f"CLOB order returned terminal non-fill status={resp_status}",
+                    details={"outcome_unknown": False, "requires_exchange_reconciliation": False, "fak_killed": True, "raw_response": post_resp},
+                )
+                self._log_order(res)
+                return res
+            if resp_status in {"DELAYED", "LIVE"} and making_amt in (None, "") and taking_amt in (None, ""):
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=shares_to_buy, notional_usd=notional_usd, fee_usd=fee_usd, latency_ms=latency_ms,
+                    mode="LIVE_AMBIGUOUS_SUBMISSION", execution_status=ExecutionStatus.SUBMITTED, confirmed_onchain=False,
+                    error=f"CLOB order returned non-immediate status={resp_status} without fill amounts",
+                    details={
+                        "outcome_unknown": True, "requires_exchange_reconciliation": True, "raw_response": post_resp,
+                        "entry_order_id": order_id, "pre_token_balance": pre_token_bal, "intended_notional_usd": notional_usd,
+                    },
+                )
+                self._log_order(res)
+                return res
+            if making_amt not in (None, ""):
+                try:
+                    actual_notional = float(making_amt)
+                except (ValueError, TypeError) as parse_err:
+                    raise RuntimeError(f"MALFORMED_CLOB_RESPONSE: Invalid makingAmount={making_amt}: {parse_err}")
+            else:
+                actual_notional = round(shares_to_buy * exec_price, 4)
+            if taking_amt not in (None, ""):
+                try:
+                    actual_shares = float(taking_amt)
+                except (ValueError, TypeError) as parse_err:
+                    raise RuntimeError(f"MALFORMED_CLOB_RESPONSE: Invalid takingAmount={taking_amt}: {parse_err}")
+            else:
+                actual_shares = shares_to_buy
+            if (making_amt not in (None, "") or taking_amt not in (None, "")) and actual_shares <= 0.0:
+                res = OrderResult(
+                    success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                    side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
+                    mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False,
+                    error="FAK order matched 0 shares",
+                    details={"outcome_unknown": False, "requires_exchange_reconciliation": False, "fak_killed": True, "raw_response": post_resp},
+                )
+                self._log_order(res)
+                return res
+            fill_px = round(actual_notional / max(actual_shares, 1e-4), 4) if (making_amt not in (None, "") and taking_amt not in (None, "") and actual_shares > 0) else exec_price
+            if making_amt not in (None, "") and taking_amt not in (None, "") and actual_shares > 0:
+                p_clamped = max(0.001, min(0.999, fill_px))
+                fee_usd = round(actual_shares * f_rate * ((p_clamped * (1.0 - p_clamped)) ** f_exp), 5)
 
             trade_ids = post_resp.get("tradeIDs", [])
             tx_hashes = post_resp.get("transactionsHashes", [])
@@ -3526,14 +3836,20 @@ class PolymarketLiveExecutor:
                 }
             available = Decimal(str(wallet_balance)).quantize(lot, rounding=ROUND_FLOOR)
             if available < requested:
-                return {
-                    "success": False,
-                    "orderID": None,
-                    "matched_size": 0.0,
-                    "retryable": False,
-                    "outcome_unknown": False,
-                    "error": f"SELL_INVENTORY_RECONCILIATION_REQUIRED: unreserved {available} < requested {requested} (reserved: {self.reserved_inventory.get(token_id, 0.0):.2f})",
-                }
+                if available > Decimal("0.00") and available >= requested - Decimal("0.05"):
+                    logger.info(
+                        f"[PM-EXEC] Clamping unwind size {requested} -> {available} shares to match exact unreserved wallet dust."
+                    )
+                    requested = available
+                else:
+                    return {
+                        "success": False,
+                        "orderID": None,
+                        "matched_size": 0.0,
+                        "retryable": False,
+                        "outcome_unknown": False,
+                        "error": f"SELL_INVENTORY_RECONCILIATION_REQUIRED: unreserved {available} < requested {requested} (reserved: {self.reserved_inventory.get(token_id, 0.0):.2f})",
+                    }
             quantized_size = float(requested)
             if quantized_size <= 0.0:
                 logger.warning(f"[UNWIND SKIPPED] Size {size} rounds to 0.00 lots.")
@@ -3548,19 +3864,22 @@ class PolymarketLiveExecutor:
                 side=side,
                 token_id=token_id,
             )
-            signed_order = self.client.create_order(order_args)
+            t_u0 = time.perf_counter()
+            with _UrgentSignPriority():
+                signed_order = self.client.create_order(order_args)
             # Default to FAK (Fill-and-Kill / IOC) for aggressive unwinds to match available book depth
-            # and cancel remainder, or FOK if strictly required
+            # and cancel remainder, with defer_exec=True so SDK never blocks on tx-hash polling
             selected_order_type = getattr(OrderType, "FAK", OrderType.FOK)
             order_submitted = True
-            resp = self.client.post_order(signed_order, selected_order_type, post_only=False, defer_exec=False)
+            resp = self.client.post_order(signed_order, selected_order_type, post_only=False, defer_exec=True)
+            unwind_lat_ms = (time.perf_counter() - t_u0) * 1000.0
             order_id = resp.get("orderID") or resp.get("id")
             status = resp.get("status")
             taking_amount = resp.get("takingAmount") or resp.get("taking_amount")
             status_str = str(status).upper() if status else ""
-            raw_matched = resp.get("makingAmount") or resp.get("size")
-            matched_status = status_str in {"MATCHED", "FILLED", "CONFIRMED"}
-            is_matched = bool(order_id) and matched_status and raw_matched is not None
+            raw_matched = resp.get("makingAmount") if resp.get("makingAmount") not in (None, "") else resp.get("size_matched")
+            matched_status = status_str in {"MATCHED", "FILLED", "CONFIRMED", "MINED"}
+            is_matched = bool(order_id) and matched_status and raw_matched not in (None, "")
             if is_matched:
                 matched_size = float(raw_matched)
                 taking_missing = taking_amount in (None, "")
@@ -3611,6 +3930,24 @@ class PolymarketLiveExecutor:
                     5,
                 )
 
+                self._log_order(OrderResult(
+                    success=True,
+                    order_id=str(order_id),
+                    trade_id=f"UNWIND_{order_id}",
+                    token_id=str(token_id),
+                    target_token="",
+                    side=side,
+                    price=round(average_price, 4),
+                    size=matched_size,
+                    notional_usd=round(taking_amt, 4),
+                    fee_usd=estimated_fee,
+                    latency_ms=unwind_lat_ms,
+                    mode="LIVE_UNWIND",
+                    execution_status=ExecutionStatus.FILLED,
+                    confirmed_onchain=onchain_settled,
+                    details={"raw_response": resp, "taking_is_estimated": taking_is_estimated},
+                ))
+
                 # Exact Exchange-Compatible Decimal Arithmetic (No permissive 0.01 tolerance)
                 target_dec = Decimal(str(quantized_size)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR)
                 matched_dec = Decimal(str(matched_size)).quantize(Decimal("0.01"), rounding=ROUND_FLOOR)
@@ -3650,7 +3987,11 @@ class PolymarketLiveExecutor:
                     "raw": resp,
                 }
             else:
-                is_terminal_rejection = status_str in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}
+                is_terminal_rejection = (
+                    status_str in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED", "UNMATCHED"}
+                    or is_fak_killed_no_match(None, resp)
+                    or is_clob_400_rejection(None, resp)
+                )
                 outcome_unknown = not is_terminal_rejection
                 logger.warning(f"[LIVE UNWIND NON-MATCHED] Response: {resp} | terminal={is_terminal_rejection}")
                 res_id = None
@@ -3671,8 +4012,9 @@ class PolymarketLiveExecutor:
                 }
         except Exception as e:
             logger.error(f"[LIVE UNWIND EXCEPTION] Error executing unwind order (submitted={order_submitted}): {e}")
-            if not order_submitted:
-                # Nothing reached the exchange: a clean, retryable failure with no commitment.
+            if not order_submitted or is_clob_400_rejection(e):
+                # Nothing matched on the exchange (pre-submit or synchronous HTTP 400 / FAK 0-match kill):
+                # retryable failure with zero inventory lock!
                 return {
                     "success": False,
                     "orderID": None,
@@ -3700,13 +4042,37 @@ class PolymarketLiveExecutor:
             return {"heartbeat_id": "MOCK_HEARTBEAT"}
         hid = self.last_heartbeat_id if heartbeat_id is None else heartbeat_id
         try:
-            resp = self.client.post_heartbeat(heartbeat_id=hid or "")
-            new_id = resp.get("heartbeat_id")
+            with _CLOB_HTTP_LOCK:
+                resp = self.client.post_heartbeat(heartbeat_id=hid or "")
+            new_id = resp.get("heartbeat_id") if isinstance(resp, dict) else None
             if new_id:
                 self.last_heartbeat_id = new_id
             self.heartbeat_failures = 0
             return resp
         except Exception as e:
+            # Self-healing resync: When CLOB returns 400 {'error': 'Invalid Heartbeat ID', 'heartbeat_id': '<uuid>'},
+            # extract the authoritative server heartbeat_id and immediately resync in-place.
+            server_hid = None
+            err_msg_obj = getattr(e, "error_message", None) or getattr(e, "error_msg", None)
+            if isinstance(err_msg_obj, dict) and err_msg_obj.get("heartbeat_id"):
+                server_hid = str(err_msg_obj["heartbeat_id"]).strip()
+            else:
+                import re
+                m_hid = re.search(r"['\"]heartbeat_id['\"]\s*:\s*['\"]([0-9a-fA-F-]{16,})['\"]", str(e))
+                if m_hid:
+                    server_hid = m_hid.group(1).strip()
+            if server_hid and server_hid != (hid or ""):
+                try:
+                    with _CLOB_HTTP_LOCK:
+                        retry_resp = self.client.post_heartbeat(heartbeat_id=server_hid)
+                    new_id = retry_resp.get("heartbeat_id") if isinstance(retry_resp, dict) else None
+                    self.last_heartbeat_id = str(new_id or server_hid)
+                    self.heartbeat_failures = 0
+                    logger.info(f"[HEARTBEAT RESYNCED] Automatically resynced CLOB heartbeat_id ({server_hid} -> {self.last_heartbeat_id}).")
+                    return retry_resp if isinstance(retry_resp, dict) else {"heartbeat_id": self.last_heartbeat_id}
+                except Exception as retry_err:
+                    logger.warning(f"[HEARTBEAT RESYNC WARN] Retry with server heartbeat_id {server_hid} failed: {retry_err}")
+
             self.last_heartbeat_id = ""
             self.heartbeat_failures += 1
             logger.error(f"[HEARTBEAT FAILURE] CLOB heartbeat error (failures={self.heartbeat_failures}): {e}")
@@ -3767,27 +4133,8 @@ class PolymarketLiveExecutor:
             matched = float((order_info or {}).get("size_matched", 0.0) or 0.0)
             orig_size = float((order_info or {}).get("original_size", 0.0) or 0.0)
 
-            if is_in_canceled_list or status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}:
-                if matched > 0.0 and orig_size > 0.0 and matched < orig_size:
-                    outcome = "PARTIALLY_FILLED_CANCELED"
-                else:
-                    outcome = "CANCELED"
-                # Safe to release unexecuted reservation
-                self.release_inventory(reservation_id=order_id)
-                logger.info(f"[PM-EXEC] Order {order_id} verified canceled ({outcome}). Released reservation.")
-                return CancelOrderResult(
-                    res if is_in_canceled_list else {"canceled": [order_id]},
-                    order_id=str(order_id),
-                    outcome=outcome,
-                    is_canceled=True,
-                    matched=matched,
-                    raw=res,
-                    canceled=[order_id],
-                )
-            elif status in {"MATCHED", "FILLED"} or (orig_size > 0.0 and matched >= orig_size - 1e-4):
+            if status in {"MATCHED", "FILLED"} or (orig_size > 0.0 and matched >= orig_size - 1e-4):
                 outcome = "FILLED"
-                # DO NOT release reservation! The order executed, so inventory was consumed.
-                # Caller fill-reconciliation engine must reconcile matched shares before any new orders.
                 logger.warning(
                     f"[PM-EXEC] Order {order_id} cancellation returned FILLED/MATCHED (matched={matched:.2f}). "
                     "Retaining reservation until caller reconciles filled quantity."
@@ -3799,6 +4146,24 @@ class PolymarketLiveExecutor:
                     is_canceled=False,
                     matched=matched,
                     raw=res,
+                )
+            elif status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"} or (
+                is_in_canceled_list and (self.dry_run or order_info is not None)
+            ):
+                if matched > 0.0 and orig_size > 0.0 and matched < orig_size:
+                    outcome = "PARTIALLY_FILLED_CANCELED"
+                else:
+                    outcome = "CANCELED"
+                self.release_inventory(reservation_id=order_id)
+                logger.info(f"[PM-EXEC] Order {order_id} verified canceled ({outcome}). Released reservation.")
+                return CancelOrderResult(
+                    res if is_in_canceled_list else {"canceled": [order_id]},
+                    order_id=str(order_id),
+                    outcome=outcome,
+                    is_canceled=True,
+                    matched=matched,
+                    raw=res,
+                    canceled=[order_id],
                 )
             else:
                 outcome = "UNKNOWN"
@@ -3896,15 +4261,22 @@ class PolymarketLiveExecutor:
             logger.error(f"[PM-EXEC] Failed to query CLOB conditional balance for {token_id}: {e}")
             return None
 
-    _class_reservations: Dict[str, Dict[str, Any]] = {}
+    _class_reservations: Dict[str, Dict[str, Dict[str, Any]]] = {}
     RESERVATIONS_STATE_PATH = POLYMARKET_DATA_DIR / "inventory_reservations.json"
     RESERVATIONS_SCHEMA = "pm-reservations/2.3.8"
 
     @property
     def reservations_path(self) -> Path:
         """Live and dry-run commitments are kept in physically separate files."""
-        base = Path(self.RESERVATIONS_STATE_PATH)
+        env_res_path = os.getenv("POLYMARKET_RESERVATIONS_PATH", "").strip()
+        base = Path(env_res_path) if env_res_path else Path(self.RESERVATIONS_STATE_PATH)
         return base.with_name(base.stem + ".dryrun" + base.suffix) if self.dry_run else base
+
+    def _class_res_bucket(self) -> Dict[str, Dict[str, Any]]:
+        key = str(self.reservations_path)
+        if key not in PolymarketLiveExecutor._class_reservations:
+            PolymarketLiveExecutor._class_reservations[key] = {}
+        return PolymarketLiveExecutor._class_reservations[key]
 
     @classmethod
     def _get_hmac_secret(cls, live_mode: bool = False) -> bytes:
@@ -4000,9 +4372,10 @@ class PolymarketLiveExecutor:
                     "All sell submissions are blocked until reservations are rebuilt from authoritative exchange orders."
                 )
                 self.reservation_records = {}
-                PolymarketLiveExecutor._class_reservations.clear()
-        self.reservation_records.update(PolymarketLiveExecutor._class_reservations)
-        PolymarketLiveExecutor._class_reservations.update(self.reservation_records)
+                self._class_res_bucket().clear()
+        bucket = self._class_res_bucket()
+        self.reservation_records.update(bucket)
+        bucket.update(self.reservation_records)
         self._sync_reserved_inventory()
 
     def rebuild_reservations_from_exchange(self, open_orders: Optional[List[Dict[str, Any]]]) -> bool:
@@ -4048,8 +4421,9 @@ class PolymarketLiveExecutor:
                 rebuilt[rid] = dict(r)
                 has_ambiguous = True
 
-        PolymarketLiveExecutor._class_reservations.clear()
-        PolymarketLiveExecutor._class_reservations.update(rebuilt)
+        bucket = self._class_res_bucket()
+        bucket.clear()
+        bucket.update(rebuilt)
         self.reservation_records = dict(rebuilt)
         self._sync_reserved_inventory()
         self._save_durable_reservations()
@@ -4077,36 +4451,39 @@ class PolymarketLiveExecutor:
 
     def _save_durable_reservations(self):
         """Atomically and durably persists reservation records (fsync file + directory, integrity digest)."""
-        path = self.reservations_path
-        temp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}")
-        try:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            d = self._reservation_digest(self.reservation_records, live_mode=not self.dry_run)
-            payload = {
-                "schema": self.RESERVATIONS_SCHEMA,
-                "reservation_records": self.reservation_records,
-                "hmac_sha256": d,
-                "sha256": d,
-                "updated_at": time.time(),
-            }
-            with open(temp_path, "w", encoding="utf-8") as f:
-                json.dump(payload, f, indent=2, default=str)
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(temp_path, path)
-            dir_fd = os.open(str(path.parent), os.O_RDONLY)
+        lock = getattr(self, "_reservations_lock", None) or _CLOB_HTTP_LOCK
+        with lock:
+            path = self.reservations_path
+            temp_path = path.with_name(f"{path.name}.tmp.{os.getpid()}.{threading.get_ident()}")
             try:
-                os.fsync(dir_fd)
-            finally:
-                os.close(dir_fd)
-        except Exception as e:
-            try:
-                temp_path.unlink(missing_ok=True)
-            except Exception:
-                pass
-            logger.error(f"Could not save durable reservations: {e}")
-            if not self.dry_run:
-                raise RuntimeError(f"CRITICAL: Failed to persist durable reservations: {e}")
+                path.parent.mkdir(parents=True, exist_ok=True)
+                d = self._reservation_digest(self.reservation_records, live_mode=not self.dry_run)
+                payload = {
+                    "schema": self.RESERVATIONS_SCHEMA,
+                    "reservation_records": self.reservation_records,
+                    "hmac_sha256": d,
+                    "sha256": d,
+                    "updated_at": time.time(),
+                }
+                with open(temp_path, "w", encoding="utf-8") as f:
+                    json.dump(payload, f, indent=2, default=str)
+                    f.flush()
+                    os.fsync(f.fileno())
+                os.replace(temp_path, path)
+                if os.name != "nt":
+                    dir_fd = os.open(str(path.parent), os.O_RDONLY)
+                    try:
+                        os.fsync(dir_fd)
+                    finally:
+                        os.close(dir_fd)
+            except Exception as e:
+                try:
+                    temp_path.unlink(missing_ok=True)
+                except Exception:
+                    pass
+                logger.error(f"Could not save durable reservations: {e}")
+                if not self.dry_run:
+                    raise RuntimeError(f"CRITICAL: Failed to persist durable reservations: {e}")
 
     @classmethod
     def clear_all_reservations(cls):
@@ -4135,7 +4512,7 @@ class PolymarketLiveExecutor:
             "created_at_ts": time.time(),
         }
         self.reservation_records[r_id] = record
-        PolymarketLiveExecutor._class_reservations[r_id] = record
+        self._class_res_bucket()[r_id] = record
         self._sync_reserved_inventory()
         self._save_durable_reservations()
 
@@ -4143,10 +4520,11 @@ class PolymarketLiveExecutor:
         """Releases reserved inventory when an exit order is authoritatively settled or canceled (R3-07 Fix)."""
         lot = Decimal("0.01")
         quantized = float(Decimal(str(max(0.0, size))).quantize(lot, rounding=ROUND_FLOOR)) if size else 0.0
+        bucket = self._class_res_bucket()
         if reservation_id and str(reservation_id) in self.reservation_records:
             r_id = str(reservation_id)
             self.reservation_records.pop(r_id, None)
-            PolymarketLiveExecutor._class_reservations.pop(r_id, None)
+            bucket.pop(r_id, None)
         elif token_id:
             remaining_to_release = quantized if quantized > 0.0 else self.reserved_inventory.get(token_id, 0.0)
             for r_id, r in list(self.reservation_records.items()):
@@ -4155,11 +4533,11 @@ class PolymarketLiveExecutor:
                     if cur_sz <= remaining_to_release:
                         remaining_to_release -= cur_sz
                         self.reservation_records.pop(r_id, None)
-                        PolymarketLiveExecutor._class_reservations.pop(r_id, None)
+                        bucket.pop(r_id, None)
                     else:
                         r["size"] = round(cur_sz - remaining_to_release, 4)
-                        if r_id in PolymarketLiveExecutor._class_reservations:
-                            PolymarketLiveExecutor._class_reservations[r_id]["size"] = r["size"]
+                        if r_id in bucket:
+                            bucket[r_id]["size"] = r["size"]
                         remaining_to_release = 0.0
                         break
                     if remaining_to_release <= 0.0:
@@ -4177,9 +4555,10 @@ class PolymarketLiveExecutor:
         if quantized <= 0.0:
             self.release_inventory(reservation_id=r_id)
         else:
+            bucket = self._class_res_bucket()
             self.reservation_records[r_id]["size"] = quantized
-            if r_id in PolymarketLiveExecutor._class_reservations:
-                PolymarketLiveExecutor._class_reservations[r_id]["size"] = quantized
+            if r_id in bucket:
+                bucket[r_id]["size"] = quantized
             self._sync_reserved_inventory()
             self._save_durable_reservations()
 
@@ -4258,7 +4637,6 @@ class PolymarketLiveExecutor:
                 f.write(json.dumps(entry) + "\n")
         except Exception as e:
             logger.error(f"Failed to append to live order ledger: {e}")
-
 
 if __name__ == "__main__":
     print("=" * 80)

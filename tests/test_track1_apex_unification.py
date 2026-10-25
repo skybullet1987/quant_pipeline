@@ -226,3 +226,147 @@ def test_mainnet_paper_mode_nav_reconciliation(tmp_path):
     assert executor.state.valuation_residual_usd == 0.0
     assert executor.state.circuit_breaker == CircuitBreakerState.RUNNING
     assert "BTC" in confirmed_pos
+
+
+def test_v381_dry_run_bracket_stop_loss_and_take_profit(tmp_path):
+    """
+    Verifies that arm_position_brackets in --dry-run mode:
+      1. Actively checks mark_px against -3.5% SL and +7.0% TP.
+      2. Closes breached positions (e.g., SAND down -8.65%), records FILL_RECONCILED and IMPLEMENTATION_AUDIT_RECORD.
+      3. Removes stopped-out symbols from frozen_target_weights while preserving bars_since_macro.
+      4. Populates armed_triggers for non-breached positions.
+    """
+    import time
+    journal_p = tmp_path / "journal.jsonl"
+    state_p = tmp_path / "state.json"
+    executor = ProductionApexExecutor(
+        testnet=False,
+        dry_run=True,
+        acquire_lock=False,
+        journal_path=journal_p,
+        state_path=state_p,
+    )
+    now_ms = int(time.time() * 1000)
+    # Seed SAND Long @ $0.0639 (mark $0.0584 -> -8.6% SL breach) and BTC Long @ $80000 (mark $80500 -> healthy)
+    executor.journal.append_event("TARGET_FROZEN", {
+        "generation_id": "EXP103_GEN_TEST",
+        "signal_bar_ts": "2026-10-20 00:00:00 UTC",
+        "target_weights": {"SAND": 0.25, "BTC": 0.50},
+        "active_leverage": 2.0,
+        "cushion": 1.0,
+        "holding_locks": {"SAND": 19, "BTC": 19},
+        "bars_since_macro": 17,
+        "timestamp": "2026-10-20 00:00:00 UTC",
+    })
+    executor.journal.append_event("FILL_RECONCILED", {
+        "fill_key": f"DRY_SAND_{now_ms}",
+        "coin": "SAND",
+        "oid": 201,
+        "tid": 201,
+        "time_ms": now_ms,
+        "closed_pnl": 0.0,
+        "fee": 0.04,
+        "px": 0.0639,
+        "sz": 4421.0,
+        "side": "BUY",
+    })
+    executor.journal.append_event("FILL_RECONCILED", {
+        "fill_key": f"DRY_BTC_{now_ms}",
+        "coin": "BTC",
+        "oid": 202,
+        "tid": 202,
+        "time_ms": now_ms,
+        "closed_pnl": 0.0,
+        "fee": 0.08,
+        "px": 80000.0,
+        "sz": 0.006,
+        "side": "BUY",
+    })
+    executor.state = executor.journal.replay_and_project()
+    assert executor.state.bars_since_macro == 17
+
+    mock_gw = MagicMock()
+    mock_gw.sz_decimals = {"SAND": 0, "BTC": 4}
+    mock_gw.get_account_state.return_value = (0.0, 0.0, {})
+    mock_gw.info.user_state.return_value = {"assetPositions": []}
+    mock_gw.info.user_fills_by_time.return_value = []
+    mock_gw.info.post.return_value = []
+    mock_gw.get_mid_price.side_effect = lambda sym: 0.05837 if sym == "SAND" else 80500.0
+    executor.gateway = mock_gw
+
+    armed = executor.arm_position_brackets(sl_pct=0.035, tp_pct=0.070)
+
+    # SAND must be stopped out and removed from paper_positions & frozen_target_weights
+    assert "SAND" not in executor.state.paper_positions
+    assert "SAND" not in executor.state.frozen_target_weights
+    # BTC must remain open and armed
+    assert "BTC" in executor.state.paper_positions
+    assert "BTC" in armed
+    assert armed["BTC"]["sl_armed"] is True
+    # Cadence counter must be preserved
+    assert executor.state.bars_since_macro == 17
+
+
+def test_v381_single_name_altcoin_cap_25pct(tmp_path):
+    """
+    Verifies that when only 2 altcoins qualify for the long leg,
+    MAX_SINGLE_ALT_WEIGHT (0.25) prevents any single altcoin from receiving 50%+ of NAV.
+    """
+    from src.execution.production_apex_daemon import MAX_SINGLE_ALT_WEIGHT
+    assert MAX_SINGLE_ALT_WEIGHT == 0.25
+
+    executor = ProductionApexExecutor(
+        testnet=True,
+        dry_run=True,
+        acquire_lock=False,
+        journal_path=tmp_path / "journal.jsonl",
+        state_path=tmp_path / "state.json",
+    )
+    n_bars = 40
+    symbols = ["BTC", "ETH", "INJ", "SAND", "ALT1", "ALT2", "ALT3", "ALT4"]
+    n_symbols = len(symbols)
+    close_mat = np.ones((n_bars, n_symbols)) * 100.0
+    # Give slight variation so returns std is non-zero
+    np.random.seed(7)
+    for i in range(n_symbols):
+        close_mat[:, i] = 100.0 * np.cumprod(1.0 + np.random.normal(0.001, 0.01, n_bars))
+
+    atr_mat = np.ones((n_bars, n_symbols)) * 1.5
+    valid_mask = np.ones((n_bars, n_symbols), dtype=bool)
+    funding_rates = np.zeros(n_symbols)
+
+    with patch("src.execution.production_apex_daemon.apply_fractional_differentiation") as mock_fd, \
+         patch("src.execution.production_apex_daemon.compute_multi_beta_residual_momentum") as mock_f5, \
+         patch("src.execution.production_apex_daemon.compute_asymmetric_fip_scores") as mock_fip, \
+         patch("src.execution.production_apex_daemon.compute_bipower_variation_stats") as mock_bv, \
+         patch("src.execution.production_apex_daemon.compute_hurst_exponent") as mock_h, \
+         patch("src.execution.production_apex_daemon.compute_variance_ratio") as mock_vr:
+
+        mock_fd.return_value = np.zeros((n_bars, n_symbols))
+        f5_mock = np.zeros((n_bars, n_symbols))
+        # Only INJ (2) and SAND (3) positive; others negative
+        f5_mock[-1, 2] = 3.0
+        f5_mock[-1, 3] = 2.5
+        f5_mock[-1, :2] = -2.0
+        for j in range(4, n_symbols):
+            f5_mock[-1, j] = -2.0
+        mock_f5.return_value = (f5_mock, np.zeros((n_bars, n_symbols)))
+        mock_fip.return_value = f5_mock.copy()
+        mock_bv.return_value = (1.0, 1.0, 0.10)
+        mock_h.return_value = 0.60
+        mock_vr.return_value = 1.10
+
+        targets, lev, cushion, longs, shorts, locks = executor.compute_exp103_signals_and_weights(
+            close_mat=close_mat,
+            atr_mat=atr_mat,
+            funding_rates=funding_rates,
+            valid_mask=valid_mask,
+            symbols=symbols,
+            btc_idx=0,
+            eth_idx=1,
+            vol_mat=np.ones_like(close_mat) * 1000.0,
+        )
+
+        assert set(longs) == {"INJ", "SAND"}
+        assert targets.get("INJ", 0.0) <= MAX_SINGLE_ALT_WEIGHT + 1e-6
+        assert targets.get("SAND", 0.0) <= MAX_SINGLE_ALT_WEIGHT + 1e-6

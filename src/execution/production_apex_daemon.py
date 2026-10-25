@@ -97,6 +97,8 @@ from src.alpha.fracdiff_orthogonal_engine import (
 from src.signals.asym_fip import compute_asymmetric_fip_scores
 from src.execution.as_quoting import compute_as_quote_offsets
 from src.execution.exchange_gateway import HyperliquidGateway
+from hyperliquid.info import Info
+from hyperliquid.utils import constants
 
 JOURNAL_FILE = PIPELINE_ROOT / "data" / "papertrade_journal.jsonl"
 STATE_FILE = PIPELINE_ROOT / "data" / "papertrade_state.json"
@@ -121,15 +123,25 @@ DYNAMIC_VALUATION_NAV_BPS = 0.0005 # 0.05% (5 bps) of NAV dynamic valuation tole
 CLOCK_DRIFT_MAX_RETRIES = 3       # 3-attempt retry loop for transient DNS/network hiccups
 CLOCK_DRIFT_BASE_BACKOFF_SEC = 0.5 # Exponential backoff base (0.5s -> 1.0s -> 2.0s)
 TARGET_PORTFOLIO_VOL_ANN = 0.45   # 45% annualized target volatility for dynamic vol scaling
-EXP112_RECYCLER_ENABLED = True    # Activate EXP-112 Unified Capital Recycler during fl0 cash days
-EXP109_SATELLITE_ALLOC = 0.15     # 15% calibrated margin allocation to EXP-109 Extreme Funding Mean Reversion
+EXP112_RECYCLER_ENABLED = True    # Activate EXP-112 / Always-On EXP-109 4H Fast Satellite Sleeve
+EXP109_SATELLITE_ALLOC = 0.15     # 15% calibrated margin allocation to EXP-109 inside the validated fl0 recycler (Config D)
+EXP109_ALWAYS_ON_MAX_SLOTS = 3    # Always-On 4H EXP-109 sleeve: max concurrent satellite shorts
+EXP109_SLOT_WEIGHT = 0.10         # Always-On 4H EXP-109 sleeve: fixed 0.10x NAV per slot (0.30x max sleeve), BTC/ETH beta-hedged
 EXP106_RECOVERY_ALLOC = 0.15      # 15% margin allocation to EXP-106 Markov Regime Recovery
+MAX_SINGLE_ALT_WEIGHT = 0.25      # 25% of NAV hard cap per single non-BTC/ETH altcoin in 72H core book
+WHIPSAW_EXCLUSIONS = {"CASHCAT", "VVV", "FARTCOIN", "PUMP", "ENA"}  # Hard L1 Liquidity / Whipsaw Exclusions (certified Unified Stack Step 2)
+ADV_FLOOR_QUANTILE = 15.0         # Bottom 15% rolling dollar-volume liquidity exclusion floor
 USE_RISK_PARITY_103C = True       # EXP-103C Shrunk-Covariance Risk Parity Portfolio Allocator (-22.1% vol)
 EXP103B_OFI_DEFENSE_ENABLED = True # EXP-103B Model 2A Adaptive OFI Cancellation Guard (-83% adverse selection)
 OFI_ADVERSE_DRIFT_THRESHOLD_BPS = 5.0 # 5.0 bps adverse mid drift threshold for maker queue protection
+EXP113_SYMMETRIC_SIEVE_ENABLED = True # EXP-113 Symmetric Hurst/VR/FIP Persistence Sieve & Quality Tilt (+3.9% CAGR)
+EXP114_ROLLING_CADENCE_BARS = 6   # EXP-114 Fast Rolling 24H (6 x 4H bars) Rebalance Cadence with GP Smoothing
+EXP115_ATR_BRACKETS_ENABLED = True # EXP-115 ATR-Scaled Volatility Brackets + 4-Stage Convex Trailing Profit Ratchet (+20.8% CAGR)
+EXP116_VOL_DAMPER_ENABLED = True  # EXP-116 Volatility-Targeted Downside Cushion Damper
+EXP117_118_FAST_SLEEVES_ENABLED = True # EXP-117/118 Fast 4H Negative-Funding Squeeze Longs & Bipower Cascade Harvester
 ADMIN_RESET_TOKEN = os.getenv("APEX_ADMIN_RESET_TOKEN", "APEX_OPERATOR_AUTHORIZED_EMERGENCY_RESET_2026")
 BENCHMARK_SYMBOL = "BTC"
-STRATEGY_VERSION = "v3.8.0-unified-mainnet-paper"
+STRATEGY_VERSION = "v4.0.0-unified-deep-research"
 PYRAMID_RATIO = 0.0  # Strictly zero pyramiding invariant
 
 
@@ -225,6 +237,8 @@ class PaperTradeState:
     frozen_target_weights: Dict[str, float] = field(default_factory=dict)
     holding_locks: Dict[str, int] = field(default_factory=dict)
     paper_positions: Dict[str, Dict[str, float]] = field(default_factory=dict)
+    # Explicit Always-On EXP-109 satellite registry (sym -> {weight, size, entry_bar, exit_bar, hedges, hedge_weights})
+    satellites: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     processed_fill_keys: Set[str] = field(default_factory=set)
     processed_funding_keys: Set[str] = field(default_factory=set)
@@ -470,8 +484,11 @@ class EventJournal:
                     state.active_leverage = float(payload.get("active_leverage", state.active_leverage))
                     state.cushion = float(payload.get("cushion", state.cushion))
                     state.holding_locks = payload.get("holding_locks", {})
-                    state.bars_since_macro = 0
-                    state.last_macro_ts = payload.get("timestamp", "")
+                    state.bars_since_macro = int(payload.get("bars_since_macro", 0))
+                    if not payload.get("is_intra_period_update", False):
+                        state.last_macro_ts = payload.get("timestamp", "")
+                elif ev_type == "SATELLITE_STATE":
+                    state.satellites = {k: dict(v) for k, v in (payload.get("satellites") or {}).items()}
                 elif ev_type == "ORDER_INTENT":
                     cloid = payload.get("cloid")
                     if cloid:
@@ -588,11 +605,18 @@ class ProductionApexExecutor:
         journal_path: Optional[Path] = None,
         state_path: Optional[Path] = None,
         use_risk_parity_103c: bool = USE_RISK_PARITY_103C,
+        mainnet_signals: bool = False,
     ):
         self.testnet = testnet
         self.dry_run = dry_run
+        self.mainnet_signals = mainnet_signals
+        # Explicit virtual paper mode: --mainnet --dry-run prices fills against live Mainnet books but never
+        # reconciles NAV against the real wallet. Testnet dry-run still reconciles against chain state.
+        self.virtual_paper = bool(dry_run and not testnet)
         self.force_macro = force_macro
         self.use_risk_parity_103c = use_risk_parity_103c
+        self.latest_atr_map: Dict[str, float] = {}
+        self.position_hwm_map: Dict[str, float] = {}
 
         # 1. Process Singleton Enforcement
         self._lock_file_handle = None
@@ -614,6 +638,15 @@ class ProductionApexExecutor:
         secret = os.getenv("HYPERLIQUID_PRIVATE_KEY") or os.getenv("HYPERLIQUID_API_KEY")
         addr = os.getenv("HYPERLIQUID_ACCOUNT_ADDRESS")
         self.gateway = HyperliquidGateway(secret_key=secret, account_address=addr, testnet=testnet)
+        if self.mainnet_signals and self.testnet:
+            try:
+                self.signal_info = Info(constants.MAINNET_API_URL, skip_ws=True)
+                log("INFO", "[HYBRID SIGNAL ENGINE] Connected Mainnet Info feed for institutional signal/funding calculation while executing on Testnet.")
+            except Exception as e_sig:
+                log("WARN", f"[HYBRID SIGNAL ENGINE] Fallback to gateway.info ({e_sig})")
+                self.signal_info = self.gateway.info
+        else:
+            self.signal_info = self.gateway.info
 
         # 4. Event Journal & State Projection
         self.latch_file = self.journal_file.parent / (self.journal_file.stem + "_emergency_halt.latch")
@@ -941,13 +974,31 @@ class ProductionApexExecutor:
         decision_ts_ms, completed_bar_end_ms = self.get_causal_4h_decision_boundary()
 
         log("INFO", f"[DATA] Causal 4H Decision Boundary: {datetime.fromtimestamp(decision_ts_ms/1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        meta, asset_ctxs = self.gateway.info.meta_and_asset_ctxs()
+        sig_info = getattr(self, "signal_info", None) or self.gateway.info
+        meta, asset_ctxs = sig_info.meta_and_asset_ctxs()
         tradeable_syms = set(self.gateway.sz_decimals.keys())
+
+        # If executing on Testnet while sourcing signals from Mainnet, pre-filter out Testnet books with zero L1 liquidity
+        testnet_liquid_syms: Optional[Set[str]] = None
+        if getattr(self, "mainnet_signals", False) and self.testnet and not self.dry_run:
+            try:
+                tn_meta, tn_ctxs = self.gateway.info.meta_and_asset_ctxs()
+                testnet_liquid_syms = set()
+                for idx_t, u_t in enumerate(tn_meta.get("universe", [])):
+                    nm = u_t.get("name")
+                    ctx_t = tn_ctxs[idx_t] if idx_t < len(tn_ctxs) else {}
+                    # Require active midPx/markPx on Testnet
+                    if nm and float(ctx_t.get("markPx") or 0.0) > 0 and (nm in ("BTC", "ETH") or float(ctx_t.get("dayNtlVlm") or 0.0) > 0 or float(ctx_t.get("openInterest") or 0.0) > 0):
+                        testnet_liquid_syms.add(nm)
+            except Exception:
+                testnet_liquid_syms = None
 
         candidates = []
         for idx, u in enumerate(meta["universe"]):
             name = u["name"]
-            if name in tradeable_syms and not u.get("isSpot", False):
+            if name in tradeable_syms and name not in WHIPSAW_EXCLUSIONS and not u.get("isSpot", False):
+                if testnet_liquid_syms is not None and name not in testnet_liquid_syms:
+                    continue
                 ctx = asset_ctxs[idx] if idx < len(asset_ctxs) else {}
                 vol = float(ctx.get("dayNtlVlm", 0.0))
                 funding_rate = float(ctx.get("funding", 0.0))
@@ -970,7 +1021,7 @@ class ProductionApexExecutor:
 
         for sym in top_symbols:
             try:
-                raw_candles = self.gateway.info.candles_snapshot(sym, "4h", start_ms, decision_ts_ms + (4 * 3600 * 1000))
+                raw_candles = sig_info.candles_snapshot(sym, "4h", start_ms, decision_ts_ms + (4 * 3600 * 1000))
                 if not raw_candles:
                     continue
 
@@ -1039,6 +1090,12 @@ class ProductionApexExecutor:
 
         # Compute Canonical Wilder's ATR(14)
         atr_mat = compute_canonical_wilder_atr(ffill_high, ffill_low, ffill_close, window=14)
+        if atr_mat.shape[0] > 0:
+            self.latest_atr_map = {
+                symbols[i]: float(atr_mat[-1, i])
+                for i in range(len(symbols))
+                if np.isfinite(atr_mat[-1, i]) and atr_mat[-1, i] > 0
+            }
 
         # Extract PIT funding rates
         funding_rates = np.array([live_funding_map.get(s, 0.0) for s in symbols], dtype=float)
@@ -1222,6 +1279,21 @@ class ProductionApexExecutor:
         composite_alpha = 0.50 * z_fd + 0.35 * z_fip + 0.15 * z_carry
 
         # 3. Microstructure Jump Disentanglement & Hurst/VR Regime Sieve with EXP-109 Squeeze & Funding Veto
+        # Hard L1 Liquidity / ADV Floor (Certified Unified Stack Step 2):
+        # Exclude WHIPSAW_EXCLUSIONS and bottom 15% of rolling dollar volume (when universe >= 12 symbols with non-uniform volume)
+        adv_floor_excluded: Set[int] = set()
+        if vol_mat is not None and n_symbols >= 12:
+            dv_mat = np.where(valid_mask, close_mat * vol_mat, np.nan)
+            with np.errstate(invalid="ignore"):
+                mean_adv = np.nanmean(dv_mat, axis=0)
+            finite_adv = mean_adv[np.isfinite(mean_adv) & (mean_adv > 0)]
+            if len(finite_adv) >= 12 and (np.max(finite_adv) - np.min(finite_adv)) > 1e-6:
+                q15_adv = float(np.percentile(finite_adv, ADV_FLOOR_QUANTILE))
+                for idx_c in range(n_symbols):
+                    if symbols[idx_c] not in ("BTC", "ETH"):
+                        if not np.isfinite(mean_adv[idx_c]) or mean_adv[idx_c] < q15_adv:
+                            adv_floor_excluded.add(idx_c)
+
         ret_24h = (close_mat[t] / np.maximum(close_mat[max(0, t - 6)], 1e-8)) - 1.0 if n_bars >= 8 else np.zeros(n_symbols)
         ret_72h = (close_mat[t] / np.maximum(close_mat[max(0, t - 18)], 1e-8)) - 1.0 if n_bars >= 20 else np.zeros(n_symbols)
         mom_raw = ret_24h + ret_72h
@@ -1234,11 +1306,14 @@ class ProductionApexExecutor:
             z_mom = np.zeros(n_symbols)
 
         qualified_longs = []
+        fallback_long_cands = []
         qualified_shorts = []
         holding_locks = {}
 
         for i in valid_indices:
             sym = symbols[i]
+            if sym in WHIPSAW_EXCLUSIONS or i in adv_floor_excluded:
+                continue
             p_slice = close_mat[max(0, t - 36):t + 1, i]
             if len(p_slice) < 18 or np.any(p_slice <= 0):
                 continue
@@ -1256,23 +1331,44 @@ class ProductionApexExecutor:
                 continue
 
             lock_bars = determine_holding_lock_duration(hurst, vr)
-            # Store absolute target expiry micro-bar index (immune to replay wipes)
-            holding_locks[sym] = self.state.total_micro_bars + lock_bars
+            atr_i = np.nanmean(np.abs(close_mat[max(0, t-18):t, i] - close_mat[max(0, t-19):max(1, t-1), i])) if t >= 20 else 0.01
+            dp_atr = abs(ret_24h[i] * close_mat[t, i]) / (atr_i + 1e-8)
 
-            score = composite_alpha[i]
+            score = float(composite_alpha[i])
+            if EXP113_SYMMETRIC_SIEVE_ENABLED:
+                # EXP-113 Persistence Quality Tilt (+15% for smooth Frog-in-the-Pan trend continuity)
+                if abs(float(asym_fip_scores[i])) >= 0.20 and jump_ratio <= 0.35:
+                    score *= 1.15
+            if EXP115_ATR_BRACKETS_ENABLED:
+                # EXP-115 Multi-ATR Parabolic Runner Conviction Tilt (+25% for >= 1.5 ATR 24h directional breakout)
+                if dp_atr >= 1.50 and np.sign(ret_24h[i]) == np.sign(score) and jump_ratio <= 0.35:
+                    score *= 1.25
+
             if score > 0 and hurst > 0.52 and vr > 0.95:
-                qualified_longs.append((sym, score))
+                qualified_longs.append((sym, score, lock_bars))
+            elif score > 0 and EXP113_SYMMETRIC_SIEVE_ENABLED and (
+                (hurst >= 0.48 and vr >= 0.85) or (hurst >= 0.46 and abs(float(asym_fip_scores[i])) >= 0.20)
+            ):
+                fallback_long_cands.append((sym, score, lock_bars))
             elif score < 0:
                 # EXP-109 / EXP-104.1 Squeeze Veto & Toxic Funding Check
-                atr_i = np.nanmean(np.abs(close_mat[max(0, t-18):t, i] - close_mat[max(0, t-19):max(1, t-1), i])) if t >= 20 else 0.01
-                dp_atr = abs(ret_24h[i] * close_mat[t, i]) / (atr_i + 1e-8)
                 if z_mom[i] > 2.50 and dp_atr > 2.0:
                     log("INFO", f"[EXP-109 SQUEEZE VETO] Core vetoed short on {sym}: z_mom={z_mom[i]:.2f}, dp_atr={dp_atr:.2f}")
                     continue
                 if funding_rates[i] < -0.00010:  # shorts paying longs > 27% APR fee bleed
                     log("INFO", f"[EXP-109 FUNDING VETO] Core vetoed short on {sym}: funding={funding_rates[i]*8760*100:.1f}% APR (shorts bleed)")
                     continue
-                qualified_shorts.append((sym, score))
+                # EXP-113 Symmetric Short Persistence Gate (active on full >= 12 symbol live universes)
+                if EXP113_SYMMETRIC_SIEVE_ENABLED and n_symbols >= 12 and hurst < 0.45 and vr < 0.82:
+                    continue
+                qualified_shorts.append((sym, score, lock_bars))
+
+        # EXP-113 Adaptive Long Breadth Protection: prevent asymmetric Long book starvation on live universes
+        if EXP113_SYMMETRIC_SIEVE_ENABLED and n_symbols >= 12 and len(qualified_longs) < min(6, len(qualified_shorts)) and fallback_long_cands:
+            fallback_long_cands.sort(key=lambda x: x[1], reverse=True)
+            needed = min(6, len(qualified_shorts)) - len(qualified_longs)
+            qualified_longs.extend(fallback_long_cands[:needed])
+            log("INFO", f"[EXP-113 SYMMETRIC SIEVE] Balanced Long breadth to {len(qualified_longs)} legs using persistence-qualified candidates.")
 
         qualified_longs.sort(key=lambda x: x[1], reverse=True)
         qualified_shorts.sort(key=lambda x: x[1])
@@ -1281,30 +1377,37 @@ class ProductionApexExecutor:
         K = min(8, max(4, len(qualified_longs), len(qualified_shorts)))
         selected_longs = [x[0] for x in qualified_longs[:K]]
         selected_shorts = [x[0] for x in qualified_shorts[:K]]
+        for sym, _, lb in qualified_longs[:K] + qualified_shorts[:K]:
+            # Store absolute target expiry micro-bar index ONLY for selected core assets
+            holding_locks[sym] = self.state.total_micro_bars + lb
 
         target_weights: Dict[str, float] = {}
         half_leverage = active_leverage / 2.0
 
-        # EXP-103C Shrunk-Covariance Risk Parity Sizing (vs Equal-Notional)
+        # EXP-103C Shrunk-Covariance Risk Parity Sizing with Single-Name Altcoin Cap (<= 25% NAV)
         if selected_longs:
+            eff_long_lev = min(half_leverage, len(selected_longs) * MAX_SINGLE_ALT_WEIGHT)
             w_longs = self._compute_shrunk_covariance_risk_parity_weights(
                 symbols_subset=selected_longs,
                 returns_mat_full=returns_mat_full,
                 all_symbols=symbols,
-                target_gross_leverage=half_leverage,
+                target_gross_leverage=eff_long_lev,
             )
             for sym, w in w_longs.items():
-                target_weights[sym] = float(w)
+                cap = MAX_SINGLE_ALT_WEIGHT if sym not in ("BTC", "ETH") else half_leverage
+                target_weights[sym] = float(min(w, cap))
 
         if selected_shorts:
+            eff_short_lev = min(half_leverage, len(selected_shorts) * MAX_SINGLE_ALT_WEIGHT)
             w_shorts = self._compute_shrunk_covariance_risk_parity_weights(
                 symbols_subset=selected_shorts,
                 returns_mat_full=returns_mat_full,
                 all_symbols=symbols,
-                target_gross_leverage=half_leverage,
+                target_gross_leverage=eff_short_lev,
             )
             for sym, w in w_shorts.items():
-                target_weights[sym] = float(-w)
+                cap = MAX_SINGLE_ALT_WEIGHT if sym not in ("BTC", "ETH") else half_leverage
+                target_weights[sym] = float(-min(w, cap))
 
         # EXP-104.1 Multi-Beta OLS Neutralization Overlay against BTC & ETH
         target_weights = self._neutralize_portfolio_btc_eth_beta(
@@ -1408,12 +1511,15 @@ class ProductionApexExecutor:
         eth_idx: int,
         rho_val: float,
         returns_mat_full: np.ndarray,
+        use_abs_apr: bool = False,
     ) -> Tuple[Dict[str, float], float, float, List[str], List[str], Dict[str, int]]:
         """
         EXP-112 Unified Capital Recycler:
         Monetizes defensive CASH_FLOOR_fl0 regimes by deploying capped satellite risk into:
           1. EXP-109 Extreme Funding Mean Reversion (|z(Funding)| > 1.8 -> contrarian carry convergence, 12H lock).
           2. EXP-106 Markov Regime Recovery (when 24h breadth >= 50% and returns stabilizing -> 15% recovery sleeve).
+        use_abs_apr=True (Always-On 4H sleeve only) additionally qualifies coins with absolute funding > +100% APR;
+        the validated fl0 recycler path keeps the original z-score-only rule.
         """
         n_bars, n_symbols = close_mat.shape
         t = n_bars - 1
@@ -1447,10 +1553,14 @@ class ProductionApexExecutor:
 
         extreme_shorts = []
         for i in range(n_symbols):
-            if not valid_mask[t, i] or f1_carry[i] >= -1.8:
+            if not valid_mask[t, i]:
+                continue
+            # Qualify on cross-sectional z-score (f1_carry < -1.8); Always-On sleeve also accepts funding > +100% APR
+            fund_apr_i = float(funding_rates[i]) * 24.0 * 365.25 if i < len(funding_rates) else 0.0
+            if f1_carry[i] >= -1.8 and not (use_abs_apr and fund_apr_i > 1.00):
                 continue
             sym = symbols[i]
-            if sym in ("BTC", "ETH"):
+            if sym in ("BTC", "ETH") or sym in WHIPSAW_EXCLUSIONS:
                 continue
             
             # Squeeze Veto check: z_mom > 2.50 AND 24h move > 2.0 ATR
@@ -1483,7 +1593,7 @@ class ProductionApexExecutor:
                 max_gross_leverage=EXP109_SATELLITE_ALLOC,
             )
             sat_lev = float(sum(abs(w) for w in target_weights.values()))
-            log("INFO", f"[EXP-112 RECYCLER ACTIVE] Deployed {sat_lev:.2f}x satellite leverage during fl0 (S:{len(selected_shorts)})")
+            log("INFO", f"[EXP-112/109 SCAN] Computed {sat_lev:.2f}x satellite weights (S:{len(selected_shorts)})")
         return target_weights, sat_lev, cushion, selected_longs, selected_shorts, holding_locks
 
     def _neutralize_portfolio_btc_eth_beta(
@@ -1544,87 +1654,398 @@ class ProductionApexExecutor:
             hedged = {k: float(v * scale) for k, v in hedged.items() if abs(v * scale) > 1e-4}
         return hedged
 
+    # ------------------------------------------------------------------------------
+    # Always-On EXP-109 Satellite Sleeve (v3.8.2): explicit registry, fixed 0.10x slots, BTC/ETH beta hedge
+    # ------------------------------------------------------------------------------
+
+    def _current_position_size(self, sym: str, positions: Dict[str, Any]) -> float:
+        """Signed position size; in virtual paper mode reads the live in-memory paper book."""
+        if getattr(self, "virtual_paper", False):
+            return float(self.state.paper_positions.get(sym, {}).get("size", 0.0))
+        return float((positions or {}).get(sym, {}).get("size", 0.0))
+
+    def _paper_fill(
+        self,
+        sym: str,
+        is_buy: bool,
+        sz_abs: float,
+        px: float,
+        tag: str,
+        signal_px: Optional[float] = None,
+        order_type: str = "RESTING_ALO",
+        fee_rate: float = 0.00015,
+    ) -> Tuple[float, float]:
+        """
+        Journals a simulated paper fill (FILL_RECONCILED + DRY_RUN IMPLEMENTATION_AUDIT_RECORD) and mirrors the
+        replay projection in memory so un-journaled target edits made by the caller are not wiped by a replay.
+        """
+        now_ms = int(time.time() * 1000)
+        mock_oid = now_ms + random.randint(100, 999)
+        prev = self.state.paper_positions.get(sym, {})
+        prev_sz = float(prev.get("size", 0.0))
+        prev_entry = float(prev.get("entry_px", px))
+        closed_pnl = 0.0
+        if is_buy and prev_sz < 0:
+            closed_pnl = min(sz_abs, abs(prev_sz)) * (prev_entry - px)
+        elif (not is_buy) and prev_sz > 0:
+            closed_pnl = min(sz_abs, prev_sz) * (px - prev_entry)
+        fee = sz_abs * px * fee_rate
+        sig = float(signal_px if signal_px is not None else px)
+        side = "BUY" if is_buy else "SELL"
+
+        self.journal.append_event("FILL_RECONCILED", {
+            "fill_key": f"DRY_{tag}_{sym}_{mock_oid}",
+            "coin": sym,
+            "oid": mock_oid,
+            "tid": mock_oid,
+            "time_ms": now_ms,
+            "closed_pnl": closed_pnl,
+            "fee": fee,
+            "px": px,
+            "sz": sz_abs,
+            "side": side,
+        })
+        side_mult = 1.0 if is_buy else -1.0
+        slip_bps = side_mult * ((px - sig) / sig * 1e4) if sig > 0 else 0.0
+        fee_bps = fee_rate * 1e4
+        self.journal.append_event("IMPLEMENTATION_AUDIT_RECORD", {
+            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ms / 1000.0)),
+            "symbol": f"{sym}-USDC",
+            "side": side,
+            "signal_price": sig,
+            "target_open_price": px,
+            "actual_fill_price": px,
+            "filled_size": sz_abs,
+            "order_type": order_type,
+            "exchange_fee_usdc": fee,
+            "delay_slippage_bps": slip_bps,
+            "execution_impact_bps": 0.0,
+            "fee_drag_bps": fee_bps,
+            "total_shortfall_bps": slip_bps + fee_bps,
+            "mode": "DRY_RUN",
+        })
+
+        # Mirror EventJournal.replay_and_project FILL_RECONCILED projection exactly
+        self.state.cumulative_realized_pnl += closed_pnl
+        self.state.cumulative_exchange_fees += fee
+        delta = sz_abs if is_buy else -sz_abs
+        if sym not in self.state.paper_positions:
+            self.state.paper_positions[sym] = {
+                "size": delta, "entry_px": px, "mark_px": px, "unrealized_pnl": 0.0, "leverage": 10.0,
+            }
+        else:
+            curr = self.state.paper_positions[sym]
+            old_sz = curr["size"]
+            new_sz = round(old_sz + delta, 6)
+            if abs(new_sz) < 1e-6:
+                del self.state.paper_positions[sym]
+            else:
+                if (old_sz > 0 and delta > 0) or (old_sz < 0 and delta < 0):
+                    curr["entry_px"] = (old_sz * curr["entry_px"] + delta * px) / new_sz
+                curr["size"] = new_sz
+        return closed_pnl, fee
+
+    def _route_satellite_order(self, sym: str, is_buy: bool, sz_raw: float, tag: str, reduce: bool = False) -> float:
+        """Routes one satellite/hedge leg. Returns the (rounded) size sent/filled, or 0.0 if skipped/rejected."""
+        mid = float(self.gateway.get_mid_price(sym))
+        sz_dec = self.gateway.sz_decimals.get(sym, 2) if isinstance(getattr(self.gateway, "sz_decimals", None), dict) else 2
+        sz_abs = abs(round_sz(abs(sz_raw), sz_dec))
+        if sz_abs <= 0 or (not reduce and sz_abs * mid < MIN_NOTIONAL_L1):
+            log("INFO", f"  [EXP-109 {tag}] Skipped {sym}: size {sz_abs} (${sz_abs * mid:.2f}) below L1 minimum.")
+            return 0.0
+        px = round_px(mid, sz_dec)
+        cloid = f"EXP109_{tag}_{self.state.total_micro_bars}_{sym}"
+        self.journal.append_event("ORDER_INTENT", {
+            "cloid": cloid,
+            "sym": sym,
+            "action": f"EXP109_{tag}",
+            "is_buy": is_buy,
+            "size": sz_abs,
+            "price": px,
+            "reduce_only": reduce,
+            "micro_bar": self.state.total_micro_bars,
+        })
+        if self.dry_run:
+            self._paper_fill(sym, is_buy, sz_abs, px, f"EXP109_{tag}", signal_px=mid)
+            log("INFO", f"  --> [EXP-109 {tag}] [DRY-RUN] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs} @ ${px}")
+            return sz_abs
+        if reduce:
+            # close_position(symbol, size, is_long): a BUY closes a short (is_long=False)
+            self.gateway.close_position(sym, sz_abs, not is_buy)
+            log("INFO", f"  --> [EXP-109 {tag}] {sym:<8}: reduce-only {'BUY' if is_buy else 'SELL'} size={sz_abs}")
+            return sz_abs
+        res = self.gateway.place_alo_order(sym, is_buy, sz_abs, px, cloid=cloid)
+        ok, oid, status_detail = parse_order_response(res)
+        if not ok and self.testnet and ("post only" in str(status_detail).lower() or "immediately match" in str(status_detail).lower()):
+            try:
+                rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
+                px = round_px((rb_ask * 1.0025 if is_buy else rb_bid * 0.9975), sz_dec)
+                cloid_obj = Cloid.from_str("0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()) if cloid else None
+                res = self.gateway.exchange.order(sym, is_buy, sz_abs, px, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj)
+                ok, oid, status_detail = parse_order_response(res)
+            except Exception:
+                pass
+        if ok and oid is not None:
+            self.journal.append_event("ORDER_CONFIRMED", {
+                "cloid": cloid, "oid": oid, "sym": sym, "size": sz_abs, "price": px,
+                "signal_price": mid, "target_price": px, "status": status_detail,
+            })
+            self.state.owned_oids.add(int(oid))
+            self.state.owned_cloids.add(cloid)
+            self.state.order_decision_prices[str(oid)] = {"signal_price": mid, "target_price": float(px)}
+            log("INFO", f"  --> [EXP-109 {tag}] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs} @ {px} | oid={oid}")
+            return sz_abs
+        self.journal.append_event("ORDER_REJECTED", {"cloid": cloid, "sym": sym, "reason": status_detail})
+        log("WARN", f"  --> [EXP-109 {tag}] Rejected {sym}: {status_detail}")
+        return 0.0
+
+    def _compute_satellite_hedge_weights(
+        self, sym: str, weight: float, returns_mat_full: np.ndarray, symbols: List[str], btc_idx: int, eth_idx: int,
+    ) -> Dict[str, float]:
+        """Per-satellite EXP-104.1 BTC/ETH multi-beta hedge weights (NAV fractions, signed)."""
+        hedged = self._neutralize_portfolio_btc_eth_beta(
+            target_weights={sym: weight},
+            returns_mat=returns_mat_full,
+            symbols=symbols,
+            btc_idx=btc_idx,
+            eth_idx=eth_idx,
+            max_gross_leverage=10.0,
+        )
+        return {c: float(hedged[c]) for c in ("BTC", "ETH") if abs(float(hedged.get(c, 0.0))) > 1e-6}
+
+    def _adjust_frozen_target(self, sym: str, delta_w: float, only_if_present: bool = False):
+        if only_if_present and sym not in self.state.frozen_target_weights:
+            return
+        new_w = float(self.state.frozen_target_weights.get(sym, 0.0)) + float(delta_w)
+        if abs(new_w) < 1e-6:
+            self.state.frozen_target_weights.pop(sym, None)
+        else:
+            self.state.frozen_target_weights[sym] = new_w
+
+    def _open_satellite(
+        self,
+        sym: str,
+        weight: float,
+        chain_equity: float,
+        returns_mat_full: np.ndarray,
+        symbols: List[str],
+        btc_idx: int,
+        eth_idx: int,
+        exit_bar: Optional[int] = None,
+        adopt_existing_size: Optional[float] = None,
+        sleeve_tag: str = "EXP109",
+    ) -> bool:
+        """Opens (or adopts) one satellite leg (short or long) plus its BTC/ETH beta hedge legs and registers it."""
+        is_buy_leg = weight > 0
+        if adopt_existing_size is None:
+            mid = float(self.gateway.get_mid_price(sym))
+            filled = self._route_satellite_order(sym, is_buy_leg, abs(weight) * chain_equity / (mid + 1e-8), "SAT_ENTRY")
+            if filled <= 0:
+                return False
+        else:
+            filled = abs(float(adopt_existing_size))
+
+        hedge_weights = self._compute_satellite_hedge_weights(sym, weight, returns_mat_full, symbols, btc_idx, eth_idx)
+        hedges: Dict[str, float] = {}
+        booked_hedge_weights: Dict[str, float] = {}
+        for c, hw in hedge_weights.items():
+            try:
+                cmid = float(self.gateway.get_mid_price(c))
+                done = self._route_satellite_order(c, hw > 0, abs(hw) * chain_equity / (cmid + 1e-8), "SAT_HEDGE")
+                if done > 0:
+                    hedges[c] = done if hw > 0 else -done
+                    booked_hedge_weights[c] = hw
+            except Exception as e_h:
+                log("WARN", f"  [EXP-109 SAT_HEDGE] Hedge leg {c} for {sym} failed: {e_h}")
+
+        bar = self.state.total_micro_bars
+        self.state.satellites[sym] = {
+            "weight": float(weight),
+            "size": float(filled),
+            "entry_bar": int(bar),
+            "exit_bar": int(exit_bar if exit_bar is not None else bar + 6),  # 24H maximum dwell
+            "hedges": hedges,
+            "hedge_weights": booked_hedge_weights,
+            "sleeve": sleeve_tag,
+            "opened_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        }
+        self._adjust_frozen_target(sym, weight)
+        for c, hw in booked_hedge_weights.items():
+            self._adjust_frozen_target(c, hw)
+        self.state.holding_locks[sym] = self.state.satellites[sym]["exit_bar"]
+        log("INFO", f"[{sleeve_tag} SATELLITE OPENED] {sym} w={weight:+.2%} size={filled} | hedges={hedges} | exit_bar={self.state.satellites[sym]['exit_bar']}")
+        return True
+
+    def _exit_satellite(self, sym: str, reason: str, positions: Dict[str, Any]) -> bool:
+        """Closes one registered satellite position and unwinds only the hedge size it added (never flips a core leg)."""
+        sat = self.state.satellites.get(sym)
+        if not sat:
+            return False
+        log("INFO", f"[EXP-109 SATELLITE EXIT] {sym}: {reason}")
+        cur_sz = self._current_position_size(sym, positions)
+        sat_w = float(sat.get("weight", -0.10))
+        if sat_w < 0 and cur_sz < 0:
+            buy_sz = min(abs(cur_sz), float(sat.get("size", abs(cur_sz))))
+            self._route_satellite_order(sym, True, buy_sz, "SAT_EXIT", reduce=True)
+        elif sat_w > 0 and cur_sz > 0:
+            sell_sz = min(abs(cur_sz), float(sat.get("size", abs(cur_sz))))
+            self._route_satellite_order(sym, False, sell_sz, "SAT_EXIT", reduce=True)
+        for c, hsz in (sat.get("hedges") or {}).items():
+            hsz = float(hsz)
+            hpos = self._current_position_size(c, positions)
+            if hsz == 0.0 or hpos == 0.0 or (hpos > 0) != (hsz > 0):
+                continue
+            self._route_satellite_order(c, hsz < 0, min(abs(hsz), abs(hpos)), "SAT_HEDGE_EXIT", reduce=True)
+        self._adjust_frozen_target(sym, -float(sat.get("weight", 0.0)), only_if_present=True)
+        for c, hw in (sat.get("hedge_weights") or {}).items():
+            self._adjust_frozen_target(c, -float(hw), only_if_present=True)
+        self.state.holding_locks.pop(sym, None)
+        del self.state.satellites[sym]
+        return True
+
+    def _commit_satellite_targets(self):
+        """Journals registry + intra-period target update atomically, then re-projects state from the journal."""
+        self.journal.append_event("SATELLITE_STATE", {
+            "satellites": {k: dict(v) for k, v in self.state.satellites.items()},
+        })
+        self.journal.append_event("TARGET_FROZEN", {
+            "generation_id": self.state.frozen_target_generation_id or f"EXP103_SAT_{int(time.time() * 1000)}",
+            "signal_bar_ts": self.state.frozen_target_signal_bar_ts,
+            "target_weights": dict(self.state.frozen_target_weights),
+            "active_leverage": self.state.active_leverage,
+            "cushion": self.state.cushion,
+            "holding_locks": dict(self.state.holding_locks),
+            "bars_since_macro": self.state.bars_since_macro,
+            "is_intra_period_update": True,
+            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+        })
+        halted = self.state.circuit_breaker == CircuitBreakerState.HALTED
+        self.state = self.journal.replay_and_project()
+        if halted:
+            self.state.circuit_breaker = CircuitBreakerState.HALTED
+
+    def _scan_exp117_118_fast_directional_satellites(
+        self,
+        close_mat: np.ndarray,
+        atr_mat: np.ndarray,
+        funding_rates: np.ndarray,
+        valid_mask: np.ndarray,
+        symbols: List[str],
+        btc_idx: int,
+        eth_idx: int,
+        vol_mat: Optional[np.ndarray] = None,
+    ) -> List[Tuple[str, float, int, str]]:
+        """
+        EXP-117 & EXP-118 Fast 4H Directional Satellite Scanner:
+          - EXP-117 (Negative-Funding Short-Squeeze Breakout Longs): funding_apr < -45%, price breaking above
+            prior 6-bar (24H) high-close channel + 0.20 ATR, volume surge >= 1.35x -> +0.10x long (4 bars / 16H dwell).
+          - EXP-118 (Bipower Diffusive Continuation): jump_ratio <= 0.20, signed semivariance imbalance >= 0.65,
+            24H move >= 2.0 ATR -> +0.10x long (4 bars / 16H dwell).
+        """
+        n_bars, n_symbols = close_mat.shape
+        if n_bars < 20 or n_symbols < 12:
+            return []
+        t = n_bars - 1
+        candidates: List[Tuple[str, float, int, str, float]] = []
+        for i in range(n_symbols):
+            sym = symbols[i]
+            if not valid_mask[t, i] or sym in ("BTC", "ETH") or sym in WHIPSAW_EXCLUSIONS:
+                continue
+            px_now = float(close_mat[t, i])
+            if px_now <= 0:
+                continue
+            atr_i = float(atr_mat[t, i]) if (atr_mat.shape == close_mat.shape and atr_mat[t, i] > 0) else px_now * 0.02
+            fund_apr = float(funding_rates[i]) * 24.0 * 365.25 if i < len(funding_rates) else 0.0
+            high_6b = float(np.max(close_mat[max(0, t - 6):t, i]))
+            ret_24h = (px_now / max(float(close_mat[max(0, t - 6), i]), 1e-8)) - 1.0
+            dp_24h_atr = abs(ret_24h * px_now) / (atr_i + 1e-8)
+
+            vol_ratio = 1.5
+            if vol_mat is not None and vol_mat.shape == close_mat.shape:
+                dv_now = px_now * float(vol_mat[t, i])
+                dv_prev = float(np.mean(close_mat[max(0, t - 18):t, i] * vol_mat[max(0, t - 18):t, i])) + 1e-8
+                vol_ratio = dv_now / dv_prev
+
+            # 1. EXP-117: Negative-Funding Short-Squeeze Breakout Long
+            if fund_apr < -0.45 and px_now > (high_6b + 0.20 * atr_i) and vol_ratio >= 1.35 and ret_24h > 0.02:
+                candidates.append((sym, EXP109_SLOT_WEIGHT, 4, "EXP117_SQUEEZE", abs(fund_apr) * vol_ratio))
+                continue
+
+            # 2. EXP-118: Bipower Diffusive Trend Continuation Long
+            p_slice = close_mat[max(0, t - 18):t + 1, i]
+            if len(p_slice) >= 13 and np.all(p_slice > 0):
+                ret_slice = np.diff(np.log(p_slice))
+                _, _, jump_ratio = compute_bipower_variation_stats(ret_slice)
+                recent_6 = ret_slice[-6:]
+                rv_pos = float(np.sum(np.where(recent_6 > 0, recent_6 ** 2, 0.0)))
+                rv_neg = float(np.sum(np.where(recent_6 < 0, recent_6 ** 2, 0.0)))
+                sv_imb = (rv_pos - rv_neg) / (rv_pos + rv_neg + 1e-12)
+                if jump_ratio <= 0.20 and sv_imb >= 0.65 and dp_24h_atr >= 2.0 and vol_ratio >= 1.30 and ret_24h > 0.03:
+                    candidates.append((sym, EXP109_SLOT_WEIGHT, 4, "EXP118_BIPOWER", dp_24h_atr * sv_imb))
+
+        candidates.sort(key=lambda x: x[4], reverse=True)
+        return [(c[0], c[1], c[2], c[3]) for c in candidates]
+
     def _evaluate_fast_satellite_and_hedge_clock(
         self,
         chain_equity: float,
         current_positions: Dict[str, Any],
     ):
         """
-        Decoupled Fast 4H Clock Execution (EXP-112 -> Short-Only EXP-109 & EXP-104.1 Hedge):
-        Operates on every 4H bar:
-          1. Dynamic Satellite Exits:
-             - Evaluates active satellite shorts for dynamic mean-reversion exit (funding < +25% APR / 0.25)
-               or max dwell time expiration (>= 24 hours / 6 micro bars).
-          2. Fast Satellite Entry Scanner:
-             - When in cash floor (fl0) or de-escalated regime (cushion < 0.25):
-               scans perps for extreme positive funding (APR > +100% or z_F > 1.80) with
-               EXP-104.1 Squeeze Veto (z_mom > 2.50 & dp_24h_atr > 2.0).
-               Deploys up to 3 orthogonal short slots via Model 2A OFI passive maker limit orders
-               with exact offsetting BTC beta neutralization.
-          3. Fast Hedge De-Escalation Gate:
-             - If macro hedge is currently active and market demonstrates instantaneous de-escalation
-               (v_oi_24h > 0 and r_BTC > 0.50 * atr_norm), de-escalates hedge immediately without waiting 72H.
+        Always-On 4H Satellite Sleeve (v4.0.0: EXP-109 Short Carry + EXP-117 Squeeze Longs + EXP-118 Bipower):
+          1. Exits: only symbols in the explicit satellite registry are ever touched (core-book positions with
+             holding locks are NOT satellites). Exit on dwell expiry, funding mean-reversion, or external bracket close.
+          2. Entries: when cushion >= 25%, fills open slots (max EXP109_ALWAYS_ON_MAX_SLOTS) with EXP-109 shorts first,
+             followed by EXP-117/118 fast directional breakouts when cushion >= 30%.
         """
         floor_level = (1.0 - GROSSMAN_ZHOU_FLOOR) * self.state.historical_hwm
         cushion = max(0.0, (chain_equity - floor_level) / (GROSSMAN_ZHOU_FLOOR * self.state.historical_hwm + 1e-8))
+        changed = False
 
-        active_sat_coins = [
-            sym for sym in current_positions
-            if sym in self.state.holding_locks and sym not in ("BTC", "ETH")
-        ]
-
-        # 1. Dynamic Exits for Active Satellites (every 4H bar)
-        if active_sat_coins:
+        # 1. Exits (registry only)
+        if self.state.satellites:
+            fund_apr: Dict[str, float] = {}
             try:
-                meta_res, asset_ctxs = self.gateway.info.meta_and_asset_ctxs()
-                coin_to_idx = {c["name"]: i for i, c in enumerate(meta_res.get("universe", []))}
-                for sym in active_sat_coins:
-                    pos = current_positions[sym]
-                    sz = abs(pos["size"])
-                    is_short = pos["size"] < 0
-                    if not is_short or sz <= 0:
-                        continue
-
-                    # Check dwell time (6 micro bars = 24 hours max dwell)
-                    lock_target_bar = self.state.holding_locks.get(sym, 0)
-                    is_dwell_expired = (self.state.total_micro_bars >= lock_target_bar)
-
-                    # Check funding mean-reversion (< +25% APR)
-                    is_mean_reverted = False
-                    idx = coin_to_idx.get(sym)
-                    if idx is not None and idx < len(asset_ctxs):
-                        h_f = float(asset_ctxs[idx].get("funding", 0.0))
-                        fund_apr = h_f * 24.0 * 365.25
-                        if fund_apr < 0.25:
-                            is_mean_reverted = True
-
-                    if is_dwell_expired or is_mean_reverted:
-                        reason = "24h dwell expired" if is_dwell_expired else "funding mean-reverted < +25% APR"
-                        log("INFO", f"[FAST SATELLITE EXIT] Exiting satellite short on {sym} ({reason}).")
-                        try:
-                            self.gateway.close_position(sym, sz, is_buy=True)
-                            if sym in self.state.holding_locks:
-                                del self.state.holding_locks[sym]
-                            if sym in self.state.frozen_target_weights:
-                                del self.state.frozen_target_weights[sym]
-                        except Exception as e_close:
-                            log("WARN", f"[FAST SATELLITE EXIT] Failed to close {sym}: {e_close}")
-            except Exception as e_exit:
-                log("WARN", f"[FAST SATELLITE EXIT] Error auditing satellite exits: {e_exit}")
-
-        # 2. Fast Satellite Entry Scanner (when cushion < 0.25)
-        if cushion < 0.25:
-            remaining_sat_count = len([
-                s for s in current_positions
-                if s in self.state.holding_locks and s not in ("BTC", "ETH")
-            ])
-            if remaining_sat_count < 3:
-                log("INFO", f"[FAST SATELLITE SCANNER] Scanning for EXP-109 funding squeeze shorts (slots available: {3 - remaining_sat_count})...")
+                sig_info = getattr(self, "signal_info", None) or self.gateway.info
+                meta_res, asset_ctxs = sig_info.meta_and_asset_ctxs()
+                for i, c in enumerate(meta_res.get("universe", [])):
+                    if i < len(asset_ctxs):
+                        fund_apr[c["name"]] = float(asset_ctxs[i].get("funding", 0.0)) * 24.0 * 365.25
+            except Exception as e_meta:
+                log("WARN", f"[EXP-109 SATELLITE EXIT] Funding query failed ({e_meta}); evaluating dwell/position exits only.")
+            for sym in list(self.state.satellites.keys()):
+                sat = self.state.satellites[sym]
+                sat_w = float(sat.get("weight", -0.10))
+                sleeve = str(sat.get("sleeve", "EXP109"))
                 try:
-                    close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, _ = self.load_canonical_market_data()
+                    cur_sz = self._current_position_size(sym, current_positions)
+                    if (sat_w < 0 and cur_sz >= 0) or (sat_w > 0 and cur_sz <= 0):
+                        reason = "position closed externally (bracket/manual)"
+                    elif self.state.total_micro_bars >= int(sat.get("exit_bar", 0)):
+                        reason = "dwell expired"
+                    elif sat_w < 0 and sym in fund_apr and fund_apr[sym] < 0.25:
+                        reason = f"funding mean-reverted to {fund_apr[sym]*100:+.1f}% APR < +25%"
+                    elif sleeve == "EXP117_SQUEEZE" and sym in fund_apr and fund_apr[sym] > 0.15:
+                        reason = f"short squeeze funding normalized to {fund_apr[sym]*100:+.1f}% APR > +15%"
+                    else:
+                        continue
+                    if self._exit_satellite(sym, reason, current_positions):
+                        changed = True
+                except Exception as e_exit:
+                    log("WARN", f"[EXP-109 SATELLITE EXIT] Error exiting {sym}: {e_exit}")
+
+        # 2. Entries
+        if cushion < 0.25:
+            log("WARN", f"[EXP-109 SATELLITE CLOCK] Cushion {cushion*100:.1f}% < 25% safety gate. No new satellite entries.")
+        else:
+            open_slots = EXP109_ALWAYS_ON_MAX_SLOTS - len(self.state.satellites)
+            if open_slots > 0:
+                log("INFO", f"[EXP-109 SATELLITE SCANNER] Always-On 4H scan (open slots: {open_slots}, cushion={cushion*100:.1f}%)...")
+                try:
+                    close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat = self.load_latest_market_data()
                     returns_mat_full = np.zeros_like(close_mat)
                     returns_mat_full[1:] = np.diff(close_mat, axis=0) / np.maximum(close_mat[:-1], 1e-8)
-                    sat_targets, sat_lev, _, _, sel_shorts, holding_locks = self._compute_exp112_recycler_satellite_weights(
+                    _, _, _, _, sel_shorts, _ = self._compute_exp112_recycler_satellite_weights(
                         close_mat=close_mat,
                         funding_rates=funding_rates,
                         valid_mask=valid_mask,
@@ -1633,14 +2054,58 @@ class ProductionApexExecutor:
                         eth_idx=eth_idx,
                         rho_val=-0.20,
                         returns_mat_full=returns_mat_full,
+                        use_abs_apr=True,
                     )
-                    for s, lock_bar in holding_locks.items():
-                        self.state.holding_locks[s] = self.state.total_micro_bars + 6  # 24H maximum dwell
-                        self.state.frozen_target_weights[s] = sat_targets.get(s, 0.0)
+                    opened = 0
+                    for s in sel_shorts:
+                        if open_slots <= 0:
+                            break
+                        if s in self.state.satellites or abs(self._current_position_size(s, current_positions)) > 1e-9:
+                            continue
+                        try:
+                            if self._open_satellite(s, -EXP109_SLOT_WEIGHT, chain_equity, returns_mat_full, symbols, btc_idx, eth_idx):
+                                open_slots -= 1
+                                opened += 1
+                                changed = True
+                        except Exception as e_open:
+                            log("WARN", f"[EXP-109 SATELLITE SCANNER] Error opening {s}: {e_open}")
+
+                    # EXP-117 / EXP-118 Fast 4H Directional Breakouts (when open_slots remain and cushion >= 30%)
+                    if EXP117_118_FAST_SLEEVES_ENABLED and open_slots > 0 and cushion >= 0.30:
+                        fast_cands = self._scan_exp117_118_fast_directional_satellites(
+                            close_mat=close_mat,
+                            atr_mat=atr_mat,
+                            funding_rates=funding_rates,
+                            valid_mask=valid_mask,
+                            symbols=symbols,
+                            btc_idx=btc_idx,
+                            eth_idx=eth_idx,
+                            vol_mat=vol_mat,
+                        )
+                        for s_fast, w_fast, dwell_b, tag_fast in fast_cands:
+                            if open_slots <= 0:
+                                break
+                            if s_fast in self.state.satellites or abs(self._current_position_size(s_fast, current_positions)) > 1e-9:
+                                continue
+                            try:
+                                exit_b = self.state.total_micro_bars + dwell_b
+                                if self._open_satellite(
+                                    s_fast, w_fast, chain_equity, returns_mat_full, symbols, btc_idx, eth_idx,
+                                    exit_bar=exit_b, sleeve_tag=tag_fast
+                                ):
+                                    open_slots -= 1
+                                    opened += 1
+                                    changed = True
+                            except Exception as e_f:
+                                log("WARN", f"[{tag_fast} SCANNER] Error opening {s_fast}: {e_f}")
+
+                    if opened == 0:
+                        log("INFO", "[EXP-109 SATELLITE SCANNER] No new un-positioned coins qualified this 4H bar.")
                 except Exception as e_scan:
-                    log("WARN", f"[FAST SATELLITE SCANNER] Error scanning satellites: {e_scan}")
-        else:
-            log("INFO", f"[FAST SATELLITE CLOCK] Core active (cushion={cushion*100:.1f}% >= 25%). Recycler idle.")
+                    log("WARN", f"[EXP-109 SATELLITE SCANNER] Error scanning satellites: {e_scan}")
+
+        if changed:
+            self._commit_satellite_targets()
 
 
     def reconcile_ledger_events_and_reconstruct_nav(self) -> Tuple[float, float, Dict[str, Any]]:
@@ -1799,7 +2264,7 @@ class ProductionApexExecutor:
 
         # 5. Extract Exchange Mark-Price Unrealized PnL
         unrealized_mark_pnl = 0.0
-        is_virtual_paper = self.dry_run and self.state.initial_strategy_equity >= 500.0
+        is_virtual_paper = getattr(self, "virtual_paper", bool(self.dry_run and not self.testnet))
 
         if is_virtual_paper:
             current_positions = dict(self.state.paper_positions)
@@ -1888,37 +2353,48 @@ class ProductionApexExecutor:
         total_signals = 0
         unfilled_breakouts = 0
 
-        if JOURNAL_FILE.exists():
+        j_file = getattr(self, "journal_file", JOURNAL_FILE)
+        if j_file.exists():
             try:
-                with open(JOURNAL_FILE, "r") as f:
+                with open(j_file, "r") as f:
                     for line in f:
                         line = line.strip()
                         if not line:
                             continue
                         ev = json.loads(line)
                         ev_type = ev.get("event_type")
+                        payload = ev.get("payload", {})
                         if ev_type == "IMPLEMENTATION_AUDIT_RECORD":
-                            audit_records.append(ev.get("payload", {}))
-                        elif ev_type == "TARGET_FROZEN":
-                            weights = ev.get("payload", {}).get("target_weights", {})
+                            audit_records.append(payload)
+                        elif ev_type == "TARGET_FROZEN" and not payload.get("is_intra_period_update", False):
+                            weights = payload.get("target_weights", {})
                             total_signals += len([w for w in weights.values() if abs(w) > 0.001])
                         elif ev_type == "UNFILLED_BREAKOUT_ABANDONED":
                             unfilled_breakouts += 1
             except Exception as e:
                 log("WARN", f"[TELEMETRY] Error reading journal for telemetry: {e}")
 
-        rolling_window = audit_records[-100:] if len(audit_records) >= 100 else audit_records
-        n_samples = len(rolling_window)
-        total_lifetime_fills = len(audit_records)
+        # Gate 2 measures REAL execution quality. Simulated paper fills (mode == DRY_RUN) are priced at the limit
+        # by construction, so they are reported separately and never count toward Gate 2 attainment.
+        live_records = [r for r in audit_records if str(r.get("mode", "")).upper() != "DRY_RUN"]
+        paper_records = [r for r in audit_records if str(r.get("mode", "")).upper() == "DRY_RUN"]
+        paper_only = len(live_records) == 0 and len(paper_records) > 0
+        source_records = live_records if live_records else paper_records
 
-        total_long_fills = sum(1 for r in audit_records if str(r.get("side", "")).upper() in ["BUY", "LONG"])
+        rolling_window = source_records[-100:] if len(source_records) >= 100 else source_records
+        n_samples = len(rolling_window)
+        total_lifetime_fills = len(live_records)
+
+        total_long_fills = sum(1 for r in live_records if str(r.get("side", "")).upper() in ["BUY", "LONG"])
         total_short_fills = total_lifetime_fills - total_long_fills
 
         telemetry: Dict[str, Any] = {
             "window_size": n_samples,
+            "window_source": "PAPER_SIMULATED" if paper_only else "LIVE",
             "total_lifetime_fills": total_lifetime_fills,
             "total_long_fills": total_long_fills,
             "total_short_fills": total_short_fills,
+            "paper_fills_excluded_from_gate2": len(paper_records),
             "gate2_sample_target": 500,
             "gate2_attained": bool(total_lifetime_fills >= 500 and total_long_fills >= 100 and total_short_fills >= 100),
             "long_median_shortfall_p50_bps": 0.0,
@@ -1984,10 +2460,87 @@ class ProductionApexExecutor:
 
             telemetry["violations"] = violations
             telemetry["status"] = "PASSED" if len(violations) == 0 else "GATES_BREACHED"
+            if paper_only:
+                # Simulated fills cannot validate execution quality; never present them as a Gate 2 pass.
+                telemetry["status"] = "PAPER_SIMULATED_NOT_GATE2_ELIGIBLE"
 
-            log("INFO", f"[DISTRIBUTIONAL TELEMETRY (N={n_samples}/100)] LongP50={long_p50:.1f}bp | ShortP50={short_p50:.1f}bp | P90={p90:.1f}bp | P95={p95:.1f}bp | Maker={maker_ratio:.1f}% | Status={telemetry['status']}")
+            log("INFO", f"[DISTRIBUTIONAL TELEMETRY (N={n_samples}/100, source={telemetry['window_source']})] LongP50={long_p50:.1f}bp | ShortP50={short_p50:.1f}bp | P90={p90:.1f}bp | P95={p95:.1f}bp | Maker={maker_ratio:.1f}% | Status={telemetry['status']} | Gate2 live fills={total_lifetime_fills}/500")
 
         return telemetry
+
+    def compute_exp115_atr_bracket_and_ratchet(
+        self,
+        sym: str,
+        entry_px: float,
+        mark_px: float,
+        is_long: bool,
+        sl_pct: float = DEFAULT_SL_PCT,
+        tp_pct: float = DEFAULT_TP_PCT,
+        existing_sl_px: Optional[float] = None,
+    ) -> Tuple[float, float, str]:
+        """
+        EXP-115 ATR-Normalized Volatility Brackets + 4-Stage Convex Trailing Profit Ratchet:
+          - Stage 0 (m_atr < 1.50): Initial SL = clamp(2.20 * ATR_14, 1.8%, 8.5%), TP = clamp(8.00 * ATR_14, 7.0%, 28.0%)
+          - Stage 1 (1.50 <= m_atr < 2.50): Breakeven + Fee + 0.35 ATR profit lock
+          - Stage 2 (2.50 <= m_atr < 4.00): Loose trend trail 1.15 ATR behind position HWM
+          - Stage 3 (m_atr >= 4.00): Parabolic trail 0.75 ATR behind position HWM
+          - Strict monotonic non-regression against existing_sl_px.
+          - Falls back to legacy flat sl_pct/tp_pct if latest_atr_map is not populated (e.g. unit test mocks).
+        """
+        atr_map = getattr(self, "latest_atr_map", None) or {}
+        if not EXP115_ATR_BRACKETS_ENABLED or sym not in atr_map or entry_px <= 0:
+            raw_sl = entry_px * (1.0 - sl_pct) if is_long else entry_px * (1.0 + sl_pct)
+            raw_tp = entry_px * (1.0 + tp_pct) if is_long else entry_px * (1.0 - tp_pct)
+            return raw_sl, raw_tp, "LEGACY_FLAT"
+
+        atr_val = max(float(atr_map[sym]), entry_px * 0.008)
+        atr_pct = atr_val / entry_px
+        hwm_map = getattr(self, "position_hwm_map", None)
+        if hwm_map is None:
+            self.position_hwm_map = {}
+            hwm_map = self.position_hwm_map
+
+        prev_hwm = float(hwm_map.get(sym, entry_px))
+        if is_long:
+            hwm_px = max(entry_px, mark_px, prev_hwm if prev_hwm >= entry_px * 0.5 else entry_px)
+            m_atr = (hwm_px - entry_px) / atr_val
+        else:
+            hwm_px = min(entry_px, mark_px, prev_hwm if prev_hwm > 0 else entry_px)
+            m_atr = (entry_px - hwm_px) / atr_val
+        hwm_map[sym] = hwm_px
+
+        init_sl_dist = float(np.clip(2.20 * atr_pct, 0.018, 0.085))
+        tp_dist = float(np.clip(8.00 * atr_pct, max(tp_pct, 0.12), 0.280))
+        raw_tp = entry_px * (1.0 + tp_dist) if is_long else entry_px * (1.0 - tp_dist)
+
+        if m_atr >= 4.00:
+            stage = "STAGE3_PARABOLIC_TRAIL"
+            raw_sl = (hwm_px - 0.75 * atr_val) if is_long else (hwm_px + 0.75 * atr_val)
+        elif m_atr >= 2.50:
+            stage = "STAGE2_LOOSE_TRAIL"
+            raw_sl = (hwm_px - 1.15 * atr_val) if is_long else (hwm_px + 1.15 * atr_val)
+        elif m_atr >= 1.50:
+            stage = "STAGE1_BE_PLUS"
+            raw_sl = (entry_px * 1.0020 + 0.35 * atr_val) if is_long else (entry_px * 0.9980 - 0.35 * atr_val)
+        else:
+            stage = "STAGE0_INIT"
+            raw_sl = entry_px * (1.0 - init_sl_dist) if is_long else entry_px * (1.0 + init_sl_dist)
+
+        # Monotonic non-regression against existing on-chain stop-loss
+        if existing_sl_px is not None and existing_sl_px > 0:
+            if is_long and raw_sl < existing_sl_px:
+                raw_sl = existing_sl_px
+            elif (not is_long) and raw_sl > existing_sl_px:
+                raw_sl = existing_sl_px
+
+        # Keep SL on the valid side of current mark price unless Stage 0 initial stop is breached
+        if stage != "STAGE0_INIT" and mark_px > 0:
+            if is_long and raw_sl >= mark_px:
+                raw_sl = mark_px * 0.996
+            elif (not is_long) and raw_sl <= mark_px:
+                raw_sl = mark_px * 1.004
+
+        return raw_sl, raw_tp, stage
 
     def arm_position_brackets(self, sl_pct: float = DEFAULT_SL_PCT, tp_pct: float = DEFAULT_TP_PCT) -> Dict[str, Any]:
         """
@@ -1996,7 +2549,113 @@ class ProductionApexExecutor:
         """
         armed_summary: Dict[str, Any] = {}
         if self.dry_run:
-            log("INFO", "[BRACKETS] [DRY-RUN] Simulating native on-chain TP/SL brackets.")
+            paper_pos = dict(self.state.paper_positions)
+            if not paper_pos:
+                return armed_summary
+            bracket_triggered = False
+            bracket_closed_syms: List[str] = []
+            for sym, pos in list(paper_pos.items()):
+                sz = float(pos.get("size", 0.0))
+                entry = float(pos.get("entry_px", 0.0))
+                if abs(sz) <= 1e-6 or entry <= 0:
+                    continue
+                is_long = sz > 0
+                sz_dec = self.gateway.sz_decimals.get(sym, 2) if hasattr(self.gateway, "sz_decimals") and isinstance(self.gateway.sz_decimals, dict) else 2
+                raw_sl = entry * (1.0 - sl_pct) if is_long else entry * (1.0 + sl_pct)
+                raw_tp = entry * (1.0 + tp_pct) if is_long else entry * (1.0 - tp_pct)
+                sl_px = round_px(raw_sl, sz_dec)
+                tp_px = round_px(raw_tp, sz_dec)
+                try:
+                    mark_px = float(self.gateway.get_mid_price(sym))
+                except Exception:
+                    mark_px = float(pos.get("mark_px", entry))
+
+                sl_hit = (is_long and mark_px <= sl_px) or (not is_long and mark_px >= sl_px)
+                tp_hit = (is_long and mark_px >= tp_px) or (not is_long and mark_px <= tp_px)
+
+                if sl_hit or tp_hit:
+                    trig_label = "STOP_LOSS" if sl_hit else "TAKE_PROFIT"
+                    trig_px = sl_px if sl_hit else tp_px
+                    sz_abs = abs(sz)
+                    is_buy_exit = not is_long
+                    taker_fee = (sz_abs * mark_px) * 0.00035
+                    closed_pnl = sz_abs * (mark_px - entry) if is_long else sz_abs * (entry - mark_px)
+                    pnl_pct = ((mark_px - entry) / entry * 100.0) if is_long else ((entry - mark_px) / entry * 100.0)
+                    now_ms = int(time.time() * 1000)
+                    mock_oid = now_ms + random.randint(100, 999)
+                    fill_key = f"DRY_BRACKET_{trig_label}_{sym}_{mock_oid}"
+                    self.journal.append_event("FILL_RECONCILED", {
+                        "fill_key": fill_key,
+                        "coin": sym,
+                        "oid": mock_oid,
+                        "tid": mock_oid,
+                        "time_ms": now_ms,
+                        "closed_pnl": closed_pnl,
+                        "fee": taker_fee,
+                        "px": mark_px,
+                        "sz": sz_abs,
+                        "side": "BUY" if is_buy_exit else "SELL",
+                        "trigger": trig_label,
+                    })
+                    self.journal.append_event("IMPLEMENTATION_AUDIT_RECORD", {
+                        "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ms / 1000.0)),
+                        "symbol": f"{sym}-USDC",
+                        "side": "BUY" if is_buy_exit else "SELL",
+                        "signal_price": trig_px,
+                        "target_open_price": trig_px,
+                        "actual_fill_price": mark_px,
+                        "filled_size": sz_abs,
+                        "order_type": "TAKER_IOC",
+                        "exchange_fee_usdc": taker_fee,
+                        "delay_slippage_bps": 0.0,
+                        "execution_impact_bps": 0.0,
+                        "fee_drag_bps": 3.5,
+                        "total_shortfall_bps": 3.5,
+                        "mode": "DRY_RUN",
+                    })
+                    log("WARN" if sl_hit else "INFO", f"[BRACKETS] [DRY-RUN {trig_label} TRIGGERED] Closed {sym} ({'LONG' if is_long else 'SHORT'} sz={sz_abs} @ entry=${entry:.4f}, mark=${mark_px:.4f}, trigger=${trig_px:.4f} | move={pnl_pct:+.2f}% | realized_pnl=${closed_pnl:+.2f} | fee=${taker_fee:.4f})")
+                    self.state.frozen_target_weights.pop(sym, None)
+                    self.state.holding_locks.pop(sym, None)
+                    bracket_triggered = True
+                    bracket_closed_syms.append(sym)
+                else:
+                    armed_summary[sym] = {
+                        "sl": sl_px,
+                        "tp": tp_px,
+                        "sl_armed": True,
+                        "tp_armed": True,
+                        "unhedged": False,
+                        "mode": "DRY_RUN",
+                    }
+
+            if bracket_triggered:
+                self.journal.append_event("TARGET_FROZEN", {
+                    "generation_id": self.state.frozen_target_generation_id,
+                    "signal_bar_ts": self.state.frozen_target_signal_bar_ts,
+                    "target_weights": dict(self.state.frozen_target_weights),
+                    "active_leverage": self.state.active_leverage,
+                    "cushion": self.state.cushion,
+                    "holding_locks": dict(self.state.holding_locks),
+                    "bars_since_macro": self.state.bars_since_macro,
+                    "is_intra_period_update": True,
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                })
+                self.state = self.journal.replay_and_project()
+                # A bracket-closed satellite must also unwind its BTC/ETH hedge legs and leave the registry now
+                closed_sats = [s for s in bracket_closed_syms if s in self.state.satellites]
+                for s_sym in closed_sats:
+                    try:
+                        self._exit_satellite(s_sym, "closed by dry-run bracket", {})
+                    except Exception as e_sat:
+                        log("WARN", f"[BRACKETS] [DRY-RUN] Satellite unwind error on {s_sym}: {e_sat}")
+                if closed_sats:
+                    self._commit_satellite_targets()
+                try:
+                    chain_eq, _, conf_pos = self.reconcile_ledger_events_and_reconstruct_nav()
+                    self.last_telemetry_audit = self.audit_distributional_telemetry()
+                    self.save_materialized_state_cache(conf_pos, armed_summary)
+                except Exception as e_rec:
+                    log("WARN", f"[BRACKETS] [DRY-RUN] Post-bracket state refresh warning: {e_rec}")
             return armed_summary
 
         def _do_arm() -> Dict[str, Any]:
@@ -2037,23 +2696,32 @@ class ProductionApexExecutor:
                 if rounded_sz <= 0:
                     continue
 
-                if is_long:
-                    raw_sl = entry * (1.0 - sl_pct)
-                    raw_tp = entry * (1.0 + tp_pct)
-                    is_buy_exit = False
-                else:
-                    raw_sl = entry * (1.0 + sl_pct)
-                    raw_tp = entry * (1.0 - tp_pct)
-                    is_buy_exit = True
+                sym_triggers = [o for o in active_triggers if o.get("coin") == sym]
+                mark_px = float(pos.get("mark_px") or entry)
+                existing_sl_px = None
+                for o in sym_triggers:
+                    otype = str(o.get("orderType", "")).lower()
+                    if "stop" in otype or o.get("tpsl") == "sl":
+                        existing_sl_px = float(o.get("triggerPx") or o.get("origPx") or 0.0)
+                        break
+
+                raw_sl, raw_tp, ratchet_stage = self.compute_exp115_atr_bracket_and_ratchet(
+                    sym=sym,
+                    entry_px=entry,
+                    mark_px=mark_px,
+                    is_long=is_long,
+                    sl_pct=sl_pct,
+                    tp_pct=tp_pct,
+                    existing_sl_px=existing_sl_px,
+                )
+                is_buy_exit = not is_long
 
                 sl_px = round_px(raw_sl, sz_dec)
                 tp_px = round_px(raw_tp, sz_dec)
 
                 has_valid_sl = False
                 has_valid_tp = False
-                sym_triggers = [o for o in active_triggers if o.get("coin") == sym]
 
-                mark_px = pos.get("mark_px", entry)
                 is_breached = (is_long and mark_px <= sl_px) or (not is_long and mark_px >= sl_px)
 
                 for o in sym_triggers:
@@ -2144,6 +2812,7 @@ class ProductionApexExecutor:
                     "sl_armed": sl_armed,
                     "tp_armed": tp_armed,
                     "unhedged": not sl_armed,
+                    "ratchet_stage": ratchet_stage,
                 }
                 if not sl_armed:
                     log("CRITICAL", f"[BRACKETS] UNHEDGED POSITION DETECTED: {sym} has no active stop loss protection!")
@@ -2243,6 +2912,17 @@ class ProductionApexExecutor:
         }
         for s, new_exp in locks.items():
             merged_locks[s] = max(merged_locks.get(s, 0), new_exp)
+
+        # Preserve registered Always-On EXP-109 satellites and their BTC/ETH hedge legs across the macro
+        # rebalance so the new core target neither liquidates the satellite nor nets away its hedge.
+        if self.state.satellites:
+            raw_weights = dict(raw_weights)
+            for s_sym, sat in self.state.satellites.items():
+                raw_weights[s_sym] = float(raw_weights.get(s_sym, 0.0)) + float(sat.get("weight", 0.0))
+                for c, hw in (sat.get("hedge_weights") or {}).items():
+                    raw_weights[c] = float(raw_weights.get(c, 0.0)) + float(hw)
+                merged_locks[s_sym] = max(merged_locks.get(s_sym, 0), int(sat.get("exit_bar", 0)))
+            log("INFO", f"[MACRO] Carried {len(self.state.satellites)} EXP-109 satellite(s) + hedges into frozen target: {list(self.state.satellites)}")
 
         decision_ts_ms, _ = self.get_causal_4h_decision_boundary()
         gen_id = f"EXP103_GEN_{decision_ts_ms}"
@@ -2389,6 +3069,29 @@ class ProductionApexExecutor:
                     res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price, cloid=cloid)
 
                 ok, oid, status_detail = parse_order_response(res)
+                if not ok and ("post only" in str(status_detail).lower() or "immediately match" in str(status_detail).lower()):
+                    # Refresh BBO and retry passive quote at best bid / ask
+                    try:
+                        rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
+                        alo_price = round_px(rb_bid if is_buy else rb_ask, sz_dec)
+                        ord_info["alo_price"] = alo_price
+                        if is_reduce_only:
+                            res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Alo"}}, reduce_only=True, cloid=cloid_obj)
+                        else:
+                            res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price, cloid=cloid)
+                        ok, oid, status_detail = parse_order_response(res)
+                    except Exception:
+                        pass
+                if not ok and self.testnet and not is_reduce_only and "post only" in str(status_detail).lower():
+                    # On Hyperliquid Testnet, crossed/stale synthetic spreads can reject ALO even at BBO; fall back to GTC limit at 25bps collar
+                    try:
+                        rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
+                        alo_price = round_px(rb_ask * 1.0025 if is_buy else rb_bid * 0.9975, sz_dec)
+                        ord_info["alo_price"] = alo_price
+                        res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj)
+                        ok, oid, status_detail = parse_order_response(res)
+                    except Exception:
+                        pass
                 if ok and oid is not None:
                     self.journal.append_event("ORDER_CONFIRMED", {
                         "cloid": cloid,
@@ -2523,18 +3226,37 @@ class ProductionApexExecutor:
                             sz_closed = min(sz_abs, prev_sz)
                             closed_pnl = sz_closed * (alo_price - prev_entry)
 
+                        now_fill_ms = int(time.time() * 1000)
                         fill_key = f"DRY_{cloid}_{mock_oid}"
                         self.journal.append_event("FILL_RECONCILED", {
                             "fill_key": fill_key,
                             "coin": sym,
                             "oid": mock_oid,
                             "tid": mock_oid,
-                            "time_ms": int(time.time() * 1000),
+                            "time_ms": now_fill_ms,
                             "closed_pnl": closed_pnl,
                             "fee": maker_fee,
                             "px": alo_price,
                             "sz": sz_abs,
                             "side": "BUY" if is_buy else "SELL",
+                        })
+                        side_mult = 1.0 if is_buy else -1.0
+                        delay_slip_bps = side_mult * ((alo_price - mid) / mid * 1e4) if mid > 0 else 0.0
+                        self.journal.append_event("IMPLEMENTATION_AUDIT_RECORD", {
+                            "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_fill_ms / 1000.0)),
+                            "symbol": f"{sym}-USDC",
+                            "side": "BUY" if is_buy else "SELL",
+                            "signal_price": float(mid),
+                            "target_open_price": float(alo_price),
+                            "actual_fill_price": float(alo_price),
+                            "filled_size": float(sz_abs),
+                            "order_type": "RESTING_ALO",
+                            "exchange_fee_usdc": float(maker_fee),
+                            "delay_slippage_bps": float(delay_slip_bps),
+                            "execution_impact_bps": 0.0,
+                            "fee_drag_bps": 1.5,
+                            "total_shortfall_bps": float(delay_slip_bps + 1.5),
+                            "mode": "DRY_RUN",
                         })
                         log("INFO", f"  --> [DRY-RUN MAKER FILL] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ ${alo_price:.4f} | fee=${maker_fee:.4f} | pnl=${closed_pnl:.4f}")
                     # Replay state to apply fills immediately
@@ -2606,7 +3328,18 @@ class ProductionApexExecutor:
                             re_px = round_px(current_mid, sz_dec)
                             cloid_req = f"EXP103_{gen_id}_{coin}_REQUOTE_1"
                             self.journal.append_event("ORDER_INTENT", {"cloid": cloid_req, "sym": coin, "requote": True})
-                            res_req = self.gateway.place_alo_order(coin, is_buy, sz, re_px, cloid=cloid_req)
+                            if self.testnet:
+                                # On Testnet, synthetic books have zero passive organic takers; cross up to 25 bps to complete rebalance on timeout
+                                try:
+                                    rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(coin)
+                                    cross_raw = rb_ask * 1.0025 if is_buy else rb_bid * 0.9975
+                                    re_px = round_px(cross_raw, sz_dec)
+                                except Exception:
+                                    pass
+                                cloid_obj_req = Cloid.from_str("0x" + hashlib.md5(cloid_req.encode("utf-8")).hexdigest())
+                                res_req = self.gateway.exchange.order(coin, is_buy, sz, re_px, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj_req)
+                            else:
+                                res_req = self.gateway.place_alo_order(coin, is_buy, sz, re_px, cloid=cloid_req)
                             ok_req, oid_req, status_req = parse_order_response(res_req)
                             if ok_req and oid_req is not None:
                                 self.journal.append_event("ORDER_CONFIRMED", {
@@ -2653,6 +3386,15 @@ class ProductionApexExecutor:
         time.sleep(2)
         armed_brackets = self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
 
+        # 8B. Always-On 4H EXP-109 Satellite Sleeve: scan immediately after Macro Rebalance as well
+        if EXP112_RECYCLER_ENABLED and self.state.circuit_breaker != CircuitBreakerState.HALTED:
+            try:
+                chain_eq_now, _, cur_pos_now = self.reconcile_ledger_events_and_reconstruct_nav()
+                self._evaluate_fast_satellite_and_hedge_clock(chain_eq_now, cur_pos_now)
+                armed_brackets = self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+            except Exception as e_sat_macro:
+                log("WARN", f"[MACRO] Post-rebalance satellite scan error: {e_sat_macro}")
+
         # 9. Post-Trade Account State Refresh & Materialized Checkpointing
         chain_equity, discrepancy, confirmed_positions = self.reconcile_ledger_events_and_reconstruct_nav()
         self.last_telemetry_audit = self.audit_distributional_telemetry()
@@ -2661,7 +3403,7 @@ class ProductionApexExecutor:
         log("INFO", ">>> 72H MACRO REBALANCE CYCLE COMPLETE <<<")
         log("INFO", "================================================================================")
 
-    def execute_micro_risk_cycle(self):
+    def execute_micro_risk_cycle(self, advance_cadence: bool = True):
         """
         4H Micro Risk Monitor & Execution Repair Loop:
           1. Reconciles ledger events (fills, funding) and checks NAV invariant.
@@ -2716,7 +3458,7 @@ class ProductionApexExecutor:
         frozen_targets = self.state.frozen_target_weights
         frozen_gen_id = self.state.frozen_target_generation_id
 
-        if frozen_targets and not self.dry_run:
+        if frozen_targets:
             log("INFO", f"[REPAIR] Auditing actual portfolio weights against Frozen Target {frozen_gen_id}...")
             curr_weights = {}
             for sym, pos in current_positions.items():
@@ -2726,17 +3468,20 @@ class ProductionApexExecutor:
                 except Exception:
                     curr_weights[sym] = 0.0
 
-            try:
-                open_now = self.gateway.get_frontend_open_orders()
-                resting_owned_coins = {
-                    o.get("coin") for o in open_now
-                    if not o.get("isTrigger") and int(o.get("oid", 0)) in self.state.owned_oids
-                }
-            except Exception as e:
-                log("CRITICAL", f"[REPAIR] Cannot query open orders ({e}); skipping all repairs this bar to avoid duplicate exposure.")
-                frozen_targets = {}
-                resting_owned_coins = set()
+            resting_owned_coins = set()
+            if not self.dry_run:
+                try:
+                    open_now = self.gateway.get_frontend_open_orders()
+                    resting_owned_coins = {
+                        o.get("coin") for o in open_now
+                        if not o.get("isTrigger") and int(o.get("oid", 0)) in self.state.owned_oids
+                    }
+                except Exception as e:
+                    log("CRITICAL", f"[REPAIR] Cannot query open orders ({e}); skipping all repairs this bar to avoid duplicate exposure.")
+                    frozen_targets = {}
+                    resting_owned_coins = set()
 
+            dry_repairs_filled = False
             for sym, tgt_w in frozen_targets.items():
                 if sym in resting_owned_coins:
                     log("INFO", f"  [REPAIR] Skipping {sym}: owned order still resting on exchange.")
@@ -2771,34 +3516,90 @@ class ProductionApexExecutor:
                                 "micro_bar": self.state.total_micro_bars,
                             })
                             self.state.owned_cloids.add(cloid)
-                            res = self.gateway.place_alo_order(sym, is_buy, sz_abs, re_px, cloid=cloid)
-                            ok, oid, status_detail = parse_order_response(res)
-                            if ok and oid is not None:
+                            if self.dry_run:
+                                now_ms = int(time.time() * 1000)
+                                mock_oid = now_ms + random.randint(100, 999)
+                                maker_fee = (sz_abs * re_px) * 0.00015
+                                prev_pos = self.state.paper_positions.get(sym, {})
+                                prev_sz = prev_pos.get("size", 0.0)
+                                prev_entry = prev_pos.get("entry_px", re_px)
+                                closed_pnl = 0.0
+                                if is_buy and prev_sz < 0:
+                                    closed_pnl = min(sz_abs, abs(prev_sz)) * (prev_entry - re_px)
+                                elif not is_buy and prev_sz > 0:
+                                    closed_pnl = min(sz_abs, prev_sz) * (re_px - prev_entry)
                                 self.journal.append_event("ORDER_CONFIRMED", {
                                     "cloid": cloid,
-                                    "oid": oid,
+                                    "oid": mock_oid,
                                     "sym": sym,
                                     "size": sz_abs,
-                                    "price": round_px(mid, sz_dec),
+                                    "price": re_px,
                                     "signal_price": float(mid),
-                                    "target_price": float(round_px(mid, sz_dec)),
-                                    "status": status_detail,
+                                    "target_price": float(re_px),
+                                    "status": "FILLED",
                                 })
-                                self.state.owned_oids.add(int(oid))
-                                self.state.owned_cloids.add(cloid)
-                                log("INFO", f"  [REPAIR SLICE] Reconciled {sym:<8} (dw={dw:+.4f} > {LELAND_DEADBAND:.3f}): sz={sz_abs} @ {mid:.4f} | oid={oid}")
+                                self.journal.append_event("FILL_RECONCILED", {
+                                    "fill_key": f"DRY_{cloid}_{mock_oid}",
+                                    "coin": sym,
+                                    "oid": mock_oid,
+                                    "tid": mock_oid,
+                                    "time_ms": now_ms,
+                                    "closed_pnl": closed_pnl,
+                                    "fee": maker_fee,
+                                    "px": re_px,
+                                    "sz": sz_abs,
+                                    "side": "BUY" if is_buy else "SELL",
+                                })
+                                self.journal.append_event("IMPLEMENTATION_AUDIT_RECORD", {
+                                    "timestamp_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_ms / 1000.0)),
+                                    "symbol": f"{sym}-USDC",
+                                    "side": "BUY" if is_buy else "SELL",
+                                    "signal_price": float(mid),
+                                    "target_open_price": float(re_px),
+                                    "actual_fill_price": float(re_px),
+                                    "filled_size": float(sz_abs),
+                                    "order_type": "RESTING_ALO",
+                                    "exchange_fee_usdc": float(maker_fee),
+                                    "delay_slippage_bps": 0.0,
+                                    "execution_impact_bps": 0.0,
+                                    "fee_drag_bps": 1.5,
+                                    "total_shortfall_bps": 1.5,
+                                    "mode": "DRY_RUN",
+                                })
+                                dry_repairs_filled = True
+                                log("INFO", f"  [REPAIR SLICE] [DRY-RUN] Reconciled {sym:<8} (dw={dw:+.4f} > {LELAND_DEADBAND:.3f}): sz={sz_abs} @ {re_px:.4f}")
                             else:
-                                self.journal.append_event("ORDER_REJECTED", {
-                                    "cloid": cloid,
-                                    "sym": sym,
-                                    "reason": status_detail,
-                                })
-                                log("WARN", f"  [REPAIR REJECT] Repair slice rejected for {sym}: {status_detail}")
+                                res = self.gateway.place_alo_order(sym, is_buy, sz_abs, re_px, cloid=cloid)
+                                ok, oid, status_detail = parse_order_response(res)
+                                if ok and oid is not None:
+                                    self.journal.append_event("ORDER_CONFIRMED", {
+                                        "cloid": cloid,
+                                        "oid": oid,
+                                        "sym": sym,
+                                        "size": sz_abs,
+                                        "price": round_px(mid, sz_dec),
+                                        "signal_price": float(mid),
+                                        "target_price": float(round_px(mid, sz_dec)),
+                                        "status": status_detail,
+                                    })
+                                    self.state.owned_oids.add(int(oid))
+                                    self.state.owned_cloids.add(cloid)
+                                    log("INFO", f"  [REPAIR SLICE] Reconciled {sym:<8} (dw={dw:+.4f} > {LELAND_DEADBAND:.3f}): sz={sz_abs} @ {mid:.4f} | oid={oid}")
+                                else:
+                                    self.journal.append_event("ORDER_REJECTED", {
+                                        "cloid": cloid,
+                                        "sym": sym,
+                                        "reason": status_detail,
+                                    })
+                                    log("WARN", f"  [REPAIR REJECT] Repair slice rejected for {sym}: {status_detail}")
                     except Exception as e:
                         log("WARN", f"  [REPAIR] Error routing repair slice for {sym}: {e}")
+            if dry_repairs_filled:
+                self.state = self.journal.replay_and_project()
+                current_positions = dict(self.state.paper_positions)
 
-        # 3B. Decoupled Fast 4H Clock: Evaluate EXP-112 -> EXP-109 Satellite Scanner & Fast Hedge
-        if EXP112_RECYCLER_ENABLED and not self.dry_run:
+        # 3B. Decoupled Fast 4H Clock: Evaluate Always-On EXP-109 Satellite Scanner & Dynamic Exits
+        if EXP112_RECYCLER_ENABLED:
             self._evaluate_fast_satellite_and_hedge_clock(chain_equity, current_positions)
 
         # 4. Sweep dust remnants (< $8.00)
@@ -2813,18 +3614,19 @@ class ProductionApexExecutor:
                 except Exception:
                     pass
 
-        # 5. Synchronize native on-chain TP/SL brackets
+        # 5. Synchronize native on-chain / dry-run TP/SL brackets
         armed_brackets = self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
 
-        # 6. Advance cadence counters
-        self.state.total_micro_bars += 1
-        self.state.bars_since_macro += 1
-        self.journal.append_event("MICRO_BAR_COMPLETED", {
-            "total_micro_bars": self.state.total_micro_bars,
-            "bars_since_macro": self.state.bars_since_macro,
-            "holding_locks": dict(self.state.holding_locks),
-            "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-        })
+        # 6. Advance cadence counters (unless mid-bar boot check)
+        if advance_cadence:
+            self.state.total_micro_bars += 1
+            self.state.bars_since_macro += 1
+            self.journal.append_event("MICRO_BAR_COMPLETED", {
+                "total_micro_bars": self.state.total_micro_bars,
+                "bars_since_macro": self.state.bars_since_macro,
+                "holding_locks": dict(self.state.holding_locks),
+                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+            })
 
         # 7. Post-Trade Account State Refresh & Checkpointing
         chain_equity, discrepancy, confirmed_positions = self.reconcile_ledger_events_and_reconstruct_nav()
@@ -2877,6 +3679,7 @@ class ProductionApexExecutor:
                 ),
             },
             "holding_locks": self.state.holding_locks,
+            "exp109_satellites": self.state.satellites,
             "open_positions": current_positions,
             "armed_triggers": armed_triggers,
             "distributional_telemetry": getattr(self, "last_telemetry_audit", {}),
@@ -2902,14 +3705,27 @@ class ProductionApexExecutor:
                 log("CRITICAL", "[SAFETY GATE] Boot clock verification failed. Halting daemon initialization.")
                 return
             equity, _, pos = self.gateway.get_account_state()
-            if self.dry_run and equity < 50.0:
+            if self.virtual_paper:
                 pos = self.state.paper_positions
-            if self.force_macro or len(pos) == 0 or self.state.bars_since_macro >= MACRO_CADENCE_BARS:
+            if self.force_macro or len(pos) == 0 or self.state.bars_since_macro >= EXP114_ROLLING_CADENCE_BARS:
                 log("INFO", "[BOOT] Triggering Initial Macro Rebalance Cycle...")
                 self.execute_macro_rebalance()
             else:
-                log("INFO", "[BOOT] Open positions detected; triggering Micro Risk Cycle...")
-                self.execute_micro_risk_cycle()
+                # Check if a micro bar already completed in the current 4H window so restart doesn't double-increment cadence
+                boundary_ms, _ = self.get_causal_4h_decision_boundary()
+                already_advanced = False
+                if self.journal_file.exists():
+                    try:
+                        with open(self.journal_file, "r") as jf:
+                            for line in jf:
+                                if '"MICRO_BAR_COMPLETED"' in line:
+                                    ev = json.loads(line)
+                                    if int(ev.get("timestamp_ms", 0)) >= boundary_ms:
+                                        already_advanced = True
+                    except Exception:
+                        pass
+                log("INFO", f"[BOOT] Open positions detected; triggering Micro Risk Cycle (advance_cadence={not already_advanced})...")
+                self.execute_micro_risk_cycle(advance_cadence=not already_advanced)
         except Exception as e:
             log("ERROR", f"[BOOT] Boot cycle exception: {e}")
 
@@ -2945,8 +3761,8 @@ class ProductionApexExecutor:
             except Exception as e:
                 log("ERROR", f"Error during Micro Risk Cycle: {e}")
 
-            # 72H Macro Rebalance Cycle
-            if self.state.bars_since_macro >= MACRO_CADENCE_BARS:
+            # EXP-114 Rolling Macro Rebalance Cycle (24H = 6 x 4H bars)
+            if self.state.bars_since_macro >= EXP114_ROLLING_CADENCE_BARS:
                 try:
                     self.execute_macro_rebalance()
                 except Exception as e:
@@ -2959,6 +3775,7 @@ def main():
     parser.add_argument("--macro", action="store_true", help="Force execute macro rebalance cycle")
     parser.add_argument("--dry-run", action="store_true", help="Simulate orders without exchange execution")
     parser.add_argument("--mainnet", action="store_true", help="Target mainnet instead of testnet")
+    parser.add_argument("--mainnet-signals", action="store_true", help="Compute signals/funding from Mainnet Info feed while executing orders on Testnet")
     parser.add_argument("--no-risk-parity", action="store_true", help="Disable EXP-103C shrunk-covariance risk parity (defaults to True)")
     args = parser.parse_args()
 
@@ -2967,6 +3784,7 @@ def main():
         dry_run=args.dry_run,
         force_macro=args.macro,
         use_risk_parity_103c=not args.no_risk_parity,
+        mainnet_signals=args.mainnet_signals,
     )
 
     if args.once:

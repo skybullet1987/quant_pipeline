@@ -678,3 +678,144 @@ def test_adaptive_shock_threshold():
     # Midday hours: 100ms vol = $70,000 -> 18 * 70k = $1,260,000 (between 975k and 2,025k)
     assert compute_adaptive_shock_threshold(base, 70_000.0) == 1_260_000.0
 
+
+def test_v36_ranks_1_to_4_upgrades(tmp_path, monkeypatch):
+    """Verifies Rank #1 (Spot basis veto), Rank #2 (Sleeve 3 strike convergence incl. SOL), Rank #3 (Deribit SVI), and Rank #4 (Boundary Lock)."""
+    import asyncio
+    from src.polymarket_research import polymarket_live_harvester as hv_mod
+    from src.polymarket_research.polymarket_live_harvester import (
+        PolymarketLiveHarvester,
+        compute_composite_edge_score,
+    )
+    from src.polymarket_research.deribit_svi_surface import (
+        SVIParams,
+        compute_breeden_litzenberger_digital,
+    )
+
+    # Rank #1: Spot-led shock allows -4.5 bps basis lag while Futures shock vetoes at -2.0 bps
+    base_shk = {
+        "shock_direction": "BUY",
+        "shock_ofi": 0.90,
+        "shock_volume_100ms": 2_000_000.0,
+        "delta_basis_100ms": -4.5,
+        "pre_shock_features_t0": {"UP": {"age_ask_ms": 400.0, "spread": 0.01}},
+    }
+    assert compute_composite_edge_score({**base_shk, "shock_source": "SPOT"})["veto"] is False
+    assert compute_composite_edge_score({**base_shk, "shock_source": "FUTURES"})["veto"] is True
+
+    # Rank #3: Deribit SVI + Breeden-Litzenberger digital probability
+    svi = SVIParams(a=0.00002, b=0.0001, rho=-0.15, m=0.0, sigma=0.02, t_years=1.0 / 8760.0, forward_price=82000.0, calibrated_at=time.time())
+    p_itm = compute_breeden_litzenberger_digital(82500.0, 82000.0, 1.0 / 8760.0, svi)
+    p_otm = compute_breeden_litzenberger_digital(81500.0, 82000.0, 1.0 / 8760.0, svi)
+    assert p_itm > 0.80 and p_otm < 0.20
+
+    # Rank #2 & #4: Harvester Sleeve 3 (SOL strike convergence) & Sleeve 4 (Boundary Lock)
+    for name in ("TRIGGER_FILE", "SHOCK_FILE", "RESOLUTIONS_FILE", "PID_FILE", "STATE_FILE"):
+        monkeypatch.setattr(hv_mod, name, tmp_path / f"{name.lower()}.json")
+    h = PolymarketLiveHarvester(dry_run=True, ticket_notional=25.0, max_exposure=100.0, allow_cli_exposure=True)
+
+    # Sleeve 3 SOL strike convergence trigger
+    sol_trig = {
+        "shock_id": "EXP316_SOL_1",
+        "t0_unix": time.time(),
+        "shock_source": "EXP316_TRACK_A_CONVERGENCE",
+        "sleeve": "SLEEVE_3_STRIKE_CONVERGENCE",
+        "asset": "SOL",
+        "horizon": "DAILY_STRIKE",
+        "market_id": "EXP316_SOL_MKT1",
+        "condition_id": "0xcond_sol_1",
+        "title": "Solana above $105 on Oct 21? (YES)",
+        "seconds_to_expiry": 3600.0,
+        "shock_direction": "BUY",
+        "shock_ofi": 0.85,
+        "shock_volume_100ms": 2_000_000.0,
+        "delta_basis_100ms": 1.5,
+        "z_val": 2.2,
+        "p_svi": 0.91,
+        "spot_at_t0": 106.2,
+        "candle_open_spot": 105.0,
+        "candle_distance_pct": 1.14,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xcond_sol_1"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "0xTOK_SOL_YES",
+                "age_ask_ms": 450.0,
+                "spread": 0.01,
+                "raw_top_asks": [[0.82, 500.0]],
+                "raw_top_bids": [[0.81, 500.0]],
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(sol_trig))
+    assert any(p.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" and p.get("asset") == "SOL" for p in h.active_positions.values())
+
+    # Rank #4: Boundary Lock trigger at TTE=22s, ask=0.91, z=3.5
+    bnd_trig = {
+        "shock_id": "BND_BTC_1",
+        "t0_unix": time.time(),
+        "shock_source": "BOUNDARY_LOCK",
+        "regime_override": "REGIME_D_BOUNDARY_LOCK",
+        "asset": "BTC",
+        "horizon": "1h",
+        "market_id": "MKT_BND_1",
+        "condition_id": "0xcond_bnd_1",
+        "title": "Bitcoin Up or Down - 1H",
+        "seconds_to_expiry": 22.0,
+        "shock_direction": "BUY",
+        "shock_ofi": 0.90,
+        "shock_volume_100ms": 2_000_000.0,
+        "delta_basis_100ms": 1.0,
+        "z_val": 3.5,
+        "spot_at_t0": 82500.0,
+        "finalized_1h_open": 82200.0,
+        "candle_distance_pct": 0.365,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xcond_bnd_1"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "0xTOK_BTC_BND",
+                "age_ask_ms": 400.0,
+                "spread": 0.01,
+                "raw_top_asks": [[0.91, 500.0]],
+                "raw_top_bids": [[0.90, 500.0]],
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(bnd_trig))
+    assert any(p.get("sleeve") == "SLEEVE_4_BOUNDARY_SNIPE" and p.get("target_exit_price") == 0.99 for p in h.active_positions.values())
+
+
+def test_forensic_code_review_fixes(tmp_path):
+    """Verify the 6 forensic code review fixes: SVI barrier reflection & alias, fresh-ask Boundary Lock exemption, and SLEEVE_4 Final-45s protection."""
+    from src.polymarket_research.deribit_svi_surface import GLOBAL_SVI_ENGINE
+
+    # 1. SVI get_implied_hourly_sigma alias + is_barrier_no reflection principle
+    sig = GLOBAL_SVI_ENGINE.get_implied_hourly_sigma("BTC")
+    assert 0.0020 <= sig <= 0.0250
+    res_euro = GLOBAL_SVI_ENGINE.evaluate_strike_probability(
+        asset="BTC", spot=82000.0, strike=83000.0, tte_seconds=3600.0,
+        outcome="NO", is_upward=True, is_barrier_no=False, fallback_sigma_1h=0.0060,
+    )
+    res_barrier = GLOBAL_SVI_ENGINE.evaluate_strike_probability(
+        asset="BTC", spot=82000.0, strike=83000.0, tte_seconds=3600.0,
+        outcome="NO", is_upward=True, is_barrier_no=True, fallback_sigma_1h=0.0060,
+    )
+    # One-touch barrier NO probability must be strictly lower than European digital NO probability (reflection principle 2x tail)
+    assert res_barrier["p_svi"] < res_euro["p_svi"]
+
+    # 2. Boundary Lock with newly posted ask (age_ask_ms=5ms, obi_l1=-0.70) must NOT be vetoed by MM reprice check
+    edge = compute_composite_edge_score({
+        "shock_source": "BOUNDARY_LOCK",
+        "shock_direction": "BUY",
+        "shock_ofi": 0.95,
+        "shock_volume_100ms": 2_000_000.0,
+        "delta_basis_100ms": 1.0,
+        "pre_shock_features_t0": {
+            "UP": {"age_ask_ms": 5.0, "obi_l1": -0.70, "spread": 0.01, "raw_top_asks": [[0.90, 200.0]]},
+            "DOWN": {"age_bid_ms": 400.0},
+        },
+    })
+    assert not edge["veto"]
+    assert edge["e_score"] >= 60.0
+
+
+

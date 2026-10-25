@@ -1,0 +1,20 @@
+{
+  "ticket_notional": 16.5,
+  "dynamic_sizing": true,
+  "dynamic_risk_pct": 0.18,
+  "scale_up_equity_threshold": 110.0,
+  "scale_up_risk_pct": 0.22,
+  "min_equity_floor": 66.67,
+  "seed_survival_equity_threshold": 88.0,
+  "seed_survival_ticket_usd": 12.0,
+  "seed_survival_max_concurrent": 1,
+  "seed_survival_floor_usd": 48.0,
+  "max_daily_loss": 20.0,
+  "max_exposure": 35.0,
+  "max_concurrent_positions": 2,
+  "hold_to_maturity": false,
+  "stale_fast_tick_max_age_sec": 15.0,
+  "stale_telemetry_max_age_sec": 30.0,
+  "stale_alert_after_sec": 60.0,
+  "alert_rate_limit_sec": 300.0
+}

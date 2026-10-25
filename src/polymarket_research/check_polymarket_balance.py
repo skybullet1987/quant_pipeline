@@ -21,6 +21,7 @@ if not WALLET_ADDR:
     sys.exit(1)
 
 USDC_E = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+PUSD = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
 
 
 def check_balance():
@@ -48,6 +49,7 @@ def check_balance():
         "https://1rpc.io/matic",
     ]
     pol_bal = 0.0
+    pusd_bal = 0.0
     usdc_bal = 0.0
 
     for rpc in rpcs:
@@ -55,24 +57,32 @@ def check_balance():
             # Native POL
             r_pol = requests.post(rpc, json={
                 "jsonrpc": "2.0", "method": "eth_getBalance", "params": [WALLET_ADDR, "latest"], "id": 1
-            }, timeout=2.0).json()
+            }, timeout=2.5).json()
             if "result" in r_pol:
                 pol_bal = int(r_pol["result"], 16) / 1e18
 
-            # USDC.e
             call_data = "0x70a08231" + WALLET_ADDR[2:].lower().rjust(64, "0")
+            # V2 pUSD primary collateral
+            r_pusd = requests.post(rpc, json={
+                "jsonrpc": "2.0", "method": "eth_call", "params": [{"to": PUSD, "data": call_data}, "latest"], "id": 2
+            }, timeout=2.5).json()
+            if "result" in r_pusd:
+                pusd_bal = int(r_pusd["result"], 16) / 1e6
+
+            # Legacy USDC.e
             r_usdc = requests.post(rpc, json={
-                "jsonrpc": "2.0", "method": "eth_call", "params": [{"to": USDC_E, "data": call_data}, "latest"], "id": 2
-            }, timeout=2.0).json()
+                "jsonrpc": "2.0", "method": "eth_call", "params": [{"to": USDC_E, "data": call_data}, "latest"], "id": 3
+            }, timeout=2.5).json()
             if "result" in r_usdc:
                 usdc_bal = int(r_usdc["result"], 16) / 1e6
-                if usdc_bal > 0 or pol_bal > 0:
-                    break
+            if pusd_bal > 0 or usdc_bal > 0 or pol_bal > 0:
+                break
         except Exception:
             continue
 
     print(f"POL Gas Balance: {pol_bal:.4f} POL")
-    print(f"USDC.e On-chain: ${usdc_bal:,.2f} USDC.e")
+    print(f"pUSD On-chain:   ${pusd_bal:,.2f} pUSD (V2 Primary Collateral)")
+    print(f"USDC.e On-chain: ${usdc_bal:,.2f} USDC.e (Legacy Bridge)")
 
     # 2. Check live execution ledger if active
     ledger_path = PIPELINE_ROOT / "data/polymarket/live_orders.jsonl"

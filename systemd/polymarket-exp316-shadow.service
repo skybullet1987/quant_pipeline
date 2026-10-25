@@ -1,0 +1,16 @@
+[Unit]
+Description=Polymarket EXP-316 Daily/Weekly Crypto Strike Convergence Shadow Engine (Isolated --no-live-triggers)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=PYTHONUNBUFFERED=1
+Environment=PM_DISABLE_EXP316_LIVE_EMIT=1
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/exp316_macro_strike_shadow.py --daemon --no-live-triggers
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

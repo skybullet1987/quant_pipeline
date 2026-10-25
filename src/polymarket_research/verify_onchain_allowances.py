@@ -60,13 +60,18 @@ spenders = [
     ("Exchange V3 (Protocol V2 Route)", EXCHANGE_V3),
 ]
 
-print("\n[USDC.e Spender Allowances]")
+print("\n[pUSD (V2 Primary) & USDC.e Spender Allowances]")
 for name, addr in spenders:
     try:
-        raw = usdc.functions.allowance(WALLET, addr).call()
-        usd = raw / 1e6
-        is_max = (raw > 1e30)
-        print(f"  ✓ {name}: {'MAX_UINT256 (Unlimited)' if is_max else f'${usd:,.2f}'}")
+        raw_p = pusd.functions.allowance(WALLET, addr).call()
+        usd_p = raw_p / 1e6
+        is_max_p = (raw_p > 1e30)
+        raw_u = usdc.functions.allowance(WALLET, addr).call()
+        usd_u = raw_u / 1e6
+        is_max_u = (raw_u > 1e30)
+        p_str = "MAX_UINT256 (Unlimited)" if is_max_p else f"${usd_p:,.2f}"
+        u_str = "MAX_UINT256 (Unlimited)" if is_max_u else f"${usd_u:,.2f}"
+        print(f"  ✓ {name}: pUSD={p_str} | USDC.e={u_str}")
     except Exception as e:
         print(f"  ✗ {name}: Failed ({e})")
 
