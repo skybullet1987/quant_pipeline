@@ -54,7 +54,74 @@ def enable_tcp_nodelay_globally() -> None:
     except Exception:
         pass
 
+
+class _ThreadLocalClobHttpClient:
+    """
+    v3.9.3 Forensic Fix: Thread-isolated HTTP/1.1 persistent keep-alive proxy for py_clob_client_v2.
+    Replaces py_clob_client_v2's single module-global `httpx.Client(http2=True)`, eliminating:
+      1. `RuntimeError: deque mutated during iteration` when concurrent `asyncio.to_thread` workers
+         mutate httpcore's shared connection/stream deque simultaneously.
+      2. Cloudflare HTTP/2 `<ConnectionTerminated error_code:9>` GOAWAY stream-limit resets.
+    """
+
+    def __init__(self, timeout: float = 8.0) -> None:
+        self._local = threading.local()
+        self._timeout = timeout
+
+    def _client(self, reset: bool = False) -> httpx.Client:
+        cli = getattr(self._local, "client", None)
+        if reset and cli is not None:
+            try:
+                cli.close()
+            except Exception:
+                pass
+            cli = None
+        if cli is None or getattr(cli, "is_closed", False):
+            cli = httpx.Client(
+                http2=False,
+                timeout=self._timeout,
+                limits=httpx.Limits(
+                    max_keepalive_connections=8,
+                    max_connections=16,
+                    keepalive_expiry=45.0,
+                ),
+            )
+            self._local.client = cli
+        return cli
+
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        try:
+            return self._client().request(method=method, url=url, **kwargs)
+        except (httpx.RemoteProtocolError, httpx.LocalProtocolError) as exc:
+            # Safe 1-shot reconnect ONLY on idempotent GET when an idle keep-alive socket was closed upstream
+            if str(method).upper() == "GET":
+                return self._client(reset=True).request(method=method, url=url, **kwargs)
+            self._client(reset=True)
+            raise exc
+
+
+def install_thread_safe_clob_http_client(target_module: Any = None) -> bool:
+    """Installs _ThreadLocalClobHttpClient on py_clob_client_v2.http_helpers.helpers._http_client."""
+    try:
+        if target_module is None:
+            import py_clob_client_v2.http_helpers.helpers as hh
+            target_module = hh
+        cur = getattr(target_module, "_http_client", None)
+        if isinstance(cur, _ThreadLocalClobHttpClient):
+            return True
+        target_module._http_client = _ThreadLocalClobHttpClient()
+        try:
+            if cur is not None and hasattr(cur, "close"):
+                cur.close()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
+
+
 enable_tcp_nodelay_globally()
+install_thread_safe_clob_http_client()
 
 # Ensure pipeline root is in sys.path
 PIPELINE_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -692,6 +759,7 @@ class PolymarketLiveExecutor:
 
         try:
             t0 = time.perf_counter()
+            install_thread_safe_clob_http_client()
             # Initialize L1 client with configured signature type (3 for Polymarket deposit proxy wallet)
             self.client = ClobClient(
                 host=self.CLOB_HOST,

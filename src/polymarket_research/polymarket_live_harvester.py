@@ -4262,11 +4262,13 @@ class PolymarketLiveHarvester:
             p_max = max(p_max, 0.94)
         elif is_1h:
             if _is_live_real:
-                # Purged WFO v3.9.1 Optimal Live 1h Window: 120s <= TTE <= 1200s, min_cushion=0.04%, continuous +EV ceiling up to $0.85
+                # Purged WFO v3.9.3 Optimal Live 1h Window: 120s <= TTE <= 1200s, continuous +EV ceiling up to $0.85.
+                # v3.9.3 Forensic Fix (6081501): Scale ETH 1h cushion floor for ETH's higher whipsaw amplitude
+                # (0.15% at TTE > 600s, 0.08% at TTE <= 600s; preserves 100% of 76/76 historical WFO setups).
                 if 120.0 <= tte <= 1200.0:
                     regime = "REGIME_B_LATE_SNIPER"
                     cushion = abs(dist_pct)
-                    _min_reg_b_cush = 0.04
+                    _min_reg_b_cush = (0.15 if tte > 600.0 else 0.08) if asset_str == "ETH" else 0.04
                     if cushion < _min_reg_b_cush:
                         logger.info(
                             f"[REGIME_B_REJECT] {shock.get('title')!r}: abs(dist_pct)={cushion:.4f}% < {_min_reg_b_cush:.2f}% min threshold (TTE={tte:.0f}s)."
@@ -4385,6 +4387,10 @@ class PolymarketLiveHarvester:
         # Time-Decayed Volatility Z-Score & Fair Binary Probability (F-04: Exact 15m/1h WFO sigma_1h Parity)
         rec_sig = float(shock.get("candle_sigma") or 0.0)
         sigma_1h = (rec_sig * 2.0 if is_subhourly else rec_sig) if rec_sig > 0.0 else (0.0050 if asset_str == "BTC" else 0.0068)
+        if _is_live_real and asset_str == "ETH":
+            # v3.9.3 Forensic Fix (6081501): Prevent quiet overnight/weekend backward-looking ETH candle_sigma
+            # from understating active session volatility (floors ETH at 0.48%/h while keeping BTC 100% untouched).
+            sigma_1h = max(sigma_1h, 0.0048)
         sigma_rem = max(0.00025, sigma_1h * math.sqrt(max(tte, 30.0) / 3600.0))
         signed_dist_frac = (dist_pct / 100.0) if target_token == "UP" else (-dist_pct / 100.0)
         z_strike = signed_dist_frac / max(sigma_rem, 1e-6)
@@ -6757,6 +6763,16 @@ class PolymarketLiveHarvester:
                                     pos["pending_canceled_order_id"] = exit_oid
                                     self.save_state()
                                     continue
+                                if (
+                                    isinstance(cancel_res, dict)
+                                    and bool(cancel_res.get("is_canceled"))
+                                    and summary is not None
+                                    and bool(summary.get("terminal"))
+                                ):
+                                    # v3.9.3 Forensic Fix: Evict exit_oid from pre-cancel open_oids snapshot once
+                                    # BOTH cancel_order and post-cancel order summary prove terminal cancellation,
+                                    # eliminating the 3.9s STOP_CANCEL_PENDING double-cancel delay on salvage.
+                                    open_oids.discard(exit_oid)
                                 canceled_confirmed = (
                                     (self.dry_run and (exit_oid not in open_oids or summary is None))
                                     or (exit_oid not in open_oids and (
@@ -6830,8 +6846,26 @@ class PolymarketLiveHarvester:
                                 self._close_position(tid, pos, ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB", won=None)
                                 continue
 
-                            # Aggressive FAK unwind at best bid (min price 0.01) to lock in capital recovery
-                            limit_px = max(0.01, best_b - 0.01) if final_45s_triggered else max(0.01, best_b - 0.02)
+                            # Refresh best_b from /dev/shm fast-tick after cancel RTT so FAK min_price isn't stale
+                            if _is_live_auth:
+                                _post_cancel_bk = self._get_verified_shm_book(pos)
+                                if isinstance(_post_cancel_bk, dict):
+                                    _pc_bids = _post_cancel_bk.get("bids") or []
+                                    _pc_best = max((float(b.get("price", 0.0)) for b in _pc_bids if float(b.get("size", 0.0)) > 0), default=0.0)
+                                    if _pc_best > 0.0:
+                                        best_b = _pc_best
+
+                            # Aggressive FAK unwind at best bid (min price 0.01) to lock in capital recovery.
+                            # v3.9.3 Forensic Fix: Use 4c (+4c/retry) sweep floor on live adverse salvage so 1-2c L1
+                            # flickers don't cause 400 FAK zero-match rejections (CLOB FAK still fills at top resting bid).
+                            _prior_retries = int(pos.get("unwind_retry_count", 0) or 0)
+                            if final_45s_triggered:
+                                limit_px = max(0.01, round(best_b - 0.01, 4))
+                            elif (_is_live_auth and not trailing_ratchet_triggered) or _prior_retries > 0:
+                                _fak_slip = 0.04 + (0.04 * min(_prior_retries, 4))
+                                limit_px = max(0.01, round(best_b - _fak_slip, 4))
+                            else:
+                                limit_px = max(0.01, round(best_b - 0.02, 4))
                             unwind_res = await asyncio.to_thread(
                                 self.executor.execute_unwind_order,
                                 token_id=token_id,
@@ -6893,7 +6927,12 @@ class PolymarketLiveHarvester:
                             pos["is_liquidating"] = False
                             attempts = int(pos.get("unwind_retry_count", 0)) + 1
                             pos["unwind_retry_count"] = attempts
-                            backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
+                            if "no orders found to match with fak order" in err_u_low:
+                                # v3.9.3 Forensic Fix: Zero-match FAK 400 is deterministic (0 exposure resting);
+                                # retry rapidly in 0.35s with widened sweep floor instead of sleeping 2s -> 4s -> 8s!
+                                backoff_seconds = 0.35
+                            else:
+                                backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
                             pos["next_unwind_retry_ts"] = now_ts + backoff_seconds
                             pos["unwind_last_error"] = str(unwind_res.get("error", "unknown"))
                             pos["unwind_last_attempt_ts"] = now_ts
@@ -7567,7 +7606,7 @@ class PolymarketLiveHarvester:
                     or p.get("low_bid_detected_ts")
                     or p.get("trail_stop_detected_ts")
                     or p.get("zero_bid_detected_ts")
-                    or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED"}
+                    or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED", "UNWIND_RETRY_REQUIRED"}
                     for p in self.active_positions.values()
                 )
                 mgmt_interval = 0.20 if urgent_supervision else 1.0

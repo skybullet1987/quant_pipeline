@@ -1,7 +1,7 @@
 """
 ================================================================================
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-25 12:52:59 UTC
+Generated: 2026-10-25 14:19:01 UTC
 Version: 3.9.0 Purged-WFO, Genuine Refit CPCV & Second-Pass Audit Hardened Release
 Repository: C:/Users/Anton/source/repos/Dominus
 
@@ -16,17 +16,17 @@ tools, post-trade forensic auditor, and Purged Walk-Forward / CPCV Optimizer:
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 34 - 64 | 586 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 65 - 102 | 1,633 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 103 - 6,959 | 442,251 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,960 - 11,194 | 225,107 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 11,195 - 13,528 | 136,200 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 13,529 - 13,873 | 14,568 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 13,874 - 15,856 | 122,453 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 15,857 - 15,949 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 15,950 - 16,051 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 16,052 - 16,204 | 7,450 B) :: CTF Settled Position Redemption Engine
-  - [src/polymarket_research/setup_polymarket_account.py] (Lines 16,205 - 16,436 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  - [audit_losing_trades.py] (Lines 16,437 - 16,670 | 10,687 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 16,671 - 18,221 | 79,683 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 103 - 6,722 | 445,399 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,723 - 10,684 | 227,806 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,685 - 12,870 | 136,200 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,871 - 13,195 | 14,568 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 13,196 - 15,135 | 122,453 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 15,136 - 15,223 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 15,224 - 15,325 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 15,326 - 15,467 | 7,450 B) :: CTF Settled Position Redemption Engine
+  - [src/polymarket_research/setup_polymarket_account.py] (Lines 15,468 - 15,693 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  - [audit_losing_trades.py] (Lines 15,694 - 15,915 | 10,687 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,916 - 17,437 | 79,683 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 
 from __future__ import annotations
@@ -107,16 +107,6 @@ WantedBy=default.target
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-POLYMARKET LIVE HARVESTER DAEMON (v1.0.0 Production)
-===================================================
-Real-time execution daemon implementing Policy B2 (Maker-First Fast Unwind):
-  1. Tails real-time shock responses from Binance/Polymarket streaming pipeline.
-  2. Enforces strict fail-closed depth guard (DepthRatio >= 1.50) and sweet-spot gating.
-  3. Executes atomic FOK entry via EIP-712 L2 CLOB API.
-  4. Posts resting maker scalp ask (+10¢ target) to capture fast unwind repricing.
-  5. Manages positions, logs fills to live immutable audit ledger.
-"""
 import asyncio
 import ctypes
 import json
@@ -167,7 +157,6 @@ logging.basicConfig(
 )
 _FILE_LOGGER_ATTACHED = False
 def _ensure_file_logging() -> None:
-    """Attaches live_harvester.log handler lazily on daemon startup so imports never touch production files."""
     global _FILE_LOGGER_ATTACHED
     if _FILE_LOGGER_ATTACHED:
         return
@@ -184,7 +173,6 @@ _ALERT_LAST_SENT: Dict[str, float] = {}
 _ALERT_LOCK = threading.Lock()
 _ALERT_THREADS: List[threading.Thread] = []
 def flush_operational_alerts(timeout: float = 3.0) -> None:
-    """Waits (bounded) for in-flight alert pushes so a halt alert survives an immediate process exit."""
     deadline = time.time() + max(0.0, float(timeout))
     for t in list(_ALERT_THREADS):
         t.join(max(0.0, deadline - time.time()))
@@ -195,7 +183,6 @@ def _alerts_file_path() -> Optional[Path]:
         return Path(override) if override else None
     return DATA_DIR / "critical_alerts.jsonl"
 def _post_alert_http(text: str, record: Dict[str, Any]) -> None:
-    """Blocking HTTP dispatch (runs ONLY on a daemon thread; 2.5s timeout). Never raises."""
     try:
         import urllib.request
         token = os.environ.get("TELEGRAM_BOT_TOKEN", "").strip()
@@ -221,10 +208,6 @@ def send_operational_alert(
     rate_limit_sec: float = 0.0,
     dedupe_key: Optional[str] = None,
 ) -> bool:
-    """Appends a structured alert to data/polymarket/critical_alerts.jsonl and, when TELEGRAM_BOT_TOKEN +
-    TELEGRAM_CHAT_ID (or ALERT_WEBHOOK_URL) are configured, pushes it from a non-blocking daemon thread.
-    Returns True if the alert was emitted, False if suppressed by the rate limiter.
-    """
     now = time.time()
     key = dedupe_key or event_type
     with _ALERT_LOCK:
@@ -260,10 +243,6 @@ def send_operational_alert(
         _t.start()
     return True
 class LinuxInotifyWatcher:
-    """
-    Sub-millisecond filesystem change notifier using Linux inotify syscalls via libc.
-    Replaces 50ms polling with direct event-driven kernel wakeups.
-    """
     IN_MODIFY = 0x00000002
     IN_CLOSE_WRITE = 0x00000008
     IN_NONBLOCK = 0x00000800
@@ -294,7 +273,6 @@ class LinuxInotifyWatcher:
     def is_available(self) -> bool:
         return self._available and self.fd >= 0
     def drain_events(self):
-        """Non-blocking drain of inotify event queue."""
         if not self.is_available:
             return
         try:
@@ -320,7 +298,6 @@ FAST_TICK_DIR = Path(os.getenv("PM_FAST_TICK_DIR", "/dev/shm"))
 FAST_TICK_MAX_AGE_SEC = 0.50
 VENUE_DIVERGENCE_VETO_BPS = 15.0
 def read_fast_tick(asset: str, max_age_sec: float = FAST_TICK_MAX_AGE_SEC, now: Optional[float] = None) -> Optional[Dict[str, Any]]:
-    """Reads /dev/shm/pm_fast_tick_{ASSET}.json; returns None if missing, unparsable or older than max_age_sec."""
     if "PM_FAST_TICK_DIR" in os.environ:
         env_dir = os.environ["PM_FAST_TICK_DIR"].strip()
         if not env_dir:
@@ -338,7 +315,6 @@ def read_fast_tick(asset: str, max_age_sec: float = FAST_TICK_MAX_AGE_SEC, now: 
     except Exception:
         return None
 def fast_tick_book_for_token(snap: Optional[Dict[str, Any]], token_id: str) -> Optional[Dict[str, Any]]:
-    """Returns a REST-shaped top-of-book {'bids': [...], 'asks': [...]} for token_id from a fast tick, or None."""
     if not snap or not token_id:
         return None
     candidates = [snap.get("UP"), snap.get("DOWN")]
@@ -358,13 +334,6 @@ def fast_tick_book_for_token(snap: Optional[Dict[str, Any]], token_id: str) -> O
         }
     return None
 def evaluate_coinbase_venue_veto(shock: Dict[str, Any], target_token: str) -> Tuple[bool, str]:
-    """
-    v3.8 Coinbase + Binance composite filter (fail-open, WFO F-10 OR-parity).
-    - When causally centered basis (venue_divergence_centered_bps) is available: veto if directional
-      centered divergence > 12.0 bps OR directional 2s Coinbase move < -4.0 bps (1:1 WFO parity).
-    - When only raw uncentered venue_divergence_bps is available: veto if > 15.0 bps AND Coinbase
-      moves against shock (< -0.50 bps), OR directional 2s Coinbase move < -4.0 bps.
-    """
     try:
         cb = float(shock.get("coinbase_spot") or 0.0)
         if cb <= 0.0:
@@ -398,12 +367,6 @@ def compute_queue_priority_maker_price(
     valid_asks: List[Dict[str, Any]],
     current_target_px: float,
 ) -> Optional[float]:
-    """
-    FIFO queue-priority jump: when a wall > max(300, 12 x our shares) sits at the current maker TP
-    (0.98/0.99) as the best ask and the bid is within 3 cents, step 1 cent in front of it. Returns the
-    new price, or None to keep the current target. Never goes below max(entry + 0.14, 0.95) and never
-    crosses/touches the best bid (so a post_only order stays resting).
-    """
     try:
         tgt = round(float(current_target_px), 2)
         if tgt < QUEUE_JUMP_MIN_TARGET or float(rem_shares) <= 0.0:
@@ -494,16 +457,11 @@ ENTRY_UNEXECUTED_PROOF_AGE_S = 60.0
 UNWIND_UNKNOWN_PROOF_AGE_S = 30.0
 REDEMPTION_POLL_INTERVAL_S = 60.0
 def position_requires_global_halt(pos: Dict[str, Any]) -> bool:
-    """True if this position's exchange outcome requires a GLOBAL halt across ALL markets."""
     return (
         pos.get("exit_order_status") in PIPELINE_GLOBAL_HALT_STATUSES
         or pos.get("status") in PIPELINE_GLOBAL_HALT_STATUSES
     )
 def position_may_post_new_maker_exit(pos: Dict[str, Any]) -> bool:
-    """
-    Allowlist gate for ANY new maker-exit submission. Denies by default: unknown outcomes,
-    unwinds in flight, partial-unwind residuals, terminal holds and receivables.
-    """
     if (
         position_requires_global_halt(pos)
         or pos.get("status") in MARKET_SCOPED_ENTRY_HALT_STATUSES
@@ -520,11 +478,6 @@ def position_may_post_new_maker_exit(pos: Dict[str, Any]) -> bool:
 def position_is_settlement_receivable(pos: Dict[str, Any]) -> bool:
     return pos.get("status") in SETTLEMENT_RECEIVABLE_STATUSES
 def compute_composite_edge_score(shock: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Pillar 1: Composite Edge & Stale-Quote Scoring Function.
-    Evaluates orderbook microstructure, flow momentum, and queue dynamics to assign
-    a conviction score (0-100) and Kelly sizing multiplier (1.15x for Tier A+, 1.00x for Tier B).
-    """
     shock_dir = str(shock.get("shock_direction") or "UP").upper()
     target_token = "UP" if shock_dir in ("BUY", "UP") else "DOWN"
     opp_token = "DOWN" if target_token == "UP" else "UP"
@@ -644,11 +597,6 @@ def compute_max_acceptable_ask(
     expected_salvage_net: float = 0.36,
     q_tail: float = 0.08,
 ) -> Dict[str, float]:
-    """
-    Pillar 2: Salvage-Adjusted Continuous Maximum-Ask Pricing Model.
-    Includes Expected Salvage Value (1 - p_true)(1 - q_tail) * s_net in the expected payoff numerator
-    so mid-hour setups ($0.60-$0.76) are NOT starved while blocking true overpayments.
-    """
     asset_clean = str(asset or "BTC").upper()
     sigma_1h = 0.0050 if asset_clean == "BTC" else (0.0095 if asset_clean == "SOL" else 0.0068)
     if GLOBAL_SVI_ENGINE is not None and os.environ.get("PM_SVI_DISABLE_BG_REFRESH") != "1":
@@ -701,11 +649,6 @@ def compute_modified_salvage_kelly_fraction(
     q_tail: float = 0.05,
     kelly_lambda: float = 0.28,
 ) -> float:
-    """
-    Pillar 4: Truncated-Payoff Kelly Fraction.
-    Models the 3-state return distribution where losers are truncated at ~38c-42c salvage recovery
-    rather than losing 100% of notional to $0.00.
-    """
     if entry_price <= 0.01 or entry_price >= 0.99 or p_win <= 0.50:
         return 0.0
     r_win = (target_exit - entry_price) / entry_price
@@ -735,12 +678,6 @@ def compute_correlated_truncated_kelly_size(
     entry_price: Optional[float] = None,
     p_true: Optional[float] = None,
 ) -> float:
-    """
-    Pillar 4: Correlated Truncated-Payoff Kelly Sizing.
-    Computes ticket notional using truncated Kelly sizing.
-    Applies 46% correlation haircut (multiplier ~0.54) if another position is active
-    in the same hourly expiry window in the same direction (e.g. BTC and ETH both long/short).
-    """
     if bankroll_usd is not None and live_equity <= 0.0:
         live_equity = bankroll_usd
     if entry_price is not None and entry_px <= 0.0:
@@ -776,19 +713,6 @@ def get_equity_tier_limits(
     high_water_mark_equity: Optional[float] = None,
     previous_tier: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """
-    Auto-Stepping Bankroll Sizing & Exposure by Live Equity Tier (Safeguard #1 + v3.9 R04 Smooth Ramp):
-    - Seed Survival (< $88.00, with +$3.00 upward hysteresis when previous_tier == 'SEED_SURVIVAL'):
-        dynamic_bankroll_pct = 0.1568 ($12 ticket cap), max_concurrent_positions = 1, floor = $48.00
-    - Seed Ramp ($91.00 <= equity < $108.00 when graduating up from SEED_SURVIVAL / SEED_RAMP):
-        Smooth transition band eliminating the +61% single-ticket jump and 2x concurrency cliff at $88.01!
-    - Recovery Tier (total_equity < 140.0):
-        dynamic_bankroll_pct = 0.22, max_concurrent_positions = 2, max_exposure = round(max(45.0, total_equity * 0.55), 2)
-    - Growth Tier (140.0 <= total_equity < 300.0):
-        dynamic_bankroll_pct = 0.26, max_concurrent_positions = 3, max_exposure = round(min(350.0, total_equity * 0.75), 2)
-    - Scale Tier (total_equity >= 300.0):
-        dynamic_bankroll_pct = 0.28, max_concurrent_positions = 3, max_exposure = round(min(500.0, total_equity * 0.85), 2)
-    """
     eq = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
     hwm = (
         float(high_water_mark_equity)
@@ -853,10 +777,8 @@ def get_equity_tier_limits(
         "min_equity_floor": min_equity_floor,
     }
 class StatePersistenceError(RuntimeError):
-    """Critical state could not be durably written; live entry must halt."""
     pass
 class EmergencyRiskController:
-    """Automated circuit breaker enforcing max loss & emergency halt policies."""
     def __init__(
         self,
         max_consecutive_losses: int = 3,
@@ -876,7 +798,6 @@ class EmergencyRiskController:
         self.kill_file = DATA_DIR / "KILL_SWITCH"
         self._halt_alerted = False
     def check_equity_drawdown(self, current_equity: Optional[float]):
-        """Circuit breaker: Halts trading if live bankroll equity breaches the configured equity floor."""
         if current_equity is not None and math.isfinite(float(current_equity)):
             eq = float(current_equity)
             if eq < self.min_equity_floor_usd:
@@ -891,7 +812,6 @@ class EmergencyRiskController:
                 self.halt_reason = ""
                 logger.info(f"[CIRCUIT_BREAKER_CLEARED] Account equity ${eq:.2f} restored above ${self.min_equity_floor_usd:.2f} floor.")
     def _check_and_reset_daily(self):
-        """Enforces clean UTC calendar day rollover for daily loss budget."""
         current_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         if current_date != self.last_loss_date_utc:
             logger.info(f"[RISK CONTROLLER] UTC day rolled over ({self.last_loss_date_utc} -> {current_date}). Resetting daily realized loss to $0.00.")
@@ -916,7 +836,6 @@ class EmergencyRiskController:
             self.consecutive_losses = 0
             self.daily_realized_loss = max(0.0, self.daily_realized_loss - net_pnl)
     def is_halted(self) -> bool:
-        """Evaluates whether trading is halted due to automated circuit breaker or manual kill switch."""
         self._check_and_reset_daily()
         if self.halted and "KILL_SWITCH file" in str(self.halt_reason or "") and not self.kill_file.exists():
             self.halted = False
@@ -951,7 +870,6 @@ def compute_kelly_ticket_size(
     fee_exponent: Optional[float] = None,
     max_cap: Optional[float] = None,
 ) -> float:
-    """Module-level Kelly sizing function supporting 35% elastic ticket sizing."""
     if not all(math.isfinite(float(v)) for v in (p_model, p_market_ask, bankroll)):
         return 0.0
     if not (0.0 < float(p_model) < 1.0):
@@ -1087,7 +1005,6 @@ class PolymarketLiveHarvester:
         self._last_known_collateral: Optional[float] = None
         self._prewarm_hourly_opens()
     def _record_seen_shock_id(self, shock_id: str) -> None:
-        """Maintains insertion-ordered bounded dict (max 2,000 entries) so [-1000:] preserves newest IDs."""
         if not hasattr(self, "_seen_shock_order"):
             self._seen_shock_order = {sid: None for sid in self.seen_shock_ids}
         self._seen_shock_order.pop(shock_id, None)
@@ -1105,7 +1022,6 @@ class PolymarketLiveHarvester:
         if len(self.closed_positions) > 200:
             self.closed_positions = self.closed_positions[-200:]
     def effective_risk_pct(self, equity: float) -> float:
-        """Dynamic sizing pct: base pct (18%) until equity crosses scale_up_equity_threshold, then scale_up_risk_pct (22%)."""
         try:
             if float(equity) >= float(self.risk_config["scale_up_equity_threshold"]):
                 return float(self.risk_config["scale_up_risk_pct"])
@@ -1120,11 +1036,6 @@ class PolymarketLiveHarvester:
             asset = title.split()[0].upper() if title else "BTC"
         return asset
     def check_recorder_freshness(self, asset: str, now_ts: float) -> Tuple[bool, float, str]:
-        """Stale-recorder watchdog (zombie-socket guard).
-        Fresh iff the recorder's /dev/shm fast-tick file was written within stale_fast_tick_max_age_sec (15s)
-        OR its JSONL telemetry file was appended within stale_telemetry_max_age_sec (30s).
-        Returns (is_fresh, newest_age_seconds, reason). A missing file counts as infinitely old.
-        """
         asset = str(asset).upper()
         env_dir = os.environ.get("PM_FAST_TICK_DIR")
         tick_dir = Path(env_dir) if env_dir else FAST_TICK_DIR
@@ -1146,7 +1057,6 @@ class PolymarketLiveHarvester:
             return True, newest, f"telemetry_age={tele_age:.1f}s<={tele_max:.0f}s"
         return False, newest, f"fast_tick_age={tick_age:.1f}s>{fast_max:.0f}s and telemetry_age={tele_age:.1f}s>{tele_max:.0f}s"
     def monitor_recorder_staleness(self, now_ts: float) -> None:
-        """Heartbeat-loop hook: rate-limited alert when any allowed asset's recorder feed is older than 60s."""
         alert_after = float(self.risk_config["stale_alert_after_sec"])
         for asset in sorted(self.allowed_assets):
             ok, age, reason = self.check_recorder_freshness(asset, now_ts)
@@ -1159,7 +1069,6 @@ class PolymarketLiveHarvester:
                     dedupe_key=f"stale_recorder:{asset}",
                 )
     def _append_shadow_phase3_4_event(self, record: Dict[str, Any]) -> None:
-        """Appends a structured Phase 3A / Phase 4 shadow telemetry event to shadow_phase3_4_tracker.jsonl (fail-open)."""
         raw_target = os.environ.get("PM_SHADOW_TRACKER_FILE")
         if raw_target is not None and not raw_target.strip():
             return
@@ -1183,11 +1092,6 @@ class PolymarketLiveHarvester:
         dist_pct: float,
         tte: float,
     ) -> None:
-        """
-        Phase 3A Shadow Tracker: Registers a virtual 15s Post-Only Maker-In limit order (0% fee + 20% rebate)
-        whenever a qualified shock is rejected by max_allowed_price, 400 FAK miss, or FOK Sweep Infeasible.
-        Also records Idea #1 (Elastic Rung Down-Snapping) and Idea #5 (+2c Fallback Headroom) diagnostics.
-        """
         try:
             if first_ask <= 0.0 or first_bid < 0.50 or tte < 35.0:
                 return
@@ -1254,10 +1158,6 @@ class PolymarketLiveHarvester:
     def _update_shadow_phase4_monotonicity_scanner(
         self, shock: Dict[str, Any], asset_str: str, is_subhourly: bool, is_1h: bool, tte: float, open_spot: float
     ) -> None:
-        """
-        Phase 4 (Sleeve 5) Shadow Scanner: Caches overlapping :45-:00 15m and 1h L2 books sharing the same
-        terminal clock-hour expiry and logs risk-free (<$1.00) or statistical corridor (<=$1.05) box arbs.
-        """
         try:
             if not (is_subhourly or is_1h) or not (20.0 <= tte <= 900.0) or not open_spot or open_spot <= 0.0:
                 return
@@ -1364,7 +1264,6 @@ class PolymarketLiveHarvester:
         except Exception as exc:
             logger.debug(f"[SHADOW PHASE 4] Scan error: {exc}")
     def _step_shadow_phase3_4_tracker(self, now_ts: float) -> None:
-        """Supervises resting and filled Phase 3A shadow Maker-In orders using zero-REST /dev/shm fast ticks."""
         shadow_orders = getattr(self, "_shadow_maker_orders", None) or {}
         for key, ord_rec in list(shadow_orders.items()):
             try:
@@ -1550,13 +1449,6 @@ class PolymarketLiveHarvester:
             except Exception as exc:
                 logger.debug(f"[SHADOW PHASE 4] Resolve error: {exc}")
     def _get_verified_shm_book(self, pos: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """
-        Reads /dev/shm/pm_fast_tick_{asset}.json ONLY if:
-          1. mkt_payload['market_id'] == str(pos['market_id'])
-          2. side_book['token_id'] == str(pos['token_id'])
-          3. Snapshot age <= 1.5s
-        Falls back to REST get_market_book_async(token_id) if market_id or token_id mismatches.
-        """
         asset = str(pos.get("asset") or "BTC").upper()
         target_mid = str(pos.get("market_id") or "")
         target_tid = str(pos.get("token_id") or "")
@@ -1608,11 +1500,6 @@ class PolymarketLiveHarvester:
     async def _atomic_replace_maker_exit(
         self, tid: str, pos: Dict[str, Any], new_price: float
     ) -> bool:
-        """
-        Atomically cancels an existing resting Maker TP (old_oid), reconciles any partial fills,
-        releases old_oid's inventory reservation, and posts the replacement Maker TP at new_price.
-        Guarantees zero INSUFFICIENT_UNRESERVED_BALANCE collisions during Queue-Priority Jumping.
-        """
         token_id = pos.get("token_id")
         old_oid = pos.get("exit_order_id")
         if not token_id:
@@ -1661,7 +1548,6 @@ class PolymarketLiveHarvester:
         await asyncio.to_thread(self.save_state)
         return posted
     def _prewarm_hourly_opens(self):
-        """Prewarms recent 1-HOUR candle opens (strictly excluding 15m/5m sub-hourly triggers)."""
         trigger_path = DATA_DIR / "live_shock_triggers.jsonl"
         if not trigger_path.exists():
             return
@@ -1716,7 +1602,6 @@ class PolymarketLiveHarvester:
             oldest_k = min(reg, key=reg.get)
             reg.pop(oldest_k, None)
     def _prewarm_market_metadata(self, shock: Dict[str, Any]):
-        """Proactively warms CLOB caches with authoritative Polymarket V2 fee rates (default 700 bps / exponent 1.0)."""
         try:
             title_l = str(shock.get("title", "") or "").lower()
             default_rate = 0.07
@@ -1751,7 +1636,6 @@ class PolymarketLiveHarvester:
         except Exception as exc:
             logger.debug(f"[PREWARM NOTICE] Prewarm metadata notice: {exc}")
     def _prewarm_active_market_tokens(self):
-        """Pre-warms active market tokens without re-reading disk after startup."""
         try:
             reg = getattr(self, "_active_warmed_token_expiries", None)
             if not getattr(self, "_startup_prewarmed_logged", False) or not reg:
@@ -1782,11 +1666,6 @@ class PolymarketLiveHarvester:
         except Exception as e:
             logger.debug(f"[KEEPALIVE PREWARM] Notice: {e}")
     def _spawn_ladder_prewarm(self, tokens: List[str]) -> None:
-        """
-        Pillar 5A: Pre-signs the $0.55-$0.88 BUY ladder for active UP/DOWN tokens in a single-flight
-        daemon thread so EIP-712 signing never blocks the asyncio event loop. Fresh entries are skipped
-        inside prewarm_order_ladder, so steady-state cost is near zero.
-        """
         import threading
         existing = getattr(self, "_ladder_prewarm_thread", None)
         if existing is not None and existing.is_alive():
@@ -1831,11 +1710,6 @@ class PolymarketLiveHarvester:
         self._ladder_prewarm_thread = th
         th.start()
     async def _prewarm_next_candle_markets(self) -> None:
-        """
-        Upgrade 4: Pre-warms next 1-hour and 15-minute market condition IDs, token IDs,
-        fee structures, and CLOB metadata caches from Gamma API 2 minutes before candle expiry
-        (:58, :13, :28, :43), guaranteeing zero blindness or pre-flight REST latency at candle open.
-        """
         series_slugs = [
             "btc-up-or-down-hourly",
             "eth-up-or-down-hourly",
@@ -1895,7 +1769,6 @@ class PolymarketLiveHarvester:
             logger.info(f"[PREWARM NEXT-CANDLE] Pre-warmed metadata & CLOB caches for {warmed} upcoming token(s) from Gamma API.")
             self._prewarm_active_market_tokens()
     async def _async_refresh_collateral(self) -> None:
-        """Asynchronously updates CLOB L2 collateral balance in RAM without blocking hot path."""
         if self.dry_run or not self.executor.is_authenticated:
             return
         try:
@@ -1948,18 +1821,12 @@ class PolymarketLiveHarvester:
             return 0.99
         return min(0.95, round(price + self.profit_theta, 2))
     def _use_two_tranche_maker_exit(self, sleeve: Optional[str]) -> bool:
-        """
-        Enables 2-tranche resting maker exit (50% @ min(0.94, entry + offset), 50% @ $0.98)
-        whenever hold_to_maturity=False (live WFO production policy) or when explicitly enabled
-        on SLEEVE_2_MID_HOUR.
-        """
         if not getattr(self, "hold_to_maturity", False):
             return True
         if sleeve == "SLEEVE_2_MID_HOUR" and getattr(self, "enable_mid_hour_t1_12c", False):
             return True
         return False
     def _tranche1_tp_offset(self, sleeve: Optional[str]) -> float:
-        """Returns +$0.12 when mid-hour tight tranche is explicitly enabled, else +$0.14 (WFO optimum)."""
         if sleeve == "SLEEVE_2_MID_HOUR" and getattr(self, "enable_mid_hour_t1_12c", False):
             return 0.12
         return 0.14
@@ -1977,7 +1844,6 @@ class PolymarketLiveHarvester:
             reasons.append("RESERVATIONS_UNTRUSTED")
         return reasons
     def _reconciling_market_ids(self) -> Set[str]:
-        """Markets that have an active ENTRY_OUTCOME_UNKNOWN or ENTRY_ONCHAIN_REVERTED position awaiting reconciliation."""
         reconciling = set()
         for p in (getattr(self, "active_positions", {}) or {}).values():
             st = p.get("status")
@@ -1988,11 +1854,6 @@ class PolymarketLiveHarvester:
                     reconciling.add(m_id)
         return reconciling
     def _refresh_global_halt(self, authoritative: bool = False) -> bool:
-        """
-        Re-derives the global halt. It may only be CLEARED after authoritative reconciliation
-        (startup reconcile completed, or an explicit authoritative caller); otherwise the
-        persisted halt is retained. Returns the resulting halt state.
-        """
         reasons = self._global_halt_reasons()
         may_clear = authoritative or self.dry_run or getattr(self, "_startup_reconciled", False)
         new_halt = bool(reasons) or (self.risk_halt and not may_clear)
@@ -2009,11 +1870,6 @@ class PolymarketLiveHarvester:
         return new_halt
     @staticmethod
     def get_position_market_value(pos: Dict[str, Any], now_ts: Optional[float] = None) -> float:
-        """
-        Calculates true marked-to-market equity of an active position.
-        Expired out-of-the-money positions (TTE <= 0 without 0.99 fill, or resolved loss)
-        are valued strictly at $0.00, NEVER adding ghost equity to total_account_value.
-        """
         if now_ts is None:
             now_ts = time.time()
         if pos.get("pending_settlement_close_reason") in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}:
@@ -2037,12 +1893,6 @@ class PolymarketLiveHarvester:
             return 0.0
         return float(pos.get("remaining_cost_basis", pos.get("notional_usd", 0.0)) or 0.0)
     def _risk_bearing_positions(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Active positions carrying live market price risk.
-        Positions whose candle has expired (now_ts >= candle_expiry_ts) or whose status
-        is UNRESOLVED_SETTLEMENT / AWAITING_ONCHAIN_SETTLEMENT carry zero active price risk
-        and do NOT count toward exposure or MAX_CONCURRENT_POSITIONS.
-        """
         now_ts = time.time()
         active = {}
         for k, v in self.active_positions.items():
@@ -2056,7 +1906,6 @@ class PolymarketLiveHarvester:
             active[k] = v
         return active
     def can_enter_new_position(self, market_id: Optional[str] = None) -> bool:
-        """Returns True if the harvester is eligible to accept new position entries."""
         if self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
             return False
         if bool(self._global_halt_reasons()):
@@ -2074,7 +1923,6 @@ class PolymarketLiveHarvester:
     })
     @staticmethod
     def _num(val: Any) -> Optional[float]:
-        """Strict numeric coercion: only real numbers / numeric strings; never mocks, bools, NaN or inf."""
         if isinstance(val, bool) or not isinstance(val, (int, float, str, Decimal)):
             return None
         try:
@@ -2083,7 +1931,6 @@ class PolymarketLiveHarvester:
             return None
         return f if math.isfinite(f) else None
     def _wallet_token_balance(self, token_id: Optional[str]) -> Tuple[Optional[float], str]:
-        """Wallet inventory: Polygon ERC-1155 balanceOf first, CLOB balance API as fallback."""
         if not token_id:
             return None, "UNAVAILABLE"
         onchain_fn = getattr(self.executor, "get_onchain_erc1155_balance", None)
@@ -2124,7 +1971,6 @@ class PolymarketLiveHarvester:
         self, token_id: str, after_ts: float, side: str,
         order_id: Optional[str] = None, exclude_tid: Optional[str] = None,
     ) -> Optional[List[Dict[str, Any]]]:
-        """Own fills from exchange trade history not yet attributed to any position (None = unavailable)."""
         fn = getattr(self.executor, "get_account_fills", None)
         if fn is None:
             return None
@@ -2148,7 +1994,6 @@ class PolymarketLiveHarvester:
         self, token_id: str, submitted_ts: float,
         entry_order_id: Optional[str] = None, exclude_tid: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Authoritative entry finality evidence (trade ids, tx hashes, actual cost) from exchange history."""
         fills = self._fetch_account_fills(token_id, submitted_ts - 5.0, "BUY", entry_order_id, exclude_tid)
         if fills is None:
             return None
@@ -2165,13 +2010,6 @@ class PolymarketLiveHarvester:
         self, token_id: str, pre_bal: float, submitted_ts: float,
         entry_order_id: Optional[str], exclude_tid: Optional[str],
     ) -> Dict[str, Any]:
-        """
-        Classifies an entry whose exchange outcome is not locally known:
-          ARRIVED            tokens are in the wallet above the pre-trade baseline
-          MATCHED_UNSETTLED  exchange reports our fills but tokens have not yet arrived
-          NOT_EXECUTED       authoritatively proven non-execution
-          UNKNOWN            anything else (fail closed; the global halt stays)
-        """
         bal, src = self._wallet_token_balance(token_id)
         evidence = self._fetch_entry_evidence(token_id, submitted_ts, entry_order_id, exclude_tid)
         out: Dict[str, Any] = {"verdict": "UNKNOWN", "balance": bal, "source": src, "delta": None, "evidence": evidence}
@@ -2208,7 +2046,6 @@ class PolymarketLiveHarvester:
             out["proof"] = "ONCHAIN_UNCHANGED_AND_NO_ACCOUNT_FILLS"
         return out
     def _apply_entry_evidence(self, pos: Dict[str, Any], cls: Dict[str, Any]) -> None:
-        """Writes recovered entry inventory + finality evidence into a position (never fabricated)."""
         evidence = cls.get("evidence") or {}
         delta = cls.get("delta")
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -2257,7 +2094,6 @@ class PolymarketLiveHarvester:
         pos["remaining_cost_basis"] = float(pos.get("notional_usd", 0.0) or 0.0)
         pos["entry_finality_verified_at_utc"] = now_iso
     def _verify_entry_finality(self, pos: Dict[str, Any]) -> Tuple[bool, bool]:
-        """Returns (final, reverted) from exchange trade status and Polygon receipts."""
         reverted = False
         for tr_id in pos.get("trade_ids") or []:
             try:
@@ -2298,7 +2134,6 @@ class PolymarketLiveHarvester:
         pos["pending_reservation_ids"] = []
     def _close_position(self, tid: str, pos: Dict[str, Any], status: str, reason: str,
                         won: Optional[bool] = None, record_pnl: bool = True) -> Optional[float]:
-        """Single closeout: realized cash PnL strictly from recorded exchange fills/receipts."""
         is_terminal_loss = (
             reason in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}
             or pos.get("pending_settlement_close_reason") in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}
@@ -2366,7 +2201,6 @@ class PolymarketLiveHarvester:
         return round(shares * fee_rate * ((px * (1.0 - px)) ** max(1.0, float(fee_exponent))), 5)
     def _record_order_summary(self, pos: Dict[str, Any], summary: Dict[str, Any],
                               fallback_px: float, taker: bool) -> bool:
-        """Records an authoritative order fill summary idempotently. Returns True if new fills were booked."""
         oid = str(summary["order_id"])
         matched = float(summary.get("matched", 0.0) or 0.0)
         prior_rec = (pos.get("order_records") or {}).get(oid) or {}
@@ -2416,7 +2250,6 @@ class PolymarketLiveHarvester:
             self.executor.release_inventory(reservation_id=oid)
         return True
     def _record_history_fills(self, pos: Dict[str, Any], fills: List[Dict[str, Any]], taker: bool) -> int:
-        """Books exchange-history SELL fills grouped by order id; returns number of fills booked."""
         by_order: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for f in fills:
             by_order[str(f.get("order_id") or f.get("fill_id"))].append(f)
@@ -2450,7 +2283,6 @@ class PolymarketLiveHarvester:
             pos["exit_fee_estimated"] = True
         return booked
     def _after_unwind_reconciled(self, tid: str, pos: Dict[str, Any], reason_default: str) -> None:
-        """Common tail once an unknown unwind is authoritatively resolved."""
         pos["unwind_order_id"] = None
         pos["is_liquidating"] = False
         pos.pop("unwind_attempt_ts", None)
@@ -2462,11 +2294,6 @@ class PolymarketLiveHarvester:
         pos["next_unwind_retry_ts"] = 0.0
         self.save_state()
     def _resolve_unknown_unwind(self, tid: str, pos: Dict[str, Any]) -> bool:
-        """
-        Authoritatively resolves an unwind whose execution outcome is unknown. Never submits.
-        Order id known -> exchange order status + fills. Otherwise -> account SELL fill history
-        since the attempt, and (only after a proof age) the on-chain balance.
-        """
         token_id = pos.get("token_id")
         u_oid = pos.get("unwind_order_id")
         attempt_ts = float(pos.get("unwind_attempt_ts") or pos.get("unwind_last_attempt_ts")
@@ -2639,7 +2466,6 @@ class PolymarketLiveHarvester:
         return True
     def _resolve_lifecycle(self, tid: str, pos: Dict[str, Any],
                            open_orders: Optional[List[Dict[str, Any]]] = None, force: bool = False) -> bool:
-        """Dispatches any unknown/unreconciled state to its single authoritative resolver. Never submits orders."""
         now = time.time()
         if not force and now < float(pos.get("next_resolve_ts", 0.0) or 0.0):
             return False
@@ -2687,7 +2513,6 @@ class PolymarketLiveHarvester:
             pos["next_resolve_ts"] = now + 5.0
         return resolved
     def _apply_exit_post_result(self, pos: Dict[str, Any], exit_res: Dict[str, Any], size: float) -> bool:
-        """Single interpretation of a maker-exit submission result (startup, entry and supervisor paths)."""
         exit_res = exit_res or {}
         now = time.time()
         if exit_res.get("success"):
@@ -2721,10 +2546,6 @@ class PolymarketLiveHarvester:
         logger.warning(f"Maker exit post deferred for {pos.get('trade_id')} ({exit_res.get('error')}); retry with backoff.")
         return False
     def _attempt_maker_exit_post(self, tid: str, pos: Dict[str, Any]) -> bool:
-        """
-        v3.4 guard: the supervisor and the fast-confirm task both run this in worker threads, so a
-        per-position non-blocking lock guarantees at most one maker-exit submission in flight per position.
-        """
         import threading
         locks = self.__dict__.setdefault("_exit_post_locks", {})
         lock = locks.get(tid)
@@ -2739,13 +2560,11 @@ class PolymarketLiveHarvester:
         finally:
             lock.release()
     def _settlement_recheck_delay(self, pos: Dict[str, Any], now: float) -> float:
-        """0.20s re-checks during the first 12s after entry (shares land ~1.5s after match), 5.0s afterwards."""
         entry_ts = float(pos.get("entry_ts", 0.0) or 0.0)
         if entry_ts > 0.0 and (now - entry_ts) < FAST_SETTLEMENT_RECHECK_WINDOW_SEC:
             return FAST_CONFIRM_POLL_SEC
         return 5.0
     def _maybe_queue_jump_on_post(self, pos: Dict[str, Any], size: float) -> None:
-        """Pre-post queue jump using the RAM fast-tick L1 book only (no REST on the post path)."""
         if pos.get("queue_jumped"):
             return
         tgt = float(pos.get("target_exit_price") or 0.0)
@@ -2766,10 +2585,6 @@ class PolymarketLiveHarvester:
                     t["price"] = jump
                     break
     async def _fast_confirm_and_post_maker_exit(self, trade_id: str) -> bool:
-        """
-        v3.4: polls the shared maker-exit gate every 0.20s for up to 5.0s right after a MATCHED_PENDING_SETTLEMENT
-        entry, so the post_only maker TP lands the moment the ERC-1155 shares arrive instead of after a 5s sleep.
-        """
         deadline = time.time() + FAST_CONFIRM_WINDOW_SEC
         while time.time() < deadline:
             pos = self.active_positions.get(trade_id)
@@ -2797,12 +2612,6 @@ class PolymarketLiveHarvester:
         tasks.add(task)
         task.add_done_callback(tasks.discard)
     def _attempt_maker_exit_post_impl(self, tid: str, pos: Dict[str, Any]) -> bool:
-        """
-        The ONLY path that submits a new maker exit (startup recovery and live supervision).
-        Requires: allowlisted lifecycle state, outside the pre-expiry window, authoritative entry
-        finality (trade/tx evidence or verified on-chain inventory) and wallet inventory covering
-        the remaining shares. Returns True if an order was posted.
-        """
         now = time.time()
         expiry = float(pos.get("candle_expiry_ts", now + 600.0) or (now + 600.0))
         eff_cancel_win = 5.0 if pos.get("sleeve") == "SLEEVE_4_BOUNDARY_SNIPE" else self.tte_cancel_window
@@ -3009,11 +2818,6 @@ class PolymarketLiveHarvester:
     def _handle_unwind_response(self, tid: str, pos: Dict[str, Any], res: Optional[Dict[str, Any]],
                                 requested: float, close_reason: str, partial_state: str,
                                 limit_price: float) -> str:
-        """
-        Single interpretation of an aggressive FAK unwind response. Returns CLOSED / PARTIAL / UNKNOWN / FAILED.
-        Never infers fill quantity from cash: missing, zero, contradictory or estimated fill amounts are
-        routed to UNWIND_EXECUTION_OUTCOME_UNKNOWN and resolved from exchange records.
-        """
         res = res or {}
         now = time.time()
         oid = res.get("orderID")
@@ -3089,12 +2893,6 @@ class PolymarketLiveHarvester:
         return "PARTIAL"
     @staticmethod
     def calculate_realized_cash_pnl(pos: Dict[str, Any], gross_exit_cash: float, exit_fee: float = 0.0) -> float:
-        """
-        Unified cash PnL formula guaranteeing cash and token conservation across all closeout branches:
-        Cash PnL = Actual Cash Received - Actual Cash Spent - Actual Cash Entry Fee - Actual Cash Exit Fee.
-        If entry fees were collected in outcome shares (the standard Polymarket CLOB mechanism for buys),
-        the token fee already reduced the delivered shares inventory, so entry_cash_fee is strictly 0.0.
-        """
         entry_fee_asset = str(pos.get("entry_fee_asset", "")).upper()
         if entry_fee_asset == "SHARES":
             entry_cash_fee = float(pos.get("entry_fee_cash_usd", 0.0))
@@ -3113,17 +2911,6 @@ class PolymarketLiveHarvester:
         fee_usd: float = 0.0,
         cash_is_estimated: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Unified, single-source-of-truth fill-accounting engine (P0-03, P0-04, Round 10 P1-04 Fix).
-        Idempotently updates per-order/per-trade records in pos["order_records"][order_id]
-        and recomputes position-level cumulative filled shares, confirmed realized cash proceeds,
-        estimated exit proceeds, and exit fees strictly from order_records.
-        Guarantees:
-        1. Multi-order fill monotonicity: subsequent order matches NEVER overwrite prior order proceeds/fees.
-        2. Fee conservation: exit fees from order_records are never double-counted with pos["realized_exit_fee"].
-        3. Accurate remaining shares and inventory tracking.
-        4. Round 10 P1-04: confirmed_realized_cash and estimated_exit_cash are kept strictly separated.
-        """
         order_records = pos.setdefault("order_records", {})
         current_exit_oid = str(pos.get("exit_order_id") or "")
         legacy_shares = float(pos.get("filled_exit_shares", 0.0) or 0.0)
@@ -3195,14 +2982,6 @@ class PolymarketLiveHarvester:
         verified_usdc_received: Optional[float] = None,
         tx_hash: Optional[str] = None,
     ) -> bool:
-        """
-        Finalizes a resolved winning position ONLY on verified redemption receipt (Condition 3).
-        Live mode: the payout is read from the Conditional Tokens PayoutRedemption event emitted
-        to this wallet for the position's condition (tx receipt status == 1). Caller-supplied
-        amounts are never trusted. Receipts are deduplicated by transaction hash, and the cash
-        attributed to the position is capped at its winning shares x $1.00.
-        Dry-run mode: accepts the supplied simulated amount.
-        """
         pos = self.active_positions.get(trade_id)
         if not pos:
             logger.warning(f"[REDEMPTION] Position {trade_id} not found in active_positions.")
@@ -3271,7 +3050,6 @@ class PolymarketLiveHarvester:
         logger.info(f"✓ ON-CHAIN REDEMPTION VERIFIED: {trade_id} | tx={tx} | USDC=${attributed:.2f} | Net PnL=${net_pnl:+.2f}")
         return True
     def poll_onchain_redemptions(self, force: bool = False) -> int:
-        """Periodically verifies redemptions for resolved winning receivables every 60s. Returns count settled."""
         now = time.time()
         if not force and (now - self._last_redemption_poll) < REDEMPTION_POLL_INTERVAL_S:
             return 0
@@ -3342,10 +3120,6 @@ class PolymarketLiveHarvester:
             logger.error(f"Error fetching tokens for market {market_id}: {e}")
         return None
     def get_reference_spot_price(self, asset: str) -> Optional[float]:
-        """
-        Pulls current spot reference price from Binance REST ticker with low latency (<50ms).
-        Caches price for 1.0s to avoid redundant network overhead during high-frequency checks.
-        """
         now = time.time()
         cache_key = f"{asset.upper()}USDT"
         snap = read_fast_tick(asset, max_age_sec=FAST_TICK_MAX_AGE_SEC, now=now)
@@ -3379,19 +3153,6 @@ class PolymarketLiveHarvester:
         fee_rate: Optional[float] = None,
         fee_exponent: Optional[float] = None,
     ) -> float:
-        """
-        Calculates fractional Kelly sizing for bounded binary contracts using the authoritative
-        cash-and-share payoff model (Round 10 Auditor Spec 6.A):
-          p = acquisition price per gross share
-          q = calibrated probability of winning
-          f(p) = fee_rate * (p * (1 - p)) ** fee_exponent
-          h(p) = f(p) / p (fee fraction of gross shares)
-          g(p) = 1.0 - h(p) (net delivered share multiplier)
-          c_eff = p / g(p) (effective acquisition cost per delivered winning share)
-          f* = max(0, (q - c_eff) / (1 - c_eff))
-        Capped at max_notional_cap_pct of bankroll (default 30% for elastic bankroll compounding) and MAX_ABSOLUTE_TICKET_USD ($75.00).
-        Deducts taker fees net of notional.
-        """
         if not all(math.isfinite(float(v)) for v in (p_model, p_market_ask, bankroll)):
             return 0.0
         if not (0.0 < float(p_model) < 1.0):
@@ -3944,7 +3705,7 @@ class PolymarketLiveHarvester:
                 if 120.0 <= tte <= 1200.0:
                     regime = "REGIME_B_LATE_SNIPER"
                     cushion = abs(dist_pct)
-                    _min_reg_b_cush = 0.04
+                    _min_reg_b_cush = (0.15 if tte > 600.0 else 0.08) if asset_str == "ETH" else 0.04
                     if cushion < _min_reg_b_cush:
                         logger.info(
                             f"[REGIME_B_REJECT] {shock.get('title')!r}: abs(dist_pct)={cushion:.4f}% < {_min_reg_b_cush:.2f}% min threshold (TTE={tte:.0f}s)."
@@ -4050,6 +3811,8 @@ class PolymarketLiveHarvester:
             return
         rec_sig = float(shock.get("candle_sigma") or 0.0)
         sigma_1h = (rec_sig * 2.0 if is_subhourly else rec_sig) if rec_sig > 0.0 else (0.0050 if asset_str == "BTC" else 0.0068)
+        if _is_live_real and asset_str == "ETH":
+            sigma_1h = max(sigma_1h, 0.0048)
         sigma_rem = max(0.00025, sigma_1h * math.sqrt(max(tte, 30.0) / 3600.0))
         signed_dist_frac = (dist_pct / 100.0) if target_token == "UP" else (-dist_pct / 100.0)
         z_strike = signed_dist_frac / max(sigma_rem, 1e-6)
@@ -5205,11 +4968,6 @@ class PolymarketLiveHarvester:
                     self._spawn_fast_confirm(trade_id)
             await asyncio.to_thread(self.save_state)
     def _recover_pending_intent(self, trade_id: str, intent: Dict[str, Any]) -> str:
-        """
-        Resolves one durable pending entry intent left by a crash. Returns RECOVERED / NOT_EXECUTED / UNRESOLVED.
-        Recovered positions carry authoritative exchange finality evidence (trade ids, tx hashes, actual
-        cost from trade history) or, failing that, verified on-chain inventory - never fabricated ids.
-        """
         token_id = intent.get("token_id")
         pre_bal = float(intent.get("pre_token_balance", 0.0) or 0.0)
         intended_notional = float(intent.get("notional_usd", intent.get("intended_notional", 0.0)) or 0.0)
@@ -5317,15 +5075,6 @@ class PolymarketLiveHarvester:
         )
         return "RECOVERED"
     def reconcile_with_exchange(self):
-        """
-        Startup reconciliation (fail-closed). Uses the SAME lifecycle resolvers and the SAME
-        maker-exit gate as the live supervisor:
-          0. resolve durable pending entry intents (exchange trade history + on-chain inventory)
-          1. resolve every unknown/unreconciled lifecycle state (never submits)
-          2. align exit orders with the exchange; only allowlisted states may receive a new maker exit
-          3. cancel orphan orders, then rebuild the reservation book from an authoritative snapshot
-          4. re-derive the persisted global halt authoritatively
-        """
         if self.dry_run or not self.executor.is_authenticated:
             return
         logger.info("[RECONCILIATION] Reconciling local state with live exchange...")
@@ -5506,14 +5255,6 @@ class PolymarketLiveHarvester:
             raise RuntimeError("CLOB open-order snapshot unavailable")
         return open_orders
     async def _apply_market_resolution(self, tid: str, pos: Dict[str, Any], winning_outcome: Any) -> None:
-        """
-        Applies a finalized market resolution (Condition 3 / R3-04). Retried every supervisor pass until done.
-          - unresolved execution outcomes are reconciled FIRST (their cash must not be lost)
-          - a resting exit is cancelled with verified terminal status; its fills are booked from the exchange
-          - live LOSING inventory closes immediately (worth $0; realized cash = recorded fills only)
-          - live WINNING inventory becomes a redemption receivable: NO cash is realized until a verified
-            on-chain PayoutRedemption receipt (confirm_onchain_redemption / poll_onchain_redemptions)
-        """
         if tid not in self.active_positions:
             return
         outcome_str = winning_outcome.get("winning_outcome") if isinstance(winning_outcome, dict) else str(winning_outcome or "")
@@ -5637,7 +5378,6 @@ class PolymarketLiveHarvester:
         net_pnl = self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED", won=None)
         logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={won} | RemShares={rem_shares:.2f} | Net PnL=${net_pnl:+.2f}")
     async def check_resolutions_and_manage_positions(self):
-        """Monitors active positions for delta settlements, maker scalp fills, time-decay unwind, or finalized resolutions."""
         if not self.active_positions:
             self._refresh_global_halt()
             return
@@ -6129,6 +5869,13 @@ class PolymarketLiveHarvester:
                                     pos["pending_canceled_order_id"] = exit_oid
                                     self.save_state()
                                     continue
+                                if (
+                                    isinstance(cancel_res, dict)
+                                    and bool(cancel_res.get("is_canceled"))
+                                    and summary is not None
+                                    and bool(summary.get("terminal"))
+                                ):
+                                    open_oids.discard(exit_oid)
                                 canceled_confirmed = (
                                     (self.dry_run and (exit_oid not in open_oids or summary is None))
                                     or (exit_oid not in open_oids and (
@@ -6198,7 +5945,21 @@ class PolymarketLiveHarvester:
                             if rem_shrs < 0.01:
                                 self._close_position(tid, pos, ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB", won=None)
                                 continue
-                            limit_px = max(0.01, best_b - 0.01) if final_45s_triggered else max(0.01, best_b - 0.02)
+                            if _is_live_auth:
+                                _post_cancel_bk = self._get_verified_shm_book(pos)
+                                if isinstance(_post_cancel_bk, dict):
+                                    _pc_bids = _post_cancel_bk.get("bids") or []
+                                    _pc_best = max((float(b.get("price", 0.0)) for b in _pc_bids if float(b.get("size", 0.0)) > 0), default=0.0)
+                                    if _pc_best > 0.0:
+                                        best_b = _pc_best
+                            _prior_retries = int(pos.get("unwind_retry_count", 0) or 0)
+                            if final_45s_triggered:
+                                limit_px = max(0.01, round(best_b - 0.01, 4))
+                            elif (_is_live_auth and not trailing_ratchet_triggered) or _prior_retries > 0:
+                                _fak_slip = 0.04 + (0.04 * min(_prior_retries, 4))
+                                limit_px = max(0.01, round(best_b - _fak_slip, 4))
+                            else:
+                                limit_px = max(0.01, round(best_b - 0.02, 4))
                             unwind_res = await asyncio.to_thread(
                                 self.executor.execute_unwind_order,
                                 token_id=token_id,
@@ -6253,7 +6014,10 @@ class PolymarketLiveHarvester:
                             pos["is_liquidating"] = False
                             attempts = int(pos.get("unwind_retry_count", 0)) + 1
                             pos["unwind_retry_count"] = attempts
-                            backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
+                            if "no orders found to match with fak order" in err_u_low:
+                                backoff_seconds = 0.35
+                            else:
+                                backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
                             pos["next_unwind_retry_ts"] = now_ts + backoff_seconds
                             pos["unwind_last_error"] = str(unwind_res.get("error", "unknown"))
                             pos["unwind_last_attempt_ts"] = now_ts
@@ -6489,7 +6253,6 @@ class PolymarketLiveHarvester:
         finally:
             self._refresh_global_halt()
     def check_resolutions_and_manage_positions_sync(self):
-        """Synchronous wrapper for test execution."""
         return asyncio.run(self.check_resolutions_and_manage_positions())
     async def run(self):
         if not self.dry_run and _alerts_file_path() is not None:
@@ -6838,7 +6601,7 @@ class PolymarketLiveHarvester:
                     or p.get("low_bid_detected_ts")
                     or p.get("trail_stop_detected_ts")
                     or p.get("zero_bid_detected_ts")
-                    or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED"}
+                    or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED", "UNWIND_RETRY_REQUIRED"}
                     for p in self.active_positions.values()
                 )
                 mgmt_interval = 0.20 if urgent_supervision else 1.0
@@ -6964,18 +6727,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-POLYMARKET LIVE CLOB EXECUTION ADAPTER (v1.0.0)
-===============================================
-Institutional EIP-712 Order Dispatcher for Polymarket Central Limit Order Book (CLOB).
-Operates with py-clob-client on Polygon Mainnet (Chain ID: 137).
-Features:
-  1. Automated L1 -> L2 API Key Derivation / Authentication.
-  2. Fail-Closed Liquidity Guard: DepthRatio >= 1.50 within top 2 ticks.
-  3. Dynamic Crypto Fee Model: fee_rate(p) = 0.07 * (1 - p).
-  4. Non-Blocking Execution with Execution Shortfall & Gasless Relayer Dispatch.
-  5. Fallback Mock / Dry-Run Engine when live private key is unconfigured.
-"""
 # from __future__ import annotations  # (Lifted to top of consolidated bundle)
 import asyncio
 import json
@@ -6997,11 +6748,6 @@ import httpx
 import requests
 from dotenv import load_dotenv
 def enable_tcp_nodelay_globally() -> None:
-    """
-    Pillar 5A: Global TCP_NODELAY and SO_KEEPALIVE socket options.
-    Disables Nagle's algorithm on all underlying urllib3/requests HTTP connections,
-    slashing CLOB order dispatch roundtrip latency by 10-40ms.
-    """
     try:
         orig_options = list(HTTPConnection.default_socket_options)
         nodelay_opt = (socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
@@ -7013,7 +6759,57 @@ def enable_tcp_nodelay_globally() -> None:
         HTTPConnection.default_socket_options = orig_options
     except Exception:
         pass
+class _ThreadLocalClobHttpClient:
+    def __init__(self, timeout: float = 8.0) -> None:
+        self._local = threading.local()
+        self._timeout = timeout
+    def _client(self, reset: bool = False) -> httpx.Client:
+        cli = getattr(self._local, "client", None)
+        if reset and cli is not None:
+            try:
+                cli.close()
+            except Exception:
+                pass
+            cli = None
+        if cli is None or getattr(cli, "is_closed", False):
+            cli = httpx.Client(
+                http2=False,
+                timeout=self._timeout,
+                limits=httpx.Limits(
+                    max_keepalive_connections=8,
+                    max_connections=16,
+                    keepalive_expiry=45.0,
+                ),
+            )
+            self._local.client = cli
+        return cli
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        try:
+            return self._client().request(method=method, url=url, **kwargs)
+        except (httpx.RemoteProtocolError, httpx.LocalProtocolError) as exc:
+            if str(method).upper() == "GET":
+                return self._client(reset=True).request(method=method, url=url, **kwargs)
+            self._client(reset=True)
+            raise exc
+def install_thread_safe_clob_http_client(target_module: Any = None) -> bool:
+    try:
+        if target_module is None:
+            import py_clob_client_v2.http_helpers.helpers as hh
+            target_module = hh
+        cur = getattr(target_module, "_http_client", None)
+        if isinstance(cur, _ThreadLocalClobHttpClient):
+            return True
+        target_module._http_client = _ThreadLocalClobHttpClient()
+        try:
+            if cur is not None and hasattr(cur, "close"):
+                cur.close()
+        except Exception:
+            pass
+        return True
+    except Exception:
+        return False
 enable_tcp_nodelay_globally()
+install_thread_safe_clob_http_client()
 PIPELINE_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
@@ -7036,10 +6832,6 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "alert_rate_limit_sec": 300.0,
 }
 def load_risk_config(path: Optional[Path] = None) -> Dict[str, Any]:
-    """Loads config/polymarket_risk_config.json merged over safe defaults.
-    Fail-safe: a missing/corrupt file or a non-finite/non-positive numeric value falls back to the
-    conservative built-in default for that key (never to a looser legacy limit).
-    """
     cfg: Dict[str, Any] = dict(_RISK_CONFIG_DEFAULTS)
     try:
         with open(path or RISK_CONFIG_PATH, "r", encoding="utf-8") as fh:
@@ -7111,7 +6903,6 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 class ExecutionStatus:
-    """Explicit lifecycle states for Polymarket CLOB order execution."""
     REJECTED = "REJECTED"
     SUBMITTED = "SUBMITTED"
     MATCHED_PENDING_SETTLEMENT = "MATCHED_PENDING_SETTLEMENT"
@@ -7127,16 +6918,6 @@ def calculate_taker_fee(
     fee_rate: float = 0.07,
     fee_exponent: float = 1.0,
 ) -> Tuple[float, float]:
-    """
-    Canonical Polymarket V2 dynamic crypto taker fee calculation.
-    Platform fee schedule:
-      platform_fee_rate = fee_rate * (p * (1 - p)) ** fee_exponent
-      shares = notional_usd / p
-      taker_fee = shares * platform_fee_rate = notional_usd * fee_rate * (p * (1 - p)) ** fee_exponent / p
-      For fee_exponent == 1: simplifies to notional_usd * fee_rate * (1 - p)
-    Used canonically across executor, paper trader, and telemetry recorder.
-    Returns: (effective_rate, fee_usd)
-    """
     clamped_p = max(0.001, min(0.999, price))
     shares = notional_usd / clamped_p
     per_share_fee = fee_rate * ((clamped_p * (1.0 - clamped_p)) ** fee_exponent)
@@ -7144,14 +6925,6 @@ def calculate_taker_fee(
     effective_rate = round(fee_usd / max(notional_usd, 1e-6), 8)
     return effective_rate, fee_usd
 def is_fak_killed_no_match(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    Polymarket CLOB Semantics:
-    When a FAK (Fill-And-Kill) order finds no matching liquidity, the matching engine
-    synchronously rejects the order with HTTP 400 Bad Request:
-      {"error": "no orders found to match with FAK order. FAK orders are partially filled or killed if no match is found.", "orderID": "0x..."}
-    Even though an orderID hash is returned, exactly zero shares were matched and no resting order remains.
-    This is a deterministic terminal rejection, NOT an ambiguous submission.
-    """
     pattern = "no orders found to match with fak order"
     if err is not None:
         err_msg_field = getattr(err, "error_message", None) or getattr(err, "error_msg", None)
@@ -7167,13 +6940,6 @@ def is_fak_killed_no_match(err: Any = None, raw_resp: Optional[Dict[str, Any]] =
             return True
     return False
 def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = None) -> bool:
-    """
-    Polymarket CLOB HTTP 400 Rejections:
-    Synchronous rejection by the CLOB matching engine or gateway before matching.
-    Includes FAK zero-liquidity kill, 'invalid amounts', 'invalid signature', etc.
-    0 shares are filled and no order rests on the book.
-    Deterministic terminal rejection (NOT an ambiguous in-flight state).
-    """
     if is_fak_killed_no_match(err, raw_resp):
         return True
     if err is not None:
@@ -7197,7 +6963,6 @@ def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = 
             return True
     return False
 def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
-    """Invokes order creation with PartialCreateOrderOptions, falling back if client does not accept options."""
     if options is not None:
         try:
             return client_fn(args, options)
@@ -7205,17 +6970,6 @@ def _safe_create_order(client_fn: Any, args: Any, options: Any = None) -> Any:
             return client_fn(args)
     return client_fn(args)
 class PreSignedOrderLadderCache:
-    """
-    Pillar 5A: Pre-signed EIP-712 Order Ladder Cache.
-    Pre-signs BUY orders for active tokens across realistic price levels and share quantities
-    to eliminate EIP-712 signing latency on the hot execution path.
-    Keyed by (token_id, price_cents_int, shares_int) with a 300s TTL.
-    Safety invariants (v3.3 audit):
-      - SINGLE-USE: a signed order carries a unique salt/hash; once posted it can never be
-        re-posted, so get_presigned_order() POPS the entry (take semantics).
-      - EXACT MATCH ONLY: entries are only stored/served for whole-cent prices and whole-integer
-        share sizes, so a cache hit is guaranteed to carry exactly the requested price and size.
-    """
     def __init__(self, ttl_seconds: float = 300.0):
         self.ttl_seconds = ttl_seconds
         self._cache: Dict[Tuple[str, int, int], Tuple[float, Any]] = {}
@@ -7237,7 +6991,6 @@ class PreSignedOrderLadderCache:
             return None
         return (str(token_id), p_cents, shares_int)
     def get_presigned_order(self, token_id: str, price: float = 0.0, shares: float = 0.0, price_cents: Optional[int] = None) -> Optional[Any]:
-        """Takes (pops) a fresh pre-signed order for an exact (token, price, shares) match."""
         key = self._make_key(token_id, price, shares, price_cents)
         now = time.time()
         with self._lock:
@@ -7260,11 +7013,6 @@ class PreSignedOrderLadderCache:
         max_share_delta: int = 2,
         max_notional_usd: Optional[float] = None,
     ) -> Optional[Tuple[Any, int]]:
-        """
-        Live hot-path fallback when elastic/Kelly sizing differs by 1-2 shares from the pre-signed rung.
-        Checks deltas (-1, +1, -2, +2) at the exact whole-cent price and pops if fresh, strictly
-        respecting max_notional_usd when provided so risk caps are never exceeded.
-        """
         base_key = self._make_key(token_id, price, shares)
         if base_key is None:
             return None
@@ -7320,7 +7068,6 @@ _HOT_DISPATCH_ACTIVE = threading.Event()
 _URGENT_SIGN_COUNTER_LOCK = threading.Lock()
 _URGENT_SIGN_WAITERS = 0
 class _UrgentSignPriority:
-    """R08 (v3.9): Signals background ladder pre-warming to yield _CLOB_CLIENT_SIGN_LOCK immediately."""
     def __enter__(self):
         global _URGENT_SIGN_WAITERS
         with _URGENT_SIGN_COUNTER_LOCK:
@@ -7336,7 +7083,7 @@ class _UrgentSignPriority:
                 _URGENT_SIGN_WAITERS = max(0, _URGENT_SIGN_WAITERS - 1)
         return False
 class PreSubmitError(RuntimeError):
-    """Raised when the single-hop dispatch fails BEFORE the HTTP order was sent (safe: no exchange exposure)."""
+    pass
 def _sign_and_post_single_hop(
     client: Any,
     ladder_cache: Optional[PreSignedOrderLadderCache],
@@ -7349,12 +7096,6 @@ def _sign_and_post_single_hop(
     stage: Optional[Dict[str, Any]] = None,
     max_notional_usd: Optional[float] = None,
 ) -> Dict[str, Any]:
-    """
-    v3.3 Single-Hop Sign + Post: pre-signed ladder lookup (or cold EIP-712 create_order fallback)
-    AND client.post_order(..., defer_exec=True) inside ONE worker-thread hop.
-    `stage["submitted"]` flips to True immediately before the HTTP POST so callers can tell a
-    pre-submit failure (no exposure) from an unknown-outcome failure (needs reconciliation).
-    """
     import gc
     if stage is None:
         stage = {}
@@ -7425,11 +7166,6 @@ class OrderResult:
     details: Dict[str, Any] = field(default_factory=dict)
     error: Optional[str] = None
 class CancelOrderResult(dict):
-    """
-    Structured order cancellation result (Round 11 P1-09).
-    Distinguishes outcome ('CANCELED', 'FILLED', 'PARTIALLY_FILLED_CANCELED', 'UNKNOWN'),
-    is_canceled (bool), matched (float), and preserves raw exchange payload for backward compatibility.
-    """
     def __init__(self, *args, **kwargs):
         raw = args[0] if args else kwargs.pop("raw", {})
         payload = dict(raw) if isinstance(raw, dict) else {}
@@ -7458,9 +7194,6 @@ class CancelOrderResult(dict):
         combined.update(self._extra)
         return repr(combined)
 class PolymarketLiveExecutor:
-    """
-    Production-grade execution interface for Polymarket CLOB.
-    """
     CLOB_HOST = "https://clob.polymarket.com"
     CHAIN_ID = 137
     def __init__(
@@ -7544,7 +7277,6 @@ class PolymarketLiveExecutor:
         self._initialize_client()
     @property
     def _sync_session(self) -> requests.Session:
-        """Thread-safe per-thread requests.Session for concurrent asyncio.to_thread workers."""
         sess = getattr(self._thread_local, "session", None)
         if sess is None:
             sess = requests.Session()
@@ -7554,7 +7286,6 @@ class PolymarketLiveExecutor:
     def _sync_session(self, sess: requests.Session) -> None:
         self._thread_local.session = sess
     def _initialize_client(self):
-        """Initializes py-clob-client with L1 and L2 credentials with strict fail-closed live gating."""
         if self.dry_run:
             self.auth_mode = "DRY_RUN_STANDBY"
             logger.info("Initializing in DRY-RUN / Standby mode (--dry-run specified).")
@@ -7584,6 +7315,7 @@ class PolymarketLiveExecutor:
             logger.warning(f"Metadata version check exception: {e}")
         try:
             t0 = time.perf_counter()
+            install_thread_safe_clob_http_client()
             self.client = ClobClient(
                 host=self.CLOB_HOST,
                 key=self.private_key,
@@ -7611,12 +7343,6 @@ class PolymarketLiveExecutor:
             logger.error(f"Failed to authenticate with Polymarket CLOB: {e}")
             raise RuntimeError(f"LIVE MODE REFUSED: CLOB L2 authentication failed: {e}")
     def assert_market_routing(self, asset_id: str, market_version: str = "CTF") -> None:
-        """
-        P1: Asset-routing invariant assertion:
-        CTF market -> token_id / CTF exchange route.
-        Protocol V2 position market -> position_id / Exchange V3 route.
-        Fails closed if the asset identifier type does not match the market version.
-        """
         if market_version.upper() == "CTF":
             if not (isinstance(asset_id, str) and (asset_id.isdigit() or asset_id.startswith("0x")) and len(asset_id) >= 10):
                 raise ValueError(f"ASSET ROUTING ERROR: Invalid CTF token_id format '{asset_id}' for CTF market route.")
@@ -7633,13 +7359,6 @@ class PolymarketLiveExecutor:
         fee_rate: float = 0.07,
         fee_exponent: float = 1.0,
     ) -> None:
-        """
-        Pre-warms py-clob-client internal cache dictionaries (_ClobClient__tick_sizes,
-        _ClobClient__tick_size_timestamps, _ClobClient__neg_risk, _ClobClient__fee_rates,
-        _ClobClient__cached_version, _ClobClient__token_condition_map, _ClobClient__fee_infos)
-        so that subsequent calls to create_order / create_market_order execute with ZERO
-        synchronous HTTP GET roundtrips prior to EIP-712 signing.
-        """
         if not token_id:
             return
         tick_size_str = str(tick_size)
@@ -7683,12 +7402,6 @@ class PolymarketLiveExecutor:
         share_deltas: Tuple[int, ...] = (0,),
         exact_shares: Optional[List[int]] = None,
     ) -> int:
-        """
-        Pillar 5A / v3.8 Blueprint 4: Pre-signs a ladder of BUY orders for token_id across $0.55-$0.88
-        (1-cent steps). Supports either a dense integer share grid (`exact_shares`, e.g. 8..32 shares
-        for 100.0% O(1) hit rate across all elastic/downscaled tickets) or ticket_notional + share_deltas.
-        Fresh entries (>60s TTL remaining) are skipped, so repeated calls are cheap.
-        """
         if self.dry_run or not self.is_authenticated or self.client is None or OrderArgsV2 is None:
             return 0
         if price_levels is None:
@@ -7729,7 +7442,6 @@ class PolymarketLiveExecutor:
                     continue
         return count
     def ping_clob_keepalive(self) -> None:
-        """Lightweight GET ping to ensure persistent HTTP keep-alive connection remains warm."""
         if self.dry_run or not self.client or _HOT_DISPATCH_ACTIVE.is_set():
             return
         if not _CLOB_HTTP_LOCK.acquire(blocking=False):
@@ -7744,7 +7456,6 @@ class PolymarketLiveExecutor:
         finally:
             _CLOB_HTTP_LOCK.release()
     def get_async_client(self) -> httpx.AsyncClient:
-        """P2: Returns persistent httpx.AsyncClient bound to the current running event loop."""
         try:
             cur_loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -7761,36 +7472,16 @@ class PolymarketLiveExecutor:
             self._async_client_loop = cur_loop
         return self._async_client
     async def close_async(self):
-        """Closes the persistent HTTP client cleanly."""
         if self._async_client is not None and not self._async_client.is_closed:
             await self._async_client.aclose()
             self._async_client = None
     @staticmethod
     def calculate_balance_epsilon(quantity_unit_or_shares: float = 0.001) -> float:
-        """
-        P1: Precision-derived balance tolerance epsilon derived from platform base units.
-        Rather than an ad-hoc size percentage, tolerance is derived strictly from:
-          exchange quantity representation (0.001 shares) + 
-          CLOB / ERC-1155 token decimal precision (10^-6 base units).
-        Calculated using Decimal arithmetic:
-          epsilon = 2 * quantity_unit
-        Default for Polymarket: 2 * 0.001 = 0.002 shares (2 millishares / 2,000 base units).
-        """
         base_unit = 0.001 if quantity_unit_or_shares > 0.01 else quantity_unit_or_shares
         unit_dec = Decimal(str(base_unit))
         epsilon_dec = Decimal("2") * unit_dec
         return float(epsilon_dec)
     def get_market_fee_params(self, condition_id: str, token_id: Optional[str] = None) -> Tuple[float, float]:
-        """
-        P1: Authoritative CLOB fee metadata resolution using get_clob_market_info(condition_id)
-        or SDK fee methods.
-        Retrieves:
-          fd.r = fee rate
-          fd.e = fee exponent
-        Caches against condition_id and token_id.
-        Fails closed (raises RuntimeError) if fee metadata is absent or malformed in live mode.
-        Returns: (fee_rate, fee_exponent)
-        """
         if condition_id in self._fee_cache:
             res_fee = self._fee_cache[condition_id]
             if token_id:
@@ -7856,7 +7547,6 @@ class PolymarketLiveExecutor:
             logger.warning(f"Notice fetching authoritative CLOB fee metadata for {condition_id} ({real_cid}): {e}. Applying default 0.07.")
             return _store_fee(0.07, 1.0)
     async def get_market_book_async(self, token_id: str) -> Dict[str, Any]:
-        """P0/P2: Asynchronously queries the live L2 orderbook using persistent connection pool."""
         url = f"{self.CLOB_HOST}/book?token_id={token_id}"
         try:
             client = self.get_async_client()
@@ -7873,13 +7563,6 @@ class PolymarketLiveExecutor:
             return {"bids": [], "asks": []}
         raise RuntimeError(f"HTTP {resp.status_code} querying orderbook for {token_id}: {resp.text[:100]}")
     async def get_transaction_receipt_status_async(self, tx_hash: str) -> Optional[bool]:
-        """
-        P0/P1: Asynchronously verifies Polygon on-chain transaction receipt.
-        Rule:
-          - Returns True if receipt exists and status == 1 (successful on-chain transfer).
-          - Returns False if receipt exists and status == 0 (reverted on-chain!).
-          - Returns None if receipt does not exist yet (transaction pending / not yet mined).
-        """
         if self.dry_run:
             return True
         if not tx_hash or not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
@@ -7910,7 +7593,6 @@ class PolymarketLiveExecutor:
             logger.warning(f"Failed to query Polygon transaction receipt for {tx_hash}: {e}")
             return None
     def get_transaction_receipt_status(self, tx_hash: str) -> Optional[bool]:
-        """Synchronous wrapper for get_transaction_receipt_status_async."""
         if self.dry_run:
             return True
         if not tx_hash or not isinstance(tx_hash, str) or not tx_hash.startswith("0x"):
@@ -7940,7 +7622,6 @@ class PolymarketLiveExecutor:
             logger.warning(f"Failed to query Polygon transaction receipt for {tx_hash}: {e}")
             return None
     def get_market_book(self, token_id: str) -> Dict[str, Any]:
-        """Queries the live L2 orderbook for a given outcome token."""
         url = f"{self.CLOB_HOST}/book?token_id={token_id}"
         try:
             get_fn = requests.get if hasattr(requests.get, "mock_calls") else getattr(self, "_sync_session", requests).get
@@ -7958,10 +7639,6 @@ class PolymarketLiveExecutor:
         raise RuntimeError(f"HTTP {resp.status_code} querying orderbook for {token_id}: {resp.text[:100]}")
     @staticmethod
     def normalize_trade_record(data: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        P0 Invariant: Normalizes CLOB trade record dictionary to support both SDK snake_case
-        and camelCase schemas (e.g. transaction_hash vs transactionHash).
-        """
         if not isinstance(data, dict):
             return {}
         res = dict(data)
@@ -7978,14 +7655,6 @@ class PolymarketLiveExecutor:
             res["status"] = str(st).upper()
         return res
     def get_trade_status(self, trade_id: str) -> Dict[str, Any]:
-        """
-        P0/P1: Authoritative CLOB trade status lookup for reconciliation.
-        Trade lifecycle progression: MATCHED -> MINED -> CONFIRMED (terminal) | FAILED
-        Uses TradeParams(id=trade_id) matching py_clob_client SDK signature.
-        Normalizes both transaction_hash and transactionHash schemas.
-        Round 9 invariant: a trade id that the exchange does not return is NOT_FOUND,
-        never MATCHED/CONFIRMED. Local/synthetic identifiers cannot create finality.
-        """
         if self.dry_run:
             return {"status": "CONFIRMED", "trade_id": trade_id, "transaction_hash": None, "transactionHash": None}
         if not self.client or not self.is_authenticated:
@@ -8026,10 +7695,6 @@ class PolymarketLiveExecutor:
         token_id: str,
         target_order_id: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
-        """
-        Converts raw CLOB trade records into this account's own fills for `token_id`.
-        Supports both direct matches and complementary-token mint/merge matches.
-        """
         fills: List[Dict[str, Any]] = []
         me = str(self.funder_address or "").lower()
         api_owner = str(getattr(getattr(self.client, "creds", None), "api_key", "") or "")
@@ -8089,11 +7754,6 @@ class PolymarketLiveExecutor:
         side: Optional[str] = None,
         order_id: Optional[str] = None,
     ) -> Optional[List[Dict[str, Any]]]:
-        """
-        Authoritative exchange fill history for this account and token.
-        Returns None if the history cannot be retrieved (UNKNOWN); [] means the exchange
-        authoritatively reports no matching fills. FAILED trades are excluded.
-        """
         if self.dry_run:
             return []
         if not self.client or not self.is_authenticated or not hasattr(self.client, "get_trades"):
@@ -8126,15 +7786,6 @@ class PolymarketLiveExecutor:
             out.append(f)
         return out
     def get_order_fill_summary(self, order_id: str, token_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
-        """
-        Authoritative status + fill summary for a single order (Round 11 P0-13 Fix).
-        Separates distinct facts:
-        - resting: True if order is actively resting on orderbook.
-        - matched: cumulative matched shares.
-        - is_settled: True ONLY if fills have verified on-chain tx hashes or final CONFIRMED/MINED settlement.
-        - cash_is_estimated: True if proceeds are provisional/unsettled (MATCHED without final settlement).
-        - terminal: True ONLY if order is terminal AND settlement is final (or cancelled/rejected).
-        """
         info = self.get_order_status(order_id)
         if not info:
             return None
@@ -8269,7 +7920,6 @@ class PolymarketLiveExecutor:
         except (TypeError, ValueError):
             return None
     def parse_payout_redemption_logs(self, logs: List[Dict[str, Any]], condition_id: str) -> List[Dict[str, Any]]:
-        """Extracts this account's PayoutRedemption events for `condition_id` (payout in USD)."""
         out = []
         topic0 = self._payout_redemption_topic().lower()
         me = str(self.funder_address or "").lower().replace("0x", "").rjust(64, "0")
@@ -8302,11 +7952,6 @@ class PolymarketLiveExecutor:
         tx_hash: Optional[str] = None,
         max_span: int = 9000,
     ) -> Optional[List[Dict[str, Any]]]:
-        """
-        Returns verified PayoutRedemption receipts for this account and condition, either
-        from a specific transaction receipt or by scanning logs from `from_block`.
-        None = could not verify (RPC unavailable); [] = verified absence.
-        """
         if self.dry_run or not self.funder_address or not condition_id:
             return None
         if tx_hash:
@@ -8339,7 +7984,6 @@ class PolymarketLiveExecutor:
             cursor = end + 1
         return found
     def attempt_onchain_redemption(self, condition_id: str) -> Optional[str]:
-        """Attempts CTF redeemPositions via EOA (sig_type=0) or 1-of-1 Gnosis Safe execTransaction (sig_type in 2,3) when EOA holds >=0.05 POL."""
         sig_type = int(getattr(self, "signature_type", 1) or 1)
         if self.dry_run or not condition_id or sig_type not in (0, 2, 3):
             return None
@@ -8433,11 +8077,6 @@ class PolymarketLiveExecutor:
         fee_rate: float = 0.07,
         fee_exponent: float = 1.0,
     ) -> Any:
-        """
-        Simulates an exact FOK sweep across multiple price levels:
-        Computes fee across individual fill legs rather than single VWAP approximation.
-        Returns: (fillable, vwap, total_shares, worst_price, effective_fee_usd[, fill_legs])
-        """
         levels = orderbook.get("asks" if side == "BUY" else "bids", [])
         if not levels or not self._book_levels_valid(levels):
             if return_legs:
@@ -8491,11 +8130,6 @@ class PolymarketLiveExecutor:
         return True, vwap, total_shares, worst_price, fee_usd
     @staticmethod
     def _book_levels_valid(levels: Any) -> bool:
-        """
-        Round 10 P1-02: every book level must be economically valid before sorting, depth
-        aggregation or sweep simulation: finite 0 < price < 1 and finite size >= 0.
-        A single malformed level invalidates the whole side (fail closed).
-        """
         try:
             for lvl in levels:
                 px = float(lvl.get("price"))
@@ -8537,21 +8171,6 @@ class PolymarketLiveExecutor:
         min_lot_size: float = MIN_LOT_SIZE_USD,
         max_ticket_size: float = MAX_TICKET_CAP_USD,
     ) -> Union[Tuple[bool, float, float], Tuple[bool, float, float, float]]:
-        """
-        Validates executable orderbook depth across all qualifying price levels up to max_price_ceiling.
-        Supports dynamic elastic book-depth sizing: scales ticket size proportionally to available liquidity:
-          ticket_size = clip(executable_ask_depth / depth_hurdle_ratio, min=$25.00, max=$75.00)
-        rather than rejecting profitable setups on thinner books or under-allocating on deep books.
-        For BUY:
-          Sorts asks ascending (lowest price first).
-          Aggregates available liquidity across all asks where price <= max_price_ceiling.
-        For SELL:
-          Sorts bids descending (highest price first).
-          Aggregates available liquidity across all bids where price >= min_price_floor.
-        Returns:
-          If return_adjusted is False (legacy signature): (passed, ratio, best_price)
-          If return_adjusted is True: (passed, ratio, best_price, adjusted_notional)
-        """
         levels = orderbook.get("asks" if side == "BUY" else "bids", [])
         if (
             not levels
@@ -8596,11 +8215,6 @@ class PolymarketLiveExecutor:
         min_ticket_usd: float = MIN_TICKET_USD,
         max_ticket_usd: float = MAX_TICKET_CAP_USD,
     ) -> Tuple[bool, float]:
-        """
-        Dynamic book-proportional elastic sizing:
-          ticket_size = clip(executable_ask_depth / depth_hurdle_ratio, min=min_ticket, max=max_ticket)
-        Fails closed (returns False, 0.0) if available depth cannot support min_ticket at depth_hurdle_ratio.
-        """
         if not math.isfinite(executable_depth_usd) or executable_depth_usd <= 0:
             return False, 0.0
         raw_ticket = executable_depth_usd / max(depth_hurdle_ratio, 1.0)
@@ -8613,9 +8227,6 @@ class PolymarketLiveExecutor:
         z_btc: float,
         min_z_score: float = 1.645,
     ) -> Tuple[bool, str]:
-        """
-        Validates BTC shock signal against the critical threshold |z_BTC| >= 1.645.
-        """
         if abs(z_btc) < min_z_score:
             return False, f"REJECT_BTC_Z_TOO_LOW (|z|={abs(z_btc):.3f} < {min_z_score})"
         return True, "BTC_SIGNAL_CONFIRMED"
@@ -8627,11 +8238,6 @@ class PolymarketLiveExecutor:
         z_alt: float = 0.0,
         z_btc: float = 0.0,
     ) -> Tuple[bool, float, str]:
-        """
-        Cross-asset lead-lag confirmation filter for altcoin contracts (e.g. ETH).
-        Computes joint signal: z_joint = 0.70 * z_ETH + 0.30 * z_BTC.
-        Enforces sign(z_ETH) == sign(z_BTC) and blocks ETH triggers when BTC spot velocity is counter-trending (filters out 18.4% of whipsaw entries).
-        """
         if target_asset.upper() != "ETH":
             return True, z_alt, "NON_ALT_ASSET_PASSED"
         def _norm_dir(d: Optional[str]) -> Optional[str]:
@@ -8660,12 +8266,6 @@ class PolymarketLiveExecutor:
         active_positions: List[Dict[str, Any]],
         max_expiry_window_delta: float = 900.0,
     ) -> Tuple[bool, str]:
-        """
-        Cross-Asset Directional Conflict Guard (BTC vs. ETH Same-Candle Lock):
-        Prevents self-hedging between highly correlated assets (BTC & ETH).
-        Blocks any entry if an active or pending position in the other asset has an opposing
-        direction (UP vs DOWN) for an overlapping expiry window (within max_expiry_window_delta).
-        """
         cand_asset = candidate_asset.upper().strip()
         cand_dir = candidate_direction.upper().strip()
         for pos in active_positions:
@@ -8695,12 +8295,6 @@ class PolymarketLiveExecutor:
         tte_seconds: Optional[float] = None,
         max_tte_seconds: float = 1500.0,
     ) -> Tuple[bool, str]:
-        """
-        Enforces Production Golden Universe restrictions:
-        1. Zero SOL polling/execution (dead venue on Gamma API).
-        2. Zero 1-hour BTC strikes (negative EV: -$751.38 under Hold, -$711.24 under Scalp).
-        3. Restricts execution strictly to 5m and 15m BTC and ETH markets (and final 25m [120s, 1500s] of 1h strikes).
-        """
         asset_clean = (asset or "").upper().strip()
         title_lower = (title or "").lower().strip()
         slug_lower = (slug or "").lower().strip()
@@ -8746,11 +8340,6 @@ class PolymarketLiveExecutor:
         stop_delta: float = 0.12,
         price_floor: float = 0.02,
     ) -> float:
-        """
-        EXP-302 relative spot-delta stop price anchored strictly below entry:
-          stop_exit_px = max(floor, round(entry_price - stop_delta, 4))
-        Prevents counterfactual salvage bug where losing trades were exited at artificial $0.58.
-        """
         return max(price_floor, round(entry_price - stop_delta, 4))
     @staticmethod
     def evaluate_exp302_exit_policy(
@@ -8766,13 +8355,6 @@ class PolymarketLiveExecutor:
         signed_candle_distance_pct: Optional[float] = None,
         tte_seconds: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Evaluates the Golden Production EXP-302 exit policy:
-        1. Primary Exit: Hold to $1.00 maturity while resting 0%-fee Maker take-profit sell @ $0.95 ($0.985 for entries >= 0.80).
-        2. Strike-Retrace Stop: If signed candle distance drops below +0.03% with TTE > 60s, exit immediately at bid (~45c-50c salvage).
-        3. Spot-Delta Stop: Relative -12c / 0.50*ATR adverse reversal -> aggressive CLOB unwind at bid.
-        4. Capital-Starvation Override: Only trigger mid-candle unwind if free_usdc < $25.00 AND higher-scoring shock arrives.
-        """
         stop_px = max(0.02, round(entry_price - stop_delta, 4))
         effective_maker_tp = maker_tp_price
         if maker_tp_price == 0.95 and entry_price >= 0.80:
@@ -8833,11 +8415,6 @@ class PolymarketLiveExecutor:
         candidates: List[Dict[str, Any]],
         window_seconds: float = 5.0,
     ) -> List[Dict[str, Any]]:
-        """
-        5-Second Shock Window Priority Selector:
-          score = abs(z) / ask_price
-        Ranks concurrent candidates by delta-per-dollar efficiency.
-        """
         def _score(c):
             z = abs(float(c.get("z_val", c.get("z_score", c.get("expected_prob_shift", 0.0)))))
             ask_px = max(float(c.get("clob_price", c.get("price", c.get("effective_price_$50", 0.50)))), 0.01)
@@ -8850,7 +8427,6 @@ class PolymarketLiveExecutor:
         fee_rate: float = 0.07,
         fee_exponent: float = 1.0,
     ) -> Tuple[float, float]:
-        """Canonical dynamic crypto taker fee calculation delegated to calculate_taker_fee."""
         return calculate_taker_fee(notional_usd, entry_price, fee_rate, fee_exponent)
     def execute_snipe_order(
         self,
@@ -8872,9 +8448,6 @@ class PolymarketLiveExecutor:
         prefetched_pre_balance: Optional[float] = None,
         prefetched_book: Optional[Dict[str, Any]] = None,
     ) -> OrderResult:
-        """
-        Executes a directional latency snipe with pre-trade risk and depth assertions.
-        """
         t0 = time.perf_counter()
         now_utc = datetime.now(timezone.utc).isoformat()
         try:
@@ -9557,11 +9130,6 @@ class PolymarketLiveExecutor:
         prefetched_pre_balance: Optional[float] = None,
         min_price_floor: float = MIN_PRICE_FLOOR,
     ) -> OrderResult:
-        """
-        P0: Fully asynchronous, non-blocking EIP-712 order dispatcher.
-        Uses native async HTTP for orderbook fetching and isolates Web3/SDK calls
-        into worker threads via asyncio.to_thread, completely preventing event-loop stalls.
-        """
         t0 = time.perf_counter()
         now_utc = datetime.now(timezone.utc).isoformat()
         try:
@@ -10217,11 +9785,6 @@ class PolymarketLiveExecutor:
             self._log_order(res)
             return res
     def get_token_tick_size(self, token_id: str) -> float:
-        """
-        P0 Invariant: Dynamically resolves token-specific minimum tick size via ClobClient SDK.
-        Supported tick sizes in py_clob_client_v2: ('0.1', '0.01', '0.005', '0.0025', '0.001', '0.0001').
-        Falls back to 0.01 if query fails or token is untracked in dry-run mode.
-        """
         if token_id in self._tick_size_cache:
             return self._tick_size_cache[token_id]
         if self.client and hasattr(self.client, "get_tick_size"):
@@ -10239,12 +9802,6 @@ class PolymarketLiveExecutor:
         self._tick_size_cache[token_id] = tick_val
         return tick_val
     def quantize_order_price(self, price: float, token_id: str, rounding=ROUND_HALF_UP) -> float:
-        """
-        Quantizes order price to the token's authoritative minimum tick size using exact Decimal multiples.
-        Supports all SDK tick sizes: 0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001.
-        Preserves 4th-decimal increments (e.g. 0.0025) without truncation.
-        Clamps to valid probability interval [min_tick, 1.0 - min_tick].
-        """
         tick = Decimal(str(self.get_token_tick_size(token_id)))
         if price is None or not math.isfinite(float(price)):
             raise ValueError(f"Refusing to quantize non-finite price {price!r} for {token_id}")
@@ -10260,12 +9817,6 @@ class PolymarketLiveExecutor:
         size: float,
         side: str = "SELL",
     ) -> Dict[str, Any]:
-        """
-        Posts a resting maker scalp limit order with post_only=True and defer_exec=True.
-        Guarantees passive execution (zero taker fee, zero spread crossing).
-        Enforces strict conditional token balance invariant before submitting.
-        Dynamically quantizes limit price to token-specific minimum tick size.
-        """
         lot = Decimal("0.01")
         requested = Decimal(str(size)).quantize(lot, rounding=ROUND_FLOOR)
         if requested <= Decimal("0.00"):
@@ -10390,12 +9941,6 @@ class PolymarketLiveExecutor:
         side: str = "SELL",
         min_price: float = 0.01,
     ) -> Dict[str, Any]:
-        """
-        Executes an immediate aggressive FOK sell order on the CLOB matching engine.
-        Used by Stop-Loss and Terminal-Unwind policies.
-        Guarantees that an unwind is ACTUALLY SUBMITTED to the exchange, not just locally assumed.
-        Dynamically quantizes price to token-specific minimum tick size.
-        """
         if self.dry_run:
             mock_id = f"MOCK_UNWIND_{int(time.time()*1000)}"
             logger.info(f"[DRY-RUN UNWIND] Executed simulated {side} unwind: {size:.2f} shares @ min ${min_price:.4f}")
@@ -10618,7 +10163,6 @@ class PolymarketLiveExecutor:
                 "error": str(e),
             }
     def post_heartbeat(self, heartbeat_id: Optional[str] = None) -> Dict[str, Any]:
-        """Maintains active CLOB session so resting GTC orders are not canceled."""
         if self.dry_run or not self.is_authenticated or self.client is None:
             return {"heartbeat_id": "MOCK_HEARTBEAT"}
         hid = self.last_heartbeat_id if heartbeat_id is None else heartbeat_id
@@ -10656,10 +10200,8 @@ class PolymarketLiveExecutor:
             logger.error(f"[HEARTBEAT FAILURE] CLOB heartbeat error (failures={self.heartbeat_failures}): {e}")
             return {"error": str(e), "failures": self.heartbeat_failures}
     def is_heartbeat_healthy(self) -> bool:
-        """Returns False if heartbeat has failed repeatedly."""
         return self.heartbeat_failures < 3
     def get_open_orders(self, *, strict: bool = False) -> Optional[List[Dict[str, Any]]]:
-        """Queries all live open orders from CLOB matching engine."""
         if self.dry_run:
             return []
         if not self.is_authenticated or self.client is None:
@@ -10677,7 +10219,6 @@ class PolymarketLiveExecutor:
                 raise RuntimeError("CLOB open-order snapshot unavailable") from e
             return None
     def cancel_all_orders(self) -> Dict[str, Any]:
-        """Emergency kill-switch: cancels all open orders on CLOB."""
         if self.dry_run or not self.is_authenticated or self.client is None:
             return {"canceled_all": True}
         try:
@@ -10687,11 +10228,6 @@ class PolymarketLiveExecutor:
             logger.error(f"Failed to cancel all orders: {e}")
             return {"error": str(e)}
     def cancel_order(self, order_id: str) -> Dict[str, Any]:
-        """
-        Cancels an active order by ID and releases its reserved inventory only upon terminal cancellation proof (Round 11 P1-09).
-        Distinguishes CANCELED, FILLED, PARTIALLY_FILLED_CANCELED, and UNKNOWN.
-        NEVER releases reservations when status is FILLED or MATCHED.
-        """
         if self.dry_run and (self.client is None or not self.is_authenticated):
             self.release_inventory(reservation_id=order_id)
             return CancelOrderResult({"canceled": [order_id]}, order_id=str(order_id), outcome="CANCELED", is_canceled=True, canceled=[order_id], matched=0.0)
@@ -10755,7 +10291,6 @@ class PolymarketLiveExecutor:
             logger.error(f"Failed to cancel order {order_id}: {e}")
             return CancelOrderResult({}, order_id=str(order_id), outcome="UNKNOWN", is_canceled=False, error=str(e))
     def get_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:
-        """Queries live status of an order from CLOB."""
         if self.dry_run or not self.is_authenticated or self.client is None:
             return None
         try:
@@ -10765,13 +10300,6 @@ class PolymarketLiveExecutor:
             logger.error(f"Error querying order {order_id}: {e}")
             return None
     def get_collateral_balance(self, max_cache_age_s: float = 15.0, hot_path: bool = False) -> Optional[float]:
-        """
-        Queries CLOB L2 for authoritative collateral balance in human USD units.
-        Avoids 1,000,000x confusion by dividing 6-decimal integer base units explicitly.
-        FAIL-CLOSED INVARIANT: Returns None (UNKNOWN) if unauthenticated or on API error.
-        NEVER returns 0.0 on error in live mode.
-        If hot_path is True, immediately returns cached balance without network I/O.
-        """
         now = time.time()
         cached_bal, cached_ts = getattr(self, "_collateral_cache", (None, 0.0))
         if hot_path and cached_bal is not None and isinstance(cached_bal, (int, float)) and cached_bal > 0:
@@ -10797,19 +10325,11 @@ class PolymarketLiveExecutor:
             logger.error(f"[PM-EXEC] Failed to query CLOB collateral balance: {e}")
             return None
     def set_cached_collateral(self, balance: float) -> None:
-        """Sets the cached collateral balance in memory (0ms access)."""
         if isinstance(balance, (int, float)) and math.isfinite(balance) and balance > 0:
             self._collateral_cache = (float(balance), time.time())
     def invalidate_collateral_cache(self):
-        """Invalidates cached collateral balance on order state transitions."""
         self._collateral_cache = (None, 0.0)
     def get_conditional_balance(self, token_id: str) -> Optional[float]:
-        """
-        Queries CLOB L2 for conditional token (ERC-1155) balance for a specific token_id.
-        Avoids 1,000,000x confusion by dividing 6-decimal integer base units explicitly.
-        FAIL-CLOSED INVARIANT: Returns None (UNKNOWN) if unauthenticated, client unavailable,
-        or an exception occurs. NEVER returns 0.0 on error to prevent false-closure bugs.
-        """
         if self.dry_run:
             return 0.0
         if not self.is_authenticated or self.client is None or BalanceAllowanceParams is None:
@@ -10831,7 +10351,6 @@ class PolymarketLiveExecutor:
     RESERVATIONS_SCHEMA = "pm-reservations/2.3.8"
     @property
     def reservations_path(self) -> Path:
-        """Live and dry-run commitments are kept in physically separate files."""
         env_res_path = os.getenv("POLYMARKET_RESERVATIONS_PATH", "").strip()
         base = Path(env_res_path) if env_res_path else Path(self.RESERVATIONS_STATE_PATH)
         return base.with_name(base.stem + ".dryrun" + base.suffix) if self.dry_run else base
@@ -10886,13 +10405,6 @@ class PolymarketLiveExecutor:
         legacy_sha = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
         return hmac.compare_digest(digest, legacy_sha)
     def _load_durable_reservations(self):
-        """
-        Restores inventory reservations from disk (R3-07 / Round 9 P0-03 / Round 11 P1-08).
-        Fail-closed policy: an unreadable, empty, malformed or digest-mismatched file is
-        NEVER interpreted as "zero commitments". It is quarantined, the reservation book is
-        marked untrusted, and every sell path refuses to submit until
-        rebuild_reservations_from_exchange() re-derives commitments from the exchange.
-        """
         self.reservation_records = {}
         self.reservations_trusted = True
         path = self.reservations_path
@@ -10934,12 +10446,6 @@ class PolymarketLiveExecutor:
         bucket.update(self.reservation_records)
         self._sync_reserved_inventory()
     def rebuild_reservations_from_exchange(self, open_orders: Optional[List[Dict[str, Any]]]) -> bool:
-        """
-        Re-derives the reservation book from an authoritative open-order snapshot (Round 11 P0-14 Fix).
-        Every resting SELL order commits (original_size - size_matched) of its token.
-        Preserves existing ambiguous / unresolved reservations until their originating orders are
-        individually reconciled. An unresolved commitment survives process restarts and incomplete snapshots.
-        """
         if open_orders is None:
             self.reservations_trusted = False
             return False
@@ -10991,7 +10497,6 @@ class PolymarketLiveExecutor:
             logger.info(f"[PM-EXEC] Reservation book rebuilt from exchange: {len(rebuilt)} resting SELL commitment(s).")
         return True
     def _sync_reserved_inventory(self):
-        """Aggregates active reservation records into per-token unreserved inventory deductions."""
         totals: Dict[str, float] = defaultdict(float)
         for r in self.reservation_records.values():
             tid = str(r.get("token_id", ""))
@@ -10999,7 +10504,6 @@ class PolymarketLiveExecutor:
                 totals[tid] += float(r.get("size", 0.0))
         self.reserved_inventory = defaultdict(float, {k: round(v, 4) for k, v in totals.items()})
     def _save_durable_reservations(self):
-        """Atomically and durably persists reservation records (fsync file + directory, integrity digest)."""
         lock = getattr(self, "_reservations_lock", None) or _CLOB_HTTP_LOCK
         with lock:
             path = self.reservations_path
@@ -11035,7 +10539,6 @@ class PolymarketLiveExecutor:
                     raise RuntimeError(f"CRITICAL: Failed to persist durable reservations: {e}")
     @classmethod
     def clear_all_reservations(cls):
-        """Forensic utility to clear all active reservation records."""
         cls._class_reservations.clear()
         base = Path(cls.RESERVATIONS_STATE_PATH)
         for p in (base, base.with_name(base.stem + ".dryrun" + base.suffix)):
@@ -11045,7 +10548,6 @@ class PolymarketLiveExecutor:
                 except Exception:
                     pass
     def reserve_inventory(self, token_id: str, size: float, reservation_id: Optional[str] = None):
-        """Durable reservation for resting or uncertain exit orders (R3-07 Fix)."""
         lot = Decimal("0.01")
         quantized = float(Decimal(str(max(0.0, size))).quantize(lot, rounding=ROUND_FLOOR))
         if quantized <= 0.0:
@@ -11063,7 +10565,6 @@ class PolymarketLiveExecutor:
         self._sync_reserved_inventory()
         self._save_durable_reservations()
     def release_inventory(self, token_id: str = "", size: float = 0.0, reservation_id: Optional[str] = None):
-        """Releases reserved inventory when an exit order is authoritatively settled or canceled (R3-07 Fix)."""
         lot = Decimal("0.01")
         quantized = float(Decimal(str(max(0.0, size))).quantize(lot, rounding=ROUND_FLOOR)) if size else 0.0
         bucket = self._class_res_bucket()
@@ -11091,7 +10592,6 @@ class PolymarketLiveExecutor:
         self._sync_reserved_inventory()
         self._save_durable_reservations()
     def update_reservation(self, reservation_id: str, new_remaining_size: float):
-        """Round 10 P1-03: Updates remaining size for an existing order reservation (e.g. after partial fill)."""
         r_id = str(reservation_id)
         if r_id not in self.reservation_records:
             return
@@ -11107,10 +10607,6 @@ class PolymarketLiveExecutor:
             self._sync_reserved_inventory()
             self._save_durable_reservations()
     def get_unreserved_conditional_balance(self, token_id: str) -> Optional[float]:
-        """Calculates wallet balance net of all outstanding resting and uncertain sell commitments (R3-07 Fix).
-        Returns None (UNKNOWN) while the reservation book is untrusted (Round 9 P0-03): an
-        unreadable commitment ledger can never be read as zero commitments.
-        """
         if not getattr(self, "reservations_trusted", True):
             logger.critical(f"[PM-EXEC] Reservation book UNTRUSTED; refusing to compute free inventory for {token_id}.")
             return None
@@ -11120,11 +10616,6 @@ class PolymarketLiveExecutor:
         reserved = self.reserved_inventory.get(token_id, 0.0)
         return max(0.0, round(bal - reserved, 4))
     def get_onchain_erc1155_balance(self, token_id: str, account_address: Optional[str] = None) -> Optional[float]:
-        """
-        P0 Invariant: Direct independent Polygon on-chain ERC-1155 balanceOf(account, id) read via JSON-RPC.
-        Target contract: Polymarket ConditionalTokens (0x4D97DCd97eC945f40cF65F87097ACe5EA0476045).
-        Queries node directly without relying on CLOB API. Returns verified token balance divided by 1e6.
-        """
         target_account = account_address or self.funder_address
         if not target_account or not token_id:
             return None
@@ -11155,7 +10646,6 @@ class PolymarketLiveExecutor:
             logger.debug(f"On-chain ERC-1155 balanceOf query error for {token_id}: {e}")
             return None
     def _log_order(self, res: OrderResult):
-        """Appends order execution event to immutable JSONL audit ledger."""
         try:
             entry = {
                 "timestamp_utc": datetime.now(timezone.utc).isoformat(),
@@ -11199,59 +10689,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-Futures/Spot -> Polymarket Information-Flow Experiment (Route 3 - Data Lab v2.6)
-================================================================================
-Empirical research pipeline testing information transmission between Binance USD(S)-M Futures,
-Binance Spot, and Polymarket 1-Hour BTC Up/Down binary contract order books.
-Microstructure, Econometric, and Invariant Foundations:
-  1. Dual Binance Antennas (Tokyo Latency):
-       - Binance Spot:    wss://stream.binance.com:443/ws/btcusdt@aggTrade (Polymarket Settlement Ref)
-       - Binance Futures: wss://fstream.binance.com:443/market/ws/btcusdt@aggTrade (Futures Flow Antenna)
-       - Microsecond-resolution timestamps: t_binance_event (E), t_binance_trade (T), t_receive_local.
-  2. Strict Causal Information Boundary (t0 Anchor):
-       - t0 = exact end of qualifying 100-ms shock window.
-       - All predictive features X_t strictly satisfy t_feature <= t0.
-       - All impulse-response measurements Delta_q(Delta_t) start strictly after t0 + epsilon.
-  3. L2 Order Book Invariants & OBI / Microprice Reconciliation:
-       - Top-of-Book OBI: OBI_L1 = (Q_bid1 - Q_ask1) / (Q_bid1 + Q_ask1)
-       - Top-of-Book Microprice: q_micro = (ask1 * Q_bid1 + bid1 * Q_ask1) / (Q_bid1 + Q_ask1)
-       - Invariant: sign(q_micro - q_mid) MUST match sign(OBI_L1).
-       - Runtime Assertion:
-           if OBI_L1 > 1e-6: assert q_micro >= q_mid - 1e-6
-           if OBI_L1 < -1e-6: assert q_micro <= q_mid + 1e-6
-       - Depth OBI: OBI_depth = (sum(Q_bid[:5]) - sum(Q_ask[:5])) / (sum(Q_bid[:5]) + sum(Q_ask[:5]))
-       - Book Invariants: best_bid < best_ask (unless locked/crossed), depth_i >= 0, VWAP(C) >= best_ask.
-       - Explicit logging of: obi_depth_levels, microprice_formula, book_sequence_id, book_timestamp.
-  4. Tripartite Quote Age Decomposition:
-       - Age_book = time since any L2 message (snapshot or price_change).
-       - Age_bid  = time since best bid changed (price or size).
-       - Age_ask  = time since best ask changed (price or size) [stale executable quote metric].
-  5. Basis & Delta Basis:
-       - basis_t0 = P_futures - P_spot (signed USD and bps)
-       - Delta_basis_100ms = basis(t0) - basis(t0 - 100ms)
-       - |basis| (magnitude)
-  6. Pre-Registered Econometric Models:
-       - Model A (Spot):    Y = f(q, X_S, TTE, dist)
-       - Model B (Futures): Y = f(q, X_F, TTE, dist)
-       - Model C (Joint):   Y = f(q, X_S, X_F, basis, Delta_basis, TTE, dist)
-       - Model D (Incr):    Y = f(q, X_S, TTE, dist) + g(X_F | X_S) -> Test H0: beta_{F|S} = 0.
-  7. Pre-Registered Lead/Lag Cross-Correlation Grid:
-       - Delta in {-500, -250, -100, -50, 0, +50, +100, +250, +500, +1000} ms.
-  8. Executable Capacity Surface & Dynamic Fee Parameters:
-       - EV(C) = p - VWAP(C) - Fee(C) for C in {1, 5, 20, 50, 100}.
-       - fee_rate_market, fee_source, fee_enabled, fee_formula_version recorded per contract.
-  9. Strategy Dichotomy:
-       - Strategy R3-A: Terminal hold (p_t - q_t - fee) -> Primary scientific experiment.
-       - Strategy R3-B: Momentum repricing (q_{t+Delta} - q_t - 2*fee - spread/slip) -> Secondary.
-  10. Settlement Ground Truth Verification:
-       - Y = 1[Close_1H >= Open_1H] verified directly from finalized Binance Spot 1H candle.
-  11. Clustered Statistical Inference:
-       - Standard errors clustered at market-hour and shock-episode.
-       - Response curve IRF(tau) = E[Delta_q(tau)] bootstrapped at shock-event level.
-  12. Operational Boundary:
-       - Strictly read-only research pipeline; zero orders or authentication.
-"""
 import asyncio
 import collections
 from collections import defaultdict, deque
@@ -11305,7 +10742,6 @@ ADAPTIVE_THRESH_MIN_COVERAGE_SEC = 60.0
 def lead_state_path(asset: str = "BTC") -> Path:
     return SHM_DIR / f"pm_lead_state_{str(asset).upper()}.json"
 def write_lead_state(state: Dict[str, Any], path: Optional[Path] = None) -> bool:
-    """Atomic (tmp + os.replace) write of the BTC lead state into RAM. Never raises."""
     path = path or lead_state_path("BTC")
     try:
         payload = _orjson.dumps(state) if _orjson else json.dumps(state).encode("utf-8")
@@ -11318,7 +10754,6 @@ def write_lead_state(state: Dict[str, Any], path: Optional[Path] = None) -> bool
         return False
 def read_lead_state(path: Optional[Path] = None, max_age_ms: float = LEAD_STATE_MAX_AGE_MS,
                     now_ns: Optional[int] = None) -> Optional[Dict[str, Any]]:
-    """Reads the BTC lead state; returns None if missing, unparsable or older than max_age_ms (wall clock)."""
     path = path or lead_state_path("BTC")
     try:
         with open(path, "rb") as f:
@@ -11331,17 +10766,12 @@ def read_lead_state(path: Optional[Path] = None, max_age_ms: float = LEAD_STATE_
     except Exception:
         return None
 def compute_adaptive_shock_threshold(base_threshold: float, avg_100ms_vol_5m: Optional[float]) -> float:
-    """effective = clamp(18 * avg_100ms_vol_5m, 0.65 * base, 1.35 * base); base when no baseline."""
     if avg_100ms_vol_5m is None or not math.isfinite(avg_100ms_vol_5m) or avg_100ms_vol_5m <= 0.0:
         return float(base_threshold)
     return min(ADAPTIVE_THRESH_MAX_MULT * base_threshold,
                max(ADAPTIVE_THRESH_MIN_MULT * base_threshold, ADAPTIVE_THRESH_VOL_MULT * avg_100ms_vol_5m))
 def evaluate_btc_sympathy(lead: Optional[Dict[str, Any]], eth_flow_dir: str, eth_target_age_ask_ms: Optional[float],
                           now_ns: Optional[int] = None) -> bool:
-    """
-    BTC-led ETH sympathy: BTC fired a shock within 500ms with vol >= $2.25M and |OFI| >= 0.85 in the
-    same direction as ETH flow, and ETH's target Polymarket ask is stale (age_ask_ms >= 300ms).
-    """
     if not lead or eth_target_age_ask_ms is None:
         return False
     try:
@@ -11371,12 +10801,6 @@ def evaluate_realtime_exp306_boundary_and_merge(
     sigma_1h: Optional[float] = None,
     estimated_gas_usd: float = 0.015,
 ) -> Dict[str, Any]:
-    """
-    Pillar 5B: Read-only EXP-306 expiry-boundary + complementary merge evaluation.
-    - Merge: P_ask(UP) + P_ask(DOWN) + taker fees + gas < 1.00 (>= 1.5c/share net).
-    - Boundary: |S - K| / (sigma * sqrt(tau)) >= 3.5 within the final 120s.
-    Never places orders; returns a diagnostic record only.
-    """
     ask_up = float(up_top.get("best_ask") or 0.0)
     ask_dn = float(down_top.get("best_ask") or 0.0)
     sz_up = float(up_top.get("ask_size_l1") or 0.0)
@@ -11470,7 +10894,6 @@ _FAST_IPC_ADDR = b"\x00polymarket_shock_notify"
 _IPC_SEND_FAILURES = 0
 _IPC_LAST_WARN_TS = 0.0
 def _broadcast_fast_trigger_ipc(data: bytes) -> None:
-    """Zero-disk-jitter RAM datagram push to harvester (~15 us on Linux abstract AF_UNIX)."""
     global _FAST_IPC_SOCK, _IPC_SEND_FAILURES, _IPC_LAST_WARN_TS
     if os.name == "nt":
         return
@@ -11488,7 +10911,6 @@ def _broadcast_fast_trigger_ipc(data: bytes) -> None:
             _IPC_LAST_WARN_TS = now_u
             logger.debug(f"[FAST IPC NOTICE] Abstract socket send missed ({_IPC_SEND_FAILURES} total, disk fallback active): {e}")
 def _atomic_append_jsonl(path: Path, line_str: str, broadcast_ipc: bool = True) -> None:
-    """Atomically appends a single JSONL line across concurrent BTC/ETH recorder processes."""
     if not line_str.endswith("\n"):
         line_str += "\n"
     data = line_str.encode("utf-8")
@@ -11510,7 +10932,6 @@ def _atomic_append_jsonl(path: Path, line_str: str, broadcast_ipc: bool = True) 
             pass
         os.close(fd)
 def _dispatch_trigger_fast(path: Path, payload: Dict[str, Any]) -> Tuple[bytes, str]:
-    """Serializes via orjson, broadcasts RAM IPC immediately, returns (raw_bytes, line_str)."""
     if _orjson is not None:
         raw = _orjson.dumps(payload) + b"\n"
         line_str = raw.decode("utf-8")
@@ -11521,11 +10942,6 @@ def _dispatch_trigger_fast(path: Path, payload: Dict[str, Any]) -> Tuple[bytes, 
         _broadcast_fast_trigger_ipc(raw)
     return raw, line_str
 def _persist_trigger_nonblocking(path: Path, line_str: str) -> None:
-    """
-    Fast non-blocking page-cache append after BOTH 1h & 15m RAM IPC datagrams have already fired.
-    Attempts LOCK_EX | LOCK_NB (~15us page-cache write); if another recorder holds the lock,
-    offloads blocking flock wait to run_in_executor so the asyncio loop never stalls.
-    """
     path.parent.mkdir(parents=True, exist_ok=True)
     data = line_str.encode("utf-8")
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o644)
@@ -11577,19 +10993,9 @@ DEFAULT_FEE_RATE = 0.07
 TICKET_CAPACITY_LEVELS = [1.0, 5.0, 20.0, 25.0, 50.0, 100.0, 150.0, 200.0, 250.0]
 CORRELATION_LAGS_MS = [-1000, -500, -250, -100, -50, 0, 50, 100, 250, 500, 1000]
 def calculate_per_share_taker_fee(price: float, fee_rate: float = DEFAULT_FEE_RATE, fee_exponent: float = 1.0) -> float:
-    """
-    Computes Polymarket crypto taker fee per share: feeRate * (p * (1 - p)) ** fee_exponent.
-    Multiply by the number of shares (not dollar notional) for the USD fee. Makers pay zero fee.
-    (Renamed from the recorder's 2-arg calculate_taker_fee to avoid colliding with the executor's
-    4-arg calculate_taker_fee(notional_usd, price, fee_rate, fee_exponent) in the unified bundle.)
-    """
     p = max(0.001, min(0.999, price))
     return fee_rate * ((p * (1.0 - p)) ** fee_exponent)
 class L2OrderBook:
-    """
-    Maintains continuous in-memory full L2 orderbook with exact microstructure invariants,
-    OBI/microprice reconciliation, and tripartite quote age tracking.
-    """
     def __init__(self, asset_id: str):
         self.asset_id = str(asset_id)
         self.token_id = str(asset_id)
@@ -11659,7 +11065,6 @@ class L2OrderBook:
             self._dirty = True
         self._check_top_changes(now_ts)
     def top_of_book(self, obs_ts: Optional[float] = None) -> Dict[str, Any]:
-        """Lightweight O(n) top-of-book snapshot for the 25ms shared-memory tick bus (no sorting, no asserts)."""
         t_now = obs_ts if obs_ts is not None else time.time()
         best_bid = max(self.bids) if self.bids else 0.0
         best_ask = min(self.asks) if self.asks else 1.0
@@ -11838,13 +11243,11 @@ class PolymarketDualFeed1HRecorder:
             return self.coinbase_spot
         return 0.0
     def get_venue_divergence_bps(self, now: Optional[float] = None) -> float:
-        """Signed (Binance spot - Coinbase spot) / Coinbase in bps. 0.0 when Coinbase unavailable (fail-open)."""
         cb = self.get_coinbase_spot(now)
         if cb <= 0 or self.spot_price <= 0:
             return 0.0
         return round((self.spot_price - cb) / cb * 10000.0, 2)
     def get_venue_divergence_centered_bps(self, now: Optional[float] = None) -> float:
-        """Causal basis-centered venue divergence (subtracts trailing 200-sample rolling median of USDT/USD basis)."""
         raw_div = self.get_venue_divergence_bps(now)
         cb = self.get_coinbase_spot(now)
         if cb <= 0 or self.spot_price <= 0:
@@ -11854,7 +11257,6 @@ class PolymarketDualFeed1HRecorder:
             return round(raw_div - statistics.median(hist), 2)
         return raw_div
     def get_chainlink_proxy_spot(self, now: Optional[float] = None) -> float:
-        """v3.8 Blueprint 3: Basis-centered synthetic Chainlink USD oracle proxy (de-meaned Binance + Coinbase midpoint)."""
         now_ts = now if now is not None else time.time()
         if self.spot_price <= 0:
             return 0.0
@@ -11868,7 +11270,6 @@ class PolymarketDualFeed1HRecorder:
                 hist.popleft()
         return cl_px
     def get_chainlink_twap_60s(self, now: Optional[float] = None) -> float:
-        """v3.9 R07: Real-time 60-second rolling USD TWAP mirroring Chainlink's btc-usd-twap-60s-streams."""
         now_ts = now if now is not None else time.time()
         cl_now = self.get_chainlink_proxy_spot(now_ts)
         hist = getattr(self, "_cl_proxy_history", None)
@@ -11879,11 +11280,6 @@ class PolymarketDualFeed1HRecorder:
             return cl_now
         return round(statistics.mean(pts), 4)
     async def fetch_polygon_chainlink_spot(self) -> float:
-        """
-        v3.8 Blueprint 3 / v3.9 R07: Lightweight Polygon AggregatorV3 latestRoundData() poller (0xfeaf968c)
-        for BTC/USD (0xc907...7F6f) and ETH/USD (0xF968...5945). Rejects rounds > 20s stale so non-TWAP
-        point feeds never distort 15m boundary anchors. Strictly fail-open (1.5s timeout).
-        """
         agg_map = {
             "BTC": "0xc907E116054Ad103354f2D350FD2514433D57F6f",
             "ETH": "0xF9680D99D6C9589e2a93a78A04A279e509205945",
@@ -11914,7 +11310,6 @@ class PolymarketDualFeed1HRecorder:
             logger.debug(f"Polygon Chainlink AggregatorV3 fetch skipped ({self.asset}): {e}")
         return 0.0
     def get_coinbase_move_bps(self, window_sec: float = 2.0, now: Optional[float] = None) -> float:
-        """Signed Coinbase spot move over the trailing window in bps (0.0 if unavailable)."""
         now = now if now is not None else time.time()
         cb = self.get_coinbase_spot(now)
         if cb <= 0 or not self.coinbase_history:
@@ -11928,7 +11323,6 @@ class PolymarketDualFeed1HRecorder:
             return 0.0
         return round((cb - ref) / ref * 10000.0, 2)
     async def _coinbase_stream_worker(self):
-        """Coinbase spot ticker stream for BTC-USD / ETH-USD. Fail-open: entries are never blocked by its absence."""
         backoff = 2.0
         while self.running:
             try:
@@ -12020,11 +11414,6 @@ class PolymarketDualFeed1HRecorder:
         snap["markets"] = markets_map
         return snap
     def _publish_shm_fast_tick(self, market_id: str, up_token: str, down_token: str) -> None:
-        """
-        Atomically updates /dev/shm/pm_fast_tick_{asset}.json using a keyed 'markets' map
-        and PID-scoped temp file + os.replace() so 1h and 15m feeds never overwrite each other
-        and readers never encounter torn JSON reads.
-        """
         if "UP" not in self.books or "DOWN" not in self.books:
             return
         now_ts = time.time()
@@ -12084,7 +11473,6 @@ class PolymarketDualFeed1HRecorder:
         except Exception as e:
             logger.debug(f"SHM fast tick publish notice: {e}")
     def _maybe_write_fast_tick(self, force: bool = False) -> bool:
-        """Atomic (tmp + os.replace) RAM snapshot, throttled to 25ms. Never raises."""
         if not self._fast_tick_enabled:
             return False
         now = time.time()
@@ -12155,11 +11543,6 @@ class PolymarketDualFeed1HRecorder:
             )
         return self.session
     async def calibrate_binance_clock_offset(self):
-        """
-        Calibrates local Tokyo clock offset against Binance server time using Cristian's algorithm.
-        Offset = (t_req + t_resp)/2 - t_server
-        Uncertainty = RTT / 2
-        """
         session = await self.get_session()
         try:
             t0 = time.time() * 1000.0
@@ -12178,7 +11561,6 @@ class PolymarketDualFeed1HRecorder:
         except Exception as e:
             logger.warning(f"Clock calibration failed: {e}")
     async def discover_nearest_1h_market(self) -> Optional[Dict[str, Any]]:
-        """Enforces: series_slug == self.series_slug and market_duration == 3600s."""
         session = await self.get_session()
         try:
             url = f"{GAMMA_API_URL}/events?series_slug={self.series_slug}&limit=20&closed=false"
@@ -12271,11 +11653,6 @@ class PolymarketDualFeed1HRecorder:
             logger.error(f"Error discovering 1H market: {e}")
         return None
     async def discover_nearest_15m_market(self) -> Optional[Dict[str, Any]]:
-        """
-        Pillar 5B: Discovers active 15m sub-hourly market from Gamma API.
-        Tries btc-up-or-down-15m / eth-up-or-down-15m and btc-15m / eth-15m.
-        Fetches finalized 15m Binance Spot open strike (interval=15m).
-        """
         session = await self.get_session()
         asset_lower = self.asset.lower()
         slug_candidates = [
@@ -12363,11 +11740,6 @@ class PolymarketDualFeed1HRecorder:
                 logger.debug(f"15m discovery notice for {s_slug}: {e}")
         return None
     async def fetch_binance_60s_twap_open(self, candle_open_ts: int) -> float:
-        """
-        Pulls the 60 finalized 1-second Binance Spot klines over [candle_open_ts - 60, candle_open_ts)
-        (with 1-minute OHLC/4 fallback) to compute the exact 60-second time-weighted average price
-        matching Chainlink's 60s TWAP reference strike on 15m Up/Down markets.
-        """
         session = await self.get_session()
         start_ms = (int(candle_open_ts) - 60) * 1000
         try:
@@ -12403,7 +11775,6 @@ class PolymarketDualFeed1HRecorder:
     async def fetch_finalized_binance_candle(
         self, candle_open_ts: int, interval: str = "1h"
     ) -> Tuple[float, float]:
-        """Pulls exact finalized Binance Spot 1H or 15M candle open and close prices."""
         session = await self.get_session()
         binance_interval = "15m" if str(interval).lower() in ("15m", "900s") else "1h"
         try:
@@ -12423,11 +11794,6 @@ class PolymarketDualFeed1HRecorder:
             logger.error(f"Failed to fetch Binance Spot {binance_interval} candle for {self.binance_symbol}: {e}")
         return 0.0, 0.0
     async def verify_and_log_resolution(self, market: Dict[str, Any], max_polls: int = 60, poll_interval_sec: float = 30.0):
-        """
-        Polls official Polymarket Gamma API (`outcomePrices`) up to 30 minutes (`60 * 30s`)
-        so Chainlink 60s-TWAP / UMA oracle settlements are captured authoritatively without
-        contaminating ground-truth labels with Binance 1s spot mismatches.
-        """
         m_id_str = str(market.get("market_id") or "")
         logged_set = getattr(self, "_logged_resolution_market_ids", None)
         if logged_set is None:
@@ -12514,7 +11880,6 @@ class PolymarketDualFeed1HRecorder:
             self.basis_bps = (self.basis_usd / self.spot_price) * 10000.0
             self.basis_history.append((time.monotonic_ns(), self.basis_bps))
     def get_delta_basis_100ms(self) -> float:
-        """Computes signed basis change over the last 100ms."""
         now_ns = time.monotonic_ns()
         cutoff_ns = now_ns - 100_000_000
         for t_ns, b_bps in self.basis_history:
@@ -12522,7 +11887,6 @@ class PolymarketDualFeed1HRecorder:
                 return round(self.basis_bps - b_bps, 2)
         return 0.0
     async def stream_binance_spot(self):
-        """Tokyo-latency microsecond Binance Spot aggTrade stream (Polymarket Settlement Ref)."""
         while self.running:
             try:
                 logger.info(f"Connecting to Binance Spot aggTrade ({self.binance_spot_ws})...")
@@ -12549,7 +11913,6 @@ class PolymarketDualFeed1HRecorder:
                 logger.warning(f"Binance Spot feed disconnected: {e}. Reconnecting in 3s...")
                 await asyncio.sleep(3)
     async def stream_binance_futures(self):
-        """Tokyo-latency microsecond Binance USDⓈ-M Futures aggTrade stream (Routed /market endpoint)."""
         while self.running:
             try:
                 logger.info(f"Connecting to Binance Futures aggTrade ({self.binance_futures_ws})...")
@@ -12583,7 +11946,6 @@ class PolymarketDualFeed1HRecorder:
         else:
             self._vol_buckets.append([sec, float(notional)])
     def get_avg_100ms_vol_5m(self, now_sec: Optional[float] = None) -> Optional[float]:
-        """Rolling 5-minute mean 100ms dollar volume (spot + futures); None with < 60s of coverage."""
         now_sec = now_sec if now_sec is not None else time.time()
         if self._vol_first_sec is None or (now_sec - self._vol_first_sec) < ADAPTIVE_THRESH_MIN_COVERAGE_SEC:
             return None
@@ -12594,7 +11956,6 @@ class PolymarketDualFeed1HRecorder:
             return None
         return total / (window * 10.0)
     def get_effective_shock_threshold(self, now_sec: Optional[float] = None) -> float:
-        """Adaptive threshold in [0.65x, 1.35x] of base, recomputed at most once per second."""
         now_sec = now_sec if now_sec is not None else time.time()
         computed_at, val = self._adaptive_cache
         if now_sec - computed_at >= 1.0:
@@ -12603,7 +11964,6 @@ class PolymarketDualFeed1HRecorder:
         return val
     def _publish_btc_lead_state(self, vol_100ms: float, ofi_100ms: float, delta_basis: float,
                                 flow_dir: str, z_btc: float, force: bool = False) -> None:
-        """BTC recorder only: throttled (25ms, forced on trigger) RAM publish of live shock state."""
         if self.asset != "BTC" or not self._fast_tick_enabled:
             return
         now = time.time()
@@ -12628,10 +11988,6 @@ class PolymarketDualFeed1HRecorder:
         state.update(self._last_btc_shock)
         write_lead_state(state, self.lead_state_file)
     def evaluate_shock(self, recv_mono_ns: int, event_ts_ms: int, source: str):
-        """
-        Evaluates volume sweeps strictly over [t0 - 100ms, t0].
-        t0 is anchored as the end of the qualifying shock window.
-        """
         trade_queue = self.spot_trades if source == "SPOT" else self.futures_trades
         if trade_queue:
             self._record_volume(float(trade_queue[-1][3]))
@@ -12957,12 +12313,6 @@ class PolymarketDualFeed1HRecorder:
         m_title: str,
         fee_meta: Dict[str, Any]
     ):
-        """
-        Captures the Probability Repricing Impulse-Response Function IRF(tau) = E[Delta_q(tau)].
-        Strict Causal Separation:
-          - Predictor features frozen strictly at t <= t0 via deep-copied synchronous snapshot.
-          - Repricing measurements occur strictly after t0 + epsilon.
-        """
         up_book = self.books.get("UP")
         down_book = self.books.get("DOWN")
         if not up_book or not down_book or not self.current_market:
@@ -13044,7 +12394,6 @@ class PolymarketDualFeed1HRecorder:
                     f"AgeAsk(UP)={age_up_val:.0f}ms | UP ask={pre_shock_up['best_ask']:.3f} -> 30s Delta: {up_30s_delta:+.3f} | "
                     f"Basis={pre_shock_basis_signed:+.1f}bps (Observational episode, not yet evidence of persistent structural lag)")
     async def stream_polymarket_clob(self):
-        """Streams real-time L2 orderbook updates from Polymarket CLOB WebSocket with strict market_id rollover binding."""
         while self.running:
             if not self.current_market:
                 await asyncio.sleep(0.5)
@@ -13155,7 +12504,6 @@ class PolymarketDualFeed1HRecorder:
                 logger.warning(f"Polymarket CLOB WS disconnected: {e}. Reconnecting in 1s...")
                 await asyncio.sleep(1.0)
     def _maybe_emit_boundary_lock_trigger(self) -> None:
-        """Rank #4: Emits a BOUNDARY_LOCK trigger when TTE in [12s, 75s], |z_strike| >= 3.0, and discounted retail asks (<=0.94) offer >=2.5c net edge."""
         if self.spot_price <= 0:
             return
         now_sec = time.time()
@@ -13267,11 +12615,6 @@ class PolymarketDualFeed1HRecorder:
             except Exception as e:
                 logger.debug(f"Boundary lock emit error: {e}")
     def compute_leadlag_cross_correlation(self):
-        """
-        Pre-registered Lead/Lag cross-correlation estimation:
-          Estimates Corr(epsilon_F(t), epsilon_S(t + Delta)) over Delta in CORRELATION_LAGS_MS
-          using flow innovations (Point 2: do not perform primary lead/lag on raw levels).
-        """
         if len(self.spot_trades) < 200 or len(self.futures_trades) < 200:
             return
         now_ns = time.monotonic_ns()
@@ -13330,7 +12673,6 @@ class PolymarketDualFeed1HRecorder:
             f.write(json.dumps(record) + "\n")
         logger.info(f"[LEAD/LAG INNOVATION TELEMETRY] Peak Lag: {max_lag[0]}ms (r={max_lag[1]:+.3f}) | Status: Illustrative telemetry (H0: no stable lead/lag)")
     async def telemetry_logger_loop(self):
-        """Periodic 10s baseline telemetry logger, cross-correlation estimator, and rollover manager."""
         while self.running:
             try:
                 now = datetime.now(timezone.utc)
@@ -13533,13 +12875,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-S9: Deribit SVI Implied Volatility Surface & Breeden-Litzenberger Digital Probability Engine
-============================================================================================
-Provides real-time, non-blocking options-implied volatility (sigma_1h) and skew-aware
-Breeden-Litzenberger risk-neutral digital probabilities P(S_T > K) = -e^(rT) * dC/dK
-for Polymarket sub-hourly (15m/1h) and daily/weekly strike ladder contracts (EXP-316).
-"""
 # from __future__ import annotations  # (Lifted to top of consolidated bundle)
 import json
 import logging
@@ -13595,10 +12930,6 @@ def compute_breeden_litzenberger_digital(
     svi: SVIParams,
     r: float = 0.0,
 ) -> float:
-    """
-    Extracts risk-neutral digital probability P(S_T > K) = -e^(rT) * dC/dK
-    accounting for the SVI volatility smile slope d(sigma)/dK.
-    """
     if F <= 0.0 or K <= 0.0:
         return 0.5
     T_eff = max(1e-6, T_years)
@@ -13618,7 +12949,6 @@ def fit_svi_slice(
     t_years: float,
     forward_price: float,
 ) -> SVIParams:
-    """Fits Gatheral SVI parameters (a, b, rho, m, sigma) to observed (k, iv) quotes."""
     t_eff = max(1e-5, float(t_years))
     if len(log_moneyness) < 4:
         atm_iv = float(np.median(mark_ivs)) if mark_ivs else 0.55
@@ -13677,9 +13007,6 @@ def fit_svi_slice(
         calibrated_at=time.time(),
     )
 class DeribitSVISurfaceEngine:
-    """
-    Thread-safe, non-blocking SVI volatility surface cache and digital option calculator.
-    """
     def __init__(self, ttl_seconds: float = 60.0):
         self.ttl_seconds = ttl_seconds
         self._lock = threading.Lock()
@@ -13779,7 +13106,6 @@ class DeribitSVISurfaceEngine:
         self._trigger_background_refresh(asset_u)
         return None
     def get_surface(self, asset: str) -> Optional[SVIParams]:
-        """Alias for fetch_and_calibrate_sync used by periodic background cache warmers."""
         return self.fetch_and_calibrate_sync(asset)
     def get_hourly_sigma(self, asset: str, fallback: Optional[float] = None) -> float:
         asset_u = asset.upper()
@@ -13809,10 +13135,6 @@ class DeribitSVISurfaceEngine:
         fallback_sigma_1h: Optional[float] = None,
         allow_sync_fetch: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Computes SVI Breeden-Litzenberger digital probability for a Polymarket strike contract.
-        Returns dict with p_svi, svi_sigma_1h, svi_iv_annual, and source.
-        """
         if is_upward is not None:
             is_downward_question = not bool(is_upward)
         asset_u = asset.upper()
@@ -13878,17 +13200,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-Polymarket Autonomous Forward Paper Trader (Sweet Spot Strategy)
-File: src/polymarket_research/polymarket_paper_trader.py
-v3.1 Pure Implementation-Conformance / Forensic State:
-1. Hard-Enforces R3_VALIDATION_START_UTC = 2026-09-29T18:11:34.000Z (Commit 08d50e8 frozen boundary).
-2. Partitions ledgers into DEV calibration (data/polymarket/paper_trading_dev_ledger.jsonl)
-   and frozen Out-Of-Sample VALIDATION (data/polymarket/paper_trading_validation_ledger.jsonl).
-3. Strictly Fail-Closed executable depth check (DepthRatio >= 1.50, empty book rejects immediately).
-4. Strictly requires verified fee metadata in shock payload (fee_rate_market must be present).
-5. Fully restart-idempotent (persisted ledgers restored on startup, deduplicating historical events).
-"""
 import os
 import sys
 import json
@@ -14021,7 +13332,6 @@ class PolymarketForwardPaperTrader:
         self.hourly_candle_opens: Dict[str, Dict[int, float]] = defaultdict(dict)
         self._prewarm_hourly_opens()
     def _prewarm_hourly_opens(self):
-        """Prewarms recent hourly candle opens from live_shock_triggers.jsonl to empower rolling trend guards."""
         trigger_path = DATA_DIR / "live_shock_triggers.jsonl"
         if not trigger_path.exists():
             return
@@ -14054,7 +13364,6 @@ class PolymarketForwardPaperTrader:
         except Exception:
             pass
     def load_persisted_ledgers(self):
-        """Loads DEV and VALIDATION ledgers to restore state idempotently without duplication."""
         if DEV_LEDGER_FILE.exists():
             with open(DEV_LEDGER_FILE, "r") as f:
                 for line in f:
@@ -14091,7 +13400,6 @@ class PolymarketForwardPaperTrader:
               f"\n  DEV Ledger: {len(self.dev_trades)} trades | Realized PnL: ${self.dev_realized_pnl:+.2f} | Cash: ${self.dev_cash:,.2f}"
               f"\n  OOS VALIDATION Ledger: {len(self.val_trades)} trades | Realized PnL: ${self.val_realized_pnl:+.2f} | Cash: ${self.val_cash:,.2f}", flush=True)
     def load_persisted_sleeve2_ledger(self):
-        """Loads SLEEVE_2_LEDGER_FILE to restore Sleeve 2 state idempotently."""
         if SLEEVE_2_LEDGER_FILE.exists():
             with open(SLEEVE_2_LEDGER_FILE, "r") as f:
                 for line in f:
@@ -14107,7 +13415,6 @@ class PolymarketForwardPaperTrader:
             self.sleeve2_cash = SLEEVE_2_INITIAL_CAPITAL + self.sleeve2_realized_pnl
             print(f"[SLEEVE 2 RECOVERY] Loaded {len(self.sleeve2_trades)} settled trades | Realized PnL: ${self.sleeve2_realized_pnl:+.2f} | Cash: ${self.sleeve2_cash:,.2f}", flush=True)
     def save_sleeve2_state(self):
-        """Saves isolated state persistence for SLEEVE_2_MULTI_304_315."""
         total_trades = len(self.sleeve2_trades)
         wins = sum(1 for t in self.sleeve2_trades if t.get("won"))
         wr = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
@@ -14141,7 +13448,6 @@ class PolymarketForwardPaperTrader:
                 except Exception:
                     pass
     def load_persisted_sol_shadow_ledger(self):
-        """Loads SOL_SHADOW_LEDGER_FILE idempotently."""
         if SOL_SHADOW_LEDGER_FILE.exists():
             with open(SOL_SHADOW_LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -14156,7 +13462,6 @@ class PolymarketForwardPaperTrader:
                         self.sol_shadow_total_fees += float(t.get("taker_fee_usd", 0.0)) + float(t.get("exit_fee_usd", 0.0))
             self.sol_shadow_cash = SOL_SHADOW_INITIAL_CAPITAL + self.sol_shadow_realized_pnl
     def save_sol_shadow_state(self):
-        """Saves isolated graduation state for SLEEVE_SOL_V392_SHADOW."""
         total_trades = len(self.sol_shadow_trades)
         wins = sum(1 for t in self.sol_shadow_trades if t.get("won"))
         wr = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
@@ -14196,7 +13501,6 @@ class PolymarketForwardPaperTrader:
                 except Exception:
                     pass
     def load_persisted_xrp_shadow_ledger(self):
-        """Loads XRP_SHADOW_LEDGER_FILE idempotently."""
         if XRP_SHADOW_LEDGER_FILE.exists():
             with open(XRP_SHADOW_LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
@@ -14211,7 +13515,6 @@ class PolymarketForwardPaperTrader:
                         self.xrp_shadow_total_fees += float(t.get("taker_fee_usd", 0.0)) + float(t.get("exit_fee_usd", 0.0))
             self.xrp_shadow_cash = XRP_SHADOW_INITIAL_CAPITAL + self.xrp_shadow_realized_pnl
     def save_xrp_shadow_state(self):
-        """Saves isolated graduation state for SLEEVE_XRP_V392_SHADOW."""
         total_trades = len(self.xrp_shadow_trades)
         wins = sum(1 for t in self.xrp_shadow_trades if t.get("won"))
         wr = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
@@ -14251,7 +13554,6 @@ class PolymarketForwardPaperTrader:
                 except Exception:
                     pass
     def _get_live_account_equity(self) -> Optional[float]:
-        """Reads live_harvester_state.json to extract the live wallet's actual total equity."""
         try:
             live_state_file = getattr(self, "live_state_file", DATA_DIR / "live_harvester_state.json")
             if live_state_file.exists():
@@ -14269,10 +13571,6 @@ class PolymarketForwardPaperTrader:
     def _get_latest_telemetry_snapshot(
         self, market_id: str, asset: str = "", min_timestamp_unix: float = 0.0, poll_timeout_sec: float = 0.0
     ) -> Optional[Dict[str, Any]]:
-        """Fast tail search of hourly telemetry to obtain post-latency orderbook snapshot for live triggers.
-        If min_timestamp_unix > 0 and poll_timeout_sec > 0, polls until a snapshot with
-        timestamp_unix >= min_timestamp_unix is written to disk (up to poll_timeout_sec).
-        """
         asset_up = str(asset).upper()
         asset_clean = asset_up if asset_up in ("BTC", "ETH", "SOL", "XRP") else "BTC"
         shm_dir = os.environ.get("PM_FAST_TICK_DIR", "/dev/shm")
@@ -14343,7 +13641,6 @@ class PolymarketForwardPaperTrader:
             pass
         return None
     def replay_existing_data(self):
-        """Replays historical shock data to catch any pending un-settled trades in active markets."""
         if not RESOLUTIONS_FILE.exists() or not SHOCK_FILE.exists():
             return
         resolutions: Dict[str, Dict[str, Any]] = {}
@@ -14399,7 +13696,6 @@ class PolymarketForwardPaperTrader:
     def _evaluate_xrp_shadow_sleeve(self, shock: Dict[str, Any], historical: bool = False) -> bool:
         return self._evaluate_alt_shadow_sleeve(shock, asset_sym="XRP", historical=historical)
     def _evaluate_alt_shadow_sleeve(self, shock: Dict[str, Any], asset_sym: str = "SOL", historical: bool = False) -> bool:
-        """Evaluates isolated SOL / XRP 15m/1h setups (dist>=0.12%, z>=0.70, band_L2>=$15, spread<=6c)."""
         if historical:
             return False
         m_id = str(shock.get("market_id") or "")
@@ -14854,15 +14150,6 @@ class PolymarketForwardPaperTrader:
                   f"Price: {exec_price:.3f} (Slippage: +{adverse_slippage_cents:.2f}¢) | Shares: {shares:.1f} | TTE: {tte/60.0:.1f}m | Dist: {dist_pct:+.2f}% | Fee: ${taker_fee:.3f}", flush=True)
         return True
     def _evaluate_sleeve_2(self, shock: Dict[str, Any], historical: bool = False):
-        """
-        SLEEVE 2: Multi-Asset EXP-304/EXP-315 Add-On (ETH 1h Sweet Spot 0.72-0.85).
-        Invariants:
-          1. Strict Mutual Exclusion: Vetoed if Sleeve 1 holds an open position on this contract.
-          2. Realistic L2 orderbook walking for $50 fixed notional with DepthRatio >= 1.50.
-          3. True 1-hour candle open strike price anchor (spot_at_t0 / (1 + dist/100)).
-          4. Certified EXP-315 dynamic Maker TP curve (+8c at TTE>900s, +18c at TTE<=300s).
-          5. Isolated paper bankroll ($500 initial) and separate ledger/state persistence.
-        """
         if historical:
             return
         m_id = shock.get("market_id")
@@ -15043,16 +14330,8 @@ class PolymarketForwardPaperTrader:
         fee_rate: float = 0.07,
         fee_exponent: float = 1.0,
     ) -> List[Dict[str, Any]]:
-        """
-        Policy A: Zero mid-candle stops or dumps. Hold strictly to 0.99 resting Maker TP or $1.00 expiry.
-        """
         return []
     def check_maker_tp_fills(self, market_id: str, telem: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        Check if resting Maker Take-Profit order has filled on CLOB telemetry,
-        or if Confirmed Opposite-Side Structural Breakout Salvage triggers.
-        Evaluates both Sleeve 1 (99c Maker TP) and Sleeve 2 (EXP-315 Dynamic TP).
-        """
         if (
             market_id not in self.open_trades
             and market_id not in self.sleeve2_open_trades
@@ -15861,11 +15140,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-POLYMARKET LIVE BALANCE & PERFORMANCE INSPECTOR
-==============================================
-Quick CLI tool to monitor live wallet balance, open outcome tokens, and realized PnL.
-"""
 import json
 import os
 import sys
@@ -16056,16 +15330,6 @@ print("=" * 65)
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-POLYMARKET CTF SETTLEMENT & REDEMPTION MONITOR (v1.0.0)
-======================================================
-Audits resolved prediction positions, inspects on-chain CTF Conditional Token
-balances for the Polymarket Deposit Proxy wallet, and reports claimable collateral.
-Addresses:
-  - Conditional Tokens (CTF): 0x4D97DCd97eC945f40cF65F87097ACe5EA0476045
-  - USDC.e (Bridged):         0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174
-  - Polymarket NegRisk CTF:   0xC5d563A36AE78145C45a50134d48A1215220f80a
-"""
 import json
 import logging
 import os
@@ -16095,7 +15359,6 @@ DATA_DIR = PIPELINE_ROOT / "data/polymarket"
 STATE_FILE = DATA_DIR / "live_harvester_state.json"
 from typing import Optional
 def get_token_balance_onchain(funder_address: str, token_id: str) -> Optional[float]:
-    """Queries ERC-1155 balanceOf(account, tokenId) via Polygon RPC."""
     try:
         addr_padded = funder_address.lower().replace("0x", "").zfill(64)
         token_int = int(token_id, 16) if str(token_id).startswith("0x") else int(token_id)
@@ -16209,12 +15472,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-POLYMARKET ACCOUNT ONBOARDING & VERIFICATION UTILITY
-===================================================
-Automates on-chain token allowances and L2 API credential derivation
-for Rabby / EOA wallets on Polygon PoS (Chain ID 137).
-"""
 import json
 import os
 import sys
@@ -16441,18 +15698,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-AUTONOMOUS POST-TRADE FORENSIC AUDITOR (LIVE REAL-MONEY KRAKEN-FINLAND ONLY)
-============================================================================
-1. Queries `kraken-finland:/home/skybullet1987/quant_pipeline/data/polymarket/live_harvester_state.json`
-   for real-money Polymarket trades and `polymarket-live-harvester.service` health.
-2. Automatically marks winning real-money trades (`won == True`) as `PROFIT_OK`.
-3. Surfaces any newly settled losing real-money trades (`won == False`) in `uninspected_losses`.
-4. Provides deterministic CLI actions for the Antigravity Forensic Agent:
-   - `python audit_losing_trades.py --check`
-   - `python audit_losing_trades.py --mark-audited <trade_id> --verdict <EXPECTED_LOSS|BUG_FIXED> --notes "<reason>"`
-   - `python audit_losing_trades.py --redeploy`
-"""
 import argparse
 import json
 import os
@@ -16675,24 +15920,6 @@ if __name__ == "__main__":
 # ==============================================================================
 
 #!/usr/bin/env python3
-"""
-HONEST ZERO-LOOKAHEAD PURGED WALK-FORWARD OPTIMIZER (WFO) — POLYMARKET v3.7
-===========================================================================
-Addresses all historical backtest-to-live parity & domain-selection flaws:
-  1. Official Gamma / Chainlink UMA ground-truth (`verified_gamma_resolutions.json`, 2,199 markets)
-     — zero reliance on recorder's 36s Binance-spot fallback (`60` proven oracle mismatches eliminated).
-  2. Real Finland `+500ms` CLOB execution latency (`424ms` measured median RTT) + `+1000ms` stress test,
-     enforcing `FAK_KILLED_NO_MATCH` when `ask_exec > limit_px` (preserving adverse selection).
-  3. Exact V2 taker fee (`shares * 0.07 * p * (1 - p)`) on every taker leg and `0%` on passive GTC maker legs.
-  4. Real L2 bid-book walking (`vwap_$20` / top-5 bids) on stop/salvage/ratchet exits — ZERO `$0.40` magic floor,
-     plus dense `impulse_response` (`100ms, 250ms, 500ms, 1s, 5s, 30s`) + hourly L2 + `exp306` boundary paths.
-  5. Two-sided book check for passive Maker GTC exits (`bid >= tp_px` with valid spread).
-  6. Strictly causal rolling volatility & de-meaned Coinbase-Binance venue divergence.
-  7. Chronological Purged Walk-Forward Split:
-       Train (50%) -> 2h Purge -> Validation (25%) -> 2h Purge -> Sealed Holdout (25%)
-     Selection uses ONLY Train + Validation + 4 Internal Purged Dev Sub-Folds (worst-split Sharpe/t-stat/PF
-     objective, preventing trade-spam volume bias). Sealed Holdout is evaluated ONCE after selection.
-"""
 # from __future__ import annotations  # (Lifted to top of consolidated bundle)
 import bisect
 import collections
@@ -16722,7 +15949,6 @@ def taker_fee_per_share(px: float, fee_rate: float = FEE_RATE) -> float:
     px_c = max(0.001, min(0.999, px))
     return fee_rate * px_c * (1.0 - px_c)
 def walk_bids_vwap(raw_bids: List[Any], best_bid: float, target_shares: float = 22.0) -> float:
-    """Walks real L2 top-5 bids for `target_shares`; falls back conservatively if depth is thin."""
     if not raw_bids:
         return max(0.0, best_bid - 0.01) if best_bid > 0.02 else best_bid
     rem = target_shares
@@ -17114,10 +16340,6 @@ def simulate_single_trade(cand: Dict[str, Any], cfg: Dict[str, Any], latency_mod
         return None
     return res[0], res[1], res[2]
 def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_mode: str = "500ms") -> Optional[Tuple[float, str, bool, float]]:
-    """
-    Returns (pnl_per_dollar_notional, exit_reason, won_flag, release_ts) or None if filtered/unfilled.
-    Models exact $20 reference ticket mechanics, V2 fees, 2-sided Maker TP, Ratchet, and Salvage.
-    """
     if cand["asset"] not in cfg["assets"]:
         return None
     hz = cand["hz"]
@@ -17440,12 +16662,6 @@ def compute_wfo_dev_score(
     r_vl_1000: Optional[Dict[str, Any]] = None,
     subfold_pnls: Optional[List[float]] = None,
 ) -> float:
-    """
-    Institutional Risk-Adjusted Walk-Forward Objective strictly on Train + Val:
-    - Uses worst-split Sharpe (`min(tr_sharpe, vl_sharpe)`), worst-split capped PF (`min(tr_pf, vl_pf, 3.5)`),
-      and worst-split EV * sqrt(N) (t-stat scaling, preventing low-conviction volume spam from dominating!).
-    - Penalizes worst drawdown and worst wipeout rate heavily.
-    """
     min_sharpe = min(r_tr["sharpe"], r_vl["sharpe"])
     min_pf = min(r_tr["profit_factor"], r_vl["profit_factor"], 3.5)
     min_ev = min(r_tr["ev_per_trade"], r_vl["ev_per_trade"])

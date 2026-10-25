@@ -1327,6 +1327,155 @@ def test_fix16_xrp_and_sol_shadow_sleeves_and_exp316(tmp_path):
         assert xrp_state["winning_trades"] == 1
 
 
+def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
+    """
+    Verifies v3.9.3 Forensic Remediation of LIVE_6081501_1792935724_UP (ETH 9AM ET -$6.80 loss):
+      1. Thin-cushion ETH 1h whipsaw (dist=+0.1285% < 0.15% at TTE=1075.4s, sigma=0.00405) is rejected,
+         while historical WFO ETH 1h setups (dist=+0.2286% >= 0.15%) continue to qualify.
+      2. Salvage unwind evicts exit_oid from pre-cancel open_oids once BOTH cancel_order(is_canceled=True)
+         and post-cancel summary(terminal=True) confirm cancellation, unwinding immediately on Pass #1
+         with a 4c sweep floor (best_b - 0.04) and 0.35s fast retry on 400 FAK zero-match rejections.
+      3. _ThreadLocalClobHttpClient isolates per-thread HTTP/1.1 keep-alive clients (zero shared deque).
+    """
+    import asyncio
+    import threading
+    from unittest.mock import MagicMock
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.polymarket_live_executor import (
+        ExecutionStatus,
+        _ThreadLocalClobHttpClient,
+        install_thread_safe_clob_http_client,
+    )
+
+    # 1. Thread-local HTTP/1.1 client isolation (eliminates deque mutated during iteration + HTTP/2 GOAWAY)
+    dummy_mod = type("DummyHelpers", (), {"_http_client": MagicMock()})()
+    assert install_thread_safe_clob_http_client(dummy_mod) is True
+    assert isinstance(dummy_mod._http_client, _ThreadLocalClobHttpClient)
+    clients = []
+
+    def _grab():
+        clients.append(dummy_mod._http_client._client())
+
+    t1 = threading.Thread(target=_grab)
+    t2 = threading.Thread(target=_grab)
+    t1.start(); t2.start(); t1.join(); t2.join()
+    assert len(clients) == 2 and clients[0] is not clients[1]
+    for c in clients:
+        c.close()
+
+    # 2. Exact replay of LIVE_6081501_1792935724_UP vs valid WFO ETH 1h trade
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", tmp_path / "f17_state.json")
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.RESOLUTIONS_FILE", tmp_path / "f17_res.jsonl")
+    h = PolymarketLiveHarvester(ticket_notional=12.0, dry_run=True, allowed_assets={"BTC", "ETH"})
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = tmp_path / "f17_state.json"
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.executor.get_collateral_balance = lambda *a, **kw: 70.67
+    submitted = []
+    h.executor.execute_live_order = MagicMock(side_effect=lambda **kw: submitted.append(kw))
+
+    real_eth_tok = "100434764618174237135201777197981253576172734064131101154122934005557319214073"
+    now_u = time.time()
+    losing_shock = {
+        "shock_id": "6081501_replay",
+        "market_id": "6081501",
+        "condition_id": "0x6c7e137b9293b4004131cd749fe460eeb669b626ea5b3d9795bffbe491caa527",
+        "title": "Ethereum Up or Down - October 25, 9AM ET",
+        "asset": "ETH",
+        "horizon": "1h",
+        "resolution_source": "https://www.binance.com/en/trade/ETH_USDT",
+        "t0_unix": now_u,
+        "seconds_to_expiry": 1075.4,
+        "expiry_ts": now_u + 1075.4,
+        "candle_sigma": 0.00405,
+        "shock_volume_100ms": 455771.0,
+        "is_40ms_fast_track": True,
+        "shock_direction": "BUY",
+        "shock_ofi": 1.0,
+        "spot_at_t0": 2337.90,
+        "finalized_1h_open": 2334.90,
+        "candle_open_spot": 2334.90,
+        "candle_distance_pct": 0.1285,
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": real_eth_tok,
+                "best_bid": 0.74,
+                "best_ask": 0.76,
+                "spread": 0.02,
+                "age_book_ms": 3.4,
+                "age_ask_ms": 10.9,
+                "age_bid_ms": 3521.5,
+                "obi_l1": 0.463,
+                "raw_top_bids": [[0.74, 150.0], [0.70, 66.0]],
+                "raw_top_asks": [[0.76, 55.0], [0.77, 25.0]],
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(losing_shock))
+    assert len(submitted) == 0, "Thin +0.1285% ETH 1h bounce at TTE=1075s must be rejected!"
+
+    # 3. Single-pass verified cancel + 4c sweep floor + 0.35s fast retry on 400 FAK zero-match
+    exit_oid = "0x0f37be121c4a7bde2e0439b44244fa35c6cb29287923724a23529481d3ad0a24"
+    pos = {
+        "trade_id": "LIVE_6081501_TEST",
+        "market_id": "6081501",
+        "token_id": real_eth_tok,
+        "target_token": "UP",
+        "asset": "ETH",
+        "horizon": "1h",
+        "status": ExecutionStatus.EXIT_RESTING,
+        "exit_order_id": exit_oid,
+        "exit_order_status": "RESTING",
+        "inventory_reconciled": True,
+        "entry_price": 0.7569,
+        "entry_shares": 15.26,
+        "remaining_shares": 15.26,
+        "notional_usd": 11.55,
+        "candle_open_spot": 2334.90,
+        "entry_spot_ref": 2337.90,
+        "candle_sigma": 0.00405,
+        "candle_expiry_ts": now_u + 174.0,
+        "low_bid_detected_ts": now_u - 7.0,
+    }
+    h.active_positions["LIVE_6081501_TEST"] = pos
+    # Pre-cancel open_orders snapshot STILL contains exit_oid (exact live bug!)
+    h._strict_open_orders = lambda: [{"id": exit_oid}]
+    h._get_verified_shm_book = lambda p: {
+        "bids": [{"price": "0.31", "size": "60.0"}],
+        "asks": [{"price": "0.35", "size": "60.0"}],
+    }
+    h.get_reference_spot_price = lambda asset: 2333.90
+    h._wallet_token_balance = MagicMock(return_value=(15.26, h.ONCHAIN_SOURCE))
+    h.executor.cancel_order = MagicMock(return_value={"canceled": [exit_oid], "is_canceled": True, "outcome": "CANCELED"})
+    h.executor.get_order_fill_summary = MagicMock(return_value={
+        "order_id": exit_oid, "status": "CANCELED", "matched": 0.0, "cash": 0.0, "fee": 0.0, "terminal": True,
+    })
+    unwind_calls = []
+
+    def _mock_unwind(**kw):
+        unwind_calls.append(kw)
+        return {
+            "success": False,
+            "orderID": None,
+            "matched_size": 0.0,
+            "retryable": True,
+            "outcome_unknown": False,
+            "error": "PolyApiException[status_code=400, error_message={'error': 'no orders found to match with FAK order'}]",
+        }
+
+    h.executor.execute_unwind_order = _mock_unwind
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(unwind_calls) == 1, "Must dispatch FAK unwind on Pass #1 without 3.9s STOP_CANCEL_PENDING delay!"
+    assert unwind_calls[0]["min_price"] == pytest.approx(0.27)  # 0.31 - 0.04 sweep floor
+    assert pos["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    assert (pos["next_unwind_retry_ts"] - time.time()) <= 0.50
+
+
+
 
 
 

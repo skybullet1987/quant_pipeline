@@ -6,6 +6,7 @@ Purged Walk-Forward Optimizer, forensic auditor, and config/systemd definitions
 into a single unified Python file strictly under 1,000,000 bytes (< 1 MB) with exact TOC line numbers.
 """
 
+import ast
 import io
 import re
 import tokenize
@@ -52,10 +53,35 @@ def transform_module(rel_path: str, code: str) -> str:
     clean_code = _FUTURE_RE.sub(r"# \1  # (Lifted to top of consolidated bundle)", code)
     lines = clean_code.splitlines(keepends=True)
     drop_lines = set()
+    replace_pass: dict[int, str] = {}
+    try:
+        tree = ast.parse(clean_code)
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and node.body:
+                first = node.body[0]
+                if (
+                    isinstance(first, ast.Expr)
+                    and isinstance(getattr(first, "value", None), ast.Constant)
+                    and isinstance(first.value.value, str)
+                ):
+                    s_idx = first.lineno - 1
+                    e_idx = (first.end_lineno or first.lineno) - 1
+                    if len(node.body) == 1 and not isinstance(node, ast.Module):
+                        indent = lines[s_idx][: len(lines[s_idx]) - len(lines[s_idx].lstrip())]
+                        replace_pass[s_idx] = f"{indent}pass\n"
+                        for k in range(s_idx + 1, e_idx + 1):
+                            drop_lines.add(k)
+                    else:
+                        for k in range(s_idx, e_idx + 1):
+                            drop_lines.add(k)
+    except Exception:
+        pass
     inline_strip: dict[int, int] = {}
     for tok in tokenize.generate_tokens(io.StringIO(clean_code).readline):
         if tok.type == tokenize.COMMENT:
             idx = tok.start[0] - 1
+            if idx in drop_lines or idx in replace_pass:
+                continue
             ln = lines[idx]
             if ln.lstrip().startswith("#"):
                 if not _KEEP_COMMENT_RE.search(ln):
@@ -65,6 +91,9 @@ def transform_module(rel_path: str, code: str) -> str:
     out_lines = []
     for i, ln in enumerate(lines):
         if i in drop_lines:
+            continue
+        if i in replace_pass:
+            out_lines.append(replace_pass[i])
             continue
         if i in inline_strip:
             ln = ln[: inline_strip[i]].rstrip() + "\n"
