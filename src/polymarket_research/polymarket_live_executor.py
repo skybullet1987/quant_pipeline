@@ -697,6 +697,7 @@ class PolymarketLiveExecutor:
         self.heartbeat_failures = 0
         self._fee_cache: Dict[str, Tuple[float, float]] = {}
         self._tick_size_cache: Dict[str, float] = {}
+        self._neg_risk_cache: Dict[str, bool] = {}
         self._async_client: Optional[httpx.AsyncClient] = None
         self._thread_local = threading.local()
         self._collateral_cache: Tuple[Optional[float], float] = (None, 0.0)
@@ -831,6 +832,7 @@ class PolymarketLiveExecutor:
             self._tick_size_cache[token_id] = float(tick_size_str)
         except Exception:
             self._tick_size_cache[token_id] = 0.01
+        self._neg_risk_cache[token_id] = bool(neg_risk)
 
         cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
         if cond:
@@ -870,6 +872,30 @@ class PolymarketLiveExecutor:
             except Exception as e:
                 logger.debug(f"[CACHE PREWARM] Warning pre-warming py-clob-client for {token_id}: {e}")
 
+    def get_token_neg_risk(self, token_id: str, explicit_neg_risk: Optional[bool] = None) -> bool:
+        """
+        Resolves and caches whether `token_id` belongs to a Polymarket NegRisk multi-outcome market
+        (e.g. Daily Weather ladders, multi-bucket events) so EIP-712 orders sign against the exact
+        NegRisk CTF Exchange domain instead of poisoning `_ClobClient__neg_risk` with False.
+        """
+        if explicit_neg_risk is not None:
+            val = bool(explicit_neg_risk)
+            if token_id:
+                self._neg_risk_cache[token_id] = val
+                if self.client is not None and hasattr(self.client, "_ClobClient__neg_risk"):
+                    self.client._ClobClient__neg_risk[token_id] = val
+            return val
+        if token_id in self._neg_risk_cache:
+            return self._neg_risk_cache[token_id]
+        if self.client is not None and hasattr(self.client, "get_neg_risk"):
+            try:
+                val = bool(self.client.get_neg_risk(token_id))
+                self._neg_risk_cache[token_id] = val
+                return val
+            except Exception as e:
+                logger.debug(f"Could not query neg_risk from SDK for {token_id}: {e}")
+        return False
+
     def prewarm_order_ladder(
         self,
         token_id: str,
@@ -879,6 +905,7 @@ class PolymarketLiveExecutor:
         fee_rate_bps: int = 0,
         share_deltas: Tuple[int, ...] = (0,),
         exact_shares: Optional[List[int]] = None,
+        neg_risk: Optional[bool] = None,
     ) -> int:
         """
         Pillar 5A / v3.8 Blueprint 4: Pre-signs a ladder of BUY orders for token_id across $0.55-$0.88
@@ -891,7 +918,8 @@ class PolymarketLiveExecutor:
         if price_levels is None:
             price_levels = [round(c / 100.0, 2) for c in range(55, 89)]
 
-        create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+        eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
+        create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
         self.order_ladder_cache.prune_expired()
         count = 0
         for px in price_levels:
@@ -1429,10 +1457,14 @@ class PolymarketLiveExecutor:
                 cash = None
 
         # Order no longer resting on the book
-        no_longer_resting = status in {"MATCHED", "FILLED", "CONFIRMED", "CANCELED", "CANCELLED", "EXPIRED", "REJECTED"} or (orig_size > 0 and matched >= orig_size - 1e-4)
+        no_longer_resting = (
+            status.startswith("CANCEL")
+            or status in {"MATCHED", "FILLED", "CONFIRMED", "EXPIRED", "REJECTED"}
+            or (orig_size > 0 and matched >= orig_size - 1e-4)
+        )
 
         # Terminal status requires either cancellation/expiration/rejection OR authoritative settlement finality
-        is_canceled = status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}
+        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"}
         order_type_str = str(info.get("order_type") or info.get("type") or "GTC").upper()
         if is_canceled:
             terminal = True if (matched <= 1e-6 or is_settled) else False
@@ -1491,11 +1523,138 @@ class PolymarketLiveExecutor:
     # Round 9: verified on-chain redemption receipts (cash conservation)
     # ------------------------------------
     CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+    NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
+    NEG_RISK_WRAPPED_COLLATERAL = "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
+    DEPOSIT_WALLET_FACTORY = "0x00000000000Fb5C9ADea0298D729A0CB3823Cc07"
+    POLY_PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052"
+    RELAYER_V2_URL = "https://relayer-v2.polymarket.com"
 
     @staticmethod
     def _payout_redemption_topic() -> str:
         from eth_utils import keccak
         return "0x" + keccak(text="PayoutRedemption(address,address,bytes32,bytes32,uint256[],uint256)").hex().replace("0x", "")
+
+    @staticmethod
+    def _neg_risk_payout_redemption_topic() -> str:
+        from eth_utils import keccak
+        return "0x" + keccak(text="PayoutRedemption(address,bytes32,uint256[],uint256)").hex().replace("0x", "")
+
+    @staticmethod
+    def build_relayer_builder_headers(
+        api_key: str,
+        secret: str,
+        passphrase: str,
+        method: str,
+        request_path: str,
+        body: Any = None,
+        timestamp: Optional[int] = None,
+    ) -> Dict[str, str]:
+        """
+        Generates exact Polymarket Relayer V2 HMAC headers matching `py-builder-signing-sdk`
+        bit-for-bit (`POLY_BUILDER_API_KEY`, `POLY_BUILDER_TIMESTAMP`, `POLY_BUILDER_PASSPHRASE`,
+        `POLY_BUILDER_SIGNATURE`).
+        """
+        import base64
+        import hashlib
+        import hmac
+
+        ts_str = str(int(timestamp if timestamp is not None else time.time()))
+        raw_secret = base64.urlsafe_b64decode(secret)
+        msg = ts_str + str(method) + str(request_path)
+        if body is not None:
+            body_str = body if isinstance(body, str) else str(body)
+            msg += body_str.replace("'", '"')
+        sig = base64.urlsafe_b64encode(
+            hmac.new(raw_secret, msg.encode("utf-8"), hashlib.sha256).digest()
+        ).decode("utf-8")
+        return {
+            "POLY_BUILDER_API_KEY": api_key,
+            "POLY_BUILDER_TIMESTAMP": ts_str,
+            "POLY_BUILDER_PASSPHRASE": passphrase,
+            "POLY_BUILDER_SIGNATURE": sig,
+        }
+
+    @classmethod
+    def build_deposit_wallet_relayer_batch(
+        cls,
+        *,
+        private_key: str,
+        wallet_address: str,
+        nonce: int,
+        deadline: int,
+        calls: List[Dict[str, str]],
+        chain_id: int = 137,
+    ) -> Dict[str, Any]:
+        """
+        Constructs and EIP-712 signs a `DepositWallet` (`signature_type=3` / `POLY_1271`)
+        `WALLET` batch payload matching Polymarket's `DepositWallet` contract
+        (`Batch(address wallet,uint256 nonce,uint256 deadline,Call[] calls)Call(address target,uint256 value,bytes data)`).
+        """
+        from eth_account import Account
+        from eth_account.messages import encode_typed_data
+        from web3 import Web3
+
+        wallet_cs = Web3.to_checksum_address(wallet_address)
+        signer_cs = Web3.to_checksum_address(Account.from_key(private_key).address)
+        factory_cs = Web3.to_checksum_address(cls.DEPOSIT_WALLET_FACTORY)
+        norm_calls = []
+        typed_calls = []
+        for c in calls:
+            tgt_cs = Web3.to_checksum_address(c["target"])
+            val_str = str(int(c.get("value", "0") or 0))
+            data_hex = str(c["data"]) if str(c["data"]).startswith("0x") else ("0x" + str(c["data"]))
+            norm_calls.append({"target": tgt_cs, "value": val_str, "data": data_hex})
+            typed_calls.append({"target": tgt_cs, "value": int(val_str), "data": bytes.fromhex(data_hex[2:])})
+
+        typed_msg = {
+            "types": {
+                "EIP712Domain": [
+                    {"name": "name", "type": "string"},
+                    {"name": "version", "type": "string"},
+                    {"name": "chainId", "type": "uint256"},
+                    {"name": "verifyingContract", "type": "address"},
+                ],
+                "Call": [
+                    {"name": "target", "type": "address"},
+                    {"name": "value", "type": "uint256"},
+                    {"name": "data", "type": "bytes"},
+                ],
+                "Batch": [
+                    {"name": "wallet", "type": "address"},
+                    {"name": "nonce", "type": "uint256"},
+                    {"name": "deadline", "type": "uint256"},
+                    {"name": "calls", "type": "Call[]"},
+                ],
+            },
+            "primaryType": "Batch",
+            "domain": {
+                "name": "DepositWallet",
+                "version": "1",
+                "chainId": int(chain_id),
+                "verifyingContract": wallet_cs,
+            },
+            "message": {
+                "wallet": wallet_cs,
+                "nonce": int(nonce),
+                "deadline": int(deadline),
+                "calls": typed_calls,
+            },
+        }
+        signable = encode_typed_data(full_message=typed_msg)
+        raw_sig = Account.sign_message(signable, private_key=private_key).signature.hex()
+        sig_hex = raw_sig if raw_sig.startswith("0x") else f"0x{raw_sig}"
+        return {
+            "type": "WALLET",
+            "from": signer_cs,
+            "to": factory_cs,
+            "nonce": str(int(nonce)),
+            "signature": sig_hex,
+            "depositWalletParams": {
+                "depositWallet": wallet_cs,
+                "deadline": str(int(deadline)),
+                "calls": norm_calls,
+            },
+        }
 
     def _rpc(self, method: str, params: list) -> Optional[Any]:
         rpc_url = os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com")
@@ -1520,25 +1679,36 @@ class PolymarketLiveExecutor:
             return None
 
     def parse_payout_redemption_logs(self, logs: List[Dict[str, Any]], condition_id: str) -> List[Dict[str, Any]]:
-        """Extracts this account's PayoutRedemption events for `condition_id` (payout in USD)."""
+        """
+        Extracts this account's PayoutRedemption events for `condition_id` (payout in USD),
+        supporting BOTH standard ConditionalTokens (`CTF_ADDRESS`) AND `NegRiskAdapter`
+        (`NEG_RISK_ADAPTER_ADDRESS`, used by multi-bucket Weather `#1` markets).
+        """
         out = []
-        topic0 = self._payout_redemption_topic().lower()
+        ctf_topic0 = self._payout_redemption_topic().lower()
+        nr_topic0 = self._neg_risk_payout_redemption_topic().lower()
         me = str(self.funder_address or "").lower().replace("0x", "").rjust(64, "0")
         cond = str(condition_id or "").lower().replace("0x", "").rjust(64, "0")
         for lg in logs or []:
             topics = [str(t).lower() for t in (lg.get("topics") or [])]
-            if len(topics) < 2 or topics[0] != topic0:
-                continue
-            if str(lg.get("address", "")).lower() != self.CTF_ADDRESS.lower():
-                continue
-            if topics[1].replace("0x", "").rjust(64, "0") != me:
-                continue
+            addr = str(lg.get("address", "")).lower()
             data = str(lg.get("data", "")).replace("0x", "")
-            if len(data) < 192:
+            if len(topics) >= 2 and topics[0] == ctf_topic0 and addr == self.CTF_ADDRESS.lower():
+                if topics[1].replace("0x", "").rjust(64, "0") != me:
+                    continue
+                if len(data) < 192 or data[0:64] != cond:
+                    continue
+                payout = int(data[128:192], 16) / 1e6
+            elif len(topics) >= 3 and topics[0] == nr_topic0 and addr == self.NEG_RISK_ADAPTER_ADDRESS.lower():
+                if topics[1].replace("0x", "").rjust(64, "0") != me:
+                    continue
+                if topics[2].replace("0x", "").rjust(64, "0") != cond:
+                    continue
+                if len(data) < 128:
+                    continue
+                payout = int(data[64:128], 16) / 1e6
+            else:
                 continue
-            if data[0:64] != cond:
-                continue
-            payout = int(data[128:192], 16) / 1e6
             out.append({
                 "transaction_hash": lg.get("transactionHash"),
                 "block_number": int(str(lg.get("blockNumber", "0x0")), 16) if str(lg.get("blockNumber", "")).startswith("0x") else lg.get("blockNumber"),
@@ -1556,7 +1726,8 @@ class PolymarketLiveExecutor:
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Returns verified PayoutRedemption receipts for this account and condition, either
-        from a specific transaction receipt or by scanning logs from `from_block`.
+        from a specific transaction receipt or by scanning logs from `from_block` across
+        both standard `CTF` and `NegRiskAdapter`.
         None = could not verify (RPC unavailable); [] = verified absence.
         """
         if self.dry_run or not self.funder_address or not condition_id:
@@ -1576,6 +1747,7 @@ class PolymarketLiveExecutor:
         start = int(from_block) if from_block else max(0, head - lookback)
         found: List[Dict[str, Any]] = []
         me_topic = "0x" + str(self.funder_address).lower().replace("0x", "").rjust(64, "0")
+        cond_topic = "0x" + str(condition_id).lower().replace("0x", "").rjust(64, "0")
         cursor = start
         while cursor <= head:
             end = min(head, cursor + chunk_span)
@@ -1588,17 +1760,109 @@ class PolymarketLiveExecutor:
             if logs is None:
                 return None
             found.extend(self.parse_payout_redemption_logs(logs, condition_id))
+            nr_logs = self._rpc("eth_getLogs", [{
+                "address": self.NEG_RISK_ADAPTER_ADDRESS,
+                "fromBlock": hex(cursor),
+                "toBlock": hex(end),
+                "topics": [self._neg_risk_payout_redemption_topic(), me_topic, cond_topic],
+            }])
+            if nr_logs:
+                found.extend(self.parse_payout_redemption_logs(nr_logs, condition_id))
             cursor = end + 1
         return found
 
-    def attempt_onchain_redemption(self, condition_id: str) -> Optional[str]:
-        """Attempts CTF redeemPositions via EOA (sig_type=0) or 1-of-1 Gnosis Safe execTransaction (sig_type in 2,3) when EOA holds >=0.05 POL."""
+    def _submit_deposit_wallet_relayer_redemption(
+        self,
+        *,
+        pk: str,
+        funder_cs: str,
+        nonce: int,
+        calls: List[Dict[str, str]],
+        condition_id: str,
+    ) -> Optional[str]:
+        """
+        Submits a gasless `DepositWallet` (`signature_type=3`) redemption batch to
+        Polymarket's Relayer V2 (`POST /submit`) when Builder API credentials are configured,
+        enforcing a 180s per-condition rate-limit cooldown.
+        """
+        b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
+        b_sec = (os.getenv("POLY_BUILDER_SECRET") or os.getenv("BUILDER_SECRET") or "").strip()
+        b_pass = (os.getenv("POLY_BUILDER_PASSPHRASE") or os.getenv("BUILDER_PASS_PHRASE") or "").strip()
+        if not (b_key and b_sec and b_pass):
+            return None
+
+        cooldown_map = getattr(self, "_relayer_redemption_cooldown", None)
+        if cooldown_map is None:
+            self._relayer_redemption_cooldown = {}
+            cooldown_map = self._relayer_redemption_cooldown
+        now_s = time.time()
+        if (now_s - float(cooldown_map.get(condition_id, 0.0))) < 180.0:
+            return None
+        cooldown_map[condition_id] = now_s
+
+        relayer_base = os.getenv("POLY_RELAYER_URL", self.RELAYER_V2_URL).rstrip("/")
+        deadline = int(now_s) + 300
+        req_dict = self.build_deposit_wallet_relayer_batch(
+            private_key=pk,
+            wallet_address=funder_cs,
+            nonce=nonce,
+            deadline=deadline,
+            calls=calls,
+            chain_id=self.CHAIN_ID,
+        )
+        headers = self.build_relayer_builder_headers(
+            api_key=b_key,
+            secret=b_sec,
+            passphrase=b_pass,
+            method="POST",
+            request_path="/submit",
+            body=req_dict,
+        )
+        session = getattr(self, "_sync_session", requests)
+        resp = session.post(f"{relayer_base}/submit", headers=headers, json=req_dict, timeout=8.0)
+        if resp.status_code != 200:
+            logger.warning(f"[REDEMPTION] Relayer V2 DepositWallet submit HTTP {resp.status_code}: {resp.text[:200]}")
+            return None
+        body = resp.json() if resp.content else {}
+        tx_hash = body.get("transactionHash")
+        tx_id = body.get("transactionID")
+        if not tx_hash and tx_id:
+            for _ in range(3):
+                time.sleep(1.5)
+                tr = session.get(f"{relayer_base}/transaction", params={"id": tx_id}, timeout=5.0)
+                if tr.status_code == 200:
+                    t_list = tr.json()
+                    if isinstance(t_list, list) and t_list:
+                        tx_hash = t_list[0].get("transactionHash")
+                        if tx_hash or t_list[0].get("state") in ("STATE_FAILED", "STATE_INVALID"):
+                            break
+        if tx_hash:
+            return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+        return None
+
+    def attempt_onchain_redemption(self, condition_id: str, *, neg_risk: Optional[bool] = None) -> Optional[str]:
+        """
+        R01 Multi-Wallet & Multi-Adapter Redemption Engine:
+          - Supports BOTH standard `CTF.redeemPositions` (`pUSD` / `USDC.e`) AND
+            `NegRiskAdapter.redeemPositions` (`0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296`, Weather `#1`).
+          - Verifies `CTF.payoutDenominator(conditionId) > 0` before any tx construction.
+          - Supports all 4 Polymarket wallet architectures:
+              * `sig_type == 0`: Direct EOA transaction
+              * `sig_type == 1`: Polymarket Magic/Email Proxy (`ProxyWalletFactory.proxy`)
+              * `sig_type == 2`: 1-of-1 Gnosis Safe (`execTransaction`)
+              * `sig_type == 3`: Polymarket V2 `DepositWallet` (`POLY_1271`) via Relayer V2 `WALLET` batch
+        """
         sig_type = int(getattr(self, "signature_type", 1) or 1)
-        if self.dry_run or not condition_id or sig_type not in (0, 2, 3):
+        if self.dry_run or not condition_id or sig_type not in (0, 1, 2, 3):
             return None
-        if sig_type in (2, 3) and getattr(self, "_funder_is_gnosis_safe", None) is False:
+        b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
+        if sig_type == 3 and not b_key:
+            # DepositWallet (POLY_1271) executes batches via Polymarket Relayer V2; never spam Safe revert RPCs.
+            self._funder_is_gnosis_safe = False
             return None
-        pk = os.getenv("POLYGON_PRIVATE_KEY", "").strip()
+        if sig_type == 2 and getattr(self, "_funder_is_gnosis_safe", None) is False:
+            return None
+        pk = (os.getenv("POLYGON_PRIVATE_KEY") or self.private_key or "").strip()
         if not pk or not self.funder_address:
             return None
         try:
@@ -1606,22 +1870,89 @@ class PolymarketLiveExecutor:
             w3 = Web3(Web3.HTTPProvider(os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"), request_kwargs={"timeout": 5}))
             funder_cs = Web3.to_checksum_address(self.funder_address)
             signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
-            gas_payer_cs = funder_cs if sig_type == 0 else signer_cs
-            if w3.eth.get_balance(gas_payer_cs) < int(0.05 * 1e18):
-                return None
+            if sig_type in (0, 1, 2):
+                gas_payer_cs = funder_cs if sig_type == 0 else signer_cs
+                if w3.eth.get_balance(gas_payer_cs) < int(0.05 * 1e18):
+                    return None
+
             cond_bytes = bytes.fromhex(condition_id.lower().replace("0x", "").rjust(64, "0"))
             ctf_abi = [
                 {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSets", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
                 {"inputs": [{"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSet", "type": "uint256"}], "name": "getCollectionId", "outputs": [{"name": "", "type": "bytes32"}], "stateMutability": "view", "type": "function"},
                 {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "collectionId", "type": "bytes32"}], "name": "getPositionId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "pure", "type": "function"},
                 {"inputs": [{"name": "owner", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "conditionId", "type": "bytes32"}], "name": "payoutDenominator", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+            ]
+            nr_abi = [
+                {"inputs": [{"name": "_conditionId", "type": "bytes32"}, {"name": "_amounts", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
             ]
             ctf_cs = Web3.to_checksum_address(self.CTF_ADDRESS)
             ctf = w3.eth.contract(address=ctf_cs, abi=ctf_abi)
-            safe = None
-            preval_sig = b""
-            zero_cs = Web3.to_checksum_address("0x" + "00" * 20)
-            if sig_type in (2, 3):
+            nr_cs = Web3.to_checksum_address(self.NEG_RISK_ADAPTER_ADDRESS)
+            nr_contract = w3.eth.contract(address=nr_cs, abi=nr_abi)
+
+            # Never submit redemption before oracle payout vector is finalized on-chain
+            try:
+                if int(ctf.functions.payoutDenominator(cond_bytes).call()) <= 0:
+                    return None
+            except Exception:
+                pass
+
+            # Build candidate (target_contract, inner_calldata_hex) calls that hold positive redeemable inventory
+            redeem_targets: List[Tuple[str, str]] = []
+            # 1. Check NegRisk WrappedCollateral positions first when neg_risk is True or unknown
+            if neg_risk is not False:
+                try:
+                    wcol_cs = Web3.to_checksum_address(self.NEG_RISK_WRAPPED_COLLATERAL)
+                    b_yes = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(wcol_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 1).call()).call()).call())
+                    b_no = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(wcol_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call())
+                    if b_yes > 0 or b_no > 0:
+                        nr_hex = (
+                            nr_contract.encode_abi("redeemPositions", args=[cond_bytes, [b_yes, b_no]])
+                            if hasattr(nr_contract, "encode_abi")
+                            else nr_contract.encodeABI(fn_name="redeemPositions", args=[cond_bytes, [b_yes, b_no]])
+                        )
+                        redeem_targets.append((nr_cs, nr_hex))
+                except Exception:
+                    pass
+
+            # 2. Check standard CTF positions (Polymarket V2 pUSD + legacy USDC.e)
+            if neg_risk is not True:
+                for col_hex in (
+                    "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",  # Polymarket V2 Wrapped Collateral (pUSD)
+                    "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # Legacy Polygon Bridged USDC.e
+                ):
+                    try:
+                        col_cs = Web3.to_checksum_address(col_hex)
+                        has_bal = any(
+                            int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, idx).call()).call()).call()) > 0
+                            for idx in (1, 2)
+                        )
+                        if has_bal:
+                            ctf_hex = (
+                                ctf.encode_abi("redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
+                                if hasattr(ctf, "encode_abi")
+                                else ctf.encodeABI(fn_name="redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
+                            )
+                            redeem_targets.append((ctf_cs, ctf_hex))
+                    except Exception:
+                        continue
+
+            if not redeem_targets:
+                return None
+
+            # Route A: sig_type == 3 (DepositWallet via Relayer V2 WALLET batch)
+            if sig_type == 3:
+                dw_abi = [{"inputs": [], "name": "nonce", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}]
+                dw = w3.eth.contract(address=funder_cs, abi=dw_abi)
+                dw_nonce = int(dw.functions.nonce().call())
+                calls_payload = [{"target": tgt, "value": "0", "data": d_hex} for tgt, d_hex in redeem_targets]
+                return self._submit_deposit_wallet_relayer_redemption(
+                    pk=pk, funder_cs=funder_cs, nonce=dw_nonce, calls=calls_payload, condition_id=condition_id
+                )
+
+            # Route B: sig_type == 2 (1-of-1 Gnosis Safe execTransaction)
+            if sig_type == 2:
                 safe_abi = [
                     {"inputs": [], "name": "getThreshold", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
                     {"inputs": [], "name": "getOwners", "outputs": [{"name": "", "type": "address[]"}], "stateMutability": "view", "type": "function"},
@@ -1632,42 +1963,66 @@ class PolymarketLiveExecutor:
                     owners = [Web3.to_checksum_address(o) for o in safe.functions.getOwners().call()]
                     threshold_val = int(safe.functions.getThreshold().call())
                 except Exception:
-                    # R01 / Patch F (v3.9): Custom Polymarket Deposit Beacon Proxy (sig_type=3) is not a Gnosis Safe;
-                    # cache False so we never spam revert RPCs and rely on Polymarket's relayer sweep.
                     self._funder_is_gnosis_safe = False
-                    logger.debug(f"[REDEMPTION] Funder {funder_cs} is a non-Safe proxy (sig_type={sig_type}); skipping direct Safe execTransaction.")
                     return None
                 self._funder_is_gnosis_safe = True
                 if threshold_val != 1 or signer_cs not in owners:
                     return None
+                zero_cs = Web3.to_checksum_address("0x" + "00" * 20)
                 preval_sig = b"\x00" * 12 + bytes.fromhex(signer_cs[2:].lower()) + b"\x00" * 32 + b"\x01"
-            for col_hex in (
-                "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",  # Polymarket V2 Wrapped Collateral (pUSD)
-                "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # Legacy Polygon Bridged USDC.e
-            ):
-                col_cs = Web3.to_checksum_address(col_hex)
-                try:
-                    has_bal = any(
-                        int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, idx).call()).call()).call()) > 0
-                        for idx in (1, 2)
-                    )
-                    if not has_bal:
-                        continue
-                    if sig_type == 0:
-                        ctf.functions.redeemPositions(col_cs, b"\x00" * 32, cond_bytes, [1, 2]).call({"from": funder_cs})
-                        tx = ctf.functions.redeemPositions(col_cs, b"\x00" * 32, cond_bytes, [1, 2]).build_transaction({
-                            "from": funder_cs, "nonce": w3.eth.get_transaction_count(funder_cs, "pending"),
-                            "gas": 220000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-                        })
-                    else:
-                        inner_hex = ctf.encode_abi("redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
+                for tgt_cs, inner_hex in redeem_targets:
+                    try:
                         inner_bytes = bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex)
-                        if not safe.functions.execTransaction(ctf_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).call({"from": signer_cs}):
+                        if not safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).call({"from": signer_cs}):
                             continue
-                        tx = safe.functions.execTransaction(ctf_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).build_transaction({
+                        tx = safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).build_transaction({
                             "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
-                            "gas": 280000, "gasPrice": w3.eth.gas_price, "chainId": 137,
+                            "gas": 300000, "gasPrice": w3.eth.gas_price, "chainId": 137,
                         })
+                        signed = w3.eth.account.sign_transaction(tx, private_key=pk)
+                        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
+                        return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+                    except Exception:
+                        continue
+                return None
+
+            # Route C: sig_type == 1 (PolyProxy via ProxyWalletFactory.proxy)
+            if sig_type == 1:
+                pf_abi = [{
+                    "inputs": [{"components": [{"name": "typeCode", "type": "uint8"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}, {"name": "data", "type": "bytes"}], "name": "calls", "type": "tuple[]"}],
+                    "name": "proxy",
+                    "outputs": [{"name": "returnValues", "type": "bytes[]"}],
+                    "stateMutability": "payable",
+                    "type": "function",
+                }]
+                pf = w3.eth.contract(address=Web3.to_checksum_address(self.POLY_PROXY_FACTORY), abi=pf_abi)
+                tuple_calls = [
+                    (1, tgt_cs, 0, bytes.fromhex(h[2:] if h.startswith("0x") else h))
+                    for tgt_cs, h in redeem_targets
+                ]
+                pf.functions.proxy(tuple_calls).call({"from": signer_cs})
+                tx = pf.functions.proxy(tuple_calls).build_transaction({
+                    "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
+                    "gas": 320000, "gasPrice": w3.eth.gas_price, "chainId": 137,
+                })
+                signed = w3.eth.account.sign_transaction(tx, private_key=pk)
+                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
+                return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+
+            # Route D: sig_type == 0 (Direct EOA)
+            for tgt_cs, inner_hex in redeem_targets:
+                try:
+                    w3.eth.call({"from": funder_cs, "to": tgt_cs, "data": inner_hex})
+                    tx = {
+                        "from": funder_cs,
+                        "to": tgt_cs,
+                        "value": 0,
+                        "data": inner_hex,
+                        "nonce": w3.eth.get_transaction_count(funder_cs, "pending"),
+                        "gas": 250000,
+                        "gasPrice": w3.eth.gas_price,
+                        "chainId": 137,
+                    }
                     signed = w3.eth.account.sign_transaction(tx, private_key=pk)
                     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
                     return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
@@ -2192,12 +2547,15 @@ class PolymarketLiveExecutor:
         min_price_floor: float = MIN_PRICE_FLOOR,
         prefetched_pre_balance: Optional[float] = None,
         prefetched_book: Optional[Dict[str, Any]] = None,
+        neg_risk: Optional[bool] = None,
     ) -> OrderResult:
         """
         Executes a directional latency snipe with pre-trade risk and depth assertions.
         """
         t0 = time.perf_counter()
         now_utc = datetime.now(timezone.utc).isoformat()
+        if neg_risk is not None:
+            self.get_token_neg_risk(token_id, neg_risk)
 
         # Enforce finite validation and ticket cap (defaults to $37.50 unless max_ticket_cap configured)
         try:
@@ -2241,7 +2599,7 @@ class PolymarketLiveExecutor:
             side=side,
             depth_hurdle_ratio=depth_hurdle,
             max_price_ceiling=max_price_ceiling,
-            min_price_floor=MIN_PRICE_FLOOR,
+            min_price_floor=min_price_floor,
             return_adjusted=True,
             min_lot_size=MIN_LOT_SIZE_USD,
             max_ticket_size=ticket_ceiling,
@@ -2483,8 +2841,14 @@ class PolymarketLiveExecutor:
             f_rate, f_exp = 0.07, 1.0
 
         if not self.dry_run:
-            if not (math.isfinite(f_rate) and f_rate >= 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
-                err = f"AuthoritativeFeeGuard Rejected: Non-finite or non-positive fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
+            valid_fee = (
+                math.isfinite(f_rate)
+                and f_rate >= 0.0
+                and math.isfinite(f_exp)
+                and (f_exp > 0.0 or (f_rate == 0.0 and f_exp >= 0.0))
+            )
+            if not valid_fee:
+                err = f"AuthoritativeFeeGuard Rejected: Non-finite or invalid fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
                 logger.error(f"[{trade_id}] {err}")
                 return OrderResult(
                     success=False,
@@ -2582,16 +2946,17 @@ class PolymarketLiveExecutor:
                 self._tick_size_cache[token_id] = 0.01
 
             fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
+            eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
             self.prewarm_token_market_cache(
                 token_id=token_id,
                 tick_size=tick_size_str,
-                neg_risk=False,
+                neg_risk=eff_neg_risk,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
                 fee_rate=f_rate,
                 fee_exponent=f_exp,
             )
-            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
 
             # v3.3 Single-Hop Sign + Post (pre-signed ladder take or cold sign, then post_order defer_exec=True)
             dispatch_stage: Dict[str, Any] = {"submitted": False}
@@ -2739,7 +3104,7 @@ class PolymarketLiveExecutor:
             making_amt = post_resp.get("makingAmount")
             taking_amt = post_resp.get("takingAmount")
 
-            if resp_status in {"UNMATCHED", "CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}:
+            if resp_status.startswith("CANCEL") or resp_status in {"UNMATCHED", "EXPIRED", "REJECTED"}:
                 res = OrderResult(
                     success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
                     side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
@@ -2951,6 +3316,7 @@ class PolymarketLiveExecutor:
         prefetched_book: Optional[Dict[str, Any]] = None,
         prefetched_pre_balance: Optional[float] = None,
         min_price_floor: float = MIN_PRICE_FLOOR,
+        neg_risk: Optional[bool] = None,
     ) -> OrderResult:
         """
         P0: Fully asynchronous, non-blocking EIP-712 order dispatcher.
@@ -2959,6 +3325,8 @@ class PolymarketLiveExecutor:
         """
         t0 = time.perf_counter()
         now_utc = datetime.now(timezone.utc).isoformat()
+        if neg_risk is not None:
+            self.get_token_neg_risk(token_id, neg_risk)
 
         # Enforce finite validation and ticket cap (defaults to $37.50 unless max_ticket_cap configured)
         try:
@@ -3004,7 +3372,7 @@ class PolymarketLiveExecutor:
             side=side,
             depth_hurdle_ratio=depth_hurdle,
             max_price_ceiling=max_price_ceiling,
-            min_price_floor=MIN_PRICE_FLOOR,
+            min_price_floor=min_price_floor,
             return_adjusted=True,
             min_lot_size=MIN_LOT_SIZE_USD,
             max_ticket_size=ticket_ceiling,
@@ -3233,8 +3601,14 @@ class PolymarketLiveExecutor:
             f_rate, f_exp = 0.07, 1.0
 
         if not self.dry_run:
-            if not (math.isfinite(f_rate) and f_rate >= 0.0 and math.isfinite(f_exp) and f_exp > 0.0):
-                err = f"AuthoritativeFeeGuard Rejected: Non-finite or non-positive fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
+            valid_fee = (
+                math.isfinite(f_rate)
+                and f_rate >= 0.0
+                and math.isfinite(f_exp)
+                and (f_exp > 0.0 or (f_rate == 0.0 and f_exp >= 0.0))
+            )
+            if not valid_fee:
+                err = f"AuthoritativeFeeGuard Rejected: Non-finite or invalid fee parameters (rate={f_rate}, exp={f_exp}) for {cid}."
                 logger.error(f"[{trade_id}] {err}")
                 return OrderResult(
                     success=False,
@@ -3323,17 +3697,20 @@ class PolymarketLiveExecutor:
 
             t_sign_start = time.perf_counter()
             tick_size_str = str(self.get_token_tick_size(token_id) or "0.01")
+            if neg_risk is None and token_id not in self._neg_risk_cache and not self.dry_run:
+                await asyncio.to_thread(self.get_token_neg_risk, token_id)
             fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
+            eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
             self.prewarm_token_market_cache(
                 token_id=token_id,
                 tick_size=tick_size_str,
-                neg_risk=False,
+                neg_risk=eff_neg_risk,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
                 fee_rate=f_rate,
                 fee_exponent=f_exp,
             )
-            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=False, version=2) if PartialCreateOrderOptions else None
+            create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
 
             # v3.3 Single-Hop Sign + Post: ONE asyncio.to_thread hop for ladder take / cold sign + post_order(defer_exec=True)
             dispatch_stage: Dict[str, Any] = {"submitted": False}
@@ -3485,7 +3862,7 @@ class PolymarketLiveExecutor:
             resp_status = str(post_resp.get("status") or "").upper()
             making_amt = post_resp.get("makingAmount")
             taking_amt = post_resp.get("takingAmount")
-            if resp_status in {"UNMATCHED", "CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}:
+            if resp_status.startswith("CANCEL") or resp_status in {"UNMATCHED", "EXPIRED", "REJECTED"}:
                 res = OrderResult(
                     success=False, order_id=order_id, trade_id=trade_id, token_id=token_id, target_token=target_token,
                     side=side, price=best_px, size=0.0, notional_usd=0.0, fee_usd=0.0, latency_ms=latency_ms,
@@ -3711,12 +4088,393 @@ class PolymarketLiveExecutor:
         q = max(tick, min(Decimal("1") - tick, q))
         return float(q)
 
+    def post_maker_entry_order(
+        self,
+        token_id: str,
+        price: float,
+        notional_usd: float,
+        side: str = "BUY",
+        neg_risk: Optional[bool] = None,
+        min_price_floor: float = 0.02,
+        max_price_ceiling: float = 0.96,
+    ) -> Dict[str, Any]:
+        """
+        Posts a passive 0%-fee resting Maker entry order (`post_only=True`, `OrderType.GTC`,
+        `defer_exec=True`) for non-HFT Alpha sleeves (`M1_SVI_MAKER_SCALP`, `W2_ENSEMBLE_VALUE`).
+        Enforces whole-integer share quantization (guaranteed EIP-712 makerAmount accuracy),
+        Polymarket CLOB >= 5 share minimum resting lot, NegRisk domain awareness, and sign-lock safety.
+        """
+        try:
+            notional_f = float(notional_usd)
+            price_f = float(price)
+        except (TypeError, ValueError):
+            return {"success": False, "orderID": None, "error": "INVALID_MAKER_ENTRY_INPUTS", "retryable": False}
+        if not math.isfinite(notional_f) or notional_f <= 0 or not math.isfinite(price_f) or price_f <= 0:
+            return {"success": False, "orderID": None, "error": "NON_POSITIVE_MAKER_ENTRY_INPUTS", "retryable": False}
+
+        quantized_price = self.quantize_order_price(price_f, token_id, rounding=ROUND_FLOOR)
+        if quantized_price < min_price_floor or quantized_price > max_price_ceiling:
+            return {
+                "success": False,
+                "orderID": None,
+                "error": f"MAKER_ENTRY_PRICE_OUT_OF_BOUNDS ({quantized_price:.4f} not in [{min_price_floor:.2f}, {max_price_ceiling:.2f}])",
+                "retryable": False,
+            }
+
+        shares_int = float(math.floor(notional_f / quantized_price))
+        if shares_int < 5.0:
+            return {
+                "success": False,
+                "orderID": None,
+                "error": f"MAKER_ENTRY_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares at ${quantized_price:.4f})",
+                "retryable": False,
+            }
+
+        if self.dry_run:
+            if neg_risk is not None:
+                self.get_token_neg_risk(token_id, neg_risk)
+            mock_id = f"MOCK_MAKER_ENTRY_{int(time.time()*1000)}"
+            logger.info(
+                f"[DRY-RUN MAKER ENTRY] Resting {side} post_only GTC: {shares_int:.0f} shares @ ${quantized_price:.4f} "
+                f"(notional=${shares_int * quantized_price:.2f}, ID={mock_id})"
+            )
+            return {
+                "success": True,
+                "orderID": mock_id,
+                "mode": "DRY_RUN",
+                "post_only": True,
+                "price": quantized_price,
+                "shares": shares_int,
+                "notional_usd": round(shares_int * quantized_price, 4),
+            }
+
+        if not self.is_authenticated or self.client is None or OrderArgsV2 is None:
+            raise RuntimeError(f"LIVE MAKER ENTRY REFUSED: Executor unauthenticated ({self.auth_mode}).")
+
+        order_submitted = False
+        try:
+            tick_sz = self.get_token_tick_size(token_id)
+            eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
+            create_opts = (
+                PartialCreateOrderOptions(tick_size=str(tick_sz), neg_risk=eff_neg_risk, version=2)
+                if PartialCreateOrderOptions
+                else None
+            )
+            order_args = OrderArgsV2(price=quantized_price, size=shares_int, side=side, token_id=token_id)
+            with _UrgentSignPriority():
+                signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
+            order_submitted = True
+            resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
+            has_err = resp.get("errorMsg") or resp.get("error")
+            order_id = resp.get("orderID") or resp.get("id")
+            if has_err and order_id:
+                return {
+                    "success": False,
+                    "orderID": order_id,
+                    "outcome_unknown": True,
+                    "retryable": False,
+                    "error": f"CONTRADICTORY_MAKER_ENTRY_RESPONSE: {has_err}",
+                    "raw": resp,
+                }
+            if has_err:
+                return {
+                    "success": False,
+                    "orderID": None,
+                    "outcome_unknown": False,
+                    "retryable": True,
+                    "error": str(has_err),
+                    "raw": resp,
+                }
+            if order_id:
+                logger.info(
+                    f"[LIVE MAKER ENTRY POSTED] OID={order_id} | {side} {shares_int:.0f} shares @ ${quantized_price:.4f} (neg_risk={eff_neg_risk})"
+                )
+                return {
+                    "success": True,
+                    "orderID": order_id,
+                    "post_only": True,
+                    "price": quantized_price,
+                    "shares": shares_int,
+                    "notional_usd": round(shares_int * quantized_price, 4),
+                    "raw": resp,
+                }
+            return {
+                "success": False,
+                "orderID": None,
+                "outcome_unknown": True,
+                "retryable": False,
+                "error": "MISSING_ORDER_ID_IN_MAKER_ENTRY",
+                "raw": resp,
+            }
+        except Exception as e:
+            err_msg = str(getattr(e, "error_message", "") or str(e))
+            is_client_err = is_clob_400_rejection(e) or any(
+                k in err_msg.lower() for k in ("crosses book", "post only", "post-only", "not enough balance", "allowance")
+            )
+            return {
+                "success": False,
+                "orderID": None,
+                "outcome_unknown": bool(order_submitted and not is_client_err),
+                "retryable": bool(not order_submitted or is_client_err),
+                "error": err_msg,
+            }
+
+    def execute_atomic_dominance_box(
+        self,
+        box_id: str,
+        leg_a_token_id: str,
+        leg_a_label: str,
+        leg_a_limit_price: float,
+        leg_b_token_id: str,
+        leg_b_label: str,
+        leg_b_limit_price: float,
+        shares: float,
+        max_box_cost_net: float = 0.995,
+        fee_rate: float = 0.07,
+        fee_exponent: float = 1.0,
+        leg_a_avail_shares: Optional[float] = None,
+        leg_b_avail_shares: Optional[float] = None,
+        neg_risk: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Executes a 2-leg equal-share Same-Oracle Dominance Box (`D1_SAME_ORACLE_DOMINANCE_BOX`)
+        with pre-signed back-to-back FOK execution (thinner leg first -> 0ms signing gap -> second leg)
+        and automatic emergency Leg-1 unwind if Leg 2 FOK-rejects cleanly.
+        """
+        try:
+            px_a_in = float(leg_a_limit_price)
+            px_b_in = float(leg_b_limit_price)
+            shares_in = float(shares)
+            cap_in = float(max_box_cost_net)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "INVALID_BOX_INPUTS", "legged_out": False, "outcome_unknown": False}
+
+        if (
+            not leg_a_token_id
+            or not leg_b_token_id
+            or str(leg_a_token_id) == str(leg_b_token_id)
+            or not math.isfinite(px_a_in)
+            or not math.isfinite(px_b_in)
+            or not math.isfinite(shares_in)
+            or px_a_in <= 0.0
+            or px_b_in <= 0.0
+        ):
+            return {"success": False, "error": "INVALID_BOX_TOKENS_OR_PRICES", "legged_out": False, "outcome_unknown": False}
+
+        shares_int = float(math.floor(shares_in))
+        if shares_int < 5.0:
+            return {
+                "success": False,
+                "error": f"BOX_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares)",
+                "legged_out": False,
+                "outcome_unknown": False,
+            }
+
+        px_a = self.quantize_order_price(px_a_in, leg_a_token_id, rounding=ROUND_CEILING)
+        px_b = self.quantize_order_price(px_b_in, leg_b_token_id, rounding=ROUND_CEILING)
+        fee_a_ps = float(fee_rate) * ((px_a * (1.0 - px_a)) ** float(fee_exponent)) if fee_rate > 0 else 0.0
+        fee_b_ps = float(fee_rate) * ((px_b * (1.0 - px_b)) ** float(fee_exponent)) if fee_rate > 0 else 0.0
+        worst_box_cost_net = round(px_a + fee_a_ps + px_b + fee_b_ps, 6)
+
+        if worst_box_cost_net > cap_in + 1e-6:
+            return {
+                "success": False,
+                "error": f"WORST_LIMIT_BOX_COST_EXCEEDS_CAP ({worst_box_cost_net:.5f} > {cap_in:.5f})",
+                "worst_box_cost_net": worst_box_cost_net,
+                "legged_out": False,
+                "outcome_unknown": False,
+            }
+
+        # Dispatch thinner leg first so any liquidity miss FOK-kills on Leg 1 with zero naked exposure
+        b_thinner = (
+            leg_a_avail_shares is not None
+            and leg_b_avail_shares is not None
+            and float(leg_b_avail_shares) < float(leg_a_avail_shares)
+        )
+        if b_thinner:
+            legs = [
+                (leg_b_token_id, leg_b_label, px_b, fee_b_ps),
+                (leg_a_token_id, leg_a_label, px_a, fee_a_ps),
+            ]
+        else:
+            legs = [
+                (leg_a_token_id, leg_a_label, px_a, fee_a_ps),
+                (leg_b_token_id, leg_b_label, px_b, fee_b_ps),
+            ]
+
+        if self.dry_run:
+            self.get_token_neg_risk(leg_a_token_id, neg_risk)
+            self.get_token_neg_risk(leg_b_token_id, neg_risk)
+            ts_ms = int(time.time() * 1000)
+            return {
+                "success": True,
+                "mode": "DRY_RUN",
+                "box_id": box_id,
+                "shares": shares_int,
+                "worst_box_cost_net": worst_box_cost_net,
+                "guaranteed_min_profit_usd": round(shares_int * (1.0 - worst_box_cost_net), 4),
+                "legged_out": False,
+                "outcome_unknown": False,
+                "leg_1": {"label": legs[0][1], "token_id": legs[0][0], "price": legs[0][2], "orderID": f"MOCK_BOX_L1_{ts_ms}"},
+                "leg_2": {"label": legs[1][1], "token_id": legs[1][0], "price": legs[1][2], "orderID": f"MOCK_BOX_L2_{ts_ms}"},
+            }
+
+        if not self.is_authenticated or self.client is None or OrderArgsV2 is None:
+            raise RuntimeError(f"LIVE DOMINANCE BOX REFUSED: Executor unauthenticated ({self.auth_mode}).")
+
+        (tok_1, lbl_1, px_1, _), (tok_2, lbl_2, px_2, _) = legs
+        tick_1 = self.get_token_tick_size(tok_1)
+        tick_2 = self.get_token_tick_size(tok_2)
+        nr_1 = self.get_token_neg_risk(tok_1, neg_risk)
+        nr_2 = self.get_token_neg_risk(tok_2, neg_risk)
+        opts_1 = PartialCreateOrderOptions(tick_size=str(tick_1), neg_risk=nr_1, version=2) if PartialCreateOrderOptions else None
+        opts_2 = PartialCreateOrderOptions(tick_size=str(tick_2), neg_risk=nr_2, version=2) if PartialCreateOrderOptions else None
+
+        # Pre-sign BOTH FOK legs in RAM before sending Leg 1 so Leg 1 -> Leg 2 gap has 0ms signing overhead
+        with _UrgentSignPriority():
+            signed_1 = _safe_create_order(
+                self.client.create_order,
+                OrderArgsV2(price=px_1, size=shares_int, side="BUY", token_id=tok_1),
+                opts_1,
+            )
+            signed_2 = _safe_create_order(
+                self.client.create_order,
+                OrderArgsV2(price=px_2, size=shares_int, side="BUY", token_id=tok_2),
+                opts_2,
+            )
+
+        # Leg 1 FOK submission
+        leg1_submitted = False
+        try:
+            leg1_submitted = True
+            resp_1 = self.client.post_order(signed_1, OrderType.FOK)
+        except Exception as e1:
+            err_1 = str(getattr(e1, "error_message", "") or str(e1))
+            is_clean_400 = is_clob_400_rejection(e1) or any(
+                k in err_1.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
+            )
+            return {
+                "success": False,
+                "stage": "LEG_1_EXCEPTION",
+                "legged_out": False,
+                "outcome_unknown": bool(leg1_submitted and not is_clean_400),
+                "error": err_1,
+            }
+
+        err_1 = resp_1.get("errorMsg") or resp_1.get("error")
+        oid_1 = resp_1.get("orderID") or resp_1.get("id")
+        if err_1 and not oid_1:
+            return {
+                "success": False,
+                "stage": "LEG_1_REJECTED",
+                "legged_out": False,
+                "outcome_unknown": False,
+                "error": str(err_1),
+                "raw_leg_1": resp_1,
+            }
+        if err_1 or not oid_1:
+            return {
+                "success": False,
+                "stage": "LEG_1_UNKNOWN",
+                "legged_out": False,
+                "outcome_unknown": True,
+                "leg_1_order_id": oid_1,
+                "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}",
+                "raw_leg_1": resp_1,
+            }
+
+        # Leg 2 FOK submission (immediate pre-signed dispatch)
+        leg2_submitted = False
+        try:
+            leg2_submitted = True
+            resp_2 = self.client.post_order(signed_2, OrderType.FOK)
+        except Exception as e2:
+            err_2 = str(getattr(e2, "error_message", "") or str(e2))
+            is_clean_400 = is_clob_400_rejection(e2) or any(
+                k in err_2.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
+            )
+            if not is_clean_400:
+                return {
+                    "success": False,
+                    "stage": "LEG_2_UNKNOWN",
+                    "legged_out": True,
+                    "outcome_unknown": True,
+                    "leg_1_order_id": oid_1,
+                    "error": err_2,
+                }
+            unwind_res = self.execute_unwind_order(
+                tok_1,
+                size=shares_int,
+                side="SELL",
+                min_price=max(0.01, round(px_1 * 0.85, 2)),
+                neg_risk=nr_1,
+            )
+            return {
+                "success": False,
+                "stage": "LEG_2_REJECTED_UNWOUND",
+                "legged_out": True,
+                "outcome_unknown": False,
+                "leg_1_order_id": oid_1,
+                "unwind_result": unwind_res,
+                "error": err_2,
+            }
+
+        err_2 = resp_2.get("errorMsg") or resp_2.get("error")
+        oid_2 = resp_2.get("orderID") or resp_2.get("id")
+        if not err_2 and oid_2:
+            logger.info(
+                f"[LIVE DOMINANCE BOX FILLED] {box_id} | {shares_int:.0f} pairs @ worst_net=${worst_box_cost_net:.4f} "
+                f"({lbl_1}={oid_1}, {lbl_2}={oid_2})"
+            )
+            return {
+                "success": True,
+                "box_id": box_id,
+                "shares": shares_int,
+                "worst_box_cost_net": worst_box_cost_net,
+                "guaranteed_min_profit_usd": round(shares_int * (1.0 - worst_box_cost_net), 4),
+                "legged_out": False,
+                "outcome_unknown": False,
+                "leg_1": {"label": lbl_1, "token_id": tok_1, "price": px_1, "orderID": oid_1, "raw": resp_1},
+                "leg_2": {"label": lbl_2, "token_id": tok_2, "price": px_2, "orderID": oid_2, "raw": resp_2},
+            }
+
+        if err_2 and not oid_2:
+            unwind_res = self.execute_unwind_order(
+                tok_1,
+                size=shares_int,
+                side="SELL",
+                min_price=max(0.01, round(px_1 * 0.85, 2)),
+                neg_risk=nr_1,
+            )
+            return {
+                "success": False,
+                "stage": "LEG_2_REJECTED_UNWOUND",
+                "legged_out": True,
+                "outcome_unknown": False,
+                "leg_1_order_id": oid_1,
+                "unwind_result": unwind_res,
+                "error": str(err_2),
+                "raw_leg_2": resp_2,
+            }
+
+        return {
+            "success": False,
+            "stage": "LEG_2_UNKNOWN",
+            "legged_out": True,
+            "outcome_unknown": True,
+            "leg_1_order_id": oid_1,
+            "leg_2_order_id": oid_2,
+            "error": f"AMBIGUOUS_LEG_2_RESPONSE: {err_2 or 'missing orderID'}",
+            "raw_leg_2": resp_2,
+        }
+
     def post_maker_exit_order(
         self,
         token_id: str,
         price: float,
         size: float,
         side: str = "SELL",
+        neg_risk: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Posts a resting maker scalp limit order with post_only=True and defer_exec=True.
@@ -3767,6 +4525,13 @@ class PolymarketLiveExecutor:
         try:
             # Dynamically quantize price to token-specific tick size (ceiling rounding for maker sell)
             quantized_price = self.quantize_order_price(price, token_id, rounding=ROUND_CEILING)
+            tick_sz = self.get_token_tick_size(token_id)
+            eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
+            create_opts = (
+                PartialCreateOrderOptions(tick_size=str(tick_sz), neg_risk=eff_neg_risk, version=2)
+                if PartialCreateOrderOptions
+                else None
+            )
 
             order_args = OrderArgsV2(
                 price=quantized_price,
@@ -3774,7 +4539,8 @@ class PolymarketLiveExecutor:
                 side=side,
                 token_id=token_id,
             )
-            signed_order = self.client.create_order(order_args)
+            with _UrgentSignPriority():
+                signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
             # Enforce post_only=True and defer_exec=True to guarantee non-blocking maker status
             order_submitted = True
             resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
@@ -3799,13 +4565,14 @@ class PolymarketLiveExecutor:
                         bk = self.get_market_book(token_id)
                         b_list = bk.get("bids", []) if isinstance(bk, dict) else []
                         best_b = max((float(b.get("price", 0.0)) for b in b_list if float(b.get("size", 0.0)) > 0), default=0.0)
-                        tick_sz = self.get_token_tick_size(token_id)
+                        max_valid_px = float(Decimal("1") - Decimal(str(tick_sz)))
                         if best_b >= quantized_price:
-                            improved_px = self.quantize_order_price(min(0.99, best_b + tick_sz), token_id, rounding=ROUND_CEILING)
+                            improved_px = self.quantize_order_price(min(max_valid_px, best_b + tick_sz), token_id, rounding=ROUND_CEILING)
                             if improved_px > quantized_price:
                                 logger.info(f"[POST-ONLY PRICE IMPROVEMENT] Best bid ${best_b:.4f} >= target ${quantized_price:.4f}. Repricing maker sell to ${improved_px:.4f}!")
                                 order_args_2 = OrderArgsV2(price=improved_px, size=quantized_size, side=side, token_id=token_id)
-                                signed_2 = self.client.create_order(order_args_2)
+                                with _UrgentSignPriority():
+                                    signed_2 = _safe_create_order(self.client.create_order, order_args_2, create_opts)
                                 resp_2 = self.client.post_order(signed_2, OrderType.GTC, post_only=True, defer_exec=True)
                                 oid_2 = resp_2.get("orderID") or resp_2.get("id")
                                 if oid_2 and not (resp_2.get("errorMsg") or resp_2.get("error")):
@@ -3860,6 +4627,7 @@ class PolymarketLiveExecutor:
         size: float,
         side: str = "SELL",
         min_price: float = 0.01,
+        neg_risk: Optional[bool] = None,
     ) -> Dict[str, Any]:
         """
         Executes an immediate aggressive FOK sell order on the CLOB matching engine.
@@ -3925,6 +4693,13 @@ class PolymarketLiveExecutor:
 
             # Dynamically quantize price to token-specific tick size (floor rounding for aggressive sell)
             quantized_price = self.quantize_order_price(min_price, token_id, rounding=ROUND_FLOOR)
+            tick_sz = self.get_token_tick_size(token_id)
+            eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
+            create_opts = (
+                PartialCreateOrderOptions(tick_size=str(tick_sz), neg_risk=eff_neg_risk, version=2)
+                if PartialCreateOrderOptions
+                else None
+            )
 
             order_args = OrderArgsV2(
                 price=quantized_price,
@@ -3934,7 +4709,7 @@ class PolymarketLiveExecutor:
             )
             t_u0 = time.perf_counter()
             with _UrgentSignPriority():
-                signed_order = self.client.create_order(order_args)
+                signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
             # Default to FAK (Fill-and-Kill / IOC) for aggressive unwinds to match available book depth
             # and cancel remainder, with defer_exec=True so SDK never blocks on tx-hash polling
             selected_order_type = getattr(OrderType, "FAK", OrderType.FOK)
@@ -4056,7 +4831,8 @@ class PolymarketLiveExecutor:
                 }
             else:
                 is_terminal_rejection = (
-                    status_str in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED", "UNMATCHED"}
+                    status_str.startswith("CANCEL")
+                    or status_str in {"EXPIRED", "REJECTED", "UNMATCHED"}
                     or is_fak_killed_no_match(None, resp)
                     or is_clob_400_rejection(None, resp)
                 )
@@ -4215,7 +4991,7 @@ class PolymarketLiveExecutor:
                     matched=matched,
                     raw=res,
                 )
-            elif status in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"} or (
+            elif status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (
                 is_in_canceled_list and (self.dry_run or order_info is not None)
             ):
                 if matched > 0.0 and orig_size > 0.0 and matched < orig_size:

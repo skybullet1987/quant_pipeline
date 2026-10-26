@@ -23,7 +23,10 @@ import time
 from collections import defaultdict
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_FLOOR
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None  # type: ignore
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -1339,6 +1342,8 @@ class PolymarketLiveHarvester:
                 "spot": spot_px,
                 "up_a": up_a,
                 "dn_a": dn_a,
+                "up_asks": [{"price": float(p), "size": float(s)} for p, s in up_asks if float(p) > 0 and float(s) > 0],
+                "dn_asks": [{"price": float(p), "size": float(s)} for p, s in dn_asks if float(p) > 0 and float(s) > 0],
                 "up_l1_usd": up_l1_usd,
                 "dn_l1_usd": dn_l1_usd,
             }
@@ -1352,28 +1357,45 @@ class PolymarketLiveHarvester:
                 return
 
             if k15 < k1h:
-                leg1_lbl, leg1_px, leg1_depth = "UP_15M", s15["up_a"], s15["up_l1_usd"]
-                leg2_lbl, leg2_px, leg2_depth = "DOWN_1H", s1h["dn_a"], s1h["dn_l1_usd"]
+                leg1_lbl, leg1_px, leg1_depth, leg1_asks = "UP_15M", s15["up_a"], s15["up_l1_usd"], s15.get("up_asks") or []
+                leg2_lbl, leg2_px, leg2_depth, leg2_asks = "DOWN_1H", s1h["dn_a"], s1h["dn_l1_usd"], s1h.get("dn_asks") or []
                 k_low, k_high = k15, k1h
             else:
-                leg1_lbl, leg1_px, leg1_depth = "UP_1H", s1h["up_a"], s1h["up_l1_usd"]
-                leg2_lbl, leg2_px, leg2_depth = "DOWN_15M", s15["dn_a"], s15["dn_l1_usd"]
+                leg1_lbl, leg1_px, leg1_depth, leg1_asks = "UP_1H", s1h["up_a"], s1h["up_l1_usd"], s1h.get("up_asks") or []
+                leg2_lbl, leg2_px, leg2_depth, leg2_asks = "DOWN_15M", s15["dn_a"], s15["dn_l1_usd"], s15.get("dn_asks") or []
                 k_low, k_high = k1h, k15
 
-            c_taker = (leg1_px + 0.07 * leg1_px * (1.0 - leg1_px)) + (leg2_px + 0.07 * leg2_px * (1.0 - leg2_px))
+            from src.polymarket_research.same_oracle_dominance_box import walk_equal_shares_dominance_box
+            walk_res = walk_equal_shares_dominance_box(
+                leg1_asks,
+                leg2_asks,
+                target_budget_usd=25.0,
+                fee_rate_a=0.07,
+                fee_rate_b=0.07,
+                max_box_cost_net=1.08,
+                min_shares=8,
+                min_box_notional_usd=7.0,
+            )
+            if not walk_res.get("filled"):
+                return
+
+            c_taker = float(walk_res["box_cost_net"])
+            leg1_w = walk_res["leg_a_walk"]
+            leg2_w = walk_res["leg_b_walk"]
             m1, m2 = max(0.01, leg1_px - 0.01), max(0.01, leg2_px - 0.01)
             c_maker = (m1 - 0.014 * m1 * (1.0 - m1)) + (m2 - 0.014 * m2 * (1.0 - m2))
             in_corridor = (k_low <= spot_px <= k_high)
-            min_leg_depth_usd = round(min(leg1_depth, leg2_depth), 2)
+            min_leg_depth_usd = round(min(float(leg1_depth), float(leg2_depth)), 2)
             corridor_width_pct = round((k_high - k_low) / k_low * 100.0, 4)
-            # v3.9.2 Cross-Oracle Safety: 15m settles on Chainlink USD 60s TWAP while 1h settles on Binance USDT close
-            # (5-20 bps natural basis gap); require >= 0.25% corridor width + >= $20 L1 depth on both legs for corridor boxes!
-            basis_safe = bool(corridor_width_pct >= 0.25 and min_leg_depth_usd >= 20.0)
+            # Strict Cross-Oracle Safety: 15m settles on Chainlink USD 60s TWAP while 1h settles on Binance USDT close
+            # (5-20 bps natural basis gap); require >= 0.25% corridor width + >= $15 L1 depth!
+            basis_safe = bool(corridor_width_pct >= 0.25 and min_leg_depth_usd >= 15.0)
+            live_eligible_96c = bool(c_taker <= 0.960 and basis_safe)
 
             sig_type = None
             if c_taker < 1.00:
                 sig_type = "SHADOW_PHASE4_RISK_FREE_BOX_ARB"
-            elif c_taker <= 1.05 and in_corridor and basis_safe:
+            elif in_corridor and c_taker < 1.08 and basis_safe:
                 sig_type = "SHADOW_PHASE4_CORRIDOR_BOX_ARB"
 
             if sig_type and (asset_str, exp_bucket, sig_type) not in emitted:
@@ -1393,10 +1415,12 @@ class PolymarketLiveHarvester:
                     "strike_high": round(k_high, 2),
                     "corridor_width_pct": corridor_width_pct,
                     "cross_oracle_basis_safe": basis_safe,
+                    "live_eligible_96c": live_eligible_96c,
                     "spot_px": round(spot_px, 2),
                     "spot_in_corridor": in_corridor,
-                    "leg1": {"side": leg1_lbl, "ask": leg1_px, "l1_depth_usd": round(leg1_depth, 2)},
-                    "leg2": {"side": leg2_lbl, "ask": leg2_px, "l1_depth_usd": round(leg2_depth, 2)},
+                    "equal_shares_walked": int(walk_res["shares"]),
+                    "leg1": {"side": leg1_lbl, "ask": leg1_w["vwap"], "eff_px": leg1_w["eff_px"], "l1_depth_usd": round(float(leg1_depth), 2)},
+                    "leg2": {"side": leg2_lbl, "ask": leg2_w["vwap"], "eff_px": leg2_w["eff_px"], "l1_depth_usd": round(float(leg2_depth), 2)},
                     "min_leg_l1_depth_usd": min_leg_depth_usd,
                     "all_in_taker_box_cost": round(c_taker, 4),
                     "maker_box_cost": round(c_maker, 4),
@@ -2316,7 +2340,7 @@ class PolymarketLiveHarvester:
             if isinstance(info, dict):
                 st = str(info.get("status", "")).upper()
                 matched = self._num(info.get("size_matched")) or 0.0
-                if st in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"} and matched <= 1e-4:
+                if (st.startswith("CANCEL") or st in {"EXPIRED", "REJECTED"}) and matched <= 1e-4:
                     out["verdict"] = "NOT_EXECUTED"
                     out["proof"] = "TERMINAL_ZERO_FILL_ORDER_STATUS"
                     return out
@@ -2481,6 +2505,20 @@ class PolymarketLiveHarvester:
         pos["remaining_shares"] = 0.0
         pos["remaining_exit_shares"] = 0.0
         pos["is_liquidating"] = False
+        r_up = str(reason or "").upper()
+        if "MAKER_SCALP" in r_up or "FILLED_OFFLINE" in r_up:
+            pos["exit_decomposition_bucket"] = "MAKER_SCALP"
+        elif "RATCHET" in r_up:
+            pos["exit_decomposition_bucket"] = "PROFIT_RATCHET"
+        elif "STOP" in r_up or "UNWIND" in r_up or "SALVAGE" in r_up:
+            pos["exit_decomposition_bucket"] = "SALVAGE_UNWIND"
+        elif "REDEMPTION" in r_up or (pos.get("won") and "RESOLVED" in r_up):
+            pos["exit_decomposition_bucket"] = "TERMINAL_SETTLEMENT"
+        else:
+            pos["exit_decomposition_bucket"] = "TERMINAL_LOSS"
+        m_id_closed = str(pos.get("market_id") or "")
+        pos["entry_sequence_in_market"] = int(self.trades_per_market.get(m_id_closed, 1) or 1)
+        pos["is_win_reset_second_entry"] = bool(pos["entry_sequence_in_market"] >= 2)
         self.closed_positions.append(pos)
         if record_pnl:
             self.risk_controller.record_trade_pnl(net_pnl)
@@ -3504,12 +3542,19 @@ class PolymarketLiveHarvester:
                     if not self.dry_run and m_id_str.isdigit() and int(m_id_str) >= 100000:
                         try:
                             gm = self.executor._sync_session.get(f"https://gamma-api.polymarket.com/markets/{m_id_str}", timeout=3.0).json()
+                            uma_st = str(gm.get("umaResolutionStatus") or "").strip().lower()
                             raw_op = gm.get("outcomePrices")
                             op = json.loads(raw_op) if isinstance(raw_op, str) else raw_op
-                            if isinstance(op, list) and len(op) >= 2:
-                                t_idx = 0 if str(pos.get("target_token", "UP")).upper() == "UP" else 1
+                            raw_toks = gm.get("clobTokenIds")
+                            clob_toks = json.loads(raw_toks) if isinstance(raw_toks, str) else raw_toks
+                            if uma_st in ("", "resolved") and isinstance(op, list) and len(op) >= 2:
+                                pos_tok = str(pos.get("token_id") or "")
+                                if isinstance(clob_toks, list) and pos_tok and pos_tok in [str(x) for x in clob_toks]:
+                                    t_idx = [str(x) for x in clob_toks].index(pos_tok)
+                                else:
+                                    t_idx = 0 if str(pos.get("target_token", "UP")).upper() in ("UP", "YES") else 1
                                 if float(op[t_idx]) == 0.0 and float(op[1 - t_idx]) == 1.0:
-                                    logger.warning(f"[GAMMA ORACLE OVERRIDE] {tid}: Gamma outcomePrices={op} shows Chainlink resolved against local spot oracle. Closing ghost receivable.")
+                                    logger.warning(f"[GAMMA ORACLE OVERRIDE] {tid}: Gamma outcomePrices={op} (idx={t_idx}) shows authoritative resolution against local spot oracle. Closing ghost receivable.")
                                     pos["expected_terminal_payout_usd"] = 0.0
                                     pos["redemption_receivable_usd"] = 0.0
                                     pos["winning_shares_held"] = 0.0
@@ -3519,7 +3564,14 @@ class PolymarketLiveHarvester:
                             pass
                     sub_tx = None
                     if not self.dry_run and hasattr(self.executor, "attempt_onchain_redemption"):
-                        sub_tx = self.executor.attempt_onchain_redemption(str(pos.get("condition_id") or ""))
+                        cond_str = str(pos.get("condition_id") or "")
+                        try:
+                            sub_tx = self.executor.attempt_onchain_redemption(
+                                cond_str,
+                                neg_risk=pos.get("neg_risk") if "neg_risk" in pos else None,
+                            )
+                        except TypeError:
+                            sub_tx = self.executor.attempt_onchain_redemption(cond_str)
                     if self.confirm_onchain_redemption(tid, tx_hash=sub_tx):
                         settled += 1
                 except Exception as e:
@@ -3631,10 +3683,10 @@ class PolymarketLiveHarvester:
         p = float(p_market_ask)
         q = float(p_model)
 
-        # Authoritative fee schedule binding (Round 10 P1-01)
+        # Authoritative fee schedule binding (Round 10 P1-01; supports zero_fees r=0.0, e>=0.0)
         r = float(fee_rate if fee_rate is not None else 0.07)
         e = float(fee_exponent if fee_exponent is not None else 1.0)
-        if not (math.isfinite(r) and r >= 0.0 and math.isfinite(e) and e > 0.0):
+        if not (math.isfinite(r) and r >= 0.0 and math.isfinite(e) and (e > 0.0 or (r == 0.0 and e >= 0.0))):
             return 0.0
 
         clamped_p = min(0.9999, max(0.0001, p))
@@ -4083,7 +4135,13 @@ class PolymarketLiveHarvester:
         _uses_chainlink_twap = ("chain.link" in _res_source_lower) or (is_subhourly and "binance" not in _res_source_lower)
         twap_60s_open = float(shock.get("twap_60s_open") or 0.0)
         cl_open_spot = float(shock.get("chainlink_open_spot") or 0.0)
-        if _uses_chainlink_twap and open_spot_cand and float(open_spot_cand) > 0.0:
+        auth_cl_open = float(shock.get("authoritative_chainlink_open") or 0.0)
+        usd_spot_t0 = float(shock.get("chainlink_proxy_spot") or shock.get("coinbase_spot") or 0.0)
+        if _uses_chainlink_twap and auth_cl_open > 0.0 and usd_spot_t0 > 0.0 and math.isfinite(auth_cl_open) and math.isfinite(usd_spot_t0):
+            # Pure USD <-> USD authoritative Chainlink 60s-TWAP strike binding (zero USDT currency basis or 1m drift)
+            open_spot_cand = auth_cl_open
+            dist_pct = ((usd_spot_t0 - auth_cl_open) / auth_cl_open) * 100.0
+        elif _uses_chainlink_twap and open_spot_cand and float(open_spot_cand) > 0.0:
             raw_open_ref = float(open_spot_cand)
             anchor_candidates = [raw_open_ref]
             if twap_60s_open > 0.0:
@@ -4906,7 +4964,30 @@ class PolymarketLiveHarvester:
                 cand_exp_ts = float(shock.get("expiry_ts") or shock.get("candle_expiry_ts") or (time.time() + tte))
                 p_win_est = float(p_true)
                 ticket_cap_ceiling = getattr(self, "max_ticket_cap", None) or self.max_absolute_ticket_usd or MAX_ABSOLUTE_TICKET_USD
-                tier_limits = get_equity_tier_limits(total_account_value, getattr(self, "high_water_mark_equity", None))
+                tier_limits = get_equity_tier_limits(
+                    total_account_value,
+                    getattr(self, "high_water_mark_equity", None),
+                    getattr(self, "current_equity_tier", None),
+                )
+                small_bankroll_corr_cap = float(RISK_CONFIG.get("scale_up_equity_threshold", 110.0))
+                if (
+                    not self.dry_run
+                    and total_account_value < small_bankroll_corr_cap
+                    and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO") != "1"
+                ):
+                    active_dir_crypto = [
+                        p for p in self._risk_bearing_positions().values()
+                        if str(p.get("asset") or "").upper() in ("BTC", "ETH", "SOL", "XRP")
+                        and "BOX" not in str(p.get("sleeve") or "").upper()
+                        and "WEATHER" not in str(p.get("sleeve") or "").upper()
+                    ]
+                    if len(active_dir_crypto) >= 1:
+                        logger.info(
+                            f"[CORRELATED CRYPTO CONCURRENCY GUARD] {shock.get('title')!r}: "
+                            f"equity=${total_account_value:.2f} < ${small_bankroll_corr_cap:.2f} already holds 1 directional crypto position; "
+                            "reserving slot #2 strictly for uncorrelated sleeves (Box/Weather)."
+                        )
+                        return
                 risk_pct = tier_limits["dynamic_bankroll_pct"]
                 pct_ticket_cap = round(risk_pct * total_account_value, 2)
                 if total_account_value < float(RISK_CONFIG.get("seed_survival_equity_threshold", 88.0)):
@@ -5894,7 +5975,9 @@ class PolymarketLiveHarvester:
                             logger.warning(f"Cannot reconcile pending cancellation {exit_oid} for {tid}; retaining position.")
                             continue
                         terminal = str(order_info.get("status", "")).upper()
-                        if terminal not in {"CANCELED", "CANCELLED", "EXPIRED", "MATCHED", "FILLED", "CONFIRMED"}:
+                        if terminal not in {"MATCHED", "FILLED", "CONFIRMED"} and not (
+                            terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED"}
+                        ):
                             logger.warning(f"Cancellation not terminal: {exit_oid} (status={terminal}); retaining position.")
                             continue
                         if terminal in {"MATCHED", "FILLED", "CONFIRMED"}:
@@ -5945,8 +6028,13 @@ class PolymarketLiveHarvester:
 
                     rem_shares = float(pos["remaining_shares"])
                     total_filled_shares = float(pos["filled_exit_shares"])
-                    is_order_terminal = order_status_str in {"MATCHED", "FILLED", "CONFIRMED"} or order_matched >= order_size - 1e-4
-                    is_canceled = order_status_str in {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED"}
+                    is_order_terminal = (
+                        order_status_str in {"MATCHED", "FILLED", "CONFIRMED"}
+                        or order_status_str.startswith("CANCEL")
+                        or order_status_str in {"EXPIRED", "REJECTED"}
+                        or order_matched >= order_size - 1e-4
+                    )
+                    is_canceled = order_status_str.startswith("CANCEL") or order_status_str in {"EXPIRED", "REJECTED"}
                     is_position_complete = rem_shares <= 0.01 or total_filled_shares >= float(pos["entry_shares"]) - 1e-4
 
                     if is_position_complete:
@@ -7215,11 +7303,12 @@ class PolymarketLiveHarvester:
 
         lock_path = PID_FILE.with_suffix(".lock")
         self._instance_lock_fd = open(lock_path, "a+")
-        try:
-            fcntl.flock(self._instance_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            self._instance_lock_fd.close()
-            raise RuntimeError("Another live harvester instance already holds the lock") from exc
+        if fcntl is not None:
+            try:
+                fcntl.flock(self._instance_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError as exc:
+                self._instance_lock_fd.close()
+                raise RuntimeError("Another live harvester instance already holds the lock") from exc
 
         watcher = None
         trigger_fp = None
@@ -7681,7 +7770,8 @@ class PolymarketLiveHarvester:
             lock_fd = getattr(self, "_instance_lock_fd", None)
             if lock_fd is not None:
                 try:
-                    fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
+                    if fcntl is not None:
+                        fcntl.flock(lock_fd.fileno(), fcntl.LOCK_UN)
                     lock_fd.close()
                 except Exception:
                     pass

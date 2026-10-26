@@ -1508,6 +1508,37 @@ def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
     assert (pos["next_unwind_retry_ts"] - time.time()) <= 0.50
 
 
+def test_fix18_canceled_market_resolved_terminal_state():
+    """
+    Verifies deterministic handling of Polymarket CLOB status 'CANCELED_MARKET_RESOLVED':
+    1. cancel_order recognizes 'CANCELED_MARKET_RESOLVED' as terminal CANCELED (not UNKNOWN).
+    2. get_order_fill_summary marks is_canceled=True and terminal=True.
+    """
+    from unittest.mock import MagicMock
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+
+    ex = PolymarketLiveExecutor(dry_run=False)
+    ex.client = MagicMock()
+    ex.is_authenticated = True
+    ex.client.cancel_orders.return_value = {"canceled": []}
+    ex.client.get_order.return_value = {
+        "status": "CANCELED_MARKET_RESOLVED",
+        "size_matched": "0.0",
+        "original_size": "12.2",
+        "price": "0.95",
+        "side": "SELL",
+    }
+    cancel_res = ex.cancel_order("0xTEST_OID_RESOLVED")
+    assert cancel_res.is_canceled is True
+    assert cancel_res.outcome == "CANCELED"
+
+    summary = ex.get_order_fill_summary("0xTEST_OID_RESOLVED")
+    assert summary is not None
+    assert summary["resting"] is False
+    assert summary["terminal"] is True
+
+
+
 
 
 
