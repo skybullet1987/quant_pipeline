@@ -764,12 +764,22 @@ class PolymarketDualFeed1HRecorder:
         return raw_div
 
     def get_chainlink_proxy_spot(self, now: Optional[float] = None) -> float:
-        """v3.8 Blueprint 3: Basis-centered synthetic Chainlink USD oracle proxy (de-meaned Binance + Coinbase midpoint)."""
+        """v3.9.2 True-USD synthetic Chainlink oracle proxy (Coinbase USD + USDT/USD-adjusted Binance midpoint)."""
         now_ts = now if now is not None else time.time()
-        if self.spot_price <= 0:
+        cb = self.get_coinbase_spot(now_ts)
+        hist_div = getattr(self, "_venue_div_history", None)
+        bn_usd = 0.0
+        if self.spot_price > 0 and hist_div and len(hist_div) >= 10:
+            med_bps = max(-250.0, min(250.0, float(statistics.median(hist_div))))
+            bn_usd = self.spot_price / (1.0 + med_bps / 10000.0)
+        if cb > 0 and bn_usd > 0:
+            cl_px = round(0.5 * (cb + bn_usd), 4)
+        elif cb > 0:
+            cl_px = round(cb, 4)
+        elif bn_usd > 0:
+            cl_px = round(bn_usd, 4)
+        else:
             return 0.0
-        vdiv_c = max(-50.0, min(50.0, self.get_venue_divergence_centered_bps(now_ts)))
-        cl_px = round(self.spot_price * (1.0 - 0.5 * (vdiv_c / 10000.0)), 4)
         hist = getattr(self, "_cl_proxy_history", None)
         if hist is not None and cl_px > 0:
             if not hist or (now_ts - hist[-1][0]) >= 0.20:
@@ -921,6 +931,7 @@ class PolymarketDualFeed1HRecorder:
             snap["m15"] = {
                 "market_id": m15.get("market_id"),
                 "finalized_15m_open": m15.get("finalized_15m_open"),
+                "authoritative_chainlink_open": m15.get("authoritative_chainlink_open"),
                 "UP": dict(self.books["UP_15M"].top_of_book(now), token_id=m15["tokens"].get("UP")),
                 "DOWN": dict(self.books["DOWN_15M"].top_of_book(now), token_id=m15["tokens"].get("DOWN")),
             }
@@ -1079,7 +1090,9 @@ class PolymarketDualFeed1HRecorder:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=10),
-                headers={"User-Agent": "PolymarketDualFeedRecorder/2.7"}
+                headers={"User-Agent": "PolymarketDualFeedRecorder/2.7"},
+                max_line_size=65536,
+                max_field_size=65536,
             )
         return self.session
 
@@ -1270,8 +1283,9 @@ class PolymarketDualFeed1HRecorder:
 
                     open_15m, _ = await self.fetch_finalized_binance_candle(candle_open_ts, interval="15m")
                     twap_60s_15m = await self.fetch_binance_60s_twap_open(candle_open_ts)
-                    cl_open_15m = 0.0
-                    if abs(time.time() - candle_open_ts) <= 35.0:
+                    auth_cl_open_15m = await self.fetch_authoritative_chainlink_open_15m(candle_open_ts, candle_close_ts)
+                    cl_open_15m = auth_cl_open_15m if auth_cl_open_15m > 0.0 else 0.0
+                    if cl_open_15m <= 0.0 and abs(time.time() - candle_open_ts) <= 35.0:
                         cl_open_15m = await self.fetch_polygon_chainlink_spot()
 
                     return {
@@ -1293,6 +1307,7 @@ class PolymarketDualFeed1HRecorder:
                         "outcomes": outcomes,
                         "finalized_15m_open": open_15m,
                         "twap_60s_open": twap_60s_15m,
+                        "authoritative_chainlink_open": auth_cl_open_15m or None,
                         "chainlink_open_spot": cl_open_15m or None,
                         "fee_metadata": {
                             "fee_rate_market": fee_rate,
@@ -1307,6 +1322,34 @@ class PolymarketDualFeed1HRecorder:
             except Exception as e:
                 logger.debug(f"15m discovery notice for {s_slug}: {e}")
         return None
+
+    async def fetch_authoritative_chainlink_open_15m(self, candle_open_ts: int, candle_close_ts: int) -> float:
+        """
+        Queries Polymarket's authoritative Chainlink Data Streams 60s-TWAP endpoint
+        (`https://polymarket.com/api/crypto/crypto-price`) to lock the exact 14-digit
+        USD `openPrice` (`priceToBeat`) for the active 15-minute candle.
+        """
+        if time.time() < float(candle_open_ts):
+            return 0.0
+        session = await self.get_session()
+        start_iso = datetime.fromtimestamp(int(candle_open_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        end_iso = datetime.fromtimestamp(int(candle_close_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        url = (
+            f"https://polymarket.com/api/crypto/crypto-price"
+            f"?symbol={self.asset.upper()}&eventStartTime={start_iso}"
+            f"&variant=fifteen&endDate={end_iso}"
+        )
+        try:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
+                if resp.status == 200:
+                    payload = await resp.json()
+                    if isinstance(payload, dict) and payload.get("openPrice") is not None:
+                        val = float(payload["openPrice"])
+                        if math.isfinite(val) and val > 0.0:
+                            return val
+        except Exception as e:
+            logger.debug(f"[{self.asset}] Authoritative 15m openPrice query note: {e}")
+        return 0.0
 
     async def fetch_binance_60s_twap_open(self, candle_open_ts: int) -> float:
         """
@@ -1893,6 +1936,7 @@ class PolymarketDualFeed1HRecorder:
                             "finalized_1h_open": open_15m,
                             "candle_open_spot": open_15m,
                             "twap_60s_open": float(m15.get("twap_60s_open", 0.0) or 0.0) or None,
+                            "authoritative_chainlink_open": float(m15.get("authoritative_chainlink_open", 0.0) or 0.0) or None,
                             "chainlink_open_spot": float(m15.get("chainlink_open_spot", 0.0) or 0.0) or None,
                             "candle_distance_pct": round(dist_15m, 4),
                             "fee_metadata": dict(m15.get("fee_metadata", {})),
@@ -2274,6 +2318,10 @@ class PolymarketDualFeed1HRecorder:
                 "basis_abs_bps_t0": round(abs(self.basis_bps), 2),
                 "delta_basis_100ms": max(0.0, self.get_delta_basis_100ms()) if win_side == "UP" else min(0.0, self.get_delta_basis_100ms()),
                 "coinbase_spot": self.get_coinbase_spot(now_sec),
+                "chainlink_proxy_spot": self.get_chainlink_proxy_spot(now_sec),
+                "chainlink_twap_60s": self.get_chainlink_twap_60s(now_sec),
+                "resolution_source": mkt.get("resolution_source", ""),
+                "authoritative_chainlink_open": mkt.get("authoritative_chainlink_open") if horizon == "15m" else None,
                 "venue_divergence_bps": self.get_venue_divergence_bps(now_sec),
                 "coinbase_move_bps_2s": self.get_coinbase_move_bps(2.0, now_sec),
                 "finalized_1h_open": open_px,
@@ -2451,6 +2499,17 @@ class PolymarketDualFeed1HRecorder:
                         if twap_15_px > 0.0:
                             self.market_15m["twap_60s_open"] = twap_15_px
                             logger.info(f"[{self.asset} 15M TWAP-60S OPEN RECOVERED] Chainlink Proxy 60s TWAP Open: ${twap_15_px:,.2f}")
+                if self.market_15m and float(self.market_15m.get("authoritative_chainlink_open") or 0.0) <= 0.0:
+                    now_ts = int(datetime.now(timezone.utc).timestamp())
+                    open_ts_15 = int(self.market_15m.get("candle_open_ts", 0))
+                    close_ts_15 = int(self.market_15m.get("candle_close_ts", open_ts_15 + 900))
+                    if now_ts >= open_ts_15 and (now_ts - float(self.market_15m.get("_last_auth_open_try", 0.0))) >= 5.0:
+                        self.market_15m["_last_auth_open_try"] = float(now_ts)
+                        auth_px = await self.fetch_authoritative_chainlink_open_15m(open_ts_15, close_ts_15)
+                        if auth_px > 0.0:
+                            self.market_15m["authoritative_chainlink_open"] = auth_px
+                            self.market_15m["chainlink_open_spot"] = auth_px
+                            logger.info(f"[{self.asset} 15M AUTHORITATIVE CHAINLINK OPEN LOCKED] Polymarket openPrice: ${auth_px:,.6f}")
 
                 if self.current_market and "UP" in self.books and "DOWN" in self.books:
                     up_metrics = self.books["UP"].get_metrics(fee_rate=self.fee_rate_market)

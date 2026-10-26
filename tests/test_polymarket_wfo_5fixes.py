@@ -1508,6 +1508,302 @@ def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
     assert (pos["next_unwind_retry_ts"] - time.time()) <= 0.50
 
 
+def test_fix16_external_dual_audit_executor_and_harvester_hardening(tmp_path, monkeypatch):
+    """
+    Regression suite verifying ChatGPT + Gemini dual adversarial audit fixes across Live Executor & Live Harvester:
+      - F-01: `signature_type=0` EOA wallet preserved (not coerced to `1`) in `attempt_onchain_redemption`
+      - F-02: `find_redemption_payouts` fails closed (`None`) when `NegRiskAdapter` `eth_getLogs` fails
+      - F-23: `build_relayer_builder_headers` signs exact canonical JSON `str` wire bytes verbatim
+      - F-09: `execute_atomic_dominance_box` enforces per-leg fees + unwinds actual partial `takingAmount`
+      - F-16: `get_collateral_balance(hot_path=True)` invalidates stale `>120s` cache in live mode
+      - F-05: Zero/negative Kelly edge returns `0.0` (never `min_lot_usd` or `MAX_ABSOLUTE_TICKET_USD`)
+      - F-22: Sticky account-equity floor halt with `+$3.00` hysteresis & verified `allow_auto_clear=True`
+      - M-01: `5..10`-share position posts a single maker exit lot without leaving `<5`-share orphan tail
+      - F-17: DST-aware `America/New_York` weekday `09:15-09:32 ET` opening-bell blackout
+      - F-11 / M-05: Future clock-skew & internal JSON timestamp staleness checks
+      - F-07: Live `15m` Chainlink USD provenance guard rejects missing USD spot anchor
+    """
+    import asyncio
+    import hashlib
+    import hmac
+    import base64
+    import json
+    from datetime import datetime, timezone
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor, ExecutionStatus
+    from src.polymarket_research.polymarket_live_harvester import (
+        PolymarketLiveHarvester,
+        compute_correlated_truncated_kelly_size,
+        compute_kelly_ticket_size,
+        check_recorder_freshness,
+        read_fast_tick,
+    )
+
+    # 1. F-23: Canonical JSON string wire-byte HMAC signing
+    secret_b64 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+    canonical_json = json.dumps({"type": "WALLET", "nonce": "7", "nested": {"x": 1}}, separators=(",", ":"))
+    hdrs = PolymarketLiveExecutor.build_relayer_builder_headers(
+        api_key="k",
+        secret=secret_b64,
+        passphrase="p",
+        method="POST",
+        request_path="/submit",
+        body=canonical_json,
+        timestamp=1700000000,
+    )
+    expected_msg = f"1700000000POST/submit{canonical_json}".encode("utf-8")
+    expected_sig = base64.urlsafe_b64encode(
+        hmac.new(base64.urlsafe_b64decode(secret_b64), expected_msg, hashlib.sha256).digest()
+    ).decode("utf-8")
+    assert hdrs["POLY_BUILDER_SIGNATURE"] == expected_sig
+
+    # 2. F-02: `find_redemption_payouts` returns `None` when NegRiskAdapter RPC fails (`None`)
+    ex = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "f16_exec.jsonl")
+    ex.dry_run = False
+    ex.funder_address = "0x013A2474454fBd8738cff6a7f204eF1bc377F4e9"
+    cond_id = "0x" + ("cd" * 32)
+    rpc_calls = []
+
+    def fake_rpc_logs(method, params):
+        rpc_calls.append((method, params))
+        flt = (params or [{}])[0]
+        if str(flt.get("address", "")).lower() == ex.NEG_RISK_ADAPTER_ADDRESS.lower():
+            return None  # Simulate RPC error on NegRiskAdapter!
+        return []
+
+    monkeypatch.setattr(ex, "get_current_block_number", lambda: 200)
+    monkeypatch.setattr(ex, "_rpc", fake_rpc_logs)
+    assert ex.find_redemption_payouts(cond_id, from_block=100, max_span=1000) is None
+    assert len(rpc_calls) == 2
+
+    # 3. F-01: `signature_type=0` EOA wallet is NOT coerced to `1` (`POLY_PROXY`)
+    import web3
+    ex_eoa = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "f16_eoa.jsonl")
+    ex_eoa.dry_run = False
+    ex_eoa.signature_type = 0
+    ex_eoa.funder_address = "0x013A2474454fBd8738cff6a7f204eF1bc377F4e9"
+    ex_eoa.private_key = "0x" + ("11" * 32)
+    monkeypatch.delenv("POLYGON_PRIVATE_KEY", raising=False)
+    checked_gas_payers = []
+
+    class DummyEth:
+        class account:
+            @staticmethod
+            def from_key(pk):
+                return type("Acct", (), {"address": "0x2222222222222222222222222222222222222222"})()
+
+        @staticmethod
+        def get_balance(addr):
+            checked_gas_payers.append(str(addr).lower())
+            return 0  # Exits cleanly right after proving sig_type==0 selected funder_cs!
+
+    class DummyW3:
+        HTTPProvider = web3.Web3.HTTPProvider
+        to_checksum_address = staticmethod(web3.Web3.to_checksum_address)
+        eth = DummyEth()
+
+        def __init__(self, *a, **kw):
+            pass
+
+    monkeypatch.setattr(web3, "Web3", DummyW3)
+    assert ex_eoa.attempt_onchain_redemption(cond_id) is None
+    assert checked_gas_payers == [ex_eoa.funder_address.lower()]
+
+    # 4. F-09: Per-leg fees + partial Leg-1 `takingAmount` unwind in `execute_atomic_dominance_box`
+    ex_box = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "f16_box.jsonl")
+    ex_box.dry_run = False
+    ex_box.is_authenticated = True
+    monkeypatch.setattr(ex_box, "get_token_tick_size", lambda tid: 0.01)
+    monkeypatch.setattr(ex_box, "get_token_neg_risk", lambda tid, explicit_neg_risk=None: False)
+    # High fee on leg_b (`0.25`) pushes box cost over `0.995` even if `fee_rate` default was `0.07`
+    cap_res = ex_box.execute_atomic_dominance_box(
+        box_id="BOX_FEE_B",
+        leg_a_token_id="tok_a",
+        leg_a_label="15M_UP",
+        leg_a_limit_price=0.48,
+        leg_b_token_id="tok_b",
+        leg_b_label="5M_DOWN",
+        leg_b_limit_price=0.46,
+        shares=20,
+        max_box_cost_net=0.995,
+        fee_rate_a=0.07,
+        fee_rate_b=0.25,
+    )
+    assert cap_res["success"] is False and "WORST_LIMIT_BOX_COST_EXCEEDS_CAP" in cap_res["error"]
+
+    class PartialFillClient:
+        def create_order(self, args, options=None):
+            return {"token_id": args.token_id, "price": args.price, "size": args.size}
+
+        def post_order(self, signed, order_type):
+            # Returns partial 12-share fill instead of requested 20 shares!
+            return {"orderID": "OID_PARTIAL_12", "takingAmount": "12.0"}
+
+    ex_box.client = PartialFillClient()
+    unwound_partial = []
+    monkeypatch.setattr(
+        ex_box,
+        "execute_unwind_order",
+        lambda token_id, size, side="SELL", min_price=0.01, neg_risk=None: (
+            unwound_partial.append((token_id, size)) or {"success": True, "matched_size": size}
+        ),
+    )
+    part_res = ex_box.execute_atomic_dominance_box(
+        box_id="BOX_PARTIAL",
+        leg_a_token_id="tok_a",
+        leg_a_label="15M_UP",
+        leg_a_limit_price=0.50,
+        leg_b_token_id="tok_b",
+        leg_b_label="5M_DOWN",
+        leg_b_limit_price=0.42,
+        shares=20,
+        max_box_cost_net=0.995,
+        leg_a_avail_shares=25.0,
+        leg_b_avail_shares=80.0,
+    )
+    assert part_res["success"] is False and part_res["stage"] == "LEG_1_PARTIAL_FILL_UNWOUND"
+    assert unwound_partial == [("tok_a", 12.0)]
+
+    # 5. F-16: Stale `>120s` hot-path collateral cache invalidated in live mode
+    ex_col = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "f16_col.jsonl")
+    ex_col.dry_run = False
+    ex_col.is_authenticated = False  # Live fallback returns None when stale cache is invalidated
+    ex_col._collateral_cache = (time.time() - 300.0, 99.50)
+    assert ex_col.get_collateral_balance(hot_path=True) is None
+
+    # 6. F-05: Zero/negative Kelly edge returns `0.0` (never `min_lot_usd` or `MAX_ABSOLUTE_TICKET_USD`)
+    assert compute_correlated_truncated_kelly_size(p_win=0.50, entry_px=0.75, live_equity=100.0) == 0.0
+    assert compute_correlated_truncated_kelly_size(p_win=0.85, entry_px=0.72, live_equity=0.0) == 0.0
+    assert compute_kelly_ticket_size(p_model=0.65, p_eff=0.72, bankroll=100.0) == 0.0
+    assert compute_kelly_ticket_size(p_model=0.85, p_eff=0.70, bankroll=-10.0) == 0.0
+
+    # 7. F-22: Sticky account-equity floor halt + $3.00 recovery hysteresis
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", tmp_path / "f16_state.json")
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.RESOLUTIONS_FILE", tmp_path / "f16_res.jsonl")
+    h = PolymarketLiveHarvester(ticket_notional=12.0, dry_run=True)
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = tmp_path / "f16_state.json"
+    h.risk_controller.min_equity_floor_usd = 48.0
+    assert h.risk_controller.check_equity_drawdown(45.5, 80.0) is True
+    assert h.risk_controller.is_halted() is True
+    # Hot-path check (`allow_auto_clear=False`) must NOT auto-clear even at $55!
+    assert h.risk_controller.check_equity_drawdown(55.0, 80.0) is True
+    assert h.risk_controller.is_halted() is True
+    # Verified refresh below $51 (`48 + 3`) stays halted; >= $51 clears cleanly!
+    assert h.risk_controller.check_equity_drawdown(49.5, 80.0, allow_auto_clear=True) is True
+    assert h.risk_controller.check_equity_drawdown(51.5, 80.0, allow_auto_clear=True) is False
+    assert h.risk_controller.is_halted() is False
+
+    # 8. M-01: `7.2`-share position (`5 <= rem < 10`) posts single `7.2`-share maker exit (no `<5` orphan split!)
+    real_tok = "554433221100998877665544332211"
+    pos_7sh = {
+        "trade_id": "LIVE_M01_ORPHAN_GUARD",
+        "token_id": real_tok,
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+        "exit_order_status": "EXIT_RECOVERY_REQUIRED",
+        "inventory_reconciled": True,
+        "entry_price": 0.72,
+        "entry_shares": 7.2,
+        "remaining_shares": 7.2,
+        "candle_expiry_ts": time.time() + 240.0,
+        "exit_tranches": [
+            {"idx": 1, "size": 5.0, "price": 0.95, "status": "PENDING"},
+            {"idx": 2, "size": 2.2, "price": 0.98, "status": "PENDING"},
+        ],
+    }
+    posted_m01 = []
+    h._wallet_token_balance = MagicMock(return_value=(7.2, h.ONCHAIN_SOURCE))
+    h._strict_open_orders = lambda: []
+    h._get_verified_shm_book = lambda p: {"bids": [{"price": "0.80", "size": "100"}], "asks": [{"price": "0.82", "size": "100"}]}
+    h.executor.post_maker_exit_order = lambda **kw: (
+        posted_m01.append(kw) or {"success": True, "orderID": "OID_SINGLE_72", "price": kw["price"]}
+    )
+    assert h._attempt_maker_exit_post_impl("LIVE_M01_ORPHAN_GUARD", pos_7sh) is True
+    assert len(posted_m01) == 1 and posted_m01[0]["size"] == pytest.approx(7.2)
+
+    # 9. F-11 / M-05: Internal JSON staleness in `check_recorder_freshness` & future skew in `read_fast_tick`
+    hb_path = tmp_path / "recorder_hb.json"
+    now_s = time.time()
+    hb_path.write_text(json.dumps({"timestamp_unix": now_s - 45.0}), encoding="utf-8")
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.RECORDER_HEARTBEAT_FILES", [hb_path])
+    ok_hb, reason_hb = check_recorder_freshness(max_stale_sec=10.0)
+    assert ok_hb is False and "internal_stale" in reason_hb
+
+    monkeypatch.delenv("PM_FAST_TICK_DIR", raising=False)
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.FAST_TICK_SHM_DIR", tmp_path)
+    (tmp_path / "pm_fast_tick_BTC.json").write_text(
+        json.dumps({"timestamp_unix": now_s + 10.0, "spot_price": 84000.0}), encoding="utf-8"
+    )
+    assert read_fast_tick("BTC") is None
+
+    # 10. F-17 (NYSE EST post-DST blackout) & F-07 (15m Chainlink missing USD spot veto)
+    snipe_f17 = []
+
+    async def mock_snipe_f17(**kw):
+        snipe_f17.append(kw)
+        return MagicMock(success=True)
+
+    h.executor.auth_mode = "LIVE"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.check_recorder_freshness = lambda asset, now_t: (True, 0.05, "OK")
+    h.executor.execute_snipe_order_async = mock_snipe_f17
+    h.executor.get_collateral_balance = lambda *a, **kw: 95.0
+    # Monday Nov 2, 2026 14:20:00 UTC == 09:20:00 EST (after Nov 1 DST fallback!)
+    est_open_ts = datetime(2026, 11, 2, 14, 20, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.time.time", lambda: est_open_ts)
+    shock_est = {
+        "event_id": "EVT_NYSE_EST",
+        "market_id": "6099991",
+        "condition_id": "0xnyse",
+        "t0_unix": est_open_ts,
+        "title": "Bitcoin Up or Down - Nov 2, 9:00AM-10:00AM ET",
+        "asset": "BTC",
+        "horizon": "1h",
+        "shock_direction": "BUY",
+        "seconds_to_expiry": 240.0,
+        "spot_at_t0": 84250.0,
+        "trigger_price": 84250.0,
+        "candle_open_spot": 84050.0,
+        "candle_distance_pct": 0.238,
+        "shock_volume_100ms": 3000000.0,
+        "shock_ofi": 0.92,
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": real_tok,
+                "raw_top_asks": [[0.72, 100.0]],
+                "raw_top_bids": [[0.71, 100.0]],
+                "effective_price_$25": 0.72,
+                "vwap_$25": 0.72,
+                "age_book_ms": 50.0,
+                "book_timestamp": est_open_ts,
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(shock_est))
+    assert len(snipe_f17) == 0, "Monday 09:20 EST (14:20 UTC post-DST) must be blocked by NYSE blackout!"
+
+    # Move outside NYSE blackout (Monday 15:20 UTC == 10:20 EST) and test 15m Chainlink missing USD spot veto (`F-07`)
+    est_1020_ts = datetime(2026, 11, 2, 15, 20, 0, tzinfo=timezone.utc).timestamp()
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.time.time", lambda: est_1020_ts)
+    shock_15m_no_usd = dict(
+        shock_est,
+        event_id="EVT_15M_NO_USD",
+        market_id="6099992",
+        t0_unix=est_1020_ts,
+        horizon="15m",
+        authoritative_chainlink_open=84050.123456,
+        # Intentionally omit chainlink_proxy_spot & coinbase_spot -> must veto USDT vs USD comparison!
+    )
+    shock_15m_no_usd["pre_shock_features_t0"] = {
+        "UP": dict(shock_est["pre_shock_features_t0"]["UP"], book_timestamp=est_1020_ts)
+    }
+    asyncio.run(h.evaluate_shock_and_execute(shock_15m_no_usd))
+    assert len(snipe_f17) == 0, "Live 15m Chainlink market without verified USD spot anchor must fail closed!"
+
+
+
 def test_fix18_canceled_market_resolved_terminal_state():
     """
     Verifies deterministic handling of Polymarket CLOB status 'CANCELED_MARKET_RESOLVED':
@@ -1536,6 +1832,175 @@ def test_fix18_canceled_market_resolved_terminal_state():
     assert summary is not None
     assert summary["resting"] is False
     assert summary["terminal"] is True
+
+
+def test_fix19_15m_usd_vs_usdt_oracle_and_supervision_parity(tmp_path, monkeypatch):
+    """
+    Forensic regression test for LIVE_6169334_1792980781_UP (15m ETH Chainlink USD vs Binance USDT unit mismatch):
+      1. PolymarketTerminalRecorder.get_chainlink_proxy_spot() converts Binance USDT spot to true USD via
+         causal rolling median USDT/USD basis (returning ~2311.20 USD, NEVER 2314.40 USDT), and returns 0.0
+         when neither Coinbase USD nor basis history is available.
+      2. Exact replay of LIVE_6169334_1792980781_UP (authoritative_chainlink_open=2311.940735 USD,
+         spot_at_t0=2314.41 USDT, coinbase_spot=2311.19 USD, even with legacy unadjusted
+         chainlink_proxy_spot=2314.3973) is deterministically REJECTED (0 orders) because true USD distance
+         is -0.0325% OTM for UP.
+      3. Open 15m USD-settled positions carry spot_denomination='USD' + USD entry_spot_ref and route
+         check_resolutions_and_manage_positions supervision strictly through get_usd_reference_spot_price.
+    """
+    import asyncio
+    from collections import deque
+    from unittest.mock import MagicMock
+    from src.polymarket_research.polymarket_terminal_recorder import PolymarketDualFeed1HRecorder as PolymarketTerminalRecorder
+    from src.polymarket_research.polymarket_live_executor import ExecutionStatus
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+
+    # 1. Recorder true-USD Chainlink proxy spot conversion
+    rec = PolymarketTerminalRecorder.__new__(PolymarketTerminalRecorder)
+    rec.asset = "ETH"
+    rec.spot_price = 2314.41  # Binance ETHUSDT
+    rec.coinbase_spot = 0.0
+    rec.coinbase_spot_ts = 0.0
+    rec._venue_div_history = deque(maxlen=200)
+    rec._cl_proxy_history = deque(maxlen=400)
+    now_u = 1792980781.75
+    # Without Coinbase or basis history, never emit raw USDT as USD proxy!
+    assert rec.get_chainlink_proxy_spot(now_u) == 0.0
+
+    rec.coinbase_spot = 2311.19  # Coinbase ETH-USD
+    rec.coinbase_spot_ts = now_u
+    for _ in range(20):
+        rec._venue_div_history.append(13.82)  # +13.82 bps USDT/USD basis
+    cl_usd = rec.get_chainlink_proxy_spot(now_u)
+    assert 2311.00 <= cl_usd <= 2311.40, f"Expected true USD ~2311.20, got {cl_usd}"
+    assert rec.get_chainlink_twap_60s(now_u) == pytest.approx(cl_usd, abs=0.05)
+
+    # 2. Exact replay of LIVE_6169334_1792980781_UP must be rejected (0 orders placed)
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", tmp_path / "f19_state.json")
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.RESOLUTIONS_FILE", tmp_path / "f19_res.jsonl")
+    h = PolymarketLiveHarvester(ticket_notional=12.0, dry_run=True)
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = tmp_path / "f19_state.json"
+    h.executor.auth_mode = "LIVE"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.executor.get_collateral_balance = lambda *a, **kw: 72.0
+    h.check_recorder_freshness = lambda asset, now_t: (True, 0.05, "OK")
+    placed = []
+
+    async def fail_if_called(**kw):
+        placed.append(kw)
+        return MagicMock(success=False, mode="REJECTED", details={})
+
+    h.executor.execute_snipe_order_async = fail_if_called
+    real_tok = "998877665544332211009988776655"
+    shock_bugged_replay = {
+        "event_id": "6169334_1792980781.749534",
+        "market_id": "6169334",
+        "condition_id": "0x6169334",
+        "t0_unix": now_u,
+        "title": "Ethereum Up or Down - October 25, 10:00PM-10:15PM ET",
+        "asset": "ETH",
+        "horizon": "15m",
+        "resolution_source": "https://data.chain.link/streams/eth-usd-twap-60s-streams",
+        "shock_direction": "BUY",
+        "seconds_to_expiry": 118.2,
+        "spot_at_t0": 2314.41,
+        "trigger_price": 2314.41,
+        "candle_open_spot": 2315.01,
+        "authoritative_chainlink_open": 2311.940735,
+        "coinbase_spot": 2311.19,
+        "chainlink_proxy_spot": 2314.3973,  # Legacy unadjusted USDT value from pre-fix recorder!
+        "chainlink_twap_60s": 2314.55,
+        "shock_volume_100ms": 2_500_000.0,
+        "shock_ofi": 0.90,
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": real_tok,
+                "best_bid": 0.46,
+                "best_ask": 0.47,
+                "raw_top_asks": [[0.47, 150.0]],
+                "raw_top_bids": [[0.46, 150.0]],
+                "effective_price_$25": 0.47,
+                "vwap_$25": 0.47,
+                "age_book_ms": 1357.1,
+                "age_ask_ms": 1357.1,
+                "book_timestamp": now_u,
+            }
+        },
+    }
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.time.time", lambda: now_u)
+    asyncio.run(h.evaluate_shock_and_execute(shock_bugged_replay))
+    assert len(placed) == 0, "OTM ETH 15m UP setup (-0.0325% in USD) must NEVER pass cushion gate via USDT basis!"
+
+    # 3. Supervision of open 15m USD-denominated position uses get_usd_reference_spot_price (NOT Binance USDT)
+    from datetime import datetime, timezone
+    now_sup = datetime.now(timezone.utc).timestamp()
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.time.time", lambda: now_sup)
+    usd_calls = []
+    usdt_calls = []
+    h.get_usd_reference_spot_price = lambda sym: (usd_calls.append(sym) or 2309.50)
+    h.get_reference_spot_price = lambda sym: (usdt_calls.append(sym) or 2313.10)
+    h._strict_open_orders = lambda: [{"id": "OID_MAKER_95"}]
+    h._get_verified_shm_book = lambda pos: {
+        "bids": [{"price": "0.32", "size": "200"}],
+        "asks": [{"price": "0.34", "size": "200"}],
+    }
+    h._wallet_token_balance = MagicMock(return_value=(20.0, h.ONCHAIN_SOURCE))
+    h.executor.cancel_order = MagicMock(return_value={"canceled": ["OID_MAKER_95"], "is_canceled": True, "outcome": "CANCELED"})
+    h.executor.get_order_fill_summary = MagicMock(return_value={
+        "order_id": "OID_MAKER_95", "status": "CANCELED", "matched": 0.0, "cash": 0.0, "fee": 0.0, "terminal": True,
+    })
+    unwound = []
+    h.executor.execute_unwind_order = lambda **kw: (
+        unwound.append(kw) or {
+            "success": False,
+            "orderID": None,
+            "matched_size": 0.0,
+            "retryable": True,
+            "outcome_unknown": False,
+            "error": "SIM_UNWIND_PASS",
+        }
+    )
+    h.active_positions["LIVE_USD_SUP"] = {
+        "trade_id": "LIVE_USD_SUP",
+        "market_id": "6169334",
+        "condition_id": "0x6169334",
+        "token_id": real_tok,
+        "target_token": "UP",
+        "asset": "ETH",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "spot_denomination": "USD",
+        "candle_open_spot": 2311.94,
+        "entry_spot_ref": 2313.80,
+        "candle_sigma": 0.0034,
+        "entry_price": 0.72,
+        "entry_shares": 20.0,
+        "gross_entry_shares": 20.0,
+        "remaining_shares": 20.0,
+        "remaining_exit_shares": 20.0,
+        "filled_exit_shares": 0.0,
+        "remaining_cost_basis": 14.40,
+        "notional_usd": 14.40,
+        "fee_usd": 0.15,
+        "entry_fee_cash_usd": 0.15,
+        "target_exit_price": 0.95,
+        "entry_ts": now_sup - 30.0,
+        "candle_expiry_ts": now_sup + 175.0,
+        "low_bid_detected_ts": now_sup - 7.0,
+        "status": ExecutionStatus.EXIT_RESTING,
+        "inventory_reconciled": True,
+        "exit_order_id": "OID_MAKER_95",
+        "exit_order_status": "RESTING",
+        "is_liquidating": False,
+    }
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert usd_calls == ["ETH"], "USD-denominated 15m position must query get_usd_reference_spot_price!"
+    assert usdt_calls == [], "USD-denominated 15m position must NEVER query Binance USDT get_reference_spot_price!"
+    assert len(unwound) == 1, "True USD OTM break (2309.50 < 2311.94 open, bid=0.32) must trigger protective salvage!"
+
 
 
 

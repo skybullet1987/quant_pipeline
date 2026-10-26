@@ -99,7 +99,22 @@ def transform_module(rel_path: str, code: str) -> str:
             ln = ln[: inline_strip[i]].rstrip() + "\n"
         out_lines.append(ln)
     compacted = re.sub(r"\n(?:[ \t]*\n)+", "\n", "".join(out_lines))
-    return compacted + "\n\n"
+    nl_rows = {
+        tok.start[0] - 1
+        for tok in tokenize.generate_tokens(io.StringIO(compacted).readline)
+        if tok.type == tokenize.NL
+    }
+    if nl_rows:
+        c_lines = compacted.splitlines(keepends=True)
+        joined = []
+        for idx, cln in enumerate(c_lines):
+            if idx > 0 and (idx - 1) in nl_rows:
+                cln = " " + cln.lstrip(" \t")
+            if idx in nl_rows:
+                cln = cln.rstrip("\r\n")
+            joined.append(cln)
+        compacted = "".join(joined)
+    return compacted.rstrip("\n") + "\n\n"
 
 
 def _assemble(module_data, toc_lines):

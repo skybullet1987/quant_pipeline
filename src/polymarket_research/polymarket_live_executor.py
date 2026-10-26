@@ -1562,8 +1562,12 @@ class PolymarketLiveExecutor:
         raw_secret = base64.urlsafe_b64decode(secret)
         msg = ts_str + str(method) + str(request_path)
         if body is not None:
-            body_str = body if isinstance(body, str) else str(body)
-            msg += body_str.replace("'", '"')
+            if isinstance(body, (bytes, bytearray)):
+                msg += body.decode("utf-8")
+            elif isinstance(body, str):
+                msg += body
+            else:
+                msg += str(body).replace("'", '"')
         sig = base64.urlsafe_b64encode(
             hmac.new(raw_secret, msg.encode("utf-8"), hashlib.sha256).digest()
         ).decode("utf-8")
@@ -1766,64 +1770,46 @@ class PolymarketLiveExecutor:
                 "toBlock": hex(end),
                 "topics": [self._neg_risk_payout_redemption_topic(), me_topic, cond_topic],
             }])
+            if nr_logs is None:
+                return None
             if nr_logs:
                 found.extend(self.parse_payout_redemption_logs(nr_logs, condition_id))
             cursor = end + 1
         return found
 
     def _submit_deposit_wallet_relayer_redemption(
-        self,
-        *,
-        pk: str,
-        funder_cs: str,
-        nonce: int,
-        calls: List[Dict[str, str]],
-        condition_id: str,
+        self, *, pk: str, funder_cs: str, nonce: int, calls: List[Dict[str, str]], condition_id: str,
     ) -> Optional[str]:
-        """
-        Submits a gasless `DepositWallet` (`signature_type=3`) redemption batch to
-        Polymarket's Relayer V2 (`POST /submit`) when Builder API credentials are configured,
-        enforcing a 180s per-condition rate-limit cooldown.
-        """
+        """Submits gasless DepositWallet (sig_type=3) redemption batch via Relayer V2 with wire-byte HMAC & receipt verification."""
         b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
         b_sec = (os.getenv("POLY_BUILDER_SECRET") or os.getenv("BUILDER_SECRET") or "").strip()
         b_pass = (os.getenv("POLY_BUILDER_PASSPHRASE") or os.getenv("BUILDER_PASS_PHRASE") or "").strip()
         if not (b_key and b_sec and b_pass):
             return None
-
         cooldown_map = getattr(self, "_relayer_redemption_cooldown", None)
         if cooldown_map is None:
-            self._relayer_redemption_cooldown = {}
-            cooldown_map = self._relayer_redemption_cooldown
+            self._relayer_redemption_cooldown = cooldown_map = {}
         now_s = time.time()
         if (now_s - float(cooldown_map.get(condition_id, 0.0))) < 180.0:
             return None
         cooldown_map[condition_id] = now_s
-
         relayer_base = os.getenv("POLY_RELAYER_URL", self.RELAYER_V2_URL).rstrip("/")
-        deadline = int(now_s) + 300
         req_dict = self.build_deposit_wallet_relayer_batch(
-            private_key=pk,
-            wallet_address=funder_cs,
-            nonce=nonce,
-            deadline=deadline,
-            calls=calls,
-            chain_id=self.CHAIN_ID,
+            private_key=pk, wallet_address=funder_cs, nonce=nonce, deadline=int(now_s) + 300, calls=calls, chain_id=self.CHAIN_ID,
         )
+        body_json = json.dumps(req_dict, separators=(",", ":"))
         headers = self.build_relayer_builder_headers(
-            api_key=b_key,
-            secret=b_sec,
-            passphrase=b_pass,
-            method="POST",
-            request_path="/submit",
-            body=req_dict,
+            api_key=b_key, secret=b_sec, passphrase=b_pass, method="POST", request_path="/submit", body=body_json,
         )
+        headers["Content-Type"] = "application/json"
         session = getattr(self, "_sync_session", requests)
-        resp = session.post(f"{relayer_base}/submit", headers=headers, json=req_dict, timeout=8.0)
+        resp = session.post(f"{relayer_base}/submit", headers=headers, data=body_json.encode("utf-8"), timeout=8.0)
         if resp.status_code != 200:
-            logger.warning(f"[REDEMPTION] Relayer V2 DepositWallet submit HTTP {resp.status_code}: {resp.text[:200]}")
+            logger.warning(f"[REDEMPTION] Relayer V2 submit HTTP {resp.status_code}: {resp.text[:200]}")
             return None
         body = resp.json() if resp.content else {}
+        if body.get("state") in ("STATE_FAILED", "STATE_INVALID"):
+            return None
         tx_hash = body.get("transactionHash")
         tx_id = body.get("transactionID")
         if not tx_hash and tx_id:
@@ -1833,32 +1819,33 @@ class PolymarketLiveExecutor:
                 if tr.status_code == 200:
                     t_list = tr.json()
                     if isinstance(t_list, list) and t_list:
+                        if t_list[0].get("state") in ("STATE_FAILED", "STATE_INVALID"):
+                            return None
                         tx_hash = t_list[0].get("transactionHash")
-                        if tx_hash or t_list[0].get("state") in ("STATE_FAILED", "STATE_INVALID"):
+                        if tx_hash:
                             break
         if tx_hash:
-            return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+            tx_hash_norm = tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
+            receipt = self._rpc("eth_getTransactionReceipt", [tx_hash_norm])
+            if isinstance(receipt, dict) and receipt.get("status") is not None:
+                if str(receipt.get("status", "")).lower() not in {"0x1", "1"}:
+                    return None
+            return tx_hash_norm
         return None
 
     def attempt_onchain_redemption(self, condition_id: str, *, neg_risk: Optional[bool] = None) -> Optional[str]:
-        """
-        R01 Multi-Wallet & Multi-Adapter Redemption Engine:
-          - Supports BOTH standard `CTF.redeemPositions` (`pUSD` / `USDC.e`) AND
-            `NegRiskAdapter.redeemPositions` (`0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296`, Weather `#1`).
-          - Verifies `CTF.payoutDenominator(conditionId) > 0` before any tx construction.
-          - Supports all 4 Polymarket wallet architectures:
-              * `sig_type == 0`: Direct EOA transaction
-              * `sig_type == 1`: Polymarket Magic/Email Proxy (`ProxyWalletFactory.proxy`)
-              * `sig_type == 2`: 1-of-1 Gnosis Safe (`execTransaction`)
-              * `sig_type == 3`: Polymarket V2 `DepositWallet` (`POLY_1271`) via Relayer V2 `WALLET` batch
-        """
-        sig_type = int(getattr(self, "signature_type", 1) or 1)
+        """R01 Multi-Wallet & Multi-Adapter Redemption Engine (EOA=0, Proxy=1, Safe=2, DepositWallet=3)."""
+        raw_sig_type = getattr(self, "signature_type", None)
+        sig_type = 1 if raw_sig_type is None else int(raw_sig_type)
         if self.dry_run or not condition_id or sig_type not in (0, 1, 2, 3):
             return None
         b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
         if sig_type == 3 and not b_key:
-            # DepositWallet (POLY_1271) executes batches via Polymarket Relayer V2; never spam Safe revert RPCs.
             self._funder_is_gnosis_safe = False
+            now_warn = time.time()
+            if (now_warn - float(getattr(self, "_last_missing_builder_key_warn_ts", 0.0))) >= 3600.0:
+                self._last_missing_builder_key_warn_ts = now_warn
+                logger.warning(f"[REDEMPTION] DepositWallet ({self.funder_address}) requires POLY_BUILDER_API_KEY for Relayer V2.")
             return None
         if sig_type == 2 and getattr(self, "_funder_is_gnosis_safe", None) is False:
             return None
@@ -4219,6 +4206,22 @@ class PolymarketLiveExecutor:
                 "error": err_msg,
             }
 
+    @staticmethod
+    def _extract_fok_matched_shares(resp: Dict[str, Any], default_shares: float) -> Optional[float]:
+        if not isinstance(resp, dict):
+            return None
+        for key in ("takingAmount", "taking_amount", "matched_size", "size_matched", "sizeMatched"):
+            val = resp.get(key)
+            if val not in (None, ""):
+                try:
+                    parsed = float(val)
+                    return parsed if math.isfinite(parsed) else None
+                except (TypeError, ValueError):
+                    return None
+        if str(resp.get("status", "")).upper() in {"DELAYED", "LIVE", "UNMATCHED"}:
+            return None
+        return default_shares
+
     def execute_atomic_dominance_box(
         self,
         box_id: str,
@@ -4235,17 +4238,18 @@ class PolymarketLiveExecutor:
         leg_a_avail_shares: Optional[float] = None,
         leg_b_avail_shares: Optional[float] = None,
         neg_risk: bool = False,
+        fee_rate_a: Optional[float] = None,
+        fee_rate_b: Optional[float] = None,
+        fee_exponent_a: Optional[float] = None,
+        fee_exponent_b: Optional[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Executes a 2-leg equal-share Same-Oracle Dominance Box (`D1_SAME_ORACLE_DOMINANCE_BOX`)
-        with pre-signed back-to-back FOK execution (thinner leg first -> 0ms signing gap -> second leg)
-        and automatic emergency Leg-1 unwind if Leg 2 FOK-rejects cleanly.
-        """
+        """Executes a 2-leg Same-Oracle Dominance Box with per-leg fees (F-09) and partial-fill unwind."""
         try:
-            px_a_in = float(leg_a_limit_price)
-            px_b_in = float(leg_b_limit_price)
-            shares_in = float(shares)
-            cap_in = float(max_box_cost_net)
+            px_a_in, px_b_in, shares_in, cap_in = float(leg_a_limit_price), float(leg_b_limit_price), float(shares), float(max_box_cost_net)
+            fr_a = float(fee_rate if fee_rate_a is None else fee_rate_a)
+            fe_a = float(fee_exponent if fee_exponent_a is None else fee_exponent_a)
+            fr_b = float(fee_rate if fee_rate_b is None else fee_rate_b)
+            fe_b = float(fee_exponent if fee_exponent_b is None else fee_exponent_b)
         except (TypeError, ValueError):
             return {"success": False, "error": "INVALID_BOX_INPUTS", "legged_out": False, "outcome_unknown": False}
 
@@ -4263,17 +4267,12 @@ class PolymarketLiveExecutor:
 
         shares_int = float(math.floor(shares_in))
         if shares_int < 5.0:
-            return {
-                "success": False,
-                "error": f"BOX_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares)",
-                "legged_out": False,
-                "outcome_unknown": False,
-            }
+            return {"success": False, "error": f"BOX_MIN_SHARES_REJECTED ({shares_int:.0f} < 5 shares)", "legged_out": False, "outcome_unknown": False}
 
         px_a = self.quantize_order_price(px_a_in, leg_a_token_id, rounding=ROUND_CEILING)
         px_b = self.quantize_order_price(px_b_in, leg_b_token_id, rounding=ROUND_CEILING)
-        fee_a_ps = float(fee_rate) * ((px_a * (1.0 - px_a)) ** float(fee_exponent)) if fee_rate > 0 else 0.0
-        fee_b_ps = float(fee_rate) * ((px_b * (1.0 - px_b)) ** float(fee_exponent)) if fee_rate > 0 else 0.0
+        fee_a_ps = fr_a * ((px_a * (1.0 - px_a)) ** fe_a) if fr_a > 0.0 else 0.0
+        fee_b_ps = fr_b * ((px_b * (1.0 - px_b)) ** fe_b) if fr_b > 0.0 else 0.0
         worst_box_cost_net = round(px_a + fee_a_ps + px_b + fee_b_ps, 6)
 
         if worst_box_cost_net > cap_in + 1e-6:
@@ -4373,17 +4372,17 @@ class PolymarketLiveExecutor:
                 "raw_leg_1": resp_1,
             }
         if err_1 or not oid_1:
-            return {
-                "success": False,
-                "stage": "LEG_1_UNKNOWN",
-                "legged_out": False,
-                "outcome_unknown": True,
-                "leg_1_order_id": oid_1,
-                "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}",
-                "raw_leg_1": resp_1,
-            }
+            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}", "raw_leg_1": resp_1}
 
-        # Leg 2 FOK submission (immediate pre-signed dispatch)
+        matched_1 = self._extract_fok_matched_shares(resp_1, shares_int)
+        if matched_1 is None:
+            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": f"LEG_1_NON_IMMEDIATE_STATUS ({resp_1.get('status')})", "raw_leg_1": resp_1}
+        if matched_1 <= 0.0:
+            return {"success": False, "stage": "LEG_1_REJECTED", "legged_out": False, "outcome_unknown": False, "error": "LEG_1_MATCHED_ZERO_SHARES", "raw_leg_1": resp_1}
+        if matched_1 < shares_int - 0.05:
+            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
+            return {"success": False, "stage": "LEG_1_PARTIAL_FILL_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": f"LEG_1_UNDERFILLED ({matched_1:.2f} < {shares_int:.2f})", "raw_leg_1": resp_1}
+
         leg2_submitted = False
         try:
             leg2_submitted = True
@@ -4394,58 +4393,35 @@ class PolymarketLiveExecutor:
                 k in err_2.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
             )
             if not is_clean_400:
-                return {
-                    "success": False,
-                    "stage": "LEG_2_UNKNOWN",
-                    "legged_out": True,
-                    "outcome_unknown": True,
-                    "leg_1_order_id": oid_1,
-                    "error": err_2,
-                }
-            unwind_res = self.execute_unwind_order(
-                tok_1,
-                size=shares_int,
-                side="SELL",
-                min_price=max(0.01, round(px_1 * 0.85, 2)),
-                neg_risk=nr_1,
-            )
-            return {
-                "success": False,
-                "stage": "LEG_2_REJECTED_UNWOUND",
-                "legged_out": True,
-                "outcome_unknown": False,
-                "leg_1_order_id": oid_1,
-                "unwind_result": unwind_res,
-                "error": err_2,
-            }
+                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": err_2}
+            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
+            return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": err_2}
 
         err_2 = resp_2.get("errorMsg") or resp_2.get("error")
         oid_2 = resp_2.get("orderID") or resp_2.get("id")
         if not err_2 and oid_2:
-            logger.info(
-                f"[LIVE DOMINANCE BOX FILLED] {box_id} | {shares_int:.0f} pairs @ worst_net=${worst_box_cost_net:.4f} "
-                f"({lbl_1}={oid_1}, {lbl_2}={oid_2})"
-            )
+            matched_2 = self._extract_fok_matched_shares(resp_2, matched_1)
+            if matched_2 is None:
+                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
+            if matched_2 <= 0.0:
+                unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": "LEG_2_MATCHED_ZERO_SHARES", "raw_leg_2": resp_2}
+            paired_shares = min(matched_1, matched_2)
+            imbalance_unwind = None
+            if abs(matched_1 - matched_2) > 0.05:
+                excess_tok, excess_px, excess_nr = (tok_1, px_1, nr_1) if matched_1 > matched_2 else (tok_2, px_2, nr_2)
+                imbalance_unwind = self.execute_unwind_order(excess_tok, size=abs(matched_1 - matched_2), side="SELL", min_price=max(0.01, round(excess_px * 0.85, 2)), neg_risk=excess_nr)
+            logger.info(f"[LIVE DOMINANCE BOX FILLED] {box_id} | {paired_shares:.2f} pairs @ worst_net=${worst_box_cost_net:.4f} ({lbl_1}={oid_1}, {lbl_2}={oid_2})")
             return {
-                "success": True,
-                "box_id": box_id,
-                "shares": shares_int,
-                "worst_box_cost_net": worst_box_cost_net,
-                "guaranteed_min_profit_usd": round(shares_int * (1.0 - worst_box_cost_net), 4),
-                "legged_out": False,
-                "outcome_unknown": False,
-                "leg_1": {"label": lbl_1, "token_id": tok_1, "price": px_1, "orderID": oid_1, "raw": resp_1},
-                "leg_2": {"label": lbl_2, "token_id": tok_2, "price": px_2, "orderID": oid_2, "raw": resp_2},
+                "success": True, "box_id": box_id, "shares": paired_shares, "worst_box_cost_net": worst_box_cost_net,
+                "guaranteed_min_profit_usd": round(paired_shares * (1.0 - worst_box_cost_net), 4),
+                "legged_out": False, "outcome_unknown": False, "imbalance_unwind": imbalance_unwind,
+                "leg_1": {"label": lbl_1, "token_id": tok_1, "price": px_1, "matched_shares": matched_1, "orderID": oid_1, "raw": resp_1},
+                "leg_2": {"label": lbl_2, "token_id": tok_2, "price": px_2, "matched_shares": matched_2, "orderID": oid_2, "raw": resp_2},
             }
 
         if err_2 and not oid_2:
-            unwind_res = self.execute_unwind_order(
-                tok_1,
-                size=shares_int,
-                side="SELL",
-                min_price=max(0.01, round(px_1 * 0.85, 2)),
-                neg_risk=nr_1,
-            )
+            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
             return {
                 "success": False,
                 "stage": "LEG_2_REJECTED_UNWOUND",
@@ -5047,9 +5023,17 @@ class PolymarketLiveExecutor:
         If hot_path is True, immediately returns cached balance without network I/O.
         """
         now = time.time()
-        cached_bal, cached_ts = getattr(self, "_collateral_cache", (None, 0.0))
+        c_first, c_second = getattr(self, "_collateral_cache", (None, 0.0))
+        if isinstance(c_first, (int, float)) and c_first > 1e9 and isinstance(c_second, (int, float)) and c_second < 1e9:
+            cached_ts, cached_bal = float(c_first), float(c_second)
+        else:
+            cached_bal, cached_ts = c_first, float(c_second or 0.0)
+        hot_path_max_age_s = float(os.getenv("PM_HOT_PATH_COLLATERAL_MAX_AGE_SEC", "120.0"))
         if hot_path and cached_bal is not None and isinstance(cached_bal, (int, float)) and cached_bal > 0:
-            return cached_bal
+            cache_age = (now - cached_ts) if cached_ts > 0.0 else 0.0
+            if self.dry_run or (-5.0 <= cache_age <= hot_path_max_age_s):
+                return cached_bal
+            logger.warning(f"[PM-EXEC] Stale hot-path collateral cache (age={cache_age:.1f}s > {hot_path_max_age_s:.1f}s); refreshing.")
         if self.dry_run:
             return cached_bal if (cached_bal is not None and cached_bal > 0) else 0.0
         if max_cache_age_s > 0.0 and cached_bal is not None and (now - cached_ts) <= max_cache_age_s:
