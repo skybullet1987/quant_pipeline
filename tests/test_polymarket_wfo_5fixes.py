@@ -1301,9 +1301,11 @@ def test_fix16_xrp_and_sol_shadow_sleeves_and_exp316(tmp_path):
     assert e316_mod.extract_strike_price("Will the price of XRP be above $0.85 on October 25?", None) == pytest.approx(0.85)
     assert e316_mod.extract_strike_price("Will XRP reach $2.10 October 19-25?", None) == pytest.approx(2.10)
 
-    # 3. Paper Trader runs isolated SLEEVE_XRP_V392_SHADOW alongside SLEEVE_SOL_V392_SHADOW
+    # 3. Paper Trader runs isolated SLEEVE_XRP_V392_SHADOW when opted-in (retired to False in production)
+    assert pt_mod.ENABLE_XRP_SHADOW_SLEEVE is False
     now_u = time.time()
-    with patch.object(pt_mod, "SOL_SHADOW_LEDGER_FILE", tmp_path / "sol_led.jsonl"), \
+    with patch.object(pt_mod, "ENABLE_XRP_SHADOW_SLEEVE", True), \
+         patch.object(pt_mod, "SOL_SHADOW_LEDGER_FILE", tmp_path / "sol_led.jsonl"), \
          patch.object(pt_mod, "SOL_SHADOW_STATE_FILE", tmp_path / "sol_st.json"), \
          patch.object(pt_mod, "XRP_SHADOW_LEDGER_FILE", tmp_path / "xrp_led.jsonl"), \
          patch.object(pt_mod, "XRP_SHADOW_STATE_FILE", tmp_path / "xrp_st.json"), \
@@ -1441,7 +1443,7 @@ def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
         resolution_source="https://data.chain.link/streams/eth-usd-twap-60s-streams",
         seconds_to_expiry=300.0,
         expiry_ts=now_u + 300.0,
-        candle_sigma=0.0020,  # sigma_1h = 0.0040 (previously choked by ad-hoc 0.0048 floor -> z=0.60 < 0.65; now z=0.72 >= 0.65!)
+        candle_sigma=0.0020,  # sigma_1h = 0.0040 -> z_strike ~0.72: below the flat 0.78 floor (2026-10-27 re-evaluation) -> must be rejected
         spot_at_t0=2336.85,
         candle_open_spot=2334.90,
         twap_60s_open=2334.90,
@@ -1449,7 +1451,12 @@ def test_fix17_eth_9am_forensic_remediation(tmp_path, monkeypatch):
         fee_metadata={"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": losing_shock["condition_id"]},
     )
     asyncio.run(h.evaluate_shock_and_execute(eth_15m_winner))
-    assert len(sniped_15m) >= 1, "Unchoked ETH 15m winner (z=0.72 >= 0.65) must NOT be blocked by an ad-hoc sigma floor!"
+    assert len(sniped_15m) == 0, "Flat 0.78 z floor: ETH 15m at z~0.72 (TTE=300s) must be rejected (former 0.65 branch removed)!"
+
+    # Same setup with a quieter recorded sigma (sigma_1h=0.0034 -> z~0.85 >= 0.78) must trade: no ad-hoc sigma floor chokes it.
+    eth_15m_unchoked = dict(eth_15m_winner, shock_id="eth_15m_unchoked_z085", candle_sigma=0.0017)
+    asyncio.run(h.evaluate_shock_and_execute(eth_15m_unchoked))
+    assert len(sniped_15m) >= 1, "Unchoked ETH 15m winner (z~0.85 >= 0.78) must NOT be blocked by an ad-hoc sigma floor!"
 
     # 3. Single-pass verified cancel + 4c sweep floor + 0.35s fast retry on 400 FAK zero-match
     exit_oid = "0x0f37be121c4a7bde2e0439b44244fa35c6cb29287923724a23529481d3ad0a24"
@@ -2000,6 +2007,1180 @@ def test_fix19_15m_usd_vs_usdt_oracle_and_supervision_parity(tmp_path, monkeypat
     assert usd_calls == ["ETH"], "USD-denominated 15m position must query get_usd_reference_spot_price!"
     assert usdt_calls == [], "USD-denominated 15m position must NEVER query Binance USDT get_reference_spot_price!"
     assert len(unwound) == 1, "True USD OTM break (2309.50 < 2311.94 open, bid=0.32) must trigger protective salvage!"
+
+
+def test_v40_live_execution_speed_and_compounding_levers(tmp_path, monkeypatch):
+    """
+    Verifies the v4.0 live execution speed, compounding, and riskless Slot-2 graduation upgrades:
+      1. Lever #1a: `_ThreadLocalClobHttpClient` `LifoQueue` warm TLS 1.3 HTTP/1.1 pool (`warm_pool(min_warm=2)`)
+         reuses hot sockets across distinct OS worker threads without concurrent socket sharing.
+      2. Gemini #2: `PolymarketLiveExecutor.execute_atomic_dominance_box(..., parallel_dispatch=True)`
+         dispatches both pre-signed FOK legs concurrently (<5ms skew) AND auto-unwinds Leg 1 if Leg 2 rejects.
+      3. Lever #1b + Lever #2: Smooth `18%` dynamic compounding at `$73.01` (`~$13.14` ticket instead of frozen `$12.00`)
+         + Shot-1 `+2c` price-improved FAK strictly clamped at `<= p_max`.
+      4. Gemini #6: `$0.985-$0.99` pre-expiry cash recycling (`8s <= TTE <= 25s`, `limit_price >= 0.98`) freeing
+         collateral BEFORE `:00/:15/:30/:45` candle rollovers.
+      5. Lever #3 + Gemini #12: `maybe_execute_graduated_d1_box` (`8/8` settled at `100%` WR) and
+         `get_graduated_allowed_assets` (`>=$110` equity + `ready_for_live_graduation: true`).
+    """
+    import asyncio
+    import json
+    import threading
+    from unittest.mock import MagicMock
+    import src.polymarket_research.polymarket_live_executor as exec_mod
+    import src.polymarket_research.polymarket_live_harvester as harv_mod
+    from src.polymarket_research.polymarket_live_executor import (
+        ExecutionStatus,
+        PolymarketLiveExecutor,
+        _ThreadLocalClobHttpClient,
+    )
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+
+    # 1. Warm LifoQueue HTTP/1.1 pool: warm_pool(min_warm=2) + cross-thread LIFO socket reuse
+    pool_cli = _ThreadLocalClobHttpClient(timeout=4.0, max_pool_size=8)
+    created_clients = []
+
+    class FakeHttpxClient:
+        def __init__(self):
+            self.is_closed = False
+            self.calls = 0
+            created_clients.append(self)
+
+        def request(self, method="GET", url="", **kw):
+            self.calls += 1
+            return MagicMock(status_code=200)
+
+        def close(self):
+            self.is_closed = True
+
+    pool_cli._make_client = FakeHttpxClient
+    warmed_cnt = pool_cli.warm_pool(url="https://clob.polymarket.com/time", min_warm=2, max_idle_sec=0.0)
+    assert warmed_cnt == 2 and pool_cli._pool.qsize() == 2
+
+    used_by_workers = []
+
+    def _worker_req():
+        b_cli = pool_cli._borrow_pool_client()
+        used_by_workers.append(b_cli)
+        b_cli.request("POST", "https://clob.polymarket.com/order")
+        pool_cli._return_pool_client(b_cli)
+
+    for _ in range(4):
+        th = threading.Thread(target=_worker_req)
+        th.start()
+        th.join()
+    # Different worker threads reused the pre-warmed hot pool without creating cold sockets!
+    assert len(created_clients) == 2
+    assert all(c in created_clients for c in used_by_workers)
+
+    # 2. Parallel 2-leg FOK Dominance Box dispatch + automatic single-leg unwind on Leg 2 reject
+    ex = PolymarketLiveExecutor(dry_run=True)
+    ex.dry_run = False
+    ex.is_authenticated = True
+    ex.auth_mode = "AUTHENTICATED_L2"
+    ex._tick_size_cache["tok_a"] = 0.01
+    ex._tick_size_cache["tok_b"] = 0.01
+    ex._neg_risk_cache["tok_a"] = False
+    ex._neg_risk_cache["tok_b"] = False
+    if exec_mod.OrderArgsV2 is None:
+        monkeypatch.setattr(exec_mod, "OrderArgsV2", lambda **kw: kw)
+    if exec_mod.OrderType is None:
+        monkeypatch.setattr(exec_mod, "OrderType", type("OT", (), {"FOK": "FOK", "FAK": "FAK", "GTC": "GTC"}))
+
+    fake_clob = MagicMock()
+    fake_clob.create_order.side_effect = lambda args, *a: {"token_id": getattr(args, "token_id", args["token_id"] if isinstance(args, dict) else "tok")}
+    fake_clob.post_order.side_effect = [
+        {"orderID": "OID_BOX_1", "status": "MATCHED", "takingAmount": "12", "makingAmount": "5.64"},
+        {"orderID": "OID_BOX_2", "status": "MATCHED", "takingAmount": "12", "makingAmount": "5.76"},
+    ]
+    ex.client = fake_clob
+    res_ok = ex.execute_atomic_dominance_box(
+        box_id="BOX_PAR_OK",
+        leg_a_token_id="tok_a",
+        leg_a_label="15M_UP",
+        leg_a_limit_price=0.47,
+        leg_b_token_id="tok_b",
+        leg_b_label="5M_DOWN",
+        leg_b_limit_price=0.48,
+        shares=12.0,
+        max_box_cost_net=0.995,
+        parallel_dispatch=True,
+    )
+    assert res_ok["success"] is True and res_ok["dispatch_mode"] == "PARALLEL_2LEG_FOK" and res_ok["shares"] == 12.0
+
+    # Leg 2 rejects -> Leg 1 must automatically unwind!
+    unwind_calls = []
+    ex.execute_unwind_order = lambda tok, **kw: (unwind_calls.append((tok, kw)) or {"success": True, "matched_size": 12.0})
+    fake_clob.post_order.side_effect = lambda signed, *a, **kw: (
+        {"orderID": "OID_BOX_L1_ONLY", "status": "MATCHED", "takingAmount": "12", "makingAmount": "5.64"}
+        if isinstance(signed, dict) and signed.get("token_id") == "tok_a"
+        else {"errorMsg": "FOK order couldn't be fully filled", "orderID": None}
+    )
+    res_legout = ex.execute_atomic_dominance_box(
+        box_id="BOX_PAR_LEGOUT",
+        leg_a_token_id="tok_a",
+        leg_a_label="15M_UP",
+        leg_a_limit_price=0.47,
+        leg_b_token_id="tok_b",
+        leg_b_label="5M_DOWN",
+        leg_b_limit_price=0.48,
+        shares=12.0,
+        max_box_cost_net=0.995,
+        parallel_dispatch=True,
+    )
+    assert res_legout["success"] is False and res_legout["legged_out"] is True
+    assert len(unwind_calls) == 1 and unwind_calls[0][0] == "tok_a"
+
+    # 3. Smooth 18% dynamic compounding ($73.01 -> ~$13.14) + Shot-1 +2c FAK strictly <= p_max
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    monkeypatch.setattr(harv_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(harv_mod, "STATE_FILE", tmp_path / "v40_state.json")
+    monkeypatch.setattr(harv_mod, "RESOLUTIONS_FILE", tmp_path / "v40_res.jsonl")
+
+    h = PolymarketLiveHarvester(ticket_notional=12.0, dry_run=True, allowed_assets={"BTC", "ETH"})
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = tmp_path / "v40_state.json"
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.executor.get_collateral_balance = lambda *a, **kw: 73.01
+    h.check_recorder_freshness = lambda asset, now_t: (True, 0.05, "OK")
+
+    snipe_dispatches = []
+
+    async def _capture_snipe(**kw):
+        snipe_dispatches.append(kw)
+        return type("FakeSnipeRes", (), {
+            "success": False, "order_id": None, "tx_hashes": [], "filled_size": 0.0, "avg_price": 0.0,
+            "size": 0.0, "price": 0.0, "fee_paid_usd": 0.0, "latency_ms": 1.0, "error_msg": "SIM", "error": "SIM",
+            "mode": "FAK_KILLED_NO_MATCH", "details": {"fak_killed": True}, "execution_status": ExecutionStatus.REJECTED,
+        })()
+
+    h.executor.execute_snipe_order_async = _capture_snipe
+    real_tok_v40 = "100434764618174237135201777197981253576172734064131101154122934005557319214073"
+    now_v40 = time.time()
+    shock_v40 = {
+        "shock_id": "v40_smooth_snipe",
+        "market_id": "6200101",
+        "condition_id": "0x6c7e137b9293b4004131cd749fe460eeb669b626ea5b3d9795bffbe491caa527",
+        "title": "Ethereum Up or Down - October 26, 10:00AM-10:15AM ET",
+        "asset": "ETH",
+        "horizon": "15m",
+        "resolution_source": "https://data.chain.link/streams/eth-usd-twap-60s-streams",
+        "t0_unix": now_v40,
+        "seconds_to_expiry": 240.0,
+        "expiry_ts": now_v40 + 240.0,
+        "candle_sigma": 0.0024,
+        "shock_volume_100ms": 620000.0,
+        "is_40ms_fast_track": True,
+        "shock_direction": "BUY",
+        "shock_ofi": 0.95,
+        "spot_at_t0": 2345.00,
+        "coinbase_spot": 2345.00,
+        "candle_open_spot": 2340.00,
+        "twap_60s_open": 2340.00,
+        "candle_distance_pct": 0.2137,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0x6c7e137b9293b4004131cd749fe460eeb669b626ea5b3d9795bffbe491caa527"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": real_tok_v40,
+                "best_bid": 0.71,
+                "best_ask": 0.72,
+                "spread": 0.01,
+                "book_timestamp": now_v40 - 0.02,
+                "age_book_ms": 20.0,
+                "age_ask_ms": 210.0,
+                "age_bid_ms": 300.0,
+                "obi_l1": 0.35,
+                "raw_top_bids": [[0.71, 150.0], [0.70, 100.0]],
+                "raw_top_asks": [[0.72, 120.0], [0.73, 120.0]],
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(shock_v40))
+    assert len(snipe_dispatches) >= 1
+    disp = snipe_dispatches[0]
+    assert disp["notional_usd"] > 12.50, f"Expected smooth 18% compounding > $12.50 at $73.01 equity, got {disp['notional_usd']}"
+    assert disp["target_price"] == 0.74, f"Expected Shot-1 +2c price-improved FAK (0.72 + 0.02 = 0.74), got {disp['target_price']}"
+    assert disp["target_price"] <= disp["max_price_ceiling"], "Shot-1 target_price must never exceed p_max ceiling!"
+
+    # 4. Pre-expiry $0.985-$0.99 instant cash recycling (`8s <= TTE <= 25s`, `limit_px >= 0.98`)
+    h.get_usd_reference_spot_price = lambda sym: 2348.0
+    h._strict_open_orders = lambda: [{"id": "OID_MKR_99"}]
+    h._get_verified_shm_book = lambda pos: {
+        "bids": [{"price": "0.99", "size": "250"}],
+        "asks": [{"price": "1.00", "size": "250"}],
+    }
+    h._wallet_token_balance = MagicMock(return_value=(18.0, h.ONCHAIN_SOURCE))
+    h.executor.cancel_order = MagicMock(return_value={"canceled": ["OID_MKR_99"], "is_canceled": True, "outcome": "CANCELED"})
+    h.executor.get_order_fill_summary = MagicMock(return_value={
+        "order_id": "OID_MKR_99", "status": "CANCELED", "matched": 0.0, "cash": 0.0, "fee": 0.0, "terminal": True,
+    })
+    recycled_unwinds = []
+    h.executor.execute_unwind_order = lambda **kw: (
+        recycled_unwinds.append(kw) or {
+            "success": True, "orderID": "OID_RECYCLE_99", "matched_size": 18.0, "taking_amount": 17.8076, "fee_usd": 0.0124,
+        }
+    )
+    h.active_positions["LIVE_RECYCLE_99"] = {
+        "trade_id": "LIVE_RECYCLE_99",
+        "market_id": "6200101",
+        "condition_id": "0x6200101",
+        "token_id": real_tok_v40,
+        "target_token": "UP",
+        "asset": "ETH",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "spot_denomination": "USD",
+        "candle_open_spot": 2340.00,
+        "entry_spot_ref": 2345.00,
+        "candle_sigma": 0.0024,
+        "entry_price": 0.72,
+        "entry_shares": 18.0,
+        "gross_entry_shares": 18.0,
+        "remaining_shares": 18.0,
+        "remaining_exit_shares": 18.0,
+        "filled_exit_shares": 0.0,
+        "remaining_cost_basis": 12.96,
+        "notional_usd": 12.96,
+        "fee_usd": 0.12,
+        "entry_fee_cash_usd": 0.12,
+        "target_exit_price": 0.99,
+        "entry_ts": now_v40 - 200.0,
+        "candle_expiry_ts": time.time() + 15.0,  # 15s TTE inside [8s, 25s] recycle window!
+        "status": ExecutionStatus.EXIT_RESTING,
+        "inventory_reconciled": True,
+        "exit_order_id": "OID_MKR_99",
+        "exit_order_status": "RESTING",
+        "is_liquidating": False,
+    }
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(recycled_unwinds) == 1
+    assert recycled_unwinds[0]["min_price"] >= 0.98, f"Expected >= $0.98 recycle floor, got {recycled_unwinds[0]['min_price']}"
+
+    # 5. Lever #3 (`maybe_execute_graduated_d1_box`) & Gemini #12 (`get_graduated_allowed_assets`)
+    (tmp_path / "state_shadow_sol_v392.json").write_text(json.dumps({"ready_for_live_graduation": True}), encoding="utf-8")
+    assert "SOL" not in h.get_graduated_allowed_assets(total_equity=73.01)  # Blocked < $110!
+    assert "SOL" in h.get_graduated_allowed_assets(total_equity=115.00)     # Auto-unlocked >= $110!
+
+    h.active_positions.clear()
+    (tmp_path / "alpha124_shadow_state.json").write_text(
+        json.dumps({"by_sleeve": {"D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 5, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 4.2}}}),
+        encoding="utf-8",
+    )
+    cand_box = {
+        "box_id": "D1_TEST_SLOT2",
+        "leg_a_token_id": "tok_a",
+        "leg_b_token_id": "tok_b",
+        "leg_a_limit_price": 0.47,
+        "leg_b_limit_price": 0.48,
+        "shares": 12.0,
+        "corridor_bps": 10.0,
+        "leg_a_side": "UP",
+        "leg_b_side": "DOWN",
+        "leg_a_strike": 80000.0,
+        "leg_b_strike": 80080.0,
+        "leg_a_market_id": "m_a",
+        "leg_b_market_id": "m_b",
+    }
+    assert h.maybe_execute_graduated_d1_box(cand_box)["executed"] is False  # 5 < 8 required!
+
+    (tmp_path / "alpha124_shadow_state.json").write_text(
+        json.dumps({"by_sleeve": {"D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 8, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 7.5}}}),
+        encoding="utf-8",
+    )
+    h.executor.execute_atomic_dominance_box = MagicMock(return_value={"success": True, "shares": 12.0})
+    h._startup_reconciled = True
+    _prev_dry = h.dry_run
+    h.dry_run = True  # non-live path: live-only prechecks (numeric tokens, fresh books) are covered by test_v42
+    d1_exec = h.maybe_execute_graduated_d1_box(cand_box)
+    h.dry_run = _prev_dry
+    assert d1_exec["executed"] is True, d1_exec
+    assert h.executor.execute_atomic_dominance_box.call_args.kwargs["parallel_dispatch"] is True
+
+
+def test_v41_burst_drain_adverse_collapse_and_wfo_parity(tmp_path, monkeypatch):
+    """
+    v4.1 Forensic Remediation & Purged-WFO Parity Suite:
+      1. Recorder evaluate_shock blocks socket burst-drain phantom shocks (exch_lag_ms > 1000ms AND
+         multi-second exchange t_ts spread arriving in a 5ms OS recv burst), while firing on genuine sweeps.
+      2. Executor AdverseCollapseGuard + Harvester 2.5s WS book ceiling & ingress lag/WS guards block
+         collapsing-book fills like LIVE_6176805 ($0.82 trigger ask -> $0.66 fill).
+      3. Harvester dynamic_sizing AND cushion boolean fix enforces Quarter-Kelly VWAP veto on thin
+         cushions (<0.07% 15m), blocking LIVE_6176805 ($0.82 ask on 0.0597% cushion at $65.05 bankroll).
+      4. Purged-WFO Z-adaptive FAK buffer (+1c for z_strike < 1.25, +2c for z_strike >= 1.25).
+    """
+    import asyncio
+    import json
+    from datetime import datetime, timezone
+    from src.polymarket_research.polymarket_terminal_recorder import (
+        PolymarketDualFeed1HRecorder,
+        L2OrderBook,
+    )
+    from src.polymarket_research.polymarket_live_executor import (
+        PolymarketLiveExecutor,
+        OrderResult,
+        ExecutionStatus,
+    )
+    import src.polymarket_research.polymarket_terminal_recorder as rec_mod
+    import src.polymarket_research.polymarket_live_harvester as harvester_mod
+
+    emitted_triggers = []
+    monkeypatch.setattr(rec_mod, "TRIGGER_FILE", tmp_path / "live_shock_triggers.jsonl")
+    monkeypatch.setattr(
+        rec_mod,
+        "_dispatch_trigger_fast",
+        lambda path, payload: (emitted_triggers.append((str(path), dict(payload))) or True, json.dumps(payload)),
+    )
+    monkeypatch.setattr(rec_mod, "_persist_trigger_nonblocking", lambda *a, **kw: None)
+
+    rec = PolymarketDualFeed1HRecorder(asset="ETH", shock_threshold=400_000.0)
+    rec.clob_ws_connected = True
+    rec.active_burst_tasks = {1, 2, 3, 4, 5}
+    rec.spot_price = 2224.20
+    rec.futures_price = 2224.10
+    rec.finalized_1h_open = 2228.00
+    now_u = time.time()
+    rec.current_market = {
+        "market_id": "6176800",
+        "condition_id": "0x6176800",
+        "title": "Ethereum Up or Down - Hourly",
+        "end_dt": datetime.fromtimestamp(now_u + 1200, tz=timezone.utc),
+        "candle_open_ts": int(now_u - 2400),
+        "candle_close_ts": int(now_u + 1200),
+        "resolution_source": "https://www.binance.com/en/trade/ETH_USDT",
+    }
+    for side, tok in (("UP", "1" * 24), ("DOWN", "2" * 24)):
+        bk = L2OrderBook(tok)
+        bk.bids = {0.70: 200.0}
+        bk.asks = {0.72: 200.0}
+        bk.last_book_update_ts = now_u - 0.05
+        bk.last_best_ask_change_ts = now_u - 0.40
+        bk.last_best_bid_change_ts = now_u - 0.40
+        rec.books[side] = bk
+    rec.spawn_burst_verification = lambda *a, **kw: None
+
+    # 1a. Stale exchange_event_ts_ms (> 1000ms lag) -> VETOED
+    mono_base = time.monotonic_ns()
+    stale_ms = int((time.time() - 4.2) * 1000)
+    rec.spot_trades.clear()
+    rec.spot_trades.append((mono_base, stale_ms, stale_ms, 650_000.0, False, 2224.20))
+    rec.evaluate_shock(mono_base, stale_ms, "SPOT")
+    assert len(emitted_triggers) == 0, "Expected exch_lag_ms > 1000ms packet to be vetoed!"
+
+    # 1b. OS socket burst-drain: 6 small trades spanning 7.5s of Binance t_ts drained within 4ms local mono -> VETOED
+    rec.spot_trades.clear()
+    fresh_ms = int(time.time() * 1000) - 20
+    mono_burst = time.monotonic_ns()
+    for idx in range(6):
+        t_exch_i = fresh_ms - (5 - idx) * 1500  # 1,500ms apart on Binance!
+        rec.spot_trades.append((mono_burst - (5 - idx) * 600_000, t_exch_i, t_exch_i, 110_000.0, False, 2224.20))
+    rec.evaluate_shock(mono_burst, fresh_ms, "SPOT")
+    assert len(emitted_triggers) == 0, "Expected multi-second Binance trades drained in 4ms OS burst NOT to sum into a phantom shock!"
+
+    # 1c. Genuine 50ms institutional sweep -> FIRES with clob_ws_connected=True
+    rec.spot_trades.clear()
+    rec.last_shock_ts = 0.0
+    rec.last_shock_ts_by_source.clear()
+    now_ms_ok = int(time.time() * 1000) - 15
+    mono_ok = time.monotonic_ns()
+    for idx in range(5):
+        t_exch_i = now_ms_ok - (4 - idx) * 10  # 40ms total span on Binance!
+        rec.spot_trades.append((mono_ok - (4 - idx) * 10_000_000, t_exch_i, t_exch_i, 120_000.0, False, 2224.20))
+    rec.evaluate_shock(mono_ok, now_ms_ok, "SPOT")
+    live_trigs = [payload for p, payload in emitted_triggers if "live_shock_triggers" in p]
+    assert len(live_trigs) == 1, f"Expected genuine 40ms sweep to emit 1 live trigger, got {len(live_trigs)}"
+    assert live_trigs[0]["clob_ws_connected"] is True
+
+    # 2a. Executor AdverseCollapseGuard rejects >= 4c downward ask collapse
+    ex = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "exec_v41.jsonl")
+    collapsed_book = {
+        "asks": [{"price": "0.66", "size": "200"}],
+        "bids": [{"price": "0.65", "size": "200"}],
+        "timestamp": time.time(),
+    }
+    res_collapse = asyncio.run(
+        ex.execute_snipe_order_async(
+            trade_id="TEST_COLLAPSE_6176805",
+            token_id="9" * 24,
+            target_token="DOWN",
+            notional_usd=12.0,
+            target_price=0.84,
+            max_price_ceiling=0.85,
+            min_price_floor=0.55,
+            expected_best_price=0.82,
+            prefetched_book=collapsed_book,
+            market_fee_rate=0.07,
+            market_fee_exponent=1.0,
+        )
+    )
+    assert res_collapse.success is False
+    assert "AdverseCollapseGuard" in (res_collapse.error or "")
+
+    # 2b & 3. Harvester live ingress guards, 2.5s WS book ceiling -> REST refresh, Adverse Ask Collapse, and LIVE_6176805 Kelly veto
+    monkeypatch.setattr(harvester_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(harvester_mod, "STATE_FILE", tmp_path / "state_v41.json")
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    real_tok_down = "888888888888888888888888"
+    for sym in ("BTC", "ETH"):
+        (tmp_path / f"pm_fast_tick_{sym}.json").write_text(
+            json.dumps({"ts": time.time(), "spot_price": 2224.20}),
+            encoding="utf-8",
+        )
+
+    h = PolymarketLiveHarvester(
+        dry_run=True,
+        dynamic_sizing=True,
+        hold_to_maturity=False,
+        ticket_notional=12.0,
+        max_exposure=60.0,
+        allowed_assets={"BTC", "ETH"},
+    )
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = tmp_path / "state_v41.json"
+    h._startup_reconciled = True
+    h._last_known_collateral = 65.05
+    h.high_water_mark_equity = 65.05
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.executor.get_collateral_balance = lambda *a, **kw: 65.05
+
+    dispatched = []
+    rest_book_calls = []
+
+    async def _mock_rest_book(tid):
+        rest_book_calls.append(tid)
+        return {
+            "asks": [{"price": "0.66", "size": "250"}],
+            "bids": [{"price": "0.65", "size": "250"}],
+            "timestamp": time.time(),
+        }
+
+    async def _mock_snipe(**kw):
+        dispatched.append(kw)
+        return OrderResult(
+            success=False, order_id=None, trade_id=kw["trade_id"], token_id=kw["token_id"],
+            target_token=kw["target_token"], side="BUY", price=0.0, size=0.0, notional_usd=0.0,
+            fee_usd=0.0, latency_ms=1.0, mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED,
+            confirmed_onchain=False, error="FAK killed", details={"fak_killed": True},
+        )
+
+    h.executor.get_market_book_async = _mock_rest_book
+    h.executor.execute_snipe_order_async = _mock_snipe
+
+    def _make_eth_15m_shock(shock_id: str, **overrides):
+        t_now = time.time()
+        base = {
+            "shock_id": shock_id,
+            "t0_unix": t_now - 0.05,
+            "exchange_event_ts_ms": int((t_now - 0.08) * 1000),
+            "clob_ws_connected": True,
+            "market_id": f"MKT_{shock_id}",
+            "condition_id": "0x6176805",
+            "asset": "ETH",
+            "horizon": "15m",
+            "title": "Ethereum Up or Down - 15m",
+            "shock_direction": "SELL",
+            "candle_distance_pct": -0.0597,
+            "candle_open_spot": 2225.57,
+            "spot_at_t0": 2224.24,
+            "candle_sigma": 0.0017,
+            "seconds_to_expiry": 152.9,
+            "candle_open_ts": t_now - 747.1,
+            "candle_expiry_ts": t_now + 152.9,
+            "shock_ofi": -1.0,
+            "shock_volume_100ms": 1_200_000.0,
+            "delta_basis_100ms": -1.5,
+            "age_ask_ms": 220.0,
+            "resolution_source": "https://www.binance.com/en/trade/ETH_USDT",
+            "fee_metadata": {"condition_id": "0x6176805", "fee_rate_market": 0.07, "fee_exponent": 1.0},
+            "pre_shock_features_t0": {
+                "DOWN": {
+                    "token_id": real_tok_down,
+                    "best_bid": 0.80,
+                    "best_ask": 0.82,
+                    "spread": 0.02,
+                    "book_timestamp": t_now - 0.05,
+                    "age_book_ms": 50.0,
+                    "age_ask_ms": 220.0,
+                    "age_bid_ms": 250.0,
+                    "obi_l1": 0.30,
+                    "raw_top_bids": [[0.80, 150.0], [0.79, 150.0]],
+                    "raw_top_asks": [[0.82, 150.0], [0.83, 150.0]],
+                }
+            },
+        }
+        base.update(overrides)
+        return base
+
+    # Ingress guard A: exchange_event_ts_ms lag > 1000ms -> rejected immediately
+    shk_lag = _make_eth_15m_shock("LAG_8S", exchange_event_ts_ms=int((time.time() - 8.4) * 1000))
+    asyncio.run(h.evaluate_shock_and_execute(shk_lag))
+    assert len(dispatched) == 0 and len(rest_book_calls) == 0
+
+    # Ingress guard B: clob_ws_connected=False -> rejected immediately
+    shk_ws_down = _make_eth_15m_shock("WS_DOWN", clob_ws_connected=False)
+    asyncio.run(h.evaluate_shock_and_execute(shk_ws_down))
+    assert len(dispatched) == 0 and len(rest_book_calls) == 0
+
+    # Stale WS book (>2.5s old) -> forces REST get_market_book_async -> catches $0.82 -> $0.66 adverse collapse!
+    shk_stale_book = _make_eth_15m_shock("STALE_BOOK_COLLAPSE", candle_distance_pct=-0.12)
+    shk_stale_book["pre_shock_features_t0"]["DOWN"]["book_timestamp"] = time.time() - 12.0
+    shk_stale_book["pre_shock_features_t0"]["DOWN"]["age_book_ms"] = 12000.0
+    asyncio.run(h.evaluate_shock_and_execute(shk_stale_book))
+    assert len(rest_book_calls) == 1, "Expected >2.5s old WS book to force fresh REST get_market_book_async!"
+    assert len(dispatched) == 0, "Expected $0.82 -> $0.66 fresh ask collapse to be rejected before order dispatch!"
+
+    # 3. Exact LIVE_6176805 replica (fresh book @ $0.82, thin -0.0597% cushion, $65.05 bankroll) -> rejected by [VWAP KELLY REJECT]!
+    shk_6176805 = _make_eth_15m_shock("REPLICA_6176805")
+    asyncio.run(h.evaluate_shock_and_execute(shk_6176805))
+    assert len(dispatched) == 0, "Expected thin-cushion $0.82 overpay (LIVE_6176805 replica) to be blocked by [VWAP KELLY REJECT]!"
+
+    # 4. Z-Adaptive FAK Buffer Parity: moderate z_strike (< 1.25) on TIER_B_STANDARD gets +1c (0.70 -> 0.71)
+    shk_mod_z = _make_eth_15m_shock("MOD_Z_TIER_B", candle_distance_pct=-0.075, age_ask_ms=60.0)
+    shk_mod_z["pre_shock_features_t0"]["DOWN"].update({
+        "best_bid": 0.69,
+        "best_ask": 0.70,
+        "spread": 0.01,
+        "age_ask_ms": 60.0,
+        "raw_top_bids": [[0.69, 180.0], [0.68, 150.0]],
+        "raw_top_asks": [[0.70, 180.0], [0.71, 150.0]],
+    })
+    asyncio.run(h.evaluate_shock_and_execute(shk_mod_z))
+    assert len(dispatched) == 1, "Expected clean $0.70 ask with 0.075% cushion to dispatch!"
+    assert dispatched[0]["target_price"] == 0.71, f"Expected +1c Z-adaptive FAK buffer (0.71) when z_strike < 1.25, got {dispatched[0]['target_price']}"
+    assert dispatched[0]["expected_best_price"] == 0.70
+    assert dispatched[0]["min_price_floor"] == 0.55
+
+
+def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
+    """
+    End-to-end verification of v4.2 Zero-Churn Profit Acceleration:
+      1. Alpha124 shadow quarantine flags (PM_DISABLE_SHADOW_M4_CATCHUP=1 preserves M1 defensive cancel
+         while eliminating multi-rung /book rate-limit bursts) + graduation mirror + D1 candidate stream.
+      2. Harvester Slot #2 live D1 bridge: $14.00 SLEEVE_1 collateral reserve, fresh L2 book walk <= 0.975,
+         zero interference with SLEEVE_1 concurrency or cross-asset directional checks, $0.99 Maker GTC ask
+         without queue-jump step-down, zero-bid OTM leg exemption, 8s..28s >= $0.98 CLOB cash recycling,
+         and unified 2-leg D1_BOX_CONSOLIDATED PnL accounting (0 false losses).
+    """
+    import asyncio
+    import json
+    from unittest.mock import AsyncMock, MagicMock
+    import src.polymarket_research.alpha_124_shadow_daemon as a124_mod
+    from src.polymarket_research.same_oracle_dominance_box import TwapCandleMarketSpec
+    import src.polymarket_research.polymarket_live_harvester as harvester_mod
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.polymarket_live_executor import ExecutionStatus, OrderResult
+
+    # --- PART 1: Alpha124 Shadow Quarantine + Graduation Mirror + D1 Live Candidate Stream ---
+    a124_dir = tmp_path / "alpha124"
+    live_dir = tmp_path / "polymarket"
+    a124_dir.mkdir(parents=True, exist_ok=True)
+    live_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(a124_mod, "DATA_DIR", a124_dir)
+    monkeypatch.setattr(a124_mod, "STATE_FILE", a124_dir / "alpha124_shadow_state.json")
+    monkeypatch.setattr(a124_mod, "OPPS_FILE", a124_dir / "alpha124_top_opportunities.json")
+    monkeypatch.setattr(a124_mod, "LEDGER_FILE", a124_dir / "alpha124_shadow_ledger.jsonl")
+    monkeypatch.setattr(a124_mod, "LIVE_POLYMARKET_DIR", live_dir)
+    monkeypatch.setattr(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", live_dir / "alpha124_shadow_state.json")
+    monkeypatch.setattr(a124_mod, "D1_LIVE_CANDIDATES_FILE", live_dir / "d1_live_box_candidates.jsonl")
+    monkeypatch.setenv("PM_DISABLE_SHADOW_M4_CATCHUP", "1")
+    monkeypatch.setenv("PM_DISABLE_SHADOW_W2_TAKER", "1")
+
+    daemon = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+    now_u = time.time()
+    # Seed 11 settled winning D1 boxes in shadow state
+    for i in range(11):
+        daemon.closed_positions.append({
+            "position_id": f"D1_HIST_{i}",
+            "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+            "won": True,
+            "tier_pnls_usd": {"T100": 2.40, "T1000": 8.11, "T5000": 28.50},
+        })
+    daemon.write_state_files([])
+    mirror_path = live_dir / "alpha124_shadow_state.json"
+    assert mirror_path.exists(), "Graduation mirror must be written to data/polymarket/alpha124_shadow_state.json!"
+    mirror_data = json.loads(mirror_path.read_text(encoding="utf-8"))
+    assert mirror_data["by_sleeve"]["D1_SAME_ORACLE_DOMINANCE_BOX"]["closed"] == 11
+    assert mirror_data["by_sleeve"]["D1_SAME_ORACLE_DOMINANCE_BOX"]["win_rate_pct"] == 100.0
+
+    # Verify M4 quarantine flag blocks /book burst while keeping M1 defensive maker cancel intact
+    m4_book_fetches = []
+    async def _track_fetch(url, timeout=3.0):
+        if "T_Y_M4" in url or "T_N_M4" in url:
+            m4_book_fetches.append(url)
+        if "T_M1_NO" in url:
+            return {"bids": [{"price": "0.48", "size": "100"}], "asks": [{"price": "0.52", "size": "100"}]}
+        return None
+    daemon.fetch_json = _track_fetch
+    exp_close = now_u + 14400.0
+    daemon.spots["BTC"] = 79500.0
+    asyncio.run(daemon.post_shadow_maker_entry(
+        sleeve="M1_SVI_MAKER_SCALP", dedupe_key="M1_DEF_1", asset="BTC", title="BTC > 80k",
+        side_label="NO", token_id="T_M1_NO", p_model=0.60, close_ts=exp_close,
+        extra={"market_id": "M_RUNG", "strike": 80000.0, "is_downward": False},
+    ))
+    assert len(daemon.pending_maker_orders) == 1
+    daemon.spots["BTC"] = 80250.0  # Spot surges +0.94% adversely across $80,000 strike!
+    daemon.strike_ladders["BTC_LAD"] = [
+        a124_mod.StrikeRungSpec("EV_BTC", "btc-daily", "BTC", "BTC Above", "M_RUNG", "0x1", "BTC > 80000", 80000.0, False, exp_close, "T_Y_M4", "T_N_M4")
+    ]
+    asyncio.run(daemon.handle_shock_triggers(
+        [{"asset": "BTC", "shock_direction": "BUY", "shock_ofi": 0.92, "shock_volume_100ms": 1_500_000.0, "t0_unix": now_u, "spot_at_t0": 80250.0}],
+        [],
+        now_ts=now_u,
+    ))
+    assert len(daemon.pending_maker_orders) == 0, "Defensive M1 maker cancel must remain active!"
+    assert len(m4_book_fetches) == 0, "Quarantined M4 catchup must issue zero multi-rung /book fetches!"
+
+    # Emit live D1 candidate via scan_same_oracle_dominance_boxes
+    tok_15m_up = "111111111111111111111111111111"
+    tok_5m_dn = "222222222222222222222222222222"
+    end_ts = round((now_u + 180.0) / 5.0) * 5.0
+    m15 = TwapCandleMarketSpec(
+        market_id="650015", condition_id="0x" + "aa" * 32, asset="BTC", horizon="15m",
+        title="BTC 15m", start_ts=end_ts - 900.0, end_ts=end_ts, start_iso="2026-10-26T12:00:00Z",
+        end_iso="2026-10-26T12:15:00Z", up_token=tok_15m_up, down_token="333333333333333333333333333333",
+        fee_rate=0.07, fee_exponent=1.0, neg_risk=False, twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams",
+    )
+    m5 = TwapCandleMarketSpec(
+        market_id="650005", condition_id="0x" + "bb" * 32, asset="BTC", horizon="5m",
+        title="BTC 5m", start_ts=end_ts - 300.0, end_ts=end_ts, start_iso="2026-10-26T12:10:00Z",
+        end_iso="2026-10-26T12:15:00Z", up_token="444444444444444444444444444444", down_token=tok_5m_dn,
+        fee_rate=0.07, fee_exponent=1.0, neg_risk=False, twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams",
+    )
+    daemon.dominance_pairs[f"BTC_{int(end_ts)}"] = (m15, m5)
+    daemon.get_authoritative_open_strike = AsyncMock(side_effect=lambda sp: 80000.0 if sp.horizon == "15m" else 80120.0)
+    tok_15m_dn = "333333333333333333333333333333"
+    tok_5m_up = "444444444444444444444444444444"
+    fake_books = {
+        tok_15m_up: {"asks": [{"price": "0.46", "size": "250"}], "bids": [{"price": "0.45", "size": "250"}]},
+        tok_5m_dn: {"asks": [{"price": "0.46", "size": "250"}], "bids": [{"price": "0.45", "size": "250"}]},
+        tok_15m_dn: {"asks": [{"price": "0.52", "size": "250"}], "bids": [{"price": "0.49", "size": "250"}]},
+        tok_5m_up: {"asks": [{"price": "0.52", "size": "250"}], "bids": [{"price": "0.49", "size": "250"}]},
+    }
+    async def _fetch_d1(url, timeout=3.0):
+        for tk, bk in fake_books.items():
+            if tk in url:
+                return bk
+        return None
+    daemon.fetch_json = _fetch_d1
+
+    # --- PART 2: Harvester Startup Before Candidate File Exists -> Catches Very First D1 Box ---
+    monkeypatch.setattr(harvester_mod, "DATA_DIR", live_dir)
+    monkeypatch.setattr(harvester_mod, "STATE_FILE", live_dir / "live_state.json")
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(live_dir))
+    for sym, px in (("BTC", 80060.0), ("ETH", 2500.0)):
+        (live_dir / f"pm_fast_tick_{sym}.json").write_text(
+            json.dumps({
+                "ts": now_u, "spot_price": px,
+                tok_15m_up: {"bids": [[0.98, 50.0]], "asks": [[0.99, 600.0]]},  # Heavy $0.99 wall to test queue-jump immunity!
+            }),
+            encoding="utf-8",
+        )
+
+    h = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, ticket_notional=12.0,
+        max_exposure=60.0, max_concurrent=1, allowed_assets={"BTC", "ETH"},
+    )
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.poll_onchain_redemptions = lambda: None
+    h.state_file = live_dir / "live_state.json"
+    h._startup_reconciled = True
+
+    # Poll #0 before file exists -> initializes cleanly at offset 0 without missing first candidate
+    assert asyncio.run(h._poll_d1_live_box_candidates(now_u)) == 0
+
+    # Now shadow daemon scans & emits first live D1 candidate
+    opps = []
+    asyncio.run(daemon.scan_same_oracle_dominance_boxes(opps, now_ts=now_u))
+    cand_file = live_dir / "d1_live_box_candidates.jsonl"
+    assert cand_file.exists(), "Live D1 candidate JSONL must be emitted when rem_sec=180s and box_cost_net <= 0.980!"
+
+    # Collateral reserve check: at $20.00 free collateral ($20 - $14 reserve = $6 < $7.50 min), D1 yields to SLEEVE_1
+    cand_obj = json.loads(cand_file.read_text(encoding="utf-8").splitlines()[0])
+    h._last_known_collateral = 20.00
+    res_low_collat = h.maybe_execute_graduated_d1_box(cand_obj)
+    assert res_low_collat["executed"] is False
+    assert res_low_collat["reason"] == "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"
+
+    # At $65.05 bankroll ($13.50 box budget, leaving >$51 free for SLEEVE_1), _poll_d1_live_box_candidates executes!
+    h._last_known_collateral = 65.05
+    h.high_water_mark_equity = 65.05
+    h.executor.get_collateral_balance = lambda *a, **kw: h._last_known_collateral
+    h.executor.get_market_book = lambda tid: fake_books[tid]
+    wallet_bals = {tok_15m_up: 0.0, tok_5m_dn: 0.0}
+    h._wallet_token_balance = lambda tid: (wallet_bals.get(tid, 0.0), h.ONCHAIN_SOURCE)
+    h._verify_entry_finality = MagicMock(return_value=(True, False))
+
+    def _mock_atomic_box(**kw):
+        assert kw["max_box_cost_net"] == pytest.approx(0.975)  # Shock fired at now_u -> is_quiet_book=False -> 0.975 cap!
+        assert kw["parallel_dispatch"] is True, "Deep book (>=4x depth, <=0.975 net) must dispatch in parallel!"
+        sh = int(kw["shares"])
+        assert sh == 17, "25% dynamic sizing ($16.50 reserve) on $65.05 bankroll ($16.26 budget) must size 17 pairs!"
+        wallet_bals[tok_15m_up] = float(sh)
+        wallet_bals[tok_5m_dn] = float(sh)
+        h._last_known_collateral = round(65.05 - sh * 0.92, 2)
+        return {
+            "success": True,
+            "box_id": kw["box_id"],
+            "shares": float(sh),
+            "leg_1": {"token_id": tok_15m_up, "label": kw["leg_a_label"], "price": 0.46, "orderID": "OID_BOX_A", "raw": {"makingAmount": round(sh * 0.46, 2), "transactionsHashes": ["0xtxa"]}},
+            "leg_2": {"token_id": tok_5m_dn, "label": kw["leg_b_label"], "price": 0.46, "orderID": "OID_BOX_B", "raw": {"makingAmount": round(sh * 0.46, 2), "transactionsHashes": ["0xtxb"]}},
+        }
+
+    posted_maker_exits = []
+    h.executor.execute_atomic_dominance_box = _mock_atomic_box
+    h.executor.post_maker_exit_order = lambda **kw: (
+        posted_maker_exits.append(kw) or {"success": True, "orderID": f"EXIT_{kw['token_id'][:4]}", "price": kw["price"]}
+    )
+
+    assert asyncio.run(h._poll_d1_live_box_candidates(time.time())) == 1
+    assert len(h.active_positions) == 2
+    assert h._risk_bearing_positions() == {}, "Delta-hedged D1 box legs must NOT consume SLEEVE_1 directional slot!"
+
+    # Verify cross-asset directional conflict guard for an ETH DOWN SLEEVE_1 candidate is NOT blocked by hedged BTC D1 box
+    ok_conf, _ = h.executor.validate_cross_asset_directional_conflict(
+        candidate_asset="ETH",
+        candidate_direction="DOWN",
+        candidate_expiry_ts=end_ts,
+        active_positions=list(h._risk_bearing_positions().values()),
+        max_expiry_window_delta=2700.0,
+    )
+    assert ok_conf is True
+
+    # Reconcile & post $0.99 single-tranche Maker GTC asks (must NOT step down below $0.99 despite $0.99 wall!)
+    tids = sorted(h.active_positions.keys())
+    for tid in tids:
+        if not h.active_positions[tid].get("exit_order_id"):
+            assert h._attempt_maker_exit_post(tid, h.active_positions[tid]) is True
+        assert h.active_positions[tid].get("exit_order_id")
+        assert h.active_positions[tid]["target_exit_price"] == pytest.approx(0.99)
+        assert "exit_tranches" not in h.active_positions[tid]
+
+    # --- PART 3: Supervision Immunity at TTE=42s (Zero-Bid OTM Leg + $0.88 Winning Leg) ---
+    tid_a = [t for t in tids if h.active_positions[t]["token_id"] == tok_15m_up][0]
+    tid_b = [t for t in tids if h.active_positions[t]["token_id"] == tok_5m_dn][0]
+    sh_held = float(h.active_positions[tid_a]["entry_shares"])
+    for t in (tid_a, tid_b):
+        h.active_positions[t]["candle_expiry_ts"] = time.time() + 42.0
+
+    live_books = {
+        tok_15m_up: {"bids": [{"price": "0.88", "size": "100"}], "asks": [{"price": "0.90", "size": "500"}]},
+        tok_5m_dn: {"bids": [], "asks": [{"price": "0.02", "size": "100"}]},  # Dead OTM leg with ZERO bids!
+    }
+    h._strict_open_orders = lambda: [
+        {"id": h.active_positions[tid_a]["exit_order_id"], "asset_id": tok_15m_up, "side": "SELL"},
+        {"id": h.active_positions[tid_b]["exit_order_id"], "asset_id": tok_5m_dn, "side": "SELL"},
+    ]
+    h._get_verified_shm_book = lambda p: live_books[p["token_id"]]
+    h.executor.get_order_fill_summary = lambda oid, tok: {
+        "order_id": oid, "status": "LIVE", "matched": 0.0, "cash": 0.0, "fee": 0.0, "terminal": False, "resting": True,
+    }
+    unwind_calls = []
+    h.executor.execute_unwind_order = MagicMock(side_effect=lambda **kw: unwind_calls.append(kw))
+
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(unwind_calls) == 0, "D1 box must NOT premature-recycle at $0.88 on a $0.953 box or salvage OTM leg!"
+    assert h.risk_halt is False, "Zero-bid OTM leg of a hedged D1 box must NEVER trigger LIQUIDITY_CRISIS!"
+
+    # --- PART 4: Pre-Expiry CLOB Cash Recycling at TTE=18s ($0.99 Bid Only, No $0.98 Dump or Stop-Loss Escalation) ---
+    for t in (tid_a, tid_b):
+        h.active_positions[t]["candle_expiry_ts"] = time.time() + 18.0
+    # 4a. $0.98 bid at TTE=18s must NOT cancel resting $0.99 Maker GTC ask or dump at 96.8c!
+    live_books[tok_15m_up] = {"bids": [{"price": "0.98", "size": "200"}], "asks": [{"price": "0.99", "size": "50"}]}
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(unwind_calls) == 0, "D1 leg at $0.98 bid must keep resting $0.99 Maker GTC ask instead of taking a taker haircut!"
+
+    # 4b. $0.99 bid triggers recycle; if FAK misses ($0.99 blinked), must hold to maturity (NEVER UNWIND_RETRY_REQUIRED!)
+    live_books[tok_15m_up] = {"bids": [{"price": "0.99", "size": "200"}], "asks": [{"price": "1.00", "size": "50"}]}
+    h.executor.cancel_order = lambda oid: {"is_canceled": True, "canceled": [oid]}
+    h.executor.get_order_fill_summary = lambda oid, tok: {
+        "order_id": oid, "status": "CANCELED", "matched": 0.0, "cash": 0.0, "fee": 0.0, "terminal": True, "resting": False,
+    }
+    h.executor.execute_unwind_order = lambda **kw: (
+        unwind_calls.append(kw) or {"success": False, "matched_size": 0.0, "error": "no orders found to match with fak order"}
+    )
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(unwind_calls) == 1 and unwind_calls[0]["min_price"] == pytest.approx(0.98)
+    assert h.active_positions[tid_a]["exit_order_status"] == "DETERMINISTIC_TERMINAL_HOLD"
+    assert h.active_positions[tid_a].get("unwind_retry_count", 0) == 0
+    unwind_calls.clear()
+
+    def _mock_recycle_unwind(**kw):
+        unwind_calls.append(kw)
+        gross_cash = round(sh_held * 0.99, 4)
+        exit_fee = round(sh_held * 0.07 * 0.99 * 0.01, 4)
+        return {
+            "success": True,
+            "orderID": "OID_RECYCLE_99",
+            "matched_size": sh_held,
+            "taking_amount": gross_cash,
+            "fee_usd": exit_fee,
+            "taking_amount_estimated": False,
+            "transactions_hashes": ["0xrec1"],
+        }
+
+    h.executor.execute_unwind_order = _mock_recycle_unwind
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert len(unwind_calls) == 1, "Winning D1 leg at $0.99 with TTE=18s must trigger pre-expiry CLOB cash recycling!"
+    assert unwind_calls[0]["min_price"] == pytest.approx(0.98), "D1 $0.99 recycle must use 1c buffer ($0.98) to survive $0.99->$0.98 flickers!"
+    assert tid_a not in h.active_positions
+    assert tid_b in h.active_positions
+    assert len(h.closed_positions) == 0, "Leg 1 close must stash onto partner leg without emitting half-box record!"
+    assert "_closed_partner_leg" in h.active_positions[tid_b]
+
+    # Now expire & resolve OTM Leg 2 (5m DOWN lost because UP won) -> emits 1 unified winning D1_BOX_CONSOLIDATED trade!
+    h.active_positions[tid_b]["candle_expiry_ts"] = time.time() - 5.0
+    h._strict_open_orders = lambda: []
+    asyncio.run(h._apply_market_resolution(tid_b, h.active_positions[tid_b], "UP"))
+    assert tid_b not in h.active_positions
+    assert len(h.closed_positions) == 1
+    consolidated = h.closed_positions[0]
+    assert "D1_BOX_CONSOLIDATED" in consolidated["close_reason"]
+    assert consolidated["exit_decomposition_bucket"] == "DOMINANCE_BOX_ARB"
+    assert len(consolidated["box_legs_summary"]) == 2
+    assert consolidated["won"] is True
+    assert consolidated["net_pnl_usd"] > 0.25
+    assert h.risk_controller.consecutive_losses == 0, "Winning D1 box must NEVER increment consecutive_losses!"
+
+    # --- PART 5: Legged-Out 1ms Polygon Settlement Race -> Supervised Residual Handoff (Zero Orphaned Shares!) ---
+    h._last_known_collateral = 65.05
+    wallet_bals[tok_15m_up] = 0.0
+    wallet_bals[tok_5m_dn] = 0.0
+    fake_books[tok_5m_dn] = {"bids": [{"price": "0.45", "size": "100"}], "asks": [{"price": "0.46", "size": "14"}]}
+    cand_legged = {
+        **cand_obj,
+        "box_id": "D1_LIVE_LEGGED_TEST",
+        "dedupe_key": "D1_BTC_LEGGED_NEW",
+        "timestamp_unix": time.time(),
+        "expiry_ts": time.time() + 180.0,
+    }
+    captured_box_kw = {}
+
+    def _mock_thin_legged_box(**kw):
+        captured_box_kw.update(kw)
+        return {
+            "success": False,
+            "stage": "LEG_2_REJECTED_UNWOUND",
+            "legged_out": True,
+            "outcome_unknown": False,
+            "leg_1_order_id": "OID_LEG1_ONLY",
+            "unwind_result": {"success": False, "matched_size": 0.0, "error": "SELL_INVENTORY_RECONCILIATION_REQUIRED: unreserved=0.0 < 12.0"},
+            "residual_unhedged_leg": {
+                "token_id": tok_15m_up,
+                "label": "15M_UP",
+                "price": 0.46,
+                "matched_shares": 12.0,
+                "unwound_shares": 0.0,
+                "residual_shares": 12.0,
+                "orderID": "OID_LEG1_ONLY",
+                "raw": {},
+                "unwind_outcome_unknown": False,
+                "unwind_result": {"success": False, "matched_size": 0.0, "error": "SELL_INVENTORY_RECONCILIATION_REQUIRED"},
+            },
+            "error": "FOK order couldn't be fully filled",
+        }
+
+    h.executor.execute_atomic_dominance_box = _mock_thin_legged_box
+    res_leg_handoff = h.maybe_execute_graduated_d1_box(cand_legged)
+    assert captured_box_kw["parallel_dispatch"] is False, "Thin leg (<1.5x depth) must switch to sequential thinner-leg-first!"
+    assert res_leg_handoff["executed"] is False
+    assert "D1_LIVE_LEGGED_TEST_LEG_RESID" in h.active_positions, "Legged-out shares unsettled on Polygon MUST be registered in active_positions!"
+    resid_pos = h.active_positions["D1_LIVE_LEGGED_TEST_LEG_RESID"]
+    assert resid_pos["is_dominance_box"] is False, "Unhedged residual leg must NOT get delta-hedged D1 supervision immunity!"
+    assert resid_pos["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    resid_pos["next_unwind_retry_ts"] = time.time() - 0.1
+
+    # Tick 1: Polygon STILL hasn't settled BUY shares (wallet_bal == 0.0) -> must retry in 0.50s WITHOUT false UNRESOLVED_BALANCE_DISCREPANCY halt!
+    live_books[tok_15m_up] = {"bids": [{"price": "0.45", "size": "200"}], "asks": [{"price": "0.47", "size": "200"}]}
+    h.executor.execute_unwind_order = lambda **kw: {
+        "success": False, "matched_size": 0.0, "error": "SELL_INVENTORY_RECONCILIATION_REQUIRED: unreserved=0.0 < 12.0",
+    }
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert "D1_LIVE_LEGGED_TEST_LEG_RESID" in h.active_positions
+    assert resid_pos["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    assert resid_pos.get("unwind_retry_count", 0) == 0
+
+    # Tick 2: Polygon settles 12.0 shares -> supervision immediately unwinds 100% of legged-out shares to flat!
+    wallet_bals[tok_15m_up] = 12.0
+    resid_pos["next_unwind_retry_ts"] = time.time() - 0.1
+    h.executor.execute_unwind_order = lambda **kw: {
+        "success": True, "orderID": "OID_RESID_UNWOUND", "matched_size": 12.0,
+        "taking_amount": 5.40, "fee_usd": 0.21, "taking_amount_estimated": False, "transactions_hashes": ["0xuw2"],
+    }
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert "D1_LIVE_LEGGED_TEST_LEG_RESID" not in h.active_positions
+
+    # --- PART 6: Pre-Book Balance Order, Unlocked SOL/XRP D1 Boxes, ETH Sequential Tail-First Dispatch, Inline Unwind & Restart Persistence ---
+    # 6a. Unknown assets (e.g. DOGE) rejected cleanly; SOL/XRP unlocked; 4-token complement anti-box (> 1.00) vetoed cleanly
+    res_doge = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "dedupe_key": "D1_DOGE_TEST"})
+    assert res_doge["executed"] is False and res_doge["reason"] == "UNSUPPORTED_D1_ASSET:DOGE"
+
+    # 6b. ETH skewed box allowed, _wallet_token_balance runs BEFORE get_market_book, parallel_dispatch=False, and 100% inline unwind recorded!
+    h._last_known_collateral = 73.65
+    call_sequence = []
+    h._wallet_token_balance = lambda tid: (call_sequence.append("PRE_BAL") or (0.0, h.ONCHAIN_SOURCE))
+    eth_books = {
+        tok_15m_up: {"asks": [{"price": "0.82", "size": "90"}], "bids": [{"price": "0.80", "size": "90"}]},
+        tok_5m_dn: {"asks": [{"price": "0.13", "size": "40"}], "bids": [{"price": "0.12", "size": "40"}]},
+        tok_15m_dn: {"asks": [{"price": "0.20", "size": "90"}], "bids": [{"price": "0.17", "size": "90"}]},
+        tok_5m_up: {"asks": [{"price": "0.88", "size": "40"}], "bids": [{"price": "0.80", "size": "40"}]},
+    }
+    h.executor.get_market_book = lambda tid: (call_sequence.append("GET_BOOK") or eth_books[tid])
+    # Verify complement anti-box veto when complement best bids sum > 1.03 (e.g. 0.55 + 0.55 = 1.10)
+    anti_books = {**eth_books, tok_15m_dn: {"bids": [{"price": "0.55", "size": "50"}]}, tok_5m_up: {"bids": [{"price": "0.55", "size": "50"}]}}
+    h.executor.get_market_book = lambda tid: anti_books[tid]
+    res_comp_veto = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "ETH", "dedupe_key": "D1_ETH_ANTIBOX_VETO", "ts_unix": time.time(), "expiry_ts": time.time() + 180.0})
+    assert res_comp_veto["executed"] is False and "ANTI_BOX_COMPLEMENT_VETO" in res_comp_veto["reason"]
+
+    call_sequence.clear()
+    h.executor.get_market_book = lambda tid: (call_sequence.append("GET_BOOK") or eth_books[tid])
+    sol_box_kw = {}
+
+    def _mock_sol_inline_unwind(**kw):
+        sol_box_kw.update(kw)
+        return {
+            "success": False,
+            "stage": "LEG_2_REJECTED_UNWOUND",
+            "legged_out": True,
+            "outcome_unknown": False,
+            "unwind_result": {
+                "success": True, "orderID": "0x389cae", "matched_size": 14.17,
+                "taking_amount": 11.1943, "fee_usd": 0.1646,
+            },
+            "residual_unhedged_leg": {
+                "token_id": tok_15m_up, "label": "15M_UP", "price": 0.82,
+                "matched_shares": 14.17, "unwound_shares": 14.17, "residual_shares": 0.0,
+                "orderID": "0xsol_in", "raw": {"makingAmount": 11.6194},
+                "unwind_outcome_unknown": False,
+                "unwind_result": {
+                    "success": True, "orderID": "0x389cae", "matched_size": 14.17,
+                    "taking_amount": 11.1943, "fee_usd": 0.1646,
+                },
+            },
+            "error": "FOK order couldn't be fully filled",
+        }
+
+    h.executor.execute_atomic_dominance_box = _mock_sol_inline_unwind
+    cand_sol = {
+        **cand_obj,
+        "box_id": "D1_LIVE_ETH_1793037600_14389",
+        "dedupe_key": "D1_ETH_6213180_6214389",
+        "asset": "ETH",
+        "ts_unix": time.time(),
+        "expiry_ts": time.time() + 180.0,
+    }
+    pre_closed_len = len(h.closed_positions)
+    res_sol = h.maybe_execute_graduated_d1_box(cand_sol)
+    assert res_sol["executed"] is False
+    assert "shares" in sol_box_kw, res_sol
+    assert sol_box_kw["parallel_dispatch"] is False, "Skewed tail box must dispatch fragile 5m leg first (sequential)!"
+    assert max(i for i, s in enumerate(call_sequence) if s == "PRE_BAL") < min(i for i, s in enumerate(call_sequence) if s == "GET_BOOK")
+    assert len(h.closed_positions) == pre_closed_len + 1
+    inline_rec = h.closed_positions[-1]
+    assert inline_rec["close_reason"] == "D1_INLINE_LEGGED_OUT_UNWIND"
+    assert inline_rec["asset"] == "ETH"
+    assert inline_rec["net_pnl_usd"] == pytest.approx(-0.74, abs=0.01)
+
+    # 6c. Reload harvester from disk -> seen_d1_box_keys survives restart and blocks duplicate attempt!
+    h_reloaded = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, ticket_notional=12.0,
+        max_exposure=60.0, max_concurrent=1, allowed_assets={"BTC", "ETH"},
+    )
+    h_reloaded.state_file = h.state_file
+    h_reloaded.load_state()
+    assert "D1_ETH_6213180_6214389" in h_reloaded._seen_d1_box_keys
+    res_dup = h_reloaded.maybe_execute_graduated_d1_box(cand_sol)
+    assert res_dup["executed"] is False and res_dup["reason"] == "ALREADY_EXECUTED_PAIR"
+
+    # --- PART 7: Phase 1 Latency Optimizations (4-Socket Warm Pool, D1 defer_exec=True, Fast D1 IPC Dedupe & mtime Cache) ---
+    import src.polymarket_research.polymarket_live_executor as exec_mod
+    from collections import deque
+
+    # 7a. _ThreadLocalClobHttpClient.warm_pool(min_warm=4) returns healthy inventory=4 with 0 redundant GETs when hot
+    pool4 = exec_mod._ThreadLocalClobHttpClient(timeout=4.0, max_pool_size=8)
+    created4 = []
+
+    class _FakeCli4:
+        def __init__(self):
+            self.is_closed = False
+            self.calls = 0
+            created4.append(self)
+
+        def request(self, method="GET", url="", **kw):
+            self.calls += 1
+            return MagicMock(status_code=200)
+
+        def close(self):
+            self.is_closed = True
+
+    pool4._make_client = _FakeCli4
+    assert pool4.warm_pool(min_warm=4, max_idle_sec=18.0) == 4
+    assert len(created4) == 4 and sum(c.calls for c in created4) == 4
+    # Second call while all 4 sockets are <18s idle must still report 4 healthy sockets AND fire 0 new GETs!
+    assert pool4.warm_pool(min_warm=4, max_idle_sec=18.0) == 4
+    assert sum(c.calls for c in created4) == 4
+
+    # 7b. D1 execute_atomic_dominance_box passes defer_exec=True on sequential & parallel FOKs + fails closed on DELAYED
+    ex_d1 = exec_mod.PolymarketLiveExecutor(dry_run=True)
+    ex_d1.dry_run = False
+    ex_d1.is_authenticated = True
+    ex_d1.auth_mode = "AUTHENTICATED_L2"
+    ex_d1._tick_size_cache[tok_15m_up] = 0.01
+    ex_d1._tick_size_cache[tok_5m_dn] = 0.01
+    ex_d1._neg_risk_cache[tok_15m_up] = False
+    ex_d1._neg_risk_cache[tok_5m_dn] = False
+    if exec_mod.OrderArgsV2 is None:
+        monkeypatch.setattr(exec_mod, "OrderArgsV2", lambda **kw: kw)
+    if exec_mod.OrderType is None:
+        monkeypatch.setattr(exec_mod, "OrderType", type("OT", (), {"FOK": "FOK", "FAK": "FAK", "GTC": "GTC"}))
+    post_calls = []
+
+    class _StubClobDefer:
+        def create_order(self, args, options=None):
+            return {"signed": args}
+
+        def post_order(self, order, order_type=None, post_only=False, defer_exec=False):
+            post_calls.append((order_type, post_only, defer_exec))
+            if len(post_calls) == 1:
+                return {"orderID": "OID_DELAYED_NO_AMT", "status": "DELAYED"}
+            return {"orderID": f"OID_{len(post_calls)}", "status": "matched", "takingAmount": "10"}
+
+    ex_d1.client = _StubClobDefer()
+    res_delayed = ex_d1.execute_atomic_dominance_box(
+        box_id="BOX_DEFER_UNK", leg_a_token_id=tok_15m_up, leg_a_label="15M_UP", leg_a_limit_price=0.80,
+        leg_b_token_id=tok_5m_dn, leg_b_label="5M_DN", leg_b_limit_price=0.14, shares=10,
+        max_box_cost_net=0.975, parallel_dispatch=False,
+    )
+    assert post_calls[0][1] is False and post_calls[0][2] is True, "Sequential D1 FOK must pass defer_exec=True!"
+    assert res_delayed["success"] is False and res_delayed["outcome_unknown"] is True
+
+    res_seq_ok = ex_d1.execute_atomic_dominance_box(
+        box_id="BOX_DEFER_OK", leg_a_token_id=tok_15m_up, leg_a_label="15M_UP", leg_a_limit_price=0.80,
+        leg_b_token_id=tok_5m_dn, leg_b_label="5M_DN", leg_b_limit_price=0.14, shares=10,
+        max_box_cost_net=0.975, parallel_dispatch=False,
+    )
+    assert res_seq_ok["success"] is True
+    assert all(c[2] is True for c in post_calls), "All D1 FOK post_order calls must set defer_exec=True!"
+
+    # 7c. Fast D1 RAM IPC queue + emit_id dedupe prevents double evaluation when disk cursor catches up
+    eval_calls = []
+    h._fast_d1_cand_lines = deque()
+    ipc_cand = {**cand_obj, "box_id": "D1_IPC_DEDUPE_1", "dedupe_key": "D1_IPC_KEY_1", "ts_unix": round(time.time(), 3)}
+    ipc_line = json.dumps(ipc_cand)
+    h._fast_d1_cand_lines.append(ipc_line)
+    with open(cand_file, "a", encoding="utf-8") as fp:
+        fp.write(ipc_line + "\n")
+    h.maybe_execute_graduated_d1_box = lambda c: (eval_calls.append(c["box_id"]) or {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT"})
+    h._last_d1_disk_poll = time.time()  # Simulate immediate RAM IPC wakeup (<0.50s before disk poll)
+    asyncio.run(h._poll_d1_live_box_candidates(time.time()))
+    assert eval_calls == ["D1_IPC_DEDUPE_1"]
+    h._last_d1_disk_poll = 0.0  # Now let disk fallback poll catch up to the appended JSONL line
+    asyncio.run(h._poll_d1_live_box_candidates(time.time()))
+    assert eval_calls == ["D1_IPC_DEDUPE_1"], "Identical emit_id from JSONL fallback must not re-evaluate!"
+
+    # --- PART 8: Live D1 Quiet-Book 0.985 Promotion, 4h/15m 900s TTE Bridge & $0-Miss 10s Retry Cooldown ---
+    del h.maybe_execute_graduated_d1_box
+    h.active_positions.clear()
+    h._last_known_collateral = 85.08
+    # 0.48 + 0.47 = 0.95 gross + ~0.03497 fees => ~0.98497 net (>0.975 and <=0.985!)
+    tight_quiet_books = {
+        tok_15m_up: {"asks": [{"price": "0.48", "size": "120"}], "bids": [{"price": "0.46", "size": "120"}]},
+        tok_5m_dn: {"asks": [{"price": "0.46", "size": "120"}], "bids": [{"price": "0.44", "size": "120"}]},
+        tok_15m_dn: {"asks": [{"price": "0.52", "size": "120"}], "bids": [{"price": "0.49", "size": "120"}]},
+        tok_5m_up: {"asks": [{"price": "0.53", "size": "120"}], "bids": [{"price": "0.50", "size": "120"}]},
+    }
+    # 0.48*(1 + 0.07*0.52) = 0.497472; 0.46*(1 + 0.07*0.54) = 0.477388 -> sum = 0.97486; let's use 0.48 + 0.465 -> 0.48 + 0.47!
+    tight_quiet_books[tok_5m_dn] = {"asks": [{"price": "0.47", "size": "120"}], "bids": [{"price": "0.45", "size": "120"}]}
+    # Check: 0.48 + 0.47 = 0.95 + 0.017472 + 0.017437 = 0.984909 <= 0.985 and > 0.975!
+    h.executor.get_market_book = lambda tid: tight_quiet_books[tid]
+
+    # 8a. Non-quiet candidate at 0.9849 net MUST be rejected (> 0.975 non-quiet cap)
+    cand_non_quiet = {
+        **cand_obj,
+        "box_id": "D1_NON_QUIET_9849",
+        "dedupe_key": "D1_BTC_NON_QUIET_1",
+        "is_quiet_book": False,
+        "ts_unix": time.time(),
+        "expiry_ts": time.time() + 180.0,
+    }
+    res_nq = h.maybe_execute_graduated_d1_box(cand_non_quiet)
+    assert res_nq["executed"] is False and "FRESH_BOOK_WALK_REJECT" in res_nq["reason"]
+
+    # 8b. Quiet-book 4h/15m candidate at TTE=600s & 0.9849 net:
+    # First attempt: clean $0.00-cost Leg-1 FOK miss -> 10s cooldown (NOT permanent lockout!), then retry succeeds!
+    attempts_8b = []
+
+    def _mock_quiet_4h_fok(**kw):
+        attempts_8b.append(dict(kw))
+        if len(attempts_8b) == 1:
+            return {
+                "success": False,
+                "stage": "LEG_1_REJECTED",
+                "legged_out": False,
+                "outcome_unknown": False,
+                "error": "FOK order couldn't be fully filled",
+            }
+        sh = float(kw["shares"])
+        return {
+            "success": True,
+            "box_id": kw["box_id"],
+            "shares": sh,
+            "leg_1": {"token_id": tok_15m_up, "label": kw["leg_a_label"], "price": 0.48, "orderID": "OID_4H_A", "raw": {"makingAmount": round(sh * 0.48, 2)}},
+            "leg_2": {"token_id": tok_5m_dn, "label": kw["leg_b_label"], "price": 0.47, "orderID": "OID_4H_B", "raw": {"makingAmount": round(sh * 0.47, 2)}},
+        }
+
+    h.executor.execute_atomic_dominance_box = _mock_quiet_4h_fok
+    cand_4h_quiet = {
+        **cand_obj,
+        "box_id": "D1_4H_LIVE_BTC_600S",
+        "dedupe_key": "D1_BTC_4H_15M_RETRY_1",
+        "pair_horizons": "4h_15m",
+        "sleeve_source": "D1_4H_DOMINANCE_BOX",
+        "leg_a_horizon": "4h",
+        "leg_b_horizon": "15m",
+        "is_quiet_book": True,
+        "ts_unix": time.time(),
+        "expiry_ts": time.time() + 600.0,  # TTE = 600s (>300s 5m cap, <=900s 4h/15m cap!)
+    }
+    res_miss1 = h.maybe_execute_graduated_d1_box(cand_4h_quiet)
+    assert res_miss1["executed"] is False
+    assert len(attempts_8b) == 1
+    assert attempts_8b[0]["max_box_cost_net"] == pytest.approx(0.985)
+    assert attempts_8b[0]["parallel_dispatch"] is False, "Tighter (0.975..0.985] quiet box must dispatch fragile leg sequentially!"
+    assert "D1_BTC_4H_15M_RETRY_1" not in h._seen_d1_box_keys, "$0.00-cost Leg-1 FOK miss must NOT permanently lock pair!"
+
+    # Immediate re-attempt (< 10s) blocked by cooldown
+    res_cd = h.maybe_execute_graduated_d1_box({**cand_4h_quiet, "ts_unix": time.time()})
+    assert res_cd["executed"] is False and res_cd["reason"] == "RETRY_COOLDOWN_10S"
+
+    # Expire 10s cooldown -> second attempt fills cleanly and permanently locks dedupe_key!
+    h._d1_retry_cooldown_until["D1_BTC_4H_15M_RETRY_1"] = time.time() - 0.1
+    res_retry_ok = h.maybe_execute_graduated_d1_box({**cand_4h_quiet, "ts_unix": time.time()})
+    assert res_retry_ok["executed"] is True
+    assert len(attempts_8b) == 2
+    assert "D1_BTC_4H_15M_RETRY_1" in h._seen_d1_box_keys
+
+
+
+
+
+
 
 
 

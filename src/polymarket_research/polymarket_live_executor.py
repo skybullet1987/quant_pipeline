@@ -16,10 +16,12 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import math
 import os
+import queue
 import sys
 import threading
 import time
@@ -28,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import socket
 from urllib3.connection import HTTPConnection
@@ -57,16 +59,31 @@ def enable_tcp_nodelay_globally() -> None:
 
 class _ThreadLocalClobHttpClient:
     """
-    v3.9.3 Forensic Fix: Thread-isolated HTTP/1.1 persistent keep-alive proxy for py_clob_client_v2.
-    Replaces py_clob_client_v2's single module-global `httpx.Client(http2=True)`, eliminating:
-      1. `RuntimeError: deque mutated during iteration` when concurrent `asyncio.to_thread` workers
-         mutate httpcore's shared connection/stream deque simultaneously.
-      2. Cloudflare HTTP/2 `<ConnectionTerminated error_code:9>` GOAWAY stream-limit resets.
+    v4.0 Lock-Free Multi-Socket HTTP/1.1 Keep-Alive Pool + Thread-Local Isolation for py_clob_client_v2.
+    Eliminates:
+      1. `RuntimeError: deque mutated during iteration` (every borrowed `httpx.Client` is exclusively owned
+         by at most one thread during `request()`, then returned to a LIFO pool).
+      2. Cold worker-thread TLS handshake spikes (`260-507ms`) across `asyncio.to_thread` worker pools by
+         LIFO-reusing 2+ pre-warmed TLS 1.3 sockets regardless of which OS thread wakes up.
+      3. Cloudflare HTTP/2 `<ConnectionTerminated error_code:9>` GOAWAY stream-limit resets (`http2=False`).
     """
 
-    def __init__(self, timeout: float = 8.0) -> None:
+    def __init__(self, timeout: float = 8.0, max_pool_size: int = 16) -> None:
         self._local = threading.local()
         self._timeout = timeout
+        self._pool: "queue.LifoQueue[Tuple[httpx.Client, float]]" = queue.LifoQueue(maxsize=max_pool_size)
+        self._warm_lock = threading.Lock()
+
+    def _make_client(self) -> httpx.Client:
+        return httpx.Client(
+            http2=False,
+            timeout=self._timeout,
+            limits=httpx.Limits(
+                max_keepalive_connections=8,
+                max_connections=16,
+                keepalive_expiry=45.0,
+            ),
+        )
 
     def _client(self, reset: bool = False) -> httpx.Client:
         cli = getattr(self._local, "client", None)
@@ -77,27 +94,116 @@ class _ThreadLocalClobHttpClient:
                 pass
             cli = None
         if cli is None or getattr(cli, "is_closed", False):
-            cli = httpx.Client(
-                http2=False,
-                timeout=self._timeout,
-                limits=httpx.Limits(
-                    max_keepalive_connections=8,
-                    max_connections=16,
-                    keepalive_expiry=45.0,
-                ),
-            )
+            cli = self._make_client()
             self._local.client = cli
         return cli
 
-    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    def _borrow_pool_client(self) -> httpx.Client:
+        while True:
+            try:
+                cli, last_ts = self._pool.get_nowait()
+            except queue.Empty:
+                return self._make_client()
+            if cli is not None and not getattr(cli, "is_closed", False) and (time.monotonic() - last_ts) < 40.0:
+                return cli
+            try:
+                if cli is not None:
+                    cli.close()
+            except Exception:
+                pass
+
+    def _return_pool_client(self, cli: Optional[httpx.Client]) -> None:
+        if cli is None or getattr(cli, "is_closed", False):
+            return
         try:
-            return self._client().request(method=method, url=url, **kwargs)
+            self._pool.put_nowait((cli, time.monotonic()))
+        except queue.Full:
+            try:
+                cli.close()
+            except Exception:
+                pass
+
+    def warm_pool(
+        self,
+        url: str = "https://clob.polymarket.com/time",
+        min_warm: int = 4,
+        max_idle_sec: float = 18.0,
+    ) -> int:
+        """Ensures at least `min_warm` distinct HTTP/1.1 TLS 1.3 sockets sit hot at the top of the LIFO pool."""
+        if not self._warm_lock.acquire(blocking=False):
+            return 0
+        checked: List[Tuple[httpx.Client, float]] = []
+        staged: List[Tuple[httpx.Client, float]] = []
+        reserve_pushed = False
+        try:
+            now_m = time.monotonic()
+            for _ in range(max(1, int(min_warm))):
+                try:
+                    staged.append(self._pool.get_nowait())
+                except queue.Empty:
+                    staged.append((self._make_client(), 0.0))
+            staged.sort(key=lambda x: -x[1])
+            for cli, last_ts in staged:
+                if getattr(cli, "is_closed", False):
+                    cli, last_ts = self._make_client(), 0.0
+                if (now_m - last_ts) >= max_idle_sec:
+                    try:
+                        cli.request("GET", url)
+                        last_ts = time.monotonic()
+                    except Exception:
+                        try:
+                            cli.close()
+                        except Exception:
+                            pass
+                        continue
+                if not reserve_pushed:
+                    try:
+                        self._pool.put_nowait((cli, last_ts))
+                        reserve_pushed = True
+                        continue
+                    except queue.Full:
+                        pass
+                checked.append((cli, last_ts))
+        finally:
+            for cli_item, ts_item in reversed(checked):
+                try:
+                    self._pool.put_nowait((cli_item, ts_item))
+                except queue.Full:
+                    try:
+                        cli_item.close()
+                    except Exception:
+                        pass
+            self._warm_lock.release()
+        return len(checked) + (1 if reserve_pushed else 0)
+
+    def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        cli = self._borrow_pool_client()
+        healthy = True
+        try:
+            return cli.request(method=method, url=url, **kwargs)
         except (httpx.RemoteProtocolError, httpx.LocalProtocolError) as exc:
+            healthy = False
+            try:
+                cli.close()
+            except Exception:
+                pass
             # Safe 1-shot reconnect ONLY on idempotent GET when an idle keep-alive socket was closed upstream
             if str(method).upper() == "GET":
-                return self._client(reset=True).request(method=method, url=url, **kwargs)
-            self._client(reset=True)
+                fresh = self._make_client()
+                try:
+                    resp = fresh.request(method=method, url=url, **kwargs)
+                    self._return_pool_client(fresh)
+                    return resp
+                except Exception:
+                    try:
+                        fresh.close()
+                    except Exception:
+                        pass
+                    raise
             raise exc
+        finally:
+            if healthy:
+                self._return_pool_client(cli)
 
 
 def install_thread_safe_clob_http_client(target_module: Any = None) -> bool:
@@ -144,9 +250,17 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "scale_up_equity_threshold": 110.00,
     "scale_up_risk_pct": 0.22,
     "min_equity_floor": 66.67,
+    "seed_survival_equity_threshold": 88.00,
+    "seed_survival_ticket_usd": 12.00,
+    "seed_survival_max_concurrent": 1,
+    "seed_survival_floor_usd": 48.00,
+    "seed_smooth_compounding": True,
+    "enable_graduated_d1_box": True,
+    "enable_graduated_alt_sleeves": True,
     "max_daily_loss": 20.00,
     "max_exposure": 35.00,
     "max_concurrent_positions": 2,
+    "hold_to_maturity": False,
     "stale_fast_tick_max_age_sec": 15.0,
     "stale_telemetry_max_age_sec": 30.0,
     "stale_alert_after_sec": 60.0,
@@ -461,9 +575,63 @@ class PreSignedOrderLadderCache:
 
 _CLOB_CLIENT_SIGN_LOCK = threading.Lock()
 _CLOB_HTTP_LOCK = threading.RLock()
-_HOT_DISPATCH_ACTIVE = threading.Event()
+try:
+    from src.polymarket_research.latency_trace import ActiveCounter as _ActiveCounter, CURRENT_TRACE as _CURRENT_TRACE
+except ImportError:  # pragma: no cover - executed when the package root is not on sys.path
+    try:
+        from latency_trace import ActiveCounter as _ActiveCounter, CURRENT_TRACE as _CURRENT_TRACE  # type: ignore
+    except ImportError:
+        _CURRENT_TRACE = None  # type: ignore
+
+        class _ActiveCounter:  # type: ignore
+            def __init__(self) -> None:
+                self._n = 0
+                self._lock = threading.Lock()
+
+            def enter(self) -> None:
+                with self._lock:
+                    self._n += 1
+
+            def leave(self) -> None:
+                with self._lock:
+                    self._n = max(0, self._n - 1)
+
+            def is_set(self) -> bool:
+                return self._n > 0
+
+            @property
+            def count(self) -> int:
+                return self._n
+
+# Refcounted (not a boolean Event): the hot pool has 12 workers, so overlapping dispatches are possible and the
+# first finisher must not mark the hot path idle while another POST is still in flight.
+_HOT_DISPATCH_ACTIVE = _ActiveCounter()
 _URGENT_SIGN_COUNTER_LOCK = threading.Lock()
 _URGENT_SIGN_WAITERS = 0
+_HOT_IO_POOL_LOCK = threading.Lock()
+_HOT_IO_POOL: Optional[concurrent.futures.ThreadPoolExecutor] = None
+
+
+def _get_hot_io_pool() -> concurrent.futures.ThreadPoolExecutor:
+    """Returns a persistent, pre-spawned 12-worker hot thread pool isolated from slow background tasks."""
+    global _HOT_IO_POOL
+    if _HOT_IO_POOL is None:
+        with _HOT_IO_POOL_LOCK:
+            if _HOT_IO_POOL is None:
+                pool = concurrent.futures.ThreadPoolExecutor(max_workers=12, thread_name_prefix="pm-hot")
+                bar = threading.Barrier(12, timeout=0.25)
+                def _warm_th() -> None:
+                    try:
+                        bar.wait()
+                    except Exception:
+                        pass
+                for f in [pool.submit(_warm_th) for _ in range(12)]:
+                    try:
+                        f.result(timeout=0.35)
+                    except Exception:
+                        pass
+                _HOT_IO_POOL = pool
+    return _HOT_IO_POOL
 
 
 class _UrgentSignPriority:
@@ -499,6 +667,7 @@ def _sign_and_post_single_hop(
     create_options: Any = None,
     stage: Optional[Dict[str, Any]] = None,
     max_notional_usd: Optional[float] = None,
+    enqueue_ns: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
     v3.3 Single-Hop Sign + Post: pre-signed ladder lookup (or cold EIP-712 create_order fallback)
@@ -511,10 +680,12 @@ def _sign_and_post_single_hop(
     if stage is None:
         stage = {}
     stage["submitted"] = False
-    _HOT_DISPATCH_ACTIVE.set()
+    _HOT_DISPATCH_ACTIVE.enter()
     gc_was_enabled = gc.isenabled()
     if gc_was_enabled:
         gc.disable()
+    t0_ns = time.perf_counter_ns()
+    thread_hop_ms = round(max(0.0, (t0_ns - enqueue_ns) / 1_000_000.0), 3) if enqueue_ns is not None else 0.0
     t0 = time.perf_counter()
     signed = None
     cache_hit = False
@@ -550,12 +721,13 @@ def _sign_and_post_single_hop(
             "post_resp": post_resp,
             "sign_ms": (t1 - t0) * 1000.0,
             "post_ms": (t2 - t1) * 1000.0,
+            "thread_hop_ms": thread_hop_ms,
             "cache_hit": cache_hit,
             "signed_shares": actual_signed_shares,
             "t_post_end": t2,
         }
     finally:
-        _HOT_DISPATCH_ACTIVE.clear()
+        _HOT_DISPATCH_ACTIVE.leave()
         if gc_was_enabled:
             gc.enable()
 
@@ -787,6 +959,8 @@ class PolymarketLiveExecutor:
             self.is_authenticated = True
             self.auth_mode = "AUTHENTICATED_L2"
             logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client v{PY_CLOB_VERSION}) in {latency_ms:.2f} ms.")
+            if os.environ.get("PM_ENABLE_TLS_KEEPALIVE", "1") == "1":
+                self.start_clob_tls_keepalive_daemon(interval_sec=20.0)
 
         except Exception as e:
             self.auth_mode = "AUTH_FAILED"
@@ -916,7 +1090,7 @@ class PolymarketLiveExecutor:
         if self.dry_run or not self.is_authenticated or self.client is None or OrderArgsV2 is None:
             return 0
         if price_levels is None:
-            price_levels = [round(c / 100.0, 2) for c in range(55, 89)]
+            price_levels = [round(c / 100.0, 2) for c in range(55, 91)]
 
         eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
         create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
@@ -955,17 +1129,50 @@ class PolymarketLiveExecutor:
                     continue
         return count
 
+    def start_clob_tls_keepalive_daemon(self, interval_sec: float = 20.0) -> None:
+        """Starts a lightweight background daemon thread keeping 2+ HTTP/1.1 TLS 1.3 sockets hot 24/7."""
+        if self.dry_run or getattr(self, "_tls_keepalive_started", False):
+            return
+        self._tls_keepalive_started = True
+
+        def _loop() -> None:
+            while not self.dry_run:
+                time.sleep(max(5.0, float(interval_sec)))
+                if self.dry_run:
+                    break
+                try:
+                    if not _HOT_DISPATCH_ACTIVE.is_set():
+                        self.ping_clob_keepalive()
+                except Exception:
+                    pass
+
+        t = threading.Thread(target=_loop, name="clob-tls-keepalive", daemon=True)
+        t.start()
+
     def ping_clob_keepalive(self) -> None:
-        """Lightweight GET ping to ensure persistent HTTP keep-alive connection remains warm."""
+        """Lightweight GET ping ensuring 2+ pooled HTTP/1.1 TLS 1.3 keep-alive sockets remain warm."""
         if self.dry_run or not self.client or _HOT_DISPATCH_ACTIVE.is_set():
             return
         if not _CLOB_HTTP_LOCK.acquire(blocking=False):
             return
         try:
             t0 = time.perf_counter()
-            self.client.get_server_time()
+            warmed = 0
+            try:
+                import py_clob_client_v2.http_helpers.helpers as hh
+                http_cli = getattr(hh, "_http_client", None)
+                if isinstance(http_cli, _ThreadLocalClobHttpClient):
+                    warmed = http_cli.warm_pool(
+                        url=f"{self.CLOB_HOST.rstrip('/')}/time",
+                        min_warm=4,
+                        max_idle_sec=18.0,
+                    )
+            except Exception:
+                warmed = 0
+            if warmed == 0:
+                self.client.get_server_time()
             elapsed_ms = (time.perf_counter() - t0) * 1000.0
-            logger.debug(f"[KEEPALIVE] CLOB HTTP keepalive ping: {elapsed_ms:.1f}ms")
+            logger.debug(f"[KEEPALIVE] CLOB HTTP keepalive ping ({warmed} pool sockets warmed): {elapsed_ms:.1f}ms")
         except Exception as e:
             logger.debug(f"[KEEPALIVE] CLOB ping notice: {e}")
         finally:
@@ -2535,11 +2742,15 @@ class PolymarketLiveExecutor:
         prefetched_pre_balance: Optional[float] = None,
         prefetched_book: Optional[Dict[str, Any]] = None,
         neg_risk: Optional[bool] = None,
+        expected_best_price: Optional[float] = None,
     ) -> OrderResult:
         """
         Executes a directional latency snipe with pre-trade risk and depth assertions.
         """
         t0 = time.perf_counter()
+        _trace = _CURRENT_TRACE.get() if _CURRENT_TRACE is not None else None
+        if _trace is not None:
+            _trace.stamp("exec_enter")
         now_utc = datetime.now(timezone.utc).isoformat()
         if neg_risk is not None:
             self.get_token_neg_risk(token_id, neg_risk)
@@ -2662,6 +2873,17 @@ class PolymarketLiveExecutor:
                 execution_status=ExecutionStatus.REJECTED,
                 confirmed_onchain=False,
                 error=err,
+            )
+
+        # Adverse Downward Collapse Guard: Do not BUY into a collapsing ask (>= 4¢ drop from trigger t0 ask)
+        if side == "BUY" and expected_best_price is not None and expected_best_price > 0 and (expected_best_price - best_px) >= 0.04:
+            err = f"AdverseCollapseGuard Rejected: Best ask ${best_px:.4f} collapsed >= 4¢ below trigger ask ${expected_best_price:.4f}."
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False, order_id=None, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side=side, price=best_px, size=0.0, notional_usd=notional_usd, fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0, mode=self.auth_mode,
+                execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False, error=err,
             )
 
         # Smart FAK Price Buffer:
@@ -2923,6 +3145,8 @@ class PolymarketLiveExecutor:
             # Dispatch via native MarketOrderArgsV2 / OrderArgsV2 (sweeps depth up to worst_acceptable_px)
             entry_order_type = getattr(OrderType, "FAK", OrderType.FOK)
             t_qualify_end = time.perf_counter()
+            if _trace is not None:
+                _trace.stamp("qualify_end")
             qualify_ms = (t_qualify_end - t0) * 1000.0
 
             # Fast hot-path tick size resolution: NEVER make synchronous REST GET calls during a shock
@@ -2970,6 +3194,17 @@ class PolymarketLiveExecutor:
 
             latency_ms = (t_post_end - t0) * 1000.0
             order_id = post_resp.get("orderID") or post_resp.get("id")
+            if _trace is not None:
+                _trace.emit(
+                    trade_id=trade_id, token_id=token_id, side=side, outcome="posted",
+                    order_id_present=bool(order_id), resp_status=str(post_resp.get("status")),
+                    resp_error=str(post_resp.get("errorMsg") or post_resp.get("error") or "")[:120],
+                    qualify_ms=round(qualify_ms, 3), sign_ms=round(sign_ms, 3),
+                    thread_hop_ms=round(float(hop.get("thread_hop_ms", 0.0)), 3), clob_http_post_ms=round(clob_http_post_ms, 3),
+                    total_trigger_to_ack_ms=round(total_trigger_to_ack_ms, 3),
+                    presign_cache_hit=bool(hop.get("cache_hit")), hot_active=_HOT_DISPATCH_ACTIVE.count,
+                    taker_delay_hint=getattr(self, "_taker_delay_ms_hint", None),
+                )
 
             # Deterministic FAK zero-match rejection check:
             if is_fak_killed_no_match(None, post_resp):
@@ -3003,6 +3238,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3041,6 +3277,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3078,6 +3315,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3185,6 +3423,7 @@ class PolymarketLiveExecutor:
                     "latency_telemetry": {
                         "qualify_ms": qualify_ms,
                         "sign_ms": sign_ms,
+                        "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                         "clob_http_post_ms": clob_http_post_ms,
                         "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                     },
@@ -3304,6 +3543,7 @@ class PolymarketLiveExecutor:
         prefetched_pre_balance: Optional[float] = None,
         min_price_floor: float = MIN_PRICE_FLOOR,
         neg_risk: Optional[bool] = None,
+        expected_best_price: Optional[float] = None,
     ) -> OrderResult:
         """
         P0: Fully asynchronous, non-blocking EIP-712 order dispatcher.
@@ -3311,6 +3551,9 @@ class PolymarketLiveExecutor:
         into worker threads via asyncio.to_thread, completely preventing event-loop stalls.
         """
         t0 = time.perf_counter()
+        _trace = _CURRENT_TRACE.get() if _CURRENT_TRACE is not None else None
+        if _trace is not None:
+            _trace.stamp("exec_enter")
         now_utc = datetime.now(timezone.utc).isoformat()
         if neg_risk is not None:
             self.get_token_neg_risk(token_id, neg_risk)
@@ -3421,6 +3664,16 @@ class PolymarketLiveExecutor:
                 execution_status=ExecutionStatus.REJECTED,
                 confirmed_onchain=False,
                 error=err,
+            )
+
+        if side == "BUY" and expected_best_price is not None and expected_best_price > 0 and (expected_best_price - best_px) >= 0.04:
+            err = f"AdverseCollapseGuard Rejected: Best ask ${best_px:.4f} collapsed >= 4¢ below trigger ask ${expected_best_price:.4f}."
+            logger.warning(f"[{trade_id}] {err}")
+            return OrderResult(
+                success=False, order_id=None, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side=side, price=best_px, size=0.0, notional_usd=notional_usd, fee_usd=0.0,
+                latency_ms=(time.perf_counter() - t0) * 1000.0, mode=self.auth_mode,
+                execution_status=ExecutionStatus.REJECTED, confirmed_onchain=False, error=err,
             )
 
         # Smart FAK Price Buffer:
@@ -3680,6 +3933,8 @@ class PolymarketLiveExecutor:
 
             entry_order_type = getattr(OrderType, "FAK", OrderType.FOK)
             t_qualify_end = time.perf_counter()
+            if _trace is not None:
+                _trace.stamp("qualify_end")
             qualify_ms = (t_qualify_end - t0) * 1000.0
 
             t_sign_start = time.perf_counter()
@@ -3699,19 +3954,32 @@ class PolymarketLiveExecutor:
             )
             create_options = PartialCreateOrderOptions(tick_size=tick_size_str, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
 
-            # v3.3 Single-Hop Sign + Post: ONE asyncio.to_thread hop for ladder take / cold sign + post_order(defer_exec=True)
+            # v3.3 Single-Hop Sign + Post on dedicated pre-spawned _HOT_IO_POOL (zero SVI/bg contention)
             dispatch_stage: Dict[str, Any] = {"submitted": False}
+            hop: Optional[Dict[str, Any]] = None
+            if _trace is not None:
+                _trace.stamp("dispatch_enqueue")
+            enqueue_ns = time.perf_counter_ns()
             try:
-                hop = await asyncio.to_thread(
+                hop = await asyncio.get_running_loop().run_in_executor(
+                    _get_hot_io_pool(),
                     _sign_and_post_single_hop,
                     self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
-                    side, entry_order_type, create_options, dispatch_stage, notional_usd,
+                    side, entry_order_type, create_options, dispatch_stage, notional_usd, enqueue_ns,
                 )
             finally:
                 order_submitted = bool(dispatch_stage.get("submitted"))
+                if _trace is not None:
+                    _trace.stamp("post_return")
+                    if hop is None:  # signing/POST raised: still record the journey (unknown-outcome analysis)
+                        _trace.emit(
+                            trade_id=trade_id, token_id=token_id, side=side, outcome="dispatch_exception",
+                            submitted=order_submitted, hot_active=_HOT_DISPATCH_ACTIVE.count,
+                        )
             shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
             post_resp = hop["post_resp"]
             sign_ms = hop["sign_ms"]
+            thread_hop_ms = float(hop.get("thread_hop_ms", 0.0))
             clob_http_post_ms = hop["post_ms"]
             t_post_end = time.perf_counter()
             total_trigger_to_ack_ms = (t_post_end - t0) * 1000.0
@@ -3720,11 +3988,22 @@ class PolymarketLiveExecutor:
 
             logger.info(
                 f"[{trade_id}] LATENCY TELEMETRY: qualify_ms={qualify_ms:.2f} | sign_ms={sign_ms:.2f} | "
-                f"clob_http_post_ms={clob_http_post_ms:.2f} | total_trigger_to_ack_ms={total_trigger_to_ack_ms:.2f}"
+                f"thread_hop_ms={thread_hop_ms:.3f} | clob_http_post_ms={clob_http_post_ms:.2f} | total_trigger_to_ack_ms={total_trigger_to_ack_ms:.2f}"
             )
 
             latency_ms = (t_post_end - t0) * 1000.0
             order_id = post_resp.get("orderID") or post_resp.get("id")
+            if _trace is not None:
+                _trace.emit(
+                    trade_id=trade_id, token_id=token_id, side=side, outcome="posted",
+                    order_id_present=bool(order_id), resp_status=str(post_resp.get("status")),
+                    resp_error=str(post_resp.get("errorMsg") or post_resp.get("error") or "")[:120],
+                    qualify_ms=round(qualify_ms, 3), sign_ms=round(sign_ms, 3),
+                    thread_hop_ms=round(float(hop.get("thread_hop_ms", 0.0)), 3), clob_http_post_ms=round(clob_http_post_ms, 3),
+                    total_trigger_to_ack_ms=round(total_trigger_to_ack_ms, 3),
+                    presign_cache_hit=bool(hop.get("cache_hit")), hot_active=_HOT_DISPATCH_ACTIVE.count,
+                    taker_delay_hint=getattr(self, "_taker_delay_ms_hint", None),
+                )
 
             # Deterministic FAK zero-match rejection check:
             if is_fak_killed_no_match(None, post_resp):
@@ -3758,6 +4037,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3795,6 +4075,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3838,6 +4119,7 @@ class PolymarketLiveExecutor:
                         "latency_telemetry": {
                             "qualify_ms": qualify_ms,
                             "sign_ms": sign_ms,
+                            "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                             "clob_http_post_ms": clob_http_post_ms,
                             "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                         },
@@ -3935,6 +4217,7 @@ class PolymarketLiveExecutor:
                     "latency_telemetry": {
                         "qualify_ms": qualify_ms,
                         "sign_ms": sign_ms,
+                        "thread_hop_ms": locals().get("thread_hop_ms", 0.0),
                         "clob_http_post_ms": clob_http_post_ms,
                         "total_trigger_to_ack_ms": total_trigger_to_ack_ms,
                     },
@@ -4242,8 +4525,9 @@ class PolymarketLiveExecutor:
         fee_rate_b: Optional[float] = None,
         fee_exponent_a: Optional[float] = None,
         fee_exponent_b: Optional[float] = None,
+        parallel_dispatch: Optional[bool] = None,
     ) -> Dict[str, Any]:
-        """Executes a 2-leg Same-Oracle Dominance Box with per-leg fees (F-09) and partial-fill unwind."""
+        """Executes a 2-leg Same-Oracle Dominance Box with per-leg fees (F-09), optional <5ms parallel 2-leg FOK dispatch (Gemini #2), and partial-fill unwind."""
         try:
             px_a_in, px_b_in, shares_in, cap_in = float(leg_a_limit_price), float(leg_b_limit_price), float(shares), float(max_box_cost_net)
             fr_a = float(fee_rate if fee_rate_a is None else fee_rate_a)
@@ -4275,6 +4559,14 @@ class PolymarketLiveExecutor:
         fee_b_ps = fr_b * ((px_b * (1.0 - px_b)) ** fe_b) if fr_b > 0.0 else 0.0
         worst_box_cost_net = round(px_a + fee_a_ps + px_b + fee_b_ps, 6)
 
+        if worst_box_cost_net < 0.900 - 1e-6:
+            return {
+                "success": False,
+                "error": f"ANTI_BOX_COST_FLOOR_VETO ({worst_box_cost_net:.5f} < 0.90000)",
+                "worst_box_cost_net": worst_box_cost_net,
+                "legged_out": False,
+                "outcome_unknown": False,
+            }
         if worst_box_cost_net > cap_in + 1e-6:
             return {
                 "success": False,
@@ -4284,12 +4576,12 @@ class PolymarketLiveExecutor:
                 "outcome_unknown": False,
             }
 
-        # Dispatch thinner leg first so any liquidity miss FOK-kills on Leg 1 with zero naked exposure
-        b_thinner = (
-            leg_a_avail_shares is not None
-            and leg_b_avail_shares is not None
-            and float(leg_b_avail_shares) < float(leg_a_avail_shares)
-        )
+        # Dispatch materially thinner-depth leg FIRST (>1.25x depth asymmetry), else lower-price tail leg first
+        if leg_a_avail_shares is not None and leg_b_avail_shares is not None and min(float(leg_a_avail_shares), float(leg_b_avail_shares)) > 0.0:
+            av_a, av_b = float(leg_a_avail_shares), float(leg_b_avail_shares)
+            b_thinner = (av_b < av_a) if max(av_a, av_b) > 1.25 * min(av_a, av_b) else (px_b < px_a)
+        else:
+            b_thinner = px_b < px_a
         if b_thinner:
             legs = [
                 (leg_b_token_id, leg_b_label, px_b, fee_b_ps),
@@ -4329,6 +4621,53 @@ class PolymarketLiveExecutor:
         opts_1 = PartialCreateOrderOptions(tick_size=str(tick_1), neg_risk=nr_1, version=2) if PartialCreateOrderOptions else None
         opts_2 = PartialCreateOrderOptions(tick_size=str(tick_2), neg_risk=nr_2, version=2) if PartialCreateOrderOptions else None
 
+        def _unwind_legged_out(
+            tok_u: str, lbl_u: str, m_u: float, px_u: float, nr_u: bool, oid_u: Optional[str], raw_u: Any
+        ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+            # Poll up to 3.5s (every 0.25s) for Polygon ERC-1155 BUY settlement before firing FAK SELL unwind
+            if getattr(self, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2"):
+                deadline_u = time.monotonic() + 3.5
+                while time.monotonic() < deadline_u:
+                    try:
+                        avail_u = self.get_unreserved_conditional_balance(tok_u)
+                    except Exception:
+                        break
+                    if avail_u is None or float(avail_u) >= float(m_u) - 0.05:
+                        break
+                    time.sleep(0.25)
+            uw_res = self.execute_unwind_order(
+                tok_u, size=m_u, side="SELL", min_price=max(0.01, round(px_u - 0.03, 2)), neg_risk=nr_u
+            )
+            uw_unk = bool(isinstance(uw_res, dict) and uw_res.get("outcome_unknown"))
+            unwound_sh = (
+                float(uw_res.get("matched_size") or 0.0)
+                if (isinstance(uw_res, dict) and (uw_res.get("success") or uw_res.get("partial")) and not uw_unk)
+                else 0.0
+            )
+            rem_u = round(max(0.0, float(m_u) - unwound_sh), 4)
+            if rem_u > 0.05 and not uw_unk:
+                uw_2 = self.execute_unwind_order(
+                    tok_u, size=rem_u, side="SELL", min_price=max(0.01, round(px_u * 0.85, 2)), neg_risk=nr_u
+                )
+                if isinstance(uw_2, dict):
+                    uw_unk = bool(uw_2.get("outcome_unknown"))
+                    if (uw_2.get("success") or uw_2.get("partial")) and not uw_unk:
+                        unwound_sh += float(uw_2.get("matched_size") or 0.0)
+                    uw_res = uw_2
+            resid_sh = round(max(0.0, float(m_u) - unwound_sh), 4)
+            return uw_res, {
+                "token_id": tok_u,
+                "label": lbl_u,
+                "price": px_u,
+                "matched_shares": float(m_u),
+                "unwound_shares": unwound_sh,
+                "residual_shares": resid_sh,
+                "orderID": oid_u,
+                "raw": raw_u,
+                "unwind_outcome_unknown": uw_unk,
+                "unwind_result": uw_res,
+            }
+
         # Pre-sign BOTH FOK legs in RAM before sending Leg 1 so Leg 1 -> Leg 2 gap has 0ms signing overhead
         with _UrgentSignPriority():
             signed_1 = _safe_create_order(
@@ -4342,11 +4681,120 @@ class PolymarketLiveExecutor:
                 opts_2,
             )
 
-        # Leg 1 FOK submission
+        import inspect as _inspect
+        _po_fn = self.client.post_order
+        try:
+            _po_params = list(_inspect.signature(_po_fn).parameters.values())
+            _supports_defer = len(_po_params) >= 4 or any(
+                p.kind in (_inspect.Parameter.VAR_POSITIONAL, _inspect.Parameter.VAR_KEYWORD) or p.name == "defer_exec"
+                for p in _po_params
+            )
+        except Exception:
+            _supports_defer = True
+
+        def _post_fok_fast(signed_ord: Any) -> Any:
+            if _supports_defer:
+                return _po_fn(signed_ord, OrderType.FOK, False, True)  # post_only=False, defer_exec=True
+            return _po_fn(signed_ord, OrderType.FOK)
+
+        use_parallel = (
+            bool(parallel_dispatch)
+            if parallel_dispatch is not None
+            else bool(
+                leg_a_avail_shares is not None
+                and leg_b_avail_shares is not None
+                and float(leg_a_avail_shares) >= 1.5 * shares_int
+                and float(leg_b_avail_shares) >= 1.5 * shares_int
+            )
+        )
+        if use_parallel:
+            def _post_leg(signed_ord: Any) -> Tuple[Optional[Dict[str, Any]], Optional[Exception], float]:
+                t_s = time.perf_counter()
+                try:
+                    return _post_fok_fast(signed_ord), None, t_s
+                except Exception as exc_p:
+                    return None, exc_p, t_s
+
+            hot_pool = _get_hot_io_pool()
+            f1 = hot_pool.submit(_post_leg, signed_1)
+            f2 = hot_pool.submit(_post_leg, signed_2)
+            resp_1, exc_1, ts_1 = f1.result()
+            resp_2, exc_2, ts_2 = f2.result()
+            skew_ms = round(abs(ts_2 - ts_1) * 1000.0, 3)
+
+            def _eval_leg(resp_x: Optional[Dict[str, Any]], exc_x: Optional[Exception]) -> Tuple[str, float, Optional[str], str]:
+                if exc_x is not None:
+                    em = str(getattr(exc_x, "error_message", "") or str(exc_x))
+                    clean = is_clob_400_rejection(exc_x) or any(
+                        k in em.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
+                    )
+                    return ("REJECTED" if clean else "UNKNOWN"), 0.0, None, em
+                if not isinstance(resp_x, dict):
+                    return "UNKNOWN", 0.0, None, "MISSING_RESPONSE"
+                err_x = resp_x.get("errorMsg") or resp_x.get("error")
+                oid_x = resp_x.get("orderID") or resp_x.get("id")
+                if err_x and not oid_x:
+                    return "REJECTED", 0.0, None, str(err_x)
+                if err_x or not oid_x:
+                    return "UNKNOWN", 0.0, oid_x, str(err_x or "missing orderID")
+                m_sh = self._extract_fok_matched_shares(resp_x, shares_int)
+                if m_sh is None:
+                    return "UNKNOWN", 0.0, oid_x, f"NON_IMMEDIATE_STATUS ({resp_x.get('status')})"
+                if m_sh <= 0.0:
+                    return "REJECTED", 0.0, oid_x, "MATCHED_ZERO_SHARES"
+                return "FILLED", float(m_sh), str(oid_x), ""
+
+            st_1, m_1, oid_1, err_s1 = _eval_leg(resp_1, exc_1)
+            st_2, m_2, oid_2, err_s2 = _eval_leg(resp_2, exc_2)
+            if st_1 == "FILLED" and st_2 == "FILLED":
+                paired_shares = min(m_1, m_2)
+                imbalance_unwind = None
+                if abs(m_1 - m_2) > 0.05:
+                    excess_tok, excess_px, excess_nr = (tok_1, px_1, nr_1) if m_1 > m_2 else (tok_2, px_2, nr_2)
+                    imbalance_unwind = self.execute_unwind_order(
+                        excess_tok, size=abs(m_1 - m_2), side="SELL", min_price=max(0.01, round(excess_px * 0.85, 2)), neg_risk=excess_nr
+                    )
+                return {
+                    "success": True, "box_id": box_id, "dispatch_mode": "PARALLEL_2LEG_FOK", "inter_leg_skew_ms": skew_ms,
+                    "shares": paired_shares, "worst_box_cost_net": worst_box_cost_net,
+                    "guaranteed_min_profit_usd": round(paired_shares * (1.0 - worst_box_cost_net), 4),
+                    "legged_out": False, "outcome_unknown": False, "imbalance_unwind": imbalance_unwind,
+                    "leg_1": {"label": lbl_1, "token_id": tok_1, "price": px_1, "matched_shares": m_1, "orderID": oid_1, "raw": resp_1},
+                    "leg_2": {"label": lbl_2, "token_id": tok_2, "price": px_2, "matched_shares": m_2, "orderID": oid_2, "raw": resp_2},
+                }
+            if st_1 == "REJECTED" and st_2 == "REJECTED":
+                return {
+                    "success": False, "stage": "PARALLEL_BOTH_REJECTED", "dispatch_mode": "PARALLEL_2LEG_FOK",
+                    "inter_leg_skew_ms": skew_ms, "legged_out": False, "outcome_unknown": False,
+                    "error": f"L1={err_s1}; L2={err_s2}",
+                }
+            if st_1 == "FILLED" and st_2 == "REJECTED":
+                uw, resid_info = _unwind_legged_out(tok_1, lbl_1, m_1, px_1, nr_1, oid_1, resp_1)
+                return {
+                    "success": False, "stage": "LEG_2_REJECTED_UNWOUND", "dispatch_mode": "PARALLEL_2LEG_FOK",
+                    "inter_leg_skew_ms": skew_ms, "legged_out": True, "outcome_unknown": False,
+                    "leg_1_order_id": oid_1, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_s2,
+                }
+            if st_2 == "FILLED" and st_1 == "REJECTED":
+                uw, resid_info = _unwind_legged_out(tok_2, lbl_2, m_2, px_2, nr_2, oid_2, resp_2)
+                return {
+                    "success": False, "stage": "LEG_1_REJECTED_LEG_2_UNWOUND", "dispatch_mode": "PARALLEL_2LEG_FOK",
+                    "inter_leg_skew_ms": skew_ms, "legged_out": True, "outcome_unknown": False,
+                    "leg_2_order_id": oid_2, "unwind_result": uw, "residual_unhedged_leg": resid_info, "error": err_s1,
+                }
+            return {
+                "success": False, "stage": "PARALLEL_OUTCOME_UNKNOWN", "dispatch_mode": "PARALLEL_2LEG_FOK",
+                "inter_leg_skew_ms": skew_ms, "legged_out": bool(st_1 == "FILLED" or st_2 == "FILLED"),
+                "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2,
+                "leg_1_token_id": tok_1, "leg_2_token_id": tok_2,
+                "error": f"L1={st_1}:{err_s1}; L2={st_2}:{err_s2}",
+            }
+
+        # Leg 1 FOK submission (defer_exec=True prevents synchronous Polygon tx-hash polling before Leg 2)
         leg1_submitted = False
         try:
             leg1_submitted = True
-            resp_1 = self.client.post_order(signed_1, OrderType.FOK)
+            resp_1 = _post_fok_fast(signed_1)
         except Exception as e1:
             err_1 = str(getattr(e1, "error_message", "") or str(e1))
             is_clean_400 = is_clob_400_rejection(e1) or any(
@@ -4357,6 +4805,7 @@ class PolymarketLiveExecutor:
                 "stage": "LEG_1_EXCEPTION",
                 "legged_out": False,
                 "outcome_unknown": bool(leg1_submitted and not is_clean_400),
+                "leg_1_token_id": tok_1,
                 "error": err_1,
             }
 
@@ -4372,40 +4821,40 @@ class PolymarketLiveExecutor:
                 "raw_leg_1": resp_1,
             }
         if err_1 or not oid_1:
-            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}", "raw_leg_1": resp_1}
+            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}", "raw_leg_1": resp_1}
 
         matched_1 = self._extract_fok_matched_shares(resp_1, shares_int)
         if matched_1 is None:
-            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": f"LEG_1_NON_IMMEDIATE_STATUS ({resp_1.get('status')})", "raw_leg_1": resp_1}
+            return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"LEG_1_NON_IMMEDIATE_STATUS ({resp_1.get('status')})", "raw_leg_1": resp_1}
         if matched_1 <= 0.0:
             return {"success": False, "stage": "LEG_1_REJECTED", "legged_out": False, "outcome_unknown": False, "error": "LEG_1_MATCHED_ZERO_SHARES", "raw_leg_1": resp_1}
         if matched_1 < shares_int - 0.05:
-            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
-            return {"success": False, "stage": "LEG_1_PARTIAL_FILL_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": f"LEG_1_UNDERFILLED ({matched_1:.2f} < {shares_int:.2f})", "raw_leg_1": resp_1}
+            unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+            return {"success": False, "stage": "LEG_1_PARTIAL_FILL_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": f"LEG_1_UNDERFILLED ({matched_1:.2f} < {shares_int:.2f})", "raw_leg_1": resp_1}
 
         leg2_submitted = False
         try:
             leg2_submitted = True
-            resp_2 = self.client.post_order(signed_2, OrderType.FOK)
+            resp_2 = _post_fok_fast(signed_2)
         except Exception as e2:
             err_2 = str(getattr(e2, "error_message", "") or str(e2))
             is_clean_400 = is_clob_400_rejection(e2) or any(
                 k in err_2.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
             )
             if not is_clean_400:
-                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "error": err_2}
-            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
-            return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": err_2}
+                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": err_2}
+            unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+            return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": err_2}
 
         err_2 = resp_2.get("errorMsg") or resp_2.get("error")
         oid_2 = resp_2.get("orderID") or resp_2.get("id")
         if not err_2 and oid_2:
             matched_2 = self._extract_fok_matched_shares(resp_2, matched_1)
             if matched_2 is None:
-                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
+                return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
             if matched_2 <= 0.0:
-                unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
-                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "error": "LEG_2_MATCHED_ZERO_SHARES", "raw_leg_2": resp_2}
+                unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": oid_1, "unwind_result": unwind_res, "residual_unhedged_leg": resid_info, "error": "LEG_2_MATCHED_ZERO_SHARES", "raw_leg_2": resp_2}
             paired_shares = min(matched_1, matched_2)
             imbalance_unwind = None
             if abs(matched_1 - matched_2) > 0.05:
@@ -4421,7 +4870,7 @@ class PolymarketLiveExecutor:
             }
 
         if err_2 and not oid_2:
-            unwind_res = self.execute_unwind_order(tok_1, size=matched_1, side="SELL", min_price=max(0.01, round(px_1 * 0.85, 2)), neg_risk=nr_1)
+            unwind_res, resid_info = _unwind_legged_out(tok_1, lbl_1, matched_1, px_1, nr_1, oid_1, resp_1)
             return {
                 "success": False,
                 "stage": "LEG_2_REJECTED_UNWOUND",
@@ -4429,6 +4878,7 @@ class PolymarketLiveExecutor:
                 "outcome_unknown": False,
                 "leg_1_order_id": oid_1,
                 "unwind_result": unwind_res,
+                "residual_unhedged_leg": resid_info,
                 "error": str(err_2),
                 "raw_leg_2": resp_2,
             }
@@ -4440,6 +4890,8 @@ class PolymarketLiveExecutor:
             "outcome_unknown": True,
             "leg_1_order_id": oid_1,
             "leg_2_order_id": oid_2,
+            "leg_1_token_id": tok_1,
+            "leg_2_token_id": tok_2,
             "error": f"AMBIGUOUS_LEG_2_RESPONSE: {err_2 or 'missing orderID'}",
             "raw_leg_2": resp_2,
         }

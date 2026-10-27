@@ -91,7 +91,9 @@ SOL_SHADOW_TICKET_NOTIONAL = 12.0
 SOL_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_sol_v392.jsonl"
 SOL_SHADOW_STATE_FILE = DATA_DIR / "state_shadow_sol_v392.json"
 
-ENABLE_XRP_SHADOW_SLEEVE = True
+# Quarantined 2026-10-26: XRP 15m/1h directional books fail >=$15 tight-spread L2 depth (0/1, -$12.19);
+# XRP remains active only on REST-polled zero-basis D1 Dominance Boxes & B2 Barrier NO Locks.
+ENABLE_XRP_SHADOW_SLEEVE = False
 XRP_SHADOW_INITIAL_CAPITAL = 500.0
 XRP_SHADOW_TICKET_NOTIONAL = 12.0
 XRP_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_xrp_v392.jsonl"
@@ -528,8 +530,9 @@ class PolymarketForwardPaperTrader:
             for line in f:
                 if line.strip():
                     r = json.loads(line)
-                    resolutions[r["market_id"]] = r
-                    self.seen_resolution_ids.add(r["market_id"])
+                    if r.get("winning_outcome") in ("UP", "DOWN"):
+                        resolutions[r["market_id"]] = r
+                        self.seen_resolution_ids.add(r["market_id"])
 
         with open(SHOCK_FILE, "r") as f:
             for line in f:
@@ -725,8 +728,8 @@ class PolymarketForwardPaperTrader:
             self.check_maker_tp_fills(m_id, token_feats)
             current_market_open = self.open_trades.get(m_id, [])
 
-        # Check total trades per market hour cap (settled + open)
-        hour_now = int(time.time() // 3600)
+        # Check total trades per market hour cap (settled + open) using event timestamp (historical-replay safe)
+        hour_now = int(float(t0_unix) // 3600)
         if hour_now != self.current_hour_window:
             self.current_hour_window = hour_now
             self.trades_this_hour = 0
@@ -1430,8 +1433,8 @@ class PolymarketForwardPaperTrader:
                     or t.get("effective_price") or t.get("vwap") or 0.50
                 )
                 target_tp_px = float(t.get("take_profit_maker_limit_px") or (0.99 if entry_px >= 0.80 else 0.98))
-                # Fix 2: Require buyer to sweep target maker ask (best_bid >= target_tp_px OR ask swept past target_tp_px)
-                is_maker_fill = (best_bid >= target_tp_px) or (best_ask > target_tp_px and best_ask <= 1.0)
+                # Conservative passive Maker fill: require live best_bid >= target_tp_px (never treat empty best_ask=1.0 as a fill!)
+                is_maker_fill = best_bid >= target_tp_px
 
                 # 3-Zone TTE-Adaptive Wrong-Side Salvage Stop (Pillar 3 Configuration):
                 current_spot = float(
@@ -1647,8 +1650,8 @@ class PolymarketForwardPaperTrader:
                     or t.get("effective_price") or t.get("vwap") or 0.50
                 )
                 tp_px = float(t.get("take_profit_maker_limit_px", 0.99))
-                # Fill check: Buyer sweeps resting maker order at tp_px
-                is_maker_fill = (best_bid >= tp_px) or (best_ask > tp_px and best_ask <= 1.0)
+                # Conservative passive Maker fill: require live best_bid >= tp_px (never treat empty best_ask=1.0 as a fill!)
+                is_maker_fill = best_bid >= tp_px
 
                 # 3-Zone TTE-Adaptive Wrong-Side Salvage Stop (Pillar 3 Configuration):
                 current_spot = float(
@@ -1927,6 +1930,8 @@ class PolymarketForwardPaperTrader:
             return
 
         winning = resolution.get("winning_outcome")  # UP or DOWN
+        if winning not in ("UP", "DOWN"):
+            return
 
         # 1. Settle Sleeve 1 (EXP-302 Core Baseline)
         if m_id in self.open_trades:
@@ -2222,11 +2227,11 @@ class PolymarketForwardPaperTrader:
                                     await asyncio.to_thread(self.evaluate_shock_signal, s, False)
 
                 # 1B. Also tail dedicated SOL/XRP shock files as redundancy (deduped via seen_shock_ids)
-                for alt_shock_file, alt_pos_attr, alt_sym in (
-                    (SHOCK_SOL_FILE, "last_shock_sol_file_pos", "SOL"),
-                    (SHOCK_XRP_FILE, "last_shock_xrp_file_pos", "XRP"),
+                for alt_shock_file, alt_pos_attr, alt_sym, alt_enabled in (
+                    (SHOCK_SOL_FILE, "last_shock_sol_file_pos", "SOL", ENABLE_SOL_SHADOW_SLEEVE),
+                    (SHOCK_XRP_FILE, "last_shock_xrp_file_pos", "XRP", ENABLE_XRP_SHADOW_SLEEVE),
                 ):
-                    if alt_shock_file.exists():
+                    if alt_enabled and alt_shock_file.exists():
                         cur_alt_sz = alt_shock_file.stat().st_size
                         last_alt_pos = getattr(self, alt_pos_attr)
                         if cur_alt_sz > last_alt_pos:
@@ -2263,7 +2268,7 @@ class PolymarketForwardPaperTrader:
                                     continue
                                 res = json.loads(line)
                                 m_id = res.get("market_id")
-                                if m_id not in self.seen_resolution_ids:
+                                if res.get("winning_outcome") in ("UP", "DOWN") and m_id not in self.seen_resolution_ids:
                                     self.seen_resolution_ids.add(m_id)
                                     self.settle_market(m_id, res, historical=False)
 

@@ -2,12 +2,14 @@
 """Read-only Live + Shadow Polymarket scorecard snapshot for scheduled monitoring."""
 
 import json
+import os
 import pathlib
 import subprocess
 
 ROOT = pathlib.Path("/home/skybullet1987/quant_pipeline")
 SERVICES = [
     "polymarket-live-harvester",
+    "polymarket-alpha124-shadow",
     "polymarket-trader",
     "polymarket-exp316-shadow",
     "polymarket-recorder",
@@ -28,16 +30,22 @@ def _read_json(rel_path: str) -> dict:
 
 
 def main() -> None:
+    env = dict(os.environ)
+    if hasattr(os, "getuid"):
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
     svc_map = {
         s: subprocess.run(
             ["systemctl", "--user", "is-active", s],
             capture_output=True,
             text=True,
+            env=env,
         ).stdout.strip()
         for s in SERVICES
     }
 
     live = _read_json("data/polymarket/live_harvester_state.json")
+    alpha124 = _read_json("data/alpha124/alpha124_shadow_state.json")
+    proj = _read_json("data/polymarket/live_daily_projections.json")
     paper = _read_json("data/polymarket/paper_trader_state.json")
     sol = _read_json("data/polymarket/state_shadow_sol_v392.json")
     xrp = _read_json("data/polymarket/state_shadow_xrp_v392.json")
@@ -71,6 +79,7 @@ def main() -> None:
         ],
         capture_output=True,
         text=True,
+        env=env,
     ).stdout.splitlines()
 
     p3a = [line for line in j_out if "SHADOW_PHASE3A" in line][-5:]
@@ -112,6 +121,15 @@ def main() -> None:
             "reconciliation_required": live.get("reconciliation_required"),
             "global_halt_reasons": live.get("global_halt_reasons"),
         },
+        "alpha124_11sleeve_shadow": {
+            "updated_at_utc": alpha124.get("updated_at_utc"),
+            "markets_monitored": alpha124.get("markets_monitored"),
+            "open_positions_count": alpha124.get("open_positions_count"),
+            "pending_maker_orders_count": alpha124.get("pending_maker_orders_count"),
+            "portfolio_realized_pnl_by_bankroll_usd": alpha124.get("portfolio_realized_pnl_by_bankroll_usd"),
+            "by_sleeve": alpha124.get("by_sleeve"),
+        },
+        "live_daily_projections_summary": proj.get("summary_horizons_usd", {}),
         "paper_sleeve1_benchmark": paper.get("validation_oos_epoch", {}),
         "shadow_sol_v392": {k: sol.get(k) for k in alt_keys},
         "shadow_xrp_v392": {k: xrp.get(k) for k in alt_keys},

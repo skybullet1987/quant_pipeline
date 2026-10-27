@@ -17,6 +17,8 @@ ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_rese
 # Exit 0 (circuit breaker / graceful SIGTERM) stays down; non-zero (crash) restarts after 3s.
 Restart=on-failure
 RestartSec=3
+CPUWeight=1000
+IOWeight=1000
 KillSignal=SIGTERM
 KillMode=mixed
 TimeoutStopSec=20s

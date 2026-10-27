@@ -38,11 +38,11 @@ def compute_asymmetric_fip_scores(
     n_bars, n_symbols = raw_f5_scores.shape
     f_asym = np.zeros_like(raw_f5_scores)
 
-    for t in range(lookback, n_bars):
+    for t in range(lookback - 1, n_bars):
         m_t = valid_mask[t]
         v_idx = np.where(m_t)[0]
         if len(v_idx) >= 10:
-            res_win = residuals[t - lookback : t, v_idx]  # shape (lookback, len(v_idx))
+            res_win = residuals[t - lookback + 1 : t + 1, v_idx]  # inclusive of completed bar t
             scores_t = raw_f5_scores[t, v_idx]
 
             total_abs_drift = np.sum(np.abs(res_win), axis=0) + 1e-8

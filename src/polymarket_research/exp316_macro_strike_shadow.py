@@ -160,6 +160,9 @@ class TrackAPosition:
     fill: SimulatedFillResult
     maker_tp_price: float = 0.97
     max_seen_bid: float = 0.0
+    market_id: str = ""
+    end_unix: float = 0.0
+    barrier_breached: bool = False
     tp_filled: bool = False
     tp_fill_time_utc: Optional[str] = None
     settled: bool = False
@@ -220,50 +223,56 @@ async def execute_simulated_l2_walk(
     ticket_usd: float,
     max_slippage_cents: float = 0.04,
     latency_ms: int = 50,
+    prefetched_book: Optional[Dict[str, Any]] = None,
+    fee_rate: float = 0.07,
 ) -> SimulatedFillResult:
     """
     Simulates walking the actual Polymarket L2 ask book at t_signal + 50ms.
-    Strictly zero lookahead bias: fetches the orderbook after the latency sleep.
+    Strictly zero lookahead bias: fetches the orderbook after the latency sleep
+    (or reuses a single t_signal + 50ms snapshot across ticket tiers).
     """
-    if latency_ms > 0:
-        await asyncio.sleep(latency_ms / 1000.0)
+    if prefetched_book is not None:
+        book = prefetched_book
+    else:
+        if latency_ms > 0:
+            await asyncio.sleep(latency_ms / 1000.0)
 
-    url = f"{CLOB_API_URL}/book"
-    try:
-        async with session.get(url, params={"token_id": token_id}, timeout=aiohttp.ClientTimeout(total=4.0)) as resp:
-            if resp.status != 200:
-                return SimulatedFillResult(
-                    token_id=token_id,
-                    ticket_requested=ticket_usd,
-                    ticket_filled=0.0,
-                    fill_ratio=0.0,
-                    shares=0.0,
-                    best_ask_pre=0.0,
-                    vwap=0.0,
-                    slippage_cents=0.0,
-                    slippage_bps=0.0,
-                    entry_fee_usd=0.0,
-                    levels_consumed=0,
-                    success=False,
-                    rejection_reason=f"CLOB_HTTP_{resp.status}",
-                )
-            book = await resp.json()
-    except Exception as e:
-        return SimulatedFillResult(
-            token_id=token_id,
-            ticket_requested=ticket_usd,
-            ticket_filled=0.0,
-            fill_ratio=0.0,
-            shares=0.0,
-            best_ask_pre=0.0,
-            vwap=0.0,
-            slippage_cents=0.0,
-            slippage_bps=0.0,
-            entry_fee_usd=0.0,
-            levels_consumed=0,
-            success=False,
-            rejection_reason=f"CLOB_FETCH_EXCEPTION_{type(e).__name__}",
-        )
+        url = f"{CLOB_API_URL}/book"
+        try:
+            async with session.get(url, params={"token_id": token_id}, timeout=aiohttp.ClientTimeout(total=4.0)) as resp:
+                if resp.status != 200:
+                    return SimulatedFillResult(
+                        token_id=token_id,
+                        ticket_requested=ticket_usd,
+                        ticket_filled=0.0,
+                        fill_ratio=0.0,
+                        shares=0.0,
+                        best_ask_pre=0.0,
+                        vwap=0.0,
+                        slippage_cents=0.0,
+                        slippage_bps=0.0,
+                        entry_fee_usd=0.0,
+                        levels_consumed=0,
+                        success=False,
+                        rejection_reason=f"CLOB_HTTP_{resp.status}",
+                    )
+                book = await resp.json()
+        except Exception as e:
+            return SimulatedFillResult(
+                token_id=token_id,
+                ticket_requested=ticket_usd,
+                ticket_filled=0.0,
+                fill_ratio=0.0,
+                shares=0.0,
+                best_ask_pre=0.0,
+                vwap=0.0,
+                slippage_cents=0.0,
+                slippage_bps=0.0,
+                entry_fee_usd=0.0,
+                levels_consumed=0,
+                success=False,
+                rejection_reason=f"CLOB_FETCH_EXCEPTION_{type(e).__name__}",
+            )
 
     asks = book.get("asks", [])
     valid_asks = [(float(a["price"]), float(a["size"])) for a in asks if float(a.get("price", 0)) > 0]
@@ -311,12 +320,13 @@ async def execute_simulated_l2_walk(
             tot_cost += level_cost
             rem_usd -= level_cost
 
-    if tot_shares <= 0.0:
+    fill_ratio = tot_cost / ticket_usd if ticket_usd > 0 else 0.0
+    if tot_shares <= 0.0 or fill_ratio < 0.98:
         return SimulatedFillResult(
             token_id=token_id,
             ticket_requested=ticket_usd,
-            ticket_filled=0.0,
-            fill_ratio=0.0,
+            ticket_filled=round(tot_cost, 2),
+            fill_ratio=round(fill_ratio, 4),
             shares=0.0,
             best_ask_pre=best_ask,
             vwap=0.0,
@@ -325,14 +335,13 @@ async def execute_simulated_l2_walk(
             entry_fee_usd=0.0,
             levels_consumed=levels_consumed,
             success=False,
-            rejection_reason="LIQUIDITY_EXCEEDED_SLIPPAGE_TOLERANCE",
+            rejection_reason="INSUFFICIENT_DEPTH_BELOW_98PCT",
         )
 
     vwap = tot_cost / tot_shares
     slippage_cents = vwap - best_ask
     slippage_bps = (slippage_cents / best_ask) * 10000.0
-    fee_usd = calculate_crypto_v2_fee(tot_shares, vwap, rate=0.07)
-    fill_ratio = tot_cost / ticket_usd
+    fee_usd = calculate_crypto_v2_fee(tot_shares, vwap, rate=fee_rate)
 
     return SimulatedFillResult(
         token_id=token_id,
@@ -465,19 +474,80 @@ class Exp316MacroStrikeEngine:
         }
 
     def _hydrate_traded_conditions(self) -> None:
-        """Hydrates already-entered condition_ids from the current ledger so we never duplicate entries."""
+        """Hydrates already-entered condition_ids AND open Track A positions from ledger across restarts."""
         if not LEDGER_FILE.exists():
             return
         try:
-            with open(LEDGER_FILE, "r") as f:
+            entries_by_id: Dict[str, Dict[str, Any]] = {}
+            closed_ids: set[str] = set()
+            with open(LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
                 for line in f:
                     if not line.strip():
                         continue
                     row = json.loads(line)
-                    if row.get("event_type") == "TRACK_A_ENTRY" and row.get("condition_id"):
-                        self.traded_condition_ids.add(str(row["condition_id"]))
-            if self.traded_condition_ids:
-                logger.info(f"Hydrated {len(self.traded_condition_ids)} previously traded condition_ids from ledger.")
+                    ev_t = str(row.get("event_type") or "")
+                    tid = str(row.get("trade_id") or "")
+                    if ev_t == "TRACK_A_ENTRY":
+                        if row.get("condition_id"):
+                            self.traded_condition_ids.add(str(row["condition_id"]))
+                        if tid:
+                            entries_by_id[tid] = row
+                    elif ev_t in (
+                        "TRACK_A_TP_MAKER_FILLED",
+                        "TRACK_A_TRAILING_RATCHET_EXIT",
+                        "TRACK_A_SALVAGE_STOP",
+                        "TRACK_A_SETTLED",
+                    ) and tid:
+                        closed_ids.add(tid)
+
+            for tid, r in entries_by_id.items():
+                if tid in closed_ids:
+                    continue
+                fill_obj = SimulatedFillResult(
+                    token_id=str(r.get("token_id") or ""),
+                    ticket_requested=float(r.get("ticket_tier") or 25.0),
+                    ticket_filled=float(r.get("ticket_filled") or r.get("ticket_tier") or 25.0),
+                    fill_ratio=1.0,
+                    shares=float(r.get("shares") or 0.0),
+                    best_ask_pre=float(r.get("best_ask_pre") or 0.0),
+                    vwap=float(r.get("entry_vwap") or 0.0),
+                    slippage_cents=float(r.get("slippage_cents") or 0.0),
+                    slippage_bps=float(r.get("slippage_bps") or 0.0),
+                    entry_fee_usd=float(r.get("entry_fee_usd") or 0.0),
+                    levels_consumed=int(r.get("levels_consumed") or 1),
+                    success=True,
+                )
+                end_u = float(r.get("end_unix") or 0.0)
+                if end_u <= 0.0 and r.get("timestamp_utc") and r.get("tte_seconds"):
+                    try:
+                        c_dt = datetime.fromisoformat(str(r["timestamp_utc"]).replace("Z", "+00:00"))
+                        end_u = c_dt.timestamp() + float(r["tte_seconds"])
+                    except Exception:
+                        end_u = 0.0
+                self.active_track_a[tid] = TrackAPosition(
+                    trade_id=tid,
+                    created_at_utc=str(r.get("timestamp_utc") or ""),
+                    asset=str(r.get("asset") or "BTC"),
+                    series_slug=str(r.get("series_slug") or ""),
+                    question=str(r.get("question") or ""),
+                    condition_id=str(r.get("condition_id") or ""),
+                    token_id=str(r.get("token_id") or ""),
+                    outcome=str(r.get("outcome") or "YES"),
+                    strike_price=float(r["strike_price"]) if r.get("strike_price") is not None else None,
+                    tte_seconds_entry=float(r.get("tte_seconds") or 0.0),
+                    spot_at_signal=float(r.get("spot_at_signal") or 0.0),
+                    cushion_pct=float(r.get("cushion_pct") or 0.0),
+                    z_score=float(r.get("z_score") or 0.0),
+                    ticket_tier=float(r.get("ticket_tier") or 25.0),
+                    fill=fill_obj,
+                    market_id=str(r.get("market_id") or ""),
+                    end_unix=end_u,
+                )
+            if self.traded_condition_ids or self.active_track_a:
+                logger.info(
+                    f"Hydrated {len(self.traded_condition_ids)} traded condition_ids and "
+                    f"{len(self.active_track_a)} active Track A positions from ledger."
+                )
         except Exception as e:
             logger.warning(f"Failed to hydrate traded condition_ids: {e}")
 
@@ -675,10 +745,10 @@ class Exp316MacroStrikeEngine:
                 "candle_open_spot": strike,
                 "candle_distance_pct": signed_dist_pct,
                 "fee_metadata": {
-                    "fee_rate_market": round(meta.base_fee_bps / 10000.0, 4) if meta.base_fee_bps > 0 else 0.07,
+                    "fee_rate_market": 0.0 if meta.fee_type == "zero_fees" else (round(meta.base_fee_bps / 10000.0, 4) if 0 < meta.base_fee_bps <= 900 else 0.07),
                     "fee_exponent": 1.0,
                     "fee_source": f"gamma_{meta.fee_type}",
-                    "fee_enabled": True,
+                    "fee_enabled": meta.fee_type != "zero_fees",
                     "fee_formula_version": meta.fee_type,
                     "condition_id": meta.condition_id,
                     "timestamp_utc": now_sec,
@@ -754,7 +824,8 @@ class Exp316MacroStrikeEngine:
 
                 strike = extract_strike_price(q, m.get("strikePrice"))
                 fee_type = str(m.get("feeType") or "crypto_fees_v2")
-                taker_base_fee = int(m.get("takerBaseFee") or 1000)
+                raw_tbf = m.get("takerBaseFee")
+                taker_base_fee = 0 if fee_type == "zero_fees" else (int(raw_tbf) if raw_tbf is not None else 700)
                 m_id_str = str(m.get("id") or "")
 
                 raw_tokens = m.get("clobTokenIds", [])
@@ -1046,6 +1117,23 @@ class Exp316MacroStrikeEngine:
                 f"p_svi: {p_svi:.3f} | Best Ask: {best_ask:.3f}"
             )
 
+            # Fetch a SINGLE causal t_signal + 50ms CLOB snapshot and evaluate all tiers consistently against it
+            await asyncio.sleep(0.050)
+            book_t50: Optional[Dict[str, Any]] = None
+            try:
+                async with session.get(
+                    f"{CLOB_API_URL}/book",
+                    params={"token_id": meta.token_id},
+                    timeout=aiohttp.ClientTimeout(total=4.0),
+                ) as b_resp:
+                    if b_resp.status == 200:
+                        book_t50 = await b_resp.json()
+            except Exception:
+                book_t50 = None
+            if book_t50 is None:
+                continue
+
+            eff_fee_rate = 0.0 if meta.fee_type == "zero_fees" else 0.07
             live_emitted = False
             if self.emit_live_triggers:
                 fill_25 = await execute_simulated_l2_walk(
@@ -1053,7 +1141,9 @@ class Exp316MacroStrikeEngine:
                     token_id=meta.token_id,
                     ticket_usd=25.0,
                     max_slippage_cents=0.04,
-                    latency_ms=50,
+                    latency_ms=0,
+                    prefetched_book=book_t50,
+                    fee_rate=eff_fee_rate,
                 )
                 if fill_25.success:
                     live_emitted = True
@@ -1065,11 +1155,11 @@ class Exp316MacroStrikeEngine:
                         z_score=z_score,
                         p_svi=p_svi,
                         svi_sigma_1h=svi_sigma_1h,
-                        book=book,
+                        book=book_t50,
                         fill_res=fill_25,
                     )
 
-            # Walk book for graduation ($25, $50) and institutional ($250, $1,000, $2,500) ticket tiers
+            # Walk the exact same t_signal + 50ms book for graduation ($25, $50) and institutional ($250, $1,000, $2,500) tiers
             for tier in [25.0, 50.0, 250.0, 1000.0, 2500.0]:
                 trade_id = f"{trade_base_id}_T{int(tier)}"
                 fill_res = await execute_simulated_l2_walk(
@@ -1077,13 +1167,15 @@ class Exp316MacroStrikeEngine:
                     token_id=meta.token_id,
                     ticket_usd=tier,
                     max_slippage_cents=0.04,
-                    latency_ms=50,  # Enforce 50ms latency
+                    latency_ms=0,
+                    prefetched_book=book_t50,
+                    fee_rate=eff_fee_rate,
                 )
 
                 if fill_res.success:
                     self.stats["track_a_fills"] += 1
                     self.traded_condition_ids.add(meta.condition_id)
-                    if not live_emitted:
+                    if not live_emitted and self.emit_live_triggers:
                         live_emitted = True
                         self.emit_live_sleeve3_trigger(
                             meta=meta,
@@ -1093,7 +1185,7 @@ class Exp316MacroStrikeEngine:
                             z_score=z_score,
                             p_svi=p_svi,
                             svi_sigma_1h=svi_sigma_1h,
-                            book=book,
+                            book=book_t50,
                             fill_res=fill_res,
                         )
                     pos = TrackAPosition(
@@ -1112,6 +1204,8 @@ class Exp316MacroStrikeEngine:
                         z_score=z_score,
                         ticket_tier=tier,
                         fill=fill_res,
+                        market_id=meta.market_id,
+                        end_unix=meta.end_unix,
                     )
                     self.active_track_a[trade_id] = pos
 
@@ -1123,10 +1217,12 @@ class Exp316MacroStrikeEngine:
                         "asset": meta.asset,
                         "series_slug": meta.series_slug,
                         "question": meta.question,
+                        "market_id": meta.market_id,
                         "condition_id": meta.condition_id,
                         "token_id": meta.token_id,
                         "outcome": meta.outcome,
                         "strike_price": meta.strike_price,
+                        "end_unix": meta.end_unix,
                         "tte_seconds": pos.tte_seconds_entry,
                         "tau_hours": round(tte_sec / 3600.0, 2),
                         "spot_at_signal": spot,
@@ -1167,10 +1263,38 @@ class Exp316MacroStrikeEngine:
 
         for trade_id, pos in list(self.active_track_a.items()):
             meta = self.market_registry.get(pos.token_id)
-            if not meta:
+            eff_end_unix = meta.end_unix if meta is not None else pos.end_unix
+            if eff_end_unix <= 0.0:
                 continue
 
-            tte_remaining = meta.end_unix - now_ts
+            tte_remaining = eff_end_unix - now_ts
+
+            # Continuous intra-life barrier touch monitoring for "hit" contracts
+            curr_spot_live = self.latest_spot.get(pos.asset, pos.spot_at_signal)
+            if "hit" in pos.series_slug.lower() and pos.strike_price and pos.strike_price > 0 and curr_spot_live > 0:
+                c_live = compute_strike_cushion(pos.question, pos.series_slug, pos.outcome, curr_spot_live, pos.strike_price)
+                if c_live is not None and c_live <= 0.0:
+                    pos.barrier_breached = True
+                    if pos.outcome == "NO":
+                        pos.settled = True
+                        pos.settlement_time_utc = datetime.now(timezone.utc).isoformat()
+                        pos.settlement_price = 0.0
+                        net_pnl = -pos.fill.ticket_filled - pos.fill.entry_fee_usd
+                        pos.net_pnl_usd = round(net_pnl, 2)
+                        pos.net_roi_pct = round((net_pnl / pos.fill.ticket_filled) * 100.0, 2)
+                        completed_ids.append(trade_id)
+                        self.log_ledger_entry({
+                            "event_type": "TRACK_A_SETTLED",
+                            "trade_id": trade_id,
+                            "timestamp_utc": pos.settlement_time_utc,
+                            "settlement_price": 0.0,
+                            "final_spot": curr_spot_live,
+                            "net_pnl_usd": pos.net_pnl_usd,
+                            "net_roi_pct": pos.net_roi_pct,
+                            "reason": "BARRIER_TOUCHED_INTRALIFE",
+                        })
+                        logger.info(f"[TRACK-A BARRIER BREACHED] {trade_id} | NO settled $0.00 @ spot=${curr_spot_live:,.2f}")
+                        continue
 
             # Poll live book for Maker TP, Trailing Profit Ratchet, and Salvage Stop
             best_bid = 0.0
@@ -1281,16 +1405,56 @@ class Exp316MacroStrikeEngine:
             except Exception:
                 pass
 
-            # Check 2: Resolution at Expiry
+            # Check 2: Resolution at Expiry (Authoritative Gamma API outcomePrices first, then spot fallback)
             if tte_remaining <= 0.0:
+                gamma_px: Optional[float] = None
+                try:
+                    g_url = (
+                        f"{GAMMA_API_URL}/markets/{pos.market_id}"
+                        if pos.market_id
+                        else f"{GAMMA_API_URL}/markets?clob_token_ids={pos.token_id}"
+                    )
+                    async with session.get(g_url, timeout=aiohttp.ClientTimeout(total=3.5)) as g_resp:
+                        if g_resp.status == 200:
+                            g_data = await g_resp.json()
+                            gm = g_data[0] if isinstance(g_data, list) and g_data else (g_data if isinstance(g_data, dict) else None)
+                            if isinstance(gm, dict) and gm.get("closed"):
+                                uma_st = str(gm.get("umaResolutionStatus") or "").strip().lower()
+                                if uma_st in ("", "resolved"):
+                                    raw_op = gm.get("outcomePrices")
+                                    op = json.loads(raw_op) if isinstance(raw_op, str) else raw_op
+                                    raw_toks = gm.get("clobTokenIds")
+                                    toks = json.loads(raw_toks) if isinstance(raw_toks, str) else raw_toks
+                                    if isinstance(op, list) and len(op) >= 2:
+                                        idx_m = (
+                                            [str(t) for t in toks].index(str(pos.token_id))
+                                            if (isinstance(toks, list) and str(pos.token_id) in [str(t) for t in toks])
+                                            else (0 if pos.outcome == "YES" else 1)
+                                        )
+                                        val_px = float(op[idx_m])
+                                        if val_px >= 0.99:
+                                            gamma_px = 1.0
+                                        elif val_px <= 0.01:
+                                            gamma_px = 0.0
+                except Exception:
+                    gamma_px = None
+
+                # Wait up to 15 minutes past end_unix for authoritative Gamma resolution before spot fallback
+                if gamma_px is None and tte_remaining > -900.0:
+                    continue
+
                 pos.settled = True
                 pos.settlement_time_utc = datetime.now(timezone.utc).isoformat()
                 final_spot = self.latest_spot.get(pos.asset, pos.spot_at_signal)
 
                 settle_px = 0.0
-                if best_bid >= 0.95:
+                if gamma_px is not None:
+                    settle_px = gamma_px
+                elif pos.barrier_breached and "hit" in pos.series_slug.lower() and pos.outcome == "NO":
+                    settle_px = 0.0
+                elif best_bid >= 0.99:
                     settle_px = 1.0
-                elif best_ask <= 0.05:
+                elif best_ask <= 0.01:
                     settle_px = 0.0
                 elif pos.strike_price and pos.strike_price > 0:
                     c_final = compute_strike_cushion(pos.question, pos.series_slug, pos.outcome, final_spot, pos.strike_price)

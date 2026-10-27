@@ -31,4 +31,5 @@ def _polymarket_test_sandbox_isolation(tmp_path: Path, monkeypatch: pytest.Monke
     monkeypatch.setenv("PM_SVI_DISABLE_BG_REFRESH", "1")
     monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
     monkeypatch.setenv("PM_DISABLE_EXP316_LIVE_EMIT", "1")
+    monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "0")
     monkeypatch.setenv("POLYMARKET_IPC_SOCKET_NAME", f"pm_shock_test_{os.getpid()}_{id(tmp_path) & 0xFFFF}")

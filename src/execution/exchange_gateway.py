@@ -8,6 +8,14 @@ from hyperliquid.exchange import Exchange
 from hyperliquid.utils import constants
 from hyperliquid.utils.types import Cloid
 
+_TRANSIENT_ERR_MARKERS = ("502", "503", "504", "bad gateway", "service unavailable", "gateway timeout", "timed out", "connection aborted", "connection reset")
+
+
+def _is_transient_gateway_exc(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(tok in msg for tok in _TRANSIENT_ERR_MARKERS)
+
+
 class HyperliquidGateway:
     def __init__(self, secret_key: str = None, account_address: str = None, testnet: bool = True):
         self.testnet = testnet
@@ -263,6 +271,8 @@ class HyperliquidGateway:
                 cloid=cloid_obj
             )
         except Exception as e:
+            if _is_transient_gateway_exc(e):
+                raise
             print(f"--> [Gateway Warning] Failed to place ALO order for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
@@ -288,6 +298,8 @@ class HyperliquidGateway:
                 cloid=cloid_obj
             )
         except Exception as e:
+            if _is_transient_gateway_exc(e):
+                raise
             print(f"--> [Gateway Warning] Failed to place trigger stop for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
@@ -299,7 +311,8 @@ class HyperliquidGateway:
             rounded_px = self.round_px(symbol, trigger_price)
             if rounded_sz <= 0 or rounded_px <= 0:
                 return {}
-            raw_limit_px = rounded_px * 0.970 if is_buy_to_close else rounded_px * 1.030
+            # Marketable 3.0% slippage collar in the closing direction (BUY above trigger, SELL below trigger)
+            raw_limit_px = rounded_px * 1.030 if is_buy_to_close else rounded_px * 0.970
             limit_px = self.round_px(symbol, raw_limit_px)
             cloid_obj = None
             if cloid:
@@ -312,6 +325,8 @@ class HyperliquidGateway:
                 cloid=cloid_obj
             )
         except Exception as e:
+            if _is_transient_gateway_exc(e):
+                raise
             print(f"--> [Gateway Warning] Failed to place trigger TP for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
@@ -331,9 +346,9 @@ class HyperliquidGateway:
 
     def close_position(self, symbol: str, size: float, is_long: bool) -> Dict[str, Any]:
         """
-        Multi-Stage Emergency Position Exit:
+        Multi-Stage Emergency Position Exit (Partial-Fill Safe):
           Stage 1: 5-Tick Marketable Limit IOC Sweep anchored to live L2 BBO.
-          Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep.
+          Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep for any remaining unfilled size.
           Stage 3: Resting GTC Reduce-Only Marketable Limit fallback if book has zero resting liquidity.
         """
         if not self.exchange:
@@ -344,14 +359,30 @@ class HyperliquidGateway:
             if rounded_sz <= 0:
                 return {}
 
-            mid = self.get_mid_price(symbol)
+            oracle_px = self.get_oracle_price(symbol)
             try:
-                best_bid, best_ask, _ = self.get_bbo_and_mid(symbol)
+                best_bid, best_ask, mid = self.get_bbo_and_mid(symbol)
             except Exception:
-                best_bid, best_ask = mid * 0.999, mid * 1.001
+                # Survive one-sided / empty L2 books (e.g. broken Testnet book or flash vacuum) via oraclePx fallback
+                l2 = {}
+                try:
+                    l2 = self.info.l2_snapshot(symbol)
+                except Exception:
+                    pass
+                bids, asks = l2.get("levels", [[], []]) if isinstance(l2, dict) else ([], [])
+                ref_px = oracle_px if oracle_px > 0 else 0.0
+                if ref_px <= 0:
+                    if bids:
+                        ref_px = float(bids[0]["px"])
+                    elif asks:
+                        ref_px = float(asks[0]["px"])
+                if ref_px <= 0:
+                    raise ValueError(f"Orderbook empty and oracle unavailable for {symbol}")
+                mid = ref_px
+                best_bid = float(bids[0]["px"]) if bids else mid * 0.995
+                best_ask = float(asks[0]["px"]) if asks else mid * 1.005
 
             tick_sz = self.get_tick_size(symbol, mid)
-            oracle_px = self.get_oracle_price(symbol)
 
             # Stage 1: 5-Tick Marketable Limit Sweep across opposing BBO
             stage1_raw = (best_ask + 5.0 * tick_sz) if is_buy_to_close else max(tick_sz, best_bid - 5.0 * tick_sz)
@@ -368,10 +399,19 @@ class HyperliquidGateway:
             )
             statuses1 = res1.get("response", {}).get("data", {}).get("statuses", [{}]) if isinstance(res1, dict) else [{}]
             first1 = statuses1[0] if statuses1 else {}
-            if isinstance(first1, dict) and ("filled" in first1 or "resting" in first1):
-                return res1
 
-            # Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep
+            rem_sz = rounded_sz
+            if isinstance(first1, dict):
+                if "resting" in first1:
+                    return res1
+                if "filled" in first1:
+                    filled_obj = first1.get("filled")
+                    filled_sz = float(filled_obj.get("totalSz", rounded_sz)) if isinstance(filled_obj, dict) else rounded_sz
+                    rem_sz = abs(self.round_sz(symbol, max(0.0, rounded_sz - filled_sz)))
+                    if rem_sz <= 0:
+                        return res1
+
+            # Stage 2: Wide 5% / Oracle-Collar Aggressive IOC Sweep on remaining unfilled size `rem_sz`
             raw_slip = mid * 1.05 if is_buy_to_close else mid * 0.95
             if oracle_px > 0:
                 if is_buy_to_close:
@@ -381,18 +421,32 @@ class HyperliquidGateway:
 
             slip_px = self.round_px(symbol, raw_slip)
             res2 = self.exchange.order(
-                symbol, is_buy_to_close, rounded_sz, slip_px,
+                symbol, is_buy_to_close, rem_sz, slip_px,
                 order_type={"limit": {"tif": "Ioc"}}, reduce_only=True
             )
             statuses2 = res2.get("response", {}).get("data", {}).get("statuses", [{}]) if isinstance(res2, dict) else [{}]
             first2 = statuses2[0] if statuses2 else {}
-            if isinstance(first2, dict) and "error" in first2 and "match against any resting" in str(first2.get("error", "")):
-                # Stage 3: Book has no matching resting liquidity -> place GTC reduce-only at collar to guarantee fill
+
+            rem_sz2 = rem_sz
+            if isinstance(first2, dict) and "filled" in first2:
+                filled_obj2 = first2.get("filled")
+                filled_sz2 = float(filled_obj2.get("totalSz", rem_sz)) if isinstance(filled_obj2, dict) else rem_sz
+                rem_sz2 = abs(self.round_sz(symbol, max(0.0, rem_sz - filled_sz2)))
+                if rem_sz2 <= 0:
+                    return res2
+
+            if rem_sz2 > 0 and isinstance(first2, dict) and (
+                ("error" in first2)
+                or ("filled" in first2)
+            ):
+                # Stage 3: Book has insufficient resting liquidity -> place GTC reduce-only at collar for remainder
                 return self.exchange.order(
-                    symbol, is_buy_to_close, rounded_sz, slip_px,
+                    symbol, is_buy_to_close, rem_sz2, slip_px,
                     order_type={"limit": {"tif": "Gtc"}}, reduce_only=True
                 )
             return res2
         except Exception as e:
+            if _is_transient_gateway_exc(e):
+                raise
             print(f"--> [Gateway Warning] Failed to close position for {symbol}: {e}", flush=True)
             return {"error": str(e)}

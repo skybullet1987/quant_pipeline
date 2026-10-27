@@ -81,26 +81,26 @@ def compute_multi_beta_residual_momentum(
     residuals = np.zeros_like(returns_mat)
     f5_signal = np.zeros_like(returns_mat)
     
-    # Benchmarks matrix X: [ones, btc, eth]
-    for t in range(lookback_h + 2, n_bars):
+    # Benchmarks matrix X: [ones, btc, eth] — inclusive of completed bar t ([t - lookback_h + 1 : t + 1])
+    for t in range(lookback_h - 1, n_bars):
         mask_t = valid_mask[t]
         if np.sum(mask_t) < 5:
             continue
             
-        b_w = btc_rets[t - lookback_h : t]
-        e_w = eth_rets[t - lookback_h : t]
+        b_w = btc_rets[t - lookback_h + 1 : t + 1]
+        e_w = eth_rets[t - lookback_h + 1 : t + 1]
         X = np.column_stack([np.ones(lookback_h), b_w, e_w])
         
-        # Precompute (X^T X)^{-1} X^T with ridge stabilizer
+        # Precompute (X^T X + lambda I)^{-1} X^T with ridge stabilizer against BTC/ETH collinearity
         try:
-            XtX_inv_Xt = np.linalg.inv(X.T @ X + np.eye(3) * 1e-6) @ X.T
+            XtX_inv_Xt = np.linalg.inv(X.T @ X + np.eye(3) * 1e-4) @ X.T
         except np.linalg.LinAlgError:
             continue
             
         for i in range(n_symbols):
             if not mask_t[i]:
                 continue
-            y_i = returns_mat[t - lookback_h : t, i]
+            y_i = returns_mat[t - lookback_h + 1 : t + 1, i]
             betas = XtX_inv_Xt @ y_i
             # Purge systematic BTC and ETH market beta, retaining idiosyncratic alpha drift
             res_w = y_i - (betas[1] * b_w + betas[2] * e_w)

@@ -67,7 +67,7 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any, Tuple, Set
 
 import aiohttp
 import numpy as np
@@ -703,6 +703,9 @@ class PolymarketDualFeed1HRecorder:
         self.last_cross_corr_ts: float = 0.0
         self.active_burst_tasks: Set[asyncio.Task] = set()
         self.running: bool = True
+        self.clob_ws_connected: bool = False
+        self.last_clob_ws_msg_ts: float = 0.0
+        self._last_stale_exch_warn_ts: float = 0.0
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.telemetry_15m_file: Path = DATA_DIR / f"polymarket_15m_telemetry_{self.asset.lower()}.jsonl"
@@ -1325,30 +1328,48 @@ class PolymarketDualFeed1HRecorder:
 
     async def fetch_authoritative_chainlink_open_15m(self, candle_open_ts: int, candle_close_ts: int) -> float:
         """
-        Queries Polymarket's authoritative Chainlink Data Streams 60s-TWAP endpoint
-        (`https://polymarket.com/api/crypto/crypto-price`) to lock the exact 14-digit
-        USD `openPrice` (`priceToBeat`) for the active 15-minute candle.
+        Queries Polymarket's exact 60s-TWAP endpoint (`twapEnabled=true&twapLookbackSeconds=60`)
+        to lock the 15-digit Chainlink `priceToBeat` at `t = +2s`, with finalized preceding-5m
+        Gamma `eventMetadata.finalPrice` fallback. Never uses un-TWAP'd `crypto-price` spot.
         """
-        if time.time() < float(candle_open_ts):
+        now_t = time.time()
+        if now_t < float(candle_open_ts) + 2.0:
             return 0.0
         session = await self.get_session()
         start_iso = datetime.fromtimestamp(int(candle_open_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         end_iso = datetime.fromtimestamp(int(candle_close_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        url = (
+        twap_url = (
             f"https://polymarket.com/api/crypto/crypto-price"
             f"?symbol={self.asset.upper()}&eventStartTime={start_iso}"
-            f"&variant=fifteen&endDate={end_iso}"
+            f"&variant=fifteen&endDate={end_iso}&twapEnabled=true&twapLookbackSeconds=60"
         )
         try:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
+            async with session.get(twap_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
                 if resp.status == 200:
                     payload = await resp.json()
-                    if isinstance(payload, dict) and payload.get("openPrice") is not None:
-                        val = float(payload["openPrice"])
-                        if math.isfinite(val) and val > 0.0:
-                            return val
+                    if isinstance(payload, dict) and (payload.get("cached") is True or payload.get("completed") is True):
+                        if payload.get("openPrice") is not None:
+                            val = float(payload["openPrice"])
+                            if math.isfinite(val) and val > 0.0:
+                                return val
         except Exception as e:
-            logger.debug(f"[{self.asset}] Authoritative 15m openPrice query note: {e}")
+            logger.debug(f"[{self.asset}] Authoritative 15m TWAP query note: {e}")
+        if now_t >= float(candle_open_ts) + 335.0:
+            try:
+                g_url = f"{GAMMA_API_URL}/events?slug={self.asset.lower()}-updown-5m-{int(candle_open_ts) - 300}"
+                async with session.get(g_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
+                    if resp.status == 200:
+                        payload = await resp.json()
+                        ev = payload[0] if isinstance(payload, list) and payload else payload
+                        if isinstance(ev, dict) and ev.get("closed") is True:
+                            meta = ev.get("eventMetadata")
+                            meta = json.loads(meta) if isinstance(meta, str) else meta
+                            if isinstance(meta, dict) and meta.get("finalPrice") is not None:
+                                val = float(meta["finalPrice"])
+                                if math.isfinite(val) and val > 0.0:
+                                    return val
+            except Exception:
+                pass
         return 0.0
 
     async def fetch_binance_60s_twap_open(self, candle_open_ts: int) -> float:
@@ -1644,10 +1665,25 @@ class PolymarketDualFeed1HRecorder:
         """
         Evaluates volume sweeps strictly over [t0 - 100ms, t0].
         t0 is anchored as the end of the qualifying shock window.
+        Enforces both local receipt monotonicity AND exchange trade/event timestamp windowing
+        plus a 1000ms live exchange-lag ceiling so socket burst-drains never fire phantom shocks.
         """
         trade_queue = self.spot_trades if source == "SPOT" else self.futures_trades
         if trade_queue:
             self._record_volume(float(trade_queue[-1][3]))
+
+        now_wall_sec = time.time()
+        exch_lag_ms = (now_wall_sec * 1000.0 - float(event_ts_ms)) if event_ts_ms > 0 else 0.0
+        if event_ts_ms > 1_600_000_000_000 and 1000.0 < exch_lag_ms < 86_400_000.0:
+            last_warn = float(getattr(self, "_last_stale_exch_warn_ts", 0.0) or 0.0)
+            if now_wall_sec - last_warn >= 5.0:
+                self._last_stale_exch_warn_ts = now_wall_sec
+                logger.warning(
+                    f"[STALE_EXCHANGE_EVENT_VETO] Dropping stale {source} {self.asset} packet "
+                    f"(exch_lag_ms={exch_lag_ms:.1f}ms > 1000ms ceiling) to prevent burst-drain phantom shock."
+                )
+            return
+
         base_threshold = float(self.shock_threshold_usd)
         eff_threshold = self.get_effective_shock_threshold()
         cutoff_ns = recv_mono_ns - 100_000_000  # 100ms rolling window
@@ -1664,21 +1700,34 @@ class PolymarketDualFeed1HRecorder:
         buy_250ms = 0.0
         sell_250ms = 0.0
         cutoff_250_ns = recv_mono_ns - 250_000_000  # 250ms institutional sweep window
-        for t_mono, _, _, ntl, buyer, _ in reversed(trade_queue):
+        anchor_exch_ms = int((trade_queue[-1][2] or trade_queue[-1][1]) if trade_queue else 0) or int(event_ts_ms or 0)
+        for t_mono, e_ts_i, t_ts_i, ntl, buyer, _ in reversed(trade_queue):
             if t_mono < cutoff_250_ns:
                 break
+            ts_i_ms = int(t_ts_i or e_ts_i or 0)
+            if anchor_exch_ms > 0 and ts_i_ms > 0:
+                dt_exch_ms = anchor_exch_ms - ts_i_ms
+                if dt_exch_ms > 250:
+                    break
+                if dt_exch_ms < -50:
+                    continue
+                in_100ms = (dt_exch_ms <= 100) and (t_mono >= cutoff_ns)
+                in_40ms = (dt_exch_ms <= 40) and (t_mono >= cutoff_40_ns)
+            else:
+                in_100ms = (t_mono >= cutoff_ns)
+                in_40ms = (t_mono >= cutoff_40_ns)
             vol_250ms += ntl
             if buyer:
                 buy_250ms += ntl
             else:
                 sell_250ms += ntl
-            if t_mono >= cutoff_ns:
+            if in_100ms:
                 vol_100ms += ntl
                 if buyer:
                     buy_vol += ntl
                 else:
                     sell_vol += ntl
-            if t_mono >= cutoff_40_ns:
+            if in_40ms:
                 vol_40ms += ntl
                 if buyer:
                     buy_40ms += ntl
@@ -1690,9 +1739,14 @@ class PolymarketDualFeed1HRecorder:
         other_100ms = 0.0
         other_buy_100ms = 0.0
         other_sell_100ms = 0.0
-        for t_m, _, _, ntl, buyer, _ in reversed(other_queue):
+        for t_m, o_e_ts, o_t_ts, ntl, buyer, _ in reversed(other_queue):
             if t_m < cutoff_ns:
                 break
+            o_ts_ms = int(o_t_ts or o_e_ts or 0)
+            if anchor_exch_ms > 0 and o_ts_ms > 0 and abs(anchor_exch_ms - o_ts_ms) > 120:
+                if (anchor_exch_ms - o_ts_ms) > 120:
+                    break
+                continue
             other_100ms += ntl
             if buyer:
                 other_buy_100ms += ntl
@@ -1817,6 +1871,7 @@ class PolymarketDualFeed1HRecorder:
                 "t0_mono_ns": t0_mono_ns,
                 "t0_definition": "local_receipt_boundary",
                 "exchange_event_ts_ms": event_ts_ms,
+                "clob_ws_connected": bool(getattr(self, "clob_ws_connected", True)),
                 "shock_source": source,
                 "asset": self.asset,
                 "horizon": horizon_str,
@@ -1896,6 +1951,7 @@ class PolymarketDualFeed1HRecorder:
                             "t0_mono_ns": t0_mono_ns,
                             "t0_definition": "local_receipt_boundary",
                             "exchange_event_ts_ms": event_ts_ms,
+                            "clob_ws_connected": bool(getattr(self, "clob_ws_connected", True)),
                             "shock_source": source,
                             "asset": self.asset,
                             "horizon": "15m",
@@ -2151,6 +2207,8 @@ class PolymarketDualFeed1HRecorder:
                     logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {subscribed_market_id}.")
                     self._reconnect_clob = False
                     last_ws_msg_ts = time.time()
+                    self.clob_ws_connected = True
+                    self.last_clob_ws_msg_ts = last_ws_msg_ts
 
                     while self.running:
                         now_utc = datetime.now(timezone.utc)
@@ -2165,6 +2223,7 @@ class PolymarketDualFeed1HRecorder:
                                 f"[*] Market {subscribed_market_id} expired or rotated to "
                                 f"{(self.current_market or {}).get('market_id')}. Re-subscribing CLOB WS immediately."
                             )
+                            self.clob_ws_connected = False
                             break
 
                         # Check if 15M market reached expiry
@@ -2174,15 +2233,18 @@ class PolymarketDualFeed1HRecorder:
                             self.market_15m = None
                             self.books.pop("UP_15M", None)
                             self.books.pop("DOWN_15M", None)
+                            self.clob_ws_connected = False
                             break
 
-                        if time.time() - last_ws_msg_ts > 45.0:
-                            logger.warning(f"[*] CLOB WS silent for >45s on market {subscribed_market_id}. Reconnecting...")
+                        if time.time() - last_ws_msg_ts > 25.0:
+                            logger.warning(f"[*] CLOB WS silent for >25s on market {subscribed_market_id}. Reconnecting...")
+                            self.clob_ws_connected = False
                             break
 
                         try:
                             msg_str = await asyncio.wait_for(ws.recv(), timeout=1.0)
                             last_ws_msg_ts = time.time()
+                            self.last_clob_ws_msg_ts = last_ws_msg_ts
                         except asyncio.TimeoutError:
                             self._maybe_emit_boundary_lock_trigger()
                             continue
@@ -2215,6 +2277,7 @@ class PolymarketDualFeed1HRecorder:
                         self._maybe_write_fast_tick()
                         self._maybe_emit_boundary_lock_trigger()
             except Exception as e:
+                self.clob_ws_connected = False
                 logger.warning(f"Polymarket CLOB WS disconnected: {e}. Reconnecting in 1s...")
                 await asyncio.sleep(1.0)
 
@@ -2644,6 +2707,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     setup_logging(args.asset)
+    if os.name != "nt":
+        try:
+            import uvloop
+            uvloop.install()
+        except Exception:
+            pass
     recorder = PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold)
     try:
         asyncio.run(recorder.run())

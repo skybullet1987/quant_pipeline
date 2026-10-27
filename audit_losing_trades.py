@@ -229,6 +229,7 @@ def redeploy_daemon(force: bool = False) -> None:
         "ssh", "-n", "kraken-finland",
         (
             "/home/skybullet1987/quant_pipeline/venv/bin/python -m py_compile "
+            "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_terminal_recorder.py "
             "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_live_executor.py "
             "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_live_harvester.py && "
             "systemctl --user daemon-reload && "

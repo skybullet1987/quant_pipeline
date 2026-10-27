@@ -114,6 +114,7 @@ def transform_module(rel_path: str, code: str) -> str:
                 cln = cln.rstrip("\r\n")
             joined.append(cln)
         compacted = "".join(joined)
+    compacted = re.sub(r"\n([ \t]{4,})", lambda m: "\n" + " " * (len(m.group(1)) // 2), compacted)
     return compacted.rstrip("\n") + "\n\n"
 
 
