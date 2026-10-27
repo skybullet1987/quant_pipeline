@@ -481,11 +481,19 @@ class L2OrderBook:
         else:
             curr_best_ask = (1.0, 0.0)
         
-        if curr_best_bid[0] != self.prev_best_bid[0]:
+        if (
+            self.last_best_bid_change_ts == 0.0
+            or self.prev_best_bid[0] <= 0.0
+            or curr_best_bid[0] < self.prev_best_bid[0]
+        ):
             self.last_best_bid_change_ts = now_ts
         self.prev_best_bid = curr_best_bid
-            
-        if curr_best_ask[0] != self.prev_best_ask[0]:
+
+        if (
+            self.last_best_ask_change_ts == 0.0
+            or self.prev_best_ask[0] >= 1.0
+            or curr_best_ask[0] > self.prev_best_ask[0]
+        ):
             self.last_best_ask_change_ts = now_ts
         self.prev_best_ask = curr_best_ask
 
@@ -1932,9 +1940,14 @@ class PolymarketDualFeed1HRecorder:
                 try:
                     m15 = self.market_15m
                     open_15m = float(m15.get("finalized_15m_open", 0.0) or 0.0)
+                    auth_cl_15m = float(m15.get("authoritative_chainlink_open", 0.0) or 0.0)
+                    cl_spot_15m = float(self.get_chainlink_proxy_spot(t0_sec) or 0.0)
                     t0_15m_secs = (m15["end_dt"] - datetime.now(timezone.utc)).total_seconds()
                     if 0 < t0_15m_secs <= 900.0:
-                        dist_15m = ((self.spot_price - open_15m) / open_15m * 100.0) if open_15m > 0 else 0.0
+                        if auth_cl_15m > 0.0 and cl_spot_15m > 0.0:
+                            dist_15m = ((cl_spot_15m - auth_cl_15m) / auth_cl_15m * 100.0)
+                        else:
+                            dist_15m = ((self.spot_price - open_15m) / open_15m * 100.0) if open_15m > 0 else 0.0
                         tau_frac_15m = max(0.001, t0_15m_secs / float(m15.get("duration_s", 900.0)))
                         candle_sigma_15m = self.get_rolling_sigma("15m")
                         signed_z_15m = (dist_15m / 100.0) / max(candle_sigma_15m * math.sqrt(tau_frac_15m), 1e-6)

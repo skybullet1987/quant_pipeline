@@ -1,7 +1,7 @@
 """
 ================================================================================
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-27 20:27:38 UTC
+Generated: 2026-10-27 20:44:56 UTC
 Version: 3.9.0 Purged-WFO, Genuine Refit CPCV & Second-Pass Audit Hardened Release
 Repository: C:/Users/Anton/source/repos/Dominus
 
@@ -16,17 +16,17 @@ tools, post-trade forensic auditor, and Purged Walk-Forward / CPCV Optimizer:
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 34 - 70 | 802 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 71 - 110 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 111 - 6,028 | 522,571 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 111 - 6,028 | 522,655 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,029 - 9,099 | 289,354 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 9,100 - 10,720 | 143,876 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 10,721 - 11,042 | 21,902 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 11,043 - 12,659 | 122,937 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 12,660 - 12,734 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 12,735 - 12,822 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 12,823 - 12,946 | 7,450 B) :: CTF Settled Position Redemption Engine
-  - [src/polymarket_research/setup_polymarket_account.py] (Lines 12,947 - 13,097 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  - [audit_losing_trades.py] (Lines 13,098 - 13,237 | 11,742 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 13,238 - 14,368 | 79,695 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 9,100 - 10,725 | 144,472 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 10,726 - 11,047 | 21,902 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 11,048 - 12,664 | 122,937 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 12,665 - 12,739 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 12,740 - 12,827 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 12,828 - 12,951 | 7,450 B) :: CTF Settled Position Redemption Engine
+  - [src/polymarket_research/setup_polymarket_account.py] (Lines 12,952 - 13,102 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  - [audit_losing_trades.py] (Lines 13,103 - 13,242 | 11,742 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 13,243 - 14,373 | 79,695 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 
 from __future__ import annotations
@@ -3582,14 +3582,6 @@ class PolymarketLiveHarvester:
     if not shock_dir:
       return
     target_token = "UP" if shock_dir == "BUY" else "DOWN"
-    edge_info = compute_composite_edge_score(shock)
-    if edge_info.get("veto", False):
-      logger.info( f"[COMPOSITE_EDGE_VETO] {shock.get('title')!r}: Vetoed by edge scoring: {edge_info.get('veto_reason')}" )
-      return
-    edge_tier = edge_info.get("tier", "TIER_B_STANDARD")
-    edge_score = edge_info.get("e_score", 60.0)
-    kelly_mult = edge_info.get("kelly_multiplier", 1.00)
-    fak_buf = edge_info.get("fak_price_buffer", 0.015)
     tte = float(shock.get("seconds_to_expiry", 3600.0) or 3600.0)
     is_sleeve3_strike = bool( shock.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" or shock.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE" )
     is_boundary_lock_cand = bool( shock.get("shock_source") == "BOUNDARY_LOCK" or shock.get("regime_override") == "REGIME_D_BOUNDARY_LOCK" or (12.0 <= tte <= 90.0 and abs(float(shock.get("z_val") or shock.get("z_score") or 0.0)) >= 3.0) )
@@ -3712,19 +3704,6 @@ class PolymarketLiveHarvester:
         logger.info(f"[SHADOW_{asset_str}_COLLECTED] {shock.get('title')} {target_token} recorded for shadow research (live trading paused).")
       logger.debug(f"[TIER GUARD] Asset {asset_str!r} not in ALLOWED_ASSETS ({self.allowed_assets}). Skipping.")
       return
-    shock_ofi_val = float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)
-    shock_vol_usd = float(shock.get("shock_volume_100ms", 1_500_000.0) or 1_500_000.0)
-    delta_basis_bps = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
-    dir_delta_basis_bps = delta_basis_bps if target_token == "UP" else -delta_basis_bps
-    age_ask_ms_val = float(shock.get("age_ask_ms") or token_features.get("age_ask_ms", 350.0) or 350.0)
-    cb_veto, cb_reason = evaluate_coinbase_venue_veto(shock, target_token)
-    if cb_veto:
-      logger.info(f"[COINBASE VENUE VETO] {shock.get('title')!r} {target_token}: {cb_reason}. Skipping.")
-      return
-    p_max_info = compute_max_acceptable_ask( dist_pct=dist_pct, tte_sec=tte, asset=asset_str, shock_ofi=shock_ofi_val, shock_vol_usd=shock_vol_usd, delta_basis_bps=dir_delta_basis_bps, age_ask_ms=age_ask_ms_val, is_subhourly_15m=is_subhourly, )
-    z_eff = p_max_info.get("z_eff", 0.0)
-    p_true = p_max_info.get("p_true", 0.5)
-    p_max = p_max_info.get("p_max", 0.0)
     is_real_ctf_token = bool(token_id and str(token_id).isdigit() and len(str(token_id)) >= 20)
     is_synthetic_test = not is_real_ctf_token
     _is_live_real = (not self.dry_run) and is_real_ctf_token
@@ -3763,6 +3742,27 @@ class PolymarketLiveHarvester:
           _spot_refs.append(spot_at_t0 * (1.0 - 0.5 * _vdiv_clamped / 10000.0))
         _eff_spot_ref = min(_spot_refs) if target_token == "UP" else max(_spot_refs)
         dist_pct = ((_eff_spot_ref - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
+    edge_info = compute_composite_edge_score({**shock, "candle_distance_pct": dist_pct})
+    if edge_info.get("veto", False):
+      logger.info( f"[COMPOSITE_EDGE_VETO] {shock.get('title')!r}: Vetoed by edge scoring: {edge_info.get('veto_reason')}" )
+      return
+    edge_tier = edge_info.get("tier", "TIER_B_STANDARD")
+    edge_score = edge_info.get("e_score", 60.0)
+    kelly_mult = edge_info.get("kelly_multiplier", 1.00)
+    fak_buf = edge_info.get("fak_price_buffer", 0.015)
+    shock_ofi_val = float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)
+    shock_vol_usd = float(shock.get("shock_volume_100ms", 1_500_000.0) or 1_500_000.0)
+    delta_basis_bps = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
+    dir_delta_basis_bps = delta_basis_bps if target_token == "UP" else -delta_basis_bps
+    age_ask_ms_val = float(shock.get("age_ask_ms") or token_features.get("age_ask_ms", 350.0) or 350.0)
+    cb_veto, cb_reason = evaluate_coinbase_venue_veto(shock, target_token)
+    if cb_veto:
+      logger.info(f"[COINBASE VENUE VETO] {shock.get('title')!r} {target_token}: {cb_reason}. Skipping.")
+      return
+    p_max_info = compute_max_acceptable_ask( dist_pct=dist_pct, tte_sec=tte, asset=asset_str, shock_ofi=shock_ofi_val, shock_vol_usd=shock_vol_usd, delta_basis_bps=dir_delta_basis_bps, age_ask_ms=age_ask_ms_val, is_subhourly_15m=is_subhourly, )
+    z_eff = p_max_info.get("z_eff", 0.0)
+    p_true = p_max_info.get("p_true", 0.5)
+    p_max = p_max_info.get("p_max", 0.0)
     regime = None
     min_allowed_price = self.min_price_floor
     max_allowed_price = self.max_price_ceiling
@@ -9360,10 +9360,10 @@ class L2OrderBook:
       curr_best_ask = (ba, self.asks[ba])
     else:
       curr_best_ask = (1.0, 0.0)
-    if curr_best_bid[0] != self.prev_best_bid[0]:
+    if ( self.last_best_bid_change_ts == 0.0 or self.prev_best_bid[0] <= 0.0 or curr_best_bid[0] < self.prev_best_bid[0] ):
       self.last_best_bid_change_ts = now_ts
     self.prev_best_bid = curr_best_bid
-    if curr_best_ask[0] != self.prev_best_ask[0]:
+    if ( self.last_best_ask_change_ts == 0.0 or self.prev_best_ask[0] >= 1.0 or curr_best_ask[0] > self.prev_best_ask[0] ):
       self.last_best_ask_change_ts = now_ts
     self.prev_best_ask = curr_best_ask
   def apply_snapshot(self, bids: List[Dict[str, str]], asks: List[Dict[str, str]]):
@@ -10303,9 +10303,14 @@ class PolymarketDualFeed1HRecorder:
         try:
           m15 = self.market_15m
           open_15m = float(m15.get("finalized_15m_open", 0.0) or 0.0)
+          auth_cl_15m = float(m15.get("authoritative_chainlink_open", 0.0) or 0.0)
+          cl_spot_15m = float(self.get_chainlink_proxy_spot(t0_sec) or 0.0)
           t0_15m_secs = (m15["end_dt"] - datetime.now(timezone.utc)).total_seconds()
           if 0 < t0_15m_secs <= 900.0:
-            dist_15m = ((self.spot_price - open_15m) / open_15m * 100.0) if open_15m > 0 else 0.0
+            if auth_cl_15m > 0.0 and cl_spot_15m > 0.0:
+              dist_15m = ((cl_spot_15m - auth_cl_15m) / auth_cl_15m * 100.0)
+            else:
+              dist_15m = ((self.spot_price - open_15m) / open_15m * 100.0) if open_15m > 0 else 0.0
             tau_frac_15m = max(0.001, t0_15m_secs / float(m15.get("duration_s", 900.0)))
             candle_sigma_15m = self.get_rolling_sigma("15m")
             signed_z_15m = (dist_15m / 100.0) / max(candle_sigma_15m * math.sqrt(tau_frac_15m), 1e-6)

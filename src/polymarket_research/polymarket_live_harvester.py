@@ -5027,18 +5027,6 @@ class PolymarketLiveHarvester:
 
         target_token = "UP" if shock_dir == "BUY" else "DOWN"
 
-        # Pillar 1: Composite Edge & Stale-Quote Scoring Function
-        edge_info = compute_composite_edge_score(shock)
-        if edge_info.get("veto", False):
-            logger.info(
-                f"[COMPOSITE_EDGE_VETO] {shock.get('title')!r}: Vetoed by edge scoring: {edge_info.get('veto_reason')}"
-            )
-            return
-        edge_tier = edge_info.get("tier", "TIER_B_STANDARD")
-        edge_score = edge_info.get("e_score", 60.0)
-        kelly_mult = edge_info.get("kelly_multiplier", 1.00)
-        fak_buf = edge_info.get("fak_price_buffer", 0.015)
-
         # Time-to-Expiry (TTE) Guard: Must be in sweet spot (30s <= TTE <= max_tte; extended for Sleeve 3 & Boundary Lock)
         tte = float(shock.get("seconds_to_expiry", 3600.0) or 3600.0)
         is_sleeve3_strike = bool(
@@ -5250,33 +5238,6 @@ class PolymarketLiveHarvester:
             logger.debug(f"[TIER GUARD] Asset {asset_str!r} not in ALLOWED_ASSETS ({self.allowed_assets}). Skipping.")
             return
 
-        # Pillar 2: Salvage-Adjusted Continuous Maximum-Ask Pricing Model
-        shock_ofi_val = float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)
-        shock_vol_usd = float(shock.get("shock_volume_100ms", 1_500_000.0) or 1_500_000.0)
-        delta_basis_bps = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
-        # Directional delta basis: positive = futures basis moving WITH the target token direction
-        dir_delta_basis_bps = delta_basis_bps if target_token == "UP" else -delta_basis_bps
-        age_ask_ms_val = float(shock.get("age_ask_ms") or token_features.get("age_ask_ms", 350.0) or 350.0)
-
-        # v3.3 Coinbase + Binance composite venue filter (fail-open when Coinbase unavailable)
-        cb_veto, cb_reason = evaluate_coinbase_venue_veto(shock, target_token)
-        if cb_veto:
-            logger.info(f"[COINBASE VENUE VETO] {shock.get('title')!r} {target_token}: {cb_reason}. Skipping.")
-            return
-        p_max_info = compute_max_acceptable_ask(
-            dist_pct=dist_pct,
-            tte_sec=tte,
-            asset=asset_str,
-            shock_ofi=shock_ofi_val,
-            shock_vol_usd=shock_vol_usd,
-            delta_basis_bps=dir_delta_basis_bps,
-            age_ask_ms=age_ask_ms_val,
-            is_subhourly_15m=is_subhourly,
-        )
-        z_eff = p_max_info.get("z_eff", 0.0)
-        p_true = p_max_info.get("p_true", 0.5)
-        p_max = p_max_info.get("p_max", 0.0)
-
         # Real Polygon CTF ERC-1155 conditional token IDs are 20+ digit base-10 uint256 strings.
         is_real_ctf_token = bool(token_id and str(token_id).isdigit() and len(str(token_id)) >= 20)
         is_synthetic_test = not is_real_ctf_token
@@ -5322,6 +5283,45 @@ class PolymarketLiveHarvester:
                     _spot_refs.append(spot_at_t0 * (1.0 - 0.5 * _vdiv_clamped / 10000.0))
                 _eff_spot_ref = min(_spot_refs) if target_token == "UP" else max(_spot_refs)
                 dist_pct = ((_eff_spot_ref - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
+
+        # Pillar 1: Composite Edge & Stale-Quote Scoring Function (evaluated on authoritative True-USD dist_pct)
+        edge_info = compute_composite_edge_score({**shock, "candle_distance_pct": dist_pct})
+        if edge_info.get("veto", False):
+            logger.info(
+                f"[COMPOSITE_EDGE_VETO] {shock.get('title')!r}: Vetoed by edge scoring: {edge_info.get('veto_reason')}"
+            )
+            return
+        edge_tier = edge_info.get("tier", "TIER_B_STANDARD")
+        edge_score = edge_info.get("e_score", 60.0)
+        kelly_mult = edge_info.get("kelly_multiplier", 1.00)
+        fak_buf = edge_info.get("fak_price_buffer", 0.015)
+
+        # Pillar 2: Salvage-Adjusted Continuous Maximum-Ask Pricing Model
+        shock_ofi_val = float(shock.get("shock_ofi", 1.0) if shock.get("shock_ofi") is not None else 1.0)
+        shock_vol_usd = float(shock.get("shock_volume_100ms", 1_500_000.0) or 1_500_000.0)
+        delta_basis_bps = float(shock.get("delta_basis_100ms", 0.0) or 0.0)
+        # Directional delta basis: positive = futures basis moving WITH the target token direction
+        dir_delta_basis_bps = delta_basis_bps if target_token == "UP" else -delta_basis_bps
+        age_ask_ms_val = float(shock.get("age_ask_ms") or token_features.get("age_ask_ms", 350.0) or 350.0)
+
+        # v3.3 Coinbase + Binance composite venue filter (fail-open when Coinbase unavailable)
+        cb_veto, cb_reason = evaluate_coinbase_venue_veto(shock, target_token)
+        if cb_veto:
+            logger.info(f"[COINBASE VENUE VETO] {shock.get('title')!r} {target_token}: {cb_reason}. Skipping.")
+            return
+        p_max_info = compute_max_acceptable_ask(
+            dist_pct=dist_pct,
+            tte_sec=tte,
+            asset=asset_str,
+            shock_ofi=shock_ofi_val,
+            shock_vol_usd=shock_vol_usd,
+            delta_basis_bps=dir_delta_basis_bps,
+            age_ask_ms=age_ask_ms_val,
+            is_subhourly_15m=is_subhourly,
+        )
+        z_eff = p_max_info.get("z_eff", 0.0)
+        p_true = p_max_info.get("p_true", 0.5)
+        p_max = p_max_info.get("p_max", 0.0)
 
         # Dual-Regime Cushion-to-Price Entry Matrix (Purged WFO Optimal Live Windows + Dry-Run/Synthetic Parity)
         regime = None
