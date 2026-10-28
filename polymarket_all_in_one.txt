@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 21:30:27 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 22:10:11 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 53 | 905 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
-  - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,527 | 573,251 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,528 - 10,198 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,199 - 11,948 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,949 - 12,312 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,313 - 13,934 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,935 - 14,004 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,005 - 14,087 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,088 - 14,277 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,278 - 14,448 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,449 - 15,604 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,731 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,533 | 573,669 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,534 - 10,204 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,205 - 11,954 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,955 - 12,318 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,319 - 13,940 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,941 - 14,010 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,011 - 14,093 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,094 - 14,283 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,284 - 14,454 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,455 - 15,610 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -66,10 +66,10 @@ StartLimitBurst=5
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
 # Sizing / exposure / daily-loss / equity-floor come from config/polymarket_risk_config.json.
-# --no-hold-to-maturity activates Purged-WFO resting Maker GTC take-profits (50/50 $0.95 & $0.98),
+# --no-hold-to-maturity --exit-policy hold_98 activates Purged-WFO-winning single-tranche $0.98 Maker GTC TP + 15s gasless Relayer V2 redemption,
 # --max-tte 1200.0 unlocks the full WFO-optimal [120s, 1200s] 1h window + [90s, 480s] 15m window,
 # and --max-trades-per-market 2 enables Win-Reset Compounding (2nd trade ONLY if Trade #1 closed in profit).
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --max-ticket-cap 200.0 --max-trades-per-market 2 --max-trades-per-hour 8 --min-price-floor 0.55 --max-price-ceiling 0.85 --max-tte 1200.0 --allowed-assets BTC ETH
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --exit-policy hold_98 --max-ticket-cap 200.0 --max-trades-per-market 2 --max-trades-per-hour 8 --min-price-floor 0.55 --max-price-ceiling 0.85 --max-tte 1200.0 --allowed-assets BTC ETH
 # Exit 0 (circuit breaker / graceful SIGTERM) stays down; non-zero (crash) restarts after 3s.
 Restart=on-failure
 RestartSec=3
@@ -742,13 +742,14 @@ def compute_kelly_ticket_size( p_model:float,p_market_ask:Optional[float]=None,b
   ticket_usd=min(max(25.0,float(bankroll) * MAX_NOTIONAL_CAP_PCT),effective_cap)
   return round(ticket_usd,2)
 class PolymarketLiveHarvester:
-  def __init__( self,ticket_notional:float=DEFAULT_TICKET_NOTIONAL,dry_run:bool=False,dynamic_sizing:bool=True,max_exposure:Optional[float]=None,max_concurrent:Optional[int]=None,max_trades_per_market:int=DEFAULT_MAX_TRADES_PER_MARKET,max_trades_per_hour:int=DEFAULT_MAX_TRADES_PER_HOUR,max_tte:float=MAX_TTE_SECONDS,max_price_ceiling:float=MAX_PRICE_CEILING,min_price_floor:float=MIN_PRICE_FLOOR,profit_theta:float=PROFIT_THETA,spot_delta_k:float=SPOT_DELTA_K,tte_cancel_window:float=TTE_CANCEL_WINDOW,kelly_fraction:float=KELLY_FRACTION,max_notional_cap_pct:float=MAX_NOTIONAL_CAP_PCT,passive_unwind_timeout:float=PASSIVE_UNWIND_TIMEOUT,depth_hurdle:float=1.30,unconstrained_kelly:bool=False,max_absolute_ticket_usd:Optional[float]=None,dynamic_theta:bool=False,hold_to_maturity:bool=True,allow_cli_exposure:bool=False,allowed_assets:Optional[Set[str]]=None,reset_risk:bool=False,max_daily_loss:Optional[float]=None,):
+  def __init__( self,ticket_notional:float=DEFAULT_TICKET_NOTIONAL,dry_run:bool=False,dynamic_sizing:bool=True,max_exposure:Optional[float]=None,max_concurrent:Optional[int]=None,max_trades_per_market:int=DEFAULT_MAX_TRADES_PER_MARKET,max_trades_per_hour:int=DEFAULT_MAX_TRADES_PER_HOUR,max_tte:float=MAX_TTE_SECONDS,max_price_ceiling:float=MAX_PRICE_CEILING,min_price_floor:float=MIN_PRICE_FLOOR,profit_theta:float=PROFIT_THETA,spot_delta_k:float=SPOT_DELTA_K,tte_cancel_window:float=TTE_CANCEL_WINDOW,kelly_fraction:float=KELLY_FRACTION,max_notional_cap_pct:float=MAX_NOTIONAL_CAP_PCT,passive_unwind_timeout:float=PASSIVE_UNWIND_TIMEOUT,depth_hurdle:float=1.30,unconstrained_kelly:bool=False,max_absolute_ticket_usd:Optional[float]=None,dynamic_theta:bool=False,hold_to_maturity:bool=True,exit_policy:str="two_tranche_95_98",allow_cli_exposure:bool=False,allowed_assets:Optional[Set[str]]=None,reset_risk:bool=False,max_daily_loss:Optional[float]=None,):
     DATA_DIR.mkdir(parents=True,exist_ok=True)
     self.ticket_notional=ticket_notional
     self.dry_run=dry_run
     self.dynamic_sizing=dynamic_sizing
     self.unconstrained_kelly=unconstrained_kelly
     self.hold_to_maturity=hold_to_maturity
+    self.exit_policy=str(exit_policy or "two_tranche_95_98").strip().lower()
     reset_marker=STATE_FILE.parent / "RESET_RISK_ONCE"
     if not dry_run and reset_marker.exists():
       try:
@@ -1716,16 +1717,18 @@ class PolymarketLiveHarvester:
       logger.debug(f"[COLLATERAL SYNC] Notice: {e}")
   def _calculate_target_exit(self,price:float,tte:float)->float:
     if getattr(self,"hold_to_maturity",False):
-      if price < 0.80:
-        return 0.98
-      return 0.99
+      return 0.98 if price < 0.80 else 0.99
+    if getattr(self,"exit_policy","")=="hold_98":
+      return 0.98
     return min(0.95,round(price + self.profit_theta,2))
   def _use_two_tranche_maker_exit(self,sleeve:Optional[str])->bool:
     if sleeve and ("BOX" in str(sleeve).upper() or sleeve=="SLEEVE_4_BOUNDARY_SNIPE"):
       return False
-    if not getattr(self,"hold_to_maturity",False):
-      return True
     if sleeve=="SLEEVE_2_MID_HOUR" and getattr(self,"enable_mid_hour_t1_12c",False):
+      return True
+    if getattr(self,"exit_policy","")=="hold_98":
+      return False
+    if not getattr(self,"hold_to_maturity",False):
       return True
     return False
   def _tranche1_tp_offset(self,sleeve:Optional[str])->float:
@@ -2770,6 +2773,8 @@ class PolymarketLiveHarvester:
       pos.pop("exit_tranches",None)
       if pos.get("is_dominance_box"):
         pos["target_exit_price"]=0.99
+      elif getattr(self,"exit_policy","")=="hold_98":
+        pos["target_exit_price"]=0.98
       elif not pos.get("target_exit_price"):
         pos["target_exit_price"]=0.96 if is_live_ctf else min(0.96,round(entry_px + 0.16,2))
     pos["status"]=ExecutionStatus.POSITION_CONFIRMED
@@ -6510,13 +6515,14 @@ if __name__=="__main__":
   parser.add_argument("--max-ticket-cap",type=float,default=MAX_ABSOLUTE_TICKET_USD,help="Explicit maximum dollar cap for single ticket (default: module MAX_ABSOLUTE_TICKET_USD)")
   parser.add_argument("--dynamic-theta",action="store_true",default=False,help="Enable EXP-315 regime-dependent profit target (0.06 when TTE>900s, 0.09 standard, hold-to-expiry when TTE<=300s)")
   parser.add_argument("--hold-to-maturity",dest="hold_to_maturity",action="store_true",default=bool(RISK_CONFIG.get("hold_to_maturity",False)),help="Hold resting $0.99 single-tranche ask to maturity instead of 2-tranche / $0.95 WFO maker exit")
-  parser.add_argument("--no-hold-to-maturity",dest="hold_to_maturity",action="store_false",help="Enable WFO-optimal 2-tranche / $0.95 resting maker exits (default in production)")
+  parser.add_argument("--no-hold-to-maturity",dest="hold_to_maturity",action="store_false",help="Enable WFO-optimal resting maker exits (default in production)")
+  parser.add_argument("--exit-policy",type=str,default=str(RISK_CONFIG.get("exit_policy","two_tranche_95_98")),help="Exit policy: hold_98 or two_tranche_95_98")
   parser.add_argument("--allowed-assets",nargs="+",default=["BTC","ETH"],help="Assets permitted for live trading (default: BTC ETH)")
   parser.add_argument("--dry-run",action="store_true",help="Run in dry-run simulation mode")
   parser.add_argument("--reset-risk",action="store_true",default=False,help="Reset circuit breaker and consecutive losses on launch")
   parser.add_argument("--max-daily-loss",type=float,default=None,help="Circuit breaker max daily loss limit in USD (default: config max_daily_loss)")
   args=parser.parse_args()
-  harvester=PolymarketLiveHarvester( ticket_notional=args.lot_size,dry_run=args.dry_run,dynamic_sizing=args.dynamic_sizing,max_exposure=args.max_exposure,max_concurrent=args.max_concurrent,max_trades_per_market=args.max_trades_per_market,max_trades_per_hour=args.max_trades_per_hour,max_tte=args.max_tte,max_price_ceiling=args.max_price_ceiling,min_price_floor=args.min_price_floor,unconstrained_kelly=args.unconstrained_kelly,max_absolute_ticket_usd=args.max_ticket_cap,dynamic_theta=args.dynamic_theta,hold_to_maturity=args.hold_to_maturity,allow_cli_exposure=any(a=="--max-exposure" or a.startswith("--max-exposure=") for a in sys.argv[1:]),allowed_assets=set(args.allowed_assets),reset_risk=args.reset_risk,max_daily_loss=args.max_daily_loss,)
+  harvester=PolymarketLiveHarvester( ticket_notional=args.lot_size,dry_run=args.dry_run,dynamic_sizing=args.dynamic_sizing,max_exposure=args.max_exposure,max_concurrent=args.max_concurrent,max_trades_per_market=args.max_trades_per_market,max_trades_per_hour=args.max_trades_per_hour,max_tte=args.max_tte,max_price_ceiling=args.max_price_ceiling,min_price_floor=args.min_price_floor,unconstrained_kelly=args.unconstrained_kelly,max_absolute_ticket_usd=args.max_ticket_cap,dynamic_theta=args.dynamic_theta,hold_to_maturity=args.hold_to_maturity,exit_policy=args.exit_policy,allow_cli_exposure=any(a=="--max-exposure" or a.startswith("--max-exposure=") for a in sys.argv[1:]),allowed_assets=set(args.allowed_assets),reset_risk=args.reset_risk,max_daily_loss=args.max_daily_loss,)
   if os.name!="nt":
     try:
       import uvloop

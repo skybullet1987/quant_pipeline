@@ -1167,6 +1167,17 @@ def test_fix14_v391_unchoked_ev_and_stale_book_snipe(tmp_path, monkeypatch):
         f"AUTHENTICATED_L2 must rest at [0.95, 0.98], got {pos_auth.get('exit_tranches')}"
     )
 
+    # Purged-WFO hold_98 policy (with Builder Relayer armed): 100% single resting Maker GTC exit at $0.98 (no 50% @ $0.95 giveaway)
+    h.exit_policy = "hold_98"
+    posted_exits.clear()
+    pos_h98 = {**pos_auth, "trade_id": "LIVE_6075458_H98", "exit_order_id": None, "exit_order_status": "NONE"}
+    pos_h98.pop("exit_tranches", None)
+    pos_h98.pop("target_exit_price", None)
+    assert h._attempt_maker_exit_post("LIVE_6075458_H98", pos_h98) is True
+    assert "exit_tranches" not in pos_h98
+    assert posted_exits[0]["price"] == pytest.approx(0.98) and posted_exits[0]["size"] == pytest.approx(15.38)
+    h.exit_policy = "two_tranche_95_98"
+
 
 def test_fix15_v392_shadow_graduation_upgrades(tmp_path, monkeypatch):
     """

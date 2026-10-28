@@ -1107,6 +1107,7 @@ class PolymarketLiveHarvester:
         max_absolute_ticket_usd: Optional[float] = None,
         dynamic_theta: bool = False,
         hold_to_maturity: bool = True,
+        exit_policy: str = "two_tranche_95_98",
         allow_cli_exposure: bool = False,
         allowed_assets: Optional[Set[str]] = None,
         reset_risk: bool = False,
@@ -1118,6 +1119,7 @@ class PolymarketLiveHarvester:
         self.dynamic_sizing = dynamic_sizing
         self.unconstrained_kelly = unconstrained_kelly
         self.hold_to_maturity = hold_to_maturity
+        self.exit_policy = str(exit_policy or "two_tranche_95_98").strip().lower()
         # One-shot reset marker (systemd-friendly alternative to passing --reset-risk on every auto-restart):
         # scripts/reload_production_daemons.py drops this file; it is consumed exactly once at startup.
         reset_marker = STATE_FILE.parent / "RESET_RISK_ONCE"
@@ -2429,22 +2431,20 @@ class PolymarketLiveHarvester:
 
     def _calculate_target_exit(self, price: float, tte: float) -> float:
         if getattr(self, "hold_to_maturity", False):
-            if price < 0.80:
-                return 0.98
-            return 0.99
+            return 0.98 if price < 0.80 else 0.99
+        if getattr(self, "exit_policy", "") == "hold_98":
+            return 0.98
         return min(0.95, round(price + self.profit_theta, 2))
 
     def _use_two_tranche_maker_exit(self, sleeve: Optional[str]) -> bool:
-        """
-        Enables 2-tranche resting maker exit (50% @ min(0.94, entry + offset), 50% @ $0.98)
-        whenever hold_to_maturity=False (live WFO production policy) or when explicitly enabled
-        on SLEEVE_2_MID_HOUR.
-        """
+        """Enables 2-tranche resting maker exit unless hold_98 / hold_to_maturity is active."""
         if sleeve and ("BOX" in str(sleeve).upper() or sleeve == "SLEEVE_4_BOUNDARY_SNIPE"):
             return False
-        if not getattr(self, "hold_to_maturity", False):
-            return True
         if sleeve == "SLEEVE_2_MID_HOUR" and getattr(self, "enable_mid_hour_t1_12c", False):
+            return True
+        if getattr(self, "exit_policy", "") == "hold_98":
+            return False
+        if not getattr(self, "hold_to_maturity", False):
             return True
         return False
 
@@ -3765,6 +3765,8 @@ class PolymarketLiveHarvester:
             pos.pop("exit_tranches", None)
             if pos.get("is_dominance_box"):
                 pos["target_exit_price"] = 0.99
+            elif getattr(self, "exit_policy", "") == "hold_98":
+                pos["target_exit_price"] = 0.98
             elif not pos.get("target_exit_price"):
                 pos["target_exit_price"] = 0.96 if is_live_ctf else min(0.96, round(entry_px + 0.16, 2))
 
@@ -9661,7 +9663,8 @@ if __name__ == "__main__":
     parser.add_argument("--max-ticket-cap", type=float, default=MAX_ABSOLUTE_TICKET_USD, help="Explicit maximum dollar cap for single ticket (default: module MAX_ABSOLUTE_TICKET_USD)")
     parser.add_argument("--dynamic-theta", action="store_true", default=False, help="Enable EXP-315 regime-dependent profit target (0.06 when TTE>900s, 0.09 standard, hold-to-expiry when TTE<=300s)")
     parser.add_argument("--hold-to-maturity", dest="hold_to_maturity", action="store_true", default=bool(RISK_CONFIG.get("hold_to_maturity", False)), help="Hold resting $0.99 single-tranche ask to maturity instead of 2-tranche / $0.95 WFO maker exit")
-    parser.add_argument("--no-hold-to-maturity", dest="hold_to_maturity", action="store_false", help="Enable WFO-optimal 2-tranche / $0.95 resting maker exits (default in production)")
+    parser.add_argument("--no-hold-to-maturity", dest="hold_to_maturity", action="store_false", help="Enable WFO-optimal resting maker exits (default in production)")
+    parser.add_argument("--exit-policy", type=str, default=str(RISK_CONFIG.get("exit_policy", "two_tranche_95_98")), help="Exit policy: hold_98 or two_tranche_95_98")
     parser.add_argument("--allowed-assets", nargs="+", default=["BTC", "ETH"], help="Assets permitted for live trading (default: BTC ETH)")
     parser.add_argument("--dry-run", action="store_true", help="Run in dry-run simulation mode")
     parser.add_argument("--reset-risk", action="store_true", default=False, help="Reset circuit breaker and consecutive losses on launch")
@@ -9683,6 +9686,7 @@ if __name__ == "__main__":
         max_absolute_ticket_usd=args.max_ticket_cap,
         dynamic_theta=args.dynamic_theta,
         hold_to_maturity=args.hold_to_maturity,
+        exit_policy=args.exit_policy,
         allow_cli_exposure=any(a == "--max-exposure" or a.startswith("--max-exposure=") for a in sys.argv[1:]),
         allowed_assets=set(args.allowed_assets),
         reset_risk=args.reset_risk,
