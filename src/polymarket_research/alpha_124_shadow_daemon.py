@@ -86,7 +86,10 @@ from src.polymarket_research.net_alpha_opportunity_engine import (
     read_global_positions_shm,
     scan_binary_complete_set_arb,
 )
-from src.polymarket_research.orderflow_wfo_simulators import compute_d1_legging_drag_haircut
+from src.polymarket_research.orderflow_wfo_simulators import (
+    compute_d1_legging_drag_haircut,
+    compute_d1_maker_anchor_drag_haircut,
+)
 from src.polymarket_research.same_oracle_dominance_box import (
     DOMINANCE_ASSETS,
     DOMINANCE_SERIES_SLUGS,
@@ -591,11 +594,12 @@ class Alpha124ShadowDaemon:
             **payload,
         }
         try:
-            telem_path = (
-                MARKET_TELEMETRY_FILE
-                if MARKET_TELEMETRY_FILE.parent != DATA_DIR
-                else (LEDGER_FILE.parent / "alpha124_market_telemetry.jsonl")
-            )
+            if MARKET_TELEMETRY_FILE.parent != DATA_DIR:
+                telem_path = MARKET_TELEMETRY_FILE
+            elif STATE_FILE.parent != DATA_DIR:
+                telem_path = STATE_FILE.parent / "alpha124_market_telemetry.jsonl"
+            else:
+                telem_path = LEDGER_FILE.parent / "alpha124_market_telemetry.jsonl"
             line_b = (json.dumps(row, separators=(",", ":")) + "\n").encode("utf-8")
             fd = os.open(str(telem_path), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o664)
             try:
@@ -643,16 +647,30 @@ class Alpha124ShadowDaemon:
         if ask_a >= 1.0 or ask_b >= 1.0:
             return
         bid_a, _ = extract_best_bid(bk_a.get("bids") or [])
+        bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
         fa = float(leg_a["fee_rate"]) * ((ask_a * (1.0 - ask_a)) ** float(leg_a.get("fee_exponent", 1.0)))
         fb = float(leg_b["fee_rate"]) * ((ask_b * (1.0 - ask_b)) ** float(leg_b.get("fee_exponent", 1.0)))
-        mkr_bid_a = round(min(bid_a + 0.01, ask_a - 0.01), 4) if bid_a > 0 and (ask_a - bid_a) >= 0.02 else None
+        tick_a = 0.001 if (ask_a >= 0.96 or ask_a <= 0.04) else 0.01
+        tick_b = 0.001 if (ask_b >= 0.96 or ask_b <= 0.04) else 0.01
+        mkr_cands: List[float] = []
+        if bid_a > 0.0:
+            if (ask_a - bid_a) >= 2.0 * tick_a - 1e-9:
+                mkr_cands.append(round(min(bid_a + tick_a, ask_a - tick_a) + ask_b + fb, 4))
+            elif (ask_a - bid_a) >= 0.01 - 1e-9 and 0.15 <= ask_a <= 0.85:
+                mkr_cands.append(round(bid_a + ask_b + fb, 4))
+        if bid_b > 0.0:
+            if (ask_b - bid_b) >= 2.0 * tick_b - 1e-9:
+                mkr_cands.append(round(min(bid_b + tick_b, ask_b - tick_b) + ask_a + fa, 4))
+            elif (ask_b - bid_b) >= 0.01 - 1e-9 and 0.15 <= ask_b <= 0.85:
+                mkr_cands.append(round(bid_b + ask_a + fa, 4))
+        best_mkr_net = min(mkr_cands) if mkr_cands else None
         usd_h = self.usd_spot_hist.get(m_outer.asset)
         usd_px = round(float(usd_h[-1][1]), 6) if usd_h else None
         self._record_market_telemetry(
             key=f"D1_{pair_type}_{m_outer.asset}_{m_inner.market_id}",
             min_interval_sec=10.0,
             now_ts=now_ts,
-            sig=(ask_a, ask_b, mkr_bid_a),
+            sig=(ask_a, ask_b, best_mkr_net),
             unchanged_heartbeat_sec=60.0,
             payload={
                 "type": "D1_CORRIDOR",
@@ -671,7 +689,7 @@ class Alpha124ShadowDaemon:
                 "leg_b_ask": ask_b,
                 "gross_box_l1": round(ask_a + ask_b, 4),
                 "net_box_l1": round(ask_a + fa + ask_b + fb, 4),
-                "maker_anchor_net_l1": round(mkr_bid_a + ask_b + fb, 4) if mkr_bid_a is not None else None,
+                "maker_anchor_net_l1": best_mkr_net,
                 "l1_min_shares": round(min(sz_a, sz_b), 2),
             },
         )
@@ -1120,10 +1138,10 @@ class Alpha124ShadowDaemon:
                                 for aid, pcs in grouped.items():
                                     if self._apply_ws_price_changes(aid, pcs, now_rx) and aid in d1_wake_toks:
                                         woke = True
-                        # Only D1 overlap-window token updates wake the fast D1 sub-scan (throttled to <=8.3 Hz; eliminates idle spin)
+                        # D1 overlap-window or active resting Maker-Anchor updates wake the fast D1 sub-scan (<=8.3 Hz)
                         if (
                             woke
-                            and self.is_in_same_oracle_overlap_window(now_rx)
+                            and (self.is_in_same_oracle_overlap_window(now_rx) or bool(self.pending_maker_anchors))
                             and (now_rx - getattr(self, "_last_ws_d1_wake_ts", 0.0)) >= 0.12
                         ):
                             self._last_ws_d1_wake_ts = now_rx
@@ -4310,6 +4328,12 @@ class Alpha124ShadowDaemon:
             logger.debug(f"2-leg box live candidate write notice: {exc}")
             return False
 
+    def _latest_spot_px(self, asset: str) -> float:
+        uh = self.usd_spot_hist.get(asset)
+        if uh and len(uh) > 0 and (time.time() - float(uh[-1][0])) <= 10.0 and float(uh[-1][1]) > 0.0:
+            return float(uh[-1][1])
+        return float(self.spots.get(asset) or 0.0)
+
     def post_maker_anchor_candidate(
         self,
         m15: TwapCandleMarketSpec,
@@ -4320,9 +4344,12 @@ class Alpha124ShadowDaemon:
         now_ts: float,
     ) -> bool:
         """
-        Tier-2 (`D1_MAKER_ANCHOR_BOX`): Posts a single-leg 0%-fee `post_only=True` Maker Anchor
-        on near-arb overlap corridors (`(0.995, 1.015]`) ONLY when the opposite hedge leg has >= 3.0x
-        share depth and calm spot (`|ret_5s| <= 4.5 bps`). Supervised every 0.5s with $0 cancel-on-thinning.
+        Tier-2 (`D1_MAKER_ANCHOR_BOX`, EXP-PM-406 Hardened): Posts a single-leg 0%-fee `post_only=True`
+        Maker Anchor on near-arb overlap corridors (`(0.995, 1.032]`) with:
+          - Tick-exact `0.001` (`>=0.96` / `<=0.04`) and `0.01` pricing across `[0.03, 0.999]`,
+          - Queue-front `+1 tick` step on `>= 2-tick` spreads OR `1c` mid-book join (`[0.15, 0.85]`) when `obi_l1 >= -0.15`,
+          - Realistic `T100` (`$18` capped by `asset_cap`) `>= 2.5x` hedge depth gate + `0.900` anti-box floor,
+          - 120ms WS supervision with 2.5 bps directional asymmetric spot cancel-on-move and 12s TTL.
         """
         if is_shadow_sleeve_quarantined("D1_MAKER_ANCHOR_BOX"):
             return False
@@ -4330,7 +4357,8 @@ class Alpha124ShadowDaemon:
         max_anc_rem = 880.0 if str(m5.horizon) == "15m" else 295.0
         if not (65.0 <= rem_sec <= max_anc_rem):
             return False
-        if abs(self.get_return_bps(m15.asset, 5.0)) > 4.5:
+        ret_5s_init = self.get_return_bps(m15.asset, 5.0)
+        if abs(ret_5s_init) > 4.5:
             return False
         if (now_ts - float(self._last_any_shock_ts_by_asset.get(m15.asset, 0.0) or 0.0)) < 4.0:
             return False
@@ -4339,46 +4367,70 @@ class Alpha124ShadowDaemon:
             return False
 
         leg_a, leg_b = dom_info["leg_a"], dom_info["leg_b"]
-        bid_a, _ = extract_best_bid(bk_a.get("bids") or [])
-        bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
+        bids_a = sorted([(float(b["price"]), float(b["size"])) for b in (bk_a.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0], key=lambda x: -x[0])
+        bids_b = sorted([(float(b["price"]), float(b["size"])) for b in (bk_b.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0], key=lambda x: -x[0])
         asks_a = sorted([(float(a["price"]), float(a["size"])) for a in (bk_a.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
         asks_b = sorted([(float(a["price"]), float(a["size"])) for a in (bk_b.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
-        if not asks_a or not asks_b or bid_a <= 0.0 or bid_b <= 0.0:
+        if not asks_a or not asks_b or not bids_a or not bids_b:
             return False
+        bid_a, bsz_a = bids_a[0]
+        bid_b, bsz_b = bids_b[0]
         ask_a, sz_a = asks_a[0]
         ask_b, sz_b = asks_b[0]
         spr_a, spr_b = round(ask_a - bid_a, 4), round(ask_b - bid_b, 4)
+        obi_a = (bsz_a - sz_a) / max(1e-9, bsz_a + sz_a)
+        obi_b = (bsz_b - sz_b) / max(1e-9, bsz_b + sz_b)
 
-        best_choice: Optional[Tuple[bool, float, float, float]] = None  # (anchor_is_a, bid_anchor, hedge_eff, req_sh)
+        asset_cap_u = float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(m15.asset, 40.0))
+        ref_bud_t100 = min(float(BANKROLL_TICKETS["T100"]["D1_MAKER_ANCHOR_BOX"]), asset_cap_u)
+        req_sh_t100 = max(5.0, math.floor(ref_bud_t100 / 0.985))
+
+        candidates: List[Tuple[float, bool, bool, float, float, float]] = []
         for anchor_is_a in (True, False):
             b_anc = bid_a if anchor_is_a else bid_b
+            bsz_anc = bsz_a if anchor_is_a else bsz_b
             a_anc = ask_a if anchor_is_a else ask_b
             s_anc = spr_a if anchor_is_a else spr_b
+            obi_anc = obi_a if anchor_is_a else obi_b
+            leg_anc = leg_a if anchor_is_a else leg_b
             asks_hdg = asks_b if anchor_is_a else asks_a
             leg_hdg = leg_b if anchor_is_a else leg_a
-            if s_anc < 0.02 or not (0.12 <= a_anc <= 0.88):
+            if not (0.03 <= a_anc <= 0.999) or obi_anc < -0.35:
                 continue
-            cand_bid = round(min(b_anc + 0.01, a_anc - 0.01), 2)
-            asset_cap_u = float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(m15.asset, 40.0))
-            ref_bud = min(float(BANKROLL_TICKETS["T1000"]["D1_MAKER_ANCHOR_BOX"]), asset_cap_u)
-            req_sh = max(5.0, math.floor(ref_bud / 0.985))
+            anc_side = str(leg_anc.get("side") or "UP").upper()
+            if (anc_side == "UP" and ret_5s_init < -2.2) or (anc_side == "DOWN" and ret_5s_init > 2.2):
+                continue
+            tick = 0.001 if (a_anc >= 0.96 or a_anc <= 0.04) else 0.01
+            dec = 3 if tick < 0.01 else 2
+            if s_anc >= 2.0 * tick - 1e-9:
+                cand_bid = round(min(b_anc + tick, a_anc - tick), dec)
+                q_front = True
+            elif s_anc >= 0.01 - 1e-9 and 0.15 <= a_anc <= 0.85 and obi_anc >= -0.15 and bsz_anc >= 15.0:
+                cand_bid = round(b_anc, 2)
+                q_front = False
+            else:
+                continue
             avail_hdg = sum(sz for px, sz in asks_hdg if px <= asks_hdg[0][0] + 0.01)
-            if avail_hdg < max(15.0, 3.0 * req_sh):
+            if avail_hdg < max(15.0, 2.5 * req_sh_t100):
                 continue
             hdg_px = asks_hdg[0][0]
             hdg_fee = float(leg_hdg["fee_rate"]) * ((hdg_px * (1.0 - hdg_px)) ** float(leg_hdg.get("fee_exponent", 1.0)))
             hdg_eff = hdg_px + hdg_fee
-            max_anc_bid = math.floor((0.988 - hdg_eff) * 100.0 + 1e-9) / 100.0
-            bid_px = min(cand_bid, max_anc_bid)
-            if bid_px < round(b_anc - 0.01, 2) or bid_px <= 0.04 or bid_px >= a_anc:
+            scale = 1000.0 if tick < 0.01 else 100.0
+            max_anc_bid = math.floor((0.988 - hdg_eff) * scale + 1e-9) / scale
+            bid_px = round(min(cand_bid, max_anc_bid), dec)
+            min_ok_bid = round(b_anc - (tick if q_front else 0.0), dec)
+            if bid_px < min_ok_bid or bid_px <= 0.02 or bid_px >= a_anc:
                 continue
-            if (bid_px + hdg_eff) <= 0.988:
-                best_choice = (anchor_is_a, round(bid_px, 2), round(hdg_eff, 4), req_sh)
-                break
-        if best_choice is None:
-            return False
+            pair_est = round(bid_px + hdg_eff, 4)
+            if 0.900 <= pair_est <= 0.988:
+                # Sort key prefers lowest net box cost, breaking ties in favor of queue_front (+1 tick)
+                candidates.append((pair_est - (0.0005 if q_front else 0.0), anchor_is_a, q_front, bid_px, round(hdg_eff, 4), req_sh_t100))
 
-        anchor_is_a, bid_px, hdg_eff, req_sh = best_choice
+        if not candidates:
+            return False
+        candidates.sort(key=lambda z: z[0])
+        _, anchor_is_a, q_front, bid_px, hdg_eff, req_sh = candidates[0]
         self.pending_maker_anchors[d_key] = {
             "dedupe_key": d_key,
             "asset": m15.asset,
@@ -4386,13 +4438,15 @@ class Alpha124ShadowDaemon:
             "m5": m5,
             "dom_info": dom_info,
             "anchor_is_a": anchor_is_a,
+            "queue_front": q_front,
             "bid_px": bid_px,
+            "req_shares_t100": req_sh,
             "req_shares_t1000": req_sh,
             "posted_ts": now_ts,
-            "posted_spot": float(self.spots.get(m15.asset) or 0.0),
+            "posted_spot": self._latest_spot_px(m15.asset),
         }
         logger.info(
-            f"[MAKER_ANCHOR_POST] {m15.asset} {dom_info['regime']} | Resting post_only=${bid_px:.2f} "
+            f"[MAKER_ANCHOR_POST] {m15.asset} {dom_info['regime']} | Resting post_only=${bid_px:.3f} (qf={q_front}) "
             f"+ hedge_eff=${hdg_eff:.4f} = ${bid_px + hdg_eff:.4f} (TTE={rem_sec:.0f}s)"
         )
         return True
@@ -4413,6 +4467,7 @@ class Alpha124ShadowDaemon:
             di = st["dom_info"]
             leg_a, leg_b = di["leg_a"], di["leg_b"]
             anc_is_a = bool(st["anchor_is_a"])
+            q_front = bool(st.get("queue_front", True))
             leg_anc = leg_a if anc_is_a else leg_b
             leg_hdg = leg_b if anc_is_a else leg_a
             bk_anc = bks.get(str(leg_anc["token_id"]))
@@ -4423,7 +4478,7 @@ class Alpha124ShadowDaemon:
 
             asks_anc = (bk_anc or {}).get("asks") or []
             best_ask_anc = min((float(a["price"]) for a in asks_anc if float(a.get("size", 0)) > 0), default=1.0)
-            filled_anc = bk_anc is not None and rested >= 0.50 and best_ask_anc <= bid_px
+            filled_anc = bk_anc is not None and rested >= 0.35 and best_ask_anc <= bid_px
 
             if filled_anc and bk_hdg is not None:
                 self.pending_maker_anchors.pop(d_key, None)
@@ -4435,8 +4490,11 @@ class Alpha124ShadowDaemon:
                 pair_eff = round(bid_px + hdg_px + hdg_fee, 4)
 
                 asset_cap_u = float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(m15.asset, 100.0))
-                if asks_hdg and hdg_avail >= 5.0 and pair_eff <= 0.996:
+                is_4h_m = "4h" in (str(m15.horizon).lower(), str(m5.horizon).lower())
+                if asks_hdg and hdg_avail >= 5.0 and 0.900 <= pair_eff <= 0.995:
                     tier_fills: Dict[str, Dict[str, Any]] = {}
+                    drag_by_tier: Dict[str, float] = {}
+                    rebate_est_t1000 = 0.0
                     for t_name, t_map in BANKROLL_TICKETS.items():
                         sh = max(5.0, min(hdg_avail, math.floor(min(t_map["D1_MAKER_ANCHOR_BOX"], asset_cap_u) / pair_eff)))
                         fee_u = round(sh * hdg_fee, 4)
@@ -4450,6 +4508,20 @@ class Alpha124ShadowDaemon:
                             "shares": sh,
                             "l1_usd": round(hdg_avail * pair_eff, 2),
                         }
+                        dr = compute_d1_maker_anchor_drag_haircut(
+                            shares=sh,
+                            pair_eff=pair_eff,
+                            bid_anc=bid_px,
+                            hdg_px=hdg_px,
+                            hdg_avail_shares=hdg_avail,
+                            fee_rate_anc=float(leg_anc.get("fee_rate", CRYPTO_FEE_RATE)),
+                            fee_exponent_anc=float(leg_anc.get("fee_exponent", 1.0)),
+                            queue_front=q_front,
+                            is_4h_mixed=is_4h_m,
+                        )
+                        drag_by_tier[t_name] = float(dr["legging_drag_usd"])
+                        if t_name == "T1000":
+                            rebate_est_t1000 = float(dr["maker_rebate_20pct_est_usd"])
                     bid_a_cur, _ = extract_best_bid((bks.get(str(leg_a["token_id"])) or {}).get("bids") or [])
                     bid_b_cur, _ = extract_best_bid((bks.get(str(leg_b["token_id"])) or {}).get("bids") or [])
                     pos_id = f"D1_MAKER_ANCHOR_BOX_{int(now)}_{m5.market_id[-6:]}"
@@ -4458,7 +4530,7 @@ class Alpha124ShadowDaemon:
                         "dedupe_key": d_key,
                         "sleeve": "D1_MAKER_ANCHOR_BOX",
                         "asset_or_city": m15.asset,
-                        "title": f"{m15.asset} {di['regime']} [0%-Fee Maker Anchor @ ${bid_px:.2f}]",
+                        "title": f"{m15.asset} {di['regime']} [0%-Fee Maker Anchor @ ${bid_px:.3f}]",
                         "side": f"{leg_a['label']}+{leg_b['label']}",
                         "token_id": f"{leg_a['token_id']}|{leg_b['token_id']}",
                         "fee_rate": float(leg_hdg["fee_rate"]),
@@ -4476,6 +4548,9 @@ class Alpha124ShadowDaemon:
                         "extra": {
                             "is_dominance_box": True,
                             "is_maker_anchor_box": True,
+                            "queue_front": q_front,
+                            "legging_drag_usd_by_tier": drag_by_tier,
+                            "maker_rebate_20pct_est_t1000_usd": rebate_est_t1000,
                             "regime": di["regime"],
                             "k_low": di["k_low"],
                             "k_high": di["k_high"],
@@ -4528,6 +4603,7 @@ class Alpha124ShadowDaemon:
                         "net_payout_per_share": round(net_scr, 4),
                         "tier_fills": tf_s,
                         "tier_pnls_usd": tp_s,
+                        "legging_adjusted_tier_pnls_usd": dict(tp_s),
                         "won": tp_s.get("T1000", 0.0) > 0,
                         "status": "MAKER_ANCHOR_UNHEDGED_SCRATCH",
                     }
@@ -4535,14 +4611,39 @@ class Alpha124ShadowDaemon:
                     self._append_ledger({"event": "SHADOW_CLOSE", **pos_scr})
                 continue
 
-            # Cancel-on-thinning / impulse / TTE / TTL supervision ($0.00 cost on unfilled post_only Maker quote)
+            # Cancel-on-thinning / directional adverse-spot / OBI collapse / TTL=12s ($0.00 cost on unfilled post_only)
             asks_hdg_c = sorted([(float(a["price"]), float(a["size"])) for a in ((bk_hdg or {}).get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
             hdg_px_c = asks_hdg_c[0][0] if asks_hdg_c else 1.0
             hdg_avail_c = sum(sz for px, sz in asks_hdg_c if px <= hdg_px_c + 0.01) if asks_hdg_c else 0.0
             hdg_fee_c = float(leg_hdg["fee_rate"]) * ((hdg_px_c * (1.0 - hdg_px_c)) ** float(leg_hdg.get("fee_exponent", 1.0))) if hdg_px_c < 1.0 else 0.0
-            thin_or_drifted = (hdg_avail_c < 2.0 * float(st["req_shares_t1000"])) or ((bid_px + hdg_px_c + hdg_fee_c) > 0.993)
+            req_sh_chk = float(st.get("req_shares_t100") or st.get("req_shares_t1000") or 15.0)
+            thin_or_drifted = (hdg_avail_c < max(12.0, 2.0 * req_sh_chk)) or ((bid_px + hdg_px_c + hdg_fee_c) > 0.993)
+            obi_anc_c = 0.0
+            if bk_anc is not None:
+                _, b_sz_c = extract_best_bid(bk_anc.get("bids") or [])
+                a_sz_c = sum(float(a.get("size", 0)) for a in asks_anc if abs(float(a.get("price", 0)) - best_ask_anc) < 1e-6)
+                if (b_sz_c + a_sz_c) > 0.0:
+                    obi_anc_c = (b_sz_c - a_sz_c) / (b_sz_c + a_sz_c)
+            post_spot = float(st.get("posted_spot") or 0.0)
+            cur_spot = self._latest_spot_px(m15.asset)
+            spot_drift_bps = ((cur_spot - post_spot) / post_spot * 10000.0) if (post_spot > 0.0 and cur_spot > 0.0) else 0.0
+            ret_5s_c = self.get_return_bps(m15.asset, 5.0)
+            anc_side_c = str(leg_anc.get("side") or "UP").upper()
+            adv_move_c = (
+                (min(spot_drift_bps, ret_5s_c) < -2.5)
+                if anc_side_c == "UP"
+                else (max(spot_drift_bps, ret_5s_c) > 2.5)
+            )
             shock_recent = (now - float(self._last_any_shock_ts_by_asset.get(m15.asset, 0.0) or 0.0)) < 4.0
-            if rem_sec <= 45.0 or rested >= 25.0 or abs(self.get_return_bps(m15.asset, 5.0)) > 5.0 or shock_recent or thin_or_drifted:
+            if (
+                rem_sec <= 45.0
+                or rested >= 12.0
+                or adv_move_c
+                or abs(ret_5s_c) > 8.0
+                or obi_anc_c < -0.35
+                or shock_recent
+                or thin_or_drifted
+            ):
                 self.pending_maker_anchors.pop(d_key, None)
 
     def post_zero_fee_maker_anchor_box(
@@ -4799,10 +4900,11 @@ class Alpha124ShadowDaemon:
                         fee_rate_b=float(leg_b["fee_rate"]),
                         fee_exponent_a=float(leg_a["fee_exponent"]),
                         fee_exponent_b=float(leg_b["fee_exponent"]),
-                        max_box_cost_net=1.015,  # Surface near-arb boxes <= $1.015; enter Taker <= $0.995 or Maker Anchor in (0.995, 1.015]!
+                        max_box_cost_net=1.032,  # Surface near-arb boxes <= $1.032 so 2.1c-3.6c Maker-Leg-1 fee+spread savings can lock <= $0.988!
                         min_shares=12,
                         min_box_notional_usd=11.0,
                     )
+                    taker_cleared_995 = False
                     if w_scan.get("filled"):
                         box_net = float(w_scan["box_cost_net"])
                         floor_edge = round(1.0 - box_net, 4)
@@ -4820,6 +4922,7 @@ class Alpha124ShadowDaemon:
                                 comp_checked = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=batch_bks)
                             if not comp_checked:
                                 continue
+                            taker_cleared_995 = True
                             await self.open_shadow_dominance_box(m15.asset, m15, m5, dom_info, prefetched_books=(bk_a, bk_b))
                             if self._passes_quiet_book_filter(m15.asset, bk_a, bk_b, w_scan, eval_now):
                                 await self.open_shadow_dominance_box(
@@ -4831,7 +4934,10 @@ class Alpha124ShadowDaemon:
                                     sleeve_override="D1_QUIET_BOOK_BOX",
                                     max_box_cost_override=0.992,
                                 )
-                        elif 0.995 < box_net <= 1.015:
+                    if not taker_cleared_995:
+                        ask_a_l1, _ = self._best_ask_sz(bk_a)
+                        ask_b_l1, _ = self._best_ask_sz(bk_b)
+                        if (ask_a_l1 + ask_b_l1) <= 1.020:
                             if comp_checked is None:
                                 comp_checked = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=batch_bks)
                             if comp_checked:
@@ -5014,25 +5120,28 @@ class Alpha124ShadowDaemon:
                 fee_rate_b=float(leg_b["fee_rate"]),
                 fee_exponent_a=float(leg_a["fee_exponent"]),
                 fee_exponent_b=float(leg_b["fee_exponent"]),
-                max_box_cost_net=1.005,
+                max_box_cost_net=1.032,
                 min_shares=10,
                 min_box_notional_usd=9.0,
             )
+            taker_4h_cleared = False
             if w_scan.get("filled"):
                 box_net = float(w_scan["box_cost_net"])
-                opps_out.append({
-                    "sleeve": "D1_4H_DOMINANCE_BOX",
-                    "market": f"{m4.asset} {dom_info['regime']} (TTE={rem_sec:.0f}s, {dom_info['corridor_bps']:.1f}bps)",
-                    "ask_vwap": round(box_net, 4),
-                    "p_model": 1.0,
-                    "net_edge": round(1.0 - box_net, 4),
-                    "l1_usd": w_scan["l1_usd"],
-                })
+                if box_net <= 1.005:
+                    opps_out.append({
+                        "sleeve": "D1_4H_DOMINANCE_BOX",
+                        "market": f"{m4.asset} {dom_info['regime']} (TTE={rem_sec:.0f}s, {dom_info['corridor_bps']:.1f}bps)",
+                        "ask_vwap": round(box_net, 4),
+                        "p_model": 1.0,
+                        "net_edge": round(1.0 - box_net, 4),
+                        "l1_usd": w_scan["l1_usd"],
+                    })
                 if box_net <= 0.992:
                     if comp_4h_ok is None:
                         comp_4h_ok = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=bks_4h)
                     if not comp_4h_ok:
                         continue
+                    taker_4h_cleared = True
                     await self.open_shadow_dominance_box(
                         m4.asset,
                         m4,
@@ -5052,8 +5161,14 @@ class Alpha124ShadowDaemon:
                             sleeve_override="D1_QUIET_BOOK_BOX",
                             max_box_cost_override=0.992,
                         )
-                elif box_net <= 1.015:
-                    self.post_maker_anchor_candidate(m4, m_short, dom_info, bk_a, bk_b, eval_4h_now)
+            if not taker_4h_cleared:
+                ask_a_4h, _ = self._best_ask_sz(bk_a)
+                ask_b_4h, _ = self._best_ask_sz(bk_b)
+                if (ask_a_4h + ask_b_4h) <= 1.020:
+                    if comp_4h_ok is None:
+                        comp_4h_ok = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=bks_4h)
+                    if comp_4h_ok:
+                        self.post_maker_anchor_candidate(m4, m_short, dom_info, bk_a, bk_b, eval_4h_now)
 
         # `S4H_CHAINLINK_CONVERGENCE`: Final-15m (`180s <= rem_4h <= 900s`) 4h Chainlink SVI z>=2.30 convergence sniper
         for _, sp4 in list(self.s4h_candles.items()):

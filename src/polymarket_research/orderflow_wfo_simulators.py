@@ -575,3 +575,255 @@ def calibrate_d1_box_wfo(
         "sealed_holdout": best_ho,
         "unfiltered_parallel_holdout_baseline": naive_parallel_ho,
     }
+
+
+def compute_d1_maker_anchor_drag_haircut(
+    shares: float,
+    pair_eff: float,
+    bid_anc: float,
+    hdg_px: float,
+    hdg_avail_shares: float,
+    fee_rate_anc: float = DEFAULT_FEE_RATE,
+    fee_exponent_anc: float = 1.0,
+    queue_front: bool = True,
+    is_4h_mixed: bool = False,
+    scratch_slip_cents: float = 0.015,
+) -> Dict[str, float]:
+    """
+    Computes residual post-fill 250ms FOK hedge-miss + taker-scratch drag for `D1_MAKER_ANCHOR_BOX`.
+    Maker Leg 1 pays 0% entry fee (saving ~100% of Leg 1 fee + 1c spread); if Leg 2 FOK misses during
+    the 250ms hedge transit, only the exit scratch pays 1x V2 taker fee + `scratch_slip_cents`.
+    """
+    sh = max(1.0, float(shares))
+    depth_mult = max(0.0, float(hdg_avail_shares)) / sh
+    if depth_mult < 1.50:
+        p_miss = 0.14
+    elif depth_mult < 2.50:
+        p_miss = 0.055
+    else:
+        p_miss = 0.020
+    if not queue_front:
+        p_miss = min(0.30, p_miss + 0.025)
+    if is_4h_mixed:
+        p_miss = min(0.30, p_miss + 0.020)
+
+    scr_px = max(0.01, float(bid_anc) - float(scratch_slip_cents))
+    fee_scr = v2_taker_fee_per_share(scr_px, fee_rate_anc, fee_exponent_anc)
+    scratch_loss_ps = (float(bid_anc) - scr_px) + fee_scr
+    drag_per_pair = p_miss * scratch_loss_ps
+    gross_floor_ps = 1.0 - float(pair_eff)
+    adj_ev_ps = gross_floor_ps - drag_per_pair
+    rebate_20pct_ps = 0.20 * v2_taker_fee_per_share(float(bid_anc), fee_rate_anc, fee_exponent_anc)
+
+    return {
+        "hdg_depth_mult": round(depth_mult, 4),
+        "p_hedge_miss_250ms": round(p_miss, 4),
+        "scratch_loss_per_share": round(scratch_loss_ps, 5),
+        "legging_drag_per_pair": round(drag_per_pair, 5),
+        "legging_drag_usd": round(sh * drag_per_pair, 4),
+        "gross_floor_per_pair": round(gross_floor_ps, 5),
+        "legging_adjusted_net_ev_per_pair": round(adj_ev_ps, 5),
+        "legging_adjusted_min_profit_usd": round(sh * adj_ev_ps, 4),
+        "maker_rebate_20pct_est_usd": round(sh * rebate_20pct_ps, 4),
+    }
+
+
+def _default_d1_maker_leg1_events() -> List[Dict[str, Any]]:
+    """
+    Deterministic 60-event near-arb D1 corpus (`taker_net` in `[1.001, 1.028]`) spanning:
+      - Calm 2c-spread mid-book boxes (`$0.48/$0.50 + $0.47/$0.48`),
+      - Calm 1c-spread mid-book boxes (`$0.48/$0.49 + $0.48/$0.49`) with healthy vs collapsing OBI,
+      - Sub-cent `0.001`-tick 4h/15m tail boxes (`$0.964/$0.999 + $0.01/$0.02`, matching real XRP 4h_15m),
+      - Adverse-spot snipers (`spot_move_bps` against anchor) where directional cancel-on-move saves scratches.
+    """
+    archetypes = [
+        # (anc_side, bid_anc, ask_anc, obi_anc, ask_hdg, hdg_sh, spot_ret_bps, fill_if_kept, hdg_jump_on_adv, shares)
+        ("UP", 0.48, 0.50, 0.12, 0.48, 85.0, 0.6, True, 0.00, 18.0),      # 2c spread queue-front clean fill
+        ("DOWN", 0.48, 0.49, 0.18, 0.49, 95.0, -0.8, True, 0.00, 18.0),   # 1c spread healthy OBI + favorable spot
+        ("UP", 0.48, 0.49, -0.48, 0.49, 60.0, -4.2, True, 0.04, 18.0),    # Toxic collapsing OBI + adverse drop -> must veto/cancel!
+        ("UP", 0.964, 0.999, 0.10, 0.019, 32.0, 0.4, True, 0.00, 15.0),   # 0.001-tick tail anchor (saves 3.6c vs taker!)
+        ("DOWN", 0.47, 0.49, 0.05, 0.49, 70.0, 3.8, True, 0.03, 18.0),    # Adverse +3.8bps rise against DOWN -> directional cancel saves!
+        ("UP", 0.46, 0.48, 0.22, 0.50, 18.0, 0.3, True, 0.02, 18.0),      # Thin hedge (<2x shares) -> depth gate blocks!
+    ]
+    out: List[Dict[str, Any]] = []
+    for idx in range(60):
+        side, b_a, a_a, obi_a, a_h, h_sh, s_ret, f_ok, h_jmp, sh = archetypes[idx % len(archetypes)]
+        jit = ((idx % 3) - 1) * 0.001
+        out.append({
+            "anc_side": side,
+            "bid_anc": round(b_a, 3),
+            "ask_anc": round(a_a, 3),
+            "obi_anc": round(obi_a + jit * 10.0, 3),
+            "ask_hdg": round(a_h, 3),
+            "hdg_shares": h_sh,
+            "spot_ret_bps": s_ret,
+            "passive_fill": f_ok,
+            "hdg_jump_on_adverse": h_jmp,
+            "shares": sh,
+            "fee_rate": DEFAULT_FEE_RATE,
+        })
+    return out
+
+
+def simulate_d1_maker_leg1_box(ev: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """Simulates a single `D1_MAKER_ANCHOR_BOX` candidate under queue-realistic + 250ms hedge latency physics."""
+    b_anc = float(ev["bid_anc"])
+    a_anc = float(ev["ask_anc"])
+    obi_anc = float(ev.get("obi_anc", 0.0))
+    a_hdg = float(ev["ask_hdg"])
+    hdg_sh = float(ev["hdg_shares"])
+    sh = max(5.0, float(ev.get("shares", 18.0)))
+    fr = float(ev.get("fee_rate", DEFAULT_FEE_RATE))
+    side = str(ev.get("anc_side", "UP")).upper()
+    spot_ret_bps = float(ev.get("spot_ret_bps", 0.0))
+
+    tick = 0.001 if (a_anc >= 0.96 or a_anc <= 0.04) else 0.01
+    spr = round(a_anc - b_anc, 4)
+    allow_join_1c = bool(cfg.get("allow_join_1c_mid", True))
+    min_obi_1c = float(cfg.get("min_obi_join_1c", -0.15))
+    min_obi_any = float(cfg.get("min_obi_any", -0.35))
+    min_hdg_mult = float(cfg.get("min_hdg_depth_mult", 2.5))
+    max_post_net = float(cfg.get("max_post_net", 0.988))
+    adv_cancel_bps = float(cfg.get("adverse_spot_cancel_bps", 2.5))
+
+    if obi_anc < min_obi_any or hdg_sh < max(15.0, min_hdg_mult * sh):
+        return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+
+    if spr >= 2.0 * tick - 1e-9:
+        cand_bid = round(min(b_anc + tick, a_anc - tick), 3 if tick < 0.01 else 2)
+        q_front = True
+    elif allow_join_1c and spr >= 0.01 - 1e-9 and 0.15 <= a_anc <= 0.85 and obi_anc >= min_obi_1c:
+        cand_bid = round(b_anc, 2)
+        q_front = False
+    else:
+        return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+
+    hdg_eff0 = a_hdg + v2_taker_fee_per_share(a_hdg, fr)
+    scale = 1000.0 if tick < 0.01 else 100.0
+    max_anc = math.floor((max_post_net - hdg_eff0) * scale + 1e-9) / scale
+    bid_px = min(cand_bid, max_anc)
+    if bid_px < round(b_anc - (tick if q_front else 0.0), 3) or bid_px <= 0.02 or bid_px >= a_anc:
+        return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+    if not (0.900 <= (bid_px + hdg_eff0) <= max_post_net):
+        return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+
+    # Directional cancel-on-spot-move BEFORE toxic sniper fill ($0.00 cost on postOnly cancel)
+    adv_bps = (-spot_ret_bps) if side == "UP" else spot_ret_bps
+    if adv_bps > adv_cancel_bps:
+        return {"posted": True, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+
+    if not ev.get("passive_fill", True):
+        return {"posted": True, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
+
+    hdg_px_fill = round(a_hdg + (float(ev.get("hdg_jump_on_adverse", 0.0)) if adv_bps > 1.5 else 0.0), 4)
+    pair_eff = bid_px + hdg_px_fill + v2_taker_fee_per_share(hdg_px_fill, fr)
+    if 0.900 <= pair_eff <= 0.995:
+        drag = compute_d1_maker_anchor_drag_haircut(
+            shares=sh, pair_eff=pair_eff, bid_anc=bid_px, hdg_px=hdg_px_fill,
+            hdg_avail_shares=hdg_sh, fee_rate_anc=fr, queue_front=q_front,
+        )
+        return {
+            "posted": True,
+            "filled": True,
+            "hedged": True,
+            "scratched": False,
+            "pnl_usd": round(sh * (1.0 - pair_eff), 4),
+            "adj_pnl_usd": drag["legging_adjusted_min_profit_usd"],
+        }
+
+    scr_px = max(0.01, bid_px - max(0.015, float(ev.get("hdg_jump_on_adverse", 0.02))))
+    scr_net = scr_px - v2_taker_fee_per_share(scr_px, fr)
+    loss_u = round(sh * (scr_net - bid_px), 4)
+    return {"posted": True, "filled": True, "hedged": False, "scratched": True, "pnl_usd": loss_u, "adj_pnl_usd": loss_u}
+
+
+def calibrate_d1_maker_leg1_wfo(
+    maker_events: Optional[Sequence[Dict[str, Any]]] = None,
+    purge_gap: int = 3,
+) -> Dict[str, Any]:
+    """Purged Train -> Embargo -> Validation -> Embargo -> Sealed Holdout WFO for `D1_MAKER_ANCHOR_BOX` (`EXP-PM-406`)."""
+    events = list(maker_events) if maker_events is not None else _default_d1_maker_leg1_events()
+    n = len(events)
+    i_tr = max(4, int(0.50 * n))
+    i_vl_s = min(n, i_tr + purge_gap)
+    i_vl_e = max(i_vl_s + 2, int(0.75 * n))
+    i_ho_s = min(n, i_vl_e + purge_gap)
+    tr_ev, vl_ev, ho_ev = events[:i_tr], events[i_vl_s:i_vl_e], events[i_ho_s:]
+
+    def _eval(sub: Sequence[Dict[str, Any]], cfg: Dict[str, Any]) -> Dict[str, Any]:
+        rows = [simulate_d1_maker_leg1_box(e, cfg) for e in sub]
+        fills = [r for r in rows if r["filled"]]
+        wins = [r for r in fills if r["hedged"]]
+        scratches = [r for r in fills if r["scratched"]]
+        adj_pnl = sum(float(r.get("adj_pnl_usd", r["pnl_usd"])) for r in fills)
+        raw_pnl = sum(float(r["pnl_usd"]) for r in fills)
+        return {
+            "posted": sum(1 for r in rows if r["posted"]),
+            "fills": len(fills),
+            "wins": len(wins),
+            "scratches": len(scratches),
+            "win_rate_pct": round(100.0 * len(wins) / len(fills), 2) if fills else 0.0,
+            "raw_pnl_usd": round(raw_pnl, 4),
+            "legging_adjusted_pnl_usd": round(adj_pnl, 4),
+        }
+
+    best_sc = -1e9
+    best_cfg: Dict[str, Any] = {
+        "allow_join_1c_mid": True,
+        "min_obi_join_1c": -0.15,
+        "min_obi_any": -0.35,
+        "min_hdg_depth_mult": 2.5,
+        "adverse_spot_cancel_bps": 2.5,
+        "max_post_net": 0.988,
+    }
+    best_tr: Dict[str, Any] = {}
+    best_vl: Dict[str, Any] = {}
+    grid_n = 0
+    for join_1c in (True, False):
+        for adv_bps in (2.0, 2.5, 5.0):
+            for obi_1c in (-0.15, -0.40):
+                for hdg_m in (1.5, 2.5):
+                    cfg_c = {
+                        "allow_join_1c_mid": join_1c,
+                        "min_obi_join_1c": obi_1c,
+                        "min_obi_any": -0.35,
+                        "min_hdg_depth_mult": hdg_m,
+                        "adverse_spot_cancel_bps": adv_bps,
+                        "max_post_net": 0.988,
+                    }
+                    grid_n += 1
+                    s_tr, s_vl = _eval(tr_ev, cfg_c), _eval(vl_ev, cfg_c)
+                    if s_tr["fills"] < 3 or s_vl["fills"] < 2:
+                        continue
+                    sc = (
+                        min(s_tr["legging_adjusted_pnl_usd"], s_vl["legging_adjusted_pnl_usd"])
+                        + 0.30 * (s_tr["legging_adjusted_pnl_usd"] + s_vl["legging_adjusted_pnl_usd"])
+                        - 6.0 * (s_tr["scratches"] + s_vl["scratches"])
+                    )
+                    if sc > best_sc:
+                        best_sc, best_cfg, best_tr, best_vl = sc, cfg_c, s_tr, s_vl
+
+    if not best_tr:
+        best_tr, best_vl = _eval(tr_ev, best_cfg), _eval(vl_ev, best_cfg)
+    best_ho = _eval(ho_ev, best_cfg)
+    naive_ho = _eval(
+        ho_ev,
+        {
+            "allow_join_1c_mid": True,
+            "min_obi_join_1c": -1.0,
+            "min_obi_any": -1.0,
+            "min_hdg_depth_mult": 1.0,
+            "adverse_spot_cancel_bps": 99.0,
+            "max_post_net": 0.992,
+        },
+    )
+    return {
+        "events_total": n,
+        "purge_gap_events": purge_gap,
+        "grid_configs_evaluated": grid_n,
+        "selected_maker_leg1_policy": best_cfg,
+        "train": best_tr,
+        "val": best_vl,
+        "sealed_holdout": best_ho,
+        "unguarded_maker_holdout_baseline": naive_ho,
+    }

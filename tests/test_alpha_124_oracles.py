@@ -2687,6 +2687,151 @@ def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch, tmp_path) 
     asyncio.run(_run_zfa())
 
 
+def test_exp406_hardened_d1_maker_leg1_wfo_and_microstructure_shields(tmp_path: Path, monkeypatch) -> None:
+    """EXP-PM-406: Verifies Purged-WFO Maker-Leg-1 calibration, 1c mid-book join OBI shield, 0.001-tick tail anchor, and directional cancel-on-move."""
+    import asyncio
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    from src.polymarket_research.orderflow_wfo_simulators import calibrate_d1_maker_leg1_wfo
+    from src.polymarket_research.same_oracle_dominance_box import TwapCandleMarketSpec, determine_dominance_legs
+
+    wfo = calibrate_d1_maker_leg1_wfo()
+    assert wfo["sealed_holdout"]["legging_adjusted_pnl_usd"] > 0.0
+    assert wfo["sealed_holdout"]["scratches"] == 0
+    assert wfo["sealed_holdout"]["legging_adjusted_pnl_usd"] > wfo["unguarded_maker_holdout_baseline"]["legging_adjusted_pnl_usd"]
+
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "m406_st.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "m406_ldg.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "m406_opps.json")
+    monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "0")
+
+    d = a124.Alpha124ShadowDaemon(single_scan=True)
+    now_t = 1793226000.0
+    s15 = TwapCandleMarketSpec(
+        asset="BTC",
+        horizon="15m",
+        market_id="m15_btc",
+        condition_id="0xc15",
+        title="BTC 15m",
+        start_iso="2026-10-28T22:15:00Z",
+        end_iso="2026-10-28T22:30:00Z",
+        start_ts=now_t - 700,
+        end_ts=now_t + 200,
+        up_token="t15u",
+        down_token="t15d",
+        fee_rate=0.07,
+        fee_exponent=1.0,
+        neg_risk=False,
+        twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams",
+    )
+    s5 = TwapCandleMarketSpec(
+        asset="BTC",
+        horizon="5m",
+        market_id="m5_btc",
+        condition_id="0xc5",
+        title="BTC 5m",
+        start_iso="2026-10-28T22:25:00Z",
+        end_iso="2026-10-28T22:30:00Z",
+        start_ts=now_t - 100,
+        end_ts=now_t + 200,
+        up_token="t5u",
+        down_token="t5d",
+        fee_rate=0.07,
+        fee_exponent=1.0,
+        neg_risk=False,
+        twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams",
+    )
+    dom = determine_dominance_legs(s15, 81000.0, s5, 81050.0, min_corridor_bps=3.0)
+    assert dom is not None
+    ta, tb = dom["leg_a"]["token_id"], dom["leg_b"]["token_id"]
+
+    # 1. Collapsing L1 OBI (-0.50 < -0.15) on 1c mid-book spread MUST be vetoed
+    bk_toxic = {"bids": [{"price": "0.48", "size": "20"}], "asks": [{"price": "0.49", "size": "60"}]}
+    bk_hdg = {"bids": [{"price": "0.48", "size": "80"}], "asks": [{"price": "0.49", "size": "80"}]}
+    assert d.post_maker_anchor_candidate(s15, s5, dom, bk_toxic, bk_toxic, now_ts=now_t) is False
+
+    # 2. Healthy 1c mid-book spread ($0.48/$0.49 + $0.48/$0.49, taker=$1.0143) joins $0.48 (net=$0.9871 <= $0.988, saving 2.72c!)
+    d.spots["BTC"] = 81025.0
+    bk_calm = {"bids": [{"price": "0.48", "size": "90"}], "asks": [{"price": "0.49", "size": "80"}]}
+    assert d.post_maker_anchor_candidate(s15, s5, dom, bk_calm, bk_hdg, now_ts=now_t) is True
+    dk = f"D1_MKR_BTC_{s15.market_id}_{s5.market_id}"
+    assert d.pending_maker_anchors[dk]["bid_px"] == 0.48 and d.pending_maker_anchors[dk]["queue_front"] is False
+
+    # 3. Directional asymmetric spot shield: +3.0 bps favorable move for UP(K_low) keeps resting, -3.0 bps adverse drop cancels!
+    bks_live = {ta: bk_calm, tb: bk_hdg}
+
+    async def _fb(toks, timeout=2.5):
+        return {t: bks_live[t] for t in toks if t in bks_live}
+
+    monkeypatch.setattr(d, "fetch_books_batch", _fb)
+    if dom["leg_a"]["side"] == "UP":
+        d.spots["BTC"] = 81025.0 * 1.0003  # +3.0 bps favorable for UP
+    else:
+        d.spots["BTC"] = 81025.0 * 0.9997
+    asyncio.run(d.manage_pending_maker_anchors(now_ts=now_t + 0.5))
+    assert dk in d.pending_maker_anchors, "Favorable spot move must NOT cancel resting anchor!"
+
+    if dom["leg_a"]["side"] == "UP":
+        d.spots["BTC"] = 81025.0 * 0.99965  # -3.5 bps adverse for UP
+    else:
+        d.spots["BTC"] = 81025.0 * 1.00035
+    asyncio.run(d.manage_pending_maker_anchors(now_ts=now_t + 0.8))
+    assert dk not in d.pending_maker_anchors, "Adverse spot move > 2.5 bps MUST cancel resting anchor at $0 cost!"
+
+    # 4. 0.001-tick sub-cent 4h/15m tail anchor ($0.964/$0.999 + $0.019/$0.020 -> taker=$1.0204, maker=$0.9854, saving 3.5c!)
+    x4 = TwapCandleMarketSpec(
+        asset="XRP",
+        horizon="4h",
+        market_id="m4_xrp",
+        condition_id="0xx4",
+        title="XRP 4h",
+        start_iso="2026-10-28T20:00:00Z",
+        end_iso="2026-10-29T00:00:00Z",
+        start_ts=now_t - 14000,
+        end_ts=now_t + 200,
+        up_token="tx4u",
+        down_token="tx4d",
+        fee_rate=0.07,
+        fee_exponent=1.0,
+        neg_risk=False,
+        twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/xrp-usd-twap-60s-streams",
+    )
+    x15 = TwapCandleMarketSpec(
+        asset="XRP",
+        horizon="15m",
+        market_id="m15_xrp",
+        condition_id="0xx15",
+        title="XRP 15m",
+        start_iso="2026-10-28T23:45:00Z",
+        end_iso="2026-10-29T00:00:00Z",
+        start_ts=now_t - 700,
+        end_ts=now_t + 200,
+        up_token="tx15u",
+        down_token="tx15d",
+        fee_rate=0.07,
+        fee_exponent=1.0,
+        neg_risk=False,
+        twap_lookback_sec=60,
+        resolution_source="https://data.chain.link/streams/xrp-usd-twap-60s-streams",
+    )
+    dom_x = determine_dominance_legs(x4, 0.5200, x15, 0.5220, min_corridor_bps=3.0)
+    assert dom_x is not None
+    txa, txb = dom_x["leg_a"]["token_id"], dom_x["leg_b"]["token_id"]
+    d.spots["XRP"] = 0.5210
+    bks_live[txa] = {"bids": [{"price": "0.963", "size": "80"}], "asks": [{"price": "0.999", "size": "80"}]}
+    bks_live[txb] = {"bids": [{"price": "0.018", "size": "80"}], "asks": [{"price": "0.020", "size": "80"}]}
+    assert d.post_maker_anchor_candidate(x4, x15, dom_x, bks_live[txa], bks_live[txb], now_ts=now_t) is True
+    dk_x = f"D1_MKR_XRP_{x4.market_id}_{x15.market_id}"
+    assert d.pending_maker_anchors[dk_x]["bid_px"] == 0.964
+    bks_live[txa] = {"bids": [{"price": "0.963", "size": "80"}], "asks": [{"price": "0.964", "size": "40"}]}
+    asyncio.run(d.manage_pending_maker_anchors(now_ts=now_t + 1.0))
+    open_x = [p for p in d.open_positions.values() if p["dedupe_key"] == dk_x]
+    assert len(open_x) == 1 and open_x[0]["entry_eff_px_t1000"] < 0.988
+    assert open_x[0]["extra"]["legging_drag_usd_by_tier"]["T1000"] > 0.0
+
+
 if __name__ == "__main__":
     test_polymarket_weather_rounding_spec_examples()
     test_metar_parser_speci_and_t_remark()
