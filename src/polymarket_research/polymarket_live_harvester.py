@@ -4819,7 +4819,7 @@ class PolymarketLiveHarvester:
             if box_type == "DOMINANCE":
                 if not _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {}):
                     return {"executed": False, "reason": "D1_NOT_YET_8_OF_8_GRADUATED"}
-                if cand_asset in (exp_d1 | {"SOL"}) and not _grad8(by_da_map.get(cand_asset) or {}):
+                if cand_asset in exp_d1 and not _grad8(by_da_map.get(cand_asset) or {}):
                     return {"executed": False, "reason": f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
             elif not _grad8(by_sl_map.get(sleeve_src) or {}):
                 return {"executed": False, "reason": f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}

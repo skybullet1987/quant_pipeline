@@ -1,10 +1,10 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 22:10:11 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 22:18:56 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 53 | 905 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,731 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,533 | 573,669 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,533 | 573,657 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,534 - 10,204 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
   - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,205 - 11,954 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,955 - 12,318 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
@@ -3513,7 +3513,7 @@ class PolymarketLiveHarvester:
       if box_type=="DOMINANCE":
         if not _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {}):
           return {"executed":False,"reason":"D1_NOT_YET_8_OF_8_GRADUATED"}
-        if cand_asset in (exp_d1 | {"SOL"}) and not _grad8(by_da_map.get(cand_asset) or {}):
+        if cand_asset in exp_d1 and not _grad8(by_da_map.get(cand_asset) or {}):
           return {"executed":False,"reason":f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
       elif not _grad8(by_sl_map.get(sleeve_src) or {}):
         return {"executed":False,"reason":f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}

@@ -2945,8 +2945,8 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     assert res_doge_tight["executed"] is False and "CORRIDOR_TOO_NARROW_OR_MISSING" in res_doge_tight["reason"]
     res_doge = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "corridor_bps": 8.0, "dedupe_key": "D1_DOGE_TEST"})
     assert res_doge["executed"] is False and res_doge["reason"] == "EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:DOGE"
-    res_sol_4of8 = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "SOL", "corridor_bps": 4.2, "dedupe_key": "D1_SOL_4OF8"})
-    assert res_sol_4of8["executed"] is False and res_sol_4of8["reason"] == "EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:SOL"
+    res_sol_tight = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "SOL", "corridor_bps": 1.25, "dedupe_key": "D1_SOL_TIGHT"})
+    assert res_sol_tight["executed"] is False and "CORRIDOR_TOO_NARROW_OR_MISSING" in res_sol_tight["reason"]
     res_c1_ungrad = h.maybe_execute_graduated_d1_box({
         **cand_obj, "box_type": "COMPLETE_SET", "sleeve_source": "C1_BINARY_COMPLETE_SET",
         "leg_a_market_id": "650015", "leg_b_market_id": "650015", "dedupe_key": "C1_UNGRAD_TEST",
