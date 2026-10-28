@@ -61,6 +61,7 @@ svcs = [
     "polymarket-recorder.service",
     "polymarket-recorder-eth.service",
     "polymarket-recorder-sol.service",
+    "polymarket-recorder-xrp.service",
     "polymarket-trader.service",
     "polymarket-exp316-shadow.service",
 ]
