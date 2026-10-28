@@ -1,28 +1,28 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 11-SLEEVE EXPANSION + PROJECTIONS + TESTS (<1 MB COMPANION BUNDLE)
-Generated: 2026-10-28 13:02:58 UTC
+Generated: 2026-10-28 15:03:42 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
-  [01] systemd/polymarket-alpha124-shadow.service (Lines 30 - 58 | 594 B) :: Alpha-124 Unified Shadow systemd Unit
-  [02] src/polymarket_research/orderflow_wfo_simulators.py (Lines 59 - 641 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [03] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 642 - 1,402 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [04] src/polymarket_research/weather_metar_engine.py (Lines 1,403 - 2,750 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [05] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 2,751 - 3,286 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [06] src/polymarket_research/multistrike_svi_scalper.py (Lines 3,287 - 4,010 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [07] src/polymarket_research/same_oracle_dominance_box.py (Lines 4,011 - 4,847 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [08] src/polymarket_research/exact_twap_lock_engine.py (Lines 4,848 - 5,083 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [09] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 5,084 - 6,090 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [10] src/polymarket_research/macro_counting_ctf_engine.py (Lines 6,091 - 7,065 | 44,004 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [11] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 7,066 - 14,446 | 393,757 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
-  [12] scripts/backtest_alpha_124.py (Lines 14,447 - 15,307 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [13] scripts/polymarket_daily_projections.py (Lines 15,308 - 16,220 | 34,735 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [14] scripts/alpha124_status.py (Lines 16,221 - 16,299 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [15] scripts/polymarket_scorecard_snapshot.py (Lines 16,300 - 16,449 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [16] tests/test_alpha_124_oracles.py (Lines 16,450 - 19,151 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [01] systemd/polymarket-alpha124-shadow.service (Lines 30 - 60 | 799 B) :: Alpha-124 Unified Shadow systemd Unit
+  [02] src/polymarket_research/orderflow_wfo_simulators.py (Lines 61 - 643 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [03] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 644 - 1,404 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [04] src/polymarket_research/weather_metar_engine.py (Lines 1,405 - 2,752 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [05] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 2,753 - 3,288 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [06] src/polymarket_research/multistrike_svi_scalper.py (Lines 3,289 - 4,012 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [07] src/polymarket_research/same_oracle_dominance_box.py (Lines 4,013 - 4,849 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [08] src/polymarket_research/exact_twap_lock_engine.py (Lines 4,850 - 5,085 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [09] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 5,086 - 6,092 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [10] src/polymarket_research/macro_counting_ctf_engine.py (Lines 6,093 - 7,067 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [11] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 7,068 - 14,495 | 396,441 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
+  [12] scripts/backtest_alpha_124.py (Lines 14,496 - 15,356 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [13] scripts/polymarket_daily_projections.py (Lines 15,357 - 16,272 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [14] scripts/alpha124_status.py (Lines 16,273 - 16,351 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [15] scripts/polymarket_scorecard_snapshot.py (Lines 16,352 - 16,501 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [16] tests/test_alpha_124_oracles.py (Lines 16,502 - 19,203 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 """
 
 from __future__ import annotations
@@ -45,8 +45,10 @@ WorkingDirectory=/home/skybullet1987/quant_pipeline
 Environment=PYTHONUNBUFFERED=1
 Environment=PM_DISABLE_SHADOW_M4_CATCHUP=1
 Environment=PM_DISABLE_SHADOW_W2_TAKER=1
-CPUWeight=1000
-IOWeight=1000
+# 2-vCPU host: keep below the live harvester + BTC/ETH recorders (1000) so shadow scans never starve
+# the latency-critical live path (CPU starvation caused recorder WS ping timeouts / slow-consumer drops).
+CPUWeight=300
+IOWeight=300
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py
 Restart=always
 RestartSec=10
@@ -6515,7 +6517,7 @@ def _parlay_word_matches(word: str, action: str) -> bool:
 def build_fomc_truth_table_legs(
     fomc_events: List[Dict[str, Any]],
     parlay_events: List[Dict[str, Any]],
-    sep_2026_realized_action: Optional[str] = "HIKE25",
+    sep_2026_realized_action: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Maps every open `0%`-fee contract in `Oct FOMC`, `Dec FOMC`, `Jan FOMC`, `fed-decisions-oct-jan`,
@@ -7296,6 +7298,10 @@ QUARANTINED_SHADOW_SLEEVES = frozenset({
     "M1_SVI_MAKER_SCALP",
     "M2_STRIKE_CONVERGENCE",
     "P1_PREOPEN_MAKER_STRADDLE",
+    "B1_CONVEX_TAIL_YES",
+    "S2_EXACT_TWAP_LOCK",
+    "ZERO_FEE_MAKER_ANCHOR_BOX",
+    "CTF_OVERROUND_MINT_SELL",
 })
 
 
@@ -7874,6 +7880,8 @@ class Alpha124ShadowDaemon:
                 self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
         if is_shadow_sleeve_quarantined("P1_PREOPEN_MAKER_STRADDLE"):
             self.pending_preopen_straddles.clear()
+        if is_shadow_sleeve_quarantined("ZERO_FEE_MAKER_ANCHOR_BOX"):
+            self.pending_zero_fee_maker_anchors.clear()
 
     def _append_ledger(self, rec: Dict[str, Any]) -> None:
         with open(LEDGER_FILE, "a", encoding="utf-8") as f:
@@ -8184,8 +8192,13 @@ class Alpha124ShadowDaemon:
                                 for aid, pcs in grouped.items():
                                     if self._apply_ws_price_changes(aid, pcs, now_rx) and aid in d1_wake_toks:
                                         woke = True
-                        # Only D1/S2 (priority-1) token updates wake the fast D1 sub-scan
-                        if woke:
+                        # Only D1 overlap-window token updates wake the fast D1 sub-scan (throttled to <=8.3 Hz; eliminates idle spin)
+                        if (
+                            woke
+                            and self.is_in_same_oracle_overlap_window(now_rx)
+                            and (now_rx - getattr(self, "_last_ws_d1_wake_ts", 0.0)) >= 0.12
+                        ):
+                            self._last_ws_d1_wake_ts = now_rx
                             self._ws_d1_wakeup.set()
             except asyncio.CancelledError:
                 raise
@@ -8259,7 +8272,8 @@ class Alpha124ShadowDaemon:
 
     async def update_crypto_spots(self) -> None:
         now = time.time()
-        data = await self.fetch_json(f"{BINANCE_URL}/api/v3/ticker/price", timeout=3.5)
+        syms_json = "%5B" + ",".join(f"%22{s}%22" for s in sorted(set(ASSET_BINANCE_SYMBOL.values()))) + "%5D"
+        data = await self.fetch_json(f"{BINANCE_URL}/api/v3/ticker/price?symbols={syms_json}", timeout=3.5)
         if isinstance(data, list):
             sym_map = {v: k for k, v in ASSET_BINANCE_SYMBOL.items()}
             for item in data:
@@ -8279,9 +8293,12 @@ class Alpha124ShadowDaemon:
         missing_usd_assets = [
             a
             for a in DOMINANCE_ASSETS
-            if not self.usd_direct_flags.get(a, False)
-            or not self.usd_spot_hist.get(a)
-            or (now - float(self.usd_spot_hist[a][-1][0])) > 3.0
+            if a != "HYPE"
+            and (
+                not self.usd_direct_flags.get(a, False)
+                or not self.usd_spot_hist.get(a)
+                or (now - float(self.usd_spot_hist[a][-1][0])) > 3.0
+            )
         ]
         if missing_usd_assets:
             cb_rows = await asyncio.gather(
@@ -8502,6 +8519,7 @@ class Alpha124ShadowDaemon:
         self.fomc_truth_legs = build_fomc_truth_table_legs(
             raw_by_series.get("fomc") or [],
             raw_by_series.get("fed-3-parlay") or [],
+            sep_2026_realized_action=(os.getenv("PM_SEP_2026_FOMC_ACTION") or "").strip().upper() or None,
         )
 
         os_res = await asyncio.gather(
@@ -13920,6 +13938,21 @@ class Alpha124ShadowDaemon:
                     max_box_cost_net=0.994,
                     extra={"is_pyth_zero_fee_box": True},
                 )
+                if float(w_pb["box_cost_net"]) <= 0.990 and (c_ts - now) <= 86400.0:
+                    self.emit_live_two_leg_box_candidate(
+                        sleeve_source="CM_B3_PYTH_BARRIER_BOX",
+                        box_type="BARRIER_MONO",
+                        asset=p_asset,
+                        dedupe_key=p_dkey,
+                        leg_a=la,
+                        leg_b=lb,
+                        bk_a=bk_a,
+                        bk_b=bk_b,
+                        close_ts=c_ts,
+                        now_ts=now,
+                        k_low=min(float(la.get("strike") or 100.0), float(lb.get("strike") or 100.0)),
+                        k_high=max(float(la.get("strike") or 100.0), float(lb.get("strike") or 100.0)),
+                    )
             else:
                 self.post_zero_fee_maker_anchor_box("CM_B3", p_asset, f"ZFA_{p_dkey}", la, lb, bk_a, bk_b, c_ts, p_title, now)
 
@@ -14025,6 +14058,19 @@ class Alpha124ShadowDaemon:
                         max_box_cost_net=0.994,
                         extra={"is_nba_zero_fee_box": True, "box_kind": nb["box_kind"], "middle_width_pts": nb["middle_width_pts"]},
                     )
+                    if float(w_nba["box_cost_net"]) <= 0.990 and (float(nb["close_ts"]) - now) <= 86400.0:
+                        self.emit_live_two_leg_box_candidate(
+                            sleeve_source="SP1_NBA_ZERO_FEE_BOX",
+                            box_type="NBA_DOMINANCE",
+                            asset="NBA",
+                            dedupe_key=f"SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
+                            leg_a=la_n,
+                            leg_b=lb_n,
+                            bk_a=bk_a,
+                            bk_b=bk_b,
+                            close_ts=float(nb["close_ts"]),
+                            now_ts=now,
+                        )
 
         # 5. NR0_ZERO_FEE_SLATE_ARB: Zero-Fee NegRisk Partition Slates (`elon-tweets`, `fomc`, `boj`, `boc`)
         for sp_nr in list(self.negrisk_zero_slates.values()):
@@ -14393,20 +14439,23 @@ class Alpha124ShadowDaemon:
                     # Wake immediately (<250ms) if a live Binance shock arrives
                     shocks_w = self.poll_fresh_shock_triggers(now_ts=now_s)
                     if shocks_w:
+                        prev_mkr_keys = set(self.pending_maker_orders)
+                        prev_open_n = len(self.open_positions)
                         s_opps: List[Dict[str, Any]] = []
                         await self.handle_shock_triggers(shocks_w, s_opps, now_ts=now_s)
                         if s_opps:
                             self.cached_shock_opps = s_opps
-                        await self.write_state_files_async(
-                            twap_opps
-                            + dom_opps
-                            + s5m_opps
-                            + p1_opps
-                            + self.cached_shock_opps
-                            + self.cached_mid_opps
-                            + self.cached_tradfi_sports_opps
-                            + self.cached_weather_opps
-                        )
+                        if s_opps or set(self.pending_maker_orders) != prev_mkr_keys or len(self.open_positions) != prev_open_n:
+                            await self.write_state_files_async(
+                                twap_opps
+                                + dom_opps
+                                + s5m_opps
+                                + p1_opps
+                                + self.cached_shock_opps
+                                + self.cached_mid_opps
+                                + self.cached_tradfi_sports_opps
+                                + self.cached_weather_opps
+                            )
                     # Step down cadence immediately if we just entered the final-55s TWAP lock window
                     if target_cadence > 3.0 and self.is_in_exact_twap_lock_window(now_s):
                         break
@@ -15367,6 +15416,9 @@ QUARANTINED_SLEEVES = frozenset({
     "M2_STRIKE_CONVERGENCE",
     "P1_PREOPEN_MAKER_STRADDLE",
     "B1_CONVEX_TAIL_YES",
+    "S2_EXACT_TWAP_LOCK",
+    "ZERO_FEE_MAKER_ANCHOR_BOX",
+    "CTF_OVERROUND_MINT_SELL",
     "SLEEVE_XRP_V392_SHADOW",
 })
 
@@ -15887,8 +15939,8 @@ def simulate_single_day_net_pnl(
     pnl_v39 = min(cap_v39, t_v39 * eff_fills_v39 * ev_v39)
     breakdown["wfo_v395_directional_live"] = round(pnl_v39, 2)
 
-    # 2. Wave 1 (Live Now): D1 Same-Oracle Dominance Boxes (15m/5m 28/28 + QuietBook 13/13 + 4h Corridors, 38% sizing >= $95)
-    d1_pct = 0.38 if equity_start >= 95.0 else 0.25
+    # 2. Wave 1 (Live Now): D1 Same-Oracle Dominance Boxes (15m/5m 28/28 + QuietBook 13/13 + 4h Corridors, 25% sizing <$160 / 32% >=$160)
+    d1_pct = 0.32 if equity_start >= 160.0 else 0.25
     if day_idx < 4 and not has_slot2:
         t_d1 = min(42.0, max(15.0, fast_pool * d1_pct))
         live_boxes_per_day = 2.8 * fast_concurrency_disc * (1.18 if is_low_lat else 1.0)

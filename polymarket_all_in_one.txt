@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 13:53:15 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 15:03:36 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 53 | 906 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,473 | 567,895 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,474 - 10,144 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,145 - 11,894 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,895 - 12,258 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,259 - 13,880 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,881 - 13,950 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,951 - 14,033 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,034 - 14,223 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,224 - 14,394 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,395 - 15,550 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,494 | 570,005 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,495 - 10,165 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,166 - 11,915 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,916 - 12,279 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,280 - 13,901 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,902 - 13,971 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,972 - 14,054 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,055 - 14,244 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,245 - 14,415 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,416 - 15,571 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -2358,6 +2358,25 @@ class PolymarketLiveHarvester:
       self._close_position(tid, pos, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
       return True
     return False
+  def _exit_fill_settled_onchain(self, pos: Dict[str, Any], summary: Dict[str, Any]) -> bool:
+    try:
+      st = str(summary.get("status") or "").upper()
+      orig = float(summary.get("original_size") or 0.0)
+      matched = float(summary.get("matched") or 0.0)
+      if ( self.dry_run or summary.get("resting") or summary.get("has_reverted_fills") or st not in {"MATCHED", "FILLED", "CONFIRMED", "MINED"} or orig <= 0.0 or matched < orig - 0.01 or str((summary.get("raw") or {}).get("side") or "SELL").upper() != "SELL" or not hasattr(self.executor, "get_onchain_erc1155_balance") ):
+        return False
+      tok = str(pos.get("token_id") or "")
+      if not tok:
+        return False
+      bal = self.executor.get_onchain_erc1155_balance(tok)
+      rem = float(pos.get("remaining_shares", 0.0) or 0.0)
+      ok = bal is not None and float(bal) <= rem + 0.011
+      if ok:
+        logger.info( f"[FILL RECONCILED ON-CHAIN] {summary.get('order_id')}: MATCHED {matched:.2f}/{orig:.2f}; wallet " f"{float(bal):.4f} <= position remaining {rem:.4f} -> exit fill final." )
+      return ok
+    except Exception as e:
+      logger.debug(f"On-chain exit settlement check skipped: {e}")
+      return False
   def _resolve_fill_reconciliation(self, tid: str, pos: Dict[str, Any]) -> bool:
     oid = pos.get("pending_canceled_order_id") or pos.get("exit_order_id") or pos.get("unwind_order_id")
     if not oid:
@@ -2371,6 +2390,8 @@ class PolymarketLiveHarvester:
     if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
       self._close_position(tid, pos, ExecutionStatus.FILLED if is_exit else ExecutionStatus.SETTLED, "MAKER_SCALP_FILLED_CLOB" if is_exit else "UNWIND_RECONCILED", won=None)
       return True
+    if not summary["terminal"] and is_exit and self._exit_fill_settled_onchain(pos, summary):
+      summary = {**summary, "terminal": True}
     if not summary["terminal"]:
       if summary.get("resting", False) and str(oid) == str(pos.get("exit_order_id") or "") and not pos.get("pending_canceled_order_id"):
         pos["exit_order_status"] = "RESTING"

@@ -3295,6 +3295,44 @@ class PolymarketLiveHarvester:
             return True
         return False
 
+    def _exit_fill_settled_onchain(self, pos: Dict[str, Any], summary: Dict[str, Any]) -> bool:
+        """
+        True when a fully MATCHED maker-exit SELL is provably settled on-chain even though CLOB `/trades`
+        under-reports its fills (e.g. 2 associate trades, 1 returned). The executor's own fallback requires
+        the wallet balance to drop to ~0, which never holds for a partial-tranche TP (the position's other
+        shares remain in the wallet). Here we compare against THIS position's recorded remaining shares.
+        """
+        try:
+            st = str(summary.get("status") or "").upper()
+            orig = float(summary.get("original_size") or 0.0)
+            matched = float(summary.get("matched") or 0.0)
+            if (
+                self.dry_run
+                or summary.get("resting")
+                or summary.get("has_reverted_fills")
+                or st not in {"MATCHED", "FILLED", "CONFIRMED", "MINED"}
+                or orig <= 0.0
+                or matched < orig - 0.01
+                or str((summary.get("raw") or {}).get("side") or "SELL").upper() != "SELL"
+                or not hasattr(self.executor, "get_onchain_erc1155_balance")
+            ):
+                return False
+            tok = str(pos.get("token_id") or "")
+            if not tok:
+                return False
+            bal = self.executor.get_onchain_erc1155_balance(tok)
+            rem = float(pos.get("remaining_shares", 0.0) or 0.0)
+            ok = bal is not None and float(bal) <= rem + 0.011
+            if ok:
+                logger.info(
+                    f"[FILL RECONCILED ON-CHAIN] {summary.get('order_id')}: MATCHED {matched:.2f}/{orig:.2f}; wallet "
+                    f"{float(bal):.4f} <= position remaining {rem:.4f} -> exit fill final."
+                )
+            return ok
+        except Exception as e:
+            logger.debug(f"On-chain exit settlement check skipped: {e}")
+            return False
+
     def _resolve_fill_reconciliation(self, tid: str, pos: Dict[str, Any]) -> bool:
         oid = pos.get("pending_canceled_order_id") or pos.get("exit_order_id") or pos.get("unwind_order_id")
         if not oid:
@@ -3312,6 +3350,8 @@ class PolymarketLiveHarvester:
         # Distinguish summary["resting"] from summary["terminal"]:
         # A canceled order with a partial fill still mining on Polygon has resting=False and terminal=False.
         # Never reset a non-resting order back to RESTING!
+        if not summary["terminal"] and is_exit and self._exit_fill_settled_onchain(pos, summary):
+            summary = {**summary, "terminal": True}
         if not summary["terminal"]:
             if summary.get("resting", False) and str(oid) == str(pos.get("exit_order_id") or "") and not pos.get("pending_canceled_order_id"):
                 pos["exit_order_status"] = "RESTING"
