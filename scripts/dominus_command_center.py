@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """
-Dominus Zero-Overhead Live Command Center (Local Windows / CLI / Web Dashboard).
+Dominus Zero-Overhead Live Command Center (24/7 Constant Local Web Dashboard & CLI).
 
 Replaces heavy VM Chrome Remote Desktop (which consumed ~1.74 GB RAM + ~45% CPU on
-kraken-finland) with a lightweight local dashboard at http://127.0.0.1:8787 that
-fetches <10 KB read-only JSON snapshots over SSH using 0 MB persistent VM RAM.
+kraken-finland) with a constant local dashboard at http://127.0.0.1:8787 that
+fetches <12 KB read-only JSON snapshots over SSH using 0 MB persistent VM RAM.
 
 Usage:
-  # Launch live auto-refreshing browser dashboard on Windows:
+  # Launch 24/7 auto-refreshing browser dashboard on Windows:
   "C:\\Program Files\\LibreOffice\\program\\python.exe" scripts/dominus_command_center.py
 
   # Instant one-shot terminal summary:
@@ -17,10 +17,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
-import datetime as dt
 import json
 import subprocess
-import sys
 import threading
 import time
 import webbrowser
@@ -31,7 +29,7 @@ REMOTE_PROBE_PY = r"""
 import json, os, pathlib, subprocess, time
 
 root = pathlib.Path("/home/skybullet1987/quant_pipeline")
-out = {"fetched_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
+out = {"fetched_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()), "unix_ts": time.time()}
 
 # 1. Host load & memory
 try:
@@ -80,7 +78,7 @@ except Exception:
     svc_map["hyperliquid-apex-testnet"] = "unknown"
 out["services"] = svc_map
 
-# 3. Polymarket Live Harvester
+# 3. Polymarket Live Harvester + Live Log Events
 lh_path = root / "data/polymarket/live_harvester_state.json"
 if lh_path.exists():
     s = json.loads(lh_path.read_text())
@@ -102,6 +100,11 @@ if lh_path.exists():
             "status": p.get("exit_order_status") or p.get("status"),
         })
     recent_closed = []
+    cum = round(float(s.get("live_bankroll", 0.0) or 0.0) - tot_pnl, 2)
+    equity_curve = [cum]
+    for c in closed:
+        cum = round(cum + float(c.get("net_pnl_usd", 0.0)), 2)
+        equity_curve.append(cum)
     for c in reversed(closed[-12:]):
         recent_closed.append({
             "time_utc": str(c.get("entry_time_utc", ""))[:19].replace("T", " "),
@@ -128,18 +131,35 @@ if lh_path.exists():
         "epoch_net_pnl_usd": tot_pnl,
         "epoch_fees_usd": tot_fees,
         "trades_this_hour": s.get("trades_this_hour", 0),
+        "equity_curve": equity_curve,
         "active_positions": act_list,
         "recent_closed": recent_closed,
     }
 else:
     out["polymarket_live"] = {}
 
-# 4. Alpha-124 Shadow & _grad8 progress
+# Recent notable live log lines
+log_path = root / "data/polymarket/live_harvester.log"
+log_events = []
+if log_path.exists():
+    try:
+        r_lg = subprocess.run(
+            ["grep", "-E", r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX", str(log_path)],
+            capture_output=True, text=True, timeout=2
+        )
+        for ln in r_lg.stdout.splitlines()[-8:]:
+            log_events.append(ln[-150:])
+    except Exception:
+        pass
+out["live_log_events"] = list(reversed(log_events))
+
+# 4. Alpha-124 Shadow & _grad8 progress + live spots
 a_path = root / "data/alpha124/alpha124_shadow_state.json"
 if a_path.exists():
     a = json.loads(a_path.read_text())
     by_slv = a.get("by_sleeve") or {}
     open_p = a.get("open_positions") or []
+    spots = {k: round(float(v), 4 if float(v) < 10 else 2) for k, v in (a.get("spots") or {}).items() if k in ("BTC", "ETH", "SOL", "XRP")}
     watch_sleeves = [
         "D1_SAME_ORACLE_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
@@ -163,14 +183,15 @@ if a_path.exists():
             "grad8_progress": f"{min(c_n, 8)}/8",
         })
     open_boxes = []
-    for p in open_p[:10]:
+    for p in open_p[:8]:
         open_boxes.append({
             "sleeve": p.get("sleeve"),
-            "asset": p.get("asset_or_city") or p.get("asset"),
-            "title": str(p.get("title") or "")[:58],
+            "title": str(p.get("title") or "")[:54],
             "eff_px": p.get("entry_eff_px_t1000"),
+            "last_bid": p.get("last_bid"),
         })
     out["alpha124"] = {
+        "spots": spots,
         "open_total": len(open_p),
         "closed_total": sum(int(v.get("closed", 0) or 0) for v in by_slv.values()),
         "by_d1_asset": a.get("by_d1_asset") or {},
@@ -233,7 +254,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>DOMINUS — Live Quantitative Command Center</title>
+<title>DOMINUS — 24/7 Live Quantitative Command Center</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   :root {
@@ -243,62 +264,80 @@ HTML_PAGE = """<!DOCTYPE html>
   }
   * { box-sizing: border-box; }
   body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: var(--bg); color: var(--text); }
-  header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
-  h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
-  .sub { color: var(--muted); font-size: 12px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--green-bright); box-shadow: 0 0 8px var(--green-bright); display: inline-block; }
+  .sub { color: var(--muted); font-size: 12px; margin-top: 3px; }
+  .spots { display: flex; gap: 12px; align-items: center; font-size: 12px; flex-wrap: wrap; }
+  .spot-chip { background: #192233; border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
   .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
   .card .val { font-size: 24px; font-weight: 700; margin-top: 6px; }
   .pos { color: var(--green-bright); }
   .neg { color: var(--red); }
   .warn { color: var(--amber); }
-  .two-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 18px; }
+  .two-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 16px; }
   @media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
-  h2 { font-size: 14px; margin: 0 0 10px 0; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; }
+  h2 { font-size: 13px; margin: 0 0 10px 0; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
   th { color: var(--muted); font-weight: 600; }
-  .pill { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
   .pill-ok { background: rgba(46,160,67,0.2); color: var(--green-bright); border: 1px solid rgba(63,185,80,0.4); }
   .pill-bad { background: rgba(248,81,73,0.2); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
   button { background: #1f6feb; color: #fff; border: none; border-radius: 6px; padding: 7px 13px; cursor: pointer; font-weight: 600; font-size: 12px; }
   button:hover { background: #388bfd; }
   .svc-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  .log-box { font-size: 11.5px; color: #b6c2d4; line-height: 1.5; max-height: 150px; overflow-y: auto; background: #0e1420; padding: 10px; border-radius: 6px; border: 1px solid var(--border); }
 </style>
 </head>
 <body>
 <header>
   <div>
-    <h1>DOMINUS — LIVE QUANTITATIVE COMMAND CENTER</h1>
+    <h1><span class="dot" id="live_dot"></span> DOMINUS — 24/7 QUANTITATIVE COMMAND CENTER</h1>
     <div class="sub" id="meta">Connecting to kraken-finland over zero-RAM SSH pipe...</div>
   </div>
+  <div class="spots" id="spots"></div>
   <div>
-    <button onclick="refreshNow()">Refresh Now</button>
+    <button onclick="refreshNow(true)">Refresh Now</button>
   </div>
 </header>
 
 <div class="grid" id="kpis"></div>
 
-<div class="card" style="margin-bottom:18px;">
-  <h2>Host &amp; Daemon Health (kraken-finland — 0 MB Browser Overhead)</h2>
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+    <h2 style="margin:0;">Daemon Fleet &amp; D1 Overlap Window Countdown (0 MB VM Browser Overhead)</h2>
+    <div class="sub" id="d1_timer" style="margin:0;color:var(--amber);font-weight:600;"></div>
+  </div>
   <div class="svc-wrap" id="svcs"></div>
 </div>
 
 <div class="two-col">
   <div class="card">
-    <h2>Polymarket Real-Money Live Harvester Trades</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2>Polymarket Real-Money Live Harvester</h2>
+      <svg id="spark" width="160" height="32"></svg>
+    </div>
     <div id="active_box" style="margin-bottom:10px;font-size:12px;"></div>
     <table>
-      <thead><tr><th>UTC</th><th>Market</th><th>In / Out</th><th>Notional</th><th>Net PnL</th><th>Exit</th></tr></thead>
+      <thead><tr><th>UTC</th><th>Market</th><th>In &rarr; Out</th><th>Notional</th><th>Net PnL</th><th>Exit</th></tr></thead>
       <tbody id="pm_trades"></tbody>
     </table>
+    <h2 style="margin-top:16px;">Live Execution Event Stream</h2>
+    <div class="log-box" id="log_events"></div>
   </div>
   <div class="card">
     <h2>Alpha-124 Shadow &amp; _grad8 Auto-Promotion</h2>
     <table>
       <thead><tr><th>Sleeve</th><th>Open</th><th>W / L</th><th>Grad8</th><th>T1000 PnL</th></tr></thead>
       <tbody id="a124_sleeves"></tbody>
+    </table>
+    <h2 style="margin-top:14px;">Open Shadow Structural Boxes</h2>
+    <table>
+      <thead><tr><th>Sleeve</th><th>Market</th><th>Cost</th><th>Bid</th></tr></thead>
+      <tbody id="a124_open"></tbody>
     </table>
     <h2 style="margin-top:16px;">Hyperliquid APEX v5.0 (Testnet — $0 Mainnet)</h2>
     <div id="apex_meta" style="font-size:12px;margin-bottom:8px;"></div>
@@ -310,20 +349,63 @@ HTML_PAGE = """<!DOCTYPE html>
 </div>
 
 <script>
-async function refreshNow() {
+function updateD1Countdown() {
+  const now = new Date();
+  const min = now.getUTCMinutes();
+  const sec = now.getUTCSeconds();
+  const secIn15m = (min % 15) * 60 + sec;
+  const el = document.getElementById('d1_timer');
+  if (!el) return;
+  if (secIn15m >= 690) {
+    const rem = 900 - secIn15m;
+    el.style.color = '#3fb950';
+    el.textContent = `D1 15m/5m Same-Oracle Overlap ACTIVE NOW (${rem}s remaining)`;
+  } else {
+    const wait = 690 - secIn15m;
+    const m = Math.floor(wait / 60), s = wait % 60;
+    el.style.color = '#d29922';
+    el.textContent = `Next D1 Same-Oracle Overlap Window in ${m}m ${s}s`;
+  }
+}
+setInterval(updateD1Countdown, 1000);
+
+function drawSpark(pts) {
+  const svg = document.getElementById('spark');
+  if (!svg || !pts || pts.length < 2) return;
+  const mn = Math.min(...pts), mx = Math.max(...pts);
+  const rng = Math.max(0.01, mx - mn);
+  const w = 156, h = 26;
+  const coords = pts.map((v, i) => {
+    const x = 2 + (i / (pts.length - 1)) * w;
+    const y = 3 + h - ((v - mn) / rng) * h;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+  svg.innerHTML = `<polyline fill="none" stroke="#3fb950" stroke-width="2" points="${coords}"/>`;
+}
+
+async function refreshNow(force=false) {
   try {
-    const r = await fetch('/api/snapshot?t=' + Date.now());
+    const r = await fetch('/api/snapshot?t=' + Date.now() + (force ? '&force=1' : ''));
     const d = await r.json();
+    const dot = document.getElementById('live_dot');
     if (d.error) {
+      dot.style.background = '#f85149';
       document.getElementById('meta').textContent = 'SSH Error: ' + d.error;
       return;
     }
+    dot.style.background = '#3fb950';
     const pm = d.polymarket_live || {};
     const mem = d.mem_mb || {};
     const la = d.load_avg || [0,0,0];
     const ap = d.apex_testnet || {};
+    const a124 = d.alpha124 || {};
     document.getElementById('meta').textContent =
-      `Last synced: ${d.fetched_at_utc} | Host Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB (Auto-refreshes every 20s)`;
+      `Synced: ${d.fetched_at_utc} | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB | Auto-refresh: 15s`;
+
+    const spots = a124.spots || {};
+    document.getElementById('spots').innerHTML = Object.entries(spots).map(([k, v]) =>
+      `<span class="spot-chip"><b>${k}</b> $${v}</span>`
+    ).join('');
 
     const pnlCls = (pm.epoch_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg';
     const wr = pm.epoch_closed_count ? ((100 * pm.epoch_wins / pm.epoch_closed_count).toFixed(1) + '%') : 'N/A';
@@ -331,9 +413,11 @@ async function refreshNow() {
       <div class="card"><div class="label">Polymarket Live Cash</div><div class="val pos">$${(pm.bankroll_usd ?? 0).toFixed(2)}</div><div class="sub">Equity: $${(pm.equity_usd ?? 0).toFixed(2)} | Tier: ${pm.tier || '-'}</div></div>
       <div class="card"><div class="label">Current Epoch Net PnL</div><div class="val ${pnlCls}">${(pm.epoch_net_pnl_usd ?? 0) >= 0 ? '+' : ''}$${(pm.epoch_net_pnl_usd ?? 0).toFixed(2)}</div><div class="sub">Fees paid: $${(pm.epoch_fees_usd ?? 0).toFixed(2)}</div></div>
       <div class="card"><div class="label">Live Win Rate (Epoch)</div><div class="val">${pm.epoch_wins ?? 0}W / ${pm.epoch_losses ?? 0}L (${wr})</div><div class="sub">Open now: ${(pm.active_positions || []).length} | This hr: ${pm.trades_this_hour ?? 0}</div></div>
-      <div class="card"><div class="label">VM Load &amp; Free RAM</div><div class="val">${la[0]} / ${mem.available || 0} MB</div><div class="sub">Risk Halt: ${pm.risk_halt ? 'HALTED' : 'CLEAR'}</div></div>
+      <div class="card"><div class="label">VM Load &amp; Avail RAM</div><div class="val">${la[0]} / ${mem.available || 0} MB</div><div class="sub">Risk Halt: ${pm.risk_halt ? 'HALTED' : 'CLEAR'}</div></div>
       <div class="card"><div class="label">APEX v5.0 Testnet</div><div class="val ${ap.circuit_breaker === 'RUNNING' ? 'pos' : 'neg'}">${ap.circuit_breaker || '?'}</div><div class="sub">Gate 2: ${ap.gate2_fills || '-'} | Maker: ${ap.maker_pct ?? 0}%</div></div>
     `;
+
+    drawSpark(pm.equity_curve || []);
 
     const svcs = d.services || {};
     document.getElementById('svcs').innerHTML = Object.entries(svcs).map(([k, v]) =>
@@ -342,8 +426,8 @@ async function refreshNow() {
 
     const acts = pm.active_positions || [];
     document.getElementById('active_box').innerHTML = acts.length === 0
-      ? '<span class="sub">Active live positions: 0 (Flat &amp; scanning shocks + D1 overlap windows)</span>'
-      : '<b>Active Positions:</b> ' + acts.map(a => `${a.asset} ${a.horizon} ${a.side} ($${a.notional_usd} @ ${a.entry_px} -> TP ${a.target_tp}) [${a.status}]`).join(' | ');
+      ? '<span class="sub">Active live positions: 0 (Flat &amp; scanning shocks + Phase 3A maker rescues + D1 boxes)</span>'
+      : '<b>LIVE OPEN POSITION:</b> ' + acts.map(a => `<span class="pos">${a.asset} ${a.horizon} ${a.side}</span> ($${a.notional_usd} @ ${a.entry_px} &rarr; TP ${a.target_tp}) [${a.status}]`).join(' | ');
 
     document.getElementById('pm_trades').innerHTML = (pm.recent_closed || []).map(c => `
       <tr>
@@ -356,8 +440,11 @@ async function refreshNow() {
       </tr>
     `).join('');
 
-    const a124 = (d.alpha124 || {}).sleeves || [];
-    document.getElementById('a124_sleeves').innerHTML = a124.map(s => `
+    document.getElementById('log_events').innerHTML = (d.live_log_events || []).map(l =>
+      `<div>${l.replace(/</g,'&lt;')}</div>`
+    ).join('') || '<div class="sub">No recent log events.</div>';
+
+    document.getElementById('a124_sleeves').innerHTML = (a124.sleeves || []).map(s => `
       <tr>
         <td>${s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_')}</td>
         <td>${s.open}</td>
@@ -366,6 +453,15 @@ async function refreshNow() {
         <td class="${s.t1000_pnl_usd >= 0 ? 'pos' : 'neg'}">${s.t1000_pnl_usd >= 0 ? '+' : ''}$${s.t1000_pnl_usd.toFixed(2)}</td>
       </tr>
     `).join('');
+
+    document.getElementById('a124_open').innerHTML = (a124.open_positions || []).map(p => `
+      <tr>
+        <td>${(p.sleeve || '').slice(0,14)}</td>
+        <td>${p.title || ''}</td>
+        <td>$${Number(p.eff_px || 0).toFixed(3)}</td>
+        <td>$${Number(p.last_bid || 0).toFixed(3)}</td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" class="sub">No open shadow boxes</td></tr>';
 
     document.getElementById('apex_meta').innerHTML =
       `State: <b>${ap.circuit_breaker || '-'}</b> | Gate 2 Fills: <b>${ap.gate2_fills || '-'}</b> | Maker Share: <b>${ap.maker_pct ?? 0}%</b>`;
@@ -382,8 +478,9 @@ async function refreshNow() {
     document.getElementById('meta').textContent = 'Dashboard fetch error: ' + e;
   }
 }
+updateD1Countdown();
 refreshNow();
-setInterval(refreshNow, 20000);
+setInterval(() => refreshNow(false), 15000);
 </script>
 </body>
 </html>
@@ -493,9 +590,11 @@ def main() -> None:
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             if self.path.startswith("/api/snapshot"):
-                payload = json.dumps(cache.get()).encode("utf-8")
+                force = "force=1" in self.path
+                payload = json.dumps(cache.get(force=force)).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 self.wfile.write(payload)
@@ -511,8 +610,7 @@ def main() -> None:
 
     url = f"http://127.0.0.1:{args.port}"
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Dominus Live Command Center running locally at {url} (Ctrl+C to stop)")
-    print("Zero Chrome/Xorg RAM or CPU overhead on kraken-finland!")
+    print(f"Dominus Live Command Center running locally at {url} (Ctrl+C to stop)", flush=True)
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
