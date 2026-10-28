@@ -2381,6 +2381,7 @@ class PolymarketDualFeed1HRecorder:
                     await ws.send(json.dumps(sub_msg))
                     logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {subscribed_market_id}.")
                     self._reconnect_clob = False
+                    pending_sub_toks: Dict[str, float] = {}
                     last_ws_msg_ts = time.time()
                     self.clob_ws_connected = True
                     self.last_clob_ws_msg_ts = last_ws_msg_ts
@@ -2392,7 +2393,6 @@ class PolymarketDualFeed1HRecorder:
                             (subscribed_end_dt - now_utc).total_seconds() <= 0
                             or not self.current_market
                             or str(self.current_market.get("market_id")) != subscribed_market_id
-                            or getattr(self, "_reconnect_clob", False)
                         ):
                             logger.info(
                                 f"[*] Market {subscribed_market_id} expired or rotated to "
@@ -2415,8 +2415,40 @@ class PolymarketDualFeed1HRecorder:
                                 setattr(self, attr_n, None)
                                 self.books.pop(up_k, None)
                                 self.books.pop(dn_k, None)
+                                for old_t in [t for t, r in subscribed_tokens.items() if r in (up_k, dn_k)]:
+                                    subscribed_tokens.pop(old_t, None)
                                 expired_twap = True
-                        if expired_twap:
+
+                        # 5m/15m/4h rollovers: subscribe the new tokens IN PLACE on the live socket instead of tearing
+                        # down the whole CLOB WS (which flagged the 1h/15m books disconnected at every boundary).
+                        if expired_twap or getattr(self, "_reconnect_clob", False):
+                            self._reconnect_clob = False
+                            added_toks: List[str] = []
+                            for hz, attr_n, up_k, dn_k in (
+                                ("5m", "market_5m", "UP_5M", "DOWN_5M"),
+                                ("15m", "market_15m", "UP_15M", "DOWN_15M"),
+                                ("4h", "market_4h", "UP_4H", "DOWN_4H"),
+                            ):
+                                mh = getattr(self, attr_n, None)
+                                if not (mh and "tokens" in mh):
+                                    continue
+                                for tok_n, role_n in ((str(mh["tokens"]["UP"]), up_k), (str(mh["tokens"]["DOWN"]), dn_k)):
+                                    if role_n not in self.books or getattr(self.books[role_n], "token_id", None) != tok_n:
+                                        self.books[role_n] = L2OrderBook(tok_n)
+                                    if subscribed_tokens.get(tok_n) != role_n:
+                                        for old_t in [t for t, r in subscribed_tokens.items() if r == role_n and t != tok_n]:
+                                            subscribed_tokens.pop(old_t, None)
+                                        subscribed_tokens[tok_n] = role_n
+                                        added_toks.append(tok_n)
+                            if added_toks:
+                                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe"}))
+                                now_sub = time.time()
+                                for tok_n in added_toks:
+                                    pending_sub_toks[tok_n] = now_sub
+                                logger.info(f"[+] In-place CLOB WS subscribe for {len(added_toks)} rolled TWAP token(s).")
+                        # Fallback: if a dynamically subscribed token never delivers a book within 8s, fully reconnect.
+                        if pending_sub_toks and (time.time() - min(pending_sub_toks.values())) > 8.0:
+                            logger.warning("[*] In-place CLOB WS subscribe got no book within 8s. Reconnecting...")
                             self.clob_ws_connected = False
                             break
 
@@ -2437,6 +2469,7 @@ class PolymarketDualFeed1HRecorder:
                         if isinstance(data, list):
                             for item in data:
                                 asset_id = str(item.get("asset_id") or "")
+                                pending_sub_toks.pop(asset_id, None)
                                 role = subscribed_tokens.get(asset_id)
                                 if role and role in self.books:
                                     self.books[role].apply_snapshot(item.get("bids", []), item.get("asks", []))
@@ -2453,6 +2486,7 @@ class PolymarketDualFeed1HRecorder:
                                         self.books[role].apply_price_changes(pcs)
                             elif event_type == "book":
                                 asset_id = str(data.get("asset_id") or "")
+                                pending_sub_toks.pop(asset_id, None)
                                 role = subscribed_tokens.get(asset_id)
                                 if role and role in self.books:
                                     self.books[role].apply_snapshot(data.get("bids", []), data.get("asks", []))

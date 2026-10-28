@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 11:28:12 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 13:02:47 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 51 | 834 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 52 - 86 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
   - [src/polymarket_research/polymarket_live_harvester.py] (Lines 87 - 6,454 | 565,588 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,455 - 10,104 | 340,177 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,105 - 11,827 | 157,489 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,828 - 12,191 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,192 - 13,813 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,814 - 13,883 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,884 - 13,966 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 13,967 - 14,156 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,157 - 14,327 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,328 - 15,483 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,105 - 11,854 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,855 - 12,218 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,219 - 13,840 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,841 - 13,910 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,911 - 13,993 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 13,994 - 14,183 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,184 - 14,354 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,355 - 15,510 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -11470,12 +11470,13 @@ class PolymarketDualFeed1HRecorder:
           await ws.send(json.dumps(sub_msg))
           logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {subscribed_market_id}.")
           self._reconnect_clob = False
+          pending_sub_toks: Dict[str, float] = {}
           last_ws_msg_ts = time.time()
           self.clob_ws_connected = True
           self.last_clob_ws_msg_ts = last_ws_msg_ts
           while self.running:
             now_utc = datetime.now(timezone.utc)
-            if ( (subscribed_end_dt - now_utc).total_seconds() <= 0 or not self.current_market or str(self.current_market.get("market_id")) != subscribed_market_id or getattr(self, "_reconnect_clob", False) ):
+            if ( (subscribed_end_dt - now_utc).total_seconds() <= 0 or not self.current_market or str(self.current_market.get("market_id")) != subscribed_market_id ):
               logger.info( f"[*] Market {subscribed_market_id} expired or rotated to " f"{(self.current_market or {}).get('market_id')}. Re-subscribing CLOB WS immediately." )
               self.clob_ws_connected = False
               break
@@ -11488,8 +11489,32 @@ class PolymarketDualFeed1HRecorder:
                 setattr(self, attr_n, None)
                 self.books.pop(up_k, None)
                 self.books.pop(dn_k, None)
+                for old_t in [t for t, r in subscribed_tokens.items() if r in (up_k, dn_k)]:
+                  subscribed_tokens.pop(old_t, None)
                 expired_twap = True
-            if expired_twap:
+            if expired_twap or getattr(self, "_reconnect_clob", False):
+              self._reconnect_clob = False
+              added_toks: List[str] = []
+              for hz, attr_n, up_k, dn_k in ( ("5m", "market_5m", "UP_5M", "DOWN_5M"), ("15m", "market_15m", "UP_15M", "DOWN_15M"), ("4h", "market_4h", "UP_4H", "DOWN_4H"), ):
+                mh = getattr(self, attr_n, None)
+                if not (mh and "tokens" in mh):
+                  continue
+                for tok_n, role_n in ((str(mh["tokens"]["UP"]), up_k), (str(mh["tokens"]["DOWN"]), dn_k)):
+                  if role_n not in self.books or getattr(self.books[role_n], "token_id", None) != tok_n:
+                    self.books[role_n] = L2OrderBook(tok_n)
+                  if subscribed_tokens.get(tok_n) != role_n:
+                    for old_t in [t for t, r in subscribed_tokens.items() if r == role_n and t != tok_n]:
+                      subscribed_tokens.pop(old_t, None)
+                    subscribed_tokens[tok_n] = role_n
+                    added_toks.append(tok_n)
+              if added_toks:
+                await ws.send(json.dumps({"assets_ids": added_toks, "operation": "subscribe"}))
+                now_sub = time.time()
+                for tok_n in added_toks:
+                  pending_sub_toks[tok_n] = now_sub
+                logger.info(f"[+] In-place CLOB WS subscribe for {len(added_toks)} rolled TWAP token(s).")
+            if pending_sub_toks and (time.time() - min(pending_sub_toks.values())) > 8.0:
+              logger.warning("[*] In-place CLOB WS subscribe got no book within 8s. Reconnecting...")
               self.clob_ws_connected = False
               break
             if time.time() - last_ws_msg_ts > 25.0:
@@ -11507,6 +11532,7 @@ class PolymarketDualFeed1HRecorder:
             if isinstance(data, list):
               for item in data:
                 asset_id = str(item.get("asset_id") or "")
+                pending_sub_toks.pop(asset_id, None)
                 role = subscribed_tokens.get(asset_id)
                 if role and role in self.books:
                   self.books[role].apply_snapshot(item.get("bids", []), item.get("asks", []))
@@ -11523,6 +11549,7 @@ class PolymarketDualFeed1HRecorder:
                     self.books[role].apply_price_changes(pcs)
               elif event_type == "book":
                 asset_id = str(data.get("asset_id") or "")
+                pending_sub_toks.pop(asset_id, None)
                 role = subscribed_tokens.get(asset_id)
                 if role and role in self.books:
                   self.books[role].apply_snapshot(data.get("bids", []), data.get("asks", []))
