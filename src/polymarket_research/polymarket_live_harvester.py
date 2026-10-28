@@ -2327,13 +2327,55 @@ class PolymarketLiveHarvester:
             logger.info(f"[PREWARM NEXT-CANDLE] Pre-warmed metadata & CLOB caches for {warmed} upcoming token(s) from Gamma API.")
             self._prewarm_active_market_tokens()
 
-    def _update_equity_tier(self, total_equity: float) -> Dict[str, Any]:
+    def _has_unsettled_collateral_overlap(self, now_ts: Optional[float] = None) -> bool:
+        """
+        True whenever CLOB L2 collateral balance and active_positions valuation may transiently
+        overlap (e.g. UNRESOLVED_SETTLEMENT / AWAITING_ONCHAIN_SETTLEMENT payouts already in
+        collateral, MATCHED_PENDING_SETTLEMENT or <30s post-entry indexer lag before collateral
+        deduction, or partial maker exit fills before remaining_cost_basis settles).
+        While True, high_water_mark_equity must NOT ratchet upward.
+        """
+        if now_ts is None:
+            now_ts = time.time()
+        if getattr(self, "pending_entry_intents", None):
+            return True
+        for p in (getattr(self, "active_positions", None) or {}).values():
+            st = p.get("status")
+            if st in {
+                "MATCHED_PENDING_SETTLEMENT",
+                "ENTRY_OUTCOME_UNKNOWN",
+                "UNRESOLVED_SETTLEMENT",
+                "AWAITING_ONCHAIN_SETTLEMENT",
+            }:
+                return True
+            if position_is_settlement_receivable(p):
+                return True
+            expiry_ts = float(p.get("candle_expiry_ts") or 0.0)
+            if expiry_ts > 0.0 and now_ts >= expiry_ts:
+                return True
+            entry_ts = float(p.get("entry_ts") or 0.0)
+            if entry_ts > 0.0 and (now_ts - entry_ts) < 30.0:
+                return True
+            if (
+                float(p.get("filled_exit_shares", 0.0) or 0.0) > 0.0
+                or float(p.get("confirmed_realized_cash", 0.0) or 0.0) > 0.0
+                or float(p.get("estimated_exit_cash", 0.0) or 0.0) > 0.0
+            ):
+                return True
+        return False
+
+    def _update_equity_tier(self, total_equity: float, *, allow_hwm_ratchet: Optional[bool] = None) -> Dict[str, Any]:
         """Calculates equity tier, updates high-water mark, bankroll pct, exposure, and risk limits."""
         tot_equity = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
         seed_thresh = float(RISK_CONFIG.get("seed_survival_equity_threshold", 88.0))
-        if not hasattr(self, "high_water_mark_equity") or self.high_water_mark_equity is None or tot_equity > self.high_water_mark_equity:
+        if allow_hwm_ratchet is None:
+            allow_hwm_ratchet = not self._has_unsettled_collateral_overlap()
+        cur_hwm = getattr(self, "high_water_mark_equity", None)
+        if cur_hwm is None or not math.isfinite(float(cur_hwm)) or float(cur_hwm) <= 0.0:
             self.high_water_mark_equity = tot_equity
-        elif tot_equity < seed_thresh and float(self.high_water_mark_equity) > tot_equity * 1.15:
+        elif tot_equity < seed_thresh and float(cur_hwm) > tot_equity * 1.15:
+            self.high_water_mark_equity = tot_equity
+        elif allow_hwm_ratchet and tot_equity > float(cur_hwm):
             self.high_water_mark_equity = tot_equity
         prev_tier = getattr(self, "_current_equity_tier", None) or getattr(self, "current_equity_tier", None)
         tier_limits = get_equity_tier_limits(tot_equity, self.high_water_mark_equity, previous_tier=prev_tier)
@@ -2374,7 +2416,8 @@ class PolymarketLiveHarvester:
                     if p.get("status") == "UNRESOLVED_SETTLEMENT"
                 )
                 tot_equity = float(bal) + active_market_equity + in_flight_unwind_cash
-                tier_limits = self._update_equity_tier(tot_equity)
+                allow_ratchet = (in_flight_unwind_cash <= 0.0) and (not self._has_unsettled_collateral_overlap(now_ts))
+                tier_limits = self._update_equity_tier(tot_equity, allow_hwm_ratchet=allow_ratchet)
                 prev_halted = bool(self.risk_controller.halted)
                 self.risk_controller.check_equity_drawdown(float(tot_equity), allow_auto_clear=True)
                 halt_transition = (prev_halted != bool(self.risk_controller.halted))

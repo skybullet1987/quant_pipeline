@@ -1,9 +1,9 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 11-SLEEVE EXPANSION + PROJECTIONS + TESTS (<1 MB COMPANION BUNDLE)
-Generated: 2026-10-28 16:02:58 UTC
+Generated: 2026-10-28 21:04:58 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
-Repository: /home/skybullet1987/quant_pipeline
+Repository: /tmp/qa_hwm_ws
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
@@ -17,12 +17,12 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [08] src/polymarket_research/exact_twap_lock_engine.py (Lines 4,850 - 5,085 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
   [09] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 5,086 - 6,092 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
   [10] src/polymarket_research/macro_counting_ctf_engine.py (Lines 6,093 - 7,067 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [11] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 7,068 - 14,495 | 396,441 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
-  [12] scripts/backtest_alpha_124.py (Lines 14,496 - 15,356 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [13] scripts/polymarket_daily_projections.py (Lines 15,357 - 16,272 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [14] scripts/alpha124_status.py (Lines 16,273 - 16,351 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [15] scripts/polymarket_scorecard_snapshot.py (Lines 16,352 - 16,501 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [16] tests/test_alpha_124_oracles.py (Lines 16,502 - 19,203 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [11] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 7,068 - 14,505 | 397,186 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
+  [12] scripts/backtest_alpha_124.py (Lines 14,506 - 15,366 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [13] scripts/polymarket_daily_projections.py (Lines 15,367 - 16,282 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [14] scripts/alpha124_status.py (Lines 16,283 - 16,361 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [15] scripts/polymarket_scorecard_snapshot.py (Lines 16,362 - 16,511 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [16] tests/test_alpha_124_oracles.py (Lines 16,512 - 19,213 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 """
 
 from __future__ import annotations
@@ -8594,8 +8594,9 @@ class Alpha124ShadowDaemon:
             return False
 
         try:
-            # Strictly causal L2 walk at t_signal + 50ms (or single-RTT book already fetched on M4 wakeup)
-            book = prefetched_book if prefetched_book is not None else await self.fetch_book_after_latency(token_id, latency_ms=50)
+            # Strictly causal L2 walk at t_signal + latency (250ms for W1_SOLAR_PEAK_LOCK EXP-PM-405; 50ms default)
+            req_lat_ms = 250 if sleeve == "W1_SOLAR_PEAK_LOCK" else 50
+            book = prefetched_book if (prefetched_book is not None and sleeve != "W1_SOLAR_PEAK_LOCK") else await self.fetch_book_after_latency(token_id, latency_ms=req_lat_ms)
             if not book:
                 return False
             asks_raw = book.get("asks") or []
@@ -10794,6 +10795,15 @@ class Alpha124ShadowDaemon:
         if not acq:
             return False
         try:
+            # EXP-PM-404: Enforce causal 250ms L2 re-fetch & re-walk on 0%-fee 2-leg structural boxes
+            # so _grad8 auto-graduation only counts edges that survive realistic execution latency.
+            if sleeve in ("CM_B3_PYTH_BARRIER_BOX", "SP1_NBA_ZERO_FEE_BOX"):
+                await asyncio.sleep(0.25)
+                re_bks = await self.fetch_books_batch([leg_a["token_id"], leg_b["token_id"]], timeout=3.0)
+                bk_a = re_bks.get(leg_a["token_id"]) or {}
+                bk_b = re_bks.get(leg_b["token_id"]) or {}
+                if not bk_a or not bk_b:
+                    return False
             asks_a = bk_a.get("asks") or []
             asks_b = bk_b.get("asks") or []
             bid_a, _ = extract_best_bid(bk_a.get("bids") or [])

@@ -3263,6 +3263,63 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     assert "D1_BTC_4H_15M_RETRY_1" in h._seen_d1_box_keys
 
 
+def test_hwm_does_not_ratchet_during_unresolved_settlement_or_entry_indexer_lag(tmp_path):
+    """
+    Regression test: high_water_mark_equity must NOT ratchet upward when CLOB collateral
+    overlaps with UNRESOLVED_SETTLEMENT exit cash or post-entry MATCHED_PENDING_SETTLEMENT
+    collateral-indexer lag, preventing false circuit-breaker drawdown halts after wins.
+    """
+    import asyncio
+    h = PolymarketLiveHarvester(dry_run=False, dynamic_sizing=True)
+    h.executor.is_authenticated = True
+    h.active_positions.clear()
+    h.pending_entry_intents.clear()
+    h.high_water_mark_equity = 131.79
+
+    # 1. UNRESOLVED_SETTLEMENT: CLOB already credited $31.86 payout into collateral ($131.79),
+    # while position still carries estimated_exit_cash=$31.86 before authoritative fill close.
+    h.active_positions["LIVE_UNRES_1"] = {
+        "trade_id": "LIVE_UNRES_1",
+        "status": "UNRESOLVED_SETTLEMENT",
+        "confirmed_realized_cash": 0.0,
+        "estimated_exit_cash": 31.86,
+        "candle_expiry_ts": time.time() + 300.0,
+    }
+    h.executor.get_collateral_balance = lambda *a, **kw: 131.79
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(131.79), (
+        "UNRESOLVED_SETTLEMENT double-count ($131.79 + $31.86 = $163.65) must NOT ratchet HWM!"
+    )
+
+    # 2. MATCHED_PENDING_SETTLEMENT (<30s post-entry): CLOB collateral still shows pre-entry $134.59
+    # while active_positions already holds $29.05 notional_usd.
+    h.active_positions.clear()
+    h.high_water_mark_equity = 134.59
+    h.active_positions["LIVE_MPS_1"] = {
+        "trade_id": "LIVE_MPS_1",
+        "status": "MATCHED_PENDING_SETTLEMENT",
+        "notional_usd": 29.05,
+        "remaining_cost_basis": 29.05,
+        "entry_ts": time.time(),
+        "candle_expiry_ts": time.time() + 400.0,
+    }
+    h.executor.get_collateral_balance = lambda *a, **kw: 134.59
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(134.59), (
+        "Post-entry indexer lag ($134.59 + $29.05 = $163.64) must NOT ratchet HWM!"
+    )
+
+    # 3. Once flat (all positions settled), HWM ratchets cleanly to true realized collateral ($138.98)
+    # and does NOT trip any false drawdown halt.
+    h.active_positions.clear()
+    h.executor.get_collateral_balance = lambda *a, **kw: 138.98
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(138.98)
+    assert h.risk_controller.min_equity_floor_usd == pytest.approx(round(138.98 * 0.68, 2))
+    assert h.risk_controller.is_halted() is False
+
+
+
 
 
 

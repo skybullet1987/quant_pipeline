@@ -1,9 +1,9 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-10-28 16:02:54 UTC
+Generated: 2026-10-28 21:04:55 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
-Repository: /home/skybullet1987/quant_pipeline
+Repository: /tmp/qa_hwm_ws
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
@@ -16,37 +16,37 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [07] systemd/polymarket-recorder-xrp.service (Lines 254 - 282 | 661 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [08] systemd/polymarket-trader.service (Lines 283 - 313 | 720 B) :: Forward Paper Trader systemd Unit
   [09] systemd/polymarket-exp316-shadow.service (Lines 314 - 339 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 340 - 10,041 | 571,302 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
-  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,042 - 16,970 | 341,824 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 16,971 - 17,883 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [13] src/polymarket_research/latency_trace.py (Lines 17,884 - 18,112 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,113 - 21,129 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,130 - 21,708 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 21,709 - 24,051 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,052 - 24,164 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 24,165 - 24,281 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [19] src/polymarket_research/redeem_settled_positions.py (Lines 24,282 - 24,581 | 12,505 B) :: CTF Settled Position Redemption CLI
-  [20] src/polymarket_research/setup_polymarket_account.py (Lines 24,582 - 24,847 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [21] audit_losing_trades.py (Lines 24,848 - 25,209 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [22] scripts/honest_purged_wfo_optimizer.py (Lines 25,210 - 26,989 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 26,990 - 27,572 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 27,573 - 28,333 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [25] src/polymarket_research/weather_metar_engine.py (Lines 28,334 - 29,681 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 29,682 - 30,217 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 30,218 - 30,941 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 30,942 - 31,778 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 31,779 - 32,014 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 32,015 - 33,021 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 33,022 - 33,996 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 33,997 - 41,424 | 396,441 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
-  [33] scripts/backtest_alpha_124.py (Lines 41,425 - 42,285 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [34] scripts/polymarket_daily_projections.py (Lines 42,286 - 43,201 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [35] scripts/alpha124_status.py (Lines 43,202 - 43,280 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [36] scripts/polymarket_scorecard_snapshot.py (Lines 43,281 - 43,430 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [37] tests/test_alpha_124_oracles.py (Lines 43,431 - 46,132 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 46,133 - 48,027 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [39] tests/test_polymarket_wfo_5fixes.py (Lines 48,028 - 51,312 | 160,008 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [40] tests/test_zero_trust_forensic_audit.py (Lines 51,313 - 52,056 | 32,659 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 340 - 10,043 | 573,240 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
+  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,044 - 16,972 | 341,824 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 16,973 - 17,885 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [13] src/polymarket_research/latency_trace.py (Lines 17,886 - 18,114 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,115 - 21,131 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,132 - 21,710 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 21,711 - 24,053 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,054 - 24,166 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 24,167 - 24,283 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [19] src/polymarket_research/redeem_settled_positions.py (Lines 24,284 - 24,583 | 12,505 B) :: CTF Settled Position Redemption CLI
+  [20] src/polymarket_research/setup_polymarket_account.py (Lines 24,584 - 24,849 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [21] audit_losing_trades.py (Lines 24,850 - 25,211 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [22] scripts/honest_purged_wfo_optimizer.py (Lines 25,212 - 26,991 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 26,992 - 27,574 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 27,575 - 28,335 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [25] src/polymarket_research/weather_metar_engine.py (Lines 28,336 - 29,683 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 29,684 - 30,219 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 30,220 - 30,943 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 30,944 - 31,780 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 31,781 - 32,016 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 32,017 - 33,023 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 33,024 - 33,998 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 33,999 - 41,436 | 397,186 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
+  [33] scripts/backtest_alpha_124.py (Lines 41,437 - 42,297 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [34] scripts/polymarket_daily_projections.py (Lines 42,298 - 43,213 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [35] scripts/alpha124_status.py (Lines 43,214 - 43,292 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [36] scripts/polymarket_scorecard_snapshot.py (Lines 43,293 - 43,442 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [37] tests/test_alpha_124_oracles.py (Lines 43,443 - 46,144 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 46,145 - 48,039 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [39] tests/test_polymarket_wfo_5fixes.py (Lines 48,040 - 51,380 | 162,600 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [40] tests/test_zero_trust_forensic_audit.py (Lines 51,381 - 52,124 | 32,659 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
 """
 
 from __future__ import annotations
@@ -1763,73 +1763,43 @@ class PolymarketLiveHarvester:
             logger.debug(f"[SHADOW PHASE 3A] Register error: {exc}")
 
     async def _attempt_live_phase3a_maker_rescue(
-        self,
-        *,
-        trade_id: str,
-        token_id: str,
-        target_token: str,
-        asset_str: str,
-        effective_notional: float,
-        first_ask: float,
-        first_bid: float,
-        min_allowed_price: float,
-        max_allowed_price: float,
-        open_spot: float,
-        entry_spot_ref: float,
-        spot_denom: str,
-        tte: float,
-        pre_cond_bal: float,
+        self, trade_id: str, token_id: str, target_token: str, asset_str: str, effective_notional: float,
+        first_ask: float, first_bid: float, min_allowed_price: float, max_allowed_price: float,
+        open_spot: float, entry_spot_ref: float, spot_denom: str, tte: float, pre_cond_bal: float,
         book_snapshot: Optional[Dict[str, Any]],
     ) -> Optional[OrderResult]:
         explicit_flag = self.__dict__.get("enable_live_phase3a_maker_fallback")
         if explicit_flag is False or os.environ.get("PM_DISABLE_LIVE_PHASE3A_MAKER", "0") == "1":
             return None
         real_live = (
-            not self.dry_run
-            and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+            not self.dry_run and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
             and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
-            and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
-            and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
+            and not any(k in getattr(self.executor, "__dict__", {}) for k in ("execute_snipe_order_async", "execute_snipe_order"))
         )
         if not (explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback", True)))):
             return None
-        min_tte_p3a = 85.0 if real_live else 75.0
-        if tte < min_tte_p3a or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
+        if tte < (85.0 if real_live else 75.0) or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
             return None
-        maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr(
-            self.executor, "post_maker_entry_order", None
-        )
+        maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr(self.executor, "post_maker_entry_order", None)
         if maker_entry_fn is None:
             return None
-
         fresh_bk = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot or {}
-        asks_f = fresh_bk.get("asks") or []
-        bids_f = fresh_bk.get("bids") or []
-        f_ask = min((float(a["price"] if isinstance(a, dict) else a[0]) for a in asks_f if float(a.get("size", 0) if isinstance(a, dict) else a[1]) > 0), default=first_ask)
-        f_bid = max((float(b["price"] if isinstance(b, dict) else b[0]) for b in bids_f if float(b.get("size", 0) if isinstance(b, dict) else b[1]) > 0), default=first_bid)
+        f_ask = min((float(a["price"] if isinstance(a, dict) else a[0]) for a in (fresh_bk.get("asks") or []) if float(a.get("size", 0) if isinstance(a, dict) else a[1]) > 0), default=first_ask)
+        f_bid = max((float(b["price"] if isinstance(b, dict) else b[0]) for b in (fresh_bk.get("bids") or []) if float(b.get("size", 0) if isinstance(b, dict) else b[1]) > 0), default=first_bid)
         ask_cap = round(f_ask - 0.01, 2) if f_ask > 0.02 else round(max_allowed_price, 2)
         bid_step = round(max(f_bid, first_bid) + 0.01, 2) if max(f_bid, first_bid) > 0.0 else ask_cap
         maker_px = round(min(float(max_allowed_price), ask_cap, bid_step), 2)
-        if maker_px < float(min_allowed_price) - 1e-6 or maker_px > float(max_allowed_price) + 1e-6:
-            return None
-        if f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6:
+        if not (float(min_allowed_price) - 1e-6 <= maker_px <= float(max_allowed_price) + 1e-6) or (f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6):
             return None
         rescue_notional = min(float(effective_notional), float(RISK_CONFIG.get("phase3a_maker_max_notional_usd", 22.00)))
         if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
             return None
-
         t0_m = time.perf_counter()
         if trade_id in self.pending_entry_intents:
-            self.pending_entry_intents[trade_id]["target_price"] = maker_px
-            self.pending_entry_intents[trade_id]["notional_usd"] = rescue_notional
+            self.pending_entry_intents[trade_id].update(target_price=maker_px, notional_usd=rescue_notional)
         post_res = await asyncio.to_thread(
-            maker_entry_fn,
-            token_id=token_id,
-            price=maker_px,
-            notional_usd=rescue_notional,
-            side="BUY",
-            min_price_floor=float(min_allowed_price),
-            max_price_ceiling=float(max_allowed_price),
+            maker_entry_fn, token_id=token_id, price=maker_px, notional_usd=rescue_notional, side="BUY",
+            min_price_floor=float(min_allowed_price), max_price_ceiling=float(max_allowed_price),
         )
         if not isinstance(post_res, dict):
             return None
@@ -1847,7 +1817,6 @@ class PolymarketLiveHarvester:
             return None
         if trade_id in self.pending_entry_intents:
             self.pending_entry_intents[trade_id]["entry_order_id"] = maker_oid
-
         ttl_s = max(0.2, float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC", "3.5")))
         deadline = time.monotonic() + ttl_s
         uws = getattr(self.executor, "_user_ws_cache", None)
@@ -1855,60 +1824,42 @@ class PolymarketLiveHarvester:
         while time.monotonic() < deadline:
             rem_w = max(0.02, min(0.10, deadline - time.monotonic()))
             if uws is not None and uws.is_healthy():
-                prev_s = uws.fill_sequence
-                await uws.wait_for_fill_or_timeout(rem_w, prev_seq=prev_s)
+                await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
                 snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
                 if isinstance(snap_o, dict) and str(snap_o.get("status") or "").upper() in ("MATCHED", "FILLED"):
                     break
             else:
                 await asyncio.sleep(rem_w)
             if open_spot > 0.0 and init_disp > 0.0:
-                ref_fn = self.get_usd_reference_spot_price if spot_denom == "USD" else self.get_reference_spot_price
-                cur_sp = await asyncio.to_thread(ref_fn, asset_str)
-                if cur_sp and float(cur_sp) > 0.0:
-                    cur_disp = (float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))
-                    if cur_disp < 0.55 * init_disp:
-                        logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: spot cushion decayed >45%; canceling OID={maker_oid} early.")
-                        break
-
+                cur_sp = await asyncio.to_thread(self.get_usd_reference_spot_price if spot_denom == "USD" else self.get_reference_spot_price, asset_str)
+                if cur_sp and float(cur_sp) > 0.0 and (((float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))) < 0.55 * init_disp):
+                    logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: cushion decayed >45%; canceling {maker_oid}.")
+                    break
         cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
         summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
         c_out = str((cancel_res or {}).get("outcome") or "")
         is_canc = bool((cancel_res or {}).get("is_canceled"))
         matched_sh = float((summary or {}).get("matched") or (cancel_res or {}).get("matched") or 0.0)
-        if matched_sh >= 0.01 and (
-            is_canc
-            or c_out in ("FILLED", "CANCELED", "PARTIALLY_FILLED_CANCELED")
-            or bool((summary or {}).get("terminal"))
-        ):
+        if matched_sh >= 0.01 and (is_canc or c_out in ("FILLED", "CANCELED", "PARTIALLY_FILLED_CANCELED") or bool((summary or {}).get("terminal"))):
             avg_px = float((summary or {}).get("avg_price") or maker_px)
-            notional_act = round(matched_sh * avg_px, 4)
-            logger.info(
-                f"✓ [LIVE PHASE 3A MAKER RESCUE FILLED] {trade_id}: {matched_sh:.2f} sh @ ${avg_px:.4f} "
-                f"(0% fee + 20% Maker rebate, OID={maker_oid})"
-            )
+            logger.info(f"[LIVE PHASE 3A MAKER RESCUE FILLED] {trade_id}: {matched_sh:.2f} sh @ ${avg_px:.4f} (OID={maker_oid})")
             return OrderResult(
-                success=True, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
-                target_token=target_token, side="BUY", price=avg_px, size=matched_sh,
-                notional_usd=notional_act, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
-                mode="LIVE_PHASE3A_MAKER_IN", execution_status=ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
-                details={
-                    "pre_token_balance": pre_cond_bal,
-                    "trade_ids": list((summary or {}).get("trade_ids") or []),
-                    "transactions_hashes": list((summary or {}).get("tx_hashes") or []),
-                    "phase3a_maker_rescue": True,
-                },
+                success=True, order_id=maker_oid, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side="BUY", price=avg_px, size=matched_sh, notional_usd=round(matched_sh * avg_px, 4), fee_usd=0.0,
+                latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2), mode="LIVE_PHASE3A_MAKER_IN",
+                execution_status=ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
+                details={"pre_token_balance": pre_cond_bal, "trade_ids": list((summary or {}).get("trade_ids") or []), "transactions_hashes": list((summary or {}).get("tx_hashes") or []), "phase3a_maker_rescue": True},
             )
         if not is_canc and c_out != "FILLED" and (summary is None or not summary.get("terminal") or summary.get("resting")):
             return OrderResult(
-                success=False, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
-                target_token=target_token, side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0),
-                notional_usd=rescue_notional, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
-                mode="LIVE_PHASE3A_CANCEL_UNKNOWN", execution_status=ExecutionStatus.SUBMITTED,
+                success=False, order_id=maker_oid, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0), notional_usd=rescue_notional,
+                fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2), mode="LIVE_PHASE3A_CANCEL_UNKNOWN",
+                execution_status=ExecutionStatus.SUBMITTED,
                 details={"outcome_unknown": True, "entry_order_id": maker_oid, "pre_token_balance": pre_cond_bal},
                 error="PHASE3A_CANCEL_UNVERIFIED",
             )
-        logger.info(f"[LIVE PHASE 3A EXPIRED CLEAN] {trade_id}: OID={maker_oid} canceled after {ttl_s:.1f}s (0 filled).")
+        logger.info(f"[LIVE PHASE 3A EXPIRED CLEAN] {trade_id}: {maker_oid} canceled ({ttl_s:.1f}s).")
         return None
 
     async def _maybe_merge_live_complete_sets(self, now_ts: float) -> None:
@@ -2153,10 +2104,11 @@ class PolymarketLiveHarvester:
                             shadow_orders.pop(key, None)
                             continue
 
-                    # Check L2 book for fill at shadow_maker_px
-                    if cur_ask > 0.0 or cur_bid > 0.0:
+                    # Check L2 book for fill at shadow_maker_px (EXP-PM-402: require >=250ms post latency
+                    # and true seller offer crossing <= m_px; never fill merely because cur_bid <= m_px!)
+                    if cur_ask > 0.0 and (now_ts - float(ord_rec["placed_ts"])) >= 0.25:
                         m_px = float(ord_rec["shadow_maker_px"])
-                        if (0.0 < cur_ask <= m_px + 0.001) or (0.0 < cur_bid <= m_px):
+                        if 0.0 < cur_ask <= m_px + 0.001:
                             ord_rec["status"] = "SHADOW_MAKER_FILLED"
                             ord_rec["filled_ts"] = now_ts
                             ord_rec["fill_delay_sec"] = round(now_ts - float(ord_rec["placed_ts"]), 2)
@@ -2719,13 +2671,55 @@ class PolymarketLiveHarvester:
             logger.info(f"[PREWARM NEXT-CANDLE] Pre-warmed metadata & CLOB caches for {warmed} upcoming token(s) from Gamma API.")
             self._prewarm_active_market_tokens()
 
-    def _update_equity_tier(self, total_equity: float) -> Dict[str, Any]:
+    def _has_unsettled_collateral_overlap(self, now_ts: Optional[float] = None) -> bool:
+        """
+        True whenever CLOB L2 collateral balance and active_positions valuation may transiently
+        overlap (e.g. UNRESOLVED_SETTLEMENT / AWAITING_ONCHAIN_SETTLEMENT payouts already in
+        collateral, MATCHED_PENDING_SETTLEMENT or <30s post-entry indexer lag before collateral
+        deduction, or partial maker exit fills before remaining_cost_basis settles).
+        While True, high_water_mark_equity must NOT ratchet upward.
+        """
+        if now_ts is None:
+            now_ts = time.time()
+        if getattr(self, "pending_entry_intents", None):
+            return True
+        for p in (getattr(self, "active_positions", None) or {}).values():
+            st = p.get("status")
+            if st in {
+                "MATCHED_PENDING_SETTLEMENT",
+                "ENTRY_OUTCOME_UNKNOWN",
+                "UNRESOLVED_SETTLEMENT",
+                "AWAITING_ONCHAIN_SETTLEMENT",
+            }:
+                return True
+            if position_is_settlement_receivable(p):
+                return True
+            expiry_ts = float(p.get("candle_expiry_ts") or 0.0)
+            if expiry_ts > 0.0 and now_ts >= expiry_ts:
+                return True
+            entry_ts = float(p.get("entry_ts") or 0.0)
+            if entry_ts > 0.0 and (now_ts - entry_ts) < 30.0:
+                return True
+            if (
+                float(p.get("filled_exit_shares", 0.0) or 0.0) > 0.0
+                or float(p.get("confirmed_realized_cash", 0.0) or 0.0) > 0.0
+                or float(p.get("estimated_exit_cash", 0.0) or 0.0) > 0.0
+            ):
+                return True
+        return False
+
+    def _update_equity_tier(self, total_equity: float, *, allow_hwm_ratchet: Optional[bool] = None) -> Dict[str, Any]:
         """Calculates equity tier, updates high-water mark, bankroll pct, exposure, and risk limits."""
         tot_equity = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
         seed_thresh = float(RISK_CONFIG.get("seed_survival_equity_threshold", 88.0))
-        if not hasattr(self, "high_water_mark_equity") or self.high_water_mark_equity is None or tot_equity > self.high_water_mark_equity:
+        if allow_hwm_ratchet is None:
+            allow_hwm_ratchet = not self._has_unsettled_collateral_overlap()
+        cur_hwm = getattr(self, "high_water_mark_equity", None)
+        if cur_hwm is None or not math.isfinite(float(cur_hwm)) or float(cur_hwm) <= 0.0:
             self.high_water_mark_equity = tot_equity
-        elif tot_equity < seed_thresh and float(self.high_water_mark_equity) > tot_equity * 1.15:
+        elif tot_equity < seed_thresh and float(cur_hwm) > tot_equity * 1.15:
+            self.high_water_mark_equity = tot_equity
+        elif allow_hwm_ratchet and tot_equity > float(cur_hwm):
             self.high_water_mark_equity = tot_equity
         prev_tier = getattr(self, "_current_equity_tier", None) or getattr(self, "current_equity_tier", None)
         tier_limits = get_equity_tier_limits(tot_equity, self.high_water_mark_equity, previous_tier=prev_tier)
@@ -2766,7 +2760,8 @@ class PolymarketLiveHarvester:
                     if p.get("status") == "UNRESOLVED_SETTLEMENT"
                 )
                 tot_equity = float(bal) + active_market_equity + in_flight_unwind_cash
-                tier_limits = self._update_equity_tier(tot_equity)
+                allow_ratchet = (in_flight_unwind_cash <= 0.0) and (not self._has_unsettled_collateral_overlap(now_ts))
+                tier_limits = self._update_equity_tier(tot_equity, allow_hwm_ratchet=allow_ratchet)
                 prev_halted = bool(self.risk_controller.halted)
                 self.risk_controller.check_equity_drawdown(float(tot_equity), allow_auto_clear=True)
                 halt_transition = (prev_halted != bool(self.risk_controller.halted))
@@ -3813,6 +3808,13 @@ class PolymarketLiveHarvester:
             return False
         failures = int(pos.get("exit_post_failures", 0) or 0) + 1
         pos["exit_post_failures"] = failures
+        err_txt = str(exit_res.get("error") or "").lower()
+        entry_age = now - float(pos.get("entry_ts", 0.0) or 0.0)
+        if "not enough balance" in err_txt and 0.0 <= entry_age < 15.0:
+            pos["next_exit_post_ts"] = now + 0.5
+            pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT"
+            logger.info(f"Maker exit post awaiting CLOB balance indexer sync for {pos.get('trade_id')} (age={entry_age:.2f}s); retry in 0.5s.")
+            return False
         pos["next_exit_post_ts"] = now + min(30.0, 2.0 ** min(failures, 5))
         pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT" if exit_res.get("retryable") else "POST_FAILED"
         logger.warning(f"Maker exit post deferred for {pos.get('trade_id')} ({exit_res.get('error')}); retry with backoff.")
@@ -35523,8 +35525,9 @@ class Alpha124ShadowDaemon:
             return False
 
         try:
-            # Strictly causal L2 walk at t_signal + 50ms (or single-RTT book already fetched on M4 wakeup)
-            book = prefetched_book if prefetched_book is not None else await self.fetch_book_after_latency(token_id, latency_ms=50)
+            # Strictly causal L2 walk at t_signal + latency (250ms for W1_SOLAR_PEAK_LOCK EXP-PM-405; 50ms default)
+            req_lat_ms = 250 if sleeve == "W1_SOLAR_PEAK_LOCK" else 50
+            book = prefetched_book if (prefetched_book is not None and sleeve != "W1_SOLAR_PEAK_LOCK") else await self.fetch_book_after_latency(token_id, latency_ms=req_lat_ms)
             if not book:
                 return False
             asks_raw = book.get("asks") or []
@@ -37723,6 +37726,15 @@ class Alpha124ShadowDaemon:
         if not acq:
             return False
         try:
+            # EXP-PM-404: Enforce causal 250ms L2 re-fetch & re-walk on 0%-fee 2-leg structural boxes
+            # so _grad8 auto-graduation only counts edges that survive realistic execution latency.
+            if sleeve in ("CM_B3_PYTH_BARRIER_BOX", "SP1_NBA_ZERO_FEE_BOX"):
+                await asyncio.sleep(0.25)
+                re_bks = await self.fetch_books_batch([leg_a["token_id"], leg_b["token_id"]], timeout=3.0)
+                bk_a = re_bks.get(leg_a["token_id"]) or {}
+                bk_b = re_bks.get(leg_b["token_id"]) or {}
+                if not bk_a or not bk_b:
+                    return False
             asks_a = bk_a.get("asks") or []
             asks_b = bk_b.get("asks") or []
             bid_a, _ = extract_best_bid(bk_a.get("bids") or [])
@@ -51293,6 +51305,62 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     assert res_retry_ok["executed"] is True
     assert len(attempts_8b) == 2
     assert "D1_BTC_4H_15M_RETRY_1" in h._seen_d1_box_keys
+
+
+def test_hwm_does_not_ratchet_during_unresolved_settlement_or_entry_indexer_lag(tmp_path):
+    """
+    Regression test: high_water_mark_equity must NOT ratchet upward when CLOB collateral
+    overlaps with UNRESOLVED_SETTLEMENT exit cash or post-entry MATCHED_PENDING_SETTLEMENT
+    collateral-indexer lag, preventing false circuit-breaker drawdown halts after wins.
+    """
+    h = PolymarketLiveHarvester(dry_run=False, dynamic_sizing=True)
+    h.executor.is_authenticated = True
+    h.active_positions.clear()
+    h.pending_entry_intents.clear()
+    h.high_water_mark_equity = 131.79
+
+    # 1. UNRESOLVED_SETTLEMENT: CLOB already credited $31.86 payout into collateral ($131.79),
+    # while position still carries estimated_exit_cash=$31.86 before authoritative fill close.
+    h.active_positions["LIVE_UNRES_1"] = {
+        "trade_id": "LIVE_UNRES_1",
+        "status": "UNRESOLVED_SETTLEMENT",
+        "confirmed_realized_cash": 0.0,
+        "estimated_exit_cash": 31.86,
+        "candle_expiry_ts": time.time() + 300.0,
+    }
+    h.executor.get_collateral_balance = lambda *a, **kw: 131.79
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(131.79), (
+        "UNRESOLVED_SETTLEMENT double-count ($131.79 + $31.86 = $163.65) must NOT ratchet HWM!"
+    )
+
+    # 2. MATCHED_PENDING_SETTLEMENT (<30s post-entry): CLOB collateral still shows pre-entry $134.59
+    # while active_positions already holds $29.05 notional_usd.
+    h.active_positions.clear()
+    h.high_water_mark_equity = 134.59
+    h.active_positions["LIVE_MPS_1"] = {
+        "trade_id": "LIVE_MPS_1",
+        "status": "MATCHED_PENDING_SETTLEMENT",
+        "notional_usd": 29.05,
+        "remaining_cost_basis": 29.05,
+        "entry_ts": time.time(),
+        "candle_expiry_ts": time.time() + 400.0,
+    }
+    h.executor.get_collateral_balance = lambda *a, **kw: 134.59
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(134.59), (
+        "Post-entry indexer lag ($134.59 + $29.05 = $163.64) must NOT ratchet HWM!"
+    )
+
+    # 3. Once flat (all positions settled), HWM ratchets cleanly to true realized collateral ($138.98)
+    # and does NOT trip any false drawdown halt.
+    h.active_positions.clear()
+    h.executor.get_collateral_balance = lambda *a, **kw: 138.98
+    asyncio.run(h._async_refresh_collateral())
+    assert h.high_water_mark_equity == pytest.approx(138.98)
+    assert h.risk_controller.min_equity_floor_usd == pytest.approx(round(138.98 * 0.68, 2))
+    assert h.risk_controller.is_halted() is False
+
 
 
 

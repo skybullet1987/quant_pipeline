@@ -116,6 +116,39 @@ def transform_module(rel_path: str, code: str) -> str:
             joined.append(cln)
         compacted = "".join(joined)
     compacted = re.sub(r"\n([ \t]{4,})", lambda m: "\n" + " " * (len(m.group(1)) // 2), compacted)
+    op_spans_by_row: dict[int, list[tuple[int, int]]] = {}
+    fstr_start = getattr(tokenize, "FSTRING_START", -1)
+    fstr_end = getattr(tokenize, "FSTRING_END", -1)
+    fstr_depth = 0
+    for tok in tokenize.generate_tokens(io.StringIO(compacted).readline):
+        if tok.type == fstr_start:
+            fstr_depth += 1
+        elif tok.type == fstr_end:
+            fstr_depth = max(0, fstr_depth - 1)
+        elif (
+            fstr_depth == 0
+            and tok.type == tokenize.OP
+            and tok.string in {",", ":", "=", "==", "!=", "<=", ">=", "->"}
+            and tok.start[0] == tok.end[0]
+        ):
+            op_spans_by_row.setdefault(tok.start[0] - 1, []).append((tok.start[1], tok.end[1]))
+    if op_spans_by_row:
+        r_lines = compacted.splitlines(keepends=True)
+        for r_idx, spans in op_spans_by_row.items():
+            ln = r_lines[r_idx]
+            indent_len = len(ln) - len(ln.lstrip(" \t"))
+            for s_col, e_col in reversed(spans):
+                r_end = e_col
+                while r_end < len(ln) and ln[r_end] in (" ", "\t"):
+                    r_end += 1
+                l_start = s_col
+                while l_start > indent_len and ln[l_start - 1] in (" ", "\t"):
+                    l_start -= 1
+                ln = ln[:l_start] + ln[s_col:e_col] + ln[r_end:]
+            r_lines[r_idx] = ln
+        tightened = "".join(r_lines)
+        if ast.dump(ast.parse(tightened)) == ast.dump(ast.parse(compacted)):
+            compacted = tightened
     return compacted.rstrip("\n") + "\n\n"
 
 
