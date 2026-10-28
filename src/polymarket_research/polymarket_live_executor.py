@@ -129,22 +129,32 @@ class _ThreadLocalClobHttpClient:
         min_warm: int = 4,
         max_idle_sec: float = 18.0,
     ) -> int:
-        """Ensures at least `min_warm` distinct HTTP/1.1 TLS 1.3 sockets sit hot at the top of the LIFO pool."""
+        """
+        Ensures at least `min_warm` distinct HTTP/1.1 TLS 1.3 sockets sit hot in the LIFO pool
+        WITHOUT ever draining `self._pool` (at most 1 socket is checked out at a time while the
+        remaining `min_warm - 1` warm sockets stay live in `self._pool` for instant hot-path borrow).
+        """
         if not self._warm_lock.acquire(blocking=False):
             return 0
-        checked: List[Tuple[httpx.Client, float]] = []
-        staged: List[Tuple[httpx.Client, float]] = []
-        reserve_pushed = False
+        seen_ids: set = set()
+        healthy_count = 0
+        target = max(1, int(min_warm))
         try:
-            now_m = time.monotonic()
-            for _ in range(max(1, int(min_warm))):
-                try:
-                    staged.append(self._pool.get_nowait())
-                except queue.Empty:
-                    staged.append((self._make_client(), 0.0))
-            staged.sort(key=lambda x: -x[1])
-            for cli, last_ts in staged:
-                if getattr(cli, "is_closed", False):
+            for _ in range(target):
+                now_m = time.monotonic()
+                cli: Optional[httpx.Client] = None
+                last_ts = 0.0
+                with self._pool.mutex:
+                    q_list = self._pool.queue
+                    pick_idx = None
+                    for idx in range(len(q_list) - 1, -1, -1):
+                        cand_cli, _ = q_list[idx]
+                        if id(cand_cli) not in seen_ids:
+                            pick_idx = idx
+                            break
+                    if pick_idx is not None:
+                        cli, last_ts = q_list.pop(pick_idx)
+                if cli is None or getattr(cli, "is_closed", False):
                     cli, last_ts = self._make_client(), 0.0
                 if (now_m - last_ts) >= max_idle_sec:
                     try:
@@ -156,25 +166,18 @@ class _ThreadLocalClobHttpClient:
                         except Exception:
                             pass
                         continue
-                if not reserve_pushed:
-                    try:
-                        self._pool.put_nowait((cli, last_ts))
-                        reserve_pushed = True
-                        continue
-                    except queue.Full:
-                        pass
-                checked.append((cli, last_ts))
-        finally:
-            for cli_item, ts_item in reversed(checked):
+                seen_ids.add(id(cli))
                 try:
-                    self._pool.put_nowait((cli_item, ts_item))
+                    self._pool.put_nowait((cli, last_ts))
+                    healthy_count += 1
                 except queue.Full:
                     try:
-                        cli_item.close()
+                        cli.close()
                     except Exception:
                         pass
+        finally:
             self._warm_lock.release()
-        return len(checked) + (1 if reserve_pushed else 0)
+        return healthy_count
 
     def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
         cli = self._borrow_pool_client()
@@ -714,6 +717,11 @@ def _sign_and_post_single_hop(
         except Exception as e:
             raise PreSubmitError(f"Order signing failed before submission: {e}") from e
         t1 = time.perf_counter()
+        stage["sign_ms"] = round((t1 - t0) * 1000.0, 3)
+        stage["thread_hop_ms"] = thread_hop_ms
+        stage["cache_hit"] = cache_hit
+        stage["signed_shares"] = actual_signed_shares
+        stage["t_post_start"] = t1
         stage["submitted"] = True
         post_resp = client.post_order(signed, order_type, False, True)  # post_only=False, defer_exec=True
         t2 = time.perf_counter()
@@ -960,7 +968,7 @@ class PolymarketLiveExecutor:
             self.auth_mode = "AUTHENTICATED_L2"
             logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client v{PY_CLOB_VERSION}) in {latency_ms:.2f} ms.")
             if os.environ.get("PM_ENABLE_TLS_KEEPALIVE", "1") == "1":
-                self.start_clob_tls_keepalive_daemon(interval_sec=20.0)
+                self.start_clob_tls_keepalive_daemon(interval_sec=12.0)
 
         except Exception as e:
             self.auth_mode = "AUTH_FAILED"
@@ -1136,6 +1144,11 @@ class PolymarketLiveExecutor:
         self._tls_keepalive_started = True
 
         def _loop() -> None:
+            try:
+                if not _HOT_DISPATCH_ACTIVE.is_set():
+                    self.ping_clob_keepalive()
+            except Exception:
+                pass
             while not self.dry_run:
                 time.sleep(max(5.0, float(interval_sec)))
                 if self.dry_run:
@@ -3972,9 +3985,16 @@ class PolymarketLiveExecutor:
                 if _trace is not None:
                     _trace.stamp("post_return")
                     if hop is None:  # signing/POST raised: still record the journey (unknown-outcome analysis)
+                        _t_p0 = dispatch_stage.get("t_post_start")
+                        _post_err_ms = round((time.perf_counter() - float(_t_p0)) * 1000.0, 3) if _t_p0 else None
                         _trace.emit(
                             trade_id=trade_id, token_id=token_id, side=side, outcome="dispatch_exception",
                             submitted=order_submitted, hot_active=_HOT_DISPATCH_ACTIVE.count,
+                            qualify_ms=round(qualify_ms, 3),
+                            sign_ms=dispatch_stage.get("sign_ms"),
+                            thread_hop_ms=dispatch_stage.get("thread_hop_ms"),
+                            clob_http_post_ms=_post_err_ms,
+                            presign_cache_hit=dispatch_stage.get("cache_hit"),
                         )
             shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
             post_resp = hop["post_resp"]

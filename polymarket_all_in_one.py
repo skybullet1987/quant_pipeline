@@ -1,7 +1,7 @@
 """
 ================================================================================
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-27 20:44:56 UTC
+Generated: 2026-10-28 00:02:05 UTC
 Version: 3.9.0 Purged-WFO, Genuine Refit CPCV & Second-Pass Audit Hardened Release
 Repository: C:/Users/Anton/source/repos/Dominus
 
@@ -16,17 +16,17 @@ tools, post-trade forensic auditor, and Purged Walk-Forward / CPCV Optimizer:
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 34 - 70 | 802 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 71 - 110 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 111 - 6,028 | 522,655 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,029 - 9,099 | 289,354 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 9,100 - 10,725 | 144,472 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 10,726 - 11,047 | 21,902 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 11,048 - 12,664 | 122,937 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 12,665 - 12,739 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 12,740 - 12,827 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 12,828 - 12,951 | 7,450 B) :: CTF Settled Position Redemption Engine
-  - [src/polymarket_research/setup_polymarket_account.py] (Lines 12,952 - 13,102 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  - [audit_losing_trades.py] (Lines 13,103 - 13,242 | 11,742 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 13,243 - 14,373 | 79,695 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 111 - 6,026 | 522,924 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,027 - 9,108 | 290,396 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 9,109 - 10,734 | 144,472 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 10,735 - 11,056 | 21,902 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 11,057 - 12,673 | 122,937 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 12,674 - 12,748 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 12,749 - 12,836 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 12,837 - 12,960 | 7,450 B) :: CTF Settled Position Redemption Engine
+  - [src/polymarket_research/setup_polymarket_account.py] (Lines 12,961 - 13,111 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  - [audit_losing_trades.py] (Lines 13,112 - 13,251 | 11,742 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 13,252 - 14,382 | 79,695 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 
 from __future__ import annotations
@@ -3724,19 +3724,12 @@ class PolymarketLiveHarvester:
         return
     if _is_live_real and _uses_chainlink_twap and open_spot_cand and float(open_spot_cand) > 0.0:
       if _is_usd_oracle:
-        _spot_refs = [usd_spot_t0]
-        if usd_twap_t0 > 0.0 and abs(usd_twap_t0 - usd_spot_t0) / usd_spot_t0 < 0.015:
-          _spot_refs.append(usd_twap_t0)
-        _eff_spot_ref = min(_spot_refs) if target_token == "UP" else max(_spot_refs)
-        dist_pct = ((_eff_spot_ref - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
+        dist_pct = ((usd_spot_t0 - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
       elif spot_at_t0 > 0.0:
-        _cl_twap_now = float(shock.get("chainlink_twap_60s") or 0.0)
         _vdiv_raw = shock.get("venue_divergence_centered_bps")
         if _vdiv_raw is None:
           _vdiv_raw = shock.get("venue_divergence_bps")
         _spot_refs = [spot_at_t0]
-        if _cl_twap_now > 0.0 and abs(_cl_twap_now - spot_at_t0) / spot_at_t0 < 0.015:
-          _spot_refs.append(_cl_twap_now)
         if _vdiv_raw is not None:
           _vdiv_clamped = max(-30.0, min(30.0, float(_vdiv_raw or 0.0)))
           _spot_refs.append(spot_at_t0 * (1.0 - 0.5 * _vdiv_clamped / 10000.0))
@@ -4380,7 +4373,12 @@ class PolymarketLiveHarvester:
     if is_special_regime:
       sleeve_max_price = max(self.max_price_ceiling, max_allowed_price)
     elif not self.dry_run:
-      sleeve_max_price = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
+      _base_ceil = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
+      if _is_live_real:
+        _ev_fair_cap = round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05, 4)
+        sleeve_max_price = max(_base_ceil, min(0.87, round(max_allowed_price + 0.02, 2), _ev_fair_cap))
+      else:
+        sleeve_max_price = _base_ceil
     else:
       sleeve_max_price = self.max_price_ceiling
     target_limit_px = round(min(raw_vwap + fak_buf, sleeve_max_price), 2)
@@ -6111,19 +6109,25 @@ class _ThreadLocalClobHttpClient:
   def warm_pool( self, url: str = "https://clob.polymarket.com/time", min_warm: int = 4, max_idle_sec: float = 18.0, ) -> int:
     if not self._warm_lock.acquire(blocking=False):
       return 0
-    checked: List[Tuple[httpx.Client, float]] = []
-    staged: List[Tuple[httpx.Client, float]] = []
-    reserve_pushed = False
+    seen_ids: set = set()
+    healthy_count = 0
+    target = max(1, int(min_warm))
     try:
-      now_m = time.monotonic()
-      for _ in range(max(1, int(min_warm))):
-        try:
-          staged.append(self._pool.get_nowait())
-        except queue.Empty:
-          staged.append((self._make_client(), 0.0))
-      staged.sort(key=lambda x: -x[1])
-      for cli, last_ts in staged:
-        if getattr(cli, "is_closed", False):
+      for _ in range(target):
+        now_m = time.monotonic()
+        cli: Optional[httpx.Client] = None
+        last_ts = 0.0
+        with self._pool.mutex:
+          q_list = self._pool.queue
+          pick_idx = None
+          for idx in range(len(q_list) - 1, -1, -1):
+            cand_cli, _ = q_list[idx]
+            if id(cand_cli) not in seen_ids:
+              pick_idx = idx
+              break
+          if pick_idx is not None:
+            cli, last_ts = q_list.pop(pick_idx)
+        if cli is None or getattr(cli, "is_closed", False):
           cli, last_ts = self._make_client(), 0.0
         if (now_m - last_ts) >= max_idle_sec:
           try:
@@ -6135,25 +6139,18 @@ class _ThreadLocalClobHttpClient:
             except Exception:
               pass
             continue
-        if not reserve_pushed:
-          try:
-            self._pool.put_nowait((cli, last_ts))
-            reserve_pushed = True
-            continue
-          except queue.Full:
-            pass
-        checked.append((cli, last_ts))
-    finally:
-      for cli_item, ts_item in reversed(checked):
+        seen_ids.add(id(cli))
         try:
-          self._pool.put_nowait((cli_item, ts_item))
+          self._pool.put_nowait((cli, last_ts))
+          healthy_count += 1
         except queue.Full:
           try:
-            cli_item.close()
+            cli.close()
           except Exception:
             pass
+    finally:
       self._warm_lock.release()
-    return len(checked) + (1 if reserve_pushed else 0)
+    return healthy_count
   def request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
     cli = self._borrow_pool_client()
     healthy = True
@@ -6518,6 +6515,11 @@ def _sign_and_post_single_hop( client: Any, ladder_cache: Optional[PreSignedOrde
     except Exception as e:
       raise PreSubmitError(f"Order signing failed before submission: {e}") from e
     t1 = time.perf_counter()
+    stage["sign_ms"] = round((t1 - t0) * 1000.0, 3)
+    stage["thread_hop_ms"] = thread_hop_ms
+    stage["cache_hit"] = cache_hit
+    stage["signed_shares"] = actual_signed_shares
+    stage["t_post_start"] = t1
     stage["submitted"] = True
     post_resp = client.post_order(signed, order_type, False, True)
     t2 = time.perf_counter()
@@ -6684,7 +6686,7 @@ class PolymarketLiveExecutor:
       self.auth_mode = "AUTHENTICATED_L2"
       logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client v{PY_CLOB_VERSION}) in {latency_ms:.2f} ms.")
       if os.environ.get("PM_ENABLE_TLS_KEEPALIVE", "1") == "1":
-        self.start_clob_tls_keepalive_daemon(interval_sec=20.0)
+        self.start_clob_tls_keepalive_daemon(interval_sec=12.0)
     except Exception as e:
       self.auth_mode = "AUTH_FAILED"
       self.is_authenticated = False
@@ -6791,6 +6793,11 @@ class PolymarketLiveExecutor:
       return
     self._tls_keepalive_started = True
     def _loop() -> None:
+      try:
+        if not _HOT_DISPATCH_ACTIVE.is_set():
+          self.ping_clob_keepalive()
+      except Exception:
+        pass
       while not self.dry_run:
         time.sleep(max(5.0, float(interval_sec)))
         if self.dry_run:
@@ -8088,7 +8095,9 @@ class PolymarketLiveExecutor:
         if _trace is not None:
           _trace.stamp("post_return")
           if hop is None:
-            _trace.emit( trade_id=trade_id, token_id=token_id, side=side, outcome="dispatch_exception", submitted=order_submitted, hot_active=_HOT_DISPATCH_ACTIVE.count, )
+            _t_p0 = dispatch_stage.get("t_post_start")
+            _post_err_ms = round((time.perf_counter() - float(_t_p0)) * 1000.0, 3) if _t_p0 else None
+            _trace.emit( trade_id=trade_id, token_id=token_id, side=side, outcome="dispatch_exception", submitted=order_submitted, hot_active=_HOT_DISPATCH_ACTIVE.count, qualify_ms=round(qualify_ms, 3), sign_ms=dispatch_stage.get("sign_ms"), thread_hop_ms=dispatch_stage.get("thread_hop_ms"), clob_http_post_ms=_post_err_ms, presign_cache_hit=dispatch_stage.get("cache_hit"), )
       shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
       post_resp = hop["post_resp"]
       sign_ms = hop["sign_ms"]

@@ -5265,19 +5265,14 @@ class PolymarketLiveHarvester:
 
         if _is_live_real and _uses_chainlink_twap and open_spot_cand and float(open_spot_cand) > 0.0:
             if _is_usd_oracle:
-                _spot_refs = [usd_spot_t0]
-                if usd_twap_t0 > 0.0 and abs(usd_twap_t0 - usd_spot_t0) / usd_spot_t0 < 0.015:
-                    _spot_refs.append(usd_twap_t0)
-                _eff_spot_ref = min(_spot_refs) if target_token == "UP" else max(_spot_refs)
-                dist_pct = ((_eff_spot_ref - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
+                # 15m/5m Chainlink Data Streams settle on instantaneous USD tick at expiry (NOT a 60s lagging TWAP);
+                # clamping usd_spot_t0 to lagging usd_twap_t0 during a 100ms shock erased valid breakouts (e.g. 23:07:09 BTC 15m UP).
+                dist_pct = ((usd_spot_t0 - float(open_spot_cand)) / float(open_spot_cand)) * 100.0
             elif spot_at_t0 > 0.0:
-                _cl_twap_now = float(shock.get("chainlink_twap_60s") or 0.0)
                 _vdiv_raw = shock.get("venue_divergence_centered_bps")
                 if _vdiv_raw is None:
                     _vdiv_raw = shock.get("venue_divergence_bps")
                 _spot_refs = [spot_at_t0]
-                if _cl_twap_now > 0.0 and abs(_cl_twap_now - spot_at_t0) / spot_at_t0 < 0.015:
-                    _spot_refs.append(_cl_twap_now)
                 if _vdiv_raw is not None:
                     _vdiv_clamped = max(-30.0, min(30.0, float(_vdiv_raw or 0.0)))
                     _spot_refs.append(spot_at_t0 * (1.0 - 0.5 * _vdiv_clamped / 10000.0))
@@ -6445,11 +6440,18 @@ class PolymarketLiveHarvester:
         is_special_regime = regime in ("REGIME_D_BOUNDARY_LOCK", "REGIME_E_STRIKE_CONVERGENCE")
         target_exit = 0.99 if (self.hold_to_maturity or is_special_regime) else self._calculate_target_exit(raw_vwap, tte)
 
-        # Smart FAK Price Buffer: capped strictly at min(max_price_ceiling, max_allowed_price, eff_price_ceiling) in live mode
+        # Smart FAK Price Buffer: entry qualification (`first_ask` & `raw_vwap`) is strictly <= eff_price_ceiling ($0.85),
+        # while the FAK sweep limit (`sleeve_max_price`) in live mode allows up to +2c ($0.87) ONLY when p_fair +EV supports it,
+        # preventing 0c slippage tolerance (`FAK_KILLED_NO_MATCH`) on qualified $0.84-$0.85 entries!
         if is_special_regime:
             sleeve_max_price = max(self.max_price_ceiling, max_allowed_price)
         elif not self.dry_run:
-            sleeve_max_price = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
+            _base_ceil = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
+            if _is_live_real:
+                _ev_fair_cap = round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05, 4)
+                sleeve_max_price = max(_base_ceil, min(0.87, round(max_allowed_price + 0.02, 2), _ev_fair_cap))
+            else:
+                sleeve_max_price = _base_ceil
         else:
             sleeve_max_price = self.max_price_ceiling
         target_limit_px = round(min(raw_vwap + fak_buf, sleeve_max_price), 2)
