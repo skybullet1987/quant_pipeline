@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-10-28 15:03:39 UTC
+Generated: 2026-10-28 16:02:54 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -16,37 +16,37 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [07] systemd/polymarket-recorder-xrp.service (Lines 254 - 282 | 661 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [08] systemd/polymarket-trader.service (Lines 283 - 313 | 720 B) :: Forward Paper Trader systemd Unit
   [09] systemd/polymarket-exp316-shadow.service (Lines 314 - 339 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 340 - 10,023 | 570,005 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
-  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,024 - 16,952 | 341,824 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 16,953 - 17,865 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [13] src/polymarket_research/latency_trace.py (Lines 17,866 - 18,094 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,095 - 21,111 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,112 - 21,690 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 21,691 - 24,033 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,034 - 24,146 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 24,147 - 24,263 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [19] src/polymarket_research/redeem_settled_positions.py (Lines 24,264 - 24,563 | 12,505 B) :: CTF Settled Position Redemption CLI
-  [20] src/polymarket_research/setup_polymarket_account.py (Lines 24,564 - 24,829 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [21] audit_losing_trades.py (Lines 24,830 - 25,191 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [22] scripts/honest_purged_wfo_optimizer.py (Lines 25,192 - 26,971 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 26,972 - 27,554 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 27,555 - 28,315 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [25] src/polymarket_research/weather_metar_engine.py (Lines 28,316 - 29,663 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 29,664 - 30,199 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 30,200 - 30,923 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 30,924 - 31,760 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 31,761 - 31,996 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 31,997 - 33,003 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 33,004 - 33,978 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 33,979 - 41,406 | 396,441 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
-  [33] scripts/backtest_alpha_124.py (Lines 41,407 - 42,267 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [34] scripts/polymarket_daily_projections.py (Lines 42,268 - 43,183 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [35] scripts/alpha124_status.py (Lines 43,184 - 43,262 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [36] scripts/polymarket_scorecard_snapshot.py (Lines 43,263 - 43,412 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [37] tests/test_alpha_124_oracles.py (Lines 43,413 - 46,114 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 46,115 - 48,009 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [39] tests/test_polymarket_wfo_5fixes.py (Lines 48,010 - 51,294 | 160,008 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [40] tests/test_zero_trust_forensic_audit.py (Lines 51,295 - 52,038 | 32,659 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 340 - 10,041 | 571,302 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
+  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,042 - 16,970 | 341,824 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 16,971 - 17,883 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [13] src/polymarket_research/latency_trace.py (Lines 17,884 - 18,112 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,113 - 21,129 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,130 - 21,708 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 21,709 - 24,051 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,052 - 24,164 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 24,165 - 24,281 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [19] src/polymarket_research/redeem_settled_positions.py (Lines 24,282 - 24,581 | 12,505 B) :: CTF Settled Position Redemption CLI
+  [20] src/polymarket_research/setup_polymarket_account.py (Lines 24,582 - 24,847 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [21] audit_losing_trades.py (Lines 24,848 - 25,209 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [22] scripts/honest_purged_wfo_optimizer.py (Lines 25,210 - 26,989 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 26,990 - 27,572 | 25,644 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 27,573 - 28,333 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [25] src/polymarket_research/weather_metar_engine.py (Lines 28,334 - 29,681 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 29,682 - 30,217 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 30,218 - 30,941 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 30,942 - 31,778 | 33,923 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 31,779 - 32,014 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 32,015 - 33,021 | 40,965 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 33,022 - 33,996 | 44,000 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 33,997 - 41,424 | 396,441 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
+  [33] scripts/backtest_alpha_124.py (Lines 41,425 - 42,285 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [34] scripts/polymarket_daily_projections.py (Lines 42,286 - 43,201 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [35] scripts/alpha124_status.py (Lines 43,202 - 43,280 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [36] scripts/polymarket_scorecard_snapshot.py (Lines 43,281 - 43,430 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [37] tests/test_alpha_124_oracles.py (Lines 43,431 - 46,132 | 142,721 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 46,133 - 48,027 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [39] tests/test_polymarket_wfo_5fixes.py (Lines 48,028 - 51,312 | 160,008 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [40] tests/test_zero_trust_forensic_audit.py (Lines 51,313 - 52,056 | 32,659 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
 """
 
 from __future__ import annotations
@@ -4405,6 +4405,24 @@ class PolymarketLiveHarvester:
                 from_block=pos.get("resolution_block"),
                 tx_hash=tx_hash,
             )
+            if not receipts and win_shares >= 0.01 and not tx_hash:
+                # Redemptions submitted outside the harvester (Polymarket UI / pUSD adapter route) may emit
+                # PayoutRedemption with a redeemer other than this wallet, so the topic scan finds nothing.
+                # If the winning ERC-1155 balance is verifiably ZERO on-chain after resolution, the shares were
+                # redeemed: settle the receivable at $1.00/share instead of double-counting it in equity forever.
+                tok_r = str(pos.get("token_id") or "")
+                bal_r = None
+                if tok_r and hasattr(self.executor, "get_onchain_erc1155_balance"):
+                    try:
+                        bal_r = self.executor.get_onchain_erc1155_balance(tok_r)
+                    except Exception:
+                        bal_r = None
+                if bal_r is not None and float(bal_r) <= 0.0001:
+                    logger.info(
+                        f"[REDEMPTION EXTERNAL] {trade_id}: winning token balance is 0 on-chain -> settling "
+                        f"{win_shares:.2f} sh receivable as redeemed outside the harvester."
+                    )
+                    receipts = [{"transaction_hash": f"EXTERNAL_REDEMPTION_{trade_id}", "payout_usd": win_shares}]
             if receipts is None:
                 if (
                     win_shares < 0.01

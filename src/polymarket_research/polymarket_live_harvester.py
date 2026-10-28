@@ -4061,6 +4061,24 @@ class PolymarketLiveHarvester:
                 from_block=pos.get("resolution_block"),
                 tx_hash=tx_hash,
             )
+            if not receipts and win_shares >= 0.01 and not tx_hash:
+                # Redemptions submitted outside the harvester (Polymarket UI / pUSD adapter route) may emit
+                # PayoutRedemption with a redeemer other than this wallet, so the topic scan finds nothing.
+                # If the winning ERC-1155 balance is verifiably ZERO on-chain after resolution, the shares were
+                # redeemed: settle the receivable at $1.00/share instead of double-counting it in equity forever.
+                tok_r = str(pos.get("token_id") or "")
+                bal_r = None
+                if tok_r and hasattr(self.executor, "get_onchain_erc1155_balance"):
+                    try:
+                        bal_r = self.executor.get_onchain_erc1155_balance(tok_r)
+                    except Exception:
+                        bal_r = None
+                if bal_r is not None and float(bal_r) <= 0.0001:
+                    logger.info(
+                        f"[REDEMPTION EXTERNAL] {trade_id}: winning token balance is 0 on-chain -> settling "
+                        f"{win_shares:.2f} sh receivable as redeemed outside the harvester."
+                    )
+                    receipts = [{"transaction_hash": f"EXTERNAL_REDEMPTION_{trade_id}", "payout_usd": win_shares}]
             if receipts is None:
                 if (
                     win_shares < 0.01

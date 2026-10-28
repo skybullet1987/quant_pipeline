@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 15:03:36 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 16:02:52 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 53 | 906 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,494 | 570,005 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,495 - 10,165 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,166 - 11,915 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,916 - 12,279 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,280 - 13,901 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,902 - 13,971 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,972 - 14,054 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,055 - 14,244 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,245 - 14,415 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,416 - 15,571 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,505 | 571,302 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,506 - 10,176 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,177 - 11,926 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,927 - 12,290 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,291 - 13,912 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,913 - 13,982 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,983 - 14,065 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,066 - 14,255 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,256 - 14,426 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,427 - 15,582 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -2919,6 +2919,17 @@ class PolymarketLiveHarvester:
       tx = tx_hash or f"DRYRUN_REDEMPTION_{trade_id}"
     else:
       receipts = self.executor.find_redemption_payouts( str(pos.get("condition_id") or ""), from_block=pos.get("resolution_block"), tx_hash=tx_hash, )
+      if not receipts and win_shares >= 0.01 and not tx_hash:
+        tok_r = str(pos.get("token_id") or "")
+        bal_r = None
+        if tok_r and hasattr(self.executor, "get_onchain_erc1155_balance"):
+          try:
+            bal_r = self.executor.get_onchain_erc1155_balance(tok_r)
+          except Exception:
+            bal_r = None
+        if bal_r is not None and float(bal_r) <= 0.0001:
+          logger.info( f"[REDEMPTION EXTERNAL] {trade_id}: winning token balance is 0 on-chain -> settling " f"{win_shares:.2f} sh receivable as redeemed outside the harvester." )
+          receipts = [{"transaction_hash": f"EXTERNAL_REDEMPTION_{trade_id}", "payout_usd": win_shares}]
       if receipts is None:
         if ( win_shares < 0.01 and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) > 0.0 ):
           pos["exit_cash_estimated"] = False
