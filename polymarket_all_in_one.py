@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 13:02:47 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-28 13:53:15 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
-  - [config/polymarket_risk_config.json] (Lines 19 - 51 | 834 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
-  - [systemd/polymarket-live-harvester.service] (Lines 52 - 86 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 87 - 6,454 | 565,588 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,455 - 10,104 | 340,177 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,105 - 11,854 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,855 - 12,218 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,219 - 13,840 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,841 - 13,910 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,911 - 13,993 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 13,994 - 14,183 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,184 - 14,354 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,355 - 15,510 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [config/polymarket_risk_config.json] (Lines 19 - 53 | 906 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
+  - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,473 | 567,895 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,474 - 10,144 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,145 - 11,894 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,895 - 12,258 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,259 - 13,880 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 13,881 - 13,950 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 13,951 - 14,033 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,034 - 14,223 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,224 - 14,394 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,395 - 15,550 | 81,401 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -32,6 +32,8 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "seed_survival_floor_usd": 48.0,
   "seed_smooth_compounding": true,
   "enable_graduated_d1_box": true,
+  "enable_sol_d1_box": false,
+  "phase3a_maker_max_notional_usd": 22.0,
   "d1_box_max_budget_usd": 250.0,
   "d1_box_collateral_reserve_usd": 16.5,
   "d1_box_bankroll_pct": 0.25,
@@ -419,7 +421,7 @@ SETTLEMENT_RECEIVABLE_STATUSES = frozenset({"AWAITING_ONCHAIN_SETTLEMENT"})
 UNRESOLVED_RECONCILIATION_STATUSES = GLOBAL_HALT_STATUSES
 ENTRY_UNEXECUTED_PROOF_AGE_S = 60.0
 UNWIND_UNKNOWN_PROOF_AGE_S = 30.0
-REDEMPTION_POLL_INTERVAL_S = 60.0
+REDEMPTION_POLL_INTERVAL_S = 15.0
 def position_requires_global_halt(pos: Dict[str, Any]) -> bool:
   return ( pos.get("exit_order_status") in PIPELINE_GLOBAL_HALT_STATUSES or pos.get("status") in PIPELINE_GLOBAL_HALT_STATUSES )
 def position_may_post_new_maker_exit(pos: Dict[str, Any]) -> bool:
@@ -968,7 +970,8 @@ class PolymarketLiveHarvester:
     real_live = ( not self.dry_run and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2") and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {}) and "execute_snipe_order" not in getattr(self.executor, "__dict__", {}) )
     if not (explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback", True)))):
       return None
-    if tte < 75.0 or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
+    min_tte_p3a = 85.0 if real_live else 75.0
+    if tte < min_tte_p3a or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
       return None
     maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr( self.executor, "post_maker_entry_order", None )
     if maker_entry_fn is None:
@@ -985,7 +988,7 @@ class PolymarketLiveHarvester:
       return None
     if f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6:
       return None
-    rescue_notional = min(float(effective_notional), float(RISK_CONFIG.get("phase3a_maker_max_notional_usd", 16.50)))
+    rescue_notional = min(float(effective_notional), float(RISK_CONFIG.get("phase3a_maker_max_notional_usd", 22.00)))
     if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
       return None
     t0_m = time.perf_counter()
@@ -1021,8 +1024,8 @@ class PolymarketLiveHarvester:
         cur_sp = await asyncio.to_thread(ref_fn, asset_str)
         if cur_sp and float(cur_sp) > 0.0:
           cur_disp = (float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))
-          if cur_disp < 0.50 * init_disp:
-            logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: spot cushion decayed >50%; canceling OID={maker_oid} early.")
+          if cur_disp < 0.55 * init_disp:
+            logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: spot cushion decayed >45%; canceling OID={maker_oid} early.")
             break
     cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
     summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
@@ -1574,7 +1577,7 @@ class PolymarketLiveHarvester:
           notionals.append(cand_n)
     def _worker():
       signed = 0
-      dense_shares = list(range(8, 33))
+      dense_shares = list(range(6, 56))
       for t in tokens:
         try:
           signed += int(self.executor.prewarm_order_ladder(t, 12.0, exact_shares=dense_shares) or 0)
@@ -1703,7 +1706,7 @@ class PolymarketLiveHarvester:
       return 0.99
     return min(0.95, round(price + self.profit_theta, 2))
   def _use_two_tranche_maker_exit(self, sleeve: Optional[str]) -> bool:
-    if sleeve and "BOX" in str(sleeve).upper():
+    if sleeve and ("BOX" in str(sleeve).upper() or sleeve == "SLEEVE_4_BOUNDARY_SNIPE"):
       return False
     if not getattr(self, "hold_to_maturity", False):
       return True
@@ -2165,8 +2168,9 @@ class PolymarketLiveHarvester:
       return False
     applied_r = float(pos.get("fee_rate_applied") or 0.07)
     applied_e = float(pos.get("fee_exponent_applied") or 1.0)
-    fee = self._estimated_taker_fee(matched, float(cash), fee_rate=applied_r, fee_exponent=applied_e) if taker else 0.0
-    if taker:
+    charge_est_fee = bool(taker and not summary.get("cash_from_reported_taking"))
+    fee = self._estimated_taker_fee(matched, float(cash), fee_rate=applied_r, fee_exponent=applied_e) if charge_est_fee else 0.0
+    if charge_est_fee:
       pos["exit_fee_estimated"] = True
     self.record_fill_and_update_position(pos, oid, matched, float(cash), fee, cash_is_estimated=is_est)
     ids = set(pos.get("exit_trade_ids") or []) | set(summary.get("trade_ids") or [])
@@ -3336,7 +3340,10 @@ class PolymarketLiveHarvester:
         if isinstance(cached_g, tuple) and len(cached_g) == 2 and cached_g[0] == ck:
           is_grad = bool(cached_g[1])
         else:
-          is_grad = _json_loads(sp.read_bytes()).get("ready_for_live_graduation") is True
+          st_doc = _json_loads(sp.read_bytes())
+          pf_ok = float(st_doc.get("profit_factor", 2.0) or 2.0) >= 1.80 if "profit_factor" in st_doc else True
+          wr_ok = float(st_doc.get("win_rate_pct", 90.0) or 90.0) >= 84.0 if "win_rate_pct" in st_doc else True
+          is_grad = bool(st_doc.get("ready_for_live_graduation") is True and pf_ok and wr_ok)
           grad_cache[sym] = (ck, is_grad)
         if is_grad:
           assets.add(sym)
@@ -3361,7 +3368,7 @@ class PolymarketLiveHarvester:
     box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
     sleeve_src = str(candidate_box.get("sleeve_source") or "D1_SAME_ORACLE_DOMINANCE_BOX").strip()
     cand_asset = str(candidate_box.get("asset") or "").strip().upper()
-    core_d1 = {"BTC", "ETH", "SOL", "XRP"}
+    core_d1 = {"BTC", "ETH", "XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box", False) else set())
     exp_d1 = {"BNB", "DOGE", "HYPE"}
     mid_a_chk = str(candidate_box.get("leg_a_market_id") or "")
     mid_b_chk = str(candidate_box.get("leg_b_market_id") or "")
@@ -3370,6 +3377,8 @@ class PolymarketLiveHarvester:
     if box_type == "DOMINANCE":
       if cand_asset and cand_asset not in (core_d1 | exp_d1):
         return {"executed": False, "reason": f"UNSUPPORTED_D1_ASSET:{cand_asset}"}
+      if not self.dry_run and cand_asset == "XRP" and not candidate_box.get("is_quiet_book"):
+        return {"executed": False, "reason": "XRP_REQUIRES_QUIET_BOOK"}
       corr_bps = float(candidate_box.get("corridor_bps") or 0.0)
       min_corr = 5.0 if cand_asset in exp_d1 else 3.0
       if corr_bps < min_corr:
@@ -3381,7 +3390,7 @@ class PolymarketLiveHarvester:
         k_a_chk = k_b_chk = 0.0
       if ( str(candidate_box.get("leg_a_side") or "").upper() != "UP" or str(candidate_box.get("leg_b_side") or "").upper() != "DOWN" or not (0.0 < k_a_chk < k_b_chk) or not mid_a_chk or not mid_b_chk or mid_a_chk == mid_b_chk or not tok_a or not tok_b or tok_a == tok_b ):
         return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
-    elif box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG"}:
+    elif box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG", "NBA_DOMINANCE"}:
       same_mkt_ok = (mid_a_chk == mid_b_chk) if box_type == "COMPLETE_SET" else (mid_a_chk != mid_b_chk)
       if not tok_a or not tok_b or tok_a == tok_b or not mid_a_chk or not mid_b_chk or not same_mkt_ok:
         return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
@@ -3494,9 +3503,9 @@ class PolymarketLiveHarvester:
             collat = None
         inflight_intent_usd = sum( float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict) )
         collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
-        d1_pct = ( 0.38 if collat_f >= min(95.0, float(RISK_CONFIG.get("scale_up_equity_threshold", 110.0))) else float(RISK_CONFIG.get("d1_box_bankroll_pct", 0.25)) )
+        d1_pct = ( 0.32 if collat_f >= 160.0 else float(RISK_CONFIG.get("d1_box_bankroll_pct", 0.25)) )
         rem_daily = max(0.0, float(self.risk_controller.max_daily_loss_usd) - float(self.risk_controller.daily_realized_loss))
-        asset_cap = {"BTC": 150.0, "ETH": 75.0, "SOL": 22.0, "XRP": 22.0, "BNB": 22.0, "HYPE": 15.0, "DOGE": 15.0}.get(cand_asset, 25.0)
+        asset_cap = {"BTC": 150.0, "ETH": 75.0, "SOL": 16.5, "XRP": 16.5, "BNB": 22.0, "HYPE": 15.0, "DOGE": 15.0}.get(cand_asset, 25.0)
         cur_open_exp = sum( float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) ) + inflight_intent_usd
         port_headroom = max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_open_exp)
         target_budget = min( float(RISK_CONFIG.get("d1_box_max_budget_usd", 250.0)), asset_cap, max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))), collat_f * d1_pct, rem_daily * 10.0, port_headroom, )
@@ -3588,6 +3597,8 @@ class PolymarketLiveHarvester:
             bb = max(float(x["price"] if isinstance(x, dict) else x[0]) for x in bids_d)
             return bb > 0.0 and (ba - bb) <= 0.041
           fresh_quiet = bool(candidate_box.get("is_quiet_book") and _bk_quiet(bk_a) and _bk_quiet(bk_b))
+          if cand_asset == "XRP" and not fresh_quiet:
+            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:XRP_NOT_QUIET"}
           zero_fee_box = max(fr_a, fr_b) == 0.0
           live_walk_cap = (0.990 if fresh_quiet else 0.982) if zero_fee_box else (0.985 if fresh_quiet else 0.975)
           w_fresh = walk_equal_shares_dominance_box( bk_a.get("asks") or [], bk_b.get("asks") or [], target_budget_usd=target_budget, fee_rate_a=fr_a, fee_rate_b=fr_b, fee_exponent_a=fe_a, fee_exponent_b=fe_b, max_box_cost_net=live_walk_cap, min_shares=5, min_box_notional_usd=4.85, )
@@ -3615,8 +3626,8 @@ class PolymarketLiveHarvester:
       if fresh_box_net < 0.900:
         return {"executed": False, "reason": f"ANTI_BOX_COST_FLOOR_REJECT:{fresh_box_net:.4f}"}
       is_4h_cand = ( str(candidate_box.get("leg_a_horizon") or "").lower() == "4h" or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h" )
-      is_zero_itode_box = box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_CROSS"}
-      use_parallel_d1 = bool( ( is_zero_itode_box or ( (not is_4h_cand) and (not cand_asset or cand_asset in {"BTC", "ETH", "SOL"}) and fresh_box_net <= 0.975 ) ) and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.30) and ( avail_a is None or avail_b is None or min(float(avail_a), float(avail_b)) >= (1.5 if is_zero_itode_box else 2.0) * sh_req ) )
+      is_zero_itode_box = box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG", "NEGRISK_CROSS", "NBA_DOMINANCE"}
+      use_parallel_d1 = bool( ( is_zero_itode_box or ( (not is_4h_cand) and (not cand_asset or cand_asset in {"BTC", "ETH"}) and fresh_box_net <= 0.975 ) ) and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.30) and ( avail_a is None or avail_b is None or min(float(avail_a), float(avail_b)) >= (1.5 if is_zero_itode_box else 2.0) * sh_req ) )
       box_id = str(candidate_box.get("box_id") or f"D1_LIVE_{int(now_ts)}")
       st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
       if dedupe_k and is_live_ctf_box:
@@ -4708,7 +4719,7 @@ class PolymarketLiveHarvester:
     effective_notional = min(float(effective_notional), notional_cap)
     pre_cond_bal: Optional[float] = 0.0
     if not self.dry_run and token_id:
-      has_prior_activity = ( any(p.get("token_id") == token_id for p in self.active_positions.values()) or any(i.get("token_id") == token_id for i in self.pending_entry_intents.values()) or any(p.get("token_id") == token_id for p in getattr(self, "closed_positions", [])[-20:]) )
+      has_prior_activity = ( any(p.get("token_id") == token_id for p in self.active_positions.values()) or any(i.get("token_id") == token_id for i in self.pending_entry_intents.values()) or any( p.get("token_id") == token_id and (float(p.get("remaining_shares", 0.0) or 0.0) > 0.01 or p.get("status") not in ("FILLED", "SETTLED")) for p in getattr(self, "closed_positions", [])[-20:] ) )
       if has_prior_activity:
         _inv_t0 = time.perf_counter()
         try:
@@ -4797,23 +4808,26 @@ class PolymarketLiveHarvester:
             if "max_book_buffer" not in str(_te):
               raise
             res = await self.executor.execute_snipe_order_async( **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=fresh_fallback_book, )
-      if ( ( res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or z_strike >= 1.25) ):
+      if ( ( res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or (z_strike >= 0.85 and abs(dist_pct) >= 0.06)) ):
         rescue_res = await self._attempt_live_phase3a_maker_rescue( trade_id=trade_id, token_id=token_id, target_token=target_token, asset_str=asset_str, effective_notional=effective_notional, first_ask=first_ask, first_bid=first_bid, min_allowed_price=min_allowed_price, max_allowed_price=max_allowed_price, open_spot=open_spot, entry_spot_ref=entry_spot_ref, spot_denom=spot_denom, tte=tte, pre_cond_bal=pre_cond_bal, book_snapshot=book_snapshot, )
         if rescue_res is not None:
           res = rescue_res
     finally:
+      _det_err = ( (str(res.error or "").lower() + str((res.details or {}).get("raw_exception", "")).lower()) if res is not None else "" )
+      if res is not None and ( res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") or "status_code=400" in _det_err or "status=400" in _det_err or "invalid amounts" in _det_err or "supports a max accuracy" in _det_err ):
+        self.pending_entry_intents.pop(trade_id, None)
       await asyncio.to_thread(self.save_state)
     if res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection"):
-      self.pending_entry_intents.pop(trade_id, None)
-      await asyncio.to_thread(self.save_state)
+      if self.pending_entry_intents.pop(trade_id, None) is not None:
+        await asyncio.to_thread(self.save_state)
       if not self.dry_run:
         self._register_shadow_phase3a_maker_in( shock, target_token, first_ask, first_bid, max_allowed_price, raw_asks, f"CLOB_400_OR_FAK_MISS:{res.mode}", bool(is_subhourly), float(dist_pct), float(tte), )
       logger.info( f"[CLOB REJECTION / FAK ZERO MATCH] {trade_id} rejected deterministically by CLOB (0 shares filled, error={res.error}). " f"Released entry intent immediately without halting." )
       return
     err_str = str(res.error or "").lower() + str((res.details or {}).get("raw_exception", "")).lower()
     if "status_code=400" in err_str or "status=400" in err_str or "invalid amounts" in err_str or "supports a max accuracy" in err_str:
-      self.pending_entry_intents.pop(trade_id, None)
-      await asyncio.to_thread(self.save_state)
+      if self.pending_entry_intents.pop(trade_id, None) is not None:
+        await asyncio.to_thread(self.save_state)
       logger.warning(f"[HTTP 400 REJECTION OVERRIDE] {trade_id} rejected with HTTP 400 ({res.error}). Not registering in active_positions.")
       return
     if (res.details or {}).get("outcome_unknown"):
@@ -5234,6 +5248,10 @@ class PolymarketLiveHarvester:
       pos["resolution_block"] = max(0, int(head) - 50) if isinstance(head, int) else None
       self.save_state()
       logger.info( f"[RESOLVED - RECEIVABLE] {tid}: {rem_shares:.2f} winning shares held. Expected ${rem_shares:.2f} is a " "receivable, NOT realized cash, until a verified on-chain redemption receipt." )
+      try:
+        await asyncio.to_thread(self.poll_onchain_redemptions, True)
+      except Exception as exc_red_imm:
+        logger.debug(f"[AUTO-REDEEMER] Immediate post-resolution redemption poll notice: {exc_red_imm}")
       return
     payout = rem_shares * 1.0 if (won and rem_shares >= 0.01) else 0.0
     if payout > 0.0:
@@ -6241,31 +6259,32 @@ class PolymarketLiveHarvester:
           while self._fast_trigger_lines:
             fast_lines.append(self._fast_trigger_lines.popleft())
         chunk = b""
-        try:
-          chunk = trigger_fp.read()
-        except Exception as e:
-          logger.debug(f"Trigger stream read notice: {e}")
-          chunk = b""
-        if not chunk and TRIGGER_FILE.exists():
-          try:
-            curr_sz = TRIGGER_FILE.stat().st_size
-            if curr_sz < self.last_trigger_file_pos:
-              trigger_fp.seek(0, 2)
-              self.last_trigger_file_pos = trigger_fp.tell()
-              chunk = b""
-          except Exception:
-            pass
         disk_lines = []
-        if chunk:
-          complete_end = chunk.rfind(b"\n") + 1
-          if complete_end:
-            disk_lines = chunk[:complete_end].decode("utf-8", errors="ignore").splitlines()
-            self.last_trigger_file_pos += complete_end
-            if complete_end < len(chunk):
+        if not fast_lines:
+          try:
+            chunk = trigger_fp.read()
+          except Exception as e:
+            logger.debug(f"Trigger stream read notice: {e}")
+            chunk = b""
+          if not chunk and TRIGGER_FILE.exists():
+            try:
+              curr_sz = TRIGGER_FILE.stat().st_size
+              if curr_sz < self.last_trigger_file_pos:
+                trigger_fp.seek(0, 2)
+                self.last_trigger_file_pos = trigger_fp.tell()
+                chunk = b""
+            except Exception:
+              pass
+          if chunk:
+            complete_end = chunk.rfind(b"\n") + 1
+            if complete_end:
+              disk_lines = chunk[:complete_end].decode("utf-8", errors="ignore").splitlines()
+              self.last_trigger_file_pos += complete_end
+              if complete_end < len(chunk):
+                trigger_fp.seek(self.last_trigger_file_pos)
+            else:
+              disk_lines = []
               trigger_fp.seek(self.last_trigger_file_pos)
-          else:
-            disk_lines = []
-            trigger_fp.seek(self.last_trigger_file_pos)
         new_lines = fast_lines + disk_lines
         if new_lines:
             batch_candidates = []
@@ -6296,7 +6315,7 @@ class PolymarketLiveHarvester:
                 feats = s_item.get("pre_shock_features_t0", {})
                 side_data = feats.get(tgt, {}) if isinstance(feats, dict) else {}
                 dist_raw = float(s_item.get("candle_distance_pct", 0.0) or 0.0)
-                if (tgt == "UP" and dist_raw < 0.05) or (tgt == "DOWN" and dist_raw > -0.05):
+                if (tgt == "UP" and dist_raw < 0.04) or (tgt == "DOWN" and dist_raw > -0.04):
                   return 0.0
                 dist = abs(dist_raw)
                 z_sc = abs(float(s_item.get("z_val", s_item.get("z_score", s_item.get("expected_prob_shift", dist * 0.5)))))
@@ -6305,7 +6324,7 @@ class PolymarketLiveHarvester:
                 _is_15m = ("pm-" in _t_low or "am-" in _t_low or "15m" in str(s_item.get("timeframe", "")).lower())
                 _is_bnd = s_item.get("shock_source") == "BOUNDARY_LOCK" or s_item.get("regime_override") == "REGIME_D_BOUNDARY_LOCK"
                 _is_slv3 = s_item.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" or s_item.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE"
-                _ceil = 0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling, 0.82) if _is_15m else self.max_price_ceiling))
+                _ceil = 0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling, 0.85) if _is_15m else self.max_price_ceiling))
                 if ask_est < self.min_price_floor or ask_est > _ceil:
                   return 0.0
                 return z_sc / max(ask_est, 0.01)
@@ -6499,7 +6518,12 @@ class _ThreadLocalClobHttpClient:
     self._bg_pool: "queue.LifoQueue[Tuple[httpx.Client, float]]" = queue.LifoQueue(maxsize=max(8, max_pool_size))
     self._warm_lock = threading.Lock()
   def _make_client(self) -> httpx.Client:
-    return httpx.Client( http2=False, timeout=self._timeout, limits=httpx.Limits( max_keepalive_connections=8, max_connections=16, keepalive_expiry=45.0, ), )
+    limits = httpx.Limits( max_keepalive_connections=8, max_connections=16, keepalive_expiry=45.0, )
+    try:
+      transport = httpx.HTTPTransport( http2=False, limits=limits, socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)], )
+      return httpx.Client(http2=False, timeout=self._timeout, transport=transport)
+    except Exception:
+      return httpx.Client(http2=False, timeout=self._timeout, limits=limits)
   def _client(self, reset: bool = False) -> httpx.Client:
     cli = getattr(self._local, "client", None)
     if reset and cli is not None:
@@ -7473,7 +7497,12 @@ class PolymarketLiveExecutor:
     except RuntimeError:
       cur_loop = None
     if ( self._async_client is None or self._async_client.is_closed or (cur_loop is not None and getattr(self, "_async_client_loop", None) is not cur_loop) ):
-      self._async_client = httpx.AsyncClient( timeout=3.0, limits=httpx.Limits(max_keepalive_connections=10, max_connections=20) )
+      limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+      try:
+        transport = httpx.AsyncHTTPTransport( limits=limits, socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)], )
+        self._async_client = httpx.AsyncClient(timeout=3.0, transport=transport)
+      except Exception:
+        self._async_client = httpx.AsyncClient(timeout=3.0, limits=limits)
       self._async_client_loop = cur_loop
     return self._async_client
   async def close_async(self):
@@ -7905,7 +7934,7 @@ class PolymarketLiveExecutor:
     else:
       terminal = False
       estimated = True
-    return { "order_id": str(order_id), "status": status, "resting": not no_longer_resting, "is_matched": matched > 0.0, "is_settled": is_settled, "has_reverted_fills": has_reverted_fills, "terminal": terminal, "original_size": orig_size, "matched": matched, "cash": cash, "cash_is_estimated": estimated, "limit_price": limit_px, "trade_ids": trade_ids, "transactions_hashes": tx_hashes, "fill_ids": fill_ids, "raw": info, }
+    return { "order_id": str(order_id), "status": status, "resting": not no_longer_resting, "is_matched": matched > 0.0, "is_settled": is_settled, "has_reverted_fills": has_reverted_fills, "terminal": terminal, "original_size": orig_size, "matched": matched, "cash": cash, "cash_is_estimated": estimated, "cash_from_reported_taking": cash_from_reported_taking, "limit_price": limit_px, "trade_ids": trade_ids, "transactions_hashes": tx_hashes, "fill_ids": fill_ids, "raw": info, }
   CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
   NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
   NEG_RISK_WRAPPED_COLLATERAL = "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
@@ -9052,8 +9081,12 @@ class PolymarketLiveExecutor:
       eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
       create_opts = ( PartialCreateOrderOptions(tick_size=str(tick_sz), neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None )
       order_args = OrderArgsV2(price=quantized_price, size=shares_int, side=side, token_id=token_id)
-      with _UrgentSignPriority():
+      has_lockfree_fast_signer = ( getattr(self.client, "_fast_v2_signer", None) is not None and "create_order" not in getattr(self.client, "__dict__", {}) )
+      if has_lockfree_fast_signer:
         signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
+      else:
+        with _UrgentSignPriority():
+          signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
       order_submitted = True
       resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
       has_err = resp.get("errorMsg") or resp.get("error")
@@ -9381,8 +9414,12 @@ class PolymarketLiveExecutor:
       eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
       create_opts = ( PartialCreateOrderOptions(tick_size=str(tick_sz), neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None )
       order_args = OrderArgsV2( price=quantized_price, size=quantized_size, side=side, token_id=token_id, )
-      with _UrgentSignPriority():
+      has_lockfree_fast_signer = ( getattr(self.client, "_fast_v2_signer", None) is not None and "create_order" not in getattr(self.client, "__dict__", {}) )
+      if has_lockfree_fast_signer:
         signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
+      else:
+        with _UrgentSignPriority():
+          signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
       order_submitted = True
       resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
       has_err = resp.get("errorMsg") or resp.get("error")
@@ -9408,8 +9445,11 @@ class PolymarketLiveExecutor:
               if improved_px > max(quantized_price, best_b) + 1e-9:
                 logger.info(f"[POST-ONLY PRICE IMPROVEMENT] Best bid ${best_b:.4f} >= target ${quantized_price:.4f}. Repricing maker sell to ${improved_px:.4f}!")
                 order_args_2 = OrderArgsV2(price=improved_px, size=quantized_size, side=side, token_id=token_id)
-                with _UrgentSignPriority():
+                if has_lockfree_fast_signer:
                   signed_2 = _safe_create_order(self.client.create_order, order_args_2, create_opts)
+                else:
+                  with _UrgentSignPriority():
+                    signed_2 = _safe_create_order(self.client.create_order, order_args_2, create_opts)
           except Exception as repr_err:
             logger.debug(f"Post-only price improvement book/sign skipped: {repr_err}")
           if signed_2 is not None:

@@ -98,6 +98,7 @@ class PolymarketUserWsCache:
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._fill_event = threading.Event()
+        self._async_waiters: List[Tuple[asyncio.AbstractEventLoop, asyncio.Event]] = []
         self._thread: Optional[threading.Thread] = None
 
         self._connected = False
@@ -128,6 +129,20 @@ class PolymarketUserWsCache:
     def stop(self) -> None:
         self._stop_event.set()
         self._fill_event.set()
+        self._notify_async_waiters()
+
+    def _notify_async_waiters(self) -> None:
+        with self._lock:
+            if not self._async_waiters:
+                return
+            waiters = list(self._async_waiters)
+            self._async_waiters.clear()
+        for loop, ev in waiters:
+            try:
+                if not loop.is_closed():
+                    loop.call_soon_threadsafe(ev.set)
+            except Exception:
+                pass
 
     def is_healthy(self, max_silence_sec: float = 25.0) -> bool:
         with self._lock:
@@ -205,17 +220,34 @@ class PolymarketUserWsCache:
             return last_ts >= (float(since_unix_ts) - 0.5)
 
     async def wait_for_fill_or_timeout(self, timeout_sec: float, prev_seq: Optional[int] = None) -> int:
-        """Waits asynchronously for the next user WS fill/order wakeup or `timeout_sec`."""
-        deadline = time.monotonic() + max(0.01, float(timeout_sec))
+        """Waits asynchronously (<0.1ms event-driven wakeup) for the next user WS fill/order wakeup or `timeout_sec`."""
+        deadline = time.monotonic() + max(0.001, float(timeout_sec))
         base_seq = self.fill_sequence if prev_seq is None else int(prev_seq)
+        loop = asyncio.get_running_loop()
         while True:
-            cur_seq = self.fill_sequence
-            if cur_seq != base_seq:
-                return cur_seq
+            ev = asyncio.Event()
+            with self._lock:
+                cur_seq = self._fill_seq
+                if cur_seq != base_seq or self._stop_event.is_set():
+                    return cur_seq
+                self._async_waiters.append((loop, ev))
             rem = deadline - time.monotonic()
             if rem <= 0.0:
-                return cur_seq
-            await asyncio.sleep(min(0.025, rem))
+                with self._lock:
+                    try:
+                        self._async_waiters.remove((loop, ev))
+                    except ValueError:
+                        pass
+                    return self._fill_seq
+            try:
+                await asyncio.wait_for(ev.wait(), timeout=rem)
+            except asyncio.TimeoutError:
+                with self._lock:
+                    try:
+                        self._async_waiters.remove((loop, ev))
+                    except ValueError:
+                        pass
+                    return self._fill_seq
 
     def process_ws_payload(self, raw_payload: Any, now_unix: Optional[float] = None) -> int:
         """Parses a raw or decoded WS message (public for deterministic unit testing)."""
@@ -371,6 +403,8 @@ class PolymarketUserWsCache:
                     if tr_status in ("MATCHED", "MINED", "CONFIRMED", "FAILED", "RETRYING"):
                         fire_callbacks.append(dict(item))
 
+        if events_applied > 0:
+            self._notify_async_waiters()
         if self._on_fill_callback is not None:
             for ev in fire_callbacks:
                 try:

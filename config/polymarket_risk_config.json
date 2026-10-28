@@ -11,6 +11,8 @@
   "seed_survival_floor_usd": 48.0,
   "seed_smooth_compounding": true,
   "enable_graduated_d1_box": true,
+  "enable_sol_d1_box": false,
+  "phase3a_maker_max_notional_usd": 22.0,
   "d1_box_max_budget_usd": 250.0,
   "d1_box_collateral_reserve_usd": 16.5,
   "d1_box_bankroll_pct": 0.25,

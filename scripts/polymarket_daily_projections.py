@@ -55,6 +55,9 @@ QUARANTINED_SLEEVES = frozenset({
     "M2_STRIKE_CONVERGENCE",
     "P1_PREOPEN_MAKER_STRADDLE",
     "B1_CONVEX_TAIL_YES",
+    "S2_EXACT_TWAP_LOCK",
+    "ZERO_FEE_MAKER_ANCHOR_BOX",
+    "CTF_OVERROUND_MINT_SELL",
     "SLEEVE_XRP_V392_SHADOW",
 })
 
@@ -575,8 +578,8 @@ def simulate_single_day_net_pnl(
     pnl_v39 = min(cap_v39, t_v39 * eff_fills_v39 * ev_v39)
     breakdown["wfo_v395_directional_live"] = round(pnl_v39, 2)
 
-    # 2. Wave 1 (Live Now): D1 Same-Oracle Dominance Boxes (15m/5m 28/28 + QuietBook 13/13 + 4h Corridors, 38% sizing >= $95)
-    d1_pct = 0.38 if equity_start >= 95.0 else 0.25
+    # 2. Wave 1 (Live Now): D1 Same-Oracle Dominance Boxes (15m/5m 28/28 + QuietBook 13/13 + 4h Corridors, 25% sizing <$160 / 32% >=$160)
+    d1_pct = 0.32 if equity_start >= 160.0 else 0.25
     if day_idx < 4 and not has_slot2:
         t_d1 = min(42.0, max(15.0, fast_pool * d1_pct))
         live_boxes_per_day = 2.8 * fast_concurrency_disc * (1.18 if is_low_lat else 1.0)

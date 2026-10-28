@@ -84,15 +84,20 @@ class _ThreadLocalClobHttpClient:
         self._warm_lock = threading.Lock()
 
     def _make_client(self) -> httpx.Client:
-        return httpx.Client(
-            http2=False,
-            timeout=self._timeout,
-            limits=httpx.Limits(
-                max_keepalive_connections=8,
-                max_connections=16,
-                keepalive_expiry=45.0,
-            ),
+        limits = httpx.Limits(
+            max_keepalive_connections=8,
+            max_connections=16,
+            keepalive_expiry=45.0,
         )
+        try:
+            transport = httpx.HTTPTransport(
+                http2=False,
+                limits=limits,
+                socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
+            )
+            return httpx.Client(http2=False, timeout=self._timeout, transport=transport)
+        except Exception:
+            return httpx.Client(http2=False, timeout=self._timeout, limits=limits)
 
     def _client(self, reset: bool = False) -> httpx.Client:
         cli = getattr(self._local, "client", None)
@@ -1648,10 +1653,15 @@ class PolymarketLiveExecutor:
             or self._async_client.is_closed
             or (cur_loop is not None and getattr(self, "_async_client_loop", None) is not cur_loop)
         ):
-            self._async_client = httpx.AsyncClient(
-                timeout=3.0,
-                limits=httpx.Limits(max_keepalive_connections=10, max_connections=20)
-            )
+            limits = httpx.Limits(max_keepalive_connections=10, max_connections=20)
+            try:
+                transport = httpx.AsyncHTTPTransport(
+                    limits=limits,
+                    socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
+                )
+                self._async_client = httpx.AsyncClient(timeout=3.0, transport=transport)
+            except Exception:
+                self._async_client = httpx.AsyncClient(timeout=3.0, limits=limits)
             self._async_client_loop = cur_loop
         return self._async_client
 
@@ -2271,6 +2281,7 @@ class PolymarketLiveExecutor:
             "matched": matched,
             "cash": cash,
             "cash_is_estimated": estimated,
+            "cash_from_reported_taking": cash_from_reported_taking,
             "limit_price": limit_px,
             "trade_ids": trade_ids,
             "transactions_hashes": tx_hashes,
@@ -5108,8 +5119,15 @@ class PolymarketLiveExecutor:
                 else None
             )
             order_args = OrderArgsV2(price=quantized_price, size=shares_int, side=side, token_id=token_id)
-            with _UrgentSignPriority():
+            has_lockfree_fast_signer = (
+                getattr(self.client, "_fast_v2_signer", None) is not None
+                and "create_order" not in getattr(self.client, "__dict__", {})
+            )
+            if has_lockfree_fast_signer:
                 signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
+            else:
+                with _UrgentSignPriority():
+                    signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
             order_submitted = True
             resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
             has_err = resp.get("errorMsg") or resp.get("error")
@@ -5773,8 +5791,15 @@ class PolymarketLiveExecutor:
                 side=side,
                 token_id=token_id,
             )
-            with _UrgentSignPriority():
+            has_lockfree_fast_signer = (
+                getattr(self.client, "_fast_v2_signer", None) is not None
+                and "create_order" not in getattr(self.client, "__dict__", {})
+            )
+            if has_lockfree_fast_signer:
                 signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
+            else:
+                with _UrgentSignPriority():
+                    signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
             # Enforce post_only=True and defer_exec=True to guarantee non-blocking maker status
             order_submitted = True
             resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
@@ -5819,8 +5844,11 @@ class PolymarketLiveExecutor:
                             if improved_px > max(quantized_price, best_b) + 1e-9:
                                 logger.info(f"[POST-ONLY PRICE IMPROVEMENT] Best bid ${best_b:.4f} >= target ${quantized_price:.4f}. Repricing maker sell to ${improved_px:.4f}!")
                                 order_args_2 = OrderArgsV2(price=improved_px, size=quantized_size, side=side, token_id=token_id)
-                                with _UrgentSignPriority():
+                                if has_lockfree_fast_signer:
                                     signed_2 = _safe_create_order(self.client.create_order, order_args_2, create_opts)
+                                else:
+                                    with _UrgentSignPriority():
+                                        signed_2 = _safe_create_order(self.client.create_order, order_args_2, create_opts)
                     except Exception as repr_err:
                         logger.debug(f"Post-only price improvement book/sign skipped: {repr_err}")
                     if signed_2 is not None:

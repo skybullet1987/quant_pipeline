@@ -1174,22 +1174,35 @@ class ProductionApexExecutor:
             f"[PARITY VIOLATION] Selected bar start {selected_bar_start_ms} + 4H != decision_ts {decision_ts_ms}"
         )
 
-        # Compute Canonical Wilder's ATR(14)
+        # Compute Canonical Wilder's ATR(14) (preserve prior open-position ATRs across partial symbol snapshots)
         atr_mat = compute_canonical_wilder_atr(ffill_high, ffill_low, ffill_close, window=14)
         if atr_mat.shape[0] > 0:
-            self.latest_atr_map = {
-                symbols[i]: float(atr_mat[-1, i])
-                for i in range(len(symbols))
-                if np.isfinite(atr_mat[-1, i]) and atr_mat[-1, i] > 0
-            }
+            merged_atr = dict(getattr(self, "latest_atr_map", None) or {})
+            for i in range(len(symbols)):
+                if np.isfinite(atr_mat[-1, i]) and atr_mat[-1, i] > 0:
+                    merged_atr[symbols[i]] = float(atr_mat[-1, i])
+            self.latest_atr_map = merged_atr
 
-        # Extract PIT funding rates (smoothed 24H EMA over real historical 4H funding lake when available)
+        # Extract PIT funding rates (smoothed 24H EMA over real historical 4H funding lake + live 4H ctx lake fallback)
         funding_rates = np.array([live_funding_map.get(s, 0.0) for s in symbols], dtype=float)
         real_fund_lake = PIPELINE_ROOT / "data" / "lake" / "hl_real_funding_4h.parquet"
-        if real_fund_lake.exists():
+        ctx_fund_lake = PIPELINE_ROOT / "data" / "lake" / "raw_asset_ctx_4h.parquet"
+        if real_fund_lake.exists() or ctx_fund_lake.exists():
             try:
-                fdf = pd.read_parquet(real_fund_lake, columns=["symbol", "timestamp_ms", "funding_rate_mean"])
-                fdf = fdf[(fdf["timestamp_ms"] >= start_ms) & (fdf["timestamp_ms"] <= selected_bar_start_ms) & (fdf["symbol"].isin(symbols))]
+                frames_f = []
+                max_rf_ts = 0
+                if real_fund_lake.exists():
+                    fdf_r = pd.read_parquet(real_fund_lake, columns=["symbol", "timestamp_ms", "funding_rate_mean"])
+                    fdf_r = fdf_r[(fdf_r["timestamp_ms"] >= start_ms) & (fdf_r["timestamp_ms"] <= selected_bar_start_ms) & (fdf_r["symbol"].isin(symbols))]
+                    if not fdf_r.empty:
+                        max_rf_ts = int(fdf_r["timestamp_ms"].max())
+                        frames_f.append(fdf_r)
+                if ctx_fund_lake.exists() and (max_rf_ts < selected_bar_start_ms):
+                    cdf = pd.read_parquet(ctx_fund_lake, columns=["symbol", "timestamp_ms", "funding_rate"])
+                    cdf = cdf[(cdf["timestamp_ms"] > max(start_ms - 1, max_rf_ts)) & (cdf["timestamp_ms"] <= selected_bar_start_ms) & (cdf["symbol"].isin(symbols))]
+                    if not cdf.empty:
+                        frames_f.append(cdf.rename(columns={"funding_rate": "funding_rate_mean"}))
+                fdf = pd.concat(frames_f, ignore_index=True) if frames_f else pd.DataFrame()
                 if not fdf.empty:
                     fpiv = fdf.pivot_table(index="timestamp_ms", columns="symbol", values="funding_rate_mean", aggfunc="last").sort_index()
                     f_ema = fpiv.ewm(span=6, min_periods=1).mean()
@@ -2326,15 +2339,18 @@ class ProductionApexExecutor:
              NAV_recon = OpeningEquity + RealizedPnL + FundingPnL - Fees + Unrealized(Mark) + CashFlows.
           7. Asserts |D_t| <= $0.01; if > $0.10, trips circuit breaker to HALTED.
         """
-        # 1. Fetch live exchange state (Fail-closed on error)
+        # 1. Fetch live exchange state (Fail-closed on non-transient error; retry transient 502/503/504)
         try:
-            total_equity, cash, current_positions = self.gateway.get_account_state()
+            total_equity, cash, current_positions = call_with_gateway_retry(self.gateway.get_account_state)
             last_us = getattr(self.gateway, "last_user_state", None)
             if isinstance(last_us, dict) and "assetPositions" in last_us:
                 user_state = last_us
             else:
-                user_state = self.gateway.info.user_state(self.gateway.account_address)
+                user_state = call_with_gateway_retry(self.gateway.info.user_state, self.gateway.account_address)
         except Exception as e:
+            if any(code in str(e) for code in TRANSIENT_HTTP_CODES):
+                log("WARN", f"[TRANSIENT GATEWAY] Account state query unavailable after retries ({e}); aborting cycle without latching permanent HALT.")
+                raise RuntimeError(f"Transient exchange state query unavailable: {e}")
             log("CRITICAL", f"[FAIL-CLOSED] Could not retrieve account state from Hyperliquid: {e}")
             self.trip_halt(f"Exchange state query failed: {e}")
             raise RuntimeError(f"Exchange state query failed: {e}")
@@ -3092,6 +3108,11 @@ class ProductionApexExecutor:
         try:
             return call_with_gateway_retry(_do_arm)
         except Exception as e:
+            if any(code in str(e) for code in TRANSIENT_HTTP_CODES):
+                log("WARN", f"[BRACKETS] Transient upstream HTTP gateway error ({e}); deferring bracket verification to next 60s sweep without latching permanent HALT.")
+                armed_summary["_error"] = str(e)
+                armed_summary["_transient_gateway_outage"] = True
+                return armed_summary
             log("CRITICAL", f"[BRACKETS] Error arming trigger brackets: {e}")
             self.state.unverified_protection = True
             self.trip_halt(f"Trigger bracket verification failed: {e}")
@@ -3697,7 +3718,7 @@ class ProductionApexExecutor:
             # Read-only ledger & state reconciliation so on-chain L1 trigger fills/funding are journaled while HALTED
             if not self.dry_run:
                 try:
-                    probe = self.gateway.get_account_state()
+                    probe = call_with_gateway_retry(self.gateway.get_account_state)
                     if isinstance(probe, tuple) and len(probe) == 3:
                         _, _, halted_pos = self.reconcile_ledger_events_and_reconstruct_nav()
                         self.save_materialized_state_cache(halted_pos, {})
@@ -3982,7 +4003,7 @@ class ProductionApexExecutor:
             if not self.check_clock_drift():
                 log("CRITICAL", "[SAFETY GATE] Boot clock verification failed. Halting daemon initialization.")
                 return
-            equity, _, pos = self.gateway.get_account_state()
+            equity, _, pos = call_with_gateway_retry(self.gateway.get_account_state)
             if self.virtual_paper:
                 pos = self.state.paper_positions
             if self.force_macro or len(pos) == 0 or self.state.bars_since_macro >= EXP114_ROLLING_CADENCE_BARS:

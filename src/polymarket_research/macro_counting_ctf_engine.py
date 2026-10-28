@@ -420,7 +420,7 @@ def _parlay_word_matches(word: str, action: str) -> bool:
 def build_fomc_truth_table_legs(
     fomc_events: List[Dict[str, Any]],
     parlay_events: List[Dict[str, Any]],
-    sep_2026_realized_action: Optional[str] = "HIKE25",
+    sep_2026_realized_action: Optional[str] = None,
 ) -> List[Dict[str, Any]]:
     """
     Maps every open `0%`-fee contract in `Oct FOMC`, `Dec FOMC`, `Jan FOMC`, `fed-decisions-oct-jan`,

@@ -226,6 +226,10 @@ QUARANTINED_SHADOW_SLEEVES = frozenset({
     "M1_SVI_MAKER_SCALP",
     "M2_STRIKE_CONVERGENCE",
     "P1_PREOPEN_MAKER_STRADDLE",
+    "B1_CONVEX_TAIL_YES",
+    "S2_EXACT_TWAP_LOCK",
+    "ZERO_FEE_MAKER_ANCHOR_BOX",
+    "CTF_OVERROUND_MINT_SELL",
 })
 
 
@@ -804,6 +808,8 @@ class Alpha124ShadowDaemon:
                 self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
         if is_shadow_sleeve_quarantined("P1_PREOPEN_MAKER_STRADDLE"):
             self.pending_preopen_straddles.clear()
+        if is_shadow_sleeve_quarantined("ZERO_FEE_MAKER_ANCHOR_BOX"):
+            self.pending_zero_fee_maker_anchors.clear()
 
     def _append_ledger(self, rec: Dict[str, Any]) -> None:
         with open(LEDGER_FILE, "a", encoding="utf-8") as f:
@@ -1114,8 +1120,13 @@ class Alpha124ShadowDaemon:
                                 for aid, pcs in grouped.items():
                                     if self._apply_ws_price_changes(aid, pcs, now_rx) and aid in d1_wake_toks:
                                         woke = True
-                        # Only D1/S2 (priority-1) token updates wake the fast D1 sub-scan
-                        if woke:
+                        # Only D1 overlap-window token updates wake the fast D1 sub-scan (throttled to <=8.3 Hz; eliminates idle spin)
+                        if (
+                            woke
+                            and self.is_in_same_oracle_overlap_window(now_rx)
+                            and (now_rx - getattr(self, "_last_ws_d1_wake_ts", 0.0)) >= 0.12
+                        ):
+                            self._last_ws_d1_wake_ts = now_rx
                             self._ws_d1_wakeup.set()
             except asyncio.CancelledError:
                 raise
@@ -1189,7 +1200,8 @@ class Alpha124ShadowDaemon:
 
     async def update_crypto_spots(self) -> None:
         now = time.time()
-        data = await self.fetch_json(f"{BINANCE_URL}/api/v3/ticker/price", timeout=3.5)
+        syms_json = "%5B" + ",".join(f"%22{s}%22" for s in sorted(set(ASSET_BINANCE_SYMBOL.values()))) + "%5D"
+        data = await self.fetch_json(f"{BINANCE_URL}/api/v3/ticker/price?symbols={syms_json}", timeout=3.5)
         if isinstance(data, list):
             sym_map = {v: k for k, v in ASSET_BINANCE_SYMBOL.items()}
             for item in data:
@@ -1209,9 +1221,12 @@ class Alpha124ShadowDaemon:
         missing_usd_assets = [
             a
             for a in DOMINANCE_ASSETS
-            if not self.usd_direct_flags.get(a, False)
-            or not self.usd_spot_hist.get(a)
-            or (now - float(self.usd_spot_hist[a][-1][0])) > 3.0
+            if a != "HYPE"
+            and (
+                not self.usd_direct_flags.get(a, False)
+                or not self.usd_spot_hist.get(a)
+                or (now - float(self.usd_spot_hist[a][-1][0])) > 3.0
+            )
         ]
         if missing_usd_assets:
             cb_rows = await asyncio.gather(
@@ -1432,6 +1447,7 @@ class Alpha124ShadowDaemon:
         self.fomc_truth_legs = build_fomc_truth_table_legs(
             raw_by_series.get("fomc") or [],
             raw_by_series.get("fed-3-parlay") or [],
+            sep_2026_realized_action=(os.getenv("PM_SEP_2026_FOMC_ACTION") or "").strip().upper() or None,
         )
 
         os_res = await asyncio.gather(
@@ -6850,6 +6866,21 @@ class Alpha124ShadowDaemon:
                     max_box_cost_net=0.994,
                     extra={"is_pyth_zero_fee_box": True},
                 )
+                if float(w_pb["box_cost_net"]) <= 0.990 and (c_ts - now) <= 86400.0:
+                    self.emit_live_two_leg_box_candidate(
+                        sleeve_source="CM_B3_PYTH_BARRIER_BOX",
+                        box_type="BARRIER_MONO",
+                        asset=p_asset,
+                        dedupe_key=p_dkey,
+                        leg_a=la,
+                        leg_b=lb,
+                        bk_a=bk_a,
+                        bk_b=bk_b,
+                        close_ts=c_ts,
+                        now_ts=now,
+                        k_low=min(float(la.get("strike") or 100.0), float(lb.get("strike") or 100.0)),
+                        k_high=max(float(la.get("strike") or 100.0), float(lb.get("strike") or 100.0)),
+                    )
             else:
                 self.post_zero_fee_maker_anchor_box("CM_B3", p_asset, f"ZFA_{p_dkey}", la, lb, bk_a, bk_b, c_ts, p_title, now)
 
@@ -6955,6 +6986,19 @@ class Alpha124ShadowDaemon:
                         max_box_cost_net=0.994,
                         extra={"is_nba_zero_fee_box": True, "box_kind": nb["box_kind"], "middle_width_pts": nb["middle_width_pts"]},
                     )
+                    if float(w_nba["box_cost_net"]) <= 0.990 and (float(nb["close_ts"]) - now) <= 86400.0:
+                        self.emit_live_two_leg_box_candidate(
+                            sleeve_source="SP1_NBA_ZERO_FEE_BOX",
+                            box_type="NBA_DOMINANCE",
+                            asset="NBA",
+                            dedupe_key=f"SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
+                            leg_a=la_n,
+                            leg_b=lb_n,
+                            bk_a=bk_a,
+                            bk_b=bk_b,
+                            close_ts=float(nb["close_ts"]),
+                            now_ts=now,
+                        )
 
         # 5. NR0_ZERO_FEE_SLATE_ARB: Zero-Fee NegRisk Partition Slates (`elon-tweets`, `fomc`, `boj`, `boc`)
         for sp_nr in list(self.negrisk_zero_slates.values()):
@@ -7323,20 +7367,23 @@ class Alpha124ShadowDaemon:
                     # Wake immediately (<250ms) if a live Binance shock arrives
                     shocks_w = self.poll_fresh_shock_triggers(now_ts=now_s)
                     if shocks_w:
+                        prev_mkr_keys = set(self.pending_maker_orders)
+                        prev_open_n = len(self.open_positions)
                         s_opps: List[Dict[str, Any]] = []
                         await self.handle_shock_triggers(shocks_w, s_opps, now_ts=now_s)
                         if s_opps:
                             self.cached_shock_opps = s_opps
-                        await self.write_state_files_async(
-                            twap_opps
-                            + dom_opps
-                            + s5m_opps
-                            + p1_opps
-                            + self.cached_shock_opps
-                            + self.cached_mid_opps
-                            + self.cached_tradfi_sports_opps
-                            + self.cached_weather_opps
-                        )
+                        if s_opps or set(self.pending_maker_orders) != prev_mkr_keys or len(self.open_positions) != prev_open_n:
+                            await self.write_state_files_async(
+                                twap_opps
+                                + dom_opps
+                                + s5m_opps
+                                + p1_opps
+                                + self.cached_shock_opps
+                                + self.cached_mid_opps
+                                + self.cached_tradfi_sports_opps
+                                + self.cached_weather_opps
+                            )
                     # Step down cadence immediately if we just entered the final-55s TWAP lock window
                     if target_cadence > 3.0 and self.is_in_exact_twap_lock_window(now_s):
                         break
