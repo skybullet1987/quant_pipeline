@@ -1,0 +1,525 @@
+#!/usr/bin/env python3
+"""
+Dominus Zero-Overhead Live Command Center (Local Windows / CLI / Web Dashboard).
+
+Replaces heavy VM Chrome Remote Desktop (which consumed ~1.74 GB RAM + ~45% CPU on
+kraken-finland) with a lightweight local dashboard at http://127.0.0.1:8787 that
+fetches <10 KB read-only JSON snapshots over SSH using 0 MB persistent VM RAM.
+
+Usage:
+  # Launch live auto-refreshing browser dashboard on Windows:
+  "C:\\Program Files\\LibreOffice\\program\\python.exe" scripts/dominus_command_center.py
+
+  # Instant one-shot terminal summary:
+  "C:\\Program Files\\LibreOffice\\program\\python.exe" scripts/dominus_command_center.py --once
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as dt
+import json
+import subprocess
+import sys
+import threading
+import time
+import webbrowser
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any, Dict
+
+REMOTE_PROBE_PY = r"""
+import json, os, pathlib, subprocess, time
+
+root = pathlib.Path("/home/skybullet1987/quant_pipeline")
+out = {"fetched_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())}
+
+# 1. Host load & memory
+try:
+    la = os.getloadavg()
+    out["load_avg"] = [round(la[0], 2), round(la[1], 2), round(la[2], 2)]
+except Exception:
+    out["load_avg"] = [0.0, 0.0, 0.0]
+
+mem = {}
+try:
+    for line in pathlib.Path("/proc/meminfo").read_text().splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            mem[parts[0].rstrip(":")] = int(parts[1]) // 1024
+    out["mem_mb"] = {
+        "total": mem.get("MemTotal", 0),
+        "available": mem.get("MemAvailable", 0),
+        "used": max(0, mem.get("MemTotal", 0) - mem.get("MemAvailable", 0)),
+        "swap_free": mem.get("SwapFree", 0),
+        "swap_total": mem.get("SwapTotal", 0),
+    }
+except Exception:
+    out["mem_mb"] = {}
+
+# 2. Services
+svcs = [
+    "polymarket-live-harvester.service",
+    "polymarket-alpha124-shadow.service",
+    "polymarket-recorder.service",
+    "polymarket-recorder-eth.service",
+    "polymarket-recorder-sol.service",
+    "polymarket-trader.service",
+    "polymarket-exp316-shadow.service",
+]
+svc_map = {}
+for sv in svcs:
+    try:
+        r = subprocess.run(["systemctl", "--user", "is-active", sv], capture_output=True, text=True, timeout=2)
+        svc_map[sv.replace(".service", "")] = r.stdout.strip() or "unknown"
+    except Exception:
+        svc_map[sv.replace(".service", "")] = "unknown"
+try:
+    ap = subprocess.run(["pgrep", "-f", "production_apex_daemon.py"], capture_output=True, text=True, timeout=2)
+    svc_map["hyperliquid-apex-testnet"] = "active" if ap.returncode == 0 and ap.stdout.strip() else "inactive"
+except Exception:
+    svc_map["hyperliquid-apex-testnet"] = "unknown"
+out["services"] = svc_map
+
+# 3. Polymarket Live Harvester
+lh_path = root / "data/polymarket/live_harvester_state.json"
+if lh_path.exists():
+    s = json.loads(lh_path.read_text())
+    closed = s.get("closed_positions") or []
+    wins = sum(1 for c in closed if float(c.get("net_pnl_usd", 0.0)) > 0)
+    tot_pnl = round(sum(float(c.get("net_pnl_usd", 0.0)) for c in closed), 2)
+    tot_fees = round(sum(float(c.get("fee_usd", 0.0)) for c in closed), 2)
+    act_list = []
+    for tid, p in (s.get("active_positions") or {}).items():
+        act_list.append({
+            "trade_id": tid,
+            "asset": p.get("asset"),
+            "horizon": p.get("horizon"),
+            "sleeve": p.get("sleeve"),
+            "side": p.get("target_token"),
+            "entry_px": p.get("entry_price"),
+            "target_tp": p.get("target_exit_price"),
+            "notional_usd": round(float(p.get("notional_usd", 0.0) or 0.0), 2),
+            "status": p.get("exit_order_status") or p.get("status"),
+        })
+    recent_closed = []
+    for c in reversed(closed[-12:]):
+        recent_closed.append({
+            "time_utc": str(c.get("entry_time_utc", ""))[:19].replace("T", " "),
+            "trade_id": c.get("trade_id"),
+            "asset": f"{c.get('asset','')} {c.get('horizon','')} {c.get('target_token','')}".strip(),
+            "sleeve": c.get("sleeve"),
+            "entry_px": c.get("entry_price"),
+            "exit_px": c.get("average_exit_price"),
+            "notional_usd": round(float(c.get("notional_usd", 0.0) or 0.0), 2),
+            "fee_usd": round(float(c.get("fee_usd", 0.0) or 0.0), 2),
+            "net_pnl_usd": round(float(c.get("net_pnl_usd", 0.0) or 0.0), 2),
+            "reason": c.get("close_reason") or c.get("status"),
+        })
+    out["polymarket_live"] = {
+        "bankroll_usd": round(float(s.get("live_bankroll", 0.0) or 0.0), 2),
+        "equity_usd": round(float(s.get("total_account_equity", 0.0) or 0.0), 2),
+        "hwm_usd": round(float(s.get("high_water_mark_equity", 0.0) or 0.0), 2),
+        "tier": s.get("current_equity_tier") or s.get("equity_tier"),
+        "risk_halt": bool(s.get("risk_halt", False)),
+        "halt_reasons": s.get("global_halt_reasons") or [],
+        "epoch_closed_count": len(closed),
+        "epoch_wins": wins,
+        "epoch_losses": len(closed) - wins,
+        "epoch_net_pnl_usd": tot_pnl,
+        "epoch_fees_usd": tot_fees,
+        "trades_this_hour": s.get("trades_this_hour", 0),
+        "active_positions": act_list,
+        "recent_closed": recent_closed,
+    }
+else:
+    out["polymarket_live"] = {}
+
+# 4. Alpha-124 Shadow & _grad8 progress
+a_path = root / "data/alpha124/alpha124_shadow_state.json"
+if a_path.exists():
+    a = json.loads(a_path.read_text())
+    by_slv = a.get("by_sleeve") or {}
+    open_p = a.get("open_positions") or []
+    watch_sleeves = [
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_QUIET_BOOK_BOX",
+        "CM_B3_PYTH_BARRIER_BOX",
+        "SP1_NBA_ZERO_FEE_BOX",
+        "NR0_ZERO_FEE_SLATE_ARB",
+        "W1_SOLAR_PEAK_LOCK",
+        "U1_DAILY_UPDOWN_LOCK",
+    ]
+    slv_rows = []
+    for slv in watch_sleeves:
+        m = by_slv.get(slv) or {}
+        c_n = int(m.get("closed", 0) or 0)
+        slv_rows.append({
+            "sleeve": slv,
+            "open": int(m.get("open", 0) or 0),
+            "closed": c_n,
+            "wins": int(m.get("wins", 0) or 0),
+            "losses": int(m.get("losses", 0) or 0),
+            "t1000_pnl_usd": round(float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0), 2),
+            "grad8_progress": f"{min(c_n, 8)}/8",
+        })
+    open_boxes = []
+    for p in open_p[:10]:
+        open_boxes.append({
+            "sleeve": p.get("sleeve"),
+            "asset": p.get("asset_or_city") or p.get("asset"),
+            "title": str(p.get("title") or "")[:58],
+            "eff_px": p.get("entry_eff_px_t1000"),
+        })
+    out["alpha124"] = {
+        "open_total": len(open_p),
+        "closed_total": sum(int(v.get("closed", 0) or 0) for v in by_slv.values()),
+        "by_d1_asset": a.get("by_d1_asset") or {},
+        "sleeves": slv_rows,
+        "open_positions": open_boxes,
+    }
+else:
+    out["alpha124"] = {}
+
+# 5. Hyperliquid APEX v5.0 Testnet
+j_path = root / "data/papertrade_journal.jsonl"
+if j_path.exists():
+    audits = []
+    cb_state = "RUNNING"
+    cb_reason = ""
+    hwm_nav = 609.0
+    for ln in j_path.read_text().splitlines():
+        if not ln.strip():
+            continue
+        try:
+            ev = json.loads(ln)
+        except Exception:
+            continue
+        et = ev.get("event_type")
+        pl = ev.get("payload") or {}
+        if et == "CIRCUIT_BREAKER":
+            cb_state = pl.get("state", cb_state)
+            cb_reason = pl.get("reason", "")
+        elif et == "HWM_UPDATE":
+            hwm_nav = float(pl.get("hwm", hwm_nav))
+        elif et == "IMPLEMENTATION_AUDIT_RECORD":
+            audits.append(pl)
+    maker_n = sum(1 for x in audits if x.get("order_type") == "RESTING_ALO")
+    recent_hl = []
+    for x in reversed(audits[-6:]):
+        recent_hl.append({
+            "time_utc": x.get("timestamp_utc", ""),
+            "symbol": x.get("symbol"),
+            "side": x.get("side"),
+            "order_type": x.get("order_type"),
+            "px": x.get("actual_fill_price"),
+            "sz": x.get("filled_size"),
+            "shortfall_bps": round(float(x.get("total_shortfall_bps", 0.0)), 2),
+        })
+    out["apex_testnet"] = {
+        "circuit_breaker": cb_state,
+        "halt_reason": cb_reason if cb_state != "RUNNING" else "",
+        "hwm_nav_usd": round(hwm_nav, 2),
+        "gate2_fills": f"{len(audits)}/500",
+        "maker_pct": round(100.0 * maker_n / len(audits), 1) if audits else 0.0,
+        "recent_fills": recent_hl,
+    }
+else:
+    out["apex_testnet"] = {}
+
+print(json.dumps(out))
+"""
+
+HTML_PAGE = """<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<title>DOMINUS — Live Quantitative Command Center</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<style>
+  :root {
+    --bg: #0b0f17; --panel: #131a26; --border: #233044;
+    --text: #e6edf3; --muted: #8b9bb4; --green: #2ea043; --green-bright: #3fb950;
+    --red: #f85149; --amber: #d29922; --blue: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace; background: var(--bg); color: var(--text); }
+  header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 12px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
+  h1 { font-size: 18px; margin: 0; letter-spacing: 0.5px; }
+  .sub { color: var(--muted); font-size: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .card .label { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+  .card .val { font-size: 24px; font-weight: 700; margin-top: 6px; }
+  .pos { color: var(--green-bright); }
+  .neg { color: var(--red); }
+  .warn { color: var(--amber); }
+  .two-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 18px; }
+  @media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
+  h2 { font-size: 14px; margin: 0 0 10px 0; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; }
+  .pill { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .pill-ok { background: rgba(46,160,67,0.2); color: var(--green-bright); border: 1px solid rgba(63,185,80,0.4); }
+  .pill-bad { background: rgba(248,81,73,0.2); color: var(--red); border: 1px solid rgba(248,81,73,0.4); }
+  button { background: #1f6feb; color: #fff; border: none; border-radius: 6px; padding: 7px 13px; cursor: pointer; font-weight: 600; font-size: 12px; }
+  button:hover { background: #388bfd; }
+  .svc-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>DOMINUS — LIVE QUANTITATIVE COMMAND CENTER</h1>
+    <div class="sub" id="meta">Connecting to kraken-finland over zero-RAM SSH pipe...</div>
+  </div>
+  <div>
+    <button onclick="refreshNow()">Refresh Now</button>
+  </div>
+</header>
+
+<div class="grid" id="kpis"></div>
+
+<div class="card" style="margin-bottom:18px;">
+  <h2>Host &amp; Daemon Health (kraken-finland — 0 MB Browser Overhead)</h2>
+  <div class="svc-wrap" id="svcs"></div>
+</div>
+
+<div class="two-col">
+  <div class="card">
+    <h2>Polymarket Real-Money Live Harvester Trades</h2>
+    <div id="active_box" style="margin-bottom:10px;font-size:12px;"></div>
+    <table>
+      <thead><tr><th>UTC</th><th>Market</th><th>In / Out</th><th>Notional</th><th>Net PnL</th><th>Exit</th></tr></thead>
+      <tbody id="pm_trades"></tbody>
+    </table>
+  </div>
+  <div class="card">
+    <h2>Alpha-124 Shadow &amp; _grad8 Auto-Promotion</h2>
+    <table>
+      <thead><tr><th>Sleeve</th><th>Open</th><th>W / L</th><th>Grad8</th><th>T1000 PnL</th></tr></thead>
+      <tbody id="a124_sleeves"></tbody>
+    </table>
+    <h2 style="margin-top:16px;">Hyperliquid APEX v5.0 (Testnet — $0 Mainnet)</h2>
+    <div id="apex_meta" style="font-size:12px;margin-bottom:8px;"></div>
+    <table>
+      <thead><tr><th>UTC</th><th>Asset</th><th>Side</th><th>Type</th><th>Shortfall</th></tr></thead>
+      <tbody id="apex_fills"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+async function refreshNow() {
+  try {
+    const r = await fetch('/api/snapshot?t=' + Date.now());
+    const d = await r.json();
+    if (d.error) {
+      document.getElementById('meta').textContent = 'SSH Error: ' + d.error;
+      return;
+    }
+    const pm = d.polymarket_live || {};
+    const mem = d.mem_mb || {};
+    const la = d.load_avg || [0,0,0];
+    const ap = d.apex_testnet || {};
+    document.getElementById('meta').textContent =
+      `Last synced: ${d.fetched_at_utc} | Host Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB (Auto-refreshes every 20s)`;
+
+    const pnlCls = (pm.epoch_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg';
+    const wr = pm.epoch_closed_count ? ((100 * pm.epoch_wins / pm.epoch_closed_count).toFixed(1) + '%') : 'N/A';
+    document.getElementById('kpis').innerHTML = `
+      <div class="card"><div class="label">Polymarket Live Cash</div><div class="val pos">$${(pm.bankroll_usd ?? 0).toFixed(2)}</div><div class="sub">Equity: $${(pm.equity_usd ?? 0).toFixed(2)} | Tier: ${pm.tier || '-'}</div></div>
+      <div class="card"><div class="label">Current Epoch Net PnL</div><div class="val ${pnlCls}">${(pm.epoch_net_pnl_usd ?? 0) >= 0 ? '+' : ''}$${(pm.epoch_net_pnl_usd ?? 0).toFixed(2)}</div><div class="sub">Fees paid: $${(pm.epoch_fees_usd ?? 0).toFixed(2)}</div></div>
+      <div class="card"><div class="label">Live Win Rate (Epoch)</div><div class="val">${pm.epoch_wins ?? 0}W / ${pm.epoch_losses ?? 0}L (${wr})</div><div class="sub">Open now: ${(pm.active_positions || []).length} | This hr: ${pm.trades_this_hour ?? 0}</div></div>
+      <div class="card"><div class="label">VM Load &amp; Free RAM</div><div class="val">${la[0]} / ${mem.available || 0} MB</div><div class="sub">Risk Halt: ${pm.risk_halt ? 'HALTED' : 'CLEAR'}</div></div>
+      <div class="card"><div class="label">APEX v5.0 Testnet</div><div class="val ${ap.circuit_breaker === 'RUNNING' ? 'pos' : 'neg'}">${ap.circuit_breaker || '?'}</div><div class="sub">Gate 2: ${ap.gate2_fills || '-'} | Maker: ${ap.maker_pct ?? 0}%</div></div>
+    `;
+
+    const svcs = d.services || {};
+    document.getElementById('svcs').innerHTML = Object.entries(svcs).map(([k, v]) =>
+      `<span class="pill ${v === 'active' ? 'pill-ok' : 'pill-bad'}">${k}: ${v}</span>`
+    ).join('');
+
+    const acts = pm.active_positions || [];
+    document.getElementById('active_box').innerHTML = acts.length === 0
+      ? '<span class="sub">Active live positions: 0 (Flat &amp; scanning shocks + D1 overlap windows)</span>'
+      : '<b>Active Positions:</b> ' + acts.map(a => `${a.asset} ${a.horizon} ${a.side} ($${a.notional_usd} @ ${a.entry_px} -> TP ${a.target_tp}) [${a.status}]`).join(' | ');
+
+    document.getElementById('pm_trades').innerHTML = (pm.recent_closed || []).map(c => `
+      <tr>
+        <td>${(c.time_utc || '').slice(11)}</td>
+        <td><b>${c.asset}</b></td>
+        <td>${c.entry_px} &rarr; ${c.exit_px}</td>
+        <td>$${c.notional_usd.toFixed(2)}</td>
+        <td class="${c.net_pnl_usd >= 0 ? 'pos' : 'neg'}"><b>${c.net_pnl_usd >= 0 ? '+' : ''}$${c.net_pnl_usd.toFixed(2)}</b></td>
+        <td>${c.reason}</td>
+      </tr>
+    `).join('');
+
+    const a124 = (d.alpha124 || {}).sleeves || [];
+    document.getElementById('a124_sleeves').innerHTML = a124.map(s => `
+      <tr>
+        <td>${s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_')}</td>
+        <td>${s.open}</td>
+        <td>${s.wins}W / ${s.losses}L</td>
+        <td>${s.grad8_progress}</td>
+        <td class="${s.t1000_pnl_usd >= 0 ? 'pos' : 'neg'}">${s.t1000_pnl_usd >= 0 ? '+' : ''}$${s.t1000_pnl_usd.toFixed(2)}</td>
+      </tr>
+    `).join('');
+
+    document.getElementById('apex_meta').innerHTML =
+      `State: <b>${ap.circuit_breaker || '-'}</b> | Gate 2 Fills: <b>${ap.gate2_fills || '-'}</b> | Maker Share: <b>${ap.maker_pct ?? 0}%</b>`;
+    document.getElementById('apex_fills').innerHTML = (ap.recent_fills || []).map(f => `
+      <tr>
+        <td>${(f.time_utc || '').slice(11,19)}</td>
+        <td>${f.symbol}</td>
+        <td>${f.side}</td>
+        <td>${f.order_type}</td>
+        <td class="${f.shortfall_bps <= 5 ? 'pos' : 'warn'}">${f.shortfall_bps} bps</td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    document.getElementById('meta').textContent = 'Dashboard fetch error: ' + e;
+  }
+}
+refreshNow();
+setInterval(refreshNow, 20000);
+</script>
+</body>
+</html>
+"""
+
+
+class SnapshotCache:
+    def __init__(self, host: str, ttl_sec: float = 8.0) -> None:
+        self.host = host
+        self.ttl_sec = ttl_sec
+        self._lock = threading.Lock()
+        self._last_ts = 0.0
+        self._last_data: Dict[str, Any] = {}
+
+    def get(self, force: bool = False) -> Dict[str, Any]:
+        with self._lock:
+            now = time.time()
+            if not force and self._last_data and (now - self._last_ts) < self.ttl_sec:
+                return self._last_data
+            try:
+                proc = subprocess.run(
+                    [
+                        "ssh",
+                        "-o",
+                        "BatchMode=yes",
+                        "-o",
+                        "ConnectTimeout=7",
+                        self.host,
+                        "/home/skybullet1987/quant_pipeline/venv/bin/python3 -",
+                    ],
+                    input=REMOTE_PROBE_PY,
+                    capture_output=True,
+                    text=True,
+                    timeout=15,
+                )
+                if proc.returncode != 0:
+                    return {"error": (proc.stderr or proc.stdout).strip()[:400]}
+                lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
+                if not lines:
+                    return {"error": f"Unexpected SSH output: {proc.stdout[:200]}"}
+                self._last_data = json.loads(lines[-1])
+                self._last_ts = now
+                return self._last_data
+            except Exception as exc:
+                return {"error": str(exc)}
+
+
+def print_cli_summary(d: Dict[str, Any]) -> None:
+    if d.get("error"):
+        print(f"[ERROR] Could not fetch telemetry: {d['error']}")
+        return
+    pm = d.get("polymarket_live") or {}
+    mem = d.get("mem_mb") or {}
+    la = d.get("load_avg") or [0, 0, 0]
+    ap = d.get("apex_testnet") or {}
+    print("=" * 78)
+    print(f" DOMINUS LIVE COMMAND CENTER  |  {d.get('fetched_at_utc')}")
+    print("=" * 78)
+    print(
+        f" Host Load (2 vCPU): {la[0]} ({la[1]}, {la[2]})  |  "
+        f"RAM Available: {mem.get('available')} / {mem.get('total')} MB"
+    )
+    print(
+        f" Polymarket Live   : ${pm.get('bankroll_usd', 0):.2f} Cash  |  "
+        f"Epoch: {pm.get('epoch_wins', 0)}W/{pm.get('epoch_losses', 0)}L "
+        f"({pm.get('epoch_net_pnl_usd', 0):+.2f} USD net, fees ${pm.get('epoch_fees_usd', 0):.2f})  |  "
+        f"Halt={pm.get('risk_halt')}"
+    )
+    print(
+        f" APEX v5.0 Testnet : {ap.get('circuit_breaker')}  |  "
+        f"Gate 2 Fills: {ap.get('gate2_fills')} (Maker {ap.get('maker_pct')}%)  |  Mainnet: $0.00"
+    )
+    print("-" * 78)
+    print(" Recent Real-Money Polymarket Closed Trades:")
+    for c in (pm.get("recent_closed") or [])[:8]:
+        print(
+            f"   {c['time_utc']} | {c['asset']:14s} | {c['entry_px']} -> {c['exit_px']} | "
+            f"${c['notional_usd']:6.2f} | Net {c['net_pnl_usd']:+6.2f} USD | {c['reason']}"
+        )
+    print("-" * 78)
+    print(" Alpha-124 Shadow & _grad8 Auto-Promotion Tracker:")
+    for s in (d.get("alpha124") or {}).get("sleeves") or []:
+        print(
+            f"   {s['sleeve']:30s} | Open={s['open']} | {s['wins']:2d}W/{s['losses']:2d}L | "
+            f"Grad8={s['grad8_progress']} | T1000={s['t1000_pnl_usd']:+7.2f} USD"
+        )
+    print("=" * 78)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Dominus Zero-Overhead Live Command Center")
+    parser.add_argument("--host", default="kraken-finland", help="SSH host alias")
+    parser.add_argument("--port", type=int, default=8787, help="Local HTTP dashboard port")
+    parser.add_argument("--once", action="store_true", help="Print CLI summary once and exit")
+    parser.add_argument("--json", action="store_true", help="Print raw JSON snapshot once and exit")
+    parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser tab")
+    args = parser.parse_args()
+
+    cache = SnapshotCache(host=args.host)
+    if args.json:
+        print(json.dumps(cache.get(force=True), indent=2))
+        return
+    if args.once:
+        print_cli_summary(cache.get(force=True))
+        return
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            if self.path.startswith("/api/snapshot"):
+                payload = json.dumps(cache.get()).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(payload)
+            else:
+                body = HTML_PAGE.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(body)
+
+        def log_message(self, fmt: str, *a: Any) -> None:
+            return
+
+    url = f"http://127.0.0.1:{args.port}"
+    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    print(f"Dominus Live Command Center running locally at {url} (Ctrl+C to stop)")
+    print("Zero Chrome/Xorg RAM or CPU overhead on kraken-finland!")
+    if not args.no_browser:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped Dominus Live Command Center.")
+
+
+if __name__ == "__main__":
+    main()

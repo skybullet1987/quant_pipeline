@@ -1522,8 +1522,9 @@ class Alpha124ShadowDaemon:
             return False
 
         try:
-            # Strictly causal L2 walk at t_signal + 50ms (or single-RTT book already fetched on M4 wakeup)
-            book = prefetched_book if prefetched_book is not None else await self.fetch_book_after_latency(token_id, latency_ms=50)
+            # Strictly causal L2 walk at t_signal + latency (250ms for W1_SOLAR_PEAK_LOCK EXP-PM-405; 50ms default)
+            req_lat_ms = 250 if sleeve == "W1_SOLAR_PEAK_LOCK" else 50
+            book = prefetched_book if (prefetched_book is not None and sleeve != "W1_SOLAR_PEAK_LOCK") else await self.fetch_book_after_latency(token_id, latency_ms=req_lat_ms)
             if not book:
                 return False
             asks_raw = book.get("asks") or []
@@ -3722,6 +3723,15 @@ class Alpha124ShadowDaemon:
         if not acq:
             return False
         try:
+            # EXP-PM-404: Enforce causal 250ms L2 re-fetch & re-walk on 0%-fee 2-leg structural boxes
+            # so _grad8 auto-graduation only counts edges that survive realistic execution latency.
+            if sleeve in ("CM_B3_PYTH_BARRIER_BOX", "SP1_NBA_ZERO_FEE_BOX"):
+                await asyncio.sleep(0.25)
+                re_bks = await self.fetch_books_batch([leg_a["token_id"], leg_b["token_id"]], timeout=3.0)
+                bk_a = re_bks.get(leg_a["token_id"]) or {}
+                bk_b = re_bks.get(leg_b["token_id"]) or {}
+                if not bk_a or not bk_b:
+                    return False
             asks_a = bk_a.get("asks") or []
             asks_b = bk_b.get("asks") or []
             bid_a, _ = extract_best_bid(bk_a.get("bids") or [])

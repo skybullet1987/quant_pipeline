@@ -1419,73 +1419,43 @@ class PolymarketLiveHarvester:
             logger.debug(f"[SHADOW PHASE 3A] Register error: {exc}")
 
     async def _attempt_live_phase3a_maker_rescue(
-        self,
-        *,
-        trade_id: str,
-        token_id: str,
-        target_token: str,
-        asset_str: str,
-        effective_notional: float,
-        first_ask: float,
-        first_bid: float,
-        min_allowed_price: float,
-        max_allowed_price: float,
-        open_spot: float,
-        entry_spot_ref: float,
-        spot_denom: str,
-        tte: float,
-        pre_cond_bal: float,
+        self, trade_id: str, token_id: str, target_token: str, asset_str: str, effective_notional: float,
+        first_ask: float, first_bid: float, min_allowed_price: float, max_allowed_price: float,
+        open_spot: float, entry_spot_ref: float, spot_denom: str, tte: float, pre_cond_bal: float,
         book_snapshot: Optional[Dict[str, Any]],
     ) -> Optional[OrderResult]:
         explicit_flag = self.__dict__.get("enable_live_phase3a_maker_fallback")
         if explicit_flag is False or os.environ.get("PM_DISABLE_LIVE_PHASE3A_MAKER", "0") == "1":
             return None
         real_live = (
-            not self.dry_run
-            and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+            not self.dry_run and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
             and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
-            and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
-            and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
+            and not any(k in getattr(self.executor, "__dict__", {}) for k in ("execute_snipe_order_async", "execute_snipe_order"))
         )
         if not (explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback", True)))):
             return None
-        min_tte_p3a = 85.0 if real_live else 75.0
-        if tte < min_tte_p3a or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
+        if tte < (85.0 if real_live else 75.0) or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
             return None
-        maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr(
-            self.executor, "post_maker_entry_order", None
-        )
+        maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr(self.executor, "post_maker_entry_order", None)
         if maker_entry_fn is None:
             return None
-
         fresh_bk = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot or {}
-        asks_f = fresh_bk.get("asks") or []
-        bids_f = fresh_bk.get("bids") or []
-        f_ask = min((float(a["price"] if isinstance(a, dict) else a[0]) for a in asks_f if float(a.get("size", 0) if isinstance(a, dict) else a[1]) > 0), default=first_ask)
-        f_bid = max((float(b["price"] if isinstance(b, dict) else b[0]) for b in bids_f if float(b.get("size", 0) if isinstance(b, dict) else b[1]) > 0), default=first_bid)
+        f_ask = min((float(a["price"] if isinstance(a, dict) else a[0]) for a in (fresh_bk.get("asks") or []) if float(a.get("size", 0) if isinstance(a, dict) else a[1]) > 0), default=first_ask)
+        f_bid = max((float(b["price"] if isinstance(b, dict) else b[0]) for b in (fresh_bk.get("bids") or []) if float(b.get("size", 0) if isinstance(b, dict) else b[1]) > 0), default=first_bid)
         ask_cap = round(f_ask - 0.01, 2) if f_ask > 0.02 else round(max_allowed_price, 2)
         bid_step = round(max(f_bid, first_bid) + 0.01, 2) if max(f_bid, first_bid) > 0.0 else ask_cap
         maker_px = round(min(float(max_allowed_price), ask_cap, bid_step), 2)
-        if maker_px < float(min_allowed_price) - 1e-6 or maker_px > float(max_allowed_price) + 1e-6:
-            return None
-        if f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6:
+        if not (float(min_allowed_price) - 1e-6 <= maker_px <= float(max_allowed_price) + 1e-6) or (f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6):
             return None
         rescue_notional = min(float(effective_notional), float(RISK_CONFIG.get("phase3a_maker_max_notional_usd", 22.00)))
         if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
             return None
-
         t0_m = time.perf_counter()
         if trade_id in self.pending_entry_intents:
-            self.pending_entry_intents[trade_id]["target_price"] = maker_px
-            self.pending_entry_intents[trade_id]["notional_usd"] = rescue_notional
+            self.pending_entry_intents[trade_id].update(target_price=maker_px, notional_usd=rescue_notional)
         post_res = await asyncio.to_thread(
-            maker_entry_fn,
-            token_id=token_id,
-            price=maker_px,
-            notional_usd=rescue_notional,
-            side="BUY",
-            min_price_floor=float(min_allowed_price),
-            max_price_ceiling=float(max_allowed_price),
+            maker_entry_fn, token_id=token_id, price=maker_px, notional_usd=rescue_notional, side="BUY",
+            min_price_floor=float(min_allowed_price), max_price_ceiling=float(max_allowed_price),
         )
         if not isinstance(post_res, dict):
             return None
@@ -1503,7 +1473,6 @@ class PolymarketLiveHarvester:
             return None
         if trade_id in self.pending_entry_intents:
             self.pending_entry_intents[trade_id]["entry_order_id"] = maker_oid
-
         ttl_s = max(0.2, float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC", "3.5")))
         deadline = time.monotonic() + ttl_s
         uws = getattr(self.executor, "_user_ws_cache", None)
@@ -1511,60 +1480,42 @@ class PolymarketLiveHarvester:
         while time.monotonic() < deadline:
             rem_w = max(0.02, min(0.10, deadline - time.monotonic()))
             if uws is not None and uws.is_healthy():
-                prev_s = uws.fill_sequence
-                await uws.wait_for_fill_or_timeout(rem_w, prev_seq=prev_s)
+                await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
                 snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
                 if isinstance(snap_o, dict) and str(snap_o.get("status") or "").upper() in ("MATCHED", "FILLED"):
                     break
             else:
                 await asyncio.sleep(rem_w)
             if open_spot > 0.0 and init_disp > 0.0:
-                ref_fn = self.get_usd_reference_spot_price if spot_denom == "USD" else self.get_reference_spot_price
-                cur_sp = await asyncio.to_thread(ref_fn, asset_str)
-                if cur_sp and float(cur_sp) > 0.0:
-                    cur_disp = (float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))
-                    if cur_disp < 0.55 * init_disp:
-                        logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: spot cushion decayed >45%; canceling OID={maker_oid} early.")
-                        break
-
+                cur_sp = await asyncio.to_thread(self.get_usd_reference_spot_price if spot_denom == "USD" else self.get_reference_spot_price, asset_str)
+                if cur_sp and float(cur_sp) > 0.0 and (((float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))) < 0.55 * init_disp):
+                    logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: cushion decayed >45%; canceling {maker_oid}.")
+                    break
         cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
         summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
         c_out = str((cancel_res or {}).get("outcome") or "")
         is_canc = bool((cancel_res or {}).get("is_canceled"))
         matched_sh = float((summary or {}).get("matched") or (cancel_res or {}).get("matched") or 0.0)
-        if matched_sh >= 0.01 and (
-            is_canc
-            or c_out in ("FILLED", "CANCELED", "PARTIALLY_FILLED_CANCELED")
-            or bool((summary or {}).get("terminal"))
-        ):
+        if matched_sh >= 0.01 and (is_canc or c_out in ("FILLED", "CANCELED", "PARTIALLY_FILLED_CANCELED") or bool((summary or {}).get("terminal"))):
             avg_px = float((summary or {}).get("avg_price") or maker_px)
-            notional_act = round(matched_sh * avg_px, 4)
-            logger.info(
-                f"✓ [LIVE PHASE 3A MAKER RESCUE FILLED] {trade_id}: {matched_sh:.2f} sh @ ${avg_px:.4f} "
-                f"(0% fee + 20% Maker rebate, OID={maker_oid})"
-            )
+            logger.info(f"[LIVE PHASE 3A MAKER RESCUE FILLED] {trade_id}: {matched_sh:.2f} sh @ ${avg_px:.4f} (OID={maker_oid})")
             return OrderResult(
-                success=True, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
-                target_token=target_token, side="BUY", price=avg_px, size=matched_sh,
-                notional_usd=notional_act, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
-                mode="LIVE_PHASE3A_MAKER_IN", execution_status=ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
-                details={
-                    "pre_token_balance": pre_cond_bal,
-                    "trade_ids": list((summary or {}).get("trade_ids") or []),
-                    "transactions_hashes": list((summary or {}).get("tx_hashes") or []),
-                    "phase3a_maker_rescue": True,
-                },
+                success=True, order_id=maker_oid, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side="BUY", price=avg_px, size=matched_sh, notional_usd=round(matched_sh * avg_px, 4), fee_usd=0.0,
+                latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2), mode="LIVE_PHASE3A_MAKER_IN",
+                execution_status=ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
+                details={"pre_token_balance": pre_cond_bal, "trade_ids": list((summary or {}).get("trade_ids") or []), "transactions_hashes": list((summary or {}).get("tx_hashes") or []), "phase3a_maker_rescue": True},
             )
         if not is_canc and c_out != "FILLED" and (summary is None or not summary.get("terminal") or summary.get("resting")):
             return OrderResult(
-                success=False, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
-                target_token=target_token, side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0),
-                notional_usd=rescue_notional, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
-                mode="LIVE_PHASE3A_CANCEL_UNKNOWN", execution_status=ExecutionStatus.SUBMITTED,
+                success=False, order_id=maker_oid, trade_id=trade_id, token_id=token_id, target_token=target_token,
+                side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0), notional_usd=rescue_notional,
+                fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2), mode="LIVE_PHASE3A_CANCEL_UNKNOWN",
+                execution_status=ExecutionStatus.SUBMITTED,
                 details={"outcome_unknown": True, "entry_order_id": maker_oid, "pre_token_balance": pre_cond_bal},
                 error="PHASE3A_CANCEL_UNVERIFIED",
             )
-        logger.info(f"[LIVE PHASE 3A EXPIRED CLEAN] {trade_id}: OID={maker_oid} canceled after {ttl_s:.1f}s (0 filled).")
+        logger.info(f"[LIVE PHASE 3A EXPIRED CLEAN] {trade_id}: {maker_oid} canceled ({ttl_s:.1f}s).")
         return None
 
     async def _maybe_merge_live_complete_sets(self, now_ts: float) -> None:
@@ -1809,10 +1760,11 @@ class PolymarketLiveHarvester:
                             shadow_orders.pop(key, None)
                             continue
 
-                    # Check L2 book for fill at shadow_maker_px
-                    if cur_ask > 0.0 or cur_bid > 0.0:
+                    # Check L2 book for fill at shadow_maker_px (EXP-PM-402: require >=250ms post latency
+                    # and true seller offer crossing <= m_px; never fill merely because cur_bid <= m_px!)
+                    if cur_ask > 0.0 and (now_ts - float(ord_rec["placed_ts"])) >= 0.25:
                         m_px = float(ord_rec["shadow_maker_px"])
-                        if (0.0 < cur_ask <= m_px + 0.001) or (0.0 < cur_bid <= m_px):
+                        if 0.0 < cur_ask <= m_px + 0.001:
                             ord_rec["status"] = "SHADOW_MAKER_FILLED"
                             ord_rec["filled_ts"] = now_ts
                             ord_rec["fill_delay_sec"] = round(now_ts - float(ord_rec["placed_ts"]), 2)
@@ -3469,6 +3421,13 @@ class PolymarketLiveHarvester:
             return False
         failures = int(pos.get("exit_post_failures", 0) or 0) + 1
         pos["exit_post_failures"] = failures
+        err_txt = str(exit_res.get("error") or "").lower()
+        entry_age = now - float(pos.get("entry_ts", 0.0) or 0.0)
+        if "not enough balance" in err_txt and 0.0 <= entry_age < 15.0:
+            pos["next_exit_post_ts"] = now + 0.5
+            pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT"
+            logger.info(f"Maker exit post awaiting CLOB balance indexer sync for {pos.get('trade_id')} (age={entry_age:.2f}s); retry in 0.5s.")
+            return False
         pos["next_exit_post_ts"] = now + min(30.0, 2.0 ** min(failures, 5))
         pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT" if exit_res.get("retryable") else "POST_FAILED"
         logger.warning(f"Maker exit post deferred for {pos.get('trade_id')} ({exit_res.get('error')}); retry with backoff.")
