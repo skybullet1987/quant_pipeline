@@ -352,7 +352,9 @@ def _broadcast_fast_trigger_ipc(data: bytes) -> None:
             s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
             s.setblocking(False)
             _FAST_IPC_SOCK = s
-        _FAST_IPC_SOCK.sendto(data, _FAST_IPC_ADDR)
+        # Resolved per send so `POLYMARKET_IPC_SOCKET_NAME` (same env var the harvester listens on) isolates tests
+        ipc_addr = b"\x00" + os.environ.get("POLYMARKET_IPC_SOCKET_NAME", "polymarket_shock_notify").encode("utf-8")
+        _FAST_IPC_SOCK.sendto(data, ipc_addr)
     except Exception as e:
         _IPC_SEND_FAILURES += 1
         now_u = time.time()

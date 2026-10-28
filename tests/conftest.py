@@ -47,3 +47,23 @@ def _polymarket_test_sandbox_isolation(request: pytest.FixtureRequest, tmp_path:
     monkeypatch.setenv("PM_DISABLE_EXP316_LIVE_EMIT", "1")
     monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "0")
     monkeypatch.setenv("POLYMARKET_IPC_SOCKET_NAME", f"pm_shock_test_{os.getpid()}_{id(tmp_path) & 0xFFFF}")
+    monkeypatch.setenv("POLYMARKET_D1_IPC_SOCKET_NAME", f"pm_d1_test_{os.getpid()}_{id(tmp_path) & 0xFFFF}")
+
+    # Never let a test persist into the PRODUCTION state files under data/ (a test calling
+    # `save_state()` previously overwrote the live harvester's `live_harvester_state.json`).
+    # Tests that need a specific path still override these attributes themselves.
+    state_dir = tmp_path / "default_state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    for mod_name, attrs in (
+        ("src.polymarket_research.polymarket_live_harvester", ("STATE_FILE", "PID_FILE", "COUNTERFACTUAL_CANDIDATES_FILE")),
+        ("src.polymarket_research.polymarket_paper_trader", ("STATE_FILE", "SOL_SHADOW_STATE_FILE", "XRP_SHADOW_STATE_FILE")),
+        ("src.polymarket_research.alpha_124_shadow_daemon", ("STATE_FILE",)),
+    ):
+        try:
+            mod = __import__(mod_name, fromlist=["_"])
+        except Exception:
+            continue
+        for attr in attrs:
+            cur = getattr(mod, attr, None)
+            if isinstance(cur, Path):
+                monkeypatch.setattr(mod, attr, state_dir / f"{mod_name.rsplit('.', 1)[-1]}__{cur.name}")
