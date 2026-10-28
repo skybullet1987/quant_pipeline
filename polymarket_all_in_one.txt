@@ -1,10 +1,10 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-28 21:04:49 UTC | Repo: /tmp/qa_hwm_ws
+Generated: 2026-10-28 21:30:27 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
-  - [config/polymarket_risk_config.json] (Lines 19 - 53 | 906 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
+  - [config/polymarket_risk_config.json] (Lines 19 - 53 | 905 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 54 - 88 | 1,662 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,527 | 573,240 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 89 - 6,527 | 573,251 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,528 - 10,198 | 341,824 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
   - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,199 - 11,948 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (Lines 11,949 - 12,312 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
@@ -32,7 +32,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "seed_survival_floor_usd": 48.0,
   "seed_smooth_compounding": true,
   "enable_graduated_d1_box": true,
-  "enable_sol_d1_box": false,
+  "enable_sol_d1_box": true,
   "phase3a_maker_max_notional_usd": 22.0,
   "d1_box_max_budget_usd": 250.0,
   "d1_box_collateral_reserve_usd": 16.5,
@@ -3422,7 +3422,7 @@ class PolymarketLiveHarvester:
     box_type=str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
     sleeve_src=str(candidate_box.get("sleeve_source") or "D1_SAME_ORACLE_DOMINANCE_BOX").strip()
     cand_asset=str(candidate_box.get("asset") or "").strip().upper()
-    core_d1={"BTC","ETH","XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box",False) else set())
+    core_d1={"BTC","ETH","XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box",True) else set())
     exp_d1={"BNB","DOGE","HYPE"}
     mid_a_chk=str(candidate_box.get("leg_a_market_id") or "")
     mid_b_chk=str(candidate_box.get("leg_b_market_id") or "")
@@ -3508,7 +3508,7 @@ class PolymarketLiveHarvester:
       if box_type=="DOMINANCE":
         if not _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {}):
           return {"executed":False,"reason":"D1_NOT_YET_8_OF_8_GRADUATED"}
-        if cand_asset in exp_d1 and not _grad8(by_da_map.get(cand_asset) or {}):
+        if cand_asset in (exp_d1 | {"SOL"}) and not _grad8(by_da_map.get(cand_asset) or {}):
           return {"executed":False,"reason":f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
       elif not _grad8(by_sl_map.get(sleeve_src) or {}):
         return {"executed":False,"reason":f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}

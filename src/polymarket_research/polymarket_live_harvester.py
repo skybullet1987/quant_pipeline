@@ -4700,7 +4700,7 @@ class PolymarketLiveHarvester:
         box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
         sleeve_src = str(candidate_box.get("sleeve_source") or "D1_SAME_ORACLE_DOMINANCE_BOX").strip()
         cand_asset = str(candidate_box.get("asset") or "").strip().upper()
-        core_d1 = {"BTC", "ETH", "XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box", False) else set())
+        core_d1 = {"BTC", "ETH", "XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box", True) else set())
         exp_d1 = {"BNB", "DOGE", "HYPE"}
         mid_a_chk = str(candidate_box.get("leg_a_market_id") or "")
         mid_b_chk = str(candidate_box.get("leg_b_market_id") or "")
@@ -4817,7 +4817,7 @@ class PolymarketLiveHarvester:
             if box_type == "DOMINANCE":
                 if not _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {}):
                     return {"executed": False, "reason": "D1_NOT_YET_8_OF_8_GRADUATED"}
-                if cand_asset in exp_d1 and not _grad8(by_da_map.get(cand_asset) or {}):
+                if cand_asset in (exp_d1 | {"SOL"}) and not _grad8(by_da_map.get(cand_asset) or {}):
                     return {"executed": False, "reason": f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
             elif not _grad8(by_sl_map.get(sleeve_src) or {}):
                 return {"executed": False, "reason": f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}
