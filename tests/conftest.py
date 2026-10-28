@@ -4,13 +4,27 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _polymarket_test_sandbox_isolation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def _polymarket_test_sandbox_isolation(request: pytest.FixtureRequest, tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     """
     Automatic sandbox isolation for all unit tests so zero `PYTEST_CURRENT_TEST`
     branches exist anywhere in `src/polymarket_research/`.
     Isolates order ledgers, inventory reservations, operational alerts, Unix IPC
     socket names, shadow trackers, and `/dev/shm` fast-tick files into `tmp_path`.
     """
+    if "test_polymarket_live_qa" not in request.node.nodeid:
+        from unittest.mock import MagicMock
+        import src.polymarket_research.polymarket_live_executor as ex_mod
+
+        monkeypatch.setattr(ex_mod, "ClobClient", MagicMock(name="OfflineClobClient"))
+        monkeypatch.setattr(ex_mod, "PY_CLOB_AVAILABLE", True)
+        if not os.getenv("POLYGON_PRIVATE_KEY"):
+            monkeypatch.setenv("POLYGON_PRIVATE_KEY", "0x" + "11" * 32)
+        if not (os.getenv("POLYGON_FUNDER_ADDRESS") or os.getenv("POLYGON_PROXY_ADDRESS")):
+            monkeypatch.setenv("POLYGON_FUNDER_ADDRESS", "0x" + "22" * 20)
+        if not os.getenv("POLYGON_SIGNATURE_TYPE"):
+            monkeypatch.setenv("POLYGON_SIGNATURE_TYPE", "3")
+        monkeypatch.setenv("PM_ENABLE_TLS_KEEPALIVE", "0")
+        monkeypatch.setenv("PM_ENABLE_USER_WS", "0")
     shm_dir = tmp_path / "default_shm"
     tele_dir = tmp_path / "default_tele"
     shm_dir.mkdir(parents=True, exist_ok=True)

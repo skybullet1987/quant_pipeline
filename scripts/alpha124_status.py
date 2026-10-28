@@ -31,6 +31,15 @@ def main() -> None:
             f"({m['wins']}W/{m['losses']}L, WR={m['win_rate_pct']:5.1f}%) | T1000 PnL=${m['realized_pnl_t1000_usd']:+8.2f}"
         )
 
+    by_d1 = st.get("by_d1_asset") or {}
+    if by_d1:
+        print("\n--- D1 Same-Oracle 7-Coin Graduation Status ---")
+        for sym, dm in by_d1.items():
+            print(
+                f"  {sym:6s} | Open={dm['open']:2d} | Closed={dm['closed']:3d} "
+                f"({dm['wins']}W/{dm['losses']}L, WR={dm['win_rate_pct']:5.1f}%) | T1000 PnL=${dm['realized_pnl_t1000_usd']:+8.2f}"
+            )
+
     pend_m = st.get("pending_maker_orders") or []
     if pend_m:
         print(f"\n--- Resting 0%-Fee Maker Entry Bids ({len(pend_m)}) ---")

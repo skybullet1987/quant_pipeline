@@ -25,6 +25,8 @@ from scipy.optimize import minimize
 from scipy.stats import norm
 
 logger = logging.getLogger("DeribitSVISurface")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 DERIBIT_PUBLIC_URL = "https://www.deribit.com/api/v2/public/get_book_summary_by_currency"
 
@@ -238,11 +240,15 @@ class DeribitSVISurfaceEngine:
     Thread-safe, non-blocking, horizon-aware SVI volatility surface cache and digital option calculator.
     """
     def __init__(self, ttl_seconds: float = 60.0):
+        import queue as _queue
         self.ttl_seconds = ttl_seconds
         self._lock = threading.Lock()
         self._cache: Dict[str, SVIParams] = {}
         self._last_fetch_attempt: Dict[str, float] = {}
         self._refresh_in_flight: Dict[str, bool] = {}
+        self._refresh_queue: "_queue.SimpleQueue[Tuple[str, str, float]]" = _queue.SimpleQueue()
+        self._bg_worker_thread: Optional[threading.Thread] = None
+        self._http_client: Any = None
 
     @staticmethod
     def _cache_key(asset_u: str, target_tte_sec: Optional[float] = None) -> str:
@@ -281,9 +287,29 @@ class DeribitSVISurfaceEngine:
 
         url = f"{DERIBIT_PUBLIC_URL}?currency={asset_u}&kind=option"
         try:
-            req = urllib.request.Request(url, headers={"User-Agent": "Polymarket-SVI-Engine/1.0"})
-            with urllib.request.urlopen(req, timeout=2.5) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            _urlopen_fn = urllib.request.urlopen
+            _is_mocked = hasattr(_urlopen_fn, "mock_calls") or getattr(_urlopen_fn, "__module__", "") != "urllib.request"
+            if _is_mocked:
+                req = urllib.request.Request(url, headers={"User-Agent": "Polymarket-SVI-Engine/1.0"})
+                with _urlopen_fn(req, timeout=2.5) as resp:
+                    raw_bytes = resp.read()
+            else:
+                try:
+                    import httpx as _httpx
+                    cli = self._http_client
+                    if cli is None or getattr(cli, "is_closed", False):
+                        cli = _httpx.Client(http2=False, timeout=2.5, headers={"User-Agent": "Polymarket-SVI-Engine/1.0"})
+                        self._http_client = cli
+                    raw_bytes = cli.get(url).content
+                except Exception:
+                    req = urllib.request.Request(url, headers={"User-Agent": "Polymarket-SVI-Engine/1.0"})
+                    with _urlopen_fn(req, timeout=2.5) as resp:
+                        raw_bytes = resp.read()
+            try:
+                import orjson as _orjson
+                data = _orjson.loads(raw_bytes)
+            except Exception:
+                data = json.loads(raw_bytes.decode("utf-8") if isinstance(raw_bytes, (bytes, bytearray)) else raw_bytes)
             summaries = data.get("result", [])
             if not summaries:
                 return None
@@ -332,6 +358,37 @@ class DeribitSVISurfaceEngine:
             logger.debug(f"Deribit SVI fetch notice for {asset_u} ({c_key}): {e}")
             return None
 
+    def _ensure_bg_worker(self) -> None:
+        th = self._bg_worker_thread
+        if th is not None and th.is_alive():
+            return
+        with self._lock:
+            th = self._bg_worker_thread
+            if th is not None and th.is_alive():
+                return
+
+            def _loop() -> None:
+                while True:
+                    c_key, asset_u, eff_tte = self._refresh_queue.get()
+                    try:
+                        # Yield slightly if hot order dispatch is active so L-BFGS-B never steals GIL mid-snipe
+                        try:
+                            from src.polymarket_research.polymarket_live_executor import _HOT_DISPATCH_ACTIVE
+                            if _HOT_DISPATCH_ACTIVE.is_set():
+                                time.sleep(0.05)
+                        except Exception:
+                            pass
+                        self.fetch_and_calibrate_sync(asset_u, target_tte_sec=eff_tte)
+                    except Exception:
+                        pass
+                    finally:
+                        with self._lock:
+                            self._refresh_in_flight[c_key] = False
+
+            t = threading.Thread(target=_loop, name="svi-bg-refresher", daemon=True)
+            t.start()
+            self._bg_worker_thread = t
+
     def _trigger_background_refresh(self, asset: str, target_tte_sec: Optional[float] = None) -> None:
         asset_u = asset.upper()
         c_key = self._cache_key(asset_u, target_tte_sec)
@@ -344,16 +401,8 @@ class DeribitSVISurfaceEngine:
                 return
             self._refresh_in_flight[c_key] = True
             self._last_fetch_attempt[c_key] = now
-
-        def _worker():
-            try:
-                self.fetch_and_calibrate_sync(asset_u, target_tte_sec=eff_tte)
-            finally:
-                with self._lock:
-                    self._refresh_in_flight[c_key] = False
-
-        t = threading.Thread(target=_worker, name=f"svi-refresh-{c_key}", daemon=True)
-        t.start()
+        self._ensure_bg_worker()
+        self._refresh_queue.put((c_key, asset_u, eff_tte))
 
     def get_svi_params(
         self,

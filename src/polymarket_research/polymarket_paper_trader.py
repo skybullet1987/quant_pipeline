@@ -2189,6 +2189,8 @@ class PolymarketForwardPaperTrader:
                 # 1. Ingest new zero-latency shock triggers (<1ms from recorder detection)
                 if TRIGGER_FILE.exists():
                     current_trig_size = TRIGGER_FILE.stat().st_size
+                    if current_trig_size < self.last_trigger_file_pos:
+                        self.last_trigger_file_pos = current_trig_size
                     if current_trig_size > self.last_trigger_file_pos:
                         with open(TRIGGER_FILE, "rb") as f:
                             f.seek(self.last_trigger_file_pos)
@@ -2209,6 +2211,8 @@ class PolymarketForwardPaperTrader:
                 # Fallback to shock_responses if trigger file is absent
                 elif SHOCK_FILE.exists():
                     current_shock_size = SHOCK_FILE.stat().st_size
+                    if current_shock_size < self.last_shock_file_pos:
+                        self.last_shock_file_pos = current_shock_size
                     if current_shock_size > self.last_shock_file_pos:
                         with open(SHOCK_FILE, "rb") as f:
                             f.seek(self.last_shock_file_pos)
@@ -2234,6 +2238,9 @@ class PolymarketForwardPaperTrader:
                     if alt_enabled and alt_shock_file.exists():
                         cur_alt_sz = alt_shock_file.stat().st_size
                         last_alt_pos = getattr(self, alt_pos_attr)
+                        if cur_alt_sz < last_alt_pos:
+                            setattr(self, alt_pos_attr, cur_alt_sz)
+                            last_alt_pos = cur_alt_sz
                         if cur_alt_sz > last_alt_pos:
                             with open(alt_shock_file, "rb") as f:
                                 f.seek(last_alt_pos)
@@ -2290,6 +2297,10 @@ class PolymarketForwardPaperTrader:
                         if telem_path.exists():
                             cur_sz = telem_path.stat().st_size
                             last_pos = getattr(self, pos_attr)
+                            if cur_sz < last_pos:
+                                # Compacted/truncated in place by the telemetry compactor: resume from new EOF.
+                                setattr(self, pos_attr, cur_sz)
+                                last_pos = cur_sz
                             if cur_sz > last_pos:
                                 with open(telem_path, "rb") as f:
                                     f.seek(last_pos)

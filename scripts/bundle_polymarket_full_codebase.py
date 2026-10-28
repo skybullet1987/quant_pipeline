@@ -44,6 +44,8 @@ CORE_V393_MODULES: List[Tuple[str, str]] = [
     # 2. CORE v3.9.3 LIVE EXECUTION, HARVESTING & STREAMING STACK
     ("src/polymarket_research/polymarket_live_harvester.py", "v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP"),
     ("src/polymarket_research/polymarket_live_executor.py", "CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer"),
+    ("src/polymarket_research/polymarket_ws_streams.py", "Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)"),
+    ("src/polymarket_research/latency_trace.py", "Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry"),
     ("src/polymarket_research/polymarket_terminal_recorder.py", "Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder"),
     ("src/polymarket_research/deribit_svi_surface.py", "Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine"),
     ("src/polymarket_research/polymarket_paper_trader.py", "Forward Paper Trader & Production-Parity Simulation Engine"),
@@ -61,14 +63,18 @@ CORE_V393_MODULES: List[Tuple[str, str]] = [
 
 ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
     # 5. ALPHA-124 14-SLEEVE MATHEMATICAL ORACLES, v4.0 NET-ALPHA ENGINE & UNIFIED SHADOW DAEMON
+    ("src/polymarket_research/orderflow_wfo_simulators.py", "v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine"),
     ("src/polymarket_research/net_alpha_opportunity_engine.py", "v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine"),
     ("src/polymarket_research/weather_metar_engine.py", "Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb"),
     ("src/polymarket_research/barrier_onetouch_svi_engine.py", "Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)"),
     ("src/polymarket_research/multistrike_svi_scalper.py", "Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner"),
     ("src/polymarket_research/same_oracle_dominance_box.py", "Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine"),
     ("src/polymarket_research/exact_twap_lock_engine.py", "Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock"),
-    ("src/polymarket_research/alpha_124_shadow_daemon.py", "Unified 11-Sleeve Shadow Daemon (W1, W2, W2_MAKER, B1, B2, M1, M2, M3, M4_<250ms_Shock, D1, S2)"),
-    ("src/polymarket_research/exp316_macro_strike_shadow.py", "EXP-316 Isolated Multi-Strike Convergence Shadow Engine"),
+    ("src/polymarket_research/tradfi_sports_zero_fee_engine.py", "Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)"),
+    ("src/polymarket_research/macro_counting_ctf_engine.py", "Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)"),
+    ("src/polymarket_research/alpha_124_shadow_daemon.py", "Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)"),
+    # EXP-316 (isolated separate service) is bundled only in the full codebase (see EXP316_MODULES) to keep
+    # the Alpha-124 companion bundle strictly < 1,000,000 bytes.
 
     # 6. BACKTESTING, LIVE DAY-BY-DAY PROJECTIONS & TELEMETRY SCORECARDS
     ("scripts/backtest_alpha_124.py", "Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124"),
@@ -76,8 +82,15 @@ ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
     ("scripts/alpha124_status.py", "Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector"),
     ("scripts/polymarket_scorecard_snapshot.py", "Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot"),
 
-    # 7. VERIFICATION & ZERO-TRUST FORENSIC UNIT TEST SUITES (54 PASSING TESTS)
-    ("tests/test_alpha_124_oracles.py", "Unit Tests: Weather METAR, Jump-SVI Barrier, SVI Ladder, D1 Box, S2 TWAP Lock, W2 Maker, M4 Shock, R01 Wallet"),
+    # 7. ALPHA-124 & MULTI-VERTICAL ORACLE UNIT TEST SUITE
+    ("tests/test_alpha_124_oracles.py", "Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet"),
+]
+
+EXP316_MODULES: List[Tuple[str, str]] = [
+    ("src/polymarket_research/exp316_macro_strike_shadow.py", "EXP-316 Isolated Multi-Strike Convergence Shadow Engine"),
+]
+
+HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [
     ("tests/test_polymarket_wfo_5fixes.py", "Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation"),
     ("tests/test_zero_trust_forensic_audit.py", "Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync"),
 ]
@@ -155,7 +168,7 @@ def assemble_bundle(
 
 
 def main() -> None:
-    all_modules = CORE_V393_MODULES + ALPHA124_EXPANSION_MODULES
+    all_modules = CORE_V393_MODULES + ALPHA124_EXPANSION_MODULES + EXP316_MODULES + HARVESTER_TEST_MODULES
     full_text, full_toc = assemble_bundle(
         title="DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)",
         subtitle="100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests",

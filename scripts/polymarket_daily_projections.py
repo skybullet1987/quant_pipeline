@@ -3,7 +3,7 @@
 polymarket_daily_projections.py
 ===============================
 Live Day-by-Day Equity, Net Profit & Phased Sleeve Graduation Projection Engine
-(v4.2 Post-Purge Clean Roster Edition ??? Zero Quarantined Sleeves).
+(v4.2 Post-Purge Clean Roster Edition — Zero Quarantined Sleeves).
 
 Dynamically anchors Day 0 to the REAL live collateral balance and closed trade ledger in
 `data/polymarket/live_harvester_state.json`, tracks real-time shadow graduation progress
@@ -116,6 +116,28 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "l1_daily_pnl_cap_usd": 25.0,
     },
     {
+        "sleeve": "B3_BARRIER_MONO_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "D1_MAKER_ANCHOR_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 0.5,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 45.0,
+    },
+    {
         "sleeve": "N1_NEGRISK_CROSS_BOX",
         "wave": "Wave 1 (Fast-Track 8/8)",
         "target_day": 4,
@@ -136,6 +158,138 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "source": "alpha124",
         "stage1_ticket_usd": 15.0,
         "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "CM_B3_PYTH_BARRIER_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 30.0,
+    },
+    {
+        "sleeve": "SP1_NBA_ZERO_FEE_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 35.0,
+    },
+    {
+        "sleeve": "NR0_ZERO_FEE_SLATE_ARB",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "B4_TOUCHED_BARRIER_WICK_LOCK",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 4,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "ZERO_FEE_MAKER_ANCHOR_BOX",
+        "wave": "Wave 1 (Fast-Track Maker Box)",
+        "target_day": 5,
+        "min_days": 1.0,
+        "min_settled": 8,
+        "min_wr_pct": 92.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 35.0,
+    },
+    {
+        "sleeve": "CTF_OVERROUND_MINT_SELL",
+        "wave": "Wave 1 (Instant Mint-Sell 8/8)",
+        "target_day": 4,
+        "min_days": 0.5,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 30.0,
+    },
+    {
+        "sleeve": "TW1_COUNTING_TRUNCATION_AND_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 5,
+        "min_days": 1.5,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 30.0,
+    },
+    {
+        "sleeve": "FED1_CENTRAL_BANK_LP_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 6,
+        "min_days": 2.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "COND1_MACRO_PARTITION_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 6,
+        "min_days": 2.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "D2_12PM_BINANCE_BOX",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 5,
+        "min_days": 1.5,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 18.0,
+        "l1_daily_pnl_cap_usd": 25.0,
+    },
+    {
+        "sleeve": "GAS1_AAA_GASOLINE_LOCK",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 6,
+        "min_days": 2.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 20.0,
+    },
+    {
+        "sleeve": "MKR_REWARD_LOCKED_CARRY",
+        "wave": "Wave 1 (Fast-Track 8/8)",
+        "target_day": 6,
+        "min_days": 2.0,
+        "min_settled": 8,
+        "min_wr_pct": 100.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 20.0,
     },
     {
         "sleeve": "SLEEVE_SOL_V392_SHADOW",
@@ -182,6 +336,28 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "l1_daily_pnl_cap_usd": 55.0,
     },
     {
+        "sleeve": "CM_B2_PYTH_SESSION_NO_LOCK",
+        "wave": "Wave 2 (Day 9 Pyth 0%-Fee)",
+        "target_day": 9,
+        "min_days": 5.0,
+        "min_settled": 25,
+        "min_wr_pct": 88.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 45.0,
+    },
+    {
+        "sleeve": "CM_U1_PYTH_CLOSE_LOCK",
+        "wave": "Wave 2 (Day 10 Pyth Close)",
+        "target_day": 10,
+        "min_days": 5.0,
+        "min_settled": 25,
+        "min_wr_pct": 88.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 35.0,
+    },
+    {
         "sleeve": "EXP316_TRACK_A_LATE_LOCK",
         "wave": "Wave 2 (Day 10 Strike)",
         "target_day": 10,
@@ -213,6 +389,28 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "source": "alpha124",
         "stage1_ticket_usd": 14.0,
         "l1_daily_pnl_cap_usd": 35.0,
+    },
+    {
+        "sleeve": "S4H_CHAINLINK_CONVERGENCE",
+        "wave": "Wave 3 (Day 14 4h)",
+        "target_day": 14,
+        "min_days": 7.0,
+        "min_settled": 25,
+        "min_wr_pct": 85.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 15.0,
+        "l1_daily_pnl_cap_usd": 30.0,
+    },
+    {
+        "sleeve": "CM_SHOCK_PYTH_CATALYST",
+        "wave": "Wave 3 (Day 16 Macro Jump)",
+        "target_day": 16,
+        "min_days": 10.0,
+        "min_settled": 25,
+        "min_wr_pct": 82.0,
+        "source": "alpha124",
+        "stage1_ticket_usd": 14.0,
+        "l1_daily_pnl_cap_usd": 25.0,
     },
     {
         "sleeve": "S2_EXACT_TWAP_LOCK",
@@ -421,7 +619,7 @@ def simulate_single_day_net_pnl(
             if day_idx < 8:
                 milestone = "Wave 2A Live: +SOL & Phase-3A 0%-Fee Maker Fallback"
 
-    # 4. Wave 2B (Day 8+): Slow-Pool High-WR Locks ??? W1 80-City 0%-Fee METAR + W3 Slate Arb + B2 Barrier + EXP-316 Track A
+    # 4. Wave 2B (Day 8+): Slow-Pool High-WR Locks — W1 80-City 0%-Fee METAR + W3 Slate Arb + B2 Barrier + EXP-316 Track A
     if day_idx >= 8:
         in_stage1_w2 = day_idx < 14
         slow_t1_budget = min(48.0, slow_pool) if in_stage1_w2 else (slow_pool * (0.72 if day_idx >= 15 else 0.95))
@@ -648,7 +846,7 @@ def build_live_projections(days: int = 30, fallback_equity: float = 85.08) -> Di
             if k <= len(daily_rows)
         },
         "p75_jurisdiction_compliance_note": (
-            "P75 models <15ms low-latency execution; Polymarket restricts UK (eu-west-2), FR, DE, IE, and ON ??? "
+            "P75 models <15ms low-latency execution; Polymarket restricts UK (eu-west-2), FR, DE, IE, and ON — "
             "keep live execution on Finland (or another verified non-restricted EU region) unless lawful eligibility is confirmed."
         ),
         "sleeve_graduation_live_tracker": grad_tracker,
@@ -707,4 +905,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

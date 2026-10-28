@@ -29,10 +29,15 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+try:
+    import orjson as _orjson
+except ImportError:  # pragma: no cover
+    _orjson = None
+
 logger = logging.getLogger(__name__)
 
 _WRITER_LOCK = threading.Lock()
-_WRITER_QUEUE: "queue.SimpleQueue[str]" = queue.SimpleQueue()
+_WRITER_QUEUE: "queue.SimpleQueue[tuple[str, str]]" = queue.SimpleQueue()
 _WRITER_THREAD: Optional[threading.Thread] = None
 _QUEUE_SOFT_LIMIT = 5000
 _pending = 0
@@ -57,20 +62,24 @@ def _writer_loop() -> None:
     global _pending
     while True:
         try:
-            first = _WRITER_QUEUE.get()
-            batch = [first]
+            first_item = _WRITER_QUEUE.get()
+            batch_items = [first_item]
             deadline = time.monotonic() + 0.25
-            while len(batch) < 200 and time.monotonic() < deadline:
+            while len(batch_items) < 200 and time.monotonic() < deadline:
                 try:
-                    batch.append(_WRITER_QUEUE.get(timeout=0.05))
+                    batch_items.append(_WRITER_QUEUE.get(timeout=0.05))
                 except queue.Empty:
                     break
-            path = trace_path()
-            path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "a", encoding="utf-8") as fh:
-                fh.write("\n".join(batch) + "\n")
+            by_dest: Dict[str, list[str]] = {}
+            for dest_s, ln in batch_items:
+                by_dest.setdefault(dest_s, []).append(ln)
+            for dest_s, lines_out in by_dest.items():
+                path = Path(dest_s)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "a", encoding="utf-8") as fh:
+                    fh.write("\n".join(lines_out) + "\n")
             with _pending_lock:
-                _pending = max(0, _pending - len(batch))
+                _pending = max(0, _pending - len(batch_items))
         except Exception:  # never let telemetry kill anything
             time.sleep(0.5)
 
@@ -149,13 +158,21 @@ class LatencyTrace:
             if final_fields:
                 self.fields.update(final_fields)
             self.stamp("emit")
-            line = json.dumps(self.to_record(), default=str, separators=(",", ":"))
+            rec = self.to_record()
+            if _orjson is not None:
+                try:
+                    line = _orjson.dumps(rec, default=str).decode("utf-8")
+                except Exception:
+                    line = json.dumps(rec, default=str, separators=(",", ":"))
+            else:
+                line = json.dumps(rec, default=str, separators=(",", ":"))
+            dest_str = str(trace_path())
             with _pending_lock:
                 if _pending >= _QUEUE_SOFT_LIMIT:
                     return  # drop rather than grow unbounded
                 _pending += 1
             _ensure_writer()
-            _WRITER_QUEUE.put(line)
+            _WRITER_QUEUE.put((dest_str, line))
             self.attempt += 1
         except Exception:
             logger.debug("latency trace emit failed", exc_info=True)
@@ -189,6 +206,14 @@ class ActiveCounter:
     def leave(self) -> None:
         with self._lock:
             self._n = max(0, self._n - 1)
+
+    def __enter__(self) -> "ActiveCounter":
+        self.enter()
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool:
+        self.leave()
+        return False
 
     def is_set(self) -> bool:  # Event-compatible read API for existing call sites
         return self._n > 0

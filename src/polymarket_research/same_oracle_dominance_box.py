@@ -33,13 +33,38 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-DOMINANCE_ASSETS: Tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")
+CORE_LIVE_DOMINANCE_ASSETS: Tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")
+EXPANSION_DOMINANCE_ASSETS: Tuple[str, ...] = ("BNB", "DOGE", "HYPE")
+DOMINANCE_ASSETS: Tuple[str, ...] = CORE_LIVE_DOMINANCE_ASSETS + EXPANSION_DOMINANCE_ASSETS
 
 DOMINANCE_SERIES_SLUGS: Dict[str, Dict[str, str]] = {
     "BTC": {"4h": "btc-up-or-down-4h", "15m": "btc-up-or-down-15m", "5m": "btc-up-or-down-5m"},
     "ETH": {"4h": "eth-up-or-down-4h", "15m": "eth-up-or-down-15m", "5m": "eth-up-or-down-5m"},
     "SOL": {"4h": "sol-up-or-down-4h", "15m": "sol-up-or-down-15m", "5m": "sol-up-or-down-5m"},
     "XRP": {"4h": "xrp-up-or-down-4h", "15m": "xrp-up-or-down-15m", "5m": "xrp-up-or-down-5m"},
+    "BNB": {"4h": "bnb-up-or-down-4h", "15m": "bnb-up-or-down-15m", "5m": "bnb-up-or-down-5m"},
+    "DOGE": {"4h": "doge-up-or-down-4h", "15m": "doge-up-or-down-15m", "5m": "doge-up-or-down-5m"},
+    "HYPE": {"4h": "hype-up-or-down-4h", "15m": "hype-up-or-down-15m", "5m": "hype-up-or-down-5m"},
+}
+
+EMPIRICAL_BOX_ASSET_CAPS_USD: Dict[str, float] = {
+    "BTC": 150.0,
+    "ETH": 75.0,
+    "SOL": 22.0,
+    "XRP": 22.0,
+    "BNB": 22.0,
+    "HYPE": 15.0,
+    "DOGE": 15.0,
+}
+
+MIN_CORRIDOR_BPS_BY_ASSET: Dict[str, float] = {
+    "BTC": 3.0,
+    "ETH": 3.0,
+    "SOL": 3.0,
+    "XRP": 3.0,
+    "BNB": 5.0,
+    "DOGE": 5.0,
+    "HYPE": 5.0,
 }
 
 POLYMARKET_CRYPTO_PRICE_URL = "https://polymarket.com/api/crypto/crypto-price"
@@ -472,8 +497,8 @@ def walk_equal_shares_dominance_box(
     fee_exponent_b: float = 1.0,
     max_box_cost_net: float = 0.995,
     max_slip_cents: float = 0.025,
-    min_shares: int = 10,
-    min_box_notional_usd: float = 9.0,
+    min_shares: int = 5,
+    min_box_notional_usd: float = 4.85,
     min_box_cost_net: float = 0.900,
 ) -> Dict[str, Any]:
     """
@@ -603,6 +628,21 @@ def walk_equal_shares_dominance_box(
                 "avail_pair_shares": max_avail_pairs,
             }
 
+    # Polymarket rejects marketable orders below $1 notional: with equal-share boxes a cheap leg
+    # (e.g. 5 sh @ $0.07) would be rejected while the other leg fills -> one-legged box. Checked
+    # AFTER all Q trims so the final share count is what gets validated.
+    min_leg_px = min(best_a, best_b)
+    q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
+    if q_pairs < q_floor:
+        return {
+            "filled": False,
+            "reason": "LEG_BELOW_1USD_MIN",
+            "best_a": round(best_a, 4),
+            "best_b": round(best_b, 4),
+            "l1_box_cost_net": round(min_possible_unit_cost, 5),
+            "avail_pair_shares": max_avail_pairs,
+        }
+
     if spent_total < min_box_notional_usd:
         return {
             "filled": False,
@@ -673,8 +713,8 @@ def walk_equal_shares_multi_leg_box(
     guaranteed_payout_per_bundle: float = 1.0,
     max_bundle_cost_net: float = 0.992,
     max_slip_cents: float = 0.025,
-    min_shares: int = 8,
-    min_box_notional_usd: float = 7.5,
+    min_shares: int = 5,
+    min_box_notional_usd: float = 4.85,
 ) -> Dict[str, Any]:
     """
     Walks N L2 ask books (`N >= 2`, e.g., 2-leg tail equivalence or 3-leg Multi-Strike vs
@@ -750,6 +790,16 @@ def walk_equal_shares_multi_leg_box(
         fee_total = sum(w["fee_usd"] for w in walks)
         all_in_total = spent_total + fee_total
         bundle_cost_net = all_in_total / float(q_sh)
+
+    # Polymarket $1 min marketable order: every leg must clear $1 at the final Q (else one-legged bundle).
+    min_leg_px = min(best_asks)
+    q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
+    if q_sh < q_floor:
+        return {
+            "filled": False,
+            "reason": "LEG_BELOW_1USD_MIN",
+            "avail_bundle_shares": max_avail_sh,
+        }
 
     if spent_total < min_box_notional_usd:
         return {"filled": False, "reason": "BELOW_MIN_BOX_NOTIONAL", "spent_usd": round(spent_total, 2)}

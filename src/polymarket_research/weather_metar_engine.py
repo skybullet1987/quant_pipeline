@@ -92,7 +92,14 @@ STATION_CATALOG: Dict[str, Tuple[float, float, str, str]] = {
     "KDEN": (39.8561, -104.6737, "America/Denver", "Denver"),
     "UUWW": (55.5915, 37.2615, "Europe/Moscow", "Moscow"),
     "MPMG": (8.9733, -79.5556, "America/Panama", "Panama City"),
+    "KAUS": (30.1945, -97.6699, "America/Chicago", "Austin"),
+    "KLAX": (33.9425, -118.4081, "America/Los_Angeles", "Los Angeles"),
+    "HKO": (22.3019, 114.1742, "Asia/Hong_Kong", "Hong Kong"),
 }
+
+HKO_1MIN_CSV_URL = "https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_1min_temperature.csv"
+HKO_MAXMIN_CSV_URL = "https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_since_midnight_maxmin.csv"
+HKO_RHRREAD_URL = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en"
 
 _T_REMARK_RE = re.compile(r"(?:^|\s)T([01])(\d{3})(?:\d{4}|////)(?=\s|$)")
 _BODY_TEMP_RE = re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)")
@@ -108,7 +115,9 @@ _PAREN_ICAO_RE = re.compile(r"\(([A-Z]{4})\)")
 _SERIES_TO_ICAO: Dict[str, str] = {
     "tokyo-daily-weather": "RJTT",
     "london-daily-weather": "EGLC",
+    "london-daily-lowest-temperature": "EGLC",
     "shanghai-daily-weather": "ZSPD",
+    "shanghai-daily-lowest-temperature": "ZSPD",
     "chengdu-daily-weather": "ZUUU",
     "beijing-daily-weather": "ZBAA",
     "wuhan-daily-weather": "ZHHH",
@@ -119,9 +128,15 @@ _SERIES_TO_ICAO: Dict[str, str] = {
     "paris-daily-weather": "LFPB",
     "munich-daily-weather": "EDDM",
     "miami-daily-weather": "KMIA",
+    "miami-daily-lowest-temperature": "KMIA",
     "nyc-daily-weather": "KLGA",
+    "nyc-daily-lowest-temperature": "KLGA",
     "houston-daily-weather": "KHOU",
+    "austin-daily-weather": "KAUS",
+    "los-angeles-daily-weather": "KLAX",
+    "los-angeles-daily-lowest-temperature": "KLAX",
     "seoul-daily-weather": "RKSI",
+    "seoul-daily-lowest-temperature": "RKSI",
     "busan-daily-weather": "RKPK",
     "chicago-daily-weather": "KORD",
     "seattle-daily-weather": "KSEA",
@@ -130,13 +145,34 @@ _SERIES_TO_ICAO: Dict[str, str] = {
     "amsterdam-daily-weather": "EHAM",
     "taipei-daily-weather": "RCSS",
     "singapore-daily-weather": "WSSS",
+    "hong-kong-daily-weather": "HKO",
+    "hong-kong-daily-lowest-temperature": "HKO",
+    "wellington-daily-weather": "NZWN",
+    "wellington-daily-lowest-temperature": "NZWN",
+    "warsaw-daily-weather": "EPWA",
+    "warsaw-daily-lowest-temperature": "EPWA",
+    "buenos-aires-daily-weather": "SAEZ",
+    "helsinki-daily-weather": "EFHK",
+    "denver-daily-weather": "KDEN",
+    "toronto-daily-weather": "CYYZ",
+    "mexico-city-daily-weather": "MMMX",
+    "tel-aviv-daily-weather": "LLBG",
+    "istanbul-daily-weather": "LTFM",
+    "sao-paulo-daily-weather": "SBGR",
+    "manila-daily-weather": "RPLL",
+    "atlanta-daily-weather": "KATL",
+    "san-francisco-daily-weather": "KSFO",
 }
 
 HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
+    "hong-kong-daily-weather",
+    "hong-kong-daily-lowest-temperature",
     "chengdu-daily-weather",
     "beijing-daily-weather",
     "seoul-daily-weather",
+    "seoul-daily-lowest-temperature",
     "shanghai-daily-weather",
+    "shanghai-daily-lowest-temperature",
     "tokyo-daily-weather",
     "wuhan-daily-weather",
     "chongqing-daily-weather",
@@ -145,8 +181,27 @@ HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
     "taipei-daily-weather",
     "singapore-daily-weather",
     "nyc-daily-weather",
+    "nyc-daily-lowest-temperature",
     "chicago-daily-weather",
     "london-daily-weather",
+    "london-daily-lowest-temperature",
+    "miami-daily-weather",
+    "miami-daily-lowest-temperature",
+    "austin-daily-weather",
+    "los-angeles-daily-weather",
+    "los-angeles-daily-lowest-temperature",
+    "houston-daily-weather",
+    "dallas-daily-weather",
+    "wellington-daily-weather",
+    "wellington-daily-lowest-temperature",
+    "warsaw-daily-weather",
+    "warsaw-daily-lowest-temperature",
+    "buenos-aires-daily-weather",
+    "helsinki-daily-weather",
+    "denver-daily-weather",
+    "toronto-daily-weather",
+    "paris-daily-weather",
+    "madrid-daily-weather",
 )
 _MONTH_MAP = {
     "january": 1, "jan": 1,
@@ -178,7 +233,7 @@ class WeatherBucket:
     outcome_yes_resolved: Optional[int] = None  # 1 or 0 for closed markets
     fee_rate: float = 0.0
     fee_exponent: float = 1.0
-
+    neg_risk: Optional[bool] = None  # Gamma `negRisk`; None = unknown (blocks LIVE C1 emits)
     def contains_rounded(self, rounded_int: int) -> bool:
         return self.low_bound <= rounded_int <= self.high_bound
 
@@ -415,6 +470,8 @@ def parse_weather_event(
     m_icao = _AWC_ICAO_RE.search(desc)
     if m_icao and "SPECI" in desc:
         icao = m_icao.group(1).upper()
+    elif "weather.gov.hk" in desc.lower() and "hong kong observatory" in desc.lower():
+        icao = "HKO"
     elif allow_historical_same_station:
         m_noaa = _NOAA_ICAO_RE.search(desc)
         m_par = _PAREN_ICAO_RE.search(desc)
@@ -516,6 +573,102 @@ def parse_weather_event(
     )
 
 
+def parse_hko_csv_observations(
+    raw_1min_csv: str,
+    raw_maxmin_csv: str,
+    obs_date: date,
+    tz_name: str = "Asia/Hong_Kong",
+) -> List[MetarObservation]:
+    """
+    Parses Hong Kong Observatory (`HKO`) official 1-minute tenths-of-°C live air temperature
+    and midnight-to-now Absolute Daily Max/Min CSV feeds (`HK Observatory` station, NOT Chek Lap Kok airport).
+    """
+    tz = ZoneInfo(tz_name)
+    local_start = datetime(obs_date.year, obs_date.month, obs_date.day, 0, 0, tzinfo=tz)
+    cur_c: Optional[float] = None
+    cur_dt_loc: Optional[datetime] = None
+    max_c: Optional[float] = None
+    min_c: Optional[float] = None
+
+    for ln in (raw_1min_csv or "").splitlines():
+        parts = [p.strip() for p in ln.split(",")]
+        if len(parts) >= 3 and parts[1] in ("HK Observatory", "Hong Kong Observatory") and len(parts[0]) >= 12 and parts[0][:12].isdigit():
+            try:
+                dt_l = datetime.strptime(parts[0][:12], "%Y%m%d%H%M").replace(tzinfo=tz)
+                if dt_l.date() == obs_date:
+                    cur_c = float(parts[2])
+                    cur_dt_loc = dt_l
+            except ValueError:
+                pass
+
+    for ln in (raw_maxmin_csv or "").splitlines():
+        parts = [p.strip() for p in ln.split(",")]
+        if len(parts) >= 4 and parts[1] in ("HK Observatory", "Hong Kong Observatory") and len(parts[0]) >= 12 and parts[0][:12].isdigit():
+            try:
+                dt_l = datetime.strptime(parts[0][:12], "%Y%m%d%H%M").replace(tzinfo=tz)
+                if dt_l.date() == obs_date:
+                    if parts[2] and parts[2].upper() != "N/A":
+                        max_c = float(parts[2])
+                    if parts[3] and parts[3].upper() != "N/A":
+                        min_c = float(parts[3])
+                    if cur_dt_loc is None:
+                        cur_dt_loc = dt_l
+            except ValueError:
+                pass
+
+    if cur_dt_loc is None:
+        return []
+    out: List[MetarObservation] = []
+    # Stamp midnight-since-start min/max near start of local day so they anchor exact `running_ext_c`
+    # without distorting the recent 3.5h real-time NWP bias window!
+    if min_c is not None:
+        dt_min = min(cur_dt_loc, local_start + timedelta(minutes=1))
+        out.append(MetarObservation("HKO", dt_min.astimezone(timezone.utc), dt_min, min_c, True, f"HKO_MIN {min_c:.1f}C"))
+    if max_c is not None:
+        dt_max = min(cur_dt_loc, local_start + timedelta(minutes=2))
+        out.append(MetarObservation("HKO", dt_max.astimezone(timezone.utc), dt_max, max_c, True, f"HKO_MAX {max_c:.1f}C"))
+    eff_cur = cur_c if cur_c is not None else (max_c if max_c is not None else min_c)
+    if eff_cur is not None:
+        out.append(MetarObservation("HKO", cur_dt_loc.astimezone(timezone.utc), cur_dt_loc, eff_cur, True, f"HKO_1M {eff_cur:.1f}C"))
+    out.sort(key=lambda o: o.utc_dt)
+    return out
+
+
+def fetch_hko_observations_sync(
+    obs_date: date,
+    tz_name: str = "Asia/Hong_Kong",
+    timeout: float = 7.0,
+) -> List[MetarObservation]:
+    """Fetches official Hong Kong Observatory (`HKO`) 1-min and midnight max/min observations."""
+    raw_1m = ""
+    raw_mm = ""
+    hdrs = {"User-Agent": "DominusWeatherEngine/1.0"}
+    try:
+        raw_1m = urllib.request.urlopen(urllib.request.Request(HKO_1MIN_CSV_URL, headers=hdrs), timeout=timeout).read().decode("utf-8-sig", errors="ignore")
+    except Exception as exc:
+        logger.debug(f"HKO 1min CSV notice: {exc}")
+    try:
+        raw_mm = urllib.request.urlopen(urllib.request.Request(HKO_MAXMIN_CSV_URL, headers=hdrs), timeout=timeout).read().decode("utf-8-sig", errors="ignore")
+    except Exception as exc:
+        logger.debug(f"HKO maxmin CSV notice: {exc}")
+    parsed = parse_hko_csv_observations(raw_1m, raw_mm, obs_date, tz_name)
+    if parsed:
+        return parsed
+    try:
+        data = json.loads(urllib.request.urlopen(urllib.request.Request(HKO_RHRREAD_URL, headers=hdrs), timeout=timeout).read().decode("utf-8"))
+        t_blk = data.get("temperature") or {}
+        rec_iso = str(t_blk.get("recordTime") or "")
+        dt_l = datetime.fromisoformat(rec_iso).astimezone(ZoneInfo(tz_name)) if rec_iso else datetime.now(ZoneInfo(tz_name))
+        if dt_l.date() == obs_date:
+            for item in t_blk.get("data") or []:
+                if "Observatory" in str(item.get("place") or ""):
+                    v = float(item["value"])
+                    return [MetarObservation("HKO", dt_l.astimezone(timezone.utc), dt_l, v, False, f"HKO_RHR {v:.1f}C")]
+    except Exception:
+        pass
+    return []
+
+
 def fetch_metar_observations_sync(
     icao: str,
     obs_date: date,
@@ -527,6 +680,8 @@ def fetch_metar_observations_sync(
     Uses exact Polymarket AWC endpoint for recent dates (<= 13 days) and falls back
     seamlessly to Iowa Environmental Mesonet (IEM ASOS) raw METAR archive for older dates.
     """
+    if icao.upper() == "HKO":
+        return fetch_hko_observations_sync(obs_date, tz_name, timeout=timeout)
     tz = ZoneInfo(tz_name)
     local_start = datetime(obs_date.year, obs_date.month, obs_date.day, 0, 0, tzinfo=tz)
     local_end = local_start + timedelta(days=1)
@@ -787,13 +942,27 @@ def compute_weather_probabilities(
             if past_peak and (eval_local.date() > spec.obs_date or cooling_cushion_c >= 0.8) and p_locked_bucket >= 0.88:
                 is_solar_lock_window = True
         else:
-            # LOW temperature market: typically locks only late at night (23:00+) unless evening stays warm above morning trough
+            # LOW temperature market:
+            #   (a) Late-night lock (`>= 22:30` local) with `>= 1.0°C` warming cushion, OR
+            #   (b) Post-sunrise morning trough lock (`09:30 <= local_hr < 22:30`) with `>= 2.0°C` warming cushion
+            #       AND strict NWP evening cold-front veto (`min(member_extremes) >= running_ext_c + 1.8°C`).
             warming_cushion_c = latest_obs.temp_c - running_ext_c
             cooling_cushion_c = warming_cushion_c
-            past_trough = (eval_local.date() > spec.obs_date) or (
+            past_trough_late = (eval_local.date() > spec.obs_date) or (
                 eval_local.date() == spec.obs_date and local_hr_float >= 22.5
             )
-            if past_trough and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0) and p_locked_bucket >= 0.90:
+            morning_trough_safe = (
+                eval_local.date() == spec.obs_date
+                and 9.50 <= local_hr_float < 22.5
+                and warming_cushion_c >= 2.0
+                and n_raw >= 15
+                and bool(member_extremes)
+                and min(member_extremes) >= (running_ext_c + 1.8)
+            )
+            if p_locked_bucket >= 0.90 and (
+                (past_trough_late and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0))
+                or morning_trough_safe
+            ):
                 is_solar_lock_window = True
 
     return {
@@ -930,7 +1099,7 @@ AWC_TAF_URL = "https://aviationweather.gov/api/data/taf"
 # Empirical ICAO routine hourly METAR release minute past the hour (US ASOS :51-:54, ICAO Europe/Asia :00/:20/:50)
 STATION_ROUTINE_RELEASE_MIN: Dict[str, Tuple[int, ...]] = {
     "KLGA": (51,), "KORD": (51,), "KATL": (52,), "KDAL": (53,), "KHOU": (53,),
-    "KMIA": (53,), "KSEA": (53,), "KSFO": (56,), "KDEN": (53,), "CYYZ": (0,),
+    "KMIA": (53,), "KSEA": (53,), "KSFO": (56,), "KDEN": (53,), "KAUS": (53,), "KLAX": (53,), "CYYZ": (0,),
     "EGLC": (20, 50), "LFPB": (0, 30), "EDDM": (20, 50), "LIMC": (20, 50), "EFHK": (20, 50),
     "RJTT": (0, 30), "RKSI": (0, 30), "RKPK": (0,), "ZSPD": (0,), "ZGSZ": (0,),
     "RPLL": (0,), "LTAC": (20, 50), "SAEZ": (0,), "NZWN": (0, 30), "MMMX": (45,),
@@ -947,6 +1116,8 @@ def compute_adaptive_metar_poll_ttl(
     Returns `10.0s` inside `[release_min - 1, release_min + 4]` (capturing new hourly METARs within
     seconds of AWC publication!) and `300.0s` during quiet mid-hour windows.
     """
+    if icao.upper() == "HKO":
+        return 45.0
     dt = now_utc or datetime.now(timezone.utc)
     cur_min = dt.minute + dt.second / 60.0
     release_mins: List[int] = list(STATION_ROUTINE_RELEASE_MIN.get(icao.upper(), ()))
@@ -1010,6 +1181,8 @@ def fetch_taf_extremes_sync(
     timeout: float = 5.0,
 ) -> Dict[str, float]:
     """Fetches official `aviationweather.gov/api/data/taf` `TX`/`TN` runway extremes for `(icao, obs_date)`."""
+    if icao.upper() == "HKO":
+        return {}
     url = f"{AWC_TAF_URL}?ids={icao.upper()}&format=raw"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "DominusWeatherEngine/1.0"})
@@ -1051,38 +1224,91 @@ def evaluate_weather_event_slate(
     """
     partition_ok = verify_weather_slate_partition(spec)
     rows: List[Dict[str, Any]] = []
+    no_rows: List[Dict[str, Any]] = []
     for idx, b in enumerate(spec.buckets):
         bk = bucket_books.get(b.market_id) or {}
         ask_y = bk.get("ask_yes")
         ask_sz = float(bk.get("ask_yes_shares") or 0.0)
+        ask_n = bk.get("ask_no")
+        ask_n_sz = float(bk.get("ask_no_shares") or 0.0)
         p_b = float(probs[idx]) if idx < len(probs) else 0.0
+        fr_b = max(0.0, float(getattr(b, "fee_rate", 0.0) or 0.0))
+        fe_b = max(1.0, float(getattr(b, "fee_exponent", 1.0) or 1.0))
         if ask_y is not None and 0.005 <= float(ask_y) <= 0.99 and ask_sz >= 5.0:
+            ask_yf = float(ask_y)
+            fee_yf = fr_b * ((ask_yf * (1.0 - ask_yf)) ** fe_b) if fr_b > 0.0 else 0.0
+            eff_yf = ask_yf + fee_yf
             rows.append({
                 "idx": idx,
                 "market_id": b.market_id,
                 "label": b.label,
                 "yes_token": b.yes_token,
-                "ask_yes": float(ask_y),
+                "ask_yes": ask_yf,
+                "eff_ask_yes": round(eff_yf, 6),
+                "fee_per_share": round(fee_yf, 6),
+                "fee_rate": fr_b,
+                "fee_exponent": fe_b,
                 "ask_yes_shares": ask_sz,
                 "prob": p_b,
-                "edge": p_b - float(ask_y),
+                "edge": p_b - eff_yf,
+            })
+        if ask_n is not None and 0.005 <= float(ask_n) <= 0.995 and ask_n_sz >= 5.0:
+            ask_nf = float(ask_n)
+            fee_nf = fr_b * ((ask_nf * (1.0 - ask_nf)) ** fe_b) if fr_b > 0.0 else 0.0
+            eff_nf = ask_nf + fee_nf
+            no_rows.append({
+                "idx": idx,
+                "market_id": b.market_id,
+                "label": b.label,
+                "yes_token": b.no_token,
+                "no_token": b.no_token,
+                "side": "NO",
+                "ask_yes": ask_nf,
+                "eff_ask_yes": round(eff_nf, 6),
+                "fee_per_share": round(fee_nf, 6),
+                "fee_rate": fr_b,
+                "fee_exponent": fe_b,
+                "ask_yes_shares": ask_n_sz,
             })
 
     full_slate: Optional[Dict[str, Any]] = None
     if partition_ok and len(rows) == len(spec.buckets):
-        sum_asks = sum(r["ask_yes"] for r in rows)
+        sum_asks = sum(r["eff_ask_yes"] for r in rows)
+        sum_raw_asks = sum(r["ask_yes"] for r in rows)
         min_sh = min(r["ask_yes_shares"] for r in rows)
         if sum_asks <= max_underround_sum and min_sh >= 5.0:
             equal_sh = max(5.0, min(min_sh, math.floor(float(target_budget_usd) / max(0.10, sum_asks))))
             if equal_sh * sum_asks <= float(target_budget_usd) * 1.25:
                 full_slate = {
                     "mode": "FULL_SLATE_DUTCH_ARB",
+                    "side": "ALL_BUCKETS_YES",
+                    "guaranteed_payout_per_set": 1.0,
                     "sum_asks": round(sum_asks, 5),
+                    "sum_raw_asks": round(sum_raw_asks, 5),
                     "guaranteed_edge_per_set": round(1.0 - sum_asks, 5),
                     "equal_shares": float(equal_sh),
                     "total_cost_usd": round(equal_sh * sum_asks, 4),
                     "guaranteed_profit_usd": round(equal_sh * (1.0 - sum_asks), 4),
                     "legs": rows,
+                }
+    if full_slate is None and partition_ok and len(no_rows) == len(spec.buckets) and len(spec.buckets) >= 3:
+        n_b = float(len(spec.buckets))
+        guar_pay = n_b - 1.0
+        sum_asks_no = sum(r["eff_ask_yes"] for r in no_rows)
+        min_sh_no = min(r["ask_yes_shares"] for r in no_rows)
+        if sum_asks_no <= guar_pay - (1.0 - max_underround_sum) and min_sh_no >= 5.0:
+            equal_sh_no = max(5.0, min(min_sh_no, math.floor(float(target_budget_usd) / max(0.50, sum_asks_no))))
+            if equal_sh_no * sum_asks_no <= float(target_budget_usd) * 1.25:
+                full_slate = {
+                    "mode": "FULL_SLATE_NO_COMPLEMENT_ARB",
+                    "side": "ALL_BUCKETS_NO",
+                    "guaranteed_payout_per_set": round(guar_pay, 4),
+                    "sum_asks": round(sum_asks_no, 5),
+                    "guaranteed_edge_per_set": round(guar_pay - sum_asks_no, 5),
+                    "equal_shares": float(equal_sh_no),
+                    "total_cost_usd": round(equal_sh_no * sum_asks_no, 4),
+                    "guaranteed_profit_usd": round(equal_sh_no * (guar_pay - sum_asks_no), 4),
+                    "legs": no_rows,
                 }
 
     # Constrained positive-EV subset (2-3 buckets with individual edge >= +0.04, combined prob >= 0.72, sum_asks <= 0.88)
@@ -1090,7 +1316,7 @@ def evaluate_weather_event_slate(
     best_subset: Optional[Dict[str, Any]] = None
     if len(pos_rows) >= 2:
         cand_legs = pos_rows[:3]
-        sum_sub_asks = sum(r["ask_yes"] for r in cand_legs)
+        sum_sub_asks = sum(r["eff_ask_yes"] for r in cand_legs)
         sum_sub_prob = min(0.999, sum(r["prob"] for r in cand_legs))
         min_sub_sh = min(r["ask_yes_shares"] for r in cand_legs)
         net_edge_set = sum_sub_prob - sum_sub_asks

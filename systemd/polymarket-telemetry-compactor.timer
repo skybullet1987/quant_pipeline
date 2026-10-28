@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Polymarket & Alpha-124 Telemetry Compactor every 2 hours
+
+[Timer]
+OnCalendar=*-*-* 00/2:17:00
+RandomizedDelaySec=90
+Persistent=true
+
+[Install]
+WantedBy=timers.target

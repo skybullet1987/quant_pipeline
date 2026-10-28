@@ -441,6 +441,7 @@ def scan_binary_complete_set_arb(
     fee_exponent: float = 1.0,
     max_complete_set_cost: float = 0.994,
     min_shares: int = 10,
+    max_box_cost_net: Optional[float] = None,
 ) -> Dict[str, Any]:
     """
     Walks equal integer share quantity `Q` across `YES` and `NO` asks of the EXACT SAME
@@ -448,6 +449,8 @@ def scan_binary_complete_set_arb(
     zero oracle/basis divergence, `net_cost_per_pair <= max_complete_set_cost` locks a
     deterministic riskless floor (redeemable/mergeable for $1.00).
     """
+    if max_box_cost_net is not None:
+        max_complete_set_cost = float(max_box_cost_net)
     if not market_id or not yes_token or not no_token or str(yes_token) == str(no_token):
         return {"filled": False, "reason": "INVALID_TOKENS"}
 

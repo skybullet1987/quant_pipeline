@@ -1343,6 +1343,9 @@ def test_round8_p0_02_recovered_entry_contains_complete_supervisory_metadata():
     """P0-02: Recovered position contains full supervisory metadata, preventing reliance on defaults."""
     harvester = PolymarketLiveHarvester(dry_run=False)
     harvester.save_state = MagicMock()
+    # Offline sandbox client (conftest) must behave like the exchange rejecting the fake token,
+    # not return an ambiguous MagicMock that is (correctly) classified as EXIT_POST_OUTCOME_UNKNOWN.
+    harvester.executor.client.post_order = MagicMock(return_value={"success": False, "errorMsg": "invalid token id"})
 
     trade_id = "INTENT_FULL_SCHEMA_01"
     token_id = "0xTOK_SCHEMA_TEST"

@@ -32,6 +32,9 @@ DEFAULT_ANNUAL_IV_FLOORS: Dict[str, float] = {
     "ETH": 0.70,
     "SOL": 0.90,
     "XRP": 0.95,
+    "BNB": 0.85,
+    "DOGE": 1.15,
+    "HYPE": 1.35,
 }
 
 SECONDS_PER_YEAR = 365.25 * 86400.0

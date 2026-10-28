@@ -449,9 +449,9 @@ def test_same_oracle_dominance_box_math_equal_shares_and_strike_guard() -> None:
     assert w_exp["filled"] is False
 
     # Regression (SOL D1_QUIET_BOOK_BOX 23:56 UTC): 11 shares @ $0.90 + 138 @ $0.91 with Leg B @ $0.07 ($13.50 budget, 0.985 cap)
-    # Must trim 13 -> 11 shares at L1 ($0.90 + $0.07 + fees = $0.98086 <= $0.985) so worst_px ($0.90) never breaches 0.985!
+    # 11 x $0.07 = $0.77 Leg B is below Polymarket's $1 marketable-BUY minimum -> must reject (would leave a naked leg).
     from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
-    w_sol_trim = walk_equal_shares_dominance_box(
+    w_sol_sub1 = walk_equal_shares_dominance_box(
         asks_a_raw=[{"price": "0.90", "size": "11"}, {"price": "0.91", "size": "138.36"}],
         asks_b_raw=[{"price": "0.07", "size": "66.7"}],
         target_budget_usd=13.50,
@@ -459,10 +459,22 @@ def test_same_oracle_dominance_box_math_equal_shares_and_strike_guard() -> None:
         min_shares=8,
         min_box_notional_usd=7.0,
     )
+    assert w_sol_sub1["filled"] is False
+    assert w_sol_sub1["reason"] == "LEG_BELOW_1USD_MIN"
+
+    # Same trim geometry with a >= $1 Leg B: must trim to the 11 L1 shares so worst_px never breaches 0.985.
+    w_sol_trim = walk_equal_shares_dominance_box(
+        asks_a_raw=[{"price": "0.86", "size": "11"}, {"price": "0.88", "size": "138.36"}],
+        asks_b_raw=[{"price": "0.10", "size": "66.7"}],
+        target_budget_usd=13.50,
+        max_box_cost_net=0.985,
+        min_shares=8,
+        min_box_notional_usd=7.0,
+    )
     assert w_sol_trim["filled"] is True
     assert w_sol_trim["shares"] == 11
-    assert w_sol_trim["leg_a_walk"]["worst_px"] == 0.90
-    assert w_sol_trim["leg_b_walk"]["worst_px"] == 0.07
+    assert w_sol_trim["leg_a_walk"]["worst_px"] == 0.86
+    assert w_sol_trim["leg_b_walk"]["worst_px"] == 0.10
     assert w_sol_trim["box_cost_net"] <= 0.985
     ex_dry = PolymarketLiveExecutor(dry_run=True)
     r_exec_trim = ex_dry.execute_atomic_dominance_box(
@@ -1810,7 +1822,7 @@ def test_v42_seven_new_shadow_additions_and_quarantine(tmp_path, monkeypatch):
         scratches = [c for c in d.closed_positions if c["status"] == "PREOPEN_ONE_LEG_SCRATCH"]
         assert len(scratches) == 1 and scratches[0]["tier_pnls_usd"]["T1000"] < 0.0
 
-        # Test S5M_CHAINLINK_SNIPER entry at TTE=90s
+        # Test S5M_CHAINLINK_SNIPER entry at TTE=90s (requires verified direct USD flag — never unverified USDT!)
         sp_5m = a124.TwapCandleMarketSpec(
             asset="BTC", horizon="5m", market_id="m_s5m", condition_id="0xs5m",
             title="BTC 5m", start_iso="2026-10-26T14:55:00Z", end_iso="2026-10-26T15:00:00Z",
@@ -1820,6 +1832,10 @@ def test_v42_seven_new_shadow_additions_and_quarantine(tmp_path, monkeypatch):
         )
         d.s5m_candles = {"BTC_5m_1793026800": sp_5m}
         d.chainlink_open_cache[f"BTC_5m_{int(sp_5m.start_ts)}"] = (sp_5m.end_ts, 83800.0)  # +23.8 bps cushion!
+        d.usd_direct_flags["BTC"] = False
+        await d.scan_s5m_chainlink_sniper([], now_ts=1793026710.0)
+        assert not any(p["sleeve"] == "S5M_CHAINLINK_SNIPER" for p in d.open_positions.values())
+        d.usd_direct_flags["BTC"] = True
         await d.scan_s5m_chainlink_sniper([], now_ts=1793026710.0)
         assert any(p["sleeve"] == "S5M_CHAINLINK_SNIPER" for p in d.open_positions.values())
 
@@ -1960,6 +1976,715 @@ def test_oct27_0655_strike_inversion_and_antibox_veto(tmp_path: Path) -> None:
     assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is True
     books_fc["ob"] = {"bids": [{"price": "0.61", "size": "50"}]}
     assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is False
+
+
+def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path):
+    """Verify 7-coin D1 expansion, t+35s Gamma strike fallback, B3 barrier boxes, W3 ALL_BUCKETS_NO, Pyth 0%-fee, and D1_MAKER_ANCHOR_BOX."""
+    import asyncio
+    import time
+    from datetime import date
+    import src.polymarket_research.alpha_124_shadow_daemon as a124_exp
+    from src.polymarket_research.same_oracle_dominance_box import (
+        DOMINANCE_ASSETS,
+        MIN_CORRIDOR_BPS_BY_ASSET,
+        build_crypto_price_query_url,
+        determine_dominance_legs,
+        parse_twap_candle_event,
+    )
+    from src.polymarket_research.barrier_onetouch_svi_engine import detect_barrier_monotonicity_boxes
+    from src.polymarket_research.multistrike_svi_scalper import ZERO_FEE_PYTH_DAILY_SERIES
+    from src.polymarket_research.weather_metar_engine import (
+        WeatherBucket,
+        WeatherEventSpec,
+        evaluate_weather_event_slate,
+    )
+
+    # 1. 7-coin Dominance catalog (BNB, DOGE, HYPE) + 5.0 bps expansion corridor guard
+    assert set(DOMINANCE_ASSETS) == {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE"}
+    assert len(ZERO_FEE_PYTH_DAILY_SERIES) == 8
+    specs_exp = {}
+    for sym, slug_p, stream in (
+        ("BNB", "bnb", "bnb-usd"),
+        ("DOGE", "doge", "doge-usd"),
+        ("HYPE", "hype", "hype-usd"),
+    ):
+        ev15 = {
+            "slug": f"{slug_p}-updown-15m-1793100000",
+            "endDate": "2026-10-27T11:15:00Z",
+            "markets": [{
+                "id": f"m15_{sym}", "conditionId": "0x" + "11" * 32, "question": f"{sym} Up or Down 15m",
+                "eventStartTime": "2026-10-27T11:00:00Z", "endDate": "2026-10-27T11:15:00Z",
+                "resolutionSource": f"https://data.chain.link/streams/{stream}-twap-60s-streams",
+                "cryptoMarketConfig": {"twapEnabled": True, "twapLookbackSeconds": 60},
+                "outcomes": '["Up", "Down"]', "clobTokenIds": f'["{sym}_15_up", "{sym}_15_dn"]',
+                "orderMinSize": 5, "feesEnabled": True, "feeSchedule": {"rate": 0.07, "exponent": 1},
+            }],
+        }
+        ev5 = {
+            "slug": f"{slug_p}-updown-5m-1793100600",
+            "endDate": "2026-10-27T11:15:00Z",
+            "markets": [{
+                "id": f"m5_{sym}", "conditionId": "0x" + "22" * 32, "question": f"{sym} Up or Down 5m",
+                "eventStartTime": "2026-10-27T11:10:00Z", "endDate": "2026-10-27T11:15:00Z",
+                "resolutionSource": f"https://data.chain.link/streams/{stream}-twap-60s-streams",
+                "cryptoMarketConfig": {"twapEnabled": True, "twapLookbackSeconds": 60},
+                "outcomes": '["Up", "Down"]', "clobTokenIds": f'["{sym}_5_up", "{sym}_5_dn"]',
+                "orderMinSize": 5, "feesEnabled": True, "feeSchedule": {"rate": 0.07, "exponent": 1},
+            }],
+        }
+        s15 = parse_twap_candle_event(ev15, sym, "15m")
+        s5 = parse_twap_candle_event(ev5, sym, "5m")
+        assert s15 is not None and s5 is not None and s15.asset == sym
+        assert f"symbol={sym}" in build_crypto_price_query_url(s15)
+        specs_exp[sym] = (s15, s5)
+
+    dg15, dg5 = specs_exp["DOGE"]
+    assert determine_dominance_legs(dg15, 0.20000, dg5, 0.20007, min_corridor_bps=MIN_CORRIDOR_BPS_BY_ASSET["DOGE"]) is None
+    assert determine_dominance_legs(dg15, 0.20000, dg5, 0.20014, min_corridor_bps=MIN_CORRIDOR_BPS_BY_ASSET["DOGE"]) is not None
+
+    # 2. Proactive t+35s prev_5m Gamma eventMetadata.finalPrice strike recovery when crypto-price returns HTTP 429 (None)
+    a124_exp.STATE_FILE = tmp_path / "exp_state.json"
+    a124_exp.LEDGER_FILE = tmp_path / "exp_ledger.jsonl"
+    a124_exp.LIVE_ALPHA124_STATE_MIRROR_FILE = tmp_path / "exp_mirror.json"
+    a124_exp.D1_LIVE_CANDIDATES_FILE = tmp_path / "exp_d1_cands.jsonl"
+    d_exp = a124_exp.Alpha124ShadowDaemon(single_scan=False)
+    prev_slug = f"doge-updown-5m-{int(dg15.start_ts) - 300}"
+
+    async def _fetch_429_fallback(url: str, timeout: float = 5.0):
+        if "crypto-price" in url:
+            return None  # Simulated Chainlink HTTP 429
+        if prev_slug in url:
+            return [{"slug": prev_slug, "closed": True, "eventMetadata": {"finalPrice": 0.21456}}]
+        return None
+
+    d_exp.fetch_json = _fetch_429_fallback
+    orig_time = a124_exp.time.time
+    try:
+        a124_exp.time.time = lambda: dg15.start_ts + 45.0
+        k_rec = asyncio.run(d_exp.get_authoritative_open_strike(dg15))
+        assert k_rec == 0.21456
+    finally:
+        a124_exp.time.time = orig_time
+
+    # 3. B3_BARRIER_MONO_BOX monotonicity detector (UP & DOWN barriers)
+    b3_rows = [
+        {"direction": "UP", "strike": 100000.0, "ask_yes": 0.50, "ask_no": 0.52, "market_id": "m_lo", "condition_id": "0x1", "yes_token": "t_lo_y", "no_token": "t_lo_n", "end_ts": time.time() + 3600},
+        {"direction": "UP", "strike": 105000.0, "ask_yes": 0.58, "ask_no": 0.43, "market_id": "m_hi", "condition_id": "0x2", "yes_token": "t_hi_y", "no_token": "t_hi_n", "end_ts": time.time() + 3600},
+        {"direction": "DOWN", "strike": 80000.0, "ask_yes": 0.58, "ask_no": 0.44, "market_id": "m_dlo", "condition_id": "0x3", "yes_token": "t_dlo_y", "no_token": "t_dlo_n", "end_ts": time.time() + 3600},
+        {"direction": "DOWN", "strike": 85000.0, "ask_yes": 0.50, "ask_no": 0.52, "market_id": "m_dhi", "condition_id": "0x4", "yes_token": "t_dhi_y", "no_token": "t_dhi_n", "end_ts": time.time() + 3600},
+    ]
+    b3_found = detect_barrier_monotonicity_boxes(b3_rows, fee_rate=0.07, max_box_cost_net=0.985)
+    assert len(b3_found) == 2
+    assert {b["direction"] for b in b3_found} == {"UP", "DOWN"}
+
+    # 4. W3_WEATHER_SLATE_ARB ALL_BUCKETS_NO ($2.00 guaranteed payout on 3-bucket slate) + settlement
+    b1 = WeatherBucket("w1", "c1", "<=69F", "NYC <= 69F", "w1_y", "w1_n", "F", -float("inf"), 69.0)
+    b2 = WeatherBucket("w2", "c2", "70-71F", "NYC 70-71F", "w2_y", "w2_n", "F", 70.0, 71.0)
+    b3 = WeatherBucket("w3", "c3", ">=72F", "NYC >= 72F", "w3_y", "w3_n", "F", 72.0, float("inf"))
+    sp_w = WeatherEventSpec(
+        "W_EV_NO", "nyc-oct-27", "nyc-daily-weather", "NYC High", "KLGA", "NYC",
+        40.77, -73.87, "America/New_York", date(2026, 10, 27), "HIGH", "F",
+        "zero_fees", "2026-10-28T04:00:00Z", [b1, b2, b3],
+    )
+    w_res = evaluate_weather_event_slate(
+        sp_w,
+        [0.34, 0.33, 0.33],
+        {
+            "w1": {"ask_yes": 0.42, "ask_yes_shares": 50.0, "ask_no": 0.62, "ask_no_shares": 60.0},
+            "w2": {"ask_yes": 0.42, "ask_yes_shares": 50.0, "ask_no": 0.62, "ask_no_shares": 60.0},
+            "w3": {"ask_yes": 0.42, "ask_yes_shares": 50.0, "ask_no": 0.62, "ask_no_shares": 60.0},
+        },
+        target_budget_usd=35.0,
+    )
+    full_arb = w_res["full_slate_arb"]
+    assert full_arb is not None and full_arb["mode"] == "FULL_SLATE_NO_COMPLEMENT_ARB"
+    assert full_arb["guaranteed_payout_per_set"] == 2.0
+    assert asyncio.run(d_exp.open_shadow_weather_slate(sp_w, full_arb, time.time() - 60.0)) is True
+
+    async def _fetch_w_closed(url: str, timeout: float = 5.0):
+        if "/markets/w1" in url:
+            return {"id": "w1", "closed": True, "umaResolutionStatus": "resolved", "clobTokenIds": '["w1_y","w1_n"]', "outcomePrices": '["1","0"]'}
+        if "/markets/w2" in url:
+            return {"id": "w2", "closed": True, "umaResolutionStatus": "resolved", "clobTokenIds": '["w2_y","w2_n"]', "outcomePrices": '["0","1"]'}
+        if "/markets/w3" in url:
+            return {"id": "w3", "closed": True, "umaResolutionStatus": "resolved", "clobTokenIds": '["w3_y","w3_n"]', "outcomePrices": '["0","1"]'}
+        return None
+
+    d_exp.fetch_json = _fetch_w_closed
+    asyncio.run(d_exp.manage_open_positions())
+    w_closed = [c for c in d_exp.closed_positions if c["sleeve"] == "W3_WEATHER_SLATE_ARB"]
+    assert len(w_closed) == 1 and w_closed[0]["won"] is True and w_closed[0]["status"] == "SETTLED_WEATHER_SLATE_NX"
+    assert w_closed[0]["tier_pnls_usd"]["T100"] > 0.0
+
+    # 5. Tier-2 D1_MAKER_ANCHOR_BOX: passive fill -> atomic hedge in open_positions, and cancel-on-thinning (<2x depth)
+    from dataclasses import replace as dc_replace
+    now_ma = time.time()
+    dg15 = dc_replace(dg15, end_ts=now_ma + 180.0)
+    dg5 = dc_replace(dg5, end_ts=now_ma + 180.0)
+    dom_dg = determine_dominance_legs(dg15, 0.20000, dg5, 0.20020, min_corridor_bps=5.0)
+    assert dom_dg is not None
+    tok_anc = dom_dg["leg_a"]["token_id"]
+    tok_hdg = dom_dg["leg_b"]["token_id"]
+    ma_books = {
+        tok_anc: {"bids": [{"price": "0.50", "size": "80"}], "asks": [{"price": "0.53", "size": "80"}]},
+        tok_hdg: {"bids": [{"price": "0.45", "size": "220"}], "asks": [{"price": "0.46", "size": "220"}]},
+    }
+
+    async def _fetch_ma(url: str, timeout: float = 5.0):
+        for tk, bk in ma_books.items():
+            if tk in url:
+                return bk
+        return None
+
+    d_exp.fetch_json = _fetch_ma
+    assert d_exp.post_maker_anchor_candidate(dg15, dg5, dom_dg, ma_books[tok_anc], ma_books[tok_hdg], now_ts=now_ma - 2.0) is True
+    assert len(d_exp.pending_maker_anchors) == 1
+    # Simulate trade through passive anchor bid ($0.51 >= ask $0.51) while hedge ask $0.46 has 220 shares (>=3x) -> hedged box!
+    ma_books[tok_anc] = {"bids": [{"price": "0.50", "size": "80"}], "asks": [{"price": "0.51", "size": "40"}]}
+    asyncio.run(d_exp.manage_pending_maker_anchors(now_ts=now_ma))
+    assert len(d_exp.pending_maker_anchors) == 0
+    ma_open = [p for p in d_exp.open_positions.values() if p["sleeve"] == "D1_MAKER_ANCHOR_BOX"]
+    assert len(ma_open) == 1 and ma_open[0]["extra"]["is_maker_anchor_box"] is True
+
+    # Cancel-on-thinning when opposite hedge leg depth drops below 2.0x
+    bnb15, bnb5 = specs_exp["BNB"]
+    bnb15 = dc_replace(bnb15, end_ts=now_ma + 180.0)
+    bnb5 = dc_replace(bnb5, end_ts=now_ma + 180.0)
+    dom_bnb = determine_dominance_legs(bnb15, 600.0, bnb5, 600.6, min_corridor_bps=5.0)
+    assert dom_bnb is not None
+    tok_b_anc = dom_bnb["leg_a"]["token_id"]
+    tok_b_hdg = dom_bnb["leg_b"]["token_id"]
+    ma_books[tok_b_anc] = {"bids": [{"price": "0.50", "size": "80"}], "asks": [{"price": "0.53", "size": "80"}]}
+    ma_books[tok_b_hdg] = {"bids": [{"price": "0.45", "size": "220"}], "asks": [{"price": "0.46", "size": "220"}]}
+    assert d_exp.post_maker_anchor_candidate(bnb15, bnb5, dom_bnb, ma_books[tok_b_anc], ma_books[tok_b_hdg], now_ts=now_ma - 2.0) is True
+    assert len(d_exp.pending_maker_anchors) == 1
+    ma_books[tok_b_hdg] = {"bids": [{"price": "0.45", "size": "5"}], "asks": [{"price": "0.46", "size": "5"}]}  # Thinned < 2x!
+    asyncio.run(d_exp.manage_pending_maker_anchors(now_ts=now_ma))
+    assert len(d_exp.pending_maker_anchors) == 0
+
+    # Verify continuous history/SHM recorder covers all 7 DOMINANCE_ASSETS + 5m/15m/1h/4h files + corridor/slate telemetry
+    import json as _json_t
+    from src.polymarket_research.polymarket_terminal_recorder import ASSET_CONFIGS, PolymarketDualFeed1HRecorder
+    for sym in DOMINANCE_ASSETS:
+        assert sym in ASSET_CONFIGS
+        rec_i = PolymarketDualFeed1HRecorder(asset=sym)
+        assert rec_i.coinbase_product == f"{sym}-USD"
+        assert rec_i.telemetry_5m_file.name == f"polymarket_5m_telemetry_{sym.lower()}.jsonl"
+        assert rec_i.telemetry_15m_file.name == f"polymarket_15m_telemetry_{sym.lower()}.jsonl"
+        assert rec_i.telemetry_4h_file.name == f"polymarket_4h_telemetry_{sym.lower()}.jsonl"
+    assert ASSET_CONFIGS["HYPE"].get("futures_only_ref") is True
+    assert ASSET_CONFIGS["DOGE"]["series_slug"] == "doge-up-or-down-hourly"
+    assert ASSET_CONFIGS["BNB"]["series_slug"] == "bnb-up-or-down-hourly"
+
+    d_exp._record_d1_corridor_telemetry(
+        "15m_5m",
+        bnb15,
+        bnb5,
+        dom_bnb,
+        {"bids": [{"price": "0.50", "size": "80"}], "asks": [{"price": "0.53", "size": "80"}]},
+        {"bids": [{"price": "0.45", "size": "80"}], "asks": [{"price": "0.49", "size": "80"}]},
+        now_ma,
+    )
+    t_file = tmp_path / "alpha124_market_telemetry.jsonl"
+    assert t_file.exists()
+    t_rows = [_json_t.loads(ln) for ln in t_file.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    assert any(r["type"] == "D1_CORRIDOR" and r["asset"] == "BNB" and r["gross_box_l1"] == 1.02 for r in t_rows)
+
+
+def test_telemetry_compact_encoding_delta_dedupe_and_inode_safe_gzip_compactor(tmp_path: Path, monkeypatch) -> None:
+    import json as _json_c
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    from scripts.honest_purged_wfo_optimizer import iter_jsonl_lines_with_archives
+    from scripts.polymarket_telemetry_compactor import compact_jsonl_file, is_protected_path
+    from src.polymarket_research.polymarket_terminal_recorder import L2OrderBook, _dumps_compact
+
+    # 1. Layer 1: L2OrderBook compact=True vs compact=False backward compatibility & byte savings
+    bk = L2OrderBook("tok_test")
+    bk.apply_snapshot(
+        bids=[{"price": str(round(0.49 - 0.01 * i, 2)), "size": "120"} for i in range(15)],
+        asks=[{"price": str(round(0.51 + 0.01 * i, 2)), "size": "120"} for i in range(15)],
+    )
+    t_obs = bk.last_book_update_ts + 0.5
+    full_m = bk.get_metrics(obs_ts=t_obs, compact=False)
+    comp_m = bk.get_metrics(obs_ts=t_obs, compact=True)
+    assert "microprice_formula" in full_m and "vwap_$250" in full_m and len(full_m["raw_top_bids"]) == 15
+    assert "microprice_formula" not in comp_m and "vwap_$250" not in comp_m and len(comp_m["raw_top_bids"]) == 10
+    for k in ("best_bid", "best_ask", "q_mid", "q_micro", "obi_l1", "obi_depth", "vwap_$20", "vwap_$25", "vwap_$50", "effective_price_$50", "fill_fees_$50"):
+        assert comp_m[k] == full_m[k]
+    raw_bytes_full = len(_json_c.dumps({"UP": full_m, "DOWN": full_m}).encode("utf-8"))
+    raw_bytes_comp = len(_dumps_compact({"UP": comp_m, "DOWN": comp_m}).encode("utf-8"))
+    assert raw_bytes_comp < 0.45 * raw_bytes_full
+
+    # 2. Layer 2b: Delta deduplication in _record_market_telemetry
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "st.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "ldg.jsonl")
+    monkeypatch.setattr(a124, "MARKET_TELEMETRY_FILE", tmp_path / "m_telem.jsonl")
+    d_t = a124.Alpha124ShadowDaemon(single_scan=True)
+    d_t._record_market_telemetry("W_SLATE_1", 10.0, {"type": "WEATHER_SLATE", "sum_yes_l1": 1.02}, now_ts=1000.0, sig=(1.02,))
+    d_t._record_market_telemetry("W_SLATE_1", 10.0, {"type": "WEATHER_SLATE", "sum_yes_l1": 1.02}, now_ts=1025.0, sig=(1.02,))  # unchanged -> skipped!
+    d_t._record_market_telemetry("W_SLATE_1", 10.0, {"type": "WEATHER_SLATE", "sum_yes_l1": 0.99}, now_ts=1040.0, sig=(0.99,))  # changed -> logged!
+    m_lines = (tmp_path / "m_telem.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(m_lines) == 2
+
+    # 3. Layer 3 & 4: Protected ledgers + lossless inode-safe gzip compaction + sibling stem isolation + WFO streaming
+    assert is_protected_path(tmp_path / "live_orders.jsonl") is True
+    assert is_protected_path(tmp_path / "finalized_market_resolutions.jsonl") is True
+    assert is_protected_path(tmp_path / "alpha124_shadow_ledger.jsonl") is True
+    assert is_protected_path(tmp_path / "d1_live_box_candidates.jsonl") is True
+    assert is_protected_path(tmp_path / "polymarket_hourly_telemetry.jsonl") is False
+    assert is_protected_path(tmp_path / "alpha124_market_telemetry.jsonl") is False
+    assert is_protected_path(tmp_path / "counterfactual_candidates.jsonl") is False
+
+    pm_dir = tmp_path / "polymarket"
+    pm_dir.mkdir(parents=True, exist_ok=True)
+    hot_btc = pm_dir / "polymarket_hourly_telemetry.jsonl"
+    hot_eth = pm_dir / "polymarket_hourly_telemetry_eth.jsonl"
+    expected_btc_ids = [f"btc_{i}" for i in range(400)]
+    hot_btc.write_text(
+        "".join(_dumps_compact({"seq": i, "id": f"btc_{i}", "UP": comp_m}) + "\n" for i in range(400)),
+        encoding="utf-8",
+    )
+    hot_eth.write_text(
+        "".join(_dumps_compact({"seq": i, "id": f"eth_{i}", "UP": comp_m}) + "\n" for i in range(400)),
+        encoding="utf-8",
+    )
+
+    res_btc = compact_jsonl_file(hot_btc, hot_threshold_bytes=20_000, keep_tail_bytes=15_000, min_archive_bytes=10_000)
+    res_eth = compact_jsonl_file(hot_eth, hot_threshold_bytes=20_000, keep_tail_bytes=15_000, min_archive_bytes=10_000)
+    assert res_btc["status"] == "COMPACTED" and res_btc["inode_preserved"] is True and res_btc["compression_ratio_x"] > 3.0
+    assert res_eth["status"] == "COMPACTED"
+    assert hot_btc.stat().st_size < 25_000
+
+    # Stream back BTC archive + hot tail and verify 100% lossless order with zero ETH cross-contamination!
+    streamed_btc = [_json_c.loads(ln)["id"] for ln in iter_jsonl_lines_with_archives(pm_dir, "polymarket_hourly_telemetry.jsonl") if ln.strip()]
+    assert streamed_btc == expected_btc_ids
+
+
+def test_multi_vertical_zero_fee_expansion_sleeves(tmp_path: Path, monkeypatch) -> None:
+    """
+    Verifies all new zero-lookahead expansion sleeves:
+      1. Weather v2: `HKO` Hong Kong Observatory CSV parsing (isolating HK Observatory from Chek Lap Kok airport)
+         + `W1_LOW` morning post-sunrise trough lock & evening cold-front veto.
+      2. TradFi Pyth `0%`-Fee: NYSE (`6.5h/day`) & CME (`23h/day`) session variance clocks, `CM_B3` calendar
+         inclusion (`NO_Week + YES_Month`) and `Close ⊂ Hit` path-vs-terminal dominance boxes.
+      3. Sports `SP1_NBA_ZERO_FEE_BOX`: Full-game Polish Middle (`ML + underdog spread`), spread monotonicity,
+         totals O/U middle, and strict rejection of anti-boxes (`-4.5 + -1.5`), 1H markets, and push lines.
+      4. `NR0_ZERO_FEE_SLATE_ARB` early-`NO` bracket handling & `B4_TOUCHED_BARRIER_WICK_LOCK` finalized-1m sweep.
+    """
+    import asyncio
+    import time
+    from datetime import date
+    from zoneinfo import ZoneInfo
+
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    from src.polymarket_research.barrier_onetouch_svi_engine import BarrierRungSpec
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import (
+        compute_effective_trading_hours,
+        detect_nba_dominance_boxes,
+        detect_pyth_calendar_inclusion_boxes,
+        detect_pyth_close_vs_hit_boxes,
+        parse_nba_zero_fee_event,
+        parse_zero_fee_negrisk_slate,
+    )
+    from src.polymarket_research.weather_metar_engine import (
+        MetarObservation,
+        WeatherBucket,
+        WeatherEventSpec,
+        compute_weather_probabilities,
+        parse_hko_csv_observations,
+        parse_weather_event,
+    )
+
+    # 1A. HKO parser must extract `HK Observatory` (26.3C max / 24.8C min / 26.2C cur) and ignore Chek Lap Kok (28.7C)!
+    csv_1m = "Date time,Automatic Weather Station,Air Temperature(degree Celsius)\n202610281020,Chek Lap Kok,28.7\n202610281020,HK Observatory,26.2\n"
+    csv_mm = "Date time,Automatic Weather Station,Max,Min\n202610281020,Chek Lap Kok,28.7,26.0\n202610281020,HK Observatory,26.3,24.8\n"
+    hko_obs = parse_hko_csv_observations(csv_1m, csv_mm, date(2026, 10, 28))
+    assert len(hko_obs) == 3
+    assert max(o.temp_c for o in hko_obs) == 26.3
+    assert min(o.temp_c for o in hko_obs) == 24.8
+    assert hko_obs[-1].temp_c == 26.2
+
+    hko_ev = {
+        "id": "ev_hko_1",
+        "title": "Highest temperature in Hong Kong on October 28?",
+        "endDate": "2026-10-28T16:00:00Z",
+        "markets": [
+            {
+                "id": f"hk_{i}",
+                "conditionId": f"0xhk_{i}",
+                "groupItemTitle": lbl,
+                "description": "Resolves to highest temperature recorded by the Hong Kong Observatory on 28 Oct '26 via https://www.weather.gov.hk/en/cis/climat.htm",
+                "clobTokenIds": f'["hy_{i}", "hn_{i}"]',
+                "feeType": "zero_fees",
+                "feesEnabled": True,
+                "feeSchedule": {"rate": 0},
+            }
+            for i, lbl in enumerate(["25°C or below", "26°C", "27°C", "28°C or higher"])
+        ],
+    }
+    sp_hko = parse_weather_event(hko_ev)
+    assert sp_hko is not None and sp_hko.icao == "HKO" and sp_hko.fee_type == "zero_fees"
+
+    # 1B. W1_LOW morning trough lock + strict evening cold-front veto
+    tz_ny = ZoneInfo("America/New_York")
+    low_buckets = [
+        WeatherBucket("b0", "c0", "9°C or below", "9-", "y0", "n0", "C", float("-inf"), 9.0),
+        WeatherBucket("b1", "c1", "10°C", "10", "y1", "n1", "C", 10.0, 10.0),
+        WeatherBucket("b2", "c2", "11°C", "11", "y2", "n2", "C", 11.0, 11.0),
+        WeatherBucket("b3", "c3", "12°C or higher", "12+", "y3", "n3", "C", 12.0, float("inf")),
+    ]
+    sp_low = WeatherEventSpec(
+        "ev_low", "nyc-low", "nyc-daily-lowest-temperature", "Lowest temperature in NYC on October 28?",
+        "KLGA", "NYC", 40.7769, -73.8740, "America/New_York", date(2026, 10, 28), "LOW", "C", "zero_fees",
+        "2026-10-29T04:00:00Z", low_buckets,
+    )
+    dt_06 = datetime(2026, 10, 28, 6, 0, tzinfo=tz_ny)
+    dt_11 = datetime(2026, 10, 28, 11, 0, tzinfo=tz_ny)
+    obs_low = [
+        MetarObservation("KLGA", dt_06.astimezone(timezone.utc), dt_06, 10.1, True, "T0101"),
+        MetarObservation("KLGA", dt_11.astimezone(timezone.utc), dt_11, 14.5, True, "T0145"),
+    ]
+    # Warm evening ensemble (all 20 members >= 13.0C through midnight -> +2.9C above 10.1C morning trough) -> LOCKS!
+    ens_warm = {
+        int(datetime(2026, 10, 28, h, 0, tzinfo=tz_ny).astimezone(timezone.utc).timestamp()): [13.5] * 20
+        for h in range(12, 24)
+    }
+    ens_warm[int(datetime(2026, 10, 29, 0, 0, tzinfo=tz_ny).astimezone(timezone.utc).timestamp())] = [13.2] * 20
+    r_warm = compute_weather_probabilities(sp_low, dt_11.astimezone(timezone.utc), obs_low, ens_warm)
+    assert r_warm["is_solar_lock"] is True and r_warm["locked_bucket_idx"] == 1
+
+    # Cold-front evening ensemble (drops to 10.8C at 23:00 < 10.1 + 1.8 = 11.9C) -> MUST VETO morning lock!
+    ens_front = dict(ens_warm)
+    ens_front[int(datetime(2026, 10, 28, 23, 0, tzinfo=tz_ny).astimezone(timezone.utc).timestamp())] = [10.8] * 20
+    r_front = compute_weather_probabilities(sp_low, dt_11.astimezone(timezone.utc), obs_low, ens_front)
+    assert r_front["is_solar_lock"] is False
+
+    # 2. NYSE (`6.5h/day`) & CME (`23h/day`) session variance clocks + Pyth `CM_B3` inclusion boxes
+    fri_15_et = datetime(2026, 10, 30, 15, 0, tzinfo=tz_ny).timestamp()
+    mon_1030_et = datetime(2026, 11, 2, 10, 30, tzinfo=tz_ny).timestamp()
+    # Fri 15:00->16:00 (1.0h) + Sat/Sun (0.0h) + Mon 09:30->10:30 (1.0h) = exactly 2.0h RTH!
+    assert abs(compute_effective_trading_hours(fri_15_et, mon_1030_et, "EQUITY_RTH") - 2.0) < 1e-6
+
+    cal_boxes = detect_pyth_calendar_inclusion_boxes([
+        {"asset": "WTI", "direction": "UP", "strike": 105.0, "fee_rate": 0.0, "start_ts": 1000.0, "end_ts": 50000.0, "ask_yes": 0.45, "ask_no": 0.56, "market_id": "w1", "condition_id": "cw1", "yes_token": "wy", "no_token": "wn"},
+        {"asset": "WTI", "direction": "UP", "strike": 105.0, "fee_rate": 0.0, "start_ts": 900.0, "end_ts": 200000.0, "ask_yes": 0.42, "ask_no": 0.59, "market_id": "m1", "condition_id": "cm1", "yes_token": "my", "no_token": "mn"},
+    ])
+    assert len(cal_boxes) == 1 and abs(cal_boxes[0]["box_cost_net"] - 0.98) < 1e-6
+
+    cvh_boxes = detect_pyth_close_vs_hit_boxes(
+        close_rows=[{"asset": "SPY", "strike": 775.0, "is_downward": False, "fee_rate": 0.0, "end_ts": 5000.0, "ask_no": 0.55, "market_id": "c1", "condition_id": "cc1", "yes_token": "cy", "no_token": "cn"}],
+        hit_rows=[{"asset": "SPY", "strike": 775.0, "direction": "UP", "fee_rate": 0.0, "start_ts": 1000.0, "end_ts": 9000.0, "ask_yes": 0.43, "market_id": "h1", "condition_id": "ch1", "yes_token": "hy", "no_token": "hn"}],
+        now_ts=2000.0,
+    )
+    assert len(cvh_boxes) == 1 and abs(cvh_boxes[0]["box_cost_net"] - 0.98) < 1e-6
+
+    # 3. NBA Zero-Fee Polish Middle & Dominance Box invariants (and rejection of anti-boxes & 1H markets)
+    nba_ev = {
+        "id": "nba_1",
+        "slug": "nba-bkn-bos",
+        "title": "Nets vs. Celtics",
+        "endDate": "2026-10-28T23:30:00Z",
+        "markets": [
+            {"id": "ml", "conditionId": "c_ml", "sportsMarketType": "moneyline", "question": "Nets vs. Celtics", "outcomes": '["Nets", "Celtics"]', "clobTokenIds": '["t_nets_ml", "t_bos_ml"]', "feeType": "zero_fees", "feesEnabled": True, "feeSchedule": {"rate": 0}},
+            {"id": "sp_bos", "conditionId": "c_sp1", "sportsMarketType": "spreads", "question": "Spread: Celtics (-4.5)", "outcomes": '["Celtics", "Nets"]', "line": -4.5, "clobTokenIds": '["t_bos_m45", "t_nets_p45"]', "feeType": "zero_fees", "feesEnabled": True, "feeSchedule": {"rate": 0}},
+            {"id": "sp_1h", "conditionId": "c_1h", "sportsMarketType": "first_half_spreads", "question": "1H Spread: Celtics (-2.5)", "outcomes": '["Celtics", "Nets"]', "line": -2.5, "clobTokenIds": '["t_1h_a", "t_1h_b"]', "feeType": "zero_fees"},
+            {"id": "tot_lo", "conditionId": "c_tl", "sportsMarketType": "totals", "question": "Nets vs. Celtics: O/U 215.5", "outcomes": '["Over", "Under"]', "line": 215.5, "clobTokenIds": '["t_ov_215", "t_un_215"]', "feeType": "zero_fees"},
+            {"id": "tot_hi", "conditionId": "c_th", "sportsMarketType": "totals", "question": "Nets vs. Celtics: O/U 220.5", "outcomes": '["Over", "Under"]', "line": 220.5, "clobTokenIds": '["t_ov_220", "t_un_220"]', "feeType": "zero_fees"},
+        ],
+    }
+    sp_nba = parse_nba_zero_fee_event(nba_ev, now_ts=1793220000.0)
+    assert sp_nba is not None
+    # 1H spread must be strictly excluded!
+    assert all("1h" not in lg.token_id for lg in sp_nba.margin_legs)
+    nba_arbs = detect_nba_dominance_boxes(
+        sp_nba,
+        {
+            "t_bos_ml": 0.56,      # Celtics ML (M < 0)
+            "t_nets_p45": 0.425,   # Nets +4.5 (M > -4.5) -> Celtics ML + Nets +4.5 = $0.985 Polish Middle (wins $2 if BOS wins by 1..4)!
+            "t_bos_m45": 0.58,     # Celtics -4.5 (anti-box with Nets ML must NOT pair!)
+            "t_nets_ml": 0.40,     # Nets ML + Celtics -4.5 = $0.98 ANTI-BOX (loses if BOS wins by 1..4) -> MUST BE REJECTED!
+            "t_ov_215": 0.52,
+            "t_un_220": 0.465,     # Over 215.5 + Under 220.5 = $0.985 Total Middle!
+        },
+        max_box_cost_net=0.994,
+    )
+    labels = {a["label"] for a in nba_arbs}
+    assert "Nets +4.5 + Celtics ML" in labels
+    assert "Over 215.5 + Under 220.5" in labels
+    assert not any("Nets ML" in lbl and "Celtics -4.5" in lbl for lbl in labels), "Anti-box must never be emitted!"
+
+    # 4. Zero-Fee NegRisk Slate early-NO bracket acceptance vs YES-resolved rejection
+    nr_ev = {
+        "id": "nr_elon",
+        "title": "Elon tweets 48h?",
+        "negRisk": True,
+        "endDate": "2026-10-30T16:00:00Z",
+        "markets": [
+            {"id": "e0", "closed": True, "outcomePrices": '["0", "1"]'},  # <40 already resolved NO -> safe!
+            {"id": "e1", "conditionId": "ce1", "groupItemTitle": "40-64", "clobTokenIds": '["ey1","en1"]', "feeType": "zero_fees"},
+            {"id": "e2", "conditionId": "ce2", "groupItemTitle": "65-89", "clobTokenIds": '["ey2","en2"]', "feeType": "zero_fees"},
+            {"id": "e3", "conditionId": "ce3", "groupItemTitle": "90+", "clobTokenIds": '["ey3","en3"]', "feeType": "zero_fees"},
+        ],
+    }
+    assert parse_zero_fee_negrisk_slate(nr_ev, "elon-tweets-48h") is not None
+    nr_ev["markets"][0]["outcomePrices"] = '["1", "0"]'
+    assert parse_zero_fee_negrisk_slate(nr_ev, "elon-tweets-48h") is None
+
+    # 5. B4_TOUCHED_BARRIER_WICK_LOCK finalized-1m sweep in Alpha124ShadowDaemon
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "b4_st.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "b4_ldg.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "b4_opps.json")
+
+    async def _run_b4():
+        d = a124.Alpha124ShadowDaemon(single_scan=True)
+        now_b4 = time.time()
+        d.spots["BTC"] = 84200.0
+        d.barrier_rungs["m_b4"] = BarrierRungSpec(
+            asset="BTC", horizon_group="WEEK", series_slug="btc-hit", event_id="ev_b4", market_id="m_b4",
+            condition_id="0xcb4", group_label="↑ 85,000", question="Will BTC hit $85,000?", strike=85000.0,
+            direction="UP", start_ts=now_b4 - 7200.0, end_ts=now_b4 + 86400.0, yes_token="t_b4_y", no_token="t_b4_n", fee_rate=0.07,
+        )
+        # Newly minted mid-month rung with low $0.085 ask must NEVER be falsely swept by B4!
+        d.barrier_rungs["m_b4_stale"] = BarrierRungSpec(
+            asset="BTC", horizon_group="MONTH", series_slug="btc-hit", event_id="ev_b4", market_id="m_b4_stale",
+            condition_id="0xcst", group_label="↑ 85,000", question="Will BTC reach $85,000 in Oct?", strike=85000.0,
+            direction="UP", start_ts=now_b4 - 600.0, end_ts=now_b4 + 86400.0, yes_token="t_b4_stale_y", no_token="t_b4_stale_n", fee_rate=0.07,
+        )
+        # Finalized 1m candle already wicked to $85,120 (>= 85000 * 1.0005), then spot faded to $84,200!
+        d.barrier_ext_cache["ev_b4"] = (now_b4, (85120.0, 83900.0, 84200.0))
+
+        async def fake_batch(toks, timeout=3.0):
+            return {
+                "t_b4_y": {"bids": [{"price": "0.95", "size": "200"}], "asks": [{"price": "0.97", "size": "200"}]},
+                "t_b4_stale_y": {"bids": [{"price": "0.07", "size": "200"}], "asks": [{"price": "0.085", "size": "200"}]},
+            }
+
+        monkeypatch.setattr(d, "fetch_books_batch", fake_batch)
+        opps_b4: list = []
+        await d.scan_barrier_markets(opps_b4)
+        assert any(p["sleeve"] == "B4_TOUCHED_BARRIER_WICK_LOCK" and p["dedupe_key"] == "B4_m_b4" for p in d.open_positions.values())
+        assert not any(p["dedupe_key"] == "B4_m_b4_stale" for p in d.open_positions.values())
+
+    asyncio.run(_run_b4())
+
+    # 6. Per-market mid-month `m.startDate` isolation + `is_same_continuous_session` earnings-gap veto
+    from src.polymarket_research.barrier_onetouch_svi_engine import parse_hit_event
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import is_same_continuous_session
+
+    mid_ev = {
+        "id": "ev_oct",
+        "startDate": "2026-10-01T05:00:00Z",
+        "endDate": "2026-11-01T03:59:59Z",
+        "markets": [
+            {
+                "id": "m_init", "conditionId": "c1", "question": "Will ETH reach $3,000 in October?",
+                "groupItemTitle": "↑ 3,000", "clobTokenIds": '["y1","n1"]', "startDate": "2026-10-01T05:00:00Z",
+            },
+            {
+                "id": "m_minted", "conditionId": "c2", "question": "Will ETH reach $2,600 in October?",
+                "groupItemTitle": "↑ 2,600", "clobTokenIds": '["y2","n2"]', "startDate": "2026-10-22T16:18:20Z",
+                "description": "from the creation of this market through 11:59 PM ET",
+            },
+        ],
+    }
+    parsed_hit = {r.market_id: r for r in parse_hit_event(mid_ev, "ETH", "MONTHLY", "ethereum-hit-price-monthly")}
+    assert parsed_hit["m_minted"].start_ts > parsed_hit["m_init"].start_ts + 15 * 86400.0
+    ny_tz = ZoneInfo("America/New_York")
+    t_tue_after = a124.datetime(2026, 10, 27, 23, 0, tzinfo=ny_tz).timestamp()
+    t_fri_aft = a124.datetime(2026, 10, 30, 14, 0, tzinfo=ny_tz).timestamp()
+    t_fri_close = a124.datetime(2026, 10, 30, 16, 0, tzinfo=ny_tz).timestamp()
+    assert not is_same_continuous_session(t_tue_after, t_fri_close, "EQUITY_RTH"), "Multi-day / overnight earnings gap must be vetoed!"
+    assert is_same_continuous_session(t_fri_aft, t_fri_close, "EQUITY_RTH"), "Friday same-session RTH final 2h must pass!"
+
+
+def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch, tmp_path) -> None:
+    """Verifies Phase-2 roadmap sleeves (`TW1`, `FED1`, `COND1`, `CTF_OVR`, `GAS1`, `CM_SHOCK`, `AI1`, `D2`, `ZF_MAKER`)."""
+    import asyncio
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from src.polymarket_research import alpha_124_shadow_daemon as a124
+    from src.polymarket_research.macro_counting_ctf_engine import (
+        ALL_FOMC_MASK,
+        ALL_OIL_SENATE_MASK,
+        build_fomc_truth_table_legs,
+        build_oil_senate_truth_table_legs,
+        detect_counting_subwindow_boxes,
+        detect_d2_12pm_binance_boxes,
+        evaluate_ai_elo_ci_lock,
+        evaluate_counting_dead_no_locks,
+        evaluate_locked_market_reward_carry,
+        evaluate_pyth_catalyst_shock,
+        find_cross_event_bitmask_boxes,
+        parse_aaa_gas_html,
+        parse_counting_slate_event,
+        walk_equal_shares_overround_bids,
+    )
+    from src.polymarket_research.redeem_settled_positions import (
+        encode_ctf_merge_or_split_calldata,
+        inspect_mergeable_complete_set,
+    )
+
+    # 1. `TW1`: Counting truncation (`max(gamma_closed_floor, xtracker_total)`) + `48h ⊂ 7d` sub-window box
+    ev_7d = {
+        "id": "ev_elon_7d",
+        "slug": "elon-musk-of-tweets-october-27-november-3",
+        "title": "Elon Musk # tweets October 27 - November 3, 2026?",
+        "endDate": "2026-11-03T17:00:00Z",
+        "description": "from October 27, 2026, 12:00 PM ET to November 3, 2026, 12:00 PM ET",
+        "markets": [
+            {"id": "c7_0", "closed": True, "groupItemTitle": "<40", "outcomePrices": '["0","1"]'},
+            {"id": "c7_1", "conditionId": "0xc71", "groupItemTitle": "40-64", "clobTokenIds": '["t7_y1","t7_n1"]', "feeType": "zero_fees", "rewardsMinSize": 50, "rewardsMaxSpread": 3.5},
+            {"id": "c7_2", "conditionId": "0xc72", "groupItemTitle": "65-89", "clobTokenIds": '["t7_y2","t7_n2"]', "feeType": "zero_fees"},
+            {"id": "c7_3", "conditionId": "0xc73", "groupItemTitle": "140+", "clobTokenIds": '["t7_yup","t7_nup"]', "feeType": "zero_fees"},
+        ],
+    }
+    ev_48h = {
+        "id": "ev_elon_48h",
+        "slug": "elon-musk-of-tweets-october-29-october-31",
+        "title": "Elon Musk # tweets October 29 - October 31, 2026?",
+        "endDate": "2026-10-31T16:00:00Z",
+        "description": "from October 29, 2026, 12:00 PM ET to October 31, 2026, 12:00 PM ET",
+        "markets": [
+            {"id": "c2_0", "conditionId": "0xc20", "groupItemTitle": "<40", "clobTokenIds": '["t2_ylo","t2_nlo"]', "feeType": "zero_fees"},
+            {"id": "c2_1", "conditionId": "0xc21", "groupItemTitle": "40-89", "clobTokenIds": '["t2_ym","t2_nm"]', "feeType": "zero_fees"},
+            {"id": "c2_2", "conditionId": "0xc22", "groupItemTitle": "90+", "clobTokenIds": '["t2_yup","t2_nup"]', "feeType": "zero_fees"},
+        ],
+    }
+    s7 = parse_counting_slate_event(ev_7d, "elon-tweets", "elonmusk")
+    s2 = parse_counting_slate_event(ev_48h, "elon-tweets-48h", "elonmusk")
+    assert s7 is not None and s2 is not None and s7.gamma_closed_floor == 40
+    xt_map = {
+        s7.slug: {"total": 68, "hourly": [(s7.window_start_ts + 3600.0, 55)]},
+    }
+    v_floor, dead = evaluate_counting_dead_no_locks(s7, xt_map, safety_post_buffer=2)
+    assert v_floor == 68 and [b.market_id for b in dead] == ["c7_1"]
+    rw = evaluate_locked_market_reward_carry(1.0, 0.975, 0.990, 50.0, 3.5, 0.0)
+    assert rw["eligible"] is True and 0.975 <= rw["resting_bid"] <= 0.985
+    # With 55 banked posts prior to 48h start, 48h `90+` implies 7d `>= 145 >= 140+`!
+    tw_boxes = detect_counting_subwindow_boxes([s7, s2], {"t2_nup": 0.44, "t7_yup": 0.54}, {"elonmusk": xt_map}, max_box_cost_net=0.99)
+    assert any(b["box_kind"] == "TW1_UPPER_SUBWINDOW" and abs(b["box_cost_net"] - 0.98) < 1e-6 for b in tw_boxes)
+
+    # 2. `FED1`: Exact 125-state FOMC vs `fed-3-parlay` bitmask dominance
+    fomc_evs = [
+        {"slug": "fed-decision-in-october-2026", "endDate": "2026-10-29T18:00:00Z", "markets": [
+            {"id": "fo_p", "conditionId": "0xfop", "groupItemTitle": "No change", "clobTokenIds": '["fop_y","fop_n"]', "feeType": "zero_fees"},
+        ]},
+    ]
+    par_evs = [
+        {"slug": "fed-decisions-oct-jan", "endDate": "2027-01-29T19:00:00Z", "markets": [
+            {"id": "fp_1", "conditionId": "0xfp1", "groupItemTitle": "Pause-Pause-Pause", "clobTokenIds": '["fp1_y","fp1_n"]', "feeType": "zero_fees"},
+            {"id": "fp_2", "conditionId": "0xfp2", "groupItemTitle": "Hike-Pause-Pause", "clobTokenIds": '["fp2_y","fp2_n"]', "feeType": "zero_fees"},
+            {"id": "fp_o", "conditionId": "0xfpo", "groupItemTitle": "Other", "clobTokenIds": '["fpo_y","fpo_n"]', "feeType": "zero_fees"},
+        ]},
+    ]
+    f_legs = build_fomc_truth_table_legs(fomc_evs, par_evs)
+    # `YES(OCT:PAUSE)` + `NO(PARLAY:Pause-Pause-Pause)` covers 100% of 125 states (`Pause-Pause-Pause` is a strict subset of `OCT:PAUSE`)!
+    f_boxes = find_cross_event_bitmask_boxes(f_legs, {"fop_y": 0.88, "fp1_n": 0.105}, ALL_FOMC_MASK, max_2leg_cost=0.995)
+    assert len(f_boxes) == 1 and f_boxes[0]["n_legs"] == 2 and f_boxes[0]["box_cost_net"] == 0.985
+
+    # 3. `COND1`: Exact 9-state Oil x Senate 3-leg partition & `$80` vs `$85` 2-leg dominance
+    os_evs = {
+        "which-party-will-win-the-senate-in-2026": {"endDate": "2026-11-04T00:00:00Z", "markets": [
+            {"id": "sm_d", "conditionId": "0xsmd", "groupItemTitle": "Democratic Party", "clobTokenIds": '["smd_y","smd_n"]', "feeType": "zero_fees"},
+        ]},
+        "who-wins-the-senate-pending-oil-above-or-below-80-before-the-midterms": {"endDate": "2026-11-04T00:00:00Z", "markets": [
+            {"id": "s80_ld", "conditionId": "0x80ld", "groupItemTitle": "Oil < $80; D Senate", "clobTokenIds": '["o80ld_y","o80ld_n"]', "feeType": "zero_fees"},
+            {"id": "s80_gd", "conditionId": "0x80gd", "groupItemTitle": "Oil ≥ $80; D Senate", "clobTokenIds": '["o80gd_y","o80gd_n"]', "feeType": "zero_fees"},
+        ]},
+        "who-wins-the-senate-pending-oil-below-85-before-the-midterms": {"endDate": "2026-11-04T00:00:00Z", "markets": [
+            {"id": "s85_ld", "conditionId": "0x85ld", "groupItemTitle": "Oil < $85; D Senate", "clobTokenIds": '["o85ld_y","o85ld_n"]', "feeType": "zero_fees"},
+        ]},
+    }
+    os_legs = build_oil_senate_truth_table_legs(os_evs)
+    os_boxes = find_cross_event_bitmask_boxes(
+        os_legs,
+        {"o80ld_y": 0.01, "o80gd_y": 0.64, "smd_n": 0.335, "o80ld_n": 0.97, "o85ld_y": 0.015},
+        ALL_OIL_SENATE_MASK,
+        max_2leg_cost=0.995,
+        max_3leg_cost=0.995,
+    )
+    assert any(b["n_legs"] == 3 and abs(b["box_cost_net"] - 0.985) < 1e-6 for b in os_boxes)
+    assert any(b["n_legs"] == 2 and abs(b["box_cost_net"] - 0.985) < 1e-6 for b in os_boxes)
+
+    # 4. `CTF_OVERROUND_MINT_SELL` & Polygon CTF Merge/Split ABI selectors
+    ovr = walk_equal_shares_overround_bids(
+        [
+            {"bids": [{"price": "0.52", "size": "50"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+            {"bids": [{"price": "0.49", "size": "50"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+        ],
+        target_mint_budget_usd=40.0,
+        min_net_proceeds_per_set=1.004,
+    )
+    assert ovr["filled"] is True and ovr["net_proceeds_per_set"] == 1.01
+    cid_hex = "0x" + "ab" * 32
+    from src.polymarket_research import redeem_settled_positions as rsp
+    _, cd_m_std = encode_ctf_merge_or_split_calldata(cid_hex, 25.0, is_split=False, neg_risk=False)
+    _, cd_s_std = encode_ctf_merge_or_split_calldata(cid_hex, 25.0, is_split=True, neg_risk=False)
+    _, cd_m_nr = encode_ctf_merge_or_split_calldata(cid_hex, 25.0, is_split=False, neg_risk=True)
+    _, cd_s_nr = encode_ctf_merge_or_split_calldata(cid_hex, 25.0, is_split=True, neg_risk=True)
+    assert cd_m_std[:10] == "0x9e7212ad" and cd_s_std[:10] == "0x72ce4275"
+    assert cd_m_nr[:10] == "0xb10c5c17" and cd_s_nr[:10] == "0xa3d7da1d"
+    monkeypatch.setattr(rsp, "get_token_balance_onchain", lambda addr, tok: 12.5 if tok == "tok_y" else 15.0)
+    assert inspect_mergeable_complete_set("0x1111111111111111111111111111111111111111", "tok_y", "tok_n") == 12.5
+
+    # 5. `GAS1`, `CM_SHOCK`, `AI1` staleness guard, `D2_12PM_BINANCE_BOX` & `ZERO_FEE_MAKER_ANCHOR_BOX`
+    aaa_html = '<div>Price as of 10/27/26</div><td>$4.2661</td><td>$4.2661</td><td>$4.7966</td><td>$5.1822</td><td>$5.5656</td><td>$3.2856</td><td>$4.2602</td>'
+    aaa_p = parse_aaa_gas_html(aaa_html)
+    assert aaa_p == {"as_of_date": "2026-10-27", "current_regular": 4.2661, "yesterday_regular": 4.2602}
+
+    # Pre-listed named-month guard: `"in November?"` listed Oct 25 must NOT start before Nov 1 ET
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import detect_pyth_calendar_inclusion_boxes, parse_pyth_hit_event
+    nov_ev = {"id": "ev_nov", "startDate": "2026-10-25T04:02:00Z", "endDate": "2026-12-01T04:59:59Z", "markets": [{"id": "6172752", "conditionId": "0xnov", "question": "Will WTI Crude Oil (WTI) hit (HIGH) $100 in November?", "groupItemTitle": "↑ $100", "clobTokenIds": '["ny","nn"]', "feeType": "zero_fees", "description": "during a trading session of November 2026, any Pyth 1-minute candle"}]}
+    nov_r = parse_pyth_hit_event(nov_ev, "WTI", "MONTHLY", "wti-hit")
+    oct28_ts = datetime(2026, 10, 28, 12, 0, tzinfo=ZoneInfo("America/New_York")).timestamp()
+    assert len(nov_r) == 1 and nov_r[0].start_ts > oct28_ts
+    assert detect_pyth_calendar_inclusion_boxes([{"asset": "WTI", "direction": "UP", "strike": 100.0, "start_ts": oct28_ts - 86400.0, "end_ts": oct28_ts + 86400.0, "ask_no": 0.4, "ask_yes": 0.6, "fee_rate": 0.0}, {"asset": "WTI", "direction": "UP", "strike": 100.0, "start_ts": nov_r[0].start_ts, "end_ts": nov_r[0].end_ts, "ask_no": 0.5, "ask_yes": 0.5, "fee_rate": 0.0}], now_ts=oct28_ts) == []
+
+    ny = ZoneInfo("America/New_York")
+    t_eia = datetime(2026, 10, 28, 10, 31, tzinfo=ny).timestamp()  # Wed 10:31 AM ET EIA Crude
+    t_off = datetime(2026, 10, 28, 11, 30, tzinfo=ny).timestamp()
+    sh_ok = evaluate_pyth_catalyst_shock("WTI", 69.0, 70.2, 71.0, "UP", 3.0, 0.35, t_eia)
+    sh_no = evaluate_pyth_catalyst_shock("WTI", 69.0, 70.2, 71.0, "UP", 3.0, 0.35, t_off)
+    assert sh_ok["eligible"] is True and sh_ok["catalyst"] == "EIA_1030_PETROLEUM" and sh_ok["side"] == "YES"
+    assert sh_no["eligible"] is False
+
+    rows_ai = [{"organization": "Google", "rating": 1395, "rating_q025": 1388, "rating_q975": 1402}, {"organization": "OpenAI", "rating": 1372, "rating_q025": 1365, "rating_q975": 1379}]
+    assert evaluate_ai_elo_ci_lock(rows_ai, 1000.0, 50000.0, 36000.0)["eligible"] is False, "Stale >6h snapshot must be rejected!"
+    assert evaluate_ai_elo_ci_lock(rows_ai, 48000.0, 50000.0, 36000.0)["eligible"] is True
+
+    d2 = detect_d2_12pm_binance_boxes(
+        {"asset": "BTC", "market_id": "h1", "condition_id": "0xh1", "end_ts": 1793203200.0, "up_token": "h_up", "down_token": "h_dn", "fee_rate": 0.07},
+        83800.0,
+        [{"market_id": "d1", "condition_id": "0xd1", "end_ts": 1793203200.0, "strike": 84400.0, "is_downward": False, "yes_token": "d_y", "no_token": "d_n", "fee_rate": 0.07}],
+    )
+    assert len(d2) == 1 and d2[0]["leg_a"]["token_id"] == "h_up" and d2[0]["leg_b"]["token_id"] == "d_n"
+
+    # End-to-end `ZERO_FEE_MAKER_ANCHOR_BOX` hedged fill + unhedged scratch in Alpha124ShadowDaemon
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "zfa_st.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "zfa_ldg.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "zfa_opps.json")
+
+    async def _run_zfa():
+        d = a124.Alpha124ShadowDaemon(single_scan=True)
+        now_z = 1793220000.0
+        la = {"token_id": "za1", "opp_token_id": "za2", "condition_id": "0x1", "side": "YES", "label": "Nets +4.5", "market_id": "m1", "fee_rate": 0.0}
+        lb = {"token_id": "zb1", "opp_token_id": "zb2", "condition_id": "0x2", "side": "YES", "label": "Celtics ML", "market_id": "m2", "fee_rate": 0.0}
+        bk_a0 = {"bids": [{"price": "0.41", "size": "200"}], "asks": [{"price": "0.45", "size": "200"}]}
+        bk_b0 = {"bids": [{"price": "0.54", "size": "300"}], "asks": [{"price": "0.56", "size": "300"}]}
+        ok = d.post_zero_fee_maker_anchor_box("SP1_NBA", "NBA", "ZFA_TEST_1", la, lb, bk_a0, bk_b0, now_z + 7200.0, "Nets vs Celtics", now_z)
+        assert ok is True and d.pending_zero_fee_maker_anchors["ZFA_TEST_1"]["bid_px"] == 0.42
+
+        async def fake_bks_fill(toks, timeout=3.0):
+            return {
+                "za1": {"bids": [{"price": "0.41", "size": "200"}], "asks": [{"price": "0.42", "size": "200"}]},
+                "zb1": {"bids": [{"price": "0.54", "size": "300"}], "asks": [{"price": "0.56", "size": "300"}]},
+            }
+
+        monkeypatch.setattr(d, "fetch_books_batch", fake_bks_fill)
+        await d.manage_pending_zero_fee_maker_anchors(now_z + 2.0)
+        assert any(p["sleeve"] == "ZERO_FEE_MAKER_ANCHOR_BOX" and p["entry_eff_px_t1000"] == 0.98 for p in d.open_positions.values())
+
+    asyncio.run(_run_zfa())
 
 
 if __name__ == "__main__":

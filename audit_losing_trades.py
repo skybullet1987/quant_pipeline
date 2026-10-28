@@ -18,12 +18,25 @@ import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 REPO_DIR = Path(r"C:\Users\Anton\source\repos\Dominus")
 DATA_DIR = REPO_DIR / "data" / "polymarket"
 AUDIT_STATE_FILE = DATA_DIR / "forensic_audit_state.json"
 AUDIT_LEDGER_FILE = DATA_DIR / "forensic_audit_ledger.jsonl"
+WFO_HYPOTHESIS_QUEUE_FILE = DATA_DIR / "wfo_hypothesis_queue.jsonl"
+
+AUDIT_CLASSIFICATIONS = (
+    "PLUMBING_0_PARAM",
+    "SEQUENCE_TELEMETRY_REQUIRED",
+    "PARAM_WFO_REQUIRED",
+    "EXPECTED_VARIANCE_NO_CHANGE",
+    "WIN_AUTO_CLEARED",
+)
+_TYPE2_PARAM_TOKENS = (
+    "min_cushion", "dist_pct", "z_strike", "min_z", "sigma_1h", "max_px", "min_px", "kelly", "wrong_side_thresh",
+)
+_TUNE_VERBS = ("tighten", "widen", "raise", "lower", "increase", "decrease", "tune", "adjust threshold")
 
 # Historical closed trades already audited prior to 2026-10-23 02:00 UTC
 HISTORICAL_BASELINE_TRADES = {
@@ -88,6 +101,23 @@ def append_audit_ledger(rec: Dict[str, Any]) -> None:
         f.write(json.dumps(rec) + "\n")
 
 
+def append_wfo_hypothesis_queue(rec: Dict[str, Any]) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    with open(WFO_HYPOTHESIS_QUEUE_FILE, "a", encoding="utf-8") as f:
+        f.write(json.dumps(rec) + "\n")
+
+
+def classify_losing_trade_forensics(rec: Dict[str, Any]) -> Dict[str, str]:
+    st = str(rec.get("status") or "").upper()
+    cr = str(rec.get("close_reason") or "").upper()
+    em = str(rec.get("entry_mode") or "").upper()
+    if st in {"UNRESOLVED_BALANCE_DISCREPANCY", "ENTRY_OUTCOME_UNKNOWN", "EXIT_CANCEL_PENDING"} or "ERROR" in cr:
+        return {"suggested_classification": "PLUMBING_0_PARAM", "rationale": "Deterministic state/reconciliation anomaly."}
+    if "LEGGED_OUT" in cr or any(k in em for k in ("RESCUE", "FALLBACK", "DOWNSNAP")):
+        return {"suggested_classification": "SEQUENCE_TELEMETRY_REQUIRED", "rationale": "Sequence/timing event; check simulator."}
+    return {"suggested_classification": "EXPECTED_VARIANCE_NO_CHANGE", "rationale": "Variance; threshold edits need PARAM_WFO_REQUIRED."}
+
+
 def fetch_kraken_live_state() -> Dict[str, Any]:
     cmd = [
         "ssh", "-n", "-o", "ConnectTimeout=5", "kraken-finland",
@@ -150,6 +180,7 @@ def scan_trades() -> Dict[str, Any]:
                 "asset": rec.get("asset"),
                 "net_pnl_usd": rec.get("net_pnl_usd"),
                 "verdict": "PROFIT_OK",
+                "classification": "WIN_AUTO_CLEARED",
                 "notes": "Winning real-money trade — auto-cleared.",
             }
             audited[tid] = entry
@@ -157,7 +188,9 @@ def scan_trades() -> Dict[str, Any]:
             newly_skipped_wins += 1
             append_audit_ledger(entry)
         else:
-            uninspected_losses.append(rec)
+            rec_enriched = dict(rec)
+            rec_enriched["forensic_classification_hint"] = classify_losing_trade_forensics(rec)
+            uninspected_losses.append(rec_enriched)
 
     save_audit_state(audit_st)
 
@@ -187,17 +220,50 @@ def scan_trades() -> Dict[str, Any]:
     }
 
 
-def mark_audited(trade_id: str, verdict: str, notes: str) -> None:
+def mark_audited(
+    trade_id: str,
+    verdict: str,
+    notes: str,
+    classification: Optional[str] = None,
+    wfo_grid: str = "",
+) -> Dict[str, Any]:
+    default_cls = {
+        "EXPECTED_LOSS": "EXPECTED_VARIANCE_NO_CHANGE",
+        "BUG_FIXED": "PLUMBING_0_PARAM",
+        "PARAM_WFO_REQUIRED": "PARAM_WFO_REQUIRED",
+        "PROFIT_OK": "WIN_AUTO_CLEARED",
+    }
+    resolved_cls = classification or default_cls.get(verdict, "EXPECTED_VARIANCE_NO_CHANGE")
+    if resolved_cls not in AUDIT_CLASSIFICATIONS:
+        raise ValueError(f"Unsupported classification: {resolved_cls}")
+
+    notes_low = (notes or "").lower()
+    if verdict == "BUG_FIXED":
+        if resolved_cls != "PLUMBING_0_PARAM":
+            raise ValueError(
+                f"GOVERNANCE_VIOLATION: verdict=BUG_FIXED requires classification=PLUMBING_0_PARAM (got {resolved_cls})."
+            )
+        if classification is None and any(tok in notes_low for tok in _TYPE2_PARAM_TOKENS) and any(
+            vb in notes_low for vb in _TUNE_VERBS
+        ):
+            raise ValueError(
+                "GOVERNANCE_VIOLATION: Numerical strategy/risk parameter tuning cannot be recorded as BUG_FIXED; "
+                "use --verdict PARAM_WFO_REQUIRED."
+            )
+
     audit_st = load_audit_state()
     audited = audit_st.setdefault("audited_trades", {})
     now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    entry = {
+    entry: Dict[str, Any] = {
         "timestamp": now_str,
         "trade_id": trade_id,
         "verdict": verdict,
+        "classification": resolved_cls,
         "notes": notes,
     }
+    if wfo_grid:
+        entry["wfo_grid"] = wfo_grid
     audited[trade_id] = entry
 
     if verdict == "EXPECTED_LOSS":
@@ -207,12 +273,24 @@ def mark_audited(trade_id: str, verdict: str, notes: str) -> None:
     elif verdict == "PARAM_WFO_REQUIRED":
         audit_st["stats"]["param_wfo_queued"] = audit_st["stats"].get("param_wfo_queued", 0) + 1
 
+    if verdict == "PARAM_WFO_REQUIRED" or resolved_cls in ("PARAM_WFO_REQUIRED", "SEQUENCE_TELEMETRY_REQUIRED"):
+        append_wfo_hypothesis_queue({
+            "queued_at": now_str,
+            "trade_id": trade_id,
+            "verdict": verdict,
+            "classification": resolved_cls,
+            "wfo_grid": wfo_grid,
+            "notes": notes,
+            "status": "QUEUED_FOR_PURGED_WFO",
+        })
+
     recent = audit_st.setdefault("recent_verdicts", [])
     recent.append(entry)
     audit_st["recent_verdicts"] = recent[-30:]
     save_audit_state(audit_st)
     append_audit_ledger(entry)
     print(json.dumps({"ok": True, "recorded": entry}, indent=2))
+    return entry
 
 
 def redeploy_daemon(force: bool = False) -> None:
@@ -258,13 +336,15 @@ def main() -> None:
     parser.add_argument("--check", action="store_true", help="Scan for uninspected real-money losing trades and live harvester health")
     parser.add_argument("--mark-audited", type=str, help="Trade ID to mark as audited")
     parser.add_argument("--verdict", type=str, choices=["EXPECTED_LOSS", "BUG_FIXED", "PARAM_WFO_REQUIRED", "PROFIT_OK"], default="EXPECTED_LOSS")
+    parser.add_argument("--classification", type=str, choices=list(AUDIT_CLASSIFICATIONS), default=None, help="Structured Type 0 / Type 1 / Type 2 forensic classification")
+    parser.add_argument("--wfo-grid", type=str, default="", help="Optional Purged WFO grid specification routed to wfo_hypothesis_queue.jsonl")
     parser.add_argument("--notes", type=str, default="", help="Forensic explanation or patch summary")
     parser.add_argument("--redeploy", action="store_true", help="Compile-check and restart polymarket-live-harvester.service on kraken-finland")
     parser.add_argument("--force-redeploy", action="store_true", help="Override open-position safety lock during emergency recovery")
     args = parser.parse_args()
 
     if args.mark_audited:
-        mark_audited(args.mark_audited, args.verdict, args.notes)
+        mark_audited(args.mark_audited, args.verdict, args.notes, classification=args.classification, wfo_grid=args.wfo_grid)
     elif args.redeploy:
         redeploy_daemon(force=args.force_redeploy)
     else:

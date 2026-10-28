@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import bisect
 import collections
+import gzip
 import json
 import math
 import multiprocessing as mp
@@ -29,9 +30,20 @@ import os
 import pickle
 import random
 import statistics
+import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterator, List, Optional, Tuple
+
+_REPO_ROOT = str(Path(__file__).resolve().parent.parent)
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
+
+try:
+    from src.polymarket_research.orderflow_wfo_simulators import calibrate_d1_box_wfo, simulate_microclip_cascade_entry
+except ImportError:
+    calibrate_d1_box_wfo = None  # type: ignore
+    simulate_microclip_cascade_entry = None  # type: ignore
 
 try:
     import orjson as _orjson
@@ -45,7 +57,7 @@ except ImportError:
 PIPELINE_ROOT = Path("/home/skybullet1987/quant_pipeline")
 DATA_DIR = PIPELINE_ROOT / "data" / "polymarket"
 OUT_JSON = DATA_DIR / "honest_wfo_results.json"
-CACHE_PKL = Path("/tmp/pm_wfo_v39_dataset.pkl")
+CACHE_PKL = Path("/tmp/pm_wfo_v40_dataset.pkl")
 
 FEE_RATE = 0.07
 
@@ -108,6 +120,28 @@ def infer_asset_and_horizon(d: Dict[str, Any]) -> Tuple[str, str]:
     return asset, hz
 
 
+def iter_jsonl_lines_with_archives(data_dir: Path, filename: str) -> Iterator[str]:
+    """Streams chronological `<stem>__20*.jsonl.gz` cold archives followed by the live hot `.jsonl` tail."""
+    stem = Path(filename).stem
+    arch_dir = data_dir / "archive"
+    prefix = f"{stem}__20"
+    if arch_dir.is_dir():
+        for gz_path in sorted(arch_dir.glob(f"{stem}__*.jsonl.gz")):
+            if not gz_path.name.startswith(prefix):
+                continue
+            try:
+                with gzip.open(gz_path, "rt", encoding="utf-8", errors="replace") as gf:
+                    for line in gf:
+                        yield line
+            except Exception:
+                continue
+    hot_path = data_dir / filename
+    if hot_path.exists():
+        with open(hot_path, "r", encoding="utf-8", errors="replace") as hf:
+            for line in hf:
+                yield line
+
+
 def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
     if use_cache and CACHE_PKL.exists():
         try:
@@ -132,109 +166,7 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
     sr_count = 0
     ir_offsets = {"100ms": 0.1, "250ms": 0.25, "500ms": 0.5, "1s": 1.0, "5s": 5.0, "30s": 30.0}
     for sr_name in ("shock_responses.jsonl", "shock_responses_eth.jsonl", "shock_responses_sol.jsonl"):
-        p = DATA_DIR / sr_name
-        if not p.exists():
-            continue
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    d = _loads(line)
-                except Exception:
-                    continue
-                mid = str(d.get("market_id") or "")
-                if mid not in verified:
-                    continue
-                t0 = float(d.get("t0_unix") or 0.0)
-                ir = d.get("impulse_response") or {}
-                if t0 > 0 and ir:
-                    sr_index[mid].append((t0, ir))
-                    sr_count += 1
-                    base_sp = float(d.get("spot_at_t0") or d.get("spot_at_shock") or 0.0)
-                    for h_key, def_dt in ir_offsets.items():
-                        step = ir.get(h_key)
-                        if not step:
-                            continue
-                        dt = float(step.get("elapsed_sec") or def_dt)
-                        u_ask = float(step.get("up_ask") or 1.0)
-                        u_mid = float(step.get("up_mid") or 0.0)
-                        u_bid = max(0.0, round(2.0 * u_mid - u_ask, 3)) if (u_mid > 0 and u_ask < 1.0) else 0.0
-                        d_ask = float(step.get("down_ask") or 1.0)
-                        d_mid = float(step.get("down_mid") or 0.0)
-                        d_bid = max(0.0, round(2.0 * d_mid - d_ask, 3)) if (d_mid > 0 and d_ask < 1.0) else 0.0
-                        sp = float(step.get("binance_spot") or base_sp)
-                        market_paths[mid].append((
-                            t0 + dt, sp, u_bid, u_ask, d_bid, d_ask,
-                            max(0.0, u_bid - 0.005), max(0.0, d_bid - 0.005)
-                        ))
-
-    for mid in sr_index:
-        sr_index[mid].sort(key=lambda x: x[0])
-
-    # 2. Load 1s hourly L2 telemetry (downsample to 2s to keep RAM compact & fast while preserving peaks/stops)
-    telem_rows = 0
-    for t_name in ("polymarket_hourly_telemetry.jsonl", "polymarket_hourly_telemetry_eth.jsonl", "polymarket_hourly_telemetry_sol.jsonl"):
-        p = DATA_DIR / t_name
-        if not p.exists():
-            continue
-        last_ts_by_mid: Dict[str, float] = {}
-        with open(p, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    d = _loads(line)
-                except Exception:
-                    continue
-                mid = str(d.get("market_id") or "")
-                if mid not in verified:
-                    continue
-                ts = float(d.get("timestamp_unix") or 0.0)
-                if ts - last_ts_by_mid.get(mid, 0.0) < 2.0 and float(d.get("seconds_to_expiry") or 999) > 90.0:
-                    continue
-                last_ts_by_mid[mid] = ts
-                tte = float(d.get("seconds_to_expiry") or 0.0)
-                if tte > 0:
-                    market_expiry[mid] = ts + tte
-                sp = float(d.get("binance_spot") or 0.0)
-                up = d.get("UP") or {}
-                dn = d.get("DOWN") or {}
-                u_bid = float(up.get("best_bid") or 0.0)
-                u_ask = float(up.get("best_ask") or 1.0)
-                d_bid = float(dn.get("best_bid") or 0.0)
-                d_ask = float(dn.get("best_ask") or 1.0)
-                u_vwap = walk_bids_vwap(up.get("raw_top_bids") or [], u_bid)
-                d_vwap = walk_bids_vwap(dn.get("raw_top_bids") or [], d_bid)
-                market_paths[mid].append((ts, sp, u_bid, u_ask, d_bid, d_ask, u_vwap, d_vwap))
-                telem_rows += 1
-
-    # 3. Load exp306_realtime_boundary_merge.jsonl (dense final-60s quotes for 15m and 1h!)
-    p_306 = DATA_DIR / "exp306_realtime_boundary_merge.jsonl"
-    if p_306.exists():
-        with open(p_306, "r", encoding="utf-8", errors="replace") as f:
-            for line in f:
-                if not line.strip():
-                    continue
-                try:
-                    d = _loads(line)
-                except Exception:
-                    continue
-                mid = str(d.get("market_id") or "")
-                if mid not in verified:
-                    continue
-                ts = float(d.get("timestamp_unix") or 0.0)
-                u_ask = float(d.get("ask_up") or 1.0)
-                d_ask = float(d.get("ask_down") or 1.0)
-                # v3.8 F-12a Fix: Never fabricate u_ask - 0.01 synthetic bids when complement ask is missing (1.0)
-                u_bid = max(0.0, round(1.0 - d_ask, 3)) if d_ask < 1.0 else 0.0
-                d_bid = max(0.0, round(1.0 - u_ask, 3)) if u_ask < 1.0 else 0.0
-                market_paths[mid].append((ts, 0.0, u_bid, u_ask, d_bid, d_ask, max(0.0, u_bid - 0.01), max(0.0, d_bid - 0.01)))
-
-    # 4. Load all raw triggers from live_shock_triggers.jsonl (adds L2 snapshots + builds candidate list)
-    raw_triggers: List[Tuple[float, str, str, str, float, Dict[str, Any]]] = []
-    with open(DATA_DIR / "live_shock_triggers.jsonl", "r", encoding="utf-8", errors="replace") as f:
-        for line in f:
+        for line in iter_jsonl_lines_with_archives(DATA_DIR, sr_name):
             if not line.strip():
                 continue
             try:
@@ -244,27 +176,117 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             mid = str(d.get("market_id") or "")
             if mid not in verified:
                 continue
-            asset, hz = infer_asset_and_horizon(d)
-            if hz not in ("15m", "1h") or asset not in ("BTC", "ETH", "SOL"):
-                continue
             t0 = float(d.get("t0_unix") or 0.0)
-            tte = float(d.get("seconds_to_expiry") or 0.0)
-            if t0 <= 0 or tte <= 5.0:
+            ir = d.get("impulse_response") or {}
+            if t0 > 0 and ir:
+                sr_index[mid].append((t0, ir))
+                sr_count += 1
+                base_sp = float(d.get("spot_at_t0") or d.get("spot_at_shock") or 0.0)
+                for h_key, def_dt in ir_offsets.items():
+                    step = ir.get(h_key)
+                    if not step:
+                        continue
+                    dt = float(step.get("elapsed_sec") or def_dt)
+                    u_ask = float(step.get("up_ask") or 1.0)
+                    u_mid = float(step.get("up_mid") or 0.0)
+                    u_bid = max(0.0, round(2.0 * u_mid - u_ask, 3)) if (u_mid > 0 and u_ask < 1.0) else 0.0
+                    d_ask = float(step.get("down_ask") or 1.0)
+                    d_mid = float(step.get("down_mid") or 0.0)
+                    d_bid = max(0.0, round(2.0 * d_mid - d_ask, 3)) if (d_mid > 0 and d_ask < 1.0) else 0.0
+                    sp = float(step.get("binance_spot") or base_sp)
+                    market_paths[mid].append((
+                        t0 + dt, sp, u_bid, u_ask, d_bid, d_ask,
+                        max(0.0, u_bid - 0.005), max(0.0, d_bid - 0.005)
+                    ))
+
+    for mid in sr_index:
+        sr_index[mid].sort(key=lambda x: x[0])
+
+    # 2. Load 1s hourly L2 telemetry (downsample to 2s to keep RAM compact & fast while preserving peaks/stops)
+    telem_rows = 0
+    for t_name in ("polymarket_hourly_telemetry.jsonl", "polymarket_hourly_telemetry_eth.jsonl", "polymarket_hourly_telemetry_sol.jsonl"):
+        last_ts_by_mid: Dict[str, float] = {}
+        for line in iter_jsonl_lines_with_archives(DATA_DIR, t_name):
+            if not line.strip():
                 continue
-            exp_ts = float(d.get("candle_expiry_ts") or d.get("expiry_ts") or (t0 + tte))
-            market_expiry[mid] = exp_ts
-            pre = d.get("pre_shock_features_t0") or {}
-            up = pre.get("UP") or {}
-            dn = pre.get("DOWN") or {}
-            sp = float(d.get("spot_at_t0") or 0.0)
+            try:
+                d = _loads(line)
+            except Exception:
+                continue
+            mid = str(d.get("market_id") or "")
+            if mid not in verified:
+                continue
+            ts = float(d.get("timestamp_unix") or 0.0)
+            if ts - last_ts_by_mid.get(mid, 0.0) < 2.0 and float(d.get("seconds_to_expiry") or 999) > 90.0:
+                continue
+            last_ts_by_mid[mid] = ts
+            tte = float(d.get("seconds_to_expiry") or 0.0)
+            if tte > 0:
+                market_expiry[mid] = ts + tte
+            sp = float(d.get("binance_spot") or 0.0)
+            up = d.get("UP") or {}
+            dn = d.get("DOWN") or {}
             u_bid = float(up.get("best_bid") or 0.0)
             u_ask = float(up.get("best_ask") or 1.0)
             d_bid = float(dn.get("best_bid") or 0.0)
             d_ask = float(dn.get("best_ask") or 1.0)
-            u_vwap_b = walk_bids_vwap(up.get("raw_top_bids") or [], u_bid)
-            d_vwap_b = walk_bids_vwap(dn.get("raw_top_bids") or [], d_bid)
-            market_paths[mid].append((t0, sp, u_bid, u_ask, d_bid, d_ask, u_vwap_b, d_vwap_b))
-            raw_triggers.append((t0, asset, hz, mid, exp_ts, d))
+            u_vwap = walk_bids_vwap(up.get("raw_top_bids") or [], u_bid)
+            d_vwap = walk_bids_vwap(dn.get("raw_top_bids") or [], d_bid)
+            market_paths[mid].append((ts, sp, u_bid, u_ask, d_bid, d_ask, u_vwap, d_vwap))
+            telem_rows += 1
+
+    # 3. Load exp306_realtime_boundary_merge.jsonl (dense final-60s quotes for 15m and 1h!)
+    for line in iter_jsonl_lines_with_archives(DATA_DIR, "exp306_realtime_boundary_merge.jsonl"):
+        if not line.strip():
+            continue
+        try:
+            d = _loads(line)
+        except Exception:
+            continue
+        mid = str(d.get("market_id") or "")
+        if mid not in verified:
+            continue
+        ts = float(d.get("timestamp_unix") or 0.0)
+        u_ask = float(d.get("ask_up") or 1.0)
+        d_ask = float(d.get("ask_down") or 1.0)
+        # v3.8 F-12a Fix: Never fabricate u_ask - 0.01 synthetic bids when complement ask is missing (1.0)
+        u_bid = max(0.0, round(1.0 - d_ask, 3)) if d_ask < 1.0 else 0.0
+        d_bid = max(0.0, round(1.0 - u_ask, 3)) if u_ask < 1.0 else 0.0
+        market_paths[mid].append((ts, 0.0, u_bid, u_ask, d_bid, d_ask, max(0.0, u_bid - 0.01), max(0.0, d_bid - 0.01)))
+
+    # 4. Load all raw triggers from live_shock_triggers.jsonl (adds L2 snapshots + builds candidate list)
+    raw_triggers: List[Tuple[float, str, str, str, float, Dict[str, Any]]] = []
+    for line in iter_jsonl_lines_with_archives(DATA_DIR, "live_shock_triggers.jsonl"):
+        if not line.strip():
+            continue
+        try:
+            d = _loads(line)
+        except Exception:
+            continue
+        mid = str(d.get("market_id") or "")
+        if mid not in verified:
+            continue
+        asset, hz = infer_asset_and_horizon(d)
+        if hz not in ("15m", "1h") or asset not in ("BTC", "ETH", "SOL"):
+            continue
+        t0 = float(d.get("t0_unix") or 0.0)
+        tte = float(d.get("seconds_to_expiry") or 0.0)
+        if t0 <= 0 or tte <= 5.0:
+            continue
+        exp_ts = float(d.get("candle_expiry_ts") or d.get("expiry_ts") or (t0 + tte))
+        market_expiry[mid] = exp_ts
+        pre = d.get("pre_shock_features_t0") or {}
+        up = pre.get("UP") or {}
+        dn = pre.get("DOWN") or {}
+        sp = float(d.get("spot_at_t0") or 0.0)
+        u_bid = float(up.get("best_bid") or 0.0)
+        u_ask = float(up.get("best_ask") or 1.0)
+        d_bid = float(dn.get("best_bid") or 0.0)
+        d_ask = float(dn.get("best_ask") or 1.0)
+        u_vwap_b = walk_bids_vwap(up.get("raw_top_bids") or [], u_bid)
+        d_vwap_b = walk_bids_vwap(dn.get("raw_top_bids") or [], d_bid)
+        market_paths[mid].append((t0, sp, u_bid, u_ask, d_bid, d_ask, u_vwap_b, d_vwap_b))
+        raw_triggers.append((t0, asset, hz, mid, exp_ts, d))
 
     raw_triggers.sort(key=lambda x: x[0])
 
@@ -424,6 +446,17 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
 
         compact_path = []
         strike_worst = open_sp if hz == "1h" else (max(open_sp, twap_open) if side == "UP" else min(open_sp, twap_open))
+        idx_mc0 = bisect.bisect_right(ts_list, t0 + 0.04)
+        idx_mc1 = bisect.bisect_right(ts_list, t0 + 5.50)
+        micro_clips = [
+            (
+                round(p_ts - t0, 3),
+                sign * (p_sp - strike_worst) / strike_worst if p_sp > 0 else cushion_oracle,
+                ub if side == "UP" else db,
+                ua if side == "UP" else da,
+            )
+            for p_ts, p_sp, ub, ua, db, da, _, _ in pts[idx_mc0:idx_mc1]
+        ]
         for p_ts, p_sp, ub, ua, db, da, uvb, dvb in raw_post:
             tte_i = max(0.0, exp_ts - p_ts)
             b_i = ub if side == "UP" else db
@@ -467,6 +500,7 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             "cb_move_2s": cb_move_2s,
             "ask_500ms": ask_500ms,
             "ask_1000ms": ask_1000ms,
+            "micro_clips": micro_clips,
             "path": compact_path,
             "won": gamma_won,
             "oracle_mismatch": oracle_mismatch,
@@ -536,6 +570,8 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
             return None
 
     entry_mode = cfg["entry_mode"]
+    size_mult = 1.0
+    cascade_tag = ""
     if entry_mode == "maker_in":
         maker_px = round(min(ask_t0 - 0.01, cand["bid_t0"] + (0.01 if cand["spread_t0"] >= 0.02 else 0.0)), 2)
         if maker_px < cfg["min_px"]:
@@ -555,6 +591,12 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
         fill_px = maker_px
         entry_fee_ps = 0.0
         active_path = cand["path"][fill_idx + 1 :]
+    elif entry_mode == "cascade_v4" and simulate_microclip_cascade_entry is not None:
+        casc = simulate_microclip_cascade_entry(cand, cfg, latency_mode=latency_mode)
+        if casc is None:
+            return None
+        fill_px, entry_fee_ps, fill_el_s, size_mult, cascade_tag = casc
+        active_path = [r for r in cand["path"] if (cand["tte"] - r[0]) > fill_el_s]
     else:
         ask_lat = cand["ask_500ms"] if latency_mode == "500ms" else cand["ask_1000ms"]
         limit_px = min(cfg["max_px"] + 0.01, round(ask_t0 + cfg["fak_buffer"], 4))
@@ -713,7 +755,9 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
         else:
             exit_reason = "TP1_PLUS_LOSS" if tp1_done and tp1_frac > 0 else "RESOLVED_LOSS_WIPEOUT"
 
-    net_pnl = realized_cash - total_cost
+    net_pnl = (realized_cash - total_cost) * size_mult
+    if cascade_tag:
+        exit_reason = f"{cascade_tag}:{exit_reason}"
     rel_ts = (cand["t0"] + exit_elapsed_s + 4.0) if exit_elapsed_s is not None else cand["exp_ts"]
     return net_pnl, exit_reason, (net_pnl > 0), rel_ts
 
@@ -1266,6 +1310,7 @@ def main():
         eval_ablation("ABLATE_ENABLE_FINAL_45S_TAKER_UNWIND", {"final_45s_unwind": True}),
         eval_ablation("ABLATE_NO_VENUE_VETO", {"use_venue_veto": False}),
         eval_ablation("ABLATE_ALT_ENTRY_MODE (maker_in vs taker_fak)", {"entry_mode": "maker_in" if best_cfg["entry_mode"] != "maker_in" else "taker_fak"}),
+        eval_ablation("ABLATE_CASCADE_V4_4STEP_ENTRY", {"entry_mode": "cascade_v4"}),
     ]
 
     # v3.9 Patch E (R05): Genuine Out-of-Sample Refit CPCV(N=6, k=2) -> 15 Zero-Leakage Splits
@@ -1693,6 +1738,7 @@ def main():
             "kelly_sizing": kelly,
         },
         "controlled_ablations": ablations,
+        "d1_box_wfo_calibration": calibrate_d1_box_wfo(data_dir=DATA_DIR) if calibrate_d1_box_wfo is not None else {},
         "top_5_configs": top5_summary,
         "live_105_trades_counterfactual": live_counterfactual,
     }

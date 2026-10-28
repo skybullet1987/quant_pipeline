@@ -34,7 +34,8 @@ MODULES = [
     ("src/polymarket_research/check_polymarket_balance.py", "Polygon pUSD + USDC.e Collateral Balance Checker"),
     ("src/polymarket_research/verify_onchain_allowances.py", "ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier"),
     ("src/polymarket_research/redeem_settled_positions.py", "CTF Settled Position Redemption Engine"),
-    ("src/polymarket_research/setup_polymarket_account.py", "CLOB L2 API Key & Proxy Credential Generator"),
+    # setup_polymarket_account.py (one-time CLOB L2 credential generator) lives only in the full-codebase bundle
+    # to keep this production bundle under the 1,000,000-byte cap.
 
     # 4. AUTONOMOUS POST-TRADE FORENSICS & ZERO-LOOKAHEAD PURGED WALK-FORWARD OPTIMIZER
     ("audit_losing_trades.py", "Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier"),
@@ -120,37 +121,19 @@ def transform_module(rel_path: str, code: str) -> str:
 
 def _assemble(module_data, toc_lines):
     header_text = f'''"""
-================================================================================
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")}
-Version: 3.9.0 Purged-WFO, Genuine Refit CPCV & Second-Pass Audit Hardened Release
-Repository: {PIPELINE_ROOT.as_posix()}
-
-This single consolidated file contains the complete Polymarket v3.9 production
-trading engine, execution adapter, streaming shock recorder, on-chain collateral
-tools, post-trade forensic auditor, and Purged Walk-Forward / CPCV Optimizer:
-  1. Centralized Risk Config & Graceful systemd Production Unit
-  2. Core Live Execution, Harvesting & Sub-ms Streaming Engine
-  3. On-Chain Collateral (pUSD + USDC.e), Allowances & Position Redemption
-  4. Autonomous Post-Trade Forensics & Zero-Lookahead Purged WFO Optimizer
-
+Generated: {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")} | Repo: {PIPELINE_ROOT.as_posix()}
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
 '''
     chunks = [header_text]
     for ln in toc_lines:
         chunks.append(ln + "\n")
-    chunks.append('"""\n\nfrom __future__ import annotations\n\n')
+    chunks.append('"""\nfrom __future__ import annotations\n')
 
     cur_line = sum(c.count("\n") for c in chunks)
     computed_toc = []
     for idx, (rel_path, desc, code) in enumerate(module_data, 1):
-        banner = (
-            f"# {'=' * 78}\n"
-            f"# [{idx:02d}/{len(module_data):02d}] MODULE: {rel_path}\n"
-            f"# DESCRIPTION: {desc}\n"
-            f"# SOURCE FILE: {rel_path}\n"
-            f"# {'=' * 78}\n\n"
-        )
+        banner = f"# === [{idx:02d}/{len(module_data):02d}] {rel_path} :: {desc} ===\n"
         body = transform_module(rel_path, code)
         start_line = cur_line + 1
         end_line = cur_line + banner.count("\n") + body.count("\n")

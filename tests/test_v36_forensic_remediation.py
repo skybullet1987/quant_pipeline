@@ -381,6 +381,9 @@ def test_v36_equity_tier_limits_safeguard_1():
 
 def test_v36_trap_11_bid_depth_downscaler_source():
     src = inspect.getsource(PolymarketLiveHarvester.evaluate_shock_and_execute)
+    impl_fn = getattr(PolymarketLiveHarvester, "_evaluate_shock_and_execute_impl", None)
+    if impl_fn is not None:
+        src += "\n" + inspect.getsource(impl_fn)
     assert "[BID_DEPTH_DOWNSCALE]" in src
     assert "max_near_bid_shares = near_touch_bid_shares / max(min_bid_mult, 1.0)" in src
     assert "max_bid_supported_usd = math.floor(max_bid_supported_shares * first_ask * 100.0) / 100.0" in src

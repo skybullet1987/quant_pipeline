@@ -66,6 +66,14 @@ except Exception:  # pragma: no cover - tracing is optional and must never block
     _LatencyTrace = None  # type: ignore
     _CURRENT_TRACE = None  # type: ignore
 
+try:
+    from src.polymarket_research.polymarket_ws_streams import PolymarketClobMarketWsTracker as _PolymarketClobMarketWsTracker
+except Exception:
+    try:
+        from polymarket_ws_streams import PolymarketClobMarketWsTracker as _PolymarketClobMarketWsTracker  # type: ignore
+    except Exception:
+        _PolymarketClobMarketWsTracker = None  # type: ignore
+
 # Max age of the recorder's WebSocket L2 snapshot that live entries may trade on without a fresh REST /book.
 # Default preserves the previous hard-coded 2500 ms; lower it only after the latency traces show
 # edge decay vs book age (see scripts/latency_trace_report.py).
@@ -490,6 +498,8 @@ MAKER_EXIT_POSTABLE_STATUSES = frozenset({
     "ENTRY_INVENTORY_RECONCILIATION_REQUIRED",
     "POST_FAILED",
     "EXIT_RECOVERY_REQUIRED",
+    # Post-only TP rejected because best bid sat at the max tick; re-post once `next_exit_post_ts` elapses.
+    "CROSSED_AT_MAX_TICK_WAIT",
 })
 
 # Partial unwind residuals continue to be unwound (never re-posted as profit-taking makers).
@@ -1301,12 +1311,12 @@ class PolymarketLiveHarvester:
                 return float("inf")
 
         tick_age = _age_with_payload(tick_dir / f"pm_fast_tick_{asset}.json", is_jsonl=False)
-        tele_age = _age_with_payload(tele_dir / tele_name, is_jsonl=True)
         fast_max = float(self.risk_config["stale_fast_tick_max_age_sec"])
+        if tick_age <= fast_max:
+            return True, tick_age, f"fast_tick_age={tick_age:.1f}s<={fast_max:.0f}s"
+        tele_age = _age_with_payload(tele_dir / tele_name, is_jsonl=True)
         tele_max = float(self.risk_config["stale_telemetry_max_age_sec"])
         newest = min(tick_age, tele_age)
-        if tick_age <= fast_max:
-            return True, newest, f"fast_tick_age={tick_age:.1f}s<={fast_max:.0f}s"
         if tele_age <= tele_max:
             return True, newest, f"telemetry_age={tele_age:.1f}s<={tele_max:.0f}s"
         return False, newest, f"fast_tick_age={tick_age:.1f}s>{fast_max:.0f}s and telemetry_age={tele_age:.1f}s>{tele_max:.0f}s"
@@ -1407,6 +1417,236 @@ class PolymarketLiveHarvester:
             )
         except Exception as exc:
             logger.debug(f"[SHADOW PHASE 3A] Register error: {exc}")
+
+    async def _attempt_live_phase3a_maker_rescue(
+        self,
+        *,
+        trade_id: str,
+        token_id: str,
+        target_token: str,
+        asset_str: str,
+        effective_notional: float,
+        first_ask: float,
+        first_bid: float,
+        min_allowed_price: float,
+        max_allowed_price: float,
+        open_spot: float,
+        entry_spot_ref: float,
+        spot_denom: str,
+        tte: float,
+        pre_cond_bal: float,
+        book_snapshot: Optional[Dict[str, Any]],
+    ) -> Optional[OrderResult]:
+        explicit_flag = self.__dict__.get("enable_live_phase3a_maker_fallback")
+        if explicit_flag is False or os.environ.get("PM_DISABLE_LIVE_PHASE3A_MAKER", "0") == "1":
+            return None
+        real_live = (
+            not self.dry_run
+            and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+            and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+            and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
+            and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
+        )
+        if not (explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback", True)))):
+            return None
+        if tte < 75.0 or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
+            return None
+        maker_entry_fn = getattr(self.executor, "place_passive_maker_entry", None) or getattr(
+            self.executor, "post_maker_entry_order", None
+        )
+        if maker_entry_fn is None:
+            return None
+
+        fresh_bk = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot or {}
+        asks_f = fresh_bk.get("asks") or []
+        bids_f = fresh_bk.get("bids") or []
+        f_ask = min((float(a["price"] if isinstance(a, dict) else a[0]) for a in asks_f if float(a.get("size", 0) if isinstance(a, dict) else a[1]) > 0), default=first_ask)
+        f_bid = max((float(b["price"] if isinstance(b, dict) else b[0]) for b in bids_f if float(b.get("size", 0) if isinstance(b, dict) else b[1]) > 0), default=first_bid)
+        ask_cap = round(f_ask - 0.01, 2) if f_ask > 0.02 else round(max_allowed_price, 2)
+        bid_step = round(max(f_bid, first_bid) + 0.01, 2) if max(f_bid, first_bid) > 0.0 else ask_cap
+        maker_px = round(min(float(max_allowed_price), ask_cap, bid_step), 2)
+        if maker_px < float(min_allowed_price) - 1e-6 or maker_px > float(max_allowed_price) + 1e-6:
+            return None
+        if f_ask > 0.0 and maker_px > round(f_ask - 0.01, 2) + 1e-6:
+            return None
+        rescue_notional = min(float(effective_notional), float(RISK_CONFIG.get("phase3a_maker_max_notional_usd", 16.50)))
+        if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
+            return None
+
+        t0_m = time.perf_counter()
+        if trade_id in self.pending_entry_intents:
+            self.pending_entry_intents[trade_id]["target_price"] = maker_px
+            self.pending_entry_intents[trade_id]["notional_usd"] = rescue_notional
+        post_res = await asyncio.to_thread(
+            maker_entry_fn,
+            token_id=token_id,
+            price=maker_px,
+            notional_usd=rescue_notional,
+            side="BUY",
+            min_price_floor=float(min_allowed_price),
+            max_price_ceiling=float(max_allowed_price),
+        )
+        if not isinstance(post_res, dict):
+            return None
+        if post_res.get("outcome_unknown"):
+            return OrderResult(
+                success=False, order_id=post_res.get("orderID"), trade_id=trade_id, token_id=token_id,
+                target_token=target_token, side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0),
+                notional_usd=rescue_notional, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
+                mode="LIVE_PHASE3A_UNKNOWN", execution_status=ExecutionStatus.SUBMITTED,
+                details={"outcome_unknown": True, "entry_order_id": post_res.get("orderID"), "pre_token_balance": pre_cond_bal},
+                error=str(post_res.get("error") or "PHASE3A_POST_UNKNOWN"),
+            )
+        maker_oid = str(post_res.get("orderID") or "").strip()
+        if not post_res.get("success") or not maker_oid:
+            return None
+        if trade_id in self.pending_entry_intents:
+            self.pending_entry_intents[trade_id]["entry_order_id"] = maker_oid
+
+        ttl_s = max(0.2, float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC", "3.5")))
+        deadline = time.monotonic() + ttl_s
+        uws = getattr(self.executor, "_user_ws_cache", None)
+        init_disp = (entry_spot_ref - open_spot) if target_token == "UP" else (open_spot - entry_spot_ref)
+        while time.monotonic() < deadline:
+            rem_w = max(0.02, min(0.10, deadline - time.monotonic()))
+            if uws is not None and uws.is_healthy():
+                prev_s = uws.fill_sequence
+                await uws.wait_for_fill_or_timeout(rem_w, prev_seq=prev_s)
+                snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
+                if isinstance(snap_o, dict) and str(snap_o.get("status") or "").upper() in ("MATCHED", "FILLED"):
+                    break
+            else:
+                await asyncio.sleep(rem_w)
+            if open_spot > 0.0 and init_disp > 0.0:
+                ref_fn = self.get_usd_reference_spot_price if spot_denom == "USD" else self.get_reference_spot_price
+                cur_sp = await asyncio.to_thread(ref_fn, asset_str)
+                if cur_sp and float(cur_sp) > 0.0:
+                    cur_disp = (float(cur_sp) - open_spot) if target_token == "UP" else (open_spot - float(cur_sp))
+                    if cur_disp < 0.50 * init_disp:
+                        logger.info(f"[LIVE PHASE 3A ADVERSE SHIELD] {trade_id}: spot cushion decayed >50%; canceling OID={maker_oid} early.")
+                        break
+
+        cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
+        summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
+        c_out = str((cancel_res or {}).get("outcome") or "")
+        is_canc = bool((cancel_res or {}).get("is_canceled"))
+        matched_sh = float((summary or {}).get("matched") or (cancel_res or {}).get("matched") or 0.0)
+        if matched_sh >= 0.01 and (
+            is_canc
+            or c_out in ("FILLED", "CANCELED", "PARTIALLY_FILLED_CANCELED")
+            or bool((summary or {}).get("terminal"))
+        ):
+            avg_px = float((summary or {}).get("avg_price") or maker_px)
+            notional_act = round(matched_sh * avg_px, 4)
+            logger.info(
+                f"✓ [LIVE PHASE 3A MAKER RESCUE FILLED] {trade_id}: {matched_sh:.2f} sh @ ${avg_px:.4f} "
+                f"(0% fee + 20% Maker rebate, OID={maker_oid})"
+            )
+            return OrderResult(
+                success=True, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
+                target_token=target_token, side="BUY", price=avg_px, size=matched_sh,
+                notional_usd=notional_act, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
+                mode="LIVE_PHASE3A_MAKER_IN", execution_status=ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
+                details={
+                    "pre_token_balance": pre_cond_bal,
+                    "trade_ids": list((summary or {}).get("trade_ids") or []),
+                    "transactions_hashes": list((summary or {}).get("tx_hashes") or []),
+                    "phase3a_maker_rescue": True,
+                },
+            )
+        if not is_canc and c_out != "FILLED" and (summary is None or not summary.get("terminal") or summary.get("resting")):
+            return OrderResult(
+                success=False, order_id=maker_oid, trade_id=trade_id, token_id=token_id,
+                target_token=target_token, side="BUY", price=maker_px, size=float(post_res.get("shares") or 5.0),
+                notional_usd=rescue_notional, fee_usd=0.0, latency_ms=round((time.perf_counter() - t0_m) * 1000.0, 2),
+                mode="LIVE_PHASE3A_CANCEL_UNKNOWN", execution_status=ExecutionStatus.SUBMITTED,
+                details={"outcome_unknown": True, "entry_order_id": maker_oid, "pre_token_balance": pre_cond_bal},
+                error="PHASE3A_CANCEL_UNVERIFIED",
+            )
+        logger.info(f"[LIVE PHASE 3A EXPIRED CLEAN] {trade_id}: OID={maker_oid} canceled after {ttl_s:.1f}s (0 filled).")
+        return None
+
+    async def _maybe_merge_live_complete_sets(self, now_ts: float) -> None:
+        if self.dry_run or not hasattr(self.executor, "attempt_onchain_complete_set_merge"):
+            return
+        sig_t = int(getattr(self.executor, "signature_type", 3) or 3)
+        if sig_t == 3 and not (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY")) and os.getenv("PM_ENABLE_ONCHAIN_MERGE", "0") != "1":
+            return
+        seen_boxes: set[str] = set()
+        merge_cd = self.__dict__.setdefault("_c1_merge_attempt_ts", {})
+        for tid, pos in list(self.active_positions.items()):
+            if tid not in self.active_positions or str(pos.get("box_type") or "") != "COMPLETE_SET":
+                continue
+            b_id = str(pos.get("box_id") or "")
+            p_tid = str(pos.get("box_partner_trade_id") or "")
+            partner = self.active_positions.get(p_tid)
+            cid = str(pos.get("condition_id") or "")
+            if not b_id or b_id in seen_boxes or not isinstance(partner, dict) or not cid or cid != str(partner.get("condition_id") or ""):
+                continue
+            seen_boxes.add(b_id)
+            if (now_ts - float(merge_cd.get(b_id, 0.0) or 0.0)) < 20.0:
+                continue
+            if not (pos.get("inventory_reconciled") and partner.get("inventory_reconciled")):
+                continue
+            sh_1 = float(pos.get("remaining_shares", 0.0) or 0.0)
+            sh_2 = float(partner.get("remaining_shares", 0.0) or 0.0)
+            if min(sh_1, sh_2) < 5.0 or float(pos.get("filled_exit_shares", 0.0) or 0.0) > 0.01 or float(partner.get("filled_exit_shares", 0.0) or 0.0) > 0.01:
+                continue
+            merge_cd[b_id] = now_ts
+            cancel_aborted = False
+            any_exit_canceled = False
+            for lg_tid_c, lg_p in ((tid, pos), (p_tid, partner)):
+                e_oid = lg_p.get("exit_order_id")
+                if e_oid:
+                    c_r = await asyncio.to_thread(self.executor.cancel_order, str(e_oid))
+                    s_r = await asyncio.to_thread(self.executor.get_order_fill_summary, str(e_oid), lg_p.get("token_id"))
+                    if s_r is not None:
+                        self._record_order_summary(lg_p, s_r, float(lg_p.get("target_exit_price", 0.99) or 0.99), taker=False)
+                        if float(lg_p.get("remaining_shares", 0.0) or 0.0) <= 0.01:
+                            self._close_position(lg_tid_c, lg_p, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
+                            cancel_aborted = True
+                            break
+                    if not (c_r or {}).get("is_canceled") or float(lg_p.get("filled_exit_shares", 0.0) or 0.0) > 0.01:
+                        if (c_r or {}).get("is_canceled"):
+                            self.executor.release_inventory(reservation_id=str(e_oid))
+                            lg_p["exit_order_id"] = None
+                            lg_p["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+                            any_exit_canceled = True
+                        cancel_aborted = True
+                        break
+                    self.executor.release_inventory(reservation_id=str(e_oid))
+                    lg_p["exit_order_id"] = None
+                    lg_p["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+                    any_exit_canceled = True
+            if cancel_aborted:
+                if any_exit_canceled:
+                    await asyncio.to_thread(self.save_state)
+                continue
+            sh_1 = float(pos.get("remaining_shares", 0.0) or 0.0)
+            sh_2 = float(partner.get("remaining_shares", 0.0) or 0.0)
+            m_res = await asyncio.to_thread(
+                self.executor.attempt_onchain_complete_set_merge, cid, min_pairs=min(sh_1, sh_2), max_pairs=min(sh_1, sh_2)
+            )
+            if isinstance(m_res, tuple) and len(m_res) == 2 and m_res[0] and float(m_res[1]) >= 4.99:
+                tx_h, pairs_m = str(m_res[0]), float(m_res[1])
+                tot_c = max(0.01, float(pos.get("notional_usd", 0.0)) + float(partner.get("notional_usd", 0.0)))
+                for lg_tid, lg_p in ((tid, pos), (p_tid, partner)):
+                    share_w = float(lg_p.get("notional_usd", 0.0)) / tot_c
+                    cash_leg = round(pairs_m * share_w, 4)
+                    lg_p["merge_tx_hash"] = tx_h
+                    self.record_fill_and_update_position(
+                        lg_p, f"MERGE_{tx_h}_{lg_tid}", pairs_m, cash_leg, 0.0, cash_is_estimated=False
+                    )
+                    if float(lg_p.get("remaining_shares", 0.0) or 0.0) <= 0.02:
+                        self._close_position(lg_tid, lg_p, ExecutionStatus.SETTLED, "COMPLETE_SET_ONCHAIN_MERGED", won=True)
+                self._pending_collateral_refresh = True
+                await asyncio.to_thread(self.save_state)
+                logger.info(f"✓ [C1 COMPLETE SET MERGED] {b_id}: {pairs_m:.2f} pairs -> ${pairs_m:.2f} cash freed immediately (tx={tx_h}).")
+            else:
+                # Merge unavailable/unconfirmed (gas, relayer, revert): back off 10 min so exits aren't cancelled every cycle.
+                merge_cd[b_id] = now_ts + 600.0
+                if any_exit_canceled:
+                    await asyncio.to_thread(self.save_state)
 
     def _update_shadow_phase4_monotonicity_scanner(
         self, shock: Dict[str, Any], asset_str: str, is_subhourly: bool, is_1h: bool, tte: float, open_spot: float
@@ -1781,7 +2021,7 @@ class PolymarketLiveHarvester:
             return None
 
     async def _atomic_replace_maker_exit(
-        self, tid: str, pos: Dict[str, Any], new_price: float
+        self, tid: str, pos: Dict[str, Any], new_price: float, collapse_tranches: bool = False
     ) -> bool:
         """
         Atomically cancels an existing resting Maker TP (old_oid), reconciles any partial fills,
@@ -1793,9 +2033,14 @@ class PolymarketLiveHarvester:
         if not token_id:
             return False
 
+        order_matched = 0.0
         if old_oid:
             cancel_res = await asyncio.to_thread(self.executor.cancel_order, str(old_oid))
+            is_canceled = bool((cancel_res or {}).get("is_canceled"))
             summary = await asyncio.to_thread(self.executor.get_order_fill_summary, str(old_oid), token_id)
+            if is_canceled and isinstance(summary, dict) and summary.get("resting", False):
+                await asyncio.sleep(0.25)
+                summary = await asyncio.to_thread(self.executor.get_order_fill_summary, str(old_oid), token_id)
             if summary is None:
                 logger.warning(
                     f"[QUEUE JUMP ABORT] No fill summary for {old_oid} after cancel; retaining reservation."
@@ -1804,13 +2049,13 @@ class PolymarketLiveHarvester:
                 pos["pending_canceled_order_id"] = str(old_oid)
                 await asyncio.to_thread(self.save_state)
                 return False
+            order_matched = float(summary.get("matched", 0.0) or 0.0)
             self._record_order_summary(pos, summary, float(pos.get("target_exit_price", 0.99) or 0.99), taker=False)
             if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
                 self._close_position(tid, pos, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
                 return True
-            is_canceled = bool((cancel_res or {}).get("is_canceled"))
             if summary.get("resting", False) or not is_canceled or not summary.get("terminal", False):
-                if not summary.get("resting", False):
+                if not summary.get("resting", False) or is_canceled:
                     pos["exit_order_status"] = "FILL_RECONCILIATION_REQUIRED"
                     pos["pending_canceled_order_id"] = str(old_oid)
                 logger.warning(f"[QUEUE JUMP ABORT] {old_oid} not terminally canceled; retaining reservation.")
@@ -1828,15 +2073,51 @@ class PolymarketLiveHarvester:
         if rem_shares < 0.01:
             return False
 
+        post_size = rem_shares
+        active_tranche = None
+        if collapse_tranches:
+            pos.pop("exit_tranches", None)
+        elif pos.get("exit_tranches"):
+            for t in pos["exit_tranches"]:
+                if t.get("status") in {"POSTED", "IN_FLIGHT"}:
+                    t_rem = max(0.0, round(float(t.get("size", 0.0)) - order_matched, 2))
+                    if t_rem <= 0.01:
+                        t["status"] = "FILLED"
+                    else:
+                        t["size"] = t_rem
+                        t["status"] = "PENDING"
+            pending_tr = [t for t in pos["exit_tranches"] if t.get("status") == "PENDING" and float(t.get("size", 0.0)) >= 5.0]
+            if pending_tr and rem_shares >= 5.0:
+                cand_sz = min(rem_shares, float(pending_tr[0]["size"]))
+                leftover = round(rem_shares - cand_sz, 4)
+                if 0.01 < leftover < 5.0:
+                    pos.pop("exit_tranches", None)
+                else:
+                    active_tranche = pending_tr[0]
+                    post_size = cand_sz
+                    active_tranche["price"] = round(float(new_price), 4)
+            else:
+                pos.pop("exit_tranches", None)
+
+        if post_size < 5.0 and not self.dry_run and str(token_id).isdigit() and len(str(token_id)) >= 20:
+            pos["exit_order_status"] = "SUB_MINIMUM_LOT_SUPERVISED_HOLD"
+            pos["terminal_policy"] = "DETERMINISTIC_TERMINAL_HOLD"
+            await asyncio.to_thread(self.save_state)
+            return False
+
         pos["target_exit_price"] = round(float(new_price), 4)
         exit_res = await asyncio.to_thread(
             self.executor.post_maker_exit_order,
             token_id=token_id,
             price=pos["target_exit_price"],
-            size=rem_shares,
+            size=post_size,
             side="SELL",
         )
-        posted = self._apply_exit_post_result(pos, exit_res, rem_shares)
+        posted = self._apply_exit_post_result(pos, exit_res, post_size)
+        if active_tranche is not None and posted:
+            active_tranche["status"] = "POSTED"
+        elif active_tranche is not None and (exit_res or {}).get("outcome_unknown"):
+            active_tranche["status"] = "IN_FLIGHT"
         await asyncio.to_thread(self.save_state)
         return posted
 
@@ -2436,6 +2717,26 @@ class PolymarketLiveHarvester:
             if isinstance(info, dict):
                 st = str(info.get("status", "")).upper()
                 matched = self._num(info.get("size_matched")) or 0.0
+                if st in {"LIVE", "OPEN", "RESTING", "DELAYED"}:
+                    try:
+                        c_res = self.executor.cancel_order(str(entry_order_id))
+                    except Exception:
+                        c_res = {}
+                    if not (c_res or {}).get("is_canceled"):
+                        return out
+                    try:
+                        info = self.executor.get_order_status(str(entry_order_id)) or info
+                    except Exception:
+                        pass
+                    st = str(info.get("status", "")).upper()
+                    matched = max(matched, self._num((c_res or {}).get("matched")) or 0.0, self._num(info.get("size_matched")) or 0.0)
+                    if matched > 1e-4:
+                        out["verdict"] = "MATCHED_UNSETTLED"
+                        return out
+                    if (c_res or {}).get("is_canceled") and matched <= 1e-4:
+                        out["verdict"] = "NOT_EXECUTED"
+                        out["proof"] = "RESTING_ENTRY_CANCELED_ZERO_FILL"
+                        return out
                 if (st.startswith("CANCEL") or st in {"EXPIRED", "REJECTED"}) and matched <= 1e-4:
                     out["verdict"] = "NOT_EXECUTED"
                     out["proof"] = "TERMINAL_ZERO_FILL_ORDER_STATUS"
@@ -2445,8 +2746,27 @@ class PolymarketLiveHarvester:
             evidence is not None and not evidence["fills"]
             and src in (self.ONCHAIN_SOURCE, "CLOB_BALANCE_API") and age >= ENTRY_UNEXECUTED_PROOF_AGE_S
         ):
-            # Entry orders are FOK/FAK and can never rest: after the proof age, an unchanged
-            # on-chain balance AND an authoritative empty account fill history is conclusive.
+            if hasattr(self.executor, "get_open_orders"):
+                try:
+                    open_os = self.executor.get_open_orders(strict=True)
+                except TypeError:
+                    open_os = self.executor.get_open_orders()
+                except Exception:
+                    open_os = None
+                if not isinstance(open_os, list):
+                    # Fail closed: cannot prove no resting BUY is still live on the book.
+                    return out
+                if isinstance(open_os, list):
+                    for o_b in open_os:
+                        if str((o_b or {}).get("asset_id") or (o_b or {}).get("token_id") or "") == str(token_id) and str((o_b or {}).get("side") or "").upper() == "BUY":
+                            o_bid = str((o_b or {}).get("id") or (o_b or {}).get("orderID") or "")
+                            if o_bid:
+                                try:
+                                    c_b = self.executor.cancel_order(o_bid)
+                                except Exception:
+                                    c_b = {}
+                                if not (c_b or {}).get("is_canceled") or (self._num((c_b or {}).get("matched")) or 0.0) > 1e-4:
+                                    return out
             out["verdict"] = "NOT_EXECUTED"
             out["proof"] = "ONCHAIN_UNCHANGED_AND_NO_ACCOUNT_FILLS"
         return out
@@ -2664,6 +2984,15 @@ class PolymarketLiveHarvester:
         m_id_closed = str(pos.get("market_id") or "")
         pos["entry_sequence_in_market"] = int((getattr(self, "trades_per_market", None) or {}).get(m_id_closed, 1) or 1)
         pos["is_win_reset_second_entry"] = bool(pos["entry_sequence_in_market"] >= 2)
+        leg_net_cash = max(0.0, float(cum_cash or 0.0) - float(cum_fee or 0.0))
+        if (
+            not getattr(self, "dry_run", True)
+            and getattr(self, "_last_known_collateral", None) is not None
+            and leg_net_cash > 0.0
+            and not pos.get("_collateral_exit_credited")
+        ):
+            pos["_collateral_exit_credited"] = True
+            self._last_known_collateral = float(self._last_known_collateral) + leg_net_cash
         deferred_partner, net_pnl = self._consolidate_dominance_box_close(
             tid, pos, cum_cash, cum_fee, net_pnl, reason, record_pnl
         )
@@ -2861,10 +3190,25 @@ class PolymarketLiveHarvester:
             pos.get("entry_order_id"), tid,
         )
         verdict = cls["verdict"]
+        p_tid = str(pos.get("box_partner_trade_id") or "")
         if verdict in {"ARRIVED", "MATCHED_UNSETTLED"}:
             self._apply_entry_evidence(pos, cls)
-            pos["status"] = ExecutionStatus.POSITION_CONFIRMED if verdict == "ARRIVED" else ExecutionStatus.MATCHED_PENDING_SETTLEMENT
-            pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT"
+            partner_dead = bool(
+                p_tid
+                and p_tid not in self.active_positions
+                and any(c.get("trade_id") == p_tid and c.get("status") == "NOT_EXECUTED" for c in self.closed_positions)
+            )
+            if partner_dead:
+                pos["is_dominance_box"] = False
+                pos["is_legged_out_residual"] = True
+                pos["pending_unwind_tag"] = "D1_LEGGED_OUT_RESIDUAL_UNWIND"
+                pos["status"] = ExecutionStatus.POSITION_CONFIRMED if verdict == "ARRIVED" else ExecutionStatus.MATCHED_PENDING_SETTLEMENT
+                pos["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
+                pos["stop_triggered_ts"] = time.time()
+                pos["next_unwind_retry_ts"] = 0.0
+            else:
+                pos["status"] = ExecutionStatus.POSITION_CONFIRMED if verdict == "ARRIVED" else ExecutionStatus.MATCHED_PENDING_SETTLEMENT
+                pos["exit_order_status"] = "AWAITING_DELTA_SETTLEMENT"
             self.save_state()
             logger.warning(f"[ENTRY RECONCILED] {tid}: {verdict} ({pos.get('entry_finality_source')}, shares={pos.get('entry_shares')}).")
             return True
@@ -2872,6 +3216,15 @@ class PolymarketLiveHarvester:
             pos["entry_shares"] = 0.0
             pos["notional_usd"] = 0.0
             pos["non_execution_proof"] = cls.get("proof")
+            partner = self.active_positions.get(p_tid) if p_tid else None
+            if isinstance(partner, dict) and partner.get("is_dominance_box"):
+                partner["is_dominance_box"] = False
+                partner["is_legged_out_residual"] = True
+                partner["pending_unwind_tag"] = "D1_LEGGED_OUT_RESIDUAL_UNWIND"
+                if partner.get("status") != "ENTRY_OUTCOME_UNKNOWN":
+                    partner["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
+                    partner["stop_triggered_ts"] = time.time()
+                    partner["next_unwind_retry_ts"] = 0.0
             self._close_position(tid, pos, "NOT_EXECUTED", "ENTRY_NOT_EXECUTED_VERIFIED", won=False, record_pnl=False)
             return True
         return False
@@ -3068,6 +3421,10 @@ class PolymarketLiveHarvester:
             pos["exit_order_status"] = "EXIT_POST_OUTCOME_UNKNOWN"
             logger.critical(f"Ambiguous maker exit post for {pos.get('trade_id')} (OID: {oid}); no re-post until reconciled.")
             return False
+        if exit_res.get("crossed_at_max_tick"):
+            pos["next_exit_post_ts"] = now + 1.0
+            pos["exit_order_status"] = "CROSSED_AT_MAX_TICK_WAIT"
+            return False
         failures = int(pos.get("exit_post_failures", 0) or 0) + 1
         pos["exit_post_failures"] = failures
         pos["next_exit_post_ts"] = now + min(30.0, 2.0 ** min(failures, 5))
@@ -3130,7 +3487,9 @@ class PolymarketLiveHarvester:
         entry, so the post_only maker TP lands the moment the ERC-1155 shares arrive instead of after a 5s sleep.
         """
         deadline = time.time() + FAST_CONFIRM_WINDOW_SEC
+        uws = getattr(self.executor, "_user_ws_cache", None)
         while time.time() < deadline:
+            prev_seq = uws.fill_sequence if uws is not None else None
             pos = self.active_positions.get(trade_id)
             if pos is None or pos.get("exit_order_id"):
                 return False
@@ -3145,17 +3504,32 @@ class PolymarketLiveHarvester:
                     return True
                 if position_requires_global_halt(pos):
                     return False
-            await asyncio.sleep(FAST_CONFIRM_POLL_SEC)
+            if uws is not None and uws.is_healthy():
+                await uws.wait_for_fill_or_timeout(FAST_CONFIRM_POLL_SEC, prev_seq=prev_seq)
+            else:
+                await asyncio.sleep(FAST_CONFIRM_POLL_SEC)
         return False
 
     def _spawn_fast_confirm(self, trade_id: str) -> None:
-        try:
-            task = asyncio.get_running_loop().create_task(self._fast_confirm_and_post_maker_exit(trade_id))
-        except RuntimeError:
+        inflight = self.__dict__.setdefault("_fast_confirm_inflight_ids", set())
+        if trade_id in inflight:
             return
+        try:
+            loop = asyncio.get_running_loop()
+            self._main_loop = loop
+        except RuntimeError:
+            main_loop = getattr(self, "_main_loop", None)
+            if main_loop is not None and main_loop.is_running():
+                try:
+                    main_loop.call_soon_threadsafe(self._spawn_fast_confirm, trade_id)
+                except RuntimeError:
+                    pass
+            return
+        inflight.add(trade_id)
+        task = loop.create_task(self._fast_confirm_and_post_maker_exit(trade_id))
         tasks = self.__dict__.setdefault("_fast_confirm_tasks", set())
         tasks.add(task)
-        task.add_done_callback(tasks.discard)
+        task.add_done_callback(lambda t: (tasks.discard(t), inflight.discard(trade_id)))
 
     def _attempt_maker_exit_post_impl(self, tid: str, pos: Dict[str, Any]) -> bool:
         """
@@ -3225,7 +3599,7 @@ class PolymarketLiveHarvester:
                 if gross > Decimal("0") and received < gross - Decimal("0.02"):
                     # v3.9 R02 / Patch B: Verify against authoritative CLOB fill summary before altering ledger!
                     # On Polymarket V2 (0xE111...), BUY fees are charged in pUSD cash and 100% of gross shares settle.
-                    entry_oid = str(pos.get("order_id") or "").strip()
+                    entry_oid = str(pos.get("entry_order_id") or pos.get("order_id") or "").strip()
                     clob_entry_sum = None
                     if entry_oid and hasattr(self.executor, "get_order_fill_summary"):
                         try:
@@ -3365,12 +3739,17 @@ class PolymarketLiveHarvester:
             token_id=token_id, price=pos["target_exit_price"], size=size, side="SELL",
         )
         # Reprice maker ask up to best_bid + 0.01 if post_only rejected due to crossing book (FINDING-15-03c)
-        if not (exit_res or {}).get("success") and "crosses book" in str((exit_res or {}).get("error", "")).lower():
+        if (
+            not (exit_res or {}).get("success")
+            and not (exit_res or {}).get("outcome_unknown")
+            and not (exit_res or {}).get("crossed_at_max_tick")
+            and "crosses book" in str((exit_res or {}).get("error", "")).lower()
+        ):
             try:
                 book = self.executor.get_market_book(token_id) if hasattr(self.executor, "get_market_book") else None
                 bids = (book or {}).get("bids", [])
                 if bids:
-                    best_bid = float(bids[0].get("price", 0.0) or 0.0)
+                    best_bid = max((float(b.get("price", 0.0) or 0.0) for b in bids if isinstance(b, dict)), default=0.0)
                     repriced = min(0.99, round(best_bid + 0.01, 4))
                     if repriced > float(pos["target_exit_price"]):
                         logger.info(f"[MAKER REPRICE] {tid}: post_only crossed book (bid={best_bid:.4f}). Repricing ask to ${repriced:.4f}.")
@@ -3684,6 +4063,15 @@ class PolymarketLiveHarvester:
 
         redeemed.add(tx)
         self.redeemed_tx_hashes = sorted(redeemed)[-1000:]
+        leg_net_cash = max(0.0, float(cum_cash or 0.0) - float(cum_exit_fee or 0.0))
+        if (
+            not getattr(self, "dry_run", True)
+            and getattr(self, "_last_known_collateral", None) is not None
+            and leg_net_cash > 0.0
+            and not pos.get("_collateral_exit_credited")
+        ):
+            pos["_collateral_exit_credited"] = True
+            self._last_known_collateral = float(self._last_known_collateral) + leg_net_cash
         deferred_partner, net_pnl = self._consolidate_dominance_box_close(
             trade_id, pos, cum_cash, cum_exit_fee, net_pnl, "ONCHAIN_REDEMPTION_CONFIRMED", True
         )
@@ -4160,7 +4548,7 @@ class PolymarketLiveHarvester:
                 "risk_halt": getattr(self, "risk_halt", False), "reconciliation_required": getattr(self, "reconciliation_required", False),
                 "global_halt_reasons": list(getattr(self, "global_halt_reasons", []) or []),
                 "redeemed_tx_hashes": list(getattr(self, "redeemed_tx_hashes", []) or [])[-1000:],
-                "closed_positions": self.closed_positions[-20:], "seen_shock_ids": seen_shocks_list,
+                "closed_positions": self.closed_positions[-200:], "seen_shock_ids": seen_shocks_list,
                 "seen_d1_box_keys": seen_d1_list,
                 "traded_market_ids": list(self.traded_market_ids)[-100:], "trades_per_market": dict(self.trades_per_market),
                 "trades_per_market_direction": {f"{k[0]}_{k[1]}": v for k, v in getattr(self, "trades_per_market_direction", {}).items()},
@@ -4208,10 +4596,19 @@ class PolymarketLiveHarvester:
             )
         if eq is None or float(eq) < float(RISK_CONFIG.get("scale_up_equity_threshold", 110.0)):
             return assets
+        grad_cache = self.__dict__.setdefault("_alt_grad_file_cache", {})
         for sym, fname in (("SOL", "state_shadow_sol_v392.json"), ("XRP", "state_shadow_xrp_v392.json")):
             try:
                 sp = DATA_DIR / fname
-                if sp.exists() and json.loads(sp.read_text(encoding="utf-8")).get("ready_for_live_graduation") is True:
+                st_sp = sp.stat()
+                ck = (str(sp), st_sp.st_mtime_ns, st_sp.st_size)
+                cached_g = grad_cache.get(sym)
+                if isinstance(cached_g, tuple) and len(cached_g) == 2 and cached_g[0] == ck:
+                    is_grad = bool(cached_g[1])
+                else:
+                    is_grad = _json_loads(sp.read_bytes()).get("ready_for_live_graduation") is True
+                    grad_cache[sym] = (ck, is_grad)
+                if is_grad:
                     assets.add(sym)
             except Exception:
                 continue
@@ -4232,29 +4629,43 @@ class PolymarketLiveHarvester:
             seen_boxes.discard(oldest_k)
 
     def maybe_execute_graduated_d1_box(self, candidate_box: Dict[str, Any]) -> Dict[str, Any]:
-        """Fast-tracks verified D1_SAME_ORACLE_DOMINANCE_BOX into idle Slot #2 once shadow hits 8/8 settled at 100% WR."""
+        """Executes verified 8/8-graduated 2-leg riskless boxes (D1 7-coin, C1, M3, B3, 2-leg N1) with multi-box concurrency."""
         if not RISK_CONFIG.get("enable_graduated_d1_box", True) or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
             return {"executed": False, "reason": "DISABLED_OR_HALTED"}
+        box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
+        sleeve_src = str(candidate_box.get("sleeve_source") or "D1_SAME_ORACLE_DOMINANCE_BOX").strip()
         cand_asset = str(candidate_box.get("asset") or "").strip().upper()
-        if cand_asset and cand_asset not in {"BTC", "ETH", "SOL", "XRP"}:
-            return {"executed": False, "reason": f"UNSUPPORTED_D1_ASSET:{cand_asset}"}
-        corr_bps = float(candidate_box.get("corridor_bps") or 0.0)
-        if corr_bps < 3.0:
-            return {"executed": False, "reason": f"CORRIDOR_TOO_NARROW_OR_MISSING:{corr_bps:.2f}"}
-        try:
-            k_a_chk = float(candidate_box.get("leg_a_strike") or 0.0)
-            k_b_chk = float(candidate_box.get("leg_b_strike") or 0.0)
-        except (TypeError, ValueError):
-            k_a_chk = k_b_chk = 0.0
+        core_d1 = {"BTC", "ETH", "SOL", "XRP"}
+        exp_d1 = {"BNB", "DOGE", "HYPE"}
         mid_a_chk = str(candidate_box.get("leg_a_market_id") or "")
         mid_b_chk = str(candidate_box.get("leg_b_market_id") or "")
-        if (
-            str(candidate_box.get("leg_a_side") or "").upper() != "UP"
-            or str(candidate_box.get("leg_b_side") or "").upper() != "DOWN"
-            or not (0.0 < k_a_chk < k_b_chk)
-            or not mid_a_chk or not mid_b_chk or mid_a_chk == mid_b_chk
-        ):
-            return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
+        tok_a = str(candidate_box.get("leg_a_token_id") or "")
+        tok_b = str(candidate_box.get("leg_b_token_id") or "")
+        if box_type == "DOMINANCE":
+            if cand_asset and cand_asset not in (core_d1 | exp_d1):
+                return {"executed": False, "reason": f"UNSUPPORTED_D1_ASSET:{cand_asset}"}
+            corr_bps = float(candidate_box.get("corridor_bps") or 0.0)
+            min_corr = 5.0 if cand_asset in exp_d1 else 3.0
+            if corr_bps < min_corr:
+                return {"executed": False, "reason": f"CORRIDOR_TOO_NARROW_OR_MISSING:{corr_bps:.2f}"}
+            try:
+                k_a_chk = float(candidate_box.get("leg_a_strike") or 0.0)
+                k_b_chk = float(candidate_box.get("leg_b_strike") or 0.0)
+            except (TypeError, ValueError):
+                k_a_chk = k_b_chk = 0.0
+            if (
+                str(candidate_box.get("leg_a_side") or "").upper() != "UP"
+                or str(candidate_box.get("leg_b_side") or "").upper() != "DOWN"
+                or not (0.0 < k_a_chk < k_b_chk)
+                or not mid_a_chk or not mid_b_chk or mid_a_chk == mid_b_chk or not tok_a or not tok_b or tok_a == tok_b
+            ):
+                return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
+        elif box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_2LEG"}:
+            same_mkt_ok = (mid_a_chk == mid_b_chk) if box_type == "COMPLETE_SET" else (mid_a_chk != mid_b_chk)
+            if not tok_a or not tok_b or tok_a == tok_b or not mid_a_chk or not mid_b_chk or not same_mkt_ok:
+                return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
+        else:
+            return {"executed": False, "reason": f"UNSUPPORTED_BOX_TYPE:{box_type}"}
         if not self.dry_run:
             if not getattr(self, "_startup_reconciled", False):
                 return {"executed": False, "reason": "STARTUP_NOT_RECONCILED"}
@@ -4264,10 +4675,24 @@ class PolymarketLiveHarvester:
             recon_m = self._reconciling_market_ids()
             if mid_a_chk in recon_m or mid_b_chk in recon_m:
                 return {"executed": False, "reason": "MARKET_RECONCILING"}
-        active_boxes = [p for p in self.active_positions.values() if "BOX" in str(p.get("sleeve") or "").upper()]
-        if active_boxes:
-            return {"executed": False, "reason": "SLOT_2_BOX_OCCUPIED"}
+        for p_act in self.active_positions.values():
+            is_box_p = "BOX" in str(p_act.get("sleeve") or "").upper() or bool(p_act.get("box_id"))
+            if (is_box_p and not p_act.get("is_dominance_box")) or p_act.get("exit_order_status") in (
+                "UNWIND_RETRY_REQUIRED",
+                "UNWIND_EXECUTION_OUTCOME_UNKNOWN",
+            ):
+                return {"executed": False, "reason": "UNHEDGED_BOX_RESIDUAL_ACTIVE"}
         now_ts = time.time()
+        active_box_ids = {
+            str(p.get("box_id") or k)
+            for k, p in self.active_positions.items()
+            if p.get("is_dominance_box")
+            and not position_is_settlement_receivable(p)
+            and p.get("status") not in {"UNRESOLVED_SETTLEMENT", "AWAITING_ONCHAIN_SETTLEMENT"}
+            and not (float(p.get("candle_expiry_ts") or 0.0) > 0.0 and now_ts >= float(p.get("candle_expiry_ts") or 0.0))
+        }
+        if len(active_box_ids) >= int(RISK_CONFIG.get("max_concurrent_d1_boxes", 4)):
+            return {"executed": False, "reason": "MAX_CONCURRENT_BOXES_REACHED"}
         dedupe_k = str(candidate_box.get("dedupe_key") or "")
         seen_boxes = self.__dict__.setdefault("_seen_d1_box_keys", set())
         if dedupe_k and dedupe_k in seen_boxes:
@@ -4275,6 +4700,19 @@ class PolymarketLiveHarvester:
         retry_cd = self.__dict__.setdefault("_d1_retry_cooldown_until", {})
         if dedupe_k and float(retry_cd.get(dedupe_k, 0.0) or 0.0) > now_ts:
             return {"executed": False, "reason": "RETRY_COOLDOWN_10S"}
+        if cand_asset:
+            leg_outs_12h = [
+                p for p in getattr(self, "closed_positions", [])
+                if str(p.get("asset") or "").upper() == cand_asset
+                and (now_ts - float(p.get("exit_ts") or p.get("exit_time_unix") or p.get("entry_ts") or 0.0)) <= 43200.0
+                and (
+                    "LEGGED_OUT" in str(p.get("close_reason") or "").upper()
+                    or "LEGGED_OUT" in str(p.get("sleeve") or "").upper()
+                    or "_LEG_RESID" in str(p.get("trade_id") or "")
+                )
+            ]
+            if len(leg_outs_12h) >= 2 or sum(float(p.get("net_pnl_usd") or 0.0) for p in leg_outs_12h) <= -2.50:
+                return {"executed": False, "reason": f"ASSET_LEGGING_COOLDOWN:{cand_asset}"}
         try:
             st_path = DATA_DIR / "alpha124_shadow_state.json"
             if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
@@ -4287,307 +4725,396 @@ class PolymarketLiveHarvester:
             if (time.time() - st_info.st_mtime) > 300.0:
                 return {"executed": False, "reason": "ALPHA124_STATE_STALE"}
             cache_tup = getattr(self, "_d1_grad_cache", None)
-            st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size)
-            if isinstance(cache_tup, tuple) and len(cache_tup) == 2 and cache_tup[0] == st_key:
-                d1_grad_ok = bool(cache_tup[1])
+            manual_inv = getattr(self, "_a124_grad_cache_mtime", 0.0)
+            st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, manual_inv)
+            if isinstance(cache_tup, tuple) and len(cache_tup) == 3 and cache_tup[0] == st_key and manual_inv >= 0.0:
+                by_sl_map, by_da_map = cache_tup[1], cache_tup[2]
             else:
+                if manual_inv < 0.0:
+                    self._a124_grad_cache_mtime = 0.0
+                    st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, 0.0)
                 st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
-                d1_stat = ((st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}).get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
-                d1_grad_ok = bool(
-                    int(d1_stat.get("closed", 0) or 0) >= 8
-                    and float(d1_stat.get("win_rate_pct", 0.0) or 0.0) >= 100.0
-                    and float(d1_stat.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0.0
+                by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
+                by_da_map = st_raw.get("by_d1_asset") or {}
+                self._d1_grad_cache = (st_key, by_sl_map, by_da_map)
+
+            def _grad8(rec: Dict[str, Any]) -> bool:
+                adj_pnl = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
+                return bool(
+                    int(rec.get("closed", 0) or 0) >= 8
+                    and float(rec.get("win_rate_pct", 0.0) or 0.0) >= 100.0
+                    and float(rec.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0.0
+                    and float(adj_pnl or 0.0) > 0.0
                 )
-                self._d1_grad_cache = (st_key, d1_grad_ok)
-            if not d1_grad_ok:
-                return {"executed": False, "reason": "D1_NOT_YET_8_OF_8_GRADUATED"}
+
+            if box_type == "DOMINANCE":
+                if not _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {}):
+                    return {"executed": False, "reason": "D1_NOT_YET_8_OF_8_GRADUATED"}
+                if cand_asset in exp_d1 and not _grad8(by_da_map.get(cand_asset) or {}):
+                    return {"executed": False, "reason": f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
+            elif not _grad8(by_sl_map.get(sleeve_src) or {}):
+                return {"executed": False, "reason": f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}
         except Exception as exc:
             return {"executed": False, "reason": f"STATE_READ_ERROR:{exc}"}
 
-        tok_a = str(candidate_box["leg_a_token_id"])
-        tok_b = str(candidate_box["leg_b_token_id"])
-        lbl_a = str(candidate_box.get("leg_a_label", "LEG_A"))
-        lbl_b = str(candidate_box.get("leg_b_label", "LEG_B"))
-        px_a_lim = float(candidate_box["leg_a_limit_price"])
-        px_b_lim = float(candidate_box["leg_b_limit_price"])
-        sh_req = float(candidate_box.get("shares", 12.0))
-        cap_net = float(candidate_box.get("max_box_cost_net", 0.995))
-        fresh_box_net = float(candidate_box.get("box_cost_net") or (px_a_lim + px_b_lim))
-        avail_a = candidate_box.get("leg_a_avail_shares")
-        avail_b = candidate_box.get("leg_b_avail_shares")
-        fr_a = float(candidate_box.get("leg_a_fee_rate", 0.07) or 0.07)
-        fr_b = float(candidate_box.get("leg_b_fee_rate", 0.07) or 0.07)
-        fe_a = float(candidate_box.get("leg_a_fee_exponent", 1.0) or 1.0)
-        fe_b = float(candidate_box.get("leg_b_fee_exponent", 1.0) or 1.0)
-        pre_bal_a, pre_bal_b = 0.0, 0.0
+        inflight_lock = self.__dict__.setdefault("_d1_inflight_exec_lock", threading.Lock())
+        if not inflight_lock.acquire(blocking=False):
+            return {"executed": False, "reason": "BOX_EXECUTION_INFLIGHT"}
+        try:
+            lbl_a = str(candidate_box.get("leg_a_label", "LEG_A"))
+            lbl_b = str(candidate_box.get("leg_b_label", "LEG_B"))
+            px_a_lim = float(candidate_box["leg_a_limit_price"])
+            px_b_lim = float(candidate_box["leg_b_limit_price"])
+            sh_req = float(candidate_box.get("shares", 12.0))
+            cap_net = float(candidate_box.get("max_box_cost_net", 0.995))
+            fresh_box_net = float(candidate_box.get("box_cost_net") or (px_a_lim + px_b_lim))
+            avail_a = candidate_box.get("leg_a_avail_shares")
+            avail_b = candidate_box.get("leg_b_avail_shares")
+            fr_a = float(candidate_box["leg_a_fee_rate"]) if candidate_box.get("leg_a_fee_rate") is not None else 0.07
+            fr_b = float(candidate_box["leg_b_fee_rate"]) if candidate_box.get("leg_b_fee_rate") is not None else 0.07
+            fe_a = float(candidate_box.get("leg_a_fee_exponent", 1.0) or 1.0)
+            fe_b = float(candidate_box.get("leg_b_fee_exponent", 1.0) or 1.0)
+            pre_bal_a, pre_bal_b = 0.0, 0.0
 
-        is_live_ctf_box = (
-            (not self.dry_run)
-            and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
-            and len(tok_a) >= 20 and tok_a.isdigit()
-            and len(tok_b) >= 20 and tok_b.isdigit()
-        )
-        cand_ts = float(candidate_box.get("ts_unix") or now_ts)
-        ipc_age_ms = round(max(0.0, (now_ts - cand_ts) * 1000.0), 2)
-        pre_bal_ms, book_walk_ms = 0.0, 0.0
-        if not self.dry_run and (
-            not is_live_ctf_box
-            or not candidate_box.get("ts_unix")
-            or not candidate_box.get("expiry_ts")
-            or walk_equal_shares_dominance_box is None
-            or not hasattr(self.executor, "get_market_book")
-        ):
-            return {"executed": False, "reason": "LIVE_PRECHECK_UNAVAILABLE"}
-        if is_live_ctf_box:
-            exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
-            is_4h_box = str(candidate_box.get("leg_a_horizon") or "").lower() == "4h" or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h"
-            max_tte_box = 900.0 if is_4h_box else 300.0
-            if (now_ts - cand_ts) > 6.5 or (exp_ts > 0.0 and not (35.0 <= (exp_ts - now_ts) <= max_tte_box)):
-                return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
-            m_a = str(candidate_box.get("leg_a_market_id") or "")
-            m_b = str(candidate_box.get("leg_b_market_id") or "")
-            busy_mkts = {str(p.get("market_id") or "") for p in self.active_positions.values()} | {
-                str(i.get("market_id") or "") for i in getattr(self, "pending_entry_intents", {}).values()
-            }
-            if (m_a and m_a in busy_mkts) or (m_b and m_b in busy_mkts):
-                return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
-            collat = getattr(self, "_last_known_collateral", None)
-            if collat is None:
-                try:
-                    collat = self.executor.get_collateral_balance()
-                except Exception:
-                    collat = None
-            collat_f = float(collat or 0.0)
-            d1_pct = (
-                0.38
-                if collat_f >= min(95.0, float(RISK_CONFIG.get("scale_up_equity_threshold", 110.0)))
-                else float(RISK_CONFIG.get("d1_box_bankroll_pct", 0.25))
+            is_live_ctf_box = (
+                (not self.dry_run)
+                and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+                and len(tok_a) >= 20 and tok_a.isdigit()
+                and len(tok_b) >= 20 and tok_b.isdigit()
             )
-            rem_daily = max(0.0, float(self.risk_controller.max_daily_loss_usd) - float(self.risk_controller.daily_realized_loss))
-            target_budget = min(
-                float(RISK_CONFIG.get("d1_box_max_budget_usd", 250.0)),
-                max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))),
-                collat_f * d1_pct,
-                rem_daily * 10.0,
-                max(float(self.max_exposure), collat_f * 0.55),
-            )
-            if target_budget < 7.50:
-                return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
-            # Pre-warm caches & fetch pre-balances on pre-spawned _HOT_IO_POOL BEFORE walking fresh L2 books
-            for t_id, c_id, nr_f, fr_f, fe_f in (
-                (tok_a, str(candidate_box.get("leg_a_condition_id") or ""), bool(candidate_box.get("leg_a_neg_risk", False)), fr_a, fe_a),
-                (tok_b, str(candidate_box.get("leg_b_condition_id") or ""), bool(candidate_box.get("leg_b_neg_risk", False)), fr_b, fe_b),
+            cand_ts = float(candidate_box.get("ts_unix") or now_ts)
+            ipc_age_ms = round(max(0.0, (now_ts - cand_ts) * 1000.0), 2)
+            pre_bal_ms, book_walk_ms = 0.0, 0.0
+            if not self.dry_run and (
+                not is_live_ctf_box
+                or not candidate_box.get("ts_unix")
+                or not candidate_box.get("expiry_ts")
+                or walk_equal_shares_dominance_box is None
+                or not hasattr(self.executor, "get_market_book")
             ):
-                if c_id and hasattr(self.executor, "prewarm_token_market_cache"):
-                    self.executor.prewarm_token_market_cache(
-                        token_id=t_id, tick_size="0.01", neg_risk=nr_f,
-                        fee_rate_bps=int(round(fr_f * 10000)), condition_id=c_id, fee_rate=fr_f, fee_exponent=fe_f,
-                    )
-            hot_pool = _get_hot_io_pool()
-            pre_bal_cache = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
-            use_bal_cache = "_wallet_token_balance" not in self.__dict__
-            now_pb = time.time()
-            # Hot-path zero-inventory fast check (parity with Sleeve 1 line 6332): if a token has zero prior
-            # activity in active_positions, pending_entry_intents, or recent closed_positions, its pre-trade
-            # balance is deterministically 0.0 in-memory (saves 220-565ms of sequential Polygon RPC latency!).
-            prior_toks = (
-                {p.get("token_id") for p in self.active_positions.values()}
-                | {i.get("token_id") for i in getattr(self, "pending_entry_intents", {}).values()}
-                | {p.get("token_id") for p in getattr(self, "closed_positions", [])[-20:]}
-            ) if use_bal_cache else {tok_a, tok_b}
-            c_ba = pre_bal_cache.get(tok_a) if use_bal_cache else None
-            c_bb = pre_bal_cache.get(tok_b) if use_bal_cache else None
-            if use_bal_cache and tok_a not in prior_toks and c_ba is None:
-                c_ba = (0.0, now_pb)
-            if use_bal_cache and tok_b not in prior_toks and c_bb is None:
-                c_bb = (0.0, now_pb)
-            t_pb0 = time.perf_counter_ns()
-            fb_a = None if (c_ba is not None and (now_pb - c_ba[1]) <= 360.0) else hot_pool.submit(self._wallet_token_balance, tok_a)
-            fb_b = None if (c_bb is not None and (now_pb - c_bb[1]) <= 360.0) else hot_pool.submit(self._wallet_token_balance, tok_b)
-            b_a = c_ba[0] if fb_a is None else fb_a.result()[0]
-            b_b = c_bb[0] if fb_b is None else fb_b.result()[0]
-            pre_bal_ms = round((time.perf_counter_ns() - t_pb0) / 1_000_000.0, 2)
-            pre_bal_a = float(b_a or 0.0)
-            pre_bal_b = float(b_b or 0.0)
-            if use_bal_cache:
-                now_pb_done = time.time()
-                pre_bal_cache[tok_a] = (pre_bal_a, now_pb_done)
-                pre_bal_cache[tok_b] = (pre_bal_b, now_pb_done)
-            if walk_equal_shares_dominance_box is not None and hasattr(self.executor, "get_market_book"):
-                t_bk0 = time.perf_counter_ns()
-                opp_a = str(candidate_box.get("leg_a_opp_token_id") or "")
-                opp_b = str(candidate_box.get("leg_b_opp_token_id") or "")
-                fk_a = hot_pool.submit(self.executor.get_market_book, tok_a)
-                fk_b = hot_pool.submit(self.executor.get_market_book, tok_b)
-                fk_oa = hot_pool.submit(self.executor.get_market_book, opp_a) if (len(opp_a) >= 20 and opp_a.isdigit()) else None
-                fk_ob = hot_pool.submit(self.executor.get_market_book, opp_b) if (len(opp_b) >= 20 and opp_b.isdigit()) else None
-                bk_a = fk_a.result() or {}
-                bk_b = fk_b.result() or {}
-                if fk_oa is None or fk_ob is None:
-                    return {"executed": False, "reason": "ANTI_BOX_COMPLEMENT_UNVERIFIED:MISSING_OPP_TOKENS"}
-                try:
-                    bk_oa, bk_ob = fk_oa.result() or {}, fk_ob.result() or {}
-                    b_oa = bk_oa.get("bids") or []
-                    b_ob = bk_ob.get("bids") or []
-                    if not (b_oa and b_ob):
-                        return {"executed": False, "reason": "ANTI_BOX_COMPLEMENT_UNVERIFIED:EMPTY_OPP_BOOK"}
-                    opp_sum = max(float(x["price"] if isinstance(x, dict) else x[0]) for x in b_oa) + max(float(x["price"] if isinstance(x, dict) else x[0]) for x in b_ob)
-                    if opp_sum > 1.0:
-                        return {"executed": False, "reason": f"ANTI_BOX_COMPLEMENT_VETO:{opp_sum:.4f}"}
-                except Exception as exc_opp:
-                    return {"executed": False, "reason": f"ANTI_BOX_COMPLEMENT_UNVERIFIED:{exc_opp}"}
-                book_walk_ms = round((time.perf_counter_ns() - t_bk0) / 1_000_000.0, 2)
-
-                def _bk_quiet(bk_d: Dict[str, Any]) -> bool:
-                    asks_d, bids_d = bk_d.get("asks") or [], bk_d.get("bids") or []
-                    if not asks_d or not bids_d:
-                        return False
-                    ba = min(float(x["price"] if isinstance(x, dict) else x[0]) for x in asks_d)
-                    bb = max(float(x["price"] if isinstance(x, dict) else x[0]) for x in bids_d)
-                    return bb > 0.0 and (ba - bb) <= 0.041
-
-                fresh_quiet = bool(candidate_box.get("is_quiet_book") and _bk_quiet(bk_a) and _bk_quiet(bk_b))
-                live_walk_cap = 0.985 if fresh_quiet else 0.975
-                w_fresh = walk_equal_shares_dominance_box(
-                    bk_a.get("asks") or [], bk_b.get("asks") or [],
-                    target_budget_usd=target_budget, fee_rate_a=fr_a, fee_rate_b=fr_b,
-                    fee_exponent_a=fe_a, fee_exponent_b=fe_b, max_box_cost_net=live_walk_cap,
-                    min_shares=8, min_box_notional_usd=7.0,
+                return {"executed": False, "reason": "LIVE_PRECHECK_UNAVAILABLE"}
+            if is_live_ctf_box:
+                exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
+                is_4h_box = str(candidate_box.get("leg_a_horizon") or "").lower() == "4h" or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h"
+                max_tte_box = 172800.0 if box_type != "DOMINANCE" else (900.0 if is_4h_box else 300.0)
+                if (now_ts - cand_ts) > 6.5 or (exp_ts > 0.0 and not (35.0 <= (exp_ts - now_ts) <= max_tte_box)):
+                    return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
+                m_a = str(candidate_box.get("leg_a_market_id") or "")
+                m_b = str(candidate_box.get("leg_b_market_id") or "")
+                busy_mkts = {str(p.get("market_id") or "") for p in self.active_positions.values()} | {
+                    str(i.get("market_id") or "") for i in getattr(self, "pending_entry_intents", {}).values()
+                }
+                if (m_a and m_a in busy_mkts) or (m_b and m_b in busy_mkts):
+                    return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+                collat = getattr(self, "_last_known_collateral", None)
+                if collat is None:
+                    try:
+                        collat = self.executor.get_collateral_balance()
+                    except Exception:
+                        collat = None
+                inflight_intent_usd = sum(
+                    float(i.get("notional_usd", 0.0) or 0.0)
+                    for i in getattr(self, "pending_entry_intents", {}).values()
+                    if isinstance(i, dict)
                 )
-                if not w_fresh.get("filled"):
-                    rej_r = str(w_fresh.get("reason"))
-                    logger.info(
-                        f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): {rej_r} | "
-                        f"cap={live_walk_cap:.3f} quiet={fresh_quiet} ipc_age_ms={ipc_age_ms:.1f} pre_bal_ms={pre_bal_ms:.1f} book_ms={book_walk_ms:.1f}"
+                collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
+                d1_pct = (
+                    0.38
+                    if collat_f >= min(95.0, float(RISK_CONFIG.get("scale_up_equity_threshold", 110.0)))
+                    else float(RISK_CONFIG.get("d1_box_bankroll_pct", 0.25))
+                )
+                rem_daily = max(0.0, float(self.risk_controller.max_daily_loss_usd) - float(self.risk_controller.daily_realized_loss))
+                asset_cap = {"BTC": 150.0, "ETH": 75.0, "SOL": 22.0, "XRP": 22.0, "BNB": 22.0, "HYPE": 15.0, "DOGE": 15.0}.get(cand_asset, 25.0)
+                # Portfolio-level ceiling: all open positions (directional + boxes) + in-flight intents share one
+                # exposure budget, so concurrent boxes can't lock the whole bankroll.
+                cur_open_exp = sum(
+                    float(p.get("notional_usd", 0.0) or 0.0)
+                    for p in self.active_positions.values()
+                    if not position_is_settlement_receivable(p)
+                ) + inflight_intent_usd
+                port_headroom = max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_open_exp)
+                target_budget = min(
+                    float(RISK_CONFIG.get("d1_box_max_budget_usd", 250.0)),
+                    asset_cap,
+                    max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))),
+                    collat_f * d1_pct,
+                    rem_daily * 10.0,
+                    port_headroom,
+                )
+                if target_budget < 4.85:
+                    return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
+                for t_id, c_id, nr_f, fr_f, fe_f in (
+                    (tok_a, str(candidate_box.get("leg_a_condition_id") or ""), bool(candidate_box.get("leg_a_neg_risk", False)), fr_a, fe_a),
+                    (tok_b, str(candidate_box.get("leg_b_condition_id") or ""), bool(candidate_box.get("leg_b_neg_risk", False)), fr_b, fe_b),
+                ):
+                    if c_id and hasattr(self.executor, "prewarm_token_market_cache"):
+                        self.executor.prewarm_token_market_cache(
+                            token_id=t_id, tick_size="0.01", neg_risk=nr_f,
+                            fee_rate_bps=int(round(fr_f * 10000)), condition_id=c_id, fee_rate=fr_f, fee_exponent=fe_f,
+                        )
+                hot_pool = _get_hot_io_pool()
+                pre_bal_cache = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
+                use_bal_cache = "_wallet_token_balance" not in self.__dict__
+                now_pb = time.time()
+                uws_d1 = getattr(self.executor, "_user_ws_cache", None) if use_bal_cache else None
+                uws_d1_ok = bool(uws_d1 is not None and uws_d1.is_healthy())
+                bal_ttl = 1800.0 if uws_d1_ok else 360.0
+                prior_toks = (
+                    {p.get("token_id") for p in self.active_positions.values()}
+                    | {i.get("token_id") for i in getattr(self, "pending_entry_intents", {}).values()}
+                    | {
+                        p.get("token_id")
+                        for p in getattr(self, "closed_positions", [])[-20:]
+                        if float(p.get("remaining_shares", 0.0) or 0.0) > 0.01 or not uws_d1_ok
+                    }
+                ) if use_bal_cache else {tok_a, tok_b}
+                c_ba = pre_bal_cache.get(tok_a) if use_bal_cache else None
+                c_bb = pre_bal_cache.get(tok_b) if use_bal_cache else None
+                if c_ba is not None and uws_d1_ok and uws_d1.has_token_fill_since(tok_a, c_ba[1]):
+                    c_ba = None
+                if c_bb is not None and uws_d1_ok and uws_d1.has_token_fill_since(tok_b, c_bb[1]):
+                    c_bb = None
+                if use_bal_cache and tok_a not in prior_toks and c_ba is None and not (uws_d1_ok and uws_d1.has_token_fill_since(tok_a, now_pb - 300.0)):
+                    c_ba = (0.0, now_pb)
+                if use_bal_cache and tok_b not in prior_toks and c_bb is None and not (uws_d1_ok and uws_d1.has_token_fill_since(tok_b, now_pb - 300.0)):
+                    c_bb = (0.0, now_pb)
+                t_pb0 = time.perf_counter_ns()
+                fb_a = None if (c_ba is not None and (now_pb - c_ba[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_a)
+                fb_b = None if (c_bb is not None and (now_pb - c_bb[1]) <= bal_ttl) else hot_pool.submit(self._wallet_token_balance, tok_b)
+                b_a = c_ba[0] if fb_a is None else fb_a.result()[0]
+                b_b = c_bb[0] if fb_b is None else fb_b.result()[0]
+                pre_bal_ms = round((time.perf_counter_ns() - t_pb0) / 1_000_000.0, 2)
+                pre_bal_a = float(b_a or 0.0)
+                pre_bal_b = float(b_b or 0.0)
+                if use_bal_cache:
+                    now_pb_done = time.time()
+                    pre_bal_cache[tok_a] = (pre_bal_a, now_pb_done)
+                    pre_bal_cache[tok_b] = (pre_bal_b, now_pb_done)
+                if walk_equal_shares_dominance_box is not None and hasattr(self.executor, "get_market_book"):
+                    t_bk0 = time.perf_counter_ns()
+                    opp_a = str(candidate_box.get("leg_a_opp_token_id") or "")
+                    opp_b = str(candidate_box.get("leg_b_opp_token_id") or "")
+                    need_sep_opp = box_type != "COMPLETE_SET"
+                    if need_sep_opp and not (len(opp_a) >= 20 and opp_a.isdigit() and len(opp_b) >= 20 and opp_b.isdigit()):
+                        return {"executed": False, "reason": "ANTI_BOX_COMPLEMENT_UNVERIFIED:MISSING_OPP_TOKENS"}
+                    custom_book_fn = "get_market_book" in getattr(self.executor, "__dict__", {})
+                    ws_bks = candidate_box.get("ws_books") if not custom_book_fn else None
+                    ws_bks_ts = float(candidate_box.get("ws_books_ts") or 0.0)
+                    use_ws_bks = (
+                        isinstance(ws_bks, dict)
+                        and (time.time() - ws_bks_ts) <= 0.65
+                        and isinstance(ws_bks.get(tok_a), dict)
+                        and isinstance(ws_bks.get(tok_b), dict)
+                        and (not need_sep_opp or (isinstance(ws_bks.get(opp_a), dict) and isinstance(ws_bks.get(opp_b), dict)))
                     )
-                    return {"executed": False, "reason": f"FRESH_BOOK_WALK_REJECT:{rej_r}"}
-                avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
-                if int(w_fresh["shares"]) > 16 and avail_min_f < 2.0 * float(w_fresh["shares"]):
-                    cap_sh = max(16, int(math.floor(avail_min_f * 0.50)))
-                    w_trim = walk_equal_shares_dominance_box(
+                    if use_ws_bks:
+                        bk_a = ws_bks[tok_a]
+                        bk_b = ws_bks[tok_b]
+                        bk_oa_pre = bk_b if not need_sep_opp else ws_bks[opp_a]
+                        bk_ob_pre = bk_a if not need_sep_opp else ws_bks[opp_b]
+                    elif not custom_book_fn and hasattr(self.executor, "get_market_books_batch"):
+                        req_toks = [tok_a, tok_b] + ([opp_a, opp_b] if need_sep_opp else [])
+                        batch_map = self.executor.get_market_books_batch(req_toks)
+                        bk_a = batch_map.get(tok_a) or {}
+                        bk_b = batch_map.get(tok_b) or {}
+                        bk_oa_pre = bk_b if not need_sep_opp else (batch_map.get(opp_a) or {})
+                        bk_ob_pre = bk_a if not need_sep_opp else (batch_map.get(opp_b) or {})
+                    else:
+                        fk_a = hot_pool.submit(self.executor.get_market_book, tok_a)
+                        fk_b = hot_pool.submit(self.executor.get_market_book, tok_b)
+                        fk_oa = hot_pool.submit(self.executor.get_market_book, opp_a) if need_sep_opp else None
+                        fk_ob = hot_pool.submit(self.executor.get_market_book, opp_b) if need_sep_opp else None
+                        bk_a = fk_a.result() or {}
+                        bk_b = fk_b.result() or {}
+                        bk_oa_pre = bk_b if not need_sep_opp else (fk_oa.result() or {})
+                        bk_ob_pre = bk_a if not need_sep_opp else (fk_ob.result() or {})
+                    try:
+                        bk_oa = bk_oa_pre
+                        bk_ob = bk_ob_pre
+                        b_oa = bk_oa.get("bids") or []
+                        b_ob = bk_ob.get("bids") or []
+                        if not (b_oa and b_ob):
+                            return {"executed": False, "reason": "ANTI_BOX_COMPLEMENT_UNVERIFIED:EMPTY_OPP_BOOK"}
+                        opp_sum = max(float(x["price"] if isinstance(x, dict) else x[0]) for x in b_oa) + max(float(x["price"] if isinstance(x, dict) else x[0]) for x in b_ob)
+                        if opp_sum > 1.0:
+                            return {"executed": False, "reason": f"ANTI_BOX_COMPLEMENT_VETO:{opp_sum:.4f}"}
+                    except Exception as exc_opp:
+                        return {"executed": False, "reason": f"ANTI_BOX_COMPLEMENT_UNVERIFIED:{exc_opp}"}
+                    book_walk_ms = round((time.perf_counter_ns() - t_bk0) / 1_000_000.0, 2)
+
+                    def _bk_quiet(bk_d: Dict[str, Any]) -> bool:
+                        asks_d, bids_d = bk_d.get("asks") or [], bk_d.get("bids") or []
+                        if not asks_d or not bids_d:
+                            return False
+                        ba = min(float(x["price"] if isinstance(x, dict) else x[0]) for x in asks_d)
+                        bb = max(float(x["price"] if isinstance(x, dict) else x[0]) for x in bids_d)
+                        return bb > 0.0 and (ba - bb) <= 0.041
+
+                    fresh_quiet = bool(candidate_box.get("is_quiet_book") and _bk_quiet(bk_a) and _bk_quiet(bk_b))
+                    zero_fee_box = max(fr_a, fr_b) == 0.0
+                    live_walk_cap = (0.990 if fresh_quiet else 0.982) if zero_fee_box else (0.985 if fresh_quiet else 0.975)
+                    w_fresh = walk_equal_shares_dominance_box(
                         bk_a.get("asks") or [], bk_b.get("asks") or [],
-                        target_budget_usd=min(target_budget, (cap_sh + 0.25) * float(w_fresh["eff_px"])),
-                        fee_rate_a=fr_a, fee_rate_b=fr_b, fee_exponent_a=fe_a, fee_exponent_b=fe_b,
-                        max_box_cost_net=live_walk_cap, min_shares=8, min_box_notional_usd=7.0,
+                        target_budget_usd=target_budget, fee_rate_a=fr_a, fee_rate_b=fr_b,
+                        fee_exponent_a=fe_a, fee_exponent_b=fe_b, max_box_cost_net=live_walk_cap,
+                        min_shares=5, min_box_notional_usd=4.85,
                     )
-                    if w_trim.get("filled"):
-                        w_fresh = w_trim
-                        avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
-                fresh_box_net = float(w_fresh["box_cost_net"])
-                if fresh_box_net > 0.975 and avail_min_f < 1.5 * float(w_fresh["shares"]):
-                    logger.info(
-                        f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): QUIET_DEPTH_THINNED | "
-                        f"net={fresh_box_net:.4f} sh={w_fresh['shares']}"
-                    )
-                    return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:QUIET_DEPTH_THINNED"}
-                px_a_lim = float(w_fresh["leg_a_walk"]["worst_px"])
-                px_b_lim = float(w_fresh["leg_b_walk"]["worst_px"])
-                sh_req = float(w_fresh["shares"])
-                avail_a = float(w_fresh["avail_a_shares"])
-                avail_b = float(w_fresh["avail_b_shares"])
-                cap_net = live_walk_cap
+                    if not w_fresh.get("filled"):
+                        rej_r = str(w_fresh.get("reason"))
+                        logger.info(
+                            f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): {rej_r} | "
+                            f"cap={live_walk_cap:.3f} quiet={fresh_quiet} ipc_age_ms={ipc_age_ms:.1f} pre_bal_ms={pre_bal_ms:.1f} book_ms={book_walk_ms:.1f}"
+                        )
+                        return {"executed": False, "reason": f"FRESH_BOOK_WALK_REJECT:{rej_r}"}
+                    avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
+                    if int(w_fresh["shares"]) > 16 and avail_min_f < 2.0 * float(w_fresh["shares"]):
+                        cap_sh = max(16, int(math.floor(avail_min_f * 0.50)))
+                        w_trim = walk_equal_shares_dominance_box(
+                            bk_a.get("asks") or [], bk_b.get("asks") or [],
+                            target_budget_usd=min(target_budget, (cap_sh + 0.25) * float(w_fresh["eff_px"])),
+                            fee_rate_a=fr_a, fee_rate_b=fr_b, fee_exponent_a=fe_a, fee_exponent_b=fe_b,
+                            max_box_cost_net=live_walk_cap, min_shares=5, min_box_notional_usd=4.85,
+                        )
+                        if w_trim.get("filled"):
+                            w_fresh = w_trim
+                            avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
+                    fresh_box_net = float(w_fresh["box_cost_net"])
+                    if fresh_box_net > 0.975 and avail_min_f < 1.5 * float(w_fresh["shares"]):
+                        logger.info(
+                            f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): QUIET_DEPTH_THINNED | "
+                            f"net={fresh_box_net:.4f} sh={w_fresh['shares']}"
+                        )
+                        return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:QUIET_DEPTH_THINNED"}
+                    px_a_lim = float(w_fresh["leg_a_walk"]["worst_px"])
+                    px_b_lim = float(w_fresh["leg_b_walk"]["worst_px"])
+                    sh_req = float(w_fresh["shares"])
+                    avail_a = float(w_fresh["avail_a_shares"])
+                    avail_b = float(w_fresh["avail_b_shares"])
+                    cap_net = live_walk_cap
 
-        if fresh_box_net < 0.900:
-            return {"executed": False, "reason": f"ANTI_BOX_COST_FLOOR_REJECT:{fresh_box_net:.4f}"}
-        # Only fire parallel 2-leg FOK on deep, wide-margin (<=0.975), balanced BTC/ETH books (>=4x depth, both legs >=$0.36);
-        # SOL, tighter quiet-book (0.975..0.985], and skewed/thin tail boxes dispatch fragile Leg 1 first ($0.00 miss cost).
-        use_parallel_d1 = bool(
-            (not cand_asset or cand_asset in {"BTC", "ETH"})
-            and fresh_box_net <= 0.975
-            and min(px_a_lim, px_b_lim) >= 0.36
-            and (avail_a is None or avail_b is None or min(float(avail_a), float(avail_b)) >= 4.0 * sh_req)
-        )
-        box_id = str(candidate_box.get("box_id") or f"D1_LIVE_{int(now_ts)}")
-        st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
-        if dedupe_k and is_live_ctf_box:
-            with st_lock:
-                self._record_seen_d1_box_key(dedupe_k)
-                self.save_state()
-        t_fok0 = time.perf_counter_ns()
-        res = self.executor.execute_atomic_dominance_box(
-            box_id=box_id,
-            leg_a_token_id=tok_a,
-            leg_a_label=lbl_a,
-            leg_a_limit_price=px_a_lim,
-            leg_b_token_id=tok_b,
-            leg_b_label=lbl_b,
-            leg_b_limit_price=px_b_lim,
-            shares=sh_req,
-            max_box_cost_net=cap_net,
-            leg_a_avail_shares=avail_a,
-            leg_b_avail_shares=avail_b,
-            fee_rate_a=fr_a,
-            fee_rate_b=fr_b,
-            fee_exponent_a=fe_a,
-            fee_exponent_b=fe_b,
-            parallel_dispatch=use_parallel_d1,
-        )
-        fok_box_ms = round((time.perf_counter_ns() - t_fok0) / 1_000_000.0, 2)
-        _fok_ok = bool(res.get("success"))
-        _fok_err = "" if _fok_ok else f" | abort={res.get('stage') or res.get('error') or 'FAILED'}"
-        logger.info(
-            f"[D1 LATENCY TELEMETRY] {box_id} ({cand_asset or 'BTC'}): ipc_age_ms={ipc_age_ms:.2f} | "
-            f"pre_bal_ms={pre_bal_ms:.2f} | book_walk_ms={book_walk_ms:.2f} | fok_box_ms={fok_box_ms:.2f} | "
-            f"sh={sh_req:.0f} | parallel={use_parallel_d1} | ok={_fok_ok}{_fok_err}"
-        )
-        if _LatencyTrace is not None:
-            try:
-                _d1_tr = _LatencyTrace(
-                    box_id=box_id, asset=str(cand_asset or "BTC"), sleeve="D1_SAME_ORACLE_DOMINANCE_BOX",
-                    ipc_age_ms=ipc_age_ms, pre_bal_ms=pre_bal_ms, book_walk_ms=book_walk_ms,
-                    fok_box_ms=fok_box_ms, shares=sh_req, parallel=use_parallel_d1,
-                    outcome="d1_ok" if _fok_ok else f"d1_{res.get('stage') or 'fail'}",
+            if fresh_box_net < 0.900:
+                return {"executed": False, "reason": f"ANTI_BOX_COST_FLOOR_REJECT:{fresh_box_net:.4f}"}
+            is_4h_cand = (
+                str(candidate_box.get("leg_a_horizon") or "").lower() == "4h"
+                or str(candidate_box.get("leg_b_horizon") or "").lower() == "4h"
+            )
+            is_zero_itode_box = box_type in {"COMPLETE_SET", "LADDER_MONO", "BARRIER_MONO", "NEGRISK_CROSS"}
+            use_parallel_d1 = bool(
+                (
+                    is_zero_itode_box
+                    or (
+                        (not is_4h_cand)
+                        and (not cand_asset or cand_asset in {"BTC", "ETH", "SOL"})
+                        and fresh_box_net <= 0.975
+                    )
                 )
-                _d1_tr.emit()
-            except Exception:
-                pass
-        leg_tids: List[str] = []
-        clean_zero_cost_abort = bool(
-            not res.get("success")
-            and not res.get("outcome_unknown")
-            and not res.get("legged_out")
-            and not isinstance(res.get("residual_unhedged_leg"), dict)
-        )
-        _pb_map = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
-        if clean_zero_cost_abort and "_wallet_token_balance" not in self.__dict__:
-            _now_c = time.time()
-            for _tk_old, (_, _ts_old) in list(_pb_map.items()):
-                if (_now_c - _ts_old) > 120.0:
-                    _pb_map.pop(_tk_old, None)
-            _pb_map[tok_a] = (pre_bal_a, _now_c)
-            _pb_map[tok_b] = (pre_bal_b, _now_c)
-        else:
-            _pb_map.pop(tok_a, None)
-            _pb_map.pop(tok_b, None)
-        with st_lock:
-            if dedupe_k:
-                if clean_zero_cost_abort:
-                    seen_boxes.discard(dedupe_k)
-                    self.__dict__.get("_seen_d1_box_order", {}).pop(dedupe_k, None)
-                    for k_cd, ts_cd in list(retry_cd.items()):
-                        if float(ts_cd or 0.0) <= now_ts:
-                            retry_cd.pop(k_cd, None)
-                    retry_cd[dedupe_k] = now_ts + 9.5
-                    if is_live_ctf_box:
-                        self.save_state()
-                else:
-                    retry_cd.pop(dedupe_k, None)
+                and min(px_a_lim, px_b_lim) >= (0.05 if is_zero_itode_box else 0.30)
+                and (
+                    avail_a is None
+                    or avail_b is None
+                    or min(float(avail_a), float(avail_b)) >= (1.5 if is_zero_itode_box else 2.0) * sh_req
+                )
+            )
+            box_id = str(candidate_box.get("box_id") or f"D1_LIVE_{int(now_ts)}")
+            st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
+            if dedupe_k and is_live_ctf_box:
+                with st_lock:
                     self._record_seen_d1_box_key(dedupe_k)
-            if res.get("success") and isinstance(res.get("leg_1"), dict) and isinstance(res.get("leg_2"), dict):
-                leg_tids = self._register_live_d1_box_positions(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
-            elif res.get("outcome_unknown"):
-                self._register_unknown_d1_box_legs(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
-            elif isinstance(res.get("residual_unhedged_leg"), dict):
-                self.executor.invalidate_collateral_cache()
-                self._pending_collateral_refresh = True
-                resid = res["residual_unhedged_leg"]
-                if float(resid.get("residual_shares") or 0.0) > 0.01 or resid.get("unwind_outcome_unknown"):
-                    leg_tids = self._register_legged_out_d1_residual(box_id, candidate_box, resid, pre_bal_a, pre_bal_b)
-                else:
-                    self._record_inline_d1_legged_out_close(box_id, candidate_box, resid, res)
-            elif dedupe_k and not clean_zero_cost_abort:
-                self.save_state()
-        return {"executed": bool(res.get("success")), "result": res, "leg_trade_ids": leg_tids}
+            t_fok0 = time.perf_counter_ns()
+            _box_call_kw = dict(
+                box_id=box_id,
+                leg_a_token_id=tok_a,
+                leg_a_label=lbl_a,
+                leg_a_limit_price=px_a_lim,
+                leg_b_token_id=tok_b,
+                leg_b_label=lbl_b,
+                leg_b_limit_price=px_b_lim,
+                shares=sh_req,
+                max_box_cost_net=cap_net,
+                leg_a_avail_shares=avail_a,
+                leg_b_avail_shares=avail_b,
+                fee_rate_a=fr_a,
+                fee_rate_b=fr_b,
+                fee_exponent_a=fe_a,
+                fee_exponent_b=fe_b,
+                parallel_dispatch=use_parallel_d1,
+            )
+            try:
+                res = self.executor.execute_atomic_dominance_box(
+                    **_box_call_kw,
+                    leg_a_pre_balance=pre_bal_a,
+                    leg_b_pre_balance=pre_bal_b,
+                )
+            except TypeError:
+                res = self.executor.execute_atomic_dominance_box(**_box_call_kw)
+            fok_box_ms = round((time.perf_counter_ns() - t_fok0) / 1_000_000.0, 2)
+            _fok_ok = bool(res.get("success"))
+            _fok_err = "" if _fok_ok else f" | abort={res.get('stage') or res.get('error') or 'FAILED'}"
+            logger.info(
+                f"[D1 LATENCY TELEMETRY] {box_id} ({cand_asset or 'BTC'}): ipc_age_ms={ipc_age_ms:.2f} | "
+                f"pre_bal_ms={pre_bal_ms:.2f} | book_walk_ms={book_walk_ms:.2f} | fok_box_ms={fok_box_ms:.2f} | "
+                f"sh={sh_req:.0f} | parallel={use_parallel_d1} | ok={_fok_ok}{_fok_err}"
+            )
+            if _LatencyTrace is not None:
+                try:
+                    _d1_tr = _LatencyTrace(
+                        box_id=box_id, asset=str(cand_asset or "BTC"), sleeve=sleeve_src,
+                        ipc_age_ms=ipc_age_ms, pre_bal_ms=pre_bal_ms, book_walk_ms=book_walk_ms,
+                        fok_box_ms=fok_box_ms, shares=sh_req, parallel=use_parallel_d1,
+                        outcome="d1_ok" if _fok_ok else f"d1_{res.get('stage') or 'fail'}",
+                    )
+                    _d1_tr.emit()
+                except Exception:
+                    pass
+            leg_tids: List[str] = []
+            clean_zero_cost_abort = bool(
+                not res.get("success")
+                and not res.get("outcome_unknown")
+                and not res.get("legged_out")
+                and not isinstance(res.get("residual_unhedged_leg"), dict)
+            )
+            _pb_map = self.__dict__.setdefault("_d1_clean_pre_bal_cache", {})
+            if clean_zero_cost_abort and "_wallet_token_balance" not in self.__dict__:
+                _now_c = time.time()
+                for _tk_old, (_, _ts_old) in list(_pb_map.items()):
+                    if (_now_c - _ts_old) > 120.0:
+                        _pb_map.pop(_tk_old, None)
+                _pb_map[tok_a] = (pre_bal_a, _now_c)
+                _pb_map[tok_b] = (pre_bal_b, _now_c)
+            else:
+                _pb_map.pop(tok_a, None)
+                _pb_map.pop(tok_b, None)
+            with st_lock:
+                if dedupe_k:
+                    if clean_zero_cost_abort:
+                        seen_boxes.discard(dedupe_k)
+                        self.__dict__.get("_seen_d1_box_order", {}).pop(dedupe_k, None)
+                        for k_cd, ts_cd in list(retry_cd.items()):
+                            if float(ts_cd or 0.0) <= now_ts:
+                                retry_cd.pop(k_cd, None)
+                        retry_cd[dedupe_k] = now_ts + 9.5
+                        if is_live_ctf_box:
+                            self.save_state()
+                    else:
+                        retry_cd.pop(dedupe_k, None)
+                        self._record_seen_d1_box_key(dedupe_k)
+                if res.get("success") and isinstance(res.get("leg_1"), dict) and isinstance(res.get("leg_2"), dict):
+                    leg_tids = self._register_live_d1_box_positions(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
+                elif res.get("outcome_unknown"):
+                    self._register_unknown_d1_box_legs(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
+                elif isinstance(res.get("residual_unhedged_leg"), dict):
+                    self.executor.invalidate_collateral_cache()
+                    self._pending_collateral_refresh = True
+                    resid = res["residual_unhedged_leg"]
+                    if float(resid.get("residual_shares") or 0.0) > 0.01 or resid.get("unwind_outcome_unknown"):
+                        leg_tids = self._register_legged_out_d1_residual(box_id, candidate_box, resid, pre_bal_a, pre_bal_b)
+                    else:
+                        self._record_inline_d1_legged_out_close(box_id, candidate_box, resid, res)
+                elif dedupe_k and not clean_zero_cost_abort:
+                    self.save_state()
+            return {"executed": bool(res.get("success")), "result": res, "leg_trade_ids": leg_tids}
+        finally:
+            inflight_lock.release()
 
     def _record_inline_d1_legged_out_close(
         self, box_id: str, cand: Dict[str, Any], resid: Dict[str, Any], res: Dict[str, Any]
@@ -4639,8 +5166,8 @@ class PolymarketLiveHarvester:
             "asset": asset_sym,
             "horizon": str(cand.get(f"{pfx}_horizon") or "15m"),
             "is_subhourly": True,
-            "candle_open_spot": float(cand.get(f"{pfx}_strike") or 100.0),
-            "entry_spot_ref": float(cand.get(f"{pfx}_strike") or 100.0),
+            "candle_open_spot": float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0),
+            "entry_spot_ref": float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0),
             "spot_denomination": "USD",
             "entry_price": round(notional / max(m_sh, 0.01), 4),
             "entry_shares": m_sh,
@@ -4678,6 +5205,10 @@ class PolymarketLiveHarvester:
         self.closed_positions.append(closed_rec)
         if len(self.closed_positions) > 200:
             self.closed_positions = self.closed_positions[-200:]
+        try:
+            self.risk_controller.record_trade_pnl(net_pnl)
+        except Exception:
+            pass
         self.save_state()
         logger.warning(
             f"[D1 INLINE LEGGED-OUT UNWIND RECORDED] {tid} ({asset_sym}): "
@@ -4714,17 +5245,23 @@ class PolymarketLiveHarvester:
             if mk_raw is not None and m_leg > sh + 0.05:
                 mk_raw = mk_raw * (sh / m_leg)
             notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (sh * px), 4)
-            fr = float(cand.get(f"{pfx}_fee_rate", 0.07) or 0.07)
+            leg_fr_raw = cand.get(f"{pfx}_fee_rate")
+            fr = float(leg_fr_raw) if leg_fr_raw is not None else 0.07
             fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
             fee_u = round(sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0
             tot_box_cost += notional + fee_u
             side_str = str(cand.get(f"{pfx}_side") or ("UP" if "UP" in str(lg.get("label", "")).upper() else "DOWN"))
-            strike_k = float(cand.get(f"{pfx}_strike") or cand.get("k_low") or 100.0)
+            strike_k = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
             oid = lg.get("orderID")
             txs = raw_r.get("transactionsHashes") or raw_r.get("transactions_hashes") or []
+            slv_rec = (
+                "D1_SAME_ORACLE_DOMINANCE_BOX"
+                if str(cand.get("box_type") or "DOMINANCE").upper() == "DOMINANCE"
+                else str(cand.get("sleeve_source") or "D1_SAME_ORACLE_DOMINANCE_BOX")
+            )
             leg_records.append((tid, {
                 "trade_id": tid, "box_id": box_id, "box_partner_trade_id": partner_tid, "is_dominance_box": True,
-                "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX", "entry_tte": max(1.0, exp_ts - now_ts), "event_id": box_id,
+                "sleeve": slv_rec, "entry_tte": max(1.0, exp_ts - now_ts), "event_id": box_id,
                 "market_id": str(cand.get(f"{pfx}_market_id") or f"{box_id}_{idx}"),
                 "condition_id": str(cand.get(f"{pfx}_condition_id") or ""),
                 "token_id": tok, "target_token": side_str, "asset": asset_sym,
@@ -4748,10 +5285,18 @@ class PolymarketLiveHarvester:
                 "is_liquidating": False, "unwind_order_id": None, "unwind_start_time": 0.0,
             }))
         box_unit = round(tot_box_cost / max(sh, 1.0), 5)
+        box_tp_u = str(cand.get("box_type") or "DOMINANCE").upper()
+        k_lo_b = float(cand.get("k_low") or 0.0)
+        k_hi_b = float(cand.get("k_high") or 0.0)
         for tid, rec in leg_records:
+            rec["box_type"] = box_tp_u
+            rec["box_k_low"] = k_lo_b
+            rec["box_k_high"] = k_hi_b
             rec["box_cost_net"] = box_unit
             rec["box_total_cost_usd"] = round(tot_box_cost, 4)
             self.active_positions[tid] = rec
+        if getattr(self, "_last_known_collateral", None) is not None:
+            self._last_known_collateral = max(0.0, float(self._last_known_collateral) - tot_box_cost)
         self.executor.invalidate_collateral_cache()
         self._pending_collateral_refresh = True
         self.save_state()
@@ -4789,15 +5334,17 @@ class PolymarketLiveHarvester:
         if tid in self.active_positions or any(p.get("trade_id") == tid for p in self.closed_positions):
             tid = f"{tid}_{int(now_ts)}"
         uw_oid = (resid.get("unwind_result") or {}).get("orderID") if isinstance(resid.get("unwind_result"), dict) else None
+        strike_resid = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
         self.active_positions[tid] = {
-            "trade_id": tid, "box_id": box_id, "is_dominance_box": False,
+            "trade_id": tid, "box_id": box_id, "is_dominance_box": False, "is_legged_out_residual": True,
+            "pending_unwind_tag": "D1_LEGGED_OUT_RESIDUAL_UNWIND",
             "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX", "entry_tte": max(1.0, exp_ts - now_ts), "event_id": box_id,
             "market_id": str(cand.get(f"{pfx}_market_id") or tid),
             "condition_id": str(cand.get(f"{pfx}_condition_id") or ""),
             "token_id": tok, "target_token": str(cand.get(f"{pfx}_side") or "UP"), "asset": asset_sym,
             "horizon": str(cand.get(f"{pfx}_horizon") or "15m"), "is_subhourly": True,
-            "candle_open_spot": float(cand.get(f"{pfx}_strike") or 100.0),
-            "entry_spot_ref": float(cand.get(f"{pfx}_strike") or 100.0), "spot_denomination": "USD",
+            "candle_open_spot": strike_resid,
+            "entry_spot_ref": strike_resid, "spot_denomination": "USD",
             "candle_sigma": 0.0025 if asset_sym == "BTC" else 0.0035,
             "entry_price": px, "entry_shares": rem_sh, "gross_entry_shares": rem_sh,
             "remaining_shares": rem_sh, "filled_exit_shares": 0.0, "remaining_exit_shares": rem_sh,
@@ -4836,28 +5383,37 @@ class PolymarketLiveHarvester:
             (res.get("leg_1_token_id") or cand.get("leg_a_token_id"), res.get("leg_1_order_id")),
             (res.get("leg_2_token_id") or cand.get("leg_b_token_id"), res.get("leg_2_order_id")),
         ]
+        unk_tids: List[str] = []
+        unk_entries: List[Tuple[int, str, Optional[str]]] = []
         for idx, (tok_raw, oid) in enumerate(slots):
             tok = str(tok_raw or "")
             if not tok:
                 continue
-            pfx, pre_b = meta_by_tok.get(tok, ("leg_a" if idx == 0 else "leg_b", 0.0))
-            px = float(cand.get(f"{pfx}_limit_price") or 0.50)
             tid = f"{box_id}_UNK_{idx + 1}"
             if tid in self.active_positions or any(p.get("trade_id") == tid for p in self.closed_positions):
                 tid = f"{tid}_{int(now_ts)}"
+            unk_tids.append(tid)
+            unk_entries.append((idx, tok, oid))
+        for pos_i, (idx, tok, oid) in enumerate(unk_entries):
+            tid = unk_tids[pos_i]
+            partner_tid = unk_tids[1 - pos_i] if len(unk_tids) == 2 else ""
+            pfx, pre_b = meta_by_tok.get(tok, ("leg_a" if idx == 0 else "leg_b", 0.0))
+            px = float(cand.get(f"{pfx}_limit_price") or 0.50)
+            strike_u = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
             self.active_positions[tid] = {
-                "trade_id": tid, "box_id": box_id, "is_dominance_box": True, "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+                "trade_id": tid, "box_id": box_id, "box_partner_trade_id": partner_tid,
+                "is_dominance_box": True, "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
                 "event_id": box_id, "market_id": str(cand.get(f"{pfx}_market_id") or tid),
                 "condition_id": str(cand.get(f"{pfx}_condition_id") or ""), "token_id": tok,
                 "target_token": str(cand.get(f"{pfx}_side") or "UP"), "asset": str(cand.get("asset") or "BTC").upper(),
-                "candle_open_spot": float(cand.get(f"{pfx}_strike") or 100.0),
-                "entry_spot_ref": float(cand.get(f"{pfx}_strike") or 100.0), "spot_denomination": "USD",
+                "candle_open_spot": strike_u,
+                "entry_spot_ref": strike_u, "spot_denomination": "USD",
                 "candle_sigma": 0.003, "entry_price": px, "entry_shares": sh, "gross_entry_shares": sh,
                 "remaining_shares": sh, "filled_exit_shares": 0.0, "remaining_exit_shares": sh,
                 "remaining_cost_basis": round(sh * px, 4), "realized_exit_cash": 0.0, "realized_exit_fee": 0.0,
                 "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
                 "notional_usd": round(sh * px, 4), "intended_notional": round(sh * px, 4),
-                "fee_usd": 0.0, "entry_fee_cash_usd": 0.0, "entry_fee_asset": "USDC",
+                "fee_usd": 0.0, "entry_fee_cash_usd": 0.0, "entry_fee_asset": "USDC", "fee_source": "crypto_fees_v2",
                 "target_exit_price": 0.99, "entry_time_utc": datetime.now(timezone.utc).isoformat(),
                 "entry_ts": now_ts, "submitted_at_ts": now_ts, "candle_expiry_ts": exp_ts,
                 "pre_token_balance": pre_b, "entry_order_id": oid, "order_id": oid,
@@ -4879,10 +5435,9 @@ class PolymarketLiveHarvester:
             cand_file = DATA_DIR / "d1_live_box_candidates.jsonl"
             if not getattr(self, "_d1_cand_initialized", False):
                 self._d1_cand_initialized = True
-                if cand_file.exists() and (now_ts - cand_file.stat().st_mtime) > 6.5:
-                    self._last_d1_cand_offset = cand_file.stat().st_size
-                else:
-                    self._last_d1_cand_offset = 0
+                # Always tail from EOF at startup: the file is append-only and large (embedded ws_books); fresh
+                # candidates arrive via IPC, and replaying history would only stall the loop on stale rejects.
+                self._last_d1_cand_offset = cand_file.stat().st_size if cand_file.exists() else 0
             if cand_file.exists():
                 sz = cand_file.stat().st_size
                 if sz < self._last_d1_cand_offset:
@@ -4900,6 +5455,7 @@ class PolymarketLiveHarvester:
         seen_emits = self.__dict__.setdefault("_seen_d1_emit_ids", {})
         executed = 0
         loop = asyncio.get_running_loop()
+        self._main_loop = loop
         for raw_ln in raw_lines:
             if not raw_ln.strip():
                 continue
@@ -4927,6 +5483,7 @@ class PolymarketLiveHarvester:
         Thin tracing wrapper: opens a per-trigger LatencyTrace (published to the executor through a
         ContextVar) and always resets it, so a stale trace can never leak into an unrelated order.
         """
+        self._main_loop = asyncio.get_running_loop()
         if _LatencyTrace is None or _CURRENT_TRACE is None:
             return await self._evaluate_shock_and_execute_impl(shock)
         token = None
@@ -6541,7 +7098,6 @@ class PolymarketLiveHarvester:
                         break
 
             # Idea #5: Sequential +2c Pre-Signed Fallback on deterministic 400 / FAK zero-match miss
-            # WFO Parity: In live real mode, only chase +2c on high-conviction z_strike >= 1.25 setups!
             if (
                 (res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection"))
                 and not self.dry_run
@@ -6559,9 +7115,48 @@ class PolymarketLiveHarvester:
                     if trade_id in self.pending_entry_intents:
                         self.pending_entry_intents[trade_id]["target_price"] = target_limit_px
                     fresh_fallback_book = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot
-                    res = await self.executor.execute_snipe_order_async(
-                        **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=fresh_fallback_book,
-                    )
+                    try:
+                        res = await self.executor.execute_snipe_order_async(
+                            **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
+                            prefetched_book=fresh_fallback_book, max_book_buffer=0.04,
+                        )
+                    except TypeError as _te:
+                        if "max_book_buffer" not in str(_te):
+                            raise
+                        res = await self.executor.execute_snipe_order_async(
+                            **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
+                            prefetched_book=fresh_fallback_book,
+                        )
+
+            # Live Phase 3A Passive Maker-In Rescue (GTC + postOnly=True, 0% fee + 20% Maker rebate, 0ms itode, 3.5s TTL)
+            # Same deep-ITM conviction gate as the +2c fallback: passive bids only fill on adverse moves.
+            if (
+                (
+                    res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION")
+                    or (res.details or {}).get("fak_killed")
+                    or (res.details or {}).get("clob_400_rejection")
+                )
+                and (not _is_live_real or z_strike >= 1.25)
+            ):
+                rescue_res = await self._attempt_live_phase3a_maker_rescue(
+                    trade_id=trade_id,
+                    token_id=token_id,
+                    target_token=target_token,
+                    asset_str=asset_str,
+                    effective_notional=effective_notional,
+                    first_ask=first_ask,
+                    first_bid=first_bid,
+                    min_allowed_price=min_allowed_price,
+                    max_allowed_price=max_allowed_price,
+                    open_spot=open_spot,
+                    entry_spot_ref=entry_spot_ref,
+                    spot_denom=spot_denom,
+                    tte=tte,
+                    pre_cond_bal=pre_cond_bal,
+                    book_snapshot=book_snapshot,
+                )
+                if rescue_res is not None:
+                    res = rescue_res
         finally:
             await asyncio.to_thread(self.save_state)
 
@@ -6604,10 +7199,12 @@ class PolymarketLiveHarvester:
                 "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
                 "notional_usd": float(effective_notional), "intended_notional": float(effective_notional),
                 "fee_usd": float(res.fee_usd or 0.0), "entry_fee_cash_usd": float(res.fee_usd or 0.0),
-                "entry_fee_asset": "USDC", "fee_rate_applied": m_fee_rate, "fee_exponent_applied": m_fee_exp,
+                "entry_fee_asset": "USDC", "fee_source": "crypto_fees_v2",
+                "fee_rate_applied": m_fee_rate, "fee_exponent_applied": m_fee_exp,
                 "target_exit_price": self._calculate_target_exit(ref_px, tte),
                 "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": now_ts, "submitted_at_ts": now_ts,
                 "candle_expiry_ts": expiry_ts, "pre_token_balance": float(unknown_pre_bal if unknown_pre_bal is not None else pre_cond_bal),
+                "order_id": res.order_id or (res.details or {}).get("entry_order_id"),
                 "entry_order_id": res.order_id or (res.details or {}).get("entry_order_id"),
                 "trade_ids": [], "transactions_hashes": [], "status": "ENTRY_OUTCOME_UNKNOWN",
                 "exit_order_status": "ENTRY_OUTCOME_UNKNOWN", "inventory_reconciled": False,
@@ -6663,17 +7260,24 @@ class PolymarketLiveHarvester:
                 "remaining_cost_basis": res.notional_usd, "realized_exit_cash": 0.0, "realized_exit_fee": 0.0,
                 "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
                 "notional_usd": res.notional_usd, "fee_usd": res.fee_usd, "entry_fee_cash_usd": float(res.fee_usd or 0.0),
-                "entry_fee_asset": "USDC", "fee_rate_applied": m_fee_rate, "fee_exponent_applied": m_fee_exp,
+                "entry_fee_asset": "USDC", "fee_source": "crypto_fees_v2",
+                "fee_rate_applied": m_fee_rate, "fee_exponent_applied": m_fee_exp,
                 "target_exit_price": 0.99 if self.hold_to_maturity else target_exit, "exit_order_size": float(res.size),
                 "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": time.time(),
                 "candle_expiry_ts": time.time() + tte, "pre_token_balance": res.details.get("pre_token_balance", pre_cond_bal),
-                "entry_order_id": res.order_id, "trade_ids": res.details.get("trade_ids", []),
+                "order_id": res.order_id, "entry_order_id": res.order_id, "trade_ids": res.details.get("trade_ids", []),
                 "transactions_hashes": res.details.get("transactions_hashes", []), "status": res.execution_status,
                 "exit_order_id": None, "exit_order_status": "NONE", "is_liquidating": False,
                 "unwind_order_id": None, "unwind_start_time": 0.0,
             }
             # IMMUTABLE PERSISTENCE: Save open position immediately before placing exit order
             self.active_positions[trade_id] = pos_record
+            if not self.dry_run:
+                _fill_cost_total = max(0.0, float(res.notional_usd or 0.0) + float(res.fee_usd or 0.0))
+                if getattr(self, "_last_known_collateral", None) is not None and _fill_cost_total > 0.0:
+                    self._last_known_collateral = max(0.0, float(self._last_known_collateral) - _fill_cost_total)
+                self.executor.invalidate_collateral_cache()
+                self._pending_collateral_refresh = True
             await asyncio.to_thread(self.save_state)
             logger.info(f"✓ POSITION RECORDED & PERSISTED: {trade_id} | Shares={res.size:.2f} @ ${res.price:.4f} | Status={res.execution_status}")
             if not self.dry_run:
@@ -6789,6 +7393,7 @@ class PolymarketLiveHarvester:
         target_tok = intent.get("target_token", "")
         recovered_pos = {
             "trade_id": trade_id, "entry_trade_id": intent.get("entry_trade_id") or trade_id,
+            "order_id": intent.get("entry_order_id") or intent.get("order_id"),
             "entry_order_id": intent.get("entry_order_id") or intent.get("order_id"),
             "trade_ids": [], "transactions_hashes": [], "pre_token_balance": pre_bal,
             "event_id": intent.get("event_id", ""), "market_id": intent.get("market_id", ""),
@@ -6803,7 +7408,9 @@ class PolymarketLiveHarvester:
             "intended_notional": intended_notional, "cost_basis_estimated": True,
             "fee_usd": float(intent.get("fee_usd", 0.0) or 0.0),
             "entry_fee_cash_usd": float(intent.get("entry_fee_cash_usd", 0.0) or 0.0),
-            "entry_fee_asset": intent.get("entry_fee_asset", "SHARES"), "target_exit_price": target_exit_p,
+            "entry_fee_asset": intent.get("entry_fee_asset", "USDC"),
+            "fee_source": intent.get("fee_source", "crypto_fees_v2"),
+            "target_exit_price": target_exit_p,
             "entry_time_utc": intent.get("created_at_utc", datetime.now(timezone.utc).isoformat()),
             "entry_ts": submitted_ts, "submitted_at_ts": submitted_ts,
             "status": ExecutionStatus.POSITION_CONFIRMED if verdict == "ARRIVED" else ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
@@ -7214,6 +7821,7 @@ class PolymarketLiveHarvester:
 
     async def check_resolutions_and_manage_positions(self):
         """Monitors active positions for delta settlements, maker scalp fills, time-decay unwind, or finalized resolutions."""
+        self._main_loop = asyncio.get_running_loop()
         if not self.active_positions:
             self._refresh_global_halt()
             return
@@ -7338,6 +7946,13 @@ class PolymarketLiveHarvester:
                 open_orders_authoritative = False
 
             now_ts = time.time()
+            mkt_ws = getattr(self, "_pos_market_ws", None)
+            if mkt_ws is not None:
+                mkt_ws.set_desired_tokens([str(p.get("token_id") or "") for p in self.active_positions.values()])
+            try:
+                await self._maybe_merge_live_complete_sets(now_ts)
+            except Exception as merge_exc:
+                logger.exception(f"[C1 MERGE] complete-set merge pass failed (supervision continues): {merge_exc}")
             for tid, pos in list(self.active_positions.items()):
                 if tid not in self.active_positions:
                     continue
@@ -7423,8 +8038,10 @@ class PolymarketLiveHarvester:
                     entry_spot_disp = 0.0
                     entry_move_pct = 0.0
                     if (not pos.get("is_liquidating") or retry_due) and token_id and rem_shrs > 0.01:
-                        # v3.3: /dev/shm fast tick top-of-book first (<=1.5s old, verified market_id & token_id), REST fallback
+                        # v3.3: /dev/shm fast tick top-of-book first (<=1.5s old), then live CLOB market WS, then REST fallback
                         book = self._get_verified_shm_book(pos)
+                        if book is None and mkt_ws is not None and "get_market_book_async" not in getattr(self.executor, "__dict__", {}):
+                            book = mkt_ws.get_book(token_id, max_age_sec=2.0)
                         if book is None:
                             try:
                                 book = await self.executor.get_market_book_async(token_id)
@@ -7466,52 +8083,19 @@ class PolymarketLiveHarvester:
                                 jump_px = compute_queue_priority_maker_price(
                                     entry_px, rem_shrs, bids, asks, curr_target_px
                                 )
-                                if jump_px is not None:
+                                if jump_px is not None and (now_ts - float(pos.get("queue_jump_attempt_ts", 0.0) or 0.0)) >= 30.0:
+                                    pos["queue_jump_attempt_ts"] = now_ts
                                     logger.info(
                                         f"[QUEUE JUMP SUPERVISION] Position {tid}: massive wall at ${curr_target_px:.2f}. "
                                         f"Stepping 1c in front to ${jump_px:.2f} (cancelling OID: {exit_oid})."
                                     )
-                                    pos["queue_jumped"] = True
                                     posted = await self._atomic_replace_maker_exit(tid, pos, jump_px)
+                                    if tid not in self.active_positions:
+                                        continue
+                                    if posted:
+                                        pos["queue_jumped"] = True
                                     exit_oid = pos.get("exit_order_id")
-                                    if pos.get("exit_tranches") and posted:
-                                        for t in pos["exit_tranches"]:
-                                            if abs(float(t.get("price", 0.0)) - jump_px) < 1e-9:
-                                                t["status"] = "POSTED"
-                                                break
-
-                        if (
-                            not _is_dom_box
-                            and evaluate_optimal_stopping_exit is not None
-                            and exit_oid
-                            and not pos.get("obi_stepped_down")
-                            and not pos.get("is_liquidating")
-                            and rem_shrs >= 5.0
-                            and tte_rem >= self.tte_cancel_window
-                            and bids
-                            and asks
-                        ):
-                            _b1_sz = float(bids[0].get("size", 0.0) if isinstance(bids[0], dict) else bids[0][1])
-                            _a1_sz = float(asks[0].get("size", 0.0) if isinstance(asks[0], dict) else asks[0][1])
-                            _obi_cur = (_b1_sz - _a1_sz) / max(1e-6, _b1_sz + _a1_sz)
-                            _opt_exit = evaluate_optimal_stopping_exit(
-                                entry_px=entry_px,
-                                rem_shares=rem_shrs,
-                                best_bid=best_b,
-                                best_ask=best_a,
-                                curr_target_px=float(pos.get("target_exit_price") or 0.0),
-                                tte_sec=tte_rem,
-                                obi_l1=_obi_cur,
-                            )
-                            if _opt_exit.get("action") == "OBI_MAKER_STEP_DOWN":
-                                _step_px = float(_opt_exit["target_px"])
-                                logger.info(
-                                    f"[OBI MAKER STEP-DOWN] {tid}: heavy sell wall obi_l1={_obi_cur:.2f} <= -0.60 at TTE={tte_rem:.0f}s; "
-                                    f"stepping resting maker ask to ${_step_px:.2f}."
-                                )
-                                pos["obi_stepped_down"] = True
-                                await self._atomic_replace_maker_exit(tid, pos, _step_px)
-                                exit_oid = pos.get("exit_order_id")
+                                    rem_shrs = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs)) or 0.0)
 
                         asset_sym = pos.get("asset", "BTC")
                         if pos.get("spot_denomination") == "USD":
@@ -7549,6 +8133,57 @@ class PolymarketLiveHarvester:
                             pos["v_spot_15s_pct"] = round(v_spot_15s_pct, 4)
                         else:
                             v_spot_15s_pct = float(pos.get("v_spot_15s_pct", 0.0) or 0.0)
+
+                        if (
+                            not _is_dom_box
+                            and evaluate_optimal_stopping_exit is not None
+                            and exit_oid
+                            and not pos.get("obi_stepped_down")
+                            and not pos.get("is_liquidating")
+                            and rem_shrs >= 5.0
+                            and tte_rem >= self.tte_cancel_window
+                            and best_b > 0.0
+                            and best_a > 0.0
+                            and bids
+                            and asks
+                        ):
+                            _b1_sz = sum(
+                                float(b.get("size", 0.0) if isinstance(b, dict) else b[1])
+                                for b in bids
+                                if abs(float(b.get("price", 0.0) if isinstance(b, dict) else b[0]) - best_b) < 1e-6
+                            )
+                            _a1_sz = sum(
+                                float(a.get("size", 0.0) if isinstance(a, dict) else a[1])
+                                for a in asks
+                                if abs(float(a.get("price", 0.0) if isinstance(a, dict) else a[0]) - best_a) < 1e-6
+                            )
+                            _obi_cur = (_b1_sz - _a1_sz) / max(1e-6, _b1_sz + _a1_sz)
+                            _opt_exit = evaluate_optimal_stopping_exit(
+                                entry_px=entry_px,
+                                rem_shares=rem_shrs,
+                                best_bid=best_b,
+                                best_ask=best_a,
+                                curr_target_px=float(pos.get("target_exit_price") or 0.0),
+                                tte_sec=tte_rem,
+                                obi_l1=_obi_cur,
+                                v_spot_15s_pct=v_spot_15s_pct,
+                            )
+                            if _opt_exit.get("action") == "OBI_MAKER_STEP_DOWN" and (now_ts - float(pos.get("obi_step_attempt_ts", 0.0) or 0.0)) >= 30.0:
+                                pos["obi_step_attempt_ts"] = now_ts
+                                _step_px = float(_opt_exit["target_px"])
+                                logger.info(
+                                    f"[OBI MAKER STEP-DOWN] {tid}: heavy sell wall obi_l1={_obi_cur:.2f} <= -0.40 at TTE={tte_rem:.0f}s "
+                                    f"(v_spot_15s={v_spot_15s_pct:+.3f}%); stepping resting maker ask to ${_step_px:.2f}."
+                                )
+                                posted_step = await self._atomic_replace_maker_exit(
+                                    tid, pos, _step_px, collapse_tranches=True
+                                )
+                                if tid not in self.active_positions:
+                                    continue
+                                if posted_step:
+                                    pos["obi_stepped_down"] = True
+                                exit_oid = pos.get("exit_order_id")
+                                rem_shrs = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs)) or 0.0)
 
                         # Explicit Liquidation Precedence Rules (Probe 3 & R3-08 Fix):
                         # 1. Pre-Expiry Window (TTE <= 300s):
@@ -7629,7 +8264,7 @@ class PolymarketLiveHarvester:
                                 and best_b <= (0.50 if _is_15m_pos else 0.52)
                             )
                             or (spot_valid and best_b <= 0.36 and entry_move_pct <= -0.0007)
-                            or (not spot_valid and best_b <= 0.36)
+                            or (not is_pre_expiry_window and not spot_valid and best_b <= 0.36)
                         )
                         _req_low_bid_hold = 6.0
                         _min_hard_salvage_bid = 0.08
@@ -7749,9 +8384,23 @@ class PolymarketLiveHarvester:
                                     and max(float(_p_live.get("confirmed_realized_cash", 0.0) or 0.0), float(_p_live.get("realized_exit_cash", 0.0) or 0.0)) >= _box_tot_cost
                                 )
                             )
+                            _pos_fr = float(pos.get("fee_rate_applied", 0.07) or 0.0)
+                            _pos_fe = float(pos.get("fee_exponent_applied", 1.0) or 1.0)
+                            _net_b = best_b - (_pos_fr * ((best_b * (1.0 - best_b)) ** _pos_fe) if _pos_fr > 0.0 else 0.0)
+                            _k_lo = float(pos.get("box_k_low") or 0.0)
+                            _k_hi = float(pos.get("box_k_high") or 0.0)
+                            _outside_corr = bool(
+                                spot_valid
+                                and _k_hi >= _k_lo > 0.0
+                                and (current_spot < _k_lo * (1.0 - 0.0012) or current_spot > _k_hi * (1.0 + 0.0012))
+                            )
                             _d1_prim = bool(
-                                5.0 <= tte_rem <= 35.0 and rem_shrs >= 5.0 and best_b >= 0.99
-                                and (best_b - 0.07 * best_b * (1.0 - best_b)) >= (_box_unit + 0.002)
+                                rem_shrs >= 5.0
+                                and _net_b >= (_box_unit + 0.002)
+                                and (
+                                    (5.0 <= tte_rem <= 35.0 and best_b >= 0.99)
+                                    or (5.0 <= tte_rem <= 65.0 and best_b >= 0.985 and _outside_corr)
+                                )
                             )
                             _d1_bonus = bool(5.0 <= tte_rem <= 35.0 and rem_shrs >= 5.0 and _partner_cov and best_b >= 0.20)
                             pre_expiry_99c_recycle = _d1_prim
@@ -7874,7 +8523,8 @@ class PolymarketLiveHarvester:
                                     pos["exit_order_status"] = "STOP_CANCEL_PENDING"
                                     pos["cancel_pending_order_id"] = exit_oid
                                     pos["pending_unwind_tag"] = (
-                                        "FINAL_45S_CAPITAL_RECYCLE_UNWIND" if final_45s_triggered
+                                        "D1_LEGGED_OUT_RESIDUAL_UNWIND" if pos.get("is_legged_out_residual")
+                                        else "FINAL_45S_CAPITAL_RECYCLE_UNWIND" if final_45s_triggered
                                         else "TRAILING_PROFIT_RATCHET_UNWIND" if trailing_ratchet_triggered
                                         else "CONFIRMED_OPPOSITE_BREAKOUT_SALVAGE" if opposite_salvage_triggered
                                         else "STRIKE_RETRACE_SALVAGE" if strike_retrace_triggered
@@ -7927,6 +8577,22 @@ class PolymarketLiveHarvester:
                                     pos["passive_stop_start_ts"] = now_ts
                                     self.save_state()
                                     continue
+                                elif isinstance(m_res, dict) and m_res.get("outcome_unknown"):
+                                    m_oid = m_res.get("orderID")
+                                    if m_oid:
+                                        pos["exit_order_id"] = m_oid
+                                        pos["exit_order_size"] = float(rem_shrs)
+                                    if m_res.get("reservation_id"):
+                                        pos.setdefault("pending_reservation_ids", []).append(m_res["reservation_id"])
+                                    pos["target_exit_price"] = maker_unwind_px
+                                    pos["exit_post_attempt_ts"] = now_ts
+                                    pos["exit_order_status"] = "EXIT_POST_OUTCOME_UNKNOWN"
+                                    self.save_state()
+                                    logger.critical(
+                                        f"[TWO-STAGE MAKER UNWIND] Ambiguous passive maker post for {tid} (OID: {m_oid}); "
+                                        "holding reservation and deferring FAK unwind until reconciled."
+                                    )
+                                    continue
 
                             rem_shrs = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", rem_shrs)) or 0.0)
                             if rem_shrs < 0.01:
@@ -7963,7 +8629,8 @@ class PolymarketLiveHarvester:
                                 min_price=limit_px,
                             )
                             exit_tag = (
-                                "FINAL_45S_CAPITAL_RECYCLE_UNWIND" if final_45s_triggered
+                                "D1_LEGGED_OUT_RESIDUAL_UNWIND" if pos.get("is_legged_out_residual")
+                                else "FINAL_45S_CAPITAL_RECYCLE_UNWIND" if final_45s_triggered
                                 else "TRAILING_PROFIT_RATCHET_UNWIND" if trailing_ratchet_triggered
                                 else "CONFIRMED_OPPOSITE_BREAKOUT_SALVAGE" if opposite_salvage_triggered
                                 else "STRIKE_RETRACE_SALVAGE" if strike_retrace_triggered
@@ -8380,6 +9047,7 @@ class PolymarketLiveHarvester:
                 except (NotImplementedError, RuntimeError, ValueError):
                     pass
             trigger_notify_event = asyncio.Event()
+            self._main_loop = loop
             if getattr(self, "_fast_trigger_lines", None) is None:
                 from collections import deque as _deque
                 self._fast_trigger_lines = _deque(maxlen=512)
@@ -8482,6 +9150,24 @@ class PolymarketLiveHarvester:
             last_clob_heartbeat = 0.0
             last_mgmt_check = 0.0
             scanned_count = 0
+            pos_ws_task = None
+            if (
+                not self.dry_run
+                and _PolymarketClobMarketWsTracker is not None
+                and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+                and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+                and os.environ.get("PM_ENABLE_HARVESTER_MKT_WS", "1") == "1"
+            ):
+                def _on_ws_recycle_bid(_tok: str, _bb: float) -> None:
+                    self._ws_urgent_recycle_ts = time.time()
+                    loop.call_soon_threadsafe(trigger_notify_event.set)
+
+                self._pos_market_ws = _PolymarketClobMarketWsTracker(
+                    recycle_bid_trigger=0.985,
+                    on_urgent_bid=_on_ws_recycle_bid,
+                )
+                self._pos_market_ws.set_desired_tokens([str(p.get("token_id") or "") for p in self.active_positions.values()])
+                pos_ws_task = asyncio.create_task(self._pos_market_ws.run_forever(lambda: bool(self._shutdown_requested)))
 
             # Proactively pre-warm active hourly market tokens on startup to eliminate hot-path GETs
             self._prewarm_active_market_tokens()
@@ -8615,10 +9301,12 @@ class PolymarketLiveHarvester:
                         self._last_prewarm_minute_key = prewarm_min_key
                         asyncio.create_task(self._prewarm_next_candle_markets())
 
-                # 1c. Periodic collateral balance refresh in background every 20s (async, never blocking hot path)
+                # 1c. Periodic collateral balance refresh in background (60s when ws/user healthy & flat, else 20s)
+                _uws_c = getattr(self.executor, "_user_ws_cache", None)
+                _collat_iv = 60.0 if (not self.active_positions and _uws_c is not None and _uws_c.is_healthy()) else 20.0
                 if not self.dry_run and (
                     getattr(self, "_pending_collateral_refresh", False)
-                    or (now_ts - getattr(self, "_last_collat_poll", 0.0) >= 20.0)
+                    or (now_ts - getattr(self, "_last_collat_poll", 0.0) >= _collat_iv)
                 ):
                     self._pending_collateral_refresh = False
                     self._last_collat_poll = now_ts
@@ -8641,9 +9329,11 @@ class PolymarketLiveHarvester:
                     try:
                         curr_sz = TRIGGER_FILE.stat().st_size
                         if curr_sz < self.last_trigger_file_pos:
-                            trigger_fp.seek(0)
-                            self.last_trigger_file_pos = 0
-                            chunk = trigger_fp.read()
+                            # File was compacted/truncated in place: resume from EOF instead of re-ingesting the
+                            # retained hot tail (old triggers would evict real IDs from seen_shock_ids). IPC covers the gap.
+                            trigger_fp.seek(0, 2)
+                            self.last_trigger_file_pos = trigger_fp.tell()
+                            chunk = b""
                     except Exception:
                         pass
 
@@ -8756,15 +9446,18 @@ class PolymarketLiveHarvester:
                     self._last_d1_cand_poll = now_ts
                     await self._poll_d1_live_box_candidates(now_ts)
 
-                # 3. Monitor open positions (fast 0.20s cadence when a stop/cancel confirmation is armed, else 1.0s)
-                urgent_supervision = any(
-                    p.get("strike_retrace_detected_ts")
-                    or p.get("opposite_breakout_start_ts")
-                    or p.get("low_bid_detected_ts")
-                    or p.get("trail_stop_detected_ts")
-                    or p.get("zero_bid_detected_ts")
-                    or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED", "UNWIND_RETRY_REQUIRED"}
-                    for p in self.active_positions.values()
+                # 3. Monitor open positions (fast 0.20s cadence when a stop/cancel confirmation or WS >=98.5c recycle bid is armed, else 1.0s)
+                urgent_supervision = (
+                    (now_ts - float(getattr(self, "_ws_urgent_recycle_ts", 0.0) or 0.0)) <= 1.5
+                    or any(
+                        p.get("strike_retrace_detected_ts")
+                        or p.get("opposite_breakout_start_ts")
+                        or p.get("low_bid_detected_ts")
+                        or p.get("trail_stop_detected_ts")
+                        or p.get("zero_bid_detected_ts")
+                        or p.get("exit_order_status") in {"STOP_CANCEL_PENDING", "PRE_EXPIRY_CANCEL_PENDING", "FILL_RECONCILIATION_REQUIRED", "PASSIVE_STOP_RESTING", "EXIT_RECOVERY_REQUIRED", "UNWIND_RETRY_REQUIRED"}
+                        for p in self.active_positions.values()
+                    )
                 )
                 mgmt_interval = 0.20 if urgent_supervision else 1.0
                 if now_ts - last_mgmt_check >= mgmt_interval:
@@ -8808,6 +9501,8 @@ class PolymarketLiveHarvester:
             logger.critical("[FATAL] Harvester loop terminated by unhandled exception.", exc_info=True)
             raise
         finally:
+            if 'pos_ws_task' in locals() and pos_ws_task is not None:
+                pos_ws_task.cancel()
             if 'd1_ipc_sock' in locals() and d1_ipc_sock is not None:
                 try:
                     if 'loop' in locals() and loop is not None:

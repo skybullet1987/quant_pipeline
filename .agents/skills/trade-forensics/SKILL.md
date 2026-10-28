@@ -55,14 +55,14 @@ For each trade in `uninspected_losses`:
   ```powershell
   & "C:\Program Files\LibreOffice\program\python.exe" C:\Users\Anton\source\repos\Dominus\audit_losing_trades.py --mark-audited <TRADE_ID> --verdict EXPECTED_LOSS --notes "<concise reason>"
   ```
-- For strategy threshold hypotheses (after running read-only Purged WFO check on `kraken-finland`, without modifying live thresholds):
+- For strategy threshold or execution-sequence hypotheses (automatically queued to `data/polymarket/wfo_hypothesis_queue.jsonl` without modifying live thresholds):
   ```powershell
-  & "C:\Program Files\LibreOffice\program\python.exe" C:\Users\Anton\source\repos\Dominus\audit_losing_trades.py --mark-audited <TRADE_ID> --verdict PARAM_WFO_REQUIRED --notes "<Purged WFO grid metrics & recommendation>"
+  & "C:\Program Files\LibreOffice\program\python.exe" C:\Users\Anton\source\repos\Dominus\audit_losing_trades.py --mark-audited <TRADE_ID> --verdict PARAM_WFO_REQUIRED --classification PARAM_WFO_REQUIRED --wfo-grid "<grid spec>" --notes "<Purged WFO grid metrics & recommendation>"
   ```
-- Only if you fixed and `pytest`-verified a deterministic code/execution bug (`0` free strategy parameters):
+- Only if you fixed and `pytest`-verified a deterministic code/execution bug (`0` free strategy parameters — `--classification PLUMBING_0_PARAM` is enforced by `audit_losing_trades.py` and blocks any `Type 2` threshold tweaks):
   1. Mark each affected trade:
      ```powershell
-     & "C:\Program Files\LibreOffice\program\python.exe" C:\Users\Anton\source\repos\Dominus\audit_losing_trades.py --mark-audited <TRADE_ID> --verdict BUG_FIXED --notes "<what deterministic bug was fixed>"
+     & "C:\Program Files\LibreOffice\program\python.exe" C:\Users\Anton\source\repos\Dominus\audit_losing_trades.py --mark-audited <TRADE_ID> --verdict BUG_FIXED --classification PLUMBING_0_PARAM --notes "<what deterministic bug was fixed>"
      ```
   2. Compile-check and restart `polymarket-live-harvester.service` when flat (`open_positions_count == 0` is enforced automatically):
      ```powershell

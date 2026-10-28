@@ -294,6 +294,43 @@ ASSET_CONFIGS = {
         "log_file": DATA_DIR / "recorder_xrp.log",
         "pid_file": DATA_DIR / "recorder_xrp.pid",
     },
+    "BNB": {
+        "series_slug": "bnb-up-or-down-hourly",
+        "binance_symbol": "BNBUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/bnbusdt@aggTrade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/bnbusdt@aggTrade",
+        "default_shock_threshold": 150_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_bnb.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_bnb.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_bnb.jsonl",
+        "log_file": DATA_DIR / "recorder_bnb.log",
+        "pid_file": DATA_DIR / "recorder_bnb.pid",
+    },
+    "DOGE": {
+        "series_slug": "doge-up-or-down-hourly",
+        "binance_symbol": "DOGEUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/dogeusdt@aggTrade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/dogeusdt@aggTrade",
+        "default_shock_threshold": 75_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_doge.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_doge.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_doge.jsonl",
+        "log_file": DATA_DIR / "recorder_doge.log",
+        "pid_file": DATA_DIR / "recorder_doge.pid",
+    },
+    "HYPE": {
+        "series_slug": "hype-up-or-down-hourly",
+        "binance_symbol": "HYPEUSDT",
+        "binance_spot_ws": "",
+        "binance_futures_ws": "wss://fstream.binance.com:443/market/ws/hypeusdt@aggTrade",
+        "futures_only_ref": True,
+        "default_shock_threshold": 75_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_hype.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_hype.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_hype.jsonl",
+        "log_file": DATA_DIR / "recorder_hype.log",
+        "pid_file": DATA_DIR / "recorder_hype.pid",
+    },
 }
 
 logger = logging.getLogger("PolymarketDualFeed1H")
@@ -322,6 +359,13 @@ def _broadcast_fast_trigger_ipc(data: bytes) -> None:
         if (now_u - _IPC_LAST_WARN_TS) >= 60.0:
             _IPC_LAST_WARN_TS = now_u
             logger.debug(f"[FAST IPC NOTICE] Abstract socket send missed ({_IPC_SEND_FAILURES} total, disk fallback active): {e}")
+
+
+def _dumps_compact(payload: Dict[str, Any]) -> str:
+    """Compact whitespace-free JSON serialization for high-frequency JSONL telemetry."""
+    if _orjson is not None:
+        return _orjson.dumps(payload).decode("utf-8")
+    return json.dumps(payload, separators=(",", ":"))
 
 
 def _atomic_append_jsonl(path: Path, line_str: str, broadcast_ipc: bool = True) -> None:
@@ -376,6 +420,7 @@ def _persist_trigger_nonblocking(path: Path, line_str: str) -> None:
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError:
             os.close(fd)
+            fd = -1  # sentinel: already closed; finally must not unlock/close a recycled fd number
             try:
                 loop = asyncio.get_running_loop()
                 loop.run_in_executor(None, _atomic_append_jsonl, path, line_str, False)
@@ -387,15 +432,16 @@ def _persist_trigger_nonblocking(path: Path, line_str: str) -> None:
             pass
         os.write(fd, data)
     finally:
-        try:
-            import fcntl
-            fcntl.flock(fd, fcntl.LOCK_UN)
-        except Exception:
-            pass
-        try:
-            os.close(fd)
-        except OSError:
-            pass
+        if fd >= 0:
+            try:
+                import fcntl
+                fcntl.flock(fd, fcntl.LOCK_UN)
+            except Exception:
+                pass
+            try:
+                os.close(fd)
+            except OSError:
+                pass
 
 def setup_logging(asset: str = "BTC"):
     cfg = ASSET_CONFIGS.get(asset.upper(), ASSET_CONFIGS["BTC"])
@@ -529,14 +575,12 @@ class L2OrderBook:
         self._check_top_changes(now_ts)
 
     def top_of_book(self, obs_ts: Optional[float] = None) -> Dict[str, Any]:
-        """Lightweight O(n) top-of-book snapshot for the 25ms shared-memory tick bus (no sorting, no asserts)."""
+        """Lightweight O(1) cached top-of-book snapshot for the 25ms shared-memory tick bus."""
         t_now = obs_ts if obs_ts is not None else time.time()
-        best_bid = max(self.bids) if self.bids else 0.0
-        best_ask = min(self.asks) if self.asks else 1.0
-        bid_sz = self.bids.get(best_bid, 0.0) if self.bids else 0.0
-        ask_sz = self.asks.get(best_ask, 0.0) if self.asks else 0.0
-        denom = bid_sz + ask_sz
         sorted_bids, sorted_asks = self._sorted_levels()
+        best_bid, bid_sz = sorted_bids[0] if sorted_bids else (0.0, 0.0)
+        best_ask, ask_sz = sorted_asks[0] if sorted_asks else (1.0, 0.0)
+        denom = bid_sz + ask_sz
         return {
             "best_bid": round(best_bid, 4),
             "best_ask": round(best_ask, 4),
@@ -547,11 +591,16 @@ class L2OrderBook:
             "obi_l1": round((bid_sz - ask_sz) / denom, 3) if denom > 0 else 0.0,
             "age_book_ms": round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None,
             "age_ask_ms": round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None,
-            "raw_top_bids": sorted_bids[:5],
-            "raw_top_asks": sorted_asks[:5],
+            "raw_top_bids": sorted_bids[:15],
+            "raw_top_asks": sorted_asks[:15],
         }
 
-    def get_metrics(self, obs_ts: Optional[float] = None, fee_rate: float = DEFAULT_FEE_RATE) -> Dict[str, Any]:
+    def get_metrics(
+        self,
+        obs_ts: Optional[float] = None,
+        fee_rate: float = DEFAULT_FEE_RATE,
+        compact: bool = False,
+    ) -> Dict[str, Any]:
         t_now = obs_ts if obs_ts is not None else time.time()
         sorted_bids, sorted_asks = self._sorted_levels()
 
@@ -595,8 +644,9 @@ class L2OrderBook:
 
         # Crossing Cost & Execution Surface across research ticket sizes (Points 1 & 8)
         # Note: EV_terminal(C) = p_OOS - EffectivePrice(C). Using q_mid measures CrossingCost(C) = EffectivePrice(C) - q_mid.
-        execution_surface = {}
-        for notional in TICKET_CAPACITY_LEVELS:
+        execution_surface: Dict[str, Any] = {}
+        cap_levels = (20.0, 25.0, 50.0) if compact else TICKET_CAPACITY_LEVELS
+        for notional in cap_levels:
             dollar_spent = 0.0
             shares_bought = 0.0
             total_fees = 0.0
@@ -619,10 +669,14 @@ class L2OrderBook:
                 if vwap_val < best_ask - 1e-4:
                     vwap_val = round(best_ask, 4)
                 execution_surface[f"vwap_${int(notional)}"] = vwap_val
-                execution_surface[f"effective_price_${int(notional)}"] = effective_px
-                execution_surface[f"crossing_cost_${int(notional)}"] = crossing_cost
-                execution_surface[f"fill_fees_${int(notional)}"] = round(total_fees, 5)
-            else:
+                if not compact:
+                    execution_surface[f"effective_price_${int(notional)}"] = effective_px
+                    execution_surface[f"crossing_cost_${int(notional)}"] = crossing_cost
+                    execution_surface[f"fill_fees_${int(notional)}"] = round(total_fees, 5)
+                elif notional == 50.0:
+                    execution_surface["effective_price_$50"] = effective_px
+                    execution_surface["fill_fees_$50"] = round(total_fees, 5)
+            elif not compact:
                 execution_surface[f"vwap_${int(notional)}"] = None
                 execution_surface[f"effective_price_${int(notional)}"] = None
                 execution_surface[f"crossing_cost_${int(notional)}"] = None
@@ -632,6 +686,30 @@ class L2OrderBook:
         age_book_ms = round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None
         age_bid_ms = round((t_now - self.last_best_bid_change_ts) * 1000.0, 1) if self.last_best_bid_change_ts > 0 else None
         age_ask_ms = round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None
+
+        if compact:
+            return {
+                "best_bid": round(best_bid, 4),
+                "best_ask": round(best_ask, 4),
+                "bid_size_l1": round(bid_sz_1, 2),
+                "ask_size_l1": round(ask_sz_1, 2),
+                "spread": round(spread, 4),
+                "q_mid": round(q_mid, 4),
+                "q_micro": round(q_micro, 4),
+                "obi_l1": round(obi_l1, 3),
+                "obi_depth": round(obi_depth, 3),
+                "book_sequence_id": self.book_sequence_id,
+                "book_timestamp": round(self.last_book_update_ts, 3) if self.last_book_update_ts > 0 else 0.0,
+                "is_crossed": is_crossed,
+                "age_book_ms": age_book_ms,
+                "age_bid_ms": age_bid_ms,
+                "age_ask_ms": age_ask_ms,
+                "taker_fee": round(taker_fee, 5),
+                "executable_hurdle": round(executable_hurdle, 5),
+                **execution_surface,
+                "raw_top_bids": sorted_bids[:10],
+                "raw_top_asks": sorted_asks[:10],
+            }
 
         return {
             "best_bid": round(best_bid, 4),
@@ -654,8 +732,8 @@ class L2OrderBook:
             "taker_fee": round(taker_fee, 5),
             "executable_hurdle": round(executable_hurdle, 5),
             **execution_surface,
-            "raw_top_bids": sorted_bids[:5],
-            "raw_top_asks": sorted_asks[:5]
+            "raw_top_bids": sorted_bids[:15],
+            "raw_top_asks": sorted_asks[:15]
         }
 
 
@@ -669,6 +747,7 @@ class PolymarketDualFeed1HRecorder:
         self.binance_symbol = self.cfg["binance_symbol"]
         self.binance_spot_ws = self.cfg["binance_spot_ws"]
         self.binance_futures_ws = self.cfg["binance_futures_ws"]
+        self.futures_only_ref: bool = bool(self.cfg.get("futures_only_ref", False))
         self.shock_threshold_usd = shock_threshold if shock_threshold is not None else self.cfg["default_shock_threshold"]
         
         self.telemetry_file = self.cfg["telemetry_file"]
@@ -680,6 +759,8 @@ class PolymarketDualFeed1HRecorder:
         self.session: Optional[aiohttp.ClientSession] = None
         self.current_market: Optional[Dict[str, Any]] = None
         self.market_15m: Optional[Dict[str, Any]] = None
+        self.market_5m: Optional[Dict[str, Any]] = None
+        self.market_4h: Optional[Dict[str, Any]] = None
         self.books: Dict[str, L2OrderBook] = {}
 
         # Trade queues: (t_local_ns, exchange_event_ms, exchange_trade_ms, notional, is_buyer, px)
@@ -717,11 +798,20 @@ class PolymarketDualFeed1HRecorder:
 
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         self.telemetry_15m_file: Path = DATA_DIR / f"polymarket_15m_telemetry_{self.asset.lower()}.jsonl"
+        self.telemetry_5m_file: Path = DATA_DIR / f"polymarket_5m_telemetry_{self.asset.lower()}.jsonl"
+        self.telemetry_4h_file: Path = DATA_DIR / f"polymarket_4h_telemetry_{self.asset.lower()}.jsonl"
+        self._last_telem_bbo_by_hz: Dict[str, Tuple[float, Tuple[Any, ...]]] = {}
         self._spot_1m_bucket: int = 0
         self._last_1m_spot: float = 0.0
-        self._rolling_sigma_1h: float = (
-            0.0050 if self.asset == "BTC" else (0.0075 if self.asset == "SOL" else (0.0080 if self.asset == "XRP" else 0.0068))
-        )
+        self._rolling_sigma_1h: float = {
+            "BTC": 0.0050,
+            "ETH": 0.0068,
+            "BNB": 0.0068,
+            "SOL": 0.0075,
+            "XRP": 0.0080,
+            "DOGE": 0.0095,
+            "HYPE": 0.0110,
+        }.get(self.asset, 0.0068)
 
         # v3.3 Coinbase composite venue feed (fail-open) + /dev/shm fast tick bus
         self.coinbase_product = f"{self.asset}-USD"
@@ -937,26 +1027,33 @@ class PolymarketDualFeed1HRecorder:
                     "UP": snap["UP"],
                     "DOWN": snap["DOWN"],
                 }
-        m15 = getattr(self, "market_15m", None)
-        if m15 and "UP_15M" in self.books and "DOWN_15M" in self.books:
-            snap["m15"] = {
-                "market_id": m15.get("market_id"),
-                "finalized_15m_open": m15.get("finalized_15m_open"),
-                "authoritative_chainlink_open": m15.get("authoritative_chainlink_open"),
-                "UP": dict(self.books["UP_15M"].top_of_book(now), token_id=m15["tokens"].get("UP")),
-                "DOWN": dict(self.books["DOWN_15M"].top_of_book(now), token_id=m15["tokens"].get("DOWN")),
-            }
-            mid15 = str(m15.get("market_id"))
-            markets_map[mid15] = {
-                "market_id": mid15,
-                "asset": self.asset,
-                "horizon": "15m",
-                "timestamp_unix": now,
-                "spot_price": self.spot_price,
-                "futures_price": self.futures_price,
-                "UP": snap["m15"]["UP"],
-                "DOWN": snap["m15"]["DOWN"],
-            }
+        for hz, attr_n, up_k, dn_k, snap_k in (
+            ("5m", "market_5m", "UP_5M", "DOWN_5M", "m5"),
+            ("15m", "market_15m", "UP_15M", "DOWN_15M", "m15"),
+            ("4h", "market_4h", "UP_4H", "DOWN_4H", "h4"),
+        ):
+            mh = getattr(self, attr_n, None)
+            if mh and up_k in self.books and dn_k in self.books:
+                snap[snap_k] = {
+                    "market_id": mh.get("market_id"),
+                    "horizon": hz,
+                    "finalized_open": mh.get("finalized_open", mh.get("finalized_15m_open")),
+                    "finalized_15m_open": mh.get("finalized_15m_open"),
+                    "authoritative_chainlink_open": mh.get("authoritative_chainlink_open"),
+                    "UP": dict(self.books[up_k].top_of_book(now), token_id=mh["tokens"].get("UP")),
+                    "DOWN": dict(self.books[dn_k].top_of_book(now), token_id=mh["tokens"].get("DOWN")),
+                }
+                mid_h = str(mh.get("market_id"))
+                markets_map[mid_h] = {
+                    "market_id": mid_h,
+                    "asset": self.asset,
+                    "horizon": hz,
+                    "timestamp_unix": now,
+                    "spot_price": self.spot_price,
+                    "futures_price": self.futures_price,
+                    "UP": snap[snap_k]["UP"],
+                    "DOWN": snap[snap_k]["DOWN"],
+                }
         snap["markets"] = markets_map
         return snap
 
@@ -1002,23 +1099,29 @@ class PolymarketDualFeed1HRecorder:
                 if isinstance(v, dict) and (now_ts - float(v.get("timestamp_unix", 0.0))) <= 60.0
             }
             markets_map[str(market_id)] = mkt_entry
-            if getattr(self, "market_15m", None) and "UP_15M" in self.books and "DOWN_15M" in self.books:
-                m15 = self.market_15m
-                m15_id = str(m15.get("market_id"))
-                up15_m = self.books["UP_15M"].get_metrics(obs_ts=now_ts, fee_rate=m15.get("fee_metadata", {}).get("fee_rate_market", 0.07))
-                down15_m = self.books["DOWN_15M"].get_metrics(obs_ts=now_ts, fee_rate=m15.get("fee_metadata", {}).get("fee_rate_market", 0.07))
-                up15_m["token_id"] = str(m15["tokens"].get("UP"))
-                down15_m["token_id"] = str(m15["tokens"].get("DOWN"))
-                markets_map[m15_id] = {
-                    "market_id": m15_id,
-                    "asset": self.asset,
-                    "horizon": "15m",
-                    "timestamp_unix": now_ts,
-                    "spot_price": self.spot_price,
-                    "futures_price": self.futures_price,
-                    "UP": up15_m,
-                    "DOWN": down15_m,
-                }
+            for hz, attr_n, up_k, dn_k in (
+                ("5m", "market_5m", "UP_5M", "DOWN_5M"),
+                ("15m", "market_15m", "UP_15M", "DOWN_15M"),
+                ("4h", "market_4h", "UP_4H", "DOWN_4H"),
+            ):
+                mh = getattr(self, attr_n, None)
+                if mh and up_k in self.books and dn_k in self.books:
+                    mh_id = str(mh.get("market_id"))
+                    f_hz = mh.get("fee_metadata", {}).get("fee_rate_market", 0.07)
+                    uph_m = self.books[up_k].get_metrics(obs_ts=now_ts, fee_rate=f_hz)
+                    dnh_m = self.books[dn_k].get_metrics(obs_ts=now_ts, fee_rate=f_hz)
+                    uph_m["token_id"] = str(mh["tokens"].get("UP"))
+                    dnh_m["token_id"] = str(mh["tokens"].get("DOWN"))
+                    markets_map[mh_id] = {
+                        "market_id": mh_id,
+                        "asset": self.asset,
+                        "horizon": hz,
+                        "timestamp_unix": now_ts,
+                        "spot_price": self.spot_price,
+                        "futures_price": self.futures_price,
+                        "UP": uph_m,
+                        "DOWN": dnh_m,
+                    }
             payload = {
                 **mkt_entry,
                 "markets": markets_map,
@@ -1135,7 +1238,12 @@ class PolymarketDualFeed1HRecorder:
         """Enforces: series_slug == self.series_slug and market_duration == 3600s."""
         session = await self.get_session()
         try:
-            url = f"{GAMMA_API_URL}/events?series_slug={self.series_slug}&limit=20&closed=false"
+            now = datetime.now(timezone.utc)
+            now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
+            url = (
+                f"{GAMMA_API_URL}/events?series_slug={self.series_slug}"
+                f"&limit=20&closed=false&end_date_min={now_iso}&order=endDate&ascending=true"
+            )
             async with session.get(url) as resp:
                 if resp.status == 200:
                     events = await resp.json()
@@ -1193,14 +1301,17 @@ class PolymarketDualFeed1HRecorder:
                     url_spot = f"{BINANCE_REST_URL}/api/v3/ticker/price?symbol={self.binance_symbol}"
                     url_fut = f"{BINANCE_FUTURES_REST_URL}/fapi/v1/ticker/price?symbol={self.binance_symbol}"
                     try:
-                        async with session.get(url_spot) as resp_spot:
-                            if resp_spot.status == 200:
-                                data_spot = await resp_spot.json()
-                                self.spot_price = float(data_spot["price"])
+                        if not self.futures_only_ref:
+                            async with session.get(url_spot) as resp_spot:
+                                if resp_spot.status == 200:
+                                    data_spot = await resp_spot.json()
+                                    self.spot_price = float(data_spot["price"])
                         async with session.get(url_fut) as resp_fut:
                             if resp_fut.status == 200:
                                 data_fut = await resp_fut.json()
                                 self.futures_price = float(data_fut["price"])
+                                if self.futures_only_ref and self.futures_price > 0:
+                                    self.spot_price = self.futures_price
                                 self.update_basis()
                     except Exception:
                         pass
@@ -1235,22 +1346,28 @@ class PolymarketDualFeed1HRecorder:
             logger.error(f"Error discovering 1H market: {e}")
         return None
 
-    async def discover_nearest_15m_market(self) -> Optional[Dict[str, Any]]:
+    async def discover_nearest_twap_market(self, horizon: str = "15m") -> Optional[Dict[str, Any]]:
         """
-        Pillar 5B: Discovers active 15m sub-hourly market from Gamma API.
-        Tries btc-up-or-down-15m / eth-up-or-down-15m and btc-15m / eth-15m.
-        Fetches finalized 15m Binance Spot open strike (interval=15m).
+        Discovers active 5m, 15m, or 4h Chainlink-TWAP candle market from Gamma API.
+        Fetches finalized Binance candle open + 60s TWAP + authoritative 15-digit Chainlink openPrice.
         """
+        hz = str(horizon).lower()
+        dur_sec = {"5m": 300, "15m": 900, "4h": 14400}.get(hz, 900)
+        max_secs = {"5m": 600, "15m": 1800, "4h": 28800}.get(hz, 1800)
         session = await self.get_session()
         asset_lower = self.asset.lower()
         slug_candidates = [
-            f"{asset_lower}-up-or-down-15m",
-            f"{asset_lower}-15m",
+            f"{asset_lower}-up-or-down-{hz}",
+            f"{asset_lower}-{hz}",
         ]
         now = datetime.now(timezone.utc)
+        now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         for s_slug in slug_candidates:
             try:
-                url = f"{GAMMA_API_URL}/events?series_slug={s_slug}&limit=10&closed=false"
+                url = (
+                    f"{GAMMA_API_URL}/events?series_slug={s_slug}"
+                    f"&limit=10&closed=false&end_date_min={now_iso}&order=endDate&ascending=true"
+                )
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         continue
@@ -1266,7 +1383,7 @@ class PolymarketDualFeed1HRecorder:
                             continue
                         end_dt = datetime.fromisoformat(m_end_str.replace("Z", "+00:00"))
                         secs_left = (end_dt - now).total_seconds()
-                        if 0 < secs_left <= 1800:
+                        if 0 < secs_left <= max_secs:
                             candidates.append((secs_left, event, m, end_dt, m_end_str))
                     if not candidates:
                         continue
@@ -1279,7 +1396,7 @@ class PolymarketDualFeed1HRecorder:
                     outcomes_raw = m.get("outcomes", '["Up", "Down"]')
                     outcomes = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
 
-                    candle_open_ts = int(end_dt.timestamp() - 900)
+                    candle_open_ts = int(end_dt.timestamp() - dur_sec)
                     candle_close_ts = int(end_dt.timestamp())
 
                     fee_schedule = m.get("feeSchedule", {})
@@ -1292,16 +1409,17 @@ class PolymarketDualFeed1HRecorder:
                         raw_taker = float(m.get("takerBaseFee"))
                         fee_rate = raw_taker / 10000.0 if raw_taker > 1.0 else raw_taker
 
-                    open_15m, _ = await self.fetch_finalized_binance_candle(candle_open_ts, interval="15m")
-                    twap_60s_15m = await self.fetch_binance_60s_twap_open(candle_open_ts)
-                    auth_cl_open_15m = await self.fetch_authoritative_chainlink_open_15m(candle_open_ts, candle_close_ts)
-                    cl_open_15m = auth_cl_open_15m if auth_cl_open_15m > 0.0 else 0.0
-                    if cl_open_15m <= 0.0 and abs(time.time() - candle_open_ts) <= 35.0:
-                        cl_open_15m = await self.fetch_polygon_chainlink_spot()
+                    open_px, _ = await self.fetch_finalized_binance_candle(candle_open_ts, interval=hz)
+                    twap_60s_px = await self.fetch_binance_60s_twap_open(candle_open_ts)
+                    auth_cl_open = await self.fetch_authoritative_chainlink_open(candle_open_ts, candle_close_ts, horizon=hz)
+                    cl_open = auth_cl_open if auth_cl_open > 0.0 else 0.0
+                    if cl_open <= 0.0 and abs(time.time() - candle_open_ts) <= 35.0:
+                        cl_open = await self.fetch_polygon_chainlink_spot()
 
                     return {
                         "market_id": m_id,
                         "condition_id": condition_id,
+                        "horizon": hz,
                         "title": event.get("title"),
                         "question": m.get("question"),
                         "slug": event.get("slug"),
@@ -1316,14 +1434,15 @@ class PolymarketDualFeed1HRecorder:
                             "DOWN": tokens[1]
                         },
                         "outcomes": outcomes,
-                        "finalized_15m_open": open_15m,
-                        "twap_60s_open": twap_60s_15m,
-                        "authoritative_chainlink_open": auth_cl_open_15m or None,
-                        "chainlink_open_spot": cl_open_15m or None,
+                        "finalized_open": open_px,
+                        "finalized_15m_open": open_px,
+                        "twap_60s_open": twap_60s_px,
+                        "authoritative_chainlink_open": auth_cl_open or None,
+                        "chainlink_open_spot": cl_open or None,
                         "fee_metadata": {
                             "fee_rate_market": fee_rate,
                             "fee_exponent": fee_exp,
-                            "fee_source": "gamma_15m_crypto_fees",
+                            "fee_source": f"gamma_{hz}_crypto_fees",
                             "fee_enabled": True,
                             "fee_formula_version": "crypto_fees_v2",
                             "condition_id": condition_id,
@@ -1331,25 +1450,37 @@ class PolymarketDualFeed1HRecorder:
                         }
                     }
             except Exception as e:
-                logger.debug(f"15m discovery notice for {s_slug}: {e}")
+                logger.debug(f"{hz} discovery notice for {s_slug}: {e}")
         return None
 
-    async def fetch_authoritative_chainlink_open_15m(self, candle_open_ts: int, candle_close_ts: int) -> float:
+    async def discover_nearest_15m_market(self) -> Optional[Dict[str, Any]]:
+        return await self.discover_nearest_twap_market("15m")
+
+    async def discover_nearest_5m_market(self) -> Optional[Dict[str, Any]]:
+        return await self.discover_nearest_twap_market("5m")
+
+    async def discover_nearest_4h_market(self) -> Optional[Dict[str, Any]]:
+        return await self.discover_nearest_twap_market("4h")
+
+    async def fetch_authoritative_chainlink_open(
+        self, candle_open_ts: int, candle_close_ts: int, horizon: str = "15m"
+    ) -> float:
         """
         Queries Polymarket's exact 60s-TWAP endpoint (`twapEnabled=true&twapLookbackSeconds=60`)
-        to lock the 15-digit Chainlink `priceToBeat` at `t = +2s`, with finalized preceding-5m
-        Gamma `eventMetadata.finalPrice` fallback. Never uses un-TWAP'd `crypto-price` spot.
+        for `5m` (`fiveminute`), `15m` (`fifteen`), or `4h` (`fourhour`) to lock the 15-digit
+        Chainlink `priceToBeat` at `t = +2s`, with finalized preceding-5m Gamma `finalPrice` fallback.
         """
         now_t = time.time()
         if now_t < float(candle_open_ts) + 2.0:
             return 0.0
+        variant = {"5m": "fiveminute", "15m": "fifteen", "4h": "fourhour"}.get(str(horizon).lower(), "fifteen")
         session = await self.get_session()
         start_iso = datetime.fromtimestamp(int(candle_open_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         end_iso = datetime.fromtimestamp(int(candle_close_ts), tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         twap_url = (
             f"https://polymarket.com/api/crypto/crypto-price"
             f"?symbol={self.asset.upper()}&eventStartTime={start_iso}"
-            f"&variant=fifteen&endDate={end_iso}&twapEnabled=true&twapLookbackSeconds=60"
+            f"&variant={variant}&endDate={end_iso}&twapEnabled=true&twapLookbackSeconds=60"
         )
         try:
             async with session.get(twap_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
@@ -1361,8 +1492,8 @@ class PolymarketDualFeed1HRecorder:
                             if math.isfinite(val) and val > 0.0:
                                 return val
         except Exception as e:
-            logger.debug(f"[{self.asset}] Authoritative 15m TWAP query note: {e}")
-        if now_t >= float(candle_open_ts) + 335.0:
+            logger.debug(f"[{self.asset}] Authoritative {horizon} TWAP query note: {e}")
+        if now_t >= float(candle_open_ts) + 35.0:
             try:
                 g_url = f"{GAMMA_API_URL}/events?slug={self.asset.lower()}-updown-5m-{int(candle_open_ts) - 300}"
                 async with session.get(g_url, timeout=aiohttp.ClientTimeout(total=3.5)) as resp:
@@ -1380,6 +1511,9 @@ class PolymarketDualFeed1HRecorder:
                 pass
         return 0.0
 
+    async def fetch_authoritative_chainlink_open_15m(self, candle_open_ts: int, candle_close_ts: int) -> float:
+        return await self.fetch_authoritative_chainlink_open(candle_open_ts, candle_close_ts, "15m")
+
     async def fetch_binance_60s_twap_open(self, candle_open_ts: int) -> float:
         """
         Pulls the 60 finalized 1-second Binance Spot klines over [candle_open_ts - 60, candle_open_ts)
@@ -1388,22 +1522,24 @@ class PolymarketDualFeed1HRecorder:
         """
         session = await self.get_session()
         start_ms = (int(candle_open_ts) - 60) * 1000
+        if not self.futures_only_ref:
+            try:
+                url_1s = (
+                    f"{BINANCE_REST_URL}/api/v3/klines"
+                    f"?symbol={self.binance_symbol}&interval=1s&startTime={start_ms}&limit=60"
+                )
+                async with session.get(url_1s) as resp_1s:
+                    if resp_1s.status == 200:
+                        data_1s = await resp_1s.json()
+                        if isinstance(data_1s, list) and len(data_1s) >= 30:
+                            twap = sum((float(k[1]) + float(k[4])) / 2.0 for k in data_1s) / len(data_1s)
+                            return round(twap, 4)
+            except Exception as e_1s:
+                logger.debug(f"1s TWAP fetch fallback notice for {self.binance_symbol}: {e_1s}")
         try:
-            url_1s = (
-                f"{BINANCE_REST_URL}/api/v3/klines"
-                f"?symbol={self.binance_symbol}&interval=1s&startTime={start_ms}&limit=60"
-            )
-            async with session.get(url_1s) as resp_1s:
-                if resp_1s.status == 200:
-                    data_1s = await resp_1s.json()
-                    if isinstance(data_1s, list) and len(data_1s) >= 30:
-                        twap = sum((float(k[1]) + float(k[4])) / 2.0 for k in data_1s) / len(data_1s)
-                        return round(twap, 4)
-        except Exception as e_1s:
-            logger.debug(f"1s TWAP fetch fallback notice for {self.binance_symbol}: {e_1s}")
-        try:
+            kline_base = f"{BINANCE_FUTURES_REST_URL}/fapi/v1/klines" if self.futures_only_ref else f"{BINANCE_REST_URL}/api/v3/klines"
             url = (
-                f"{BINANCE_REST_URL}/api/v3/klines"
+                f"{kline_base}"
                 f"?symbol={self.binance_symbol}&interval=1m&startTime={start_ms}&limit=1"
             )
             async with session.get(url) as resp:
@@ -1422,13 +1558,22 @@ class PolymarketDualFeed1HRecorder:
     async def fetch_finalized_binance_candle(
         self, candle_open_ts: int, interval: str = "1h"
     ) -> Tuple[float, float]:
-        """Pulls exact finalized Binance Spot 1H or 15M candle open and close prices."""
+        """Pulls exact finalized Binance Spot (or Futures when futures_only_ref) 5m, 15m, 1h, or 4h candle open and close prices."""
         session = await self.get_session()
-        binance_interval = "15m" if str(interval).lower() in ("15m", "900s") else "1h"
+        iv_low = str(interval).lower()
+        if iv_low in ("5m", "300s"):
+            binance_interval = "5m"
+        elif iv_low in ("15m", "900s"):
+            binance_interval = "15m"
+        elif iv_low in ("4h", "14400s"):
+            binance_interval = "4h"
+        else:
+            binance_interval = "1h"
         try:
             start_ms = int(candle_open_ts) * 1000
+            kline_base = f"{BINANCE_FUTURES_REST_URL}/fapi/v1/klines" if self.futures_only_ref else f"{BINANCE_REST_URL}/api/v3/klines"
             url = (
-                f"{BINANCE_REST_URL}/api/v3/klines"
+                f"{kline_base}"
                 f"?symbol={self.binance_symbol}&interval={binance_interval}&startTime={start_ms}&limit=1"
             )
             async with session.get(url) as resp:
@@ -1439,7 +1584,7 @@ class PolymarketDualFeed1HRecorder:
                         close_px = float(data[0][4])
                         return open_px, close_px
         except Exception as e:
-            logger.error(f"Failed to fetch Binance Spot {binance_interval} candle for {self.binance_symbol}: {e}")
+            logger.error(f"Failed to fetch Binance {binance_interval} candle for {self.binance_symbol}: {e}")
         return 0.0, 0.0
 
     async def verify_and_log_resolution(self, market: Dict[str, Any], max_polls: int = 60, poll_interval_sec: float = 30.0):
@@ -1457,7 +1602,8 @@ class PolymarketDualFeed1HRecorder:
             return
         logged_set.add(m_id_str)
         duration = int(market.get("candle_close_ts", 0)) - int(market.get("candle_open_ts", 0))
-        horizon = str(market.get("horizon") or ("15m" if 0 < duration <= 900 else "1h"))
+        default_hz = "5m" if 0 < duration <= 300 else ("15m" if 0 < duration <= 900 else ("4h" if duration >= 10800 else "1h"))
+        horizon = str(market.get("horizon") or default_hz)
         logger.info(f"[*] Awaiting finalized {horizon} resolution for market {market['market_id']} ({market['title']})...")
         await asyncio.sleep(6.0)
         open_px, close_px = await self.fetch_finalized_binance_candle(market["candle_open_ts"], interval=horizon)
@@ -1515,6 +1661,7 @@ class PolymarketDualFeed1HRecorder:
             "title": market["title"],
             "candle_open_ts": market["candle_open_ts"],
             "candle_close_ts": market["candle_close_ts"],
+            "authoritative_chainlink_open": market.get("authoritative_chainlink_open"),
             "binance_spot_open": open_px,
             "binance_spot_close": close_px,
             "candle_return_pct": round(ret_pct, 4),
@@ -1550,6 +1697,9 @@ class PolymarketDualFeed1HRecorder:
 
     async def stream_binance_spot(self):
         """Tokyo-latency microsecond Binance Spot aggTrade stream (Polymarket Settlement Ref)."""
+        if self.futures_only_ref or not self.binance_spot_ws:
+            logger.info(f"[{self.asset}] futures_only_ref active; skipping Binance Spot WS (using Binance Futures + Coinbase USD).")
+            return
         while self.running:
             try:
                 logger.info(f"Connecting to Binance Spot aggTrade ({self.binance_spot_ws})...")
@@ -1599,6 +1749,9 @@ class PolymarketDualFeed1HRecorder:
                         notional = px * sz
 
                         self.futures_price = px
+                        if self.futures_only_ref:
+                            self.spot_price = px
+                            self._update_rolling_sigma(px)
                         self.update_basis()
                         self.futures_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
 
@@ -1816,7 +1969,6 @@ class PolymarketDualFeed1HRecorder:
                     "last_shock_dir": shock_dir,
                     "last_shock_z_btc": round(shock_z, 4),
                 }
-                self._publish_btc_lead_state(vol_100ms, ofi, self.get_delta_basis_100ms(), shock_dir, shock_z, force=True)
 
             # v3.4 cross-asset fields. BTC direction / z_btc are only attached when BTC actually fired a
             # shock within LEAD_STATE_MAX_AGE_MS (fail-open otherwise, so 100ms BTC noise never vetoes ETH).
@@ -1928,13 +2080,7 @@ class PolymarketDualFeed1HRecorder:
                     "DOWN": pre_shock_down
                 }
             }
-            line_1h = ""
-            try:
-                _, line_1h = _dispatch_trigger_fast(TRIGGER_FILE, immediate_trigger)
-            except Exception as trig_err:
-                logger.error(f"Failed to broadcast 1h trigger: {trig_err}")
-
-            # Pillar 5B: Emit 15m sub-hourly shock trigger if active (IPC broadcast BEFORE disk writes)
+            # Pillar 5B: Emit 15m sub-hourly shock trigger FIRST (fastest decay, primary live sleeve) BEFORE 1h & disk writes
             line_15m = ""
             if getattr(self, "market_15m", None) and "UP_15M" in self.books and "DOWN_15M" in self.books:
                 try:
@@ -2017,6 +2163,15 @@ class PolymarketDualFeed1HRecorder:
                         _, line_15m = _dispatch_trigger_fast(TRIGGER_FILE, trigger_15m)
                 except Exception as ex_15m:
                     logger.debug(f"Notice: 15m shock emit skipped: {ex_15m}")
+
+            line_1h = ""
+            try:
+                _, line_1h = _dispatch_trigger_fast(TRIGGER_FILE, immediate_trigger)
+            except Exception as trig_err:
+                logger.error(f"Failed to broadcast 1h trigger: {trig_err}")
+
+            if self.asset == "BTC":
+                self._publish_btc_lead_state(vol_100ms, ofi, delta_basis_100ms, shock_dir, shock_z, force=True)
 
             if line_1h:
                 try:
@@ -2178,21 +2333,26 @@ class PolymarketDualFeed1HRecorder:
                 self.books["DOWN"] = L2OrderBook(down_token)
 
             subscribed_tokens: Dict[str, str] = {up_token: "UP", down_token: "DOWN"}
-            if not getattr(self, "market_15m", None):
-                try:
-                    self.market_15m = await self.discover_nearest_15m_market()
-                except Exception:
-                    pass
-
-            if getattr(self, "market_15m", None) and "tokens" in self.market_15m:
-                up_15 = str(self.market_15m["tokens"]["UP"])
-                down_15 = str(self.market_15m["tokens"]["DOWN"])
-                if "UP_15M" not in self.books or getattr(self.books["UP_15M"], "token_id", None) != up_15:
-                    self.books["UP_15M"] = L2OrderBook(up_15)
-                if "DOWN_15M" not in self.books or getattr(self.books["DOWN_15M"], "token_id", None) != down_15:
-                    self.books["DOWN_15M"] = L2OrderBook(down_15)
-                subscribed_tokens[up_15] = "UP_15M"
-                subscribed_tokens[down_15] = "DOWN_15M"
+            for hz, attr_n, up_k, dn_k in (
+                ("5m", "market_5m", "UP_5M", "DOWN_5M"),
+                ("15m", "market_15m", "UP_15M", "DOWN_15M"),
+                ("4h", "market_4h", "UP_4H", "DOWN_4H"),
+            ):
+                if not getattr(self, attr_n, None):
+                    try:
+                        setattr(self, attr_n, await self.discover_nearest_twap_market(hz))
+                    except Exception:
+                        pass
+                mh = getattr(self, attr_n, None)
+                if mh and "tokens" in mh:
+                    up_h = str(mh["tokens"]["UP"])
+                    dn_h = str(mh["tokens"]["DOWN"])
+                    if up_k not in self.books or getattr(self.books[up_k], "token_id", None) != up_h:
+                        self.books[up_k] = L2OrderBook(up_h)
+                    if dn_k not in self.books or getattr(self.books[dn_k], "token_id", None) != dn_h:
+                        self.books[dn_k] = L2OrderBook(dn_h)
+                    subscribed_tokens[up_h] = up_k
+                    subscribed_tokens[dn_h] = dn_k
 
             try:
                 sub_assets = list(subscribed_tokens.keys())
@@ -2239,13 +2399,22 @@ class PolymarketDualFeed1HRecorder:
                             self.clob_ws_connected = False
                             break
 
-                        # Check if 15M market reached expiry
-                        if getattr(self, "market_15m", None) and (self.market_15m["end_dt"] - now_utc).total_seconds() <= 0:
-                            logger.info(f"[*] 15M Market {self.market_15m['market_id']} reached expiry. Cycling to next.")
-                            asyncio.create_task(self.verify_and_log_resolution(self.market_15m))
-                            self.market_15m = None
-                            self.books.pop("UP_15M", None)
-                            self.books.pop("DOWN_15M", None)
+                        # Check if any 5m, 15m, or 4h TWAP market reached expiry
+                        expired_twap = False
+                        for hz, attr_n, up_k, dn_k in (
+                            ("5m", "market_5m", "UP_5M", "DOWN_5M"),
+                            ("15m", "market_15m", "UP_15M", "DOWN_15M"),
+                            ("4h", "market_4h", "UP_4H", "DOWN_4H"),
+                        ):
+                            mh = getattr(self, attr_n, None)
+                            if mh and (mh["end_dt"] - now_utc).total_seconds() <= 0:
+                                logger.info(f"[*] {hz.upper()} Market {mh['market_id']} reached expiry. Cycling to next.")
+                                asyncio.create_task(self.verify_and_log_resolution(mh))
+                                setattr(self, attr_n, None)
+                                self.books.pop(up_k, None)
+                                self.books.pop(dn_k, None)
+                                expired_twap = True
+                        if expired_twap:
                             self.clob_ws_connected = False
                             break
 
@@ -2262,7 +2431,7 @@ class PolymarketDualFeed1HRecorder:
                             self._maybe_emit_boundary_lock_trigger()
                             continue
 
-                        data = json.loads(msg_str)
+                        data = _orjson.loads(msg_str) if _orjson is not None else json.loads(msg_str)
                         if isinstance(data, list):
                             for item in data:
                                 asset_id = str(item.get("asset_id") or "")
@@ -2407,7 +2576,9 @@ class PolymarketDualFeed1HRecorder:
                 "pre_shock_features_t0": {"UP": up_m, "DOWN": down_m},
             }
             try:
-                _atomic_append_jsonl(TRIGGER_FILE, json.dumps(trig))
+                _, line_bl = _dispatch_trigger_fast(TRIGGER_FILE, trig)
+                if line_bl:
+                    _persist_trigger_nonblocking(TRIGGER_FILE, line_bl)
                 logger.info(
                     f"[BOUNDARY LOCK TRIGGER] {self.asset} ({horizon}) {win_side} | TTE={secs_left:.1f}s | "
                     f"z={signed_z:+.2f} | dist={dist_pct:+.2f}% | BestAsk=${best_ask:.3f} | NetEdge=+{net_edge*100:.2f}c"
@@ -2415,13 +2586,21 @@ class PolymarketDualFeed1HRecorder:
             except Exception as e:
                 logger.debug(f"Boundary lock emit error: {e}")
 
-    def compute_leadlag_cross_correlation(self):
+    def compute_leadlag_cross_correlation(self, spot_trades=None, futures_trades=None):
         """
         Pre-registered Lead/Lag cross-correlation estimation:
           Estimates Corr(epsilon_F(t), epsilon_S(t + Delta)) over Delta in CORRELATION_LAGS_MS
           using flow innovations (Point 2: do not perform primary lead/lag on raw levels).
+
+        `spot_trades` / `futures_trades` are optional list snapshots taken on the event-loop thread
+        (the live deques are mutated by WS coroutines, so iterating them from a worker thread can
+        raise "deque mutated during iteration"). Defaults to the live deques for backward compatibility.
         """
-        if len(self.spot_trades) < 200 or len(self.futures_trades) < 200:
+        if spot_trades is None:
+            spot_trades = self.spot_trades
+        if futures_trades is None:
+            futures_trades = self.futures_trades
+        if len(spot_trades) < 200 or len(futures_trades) < 200:
             return
 
         now_ns = time.monotonic_ns()
@@ -2434,12 +2613,12 @@ class PolymarketDualFeed1HRecorder:
         spot_bins = np.zeros(num_buckets, dtype=np.float64)
         fut_bins = np.zeros(num_buckets, dtype=np.float64)
 
-        for t_mono, _, _, ntl, buyer, _ in self.spot_trades:
+        for t_mono, _, _, ntl, buyer, _ in spot_trades:
             if t_mono >= t_start_ns:
                 idx = min(int((t_mono - t_start_ns) // bucket_size_ns), num_buckets - 1)
                 spot_bins[idx] += (ntl if buyer else -ntl)
 
-        for t_mono, _, _, ntl, buyer, _ in self.futures_trades:
+        for t_mono, _, _, ntl, buyer, _ in futures_trades:
             if t_mono >= t_start_ns:
                 idx = min(int((t_mono - t_start_ns) // bucket_size_ns), num_buckets - 1)
                 fut_bins[idx] += (ntl if buyer else -ntl)
@@ -2487,8 +2666,7 @@ class PolymarketDualFeed1HRecorder:
             }
         }
 
-        with open(self.correlations_file, "a") as f:
-            f.write(json.dumps(record) + "\n")
+        _atomic_append_jsonl(self.correlations_file, _dumps_compact(record), broadcast_ipc=False)
 
         logger.info(f"[LEAD/LAG INNOVATION TELEMETRY] Peak Lag: {max_lag[0]}ms (r={max_lag[1]:+.3f}) | Status: Illustrative telemetry (H0: no stable lead/lag)")
 
@@ -2531,22 +2709,26 @@ class PolymarketDualFeed1HRecorder:
                                     f"\n  Fee Rate: {self.fee_rate_market * 100:.1f}% ({self.fee_source})"
                                     f"\n===============================================================================\n")
 
-                # Pillar 5B: Discover or refresh 15m sub-hourly market
-                if not self.market_15m or (self.market_15m["end_dt"] - now).total_seconds() <= 0:
-                    expired_15m = self.market_15m
-                    if expired_15m and (expired_15m["end_dt"] - now).total_seconds() <= 0:
-                        asyncio.create_task(self.verify_and_log_resolution(expired_15m))
-                    try:
-                        m15 = await self.discover_nearest_15m_market()
-                        if m15:
-                            prev_id = self.market_15m.get("market_id") if self.market_15m else None
-                            self.market_15m = m15
-                            if m15.get("market_id") != prev_id:
-                                logger.info(f"[ACTIVE 15M PRODUCT LOADED: {self.asset}] {m15['title']} "
-                                            f"(ID: {m15['market_id']}, Open: ${m15.get('finalized_15m_open', 0.0):,.2f})")
-                                self._reconnect_clob = True
-                    except Exception as e:
-                        logger.debug(f"15m discovery cycle note: {e}")
+                # Pillar 5B: Discover, refresh, and lock Chainlink opens for 5m, 15m, and 4h TWAP markets
+                for hz, attr_n in (("5m", "market_5m"), ("15m", "market_15m"), ("4h", "market_4h")):
+                    mh_cur = getattr(self, attr_n, None)
+                    if not mh_cur or (mh_cur["end_dt"] - now).total_seconds() <= 0:
+                        if mh_cur and (mh_cur["end_dt"] - now).total_seconds() <= 0:
+                            asyncio.create_task(self.verify_and_log_resolution(mh_cur))
+                        try:
+                            mh_new = await self.discover_nearest_twap_market(hz)
+                            if mh_new:
+                                prev_id = mh_cur.get("market_id") if mh_cur else None
+                                setattr(self, attr_n, mh_new)
+                                mh_cur = mh_new
+                                if mh_new.get("market_id") != prev_id:
+                                    logger.info(
+                                        f"[ACTIVE {hz.upper()} PRODUCT LOADED: {self.asset}] {mh_new['title']} "
+                                        f"(ID: {mh_new['market_id']}, Open: ${mh_new.get('finalized_open', 0.0):,.4f})"
+                                    )
+                                    self._reconnect_clob = True
+                        except Exception as e:
+                            logger.debug(f"{hz} discovery cycle note: {e}")
 
                 if self.current_market and (self.finalized_1h_open <= 0.0 or getattr(self, "_open_1h_provisional", False)):
                     open_px, _ = await self.fetch_finalized_binance_candle(self.current_market["candle_open_ts"])
@@ -2557,39 +2739,42 @@ class PolymarketDualFeed1HRecorder:
                             self.twap_60s_1h_open = await self.fetch_binance_60s_twap_open(self.current_market["candle_open_ts"])
                         logger.info(f"[{self.asset} FINALIZED OPEN RECOVERED] Binance Spot 1H Open: ${self.finalized_1h_open:,.2f}")
 
-                if self.market_15m and (float(self.market_15m.get("finalized_15m_open") or 0.0) <= 0.0 or self.market_15m.get("_provisional_open", False)):
-                    now_ts = int(datetime.now(timezone.utc).timestamp())
-                    if now_ts >= int(self.market_15m.get("candle_open_ts", 0)):
-                        open_15_px, _ = await self.fetch_finalized_binance_candle(self.market_15m["candle_open_ts"], interval="15m")
-                        if open_15_px > 0.0:
-                            self.market_15m["finalized_15m_open"] = open_15_px
-                            self.market_15m["_provisional_open"] = False
-                            logger.info(f"[{self.asset} 15M FINALIZED OPEN RECOVERED] Binance Spot 15M Open: ${open_15_px:,.2f}")
-                        elif float(self.market_15m.get("finalized_15m_open") or 0.0) <= 0.0 and self.spot_price > 0.0:
-                            self.market_15m["finalized_15m_open"] = self.spot_price
-                            self.market_15m["_provisional_open"] = True
-                if self.market_15m and float(self.market_15m.get("twap_60s_open") or 0.0) <= 0.0:
-                    now_ts = int(datetime.now(timezone.utc).timestamp())
-                    if now_ts >= int(self.market_15m.get("candle_open_ts", 0)):
-                        twap_15_px = await self.fetch_binance_60s_twap_open(self.market_15m["candle_open_ts"])
-                        if twap_15_px > 0.0:
-                            self.market_15m["twap_60s_open"] = twap_15_px
-                            logger.info(f"[{self.asset} 15M TWAP-60S OPEN RECOVERED] Chainlink Proxy 60s TWAP Open: ${twap_15_px:,.2f}")
-                if self.market_15m and float(self.market_15m.get("authoritative_chainlink_open") or 0.0) <= 0.0:
-                    now_ts = int(datetime.now(timezone.utc).timestamp())
-                    open_ts_15 = int(self.market_15m.get("candle_open_ts", 0))
-                    close_ts_15 = int(self.market_15m.get("candle_close_ts", open_ts_15 + 900))
-                    if now_ts >= open_ts_15 and (now_ts - float(self.market_15m.get("_last_auth_open_try", 0.0))) >= 5.0:
-                        self.market_15m["_last_auth_open_try"] = float(now_ts)
-                        auth_px = await self.fetch_authoritative_chainlink_open_15m(open_ts_15, close_ts_15)
-                        if auth_px > 0.0:
-                            self.market_15m["authoritative_chainlink_open"] = auth_px
-                            self.market_15m["chainlink_open_spot"] = auth_px
-                            logger.info(f"[{self.asset} 15M AUTHORITATIVE CHAINLINK OPEN LOCKED] Polymarket openPrice: ${auth_px:,.6f}")
+                now_ts_int = int(datetime.now(timezone.utc).timestamp())
+                for hz, attr_n, dur_s in (("5m", "market_5m", 300), ("15m", "market_15m", 900), ("4h", "market_4h", 14400)):
+                    mh = getattr(self, attr_n, None)
+                    if not mh:
+                        continue
+                    open_ts_h = int(mh.get("candle_open_ts", 0))
+                    if now_ts_int < open_ts_h:
+                        continue
+                    if float(mh.get("finalized_open") or mh.get("finalized_15m_open") or 0.0) <= 0.0 or mh.get("_provisional_open", False):
+                        open_h_px, _ = await self.fetch_finalized_binance_candle(open_ts_h, interval=hz)
+                        if open_h_px > 0.0:
+                            mh["finalized_open"] = open_h_px
+                            mh["finalized_15m_open"] = open_h_px
+                            mh["_provisional_open"] = False
+                        elif float(mh.get("finalized_open") or 0.0) <= 0.0 and self.spot_price > 0.0:
+                            mh["finalized_open"] = self.spot_price
+                            mh["finalized_15m_open"] = self.spot_price
+                            mh["_provisional_open"] = True
+                    if float(mh.get("twap_60s_open") or 0.0) <= 0.0:
+                        twap_h_px = await self.fetch_binance_60s_twap_open(open_ts_h)
+                        if twap_h_px > 0.0:
+                            mh["twap_60s_open"] = twap_h_px
+                    if float(mh.get("authoritative_chainlink_open") or 0.0) <= 0.0:
+                        close_ts_h = int(mh.get("candle_close_ts", open_ts_h + dur_s))
+                        if (now_ts_int - float(mh.get("_last_auth_open_try", 0.0))) >= 5.0:
+                            mh["_last_auth_open_try"] = float(now_ts_int)
+                            auth_px = await self.fetch_authoritative_chainlink_open(open_ts_h, close_ts_h, horizon=hz)
+                            if auth_px > 0.0:
+                                mh["authoritative_chainlink_open"] = auth_px
+                                mh["chainlink_open_spot"] = auth_px
+                                logger.info(f"[{self.asset} {hz.upper()} AUTHORITATIVE CHAINLINK OPEN LOCKED] Polymarket openPrice: ${auth_px:,.6f}")
 
                 if self.current_market and "UP" in self.books and "DOWN" in self.books:
-                    up_metrics = self.books["UP"].get_metrics(fee_rate=self.fee_rate_market)
-                    down_metrics = self.books["DOWN"].get_metrics(fee_rate=self.fee_rate_market)
+                    now_ts_u = round(now.timestamp(), 3)
+                    up_metrics = self.books["UP"].get_metrics(fee_rate=self.fee_rate_market, compact=True)
+                    down_metrics = self.books["DOWN"].get_metrics(fee_rate=self.fee_rate_market, compact=True)
                     secs_left = (self.current_market["end_dt"] - now).total_seconds()
 
                     # Upgrade 4: Proactive pre-warming at TTE <= 120s: pre-fetch next candle market
@@ -2606,62 +2791,110 @@ class PolymarketDualFeed1HRecorder:
                     dist_pct = ((self.spot_price - self.finalized_1h_open) / self.finalized_1h_open * 100.0) if self.finalized_1h_open > 0 else 0.0
 
                     delta_basis_100ms = self.get_delta_basis_100ms()
+                    bbo_1h = (
+                        self.current_market["market_id"],
+                        up_metrics["best_bid"],
+                        up_metrics["best_ask"],
+                        down_metrics["best_bid"],
+                        down_metrics["best_ask"],
+                    )
+                    prev_1h = self._last_telem_bbo_by_hz.get("1h")
+                    if (
+                        prev_1h is None
+                        or prev_1h[1] != bbo_1h
+                        or secs_left <= 900.0
+                        or (now_ts_u - prev_1h[0]) >= 19.0
+                    ):
+                        self._last_telem_bbo_by_hz["1h"] = (now_ts_u, bbo_1h)
+                        record = {
+                            "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                            "timestamp_unix": now_ts_u,
+                            "asset": self.asset,
+                            "market_id": self.current_market["market_id"],
+                            "title": self.current_market["title"],
+                            "seconds_to_expiry": round(secs_left, 1),
+                            "binance_spot": self.spot_price,
+                            "binance_futures": self.futures_price,
+                            "basis_signed_usd": round(self.basis_usd, 2),
+                            "basis_signed_bps": round(self.basis_bps, 2),
+                            "basis_abs_bps": round(abs(self.basis_bps), 2),
+                            "delta_basis_100ms": delta_basis_100ms,
+                            "binance_1h_open": self.finalized_1h_open,
+                            "candle_distance_pct": round(dist_pct, 4),
+                            "clock_metadata": {
+                                "clock_offset_ms": round(self.clock_offset_ms, 2),
+                                "clock_uncertainty_ms": round(self.clock_uncertainty_ms, 2),
+                            },
+                            "fee_metadata": {"fee_rate_market": self.fee_rate_market},
+                            "UP": up_metrics,
+                            "DOWN": down_metrics,
+                        }
+                        _atomic_append_jsonl(self.telemetry_file, _dumps_compact(record), broadcast_ipc=False)
 
-                    record = {
-                        "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                        "timestamp_unix": now.timestamp(),
-                        "asset": self.asset,
-                        "market_id": self.current_market["market_id"],
-                        "title": self.current_market["title"],
-                        "seconds_to_expiry": round(secs_left, 1),
-                        "binance_spot": self.spot_price,
-                        "binance_futures": self.futures_price,
-                        "basis_signed_usd": round(self.basis_usd, 2),
-                        "basis_signed_bps": round(self.basis_bps, 2),
-                        "basis_abs_bps": round(abs(self.basis_bps), 2),
-                        "delta_basis_100ms": delta_basis_100ms,
-                        "binance_1h_open": self.finalized_1h_open,
-                        "candle_distance_pct": round(dist_pct, 4),
-                        "clock_metadata": {
-                            "clock_offset_ms": self.clock_offset_ms,
-                            "clock_uncertainty_ms": self.clock_uncertainty_ms,
-                            "timestamp_designation": "exchange_to_local_delta_with_calibrated_offset"
-                        },
-                        "fee_metadata": self.current_market.get("fee_metadata", {}),
-                        "UP": up_metrics,
-                        "DOWN": down_metrics
-                    }
-
-                    with open(self.telemetry_file, "a") as f:
-                        f.write(json.dumps(record) + "\n")
-
-                    if self.market_15m and "UP_15M" in self.books and "DOWN_15M" in self.books:
-                        m15 = self.market_15m
-                        secs_15 = (m15["end_dt"] - now).total_seconds()
-                        if secs_15 > 0:
-                            f15 = float(m15.get("fee_metadata", {}).get("fee_rate_market", 0.07) or 0.07)
-                            up15_m = self.books["UP_15M"].get_metrics(fee_rate=f15)
-                            dn15_m = self.books["DOWN_15M"].get_metrics(fee_rate=f15)
-                            open15 = float(m15.get("finalized_15m_open") or 0.0)
-                            dist15 = ((self.spot_price - open15) / open15 * 100.0) if open15 > 0 else 0.0
-                            rec15 = {
-                                "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
-                                "timestamp_unix": now.timestamp(),
-                                "asset": self.asset,
-                                "horizon": "15m",
-                                "market_id": m15["market_id"],
-                                "title": m15["title"],
-                                "seconds_to_expiry": round(secs_15, 1),
-                                "binance_spot": self.spot_price,
-                                "binance_futures": self.futures_price,
-                                "binance_15m_open": open15,
-                                "twap_60s_open": m15.get("twap_60s_open"),
-                                "candle_distance_pct": round(dist15, 4),
-                                "fee_metadata": m15.get("fee_metadata", {}),
-                                "UP": up15_m,
-                                "DOWN": dn15_m,
-                            }
-                            _atomic_append_jsonl(self.telemetry_15m_file, json.dumps(rec15))
+                    cb_now = self.get_coinbase_spot(now_ts_u)
+                    cl_now = self.get_chainlink_proxy_spot(now_ts_u)
+                    for hz, attr_n, up_k, dn_k, out_f in (
+                        ("5m", "market_5m", "UP_5M", "DOWN_5M", self.telemetry_5m_file),
+                        ("15m", "market_15m", "UP_15M", "DOWN_15M", self.telemetry_15m_file),
+                        ("4h", "market_4h", "UP_4H", "DOWN_4H", self.telemetry_4h_file),
+                    ):
+                        mh = getattr(self, attr_n, None)
+                        if mh and up_k in self.books and dn_k in self.books:
+                            secs_h = (mh["end_dt"] - now).total_seconds()
+                            if secs_h > 0:
+                                f_h = float(mh.get("fee_metadata", {}).get("fee_rate_market", 0.07) or 0.07)
+                                uph_m = self.books[up_k].get_metrics(fee_rate=f_h, compact=True)
+                                dnh_m = self.books[dn_k].get_metrics(fee_rate=f_h, compact=True)
+                                bbo_h = (
+                                    mh["market_id"],
+                                    uph_m["best_bid"],
+                                    uph_m["best_ask"],
+                                    dnh_m["best_bid"],
+                                    dnh_m["best_ask"],
+                                )
+                                prev_h = self._last_telem_bbo_by_hz.get(hz)
+                                if hz == "4h" and secs_h > 1800.0 and prev_h is not None and prev_h[1] == bbo_h and (now_ts_u - prev_h[0]) < 58.0:
+                                    continue
+                                if hz == "15m" and secs_h > 360.0 and prev_h is not None and prev_h[1] == bbo_h and (now_ts_u - prev_h[0]) < 28.0:
+                                    continue
+                                self._last_telem_bbo_by_hz[hz] = (now_ts_u, bbo_h)
+                                open_h = float(mh.get("finalized_open") or mh.get("finalized_15m_open") or 0.0)
+                                auth_cl_h = mh.get("authoritative_chainlink_open")
+                                usd_ref_h = cl_now if cl_now > 0 else cb_now
+                                dist_h = ((self.spot_price - open_h) / open_h * 100.0) if open_h > 0 else 0.0
+                                cl_dist_h = (
+                                    round(((usd_ref_h - float(auth_cl_h)) / float(auth_cl_h)) * 100.0, 4)
+                                    if auth_cl_h and float(auth_cl_h) > 0 and usd_ref_h > 0
+                                    else None
+                                )
+                                rec_h: Dict[str, Any] = {
+                                    "timestamp": now.strftime("%Y-%m-%d %H:%M:%S UTC"),
+                                    "timestamp_unix": now_ts_u,
+                                    "asset": self.asset,
+                                    "horizon": hz,
+                                    "market_id": mh["market_id"],
+                                    "title": mh["title"],
+                                    "seconds_to_expiry": round(secs_h, 1),
+                                    "binance_spot": self.spot_price,
+                                    "binance_futures": self.futures_price,
+                                    "coinbase_usd_spot": round(cb_now, 6) if cb_now > 0 else 0.0,
+                                    "chainlink_proxy_usd_spot": round(cl_now, 6) if cl_now > 0 else 0.0,
+                                    "binance_open": open_h,
+                                    "candle_distance_pct": round(dist_h, 4),
+                                    "fee_metadata": {"fee_rate_market": f_h},
+                                    "UP": uph_m,
+                                    "DOWN": dnh_m,
+                                }
+                                if hz == "15m":
+                                    rec_h["binance_15m_open"] = open_h
+                                twap_h = mh.get("twap_60s_open")
+                                if twap_h is not None:
+                                    rec_h["twap_60s_open"] = twap_h
+                                if auth_cl_h is not None:
+                                    rec_h["authoritative_chainlink_open"] = auth_cl_h
+                                if cl_dist_h is not None:
+                                    rec_h["chainlink_usd_distance_pct"] = cl_dist_h
+                                _atomic_append_jsonl(out_f, _dumps_compact(rec_h), broadcast_ipc=False)
 
                     logger.info(
                         f"[1H TELEMETRY: {self.asset}] {self.current_market['title'][:32]} | Tau: {secs_left/60.0:.1f}m ({secs_left:.0f}s) | "
@@ -2669,10 +2902,13 @@ class PolymarketDualFeed1HRecorder:
                         f"Spot=${self.spot_price:,.1f} | Fut=${self.futures_price:,.1f} | Basis={self.basis_bps:+.1f}bp | dist={dist_pct:+.2f}%"
                     )
 
-                # Periodic 60s cross-correlation estimation on flow innovations
+                # Periodic 60s cross-correlation estimation on flow innovations (offloaded from WS event loop)
                 if time.time() - self.last_cross_corr_ts > 60.0:
                     self.last_cross_corr_ts = time.time()
-                    self.compute_leadlag_cross_correlation()
+                    # Snapshot deques on the loop thread (WS coroutines mutate them concurrently)
+                    spot_snap = list(self.spot_trades)
+                    fut_snap = list(self.futures_trades)
+                    await asyncio.to_thread(self.compute_leadlag_cross_correlation, spot_snap, fut_snap)
 
                 # Periodic 300s clock synchronization
                 if time.time() - self.last_clock_sync_ts > 300.0:
@@ -2715,7 +2951,12 @@ class PolymarketDualFeed1HRecorder:
 if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser(description="Polymarket Dual Feed 1H Telemetry Recorder")
-    parser.add_argument("--asset", choices=["BTC", "ETH", "SOL", "XRP"], default="BTC", help="Asset to record (BTC, ETH, SOL, or XRP, default: BTC)")
+    parser.add_argument(
+        "--asset",
+        choices=list(ASSET_CONFIGS.keys()),
+        default="BTC",
+        help=f"Asset to record ({', '.join(ASSET_CONFIGS.keys())}, default: BTC)",
+    )
     parser.add_argument("--shock-threshold", type=float, default=None, help="Volume shock threshold in USD over 100ms")
     args = parser.parse_args()
 

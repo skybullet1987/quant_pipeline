@@ -394,6 +394,20 @@ DAILY_UPDOWN_SERIES: List[Tuple[str, str]] = [
     ("BTC", "btc-up-or-down-daily"),
     ("ETH", "eth-up-or-down-daily"),
     ("SOL", "sol-up-or-down-daily"),
+    ("XRP", "xrp-up-or-down-daily"),
+    ("BNB", "bnb-up-or-down-daily"),
+    ("DOGE", "dogecoin-up-or-down-daily"),
+]
+
+ZERO_FEE_PYTH_DAILY_SERIES: List[Tuple[str, str]] = [
+    ("EURUSD", "eurusd-daily-up-or-down"),
+    ("GBPUSD", "gbpusd-daily-up-or-down"),
+    ("USDJPY", "usdjpy-daily-up-or-down"),
+    ("USDCHF", "usdchf-daily-up-or-down"),
+    ("DXY", "dxy-daily-up-or-down"),
+    ("GOLD", "gold-daily-up-or-down"),
+    ("SILVER", "silver-daily-up-or-down"),
+    ("OIL", "oil-daily-up-or-down"),
 ]
 
 
@@ -542,6 +556,7 @@ def build_negrisk_cross_box_bundles(
     brackets: List[NegRiskBracketSpec],
     spot: float = 0.0,
     max_strike_dist_log: float = 0.14,
+    tail_max_strike_dist_log: float = 0.24,
 ) -> List[Dict[str, Any]]:
     """
     Constructs exact deterministic cross-contract arbitrage bundles pairing `Multi-Strike`
@@ -563,7 +578,8 @@ def build_negrisk_cross_box_bundles(
     for br in brackets:
         if spot > 0.0:
             ref_k = br.k_low if br.k_low is not None else (br.k_high or spot)
-            if ref_k > 0 and abs(math.log(ref_k / spot)) > max_strike_dist_log:
+            dist_cap = tail_max_strike_dist_log if br.bracket_kind in ("LOWER_TAIL", "UPPER_TAIL") else max_strike_dist_log
+            if ref_k > 0 and abs(math.log(ref_k / spot)) > dist_cap:
                 continue
 
         if br.bracket_kind == "LOWER_TAIL" and br.k_high is not None:
@@ -575,8 +591,8 @@ def build_negrisk_cross_box_bundles(
                     "guaranteed_payout": 1.0,
                     "end_ts": br.end_ts,
                     "legs": [
-                        {"token_id": br.yes_token, "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
-                        {"token_id": ms_r.yes_token, "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
+                        {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
+                        {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
                     ],
                 })
                 bundles.append({
@@ -585,8 +601,8 @@ def build_negrisk_cross_box_bundles(
                     "guaranteed_payout": 1.0,
                     "end_ts": br.end_ts,
                     "legs": [
-                        {"token_id": br.no_token, "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO<{br.k_high:g}"},
-                        {"token_id": ms_r.no_token, "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
+                        {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO<{br.k_high:g}"},
+                        {"token_id": ms_r.no_token, "opp_token_id": ms_r.yes_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
                     ],
                 })
         elif br.bracket_kind == "UPPER_TAIL" and br.k_low is not None:
@@ -598,8 +614,8 @@ def build_negrisk_cross_box_bundles(
                     "guaranteed_payout": 1.0,
                     "end_ts": br.end_ts,
                     "legs": [
-                        {"token_id": br.yes_token, "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES>{br.k_low:g}"},
-                        {"token_id": ms_r.no_token, "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
+                        {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES>{br.k_low:g}"},
+                        {"token_id": ms_r.no_token, "opp_token_id": ms_r.yes_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
                     ],
                 })
                 bundles.append({
@@ -608,8 +624,8 @@ def build_negrisk_cross_box_bundles(
                     "guaranteed_payout": 1.0,
                     "end_ts": br.end_ts,
                     "legs": [
-                        {"token_id": br.no_token, "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
-                        {"token_id": ms_r.yes_token, "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
+                        {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
+                        {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
                     ],
                 })
         elif br.bracket_kind == "RANGE" and br.k_low is not None and br.k_high is not None:

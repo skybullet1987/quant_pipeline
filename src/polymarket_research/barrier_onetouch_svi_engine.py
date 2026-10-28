@@ -56,6 +56,7 @@ logger = logging.getLogger("BarrierOneTouchEngine")
 
 GAMMA_API_URL = "https://gamma-api.polymarket.com"
 BINANCE_API_URL = "https://api.binance.com"
+BINANCE_FAPI_URL = "https://fapi.binance.com"
 
 HIT_SERIES = [
     ("BTC", "DAILY", "bitcoin-hit-price-daily"),
@@ -64,10 +65,15 @@ HIT_SERIES = [
     ("ETH", "DAILY", "ethereum-hit-price-daily"),
     ("ETH", "WEEKLY", "ethereum-hit-price-weekly"),
     ("ETH", "MONTHLY", "ethereum-hit-price-monthly"),
+    ("SOL", "DAILY", "solana-hit-price-daily"),
     ("SOL", "WEEKLY", "solana-hit-price-weekly"),
     ("SOL", "MONTHLY", "solana-hit-price-monthly"),
+    ("XRP", "DAILY", "xrp-hit-price-daily"),
     ("XRP", "WEEKLY", "xrp-hit-price-weekly"),
     ("XRP", "MONTHLY", "xrp-hit-price-monthly"),
+    ("BNB", "MONTHLY", "bnb-hit-price-monthly"),
+    ("DOGE", "MONTHLY", "dogecoin-hit-price-monthly"),
+    ("HYPE", "MONTHLY", "hyperliquid-hit-price-monthly"),
 ]
 
 ASSET_BINANCE_SYMBOL = {
@@ -75,13 +81,21 @@ ASSET_BINANCE_SYMBOL = {
     "ETH": "ETHUSDT",
     "SOL": "SOLUSDT",
     "XRP": "XRPUSDT",
+    "BNB": "BNBUSDT",
+    "DOGE": "DOGEUSDT",
+    "HYPE": "HYPEUSDT",
 }
+
+ASSET_BINANCE_FUTURES_ONLY = frozenset({"HYPE"})
 
 ASSET_VOL_MULT_VS_BTC = {
     "BTC": 1.00,
     "ETH": 1.28,
     "SOL": 1.75,
     "XRP": 1.85,
+    "BNB": 1.45,
+    "DOGE": 2.10,
+    "HYPE": 2.35,
 }
 
 
@@ -142,6 +156,16 @@ def parse_barrier_direction(question: str, group_label: str = "") -> Optional[st
     return None
 
 
+_CRYPTO_MONTH_RE = re.compile(
+    r"\bin\s+(january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+(\d{4}))?(?:\?|\b)",
+    re.IGNORECASE,
+)
+_CRYPTO_MONTHS = {
+    "january": 1, "february": 2, "march": 3, "april": 4, "may": 5, "june": 6,
+    "july": 7, "august": 8, "september": 9, "october": 10, "november": 11, "december": 12,
+}
+
+
 def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_slug: str) -> List[BarrierRungSpec]:
     end_str = str(ev.get("endDate") or "")
     start_str = str(ev.get("startDate") or ev.get("creationDate") or "")
@@ -159,6 +183,16 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
             st_cand = datetime.fromisoformat(start_str.replace("Z", "+00:00")).timestamp()
             if end_ts - 35 * 86400.0 <= st_cand < end_ts:
                 start_ts = max(start_ts, st_cand)
+        except Exception:
+            pass
+    m_cm = _CRYPTO_MONTH_RE.search(str(ev.get("title") or ""))
+    if m_cm:
+        try:
+            from zoneinfo import ZoneInfo
+            ny = ZoneInfo("America/New_York")
+            mo_c = _CRYPTO_MONTHS[m_cm.group(1).lower()]
+            yr_c = int(m_cm.group(2)) if m_cm.group(2) else datetime.fromtimestamp(end_ts - 5 * 86400.0, tz=ny).year
+            start_ts = max(start_ts, datetime(yr_c, mo_c, 1, 0, 0, tzinfo=ny).timestamp())
         except Exception:
             pass
 
@@ -196,6 +230,19 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
                 except Exception:
                     pass
 
+        m_start_ts = start_ts
+        for m_st_raw in (m.get("startDate"), m.get("createdAt")):
+            if m_st_raw:
+                try:
+                    m_st = datetime.fromisoformat(str(m_st_raw).replace("Z", "+00:00")).timestamp()
+                    if start_ts - 3600.0 <= m_st < end_ts:
+                        # Mid-period dynamically minted rungs resolve "from the creation of this market":
+                        # add +60s boundary buffer so the ambiguous creation-minute candle is never assumed touched.
+                        buf = 60.0 if (m_st > start_ts + 300.0 or "creation of this market" in str(m.get("description") or "").lower()) else 0.0
+                        m_start_ts = max(m_start_ts, min(end_ts - 60.0, m_st + buf))
+                except Exception:
+                    pass
+
         rungs.append(
             BarrierRungSpec(
                 event_id=str(ev.get("id") or ""),
@@ -208,7 +255,7 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
                 group_label=gl,
                 strike=strike,
                 direction=direction,
-                start_ts=start_ts,
+                start_ts=m_start_ts,
                 end_ts=end_ts,
                 yes_token=str(toks[0]),
                 no_token=str(toks[1]),
@@ -344,6 +391,74 @@ def get_wing_implied_vol(
     return max(0.15, min(3.0, base_iv * wing_convexity)), "DVOL_SMILE_PARAMETRIC"
 
 
+def detect_barrier_monotonicity_boxes(
+    quote_rows: List[Dict[str, Any]],
+    fee_rate: float = 0.07,
+    max_box_cost_net: float = 0.995,
+) -> List[Dict[str, Any]]:
+    """
+    Detects deterministic same-event One-Touch Barrier Monotonicity Boxes (`B3_BARRIER_MONO_BOX`):
+      - Upward barriers (`direction == "UP"`, `K_low < K_high`):
+          `YES(↑K_low) + NO(↑K_high)` pays >= $1.00 everywhere ($2.00 when `max S_t in [K_low, K_high)`).
+      - Downward barriers (`direction == "DOWN"`, `K_low < K_high`):
+          `YES(↓K_high) + NO(↓K_low)` pays >= $1.00 everywhere ($2.00 when `min S_t in (K_low, K_high]`).
+    """
+    arbs: List[Dict[str, Any]] = []
+    for direction in ("UP", "DOWN"):
+        sub = sorted(
+            [q for q in quote_rows if str(q.get("direction") or "").upper() == direction and float(q.get("strike") or 0.0) > 0.0],
+            key=lambda x: float(x["strike"]),
+        )
+        for i in range(len(sub)):
+            for j in range(i + 1, len(sub)):
+                q_lo, q_hi = sub[i], sub[j]
+                k_lo, k_hi = float(q_lo["strike"]), float(q_hi["strike"])
+                if k_hi <= k_lo * 1.0005:
+                    continue
+                if direction == "UP":
+                    leg_yes_q, leg_no_q = q_lo, q_hi
+                    lbl = f"YES(↑{k_lo:g})+NO(↑{k_hi:g})"
+                else:
+                    leg_yes_q, leg_no_q = q_hi, q_lo
+                    lbl = f"YES(↓{k_hi:g})+NO(↓{k_lo:g})"
+                if (
+                    "start_ts" in leg_yes_q
+                    and "start_ts" in leg_no_q
+                    and float(leg_yes_q["start_ts"]) > float(leg_no_q["start_ts"]) + 1e-6  # YES window must start no later than NO
+                ):
+                    continue
+                ay = leg_yes_q.get("ask_yes")
+                an = leg_no_q.get("ask_no")
+                if ay is None or an is None:
+                    continue
+                py, pn = float(ay), float(an)
+                if not (0.01 <= py <= 0.99 and 0.01 <= pn <= 0.99):
+                    continue
+                fr_y = float(leg_yes_q.get("fee_rate", fee_rate))
+                fr_n = float(leg_no_q.get("fee_rate", fee_rate))
+                net_cost = py + (fr_y * py * (1.0 - py)) + pn + (fr_n * pn * (1.0 - pn))
+                if 0.900 <= net_cost <= max_box_cost_net:
+                    arbs.append({
+                        "direction": direction,
+                        "label": lbl,
+                        "low_strike": k_lo,
+                        "high_strike": k_hi,
+                        "leg_yes_market_id": str(leg_yes_q["market_id"]),
+                        "leg_yes_condition_id": str(leg_yes_q.get("condition_id") or ""),
+                        "yes_token": str(leg_yes_q["yes_token"]),
+                        "yes_opp_token": str(leg_yes_q.get("no_token") or ""),
+                        "leg_no_market_id": str(leg_no_q["market_id"]),
+                        "leg_no_condition_id": str(leg_no_q.get("condition_id") or ""),
+                        "no_token": str(leg_no_q["no_token"]),
+                        "no_opp_token": str(leg_no_q.get("yes_token") or ""),
+                        "box_cost_gross": round(py + pn, 5),
+                        "box_cost_net": round(net_cost, 5),
+                        "guaranteed_edge": round(1.0 - net_cost, 5),
+                    })
+    arbs.sort(key=lambda x: x["box_cost_net"])
+    return arbs
+
+
 def _fetch_finalized_klines(
     sym: str,
     st_ms: int,
@@ -351,10 +466,16 @@ def _fetch_finalized_klines(
     interval: str,
     timeout: float,
 ) -> List[List[Any]]:
-    url = (
-        f"{BINANCE_API_URL}/api/v3/klines?symbol={sym}&interval={interval}"
-        f"&startTime={st_ms}&endTime={en_ms}&limit=1000"
-    )
+    if sym == "HYPEUSDT":
+        url = (
+            f"{BINANCE_FAPI_URL}/fapi/v1/klines?symbol={sym}&interval={interval}"
+            f"&startTime={st_ms}&endTime={en_ms}&limit=1000"
+        )
+    else:
+        url = (
+            f"{BINANCE_API_URL}/api/v3/klines?symbol={sym}&interval={interval}"
+            f"&startTime={st_ms}&endTime={en_ms}&limit=1000"
+        )
     req = urllib.request.Request(url, headers={"User-Agent": "DominusBarrierEngine/1.0"})
     rows = json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8"))
     if not isinstance(rows, list):

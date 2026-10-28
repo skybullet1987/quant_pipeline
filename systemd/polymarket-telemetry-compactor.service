@@ -1,0 +1,13 @@
+[Unit]
+Description=Polymarket & Alpha-124 Inode-Safe Hot/Cold Telemetry Compactor
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 scripts/polymarket_telemetry_compactor.py
+Nice=19
+CPUWeight=20
+IOWeight=20
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/polymarket/compactor.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/polymarket/compactor.log

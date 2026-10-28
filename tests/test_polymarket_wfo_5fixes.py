@@ -2926,10 +2926,19 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     asyncio.run(h.check_resolutions_and_manage_positions())
     assert "D1_LIVE_LEGGED_TEST_LEG_RESID" not in h.active_positions
 
-    # --- PART 6: Pre-Book Balance Order, Unlocked SOL/XRP D1 Boxes, ETH Sequential Tail-First Dispatch, Inline Unwind & Restart Persistence ---
-    # 6a. Unknown assets (e.g. DOGE) rejected cleanly; SOL/XRP unlocked; 4-token complement anti-box (> 1.00) vetoed cleanly
-    res_doge = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "dedupe_key": "D1_DOGE_TEST"})
-    assert res_doge["executed"] is False and res_doge["reason"] == "UNSUPPORTED_D1_ASSET:DOGE"
+    # --- PART 6: Pre-Book Balance Order, Unlocked 7-Coin D1 Boxes, ETH Sequential Tail-First Dispatch, Inline Unwind & Restart Persistence ---
+    # 6a. Unknown assets (e.g. ZEC) rejected; expansion assets (e.g. DOGE) enforce 5.0bps corridor & 8/8 per-asset gate; ungraduated sleeves gated
+    res_zec = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "ZEC", "dedupe_key": "D1_ZEC_TEST"})
+    assert res_zec["executed"] is False and res_zec["reason"] == "UNSUPPORTED_D1_ASSET:ZEC"
+    res_doge_tight = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "corridor_bps": 3.5, "dedupe_key": "D1_DOGE_TIGHT"})
+    assert res_doge_tight["executed"] is False and "CORRIDOR_TOO_NARROW_OR_MISSING" in res_doge_tight["reason"]
+    res_doge = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "corridor_bps": 8.0, "dedupe_key": "D1_DOGE_TEST"})
+    assert res_doge["executed"] is False and res_doge["reason"] == "EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:DOGE"
+    res_c1_ungrad = h.maybe_execute_graduated_d1_box({
+        **cand_obj, "box_type": "COMPLETE_SET", "sleeve_source": "C1_BINARY_COMPLETE_SET",
+        "leg_a_market_id": "650015", "leg_b_market_id": "650015", "dedupe_key": "C1_UNGRAD_TEST",
+    })
+    assert res_c1_ungrad["executed"] is False and res_c1_ungrad["reason"] == "SLEEVE_NOT_YET_8_OF_8_GRADUATED:C1_BINARY_COMPLETE_SET"
 
     # 6b. ETH skewed box allowed, _wallet_token_balance runs BEFORE get_market_book, parallel_dispatch=False, and 100% inline unwind recorded!
     h._last_known_collateral = 73.65
@@ -3007,6 +3016,83 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     assert "D1_ETH_6213180_6214389" in h_reloaded._seen_d1_box_keys
     res_dup = h_reloaded.maybe_execute_graduated_d1_box(cand_sol)
     assert res_dup["executed"] is False and res_dup["reason"] == "ALREADY_EXECUTED_PAIR"
+
+    # 6d. 12h Per-Asset Legging Circuit Breaker + Multi-Box Concurrency (max_concurrent_d1_boxes=4) + Graduated DOGE $15 Cap
+    h.closed_positions.append({
+        "close_reason": "D1_INLINE_LEGGED_OUT_UNWIND",
+        "asset": "ETH",
+        "net_pnl_usd": -0.60,
+        "exit_time_unix": time.time(),
+    })
+    res_eth_cb = h.maybe_execute_graduated_d1_box({
+        **cand_obj, "asset": "ETH", "dedupe_key": "D1_ETH_CB_BLOCK", "ts_unix": time.time(), "expiry_ts": time.time() + 180.0,
+    })
+    assert res_eth_cb["executed"] is False and res_eth_cb["reason"] == "ASSET_LEGGING_COOLDOWN:ETH"
+    h.closed_positions.pop()
+
+    # Graduated DOGE executes alongside an already-open BTC box (multi-box concurrency) & caps budget at $15.00
+    mirror_grad = json.loads(mirror_path.read_text(encoding="utf-8"))
+    mirror_grad.setdefault("by_d1_asset", {})["DOGE"] = {"closed": 8, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 12.5}
+    mirror_path.write_text(json.dumps(mirror_grad), encoding="utf-8")
+    h._d1_grad_cache = None
+    h._last_known_collateral = 120.00
+    tok_doge_a = "7" * 29 + "1"
+    tok_doge_b = "7" * 29 + "2"
+    tok_doge_oa = "7" * 29 + "3"
+    tok_doge_ob = "7" * 29 + "4"
+    doge_books = {
+        tok_doge_a: {"asks": [{"price": "0.46", "size": "250"}], "bids": [{"price": "0.45", "size": "250"}]},
+        tok_doge_b: {"asks": [{"price": "0.46", "size": "250"}], "bids": [{"price": "0.45", "size": "250"}]},
+        tok_doge_oa: {"asks": [{"price": "0.53", "size": "250"}], "bids": [{"price": "0.48", "size": "250"}]},
+        tok_doge_ob: {"asks": [{"price": "0.53", "size": "250"}], "bids": [{"price": "0.48", "size": "250"}]},
+    }
+    h.executor.get_market_book = lambda tid: doge_books[tid]
+    h.active_positions["OPEN_BTC_A"] = {"token_id": "b_a", "market_id": "m_btc_15", "box_id": "BOX_BTC_1", "is_dominance_box": True}
+    h.active_positions["OPEN_BTC_B"] = {"token_id": "b_b", "market_id": "m_btc_5", "box_id": "BOX_BTC_1", "is_dominance_box": True}
+    doge_exec_sh = []
+
+    def _mock_doge_box(**kw):
+        sh = int(kw["shares"])
+        doge_exec_sh.append(sh)
+        wallet_bals[tok_doge_a] = float(sh)
+        wallet_bals[tok_doge_b] = float(sh)
+        return {
+            "success": True,
+            "box_id": kw["box_id"],
+            "shares": float(sh),
+            "leg_1": {"token_id": tok_doge_a, "label": kw["leg_a_label"], "price": 0.46, "orderID": "OID_DG_A", "raw": {"makingAmount": round(sh * 0.46, 2)}},
+            "leg_2": {"token_id": tok_doge_b, "label": kw["leg_b_label"], "price": 0.46, "orderID": "OID_DG_B", "raw": {"makingAmount": round(sh * 0.46, 2)}},
+        }
+
+    h._wallet_token_balance = lambda tid: (wallet_bals.get(tid, 0.0), h.ONCHAIN_SOURCE)
+    h.executor.execute_atomic_dominance_box = _mock_doge_box
+    res_doge_ok = h.maybe_execute_graduated_d1_box({
+        **cand_obj,
+        "box_id": "D1_LIVE_DOGE_CONCURRENT",
+        "dedupe_key": "D1_DOGE_7001_7002",
+        "asset": "DOGE",
+        "corridor_bps": 8.5,
+        "leg_a_market_id": "7001",
+        "leg_b_market_id": "7002",
+        "leg_a_token_id": tok_doge_a,
+        "leg_b_token_id": tok_doge_b,
+        "leg_a_opp_token_id": tok_doge_oa,
+        "leg_b_opp_token_id": tok_doge_ob,
+        "ts_unix": time.time(),
+        "expiry_ts": time.time() + 180.0,
+    })
+    assert res_doge_ok["executed"] is True, res_doge_ok
+    assert doge_exec_sh == [15], "DOGE $15 empirical L1 cap must bound ticket size even at $120 bankroll!"
+    assert len(h.active_positions) == 4  # 2 hedged boxes (BTC + DOGE) running concurrently!
+
+    # Any unhedged box residual immediately blocks new box entries
+    h.active_positions["RESID_BLOCK"] = {"token_id": "r_1", "box_id": "BOX_UNHEDGED", "is_dominance_box": False}
+    res_resid_blk = h.maybe_execute_graduated_d1_box({
+        **cand_obj, "asset": "BTC", "dedupe_key": "D1_RESID_BLOCK_CHECK", "leg_a_market_id": "9001", "leg_b_market_id": "9002",
+        "ts_unix": time.time(), "expiry_ts": time.time() + 180.0,
+    })
+    assert res_resid_blk["executed"] is False and res_resid_blk["reason"] == "UNHEDGED_BOX_RESIDUAL_ACTIVE"
+    h.active_positions.clear()
 
     # --- PART 7: Phase 1 Latency Optimizations (4-Socket Warm Pool, D1 defer_exec=True, Fast D1 IPC Dedupe & mtime Cache) ---
     import src.polymarket_research.polymarket_live_executor as exec_mod
