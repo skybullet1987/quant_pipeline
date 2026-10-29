@@ -9998,7 +9998,7 @@ class PolymarketLiveHarvester:
                                     continue
 
                                 # 5.0s shock debounce against superior QUALIFIED concurrent triggers
-                                cand_score = _calc_priority_score(shock)
+                                cand_score = self._calc_priority_score(shock)
                                 t0_u = float(shock.get("t0_unix", now_u))
                                 shk_m_id = str(shock.get("market_id") or "")
 

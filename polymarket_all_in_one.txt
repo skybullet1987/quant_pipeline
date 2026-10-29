@@ -1,10 +1,10 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-29 02:44:37 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-29 02:55:41 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 59 | 1,125 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 60 - 94 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,873 | 609,796 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,873 | 609,801 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,874 - 10,690 | 357,901 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
   - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,691 - 12,440 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,441 - 12,804 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
@@ -6732,7 +6732,7 @@ class PolymarketLiveHarvester:
        s_id=shock.get("shock_id") or f"{shock.get('market_id')}_{shock.get('t0_unix')}"
        if s_id in self.seen_shock_ids:
         continue
-       cand_score=_calc_priority_score(shock)
+       cand_score=self._calc_priority_score(shock)
        t0_u=float(shock.get("t0_unix",now_u))
        shk_m_id=str(shock.get("market_id") or "")
        if cand_score > 0.0 and self.recent_shock_window:
