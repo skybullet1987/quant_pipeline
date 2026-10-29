@@ -2682,7 +2682,7 @@ def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch, tmp_path) 
 
         monkeypatch.setattr(d, "fetch_books_batch", fake_bks_fill)
         await d.manage_pending_zero_fee_maker_anchors(now_z + 2.0)
-        assert any(p["sleeve"] == "ZERO_FEE_MAKER_ANCHOR_BOX" and p["entry_eff_px_t1000"] == 0.98 for p in d.open_positions.values())
+        assert any(p["sleeve"] in ("ZF_INTRADAY_MAKER_BOX", "ZERO_FEE_MAKER_ANCHOR_BOX") and p["entry_eff_px_t1000"] == 0.98 for p in d.open_positions.values())
 
     asyncio.run(_run_zfa())
 

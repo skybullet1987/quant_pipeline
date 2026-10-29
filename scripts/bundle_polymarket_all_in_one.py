@@ -115,7 +115,38 @@ def transform_module(rel_path: str, code: str) -> str:
                 cln = cln.rstrip("\r\n")
             joined.append(cln)
         compacted = "".join(joined)
-    compacted = re.sub(r"\n([ \t]{4,})", lambda m: "\n" + " " * (len(m.group(1)) // 2), compacted)
+    str_cont_rows: set[int] = set()
+    row_depth: dict[int, int] = {}
+    cur_depth = 0
+    for tok in tokenize.generate_tokens(io.StringIO(compacted).readline):
+        if tok.type == tokenize.INDENT:
+            cur_depth += 1
+        elif tok.type == tokenize.DEDENT:
+            cur_depth = max(0, cur_depth - 1)
+        else:
+            if tok.type == tokenize.STRING and tok.end[0] > tok.start[0]:
+                for r_s in range(tok.start[0], tok.end[0]):
+                    str_cont_rows.add(r_s)
+            if tok.type not in (tokenize.NL, tokenize.NEWLINE, tokenize.ENDMARKER):
+                row_depth.setdefault(tok.start[0] - 1, cur_depth)
+    i_lines = compacted.splitlines(keepends=True)
+    for idx_i, iln in enumerate(i_lines):
+        if idx_i in str_cont_rows:
+            continue
+        stripped_i = iln.lstrip(" \t")
+        if idx_i > 0 and i_lines[idx_i - 1].rstrip("\r\n").endswith("\\"):
+            i_lines[idx_i] = (" " * (row_depth.get(idx_i - 1, 0) + 1)) + stripped_i
+        elif idx_i in row_depth:
+            i_lines[idx_i] = (" " * row_depth[idx_i]) + stripped_i
+    reindented = "".join(i_lines)
+    try:
+        reindent_ok = ast.dump(ast.parse(reindented)) == ast.dump(ast.parse(compacted))
+    except SyntaxError:
+        reindent_ok = False
+    if reindent_ok:
+        compacted = reindented
+    else:
+        compacted = re.sub(r"\n([ \t]{4,})", lambda m: "\n" + " " * (len(m.group(1)) // 2), compacted)
     op_spans_by_row: dict[int, list[tuple[int, int]]] = {}
     fstr_start = getattr(tokenize, "FSTRING_START", -1)
     fstr_end = getattr(tokenize, "FSTRING_END", -1)

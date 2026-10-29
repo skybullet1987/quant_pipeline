@@ -39,6 +39,7 @@ import json
 import logging
 import math
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -272,6 +273,7 @@ BANKROLL_TICKETS: Dict[str, Dict[str, float]] = {
         "SP1_NBA_ZERO_FEE_BOX": 20.0,
         "NR0_ZERO_FEE_SLATE_ARB": 15.0,
         "ZERO_FEE_MAKER_ANCHOR_BOX": 18.0,
+        "ZF_INTRADAY_MAKER_BOX": 18.0,
         "TW1_COUNTING_TRUNCATION_AND_BOX": 18.0,
         "FED1_CENTRAL_BANK_LP_BOX": 20.0,
         "COND1_MACRO_PARTITION_BOX": 20.0,
@@ -311,6 +313,7 @@ BANKROLL_TICKETS: Dict[str, Dict[str, float]] = {
         "SP1_NBA_ZERO_FEE_BOX": 120.0,
         "NR0_ZERO_FEE_SLATE_ARB": 100.0,
         "ZERO_FEE_MAKER_ANCHOR_BOX": 100.0,
+        "ZF_INTRADAY_MAKER_BOX": 110.0,
         "TW1_COUNTING_TRUNCATION_AND_BOX": 100.0,
         "FED1_CENTRAL_BANK_LP_BOX": 120.0,
         "COND1_MACRO_PARTITION_BOX": 120.0,
@@ -350,6 +353,7 @@ BANKROLL_TICKETS: Dict[str, Dict[str, float]] = {
         "SP1_NBA_ZERO_FEE_BOX": 400.0,
         "NR0_ZERO_FEE_SLATE_ARB": 300.0,
         "ZERO_FEE_MAKER_ANCHOR_BOX": 350.0,
+        "ZF_INTRADAY_MAKER_BOX": 350.0,
         "TW1_COUNTING_TRUNCATION_AND_BOX": 350.0,
         "FED1_CENTRAL_BANK_LP_BOX": 400.0,
         "COND1_MACRO_PARTITION_BOX": 400.0,
@@ -4357,6 +4361,136 @@ class Alpha124ShadowDaemon:
             logger.debug(f"2-leg box live candidate write notice: {exc}")
             return False
 
+    def emit_live_maker_anchor_box_candidate(
+        self,
+        *,
+        sleeve_source: str,
+        box_type: str,
+        asset: str,
+        dedupe_key: str,
+        regime: str,
+        pair_horizons: str,
+        leg_a: Dict[str, Any],
+        leg_b: Dict[str, Any],
+        anchor_is_a: bool,
+        queue_front: bool,
+        anchor_bid_px: float,
+        hedge_limit_px: float,
+        avail_a_shares: float,
+        avail_b_shares: float,
+        close_ts: float,
+        now_ts: float,
+        k_low: float = 100.0,
+        k_high: float = 100.0,
+        corridor_bps: float = 0.0,
+        posted_spot: float = 0.0,
+    ) -> bool:
+        """EXP-PM-406B / EXP-PM-409: Emits a verified Maker-Anchor 2-leg box candidate to the live IPC stream (gated on 8/8 _grad8)."""
+        default_cand_path = LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl"
+        if STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json") and D1_LIVE_CANDIDATES_FILE == default_cand_path:
+            return False
+        if not (self.single_scan or ("fetch_json" in self.__dict__)):
+            now_ts = time.time()
+        rem_sec = float(close_ts - now_ts)
+        min_rem = 240.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 65.0
+        max_rem = 64800.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 900.0
+        if not (min_rem <= rem_sec <= max_rem):
+            return False
+        last_emit = float(self._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
+        if (now_ts - last_emit) < 12.0:
+            return False
+        if len(self._last_d1_live_emit_ts) > 256:
+            self._last_d1_live_emit_ts = {k: v for k, v in self._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
+        self._last_d1_live_emit_ts[dedupe_key] = now_ts
+        fee_a = float(leg_a.get("fee_rate", 0.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else CRYPTO_FEE_RATE))
+        fee_b = float(leg_b.get("fee_rate", 0.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else CRYPTO_FEE_RATE))
+        exp_a = float(leg_a.get("fee_exponent", 1.0))
+        exp_b = float(leg_b.get("fee_exponent", 1.0))
+        fr_hdg = fee_b if anchor_is_a else fee_a
+        fe_hdg = exp_b if anchor_is_a else exp_a
+        hdg_fee = fr_hdg * ((hedge_limit_px * (1.0 - hedge_limit_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0
+        pair_est = round(anchor_bid_px + hedge_limit_px + hdg_fee, 4)
+        max_cap = 0.990 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 0.988
+        if not (0.900 <= pair_est <= max_cap):
+            return False
+        sh_est = max(5, int(math.floor(13.50 / max(0.90, pair_est))))
+        cand = {
+            "box_id": f"{box_type}_LIVE_{asset}_{int(close_ts)}_{str(leg_a.get('market_id','0'))[-5:]}",
+            "dedupe_key": dedupe_key,
+            "box_type": str(box_type),
+            "ts_unix": round(now_ts, 3),
+            "asset": str(asset),
+            "regime": str(regime),
+            "pair_horizons": str(pair_horizons),
+            "sleeve_source": str(sleeve_source),
+            "anchor_is_a": bool(anchor_is_a),
+            "queue_front": bool(queue_front),
+            "anchor_bid_px": round(float(anchor_bid_px), 4),
+            "hedge_limit_px": round(float(hedge_limit_px), 4),
+            "posted_spot": round(float(posted_spot), 6),
+            "k_low": float(k_low),
+            "k_high": float(k_high),
+            "corridor_bps": round(float(corridor_bps), 2),
+            "expiry_ts": float(close_ts),
+            "rem_sec": round(rem_sec, 2),
+            "shares": sh_est,
+            "box_cost_net": pair_est,
+            "max_box_cost_net": max_cap,
+            "leg_a_token_id": str(leg_a["token_id"]),
+            "leg_a_opp_token_id": str(leg_a.get("opp_token_id") or ""),
+            "leg_a_label": str(leg_a.get("label") or leg_a.get("side") or "YES"),
+            "leg_a_side": str(leg_a.get("side") or "YES"),
+            "leg_a_horizon": str(leg_a.get("horizon") or pair_horizons),
+            "leg_a_market_id": str(leg_a.get("market_id") or ""),
+            "leg_a_condition_id": str(leg_a.get("condition_id") or ""),
+            "leg_a_strike": float(leg_a.get("strike") or k_low),
+            "leg_a_limit_price": round(float(anchor_bid_px if anchor_is_a else hedge_limit_px), 4),
+            "leg_a_avail_shares": round(float(avail_a_shares), 2),
+            "leg_a_fee_rate": fee_a,
+            "leg_a_fee_exponent": exp_a,
+            "leg_a_neg_risk": leg_a["neg_risk"] if isinstance(leg_a.get("neg_risk"), bool) else None,
+            "leg_b_token_id": str(leg_b["token_id"]),
+            "leg_b_opp_token_id": str(leg_b.get("opp_token_id") or ""),
+            "leg_b_label": str(leg_b.get("label") or leg_b.get("side") or "NO"),
+            "leg_b_side": str(leg_b.get("side") or "NO"),
+            "leg_b_horizon": str(leg_b.get("horizon") or pair_horizons),
+            "leg_b_market_id": str(leg_b.get("market_id") or ""),
+            "leg_b_condition_id": str(leg_b.get("condition_id") or ""),
+            "leg_b_strike": float(leg_b.get("strike") or k_high),
+            "leg_b_limit_price": round(float(hedge_limit_px if anchor_is_a else anchor_bid_px), 4),
+            "leg_b_avail_shares": round(float(avail_b_shares), 2),
+            "leg_b_fee_rate": fee_b,
+            "leg_b_fee_exponent": exp_b,
+            "leg_b_neg_risk": leg_b["neg_risk"] if isinstance(leg_b.get("neg_risk"), bool) else None,
+        }
+        try:
+            try:
+                import orjson as _orj
+                raw_b = _orj.dumps(cand) + b"\n"
+                line_s = raw_b.decode("utf-8")
+            except Exception:
+                line_s = json.dumps(cand, separators=(",", ":")) + "\n"
+                raw_b = line_s.encode("utf-8")
+            if os.name != "nt" and D1_LIVE_CANDIDATES_FILE == default_cand_path:
+                try:
+                    import socket
+                    s_ipc = getattr(self, "_d1_ipc_sock", None)
+                    if s_ipc is None:
+                        s_ipc = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+                        s_ipc.setblocking(False)
+                        self._d1_ipc_sock = s_ipc
+                    ipc_nm = os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME", "polymarket_d1_box_notify")
+                    s_ipc.sendto(raw_b, f"\x00{ipc_nm}".encode("utf-8"))
+                except Exception:
+                    pass
+            D1_LIVE_CANDIDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
+            with open(D1_LIVE_CANDIDATES_FILE, "a", encoding="utf-8") as fp:
+                fp.write(line_s)
+            return True
+        except Exception as exc:
+            logger.debug(f"Maker-anchor live candidate write notice: {exc}")
+            return False
+
     def _latest_spot_px(self, asset: str) -> float:
         uh = self.usd_spot_hist.get(asset)
         if uh and len(uh) > 0 and (time.time() - float(uh[-1][0])) <= 10.0 and float(uh[-1][1]) > 0.0:
@@ -4464,6 +4598,7 @@ class Alpha124ShadowDaemon:
             return False
         candidates.sort(key=lambda z: z[0])
         _, anchor_is_a, q_front, bid_px, hdg_eff, req_sh = candidates[0]
+        posted_sp = self._latest_spot_px(m15.asset)
         self.pending_maker_anchors[d_key] = {
             "dedupe_key": d_key,
             "asset": m15.asset,
@@ -4477,8 +4612,33 @@ class Alpha124ShadowDaemon:
             "req_shares_t100": req_sh,
             "req_shares_t1000": req_sh_t1000,
             "posted_ts": now_ts,
-            "posted_spot": self._latest_spot_px(m15.asset),
+            "posted_spot": posted_sp,
         }
+        av_a_sh = sum(sz for px, sz in asks_a if px <= ask_a + 0.01)
+        av_b_sh = sum(sz for px, sz in asks_b if px <= ask_b + 0.01)
+        hdg_raw_px = ask_b if anchor_is_a else ask_a
+        self.emit_live_maker_anchor_box_candidate(
+            sleeve_source="D1_MAKER_ANCHOR_BOX",
+            box_type="DOMINANCE_MAKER_ANCHOR",
+            asset=m15.asset,
+            dedupe_key=d_key,
+            regime=str(dom_info["regime"]),
+            pair_horizons=f"{m15.horizon}_{m5.horizon}",
+            leg_a=leg_a,
+            leg_b=leg_b,
+            anchor_is_a=anchor_is_a,
+            queue_front=q_front,
+            anchor_bid_px=bid_px,
+            hedge_limit_px=hdg_raw_px,
+            avail_a_shares=av_a_sh,
+            avail_b_shares=av_b_sh,
+            close_ts=float(m5.end_ts),
+            now_ts=now_ts,
+            k_low=float(dom_info["k_low"]),
+            k_high=float(dom_info["k_high"]),
+            corridor_bps=float(dom_info["corridor_bps"]),
+            posted_spot=posted_sp,
+        )
         logger.info(
             f"[MAKER_ANCHOR_POST] {m15.asset} {dom_info['regime']} | Resting post_only=${bid_px:.3f} (qf={q_front}) "
             f"+ hedge_eff=${hdg_eff:.4f} = ${bid_px + hdg_eff:.4f} (TTE={rem_sec:.0f}s)"
@@ -4693,50 +4853,85 @@ class Alpha124ShadowDaemon:
         close_ts: float,
         title: str,
         now_ts: float,
+        prefetched_books: Optional[Dict[str, Dict[str, Any]]] = None,
     ) -> bool:
         """
-        Posts a passive `post_only=True` `0%`-fee Maker Anchor quote on the wider-spread leg of a
-        `0%`-fee 2-leg dominance box (`SP1` NBA, `CM_B3` Pyth, `TW1`, `FED1`, `COND1`) when Taker
-        sum is `(0.994, 1.035]` and `bid_anc + ask_hdg <= $0.986`.
+        EXP-PM-409 (`ZF_INTRADAY_MAKER_BOX`): Hardened intraday (`240s <= TTE <= 18h`) `0%`-fee Maker Anchor
+        for `SP1_NBA` Polish Middles (`$0.95 + $0.01 = $0.960`), same-day `CM_B3` Pyth barriers, `TW1`, and `COND1`:
+          - Tick-exact `[0.001, 0.999]` pricing with `+1 tick` queue-front step,
+          - `obi_anc >= -0.25`, `0.900 <= pair_est <= 0.988` anti-box floor + `opp_token_id` complement guard,
+          - Realistic `T100` (`$18`) `>= 2.5x` hedge depth gate and strict `15.0s` max rest TTL.
         """
-        if is_shadow_sleeve_quarantined("ZERO_FEE_MAKER_ANCHOR_BOX"):
+        if is_shadow_sleeve_quarantined("ZF_INTRADAY_MAKER_BOX"):
             return False
-        if d_key in self.entered_keys or d_key in self.pending_zero_fee_maker_anchors or (close_ts - now_ts) < 300.0:
+        rem_sec = float(close_ts - now_ts)
+        if not (240.0 <= rem_sec <= 64800.0):
+            return False
+        cd_map = self.__dict__.setdefault("_zf_maker_cooldown_until", {})
+        if d_key in self.entered_keys or d_key in self.pending_zero_fee_maker_anchors or float(cd_map.get(d_key, 0.0) or 0.0) > now_ts:
             return False
         if float(leg_a.get("fee_rate", 0.0)) > 0.0 or float(leg_b.get("fee_rate", 0.0)) > 0.0:
             return False
-        bid_a, _ = extract_best_bid(bk_a.get("bids") or [])
-        bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
+        if prefetched_books:
+            opp_a = str(leg_a.get("opp_token_id") or "")
+            opp_b = str(leg_b.get("opp_token_id") or "")
+            if opp_a in prefetched_books and opp_b in prefetched_books:
+                ob_a, _ = extract_best_bid((prefetched_books[opp_a] or {}).get("bids") or [])
+                ob_b, _ = extract_best_bid((prefetched_books[opp_b] or {}).get("bids") or [])
+                if (ob_a + ob_b) > 1.0:
+                    return False
+
+        bids_a = sorted([(float(b["price"]), float(b["size"])) for b in (bk_a.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0], key=lambda x: -x[0])
+        bids_b = sorted([(float(b["price"]), float(b["size"])) for b in (bk_b.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0], key=lambda x: -x[0])
         asks_a = sorted([(float(a["price"]), float(a["size"])) for a in (bk_a.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
         asks_b = sorted([(float(a["price"]), float(a["size"])) for a in (bk_b.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
-        if not asks_a or not asks_b or bid_a <= 0.0 or bid_b <= 0.0:
+        if not asks_a or not asks_b or not bids_a or not bids_b:
             return False
-        ask_a, ask_b = asks_a[0][0], asks_b[0][0]
-        req_sh = max(6.0, math.floor(float(BANKROLL_TICKETS["T1000"]["ZERO_FEE_MAKER_ANCHOR_BOX"]) / 0.986))
-        best_c: Optional[Tuple[bool, float, float]] = None
+        bid_a, bsz_a = bids_a[0]
+        bid_b, bsz_b = bids_b[0]
+        ask_a, asz_a = asks_a[0]
+        ask_b, asz_b = asks_b[0]
+        obi_a = (bsz_a - asz_a) / max(1e-9, bsz_a + asz_a)
+        obi_b = (bsz_b - asz_b) / max(1e-9, bsz_b + asz_b)
+        req_sh_t100 = max(6.0, math.floor(float(BANKROLL_TICKETS["T100"]["ZF_INTRADAY_MAKER_BOX"]) / 0.988))
+        req_sh_t1000 = max(6.0, math.floor(float(BANKROLL_TICKETS["T1000"]["ZF_INTRADAY_MAKER_BOX"]) / 0.988))
+
+        def _snap_zf(p: float) -> float:
+            p = round(float(p), 4)
+            return (math.floor((p + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < p < 0.96 - 1e-9) else (math.floor((p + 1e-9) * 1000.0) / 1000.0)
+
+        zf_cands: List[Tuple[float, bool, float, float]] = []
         for anc_is_a in (True, False):
             b_anc = bid_a if anc_is_a else bid_b
             a_anc = ask_a if anc_is_a else ask_b
+            obi_anc = obi_a if anc_is_a else obi_b
             b_hdg = bid_b if anc_is_a else bid_a
             asks_hdg = asks_b if anc_is_a else asks_a
-            if (a_anc - b_anc) < 0.02 or not (0.04 <= a_anc <= 0.94):
-                continue
             a_hdg = asks_hdg[0][0]
-            if (a_hdg - b_hdg) > 0.045:
+            if not (0.02 <= a_anc <= 0.999) or not (0.001 <= a_hdg <= 0.985) or obi_anc < -0.25:
+                continue
+            if b_hdg > 0.0 and a_hdg > 0.04 and (a_hdg - b_hdg) > 0.05:
+                continue
+            tb_anc = 0.001 if (b_anc >= 0.96 or b_anc < 0.04) else 0.01
+            ta_anc = 0.001 if (a_anc > 0.96 or a_anc <= 0.04) else 0.01
+            step_b = _snap_zf(b_anc + tb_anc)
+            max_u = _snap_zf(a_anc - ta_anc)
+            if step_b > max_u + 1e-9 or step_b <= b_anc + 1e-9:
                 continue
             avail_hdg = sum(sz for px, sz in asks_hdg if px <= a_hdg + 0.01)
-            if avail_hdg < max(15.0, 2.5 * req_sh):
+            if avail_hdg < max(18.0, 2.5 * req_sh_t100):
                 continue
-            _raw_cb = min(min(b_anc + 0.01, a_anc - 0.01), 0.986 - a_hdg)
-            cand_bid = (math.floor((_raw_cb + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < round(_raw_cb, 4) < 0.96 - 1e-9) else (math.floor((_raw_cb + 1e-9) * 1000.0) / 1000.0)
-            if cand_bid < round(b_anc - 0.01, 3) or cand_bid <= 0.02 or cand_bid >= a_anc:
+            cand_bid = min(step_b, max_u, _snap_zf(0.988 - a_hdg))
+            if cand_bid < round(b_anc - tb_anc, 3) or cand_bid <= 0.015 or cand_bid >= a_anc:
                 continue
-            if (cand_bid + a_hdg) <= 0.986:
-                best_c = (anc_is_a, round(cand_bid, 3), round(a_hdg, 4))
-                break
-        if best_c is None:
+            pair_est = round(cand_bid + a_hdg, 4)
+            if 0.900 <= pair_est <= 0.988:
+                zf_cands.append((pair_est, anc_is_a, round(cand_bid, 4), round(a_hdg, 4)))
+
+        if not zf_cands:
             return False
-        anc_is_a, bid_px, hdg_px = best_c
+        zf_cands.sort(key=lambda z: z[0])
+        pair_est, anc_is_a, bid_px, hdg_px = zf_cands[0]
         self.pending_zero_fee_maker_anchors[d_key] = {
             "source_tag": source_tag,
             "dedupe_key": d_key,
@@ -4746,13 +4941,36 @@ class Alpha124ShadowDaemon:
             "leg_b": leg_b,
             "anchor_is_a": anc_is_a,
             "bid_px": bid_px,
-            "pair_est": round(bid_px + hdg_px, 4),
-            "req_shares_t1000": req_sh,
+            "pair_est": pair_est,
+            "req_shares_t100": req_sh_t100,
+            "req_shares_t1000": req_sh_t1000,
             "close_ts": close_ts,
             "posted_ts": now_ts,
         }
+        av_a_sh = sum(sz for px, sz in asks_a if px <= ask_a + 0.01)
+        av_b_sh = sum(sz for px, sz in asks_b if px <= ask_b + 0.01)
+        self.emit_live_maker_anchor_box_candidate(
+            sleeve_source="ZF_INTRADAY_MAKER_BOX",
+            box_type="ZERO_FEE_MAKER_ANCHOR",
+            asset=asset,
+            dedupe_key=d_key,
+            regime=f"ZF_{source_tag}",
+            pair_horizons=f"zf_{source_tag.lower()}",
+            leg_a=leg_a,
+            leg_b=leg_b,
+            anchor_is_a=anc_is_a,
+            queue_front=True,
+            anchor_bid_px=bid_px,
+            hedge_limit_px=hdg_px,
+            avail_a_shares=av_a_sh,
+            avail_b_shares=av_b_sh,
+            close_ts=float(close_ts),
+            now_ts=now_ts,
+            k_low=float(leg_a.get("strike") or 100.0),
+            k_high=float(leg_b.get("strike") or 100.0),
+        )
         logger.info(
-            f"[ZF_MAKER_ANCHOR_POST:{source_tag}] {title} | bid=${bid_px:.3f} + hdg=${hdg_px:.3f} = ${bid_px + hdg_px:.3f}"
+            f"[ZF_INTRADAY_MAKER_POST:{source_tag}] {title} | bid=${bid_px:.3f} + hdg=${hdg_px:.3f} = ${pair_est:.4f} (TTE={rem_sec/3600.0:.2f}h)"
         )
         return True
 
@@ -4760,6 +4978,7 @@ class Alpha124ShadowDaemon:
         if not self.pending_zero_fee_maker_anchors:
             return
         now = float(now_ts if now_ts is not None else time.time())
+        cd_map = self.__dict__.setdefault("_zf_maker_cooldown_until", {})
         toks = [t for st in self.pending_zero_fee_maker_anchors.values() for t in (str(st["leg_a"]["token_id"]), str(st["leg_b"]["token_id"]))]
         bks = await self.fetch_books_batch(toks, timeout=3.0)
         for d_key, st in list(self.pending_zero_fee_maker_anchors.items()):
@@ -4774,56 +4993,63 @@ class Alpha124ShadowDaemon:
             rem_sec = float(st["close_ts"]) - now
             asks_anc = (bk_anc or {}).get("asks") or []
             best_ask_anc = min((float(a["price"]) for a in asks_anc if float(a.get("size", 0)) > 0), default=1.0)
-            if bk_anc is not None and rested >= 0.50 and best_ask_anc <= bid_px:
+            if bk_anc is not None and rested >= 0.40 and best_ask_anc <= bid_px:
                 self.pending_zero_fee_maker_anchors.pop(d_key, None)
                 self.entered_keys.add(d_key)
                 asks_hdg = sorted([(float(a["price"]), float(a["size"])) for a in ((bk_hdg or {}).get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
                 hdg_px = asks_hdg[0][0] if asks_hdg else 1.0
                 hdg_avail = sum(sz for px, sz in asks_hdg if px <= hdg_px + 0.01) if asks_hdg else 0.0
                 pair_eff = round(bid_px + hdg_px, 4)
-                if bk_hdg is not None and asks_hdg and hdg_avail >= 5.0 and pair_eff <= 0.994:
+                if bk_hdg is not None and asks_hdg and hdg_avail >= 5.0 and 0.900 <= pair_eff <= 0.993:
                     tf_zf: Dict[str, Dict[str, Any]] = {}
+                    drag_zf: Dict[str, float] = {}
                     for t_name, t_map in BANKROLL_TICKETS.items():
-                        sh = max(5.0, min(hdg_avail, math.floor(t_map["ZERO_FEE_MAKER_ANCHOR_BOX"] / pair_eff)))
+                        sh = max(5.0, min(hdg_avail, math.floor(t_map["ZF_INTRADAY_MAKER_BOX"] / pair_eff)))
                         tf_zf[t_name] = {"filled": True, "vwap": pair_eff, "eff_px": pair_eff, "spent_usd": round(sh * pair_eff, 2), "fee_usd": 0.0, "shares": sh, "l1_usd": round(hdg_avail * pair_eff, 2)}
+                        dr_z = compute_d1_maker_anchor_drag_haircut(
+                            shares=sh, pair_eff=pair_eff, bid_anc=bid_px, hdg_px=hdg_px,
+                            hdg_avail_shares=hdg_avail, fee_rate_anc=0.0, fee_exponent_anc=1.0,
+                            queue_front=True, is_4h_mixed=False,
+                        )
+                        drag_zf[t_name] = float(dr_z["legging_drag_usd"])
                     ba_c, _ = extract_best_bid((bks.get(str(la["token_id"])) or {}).get("bids") or [])
                     bb_c, _ = extract_best_bid((bks.get(str(lb["token_id"])) or {}).get("bids") or [])
-                    pid = f"ZF_MAKER_ANCHOR_{int(now)}_{d_key[-8:]}"
+                    pid = f"ZF_INTRADAY_MKR_{int(now)}_{d_key[-8:]}"
                     pos = {
-                        "position_id": pid, "dedupe_key": d_key, "sleeve": "ZERO_FEE_MAKER_ANCHOR_BOX",
-                        "asset_or_city": st["asset"], "title": f"{st['title']} [ZF Maker Anchor @ ${bid_px:.3f}]",
+                        "position_id": pid, "dedupe_key": d_key, "sleeve": "ZF_INTRADAY_MAKER_BOX",
+                        "asset_or_city": st["asset"], "title": f"{st['title']} [ZF Intraday Maker @ ${bid_px:.3f}]",
                         "side": f"{la['label']}+{lb['label']}", "token_id": f"{la['token_id']}|{lb['token_id']}",
                         "fee_rate": 0.0, "entry_ts": now, "entry_utc": datetime.now(timezone.utc).isoformat(),
                         "close_ts": st["close_ts"], "p_model_entry": 1.0, "entry_eff_px_t1000": pair_eff,
                         "entry_vwap_t1000": pair_eff, "realized_edge_t1000": round(1.0 - pair_eff, 4),
                         "entry_best_bid": round(ba_c + bb_c, 4), "last_bid": round(ba_c + bb_c, 4),
                         "maker_tp_px": None, "tier_fills": tf_zf,
-                        "extra": {"is_two_leg_box": True, "source_tag": st["source_tag"], "leg_a": la, "leg_b": lb},
+                        "extra": {"is_two_leg_box": True, "is_maker_anchor_box": True, "legging_drag_usd_by_tier": drag_zf, "source_tag": st["source_tag"], "leg_a": la, "leg_b": lb},
                         "status": "OPEN",
                     }
                     self.open_positions[pid] = pos
                     self._append_ledger({"event": "SHADOW_ENTRY", **pos})
-                    logger.info(f"[ENTRY:ZERO_FEE_MAKER_ANCHOR_BOX] {pos['title']} -> Hedged @ ${pair_eff:.4f}!")
+                    logger.info(f"[ENTRY:ZF_INTRADAY_MAKER_BOX] {pos['title']} -> Hedged @ ${pair_eff:.4f}!")
                 else:
                     scr_bid, _ = extract_best_bid((bk_anc or {}).get("bids") or [])
                     net_scr = scr_bid if scr_bid > 0 else max(0.01, bid_px - 0.03)
                     tf_s, tp_s = {}, {}
                     ref_zf_pair = max(0.90, float(st.get("pair_est") or 0.986))
                     for t_name, t_map in BANKROLL_TICKETS.items():
-                        sh_s = max(5.0, float(math.floor(t_map["ZERO_FEE_MAKER_ANCHOR_BOX"] / ref_zf_pair)))
+                        sh_s = max(5.0, float(math.floor(t_map["ZF_INTRADAY_MAKER_BOX"] / ref_zf_pair)))
                         bud = round(sh_s * bid_px, 2)
                         tf_s[t_name] = {"filled": True, "vwap": bid_px, "eff_px": bid_px, "spent_usd": bud, "fee_usd": 0.0, "shares": sh_s}
                         tp_s[t_name] = round(sh_s * net_scr - bud, 2)
                     pos_scr = {
                         "position_id": f"ZF_MKR_SCRATCH_{int(now)}_{d_key[-8:]}", "dedupe_key": d_key,
-                        "sleeve": "ZERO_FEE_MAKER_ANCHOR_BOX", "asset_or_city": st["asset"],
-                        "title": f"{st['title']} [ZF Maker Anchor Scratch]", "side": f"{leg_anc['label']}_SCRATCH",
+                        "sleeve": "ZF_INTRADAY_MAKER_BOX", "asset_or_city": st["asset"],
+                        "title": f"{st['title']} [ZF Intraday Maker Scratch]", "side": f"{leg_anc['label']}_SCRATCH",
                         "token_id": str(leg_anc["token_id"]), "fee_rate": 0.0, "entry_ts": st["posted_ts"],
                         "entry_utc": datetime.fromtimestamp(st["posted_ts"], tz=timezone.utc).isoformat(),
                         "close_ts": st["close_ts"], "closed_ts": now, "closed_utc": datetime.now(timezone.utc).isoformat(),
                         "p_model_entry": 0.5, "entry_eff_px_t1000": bid_px, "entry_vwap_t1000": bid_px,
                         "net_payout_per_share": round(net_scr, 4), "tier_fills": tf_s, "tier_pnls_usd": tp_s,
-                        "legging_adjusted_tier_pnls_usd": tp_s, "won": tp_s.get("T1000", 0.0) > 0,
+                        "legging_adjusted_tier_pnls_usd": dict(tp_s), "won": tp_s.get("T1000", 0.0) > 0,
                         "status": "MAKER_ANCHOR_UNHEDGED_SCRATCH",
                     }
                     self.closed_positions.append(pos_scr)
@@ -4832,8 +5058,20 @@ class Alpha124ShadowDaemon:
             asks_hdg_c = sorted([(float(a["price"]), float(a["size"])) for a in ((bk_hdg or {}).get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
             hdg_px_c = asks_hdg_c[0][0] if asks_hdg_c else 1.0
             hdg_avail_c = sum(sz for px, sz in asks_hdg_c if px <= hdg_px_c + 0.01) if asks_hdg_c else 0.0
-            if rem_sec <= 180.0 or rested >= 900.0 or hdg_avail_c < 8.0 or (bid_px + hdg_px_c) > 0.996:
+            req_sh_chk = float(st.get("req_shares_t100") or 18.0)
+            best_bid_anc_c, b_sz_c = extract_best_bid((bk_anc or {}).get("bids") or [])
+            a_sz_c = sum(float(a.get("size", 0)) for a in asks_anc if abs(float(a.get("price", 0)) - best_ask_anc) < 1e-6)
+            obi_anc_c = ((b_sz_c - a_sz_c) / (b_sz_c + a_sz_c)) if (b_sz_c + a_sz_c) > 0.0 else 0.0
+            if (
+                rem_sec <= 180.0
+                or rested >= 15.0
+                or obi_anc_c < -0.30
+                or (best_bid_anc_c > 0.0 and best_bid_anc_c < bid_px - 0.015)
+                or hdg_avail_c < max(12.0, 2.0 * req_sh_chk)
+                or (bid_px + hdg_px_c) > 0.991
+            ):
                 self.pending_zero_fee_maker_anchors.pop(d_key, None)
+                cd_map[d_key] = now + 12.0
 
     async def scan_same_oracle_dominance_boxes(
         self, opps_out: List[Dict[str, Any]], now_ts: Optional[float] = None
@@ -6193,6 +6431,7 @@ class Alpha124ShadowDaemon:
                 "CM_B3_PYTH_BARRIER_BOX",
                 "SP1_NBA_ZERO_FEE_BOX",
                 "ZERO_FEE_MAKER_ANCHOR_BOX",
+                "ZF_INTRADAY_MAKER_BOX",
                 "D2_12PM_BINANCE_BOX",
             ) or (extra_chk.get("leg_a") and extra_chk.get("leg_b")):
                 extra = pos.get("extra") or {}
@@ -7120,6 +7359,7 @@ class Alpha124ShadowDaemon:
             lb = {"token_id": qn["no_token"], "opp_token_id": qn["yes_token"], "condition_id": qn["condition_id"], "side": "NO", "label": "NO_CLOSE", "market_id": qn["market_id"], "fee_rate": 0.0, "strike": float(qn["strike"])}
             pyth_box_cands.append((cvh["asset"], f"CMB3_CVH_{qy['market_id']}_{qn['market_id']}", la, lb, qy["bk_yes"], qn["bk_no"], float(cvh["close_ts"]), f"{cvh['asset']} Close-vs-Hit Box {cvh['label']}"))
 
+        pyth_box_cands.sort(key=lambda x: ((float(x[6]) - now) > 64800.0, float(x[6])))
         for p_asset, p_dkey, la, lb, bk_a, bk_b, c_ts, p_title in pyth_box_cands:
             w_pb = walk_equal_shares_dominance_box(
                 bk_a.get("asks") or [],
@@ -7239,6 +7479,7 @@ class Alpha124ShadowDaemon:
                     self.post_zero_fee_maker_anchor_box(
                         "SP1_NBA", "NBA", f"ZFA_SP1_{sp_nba.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",
                         la_n, lb_n, bk_a, bk_b, float(nb["close_ts"]), f"{sp_nba.title} [{nb['label']}]", now,
+                        prefetched_books=nba_bks,
                     )
                     continue
                 w_nba = walk_equal_shares_dominance_box(
@@ -7288,8 +7529,8 @@ class Alpha124ShadowDaemon:
                             now_ts=now,
                         )
 
-        # 5. NR0_ZERO_FEE_SLATE_ARB: Zero-Fee NegRisk Partition Slates (`elon-tweets`, `fomc`, `boj`, `boc`)
-        for sp_nr in list(self.negrisk_zero_slates.values()):
+        # 5. NR0_ZERO_FEE_SLATE_ARB: Zero-Fee NegRisk Partition Slates (`elon-tweets`, `fomc`, `boj`, `boc`) — intraday <= 18h first
+        for sp_nr in sorted(list(self.negrisk_zero_slates.values()), key=lambda s: ((float(s.end_ts) - now) > 64800.0, float(s.end_ts))):
             if sp_nr.end_ts <= now + 60:
                 self.negrisk_zero_slates.pop(sp_nr.event_id, None)
                 continue
@@ -7429,7 +7670,7 @@ class Alpha124ShadowDaemon:
                         if (float(tb["close_ts"]) - now) <= 86400.0 and float(w_tb["box_cost_net"]) <= 0.990:
                             self.emit_live_two_leg_box_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX", box_type="COUNTING_DOMINANCE", asset=tb["handle"].upper(), dedupe_key=dk_tw, leg_a=la_t, leg_b=lb_t, bk_a=bka_t, bk_b=bkb_t, close_ts=float(tb["close_ts"]), now_ts=now)
                 elif float(tb["box_cost_net"]) <= 1.035:
-                    self.post_zero_fee_maker_anchor_box("TW1", tb["handle"].upper(), f"ZFA_{dk_tw}", la_t, lb_t, bka_t, bkb_t, float(tb["close_ts"]), f"Counting Box {tb['label']}", now)
+                    self.post_zero_fee_maker_anchor_box("TW1", tb["handle"].upper(), f"ZFA_{dk_tw}", la_t, lb_t, bka_t, bkb_t, float(tb["close_ts"]), f"Counting Box {tb['label']}", now, prefetched_books=cnt_bks)
 
         # 6B. `FED1_CENTRAL_BANK_LP_BOX` (125-state FOMC) & `COND1_MACRO_PARTITION_BOX` (9-state Oil x Senate)
         lp_legs = [lg for lg in (self.fomc_truth_legs + self.oil_senate_truth_legs) if float(lg["end_ts"]) > now + 60]
@@ -7462,7 +7703,7 @@ class Alpha124ShadowDaemon:
                                 if sl_lp == "FED1_CENTRAL_BANK_LP_BOX" and (float(bx["close_ts"]) - now) <= 172800.0 and float(wm2["box_cost_net"]) <= 0.990:
                                     self.emit_live_two_leg_box_candidate(sleeve_source=sl_lp, box_type="MACRO_DOMINANCE", asset=asset_lp, dedupe_key=dk_m, leg_a=la_m, leg_b=lb_m, bk_a=bka_m, bk_b=bkb_m, close_ts=float(bx["close_ts"]), now_ts=now)
                         elif float(bx["box_cost_net"]) <= 1.035:
-                            self.post_zero_fee_maker_anchor_box(asset_lp, asset_lp, f"ZFA_{dk_m}", la_m, lb_m, bka_m, bkb_m, float(bx["close_ts"]), f"{asset_lp} {bx['label']}", now)
+                            self.post_zero_fee_maker_anchor_box(asset_lp, asset_lp, f"ZFA_{dk_m}", la_m, lb_m, bka_m, bkb_m, float(bx["close_ts"]), f"{asset_lp} {bx['label']}", now, prefetched_books=lp_bks)
                     elif int(bx["n_legs"]) == 3 and float(bx["box_cost_net"]) <= 0.992:
                         dk_3 = f"{asset_lp}_3L_{'_'.join(x['token_id'][-6:] for x in lgs)}"
                         wm3 = walk_equal_shares_multi_leg_box([{"asks": lp_bks[x["token_id"]].get("asks") or [], "fee_rate": 0.0, "fee_exponent": 1.0} for x in lgs], BANKROLL_TICKETS["T1000"][sl_lp], 1.0, 0.992, min_shares=6, min_box_notional_usd=5.5)
@@ -7632,6 +7873,8 @@ class Alpha124ShadowDaemon:
                     target_cadence = 3.0
                 elif self.is_in_same_oracle_overlap_window(now_end):
                     target_cadence = 3.5
+                elif self.pending_zero_fee_maker_anchors:
+                    target_cadence = 4.0
                 elif 8.0 <= rem_4h_end <= 905.0 or self.pending_preopen_straddles:
                     target_cadence = 6.0
                 else:

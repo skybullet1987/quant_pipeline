@@ -5800,6 +5800,162 @@ class PolymarketLiveExecutor:
         finally:
             _HOT_DISPATCH_ACTIVE.leave()
 
+    def execute_maker_anchor_hedge_or_unwind(
+        self,
+        box_id: str,
+        anchor_token_id: str,
+        anchor_label: str,
+        anchor_price: float,
+        anchor_matched_shares: float,
+        anchor_order_id: str,
+        hedge_token_id: str,
+        hedge_label: str,
+        hedge_limit_price: float,
+        max_box_cost_net: float = 0.993,
+        hedge_fee_rate: float = 0.07,
+        hedge_fee_exponent: float = 1.0,
+        neg_risk: Optional[bool] = None,
+        anchor_neg_risk: Optional[bool] = None,
+        hedge_neg_risk: Optional[bool] = None,
+        anchor_pre_balance: float = 0.0,
+        hedge_pre_balance: float = 0.0,
+        anchor_raw: Any = None,
+    ) -> Dict[str, Any]:
+        """EXP-PM-406B: Immediately hedges a filled 0%-fee Maker-Anchor Leg 1 via FOK BUY on Leg 2, or unwinds Leg 1 inline."""
+        try:
+            px_anc = float(anchor_price)
+            sh_anc = float(anchor_matched_shares)
+            px_hdg_in = float(hedge_limit_price)
+            cap_in = float(max_box_cost_net)
+            fr_h = float(hedge_fee_rate)
+            fe_h = float(hedge_fee_exponent)
+        except (TypeError, ValueError):
+            return {"success": False, "error": "INVALID_MAKER_ANCHOR_HEDGE_INPUTS", "legged_out": False, "outcome_unknown": False}
+
+        if not anchor_token_id or not hedge_token_id or str(anchor_token_id) == str(hedge_token_id) or sh_anc <= 0.0:
+            return {"success": False, "error": "INVALID_MAKER_ANCHOR_TOKENS_OR_SHARES", "legged_out": False, "outcome_unknown": False}
+
+        nr_anc = self.get_token_neg_risk(anchor_token_id, anchor_neg_risk if anchor_neg_risk is not None else neg_risk)
+        nr_hdg = self.get_token_neg_risk(hedge_token_id, hedge_neg_risk if hedge_neg_risk is not None else neg_risk)
+        px_hdg = self.quantize_order_price(px_hdg_in, hedge_token_id, rounding=ROUND_CEILING)
+        fee_h_ps = fr_h * ((px_hdg * (1.0 - px_hdg)) ** fe_h) if fr_h > 0.0 else 0.0
+        worst_box_cost_net = round(px_anc + px_hdg + fee_h_ps, 6)
+        shares_int = float(math.floor(sh_anc + 1e-9))
+
+        def _unwind_anchor_leg() -> Tuple[Dict[str, Any], Dict[str, Any]]:
+            pre_u = float(anchor_pre_balance or 0.0)
+            avail_u: Optional[float] = None
+            is_live_auth_u = (not self.dry_run) and getattr(self, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+            if is_live_auth_u:
+                deadline_u = time.monotonic() + 5.0
+                while time.monotonic() < deadline_u:
+                    try:
+                        avail_u = self.get_unreserved_conditional_balance(anchor_token_id)
+                    except Exception:
+                        avail_u = None
+                        break
+                    if avail_u is None:
+                        break
+                    settled_d = max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u)
+                    if settled_d >= sh_anc - 0.05:
+                        break
+                    time.sleep(0.15)
+            settled_ready = sh_anc
+            if is_live_auth_u and avail_u is not None:
+                settled_ready = min(float(avail_u), max(0.0, float(avail_u) - pre_u) if pre_u > 0.0 else float(avail_u))
+            if is_live_auth_u and avail_u is not None and settled_ready < 0.05:
+                uw_def = {"success": False, "matched_size": 0.0, "outcome_unknown": False, "error": "DEFERRED_TO_ASYNC_SUPERVISOR_PENDING_SETTLEMENT"}
+                return uw_def, {
+                    "token_id": anchor_token_id, "label": anchor_label, "price": px_anc, "is_maker_anchor": True,
+                    "matched_shares": sh_anc, "unwound_shares": 0.0, "residual_shares": round(sh_anc, 4),
+                    "orderID": anchor_order_id, "raw": anchor_raw, "unwind_outcome_unknown": False, "unwind_result": uw_def,
+                }
+            req_u = (math.floor(min(sh_anc, settled_ready) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None and settled_ready < sh_anc - 0.05) else sh_anc
+            uw_res = self.execute_unwind_order(anchor_token_id, size=req_u, side="SELL", min_price=max(0.01, round(px_anc - 0.02, 2)), neg_risk=nr_anc)
+            uw_unk = bool(isinstance(uw_res, dict) and uw_res.get("outcome_unknown"))
+            unw_sh = float(uw_res.get("matched_size") or 0.0) if (isinstance(uw_res, dict) and (uw_res.get("success") or uw_res.get("partial")) and not uw_unk) else 0.0
+            rem_u = round(max(0.0, sh_anc - unw_sh), 4)
+            if rem_u > 0.05 and not uw_unk:
+                uw_2 = self.execute_unwind_order(anchor_token_id, size=rem_u, side="SELL", min_price=max(0.01, round(px_anc * 0.85, 2)), neg_risk=nr_anc)
+                if isinstance(uw_2, dict):
+                    uw_unk = bool(uw_2.get("outcome_unknown"))
+                    if (uw_2.get("success") or uw_2.get("partial")) and not uw_unk:
+                        unw_sh += float(uw_2.get("matched_size") or 0.0)
+                    uw_res = dict(uw_2)
+                    uw_res["matched_size"] = round(unw_sh, 4)
+            return uw_res, {
+                "token_id": anchor_token_id, "label": anchor_label, "price": px_anc, "is_maker_anchor": True,
+                "matched_shares": sh_anc, "unwound_shares": round(unw_sh, 4), "residual_shares": round(max(0.0, sh_anc - unw_sh), 4),
+                "orderID": anchor_order_id, "raw": anchor_raw, "unwind_outcome_unknown": uw_unk, "unwind_result": uw_res,
+            }
+
+        if shares_int < 5.0 or worst_box_cost_net < 0.900 - 1e-6 or worst_box_cost_net > cap_in + 1e-6:
+            uw_r, res_i = _unwind_anchor_leg()
+            return {
+                "success": False, "stage": "ANCHOR_PARTIAL_OR_CAP_UNWOUND", "legged_out": True, "outcome_unknown": False,
+                "leg_1_order_id": anchor_order_id, "unwind_result": uw_r, "residual_unhedged_leg": res_i,
+                "error": f"MAKER_ANCHOR_PRE_HEDGE_VETO (sh={sh_anc:.2f}, net={worst_box_cost_net:.4f}, cap={cap_in:.4f})",
+            }
+
+        if self.dry_run:
+            oid_2 = f"MOCK_MKR_HDG_L2_{int(time.time() * 1000)}"
+            return {
+                "success": True, "mode": "DRY_RUN", "box_id": box_id, "shares": shares_int, "worst_box_cost_net": worst_box_cost_net,
+                "guaranteed_min_profit_usd": round(shares_int * (1.0 - worst_box_cost_net), 4), "legged_out": False, "outcome_unknown": False,
+                "leg_1": {"label": anchor_label, "token_id": anchor_token_id, "price": px_anc, "matched_shares": shares_int, "orderID": anchor_order_id, "is_maker_anchor": True, "raw": anchor_raw},
+                "leg_2": {"label": hedge_label, "token_id": hedge_token_id, "price": px_hdg, "matched_shares": shares_int, "orderID": oid_2},
+            }
+
+        if not self.is_authenticated or self.client is None or OrderArgsV2 is None:
+            raise RuntimeError(f"LIVE MAKER ANCHOR HEDGE REFUSED: Executor unauthenticated ({self.auth_mode}).")
+
+        _HOT_DISPATCH_ACTIVE.enter()
+        try:
+            tick_h = self.get_token_tick_size(hedge_token_id)
+            opts_h = PartialCreateOrderOptions(tick_size=str(tick_h), neg_risk=nr_hdg, version=2) if PartialCreateOrderOptions else None
+            with _UrgentSignPriority():
+                signed_h = _safe_create_order(self.client.create_order, OrderArgsV2(price=px_hdg, size=shares_int, side="BUY", token_id=hedge_token_id), opts_h)
+            try:
+                resp_2 = self.client.post_order(signed_h, OrderType.FOK, False, True)
+            except TypeError:
+                resp_2 = self.client.post_order(signed_h, OrderType.FOK)
+            except Exception as e2:
+                err_2 = str(getattr(e2, "error_message", "") or str(e2))
+                is_clean_400 = is_clob_400_rejection(e2) or any(k in err_2.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance"))
+                if not is_clean_400:
+                    return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": anchor_order_id, "leg_1_token_id": anchor_token_id, "leg_2_token_id": hedge_token_id, "error": err_2}
+                uw_r, res_i = _unwind_anchor_leg()
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": anchor_order_id, "unwind_result": uw_r, "residual_unhedged_leg": res_i, "error": err_2}
+
+            err_2 = resp_2.get("errorMsg") or resp_2.get("error")
+            oid_2 = resp_2.get("orderID") or resp_2.get("id")
+            if not err_2 and oid_2:
+                matched_2 = self._extract_fok_matched_shares(resp_2, shares_int)
+                if matched_2 is None:
+                    return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": anchor_order_id, "leg_2_order_id": oid_2, "leg_1_token_id": anchor_token_id, "leg_2_token_id": hedge_token_id, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
+                if matched_2 <= 0.0:
+                    uw_r, res_i = _unwind_anchor_leg()
+                    return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": anchor_order_id, "unwind_result": uw_r, "residual_unhedged_leg": res_i, "error": "LEG_2_MATCHED_ZERO_SHARES", "raw_leg_2": resp_2}
+                paired_shares = min(sh_anc, matched_2)
+                imbalance_unwind = None
+                if abs(sh_anc - matched_2) > 0.05:
+                    ex_tok, ex_px, ex_nr = (anchor_token_id, px_anc, nr_anc) if sh_anc > matched_2 else (hedge_token_id, px_hdg, nr_hdg)
+                    imbalance_unwind = self.execute_unwind_order(ex_tok, size=abs(sh_anc - matched_2), side="SELL", min_price=max(0.01, round(ex_px * 0.85, 2)), neg_risk=ex_nr)
+                logger.info(f"[LIVE MAKER ANCHOR BOX FILLED] {box_id} | {paired_shares:.2f} pairs @ worst_net=${worst_box_cost_net:.4f} (MKR={anchor_order_id}, FOK={oid_2})")
+                return {
+                    "success": True, "box_id": box_id, "shares": paired_shares, "worst_box_cost_net": worst_box_cost_net,
+                    "guaranteed_min_profit_usd": round(paired_shares * (1.0 - worst_box_cost_net), 4),
+                    "legged_out": False, "outcome_unknown": False, "imbalance_unwind": imbalance_unwind,
+                    "leg_1": {"label": anchor_label, "token_id": anchor_token_id, "price": px_anc, "matched_shares": sh_anc, "orderID": anchor_order_id, "is_maker_anchor": True, "raw": anchor_raw},
+                    "leg_2": {"label": hedge_label, "token_id": hedge_token_id, "price": px_hdg, "matched_shares": matched_2, "orderID": oid_2, "raw": resp_2},
+                }
+            if err_2 and not oid_2:
+                uw_r, res_i = _unwind_anchor_leg()
+                return {"success": False, "stage": "LEG_2_REJECTED_UNWOUND", "legged_out": True, "outcome_unknown": False, "leg_1_order_id": anchor_order_id, "unwind_result": uw_r, "residual_unhedged_leg": res_i, "error": str(err_2), "raw_leg_2": resp_2}
+            return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": anchor_order_id, "leg_2_order_id": oid_2, "leg_1_token_id": anchor_token_id, "leg_2_token_id": hedge_token_id, "error": f"AMBIGUOUS_LEG_2_RESPONSE: {err_2 or 'missing orderID'}", "raw_leg_2": resp_2}
+        finally:
+            _HOT_DISPATCH_ACTIVE.leave()
+
     def post_maker_exit_order(
         self,
         token_id: str,

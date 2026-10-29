@@ -3565,6 +3565,261 @@ def test_riskless_frequency_expansion_tte18_xrp_zf_bridge_and_bid_harvest(tmp_pa
     assert h.risk_controller.consecutive_losses == 0
 
 
+def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp_path):
+    """
+    Verifies EXP-PM-407 (Purged-WFO Convex Payoff-Normalized Sizing `convex_k79_g075_stop125`)
+    and EXP-PM-408 (`SLEEVE_4_BOUNDARY_SNIPE` pre-gate + orthogonal Slot-2 unlock):
+      1. Entry at $0.76 (below $0.79 knee) preserves punch ($40.80 -> ~$34.48 via 12.5% salvage risk cap on $130 equity).
+      2. High-price asymmetric tail entry at $0.844 tapers $40.80 -> ~$25.25 so 1 stop never wipes out 6 wins.
+      3. Boundary lock (`tte=22s`, `candle_distance_pct=+0.08%`, `price=0.89`) clears pre-gates AND enters Slot #2
+         concurrently with an open 15m directional position when equity >= $110, while a 2nd regular 15m trade is still blocked.
+    """
+    import asyncio
+    from src.polymarket_research import polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_executor import OrderResult, ExecutionStatus
+
+    # 1. Direct mathematical verification of `apply_convex_payoff_sizing_cap`
+    sz_76 = plh.apply_convex_payoff_sizing_cap(40.80, entry_px=0.76, live_equity=130.0)
+    sz_844 = plh.apply_convex_payoff_sizing_cap(40.80, entry_px=0.844, live_equity=130.0)
+    assert 23.0 <= sz_76 <= 24.5, f"$0.76 entry should cap at 12.5% salvage-risk (~$23.78 on $130 equity), got {sz_76}"
+    assert 22.0 <= sz_844 <= 23.2, f"$0.844 entry should cap at ~$22.71 (vs $40.80 flat -> -44% stop wipeout!), got {sz_844}"
+    sz_76_hi = plh.apply_convex_payoff_sizing_cap(40.80, entry_px=0.76, live_equity=280.0)
+    sz_844_hi = plh.apply_convex_payoff_sizing_cap(40.80, entry_px=0.844, live_equity=280.0)
+    assert sz_76_hi == pytest.approx(40.80), "$0.76 entry preserves 100% Kelly punch when within salvage cap!"
+    assert sz_844_hi == pytest.approx(32.16, abs=0.25), "$0.844 entry tapers by ((0.99-0.844)/0.20)**0.75 = 0.788x!"
+
+    # 2. EXP-PM-408: Boundary Lock (`tte=22s`, `$0.89`) clears `_calc_priority_score` + `is_boundary_lock_cand` + Slot #2
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "state.json")
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.dynamic_sizing = True
+    h.allowed_assets = {"BTC", "ETH"}
+    h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
+    h.executor.is_heartbeat_healthy = lambda: True
+    h._last_known_collateral = 100.0
+    h.executor.get_collateral_balance = lambda *a, **kw: 100.0
+    h.executor.get_conditional_balance = lambda *a, **kw: 0.0
+    h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "OID_EXIT_408"}
+
+    # Pre-populate Slot #1 with an active 15m BTC directional position ($30 notional -> total_account_value = $130 >= $110)
+    h.active_positions["SLOT1_BTC_15M"] = {
+        "trade_id": "SLOT1_BTC_15M",
+        "market_id": "6000001",
+        "asset": "BTC",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "sleeve": "SLEEVE_1_CRYPTO_DIRECTIONAL",
+        "candle_expiry_ts": time.time() + 420.0,
+        "notional_usd": 30.0,
+        "remaining_cost_basis": 30.0,
+        "remaining_shares": 40.0,
+        "entry_price": 0.75,
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+    }
+    snipe_calls = []
+
+    async def _mock_snipe(**kw):
+        snipe_calls.append(kw)
+        return OrderResult(
+            success=True, order_id=f"OID_{len(snipe_calls)}", trade_id=kw["trade_id"],
+            token_id=kw["token_id"], target_token=kw["target_token"], side="BUY",
+            price=kw["target_price"], size=round(kw["notional_usd"] / kw["target_price"], 2),
+            notional_usd=kw["notional_usd"], fee_usd=0.05, latency_ms=1.0,
+            mode="DRY_RUN", execution_status=ExecutionStatus.POSITION_CONFIRMED, confirmed_onchain=True,
+            details={"pre_token_balance": 0.0},
+        )
+
+    h.executor.execute_snipe_order_async = _mock_snipe
+
+    # Regular 2nd 15m directional shock at TTE=180s MUST still be blocked by correlated concurrency guard (< $180)
+    now_t = time.time()
+    reg_shock = {
+        "event_id": "EVT_REG_2", "market_id": "6000002", "condition_id": "0xc2", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 15m", "asset": "ETH", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 2520.0, "trigger_price": 2520.0,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.80,
+        "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xc2"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "100000000000000000002", "raw_top_asks": [[0.74, 150.0]], "raw_top_bids": [[0.73, 150.0]],
+                "effective_price_$25": 0.74, "vwap_$25": 0.74, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    assert h._calc_priority_score(reg_shock) > 0
+    asyncio.run(h.evaluate_shock_and_execute(reg_shock))
+    assert len(snipe_calls) == 0, "Correlated 2nd 15m trade must remain blocked below $180!"
+
+    # Boundary-Lock shock (`tte=22s`, `$0.89`, recorder shock without explicit shock_source='BOUNDARY_LOCK') MUST pass!
+    bnd_shock = {
+        "event_id": "EVT_BND_2", "market_id": "6000003", "condition_id": "0xc3", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 5m", "asset": "ETH", "horizon": "5m", "shock_direction": "BUY",
+        "seconds_to_expiry": 22.0, "spot_at_t0": 2504.0, "trigger_price": 2504.0,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.16,
+        "candle_sigma": 0.0010, "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xc3"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "100000000000000000003", "raw_top_asks": [[0.89, 150.0]], "raw_top_bids": [[0.88, 150.0]],
+                "effective_price_$25": 0.89, "vwap_$25": 0.89, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    assert h._calc_priority_score(bnd_shock) > 0, "Boundary lock at $0.89 (<= $0.94) must pass _calc_priority_score!"
+    asyncio.run(h.evaluate_shock_and_execute(bnd_shock))
+    assert len(snipe_calls) == 1, "Orthogonal SLEEVE_4_BOUNDARY_SNIPE (TTE=22s <= 45s) must unlock Slot #2!"
+    assert snipe_calls[0]["notional_usd"] <= 22.0
+
+
+def test_exp_pm_406b_live_maker_anchor_bridge_and_409_zf_intraday_maker_box(monkeypatch, tmp_path):
+    """
+    Verifies EXP-PM-406B (Live `D1_MAKER_ANCHOR_BOX` execution bridge gated on strict 8/8 `_grad8`)
+    and EXP-PM-409 (`ZF_INTRADAY_MAKER_BOX` hardened 15s-TTL intraday `0%`-fee Maker-Anchor):
+      1. `ZF_INTRADAY_MAKER_BOX` accepts `$0.95 + $0.01 = $0.960` (`<= 18h` NBA Polish Middle), rejects `> 18h` boxes,
+         and cancels unfilled orders at `15.0s` TTL (`$0.00` fee).
+      2. `maybe_execute_graduated_maker_anchor_box` strictly blocks `< 8/8` (`7/8`), executes once `8/8` (`100%` WR),
+         records `$0.00` maker fee on Leg 1 + exact taker fee on Leg 2 (including `$0.987 + $0.001` tail-tick boxes),
+         and unwinds Leg 1 inline if Leg 2 FOK is rejected.
+    """
+    import asyncio
+    import json
+    from src.polymarket_research import alpha_124_shadow_daemon as a124
+    from src.polymarket_research import polymarket_live_harvester as plh
+
+    # Part A: EXP-PM-409 `ZF_INTRADAY_MAKER_BOX` ($0.95 + $0.01 = $0.960 NBA Polish Middle + 15s TTL)
+    monkeypatch.setattr(a124, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "alpha124_shadow_state.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "ledger.jsonl")
+    monkeypatch.setattr(a124, "D1_LIVE_CANDIDATES_FILE", tmp_path / "d1_cands.jsonl")
+    d = a124.Alpha124ShadowDaemon(single_scan=True)
+    now = time.time()
+    la_nba = {"token_id": "NBA_ML_76ERS", "opp_token_id": "NBA_ML_PACERS", "market_id": "M_NBA_1", "condition_id": "0xnba1", "side": "YES", "label": "76ers ML", "fee_rate": 0.0, "strike": 0.0}
+    lb_nba = {"token_id": "NBA_SPR_PACERS", "opp_token_id": "NBA_SPR_76ERS", "market_id": "M_NBA_2", "condition_id": "0xnba2", "side": "YES", "label": "Pacers +9.5", "fee_rate": 0.0, "strike": 9.5}
+    bk_ml = {"bids": [{"price": "0.94", "size": "120"}], "asks": [{"price": "0.99", "size": "120"}]}
+    bk_sp = {"bids": [{"price": "0.005", "size": "200"}], "asks": [{"price": "0.01", "size": "8000"}]}
+
+    # > 18h (`72000s`) multi-day box MUST be rejected
+    assert d.post_zero_fee_maker_anchor_box("SP1_NBA", "NBA", "ZFA_LONG", la_nba, lb_nba, bk_ml, bk_sp, now + 72000.0, "Long Box", now) is False
+    # Intraday (`7200s` = 2h) NBA Polish Middle (`$0.95` maker bid + `$0.01` hedge = `$0.960`) MUST post & emit IPC candidate!
+    assert d.post_zero_fee_maker_anchor_box("SP1_NBA", "NBA", "ZFA_NBA_76ERS", la_nba, lb_nba, bk_ml, bk_sp, now + 7200.0, "76ers vs Pacers", now) is True
+    assert d.pending_zero_fee_maker_anchors["ZFA_NBA_76ERS"]["pair_est"] == pytest.approx(0.960)
+    emitted_lines = (tmp_path / "d1_cands.jsonl").read_text(encoding="utf-8").strip().splitlines()
+    assert len(emitted_lines) == 1
+    zf_cand = json.loads(emitted_lines[0])
+    assert zf_cand["box_type"] == "ZERO_FEE_MAKER_ANCHOR"
+    assert zf_cand["sleeve_source"] == "ZF_INTRADAY_MAKER_BOX"
+
+    # At `rested = 15.5s` without fill, `manage_pending_zero_fee_maker_anchors` MUST cancel (`$0.00` fee)
+    async def _mock_books_unfilled(toks, timeout=3.0):
+        return {"NBA_ML_76ERS": bk_ml, "NBA_SPR_PACERS": bk_sp}
+
+    d.fetch_books_batch = _mock_books_unfilled
+    asyncio.run(d.manage_pending_zero_fee_maker_anchors(now + 15.5))
+    assert "ZFA_NBA_76ERS" not in d.pending_zero_fee_maker_anchors
+
+    # Part B: EXP-PM-406B Live Harvester Maker-Anchor Bridge (strict 8/8 gate + $0.987+$0.001 tail-tick fill + 0% maker fee)
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_state.json")
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h._last_known_collateral = 129.74
+
+    d1_mkr_cand = {
+        "box_id": "D1_MKR_SOL_TEST",
+        "dedupe_key": "D1_MKR_SOL_M15_M5",
+        "box_type": "DOMINANCE_MAKER_ANCHOR",
+        "sleeve_source": "D1_MAKER_ANCHOR_BOX",
+        "ts_unix": time.time(),
+        "asset": "SOL",
+        "regime": "REGIME_1_UP15_DOWN5",
+        "pair_horizons": "15m_5m",
+        "anchor_is_a": True,
+        "queue_front": True,
+        "anchor_bid_px": 0.987,
+        "hedge_limit_px": 0.001,
+        "posted_spot": 180.50,
+        "k_low": 180.00,
+        "k_high": 180.25,
+        "corridor_bps": 13.89,
+        "expiry_ts": time.time() + 180.0,
+        "shares": 16,
+        "leg_a_token_id": "SOL_15M_UP_TOK",
+        "leg_a_opp_token_id": "SOL_15M_DN_TOK",
+        "leg_a_label": "15m_UP",
+        "leg_a_side": "UP",
+        "leg_a_horizon": "15m",
+        "leg_a_market_id": "M_SOL_15",
+        "leg_a_condition_id": "0xsol15",
+        "leg_a_strike": 180.00,
+        "leg_a_limit_price": 0.987,
+        "leg_a_fee_rate": 0.07,
+        "leg_a_fee_exponent": 1.0,
+        "leg_a_neg_risk": False,
+        "leg_b_token_id": "SOL_5M_DN_TOK",
+        "leg_b_opp_token_id": "SOL_5M_UP_TOK",
+        "leg_b_label": "5m_DOWN",
+        "leg_b_side": "DOWN",
+        "leg_b_horizon": "5m",
+        "leg_b_market_id": "M_SOL_5",
+        "leg_b_condition_id": "0xsol5",
+        "leg_b_strike": 180.25,
+        "leg_b_limit_price": 0.002,
+        "leg_b_fee_rate": 0.07,
+        "leg_b_fee_exponent": 1.0,
+        "leg_b_neg_risk": False,
+    }
+
+    # 7/8 wins MUST be blocked by strict 8/8 gate
+    (tmp_path / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "D1_MAKER_ANCHOR_BOX": {"closed": 7, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 85.0, "legging_adjusted_pnl_t1000_usd": 79.0}
+        }
+    }), encoding="utf-8")
+    r_7 = asyncio.run(h.maybe_execute_graduated_maker_anchor_box(d1_mkr_cand))
+    assert r_7["executed"] is False and "NOT_YET_8_OF_8" in r_7["reason"]
+
+    # 8/8 wins at 100% WR MUST auto-promote & execute with $0.00 Maker fee on Leg 1!
+    (tmp_path / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "D1_MAKER_ANCHOR_BOX": {"closed": 8, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 98.0, "legging_adjusted_pnl_t1000_usd": 91.0}
+        }
+    }), encoding="utf-8")
+    r_8 = asyncio.run(h.maybe_execute_graduated_maker_anchor_box(d1_mkr_cand))
+    assert r_8["executed"] is True, f"8/8 graduated D1_MAKER_ANCHOR_BOX must execute! Got {r_8}"
+    l1_pos = h.active_positions["D1_MKR_SOL_TEST_L1"]
+    l2_pos = h.active_positions["D1_MKR_SOL_TEST_L2"]
+    assert l1_pos["fee_usd"] == 0.0 and l1_pos["fee_rate_applied"] == 0.0, "Maker Anchor Leg 1 must pay $0.00 fee!"
+    assert l2_pos["fee_rate_applied"] == pytest.approx(0.07)
+
+    # Direct unwind safety check when Leg 2 FOK rejects on live-like path
+    h.executor.dry_run = False
+    h.executor.is_authenticated = True
+    h.executor.auth_mode = "LIVE"
+    h.executor.client = type("MockClob", (), {
+        "create_order": lambda self, *a, **kw: {"signed": True},
+        "post_order": lambda self, *a, **kw: {"errorMsg": "FOK order couldn't be fully filled", "orderID": None},
+    })()
+    h.executor.get_token_tick_size = lambda tok: 0.01
+    h.executor.get_token_neg_risk = lambda tok, nr=None: False
+    h.executor.get_unreserved_conditional_balance = lambda tok: 10.0
+    uw_called = []
+    h.executor.execute_unwind_order = lambda tok, size, side="SELL", min_price=0.01, neg_risk=False: (
+        uw_called.append((tok, size)) or {"success": True, "orderID": "OID_UW_ANC", "matched_size": size, "taking_amount": round(size * 0.49, 2), "fee_usd": 0.08}
+    )
+    uw_out = h.executor.execute_maker_anchor_hedge_or_unwind(
+        box_id="MKR_REJ_TEST", anchor_token_id="ANC_TOK", anchor_label="15m_UP", anchor_price=0.50,
+        anchor_matched_shares=10.0, anchor_order_id="OID_ANC_1", hedge_token_id="HDG_TOK", hedge_label="5m_DOWN",
+        hedge_limit_price=0.47, max_box_cost_net=0.993, hedge_fee_rate=0.07,
+    )
+    assert uw_out["success"] is False and uw_out["stage"] == "LEG_2_REJECTED_UNWOUND"
+    assert len(uw_called) == 1 and uw_called[0] == ("ANC_TOK", 10.0)
+    assert uw_out["residual_unhedged_leg"]["residual_shares"] == 0.0
+
+
 
 
 

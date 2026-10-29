@@ -856,6 +856,45 @@ def compute_correlated_truncated_kelly_size(
     ticket_sized = round(min(max_ticket_cap, max(min_lot_usd, raw_ticket)), 2)
     return ticket_sized
 
+
+def apply_convex_payoff_sizing_cap(
+    raw_ticket_usd: float,
+    *,
+    live_equity: float,
+    entry_px: float,
+    sleeve: str = "",
+    knee: float = 0.79,
+    gamma: float = 0.75,
+    min_taper: float = 0.58,
+    max_salvage_risk_pct: float = 0.125,
+    salvage_floor_px: float = 0.24,
+    min_lot_usd: float = 8.0,
+) -> float:
+    """
+    EXP-PM-407 Purged-WFO Convex Payoff-Normalized Sizing (`convex_k79_g075_stop125`):
+      - Preserves full Kelly firepower in the sweet-spot `$0.55–$0.79` band (`+24%..+75%` ROI).
+      - Above `knee` (`$0.79`), tapers ticket size smoothly by remaining upside `((0.99 - px)/(0.99 - knee))**0.75`
+        AND caps worst-case salvage loss (`salvage_floor_px = $0.24`) at `max_salvage_risk_pct` (`12.5%`) of equity
+        so a single `$0.84–$0.86` stop can never wipe out half a dozen wins.
+      - Purged WFO (`Train / Val / Sealed Holdout` on BTC+ETH): lifts Holdout net PnL `+$57.93 -> +$71.19` (`+22.9%`),
+        PF `1.197 -> 1.375`, Sharpe `0.953 -> 1.182`, and cuts Holdout MaxDD `54.4% -> 39.9%`.
+    """
+    if raw_ticket_usd <= 0.0 or live_equity <= 0.0 or entry_px <= 0.0:
+        return max(0.0, float(raw_ticket_usd))
+    slv_u = str(sleeve or "").upper()
+    if "BOX" in slv_u or slv_u == "SLEEVE_4_BOUNDARY_SNIPE":
+        return round(float(raw_ticket_usd), 2)
+    px = min(0.97, max(0.05, float(entry_px)))
+    taper = 1.0
+    if px > knee:
+        rem_up = max(0.04, 0.99 - px)
+        ref_up = max(0.04, 0.99 - knee)
+        taper = max(float(min_taper), (rem_up / ref_up) ** float(gamma))
+    loss_frac_at_salvage = max(0.25, (px - float(salvage_floor_px)) / px)
+    stop_cap_tkt = (float(max_salvage_risk_pct) * float(live_equity)) / loss_frac_at_salvage
+    capped = min(float(raw_ticket_usd) * taper, stop_cap_tkt)
+    return round(min(float(raw_ticket_usd), max(float(min_lot_usd), capped)), 2)
+
 def get_equity_tier_limits(
     total_equity: float,
     high_water_mark_equity: Optional[float] = None,
@@ -5268,7 +5307,7 @@ class PolymarketLiveHarvester:
         if mk_raw is not None and mk_raw >= 1e4:
             mk_raw = mk_raw / 1e6
         notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (m_sh * px), 4)
-        fr = float(cand.get(f"{pfx}_fee_rate", 0.07) or 0.07)
+        fr = 0.0 if resid.get("is_maker_anchor") else (float(cand[f"{pfx}_fee_rate"]) if cand.get(f"{pfx}_fee_rate") is not None else 0.07)
         fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
         fee_in = round(m_sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0
         uw = resid.get("unwind_result") if isinstance(resid.get("unwind_result"), dict) else (
@@ -5382,7 +5421,7 @@ class PolymarketLiveHarvester:
                 mk_raw = mk_raw * (sh / m_leg)
             notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (sh * px), 4)
             leg_fr_raw = cand.get(f"{pfx}_fee_rate")
-            fr = float(leg_fr_raw) if leg_fr_raw is not None else 0.07
+            fr = 0.0 if lg.get("is_maker_anchor") else (float(leg_fr_raw) if leg_fr_raw is not None else 0.07)
             fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
             fee_u = round(sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0
             tot_box_cost += notional + fee_u
@@ -5463,7 +5502,7 @@ class PolymarketLiveHarvester:
         uw_unk = bool(resid.get("unwind_outcome_unknown"))
         rem_sh = m_sh if uw_unk else float(resid.get("residual_shares") or 0.0)
         px = float(resid.get("price") or cand.get(f"{pfx}_limit_price") or 0.48)
-        fr = float(cand.get(f"{pfx}_fee_rate", 0.07) or 0.07)
+        fr = 0.0 if resid.get("is_maker_anchor") else (float(cand[f"{pfx}_fee_rate"]) if cand.get(f"{pfx}_fee_rate") is not None else 0.07)
         fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
         notional = round(rem_sh * px, 4)
         fee_u = round(rem_sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0
@@ -5561,6 +5600,262 @@ class PolymarketLiveHarvester:
         self._refresh_global_halt()
         self.save_state()
 
+    async def maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict[str, Any]) -> Dict[str, Any]:
+        """EXP-PM-406B / EXP-PM-409: Executes 8/8-graduated Maker-Anchor 2-leg boxes (`D1_MAKER_ANCHOR_BOX`, `ZF_INTRADAY_MAKER_BOX`) asynchronously."""
+        if not RISK_CONFIG.get("enable_graduated_d1_box", True) or self.risk_controller.is_halted() or getattr(self, "risk_halt", False):
+            return {"executed": False, "reason": "DISABLED_OR_HALTED"}
+        box_type = str(candidate_box.get("box_type") or "").strip().upper()
+        sleeve_src = str(candidate_box.get("sleeve_source") or "D1_MAKER_ANCHOR_BOX").strip()
+        cand_asset = str(candidate_box.get("asset") or "").strip().upper()
+        if box_type not in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR"}:
+            return {"executed": False, "reason": f"UNSUPPORTED_MAKER_ANCHOR_TYPE:{box_type}"}
+        core_d1 = {"BTC", "ETH", "XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box", True) else set())
+        exp_d1 = {"BNB", "DOGE", "HYPE"}
+        mid_a = str(candidate_box.get("leg_a_market_id") or "")
+        mid_b = str(candidate_box.get("leg_b_market_id") or "")
+        tok_a = str(candidate_box.get("leg_a_token_id") or "")
+        tok_b = str(candidate_box.get("leg_b_token_id") or "")
+        fr_a = float(candidate_box["leg_a_fee_rate"]) if candidate_box.get("leg_a_fee_rate") is not None else 0.07
+        fr_b = float(candidate_box["leg_b_fee_rate"]) if candidate_box.get("leg_b_fee_rate") is not None else 0.07
+        fe_a = float(candidate_box.get("leg_a_fee_exponent", 1.0) or 1.0)
+        fe_b = float(candidate_box.get("leg_b_fee_exponent", 1.0) or 1.0)
+        if not tok_a or not tok_b or tok_a == tok_b or not mid_a or not mid_b or mid_a == mid_b:
+            return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
+        if box_type == "DOMINANCE_MAKER_ANCHOR":
+            if cand_asset and cand_asset not in (core_d1 | exp_d1):
+                return {"executed": False, "reason": f"UNSUPPORTED_D1_ASSET:{cand_asset}"}
+            corr_bps = float(candidate_box.get("corridor_bps") or 0.0)
+            if corr_bps < (5.0 if cand_asset in exp_d1 else 3.0):
+                return {"executed": False, "reason": f"CORRIDOR_TOO_NARROW:{corr_bps:.2f}"}
+            k_a = float(candidate_box.get("leg_a_strike") or 0.0)
+            k_b = float(candidate_box.get("leg_b_strike") or 0.0)
+            if str(candidate_box.get("leg_a_side") or "").upper() != "UP" or str(candidate_box.get("leg_b_side") or "").upper() != "DOWN" or not (0.0 < k_a < k_b):
+                return {"executed": False, "reason": "INVALID_BOX_INVARIANTS"}
+        elif max(fr_a, fr_b) > 0.0:
+            return {"executed": False, "reason": "NON_ZERO_FEE_ON_ZF_MAKER_ANCHOR"}
+
+        inflight_mkr = self.__dict__.setdefault("_inflight_maker_anchor_keys", set())
+        if len(inflight_mkr) >= 1:
+            return {"executed": False, "reason": "MAKER_ANCHOR_ALREADY_INFLIGHT"}
+        dedupe_k = str(candidate_box.get("dedupe_key") or "")
+        now_ts = time.time()
+        seen_boxes = self.__dict__.setdefault("_seen_d1_box_keys", set())
+        retry_cd = self.__dict__.setdefault("_d1_retry_cooldown_until", {})
+        if (dedupe_k and dedupe_k in seen_boxes) or (dedupe_k and float(retry_cd.get(dedupe_k, 0.0) or 0.0) > now_ts):
+            return {"executed": False, "reason": "ALREADY_SEEN_OR_COOLDOWN"}
+        if not self.dry_run and (not getattr(self, "_startup_reconciled", False) or self._global_halt_reasons()):
+            return {"executed": False, "reason": "NOT_READY_OR_GLOBAL_HALT"}
+
+        try:
+            st_path = DATA_DIR / "alpha124_shadow_state.json"
+            if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
+                alt_p = PIPELINE_ROOT / "data" / "alpha124" / "alpha124_shadow_state.json"
+                if alt_p.exists():
+                    st_path = alt_p
+            if not st_path.exists() or (time.time() - st_path.stat().st_mtime) > 300.0:
+                return {"executed": False, "reason": "ALPHA124_STATE_MISSING_OR_STALE"}
+            st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
+            by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
+            by_da_map = st_raw.get("by_d1_asset") or {}
+
+            def _grad8_m(rec: Dict[str, Any]) -> bool:
+                adj_p = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
+                return bool(
+                    int(rec.get("closed", 0) or 0) >= 8
+                    and float(rec.get("win_rate_pct", 0.0) or 0.0) >= 100.0
+                    and float(rec.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0.0
+                    and float(adj_p or 0.0) > 0.0
+                )
+
+            if not _grad8_m(by_sl_map.get(sleeve_src) or {}):
+                return {"executed": False, "reason": f"MAKER_ANCHOR_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}
+            if box_type == "DOMINANCE_MAKER_ANCHOR" and cand_asset in exp_d1 and not _grad8_m(by_da_map.get(cand_asset) or {}):
+                return {"executed": False, "reason": f"EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:{cand_asset}"}
+        except Exception as exc_g:
+            return {"executed": False, "reason": f"STATE_READ_ERROR:{exc_g}"}
+
+        exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
+        cand_ts = float(candidate_box.get("ts_unix") or now_ts)
+        max_tte_m = 64800.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 900.0
+        min_tte_m = 240.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 65.0
+        if not self.dry_run and ((now_ts - cand_ts) > 5.0 or (exp_ts > 0.0 and not (min_tte_m <= (exp_ts - now_ts) <= max_tte_m))):
+            return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
+        busy_mkts = {str(p.get("market_id") or "") for p in self.active_positions.values()} | {
+            str(i.get("market_id") or "") for i in getattr(self, "pending_entry_intents", {}).values()
+        }
+        if mid_a in busy_mkts or mid_b in busy_mkts:
+            return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+
+        anc_is_a = bool(candidate_box.get("anchor_is_a", True))
+        tok_anc, tok_hdg = (tok_a, tok_b) if anc_is_a else (tok_b, tok_a)
+        mid_anc = mid_a if anc_is_a else mid_b
+        lbl_anc = str(candidate_box.get("leg_a_label" if anc_is_a else "leg_b_label") or "ANC")
+        lbl_hdg = str(candidate_box.get("leg_b_label" if anc_is_a else "leg_a_label") or "HDG")
+        anc_side = str(candidate_box.get("leg_a_side" if anc_is_a else "leg_b_side") or "UP").upper()
+        fr_hdg = fr_b if anc_is_a else fr_a
+        fe_hdg = fe_b if anc_is_a else fe_a
+        _raw_nr_anc = candidate_box.get("leg_a_neg_risk" if anc_is_a else "leg_b_neg_risk")
+        _raw_nr_hdg = candidate_box.get("leg_b_neg_risk" if anc_is_a else "leg_a_neg_risk")
+        nr_anc = _raw_nr_anc if isinstance(_raw_nr_anc, bool) else None
+        nr_hdg = _raw_nr_hdg if isinstance(_raw_nr_hdg, bool) else None
+        anc_bid_px = float(candidate_box.get("anchor_bid_px") or (candidate_box["leg_a_limit_price"] if anc_is_a else candidate_box["leg_b_limit_price"]))
+        hdg_lim_px = float(candidate_box.get("hedge_limit_px") or (candidate_box["leg_b_limit_price"] if anc_is_a else candidate_box["leg_a_limit_price"]))
+        max_pair_cap = 0.990 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 0.988
+        posted_spot = float(candidate_box.get("posted_spot") or 0.0)
+
+        collat = getattr(self, "_last_known_collateral", None)
+        if collat is None and not self.dry_run:
+            try:
+                collat = await asyncio.to_thread(self.executor.get_collateral_balance)
+            except Exception:
+                collat = 0.0
+        inflight_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
+        collat_f = 100.0 if self.dry_run else max(0.0, float(collat or 0.0) - inflight_u)
+        asset_cap = {"BTC": 18.0, "ETH": 18.0, "SOL": 16.5, "XRP": 16.5, "NBA": 18.0}.get(cand_asset, 16.5)
+        budget = min(18.0, asset_cap, max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))), collat_f * 0.25)
+        pair_est = anc_bid_px + hdg_lim_px + (fr_hdg * ((hdg_lim_px * (1.0 - hdg_lim_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0)
+        if not (0.900 <= pair_est <= max_pair_cap + 0.003):
+            return {"executed": False, "reason": f"PAIR_COST_OUT_OF_BAND:{pair_est:.4f}"}
+        sh_int = int(math.floor(budget / max(0.90, pair_est)))
+        if sh_int < 5:
+            return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
+
+        inflight_key = dedupe_k or f"MKR_{mid_a}_{mid_b}"
+        inflight_mkr.add(inflight_key)
+        box_id = str(candidate_box.get("box_id") or f"MKR_LIVE_{int(now_ts)}")
+        intent_id = f"{box_id}_ANC_INTENT"
+        try:
+            pre_bal_a = 0.0 if self.dry_run else float(await asyncio.to_thread(self._wallet_token_balance, tok_a) or 0.0)
+            pre_bal_b = 0.0 if self.dry_run else float(await asyncio.to_thread(self._wallet_token_balance, tok_b) or 0.0)
+            if not self.dry_run and hasattr(self.executor, "get_market_book"):
+                bk_anc_f, bk_hdg_f = await asyncio.gather(
+                    asyncio.to_thread(self.executor.get_market_book, tok_anc),
+                    asyncio.to_thread(self.executor.get_market_book, tok_hdg),
+                )
+                asks_af = sorted([(float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1])) for x in ((bk_anc_f or {}).get("asks") or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0])
+                asks_hf = sorted([(float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1])) for x in ((bk_hdg_f or {}).get("asks") or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0])
+                if not asks_af or not asks_hf or anc_bid_px >= asks_af[0][0]:
+                    return {"executed": False, "reason": "FRESH_BOOK_CROSS_OR_EMPTY"}
+                hdg_ask_f = asks_hf[0][0]
+                hdg_av_f = sum(sz for px, sz in asks_hf if px <= hdg_ask_f + 0.01)
+                hdg_fee_f = fr_hdg * ((hdg_ask_f * (1.0 - hdg_ask_f)) ** fe_hdg) if fr_hdg > 0.0 else 0.0
+                if hdg_av_f < max(15.0, 2.5 * sh_int) or not (0.900 <= (anc_bid_px + hdg_ask_f + hdg_fee_f) <= max_pair_cap):
+                    return {"executed": False, "reason": "FRESH_HEDGE_DEPTH_OR_COST_REJECT"}
+                opp_a = str(candidate_box.get("leg_a_opp_token_id") or "")
+                opp_b = str(candidate_box.get("leg_b_opp_token_id") or "")
+                if opp_a and opp_b:
+                    obk_a, obk_b = await asyncio.gather(
+                        asyncio.to_thread(self.executor.get_market_book, opp_a),
+                        asyncio.to_thread(self.executor.get_market_book, opp_b),
+                    )
+                    ob_a = max((float(x["price"] if isinstance(x, dict) else x[0]) for x in ((obk_a or {}).get("bids") or [])), default=0.0)
+                    ob_b = max((float(x["price"] if isinstance(x, dict) else x[0]) for x in ((obk_b or {}).get("bids") or [])), default=0.0)
+                    if (ob_a + ob_b) > 1.0:
+                        return {"executed": False, "reason": f"ANTI_BOX_COMPLEMENT_VETO:{ob_a + ob_b:.4f}"}
+                hdg_buf_f = 0.002 if (hdg_ask_f < 0.04 or hdg_ask_f >= 0.96) else 0.01
+                max_hdg_cap_f = max(hdg_ask_f, round(0.992 - anc_bid_px - hdg_fee_f, 3))
+                hdg_lim_px = min(0.995, max(hdg_ask_f, min(round(hdg_ask_f + hdg_buf_f, 3), max_hdg_cap_f)))
+
+            anc_notional = round((sh_int + 0.01) * anc_bid_px, 4)
+            self.pending_entry_intents[intent_id] = {
+                "trade_id": intent_id, "market_id": mid_anc, "token_id": tok_anc, "notional_usd": round(sh_int * anc_bid_px, 4), "ts": time.time(),
+            }
+            post_res = await asyncio.to_thread(
+                self.executor.post_maker_entry_order,
+                token_id=tok_anc, price=anc_bid_px, notional_usd=anc_notional, side="BUY",
+                neg_risk=nr_anc, min_price_floor=0.001, max_price_ceiling=0.995,
+            )
+            maker_oid = str((post_res or {}).get("orderID") or "").strip()
+            if not isinstance(post_res, dict) or not post_res.get("success") or not maker_oid:
+                self.pending_entry_intents.pop(intent_id, None)
+                return {"executed": False, "reason": f"ANCHOR_POST_FAILED:{(post_res or {}).get('error')}"}
+
+            if self.dry_run:
+                matched_sh, avg_anc_px, anc_raw = float(sh_int), float(post_res.get("price") or anc_bid_px), post_res
+            else:
+                ttl_s = 12.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 10.0
+                deadline = time.monotonic() + ttl_s
+                uws = getattr(self.executor, "_user_ws_cache", None)
+                while time.monotonic() < deadline:
+                    if exp_ts > 0.0 and (exp_ts - time.time()) <= (180.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 48.0):
+                        break
+                    rem_w = max(0.02, min(0.10, deadline - time.monotonic()))
+                    if uws is not None and uws.is_healthy():
+                        await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
+                        snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
+                        if isinstance(snap_o, dict) and str(snap_o.get("status") or "").upper() in ("MATCHED", "FILLED"):
+                            break
+                    else:
+                        await asyncio.sleep(rem_w)
+                    if box_type == "DOMINANCE_MAKER_ANCHOR" and posted_spot > 0.0:
+                        cur_sp = await asyncio.to_thread(self.get_usd_reference_spot_price, cand_asset)
+                        if cur_sp and float(cur_sp) > 0.0:
+                            drift_bps = (float(cur_sp) - posted_spot) / posted_spot * 10000.0
+                            if (anc_side == "UP" and drift_bps < -2.5) or (anc_side == "DOWN" and drift_bps > 2.5):
+                                logger.info(f"[MAKER ANCHOR ADVERSE CANCEL] {box_id}: drift={drift_bps:+.2f}bps against {anc_side}; canceling {maker_oid}.")
+                                break
+                cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
+                summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, tok_anc)
+                self.pending_entry_intents.pop(intent_id, None)
+                matched_sh = float((summary or {}).get("matched") or (cancel_res or {}).get("matched") or 0.0)
+                avg_anc_px = float((summary or {}).get("avg_price") or post_res.get("price") or anc_bid_px)
+                anc_raw = summary or cancel_res or post_res
+                if matched_sh < 0.01:
+                    retry_cd[dedupe_k] = time.time() + 8.0
+                    return {"executed": False, "reason": "MAKER_ANCHOR_EXPIRED_UNFILLED"}
+
+            self.pending_entry_intents.pop(intent_id, None)
+            if not self.dry_run and hasattr(self.executor, "get_market_book"):
+                bk_h2 = await asyncio.to_thread(self.executor.get_market_book, tok_hdg)
+                asks_h2 = sorted([(float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1])) for x in ((bk_h2 or {}).get("asks") or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0])
+                if asks_h2:
+                    h2_px = asks_h2[0][0]
+                    h2_fee = fr_hdg * ((h2_px * (1.0 - h2_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0
+                    h2_buf = 0.002 if (h2_px < 0.04 or h2_px >= 0.96) else 0.01
+                    h2_cap = max(h2_px, round(0.992 - avg_anc_px - h2_fee, 3))
+                    hdg_lim_px = min(0.995, max(h2_px, min(round(h2_px + h2_buf, 3), h2_cap)))
+
+            res = await asyncio.to_thread(
+                self.executor.execute_maker_anchor_hedge_or_unwind,
+                box_id=box_id, anchor_token_id=tok_anc, anchor_label=lbl_anc, anchor_price=avg_anc_px,
+                anchor_matched_shares=matched_sh, anchor_order_id=maker_oid,
+                hedge_token_id=tok_hdg, hedge_label=lbl_hdg, hedge_limit_price=hdg_lim_px,
+                max_box_cost_net=0.993, hedge_fee_rate=fr_hdg, hedge_fee_exponent=fe_hdg,
+                anchor_neg_risk=nr_anc, hedge_neg_risk=nr_hdg,
+                anchor_pre_balance=(pre_bal_a if anc_is_a else pre_bal_b),
+                hedge_pre_balance=(pre_bal_b if anc_is_a else pre_bal_a),
+                anchor_raw=anc_raw,
+            )
+            st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
+            leg_tids: List[str] = []
+            with st_lock:
+                if dedupe_k:
+                    self._record_seen_d1_box_key(dedupe_k)
+                if res.get("success") and isinstance(res.get("leg_1"), dict) and isinstance(res.get("leg_2"), dict):
+                    leg_tids = self._register_live_d1_box_positions(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
+                elif res.get("outcome_unknown"):
+                    self._register_unknown_d1_box_legs(box_id, candidate_box, res, pre_bal_a, pre_bal_b)
+                elif isinstance(res.get("residual_unhedged_leg"), dict):
+                    self.executor.invalidate_collateral_cache()
+                    self._pending_collateral_refresh = True
+                    resid = res["residual_unhedged_leg"]
+                    if float(resid.get("residual_shares") or 0.0) > 0.01 or resid.get("unwind_outcome_unknown"):
+                        leg_tids = self._register_legged_out_d1_residual(box_id, candidate_box, resid, pre_bal_a, pre_bal_b)
+                    else:
+                        self._record_inline_d1_legged_out_close(box_id, candidate_box, resid, res)
+            return {"executed": bool(res.get("success")), "result": res, "leg_trade_ids": leg_tids}
+        finally:
+            self.pending_entry_intents.pop(intent_id, None)
+            inflight_mkr.discard(inflight_key)
+
+    def _spawn_live_maker_anchor_box_task(self, candidate_box: Dict[str, Any]) -> None:
+        tasks = self.__dict__.setdefault("_maker_anchor_bg_tasks", set())
+        if len(tasks) >= 1:
+            return
+        t = asyncio.create_task(self.maybe_execute_graduated_maker_anchor_box(candidate_box))
+        tasks.add(t)
+        t.add_done_callback(tasks.discard)
+
     async def _poll_d1_live_box_candidates(self, now_ts: float) -> int:
         raw_lines: List[str] = []
         fast_q = getattr(self, "_fast_d1_cand_lines", None)
@@ -5604,6 +5899,9 @@ class PolymarketLiveHarvester:
                 seen_emits[emit_id] = None
                 while len(seen_emits) > 128:
                     seen_emits.pop(next(iter(seen_emits)), None)
+                if str(cand.get("box_type") or "").strip().upper() in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR"}:
+                    self._spawn_live_maker_anchor_box_task(cand)
+                    continue
                 out = await loop.run_in_executor(_get_hot_io_pool(), self.maybe_execute_graduated_d1_box, cand)
                 if out.get("executed"):
                     if not self.dry_run:
@@ -5614,6 +5912,34 @@ class PolymarketLiveHarvester:
             except Exception as exc:
                 logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
         return executed
+
+    def _calc_priority_score(self, s_item: Dict[str, Any]) -> float:
+        _a_s = str(s_item.get("asset") or "").upper()
+        if _a_s and _a_s not in self.get_graduated_allowed_assets():
+            return 0.0
+        s_dir = s_item.get("shock_direction")
+        tgt = "UP" if s_dir == "BUY" else "DOWN"
+        feats = s_item.get("pre_shock_features_t0", {})
+        side_data = feats.get(tgt, {}) if isinstance(feats, dict) else {}
+        dist_raw = float(s_item.get("candle_distance_pct", 0.0) or 0.0)
+        if (tgt == "UP" and dist_raw < 0.04) or (tgt == "DOWN" and dist_raw > -0.04):
+            return 0.0
+        dist = abs(dist_raw)
+        z_sc = abs(float(s_item.get("z_val", s_item.get("z_score", s_item.get("expected_prob_shift", dist * 0.5)))))
+        ask_est = float(side_data.get("vwap_$50") or side_data.get("effective_price_$50") or side_data.get("vwap_$25") or side_data.get("effective_price_$25") or 0.50)
+        _t_low = str(s_item.get("title", "")).lower()
+        _is_15m = ("pm-" in _t_low or "am-" in _t_low or "15m" in str(s_item.get("timeframe", "")).lower())
+        _tte_s = float(s_item.get("seconds_to_expiry", 3600.0) or 3600.0)
+        _is_bnd = (
+            s_item.get("shock_source") == "BOUNDARY_LOCK"
+            or s_item.get("regime_override") == "REGIME_D_BOUNDARY_LOCK"
+            or (12.0 <= _tte_s <= 60.0 and dist >= 0.08)
+        )
+        _is_slv3 = s_item.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" or s_item.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE"
+        _ceil = 0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling, 0.85) if _is_15m else self.max_price_ceiling))
+        if ask_est < self.min_price_floor or ask_est > _ceil:
+            return 0.0
+        return z_sc / max(ask_est, 0.01)
 
     async def evaluate_shock_and_execute(self, shock: Dict[str, Any]):
         """
@@ -5727,10 +6053,15 @@ class PolymarketLiveHarvester:
             shock.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE"
             or shock.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE"
         )
+        _pre_dist_abs = abs(float(shock.get("candle_distance_pct", 0.0) or 0.0))
+        _pre_z_abs = max(
+            abs(float(shock.get("z_val") or shock.get("z_score") or shock.get("shock_z") or 0.0)),
+            (_pre_dist_abs / 0.03) if (12.0 <= tte <= 60.0 and _pre_dist_abs >= 0.08) else 0.0,
+        )
         is_boundary_lock_cand = bool(
             shock.get("shock_source") == "BOUNDARY_LOCK"
             or shock.get("regime_override") == "REGIME_D_BOUNDARY_LOCK"
-            or (12.0 <= tte <= 90.0 and abs(float(shock.get("z_val") or shock.get("z_score") or 0.0)) >= 3.0)
+            or (12.0 <= tte <= 90.0 and _pre_z_abs >= 3.0)
         )
         eff_max_tte = max(self.max_tte, 10800.0) if is_sleeve3_strike else self.max_tte
         eff_min_tte = 12.0 if is_boundary_lock_cand else 30.0
@@ -6017,6 +6348,10 @@ class PolymarketLiveHarvester:
         min_allowed_price = self.min_price_floor
         max_allowed_price = self.max_price_ceiling
 
+        _rec_sig_bnd = float(shock.get("candle_sigma") or 0.0)
+        _sig_1h_bnd = (_rec_sig_bnd * 2.0 if is_subhourly else _rec_sig_bnd) if _rec_sig_bnd > 0.0 else (0.0050 if asset_str == "BTC" else 0.0068)
+        _z_cush_bnd = (abs(dist_pct) / 100.0) / max(0.00025, _sig_1h_bnd * math.sqrt(max(tte, 12.0) / 3600.0))
+
         if is_sleeve3_strike:
             if 60.0 <= tte <= 10800.0 and abs(dist_pct) >= 0.60:
                 regime = "REGIME_E_STRIKE_CONVERGENCE"
@@ -6034,7 +6369,7 @@ class PolymarketLiveHarvester:
             is_boundary_lock_cand
             and (is_1h or is_subhourly)
             and 12.0 <= tte <= 90.0
-            and max(z_eff, abs(float(shock.get("z_val") or shock.get("z_score") or 0.0))) >= 3.0
+            and max(z_eff, _z_cush_bnd, abs(float(shock.get("z_val") or shock.get("z_score") or shock.get("shock_z") or 0.0))) >= 3.0
             and abs(dist_pct) >= (0.08 if is_subhourly else 0.12)
         ):
             regime = "REGIME_D_BOUNDARY_LOCK"
@@ -6720,15 +7055,31 @@ class PolymarketLiveHarvester:
                         and "BOX" not in str(p.get("sleeve") or "").upper()
                         and "WEATHER" not in str(p.get("sleeve") or "").upper()
                     ]
-                    if len(active_dir_crypto) >= 1:
+                    _orth_boundary_slot2_ok = bool(
+                        assigned_sleeve == "SLEEVE_4_BOUNDARY_SNIPE"
+                        and 12.0 <= tte <= 45.0
+                        and total_account_value >= 110.0
+                        and len(active_dir_crypto) == 1
+                        and all(
+                            str(p.get("market_id") or "") != str(m_id or "")
+                            and (
+                                str(p.get("asset") or "").upper() != asset_str
+                                or abs(float(p.get("candle_expiry_ts") or 0.0) - cand_exp_ts) > 60.0
+                            )
+                            for p in active_dir_crypto
+                        )
+                    )
+                    if len(active_dir_crypto) >= 1 and not _orth_boundary_slot2_ok:
                         logger.info(
                             f"[CORRELATED CRYPTO CONCURRENCY GUARD] {shock.get('title')!r}: "
                             f"equity=${total_account_value:.2f} < ${small_bankroll_corr_cap:.2f} already holds 1 directional crypto position; "
-                            "reserving slot #2 strictly for uncorrelated sleeves (Box/Weather)."
+                            "reserving slot #2 strictly for uncorrelated sleeves (Box/Weather/Orthogonal <=45s Boundary Snipe)."
                         )
                         return
                 risk_pct = tier_limits["dynamic_bankroll_pct"]
                 pct_ticket_cap = round(risk_pct * total_account_value, 2)
+                if assigned_sleeve == "SLEEVE_4_BOUNDARY_SNIPE" and total_account_value < small_bankroll_corr_cap:
+                    pct_ticket_cap = min(pct_ticket_cap, round(0.16 * total_account_value, 2), 22.0)
                 seed_ticket_floor = float(RISK_CONFIG.get("seed_survival_ticket_usd", 12.0))
                 if total_account_value < float(RISK_CONFIG.get("seed_survival_equity_threshold", 88.0)):
                     if RISK_CONFIG.get("seed_smooth_compounding", True) and total_account_value >= float(RISK_CONFIG.get("min_equity_floor", 66.67)):
@@ -6747,6 +7098,13 @@ class PolymarketLiveHarvester:
                     max_ticket_cap=min(float(ticket_cap_ceiling), pct_ticket_cap),
                     default_sizing_pct=risk_pct,
                 )
+                if dynamic_ticket_cap > 0.0 and not is_synthetic_test:
+                    dynamic_ticket_cap = apply_convex_payoff_sizing_cap(
+                        dynamic_ticket_cap,
+                        live_equity=total_account_value,
+                        entry_px=first_ask,
+                        sleeve=assigned_sleeve,
+                    )
                 if dynamic_ticket_cap <= 0.0:
                     logger.info(
                         f"[CORRELATION VETO] {shock.get('title')!r} {target_token}: opposite-direction position already open "
@@ -9631,31 +9989,8 @@ class PolymarketLiveHarvester:
                                 if (now_u - w["t_unix"]) <= 5.0
                             ]
 
-                            def _calc_priority_score(s_item: Dict[str, Any]) -> float:
-                                _a_s = str(s_item.get("asset") or "").upper()
-                                if _a_s and _a_s not in self.get_graduated_allowed_assets():
-                                    return 0.0
-                                s_dir = s_item.get("shock_direction")
-                                tgt = "UP" if s_dir == "BUY" else "DOWN"
-                                feats = s_item.get("pre_shock_features_t0", {})
-                                side_data = feats.get(tgt, {}) if isinstance(feats, dict) else {}
-                                dist_raw = float(s_item.get("candle_distance_pct", 0.0) or 0.0)
-                                if (tgt == "UP" and dist_raw < 0.04) or (tgt == "DOWN" and dist_raw > -0.04):
-                                    return 0.0
-                                dist = abs(dist_raw)
-                                z_sc = abs(float(s_item.get("z_val", s_item.get("z_score", s_item.get("expected_prob_shift", dist * 0.5)))))
-                                ask_est = float(side_data.get("vwap_$50") or side_data.get("effective_price_$50") or 0.50)
-                                _t_low = str(s_item.get("title", "")).lower()
-                                _is_15m = ("pm-" in _t_low or "am-" in _t_low or "15m" in str(s_item.get("timeframe", "")).lower())
-                                _is_bnd = s_item.get("shock_source") == "BOUNDARY_LOCK" or s_item.get("regime_override") == "REGIME_D_BOUNDARY_LOCK"
-                                _is_slv3 = s_item.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" or s_item.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE"
-                                _ceil = 0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling, 0.85) if _is_15m else self.max_price_ceiling))
-                                if ask_est < self.min_price_floor or ask_est > _ceil:
-                                    return 0.0
-                                return z_sc / max(ask_est, 0.01)
-
                             # Rank qualifying candidates descending by priority score (ETH vs BTC synchronization)
-                            batch_candidates.sort(key=_calc_priority_score, reverse=True)
+                            batch_candidates.sort(key=self._calc_priority_score, reverse=True)
 
                             for shock in batch_candidates:
                                 s_id = shock.get("shock_id") or f"{shock.get('market_id')}_{shock.get('t0_unix')}"
