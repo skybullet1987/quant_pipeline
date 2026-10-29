@@ -3995,6 +3995,174 @@ def test_unlock_a_110_multislot_and_unlock_b_ev_ceiling_phase3a_maker_rescue(mon
     assert len(snipe_calls) == 0 and len(maker_posts) == 2
 
 
+def test_hold98_exit_integrity_ghost_priority_defer_and_z078_phase3a_rescue(monkeypatch, tmp_path):
+    """
+    Verifies the 3-part live PnL & fill-rate fix package:
+      1. Fix 1 (hold_98 Exit Integrity): Under `hold_98` (`POLY_BUILDER_API_KEY` set), resting `$0.98` Maker TP
+         is NEVER stepped down to `$0.93` by `OBI_MAKER_STEP_DOWN` (`obi_l1=-0.85`, `v_spot_15s=0.0`) and NEVER
+         taker-dumped at `$0.93` at `TTE=30s <= 45s`, while `best_bid=$0.99` at `TTE=15s` still recycles cleanly.
+      2. Fix 2 (Ghost `recent_shock_window` Bug Fix): `0`-fill `FAK_KILLED_NO_MATCH` NEVER pollutes
+         `recent_shock_window` (preventing false `[PRIORITY DEFER]` blocks on concurrent 15m/1h setups).
+      3. Fix 3 (`z_strike >= 0.78` Phase 3A Alignment + `8.0s` Live TTL): A WFO-qualified `z_strike ~ 0.82`
+         (`< 0.85`) setup that hits `FAK_KILLED_NO_MATCH` routes to `0%`-fee `place_passive_maker_entry`.
+    """
+    import asyncio
+    from unittest.mock import MagicMock
+    from src.polymarket_research import polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_executor import OrderResult, ExecutionStatus, load_risk_config
+
+    rcfg = load_risk_config()
+    assert float(rcfg.get("phase3a_maker_ttl_sec", 0.0)) == pytest.approx(8.0)
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "fix123_state.json")
+    monkeypatch.setenv("POLY_BUILDER_API_KEY", "test_builder_key_enabled")
+    monkeypatch.setenv("PM_LIVE_PHASE3A_TTL_SEC", "0.25")
+    monkeypatch.setattr(plh, "read_fast_tick", lambda asset, max_age_sec=1.5: None)
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.exit_policy = "hold_98"
+    h.dynamic_sizing = True
+    h.enable_live_phase3a_maker_fallback = True
+    h.allowed_assets = {"BTC", "ETH"}
+    h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
+    h.executor.auth_mode = "LIVE"
+    h.executor.signature_type = 3
+    h.executor.is_heartbeat_healthy = lambda: True
+    h._last_known_collateral = 120.12
+    h.executor.get_collateral_balance = lambda *a, **kw: 120.12
+    h.executor.get_conditional_balance = lambda *a, **kw: 25.0
+    h.get_reference_spot_price = lambda asset: 80330.0
+    h.get_usd_reference_spot_price = lambda asset: 80330.0
+    assert h._effective_exit_policy() == "hold_98"
+
+    # --- 1. Fix 1: hold_98 never steps down to $0.93 on OBI wall and never taker-dumps $0.93 at TTE=30s ---
+    now_t = time.time()
+    h.active_positions["T_HOLD98"] = {
+        "trade_id": "T_HOLD98",
+        "sleeve": "SLEEVE_1_SUBHOURLY_15M",
+        "market_id": "8100001",
+        "condition_id": "0xh98",
+        "token_id": "300000000000000000001",
+        "target_token": "UP",
+        "asset": "BTC",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "candle_open_spot": 80200.0,
+        "entry_spot_ref": 80330.0,
+        "spot_denomination": "USD",
+        "candle_sigma": 0.0025,
+        "entry_price": 0.84,
+        "entry_shares": 25.0,
+        "gross_entry_shares": 25.0,
+        "remaining_shares": 25.0,
+        "remaining_exit_shares": 25.0,
+        "filled_exit_shares": 0.0,
+        "remaining_cost_basis": 21.0,
+        "notional_usd": 21.0,
+        "fee_usd": 0.24,
+        "target_exit_price": 0.98,
+        "entry_ts": now_t - 120.0,
+        "candle_expiry_ts": now_t + 30.0,  # TTE = 30s (<= 45s!)
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+        "inventory_reconciled": True,
+        "exit_order_id": "0xRESTING_98",
+        "exit_order_status": "RESTING_MAKER_POSTED",
+        "is_liquidating": False,
+    }
+    replace_mock = MagicMock()
+    unwind_mock = MagicMock()
+    h._atomic_replace_maker_exit = replace_mock
+    h.executor.execute_unwind_order = unwind_mock
+    h.executor.get_order_fill_summary = MagicMock(
+        return_value={"order_id": "0xRESTING_98", "status": "LIVE", "resting": True, "matched": 0.0, "terminal": False}
+    )
+    h.executor.get_market_book = MagicMock(
+        return_value={
+            "bids": [{"price": "0.93", "size": "20"}],
+            "asks": [{"price": "0.95", "size": "250"}],  # obi_l1 = (20-250)/270 = -0.85 <= -0.40!
+        }
+    )
+    asyncio.run(h.check_resolutions_and_manage_positions())
+    assert replace_mock.call_count == 0, "hold_98 must NEVER step resting $0.98 Maker TP down to $0.93!"
+    assert unwind_mock.call_count == 0 and not h.active_positions["T_HOLD98"].get("is_liquidating"), (
+        "hold_98 must NEVER taker-dump a $0.93 winning position at TTE=30s!"
+    )
+    assert h.active_positions["T_HOLD98"]["target_exit_price"] == pytest.approx(0.98)
+
+    # --- 2 & 3. Fix 2 + Fix 3: z_strike ~ 0.82 FAK miss routes to Phase 3A Maker Rescue & 0-fill leaves recent_shock_window empty ---
+    h.active_positions.clear()
+    h.recent_shock_window.clear()
+    maker_calls = []
+    maker_should_fill = {"val": False}
+
+    async def _fak_miss(**kw):
+        return OrderResult(
+            success=False, order_id="0xFAK_MISS", trade_id=kw["trade_id"], token_id=kw["token_id"],
+            target_token=kw["target_token"], side="BUY", price=kw["target_price"], size=0.0,
+            notional_usd=kw["notional_usd"], fee_usd=0.0, latency_ms=10.0,
+            mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED,
+            details={"fak_killed": True}, error="FAK_KILLED_NO_MATCH",
+        )
+
+    def _mock_mkr_in(**kw):
+        maker_calls.append(kw)
+        return {"success": True, "orderID": f"0xMKR_Z82_{len(maker_calls)}", "price": kw["price"], "shares": 20.0}
+
+    def _mock_cancel_z82(oid):
+        if maker_should_fill["val"]:
+            return {"outcome": "FILLED", "is_canceled": False, "matched": 20.0}
+        return {"outcome": "CANCELED", "is_canceled": True, "matched": 0.0}
+
+    def _mock_sum_z82(oid, tok):
+        if maker_should_fill["val"]:
+            return {"matched": 20.0, "avg_price": 0.82, "terminal": True, "resting": False, "trade_ids": ["TZ82"], "tx_hashes": ["0xtz82"]}
+        return {"matched": 0.0, "avg_price": 0.0, "terminal": True, "resting": False}
+
+    h.executor.execute_snipe_order_async = _fak_miss
+    h.executor.place_passive_maker_entry = _mock_mkr_in
+    h.executor.cancel_order = _mock_cancel_z82
+    h.executor.get_order_fill_summary = _mock_sum_z82
+    h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "0xEXIT_Z82"}
+
+    # Construct 1h BTC shock with z_strike = (0.00095) / (0.0025 * sqrt(860/3600)) = 0.00095 / 0.001221 = 0.778 -> use 0.00100 -> z_strike = 0.819 (in [0.78, 0.85)!)
+    z82_shock = {
+        "event_id": "EVT_Z82_MISS", "market_id": "8100002", "condition_id": "0xz82", "t0_unix": now_t,
+        "title": "Bitcoin Up or Down - October 29, 6AM ET", "asset": "BTC", "horizon": "1h", "shock_direction": "BUY",
+        "seconds_to_expiry": 540.0, "spot_at_t0": 80280.2, "trigger_price": 80280.2,
+        "candle_open_spot": 80200.0, "finalized_1h_open": 80200.0, "candle_distance_pct": 0.10,
+        "candle_sigma": 0.00315,  # z_strike = 0.0010 / (0.00315 * sqrt(540/3600)) = 0.0010 / 0.001220 = 0.820 (< 0.85, >= 0.78!)
+        "shock_volume_100ms": 2500000.0, "shock_ofi": 0.90,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xz82"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "300000000000000000002", "raw_top_asks": [[0.82, 200.0]], "raw_top_bids": [[0.80, 200.0]],
+                "effective_price_$25": 0.82, "vwap_$25": 0.82, "age_ask_ms": 420.0, "obi_l1": 0.20,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    # Case A: Both FAK and Phase 3A Maker expire with 0 shares -> recent_shock_window MUST remain empty!
+    asyncio.run(h.evaluate_shock_and_execute(z82_shock))
+    assert len(maker_calls) == 1, "z_strike=0.82 (>=0.78) FAK miss MUST route to Phase 3A 0%-fee Maker Rescue!"
+    assert len(h.recent_shock_window) == 0, "0-fill rejection MUST NOT leave ghost entry in recent_shock_window!"
+
+    # Case B: Phase 3A Maker Rescue fills -> position recorded & recent_shock_window records filled entry!
+    maker_should_fill["val"] = True
+    z82_fill_shock = dict(z82_shock, event_id="EVT_Z82_FILL", market_id="8100003", condition_id="0xz82f")
+    z82_fill_shock["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xz82f"}
+    z82_fill_shock["pre_shock_features_t0"] = {
+        "UP": dict(z82_shock["pre_shock_features_t0"]["UP"], token_id="300000000000000000003")
+    }
+    asyncio.run(h.evaluate_shock_and_execute(z82_fill_shock))
+    assert len(maker_calls) == 2
+    assert len(h.active_positions) == 1
+    assert len(h.recent_shock_window) == 1 and h.recent_shock_window[0]["market_id"] == "8100003"
+
+
+
 
 
 

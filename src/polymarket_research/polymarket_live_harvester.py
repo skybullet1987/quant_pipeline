@@ -109,19 +109,39 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 _FILE_LOGGER_ATTACHED = False
+_LOG_QUEUE_LISTENER: Optional[Any] = None
 
 
 def _ensure_file_logging() -> None:
-    """Attaches live_harvester.log handler lazily on daemon startup so imports never touch production files."""
-    global _FILE_LOGGER_ATTACHED
+    """Attaches non-blocking QueueHandler -> QueueListener(FileHandler + StreamHandler) so hot-path logging never blocks uvloop on disk I/O."""
+    global _FILE_LOGGER_ATTACHED, _LOG_QUEUE_LISTENER
     if _FILE_LOGGER_ATTACHED:
         return
     try:
+        import atexit
+        import logging.handlers
+        import queue as _qmod
+
         log_path = DATA_DIR / "live_harvester.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
         fh = logging.FileHandler(log_path, encoding="utf-8")
         fh.setFormatter(logging.Formatter("[%(asctime)s UTC] [%(levelname)s] [HARVESTER] %(message)s"))
-        logging.getLogger().addHandler(fh)
+        root_log = logging.getLogger()
+        if os.environ.get("PM_ASYNC_FILE_LOGGING", "1") == "1":
+            downstream = [fh]
+            for h in list(root_log.handlers):
+                if type(h) is logging.StreamHandler:
+                    root_log.removeHandler(h)
+                    downstream.append(h)
+            q_obj = _qmod.SimpleQueue()
+            qh = logging.handlers.QueueHandler(q_obj)
+            ql = logging.handlers.QueueListener(q_obj, *downstream, respect_handler_level=True)
+            ql.start()
+            _LOG_QUEUE_LISTENER = ql
+            atexit.register(ql.stop)
+            root_log.addHandler(qh)
+        else:
+            root_log.addHandler(fh)
         _FILE_LOGGER_ATTACHED = True
     except Exception as exc:
         logger.debug(f"Could not attach file logger: {exc}")
@@ -1514,7 +1534,8 @@ class PolymarketLiveHarvester:
             return None
         if trade_id in self.pending_entry_intents:
             self.pending_entry_intents[trade_id]["entry_order_id"] = maker_oid
-        ttl_s = max(0.2, float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC", "3.5")))
+        _default_p3a_ttl = str((getattr(self, "risk_config", None) or RISK_CONFIG).get("phase3a_maker_ttl_sec", 8.0) if real_live else 3.5)
+        ttl_s = max(0.2, float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC", _default_p3a_ttl)))
         deadline = time.monotonic() + ttl_s
         uws = getattr(self.executor, "_user_ws_cache", None)
         init_disp = (entry_spot_ref - open_spot) if target_token == "UP" else (open_spot - entry_spot_ref)
@@ -2170,8 +2191,8 @@ class PolymarketLiveHarvester:
         for k in expired:
             reg.pop(k, None)
         while len(reg) > 12:
-            oldest_k = min(reg, key=reg.get)
-            reg.pop(oldest_k, None)
+            furthest_k = max(reg, key=reg.get)
+            reg.pop(furthest_k, None)
 
     def _prewarm_market_metadata(self, shock: Dict[str, Any]):
         """Proactively warms CLOB caches with authoritative Polymarket V2 fee rates (default 700 bps / exponent 1.0)."""
@@ -2209,6 +2230,24 @@ class PolymarketLiveHarvester:
                         self._register_active_warmed_token(str(tok_id), exp_ts)
         except Exception as exc:
             logger.debug(f"[PREWARM NOTICE] Prewarm metadata notice: {exc}")
+
+    def _handle_prewarm_ipc_signal(self) -> None:
+        """Handles sub-threshold shock precursor IPC: drains Gen-0 GC early and touches hot CLOB TLS socket."""
+        now_m = time.monotonic()
+        if (now_m - float(getattr(self, "_last_precursor_touch_mono", 0.0) or 0.0)) < 1.5:
+            return
+        self._last_precursor_touch_mono = now_m
+        if not getattr(self, "active_positions", None):
+            try:
+                import gc as _gc_p
+                _gc_p.collect(0)
+            except Exception:
+                pass
+        if not self.dry_run and hasattr(self.executor, "touch_hot_async_clob_socket"):
+            try:
+                asyncio.get_running_loop().create_task(self.executor.touch_hot_async_clob_socket(1.5))
+            except Exception:
+                pass
 
     def _prewarm_active_market_tokens(self):
         """Pre-warms active market tokens without re-reading disk after startup."""
@@ -2268,12 +2307,13 @@ class PolymarketLiveHarvester:
 
         def _worker():
             signed = 0
-            # v3.8 Blueprint 4: Pre-sign dense integer share grid (6..95 shares) across $0.55..$0.88
-            # for 100.0% exact O(1) dictionary hit rate across all Seed/Recovery/Growth elastic & downscaled tickets.
-            dense_shares = list(range(6, 96))
+            # Wave 3 Bankroll-Adaptive Dense Grid: auto-scales upper share bound with compounding bankroll
+            max_dense_sh = max(96, min(160, int(math.ceil(float(collat or 140.0) * 0.35 / 0.52))))
+            dense_shares = list(range(6, max_dense_sh))
             for t in tokens:
+                tok_tick = str(getattr(self.executor, "_tick_size_cache", {}).get(t) or "0.01")
                 try:
-                    signed += int(self.executor.prewarm_order_ladder(t, 12.0, exact_shares=dense_shares) or 0)
+                    signed += int(self.executor.prewarm_order_ladder(t, 12.0, tick_size=tok_tick, exact_shares=dense_shares) or 0)
                 except TypeError:
                     for n_val in notionals:
                         signed += int(self.executor.prewarm_order_ladder(t, n_val) or 0)
@@ -2283,15 +2323,24 @@ class PolymarketLiveHarvester:
                     if n_val <= 18.0:
                         continue
                     try:
-                        signed += int(self.executor.prewarm_order_ladder(t, n_val, share_deltas=(-2, -1, 0, 1)) or 0)
+                        signed += int(self.executor.prewarm_order_ladder(t, n_val, tick_size=tok_tick, share_deltas=(-2, -1, 0, 1)) or 0)
                     except TypeError:
                         signed += int(self.executor.prewarm_order_ladder(t, n_val) or 0)
                     except Exception as e:
                         logger.debug(f"[PREWARM LADDER] notice for {t}: {e}")
             if signed:
+                if not getattr(self, "_gc_frozen_ladder", False) and signed >= 500:
+                    self._gc_frozen_ladder = True
+                    try:
+                        import gc as _gc_f
+                        _gc_f.collect()
+                        if hasattr(_gc_f, "freeze"):
+                            _gc_f.freeze()
+                    except Exception:
+                        pass
                 logger.info(
                     f"[PREWARM LADDER] Pre-signed {signed} BUY order(s) across {len(tokens)} token(s) "
-                    f"(dense_shares=6..95 + tickets={[n for n in notionals if n > 18.0]})."
+                    f"(dense_shares=6..{max_dense_sh - 1} + tickets={[n for n in notionals if n > 18.0]})."
                 )
 
         th = threading.Thread(target=_worker, name="ladder-prewarm", daemon=True)
@@ -2359,7 +2408,7 @@ class PolymarketLiveHarvester:
                                         fee_rate=rate,
                                         fee_exponent=exp,
                                     )
-                                    if slug in dir_slugs:
+                                    if slug in dir_slugs and secs_left <= 2100:
                                         self._register_active_warmed_token(str(t), now_utc.timestamp() + secs_left)
                                     if str(t) not in held_tokens:
                                         pre_bal_cache[str(t)] = (0.0, now_pb)
@@ -6862,7 +6911,7 @@ class PolymarketLiveHarvester:
                 return False
             if regime not in ("REGIME_B_LATE_SNIPER", "REGIME_C_SUBHOURLY"):
                 return False
-            if tte < (85.0 if _is_live_real else 75.0) or z_strike < 1.00 or abs(dist_pct) < 0.06:
+            if tte < (85.0 if _is_live_real else 75.0) or z_strike < 0.78 or abs(dist_pct) < 0.06:
                 return False
             if (time.time() - float(_maker_rescue_cd_map.get(str(m_id or ""), 0.0) or 0.0)) < 8.0:
                 return False
@@ -6957,16 +7006,17 @@ class PolymarketLiveHarvester:
             if first_ask < min_allowed_price or first_ask > max_allowed_price:
                 return
 
+        _rsw_candidate: Optional[Dict[str, Any]] = None
         if hasattr(self, "recent_shock_window") and isinstance(self.recent_shock_window, list):
             _sc_ask = float(token_features.get("vwap_$50") or token_features.get("effective_price_$50") or first_ask or 0.50)
             _sc_z = abs(float(shock.get("z_val", shock.get("z_score", shock.get("expected_prob_shift", abs(dist_pct) * 0.5)))))
-            if min_allowed_price <= first_ask <= max_allowed_price:
-                self.recent_shock_window.append({
+            if min_allowed_price <= first_ask <= round(max_allowed_price + 0.03, 4) + 1e-6:
+                _rsw_candidate = {
                     "t_unix": float(shock.get("t0_unix", time.time())),
                     "score": _sc_z / max(_sc_ask, 0.01),
                     "market_id": str(m_id or ""),
                     "trade_id": str(shock_id),
-                })
+                }
 
         # Round 11 P1-10: Authoritative fee schedule provenance must be bound early before sizing
         fee_meta = shock.get("fee_metadata", {})
@@ -7207,7 +7257,9 @@ class PolymarketLiveHarvester:
         if not self.dry_run and not is_synthetic_test and first_ask > 0:
             max_near_bid_shares = near_touch_bid_shares / max(min_bid_mult, 1.0)
             max_bid_supported_shares = min(max_near_bid_shares, total_bid_shares)
-            max_bid_supported_usd = math.floor(max_bid_supported_shares * (_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask) * 100.0) / 100.0
+            max_bid_supported_usd = math.floor(max_bid_supported_shares * first_ask * 100.0) / 100.0
+            if _maker_only_ceiling_rescue:
+                max_bid_supported_usd = math.floor(max_bid_supported_shares * _maker_rescue_cap_px * 100.0) / 100.0
             if effective_notional > max_bid_supported_usd:
                 min_lot_chk = min(MIN_LOT_SIZE_USD, float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else _live_min_lot
                 if max_bid_supported_usd < min_lot_chk:
@@ -7742,7 +7794,7 @@ class PolymarketLiveHarvester:
                         or (res.details or {}).get("fak_killed")
                         or (res.details or {}).get("clob_400_rejection")
                     )
-                    and (not _is_live_real or (z_strike >= 0.85 and abs(dist_pct) >= 0.06))
+                    and (not _is_live_real or (z_strike >= 0.78 and abs(dist_pct) >= 0.06))
                 ):
                     rescue_res = await self._attempt_live_phase3a_maker_rescue(
                         trade_id=trade_id,
@@ -7853,6 +7905,8 @@ class PolymarketLiveHarvester:
                 )
 
         if res.success:
+            if _rsw_candidate is not None and hasattr(self, "recent_shock_window") and isinstance(self.recent_shock_window, list):
+                self.recent_shock_window.append(_rsw_candidate)
             self.trades_this_hour += 1
             self.trades_per_market[m_id] += 1
             self.trades_per_market_direction[(m_id, target_token)] += 1
@@ -8763,6 +8817,8 @@ class PolymarketLiveHarvester:
                         if (
                             not _is_dom_box
                             and evaluate_optimal_stopping_exit is not None
+                            and (self._effective_exit_policy() != "hold_98" or os.environ.get("PM_ENABLE_HOLD98_OBI_STEPDOWN", "0") == "1")
+                            and not getattr(self, "hold_to_maturity", False)
                             and exit_oid
                             and not pos.get("obi_stepped_down")
                             and not pos.get("is_liquidating")
@@ -9108,7 +9164,9 @@ class PolymarketLiveHarvester:
                             pre_expiry_99c_recycle = _d1_prim
                             final_45s_triggered = bool(_d1_prim or _d1_bonus or _d1_bid_harvest)
                         elif pre_expiry_99c_recycle or (
-                            pos.get("sleeve") != "SLEEVE_4_BOUNDARY_SNIPE" and tte_rem <= 45.0 and rem_shrs > 0.01 and best_b >= 0.85 and best_b > (entry_px + 0.03)
+                            self._effective_exit_policy() != "hold_98"
+                            and not getattr(self, "hold_to_maturity", False)
+                            and pos.get("sleeve") != "SLEEVE_4_BOUNDARY_SNIPE" and tte_rem <= 45.0 and rem_shrs > 0.01 and best_b >= 0.85 and best_b > (entry_px + 0.03)
                         ):
                             final_45s_triggered = True
 
@@ -9793,19 +9851,27 @@ class PolymarketLiveHarvester:
                     ipc_sock.bind(ipc_addr)
 
                     def on_fast_ipc_datagram():
+                        has_real_trigger = False
                         while True:
                             try:
                                 pkt = ipc_sock.recv(65536)
                                 if not pkt:
                                     break
                                 for ln in pkt.decode("utf-8", errors="ignore").splitlines():
-                                    if ln.strip():
-                                        self._fast_trigger_lines.append(ln)
+                                    s_ln = ln.strip()
+                                    if not s_ln:
+                                        continue
+                                    if '"_prewarm_clob_tls"' in s_ln:
+                                        self._handle_prewarm_ipc_signal()
+                                        continue
+                                    self._fast_trigger_lines.append(s_ln)
+                                    has_real_trigger = True
                             except (BlockingIOError, InterruptedError):
                                 break
                             except Exception:
                                 break
-                        trigger_notify_event.set()
+                        if has_real_trigger:
+                            trigger_notify_event.set()
 
                     loop.add_reader(ipc_sock.fileno(), on_fast_ipc_datagram)
                     logger.info("✓ Fast RAM IPC datagram listener armed on @polymarket_shock_notify (~15us zero-VFS delivery).")
@@ -9976,9 +10042,11 @@ class PolymarketLiveHarvester:
 
                         asyncio.create_task(_bg_heartbeat())
 
-                # 1b. Periodic CLOB keepalive ping every 8s on exact session to keep TLS socket warm 24/7 (Task 1C)
-                if not self.dry_run and (now_ts - getattr(self, "_last_clob_keepalive", 0.0) >= 8.0):
+                # 1b. Periodic CLOB keepalive ping every 6s on sync + async hot sockets to keep ARN->LHR tunnel warm 24/7
+                if not self.dry_run and (now_ts - getattr(self, "_last_clob_keepalive", 0.0) >= 6.0):
                     self._last_clob_keepalive = now_ts
+                    if hasattr(self.executor, "touch_hot_async_clob_socket") and not _sync_bg_io:
+                        asyncio.create_task(self.executor.touch_hot_async_clob_socket(5.5))
                     if _sync_bg_io:
                         await asyncio.to_thread(self.executor.ping_clob_keepalive)
                     elif not getattr(self, "_keepalive_in_flight", False):
@@ -10095,12 +10163,31 @@ class PolymarketLiveHarvester:
                                 if s_id in self.seen_shock_ids:
                                     continue
 
-                                # 5.0s shock debounce against superior QUALIFIED concurrent triggers
+                                # 5.0s shock debounce against superior FILLED concurrent triggers (only when no free directional slots remain)
                                 cand_score = self._calc_priority_score(shock)
                                 t0_u = float(shock.get("t0_unix", now_u))
                                 shk_m_id = str(shock.get("market_id") or "")
+                                _dir_open_cnt = sum(
+                                    1
+                                    for p in self.active_positions.values()
+                                    if not p.get("is_dominance_box")
+                                    and "BOX" not in str(p.get("sleeve") or "").upper()
+                                    and not position_is_settlement_receivable(p)
+                                )
+                                _eff_slot_cap = max(1, int(getattr(self, "max_concurrent_positions", 1) or 1))
+                                if getattr(self, "dynamic_sizing", False):
+                                    _rcfg_pd = getattr(self, "risk_config", None) or RISK_CONFIG
+                                    _eq_pd = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
+                                        self.get_position_market_value(p, now_u) for p in self.active_positions.values()
+                                    )
+                                    if _eq_pd > 0.0:
+                                        _corr_cap_pd = float(_rcfg_pd.get("correlated_crypto_single_slot_threshold", 110.0))
+                                        if not self.dry_run and _eq_pd < _corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO") != "1":
+                                            _eff_slot_cap = 1
+                                        else:
+                                            _eff_slot_cap = max(1, int(get_equity_tier_limits(_eq_pd, getattr(self, "high_water_mark_equity", None))["max_slots"]))
 
-                                if cand_score > 0.0 and self.recent_shock_window:
+                                if cand_score > 0.0 and self.recent_shock_window and _dir_open_cnt >= _eff_slot_cap:
                                     best_prior = max(self.recent_shock_window, key=lambda x: x["score"])
                                     if best_prior["market_id"] != shk_m_id and best_prior["score"] > cand_score:
                                         logger.info(

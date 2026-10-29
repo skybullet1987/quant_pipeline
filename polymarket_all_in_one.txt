@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-29 03:16:52 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-29 11:37:22 UTC | Repo: C:/Users/Anton/source/repos/Dominus
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
-  - [config/polymarket_risk_config.json] (Lines 19 - 59 | 1,125 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
-  - [systemd/polymarket-live-harvester.service] (Lines 60 - 94 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,934 | 616,470 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,935 - 10,751 | 357,901 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,752 - 12,501 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,502 - 12,865 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,866 - 14,487 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,488 - 14,557 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,558 - 14,640 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,641 - 14,830 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,831 - 15,001 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,002 - 16,157 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [config/polymarket_risk_config.json] (Lines 19 - 60 | 1,157 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
+  - [systemd/polymarket-live-harvester.service] (Lines 61 - 95 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 96 - 7,008 | 621,886 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 7,009 - 11,046 | 373,001 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 11,047 - 12,801 | 160,641 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,802 - 13,165 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 13,166 - 14,787 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,788 - 14,857 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,858 - 14,940 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,941 - 15,130 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 15,131 - 15,301 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,302 - 16,457 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -36,6 +36,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "enable_graduated_d1_box": true,
   "enable_sol_d1_box": true,
   "phase3a_maker_max_notional_usd": 22.0,
+  "phase3a_maker_ttl_sec": 8.0,
   "d1_box_max_budget_usd": 250.0,
   "d1_box_collateral_reserve_usd": 16.5,
   "d1_box_bankroll_pct": 0.25,
@@ -158,16 +159,35 @@ except Exception:
 logger=logging.getLogger("LiveHarvester")
 logging.basicConfig( level=logging.INFO,format="[%(asctime)s UTC] [%(levelname)s] [HARVESTER] %(message)s",handlers=[logging.StreamHandler(sys.stdout)],)
 _FILE_LOGGER_ATTACHED=False
+_LOG_QUEUE_LISTENER:Optional[Any]=None
 def _ensure_file_logging()->None:
- global _FILE_LOGGER_ATTACHED
+ global _FILE_LOGGER_ATTACHED,_LOG_QUEUE_LISTENER
  if _FILE_LOGGER_ATTACHED:
   return
  try:
+  import atexit
+  import logging.handlers
+  import queue as _qmod
   log_path=DATA_DIR / "live_harvester.log"
   log_path.parent.mkdir(parents=True,exist_ok=True)
   fh=logging.FileHandler(log_path,encoding="utf-8")
   fh.setFormatter(logging.Formatter("[%(asctime)s UTC] [%(levelname)s] [HARVESTER] %(message)s"))
-  logging.getLogger().addHandler(fh)
+  root_log=logging.getLogger()
+  if os.environ.get("PM_ASYNC_FILE_LOGGING","1")=="1":
+   downstream=[fh]
+   for h in list(root_log.handlers):
+    if type(h) is logging.StreamHandler:
+     root_log.removeHandler(h)
+     downstream.append(h)
+   q_obj=_qmod.SimpleQueue()
+   qh=logging.handlers.QueueHandler(q_obj)
+   ql=logging.handlers.QueueListener(q_obj,*downstream,respect_handler_level=True)
+   ql.start()
+   _LOG_QUEUE_LISTENER=ql
+   atexit.register(ql.stop)
+   root_log.addHandler(qh)
+  else:
+   root_log.addHandler(fh)
   _FILE_LOGGER_ATTACHED=True
  except Exception as exc:
   logger.debug(f"Could not attach file logger: {exc}")
@@ -1022,7 +1042,8 @@ class PolymarketLiveHarvester:
    return None
   if trade_id in self.pending_entry_intents:
    self.pending_entry_intents[trade_id]["entry_order_id"]=maker_oid
-  ttl_s=max(0.2,float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC","3.5")))
+  _default_p3a_ttl=str((getattr(self,"risk_config",None) or RISK_CONFIG).get("phase3a_maker_ttl_sec",8.0) if real_live else 3.5)
+  ttl_s=max(0.2,float(os.environ.get("PM_LIVE_PHASE3A_TTL_SEC",_default_p3a_ttl)))
   deadline=time.monotonic() + ttl_s
   uws=getattr(self.executor,"_user_ws_cache",None)
   init_disp=(entry_spot_ref - open_spot) if target_token=="UP" else (open_spot - entry_spot_ref)
@@ -1514,8 +1535,8 @@ class PolymarketLiveHarvester:
   for k in expired:
    reg.pop(k,None)
   while len(reg) > 12:
-   oldest_k=min(reg,key=reg.get)
-   reg.pop(oldest_k,None)
+   furthest_k=max(reg,key=reg.get)
+   reg.pop(furthest_k,None)
  def _prewarm_market_metadata(self,shock:Dict[str,Any]):
   try:
    title_l=str(shock.get("title","") or "").lower()
@@ -1542,6 +1563,22 @@ class PolymarketLiveHarvester:
       self._register_active_warmed_token(str(tok_id),exp_ts)
   except Exception as exc:
    logger.debug(f"[PREWARM NOTICE] Prewarm metadata notice: {exc}")
+ def _handle_prewarm_ipc_signal(self)->None:
+  now_m=time.monotonic()
+  if (now_m - float(getattr(self,"_last_precursor_touch_mono",0.0) or 0.0)) < 1.5:
+   return
+  self._last_precursor_touch_mono=now_m
+  if not getattr(self,"active_positions",None):
+   try:
+    import gc as _gc_p
+    _gc_p.collect(0)
+   except Exception:
+    pass
+  if not self.dry_run and hasattr(self.executor,"touch_hot_async_clob_socket"):
+   try:
+    asyncio.get_running_loop().create_task(self.executor.touch_hot_async_clob_socket(1.5))
+   except Exception:
+    pass
  def _prewarm_active_market_tokens(self):
   try:
    reg=getattr(self,"_active_warmed_token_expiries",None)
@@ -1591,10 +1628,12 @@ class PolymarketLiveHarvester:
      notionals.append(cand_n)
   def _worker():
    signed=0
-   dense_shares=list(range(6,96))
+   max_dense_sh=max(96,min(160,int(math.ceil(float(collat or 140.0) * 0.35 / 0.52))))
+   dense_shares=list(range(6,max_dense_sh))
    for t in tokens:
+    tok_tick=str(getattr(self.executor,"_tick_size_cache",{}).get(t) or "0.01")
     try:
-     signed += int(self.executor.prewarm_order_ladder(t,12.0,exact_shares=dense_shares) or 0)
+     signed += int(self.executor.prewarm_order_ladder(t,12.0,tick_size=tok_tick,exact_shares=dense_shares) or 0)
     except TypeError:
      for n_val in notionals:
       signed += int(self.executor.prewarm_order_ladder(t,n_val) or 0)
@@ -1604,13 +1643,22 @@ class PolymarketLiveHarvester:
      if n_val<=18.0:
       continue
      try:
-      signed += int(self.executor.prewarm_order_ladder(t,n_val,share_deltas=(-2,-1,0,1)) or 0)
+      signed += int(self.executor.prewarm_order_ladder(t,n_val,tick_size=tok_tick,share_deltas=(-2,-1,0,1)) or 0)
      except TypeError:
       signed += int(self.executor.prewarm_order_ladder(t,n_val) or 0)
      except Exception as e:
       logger.debug(f"[PREWARM LADDER] notice for {t}: {e}")
    if signed:
-    logger.info( f"[PREWARM LADDER] Pre-signed {signed} BUY order(s) across {len(tokens)} token(s) " f"(dense_shares=6..95 + tickets={[n for n in notionals if n > 18.0]})." )
+    if not getattr(self,"_gc_frozen_ladder",False) and signed>=500:
+     self._gc_frozen_ladder=True
+     try:
+      import gc as _gc_f
+      _gc_f.collect()
+      if hasattr(_gc_f,"freeze"):
+       _gc_f.freeze()
+     except Exception:
+      pass
+    logger.info( f"[PREWARM LADDER] Pre-signed {signed} BUY order(s) across {len(tokens)} token(s) " f"(dense_shares=6..{max_dense_sh - 1} + tickets={[n for n in notionals if n > 18.0]})." )
   th=threading.Thread(target=_worker,name="ladder-prewarm",daemon=True)
   self._ladder_prewarm_thread=th
   th.start()
@@ -1658,7 +1706,7 @@ class PolymarketLiveHarvester:
         gamma_tick=market.get("orderPriceMinTickSize") or "0.01"
         for t in (t_up,t_down):
          self.executor.prewarm_token_market_cache( token_id=t,tick_size=gamma_tick,neg_risk=False,fee_rate_bps=bps,condition_id=cond_id,fee_rate=rate,fee_exponent=exp,)
-         if slug in dir_slugs:
+         if slug in dir_slugs and secs_left<=2100:
           self._register_active_warmed_token(str(t),now_utc.timestamp() + secs_left)
          if str(t) not in held_tokens:
           pre_bal_cache[str(t)]=(0.0,now_pb)
@@ -4806,7 +4854,7 @@ class PolymarketLiveHarvester:
     return False
    if regime not in ("REGIME_B_LATE_SNIPER","REGIME_C_SUBHOURLY"):
     return False
-   if tte < (85.0 if _is_live_real else 75.0) or z_strike < 1.00 or abs(dist_pct) < 0.06:
+   if tte < (85.0 if _is_live_real else 75.0) or z_strike < 0.78 or abs(dist_pct) < 0.06:
     return False
    if (time.time() - float(_maker_rescue_cd_map.get(str(m_id or ""),0.0) or 0.0)) < 8.0:
     return False
@@ -4860,11 +4908,12 @@ class PolymarketLiveHarvester:
   else:
    if first_ask < min_allowed_price or first_ask > max_allowed_price:
     return
+  _rsw_candidate:Optional[Dict[str,Any]]=None
   if hasattr(self,"recent_shock_window") and isinstance(self.recent_shock_window,list):
    _sc_ask=float(token_features.get("vwap_$50") or token_features.get("effective_price_$50") or first_ask or 0.50)
    _sc_z=abs(float(shock.get("z_val",shock.get("z_score",shock.get("expected_prob_shift",abs(dist_pct) * 0.5)))))
-   if min_allowed_price<=first_ask<=max_allowed_price:
-    self.recent_shock_window.append({ "t_unix":float(shock.get("t0_unix",time.time())),"score":_sc_z / max(_sc_ask,0.01),"market_id":str(m_id or ""),"trade_id":str(shock_id),})
+   if min_allowed_price<=first_ask<=round(max_allowed_price + 0.03,4) + 1e-6:
+    _rsw_candidate={ "t_unix":float(shock.get("t0_unix",time.time())),"score":_sc_z / max(_sc_ask,0.01),"market_id":str(m_id or ""),"trade_id":str(shock_id),}
   fee_meta=shock.get("fee_metadata",{})
   if not self.dry_run or "fee_metadata" in shock:
    if ( not isinstance(fee_meta,dict) or fee_meta.get("fee_rate_market") is None or not math.isfinite(float(fee_meta.get("fee_rate_market",0.0))) or float(fee_meta.get("fee_rate_market",0.0))<=0.0 or not math.isfinite(float(fee_meta.get("fee_exponent",1.0))) or float(fee_meta.get("fee_exponent",1.0)) < 1.0 ):
@@ -4990,7 +5039,9 @@ class PolymarketLiveHarvester:
   if not self.dry_run and not is_synthetic_test and first_ask > 0:
    max_near_bid_shares=near_touch_bid_shares / max(min_bid_mult,1.0)
    max_bid_supported_shares=min(max_near_bid_shares,total_bid_shares)
-   max_bid_supported_usd=math.floor(max_bid_supported_shares * (_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask) * 100.0) / 100.0
+   max_bid_supported_usd=math.floor(max_bid_supported_shares * first_ask * 100.0) / 100.0
+   if _maker_only_ceiling_rescue:
+    max_bid_supported_usd=math.floor(max_bid_supported_shares * _maker_rescue_cap_px * 100.0) / 100.0
    if effective_notional > max_bid_supported_usd:
     min_lot_chk=min(MIN_LOT_SIZE_USD,float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else _live_min_lot
     if max_bid_supported_usd < min_lot_chk:
@@ -5233,7 +5284,7 @@ class PolymarketLiveHarvester:
        if "max_book_buffer" not in str(_te):
         raise
        res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=fresh_fallback_book,)
-    if ( ( res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or (z_strike>=0.85 and abs(dist_pct)>=0.06)) ):
+    if ( ( res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or (z_strike>=0.78 and abs(dist_pct)>=0.06)) ):
      rescue_res=await self._attempt_live_phase3a_maker_rescue( trade_id=trade_id,token_id=token_id,target_token=target_token,asset_str=asset_str,effective_notional=effective_notional,first_ask=first_ask,first_bid=first_bid,min_allowed_price=min_allowed_price,max_allowed_price=max_allowed_price,open_spot=open_spot,entry_spot_ref=entry_spot_ref,spot_denom=spot_denom,tte=tte,pre_cond_bal=pre_cond_bal,book_snapshot=book_snapshot,)
      if rescue_res is not None:
       res=rescue_res
@@ -5272,6 +5323,8 @@ class PolymarketLiveHarvester:
    if not self.dry_run:
     self._register_shadow_phase3a_maker_in( shock,target_token,first_ask,first_bid,max_allowed_price,raw_asks,f"EXECUTION_REJECT:{res.mode or res.error}",bool(is_subhourly),float(dist_pct),float(tte),)
   if res.success:
+   if _rsw_candidate is not None and hasattr(self,"recent_shock_window") and isinstance(self.recent_shock_window,list):
+    self.recent_shock_window.append(_rsw_candidate)
    self.trades_this_hour += 1
    self.trades_per_market[m_id] += 1
    self.trades_per_market_direction[(m_id,target_token)] += 1
@@ -5916,7 +5969,7 @@ class PolymarketLiveHarvester:
        pos["v_spot_15s_pct"]=round(v_spot_15s_pct,4)
       else:
        v_spot_15s_pct=float(pos.get("v_spot_15s_pct",0.0) or 0.0)
-      if ( not _is_dom_box and evaluate_optimal_stopping_exit is not None and exit_oid and not pos.get("obi_stepped_down") and not pos.get("is_liquidating") and rem_shrs>=5.0 and tte_rem>=self.tte_cancel_window and best_b > 0.0 and best_a > 0.0 and bids and asks ):
+      if ( not _is_dom_box and evaluate_optimal_stopping_exit is not None and (self._effective_exit_policy()!="hold_98" or os.environ.get("PM_ENABLE_HOLD98_OBI_STEPDOWN","0")=="1") and not getattr(self,"hold_to_maturity",False) and exit_oid and not pos.get("obi_stepped_down") and not pos.get("is_liquidating") and rem_shrs>=5.0 and tte_rem>=self.tte_cancel_window and best_b > 0.0 and best_a > 0.0 and bids and asks ):
        _b1_sz=sum( float(b.get("size",0.0) if isinstance(b,dict) else b[1]) for b in bids if abs(float(b.get("price",0.0) if isinstance(b,dict) else b[0]) - best_b) < 1e-6 )
        _a1_sz=sum( float(a.get("size",0.0) if isinstance(a,dict) else a[1]) for a in asks if abs(float(a.get("price",0.0) if isinstance(a,dict) else a[0]) - best_a) < 1e-6 )
        _obi_cur=(_b1_sz - _a1_sz) / max(1e-6,_b1_sz + _a1_sz)
@@ -6110,7 +6163,7 @@ class PolymarketLiveHarvester:
        _d1_bonus=bool(5.0<=tte_rem<=35.0 and rem_shrs>=5.0 and _partner_cov and best_b>=0.20)
        pre_expiry_99c_recycle=_d1_prim
        final_45s_triggered=bool(_d1_prim or _d1_bonus or _d1_bid_harvest)
-      elif pre_expiry_99c_recycle or ( pos.get("sleeve")!="SLEEVE_4_BOUNDARY_SNIPE" and tte_rem<=45.0 and rem_shrs > 0.01 and best_b>=0.85 and best_b > (entry_px + 0.03) ):
+      elif pre_expiry_99c_recycle or ( self._effective_exit_policy()!="hold_98" and not getattr(self,"hold_to_maturity",False) and pos.get("sleeve")!="SLEEVE_4_BOUNDARY_SNIPE" and tte_rem<=45.0 and rem_shrs > 0.01 and best_b>=0.85 and best_b > (entry_px + 0.03) ):
        final_45s_triggered=True
       if (not bids or best_b<=0.0) and not pos.get("is_liquidating"):
        if tte_rem<=30.0 or _is_dom_box:
@@ -6565,19 +6618,27 @@ class PolymarketLiveHarvester:
      ipc_addr=f"\x00{ipc_name}".encode("utf-8")
      ipc_sock.bind(ipc_addr)
      def on_fast_ipc_datagram():
+      has_real_trigger=False
       while True:
        try:
         pkt=ipc_sock.recv(65536)
         if not pkt:
          break
         for ln in pkt.decode("utf-8",errors="ignore").splitlines():
-         if ln.strip():
-          self._fast_trigger_lines.append(ln)
+         s_ln=ln.strip()
+         if not s_ln:
+          continue
+         if '"_prewarm_clob_tls"' in s_ln:
+          self._handle_prewarm_ipc_signal()
+          continue
+         self._fast_trigger_lines.append(s_ln)
+         has_real_trigger=True
        except (BlockingIOError,InterruptedError):
         break
        except Exception:
         break
-      trigger_notify_event.set()
+      if has_real_trigger:
+       trigger_notify_event.set()
      loop.add_reader(ipc_sock.fileno(),on_fast_ipc_datagram)
      logger.info("✓ Fast RAM IPC datagram listener armed on @polymarket_shock_notify (~15us zero-VFS delivery).")
     except Exception as ipc_exc:
@@ -6701,8 +6762,10 @@ class PolymarketLiveHarvester:
        finally:
         self._hb_in_flight=False
       asyncio.create_task(_bg_heartbeat())
-    if not self.dry_run and (now_ts - getattr(self,"_last_clob_keepalive",0.0)>=8.0):
+    if not self.dry_run and (now_ts - getattr(self,"_last_clob_keepalive",0.0)>=6.0):
      self._last_clob_keepalive=now_ts
+     if hasattr(self.executor,"touch_hot_async_clob_socket") and not _sync_bg_io:
+      asyncio.create_task(self.executor.touch_hot_async_clob_socket(5.5))
      if _sync_bg_io:
       await asyncio.to_thread(self.executor.ping_clob_keepalive)
      elif not getattr(self,"_keepalive_in_flight",False):
@@ -6796,7 +6859,18 @@ class PolymarketLiveHarvester:
        cand_score=self._calc_priority_score(shock)
        t0_u=float(shock.get("t0_unix",now_u))
        shk_m_id=str(shock.get("market_id") or "")
-       if cand_score > 0.0 and self.recent_shock_window:
+       _dir_open_cnt=sum( 1 for p in self.active_positions.values() if not p.get("is_dominance_box") and "BOX" not in str(p.get("sleeve") or "").upper() and not position_is_settlement_receivable(p) )
+       _eff_slot_cap=max(1,int(getattr(self,"max_concurrent_positions",1) or 1))
+       if getattr(self,"dynamic_sizing",False):
+        _rcfg_pd=getattr(self,"risk_config",None) or RISK_CONFIG
+        _eq_pd=float(getattr(self,"_last_known_collateral",0.0) or 0.0) + sum( self.get_position_market_value(p,now_u) for p in self.active_positions.values() )
+        if _eq_pd > 0.0:
+         _corr_cap_pd=float(_rcfg_pd.get("correlated_crypto_single_slot_threshold",110.0))
+         if not self.dry_run and _eq_pd < _corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO")!="1":
+          _eff_slot_cap=1
+         else:
+          _eff_slot_cap=max(1,int(get_equity_tier_limits(_eq_pd,getattr(self,"high_water_mark_equity",None))["max_slots"]))
+       if cand_score > 0.0 and self.recent_shock_window and _dir_open_cnt>=_eff_slot_cap:
         best_prior=max(self.recent_shock_window,key=lambda x:x["score"])
         if best_prior["market_id"]!=shk_m_id and best_prior["score"] > cand_score:
          logger.info( f"[PRIORITY DEFER] Deferring {shock.get('title')!r} (score={cand_score:.3f}) " f"to concurrent superior qualified trigger {best_prior.get('trade_id')} (score={best_prior['score']:.3f})" )
@@ -6934,7 +7008,11 @@ if __name__=="__main__":
 
 # === [04/12] src/polymarket_research/polymarket_live_executor.py :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter ===
 #!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import asyncio
+import base64
 import concurrent.futures
+import gc
+import hashlib
+import hmac
 import json
 import logging
 import math
@@ -7148,7 +7226,7 @@ if str(PIPELINE_ROOT) not in sys.path:
 load_dotenv(PIPELINE_ROOT / ".env")
 POLYMARKET_DATA_DIR=Path(os.getenv("POLYMARKET_DATA_DIR",str(PIPELINE_ROOT / "data/polymarket")))
 RISK_CONFIG_PATH=Path(os.getenv("POLYMARKET_RISK_CONFIG",str(PIPELINE_ROOT / "config/polymarket_risk_config.json")))
-_RISK_CONFIG_DEFAULTS:Dict[str,Any]={ "ticket_notional":16.50,"dynamic_sizing":True,"dynamic_risk_pct":0.18,"scale_up_equity_threshold":110.00,"correlated_crypto_single_slot_threshold":180.00,"scale_up_risk_pct":0.22,"min_equity_floor":66.67,"seed_survival_equity_threshold":88.00,"seed_survival_ticket_usd":12.00,"seed_survival_max_concurrent":1,"seed_survival_floor_usd":48.00,"seed_smooth_compounding":True,"enable_fak_plus2c_fallback":False,"enable_live_phase3a_maker_fallback":True,"phase3a_maker_max_notional_usd":22.00,"enable_graduated_d1_box":True,"enable_sol_d1_box":True,"d1_box_max_budget_usd":250.0,"d1_box_collateral_reserve_usd":16.50,"d1_box_bankroll_pct":0.25,"d1_depth_ratio_threshold":1.20,"d1_min_depth_mult_gate":1.15,"d1_max_giveback_frac":0.25,"max_concurrent_d1_boxes":4,"enable_graduated_alt_sleeves":True,"max_daily_loss":20.00,"max_exposure":35.00,"max_concurrent_positions":2,"hold_to_maturity":False,"exit_policy":"hold_98","stale_fast_tick_max_age_sec":15.0,"stale_telemetry_max_age_sec":30.0,"stale_alert_after_sec":60.0,"alert_rate_limit_sec":300.0,}
+_RISK_CONFIG_DEFAULTS:Dict[str,Any]={ "ticket_notional":16.50,"dynamic_sizing":True,"dynamic_risk_pct":0.18,"scale_up_equity_threshold":110.00,"correlated_crypto_single_slot_threshold":180.00,"scale_up_risk_pct":0.22,"min_equity_floor":66.67,"seed_survival_equity_threshold":88.00,"seed_survival_ticket_usd":12.00,"seed_survival_max_concurrent":1,"seed_survival_floor_usd":48.00,"seed_smooth_compounding":True,"enable_fak_plus2c_fallback":False,"enable_live_phase3a_maker_fallback":True,"phase3a_maker_max_notional_usd":22.00,"phase3a_maker_ttl_sec":8.0,"enable_graduated_d1_box":True,"enable_sol_d1_box":True,"d1_box_max_budget_usd":250.0,"d1_box_collateral_reserve_usd":16.50,"d1_box_bankroll_pct":0.25,"d1_depth_ratio_threshold":1.20,"d1_min_depth_mult_gate":1.15,"d1_max_giveback_frac":0.25,"max_concurrent_d1_boxes":4,"enable_graduated_alt_sleeves":True,"max_daily_loss":20.00,"max_exposure":35.00,"max_concurrent_positions":2,"hold_to_maturity":False,"exit_policy":"hold_98","stale_fast_tick_max_age_sec":15.0,"stale_telemetry_max_age_sec":30.0,"stale_alert_after_sec":60.0,"alert_rate_limit_sec":300.0,}
 def load_risk_config(path:Optional[Path]=None)->Dict[str,Any]:
  cfg:Dict[str,Any]=dict(_RISK_CONFIG_DEFAULTS)
  try:
@@ -7173,6 +7251,7 @@ try:
  import py_clob_client_v2
  import py_clob_client_v2.clob_types as _clob_types_mod
  from py_clob_client_v2.client import ClobClient
+ from py_clob_client_v2.exceptions import PolyApiException
  from py_clob_client_v2.clob_types import ( ApiCreds,OrderArgsV2,MarketOrderArgsV2,OrderType,AssetType,BalanceAllowanceParams,TradeParams,PartialCreateOrderOptions,FeeInfo,)
  PostOrdersV2Args=getattr(_clob_types_mod,"PostOrdersV2Args",None)
  PY_CLOB_AVAILABLE=True
@@ -7181,6 +7260,7 @@ except ImportError:
  PY_CLOB_AVAILABLE=False
  PY_CLOB_VERSION=None
  ClobClient=None
+ PolyApiException=None
  ApiCreds=None
  OrderArgsV2=None
  MarketOrderArgsV2=None
@@ -7726,6 +7806,16 @@ class PolymarketLiveExecutor:
   self._tick_size_cache:Dict[str,float]={}
   self._neg_risk_cache:Dict[str,bool]={}
   self._async_client:Optional[httpx.AsyncClient]=None
+  self._hot_order_async_client:Optional[httpx.AsyncClient]=None
+  self._hot_order_async_loop:Optional[Any]=None
+  self._hot_order_last_touch_mono:float=0.0
+  self._hot_order_touch_in_flight:bool=False
+  self._fast_l2_ready:bool=False
+  self._fast_l2_secret_bytes:bytes=b""
+  self._fast_l2_signer_addr:str=""
+  self._fast_l2_api_key:str=""
+  self._fast_l2_passphrase:str=""
+  self._last_ladder_prune_mono:float=0.0
   self._thread_local=threading.local()
   self._collateral_cache:Tuple[Optional[float],float]=(None,0.0)
   self.reservation_records:Dict[str,Dict[str,Any]]={}
@@ -7795,8 +7885,9 @@ class PolymarketLiveExecutor:
    self.is_authenticated=True
    self.auth_mode="AUTHENTICATED_L2"
    logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client v{PY_CLOB_VERSION}) in {latency_ms:.2f} ms.")
+   self._init_fast_l2_headers_cache(api_creds)
    if os.environ.get("PM_ENABLE_TLS_KEEPALIVE","1")=="1":
-    self.start_clob_tls_keepalive_daemon(interval_sec=12.0)
+    self.start_clob_tls_keepalive_daemon(interval_sec=6.0)
    if ( _PolymarketUserWsCache is not None and os.environ.get("PM_ENABLE_USER_WS","1")=="1" and getattr(self.client,"_mock_children",None) is None and getattr(api_creds,"_mock_children",None) is None and isinstance(getattr(api_creds,"api_key",None),str) ):
     try:
      self._user_ws_cache=_PolymarketUserWsCache( api_creds.api_key,api_creds.api_secret,api_creds.api_passphrase,on_fill_callback=lambda _ev:self.invalidate_collateral_cache(),)
@@ -7878,8 +7969,14 @@ class PolymarketLiveExecutor:
   eff_neg_risk=self.get_token_neg_risk(token_id,neg_risk)
   if neg_risk is None and token_id not in self._neg_risk_cache:
    return 0
+  cached_tick=self._tick_size_cache.get(token_id)
+  if cached_tick is not None:
+   tick_size=str(cached_tick)
   create_options=PartialCreateOrderOptions(tick_size=tick_size,neg_risk=eff_neg_risk,version=2) if PartialCreateOrderOptions else None
-  self.order_ladder_cache.prune_expired()
+  now_m=time.monotonic()
+  if (now_m - float(getattr(self,"_last_ladder_prune_mono",0.0) or 0.0))>=30.0:
+   self._last_ladder_prune_mono=now_m
+   self.order_ladder_cache.prune_expired()
   count=0
   for px in price_levels:
    if px<=0:
@@ -7944,7 +8041,7 @@ class PolymarketLiveExecutor:
     import py_clob_client_v2.http_helpers.helpers as hh
     http_cli=getattr(hh,"_http_client",None)
     if isinstance(http_cli,_ThreadLocalClobHttpClient):
-     warmed=http_cli.warm_pool( url=f"{self.CLOB_HOST.rstrip('/')}/time",min_warm=4,max_idle_sec=18.0,)
+     warmed=http_cli.warm_pool( url=f"{self.CLOB_HOST.rstrip('/')}/time",min_warm=4,max_idle_sec=6.5,)
    except Exception:
     warmed=0
    if warmed==0:
@@ -7973,6 +8070,201 @@ class PolymarketLiveExecutor:
   if self._async_client is not None and not self._async_client.is_closed:
    await self._async_client.aclose()
    self._async_client=None
+  if getattr(self,"_hot_order_async_client",None) is not None and not self._hot_order_async_client.is_closed:
+   await self._hot_order_async_client.aclose()
+   self._hot_order_async_client=None
+ def _init_fast_l2_headers_cache(self,api_creds:Any)->None:
+  self._fast_l2_ready=False
+  try:
+   if self.client is None or api_creds is None:
+    return
+   ak=getattr(api_creds,"api_key",None)
+   asec=getattr(api_creds,"api_secret",None)
+   apass=getattr(api_creds,"api_passphrase",None)
+   signer=getattr(self.client,"signer",None)
+   s_addr=signer.address() if (signer is not None and hasattr(signer,"address")) else None
+   if not (isinstance(ak,str) and isinstance(asec,str) and isinstance(apass,str) and isinstance(s_addr,str)):
+    return
+   self._fast_l2_secret_bytes=base64.urlsafe_b64decode(asec)
+   self._fast_l2_signer_addr=s_addr
+   self._fast_l2_api_key=ak
+   self._fast_l2_passphrase=apass
+   try:
+    from py_clob_client_v2.headers.headers import create_level_2_headers
+    from py_clob_client_v2.clob_types import RequestArgs
+    test_body='{"order":{"salt":1},"owner":"k","orderType":"FAK","deferExec":true,"postOnly":false}'
+    ref_h=create_level_2_headers( signer,api_creds,RequestArgs(method="POST",request_path="/order",body={},serialized_body=test_body),timestamp=1760000000 )
+    fast_h=self._build_fast_l2_headers("POST","/order",test_body,ts_override=1760000000)
+    for k_req in ("POLY_ADDRESS","POLY_SIGNATURE","POLY_TIMESTAMP","POLY_API_KEY","POLY_PASSPHRASE"):
+     if fast_h.get(k_req)!=ref_h.get(k_req):
+      raise RuntimeError(f"FastL2 header mismatch on {k_req}")
+   except ImportError:
+    pass
+   self._fast_l2_ready=True
+   logger.info("FastL2HeaderSigner enabled (zero-hop uvloop POST /order parity self-test PASSED).")
+  except Exception as exc:
+   self._fast_l2_ready=False
+   logger.debug(f"FastL2HeaderSigner fallback to sync SDK: {exc}")
+ def _build_fast_l2_headers( self,method:str,endpoint:str,serialized_body:str="",ts_override:Optional[int]=None )->Dict[str,str]:
+  ts=int(ts_override) if ts_override is not None else int(time.time())
+  msg=f"{ts}{method}{endpoint}{serialized_body}".encode("utf-8")
+  sig=base64.urlsafe_b64encode(hmac.new(self._fast_l2_secret_bytes,msg,hashlib.sha256).digest()).decode("ascii")
+  return { "POLY_ADDRESS":self._fast_l2_signer_addr,"POLY_SIGNATURE":sig,"POLY_TIMESTAMP":str(ts),"POLY_API_KEY":self._fast_l2_api_key,"POLY_PASSPHRASE":self._fast_l2_passphrase,"User-Agent":"py_clob_client_v2","Accept":"*/*","Connection":"keep-alive","Content-Type":"application/json",}
+ def get_hot_order_async_client(self)->httpx.AsyncClient:
+  try:
+   cur_loop=asyncio.get_running_loop()
+  except RuntimeError:
+   cur_loop=None
+  cli=getattr(self,"_hot_order_async_client",None)
+  if cli is None or cli.is_closed or (cur_loop is not None and getattr(self,"_hot_order_async_loop",None) is not cur_loop):
+   limits=httpx.Limits(max_keepalive_connections=8,max_connections=16,keepalive_expiry=45.0)
+   try:
+    transport=httpx.AsyncHTTPTransport( http2=False,limits=limits,socket_options=[(socket.IPPROTO_TCP,socket.TCP_NODELAY,1)],)
+    cli=httpx.AsyncClient(http2=False,timeout=8.0,transport=transport)
+   except Exception:
+    cli=httpx.AsyncClient(http2=False,timeout=8.0,limits=limits)
+   self._hot_order_async_client=cli
+   self._hot_order_async_loop=cur_loop
+  return cli
+ async def touch_hot_async_clob_socket(self,max_idle_sec:float=5.5)->bool:
+  if self.dry_run or not self.is_authenticated or _HOT_DISPATCH_ACTIVE.is_set():
+   return False
+  if getattr(self,"_hot_order_touch_in_flight",False):
+   return False
+  now_m=time.monotonic()
+  if (now_m - float(getattr(self,"_hot_order_last_touch_mono",0.0) or 0.0)) < float(max_idle_sec):
+   return False
+  self._hot_order_touch_in_flight=True
+  try:
+   cli=self.get_hot_order_async_client()
+   host=str(getattr(self.client,"host",None) or self.CLOB_HOST).rstrip("/")
+   resp=await cli.get( f"{host}/time",headers={"User-Agent":"py_clob_client_v2","Accept":"*/*","Connection":"keep-alive"},)
+   if resp.status_code==200:
+    self._hot_order_last_touch_mono=time.monotonic()
+    return True
+  except Exception:
+   if getattr(self,"_hot_order_async_client",None) is not None:
+    try:
+     await self._hot_order_async_client.aclose()
+    except Exception:
+     pass
+    self._hot_order_async_client=None
+  finally:
+   self._hot_order_touch_in_flight=False
+  return False
+ def _can_use_native_async_post_order(self)->bool:
+  if self.dry_run or not getattr(self,"_fast_l2_ready",False) or self.client is None:
+   return False
+  if os.environ.get("PM_NATIVE_ASYNC_ORDER_POST","1")!="1":
+   return False
+  if getattr(self,"_force_native_async_post",False):
+   return True
+  c_dict=getattr(self.client,"__dict__",{})
+  if type(self.client).__name__!="ClobClient" or "post_order" in c_dict or "_post" in c_dict:
+   return False
+  try:
+   import py_clob_client_v2.http_helpers.helpers as hh
+   if not isinstance(getattr(hh,"_http_client",None),_ThreadLocalClobHttpClient):
+    return False
+  except Exception:
+   return False
+  return True
+ async def _sign_and_post_async_zero_hop( self,token_id:str,price:float,size:float,side:str,order_type:Any,create_options:Any=None,stage:Optional[Dict[str,Any]]=None,max_notional_usd:Optional[float]=None,)->Dict[str,Any]:
+  if stage is None:
+   stage={}
+  stage["submitted"]=False
+  _HOT_DISPATCH_ACTIVE.enter()
+  t0=time.perf_counter()
+  signed=None
+  cache_hit=False
+  actual_signed_shares=float(size)
+  gc_was_enabled=gc.isenabled()
+  if gc_was_enabled:
+   gc.disable()
+  try:
+   try:
+    _opt_tick=str(getattr(create_options,"tick_size","0.01") or "0.01")
+    _opt_nr=bool(getattr(create_options,"neg_risk",False))
+    if self.order_ladder_cache is not None and str(side).upper()=="BUY":
+     signed=self.order_ladder_cache.get_presigned_order( token_id,price,size,tick_size=_opt_tick,neg_risk=_opt_nr )
+     cache_hit=signed is not None
+     if signed is None:
+      near_hit=self.order_ladder_cache.get_presigned_order_near( token_id,price,size,max_share_delta=3,max_notional_usd=max_notional_usd,tick_size=_opt_tick,neg_risk=_opt_nr,)
+      if near_hit is not None:
+       signed,near_shares=near_hit
+       actual_signed_shares=float(near_shares)
+       cache_hit=True
+    if signed is None:
+     if OrderArgsV2 is None:
+      raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+     order_args=OrderArgsV2(price=price,size=size,side=side,token_id=token_id)
+     signed=_safe_create_order(self.client.create_order,order_args,create_options)
+    if signed is None:
+     raise RuntimeError("create_order returned no signed order")
+    from py_clob_client_v2.client import _is_v2_order,order_to_json_v1,order_to_json_v2
+    owner=self._fast_l2_api_key
+    order_payload=( order_to_json_v2(signed,owner,order_type,False,True) if _is_v2_order(signed) else order_to_json_v1(signed,owner,order_type,False,True) )
+    serialized=json.dumps(order_payload,separators=(",",":"),ensure_ascii=False)
+    ts_val=( int(self.client._get_timestamp()) if getattr(self.client,"use_server_time",False) and hasattr(self.client,"_get_timestamp") else int(time.time()) )
+    headers=self._build_fast_l2_headers("POST","/order",serialized,ts_override=ts_val)
+    body_bytes=serialized.encode("utf-8")
+   except Exception as exc:
+    raise PreSubmitError(f"Order signing failed before submission: {exc}") from exc
+   finally:
+    if gc_was_enabled:
+     gc.enable()
+   t1=time.perf_counter()
+   sign_ms=round((t1 - t0) * 1000.0,3)
+   stage["sign_ms"]=sign_ms
+   stage["thread_hop_ms"]=0.0
+   stage["cache_hit"]=cache_hit
+   stage["signed_shares"]=actual_signed_shares
+   host=str(getattr(self.client,"host",None) or self.CLOB_HOST).rstrip("/")
+   endpoint_url=f"{host}/order"
+   cli=self.get_hot_order_async_client()
+   stage["submitted"]=True
+   t_post_start=time.perf_counter()
+   stage["t_post_start"]=t_post_start
+   try:
+    resp=await cli.post(endpoint_url,headers=headers,content=body_bytes)
+   except (httpx.ConnectError,httpx.ConnectTimeout,httpx.PoolTimeout):
+    try:
+     await cli.aclose()
+    except Exception:
+     pass
+    self._hot_order_async_client=None
+    cli=self.get_hot_order_async_client()
+    resp=await cli.post(endpoint_url,headers=headers,content=body_bytes)
+   except httpx.RequestError as exc:
+    try:
+     await cli.aclose()
+    except Exception:
+     pass
+    self._hot_order_async_client=None
+    logger.error("[py_clob_client_v2] async request error: %s",exc)
+    if PolyApiException is not None:
+     raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
+    raise
+   t2=time.perf_counter()
+   self._hot_order_last_touch_mono=time.monotonic()
+   cf_ray=resp.headers.get("cf-ray") if hasattr(resp,"headers") else None
+   stage["cf_ray"]=cf_ray
+   if resp.status_code!=200:
+    logger.error( "[py_clob_client_v2] request error status=%s url=%s body=%s",resp.status_code,endpoint_url,resp.text,)
+    if PolyApiException is not None:
+     raise PolyApiException(resp)
+    raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
+   post_resp=_orjson.loads(resp.content) if _orjson is not None else resp.json()
+   if hasattr(self.client,"_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
+    try:
+     self.client._ClobClient__resolve_version(force_update=True)
+    except Exception:
+     pass
+   return { "post_resp":post_resp or {},"sign_ms":sign_ms,"post_ms":round((t2 - t_post_start) * 1000.0,3),"t_post_end":t2,"cache_hit":cache_hit,"signed_shares":actual_signed_shares,"thread_hop_ms":0.0,"cf_ray":cf_ray,}
+  finally:
+   if gc_was_enabled and not gc.isenabled():
+    gc.enable()
+   _HOT_DISPATCH_ACTIVE.leave()
  @staticmethod
  def calculate_balance_epsilon(quantity_unit_or_shares:float=0.001)->float:
   base_unit=0.001 if quantity_unit_or_shares > 0.01 else quantity_unit_or_shares
@@ -9389,7 +9681,10 @@ class PolymarketLiveExecutor:
     _trace.stamp("dispatch_enqueue")
    enqueue_ns=time.perf_counter_ns()
    try:
-    hop=await asyncio.get_running_loop().run_in_executor( _get_hot_io_pool(),_sign_and_post_single_hop,self.client,self.order_ladder_cache,token_id,worst_acceptable_px,shares_to_buy,side,entry_order_type,create_options,dispatch_stage,notional_usd,enqueue_ns,)
+    if self._can_use_native_async_post_order():
+     hop=await self._sign_and_post_async_zero_hop( token_id,worst_acceptable_px,shares_to_buy,side,entry_order_type,create_options,dispatch_stage,notional_usd,)
+    else:
+     hop=await asyncio.get_running_loop().run_in_executor( _get_hot_io_pool(),_sign_and_post_single_hop,self.client,self.order_ladder_cache,token_id,worst_acceptable_px,shares_to_buy,side,entry_order_type,create_options,dispatch_stage,notional_usd,enqueue_ns,)
    except BaseException as _exc_h:
     _hop_exc=_exc_h
     raise
@@ -9401,7 +9696,7 @@ class PolymarketLiveExecutor:
       _t_p0=dispatch_stage.get("t_post_start")
       _post_err_ms=round((time.perf_counter() - float(_t_p0)) * 1000.0,3) if _t_p0 else None
       _exc_outcome=( "fak_killed" if (_hop_exc is not None and is_fak_killed_no_match(_hop_exc)) else ( "clob_400_rejected" if (_hop_exc is not None and is_clob_400_rejection(_hop_exc)) else "dispatch_exception" ) )
-      _trace.emit( trade_id=trade_id,token_id=token_id,side=side,outcome=_exc_outcome,submitted=order_submitted,hot_active=_HOT_DISPATCH_ACTIVE.count,qualify_ms=round(qualify_ms,3),sign_ms=dispatch_stage.get("sign_ms"),thread_hop_ms=dispatch_stage.get("thread_hop_ms"),clob_http_post_ms=_post_err_ms,presign_cache_hit=dispatch_stage.get("cache_hit"),)
+      _trace.emit( trade_id=trade_id,token_id=token_id,side=side,outcome=_exc_outcome,submitted=order_submitted,hot_active=_HOT_DISPATCH_ACTIVE.count,qualify_ms=round(qualify_ms,3),sign_ms=dispatch_stage.get("sign_ms"),thread_hop_ms=dispatch_stage.get("thread_hop_ms"),clob_http_post_ms=_post_err_ms,presign_cache_hit=dispatch_stage.get("cache_hit"),cf_ray=dispatch_stage.get("cf_ray"),)
    shares_to_buy=float(hop.get("signed_shares",shares_to_buy))
    post_resp=hop["post_resp"]
    sign_ms=hop["sign_ms"]
@@ -9415,7 +9710,7 @@ class PolymarketLiveExecutor:
    latency_ms=(t_post_end - t0) * 1000.0
    order_id=post_resp.get("orderID") or post_resp.get("id")
    if _trace is not None:
-    _trace.emit( trade_id=trade_id,token_id=token_id,side=side,outcome="posted",order_id_present=bool(order_id),resp_status=str(post_resp.get("status")),resp_error=str(post_resp.get("errorMsg") or post_resp.get("error") or "")[:120],qualify_ms=round(qualify_ms,3),sign_ms=round(sign_ms,3),thread_hop_ms=round(float(hop.get("thread_hop_ms",0.0)),3),clob_http_post_ms=round(clob_http_post_ms,3),total_trigger_to_ack_ms=round(total_trigger_to_ack_ms,3),presign_cache_hit=bool(hop.get("cache_hit")),hot_active=_HOT_DISPATCH_ACTIVE.count,taker_delay_hint=getattr(self,"_taker_delay_ms_hint",None),)
+    _trace.emit( trade_id=trade_id,token_id=token_id,side=side,outcome="posted",order_id_present=bool(order_id),resp_status=str(post_resp.get("status")),resp_error=str(post_resp.get("errorMsg") or post_resp.get("error") or "")[:120],qualify_ms=round(qualify_ms,3),sign_ms=round(sign_ms,3),thread_hop_ms=round(float(hop.get("thread_hop_ms",0.0)),3),clob_http_post_ms=round(clob_http_post_ms,3),total_trigger_to_ack_ms=round(total_trigger_to_ack_ms,3),presign_cache_hit=bool(hop.get("cache_hit")),hot_active=_HOT_DISPATCH_ACTIVE.count,taker_delay_hint=getattr(self,"_taker_delay_ms_hint",None),cf_ray=hop.get("cf_ray"),)
    if is_fak_killed_no_match(None,post_resp):
     err_msg=post_resp.get("error") or post_resp.get("errorMsg") or "FAK order killed with zero match"
     logger.warning(f"[{trade_id}] FAK order deterministically killed by CLOB (zero match): {err_msg} | orderID={order_id}")
@@ -11288,7 +11583,7 @@ class PolymarketDualFeed1HRecorder:
   backoff=2.0
   while self.running:
    try:
-    async with websockets.connect(COINBASE_WS_URL,ping_interval=20,ping_timeout=10) as ws:
+    async with websockets.connect(COINBASE_WS_URL,ping_interval=20,ping_timeout=10,compression=None) as ws:
      await ws.send(json.dumps({ "type":"subscribe","product_ids":[self.coinbase_product],"channels":["ticker"],}))
      logger.info(f"[+] Subscribed to Coinbase ticker ({self.coinbase_product}) for composite venue filter.")
      backoff=2.0
@@ -11751,7 +12046,7 @@ class PolymarketDualFeed1HRecorder:
   while self.running:
    try:
     logger.info(f"Connecting to Binance Spot aggTrade ({self.binance_spot_ws})...")
-    async with websockets.connect(self.binance_spot_ws,ping_interval=20,ping_timeout=10) as ws:
+    async with websockets.connect(self.binance_spot_ws,ping_interval=20,ping_timeout=10,compression=None) as ws:
      logger.info(f"[+] Subscribed to Binance Spot aggTrade stream ({self.binance_symbol}).")
      async for msg_str in ws:
       if not self.running:
@@ -11777,7 +12072,7 @@ class PolymarketDualFeed1HRecorder:
   while self.running:
    try:
     logger.info(f"Connecting to Binance Futures aggTrade ({self.binance_futures_ws})...")
-    async with websockets.connect(self.binance_futures_ws,ping_interval=20,ping_timeout=10) as ws:
+    async with websockets.connect(self.binance_futures_ws,ping_interval=20,ping_timeout=10,compression=None) as ws:
      logger.info(f"[+] Subscribed to Binance Futures aggTrade stream ({self.binance_symbol} routed /market).")
      async for msg_str in ws:
       if not self.running:
@@ -11942,6 +12237,11 @@ class PolymarketDualFeed1HRecorder:
    sell_vol=sell_vol + other_sell_100ms
   now_sec=time.time()
   should_trigger=(is_40ms_fast_track or vol_100ms>=eff_threshold)
+  if not should_trigger and vol_100ms>=0.45 * eff_threshold and (now_sec - float(getattr(self,"_last_prewarm_ipc_ts",0.0) or 0.0))>=2.5:
+   self._last_prewarm_ipc_ts=now_sec
+   self.get_rolling_sigma("15m")
+   self.get_rolling_sigma("1h")
+   _broadcast_fast_trigger_ipc(b'{"_prewarm_clob_tls":1}\n')
   if should_trigger and (now_sec - self.last_shock_ts > 2.5):
    up_book=self.books.get("UP")
    down_book=self.books.get("DOWN")
@@ -12112,7 +12412,7 @@ class PolymarketDualFeed1HRecorder:
           bk_obj.apply_snapshot(b_json.get("bids",[]),b_json.get("asks",[]))
     except Exception as seed_err:
      logger.debug(f"Initial REST book seed notice: {seed_err}")
-    async with websockets.connect(CLOB_WS_URL,ping_interval=20,ping_timeout=10) as ws:
+    async with websockets.connect(CLOB_WS_URL,ping_interval=20,ping_timeout=10,compression=None) as ws:
      sub_msg={"assets_ids":sub_assets,"type":"market"}
      await ws.send(json.dumps(sub_msg))
      logger.info(f"[+] Subscribed to Polymarket L2 orderbooks for market {subscribed_market_id}.")

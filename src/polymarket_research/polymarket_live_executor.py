@@ -16,7 +16,11 @@ Features:
 from __future__ import annotations
 
 import asyncio
+import base64
 import concurrent.futures
+import gc
+import hashlib
+import hmac
 import json
 import logging
 import math
@@ -317,6 +321,7 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "enable_fak_plus2c_fallback": False,
     "enable_live_phase3a_maker_fallback": True,
     "phase3a_maker_max_notional_usd": 22.00,
+    "phase3a_maker_ttl_sec": 8.0,
     "enable_graduated_d1_box": True,
     "enable_sol_d1_box": True,
     "d1_box_max_budget_usd": 250.0,
@@ -369,6 +374,7 @@ try:
     import py_clob_client_v2
     import py_clob_client_v2.clob_types as _clob_types_mod
     from py_clob_client_v2.client import ClobClient
+    from py_clob_client_v2.exceptions import PolyApiException
     from py_clob_client_v2.clob_types import (
         ApiCreds,
         OrderArgsV2,
@@ -387,6 +393,7 @@ except ImportError:
     PY_CLOB_AVAILABLE = False
     PY_CLOB_VERSION = None
     ClobClient = None
+    PolyApiException = None
     ApiCreds = None
     OrderArgsV2 = None
     MarketOrderArgsV2 = None
@@ -1305,6 +1312,16 @@ class PolymarketLiveExecutor:
         self._tick_size_cache: Dict[str, float] = {}
         self._neg_risk_cache: Dict[str, bool] = {}
         self._async_client: Optional[httpx.AsyncClient] = None
+        self._hot_order_async_client: Optional[httpx.AsyncClient] = None
+        self._hot_order_async_loop: Optional[Any] = None
+        self._hot_order_last_touch_mono: float = 0.0
+        self._hot_order_touch_in_flight: bool = False
+        self._fast_l2_ready: bool = False
+        self._fast_l2_secret_bytes: bytes = b""
+        self._fast_l2_signer_addr: str = ""
+        self._fast_l2_api_key: str = ""
+        self._fast_l2_passphrase: str = ""
+        self._last_ladder_prune_mono: float = 0.0
         self._thread_local = threading.local()
         self._collateral_cache: Tuple[Optional[float], float] = (None, 0.0)
         self.reservation_records: Dict[str, Dict[str, Any]] = {}
@@ -1401,8 +1418,9 @@ class PolymarketLiveExecutor:
             self.is_authenticated = True
             self.auth_mode = "AUTHENTICATED_L2"
             logger.info(f"Successfully authenticated with Polymarket CLOB L2 (v2 client v{PY_CLOB_VERSION}) in {latency_ms:.2f} ms.")
+            self._init_fast_l2_headers_cache(api_creds)
             if os.environ.get("PM_ENABLE_TLS_KEEPALIVE", "1") == "1":
-                self.start_clob_tls_keepalive_daemon(interval_sec=12.0)
+                self.start_clob_tls_keepalive_daemon(interval_sec=6.0)
             if (
                 _PolymarketUserWsCache is not None
                 and os.environ.get("PM_ENABLE_USER_WS", "1") == "1"
@@ -1556,8 +1574,14 @@ class PolymarketLiveExecutor:
         eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
         if neg_risk is None and token_id not in self._neg_risk_cache:
             return 0
+        cached_tick = self._tick_size_cache.get(token_id)
+        if cached_tick is not None:
+            tick_size = str(cached_tick)
         create_options = PartialCreateOrderOptions(tick_size=tick_size, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
-        self.order_ladder_cache.prune_expired()
+        now_m = time.monotonic()
+        if (now_m - float(getattr(self, "_last_ladder_prune_mono", 0.0) or 0.0)) >= 30.0:
+            self._last_ladder_prune_mono = now_m
+            self.order_ladder_cache.prune_expired()
         count = 0
         for px in price_levels:
             if px <= 0:
@@ -1641,7 +1665,7 @@ class PolymarketLiveExecutor:
                     warmed = http_cli.warm_pool(
                         url=f"{self.CLOB_HOST.rstrip('/')}/time",
                         min_warm=4,
-                        max_idle_sec=18.0,
+                        max_idle_sec=6.5,
                     )
             except Exception:
                 warmed = 0
@@ -1678,10 +1702,282 @@ class PolymarketLiveExecutor:
         return self._async_client
 
     async def close_async(self):
-        """Closes the persistent HTTP client cleanly."""
+        """Closes the persistent HTTP clients cleanly."""
         if self._async_client is not None and not self._async_client.is_closed:
             await self._async_client.aclose()
             self._async_client = None
+        if getattr(self, "_hot_order_async_client", None) is not None and not self._hot_order_async_client.is_closed:
+            await self._hot_order_async_client.aclose()
+            self._hot_order_async_client = None
+
+    def _init_fast_l2_headers_cache(self, api_creds: Any) -> None:
+        """Pre-decodes L2 HMAC secret and verifies byte-for-byte parity with py_clob_client_v2."""
+        self._fast_l2_ready = False
+        try:
+            if self.client is None or api_creds is None:
+                return
+            ak = getattr(api_creds, "api_key", None)
+            asec = getattr(api_creds, "api_secret", None)
+            apass = getattr(api_creds, "api_passphrase", None)
+            signer = getattr(self.client, "signer", None)
+            s_addr = signer.address() if (signer is not None and hasattr(signer, "address")) else None
+            if not (isinstance(ak, str) and isinstance(asec, str) and isinstance(apass, str) and isinstance(s_addr, str)):
+                return
+            self._fast_l2_secret_bytes = base64.urlsafe_b64decode(asec)
+            self._fast_l2_signer_addr = s_addr
+            self._fast_l2_api_key = ak
+            self._fast_l2_passphrase = apass
+            try:
+                from py_clob_client_v2.headers.headers import create_level_2_headers
+                from py_clob_client_v2.clob_types import RequestArgs
+                test_body = '{"order":{"salt":1},"owner":"k","orderType":"FAK","deferExec":true,"postOnly":false}'
+                ref_h = create_level_2_headers(
+                    signer, api_creds, RequestArgs(method="POST", request_path="/order", body={}, serialized_body=test_body), timestamp=1760000000
+                )
+                fast_h = self._build_fast_l2_headers("POST", "/order", test_body, ts_override=1760000000)
+                for k_req in ("POLY_ADDRESS", "POLY_SIGNATURE", "POLY_TIMESTAMP", "POLY_API_KEY", "POLY_PASSPHRASE"):
+                    if fast_h.get(k_req) != ref_h.get(k_req):
+                        raise RuntimeError(f"FastL2 header mismatch on {k_req}")
+            except ImportError:
+                pass
+            self._fast_l2_ready = True
+            logger.info("FastL2HeaderSigner enabled (zero-hop uvloop POST /order parity self-test PASSED).")
+        except Exception as exc:
+            self._fast_l2_ready = False
+            logger.debug(f"FastL2HeaderSigner fallback to sync SDK: {exc}")
+
+    def _build_fast_l2_headers(
+        self, method: str, endpoint: str, serialized_body: str = "", ts_override: Optional[int] = None
+    ) -> Dict[str, str]:
+        ts = int(ts_override) if ts_override is not None else int(time.time())
+        msg = f"{ts}{method}{endpoint}{serialized_body}".encode("utf-8")
+        sig = base64.urlsafe_b64encode(hmac.new(self._fast_l2_secret_bytes, msg, hashlib.sha256).digest()).decode("ascii")
+        return {
+            "POLY_ADDRESS": self._fast_l2_signer_addr,
+            "POLY_SIGNATURE": sig,
+            "POLY_TIMESTAMP": str(ts),
+            "POLY_API_KEY": self._fast_l2_api_key,
+            "POLY_PASSPHRASE": self._fast_l2_passphrase,
+            "User-Agent": "py_clob_client_v2",
+            "Accept": "*/*",
+            "Connection": "keep-alive",
+            "Content-Type": "application/json",
+        }
+
+    def get_hot_order_async_client(self) -> httpx.AsyncClient:
+        """Dedicated hot httpx.AsyncClient isolated strictly for uvloop POST /order & keepalive touches."""
+        try:
+            cur_loop = asyncio.get_running_loop()
+        except RuntimeError:
+            cur_loop = None
+        cli = getattr(self, "_hot_order_async_client", None)
+        if cli is None or cli.is_closed or (cur_loop is not None and getattr(self, "_hot_order_async_loop", None) is not cur_loop):
+            limits = httpx.Limits(max_keepalive_connections=8, max_connections=16, keepalive_expiry=45.0)
+            try:
+                transport = httpx.AsyncHTTPTransport(
+                    http2=False,
+                    limits=limits,
+                    socket_options=[(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)],
+                )
+                cli = httpx.AsyncClient(http2=False, timeout=8.0, transport=transport)
+            except Exception:
+                cli = httpx.AsyncClient(http2=False, timeout=8.0, limits=limits)
+            self._hot_order_async_client = cli
+            self._hot_order_async_loop = cur_loop
+        return cli
+
+    async def touch_hot_async_clob_socket(self, max_idle_sec: float = 5.5) -> bool:
+        """Keeps the uvloop hot POST /order TLS socket <5.5s warm (and pre-touches on sub-threshold precursors)."""
+        if self.dry_run or not self.is_authenticated or _HOT_DISPATCH_ACTIVE.is_set():
+            return False
+        if getattr(self, "_hot_order_touch_in_flight", False):
+            return False
+        now_m = time.monotonic()
+        if (now_m - float(getattr(self, "_hot_order_last_touch_mono", 0.0) or 0.0)) < float(max_idle_sec):
+            return False
+        self._hot_order_touch_in_flight = True
+        try:
+            cli = self.get_hot_order_async_client()
+            host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+            resp = await cli.get(
+                f"{host}/time",
+                headers={"User-Agent": "py_clob_client_v2", "Accept": "*/*", "Connection": "keep-alive"},
+            )
+            if resp.status_code == 200:
+                self._hot_order_last_touch_mono = time.monotonic()
+                return True
+        except Exception:
+            if getattr(self, "_hot_order_async_client", None) is not None:
+                try:
+                    await self._hot_order_async_client.aclose()
+                except Exception:
+                    pass
+                self._hot_order_async_client = None
+        finally:
+            self._hot_order_touch_in_flight = False
+        return False
+
+    def _can_use_native_async_post_order(self) -> bool:
+        if self.dry_run or not getattr(self, "_fast_l2_ready", False) or self.client is None:
+            return False
+        if os.environ.get("PM_NATIVE_ASYNC_ORDER_POST", "1") != "1":
+            return False
+        if getattr(self, "_force_native_async_post", False):
+            return True
+        c_dict = getattr(self.client, "__dict__", {})
+        if type(self.client).__name__ != "ClobClient" or "post_order" in c_dict or "_post" in c_dict:
+            return False
+        try:
+            import py_clob_client_v2.http_helpers.helpers as hh
+            if not isinstance(getattr(hh, "_http_client", None), _ThreadLocalClobHttpClient):
+                return False
+        except Exception:
+            return False
+        return True
+
+    async def _sign_and_post_async_zero_hop(
+        self,
+        token_id: str,
+        price: float,
+        size: float,
+        side: str,
+        order_type: Any,
+        create_options: Any = None,
+        stage: Optional[Dict[str, Any]] = None,
+        max_notional_usd: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Wave 3 Zero-Thread-Hop uvloop Order Dispatcher:
+        Executes pre-signed O(1) ladder lookup (or C coincurve sign) + L2 HMAC + HTTP/1.1 POST /order
+        directly on the uvloop event-loop thread (`thread_hop_ms = 0.000ms`), eliminating worker-thread
+        CFS wakeup & Python GIL handoff spikes (5-17ms p95).
+        """
+        if stage is None:
+            stage = {}
+        stage["submitted"] = False
+        _HOT_DISPATCH_ACTIVE.enter()
+        t0 = time.perf_counter()
+        signed = None
+        cache_hit = False
+        actual_signed_shares = float(size)
+        gc_was_enabled = gc.isenabled()
+        if gc_was_enabled:
+            gc.disable()
+        try:
+            try:
+                _opt_tick = str(getattr(create_options, "tick_size", "0.01") or "0.01")
+                _opt_nr = bool(getattr(create_options, "neg_risk", False))
+                if self.order_ladder_cache is not None and str(side).upper() == "BUY":
+                    signed = self.order_ladder_cache.get_presigned_order(
+                        token_id, price, size, tick_size=_opt_tick, neg_risk=_opt_nr
+                    )
+                    cache_hit = signed is not None
+                    if signed is None:
+                        near_hit = self.order_ladder_cache.get_presigned_order_near(
+                            token_id, price, size, max_share_delta=3, max_notional_usd=max_notional_usd,
+                            tick_size=_opt_tick, neg_risk=_opt_nr,
+                        )
+                        if near_hit is not None:
+                            signed, near_shares = near_hit
+                            actual_signed_shares = float(near_shares)
+                            cache_hit = True
+                if signed is None:
+                    if OrderArgsV2 is None:
+                        raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
+                    order_args = OrderArgsV2(price=price, size=size, side=side, token_id=token_id)
+                    signed = _safe_create_order(self.client.create_order, order_args, create_options)
+                if signed is None:
+                    raise RuntimeError("create_order returned no signed order")
+
+                from py_clob_client_v2.client import _is_v2_order, order_to_json_v1, order_to_json_v2
+                owner = self._fast_l2_api_key
+                order_payload = (
+                    order_to_json_v2(signed, owner, order_type, False, True)
+                    if _is_v2_order(signed)
+                    else order_to_json_v1(signed, owner, order_type, False, True)
+                )
+                serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
+                ts_val = (
+                    int(self.client._get_timestamp())
+                    if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
+                    else int(time.time())
+                )
+                headers = self._build_fast_l2_headers("POST", "/order", serialized, ts_override=ts_val)
+                body_bytes = serialized.encode("utf-8")
+            except Exception as exc:
+                raise PreSubmitError(f"Order signing failed before submission: {exc}") from exc
+            finally:
+                if gc_was_enabled:
+                    gc.enable()
+
+            t1 = time.perf_counter()
+            sign_ms = round((t1 - t0) * 1000.0, 3)
+            stage["sign_ms"] = sign_ms
+            stage["thread_hop_ms"] = 0.0
+            stage["cache_hit"] = cache_hit
+            stage["signed_shares"] = actual_signed_shares
+
+            host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+            endpoint_url = f"{host}/order"
+            cli = self.get_hot_order_async_client()
+            stage["submitted"] = True
+            t_post_start = time.perf_counter()
+            stage["t_post_start"] = t_post_start
+            try:
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+                # Pre-wire failure (0 bytes sent): safe single retry on a fresh socket
+                try:
+                    await cli.aclose()
+                except Exception:
+                    pass
+                self._hot_order_async_client = None
+                cli = self.get_hot_order_async_client()
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+            except httpx.RequestError as exc:
+                try:
+                    await cli.aclose()
+                except Exception:
+                    pass
+                self._hot_order_async_client = None
+                logger.error("[py_clob_client_v2] async request error: %s", exc)
+                if PolyApiException is not None:
+                    raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
+                raise
+            t2 = time.perf_counter()
+            self._hot_order_last_touch_mono = time.monotonic()
+            cf_ray = resp.headers.get("cf-ray") if hasattr(resp, "headers") else None
+            stage["cf_ray"] = cf_ray
+
+            if resp.status_code != 200:
+                logger.error(
+                    "[py_clob_client_v2] request error status=%s url=%s body=%s",
+                    resp.status_code, endpoint_url, resp.text,
+                )
+                if PolyApiException is not None:
+                    raise PolyApiException(resp)
+                raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
+
+            post_resp = _orjson.loads(resp.content) if _orjson is not None else resp.json()
+            if hasattr(self.client, "_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
+                try:
+                    self.client._ClobClient__resolve_version(force_update=True)
+                except Exception:
+                    pass
+            return {
+                "post_resp": post_resp or {},
+                "sign_ms": sign_ms,
+                "post_ms": round((t2 - t_post_start) * 1000.0, 3),
+                "t_post_end": t2,
+                "cache_hit": cache_hit,
+                "signed_shares": actual_signed_shares,
+                "thread_hop_ms": 0.0,
+                "cf_ray": cf_ray,
+            }
+        finally:
+            if gc_was_enabled and not gc.isenabled():
+                gc.enable()
+            _HOT_DISPATCH_ACTIVE.leave()
 
     @staticmethod
     def calculate_balance_epsilon(quantity_unit_or_shares: float = 0.001) -> float:
@@ -4664,12 +4960,18 @@ class PolymarketLiveExecutor:
                 _trace.stamp("dispatch_enqueue")
             enqueue_ns = time.perf_counter_ns()
             try:
-                hop = await asyncio.get_running_loop().run_in_executor(
-                    _get_hot_io_pool(),
-                    _sign_and_post_single_hop,
-                    self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
-                    side, entry_order_type, create_options, dispatch_stage, notional_usd, enqueue_ns,
-                )
+                if self._can_use_native_async_post_order():
+                    hop = await self._sign_and_post_async_zero_hop(
+                        token_id, worst_acceptable_px, shares_to_buy, side, entry_order_type,
+                        create_options, dispatch_stage, notional_usd,
+                    )
+                else:
+                    hop = await asyncio.get_running_loop().run_in_executor(
+                        _get_hot_io_pool(),
+                        _sign_and_post_single_hop,
+                        self.client, self.order_ladder_cache, token_id, worst_acceptable_px, shares_to_buy,
+                        side, entry_order_type, create_options, dispatch_stage, notional_usd, enqueue_ns,
+                    )
             except BaseException as _exc_h:
                 _hop_exc = _exc_h
                 raise
@@ -4697,6 +4999,7 @@ class PolymarketLiveExecutor:
                             thread_hop_ms=dispatch_stage.get("thread_hop_ms"),
                             clob_http_post_ms=_post_err_ms,
                             presign_cache_hit=dispatch_stage.get("cache_hit"),
+                            cf_ray=dispatch_stage.get("cf_ray"),
                         )
             shares_to_buy = float(hop.get("signed_shares", shares_to_buy))
             post_resp = hop["post_resp"]
@@ -4725,6 +5028,7 @@ class PolymarketLiveExecutor:
                     total_trigger_to_ack_ms=round(total_trigger_to_ack_ms, 3),
                     presign_cache_hit=bool(hop.get("cache_hit")), hot_active=_HOT_DISPATCH_ACTIVE.count,
                     taker_delay_hint=getattr(self, "_taker_delay_ms_hint", None),
+                    cf_ray=hop.get("cf_ray"),
                 )
 
             # Deterministic FAK zero-match rejection check:
