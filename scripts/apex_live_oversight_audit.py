@@ -46,7 +46,7 @@ def run_oversight_cycle(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
     shadow = json.loads(shadow_path.read_text(encoding="utf-8")) if shadow_path.exists() else {}
     pm_state = json.loads(pm_path.read_text(encoding="utf-8")) if pm_path.exists() else {}
 
-    decomp = compute_live_profitability_decomposition(journal_path)
+    decomp = compute_live_profitability_decomposition(journal_path, state_path)
     canary = evaluate_canary_readiness(repo_root=repo_root)
 
     # Record Mainnet Top-15 Majors Basis + Open Interest + L2 OBI_5 snapshot
