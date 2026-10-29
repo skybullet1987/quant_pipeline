@@ -54,7 +54,7 @@ try:
 except Exception:
     out["mem_mb"] = {}
 
-# 2. Services
+# 2. Services (single batched systemctl call for 10x faster SSH probe)
 svcs = [
     "polymarket-live-harvester.service",
     "polymarket-alpha124-shadow.service",
@@ -68,11 +68,14 @@ svcs = [
     "apex-oversight-audit.timer",
 ]
 svc_map = {}
-for sv in svcs:
-    try:
-        r = subprocess.run(["systemctl", "--user", "is-active", sv], capture_output=True, text=True, timeout=2)
-        svc_map[sv.replace(".service", "")] = r.stdout.strip() or "unknown"
-    except Exception:
+try:
+    r = subprocess.run(["systemctl", "--user", "is-active", *svcs], capture_output=True, text=True, timeout=3)
+    statuses = [ln.strip() for ln in r.stdout.splitlines()]
+    for idx, sv in enumerate(svcs):
+        key = sv.replace(".service", "")
+        svc_map[key] = statuses[idx] if idx < len(statuses) and statuses[idx] else "unknown"
+except Exception:
+    for sv in svcs:
         svc_map[sv.replace(".service", "")] = "unknown"
 try:
     ap = subprocess.run(["pgrep", "-f", "production_apex_daemon.py"], capture_output=True, text=True, timeout=2)
@@ -146,7 +149,7 @@ log_path = root / "data/polymarket/live_harvester.log"
 log_events = []
 if log_path.exists():
     try:
-        _pat = re.compile(r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX")
+        _pat = re.compile(r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[CEILING -> PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX")
         with open(log_path, "rb") as _lf:
             _sz = log_path.stat().st_size
             _off = max(0, _sz - 262144)
@@ -165,41 +168,64 @@ a_path = root / "data/alpha124/alpha124_shadow_state.json"
 if a_path.exists():
     a = json.loads(a_path.read_text())
     by_slv = a.get("by_sleeve") or {}
-    open_p = a.get("open_positions") or []
+    raw_open_p = a.get("open_positions") or []
+    open_p = list(raw_open_p.values()) if isinstance(raw_open_p, dict) else list(raw_open_p)
+    pend_d1_mkr = len(a.get("pending_maker_anchors") or {})
+    pend_zf_mkr = len(a.get("pending_zero_fee_maker_anchors") or {})
     spots = {k: round(float(v), 4 if float(v) < 10 else 2) for k, v in (a.get("spots") or {}).items() if k in ("BTC", "ETH", "SOL", "XRP")}
     watch_sleeves = [
         "D1_SAME_ORACLE_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
+        "D1_MAKER_ANCHOR_BOX",
+        "ZF_INTRADAY_MAKER_BOX",
         "CM_B3_PYTH_BARRIER_BOX",
         "SP1_NBA_ZERO_FEE_BOX",
         "NR0_ZERO_FEE_SLATE_ARB",
+        "N1_NEGRISK_CROSS_BOX",
         "W1_SOLAR_PEAK_LOCK",
         "U1_DAILY_UPDOWN_LOCK",
+        "FED1_CENTRAL_BANK_LP_BOX",
     ]
     slv_rows = []
     for slv in watch_sleeves:
         m = by_slv.get(slv) or {}
         c_n = int(m.get("closed", 0) or 0)
+        o_n = int(m.get("open", 0) or 0)
+        pend_n = pend_d1_mkr if slv == "D1_MAKER_ANCHOR_BOX" else (pend_zf_mkr if slv == "ZF_INTRADAY_MAKER_BOX" else 0)
         slv_rows.append({
             "sleeve": slv,
-            "open": int(m.get("open", 0) or 0),
+            "open": o_n,
+            "pending_quotes": pend_n,
             "closed": c_n,
             "wins": int(m.get("wins", 0) or 0),
             "losses": int(m.get("losses", 0) or 0),
             "t1000_pnl_usd": round(float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0), 2),
             "grad8_progress": f"{min(c_n, 8)}/8",
         })
+    now_u = time.time()
     open_boxes = []
-    for p in open_p[:8]:
+    for p in open_p[:10]:
+        cts = float(p.get("close_ts") or p.get("expiry_ts") or 0.0)
+        if cts > now_u:
+            rem_s = cts - now_u
+            tte_lbl = f"{rem_s/86400.0:.1f}d" if rem_s >= 86400.0 else (f"{rem_s/3600.0:.1f}h" if rem_s >= 3600.0 else f"{int(rem_s//60)}m")
+        elif cts > 0:
+            tte_lbl = "settle"
+        else:
+            tte_lbl = "-"
         open_boxes.append({
             "sleeve": p.get("sleeve"),
-            "title": str(p.get("title") or "")[:54],
+            "title": str(p.get("title") or "")[:50],
             "eff_px": p.get("entry_eff_px_t1000"),
             "last_bid": p.get("last_bid"),
+            "tte": tte_lbl,
         })
     out["alpha124"] = {
+        "state_age_sec": round(now_u - a_path.stat().st_mtime, 1),
         "spots": spots,
         "open_total": len(open_p),
+        "pending_d1_mkr": pend_d1_mkr,
+        "pending_zf_mkr": pend_zf_mkr,
         "closed_total": sum(int(v.get("closed", 0) or 0) for v in by_slv.values()),
         "by_d1_asset": a.get("by_d1_asset") or {},
         "sleeves": slv_rows,
@@ -369,17 +395,20 @@ HTML_PAGE = """<!DOCTYPE html>
     <div class="log-box" id="log_events"></div>
   </div>
   <div class="card">
-    <h2>Alpha-124 Shadow &amp; _grad8 Auto-Promotion</h2>
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <h2>Alpha-124 Shadow &amp; _grad8 Auto-Promotion</h2>
+      <span class="sub" id="a124_sync"></span>
+    </div>
     <table>
       <thead><tr><th>Sleeve</th><th>Open</th><th>W / L</th><th>Grad8</th><th>T1000 PnL</th></tr></thead>
       <tbody id="a124_sleeves"></tbody>
     </table>
-    <h2 style="margin-top:14px;">Open Shadow Structural Boxes</h2>
+    <h2 style="margin-top:14px;">Open Shadow Structural Boxes (Multi-Day / Calendar Hold-to-Expiry)</h2>
     <table>
-      <thead><tr><th>Sleeve</th><th>Market</th><th>Cost</th><th>Bid</th></tr></thead>
+      <thead><tr><th>Sleeve</th><th>Market</th><th>Cost</th><th>Bid</th><th>TTE</th></tr></thead>
       <tbody id="a124_open"></tbody>
     </table>
-    <h2 style="margin-top:16px;">Hyperliquid APEX v5.0 (Testnet — $0 Mainnet)</h2>
+    <h2 style="margin-top:16px;" id="apex_hdr">Hyperliquid APEX (Testnet — $0 Mainnet, 4H Rebalance)</h2>
     <div id="apex_meta" style="font-size:12px;margin-bottom:8px;"></div>
     <table>
       <thead><tr><th>UTC</th><th>Asset</th><th>Side</th><th>Type</th><th>Shortfall</th></tr></thead>
@@ -391,6 +420,13 @@ HTML_PAGE = """<!DOCTYPE html>
 <script>
 function esc(v) {
   return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function next4hCountdown() {
+  const now = new Date();
+  const h = now.getUTCHours(), m = now.getUTCMinutes(), s = now.getUTCSeconds();
+  const remSec = ((4 - (h % 4)) * 3600) - (m * 60) - s;
+  const rh = Math.floor(remSec / 3600), rm = Math.floor((remSec % 3600) / 60);
+  return `${rh}h ${rm}m`;
 }
 function updateD1Countdown() {
   const now = new Date();
@@ -426,7 +462,12 @@ function drawSpark(pts) {
   svg.innerHTML = `<polyline fill="none" stroke="#3fb950" stroke-width="2" points="${coords}"/>`;
 }
 
+let _inFlight = false;
 async function refreshNow(force=false) {
+  if (_inFlight && !force) return;
+  _inFlight = true;
+  const btn = document.querySelector('header button');
+  if (force && btn) { btn.textContent = 'Refreshing...'; btn.disabled = true; }
   try {
     const r = await fetch('/api/snapshot?t=' + Date.now() + (force ? '&force=1' : ''));
     const d = await r.json();
@@ -443,7 +484,7 @@ async function refreshNow(force=false) {
     const ap = d.apex_testnet || {};
     const a124 = d.alpha124 || {};
     document.getElementById('meta').textContent =
-      `Synced: ${d.fetched_at_utc} | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB | Auto-refresh: 15s`;
+      `Synced: ${d.fetched_at_utc} | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB | Instant RAM Cache: 7s`;
 
     const spots = a124.spots || {};
     document.getElementById('spots').innerHTML = Object.entries(spots).map(([k, v]) =>
@@ -452,12 +493,14 @@ async function refreshNow(force=false) {
 
     const pnlCls = (pm.epoch_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg';
     const wr = pm.epoch_closed_count ? ((100 * pm.epoch_wins / pm.epoch_closed_count).toFixed(1) + '%') : 'N/A';
+    const apVer = ap.version || 'v5.2.0';
+    const slotCap = (pm.equity_usd || 0) >= 140 ? 3 : ((pm.equity_usd || 0) >= 110 ? 2 : 1);
     document.getElementById('kpis').innerHTML = `
-      <div class="card"><div class="label">Polymarket Live Cash</div><div class="val pos">$${(pm.bankroll_usd ?? 0).toFixed(2)}</div><div class="sub">Equity: $${(pm.equity_usd ?? 0).toFixed(2)} | Tier: ${pm.tier || '-'}</div></div>
+      <div class="card"><div class="label">Polymarket Live Cash</div><div class="val pos">$${(pm.bankroll_usd ?? 0).toFixed(2)}</div><div class="sub">Equity: $${(pm.equity_usd ?? 0).toFixed(2)} | Tier: ${pm.tier || '-'} (${slotCap} slots)</div></div>
       <div class="card"><div class="label">Current Epoch Net PnL</div><div class="val ${pnlCls}">${(pm.epoch_net_pnl_usd ?? 0) >= 0 ? '+' : ''}$${(pm.epoch_net_pnl_usd ?? 0).toFixed(2)}</div><div class="sub">Fees paid: $${(pm.epoch_fees_usd ?? 0).toFixed(2)}</div></div>
-      <div class="card"><div class="label">Live Win Rate (Epoch)</div><div class="val">${pm.epoch_wins ?? 0}W / ${pm.epoch_losses ?? 0}L (${wr})</div><div class="sub">Open now: ${(pm.active_positions || []).length} | This hr: ${pm.trades_this_hour ?? 0}</div></div>
+      <div class="card"><div class="label">Live Win Rate (Epoch)</div><div class="val">${pm.epoch_wins ?? 0}W / ${pm.epoch_losses ?? 0}L (${wr})</div><div class="sub">Open now: ${(pm.active_positions || []).length}/${slotCap} | This hr: ${pm.trades_this_hour ?? 0}</div></div>
       <div class="card"><div class="label">VM Load &amp; Avail RAM</div><div class="val">${la[0]} / ${mem.available || 0} MB</div><div class="sub">Risk Halt: ${pm.risk_halt ? 'HALTED' : 'CLEAR'}</div></div>
-      <div class="card"><div class="label">APEX v5.0 Testnet</div><div class="val ${ap.circuit_breaker === 'RUNNING' ? 'pos' : 'neg'}">${ap.circuit_breaker || '?'}</div><div class="sub">Gate 2: ${ap.gate2_fills || '-'} | Maker: ${ap.maker_pct ?? 0}%</div></div>
+      <div class="card"><div class="label">APEX ${esc(apVer)} Testnet</div><div class="val ${ap.circuit_breaker === 'RUNNING' ? 'pos' : 'neg'}">$${Number(ap.nav_usd || 0).toFixed(2)}</div><div class="sub">${esc(ap.circuit_breaker || '?')} | Gate2: ${ap.gate2_fills || '-'} | Next 4H: ${next4hCountdown()}</div></div>
     `;
 
     drawSpark(pm.equity_curve || []);
@@ -469,7 +512,7 @@ async function refreshNow(force=false) {
 
     const acts = pm.active_positions || [];
     document.getElementById('active_box').innerHTML = acts.length === 0
-      ? '<span class="sub">Active live positions: 0 (Flat &amp; scanning shocks + Phase 3A maker rescues + D1 boxes)</span>'
+      ? `<span class="sub">Active live positions: 0/${slotCap} (Multi-Slot Unlock A + Ceiling->Phase3A 0%-Fee Maker Unlock B + D1 Boxes Armed)</span>`
       : '<b>LIVE OPEN POSITION:</b> ' + acts.map(a => `<span class="pos">${esc(a.asset)} ${esc(a.horizon)} ${esc(a.side)}</span> ($${Number(a.notional_usd || 0).toFixed(2)} @ ${esc(a.entry_px)} &rarr; TP ${esc(a.target_tp)}) [${esc(a.status)}]`).join(' | ');
 
     document.getElementById('pm_trades').innerHTML = (pm.recent_closed || []).map(c => `
@@ -487,15 +530,21 @@ async function refreshNow(force=false) {
       `<div>${esc(l)}</div>`
     ).join('') || '<div class="sub">No recent log events.</div>';
 
-    document.getElementById('a124_sleeves').innerHTML = (a124.sleeves || []).map(s => `
+    const syncEl = document.getElementById('a124_sync');
+    if (syncEl) {
+      syncEl.textContent = `State age: ${a124.state_age_sec ?? '?'}s | Resting Maker Quotes: ${(a124.pending_d1_mkr || 0) + (a124.pending_zf_mkr || 0)}`;
+    }
+    document.getElementById('a124_sleeves').innerHTML = (a124.sleeves || []).map(s => {
+      const qBadge = s.pending_quotes ? ` <span class="warn">(${s.pending_quotes} quote)</span>` : '';
+      return `
       <tr>
-        <td>${esc(s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_'))}</td>
+        <td>${esc(s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_'))}${qBadge}</td>
         <td>${esc(s.open)}</td>
         <td>${esc(s.wins)}W / ${esc(s.losses)}L</td>
         <td>${esc(s.grad8_progress)}</td>
         <td class="${s.t1000_pnl_usd >= 0 ? 'pos' : 'neg'}">${s.t1000_pnl_usd >= 0 ? '+' : ''}$${Number(s.t1000_pnl_usd || 0).toFixed(2)}</td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
 
     document.getElementById('a124_open').innerHTML = (a124.open_positions || []).map(p => `
       <tr>
@@ -503,11 +552,14 @@ async function refreshNow(force=false) {
         <td>${esc(p.title || '')}</td>
         <td>$${Number(p.eff_px || 0).toFixed(3)}</td>
         <td>$${Number(p.last_bid || 0).toFixed(3)}</td>
+        <td class="warn">${esc(p.tte || '-')}</td>
       </tr>
-    `).join('') || '<tr><td colspan="4" class="sub">No open shadow boxes</td></tr>';
+    `).join('') || '<tr><td colspan="5" class="sub">No open shadow boxes</td></tr>';
 
+    const apHdr = document.getElementById('apex_hdr');
+    if (apHdr) apHdr.textContent = `Hyperliquid APEX ${apVer} (Testnet — $0 Mainnet, 4H Bar Cadence)`;
     document.getElementById('apex_meta').innerHTML =
-      `State: <b>${ap.circuit_breaker || '-'}</b> | Gate 2 Fills: <b>${ap.gate2_fills || '-'}</b> | Maker Share: <b>${ap.maker_pct ?? 0}%</b>`;
+      `State: <b>${esc(ap.circuit_breaker || '-')}</b> (${esc(ap.reconciliation_status || '-')}) | Regime: <b>${esc(ap.regime || '-')}</b> | WS: <b>${ap.ws_connected ? 'LIVE' : 'IDLE'}</b> | Gate 2: <b>${esc(ap.gate2_fills || '-')}</b> (${ap.maker_pct ?? 0}% Maker) | Next 4H Bar: <b>${next4hCountdown()}</b>`;
     document.getElementById('apex_fills').innerHTML = (ap.recent_fills || []).map(f => `
       <tr>
         <td>${(f.time_utc || '').slice(11,19)}</td>
@@ -519,11 +571,14 @@ async function refreshNow(force=false) {
     `).join('');
   } catch (e) {
     document.getElementById('meta').textContent = 'Dashboard fetch error: ' + e;
+  } finally {
+    _inFlight = false;
+    if (btn) { btn.textContent = 'Refresh Now'; btn.disabled = false; }
   }
 }
 updateD1Countdown();
 refreshNow();
-setInterval(() => refreshNow(false), 15000);
+setInterval(() => refreshNow(false), 10000);
 </script>
 </body>
 </html>
@@ -531,46 +586,70 @@ setInterval(() => refreshNow(false), 15000);
 
 
 class SnapshotCache:
-    def __init__(self, host: str, ttl_sec: float = 8.0) -> None:
+    def __init__(self, host: str, ttl_sec: float = 7.0, start_bg: bool = False) -> None:
         self.host = host
         self.ttl_sec = ttl_sec
-        self._lock = threading.Lock()
+        self._fetch_lock = threading.Lock()
         self._last_ts = 0.0
         self._last_data: Dict[str, Any] = {}
+        if start_bg:
+            t = threading.Thread(target=self._bg_loop, name="DominusSnapshotPoller", daemon=True)
+            t.start()
+
+    def _probe_once(self) -> Dict[str, Any]:
+        try:
+            proc = subprocess.run(
+                [
+                    "ssh",
+                    "-o",
+                    "BatchMode=yes",
+                    "-o",
+                    "ConnectTimeout=6",
+                    self.host,
+                    "/home/skybullet1987/quant_pipeline/venv/bin/python3 -",
+                ],
+                input=REMOTE_PROBE_PY,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=12,
+            )
+            if proc.returncode != 0:
+                return {"error": (proc.stderr or proc.stdout).strip()[:400]}
+            lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
+            if not lines:
+                return {"error": f"Unexpected SSH output: {proc.stdout[:200]}"}
+            data = json.loads(lines[-1])
+            self._last_data = data
+            self._last_ts = time.time()
+            return data
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    def _bg_loop(self) -> None:
+        while True:
+            with self._fetch_lock:
+                self._probe_once()
+            time.sleep(self.ttl_sec)
 
     def get(self, force: bool = False) -> Dict[str, Any]:
-        with self._lock:
-            now = time.time()
-            if not force and self._last_data and (now - self._last_ts) < self.ttl_sec:
+        # Fast non-blocking RAM read whenever cached snapshot exists and force is False
+        if not force and self._last_data:
+            return self._last_data
+        # Coalesce concurrent forced/initial refreshes on _fetch_lock
+        acquired = self._fetch_lock.acquire(timeout=0.15 if (not force and self._last_data) else 12.0)
+        if not acquired:
+            return self._last_data or {"error": "SSH refresh in progress"}
+        try:
+            if not force and self._last_data and (time.time() - self._last_ts) < self.ttl_sec:
                 return self._last_data
-            try:
-                proc = subprocess.run(
-                    [
-                        "ssh",
-                        "-o",
-                        "BatchMode=yes",
-                        "-o",
-                        "ConnectTimeout=7",
-                        self.host,
-                        "/home/skybullet1987/quant_pipeline/venv/bin/python3 -",
-                    ],
-                    input=REMOTE_PROBE_PY,
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    timeout=15,
-                )
-                if proc.returncode != 0:
-                    return {"error": (proc.stderr or proc.stdout).strip()[:400]}
-                lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
-                if not lines:
-                    return {"error": f"Unexpected SSH output: {proc.stdout[:200]}"}
-                self._last_data = json.loads(lines[-1])
-                self._last_ts = now
+            res = self._probe_once()
+            if res.get("error") and self._last_data and not force:
                 return self._last_data
-            except Exception as exc:
-                return {"error": str(exc)}
+            return res
+        finally:
+            self._fetch_lock.release()
 
 
 def print_cli_summary(d: Dict[str, Any]) -> None:
@@ -625,43 +704,54 @@ def main() -> None:
     parser.add_argument("--no-browser", action="store_true", help="Do not auto-open browser tab")
     args = parser.parse_args()
 
-    cache = SnapshotCache(host=args.host)
     if args.json:
+        cache = SnapshotCache(host=args.host, start_bg=False)
         print(json.dumps(cache.get(force=True), indent=2))
         return
     if args.once:
+        cache = SnapshotCache(host=args.host, start_bg=False)
         print_cli_summary(cache.get(force=True))
         return
 
+    cache = SnapshotCache(host=args.host, start_bg=True)
+
     class Handler(BaseHTTPRequestHandler):
+        def _safe_send(self, code: int, content_type: str, body: bytes, no_store: bool = False) -> None:
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                if no_store:
+                    self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
+                # Browser canceled an earlier tab fetch or reloaded mid-write (WinError 10053) — benign
+                return
+
         def do_GET(self) -> None:
             host_hdr = (self.headers.get("Host") or "").split(":")[0].strip().lower()
             if host_hdr and host_hdr not in ("127.0.0.1", "localhost"):
-                self.send_error(403, "Forbidden Host")
+                try:
+                    self.send_error(403, "Forbidden Host")
+                except OSError:
+                    pass
                 return
             if self.path.startswith("/api/snapshot"):
                 force = "force=1" in self.path
                 payload = json.dumps(cache.get(force=force)).encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Cache-Control", "no-store")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(payload)
+                self._safe_send(200, "application/json; charset=utf-8", payload, no_store=True)
             else:
-                body = HTML_PAGE.encode("utf-8")
-                self.send_response(200)
-                self.send_header("Content-Type", "text/html; charset=utf-8")
-                self.send_header("X-Content-Type-Options", "nosniff")
-                self.end_headers()
-                self.wfile.write(body)
+                self._safe_send(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"))
 
         def log_message(self, fmt: str, *a: Any) -> None:
             return
 
     url = f"http://127.0.0.1:{args.port}"
     srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    print(f"Dominus Live Command Center running locally at {url} (Ctrl+C to stop)", flush=True)
+    srv.daemon_threads = True
+    print(f"Dominus Live Command Center running locally at {url} (Background SSH cache=7s, Ctrl+C to stop)", flush=True)
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
