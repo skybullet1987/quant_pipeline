@@ -102,7 +102,10 @@ class TwapCandleMarketSpec:
 
 
 def _parse_iso_ts(iso_str: str) -> float:
-    return datetime.fromisoformat(str(iso_str).replace("Z", "+00:00")).timestamp()
+    dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.timestamp()
 
 
 def parse_twap_candle_event(event: Dict[str, Any], asset: str, horizon: str) -> Optional[TwapCandleMarketSpec]:

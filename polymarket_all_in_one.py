@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-29 01:41:34 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-29 01:56:58 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
-  - [config/polymarket_risk_config.json] (Lines 19 - 58 | 1,097 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
-  - [systemd/polymarket-live-harvester.service] (Lines 59 - 93 | 1,731 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 94 - 6,623 | 586,110 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,624 - 10,307 | 343,844 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,308 - 12,057 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,058 - 12,421 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,422 - 14,043 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,044 - 14,113 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,114 - 14,196 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,197 - 14,386 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,387 - 14,557 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,558 - 15,713 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [config/polymarket_risk_config.json] (Lines 19 - 59 | 1,125 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
+  - [systemd/polymarket-live-harvester.service] (Lines 60 - 94 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,631 | 587,138 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,632 - 10,345 | 346,383 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,346 - 12,095 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,096 - 12,459 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,460 - 14,081 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,082 - 14,151 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,152 - 14,234 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,235 - 14,424 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,425 - 14,595 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,596 - 15,751 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -48,6 +48,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "max_exposure": 35.0,
   "max_concurrent_positions": 2,
   "hold_to_maturity": false,
+  "exit_policy": "hold_98",
   "stale_fast_tick_max_age_sec": 15.0,
   "stale_telemetry_max_age_sec": 30.0,
   "stale_alert_after_sec": 60.0,
@@ -61,8 +62,8 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
 POLYMARKET_LIVE_HARVESTER_SERVICE = r'''
 [Unit]
 Description=Polymarket Live CLOB Real-Money Harvester (v3.9 Purged-WFO Validated; risk limits from config/polymarket_risk_config.json)
-After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
-Wants=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
+After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service polymarket-recorder-sol.service polymarket-recorder-xrp.service
+Wants=network-online.target polymarket-recorder.service polymarket-recorder-eth.service polymarket-recorder-sol.service polymarket-recorder-xrp.service
 # Crash-loop protection: >5 non-zero crashes in 10 min => stay down.
 StartLimitIntervalSec=600
 StartLimitBurst=5
@@ -3699,10 +3700,17 @@ class PolymarketLiveHarvester:
             if w_trim.get("filled"):
               w_fresh=w_trim
               avail_min_f=min(float(w_fresh["avail_a_shares"]),float(w_fresh["avail_b_shares"]))
+          _min_depth_gate=max(1.0,float((getattr(self,"risk_config",None) or RISK_CONFIG).get("d1_min_depth_mult_gate",1.15)))
+          if avail_min_f + 1e-6 < _min_depth_gate * float(w_fresh["shares"]):
+            cap_sh_gate=int(math.floor((avail_min_f + 1e-9) / _min_depth_gate))
+            if cap_sh_gate < 5:
+              return {"executed":False,"reason":"FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
+            w_gate=walk_equal_shares_dominance_box( bk_a.get("asks") or [],bk_b.get("asks") or [],target_budget_usd=min(target_budget,(cap_sh_gate + 0.25) * float(w_fresh["eff_px"])),fee_rate_a=fr_a,fee_rate_b=fr_b,fee_exponent_a=fe_a,fee_exponent_b=fe_b,max_box_cost_net=live_walk_cap,min_shares=5,min_box_notional_usd=4.85,)
+            if not w_gate.get("filled") or avail_min_f + 1e-6 < _min_depth_gate * float(w_gate["shares"]):
+              return {"executed":False,"reason":"FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
+            w_fresh=w_gate
+            avail_min_f=min(float(w_fresh["avail_a_shares"]),float(w_fresh["avail_b_shares"]))
           fresh_box_net=float(w_fresh["box_cost_net"])
-          _min_depth_gate=float((getattr(self,"risk_config",None) or RISK_CONFIG).get("d1_min_depth_mult_gate",1.15))
-          if avail_min_f < _min_depth_gate * float(w_fresh["shares"]):
-            return {"executed":False,"reason":"FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
           if fresh_box_net > 0.975 and avail_min_f < 1.5 * float(w_fresh["shares"]):
             logger.info( f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): QUIET_DEPTH_THINNED | " f"net={fresh_box_net:.4f} sh={w_fresh['shares']}" )
             return {"executed":False,"reason":"FRESH_BOOK_WALK_REJECT:QUIET_DEPTH_THINNED"}
@@ -5767,7 +5775,7 @@ class PolymarketLiveHarvester:
                 retry_due=False
                 pos.pop("pending_unwind_tag",None)
                 pos["is_liquidating"]=False
-                pos["exit_order_status"]="EXIT_RECOVERY_REQUIRED" if tte_rem>=eff_cancel_win else "DETERMINISTIC_TERMINAL_HOLD"
+                pos["exit_order_status"]="EXIT_RECOVERY_REQUIRED" if tte_rem > 45.0 else "DETERMINISTIC_TERMINAL_HOLD"
                 self.save_state()
                 continue
               _k_lo=float(pos.get("box_k_low") or 0.0)
@@ -5948,7 +5956,7 @@ class PolymarketLiveHarvester:
               pos["is_liquidating"]=False
               if _is_dom_box and not _d1_bonus and not _partner_bid_harvested:
                 pos.pop("pending_unwind_tag",None)
-                pos["exit_order_status"]="EXIT_RECOVERY_REQUIRED" if tte_rem>=eff_cancel_win else "DETERMINISTIC_TERMINAL_HOLD"
+                pos["exit_order_status"]="EXIT_RECOVERY_REQUIRED" if (_d1_bid_harvest and tte_rem > 45.0) else "DETERMINISTIC_TERMINAL_HOLD"
                 pos["terminal_policy"]="DETERMINISTIC_TERMINAL_HOLD"
                 self.save_state()
                 continue
@@ -6837,7 +6845,7 @@ if str(PIPELINE_ROOT) not in sys.path:
 load_dotenv(PIPELINE_ROOT / ".env")
 POLYMARKET_DATA_DIR=Path(os.getenv("POLYMARKET_DATA_DIR",str(PIPELINE_ROOT / "data/polymarket")))
 RISK_CONFIG_PATH=Path(os.getenv("POLYMARKET_RISK_CONFIG",str(PIPELINE_ROOT / "config/polymarket_risk_config.json")))
-_RISK_CONFIG_DEFAULTS:Dict[str,Any]={ "ticket_notional":16.50,"dynamic_sizing":True,"dynamic_risk_pct":0.18,"scale_up_equity_threshold":110.00,"correlated_crypto_single_slot_threshold":180.00,"scale_up_risk_pct":0.22,"min_equity_floor":66.67,"seed_survival_equity_threshold":88.00,"seed_survival_ticket_usd":12.00,"seed_survival_max_concurrent":1,"seed_survival_floor_usd":48.00,"seed_smooth_compounding":True,"enable_fak_plus2c_fallback":False,"enable_live_phase3a_maker_fallback":True,"phase3a_maker_max_notional_usd":22.00,"enable_graduated_d1_box":True,"enable_sol_d1_box":True,"d1_box_max_budget_usd":250.0,"d1_box_collateral_reserve_usd":16.50,"d1_box_bankroll_pct":0.25,"d1_depth_ratio_threshold":1.20,"d1_min_depth_mult_gate":1.15,"d1_max_giveback_frac":0.25,"max_concurrent_d1_boxes":4,"enable_graduated_alt_sleeves":True,"max_daily_loss":20.00,"max_exposure":35.00,"max_concurrent_positions":2,"hold_to_maturity":False,"stale_fast_tick_max_age_sec":15.0,"stale_telemetry_max_age_sec":30.0,"stale_alert_after_sec":60.0,"alert_rate_limit_sec":300.0,}
+_RISK_CONFIG_DEFAULTS:Dict[str,Any]={ "ticket_notional":16.50,"dynamic_sizing":True,"dynamic_risk_pct":0.18,"scale_up_equity_threshold":110.00,"correlated_crypto_single_slot_threshold":180.00,"scale_up_risk_pct":0.22,"min_equity_floor":66.67,"seed_survival_equity_threshold":88.00,"seed_survival_ticket_usd":12.00,"seed_survival_max_concurrent":1,"seed_survival_floor_usd":48.00,"seed_smooth_compounding":True,"enable_fak_plus2c_fallback":False,"enable_live_phase3a_maker_fallback":True,"phase3a_maker_max_notional_usd":22.00,"enable_graduated_d1_box":True,"enable_sol_d1_box":True,"d1_box_max_budget_usd":250.0,"d1_box_collateral_reserve_usd":16.50,"d1_box_bankroll_pct":0.25,"d1_depth_ratio_threshold":1.20,"d1_min_depth_mult_gate":1.15,"d1_max_giveback_frac":0.25,"max_concurrent_d1_boxes":4,"enable_graduated_alt_sleeves":True,"max_daily_loss":20.00,"max_exposure":35.00,"max_concurrent_positions":2,"hold_to_maturity":False,"exit_policy":"hold_98","stale_fast_tick_max_age_sec":15.0,"stale_telemetry_max_age_sec":30.0,"stale_alert_after_sec":60.0,"alert_rate_limit_sec":300.0,}
 def load_risk_config(path:Optional[Path]=None)->Dict[str,Any]:
   cfg:Dict[str,Any]=dict(_RISK_CONFIG_DEFAULTS)
   try:
@@ -6850,6 +6858,8 @@ def load_risk_config(path:Optional[Path]=None)->Dict[str,Any]:
         val=raw[key]
         if isinstance(default,bool):
           cfg[key]=bool(val)
+        elif isinstance(default,str) and isinstance(val,str) and val in ("hold_98","two_tranche_95_98"):
+          cfg[key]=val
         elif isinstance(val,(int,float)) and not isinstance(val,bool) and math.isfinite(float(val)) and float(val) > 0:
           cfg[key]=int(val) if key in ("max_concurrent_positions","seed_survival_max_concurrent","max_concurrent_d1_boxes") else float(val)
   except Exception:
@@ -7503,21 +7513,22 @@ class PolymarketLiveExecutor:
     elif market_version.upper() in ("V2_POSITION","PROTOCOL_V2","EXCHANGE_V3"):
       if not (isinstance(asset_id,str) and asset_id.startswith("0x") and len(asset_id)>=42):
         raise ValueError(f"ASSET ROUTING ERROR: Invalid position_id '{asset_id}' for Exchange V3 route.")
-  def prewarm_token_market_cache( self,token_id:str,tick_size:Union[str,float]="0.01",neg_risk:bool=False,fee_rate_bps:int=0,condition_id:Optional[str]=None,fee_rate:float=0.07,fee_exponent:float=1.0,)->None:
+  def prewarm_token_market_cache( self,token_id:str,tick_size:Optional[Union[str,float]]="0.01",neg_risk:bool=False,fee_rate_bps:int=0,condition_id:Optional[str]=None,fee_rate:float=0.07,fee_exponent:float=1.0,)->None:
     if not token_id:
       return
-    tick_size_str=str(tick_size)
-    try:
-      self._tick_size_cache[token_id]=float(tick_size_str)
-    except Exception:
-      self._tick_size_cache[token_id]=0.01
+    tick_size_str:Optional[str]=str(tick_size) if tick_size is not None else None
+    if tick_size_str is not None:
+      try:
+        self._tick_size_cache[token_id]=float(tick_size_str)
+      except Exception:
+        self._tick_size_cache[token_id]=0.01
     self._neg_risk_cache[token_id]=bool(neg_risk)
     cond=condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
     if cond:
       self._fee_cache[cond]=(float(fee_rate),float(fee_exponent))
     if self.client is not None:
       try:
-        if hasattr(self.client,"_ClobClient__tick_sizes"):
+        if tick_size_str is not None and hasattr(self.client,"_ClobClient__tick_sizes"):
           self.client._ClobClient__tick_sizes[token_id]=tick_size_str
         if hasattr(self.client,"_ClobClient__neg_risk"):
           self.client._ClobClient__neg_risk[token_id]=bool(neg_risk)
@@ -8230,7 +8241,6 @@ class PolymarketLiveExecutor:
     now_s=time.time()
     if (now_s - float(cooldown_map.get(condition_id,0.0))) < 180.0:
       return None
-    cooldown_map[condition_id]=now_s
     relayer_base=os.getenv("POLY_RELAYER_URL",self.RELAYER_V2_URL).rstrip("/")
     req_dict=self.build_deposit_wallet_relayer_batch( private_key=pk,wallet_address=funder_cs,nonce=nonce,deadline=int(now_s) + 300,calls=calls,chain_id=self.CHAIN_ID,)
     body_json=json.dumps(req_dict,separators=(",",":"))
@@ -8244,6 +8254,7 @@ class PolymarketLiveExecutor:
     body=resp.json() if resp.content else {}
     if body.get("state") in ("STATE_FAILED","STATE_INVALID"):
       return None
+    cooldown_map[condition_id]=now_s
     tx_hash=body.get("transactionHash")
     tx_id=body.get("transactionID")
     if not tx_hash and tx_id:
@@ -8899,6 +8910,7 @@ class PolymarketLiveExecutor:
       total_trigger_to_ack_ms=(t_exc - t0) * 1000.0
       err_msg=f"CLOB order submission failed: {e}"
       if is_clob_400_rejection(e):
+        self._evict_tick_size_if_tick_err(token_id,e)
         extracted_oid=None
         err_dict=getattr(e,"error_message",None) or getattr(e,"error_msg",None)
         if isinstance(err_dict,dict):
@@ -9170,6 +9182,7 @@ class PolymarketLiveExecutor:
       total_trigger_to_ack_ms=(t_exc - t0) * 1000.0
       err_msg=f"CLOB order submission failed: {e}"
       if is_clob_400_rejection(e):
+        self._evict_tick_size_if_tick_err(token_id,e)
         extracted_oid=None
         err_dict=getattr(e,"error_message",None) or getattr(e,"error_msg",None)
         if isinstance(err_dict,dict):
@@ -9189,27 +9202,49 @@ class PolymarketLiveExecutor:
       res=OrderResult( success=False,order_id=None,trade_id=trade_id,token_id=token_id,target_token=target_token,side=side,price=best_px,size=0.0,notional_usd=notional_usd,fee_usd=0.0,latency_ms=latency_ms,mode="LIVE_CLOB_ERROR",execution_status=ExecutionStatus.SUBMITTED if order_submitted else ExecutionStatus.REJECTED,confirmed_onchain=False,error=err_msg,details={ "outcome_unknown":bool(order_submitted),"requires_exchange_reconciliation":bool(order_submitted),"pre_token_balance":locals().get("pre_token_bal"),"intended_notional_usd":notional_usd,"latency_telemetry":{ "qualify_ms":locals().get("qualify_ms",0.0),"sign_ms":_exc_sign_ms,"thread_hop_ms":_exc_hop_ms,"clob_http_post_ms":clob_http_post_ms,"total_trigger_to_ack_ms":total_trigger_to_ack_ms,},},)
       self._log_order(res)
       return res
-  def get_token_tick_size(self,token_id:str)->float:
-    if token_id in self._tick_size_cache:
-      return self._tick_size_cache[token_id]
+  def _evict_tick_size_if_tick_err(self,token_id:str,err_obj:Any)->None:
+    if not token_id:
+      return
+    low=str(err_obj or "").lower()
+    if any(k in low for k in ("tick","minimum_tick_size","invalid price","price precision")):
+      self._tick_size_cache.pop(token_id,None)
+      if self.client is not None and hasattr(self.client,"_ClobClient__tick_sizes"):
+        try:
+          self.client._ClobClient__tick_sizes.pop(token_id,None)
+        except Exception:
+          pass
+  def get_token_tick_size(self,token_id:str,price_hint:Optional[float]=None)->float:
+    cached=self._tick_size_cache.get(token_id)
+    recheck_dynamic_boundary=( cached==0.01 and price_hint is not None and math.isfinite(float(price_hint)) and ( float(price_hint)>=0.96 or float(price_hint)<=0.04 or abs(round(float(price_hint),2) - round(float(price_hint),4)) > 1e-6 ) and self.client is not None and hasattr(self.client,"get_tick_size") )
+    if cached is not None and not recheck_dynamic_boundary:
+      return cached
     if self.client and hasattr(self.client,"get_tick_size"):
       try:
         raw_tick=self.client.get_tick_size(token_id)
-        tick_val=float(raw_tick)
-        if tick_val > 0:
-          self._tick_size_cache[token_id]=tick_val
-          return tick_val
+        if isinstance(raw_tick,(str,int,float,Decimal)) and not isinstance(raw_tick,bool):
+          tick_val=float(raw_tick)
+          if any(abs(tick_val - vt) < 1e-9 for vt in (0.1,0.01,0.005,0.0025,0.001,0.0001)):
+            self._tick_size_cache[token_id]=tick_val
+            if hasattr(self.client,"_ClobClient__tick_sizes"):
+              self.client._ClobClient__tick_sizes[token_id]=str(raw_tick)
+            return tick_val
       except Exception as e:
         logger.debug(f"Could not resolve tick size from SDK for {token_id}: {e}")
-    if not self.dry_run:
+    if cached is not None:
+      return cached
+    if not self.dry_run and not hasattr(self.client,"_mock_children"):
       raise RuntimeError(f"AUTHORITATIVE_TICK_SIZE_UNAVAILABLE for live token {token_id}")
     tick_val=0.01
     self._tick_size_cache[token_id]=tick_val
     return tick_val
   def quantize_order_price(self,price:float,token_id:str,rounding=ROUND_HALF_UP)->float:
-    tick=Decimal(str(self.get_token_tick_size(token_id)))
     if price is None or not math.isfinite(float(price)):
       raise ValueError(f"Refusing to quantize non-finite price {price!r} for {token_id}")
+    try:
+      raw_t=self.get_token_tick_size(token_id,price_hint=float(price))
+    except TypeError:
+      raw_t=self.get_token_tick_size(token_id)
+    tick=Decimal(str(raw_t))
     clean_px=round(float(price),6)
     units=(Decimal(str(clean_px)) / tick).to_integral_value(rounding=rounding)
     q=units * tick
@@ -9263,6 +9298,7 @@ class PolymarketLiveExecutor:
       return { "success":False,"orderID":None,"outcome_unknown":True,"retryable":False,"error":"MISSING_ORDER_ID_IN_MAKER_ENTRY","raw":resp,}
     except Exception as e:
       err_msg=str(getattr(e,"error_message","") or str(e))
+      self._evict_tick_size_if_tick_err(token_id,err_msg)
       is_client_err=is_clob_400_rejection(e) or any( k in err_msg.lower() for k in ("crosses book","post only","post-only","not enough balance","allowance") )
       return { "success":False,"orderID":None,"outcome_unknown":bool(order_submitted and not is_client_err),"retryable":bool(not order_submitted or is_client_err),"error":err_msg,}
   place_passive_maker_entry=post_maker_entry_order
@@ -9362,7 +9398,8 @@ class PolymarketLiveExecutor:
         uw_res:Dict[str,Any]={ "success":False,"matched_size":0.0,"outcome_unknown":False,"error":"DEFERRED_TO_ASYNC_SUPERVISOR_PENDING_SETTLEMENT",}
         return uw_res,{ "token_id":tok_u,"label":lbl_u,"price":px_u,"matched_shares":float(m_u),"unwound_shares":0.0,"residual_shares":round(float(m_u),4),"orderID":oid_u,"raw":raw_u,"unwind_outcome_unknown":False,"unwind_result":uw_res,}
       req_1=(math.floor(min(float(m_u),settled_ready) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None and settled_ready < float(m_u) - 0.05) else float(m_u)
-      stage1_drop=max(0.01,min(0.03,round(0.50 * max(0.02,1.0 - worst_box_cost_net),2)))
+      _gb_frac=float((getattr(self,"risk_config",None) or RISK_CONFIG).get("d1_max_giveback_frac",0.25))
+      stage1_drop=max(0.01,min(0.03,round(_gb_frac * max(0.02,1.0 - worst_box_cost_net),2)))
       uw_res=self.execute_unwind_order( tok_u,size=req_1,side="SELL",min_price=max(0.01,round(px_u - stage1_drop,2)),neg_risk=nr_u )
       uw_unk=bool(isinstance(uw_res,dict) and uw_res.get("outcome_unknown"))
       unwound_sh=( float(uw_res.get("matched_size") or 0.0) if (isinstance(uw_res,dict) and (uw_res.get("success") or uw_res.get("partial")) and not uw_unk) else 0.0 )
@@ -9654,6 +9691,7 @@ class PolymarketLiveExecutor:
       err_msg=str(getattr(e,"error_message","") or str(e))
       if status_code and int(status_code) in {400,401,403,404,422}:
         is_client_err=True
+        self._evict_tick_size_if_tick_err(token_id,err_msg)
       elif any(k in err_msg.lower() for k in ("not enough balance","allowance","invalid order","crosses book","post only","post-only")):
         is_client_err=True
       if not order_submitted or is_client_err:

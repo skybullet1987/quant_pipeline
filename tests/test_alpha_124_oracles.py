@@ -2832,6 +2832,306 @@ def test_exp406_hardened_d1_maker_leg1_wfo_and_microstructure_shields(tmp_path: 
     assert open_x[0]["extra"]["legging_drag_usd_by_tier"]["T1000"] > 0.0
 
 
+def test_overround_bid_unwind_ctf_merge_and_corridor_preservation(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+    import time
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    from src.polymarket_research.macro_counting_ctf_engine import walk_position_overround_bid_unwind
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+
+    # 1. Direct L2 bid-walk verification: partial-depth rejection + exact fee deduction
+    thin_res = walk_position_overround_bid_unwind(
+        [
+            {"bids": [{"price": "0.52", "size": "25"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+            {"bids": [{"price": "0.52", "size": "15"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+        ],
+        exact_shares=25.0,
+        min_net_proceeds_per_set=1.005,
+    )
+    assert thin_res["filled"] is False, "Must reject partial unwind if any leg lacks 100% of exact_shares!"
+
+    full_res = walk_position_overround_bid_unwind(
+        [
+            {"bids": [{"price": "0.52", "size": "40"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+            {"bids": [{"price": "0.51", "size": "40"}], "fee_rate": 0.0, "fee_exponent": 1.0},
+        ],
+        exact_shares=25.0,
+        min_net_proceeds_per_set=1.005,
+    )
+    assert full_res["filled"] is True
+    assert abs(full_res["net_proceeds_per_set"] - 1.030) < 1e-6
+
+    # 2. Shadow daemon manage_open_positions:
+    #   (a) FED1 long-dated FOMC box (TTE = 2000h > 1h) with L2 bids = $1.030 unwinds early (`EARLY_OVERROUND_BID_UNWIND`)
+    #   (b) Near-expiry D1 box (TTE = 120s <= 1h) with L2 bids = $1.030 stays OPEN to preserve $2.00 corridor jackpot
+    #   (c) Single-market C1_BINARY_COMPLETE_SET (age >= 15s) recycles immediately via `CTF_COMPLETE_SET_MERGED` at $1.00
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "st_uw.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "ld_uw.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "op_uw.json")
+    monkeypatch.setattr(a124, "LIVE_ALPHA124_STATE_MIRROR_FILE", tmp_path / "mirror_uw.json")
+    d = a124.Alpha124ShadowDaemon(single_scan=True)
+    now_t = time.time()
+
+    d.open_positions["FED1_TEST"] = {
+        "position_id": "FED1_TEST",
+        "dedupe_key": "FED1_DK",
+        "sleeve": "FED1_CENTRAL_BANK_LP_BOX",
+        "asset_or_city": "FOMC",
+        "title": "FOMC 2-Leg Box",
+        "side": "BOX",
+        "token_id": "tok_fomc_a+tok_fomc_b",
+        "fee_rate": 0.0,
+        "entry_ts": now_t - 60.0,
+        "close_ts": now_t + 2000.0 * 3600.0,
+        "entry_eff_px_t1000": 0.990,
+        "p_model_entry": 1.0,
+        "tier_fills": {"T100": {"shares": 10.0, "spent_usd": 9.90, "fee_usd": 0.0}, "T1000": {"shares": 25.0, "spent_usd": 24.75, "fee_usd": 0.0}},
+        "extra": {
+            "is_two_leg_box": True,
+            "guaranteed_payout": 1.0,
+            "leg_a": {"token_id": "tok_fomc_a", "market_id": "m_fomc_1", "side": "YES", "fee_rate": 0.0},
+            "leg_b": {"token_id": "tok_fomc_b", "market_id": "m_fomc_2", "side": "NO", "fee_rate": 0.0},
+        },
+    }
+    d.open_positions["D1_NEAR_TEST"] = {
+        "position_id": "D1_NEAR_TEST",
+        "dedupe_key": "D1_NEAR_DK",
+        "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "asset_or_city": "BTC",
+        "title": "BTC 15m/5m Corridor Box",
+        "side": "BOX",
+        "token_id": "tok_d1_a+tok_d1_b",
+        "fee_rate": 0.07,
+        "entry_ts": now_t - 45.0,
+        "close_ts": now_t + 120.0,
+        "entry_eff_px_t1000": 0.980,
+        "p_model_entry": 1.0,
+        "tier_fills": {"T1000": {"shares": 25.0, "spent_usd": 24.50, "fee_usd": 0.0}},
+        "extra": {
+            "guaranteed_payout": 1.0,
+            "leg_a": {"token_id": "tok_d1_a", "market_id": "m_d1_1", "side": "UP", "fee_rate": 0.07},
+            "leg_b": {"token_id": "tok_d1_b", "market_id": "m_d1_2", "side": "DOWN", "fee_rate": 0.07},
+        },
+    }
+    d.open_positions["C1_MERGE_TEST"] = {
+        "position_id": "C1_MERGE_TEST",
+        "dedupe_key": "C1_DK",
+        "sleeve": "C1_BINARY_COMPLETE_SET",
+        "asset_or_city": "BTC",
+        "title": "BTC Single-Condition Complete Set",
+        "side": "COMPLETE_SET",
+        "token_id": "tok_c1_y+tok_c1_n",
+        "fee_rate": 0.0,
+        "entry_ts": now_t - 30.0,
+        "close_ts": now_t + 7200.0,
+        "entry_eff_px_t1000": 0.985,
+        "p_model_entry": 1.0,
+        "tier_fills": {"T1000": {"shares": 20.0, "spent_usd": 19.70, "fee_usd": 0.0}},
+        "extra": {
+            "guaranteed_payout": 1.0,
+            "leg_a": {"token_id": "tok_c1_y", "market_id": "m_c1_same", "side": "YES", "fee_rate": 0.0},
+            "leg_b": {"token_id": "tok_c1_n", "market_id": "m_c1_same", "side": "NO", "fee_rate": 0.0},
+        },
+    }
+
+    books_map = {
+        "tok_fomc_a": {"bids": [{"price": "0.52", "size": "50"}], "asks": [{"price": "0.54", "size": "50"}]},
+        "tok_fomc_b": {"bids": [{"price": "0.51", "size": "50"}], "asks": [{"price": "0.53", "size": "50"}]},
+        "tok_d1_a": {"bids": [{"price": "0.53", "size": "50"}], "asks": [{"price": "0.54", "size": "50"}]},
+        "tok_d1_b": {"bids": [{"price": "0.52", "size": "50"}], "asks": [{"price": "0.53", "size": "50"}]},
+        "tok_c1_y": {"bids": [{"price": "0.49", "size": "50"}], "asks": [{"price": "0.50", "size": "50"}]},
+        "tok_c1_n": {"bids": [{"price": "0.49", "size": "50"}], "asks": [{"price": "0.50", "size": "50"}]},
+    }
+
+    async def _fake_fetch(url: str, timeout: float = 2.5):
+        for tk, bk in books_map.items():
+            if f"token_id={tk}" in url:
+                return bk
+        return None
+
+    monkeypatch.setattr(d, "fetch_json", _fake_fetch)
+    asyncio.run(d.manage_open_positions())
+
+    assert "D1_NEAR_TEST" in d.open_positions, "Near-expiry D1 box must NOT unwind early on +3c overround; preserve $2.00 corridor!"
+    assert "FED1_TEST" not in d.open_positions
+    assert "C1_MERGE_TEST" not in d.open_positions
+    closed_by_id = {c["position_id"]: c for c in d.closed_positions}
+    assert closed_by_id["FED1_TEST"]["status"] == "EARLY_OVERROUND_BID_UNWIND"
+    assert abs(closed_by_id["FED1_TEST"]["tier_pnls_usd"]["T1000"] - 1.00) < 1e-6
+    assert closed_by_id["C1_MERGE_TEST"]["status"] == "CTF_COMPLETE_SET_MERGED"
+    assert abs(closed_by_id["C1_MERGE_TEST"]["tier_pnls_usd"]["T1000"] - 0.30) < 1e-6
+
+    # 3. Executor CTF / NegRiskAdapter mergePositions calldata verification
+    ex = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "merge_ex.jsonl")
+    cond_hex = "0x" + ("cd" * 32)
+    m_ctf = ex.merge_complete_set_positions(cond_hex, 25.0, neg_risk=False)
+    m_nr = ex.merge_complete_set_positions(cond_hex, 25.0, neg_risk=True)
+    assert m_ctf["merged"] is True and m_ctf["target_contract"].lower() == ex.CTF_ADDRESS.lower()
+    assert m_ctf["calldata"].startswith("0x9e7212ad")
+    assert m_nr["merged"] is True and m_nr["target_contract"].lower() == ex.NEG_RISK_ADAPTER_ADDRESS.lower()
+    assert m_nr["calldata"].startswith("0xb10c5c17")
+
+
+def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_path: Path, monkeypatch) -> None:
+    import json
+    import time
+    import src.polymarket_research.polymarket_live_harvester as harvester_mod
+    from src.polymarket_research.polymarket_live_harvester import ExecutionStatus, PolymarketLiveHarvester
+
+    live_dir = tmp_path / "live_pm"
+    live_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(harvester_mod, "DATA_DIR", live_dir)
+    monkeypatch.setattr(harvester_mod, "STATE_FILE", live_dir / "live_harvester_state.json")
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+
+    # D1_SAME_ORACLE_DOMINANCE_BOX has only 5 settled (<8), whereas D1_QUIET_BOOK_BOX is 13/13 graduated!
+    (live_dir / "alpha124_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "by_sleeve": {
+                    "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                        "closed": 5,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 15.0,
+                        "legging_adjusted_pnl_t1000_usd": 12.0,
+                    },
+                    "D1_QUIET_BOOK_BOX": {
+                        "closed": 13,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 43.25,
+                        "legging_adjusted_pnl_t1000_usd": 42.18,
+                    },
+                },
+                "by_d1_asset": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    h = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, ticket_notional=12.0,
+        max_exposure=76.25, max_concurrent=2, allowed_assets={"BTC", "ETH"},
+    )
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.state_file = live_dir / "live_harvester_state.json"
+    h._startup_reconciled = True
+    h._last_known_collateral = 138.98
+    h.high_water_mark_equity = 138.98
+    h._update_equity_tier(138.98)
+    assert h.current_equity_tier == "RECOVERY"
+
+    tok_a = "111111111111111111111111111111"
+    tok_oa = "222222222222222222222222222222"
+    tok_b = "333333333333333333333333333333"
+    tok_ob = "444444444444444444444444444444"
+    now_u = time.time()
+    base_cand = {
+        "box_id": "D1_QUIET_BTC_1",
+        "dedupe_key": "D1_QB_BTC_1",
+        "box_type": "DOMINANCE",
+        "ts_unix": now_u,
+        "expiry_ts": now_u + 180.0,
+        "asset": "BTC",
+        "corridor_bps": 8.0,
+        "k_low": 80000.0,
+        "k_high": 80064.0,
+        "is_quiet_book": True,
+        "shares": 25,
+        "box_cost_net": 0.981,
+        "max_box_cost_net": 0.985,
+        "leg_a_token_id": tok_a,
+        "leg_a_opp_token_id": tok_oa,
+        "leg_a_label": "15M_UP",
+        "leg_a_side": "UP",
+        "leg_a_horizon": "15m",
+        "leg_a_market_id": "610001",
+        "leg_a_condition_id": "0x" + ("11" * 32),
+        "leg_a_strike": 80000.0,
+        "leg_a_limit_price": 0.48,
+        "leg_a_avail_shares": 120.0,
+        "leg_a_fee_rate": 0.07,
+        "leg_a_fee_exponent": 1.0,
+        "leg_b_token_id": tok_b,
+        "leg_b_opp_token_id": tok_ob,
+        "leg_b_label": "5M_DOWN",
+        "leg_b_side": "DOWN",
+        "leg_b_horizon": "5m",
+        "leg_b_market_id": "610002",
+        "leg_b_condition_id": "0x" + ("22" * 32),
+        "leg_b_strike": 80064.0,
+        "leg_b_limit_price": 0.47,
+        "leg_b_avail_shares": 120.0,
+        "leg_b_fee_rate": 0.07,
+        "leg_b_fee_exponent": 1.0,
+    }
+    # Ungraduated D1_SAME_ORACLE_DOMINANCE_BOX is rejected while D1_QUIET_BOOK_BOX is accepted!
+    res_core_blk = h.maybe_execute_graduated_d1_box({**base_cand, "sleeve_source": "D1_SAME_ORACLE_DOMINANCE_BOX", "dedupe_key": "D1_CORE_BLK"})
+    assert res_core_blk["executed"] is False and res_core_blk["reason"] == "D1_NOT_YET_8_OF_8_GRADUATED"
+
+    qb_books = {
+        tok_a: {"asks": [{"price": "0.48", "size": "120"}], "bids": [{"price": "0.46", "size": "120"}]},
+        tok_b: {"asks": [{"price": "0.47", "size": "120"}], "bids": [{"price": "0.45", "size": "120"}]},
+        tok_oa: {"asks": [{"price": "0.54", "size": "120"}], "bids": [{"price": "0.51", "size": "120"}]},
+        tok_ob: {"asks": [{"price": "0.55", "size": "120"}], "bids": [{"price": "0.47", "size": "120"}]},
+    }
+    h.executor.get_market_book = lambda tid: qb_books[tid]
+    h._wallet_token_balance = lambda tid: (0.0, h.ONCHAIN_SOURCE)
+    captured_qb = {}
+
+    def _mock_qb_box(**kw):
+        captured_qb.update(kw)
+        sh = float(kw["shares"])
+        return {
+            "success": True,
+            "box_id": kw["box_id"],
+            "shares": sh,
+            "leg_1": {"token_id": tok_a, "label": kw["leg_a_label"], "price": 0.48, "orderID": "OID_QBA", "raw": {"makingAmount": round(sh * 0.48, 2)}},
+            "leg_2": {"token_id": tok_b, "label": kw["leg_b_label"], "price": 0.47, "orderID": "OID_QBB", "raw": {"makingAmount": round(sh * 0.47, 2)}},
+        }
+
+    h.executor.execute_atomic_dominance_box = _mock_qb_box
+    res_qb_ok = h.maybe_execute_graduated_d1_box({**base_cand, "sleeve_source": "D1_QUIET_BOOK_BOX"})
+    assert res_qb_ok["executed"] is True
+    assert captured_qb["parallel_dispatch"] is False, "Tighter (0.975..0.985] quiet box must preserve sequential Leg-1 dispatch!"
+    assert h.active_positions["D1_QUIET_BTC_1_L1"]["sleeve_source"] == "D1_QUIET_BOOK_BOX"
+    h.active_positions.clear()
+
+    # Deterministic RECOVERY -> GROWTH tier promotion on _close_position ($108.78 free + $32.90 exit cash = $141.68)
+    h._last_known_collateral = 108.78
+    h.active_positions["LIVE_WIN_141"] = {
+        "trade_id": "LIVE_WIN_141",
+        "token_id": "tok_eth_up",
+        "target_token": "UP",
+        "asset": "ETH",
+        "entry_price": 0.85,
+        "entry_shares": 35.0,
+        "remaining_shares": 0.0,
+        "filled_exit_shares": 35.0,
+        "notional_usd": 29.75,
+        "fee_usd": 0.45,
+        "confirmed_realized_cash": 32.90,
+        "realized_exit_cash": 32.90,
+        "realized_exit_fee": 0.0,
+        "entry_ts": now_u - 120.0,
+        "candle_expiry_ts": now_u + 1800.0,
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+    }
+    net_pnl = h._close_position("LIVE_WIN_141", h.active_positions["LIVE_WIN_141"], ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
+    assert abs(net_pnl - 2.70) < 1e-2
+    assert h.current_equity_tier == "GROWTH"
+    assert abs(h.max_exposure - 106.26) < 1e-2
+    assert h.max_concurrent_positions == 3
+    assert abs(h.dynamic_bankroll_pct - 0.26) < 1e-6
+    persisted = json.loads((live_dir / "live_harvester_state.json").read_text(encoding="utf-8"))
+    assert persisted["equity_tier"] == "GROWTH"
+    assert abs(float(persisted["max_exposure"]) - 106.26) < 1e-2
+    assert int(persisted["max_concurrent_positions"]) == 3
+
+
 if __name__ == "__main__":
     test_polymarket_weather_rounding_spec_examples()
     test_metar_parser_speci_and_t_remark()

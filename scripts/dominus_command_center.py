@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
 
 REMOTE_PROBE_PY = r"""
-import json, os, pathlib, subprocess, time
+import json, os, pathlib, re, subprocess, time
 
 root = pathlib.Path("/home/skybullet1987/quant_pipeline")
 out = {"fetched_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()), "unix_ts": time.time()}
@@ -64,6 +64,7 @@ svcs = [
     "polymarket-recorder-xrp.service",
     "polymarket-trader.service",
     "polymarket-exp316-shadow.service",
+    "apex-perp.service",
 ]
 svc_map = {}
 for sv in svcs:
@@ -139,16 +140,20 @@ if lh_path.exists():
 else:
     out["polymarket_live"] = {}
 
-# Recent notable live log lines
+# Recent notable live log lines (bounded 256 KB tail seek — zero full-file scan)
 log_path = root / "data/polymarket/live_harvester.log"
 log_events = []
 if log_path.exists():
     try:
-        r_lg = subprocess.run(
-            ["grep", "-E", r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX", str(log_path)],
-            capture_output=True, text=True, timeout=2
-        )
-        for ln in r_lg.stdout.splitlines()[-8:]:
+        _pat = re.compile(r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX")
+        with open(log_path, "rb") as _lf:
+            _sz = log_path.stat().st_size
+            _off = max(0, _sz - 262144)
+            _lf.seek(_off)
+            _tail_lines = _lf.read().decode("utf-8", errors="replace").splitlines()
+        if _off > 0 and _tail_lines:
+            _tail_lines = _tail_lines[1:]
+        for ln in [x for x in _tail_lines if _pat.search(x)][-8:]:
             log_events.append(ln[-150:])
     except Exception:
         pass
@@ -202,14 +207,27 @@ if a_path.exists():
 else:
     out["alpha124"] = {}
 
-# 5. Hyperliquid APEX v5.0 Testnet
+# 5. Hyperliquid APEX v5.0 Testnet (bounded 512 KB tail read; total count fast-scanned)
 j_path = root / "data/papertrade_journal.jsonl"
 if j_path.exists():
     audits = []
+    audit_total = 0
     cb_state = "RUNNING"
     cb_reason = ""
     hwm_nav = 609.0
-    for ln in j_path.read_text().splitlines():
+    _jsz = j_path.stat().st_size
+    with open(j_path, "rb") as _jf:
+        if _jsz > 524288:
+            while True:
+                _blk = _jf.read(262144)
+                if not _blk:
+                    break
+                audit_total += _blk.count(b'"IMPLEMENTATION_AUDIT_RECORD"')
+            _jf.seek(max(0, _jsz - 524288))
+            _jlines = _jf.read().decode("utf-8", errors="replace").splitlines()[1:]
+        else:
+            _jlines = _jf.read().decode("utf-8", errors="replace").splitlines()
+    for ln in _jlines:
         if not ln.strip():
             continue
         try:
@@ -225,6 +243,8 @@ if j_path.exists():
             hwm_nav = float(pl.get("hwm", hwm_nav))
         elif et == "IMPLEMENTATION_AUDIT_RECORD":
             audits.append(pl)
+    if _jsz <= 524288:
+        audit_total = len(audits)
     maker_n = sum(1 for x in audits if x.get("order_type") == "RESTING_ALO")
     recent_hl = []
     for x in reversed(audits[-6:]):
@@ -241,7 +261,7 @@ if j_path.exists():
         "circuit_breaker": cb_state,
         "halt_reason": cb_reason if cb_state != "RUNNING" else "",
         "hwm_nav_usd": round(hwm_nav, 2),
-        "gate2_fills": f"{len(audits)}/500",
+        "gate2_fills": f"{audit_total}/500",
         "maker_pct": round(100.0 * maker_n / len(audits), 1) if audits else 0.0,
         "recent_fills": recent_hl,
     }
@@ -350,6 +370,9 @@ HTML_PAGE = """<!DOCTYPE html>
 </div>
 
 <script>
+function esc(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
 function updateD1Countdown() {
   const now = new Date();
   const min = now.getUTCMinutes();
@@ -357,12 +380,12 @@ function updateD1Countdown() {
   const secIn15m = (min % 15) * 60 + sec;
   const el = document.getElementById('d1_timer');
   if (!el) return;
-  if (secIn15m >= 690) {
-    const rem = 900 - secIn15m;
+  if (secIn15m >= 600 && secIn15m <= 884) {
+    const rem = 884 - secIn15m;
     el.style.color = '#3fb950';
     el.textContent = `D1 15m/5m Same-Oracle Overlap ACTIVE NOW (${rem}s remaining)`;
   } else {
-    const wait = 690 - secIn15m;
+    const wait = secIn15m < 600 ? (600 - secIn15m) : (900 - secIn15m + 600);
     const m = Math.floor(wait / 60), s = wait % 60;
     el.style.color = '#d29922';
     el.textContent = `Next D1 Same-Oracle Overlap Window in ${m}m ${s}s`;
@@ -428,37 +451,37 @@ async function refreshNow(force=false) {
     const acts = pm.active_positions || [];
     document.getElementById('active_box').innerHTML = acts.length === 0
       ? '<span class="sub">Active live positions: 0 (Flat &amp; scanning shocks + Phase 3A maker rescues + D1 boxes)</span>'
-      : '<b>LIVE OPEN POSITION:</b> ' + acts.map(a => `<span class="pos">${a.asset} ${a.horizon} ${a.side}</span> ($${a.notional_usd} @ ${a.entry_px} &rarr; TP ${a.target_tp}) [${a.status}]`).join(' | ');
+      : '<b>LIVE OPEN POSITION:</b> ' + acts.map(a => `<span class="pos">${esc(a.asset)} ${esc(a.horizon)} ${esc(a.side)}</span> ($${Number(a.notional_usd || 0).toFixed(2)} @ ${esc(a.entry_px)} &rarr; TP ${esc(a.target_tp)}) [${esc(a.status)}]`).join(' | ');
 
     document.getElementById('pm_trades').innerHTML = (pm.recent_closed || []).map(c => `
       <tr>
-        <td>${(c.time_utc || '').slice(11)}</td>
-        <td><b>${c.asset}</b></td>
-        <td>${c.entry_px} &rarr; ${c.exit_px}</td>
-        <td>$${c.notional_usd.toFixed(2)}</td>
-        <td class="${c.net_pnl_usd >= 0 ? 'pos' : 'neg'}"><b>${c.net_pnl_usd >= 0 ? '+' : ''}$${c.net_pnl_usd.toFixed(2)}</b></td>
-        <td>${c.reason}</td>
+        <td>${esc((c.time_utc || '').slice(11))}</td>
+        <td><b>${esc(c.asset)}</b></td>
+        <td>${esc(c.entry_px)} &rarr; ${esc(c.exit_px)}</td>
+        <td>$${Number(c.notional_usd || 0).toFixed(2)}</td>
+        <td class="${c.net_pnl_usd >= 0 ? 'pos' : 'neg'}"><b>${c.net_pnl_usd >= 0 ? '+' : ''}$${Number(c.net_pnl_usd || 0).toFixed(2)}</b></td>
+        <td>${esc(c.reason)}</td>
       </tr>
     `).join('');
 
     document.getElementById('log_events').innerHTML = (d.live_log_events || []).map(l =>
-      `<div>${l.replace(/</g,'&lt;')}</div>`
+      `<div>${esc(l)}</div>`
     ).join('') || '<div class="sub">No recent log events.</div>';
 
     document.getElementById('a124_sleeves').innerHTML = (a124.sleeves || []).map(s => `
       <tr>
-        <td>${s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_')}</td>
-        <td>${s.open}</td>
-        <td>${s.wins}W / ${s.losses}L</td>
-        <td>${s.grad8_progress}</td>
-        <td class="${s.t1000_pnl_usd >= 0 ? 'pos' : 'neg'}">${s.t1000_pnl_usd >= 0 ? '+' : ''}$${s.t1000_pnl_usd.toFixed(2)}</td>
+        <td>${esc(s.sleeve.replace('_DOMINANCE_BOX','').replace('_ZERO_FEE_','_'))}</td>
+        <td>${esc(s.open)}</td>
+        <td>${esc(s.wins)}W / ${esc(s.losses)}L</td>
+        <td>${esc(s.grad8_progress)}</td>
+        <td class="${s.t1000_pnl_usd >= 0 ? 'pos' : 'neg'}">${s.t1000_pnl_usd >= 0 ? '+' : ''}$${Number(s.t1000_pnl_usd || 0).toFixed(2)}</td>
       </tr>
     `).join('');
 
     document.getElementById('a124_open').innerHTML = (a124.open_positions || []).map(p => `
       <tr>
-        <td>${(p.sleeve || '').slice(0,14)}</td>
-        <td>${p.title || ''}</td>
+        <td>${esc((p.sleeve || '').slice(0,14))}</td>
+        <td>${esc(p.title || '')}</td>
         <td>$${Number(p.eff_px || 0).toFixed(3)}</td>
         <td>$${Number(p.last_bid || 0).toFixed(3)}</td>
       </tr>
@@ -590,19 +613,24 @@ def main() -> None:
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
+            host_hdr = (self.headers.get("Host") or "").split(":")[0].strip().lower()
+            if host_hdr and host_hdr not in ("127.0.0.1", "localhost"):
+                self.send_error(403, "Forbidden Host")
+                return
             if self.path.startswith("/api/snapshot"):
                 force = "force=1" in self.path
                 payload = json.dumps(cache.get(force=force)).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
-                self.send_header("Access-Control-Allow-Origin", "*")
                 self.send_header("Cache-Control", "no-store")
+                self.send_header("X-Content-Type-Options", "nosniff")
                 self.end_headers()
                 self.wfile.write(payload)
             else:
                 body = HTML_PAGE.encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("X-Content-Type-Options", "nosniff")
                 self.end_headers()
                 self.wfile.write(body)
 

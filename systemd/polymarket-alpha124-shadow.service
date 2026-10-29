@@ -16,6 +16,9 @@ IOWeight=300
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py
 Restart=always
 RestartSec=10
+KillSignal=SIGTERM
+KillMode=process
+TimeoutStopSec=15s
 
 [Install]
 WantedBy=default.target

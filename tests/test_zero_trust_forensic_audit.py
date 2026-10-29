@@ -709,14 +709,27 @@ def test_v35_reload_script_graceful_terminate_and_position_guard(tmp_path, monke
 
 
 def test_v35_systemd_units_are_uniform_and_graceful():
-    """#4: all four daemons have clean unit files: Restart=on-failure, RestartSec=3, KillSignal=SIGTERM."""
-    for unit in ("polymarket-recorder", "polymarket-recorder-eth", "polymarket-trader", "polymarket-live-harvester"):
+    """#4: all core + secondary daemons have clean unit files with graceful SIGTERM handling."""
+    for unit in (
+        "polymarket-recorder",
+        "polymarket-recorder-eth",
+        "polymarket-recorder-sol",
+        "polymarket-recorder-xrp",
+        "polymarket-trader",
+        "polymarket-live-harvester",
+    ):
         text = (ROOT / "systemd" / f"{unit}.service").read_text()
         assert "Restart=on-failure" in text and "RestartSec=3" in text and "KillSignal=SIGTERM" in text, unit
+    for sec_rec, sym in (("polymarket-recorder-sol", "SOL"), ("polymarket-recorder-xrp", "XRP")):
+        r_txt = (ROOT / "systemd" / f"{sec_rec}.service").read_text()
+        assert f"--asset {sym}" in r_txt and "CPUWeight=250" in r_txt and "IOWeight=250" in r_txt, sec_rec
+    a124_txt = (ROOT / "systemd" / "polymarket-alpha124-shadow.service").read_text()
+    assert "KillSignal=SIGTERM" in a124_txt and "TimeoutStopSec=15s" in a124_txt
     harv = "\n".join(
         ln for ln in (ROOT / "systemd" / "polymarket-live-harvester.service").read_text().splitlines()
         if not ln.lstrip().startswith("#")
     )
+    assert "polymarket-recorder-sol.service" in harv and "polymarket-recorder-xrp.service" in harv
     assert "--reset-risk" not in harv, "auto-restarts must never silently clear a tripped circuit breaker"
     assert "--lot-size" not in harv and "--max-exposure" not in harv, "limits must come from the central config"
     assert "--asset BTC" in (ROOT / "systemd" / "polymarket-recorder.service").read_text()

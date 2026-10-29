@@ -5088,10 +5088,22 @@ class PolymarketLiveHarvester:
                         if w_trim.get("filled"):
                             w_fresh = w_trim
                             avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
+                    _min_depth_gate = max(1.0, float((getattr(self, "risk_config", None) or RISK_CONFIG).get("d1_min_depth_mult_gate", 1.15)))
+                    if avail_min_f + 1e-6 < _min_depth_gate * float(w_fresh["shares"]):
+                        cap_sh_gate = int(math.floor((avail_min_f + 1e-9) / _min_depth_gate))
+                        if cap_sh_gate < 5:
+                            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
+                        w_gate = walk_equal_shares_dominance_box(
+                            bk_a.get("asks") or [], bk_b.get("asks") or [],
+                            target_budget_usd=min(target_budget, (cap_sh_gate + 0.25) * float(w_fresh["eff_px"])),
+                            fee_rate_a=fr_a, fee_rate_b=fr_b, fee_exponent_a=fe_a, fee_exponent_b=fe_b,
+                            max_box_cost_net=live_walk_cap, min_shares=5, min_box_notional_usd=4.85,
+                        )
+                        if not w_gate.get("filled") or avail_min_f + 1e-6 < _min_depth_gate * float(w_gate["shares"]):
+                            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
+                        w_fresh = w_gate
+                        avail_min_f = min(float(w_fresh["avail_a_shares"]), float(w_fresh["avail_b_shares"]))
                     fresh_box_net = float(w_fresh["box_cost_net"])
-                    _min_depth_gate = float((getattr(self, "risk_config", None) or RISK_CONFIG).get("d1_min_depth_mult_gate", 1.15))
-                    if avail_min_f < _min_depth_gate * float(w_fresh["shares"]):
-                        return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_DEPTH_MULT_GATE"}
                     if fresh_box_net > 0.975 and avail_min_f < 1.5 * float(w_fresh["shares"]):
                         logger.info(
                             f"[D1 FRESH BOOK REJECT] {candidate_box.get('box_id')} ({cand_asset or 'BTC'}): QUIET_DEPTH_THINNED | "
@@ -8618,7 +8630,7 @@ class PolymarketLiveHarvester:
                                 retry_due = False
                                 pos.pop("pending_unwind_tag", None)
                                 pos["is_liquidating"] = False
-                                pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED" if tte_rem >= eff_cancel_win else "DETERMINISTIC_TERMINAL_HOLD"
+                                pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED" if tte_rem > 45.0 else "DETERMINISTIC_TERMINAL_HOLD"
                                 self.save_state()
                                 continue
                             _k_lo = float(pos.get("box_k_low") or 0.0)
@@ -8932,7 +8944,7 @@ class PolymarketLiveHarvester:
                             pos["is_liquidating"] = False
                             if _is_dom_box and not _d1_bonus and not _partner_bid_harvested:
                                 pos.pop("pending_unwind_tag", None)
-                                pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED" if tte_rem >= eff_cancel_win else "DETERMINISTIC_TERMINAL_HOLD"
+                                pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED" if (_d1_bid_harvest and tte_rem > 45.0) else "DETERMINISTIC_TERMINAL_HOLD"
                                 pos["terminal_policy"] = "DETERMINISTIC_TERMINAL_HOLD"
                                 self.save_state()
                                 continue

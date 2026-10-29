@@ -149,7 +149,10 @@ def _parse_iso_ts(raw_iso: Any) -> Optional[float]:
     if not s:
         return None
     try:
-        return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
     except Exception:
         return None
 

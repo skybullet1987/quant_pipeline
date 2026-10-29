@@ -677,7 +677,14 @@ def simulate_d1_maker_leg1_box(ev: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[
     side = str(ev.get("anc_side", "UP")).upper()
     spot_ret_bps = float(ev.get("spot_ret_bps", 0.0))
 
-    tick = 0.001 if (a_anc >= 0.96 or a_anc <= 0.04) else 0.01
+    def _snap_px(p: float) -> float:
+        p = round(float(p), 4)
+        return (math.floor((p + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < p < 0.96 - 1e-9) else (math.floor((p + 1e-9) * 1000.0) / 1000.0)
+
+    tick_b = 0.001 if (b_anc >= 0.96 or b_anc < 0.04) else 0.01
+    tick_a = 0.001 if (a_anc > 0.96 or a_anc <= 0.04) else 0.01
+    step_bid = _snap_px(b_anc + tick_b)
+    max_under = _snap_px(a_anc - tick_a)
     spr = round(a_anc - b_anc, 4)
     allow_join_1c = bool(cfg.get("allow_join_1c_mid", True))
     min_obi_1c = float(cfg.get("min_obi_join_1c", -0.15))
@@ -689,20 +696,19 @@ def simulate_d1_maker_leg1_box(ev: Dict[str, Any], cfg: Dict[str, Any]) -> Dict[
     if obi_anc < min_obi_any or hdg_sh < max(15.0, min_hdg_mult * sh):
         return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
 
-    if spr >= 2.0 * tick - 1e-9:
-        cand_bid = round(min(b_anc + tick, a_anc - tick), 3 if tick < 0.01 else 2)
+    if step_bid <= max_under + 1e-9 and step_bid > b_anc + 1e-9:
+        cand_bid = min(step_bid, max_under)
         q_front = True
     elif allow_join_1c and spr >= 0.01 - 1e-9 and 0.15 <= a_anc <= 0.85 and obi_anc >= min_obi_1c:
-        cand_bid = round(b_anc, 2)
+        cand_bid = _snap_px(b_anc)
         q_front = False
     else:
         return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
 
     hdg_eff0 = a_hdg + v2_taker_fee_per_share(a_hdg, fr)
-    scale = 1000.0 if tick < 0.01 else 100.0
-    max_anc = math.floor((max_post_net - hdg_eff0) * scale + 1e-9) / scale
+    max_anc = _snap_px(max_post_net - hdg_eff0)
     bid_px = min(cand_bid, max_anc)
-    if bid_px < round(b_anc - (tick if q_front else 0.0), 3) or bid_px <= 0.02 or bid_px >= a_anc:
+    if bid_px < round(b_anc - (tick_b if q_front else 0.0), 3) or bid_px <= 0.02 or bid_px >= a_anc:
         return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}
     if not (0.900 <= (bid_px + hdg_eff0) <= max_post_net):
         return {"posted": False, "filled": False, "hedged": False, "pnl_usd": 0.0, "scratched": False}

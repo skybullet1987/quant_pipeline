@@ -1,7 +1,7 @@
 [Unit]
 Description=Polymarket Live CLOB Real-Money Harvester (v3.9 Purged-WFO Validated; risk limits from config/polymarket_risk_config.json)
-After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
-Wants=network-online.target polymarket-recorder.service polymarket-recorder-eth.service
+After=network-online.target polymarket-recorder.service polymarket-recorder-eth.service polymarket-recorder-sol.service polymarket-recorder-xrp.service
+Wants=network-online.target polymarket-recorder.service polymarket-recorder-eth.service polymarket-recorder-sol.service polymarket-recorder-xrp.service
 # Crash-loop protection: >5 non-zero crashes in 10 min => stay down.
 StartLimitIntervalSec=600
 StartLimitBurst=5

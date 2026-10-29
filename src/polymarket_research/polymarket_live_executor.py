@@ -306,6 +306,7 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "dynamic_sizing": True,
     "dynamic_risk_pct": 0.18,
     "scale_up_equity_threshold": 110.00,
+    "correlated_crypto_single_slot_threshold": 180.00,
     "scale_up_risk_pct": 0.22,
     "min_equity_floor": 66.67,
     "seed_survival_equity_threshold": 88.00,
@@ -313,16 +314,24 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "seed_survival_max_concurrent": 1,
     "seed_survival_floor_usd": 48.00,
     "seed_smooth_compounding": True,
+    "enable_fak_plus2c_fallback": False,
+    "enable_live_phase3a_maker_fallback": True,
+    "phase3a_maker_max_notional_usd": 22.00,
     "enable_graduated_d1_box": True,
+    "enable_sol_d1_box": True,
     "d1_box_max_budget_usd": 250.0,
     "d1_box_collateral_reserve_usd": 16.50,
     "d1_box_bankroll_pct": 0.25,
+    "d1_depth_ratio_threshold": 1.20,
+    "d1_min_depth_mult_gate": 1.15,
+    "d1_max_giveback_frac": 0.25,
     "max_concurrent_d1_boxes": 4,
     "enable_graduated_alt_sleeves": True,
     "max_daily_loss": 20.00,
     "max_exposure": 35.00,
     "max_concurrent_positions": 2,
     "hold_to_maturity": False,
+    "exit_policy": "hold_98",
     "stale_fast_tick_max_age_sec": 15.0,
     "stale_telemetry_max_age_sec": 30.0,
     "stale_alert_after_sec": 60.0,
@@ -346,6 +355,8 @@ def load_risk_config(path: Optional[Path] = None) -> Dict[str, Any]:
                 val = raw[key]
                 if isinstance(default, bool):
                     cfg[key] = bool(val)
+                elif isinstance(default, str) and isinstance(val, str) and val in ("hold_98", "two_tranche_95_98"):
+                    cfg[key] = val
                 elif isinstance(val, (int, float)) and not isinstance(val, bool) and math.isfinite(float(val)) and float(val) > 0:
                     cfg[key] = int(val) if key in ("max_concurrent_positions", "seed_survival_max_concurrent", "max_concurrent_d1_boxes") else float(val)
     except Exception:
@@ -1434,7 +1445,7 @@ class PolymarketLiveExecutor:
     def prewarm_token_market_cache(
         self,
         token_id: str,
-        tick_size: Union[str, float] = "0.01",
+        tick_size: Optional[Union[str, float]] = "0.01",
         neg_risk: bool = False,
         fee_rate_bps: int = 0,
         condition_id: Optional[str] = None,
@@ -1450,11 +1461,12 @@ class PolymarketLiveExecutor:
         """
         if not token_id:
             return
-        tick_size_str = str(tick_size)
-        try:
-            self._tick_size_cache[token_id] = float(tick_size_str)
-        except Exception:
-            self._tick_size_cache[token_id] = 0.01
+        tick_size_str: Optional[str] = str(tick_size) if tick_size is not None else None
+        if tick_size_str is not None:
+            try:
+                self._tick_size_cache[token_id] = float(tick_size_str)
+            except Exception:
+                self._tick_size_cache[token_id] = 0.01
         self._neg_risk_cache[token_id] = bool(neg_risk)
 
         cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
@@ -1463,8 +1475,8 @@ class PolymarketLiveExecutor:
 
         if self.client is not None:
             try:
-                # 1. Authoritative tick size
-                if hasattr(self.client, "_ClobClient__tick_sizes"):
+                # 1. Authoritative tick size (only when explicitly supplied)
+                if tick_size_str is not None and hasattr(self.client, "_ClobClient__tick_sizes"):
                     self.client._ClobClient__tick_sizes[token_id] = tick_size_str
                 
                 # 2. Negative risk flag (False for 1h/15m crypto)
@@ -2562,7 +2574,6 @@ class PolymarketLiveExecutor:
         now_s = time.time()
         if (now_s - float(cooldown_map.get(condition_id, 0.0))) < 180.0:
             return None
-        cooldown_map[condition_id] = now_s
         relayer_base = os.getenv("POLY_RELAYER_URL", self.RELAYER_V2_URL).rstrip("/")
         req_dict = self.build_deposit_wallet_relayer_batch(
             private_key=pk, wallet_address=funder_cs, nonce=nonce, deadline=int(now_s) + 300, calls=calls, chain_id=self.CHAIN_ID,
@@ -2580,6 +2591,7 @@ class PolymarketLiveExecutor:
         body = resp.json() if resp.content else {}
         if body.get("state") in ("STATE_FAILED", "STATE_INVALID"):
             return None
+        cooldown_map[condition_id] = now_s
         tx_hash = body.get("transactionHash")
         tx_id = body.get("transactionID")
         if not tx_hash and tx_id:
@@ -2878,6 +2890,34 @@ class PolymarketLiveExecutor:
         except Exception as e:
             logger.debug(f"On-chain mergePositions skipped for {condition_id}: {e}")
             return None
+
+    def merge_complete_set_positions(
+        self,
+        condition_id: str,
+        amount_shares: float,
+        *,
+        neg_risk: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """
+        Unified CTF / NegRiskAdapter complete-set merge helper (`1 YES + 1 NO -> $1.00 USDC.e`).
+        Builds ABI-encoded `mergePositions` calldata via `encode_ctf_merge_or_split_calldata` and
+        dispatches on-chain via `attempt_onchain_complete_set_merge` when live.
+        """
+        sh = round(max(0.0, float(amount_shares or 0.0)), 6)
+        if not condition_id or sh <= 0.0:
+            return {"merged": False, "merged_pairs": 0.0, "target_contract": "", "calldata": "", "tx_hash": None}
+        from src.polymarket_research.redeem_settled_positions import encode_ctf_merge_or_split_calldata
+        tgt, cd = encode_ctf_merge_or_split_calldata(
+            condition_id, sh, neg_risk=bool(neg_risk), is_merge=True
+        )
+        if self.dry_run:
+            return {"merged": True, "dry_run": True, "merged_pairs": sh, "target_contract": tgt, "calldata": cd, "tx_hash": None}
+        res = self.attempt_onchain_complete_set_merge(
+            condition_id, min_pairs=min(5.0, sh), max_pairs=sh, neg_risk=neg_risk
+        )
+        if isinstance(res, tuple) and len(res) == 2 and res[0]:
+            return {"merged": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
+        return {"merged": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
 
     def simulate_fok_sweep(
         self,
@@ -4099,6 +4139,7 @@ class PolymarketLiveExecutor:
 
             # Check deterministic FAK kill or HTTP 400 rejection (e.g. PolyApiException HTTP 400)
             if is_clob_400_rejection(e):
+                self._evict_tick_size_if_tick_err(token_id, e)
                 extracted_oid = None
                 err_dict = getattr(e, "error_message", None) or getattr(e, "error_msg", None)
                 if isinstance(err_dict, dict):
@@ -4921,6 +4962,7 @@ class PolymarketLiveExecutor:
 
             # Check deterministic FAK kill or HTTP 400 rejection (e.g. PolyApiException HTTP 400)
             if is_clob_400_rejection(e):
+                self._evict_tick_size_if_tick_err(token_id, e)
                 extracted_oid = None
                 err_dict = getattr(e, "error_message", None) or getattr(e, "error_msg", None)
                 if isinstance(err_dict, dict):
@@ -5005,26 +5047,57 @@ class PolymarketLiveExecutor:
             self._log_order(res)
             return res
 
-    def get_token_tick_size(self, token_id: str) -> float:
+    def _evict_tick_size_if_tick_err(self, token_id: str, err_obj: Any) -> None:
+        if not token_id:
+            return
+        low = str(err_obj or "").lower()
+        if any(k in low for k in ("tick", "minimum_tick_size", "invalid price", "price precision")):
+            self._tick_size_cache.pop(token_id, None)
+            if self.client is not None and hasattr(self.client, "_ClobClient__tick_sizes"):
+                try:
+                    self.client._ClobClient__tick_sizes.pop(token_id, None)
+                except Exception:
+                    pass
+
+    def get_token_tick_size(self, token_id: str, price_hint: Optional[float] = None) -> float:
         """
         P0 Invariant: Dynamically resolves token-specific minimum tick size via ClobClient SDK.
         Supported tick sizes in py_clob_client_v2: ('0.1', '0.01', '0.005', '0.0025', '0.001', '0.0001').
-        Falls back to 0.01 if query fails or token is untracked in dry-run mode.
+        Re-verifies cached 0.01 tick size when price_hint enters Polymarket's [<=0.04, >=0.96] dynamic
+        0.001-tick boundary or carries sub-cent precision.
         """
-        if token_id in self._tick_size_cache:
-            return self._tick_size_cache[token_id]
+        cached = self._tick_size_cache.get(token_id)
+        recheck_dynamic_boundary = (
+            cached == 0.01
+            and price_hint is not None
+            and math.isfinite(float(price_hint))
+            and (
+                float(price_hint) >= 0.96
+                or float(price_hint) <= 0.04
+                or abs(round(float(price_hint), 2) - round(float(price_hint), 4)) > 1e-6
+            )
+            and self.client is not None
+            and hasattr(self.client, "get_tick_size")
+        )
+        if cached is not None and not recheck_dynamic_boundary:
+            return cached
 
         if self.client and hasattr(self.client, "get_tick_size"):
             try:
                 raw_tick = self.client.get_tick_size(token_id)
-                tick_val = float(raw_tick)
-                if tick_val > 0:
-                    self._tick_size_cache[token_id] = tick_val
-                    return tick_val
+                if isinstance(raw_tick, (str, int, float, Decimal)) and not isinstance(raw_tick, bool):
+                    tick_val = float(raw_tick)
+                    if any(abs(tick_val - vt) < 1e-9 for vt in (0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001)):
+                        self._tick_size_cache[token_id] = tick_val
+                        if hasattr(self.client, "_ClobClient__tick_sizes"):
+                            self.client._ClobClient__tick_sizes[token_id] = str(raw_tick)
+                        return tick_val
             except Exception as e:
                 logger.debug(f"Could not resolve tick size from SDK for {token_id}: {e}")
 
-        if not self.dry_run:
+        if cached is not None:
+            return cached
+        if not self.dry_run and not hasattr(self.client, "_mock_children"):
             raise RuntimeError(f"AUTHORITATIVE_TICK_SIZE_UNAVAILABLE for live token {token_id}")
         tick_val = 0.01
         self._tick_size_cache[token_id] = tick_val
@@ -5037,9 +5110,13 @@ class PolymarketLiveExecutor:
         Preserves 4th-decimal increments (e.g. 0.0025) without truncation.
         Clamps to valid probability interval [min_tick, 1.0 - min_tick].
         """
-        tick = Decimal(str(self.get_token_tick_size(token_id)))
         if price is None or not math.isfinite(float(price)):
             raise ValueError(f"Refusing to quantize non-finite price {price!r} for {token_id}")
+        try:
+            raw_t = self.get_token_tick_size(token_id, price_hint=float(price))
+        except TypeError:
+            raw_t = self.get_token_tick_size(token_id)
+        tick = Decimal(str(raw_t))
         clean_px = round(float(price), 6)
         units = (Decimal(str(clean_px)) / tick).to_integral_value(rounding=rounding)
         q = units * tick
@@ -5173,6 +5250,7 @@ class PolymarketLiveExecutor:
             }
         except Exception as e:
             err_msg = str(getattr(e, "error_message", "") or str(e))
+            self._evict_tick_size_if_tick_err(token_id, err_msg)
             is_client_err = is_clob_400_rejection(e) or any(
                 k in err_msg.lower() for k in ("crosses book", "post only", "post-only", "not enough balance", "allowance")
             )
@@ -5286,7 +5364,7 @@ class PolymarketLiveExecutor:
             b_thinner = False
         elif leg_a_avail_shares is not None and leg_b_avail_shares is not None and min(float(leg_a_avail_shares), float(leg_b_avail_shares)) > 0.0:
             av_a, av_b = float(leg_a_avail_shares), float(leg_b_avail_shares)
-            b_thinner = (av_b < av_a) if max(av_a, av_b) > 1.25 * min(av_a, av_b) else (px_b < px_a)
+            b_thinner = (av_b < av_a) if max(av_a, av_b) > 1.20 * min(av_a, av_b) else (px_b < px_a)
         else:
             b_thinner = px_b < px_a
         if b_thinner:
@@ -5378,8 +5456,10 @@ class PolymarketLiveExecutor:
                     "unwind_result": uw_res,
                 }
             req_1 = (math.floor(min(float(m_u), settled_ready) * 100.0 + 1e-9) / 100.0) if (is_live_auth_u and avail_u is not None and settled_ready < float(m_u) - 0.05) else float(m_u)
+            _gb_frac = float((getattr(self, "risk_config", None) or RISK_CONFIG).get("d1_max_giveback_frac", 0.25))
+            stage1_drop = max(0.01, min(0.03, round(_gb_frac * max(0.02, 1.0 - worst_box_cost_net), 2)))
             uw_res = self.execute_unwind_order(
-                tok_u, size=req_1, side="SELL", min_price=max(0.01, round(px_u - 0.03, 2)), neg_risk=nr_u
+                tok_u, size=req_1, side="SELL", min_price=max(0.01, round(px_u - stage1_drop, 2)), neg_risk=nr_u
             )
             uw_unk = bool(isinstance(uw_res, dict) and uw_res.get("outcome_unknown"))
             unwound_sh = (
@@ -5892,6 +5972,7 @@ class PolymarketLiveExecutor:
             err_msg = str(getattr(e, "error_message", "") or str(e))
             if status_code and int(status_code) in {400, 401, 403, 404, 422}:
                 is_client_err = True
+                self._evict_tick_size_if_tick_err(token_id, err_msg)
             elif any(k in err_msg.lower() for k in ("not enough balance", "allowance", "invalid order", "crosses book", "post only", "post-only")):
                 is_client_err = True
 

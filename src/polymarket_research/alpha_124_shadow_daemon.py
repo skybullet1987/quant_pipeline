@@ -181,6 +181,7 @@ from src.polymarket_research.macro_counting_ctf_engine import (
     parse_counting_slate_event,
     parse_gas_daily_bracket,
     walk_equal_shares_overround_bids,
+    walk_position_overround_bid_unwind,
 )
 
 DATA_DIR = PROJECT_ROOT / "data" / "alpha124"
@@ -594,9 +595,16 @@ class Alpha124ShadowDaemon:
             **payload,
         }
         try:
-            if MARKET_TELEMETRY_FILE.parent != DATA_DIR:
+            if (
+                (self.single_scan or ("fetch_json" in self.__dict__))
+                and MARKET_TELEMETRY_FILE == (DATA_DIR / "alpha124_market_telemetry.jsonl")
+                and STATE_FILE == (DATA_DIR / "alpha124_shadow_state.json")
+                and LEDGER_FILE == (DATA_DIR / "alpha124_shadow_ledger.jsonl")
+            ):
+                return
+            if MARKET_TELEMETRY_FILE != (DATA_DIR / "alpha124_market_telemetry.jsonl"):
                 telem_path = MARKET_TELEMETRY_FILE
-            elif STATE_FILE.parent != DATA_DIR:
+            elif STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json"):
                 telem_path = STATE_FILE.parent / "alpha124_market_telemetry.jsonl"
             else:
                 telem_path = LEDGER_FILE.parent / "alpha124_market_telemetry.jsonl"
@@ -650,19 +658,18 @@ class Alpha124ShadowDaemon:
         bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
         fa = float(leg_a["fee_rate"]) * ((ask_a * (1.0 - ask_a)) ** float(leg_a.get("fee_exponent", 1.0)))
         fb = float(leg_b["fee_rate"]) * ((ask_b * (1.0 - ask_b)) ** float(leg_b.get("fee_exponent", 1.0)))
-        tick_a = 0.001 if (ask_a >= 0.96 or ask_a <= 0.04) else 0.01
-        tick_b = 0.001 if (ask_b >= 0.96 or ask_b <= 0.04) else 0.01
         mkr_cands: List[float] = []
-        if bid_a > 0.0:
-            if (ask_a - bid_a) >= 2.0 * tick_a - 1e-9:
-                mkr_cands.append(round(min(bid_a + tick_a, ask_a - tick_a) + ask_b + fb, 4))
-            elif (ask_a - bid_a) >= 0.01 - 1e-9 and 0.15 <= ask_a <= 0.85:
-                mkr_cands.append(round(bid_a + ask_b + fb, 4))
-        if bid_b > 0.0:
-            if (ask_b - bid_b) >= 2.0 * tick_b - 1e-9:
-                mkr_cands.append(round(min(bid_b + tick_b, ask_b - tick_b) + ask_a + fa, 4))
-            elif (ask_b - bid_b) >= 0.01 - 1e-9 and 0.15 <= ask_b <= 0.85:
-                mkr_cands.append(round(bid_b + ask_a + fa, 4))
+        for b_x, a_x, o_eff in ((bid_a, ask_a, ask_b + fb), (bid_b, ask_b, ask_a + fa)):
+            if b_x <= 0.0:
+                continue
+            tb_x = 0.001 if (b_x >= 0.96 or b_x < 0.04) else 0.01
+            ta_x = 0.001 if (a_x > 0.96 or a_x <= 0.04) else 0.01
+            st_b = (math.floor((b_x + tb_x + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < round(b_x + tb_x, 4) < 0.96 - 1e-9) else round(b_x + tb_x, 3)
+            mx_u = (math.floor((a_x - ta_x + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < round(a_x - ta_x, 4) < 0.96 - 1e-9) else round(a_x - ta_x, 3)
+            if st_b <= mx_u + 1e-9 and st_b > b_x + 1e-9:
+                mkr_cands.append(round(min(st_b, mx_u) + o_eff, 4))
+            elif (a_x - b_x) >= 0.01 - 1e-9 and 0.15 <= a_x <= 0.85:
+                mkr_cands.append(round(b_x + o_eff, 4))
         best_mkr_net = min(mkr_cands) if mkr_cands else None
         usd_h = self.usd_spot_hist.get(m_outer.asset)
         usd_px = round(float(usd_h[-1][1]), 6) if usd_h else None
@@ -2618,7 +2625,7 @@ class Alpha124ShadowDaemon:
                                 "high_strike": ba["high_strike"],
                             },
                         )
-                        if (float(qy["end_ts"]) - now) <= 86400.0 and float(w_b3["box_cost_net"]) <= 0.985:
+                        if (float(qy["end_ts"]) - now) <= 86400.0 and float(w_b3["box_cost_net"]) <= 0.988:
                             self.emit_live_two_leg_box_candidate(
                                 sleeve_source="B3_BARRIER_MONO_BOX",
                                 box_type="BARRIER_MONO",
@@ -2699,7 +2706,7 @@ class Alpha124ShadowDaemon:
                         max_box_cost_net=0.994,
                         extra={"is_complete_set": True, "market_id": sr.market_id, "condition_id": sr.condition_id},
                     )
-                    if (sr.end_ts - now) <= 86400.0 and float(c1_chk["box_cost_net"]) <= 0.985:
+                    if (sr.end_ts - now) <= 86400.0 and float(c1_chk["box_cost_net"]) <= 0.988:
                         self.emit_live_two_leg_box_candidate(
                             sleeve_source="C1_BINARY_COMPLETE_SET",
                             box_type="COMPLETE_SET",
@@ -2899,7 +2906,7 @@ class Alpha124ShadowDaemon:
                             "high_market_id": ma["high_market_id"],
                         },
                     )
-                    if (float(q_lo["end_ts"]) - now) <= 86400.0 and float(w_m3["box_cost_net"]) <= 0.985:
+                    if (float(q_lo["end_ts"]) - now) <= 86400.0 and float(w_m3["box_cost_net"]) <= 0.988:
                         self.emit_live_two_leg_box_candidate(
                             sleeve_source="M3_LADDER_MONO_BOX",
                             box_type="LADDER_MONO",
@@ -3011,7 +3018,7 @@ class Alpha124ShadowDaemon:
                     extra={"is_multi_leg_bundle": True, "bundle_id": bnd["bundle_id"], "guaranteed_payout": gp, "legs": legs},
                 )
                 now_nr = time.time()
-                if len(legs) == 2 and gp == 1.0 and cost_net <= 0.985 and (float(bnd["end_ts"]) - now_nr) <= 172800.0:
+                if len(legs) == 2 and gp == 1.0 and cost_net <= 0.988 and (float(bnd["end_ts"]) - now_nr) <= 172800.0:
                     k_ref = float(legs[0].get("strike") or spot or 100.0)
                     self.emit_live_two_leg_box_candidate(
                         sleeve_source="N1_NEGRISK_CROSS_BOX",
@@ -3099,7 +3106,7 @@ class Alpha124ShadowDaemon:
                 "title": title,
                 "side": "+".join(str(lg.get("label", lg.get("side", "YES"))) for lg in legs),
                 "token_id": "|".join(str(lg["token_id"]) for lg in legs),
-                "fee_rate": CRYPTO_FEE_RATE,
+                "fee_rate": max((float(lg.get("fee_rate", CRYPTO_FEE_RATE)) for lg in legs), default=CRYPTO_FEE_RATE),
                 "entry_ts": now,
                 "entry_utc": datetime.now(timezone.utc).isoformat(),
                 "close_ts": close_ts,
@@ -3310,7 +3317,7 @@ class Alpha124ShadowDaemon:
                         max_box_cost_net=cap_c1,
                         extra={"is_complete_set": True, "market_id": sp_c1.market_id, "condition_id": sp_c1.condition_id},
                     )
-                    if (sp_c1.end_ts - now) <= 86400.0 and float(c1_res["box_cost_net"]) <= (0.990 if sp_c1.fee_rate == 0.0 else 0.985):
+                    if (sp_c1.end_ts - now) <= 86400.0 and float(c1_res["box_cost_net"]) <= (0.990 if sp_c1.fee_rate == 0.0 else 0.988):
                         self.emit_live_two_leg_box_candidate(
                             sleeve_source="C1_BINARY_COMPLETE_SET",
                             box_type="COMPLETE_SET",
@@ -3716,10 +3723,17 @@ class Alpha124ShadowDaemon:
         bid_oa, _ = extract_best_bid(bk_oa.get("bids") or [])
         bid_ob, _ = extract_best_bid(bk_ob.get("bids") or [])
         if bid_oa <= 0.0 or bid_ob <= 0.0 or (bid_oa + bid_ob) > 1.0:
-            logger.warning(
-                f"[ANTI-BOX VETO] Rejected box {leg_a.get('label')}+{leg_b.get('label')}: "
-                f"complement bids={bid_oa:.3f}+{bid_ob:.3f}={bid_oa + bid_ob:.3f} (unverified or > 1.03)"
-            )
+            _ab_map = self.__dict__.setdefault("_anti_box_warn_ts", {})
+            _ab_k = f"{opp_a}:{opp_b}"
+            _now_ab = time.time()
+            if (_now_ab - float(_ab_map.get(_ab_k, 0.0))) >= 30.0:
+                if len(_ab_map) > 512:
+                    _ab_map.clear()
+                _ab_map[_ab_k] = _now_ab
+                logger.warning(
+                    f"[ANTI-BOX VETO] Rejected box {leg_a.get('label')}+{leg_b.get('label')}: "
+                    f"complement bids={bid_oa:.3f}+{bid_ob:.3f}={bid_oa + bid_ob:.3f} (unverified or > 1.00)"
+                )
             return False
         return True
 
@@ -3756,7 +3770,6 @@ class Alpha124ShadowDaemon:
             bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
             tier_fills: Dict[str, Dict[str, Any]] = {}
             for tier_name, t_map in BANKROLL_TICKETS.items():
-                min_sh = 8 if tier_name == "T100" else 10
                 w_t = walk_equal_shares_dominance_box(
                     asks_a,
                     asks_b,
@@ -3764,8 +3777,8 @@ class Alpha124ShadowDaemon:
                     fee_rate_a=float(leg_a.get("fee_rate", CRYPTO_FEE_RATE)),
                     fee_rate_b=float(leg_b.get("fee_rate", CRYPTO_FEE_RATE)),
                     max_box_cost_net=max_box_cost_net,
-                    min_shares=min_sh,
-                    min_box_notional_usd=7.0 if tier_name == "T100" else 9.0,
+                    min_shares=8,
+                    min_box_notional_usd=7.0,
                 )
                 if w_t.get("filled"):
                     tier_fills[tier_name] = w_t
@@ -3919,8 +3932,8 @@ class Alpha124ShadowDaemon:
                 fee_exponent_a=float(leg_a["fee_exponent"]),
                 fee_exponent_b=float(leg_b["fee_exponent"]),
                 max_box_cost_net=max_box_cost_override,
-                min_shares=12,
-                min_box_notional_usd=11.0,
+                min_shares=8,
+                min_box_notional_usd=7.5,
             )
             if not w_ref.get("filled"):
                 return False
@@ -3950,8 +3963,6 @@ class Alpha124ShadowDaemon:
             tier_fills: Dict[str, Dict[str, Any]] = {}
             legging_drag_by_tier: Dict[str, float] = {}
             for tier_name, t_map in BANKROLL_TICKETS.items():
-                min_sh = 8 if tier_name == "T100" else 12
-                min_notional = 7.5 if tier_name == "T100" else 11.0
                 w_t = walk_equal_shares_dominance_box(
                     asks_a,
                     asks_b,
@@ -3961,8 +3972,8 @@ class Alpha124ShadowDaemon:
                     fee_exponent_a=float(leg_a["fee_exponent"]),
                     fee_exponent_b=float(leg_b["fee_exponent"]),
                     max_box_cost_net=max_box_cost_override,
-                    min_shares=min_sh,
-                    min_box_notional_usd=min_notional,
+                    min_shares=8,
+                    min_box_notional_usd=7.5,
                 )
                 if w_t.get("filled"):
                     tier_fills[tier_name] = w_t
@@ -4055,7 +4066,7 @@ class Alpha124ShadowDaemon:
         if not (self.single_scan or ("fetch_json" in self.__dict__)):
             # Live mode: stamp with emit-time wall clock (caller's value may be stale after awaited book fetches)
             now_ts = time.time()
-            if float(m5.end_ts - now_ts) < 38.0:
+            if float(m5.end_ts - now_ts) < 16.0:
                 return False
         pair_key = f"{m15.asset}_{m15.market_id}_{m5.market_id}"
         last_emit = float(self._last_d1_live_emit_ts.get(pair_key, 0.0) or 0.0)
@@ -4107,7 +4118,7 @@ class Alpha124ShadowDaemon:
             "box_cost_net": float(w_live["box_cost_net"]),
             "legging_drag_per_pair": drag_live["legging_drag_per_pair"],
             "legging_adjusted_net_ev_per_pair": drag_live["legging_adjusted_net_ev_per_pair"],
-            "max_box_cost_net": 0.985 if is_quiet_book else 0.980,
+            "max_box_cost_net": 0.990 if is_quiet_book else 0.988,
             "leg_a_token_id": str(leg_a["token_id"]),
             "leg_a_opp_token_id": str(leg_a.get("opp_token_id") or ""),
             "leg_a_label": str(leg_a["label"]),
@@ -4214,7 +4225,7 @@ class Alpha124ShadowDaemon:
             # Live mode: stamp with emit-time wall clock (caller's value may be stale after awaited book fetches)
             now_ts = time.time()
         rem_sec = float(close_ts - now_ts)
-        if rem_sec < 45.0:
+        if rem_sec < 25.0:
             return False
         last_emit = float(self._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
         if (now_ts - last_emit) < 15.0:
@@ -4223,7 +4234,7 @@ class Alpha124ShadowDaemon:
         fee_b = float(leg_b.get("fee_rate", CRYPTO_FEE_RATE))
         exp_a = float(leg_a.get("fee_exponent", 1.0))
         exp_b = float(leg_b.get("fee_exponent", 1.0))
-        max_cap = 0.990 if max(fee_a, fee_b) == 0.0 else 0.985
+        max_cap = 0.990 if max(fee_a, fee_b) == 0.0 else 0.988
         w_live = walk_equal_shares_dominance_box(
             bk_a.get("asks") or [],
             bk_b.get("asks") or [],
@@ -4238,9 +4249,20 @@ class Alpha124ShadowDaemon:
         )
         if not w_live.get("filled"):
             return False
+        if len(self._last_d1_live_emit_ts) > 256:
+            self._last_d1_live_emit_ts = {k: v for k, v in self._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
         self._last_d1_live_emit_ts[dedupe_key] = now_ts
         w_a = w_live["leg_a_walk"]
         w_b = w_live["leg_b_walk"]
+        _ba_q, _ = self._best_ask_sz(bk_a)
+        _bb_q, _ = self._best_ask_sz(bk_b)
+        _bda_q, _ = extract_best_bid(bk_a.get("bids") or [])
+        _bdb_q, _ = extract_best_bid(bk_b.get("bids") or [])
+        _quiet_2l = bool(
+            _bda_q > 0.0 and _bdb_q > 0.0
+            and (_ba_q - _bda_q) <= 0.041 and (_bb_q - _bdb_q) <= 0.041
+            and (max(fee_a, fee_b) == 0.0 or (now_ts - float(self._last_any_shock_ts_by_asset.get(str(asset), 0.0) or 0.0)) >= 4.0)
+        )
         corr_bps = round(abs(k_high - k_low) / max(1e-9, k_low) * 10000.0, 2) if k_low > 0 else 0.0
         cand = {
             "box_id": f"{box_type}_LIVE_{asset}_{int(close_ts)}_{str(leg_a.get('market_id','0'))[-5:]}",
@@ -4251,7 +4273,7 @@ class Alpha124ShadowDaemon:
             "regime": f"{box_type}_{leg_a.get('label','A')}_PLUS_{leg_b.get('label','B')}",
             "pair_horizons": str(box_type).lower(),
             "sleeve_source": str(sleeve_source),
-            "is_quiet_book": True,
+            "is_quiet_book": _quiet_2l,
             "k_low": float(k_low),
             "k_high": float(k_high),
             "corridor_bps": corr_bps,
@@ -4272,7 +4294,7 @@ class Alpha124ShadowDaemon:
             "leg_a_avail_shares": float(w_live["avail_a_shares"]),
             "leg_a_fee_rate": fee_a,
             "leg_a_fee_exponent": exp_a,
-            "leg_a_neg_risk": bool(leg_a.get("neg_risk", False)),
+            "leg_a_neg_risk": leg_a["neg_risk"] if isinstance(leg_a.get("neg_risk"), bool) else None,
             "leg_b_token_id": str(leg_b["token_id"]),
             "leg_b_opp_token_id": str(leg_b.get("opp_token_id") or ""),
             "leg_b_label": str(leg_b.get("label") or leg_b.get("side") or "NO"),
@@ -4285,7 +4307,7 @@ class Alpha124ShadowDaemon:
             "leg_b_avail_shares": float(w_live["avail_b_shares"]),
             "leg_b_fee_rate": fee_b,
             "leg_b_fee_exponent": exp_b,
-            "leg_b_neg_risk": bool(leg_b.get("neg_risk", False)),
+            "leg_b_neg_risk": leg_b["neg_risk"] if isinstance(leg_b.get("neg_risk"), bool) else None,
         }
         if not self.single_scan and self._ws_books:
             req_ws_2 = [str(leg_a["token_id"]), str(leg_b["token_id"])]
@@ -4295,10 +4317,17 @@ class Alpha124ShadowDaemon:
                         req_ws_2.append(op_id)
             rest_seeded_2 = getattr(self, "_ws_rest_seeded", set())
             if all(
-                t_x in self._ws_books and t_x not in rest_seeded_2 and (now_ts - self._ws_books[t_x][0]) <= 1.0
+                t_x in self._ws_books
+                and t_x not in rest_seeded_2
+                and (now_ts - self._ws_books[t_x][0]) <= 0.50
+                and bool(self._ws_books[t_x][1].get("bids"))
+                and bool(self._ws_books[t_x][1].get("asks"))
                 for t_x in req_ws_2
             ):
-                cand["ws_books"] = {t_x: self._ws_books[t_x][1] for t_x in req_ws_2}
+                cand["ws_books"] = {
+                    t_x: {"bids": (self._ws_books[t_x][1].get("bids") or [])[:12], "asks": (self._ws_books[t_x][1].get("asks") or [])[:12]}
+                    for t_x in req_ws_2
+                }
                 cand["ws_books_ts"] = round(min(self._ws_books[t_x][0] for t_x in req_ws_2), 3)
         try:
             try:
@@ -4384,6 +4413,11 @@ class Alpha124ShadowDaemon:
         asset_cap_u = float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(m15.asset, 40.0))
         ref_bud_t100 = min(float(BANKROLL_TICKETS["T100"]["D1_MAKER_ANCHOR_BOX"]), asset_cap_u)
         req_sh_t100 = max(5.0, math.floor(ref_bud_t100 / 0.985))
+        req_sh_t1000 = max(5.0, math.floor(min(float(BANKROLL_TICKETS["T1000"]["D1_MAKER_ANCHOR_BOX"]), asset_cap_u) / 0.985))
+
+        def _snap_c(p: float) -> float:
+            p = round(float(p), 4)
+            return (math.floor((p + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < p < 0.96 - 1e-9) else (math.floor((p + 1e-9) * 1000.0) / 1000.0)
 
         candidates: List[Tuple[float, bool, bool, float, float, float]] = []
         for anchor_is_a in (True, False):
@@ -4400,13 +4434,15 @@ class Alpha124ShadowDaemon:
             anc_side = str(leg_anc.get("side") or "UP").upper()
             if (anc_side == "UP" and ret_5s_init < -2.2) or (anc_side == "DOWN" and ret_5s_init > 2.2):
                 continue
-            tick = 0.001 if (a_anc >= 0.96 or a_anc <= 0.04) else 0.01
-            dec = 3 if tick < 0.01 else 2
-            if s_anc >= 2.0 * tick - 1e-9:
-                cand_bid = round(min(b_anc + tick, a_anc - tick), dec)
+            tb_anc = 0.001 if (b_anc >= 0.96 or b_anc < 0.04) else 0.01
+            ta_anc = 0.001 if (a_anc > 0.96 or a_anc <= 0.04) else 0.01
+            step_b = _snap_c(b_anc + tb_anc)
+            max_u = _snap_c(a_anc - ta_anc)
+            if step_b <= max_u + 1e-9 and step_b > b_anc + 1e-9:
+                cand_bid = min(step_b, max_u)
                 q_front = True
             elif s_anc >= 0.01 - 1e-9 and 0.15 <= a_anc <= 0.85 and obi_anc >= -0.15 and bsz_anc >= 15.0:
-                cand_bid = round(b_anc, 2)
+                cand_bid = _snap_c(b_anc)
                 q_front = False
             else:
                 continue
@@ -4416,15 +4452,12 @@ class Alpha124ShadowDaemon:
             hdg_px = asks_hdg[0][0]
             hdg_fee = float(leg_hdg["fee_rate"]) * ((hdg_px * (1.0 - hdg_px)) ** float(leg_hdg.get("fee_exponent", 1.0)))
             hdg_eff = hdg_px + hdg_fee
-            scale = 1000.0 if tick < 0.01 else 100.0
-            max_anc_bid = math.floor((0.988 - hdg_eff) * scale + 1e-9) / scale
-            bid_px = round(min(cand_bid, max_anc_bid), dec)
-            min_ok_bid = round(b_anc - (tick if q_front else 0.0), dec)
+            bid_px = min(cand_bid, _snap_c(0.988 - hdg_eff))
+            min_ok_bid = round(b_anc - (tb_anc if q_front else 0.0), 3)
             if bid_px < min_ok_bid or bid_px <= 0.02 or bid_px >= a_anc:
                 continue
             pair_est = round(bid_px + hdg_eff, 4)
             if 0.900 <= pair_est <= 0.988:
-                # Sort key prefers lowest net box cost, breaking ties in favor of queue_front (+1 tick)
                 candidates.append((pair_est - (0.0005 if q_front else 0.0), anchor_is_a, q_front, bid_px, round(hdg_eff, 4), req_sh_t100))
 
         if not candidates:
@@ -4440,8 +4473,9 @@ class Alpha124ShadowDaemon:
             "anchor_is_a": anchor_is_a,
             "queue_front": q_front,
             "bid_px": bid_px,
+            "pair_est": round(bid_px + hdg_eff, 4),
             "req_shares_t100": req_sh,
-            "req_shares_t1000": req_sh,
+            "req_shares_t1000": req_sh_t1000,
             "posted_ts": now_ts,
             "posted_spot": self._latest_spot_px(m15.asset),
         }
@@ -4480,10 +4514,10 @@ class Alpha124ShadowDaemon:
             best_ask_anc = min((float(a["price"]) for a in asks_anc if float(a.get("size", 0)) > 0), default=1.0)
             filled_anc = bk_anc is not None and rested >= 0.35 and best_ask_anc <= bid_px
 
-            if filled_anc and bk_hdg is not None:
+            if filled_anc:
                 self.pending_maker_anchors.pop(d_key, None)
                 self.entered_keys.add(d_key)
-                asks_hdg = sorted([(float(a["price"]), float(a["size"])) for a in (bk_hdg.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
+                asks_hdg = sorted([(float(a["price"]), float(a["size"])) for a in ((bk_hdg or {}).get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
                 hdg_px = asks_hdg[0][0] if asks_hdg else 1.0
                 hdg_avail = sum(sz for px, sz in asks_hdg if px <= hdg_px + 0.01) if asks_hdg else 0.0
                 hdg_fee = float(leg_hdg["fee_rate"]) * ((hdg_px * (1.0 - hdg_px)) ** float(leg_hdg.get("fee_exponent", 1.0))) if hdg_px < 1.0 else 0.0
@@ -4491,7 +4525,7 @@ class Alpha124ShadowDaemon:
 
                 asset_cap_u = float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(m15.asset, 100.0))
                 is_4h_m = "4h" in (str(m15.horizon).lower(), str(m5.horizon).lower())
-                if asks_hdg and hdg_avail >= 5.0 and 0.900 <= pair_eff <= 0.995:
+                if bk_hdg is not None and asks_hdg and hdg_avail >= 5.0 and 0.900 <= pair_eff <= 0.995:
                     tier_fills: Dict[str, Dict[str, Any]] = {}
                     drag_by_tier: Dict[str, float] = {}
                     rebate_est_t1000 = 0.0
@@ -4574,13 +4608,14 @@ class Alpha124ShadowDaemon:
                     scr_bid, _ = extract_best_bid((bk_anc or {}).get("bids") or [])
                     if scr_bid <= 0.0:
                         scr_bid = max(0.01, bid_px - 0.03)
-                    scr_fee = float(leg_anc["fee_rate"]) * scr_bid * (1.0 - scr_bid)
+                    scr_fee = float(leg_anc["fee_rate"]) * ((scr_bid * (1.0 - scr_bid)) ** float(leg_anc.get("fee_exponent", 1.0)))
                     net_scr = max(0.0, scr_bid - scr_fee)
                     tf_s: Dict[str, Dict[str, Any]] = {}
                     tp_s: Dict[str, float] = {}
+                    ref_pair = max(0.90, float(st.get("pair_est") or 0.985))
                     for t_name, t_map in BANKROLL_TICKETS.items():
-                        bud = round(0.5 * min(t_map["D1_MAKER_ANCHOR_BOX"], asset_cap_u), 2)
-                        sh_s = round(bud / bid_px, 4)
+                        sh_s = max(5.0, float(math.floor(min(t_map["D1_MAKER_ANCHOR_BOX"], asset_cap_u) / ref_pair)))
+                        bud = round(sh_s * bid_px, 2)
                         tf_s[t_name] = {"filled": True, "vwap": bid_px, "eff_px": bid_px, "spent_usd": bud, "fee_usd": 0.0, "shares": sh_s}
                         tp_s[t_name] = round(sh_s * net_scr - bud, 2)
                     pos_scr = {
@@ -4692,7 +4727,8 @@ class Alpha124ShadowDaemon:
             avail_hdg = sum(sz for px, sz in asks_hdg if px <= a_hdg + 0.01)
             if avail_hdg < max(15.0, 2.5 * req_sh):
                 continue
-            cand_bid = min(round(min(b_anc + 0.01, a_anc - 0.01), 3), math.floor((0.986 - a_hdg) * 1000.0 + 1e-9) / 1000.0)
+            _raw_cb = min(min(b_anc + 0.01, a_anc - 0.01), 0.986 - a_hdg)
+            cand_bid = (math.floor((_raw_cb + 1e-9) * 100.0) / 100.0) if (0.04 + 1e-9 < round(_raw_cb, 4) < 0.96 - 1e-9) else (math.floor((_raw_cb + 1e-9) * 1000.0) / 1000.0)
             if cand_bid < round(b_anc - 0.01, 3) or cand_bid <= 0.02 or cand_bid >= a_anc:
                 continue
             if (cand_bid + a_hdg) <= 0.986:
@@ -4710,6 +4746,7 @@ class Alpha124ShadowDaemon:
             "leg_b": leg_b,
             "anchor_is_a": anc_is_a,
             "bid_px": bid_px,
+            "pair_est": round(bid_px + hdg_px, 4),
             "req_shares_t1000": req_sh,
             "close_ts": close_ts,
             "posted_ts": now_ts,
@@ -4737,14 +4774,14 @@ class Alpha124ShadowDaemon:
             rem_sec = float(st["close_ts"]) - now
             asks_anc = (bk_anc or {}).get("asks") or []
             best_ask_anc = min((float(a["price"]) for a in asks_anc if float(a.get("size", 0)) > 0), default=1.0)
-            if bk_anc is not None and rested >= 0.50 and best_ask_anc <= bid_px and bk_hdg is not None:
+            if bk_anc is not None and rested >= 0.50 and best_ask_anc <= bid_px:
                 self.pending_zero_fee_maker_anchors.pop(d_key, None)
                 self.entered_keys.add(d_key)
-                asks_hdg = sorted([(float(a["price"]), float(a["size"])) for a in (bk_hdg.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
+                asks_hdg = sorted([(float(a["price"]), float(a["size"])) for a in ((bk_hdg or {}).get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0])
                 hdg_px = asks_hdg[0][0] if asks_hdg else 1.0
                 hdg_avail = sum(sz for px, sz in asks_hdg if px <= hdg_px + 0.01) if asks_hdg else 0.0
                 pair_eff = round(bid_px + hdg_px, 4)
-                if asks_hdg and hdg_avail >= 5.0 and pair_eff <= 0.994:
+                if bk_hdg is not None and asks_hdg and hdg_avail >= 5.0 and pair_eff <= 0.994:
                     tf_zf: Dict[str, Dict[str, Any]] = {}
                     for t_name, t_map in BANKROLL_TICKETS.items():
                         sh = max(5.0, min(hdg_avail, math.floor(t_map["ZERO_FEE_MAKER_ANCHOR_BOX"] / pair_eff)))
@@ -4771,9 +4808,10 @@ class Alpha124ShadowDaemon:
                     scr_bid, _ = extract_best_bid((bk_anc or {}).get("bids") or [])
                     net_scr = scr_bid if scr_bid > 0 else max(0.01, bid_px - 0.03)
                     tf_s, tp_s = {}, {}
+                    ref_zf_pair = max(0.90, float(st.get("pair_est") or 0.986))
                     for t_name, t_map in BANKROLL_TICKETS.items():
-                        bud = round(0.5 * t_map["ZERO_FEE_MAKER_ANCHOR_BOX"], 2)
-                        sh_s = round(bud / bid_px, 4)
+                        sh_s = max(5.0, float(math.floor(t_map["ZERO_FEE_MAKER_ANCHOR_BOX"] / ref_zf_pair)))
+                        bud = round(sh_s * bid_px, 2)
                         tf_s[t_name] = {"filled": True, "vwap": bid_px, "eff_px": bid_px, "spent_usd": bud, "fee_usd": 0.0, "shares": sh_s}
                         tp_s[t_name] = round(sh_s * net_scr - bud, 2)
                     pos_scr = {
@@ -4862,7 +4900,7 @@ class Alpha124ShadowDaemon:
                     rem_live = m5.end_ts - eval_now
                     # LIVE emits require both strikes REST/Gamma-verified (unverified WS-TWAP strikes stay shadow-only)
                     strikes_verified = self._strike_is_rest_verified(m15) and self._strike_is_rest_verified(m5)
-                    if strikes_verified and 38.0 <= rem_live <= 298.0:
+                    if strikes_verified and 18.0 <= rem_live <= 298.0:
                         w_live = walk_equal_shares_dominance_box(
                             bk_a.get("asks") or [],
                             bk_b.get("asks") or [],
@@ -4871,13 +4909,13 @@ class Alpha124ShadowDaemon:
                             fee_rate_b=float(leg_b["fee_rate"]),
                             fee_exponent_a=float(leg_a["fee_exponent"]),
                             fee_exponent_b=float(leg_b["fee_exponent"]),
-                            max_box_cost_net=0.985,
+                            max_box_cost_net=0.990,
                             min_shares=5,
                             min_box_notional_usd=4.85,
                         )
                         if w_live.get("filled"):
                             is_quiet_live = self._passes_quiet_book_filter(m15.asset, bk_a, bk_b, w_live, eval_now)
-                            live_emit_cap = 0.985 if is_quiet_live else 0.980
+                            live_emit_cap = 0.990 if is_quiet_live else 0.988
                             if float(w_live["box_cost_net"]) <= live_emit_cap:
                                 comp_checked = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=batch_bks)
                                 if not comp_checked:
@@ -4901,8 +4939,8 @@ class Alpha124ShadowDaemon:
                         fee_exponent_a=float(leg_a["fee_exponent"]),
                         fee_exponent_b=float(leg_b["fee_exponent"]),
                         max_box_cost_net=1.032,  # Surface near-arb boxes <= $1.032 so 2.1c-3.6c Maker-Leg-1 fee+spread savings can lock <= $0.988!
-                        min_shares=12,
-                        min_box_notional_usd=11.0,
+                        min_shares=8,
+                        min_box_notional_usd=7.5,
                     )
                     taker_cleared_995 = False
                     if w_scan.get("filled"):
@@ -5084,7 +5122,7 @@ class Alpha124ShadowDaemon:
             rem_4h_live = m_short.end_ts - eval_4h_now
             # LIVE emits require both strikes REST/Gamma-verified (unverified WS-TWAP strikes stay shadow-only)
             strikes_4h_verified = self._strike_is_rest_verified(m4) and self._strike_is_rest_verified(m_short)
-            if strikes_4h_verified and 38.0 <= rem_4h_live <= max_rem:
+            if strikes_4h_verified and 18.0 <= rem_4h_live <= max_rem:
                 w_live_4h = walk_equal_shares_dominance_box(
                     bk_a.get("asks") or [],
                     bk_b.get("asks") or [],
@@ -5093,13 +5131,13 @@ class Alpha124ShadowDaemon:
                     fee_rate_b=float(leg_b["fee_rate"]),
                     fee_exponent_a=float(leg_a["fee_exponent"]),
                     fee_exponent_b=float(leg_b["fee_exponent"]),
-                    max_box_cost_net=0.985,
+                    max_box_cost_net=0.990,
                     min_shares=5,
                     min_box_notional_usd=4.85,
                 )
                 if w_live_4h.get("filled"):
                     is_quiet_4h = self._passes_quiet_book_filter(m4.asset, bk_a, bk_b, w_live_4h, eval_4h_now)
-                    if float(w_live_4h["box_cost_net"]) <= (0.985 if is_quiet_4h else 0.980):
+                    if float(w_live_4h["box_cost_net"]) <= (0.990 if is_quiet_4h else 0.988):
                         comp_4h_ok = await self._passes_complement_anti_box_check(leg_a, leg_b, prefetched_books=bks_4h)
                         if not comp_4h_ok:
                             continue
@@ -5110,7 +5148,7 @@ class Alpha124ShadowDaemon:
                             w_live_4h,
                             eval_4h_now,
                             is_quiet_book=is_quiet_4h,
-                            sleeve_source="D1_4H_DOMINANCE_BOX",
+                            sleeve_source="D1_QUIET_BOOK_BOX" if is_quiet_4h else "D1_4H_DOMINANCE_BOX",
                         )
             w_scan = walk_equal_shares_dominance_box(
                 bk_a.get("asks") or [],
@@ -5121,8 +5159,8 @@ class Alpha124ShadowDaemon:
                 fee_exponent_a=float(leg_a["fee_exponent"]),
                 fee_exponent_b=float(leg_b["fee_exponent"]),
                 max_box_cost_net=1.032,
-                min_shares=10,
-                min_box_notional_usd=9.0,
+                min_shares=8,
+                min_box_notional_usd=7.5,
             )
             taker_4h_cleared = False
             if w_scan.get("filled"):
@@ -5821,7 +5859,7 @@ class Alpha124ShadowDaemon:
                 pair_cost = round(2.0 * bid_px, 4)
                 tier_fills: Dict[str, Dict[str, Any]] = {}
                 for t_name, t_map in BANKROLL_TICKETS.items():
-                    sh = round(t_map["P1_PREOPEN_MAKER_STRADDLE"] / pair_cost, 4)
+                    sh = max(5.0, float(math.floor(t_map["P1_PREOPEN_MAKER_STRADDLE"] / max(0.90, pair_cost))))
                     spent = round(sh * pair_cost, 2)
                     tier_fills[t_name] = {
                         "filled": True,
@@ -5892,8 +5930,8 @@ class Alpha124ShadowDaemon:
                 tier_fills_s: Dict[str, Dict[str, Any]] = {}
                 tier_pnls_s: Dict[str, float] = {}
                 for t_name, t_map in BANKROLL_TICKETS.items():
-                    leg_budget = round(0.5 * t_map["P1_PREOPEN_MAKER_STRADDLE"], 2)
-                    sh_s = round(leg_budget / bid_px, 4)
+                    sh_s = max(5.0, float(math.floor(t_map["P1_PREOPEN_MAKER_STRADDLE"] / max(0.90, 2.0 * bid_px))))
+                    leg_budget = round(sh_s * bid_px, 2)
                     tier_fills_s[t_name] = {
                         "filled": True,
                         "vwap": bid_px,
@@ -6034,12 +6072,69 @@ class Alpha124ShadowDaemon:
             return 1.0
         if px <= 0.01:
             return 0.0
+        if uma_st == "resolved" and 0.49 <= px <= 0.51:
+            return round(px, 4)
         return None
+
+    def _try_early_overround_bid_unwind(
+        self,
+        pos: Dict[str, Any],
+        legs_bids_spec: List[Dict[str, Any]],
+        now: float,
+    ) -> Optional[Tuple[float, Dict[str, float]]]:
+        """
+        Evaluates whether an open 2-leg or N-leg riskless box can be exited immediately by sweeping
+        resting L2 `bids` across 100% of held shares on every leg simultaneously:
+          - Capped-payout complete-set partitions (`C1`, `NR0`, `N1`, `W3`, `P1`):
+            requires `net_proceeds_per_set >= max(entry_eff + 0.010, guar_pay + 0.004)` (strictly > par!).
+          - Dominance boxes with `$2.00` double-payout corridor (`FED1`, `COND1`, `CM_B3`, `SP1`, `TW1`, `D2`, `M3`, `B3`, `D1_*`):
+            for lockups `> 1h` (`rem_tte > 3600s`), requires `>= max(entry_eff + 0.015, guar_pay + 0.005)`;
+            for near-expiry boxes (`<= 1h`), requires `>= max(entry_eff + 0.080, guar_pay + 0.080)` to preserve `$2.00` corridor EV.
+        """
+        if (now - float(pos.get("entry_ts") or 0.0)) < 15.0:
+            return None
+        tier_fills = pos.get("tier_fills") or {}
+        if "T1000" not in tier_fills:
+            return None
+        sh_t1000 = float(tier_fills["T1000"].get("shares") or 0.0)
+        if sh_t1000 <= 0.0:
+            return None
+        extra = pos.get("extra") or {}
+        guar_pay = float(extra.get("guaranteed_payout") or pos.get("p_model_entry") or 1.0)
+        entry_eff = float(pos.get("entry_eff_px_t1000") or 0.99)
+        rem_tte = float(pos["close_ts"]) - now
+        capped_partition = pos.get("sleeve") in (
+            "C1_BINARY_COMPLETE_SET",
+            "NR0_ZERO_FEE_SLATE_ARB",
+            "N1_NEGRISK_CROSS_BOX",
+            "W3_WEATHER_SLATE_ARB",
+            "P1_PREOPEN_MAKER_STRADDLE",
+        )
+        if capped_partition:
+            min_net_req = max(entry_eff + 0.010, guar_pay + 0.004)
+        elif rem_tte > 3600.0:
+            min_net_req = max(entry_eff + 0.015, guar_pay + 0.005)
+        else:
+            min_net_req = max(entry_eff + 0.080, guar_pay + 0.080)
+
+        w_ref = walk_position_overround_bid_unwind(legs_bids_spec, sh_t1000, min_net_proceeds_per_set=min_net_req)
+        if not w_ref.get("filled"):
+            return None
+        tier_pay_map: Dict[str, float] = {}
+        for t_name, tf in tier_fills.items():
+            sh_t = float(tf.get("shares") or 0.0)
+            if sh_t <= 0.0:
+                continue
+            wt = walk_position_overround_bid_unwind(legs_bids_spec, sh_t, min_net_proceeds_per_set=min_net_req)
+            if not wt.get("filled"):
+                return None
+            tier_pay_map[t_name] = float(wt["net_proceeds_per_set"])
+        return float(w_ref["net_proceeds_per_set"]), tier_pay_map
 
     async def manage_open_positions(self) -> None:
         now = time.time()
         loop = asyncio.get_running_loop()
-        to_close: List[Tuple[str, str, float, float]] = []  # (pos_id, status, payout_per_share, exit_fee_rate)
+        to_close: List[Tuple[str, str, float, Any]] = []  # (pos_id, status, payout_per_share, tier_pay_override)
 
         for pid, pos in list(self.open_positions.items()):
             sleeve = pos["sleeve"]
@@ -6048,9 +6143,25 @@ class Alpha124ShadowDaemon:
             # 0A. Dedicated multi-leg supervision & settlement for D1, M3, B3, C1 & W3_WEATHER_SLATE_ARB
             if sleeve == "W3_WEATHER_SLATE_ARB":
                 close_ts_f = float(pos["close_ts"])
+                extra_w = pos.get("extra") or {}
+                legs = extra_w.get("legs") or []
+                if now < close_ts_f + 30.0:
+                    if (now - float(pos.get("_last_book_poll_ts") or 0.0)) >= 30.0 and legs:
+                        pos["_last_book_poll_ts"] = now
+                        bks_w = await asyncio.gather(
+                            *[self.fetch_json(f"{CLOB_URL}/book?token_id={lg.get('token_id') or lg.get('yes_token', '')}", timeout=2.5) for lg in legs]
+                        )
+                        if all(bks_w):
+                            pos["last_bid"] = round(sum(extract_best_bid((b or {}).get("bids") or [])[0] for b in bks_w), 4)
+                            uw_w = self._try_early_overround_bid_unwind(
+                                pos,
+                                [{"bids": (b or {}).get("bids") or [], "fee_rate": 0.0, "fee_exponent": 1.0} for b in bks_w],
+                                now,
+                            )
+                            if uw_w is not None:
+                                to_close.append((pid, "EARLY_OVERROUND_BID_UNWIND", uw_w[0], uw_w[1]))
+                    continue
                 if now >= close_ts_f + 30.0:
-                    extra_w = pos.get("extra") or {}
-                    legs = extra_w.get("legs") or []
                     guar_pay_w = float(extra_w.get("guaranteed_payout") or 1.0)
                     resolved_vals = await asyncio.gather(
                         *[
@@ -6097,6 +6208,35 @@ class Alpha124ShadowDaemon:
                         bid_a, _ = extract_best_bid(bk_a.get("bids") or [])
                         bid_b, _ = extract_best_bid(bk_b.get("bids") or [])
                         pos["last_bid"] = round(bid_a + bid_b, 4)
+                        def_fr = float(pos.get("fee_rate") or 0.0)
+                        uw_2 = self._try_early_overround_bid_unwind(
+                            pos,
+                            [
+                                {
+                                    "bids": bk_a.get("bids") or [],
+                                    "fee_rate": float(leg_a.get("fee_rate", def_fr)),
+                                    "fee_exponent": float(leg_a.get("fee_exponent", 1.0)),
+                                },
+                                {
+                                    "bids": bk_b.get("bids") or [],
+                                    "fee_rate": float(leg_b.get("fee_rate", def_fr)),
+                                    "fee_exponent": float(leg_b.get("fee_exponent", 1.0)),
+                                },
+                            ],
+                            now,
+                        )
+                        if uw_2 is not None:
+                            to_close.append((pid, "EARLY_OVERROUND_BID_UNWIND", uw_2[0], uw_2[1]))
+                            continue
+                    if (
+                        sleeve == "C1_BINARY_COMPLETE_SET"
+                        and leg_a.get("market_id")
+                        and leg_a.get("market_id") == leg_b.get("market_id")
+                        and (now - float(pos.get("entry_ts") or 0.0)) >= 15.0
+                    ):
+                        to_close.append((pid, "CTF_COMPLETE_SET_MERGED", 1.0, 0.0))
+                        continue
+                    if bk_a and bk_b:
                         continue
                     if bk_a or bk_b or (now - float(pos.get("_last_gamma_chk_ts") or 0.0)) < 60.0:
                         continue
@@ -6166,6 +6306,21 @@ class Alpha124ShadowDaemon:
                             pos["last_bid"] = round(
                                 sum(extract_best_bid((b or {}).get("bids") or [])[0] for b in bks_m), 4
                             )
+                            def_fr_m = float(pos.get("fee_rate") or 0.0)
+                            uw_m = self._try_early_overround_bid_unwind(
+                                pos,
+                                [
+                                    {
+                                        "bids": (b or {}).get("bids") or [],
+                                        "fee_rate": float(lg.get("fee_rate", def_fr_m)),
+                                        "fee_exponent": float(lg.get("fee_exponent", 1.0)),
+                                    }
+                                    for lg, b in zip(legs, bks_m)
+                                ],
+                                now,
+                            )
+                            if uw_m is not None:
+                                to_close.append((pid, "EARLY_OVERROUND_BID_UNWIND", uw_m[0], uw_m[1]))
                     continue
                 resolved_vals = await asyncio.gather(
                     *[
@@ -6370,16 +6525,18 @@ class Alpha124ShadowDaemon:
                             to_close.append((pid, "SETTLED_VERIFIED_1M_CLOSE", 1.0 if won else 0.0, 0.0))
                             continue
 
-        for pid, status, net_pay_ps, _ in to_close:
+        for pid, status, net_pay_ps, tier_pay_override in to_close:
             pos = self.open_positions.pop(pid, None)
             if not pos:
                 continue
             tier_pnls: Dict[str, float] = {}
             adj_tier_pnls: Dict[str, float] = {}
             drag_map = (pos.get("extra") or {}).get("legging_drag_usd_by_tier") or {}
+            t_pay_map = tier_pay_override if isinstance(tier_pay_override, dict) else {}
             for t_name, tf in pos["tier_fills"].items():
                 cost_total = float(tf["spent_usd"]) + float(tf["fee_usd"])
-                payout_usd = float(tf["shares"]) * net_pay_ps
+                eff_pay_ps = float(t_pay_map.get(t_name, net_pay_ps))
+                payout_usd = float(tf["shares"]) * eff_pay_ps
                 raw_p = round(payout_usd - cost_total, 2)
                 tier_pnls[t_name] = raw_p
                 adj_tier_pnls[t_name] = round(raw_p - float(drag_map.get(t_name, 0.0) or 0.0), 2)
@@ -6402,6 +6559,12 @@ class Alpha124ShadowDaemon:
             )
 
     def write_state_files(self, opps: List[Dict[str, Any]]) -> None:
+        if len(getattr(self, "authoritative_strike_cache", {})) > 2000:
+            for _k in list(self.authoritative_strike_cache.keys())[:-1500]:
+                self.authoritative_strike_cache.pop(_k, None)
+        if len(self.entered_keys) > 5000:
+            _open_dk = {str(p.get("dedupe_key") or "") for p in self.open_positions.values()}
+            self.entered_keys = _open_dk | set(list(self.entered_keys)[-3000:])
         global_bus = read_global_positions_shm()
         ext_positions = [
             p
@@ -7263,6 +7426,8 @@ class Alpha124ShadowDaemon:
                     if w_tb.get("filled"):
                         opps_out.append({"sleeve": "TW1_COUNTING_TRUNCATION_AND_BOX", "market": f"Counting Box {tb['label']}", "ask_vwap": w_tb["box_cost_net"], "p_model": 1.0, "net_edge": round(1.0 - float(w_tb["box_cost_net"]), 4), "l1_usd": w_tb["l1_usd"], "close_ts": tb["close_ts"]})
                         await self.open_shadow_two_leg_box("TW1_COUNTING_TRUNCATION_AND_BOX", dk_tw, tb["handle"].upper(), f"Counting Box {tb['label']}", la_t, lb_t, bka_t, bkb_t, float(tb["close_ts"]), 0.993, {"is_two_leg_box": True, "banked": tb["banked"]})
+                        if (float(tb["close_ts"]) - now) <= 86400.0 and float(w_tb["box_cost_net"]) <= 0.990:
+                            self.emit_live_two_leg_box_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX", box_type="COUNTING_DOMINANCE", asset=tb["handle"].upper(), dedupe_key=dk_tw, leg_a=la_t, leg_b=lb_t, bk_a=bka_t, bk_b=bkb_t, close_ts=float(tb["close_ts"]), now_ts=now)
                 elif float(tb["box_cost_net"]) <= 1.035:
                     self.post_zero_fee_maker_anchor_box("TW1", tb["handle"].upper(), f"ZFA_{dk_tw}", la_t, lb_t, bka_t, bkb_t, float(tb["close_ts"]), f"Counting Box {tb['label']}", now)
 
@@ -7294,6 +7459,8 @@ class Alpha124ShadowDaemon:
                             if wm2.get("filled"):
                                 opps_out.append({"sleeve": sl_lp, "market": f"{asset_lp} {bx['label']}", "ask_vwap": wm2["box_cost_net"], "p_model": 1.0, "net_edge": round(1.0 - float(wm2["box_cost_net"]), 4), "l1_usd": wm2["l1_usd"], "close_ts": bx["close_ts"]})
                                 await self.open_shadow_two_leg_box(sl_lp, dk_m, asset_lp, f"{asset_lp} {bx['label']}", la_m, lb_m, bka_m, bkb_m, float(bx["close_ts"]), 0.994, {"is_two_leg_box": True, "double_pay_states": bx["double_pay_states"]})
+                                if sl_lp == "FED1_CENTRAL_BANK_LP_BOX" and (float(bx["close_ts"]) - now) <= 172800.0 and float(wm2["box_cost_net"]) <= 0.990:
+                                    self.emit_live_two_leg_box_candidate(sleeve_source=sl_lp, box_type="MACRO_DOMINANCE", asset=asset_lp, dedupe_key=dk_m, leg_a=la_m, leg_b=lb_m, bk_a=bka_m, bk_b=bkb_m, close_ts=float(bx["close_ts"]), now_ts=now)
                         elif float(bx["box_cost_net"]) <= 1.035:
                             self.post_zero_fee_maker_anchor_box(asset_lp, asset_lp, f"ZFA_{dk_m}", la_m, lb_m, bka_m, bkb_m, float(bx["close_ts"]), f"{asset_lp} {bx['label']}", now)
                     elif int(bx["n_legs"]) == 3 and float(bx["box_cost_net"]) <= 0.992:
@@ -7314,7 +7481,8 @@ class Alpha124ShadowDaemon:
                     end_g = _parse_iso_ts(ev_g.get("endDate")) or 0.0
                     if not (60.0 < (end_g - now) <= 57600.0):
                         continue
-                    mkt_dt = datetime.fromtimestamp(end_g, tz=NY_TZ).date().isoformat()
+                    _m_gdt = re.search(r"(20\d{2}-\d{2}-\d{2})", str(ev_g.get("slug") or ""))
+                    mkt_dt = _m_gdt.group(1) if _m_gdt else datetime.fromtimestamp(end_g, tz=NY_TZ).date().isoformat()
                     if mkt_dt != aaa["as_of_date"]:
                         continue
                     g_brs = []
