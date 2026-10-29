@@ -240,6 +240,7 @@ def compute_apex_v5_raw_unit_weights(
     fast_tsmom_blend: bool = False,
     fip_quality_weight: float = 0.0,
     vol_accel_weight: float = 0.0,
+    chop_eth_30d_dispersion: bool = False,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, List[str], List[str]]:
     """
     Computes unlevered unit-scale target weights `raw_w` (length N) at row t = n_bars - 1
@@ -317,9 +318,12 @@ def compute_apex_v5_raw_unit_weights(
         w_ts[elig_ts] = (raw_ts / denom_ts) * min(1.0, conviction * 1.6)
 
     # --- Sleeve 2: CS_SKIP_MOM (7d + 14d skip-24h BTC-residualized momentum + orthogonal carry, beta=0) ---
+    er_univ_now = float(np.mean(er_vec[elig_ts])) if len(elig_ts) > 0 else 0.15
+    in_deep_chop = bool(chop_eth_30d_dispersion and er_univ_now < 0.14)
+
     alt_mask = um.copy()
     alt_mask[btc_idx] = False
-    if 0 <= eth_idx < n_syms:
+    if 0 <= eth_idx < n_syms and not in_deep_chop:
         alt_mask[eth_idx] = False
 
     skip_b = min(6, max(1, n_bars // 6))
@@ -330,10 +334,20 @@ def compute_apex_v5_raw_unit_weights(
 
     r_7d_skip = log_p_ff[t - skip_b] - log_p_ff[t - lag_7d]
     r_14d_skip = log_p_ff[t - skip_b] - log_p_ff[t - lag_14d]
-    res_skip = (
-        0.50 * ((r_7d_skip - betas * r_7d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_7d) + 1e-6))
-        + 0.50 * ((r_14d_skip - betas * r_14d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_14d) + 1e-6))
-    )
+    if in_deep_chop and n_bars > 90:
+        lag_30d = min(180, n_bars - 1)
+        eff_30d = max(1, lag_30d - skip_b)
+        r_30d_skip = log_p_ff[t - skip_b] - log_p_ff[t - lag_30d]
+        res_skip = (
+            0.40 * ((r_7d_skip - betas * r_7d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_7d) + 1e-6))
+            + 0.40 * ((r_14d_skip - betas * r_14d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_14d) + 1e-6))
+            + 0.20 * ((r_30d_skip - betas * r_30d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_30d) + 1e-6))
+        )
+    else:
+        res_skip = (
+            0.50 * ((r_7d_skip - betas * r_7d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_7d) + 1e-6))
+            + 0.50 * ((r_14d_skip - betas * r_14d_skip[btc_idx]) / (vol_bar * math.sqrt(eff_14d) + 1e-6))
+        )
 
     z_mom = cross_sectional_zscore_1d(res_skip, alt_mask)
     z_carry_raw = cross_sectional_zscore_1d(-fund_apr, alt_mask)

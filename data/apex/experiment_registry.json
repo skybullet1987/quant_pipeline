@@ -1,0 +1,212 @@
+{
+  "registry_version": "2.1.0",
+  "updated_at_utc": "2026-10-29T02:31:00Z",
+  "system": "HyperCore APEX Perpetual Futures Engine",
+  "validation_protocol": {
+    "execution_rule": "Strictly causal Close[t] signal -> Open[t+1] execution -> Open[t+2]/Open[t+1]-1 return",
+    "funding_source": "data/lake/hl_real_funding_4h.parquet (135,593 4H rows, zero nulls)",
+    "walk_forward_folds": 4,
+    "embargo_bars_4h": 72,
+    "embargo_days": 12.0,
+    "cost_stress_bps_one_way": [3.0, 5.5, 10.0, 15.0],
+    "bootstrap_method": "Politis-Romano Stationary Block Bootstrap (1,000 resamples, avg block 36 bars = 6 days)",
+    "monte_carlo_method": "2,000-path 1-year block-resampled drawdown & CVaR stress test ($609.19 initial NAV)"
+  },
+  "active_production_champion": {
+    "experiment_id": "EXP-513",
+    "strategy_version": "v5.2.0-ws-queue-adaptive-majors",
+    "promoted_at_utc": "2026-10-29T02:31:00Z",
+    "rollback_commit": "1a7111ddc4911f2c7154e5a0ba66c615a470e5cf",
+    "hard_safety_limits": {
+      "PEAK_LEVERAGE": 3.0,
+      "MAX_SINGLE_ALT_WEIGHT": 0.25,
+      "V5_GROSSMAN_ZHOU_MAX_DD": 0.25,
+      "TRACK_B_HWM_DD_HALT": 0.52,
+      "TRACK_B_DEPOSIT_FLOOR": 0.48
+    }
+  },
+  "historical_lineage": [
+    {
+      "id": "EXP-103",
+      "title": "IronCore 72H Macro Cross-Sectional Momentum + Carry + Shrunk Beta Neutralization",
+      "status": "SUPERSEDED_BY_V50",
+      "summary": "Established SHA-256 event-sourced journal, deterministic ClOID lifecycle, dynamic valuation invariant, and shrunk BTC beta neutralization. Superseded because 72H frozen cadence + microcap universe suffered high-vol whipsaws."
+    },
+    {
+      "id": "EXP-106_109_112",
+      "title": "4H Tactical Recovery & Asymmetric Crowded-Funding Satellite Recycler",
+      "status": "DISABLED_IN_LIVE_CORE",
+      "summary": "Helpers retained for unit-test backward compatibility; 4H tactical satellites degraded OOS Sharpe when layered atop GP-smoothed Majors sleeves due to excess taker/execution churn."
+    },
+    {
+      "id": "EXP-113_118",
+      "title": "Symmetric Hurst/VR Sieve, ATR Brackets, and Fast 4H Sleeves",
+      "status": "PARTIALLY_RETAINED",
+      "summary": "Wide catastrophe L1 SL/TP brackets (10%-18%) retained for tail-crash protection without tight Stage 1-3 stop-out whipsaws; tight ratchets and 4H fast sleeves disabled."
+    },
+    {
+      "id": "EXP-303_401",
+      "title": "324-Config Purged Walk-Forward Unification -> APEX v5.0 Two-Sleeve Majors",
+      "status": "PREVIOUS_CHAMPION",
+      "oos_sharpe": 2.218,
+      "oos_cagr_pct": 49.35,
+      "oos_max_dd_pct": 9.06,
+      "summary": "50% TSMOM_MAJORS + 50% CS_SKIP_MOM over rolling 30d Top-15 liquid Hyperliquid majors at VT=0.25, GP=0.88. Suffered live Testnet drag from 25bps GTC taker fallback (-$92.89 on 467 taker fills vs +$16.07 on 1,533 maker fills), 8.7% margin utilization, and static 50% TSMOM weight in chop (Fold 3 SR=0.141)."
+    }
+  ],
+  "experiments": [
+    {
+      "id": "EXP-501",
+      "code": "S01_FAM_A_ER_GATED_TSMOM",
+      "family": "A. Predictive Directional Alpha",
+      "hypothesis": "Gating multi-horizon (3.5d/7d/14d/30d) TSMOM by causal 14-day Kaufman Efficiency Ratio (ER_14d) damps sideways chop whipsaws while preserving clean breakout trends.",
+      "oos_sharpe": 2.293,
+      "oos_cagr_pct": 44.38,
+      "oos_max_dd_pct": 8.01,
+      "fold3_chop_sharpe": 0.402,
+      "verdict": "PROMOTED_INTO_V51",
+      "notes": "Reduced OOS MaxDD from 9.06% to 8.01% and nearly tripled Fold 3 chop Sharpe (0.141 -> 0.402)."
+    },
+    {
+      "id": "EXP-502",
+      "code": "S02_FAM_A_SHORT_REV_24H",
+      "family": "A. Predictive Directional Alpha",
+      "hypothesis": "Adding explicit +12% 24H idiosyncratic mean-reversion sleeve inside CS_SKIP_MOM captures short-horizon overextensions.",
+      "oos_sharpe": 1.982,
+      "oos_cagr_pct": 41.78,
+      "oos_max_dd_pct": 10.91,
+      "verdict": "REJECTED",
+      "notes": "Skipping the last 24H in momentum is already optimal; explicitly betting on 24H reversion at 4H cadence fights multi-day institutional altcoin cascades and increases turnover (0.291 -> 0.317x/day) and MaxDD (9.06% -> 10.91%)."
+    },
+    {
+      "id": "EXP-503",
+      "code": "S03_FAM_B_VOL_ACCEL_FIP",
+      "family": "B. Market Microstructure & Participation Alpha",
+      "hypothesis": "Confirming cross-sectional momentum with Frog-in-the-Pan (FIP_14d) path continuity and 3d/14d USD dollar-volume participation acceleration filters thin fakeouts.",
+      "oos_sharpe": 2.192,
+      "full_sample_sharpe": 2.564,
+      "fold1_sharpe": 1.031,
+      "fold2_sharpe": 4.191,
+      "verdict": "PROMOTED_AT_5PCT_EACH_IN_V51",
+      "notes": "Improved full-sample Sharpe (2.541 -> 2.564) and Fold 1/Fold 2 Sharpe at modest 5%+5% ensemble weight."
+    },
+    {
+      "id": "EXP-504",
+      "code": "S04_FAM_C_ASYM_FUNDING",
+      "family": "C. Funding & Basis Alpha",
+      "hypothesis": "Vetoing negative-funding longs in CS_SKIP_MOM avoids toxic breakdown traps.",
+      "oos_sharpe": 1.961,
+      "oos_cagr_pct": 42.15,
+      "verdict": "REJECTED",
+      "notes": "Critical empirical discovery: in Top-15 Majors, high 7d+14d residual momentum paired with negative funding represents a lucrative crowded-short squeeze, NOT a falling knife. Vetoing it destroyed +0.26 OOS Sharpe."
+    },
+    {
+      "id": "EXP-505",
+      "code": "S05_FAM_C_BASIS_CARRY",
+      "family": "C. Funding & Basis Alpha",
+      "hypothesis": "4H perpetual-vs-oracle premium mean-reversion adds orthogonal basis alpha.",
+      "oos_sharpe": 1.734,
+      "oos_cagr_pct": 35.80,
+      "verdict": "REJECTED",
+      "notes": "Perp-oracle premium dislocations revert at sub-5-minute HFT horizons; fading them on a 4H bar enters against informed trend initiation."
+    },
+    {
+      "id": "EXP-506",
+      "code": "S06_FAM_D_ETH_CS_30D_MOM",
+      "family": "D. Cross-Asset & Portfolio Alpha",
+      "hypothesis": "Including ETH inside CS_SKIP_MOM and adding 30d skip-24h residual momentum improves Fold 2/3 dispersion.",
+      "oos_sharpe": 2.180,
+      "oos_cagr_pct": 50.19,
+      "oos_max_dd_pct": 8.39,
+      "verdict": "HOLD_SHADOW",
+      "notes": "Boosted Fold 2 SR to 4.531 and Fold 3 SR to 0.537 with lower MaxDD (8.39%), but hurt Fold 1 (SR 0.142). Retained for future shadow testing."
+    },
+    {
+      "id": "EXP-507",
+      "code": "S07_FAM_D_TOP18_BREADTH",
+      "family": "D. Cross-Asset & Portfolio Alpha",
+      "hypothesis": "Expanding liquid universe from Top-15 to Top-18 USD ADV majors increases cross-sectional breadth.",
+      "oos_sharpe": 2.168,
+      "oos_cagr_pct": 48.11,
+      "fold3_chop_sharpe": -0.382,
+      "verdict": "REJECTED",
+      "notes": "Ranks 16-18 introduce higher spread/whipsaw drag in chop (Fold 3 SR collapsed from +0.141 to -0.382). Top-15 remains strictly optimal."
+    },
+    {
+      "id": "EXP-508",
+      "code": "S08_FAM_E_ADAPTIVE_ROUTING",
+      "family": "E. Adaptive & Nonlinear Regime Strategies",
+      "hypothesis": "Dynamically routing sleeve risk budget via causal universe-mean ER_14d (`w_ts = clip(0.12 + 0.90 * mean_ER_14d, 0.18, 0.38)`, `w_cs = 1 - w_ts`) shifts capital into market-neutral CS_SKIP_MOM during chop while retaining TSMOM convexity in trends.",
+      "oos_sharpe": 2.473,
+      "oos_cagr_pct": 67.93,
+      "oos_max_dd_pct": 9.50,
+      "fold3_chop_sharpe": 0.672,
+      "verdict": "PROMOTED_INTO_V51",
+      "notes": "Single highest-value structural alpha upgrade at strict iso-vol VT=0.25: +0.255 OOS Sharpe, +18.58% OOS CAGR, and 4.8x Fold 3 chop Sharpe (0.141 -> 0.672)."
+    },
+    {
+      "id": "EXP-509",
+      "code": "S10_CHALLENGER_V51_ISO_VT25",
+      "family": "Synthesized Multi-Sleeve Ensemble (Iso-Vol VT=0.25)",
+      "hypothesis": "Combining EXP-501 + EXP-503 + EXP-508 + clean sub-$22 zero-target exit at strict iso-volatility (VT=0.25) strictly dominates Champion v5.0 on both return and drawdown.",
+      "oos_sharpe": 2.562,
+      "oos_cagr_pct": 67.89,
+      "oos_max_dd_pct": 8.00,
+      "full_sample_sharpe": 2.789,
+      "verdict": "PROMOTED_CORE_ALPHA",
+      "notes": "Beats v5.0 at identical 25% vol target across Sharpe (2.562 vs 2.218), CAGR (67.89% vs 49.35%), AND MaxDD (8.00% vs 9.06% — 106 bps lower drawdown!)."
+    },
+    {
+      "id": "EXP-510",
+      "code": "EXEC_PASSIVE_BBO_ALO_ONLY",
+      "family": "Microstructure Execution Architecture",
+      "hypothesis": "Eliminating all three 25bps GTC taker-crossing fallbacks in production_apex_daemon.py and replacing with 1-tick passive BBO retreat (place_passive_bbo_maker) + maxLeverage>=5 venue filter removes the #1 live PnL leak.",
+      "empirical_evidence": "2,000 live fills: Maker ALO = +$16.07 net (+2.85 bps/fill across 1,533 fills) vs Taker GTC/IOC = -$92.89 net (-27.62 bps/fill across 467 fills; +30.47 bps maker advantage).",
+      "verdict": "PROMOTED_PRODUCTION",
+      "notes": "Directly eliminates -27.62 bps taker bleed and excludes 3x-capped Testnet microcap margin traps (RESOLV)."
+    },
+    {
+      "id": "EXP-511",
+      "code": "S11_CHALLENGER_V51_VT35",
+      "family": "Capital Efficiency & Geometric Growth Optimization",
+      "hypothesis": "Because v5.1 iso-vol MaxDD dropped to 8.00% (less than one-third of the 25% Grossman-Zhou boundary) and live margin utilization sat at only 8.7%, scaling ex-ante target volatility from 0.25 to 0.35 within EXISTING hard limits (PEAK_LEVERAGE=3.00, MAX_SINGLE_ALT_WEIGHT=0.25, GZ_MAX_DD=0.25) maximizes geometric equity growth safely.",
+      "oos_sharpe": 2.590,
+      "oos_cagr_pct": 104.68,
+      "oos_max_dd_pct": 11.06,
+      "full_sample_sharpe": 2.803,
+      "bootstrap_p_val_cagr_inferior": 0.013,
+      "verdict": "PROMOTED_PRODUCTION_CHAMPION",
+      "notes": "Doubles OOS CAGR (49.35% -> 104.68%, bootstrap 95% CI delta [+3.47%, +157.59%], p=0.013) with 11.06% OOS MaxDD (well inside 25% GZ floor) and 1.44x average gross leverage (inside 3.00x ceiling)."
+    },
+    {
+      "id": "EXP-512",
+      "code": "RULE2_NEW_LEG_JUMP_REJECTED",
+      "family": "Discrete $609.19 L1 Quantization Forensics",
+      "hypothesis": "Jumping brand-new legs (prev_w=0) directly to $11.50 while existing BTC hedges smooth at (1-0.88)=12% improves $609 small-account responsiveness.",
+      "verdict": "REJECTED_BY_ADVERSARIAL_SIM",
+      "notes": "Adversarial $609.19 discrete simulation proved that jumping new altcoin longs to $11.50 while existing BTC hedges remain suppressed below $10 creates temporary unhedged long beta during crashes. Removed Rule 2; retained symmetric GP accumulation + Rule 1 sub-$22 zero-target exit."
+    },
+    {
+      "id": "EXP-506b",
+      "code": "CHOP_CONDITIONED_ETH_30D_DISPERSION",
+      "family": "D/E. Regime-Conditioned Cross-Asset Dispersion",
+      "hypothesis": "Activating ETH inside CS_SKIP_MOM and blending 20% 30d residual momentum strictly when causal ER_14d < 0.14 improves chop Sharpe without hurting trending folds.",
+      "oos_sharpe": 2.415,
+      "oos_cagr_pct": 96.22,
+      "oos_max_dd_pct": 15.63,
+      "fold2_sharpe": 4.416,
+      "fold3_chop_sharpe": 0.984,
+      "verdict": "HOLD_IN_LIVE_SHADOW_TRACK_4",
+      "notes": "Strong Fold 2 (4.42) and Fold 3 chop (0.98) gains, but aggregate OOS Sharpe (2.415 vs 2.576) and MaxDD (15.63% vs 10.97%) trailed v5.1 Champion due to Fold 1 transitions (0.43 vs 1.66). Deployed solely as non-executing Shadow Track 4 (`v5_2_challenger_exp506b_vt35`)."
+    },
+    {
+      "id": "EXP-513",
+      "code": "WS_L2_ORACLE_CACHE_AND_QUEUE_OBI5_ALO",
+      "family": "HFT Microstructure & WebSocket Execution Architecture",
+      "hypothesis": "Replacing synchronous 12-leg REST l2_snapshot + meta_and_asset_ctxs polling with a reconnect-resilient, monotonic-TTL-guarded WebSocket (`l2Book` + `activeAssetCtx` + `allMids`) cache and Top-5 decay-weighted OBI_5 post-only (`Alo`) pennying/retreat slashes decision-to-quote latency >1000x and improves maker queue priority.",
+      "empirical_evidence": "Live kraken-finland 12-leg L2+Oracle benchmark: REST = 3,768.28 ms vs WebSocket = 0.219 ms P50 / 1.197 ms P95 / 1.550 ms P99 (3,148x P95 speedup, 100% L2 & Oracle hit rate); flat-only scheduleCancel P0 guard verified.",
+      "verdict": "PROMOTED_PRODUCTION_V52",
+      "notes": "Promoted as v5.2.0-ws-queue-adaptive-majors preserving exact v5.1 alpha weights (SR 2.59, CAGR 104.6%) while upgrading execution microstructure and 24/7 4H systemd oversight."
+    }
+  ]
+}

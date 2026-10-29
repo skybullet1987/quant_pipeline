@@ -1,0 +1,84 @@
+{
+  "measured_at_utc": "2026-10-29T02:28:31Z",
+  "stages": {
+    "1_market_data_50syms_v50_sequential": {
+      "mean_ms": 17500.01,
+      "p50_ms": 15276.07,
+      "p95_ms": 26034.52,
+      "p99_ms": 26136.26
+    },
+    "1_market_data_50syms_v51_parallel4": {
+      "mean_ms": 5240.95,
+      "p50_ms": 5240.95,
+      "p95_ms": 5988.83,
+      "p99_ms": 6055.3
+    },
+    "2_feature_signal_risk_kernel_v50": {
+      "mean_ms": 5.58,
+      "p50_ms": 4.79,
+      "p95_ms": 7.7,
+      "p99_ms": 8.29
+    },
+    "2_feature_signal_risk_kernel_v51": {
+      "mean_ms": 6.05,
+      "p50_ms": 5.11,
+      "p95_ms": 8.47,
+      "p99_ms": 9.48
+    },
+    "3_oracle_dislocation_gate_12legs_v50_uncached": {
+      "mean_ms": 6600.93,
+      "p50_ms": 6692.69,
+      "p95_ms": 7129.31,
+      "p99_ms": 7168.12
+    },
+    "3_oracle_dislocation_gate_12legs_v51_ttl5s": {
+      "mean_ms": 767.44,
+      "p50_ms": 767.89,
+      "p95_ms": 768.31,
+      "p99_ms": 768.35
+    },
+    "3b_l2_bbo_plus_oracle_12legs_v51_rest": {
+      "mean_ms": 3768.28,
+      "p50_ms": 3768.28,
+      "p95_ms": 3768.28,
+      "p99_ms": 3768.28
+    },
+    "3b_l2_bbo_plus_oracle_12legs_v52_websocket": {
+      "mean_ms": 0.34,
+      "p50_ms": 0.219,
+      "p95_ms": 1.197,
+      "p99_ms": 1.55,
+      "l2_hit_rate_pct": 100.0,
+      "oracle_hit_rate_pct": 100.0,
+      "speedup_vs_rest_p95": 3148.1
+    },
+    "4_order_construction_cloid_eip712_signing_12orders": {
+      "mean_ms": 17.8,
+      "p50_ms": 17.95,
+      "p95_ms": 22.86,
+      "p99_ms": 23.19
+    },
+    "5_sha256_journal_append_fsync_per_event": {
+      "mean_ms": 0.09,
+      "p50_ms": 0.05,
+      "p95_ms": 0.25,
+      "p99_ms": 0.6
+    },
+    "6_clearinghouse_fills_funding_reconciliation": {
+      "mean_ms": 1591.84,
+      "p50_ms": 1552.0,
+      "p95_ms": 1693.76,
+      "p99_ms": 1713.49
+    }
+  },
+  "end_to_end_summary": {
+    "before_v50_p95_ms": 34888.15,
+    "after_v51_p95_ms": 8482.23,
+    "after_v52_ws_p95_ms": 7715.12,
+    "decision_to_signed_12orders_v52_p95_ms": 32.53,
+    "before_v50_p99_ms": 35049.35,
+    "after_v51_p99_ms": 8569.81,
+    "after_v52_ws_p99_ms": 7803.01,
+    "speedup_factor_p95_v52_vs_v50": 4.52
+  }
+}

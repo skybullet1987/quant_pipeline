@@ -113,6 +113,7 @@ def record_shadow_competition_step(
             "v5_0_baseline_vt25": {"nav": 1000.0, "hwm": 1000.0, "cum_turnover": 0.0, "weights": {}},
             "v5_1_adaptive_vt25_isovol": {"nav": 1000.0, "hwm": 1000.0, "cum_turnover": 0.0, "weights": {}},
             "v5_1_production_vt35": {"nav": 1000.0, "hwm": 1000.0, "cum_turnover": 0.0, "weights": {}},
+            "v5_2_challenger_exp506b_vt35": {"nav": 1000.0, "hwm": 1000.0, "cum_turnover": 0.0, "weights": {}},
         },
         "history": [],
     }
@@ -121,6 +122,10 @@ def record_shadow_competition_step(
             loaded = json.loads(shadow_path.read_text())
             if isinstance(loaded, dict) and "tracks" in loaded:
                 state = loaded
+                state["tracks"].setdefault(
+                    "v5_2_challenger_exp506b_vt35",
+                    {"nav": 1000.0, "hwm": 1000.0, "cum_turnover": 0.0, "weights": {}},
+                )
         except Exception:
             pass
 
@@ -148,9 +153,10 @@ def record_shadow_competition_step(
     regime_info = classify_causal_market_regime(close_mat, valid_mask, btc_idx, eth_idx)
 
     configs = {
-        "v5_0_baseline_vt25": {"v51_adaptive": False, "vt": 0.25},
-        "v5_1_adaptive_vt25_isovol": {"v51_adaptive": True, "vt": 0.25},
-        "v5_1_production_vt35": {"v51_adaptive": True, "vt": 0.35},
+        "v5_0_baseline_vt25": {"v51_adaptive": False, "vt": 0.25, "exp506b": False},
+        "v5_1_adaptive_vt25_isovol": {"v51_adaptive": True, "vt": 0.25, "exp506b": False},
+        "v5_1_production_vt35": {"v51_adaptive": True, "vt": 0.35, "exp506b": False},
+        "v5_2_challenger_exp506b_vt35": {"v51_adaptive": True, "vt": 0.35, "exp506b": True},
     }
 
     step_summary: Dict[str, Any] = {
@@ -178,6 +184,7 @@ def record_shadow_competition_step(
                 fast_tsmom_blend=True,
                 fip_quality_weight=0.05,
                 vol_accel_weight=0.05,
+                chop_eth_30d_dispersion=bool(cfg.get("exp506b", False)),
             )
             wf, ag, _ = scale_and_smooth_apex_v5_weights(
                 raw_w=rw,

@@ -330,7 +330,7 @@ def test_do_arm_prevents_self_front_running_and_persists_catastrophe_atr(tmp_pat
 
 
 def test_exact_numerical_parity_between_live_executor_and_v5_kernel(tmp_path):
-    assert STRATEGY_VERSION == "v5.1.0-adaptive-regime-majors"
+    assert STRATEGY_VERSION == "v5.2.0-ws-queue-adaptive-majors"
     ex = ProductionApexExecutor(
         testnet=False,
         dry_run=True,

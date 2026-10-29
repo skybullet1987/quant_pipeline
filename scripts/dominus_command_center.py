@@ -65,6 +65,7 @@ svcs = [
     "polymarket-trader.service",
     "polymarket-exp316-shadow.service",
     "apex-perp.service",
+    "apex-oversight-audit.timer",
 ]
 svc_map = {}
 for sv in svcs:
@@ -259,20 +260,28 @@ if j_path.exists():
         })
     st_path = root / "data/papertrade_state.json"
     st_obj = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
+    eq_obj = st_obj.get("equity") or {}
+    acct_obj = st_obj.get("accounting_ledger") or {}
+    ws_obj = st_obj.get("ws_market_cache") or {}
     sh_path = root / "data/apex/champion_challenger_shadow.json"
     sh_obj = json.loads(sh_path.read_text(encoding="utf-8")) if sh_path.exists() else {}
     sh_hist = sh_obj.get("history") or []
     latest_regime = (sh_hist[-1].get("regime") or {}).get("regime", "UNKNOWN") if sh_hist else "UNKNOWN"
+    post_v51_n = sum(1 for x in audits if str(x.get("timestamp_utc", "")) >= "2026-10-29T02:06:00Z")
     out["apex_testnet"] = {
-        "version": st_obj.get("version", "v5.1.0"),
-        "nav_usd": round(float(st_obj.get("current_strategy_equity", hwm_nav) or hwm_nav), 2),
-        "reconciliation_status": (st_obj.get("last_reconciliation") or {}).get("status") or st_obj.get("reconciliation_status", "EXACT"),
+        "version": st_obj.get("version", "v5.2.0"),
+        "nav_usd": round(float(eq_obj.get("current_strategy_equity") or st_obj.get("current_strategy_equity") or hwm_nav), 2),
+        "reconciliation_status": acct_obj.get("reconciliation_status") or (st_obj.get("last_reconciliation") or {}).get("status") or "EXACT",
         "regime": latest_regime,
+        "ws_connected": bool(ws_obj.get("connected", False)),
+        "ws_msgs": int(ws_obj.get("messages_received", 0) or 0),
         "circuit_breaker": st_obj.get("circuit_breaker", cb_state),
         "halt_reason": cb_reason if cb_state != "RUNNING" else "",
-        "hwm_nav_usd": round(float(st_obj.get("high_water_mark", hwm_nav) or hwm_nav), 2),
+        "hwm_nav_usd": round(float(eq_obj.get("historical_hwm") or st_obj.get("high_water_mark") or hwm_nav), 2),
+        "canary_fills": f"{post_v51_n}/100",
         "gate2_fills": f"{audit_total}/500",
         "maker_pct": round(100.0 * maker_n / len(audits), 1) if audits else 0.0,
+        "shadow_tracks": {k: round(float(v.get("nav", 1000.0)), 2) for k, v in (sh_obj.get("tracks") or {}).items()},
         "recent_fills": recent_hl,
     }
 else:
@@ -586,9 +595,9 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         f"Halt={pm.get('risk_halt')}"
     )
     print(
-        f" APEX {ap.get('version', 'v5.1.0')} : {ap.get('circuit_breaker')} ({ap.get('reconciliation_status')})  |  "
+        f" APEX {ap.get('version', 'v5.2.0')} : {ap.get('circuit_breaker')} ({ap.get('reconciliation_status')})  |  "
         f"NAV: ${ap.get('nav_usd', 0):.2f} (HWM ${ap.get('hwm_nav_usd', 0):.2f})  |  Regime: {ap.get('regime')}  |  "
-        f"Gate 2: {ap.get('gate2_fills')} ({ap.get('maker_pct')}% Maker)  |  Mainnet: $0.00"
+        f"WS={ap.get('ws_connected')} ({ap.get('ws_msgs')} msgs)  |  Canary: {ap.get('canary_fills')} (Gate2: {ap.get('gate2_fills')}, {ap.get('maker_pct')}% Maker)"
     )
     print("-" * 78)
     print(" Recent Real-Money Polymarket Closed Trades:")

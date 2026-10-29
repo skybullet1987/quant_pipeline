@@ -1,0 +1,12 @@
+[Unit]
+Description=HyperCore APEX 4H Post-Rebalance Profitability Oversight & Microstructure Recorder
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=-/home/skybullet1987/quant_pipeline/.env
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 -u /home/skybullet1987/quant_pipeline/scripts/apex_live_oversight_audit.py
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/apex/oversight_audit.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/apex/oversight_audit.log

@@ -103,6 +103,7 @@ from src.strategy.apex_v5_kernel import (
 from src.research.apex_champion_challenger import record_shadow_competition_step
 from src.execution.as_quoting import compute_as_quote_offsets
 from src.execution.exchange_gateway import HyperliquidGateway
+from src.execution.ws_market_cache import HyperliquidWsMarketCache, select_queue_aware_alo_price
 from hyperliquid.info import Info
 from hyperliquid.utils import constants
 
@@ -161,7 +162,7 @@ EXP116_VOL_DAMPER_ENABLED = True  # Volatility-Targeted Downside Cushion Damper
 EXP117_118_FAST_SLEEVES_ENABLED = False # Disabled in v5.0
 ADMIN_RESET_TOKEN = os.getenv("APEX_ADMIN_RESET_TOKEN", "APEX_OPERATOR_AUTHORIZED_EMERGENCY_RESET_2026")
 BENCHMARK_SYMBOL = "BTC"
-STRATEGY_VERSION = "v5.1.0-adaptive-regime-majors"
+STRATEGY_VERSION = "v5.2.0-ws-queue-adaptive-majors"
 PYRAMID_RATIO = 0.0  # Strictly zero pyramiding invariant
 
 
@@ -3409,12 +3410,19 @@ class ProductionApexExecutor:
             self.journal.append_event("ORDER_INTENT", {"cloid": cloid, "sym": sym, "is_buy": is_buy, "size": sz_abs})
             self.state.owned_cloids.add(cloid)
 
-            # Avellaneda-Stoikov Reservation Quote
+            # Avellaneda-Stoikov + Queue-Aware Top-5 OBI Maker Quote
             sym_idx = symbols.index(sym) if sym in symbols else -1
             coin_atr = float(atr_mat[-1, sym_idx]) if sym_idx >= 0 else mid * 0.025
             est_ann_vol = float(np.clip((coin_atr / max(mid, 1e-8)) * math.sqrt(2190), 0.20, 2.00))
+            qa_mode = "AS_OFFSET"
+            obi_5 = 0.0
             try:
-                best_bid, best_ask, _ = self.gateway.get_bbo_and_mid(sym)
+                if isinstance(self.gateway, HyperliquidGateway):
+                    ms_l2 = self.gateway.get_l2_microstructure(sym)
+                    best_bid, best_ask = ms_l2["best_bid"], ms_l2["best_ask"]
+                    obi_5 = float(ms_l2.get("obi_5", 0.0))
+                else:
+                    best_bid, best_ask, _ = self.gateway.get_bbo_and_mid(sym)
             except Exception:
                 best_bid, best_ask = None, None
             bid_px, ask_px = compute_as_quote_offsets(
@@ -3428,6 +3436,15 @@ class ProductionApexExecutor:
                 sz_decimals=sz_dec,
             )
             raw_alo_px = bid_px if is_buy else ask_px
+            if isinstance(self.gateway, HyperliquidGateway) and best_bid and best_ask:
+                tick_sz = self.gateway.get_tick_size(sym, mid)
+                raw_alo_px, qa_mode = select_queue_aware_alo_price(
+                    is_buy=is_buy,
+                    best_bid=best_bid,
+                    best_ask=best_ask,
+                    tick_sz=tick_sz,
+                    obi_5=obi_5,
+                )
             alo_price = round_px(raw_alo_px, sz_dec)
             ord_info["alo_price"] = alo_price
             ord_info["cloid"] = cloid
@@ -3473,6 +3490,8 @@ class ProductionApexExecutor:
                         "price": alo_price,
                         "signal_price": float(mid),
                         "target_price": float(alo_price),
+                        "quote_mode": qa_mode,
+                        "obi_5": round(float(obi_5), 4),
                         "status": status_detail,
                     })
                     self.state.owned_oids.add(int(oid))
@@ -3482,7 +3501,7 @@ class ProductionApexExecutor:
                     }
                     if cloid:
                         self.state.owned_cloids.add(cloid)
-                    log("INFO", f"  --> [AS-ALO MAKER] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ {alo_price} | oid={oid}")
+                    log("INFO", f"  --> [AS-ALO MAKER] {sym:<8}: {'BUY' if is_buy else 'SELL'} size={sz_abs:.4f} @ {alo_price} ({qa_mode}, OBI5={obi_5:+.2f}) | oid={oid}")
                     placed_orders.append(ord_info)
                 else:
                     self.journal.append_event("ORDER_REJECTED", {
@@ -4096,6 +4115,11 @@ class ProductionApexExecutor:
             "latest_atr_map": getattr(self, "latest_atr_map", {}),
             "position_hwm_map": getattr(self, "position_hwm_map", {}),
             "execution_latency_ms": getattr(self, "last_cycle_latency_ms", {}),
+            "ws_market_cache": (
+                self.gateway.ws_cache.get_stats()
+                if isinstance(getattr(self.gateway, "ws_cache", None), HyperliquidWsMarketCache)
+                else {}
+            ),
             "distributional_telemetry": getattr(self, "last_telemetry_audit", {}),
         }
 

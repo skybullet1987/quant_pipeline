@@ -1,5 +1,6 @@
 import math
 import hashlib
+import os
 import time
 from typing import Dict, Any, Tuple, List, Optional
 from eth_account import Account
@@ -7,6 +8,11 @@ from hyperliquid.info import Info
 from hyperliquid.exchange import Exchange
 from hyperliquid.utils import constants
 from hyperliquid.utils.types import Cloid
+from src.execution.ws_market_cache import (
+    HyperliquidWsMarketCache,
+    compute_l2_microstructure,
+    select_queue_aware_alo_price,
+)
 
 _TRANSIENT_ERR_MARKERS = (
     "502",
@@ -31,7 +37,13 @@ def _is_transient_gateway_exc(exc: Exception) -> bool:
 
 
 class HyperliquidGateway:
-    def __init__(self, secret_key: str = None, account_address: str = None, testnet: bool = True):
+    def __init__(
+        self,
+        secret_key: str = None,
+        account_address: str = None,
+        testnet: bool = True,
+        enable_ws_cache: Optional[bool] = None,
+    ):
         self.testnet = testnet
         self.base_url = constants.TESTNET_API_URL if testnet else constants.MAINNET_API_URL
         self.info = Info(self.base_url, skip_ws=True)
@@ -59,6 +71,15 @@ class HyperliquidGateway:
         }
         self._ctx_cache_ts: float = 0.0
         self._ctx_cache_data: Optional[List[Dict[str, Any]]] = None
+
+        if enable_ws_cache is None:
+            enable_ws_cache = (
+                os.getenv("APEX_ENABLE_WS_CACHE", "1") == "1"
+                and "PYTEST_CURRENT_TEST" not in os.environ
+            )
+        self.ws_cache: Optional[HyperliquidWsMarketCache] = (
+            HyperliquidWsMarketCache(self.base_url, auto_start=True) if enable_ws_cache else None
+        )
 
     def get_account_state(self) -> Tuple[float, float, Dict[str, Dict[str, float]]]:
         """Returns total unified portfolio value, withdrawable cash, and open positions."""
@@ -101,15 +122,37 @@ class HyperliquidGateway:
 
         return total_equity, available_cash, positions
 
-    def get_bbo_and_mid(self, symbol: str) -> Tuple[float, float, float]:
-        """Returns (best_bid, best_ask, mid_price) from live L2 orderbook snapshot."""
+    def get_l2_microstructure(self, symbol: str, force_rest: bool = False) -> Dict[str, float]:
+        """
+        Returns full L2 microstructure (`best_bid`, `best_ask`, `mid`, `microprice`, `obi_5`,
+        `spread_bps`, `spread_ticks`), reading from the sub-millisecond WebSocket `l2Book` cache
+        when fresh (`<= 4.0s`) and falling back seamlessly to REST `l2_snapshot`.
+        """
+        ws = getattr(self, "ws_cache", None)
+        if not force_rest and ws is not None and type(getattr(self, "info", None)).__name__ == "Info":
+            ws_lvls = ws.get_fresh_l2_levels(symbol)
+            if ws_lvls is not None and ws_lvls[0] and ws_lvls[1]:
+                ref_px = float(ws_lvls[0][0]["px"])
+                tick_sz = self.get_tick_size(symbol, ref_px)
+                ms = compute_l2_microstructure(ws_lvls[0], ws_lvls[1], tick_sz=tick_sz)
+                if ms is not None:
+                    return ms
+
         l2 = self.info.l2_snapshot(symbol)
         bids, asks = l2.get("levels", [[], []])
         if not bids or not asks:
             raise ValueError(f"Orderbook empty for {symbol}")
-        best_bid = float(bids[0]["px"])
-        best_ask = float(asks[0]["px"])
-        return best_bid, best_ask, (best_bid + best_ask) / 2.0
+        ref_px = float(bids[0]["px"])
+        tick_sz = self.get_tick_size(symbol, ref_px)
+        ms = compute_l2_microstructure(bids, asks, tick_sz=tick_sz)
+        if ms is None:
+            raise ValueError(f"Orderbook empty for {symbol}")
+        return ms
+
+    def get_bbo_and_mid(self, symbol: str) -> Tuple[float, float, float]:
+        """Returns (best_bid, best_ask, mid_price) from fresh WS L2 cache or REST L2 snapshot."""
+        ms = self.get_l2_microstructure(symbol)
+        return ms["best_bid"], ms["best_ask"], ms["mid"]
 
     def get_tick_size(self, symbol: str, ref_price: float) -> float:
         """Computes exact Hyperliquid L1 tick size for a symbol at ref_price."""
@@ -267,6 +310,11 @@ class HyperliquidGateway:
         return canceled_count
 
     def get_mid_price(self, symbol: str) -> float:
+        ws = getattr(self, "ws_cache", None)
+        if ws is not None and type(getattr(self, "info", None)).__name__ == "Info":
+            ws_mid = ws.get_fresh_mid(symbol)
+            if ws_mid is not None and ws_mid > 0.0:
+                return ws_mid
         l2 = self.info.l2_snapshot(symbol)
         bids, asks = l2.get("levels", [[], []])
         if not bids or not asks:
@@ -361,9 +409,10 @@ class HyperliquidGateway:
         cloid: Optional[str] = None,
     ) -> Tuple[Dict[str, Any], float]:
         """
-        Submits a strictly post-only (`Alo`) maker quote at inside BBO (`best_bid` for buy,
-        `best_ask` for sell), retreating 1 passive tick (`best_bid - tick_sz` / `best_ask + tick_sz`)
-        if an instantaneous L1 spread flicker causes a post-only bounce. Never crosses spread as taker.
+        Submits a strictly post-only (`Alo`) maker quote using Top-5 L2 queue-imbalance (`obi_5`)
+        pricing (`PENNY_INSIDE` on wide favorable spreads, `ADVERSE_RETREAT` on toxic opposing flow,
+        or `JOIN_BBO` on tight balanced books), retreating 1 passive tick on fresh REST BBO if an
+        instantaneous L1 flicker causes a post-only bounce. Never crosses spread as taker.
         Returns `(order_response, final_limit_price)`.
         """
         if not self.exchange:
@@ -376,9 +425,18 @@ class HyperliquidGateway:
             hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
             cloid_obj = Cloid.from_str(hex_str)
         try:
-            rb_bid, rb_ask, rb_mid = self.get_bbo_and_mid(symbol)
+            ms = self.get_l2_microstructure(symbol)
+            rb_bid, rb_ask, rb_mid = ms["best_bid"], ms["best_ask"], ms["mid"]
+            obi_5 = float(ms.get("obi_5", 0.0))
             tick_sz = self.get_tick_size(symbol, rb_mid)
-            px_1 = self.round_px(symbol, rb_bid if is_buy else rb_ask)
+            raw_px_1, _qmode = select_queue_aware_alo_price(
+                is_buy=is_buy,
+                best_bid=rb_bid,
+                best_ask=rb_ask,
+                tick_sz=tick_sz,
+                obi_5=obi_5,
+            )
+            px_1 = self.round_px(symbol, raw_px_1)
             res = self.exchange.order(
                 symbol,
                 is_buy,
@@ -392,7 +450,8 @@ class HyperliquidGateway:
             first_st = statuses[0] if statuses else {}
             err_msg = str(first_st.get("error", "")).lower() if isinstance(first_st, dict) else ""
             if "post only" in err_msg or "immediately match" in err_msg:
-                rb_bid2, rb_ask2, rb_mid2 = self.get_bbo_and_mid(symbol)
+                ms2 = self.get_l2_microstructure(symbol, force_rest=True)
+                rb_bid2, rb_ask2, rb_mid2 = ms2["best_bid"], ms2["best_ask"], ms2["mid"]
                 tick_sz2 = self.get_tick_size(symbol, rb_mid2)
                 raw_px_2 = max(tick_sz2, rb_bid2 - tick_sz2) if is_buy else (rb_ask2 + tick_sz2)
                 px_2 = self.round_px(symbol, raw_px_2)
@@ -412,9 +471,36 @@ class HyperliquidGateway:
                 raise
             return {"error": str(e)}, 0.0
 
+    def arm_flat_deadman_switch_if_safe(
+        self,
+        open_positions_count: int,
+        timeout_sec: Optional[int] = 240,
+    ) -> Dict[str, Any]:
+        """
+        Arms or disarms Hyperliquid's `scheduleCancel` dead-man's switch ONLY when the account has
+        zero open positions (`open_positions_count == 0`).
+        P0 Safety Invariant: Hyperliquid `scheduleCancel` cancels ALL open orders including
+        exchange-hosted TP/SL triggers; therefore it MUST NEVER be armed while positions are open.
+        """
+        if not self.exchange:
+            return {"skipped": "NO_EXCHANGE"}
+        if open_positions_count > 0 and timeout_sec is not None:
+            return {"skipped": "OPEN_POSITIONS_PROTECTED_BY_L1_TRIGGERS"}
+        try:
+            target_ms = int(time.time() * 1000) + max(5, int(timeout_sec)) * 1000 if timeout_sec is not None else None
+            return self.exchange.schedule_cancel(target_ms)
+        except Exception as e:
+            return {"error": str(e)}
+
     def get_oracle_price(self, symbol: str, ttl_sec: float = 5.0) -> float:
         try:
-            use_cache = type(self.info).__name__ == "Info" and ttl_sec > 0.0
+            use_cache = type(getattr(self, "info", None)).__name__ == "Info" and ttl_sec > 0.0
+            if use_cache:
+                ws = getattr(self, "ws_cache", None)
+                if ws is not None:
+                    ws_opx = ws.get_fresh_oracle_price(symbol)
+                    if ws_opx is not None and ws_opx > 0.0:
+                        return ws_opx
             now_m = time.monotonic()
             cached_ctxs = getattr(self, "_ctx_cache_data", None)
             cached_ts = float(getattr(self, "_ctx_cache_ts", 0.0))
