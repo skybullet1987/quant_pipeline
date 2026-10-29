@@ -3,7 +3,7 @@
   "dynamic_sizing": true,
   "dynamic_risk_pct": 0.18,
   "scale_up_equity_threshold": 110.0,
-  "correlated_crypto_single_slot_threshold": 180.0,
+  "correlated_crypto_single_slot_threshold": 110.0,
   "scale_up_risk_pct": 0.22,
   "min_equity_floor": 66.67,
   "seed_survival_equity_threshold": 88.0,

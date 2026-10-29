@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-10-29 02:48:33 UTC
+Generated: 2026-10-29 03:17:04 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -16,37 +16,37 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [07] systemd/polymarket-recorder-xrp.service (Lines 265 - 295 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [08] systemd/polymarket-trader.service (Lines 296 - 326 | 720 B) :: Forward Paper Trader systemd Unit
   [09] systemd/polymarket-exp316-shadow.service (Lines 327 - 352 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 353 - 10,555 | 609,796 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
-  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,556 - 17,721 | 357,901 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 17,722 - 18,634 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [13] src/polymarket_research/latency_trace.py (Lines 18,635 - 18,863 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,864 - 21,880 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,881 - 22,459 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 22,460 - 24,802 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,803 - 24,915 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 24,916 - 25,032 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [19] src/polymarket_research/redeem_settled_positions.py (Lines 25,033 - 25,332 | 12,505 B) :: CTF Settled Position Redemption CLI
-  [20] src/polymarket_research/setup_polymarket_account.py (Lines 25,333 - 25,598 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [21] audit_losing_trades.py (Lines 25,599 - 25,960 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [22] scripts/honest_purged_wfo_optimizer.py (Lines 25,961 - 27,740 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 27,741 - 28,581 | 37,391 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 28,582 - 29,342 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [25] src/polymarket_research/weather_metar_engine.py (Lines 29,343 - 30,690 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 30,691 - 31,226 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 31,227 - 31,950 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 31,951 - 32,790 | 34,006 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 32,791 - 33,026 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 33,027 - 34,036 | 41,060 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 34,037 - 35,080 | 47,109 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 35,081 - 43,044 | 426,712 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
-  [33] scripts/backtest_alpha_124.py (Lines 43,045 - 43,905 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [34] scripts/polymarket_daily_projections.py (Lines 43,906 - 44,821 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [35] scripts/alpha124_status.py (Lines 44,822 - 44,900 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [36] scripts/polymarket_scorecard_snapshot.py (Lines 44,901 - 45,050 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [37] tests/test_alpha_124_oracles.py (Lines 45,051 - 48,197 | 163,349 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 48,198 - 50,092 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [39] tests/test_polymarket_wfo_5fixes.py (Lines 50,093 - 53,936 | 189,501 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [40] tests/test_zero_trust_forensic_audit.py (Lines 53,937 - 54,693 | 33,297 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [10] src/polymarket_research/polymarket_live_harvester.py (Lines 353 - 10,653 | 616,470 B) :: v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP
+  [11] src/polymarket_research/polymarket_live_executor.py (Lines 10,654 - 17,819 | 357,901 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [12] src/polymarket_research/polymarket_ws_streams.py (Lines 17,820 - 18,732 | 41,006 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [13] src/polymarket_research/latency_trace.py (Lines 18,733 - 18,961 | 7,417 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [14] src/polymarket_research/polymarket_terminal_recorder.py (Lines 18,962 - 21,978 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [15] src/polymarket_research/deribit_svi_surface.py (Lines 21,979 - 22,557 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [16] src/polymarket_research/polymarket_paper_trader.py (Lines 22,558 - 24,900 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [17] src/polymarket_research/check_polymarket_balance.py (Lines 24,901 - 25,013 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [18] src/polymarket_research/verify_onchain_allowances.py (Lines 25,014 - 25,130 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [19] src/polymarket_research/redeem_settled_positions.py (Lines 25,131 - 25,430 | 12,505 B) :: CTF Settled Position Redemption CLI
+  [20] src/polymarket_research/setup_polymarket_account.py (Lines 25,431 - 25,696 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [21] audit_losing_trades.py (Lines 25,697 - 26,058 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [22] scripts/honest_purged_wfo_optimizer.py (Lines 26,059 - 27,838 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [23] src/polymarket_research/orderflow_wfo_simulators.py (Lines 27,839 - 28,679 | 37,391 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [24] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 28,680 - 29,440 | 32,785 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [25] src/polymarket_research/weather_metar_engine.py (Lines 29,441 - 30,788 | 58,186 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [26] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 30,789 - 31,324 | 21,735 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [27] src/polymarket_research/multistrike_svi_scalper.py (Lines 31,325 - 32,048 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [28] src/polymarket_research/same_oracle_dominance_box.py (Lines 32,049 - 32,888 | 34,006 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [29] src/polymarket_research/exact_twap_lock_engine.py (Lines 32,889 - 33,124 | 9,226 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [30] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 33,125 - 34,134 | 41,060 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [31] src/polymarket_research/macro_counting_ctf_engine.py (Lines 34,135 - 35,178 | 47,109 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [32] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 35,179 - 43,142 | 426,712 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)
+  [33] scripts/backtest_alpha_124.py (Lines 43,143 - 44,003 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [34] scripts/polymarket_daily_projections.py (Lines 44,004 - 44,919 | 34,838 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [35] scripts/alpha124_status.py (Lines 44,920 - 44,998 | 3,091 B) :: Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [36] scripts/polymarket_scorecard_snapshot.py (Lines 44,999 - 45,148 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [37] tests/test_alpha_124_oracles.py (Lines 45,149 - 48,295 | 163,349 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [38] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 48,296 - 50,190 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [39] tests/test_polymarket_wfo_5fixes.py (Lines 50,191 - 54,210 | 199,189 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [40] tests/test_zero_trust_forensic_audit.py (Lines 54,211 - 54,967 | 33,297 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
 """
 
 from __future__ import annotations
@@ -63,7 +63,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "dynamic_sizing": true,
   "dynamic_risk_pct": 0.18,
   "scale_up_equity_threshold": 110.0,
-  "correlated_crypto_single_slot_threshold": 180.0,
+  "correlated_crypto_single_slot_threshold": 110.0,
   "scale_up_risk_pct": 0.22,
   "min_equity_floor": 66.67,
   "seed_survival_equity_threshold": 88.0,
@@ -6270,6 +6270,17 @@ class PolymarketLiveHarvester:
                 logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}", exc_info=True)
         return executed
 
+    def _is_phase3a_maker_rescue_live_active(self) -> bool:
+        explicit_flag = self.__dict__.get("enable_live_phase3a_maker_fallback")
+        if explicit_flag is False or os.environ.get("PM_DISABLE_LIVE_PHASE3A_MAKER", "0") == "1":
+            return False
+        real_live = (
+            not self.dry_run and getattr(self.executor, "auth_mode", "") in ("LIVE", "AUTHENTICATED_L2")
+            and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+            and not any(k in getattr(self.executor, "__dict__", {}) for k in ("execute_snipe_order_async", "execute_snipe_order"))
+        )
+        return bool(explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback", True))))
+
     def _calc_priority_score(self, s_item: Dict[str, Any]) -> float:
         _a_s = str(s_item.get("asset") or "").upper()
         if _a_s and _a_s not in self.get_graduated_allowed_assets():
@@ -6294,7 +6305,11 @@ class PolymarketLiveHarvester:
         )
         _is_slv3 = s_item.get("sleeve") == "SLEEVE_3_STRIKE_CONVERGENCE" or s_item.get("shock_source") == "EXP316_TRACK_A_CONVERGENCE"
         _ceil = 0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling, 0.85) if _is_15m else self.max_price_ceiling))
-        if ask_est < self.min_price_floor or ask_est > _ceil:
+        if ask_est < self.min_price_floor:
+            return 0.0
+        if ask_est > _ceil:
+            if not _is_bnd and not _is_slv3 and _tte_s >= 85.0 and dist >= 0.06 and ask_est <= round(_ceil + 0.03, 4) and self._is_phase3a_maker_rescue_live_active():
+                return 0.5 * (z_sc / max(ask_est, 0.01))
             return 0.0
         return z_sc / max(ask_est, 0.01)
 
@@ -7029,7 +7044,7 @@ class PolymarketLiveHarvester:
                 logger.warning(f"[ENTRY_QUALITY_REJECT] Crossed/locked book for {token_id}: bid {best_bid:.4f} >= ask {best_ask:.4f}")
                 return
             spread = best_ask - best_bid
-            if spread > MAX_ALLOWED_SPREAD:
+            if spread > MAX_ALLOWED_SPREAD + 1e-6:
                 logger.debug(f"[SPREAD GUARD] Spread {spread:.3f} > max allowed {MAX_ALLOWED_SPREAD:.3f}. Skipping illiquid book.")
                 return
         elif not self.dry_run and not is_synthetic_test:
@@ -7089,7 +7104,7 @@ class PolymarketLiveHarvester:
 
             # Strict 3¢ spread enforcement against fresh live book
             spread = best_ask - best_bid
-            if spread > MAX_ALLOWED_SPREAD:
+            if spread > MAX_ALLOWED_SPREAD + 1e-6:
                 logger.debug(f"[SPREAD GUARD] Spread {spread:.3f} > max allowed {MAX_ALLOWED_SPREAD:.3f}. Skipping illiquid book.")
                 return
         else:
@@ -7124,7 +7139,7 @@ class PolymarketLiveHarvester:
 
             best_ask = raw_asks[0][0]
             best_bid = raw_bids[0][0]
-            if best_bid >= best_ask or (best_ask - best_bid) > MAX_ALLOWED_SPREAD:
+            if best_bid >= best_ask or (best_ask - best_bid) > MAX_ALLOWED_SPREAD + 1e-6:
                 return
 
         first_ask = raw_asks[0][0]
@@ -7194,12 +7209,34 @@ class PolymarketLiveHarvester:
                 else self.max_price_ceiling
             )
         )
+        _phase3a_live_eligible = self._is_phase3a_maker_rescue_live_active()
+        _maker_rescue_cd_map = self.__dict__.setdefault("_maker_ceiling_rescue_cd", {})
+        _maker_only_ceiling_rescue = False
+        _maker_rescue_cap_px = round(min(float(eff_price_ceiling), float(max_allowed_price), float(p_max) if p_max > 0 else float(eff_price_ceiling)), 2)
+
+        def _can_route_to_phase3a_ceiling_rescue(px_check: float, cap_ref: float) -> bool:
+            if not _phase3a_live_eligible or self.dry_run:
+                return False
+            if regime not in ("REGIME_B_LATE_SNIPER", "REGIME_C_SUBHOURLY"):
+                return False
+            if tte < (85.0 if _is_live_real else 75.0) or z_strike < 1.00 or abs(dist_pct) < 0.06:
+                return False
+            if (time.time() - float(_maker_rescue_cd_map.get(str(m_id or ""), 0.0) or 0.0)) < 8.0:
+                return False
+            if px_check > round(cap_ref + 0.03, 4) + 1e-6:
+                return False
+            cand_m_px = round(min(float(_maker_rescue_cap_px), round(float(raw_asks[0][0]) - 0.01, 2), round(float(first_bid) + 0.01, 2)), 2)
+            return bool(float(min_allowed_price) - 1e-6 <= cand_m_px <= float(_maker_rescue_cap_px) + 1e-6)
+
         if not self.dry_run and raw_asks and raw_asks[0][0] > eff_price_ceiling:
-            logger.info(
-                f"[EV CEILING REJECT] {shock.get('title')!r} {target_token}: first_ask ${raw_asks[0][0]:.4f} > "
-                f"+EV ceiling ${eff_price_ceiling:.4f} (p_max=${p_max:.4f}, z_strike={z_strike:.2f}). Skipping."
-            )
-            return
+            if _can_route_to_phase3a_ceiling_rescue(float(raw_asks[0][0]), float(eff_price_ceiling)):
+                _maker_only_ceiling_rescue = True
+            else:
+                logger.info(
+                    f"[EV CEILING REJECT] {shock.get('title')!r} {target_token}: first_ask ${raw_asks[0][0]:.4f} > "
+                    f"+EV ceiling ${eff_price_ceiling:.4f} (p_max=${p_max:.4f}, z_strike={z_strike:.2f}). Skipping."
+                )
+                return
 
         # v3.9.1 Institutional L1 Ask Depth Floor ($20.00): eliminates thin retail ask adverse-selection (95.8% Holdout WR, PF=7.70, 0 wipeouts)
         if _is_live_real and regime in ("REGIME_B_LATE_SNIPER", "REGIME_C_SUBHOURLY") and raw_asks:
@@ -7210,7 +7247,8 @@ class PolymarketLiveHarvester:
                 )
                 return
 
-        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= eff_price_ceiling)
+        _depth_cap_px = round(float(eff_price_ceiling) + 0.03, 4) if _maker_only_ceiling_rescue else float(eff_price_ceiling)
+        executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= _depth_cap_px + 1e-6)
 
         # Dynamic reference-ticket depth gate scaled to actual ticket floor
         PAPER_REFERENCE_TICKET_USD = 12.0 if self.dynamic_sizing else max(float(self.ticket_notional), 12.0)
@@ -7253,16 +7291,20 @@ class PolymarketLiveHarvester:
             else ("SLEEVE_2_MID_HOUR" if regime == "REGIME_A_MID_HOUR" else "SLEEVE_1_CORE_302")))
         )
         if not self.dry_run:
-            if first_ask < min_allowed_price or first_ask > max_allowed_price:
+            if first_ask < min_allowed_price or (first_ask > max_allowed_price and not _maker_only_ceiling_rescue):
                 if max_allowed_price < first_ask <= (max_allowed_price + 0.06):
                     self._register_shadow_phase3a_maker_in(
                         shock, target_token, first_ask, first_bid, max_allowed_price, raw_asks,
                         "PRICE_BAND_REJECT", bool(is_subhourly), float(dist_pct), float(tte),
                     )
-                logger.info(
-                    f"[PRICE BAND REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping."
-                )
-                return
+                if first_ask > max_allowed_price and _can_route_to_phase3a_ceiling_rescue(float(first_ask), float(max_allowed_price)):
+                    _maker_only_ceiling_rescue = True
+                    executable_depth_usd = sum(px * sz for px, sz in raw_asks if px <= round(float(max_allowed_price) + 0.03, 4) + 1e-6)
+                else:
+                    logger.info(
+                        f"[PRICE BAND REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping."
+                    )
+                    return
             if is_subhourly and not is_synthetic_test and (0.68 <= first_ask < 0.71) and abs(dist_pct) < 0.11 and z_strike < 0.75:
                 logger.info(
                     f"[15M DEADZONE REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} in [0.68, 0.71) with abs(dist_pct)={abs(dist_pct):.4f}% < 0.11% and z_strike={z_strike:.2f} < 0.75. Skipping."
@@ -7435,7 +7477,7 @@ class PolymarketLiveHarvester:
                         return
                 risk_pct = tier_limits["dynamic_bankroll_pct"]
                 pct_ticket_cap = round(risk_pct * total_account_value, 2)
-                if assigned_sleeve == "SLEEVE_4_BOUNDARY_SNIPE" and total_account_value < small_bankroll_corr_cap:
+                if assigned_sleeve == "SLEEVE_4_BOUNDARY_SNIPE" and total_account_value < 180.0:
                     pct_ticket_cap = min(pct_ticket_cap, round(0.16 * total_account_value, 2), 22.0)
                 seed_ticket_floor = float(RISK_CONFIG.get("seed_survival_ticket_usd", 12.0))
                 if total_account_value < float(RISK_CONFIG.get("seed_survival_equity_threshold", 88.0)):
@@ -7443,10 +7485,11 @@ class PolymarketLiveHarvester:
                         pct_ticket_cap = max(seed_ticket_floor, pct_ticket_cap)
                     else:
                         pct_ticket_cap = min(pct_ticket_cap, seed_ticket_floor)
+                _sizing_entry_px = _maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask
                 dynamic_ticket_cap = compute_correlated_truncated_kelly_size(
                     live_equity=total_account_value,
                     p_win=p_win_est,
-                    entry_px=first_ask,
+                    entry_px=_sizing_entry_px,
                     active_positions=self._risk_bearing_positions(),
                     cand_expiry_ts=cand_exp_ts,
                     cand_direction=target_token,
@@ -7459,7 +7502,7 @@ class PolymarketLiveHarvester:
                     dynamic_ticket_cap = apply_convex_payoff_sizing_cap(
                         dynamic_ticket_cap,
                         live_equity=total_account_value,
-                        entry_px=first_ask,
+                        entry_px=_sizing_entry_px,
                         sleeve=assigned_sleeve,
                     )
                 if dynamic_ticket_cap <= 0.0:
@@ -7485,8 +7528,9 @@ class PolymarketLiveHarvester:
                 # Hard portfolio exposure cap (config max_exposure) is never lifted by dynamic sizing.
                 exposure_cap = self.max_exposure
             else:
+                _sizing_entry_px = _maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask
                 kelly_ticket = _calc_kelly(
-                    p_model_for_sizing, first_ask, live_bankroll
+                    p_model_for_sizing, _sizing_entry_px, live_bankroll
                 )
                 min_lot_gate = min(MIN_LOT_SIZE_USD, float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else MIN_LOT_SIZE_USD
                 if kelly_ticket < min_lot_gate:
@@ -7520,7 +7564,7 @@ class PolymarketLiveHarvester:
         if not self.dry_run and not is_synthetic_test and first_ask > 0:
             max_near_bid_shares = near_touch_bid_shares / max(min_bid_mult, 1.0)
             max_bid_supported_shares = min(max_near_bid_shares, total_bid_shares)
-            max_bid_supported_usd = math.floor(max_bid_supported_shares * first_ask * 100.0) / 100.0
+            max_bid_supported_usd = math.floor(max_bid_supported_shares * (_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask) * 100.0) / 100.0
             if effective_notional > max_bid_supported_usd:
                 min_lot_chk = min(MIN_LOT_SIZE_USD, float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else _live_min_lot
                 if max_bid_supported_usd < min_lot_chk:
@@ -7537,7 +7581,7 @@ class PolymarketLiveHarvester:
         # Idea #1 Pre-VWAP Elastic [PREWARM LADDER] Rung Down-Snapping:
         # If L1/limit depth cannot fill the full elastic ticket without spilling into an expensive L2 jump,
         # step down to the $16.50 or $12.00 pre-warmed rung before computing raw_vwap.
-        if not self.dry_run and self.dynamic_sizing and raw_asks:
+        if not self.dry_run and self.dynamic_sizing and raw_asks and not _maker_only_ceiling_rescue:
             prelim_limit_px = round(min(float(first_ask) + fak_buf, self.max_price_ceiling, max_allowed_price), 2)
             prelim_limit_depth = sum(float(px) * float(sz) for px, sz in raw_asks if float(px) <= prelim_limit_px + 1e-6)
             if prelim_limit_depth < float(effective_notional) - 1e-6:
@@ -7560,6 +7604,8 @@ class PolymarketLiveHarvester:
             if spent >= effective_notional - 1e-6:
                 break
         raw_vwap = round(spent / shares, 4) if shares > 0 else (raw_asks[0][0] if raw_asks else None)
+        if _maker_only_ceiling_rescue:
+            raw_vwap = _maker_rescue_cap_px
 
         # Check ceiling and floor against raw execution ask / VWAP & p_max
         if not self.dry_run:
@@ -7569,15 +7615,23 @@ class PolymarketLiveHarvester:
                         shock, target_token, first_ask, first_bid, max_allowed_price, raw_asks,
                         "VWAP_BAND_REJECT", bool(is_subhourly), float(dist_pct), float(tte),
                     )
-                logger.info(
-                    f"[VWAP BAND REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping."
-                )
-                return
+                if raw_vwap and raw_vwap > max_allowed_price and _can_route_to_phase3a_ceiling_rescue(float(raw_vwap), float(_maker_rescue_cap_px)):
+                    _maker_only_ceiling_rescue = True
+                    raw_vwap = _maker_rescue_cap_px
+                else:
+                    logger.info(
+                        f"[VWAP BAND REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping."
+                    )
+                    return
             if p_max <= 0.0 or raw_vwap > p_max:
-                logger.info(
-                    f"[P_MAX REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap:.4f} > p_max ${p_max:.4f} (p_true={p_true:.4f}, z_eff={z_eff:.2f}). Skipping."
-                )
-                return
+                if p_max > 0.0 and raw_vwap and raw_vwap > p_max and _can_route_to_phase3a_ceiling_rescue(float(raw_vwap), float(_maker_rescue_cap_px)):
+                    _maker_only_ceiling_rescue = True
+                    raw_vwap = _maker_rescue_cap_px
+                else:
+                    logger.info(
+                        f"[P_MAX REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap:.4f} > p_max ${p_max:.4f} (p_true={p_true:.4f}, z_eff={z_eff:.2f}). Skipping."
+                    )
+                    return
             if age_ask_ms_val > 10000.0 and (p_true - first_ask) > 0.28:
                 logger.warning(
                     f"[ANCHOR DISAGREEMENT VETO] {shock.get('title')!r} {target_token}: resting ask ${first_ask:.4f} "
@@ -7646,12 +7700,16 @@ class PolymarketLiveHarvester:
                     return
 
         eff_px = (
-            token_features.get(f"effective_price_${int(effective_notional)}")
-            or token_features.get("effective_price_$25")
-            or token_features.get("effective_price_$20")
-            or token_features.get("effective_price_$5")
-            or token_features.get("effective_price_$50")
-            or raw_vwap
+            raw_vwap
+            if _maker_only_ceiling_rescue
+            else (
+                token_features.get(f"effective_price_${int(effective_notional)}")
+                or token_features.get("effective_price_$25")
+                or token_features.get("effective_price_$20")
+                or token_features.get("effective_price_$5")
+                or token_features.get("effective_price_$50")
+                or raw_vwap
+            )
         )
 
         m_id = str(shock.get("market_id"))
@@ -7859,21 +7917,25 @@ class PolymarketLiveHarvester:
         # Smart FAK Price Buffer: entry qualification (`first_ask` & `raw_vwap`) is strictly <= eff_price_ceiling ($0.85),
         # while the FAK sweep limit (`sleeve_max_price`) in live mode allows up to +2c ($0.87) ONLY when p_fair +EV supports it,
         # preventing 0c slippage tolerance (`FAK_KILLED_NO_MATCH`) on qualified $0.84-$0.85 entries!
-        if is_special_regime:
-            sleeve_max_price = max(self.max_price_ceiling, max_allowed_price)
-        elif not self.dry_run:
-            _base_ceil = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
-            if _is_live_real:
-                _ev_fair_cap = round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05, 4)
-                sleeve_max_price = max(_base_ceil, min(0.87, round(max_allowed_price + 0.02, 2), _ev_fair_cap))
-            else:
-                sleeve_max_price = _base_ceil
+        if _maker_only_ceiling_rescue:
+            sleeve_max_price = _maker_rescue_cap_px
+            target_limit_px = _maker_rescue_cap_px
         else:
-            sleeve_max_price = self.max_price_ceiling
-        target_limit_px = round(min(raw_vwap + fak_buf, sleeve_max_price), 2)
+            if is_special_regime:
+                sleeve_max_price = max(self.max_price_ceiling, max_allowed_price)
+            elif not self.dry_run:
+                _base_ceil = min(self.max_price_ceiling, max_allowed_price, eff_price_ceiling)
+                if _is_live_real:
+                    _ev_fair_cap = round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05, 4)
+                    sleeve_max_price = max(_base_ceil, min(0.87, round(max_allowed_price + 0.02, 2), _ev_fair_cap))
+                else:
+                    sleeve_max_price = _base_ceil
+            else:
+                sleeve_max_price = self.max_price_ceiling
+            target_limit_px = round(min(raw_vwap + fak_buf, sleeve_max_price), 2)
 
         # Idea #1: Elastic [PREWARM LADDER] Rung Down-Snapping when executable depth at target_limit_px < effective_notional
-        if not self.dry_run and self.dynamic_sizing:
+        if not self.dry_run and self.dynamic_sizing and not _maker_only_ceiling_rescue:
             limit_depth_usd = sum(float(px) * float(sz) for px, sz in raw_asks if float(px) <= target_limit_px + 1e-6)
             if limit_depth_usd < float(effective_notional) - 1e-6:
                 orig_notional = float(effective_notional)
@@ -7924,85 +7986,17 @@ class PolymarketLiveHarvester:
             sizing_fn=active_sizing_fn, max_ticket_cap=getattr(self, "max_absolute_ticket_usd", None),
             prefetched_pre_balance=pre_cond_bal,
         )
+        res = None
         try:
             _lt_disp = _CURRENT_TRACE.get() if _CURRENT_TRACE is not None else None
             if _lt_disp is not None:
                 _lt_disp.stamp("dispatch_call")
                 _lt_disp.set(effective_notional_usd=effective_notional, target_limit_px=target_limit_px)
-            res = await self.executor.execute_snipe_order_async(
-                **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=book_snapshot,
-            )
-            # Idea #1 Post-Dispatch Safety Net: If executor simulated FOK sweep infeasible at higher rung, down-snap to $16.50 / $12.00
-            if (
-                not res.success
-                and "FOK Sweep Infeasible" in str(res.error or "")
-                and not self.dry_run
-                and self.dynamic_sizing
-                and float(effective_notional) > 12.0
-            ):
-                for fallback_rung in (16.50, 12.00):
-                    if fallback_rung >= float(effective_notional) - 0.10:
-                        continue
-                    logger.info(
-                        f"[IDEA-1 FOK SWEEP DOWNSNAP RETRY] {trade_id}: ${effective_notional:.2f} infeasible at "
-                        f"${target_limit_px:.2f}; stepping down to pre-warmed rung ${fallback_rung:.2f}."
-                    )
-                    effective_notional = fallback_rung
-                    if trade_id in self.pending_entry_intents:
-                        self.pending_entry_intents[trade_id]["notional_usd"] = effective_notional
-                    res = await self.executor.execute_snipe_order_async(
-                        **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=book_snapshot,
-                    )
-                    if res.success or "FOK Sweep Infeasible" not in str(res.error or ""):
-                        break
-
-            # Idea #5: Sequential +2c Pre-Signed Fallback (disabled in live real mode by Purged WFO v4.0 unless explicitly enabled)
-            if (
-                (res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection"))
-                and not self.dry_run
-                and self.dynamic_sizing
-                and (
-                    not _is_live_real
-                    or (
-                        bool((getattr(self, "risk_config", None) or RISK_CONFIG).get("enable_fak_plus2c_fallback", False))
-                        and z_strike >= 1.25
-                    )
+            if _maker_only_ceiling_rescue:
+                logger.info(
+                    f"[CEILING -> PHASE 3A MAKER RESCUE] {trade_id}: ask=${first_ask:.2f} > +EV ceiling=${_maker_rescue_cap_px:.2f}; "
+                    f"skipping Taker FAK and routing directly to 0%-fee postOnly Maker BUY <= ${_maker_rescue_cap_px:.2f}."
                 )
-                and target_limit_px + 0.01 <= sleeve_max_price + 1e-6
-            ):
-                fallback_limit_px = round(min(sleeve_max_price, target_limit_px + 0.02), 2)
-                if fallback_limit_px > target_limit_px + 1e-6:
-                    logger.info(
-                        f"[IDEA-5 FAK +2c FALLBACK] {trade_id}: missed L1 at ${target_limit_px:.2f} (0 filled, mode={res.mode}); "
-                        f"firing sequential pre-signed fallback at ${fallback_limit_px:.2f} (ceiling=${sleeve_max_price:.2f})."
-                    )
-                    target_limit_px = fallback_limit_px
-                    if trade_id in self.pending_entry_intents:
-                        self.pending_entry_intents[trade_id]["target_price"] = target_limit_px
-                    fresh_fallback_book = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot
-                    try:
-                        res = await self.executor.execute_snipe_order_async(
-                            **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
-                            prefetched_book=fresh_fallback_book, max_book_buffer=0.04,
-                        )
-                    except TypeError as _te:
-                        if "max_book_buffer" not in str(_te):
-                            raise
-                        res = await self.executor.execute_snipe_order_async(
-                            **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
-                            prefetched_book=fresh_fallback_book,
-                        )
-
-            # Live Phase 3A Passive Maker-In Rescue (GTC + postOnly=True, 0% fee + 20% Maker rebate, 0ms itode, 3.5s TTL)
-            # Promoted from validated shadow telemetry: captures 0%-fee + 20%-rebate fills on FAK misses while canceling toxic retraces in <10ms.
-            if (
-                (
-                    res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION")
-                    or (res.details or {}).get("fak_killed")
-                    or (res.details or {}).get("clob_400_rejection")
-                )
-                and (not _is_live_real or (z_strike >= 0.85 and abs(dist_pct) >= 0.06))
-            ):
                 rescue_res = await self._attempt_live_phase3a_maker_rescue(
                     trade_id=trade_id,
                     token_id=token_id,
@@ -8012,7 +8006,7 @@ class PolymarketLiveHarvester:
                     first_ask=first_ask,
                     first_bid=first_bid,
                     min_allowed_price=min_allowed_price,
-                    max_allowed_price=max_allowed_price,
+                    max_allowed_price=_maker_rescue_cap_px,
                     open_spot=open_spot,
                     entry_spot_ref=entry_spot_ref,
                     spot_denom=spot_denom,
@@ -8022,6 +8016,110 @@ class PolymarketLiveHarvester:
                 )
                 if rescue_res is not None:
                     res = rescue_res
+                else:
+                    _maker_rescue_cd_map[str(m_id or "")] = time.time()
+                    res = OrderResult(
+                        success=False, order_id=None, trade_id=trade_id, token_id=token_id,
+                        target_token=target_token, side="BUY", price=_maker_rescue_cap_px, size=0.0,
+                        notional_usd=effective_notional, fee_usd=0.0, latency_ms=0.0,
+                        mode="FAK_KILLED_NO_MATCH", execution_status=ExecutionStatus.REJECTED,
+                        details={"fak_killed": True, "maker_ceiling_rescue_unfilled": True},
+                        error="MAKER_CEILING_RESCUE_UNFILLED",
+                    )
+            else:
+                res = await self.executor.execute_snipe_order_async(
+                    **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=book_snapshot,
+                )
+                # Idea #1 Post-Dispatch Safety Net: If executor simulated FOK sweep infeasible at higher rung, down-snap to $16.50 / $12.00
+                if (
+                    not res.success
+                    and "FOK Sweep Infeasible" in str(res.error or "")
+                    and not self.dry_run
+                    and self.dynamic_sizing
+                    and float(effective_notional) > 12.0
+                ):
+                    for fallback_rung in (16.50, 12.00):
+                        if fallback_rung >= float(effective_notional) - 0.10:
+                            continue
+                        logger.info(
+                            f"[IDEA-1 FOK SWEEP DOWNSNAP RETRY] {trade_id}: ${effective_notional:.2f} infeasible at "
+                            f"${target_limit_px:.2f}; stepping down to pre-warmed rung ${fallback_rung:.2f}."
+                        )
+                        effective_notional = fallback_rung
+                        if trade_id in self.pending_entry_intents:
+                            self.pending_entry_intents[trade_id]["notional_usd"] = effective_notional
+                        res = await self.executor.execute_snipe_order_async(
+                            **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px, prefetched_book=book_snapshot,
+                        )
+                        if res.success or "FOK Sweep Infeasible" not in str(res.error or ""):
+                            break
+
+                # Idea #5: Sequential +2c Pre-Signed Fallback (disabled in live real mode by Purged WFO v4.0 unless explicitly enabled)
+                if (
+                    (res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection"))
+                    and not self.dry_run
+                    and self.dynamic_sizing
+                    and (
+                        not _is_live_real
+                        or (
+                            bool((getattr(self, "risk_config", None) or RISK_CONFIG).get("enable_fak_plus2c_fallback", False))
+                            and z_strike >= 1.25
+                        )
+                    )
+                    and target_limit_px + 0.01 <= sleeve_max_price + 1e-6
+                ):
+                    fallback_limit_px = round(min(sleeve_max_price, target_limit_px + 0.02), 2)
+                    if fallback_limit_px > target_limit_px + 1e-6:
+                        logger.info(
+                            f"[IDEA-5 FAK +2c FALLBACK] {trade_id}: missed L1 at ${target_limit_px:.2f} (0 filled, mode={res.mode}); "
+                            f"firing sequential pre-signed fallback at ${fallback_limit_px:.2f} (ceiling=${sleeve_max_price:.2f})."
+                        )
+                        target_limit_px = fallback_limit_px
+                        if trade_id in self.pending_entry_intents:
+                            self.pending_entry_intents[trade_id]["target_price"] = target_limit_px
+                        fresh_fallback_book = fast_tick_book_for_token(read_fast_tick(asset_str), token_id) or book_snapshot
+                        try:
+                            res = await self.executor.execute_snipe_order_async(
+                                **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
+                                prefetched_book=fresh_fallback_book, max_book_buffer=0.04,
+                            )
+                        except TypeError as _te:
+                            if "max_book_buffer" not in str(_te):
+                                raise
+                            res = await self.executor.execute_snipe_order_async(
+                                **_base_snipe_kw, notional_usd=effective_notional, target_price=target_limit_px,
+                                prefetched_book=fresh_fallback_book,
+                            )
+
+                # Live Phase 3A Passive Maker-In Rescue (GTC + postOnly=True, 0% fee + 20% Maker rebate, 0ms itode, 3.5s TTL)
+                # Promoted from validated shadow telemetry: captures 0%-fee + 20%-rebate fills on FAK misses while canceling toxic retraces in <10ms.
+                if (
+                    (
+                        res.mode in ("FAK_KILLED_NO_MATCH", "CLOB_HTTP_400_REJECTION")
+                        or (res.details or {}).get("fak_killed")
+                        or (res.details or {}).get("clob_400_rejection")
+                    )
+                    and (not _is_live_real or (z_strike >= 0.85 and abs(dist_pct) >= 0.06))
+                ):
+                    rescue_res = await self._attempt_live_phase3a_maker_rescue(
+                        trade_id=trade_id,
+                        token_id=token_id,
+                        target_token=target_token,
+                        asset_str=asset_str,
+                        effective_notional=effective_notional,
+                        first_ask=first_ask,
+                        first_bid=first_bid,
+                        min_allowed_price=min_allowed_price,
+                        max_allowed_price=max_allowed_price,
+                        open_spot=open_spot,
+                        entry_spot_ref=entry_spot_ref,
+                        spot_denom=spot_denom,
+                        tte=tte,
+                        pre_cond_bal=pre_cond_bal,
+                        book_snapshot=book_snapshot,
+                    )
+                    if rescue_res is not None:
+                        res = rescue_res
         finally:
             _det_err = (
                 (str(res.error or "").lower() + str((res.details or {}).get("raw_exception", "")).lower())
@@ -8141,7 +8239,7 @@ class PolymarketLiveHarvester:
                 "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
                 "notional_usd": res.notional_usd, "fee_usd": res.fee_usd, "entry_fee_cash_usd": float(res.fee_usd or 0.0),
                 "entry_fee_asset": "USDC", "fee_source": "crypto_fees_v2",
-                "fee_rate_applied": m_fee_rate, "fee_exponent_applied": m_fee_exp,
+                "fee_rate_applied": (0.0 if res.mode == "LIVE_PHASE3A_MAKER_IN" else m_fee_rate), "fee_exponent_applied": m_fee_exp,
                 "target_exit_price": 0.99 if self.hold_to_maturity else target_exit, "exit_order_size": float(res.size),
                 "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": time.time(),
                 "candle_expiry_ts": time.time() + tte, "pre_token_balance": res.details.get("pre_token_balance", pre_cond_bal),
@@ -10355,7 +10453,7 @@ class PolymarketLiveHarvester:
                                     continue
 
                                 # 5.0s shock debounce against superior QUALIFIED concurrent triggers
-                                cand_score = _calc_priority_score(shock)
+                                cand_score = self._calc_priority_score(shock)
                                 t0_u = float(shock.get("t0_unix", now_u))
                                 shk_m_id = str(shock.get("market_id") or "")
 
@@ -53695,12 +53793,12 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
     h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
     h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
     h.executor.is_heartbeat_healthy = lambda: True
-    h._last_known_collateral = 100.0
-    h.executor.get_collateral_balance = lambda *a, **kw: 100.0
+    h._last_known_collateral = 75.0
+    h.executor.get_collateral_balance = lambda *a, **kw: 75.0
     h.executor.get_conditional_balance = lambda *a, **kw: 0.0
     h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "OID_EXIT_408"}
 
-    # Pre-populate Slot #1 with an active 15m BTC directional position ($30 notional -> total_account_value = $130 >= $110)
+    # Pre-populate Slot #1 with an active 15m BTC directional position ($30 notional -> total_account_value = $105 < $110)
     h.active_positions["SLOT1_BTC_15M"] = {
         "trade_id": "SLOT1_BTC_15M",
         "market_id": "6000001",
@@ -53730,7 +53828,7 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
 
     h.executor.execute_snipe_order_async = _mock_snipe
 
-    # Regular 2nd 15m directional shock at TTE=180s MUST still be blocked by correlated concurrency guard (< $180)
+    # Regular 2nd 15m directional shock at TTE=180s MUST still be blocked by correlated concurrency guard (< $110)
     now_t = time.time()
     reg_shock = {
         "event_id": "EVT_REG_2", "market_id": "6000002", "condition_id": "0xc2", "t0_unix": now_t,
@@ -53749,7 +53847,11 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
     }
     assert h._calc_priority_score(reg_shock) > 0
     asyncio.run(h.evaluate_shock_and_execute(reg_shock))
-    assert len(snipe_calls) == 0, "Correlated 2nd 15m trade must remain blocked below $180!"
+    assert len(snipe_calls) == 0, "Correlated 2nd 15m trade must remain blocked below $110!"
+
+    # At >= $110 ($100 free + $30 active = $130), Boundary-Lock shock (`tte=22s`, `$0.89`) MUST pass!
+    h._last_known_collateral = 100.0
+    h.executor.get_collateral_balance = lambda *a, **kw: 100.0
 
     # Boundary-Lock shock (`tte=22s`, `$0.89`, recorder shock without explicit shock_source='BOUNDARY_LOCK') MUST pass!
     bnd_shock = {
@@ -53915,6 +54017,178 @@ def test_exp_pm_406b_live_maker_anchor_bridge_and_409_zf_intraday_maker_box(monk
     assert uw_out["success"] is False and uw_out["stage"] == "LEG_2_REJECTED_UNWOUND"
     assert len(uw_called) == 1 and uw_called[0] == ("ANC_TOK", 10.0)
     assert uw_out["residual_unhedged_leg"]["residual_shares"] == 0.0
+
+
+def test_unlock_a_110_multislot_and_unlock_b_ev_ceiling_phase3a_maker_rescue(monkeypatch, tmp_path):
+    """
+    Verifies Unlock A (`correlated_crypto_single_slot_threshold = 110.0`) and
+    Unlock B (`+1c..+3c` above `+EV` ceiling routed directly to `0%`-fee `postOnly=True` Phase 3A Maker Rescue):
+      1. Unlock A: At `$135.54` total account value (`>= $110.0`), Slot #2 opens on a valid 2nd 15m directional setup
+         with the `0.54x` same-window correlation haircut + `12.5%` convex salvage-risk cap.
+      2. Unlock B: When `first_ask = $0.87` (`2c` above `$0.85` `+EV` ceiling, `first_bid = $0.84`, `z_strike >= 1.2`,
+         `tte = 180s`), `evaluate_shock_and_execute` NEVER fires a negative-EV Taker FAK above `$0.85`; instead it
+         routes directly to `place_passive_maker_entry` (`postOnly=True`) at `$0.85` (`0%` fee), records active
+         position on fill, sets an `8s` market cooldown + cleans `pending_entry_intents` on unfilled timeout, and
+         still hard-rejects runaway `$0.91` (`> +3c`) asks.
+    """
+    import asyncio
+    from src.polymarket_research import polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_executor import OrderResult, ExecutionStatus
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "unlock_ab_state.json")
+    monkeypatch.setenv("PM_LIVE_PHASE3A_TTL_SEC", "0.25")
+    monkeypatch.setattr(plh, "read_fast_tick", lambda asset, max_age_sec=1.5: None)
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.dynamic_sizing = True
+    h.enable_live_phase3a_maker_fallback = True
+    h.allowed_assets = {"BTC", "ETH"}
+    h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
+    h.executor.is_heartbeat_healthy = lambda: True
+    h._last_known_collateral = 105.54
+    h.executor.get_collateral_balance = lambda *a, **kw: 105.54
+    h.executor.get_conditional_balance = lambda *a, **kw: 0.0
+    h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "OID_EXIT_AB"}
+    h.get_reference_spot_price = lambda asset: 2520.0
+    h.get_usd_reference_spot_price = lambda asset: 2520.0
+
+    # --- 1. Unlock A: At $135.54 ($105.54 cash + $30.00 Slot #1), 2nd directional crypto slot is UNLOCKED ---
+    now_t = time.time()
+    h.active_positions["SLOT1_BTC_15M"] = {
+        "trade_id": "SLOT1_BTC_15M",
+        "market_id": "7000001",
+        "asset": "BTC",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "target_token": "UP",
+        "sleeve": "SLEEVE_1_SUBHOURLY_15M",
+        "candle_expiry_ts": now_t + 180.0,
+        "notional_usd": 30.0,
+        "remaining_cost_basis": 30.0,
+        "remaining_shares": 40.0,
+        "entry_price": 0.75,
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+    }
+    snipe_calls = []
+
+    async def _mock_snipe(**kw):
+        snipe_calls.append(kw)
+        return OrderResult(
+            success=True, order_id=f"OID_SNIPE_{len(snipe_calls)}", trade_id=kw["trade_id"],
+            token_id=kw["token_id"], target_token=kw["target_token"], side="BUY",
+            price=kw["target_price"], size=round(kw["notional_usd"] / kw["target_price"], 2),
+            notional_usd=kw["notional_usd"], fee_usd=0.05, latency_ms=1.0,
+            mode="DRY_RUN", execution_status=ExecutionStatus.POSITION_CONFIRMED, confirmed_onchain=True,
+            details={"pre_token_balance": 0.0},
+        )
+
+    h.executor.execute_snipe_order_async = _mock_snipe
+
+    slot2_shock = {
+        "event_id": "EVT_UA_SLOT2", "market_id": "7000002", "condition_id": "0xua2", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 15m", "asset": "ETH", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 2520.0, "trigger_price": 2520.0,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.80,
+        "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xua2"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "200000000000000000002", "raw_top_asks": [[0.74, 150.0]], "raw_top_bids": [[0.73, 150.0]],
+                "effective_price_$25": 0.74, "vwap_$25": 0.74, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(slot2_shock))
+    assert len(snipe_calls) == 1, "Unlock A must allow Slot #2 at $135.54 (>= $110.0)!"
+    # Recovery tier (25% * $135.54 = $33.89) * 0.54x same-window correlation haircut = $18.30
+    assert 12.0 <= snipe_calls[0]["notional_usd"] <= 19.0, f"Expected ~0.54x correlated sizing (~$18.30), got {snipe_calls[0]['notional_usd']}"
+
+    # --- 2. Unlock B: $0.87 ask (2c above $0.85 ceiling) routes directly to 0%-fee Maker Rescue <= $0.85 ---
+    h.active_positions.clear()
+    h.pending_entry_intents.clear()
+    snipe_calls.clear()
+    maker_posts = []
+    fill_mode = {"should_fill": True}
+
+    def _mock_maker_entry(**kw):
+        maker_posts.append(kw)
+        return {"success": True, "orderID": f"OID_MKR_{len(maker_posts)}", "price": kw["price"], "shares": round(kw["notional_usd"] / kw["price"], 2)}
+
+    def _mock_cancel(oid):
+        if fill_mode["should_fill"]:
+            return {"outcome": "FILLED", "is_canceled": False, "matched": 20.0}
+        return {"outcome": "CANCELED", "is_canceled": True, "matched": 0.0}
+
+    def _mock_summary(oid, tok):
+        if fill_mode["should_fill"]:
+            return {"matched": 20.0, "avg_price": 0.85, "terminal": True, "resting": False, "trade_ids": ["T_MKR_1"], "tx_hashes": ["0xtxmkr1"]}
+        return {"matched": 0.0, "avg_price": 0.0, "terminal": True, "resting": False}
+
+    h.executor.place_passive_maker_entry = _mock_maker_entry
+    h.executor.cancel_order = _mock_cancel
+    h.executor.get_order_fill_summary = _mock_summary
+
+    near_ceil_shock = {
+        "event_id": "EVT_UB_87", "market_id": "7000003", "condition_id": "0xub3", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 15m", "asset": "ETH", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 2505.5, "trigger_price": 2505.5,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.22,
+        "candle_sigma": 0.0012, "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub3"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "200000000000000000003", "raw_top_asks": [[0.87, 150.0]], "raw_top_bids": [[0.84, 150.0]],
+                "effective_price_$25": 0.87, "vwap_$25": 0.87, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    assert h._calc_priority_score(near_ceil_shock) > 0, "$0.87 ask (within +3c of $0.85 ceiling) must pass _calc_priority_score!"
+    asyncio.run(h.evaluate_shock_and_execute(near_ceil_shock))
+    assert len(snipe_calls) == 0, "Unlock B MUST NEVER fire Taker FAK above +EV ceiling!"
+    assert len(maker_posts) == 1, "Unlock B must route $0.87 near-miss to 0%-fee Maker Rescue!"
+    assert maker_posts[0]["price"] <= 0.85 and maker_posts[0]["max_price_ceiling"] <= 0.85
+    assert len(h.active_positions) == 1
+    filled_pos = next(iter(h.active_positions.values()))
+    assert filled_pos["entry_price"] == pytest.approx(0.85)
+    assert filled_pos["fee_usd"] == 0.0 and filled_pos["fee_rate_applied"] == 0.0
+
+    # --- 3. Unfilled Maker Rescue sets 8s cooldown, releases pending_entry_intents cleanly, and never halts ---
+    h.active_positions.clear()
+    fill_mode["should_fill"] = False
+    unfilled_shock = dict(near_ceil_shock, event_id="EVT_UB_87_MISS", market_id="7000004", condition_id="0xub4")
+    unfilled_shock["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub4"}
+    unfilled_shock["pre_shock_features_t0"] = {
+        "UP": dict(near_ceil_shock["pre_shock_features_t0"]["UP"], token_id="200000000000000000004")
+    }
+    asyncio.run(h.evaluate_shock_and_execute(unfilled_shock))
+    assert len(snipe_calls) == 0
+    assert len(maker_posts) == 2
+    assert len(h.pending_entry_intents) == 0 and len(h.active_positions) == 0
+    assert not h.risk_controller.is_halted() and not getattr(h, "risk_halt", False)
+    assert "7000004" in h._maker_ceiling_rescue_cd
+
+    # --- 4. Runaway $0.91 ask (> $0.85 + $0.03) is STILL hard-rejected with 0 orders ---
+    runaway_shock = dict(near_ceil_shock, event_id="EVT_UB_91", market_id="7000005", condition_id="0xub5")
+    runaway_shock["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub5"}
+    runaway_shock["pre_shock_features_t0"] = {
+        "UP": {
+            **near_ceil_shock["pre_shock_features_t0"]["UP"],
+            "token_id": "200000000000000000005",
+            "raw_top_asks": [[0.91, 150.0]],
+            "raw_top_bids": [[0.89, 150.0]],
+            "effective_price_$25": 0.91,
+            "vwap_$25": 0.91,
+        }
+    }
+    assert h._calc_priority_score(runaway_shock) < 0, "$0.91 (> +3c above ceiling) must be rejected by _calc_priority_score!"
+    asyncio.run(h.evaluate_shock_and_execute(runaway_shock))
+    assert len(snipe_calls) == 0 and len(maker_posts) == 2
+
 
 
 

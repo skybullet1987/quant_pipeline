@@ -3598,12 +3598,12 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
     h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
     h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
     h.executor.is_heartbeat_healthy = lambda: True
-    h._last_known_collateral = 100.0
-    h.executor.get_collateral_balance = lambda *a, **kw: 100.0
+    h._last_known_collateral = 75.0
+    h.executor.get_collateral_balance = lambda *a, **kw: 75.0
     h.executor.get_conditional_balance = lambda *a, **kw: 0.0
     h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "OID_EXIT_408"}
 
-    # Pre-populate Slot #1 with an active 15m BTC directional position ($30 notional -> total_account_value = $130 >= $110)
+    # Pre-populate Slot #1 with an active 15m BTC directional position ($30 notional -> total_account_value = $105 < $110)
     h.active_positions["SLOT1_BTC_15M"] = {
         "trade_id": "SLOT1_BTC_15M",
         "market_id": "6000001",
@@ -3633,7 +3633,7 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
 
     h.executor.execute_snipe_order_async = _mock_snipe
 
-    # Regular 2nd 15m directional shock at TTE=180s MUST still be blocked by correlated concurrency guard (< $180)
+    # Regular 2nd 15m directional shock at TTE=180s MUST still be blocked by correlated concurrency guard (< $110)
     now_t = time.time()
     reg_shock = {
         "event_id": "EVT_REG_2", "market_id": "6000002", "condition_id": "0xc2", "t0_unix": now_t,
@@ -3652,7 +3652,11 @@ def test_exp_pm_407_convex_payoff_sizing_and_408_boundary_slot2(monkeypatch, tmp
     }
     assert h._calc_priority_score(reg_shock) > 0
     asyncio.run(h.evaluate_shock_and_execute(reg_shock))
-    assert len(snipe_calls) == 0, "Correlated 2nd 15m trade must remain blocked below $180!"
+    assert len(snipe_calls) == 0, "Correlated 2nd 15m trade must remain blocked below $110!"
+
+    # At >= $110 ($100 free + $30 active = $130), Boundary-Lock shock (`tte=22s`, `$0.89`) MUST pass!
+    h._last_known_collateral = 100.0
+    h.executor.get_collateral_balance = lambda *a, **kw: 100.0
 
     # Boundary-Lock shock (`tte=22s`, `$0.89`, recorder shock without explicit shock_source='BOUNDARY_LOCK') MUST pass!
     bnd_shock = {
@@ -3818,6 +3822,178 @@ def test_exp_pm_406b_live_maker_anchor_bridge_and_409_zf_intraday_maker_box(monk
     assert uw_out["success"] is False and uw_out["stage"] == "LEG_2_REJECTED_UNWOUND"
     assert len(uw_called) == 1 and uw_called[0] == ("ANC_TOK", 10.0)
     assert uw_out["residual_unhedged_leg"]["residual_shares"] == 0.0
+
+
+def test_unlock_a_110_multislot_and_unlock_b_ev_ceiling_phase3a_maker_rescue(monkeypatch, tmp_path):
+    """
+    Verifies Unlock A (`correlated_crypto_single_slot_threshold = 110.0`) and
+    Unlock B (`+1c..+3c` above `+EV` ceiling routed directly to `0%`-fee `postOnly=True` Phase 3A Maker Rescue):
+      1. Unlock A: At `$135.54` total account value (`>= $110.0`), Slot #2 opens on a valid 2nd 15m directional setup
+         with the `0.54x` same-window correlation haircut + `12.5%` convex salvage-risk cap.
+      2. Unlock B: When `first_ask = $0.87` (`2c` above `$0.85` `+EV` ceiling, `first_bid = $0.84`, `z_strike >= 1.2`,
+         `tte = 180s`), `evaluate_shock_and_execute` NEVER fires a negative-EV Taker FAK above `$0.85`; instead it
+         routes directly to `place_passive_maker_entry` (`postOnly=True`) at `$0.85` (`0%` fee), records active
+         position on fill, sets an `8s` market cooldown + cleans `pending_entry_intents` on unfilled timeout, and
+         still hard-rejects runaway `$0.91` (`> +3c`) asks.
+    """
+    import asyncio
+    from src.polymarket_research import polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_executor import OrderResult, ExecutionStatus
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "unlock_ab_state.json")
+    monkeypatch.setenv("PM_LIVE_PHASE3A_TTL_SEC", "0.25")
+    monkeypatch.setattr(plh, "read_fast_tick", lambda asset, max_age_sec=1.5: None)
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.dynamic_sizing = True
+    h.enable_live_phase3a_maker_fallback = True
+    h.allowed_assets = {"BTC", "ETH"}
+    h.get_graduated_allowed_assets = lambda: {"BTC", "ETH"}
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "ok")
+    h.executor.is_heartbeat_healthy = lambda: True
+    h._last_known_collateral = 105.54
+    h.executor.get_collateral_balance = lambda *a, **kw: 105.54
+    h.executor.get_conditional_balance = lambda *a, **kw: 0.0
+    h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "OID_EXIT_AB"}
+    h.get_reference_spot_price = lambda asset: 2520.0
+    h.get_usd_reference_spot_price = lambda asset: 2520.0
+
+    # --- 1. Unlock A: At $135.54 ($105.54 cash + $30.00 Slot #1), 2nd directional crypto slot is UNLOCKED ---
+    now_t = time.time()
+    h.active_positions["SLOT1_BTC_15M"] = {
+        "trade_id": "SLOT1_BTC_15M",
+        "market_id": "7000001",
+        "asset": "BTC",
+        "horizon": "15m",
+        "is_subhourly": True,
+        "target_token": "UP",
+        "sleeve": "SLEEVE_1_SUBHOURLY_15M",
+        "candle_expiry_ts": now_t + 180.0,
+        "notional_usd": 30.0,
+        "remaining_cost_basis": 30.0,
+        "remaining_shares": 40.0,
+        "entry_price": 0.75,
+        "status": ExecutionStatus.POSITION_CONFIRMED,
+    }
+    snipe_calls = []
+
+    async def _mock_snipe(**kw):
+        snipe_calls.append(kw)
+        return OrderResult(
+            success=True, order_id=f"OID_SNIPE_{len(snipe_calls)}", trade_id=kw["trade_id"],
+            token_id=kw["token_id"], target_token=kw["target_token"], side="BUY",
+            price=kw["target_price"], size=round(kw["notional_usd"] / kw["target_price"], 2),
+            notional_usd=kw["notional_usd"], fee_usd=0.05, latency_ms=1.0,
+            mode="DRY_RUN", execution_status=ExecutionStatus.POSITION_CONFIRMED, confirmed_onchain=True,
+            details={"pre_token_balance": 0.0},
+        )
+
+    h.executor.execute_snipe_order_async = _mock_snipe
+
+    slot2_shock = {
+        "event_id": "EVT_UA_SLOT2", "market_id": "7000002", "condition_id": "0xua2", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 15m", "asset": "ETH", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 2520.0, "trigger_price": 2520.0,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.80,
+        "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xua2"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "200000000000000000002", "raw_top_asks": [[0.74, 150.0]], "raw_top_bids": [[0.73, 150.0]],
+                "effective_price_$25": 0.74, "vwap_$25": 0.74, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    asyncio.run(h.evaluate_shock_and_execute(slot2_shock))
+    assert len(snipe_calls) == 1, "Unlock A must allow Slot #2 at $135.54 (>= $110.0)!"
+    # Recovery tier (25% * $135.54 = $33.89) * 0.54x same-window correlation haircut = $18.30
+    assert 12.0 <= snipe_calls[0]["notional_usd"] <= 19.0, f"Expected ~0.54x correlated sizing (~$18.30), got {snipe_calls[0]['notional_usd']}"
+
+    # --- 2. Unlock B: $0.87 ask (2c above $0.85 ceiling) routes directly to 0%-fee Maker Rescue <= $0.85 ---
+    h.active_positions.clear()
+    h.pending_entry_intents.clear()
+    snipe_calls.clear()
+    maker_posts = []
+    fill_mode = {"should_fill": True}
+
+    def _mock_maker_entry(**kw):
+        maker_posts.append(kw)
+        return {"success": True, "orderID": f"OID_MKR_{len(maker_posts)}", "price": kw["price"], "shares": round(kw["notional_usd"] / kw["price"], 2)}
+
+    def _mock_cancel(oid):
+        if fill_mode["should_fill"]:
+            return {"outcome": "FILLED", "is_canceled": False, "matched": 20.0}
+        return {"outcome": "CANCELED", "is_canceled": True, "matched": 0.0}
+
+    def _mock_summary(oid, tok):
+        if fill_mode["should_fill"]:
+            return {"matched": 20.0, "avg_price": 0.85, "terminal": True, "resting": False, "trade_ids": ["T_MKR_1"], "tx_hashes": ["0xtxmkr1"]}
+        return {"matched": 0.0, "avg_price": 0.0, "terminal": True, "resting": False}
+
+    h.executor.place_passive_maker_entry = _mock_maker_entry
+    h.executor.cancel_order = _mock_cancel
+    h.executor.get_order_fill_summary = _mock_summary
+
+    near_ceil_shock = {
+        "event_id": "EVT_UB_87", "market_id": "7000003", "condition_id": "0xub3", "t0_unix": now_t,
+        "title": "Ethereum Up or Down - 15m", "asset": "ETH", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 2505.5, "trigger_price": 2505.5,
+        "candle_open_spot": 2500.0, "twap_60s_open": 2500.0, "candle_distance_pct": 0.22,
+        "candle_sigma": 0.0012, "shock_volume_100ms": 2000000.0, "shock_ofi": 0.92,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub3"},
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "200000000000000000003", "raw_top_asks": [[0.87, 150.0]], "raw_top_bids": [[0.84, 150.0]],
+                "effective_price_$25": 0.87, "vwap_$25": 0.87, "age_ask_ms": 420.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now_t,
+            }
+        },
+    }
+    assert h._calc_priority_score(near_ceil_shock) > 0, "$0.87 ask (within +3c of $0.85 ceiling) must pass _calc_priority_score!"
+    asyncio.run(h.evaluate_shock_and_execute(near_ceil_shock))
+    assert len(snipe_calls) == 0, "Unlock B MUST NEVER fire Taker FAK above +EV ceiling!"
+    assert len(maker_posts) == 1, "Unlock B must route $0.87 near-miss to 0%-fee Maker Rescue!"
+    assert maker_posts[0]["price"] <= 0.85 and maker_posts[0]["max_price_ceiling"] <= 0.85
+    assert len(h.active_positions) == 1
+    filled_pos = next(iter(h.active_positions.values()))
+    assert filled_pos["entry_price"] == pytest.approx(0.85)
+    assert filled_pos["fee_usd"] == 0.0 and filled_pos["fee_rate_applied"] == 0.0
+
+    # --- 3. Unfilled Maker Rescue sets 8s cooldown, releases pending_entry_intents cleanly, and never halts ---
+    h.active_positions.clear()
+    fill_mode["should_fill"] = False
+    unfilled_shock = dict(near_ceil_shock, event_id="EVT_UB_87_MISS", market_id="7000004", condition_id="0xub4")
+    unfilled_shock["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub4"}
+    unfilled_shock["pre_shock_features_t0"] = {
+        "UP": dict(near_ceil_shock["pre_shock_features_t0"]["UP"], token_id="200000000000000000004")
+    }
+    asyncio.run(h.evaluate_shock_and_execute(unfilled_shock))
+    assert len(snipe_calls) == 0
+    assert len(maker_posts) == 2
+    assert len(h.pending_entry_intents) == 0 and len(h.active_positions) == 0
+    assert not h.risk_controller.is_halted() and not getattr(h, "risk_halt", False)
+    assert "7000004" in h._maker_ceiling_rescue_cd
+
+    # --- 4. Runaway $0.91 ask (> $0.85 + $0.03) is STILL hard-rejected with 0 orders ---
+    runaway_shock = dict(near_ceil_shock, event_id="EVT_UB_91", market_id="7000005", condition_id="0xub5")
+    runaway_shock["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0xub5"}
+    runaway_shock["pre_shock_features_t0"] = {
+        "UP": {
+            **near_ceil_shock["pre_shock_features_t0"]["UP"],
+            "token_id": "200000000000000000005",
+            "raw_top_asks": [[0.91, 150.0]],
+            "raw_top_bids": [[0.89, 150.0]],
+            "effective_price_$25": 0.91,
+            "vwap_$25": 0.91,
+        }
+    }
+    assert h._calc_priority_score(runaway_shock) <= 0, "$0.91 (> +3c above ceiling) must be rejected (0.0) by _calc_priority_score!"
+    asyncio.run(h.evaluate_shock_and_execute(runaway_shock))
+    assert len(snipe_calls) == 0 and len(maker_posts) == 2
+
 
 
 

@@ -1141,7 +1141,7 @@ def test_wfo_v43_hybrid_d1_fak2c_and_correlated_growth_guard(tmp_path, monkeypat
     from src.polymarket_research.polymarket_live_executor import load_risk_config
 
     rcfg = load_risk_config()
-    assert rcfg["correlated_crypto_single_slot_threshold"] == 180.0
+    assert rcfg["correlated_crypto_single_slot_threshold"] == 110.0
     assert rcfg["enable_fak_plus2c_fallback"] is False
     assert rcfg["d1_depth_ratio_threshold"] == pytest.approx(1.20)
     assert rcfg["d1_max_giveback_frac"] == pytest.approx(0.25)
@@ -1210,7 +1210,9 @@ def test_wfo_v43_hybrid_d1_fak2c_and_correlated_growth_guard(tmp_path, monkeypat
     h.maybe_execute_graduated_d1_box({**base_cand, "box_id": "D1_SYM_2", "dedupe_key": "D1_SYM_K2"})
     assert len(captured_d1) == 2 and captured_d1[-1]["parallel_dispatch"] is True
 
-    # Correlated crypto single-slot guard at $145.00 (< $180.00): blocks 2nd directional crypto slot across $140 cliff
+    # Correlated crypto single-slot guard below $110.00 ($90.00 + $14.40 = $104.40 < $110.00): blocks 2nd directional crypto slot
+    h._last_known_collateral = 90.00
+    h.high_water_mark_equity = 104.40
     tok_eth = "33333333333333333333333333"
     (live_dir / "pm_fast_tick_ETH.json").write_text(
         json.dumps({"ts": now_u, "spot_price": 2510.0, tok_eth: {"bids": [[0.71, 200.0]], "asks": [[0.72, 200.0]]}}),
@@ -1260,12 +1262,13 @@ def test_wfo_v43_hybrid_d1_fak2c_and_correlated_growth_guard(tmp_path, monkeypat
         }
 
     asyncio.run(h.evaluate_shock_and_execute(_mk_live_eth("EVT_ETH_V43_BLOCKED")))
-    assert len(snipe_calls) == 0, "2nd directional crypto position MUST be blocked at $145 (< $180 correlated cap)!"
+    assert len(snipe_calls) == 0, "2nd directional crypto position MUST be blocked below $110 correlated cap!"
 
-    # Clear active directional BTC -> 1st directional crypto dispatches once, and Idea #5 +2c FAK fallback stays OFF!
-    h.active_positions.clear()
-    asyncio.run(h.evaluate_shock_and_execute(_mk_live_eth("EVT_ETH_V43_SINGLE")))
-    assert len(snipe_calls) == 1, "Live real FAK miss MUST NOT fire negative-OOS +2c FAK chase when disabled!"
+    # At $145.00 (>= $110.00): 2nd directional crypto slot unlocks (with 0.54x correlation haircut), and Idea #5 +2c FAK fallback stays OFF!
+    h._last_known_collateral = 145.00
+    h.high_water_mark_equity = 159.40
+    asyncio.run(h.evaluate_shock_and_execute(_mk_live_eth("EVT_ETH_V43_SLOT2_UNLOCKED")))
+    assert len(snipe_calls) == 1, "Live real FAK miss dispatches once at >= $110 without firing negative-OOS +2c FAK chase!"
 
 
 def test_round2_polymarket_adversarial_qa_fixes(tmp_path, monkeypatch):

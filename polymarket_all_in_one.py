@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-29 02:55:41 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-10-29 03:16:52 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 59 | 1,125 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 60 - 94 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,873 | 609,801 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,874 - 10,690 | 357,901 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,691 - 12,440 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,441 - 12,804 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,805 - 14,426 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,427 - 14,496 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,497 - 14,579 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,580 - 14,769 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 14,770 - 14,940 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 14,941 - 16,096 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 95 - 6,934 | 616,470 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 6,935 - 10,751 | 357,901 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 10,752 - 12,501 | 160,219 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,502 - 12,865 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 12,866 - 14,487 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,488 - 14,557 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,558 - 14,640 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,641 - 14,830 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 14,831 - 15,001 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,002 - 16,157 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -24,7 +24,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
   "dynamic_sizing": true,
   "dynamic_risk_pct": 0.18,
   "scale_up_equity_threshold": 110.0,
-  "correlated_crypto_single_slot_threshold": 180.0,
+  "correlated_crypto_single_slot_threshold": 110.0,
   "scale_up_risk_pct": 0.22,
   "min_equity_floor": 66.67,
   "seed_survival_equity_threshold": 88.0,
@@ -4222,6 +4222,12 @@ class PolymarketLiveHarvester:
    except Exception as exc:
     logger.error(f"[D1 LIVE BRIDGE] Error evaluating candidate: {exc}",exc_info=True)
   return executed
+ def _is_phase3a_maker_rescue_live_active(self)->bool:
+  explicit_flag=self.__dict__.get("enable_live_phase3a_maker_fallback")
+  if explicit_flag is False or os.environ.get("PM_DISABLE_LIVE_PHASE3A_MAKER","0")=="1":
+   return False
+  real_live=( not self.dry_run and getattr(self.executor,"auth_mode","") in ("LIVE","AUTHENTICATED_L2") and getattr(getattr(self.executor,"client",None),"_mock_children",None) is None and not any(k in getattr(self.executor,"__dict__",{}) for k in ("execute_snipe_order_async","execute_snipe_order")) )
+  return bool(explicit_flag is True or (real_live and bool(RISK_CONFIG.get("enable_live_phase3a_maker_fallback",True))))
  def _calc_priority_score(self,s_item:Dict[str,Any])->float:
   _a_s=str(s_item.get("asset") or "").upper()
   if _a_s and _a_s not in self.get_graduated_allowed_assets():
@@ -4242,7 +4248,11 @@ class PolymarketLiveHarvester:
   _is_bnd=( s_item.get("shock_source")=="BOUNDARY_LOCK" or s_item.get("regime_override")=="REGIME_D_BOUNDARY_LOCK" or (12.0<=_tte_s<=60.0 and dist>=0.08) )
   _is_slv3=s_item.get("sleeve")=="SLEEVE_3_STRIKE_CONVERGENCE" or s_item.get("shock_source")=="EXP316_TRACK_A_CONVERGENCE"
   _ceil=0.94 if _is_bnd else (0.89 if _is_slv3 else (min(self.max_price_ceiling,0.85) if _is_15m else self.max_price_ceiling))
-  if ask_est < self.min_price_floor or ask_est > _ceil:
+  if ask_est < self.min_price_floor:
+   return 0.0
+  if ask_est > _ceil:
+   if not _is_bnd and not _is_slv3 and _tte_s>=85.0 and dist>=0.06 and ask_est<=round(_ceil + 0.03,4) and self._is_phase3a_maker_rescue_live_active():
+    return 0.5 * (z_sc / max(ask_est,0.01))
    return 0.0
   return z_sc / max(ask_est,0.01)
  async def evaluate_shock_and_execute(self,shock:Dict[str,Any]):
@@ -4699,7 +4709,7 @@ class PolymarketLiveHarvester:
     logger.warning(f"[ENTRY_QUALITY_REJECT] Crossed/locked book for {token_id}: bid {best_bid:.4f} >= ask {best_ask:.4f}")
     return
    spread=best_ask - best_bid
-   if spread > MAX_ALLOWED_SPREAD:
+   if spread > MAX_ALLOWED_SPREAD + 1e-6:
     logger.debug(f"[SPREAD GUARD] Spread {spread:.3f} > max allowed {MAX_ALLOWED_SPREAD:.3f}. Skipping illiquid book.")
     return
   elif not self.dry_run and not is_synthetic_test:
@@ -4737,7 +4747,7 @@ class PolymarketLiveHarvester:
     logger.warning(f"[ENTRY_QUALITY_REJECT] Crossed/locked book for {token_id}: bid {best_bid:.4f} >= ask {best_ask:.4f}")
     return
    spread=best_ask - best_bid
-   if spread > MAX_ALLOWED_SPREAD:
+   if spread > MAX_ALLOWED_SPREAD + 1e-6:
     logger.debug(f"[SPREAD GUARD] Spread {spread:.3f} > max allowed {MAX_ALLOWED_SPREAD:.3f}. Skipping illiquid book.")
     return
   else:
@@ -4759,7 +4769,7 @@ class PolymarketLiveHarvester:
     raw_bids=[[max(0.01,round(raw_asks[0][0] - 0.01,4)),1000.0]]
    best_ask=raw_asks[0][0]
    best_bid=raw_bids[0][0]
-   if best_bid>=best_ask or (best_ask - best_bid) > MAX_ALLOWED_SPREAD:
+   if best_bid>=best_ask or (best_ask - best_bid) > MAX_ALLOWED_SPREAD + 1e-6:
     return
   first_ask=raw_asks[0][0]
   first_bid=raw_bids[0][0]
@@ -4787,15 +4797,36 @@ class PolymarketLiveHarvester:
    logger.warning( f"[BID_TOTAL_DEPTH_REJECT] Total bid shares {total_bid_shares:.1f} < intended shares {intended_shares:.1f}" )
    return
   eff_price_ceiling=( max(self.max_price_ceiling,max_allowed_price) if regime in ("REGIME_D_BOUNDARY_LOCK","REGIME_E_STRIKE_CONVERGENCE") else ( min( self.max_price_ceiling,max_allowed_price,max( p_max,max_allowed_price if ( edge_tier=="TIER_A_PLUS_STALE_SNIPE" and abs(dist_pct)>=(0.10 if is_subhourly else 0.12) ) else 0.0,),) if (not self.dry_run and p_max > 0) else self.max_price_ceiling ) )
+  _phase3a_live_eligible=self._is_phase3a_maker_rescue_live_active()
+  _maker_rescue_cd_map=self.__dict__.setdefault("_maker_ceiling_rescue_cd",{})
+  _maker_only_ceiling_rescue=False
+  _maker_rescue_cap_px=round(min(float(eff_price_ceiling),float(max_allowed_price),float(p_max) if p_max > 0 else float(eff_price_ceiling)),2)
+  def _can_route_to_phase3a_ceiling_rescue(px_check:float,cap_ref:float)->bool:
+   if not _phase3a_live_eligible or self.dry_run:
+    return False
+   if regime not in ("REGIME_B_LATE_SNIPER","REGIME_C_SUBHOURLY"):
+    return False
+   if tte < (85.0 if _is_live_real else 75.0) or z_strike < 1.00 or abs(dist_pct) < 0.06:
+    return False
+   if (time.time() - float(_maker_rescue_cd_map.get(str(m_id or ""),0.0) or 0.0)) < 8.0:
+    return False
+   if px_check > round(cap_ref + 0.03,4) + 1e-6:
+    return False
+   cand_m_px=round(min(float(_maker_rescue_cap_px),round(float(raw_asks[0][0]) - 0.01,2),round(float(first_bid) + 0.01,2)),2)
+   return bool(float(min_allowed_price) - 1e-6<=cand_m_px<=float(_maker_rescue_cap_px) + 1e-6)
   if not self.dry_run and raw_asks and raw_asks[0][0] > eff_price_ceiling:
-   logger.info( f"[EV CEILING REJECT] {shock.get('title')!r} {target_token}: first_ask ${raw_asks[0][0]:.4f} > " f"+EV ceiling ${eff_price_ceiling:.4f} (p_max=${p_max:.4f}, z_strike={z_strike:.2f}). Skipping." )
-   return
+   if _can_route_to_phase3a_ceiling_rescue(float(raw_asks[0][0]),float(eff_price_ceiling)):
+    _maker_only_ceiling_rescue=True
+   else:
+    logger.info( f"[EV CEILING REJECT] {shock.get('title')!r} {target_token}: first_ask ${raw_asks[0][0]:.4f} > " f"+EV ceiling ${eff_price_ceiling:.4f} (p_max=${p_max:.4f}, z_strike={z_strike:.2f}). Skipping." )
+    return
   if _is_live_real and regime in ("REGIME_B_LATE_SNIPER","REGIME_C_SUBHOURLY") and raw_asks:
    _l1_ask_usd=float(raw_asks[0][0]) * float(raw_asks[0][1])
    if _l1_ask_usd < 20.0:
     logger.info( f"[L1 ASK DEPTH REJECT] {shock.get('title')!r} {target_token}: L1 ask depth ${_l1_ask_usd:.2f} < $20.00 institutional floor. Skipping." )
     return
-  executable_depth_usd=sum(px * sz for px,sz in raw_asks if px<=eff_price_ceiling)
+  _depth_cap_px=round(float(eff_price_ceiling) + 0.03,4) if _maker_only_ceiling_rescue else float(eff_price_ceiling)
+  executable_depth_usd=sum(px * sz for px,sz in raw_asks if px<=_depth_cap_px + 1e-6)
   PAPER_REFERENCE_TICKET_USD=12.0 if self.dynamic_sizing else max(float(self.ticket_notional),12.0)
   _ref_depth_mult=float(self.depth_hurdle)
   if not self.dry_run and ( executable_depth_usd / PAPER_REFERENCE_TICKET_USD < _ref_depth_mult ):
@@ -4814,11 +4845,15 @@ class PolymarketLiveHarvester:
     return
   assigned_sleeve=( "SLEEVE_3_STRIKE_CONVERGENCE" if regime=="REGIME_E_STRIKE_CONVERGENCE" else ("SLEEVE_4_BOUNDARY_SNIPE" if regime=="REGIME_D_BOUNDARY_LOCK" else ("SLEEVE_1_SUBHOURLY_15M" if is_subhourly else ("SLEEVE_2_MID_HOUR" if regime=="REGIME_A_MID_HOUR" else "SLEEVE_1_CORE_302"))) )
   if not self.dry_run:
-   if first_ask < min_allowed_price or first_ask > max_allowed_price:
+   if first_ask < min_allowed_price or (first_ask > max_allowed_price and not _maker_only_ceiling_rescue):
     if max_allowed_price < first_ask<=(max_allowed_price + 0.06):
      self._register_shadow_phase3a_maker_in( shock,target_token,first_ask,first_bid,max_allowed_price,raw_asks,"PRICE_BAND_REJECT",bool(is_subhourly),float(dist_pct),float(tte),)
-    logger.info( f"[PRICE BAND REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping." )
-    return
+    if first_ask > max_allowed_price and _can_route_to_phase3a_ceiling_rescue(float(first_ask),float(max_allowed_price)):
+     _maker_only_ceiling_rescue=True
+     executable_depth_usd=sum(px * sz for px,sz in raw_asks if px<=round(float(max_allowed_price) + 0.03,4) + 1e-6)
+    else:
+     logger.info( f"[PRICE BAND REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping." )
+     return
    if is_subhourly and not is_synthetic_test and (0.68<=first_ask < 0.71) and abs(dist_pct) < 0.11 and z_strike < 0.75:
     logger.info( f"[15M DEADZONE REJECT] {shock.get('title')!r} first_ask ${first_ask:.4f} in [0.68, 0.71) with abs(dist_pct)={abs(dist_pct):.4f}% < 0.11% and z_strike={z_strike:.2f} < 0.75. Skipping." )
     return
@@ -4911,7 +4946,7 @@ class PolymarketLiveHarvester:
       return
     risk_pct=tier_limits["dynamic_bankroll_pct"]
     pct_ticket_cap=round(risk_pct * total_account_value,2)
-    if assigned_sleeve=="SLEEVE_4_BOUNDARY_SNIPE" and total_account_value < small_bankroll_corr_cap:
+    if assigned_sleeve=="SLEEVE_4_BOUNDARY_SNIPE" and total_account_value < 180.0:
      pct_ticket_cap=min(pct_ticket_cap,round(0.16 * total_account_value,2),22.0)
     seed_ticket_floor=float(RISK_CONFIG.get("seed_survival_ticket_usd",12.0))
     if total_account_value < float(RISK_CONFIG.get("seed_survival_equity_threshold",88.0)):
@@ -4919,9 +4954,10 @@ class PolymarketLiveHarvester:
       pct_ticket_cap=max(seed_ticket_floor,pct_ticket_cap)
      else:
       pct_ticket_cap=min(pct_ticket_cap,seed_ticket_floor)
-    dynamic_ticket_cap=compute_correlated_truncated_kelly_size( live_equity=total_account_value,p_win=p_win_est,entry_px=first_ask,active_positions=self._risk_bearing_positions(),cand_expiry_ts=cand_exp_ts,cand_direction=target_token,kelly_multiplier=kelly_mult,min_lot_usd=8.0,max_ticket_cap=min(float(ticket_cap_ceiling),pct_ticket_cap),default_sizing_pct=risk_pct,)
+    _sizing_entry_px=_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask
+    dynamic_ticket_cap=compute_correlated_truncated_kelly_size( live_equity=total_account_value,p_win=p_win_est,entry_px=_sizing_entry_px,active_positions=self._risk_bearing_positions(),cand_expiry_ts=cand_exp_ts,cand_direction=target_token,kelly_multiplier=kelly_mult,min_lot_usd=8.0,max_ticket_cap=min(float(ticket_cap_ceiling),pct_ticket_cap),default_sizing_pct=risk_pct,)
     if dynamic_ticket_cap > 0.0 and not is_synthetic_test:
-     dynamic_ticket_cap=apply_convex_payoff_sizing_cap( dynamic_ticket_cap,live_equity=total_account_value,entry_px=first_ask,sleeve=assigned_sleeve,)
+     dynamic_ticket_cap=apply_convex_payoff_sizing_cap( dynamic_ticket_cap,live_equity=total_account_value,entry_px=_sizing_entry_px,sleeve=assigned_sleeve,)
     if dynamic_ticket_cap<=0.0:
      logger.info( f"[CORRELATION VETO] {shock.get('title')!r} {target_token}: opposite-direction position already open " f"in the same expiry window. Skipping." )
      return
@@ -4932,7 +4968,8 @@ class PolymarketLiveHarvester:
     ticket_target=min(elastic_sz,free_usdc)
     exposure_cap=self.max_exposure
    else:
-    kelly_ticket=_calc_kelly( p_model_for_sizing,first_ask,live_bankroll )
+    _sizing_entry_px=_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask
+    kelly_ticket=_calc_kelly( p_model_for_sizing,_sizing_entry_px,live_bankroll )
     min_lot_gate=min(MIN_LOT_SIZE_USD,float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else MIN_LOT_SIZE_USD
     if kelly_ticket < min_lot_gate:
      logger.info( "[SIZING REJECTED] Kelly ticket %.2f is below minimum lot %.2f",kelly_ticket,min_lot_gate,)
@@ -4953,7 +4990,7 @@ class PolymarketLiveHarvester:
   if not self.dry_run and not is_synthetic_test and first_ask > 0:
    max_near_bid_shares=near_touch_bid_shares / max(min_bid_mult,1.0)
    max_bid_supported_shares=min(max_near_bid_shares,total_bid_shares)
-   max_bid_supported_usd=math.floor(max_bid_supported_shares * first_ask * 100.0) / 100.0
+   max_bid_supported_usd=math.floor(max_bid_supported_shares * (_maker_rescue_cap_px if _maker_only_ceiling_rescue else first_ask) * 100.0) / 100.0
    if effective_notional > max_bid_supported_usd:
     min_lot_chk=min(MIN_LOT_SIZE_USD,float(self.ticket_notional or MIN_LOT_SIZE_USD)) if self.dry_run else _live_min_lot
     if max_bid_supported_usd < min_lot_chk:
@@ -4961,7 +4998,7 @@ class PolymarketLiveHarvester:
      return
     logger.info( f"[BID_DEPTH_DOWNSCALE] Scaling ticket ${effective_notional:.2f} -> ${max_bid_supported_usd:.2f} " f"to match near-touch bid liquidity ({near_touch_bid_shares:.1f} shrs)." )
     effective_notional=max_bid_supported_usd
-  if not self.dry_run and self.dynamic_sizing and raw_asks:
+  if not self.dry_run and self.dynamic_sizing and raw_asks and not _maker_only_ceiling_rescue:
    prelim_limit_px=round(min(float(first_ask) + fak_buf,self.max_price_ceiling,max_allowed_price),2)
    prelim_limit_depth=sum(float(px) * float(sz) for px,sz in raw_asks if float(px)<=prelim_limit_px + 1e-6)
    if prelim_limit_depth < float(effective_notional) - 1e-6:
@@ -4979,15 +5016,25 @@ class PolymarketLiveHarvester:
    if spent>=effective_notional - 1e-6:
     break
   raw_vwap=round(spent / shares,4) if shares > 0 else (raw_asks[0][0] if raw_asks else None)
+  if _maker_only_ceiling_rescue:
+   raw_vwap=_maker_rescue_cap_px
   if not self.dry_run:
    if not raw_vwap or raw_vwap < min_allowed_price or raw_vwap > max_allowed_price:
     if raw_vwap and max_allowed_price < raw_vwap<=(max_allowed_price + 0.06):
      self._register_shadow_phase3a_maker_in( shock,target_token,first_ask,first_bid,max_allowed_price,raw_asks,"VWAP_BAND_REJECT",bool(is_subhourly),float(dist_pct),float(tte),)
-    logger.info( f"[VWAP BAND REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping." )
-    return
+    if raw_vwap and raw_vwap > max_allowed_price and _can_route_to_phase3a_ceiling_rescue(float(raw_vwap),float(_maker_rescue_cap_px)):
+     _maker_only_ceiling_rescue=True
+     raw_vwap=_maker_rescue_cap_px
+    else:
+     logger.info( f"[VWAP BAND REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap} outside allowed [{min_allowed_price:.2f}, {max_allowed_price:.2f}] matrix band ({regime}). Skipping." )
+     return
    if p_max<=0.0 or raw_vwap > p_max:
-    logger.info( f"[P_MAX REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap:.4f} > p_max ${p_max:.4f} (p_true={p_true:.4f}, z_eff={z_eff:.2f}). Skipping." )
-    return
+    if p_max > 0.0 and raw_vwap and raw_vwap > p_max and _can_route_to_phase3a_ceiling_rescue(float(raw_vwap),float(_maker_rescue_cap_px)):
+     _maker_only_ceiling_rescue=True
+     raw_vwap=_maker_rescue_cap_px
+    else:
+     logger.info( f"[P_MAX REJECT] {shock.get('title')!r} raw_vwap ${raw_vwap:.4f} > p_max ${p_max:.4f} (p_true={p_true:.4f}, z_eff={z_eff:.2f}). Skipping." )
+     return
    if age_ask_ms_val > 10000.0 and (p_true - first_ask) > 0.28:
     logger.warning( f"[ANCHOR DISAGREEMENT VETO] {shock.get('title')!r} {target_token}: resting ask ${first_ask:.4f} " f"(age={age_ask_ms_val:.0f}ms > 10s) diverges from model p_true={p_true:.4f} by {p_true - first_ask:+.4f} (> 0.28). " "Possible strike anchor divergence. Skipping." )
     return
@@ -5012,7 +5059,7 @@ class PolymarketLiveHarvester:
      return
     if ( executable_depth_usd / effective_notional < self.depth_hurdle - 1e-4 ):
      return
-  eff_px=( token_features.get(f"effective_price_${int(effective_notional)}") or token_features.get("effective_price_$25") or token_features.get("effective_price_$20") or token_features.get("effective_price_$5") or token_features.get("effective_price_$50") or raw_vwap )
+  eff_px=( raw_vwap if _maker_only_ceiling_rescue else ( token_features.get(f"effective_price_${int(effective_notional)}") or token_features.get("effective_price_$25") or token_features.get("effective_price_$20") or token_features.get("effective_price_$5") or token_features.get("effective_price_$50") or raw_vwap ) )
   m_id=str(shock.get("market_id"))
   if any(str(p.get("market_id"))==m_id for p in self.active_positions.values()) or any(str(i.get("market_id"))==m_id for i in self.pending_entry_intents.values()):
    logger.debug(f"[MARKET ALREADY ACTIVE] Position already active/pending for market {m_id}. Refusing concurrent re-entry.")
@@ -5111,19 +5158,23 @@ class PolymarketLiveHarvester:
   entry_spot_ref=float(usd_spot_t0 if _is_usd_oracle else (shock.get("spot_at_t0") or shock.get("trigger_price") or open_spot))
   is_special_regime=regime in ("REGIME_D_BOUNDARY_LOCK","REGIME_E_STRIKE_CONVERGENCE")
   target_exit=0.99 if (self.hold_to_maturity or is_special_regime) else self._calculate_target_exit(raw_vwap,tte)
-  if is_special_regime:
-   sleeve_max_price=max(self.max_price_ceiling,max_allowed_price)
-  elif not self.dry_run:
-   _base_ceil=min(self.max_price_ceiling,max_allowed_price,eff_price_ceiling)
-   if _is_live_real:
-    _ev_fair_cap=round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05,4)
-    sleeve_max_price=max(_base_ceil,min(0.87,round(max_allowed_price + 0.02,2),_ev_fair_cap))
-   else:
-    sleeve_max_price=_base_ceil
+  if _maker_only_ceiling_rescue:
+   sleeve_max_price=_maker_rescue_cap_px
+   target_limit_px=_maker_rescue_cap_px
   else:
-   sleeve_max_price=self.max_price_ceiling
-  target_limit_px=round(min(raw_vwap + fak_buf,sleeve_max_price),2)
-  if not self.dry_run and self.dynamic_sizing:
+   if is_special_regime:
+    sleeve_max_price=max(self.max_price_ceiling,max_allowed_price)
+   elif not self.dry_run:
+    _base_ceil=min(self.max_price_ceiling,max_allowed_price,eff_price_ceiling)
+    if _is_live_real:
+     _ev_fair_cap=round(((p_fair * 0.965) + ((1.0 - p_fair) * 0.92 * 0.38)) / 1.05,4)
+     sleeve_max_price=max(_base_ceil,min(0.87,round(max_allowed_price + 0.02,2),_ev_fair_cap))
+    else:
+     sleeve_max_price=_base_ceil
+   else:
+    sleeve_max_price=self.max_price_ceiling
+   target_limit_px=round(min(raw_vwap + fak_buf,sleeve_max_price),2)
+  if not self.dry_run and self.dynamic_sizing and not _maker_only_ceiling_rescue:
    limit_depth_usd=sum(float(px) * float(sz) for px,sz in raw_asks if float(px)<=target_limit_px + 1e-6)
    if limit_depth_usd < float(effective_notional) - 1e-6:
     orig_notional=float(effective_notional)
@@ -5141,41 +5192,51 @@ class PolymarketLiveHarvester:
   else:
    active_sizing_fn=(lambda px:_calc_kelly(max(0.95,p_model_for_sizing),px,live_bankroll)) if (p_model_for_sizing and live_bankroll) else None
   _base_snipe_kw=dict( trade_id=trade_id,token_id=token_id,target_token=target_token,side="BUY",depth_hurdle=self.depth_hurdle,max_price_ceiling=sleeve_max_price,min_price_floor=min_allowed_price,expected_best_price=(t0_best_ask if (_is_live_real and t0_best_ask > 0.0) else None),market_id=str(shock.get("market_id")),condition_id=cond_id,market_fee_rate=fee_meta.get("fee_rate_market"),market_fee_exponent=fee_meta.get("fee_exponent",1.0),sizing_fn=active_sizing_fn,max_ticket_cap=getattr(self,"max_absolute_ticket_usd",None),prefetched_pre_balance=pre_cond_bal,)
+  res=None
   try:
    _lt_disp=_CURRENT_TRACE.get() if _CURRENT_TRACE is not None else None
    if _lt_disp is not None:
     _lt_disp.stamp("dispatch_call")
     _lt_disp.set(effective_notional_usd=effective_notional,target_limit_px=target_limit_px)
-   res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=book_snapshot,)
-   if ( not res.success and "FOK Sweep Infeasible" in str(res.error or "") and not self.dry_run and self.dynamic_sizing and float(effective_notional) > 12.0 ):
-    for fallback_rung in (16.50,12.00):
-     if fallback_rung>=float(effective_notional) - 0.10:
-      continue
-     logger.info( f"[IDEA-1 FOK SWEEP DOWNSNAP RETRY] {trade_id}: ${effective_notional:.2f} infeasible at " f"${target_limit_px:.2f}; stepping down to pre-warmed rung ${fallback_rung:.2f}." )
-     effective_notional=fallback_rung
-     if trade_id in self.pending_entry_intents:
-      self.pending_entry_intents[trade_id]["notional_usd"]=effective_notional
-     res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=book_snapshot,)
-     if res.success or "FOK Sweep Infeasible" not in str(res.error or ""):
-      break
-   if ( (res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection")) and not self.dry_run and self.dynamic_sizing and ( not _is_live_real or ( bool((getattr(self,"risk_config",None) or RISK_CONFIG).get("enable_fak_plus2c_fallback",False)) and z_strike>=1.25 ) ) and target_limit_px + 0.01<=sleeve_max_price + 1e-6 ):
-    fallback_limit_px=round(min(sleeve_max_price,target_limit_px + 0.02),2)
-    if fallback_limit_px > target_limit_px + 1e-6:
-     logger.info( f"[IDEA-5 FAK +2c FALLBACK] {trade_id}: missed L1 at ${target_limit_px:.2f} (0 filled, mode={res.mode}); " f"firing sequential pre-signed fallback at ${fallback_limit_px:.2f} (ceiling=${sleeve_max_price:.2f})." )
-     target_limit_px=fallback_limit_px
-     if trade_id in self.pending_entry_intents:
-      self.pending_entry_intents[trade_id]["target_price"]=target_limit_px
-     fresh_fallback_book=fast_tick_book_for_token(read_fast_tick(asset_str),token_id) or book_snapshot
-     try:
-      res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=fresh_fallback_book,max_book_buffer=0.04,)
-     except TypeError as _te:
-      if "max_book_buffer" not in str(_te):
-       raise
-      res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=fresh_fallback_book,)
-   if ( ( res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or (z_strike>=0.85 and abs(dist_pct)>=0.06)) ):
-    rescue_res=await self._attempt_live_phase3a_maker_rescue( trade_id=trade_id,token_id=token_id,target_token=target_token,asset_str=asset_str,effective_notional=effective_notional,first_ask=first_ask,first_bid=first_bid,min_allowed_price=min_allowed_price,max_allowed_price=max_allowed_price,open_spot=open_spot,entry_spot_ref=entry_spot_ref,spot_denom=spot_denom,tte=tte,pre_cond_bal=pre_cond_bal,book_snapshot=book_snapshot,)
+   if _maker_only_ceiling_rescue:
+    logger.info( f"[CEILING -> PHASE 3A MAKER RESCUE] {trade_id}: ask=${first_ask:.2f} > +EV ceiling=${_maker_rescue_cap_px:.2f}; " f"skipping Taker FAK and routing directly to 0%-fee postOnly Maker BUY <= ${_maker_rescue_cap_px:.2f}." )
+    rescue_res=await self._attempt_live_phase3a_maker_rescue( trade_id=trade_id,token_id=token_id,target_token=target_token,asset_str=asset_str,effective_notional=effective_notional,first_ask=first_ask,first_bid=first_bid,min_allowed_price=min_allowed_price,max_allowed_price=_maker_rescue_cap_px,open_spot=open_spot,entry_spot_ref=entry_spot_ref,spot_denom=spot_denom,tte=tte,pre_cond_bal=pre_cond_bal,book_snapshot=book_snapshot,)
     if rescue_res is not None:
      res=rescue_res
+    else:
+     _maker_rescue_cd_map[str(m_id or "")]=time.time()
+     res=OrderResult( success=False,order_id=None,trade_id=trade_id,token_id=token_id,target_token=target_token,side="BUY",price=_maker_rescue_cap_px,size=0.0,notional_usd=effective_notional,fee_usd=0.0,latency_ms=0.0,mode="FAK_KILLED_NO_MATCH",execution_status=ExecutionStatus.REJECTED,details={"fak_killed":True,"maker_ceiling_rescue_unfilled":True},error="MAKER_CEILING_RESCUE_UNFILLED",)
+   else:
+    res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=book_snapshot,)
+    if ( not res.success and "FOK Sweep Infeasible" in str(res.error or "") and not self.dry_run and self.dynamic_sizing and float(effective_notional) > 12.0 ):
+     for fallback_rung in (16.50,12.00):
+      if fallback_rung>=float(effective_notional) - 0.10:
+       continue
+      logger.info( f"[IDEA-1 FOK SWEEP DOWNSNAP RETRY] {trade_id}: ${effective_notional:.2f} infeasible at " f"${target_limit_px:.2f}; stepping down to pre-warmed rung ${fallback_rung:.2f}." )
+      effective_notional=fallback_rung
+      if trade_id in self.pending_entry_intents:
+       self.pending_entry_intents[trade_id]["notional_usd"]=effective_notional
+      res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=book_snapshot,)
+      if res.success or "FOK Sweep Infeasible" not in str(res.error or ""):
+       break
+    if ( (res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection")) and not self.dry_run and self.dynamic_sizing and ( not _is_live_real or ( bool((getattr(self,"risk_config",None) or RISK_CONFIG).get("enable_fak_plus2c_fallback",False)) and z_strike>=1.25 ) ) and target_limit_px + 0.01<=sleeve_max_price + 1e-6 ):
+     fallback_limit_px=round(min(sleeve_max_price,target_limit_px + 0.02),2)
+     if fallback_limit_px > target_limit_px + 1e-6:
+      logger.info( f"[IDEA-5 FAK +2c FALLBACK] {trade_id}: missed L1 at ${target_limit_px:.2f} (0 filled, mode={res.mode}); " f"firing sequential pre-signed fallback at ${fallback_limit_px:.2f} (ceiling=${sleeve_max_price:.2f})." )
+      target_limit_px=fallback_limit_px
+      if trade_id in self.pending_entry_intents:
+       self.pending_entry_intents[trade_id]["target_price"]=target_limit_px
+      fresh_fallback_book=fast_tick_book_for_token(read_fast_tick(asset_str),token_id) or book_snapshot
+      try:
+       res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=fresh_fallback_book,max_book_buffer=0.04,)
+      except TypeError as _te:
+       if "max_book_buffer" not in str(_te):
+        raise
+       res=await self.executor.execute_snipe_order_async( **_base_snipe_kw,notional_usd=effective_notional,target_price=target_limit_px,prefetched_book=fresh_fallback_book,)
+    if ( ( res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") ) and (not _is_live_real or (z_strike>=0.85 and abs(dist_pct)>=0.06)) ):
+     rescue_res=await self._attempt_live_phase3a_maker_rescue( trade_id=trade_id,token_id=token_id,target_token=target_token,asset_str=asset_str,effective_notional=effective_notional,first_ask=first_ask,first_bid=first_bid,min_allowed_price=min_allowed_price,max_allowed_price=max_allowed_price,open_spot=open_spot,entry_spot_ref=entry_spot_ref,spot_denom=spot_denom,tte=tte,pre_cond_bal=pre_cond_bal,book_snapshot=book_snapshot,)
+     if rescue_res is not None:
+      res=rescue_res
   finally:
    _det_err=( (str(res.error or "").lower() + str((res.details or {}).get("raw_exception","")).lower()) if res is not None else "" )
    if res is not None and ( res.mode in ("FAK_KILLED_NO_MATCH","CLOB_HTTP_400_REJECTION") or (res.details or {}).get("fak_killed") or (res.details or {}).get("clob_400_rejection") or "status_code=400" in _det_err or "status=400" in _det_err or "invalid amounts" in _det_err or "supports a max accuracy" in _det_err ):
@@ -5226,7 +5287,7 @@ class PolymarketLiveHarvester:
     open_spot=(await asyncio.to_thread(ref_fn,asset_sym)) or 0.0
     if entry_spot_ref<=0.0:
      entry_spot_ref=open_spot
-   pos_record={ "trade_id":trade_id,"sleeve":assigned_sleeve,"entry_tte":tte,"event_id":event_id,"market_id":str(shock.get("market_id")),"condition_id":cond_id,"token_id":token_id,"target_token":target_token,"asset":asset_sym,"horizon":"15m" if is_subhourly else "1h","is_subhourly":bool(is_subhourly),"candle_open_spot":open_spot,"entry_spot_ref":entry_spot_ref,"spot_denomination":spot_denom,"candle_sigma":float(shock.get("candle_sigma") or ((0.0025 if asset_sym=="BTC" else 0.0034) if is_subhourly else (0.0050 if asset_sym=="BTC" else 0.0068))),"entry_price":res.price,"entry_shares":res.size,"gross_entry_shares":float(res.size),"remaining_shares":res.size,"filled_exit_shares":0.0,"remaining_exit_shares":res.size,"remaining_cost_basis":res.notional_usd,"realized_exit_cash":0.0,"realized_exit_fee":0.0,"gross_exit_cash":0.0,"average_exit_price":0.0,"exit_trade_ids":[],"notional_usd":res.notional_usd,"fee_usd":res.fee_usd,"entry_fee_cash_usd":float(res.fee_usd or 0.0),"entry_fee_asset":"USDC","fee_source":"crypto_fees_v2","fee_rate_applied":m_fee_rate,"fee_exponent_applied":m_fee_exp,"target_exit_price":0.99 if self.hold_to_maturity else target_exit,"exit_order_size":float(res.size),"entry_time_utc":datetime.now(timezone.utc).isoformat(),"entry_ts":time.time(),"candle_expiry_ts":time.time() + tte,"pre_token_balance":res.details.get("pre_token_balance",pre_cond_bal),"order_id":res.order_id,"entry_order_id":res.order_id,"trade_ids":res.details.get("trade_ids",[]),"transactions_hashes":res.details.get("transactions_hashes",[]),"status":res.execution_status,"exit_order_id":None,"exit_order_status":"NONE","is_liquidating":False,"unwind_order_id":None,"unwind_start_time":0.0,}
+   pos_record={ "trade_id":trade_id,"sleeve":assigned_sleeve,"entry_tte":tte,"event_id":event_id,"market_id":str(shock.get("market_id")),"condition_id":cond_id,"token_id":token_id,"target_token":target_token,"asset":asset_sym,"horizon":"15m" if is_subhourly else "1h","is_subhourly":bool(is_subhourly),"candle_open_spot":open_spot,"entry_spot_ref":entry_spot_ref,"spot_denomination":spot_denom,"candle_sigma":float(shock.get("candle_sigma") or ((0.0025 if asset_sym=="BTC" else 0.0034) if is_subhourly else (0.0050 if asset_sym=="BTC" else 0.0068))),"entry_price":res.price,"entry_shares":res.size,"gross_entry_shares":float(res.size),"remaining_shares":res.size,"filled_exit_shares":0.0,"remaining_exit_shares":res.size,"remaining_cost_basis":res.notional_usd,"realized_exit_cash":0.0,"realized_exit_fee":0.0,"gross_exit_cash":0.0,"average_exit_price":0.0,"exit_trade_ids":[],"notional_usd":res.notional_usd,"fee_usd":res.fee_usd,"entry_fee_cash_usd":float(res.fee_usd or 0.0),"entry_fee_asset":"USDC","fee_source":"crypto_fees_v2","fee_rate_applied":(0.0 if res.mode=="LIVE_PHASE3A_MAKER_IN" else m_fee_rate),"fee_exponent_applied":m_fee_exp,"target_exit_price":0.99 if self.hold_to_maturity else target_exit,"exit_order_size":float(res.size),"entry_time_utc":datetime.now(timezone.utc).isoformat(),"entry_ts":time.time(),"candle_expiry_ts":time.time() + tte,"pre_token_balance":res.details.get("pre_token_balance",pre_cond_bal),"order_id":res.order_id,"entry_order_id":res.order_id,"trade_ids":res.details.get("trade_ids",[]),"transactions_hashes":res.details.get("transactions_hashes",[]),"status":res.execution_status,"exit_order_id":None,"exit_order_status":"NONE","is_liquidating":False,"unwind_order_id":None,"unwind_start_time":0.0,}
    self.active_positions[trade_id]=pos_record
    if not self.dry_run:
     _fill_cost_total=max(0.0,float(res.notional_usd or 0.0) + float(res.fee_usd or 0.0))
