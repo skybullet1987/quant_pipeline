@@ -25,7 +25,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
 
-REMOTE_PROBE_PY = r"""
+REMOTE_PROBE_PY = r"""# -*- coding: utf-8 -*-
 import json, os, pathlib, re, subprocess, time
 
 root = pathlib.Path("/home/skybullet1987/quant_pipeline")
@@ -140,7 +140,7 @@ if lh_path.exists():
 else:
     out["polymarket_live"] = {}
 
-# Recent notable live log lines (bounded 256 KB tail seek — zero full-file scan)
+# Recent notable live log lines (bounded 256 KB tail seek - zero full-file scan)
 log_path = root / "data/polymarket/live_harvester.log"
 log_events = []
 if log_path.exists():
@@ -257,10 +257,20 @@ if j_path.exists():
             "sz": x.get("filled_size"),
             "shortfall_bps": round(float(x.get("total_shortfall_bps", 0.0)), 2),
         })
+    st_path = root / "data/papertrade_state.json"
+    st_obj = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
+    sh_path = root / "data/apex/champion_challenger_shadow.json"
+    sh_obj = json.loads(sh_path.read_text(encoding="utf-8")) if sh_path.exists() else {}
+    sh_hist = sh_obj.get("history") or []
+    latest_regime = (sh_hist[-1].get("regime") or {}).get("regime", "UNKNOWN") if sh_hist else "UNKNOWN"
     out["apex_testnet"] = {
-        "circuit_breaker": cb_state,
+        "version": st_obj.get("version", "v5.1.0"),
+        "nav_usd": round(float(st_obj.get("current_strategy_equity", hwm_nav) or hwm_nav), 2),
+        "reconciliation_status": (st_obj.get("last_reconciliation") or {}).get("status") or st_obj.get("reconciliation_status", "EXACT"),
+        "regime": latest_regime,
+        "circuit_breaker": st_obj.get("circuit_breaker", cb_state),
         "halt_reason": cb_reason if cb_state != "RUNNING" else "",
-        "hwm_nav_usd": round(hwm_nav, 2),
+        "hwm_nav_usd": round(float(st_obj.get("high_water_mark", hwm_nav) or hwm_nav), 2),
         "gate2_fills": f"{audit_total}/500",
         "maker_pct": round(100.0 * maker_n / len(audits), 1) if audits else 0.0,
         "recent_fills": recent_hl,
@@ -538,6 +548,8 @@ class SnapshotCache:
                     input=REMOTE_PROBE_PY,
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="replace",
                     timeout=15,
                 )
                 if proc.returncode != 0:
@@ -574,8 +586,9 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         f"Halt={pm.get('risk_halt')}"
     )
     print(
-        f" APEX v5.0 Testnet : {ap.get('circuit_breaker')}  |  "
-        f"Gate 2 Fills: {ap.get('gate2_fills')} (Maker {ap.get('maker_pct')}%)  |  Mainnet: $0.00"
+        f" APEX {ap.get('version', 'v5.1.0')} : {ap.get('circuit_breaker')} ({ap.get('reconciliation_status')})  |  "
+        f"NAV: ${ap.get('nav_usd', 0):.2f} (HWM ${ap.get('hwm_nav_usd', 0):.2f})  |  Regime: {ap.get('regime')}  |  "
+        f"Gate 2: {ap.get('gate2_fills')} ({ap.get('maker_pct')}% Maker)  |  Mainnet: $0.00"
     )
     print("-" * 78)
     print(" Recent Real-Money Polymarket Closed Trades:")
