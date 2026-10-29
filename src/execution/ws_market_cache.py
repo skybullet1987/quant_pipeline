@@ -165,6 +165,7 @@ class HyperliquidWsMarketCache:
         self,
         base_url: str,
         initial_coins: Optional[List[str]] = None,
+        allowed_coins: Optional[Set[str]] = None,
         l2_staleness_sec: float = 4.0,
         ctx_staleness_sec: float = 6.0,
         mid_staleness_sec: float = 4.0,
@@ -182,7 +183,11 @@ class HyperliquidWsMarketCache:
         self.mid_staleness_sec = float(mid_staleness_sec)
 
         self._lock = threading.Lock()
-        self._subscribed_coins: Set[str] = set(initial_coins or DEFAULT_WS_MAJORS)
+        self._allowed_coins: Optional[Set[str]] = set(allowed_coins) if allowed_coins is not None else None
+        raw_init = set(initial_coins or DEFAULT_WS_MAJORS)
+        if self._allowed_coins is not None:
+            raw_init = {c for c in raw_init if c in self._allowed_coins}
+        self._subscribed_coins: Set[str] = raw_init
         self._l2_books: Dict[str, Tuple[float, List[Dict[str, Any]], List[Dict[str, Any]]]] = {}
         self._asset_ctxs: Dict[str, Tuple[float, Dict[str, float]]] = {}
         self._all_mids: Dict[str, float] = {}
@@ -256,6 +261,8 @@ class HyperliquidWsMarketCache:
             return
         ws_to_send = None
         with self._lock:
+            if self._allowed_coins is not None and coin not in self._allowed_coins:
+                return
             if coin in self._subscribed_coins or len(self._subscribed_coins) >= self.MAX_SUBSCRIBED_COINS:
                 return
             self._subscribed_coins.add(coin)

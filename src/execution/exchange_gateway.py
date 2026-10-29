@@ -77,8 +77,19 @@ class HyperliquidGateway:
                 os.getenv("APEX_ENABLE_WS_CACHE", "1") == "1"
                 and "PYTEST_CURRENT_TEST" not in os.environ
             )
+        active_venue_coins = {
+            token["name"]
+            for token in self.meta.get("universe", [])
+            if not token.get("isDelisted", False)
+        }
         self.ws_cache: Optional[HyperliquidWsMarketCache] = (
-            HyperliquidWsMarketCache(self.base_url, auto_start=True) if enable_ws_cache else None
+            HyperliquidWsMarketCache(
+                self.base_url,
+                allowed_coins=active_venue_coins,
+                auto_start=True,
+            )
+            if enable_ws_cache
+            else None
         )
 
     def get_account_state(self) -> Tuple[float, float, Dict[str, Dict[str, float]]]:

@@ -99,7 +99,12 @@ def evaluate_canary_readiness(
     # Check Mainnet clock drift + Mainnet account state
     drift_ms = 99999.0
     try:
-        req = urllib.request.Request(constants.MAINNET_API_URL + "/info", method="HEAD")
+        req = urllib.request.Request(
+            constants.MAINNET_API_URL + "/info",
+            data=b'{"type":"meta"}',
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
         t0 = time.time()
         with urllib.request.urlopen(req, timeout=5) as resp:
             hdr_date = resp.headers.get("Date")
