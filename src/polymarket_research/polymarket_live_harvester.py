@@ -959,16 +959,19 @@ def get_equity_tier_limits(
             "tier": tier_name,
             "dynamic_bankroll_pct": dynamic_bankroll_pct,
             "max_concurrent_positions": max_concurrent_positions,
+            "max_slots": max_concurrent_positions,
             "max_exposure": max_exposure,
             "max_daily_loss": max_daily_loss,
             "min_equity_floor": min_equity_floor,
         }
 
     if previous_tier in ("SEED_SURVIVAL", "SEED_RAMP") and eq < 108.0:
+        _ramp_slots = 1 if eq < 98.0 else 2
         return {
             "tier": "SEED_RAMP",
             "dynamic_bankroll_pct": 0.17,
-            "max_concurrent_positions": 1 if eq < 98.0 else 2,
+            "max_concurrent_positions": _ramp_slots,
+            "max_slots": _ramp_slots,
             "max_exposure": round(max(30.0, eq * 0.38), 2),
             "max_daily_loss": round(max(22.0, eq * 0.26), 2),
             "min_equity_floor": round(max(54.0, min(65.0, hwm * 0.64)), 2),
@@ -997,6 +1000,7 @@ def get_equity_tier_limits(
         "tier": tier_name,
         "dynamic_bankroll_pct": dynamic_bankroll_pct,
         "max_concurrent_positions": max_concurrent_positions,
+        "max_slots": max_concurrent_positions,
         "max_exposure": max_exposure,
         "max_daily_loss": max_daily_loss,
         "min_equity_floor": min_equity_floor,
@@ -2487,6 +2491,28 @@ class PolymarketLiveHarvester:
             if hasattr(self.risk_controller, "min_equity_floor_usd"):
                 self.risk_controller.min_equity_floor_usd = float(RISK_CONFIG.get("seed_survival_floor_usd", 48.0))
         return tier_limits
+
+    def _effective_directional_slot_cap(self, now_u: Optional[float] = None) -> int:
+        """Returns effective concurrent directional crypto slot cap from live equity tier limits."""
+        now_ts = float(now_u if now_u is not None else time.time())
+        eff_slot_cap = max(1, int(getattr(self, "max_concurrent_positions", 1) or 1))
+        if getattr(self, "dynamic_sizing", False):
+            rcfg_pd = getattr(self, "risk_config", None) or RISK_CONFIG
+            eq_pd = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
+                self.get_position_market_value(p, now_ts) for p in self.active_positions.values()
+            )
+            if eq_pd > 0.0:
+                corr_cap_pd = float(rcfg_pd.get("correlated_crypto_single_slot_threshold", 110.0))
+                if not self.dry_run and eq_pd < corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO") != "1":
+                    eff_slot_cap = 1
+                else:
+                    tier_lim = get_equity_tier_limits(
+                        eq_pd,
+                        getattr(self, "high_water_mark_equity", None),
+                        previous_tier=getattr(self, "_current_equity_tier", None),
+                    )
+                    eff_slot_cap = max(1, int(tier_lim.get("max_concurrent_positions", eff_slot_cap) or 1))
+        return eff_slot_cap
 
     async def _async_refresh_collateral(self) -> None:
         """Asynchronously updates CLOB L2 collateral balance in RAM without blocking hot path."""
@@ -10174,18 +10200,7 @@ class PolymarketLiveHarvester:
                                     and "BOX" not in str(p.get("sleeve") or "").upper()
                                     and not position_is_settlement_receivable(p)
                                 )
-                                _eff_slot_cap = max(1, int(getattr(self, "max_concurrent_positions", 1) or 1))
-                                if getattr(self, "dynamic_sizing", False):
-                                    _rcfg_pd = getattr(self, "risk_config", None) or RISK_CONFIG
-                                    _eq_pd = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
-                                        self.get_position_market_value(p, now_u) for p in self.active_positions.values()
-                                    )
-                                    if _eq_pd > 0.0:
-                                        _corr_cap_pd = float(_rcfg_pd.get("correlated_crypto_single_slot_threshold", 110.0))
-                                        if not self.dry_run and _eq_pd < _corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO") != "1":
-                                            _eff_slot_cap = 1
-                                        else:
-                                            _eff_slot_cap = max(1, int(get_equity_tier_limits(_eq_pd, getattr(self, "high_water_mark_equity", None))["max_slots"]))
+                                _eff_slot_cap = self._effective_directional_slot_cap(now_u)
 
                                 if cand_score > 0.0 and self.recent_shock_window and _dir_open_cnt >= _eff_slot_cap:
                                     best_prior = max(self.recent_shock_window, key=lambda x: x["score"])

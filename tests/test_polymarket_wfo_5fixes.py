@@ -4161,6 +4161,16 @@ def test_hold98_exit_integrity_ghost_priority_defer_and_z078_phase3a_rescue(monk
     assert len(h.active_positions) == 1
     assert len(h.recent_shock_window) == 1 and h.recent_shock_window[0]["market_id"] == "8100003"
 
+    # Regression guard for live run() PRIORITY DEFER slot cap lookup (`max_concurrent_positions` key)
+    h.active_positions.clear()
+    h.dynamic_sizing = True
+    h._last_known_collateral = 105.00
+    assert h._effective_directional_slot_cap(now_t) == 1
+    h._last_known_collateral = 120.12
+    assert h._effective_directional_slot_cap(now_t) == 2
+    h._last_known_collateral = 150.00
+    assert h._effective_directional_slot_cap(now_t) == 3
+
 
 
 

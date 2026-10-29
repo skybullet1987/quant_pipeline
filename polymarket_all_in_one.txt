@@ -1,19 +1,19 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-10-29 11:37:22 UTC | Repo: C:/Users/Anton/source/repos/Dominus
+Generated: 2026-10-29 11:51:47 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (Lines 19 - 60 | 1,157 B) :: Centralized Risk & Sizing Limits (Single Source of Truth)
   - [systemd/polymarket-live-harvester.service] (Lines 61 - 95 | 1,859 B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 1200.0)
-  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 96 - 7,008 | 621,886 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (Lines 7,009 - 11,046 | 373,001 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 11,047 - 12,801 | 160,641 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,802 - 13,165 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 13,166 - 14,787 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,788 - 14,857 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,858 - 14,940 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,941 - 15,130 | 12,505 B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (Lines 15,131 - 15,301 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,302 - 16,457 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (Lines 96 - 7,014 | 622,365 B) :: v3.9 Live Harvester Engine, Oracle-Exact Gates & 95c/98c Two-Tranche Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (Lines 7,015 - 11,052 | 373,001 B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (Lines 11,053 - 12,807 | 160,641 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (Lines 12,808 - 13,171 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (Lines 13,172 - 14,793 | 123,671 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (Lines 14,794 - 14,863 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/verify_onchain_allowances.py] (Lines 14,864 - 14,946 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  - [src/polymarket_research/redeem_settled_positions.py] (Lines 14,947 - 15,136 | 12,505 B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (Lines 15,137 - 15,307 | 15,574 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (Lines 15,308 - 16,463 | 81,407 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # === [01/12] config/polymarket_risk_config.json :: Centralized Risk & Sizing Limits (Single Source of Truth) ===
@@ -670,9 +670,10 @@ def get_equity_tier_limits( total_equity:float,high_water_mark_equity:Optional[f
   max_exposure=round(max(float(RISK_CONFIG.get("max_exposure",24.0)),eq * 0.30),2)
   max_daily_loss=float(RISK_CONFIG.get("max_daily_loss",22.0))
   min_equity_floor=float(RISK_CONFIG.get("seed_survival_floor_usd",48.0))
-  return { "tier":tier_name,"dynamic_bankroll_pct":dynamic_bankroll_pct,"max_concurrent_positions":max_concurrent_positions,"max_exposure":max_exposure,"max_daily_loss":max_daily_loss,"min_equity_floor":min_equity_floor,}
+  return { "tier":tier_name,"dynamic_bankroll_pct":dynamic_bankroll_pct,"max_concurrent_positions":max_concurrent_positions,"max_slots":max_concurrent_positions,"max_exposure":max_exposure,"max_daily_loss":max_daily_loss,"min_equity_floor":min_equity_floor,}
  if previous_tier in ("SEED_SURVIVAL","SEED_RAMP") and eq < 108.0:
-  return { "tier":"SEED_RAMP","dynamic_bankroll_pct":0.17,"max_concurrent_positions":1 if eq < 98.0 else 2,"max_exposure":round(max(30.0,eq * 0.38),2),"max_daily_loss":round(max(22.0,eq * 0.26),2),"min_equity_floor":round(max(54.0,min(65.0,hwm * 0.64)),2),}
+  _ramp_slots=1 if eq < 98.0 else 2
+  return { "tier":"SEED_RAMP","dynamic_bankroll_pct":0.17,"max_concurrent_positions":_ramp_slots,"max_slots":_ramp_slots,"max_exposure":round(max(30.0,eq * 0.38),2),"max_daily_loss":round(max(22.0,eq * 0.26),2),"min_equity_floor":round(max(54.0,min(65.0,hwm * 0.64)),2),}
  if eq < 140.0:
   tier_name="RECOVERY"
   dynamic_bankroll_pct=0.22
@@ -690,7 +691,7 @@ def get_equity_tier_limits( total_equity:float,high_water_mark_equity:Optional[f
   max_exposure=round(min(500.0,eq * 0.85),2)
  max_daily_loss=round(max(25.0,eq * 0.30),2)
  min_equity_floor=round(max(65.0,hwm * 0.68),2)
- return { "tier":tier_name,"dynamic_bankroll_pct":dynamic_bankroll_pct,"max_concurrent_positions":max_concurrent_positions,"max_exposure":max_exposure,"max_daily_loss":max_daily_loss,"min_equity_floor":min_equity_floor,}
+ return { "tier":tier_name,"dynamic_bankroll_pct":dynamic_bankroll_pct,"max_concurrent_positions":max_concurrent_positions,"max_slots":max_concurrent_positions,"max_exposure":max_exposure,"max_daily_loss":max_daily_loss,"min_equity_floor":min_equity_floor,}
 class StatePersistenceError(RuntimeError):
  pass
 class EmergencyRiskController:
@@ -1765,6 +1766,20 @@ class PolymarketLiveHarvester:
    if hasattr(self.risk_controller,"min_equity_floor_usd"):
     self.risk_controller.min_equity_floor_usd=float(RISK_CONFIG.get("seed_survival_floor_usd",48.0))
   return tier_limits
+ def _effective_directional_slot_cap(self,now_u:Optional[float]=None)->int:
+  now_ts=float(now_u if now_u is not None else time.time())
+  eff_slot_cap=max(1,int(getattr(self,"max_concurrent_positions",1) or 1))
+  if getattr(self,"dynamic_sizing",False):
+   rcfg_pd=getattr(self,"risk_config",None) or RISK_CONFIG
+   eq_pd=float(getattr(self,"_last_known_collateral",0.0) or 0.0) + sum( self.get_position_market_value(p,now_ts) for p in self.active_positions.values() )
+   if eq_pd > 0.0:
+    corr_cap_pd=float(rcfg_pd.get("correlated_crypto_single_slot_threshold",110.0))
+    if not self.dry_run and eq_pd < corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO")!="1":
+     eff_slot_cap=1
+    else:
+     tier_lim=get_equity_tier_limits( eq_pd,getattr(self,"high_water_mark_equity",None),previous_tier=getattr(self,"_current_equity_tier",None),)
+     eff_slot_cap=max(1,int(tier_lim.get("max_concurrent_positions",eff_slot_cap) or 1))
+  return eff_slot_cap
  async def _async_refresh_collateral(self)->None:
   if self.dry_run or not self.executor.is_authenticated:
    return
@@ -6860,16 +6875,7 @@ class PolymarketLiveHarvester:
        t0_u=float(shock.get("t0_unix",now_u))
        shk_m_id=str(shock.get("market_id") or "")
        _dir_open_cnt=sum( 1 for p in self.active_positions.values() if not p.get("is_dominance_box") and "BOX" not in str(p.get("sleeve") or "").upper() and not position_is_settlement_receivable(p) )
-       _eff_slot_cap=max(1,int(getattr(self,"max_concurrent_positions",1) or 1))
-       if getattr(self,"dynamic_sizing",False):
-        _rcfg_pd=getattr(self,"risk_config",None) or RISK_CONFIG
-        _eq_pd=float(getattr(self,"_last_known_collateral",0.0) or 0.0) + sum( self.get_position_market_value(p,now_u) for p in self.active_positions.values() )
-        if _eq_pd > 0.0:
-         _corr_cap_pd=float(_rcfg_pd.get("correlated_crypto_single_slot_threshold",110.0))
-         if not self.dry_run and _eq_pd < _corr_cap_pd and os.environ.get("PM_ALLOW_SMALL_BANKROLL_CORRELATED_CRYPTO")!="1":
-          _eff_slot_cap=1
-         else:
-          _eff_slot_cap=max(1,int(get_equity_tier_limits(_eq_pd,getattr(self,"high_water_mark_equity",None))["max_slots"]))
+       _eff_slot_cap=self._effective_directional_slot_cap(now_u)
        if cand_score > 0.0 and self.recent_shock_window and _dir_open_cnt>=_eff_slot_cap:
         best_prior=max(self.recent_shock_window,key=lambda x:x["score"])
         if best_prior["market_id"]!=shk_m_id and best_prior["score"] > cand_score:
