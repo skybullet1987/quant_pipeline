@@ -8,7 +8,21 @@ from hyperliquid.exchange import Exchange
 from hyperliquid.utils import constants
 from hyperliquid.utils.types import Cloid
 
-_TRANSIENT_ERR_MARKERS = ("502", "503", "504", "bad gateway", "service unavailable", "gateway timeout", "timed out", "connection aborted", "connection reset")
+_TRANSIENT_ERR_MARKERS = (
+    "502",
+    "503",
+    "504",
+    "429",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
+    "timed out",
+    "read timed out",
+    "connection aborted",
+    "connection reset",
+    "remote disconnected",
+    "temporary failure in name resolution",
+)
 
 
 def _is_transient_gateway_exc(exc: Exception) -> bool:
@@ -37,6 +51,14 @@ class HyperliquidGateway:
         self.sz_decimals: Dict[str, int] = {
             token["name"]: token["szDecimals"] for token in self.meta["universe"]
         }
+        self.max_leverage: Dict[str, int] = {
+            token["name"]: int(token.get("maxLeverage", 10) or 10) for token in self.meta["universe"]
+        }
+        self._universe_idx: Dict[str, int] = {
+            token["name"]: idx for idx, token in enumerate(self.meta["universe"])
+        }
+        self._ctx_cache_ts: float = 0.0
+        self._ctx_cache_data: Optional[List[Dict[str, Any]]] = None
 
     def get_account_state(self) -> Tuple[float, float, Dict[str, Dict[str, float]]]:
         """Returns total unified portfolio value, withdrawable cash, and open positions."""
@@ -330,10 +352,87 @@ class HyperliquidGateway:
             print(f"--> [Gateway Warning] Failed to place trigger TP for {symbol}: {e}", flush=True)
             return {"error": str(e)}
 
-    def get_oracle_price(self, symbol: str) -> float:
+    def place_passive_bbo_maker(
+        self,
+        symbol: str,
+        is_buy: bool,
+        size: float,
+        reduce_only: bool = False,
+        cloid: Optional[str] = None,
+    ) -> Tuple[Dict[str, Any], float]:
+        """
+        Submits a strictly post-only (`Alo`) maker quote at inside BBO (`best_bid` for buy,
+        `best_ask` for sell), retreating 1 passive tick (`best_bid - tick_sz` / `best_ask + tick_sz`)
+        if an instantaneous L1 spread flicker causes a post-only bounce. Never crosses spread as taker.
+        Returns `(order_response, final_limit_price)`.
+        """
+        if not self.exchange:
+            return {}, 0.0
+        rounded_sz = abs(self.round_sz(symbol, size))
+        if rounded_sz <= 0:
+            return {}, 0.0
+        cloid_obj = None
+        if cloid:
+            hex_str = "0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()
+            cloid_obj = Cloid.from_str(hex_str)
         try:
-            ctxs = self.info.meta_and_asset_ctxs()[1]
-            universe = [t["name"] for t in self.meta["universe"]]
+            rb_bid, rb_ask, rb_mid = self.get_bbo_and_mid(symbol)
+            tick_sz = self.get_tick_size(symbol, rb_mid)
+            px_1 = self.round_px(symbol, rb_bid if is_buy else rb_ask)
+            res = self.exchange.order(
+                symbol,
+                is_buy,
+                rounded_sz,
+                px_1,
+                order_type={"limit": {"tif": "Alo"}},
+                reduce_only=reduce_only,
+                cloid=cloid_obj,
+            )
+            statuses = res.get("response", {}).get("data", {}).get("statuses", [{}]) if isinstance(res, dict) else [{}]
+            first_st = statuses[0] if statuses else {}
+            err_msg = str(first_st.get("error", "")).lower() if isinstance(first_st, dict) else ""
+            if "post only" in err_msg or "immediately match" in err_msg:
+                rb_bid2, rb_ask2, rb_mid2 = self.get_bbo_and_mid(symbol)
+                tick_sz2 = self.get_tick_size(symbol, rb_mid2)
+                raw_px_2 = max(tick_sz2, rb_bid2 - tick_sz2) if is_buy else (rb_ask2 + tick_sz2)
+                px_2 = self.round_px(symbol, raw_px_2)
+                res = self.exchange.order(
+                    symbol,
+                    is_buy,
+                    rounded_sz,
+                    px_2,
+                    order_type={"limit": {"tif": "Alo"}},
+                    reduce_only=reduce_only,
+                    cloid=cloid_obj,
+                )
+                return res, px_2
+            return res, px_1
+        except Exception as e:
+            if _is_transient_gateway_exc(e):
+                raise
+            return {"error": str(e)}, 0.0
+
+    def get_oracle_price(self, symbol: str, ttl_sec: float = 5.0) -> float:
+        try:
+            use_cache = type(self.info).__name__ == "Info" and ttl_sec > 0.0
+            now_m = time.monotonic()
+            cached_ctxs = getattr(self, "_ctx_cache_data", None)
+            cached_ts = float(getattr(self, "_ctx_cache_ts", 0.0))
+            if use_cache and cached_ctxs is not None and (now_m - cached_ts) <= ttl_sec:
+                ctxs = cached_ctxs
+            else:
+                meta_live, ctxs = self.info.meta_and_asset_ctxs()
+                if use_cache and isinstance(ctxs, list):
+                    self._ctx_cache_data = ctxs
+                    self._ctx_cache_ts = now_m
+                    if not getattr(self, "meta", None) and isinstance(meta_live, dict):
+                        self.meta = meta_live
+            idx_map = getattr(self, "_universe_idx", None)
+            if isinstance(idx_map, dict) and symbol in idx_map:
+                idx = idx_map[symbol]
+                if idx < len(ctxs):
+                    return float(ctxs[idx].get("oraclePx", 0.0))
+            universe = [t["name"] for t in getattr(self, "meta", {}).get("universe", [])]
             if symbol in universe:
                 idx = universe.index(symbol)
                 return float(ctxs[idx].get("oraclePx", 0.0))

@@ -112,6 +112,11 @@ def run_shared_kernel_simulation(
             vol_mat=v_win,
             top_n=15,
             max_single_alt_weight=0.25,
+            regime_adaptive_routing=True,
+            er_gate_tsmom=True,
+            fast_tsmom_blend=True,
+            fip_quality_weight=0.05,
+            vol_accel_weight=0.05,
         )
         w_new, _, _ = scale_and_smooth_apex_v5_weights(
             raw_w=raw_w,
@@ -122,12 +127,13 @@ def run_shared_kernel_simulation(
             btc_idx=btc_idx,
             current_equity=equity,
             historical_hwm=hwm,
-            target_vol_ann=0.25,
+            target_vol_ann=0.35,
             max_gross_leverage=3.0,
             gz_max_dd=0.25,
             gp_keep=0.88,
             deadband_nav=0.03,
             max_single_alt_weight=0.25,
+            clean_zero_exit=True,
         )
 
         turnover = float(np.sum(np.abs(w_new - prev_w)))
@@ -251,7 +257,7 @@ def main():
     )
 
     report = {
-        "strategy_version": "v5.0.0-two-sleeve-majors",
+        "strategy_version": "v5.1.0-adaptive-regime-majors",
         "kernel": "src.strategy.apex_v5_kernel",
         "total_bars_loaded": int(n_bars),
         "symbols_loaded": int(n_syms),

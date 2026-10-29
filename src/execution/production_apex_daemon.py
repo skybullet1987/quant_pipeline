@@ -53,6 +53,7 @@ import sys
 import time
 import random
 import logging
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
@@ -99,6 +100,7 @@ from src.strategy.apex_v5_kernel import (
     compute_apex_v5_raw_unit_weights,
     scale_and_smooth_apex_v5_weights,
 )
+from src.research.apex_champion_challenger import record_shadow_competition_step
 from src.execution.as_quoting import compute_as_quote_offsets
 from src.execution.exchange_gateway import HyperliquidGateway
 from hyperliquid.info import Info
@@ -124,15 +126,21 @@ MAX_WARNING_RESIDUAL_USD = 0.05   # $0.05 acceptable mismatch before DEGRADED va
 MAX_VALUATION_RESIDUAL_USD = 0.10 # $0.10 maximum unexplained valuation residual before hard ACCOUNTING_FAULT HALT
 DYNAMIC_VALUATION_FLOOR_USD = 0.25 # Scale-aware floor ($0.25) when multi-position mark float is active
 DYNAMIC_VALUATION_NAV_BPS = 0.0005 # 0.05% (5 bps) of NAV dynamic valuation tolerance
-CLOCK_DRIFT_MAX_RETRIES = 3       # 3-attempt retry loop for transient DNS/network hiccups
+CLOCK_DRIFT_MAX_RETRIES = 4       # 4-attempt retry loop (+ Mainnet HTTP Date fallback on Testnet 502)
 CLOCK_DRIFT_BASE_BACKOFF_SEC = 0.5 # Exponential backoff base (0.5s -> 1.0s -> 2.0s)
-TARGET_PORTFOLIO_VOL_ANN = 0.25   # 25% annualized target volatility (WFO-validated v5.0 S3 optimum)
-V5_TARGET_PORTFOLIO_VOL_ANN = 0.25 # 25% annualized ex-ante covariance target vol
+TARGET_PORTFOLIO_VOL_ANN = 0.35   # 35% annualized target volatility (WFO-validated v5.1 S11 optimum within 3.0x/25% DD bounds)
+V5_TARGET_PORTFOLIO_VOL_ANN = 0.35 # 35% annualized ex-ante covariance target vol
 V5_GROSSMAN_ZHOU_MAX_DD = 0.25    # 25% drawdown boundary with true 0.0x zero-exposure floor at cushion <= 0
 V5_GP_KEEP_WEIGHT = 0.88          # Garleanu-Pedersen optimal turnover retention weight (0.25x/day turnover)
-V5_TURNOVER_DEADBAND_NAV = 0.03   # 3% aggregate NAV turnover deadband inside v5.0 kernel
+V5_TURNOVER_DEADBAND_NAV = 0.03   # 3% aggregate NAV turnover deadband inside v5.1 kernel
 V5_PER_COIN_REBALANCE_DEADBAND = 0.015 # 1.5% per-asset delta deadband during macro execution
 V5_TOP_N_MAJORS = 15              # Causal rolling 30d Top-15 USD dollar-volume Hyperliquid majors
+V51_REGIME_ADAPTIVE_ROUTING = True # Causal ER_14d dynamic sleeve routing (18%-38% TSMOM / 62%-82% CS_SKIP_MOM)
+V51_ER_GATE_TSMOM = True          # Causal ER_14d trend-efficiency damping of choppy TSMOM legs
+V51_FAST_TSMOM_BLEND = True       # Multi-horizon 3.5d/7d/14d/30d TSMOM blend
+V51_FIP_QUALITY_WEIGHT = 0.05     # Frog-in-the-Pan path-continuity confirmation in CS_SKIP_MOM
+V51_VOL_ACCEL_WEIGHT = 0.05       # 3d/14d USD dollar-volume participation acceleration in CS_SKIP_MOM
+V51_CLEAN_ZERO_EXIT = True        # Sub-$22 clean zero-target exit + $11.50 initial L1 slice hygiene
 V5_LIVE_OFI_ADVERSE_DRIFT_BPS = 35.0 # 35 bps live maker adverse drift guard (avoids 5bps noise self-cancels)
 V5_CATASTROPHE_BRACKETS_ONLY = True # Wide L1 catastrophe stops (10%-18%), zero tight Stage 1-3 ratchets
 EXP112_RECYCLER_ENABLED = False   # Disabled in v5.0 (4H satellites destroyed Sharpe in WFO); helpers retained for unit tests
@@ -153,7 +161,7 @@ EXP116_VOL_DAMPER_ENABLED = True  # Volatility-Targeted Downside Cushion Damper
 EXP117_118_FAST_SLEEVES_ENABLED = False # Disabled in v5.0
 ADMIN_RESET_TOKEN = os.getenv("APEX_ADMIN_RESET_TOKEN", "APEX_OPERATOR_AUTHORIZED_EMERGENCY_RESET_2026")
 BENCHMARK_SYMBOL = "BTC"
-STRATEGY_VERSION = "v5.0.0-two-sleeve-majors"
+STRATEGY_VERSION = "v5.1.0-adaptive-regime-majors"
 PYRAMID_RATIO = 0.0  # Strictly zero pyramiding invariant
 
 
@@ -193,7 +201,20 @@ def log(level: str, msg: str):
     print(line, flush=True)
 
 
-TRANSIENT_HTTP_CODES = ("502", "503", "504", "Bad Gateway", "Service Unavailable", "Gateway Timeout")
+TRANSIENT_HTTP_CODES = (
+    "502",
+    "503",
+    "504",
+    "429",
+    "Bad Gateway",
+    "Service Unavailable",
+    "Gateway Timeout",
+    "timed out",
+    "Remote disconnected",
+    "Connection aborted",
+    "Connection reset",
+    "Temporary failure in name resolution",
+)
 
 
 def call_with_gateway_retry(fn, *args, max_attempts=4, base_delay=1.5, **kwargs):
@@ -942,13 +963,19 @@ class ProductionApexExecutor:
         Uses a 3-attempt exponential backoff retry loop so transient DNS/network blips
         ([Errno -3] Temporary failure in name resolution) do not falsely latch HALT.
         """
-        url = f"{self.gateway.base_url}/info"
+        primary_url = f"{self.gateway.base_url}/info"
+        fallback_url = f"{constants.MAINNET_API_URL}/info"
         last_exc: Optional[Exception] = None
 
         for attempt in range(1, CLOCK_DRIFT_MAX_RETRIES + 1):
+            probe_url = (
+                fallback_url
+                if (getattr(self, "testnet", False) and attempt >= 2 and primary_url != fallback_url)
+                else primary_url
+            )
             try:
                 req = urllib.request.Request(
-                    url, data=b'{"type":"meta"}', headers={"Content-Type": "application/json"}
+                    probe_url, data=b'{"type":"meta"}', headers={"Content-Type": "application/json"}
                 )
                 t0 = time.time()
                 with urllib.request.urlopen(req, timeout=5) as resp:
@@ -1022,11 +1049,11 @@ class ProductionApexExecutor:
 
         log("INFO", f"[DATA] Causal 4H Decision Boundary: {datetime.fromtimestamp(decision_ts_ms/1000, timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')}")
         sig_info = getattr(self, "signal_info", None) or self.gateway.info
-        meta, asset_ctxs = sig_info.meta_and_asset_ctxs()
+        meta, asset_ctxs = call_with_gateway_retry(sig_info.meta_and_asset_ctxs)
         tradeable_syms = set(self.gateway.sz_decimals.keys())
 
         # If executing on Testnet while sourcing signals from Mainnet, pre-filter out Testnet books with zero L1 liquidity,
-        # one-sided/empty orderbooks (midPx is None), wide impact spreads (>3%), or synthetic mark/oracle dislocations,
+        # one-sided/empty orderbooks (midPx is None), wide impact spreads (>3%), low-tier (<5x) margin traps, or synthetic mark/oracle dislocations,
         # and record Testnet execution-venue funding so Testnet trades never step into synthetic Testnet funding traps.
         testnet_liquid_syms: Optional[Set[str]] = None
         self.exec_funding_map: Dict[str, float] = {}
@@ -1037,7 +1064,7 @@ class ProductionApexExecutor:
                     for idx_m, u_m in enumerate(meta.get("universe", []))
                     if idx_m < len(asset_ctxs) and u_m.get("name")
                 }
-                tn_meta, tn_ctxs = self.gateway.info.meta_and_asset_ctxs()
+                tn_meta, tn_ctxs = call_with_gateway_retry(self.gateway.info.meta_and_asset_ctxs)
                 testnet_liquid_syms = set()
                 vetoed_tn = []
                 for idx_t, u_t in enumerate(tn_meta.get("universe", [])):
@@ -1046,6 +1073,10 @@ class ProductionApexExecutor:
                     if not nm:
                         continue
                     self.exec_funding_map[nm] = float(ctx_t.get("funding") or 0.0)
+                    max_lev_t = int(u_t.get("maxLeverage") or 10)
+                    if nm not in ("BTC", "ETH") and max_lev_t < 5:
+                        vetoed_tn.append(f"{nm}(maxLev={max_lev_t}x)")
+                        continue
                     t_mark = float(ctx_t.get("markPx") or 0.0)
                     t_mid_raw = ctx_t.get("midPx")
                     t_mid = float(t_mid_raw) if t_mid_raw is not None else 0.0
@@ -1102,37 +1133,58 @@ class ProductionApexExecutor:
         live_funding_map = {c[0]: c[2] for c in candidates}
 
         start_ms = decision_ts_ms - (210 * 4 * 3600 * 1000)
+        end_query_ms = decision_ts_ms + (4 * 3600 * 1000)
         records = []
         valid_symbols = []
 
-        for sym in top_symbols:
-            try:
-                raw_candles = sig_info.candles_snapshot(sym, "4h", start_ms, decision_ts_ms + (4 * 3600 * 1000))
-                if not raw_candles:
+        def _fetch_sym_candles(sym_name: str) -> Tuple[str, List[Dict[str, Any]]]:
+            raw_candles = call_with_gateway_retry(
+                sig_info.candles_snapshot, sym_name, "4h", start_ms, end_query_ms, max_attempts=3, base_delay=0.6
+            )
+            if not raw_candles:
+                return sym_name, []
+            completed = [
+                c for c in raw_candles
+                if int(c["t"]) + (4 * 3600 * 1000) <= decision_ts_ms
+            ]
+            if completed and len(completed) >= 20:
+                last_bar_end = int(completed[-1]["t"]) + (4 * 3600 * 1000)
+                if last_bar_end == decision_ts_ms:
+                    recs = [
+                        {
+                            "symbol": sym_name,
+                            "timestamp_ms": int(c["t"]),
+                            "open": float(c["o"]),
+                            "high": float(c["h"]),
+                            "low": float(c["l"]),
+                            "close": float(c["c"]),
+                            "volume": float(c["v"]),
+                        }
+                        for c in completed
+                    ]
+                    return sym_name, recs
+            return sym_name, []
+
+        if isinstance(sig_info, Info) and len(top_symbols) > 1:
+            with ThreadPoolExecutor(max_workers=min(4, len(top_symbols))) as pool:
+                futs = {pool.submit(_fetch_sym_candles, sym): sym for sym in top_symbols}
+                for fut in as_completed(futs):
+                    try:
+                        sym_done, sym_recs = fut.result()
+                        if sym_recs:
+                            valid_symbols.append(sym_done)
+                            records.extend(sym_recs)
+                    except Exception:
+                        continue
+        else:
+            for sym in top_symbols:
+                try:
+                    sym_done, sym_recs = _fetch_sym_candles(sym)
+                    if sym_recs:
+                        valid_symbols.append(sym_done)
+                        records.extend(sym_recs)
+                except Exception:
                     continue
-
-                # Causal Completed Candle Filter: Keep only completed bars where bar_end <= decision_ts_ms
-                completed = [
-                    c for c in raw_candles
-                    if int(c["t"]) + (4 * 3600 * 1000) <= decision_ts_ms
-                ]
-
-                if completed and len(completed) >= 20:
-                    last_bar_end = int(completed[-1]["t"]) + (4 * 3600 * 1000)
-                    if last_bar_end == decision_ts_ms:
-                        valid_symbols.append(sym)
-                        for c in completed:
-                            records.append({
-                                "symbol": sym,
-                                "timestamp_ms": int(c["t"]),
-                                "open": float(c["o"]),
-                                "high": float(c["h"]),
-                                "low": float(c["l"]),
-                                "close": float(c["c"]),
-                                "volume": float(c["v"]),
-                            })
-            except Exception:
-                continue
 
         df = pl.DataFrame(records).sort(["timestamp_ms", "symbol"])
 
@@ -1290,6 +1342,16 @@ class ProductionApexExecutor:
                     if abs(tn_f) > abs(eff_funding[idx_s]) and abs(tn_f) * 24.0 * 365.25 >= 0.80:
                         eff_funding[idx_s] = tn_f
 
+        self._last_signal_snapshot = {
+            "close_mat": close_mat,
+            "vol_mat": vol_mat,
+            "valid_mask": valid_mask,
+            "funding_rates_1h": eff_funding,
+            "symbols": list(symbols),
+            "btc_idx": int(btc_idx),
+            "eth_idx": int(eth_idx),
+        }
+
         raw_w, betas, vol_bar, idio_vol, _, _ = compute_apex_v5_raw_unit_weights(
             close_mat=close_mat,
             valid_mask=valid_mask,
@@ -1300,6 +1362,11 @@ class ProductionApexExecutor:
             vol_mat=vol_mat,
             top_n=V5_TOP_N_MAJORS,
             max_single_alt_weight=MAX_SINGLE_ALT_WEIGHT,
+            regime_adaptive_routing=V51_REGIME_ADAPTIVE_ROUTING,
+            er_gate_tsmom=V51_ER_GATE_TSMOM,
+            fast_tsmom_blend=V51_FAST_TSMOM_BLEND,
+            fip_quality_weight=V51_FIP_QUALITY_WEIGHT,
+            vol_accel_weight=V51_VOL_ACCEL_WEIGHT,
         )
 
         # Build clean core previous weights (excluding any registered satellite + hedge weights)
@@ -1325,6 +1392,7 @@ class ProductionApexExecutor:
             gp_keep=V5_GP_KEEP_WEIGHT,
             deadband_nav=V5_TURNOVER_DEADBAND_NAV,
             max_single_alt_weight=MAX_SINGLE_ALT_WEIGHT,
+            clean_zero_exit=V51_CLEAN_ZERO_EXIT,
         )
 
         target_weights: Dict[str, float] = {
@@ -1338,7 +1406,7 @@ class ProductionApexExecutor:
         net_btc_beta = float(np.sum(w_final * betas)) if n_symbols > 0 else 0.0
         log(
             "INFO",
-            f"[APEX v5.0 KERNEL] HWM: ${self.state.historical_hwm:.2f} | Cushion: {cushion*100:.1f}% | "
+            f"[APEX v5.1 KERNEL] HWM: ${self.state.historical_hwm:.2f} | Cushion: {cushion*100:.1f}% | "
             f"Active Gross: {active_leverage:.2f}x | Net BTC Beta: {net_btc_beta:+.2f} | "
             f"Longs({len(selected_longs)}): {selected_longs} | Shorts({len(selected_shorts)}): {selected_shorts}",
         )
@@ -1990,13 +2058,13 @@ class ProductionApexExecutor:
             return sz_abs
         res = self.gateway.place_alo_order(sym, is_buy, sz_abs, px, cloid=cloid)
         ok, oid, status_detail = parse_order_response(res)
-        if not ok and self.testnet and ("post only" in str(status_detail).lower() or "immediately match" in str(status_detail).lower()):
+        if not ok and ("post only" in str(status_detail).lower() or "immediately match" in str(status_detail).lower()):
             try:
-                rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
-                px = round_px((rb_ask * 1.0025 if is_buy else rb_bid * 0.9975), sz_dec)
-                cloid_obj = Cloid.from_str("0x" + hashlib.md5(cloid.encode("utf-8")).hexdigest()) if cloid else None
-                res = self.gateway.exchange.order(sym, is_buy, sz_abs, px, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj)
-                ok, oid, status_detail = parse_order_response(res)
+                if isinstance(self.gateway, HyperliquidGateway):
+                    res, px = self.gateway.place_passive_bbo_maker(
+                        sym, is_buy, sz_abs, reduce_only=False, cloid=cloid
+                    )
+                    ok, oid, status_detail = parse_order_response(res)
             except Exception:
                 pass
         if ok and oid is not None:
@@ -2362,7 +2430,9 @@ class ProductionApexExecutor:
         # 2. Reconcile Fills
         fill_query_start = max(self.state.epoch_start_ms, self.state.last_fill_cursor_ms - safety_overlap_ms)
         try:
-            fills = self.gateway.info.user_fills_by_time(self.gateway.account_address, start_time=fill_query_start)
+            fills = call_with_gateway_retry(
+                self.gateway.info.user_fills_by_time, self.gateway.account_address, start_time=fill_query_start
+            )
             if isinstance(fills, list):
                 for f in fills:
                     t_ms = int(f.get("time", 0))
@@ -2444,11 +2514,15 @@ class ProductionApexExecutor:
         # 3. Reconcile Funding Cashflows
         fund_query_start = max(self.state.epoch_start_ms, self.state.last_funding_cursor_ms - safety_overlap_ms)
         try:
-            funding_events = self.gateway.info.post("/info", {
-                "type": "userFunding",
-                "user": self.gateway.account_address,
-                "startTime": fund_query_start
-            })
+            funding_events = call_with_gateway_retry(
+                self.gateway.info.post,
+                "/info",
+                {
+                    "type": "userFunding",
+                    "user": self.gateway.account_address,
+                    "startTime": fund_query_start,
+                },
+            )
             if isinstance(funding_events, list):
                 for ev in funding_events:
                     t_ms = int(ev.get("time", 0))
@@ -3154,7 +3228,10 @@ class ProductionApexExecutor:
         log("INFO", ">>> STARTING 72H MACRO REBALANCE CYCLE (EXP-103 SOVEREIGN FINALITY) <<<")
         log("INFO", "================================================================================")
 
+        t_cycle_0 = time.monotonic()
+
         # 1. Reconcile ledger and verify NAV invariant
+        t_recon_0 = time.monotonic()
         try:
             chain_equity, discrepancy, current_positions = self.reconcile_ledger_events_and_reconstruct_nav()
         except Exception as e:
@@ -3164,6 +3241,7 @@ class ProductionApexExecutor:
             except Exception as e_b:
                 log("CRITICAL", f"[SAFETY GATE] Bracket verification also failed: {e_b}")
             return
+        recon_ms = (time.monotonic() - t_recon_0) * 1000.0
         if self.state.circuit_breaker == CircuitBreakerState.HALTED:
             log("CRITICAL", "[CIRCUIT BREAKER] Macro rebalance aborted: Reconciliation detected accounting fault (HALTED).")
             return
@@ -3178,12 +3256,17 @@ class ProductionApexExecutor:
                 log("DEBUG", f"[SWEEP] Stale maker sweep error ({e_sw})")
 
         # 2. Ingest causal PIT market data
+        t_data_0 = time.monotonic()
         close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat = self.load_latest_market_data()
+        data_ms = (time.monotonic() - t_data_0) * 1000.0
 
         # 3. Compute EXP-103 signals and weights
+        t_sig_0 = time.monotonic()
         raw_weights, active_lev, cushion, longs, shorts, locks = self.compute_exp103_signals_and_weights(
             close_mat, atr_mat, funding_rates, valid_mask, symbols, btc_idx, eth_idx, vol_mat=vol_mat
         )
+        signal_ms = (time.monotonic() - t_sig_0) * 1000.0
+        t_order_0 = time.monotonic()
 
         if self.state.circuit_breaker == CircuitBreakerState.HALTED:
             log("CRITICAL", "[CIRCUIT BREAKER] Macro rebalance aborted: Drawdown circuit breaker triggered (HALTED).")
@@ -3363,25 +3446,21 @@ class ProductionApexExecutor:
 
                 ok, oid, status_detail = parse_order_response(res)
                 if not ok and ("post only" in str(status_detail).lower() or "immediately match" in str(status_detail).lower()):
-                    # Refresh BBO and retry passive quote at best bid / ask
+                    # Refresh BBO and submit strictly passive maker quote (1-tick retreat if still crossing) — zero 25bps GTC taker crossing!
                     try:
-                        rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
-                        alo_price = round_px(rb_bid if is_buy else rb_ask, sz_dec)
-                        ord_info["alo_price"] = alo_price
-                        if is_reduce_only:
-                            res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Alo"}}, reduce_only=True, cloid=cloid_obj)
+                        if isinstance(self.gateway, HyperliquidGateway):
+                            res, alo_price = self.gateway.place_passive_bbo_maker(
+                                sym, is_buy, sz_abs, reduce_only=is_reduce_only, cloid=cloid
+                            )
+                            ord_info["alo_price"] = alo_price
                         else:
-                            res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price, cloid=cloid)
-                        ok, oid, status_detail = parse_order_response(res)
-                    except Exception:
-                        pass
-                if not ok and self.testnet and not is_reduce_only and "post only" in str(status_detail).lower():
-                    # On Hyperliquid Testnet, crossed/stale synthetic spreads can reject ALO even at BBO; fall back to GTC limit at 25bps collar
-                    try:
-                        rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
-                        alo_price = round_px(rb_ask * 1.0025 if is_buy else rb_bid * 0.9975, sz_dec)
-                        ord_info["alo_price"] = alo_price
-                        res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj)
+                            rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(sym)
+                            alo_price = round_px(rb_bid if is_buy else rb_ask, sz_dec)
+                            ord_info["alo_price"] = alo_price
+                            if is_reduce_only:
+                                res = self.gateway.exchange.order(sym, is_buy, sz_abs, alo_price, order_type={"limit": {"tif": "Alo"}}, reduce_only=True, cloid=cloid_obj)
+                            else:
+                                res = self.gateway.place_alo_order(sym, is_buy, sz_abs, alo_price, cloid=cloid)
                         ok, oid, status_detail = parse_order_response(res)
                     except Exception:
                         pass
@@ -3621,16 +3700,10 @@ class ProductionApexExecutor:
                             re_px = round_px(current_mid, sz_dec)
                             cloid_req = f"EXP103_{gen_id}_{coin}_REQUOTE_1"
                             self.journal.append_event("ORDER_INTENT", {"cloid": cloid_req, "sym": coin, "requote": True})
-                            if self.testnet:
-                                # On Testnet, synthetic books have zero passive organic takers; cross up to 25 bps to complete rebalance on timeout
-                                try:
-                                    rb_bid, rb_ask, _ = self.gateway.get_bbo_and_mid(coin)
-                                    cross_raw = rb_ask * 1.0025 if is_buy else rb_bid * 0.9975
-                                    re_px = round_px(cross_raw, sz_dec)
-                                except Exception:
-                                    pass
-                                cloid_obj_req = Cloid.from_str("0x" + hashlib.md5(cloid_req.encode("utf-8")).hexdigest())
-                                res_req = self.gateway.exchange.order(coin, is_buy, sz, re_px, order_type={"limit": {"tif": "Gtc"}}, reduce_only=False, cloid=cloid_obj_req)
+                            if isinstance(self.gateway, HyperliquidGateway):
+                                res_req, re_px = self.gateway.place_passive_bbo_maker(
+                                    coin, is_buy, sz, reduce_only=False, cloid=cloid_req
+                                )
                             else:
                                 res_req = self.gateway.place_alo_order(coin, is_buy, sz, re_px, cloid=cloid_req)
                             ok_req, oid_req, status_req = parse_order_response(res_req)
@@ -3675,9 +3748,13 @@ class ProductionApexExecutor:
                 except Exception as e:
                     log("WARN", f"[TIMEOUT] Error processing timeout quotes: {e}")
 
+        order_ms = (time.monotonic() - t_order_0) * 1000.0
+
         # 8. Synchronize native on-chain TP/SL brackets
+        t_brk_0 = time.monotonic()
         time.sleep(2)
         armed_brackets = self.arm_position_brackets(sl_pct=DEFAULT_SL_PCT, tp_pct=DEFAULT_TP_PCT)
+        bracket_ms = (time.monotonic() - t_brk_0) * 1000.0
 
         # 8B. Always-On 4H EXP-109 Satellite Sleeve: scan immediately after Macro Rebalance as well
         if EXP112_RECYCLER_ENABLED and self.state.circuit_breaker != CircuitBreakerState.HALTED:
@@ -3688,8 +3765,41 @@ class ProductionApexExecutor:
             except Exception as e_sat_macro:
                 log("WARN", f"[MACRO] Post-rebalance satellite scan error: {e_sat_macro}")
 
+        # 8C. Permanent Champion vs Challenger Shadow Competition Ledger (non-fatal telemetry)
+        if not self.dry_run and getattr(self, "_last_signal_snapshot", None) is not None:
+            try:
+                snap = self._last_signal_snapshot
+                record_shadow_competition_step(
+                    decision_ts_ms=decision_ts_ms,
+                    close_mat=snap["close_mat"],
+                    vol_mat=snap["vol_mat"],
+                    valid_mask=snap["valid_mask"],
+                    funding_rates_1h=snap["funding_rates_1h"],
+                    symbols=snap["symbols"],
+                    btc_idx=snap["btc_idx"],
+                    eth_idx=snap["eth_idx"],
+                    current_equity=float(self.state.current_strategy_equity),
+                    historical_hwm=float(self.state.historical_hwm),
+                )
+            except Exception as e_sh:
+                log("DEBUG", f"[SHADOW COMPETITION] Telemetry step skipped ({e_sh})")
+
         # 9. Post-Trade Account State Refresh & Materialized Checkpointing
         chain_equity, discrepancy, confirmed_positions = self.reconcile_ledger_events_and_reconstruct_nav()
+        total_ms = (time.monotonic() - t_cycle_0) * 1000.0
+        self.last_cycle_latency_ms = {
+            "recon_ms": round(recon_ms, 1),
+            "data_ms": round(data_ms, 1),
+            "signal_ms": round(signal_ms, 1),
+            "order_ms": round(order_ms, 1),
+            "bracket_ms": round(bracket_ms, 1),
+            "total_ms": round(total_ms, 1),
+        }
+        log(
+            "INFO",
+            f"[LATENCY] recon={recon_ms:.1f}ms | data={data_ms:.1f}ms | signal={signal_ms:.1f}ms | "
+            f"order={order_ms:.1f}ms | bracket={bracket_ms:.1f}ms | total={total_ms:.1f}ms",
+        )
         self.last_telemetry_audit = self.audit_distributional_telemetry()
         self.save_materialized_state_cache(confirmed_positions, armed_brackets)
         log("INFO", "================================================================================")
@@ -3936,6 +4046,10 @@ class ProductionApexExecutor:
         now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
         dd_pct = max(0.0, (self.state.historical_hwm - self.state.current_strategy_equity) / (self.state.historical_hwm + 1e-8) * 100.0)
 
+        warn_res_t, halt_res_t = compute_dynamic_valuation_thresholds(
+            self.state.current_strategy_equity, len(current_positions)
+        )
+
         payload = {
             "status": f"RUNNING_EXP103_{self.state.circuit_breaker.value}",
             "architecture": "The 10x+ Convex Compounding Architecture (EXP-103 Sovereign Finality)",
@@ -3970,8 +4084,8 @@ class ProductionApexExecutor:
                 "valuation_residual_usd": round(self.state.valuation_residual_usd, 6),
                 "reconciliation_status": (
                     "EXACT" if self.state.valuation_residual_usd <= 0.01
-                    else ("ACCEPTABLE" if self.state.valuation_residual_usd <= MAX_WARNING_RESIDUAL_USD
-                    else ("DEGRADED" if self.state.valuation_residual_usd <= MAX_VALUATION_RESIDUAL_USD
+                    else ("ACCEPTABLE" if self.state.valuation_residual_usd <= warn_res_t
+                    else ("DEGRADED" if self.state.valuation_residual_usd <= halt_res_t
                     else "ACCOUNTING_FAULT"))
                 ),
             },
@@ -3981,6 +4095,7 @@ class ProductionApexExecutor:
             "armed_triggers": armed_triggers,
             "latest_atr_map": getattr(self, "latest_atr_map", {}),
             "position_hwm_map": getattr(self, "position_hwm_map", {}),
+            "execution_latency_ms": getattr(self, "last_cycle_latency_ms", {}),
             "distributional_telemetry": getattr(self, "last_telemetry_audit", {}),
         }
 

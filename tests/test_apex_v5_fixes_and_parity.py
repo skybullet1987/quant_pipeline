@@ -35,6 +35,12 @@ from src.execution.production_apex_daemon import (
     V5_TARGET_PORTFOLIO_VOL_ANN,
     V5_TOP_N_MAJORS,
     V5_TURNOVER_DEADBAND_NAV,
+    V51_CLEAN_ZERO_EXIT,
+    V51_ER_GATE_TSMOM,
+    V51_FAST_TSMOM_BLEND,
+    V51_FIP_QUALITY_WEIGHT,
+    V51_REGIME_ADAPTIVE_ROUTING,
+    V51_VOL_ACCEL_WEIGHT,
     CircuitBreakerState,
     ProductionApexExecutor,
     call_with_gateway_retry,
@@ -324,7 +330,7 @@ def test_do_arm_prevents_self_front_running_and_persists_catastrophe_atr(tmp_pat
 
 
 def test_exact_numerical_parity_between_live_executor_and_v5_kernel(tmp_path):
-    assert STRATEGY_VERSION == "v5.0.0-two-sleeve-majors"
+    assert STRATEGY_VERSION == "v5.1.0-adaptive-regime-majors"
     ex = ProductionApexExecutor(
         testnet=False,
         dry_run=True,
@@ -379,6 +385,11 @@ def test_exact_numerical_parity_between_live_executor_and_v5_kernel(tmp_path):
         vol_mat=vol_mat,
         top_n=V5_TOP_N_MAJORS,
         max_single_alt_weight=MAX_SINGLE_ALT_WEIGHT,
+        regime_adaptive_routing=V51_REGIME_ADAPTIVE_ROUTING,
+        er_gate_tsmom=V51_ER_GATE_TSMOM,
+        fast_tsmom_blend=V51_FAST_TSMOM_BLEND,
+        fip_quality_weight=V51_FIP_QUALITY_WEIGHT,
+        vol_accel_weight=V51_VOL_ACCEL_WEIGHT,
     )
     prev_w = np.array([float(ex.state.frozen_target_weights.get(s, 0.0)) for s in symbols])
     kern_w_arr, kern_lev, kern_cush = scale_and_smooth_apex_v5_weights(
@@ -396,6 +407,7 @@ def test_exact_numerical_parity_between_live_executor_and_v5_kernel(tmp_path):
         gp_keep=V5_GP_KEEP_WEIGHT,
         deadband_nav=V5_TURNOVER_DEADBAND_NAV,
         max_single_alt_weight=MAX_SINGLE_ALT_WEIGHT,
+        clean_zero_exit=V51_CLEAN_ZERO_EXIT,
     )
     kern_w = {symbols[i]: float(kern_w_arr[i]) for i in range(n_syms) if abs(kern_w_arr[i]) >= 0.002}
 
