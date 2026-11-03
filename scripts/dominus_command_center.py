@@ -212,10 +212,136 @@ if lh_path.exists():
 
     _state_cash = float(s.get("live_bankroll", 0.0) or 0.0)
     _wallet_cash = float(_onchain_cash) if _onchain_cash is not None else _state_cash
-    _inflight_intents_usd = sum(
-        float(i.get("notional_usd", 0.0) or 0.0)
-        for i in (s.get("pending_entry_intents") or {}).values()
-        if isinstance(i, dict)
+
+    # Authoritative live open orders directly from Polymarket CLOB L2 (cached 12s in /tmp so 0 rate-limit / 0 stdout noise)
+    resting_orders = []
+    _clob_buy_quoting_usd = 0.0
+    try:
+        import contextlib, io as _io
+        _ord_cache_p = Path("/tmp/dominus_clob_open_orders_cache.json")
+        _tok_meta_cache_p = Path("/tmp/dominus_clob_tok_meta_cache.json")
+        _raw_ords = None
+        if _ord_cache_p.exists() and (time.time() - _ord_cache_p.stat().st_mtime) <= 12.0:
+            try:
+                _raw_ords = json.loads(_ord_cache_p.read_text(encoding="utf-8"))
+            except Exception:
+                _raw_ords = None
+        if _raw_ords is None:
+            _buf_out, _buf_err = _io.StringIO(), _io.StringIO()
+            with contextlib.redirect_stdout(_buf_out), contextlib.redirect_stderr(_buf_err):
+                if str(root) not in sys.path:
+                    sys.path.insert(0, str(root))
+                if str(root / "src/polymarket_research") not in sys.path:
+                    sys.path.insert(0, str(root / "src/polymarket_research"))
+                from dotenv import load_dotenv as _ld_env
+                _ld_env(root / ".env")
+                from polymarket_live_executor import PolymarketLiveExecutor as _PLExec
+                _ex_ro = _PLExec(dry_run=False)
+                _raw_ords = _ex_ro.get_open_orders() or []
+            try:
+                _ord_cache_p.write_text(json.dumps(_raw_ords), encoding="utf-8")
+            except Exception:
+                pass
+        _tok_meta = {}
+        if _tok_meta_cache_p.exists():
+            try:
+                _tok_meta = json.loads(_tok_meta_cache_p.read_text(encoding="utf-8"))
+            except Exception:
+                _tok_meta = {}
+        # Map token_id -> {market_id, sleeve, expiry_ts, label} from recent d1_live_box_candidates.jsonl tail
+        _cand_p = root / "data/polymarket/d1_live_box_candidates.jsonl"
+        if _cand_p.exists():
+            with open(_cand_p, "rb") as _cf:
+                _csz = _cand_p.stat().st_size
+                _cf.seek(max(0, _csz - 262144))
+                _clines = _cf.read().decode("utf-8", errors="replace").splitlines()[1 if _csz > 262144 else 0 :]
+            for _cl in _clines:
+                try:
+                    _cd = json.loads(_cl)
+                    _tid_c = str(_cd.get("leg_a_token_id") or "")
+                    if _tid_c:
+                        _prev_m = _tok_meta.get(_tid_c) or {}
+                        _tok_meta[_tid_c] = {
+                            "market_id": str(_cd.get("leg_a_market_id") or _prev_m.get("market_id") or ""),
+                            "sleeve": str(_cd.get("sleeve_source") or _prev_m.get("sleeve") or "BOND1_UMA_RESOLUTION_CARRY"),
+                            "expiry_ts": float(_cd.get("expiry_ts") or _prev_m.get("expiry_ts") or 0.0),
+                            "title": str(_prev_m.get("title") or ""),
+                        }
+                except Exception:
+                    pass
+        _meta_dirty = False
+        for _o in (_raw_ords or []):
+            if not isinstance(_o, dict) or str(_o.get("status") or "").upper() not in ("LIVE", "OPEN"):
+                continue
+            _aid = str(_o.get("asset_id") or "")
+            _side_o = str(_o.get("side") or "BUY").upper()
+            _px_o = float(_o.get("price") or 0.0)
+            _osz_o = float(_o.get("original_size") or 0.0)
+            _msz_o = float(_o.get("size_matched") or 0.0)
+            _rem_sz = max(0.0, _osz_o - _msz_o)
+            if _rem_sz <= 0.001:
+                continue
+            _not_o = round(_rem_sz * _px_o, 2)
+            if _side_o == "BUY":
+                _clob_buy_quoting_usd += _not_o
+            _m_info = _tok_meta.get(_aid) or {}
+            _mid_o = str(_m_info.get("market_id") or "")
+            _ttl_o = str(_m_info.get("title") or "")
+            if not _ttl_o:
+                try:
+                    _gurl = (
+                        f"https://gamma-api.polymarket.com/markets/{_mid_o}"
+                        if _mid_o.isdigit()
+                        else f"https://gamma-api.polymarket.com/markets?clob_token_ids={_aid}"
+                    )
+                    _rq_o = urllib.request.Request(_gurl, headers={"User-Agent": "DominusCommandCenter/1.0"})
+                    with urllib.request.urlopen(_rq_o, timeout=1.2) as _ro:
+                        _gj = json.loads(_ro.read().decode("utf-8"))
+                    if isinstance(_gj, list) and _gj:
+                        _gj = _gj[0]
+                    if isinstance(_gj, dict):
+                        _ttl_o = str(_gj.get("question") or "")
+                        if not _mid_o and _gj.get("id"):
+                            _mid_o = str(_gj.get("id"))
+                        if _ttl_o:
+                            _tok_meta[_aid] = {**_m_info, "market_id": _mid_o, "title": _ttl_o}
+                            _meta_dirty = True
+                except Exception:
+                    pass
+            _exp_o = float(_m_info.get("expiry_ts") or 0.0)
+            _rem_min = round((_exp_o - time.time()) / 60.0, 1) if _exp_o > time.time() else None
+            _cts_o = float(_o.get("created_at") or 0.0)
+            resting_orders.append({
+                "order_id": str(_o.get("id") or ""),
+                "market_id": _mid_o,
+                "title": _ttl_o or f"Token {_aid[:10]}...",
+                "sleeve": str(_m_info.get("sleeve") or "BOND1_UMA_RESOLUTION_CARRY"),
+                "side": _side_o,
+                "outcome": str(_o.get("outcome") or ""),
+                "price": _px_o,
+                "shares": round(_rem_sz, 2),
+                "matched_shares": round(_msz_o, 2),
+                "notional_usd": _not_o,
+                "order_type": str(_o.get("order_type") or "GTC"),
+                "status": str(_o.get("status") or "LIVE"),
+                "age_sec": max(0, int(time.time() - _cts_o)) if _cts_o > 0 else 0,
+                "rem_min": _rem_min,
+            })
+        if _meta_dirty:
+            try:
+                _tok_meta_cache_p.write_text(json.dumps(_tok_meta), encoding="utf-8")
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+    _inflight_intents_usd = max(
+        _clob_buy_quoting_usd,
+        sum(
+            float(i.get("notional_usd", 0.0) or 0.0)
+            for i in (s.get("pending_entry_intents") or {}).values()
+            if isinstance(i, dict)
+        ),
     )
     _free_cash_usd = round(max(0.0, _wallet_cash - _inflight_intents_usd), 2)
     _act_map = s.get("active_positions") or {}
@@ -474,6 +600,7 @@ if lh_path.exists():
         "trades_this_hour": s.get("trades_this_hour", 0),
         "equity_curve": equity_curve,
         "active_positions": act_list,
+        "resting_orders": resting_orders,
         "live_strategies": live_strategies,
         "recent_closed": recent_closed,
     }
@@ -2065,6 +2192,8 @@ async function refreshNow(force=false) {
     const quoteCash = Number(pm.quoting_cash_usd ?? 0);
     const freeCash = Number(pm.free_cash_usd ?? pm.bankroll_usd ?? 0);
     const openCnt = (pm.active_positions || []).length;
+    const restOrds = pm.resting_orders || [];
+    const restCnt = restOrds.length;
     const cashSubTag = quoteCash > 0.01 ? ` <span class="sub" style="font-size:12px;">(Free $${freeCash.toFixed(2)} | Quoting $${quoteCash.toFixed(2)})</span>` : '';
     const eqBreakdown = openCnt > 0
       ? (redeemEq > eqNow + 0.05
@@ -2074,7 +2203,7 @@ async function refreshNow(force=false) {
     const xauSh = ds.xau_15m || {};
     document.getElementById('kpis').innerHTML = `
       <div class="card"><div class="label">Polymarket Live Cash</div><div class="val pos">$${(pm.bankroll_usd ?? 0).toFixed(2)}${cashSubTag}</div><div class="sub">${eqBreakdown} | ${esc(pm.tier || '-')} (${slotDesc})</div></div>
-      <div class="card"><div class="label">v${esc(cfgVer)} Live (${esc(pm.today_et_date || pm.today_utc_date || 'ET')} Ottawa)</div><div class="val ${v51Cls}">${pm.v51_wins ?? 0}W / ${pm.v51_losses ?? 0}L (${v51Wr})</div><div class="sub">Session Net: <b class="${v51Cls}">${v51Pnl >= 0 ? '+' : ''}$${v51Pnl.toFixed(2)}</b> | Stop: $${Number(pm.daily_realized_loss_usd || 0).toFixed(2)}/$${dailyCap.toFixed(2)} (Floor $${ruinFloor.toFixed(0)}) | Open: <b>${openCnt}</b></div></div>
+      <div class="card"><div class="label">v${esc(cfgVer)} Live (${esc(pm.today_et_date || pm.today_utc_date || 'ET')} Ottawa)</div><div class="val ${v51Cls}">${pm.v51_wins ?? 0}W / ${pm.v51_losses ?? 0}L (${v51Wr})</div><div class="sub">Session Net: <b class="${v51Cls}">${v51Pnl >= 0 ? '+' : ''}$${v51Pnl.toFixed(2)}</b> | Stop: $${Number(pm.daily_realized_loss_usd || 0).toFixed(2)}/$${dailyCap.toFixed(2)} (Floor $${ruinFloor.toFixed(0)}) | Open: <b>${openCnt}</b> | Resting: <b class="pos">${restCnt}</b></div></div>
       <div class="card"><div class="label">All-Time Epoch Real W/L</div><div class="val">${pm.epoch_wins ?? 0}W / ${pm.epoch_losses ?? 0}L (${wr})</div><div class="sub">Epoch Net: <span class="${pnlCls}">${(pm.epoch_net_pnl_usd ?? 0) >= 0 ? '+' : ''}$${(pm.epoch_net_pnl_usd ?? 0).toFixed(2)}</span> | Fees: $${(pm.epoch_fees_usd ?? 0).toFixed(2)} | Live Quotes: <b>${pm.live_maker_posts_tail ?? 0}</b></div></div>
       <div class="card"><div class="label">Riskless _grad8 &amp; Shadow</div><div class="val pos">${a124.promoted_count ?? 0} Live 8/8 &bull; ${a124.v3_armed_count ?? 6} V3</div><div class="sub">Open Shadow Boxes: <b>${a124.open_total ?? 0}</b> | Closed Shadow: <b>${a124.closed_total ?? 0}</b></div></div>
       <div class="card"><div class="label">Directional &amp; XAU Shadow</div><div class="val pos">$${Number(ds.oos_equity_usd || 1000).toFixed(0)}</div><div class="sub">${ds.oos_wins ?? 0}W/${ds.oos_losses ?? 0}L (${ds.oos_wr_pct ?? 0}%) | XAU 15m: <b>${(xauSh.wins || 0) + (xauSh.losses || 0)}/40</b> (${esc(xauSh.status || 'IDLE')})</div></div>
@@ -2110,8 +2239,29 @@ async function refreshNow(force=false) {
     const m15Desc = dcfg.enable_15m_taker
       ? (mk15On ? `15m Taker [${t15Lo}-${t15Hi}s &le;$${Number(dcfg.max_taker_price_15m || 0.78).toFixed(2)}] + Maker` : `15m Taker-Only [${t15Lo}-${t15Hi}s &le;$${Number(dcfg.max_taker_price_15m || 0.78).toFixed(2)}, Z&ge;${Number(dcfg.min_z_15m_taker || 1.20).toFixed(2)}]`)
       : `15m Maker-Only (&le;$${Number(dcfg.max_maker_price_15m || 0.72).toFixed(2)})`;
-    document.getElementById('active_box').innerHTML = acts.length === 0
-      ? `<span class="sub">Active live positions: <b>0</b> &mdash; <b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/COND1/D1/CM_B3 Boxes Live</span>`
+    const restHtml = restOrds.length === 0 ? '' : (
+      `<div style="margin-bottom:6px;${acts.length > 0 ? 'margin-top:10px;' : ''}"><b>LIVE WORKING CLOB ORDERS (${restOrds.length} Resting on Exchange &mdash; $${restOrds.reduce((s, x) => s + Number(x.notional_usd || 0), 0).toFixed(2)} Quoting @ 0% Maker Fee):</b></div>
+       <table><thead><tr><th>Market</th><th>Side / Outcome &times; Shares</th><th>Limit Bid / Cost</th><th>Est. Redeem Edge</th><th>Settles In</th><th>CLOB Order Status</th></tr></thead><tbody>` +
+      restOrds.map(o => {
+        const px = Number(o.price || 0);
+        const sh = Number(o.shares || 0);
+        const nt = Number(o.notional_usd || 0);
+        const edgeUsd = Math.max(0, sh * 1.0 - nt);
+        const remTxt = (o.rem_min !== null && o.rem_min !== undefined) ? `${Number(o.rem_min).toFixed(0)} min` : '-';
+        const oidShort = String(o.order_id || '').slice(0, 14) + '...';
+        const outLbl = o.outcome ? `${o.side} (${o.outcome})` : o.side;
+        return `<tr>
+          <td><b>${esc(o.title)}</b><div class="sub">${esc(shortSlv(o.sleeve))} &bull; Mkt ${esc(o.market_id || '-')} &bull; <code>${esc(oidShort)}</code></div></td>
+          <td><b class="pos">${esc(outLbl)}</b> &times; ${sh.toFixed(2)}</td>
+          <td><b>$${px.toFixed(4)}</b> ($${nt.toFixed(2)})</td>
+          <td class="pos">+$${edgeUsd.toFixed(2)} (+${((1 - px) * 100).toFixed(2)}%)</td>
+          <td>${esc(remTxt)}</td>
+          <td><span class="pill pill-ok">${esc(o.status || 'LIVE')} ON CLOB</span> <span class="sub">${Number(o.age_sec || 0)}s</span></td>
+        </tr>`;
+      }).join('') + `</tbody></table>`
+    );
+    const openPosHtml = acts.length === 0
+      ? `<div class="sub" style="${restOrds.length > 0 ? 'margin-bottom:6px;' : ''}">Filled Open Positions: <b>0</b> &mdash; <b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/MKR_LOCK1/COND1/D1/CAL1 Live</div>`
       : `<div style="margin-bottom:4px;"><b>LIVE OPEN POSITIONS (${acts.length} Active &mdash; Cost Basis $${acts.reduce((s, x) => s + Number(x.notional_usd || 0), 0).toFixed(2)} &bull; Live Bid Value $${acts.reduce((s, x) => s + Number(x.mtm_bid_usd || 0), 0).toFixed(2)} &bull; @Resting TP $${acts.reduce((s, x) => s + Number(x.tp_val_usd || 0), 0).toFixed(2)}):</b></div>
          <table><thead><tr><th>Market</th><th>Side / Shares</th><th>Entry / Cost</th><th>Live Bid / Ask</th><th>Resting Exit</th><th>MTM Bid (uPnL)</th></tr></thead><tbody>` +
         acts.map(a => {
@@ -2128,6 +2278,7 @@ async function refreshNow(force=false) {
             <td><b>$${Number(a.mtm_bid_usd || 0).toFixed(2)}</b> <span class="${uCls}">(${upnl >= 0 ? '+' : ''}$${upnl.toFixed(2)})</span></td>
           </tr>`;
         }).join('') + `</tbody></table>`;
+    document.getElementById('active_box').innerHTML = openPosHtml + restHtml;
 
     document.getElementById('pm_strats').innerHTML = (pm.live_strategies || []).map(st => {
       const vp = Number(st.v51_pnl || 0), ep = Number(st.epoch_pnl || 0);
