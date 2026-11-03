@@ -111,6 +111,8 @@ def run_oversight_cycle(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
         "timestamp_utc": now_utc,
         "apex": {
             "version": state.get("version"),
+            "execution_mode": state.get("execution_mode", "UNKNOWN"),
+            "kernel_profile": state.get("kernel_profile", "v5.1"),
             "circuit_breaker": state.get("circuit_breaker"),
             "reconciliation_status": acct_block.get("reconciliation_status"),
             "valuation_residual_usd": acct_block.get("valuation_residual_usd"),
@@ -140,7 +142,7 @@ def run_oversight_cycle(repo_root: Path = REPO_ROOT) -> Dict[str, Any]:
         lf.write(json.dumps(record) + "\n")
 
     print(
-        f"[{now_utc}] APEX Oversight OK | ver={record['apex']['version']} | "
+        f"[{now_utc}] APEX Oversight OK | ver={record['apex']['version']} ({record['apex']['execution_mode']}/{record['apex']['kernel_profile']}) | "
         f"NAV=${record['apex']['nav_usd']} | Recon={record['apex']['reconciliation_status']} | "
         f"PostV51Fills={canary['post_v51_fills']}/100 | MajorsSnap={len(basis_rows)}"
     )

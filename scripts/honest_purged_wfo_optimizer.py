@@ -40,9 +40,18 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 try:
-    from src.polymarket_research.orderflow_wfo_simulators import calibrate_d1_box_wfo, simulate_microclip_cascade_entry
+    from src.polymarket_research.orderflow_wfo_simulators import (
+        calibrate_d1_box_wfo,
+        compute_v395_pricing_and_twap_gate,
+        run_subhourly_v395_wfo_ablation_suite,
+        run_wfo_post_selection_diagnostics,
+        simulate_microclip_cascade_entry,
+    )
 except ImportError:
     calibrate_d1_box_wfo = None  # type: ignore
+    compute_v395_pricing_and_twap_gate = None  # type: ignore
+    run_subhourly_v395_wfo_ablation_suite = None  # type: ignore
+    run_wfo_post_selection_diagnostics = None  # type: ignore
     simulate_microclip_cascade_entry = None  # type: ignore
 
 try:
@@ -57,7 +66,7 @@ except ImportError:
 PIPELINE_ROOT = Path("/home/skybullet1987/quant_pipeline")
 DATA_DIR = PIPELINE_ROOT / "data" / "polymarket"
 OUT_JSON = DATA_DIR / "honest_wfo_results.json"
-CACHE_PKL = Path("/tmp/pm_wfo_v40_dataset.pkl")
+CACHE_PKL = Path("/tmp/pm_wfo_v395_dataset.pkl")
 
 FEE_RATE = 0.07
 
@@ -105,16 +114,20 @@ def infer_asset_and_horizon(d: Dict[str, Any]) -> Tuple[str, str]:
             asset = "SOL"
         else:
             asset = "BTC"
-    hz = str(d.get("horizon") or d.get("candle_interval") or "").lower()
+    hz = str(d.get("horizon") or d.get("candle_interval") or d.get("timeframe") or "").lower()
     if not hz:
         if "above" in title.lower() or "strike" in title.lower():
             hz = "daily"
         elif "-" in title.split("ET")[0].split(",")[-1]:
-            hz = "15m"
+            span_txt = title.split("ET")[0].split(",")[-1]
+            mins = [int(seg.split(":")[1][:2]) for seg in span_txt.split("-") if ":" in seg and seg.split(":")[1][:2].isdigit()]
+            hz = "5m" if (len(mins) == 2 and (mins[1] - mins[0]) % 60 == 5) else "15m"
         else:
             hz = "1h"
     if "15" in hz:
         hz = "15m"
+    elif hz in ("5m", "5", "5min", "300", "300s") or "-5m" in hz or " 5m" in hz:
+        hz = "5m"
     elif "1h" in hz or "hour" in hz or "60" in hz:
         hz = "1h"
     return asset, hz
@@ -202,9 +215,16 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
     for mid in sr_index:
         sr_index[mid].sort(key=lambda x: x[0])
 
-    # 2. Load 1s hourly L2 telemetry (downsample to 2s to keep RAM compact & fast while preserving peaks/stops)
+    # 2. Load 1s hourly + 15m + 5m L2 telemetry (preserving 1s granularity in final 180s for subhourly TWAP/maker replay)
     telem_rows = 0
-    for t_name in ("polymarket_hourly_telemetry.jsonl", "polymarket_hourly_telemetry_eth.jsonl", "polymarket_hourly_telemetry_sol.jsonl"):
+    telem_files = (
+        "polymarket_hourly_telemetry.jsonl", "polymarket_hourly_telemetry_eth.jsonl", "polymarket_hourly_telemetry_sol.jsonl",
+        "polymarket_15m_telemetry_btc.jsonl", "polymarket_15m_telemetry_eth.jsonl", "polymarket_15m_telemetry_sol.jsonl",
+        "polymarket_5m_telemetry_btc.jsonl", "polymarket_5m_telemetry_eth.jsonl", "polymarket_5m_telemetry_sol.jsonl",
+    )
+    for t_name in telem_files:
+        is_sub_t = ("_15m_" in t_name) or ("_5m_" in t_name)
+        dense_tail_s = 180.0 if is_sub_t else 90.0
         last_ts_by_mid: Dict[str, float] = {}
         for line in iter_jsonl_lines_with_archives(DATA_DIR, t_name):
             if not line.strip():
@@ -217,7 +237,7 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             if mid not in verified:
                 continue
             ts = float(d.get("timestamp_unix") or 0.0)
-            if ts - last_ts_by_mid.get(mid, 0.0) < 2.0 and float(d.get("seconds_to_expiry") or 999) > 90.0:
+            if ts - last_ts_by_mid.get(mid, 0.0) < 2.0 and float(d.get("seconds_to_expiry") or 999) > dense_tail_s:
                 continue
             last_ts_by_mid[mid] = ts
             tte = float(d.get("seconds_to_expiry") or 0.0)
@@ -267,7 +287,7 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
         if mid not in verified:
             continue
         asset, hz = infer_asset_and_horizon(d)
-        if hz not in ("15m", "1h") or asset not in ("BTC", "ETH", "SOL"):
+        if hz not in ("5m", "15m", "1h") or asset not in ("BTC", "ETH", "SOL"):
             continue
         t0 = float(d.get("t0_unix") or 0.0)
         tte = float(d.get("seconds_to_expiry") or 0.0)
@@ -358,8 +378,10 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             twap_open = open_sp
 
         pre = (d.get("pre_shock_features_t0") or {}).get(side) or {}
+        opp_pre = (d.get("pre_shock_features_t0") or {}).get("DOWN" if side == "UP" else "UP") or {}
         ask_t0 = float(pre.get("best_ask") or 1.0)
         bid_t0 = float(pre.get("best_bid") or 0.0)
+        opp_bid_t0 = float(opp_pre.get("best_bid") or 0.0)
         if not (0.35 <= ask_t0 <= 0.96) or bid_t0 <= 0.0:
             continue
         spread_t0 = round(ask_t0 - bid_t0, 4)
@@ -397,6 +419,7 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
         shock_vol = float(d.get("shock_volume_100ms") or 0.0)
         shock_ofi = abs(float(d.get("shock_ofi") or 0.0))
         cb_move_2s = float(d.get("coinbase_move_bps_2s") or 0.0) * sign
+        cb_move_250ms = float(d.get("coinbase_move_bps_250ms") if d.get("coinbase_move_bps_250ms") is not None else (0.35 * float(d.get("coinbase_move_bps_2s") or 0.0))) * sign
 
         ask_500ms = None
         ask_1000ms = None
@@ -457,6 +480,16 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             )
             for p_ts, p_sp, ub, ua, db, da, _, _ in pts[idx_mc0:idx_mc1]
         ]
+        micro_clips_opp = [
+            (
+                round(p_ts - t0, 3),
+                sign * (p_sp - strike_worst) / strike_worst if p_sp > 0 else cushion_oracle,
+                ub if side == "UP" else db,
+                ua if side == "UP" else da,
+                db if side == "UP" else ub,
+            )
+            for p_ts, p_sp, ub, ua, db, da, _, _ in pts[idx_mc0:idx_mc1]
+        ]
         for p_ts, p_sp, ub, ua, db, da, uvb, dvb in raw_post:
             tte_i = max(0.0, exp_ts - p_ts)
             b_i = ub if side == "UP" else db
@@ -483,6 +516,8 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             "spread_t0": spread_t0,
             "slip20_t0": slip20_t0,
             "l1_ask_usd": ask_t0 * ask_sz,
+            "l1_bid_usd": bid_t0 * bid_sz,
+            "opp_bid_t0": opp_bid_t0,
             "depth_ratio": (ask_t0 * ask_sz + bid_t0 * bid_sz) / 20.0,
             "obi_l1": obi_l1,
             "age_ask_ms": age_ask_ms,
@@ -498,9 +533,11 @@ def load_dataset(use_cache: bool = True) -> Tuple[List[Dict[str, Any]], Dict[str
             "shock_ofi": shock_ofi,
             "vdiv_centered": vdiv_centered,
             "cb_move_2s": cb_move_2s,
+            "cb_move_250ms": cb_move_250ms,
             "ask_500ms": ask_500ms,
             "ask_1000ms": ask_1000ms,
             "micro_clips": micro_clips,
+            "micro_clips_opp": micro_clips_opp,
             "path": compact_path,
             "won": gamma_won,
             "oracle_mismatch": oracle_mismatch,
@@ -540,7 +577,10 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
     if hz not in cfg["horizons"]:
         return None
     tte = cand["tte"]
-    if hz == "15m":
+    if hz == "5m":
+        if not (float(cfg.get("min_tte_5m", 60.0)) <= tte <= float(cfg.get("max_tte_5m", 180.0))):
+            return None
+    elif hz == "15m":
         if not (cfg["min_tte_15m"] <= tte <= cfg["max_tte_15m"]):
             return None
     else:
@@ -557,6 +597,15 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
 
     eff_cush = cand.get("cushion_oracle", cand["cushion_min"]) if cfg.get("use_cl_proxy", True) else cand["cushion_min"]
     eff_z = cand.get("z_oracle", cand["z_cushion"]) if cfg.get("use_cl_proxy", True) else cand["z_cushion"]
+    if (cfg.get("use_kemna_vorst") or cfg.get("v395_df") is not None) and compute_v395_pricing_and_twap_gate is not None:
+        eff_z, p_v395 = compute_v395_pricing_and_twap_gate(
+            cand,
+            df=cfg.get("v395_df"),
+            jump_vol_mult=float(cfg.get("v395_jump_vol_mult", 1.0)),
+            use_kemna_vorst=bool(cfg.get("use_kemna_vorst", False)),
+        )
+        if cfg.get("v395_df") is not None and ask_t0 > (0.98 * p_v395 + 0.36 * (1.0 - p_v395) - 0.015):
+            return None
     if eff_cush < cfg["min_cushion"]:
         return None
     if eff_z < cfg["min_z"]:
@@ -568,6 +617,8 @@ def simulate_single_trade_ex(cand: Dict[str, Any], cfg: Dict[str, Any], latency_
         sign = 1.0 if cand["side"] == "UP" else -1.0
         if sign * cand["vdiv_centered"] > 12.0 or cand["cb_move_2s"] < -4.0:
             return None
+    if cfg.get("cb_250ms_veto_bps") is not None and float(cand.get("cb_move_250ms", 0.0)) < float(cfg["cb_250ms_veto_bps"]):
+        return None
 
     entry_mode = cfg["entry_mode"]
     size_mult = 1.0
@@ -876,7 +927,10 @@ def prefilter_entry_slice(slice_cands: List[Dict[str, Any]], cfg: Dict[str, Any]
         if hz not in hz_set:
             continue
         tte = c["tte"]
-        if hz == "15m":
+        if hz == "5m":
+            if not (float(cfg.get("min_tte_5m", 60.0)) <= tte <= float(cfg.get("max_tte_5m", 180.0))):
+                continue
+        elif hz == "15m":
             if not (min_t15 <= tte <= max_t15):
                 continue
         else:
@@ -1000,6 +1054,11 @@ def compute_quarter_kelly(pnls: List[float], ticket_usd: float = 15.0) -> Dict[s
 
 def main():
     global _G_TR_POOL, _G_VL_POOL, _G_DEV_SUBFOLDS
+    if "--subhourly-v395-sweep" in sys.argv:
+        cands_v, meta_v = load_dataset(use_cache=True)
+        res_v = run_subhourly_v395_wfo_ablation_suite(cands_v, evaluate_portfolio_on_slice, purge_sec=900.0)
+        print(json.dumps({"dataset_meta": meta_v, "v395_subhourly_wfo": res_v}, indent=2), flush=True)
+        return
     print("=" * 80)
     print("RUNNING HONEST ZERO-LOOKAHEAD PURGED WALK-FORWARD OPTIMIZER (v3.7)")
     print("=" * 80, flush=True)
@@ -1117,7 +1176,7 @@ def main():
 
     s1_exit_probes = [
         (None, "none"),
-        (0.12, "hybrid_persist"),
+        (None, "spot_persist"),
     ]
     s1_all_cfgs: List[Dict[str, Any]] = []
     for assets in asset_sets:
@@ -1131,9 +1190,9 @@ def main():
                                     s1_all_cfgs.append({
                                         "assets": assets,
                                         "horizons": horizons,
+                                        "min_px": min_px, "max_px": max_px,
                                         "min_tte_15m": t15_min, "max_tte_15m": t15_max,
                                         "min_tte_1h": t1h_min, "max_tte_1h": t1h_max,
-                                        "min_px": min_px, "max_px": max_px,
                                         "max_spread": 0.03, "min_l1_usd": 20.0,
                                         "min_cushion": min_cush, "min_z": min_z, "min_ofi": 0.60,
                                         "use_venue_veto": True, "use_cl_proxy": True,
@@ -1141,7 +1200,7 @@ def main():
                                         "exit_policy": "two_tranche_12_98",
                                         "ratchet_arm": r_probe, "ratchet_drop": 0.06,
                                         "salvage_mode": s_probe,
-                                        "wrong_side_thresh": 0.0006, "salvage_persist_s": 15.0, "clob_drop_thresh": 0.22,
+                                        "wrong_side_thresh": 0.0009, "salvage_persist_s": 18.0, "clob_drop_thresh": 0.30,
                                         "final_45s_unwind": False,
                                     })
 
@@ -1192,7 +1251,7 @@ def main():
     salvage_configs = [
         ("none", 0.0006, 15.0, 0.30),
         ("spot_persist", 0.0006, 15.0, 0.30),
-        ("spot_persist", 0.0008, 20.0, 0.30),
+        ("spot_persist", 0.0009, 18.0, 0.30),
         ("hybrid_persist", 0.0006, 15.0, 0.22),
         ("hybrid_persist", 0.0008, 20.0, 0.25),
     ]
@@ -1313,397 +1372,36 @@ def main():
         eval_ablation("ABLATE_CASCADE_V4_4STEP_ENTRY", {"entry_mode": "cascade_v4"}),
     ]
 
-    # v3.9 Patch E (R05): Genuine Out-of-Sample Refit CPCV(N=6, k=2) -> 15 Zero-Leakage Splits
-    # Uses an a-priori structural grid (zero Stage-1 leakage) and refits fitted_cfg strictly on the 4
-    # purged+embargoed non-test groups before scoring the 2 held-out test groups!
-    import itertools
-    all_sorted = sorted(cands, key=lambda x: x["t0"])
-    n_all = len(all_sorted)
-    n_groups = 6
-    group_bounds: List[Tuple[float, float]] = []
-    for g_idx in range(n_groups):
-        g_i0 = int((g_idx / n_groups) * n_all)
-        g_i1 = int(((g_idx + 1) / n_groups) * n_all) - 1
-        t_g0 = all_sorted[g_i0]["t0"]
-        t_g1 = all_sorted[max(g_i0, g_i1)]["t0"]
-        group_bounds.append((t_g0, t_g1))
-
-    apriori_cpcv_grid: List[Dict[str, Any]] = []
-    for px_lo, px_hi in [(0.55, 0.80), (0.55, 0.82), (0.55, 0.85)]:
-        for z_th in [0.65, 0.85, 1.05]:
-            for c_th in [0.0004, 0.0006]:
-                for f_b in [0.01, 0.02]:
-                    for ex_p in ["single_95", "two_tranche_14_98", "two_tranche_95_98", "hold_98"]:
-                        for s_m, r_a in [("spot_persist", None), ("hybrid_persist", 0.12)]:
-                            apriori_cpcv_grid.append({
-                                "assets": ("BTC", "ETH"), "horizons": ("15m", "1h"),
-                                "min_tte_15m": 90.0, "max_tte_15m": 480.0,
-                                "min_tte_1h": 150.0, "max_tte_1h": 1200.0,
-                                "min_px": px_lo, "max_px": px_hi,
-                                "max_spread": 0.03, "min_l1_usd": 20.0,
-                                "min_cushion": c_th, "min_z": z_th, "min_ofi": 0.60,
-                                "use_venue_veto": True, "use_cl_proxy": True,
-                                "entry_mode": "taker_fak", "fak_buffer": f_b,
-                                "exit_policy": ex_p, "ratchet_arm": r_a, "ratchet_drop": 0.06,
-                                "salvage_mode": s_m, "wrong_side_thresh": 0.0006,
-                                "salvage_persist_s": 15.0, "clob_drop_thresh": 0.22,
-                                "final_45s_unwind": False,
-                            })
-    apriori_superset = prefilter_entry_slice(all_sorted, {
-        "assets": ("BTC", "ETH"), "horizons": ("15m", "1h"),
-        "min_tte_15m": 90.0, "max_tte_15m": 480.0,
-        "min_tte_1h": 150.0, "max_tte_1h": 1200.0,
-        "min_px": 0.55, "max_px": 0.85, "max_spread": 0.03, "min_l1_usd": 20.0,
-        "min_cushion": 0.0004, "min_z": 0.65, "min_ofi": 0.60,
-        "use_venue_veto": True, "use_cl_proxy": True,
-    })
-
-    cpcv_splits = []
-    for g_a, g_b in itertools.combinations(range(n_groups), 2):
-        test_intervals = [group_bounds[g_a], group_bounds[g_b]]
-        train_cpcv = [
-            c for c in apriori_superset
-            if all(
-                (c["exp_ts"] < (ts_i - PURGE_SEC)) or (c["t0"] > (te_i + PURGE_SEC))
-                for ts_i, te_i in test_intervals
-            )
-        ]
-        oos_cpcv = []
-        for g_t in (g_a, g_b):
-            t_s, t_e = group_bounds[g_t]
-            purge_left = PURGE_SEC if (g_t > 0 and (g_t - 1) not in (g_a, g_b)) else 0.0
-            purge_right = PURGE_SEC if (g_t < n_groups - 1 and (g_t + 1) not in (g_a, g_b)) else 0.0
-            eff_s = t_s + purge_left
-            eff_e = t_e - (purge_right * 0.25)
-            oos_cpcv.extend(c for c in apriori_superset if eff_s <= c["t0"] <= eff_e and c["exp_ts"] <= t_e)
-        oos_cpcv.sort(key=lambda x: x["t0"])
-
-        # Split the 4 purged training groups 70/30 into inner_tr + inner_vl and refit strictly on train_cpcv!
-        n_tc = len(train_cpcv)
-        t_cut_inner = train_cpcv[int(0.70 * n_tc)]["t0"] if n_tc >= 20 else 0.0
-        in_tr = [c for c in train_cpcv if c["exp_ts"] <= t_cut_inner]
-        in_vl = [c for c in train_cpcv if c["t0"] >= (t_cut_inner + PURGE_SEC)]
-        fitted_cfg = apriori_cpcv_grid[0]
-        best_cpcv_sc = -1e9
-        for cand_cfg in apriori_cpcv_grid:
-            ri_tr = evaluate_portfolio_on_slice(in_tr, cand_cfg, latency_mode="500ms")
-            if ri_tr["trades"] < 20 or ri_tr["total_pnl"] <= 0 or ri_tr["profit_factor"] < 1.20:
-                continue
-            ri_vl = evaluate_portfolio_on_slice(in_vl, cand_cfg, latency_mode="500ms")
-            if ri_vl["trades"] < 8 or ri_vl["total_pnl"] <= 0 or ri_vl["profit_factor"] < 1.15:
-                continue
-            sc_i = compute_wfo_dev_score(ri_tr, ri_vl)
-            if sc_i > best_cpcv_sc:
-                best_cpcv_sc = sc_i
-                fitted_cfg = cand_cfg
-        if best_cpcv_sc <= -1e8:
-            # Fallback if inner 30% slice is sparse: rank across full 4-group purged train_cpcv
-            for cand_cfg in apriori_cpcv_grid:
-                ri_all = evaluate_portfolio_on_slice(train_cpcv, cand_cfg, latency_mode="500ms")
-                if ri_all["trades"] >= 25 and ri_all["total_pnl"] > 0:
-                    sc_i = compute_wfo_dev_score(ri_all, ri_all)
-                    if sc_i > best_cpcv_sc:
-                        best_cpcv_sc = sc_i
-                        fitted_cfg = cand_cfg
-
-        r_cpcv = evaluate_portfolio_on_slice(oos_cpcv, fitted_cfg, latency_mode="500ms")
-        r_cpcv_seed = evaluate_portfolio_on_slice(oos_cpcv, fitted_cfg, latency_mode="500ms", max_concurrent=1, ticket_usd=12.0)
-        cpcv_splits.append({
-            "test_groups": [g_a, g_b],
-            "fitted_exit_policy": fitted_cfg["exit_policy"],
-            "fitted_min_z": fitted_cfg["min_z"],
-            "trades": r_cpcv["trades"],
-            "total_pnl": r_cpcv["total_pnl"],
-            "seed_12_c1_pnl": r_cpcv_seed["total_pnl"],
-            "win_rate": r_cpcv["win_rate"],
-            "profit_factor": r_cpcv["profit_factor"],
-            "sharpe": r_cpcv["sharpe"],
-            "wipeout_rate": r_cpcv["wipeout_rate"],
-            "pnls": r_cpcv["pnls"],
-        })
-
-    cpcv_pnls_list = [s["total_pnl"] for s in cpcv_splits]
-    cpcv_seed_pnls = [s["seed_12_c1_pnl"] for s in cpcv_splits]
-    cpcv_pfs_list = [s["profit_factor"] for s in cpcv_splits]
-    cpcv_sharpes_list = [s["sharpe"] for s in cpcv_splits]
-    cpcv_summary = {
-        "mode": "GENUINE_OUT_OF_SAMPLE_REFIT_CPCV_6_2",
-        "n_groups": 6,
-        "k_test_groups": 2,
-        "apriori_grid_size": len(apriori_cpcv_grid),
-        "total_combinations": len(cpcv_splits),
-        "positive_combinations": sum(1 for x in cpcv_pnls_list if x > 0),
-        "positive_rate": round(sum(1 for x in cpcv_pnls_list if x > 0) / max(len(cpcv_splits), 1), 4),
-        "seed_12_c1_positive_combinations": sum(1 for x in cpcv_seed_pnls if x > 0),
-        "median_oos_trades": int(statistics.median(s["trades"] for s in cpcv_splits)),
-        "median_oos_pnl_usd": round(statistics.median(cpcv_pnls_list), 2),
-        "mean_oos_pnl_usd": round(statistics.mean(cpcv_pnls_list), 2),
-        "median_seed_12_c1_oos_pnl_usd": round(statistics.median(cpcv_seed_pnls), 2),
-        "min_oos_pnl_usd": round(min(cpcv_pnls_list), 2),
-        "median_oos_pf": round(statistics.median(cpcv_pfs_list), 3),
-        "median_oos_sharpe": round(statistics.median(cpcv_sharpes_list), 3),
-        "splits": [{k: v for k, v in s.items() if k != "pnls"} for s in cpcv_splits],
-    }
-
-    # v3.8 F-11 + Blueprint 3: Enrich oracle_mismatch from verified_gamma_resolutions.json + ground_truth_resolutions.jsonl
-    mismatch_mids = set()
-    ver_p = DATA_DIR / "verified_gamma_resolutions.json"
-    if ver_p.exists():
-        try:
-            ver_map = json.loads(ver_p.read_text(encoding="utf-8"))
-            for k_m, v_m in ver_map.items():
-                if isinstance(v_m, dict) and (
-                    v_m.get("oracle_mismatch")
-                    or v_m.get("mismatch")
-                    or (v_m.get("binance_winner") and v_m.get("winner") and v_m.get("binance_winner") != v_m.get("winner"))
-                ):
-                    mismatch_mids.add(str(k_m))
-        except Exception:
-            pass
-    for gt_name in ("ground_truth_resolutions.jsonl", "ground_truth_resolutions_eth.jsonl", "ground_truth_resolutions_sol.jsonl"):
-        gt_p = DATA_DIR / gt_name
-        if gt_p.exists():
-            try:
-                for ln in gt_p.read_text(encoding="utf-8", errors="replace").splitlines():
-                    if not ln.strip():
-                        continue
-                    row_g = json.loads(ln)
-                    if row_g.get("oracle_mismatch") or (
-                        row_g.get("binance_winning_outcome")
-                        and row_g.get("gamma_winning_outcome")
-                        and row_g.get("binance_winning_outcome") != row_g.get("gamma_winning_outcome")
-                    ):
-                        mismatch_mids.add(str(row_g.get("market_id")))
-            except Exception:
-                pass
-    for c_item in all_sorted:
-        if c_item["path"]:
-            tte_end_i, cush_end_i, _, _, _ = c_item["path"][-1]
-            if tte_end_i <= 30.0 and abs(cush_end_i) >= 0.00001 and ((cush_end_i > 0) != bool(c_item["won"])):
-                mismatch_mids.add(str(c_item.get("mid")))
-        if str(c_item.get("mid")) in mismatch_mids:
-            c_item["oracle_mismatch"] = True
-
-    mismatch_cands = [c for c in all_sorted if c.get("oracle_mismatch")]
-    cfg_no_cl = dict(best_cfg, use_cl_proxy=False)
-    cfg_with_cl = dict(best_cfg, use_cl_proxy=True)
-    mm_raw = evaluate_portfolio_on_slice(mismatch_cands, cfg_no_cl, latency_mode="500ms")
-    mm_cl = evaluate_portfolio_on_slice(mismatch_cands, cfg_with_cl, latency_mode="500ms")
-    full_no_cl = evaluate_portfolio_on_slice(all_sorted, cfg_no_cl, latency_mode="500ms")
-    full_with_cl = evaluate_portfolio_on_slice(all_sorted, cfg_with_cl, latency_mode="500ms")
-
-    # Blueprint 1 Evaluation on Two-Tranche Policy: Inline (<50ms) vs Concurrent (0.0s lag) vs Delayed (5.0s lag) vs Buggy F-01 Lock
-    bp1_base = dict(best_cfg)
-    if not str(bp1_base.get("exit_policy", "")).startswith("two_tranche"):
-        bp1_base["exit_policy"] = "two_tranche_12_98"
-    bp1_buggy = evaluate_portfolio_on_slice(all_sorted, dict(bp1_base, t2_post_lag_s=5.0, buggy_f01_lock_300s=True), latency_mode="500ms")
-    bp1_delayed = evaluate_portfolio_on_slice(all_sorted, dict(bp1_base, t2_post_lag_s=5.0), latency_mode="500ms")
-    bp1_inline = evaluate_portfolio_on_slice(all_sorted, dict(bp1_base, t2_post_lag_s=0.05), latency_mode="500ms")
-    bp1_concurrent = evaluate_portfolio_on_slice(all_sorted, dict(bp1_base, t2_post_lag_s=0.0), latency_mode="500ms")
-
-    chainlink_proxy_audit = {
-        "mismatch_markets_identified": len(mismatch_mids),
-        "mismatch_candidates_total": len(mismatch_cands),
-        "mismatch_raw_trades": mm_raw["trades"],
-        "mismatch_raw_pnl": mm_raw["total_pnl"],
-        "mismatch_cl_proxy_trades": mm_cl["trades"],
-        "mismatch_cl_proxy_pnl": mm_cl["total_pnl"],
-        "full_dataset_raw_pnl": full_no_cl["total_pnl"],
-        "full_dataset_raw_pf": full_no_cl["profit_factor"],
-        "full_dataset_cl_proxy_pnl": full_with_cl["total_pnl"],
-        "full_dataset_cl_proxy_pf": full_with_cl["profit_factor"],
-        "blueprint1_tranche2_comparison": {
-            "delayed_5s_pnl": bp1_delayed["total_pnl"],
-            "delayed_5s_pf": bp1_delayed["profit_factor"],
-            "inline_50ms_pnl": bp1_inline["total_pnl"],
-            "inline_50ms_pf": bp1_inline["profit_factor"],
-            "concurrent_0ms_pnl": bp1_concurrent["total_pnl"],
-            "concurrent_0ms_pf": bp1_concurrent["profit_factor"],
-        },
-    }
-
-    # v3.8 F-02: 10,000-Path 50-Trade Monte Carlo Bankroll & Halt-Floor Simulation from $76.49 Live Equity
-    oos_unit_rets = [p / 15.0 for p in (best_vl["pnls"] + best_hold_500["pnls"])]
-    if len(oos_unit_rets) < 20:
-        oos_unit_rets = [p / 15.0 for p in best_tr["pnls"]]
-
-    def sim_bankroll_policy(
-        label: str,
-        start_eq: float,
-        base_pct: float,
-        min_ticket: float,
-        floor_usd: float,
-        seed_cap_eq: float = 0.0,
-        seed_ticket: float = 12.0,
-        corr_pair_prob: float = 0.0,
-        n_paths: int = 10000,
-        n_trades: int = 50,
-    ) -> Dict[str, Any]:
-        rng_mc = random.Random(20261025)
-        halted_cnt = 0
-        end_eqs = []
-        max_dds = []
-        n_r = len(oos_unit_rets)
-        for _ in range(n_paths):
-            eq = start_eq
-            pk = start_eq
-            mdd = 0.0
-            halted = False
-            t_done = 0
-            while t_done < n_trades:
-                if eq < floor_usd:
-                    halted = True
-                    break
-                if seed_cap_eq > 0.0 and eq < seed_cap_eq:
-                    tkt = min(eq, seed_ticket)
-                    r = oos_unit_rets[rng_mc.randrange(n_r)]
-                    eq += tkt * r
-                    t_done += 1
-                else:
-                    tkt = min(eq, max(min_ticket, round(eq * base_pct, 2)))
-                    if corr_pair_prob > 0.0 and rng_mc.random() < corr_pair_prob and (t_done + 1) < n_trades:
-                        # Simultaneous correlated window pair (same sign draw with 75% prob)
-                        r1 = oos_unit_rets[rng_mc.randrange(n_r)]
-                        r2 = r1 if rng_mc.random() < 0.75 else oos_unit_rets[rng_mc.randrange(n_r)]
-                        eq += tkt * r1 + (tkt * 0.54) * r2
-                        t_done += 2
-                    else:
-                        r = oos_unit_rets[rng_mc.randrange(n_r)]
-                        eq += tkt * r
-                        t_done += 1
-                if eq > pk:
-                    pk = eq
-                if (pk - eq) > mdd:
-                    mdd = pk - eq
-                if eq < floor_usd:
-                    halted = True
-                    break
-            if halted:
-                halted_cnt += 1
-            end_eqs.append(eq)
-            max_dds.append(mdd)
-        end_eqs.sort()
-        max_dds.sort()
-        return {
-            "policy": label,
-            "start_equity_usd": start_eq,
-            "floor_usd": floor_usd,
-            "halt_prob_50_trades": round(halted_cnt / n_paths, 4),
-            "median_terminal_equity_usd": round(end_eqs[int(0.50 * n_paths)], 2),
-            "p05_terminal_equity_usd": round(end_eqs[int(0.05 * n_paths)], 2),
-            "p95_terminal_equity_usd": round(end_eqs[int(0.95 * n_paths)], 2),
-            "p95_max_drawdown_usd": round(max_dds[int(0.95 * n_paths)], 2),
-        }
-
-    bankroll_mc = [
-        sim_bankroll_policy("v3.7_UNPATCHED_22PCT_FLOOR65_CONC2", 76.49, 0.22, 12.0, 65.00, corr_pair_prob=0.25),
-        sim_bankroll_policy("CENTRAL_CFG_18PCT_FLOOR66.67_CONC2", 76.49, 0.18, 12.0, 66.67, corr_pair_prob=0.25),
-        sim_bankroll_policy("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR48", 76.49, 0.18, 12.0, 48.00, seed_cap_eq=88.0, seed_ticket=12.0, corr_pair_prob=0.15),
-        sim_bankroll_policy("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR52", 76.49, 0.18, 12.0, 52.00, seed_cap_eq=88.0, seed_ticket=12.0, corr_pair_prob=0.15),
-    ]
-
     ci_train = bootstrap_ci(best_tr["pnls"])
     ci_val = bootstrap_ci(best_vl["pnls"])
     ci_hold = bootstrap_ci(best_hold_500["pnls"])
     kelly = compute_quarter_kelly(best_tr["pnls"] + best_vl["pnls"], ticket_usd=15.0)
-
-    top5_summary = []
-    seen_top5_cores = set()
-    for sc, c_i, tr_i, vl_i, _ in stage2_results:
-        ck_i = (c_i["assets"], c_i["horizons"], c_i["min_px"], c_i["max_px"], c_i["min_z"], c_i["min_cushion"], c_i["entry_mode"], c_i["exit_policy"])
-        if ck_i in seen_top5_cores:
-            continue
-        seen_top5_cores.add(ck_i)
-        ho_i = evaluate_portfolio_on_slice(holdout_cands, c_i, latency_mode="500ms")
-        c_clean = {k: (list(v) if isinstance(v, tuple) else v) for k, v in c_i.items()}
-        top5_summary.append({
-            "score": round(sc, 2),
-            "config": c_clean,
-            "train": {k: v for k, v in tr_i.items() if k != "pnls"},
-            "val": {k: v for k, v in vl_i.items() if k != "pnls"},
-            "holdout": {k: v for k, v in ho_i.items() if k != "pnls"},
-        })
-        if len(top5_summary) >= 5:
-            break
-
-    # Counterfactual Replay on Closed Live Positions in live_harvester_state.json
-    live_counterfactual = {}
-    st_path = DATA_DIR / "live_harvester_state.json"
-    if st_path.exists():
-        st = json.loads(st_path.read_text(encoding="utf-8"))
-        closed_live = st.get("closed_positions", [])
-        cand_by_eid = {c["event_id"]: c for c in cands}
-        actual_total = 0.0
-        cf_total = 0.0
-        matched_live = 0
-        filtered_out_losses = 0
-        filtered_out_wins = 0
-        post_rebate_traces = []
-
-        for pos in closed_live:
-            act_pnl = float(pos.get("net_pnl_usd") or 0.0)
-            actual_total += act_pnl
-            eid = str(pos.get("event_id") or "")
-            tid = str(pos.get("trade_id") or "")
-            c_match = cand_by_eid.get(eid)
-            if not c_match:
-                continue
-            matched_live += 1
-            sim = simulate_single_trade(c_match, best_cfg, latency_mode="500ms")
-            notional = float(pos.get("notional_usd") or 15.0)
-            if sim is None:
-                cf_pnl = 0.0
-                cf_reason = "VETOED_AT_ENTRY"
-                if act_pnl < 0:
-                    filtered_out_losses += 1
-                else:
-                    filtered_out_wins += 1
-            else:
-                cf_pnl = round(sim[0] * notional, 2)
-                cf_reason = sim[1]
-            cf_total += cf_pnl
-            if "6076647" in tid or "6082720" in tid or act_pnl <= -15.0:
-                post_rebate_traces.append({
-                    "trade_id": tid,
-                    "entry_price": pos.get("entry_price"),
-                    "max_seen_bid": pos.get("max_seen_bid"),
-                    "actual_pnl_usd": round(act_pnl, 2),
-                    "actual_close_reason": pos.get("close_reason"),
-                    "wfo_counterfactual_pnl_usd": cf_pnl,
-                    "wfo_counterfactual_action": cf_reason,
-                })
-        live_counterfactual = {
-            "total_live_closed_trades": len(closed_live),
-            "matched_to_trigger_dataset": matched_live,
-            "actual_matched_subset_pnl_usd": round(sum(float(p.get("net_pnl_usd") or 0.0) for p in closed_live if str(p.get("event_id") or "") in cand_by_eid), 2),
-            "wfo_optimal_counterfactual_pnl_usd": round(cf_total, 2),
-            "filtered_out_losing_trades": filtered_out_losses,
-            "filtered_out_winning_trades": filtered_out_wins,
-            "wipeout_trades_counterfactual": post_rebate_traces,
-        }
-
-    # 4-Fold Expanding Purged Cross-Validation across chronological Dev dataset (with 2h embargo per fold)
-    cv_folds = []
-    if len(dev_cands) >= 100:
-        fold_fracs = [(0.25, 0.43), (0.43, 0.62), (0.62, 0.81), (0.81, 1.00)]
-        for fold_idx, (tr_f, te_f) in enumerate(fold_fracs, start=1):
-            t_cut = dev_cands[int(tr_f * n_dev)]["t0"]
-            t_end = dev_cands[min(n_dev - 1, int(te_f * n_dev) - 1)]["t0"]
-            oos_fold = [c for c in dev_cands if (t_cut + PURGE_SEC) <= c["t0"] <= t_end]
-            r_fold = evaluate_portfolio_on_slice(oos_fold, best_cfg, latency_mode="500ms")
-            cv_folds.append({
-                "fold": fold_idx,
-                "oos_candidates": len(oos_fold),
-                "trades": r_fold["trades"],
-                "total_pnl": r_fold["total_pnl"],
-                "win_rate": r_fold["win_rate"],
-                "profit_factor": r_fold["profit_factor"],
-                "wipeout_rate": r_fold["wipeout_rate"],
-            })
+    diag = run_wfo_post_selection_diagnostics(
+        cands=cands,
+        dev_cands=dev_cands,
+        holdout_cands=holdout_cands,
+        best_cfg=best_cfg,
+        best_tr=best_tr,
+        best_vl=best_vl,
+        best_hold_500=best_hold_500,
+        stage2_results=stage2_results,
+        data_dir=DATA_DIR,
+        purge_sec=PURGE_SEC,
+        evaluate_portfolio_fn=evaluate_portfolio_on_slice,
+        prefilter_fn=prefilter_entry_slice,
+        dev_score_fn=compute_wfo_dev_score,
+        simulate_single_fn=simulate_single_trade,
+    )
+    cpcv_summary = diag["cpcv_summary"]
+    chainlink_proxy_audit = diag["chainlink_proxy_audit"]
+    bankroll_mc = diag["bankroll_mc"]
+    top5_summary = diag["top5_summary"]
+    live_counterfactual = diag["live_counterfactual"]
+    cv_folds = diag["cv_folds"]
 
     report = {
         "generated_at_utc": time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime()),
-        "wfo_version": "3.9",
+        "wfo_version": "3.9.5",
         "dataset_meta": meta,
         "total_grid_configs_evaluated": total_tested,
         "purged_splits": {

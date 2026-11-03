@@ -816,3 +816,95 @@ def test_fix6_poly_api_exception_order_id_extraction():
     exc_str = MockPolyApiExceptionStr()
     assert is_fak_killed_no_match(exc_str) is True
 
+
+def test_entry_outcome_unknown_reconciled_to_not_executed_not_phantom_loss(tmp_path, monkeypatch):
+    """
+    Regression test for MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1793692777_61815:
+    When a resting 0%-fee Maker BUY enters ENTRY_OUTCOME_UNKNOWN due to a transient CLOB HTTP 500
+    on cancel/order-status, market-scoped entry halt must remain scoped (position_requires_global_halt == False)
+    while position_requires_lifecycle_resolution == True ensures supervision and market-resolution
+    reconcile the unfilled order as NOT_EXECUTED ($0.00 PnL, record_pnl=False) instead of booking
+    a phantom MARKET_RESOLVED_NO_INVENTORY loss.
+    """
+    import asyncio
+    from src.polymarket_research.polymarket_live_harvester import position_requires_lifecycle_resolution
+
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", tmp_path / "harv_state.json")
+    harvester = PolymarketLiveHarvester(ticket_notional=16.26, max_concurrent=4, dry_run=True)
+    harvester.dry_run = False
+    harvester.executor = MagicMock()
+    harvester.executor.reservations_trusted = True
+    harvester.executor.get_order_status.return_value = None
+    harvester.executor.get_open_orders.return_value = []
+    harvester.executor.get_account_fills.return_value = []
+    harvester.executor.release_inventory.return_value = None
+    harvester._wallet_token_balance = MagicMock(return_value=(0.0, harvester.ONCHAIN_SOURCE))
+
+    tid = "MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1793692777_61815"
+    pos = harvester._make_single_leg_lock_pos(
+        tid, "SINGLE_LEG_MAKER_LOCK", "BOND1_UMA_RESOLUTION_CARRY", "SPORTS_MONEYLINE", "maker_lock_1leg",
+        "6561815", "0xbefc992a", "tok_no_6561815", "NO", False, 12.0, 11.904, 0.0, 0.0, 1.0,
+        "maker_post_only_0pct", time.time() - 10.0, time.time() - 120.0, 0.0, "0x50b550a5", True,
+        unk=True, sub_ts=time.time() - 200.0,
+    )
+    harvester.active_positions[tid] = pos
+
+    assert position_requires_global_halt(pos) is False
+    assert position_requires_lifecycle_resolution(pos) is True
+
+    asyncio.run(harvester._apply_market_resolution(tid, pos, "NO"))
+
+    assert tid not in harvester.active_positions
+    closed = [c for c in harvester.closed_positions if c.get("trade_id") == tid]
+    assert len(closed) == 1
+    assert closed[0]["status"] == "NOT_EXECUTED"
+    assert closed[0]["close_reason"] == "ENTRY_NOT_EXECUTED_VERIFIED"
+    assert float(closed[0].get("net_pnl_usd") or 0.0) == 0.0
+    assert harvester.risk_controller.consecutive_losses == 0
+    assert harvester.risk_controller.daily_realized_loss == 0.0
+
+
+def test_collateral_sync_ignores_pre_indexer_spike_and_flushes_ram_only_update(tmp_path, monkeypatch):
+    """
+    Regression test for Box #2 stale live_bankroll snapshot ($16.26 vs $3.53):
+    1. Within 10s of an entry fill debit, _async_refresh_collateral must ignore stale higher
+       pre-indexer CLOB collateral reads so save_state() cannot overwrite the post-fill debit.
+    2. When an in-memory collateral update occurs without calling save_state() (e.g. box sizing
+       refresh), _async_refresh_collateral compares against _last_persisted_collateral and flushes
+       the settled balance to live_harvester_state.json immediately.
+    """
+    import asyncio
+
+    state_path = tmp_path / "harv_state.json"
+    monkeypatch.setattr("src.polymarket_research.polymarket_live_harvester.STATE_FILE", state_path)
+    harvester = PolymarketLiveHarvester(ticket_notional=16.26, max_concurrent=4, dry_run=True)
+    harvester.dry_run = False
+    harvester.state_file = state_path
+    harvester.executor = MagicMock()
+    harvester.executor.is_authenticated = True
+    harvester.executor.auth_mode = "LIVE"
+    harvester.executor.set_cached_collateral = MagicMock()
+
+    # Simulate Box #2 fill debiting $16.26 -> $3.83 and persisting to disk
+    harvester._last_known_collateral = 3.83
+    harvester._last_entry_debit_window = (time.time(), 3.83)
+    harvester.save_state()
+    assert json.loads(state_path.read_text(encoding="utf-8"))["live_bankroll"] == pytest.approx(3.83)
+
+    # 0.1s later, CLOB L2 still returns pre-settlement $16.26 -> must be ignored, not persisted
+    harvester.executor.get_collateral_balance.return_value = 16.26
+    asyncio.run(harvester._async_refresh_collateral())
+    assert harvester._last_known_collateral == pytest.approx(3.83)
+    assert json.loads(state_path.read_text(encoding="utf-8"))["live_bankroll"] == pytest.approx(3.83)
+
+    # Next, RAM-only update sets _last_known_collateral = 3.53 while disk still has 3.83 (or stale 16.26)
+    harvester._last_persisted_collateral = 16.26
+    harvester._last_known_collateral = 3.53
+    harvester._last_entry_debit_window = (time.time() - 30.0, 3.83)
+    harvester.executor.get_collateral_balance.return_value = 3.53
+    asyncio.run(harvester._async_refresh_collateral())
+    assert harvester._last_known_collateral == pytest.approx(3.53)
+    assert json.loads(state_path.read_text(encoding="utf-8"))["live_bankroll"] == pytest.approx(3.53)
+
+
+

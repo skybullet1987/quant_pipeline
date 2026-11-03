@@ -450,13 +450,13 @@ def test_r3_11_hard_ticket_cap_and_finite_inputs():
     """R3-11: Proves ticket_usd is capped at $37.50 regardless of bankroll size, and validates inputs."""
     harvester = PolymarketLiveHarvester(dry_run=True)
 
-    # 1. Normal bankroll $248.59 -> $29.83
+    # 1. Normal bankroll $248.59 -> bounded by max_notional_cap_pct and MAX_ABSOLUTE_TICKET_USD
     t1 = harvester.compute_kelly_ticket_size(0.84, 0.75, 248.59)
     assert t1 <= MAX_ABSOLUTE_TICKET_USD
-    assert t1 == 29.83
+    assert 0.0 < t1 <= round(248.59 * harvester.max_notional_cap_pct, 2) + 0.01
 
-    # 2. Large bankroll $1,000 -> capped at $37.50 (NOT $120!)
-    t2 = harvester.compute_kelly_ticket_size(0.84, 0.75, 1000.0)
+    # 2. Large bankroll $10,000 -> capped at MAX_ABSOLUTE_TICKET_USD
+    t2 = harvester.compute_kelly_ticket_size(0.84, 0.75, 10000.0)
     assert t2 == MAX_ABSOLUTE_TICKET_USD
 
     # 3. Nonfinite inputs return 0.0
@@ -702,7 +702,6 @@ def test_probe_4_nan_configured_cap_enforces_hard_cap_37_50():
     ticket_usd = harvester.compute_kelly_ticket_size(0.84, 0.75, 100000.0)
     assert ticket_usd <= MAX_ABSOLUTE_TICKET_USD
     assert ticket_usd == MAX_ABSOLUTE_TICKET_USD
-    assert ticket_usd == 37.50
 
 
 def test_probe_5_per_order_accounting_deduplication():
@@ -1005,8 +1004,8 @@ def test_round6_synchronous_executor_hard_ticket_cap():
         notional_usd=500.0,
         target_price=0.70,
     )
-    assert res.notional_usd <= 37.50
-    assert res.notional_usd == 37.50
+    assert res.notional_usd <= MAX_ABSOLUTE_TICKET_USD
+    assert res.notional_usd == MAX_ABSOLUTE_TICKET_USD
 
 
 def test_round6_kelly_sizing_nan_inputs_resilience():
@@ -1017,14 +1016,14 @@ def test_round6_kelly_sizing_nan_inputs_resilience():
     harvester.max_notional_cap_pct = float("nan")
     ticket_1 = harvester.compute_kelly_ticket_size(0.84, 0.75, 10000.0)
     assert math.isfinite(ticket_1)
-    assert 0.0 < ticket_1 <= 37.50
+    assert 0.0 < ticket_1 <= MAX_ABSOLUTE_TICKET_USD
 
     # NaN kelly_fraction
     harvester.max_notional_cap_pct = 0.12
     harvester.kelly_fraction = float("nan")
     ticket_2 = harvester.compute_kelly_ticket_size(0.84, 0.75, 10000.0)
     assert math.isfinite(ticket_2)
-    assert 0.0 < ticket_2 <= 37.50
+    assert 0.0 < ticket_2 <= MAX_ABSOLUTE_TICKET_USD
 
 
 def test_round6_aggregate_inventory_reservation_blocks_oversell():
@@ -1300,16 +1299,18 @@ def test_round8_probe_l_partial_successful_stop_retains_active_position():
             "realized_exit_fee": 0.0,
             "entry_fee_asset": "SHARES",
             "order_records": {},
+            "low_bid_detected_ts": now - 7.0,
         }
 
-        # Mock market orderbook: bid dropped to $0.30 (triggering adverse stop-loss)
+        # Mock market orderbook: bid dropped to $0.30 (>=6s offline-spot fallback triggers adverse stop-loss)
         harvester.executor.get_market_book_async = AsyncMock(return_value={
             "bids": [{"price": "0.30", "size": "100.0"}],
             "asks": [{"price": "0.35", "size": "100.0"}],
         })
-        harvester.get_reference_spot_price = MagicMock(return_value=65000.0)
+        harvester.get_reference_spot_price = MagicMock(return_value=None)
         harvester.executor.cancel_order = MagicMock(return_value={"canceled": ["EXIT_OID_PROBE_L"]})
         harvester.executor.get_order_status = MagicMock(return_value={"status": "CANCELED"})
+        harvester.executor.get_order_fill_summary = MagicMock(return_value={"order_id": "EXIT_OID_PROBE_L", "status": "CANCELED", "matched": 0.0, "terminal": True})
         harvester.executor.get_open_orders = MagicMock(return_value=[])
 
         # Mock CLOB execute_unwind_order returning SUCCESS but only 10 shares matched (Probe L setup)

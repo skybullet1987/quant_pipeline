@@ -153,55 +153,62 @@ def simulate_microclip_cascade_entry(
     eff_ask_lat = round(min(0.99, ask_lat + depletion_ticks), 4)
 
     target_limit_px = round(min(max_px, ask_t0 + fak_buffer), 4)
+    hybrid_z_split = bool(cfg.get("hybrid_z_split", False))
+    z_taker_cut = float(cfg.get("z_taker_cut", 1.20))
+    route_maker_first = hybrid_z_split and eff_z < z_taker_cut
 
-    # STEP 1: Primary Smart FAK at full ticket (`$16.50`)
-    if 0.0 < eff_ask_lat < 0.99 and l1_ask_usd >= ticket_usd:
-        vwap_full = round(max(eff_ask_lat, ask_t0 + min(0.03, slip20)), 4)
-        if vwap_full <= target_limit_px and vwap_full <= max_px:
-            return (vwap_full, v2_taker_fee_per_share(vwap_full, fee_rate), lat_s, 1.0, "STEP1_SMART_FAK")
+    if not route_maker_first:
+        # STEP 1: Primary Smart FAK at full ticket (`$16.50`)
+        if 0.0 < eff_ask_lat < 0.99 and l1_ask_usd >= ticket_usd:
+            vwap_full = round(max(eff_ask_lat, ask_t0 + min(0.03, slip20)), 4)
+            if vwap_full <= target_limit_px and vwap_full <= max_px:
+                return (vwap_full, v2_taker_fee_per_share(vwap_full, fee_rate), lat_s, 1.0, "STEP1_SMART_FAK")
 
-    # STEP 2: Idea #1 Elastic Down-Snap (`$16.50 -> $12.00`) when L1 depth or multi-level sweep blocks full ticket
-    if enable_elastic and elastic_usd < ticket_usd and 0.0 < eff_ask_lat < 0.99 and l1_ask_usd >= elastic_usd:
-        scale_r = round(elastic_usd / ticket_usd, 4)
-        vwap_elastic = round(max(eff_ask_lat, ask_t0 + min(0.02, slip20 * scale_r)), 4)
-        if vwap_elastic <= target_limit_px and vwap_elastic <= max_px:
-            return (
-                vwap_elastic,
-                v2_taker_fee_per_share(vwap_elastic, fee_rate),
-                round(lat_s + 0.05, 3),
-                scale_r,
-                "STEP2_ELASTIC_DOWNSNAP",
-            )
+        # STEP 2: Idea #1 Elastic Down-Snap (`$16.50 -> $12.00 -> $8.00`) when L1 depth blocks full ticket
+        if enable_elastic and 0.0 < eff_ask_lat < 0.99:
+            min_elastic_usd = float(cfg.get("min_elastic_usd", elastic_usd))
+            for rung_usd in (elastic_usd, min_elastic_usd):
+                if rung_usd < ticket_usd and l1_ask_usd >= rung_usd - 1e-6:
+                    scale_r = round(rung_usd / ticket_usd, 4)
+                    vwap_elastic = round(max(eff_ask_lat, ask_t0 + min(0.02, slip20 * scale_r)), 4)
+                    if vwap_elastic <= target_limit_px and vwap_elastic <= max_px:
+                        return (
+                            vwap_elastic,
+                            v2_taker_fee_per_share(vwap_elastic, fee_rate),
+                            round(lat_s + 0.05, 3),
+                            scale_r,
+                            "STEP2_ELASTIC_DOWNSNAP",
+                        )
 
-    # STEP 3: Idea #5 Sequential `+2c` Pre-Signed FAK Retry (`z_strike >= 1.25` on FAK zero-match miss)
-    if (
-        enable_fb_2c
-        and eff_z >= fallback_min_z
-        and (target_limit_px + 0.01) <= (max_px + 1e-6)
-        and l1_ask_usd >= elastic_usd
-    ):
-        fb_limit_px = round(min(max_px, target_limit_px + fallback_add), 4)
-        if fb_limit_px > target_limit_px + 1e-6:
-            t_fb = round(lat_s + 0.15, 3)
-            fb_clip = _clip_at_or_after(clips, t_fb, (t_fb, cush_lat, bid_lat, eff_ask_lat))
-            ask_fb = round(min(0.99, float(fb_clip[3]) + depletion_ticks), 4)
-            if (ask_t0 - ask_fb) >= 0.04:
-                return None
-            fb_mult = 1.0 if l1_ask_usd >= ticket_usd else round(elastic_usd / ticket_usd, 4)
-            vwap_fb = round(max(ask_fb, ask_t0 + min(0.03, slip20 * fb_mult)), 4)
-            if 0.0 < ask_fb < 0.99 and vwap_fb <= fb_limit_px and vwap_fb <= max_px:
-                return (
-                    vwap_fb,
-                    v2_taker_fee_per_share(vwap_fb, fee_rate),
-                    t_fb,
-                    fb_mult,
-                    "STEP3_FAK_PLUS_2C_FALLBACK",
-                )
+        # STEP 3: Idea #5 Sequential `+2c` Pre-Signed FAK Retry (`z_strike >= 1.25` on FAK zero-match miss)
+        if (
+            enable_fb_2c
+            and eff_z >= fallback_min_z
+            and (target_limit_px + 0.01) <= (max_px + 1e-6)
+            and l1_ask_usd >= elastic_usd
+        ):
+            fb_limit_px = round(min(max_px, target_limit_px + fallback_add), 4)
+            if fb_limit_px > target_limit_px + 1e-6:
+                t_fb = round(lat_s + 0.15, 3)
+                fb_clip = _clip_at_or_after(clips, t_fb, (t_fb, cush_lat, bid_lat, eff_ask_lat))
+                ask_fb = round(min(0.99, float(fb_clip[3]) + depletion_ticks), 4)
+                if (ask_t0 - ask_fb) >= 0.04:
+                    return None
+                fb_mult = 1.0 if l1_ask_usd >= ticket_usd else round(elastic_usd / ticket_usd, 4)
+                vwap_fb = round(max(ask_fb, ask_t0 + min(0.03, slip20 * fb_mult)), 4)
+                if 0.0 < ask_fb < 0.99 and vwap_fb <= fb_limit_px and vwap_fb <= max_px:
+                    return (
+                        vwap_fb,
+                        v2_taker_fee_per_share(vwap_fb, fee_rate),
+                        t_fb,
+                        fb_mult,
+                        "STEP3_FAK_PLUS_2C_FALLBACK",
+                    )
 
-    # STEP 4: Phase 3A Passive `GTC postOnly=True` Maker-In Rescue (`0%` fee + `100ms` adverse-spot shield)
-    if not enable_phase3a:
+    # STEP 4: Passive `GTC postOnly=True` Maker-In (Shielded Maker-First for marginal z or Phase 3A Rescue)
+    if not enable_phase3a and not route_maker_first:
         return None
-    t_p3a_start = round(lat_s + 0.20, 3)
+    t_p3a_start = round(lat_s + (0.05 if route_maker_first else 0.20), 3)
     p3a_init = _clip_at_or_after(clips, t_p3a_start, (t_p3a_start, cush_lat, bid_lat, eff_ask_lat))
     ask_reb = float(p3a_init[3])
     bid_reb = float(p3a_init[2]) if float(p3a_init[2]) > 0.0 else bid_lat
@@ -212,12 +219,39 @@ def simulate_microclip_cascade_entry(
         return None
 
     # postOnly resting bid strictly >= 1 tick below ask_reb and within [min_px, max_px]
-    maker_px = round(min(max_px, ask_reb - 0.01, max(bid_reb, ask_t0)), 2)
+    if route_maker_first:
+        spread_reb = round(ask_reb - bid_reb, 4)
+        maker_px = round(min(max_px, ask_reb - 0.01, bid_reb + (0.01 if spread_reb >= 0.02 else 0.0)), 2)
+    else:
+        maker_px = round(min(max_px, ask_reb - 0.01, max(bid_reb, ask_t0)), 2)
     if maker_px < min_px or maker_px >= ask_reb - 1e-6:
         return None
 
+    # 1-tick join queue-depth cap (`<= $45` ahead at L1 when not improving bid)
+    use_comp_shield = bool(cfg.get("use_complement_shield", route_maker_first))
+    max_join_queue_usd = float(cfg.get("max_maker_join_queue_usd", 45.0))
+    l1_bid_usd = float(cand.get("l1_bid_usd", 0.0) or 0.0)
+    if use_comp_shield and maker_px <= bid_reb + 1e-6 and l1_bid_usd > max_join_queue_usd:
+        return None
+
+    opp_clips = {
+        round(float(r[0]), 3): float(r[4])
+        for r in (cand.get("micro_clips_opp") or cand.get("micro_clips") or ())
+        if isinstance(r, (list, tuple)) and len(r) >= 5 and float(r[4]) > 0.0
+    }
+    opp_bid_t0 = float(cand.get("opp_bid_t0", 0.0) or 0.0)
+    if use_comp_shield and opp_bid_t0 > 0.0 and round(1.0 - opp_bid_t0, 4) <= maker_px - 1e-6:
+        return None
+
+    maker_fee_ps = (
+        -0.20 * v2_taker_fee_per_share(maker_px, fee_rate)
+        if bool(cfg.get("include_maker_rebate", False))
+        else 0.0
+    )
+    eff_ttl_s = float(cfg.get("maker_ttl_s", 6.0)) if route_maker_first else phase3a_ttl_s
     p3a_mult = 1.0 if l1_ask_usd >= ticket_usd else round(elastic_usd / ticket_usd, 4)
-    t_deadline = t_p3a_start + phase3a_ttl_s
+    t_deadline = t_p3a_start + eff_ttl_s
+    step_lbl = "HYBRID_MAKER_FIRST" if route_maker_first else "STEP4_PHASE3A_MAKER_RESCUE"
     for dt_c, cush_c, b_c, a_c in clips:
         if dt_c < t_p3a_start - 1e-6:
             continue
@@ -226,9 +260,16 @@ def simulate_microclip_cascade_entry(
         # 100ms Adverse-Spot Shield: cancel immediately BEFORE passive toxic fill if cushion decays > 50%
         if eff_cush > 0.0 and (cush_c <= 0.0 or cush_c < eff_cush * (1.0 - shield_decay)):
             return None
-        # Queue-depletion passive fill: ask crosses down to/through maker_px while spot shield holds
+        # Complement-Book HFT Repricing Shield (`1 - opp_bid < maker_px` or pre-fill lead `1 - opp_bid <= maker_px` while `ask > maker_px`)
+        if use_comp_shield:
+            opp_b_now = opp_clips.get(round(dt_c, 3), 0.0)
+            if opp_b_now > 0.0:
+                comp_ask = round(1.0 - opp_b_now, 4)
+                if comp_ask <= maker_px - 1e-6 or (a_c > maker_px + 1e-6 and comp_ask <= maker_px + 1e-6):
+                    return None
+        # Queue-depletion passive fill: ask crosses down to/through maker_px while shields hold
         if 0.0 < a_c <= maker_px:
-            return (maker_px, 0.0, round(dt_c, 3), p3a_mult, "STEP4_PHASE3A_MAKER_RESCUE")
+            return (maker_px, round(maker_fee_ps, 6), round(dt_c, 3), p3a_mult, step_lbl)
 
     return None
 
@@ -832,4 +873,512 @@ def calibrate_d1_maker_leg1_wfo(
         "val": best_vl,
         "sealed_holdout": best_ho,
         "unguarded_maker_holdout_baseline": naive_ho,
+    }
+
+
+def compute_v395_pricing_and_twap_gate(
+    cand: Dict[str, Any],
+    *,
+    df: Optional[float] = None,
+    jump_vol_mult: float = 1.0,
+    use_kemna_vorst: bool = False,
+) -> Tuple[float, float]:
+    """
+    Computes `(z_adj, p_win)` for a subhourly candidate under:
+      - Kemna-Vorst continuous 60s-TWAP remaining sigma (`sqrt(tau - 40)` for `tau >= 60s`),
+      - `jump_vol_mult` volatility multiplier,
+      - Unit-variance Student-t (`Var(X) = 1.0` via `t_std = z * sqrt((nu - 2)/nu)`) or Gaussian (`df=None`).
+    """
+    from src.polymarket_research.exact_twap_lock_engine import (
+        compute_kemna_vorst_twap_sigma_rem,
+        compute_unit_variance_student_t_cdf,
+    )
+
+    cush = float(cand.get("cushion_oracle", cand.get("cushion_min", 0.0)) or 0.0)
+    tte = max(5.0, float(cand.get("tte", 300.0) or 300.0))
+    sig_rem_base = max(0.00025, float(cand.get("sigma_rem", 0.0020) or 0.0020))
+    sig_1h = sig_rem_base / math.sqrt(max(tte, 1.0) / 3600.0)
+    if use_kemna_vorst and str(cand.get("hz") or "") in ("5m", "15m"):
+        sig_rem = max(0.00018, compute_kemna_vorst_twap_sigma_rem(sig_1h, tte, window_sec=60.0))
+    else:
+        sig_rem = sig_rem_base
+    sig_eff = sig_rem * max(0.50, float(jump_vol_mult))
+    z_adj = cush / sig_eff
+    ofi = min(1.0, max(0.0, float(cand.get("shock_ofi", 0.0) or 0.0)))
+    z_prob = z_adj + 0.25 * ofi
+    if df is None or math.isinf(float(df)) or float(df) > 100.0:
+        p_win = 0.5 * (1.0 + math.erf(z_prob / math.sqrt(2.0)))
+    else:
+        p_win = compute_unit_variance_student_t_cdf(z_prob, df=float(df))
+    return round(z_adj, 5), round(max(0.01, min(0.995, p_win)), 5)
+
+
+def run_wfo_post_selection_diagnostics(
+    *,
+    cands: Sequence[Dict[str, Any]],
+    dev_cands: Sequence[Dict[str, Any]],
+    holdout_cands: Sequence[Dict[str, Any]],
+    best_cfg: Dict[str, Any],
+    best_tr: Dict[str, Any],
+    best_vl: Dict[str, Any],
+    best_hold_500: Dict[str, Any],
+    stage2_results: Sequence[Any],
+    data_dir: Path,
+    purge_sec: float,
+    evaluate_portfolio_fn: Any,
+    prefilter_fn: Any,
+    dev_score_fn: Any,
+    simulate_single_fn: Any,
+) -> Dict[str, Any]:
+    """Runs CPCV(6,2), Chainlink mismatch audit, 50-trade Monte Carlo, top-5 OOS summary, and live counterfactual."""
+    import itertools
+    import random
+    import statistics
+
+    all_sorted = sorted(cands, key=lambda x: x["t0"])
+    n_all = len(all_sorted)
+    n_groups = 6
+    group_bounds: List[Tuple[float, float]] = []
+    for g_idx in range(n_groups):
+        g_i0 = int((g_idx / n_groups) * n_all)
+        g_i1 = int(((g_idx + 1) / n_groups) * n_all) - 1
+        group_bounds.append((all_sorted[g_i0]["t0"], all_sorted[max(g_i0, g_i1)]["t0"]))
+
+    apriori_cpcv_grid: List[Dict[str, Any]] = []
+    for px_lo, px_hi in [(0.55, 0.80), (0.55, 0.82), (0.55, 0.85)]:
+        for z_th in [0.65, 0.85, 1.05]:
+            for c_th in [0.0004, 0.0006]:
+                for f_b in [0.01, 0.02]:
+                    for ex_p in ["single_95", "two_tranche_14_98", "two_tranche_95_98", "hold_98"]:
+                        for s_m, r_a, w_t, s_p in [("spot_persist", None, 0.0009, 18.0), ("hybrid_persist", 0.12, 0.0006, 15.0)]:
+                            apriori_cpcv_grid.append({
+                                "assets": ("BTC", "ETH"), "horizons": ("15m", "1h"),
+                                "min_tte_15m": 90.0, "max_tte_15m": 480.0, "min_tte_1h": 150.0, "max_tte_1h": 1200.0,
+                                "min_px": px_lo, "max_px": px_hi, "max_spread": 0.03, "min_l1_usd": 20.0,
+                                "min_cushion": c_th, "min_z": z_th, "min_ofi": 0.60,
+                                "use_venue_veto": True, "use_cl_proxy": True, "entry_mode": "taker_fak", "fak_buffer": f_b,
+                                "exit_policy": ex_p, "ratchet_arm": r_a, "ratchet_drop": 0.06,
+                                "salvage_mode": s_m, "wrong_side_thresh": w_t, "salvage_persist_s": s_p,
+                                "clob_drop_thresh": 0.22, "final_45s_unwind": False,
+                            })
+    apriori_superset = prefilter_fn(all_sorted, {
+        "assets": ("BTC", "ETH"), "horizons": ("15m", "1h"),
+        "min_tte_15m": 90.0, "max_tte_15m": 480.0, "min_tte_1h": 150.0, "max_tte_1h": 1200.0,
+        "min_px": 0.55, "max_px": 0.85, "max_spread": 0.03, "min_l1_usd": 20.0,
+        "min_cushion": 0.0004, "min_z": 0.65, "min_ofi": 0.60, "use_venue_veto": True, "use_cl_proxy": True,
+    })
+
+    cpcv_splits = []
+    for g_a, g_b in itertools.combinations(range(n_groups), 2):
+        test_intervals = [group_bounds[g_a], group_bounds[g_b]]
+        train_cpcv = [
+            c for c in apriori_superset
+            if all((c["exp_ts"] < (ts_i - purge_sec)) or (c["t0"] > (te_i + purge_sec)) for ts_i, te_i in test_intervals)
+        ]
+        oos_cpcv = []
+        for g_t in (g_a, g_b):
+            t_s, t_e = group_bounds[g_t]
+            purge_left = purge_sec if (g_t > 0 and (g_t - 1) not in (g_a, g_b)) else 0.0
+            purge_right = purge_sec if (g_t < n_groups - 1 and (g_t + 1) not in (g_a, g_b)) else 0.0
+            eff_s, eff_e = t_s + purge_left, t_e - (purge_right * 0.25)
+            oos_cpcv.extend(c for c in apriori_superset if eff_s <= c["t0"] <= eff_e and c["exp_ts"] <= t_e)
+        oos_cpcv.sort(key=lambda x: x["t0"])
+
+        n_tc = len(train_cpcv)
+        t_cut_inner = train_cpcv[int(0.70 * n_tc)]["t0"] if n_tc >= 20 else 0.0
+        in_tr = [c for c in train_cpcv if c["exp_ts"] <= t_cut_inner]
+        in_vl = [c for c in train_cpcv if c["t0"] >= (t_cut_inner + purge_sec)]
+        fitted_cfg = apriori_cpcv_grid[0]
+        best_cpcv_sc = -1e9
+        for cand_cfg in apriori_cpcv_grid:
+            ri_tr = evaluate_portfolio_fn(in_tr, cand_cfg, latency_mode="500ms")
+            if ri_tr["trades"] < 20 or ri_tr["total_pnl"] <= 0 or ri_tr["profit_factor"] < 1.20:
+                continue
+            ri_vl = evaluate_portfolio_fn(in_vl, cand_cfg, latency_mode="500ms")
+            if ri_vl["trades"] < 8 or ri_vl["total_pnl"] <= 0 or ri_vl["profit_factor"] < 1.15:
+                continue
+            sc_i = dev_score_fn(ri_tr, ri_vl)
+            if sc_i > best_cpcv_sc:
+                best_cpcv_sc, fitted_cfg = sc_i, cand_cfg
+        if best_cpcv_sc <= -1e8:
+            for cand_cfg in apriori_cpcv_grid:
+                ri_all = evaluate_portfolio_fn(train_cpcv, cand_cfg, latency_mode="500ms")
+                if ri_all["trades"] >= 25 and ri_all["total_pnl"] > 0:
+                    sc_i = dev_score_fn(ri_all, ri_all)
+                    if sc_i > best_cpcv_sc:
+                        best_cpcv_sc, fitted_cfg = sc_i, cand_cfg
+
+        r_cpcv = evaluate_portfolio_fn(oos_cpcv, fitted_cfg, latency_mode="500ms")
+        r_cpcv_seed = evaluate_portfolio_fn(oos_cpcv, fitted_cfg, latency_mode="500ms", max_concurrent=1, ticket_usd=12.0)
+        cpcv_splits.append({
+            "test_groups": [g_a, g_b], "fitted_exit_policy": fitted_cfg["exit_policy"], "fitted_min_z": fitted_cfg["min_z"],
+            "trades": r_cpcv["trades"], "total_pnl": r_cpcv["total_pnl"], "seed_12_c1_pnl": r_cpcv_seed["total_pnl"],
+            "win_rate": r_cpcv["win_rate"], "profit_factor": r_cpcv["profit_factor"], "sharpe": r_cpcv["sharpe"],
+            "wipeout_rate": r_cpcv["wipeout_rate"],
+        })
+
+    cpcv_pnls_list = [s["total_pnl"] for s in cpcv_splits]
+    cpcv_seed_pnls = [s["seed_12_c1_pnl"] for s in cpcv_splits]
+    cpcv_summary = {
+        "mode": "GENUINE_OUT_OF_SAMPLE_REFIT_CPCV_6_2", "n_groups": 6, "k_test_groups": 2,
+        "apriori_grid_size": len(apriori_cpcv_grid), "total_combinations": len(cpcv_splits),
+        "positive_combinations": sum(1 for x in cpcv_pnls_list if x > 0),
+        "positive_rate": round(sum(1 for x in cpcv_pnls_list if x > 0) / max(len(cpcv_splits), 1), 4),
+        "seed_12_c1_positive_combinations": sum(1 for x in cpcv_seed_pnls if x > 0),
+        "median_oos_trades": int(statistics.median(s["trades"] for s in cpcv_splits)),
+        "median_oos_pnl_usd": round(statistics.median(cpcv_pnls_list), 2),
+        "mean_oos_pnl_usd": round(statistics.mean(cpcv_pnls_list), 2),
+        "median_seed_12_c1_oos_pnl_usd": round(statistics.median(cpcv_seed_pnls), 2),
+        "min_oos_pnl_usd": round(min(cpcv_pnls_list), 2),
+        "median_oos_pf": round(statistics.median(s["profit_factor"] for s in cpcv_splits), 3),
+        "median_oos_sharpe": round(statistics.median(s["sharpe"] for s in cpcv_splits), 3),
+        "splits": cpcv_splits,
+    }
+
+    mismatch_mids = set()
+    ver_p = data_dir / "verified_gamma_resolutions.json"
+    if ver_p.exists():
+        try:
+            for k_m, v_m in json.loads(ver_p.read_text(encoding="utf-8")).items():
+                if isinstance(v_m, dict) and (
+                    v_m.get("oracle_mismatch") or v_m.get("mismatch")
+                    or (v_m.get("binance_winner") and v_m.get("winner") and v_m.get("binance_winner") != v_m.get("winner"))
+                ):
+                    mismatch_mids.add(str(k_m))
+        except Exception:
+            pass
+    for gt_name in ("ground_truth_resolutions.jsonl", "ground_truth_resolutions_eth.jsonl", "ground_truth_resolutions_sol.jsonl"):
+        gt_p = data_dir / gt_name
+        if gt_p.exists():
+            try:
+                for ln in gt_p.read_text(encoding="utf-8", errors="replace").splitlines():
+                    if ln.strip():
+                        row_g = json.loads(ln)
+                        if row_g.get("oracle_mismatch") or (
+                            row_g.get("binance_winning_outcome") and row_g.get("gamma_winning_outcome")
+                            and row_g.get("binance_winning_outcome") != row_g.get("gamma_winning_outcome")
+                        ):
+                            mismatch_mids.add(str(row_g.get("market_id")))
+            except Exception:
+                pass
+    for c_item in all_sorted:
+        if c_item["path"]:
+            tte_end_i, cush_end_i, _, _, _ = c_item["path"][-1]
+            if tte_end_i <= 30.0 and abs(cush_end_i) >= 0.00001 and ((cush_end_i > 0) != bool(c_item["won"])):
+                mismatch_mids.add(str(c_item.get("mid")))
+        if str(c_item.get("mid")) in mismatch_mids:
+            c_item["oracle_mismatch"] = True
+
+    mismatch_cands = [c for c in all_sorted if c.get("oracle_mismatch")]
+    mm_raw = evaluate_portfolio_fn(mismatch_cands, dict(best_cfg, use_cl_proxy=False), latency_mode="500ms")
+    mm_cl = evaluate_portfolio_fn(mismatch_cands, dict(best_cfg, use_cl_proxy=True), latency_mode="500ms")
+    full_no_cl = evaluate_portfolio_fn(all_sorted, dict(best_cfg, use_cl_proxy=False), latency_mode="500ms")
+    full_with_cl = evaluate_portfolio_fn(all_sorted, dict(best_cfg, use_cl_proxy=True), latency_mode="500ms")
+
+    bp1_base = dict(best_cfg)
+    if not str(bp1_base.get("exit_policy", "")).startswith("two_tranche"):
+        bp1_base["exit_policy"] = "two_tranche_12_98"
+    bp1_delayed = evaluate_portfolio_fn(all_sorted, dict(bp1_base, t2_post_lag_s=5.0), latency_mode="500ms")
+    bp1_inline = evaluate_portfolio_fn(all_sorted, dict(bp1_base, t2_post_lag_s=0.05), latency_mode="500ms")
+    bp1_concurrent = evaluate_portfolio_fn(all_sorted, dict(bp1_base, t2_post_lag_s=0.0), latency_mode="500ms")
+
+    chainlink_proxy_audit = {
+        "mismatch_markets_identified": len(mismatch_mids),
+        "mismatch_candidates_total": len(mismatch_cands),
+        "mismatch_raw_trades": mm_raw["trades"], "mismatch_raw_pnl": mm_raw["total_pnl"],
+        "mismatch_cl_proxy_trades": mm_cl["trades"], "mismatch_cl_proxy_pnl": mm_cl["total_pnl"],
+        "full_dataset_raw_pnl": full_no_cl["total_pnl"], "full_dataset_raw_pf": full_no_cl["profit_factor"],
+        "full_dataset_cl_proxy_pnl": full_with_cl["total_pnl"], "full_dataset_cl_proxy_pf": full_with_cl["profit_factor"],
+        "blueprint1_tranche2_comparison": {
+            "delayed_5s_pnl": bp1_delayed["total_pnl"], "delayed_5s_pf": bp1_delayed["profit_factor"],
+            "inline_50ms_pnl": bp1_inline["total_pnl"], "inline_50ms_pf": bp1_inline["profit_factor"],
+            "concurrent_0ms_pnl": bp1_concurrent["total_pnl"], "concurrent_0ms_pf": bp1_concurrent["profit_factor"],
+        },
+    }
+
+    oos_unit_rets = [p / 15.0 for p in (best_vl["pnls"] + best_hold_500["pnls"])]
+    if len(oos_unit_rets) < 20:
+        oos_unit_rets = [p / 15.0 for p in best_tr["pnls"]]
+
+    def _sim_bankroll(label: str, start_eq: float, base_pct: float, min_tkt: float, floor_u: float, seed_cap: float = 0.0, corr_p: float = 0.0) -> Dict[str, Any]:
+        rng_mc = random.Random(20261025)
+        halted_cnt = 0
+        end_eqs, max_dds = [], []
+        n_r = max(1, len(oos_unit_rets))
+        for _ in range(10000):
+            eq, pk, mdd, halted, t_done = start_eq, start_eq, 0.0, False, 0
+            while t_done < 50 and oos_unit_rets:
+                if eq < floor_u:
+                    halted = True
+                    break
+                if seed_cap > 0.0 and eq < seed_cap:
+                    eq += min(eq, 12.0) * oos_unit_rets[rng_mc.randrange(n_r)]
+                    t_done += 1
+                else:
+                    tkt = min(eq, max(min_tkt, round(eq * base_pct, 2)))
+                    if corr_p > 0.0 and rng_mc.random() < corr_p and (t_done + 1) < 50:
+                        r1 = oos_unit_rets[rng_mc.randrange(n_r)]
+                        r2 = r1 if rng_mc.random() < 0.75 else oos_unit_rets[rng_mc.randrange(n_r)]
+                        eq += tkt * r1 + (tkt * 0.54) * r2
+                        t_done += 2
+                    else:
+                        eq += tkt * oos_unit_rets[rng_mc.randrange(n_r)]
+                        t_done += 1
+                pk = max(pk, eq)
+                mdd = max(mdd, pk - eq)
+                if eq < floor_u:
+                    halted = True
+                    break
+            if halted:
+                halted_cnt += 1
+            end_eqs.append(eq)
+            max_dds.append(mdd)
+        end_eqs.sort()
+        max_dds.sort()
+        return {
+            "policy": label, "start_equity_usd": start_eq, "floor_usd": floor_u,
+            "halt_prob_50_trades": round(halted_cnt / 10000, 4),
+            "median_terminal_equity_usd": round(end_eqs[5000], 2),
+            "p05_terminal_equity_usd": round(end_eqs[500], 2),
+            "p95_terminal_equity_usd": round(end_eqs[9500], 2),
+            "p95_max_drawdown_usd": round(max_dds[9500], 2),
+        }
+
+    bankroll_mc = [
+        _sim_bankroll("v3.7_UNPATCHED_22PCT_FLOOR65_CONC2", 76.49, 0.22, 12.0, 65.00, corr_p=0.25),
+        _sim_bankroll("CENTRAL_CFG_18PCT_FLOOR66.67_CONC2", 76.49, 0.18, 12.0, 66.67, corr_p=0.25),
+        _sim_bankroll("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR48", 76.49, 0.18, 12.0, 48.00, seed_cap=88.0, corr_p=0.15),
+        _sim_bankroll("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR52", 76.49, 0.18, 12.0, 52.00, seed_cap=88.0, corr_p=0.15),
+    ]
+
+    top5_summary = []
+    seen_top5_cores = set()
+    for sc, c_i, tr_i, vl_i, _ in stage2_results:
+        ck_i = (c_i["assets"], c_i["horizons"], c_i["min_px"], c_i["max_px"], c_i["min_z"], c_i["min_cushion"], c_i["entry_mode"], c_i["exit_policy"])
+        if ck_i in seen_top5_cores:
+            continue
+        seen_top5_cores.add(ck_i)
+        ho_i = evaluate_portfolio_fn(holdout_cands, c_i, latency_mode="500ms")
+        top5_summary.append({
+            "score": round(sc, 2),
+            "config": {k: (list(v) if isinstance(v, tuple) else v) for k, v in c_i.items()},
+            "train": {k: v for k, v in tr_i.items() if k != "pnls"},
+            "val": {k: v for k, v in vl_i.items() if k != "pnls"},
+            "holdout": {k: v for k, v in ho_i.items() if k != "pnls"},
+        })
+        if len(top5_summary) >= 5:
+            break
+
+    live_counterfactual: Dict[str, Any] = {}
+    st_path = data_dir / "live_harvester_state.json"
+    if st_path.exists():
+        st = json.loads(st_path.read_text(encoding="utf-8"))
+        closed_live = st.get("closed_positions", [])
+        cand_by_eid = {c["event_id"]: c for c in cands}
+        cf_total, matched_live, filtered_out_losses, filtered_out_wins = 0.0, 0, 0, 0
+        post_rebate_traces = []
+        for pos in closed_live:
+            act_pnl = float(pos.get("net_pnl_usd") or 0.0)
+            eid = str(pos.get("event_id") or "")
+            tid = str(pos.get("trade_id") or "")
+            c_match = cand_by_eid.get(eid)
+            if not c_match:
+                continue
+            matched_live += 1
+            sim = simulate_single_fn(c_match, best_cfg, latency_mode="500ms")
+            notional = float(pos.get("notional_usd") or 15.0)
+            if sim is None:
+                cf_pnl, cf_reason = 0.0, "VETOED_AT_ENTRY"
+                if act_pnl < 0:
+                    filtered_out_losses += 1
+                else:
+                    filtered_out_wins += 1
+            else:
+                cf_pnl, cf_reason = round(sim[0] * notional, 2), sim[1]
+            cf_total += cf_pnl
+            if "6076647" in tid or "6082720" in tid or act_pnl <= -15.0:
+                post_rebate_traces.append({
+                    "trade_id": tid, "entry_price": pos.get("entry_price"), "max_seen_bid": pos.get("max_seen_bid"),
+                    "actual_pnl_usd": round(act_pnl, 2), "actual_close_reason": pos.get("close_reason"),
+                    "wfo_counterfactual_pnl_usd": cf_pnl, "wfo_counterfactual_action": cf_reason,
+                })
+        live_counterfactual = {
+            "total_live_closed_trades": len(closed_live), "matched_to_trigger_dataset": matched_live,
+            "actual_matched_subset_pnl_usd": round(sum(float(p.get("net_pnl_usd") or 0.0) for p in closed_live if str(p.get("event_id") or "") in cand_by_eid), 2),
+            "wfo_optimal_counterfactual_pnl_usd": round(cf_total, 2),
+            "filtered_out_losing_trades": filtered_out_losses, "filtered_out_winning_trades": filtered_out_wins,
+            "wipeout_trades_counterfactual": post_rebate_traces,
+        }
+
+    cv_folds = []
+    n_dev = len(dev_cands)
+    if n_dev >= 100:
+        for fold_idx, (tr_f, te_f) in enumerate([(0.25, 0.43), (0.43, 0.62), (0.62, 0.81), (0.81, 1.00)], start=1):
+            t_cut = dev_cands[int(tr_f * n_dev)]["t0"]
+            t_end = dev_cands[min(n_dev - 1, int(te_f * n_dev) - 1)]["t0"]
+            oos_fold = [c for c in dev_cands if (t_cut + purge_sec) <= c["t0"] <= t_end]
+            r_fold = evaluate_portfolio_fn(oos_fold, best_cfg, latency_mode="500ms")
+            cv_folds.append({
+                "fold": fold_idx, "oos_candidates": len(oos_fold), "trades": r_fold["trades"],
+                "total_pnl": r_fold["total_pnl"], "win_rate": r_fold["win_rate"],
+                "profit_factor": r_fold["profit_factor"], "wipeout_rate": r_fold["wipeout_rate"],
+            })
+
+    return {
+        "cpcv_summary": cpcv_summary,
+        "chainlink_proxy_audit": chainlink_proxy_audit,
+        "bankroll_mc": bankroll_mc,
+        "top5_summary": top5_summary,
+        "live_counterfactual": live_counterfactual,
+        "cv_folds": cv_folds,
+    }
+
+
+def run_subhourly_v395_wfo_ablation_suite(
+    cands: Sequence[Dict[str, Any]],
+    evaluate_portfolio_fn: Any,
+    purge_sec: float = 900.0,
+) -> Dict[str, Any]:
+    """
+    Runs Track B Purged Walk-Forward (`Train 50% -> Embargo -> Val 25% -> Embargo -> Sealed Holdout 25%`)
+    across `15m` and `5m` subhourly candidates, testing:
+      1. Gaussian (`df=inf`) vs Unit-Variance Student-t (`df in {4, 6, 8}`) x `jump_vol_mult in {1.00, 1.15, 1.25}` Brier calibration,
+      2. Kemna-Vorst continuous `[45s, 90s]` TWAP variance bridge vs hard `90s` cutoff,
+      3. Hybrid `z`-Split (`z_taker_cut in {1.05, 1.15, 1.25}`) + Complement-Book Shield + `20%` Maker Rebate,
+      4. `250ms` Coinbase Impulse Veto (`-2.5 bps`) vs `2.0s` Coinbase Veto (`-4.0 bps`),
+      5. `5m` Horizon Split (`[60s, 180s]`, `z >= 0.80`) on `BTC`, `ETH`, `SOL`.
+    """
+    sub_15m = sorted([c for c in cands if c.get("hz") == "15m"], key=lambda x: x["t0"])
+    sub_5m = sorted([c for c in cands if c.get("hz") == "5m"], key=lambda x: x["t0"])
+
+    def _purged_split(items: Sequence[Dict[str, Any]], embargo: float) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        if len(items) < 12:
+            return list(items), [], []
+        t0s = [c["t0"] for c in items]
+        t_tr = t0s[int(0.50 * len(t0s))]
+        t_vl = t0s[int(0.75 * len(t0s))]
+        tr = [c for c in items if c["exp_ts"] <= t_tr]
+        vl = [c for c in items if c["t0"] >= (t_tr + embargo) and c["exp_ts"] <= t_vl]
+        ho = [c for c in items if c["t0"] >= (t_vl + embargo)]
+        return tr, vl, ho
+
+    tr_15, vl_15, ho_15 = _purged_split(sub_15m, purge_sec)
+    tr_5, vl_5, ho_5 = _purged_split(sub_5m, max(300.0, purge_sec * 0.5))
+
+    # 1. Out-of-sample Brier calibration across Gaussian vs Unit-Variance Student-t x jump_vol_mult in [0.75, 2.50] sigma
+    cal_sample_dev = [c for c in (tr_15 + vl_15) if 60.0 <= c["tte"] <= 480.0 and 0.75 <= abs(c.get("z_oracle", 0.0)) <= 2.50]
+    cal_sample_ho = [c for c in ho_15 if 60.0 <= c["tte"] <= 480.0 and 0.75 <= abs(c.get("z_oracle", 0.0)) <= 2.50]
+
+    def _brier(rows: Sequence[Dict[str, Any]], df_v: Optional[float], jvm: float) -> float:
+        if not rows:
+            return 0.25
+        err = 0.0
+        for r in rows:
+            _, p_w = compute_v395_pricing_and_twap_gate(r, df=df_v, jump_vol_mult=jvm, use_kemna_vorst=True)
+            y = 1.0 if r.get("won") else 0.0
+            err += (p_w - y) ** 2
+        return round(err / len(rows), 6)
+
+    brier_grid = []
+    best_cal = {"df": None, "jump_vol_mult": 1.0, "dev_brier": 1.0}
+    for df_opt in (None, 4.0, 6.0, 8.0):
+        for jvm_opt in (1.00, 1.15, 1.25):
+            b_dev = _brier(cal_sample_dev, df_opt, jvm_opt)
+            b_ho = _brier(cal_sample_ho, df_opt, jvm_opt)
+            row_b = {
+                "df": "gaussian" if df_opt is None else df_opt,
+                "jump_vol_mult": jvm_opt,
+                "dev_n": len(cal_sample_dev),
+                "dev_brier": b_dev,
+                "holdout_n": len(cal_sample_ho),
+                "holdout_brier": b_ho,
+            }
+            brier_grid.append(row_b)
+            if b_dev < best_cal["dev_brier"]:
+                best_cal = {"df": row_b["df"], "jump_vol_mult": jvm_opt, "dev_brier": b_dev, "holdout_brier": b_ho}
+
+    base_15m_cfg = {
+        "assets": ("BTC", "ETH", "SOL"),
+        "horizons": ("15m",),
+        "min_tte_15m": 90.0, "max_tte_15m": 480.0,
+        "min_tte_5m": 60.0, "max_tte_5m": 180.0,
+        "min_tte_1h": 150.0, "max_tte_1h": 600.0,
+        "min_px": 0.55, "max_px": 0.81,
+        "max_spread": 0.03, "min_l1_usd": 12.0,
+        "min_cushion": 0.0006, "min_z": 0.78, "min_ofi": 0.60,
+        "use_venue_veto": True, "use_cl_proxy": True,
+        "entry_mode": "cascade_v4", "fak_buffer": 0.02,
+        "cascade_ticket_usd": 16.50, "elastic_downsnap_usd": 12.00, "min_elastic_usd": 8.00,
+        "exit_policy": "hold_98", "ratchet_arm": None, "ratchet_drop": 0.06,
+        "salvage_mode": "spot_persist", "wrong_side_thresh": 0.0009, "salvage_persist_s": 18.0,
+        "clob_drop_thresh": 0.30, "final_45s_unwind": False,
+    }
+
+    def _run_var(label: str, overrides: Dict[str, Any], slices: Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]) -> Dict[str, Any]:
+        cfg_v = {**base_15m_cfg, **overrides}
+        s_tr, s_vl, s_ho = slices
+        r_tr = evaluate_portfolio_fn(s_tr, cfg_v, latency_mode="500ms") if s_tr else {"trades": 0, "total_pnl": 0.0, "profit_factor": 0.0, "win_rate": 0.0}
+        r_vl = evaluate_portfolio_fn(s_vl, cfg_v, latency_mode="500ms") if s_vl else {"trades": 0, "total_pnl": 0.0, "profit_factor": 0.0, "win_rate": 0.0}
+        r_ho = evaluate_portfolio_fn(s_ho, cfg_v, latency_mode="500ms") if s_ho else {"trades": 0, "total_pnl": 0.0, "profit_factor": 0.0, "win_rate": 0.0}
+        return {
+            "label": label,
+            "train": {"trades": r_tr["trades"], "pnl": r_tr["total_pnl"], "pf": r_tr["profit_factor"], "wr": r_tr["win_rate"]},
+            "val": {"trades": r_vl["trades"], "pnl": r_vl["total_pnl"], "pf": r_vl["profit_factor"], "wr": r_vl["win_rate"]},
+            "sealed_holdout": {"trades": r_ho["trades"], "pnl": r_ho["total_pnl"], "pf": r_ho["profit_factor"], "wr": r_ho["win_rate"]},
+        }
+
+    ablations_15m = [
+        _run_var("BASELINE_15M_CASCADE_TAKER_90_480", {}, (tr_15, vl_15, ho_15)),
+        _run_var("KEMNA_VORST_TWAP_BRIDGE_45_480", {"min_tte_15m": 45.0, "use_kemna_vorst": True}, (tr_15, vl_15, ho_15)),
+        _run_var(
+            "HYBRID_ZSPLIT_1.15_UNSHIELDED_MAKER",
+            {"hybrid_z_split": True, "z_taker_cut": 1.15, "use_complement_shield": False, "include_maker_rebate": False},
+            (tr_15, vl_15, ho_15),
+        ),
+        _run_var(
+            "HYBRID_ZSPLIT_1.15_COMP_SHIELD_NO_REBATE",
+            {"hybrid_z_split": True, "z_taker_cut": 1.15, "use_complement_shield": True, "include_maker_rebate": False},
+            (tr_15, vl_15, ho_15),
+        ),
+        _run_var(
+            "HYBRID_ZSPLIT_1.15_COMP_SHIELD_WITH_20PCT_REBATE",
+            {"hybrid_z_split": True, "z_taker_cut": 1.15, "use_complement_shield": True, "include_maker_rebate": True},
+            (tr_15, vl_15, ho_15),
+        ),
+        _run_var(
+            "HYBRID_ZSPLIT_1.25_COMP_SHIELD_WITH_20PCT_REBATE",
+            {"hybrid_z_split": True, "z_taker_cut": 1.25, "use_complement_shield": True, "include_maker_rebate": True},
+            (tr_15, vl_15, ho_15),
+        ),
+        _run_var(
+            "STUDENT_T_DF4_UNIT_VAR_JVM_1.15",
+            {"v395_df": 4.0, "v395_jump_vol_mult": 1.15, "use_kemna_vorst": True},
+            (tr_15, vl_15, ho_15),
+        ),
+        _run_var(
+            "COINBASE_250MS_IMPULSE_VETO_2.5BPS",
+            {"cb_250ms_veto_bps": -2.5},
+            (tr_15, vl_15, ho_15),
+        ),
+    ]
+
+    ablations_5m = []
+    if sub_5m:
+        for a_set, lbl_a in [(("BTC",), "BTC_5M_ONLY"), (("SOL",), "SOL_5M_CANARY"), (("BTC", "ETH", "SOL"), "ALL_CRYPTO_5M")]:
+            ablations_5m.append(
+                _run_var(
+                    lbl_a,
+                    {"assets": a_set, "horizons": ("5m",), "min_z": 0.80, "use_kemna_vorst": True},
+                    (tr_5, vl_5, ho_5),
+                )
+            )
+
+    return {
+        "counts": {"subhourly_15m_total": len(sub_15m), "subhourly_5m_total": len(sub_5m)},
+        "splits_15m": {"train": len(tr_15), "val": len(vl_15), "sealed_holdout": len(ho_15)},
+        "splits_5m": {"train": len(tr_5), "val": len(vl_5), "sealed_holdout": len(ho_5)},
+        "brier_calibration_selected_on_dev": best_cal,
+        "brier_calibration_grid": brier_grid,
+        "ablations_15m": ablations_15m,
+        "ablations_5m": ablations_5m,
     }

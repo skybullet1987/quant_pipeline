@@ -1,0 +1,20 @@
+[Unit]
+Description=PAA PID-1 System-Level Independent Supervisor (Verifies Linger, User Manager & PAA Monitor)
+After=network-online.target systemd-user-sessions.service
+
+[Service]
+Type=oneshot
+User=skybullet1987
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment="XDG_RUNTIME_DIR=/run/user/1000"
+Environment="DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/1000/bus"
+Environment="PYTHONPATH=/home/skybullet1987/quant_pipeline"
+Environment="PATH=/home/skybullet1987/.local/bin:/home/skybullet1987/quant_pipeline/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Nice=15
+CPUWeight=50
+IOWeight=50
+MemoryMax=512M
+TimeoutStartSec=60
+ExecStartPre=+/usr/bin/loginctl enable-linger skybullet1987
+ExecStartPre=+/bin/systemctl start user@1000.service
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python /home/skybullet1987/quant_pipeline/scripts/paa_cli.py supervisor-cycle

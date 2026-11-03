@@ -94,7 +94,10 @@ STATION_CATALOG: Dict[str, Tuple[float, float, str, str]] = {
     "MPMG": (8.9733, -79.5556, "America/Panama", "Panama City"),
     "KAUS": (30.1945, -97.6699, "America/Chicago", "Austin"),
     "KLAX": (33.9425, -118.4081, "America/Los_Angeles", "Los Angeles"),
+    "FACT": (-33.9648, 18.6017, "Africa/Johannesburg", "Cape Town"),
     "HKO": (22.3019, 114.1742, "Asia/Hong_Kong", "Hong Kong"),
+    "ZSJN": (36.8572, 117.2160, "Asia/Shanghai", "Jinan"),
+    "ZHCC": (34.5197, 113.8408, "Asia/Shanghai", "Zhengzhou"),
 }
 
 HKO_1MIN_CSV_URL = "https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_1min_temperature.csv"
@@ -114,37 +117,57 @@ _NOAA_ICAO_RE = re.compile(r"weather\.gov/wrh/timeseries\?site=([A-Z0-9]{4})", r
 _PAREN_ICAO_RE = re.compile(r"\(([A-Z]{4})\)")
 _SERIES_TO_ICAO: Dict[str, str] = {
     "tokyo-daily-weather": "RJTT",
+    "tokyo-daily-lowest-temperature": "RJTT",
     "london-daily-weather": "EGLC",
     "london-daily-lowest-temperature": "EGLC",
     "shanghai-daily-weather": "ZSPD",
     "shanghai-daily-lowest-temperature": "ZSPD",
     "chengdu-daily-weather": "ZUUU",
+    "chengdu-daily-lowest-temperature": "ZUUU",
     "beijing-daily-weather": "ZBAA",
+    "beijing-daily-lowest-temperature": "ZBAA",
     "wuhan-daily-weather": "ZHHH",
+    "wuhan-daily-lowest-temperature": "ZHHH",
     "chongqing-daily-weather": "ZUCK",
+    "chongqing-daily-lowest-temperature": "ZUCK",
     "guangzhou-daily-weather": "ZGGG",
+    "guangzhou-daily-lowest-temperature": "ZGGG",
     "shenzhen-daily-weather": "ZGSZ",
+    "shenzhen-daily-lowest-temperature": "ZGSZ",
     "qingdao-daily-weather": "ZSQD",
+    "qingdao-daily-lowest-temperature": "ZSQD",
     "paris-daily-weather": "LFPB",
+    "paris-daily-lowest-temperature": "LFPB",
     "munich-daily-weather": "EDDM",
+    "munich-daily-lowest-temperature": "EDDM",
     "miami-daily-weather": "KMIA",
     "miami-daily-lowest-temperature": "KMIA",
     "nyc-daily-weather": "KLGA",
     "nyc-daily-lowest-temperature": "KLGA",
     "houston-daily-weather": "KHOU",
+    "houston-daily-lowest-temperature": "KHOU",
     "austin-daily-weather": "KAUS",
+    "austin-daily-lowest-temperature": "KAUS",
     "los-angeles-daily-weather": "KLAX",
     "los-angeles-daily-lowest-temperature": "KLAX",
     "seoul-daily-weather": "RKSI",
     "seoul-daily-lowest-temperature": "RKSI",
     "busan-daily-weather": "RKPK",
+    "busan-daily-lowest-temperature": "RKPK",
     "chicago-daily-weather": "KORD",
+    "chicago-daily-lowest-temperature": "KORD",
     "seattle-daily-weather": "KSEA",
+    "seattle-daily-lowest-temperature": "KSEA",
     "dallas-daily-weather": "KDAL",
+    "dallas-daily-lowest-temperature": "KDAL",
     "madrid-daily-weather": "LEMD",
+    "madrid-daily-lowest-temperature": "LEMD",
     "amsterdam-daily-weather": "EHAM",
+    "amsterdam-daily-lowest-temperature": "EHAM",
     "taipei-daily-weather": "RCSS",
+    "taipei-daily-lowest-temperature": "RCSS",
     "singapore-daily-weather": "WSSS",
+    "singapore-daily-lowest-temperature": "WSSS",
     "hong-kong-daily-weather": "HKO",
     "hong-kong-daily-lowest-temperature": "HKO",
     "wellington-daily-weather": "NZWN",
@@ -152,21 +175,80 @@ _SERIES_TO_ICAO: Dict[str, str] = {
     "warsaw-daily-weather": "EPWA",
     "warsaw-daily-lowest-temperature": "EPWA",
     "buenos-aires-daily-weather": "SAEZ",
+    "buenos-aires-daily-lowest-temperature": "SAEZ",
     "helsinki-daily-weather": "EFHK",
+    "helsinki-daily-lowest-temperature": "EFHK",
     "denver-daily-weather": "KDEN",
+    "denver-daily-lowest-temperature": "KDEN",
     "toronto-daily-weather": "CYYZ",
+    "toronto-daily-lowest-temperature": "CYYZ",
     "mexico-city-daily-weather": "MMMX",
+    "mexico-city-daily-lowest-temperature": "MMMX",
     "tel-aviv-daily-weather": "LLBG",
+    "tel-aviv-daily-lowest-temperature": "LLBG",
     "istanbul-daily-weather": "LTFM",
+    "istanbul-daily-lowest-temperature": "LTFM",
     "sao-paulo-daily-weather": "SBGR",
+    "sao-paulo-daily-lowest-temperature": "SBGR",
     "manila-daily-weather": "RPLL",
+    "manila-daily-lowest-temperature": "RPLL",
     "atlanta-daily-weather": "KATL",
+    "atlanta-daily-lowest-temperature": "KATL",
     "san-francisco-daily-weather": "KSFO",
+    "san-francisco-daily-lowest-temperature": "KSFO",
+    "panama-daily-weather": "MPMG",
+    "panama-daily-lowest-temperature": "MPMG",
+    "milan-daily-weather": "LIMC",
+    "milan-daily-lowest-temperature": "LIMC",
+    "lucknow-daily-weather": "VILK",
+    "lucknow-daily-lowest-temperature": "VILK",
+    "karachi-daily-weather": "OPKC",
+    "karachi-daily-lowest-temperature": "OPKC",
+    "jeddah-daily-weather": "OEJN",
+    "jeddah-daily-lowest-temperature": "OEJN",
+    "ankara-daily-weather": "LTAC",
+    "ankara-daily-lowest-temperature": "LTAC",
+    "kuala-lumpur-daily-weather": "WMKK",
+    "kuala-lumpur-daily-lowest-temperature": "WMKK",
+    "moscow-daily-weather": "UUWW",
+    "moscow-daily-lowest-temperature": "UUWW",
+    "cape-town-daily-weather": "FACT",
+    "cape-town-daily-lowest-temperature": "FACT",
+    "jinan-daily-weather": "ZSJN",
+    "jinan-daily-lowest-temperature": "ZSJN",
+    "zhengzhou-daily-weather": "ZHCC",
+    "zhengzhou-daily-lowest-temperature": "ZHCC",
 }
 
 HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
     "hong-kong-daily-weather",
     "hong-kong-daily-lowest-temperature",
+    "atlanta-daily-weather",
+    "atlanta-daily-lowest-temperature",
+    "san-francisco-daily-weather",
+    "san-francisco-daily-lowest-temperature",
+    "seattle-daily-weather",
+    "seattle-daily-lowest-temperature",
+    "amsterdam-daily-weather",
+    "amsterdam-daily-lowest-temperature",
+    "panama-daily-weather",
+    "manila-daily-weather",
+    "mexico-city-daily-weather",
+    "munich-daily-weather",
+    "milan-daily-weather",
+    "istanbul-daily-weather",
+    "lucknow-daily-weather",
+    "tel-aviv-daily-weather",
+    "karachi-daily-weather",
+    "sao-paulo-daily-weather",
+    "jeddah-daily-weather",
+    "ankara-daily-weather",
+    "busan-daily-weather",
+    "cape-town-daily-weather",
+    "cape-town-daily-lowest-temperature",
+    "qingdao-daily-weather",
+    "kuala-lumpur-daily-weather",
+    "moscow-daily-weather",
     "chengdu-daily-weather",
     "beijing-daily-weather",
     "seoul-daily-weather",
@@ -174,6 +256,7 @@ HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
     "shanghai-daily-weather",
     "shanghai-daily-lowest-temperature",
     "tokyo-daily-weather",
+    "tokyo-daily-lowest-temperature",
     "wuhan-daily-weather",
     "chongqing-daily-weather",
     "guangzhou-daily-weather",
@@ -183,15 +266,19 @@ HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
     "nyc-daily-weather",
     "nyc-daily-lowest-temperature",
     "chicago-daily-weather",
+    "chicago-daily-lowest-temperature",
     "london-daily-weather",
     "london-daily-lowest-temperature",
     "miami-daily-weather",
     "miami-daily-lowest-temperature",
     "austin-daily-weather",
+    "austin-daily-lowest-temperature",
     "los-angeles-daily-weather",
     "los-angeles-daily-lowest-temperature",
     "houston-daily-weather",
+    "houston-daily-lowest-temperature",
     "dallas-daily-weather",
+    "dallas-daily-lowest-temperature",
     "wellington-daily-weather",
     "wellington-daily-lowest-temperature",
     "warsaw-daily-weather",
@@ -199,8 +286,11 @@ HIGH_VOLUME_WEATHER_SERIES: Tuple[str, ...] = (
     "buenos-aires-daily-weather",
     "helsinki-daily-weather",
     "denver-daily-weather",
+    "denver-daily-lowest-temperature",
     "toronto-daily-weather",
+    "toronto-daily-lowest-temperature",
     "paris-daily-weather",
+    "paris-daily-lowest-temperature",
     "madrid-daily-weather",
 )
 _MONTH_MAP = {
@@ -234,6 +324,8 @@ class WeatherBucket:
     fee_rate: float = 0.0
     fee_exponent: float = 1.0
     neg_risk: Optional[bool] = None  # Gamma `negRisk`; None = unknown (blocks LIVE C1 emits)
+    rewards_min_size: float = 0.0
+    rewards_max_spread: float = 0.0
     def contains_rounded(self, rounded_int: int) -> bool:
         return self.low_bound <= rounded_int <= self.high_bound
 
@@ -472,6 +564,10 @@ def parse_weather_event(
         icao = m_icao.group(1).upper()
     elif "weather.gov.hk" in desc.lower() and "hong kong observatory" in desc.lower():
         icao = "HKO"
+    elif "routine (metar)" in desc.lower() or "speci" in desc.lower():
+        m_par_live = _PAREN_ICAO_RE.search(desc)
+        if m_par_live and m_par_live.group(1).upper() in STATION_CATALOG:
+            icao = m_par_live.group(1).upper()
     elif allow_historical_same_station:
         m_noaa = _NOAA_ICAO_RE.search(desc)
         m_par = _PAREN_ICAO_RE.search(desc)
@@ -531,6 +627,8 @@ def parse_weather_event(
         raw_rate = float(m_fee_sched.get("rate") or 0.0)
         b_fee_rate = raw_rate if (fees_enabled and raw_rate > 0.0) else 0.0
         b_fee_exp = float(m_fee_sched.get("exponent") or 1.0)
+        raw_nr = m.get("negRisk") if m.get("negRisk") is not None else ev.get("negRisk")
+        b_neg_risk = bool(raw_nr) if raw_nr is not None else None
 
         buckets.append(
             WeatherBucket(
@@ -546,6 +644,9 @@ def parse_weather_event(
                 outcome_yes_resolved=resolved_yes,
                 fee_rate=b_fee_rate,
                 fee_exponent=b_fee_exp,
+                neg_risk=b_neg_risk,
+                rewards_min_size=float(m.get("rewardsMinSize") or 0.0),
+                rewards_max_spread=float(m.get("rewardsMaxSpread") or 0.0),
             )
         )
 
@@ -943,9 +1044,9 @@ def compute_weather_probabilities(
                 is_solar_lock_window = True
         else:
             # LOW temperature market:
-            #   (a) Late-night lock (`>= 22:30` local) with `>= 1.0°C` warming cushion, OR
-            #   (b) Post-sunrise morning trough lock (`09:30 <= local_hr < 22:30`) with `>= 2.0°C` warming cushion
-            #       AND strict NWP evening cold-front veto (`min(member_extremes) >= running_ext_c + 1.8°C`).
+            #   (a) Late-night lock (`>= 22:30` local) with `>= 1.0°C` warming cushion (`p_locked >= 0.90`), OR
+            #   (b) Post-sunrise morning trough lock (`09:30 <= local_hr < 22:30`) with `>= 2.5°C` warming cushion,
+            #       `p_locked >= 0.93`, AND strict NWP evening cold-front veto (`min(member_extremes) >= running_ext_c + 2.0°C`).
             warming_cushion_c = latest_obs.temp_c - running_ext_c
             cooling_cushion_c = warming_cushion_c
             past_trough_late = (eval_local.date() > spec.obs_date) or (
@@ -954,15 +1055,17 @@ def compute_weather_probabilities(
             morning_trough_safe = (
                 eval_local.date() == spec.obs_date
                 and 9.50 <= local_hr_float < 22.5
-                and warming_cushion_c >= 2.0
+                and warming_cushion_c >= 2.5
                 and n_raw >= 15
                 and bool(member_extremes)
-                and min(member_extremes) >= (running_ext_c + 1.8)
+                and min(member_extremes) >= (running_ext_c + 2.0)
+                and p_locked_bucket >= 0.93
             )
-            if p_locked_bucket >= 0.90 and (
-                (past_trough_late and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0))
-                or morning_trough_safe
-            ):
+            if (
+                past_trough_late
+                and p_locked_bucket >= 0.90
+                and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0)
+            ) or morning_trough_safe:
                 is_solar_lock_window = True
 
     return {
@@ -1103,6 +1206,8 @@ STATION_ROUTINE_RELEASE_MIN: Dict[str, Tuple[int, ...]] = {
     "EGLC": (20, 50), "LFPB": (0, 30), "EDDM": (20, 50), "LIMC": (20, 50), "EFHK": (20, 50),
     "RJTT": (0, 30), "RKSI": (0, 30), "RKPK": (0,), "ZSPD": (0,), "ZGSZ": (0,),
     "RPLL": (0,), "LTAC": (20, 50), "SAEZ": (0,), "NZWN": (0, 30), "MMMX": (45,),
+    "FACT": (0, 30), "EHAM": (25, 55), "MPMG": (0,), "LTFM": (20, 50), "SBGR": (0,),
+    "OPKC": (0, 30), "VILK": (0, 30), "OEJN": (0,), "LLBG": (20, 50),
 }
 
 

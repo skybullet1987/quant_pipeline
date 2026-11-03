@@ -1,0 +1,9 @@
+[Unit]
+Description=PAA Event-Driven Immediate Director Wakeup Path Unit
+
+[Path]
+PathModified=/home/skybullet1987/quant_pipeline/data/polymarket/paa/triggers/director_wakeup.trigger
+Unit=polymarket-paa-director.service
+
+[Install]
+WantedBy=default.target

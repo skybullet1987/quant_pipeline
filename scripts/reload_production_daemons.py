@@ -49,11 +49,20 @@ UNIT_DST_DIR = Path.home() / ".config/systemd/user"
 
 # name -> (systemd unit, pgrep pattern used for verification / legacy manual-process migration)
 SERVICES = {
-    "btc_recorder": ("polymarket-recorder.service", r"polymarket_terminal_recorder\.py.*BTC"),
-    "eth_recorder": ("polymarket-recorder-eth.service", r"polymarket_terminal_recorder\.py.*ETH"),
+    "multi_recorder": ("polymarket-recorder.service", r"polymarket_terminal_recorder\.py.*--asset BTC"),
+    "alpha124_shadow": ("polymarket-alpha124-shadow.service", r"alpha_124_shadow_daemon\.py"),
     "paper_trader": ("polymarket-trader.service", r"polymarket_paper_trader\.py"),
     "live_harvester": ("polymarket-live-harvester.service", r"polymarket_live_harvester\.py"),
 }
+RETIRED_STANDALONE_UNITS = (
+    "polymarket-recorder-eth.service",
+    "polymarket-recorder-sol.service",
+    "polymarket-recorder-xrp.service",
+    "polymarket-recorder-bnb.service",
+    "polymarket-recorder-doge.service",
+    "polymarket-recorder-hype.service",
+    "polymarket-exp316-shadow.service",
+)
 GRACEFUL_STOP_TIMEOUT_S = 8.0
 
 
@@ -262,8 +271,25 @@ def main():
     # Fail-closed: NEVER fall back to a hardcoded balance!
     usdc_bal = get_onchain_balance()
     print(f"✓ Authoritative On-Chain Balance: ${usdc_bal:.2f} USDC")
-    from src.polymarket_research.polymarket_live_harvester import get_equity_tier_limits
-    tier_limits = get_equity_tier_limits(usdc_bal)
+    from src.polymarket_research.holistic_strategy_governance import (
+        GLOBAL_GOVERNANCE_MANAGER,
+        get_unleashed_v5_tier_profile,
+    )
+    from src.polymarket_research.polymarket_live_harvester import STATE_FILE as _HARV_STATE_FILE, get_equity_tier_limits
+    _saved_hwm = None
+    _saved_prev_tier = None
+    try:
+        if _HARV_STATE_FILE.exists():
+            _st_reload = json.loads(_HARV_STATE_FILE.read_text(encoding="utf-8"))
+            _saved_hwm = _st_reload.get("high_water_mark_equity")
+            _saved_prev_tier = _st_reload.get("last_equity_tier")
+    except Exception:
+        pass
+    _unleashed_on = bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("sizing_tiers", {}).get("unleash_full_throttle", True))
+    if _unleashed_on:
+        tier_limits = get_unleashed_v5_tier_profile(usdc_bal, high_water_mark_equity=_saved_hwm, previous_tier=_saved_prev_tier)
+    else:
+        tier_limits = get_equity_tier_limits(usdc_bal, high_water_mark_equity=_saved_hwm, previous_tier=_saved_prev_tier)
     floor = tier_limits["min_equity_floor"]
     if usdc_bal < floor and os.getenv("POLYMARKET_ALLOW_BELOW_FLOOR_RELOAD", "0") != "1":
         print(
@@ -273,11 +299,13 @@ def main():
         sys.exit(1)
     risk_pct = tier_limits["dynamic_bankroll_pct"]
     lot_size = round(risk_pct * usdc_bal, 2)
+    sol_mult = float(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}).get("sol_canary_size_multiplier", 0.85))
+    sol_lot_size = round(lot_size * sol_mult, 2)
     max_exposure = tier_limits["max_exposure"]
     max_concurrent = tier_limits["max_concurrent_positions"]
     max_daily_loss = tier_limits["max_daily_loss"]
-    print(f"✓ Dynamic {risk_pct*100:.0f}% Sizing ({tier_limits['tier']} Tier): ${lot_size:.2f} USD base ticket (on ${usdc_bal:.2f} bankroll)")
-    print(f"✓ Auto-Stepping Tier Limits: max_exposure=${max_exposure:.2f}, max_concurrent={max_concurrent}, max_daily_loss=${max_daily_loss:.2f}, floor=${floor:.2f}")
+    print(f"✓ Dynamic {risk_pct*100:.0f}% Half-Kelly Sizing ({tier_limits['tier']} Tier): ${lot_size:.2f} BTC 1h / ${sol_lot_size:.2f} SOL 1h ({sol_mult:.2f}x) on ${usdc_bal:.2f} bankroll")
+    print(f"✓ Unleashed Tier Limits: max_exposure=${max_exposure:.2f}, dir_slots={max_concurrent}, max_daily_loss=${max_daily_loss:.2f}, floor=${floor:.2f}")
 
     install_units()
 
@@ -289,8 +317,16 @@ def main():
         terminate_gracefully(legacy_wrappers, timeout=3.0)  # legacy nohup supervisor (exits itself on rc=0)
     stop_service("paper_trader")
 
-    print("Restarting terminal recorders via systemd...")
-    for key in ("btc_recorder", "eth_recorder"):
+    print("Retiring standalone secondary recorders & legacy exp316 daemon (consolidated into single uvloop)...")
+    for ret_u in RETIRED_STANDALONE_UNITS:
+        sctl("stop", ret_u)
+        sctl("disable", ret_u)
+    stale_sec = [p for p in pgrep(r"polymarket_terminal_recorder\.py") if p != unit_main_pid("polymarket-recorder.service")]
+    if stale_sec:
+        terminate_gracefully(stale_sec)
+
+    print("Restarting consolidated multi-asset recorder & Alpha-124 shadow via systemd...")
+    for key in ("multi_recorder", "alpha124_shadow"):
         unit, pattern = SERVICES[key]
         stragglers = [p for p in pgrep(pattern) if p != unit_main_pid(unit)]
         if stragglers:
@@ -314,7 +350,7 @@ def main():
         report[key] = dedupe(key)
 
     print("=" * 70)
-    print("            v3.6 PRODUCTION DAEMON REPORT")
+    print("       v5.1 UNLEASHED FULL-THROTTLE PRODUCTION DAEMON REPORT")
     print("=" * 70)
     all_ok = True
     for idx, (key, (unit, _)) in enumerate(SERVICES.items(), 1):
@@ -324,9 +360,9 @@ def main():
         active = sctl("is-active", unit).stdout.strip()
         print(f"{idx}. {key:<15} PID(s): {pids}  systemd={active:<10} {'[RUNNING OK]' if ok else '[CHECK!]'}")
     print(f"Risk limits:       floor ${floor:.2f} | daily loss ${max_daily_loss:.2f} | "
-          f"max exposure ${max_exposure:.2f} | concurrent {max_concurrent} [{tier_limits['tier']} Tier]")
-    print(f"Ticket sizing:     {risk_pct*100:.0f}% -> ${lot_size:.2f} base (2nd correlated ~54% of that)")
-    print(f"Capacity cap:      --max-ticket-cap 200.0 --max-price-ceiling 0.86")
+          f"max exposure ${max_exposure:.2f} | dir slots {max_concurrent} [{tier_limits['tier']} Tier]")
+    print(f"Ticket sizing:     {risk_pct*100:.0f}% -> ${lot_size:.2f} BTC 1h / ${sol_lot_size:.2f} SOL 1h ({sol_mult:.2f}x) | D1 85% / BOND1 75% cash")
+    print("Capacity cap:      --max-ticket-cap 200.0 --max-price-ceiling 0.76 (Taker<=0.74, 15m Maker<=0.72)")
     print(f"Exactly 1 PID/daemon: {'YES' if all_ok else 'NO'}")
     print("=" * 70)
 

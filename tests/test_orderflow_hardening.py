@@ -1137,11 +1137,16 @@ def test_sprint4_forensic_auditor_classification_and_wfo_queue_guardrail(tmp_pat
 
 def test_wfo_v43_hybrid_d1_fak2c_and_correlated_growth_guard(tmp_path, monkeypatch):
     import json
+    import json
     import src.polymarket_research.polymarket_live_harvester as hv_mod
     from src.polymarket_research.polymarket_live_executor import load_risk_config
 
     rcfg = load_risk_config()
-    assert rcfg["correlated_crypto_single_slot_threshold"] == 110.0
+    assert rcfg["correlated_crypto_single_slot_threshold"] == 150.0
+    assert rcfg["d1_routing_mode"] == "hybrid_auto"
+    assert rcfg["d1_max_box_cost_net"] == pytest.approx(0.985)
+    assert rcfg["high_price_ticket_cap_pct"] == pytest.approx(0.16)
+    assert rcfg["phase3a_15m_long_tte_max_price"] == pytest.approx(0.72)
     assert rcfg["enable_fak_plus2c_fallback"] is False
     assert rcfg["d1_depth_ratio_threshold"] == pytest.approx(1.20)
     assert rcfg["d1_max_giveback_frac"] == pytest.approx(0.25)
@@ -1511,6 +1516,564 @@ def test_round2_polymarket_adversarial_qa_fixes(tmp_path, monkeypatch):
     assert sbk.count_live_open_or_pending_positions({"active_positions": {"T1": {"remaining_shares": 10.0}}}) == 1
     assert sbk.count_live_open_or_pending_positions({"active_positions": {}, "pending_entry_intents": {"I1": {}}}) == 1
     assert sbk.count_live_open_or_pending_positions({"active_positions": {}, "pending_entry_intents": {}}) == 0
+
+
+def test_full_throttle_unlimited_slots_and_universal_81_82_ceiling(tmp_path, monkeypatch):
+    """
+    Verifies Full-Throttle Unlimited-Slot production invariants:
+      1. Risk config sets unlimited_slots=True, $100.00 exposure cap, $0.00 box reserve, 99 portfolio/box slots,
+         directional_taker_max_price=0.81, directional_maker_max_price=0.82.
+      2. systemd/polymarket-live-harvester.service passes --max-concurrent 99 --max-price-ceiling 0.82.
+      3. Universal <=$0.81 Taker / <=$0.82 0%-fee Maker across ALL TTEs (including TTE=180s <= 240s):
+         - $0.85 ask / $0.83 bid at TTE=180s is hard-vetoed (0 Taker, 0 Maker above $0.82).
+         - $0.83 ask / $0.81 bid at TTE=180s routes strictly to 0%-fee Maker <= $0.82 (0 Taker).
+      4. On $76.53 Seed equity with CLI --max-concurrent 99 (allow_cli_concurrency=True), multiple simultaneous
+         BTC + ETH positions and 4+ D1 boxes execute without artificial slot caps whenever free cash allows.
+    """
+    import asyncio
+    import json
+    from pathlib import Path
+    import json
+    import src.polymarket_research.polymarket_live_harvester as hv_mod
+    from src.polymarket_research.polymarket_live_executor import load_risk_config
+
+    rcfg = load_risk_config()
+    assert rcfg["unlimited_slots"] is True
+    assert rcfg["max_exposure"] == pytest.approx(100.0)
+    assert rcfg["d1_box_collateral_reserve_usd"] == pytest.approx(0.0)
+    assert rcfg["max_concurrent_d1_boxes"] == 99
+    assert rcfg["max_total_portfolio_slots"] == 99
+    assert rcfg["directional_taker_max_price"] == pytest.approx(0.74)
+    assert rcfg["directional_maker_max_price"] == pytest.approx(0.76)
+
+    svc_txt = (Path(__file__).resolve().parents[1] / "systemd" / "polymarket-live-harvester.service").read_text(encoding="utf-8")
+    exec_lines = [ln for ln in svc_txt.splitlines() if ln.strip().startswith("ExecStart=")]
+    assert exec_lines and "--max-concurrent 99" in exec_lines[0] and "--max-price-ceiling 0.82" in exec_lines[0]
+
+    live_dir = tmp_path / "full_throttle"
+    live_dir.mkdir()
+    monkeypatch.setattr(hv_mod, "DATA_DIR", live_dir)
+    monkeypatch.setattr(hv_mod, "STATE_FILE", live_dir / "state.json")
+    monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT", "1")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(live_dir))
+
+    h = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.76, max_concurrent=99, allow_cli_concurrency=True,
+        allowed_assets={"BTC", "SOL"},
+    )
+    monkeypatch.setitem(
+        hv_mod.GLOBAL_GOVERNANCE_MANAGER.snapshot,
+        "directional",
+        {
+            **hv_mod.GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}),
+            "enable_15m_taker": False,
+            "enable_15m_subordinate_maker": True,
+            "enable_1h_shielded_maker": True,
+            "max_taker_price_1h": 0.74,
+            "max_maker_price_1h": 0.76,
+            "max_taker_price_15m": 0.72,
+            "max_maker_price_15m": 0.72,
+        },
+    )
+    h.dry_run = False
+    h._startup_reconciled = True
+    h.executor.dry_run = False
+    h.executor.auth_mode = "AUTHENTICATED_L2"
+    h.executor.client = object()  # real unmocked live marker
+    h.executor.is_authenticated = True
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "OK")
+    h._last_known_collateral = 76.53
+    h.high_water_mark_equity = 76.53
+    h.executor.get_collateral_balance = lambda *a, **kw: h._last_known_collateral
+    h._update_equity_tier(76.53)
+    assert h._is_unlimited_slots_active() is True
+    assert h.max_exposure == pytest.approx(100.0)
+    assert h.max_concurrent_positions == 99
+
+    mkr_posts = []
+    h.executor.place_passive_maker_entry = lambda **kw: (
+        mkr_posts.append(kw) or {"success": True, "orderID": f"0xCB_{len(mkr_posts)}", "price": kw["price"], "shares": 16.0}
+    )
+    h.executor.cancel_order = lambda oid: {"is_canceled": False, "outcome": "FILLED", "matched": 16.0}
+    h.executor.get_order_fill_summary = lambda oid, tok: {
+        "matched": 16.0, "avg_price": 0.71, "terminal": True, "resting": False, "trade_ids": [f"TCB_{oid}"], "tx_hashes": [f"0xtcb_{oid}"]
+    }
+    h.executor.post_maker_exit_order = lambda **kw: {"success": True, "orderID": "0xEX_CB"}
+
+    now_u = time.time()
+    # 3a. Short-TTE 15m (180s) at $0.85 ask / $0.83 bid -> MUST BE VETOED (cannot post above $0.72 on 15m!)
+    shk_85 = {
+        "event_id": "CB_85", "market_id": "9901", "condition_id": "0x9901", "t0_unix": now_u,
+        "title": "Bitcoin Up or Down - 15m", "asset": "BTC", "horizon": "15m", "shock_direction": "BUY",
+        "seconds_to_expiry": 180.0, "spot_at_t0": 80200.0, "trigger_price": 80200.0,
+        "candle_open_spot": 80000.0, "twap_60s_open": 80000.0, "candle_distance_pct": 0.25,
+        "candle_sigma": 0.0012, "shock_volume_100ms": 2_500_000.0, "shock_ofi": 0.90,
+        "fee_metadata": {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0x9901"},
+        "pre_shock_features_t0": {"UP": {
+            "token_id": "7" * 30, "raw_top_asks": [[0.85, 150.0]], "raw_top_bids": [[0.83, 150.0]],
+            "effective_price_$25": 0.85, "vwap_$25": 0.85, "age_ask_ms": 300.0, "obi_l1": 0.2,
+            "age_book_ms": 20.0, "book_timestamp": now_u,
+        }},
+    }
+    asyncio.run(h.evaluate_shock_and_execute(shk_85))
+    assert len(mkr_posts) == 0 and len(h.active_positions) == 0
+
+    # 3b. Short-TTE 15m (180s) at $0.73 ask / $0.71 bid -> 15m Taker disabled, routes strictly to 0%-fee Maker at <= $0.72!
+    shk_83 = dict(shk_85, event_id="CB_83", market_id="9902", condition_id="0x9902")
+    shk_83["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0x9902"}
+    shk_83["pre_shock_features_t0"] = {"UP": {
+        "token_id": "8" * 30, "raw_top_asks": [[0.73, 150.0]], "raw_top_bids": [[0.71, 150.0]],
+        "effective_price_$25": 0.73, "vwap_$25": 0.73, "age_ask_ms": 300.0, "obi_l1": 0.2,
+        "age_book_ms": 20.0, "book_timestamp": now_u,
+    }}
+    asyncio.run(h.evaluate_shock_and_execute(shk_83))
+    assert len(mkr_posts) == 1 and mkr_posts[0]["price"] <= 0.72 and mkr_posts[0]["max_price_ceiling"] <= 0.72
+    assert len(h.active_positions) == 1
+
+    # 4a. Simultaneous 2nd SOL 1h setup at $0.75 ask / $0.74 bid ALSO routes to 0%-fee Maker <= $0.76 in Full-Throttle mode!
+    shk_sol_2 = dict(shk_85, event_id="CB_SOL_2", market_id="9903", condition_id="0x9903", asset="SOL", horizon="1h", title="Solana Up or Down - 3PM ET", seconds_to_expiry=300.0, btc_shock_direction="BUY")
+    shk_sol_2["fee_metadata"] = {"fee_rate_market": 0.07, "fee_exponent": 1.0, "condition_id": "0x9903"}
+    shk_sol_2["pre_shock_features_t0"] = {"UP": {
+        "token_id": "9" * 30, "raw_top_asks": [[0.75, 150.0]], "raw_top_bids": [[0.74, 150.0]],
+        "effective_price_$25": 0.75, "vwap_$25": 0.75, "age_ask_ms": 300.0, "obi_l1": 0.2,
+        "age_book_ms": 20.0, "book_timestamp": now_u,
+    }}
+    asyncio.run(h.evaluate_shock_and_execute(shk_sol_2))
+    assert len(h.active_positions) == 2, "2nd simultaneous qualified position MUST execute in Full-Throttle mode!"
+    h.save_state()
+    saved = json.loads((live_dir / "state.json").read_text(encoding="utf-8"))
+    assert saved["unlimited_slots"] is True and saved["max_concurrent_positions"] == 99
+
+
+def test_single_leg_lock_live_bridge_and_negrisk_convert_calldata(tmp_path, monkeypatch):
+    """Verifies SINGLE_LEG_LOCK blocks at 7/8, auto-executes at 8/8 with DETERMINISTIC_TERMINAL_HOLD, and encodes convertPositions(0xc64748c4)."""
+    import json
+    import time
+    import src.polymarket_research.polymarket_live_harvester as hv_mod
+    from src.polymarket_research.polymarket_live_harvester import (
+        PolymarketLiveHarvester,
+        position_may_post_new_maker_exit,
+    )
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+
+    # 1. Verify NegRiskAdapter.convertPositions ABI calldata (selector 0xc64748c4, bitmask, 1e6 scaling)
+    mkt_id = "0x" + "12" * 32
+    call = PolymarketLiveExecutor.encode_negrisk_convert_positions_call(mkt_id, [0, 2, 4], 12.5)
+    assert call["target"].lower() == "0xd91e80cf2e7be2e162c6513ced06f1dd0da35296"
+    assert call["data"].startswith("0xc64748c4" + ("12" * 32))
+    assert int(call["index_set"], 16) == (1 | 4 | 16)  # 21 = 0x15
+    assert call["amount_raw"] == "12500000"
+    assert len(call["data"]) == 2 + 8 + 64 * 3
+
+    # 2. Verify SINGLE_LEG_LOCK (BOND1_UMA_RESOLUTION_CARRY) strict 7/8 block -> 8/8 auto-live graduation + DETERMINISTIC_TERMINAL_HOLD
+    live_dir = tmp_path / "sll_bridge"
+    live_dir.mkdir()
+    monkeypatch.setattr(hv_mod, "DATA_DIR", live_dir)
+    monkeypatch.setattr(hv_mod, "STATE_FILE", live_dir / "state.json")
+    a124_path = live_dir / "alpha124_shadow_state.json"
+
+    h = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.82, max_concurrent=99, allow_cli_concurrency=True,
+    )
+    h._last_known_collateral = 120.0
+    tok_w = "9" * 28
+    tok_l = "8" * 28
+    h.executor.get_market_book = lambda tid: (
+        {"asks": [{"price": 0.992, "size": 50.0}], "bids": [{"price": 0.990, "size": 50.0}]}
+        if tid == tok_w
+        else {"asks": [{"price": 0.010, "size": 50.0}], "bids": [{"price": 0.004, "size": 50.0}]}
+    )
+
+    now_u = time.time()
+    cand_bond1 = {
+        "box_id": "SLL_BOND1_TEST",
+        "dedupe_key": "BOND1_TEST_MKT1",
+        "box_type": "SINGLE_LEG_LOCK",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "asset": "UMA",
+        "ts_unix": now_u,
+        "expiry_ts": now_u + 3600.0,
+        "shares": 20.0,
+        "box_cost_net": 0.992,
+        "max_box_cost_net": 0.995,
+        "max_opp_bid": 0.008,
+        "hold_to_maturity": True,
+        "leg_a_token_id": tok_w,
+        "leg_a_opp_token_id": tok_l,
+        "leg_a_market_id": "880011",
+        "leg_a_condition_id": "0x" + "aa" * 32,
+        "leg_a_side": "YES",
+        "leg_a_limit_price": 0.992,
+        "leg_a_fee_rate": 0.0,
+        "leg_a_fee_exponent": 1.0,
+        "leg_a_neg_risk": False,
+        "leg_a_tick_size": 0.001,
+    }
+
+    # 2a. Non-bridged W1_SOLAR_PEAK_LOCK at 7/8 AND any BOND1 with losses >= 1 MUST NOT execute live!
+    a124_path.write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 30, "wins": 30, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 122.0},
+            "W1_SOLAR_PEAK_LOCK": {"closed": 7, "wins": 7, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 18.5},
+            "BOND1_UMA_RESOLUTION_CARRY": {"closed": 7, "wins": 6, "losses": 1, "win_rate_pct": 85.7, "realized_pnl_t1000_usd": 5.0},
+        }
+    }), encoding="utf-8")
+    r_w7 = h.maybe_execute_graduated_d1_box(dict(cand_bond1, sleeve_source="W1_SOLAR_PEAK_LOCK", dedupe_key="W1_7_TEST"))
+    assert r_w7["executed"] is False and "SLEEVE_NOT_YET_8_OF_8_GRADUATED" in r_w7["reason"]
+    r_b_loss = h.maybe_execute_graduated_d1_box(cand_bond1)
+    assert r_b_loss["executed"] is False and "SLEEVE_NOT_YET_8_OF_8_GRADUATED" in r_b_loss["reason"]
+
+    # 2b. Once 8W / 0L (8/8, 100% WR), BOND1 executes automatically at $0.992 (0.001 tick!) and holds to $1.00 maturity!
+    a124_path.write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 30, "wins": 30, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 122.0},
+            "BOND1_UMA_RESOLUTION_CARRY": {"closed": 8, "wins": 8, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 21.0},
+        }
+    }), encoding="utf-8")
+    r_8 = h.maybe_execute_graduated_d1_box(cand_bond1)
+    assert r_8["executed"] is True
+    pos = h.active_positions["SLL_BOND1_TEST"]
+    assert pos["is_single_leg_lock"] is True
+    assert pos["hold_to_maturity_lock"] is True
+    assert pos["exit_order_status"] == "DETERMINISTIC_TERMINAL_HOLD"
+    assert pos["target_exit_price"] == 1.0
+    assert position_may_post_new_maker_exit(pos) is False  # NEVER posts a $0.99 sell order on a $0.992 bond!
+
+
+def test_unlock1_overround_batch_cancel_velocity_gate_and_unlock2_negrisk_v2_convert(tmp_path, monkeypatch):
+    """
+    Verifies Unlock #1 & Unlock #2 end-to-end:
+      1. `_try_atomic_box_overround_unwind` unwraps real `{oid: CancelOrderResult}` batch cancel dicts on LP1/MACRO_DOMINANCE.
+      2. `LOW_CAPITAL_VELOCITY_LONG_TTE` blocks slow 38.8h $0.990 BARRIER_MONO boxes on a $74.08 bankroll while allowing
+         fast-recycle 4.7d $0.990 LP1 boxes (25 bps/hr effective recycle) and <= $0.980 high-floor boxes.
+      3. `emit_live_negrisk_convert_candidate` -> `maybe_execute_graduated_d1_box` -> `execute_negrisk_subset_convert_arb`
+         routes `convertPositions` (`0xc64748c4`) to `NegRiskAdapterV2` (`0xadA2005600Dec949baf300f4C6120000bDB6eAab`).
+      4. `enable_live_maker_anchor_boxes=False` cleanly disables 1-leg Maker-Anchor execution without side effects.
+    """
+    import asyncio
+    import json
+    import time
+    from unittest.mock import MagicMock
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    import src.polymarket_research.polymarket_live_harvester as hv_mod
+    from src.polymarket_research.polymarket_live_executor import CancelOrderResult, PolymarketLiveExecutor
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import NegRiskConvertSlateSpec
+
+    live_dir = tmp_path / "unlock_12"
+    live_dir.mkdir()
+    monkeypatch.setattr(hv_mod, "DATA_DIR", live_dir)
+    monkeypatch.setattr(hv_mod, "STATE_FILE", live_dir / "state.json")
+    a124_path = live_dir / "alpha124_shadow_state.json"
+    a124_path.write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                "closed": 43, "wins": 43, "losses": 0, "win_rate_pct": 100.0,
+                "realized_pnl_t1000_usd": 175.0, "legging_adjusted_pnl_t1000_usd": 150.0,
+            },
+            "NR2_CONVERT_NO_SUBSET_ARB": {
+                "closed": 3, "wins": 3, "losses": 0, "win_rate_pct": 100.0,
+                "realized_pnl_t1000_usd": 9.5, "legging_adjusted_pnl_t1000_usd": 9.5,
+            },
+        }
+    }), encoding="utf-8")
+
+    # --- Part 1: Real `{oid: CancelOrderResult}` batch cancel shape in `_try_atomic_box_overround_unwind` ---
+    h_ovr = PolymarketLiveHarvester(
+        dry_run=False, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.82, max_concurrent=4, allow_cli_concurrency=True,
+    )
+    now_t = time.time()
+    tok_la, tok_lb = "11" * 16, "22" * 16
+    h_ovr.active_positions = {
+        "LP1_L1": {
+            "trade_id": "LP1_L1", "box_id": "BOX_LP1_REAL", "box_partner_trade_id": "LP1_L2",
+            "is_dominance_box": True, "box_type": "MACRO_DOMINANCE", "sleeve": "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+            "box_cost_net": 0.990, "token_id": tok_la, "target_token": "YES", "entry_price": 0.495,
+            "entry_shares": 16.0, "remaining_shares": 16.0, "notional_usd": 7.92, "fee_usd": 0.0,
+            "fee_rate_applied": 0.0, "fee_exponent_applied": 1.0, "inventory_reconciled": True,
+            "exit_order_id": "0x40de_real_1", "exit_order_status": "RESTING", "target_exit_price": 0.99,
+            "candle_expiry_ts": now_t + 300000.0, "status": "POSITION_CONFIRMED",
+        },
+        "LP1_L2": {
+            "trade_id": "LP1_L2", "box_id": "BOX_LP1_REAL", "box_partner_trade_id": "LP1_L1",
+            "is_dominance_box": True, "box_type": "MACRO_DOMINANCE", "sleeve": "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+            "box_cost_net": 0.990, "token_id": tok_lb, "target_token": "NO", "entry_price": 0.495,
+            "entry_shares": 16.0, "remaining_shares": 16.0, "notional_usd": 7.92, "fee_usd": 0.0,
+            "fee_rate_applied": 0.0, "fee_exponent_applied": 1.0, "inventory_reconciled": True,
+            "exit_order_id": "0xcf0c_real_2", "exit_order_status": "RESTING", "target_exit_price": 0.99,
+            "candle_expiry_ts": now_t + 300000.0, "status": "POSITION_CONFIRMED",
+        },
+    }
+    h_ovr._get_verified_shm_book = lambda p: (
+        {"bids": [{"price": "0.502", "size": "40"}], "asks": [{"price": "0.515", "size": "40"}]}
+        if p["token_id"] == tok_la
+        else {"bids": [{"price": "0.500", "size": "40"}], "asks": [{"price": "0.510", "size": "40"}]}
+    )
+    h_ovr.executor.cancel_orders_batch = MagicMock(return_value={
+        "0x40de_real_1": CancelOrderResult(success=True, is_canceled=True, canceled=["0x40de_real_1"], not_canceled={}, raw_response={}),
+        "0xcf0c_real_2": CancelOrderResult(success=True, is_canceled=True, canceled=["0xcf0c_real_2"], not_canceled={}, raw_response={}),
+    })
+    h_ovr.executor.get_order_fill_summary = MagicMock(side_effect=lambda oid, _tok: {
+        "order_id": str(oid), "matched": 0.0, "terminal": True, "resting": False,
+    })
+    h_ovr.executor.execute_atomic_box_overround_unwind = MagicMock(return_value={
+        "success": True, "partial_leg_unwind": False, "outcome_unknown": False, "box_id": "BOX_LP1_REAL", "shares": 16.0,
+        "leg_a": {"filled": True, "outcome_unknown": False, "orderID": "UW_A", "matched_size": 16.0, "taking_amount": 8.032, "fee_usd": 0.0, "avg_px": 0.502},
+        "leg_b": {"filled": True, "outcome_unknown": False, "orderID": "UW_B", "matched_size": 16.0, "taking_amount": 8.000, "fee_usd": 0.0, "avg_px": 0.500},
+    })
+    asyncio.run(h_ovr._try_atomic_box_overround_unwind(now_t, {"0x40de_real_1", "0xcf0c_real_2"}))
+    assert len(h_ovr.active_positions) == 0, "Real per-order CancelOrderResult dict MUST unwrap and complete overround unwind!"
+    assert sum(float(c.get("net_pnl_usd") or 0.0) for c in h_ovr.closed_positions) > 0.15
+
+    # --- Part 2: Velocity Gate (`LOW_CAPITAL_VELOCITY_LONG_TTE`) on micro-bankroll ($74.08 < $250) ---
+    h_vel = PolymarketLiveHarvester(
+        dry_run=False, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.82, max_concurrent=4, allow_cli_concurrency=True,
+    )
+    h_vel._startup_reconciled = True
+    h_vel._last_known_collateral = 74.08
+    h_vel.executor.auth_mode = "LIVE"
+    h_vel.executor.get_market_book = lambda tid: (
+        {"asks": [{"price": "0.49", "size": "60"}], "bids": [{"price": "0.48", "size": "60"}]}
+        if tid == "3" * 28
+        else {"asks": [{"price": "0.50", "size": "60"}], "bids": [{"price": "0.49", "size": "60"}]}
+    )
+    h_vel.executor.get_conditional_token_balance = lambda _t: 0.0
+    h_vel.executor.prime_token_contract_metadata = lambda *a, **kw: None
+    h_vel.executor.execute_atomic_dominance_box = MagicMock(return_value={
+        "success": True, "legged_out": False, "outcome_unknown": False, "shares": 16.0, "total_spent_usd": 15.84, "total_fee_usd": 0.0,
+        "leg_a": {"filled": True, "orderID": "LA1", "matched_size": 16.0, "making_amount": 7.92, "fee_usd": 0.0, "avg_px": 0.495},
+        "leg_b": {"filled": True, "orderID": "LB1", "matched_size": 16.0, "making_amount": 7.92, "fee_usd": 0.0, "avg_px": 0.495},
+    })
+    base_cand = {
+        "box_id": "VEL_TEST_1", "dedupe_key": "VEL_SLOW_WTI", "box_type": "BARRIER_MONO",
+        "sleeve_source": "CM_B3_PYTH_BARRIER_BOX", "asset": "WTI", "ts_unix": now_t, "is_quiet_book": True,
+        "expiry_ts": now_t + 38.8 * 3600.0, "shares": 16, "box_cost_net": 0.990, "max_box_cost_net": 0.993,
+        "leg_a_token_id": "3" * 28, "leg_a_opp_token_id": "5" * 28, "leg_a_market_id": "71001", "leg_a_condition_id": "0x" + "11" * 32,
+        "leg_a_side": "YES", "leg_a_limit_price": 0.49, "leg_a_fee_rate": 0.0, "leg_a_fee_exponent": 1.0,
+        "leg_b_token_id": "4" * 28, "leg_b_opp_token_id": "6" * 28, "leg_b_market_id": "71002", "leg_b_condition_id": "0x" + "22" * 32,
+        "leg_b_side": "NO", "leg_b_limit_price": 0.50, "leg_b_fee_rate": 0.0, "leg_b_fee_exponent": 1.0,
+    }
+    res_slow = h_vel.maybe_execute_graduated_d1_box(base_cand)
+    assert res_slow["executed"] is False and res_slow["reason"].startswith("LOW_CAPITAL_VELOCITY_LONG_TTE:")
+
+    # Fast-recycle 4.7-day LP1 box at $0.990 (`eff_tte_hrs = 4.0h` -> 25 bps/hr) MUST pass and execute!
+    lp1_cand = dict(
+        base_cand,
+        box_id="VEL_LP1_FAST",
+        dedupe_key="VEL_LP1_4D7",
+        box_type="MACRO_DOMINANCE",
+        sleeve_source="LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+        expiry_ts=now_t + 4.7 * 86400.0,
+    )
+    res_lp1 = h_vel.maybe_execute_graduated_d1_box(lp1_cand)
+    assert res_lp1["executed"] is True, f"4.7d LP1 fast-recycle box failed: {res_lp1}"
+
+    # High-floor fast <=6h box at $0.980 (`5.0h`, `40 bps/hr >= 25 bps/hr`) MUST pass on $74.08 bankroll, while 38.8h is blocked!
+    h_vel.active_positions.clear()
+    h_vel.executor.get_market_book = lambda tid: (
+        {"asks": [{"price": "0.48", "size": "60"}], "bids": [{"price": "0.47", "size": "60"}]}
+        if tid == "3" * 28
+        else {"asks": [{"price": "0.50", "size": "60"}], "bids": [{"price": "0.49", "size": "60"}]}
+    )
+    slow_980 = dict(base_cand, box_id="VEL_SLOW_980", dedupe_key="VEL_WTI_SLOW980", box_cost_net=0.980, leg_a_limit_price=0.48)
+    assert h_vel.maybe_execute_graduated_d1_box(slow_980)["executed"] is False
+    hi_floor_cand = dict(base_cand, box_id="VEL_HI_FLOOR", dedupe_key="VEL_WTI_980", box_cost_net=0.980, leg_a_limit_price=0.48, expiry_ts=now_t + 5.0 * 3600.0)
+    res_hi = h_vel.maybe_execute_graduated_d1_box(hi_floor_cand)
+    assert res_hi["executed"] is True, f"High-floor 5h $0.980 box failed: {res_hi}"
+
+    # --- Part 3: End-to-End `NEGRISK_CONVERT` (`NegRiskAdapterV2` `0xadA2...` + `0xc64748c4`) ---
+    v2_call = PolymarketLiveExecutor.encode_negrisk_convert_positions_call(
+        "0x" + "ab" * 32, [0, 1, 2], 10.0, adapter_address=PolymarketLiveExecutor.NEG_RISK_ADAPTER_V2_ADDRESS
+    )
+    assert v2_call["target"].lower() == "0xada2005600dec949baf300f4c6120000bdb6eaab"
+    assert v2_call["data"].startswith("0xc64748c4" + ("ab" * 32))
+    assert int(v2_call["index_set"], 16) == 7  # 0b111
+
+    cand_file = tmp_path / "nr2_live_cands.jsonl"
+    monkeypatch.setattr(a124, "D1_LIVE_CANDIDATES_FILE", cand_file)
+    d_nr = a124.Alpha124ShadowDaemon(single_scan=True)
+    nr_spec = NegRiskConvertSlateSpec(
+        event_id="90901", slug="test-3way-closed", title="Test Closed 3-Way Partition",
+        neg_risk_market_id="0x" + "cd" * 32, neg_risk_augmented=False, total_market_count=3,
+        is_closed_convert_safe=True, end_ts=now_t + 7200.0,
+        brackets=[
+            {"market_id": f"990{i}", "condition_id": f"0x{i+1:064x}", "question_id": f"0x{i+1:064x}",
+             "question_index": i, "label": f"Outcome {i}", "yes_token": f"{i+1}" * 28, "no_token": f"{i+5}" * 28,
+             "fee_rate": 0.0, "fee_exponent": 1.0}
+            for i in range(3)
+        ],
+    )
+    nr_books = {
+        b["no_token"]: {"asks": [{"price": "0.65", "size": "40"}], "bids": [{"price": "0.64", "size": "40"}]}
+        for b in nr_spec.brackets
+    }
+    arb_hit = {
+        "mode": "NR2_PURE_CASH_CONVERT",
+        "shares": 10,
+        "net_edge_per_share": 0.050,
+        "no_legs": [
+            {"token_id": b["no_token"], "bracket": b, "walk": {"worst_px": 0.65, "net_per_share": 0.65}}
+            for b in nr_spec.brackets
+        ],
+        "yes_sell_legs": [],
+        "retained_free_yes_brackets": [],
+    }
+    assert d_nr.emit_live_negrisk_convert_candidate(
+        sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",
+        spec=nr_spec,
+        dedupe_key="NR2_M3_90901_0_1_2",
+        arb_hit=arb_hit,
+        books_by_token=nr_books,
+        now_ts=now_t,
+        fee_bips=0,
+    ) is True
+    emitted_nr = json.loads(cand_file.read_text(encoding="utf-8").strip())
+    assert emitted_nr["box_type"] == "NEGRISK_CONVERT" and emitted_nr["convert_mode"] == "NR2_PURE_CASH_CONVERT"
+
+    h_nr = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.82, max_concurrent=4, allow_cli_concurrency=True,
+    )
+    h_nr._last_known_collateral = 150.0
+    h_nr.executor.get_market_book = lambda tid: nr_books.get(tid, {"asks": [], "bids": []})
+    out_nr = h_nr.maybe_execute_graduated_d1_box(emitted_nr)
+    assert out_nr["executed"] is True, f"NEGRISK_CONVERT dry-run bridge failed: {out_nr}"
+    assert h_nr.closed_positions[-1]["close_reason"] == "ONCHAIN_NEGRISK_CONVERT_COMPLETED"
+    assert h_nr.closed_positions[-1]["net_pnl_usd"] > 0.25
+
+    # --- Part 4: Clean config gate for 1-leg Maker-Anchor boxes ---
+    h_nr.risk_config = dict(hv_mod.RISK_CONFIG, enable_live_maker_anchor_boxes=False)
+    out_ma_off = asyncio.run(h_nr.maybe_execute_graduated_maker_anchor_box({"box_type": "ZERO_FEE_MAKER_ANCHOR"}))
+    assert out_ma_off["executed"] is False and out_ma_off["reason"] == "MAKER_ANCHOR_BOX_DISABLED"
+
+
+def test_bond2_live_bridge_soc1_fee_exact_bridge_and_default_maker_anchor_quarantine(tmp_path, monkeypatch):
+    """
+    Verifies:
+      1. Production `config/polymarket_risk_config.json` defaults `enable_live_maker_anchor_boxes=False`,
+         so a default `PolymarketLiveHarvester` rejects 1-leg Maker-Anchor boxes immediately.
+      2. `BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY` bridges immediately to Live alongside `BOND1` (0 losses, <55m carry).
+      3. Fee-bearing `SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX` (`5%` soccer fee, `box_cost_net <= $0.988`, `TTE <= 6h`)
+         bridges immediately via `soc1_fee_exact_ok`, while `TTE > 6h` `5%`-fee `SOC1` waits for `8/8` `_grad8`.
+    """
+    import json
+    import src.polymarket_research.polymarket_live_harvester as hv_mod
+    from src.polymarket_research.polymarket_live_executor import load_risk_config
+
+    monkeypatch.setattr(hv_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(hv_mod, "STATE_FILE", tmp_path / "state.json")
+
+    # 1. Production config defaults `enable_live_maker_anchor_boxes` to False
+    prod_cfg = load_risk_config()
+    assert prod_cfg["enable_live_maker_anchor_boxes"] is False
+    h_def = PolymarketLiveHarvester(
+        dry_run=True, dynamic_sizing=True, hold_to_maturity=False, exit_policy="hold_98",
+        ticket_notional=16.50, max_price_ceiling=0.82, max_concurrent=4, allow_cli_concurrency=True,
+    )
+    res_def_ma = asyncio.run(h_def.maybe_execute_graduated_maker_anchor_box({"box_type": "DOMINANCE_MAKER_ANCHOR"}))
+    assert res_def_ma["executed"] is False and res_def_ma["reason"] == "MAKER_ANCHOR_BOX_DISABLED"
+
+    # Shadow state with D1 graduated, BOND2 at 0/8, SOC1 at 0/8
+    (tmp_path / "alpha124_shadow_state.json").write_text(
+        json.dumps({
+            "by_sleeve": {
+                "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                    "closed": 30, "losses": 0, "win_rate_pct": 100.0,
+                    "realized_pnl_t1000_usd": 122.0, "legging_adjusted_pnl_t1000_usd": 121.0,
+                },
+                "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY": {"closed": 0, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 0.0},
+                "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX": {"closed": 0, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 0.0},
+            }
+        }),
+        encoding="utf-8",
+    )
+
+    now_s = time.time()
+    tok_b2_w = "555555555555555555555555555501"
+    tok_b2_o = "555555555555555555555555555502"
+    tok_s_a = "666666666666666666666666666601"
+    tok_s_oa = "666666666666666666666666666602"
+    tok_s_b = "666666666666666666666666666603"
+    tok_s_ob = "666666666666666666666666666604"
+
+    books = {
+        tok_b2_w: {"asks": [{"price": "0.990", "size": "100"}], "bids": [{"price": "0.985", "size": "100"}]},
+        tok_b2_o: {"asks": [{"price": "0.015", "size": "100"}], "bids": [{"price": "0.004", "size": "100"}]},
+        tok_s_a: {"asks": [{"price": "0.48", "size": "80"}], "bids": [{"price": "0.46", "size": "80"}]},
+        tok_s_oa: {"asks": [{"price": "0.54", "size": "80"}], "bids": [{"price": "0.51", "size": "80"}]},
+        tok_s_b: {"asks": [{"price": "0.48", "size": "80"}], "bids": [{"price": "0.46", "size": "80"}]},
+        tok_s_ob: {"asks": [{"price": "0.54", "size": "80"}], "bids": [{"price": "0.51", "size": "80"}]},
+    }
+    h_def._last_known_collateral = 120.0
+    h_def.executor.get_market_book = lambda tid: books[tid]
+
+    # 2. BOND2 bridges immediately (<55m final-hour carry)
+    bond2_cand = {
+        "box_id": "BOND2_LIVE_TEST_1",
+        "dedupe_key": "BOND2_DK_1",
+        "box_type": "SINGLE_LEG_LOCK",
+        "sleeve_source": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+        "asset": "SPORTS",
+        "ts_unix": now_s,
+        "expiry_ts": now_s + 1800.0,
+        "leg_a_token_id": tok_b2_w,
+        "leg_a_opp_token_id": tok_b2_o,
+        "leg_a_market_id": "88001",
+        "leg_a_condition_id": "0x" + "ab" * 32,
+        "leg_a_side": "YES",
+        "leg_a_fee_rate": 0.0,
+        "leg_a_fee_exponent": 1.0,
+        "max_box_cost_net": 0.995,
+        "max_opp_bid": 0.006,
+        "hold_to_maturity": True,
+    }
+    r_b2 = h_def.maybe_execute_graduated_d1_box(bond2_cand)
+    assert r_b2["executed"] is True, f"BOND2 immediate live bridge failed: {r_b2}"
+    h_def.active_positions.clear()
+
+    # 3. 5%-fee SOC1: TTE <= 6h bridges immediately (`0.48 + 0.48 + 2*(0.05*0.48*0.52) = 0.9850 <= 0.988`), while TTE > 6h waits for 8/8
+    soc1_base = {
+        "box_type": "SPORTS_CORRIDOR",
+        "sleeve_source": "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",
+        "asset": "SOCCER",
+        "is_quiet_book": True,
+        "ts_unix": now_s,
+        "shares": 16,
+        "box_cost_net": 0.9850,
+        "max_box_cost_net": 0.988,
+        "leg_a_token_id": tok_s_a, "leg_a_opp_token_id": tok_s_oa, "leg_a_market_id": "88101", "leg_a_limit_price": 0.48,
+        "leg_b_token_id": tok_s_b, "leg_b_opp_token_id": tok_s_ob, "leg_b_market_id": "88102", "leg_b_limit_price": 0.48,
+        "leg_a_fee_rate": 0.05, "leg_b_fee_rate": 0.05, "leg_a_fee_exponent": 1.0, "leg_b_fee_exponent": 1.0,
+    }
+    r_soc_long = h_def.maybe_execute_graduated_d1_box({**soc1_base, "box_id": "SOC1_LONG", "dedupe_key": "SOC1_DK_LONG", "expiry_ts": now_s + 36000.0})
+    assert r_soc_long["executed"] is False and "SLEEVE_NOT_YET_8_OF_8_GRADUATED" in r_soc_long["reason"]
+
+    r_soc_intraday = h_def.maybe_execute_graduated_d1_box({**soc1_base, "box_id": "SOC1_INTRA", "dedupe_key": "SOC1_DK_INTRA", "expiry_ts": now_s + 7200.0})
+    assert r_soc_intraday["executed"] is True, f"Fee-exact <=6h SOC1 live bridge failed: {r_soc_intraday}"
+    h_def.active_positions.clear()
+
+    # 4. 5%-fee SP3_SPORTS_CORRIDOR_DOMINANCE_BOX: TTE <= 24h & cost <= 0.988 bridges live when 0 losses
+    sp3_cand = {
+        **soc1_base,
+        "box_id": "SP3_INTRA_1",
+        "dedupe_key": "SP3_DK_INTRA_1",
+        "sleeve_source": "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",
+        "asset": "SPORTS",
+        "expiry_ts": now_s + 10800.0,
+    }
+    r_sp3_intra = h_def.maybe_execute_graduated_d1_box(sp3_cand)
+    assert r_sp3_intra["executed"] is True, f"Fee-exact <=24h SP3 live bridge failed: {r_sp3_intra}"
+    h_def.active_positions.clear()
+
+
+
+
+
 
 
 

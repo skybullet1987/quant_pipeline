@@ -1,0 +1,12 @@
+[Unit]
+Description=PAA 2-Minute Tier-2 Independent Monitor Supervisor Timer
+
+[Timer]
+OnBootSec=75s
+OnUnitActiveSec=2min
+AccuracySec=5s
+Persistent=true
+Unit=polymarket-paa-supervisor.service
+
+[Install]
+WantedBy=timers.target

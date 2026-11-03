@@ -1,0 +1,12 @@
+[Unit]
+Description=PAA 5-Minute Opportunity & Problem Detection Timer
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=5min
+AccuracySec=10s
+Persistent=true
+Unit=polymarket-paa-watchdog.service
+
+[Install]
+WantedBy=timers.target

@@ -79,7 +79,12 @@ def inspect_microstructure_feature_completeness(
         or str(shock.get("event_id") or "").startswith("SHOCK_")
     )
     missing: List[str] = []
-    if tf.get("age_ask_ms") is None and not is_special:
+    _empty_ask_with_valid_bid = bool(
+        float(tf.get("best_ask") or 0.0) >= 0.995
+        and float(tf.get("ask_size_l1") or 0.0) <= 0.0
+        and tf.get("age_bid_ms") is not None
+    )
+    if tf.get("age_ask_ms") is None and not is_special and not _empty_ask_with_valid_bid:
         missing.append("age_ask_ms")
     if shock.get("shock_ofi") is None and not is_special and is_live_packet:
         missing.append("shock_ofi")
@@ -753,3 +758,362 @@ def rank_opportunities_capital_auction(
         enriched.append(item)
     enriched.sort(key=lambda x: (-float(x.get("utility_score", 0.0)), -float(x.get("net_edge", 0.0))))
     return enriched
+
+
+def infer_polymarket_tick_size(price_hint: float) -> float:
+    px = float(price_hint or 0.0)
+    if (0.0 < px < 0.04) or px >= 0.96:
+        return 0.001
+    return 0.01
+
+
+def compute_capital_velocity_ev(
+    net_edge_per_share: float,
+    expected_hold_seconds: float = 300.0,
+    *,
+    fill_prob: float = 1.0,
+    early_recycle_factor: float = 1.0,
+    net_cost_per_share: float = 1.0,
+) -> float:
+    """Capital-Velocity EV (`(net_edge / net_cost) * fill_prob / (expected_hold_seconds * early_recycle_factor)`)."""
+    cost = max(0.05, float(net_cost_per_share or 1.0))
+    eff_hold = max(10.0, float(expected_hold_seconds or 300.0) * max(0.10, float(early_recycle_factor or 1.0)))
+    fp = max(0.01, min(1.0, float(fill_prob if fill_prob is not None else 1.0)))
+    return (float(net_edge_per_share or 0.0) / cost) * fp / eff_hold
+
+
+def compute_smart_maker_bid(
+    best_bid: float,
+    best_ask: float,
+    max_cap_px: Optional[float] = None,
+    min_floor_px: float = 0.001,
+    obi_l1: float = 0.0,
+    tick_size: Optional[float] = None,
+    *,
+    max_ceiling: Optional[float] = None,
+    max_bid_px: Optional[float] = None,
+    min_floor: Optional[float] = None,
+) -> Tuple[Optional[float], bool]:
+    """
+    Tick-aware Maker bid placement:
+      - Uses 0.001 tick in <0.04 / >=0.96 tail zones, else 0.01.
+      - Pennies `best_bid + 1 tick` (`queue_front=True`) when spread >= 2 ticks and within `max_cap_px`.
+      - Passively joins `best_bid` (`queue_front=False`) on 1-tick spread unless `obi_l1 < -0.35`.
+    """
+    def _num_val(v: Any, dflt: float = 0.0) -> float:
+        return float(v) if (isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)) else dflt
+
+    eff_max = _num_val(
+        max_cap_px if max_cap_px is not None else (max_ceiling if max_ceiling is not None else (max_bid_px if max_bid_px is not None else 0.99)),
+        0.99,
+    )
+    eff_min = _num_val(min_floor if min_floor is not None else min_floor_px, 0.001)
+    ba = _num_val(best_ask, 0.0)
+    bb = _num_val(best_bid, 0.0)
+    obi_v = _num_val(obi_l1, 0.0)
+    ts_v = _num_val(tick_size, 0.0)
+    ref_px = ba if ba > 0.0 else eff_max
+    tick = ts_v if ts_v > 0.0 else infer_polymarket_tick_size(ref_px)
+    digits = 3 if tick < 0.009 else 2
+    max_non_cross = (ba - tick) if ba > tick else eff_max
+    cap_raw = min(eff_max, max_non_cross)
+    cap = round(math.floor((cap_raw + 1e-9) / tick) * tick, digits)
+    if cap < eff_min - 1e-9 or cap <= 0.0:
+        return None, False
+    if bb > 0.0:
+        spread = (ba - bb) if ba > bb else 0.0
+        penny = round(bb + tick, digits)
+        if spread >= (2.0 * tick - 1e-9) and penny <= cap + 1e-9:
+            return min(cap, penny), True
+        if bb <= cap + 1e-9:
+            if 0.0 < spread <= (tick + 1e-9) and obi_v < -0.35:
+                return None, False
+            return round(min(cap, bb), digits), False
+    return cap, True
+
+
+def _walk_bid_levels_net(
+    bids: Iterable[Dict[str, Any]],
+    target_shares: float,
+    fee_rate: float = 0.0,
+    fee_exp: float = 1.0,
+) -> Tuple[bool, float, float, float, float]:
+    lvls: List[Tuple[float, float]] = []
+    total_depth = 0.0
+    for r in bids or ():
+        if not isinstance(r, dict):
+            continue
+        try:
+            px = float(r.get("price") or 0.0)
+            sz = float(r.get("size") or 0.0)
+        except (TypeError, ValueError):
+            continue
+        if px > 0.0 and sz > 0.0:
+            lvls.append((px, sz))
+            total_depth += sz
+    if not lvls or target_shares <= 0.0 or total_depth + 1e-9 < target_shares:
+        return False, 0.0, 0.0, 0.0, total_depth
+    lvls.sort(key=lambda x: -x[0])
+    rem = float(target_shares)
+    gross_usd = 0.0
+    net_usd = 0.0
+    worst_px = lvls[0][0]
+    for px, sz in lvls:
+        take = min(rem, sz)
+        if take <= 0.0:
+            break
+        fee_ps = compute_category_taker_fee_per_share(px, fee_rate=fee_rate, fee_exponent=fee_exp)
+        gross_usd += take * px
+        net_usd += take * max(0.0, px - fee_ps)
+        worst_px = px
+        rem -= take
+        if rem <= 1e-7:
+            break
+    if rem > 1e-5:
+        return False, 0.0, 0.0, 0.0, total_depth
+    return True, gross_usd / target_shares, net_usd / target_shares, worst_px, total_depth
+
+
+def walk_dual_leg_overround_bids(
+    bids_a: Iterable[Dict[str, Any]],
+    bids_b: Iterable[Dict[str, Any]],
+    target_shares: float,
+    fee_rate_a: float = 0.0,
+    fee_exp_a: float = 1.0,
+    fee_rate_b: float = 0.0,
+    fee_exp_b: float = 1.0,
+    min_depth_mult: float = 1.25,
+) -> Dict[str, Any]:
+    """Walks L2 bids on both box legs for `target_shares` and returns net proceeds + FOK floor prices."""
+    sh = float(target_shares or 0.0)
+    ok_a, gross_a, net_a, min_px_a, depth_a = _walk_bid_levels_net(bids_a, sh, fee_rate_a, fee_exp_a)
+    ok_b, gross_b, net_b, min_px_b, depth_b = _walk_bid_levels_net(bids_b, sh, fee_rate_b, fee_exp_b)
+    depth_ok = ok_a and ok_b and depth_a >= sh * min_depth_mult and depth_b >= sh * min_depth_mult
+    return {
+        "fillable": bool(depth_ok and min_px_a > 0.0 and min_px_b > 0.0),
+        "gross_sum_per_share": round(gross_a + gross_b, 6),
+        "net_sum_per_share": round(net_a + net_b, 6),
+        "min_px_a": round(min_px_a, 4),
+        "min_px_b": round(min_px_b, 4),
+        "depth_a": round(depth_a, 4),
+        "depth_b": round(depth_b, 4),
+    }
+
+
+# ==============================================================================
+# 8. V3.9.5 GUARDED COMPLEMENT MERGE, 15M->5M CORRIDOR & 60MS TOURNAMENT
+# ==============================================================================
+
+def evaluate_guarded_complement_merge(
+    *,
+    rem_shares: float,
+    opp_ask: float,
+    opp_ask_size: float = 0.0,
+    opp_ask_size_l1: Optional[float] = None,
+    curr_maker_tp_px: Optional[float] = None,
+    fee_rate: float = 0.07,
+    fee_exponent: float = 1.0,
+    min_net_proceeds_ps: float = 0.9820,
+    max_opp_ask: float = 0.015,
+    min_marketable_usd: float = 1.00,
+) -> Dict[str, Any]:
+    """
+    Guarded `OPP <= $0.015` synthetic complement-merge evaluator (`hold_98`-safe).
+    Enforces all three live execution invariants:
+      1. Strict No-Overbuy Loss Guard: if `rem_shares * opp_ask < $1.00` forces buying extra
+         unmergeable `OPP` shares to meet Polymarket's `$1.00` marketable minimum, exact net
+         proceeds `(rem_shares * $1.00 - req_opp_shares * (opp_ask + fee)) / rem_shares` must
+         STILL exceed `min_net_proceeds_ps` (`$0.9820` > `$0.9800` Maker TP). Blocks the 20-share
+         `$0.9465/sh` over-buy loss trap!
+      2. Sub-Penny Tick Size (`0.001`) below `$0.04` via `infer_polymarket_tick_size`.
+      3. Atomic Execution Plan: `1) FAK_BUY_OPP -> 2) CONFIRM_OPP_FILL -> 3) CANCEL_MAKER_TP -> 4) MERGE_CTF`.
+    """
+    if opp_ask_size_l1 is not None and opp_ask_size <= 0.0:
+        opp_ask_size = float(opp_ask_size_l1)
+    if curr_maker_tp_px is not None:
+        min_net_proceeds_ps = max(float(min_net_proceeds_ps), float(curr_maker_tp_px) + 0.0020)
+    sh = float(rem_shares or 0.0)
+    ask = float(opp_ask or 0.0)
+    if sh < 5.0 or not (0.001 <= ask <= float(max_opp_ask)):
+        return {"approved": False, "reason": "OUT_OF_OPP_PRICE_BAND_OR_SUB_LOT"}
+
+    min_sh_for_notional = math.ceil((float(min_marketable_usd) / ask) * 100.0) / 100.0
+    req_opp_shares = max(sh, min_sh_for_notional)
+    excess_unmerged_shares = max(0.0, round(req_opp_shares - sh, 4))
+    if opp_ask_size > 0.0 and float(opp_ask_size) + 1e-6 < req_opp_shares:
+        return {"approved": False, "reason": "INSUFFICIENT_OPP_ASK_DEPTH", "req_opp_shares": req_opp_shares}
+
+    fee_ps = compute_category_taker_fee_per_share(ask, fee_rate=fee_rate, fee_exponent=fee_exponent)
+    total_opp_cost = req_opp_shares * (ask + fee_ps)
+    merged_gross_usd = sh * 1.0
+    net_proceeds_usd = merged_gross_usd - total_opp_cost
+    net_proceeds_ps = net_proceeds_usd / sh
+    tick = infer_polymarket_tick_size(ask)
+
+    if net_proceeds_ps < float(min_net_proceeds_ps):
+        return {
+            "approved": False,
+            "reason": "OVERBUY_DILUTION_BELOW_MAKER_98_HURDLE",
+            "net_proceeds_ps": round(net_proceeds_ps, 5),
+            "req_opp_shares": round(req_opp_shares, 2),
+            "excess_unmerged_shares": excess_unmerged_shares,
+        }
+
+    return {
+        "approved": True,
+        "opp_ask": round(ask, 4),
+        "tick_size": f"{tick:.3f}" if tick < 0.009 else f"{tick:.2f}",
+        "req_opp_shares": round(req_opp_shares, 2),
+        "merge_pairs": round(sh, 2),
+        "excess_unmerged_shares": excess_unmerged_shares,
+        "total_opp_cost_usd": round(total_opp_cost, 4),
+        "net_proceeds_ps": round(net_proceeds_ps, 5),
+        "atomic_sequence": ("FAK_BUY_OPP", "CONFIRM_OPP_FILL", "CANCEL_RESTING_MAKER_TP", "MERGE_CTF_POSITIONS"),
+    }
+
+
+def evaluate_d1_15m_to_5m_corridor_conversion(
+    pos_15m: Dict[str, Any],
+    snap_5m: Optional[Dict[str, Any]],
+    *,
+    now_ts: Optional[float] = None,
+    fee_rate: float = 0.07,
+    fee_exponent: float = 1.0,
+    max_total_box_cost: float = 0.975,
+    min_corridor_bps: float = 1.5,
+) -> Dict[str, Any]:
+    """
+    Evaluates converting a single-leg open `15m` position entering its final `300s` into a
+    risk-free Same-Oracle Dominance Corridor (`$1.00` guaranteed floor + `$2.00` corridor jackpot)
+    using the overlapping child `5m` contract sharing the exact Chainlink 60s-TWAP settlement timestamp.
+    """
+    if not isinstance(pos_15m, dict) or not isinstance(snap_5m, dict):
+        return {"eligible": False, "reason": "MISSING_5M_SNAPSHOT"}
+    side_15 = str(pos_15m.get("target_token") or "").upper()
+    if side_15 not in ("UP", "DOWN"):
+        return {"eligible": False, "reason": "INVALID_SIDE"}
+    rem_sh = float(pos_15m.get("remaining_shares") or 0.0)
+    entry_px_15 = float(pos_15m.get("entry_price") or 0.0)
+    fee_15_usd = float(pos_15m.get("fee_usd") or 0.0)
+    k_15 = float(pos_15m.get("candle_open_spot") or 0.0)
+    exp_15 = float(pos_15m.get("candle_expiry_ts") or 0.0)
+    t_now = float(now_ts) if now_ts is not None else 0.0
+    if t_now > 0.0 and exp_15 > 0.0 and not (15.0 <= (exp_15 - t_now) <= 295.0):
+        return {"eligible": False, "reason": "OUTSIDE_FINAL_5M_WINDOW"}
+    if rem_sh < 5.0 or entry_px_15 <= 0.0 or k_15 <= 0.0:
+        return {"eligible": False, "reason": "INVALID_15M_POSITION"}
+
+    k_5 = float(
+        snap_5m.get("authoritative_chainlink_open")
+        or snap_5m.get("finalized_open")
+        or snap_5m.get("finalized_15m_open")
+        or 0.0
+    )
+    if k_5 <= 0.0:
+        return {"eligible": False, "reason": "MISSING_5M_STRIKE"}
+
+    if side_15 == "UP":
+        corridor_bps = ((k_5 - k_15) / k_15) * 10000.0
+        opp_side_5 = "DOWN"
+    else:
+        corridor_bps = ((k_15 - k_5) / k_15) * 10000.0
+        opp_side_5 = "UP"
+
+    if corridor_bps < float(min_corridor_bps):
+        return {"eligible": False, "reason": "NO_DOMINANCE_CORRIDOR", "corridor_bps": round(corridor_bps, 2)}
+
+    bk_5 = snap_5m.get(opp_side_5) or {}
+    ask_5 = float(bk_5.get("best_ask") or 1.0)
+    ask_sz_5 = float(bk_5.get("ask_size_l1") or 0.0)
+    tok_5 = str(bk_5.get("token_id") or "")
+    mkt_5 = str(snap_5m.get("market_id") or "")
+    if not (0.01 <= ask_5 <= 0.90) or ask_sz_5 < rem_sh * 1.15 or (rem_sh * ask_5) < 1.00 or not tok_5:
+        return {"eligible": False, "reason": "INSUFFICIENT_5M_LIQUIDITY_OR_TOKEN"}
+
+    fee_5_ps = compute_category_taker_fee_per_share(ask_5, fee_rate=fee_rate, fee_exponent=fee_exponent)
+    cost_15_ps = entry_px_15 + (fee_15_usd / max(rem_sh, 1e-6))
+    total_box_cost = cost_15_ps + ask_5 + fee_5_ps
+    if total_box_cost > float(max_total_box_cost):
+        return {
+            "eligible": False,
+            "reason": "BOX_COST_EXCEEDS_CEILING",
+            "total_box_cost_ps": round(total_box_cost, 4),
+            "corridor_bps": round(corridor_bps, 2),
+        }
+
+    locked_floor_ps = 1.0 - total_box_cost
+    return {
+        "eligible": True,
+        "market_id_5m": mkt_5,
+        "token_id_5m": tok_5,
+        "opp_side_5m": opp_side_5,
+        "shares": round(rem_sh, 2),
+        "ask_5m": round(ask_5, 4),
+        "fee_5m_ps": round(fee_5_ps, 5),
+        "k_15": k_15,
+        "k_5": k_5,
+        "corridor_bps": round(corridor_bps, 2),
+        "total_box_cost_ps": round(total_box_cost, 4),
+        "locked_floor_ps": round(locked_floor_ps, 4),
+        "locked_floor_pnl_usd": round(rem_sh * locked_floor_ps, 2),
+        "corridor_jackpot_pnl_usd": round(rem_sh * (2.0 - total_box_cost), 2),
+    }
+
+
+def rank_microbatch_shock_tournament(
+    shocks: List[Dict[str, Any]],
+    active_positions: Optional[List[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Ranks simultaneous multi-asset shocks arriving within a `60ms` micro-batch window by
+    `EV_net_per_dollar * kelly_multiplier` (+ synthetic corridor completion bonus), preventing
+    a lower-conviction altcoin tick from locking out a higher-EV BTC/ETH shock 12ms later.
+    """
+    if len(shocks) <= 1:
+        return list(shocks)
+
+    def _score_shock(s: Dict[str, Any]) -> Tuple[float, float]:
+        s_dir = str(s.get("shock_direction") or "BUY").upper()
+        side = "UP" if s_dir in ("BUY", "UP") else "DOWN"
+        pre = (s.get("pre_shock_features_t0") or {}).get(side) or {}
+        ask = float(pre.get("best_ask") or pre.get("vwap_$25") or pre.get("effective_price_$25") or 0.70)
+        ask = max(0.05, min(0.95, ask))
+        dist_pct = abs(float(s.get("candle_distance_pct") or 0.0))
+        tte = max(30.0, float(s.get("seconds_to_expiry") or 300.0))
+        asset = str(s.get("asset") or "BTC").upper()
+        rec_sig = float(s.get("candle_sigma") or 0.0)
+        hz = str(s.get("horizon") or "").lower()
+        sig_1h = (
+            rec_sig * (2.0 if "15m" in hz else (math.sqrt(12.0) if hz in ("5m", "5min", "300s") or "-5m" in hz else 1.0))
+            if rec_sig > 0.0
+            else (0.0050 if asset == "BTC" else (0.0068 if asset == "ETH" else 0.0090))
+        )
+        sig_rem = max(0.00025, sig_1h * math.sqrt(tte / 3600.0))
+        ofi = min(1.0, abs(float(s.get("shock_ofi") if s.get("shock_ofi") is not None else 0.85)))
+        z_eff = (dist_pct / 100.0) / sig_rem + 0.35 * ofi
+        p_win = 0.5 * (1.0 + math.erf(z_eff / math.sqrt(2.0)))
+        fee_ps = compute_category_taker_fee_per_share(ask, 0.07, 1.0)
+        exp_val = p_win * 0.98 + (1.0 - p_win) * 0.36
+        ev_per_dollar = (exp_val - ask - fee_ps) / (ask + fee_ps)
+        age_ms = float(pre.get("age_ask_ms") if pre.get("age_ask_ms") is not None else 300.0)
+        k_mult = 1.15 if age_ms >= 250.0 else 1.00
+        liq_bonus = 0.015 if asset == "BTC" else (0.008 if asset == "ETH" else 0.0)
+        score = (ev_per_dollar * k_mult) + liq_bonus
+        if active_positions:
+            util = compute_capital_efficiency_utility(
+                {
+                    "asset": asset,
+                    "side": side,
+                    "expiry_ts": s.get("candle_expiry_ts") or s.get("expiry_ts") or 0.0,
+                    "strike": s.get("candle_open_spot") or 0.0,
+                    "net_edge": max(0.0, exp_val - ask - fee_ps),
+                    "ask_vwap": ask,
+                    "p_model": p_win,
+                    "tte_sec": tte,
+                },
+                active_global_positions=active_positions,
+            )
+            score += float(util.get("corridor_completion_bonus") or 0.0) - float(util.get("corr_penalty") or 0.0)
+        return (round(score, 6), z_eff)
+
+    return sorted(shocks, key=_score_shock, reverse=True)

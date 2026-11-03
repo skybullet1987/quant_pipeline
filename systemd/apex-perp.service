@@ -1,5 +1,5 @@
 [Unit]
-Description=HyperCore APEX Sovereign Perpetual Compounding Daemon (v5.1 Autonomous Profit Engine)
+Description=HyperCore APEX Zero-Touch Mainnet Shadow Daemon (v5.2 Un-Overfit v5.0 + 4-Track Arena)
 After=network-online.target
 Wants=network-online.target
 
@@ -7,7 +7,11 @@ Wants=network-online.target
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
 Environment="PYTHONUNBUFFERED=1"
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python -u src/execution/production_apex_daemon.py --mainnet-signals
+EnvironmentFile=-/home/skybullet1987/quant_pipeline/.env
+# Low CPU/IO weight on 2-vCPU host so Polymarket real-money harvester & recorders always have top priority
+CPUWeight=150
+IOWeight=150
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python -u src/execution/production_apex_daemon.py --mainnet --dry-run --kernel-profile v5.0
 Restart=always
 RestartSec=15s
 KillMode=process

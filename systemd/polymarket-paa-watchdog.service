@@ -1,0 +1,15 @@
+[Unit]
+Description=PAA 5-Minute Full Polymarket Ecosystem Opportunity & Problem Scanner
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment="PYTHONPATH=/home/skybullet1987/quant_pipeline"
+Environment="PATH=/home/skybullet1987/.local/bin:/home/skybullet1987/quant_pipeline/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Nice=15
+CPUWeight=50
+IOWeight=50
+MemoryMax=1536M
+TimeoutStartSec=240
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python /home/skybullet1987/quant_pipeline/scripts/paa_cli.py scan-cycle

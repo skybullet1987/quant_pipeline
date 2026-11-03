@@ -45,7 +45,10 @@ from src.polymarket_research.barrier_onetouch_svi_engine import (
 
 logger = logging.getLogger("TradFiSportsZeroFee")
 
-NY_TZ = ZoneInfo("America/New_York")
+try:
+    NY_TZ = ZoneInfo("America/New_York")
+except Exception:
+    NY_TZ = timezone(timedelta(hours=-4))
 
 # (asset, yahoo_ticker, session_class, exact_directional_ok, basis_buffer_frac, vol_floor_annual)
 PYTH_ASSET_CONFIG: Dict[str, Tuple[str, str, bool, float, float]] = {
@@ -102,6 +105,12 @@ PYTH_CLOSE_SERIES: Tuple[Tuple[str, str], ...] = (
 )
 
 NBA_SERIES_SLUGS: Tuple[str, ...] = ("nba-2026",)
+MULTI_SPORT_CORRIDOR_SERIES: Tuple[Tuple[str, str], ...] = (
+    ("NBA", "nba-2026"),
+    ("NFL", "nfl-2026"),
+    ("CFB", "cfb-2026"),
+    ("NHL", "nhl-2026"),
+)
 
 ZERO_FEE_NEGRISK_SERIES: Tuple[str, ...] = (
     "elon-tweets",
@@ -121,15 +130,61 @@ ZERO_FEE_NEGRISK_SERIES: Tuple[str, ...] = (
 _STRIKE_PRICE_RE = re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)")
 _SPREAD_FAV_RE = re.compile(r"Spread:\s*(.+?)\s*\(\s*([-+]?\d+(?:\.\d+)?)\s*\)", re.IGNORECASE)
 
+_FEE_TYPE_FALLBACK_RATES: Dict[str, Tuple[float, float]] = {
+    "sports_fees_nfl_cfb_oct26": (0.03, 1.0),
+    "sports_fees_v2": (0.03, 1.0),
+    "sports_fees_v3": (0.05, 1.0),
+    "crypto_fees_v2": (0.07, 1.0),
+    "crypto_15_min": (0.072, 1.0),
+    "politics_fees": (0.04, 1.0),
+    "weather_fees": (0.05, 1.0),
+    "culture_fees": (0.05, 1.0),
+    "economics_fees": (0.05, 1.0),
+    "finance_prices_fees": (0.04, 1.0),
+    "tech_fees": (0.04, 1.0),
+    "mentions_fees": (0.05, 1.0),
+    "general_fees": (0.04, 1.0),
+}
+
 
 def _extract_market_fee_rate(m: Dict[str, Any]) -> Tuple[float, float]:
-    sched = m.get("feeSchedule") if isinstance(m.get("feeSchedule"), dict) else {}
-    fees_enabled = bool(m.get("feesEnabled", False))
-    raw_rate = float(sched.get("rate") or 0.0)
-    fee_type = str(m.get("feeType") or "").lower()
-    if fee_type == "zero_fees" or not fees_enabled or raw_rate <= 0.0:
+    fee_type = str(m.get("feeType") or "").strip().lower()
+    if fee_type == "zero_fees" or m.get("feesEnabled") is False:
         return 0.0, 1.0
-    return raw_rate, float(sched.get("exponent") or 1.0)
+    sched = m.get("feeSchedule") if isinstance(m.get("feeSchedule"), dict) else {}
+    if "rate" in sched and sched.get("rate") is not None:
+        raw_rate = float(sched.get("rate") or 0.0)
+        if raw_rate <= 0.0:
+            return 0.0, 1.0
+        return raw_rate, float(sched.get("exponent") or 1.0)
+    if m.get("feeRate") is not None:
+        fr_v = float(m.get("feeRate") or 0.0)
+        if fr_v > 0.0:
+            return (fr_v / 10000.0 if fr_v >= 1.0 else fr_v), float(m.get("feeExponent") or 1.0)
+    if m.get("takerBaseFee") is not None:
+        tb_v = float(m.get("takerBaseFee") or 0.0)
+        if tb_v > 0.0:
+            return (tb_v / 10000.0 if tb_v >= 1.0 else tb_v), float(m.get("feeExponent") or 1.0)
+    if fee_type in _FEE_TYPE_FALLBACK_RATES:
+        return _FEE_TYPE_FALLBACK_RATES[fee_type]
+    if m.get("feesEnabled") is True and fee_type:
+        return 0.04, 1.0
+    return 0.0, 1.0
+
+
+def _net_unit_ask(px: float, fee_rate: float = 0.0, fee_exponent: float = 1.0) -> float:
+    """
+    Exact USDC cost to acquire 1.0000 net share on-chain after Polymarket V2 share-deducted BUY fees:
+    buying 1 gross share at `p` delivers `1 - h(p)` net shares where `h(p) = r * ((p*(1-p))**e) / p`,
+    so 1.0000 net share costs `p / (1 - h(p))`.
+    """
+    p = float(px)
+    r = float(fee_rate or 0.0)
+    if r <= 0.0 or p <= 0.0 or p >= 1.0:
+        return p
+    fee_usdc_eq = r * ((p * (1.0 - p)) ** float(fee_exponent or 1.0))
+    h = min(0.50, max(0.0, fee_usdc_eq / p))
+    return p / (1.0 - h)
 
 
 def _parse_clob_tokens(m: Dict[str, Any]) -> Optional[Tuple[str, str]]:
@@ -173,6 +228,7 @@ class PythBarrierRungSpec:
     start_ts: float
     end_ts: float
     fee_rate: float = 0.0
+    fee_exponent: float = 1.0
 
 
 @dataclass
@@ -189,6 +245,7 @@ class PythCloseRungSpec:
     no_token: str
     end_ts: float
     fee_rate: float = 0.0
+    fee_exponent: float = 1.0
 
 
 @dataclass
@@ -205,6 +262,8 @@ class NbaOutcomeLeg:
     # For totals markets: "OVER" means S > threshold, "UNDER" means S < threshold
     relation: str
     threshold: float
+    fee_rate: float = 0.0
+    fee_exponent: float = 1.0
 
 
 @dataclass
@@ -361,9 +420,7 @@ def parse_pyth_hit_event(
     for m in mkts:
         if m.get("closed") or m.get("archived"):
             continue
-        fee_rate, _ = _extract_market_fee_rate(m)
-        if fee_rate > 0.001:
-            continue
+        fee_rate, fee_exp = _extract_market_fee_rate(m)
         toks = _parse_clob_tokens(m)
         if not toks:
             continue
@@ -411,6 +468,7 @@ def parse_pyth_hit_event(
                 start_ts=float(start_ts),
                 end_ts=float(end_ts),
                 fee_rate=fee_rate,
+                fee_exponent=fee_exp,
             )
         )
     return out
@@ -421,7 +479,7 @@ def parse_pyth_close_event(
     asset: str,
     series_slug: str,
 ) -> List[PythCloseRungSpec]:
-    """Parses `zero_fees` Pyth regular-session Close digital multi-strike ladders."""
+    """Parses Pyth regular-session Close digital multi-strike ladders (preserving per-market dynamic fees)."""
     mkts = ev.get("markets") or []
     ev_id = str(ev.get("id") or "")
     ev_end = _parse_iso_ts(ev.get("endDate"))
@@ -429,9 +487,7 @@ def parse_pyth_close_event(
     for m in mkts:
         if m.get("closed") or m.get("archived"):
             continue
-        fee_rate, _ = _extract_market_fee_rate(m)
-        if fee_rate > 0.001:
-            continue
+        fee_rate, fee_exp = _extract_market_fee_rate(m)
         toks = _parse_clob_tokens(m)
         if not toks:
             continue
@@ -468,6 +524,7 @@ def parse_pyth_close_event(
                 no_token=toks[1],
                 end_ts=float(end_ts),
                 fee_rate=fee_rate,
+                fee_exponent=fee_exp,
             )
         )
     out.sort(key=lambda r: r.strike)
@@ -562,7 +619,7 @@ def detect_pyth_calendar_inclusion_boxes(
     now_v = float(now_ts if now_ts is not None else time.time())
     by_key: Dict[Tuple[str, str, float], List[Dict[str, Any]]] = {}
     for q in quote_rows:
-        if float(q.get("fee_rate", 0.0)) > 0.001 or float(q.get("start_ts", 0.0)) > now_v:
+        if float(q.get("start_ts", 0.0)) > now_v:
             continue
         by_key.setdefault((str(q["asset"]), str(q["direction"]), round(float(q["strike"]), 4)), []).append(q)
 
@@ -584,7 +641,12 @@ def detect_pyth_calendar_inclusion_boxes(
                 ask_y_l = q_l.get("ask_yes")
                 if ask_n_s is None or ask_y_l is None:
                     continue
-                cost = round(float(ask_n_s) + float(ask_y_l), 4)
+                cost_gross = round(float(ask_n_s) + float(ask_y_l), 4)
+                cost = round(
+                    _net_unit_ask(float(ask_n_s), float(q_s.get("fee_rate", 0.0)), float(q_s.get("fee_exponent", 1.0)))
+                    + _net_unit_ask(float(ask_y_l), float(q_l.get("fee_rate", 0.0)), float(q_l.get("fee_exponent", 1.0))),
+                    4,
+                )
                 if cost <= max_box_cost_net:
                     arbs.append({
                         "box_kind": "PYTH_CALENDAR_INCLUSION",
@@ -592,7 +654,7 @@ def detect_pyth_calendar_inclusion_boxes(
                         "direction": direction,
                         "strike": strike,
                         "box_cost_net": cost,
-                        "box_cost_gross": cost,
+                        "box_cost_gross": cost_gross,
                         "yes_row": q_l,
                         "no_row": q_s,
                         "close_ts": float(q_l["end_ts"]),
@@ -617,7 +679,7 @@ def detect_pyth_close_vs_hit_boxes(
     """
     arbs: List[Dict[str, Any]] = []
     for qc in close_rows:
-        if qc.get("is_downward") or qc.get("ask_no") is None or float(qc.get("fee_rate", 0.0)) > 0.001:
+        if qc.get("is_downward") or qc.get("ask_no") is None:
             continue
         end_c = float(qc["end_ts"])
         k_c = float(qc["strike"])
@@ -626,7 +688,6 @@ def detect_pyth_close_vs_hit_boxes(
                 qh["asset"] != qc["asset"]
                 or qh["direction"] != "UP"
                 or qh.get("ask_yes") is None
-                or float(qh.get("fee_rate", 0.0)) > 0.001
             ):
                 continue
             k_h = float(qh["strike"])
@@ -634,7 +695,12 @@ def detect_pyth_close_vs_hit_boxes(
                 continue
             if not (float(qh["start_ts"]) <= now_ts and now_ts < end_c <= float(qh["end_ts"]) + 60.0):
                 continue
-            cost = round(float(qc["ask_no"]) + float(qh["ask_yes"]), 4)
+            cost_gross = round(float(qc["ask_no"]) + float(qh["ask_yes"]), 4)
+            cost = round(
+                _net_unit_ask(float(qc["ask_no"]), float(qc.get("fee_rate", 0.0)), float(qc.get("fee_exponent", 1.0)))
+                + _net_unit_ask(float(qh["ask_yes"]), float(qh.get("fee_rate", 0.0)), float(qh.get("fee_exponent", 1.0))),
+                4,
+            )
             if cost <= max_box_cost_net:
                 arbs.append({
                     "box_kind": "PYTH_CLOSE_VS_HIT",
@@ -642,7 +708,7 @@ def detect_pyth_close_vs_hit_boxes(
                     "strike_hit": k_h,
                     "strike_close": k_c,
                     "box_cost_net": cost,
-                    "box_cost_gross": cost,
+                    "box_cost_gross": cost_gross,
                     "yes_row": qh,
                     "no_row": qc,
                     "close_ts": max(end_c, float(qh["end_ts"])),
@@ -745,10 +811,11 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
 
     # Locate full-game moneyline first to anchor canonical `(team_a, team_b)`
     ml_mkt: Optional[Dict[str, Any]] = None
+    ml_fr, ml_fe = 0.0, 1.0
     for m in mkts:
         if str(m.get("sportsMarketType") or "").strip().lower() == "moneyline" and not m.get("closed"):
-            fr, _ = _extract_market_fee_rate(m)
-            if fr == 0.0 and _parse_clob_tokens(m):
+            if _parse_clob_tokens(m):
+                ml_fr, ml_fe = _extract_market_fee_rate(m)
                 ml_mkt = m
                 break
     if ml_mkt is None:
@@ -788,6 +855,8 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
             display_label=f"{team_a} ML",
             relation="GT",
             threshold=0.0,
+            fee_rate=ml_fr,
+            fee_exponent=ml_fe,
         ),
         NbaOutcomeLeg(
             market_id=str(ml_mkt.get("id") or ""),
@@ -800,6 +869,8 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
             display_label=f"{team_b} ML",
             relation="LT",
             threshold=0.0,
+            fee_rate=ml_fr,
+            fee_exponent=ml_fe,
         ),
     ]
     total_legs: List[NbaOutcomeLeg] = []
@@ -810,9 +881,7 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
         smt = str(m.get("sportsMarketType") or "").strip().lower()
         if smt not in ("spreads", "totals"):
             continue
-        fr, _ = _extract_market_fee_rate(m)
-        if fr > 0.0:
-            continue
+        fr, fe = _extract_market_fee_rate(m)
         toks = _parse_clob_tokens(m)
         if not toks:
             continue
@@ -840,12 +909,12 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
             out0, out1 = _norm_team(outs[0]), _norm_team(outs[1])
             if fav_team == norm_a and out0 == norm_a and out1 == norm_b:
                 # idx 0 = team_a -k_abs (wins iff M > +k_abs); idx 1 = team_b +k_abs (wins iff M < +k_abs)
-                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[0], toks[1], 0, "YES", f"{team_a} -{k_abs:g}", "GT", k_abs))
-                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[1], toks[0], 1, "NO", f"{team_b} +{k_abs:g}", "LT", k_abs))
+                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[0], toks[1], 0, "YES", f"{team_a} -{k_abs:g}", "GT", k_abs, fr, fe))
+                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[1], toks[0], 1, "NO", f"{team_b} +{k_abs:g}", "LT", k_abs, fr, fe))
             elif fav_team == norm_b and out0 == norm_b and out1 == norm_a:
                 # idx 0 = team_b -k_abs (wins iff M < -k_abs); idx 1 = team_a +k_abs (wins iff M > -k_abs)
-                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[0], toks[1], 0, "YES", f"{team_b} -{k_abs:g}", "LT", -k_abs))
-                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[1], toks[0], 1, "NO", f"{team_a} +{k_abs:g}", "GT", -k_abs))
+                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[0], toks[1], 0, "YES", f"{team_b} -{k_abs:g}", "LT", -k_abs, fr, fe))
+                margin_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "spreads", toks[1], toks[0], 1, "NO", f"{team_a} +{k_abs:g}", "GT", -k_abs, fr, fe))
 
         elif smt == "totals":
             raw_line = m.get("line")
@@ -855,8 +924,8 @@ def parse_nba_zero_fee_event(ev: Dict[str, Any], now_ts: Optional[float] = None)
             if t_line <= 50.0 or not _is_half_integer(t_line):
                 continue
             if _norm_team(outs[0]) == "over" and _norm_team(outs[1]) == "under":
-                total_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "totals", toks[0], toks[1], 0, "YES", f"Over {t_line:g}", "OVER", t_line))
-                total_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "totals", toks[1], toks[0], 1, "NO", f"Under {t_line:g}", "UNDER", t_line))
+                total_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "totals", toks[0], toks[1], 0, "YES", f"Over {t_line:g}", "OVER", t_line, fr, fe))
+                total_legs.append(NbaOutcomeLeg(str(m.get("id") or ""), str(m.get("conditionId") or ""), "totals", toks[1], toks[0], 1, "NO", f"Under {t_line:g}", "UNDER", t_line, fr, fe))
 
     return NbaGameSpec(
         event_id=str(ev.get("id") or ""),
@@ -890,13 +959,15 @@ def detect_nba_dominance_boxes(
         a_px = float(best_asks_by_token[lg_a.token_id])
         if not (0.01 <= a_px <= 0.99):
             continue
+        a_net = _net_unit_ask(a_px, lg_a.fee_rate, lg_a.fee_exponent)
         for lg_b in lt_legs:
             if lg_a.market_id == lg_b.market_id or lg_a.threshold >= lg_b.threshold - 1e-6:
                 continue
             b_px = float(best_asks_by_token[lg_b.token_id])
             if not (0.01 <= b_px <= 0.99):
                 continue
-            cost = round(a_px + b_px, 4)
+            cost_gross = round(a_px + b_px, 4)
+            cost = round(a_net + _net_unit_ask(b_px, lg_b.fee_rate, lg_b.fee_exponent), 4)
             if cost <= max_box_cost_net:
                 mid_pts = round(lg_b.threshold - lg_a.threshold, 1)
                 candidates.append({
@@ -904,7 +975,7 @@ def detect_nba_dominance_boxes(
                     "event_id": spec.event_id,
                     "title": spec.title,
                     "box_cost_net": cost,
-                    "box_cost_gross": cost,
+                    "box_cost_gross": cost_gross,
                     "middle_width_pts": mid_pts,
                     "leg_a": lg_a,
                     "leg_b": lg_b,
@@ -918,20 +989,22 @@ def detect_nba_dominance_boxes(
         o_px = float(best_asks_by_token[lg_o.token_id])
         if not (0.01 <= o_px <= 0.99):
             continue
+        o_net = _net_unit_ask(o_px, lg_o.fee_rate, lg_o.fee_exponent)
         for lg_u in un_legs:
             if lg_o.market_id == lg_u.market_id or lg_o.threshold >= lg_u.threshold - 1e-6:
                 continue
             u_px = float(best_asks_by_token[lg_u.token_id])
             if not (0.01 <= u_px <= 0.99):
                 continue
-            cost = round(o_px + u_px, 4)
+            cost_gross = round(o_px + u_px, 4)
+            cost = round(o_net + _net_unit_ask(u_px, lg_u.fee_rate, lg_u.fee_exponent), 4)
             if cost <= max_box_cost_net:
                 candidates.append({
                     "box_kind": "NBA_TOTAL_MONO",
                     "event_id": spec.event_id,
                     "title": spec.title,
                     "box_cost_net": cost,
-                    "box_cost_gross": cost,
+                    "box_cost_gross": cost_gross,
                     "middle_width_pts": round(lg_u.threshold - lg_o.threshold, 1),
                     "leg_a": lg_o,
                     "leg_b": lg_u,
@@ -944,7 +1017,7 @@ def detect_nba_dominance_boxes(
 
 
 def parse_zero_fee_negrisk_slate(
-    ev: Dict[str, Any], series_slug: str, allow_mixed_fees: bool = False
+    ev: Dict[str, Any], series_slug: str, allow_mixed_fees: bool = True
 ) -> Optional[ZeroFeeNegRiskSlateSpec]:
     """
     Parses a verified `negRisk=True` complete partition event (`elon-tweets`, `fomc`, `best-ai-company`, etc.).
@@ -1002,3 +1075,677 @@ def parse_zero_fee_negrisk_slate(
         end_ts=float(end_ts),
         brackets=open_brackets,
     )
+
+
+@dataclass
+class MultiSportCorridorLeg:
+    market_id: str
+    condition_id: str
+    scope_key: str  # e.g. "FG:SPREAD", "1H:SPREAD", "Q1:SPREAD", "FG:TOTAL", "1H:TOTAL", "FG_TEAM:panthers"
+    token_id: str
+    opp_token_id: str
+    side_index: int
+    side_label: str  # "YES" for idx 0, "NO" for idx 1
+    display_label: str
+    relation: str  # "GT"/"LT" for spreads, "OVER"/"UNDER" for totals
+    threshold: float
+    fee_rate: float = 0.0
+    fee_exponent: float = 1.0
+    neg_risk: bool = False
+
+
+@dataclass
+class MultiSportCorridorSpec:
+    event_id: str
+    slug: str
+    sport: str
+    title: str
+    team_a: str
+    team_b: str
+    start_ts: float
+    settle_est_ts: float
+    legs_by_scope: Dict[str, List[MultiSportCorridorLeg]] = field(default_factory=dict)
+
+    @property
+    def legs(self) -> List[MultiSportCorridorLeg]:
+        return [lg for sc_lgs in self.legs_by_scope.values() for lg in sc_lgs]
+
+
+_SPREAD_PERIOD_MAP: Dict[str, str] = {
+    "spreads": "FG",
+    "first_half_spreads": "1H",
+    "second_half_spreads": "2H",
+    "q1_spreads": "Q1",
+    "q2_spreads": "Q2",
+    "q3_spreads": "Q3",
+    "q4_spreads": "Q4",
+}
+
+_TOTAL_PERIOD_MAP: Dict[str, str] = {
+    "totals": "FG",
+    "first_half_totals": "1H",
+    "second_half_totals": "2H",
+    "q1_totals": "Q1",
+    "q2_totals": "Q2",
+    "q3_totals": "Q3",
+    "q4_totals": "Q4",
+}
+
+_TEAM_TOTAL_PERIOD_MAP: Dict[str, str] = {
+    "team_totals": "FG_TEAM",
+    "first_half_team_totals": "1H_TEAM",
+    "second_half_team_totals": "2H_TEAM",
+}
+
+
+def _infer_sport_tag(ev: Dict[str, Any], sport_hint: str = "") -> str:
+    if sport_hint:
+        return sport_hint.upper()
+    slug = str(ev.get("slug") or "").lower()
+    for pfx, tag in (
+        ("nba-", "NBA"),
+        ("nfl-", "NFL"),
+        ("cfb-", "CFB"),
+        ("nhl-", "NHL"),
+        ("mlb-", "MLB"),
+        ("atp-", "TENNIS"),
+        ("wta-", "TENNIS"),
+        ("lol-", "ESPORTS"),
+        ("cs2-", "ESPORTS"),
+    ):
+        if slug.startswith(pfx):
+            return tag
+    for s_obj in (ev.get("series") or []):
+        if isinstance(s_obj, dict):
+            s_sl = str(s_obj.get("slug") or "").lower()
+            for kw, tag in (("nba", "NBA"), ("nfl", "NFL"), ("cfb", "CFB"), ("nhl", "NHL")):
+                if kw in s_sl:
+                    return tag
+    return "SPORTS"
+
+
+def parse_multi_sport_corridor_event(
+    ev: Dict[str, Any],
+    sport_hint: str = "",
+    now_ts: Optional[float] = None,
+    skip_nba_fg_zero_fee: bool = True,
+) -> Optional[MultiSportCorridorSpec]:
+    """
+    Parses multi-market sports events (NBA 1H/2H/Q1..Q4/TeamTotals + NFL/CFB/NHL/Soccer/Esports FG & Period
+    spreads/totals) into strictly scoped half-integer (`*.5`) dominance corridors.
+    Never mixes periods, never mixes teams, and never uses 2-way moneylines on tie-capable periods/sports
+    (half-integer spread hooks `M > L` + `M < U` with `L < U` cover `M == 0` ties 100% deterministically!).
+    """
+    now = float(now_ts if now_ts is not None else time.time())
+    if ev.get("closed") or ev.get("archived") or ev.get("negRisk"):
+        return None
+    mkts = ev.get("markets") or []
+    if len(mkts) < 4:
+        return None
+    sport = _infer_sport_tag(ev, sport_hint)
+
+    team_a, team_b = "", ""
+    start_ts: Optional[float] = None
+    for smt_cand in ("moneyline", "spreads", "first_half_spreads"):
+        for m in mkts:
+            if m.get("closed") or str(m.get("sportsMarketType") or "").strip().lower() != smt_cand:
+                continue
+            outs = m.get("outcomes")
+            if isinstance(outs, str):
+                try:
+                    outs = json.loads(outs)
+                except Exception:
+                    outs = None
+            if isinstance(outs, list) and len(outs) == 2:
+                o0, o1 = str(outs[0]).strip(), str(outs[1]).strip()
+                if {_norm_team(o0), _norm_team(o1)} not in ({"yes", "no"}, {"over", "under"}) and _norm_team(o0) != _norm_team(o1):
+                    team_a, team_b = o0, o1
+                    start_ts = _parse_iso_ts(m.get("gameStartTime") or ev.get("startDate") or ev.get("endDate"))
+                    break
+        if team_a and team_b:
+            break
+
+    norm_a, norm_b = _norm_team(team_a), _norm_team(team_b)
+    if start_ts is None:
+        for m in mkts:
+            start_ts = _parse_iso_ts(m.get("gameStartTime"))
+            if start_ts:
+                break
+    if start_ts is None:
+        start_ts = _parse_iso_ts(ev.get("endDate")) or (now + 7200.0)
+    if now > start_ts + 6.5 * 3600.0:
+        return None
+    settle_est_ts = max(start_ts + 3.75 * 3600.0, now + 1800.0)
+
+    legs_by_scope: Dict[str, List[MultiSportCorridorLeg]] = {}
+    for m in mkts:
+        if m.get("closed") or m.get("archived") or m.get("negRisk"):
+            continue
+        smt = str(m.get("sportsMarketType") or "").strip().lower()
+        if smt not in _SPREAD_PERIOD_MAP and smt not in _TOTAL_PERIOD_MAP and smt not in _TEAM_TOTAL_PERIOD_MAP:
+            continue
+        fr, fexp = _extract_market_fee_rate(m)
+        if skip_nba_fg_zero_fee and sport == "NBA" and fr == 0.0 and smt in ("spreads", "totals"):
+            # Already handled by SP1_NBA_ZERO_FEE_BOX; keep zero overlap!
+            continue
+        toks = _parse_clob_tokens(m)
+        if not toks:
+            continue
+        outs = m.get("outcomes")
+        if isinstance(outs, str):
+            try:
+                outs = json.loads(outs)
+            except Exception:
+                outs = None
+        if not isinstance(outs, list) or len(outs) < 2:
+            continue
+        q_str = str(m.get("question") or "")
+        mid = str(m.get("id") or "")
+        cid = str(m.get("conditionId") or "")
+
+        if smt in _SPREAD_PERIOD_MAP:
+            if not norm_a or not norm_b:
+                continue
+            per = _SPREAD_PERIOD_MAP[smt]
+            if per == "FG" and any(bad in q_str.lower() for bad in ("1h ", "2h ", "1q ", "2q ", "3q ", "4q ", "half", "quarter")):
+                continue
+            m_sp = _SPREAD_FAV_RE.search(q_str)
+            if not m_sp:
+                continue
+            named_team = _norm_team(m_sp.group(1))
+            line_val = float(m_sp.group(2))
+            if not _is_half_integer(line_val):
+                continue
+            out0, out1 = _norm_team(outs[0]), _norm_team(outs[1])
+            if {out0, out1} != {norm_a, norm_b} or named_team not in (norm_a, norm_b):
+                continue
+            idx_named = 0 if out0 == named_team else 1
+            idx_other = 1 - idx_named
+            tok_named, tok_other = toks[idx_named], toks[idx_other]
+            lbl_named = "YES" if idx_named == 0 else "NO"
+            lbl_other = "YES" if idx_other == 0 else "NO"
+            pfx = "" if per == "FG" else f"{per} "
+            scope = f"{per}:SPREAD"
+            if named_team == norm_a:
+                # team_a + line_val > 0 <=> M > -line_val; team_b covers <=> M < -line_val
+                thr = round(-line_val, 2)
+                legs_by_scope.setdefault(scope, []).extend([
+                    MultiSportCorridorLeg(mid, cid, scope, tok_named, tok_other, idx_named, lbl_named, f"{pfx}{team_a} {line_val:+g}", "GT", thr, fr, fexp, False),
+                    MultiSportCorridorLeg(mid, cid, scope, tok_other, tok_named, idx_other, lbl_other, f"{pfx}{team_b} {-line_val:+g}", "LT", thr, fr, fexp, False),
+                ])
+            else:
+                # team_b + line_val > 0 <=> -M + line_val > 0 <=> M < +line_val; team_a covers <=> M > +line_val
+                thr = round(line_val, 2)
+                legs_by_scope.setdefault(scope, []).extend([
+                    MultiSportCorridorLeg(mid, cid, scope, tok_named, tok_other, idx_named, lbl_named, f"{pfx}{team_b} {line_val:+g}", "LT", thr, fr, fexp, False),
+                    MultiSportCorridorLeg(mid, cid, scope, tok_other, tok_named, idx_other, lbl_other, f"{pfx}{team_a} {-line_val:+g}", "GT", thr, fr, fexp, False),
+                ])
+
+        elif smt in _TOTAL_PERIOD_MAP:
+            per = _TOTAL_PERIOD_MAP[smt]
+            if per == "FG" and any(bad in q_str.lower() for bad in ("1h ", "2h ", "1q ", "2q ", "3q ", "4q ", "half", "quarter", "team total")):
+                continue
+            raw_line = m.get("line")
+            if raw_line is None:
+                continue
+            t_line = float(raw_line)
+            if t_line <= 0.0 or not _is_half_integer(t_line):
+                continue
+            if _norm_team(outs[0]) != "over" or _norm_team(outs[1]) != "under":
+                continue
+            pfx = "" if per == "FG" else f"{per} "
+            scope = f"{per}:TOTAL"
+            legs_by_scope.setdefault(scope, []).extend([
+                MultiSportCorridorLeg(mid, cid, scope, toks[0], toks[1], 0, "YES", f"{pfx}Over {t_line:g}", "OVER", t_line, fr, fexp, False),
+                MultiSportCorridorLeg(mid, cid, scope, toks[1], toks[0], 1, "NO", f"{pfx}Under {t_line:g}", "UNDER", t_line, fr, fexp, False),
+            ])
+
+        elif smt in _TEAM_TOTAL_PERIOD_MAP:
+            if not norm_a or not norm_b:
+                continue
+            raw_line = m.get("line")
+            if raw_line is None:
+                continue
+            t_line = float(raw_line)
+            if t_line <= 0.0 or not _is_half_integer(t_line):
+                continue
+            if _norm_team(outs[0]) != "over" or _norm_team(outs[1]) != "under":
+                continue
+            q_head = q_str.split("O/U")[0].lower() if "O/U" in q_str else q_str.lower()
+            has_a = norm_a in q_head
+            has_b = norm_b in q_head
+            if has_a == has_b:
+                continue
+            tm_tag = norm_a if has_a else norm_b
+            tm_disp = team_a if has_a else team_b
+            per = _TEAM_TOTAL_PERIOD_MAP[smt]
+            pfx = "" if per == "FG_TEAM" else f"{per.split('_')[0]} "
+            scope = f"{per}:{tm_tag}"
+            legs_by_scope.setdefault(scope, []).extend([
+                MultiSportCorridorLeg(mid, cid, scope, toks[0], toks[1], 0, "YES", f"{pfx}{tm_disp} Over {t_line:g}", "OVER", t_line, fr, fexp, False),
+                MultiSportCorridorLeg(mid, cid, scope, toks[1], toks[0], 1, "NO", f"{pfx}{tm_disp} Under {t_line:g}", "UNDER", t_line, fr, fexp, False),
+            ])
+
+    # Keep only scopes that have at least 2 distinct markets (4 legs) so corridor boxes can form
+    valid_scopes = {
+        sc: lgs for sc, lgs in legs_by_scope.items() if len({lg.market_id for lg in lgs}) >= 2
+    }
+    if not valid_scopes:
+        return None
+    return MultiSportCorridorSpec(
+        event_id=str(ev.get("id") or ""),
+        slug=str(ev.get("slug") or ""),
+        sport=sport,
+        title=str(ev.get("title") or f"{team_a} vs. {team_b}"),
+        team_a=team_a,
+        team_b=team_b,
+        start_ts=float(start_ts),
+        settle_est_ts=float(settle_est_ts),
+        legs_by_scope=valid_scopes,
+    )
+
+
+def detect_multi_sport_corridor_boxes(
+    spec: MultiSportCorridorSpec,
+    best_asks_by_token: Dict[str, float],
+    max_box_cost_net: float = 1.08,
+) -> List[Dict[str, Any]]:
+    """
+    Detects fee-exact, period-exact Dominance & Polish-Middle Boxes across all scopes of `spec`:
+      - Spreads (`GT` threshold `L` + `LT` threshold `U` with `L < U`, half-integer hooks -> zero OT tie risk)
+      - Totals & Team Totals (`OVER` threshold `L` + `UNDER` threshold `U` with `L < U`, half-integer hooks -> zero push risk)
+    """
+    candidates: List[Dict[str, Any]] = []
+    for scope, legs in spec.legs_by_scope.items():
+        if scope.endswith(":SPREAD"):
+            low_rel, high_rel, kind_tag = "GT", "LT", "SPREAD_CORRIDOR"
+        else:
+            low_rel, high_rel, kind_tag = "OVER", "UNDER", "TOTAL_CORRIDOR"
+        low_legs = [lg for lg in legs if lg.relation == low_rel and lg.token_id in best_asks_by_token]
+        high_legs = [lg for lg in legs if lg.relation == high_rel and lg.token_id in best_asks_by_token]
+        for lg_a in low_legs:
+            a_px = float(best_asks_by_token[lg_a.token_id])
+            if not (0.01 <= a_px <= 0.99):
+                continue
+            a_net = _net_unit_ask(a_px, lg_a.fee_rate, lg_a.fee_exponent)
+            for lg_b in high_legs:
+                if lg_a.market_id == lg_b.market_id or lg_a.threshold >= lg_b.threshold - 1e-6:
+                    continue
+                b_px = float(best_asks_by_token[lg_b.token_id])
+                if not (0.01 <= b_px <= 0.99):
+                    continue
+                b_net = _net_unit_ask(b_px, lg_b.fee_rate, lg_b.fee_exponent)
+                cost_net = round(a_net + b_net, 4)
+                if cost_net <= max_box_cost_net:
+                    candidates.append({
+                        "box_kind": f"{spec.sport}_{kind_tag}",
+                        "sport": spec.sport,
+                        "scope": scope,
+                        "event_id": spec.event_id,
+                        "title": spec.title,
+                        "box_cost_net": cost_net,
+                        "box_cost_gross": round(a_px + b_px, 4),
+                        "middle_width_pts": round(lg_b.threshold - lg_a.threshold, 1),
+                        "leg_a": lg_a,
+                        "leg_b": lg_b,
+                        "close_ts": spec.settle_est_ts,
+                        "label": f"{lg_a.display_label} + {lg_b.display_label}",
+                    })
+    candidates.sort(key=lambda x: (float(x["box_cost_net"]), -float(x["middle_width_pts"])))
+    return candidates
+
+
+@dataclass
+class NegRiskConvertSlateSpec:
+    event_id: str
+    slug: str
+    title: str
+    neg_risk_market_id: str
+    neg_risk_augmented: bool
+    total_market_count: int
+    is_closed_convert_safe: bool
+    end_ts: float
+    brackets: List[Dict[str, Any]]
+
+
+def parse_negrisk_convert_event(ev: Dict[str, Any]) -> Optional[NegRiskConvertSlateSpec]:
+    """
+    Parses any open `NegRisk` event for:
+      1. Universal 2-leg `NO_i + NO_j` mutual-exclusion dominance boxes (safe even when `negRiskAugmented=True`!),
+      2. Closed-partition (`negRiskAugmented=False`) `NegRiskAdapter.convertPositions` `m`-leg `NO` arbitrage
+         when all `N` event sub-markets are active and carry verified `0..N-1` `questionID` byte indices.
+    """
+    if ev.get("closed") or ev.get("archived"):
+        return None
+    if not (ev.get("enableNegRisk") or ev.get("negRisk")):
+        return None
+    mkts = ev.get("markets") or []
+    if len(mkts) < 2:
+        return None
+    end_ts = _parse_iso_ts(ev.get("endDate"))
+    if not end_ts:
+        return None
+    nr_mkt_id = str(ev.get("negRiskMarketID") or "").strip().lower()
+    nr_aug = bool(ev.get("negRiskAugmented", True))
+    valid_nr_hex = len(nr_mkt_id) == 66 and nr_mkt_id.startswith("0x")
+
+    open_brackets: List[Dict[str, Any]] = []
+    all_mkts_open = True
+    has_placeholder = False
+    _ph_re = re.compile(r"(?:\bplaceholder\b|^(?:person|party|option|candidate|team|player)\s+[a-z0-9]{1,2}$)", re.IGNORECASE)
+    for m in mkts:
+        lbl_raw = str(m.get("groupItemTitle") or m.get("question") or "").strip()
+        if _ph_re.search(lbl_raw):
+            has_placeholder = True
+        if m.get("archived") or m.get("closed") or m.get("active") is False:
+            all_mkts_open = False
+            continue
+        toks = _parse_clob_tokens(m)
+        if not toks:
+            all_mkts_open = False
+            continue
+        fr, fexp = _extract_market_fee_rate(m)
+        q_id = str(m.get("questionID") or "").strip().lower()
+        q_idx: Optional[int] = None
+        if valid_nr_hex and len(q_id) == 66 and q_id.startswith("0x") and q_id[:64] == nr_mkt_id[:64]:
+            try:
+                q_idx = int(q_id[64:], 16)
+            except ValueError:
+                q_idx = None
+        open_brackets.append({
+            "market_id": str(m.get("id") or ""),
+            "condition_id": str(m.get("conditionId") or ""),
+            "question_id": q_id,
+            "question_index": q_idx,
+            "label": lbl_raw[:48],
+            "yes_token": toks[0],
+            "no_token": toks[1],
+            "fee_rate": fr,
+            "fee_exponent": fexp,
+        })
+
+    if len(open_brackets) < 2:
+        return None
+    total_n = len(mkts)
+    idx_set = {b["question_index"] for b in open_brackets if isinstance(b.get("question_index"), int)}
+    closed_safe = bool(
+        (not nr_aug)
+        and (not has_placeholder)
+        and valid_nr_hex
+        and all_mkts_open
+        and 3 <= total_n <= 24
+        and len(open_brackets) == total_n
+        and idx_set == set(range(total_n))
+    )
+    if closed_safe:
+        open_brackets.sort(key=lambda b: int(b["question_index"]))
+    return NegRiskConvertSlateSpec(
+        event_id=str(ev.get("id") or ""),
+        slug=str(ev.get("slug") or ""),
+        title=str(ev.get("title") or ev.get("slug") or ""),
+        neg_risk_market_id=nr_mkt_id,
+        neg_risk_augmented=nr_aug,
+        total_market_count=total_n,
+        is_closed_convert_safe=closed_safe,
+        end_ts=float(end_ts),
+        brackets=open_brackets,
+    )
+
+
+def detect_negrisk_no_pair_boxes(
+    spec: NegRiskConvertSlateSpec,
+    best_no_asks: Dict[str, float],
+    max_box_cost_net: float = 1.04,
+) -> List[Dict[str, Any]]:
+    """
+    Universal 2-Leg `NO_i + NO_j` Mutual-Exclusion Dominance Box:
+    In ANY `NegRisk` event (both `negRiskAugmented=False` and `negRiskAugmented=True`), at most ONE
+    sub-market can resolve `YES`. Thus `NO_i + NO_j` pays `$1.00` if `i` or `j` wins and `$2.00` if ANY
+    3rd outcome wins! Only brackets with `ask(NO) <= 0.96` can participate in a `< $1.04` pair, making
+    pairwise scan O(1) even on 100-candidate election slates.
+    """
+    active = []
+    for b in spec.brackets:
+        nt = b["no_token"]
+        if nt not in best_no_asks:
+            continue
+        px = float(best_no_asks[nt])
+        if 0.01 <= px <= 0.985:
+            active.append((b, px, _net_unit_ask(px, float(b["fee_rate"]), float(b["fee_exponent"]))))
+    active.sort(key=lambda x: x[2])
+    # Only the lowest-priced NO legs (co-favorites where YES is high) can sum <= max_box_cost_net
+    shortlist = active[:12]
+    arbs: List[Dict[str, Any]] = []
+    for i in range(len(shortlist)):
+        b_i, px_i, net_i = shortlist[i]
+        for j in range(i + 1, len(shortlist)):
+            b_j, px_j, net_j = shortlist[j]
+            if b_i["market_id"] == b_j["market_id"]:
+                continue
+            cost_net = round(net_i + net_j, 4)
+            if cost_net <= max_box_cost_net:
+                arbs.append({
+                    "mode": "NR_NO_PAIR_BOX",
+                    "event_id": spec.event_id,
+                    "slug": spec.slug,
+                    "title": spec.title,
+                    "box_cost_net": cost_net,
+                    "box_cost_gross": round(px_i + px_j, 4),
+                    "bracket_a": b_i,
+                    "bracket_b": b_j,
+                    "close_ts": spec.end_ts,
+                    "label": f"NO[{b_i['label']}] + NO[{b_j['label']}]",
+                })
+    arbs.sort(key=lambda x: float(x["box_cost_net"]))
+    return arbs
+
+
+def _walk_side_exact_shares(
+    levels_raw: List[Dict[str, Any]],
+    shares_req: float,
+    fee_rate: float,
+    fee_exp: float,
+    is_ask: bool,
+) -> Optional[Dict[str, Any]]:
+    lvls = sorted(
+        [(float(x["price"]), float(x["size"])) for x in (levels_raw or []) if float(x.get("price", 0)) > 0 and float(x.get("size", 0)) > 0],
+        key=lambda t: (t[0] if is_ask else -t[0]),
+    )
+    if not lvls:
+        return None
+    # On V2 BUY (`is_ask=True`), taker fees are deducted in conditional shares, so to receive
+    # `shares_req` net shares on-chain (e.g. for `convertPositions`), walk gross shares `shares_req / (1 - h)`.
+    p0 = lvls[0][0]
+    h_est = (min(0.50, max(0.0, (fee_rate * ((p0 * (1.0 - p0)) ** fee_exp)) / p0)) if (is_ask and fee_rate > 0.0 and 0.0 < p0 < 1.0) else 0.0)
+    gross_shares_req = (math.ceil((float(shares_req) / (1.0 - h_est)) * 100.0 - 1e-9) / 100.0) if (is_ask and h_est > 0.0) else float(shares_req)
+    rem = float(gross_shares_req)
+    gross = 0.0
+    worst_px = lvls[0][0]
+    l1_usd = round(lvls[0][0] * lvls[0][1], 2)
+    for px, sz in lvls:
+        take = min(rem, sz)
+        gross += take * px
+        worst_px = px
+        rem -= take
+        if rem <= 1e-6:
+            break
+    if rem > 1e-5:
+        return None
+    vwap = gross / gross_shares_req
+    if is_ask:
+        net_ps = _net_unit_ask(vwap, fee_rate, fee_exp)
+        net_cash = float(shares_req) * net_ps
+        fee_usd = max(0.0, net_cash - float(shares_req) * vwap)
+    else:
+        fee_ps = fee_rate * ((vwap * (1.0 - vwap)) ** fee_exp) if fee_rate > 0.0 else 0.0
+        fee_usd = float(shares_req) * fee_ps
+        net_cash = max(0.0, gross - fee_usd)
+        net_ps = net_cash / float(shares_req)
+    return {
+        "vwap": round(vwap, 5),
+        "gross_shares": round(gross_shares_req, 2),
+        "net_per_share": round(net_ps, 5),
+        "net_cash_usd": round(net_cash, 4),
+        "fee_usd": round(fee_usd, 4),
+        "worst_px": round(worst_px, 4),
+        "l1_usd": l1_usd,
+    }
+
+
+def detect_negrisk_convert_positions_arbs(
+    spec: NegRiskConvertSlateSpec,
+    books_by_token: Dict[str, Dict[str, Any]],
+    target_budget_usd: float = 120.0,
+    min_net_edge_per_share: float = 0.010,
+    min_shares: float = 8,
+    min_net_edge_per_set: Optional[float] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Closed-Partition (`is_closed_convert_safe == True`) `NegRiskAdapter.convertPositions` Arbitrage:
+    Evaluates `m = N - 1` (buy `N - 1` `NO` legs -> convert -> `(N - 2) * $1.00` USDC + 1 `YES_k` sold into
+    resting `YES_k` bids) and `m = N - 2` subsets, walking exact equal shares across all `NO` ask books and
+    complementary `YES` bid books!
+    """
+    if min_net_edge_per_set is not None:
+        min_net_edge_per_share = float(min_net_edge_per_set)
+    if not spec.is_closed_convert_safe:
+        return []
+    n_tot = len(spec.brackets)
+    if n_tot < 3:
+        return []
+
+    # Pre-score each bracket k by (net_bid_yes(k) + net_ask_no(k) - 1.0): leaving k in the YES-sell complement
+    # instead of buying NO_k changes net edge by `net_bid_yes(k) - (1.0 - net_ask_no(k)) = net_bid_yes(k) + net_ask_no(k) - 1.0`!
+    scored = []
+    for idx, b in enumerate(spec.brackets):
+        bk_y = books_by_token.get(b["yes_token"]) or {}
+        bk_n = books_by_token.get(b["no_token"]) or {}
+        asks_n = sorted(
+            [(float(x["price"]), float(x["size"])) for x in (bk_n.get("asks") or []) if float(x.get("price", 0)) > 0 and float(x.get("size", 0)) > 0],
+            key=lambda t: t[0],
+        )
+        bids_y = sorted(
+            [(float(x["price"]), float(x["size"])) for x in (bk_y.get("bids") or []) if float(x.get("price", 0)) > 0 and float(x.get("size", 0)) > 0],
+            key=lambda t: -t[0],
+        )
+        fr, fe = float(b["fee_rate"]), float(b["fee_exponent"])
+        a_no_net = _net_unit_ask(asks_n[0][0], fr, fe) if asks_n else 9.9
+        a_no_sh = asks_n[0][1] if asks_n else 0.0
+        if bids_y:
+            by0 = bids_y[0][0]
+            b_yes_net = max(0.0, by0 - (fr * ((by0 * (1.0 - by0)) ** fe) if fr > 0 else 0.0))
+            b_yes_sh = bids_y[0][1]
+        else:
+            b_yes_net, b_yes_sh = -1.0, 0.0
+        comp_adv = b_yes_net + a_no_net - 1.0
+        scored.append((comp_adv, idx, b, a_no_net, a_no_sh, b_yes_net, b_yes_sh))
+
+    # Sort descending by `comp_adv`: top 1 (for m=N-1) or top 2 (for m=N-2) are the mathematically optimal YES-sell complements!
+    scored.sort(key=lambda t: -t[0])
+    cand_subsets: List[Tuple[List[int], List[int]]] = []
+    # Candidate 1: m = N - 1 (sell best 1 YES complement)
+    if scored[0][5] > 0.0:
+        comp_1 = [scored[0][1]]
+        no_1 = [t[1] for t in scored[1:]]
+        cand_subsets.append((sorted(no_1), comp_1))
+    # Candidate 2: m = N - 2 (sell best 2 YES complements, requires N >= 4 so m >= 2)
+    if n_tot >= 4 and scored[0][5] > 0.0 and scored[1][5] > 0.0:
+        comp_2 = sorted([scored[0][1], scored[1][1]])
+        no_2 = [t[1] for t in scored[2:]]
+        cand_subsets.append((sorted(no_2), comp_2))
+
+    arbs: List[Dict[str, Any]] = []
+    by_orig = {i: spec.brackets[i] for i in range(n_tot)}
+    for no_idxs, comp_idxs in cand_subsets:
+        m_cnt = len(no_idxs)
+        if m_cnt < 2:
+            continue
+        est_unit_cost = sum(
+            next(t[3] for t in scored if t[1] == i) for i in no_idxs
+        )
+        if est_unit_cost <= 0.0 or est_unit_cost >= float(m_cnt):
+            continue
+        max_l1_sh = min(
+            [next(t[4] for t in scored if t[1] == i) for i in no_idxs]
+            + [next(t[6] for t in scored if t[1] == k) for k in comp_idxs]
+        )
+        sh_try = int(math.floor(min(max_l1_sh, target_budget_usd / max(0.25, est_unit_cost))))
+        if sh_try < min_shares:
+            continue
+
+        no_walks = []
+        ok_walk = True
+        for i in no_idxs:
+            bi = by_orig[i]
+            wi = _walk_side_exact_shares(
+                (books_by_token.get(bi["no_token"]) or {}).get("asks") or [],
+                float(sh_try), float(bi["fee_rate"]), float(bi["fee_exponent"]), is_ask=True,
+            )
+            if wi is None:
+                ok_walk = False
+                break
+            no_walks.append((bi, wi))
+        if not ok_walk:
+            continue
+
+        yes_walks = []
+        for k in comp_idxs:
+            bk_spec = by_orig[k]
+            wk = _walk_side_exact_shares(
+                (books_by_token.get(bk_spec["yes_token"]) or {}).get("bids") or [],
+                float(sh_try), float(bk_spec["fee_rate"]), float(bk_spec["fee_exponent"]), is_ask=False,
+            )
+            if wk is None:
+                ok_walk = False
+                break
+            yes_walks.append((bk_spec, wk))
+        if not ok_walk:
+            continue
+
+        tot_no_cost_ps = sum(w["net_per_share"] for _, w in no_walks)
+        tot_yes_bid_ps = sum(w["net_per_share"] for _, w in yes_walks)
+        usdc_conv_ps = float(m_cnt - 1)
+        tot_proceeds_ps = usdc_conv_ps + tot_yes_bid_ps
+        edge_ps = round(tot_proceeds_ps - tot_no_cost_ps, 5)
+        if edge_ps < min_net_edge_per_share:
+            continue
+
+        q_indices = [int(by_orig[i]["question_index"]) for i in no_idxs]
+        index_set_int = sum(1 << qi for qi in q_indices)
+        min_l1_usd = min(
+            [w["l1_usd"] for _, w in no_walks] + [w["l1_usd"] for _, w in yes_walks]
+        )
+        arbs.append({
+            "mode": "NR_CONV_POSITIONS_INSTANT",
+            "event_id": spec.event_id,
+            "slug": spec.slug,
+            "title": spec.title,
+            "neg_risk_market_id": spec.neg_risk_market_id,
+            "m_no_legs": m_cnt,
+            "n_total": n_tot,
+            "question_indices": q_indices,
+            "no_question_indices": q_indices,
+            "index_set": index_set_int,
+            "index_set_int": index_set_int,
+            "shares": sh_try,
+            "no_cost_per_share": round(tot_no_cost_ps, 4),
+            "no_cost_net_per_set": round(tot_no_cost_ps, 4),
+            "usdc_converted_per_share": usdc_conv_ps,
+            "usdc_released_per_set": usdc_conv_ps,
+            "yes_bid_proceeds_per_share": round(tot_yes_bid_ps, 4),
+            "yes_bid_proceeds_net_per_set": round(tot_yes_bid_ps, 4),
+            "net_proceeds_per_share": round(tot_proceeds_ps, 4),
+            "net_edge_per_share": round(edge_ps, 4),
+            "net_edge_per_set": round(edge_ps, 4),
+            "total_cost_usd": round(sum(w["net_cash_usd"] for _, w in no_walks), 2),
+            "total_net_profit_usd": round(sh_try * edge_ps, 2),
+            "total_fee_usd": round(sum(w["fee_usd"] for _, w in no_walks) + sum(w["fee_usd"] for _, w in yes_walks), 4),
+            "l1_usd": round(min_l1_usd, 2),
+            "no_legs": [{"token_id": b["no_token"], "bracket": b, "walk": w} for b, w in no_walks],
+            "yes_sell_legs": [{"token_id": b["yes_token"], "bracket": b, "walk": w} for b, w in yes_walks],
+            "close_ts": spec.end_ts,
+            "label": f"CONV({m_cnt}xNO->${m_cnt-1}+SELL[{','.join(b['label'][:14] for b, _ in yes_walks)}])",
+        })
+    arbs.sort(key=lambda x: -float(x["net_edge_per_share"]))
+    return arbs
+

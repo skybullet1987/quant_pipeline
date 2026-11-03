@@ -117,6 +117,7 @@ class BarrierRungSpec:
     no_token: str
     fee_rate: float = 0.07
     resolved_yes: Optional[int] = None
+    fee_exponent: float = 1.0
 
 
 _EXPLICIT_DOLLAR_STRIKE_RE = re.compile(
@@ -243,6 +244,15 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
                 except Exception:
                     pass
 
+        fr_m = 0.07
+        fe_m = 1.0
+        try:
+            from src.polymarket_research.tradfi_sports_zero_fee_engine import _extract_market_fee_rate
+            if any(k in m for k in ("feeSchedule", "feeType", "feesEnabled", "takerBaseFee")):
+                fr_m, fe_m = _extract_market_fee_rate(m)
+        except Exception:
+            pass
+
         rungs.append(
             BarrierRungSpec(
                 event_id=str(ev.get("id") or ""),
@@ -259,7 +269,9 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
                 end_ts=end_ts,
                 yes_token=str(toks[0]),
                 no_token=str(toks[1]),
+                fee_rate=fr_m,
                 resolved_yes=resolved_yes,
+                fee_exponent=fe_m,
             )
         )
     return rungs
@@ -333,8 +345,8 @@ def evaluate_barrier_no_net_ev(
     """
     p_no = max(0.0001, min(0.9999, 1.0 - float(p_touch)))
     px = max(0.01, min(0.99, float(ask_no)))
-    fee_ps = float(fee_rate) * px * (1.0 - px)
-    eff_cost = px + fee_ps
+    h_no = min(0.50, max(0.0, float(fee_rate) * (1.0 - px))) if float(fee_rate) > 0.0 else 0.0
+    eff_cost = px / (1.0 - h_no) if h_no > 0.0 else px
     net_gain_if_win = max(1e-6, 1.0 - eff_cost)
     ev_net = p_no - eff_cost
     loss_gain_ratio = eff_cost / net_gain_if_win
@@ -427,8 +439,8 @@ def detect_barrier_monotonicity_boxes(
                     and float(leg_yes_q["start_ts"]) > float(leg_no_q["start_ts"]) + 1e-6  # YES window must start no later than NO
                 ):
                     continue
-                ay = leg_yes_q.get("ask_yes")
-                an = leg_no_q.get("ask_no")
+                ay = leg_yes_q.get("ask_yes") if leg_yes_q.get("ask_yes") is not None else leg_yes_q.get("best_ask_yes")
+                an = leg_no_q.get("ask_no") if leg_no_q.get("ask_no") is not None else leg_no_q.get("best_ask_no")
                 if ay is None or an is None:
                     continue
                 py, pn = float(ay), float(an)
@@ -436,7 +448,11 @@ def detect_barrier_monotonicity_boxes(
                     continue
                 fr_y = float(leg_yes_q.get("fee_rate", fee_rate))
                 fr_n = float(leg_no_q.get("fee_rate", fee_rate))
-                net_cost = py + (fr_y * py * (1.0 - py)) + pn + (fr_n * pn * (1.0 - pn))
+                fe_y = float(leg_yes_q.get("fee_exponent", 1.0))
+                fe_n = float(leg_no_q.get("fee_exponent", 1.0))
+                hy = min(0.50, (fr_y * ((py * (1.0 - py)) ** fe_y)) / py) if fr_y > 0.0 else 0.0
+                hn = min(0.50, (fr_n * ((pn * (1.0 - pn)) ** fe_n)) / pn) if fr_n > 0.0 else 0.0
+                net_cost = (py / (1.0 - hy)) + (pn / (1.0 - hn))
                 if 0.900 <= net_cost <= max_box_cost_net:
                     arbs.append({
                         "direction": direction,
@@ -447,10 +463,14 @@ def detect_barrier_monotonicity_boxes(
                         "leg_yes_condition_id": str(leg_yes_q.get("condition_id") or ""),
                         "yes_token": str(leg_yes_q["yes_token"]),
                         "yes_opp_token": str(leg_yes_q.get("no_token") or ""),
+                        "leg_yes_fee_rate": fr_y,
+                        "leg_yes_fee_exponent": fe_y,
                         "leg_no_market_id": str(leg_no_q["market_id"]),
                         "leg_no_condition_id": str(leg_no_q.get("condition_id") or ""),
                         "no_token": str(leg_no_q["no_token"]),
                         "no_opp_token": str(leg_no_q.get("yes_token") or ""),
+                        "leg_no_fee_rate": fr_n,
+                        "leg_no_fee_exponent": fe_n,
                         "box_cost_gross": round(py + pn, 5),
                         "box_cost_net": round(net_cost, 5),
                         "guaranteed_edge": round(1.0 - net_cost, 5),

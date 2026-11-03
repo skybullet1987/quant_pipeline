@@ -1,0 +1,10 @@
+[Unit]
+Description=PAA Daily Profitability Analysis & Portfolio Report Timer
+
+[Timer]
+OnCalendar=*-*-* 00:15:00 UTC
+Persistent=true
+Unit=polymarket-paa-daily-report.service
+
+[Install]
+WantedBy=timers.target

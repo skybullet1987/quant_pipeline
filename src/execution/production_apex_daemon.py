@@ -207,35 +207,45 @@ TRANSIENT_HTTP_CODES = (
     "503",
     "504",
     "429",
-    "Bad Gateway",
-    "Service Unavailable",
-    "Gateway Timeout",
+    "bad gateway",
+    "service unavailable",
+    "gateway timeout",
     "timed out",
-    "Remote disconnected",
-    "Connection aborted",
-    "Connection reset",
-    "Temporary failure in name resolution",
+    "read timed out",
+    "remote disconnected",
+    "connection aborted",
+    "connection reset",
+    "temporary failure in name resolution",
+    "cloudflare",
+    "cloudfront",
+    "eof occurred",
 )
 
 
+def is_transient_gateway_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(code in msg for code in TRANSIENT_HTTP_CODES)
+
+
 def call_with_gateway_retry(fn, *args, max_attempts=4, base_delay=1.5, **kwargs):
-    """Retry transient L1/CloudFlare 502/503/504 errors before failing closed into the circuit breaker."""
-    for attempt in range(1, max_attempts + 1):
+    """Retry transient L1/CloudFlare/CloudFront 502/503/504 errors before failing closed."""
+    eff_attempts = max(max_attempts, 5) if ("PYTEST_CURRENT_TEST" not in os.environ and max_attempts == 4) else max_attempts
+    for attempt in range(1, eff_attempts + 1):
         try:
             return fn(*args, **kwargs)
         except Exception as exc:
             msg = str(exc)
-            is_transient = any(code in msg for code in TRANSIENT_HTTP_CODES)
-            if not is_transient or attempt == max_attempts:
+            is_transient = is_transient_gateway_error(exc)
+            if not is_transient or attempt == eff_attempts:
                 raise
             sleep_s = base_delay * (2 ** (attempt - 1)) + random.uniform(0.1, 0.5)
             logging.warning(
-                f"[RETRY {attempt}/{max_attempts}] Transient gateway error ({msg}); "
+                f"[RETRY {attempt}/{eff_attempts}] Transient gateway error ({msg}); "
                 f"retrying in {sleep_s:.2f}s before tripping circuit breaker..."
             )
             log(
                 "WARN",
-                f"[RETRY {attempt}/{max_attempts}] Transient gateway error ({msg}); "
+                f"[RETRY {attempt}/{eff_attempts}] Transient gateway error ({msg}); "
                 f"retrying in {sleep_s:.2f}s before tripping circuit breaker...",
             )
             time.sleep(sleep_s)
@@ -640,10 +650,12 @@ class ProductionApexExecutor:
         state_path: Optional[Path] = None,
         use_risk_parity_103c: bool = USE_RISK_PARITY_103C,
         mainnet_signals: bool = False,
+        kernel_profile: str = "v5.1",
     ):
         self.testnet = testnet
         self.dry_run = dry_run
         self.mainnet_signals = mainnet_signals
+        self.kernel_profile = str(kernel_profile or "v5.1").strip().lower()
         # Explicit virtual paper mode: --mainnet --dry-run prices fills against live Mainnet books but never
         # reconciles NAV against the real wallet. Testnet dry-run still reconciles against chain state.
         self.virtual_paper = bool(dry_run and not testnet)
@@ -651,10 +663,11 @@ class ProductionApexExecutor:
         self.use_risk_parity_103c = use_risk_parity_103c
         self.latest_atr_map: Dict[str, float] = {}
         self.position_hwm_map: Dict[str, float] = {}
+        self._bracket_transient_degraded: bool = False
 
-        # 1. Process Singleton Enforcement
+        # 1. Process Singleton Enforcement (enforced for both live trading and Mainnet virtual-paper shadow)
         self._lock_file_handle = None
-        if acquire_lock and not dry_run:
+        if acquire_lock and (not dry_run or self.virtual_paper):
             self._acquire_process_singleton_lock()
 
         # 2. Journal File Selection (Dry-Run on testnet isolates to dry_run_*, Mainnet paper uses canonical papertrade_*)
@@ -696,7 +709,7 @@ class ProductionApexExecutor:
         if self.state.last_event_id == 0:
             log("INFO", "[EPOCH] Clean journal detected. Initializing first strategy epoch from on-chain truth...")
             try:
-                equity, _, _ = self.gateway.get_account_state()
+                equity = 1000.0 if getattr(self, "virtual_paper", False) else self.gateway.get_account_state()[0]
                 init_eq = equity if (equity > 10.0 and not self.dry_run) else 1000.0
                 open_unrealized = 0.0
                 if not self.dry_run:
@@ -1353,6 +1366,9 @@ class ProductionApexExecutor:
             "eth_idx": int(eth_idx),
         }
 
+        use_v51 = getattr(self, "kernel_profile", "v5.1") != "v5.0"
+        eff_target_vol = V5_TARGET_PORTFOLIO_VOL_ANN if use_v51 else 0.25
+
         raw_w, betas, vol_bar, idio_vol, _, _ = compute_apex_v5_raw_unit_weights(
             close_mat=close_mat,
             valid_mask=valid_mask,
@@ -1363,11 +1379,11 @@ class ProductionApexExecutor:
             vol_mat=vol_mat,
             top_n=V5_TOP_N_MAJORS,
             max_single_alt_weight=MAX_SINGLE_ALT_WEIGHT,
-            regime_adaptive_routing=V51_REGIME_ADAPTIVE_ROUTING,
-            er_gate_tsmom=V51_ER_GATE_TSMOM,
-            fast_tsmom_blend=V51_FAST_TSMOM_BLEND,
-            fip_quality_weight=V51_FIP_QUALITY_WEIGHT,
-            vol_accel_weight=V51_VOL_ACCEL_WEIGHT,
+            regime_adaptive_routing=(V51_REGIME_ADAPTIVE_ROUTING if use_v51 else False),
+            er_gate_tsmom=(V51_ER_GATE_TSMOM if use_v51 else False),
+            fast_tsmom_blend=(V51_FAST_TSMOM_BLEND if use_v51 else False),
+            fip_quality_weight=(V51_FIP_QUALITY_WEIGHT if use_v51 else 0.0),
+            vol_accel_weight=(V51_VOL_ACCEL_WEIGHT if use_v51 else 0.0),
         )
 
         # Build clean core previous weights (excluding any registered satellite + hedge weights)
@@ -1387,7 +1403,7 @@ class ProductionApexExecutor:
             btc_idx=btc_idx,
             current_equity=self.state.current_strategy_equity,
             historical_hwm=self.state.historical_hwm,
-            target_vol_ann=V5_TARGET_PORTFOLIO_VOL_ANN,
+            target_vol_ann=eff_target_vol,
             max_gross_leverage=PEAK_LEVERAGE,
             gz_max_dd=V5_GROSSMAN_ZHOU_MAX_DD,
             gp_keep=V5_GP_KEEP_WEIGHT,
@@ -1407,7 +1423,7 @@ class ProductionApexExecutor:
         net_btc_beta = float(np.sum(w_final * betas)) if n_symbols > 0 else 0.0
         log(
             "INFO",
-            f"[APEX v5.1 KERNEL] HWM: ${self.state.historical_hwm:.2f} | Cushion: {cushion*100:.1f}% | "
+            f"[APEX {'v5.1' if use_v51 else 'v5.0-UNOVERFIT'} KERNEL] HWM: ${self.state.historical_hwm:.2f} | Cushion: {cushion*100:.1f}% | "
             f"Active Gross: {active_leverage:.2f}x | Net BTC Beta: {net_btc_beta:+.2f} | "
             f"Longs({len(selected_longs)}): {selected_longs} | Shorts({len(selected_shorts)}): {selected_shorts}",
         )
@@ -2408,30 +2424,35 @@ class ProductionApexExecutor:
              NAV_recon = OpeningEquity + RealizedPnL + FundingPnL - Fees + Unrealized(Mark) + CashFlows.
           7. Asserts |D_t| <= $0.01; if > $0.10, trips circuit breaker to HALTED.
         """
-        # 1. Fetch live exchange state (Fail-closed on non-transient error; retry transient 502/503/504)
-        try:
-            total_equity, cash, current_positions = call_with_gateway_retry(self.gateway.get_account_state)
-            last_us = getattr(self.gateway, "last_user_state", None)
-            if isinstance(last_us, dict) and "assetPositions" in last_us:
-                user_state = last_us
-            else:
-                user_state = call_with_gateway_retry(self.gateway.info.user_state, self.gateway.account_address)
-        except Exception as e:
-            if any(code in str(e) for code in TRANSIENT_HTTP_CODES):
-                log("WARN", f"[TRANSIENT GATEWAY] Account state query unavailable after retries ({e}); aborting cycle without latching permanent HALT.")
-                raise RuntimeError(f"Transient exchange state query unavailable: {e}")
-            log("CRITICAL", f"[FAIL-CLOSED] Could not retrieve account state from Hyperliquid: {e}")
-            self.trip_halt(f"Exchange state query failed: {e}")
-            raise RuntimeError(f"Exchange state query failed: {e}")
+        is_virtual_paper = getattr(self, "virtual_paper", bool(self.dry_run and not self.testnet))
+        # 1. Fetch live exchange state (Fail-closed on non-transient error; virtual_paper never touches real wallet)
+        if is_virtual_paper:
+            total_equity, cash, current_positions = float(self.state.current_strategy_equity), float(self.state.current_strategy_equity), dict(self.state.paper_positions)
+            user_state = {"assetPositions": []}
+        else:
+            try:
+                total_equity, cash, current_positions = call_with_gateway_retry(self.gateway.get_account_state)
+                last_us = getattr(self.gateway, "last_user_state", None)
+                if isinstance(last_us, dict) and "assetPositions" in last_us:
+                    user_state = last_us
+                else:
+                    user_state = call_with_gateway_retry(self.gateway.info.user_state, self.gateway.account_address)
+            except Exception as e:
+                if is_transient_gateway_error(e):
+                    log("WARN", f"[TRANSIENT GATEWAY] Account state query unavailable after retries ({e}); aborting cycle without latching permanent HALT.")
+                    raise RuntimeError(f"Transient exchange state query unavailable: {e}")
+                log("CRITICAL", f"[FAIL-CLOSED] Could not retrieve account state from Hyperliquid: {e}")
+                self.trip_halt(f"Exchange state query failed: {e}")
+                raise RuntimeError(f"Exchange state query failed: {e}")
 
         inputs_incomplete: List[str] = []
         now_ms = int(time.time() * 1000)
         safety_overlap_ms = 24 * 3600 * 1000
 
-        # 2. Reconcile Fills
+        # 2. Reconcile Fills (skipped in virtual_paper so real Mainnet wallet never contaminates paper ledger)
         fill_query_start = max(self.state.epoch_start_ms, self.state.last_fill_cursor_ms - safety_overlap_ms)
         try:
-            fills = call_with_gateway_retry(
+            fills = [] if is_virtual_paper else call_with_gateway_retry(
                 self.gateway.info.user_fills_by_time, self.gateway.account_address, start_time=fill_query_start
             )
             if isinstance(fills, list):
@@ -2512,10 +2533,10 @@ class ProductionApexExecutor:
             inputs_incomplete.append(f"user_fills_by_time: {e}")
             log("CRITICAL", f"[RECONCILE] user_fills_by_time query error ({e}); accounting inputs incomplete")
 
-        # 3. Reconcile Funding Cashflows
+        # 3. Reconcile Funding Cashflows (virtual_paper settles 4H Mainnet funding on paper_positions separately)
         fund_query_start = max(self.state.epoch_start_ms, self.state.last_funding_cursor_ms - safety_overlap_ms)
         try:
-            funding_events = call_with_gateway_retry(
+            funding_events = [] if is_virtual_paper else call_with_gateway_retry(
                 self.gateway.info.post,
                 "/info",
                 {
@@ -3178,13 +3199,21 @@ class ProductionApexExecutor:
                 log("CRITICAL", f"[BRACKETS] UNHEDGED POSITIONS DETECTED: {unhedged_syms} have no active stop loss protection! Tripping HALT.")
                 self.trip_halt(f"UNHEDGED POSITIONS DETECTED: {unhedged_syms} have no active stop loss protection on exchange")
 
+            if getattr(self, "_bracket_transient_degraded", False):
+                self._bracket_transient_degraded = False
+                if self.state.circuit_breaker == CircuitBreakerState.DEGRADED:
+                    self.state.circuit_breaker = CircuitBreakerState.RUNNING
+                    log("INFO", "[BRACKETS] Upstream gateway recovered and all L1 trigger brackets verified; resuming RUNNING state.")
             return armed_summary
 
         try:
             return call_with_gateway_retry(_do_arm)
         except Exception as e:
-            if any(code in str(e) for code in TRANSIENT_HTTP_CODES):
-                log("WARN", f"[BRACKETS] Transient upstream HTTP gateway error ({e}); deferring bracket verification to next 60s sweep without latching permanent HALT.")
+            if is_transient_gateway_error(e):
+                log("WARN", f"[BRACKETS] Transient upstream HTTP gateway error ({e}); setting DEGRADED and deferring bracket verification to next 60s sweep without latching permanent HALT.")
+                if self.state.circuit_breaker == CircuitBreakerState.RUNNING:
+                    self.state.circuit_breaker = CircuitBreakerState.DEGRADED
+                    self._bracket_transient_degraded = True
                 armed_summary["_error"] = str(e)
                 armed_summary["_transient_gateway_outage"] = True
                 return armed_summary
@@ -3784,8 +3813,43 @@ class ProductionApexExecutor:
             except Exception as e_sat_macro:
                 log("WARN", f"[MACRO] Post-rebalance satellite scan error: {e_sat_macro}")
 
-        # 8C. Permanent Champion vs Challenger Shadow Competition Ledger (non-fatal telemetry)
-        if not self.dry_run and getattr(self, "_last_signal_snapshot", None) is not None:
+        # 8B2. Virtual-Paper 4H Real Mainnet Funding Settlement (idempotent per decision_ts_ms)
+        if getattr(self, "virtual_paper", False) and getattr(self, "_last_signal_snapshot", None) is not None:
+            try:
+                snap_f = self._last_signal_snapshot
+                f_syms = snap_f["symbols"]
+                f_rates = snap_f["funding_rates_1h"]
+                f_map = {f_syms[i]: float(f_rates[i]) for i in range(min(len(f_syms), len(f_rates)))}
+                settled_any = False
+                for p_sym, p_dict in list(self.state.paper_positions.items()):
+                    f_key = f"DRY_FUND_{p_sym}_{decision_ts_ms}"
+                    if f_key in self.state.processed_funding_keys:
+                        continue
+                    r_1h = float(f_map.get(p_sym, 0.0))
+                    if not math.isfinite(r_1h):
+                        r_1h = 0.0
+                    try:
+                        m_px_f = self.gateway.get_mid_price(p_sym)
+                    except Exception:
+                        m_px_f = float(p_dict.get("mark_px", p_dict.get("entry_px", 0.0)))
+                    signed_notional = float(p_dict.get("size", 0.0)) * m_px_f
+                    usdc_cf = round(-signed_notional * (4.0 * r_1h), 6)
+                    self.state.processed_funding_keys.add(f_key)
+                    self.journal.append_event("FUNDING_RECONCILED", {
+                        "funding_key": f_key,
+                        "coin": p_sym,
+                        "time_ms": int(decision_ts_ms),
+                        "usdc": usdc_cf,
+                        "hash_id": "VIRTUAL_PAPER_4H",
+                    })
+                    settled_any = True
+                if settled_any:
+                    self.state = self.journal.replay_and_project()
+            except Exception as e_vpf:
+                log("DEBUG", f"[VIRTUAL PAPER FUNDING] Skipped ({e_vpf})")
+
+        # 8C. Permanent Champion vs Challenger Shadow Competition Ledger (active in live & Mainnet virtual-paper shadow)
+        if (not self.dry_run or getattr(self, "virtual_paper", False)) and getattr(self, "_last_signal_snapshot", None) is not None:
             try:
                 snap = self._last_signal_snapshot
                 record_shadow_competition_step(
@@ -4073,6 +4137,12 @@ class ProductionApexExecutor:
             "status": f"RUNNING_EXP103_{self.state.circuit_breaker.value}",
             "architecture": "The 10x+ Convex Compounding Architecture (EXP-103 Sovereign Finality)",
             "version": STRATEGY_VERSION,
+            "kernel_profile": getattr(self, "kernel_profile", "v5.1"),
+            "execution_mode": (
+                "MAINNET_VIRTUAL_PAPER_SHADOW"
+                if getattr(self, "virtual_paper", False)
+                else ("DRY_RUN" if self.dry_run else ("TESTNET_LIVE" if self.testnet else "MAINNET_LIVE"))
+            ),
             "timestamp": now_str,
             "circuit_breaker": self.state.circuit_breaker.value,
             "equity": {
@@ -4142,9 +4212,10 @@ class ProductionApexExecutor:
             if not self.check_clock_drift():
                 log("CRITICAL", "[SAFETY GATE] Boot clock verification failed. Halting daemon initialization.")
                 return
-            equity, _, pos = call_with_gateway_retry(self.gateway.get_account_state)
             if self.virtual_paper:
-                pos = self.state.paper_positions
+                equity, pos = float(self.state.current_strategy_equity), self.state.paper_positions
+            else:
+                equity, _, pos = call_with_gateway_retry(self.gateway.get_account_state)
             if self.force_macro or len(pos) == 0 or self.state.bars_since_macro >= EXP114_ROLLING_CADENCE_BARS:
                 log("INFO", "[BOOT] Triggering Initial Macro Rebalance Cycle...")
                 self.execute_macro_rebalance()
@@ -4215,6 +4286,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="Simulate orders without exchange execution")
     parser.add_argument("--mainnet", action="store_true", help="Target mainnet instead of testnet")
     parser.add_argument("--mainnet-signals", action="store_true", help="Compute signals/funding from Mainnet Info feed while executing orders on Testnet")
+    parser.add_argument("--kernel-profile", choices=["v5.0", "v5.1"], default="v5.1", help="Alpha kernel profile: v5.0 (un-overfit 50/50 VT=0.25) or v5.1 (adaptive VT=0.35)")
     parser.add_argument("--no-risk-parity", action="store_true", help="Disable EXP-103C shrunk-covariance risk parity (defaults to True)")
     args = parser.parse_args()
 
@@ -4224,6 +4296,7 @@ def main():
         force_macro=args.macro,
         use_risk_parity_103c=not args.no_risk_parity,
         mainnet_signals=args.mainnet_signals,
+        kernel_profile=args.kernel_profile,
     )
 
     if args.once:

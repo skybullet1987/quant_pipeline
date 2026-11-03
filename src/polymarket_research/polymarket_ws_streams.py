@@ -25,11 +25,24 @@ import json
 import logging
 import math
 import random
+import socket
 import threading
 import time
 from collections import deque
 from decimal import Decimal
 from typing import Any, Callable, Deque, Dict, Iterable, List, Optional, Set, Tuple
+
+
+def _enable_ws_nodelay(ws: Any) -> bool:
+    try:
+        tr = getattr(ws, "transport", None)
+        sock = tr.get_extra_info("socket") if tr is not None else None
+        if sock is not None:
+            sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            return True
+    except Exception:
+        pass
+    return False
 
 try:
     import orjson as _orjson
@@ -54,6 +67,7 @@ CHAINLINK_SYMBOL_MAP: Dict[str, str] = {
     "bnb/usd": "BNB",
     "doge/usd": "DOGE",
     "hype/usd": "HYPE",
+    "xau/usd": "XAU",
 }
 
 
@@ -297,7 +311,11 @@ class PolymarketUserWsCache:
                     prev_matched = _safe_float((prev_rec or {}).get("size_matched"), 0.0)
                     orig_sz = _safe_float(item.get("original_size") or item.get("size"), _safe_float((prev_rec or {}).get("original_size"), 0.0))
                     matched_sz = max(prev_matched, _safe_float(item.get("size_matched") or item.get("matched_size"), 0.0))
-                    if prev_st in TERMINAL_CANCEL_STATUSES or prev_st in TERMINAL_FILL_STATUSES:
+                    ord_type = str(item.get("order_type") or (prev_rec or {}).get("order_type") or "").strip().upper()
+                    if status in TERMINAL_FILL_STATUSES and orig_sz > 0.0 and matched_sz < orig_sz - 1e-6 and ord_type not in ("FAK", "FOK") and msg_type != "CANCELLATION":
+                        status = "LIVE"
+                    prev_term_fill = prev_st in TERMINAL_FILL_STATUSES and (orig_sz <= 0.0 or prev_matched >= orig_sz - 1e-6 or ord_type in ("FAK", "FOK"))
+                    if prev_st in TERMINAL_CANCEL_STATUSES or prev_term_fill:
                         status = prev_st
                     elif orig_sz > 0.0 and matched_sz >= orig_sz - 1e-6 and status not in TERMINAL_CANCEL_STATUSES:
                         status = "MATCHED"
@@ -384,12 +402,34 @@ class PolymarketUserWsCache:
                             self._confirmed_token_deltas[l_aid] = self._confirmed_token_deltas.get(l_aid, 0.0) - signed_sh
 
                     taker_oid = str(item.get("taker_order_id") or "").strip()
+                    matched_sz_by_oid: Dict[str, float] = {}
+                    if taker_oid and top_sz > 0.0:
+                        matched_sz_by_oid[taker_oid] = top_sz
+                    for mo in maker_list:
+                        mo_oid = str(mo.get("order_id") or "").strip()
+                        if mo_oid:
+                            mo_sz = _safe_float(mo.get("matched_amount") or mo.get("size"), top_sz if len(maker_list) == 1 else 0.0)
+                            if mo_sz > 0.0:
+                                matched_sz_by_oid[mo_oid] = matched_sz_by_oid.get(mo_oid, 0.0) + mo_sz
                     for oid_ref in [taker_oid] + [str(mo.get("order_id") or "").strip() for mo in maker_list]:
                         if oid_ref:
                             prev_o = self._orders_by_id.get(oid_ref)
                             if isinstance(prev_o, dict):
                                 prev_o["_updated_mono"] = now_m
                                 prev_o["relayer_trade_status"] = tr_status
+                                inc_sz = matched_sz_by_oid.get(oid_ref, 0.0)
+                                if tr_id and tr_status in ("MATCHED", "MINED", "CONFIRMED") and inc_sz > 0.0:
+                                    t_map = prev_o.setdefault("_trade_fill_by_id", {})
+                                    t_map[tr_id] = max(_safe_float(t_map.get(tr_id), 0.0), inc_sz)
+                                    trade_sum = sum(float(v) for v in t_map.values())
+                                    cur_m = _safe_float(prev_o.get("size_matched"), 0.0)
+                                    orig_s = _safe_float(prev_o.get("original_size"), 0.0)
+                                    new_m = max(cur_m, min(orig_s, trade_sum) if orig_s > 0.0 else trade_sum)
+                                    prev_o["size_matched"] = new_m
+                                    if orig_s > 0.0 and new_m >= orig_s - 1e-4:
+                                        prev_o["status"] = "MATCHED"
+                                elif tr_id and tr_status == "FAILED" and isinstance(prev_o.get("_trade_fill_by_id"), dict):
+                                    prev_o["_trade_fill_by_id"].pop(tr_id, None)
                                 if tr_status in ("MATCHED", "MINED", "CONFIRMED") and item.get("transaction_hash"):
                                     txs = list(prev_o.get("transactions_hashes") or [])
                                     tx_h = str(item["transaction_hash"])
@@ -452,7 +492,10 @@ class PolymarketUserWsCache:
                     open_timeout=6,
                     close_timeout=3,
                     max_size=4 * 1024 * 1024,
+                    max_queue=512,
+                    compression=None,
                 ) as ws:
+                    _enable_ws_nodelay(ws)
                     await ws.send(auth_msg)
                     now_m = time.monotonic()
                     with self._lock:
@@ -672,7 +715,10 @@ class PolymarketChainlinkLiveStream:
                     open_timeout=6,
                     close_timeout=3,
                     max_size=2 * 1024 * 1024,
+                    max_queue=512,
+                    compression=None,
                 ) as ws:
+                    _enable_ws_nodelay(ws)
                     await ws.send(sub_msg)
                     with self._lock:
                         self._connected = True
@@ -714,23 +760,53 @@ class PolymarketClobMarketWsTracker:
         ws_url: str = MARKET_WS_URL,
         recycle_bid_trigger: float = 0.985,
         on_urgent_bid: Optional[Callable[[str, float], None]] = None,
+        on_book_change: Optional[Callable[[str, Dict[str, Any]], None]] = None,
     ) -> None:
         self._ws_url = ws_url
         self._recycle_bid_trigger = float(recycle_bid_trigger)
         self._on_urgent_bid = on_urgent_bid
+        self._on_book_change = on_book_change
         self._lock = threading.RLock()
         self._desired_tokens: Set[str] = set()
         self._books: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._raw_levels: Dict[str, Tuple[Dict[float, float], Dict[float, float]]] = {}
+        self._sub_wakeup: Optional[asyncio.Event] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
 
     def set_desired_tokens(self, tokens: Iterable[str]) -> None:
         clean = {str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()}
+        added = False
         with self._lock:
+            if clean - self._desired_tokens:
+                added = True
             self._desired_tokens = clean
             for stale in list(self._books.keys()):
                 if stale not in clean:
                     self._books.pop(stale, None)
                     self._raw_levels.pop(stale, None)
+        if added:
+            self._signal_sub_wakeup()
+
+    def subscribe_tokens_immediate(self, tokens: Iterable[str]) -> None:
+        clean = {str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()}
+        if not clean:
+            return
+        added = False
+        with self._lock:
+            if clean - self._desired_tokens:
+                self._desired_tokens.update(clean)
+                added = True
+        if added:
+            self._signal_sub_wakeup()
+
+    def _signal_sub_wakeup(self) -> None:
+        ev = self._sub_wakeup
+        lp = self._loop
+        if ev is not None and lp is not None and not lp.is_closed():
+            try:
+                lp.call_soon_threadsafe(ev.set)
+            except Exception:
+                pass
 
     def get_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
         tok = str(token_id or "").strip()
@@ -754,6 +830,7 @@ class PolymarketClobMarketWsTracker:
         urgent_hits: List[Tuple[str, float]] = []
         items = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
 
+        changed_books: List[Tuple[str, Dict[str, Any]]] = []
         with self._lock:
             for item in items:
                 if not isinstance(item, dict):
@@ -763,6 +840,8 @@ class PolymarketClobMarketWsTracker:
                     aid = str(item["asset_id"])
                     if aid in self._desired_tokens:
                         bb = self._apply_snapshot_locked(aid, item.get("bids") or [], item.get("asks") or [], now_m)
+                        if self._on_book_change is not None and aid in self._books:
+                            changed_books.append((aid, self._books[aid][1]))
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
                 elif ev == "price_change" or "price_changes" in item:
@@ -774,8 +853,17 @@ class PolymarketClobMarketWsTracker:
                                 by_aid.setdefault(aid, []).append(pc)
                     for aid, pcs in by_aid.items():
                         bb = self._apply_changes_locked(aid, pcs, now_m)
+                        if self._on_book_change is not None and aid in self._books:
+                            changed_books.append((aid, self._books[aid][1]))
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
+
+        if self._on_book_change is not None and changed_books:
+            for aid, bk_snap in changed_books:
+                try:
+                    self._on_book_change(aid, bk_snap)
+                except Exception:
+                    pass
 
         if self._on_urgent_bid is not None:
             # Debounce per token (<= 1 wakeup / 2s) so a winner parked at >= $0.985 doesn't pin 5 Hz REST supervision.
@@ -848,12 +936,18 @@ class PolymarketClobMarketWsTracker:
             import websockets
         except ImportError:
             return
+        self._loop = asyncio.get_running_loop()
+        self._sub_wakeup = asyncio.Event()
         backoff = 0.5
         while not (stop_check and stop_check()):
             with self._lock:
                 desired_0 = sorted(self._desired_tokens)
             if not desired_0:
-                await asyncio.sleep(0.5)
+                try:
+                    await asyncio.wait_for(self._sub_wakeup.wait(), timeout=0.5)
+                    self._sub_wakeup.clear()
+                except asyncio.TimeoutError:
+                    pass
                 continue
             try:
                 async with websockets.connect(
@@ -863,7 +957,10 @@ class PolymarketClobMarketWsTracker:
                     open_timeout=6,
                     close_timeout=3,
                     max_size=4 * 1024 * 1024,
+                    max_queue=512,
+                    compression=None,
                 ) as ws:
+                    _enable_ws_nodelay(ws)
                     subscribed = set(desired_0)
                     # Drop pre-reconnect books: deltas missed during the gap would leave phantom levels.
                     with self._lock:
@@ -874,31 +971,49 @@ class PolymarketClobMarketWsTracker:
                     last_chk = time.monotonic()
                     last_rx = last_chk
                     last_ping = last_chk
-                    while not (stop_check and stop_check()):
-                        now_m = time.monotonic()
-                        if (now_m - last_ping) >= 9.0:
-                            last_ping = now_m
-                            await ws.send("PING")
-                        if (now_m - last_chk) >= 1.0:
-                            last_chk = now_m
-                            with self._lock:
-                                cur = set(self._desired_tokens)
-                            if not cur:
+                    recv_t: Optional[asyncio.Future[Any]] = None
+                    try:
+                        while not (stop_check and stop_check()):
+                            now_m = time.monotonic()
+                            if (now_m - last_ping) >= 9.0:
+                                last_ping = now_m
+                                await ws.send("PING")
+                            woke_sub = bool(self._sub_wakeup and self._sub_wakeup.is_set())
+                            if woke_sub or (now_m - last_chk) >= 1.0:
+                                if woke_sub and self._sub_wakeup is not None:
+                                    self._sub_wakeup.clear()
+                                last_chk = now_m
+                                with self._lock:
+                                    cur = set(self._desired_tokens)
+                                if not cur:
+                                    break
+                                added = sorted(cur - subscribed)
+                                if added:
+                                    await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe"}))
+                                    subscribed.update(added)
+                                elif len(subscribed) > len(cur) + 16:
+                                    break
+                            if (now_m - last_rx) > 30.0:
                                 break
-                            added = sorted(cur - subscribed)
-                            if added:
-                                await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe"}))
-                                subscribed.update(added)
-                            elif len(subscribed) > len(cur) + 16:
-                                break
-                        if (now_m - last_rx) > 30.0:
-                            break
-                        try:
-                            msg = await asyncio.wait_for(ws.recv(), timeout=1.0)
-                        except asyncio.TimeoutError:
-                            continue
-                        last_rx = time.monotonic()
-                        self.process_ws_payload(msg)
+                            if recv_t is None:
+                                recv_t = asyncio.ensure_future(ws.recv())
+                            wake_t = asyncio.ensure_future(self._sub_wakeup.wait()) if self._sub_wakeup is not None else None
+                            wait_set = {recv_t, wake_t} if wake_t is not None else {recv_t}
+                            done, pending = await asyncio.wait(wait_set, timeout=1.0, return_when=asyncio.FIRST_COMPLETED)
+                            if wake_t is not None and wake_t in pending:
+                                wake_t.cancel()
+                                await asyncio.gather(wake_t, return_exceptions=True)
+                            if recv_t in done:
+                                msg = recv_t.result()
+                                recv_t = None
+                                last_rx = time.monotonic()
+                                self.process_ws_payload(msg)
+                            else:
+                                continue
+                    finally:
+                        if recv_t is not None and not recv_t.done():
+                            recv_t.cancel()
+                            await asyncio.gather(recv_t, return_exceptions=True)
             except asyncio.CancelledError:
                 break
             except Exception as exc:

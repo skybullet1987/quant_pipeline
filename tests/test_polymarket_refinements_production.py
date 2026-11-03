@@ -713,11 +713,16 @@ async def test_peak_bid_trailing_profit_ratchet(tmp_path, monkeypatch):
         }
     }
 
-    # Reference spot is healthy (+0.40% cushion)
+    # 1) v5.0 Deep-ITM protection (_deep_itm_z >= 1.50 at +0.40% cushion / 300s TTE): must NOT prematurely cut winner
     harvester.get_reference_spot_price = MagicMock(return_value=60240.0)
-    # Book bid is 0.77 (floor is 0.78, so bid <= floor, and 0.77 >= 0.65 + 0.05 = 0.70)
     harvester.executor.get_market_book_async = AsyncMock(return_value={"bids": [{"price": "0.77", "size": "100"}]})
+    with patch("time.time", return_value=now_ts):
+        await harvester.check_resolutions_and_manage_positions()
+    harvester.executor.cancel_order.assert_not_called()
 
+    # 2) Fading cushion (_deep_itm_z < 1.50 at +0.10% cushion / 300s TTE): triggers TRAILING_PROFIT_RATCHET_UNWIND
+    harvester.active_positions["POS_RATCHET"]["trailing_ratchet_detected_ts"] = now_ts - 6.5
+    harvester.get_reference_spot_price = MagicMock(return_value=60060.0)
     with patch("time.time", return_value=now_ts):
         await harvester.check_resolutions_and_manage_positions()
 

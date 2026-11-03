@@ -257,13 +257,14 @@ def test_compute_max_acceptable_ask_late_expiry_unlock():
 # ==============================================================================
 
 @pytest.fixture
-def mock_harvester(tmp_path):
+def mock_harvester(tmp_path, monkeypatch):
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
     with patch("src.polymarket_research.polymarket_live_harvester.DATA_DIR", tmp_path), \
          patch("src.polymarket_research.polymarket_live_harvester.STATE_FILE", tmp_path / "live_harvester_state.json"):
         h = PolymarketLiveHarvester(dry_run=True)
         h.state_file = tmp_path / "live_harvester_state.json"
         h.active_positions = {}
-        return h
+        yield h
 
 
 @pytest.mark.anyio
@@ -299,7 +300,7 @@ async def test_anti_wick_rebound_guard_pauses_salvage(mock_harvester):
     # Current spot at 59940.0 (rebounding upward by +40 / 60000 = +0.067% >= +0.03%)
     mock_harvester.get_reference_spot_price = MagicMock(return_value=59940.0)
     mock_harvester.executor.get_market_book_async = AsyncMock(return_value={"bids": [{"price": "0.40", "size": "100"}]})
-    mock_harvester.executor.cancel_order = MagicMock()
+    mock_harvester.executor.cancel_order = MagicMock(return_value={"canceled": ["order_tp_accel"], "is_canceled": True})
 
     with patch("time.time", return_value=now_ts):
         await mock_harvester.check_resolutions_and_manage_positions()
@@ -342,7 +343,7 @@ async def test_fast_breakdown_acceleration_halves_duration(mock_harvester):
     # Current spot crashed to 59880.0, best_b = 0.38 <= 0.42
     mock_harvester.get_reference_spot_price = MagicMock(return_value=59880.0)
     mock_harvester.executor.get_market_book_async = AsyncMock(return_value={"bids": [{"price": "0.38", "size": "100"}]})
-    mock_harvester.executor.cancel_order = MagicMock()
+    mock_harvester.executor.cancel_order = MagicMock(return_value={"canceled": ["order_tp_accel"], "is_canceled": True})
     mock_harvester.executor.execute_unwind_order = MagicMock(
         return_value={"order_id": "unwind_accel_123", "status": "FILLED", "filled_shares": 30.0, "avg_fill_price": 0.38}
     )

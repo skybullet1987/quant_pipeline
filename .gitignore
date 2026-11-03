@@ -1,4 +1,3 @@
-
 # Build Artifacts & Logs
 # Data marts & local scratchpads
 # Environment Secrets
@@ -17,6 +16,7 @@
 *.pkl
 *.pyc
 .env
+.env.*
 .pytest_cache/
 __pycache__/
 data/*.parquet
@@ -31,15 +31,11 @@ crypto_features/logs/
 production_models/
 target/
 venv/
-.env
 *.lock
 *.db
-*.parquet
 *.cbm
-*.pkl
-venv/
-__pycache__/
-.pytest_cache/
 backups/
 *.bak*
 !config/polymarket_risk_config.json
+!config/polymarket_strategy_and_risk.json
+!config/paa_autonomy_config.json

@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "runtime": {
+    "agy_binary_linux": "/home/skybullet1987/.local/bin/agy",
+    "agy_binary_windows": "C:\\Users\\Anton\\.gemini\\bin\\agy.exe",
+    "adc_credentials_linux": "/home/skybullet1987/.config/gcloud/application_default_credentials.json",
+    "gcp_project": "parnasa-498503",
+    "fast_triage_model": "gemini-3.8-flash-low",
+    "research_model": "gemini-3.8-flash-high",
+    "engineering_model": "gemini-4-argon-high",
+    "worktree_root_linux": "/home/skybullet1987/paa_worktrees",
+    "staging_root_linux": "/home/skybullet1987/paa_staging"
+  },
+  "schedules": {
+    "monitor_interval_sec": 60,
+    "supervisor_interval_sec": 120,
+    "scanner_interval_sec": 300,
+    "director_interval_sec": 900,
+    "hourly_opt_interval_sec": 3600,
+    "six_hour_eval_interval_sec": 21600,
+    "daily_report_utc": "00:15:00",
+    "weekly_review_utc": "Sun 01:00:00"
+  },
+  "budget": {
+    "max_daily_ai_invocations": 96,
+    "max_hourly_ai_invocations": 8,
+    "max_daily_ai_cost_usd": 2.50,
+    "est_cost_per_1k_input_tokens_flash_usd": 0.00015,
+    "est_cost_per_1k_output_tokens_flash_usd": 0.00060,
+    "est_cost_per_1k_input_tokens_argon_usd": 0.00125,
+    "est_cost_per_1k_output_tokens_argon_usd": 0.00500,
+    "prorated_vm_hourly_cost_usd": 0.0730,
+    "research_job_timeout_sec": 180,
+    "engineering_job_timeout_sec": 420,
+    "qa_job_timeout_sec": 240,
+    "max_simultaneous_engineering_jobs": 1,
+    "max_task_retries": 3,
+    "retry_backoff_base_sec": 30.0,
+    "min_gamma_poll_interval_sec": 60.0,
+    "min_expected_daily_ev_for_ai_build_usd": 0.25
+  },
+  "monitoring": {
+    "director_heartbeat_max_age_sec": 1200.0,
+    "monitor_heartbeat_max_age_sec": 180.0,
+    "supervisor_heartbeat_max_age_sec": 300.0,
+    "worker_lease_ttl_sec": 480.0,
+    "shm_tick_max_age_sec": 30.0,
+    "alpha124_state_max_age_sec": 360.0,
+    "accounting_discrepancy_threshold_usd": 1.50,
+    "accounting_share_tolerance": 0.75,
+    "max_consecutive_empty_research_runs": 4,
+    "min_free_disk_gb": 5.0,
+    "min_available_mem_mb": 512.0
+  },
+  "permissions": {
+    "jurisdiction_compliance_gate": "RESTRICTED_NEW_LIVE_ACTIVATION_REQUIRES_ELIGIBLE_OPERATOR_APPROVAL",
+    "ontario_restriction_enforced": true,
+    "allow_auto_plumbing_bugfix_deploy": true,
+    "allow_auto_risk_tightening_hot_reload": true,
+    "require_flat_positions_for_live_restart": true,
+    "protected_files": [
+      ".env",
+      "src/paa_os/permissions.py",
+      "src/polymarket_research/execute_approvals.py",
+      "src/polymarket_research/setup_polymarket_account.py",
+      "config/paa_master_mandate.md"
+    ],
+    "forbidden_diff_patterns": [
+      "POLYGON_PRIVATE_KEY",
+      "HYPERLIQUID_PRIVATE_KEY",
+      "POLY_BUILDER_SECRET",
+      "safeTransferFrom(",
+      "eth_sendRawTransaction"
+    ],
+    "immutable_risk_floors": {
+      "min_hard_ruin_floor_usd": 42.0,
+      "max_daily_directional_loss_usd": 16.57,
+      "max_notional_cap_seed": 0.22,
+      "max_stop_equity_risk_seed": 0.135,
+      "max_portfolio_exposure_pct_seed": 0.96,
+      "max_taker_price_1h": 0.81,
+      "max_taker_price_15m": 0.81,
+      "max_maker_price_15m": 0.78,
+      "max_d1_box_cost_net": 0.985
+    }
+  }
+}

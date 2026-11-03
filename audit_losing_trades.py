@@ -12,19 +12,64 @@ AUTONOMOUS POST-TRADE FORENSIC AUDITOR (LIVE REAL-MONEY KRAKEN-FINLAND ONLY)
    - `python audit_losing_trades.py --redeploy`
 """
 import argparse
+import contextlib
 import json
 import os
 import subprocess
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional
 
-REPO_DIR = Path(r"C:\Users\Anton\source\repos\Dominus")
+REPO_DIR = Path(os.getenv("DOMINUS_REPO_DIR") or Path(__file__).resolve().parent)
 DATA_DIR = REPO_DIR / "data" / "polymarket"
 AUDIT_STATE_FILE = DATA_DIR / "forensic_audit_state.json"
+AUDIT_LOCK_FILE = DATA_DIR / "forensic_audit_state.lock"
 AUDIT_LEDGER_FILE = DATA_DIR / "forensic_audit_ledger.jsonl"
 WFO_HYPOTHESIS_QUEUE_FILE = DATA_DIR / "wfo_hypothesis_queue.jsonl"
+
+
+@contextlib.contextmanager
+def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
+    """Cross-process atomic file lock preventing concurrent monitor/PAA races on forensic_audit_state.json."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fh = open(AUDIT_LOCK_FILE, "a+b")
+    deadline = time.monotonic() + max(0.5, timeout_sec)
+    locked = False
+    try:
+        while True:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    if fh.tell() == 0:
+                        fh.write(b"\x00")
+                        fh.flush()
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    break
+                time.sleep(0.05)
+        yield
+    finally:
+        if locked:
+            try:
+                if os.name == "nt":
+                    import msvcrt
+                    fh.seek(0)
+                    msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+            except OSError:
+                pass
+        fh.close()
 
 AUDIT_CLASSIFICATIONS = (
     "PLUMBING_0_PARAM",
@@ -108,11 +153,23 @@ def append_wfo_hypothesis_queue(rec: Dict[str, Any]) -> None:
 
 
 def classify_losing_trade_forensics(rec: Dict[str, Any]) -> Dict[str, str]:
+    tid = str(rec.get("trade_id") or "")
+    slv = str(rec.get("sleeve") or "")
     st = str(rec.get("status") or "").upper()
+    eos = str(rec.get("exit_order_status") or "").upper()
     cr = str(rec.get("close_reason") or "").upper()
     em = str(rec.get("entry_mode") or "").upper()
-    if st in {"UNRESOLVED_BALANCE_DISCREPANCY", "ENTRY_OUTCOME_UNKNOWN", "EXIT_CANCEL_PENDING"} or "ERROR" in cr:
+    if (
+        st in {"UNRESOLVED_BALANCE_DISCREPANCY", "ENTRY_OUTCOME_UNKNOWN", "EXIT_CANCEL_PENDING"}
+        or eos in {"UNRESOLVED_BALANCE_DISCREPANCY", "ENTRY_OUTCOME_UNKNOWN", "EXIT_CANCEL_PENDING"}
+        or "ERROR" in cr
+    ):
         return {"suggested_classification": "PLUMBING_0_PARAM", "rationale": "Deterministic state/reconciliation anomaly."}
+    if "PRE_KICKOFF" in cr or (tid.startswith("SPORTS_CORRIDOR_LIVE_") and slv == "SOC2_EXACT_SCORE_2D_LATTICE"):
+        return {
+            "suggested_classification": "EXPECTED_VARIANCE_NO_CHANGE",
+            "rationale": "Authorized pre-kickoff Maker scratch / T-5m protection on legacy pre-v5.4.2 SOC2 corridor leg (SOC2 live routing already disabled in v5.4.2+); record EXPECTED_LOSS and do NOT edit code or restart.",
+        }
     if "LEGGED_OUT" in cr or any(k in em for k in ("RESCUE", "FALLBACK", "DOWNSNAP")):
         return {"suggested_classification": "SEQUENCE_TELEMETRY_REQUIRED", "rationale": "Sequence/timing event; check simulator."}
     return {"suggested_classification": "EXPECTED_VARIANCE_NO_CHANGE", "rationale": "Variance; threshold edits need PARAM_WFO_REQUIRED."}
@@ -133,11 +190,6 @@ def fetch_kraken_live_state() -> Dict[str, Any]:
 
 
 def scan_trades() -> Dict[str, Any]:
-    audit_st = load_audit_state()
-    audited = audit_st.setdefault("audited_trades", {})
-    uninspected_losses: List[Dict[str, Any]] = []
-    newly_skipped_wins = 0
-
     try:
         remote = fetch_kraken_live_state()
         svc_status = remote["service_status"]
@@ -147,6 +199,7 @@ def scan_trades() -> Dict[str, Any]:
         healthy = (svc_status == "active") and (not is_halted) and (st.get("status") == "RUNNING")
         closed_positions = list(st.get("closed_positions", []))
     except Exception as e:
+        audit_st = load_audit_state()
         return {
             "status": "ACTION_REQUIRED",
             "daemon_health": {"healthy": False, "error": str(e)},
@@ -156,43 +209,91 @@ def scan_trades() -> Dict[str, Any]:
             "audit_stats": audit_st.get("stats", {}),
         }
 
-    for rec in closed_positions:
-        tid = str(rec.get("trade_id") or "")
-        if not tid or tid in audited:
-            continue
-        # Skip positions still awaiting on-chain redemption resolution if PnL is not yet finalized
-        if (
-            rec.get("exit_order_status") == "AWAITING_REDEMPTION"
-            or rec.get("status") == "AWAITING_ONCHAIN_SETTLEMENT"
-        ) and rec.get("net_pnl_usd") is None:
-            continue
+    with _audit_state_lock():
+        audit_st = load_audit_state()
+        audited = audit_st.setdefault("audited_trades", {})
+        uninspected_losses: List[Dict[str, Any]] = []
+        newly_skipped_wins = 0
 
-        raw_pnl = rec.get("net_pnl_usd")
-        if raw_pnl is not None:
-            won = float(raw_pnl) >= 0.0
-        else:
-            won = bool(rec.get("won") is True)
-        if won:
-            entry = {
-                "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
-                "trade_id": tid,
-                "sleeve": rec.get("sleeve"),
-                "asset": rec.get("asset"),
-                "net_pnl_usd": rec.get("net_pnl_usd"),
-                "verdict": "PROFIT_OK",
-                "classification": "WIN_AUTO_CLEARED",
-                "notes": "Winning real-money trade — auto-cleared.",
-            }
-            audited[tid] = entry
-            audit_st["stats"]["profits_skipped"] = audit_st["stats"].get("profits_skipped", 0) + 1
-            newly_skipped_wins += 1
-            append_audit_ledger(entry)
-        else:
-            rec_enriched = dict(rec)
-            rec_enriched["forensic_classification_hint"] = classify_losing_trade_forensics(rec)
-            uninspected_losses.append(rec_enriched)
+        active_positions_map = st.get("active_positions") or {}
+        active_box_ids = {
+            str(p.get("box_id") or "").strip()
+            for p in (active_positions_map.values() if isinstance(active_positions_map, dict) else [])
+            if isinstance(p, dict) and str(p.get("box_id") or "").strip()
+        }
+        closed_by_box: Dict[str, List[Dict[str, Any]]] = {}
+        for _r in closed_positions:
+            if isinstance(_r, dict):
+                _bk = str(_r.get("box_id") or "").strip()
+                if _bk:
+                    closed_by_box.setdefault(_bk, []).append(_r)
 
-    save_audit_state(audit_st)
+        for rec in closed_positions:
+            tid = str(rec.get("trade_id") or "")
+            if not tid or tid in audited:
+                continue
+            # Skip positions still awaiting on-chain redemption resolution if PnL is not yet finalized
+            if (
+                rec.get("exit_order_status") == "AWAITING_REDEMPTION"
+                or rec.get("status") == "AWAITING_ONCHAIN_SETTLEMENT"
+            ) and rec.get("net_pnl_usd") is None:
+                continue
+
+            bk = str(rec.get("box_id") or "").strip()
+            is_box_group = bool(bk) and (bool(rec.get("is_dominance_box")) or len(closed_by_box.get(bk, ())) > 1)
+            if is_box_group and bk in active_box_ids:
+                # Partner leg of the same box is still active / settling; wait for full box resolution
+                continue
+
+            raw_pnl = rec.get("net_pnl_usd")
+            if is_box_group and len(closed_by_box.get(bk, ())) >= 2:
+                box_legs = closed_by_box[bk]
+                if any(
+                    (
+                        x.get("exit_order_status") == "AWAITING_REDEMPTION"
+                        or x.get("status") == "AWAITING_ONCHAIN_SETTLEMENT"
+                    )
+                    and x.get("net_pnl_usd") is None
+                    for x in box_legs
+                ):
+                    continue
+                box_net_pnl = sum(
+                    float(x.get("net_pnl_usd") if x.get("net_pnl_usd") is not None else (x.get("realized_pnl_usd") or 0.0))
+                    for x in box_legs
+                )
+                won = box_net_pnl >= -1e-6
+            elif raw_pnl is not None:
+                won = float(raw_pnl) >= 0.0
+            else:
+                won = bool(rec.get("won") is True)
+            if won:
+                win_note = (
+                    f"Winning multi-leg box leg (box_id={bk}) — auto-cleared."
+                    if is_box_group and float(raw_pnl or 0.0) < 0.0
+                    else "Winning real-money trade — auto-cleared."
+                )
+                entry = {
+                    "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                    "trade_id": tid,
+                    "sleeve": rec.get("sleeve"),
+                    "asset": rec.get("asset"),
+                    "net_pnl_usd": rec.get("net_pnl_usd"),
+                    "verdict": "PROFIT_OK",
+                    "classification": "WIN_AUTO_CLEARED",
+                    "notes": win_note,
+                }
+                audited[tid] = entry
+                audit_st["stats"]["profits_skipped"] = audit_st["stats"].get("profits_skipped", 0) + 1
+                newly_skipped_wins += 1
+                append_audit_ledger(entry)
+            else:
+                rec_enriched = dict(rec)
+                rec_enriched["forensic_classification_hint"] = classify_losing_trade_forensics(rec)
+                uninspected_losses.append(rec_enriched)
+
+        if newly_skipped_wins > 0 or not AUDIT_STATE_FILE.exists():
+            save_audit_state(audit_st)
+        stats_snapshot = dict(audit_st.get("stats", {}))
 
     health = {
         "mode": "LIVE_REAL_MONEY_KRAKEN_FINLAND",
@@ -216,7 +317,7 @@ def scan_trades() -> Dict[str, Any]:
         "newly_cleared_wins": newly_skipped_wins,
         "uninspected_losses_count": len(uninspected_losses),
         "uninspected_losses": uninspected_losses,
-        "audit_stats": audit_st.get("stats", {}),
+        "audit_stats": stats_snapshot,
     }
 
 
@@ -243,7 +344,7 @@ def mark_audited(
             raise ValueError(
                 f"GOVERNANCE_VIOLATION: verdict=BUG_FIXED requires classification=PLUMBING_0_PARAM (got {resolved_cls})."
             )
-        if classification is None and any(tok in notes_low for tok in _TYPE2_PARAM_TOKENS) and any(
+        if any(tok in notes_low for tok in _TYPE2_PARAM_TOKENS) and any(
             vb in notes_low for vb in _TUNE_VERBS
         ):
             raise ValueError(
@@ -251,44 +352,49 @@ def mark_audited(
                 "use --verdict PARAM_WFO_REQUIRED."
             )
 
-    audit_st = load_audit_state()
-    audited = audit_st.setdefault("audited_trades", {})
-    now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    with _audit_state_lock():
+        audit_st = load_audit_state()
+        audited = audit_st.setdefault("audited_trades", {})
+        existing = audited.get(trade_id)
+        if isinstance(existing, dict) and existing.get("verdict") not in (None, "HISTORICAL_BASELINE"):
+            print(json.dumps({"ok": True, "already_audited": True, "recorded": existing}, indent=2))
+            return existing
 
-    entry: Dict[str, Any] = {
-        "timestamp": now_str,
-        "trade_id": trade_id,
-        "verdict": verdict,
-        "classification": resolved_cls,
-        "notes": notes,
-    }
-    if wfo_grid:
-        entry["wfo_grid"] = wfo_grid
-    audited[trade_id] = entry
-
-    if verdict == "EXPECTED_LOSS":
-        audit_st["stats"]["expected_losses_ok"] = audit_st["stats"].get("expected_losses_ok", 0) + 1
-    elif verdict == "BUG_FIXED":
-        audit_st["stats"]["bugs_fixed_and_redeployed"] = audit_st["stats"].get("bugs_fixed_and_redeployed", 0) + 1
-    elif verdict == "PARAM_WFO_REQUIRED":
-        audit_st["stats"]["param_wfo_queued"] = audit_st["stats"].get("param_wfo_queued", 0) + 1
-
-    if verdict == "PARAM_WFO_REQUIRED" or resolved_cls in ("PARAM_WFO_REQUIRED", "SEQUENCE_TELEMETRY_REQUIRED"):
-        append_wfo_hypothesis_queue({
-            "queued_at": now_str,
+        now_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        entry: Dict[str, Any] = {
+            "timestamp": now_str,
             "trade_id": trade_id,
             "verdict": verdict,
             "classification": resolved_cls,
-            "wfo_grid": wfo_grid,
             "notes": notes,
-            "status": "QUEUED_FOR_PURGED_WFO",
-        })
+        }
+        if wfo_grid:
+            entry["wfo_grid"] = wfo_grid
+        audited[trade_id] = entry
 
-    recent = audit_st.setdefault("recent_verdicts", [])
-    recent.append(entry)
-    audit_st["recent_verdicts"] = recent[-30:]
-    save_audit_state(audit_st)
-    append_audit_ledger(entry)
+        if verdict == "EXPECTED_LOSS":
+            audit_st["stats"]["expected_losses_ok"] = audit_st["stats"].get("expected_losses_ok", 0) + 1
+        elif verdict == "BUG_FIXED":
+            audit_st["stats"]["bugs_fixed_and_redeployed"] = audit_st["stats"].get("bugs_fixed_and_redeployed", 0) + 1
+        elif verdict == "PARAM_WFO_REQUIRED":
+            audit_st["stats"]["param_wfo_queued"] = audit_st["stats"].get("param_wfo_queued", 0) + 1
+
+        if verdict == "PARAM_WFO_REQUIRED" or resolved_cls in ("PARAM_WFO_REQUIRED", "SEQUENCE_TELEMETRY_REQUIRED"):
+            append_wfo_hypothesis_queue({
+                "queued_at": now_str,
+                "trade_id": trade_id,
+                "verdict": verdict,
+                "classification": resolved_cls,
+                "wfo_grid": wfo_grid,
+                "notes": notes,
+                "status": "QUEUED_FOR_PURGED_WFO",
+            })
+
+        recent = audit_st.setdefault("recent_verdicts", [])
+        recent.append(entry)
+        audit_st["recent_verdicts"] = recent[-30:]
+        save_audit_state(audit_st)
+        append_audit_ledger(entry)
     print(json.dumps({"ok": True, "recorded": entry}, indent=2))
     return entry
 

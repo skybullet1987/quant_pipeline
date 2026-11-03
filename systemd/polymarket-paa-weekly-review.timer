@@ -1,0 +1,10 @@
+[Unit]
+Description=PAA Weekly Research, Architecture & Strategy Governance Timer
+
+[Timer]
+OnCalendar=Sun *-*-* 01:00:00 UTC
+Persistent=true
+Unit=polymarket-paa-weekly-review.service
+
+[Install]
+WantedBy=timers.target

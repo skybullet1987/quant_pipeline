@@ -271,6 +271,8 @@ def compute_live_profitability_decomposition(journal_path: Path, state_path: Pat
                 if ev.get("event_type") == "IMPLEMENTATION_AUDIT_RECORD":
                     p = ev.get("payload", {})
                     if str(p.get("mode", "")).upper() == "DRY_RUN":
+                        paper_maker_fills = locals().get("paper_maker_fills", 0) + 1
+                        paper_maker_fees = locals().get("paper_maker_fees", 0.0) + float(p.get("exchange_fee_usdc", 0.0))
                         continue
                     px = float(p.get("actual_fill_price", 0.0))
                     sz = float(p.get("filled_size", 0.0))
@@ -317,4 +319,6 @@ def compute_live_profitability_decomposition(journal_path: Path, state_path: Pat
         "estimated_delay_slippage_usd": round(delay_slip_usd, 4),
         "estimated_exec_impact_usd": round(impact_slip_usd, 4),
         "unrealized_mark_pnl_usd": round(unreal, 4),
+        "paper_maker_fill_count": int(locals().get("paper_maker_fills", 0)),
+        "paper_maker_fees_usd": round(float(locals().get("paper_maker_fees", 0.0)), 4),
     }

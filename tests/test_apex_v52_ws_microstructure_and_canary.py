@@ -305,3 +305,132 @@ def test_canary_preflight_blocks_until_post_v51_fills_and_collateral(tmp_path: P
     assert res["post_v51_fills"] == 5
     assert res["total_gate2_fills"] == 25
     assert res["ready_for_mainnet_canary"] is False
+
+
+def test_path_a_ws_logger_silenced_and_ping_interval():
+    import logging
+    import inspect
+    from src.execution import ws_market_cache
+
+    assert logging.getLogger("websocket").level >= logging.CRITICAL
+    ping_src = inspect.getsource(ws_market_cache.HyperliquidWsMarketCache._run_ping_loop)
+    assert "20.0" in ping_src
+
+
+def test_path_a_transient_502_degrades_and_recovers_without_halt(tmp_path: Path):
+    from unittest.mock import patch
+    from src.execution.production_apex_daemon import (
+        CircuitBreakerState,
+        ProductionApexExecutor,
+        is_transient_gateway_error,
+    )
+
+    assert is_transient_gateway_error(RuntimeError("(502, '<html><head><title>502 Bad Gateway</title></head>')"))
+    assert is_transient_gateway_error(RuntimeError("HTTPSConnectionPool: Read timed out"))
+    assert not is_transient_gateway_error(RuntimeError("exchange offline"))
+
+    with patch("src.execution.production_apex_daemon.HyperliquidGateway") as MockGW:
+        gw = MagicMock()
+        gw.testnet = True
+        gw.account_address = "0x0000000000000000000000000000000000000001"
+        gw.sz_decimals = {"SOL": 2}
+        gw.get_account_state.return_value = (609.0, 500.0, {})
+        MockGW.return_value = gw
+        ex = ProductionApexExecutor(
+            testnet=True,
+            dry_run=False,
+            acquire_lock=False,
+            journal_path=tmp_path / "j.jsonl",
+            state_path=tmp_path / "s.json",
+        )
+
+    # 1. Transient nginx/CloudFront 502 HTML failure sets DEGRADED (never latches permanent HALTED!)
+    ex.gateway.get_account_state.side_effect = RuntimeError("(502, '<html>502 bad gateway</html>')")
+    with patch("time.sleep"):
+        out1 = ex.arm_position_brackets()
+    assert out1.get("_transient_gateway_outage") is True
+    assert ex.state.circuit_breaker == CircuitBreakerState.DEGRADED
+    assert not ex.latch_file.exists()
+
+    # 2. Next 60s heartbeat succeeds -> automatically clears DEGRADED back to RUNNING
+    ex.gateway.get_account_state.side_effect = None
+    ex.gateway.get_account_state.return_value = (
+        609.0,
+        500.0,
+        {"SOL": {"size": 1.0, "entry_px": 150.0, "mark_px": 151.0, "unrealized_pnl": 1.0}},
+    )
+    ex.gateway.get_frontend_open_orders.return_value = []
+    ex.gateway.place_trigger_stop.return_value = {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 501}}]}}}
+    ex.gateway.place_trigger_tp.return_value = {"status": "ok", "response": {"data": {"statuses": [{"resting": {"oid": 502}}]}}}
+    out2 = ex.arm_position_brackets()
+    assert out2["SOL"]["sl_armed"] is True
+    assert ex.state.circuit_breaker == CircuitBreakerState.RUNNING
+
+
+def test_path_a_kernel_profile_v50_unoverfit_and_virtual_paper_wallet_isolation(tmp_path: Path):
+    from unittest.mock import patch
+    from src.execution.production_apex_daemon import ProductionApexExecutor
+
+    with patch("src.execution.production_apex_daemon.HyperliquidGateway") as MockGW:
+        gw = MagicMock()
+        gw.testnet = False
+        gw.sz_decimals = {"BTC": 5, "ETH": 4, "SOL": 2, "HYPE": 2}
+        gw.max_leverage = {"BTC": 40, "ETH": 25, "SOL": 20, "HYPE": 10}
+        MockGW.return_value = gw
+        ex_v50 = ProductionApexExecutor(
+            testnet=False,
+            dry_run=True,
+            acquire_lock=False,
+            journal_path=tmp_path / "vp_j.jsonl",
+            state_path=tmp_path / "vp_s.json",
+            kernel_profile="v5.0",
+        )
+        ex_v51 = ProductionApexExecutor(
+            testnet=False,
+            dry_run=True,
+            acquire_lock=False,
+            journal_path=tmp_path / "vp51_j.jsonl",
+            state_path=tmp_path / "vp51_s.json",
+            kernel_profile="v5.1",
+        )
+
+    assert ex_v50.virtual_paper is True
+    assert ex_v50.kernel_profile == "v5.0"
+    # Virtual paper boot & reconciliation must NEVER call real-wallet user_fills_by_time or get_account_state
+    nav, disc, pos = ex_v50.reconcile_ledger_events_and_reconstruct_nav()
+    assert nav == pytest.approx(1000.0)
+    assert disc == 0.0
+    assert pos == {}
+    assert ex_v50.gateway.get_account_state.call_count == 0
+    assert ex_v50.gateway.info.user_fills_by_time.call_count == 0
+
+    # Verify v5.0 (VT=0.25 un-overfit) produces lower gross leverage than v5.1 (VT=0.35) on identical trending market
+    rng = np.random.default_rng(42)
+    syms = ["BTC", "ETH", "SOL", "HYPE", "XRP", "DOGE", "SUI", "AVAX", "LINK", "AAVE", "UNI", "BNB"]
+    n_bars, n_syms = 200, len(syms)
+    drifts = np.linspace(0.002, -0.002, n_syms)
+    close_mat = 100.0 * np.exp(np.cumsum(drifts + rng.normal(0.0, 0.012, (n_bars, n_syms)), axis=0))
+    vol_mat = np.full((n_bars, n_syms), 10_000_000.0)
+    valid_mask = np.ones((n_bars, n_syms), dtype=bool)
+    fund = np.zeros(n_syms)
+
+    w50, lev50, _, _, _, _ = ex_v50.compute_exp103_signals_and_weights(
+        close_mat, close_mat * 0.02, fund, valid_mask, syms, 0, 1, vol_mat=vol_mat
+    )
+    w51, lev51, _, _, _, _ = ex_v51.compute_exp103_signals_and_weights(
+        close_mat, close_mat * 0.02, fund, valid_mask, syms, 0, 1, vol_mat=vol_mat
+    )
+    from src.strategy.apex_v5_kernel import scale_and_smooth_apex_v5_weights
+
+    rw_ref, betas_ref, vb_ref, iv_ref, _, _ = compute_apex_v5_raw_unit_weights(
+        close_mat, valid_mask, fund, syms, 0, 1, vol_mat=vol_mat,
+        regime_adaptive_routing=False, er_gate_tsmom=False, fast_tsmom_blend=False,
+        fip_quality_weight=0.0, vol_accel_weight=0.0,
+    )
+    wf_ref, lev_ref, _ = scale_and_smooth_apex_v5_weights(
+        rw_ref, np.zeros(n_syms), betas_ref, vb_ref, iv_ref, 0,
+        1000.0, 1000.0, target_vol_ann=0.25, clean_zero_exit=True,
+    )
+    assert len(w50) > 0 and len(w51) > 0
+    assert lev50 == pytest.approx(lev_ref, abs=1e-12)
+    assert w50 != w51

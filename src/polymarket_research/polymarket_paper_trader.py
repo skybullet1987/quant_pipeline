@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Set, Optional
 from collections import defaultdict
 
+from src.polymarket_research.directional_wfo_shadow_sleeves import DirectionalWfoShadowManager
 from src.polymarket_research.polymarket_live_executor import calculate_taker_fee
 from src.polymarket_research.polymarket_live_harvester import (
     compute_composite_edge_score,
@@ -179,6 +180,11 @@ class PolymarketForwardPaperTrader:
                 pass
         self.hourly_candle_opens: Dict[str, Dict[int, float]] = defaultdict(dict)
         self._prewarm_hourly_opens()
+        _real_prod_dir = (PIPELINE_ROOT / "data" / "polymarket").resolve()
+        self.wfo_shadow = DirectionalWfoShadowManager(
+            STATE_FILE.parent,
+            production_mode=(STATE_FILE.parent.resolve() == _real_prod_dir),
+        )
 
     def _prewarm_hourly_opens(self):
         """Prewarms recent hourly candle opens from live_shock_triggers.jsonl to empower rolling trend guards."""
@@ -325,19 +331,29 @@ class PolymarketForwardPaperTrader:
             self.sol_shadow_cash = SOL_SHADOW_INITIAL_CAPITAL + self.sol_shadow_realized_pnl
 
     def save_sol_shadow_state(self):
-        """Saves isolated graduation state for SLEEVE_SOL_V392_SHADOW."""
+        """Saves isolated graduation state for SLEEVE_SOL_V392_SHADOW (gated on >=30 post-v3.9.5 clean trades)."""
         total_trades = len(self.sol_shadow_trades)
         wins = sum(1 for t in self.sol_shadow_trades if t.get("won"))
         wr = (wins / total_trades * 100.0) if total_trades > 0 else 0.0
         gross_win = sum(float(t.get("net_pnl_usd", 0.0)) for t in self.sol_shadow_trades if float(t.get("net_pnl_usd", 0.0)) > 0)
         gross_loss = abs(sum(float(t.get("net_pnl_usd", 0.0)) for t in self.sol_shadow_trades if float(t.get("net_pnl_usd", 0.0)) < 0))
         pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (99.0 if gross_win > 0 else 0.0)
+        v395_trades = [t for t in self.sol_shadow_trades if t.get("schema_v395_fixed") is True]
+        v395_n = len(v395_trades)
+        v395_wins = sum(1 for t in v395_trades if t.get("won"))
+        v395_wr = (v395_wins / v395_n * 100.0) if v395_n > 0 else 0.0
+        v395_gw = sum(float(t.get("net_pnl_usd", 0.0)) for t in v395_trades if float(t.get("net_pnl_usd", 0.0)) > 0)
+        v395_gl = abs(sum(float(t.get("net_pnl_usd", 0.0)) for t in v395_trades if float(t.get("net_pnl_usd", 0.0)) < 0))
+        v395_pf = round(v395_gw / v395_gl, 2) if v395_gl > 0 else (99.0 if v395_gw > 0 else 0.0)
         state = {
             "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC"),
             "sleeve_id": "SLEEVE_SOL_V392_SHADOW",
-            "strategy": "SOL 15m/1h Volatility-Normalized Sniper (dist>=0.12%, z>=0.70, band_L2>=$15, spread<=6c, 95c/98c TP + 3-Zone Salvage)",
-            "graduation_criteria": "trades >= 30 and profit_factor >= 2.0 and win_rate_pct >= 85.0",
-            "ready_for_live_graduation": bool(total_trades >= 30 and pf >= 2.0 and wr >= 85.0),
+            "strategy": "SOL 15m/1h Volatility-Normalized Sniper (v3.9.5 USD-matched, 15m*2.0 sigma, <=0.81 cap, 3-Zone Salvage)",
+            "graduation_criteria": "v395_clean_trades >= 30 and v395_profit_factor >= 2.0 and v395_win_rate_pct >= 85.0",
+            "ready_for_live_graduation": bool(v395_n >= 30 and v395_pf >= 2.0 and v395_wr >= 85.0),
+            "v395_clean_trades_settled": v395_n,
+            "v395_profit_factor": v395_pf,
+            "v395_win_rate_pct": round(v395_wr, 2),
             "initial_capital": SOL_SHADOW_INITIAL_CAPITAL,
             "current_equity": round(self.sol_shadow_cash, 2),
             "realized_pnl": round(self.sol_shadow_realized_pnl, 2),
@@ -566,6 +582,7 @@ class PolymarketForwardPaperTrader:
         print(f"[REPLAY SYNCHRONIZED] Open in-flight markets: {len(self.open_trades)}", flush=True)
 
     def evaluate_shock_signal(self, shock: Dict[str, Any], historical: bool = False):
+        if not historical: self.wfo_shadow.on_shock_signal(shock)
         # 0. Evaluate Isolated SOL / XRP v3.9.2 Graduation Shadow Sleeves
         asset_up = str(shock.get("asset", "") or "").upper()
         title_l = str(shock.get("title", "") or "").lower()
@@ -628,17 +645,36 @@ class PolymarketForwardPaperTrader:
         if not is_subhourly and not (90.0 <= tte <= 2400.0):
             return False
 
-        spot_t0 = float(shock.get("chainlink_twap_60s") or shock.get("spot_at_t0") or 0.0) if is_subhourly else float(shock.get("spot_at_t0") or 0.0)
-        open_sp = float((shock.get("twap_60s_open") or shock.get("candle_open_spot") or 0.0) if is_subhourly else (shock.get("finalized_1h_open") or shock.get("candle_open_spot") or 0.0))
+        # v3.9.5 Fix: Strict currency-matched strike & instantaneous USD spot (never mix USD spot with USDT strike!)
+        auth_cl_open = float(shock.get("authoritative_chainlink_open") or shock.get("chainlink_open_spot") or 0.0)
+        cl_usd_spot = float(shock.get("chainlink_proxy_spot") or shock.get("coinbase_spot") or 0.0)
+        if is_subhourly and auth_cl_open > 0.0 and cl_usd_spot > 0.0:
+            spot_t0 = cl_usd_spot
+            open_sp = auth_cl_open
+            spot_denom = "USD"
+        elif is_subhourly:
+            spot_t0 = float(shock.get("spot_at_t0") or shock.get("trigger_price") or 0.0)
+            open_sp = float(shock.get("twap_60s_open") or shock.get("candle_open_spot") or 0.0)
+            spot_denom = "USDT"
+        else:
+            spot_t0 = float(shock.get("spot_at_t0") or shock.get("trigger_price") or 0.0)
+            open_sp = float(shock.get("finalized_1h_open") or shock.get("candle_open_spot") or 0.0)
+            spot_denom = "USDT"
         if spot_t0 <= 0.0 or open_sp <= 0.0:
             return False
-        if is_subhourly and shock.get("twap_60s_open") and shock.get("candle_open_spot"):
-            if abs(float(shock["twap_60s_open"]) - float(shock["candle_open_spot"])) / open_sp * 100.0 >= 0.09:
+        if spot_denom == "USDT" and is_subhourly and shock.get("twap_60s_open") and shock.get("candle_open_spot"):
+            if abs(float(shock["twap_60s_open"]) - float(shock["candle_open_spot"])) / max(float(shock["candle_open_spot"]), 1e-6) * 100.0 >= 0.09:
                 return False
         dist_pct = ((spot_t0 - open_sp) / open_sp) * 100.0
         signed_cush = dist_pct if target_token == "UP" else -dist_pct
         if signed_cush < 0.12:
             return False
+
+        # BTC lead-lag counter-trend & sign alignment guard (matching live Harvester parity)
+        btc_dir = str(shock.get("btc_shock_direction") or "").upper()
+        if btc_dir:
+            if (target_token == "UP" and btc_dir in ("DOWN", "SELL")) or (target_token == "DOWN" and btc_dir in ("UP", "BUY")):
+                return False
 
         shock_vol = float(shock.get("shock_volume_100ms") or 0.0)
         shock_ofi = abs(float(shock.get("shock_ofi") or 0.0))
@@ -646,12 +682,13 @@ class PolymarketForwardPaperTrader:
         if shock_vol < min_shock_vol or shock_ofi < 0.60:
             return False
 
-        default_sigma = 0.0068 if is_sol else 0.0072
-        sigma_1h = float(shock.get("candle_sigma") or default_sigma)
-        sigma_1h = max(0.0040, min(0.0120, sigma_1h))
+        default_sigma = 0.0085 if is_sol else 0.0082
+        raw_csig = float(shock.get("candle_sigma") or 0.0)
+        sigma_1h = (raw_csig * 2.0 if is_subhourly else raw_csig) if raw_csig > 0.0 else default_sigma
+        sigma_1h = max(0.0060, min(0.0160, sigma_1h))
         sigma_rem = sigma_1h * math.sqrt(max(tte, 15.0) / 3600.0) * 100.0
         z_strike = signed_cush / max(sigma_rem, 0.01)
-        if z_strike < 0.70:
+        if z_strike < 0.78:
             return False
 
         tf = (shock.get("pre_shock_features_t0") or {}).get(target_token) or {}
@@ -659,7 +696,8 @@ class PolymarketForwardPaperTrader:
         raw_bids = [(float(px), float(sz)) for px, sz in (tf.get("raw_top_bids") or []) if float(px) > 0 and float(sz) > 0]
         first_ask = raw_asks[0][0] if raw_asks else float(tf.get("best_ask") or 0.0)
         first_bid = raw_bids[0][0] if raw_bids else float(tf.get("best_bid") or 0.0)
-        if not (0.56 <= first_ask <= 0.85) or first_bid <= 0.0 or (first_ask - first_bid) > 0.06:
+        max_spread_alt = 0.03 if is_subhourly else 0.04
+        if not (0.56 <= first_ask <= 0.81) or first_bid <= 0.0 or round(first_ask - first_bid, 6) > max_spread_alt:
             return False
         band_usd = sum(px * sz for px, sz in raw_asks if px <= first_ask + 0.02) if raw_asks else float(tf.get("l1_ask_usd") or 20.0)
         if band_usd < 15.0:
@@ -667,7 +705,7 @@ class PolymarketForwardPaperTrader:
 
         p_fair = 0.5 * (1.0 + math.erf((z_strike + 0.14) / math.sqrt(2.0)))
         exp_pay = (p_fair * 0.965) + ((1.0 - p_fair) * 0.90 * 0.35)
-        p_max_alt = min(0.85, round(exp_pay / 1.04, 4))
+        p_max_alt = min(0.81, round(exp_pay / 1.04, 4))
         if first_ask > p_max_alt:
             return False
 
@@ -676,6 +714,8 @@ class PolymarketForwardPaperTrader:
         pos = {
             "trade_id": trade_id,
             "sleeve": f"SLEEVE_{asset_sym}_V392_SHADOW",
+            "schema_v395_fixed": True,
+            "spot_denomination": spot_denom,
             "market_id": m_id,
             "title": shock.get("title"),
             "asset": asset_sym,
@@ -1397,6 +1437,7 @@ class PolymarketForwardPaperTrader:
         or if Confirmed Opposite-Side Structural Breakout Salvage triggers.
         Evaluates both Sleeve 1 (99c Maker TP) and Sleeve 2 (EXP-315 Dynamic TP).
         """
+        self.wfo_shadow.on_telemetry_tick(str(market_id), telem)
         if (
             market_id not in self.open_trades
             and market_id not in self.sleeve2_open_trades
@@ -1846,7 +1887,11 @@ class PolymarketForwardPaperTrader:
                     is_maker_fill = best_bid >= tp_px
 
                     is_sub = t.get("horizon") == "15m"
-                    current_spot = float((telem.get("chainlink_twap_60s") if is_sub else 0.0) or telem.get("binance_spot") or telem.get("spot_at_t0") or telem.get("spot") or 0.0)
+                    pos_denom = t.get("spot_denomination") or ("USD" if (is_sub and not t.get("schema_v395_fixed")) else "USDT")
+                    if pos_denom == "USD":
+                        current_spot = float(telem.get("chainlink_proxy_usd_spot") or telem.get("chainlink_proxy_spot") or telem.get("coinbase_spot") or telem.get("chainlink_twap_60s") or 0.0)
+                    else:
+                        current_spot = float(telem.get("binance_spot") or telem.get("spot_at_t0") or telem.get("spot") or 0.0)
                     open_spot = float(t.get("candle_open_spot") or 0.0)
                     tte_rem = float(telem.get("seconds_to_expiry") or max(0.0, float(t.get("expiry_unix", 0.0)) - telem_unix))
 
@@ -1857,13 +1902,15 @@ class PolymarketForwardPaperTrader:
                         if wrong_pct <= 0.0:
                             t.pop("opposite_breakout_start_ts", None)
                         else:
-                            req_w = 0.22 if tte_rem > 900.0 else (0.15 if tte_rem > 180.0 else 0.09)
+                            req_w = 0.22 if tte_rem > 900.0 else (0.15 if tte_rem > 180.0 else 0.08)
                             req_d = 35.0 if tte_rem > 900.0 else (18.0 if tte_rem > 180.0 else 8.0)
+                            if tte_rem <= 150.0 and wrong_pct >= 0.09 and best_bid <= (entry_px - 0.22):
+                                req_d = min(req_d, 3.0)
                             if wrong_pct >= req_w:
                                 cs = t.get("opposite_breakout_start_ts")
                                 if cs is None:
                                     t["opposite_breakout_start_ts"] = telem_unix
-                                elif (telem_unix - float(cs)) >= req_d and best_bid >= 0.15:
+                                elif (telem_unix - float(cs)) >= req_d and best_bid >= 0.08:
                                     opposite_salvaged = True
                             else:
                                 t.pop("opposite_breakout_start_ts", None)
@@ -1921,6 +1968,7 @@ class PolymarketForwardPaperTrader:
         return closed_trades
 
     def settle_market(self, m_id: str, resolution: Dict[str, Any], historical: bool = False):
+        if not historical: self.wfo_shadow.on_market_resolution(m_id, resolution)
         if (
             m_id not in self.open_trades
             and m_id not in self.sleeve2_open_trades
@@ -2133,13 +2181,11 @@ class PolymarketForwardPaperTrader:
             self.save_xrp_shadow_state()
 
     async def live_loop(self):
-        print("===============================================================================", flush=True)
-        print("   POLYMARKET AUTONOMOUS FORWARD PAPER TRADER (v3.1 Conformance State)        ", flush=True)
-        print(f"   Frozen OOS Boundary: {R3_VALIDATION_START_UTC}                             ", flush=True)
-        print("   Depth Guard: Fail-Closed (Ratio >= 1.50) | Fee Schedule: crypto_fees_v2    ", flush=True)
-        print("   Ticket Size: $50.00 Notional | Initial Capital: $1,000.00                  ", flush=True)
-        print("   Isolated Shadow Sleeves: SOL v3.9.2 ($500) + XRP v3.9.2 ($500)             ", flush=True)
-        print("===============================================================================", flush=True)
+        print(
+            f"[PAPER TRADER v3.1] OOS: {R3_VALIDATION_START_UTC} | Depth>=1.50 | crypto_fees_v2 | "
+            "Shadows: Hybrid-zSplit + BTC-5m + SOL-v3.9.2",
+            flush=True,
+        )
 
         with open(PID_FILE, "w") as f:
             f.write(str(os.getpid()))
@@ -2182,6 +2228,7 @@ class PolymarketForwardPaperTrader:
 
         while True:
             if self._shutdown_requested:
+                self.wfo_shadow.poll_tick(True)
                 self.save_state()
                 print("[SHUTDOWN] Paper trader state flushed; exiting cleanly (STOPPED_GRACEFULLY).", flush=True)
                 break
@@ -2325,6 +2372,7 @@ class PolymarketForwardPaperTrader:
                                         except Exception:
                                             pass
 
+                await asyncio.to_thread(self.wfo_shadow.poll_tick, False)
                 self.save_state()
                 await asyncio.sleep(0.1)
             except Exception as e:

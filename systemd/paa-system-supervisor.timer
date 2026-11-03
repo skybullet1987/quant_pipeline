@@ -1,0 +1,12 @@
+[Unit]
+Description=PAA PID-1 System-Level Independent Supervisor Timer (Every 2m)
+
+[Timer]
+OnBootSec=30s
+OnUnitActiveSec=2min
+AccuracySec=5s
+Persistent=true
+Unit=paa-system-supervisor.service
+
+[Install]
+WantedBy=timers.target

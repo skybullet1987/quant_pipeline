@@ -41,6 +41,16 @@ SECONDS_PER_YEAR = 365.25 * 86400.0
 SHM_DIR = Path(os.getenv("PM_FAST_TICK_DIR", "/dev/shm"))
 
 
+def student_t_df4_cdf(z: float) -> float:
+    """Exact analytical closed-form CDF of standard Student-t (nu = 4, Var = 2)."""
+    if not math.isfinite(z):
+        return 0.5
+    z2 = z * z
+    s = math.sqrt(4.0 + z2)
+    val = 0.5 + (z / (2.0 * s)) * (1.0 + (2.0 / (4.0 + z2)))
+    return max(0.0, min(1.0, val))
+
+
 def student_t_df5_cdf(z: float) -> float:
     """
     Exact analytical closed-form CDF of the Student-t distribution with nu = 5
@@ -57,6 +67,97 @@ def student_t_df5_cdf(z: float) -> float:
         + (2.0 / 3.0) * (u / (denom * denom))
     ) / math.pi
     return max(0.0, min(1.0, val))
+
+
+def compute_unit_variance_student_t_cdf(z: float, df: float = 4.0) -> float:
+    """
+    Unit-variance Student-t CDF (`Var(X) = 1.0`) for `X = T * sqrt((df - 2) / df)`, so
+    `P(X <= z) = F_{t_df}(z * sqrt(df / (df - 2)))`.
+    When `df <= 0` or `inf`, returns standard Gaussian `Phi(z)`.
+    Resolves the unstandardized `Var(t_4) = 2` pricing paradox so tail kurtosis `df` is cleanly
+    decoupled from post-shock volatility inflation (`jump_vol_mult`).
+    """
+    if not math.isfinite(z):
+        return 0.5
+    if df <= 0.0 or not math.isfinite(df) or df >= 120.0:
+        return 0.5 * (1.0 + math.erf(z / math.sqrt(2.0)))
+    df_eff = max(2.05, float(df))
+    t_std = z * math.sqrt(df_eff / (df_eff - 2.0))
+    if abs(df_eff - 4.0) < 1e-6:
+        return student_t_df4_cdf(t_std)
+    if abs(df_eff - 5.0) < 1e-6:
+        return student_t_df5_cdf(t_std)
+    # Peizer-Pratt / Hill normal-approximation transform for general df > 2 (error < 1e-4 for df >= 3)
+    a = df_eff - 0.5
+    b = 48.0 * a * a
+    z_norm = math.copysign(math.sqrt(a * math.log1p((t_std * t_std) / df_eff)), t_std)
+    z_corr = z_norm + (z_norm ** 3 + 3.0 * z_norm) / b
+    return max(0.0, min(1.0, 0.5 * (1.0 + math.erf(z_corr / math.sqrt(2.0)))))
+
+
+def compute_kemna_vorst_twap_sigma_rem(
+    sigma_1h: float,
+    tte_sec: float,
+    window_sec: float = 60.0,
+) -> float:
+    """
+    Exact C^1-continuous remaining volatility of a `window_sec` (60s) arithmetic TWAP settlement price:
+      - `tau >= W`: `sigma_1s * sqrt(tau - 2W/3)`  (`tau - 40` for `W = 60s`)
+      - `0 < tau < W`: `sigma_1s * sqrt(tau^3 / (3 * W^2))`  (`tau^3 / 10800` for `W = 60s`)
+    Both value and first derivative match continuously at `tau = W`.
+    """
+    sig_h = max(1e-6, float(sigma_1h))
+    w = max(1.0, float(window_sec))
+    tau = max(0.25, float(tte_sec))
+    sigma_1s = sig_h / 60.0
+    if tau >= w:
+        eff_var_s = max(0.1, tau - (2.0 * w / 3.0))
+    else:
+        eff_var_s = (tau * tau * tau) / (3.0 * w * w)
+    return sigma_1s * math.sqrt(eff_var_s)
+
+
+def should_suppress_final60s_twap_salvage(
+    *,
+    side: str,
+    strike_open: float,
+    current_spot: float,
+    twap_locked_mean: Optional[float],
+    tte_sec: float,
+    sigma_1h: float,
+    twap_locked_weight: Optional[float] = None,
+    z_lock_floor: float = 1.25,
+    window_sec: float = 60.0,
+) -> Tuple[bool, float]:
+    """
+    Prevents false `pre_expiry_otm_salvage` market dumps during the final 60s of a Chainlink TWAP
+    15m/5m candle when a transient 1s spot wick crosses `strike_open` even though `(60 - tau)/60`
+    of the settlement TWAP is already banked safely ITM (`z_twap >= z_lock_floor`).
+    """
+    w = max(1.0, float(window_sec))
+    tau = float(tte_sec)
+    if (
+        not (0.0 < tau < w)
+        or strike_open <= 0.0
+        or current_spot <= 0.0
+        or twap_locked_mean is None
+        or float(twap_locked_mean) <= 0.0
+    ):
+        return False, 0.0
+    raw_w = max(0.0, min(1.0, (w - tau) / w))
+    w_locked = max(0.0, min(raw_w, float(twap_locked_weight))) if twap_locked_weight is not None else raw_w
+    if w_locked < 0.15:
+        return False, 0.0
+    proj_twap = w_locked * float(twap_locked_mean) + (1.0 - w_locked) * float(current_spot)
+    sign = 1.0 if str(side).upper() in ("UP", "BUY", "YES") else -1.0
+    cush_twap = sign * (proj_twap - float(strike_open)) / float(strike_open)
+    if cush_twap <= 0.0:
+        return False, round(cush_twap / 1e-4, 4)
+    sig_rem = max(0.00005, compute_kemna_vorst_twap_sigma_rem(sigma_1h, tau, window_sec=w))
+    # Add 2.5 bps Chainlink-vs-proxy basis floor inside final 60s so proxy noise cannot overstate lock
+    sig_tot = math.hypot(sig_rem, 0.00025)
+    z_twap = round(cush_twap / sig_tot, 4)
+    return (z_twap >= float(z_lock_floor)), z_twap
 
 
 def read_shm_usd_anchor(asset: str, now_ts: float, max_age_sec: float = 2.5) -> Dict[str, Optional[float]]:

@@ -1613,7 +1613,7 @@ def test_v42_seven_new_shadow_additions_and_quarantine(tmp_path, monkeypatch):
     )
     from src.polymarket_research.weather_metar_engine import HIGH_VOLUME_WEATHER_SERIES, parse_weather_event
 
-    # 1. Verify Production Quarantine blocks all 6 retired negative-EV sleeves (including P1_PREOPEN_MAKER_STRADDLE)
+    # 1. Verify Production Quarantine blocks all retired negative-EV sleeves (including S5M_CHAINLINK_SNIPER in v5.0)
     monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "1")
     for sl_q in (
         "M4_SHOCK_STRIKE_CATCHUP",
@@ -1622,13 +1622,13 @@ def test_v42_seven_new_shadow_additions_and_quarantine(tmp_path, monkeypatch):
         "M1_SVI_MAKER_SCALP",
         "M2_STRIKE_CONVERGENCE",
         "P1_PREOPEN_MAKER_STRADDLE",
+        "S5M_CHAINLINK_SNIPER",
     ):
         assert a124.is_shadow_sleeve_quarantined(sl_q) is True
     for sl_ok in (
         "W1_SOLAR_PEAK_LOCK",
         "D1_4H_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
-        "S5M_CHAINLINK_SNIPER",
         "N1_NEGRISK_CROSS_BOX",
         "U1_DAILY_UPDOWN_LOCK",
     ):
@@ -1975,6 +1975,14 @@ def test_oct27_0655_strike_inversion_and_antibox_veto(tmp_path: Path) -> None:
     books_fc["ob"] = {"bids": [{"price": "0.55", "size": "50"}]}
     assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is True
     books_fc["ob"] = {"bids": [{"price": "0.61", "size": "50"}]}
+    assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is False
+    # Asymmetric deep-ITM box: one complement has 0.985 bid, other complement is deep-OTM with 0.000 bid & 0.030 ask -> MUST pass!
+    books_fc["oa"] = {"bids": [{"price": "0.985", "size": "50"}], "asks": [{"price": "0.995", "size": "50"}]}
+    books_fc["ob"] = {"bids": [], "asks": [{"price": "0.030", "size": "80"}]}
+    assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is True
+    # But if zero-bid complement ask implies upper-bound sum > 1.035 (e.g. 0.960 + 0.100 = 1.060), MUST fail closed!
+    books_fc["oa"] = {"bids": [{"price": "0.960", "size": "50"}], "asks": [{"price": "0.970", "size": "50"}]}
+    books_fc["ob"] = {"bids": [], "asks": [{"price": "0.100", "size": "80"}]}
     assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is False
 
 
@@ -3051,7 +3059,7 @@ def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_p
         "leg_a_market_id": "610001",
         "leg_a_condition_id": "0x" + ("11" * 32),
         "leg_a_strike": 80000.0,
-        "leg_a_limit_price": 0.48,
+        "leg_a_limit_price": 0.47,
         "leg_a_avail_shares": 120.0,
         "leg_a_fee_rate": 0.07,
         "leg_a_fee_exponent": 1.0,
@@ -3073,9 +3081,9 @@ def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_p
     assert res_core_blk["executed"] is False and res_core_blk["reason"] == "D1_NOT_YET_8_OF_8_GRADUATED"
 
     qb_books = {
-        tok_a: {"asks": [{"price": "0.48", "size": "120"}], "bids": [{"price": "0.46", "size": "120"}]},
+        tok_a: {"asks": [{"price": "0.47", "size": "120"}], "bids": [{"price": "0.45", "size": "120"}]},
         tok_b: {"asks": [{"price": "0.47", "size": "120"}], "bids": [{"price": "0.45", "size": "120"}]},
-        tok_oa: {"asks": [{"price": "0.54", "size": "120"}], "bids": [{"price": "0.51", "size": "120"}]},
+        tok_oa: {"asks": [{"price": "0.55", "size": "120"}], "bids": [{"price": "0.52", "size": "120"}]},
         tok_ob: {"asks": [{"price": "0.55", "size": "120"}], "bids": [{"price": "0.47", "size": "120"}]},
     }
     h.executor.get_market_book = lambda tid: qb_books[tid]
@@ -3089,7 +3097,7 @@ def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_p
             "success": True,
             "box_id": kw["box_id"],
             "shares": sh,
-            "leg_1": {"token_id": tok_a, "label": kw["leg_a_label"], "price": 0.48, "orderID": "OID_QBA", "raw": {"makingAmount": round(sh * 0.48, 2)}},
+            "leg_1": {"token_id": tok_a, "label": kw["leg_a_label"], "price": 0.47, "orderID": "OID_QBA", "raw": {"makingAmount": round(sh * 0.47, 2)}},
             "leg_2": {"token_id": tok_b, "label": kw["leg_b_label"], "price": 0.47, "orderID": "OID_QBB", "raw": {"makingAmount": round(sh * 0.47, 2)}},
         }
 
@@ -3130,6 +3138,931 @@ def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_p
     assert persisted["equity_tier"] == "GROWTH"
     assert abs(float(persisted["max_exposure"]) - 106.26) < 1e-2
     assert int(persisted["max_concurrent_positions"]) == 3
+
+
+def test_bond1_uma_resolution_carry_onchain_and_settlement_guard(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    import src.polymarket_research.uma_nba_endgame_engine as uma_mod
+    from src.polymarket_research.uma_nba_endgame_engine import (
+        HALF_E18,
+        ONE_E18,
+        is_objective_uma_market,
+        verify_uma_onchain_proposal_sync,
+    )
+
+    base_mkt = {
+        "id": "990001",
+        "conditionId": "0x" + ("aa" * 32),
+        "questionID": "0x" + ("bb" * 32),
+        "negRisk": True,
+        "negRiskRequestID": "0x" + ("cc" * 32),
+        "resolvedBy": "0x69c47De9D4D3Dad79590d61b9e05918E03775f24",
+        "closed": False,
+        "archived": False,
+        "acceptingOrders": True,
+        "umaResolutionStatus": "proposed",
+        "umaResolutionStatuses": '["proposed"]',
+        "outcomes": '["Yes", "No"]',
+        "outcomePrices": '["0.004", "0.996"]',
+        "clobTokenIds": '["tok_uma_yes", "tok_uma_no"]',
+        "question": "Will the highest temperature in Tokyo be 21°C on October 28?",
+        "description": "Resolves via https://aviationweather.gov/api/data/metar?ids=RJTT routine METAR; SPECI excluded.",
+        "feesEnabled": False,
+    }
+    ok_w, tag_w = is_objective_uma_market(base_mkt)
+    assert ok_w is True and tag_w == "VERIFIED_PRIMARY_ORACLE"
+
+    # Reject speech/editorial markets, prior disputes, and missing negRiskRequestID
+    ok_sp, rsn_sp = is_objective_uma_market({**base_mkt, "question": 'Will Trump say "Tariff" during his speech?'})
+    assert ok_sp is False and rsn_sp == "SUBJECTIVE_OR_SPEECH_VETO"
+    ok_disp, rsn_disp = is_objective_uma_market({**base_mkt, "umaResolutionStatuses": '["proposed", "disputed", "proposed"]'})
+    assert ok_disp is False and rsn_disp == "PRIOR_DISPUTE_HISTORY"
+    ok_nr_miss, rsn_nr = is_objective_uma_market({**base_mkt, "negRiskRequestID": ""})
+    assert ok_nr_miss is False and rsn_nr == "MISSING_REQUEST_ID"
+
+    def _build_gq_hex(req_ts: int, anc: bytes, reset: bool = False) -> str:
+        words = [b"\x00" * 32 for _ in range(13)]
+        words[1] = req_ts.to_bytes(32, "big")
+        words[4] = (7200).to_bytes(32, "big")
+        words[8] = (1 if reset else 0).to_bytes(32, "big")
+        words[12] = (12 * 32).to_bytes(32, "big")  # 384 -> offset 32 + 384 = 416 = 13 * 32
+        pad = b"\x00" * ((32 - (len(anc) % 32)) % 32)
+        return "0x" + b"".join(words).hex() + len(anc).to_bytes(32, "big").hex() + (anc + pad).hex()
+
+    def _build_rq_hex(proposer_hex: str, disputer_hex: str, prop_price: int, exp_ts: int) -> str:
+        w = [b"\x00" * 32 for _ in range(16)]
+        w[0] = bytes.fromhex(proposer_hex.replace("0x", "").rjust(64, "0"))
+        w[1] = bytes.fromhex(disputer_hex.replace("0x", "").rjust(64, "0"))
+        w[10] = (7200).to_bytes(32, "big")
+        p_u256 = prop_price if prop_price >= 0 else (1 << 256) + prop_price
+        w[11] = p_u256.to_bytes(32, "big")
+        w[13] = exp_ts.to_bytes(32, "big")
+        return "0x" + b"".join(w).hex()
+
+    now_u = 1793200000.0
+    exp_u = int(now_u + 3600)  # proposed 3600s ago (>=120s), 3600s remaining (<=7500s)
+    anc_b = b"q: title: Tokyo 21C, res_data: p1: 0, p2: 1, p3: 0.5."
+    oo_addr_hex = "0x" + "2c0367a9db231ddebd88a94b4f6461a6e47c58b1".rjust(64, "0")
+    prop_addr = "0x" + ("11" * 20)
+
+    rpc_state = {"oo_state": 2, "disputer": uma_mod.ZERO_ADDR, "price": 0, "reset": False, "exp": exp_u}
+
+    def _fake_rpc_post(rpc_url: str, payload, timeout: float = 5.0):
+        out = []
+        for item in payload:
+            cid = item["id"]
+            if cid == 1:
+                out.append({"id": 1, "result": _build_gq_hex(1793190000, anc_b, reset=rpc_state["reset"])})
+            elif cid == 2:
+                out.append({"id": 2, "result": oo_addr_hex})
+            elif cid == 10:
+                out.append({"id": 10, "result": hex(rpc_state["oo_state"])})
+            elif cid == 11:
+                out.append({"id": 11, "result": _build_rq_hex(prop_addr, rpc_state["disputer"], rpc_state["price"], rpc_state["exp"])})
+        return out
+
+    uma_mod._OO_ADDR_CACHE.clear()
+    monkeypatch.setattr(uma_mod, "_rpc_post", _fake_rpc_post)
+
+    # 1. Valid proposedPrice == 0 (p1) -> maps to outcomes[1] == "No" (`tok_uma_no`)
+    v_ok = verify_uma_onchain_proposal_sync(base_mkt, rpc_url="http://mock", now_ts=now_u)
+    assert v_ok["verified"] is True
+    assert v_ok["win_index"] == 1 and v_ok["win_outcome_name"] == "No" and v_ok["win_token"] == "tok_uma_no"
+
+    # 2. Reject active disputer, 50/50 tie split, question reset, and too-fresh (<120s) proposal
+    rpc_state["disputer"] = "0x" + ("99" * 20)
+    assert verify_uma_onchain_proposal_sync(base_mkt, rpc_url="http://mock", now_ts=now_u)["verified"] is False
+    rpc_state["disputer"] = uma_mod.ZERO_ADDR
+    rpc_state["price"] = HALF_E18
+    assert verify_uma_onchain_proposal_sync(base_mkt, rpc_url="http://mock", now_ts=now_u)["reason"] == "TIE_50_50_PROPOSAL_VETO"
+    rpc_state["price"] = 0
+    rpc_state["reset"] = True
+    assert verify_uma_onchain_proposal_sync(base_mkt, rpc_url="http://mock", now_ts=now_u)["verified"] is False
+    rpc_state["reset"] = False
+    rpc_state["exp"] = int(now_u + 7150)  # only 50s old (< 120s)
+    assert "PROPOSAL_TOO_FRESH" in verify_uma_onchain_proposal_sync(base_mkt, rpc_url="http://mock", now_ts=now_u)["reason"]
+    rpc_state["exp"] = exp_u
+
+    # 3. Daemon scan + Settlement Guard: must NOT self-settle on best_bid=0.992 while UMA is still "proposed"!
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "b1_state.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "b1_ledger.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "b1_opps.json")
+    gamma_resolved = {"done": False}
+
+    async def _run_bond_sim() -> None:
+        d = a124.Alpha124ShadowDaemon(single_scan=True)
+        d.uma_proposed_markets = {"990001": base_mkt}
+        d.last_uma_discovery_ts = now_u
+
+        async def _fake_disc(ts: float) -> None:
+            d.uma_proposed_markets = {"990001": base_mkt}
+
+        async def _fake_fetch(url: str, timeout: float = 4.0):
+            if "tok_uma_no" in url:
+                return {"bids": [{"price": "0.991", "size": "500"}], "asks": [{"price": "0.992", "size": "500"}]}
+            if "tok_uma_yes" in url:
+                return {"bids": [{"price": "0.001", "size": "200"}], "asks": [{"price": "0.004", "size": "500"}]}
+            if "/markets/990001" in url:
+                if gamma_resolved["done"]:
+                    return {**base_mkt, "closed": True, "umaResolutionStatus": "resolved", "outcomePrices": '["0", "1"]'}
+                return {**base_mkt, "closed": False, "umaResolutionStatus": "proposed"}
+            return None
+
+        async def _fake_batch(toks, timeout: float = 3.5):
+            return {t: await _fake_fetch(t) for t in toks}
+
+        monkeypatch.setattr(d, "discover_uma_proposed_markets", _fake_disc)
+        monkeypatch.setattr(d, "fetch_json", _fake_fetch)
+        monkeypatch.setattr(d, "fetch_books_batch", _fake_batch)
+
+        opps: list = []
+        await d.scan_uma_resolution_bonds(opps, now_ts=now_u)
+        assert len(d.open_positions) == 1
+        pid = next(iter(d.open_positions))
+        pos = d.open_positions[pid]
+        assert pos["sleeve"] == "BOND1_UMA_RESOLUTION_CARRY"
+        assert abs(float(pos["entry_eff_px_t1000"]) - 0.992) < 1e-4
+
+        # Force close_ts into the past while market is still UMA "proposed" and best_bid=0.991 (>=0.99!)
+        pos["close_ts"] = time.time() - 120.0
+        await d.manage_open_positions()
+        assert pid in d.open_positions, "BOND1 must NEVER self-settle on CLOB best_bid >= 0.99 while UMA is still proposed!"
+
+        # Once UMA resolves on Gamma, settles cleanly at $1.00
+        gamma_resolved["done"] = True
+        await d.manage_open_positions()
+        assert pid not in d.open_positions
+        assert d.closed_positions[-1]["won"] is True
+        assert abs(d.closed_positions[-1]["tier_pnls_usd"]["T1000"] - round(120.0 / 0.992 - 120.0, 2)) < 0.05
+
+    import time
+    asyncio.run(_run_bond_sim())
+
+
+def test_w1_v2_cape_town_fact_and_low_trough_lock_cold_front_veto() -> None:
+    from datetime import date
+    from src.polymarket_research.weather_metar_engine import (
+        HIGH_VOLUME_WEATHER_SERIES,
+        STATION_CATALOG,
+        WeatherBucket,
+        WeatherEventSpec,
+        compute_weather_probabilities,
+        parse_metar_line,
+        parse_weather_event,
+    )
+
+    assert "FACT" in STATION_CATALOG
+    for req_s in (
+        "atlanta-daily-weather",
+        "san-francisco-daily-weather",
+        "seattle-daily-weather",
+        "amsterdam-daily-weather",
+        "cape-town-daily-weather",
+        "tokyo-daily-lowest-temperature",
+    ):
+        assert req_s in HIGH_VOLUME_WEATHER_SERIES
+
+    # Cape Town (FACT) routine METAR description without aviationweather.gov link parses cleanly in live mode
+    ev_fact = {
+        "id": "ev_fact_1",
+        "title": "Highest temperature in Cape Town on October 29?",
+        "series": [{"slug": "cape-town-daily-weather"}],
+        "endDate": "2026-10-29T22:00:00Z",
+        "markets": [
+            {
+                "id": f"m_{i}",
+                "conditionId": f"0x{i}",
+                "groupItemTitle": lbl,
+                "clobTokenIds": f'["y_{i}", "n_{i}"]',
+                "description": "Resolves to the highest temperature recorded in a routine (METAR) observation for Cape Town International Airport (FACT) on October 29, 2026. SPECI reports are excluded.",
+            }
+            for i, lbl in enumerate(["18°C or below", "19°C", "20°C", "21°C or higher"])
+        ],
+    }
+    sp_fact = parse_weather_event(ev_fact)
+    assert sp_fact is not None and sp_fact.icao == "FACT" and sp_fact.city == "Cape Town"
+
+    # Legacy Wunderground station without SPECI/routine(METAR) is still rejected in live mode
+    ev_legacy = {
+        **ev_fact,
+        "markets": [{**m, "description": "Resolves via Wunderground station history for Cape Town (FACT)."} for m in ev_fact["markets"]],
+    }
+    assert parse_weather_event(ev_legacy, allow_historical_same_station=False) is None
+
+    # Morning LOW trough lock: 11:00 JST (02:00 UTC) after 05:00 JST trough of 12.0°C, now warmed to 15.4°C (+3.4°C cushion)
+    eval_utc = datetime(2026, 10, 29, 2, 0, tzinfo=timezone.utc)
+    obs_trough = parse_metar_line("METAR RJTT 282000Z 34008KT 9999 FEW030 12/06 Q1018 RMK T01200060", "RJTT", eval_utc, "Asia/Tokyo")
+    obs_warm = parse_metar_line("METAR RJTT 290200Z 02009KT 9999 FEW035 15/07 Q1019 RMK T01540070", "RJTT", eval_utc, "Asia/Tokyo")
+    assert obs_trough is not None and obs_warm is not None
+
+    buckets = [
+        WeatherBucket("b1", "c1", "11°C or below", "11C-", "y1", "n1", "C", float("-inf"), 11.0),
+        WeatherBucket("b2", "c2", "12°C", "12C", "y2", "n2", "C", 12.0, 12.0),
+        WeatherBucket("b3", "c3", "13°C", "13C", "y3", "n3", "C", 13.0, 13.0),
+        WeatherBucket("b4", "c4", "14°C or higher", "14C+", "y4", "n4", "C", 14.0, float("inf")),
+    ]
+    sp_low = WeatherEventSpec(
+        event_id="ev_rjtt_low",
+        slug="tokyo-low-oct-29",
+        series_slug="tokyo-daily-lowest-temperature",
+        title="Lowest temperature in Tokyo on October 29?",
+        icao="RJTT",
+        city="Tokyo",
+        lat=35.5523,
+        lon=139.7798,
+        tz_name="Asia/Tokyo",
+        obs_date=date(2026, 10, 29),
+        metric="LOW",
+        unit="C",
+        fee_type="zero_fees",
+        end_date_iso="2026-10-29T15:00:00Z",
+        buckets=buckets,
+    )
+    base_hr = int(eval_utc.timestamp())
+    # Case A: Warm afternoon/evening NWP ensemble (all 40 members >= 15.0°C >= 12.0 + 2.0°C) -> locks 12°C!
+    ens_safe = {base_hr + h * 3600: [15.5 + 0.02 * m for m in range(40)] for h in range(0, 14)}
+    res_safe = compute_weather_probabilities(sp_low, eval_utc, [obs_trough, obs_warm], ens_safe)
+    assert res_safe["is_solar_lock"] is True and res_safe["locked_bucket_idx"] == 1 and res_safe["p_locked_bucket"] >= 0.93
+
+    # Case B: Evening cold front in NWP ensemble dropping to 13.2°C (< 12.0 + 2.0°C) -> morning lock VETOED!
+    ens_cold_front = {
+        base_hr + h * 3600: ([13.2 + 0.05 * m for m in range(40)] if h == 11 else [15.5 for _ in range(40)])
+        for h in range(0, 14)
+    }
+    res_veto = compute_weather_probabilities(sp_low, eval_utc, [obs_trough, obs_warm], ens_cold_front)
+    assert res_veto["is_solar_lock"] is False
+
+
+def test_sp2_nba_endgame_lock_espn_parser_and_overtime_trap_veto() -> None:
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import NbaGameSpec, NbaOutcomeLeg
+    from src.polymarket_research.uma_nba_endgame_engine import (
+        LiveNbaGameState,
+        evaluate_nba_endgame_locks,
+        match_nba_live_game,
+        parse_espn_nba_scoreboard,
+        verify_uma_against_nba_live,
+    )
+
+    espn_sample = {
+        "events": [
+            {
+                "id": "401700001",
+                "date": "2026-10-29T00:00Z",
+                "competitions": [
+                    {
+                        "date": "2026-10-29T00:00Z",
+                        "status": {"clock": 35.0, "displayClock": "0:35", "period": 4, "type": {"state": "in", "completed": False}},
+                        "competitors": [
+                            {"homeAway": "home", "score": "114", "team": {"name": "Celtics", "abbreviation": "BOS"}},
+                            {"homeAway": "away", "score": "103", "team": {"name": "Heat", "abbreviation": "MIA"}},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    board = parse_espn_nba_scoreboard(espn_sample)
+    assert len(board) == 1 and board[0].home_score == 114 and board[0].away_score == 103 and board[0].clock_sec == 35.0
+
+    tip_ts = 1793232000.0
+    board[0].start_ts = tip_ts
+    spec = NbaGameSpec(
+        event_id="nba_1",
+        slug="nba-mia-bos",
+        title="Heat vs. Celtics",
+        team_a="Heat",
+        team_b="Celtics",
+        tipoff_ts=tip_ts,
+        settle_est_ts=tip_ts + 9600.0,
+        margin_legs=[
+            NbaOutcomeLeg("m_ml", "c_ml", "moneyline", "tok_mia", "tok_bos", 0, "YES", "ML Heat", "GT", 0.0),
+            NbaOutcomeLeg("m_ml", "c_ml", "moneyline", "tok_bos", "tok_mia", 1, "NO", "ML Celtics", "LT", 0.0),
+            NbaOutcomeLeg("m_sp", "c_sp", "spreads", "tok_mia_p75", "tok_bos_m75", 0, "YES", "Heat +7.5", "GT", -7.5),
+            NbaOutcomeLeg("m_sp", "c_sp", "spreads", "tok_bos_m75", "tok_mia_p75", 1, "NO", "Celtics -7.5", "LT", -7.5),
+        ],
+        total_legs=[
+            NbaOutcomeLeg("m_tot", "c_tot", "totals", "tok_ov", "tok_un", 0, "YES", "Over 214.5", "OVER", 214.5),
+            NbaOutcomeLeg("m_tot", "c_tot", "totals", "tok_un", "tok_ov", 1, "NO", "Under 214.5", "UNDER", 214.5),
+        ],
+    )
+    matched = match_nba_live_game(spec, board)
+    assert matched is not None
+    g_st, sc_mia, sc_bos = matched
+    assert sc_mia == 103 and sc_bos == 114
+
+    # Premature UMA proposal while game is still "in" must be VETOED!
+    ok_prem, rsn_prem = verify_uma_against_nba_live(
+        {"question": "Heat vs. Celtics", "sportsMarketType": "moneyline", "outcomes": '["Heat", "Celtics"]', "gameStartTime": "2026-10-29T00:00:00Z"},
+        1,
+        board,
+    )
+    assert ok_prem is False and rsn_prem == "NBA_GAME_NOT_FINAL_YET"
+
+    # Q4 35s left, Celtics up 114-103 (+11 margin, Total=217 >= 214.5 + 2.5) -> locks Over 214.5 AND ML Celtics!
+    locks_q4 = evaluate_nba_endgame_locks(spec, g_st, sc_mia, sc_bos)
+    locked_labels = {c["leg"].display_label: c for c in locks_q4}
+    assert "Over 214.5" in locked_labels and locked_labels["Over 214.5"]["mode"] == "LIVE_TOTAL_OVER_LOCKED"
+    assert "ML Celtics" in locked_labels and locked_labels["ML Celtics"]["p_lock"] >= 0.993
+    assert "Celtics -7.5" not in locked_labels  # Only 3.5pt cushion on -7.5 spread -> must NOT lock!
+
+    # CRITICAL Overtime-Extension Trap Veto: Tied 105-105 with 10s left in Q4!
+    # Even though Heat +7.5 has a 7.5pt numerical cushion (> 5.5 floor at <=12s), game can go to OT where Celtics win by 9!
+    g_tied = LiveNbaGameState("401", tip_ts, "in", False, 4, 10.0, "Celtics", "BOS", 105, "Heat", "MIA", 105)
+    locks_tied = evaluate_nba_endgame_locks(spec, g_tied, 105, 105)
+    assert all(c["leg"].display_label != "Heat +7.5" for c in locks_tied), "Must veto +7.5 spread when tied (Overtime trap)!"
+
+    # Post-buzzer FINAL: locks all winning margin & total legs at p_lock=0.998
+    g_fin = LiveNbaGameState("401", tip_ts, "post", True, 4, 0.0, "Celtics", "BOS", 114, "Heat", "MIA", 103)
+    locks_fin = evaluate_nba_endgame_locks(spec, g_fin, 103, 114)
+    fin_labels = {c["leg"].display_label for c in locks_fin}
+    assert {"ML Celtics", "Celtics -7.5", "Over 214.5"} <= fin_labels
+
+
+def test_focus_upgrades_locked_maker_depth_cap_and_tight_zf_boxes(tmp_path: Path, monkeypatch) -> None:
+    """
+    Verifies the 3 shadow focus upgrades:
+      1. T100 ($15-$20) depth-capped taker unblocking + Empty-Ask Top-of-Book `post_only` Maker Bid
+         with real `data-api.polymarket.com/trades` fill verification & safe `TP=HOLD_SETTLE`.
+      2. 1c-tight `SP1_NBA` `ZF_INTRADAY_MAKER_BOX` Polish Middle join (`queue_front=False`, `<= $0.992`)
+         + Dual-date ESPN NBA scoreboard rollover (`?dates=YYYYMMDD` across yesterday + today ET).
+    """
+    import asyncio
+    import io
+    import json
+    import time
+    import urllib.request
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    import src.polymarket_research.uma_nba_endgame_engine as u_eng
+
+    monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "foc_st.json")
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "foc_ldg.jsonl")
+    monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "foc_opps.json")
+    monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "0")
+
+    # 1. Dual-date ESPN NBA scoreboard fetch (yesterday + today ET deduplicated by game_id)
+    seen_urls: list[str] = []
+
+    class _FakeResp(io.BytesIO):
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            pass
+
+    def _fake_urlopen(req, timeout=4.5):
+        u = req.full_url if hasattr(req, "full_url") else str(req)
+        seen_urls.append(u)
+        gid = "401_YEST" if len(seen_urls) == 1 else "401_TODAY"
+        ev = {
+            "events": [{
+                "id": gid,
+                "date": "2026-10-29T02:00Z",
+                "status": {"period": 4, "clock": 18.0, "type": {"state": "in", "completed": False}},
+                "competitions": [{"competitors": [
+                    {"homeAway": "home", "score": "112", "team": {"shortDisplayName": "Lakers", "abbreviation": "LAL"}},
+                    {"homeAway": "away", "score": "101", "team": {"shortDisplayName": "Suns", "abbreviation": "PHX"}},
+                ]}],
+            }]
+        }
+        return _FakeResp(json.dumps(ev).encode("utf-8"))
+
+    monkeypatch.setattr(urllib.request, "urlopen", _fake_urlopen)
+    games_dual = u_eng.fetch_espn_nba_scoreboard_sync(now_ts=1793250000.0)
+    assert len(seen_urls) == 2 and all("?dates=" in u for u in seen_urls)
+    assert {g.game_id for g in games_dual} == {"401_YEST", "401_TODAY"}
+
+    async def _run_focus():
+        d = a124.Alpha124ShadowDaemon(single_scan=True)
+        now_f = time.time()
+
+        # 2A. Depth-capped T100 taker fill on $18.43 L1 ask (`Wellington LOW 13°C`: 24 sh @ $0.768)
+        bk_wellington = {
+            "bids": [{"price": "0.60", "size": "50"}],
+            "asks": [{"price": "0.768", "size": "24.0"}],
+        }
+        bk_milan_empty_ask = {"bids": [{"price": "0.87", "size": "120"}], "asks": []}
+        bk_uma_empty_ask = {"bids": [{"price": "0.991", "size": "500"}], "asks": []}
+        tape_state = {"uma_created_ts": now_f}
+
+        async def _fake_fetch_tape(url: str, timeout: float = 3.0):
+            if "token_id=tok_nzwn_y" in url:
+                return bk_wellington
+            if "token_id=tok_uma_w" in url:
+                return bk_uma_empty_ask
+            if "token_id=tok_uma_l" in url:
+                return {"bids": [{"price": "0.001", "size": "100"}], "asks": []}
+            if "token_id=tok_limc_y" in url:
+                return bk_milan_empty_ask
+            if "data-api.polymarket.com/trades?market=0xcond_uma" in url:
+                c_ts = int(tape_state["uma_created_ts"])
+                return [
+                    # Historical print before created_ts + 2 must be ignored!
+                    {"timestamp": c_ts - 5, "asset": "tok_uma_w", "price": 0.990, "size": 500, "transactionHash": "0xold"},
+                    # Fresh seller hitting $0.992 bid (25 shares >= 5.0 min) -> fills Maker order with TP=None ("HOLD_SETTLE")!
+                    {"timestamp": c_ts + 5, "asset": "tok_uma_w", "price": 0.992, "size": 25.0, "transactionHash": "0xfresh"},
+                ]
+            return []
+
+        monkeypatch.setattr(d, "fetch_json", _fake_fetch_tape)
+        ok_tkr = await d.open_shadow_position(
+            sleeve="W1_LOW_TROUGH_LOCK",
+            dedupe_key="W1LOW_NZWN_13C",
+            asset_or_city="Wellington_NZWN",
+            title="Wellington Lowest Temp [13°C]",
+            side_label="YES",
+            token_id="tok_nzwn_y",
+            fee_rate=0.0,
+            p_model=0.990,
+            close_ts=now_f + 14400.0,
+            extra={"condition_id": "0xcond_nzwn"},
+            prefetched_book=bk_wellington,
+        )
+        assert ok_tkr is True
+        pos_nz = next(p for p in d.open_positions.values() if p["dedupe_key"] == "W1LOW_NZWN_13C")
+        assert pos_nz["tier_fills"]["T100"]["spent_usd"] == 15.0
+        assert pos_nz["tier_fills"]["T1000"]["spent_usd"] == 18.43
+        assert pos_nz["tier_fills"]["T1000"]["depth_capped"] is True
+
+        # 2B. Empty-ask locked weather (`Milan LOW 5°C`, bid=$0.87, asks=[]) & UMA bond (`win_bid=$0.991`, asks=[])
+        ok_mkr_w1 = await d.post_shadow_maker_entry(
+            sleeve="W1_LOW_TROUGH_LOCK",
+            dedupe_key="W1LOW_LIMC_5C",
+            asset="Milan_LIMC",
+            title="Milan Lowest Temp [5°C]",
+            side_label="YES",
+            token_id="tok_limc_y",
+            p_model=0.990,
+            close_ts=now_f + 21600.0,
+            extra={"condition_id": "0xcond_limc", "opp_token_id": "tok_limc_n"},
+            prefetched_book=bk_milan_empty_ask,
+        )
+        assert ok_mkr_w1 is True
+        ord_w1 = next(v for v in d.pending_maker_orders.values() if v["dedupe_key"] == "W1LOW_LIMC_5C")
+        assert ord_w1["resting_bid"] == 0.88 and ord_w1["queue_ahead_usd"] == 0.0
+
+        ok_mkr_uma = await d.post_shadow_maker_entry(
+            sleeve="BOND1_UMA_RESOLUTION_CARRY",
+            dedupe_key="BOND1_NBA_FIN",
+            asset="SPORTS",
+            title="Celtics vs Heat [Celtics]",
+            side_label="YES",
+            token_id="tok_uma_w",
+            p_model=1.0,
+            close_ts=now_f + 3600.0,
+            extra={"condition_id": "0xcond_uma", "opp_token_id": "tok_uma_l"},
+            prefetched_book=bk_uma_empty_ask,
+        )
+        assert ok_mkr_uma is True
+        ord_uma = next(v for v in d.pending_maker_orders.values() if v["dedupe_key"] == "BOND1_NBA_FIN")
+        assert ord_uma["resting_bid"] == 0.992
+
+        # Simulate real IOC trade print on `data-api.polymarket.com/trades` while `/book` asks stay empty!
+        ord_uma["created_ts"] = now_f - 20.0
+        ord_w1["created_ts"] = now_f - 20.0
+        tape_state["uma_created_ts"] = ord_uma["created_ts"]
+
+        await d.manage_pending_maker_orders()
+        pos_uma = [p for p in d.open_positions.values() if p["dedupe_key"] == "BOND1_NBA_FIN"]
+        assert len(pos_uma) == 1
+        assert pos_uma[0]["maker_tp_px"] is None
+        assert pos_uma[0]["extra"].get("filled_via_trade_tape") is True
+        assert pos_uma[0]["tier_fills"]["T100"]["shares"] == round(20.0 / 0.992, 4)
+        assert pos_uma[0]["tier_fills"]["T1000"]["shares"] == 25.0
+
+        # 3. 1c-tight `SP1_NBA` Polish Middle (`0.43/0.44` + `0.54/0.55` -> `0.43 + 0.55 = 0.980 <= 0.992`, `queue_front=False`)
+        la_sp1 = {"token_id": "sp1_a", "opp_token_id": "sp1_ao", "condition_id": "0xsp1", "side": "YES", "label": "Suns +4.5", "market_id": "msp1", "fee_rate": 0.0}
+        lb_sp1 = {"token_id": "sp1_b", "opp_token_id": "sp1_bo", "condition_id": "0xsp2", "side": "YES", "label": "Lakers -2.5", "market_id": "msp2", "fee_rate": 0.0}
+        bk_sp1_a = {"bids": [{"price": "0.43", "size": "120"}], "asks": [{"price": "0.44", "size": "100"}]}
+        bk_sp1_b = {"bids": [{"price": "0.43", "size": "120"}], "asks": [{"price": "0.55", "size": "100"}]}
+        bk_sp1_b["bids"] = [{"price": "0.54", "size": "120"}]
+        ok_zf1 = d.post_zero_fee_maker_anchor_box(
+            "SP1_NBA", "NBA", "ZFA_TIGHT_1C", la_sp1, lb_sp1, bk_sp1_a, bk_sp1_b, now_f + 5400.0, "Suns vs Lakers", now_f
+        )
+        assert ok_zf1 is True
+        st_zf1 = d.pending_zero_fee_maker_anchors["ZFA_TIGHT_1C"]
+        assert st_zf1["queue_front"] is False and st_zf1["pair_est"] == 0.98
+
+    asyncio.run(_run_focus())
+
+
+def test_sp3_sports_corridor_and_negrisk_convert_sleeves(monkeypatch, tmp_path):
+    """Verifies SP3 multi-sport corridor boxes, NR_CONV 2-leg + closed-partition convertPositions, and S2 live quarantine pruning."""
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import (
+        parse_multi_sport_corridor_event,
+        detect_multi_sport_corridor_boxes,
+        parse_negrisk_convert_event,
+        detect_negrisk_no_pair_boxes,
+        detect_negrisk_convert_positions_arbs,
+    )
+    from src.polymarket_research.alpha_124_shadow_daemon import Alpha124ShadowDaemon
+
+    # 1. SP3: NBA 1H (0% fee) spread corridor + NBA FG skipped (handled by SP1) + NFL FG (0.03 fee) total corridor
+    ev_sports = {
+        "id": "ev_sp3_1",
+        "slug": "nfl-kc-buf-2027-11-01",
+        "title": "Chiefs vs. Bills",
+        "endDate": "2027-11-02T01:00:00Z",
+        "markets": [
+            {
+                "id": "901001", "conditionId": "0xc1", "sportsMarketType": "spreads", "line": -2.5,
+                "question": "Spread: Chiefs (-2.5)", "outcomes": '["Chiefs", "Bills"]',
+                "clobTokenIds": '["111111111111111111111", "111111111111111111112"]',
+                "feeType": "sports_fees_nfl_cfb_oct26", "feesEnabled": True,
+            },
+            {
+                "id": "901002", "conditionId": "0xc2", "sportsMarketType": "spreads", "line": -6.5,
+                "question": "Spread: Chiefs (-6.5)", "outcomes": '["Chiefs", "Bills"]',
+                "clobTokenIds": '["222222222222222222221", "222222222222222222222"]',
+                "feeType": "sports_fees_nfl_cfb_oct26", "feesEnabled": True,
+            },
+            {
+                "id": "901003", "conditionId": "0xc3", "sportsMarketType": "totals", "line": 44.5,
+                "question": "Chiefs vs. Bills: O/U 44.5", "outcomes": '["Over", "Under"]',
+                "clobTokenIds": '["333333333333333333331", "333333333333333333332"]',
+                "feeType": "sports_fees_nfl_cfb_oct26", "feesEnabled": True,
+            },
+            {
+                "id": "901004", "conditionId": "0xc4", "sportsMarketType": "totals", "line": 48.5,
+                "question": "Chiefs vs. Bills: O/U 48.5", "outcomes": '["Over", "Under"]',
+                "clobTokenIds": '["444444444444444444441", "444444444444444444442"]',
+                "feeType": "sports_fees_nfl_cfb_oct26", "feesEnabled": True,
+            },
+            # Integer hook 46.0 MUST be ignored (push/tie risk)
+            {
+                "id": "901005", "conditionId": "0xc5", "sportsMarketType": "totals", "line": 46.0,
+                "question": "Chiefs vs. Bills: O/U 46.0", "outcomes": '["Over", "Under"]',
+                "clobTokenIds": '["555555555555555555551", "555555555555555555552"]',
+                "feeType": "sports_fees_nfl_cfb_oct26", "feesEnabled": True,
+            },
+        ],
+    }
+    sp_spec = parse_multi_sport_corridor_event(ev_sports)
+    assert sp_spec is not None and sp_spec.sport == "NFL"
+    assert len(sp_spec.legs) == 8  # 4 half-integer markets * 2 sides; integer 46.0 ("901005") excluded!
+    assert "901005" not in {lg.market_id for lg in sp_spec.legs}
+    assert all(abs(lg.fee_rate - 0.03) < 1e-9 for lg in sp_spec.legs)
+
+    best_asks_sp3 = {
+        "111111111111111111111": 0.46,
+        "222222222222222222222": 0.49,
+        "333333333333333333331": 0.47,
+        "444444444444444444442": 0.48,
+    }
+    cands_sp3 = detect_multi_sport_corridor_boxes(sp_spec, best_asks_sp3, max_box_cost_net=0.985)
+    assert len(cands_sp3) == 2  # Chiefs -2.5 + Bills +6.5 AND Over 44.5 + Under 48.5
+    assert all(0.95 < c["box_cost_net"] <= 0.985 for c in cands_sp3)
+
+    # NBA 1H vs FG overlap test: skip_nba_fg_zero_fee=True skips FG 0%-fee legs while keeping 1H 0%-fee legs
+    ev_nba = {
+        "id": "ev_nba_1h", "slug": "nba-bos-mia-2027-11-01", "title": "Celtics vs. Heat",
+        "endDate": "2027-11-02T01:00:00Z",
+        "markets": [
+            {
+                "id": "902001", "conditionId": "0xn1", "sportsMarketType": "first_half_spreads", "line": -1.5,
+                "question": "1H Spread: Celtics (-1.5)", "outcomes": '["Celtics", "Heat"]',
+                "clobTokenIds": '["611111111111111111111", "611111111111111111112"]', "feesEnabled": False,
+            },
+            {
+                "id": "902002", "conditionId": "0xn2", "sportsMarketType": "first_half_spreads", "line": -4.5,
+                "question": "1H Spread: Celtics (-4.5)", "outcomes": '["Celtics", "Heat"]',
+                "clobTokenIds": '["622222222222222222221", "622222222222222222222"]', "feesEnabled": False,
+            },
+            {
+                "id": "902003", "conditionId": "0xn3", "sportsMarketType": "spreads", "line": -3.5,
+                "question": "Spread: Celtics (-3.5)", "outcomes": '["Celtics", "Heat"]',
+                "clobTokenIds": '["633333333333333333331", "633333333333333333332"]', "feesEnabled": False,
+            },
+            {
+                "id": "902004", "conditionId": "0xn4", "sportsMarketType": "spreads", "line": -7.5,
+                "question": "Spread: Celtics (-7.5)", "outcomes": '["Celtics", "Heat"]',
+                "clobTokenIds": '["644444444444444444441", "644444444444444444442"]', "feesEnabled": False,
+            },
+        ],
+    }
+    nba_spec = parse_multi_sport_corridor_event(ev_nba, skip_nba_fg_zero_fee=True)
+    nba_asks = {
+        "611111111111111111111": 0.48,
+        "622222222222222222222": 0.49,
+        "633333333333333333331": 0.48,
+        "644444444444444444442": 0.49,
+    }
+    nba_cands = detect_multi_sport_corridor_boxes(nba_spec, nba_asks, max_box_cost_net=0.988)
+    assert len(nba_cands) == 1 and nba_cands[0]["scope"] == "1H:SPREAD"
+
+    # 2. NR_CONV: Closed 3-outcome NegRisk partition vs Augmented NegRisk event
+    nr_closed_ev = {
+        "id": "ev_nr_closed", "slug": "fed-chair-vote-margin", "title": "Vote Margin Partition",
+        "enableNegRisk": True, "negRiskAugmented": False,
+        "negRiskMarketID": "0x" + "ab" * 32,
+        "endDate": "2027-11-05T18:00:00Z",
+        "markets": [
+            {
+                "id": "910001", "conditionId": "0xd1", "negRisk": True, "groupItemTitle": "Bucket A",
+                "questionID": "0x" + "ab" * 31 + "00",
+                "clobTokenIds": '["711111111111111111111", "711111111111111111112"]', "feesEnabled": False,
+            },
+            {
+                "id": "910002", "conditionId": "0xd2", "negRisk": True, "groupItemTitle": "Bucket B",
+                "questionID": "0x" + "ab" * 31 + "01",
+                "clobTokenIds": '["722222222222222222221", "722222222222222222222"]', "feesEnabled": False,
+            },
+            {
+                "id": "910003", "conditionId": "0xd3", "negRisk": True, "groupItemTitle": "Bucket C",
+                "questionID": "0x" + "ab" * 31 + "02",
+                "clobTokenIds": '["733333333333333333331", "733333333333333333332"]', "feesEnabled": False,
+            },
+        ],
+    }
+    sl_closed = parse_negrisk_convert_event(nr_closed_ev)
+    assert sl_closed is not None and sl_closed.is_closed_convert_safe is True
+    bks_nr = {
+        "711111111111111111112": {"asks": [{"price": "0.46", "size": "100"}]},  # NO_0
+        "722222222222222222222": {"asks": [{"price": "0.51", "size": "100"}]},  # NO_1 -> pair = 0.97!
+        "733333333333333333331": {"bids": [{"price": "0.08", "size": "100"}]},  # YES_2 bid = 0.08 -> convert eff = 0.97 - 0.08 = 0.89!
+        "733333333333333333332": {"asks": [{"price": "0.94", "size": "100"}]},
+    }
+    no_asks_nr = {
+        "711111111111111111112": 0.46,
+        "722222222222222222222": 0.51,
+        "733333333333333333332": 0.94,
+    }
+    pairs_closed = detect_negrisk_no_pair_boxes(sl_closed, no_asks_nr, max_box_cost_net=0.990)
+    assert len(pairs_closed) == 1 and abs(pairs_closed[0]["box_cost_net"] - 0.97) < 1e-6
+    conv_closed = detect_negrisk_convert_positions_arbs(sl_closed, bks_nr, min_net_edge_per_share=0.012)
+    assert len(conv_closed) >= 1 and conv_closed[0]["net_edge_per_share"] > 0.08
+
+    # Augmented NegRisk: 2-leg NO pair is STILL 100% riskless, while convertPositions MUST be blocked!
+    nr_aug_ev = dict(nr_closed_ev, id="ev_nr_aug", negRiskAugmented=True)
+    sl_aug = parse_negrisk_convert_event(nr_aug_ev)
+    assert sl_aug is not None and sl_aug.is_closed_convert_safe is False
+    assert len(detect_negrisk_no_pair_boxes(sl_aug, no_asks_nr, max_box_cost_net=0.990)) == 1
+    assert detect_negrisk_convert_positions_arbs(sl_aug, bks_nr, min_net_edge_per_share=0.012) == []
+
+    # 3. Live Quarantine CPU Pruning + Lazy WS Book Materialization + End-to-End execute_negrisk_convert_positions_arb
+    import asyncio
+    import src.polymarket_research.alpha_124_shadow_daemon as a124_mod
+    monkeypatch.setattr(a124_mod, "STATE_FILE", tmp_path / "a124_q.json")
+    monkeypatch.setattr(a124_mod, "LEDGER_FILE", tmp_path / "a124_q_ledger.jsonl")
+    monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES", "1")
+    d_live = Alpha124ShadowDaemon(single_scan=False)
+    d_live.twap_candles = {"dummy": 1}
+    asyncio.run(d_live.scan_exact_twap_locks([]))
+    assert d_live.twap_candles == {}
+    # Lazy WS book materialization on 100Hz price_change deltas
+    d_live._apply_ws_book_snapshot("tok_lazy", [{"price": "0.45", "size": "50"}], [{"price": "0.47", "size": "50"}], 1000.0)
+    assert d_live._apply_ws_price_changes("tok_lazy", [{"price": "0.46", "size": "60", "side": "BUY"}], 1001.0) is True
+    assert "tok_lazy" in d_live._ws_books._dirty  # not sorted yet!
+    bk_lz = d_live._ws_books["tok_lazy"]
+    assert bk_lz[0] == 1001.0 and bk_lz[1]["bids"][0]["price"] == "0.4600"
+    # End-to-end execute_negrisk_convert_positions_arb
+    async def _mock_fetch_batch(toks, timeout=3.0):
+        return bks_nr
+    d_live.fetch_books_batch = _mock_fetch_batch
+    opps_conv = []
+    assert asyncio.run(d_live.execute_negrisk_convert_positions_arb(sl_closed, conv_closed[0], bks_nr, opps_conv)) is True
+    assert d_live.closed_positions[-1]["sleeve"] == "NR_CONV_NO_BASKET_ARB" and d_live.closed_positions[-1]["won"] is True
+
+
+def test_riskless_frontier_v2_all_six_sleeves(monkeypatch, tmp_path) -> None:
+    from src.polymarket_research.riskless_frontier_v2_engine import (
+        MOOV2_ORACLE_ADDR,
+        build_lp1_bop_2026_truth_legs,
+        build_lp1_nba_exact_margin_bundle,
+        detect_nr2_convert_no_subset_arbs,
+        detect_soc1_regulation_boxes,
+        detect_sp4_milestone_ladder_boxes,
+        evaluate_api1_esports_bo3_opportunities,
+        evaluate_sp4_ingame_clinch_locks,
+        find_state_matrix_dominance_boxes,
+        link_and_parse_soccer_regulation_trees,
+        parse_espn_nba_boxscore_players,
+        parse_esports_bo3_event,
+        parse_nba_player_props_from_event,
+        verify_bond2_moov2_final_hour_sync,
+    )
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import (
+        detect_negrisk_convert_positions_arbs,
+        parse_negrisk_convert_event,
+    )
+    from src.polymarket_research.uma_nba_endgame_engine import LiveNbaGameState
+    import src.polymarket_research.riskless_frontier_v2_engine as rfv2
+
+    # 1. NR2_CONVERT_NO_SUBSET_ARB: 5-outcome closed partition with 2 liquid frontrunners (m=2),
+    #    1 liquid mid-tier YES bid (L={2}), and 2 dead empty-bid tail brackets (U={3, 4}).
+    nr5_ev = {
+        "id": "ev_nr5", "slug": "closed-5way-slate", "title": "Closed 5-Way Slate",
+        "enableNegRisk": True, "negRiskAugmented": False,
+        "negRiskMarketID": "0x" + "cd" * 32,
+        "endDate": "2026-11-10T18:00:00Z",
+        "markets": [
+            {
+                "id": f"92000{i}", "conditionId": f"0xe{i}", "negRisk": True, "active": True,
+                "groupItemTitle": f"Contender {i}", "questionID": "0x" + "cd" * 31 + f"0{i}",
+                "clobTokenIds": f'["8{i}1111111111111111111", "8{i}2222222222222222222"]', "feesEnabled": False,
+            }
+            for i in range(5)
+        ],
+    }
+    sp5 = parse_negrisk_convert_event(nr5_ev)
+    assert sp5 is not None and sp5.is_closed_convert_safe is True
+    # Verify placeholder child ("Party A") strictly blocks is_closed_convert_safe even if negRiskAugmented=False!
+    nr_ph = {**nr5_ev, "markets": [*nr5_ev["markets"][:4], {**nr5_ev["markets"][4], "groupItemTitle": "Party A"}]}
+    assert parse_negrisk_convert_event(nr_ph).is_closed_convert_safe is False
+
+    bks_nr5 = {
+        "802222222222222222222": {"asks": [{"price": "0.48", "size": "100"}]},  # NO_0
+        "812222222222222222222": {"asks": [{"price": "0.56", "size": "100"}]},  # NO_1 -> sum(NO_0, NO_1) = 1.04
+        "821111111111111111111": {"bids": [{"price": "0.08", "size": "100"}]},  # YES_2 bid = 0.08 -> 1.00 + 0.08 - 1.04 = +0.04/sh!
+        "831111111111111111111": {"bids": []},                                   # Tail YES_3 empty bids -> retained free!
+        "841111111111111111111": {"bids": []},                                   # Tail YES_4 empty bids -> retained free!
+    }
+    # Legacy m in {N-1, N-2} fails because tail YES bids are empty, whereas NR2 succeeds and retains 2 free tails!
+    assert detect_negrisk_convert_positions_arbs(sp5, bks_nr5) == []
+    nr2_hits = detect_nr2_convert_no_subset_arbs(sp5, bks_nr5, target_budget_usd=100.0)
+    assert len(nr2_hits) == 1
+    assert nr2_hits[0]["m_no_legs"] == 2 and nr2_hits[0]["retained_tail_count"] == 2
+    assert abs(nr2_hits[0]["net_edge_per_share"] - 0.04) < 1e-4
+
+    # 2. SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK: 3B ladder box + 3A live Secaucus +2 buffer vs Final +1 clinch
+    nba_ev = {
+        "id": "ev_nba_sp4", "slug": "nba-sas-uta-2026-10-30", "title": "Spurs vs. Jazz",
+        "startTime": "2026-10-30T23:00:00Z",
+        "markets": [
+            {
+                "id": "p1", "conditionId": "0xc1", "sportsMarketType": "points", "line": 23.5, "feeType": "zero_fees",
+                "groupItemTitle": "Victor Wembanyama: Points O/U 23.5", "outcomes": '["Yes", "No"]',
+                "clobTokenIds": '["90011", "90012"]',
+            },
+            {
+                "id": "p2", "conditionId": "0xc2", "sportsMarketType": "points", "line": 27.5, "feeType": "zero_fees",
+                "groupItemTitle": "Victor Wembanyama: Points O/U 27.5", "outcomes": '["Yes", "No"]',
+                "clobTokenIds": '["90021", "90022"]',
+            },
+        ],
+    }
+    sl_sp4 = parse_nba_player_props_from_event(nba_ev)
+    assert sl_sp4 is not None
+    b_3b = detect_sp4_milestone_ladder_boxes(sl_sp4, {"90011": 0.61, "90022": 0.37}, max_box_cost_net=0.992)
+    assert len(b_3b) == 1 and abs(b_3b[0]["box_cost_net"] - 0.98) < 1e-6
+
+    espn_mock = {
+        "boxscore": {
+            "players": [{
+                "statistics": [{
+                    "keys": ["minutes", "points", "rebounds", "assists", "threePointFieldGoalsMade-threePointFieldGoalsAttempted"],
+                    "athletes": [
+                        {"athlete": {"displayName": "Victor Wembanyama"}, "didNotPlay": False, "stats": ["28", "24", "9", "4", "3-7"]},
+                        {"athlete": {"displayName": "DNP Bench"}, "didNotPlay": True, "stats": ["0", "30", "0", "0", "0-0"]},
+                    ],
+                }]
+            }]
+        }
+    }
+    p_stats = parse_espn_nba_boxscore_players(espn_mock)
+    assert "dnp bench" not in p_stats and p_stats["victor wembanyama"]["points"] == 24
+    # At 24 pts vs 23.5 line: blocked while live ("in") due to +2 Secaucus 3PT->2PT buffer, clinched once Final ("post")!
+    g_in = LiveNbaGameState("g1", 1000.0, "in", False, 3, 120.0, "Jazz", "UTA", 80, "Spurs", "SAS", 84)
+    g_post = LiveNbaGameState("g1", 1000.0, "post", True, 4, 0.0, "Jazz", "UTA", 102, "Spurs", "SAS", 108)
+    assert evaluate_sp4_ingame_clinch_locks(sl_sp4, g_in, p_stats) == []
+    assert len(evaluate_sp4_ingame_clinch_locks(sl_sp4, g_post, p_stats)) == 1
+    p_stats["victor wembanyama"]["points"] = 25
+    assert len(evaluate_sp4_ingame_clinch_locks(sl_sp4, g_in, p_stats)) == 1
+
+    # 3. BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY: Whitelist + MOOv2 + Final-Hour decay verification
+    monkeypatch.setattr(
+        rfv2, "verify_uma_onchain_proposal_sync",
+        lambda m, **kw: {
+            "verified": True, "adapter": "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7",
+            "oo_address": MOOV2_ORACLE_ADDR, "proposer": "0x" + "11" * 20,
+            "proposal_age_sec": 4200.0, "rem_challenge_sec": 1800.0,
+            "win_index": 0, "win_label": "YES", "win_outcome_name": "Yes",
+            "win_token": "t_w", "lose_token": "t_l", "expiration_ts": 5000.0,
+            "fee_rate": 0.0, "fee_exponent": 1.0, "domain": "SPORTS_POINTS", "oo_state": 2,
+        },
+    )
+    monkeypatch.setattr(rfv2, "verify_proposer_whitelisted_sync", lambda addr, **kw: addr.endswith("1111"))
+    assert verify_bond2_moov2_final_hour_sync({"id": "m_b2"})["verified"] is True
+    monkeypatch.setattr(rfv2, "verify_proposer_whitelisted_sync", lambda addr, **kw: False)
+    assert verify_bond2_moov2_final_hour_sync({"id": "m_b2"})["reason"] == "PROPOSER_NOT_WHITELISTED"
+
+    # 4. SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX: Fee-exact (sports_fees_v3 = 0.05) 3-way + Over 0.5 & advance veto
+    soc_3w = {
+        "id": "s3", "slug": "epl-ars-che-2026-11-01", "title": "Arsenal vs. Chelsea", "gameId": "99001",
+        "negRisk": True, "negRiskAugmented": False, "negRiskMarketID": "0x" + "ef" * 32,
+        "startTime": "2026-11-01T16:30:00Z",
+        "markets": [
+            {"id": "s_h", "conditionId": "0x1", "sportsMarketType": "moneyline", "feeType": "sports_fees_v3", "groupItemTitle": "Arsenal", "question": "Will Arsenal win?", "outcomes": '["Yes","No"]', "clobTokenIds": '["sh1","sh2"]', "questionID": "0x" + "ef"*31 + "00"},
+            {"id": "s_d", "conditionId": "0x2", "sportsMarketType": "moneyline", "feeType": "sports_fees_v3", "groupItemTitle": "Draw", "question": "Will Arsenal vs Chelsea end in a draw?", "outcomes": '["Yes","No"]', "clobTokenIds": '["sd1","sd2"]', "questionID": "0x" + "ef"*31 + "01"},
+            {"id": "s_a", "conditionId": "0x3", "sportsMarketType": "moneyline", "feeType": "sports_fees_v3", "groupItemTitle": "Chelsea", "question": "Will Chelsea win?", "outcomes": '["Yes","No"]', "clobTokenIds": '["sa1","sa2"]', "questionID": "0x" + "ef"*31 + "02"},
+        ],
+    }
+    soc_mm = {
+        "id": "s_mm", "slug": "epl-ars-che-2026-11-01-more-markets", "gameId": "99001", "negRisk": False,
+        "markets": [
+            {"id": "s_o05", "conditionId": "0x4", "sportsMarketType": "totals", "line": 0.5, "feeType": "sports_fees_v3", "groupItemTitle": "O/U 0.5", "question": "O/U 0.5", "outcomes": '["Over","Under"]', "clobTokenIds": '["so1","so2"]'},
+        ],
+    }
+    trees = link_and_parse_soccer_regulation_trees([soc_3w, soc_mm])
+    assert "99001" in trees and trees["99001"].over05_leg is not None
+    # Gross 0.22 + 0.76 = 0.980, AFTER 5% sports_fees_v3 -> 0.22*(1+0.05*0.78) + 0.76*(1+0.05*0.24) = 0.22858 + 0.76912 = 0.9977 (> 0.988, MUST REJECT!)
+    assert detect_soc1_regulation_boxes(trees["99001"], {}, {"sd1": 0.22, "so1": 0.76}, max_2leg_cost_net=0.988)["two_leg_boxes"] == []
+    # Gross 0.20 + 0.75 = 0.950 -> net 0.208 + 0.759375 = 0.9674 (<= 0.988, MUST PASS!)
+    assert len(detect_soc1_regulation_boxes(trees["99001"], {}, {"sd1": 0.20, "so1": 0.75}, max_2leg_cost_net=0.988)["two_leg_boxes"]) == 1
+
+    # 5. LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX: 9-State BOP (incl. Other) & 11-State NBA Exact-Margin (incl. Canceled 50-50)
+    bop_legs = build_lp1_bop_2026_truth_legs({
+        "balance-of-power-2026-midterms": {
+            "markets": [
+                {"id": "b1", "conditionId": "0xb1", "question": "2026 Balance of Power: D Senate, D House", "feeType": "zero_fees", "endDate": "2026-11-04T00:00:00Z", "clobTokenIds": '["by1","bn1"]'},
+                {"id": "b5", "conditionId": "0xb5", "question": "2026 Balance of Power: Other", "feeType": "zero_fees", "endDate": "2026-11-04T00:00:00Z", "clobTokenIds": '["by5","bn5"]'},
+            ]
+        },
+        "which-party-will-win-the-senate-in-2026": {
+            "markets": [
+                {"id": "s1", "conditionId": "0xs1", "groupItemTitle": "Democratic Party", "feeType": "zero_fees", "endDate": "2026-11-04T00:00:00Z", "clobTokenIds": '["sy1","sn1"]'},
+            ]
+        },
+    })
+    lp_hits = find_state_matrix_dominance_boxes(bop_legs, {"bn1": 0.30, "sy1": 0.67}, max_2leg_cost_net=0.993)
+    assert len(lp_hits) == 1 and lp_hits[0]["min_payout"] == 1.0 and lp_hits[0]["jackpot_states"] == 2
+
+    nba_p = {
+        "id": "np1", "slug": "nba-bos-nyk-2026-10-30", "title": "Celtics vs. Knicks", "startTime": "2026-10-30T23:30:00Z",
+        "markets": [{"id": "ml1", "conditionId": "0xm1", "sportsMarketType": "moneyline", "feeType": "zero_fees", "outcomes": '["Celtics","Knicks"]', "clobTokenIds": '["mla","mlb"]'}],
+    }
+    em_bands = [("Celtics", "1-5"), ("Celtics", "6-10"), ("Celtics", "11-15"), ("Celtics", "16-20"), ("Celtics", "21+"),
+                ("Knicks", "1-5"), ("Knicks", "6-10"), ("Knicks", "11-15"), ("Knicks", "16-20"), ("Knicks", "21+")]
+    nba_em = {
+        "id": "ne1", "slug": "nba-bos-nyk-2026-10-30-exact-margin", "negRisk": True, "negRiskAugmented": False,
+        "negRiskMarketID": "0x" + "aa" * 32,
+        "markets": [
+            {"id": f"em{k}", "conditionId": f"0xem{k}", "feeType": "zero_fees", "groupItemTitle": f"Exact Margin: {tm} by {bd}", "clobTokenIds": f'["emy{k}","emn{k}"]', "questionID": "0x" + "aa"*31 + f"{k:02x}"}
+            for k, (tm, bd) in enumerate(em_bands)
+        ] + [{"id": "em10", "conditionId": "0xem10", "feeType": "zero_fees", "groupItemTitle": "Other", "clobTokenIds": '["emy10","emn10"]', "questionID": "0x" + "aa"*31 + "0a"}],
+    }
+    em_bundle = build_lp1_nba_exact_margin_bundle(nba_p, nba_em)
+    assert em_bundle is not None and len(em_bundle["legs"]) == 24
+    # ML[Celtics] + EM_N[Celtics by 6-10] -> $1.00 on Celtics 6-10 & Knicks wins, $2.00 on other Celtics wins, $1.50 if Canceled!
+    em_hits = find_state_matrix_dominance_boxes(em_bundle["legs"], {"mla": 0.58, "emn1": 0.40}, max_2leg_cost_net=0.993)
+    assert len(em_hits) == 1 and em_hits[0]["min_payout"] == 1.0 and em_hits[0]["max_payout"] == 2.0
+
+    # 6. API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK: BO5 veto + Map 1 Underdog +1.5 lock + BO3 2-1 Polish Middle
+    esp_bo3 = {
+        "id": "esp1", "slug": "cs2-navi-faze-2026-10-30", "title": "Counter-Strike: NAVI vs FaZe (BO3)",
+        "startTime": "2026-10-30T20:00:00Z",
+        "markets": [
+            {"id": "eml", "conditionId": "0x1", "sportsMarketType": "moneyline", "feeType": "sports_fees_v2", "outcomes": '["NAVI","FaZe"]', "clobTokenIds": '["mla_e","mlb_e"]'},
+            {"id": "ehc", "conditionId": "0x2", "sportsMarketType": "map_handicap", "line": -1.5, "feeType": "sports_fees_v2", "groupItemTitle": "Map Handicap: NAVI (-1.5) vs FaZe (+1.5)", "description": 'This market will resolve to "NAVI" if NAVI wins 2 or more maps than FaZe', "outcomes": '["NAVI","FaZe"]', "clobTokenIds": '["hcm_e","hcp_e"]'},
+            {"id": "em1", "conditionId": "0x3", "sportsMarketType": "child_moneyline", "feeType": "sports_fees_v2", "groupItemTitle": "Map 1 Winner", "outcomes": '["NAVI","FaZe"]', "clobTokenIds": '["m1a_e","m1b_e"]', "outcomePrices": '["0", "1"]', "closed": True},
+        ],
+    }
+    sp_bo3 = parse_esports_bo3_event(esp_bo3)
+    assert sp_bo3 is not None and sp_bo3.hc_fav_is_a is True and sp_bo3.map1_resolved_winner == "B"
+    # Verify BO5 (with Map 4) is strictly rejected!
+    esp_bo5 = {**esp_bo3, "title": "NAVI vs FaZe (BO5)", "markets": [*esp_bo3["markets"], {"id": "em4", "sportsMarketType": "child_moneyline", "groupItemTitle": "Map 4 Winner"}]}
+    assert parse_esports_bo3_event(esp_bo5) is None
+    res_api1 = evaluate_api1_esports_bo3_opportunities(sp_bo3, {}, {"mla_e": 0.55, "hcp_e": 0.41}, max_middle_cost_net=0.988)
+    assert len(res_api1["single_leg_locks"]) == 1 and res_api1["single_leg_locks"][0]["token_id"] == "hcp_e"
+    assert len(res_api1["two_leg_boxes"]) == 1 and res_api1["two_leg_boxes"][0]["post_m1_forfeit_immune"] is True
+
+    # 7. Verify Live Harvester IPC Candidate Bridge (`d1_live_box_candidates.jsonl`) for Zero-Fee SP4 & LP1
+    import asyncio
+    import json
+    import time as _time_m
+    import src.polymarket_research.alpha_124_shadow_daemon as a124_mod
+    cand_out = tmp_path / "d1_cands.jsonl"
+    monkeypatch.setattr(a124_mod, "STATE_FILE", tmp_path / "a124_fv2.json")
+    monkeypatch.setattr(a124_mod, "LEDGER_FILE", tmp_path / "a124_fv2_ledger.jsonl")
+    monkeypatch.setattr(a124_mod, "MARKET_TELEMETRY_FILE", tmp_path / "a124_fv2_telem.jsonl")
+    monkeypatch.setattr(a124_mod, "D1_LIVE_CANDIDATES_FILE", cand_out)
+    d_fv2 = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+    now_t = _time_m.time()
+    sl_sp4.settle_est_ts = now_t + 7200.0
+    for lg_x in em_bundle["legs"]:
+        lg_x["end_ts"] = now_t + 7200.0
+    em_bundle["end_ts"] = now_t + 7200.0
+    d_fv2.nba_prop_slates = {sl_sp4.event_id: sl_sp4}
+    d_fv2.lp1_nba_em_bundles = {em_bundle["event_id"]: em_bundle}
+
+    mock_books = {
+        "90011": {"bids": [{"price": "0.60", "size": "150"}], "asks": [{"price": "0.62", "size": "150"}]},
+        "90012": {"bids": [{"price": "0.36", "size": "150"}], "asks": [{"price": "0.38", "size": "150"}]},
+        "90021": {"bids": [{"price": "0.62", "size": "150"}], "asks": [{"price": "0.65", "size": "150"}]},
+        "90022": {"bids": [{"price": "0.33", "size": "150"}], "asks": [{"price": "0.35", "size": "150"}]},
+        "mla": {"bids": [{"price": "0.56", "size": "200"}], "asks": [{"price": "0.58", "size": "200"}]},
+        "mlb": {"bids": [{"price": "0.40", "size": "200"}], "asks": [{"price": "0.42", "size": "200"}]},
+        "emy1": {"bids": [{"price": "0.58", "size": "200"}], "asks": [{"price": "0.60", "size": "200"}]},
+        "emn1": {"bids": [{"price": "0.38", "size": "200"}], "asks": [{"price": "0.40", "size": "200"}]},
+    }
+    async def _mock_fb_fv2(toks, timeout=3.5):
+        return {t: mock_books[t] for t in toks if t in mock_books}
+    d_fv2.fetch_books_batch = _mock_fb_fv2
+    opps_fv2 = []
+    asyncio.run(d_fv2._scan_frontier_v2_sleeves(opps_fv2, now_t))
+    emitted_lines = [json.loads(x) for x in cand_out.read_text(encoding="utf-8").splitlines() if x.strip()]
+    emitted_sleeves = {c["sleeve_source"] for c in emitted_lines}
+    assert "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK" in emitted_sleeves
+    assert "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX" in emitted_sleeves
 
 
 if __name__ == "__main__":

@@ -17,11 +17,15 @@ live daily projections engine, and unit test suites) Polymarket codebase review 
 from __future__ import annotations
 
 import re
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Tuple
 
 PIPELINE_ROOT = Path(__file__).resolve().parent.parent
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
+from scripts.bundle_polymarket_all_in_one import transform_module
 
 FULL_OUTPUT_PY = PIPELINE_ROOT / "polymarket_full_codebase_v4.py"
 FULL_OUTPUT_TXT = PIPELINE_ROOT / "polymarket_full_codebase_v4.txt"
@@ -30,19 +34,21 @@ ALPHA124_OUTPUT_PY = PIPELINE_ROOT / "polymarket_alpha124_all_in_one.py"
 ALPHA124_OUTPUT_TXT = PIPELINE_ROOT / "polymarket_alpha124_all_in_one.txt"
 
 CORE_V393_MODULES: List[Tuple[str, str]] = [
-    # 1. CENTRALIZED RISK CONFIG & ALL 8 PRODUCTION/SHADOW SYSTEMD UNITS
+    # 1. CENTRALIZED RISK & GOVERNANCE CONFIGS + ALL PRODUCTION/SHADOW SYSTEMD UNITS
     ("config/polymarket_risk_config.json", "Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)"),
-    ("systemd/polymarket-live-harvester.service", "Live Harvester v3.9.3 systemd Unit"),
-    ("systemd/polymarket-alpha124-shadow.service", "Alpha-124 11-Sleeve Unified Shadow Daemon systemd Unit"),
-    ("systemd/polymarket-recorder.service", "BTC Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit"),
+    ("config/polymarket_strategy_and_risk.json", "v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config"),
+    ("systemd/polymarket-live-harvester.service", "Live Harvester v5.3 systemd Unit"),
+    ("systemd/polymarket-alpha124-shadow.service", "Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit"),
+    ("systemd/polymarket-recorder.service", "Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit"),
     ("systemd/polymarket-recorder-eth.service", "ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit"),
     ("systemd/polymarket-recorder-sol.service", "SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit"),
     ("systemd/polymarket-recorder-xrp.service", "XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit"),
     ("systemd/polymarket-trader.service", "Forward Paper Trader systemd Unit"),
     ("systemd/polymarket-exp316-shadow.service", "EXP-316 Macro Strike Convergence Shadow systemd Unit"),
 
-    # 2. CORE v3.9.3 LIVE EXECUTION, HARVESTING & STREAMING STACK
-    ("src/polymarket_research/polymarket_live_harvester.py", "v3.9.3 Live Harvester: Authoritative 14-digit Chainlink Open, <$110 Guard, Phase-4 Book Walk, 95c/98c TP"),
+    # 2. CORE v5.3 LIVE GOVERNANCE, EXECUTION, HARVESTING & STREAMING STACK
+    ("src/polymarket_research/holistic_strategy_governance.py", "v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine"),
+    ("src/polymarket_research/polymarket_live_harvester.py", "v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor"),
     ("src/polymarket_research/polymarket_live_executor.py", "CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer"),
     ("src/polymarket_research/polymarket_ws_streams.py", "Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)"),
     ("src/polymarket_research/latency_trace.py", "Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry"),
@@ -63,6 +69,7 @@ CORE_V393_MODULES: List[Tuple[str, str]] = [
 
 ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
     # 5. ALPHA-124 14-SLEEVE MATHEMATICAL ORACLES, v4.0 NET-ALPHA ENGINE & UNIFIED SHADOW DAEMON
+    ("src/polymarket_research/directional_wfo_shadow_sleeves.py", "v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)"),
     ("src/polymarket_research/orderflow_wfo_simulators.py", "v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine"),
     ("src/polymarket_research/net_alpha_opportunity_engine.py", "v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine"),
     ("src/polymarket_research/weather_metar_engine.py", "Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb"),
@@ -72,14 +79,18 @@ ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
     ("src/polymarket_research/exact_twap_lock_engine.py", "Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock"),
     ("src/polymarket_research/tradfi_sports_zero_fee_engine.py", "Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)"),
     ("src/polymarket_research/macro_counting_ctf_engine.py", "Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)"),
-    ("src/polymarket_research/alpha_124_shadow_daemon.py", "Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, NBA, FOMC/Oil-Senate/Counting/AAA)"),
+    ("src/polymarket_research/uma_nba_endgame_engine.py", "Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)"),
+    ("src/polymarket_research/riskless_frontier_v2_engine.py", "Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)"),
+    ("src/polymarket_research/riskless_frontier_v3_engine.py", "Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)"),
+    ("src/polymarket_research/riskless_frontier_v4_engine.py", "Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)"),
+    ("src/polymarket_research/alpha_124_shadow_daemon.py", "Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)"),
     # EXP-316 (isolated separate service) is bundled only in the full codebase (see EXP316_MODULES) to keep
     # the Alpha-124 companion bundle strictly < 1,000,000 bytes.
 
     # 6. BACKTESTING, LIVE DAY-BY-DAY PROJECTIONS & TELEMETRY SCORECARDS
     ("scripts/backtest_alpha_124.py", "Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124"),
     ("scripts/polymarket_daily_projections.py", "Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker"),
-    ("scripts/alpha124_status.py", "Live Alpha-124 11-Sleeve Scorecard & Orderbook Opportunity Inspector"),
+    ("scripts/alpha124_status.py", "Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector"),
     ("scripts/polymarket_scorecard_snapshot.py", "Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot"),
 
     # 7. ALPHA-124 & MULTI-VERTICAL ORACLE UNIT TEST SUITE
@@ -93,6 +104,9 @@ EXP316_MODULES: List[Tuple[str, str]] = [
 HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [
     ("tests/test_polymarket_wfo_5fixes.py", "Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation"),
     ("tests/test_zero_trust_forensic_audit.py", "Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync"),
+    ("tests/test_riskless_frontier_v4.py", "Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves"),
+    ("tests/test_v530_forensic_plumbing_fixes.py", "Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine"),
+    ("tests/test_v531_qa_audit_fixes.py", "Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing"),
 ]
 
 _FUTURE_RE = re.compile(r"^(from\s+__future__\s+import\s+[^\n]+)$", flags=re.MULTILINE)
@@ -114,6 +128,7 @@ def assemble_bundle(
     title: str,
     subtitle: str,
     modules: List[Tuple[str, str]],
+    compact_ast: bool = False,
 ) -> Tuple[str, List[str]]:
     module_data: List[Tuple[str, str, str]] = []
     for rel_path, desc in modules:
@@ -148,7 +163,7 @@ def assemble_bundle(
                 f"# PURPOSE: {desc}\n"
                 f"# {'=' * 86}\n\n"
             )
-            body = format_unstripped_module(rel_p, code)
+            body = transform_module(rel_p, code) if compact_ast else format_unstripped_module(rel_p, code)
             start_ln = cur_line + 1
             end_ln = cur_line + banner.count("\n") + body.count("\n")
             raw_bytes = len(code.encode("utf-8"))
@@ -178,11 +193,19 @@ def main() -> None:
     FULL_OUTPUT_PY.write_text(full_text, encoding="utf-8", newline="\n")
     FULL_OUTPUT_TXT.write_text(full_text, encoding="utf-8", newline="\n")
 
+    a124_mods = [("systemd/polymarket-alpha124-shadow.service", "Alpha-124 Unified Shadow systemd Unit")] + ALPHA124_EXPANSION_MODULES
     a124_text, a124_toc = assemble_bundle(
-        title="DOMINUS POLYMARKET ALPHA-124 11-SLEEVE EXPANSION + PROJECTIONS + TESTS (<1 MB COMPANION BUNDLE)",
+        title="DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB COMPANION BUNDLE)",
         subtitle="Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap",
-        modules=[("systemd/polymarket-alpha124-shadow.service", "Alpha-124 Unified Shadow systemd Unit")] + ALPHA124_EXPANSION_MODULES,
+        modules=a124_mods,
     )
+    if len(a124_text.encode("utf-8")) >= 995_000:
+        a124_text, a124_toc = assemble_bundle(
+            title="DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)",
+            subtitle="Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap",
+            modules=a124_mods,
+            compact_ast=True,
+        )
     compile(a124_text, "polymarket_alpha124_all_in_one.py", "exec")
     a124_bytes = len(a124_text.encode("utf-8"))
     assert a124_bytes < 1_000_000, f"Alpha-124 bundle {a124_bytes:,} B exceeds 1 MB!"

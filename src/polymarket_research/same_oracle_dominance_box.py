@@ -30,7 +30,7 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 CORE_LIVE_DOMINANCE_ASSETS: Tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")
@@ -451,6 +451,27 @@ def _sorted_asks(asks_raw: List[Dict[str, Any]], max_slip_cents: float) -> Tuple
     return capped, best_ask, avail_shares
 
 
+def _buy_share_haircut(px: float, fee_rate: float, fee_exponent: float = 1.0) -> float:
+    """
+    Polymarket CLOB V2 deducts BUY taker fees in conditional shares:
+    buying 1 gross share at price `p` delivers `1 - h(p)` net shares where
+    `h(p) = (r * (p * (1 - p))**e) / p`.
+    """
+    p = float(px)
+    r = float(fee_rate or 0.0)
+    if r <= 0.0 or p <= 0.0 or p >= 1.0:
+        return 0.0
+    fee_usdc_eq = r * ((p * (1.0 - p)) ** float(fee_exponent or 1.0))
+    return min(0.50, max(0.0, fee_usdc_eq / p))
+
+
+def _net_unit_cost_buy(px: float, fee_rate: float, fee_exponent: float = 1.0) -> float:
+    """Exact USDC cost required to acquire 1.0000 net share on-chain after V2 share-deducted BUY fees."""
+    p = float(px)
+    h = _buy_share_haircut(p, fee_rate, fee_exponent)
+    return p / (1.0 - h) if h > 0.0 else p
+
+
 def _walk_exact_shares(
     asks_capped: List[Tuple[float, float]],
     shares_qty: int,
@@ -476,16 +497,21 @@ def _walk_exact_shares(
     if rem > 1e-5:
         return None
     vwap = spent / float(shares_qty)
-    fee_ps = fee_rate * ((vwap * (1.0 - vwap)) ** fee_exponent) if fee_rate > 0.0 else 0.0
+    h_vwap = _buy_share_haircut(vwap, fee_rate, fee_exponent)
+    eff_px = vwap / (1.0 - h_vwap) if h_vwap > 0.0 else vwap
+    fee_ps = eff_px - vwap
     fee_usd = float(shares_qty) * fee_ps
+    net_shares_delivered = float(shares_qty) * (1.0 - h_vwap)
     return {
         "shares": int(shares_qty),
+        "net_shares": round(net_shares_delivered, 4),
+        "share_haircut": round(h_vwap, 6),
         "best_ask": round(asks_capped[0][0], 4),
         "vwap": round(vwap, 5),
         "worst_px": round(worst_px, 4),
         "spent_usd": round(spent, 4),
         "fee_usd": round(fee_usd, 4),
-        "eff_px": round((spent + fee_usd) / float(shares_qty), 5),
+        "eff_px": round(eff_px, 5),
         "levels": levels,
     }
 
@@ -516,9 +542,7 @@ def walk_equal_shares_dominance_box(
     if not capped_a or not capped_b:
         return {"filled": False, "reason": "EMPTY_BOOK", "best_sum": round(best_a + best_b, 4)}
 
-    fee_best_a = fee_rate_a * ((best_a * (1.0 - best_a)) ** fee_exponent_a) if fee_rate_a > 0 else 0.0
-    fee_best_b = fee_rate_b * ((best_b * (1.0 - best_b)) ** fee_exponent_b) if fee_rate_b > 0 else 0.0
-    min_possible_unit_cost = best_a + fee_best_a + best_b + fee_best_b
+    min_possible_unit_cost = _net_unit_cost_buy(best_a, fee_rate_a, fee_exponent_a) + _net_unit_cost_buy(best_b, fee_rate_b, fee_exponent_b)
     if min_possible_unit_cost < min_box_cost_net - 0.025 or (best_a + best_b) < 0.855:
         return {
             "filled": False,
@@ -587,9 +611,7 @@ def walk_equal_shares_dominance_box(
     # so FOK limit orders never self-veto on WORST_LIMIT_BOX_COST_EXCEEDS_CAP when L1 size >= min_shares.
     def _worst_limit_net(wa_d: Dict[str, Any], wb_d: Dict[str, Any]) -> float:
         pa, pb = float(wa_d["worst_px"]), float(wb_d["worst_px"])
-        fa = fee_rate_a * ((pa * (1.0 - pa)) ** fee_exponent_a) if fee_rate_a > 0.0 else 0.0
-        fb = fee_rate_b * ((pb * (1.0 - pb)) ** fee_exponent_b) if fee_rate_b > 0.0 else 0.0
-        return round(pa + fa + pb + fb, 6)
+        return round(_net_unit_cost_buy(pa, fee_rate_a, fee_exponent_a) + _net_unit_cost_buy(pb, fee_rate_b, fee_exponent_b), 6)
 
     if _worst_limit_net(w_a, w_b) > max_box_cost_net + 1e-6:
         min_q = max(5, int(min_shares))
@@ -631,12 +653,42 @@ def walk_equal_shares_dominance_box(
                 "avail_pair_shares": max_avail_pairs,
             }
 
-    # Polymarket rejects marketable orders below $1 notional: with equal-share boxes a cheap leg
-    # (e.g. 5 sh @ $0.07) would be rejected while the other leg fills -> one-legged box. Checked
-    # AFTER all Q trims so the final share count is what gets validated.
+    # Polymarket rejects marketable orders below $1 notional: compute exact gross leg sizes
+    # to deliver identical post-fee net shares on both legs (`Q` whole net pairs whenever depth
+    # & worst_px allow gross-up; otherwise haircut-matched `<= q_pairs` when capped by L1 depth).
+    h_a_w = float(w_a.get("share_haircut") or 0.0)
+    h_b_w = float(w_b.get("share_haircut") or 0.0)
+    h_max_w = max(h_a_w, h_b_w)
+    cand_gross_a = math.ceil((float(q_pairs) / max(1e-6, 1.0 - h_a_w)) * 100.0 - 1e-9) / 100.0
+    cand_gross_b = math.ceil((float(q_pairs) / max(1e-6, 1.0 - h_b_w)) * 100.0 - 1e-9) / 100.0
+
+    def _fits_at_worst_px(asks_cap: List[Tuple[float, float]], req_sh: float, lim_px: float) -> Tuple[bool, float]:
+        rem_g = req_sh
+        sp_g = 0.0
+        for px_l, sz_l in asks_cap:
+            if px_l > lim_px + 1e-9:
+                break
+            tk_g = min(rem_g, sz_l)
+            if tk_g > 0.0:
+                sp_g += tk_g * px_l
+                rem_g -= tk_g
+                if rem_g <= 1e-8:
+                    return True, sp_g
+        return False, sp_g
+
+    ok_ga, sp_ga = _fits_at_worst_px(capped_a, cand_gross_a, float(w_a["worst_px"]))
+    ok_gb, sp_gb = _fits_at_worst_px(capped_b, cand_gross_b, float(w_b["worst_px"]))
+    if ok_ga and ok_gb and (sp_ga + sp_gb) <= float(target_budget_usd) * 1.02 + 1e-6:
+        net_paired_sh = float(q_pairs)
+        gross_sh_a = cand_gross_a
+        gross_sh_b = cand_gross_b
+    else:
+        net_paired_sh = math.floor(float(q_pairs) * (1.0 - h_max_w) * 100.0 + 1e-9) / 100.0
+        gross_sh_a = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_a_w)) * 100.0 - 1e-9) / 100.0)
+        gross_sh_b = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_b_w)) * 100.0 - 1e-9) / 100.0)
     min_leg_px = min(best_a, best_b)
     q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
-    if q_pairs < q_floor:
+    if q_pairs < q_floor or (gross_sh_a * best_a) < 1.0 - 1e-6 or (gross_sh_b * best_b) < 1.0 - 1e-6:
         return {
             "filled": False,
             "reason": "LEG_BELOW_1USD_MIN",
@@ -679,13 +731,16 @@ def walk_equal_shares_dominance_box(
     return {
         "filled": True,
         "shares": int(q_pairs),
+        "net_paired_shares": round(net_paired_sh, 4),
+        "leg_a_gross_shares": round(gross_sh_a, 2),
+        "leg_b_gross_shares": round(gross_sh_b, 2),
         "best_ask": round(best_a + best_b, 4),
         "vwap": round(spent_total / float(q_pairs), 5),
         "eff_px": round(box_cost_net, 5),
         "box_cost_net": round(box_cost_net, 5),
         "riskless_floor_per_pair": round(riskless_floor, 5),
-        "guaranteed_min_profit_usd": round(float(q_pairs) * riskless_floor, 4),
-        "corridor_bonus_profit_usd": round(float(q_pairs) * (2.0 - box_cost_net), 4),
+        "guaranteed_min_profit_usd": round(net_paired_sh * riskless_floor, 4),
+        "corridor_bonus_profit_usd": round(net_paired_sh * (2.0 - box_cost_net), 4),
         "slip_cents": round(((spent_total / float(q_pairs)) - (best_a + best_b)) * 100.0, 2),
         "spent_usd": round(spent_total, 4),
         "fee_usd": round(fee_total, 4),
@@ -740,11 +795,10 @@ def walk_equal_shares_multi_leg_box(
             return {"filled": False, "reason": "EMPTY_LEG_BOOK"}
         fr = float(lg.get("fee_rate", 0.07))
         fe = float(lg.get("fee_exponent", 1.0))
-        fee_best = fr * ((best_a * (1.0 - best_a)) ** fe) if fr > 0.0 else 0.0
         capped_list.append(capped)
         best_asks.append(best_a)
         avails.append(avail_a)
-        min_unit_cost += best_a + fee_best
+        min_unit_cost += _net_unit_cost_buy(best_a, fr, fe)
 
     if min_unit_cost > max_bundle_cost_net + 0.015:
         return {

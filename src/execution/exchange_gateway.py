@@ -28,6 +28,9 @@ _TRANSIENT_ERR_MARKERS = (
     "connection reset",
     "remote disconnected",
     "temporary failure in name resolution",
+    "cloudflare",
+    "cloudfront",
+    "eof occurred",
 )
 
 

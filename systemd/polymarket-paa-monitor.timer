@@ -1,0 +1,12 @@
+[Unit]
+Description=PAA 1-Minute Independent Health & Reconciliation Timer
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=1min
+AccuracySec=5s
+Persistent=true
+Unit=polymarket-paa-monitor.service
+
+[Install]
+WantedBy=timers.target

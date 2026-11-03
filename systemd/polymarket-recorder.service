@@ -1,12 +1,13 @@
 [Unit]
-Description=Polymarket Continuous Orderbook Telemetry Recorder for BTC (Dual Feed 1H)
+Description=Polymarket Consolidated Multi-Asset Orderbook Telemetry Recorder (BTC + ETH,SOL,XAU Single uvloop)
 After=network-online.target
 Wants=network-online.target
+Conflicts=polymarket-recorder-eth.service polymarket-recorder-sol.service polymarket-recorder-xrp.service polymarket-recorder-bnb.service polymarket-recorder-doge.service polymarket-recorder-hype.service
 
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC --co-assets ETH,SOL,XAU
 Restart=on-failure
 RestartSec=3
 CPUWeight=1000

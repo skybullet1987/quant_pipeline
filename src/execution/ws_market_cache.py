@@ -24,8 +24,15 @@ import threading
 import time
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import logging
+
 try:
     import websocket  # type: ignore
+
+    # Suppress websocket-client's internal ERROR:websocket:fin=1 opcode=8 'Expired - goodbye'
+    # log noise during expected Hyperliquid L1 session rotations; reconnect_count tracks all drops.
+    websocket.enableTrace(False)
+    logging.getLogger("websocket").setLevel(logging.CRITICAL)
 except ImportError:  # pragma: no cover
     websocket = None
 
@@ -345,7 +352,7 @@ class HyperliquidWsMarketCache:
         self._invalidate_on_disconnect()
 
     def _run_ping_loop(self) -> None:
-        while not self._stop_event.wait(30.0):
+        while not self._stop_event.wait(20.0):
             ws = self._ws_app
             if self._connected and ws is not None:
                 try:

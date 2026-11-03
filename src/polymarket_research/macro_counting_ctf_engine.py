@@ -12,19 +12,23 @@ import re
 import time
 import urllib.request
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from src.polymarket_research.barrier_onetouch_svi_engine import first_passage_touch_prob
 from src.polymarket_research.tradfi_sports_zero_fee_engine import (
     _extract_market_fee_rate,
+    _net_unit_ask,
     _parse_clob_tokens,
     _parse_iso_ts,
 )
 
 logger = logging.getLogger("MacroCountingCTF")
-NY_TZ = ZoneInfo("America/New_York")
+try:
+    NY_TZ = ZoneInfo("America/New_York")
+except Exception:
+    NY_TZ = timezone(timedelta(hours=-4))
 CHROME_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
@@ -76,6 +80,7 @@ class CountingBracket:
     rewards_min_size: float = 0.0
     rewards_max_spread: float = 0.0
     neg_risk: bool = True
+    fee_exponent: float = 1.0
 
 
 @dataclass
@@ -174,9 +179,7 @@ def parse_counting_slate_event(ev: Dict[str, Any], series_slug: str, handle: str
             elif isinstance(op, list) and len(op) >= 2 and float(op[0]) >= 0.99:
                 return None
             continue
-        fr, _ = _extract_market_fee_rate(m)
-        if fr > 0.0:
-            continue
+        fr, fe = _extract_market_fee_rate(m)
         toks = _parse_clob_tokens(m)
         if not toks:
             continue
@@ -189,10 +192,11 @@ def parse_counting_slate_event(ev: Dict[str, Any], series_slug: str, handle: str
                 high_count=hi_c,
                 yes_token=toks[0],
                 no_token=toks[1],
-                fee_rate=0.0,
+                fee_rate=fr,
                 rewards_min_size=float(m.get("rewardsMinSize") or 0.0),
                 rewards_max_spread=float(m.get("rewardsMaxSpread") or 0.0),
                 neg_risk=bool(m.get("negRisk") if m.get("negRisk") is not None else ev.get("negRisk", True)),
+                fee_exponent=fe,
             )
         )
     if len(open_brs) < 2:
@@ -335,15 +339,20 @@ def detect_counting_subwindow_boxes(
                         ask_yes_l = best_asks_by_token.get(bl.yes_token)
                         if ask_yes_l is None:
                             continue
-                        cost = round(float(ask_no_s) + float(ask_yes_l), 4)
+                        cost = round(
+                            _net_unit_ask(float(ask_no_s), bs.fee_rate, bs.fee_exponent)
+                            + _net_unit_ask(float(ask_yes_l), bl.fee_rate, bl.fee_exponent),
+                            4,
+                        )
                         if cost <= max_box_cost_net:
                             boxes.append({
                                 "box_kind": "TW1_UPPER_SUBWINDOW",
                                 "handle": s_short.handle,
                                 "banked": banked,
+                                "box_cost_gross": round(float(ask_no_s) + float(ask_yes_l), 4),
                                 "box_cost_net": cost,
-                                "leg_a": {"token_id": bs.no_token, "opp_token_id": bs.yes_token, "condition_id": bs.condition_id, "side": "NO", "label": f"NO_48H[{bs.label}]", "market_id": bs.market_id, "fee_rate": 0.0, "strike": float(bs.low_count), "neg_risk": bs.neg_risk},
-                                "leg_b": {"token_id": bl.yes_token, "opp_token_id": bl.no_token, "condition_id": bl.condition_id, "side": "YES", "label": f"YES_7D[{bl.label}]", "market_id": bl.market_id, "fee_rate": 0.0, "strike": float(bl.low_count), "neg_risk": bl.neg_risk},
+                                "leg_a": {"token_id": bs.no_token, "opp_token_id": bs.yes_token, "condition_id": bs.condition_id, "side": "NO", "label": f"NO_48H[{bs.label}]", "market_id": bs.market_id, "fee_rate": bs.fee_rate, "fee_exponent": bs.fee_exponent, "strike": float(bs.low_count), "neg_risk": bs.neg_risk},
+                                "leg_b": {"token_id": bl.yes_token, "opp_token_id": bl.no_token, "condition_id": bl.condition_id, "side": "YES", "label": f"YES_7D[{bl.label}]", "market_id": bl.market_id, "fee_rate": bl.fee_rate, "fee_exponent": bl.fee_exponent, "strike": float(bl.low_count), "neg_risk": bl.neg_risk},
                                 "close_ts": max(s_short.window_end_ts, s_long.window_end_ts),
                                 "label": f"{s_short.handle} NO({bs.label} short) + YES({bl.label} long, banked={banked})",
                             })
@@ -359,15 +368,20 @@ def detect_counting_subwindow_boxes(
                         ask_yes_s = best_asks_by_token.get(bs.yes_token)
                         if ask_yes_s is None:
                             continue
-                        cost = round(float(ask_no_l) + float(ask_yes_s), 4)
+                        cost = round(
+                            _net_unit_ask(float(ask_no_l), bl.fee_rate, bl.fee_exponent)
+                            + _net_unit_ask(float(ask_yes_s), bs.fee_rate, bs.fee_exponent),
+                            4,
+                        )
                         if cost <= max_box_cost_net:
                             boxes.append({
                                 "box_kind": "TW1_LOWER_SUBWINDOW",
                                 "handle": s_short.handle,
                                 "banked": banked,
+                                "box_cost_gross": round(float(ask_no_l) + float(ask_yes_s), 4),
                                 "box_cost_net": cost,
-                                "leg_a": {"token_id": bl.no_token, "opp_token_id": bl.yes_token, "condition_id": bl.condition_id, "side": "NO", "label": f"NO_7D[{bl.label}]", "market_id": bl.market_id, "fee_rate": 0.0, "strike": float(bl.high_count), "neg_risk": bl.neg_risk},
-                                "leg_b": {"token_id": bs.yes_token, "opp_token_id": bs.no_token, "condition_id": bs.condition_id, "side": "YES", "label": f"YES_48H[{bs.label}]", "market_id": bs.market_id, "fee_rate": 0.0, "strike": float(bs.high_count), "neg_risk": bs.neg_risk},
+                                "leg_a": {"token_id": bl.no_token, "opp_token_id": bl.yes_token, "condition_id": bl.condition_id, "side": "NO", "label": f"NO_7D[{bl.label}]", "market_id": bl.market_id, "fee_rate": bl.fee_rate, "fee_exponent": bl.fee_exponent, "strike": float(bl.high_count), "neg_risk": bl.neg_risk},
+                                "leg_b": {"token_id": bs.yes_token, "opp_token_id": bs.no_token, "condition_id": bs.condition_id, "side": "YES", "label": f"YES_48H[{bs.label}]", "market_id": bs.market_id, "fee_rate": bs.fee_rate, "fee_exponent": bs.fee_exponent, "strike": float(bs.high_count), "neg_risk": bs.neg_risk},
                                 "close_ts": max(s_short.window_end_ts, s_long.window_end_ts),
                                 "label": f"{s_short.handle} NO({bl.label} long) + YES({bs.label} short, banked={banked})",
                             })
@@ -447,10 +461,10 @@ def build_fomc_truth_table_legs(
         for m in (ev.get("markets") or []):
             if m.get("closed"):
                 continue
-            fr, _ = _extract_market_fee_rate(m)
+            fr, fe = _extract_market_fee_rate(m)
             toks = _parse_clob_tokens(m)
             act = _classify_single_fomc_label(str(m.get("groupItemTitle") or m.get("question") or ""))
-            if fr > 0.0 or not toks or not act:
+            if not toks or not act:
                 continue
             y_mask = 0
             act_set = _FOMC_LABEL_ACTION_SET.get(act, (act,))
@@ -460,8 +474,8 @@ def build_fomc_truth_table_legs(
             mid = str(m.get("id") or "")
             cid = str(m.get("conditionId") or "")
             nr_m = m.get("negRisk") if isinstance(m.get("negRisk"), bool) else (ev.get("negRisk") if isinstance(ev.get("negRisk"), bool) else None)
-            legs.append({"event_group": f"FOMC_{m_tag}", "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES({m_tag}:{act})", "mask": y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_m})
-            legs.append({"event_group": f"FOMC_{m_tag}", "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO({m_tag}:{act})", "mask": ALL_FOMC_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_m})
+            legs.append({"event_group": f"FOMC_{m_tag}", "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES({m_tag}:{act})", "mask": y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_m})
+            legs.append({"event_group": f"FOMC_{m_tag}", "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO({m_tag}:{act})", "mask": ALL_FOMC_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_m})
 
     for ev in parlay_events:
         if ev.get("closed"):
@@ -474,10 +488,10 @@ def build_fomc_truth_table_legs(
             continue
         p_tag = "PARLAY_OCT_JAN" if is_oct_jan else "PARLAY_SEP_DEC"
         named_union_mask = 0
-        # If ANY named market is skipped (closed / fee / no tokens / unparseable / zero mask), the
+        # If ANY named market is skipped (closed / no tokens / unparseable / zero mask), the
         # named union is incomplete and `Other = ALL ^ union` would over-claim states -> no Other legs.
         named_incomplete = False
-        other_mkt: Optional[Tuple[Dict[str, Any], Tuple[str, str]]] = None
+        other_mkt: Optional[Tuple[Dict[str, Any], Tuple[str, str], float, float]] = None
         for m in (ev.get("markets") or []):
             lbl = str(m.get("groupItemTitle") or "").strip()
             is_other = lbl.lower() == "other"
@@ -485,14 +499,14 @@ def build_fomc_truth_table_legs(
                 if not is_other:
                     named_incomplete = True
                 continue
-            fr, _ = _extract_market_fee_rate(m)
+            fr, fe = _extract_market_fee_rate(m)
             toks = _parse_clob_tokens(m)
-            if fr > 0.0 or not toks:
+            if not toks:
                 if not is_other:
                     named_incomplete = True
                 continue
             if is_other:
-                other_mkt = (m, toks)
+                other_mkt = (m, toks, fr, fe)
                 continue
             parts = [p.strip() for p in re.split(r"[-–—/]", lbl) if p.strip()]
             if len(parts) != 3:
@@ -515,16 +529,16 @@ def build_fomc_truth_table_legs(
             mid = str(m.get("id") or "")
             cid = str(m.get("conditionId") or "")
             nr_p = m.get("negRisk") if isinstance(m.get("negRisk"), bool) else (ev.get("negRisk") if isinstance(ev.get("negRisk"), bool) else None)
-            legs.append({"event_group": p_tag, "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES({p_tag}:{lbl})", "mask": y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_p})
-            legs.append({"event_group": p_tag, "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO({p_tag}:{lbl})", "mask": ALL_FOMC_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_p})
+            legs.append({"event_group": p_tag, "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES({p_tag}:{lbl})", "mask": y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_p})
+            legs.append({"event_group": p_tag, "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO({p_tag}:{lbl})", "mask": ALL_FOMC_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_p})
         if other_mkt is not None and not named_incomplete:
-            m_o, toks_o = other_mkt
+            m_o, toks_o, fr_o, fe_o = other_mkt
             o_mask = ALL_FOMC_MASK ^ named_union_mask
             mid_o = str(m_o.get("id") or "")
             cid_o = str(m_o.get("conditionId") or "")
             nr_o = m_o.get("negRisk") if isinstance(m_o.get("negRisk"), bool) else (ev.get("negRisk") if isinstance(ev.get("negRisk"), bool) else None)
-            legs.append({"event_group": p_tag, "market_id": mid_o, "condition_id": cid_o, "token_id": toks_o[0], "opp_token_id": toks_o[1], "side": "YES", "label": f"YES({p_tag}:Other)", "mask": o_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_o})
-            legs.append({"event_group": p_tag, "market_id": mid_o, "condition_id": cid_o, "token_id": toks_o[1], "opp_token_id": toks_o[0], "side": "NO", "label": f"NO({p_tag}:Other)", "mask": ALL_FOMC_MASK ^ o_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_o})
+            legs.append({"event_group": p_tag, "market_id": mid_o, "condition_id": cid_o, "token_id": toks_o[0], "opp_token_id": toks_o[1], "side": "YES", "label": f"YES({p_tag}:Other)", "mask": o_mask, "end_ts": end_ts, "fee_rate": fr_o, "fee_exponent": fe_o, "neg_risk": nr_o})
+            legs.append({"event_group": p_tag, "market_id": mid_o, "condition_id": cid_o, "token_id": toks_o[1], "opp_token_id": toks_o[0], "side": "NO", "label": f"NO({p_tag}:Other)", "mask": ALL_FOMC_MASK ^ o_mask, "end_ts": end_ts, "fee_rate": fr_o, "fee_exponent": fe_o, "neg_risk": nr_o})
     return legs
 
 
@@ -551,9 +565,9 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
         for m in (ev.get("markets") or []):
             if m.get("closed"):
                 continue
-            fr, _ = _extract_market_fee_rate(m)
+            fr, fe = _extract_market_fee_rate(m)
             toks = _parse_clob_tokens(m)
-            if fr > 0.0 or not toks:
+            if not toks:
                 continue
             lbl = str(m.get("groupItemTitle") or m.get("question") or "").strip()
             ll = lbl.lower()
@@ -589,8 +603,8 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
             mid = str(m.get("id") or "")
             cid = str(m.get("conditionId") or "")
             nr_s = m.get("negRisk") if isinstance(m.get("negRisk"), bool) else (ev.get("negRisk") if isinstance(ev.get("negRisk"), bool) else None)
-            legs.append({"event_group": eg, "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES[{lbl}]", "mask": y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_s})
-            legs.append({"event_group": eg, "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO[{lbl}]", "mask": ALL_OIL_SENATE_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": 0.0, "neg_risk": nr_s})
+            legs.append({"event_group": eg, "market_id": mid, "condition_id": cid, "token_id": toks[0], "opp_token_id": toks[1], "side": "YES", "label": f"YES[{lbl}]", "mask": y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_s})
+            legs.append({"event_group": eg, "market_id": mid, "condition_id": cid, "token_id": toks[1], "opp_token_id": toks[0], "side": "NO", "label": f"NO[{lbl}]", "mask": ALL_OIL_SENATE_MASK ^ y_mask, "end_ts": end_ts, "fee_rate": fr, "fee_exponent": fe, "neg_risk": nr_s})
     return legs
 
 
@@ -602,7 +616,7 @@ def find_cross_event_bitmask_boxes(
     max_3leg_cost: float = 1.03,
 ) -> List[Dict[str, Any]]:
     """
-    Finds all minimal 2-leg and 3-leg cross-event `0%`-fee portfolios whose bitwise OR covers
+    Finds all minimal 2-leg and 3-leg cross-event fee-exact portfolios whose bitwise OR covers
     100% of states (`(m1 | m2 [| m3]) == all_states_mask`), guaranteeing payout >= $1.00 in every state!
     """
     priced = []
@@ -610,7 +624,10 @@ def find_cross_event_bitmask_boxes(
         ask = best_asks_by_token.get(str(lg["token_id"]))
         m = int(lg["mask"])
         if ask is not None and 0.002 <= float(ask) <= 0.995 and 0 < m < all_states_mask:
-            priced.append((float(ask), m, lg))
+            fr_l = float(lg.get("fee_rate") or 0.0)
+            fe_l = float(lg.get("fee_exponent") or 1.0)
+            net_a = _net_unit_ask(float(ask), fr_l, fe_l)
+            priced.append((net_a, float(ask), m, lg))
 
     out: List[Dict[str, Any]] = []
     n = len(priced)
@@ -618,9 +635,9 @@ def find_cross_event_bitmask_boxes(
 
     # 1. Exact 2-leg cross-market dominance boxes (`m1 | m2 == all_states_mask`)
     for i in range(n):
-        a1, m1, l1 = priced[i]
+        a1, g1, m1, l1 = priced[i]
         for j in range(i + 1, n):
-            a2, m2, l2 = priced[j]
+            a2, g2, m2, l2 = priced[j]
             if l1["market_id"] == l2["market_id"] or l1["event_group"] == l2["event_group"]:
                 continue
             if (m1 | m2) == all_states_mask:
@@ -630,6 +647,7 @@ def find_cross_event_bitmask_boxes(
                     double_states = bin(m1 & m2).count("1")
                     out.append({
                         "n_legs": 2,
+                        "box_cost_gross": round(g1 + g2, 4),
                         "box_cost_net": cost,
                         "double_pay_states": double_states,
                         "legs": [l1, l2],
@@ -639,13 +657,13 @@ def find_cross_event_bitmask_boxes(
 
     # 2. Minimal 3-leg cross-event partitions (`m1 | m2 | m3 == all_states_mask`, no 2-leg subset already covers)
     for i in range(n):
-        a1, m1, l1 = priced[i]
+        a1, g1, m1, l1 = priced[i]
         if a1 >= max_3leg_cost:
             continue
         for j in range(i + 1, n):
             if (i, j) in covered_pairs:
                 continue
-            a2, m2, l2 = priced[j]
+            a2, g2, m2, l2 = priced[j]
             if a1 + a2 >= max_3leg_cost or l1["market_id"] == l2["market_id"]:
                 continue
             m12 = m1 | m2
@@ -654,7 +672,7 @@ def find_cross_event_bitmask_boxes(
             for k in range(j + 1, n):
                 if (i, k) in covered_pairs or (j, k) in covered_pairs:
                     continue
-                a3, m3, l3 = priced[k]
+                a3, g3, m3, l3 = priced[k]
                 cost3 = round(a1 + a2 + a3, 4)
                 if cost3 > max_3leg_cost:
                     continue
@@ -665,6 +683,7 @@ def find_cross_event_bitmask_boxes(
                 if (m12 | m3) == all_states_mask and (m1 | m3) != all_states_mask and (m2 | m3) != all_states_mask:
                     out.append({
                         "n_legs": 3,
+                        "box_cost_gross": round(g1 + g2 + g3, 4),
                         "box_cost_net": cost3,
                         "double_pay_states": 0,
                         "legs": [l1, l2, l3],
@@ -817,10 +836,11 @@ def evaluate_locked_market_reward_carry(
 ) -> Dict[str, Any]:
     """
     Graveyard-safe `MKR_REWARD_LOCKED_CARRY`: posts `post_only=True` carry bids ONLY on already
-    mathematically locked (`p_lock >= 0.995`), `0%`-fee outcomes where Gamma `rewardsMinSize > 0`
-    is active and `0.95 <= bid_px <= 0.990`.
+    mathematically locked (`p_lock >= 0.995`) outcomes (`0.00%` Maker fee + `+20%` Maker rebate
+    even on `fees_enabled` V2 markets!) where Gamma `rewardsMinSize > 0` is active and
+    `0.955 <= bid_px < best_ask`.
     """
-    if fee_rate > 0.0 or p_lock < 0.995 or rewards_min_size <= 0.0 or best_ask <= 0.96:
+    if p_lock < 0.995 or rewards_min_size <= 0.0 or best_ask <= 0.96:
         return {"eligible": False}
     bid_px = round(min(max(best_bid, 0.96), min(best_ask - 0.005, 0.989)), 3)
     max_spr = float(rewards_max_spread_cents) / 100.0 if rewards_max_spread_cents > 0.5 else float(rewards_max_spread_cents or 0.03)

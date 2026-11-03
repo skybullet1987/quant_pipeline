@@ -147,7 +147,7 @@ def inspect_mergeable_complete_set(
 
 
 def _is_harvester_lock_active(lock_path: Path) -> bool:
-    """Checks whether live_harvester.pid.lock belongs to a currently running process."""
+    """Checks whether live_harvester.pid belongs to a currently running Python/Harvester process."""
     if not lock_path.exists():
         return False
     try:
@@ -158,6 +158,14 @@ def _is_harvester_lock_active(lock_path: Path) -> bool:
         if pid <= 0:
             return False
         os.kill(pid, 0)
+        proc_cmd = Path(f"/proc/{pid}/cmdline")
+        if proc_cmd.exists():
+            try:
+                cmd_txt = proc_cmd.read_bytes().replace(b"\x00", b" ").decode("utf-8", errors="ignore").lower()
+                if cmd_txt.strip() and not any(k in cmd_txt for k in ("polymarket", "python", "pytest")):
+                    return False
+            except OSError:
+                pass
         return True
     except PermissionError:
         return True
@@ -166,9 +174,22 @@ def _is_harvester_lock_active(lock_path: Path) -> bool:
 
 
 def _is_flock_held(lock_path: Path) -> bool:
-    """Returns True when another process (the Live Harvester) currently holds an exclusive flock on `lock_path`."""
+    """Returns True when another process (the Live Harvester) currently holds an exclusive lock on `lock_path`."""
     if not lock_path.exists():
         return False
+    if os.name == "nt":
+        try:
+            import msvcrt
+            with open(lock_path, "a+b") as fh:
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+                fh.seek(0)
+                msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+            return False
+        except OSError:
+            return True
+        except Exception:
+            return False
     try:
         import fcntl
     except ImportError:
@@ -213,6 +234,8 @@ def audit_positions_and_redemptions(execute: bool = False, force: bool = False):
     unredeemed_shares = 0.0
     estimated_claimable_usd = 0.0
     has_unknown = False
+    seen_checked_tokens: Dict[str, Optional[float]] = {}
+    counted_claimable_tokens: set[str] = set()
     claimable_conditions: List[str] = []
     claimable_meta: Dict[str, Dict[str, Any]] = {}
 
@@ -230,25 +253,49 @@ def audit_positions_and_redemptions(execute: bool = False, force: bool = False):
             or float(pos.get("winning_shares_held", 0.0) or 0.0) > 0.0
             or (bool(won) and close_reason in {"MARKET_RESOLVED", "ONCHAIN_REDEMPTION_CONFIRMED"})
         )
-        # If position won at market resolution, check on-chain token balance
-        if is_candidate and token_id:
-            onchain_bal = get_token_balance_onchain(funder_address, token_id)
-            if onchain_bal is None:
-                has_unknown = True
-                print(f"  [UNKNOWN / RETRY] {tid}: Polygon balance query failed; cannot classify redemption state")
-                continue
-            if onchain_bal > 0.01:
-                unredeemed_shares += onchain_bal
-                estimated_claimable_usd += onchain_bal * 1.0
-                cid = str(pos.get("condition_id") or "").strip()
-                if cid and cid not in claimable_conditions:
-                    claimable_conditions.append(cid)
-                    claimable_meta[cid] = {
-                        "neg_risk": pos.get("neg_risk"),
-                        "winning_token_id": str(token_id),
-                    }
-                print(f"  [CLAIMABLE] {tid}: {onchain_bal:.2f} shares held on-chain -> ${onchain_bal:.2f} pUSD/USDC.e claimable")
-            else:
+        # If position won at market resolution, check on-chain token balance across primary + box legs
+        candidate_legs: List[tuple[str, str, Any]] = []
+        if token_id:
+            candidate_legs.append((str(token_id), str(pos.get("condition_id") or "").strip(), pos.get("neg_risk")))
+        for bleg in pos.get("box_legs_summary") or ():
+            if isinstance(bleg, dict) and bleg.get("token_id"):
+                btok = str(bleg["token_id"])
+                if all(btok != x[0] for x in candidate_legs):
+                    candidate_legs.append(
+                        (
+                            btok,
+                            str(bleg.get("condition_id") or pos.get("condition_id") or "").strip(),
+                            bleg.get("neg_risk", pos.get("neg_risk")),
+                        )
+                    )
+        if is_candidate and candidate_legs:
+            any_claimed = False
+            pos_has_unknown = False
+            for leg_tok, leg_cid, leg_nr in candidate_legs:
+                if leg_tok in seen_checked_tokens:
+                    onchain_bal = seen_checked_tokens[leg_tok]
+                else:
+                    onchain_bal = get_token_balance_onchain(funder_address, leg_tok)
+                    seen_checked_tokens[leg_tok] = onchain_bal
+                if onchain_bal is None:
+                    has_unknown = True
+                    pos_has_unknown = True
+                    print(f"  [UNKNOWN / RETRY] {tid}: Polygon balance query failed; cannot classify redemption state")
+                    continue
+                if onchain_bal > 0.01:
+                    any_claimed = True
+                    if leg_tok not in counted_claimable_tokens:
+                        counted_claimable_tokens.add(leg_tok)
+                        unredeemed_shares += onchain_bal
+                        estimated_claimable_usd += onchain_bal * 1.0
+                    if leg_cid and leg_cid not in claimable_conditions:
+                        claimable_conditions.append(leg_cid)
+                        claimable_meta[leg_cid] = {
+                            "neg_risk": leg_nr,
+                            "winning_token_id": leg_tok,
+                        }
+                    print(f"  [CLAIMABLE] {tid}: {onchain_bal:.2f} shares held on-chain -> ${onchain_bal:.2f} pUSD/USDC.e claimable")
+            if not any_claimed and not pos_has_unknown:
                 print(f"  [REDEEMED/EMPTY] {tid}: 0.00 shares held on-chain (already redeemed)")
         else:
             print(f"  [{close_reason}] {tid}: Won={won} | Net PnL=${net_pnl:+.2f}")
