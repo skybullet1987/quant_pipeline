@@ -212,9 +212,10 @@ class PAADirector:
             return {"task_id": tid, "outcome": "COMPLETED", "evidence": ev}
 
         if cat == "SAFETY_ACCOUNTING":
-            if "reconcile_pass" not in completed_steps:
+            if "reconcile_pass" not in completed_steps or not (step_outputs.get("reconcile_pass") or {}).get("accounting_ok"):
                 snap = self.accountant.measure_and_record(live_rpc_check=True)
-                completed_steps.append("reconcile_pass")
+                if "reconcile_pass" not in completed_steps:
+                    completed_steps.append("reconcile_pass")
                 step_outputs["reconcile_pass"] = {
                     "accounting_ok": snap["accounting_ok"],
                     "discrepancy_usd": snap["accounting_discrepancy_usd"],
