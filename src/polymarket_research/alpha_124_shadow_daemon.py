@@ -11451,10 +11451,14 @@ class Alpha124ShadowDaemon:
                         )
                 if not opened_v4_taker:
                     dk_mkr = f"MKR_LK1_{clk['market_id']}"
-                    if dk_mkr not in self.entered_keys and dk_mkr not in self.inflight_keys:
+                    _mkr_shadow_free = dk_mkr not in self.entered_keys and dk_mkr not in self.inflight_keys
+                    _is_live_daemon_mkr = not (self.single_scan or ("fetch_json" in self.__dict__))
+                    if _mkr_shadow_free or (_is_live_daemon_mkr and dk_mkr not in self.inflight_keys):
                         bid_w_v4, bid_usd_v4 = extract_best_bid(bk_w_v4.get("bids") or [])
                         ask_w_v4, _ = self._best_ask_sz(bk_w_v4)
                         _mkr_reb_sh = 0.15 if str(clk["asset"]).upper() in ("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "XAU") else 0.20
+                        _mkr_hi_cap = 0.995 if (_is_live_daemon_mkr and p_lk_v4 >= 0.999 and (close_v4 - now) <= 7200.0) else 0.991
+                        _mkr_min_ed = 0.004 if _mkr_hi_cap >= 0.995 else 0.006
                         mkr_ev = evaluate_mkr_lock1_post_clinch_rebate_bid(
                             token_id=tok_w,
                             opp_token_id=tok_o,
@@ -11472,17 +11476,20 @@ class Alpha124ShadowDaemon:
                             fee_exponent=fe_v4,
                             maker_rebate_share=_mkr_reb_sh,
                             neg_risk=bool(clk.get("neg_risk", False)),
+                            max_maker_bid=_mkr_hi_cap,
+                            min_net_edge_ps=_mkr_min_ed,
                         )
                         if mkr_ev is not None:
-                            opps_out.append({
-                                "sleeve": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
-                                "market": mkr_ev["display_label"],
-                                "ask_vwap": mkr_ev["effective_net_cost_per_share"],
-                                "p_model": p_lk_v4,
-                                "net_edge": round(float(mkr_ev["expected_net_edge_per_share"]), 4),
-                                "l1_usd": max(25.0, bid_usd_v4),
-                                "close_ts": close_v4,
-                            })
+                            if _mkr_shadow_free:
+                                opps_out.append({
+                                    "sleeve": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+                                    "market": mkr_ev["display_label"],
+                                    "ask_vwap": mkr_ev["effective_net_cost_per_share"],
+                                    "p_model": p_lk_v4,
+                                    "net_edge": round(float(mkr_ev["expected_net_edge_per_share"]), 4),
+                                    "l1_usd": max(25.0, bid_usd_v4),
+                                    "close_ts": close_v4,
+                                })
                             if (
                                 bid_w_v4 >= 0.940 - 1e-9
                                 and bid_usd_v4 >= 10.0 - 1e-6
@@ -11506,34 +11513,35 @@ class Alpha124ShadowDaemon:
                                     close_ts=close_v4,
                                     now_ts=now,
                                     min_resting_bid=0.960,
-                                    max_resting_bid=0.991,
-                                    min_maker_edge=0.006,
+                                    max_resting_bid=_mkr_hi_cap,
+                                    min_maker_edge=_mkr_min_ed,
                                     max_opp_bid=0.030,
                                     hold_to_maturity=True,
                                     p_model=p_lk_v4,
                                     target_bid_px=float(mkr_ev["post_only_bid"]),
                                     maker_rebate_ps=float(mkr_ev["maker_rebate_per_share"]),
                                 )
-                            await self.post_shadow_maker_entry(
-                                sleeve="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
-                                dedupe_key=dk_mkr,
-                                asset=str(clk["asset"]),
-                                title=str(mkr_ev["display_label"]),
-                                side_label=str(clk["side_label"]),
-                                token_id=tok_w,
-                                p_model=p_lk_v4,
-                                close_ts=close_v4,
-                                extra={
-                                    "market_id": clk["market_id"],
-                                    "condition_id": clk["condition_id"],
-                                    "opp_token_id": tok_o,
-                                    "source_sleeve": sl_v4,
-                                    "resting_bid_override": mkr_ev["post_only_bid"],
-                                    "maker_rebate_ps": mkr_ev["maker_rebate_per_share"],
-                                },
-                                prefetched_book=bk_w_v4,
-                                ttl_override_sec=180.0,
-                            )
+                            if _mkr_shadow_free:
+                                await self.post_shadow_maker_entry(
+                                    sleeve="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+                                    dedupe_key=dk_mkr,
+                                    asset=str(clk["asset"]),
+                                    title=str(mkr_ev["display_label"]),
+                                    side_label=str(clk["side_label"]),
+                                    token_id=tok_w,
+                                    p_model=p_lk_v4,
+                                    close_ts=close_v4,
+                                    extra={
+                                        "market_id": clk["market_id"],
+                                        "condition_id": clk["condition_id"],
+                                        "opp_token_id": tok_o,
+                                        "source_sleeve": sl_v4,
+                                        "resting_bid_override": mkr_ev["post_only_bid"],
+                                        "maker_rebate_ps": mkr_ev["maker_rebate_per_share"],
+                                    },
+                                    prefetched_book=bk_w_v4,
+                                    ttl_override_sec=180.0,
+                                )
 
     async def _scan_phase2_macro_counting_gas(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 6A. `TW1_COUNTING_TRUNCATION_AND_BOX` + `MKR_REWARD_LOCKED_CARRY`
@@ -11901,9 +11909,10 @@ class Alpha124ShadowDaemon:
 
         verified_list: List[Tuple[str, Dict[str, Any], Dict[str, Any]]] = []
         uncached_batch: List[Tuple[float, str, Dict[str, Any]]] = []
+        _is_live_uma_daemon = not (self.single_scan or ("fetch_json" in self.__dict__))
         for mid, m in list(self.uma_proposed_markets.items()):
             dkey = f"BOND1_{mid}"
-            if dkey in self.entered_keys or dkey in self.inflight_keys:
+            if dkey in self.inflight_keys or (not _is_live_uma_daemon and dkey in self.entered_keys):
                 continue
             cached_v = self.uma_onchain_cache.get(mid)
             ttl_v = 60.0
@@ -11965,7 +11974,7 @@ class Alpha124ShadowDaemon:
                 ref_notional,
                 BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],
                 fee_rate=float(ver["fee_rate"]),
-                min_l1_usd=15.0,
+                min_l1_usd=6.0 if _is_live_uma_daemon else 15.0,
                 max_ask_px=0.9956,
                 fee_exponent=float(ver["fee_exponent"]),
             )
@@ -12002,23 +12011,29 @@ class Alpha124ShadowDaemon:
                 "rem_challenge_sec": ver["rem_challenge_sec"],
                 "domain": ver["domain"],
             }
+            dkey_b1 = f"BOND1_{mid}"
+            _shadow_b1_free = dkey_b1 not in self.entered_keys and dkey_b1 not in self.inflight_keys
+            _b1_rem_s = close_est - now
+            _b1_max_mkr = 0.996 if (_is_live_uma_daemon and _b1_rem_s <= 7200.0) else 0.994
+            _b1_min_ed = 0.004 if _b1_max_mkr >= 0.996 else 0.006
             opened_bond = False
             taker_bond_qual = bool(w_bond.get("filled") and eff_b is not None and (0.950 <= eff_b <= 0.9955) and round(1.0 - eff_b, 4) >= 0.0045)
             if taker_bond_qual:
                 carry_edge = round(1.0 - eff_b, 4)
-                opps_out.append({
-                    "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
-                    "market": f"[{ver['domain']}] {q_str[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)",
-                    "ask_vwap": eff_b,
-                    "p_model": 1.0,
-                    "net_edge": carry_edge,
-                    "l1_usd": w_bond["l1_usd"],
-                    "close_ts": close_est,
-                })
+                if _shadow_b1_free:
+                    opps_out.append({
+                        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                        "market": f"[{ver['domain']}] {q_str[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)",
+                        "ask_vwap": eff_b,
+                        "p_model": 1.0,
+                        "net_edge": carry_edge,
+                        "l1_usd": w_bond["l1_usd"],
+                        "close_ts": close_est,
+                    })
                 self.emit_live_single_leg_lock_candidate(
                     sleeve_source="BOND1_UMA_RESOLUTION_CARRY",
                     asset=str(ver["domain"]),
-                    dedupe_key=f"BOND1_{mid}",
+                    dedupe_key=dkey_b1,
                     token_id=wtok,
                     opp_token_id=ltok,
                     market_id=mid,
@@ -12037,26 +12052,27 @@ class Alpha124ShadowDaemon:
                     hold_to_maturity=True,
                     p_model=1.0,
                 )
-                opened_bond = await self.open_shadow_position(
-                    sleeve="BOND1_UMA_RESOLUTION_CARRY",
-                    dedupe_key=f"BOND1_{mid}",
-                    asset_or_city=str(ver["domain"]),
-                    title=f"{q_str} [{ver['win_outcome_name']}]",
-                    side_label=str(ver["win_label"]),
-                    token_id=wtok,
-                    fee_rate=float(ver["fee_rate"]),
-                    p_model=1.0,
-                    close_ts=close_est,
-                    extra=bond_extra,
-                    tp_target_px=None,
-                    prefetched_book=bk_w,
-                )
-            if not taker_bond_qual and not opened_bond and 0.940 <= win_bid <= 0.994 and lose_bid <= 0.008 and (close_est - now) > 120.0:
+                if _shadow_b1_free:
+                    opened_bond = await self.open_shadow_position(
+                        sleeve="BOND1_UMA_RESOLUTION_CARRY",
+                        dedupe_key=dkey_b1,
+                        asset_or_city=str(ver["domain"]),
+                        title=f"{q_str} [{ver['win_outcome_name']}]",
+                        side_label=str(ver["win_label"]),
+                        token_id=wtok,
+                        fee_rate=float(ver["fee_rate"]),
+                        p_model=1.0,
+                        close_ts=close_est,
+                        extra=bond_extra,
+                        tp_target_px=None,
+                        prefetched_book=bk_w,
+                    )
+            if not taker_bond_qual and not opened_bond and 0.940 <= win_bid <= _b1_max_mkr and lose_bid <= 0.008 and _b1_rem_s > 120.0:
                 self.emit_live_single_leg_maker_lock_candidate(
                     sleeve_source="BOND1_UMA_RESOLUTION_CARRY",
                     asset=str(ver["domain"]),
                     dedupe_key=f"BOND1_MKR_{mid}",
-                    pair_dedupe_key=f"BOND1_{mid}",
+                    pair_dedupe_key=dkey_b1,
                     token_id=wtok,
                     opp_token_id=ltok,
                     market_id=mid,
@@ -12069,30 +12085,31 @@ class Alpha124ShadowDaemon:
                     close_ts=close_est,
                     now_ts=now,
                     min_resting_bid=0.940,
-                    max_resting_bid=0.994,
-                    min_maker_edge=0.006,
+                    max_resting_bid=_b1_max_mkr,
+                    min_maker_edge=_b1_min_ed,
                     max_opp_bid=0.008,
                     hold_to_maturity=True,
                     p_model=1.0,
                 )
-                posted_bond = await self.post_shadow_maker_entry(
-                    sleeve="BOND1_UMA_RESOLUTION_CARRY",
-                    dedupe_key=f"BOND1_{mid}",
-                    asset=str(ver["domain"]),
-                    title=f"{q_str} [{ver['win_outcome_name']}]",
-                    side_label=str(ver["win_label"]),
-                    token_id=wtok,
-                    p_model=1.0,
-                    close_ts=close_est,
-                    extra=bond_extra,
-                    prefetched_book=bk_w,
-                )
-                if posted_bond:
-                    opps_out.append({
-                        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
-                        "market": f"[MAKER:{ver['domain']}] {q_str[:58]} -> {ver['win_outcome_name']}",
-                        "ask_vwap": win_bid,
-                        "p_model": 1.0,
+                if _shadow_b1_free:
+                    posted_bond = await self.post_shadow_maker_entry(
+                        sleeve="BOND1_UMA_RESOLUTION_CARRY",
+                        dedupe_key=dkey_b1,
+                        asset=str(ver["domain"]),
+                        title=f"{q_str} [{ver['win_outcome_name']}]",
+                        side_label=str(ver["win_label"]),
+                        token_id=wtok,
+                        p_model=1.0,
+                        close_ts=close_est,
+                        extra=bond_extra,
+                        prefetched_book=bk_w,
+                    )
+                    if posted_bond:
+                        opps_out.append({
+                            "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                            "market": f"[MAKER:{ver['domain']}] {q_str[:58]} -> {ver['win_outcome_name']}",
+                            "ask_vwap": win_bid,
+                            "p_model": 1.0,
                         "net_edge": round(1.0 - win_bid, 4),
                         "l1_usd": extract_best_bid(bk_w.get("bids") or [])[1],
                         "close_ts": close_est,

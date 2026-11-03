@@ -8086,7 +8086,7 @@ class PolymarketLiveHarvester:
         if _is_rw_carry and not self.dry_run:
             budget = min(budget, float(_b1_gov.get("reward_harvester_cap_usd_seed", 12.0) or 12.0))
         min_rb = float(candidate_box.get("min_resting_bid", 0.940) or 0.940)
-        max_rb = min(0.994, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
+        max_rb = min(0.996, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
         max_opp = float(candidate_box.get("max_opp_bid", 0.008) or 0.008)
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
         if not (min_rb <= anc_bid_px <= max_rb):
@@ -8221,7 +8221,7 @@ class PolymarketLiveHarvester:
             post_res = await asyncio.to_thread(
                 self.executor.post_maker_entry_order,
                 token_id=tok_a, price=anc_bid_px, notional_usd=anc_notional, side="BUY",
-                neg_risk=nr_a, min_price_floor=max(0.90, min_rb), max_price_ceiling=0.995,
+                neg_risk=nr_a, min_price_floor=max(0.90, min_rb), max_price_ceiling=max(0.995, max_rb),
             )
             _b1_post_ms = round((time.perf_counter() - _t_b1) * 1000.0, 2)
             maker_oid = str((post_res or {}).get("orderID") or "").strip()
@@ -8341,7 +8341,7 @@ class PolymarketLiveHarvester:
                                     and min_rb <= cand_rp <= max_rb
                                     and cand_rp >= round(win_b_live - 1e-9, 4)
                                     and cand_rp > posted_px + 1e-6
-                                    and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= _b1_q_cap + 1e-6)
+                                    and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, _b1_q_cap) + 1e-6)
                                     and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
                                 ):
                                     outbid_repeg_px = cand_rp
@@ -8362,9 +8362,12 @@ class PolymarketLiveHarvester:
                     if hasattr(self.executor, "get_order_fill_summary") and (time.monotonic() - last_fill_poll) >= 15.0:
                         last_fill_poll = time.monotonic()
                         poll_s = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, tok_a)
-                        if isinstance(poll_s, dict) and (poll_s.get("terminal") or float(poll_s.get("matched") or 0.0) >= posted_sh - 0.01):
-                            ws_filled = True
-                            break
+                        if isinstance(poll_s, dict):
+                            if float(poll_s.get("matched") or 0.0) >= posted_sh - 0.01:
+                                ws_filled = True
+                                break
+                            if poll_s.get("terminal"):
+                                break
                     if (
                         not adverse_cancelled
                         and buried_since_mono is None
@@ -11872,6 +11875,25 @@ class PolymarketLiveHarvester:
                     pos["redemption_receivable_usd"] = 0.0
                     pos["winning_shares_held"] = 0.0
                     pos["expected_winning_outcome"] = winning_outcome
+                    if (
+                        not bool(pos.get("inventory_reconciled"))
+                        and (
+                            pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
+                            or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
+                        )
+                        and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
+                        and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
+                        and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
+                    ):
+                        pos["entry_shares"] = 0.0
+                        pos["notional_usd"] = 0.0
+                        pos["remaining_cost_basis"] = 0.0
+                        pos["fee_usd"] = 0.0
+                        pos["entry_fee_cash_usd"] = 0.0
+                        self._close_position(
+                            tid, pos, "NOT_EXECUTED", "ENTRY_NOT_EXECUTED_AT_RESOLUTION", won=False, record_pnl=False
+                        )
+                        return
                     self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_NO_INVENTORY", won=False)
                     return
             head = await asyncio.to_thread(self.executor.get_current_block_number)

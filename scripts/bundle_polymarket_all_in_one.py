@@ -639,18 +639,40 @@ def transform_module(rel_path: str, code: str) -> str:
                 continue
             sub_nodes, nested_defs = _shallow_walk(fn_nd.body)
             nested_scopes = [x for x in sub_nodes if isinstance(x, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))]
-            nested_ids = (
-                {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name)}
+            comp_bound_ids = (
+                {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
+                | {y.arg for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.arg)}
                 | {ndf.name for ndf in nested_defs}
                 | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name)}
                 | {y.arg for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.arg)}
+            )
+            nested_ids = (
+                {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name)}
+                | comp_bound_ids
             )
             p_names = {a.arg for a in (fn_nd.args.posonlyargs + fn_nd.args.args + fn_nd.args.kwonlyargs + ([fn_nd.args.vararg] if fn_nd.args.vararg else []) + ([fn_nd.args.kwarg] if fn_nd.args.kwarg else []))}
             imp_names = {al.asname or al.name.split(".")[0] for x in full_nodes if isinstance(x, (ast.Import, ast.ImportFrom)) for al in x.names}
             used_all = all_names | p_names | imp_names | nested_ids
             stored = {}
+            self_arg_nd = (
+                fn_nd.args.args[0]
+                if (
+                    fn_nd.args.args
+                    and not fn_nd.args.posonlyargs
+                    and fn_nd.args.args[0].arg == "self"
+                    and "super" not in all_names
+                    and "self" not in comp_bound_ids
+                    and "self" not in imp_names
+                    and not any(isinstance(d, ast.Name) and d.id == "staticmethod" for d in fn_nd.decorator_list)
+                )
+                else None
+            )
+            if self_arg_nd is not None:
+                self_uses = sum(1 for x in sub_nodes if isinstance(x, ast.Name) and x.id == "self")
+                if self_uses >= 2:
+                    stored["self"] = self_uses + 1
             for x in sub_nodes:
-                if isinstance(x, ast.Name) and len(x.id) >= 3 and x.id not in p_names and x.id not in imp_names and x.id not in nested_ids and not x.id.startswith("__"):
+                if isinstance(x, ast.Name) and len(x.id) >= 2 and x.id not in p_names and x.id not in imp_names and x.id not in comp_bound_ids and not x.id.startswith("__"):
                     if isinstance(x.ctx, ast.Store):
                         stored[x.id] = stored.get(x.id, 0) + 1
             if not stored:
@@ -671,6 +693,10 @@ def transform_module(rel_path: str, code: str) -> str:
                         used_all.add(short_nm)
                         ren_map[old_nm] = short_nm.encode("ascii")
                         break
+            if self_arg_nd is not None and "self" in ren_map and self_arg_nd.lineno == self_arg_nd.end_lineno and self_arg_nd.end_col_offset is not None:
+                r_sa = self_arg_nd.lineno - 1
+                if lv_b[r_sa][self_arg_nd.col_offset:self_arg_nd.end_col_offset] == b"self":
+                    lv_edits.setdefault(r_sa, []).append((self_arg_nd.col_offset, self_arg_nd.end_col_offset, ren_map["self"]))
             for x in sub_nodes:
                 if isinstance(x, ast.Name) and x.id in ren_map and x.lineno == x.end_lineno and x.end_col_offset is not None:
                     r_lv = x.lineno - 1
@@ -687,7 +713,42 @@ def transform_module(rel_path: str, code: str) -> str:
             compacted = cand_lv
     except Exception:
         pass
+    try:
+        t_s2 = ast.parse(compacted)
+        jn2: set[int] = set()
+        for nd2 in ast.walk(t_s2):
+            for at2 in ("body", "orelse", "finalbody"):
+                sq2 = getattr(nd2, at2, None)
+                if isinstance(sq2, list) and len(sq2) >= 2:
+                    for a2, b2 in zip(sq2, sq2[1:]):
+                        if (
+                            not isinstance(a2, _COMPOUND)
+                            and not isinstance(b2, _COMPOUND)
+                            and a2.lineno == (a2.end_lineno or a2.lineno)
+                            and b2.lineno == (b2.end_lineno or b2.lineno)
+                            and b2.lineno == a2.lineno + 1
+                        ):
+                            jn2.add(a2.lineno - 1)
+        if jn2:
+            s2_lns = compacted.splitlines(keepends=True)
+            m2_lns: list[str] = []
+            i2 = 0
+            while i2 < len(s2_lns):
+                c2 = s2_lns[i2]
+                while i2 in jn2 and (i2 + 1) < len(s2_lns) and len(c2) < 8000:
+                    c2 = c2.rstrip("\r\n") + ";" + s2_lns[i2 + 1].lstrip(" \t")
+                    i2 += 1
+                m2_lns.append(c2)
+                i2 += 1
+            cand_s2 = "".join(m2_lns)
+            if ast.dump(ast.parse(cand_s2)) == ast.dump(t_s2):
+                compacted = cand_s2
+    except Exception:
+        pass
     return compacted.rstrip("\n") + "\n"
+
+
+_TRANSFORM_CACHE: dict[tuple[str, int, str], str] = {}
 
 
 def _assemble(module_data, toc_lines):
@@ -705,7 +766,11 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges):
     computed_toc = []
     for idx, (rel_path, desc, code) in enumerate(module_data, 1):
         banner = f"# [{idx:02d}/{len(module_data):02d}] {rel_path}\n"
-        body = transform_module(rel_path, code)
+        ck = (rel_path, len(code), code[:64])
+        body = _TRANSFORM_CACHE.get(ck)
+        if body is None:
+            body = transform_module(rel_path, code)
+            _TRANSFORM_CACHE[ck] = body
         start_line = cur_line + 1
         end_line = cur_line + banner.count("\n") + body.count("\n")
         n_bytes = len(code.encode("utf-8"))

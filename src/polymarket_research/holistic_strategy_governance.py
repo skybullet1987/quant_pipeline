@@ -677,7 +677,14 @@ def passes_capital_velocity_hurdle(
     eff_hrs = min(raw_hrs, 4.0) if fast_recycle_eligible else raw_hrs
     floor_bps = max(0.0, (1.0 - float(box_cost_net)) * 10000.0)
     floor_bps_hr = floor_bps / max(0.10, eff_hrs)
-    ultra_high_yield_intraday = (eff_hrs <= 24.0 + 1e-6) and (floor_bps_hr >= (2.0 * min_bps_hr) - 1e-6)
+    _seed_sports_box = (prof.get("tier") in {"UNLEASHED_LAUNCH", "SEED", "SEED_SURVIVAL"}) and (
+        str(box_type or "").upper() in {"SPORTS_CORRIDOR", "NBA_DOMINANCE"}
+    )
+    ultra_high_yield_intraday = (
+        (not _seed_sports_box)
+        and (eff_hrs <= 24.0 + 1e-6)
+        and (floor_bps_hr >= (2.0 * min_bps_hr) - 1e-6)
+    )
     if eff_hrs > max_hrs + 1e-6 and not ultra_high_yield_intraday:
         return False, f"LOW_CAPITAL_VELOCITY_LONG_TTE:{eff_hrs:.2f}h>{max_hrs:.1f}h({floor_bps_hr:.2f}bps_hr)"
     if floor_bps_hr < min_bps_hr - 1e-6:
