@@ -409,13 +409,19 @@ def test_financial_integrity_safeguard_and_real_vs_simulated_pnl_separation(tmp_
     p0_tasks = db.list_tasks(states=("READY",))
     assert any(t["category"] == "SAFETY_ACCOUNTING" and t["priority_label"] == "P0" for t in p0_tasks)
 
-    # 2. Restore reconciled state ($21.68 == $21.68) -> safeguard clears automatically!
+    # 2. Restore reconciled state ($21.68 == $21.68) AND resting off-chain EIP-712 Maker intents ($15.00) -> safeguard clears automatically!
     snap_clean = accountant.measure_and_record(
         live_rpc_check=False,
         ledger_override=ledger_sample,
-        state_override={"live_bankroll": 21.68},
+        state_override={
+            "live_bankroll": 21.68,
+            "pending_entry_intents": {
+                "BOND1_MKR_INTENT_1": {"notional_usd": 15.00, "live_maker_anchor_inflight": True}
+            },
+        },
     )
     assert snap_clean["accounting_ok"] is True
+    assert snap_clean["accounting_discrepancy_usd"] == 0.0
     assert not (data_dir / "paa" / "ACCOUNTING_SAFEGUARD_ACTIVE.json").exists()
 
 

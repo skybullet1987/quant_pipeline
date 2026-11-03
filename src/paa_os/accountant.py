@@ -205,7 +205,11 @@ class PAAAccountant:
             for i in (st.get("pending_entry_intents") or {}).values()
             if isinstance(i, dict)
         )
-        cash_diff = abs(onchain_cash - max(0.0, state_cash - inflight_usd))
+        raw_cash_diff = abs(onchain_cash - state_cash)
+        post_fill_cash_diff = abs(onchain_cash - max(0.0, state_cash - inflight_usd))
+        # Resting EIP-712 Maker limit orders keep pUSD in wallet until matched on-chain (`onchain_cash == state_cash`),
+        # while freshly matched intents briefly drop `onchain_cash` toward `state_cash - inflight_usd`.
+        cash_diff = min(raw_cash_diff, post_fill_cash_diff) if inflight_usd > 0.0 else raw_cash_diff
         # Ignore transient settlement lag if an active position is in MATCHED_PENDING_SETTLEMENT / AWAITING_REDEMPTION
         settling_open = any(
             str(p.get("status") or "").upper() in ("MATCHED_PENDING_SETTLEMENT", "AWAITING_ONCHAIN_SETTLEMENT", "PENDING_CONFIRMATION")

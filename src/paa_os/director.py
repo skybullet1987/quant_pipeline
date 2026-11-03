@@ -336,6 +336,65 @@ class PAADirector:
                     notes=step_outputs["forensic_classify"].get("ai_note") or "Queued for Purged WFO evaluation.",
                 )
                 completed_steps.append("mark_audited")
+            elif suggested == "PLUMBING_0_PARAM" and trade_id and "mark_audited" not in completed_steps:
+                repair_prompt = (
+                    f"Diagnose and fix the 0-parameter execution/reconciliation plumbing defect surfaced by losing trade "
+                    f"{trade_id}: {json.dumps(payload.get('trade') or {})[:1400]}. "
+                    "Strictly preserve all immutable risk floors and add/pass regression tests."
+                )
+                rep_task, _ = self.db.enqueue_task(
+                    category="ENGINEERING_REPAIR",
+                    priority_label="P0",
+                    expected_net_ev_usd_per_day=8.0,
+                    dedupe_key=f"AUTO_PLUMBING_REPAIR:{trade_id}",
+                    title=f"Autonomous Worktree Repair for Plumbing Defect ({trade_id})",
+                    financial_impact_hypothesis="Eliminate deterministic execution/reconciliation bug without touching strategy thresholds.",
+                    evidence={"trade_id": trade_id, "trade": payload.get("trade"), "hint": hint},
+                    required_permission_class=PermissionClass.CONDITIONALLY_AUTOMATIC.value,
+                    payload={
+                        "steps": [
+                            {
+                                "step_id": "worktree_ai_repair_and_stage",
+                                "action": "WORKTREE_AI_PATCH_AND_STAGE",
+                                "prompt": repair_prompt,
+                                "commit_message": f"fix(plumbing): autonomous repair for {trade_id}",
+                                "pytest_targets": [
+                                    "tests/test_v50_holistic_overhaul.py",
+                                    "tests/test_paa_profit_and_accounting_upgrades.py",
+                                ],
+                                "promote_to_live_files": bool((self.cfg.get("permissions") or {}).get("allow_auto_plumbing_bugfix_deploy", True)),
+                            }
+                        ]
+                    },
+                    next_action="BUILD_TEST_AND_STAGE_IN_WORKTREE",
+                )
+                step_outputs["enqueued_repair_task_id"] = rep_task["task_id"]
+                audit_losing_trades.mark_audited(
+                    trade_id,
+                    "BUG_FIXED",
+                    classification="PLUMBING_0_PARAM",
+                    notes=f"Enqueued autonomous worktree repair {rep_task['task_id']}: {step_outputs['forensic_classify'].get('ai_note') or hint.get('rationale')}",
+                )
+                completed_steps.append("mark_audited")
+            elif suggested == "SEQUENCE_TELEMETRY_REQUIRED" and trade_id and "mark_audited" not in completed_steps:
+                self.db.enqueue_task(
+                    category="STRATEGY_EVAL_WFO",
+                    priority_label="P2",
+                    expected_net_ev_usd_per_day=2.0,
+                    dedupe_key=f"SEQUENCE_TELEMETRY_AUDIT:{trade_id}",
+                    title=f"Sequence & Timing Parity Audit for {trade_id}",
+                    financial_impact_hypothesis="Verify live-vs-shadow order sequence parity on legged/rescued execution.",
+                    evidence={"trade_id": trade_id, "trade": payload.get("trade"), "hint": hint},
+                    required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                    next_action="ANALYZE_SEQUENCE_PARITY",
+                )
+                audit_losing_trades.mark_audited(
+                    trade_id,
+                    "EXPECTED_LOSS",
+                    classification="SEQUENCE_TELEMETRY_REQUIRED",
+                    notes=step_outputs["forensic_classify"].get("ai_note") or str(hint.get("rationale") or "Queued sequence parity audit."),
+                )
+                completed_steps.append("mark_audited")
             self.db.complete_task(tid, step_outputs)
             return {"task_id": tid, "outcome": "COMPLETED", "evidence": step_outputs}
 
