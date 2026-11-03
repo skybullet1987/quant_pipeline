@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import threading
 import time
@@ -218,8 +219,8 @@ if lh_path.exists():
     _clob_buy_quoting_usd = 0.0
     try:
         import contextlib, io as _io
-        _ord_cache_p = Path("/tmp/dominus_clob_open_orders_cache.json")
-        _tok_meta_cache_p = Path("/tmp/dominus_clob_tok_meta_cache.json")
+        _ord_cache_p = pathlib.Path("/tmp/dominus_clob_open_orders_cache.json")
+        _tok_meta_cache_p = pathlib.Path("/tmp/dominus_clob_tok_meta_cache.json")
         _raw_ords = None
         if _ord_cache_p.exists() and (time.time() - _ord_cache_p.stat().st_mtime) <= 12.0:
             try:
@@ -310,7 +311,8 @@ if lh_path.exists():
                     pass
             _exp_o = float(_m_info.get("expiry_ts") or 0.0)
             _rem_min = round((_exp_o - time.time()) / 60.0, 1) if _exp_o > time.time() else None
-            _cts_o = float(_o.get("created_at") or 0.0)
+            _cts_dt = _to_ottawa_dt(_o.get("created_at"))
+            _cts_o = _cts_dt.timestamp() if _cts_dt is not None else 0.0
             resting_orders.append({
                 "order_id": str(_o.get("id") or ""),
                 "market_id": _mid_o,
@@ -545,6 +547,8 @@ if lh_path.exists():
         ("SLEEVE_1_CORE_302", _s1h_desc),
         ("SLEEVE_1_SUBHOURLY_15M", _s15_desc),
         ("BOND1_UMA_RESOLUTION_CARRY", "Live 23/23 0%-Fee UMA Carry (Maker + Post-End Taker <=$25, Disputed Recycle)"),
+        ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "Live 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
+        ("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "Live 12/12 Deadline & Scalar Dominance Box (<=24h Fast-Recycle)"),
         ("COND1_MACRO_PARTITION_BOX", "Live 9/9 Macro Partition Dominance Box (<=24h, <=$0.985 net)"),
         ("CM_B3_PYTH_BARRIER_BOX", f"Live 0%-Fee Pyth Commodity Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
         ("D1_SAME_ORACLE_DOMINANCE_BOX", f"Live 32/32 Same-Oracle Crypto Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
@@ -1812,7 +1816,8 @@ function shortSlv(s) {
     .replace('_MULTISPORT_POST_REVIEW_SCORE_CLINCH', '_POST_REVIEW_CLINCH')
     .replace('_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG', '_ELECTION_DAG')
     .replace('_THREE_WAY_REGULATION_SYNTHETIC_BOX', '_3WAY_SYNTH')
-    .replace('_INGAME_MILESTONE_IRREVERSIBLE_LOCK', '_INGAME_LOCK');
+    .replace('_INGAME_MILESTONE_IRREVERSIBLE_LOCK', '_INGAME_LOCK')
+    .replace('_POST_CLINCH_REBATE_SWEEPER', '_POST_CLINCH_SWEEPER');
 }
 function next4hCountdown() {
   const now = new Date();
@@ -2280,12 +2285,16 @@ async function refreshNow(force=false) {
         }).join('') + `</tbody></table>`;
     document.getElementById('active_box').innerHTML = openPosHtml + restHtml;
 
+    const restBySlv = {};
+    restOrds.forEach(o => { const k = o.sleeve || 'BOND1_UMA_RESOLUTION_CARRY'; restBySlv[k] = (restBySlv[k] || 0) + 1; });
     document.getElementById('pm_strats').innerHTML = (pm.live_strategies || []).map(st => {
       const vp = Number(st.v51_pnl || 0), ep = Number(st.epoch_pnl || 0);
+      const rCnt = restBySlv[st.sleeve] || 0;
+      const openCell = rCnt > 0 ? `${st.open || 0} <span class="pill pill-ok" style="padding:1px 6px;font-size:10px;">${rCnt} quoting</span>` : `${st.open || 0}`;
       return `<tr>
         <td><b>${esc(shortSlv(st.sleeve))}</b></td>
         <td class="sub">${esc(st.desc || '')}</td>
-        <td>${st.open || 0}</td>
+        <td>${openCell}</td>
         <td><b>${st.v51_w || 0}W / ${st.v51_l || 0}L</b></td>
         <td class="${vp >= 0 ? 'pos' : 'neg'}">${vp >= 0 ? '+' : ''}$${vp.toFixed(2)}</td>
         <td>${st.epoch_w || 0}W / ${st.epoch_l || 0}L</td>
@@ -2476,11 +2485,15 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         f"RAM Available: {mem.get('available')} / {mem.get('total')} MB"
     )
     print(
-        f" Polymarket Live   : ${pm.get('bankroll_usd', 0):.2f} Cash  |  "
+        f" Polymarket Live   : ${pm.get('bankroll_usd', 0):.2f} Cash (Free ${pm.get('free_cash_usd', pm.get('bankroll_usd', 0)):.2f} | Quoting ${pm.get('quoting_cash_usd', 0):.2f} across {len(pm.get('resting_orders') or [])} CLOB orders)  |  "
         f"Epoch: {pm.get('epoch_wins', 0)}W/{pm.get('epoch_losses', 0)}L "
         f"({pm.get('epoch_net_pnl_usd', 0):+.2f} USD net, fees ${pm.get('epoch_fees_usd', 0):.2f})  |  "
         f"Halt={pm.get('risk_halt')}"
     )
+    for ro in (pm.get("resting_orders") or [])[:6]:
+        print(
+            f"   [LIVE CLOB ORDER] {ro.get('side')} ({ro.get('outcome')}) x {ro.get('shares'):.2f} @ ${ro.get('price'):.4f} (${ro.get('notional_usd'):.2f}) | {str(ro.get('title'))[:58]}"
+        )
     print(
         f" APEX {ap.get('version', 'v5.2.0')} : {ap.get('circuit_breaker')} ({ap.get('reconciliation_status')})  |  "
         f"NAV: ${ap.get('nav_usd', 0):.2f} (HWM ${ap.get('hwm_nav_usd', 0):.2f})  |  Regime: {ap.get('regime')}  |  "
@@ -2592,13 +2605,16 @@ def main() -> None:
                 payload = json.dumps(cache.get(force=force)).encode("utf-8")
                 self._safe_send(200, "application/json; charset=utf-8", payload, no_store=True)
             else:
-                self._safe_send(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"))
+                self._safe_send(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"), no_store=True)
 
         def log_message(self, fmt: str, *a: Any) -> None:
             return
 
+    class ExclusiveThreadingHTTPServer(ThreadingHTTPServer):
+        allow_reuse_address = os.name != "nt"
+
     url = f"http://127.0.0.1:{args.port}"
-    srv = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv = ExclusiveThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     srv.daemon_threads = True
     print(f"Dominus Live Command Center running locally at {url} (Background SSH cache=7s, Ctrl+C to stop)", flush=True)
     if not args.no_browser:
