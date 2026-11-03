@@ -183,6 +183,93 @@ class PAADirector:
             pass
         return created_ids
 
+    def _audit_profit_conversion_and_velocity(self) -> Dict[str, Any]:
+        """Deterministic Policy Step B7 audit: measures shadow-to-live conversion, near-grad8 sleeves, and 0-loss capital focus."""
+        a124_p = self.data_dir / "alpha124_shadow_state.json"
+        harv_p = self.data_dir / "live_harvester_state.json"
+        cand_p = self.data_dir / "d1_live_box_candidates.jsonl"
+        cfg_p = self.repo_root / "config" / "polymarket_strategy_and_risk.json"
+        by_slv: Dict[str, Any] = {}
+        if a124_p.exists():
+            try:
+                raw_a = json.loads(a124_p.read_text(encoding="utf-8"))
+                by_slv = raw_a.get("by_sleeve") or raw_a.get("per_strategy") or {}
+            except Exception:
+                by_slv = {}
+        closed_live: List[Dict[str, Any]] = []
+        live_cash = 0.0
+        if harv_p.exists():
+            try:
+                raw_h = json.loads(harv_p.read_text(encoding="utf-8"))
+                closed_live = list(raw_h.get("closed_positions") or [])
+                live_cash = float(raw_h.get("live_bankroll", 0.0) or 0.0)
+            except Exception:
+                pass
+        live_wins_by_slv: Dict[str, int] = {}
+        for rec in closed_live:
+            if isinstance(rec, dict) and float(rec.get("net_pnl_usd", 0.0) or 0.0) > 0:
+                sl = str(rec.get("sleeve") or rec.get("sleeve_source") or "")
+                live_wins_by_slv[sl] = live_wins_by_slv.get(sl, 0) + 1
+        cand_counts: Dict[str, int] = {}
+        if cand_p.exists():
+            try:
+                sz = cand_p.stat().st_size
+                with open(cand_p, "rb") as cf:
+                    cf.seek(max(0, sz - 524288))
+                    lines = cf.read().decode("utf-8", errors="replace").splitlines()[1 if sz > 524288 else 0 :]
+                for ln in lines:
+                    try:
+                        d = json.loads(ln)
+                        sl = str(d.get("sleeve_source") or "")
+                        if sl:
+                            cand_counts[sl] = cand_counts.get(sl, 0) + 1
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+        grad8_ready, near_grad8, zero_live_gaps = [], [], []
+        for sl, rec in by_slv.items():
+            if not isinstance(rec, dict):
+                continue
+            w = int(rec.get("wins", 0) or 0)
+            l = int(rec.get("losses", 0) or 0)
+            pnl = float(rec.get("realized_pnl_t1000_usd", 0.0) or 0.0)
+            if w >= 8 and l == 0 and pnl > 0:
+                grad8_ready.append(sl)
+                if live_wins_by_slv.get(sl, 0) == 0 and cand_counts.get(sl, 0) == 0:
+                    zero_live_gaps.append(sl)
+            elif 5 <= w < 8 and l == 0 and pnl > 0:
+                near_grad8.append({"sleeve": sl, "wins": w, "remaining": 8 - w, "shadow_pnl_t1000": round(pnl, 2)})
+        min_dir_eq = 0.0
+        if cfg_p.exists():
+            try:
+                min_dir_eq = float(((json.loads(cfg_p.read_text(encoding="utf-8")).get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd")) or 0.0)
+            except Exception:
+                min_dir_eq = 0.0
+        summary = {
+            "audited_at_utc": utc_now_iso(),
+            "grad8_ready_count": len(grad8_ready),
+            "grad8_ready_sleeves": sorted(grad8_ready),
+            "grad8_zero_live_conversion_gaps": sorted(zero_live_gaps),
+            "near_grad8_candidates": near_grad8,
+            "live_wins_by_sleeve": live_wins_by_slv,
+            "recent_live_candidate_counts": cand_counts,
+            "seed_zero_loss_focus_active": bool(min_dir_eq > 0.0 and live_cash < min_dir_eq),
+            "min_live_equity_for_unhedged_directional_usd": min_dir_eq,
+        }
+        self.db.upsert_verified_fact(
+            fact_key="profit.conversion_and_velocity_audit",
+            category="PROFIT_CONVERSION",
+            value=summary,
+            epistemic_status=EpistemicStatus.VERIFIED_FACT.value,
+            source_type="LEDGER_AND_IPC_AUDIT",
+            source_ref="PAADirector._audit_profit_conversion_and_velocity",
+            verified_by="PAADirector",
+            ttl_sec=3600.0,
+            revalidation_rule="REAUDIT_SHADOW_TO_LIVE_CONVERSION_HOURLY",
+        )
+        return summary
+
     def _execute_task_with_checkpoints(
         self,
         task: Dict[str, Any],
@@ -500,6 +587,51 @@ class PAADirector:
             self.db.complete_task(tid, {"completed_steps": completed_steps, "step_outputs": step_outputs})
             return {"task_id": tid, "outcome": "COMPLETED", "evidence": step_outputs}
 
+        if cat == "PROFIT_CONVERSION_AUDIT":
+            if "conversion_audit" not in completed_steps:
+                conv = self._audit_profit_conversion_and_velocity()
+                completed_steps.append("conversion_audit")
+                step_outputs["conversion_audit"] = conv
+                self.db.save_checkpoint(
+                    tid,
+                    {"completed_steps": completed_steps, "step_outputs": step_outputs},
+                    next_action="VERIFY_CONVERSION_AUDIT",
+                )
+            conv_out = step_outputs["conversion_audit"]
+            if allow_headless_ai and payload.get("run_ai_synthesis", False) and conv_out.get("grad8_zero_live_conversion_gaps") and "ai_conversion_plan" not in completed_steps:
+                ok_b, _ = self.budget.can_invoke_ai_agent(task)
+                if ok_b:
+                    pkt = self.context_manager.build_fresh_session_packet(
+                        task=task,
+                        stage_role="PROFIT_CONVERSION_TRIAGE",
+                        prior_verified_checkpoint={"conversion_audit": conv_out},
+                        stage_instructions=(
+                            "In 2 concise sentences, identify why any `grad8_zero_live_conversion_gaps` sleeve has 0 live "
+                            "candidates and propose a concrete zero-risk-expansion plumbing check."
+                        ),
+                    )
+                    ai_res = self.agent_runner.invoke(
+                        prompt=pkt["prompt"],
+                        task_id=tid,
+                        cwd=self.repo_root,
+                        mode="plan",
+                        model=str((self.cfg.get("runtime") or {}).get("fast_triage_model") or "gemini-3.8-flash-low"),
+                        sandbox=True,
+                        timeout_sec=60,
+                        conversation_id=None,
+                        stage_role="PROFIT_CONVERSION_TRIAGE",
+                        context_packet=pkt,
+                        task_record=task,
+                    )
+                    completed_steps.append("ai_conversion_plan")
+                    step_outputs["ai_conversion_plan"] = {
+                        "conversation_id": ai_res.get("conversation_id"),
+                        "summary": ai_res.get("response", "").strip()[:600],
+                        "cost_usd": ai_res.get("estimated_cost_usd"),
+                    }
+            self.db.complete_task(tid, step_outputs)
+            return {"task_id": tid, "outcome": "COMPLETED", "evidence": step_outputs}
+
         self.db.complete_task(tid, {"completed_at_utc": utc_now_iso(), "category": cat})
         return {"task_id": tid, "outcome": "COMPLETED", "evidence": {"category": cat}}
 
@@ -669,24 +801,37 @@ class PAADirector:
             # Policy B4: Check settled trade losses / degradation and enqueue forensic tasks
             forensic_enqueued = self._check_strategy_degradation_and_losses()
 
-            # Policy B5 / B7: If queue has zero ready tasks and research is due, schedule unattended research
+            # Policy B5 / B7: Schedule unattended research when idle + hourly profit-conversion audit (deduped by hour)
             ready_now = self.db.list_tasks(states=("CHECKPOINTED", "READY", "PENDING"), limit=5)
-            if not ready_now and run_proactive_research_if_idle:
-                hbs = self.db.get_heartbeats()
-                res_hb = hbs.get("paa_research")
-                res_age = float(res_hb["age_sec"]) if (res_hb and res_hb.get("age_sec") is not None) else 99999.0
-                if res_age >= 300.0:
-                    self.db.enqueue_task(
-                        category="RESEARCH_DISCOVERY",
-                        priority_label="P2",
-                        expected_net_ev_usd_per_day=1.25,
-                        dedupe_key="SCHEDULED_RESEARCH:UNIVERSE_AND_WFO_SCAN",
-                        title="Continuous Polymarket Multi-Category Opportunity & Shadow WFO Scan",
-                        financial_impact_hypothesis="Discover positive-EV UMA carries, intraday carries, and graduated shadow sleeves.",
-                        required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
-                        payload={"max_events": 600, "run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
-                        next_action="SCAN_POLYMARKET_UNIVERSE",
-                    )
+            if run_proactive_research_if_idle:
+                hr_bucket = time.strftime("%Y%m%d_%H", time.gmtime())
+                if not ready_now:
+                    hbs = self.db.get_heartbeats()
+                    res_hb = hbs.get("paa_research")
+                    res_age = float(res_hb["age_sec"]) if (res_hb and res_hb.get("age_sec") is not None) else 99999.0
+                    if res_age >= 300.0:
+                        self.db.enqueue_task(
+                            category="RESEARCH_DISCOVERY",
+                            priority_label="P2",
+                            expected_net_ev_usd_per_day=1.25,
+                            dedupe_key=f"SCHEDULED_RESEARCH:UNIVERSE_AND_WFO_SCAN:{hr_bucket}",
+                            title="Continuous Polymarket Multi-Category Opportunity & Shadow WFO Scan",
+                            financial_impact_hypothesis="Discover positive-EV UMA carries, intraday carries, and graduated shadow sleeves.",
+                            required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                            payload={"max_events": 600, "run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
+                            next_action="SCAN_POLYMARKET_UNIVERSE",
+                        )
+                self.db.enqueue_task(
+                    category="PROFIT_CONVERSION_AUDIT",
+                    priority_label="P2",
+                    expected_net_ev_usd_per_day=2.50,
+                    dedupe_key=f"PROFIT_CONVERSION_AUDIT:{hr_bucket}",
+                    title=f"Hourly Shadow-to-Live Profit Conversion & Velocity Audit ({hr_bucket}Z)",
+                    financial_impact_hypothesis="Ensure all 8/8 zero-loss shadow sleeves convert to live CLOB candidates and maximize bps/hr velocity.",
+                    required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                    payload={"run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
+                    next_action="AUDIT_SHADOW_TO_LIVE_CONVERSION",
+                )
 
             # Policy B3 / B6: Claim and execute highest-priority eligible tasks
             executed_results: List[Dict[str, Any]] = []
@@ -700,6 +845,7 @@ class PAADirector:
                         "SERVICE_RECOVERY",
                         "TRADE_FORENSICS",
                         "RESEARCH_DISCOVERY",
+                        "PROFIT_CONVERSION_AUDIT",
                         "STRATEGY_EVAL_WFO",
                         "PROFIT_REPORTING",
                     }

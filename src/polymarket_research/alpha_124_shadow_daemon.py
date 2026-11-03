@@ -5615,9 +5615,11 @@ class Alpha124ShadowDaemon:
         exp_a = float(leg_a.get("fee_exponent", 1.0))
         exp_b = float(leg_b.get("fee_exponent", 1.0))
         if sleeve_source == "COND1_MACRO_PARTITION_BOX":
-            max_cap = (0.991 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
+            max_cap = (0.992 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
         elif box_type == "BARRIER_MONO":
             max_cap = 0.993
+        elif max(fee_a, fee_b) == 0.0 and self.is_sleeve_grad8_ready(sleeve_source) and rem_sec <= 172800.0:
+            max_cap = 0.992
         else:
             max_cap = 0.990 if max(fee_a, fee_b) == 0.0 else 0.988
         w_live = walk_equal_shares_dominance_box(
@@ -11703,7 +11705,7 @@ class Alpha124ShadowDaemon:
                                     sl_lp == "COND1_MACRO_PARTITION_BOX"
                                     and (float(bx["close_ts"]) - now) <= (172800.0 if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 108000.0)
                                     and float(wm2["box_cost_net"]) <= (
-                                        (0.991 if (float(bx["close_ts"]) - now) <= 108000.0 else 0.988)
+                                        (0.992 if (float(bx["close_ts"]) - now) <= 108000.0 else 0.988)
                                         if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")
                                         else 0.985
                                     )

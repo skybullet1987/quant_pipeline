@@ -330,3 +330,203 @@ def test_harvester_bond1_survives_book_poll_timeout_and_cancels_on_shutdown(tmp_
     assert calls["cancel"] == 1  # Order was cleanly canceled on CLOB, NEVER orphaned!
     assert h.pending_entry_intents == {}
 
+
+def test_seed_rebuild_directional_shadow_gate_below_150(tmp_path, monkeypatch):
+    """Verifies BOTH 15m and 1h unhedged crypto directional shocks route to shadow when equity < $150."""
+    import src.polymarket_research.polymarket_live_harvester as plh
+
+    cf_file = tmp_path / "cf_cands.jsonl"
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "seed_gate_state.json")
+    monkeypatch.setattr(plh, "COUNTERFACTUAL_CANDIDATES_FILE", cf_file)
+    monkeypatch.setattr(plh, "read_fast_tick", lambda *a, **kw: None)
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    assert plh.GLOBAL_GOVERNANCE_MANAGER.snapshot["directional"]["min_live_equity_for_unhedged_directional_usd"] == pytest.approx(150.0)
+
+    h = plh.PolymarketLiveHarvester(dry_run=True, max_price_ceiling=0.81, max_tte=2400.0, allowed_assets={"BTC", "ETH", "SOL"})
+    h.dry_run = False
+    h.holistic_v5_live_mode = True
+    h.enforce_seed_directional_shadow_gate = True
+    h._last_known_collateral = 60.94
+    taker_calls = []
+
+    async def _never_snipe(**kw):
+        taker_calls.append(kw)
+
+    h.executor.execute_snipe_order_async = _never_snipe
+    now_s = time.time()
+    for hz, m_id in (("1h", "7701"), ("15m", "7702")):
+        shk = {
+            "event_id": f"SG_{hz}", "market_id": m_id, "condition_id": f"0x{m_id}", "t0_unix": now_s,
+            "title": f"Bitcoin Up or Down - {hz}", "asset": "BTC", "horizon": hz, "shock_direction": "BUY",
+            "seconds_to_expiry": 360.0, "spot_at_t0": 70250.0, "trigger_price": 70250.0,
+            "candle_open_spot": 70000.0, "twap_60s_open": 70000.0, "candle_distance_pct": 0.35,
+            "candle_sigma": 0.0030, "shock_volume_100ms": 1_800_000.0, "shock_ofi": 0.90,
+            "pre_shock_features_t0": {
+                "UP": {
+                    "token_id": "1" * 26, "raw_top_asks": [[0.76, 120.0]], "raw_top_bids": [[0.74, 120.0]],
+                    "effective_price_$25": 0.76, "vwap_$25": 0.76, "age_ask_ms": 100.0, "obi_l1": 0.25,
+                    "age_book_ms": 20.0, "book_timestamp": now_s,
+                }
+            },
+        }
+        asyncio.run(h.evaluate_shock_and_execute(shk))
+    assert taker_calls == []
+    rows = [json.loads(x) for x in cf_file.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(rows) == 2
+    assert all(r["reason_blocked"] == "SEED_REBUILD_SHADOW_UNTIL_$150" for r in rows)
+
+
+def test_cal1_grad8_emits_up_to_0992(tmp_path, monkeypatch):
+    """Verifies 8/8-graduated 0%-fee boxes (CAL1 / COND1) emit live candidates up to $0.992."""
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+
+    cand_file = tmp_path / "d1_live_box_candidates.jsonl"
+    st_file = tmp_path / "alpha124_shadow_state.json"
+    monkeypatch.setattr(a124, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(a124, "STATE_FILE", st_file)
+    monkeypatch.setattr(a124, "D1_LIVE_CANDIDATES_FILE", cand_file)
+
+    d = a124.Alpha124ShadowDaemon(single_scan=True)
+    for i in range(12):
+        d.closed_positions.append({"sleeve": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "won": True, "pnl_t1000": 3.4})
+    assert d.is_sleeve_grad8_ready("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX") is True
+
+    now = time.time()
+    ok = d.emit_live_two_leg_box_candidate(
+        sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+        box_type="MACRO_DOMINANCE",
+        asset="MACRO",
+        dedupe_key="CAL1_TEST_09915",
+        leg_a={"token_id": "1" * 25, "opp_token_id": "2" * 25, "market_id": "8801", "condition_id": "0x8801", "label": "YES_A", "side": "YES", "fee_rate": 0.0, "fee_exponent": 1.0, "neg_risk": False},
+        leg_b={"token_id": "3" * 25, "opp_token_id": "4" * 25, "market_id": "8802", "condition_id": "0x8802", "label": "NO_B", "side": "NO", "fee_rate": 0.0, "fee_exponent": 1.0, "neg_risk": False},
+        bk_a={"bids": [{"price": "0.48", "size": "100"}], "asks": [{"price": "0.491", "size": "100"}]},
+        bk_b={"bids": [{"price": "0.49", "size": "100"}], "asks": [{"price": "0.5005", "size": "100"}]},
+        close_ts=now + 43200.0,
+        now_ts=now,
+    )
+    assert ok is True
+    emitted = [json.loads(x) for x in cand_file.read_text(encoding="utf-8").splitlines() if x.strip()]
+    assert len(emitted) == 1
+    assert emitted[0]["sleeve_source"] == "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"
+    assert 0.990 < emitted[0]["box_cost_net"] <= 0.992
+
+
+def test_bond1_velocity_upgrade_and_92pct_zero_loss_pool(tmp_path, monkeypatch):
+    """Verifies 92% Seed zero-loss pool sizing and dynamic bps/hr preemption of slow resting BOND1 bids."""
+    import src.polymarket_research.polymarket_live_harvester as plh
+
+    monkeypatch.setattr(plh, "PIPELINE_ROOT", tmp_path)
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "vel_state.json")
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    (tmp_path / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 33, "wins": 33, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 173.6, "legging_adjusted_pnl_t1000_usd": 171.7},
+            "BOND1_UMA_RESOLUTION_CARRY": {"closed": 25, "wins": 25, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 12.8, "legging_adjusted_pnl_t1000_usd": 12.8},
+        }
+    }), encoding="utf-8")
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h._startup_reconciled = True
+    h.holistic_v5_live_mode = True
+    h.enforce_bond1_smart_queue = True
+    h.executor.auth_mode = "LIVE"
+    h.executor.signature_type = 2
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "OK")
+    h._last_known_collateral = 60.94
+    h.executor.get_collateral_balance = lambda: 60.94
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+    for _cfg_d in (plh.RISK_CONFIG, h.risk_config):
+        monkeypatch.setitem(_cfg_d, "bond1_maker_ttl_sec", 0.25)
+        monkeypatch.setitem(_cfg_d, "bond1_maker_max_keep_sec", 0.25)
+
+    posted = []
+    monkeypatch.setattr(type(h.executor), "get_market_book", lambda _s, tok: (
+        {"bids": [{"price": "0.991", "size": "40"}], "asks": [{"price": "0.998", "size": "100"}], "minimum_tick_size": "0.001"}
+        if "win" in tok else {"bids": [{"price": "0.001", "size": "50"}], "asks": []}
+    ))
+    monkeypatch.setattr(type(h.executor), "post_maker_entry_order", lambda _s, token_id, price, notional_usd=0.0, **kw: (
+        posted.append((token_id, price, notional_usd)) or {"success": True, "orderID": f"0x{token_id}", "price": price, "shares": int(notional_usd / price)}
+    ))
+    monkeypatch.setattr(type(h.executor), "cancel_order", lambda _s, oid: {"is_canceled": True, "outcome": "CANCELED_ZERO_FILL", "matched": 0.0})
+    monkeypatch.setattr(type(h.executor), "get_order_fill_summary", lambda _s, oid, tok: {"terminal": True, "resting": False, "matched": 0.0})
+
+    now = time.time()
+    slow_ev = plh.threading.Event()
+    h._inflight_maker_anchor_keys = {"SLOW_BOND1"}
+    h._inflight_maker_anchor_types = {"SINGLE_LEG_MAKER_LOCK:9001"}
+    h._maker_anchor_preempt_events = {"SLOW_BOND1": slow_ev}
+    h.pending_entry_intents["SLOW_INTENT"] = {
+        "trade_id": "SLOW_INTENT", "market_id": "9001", "token_id": "tok_slow",
+        "notional_usd": 55.0, "ts": now - 45.0, "heartbeat_ts": now,
+        "live_maker_anchor_inflight": True, "inflight_key": "SLOW_BOND1",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "velocity_bps_hr": 25.0,
+    }
+
+    async def _run_preempt():
+        async def _watch_slow():
+            for _ in range(200):
+                if slow_ev.is_set():
+                    h.pending_entry_intents.pop("SLOW_INTENT", None)
+                    h._inflight_maker_anchor_keys.discard("SLOW_BOND1")
+                    h._inflight_maker_anchor_types.discard("SINGLE_LEG_MAKER_LOCK:9001")
+                    return
+                await asyncio.sleep(0.01)
+
+        w_task = asyncio.create_task(_watch_slow())
+        res = await h.maybe_execute_graduated_single_leg_maker_lock({
+            "box_id": "FAST_BOND1", "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "dedupe_key": "FAST_B1_KEY",
+            "pair_dedupe_key": "FAST_B1_PAIR", "leg_a_market_id": "9002", "leg_a_condition_id": "0x9002",
+            "leg_a_token_id": "tok_win_fast", "leg_a_opp_token_id": "tok_lose_fast",
+            "leg_a_side": "YES", "leg_a_neg_risk": False, "anchor_bid_px": 0.992,
+            "min_resting_bid": 0.940, "max_box_cost_net": 0.996, "min_maker_edge": 0.004,
+            "max_opp_bid": 0.008, "p_model": 1.0, "expiry_ts": now + 900.0, "ts_unix": now,
+        })
+        await w_task
+        return res
+
+    asyncio.run(_run_preempt())
+    assert slow_ev.is_set() is True  # Slow 25 bps/hr order was preempted for 320 bps/hr fast order!
+    assert len(posted) == 1
+    assert posted[0][0] == "tok_win_fast"
+    assert posted[0][2] >= 26.0  # 46% per-market cap on $60.94 (~$28.03 -> 28 shares)
+
+
+def test_paa_director_proactive_profit_conversion_audit(tmp_path):
+    """Verifies PAADirector Step B7 runs PROFIT_CONVERSION_AUDIT and persists Tier-B verified fact."""
+    from src.paa_os.director import PAADirector
+
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    (tmp_path / "config").mkdir(parents=True)
+    (tmp_path / "config" / "polymarket_strategy_and_risk.json").write_text(
+        json.dumps({"directional": {"min_live_equity_for_unhedged_directional_usd": 150.0}}),
+        encoding="utf-8",
+    )
+    (data_dir / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX": {"wins": 12, "losses": 0, "realized_pnl_t1000_usd": 40.85},
+            "SOC2_EXACT_SCORE_2D_LATTICE": {"wins": 5, "losses": 0, "realized_pnl_t1000_usd": 3.64},
+        }
+    }), encoding="utf-8")
+    (data_dir / "live_harvester_state.json").write_text(
+        json.dumps({"live_bankroll": 60.94, "closed_positions": []}),
+        encoding="utf-8",
+    )
+
+    director = PAADirector(repo_root=tmp_path, data_dir=data_dir)
+    director.db.record_heartbeat("paa_research", status="OK")  # Simulate fresh 5m research timer
+    rep = director.run_cycle(max_tasks_per_cycle=3, allow_headless_ai=False, run_proactive_research_if_idle=True)
+    assert rep["status"] == "OK"
+    assert any(t.get("evidence", {}).get("conversion_audit") for t in rep["tasks_executed"])
+    facts = {f["fact_key"]: f for f in director.db.list_verified_facts(include_stale=False)}
+    assert "profit.conversion_and_velocity_audit" in facts
+    val = facts["profit.conversion_and_velocity_audit"]["value"]
+    assert "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX" in val["grad8_zero_live_conversion_gaps"]
+    assert val["seed_zero_loss_focus_active"] is True
+
+

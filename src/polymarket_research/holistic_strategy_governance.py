@@ -63,6 +63,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "min_l1_ask_depth_usd": 20.0,
         "max_spread": 0.03,
         "respect_configured_exit_policy_on_safe": True,
+        "min_live_equity_for_unhedged_directional_usd": 150.0,
     },
     "routing": {
         "z_immediate_taker_cut": 1.00,
@@ -147,6 +148,8 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "d1_free_cash_pct_growth": 0.90,
         "d1_free_cash_pct_scale": 0.90,
         "bond1_free_cash_pct_seed": 0.78,
+        "seed_zero_loss_focus_bond1_pool_pct": 0.92,
+        "bond1_velocity_preempt_mult": 1.80,
         "bond1_free_cash_pct_growth": 0.88,
         "bond1_per_market_cap_usd_seed": 45.0,
         "bond1_per_market_cap_usd_recovery": 85.0,
@@ -238,6 +241,8 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("directional.sol_canary_size_multiplier must be in [0.10, 1.0]")
     if not (0.10 <= d_cfg["eth_canary_size_multiplier"] <= 1.0):
         raise ValueError("directional.eth_canary_size_multiplier must be in [0.10, 1.0]")
+    if not (0.0 <= d_cfg["min_live_equity_for_unhedged_directional_usd"] <= 10000.0):
+        raise ValueError("directional.min_live_equity_for_unhedged_directional_usd must be in [0.0, 10000.0]")
 
     ex_cfg = out["exit_supervisor"]
     if not (0.80 <= ex_cfg["high_zone_mfe_arm_bid"] <= 0.99) or not (0.01 <= ex_cfg["high_zone_mfe_drop"] <= 0.15):

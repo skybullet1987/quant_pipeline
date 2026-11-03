@@ -32,7 +32,8 @@
     "min_cushion_pct_15m_maker": 0.04,
     "min_l1_ask_depth_usd": 20.0,
     "max_spread": 0.03,
-    "respect_configured_exit_policy_on_safe": true
+    "respect_configured_exit_policy_on_safe": true,
+    "min_live_equity_for_unhedged_directional_usd": 150.0
   },
   "routing": {
     "z_immediate_taker_cut": 1.00,
@@ -117,6 +118,8 @@
     "d1_free_cash_pct_growth": 0.90,
     "d1_free_cash_pct_scale": 0.90,
     "bond1_free_cash_pct_seed": 0.78,
+    "seed_zero_loss_focus_bond1_pool_pct": 0.92,
+    "bond1_velocity_preempt_mult": 1.80,
     "bond1_free_cash_pct_growth": 0.88,
     "bond1_per_market_cap_usd_seed": 45.0,
     "bond1_per_market_cap_usd_recovery": 85.0,

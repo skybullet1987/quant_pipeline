@@ -6392,9 +6392,9 @@ class PolymarketLiveHarvester:
                     if sleeve_src == "COND1_MACRO_PARTITION_BOX" and not own_grad:
                         live_walk_cap = 0.985
                     elif sleeve_src == "COND1_MACRO_PARTITION_BOX" and own_grad and 0.0 < rem_tte_s <= 172800.0:
-                        live_walk_cap = max(0.991, 0.992 if (zero_fee_box and fresh_quiet) else 0.988)
+                        live_walk_cap = 0.992 if zero_fee_box else 0.988
                     elif zero_fee_box:
-                        live_walk_cap = float(_rcfg_d1_w.get("cm_b3_max_walk_cap", 0.990)) if box_type == "BARRIER_MONO" else (0.992 if fresh_quiet else 0.990)
+                        live_walk_cap = float(_rcfg_d1_w.get("cm_b3_max_walk_cap", 0.990)) if box_type == "BARRIER_MONO" else (0.992 if (fresh_quiet or (own_grad and 0.0 < rem_tte_s <= 172800.0)) else 0.990)
                     elif box_type in {"SPORTS_CORRIDOR", "MACRO_DOMINANCE", "NBA_DOMINANCE", "NEGRISK_2LEG", "LADDER_MONO", "COUNTING_DOMINANCE"} or sleeve_src == "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":
                         live_walk_cap = 0.988
                     elif sleeve_src == "D1_QUIET_BOOK_BOX" and fresh_quiet and self._is_v5_unleashed_active():
@@ -8042,9 +8042,14 @@ class PolymarketLiveHarvester:
             if not position_is_settlement_receivable(p)
         ) + inflight_u
         if self._is_v5_unleashed_active():
-            _v5_sll = get_unleashed_v5_tier_profile(collat_f + cur_open_u)
+            _tot_eq_sll = collat_f + cur_open_u
+            _v5_sll = get_unleashed_v5_tier_profile(_tot_eq_sll)
             _sll_pct = float(_v5_sll["bond1_free_cash_pct"])
-            port_headroom_u = max(0.0, max(float(self.max_exposure), (collat_f + cur_open_u) * 0.96) - cur_open_u)
+            _min_dir_eq_sll = float(_gsn_s.get("directional", {}).get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
+            _zf_focus_sll = bool(_enforce_b1_v53 and _min_dir_eq_sll > 0.0 and _tot_eq_sll < _min_dir_eq_sll)
+            if _zf_focus_sll:
+                _sll_pct = max(_sll_pct, float(_b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
+            port_headroom_u = max(0.0, max(float(self.max_exposure), _tot_eq_sll * 0.96) - cur_open_u)
             lot_cap_sll = max(75.0, round(collat_f * _sll_pct, 2)) if own_mkr_grad else float(_v5_sll["bridged_zero_fee_cap_usd"])
             if _enforce_b1_v53:
                 sll_used_u = (
@@ -8065,6 +8070,8 @@ class PolymarketLiveHarvester:
                     _rcfg_sll.get("bond1_per_market_cap_usd")
                     or _v5_sll.get("bond1_maker_per_market_cap_usd", _v5_sll.get("bond1_per_market_cap_usd", 25.0))
                 )
+                if _zf_focus_sll and not _rcfg_sll.get("bond1_per_market_cap_usd"):
+                    mkt_cap_u = min(float(_b1_gov.get("bond1_per_market_cap_usd_seed", 45.0)), max(mkt_cap_u, round((collat_f + sll_used_u) * 0.46, 2)))
                 budget = min(
                     lot_cap_sll,
                     mkt_cap_u,
@@ -8098,7 +8105,33 @@ class PolymarketLiveHarvester:
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
         if not (min_rb <= anc_bid_px <= max_rb):
             return {"executed": False, "reason": f"RESTING_BID_OUT_OF_BAND:{anc_bid_px:.4f}"}
+        cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(0.08, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
         sh_int = int(math.floor(budget / anc_bid_px))
+        if sh_int < 12 and not self.dry_run and cand_vel_bps >= 40.0 and self._is_v5_unleashed_active():
+            _vel_mult = float(_b1_gov.get("bond1_velocity_preempt_mult", 1.80) or 1.80)
+            _pe_map = getattr(self, "_maker_anchor_preempt_events", {})
+            _slow_cands = [
+                (float(it.get("velocity_bps_hr") or 0.0), str(it.get("inflight_key") or ""), it)
+                for it in getattr(self, "pending_entry_intents", {}).values()
+                if isinstance(it, dict) and it.get("live_maker_anchor_inflight") and (time.time() - float(it.get("ts") or 0.0)) >= 20.0
+            ]
+            if _slow_cands:
+                _slow_vel, _slow_k, _ = min(_slow_cands, key=lambda x: x[0])
+                if _slow_k in _pe_map and cand_vel_bps >= max(_slow_vel * _vel_mult, _slow_vel + 25.0):
+                    logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_slow_k} ({_slow_vel:.1f} bps/h) -> {dedupe_k} ({cand_vel_bps:.1f} bps/h)")
+                    _pe_map[_slow_k].set()
+                    for _ in range(16):
+                        await asyncio.sleep(0.06)
+                        if not any(isinstance(i, dict) and i.get("inflight_key") == _slow_k for i in self.pending_entry_intents.values()):
+                            break
+                    inflight_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict)) + sum(float(v or 0.0) for v in _prepost_res.values())
+                    collat_f = max(0.0, float(collat or 0.0) - inflight_u)
+                    sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
+                    sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
+                    budget = min(lot_cap_sll, mkt_cap_u if _enforce_b1_v53 else lot_cap_sll, sll_pool_rem if _enforce_b1_v53 else collat_f * _sll_pct, collat_f)
+                    if _is_mlk1:
+                        budget = min(budget, 22.0, round((collat_f + sll_used_u) * 0.32, 2))
+                    sh_int = int(math.floor(budget / anc_bid_px))
         if sh_int < 5:
             return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
 
@@ -8223,6 +8256,7 @@ class PolymarketLiveHarvester:
                 "trade_id": intent_id, "market_id": mid_a, "token_id": tok_a,
                 "notional_usd": round(sh_int * anc_bid_px, 4), "ts": now_int_ts, "heartbeat_ts": now_int_ts,
                 "live_maker_anchor_inflight": True, "inflight_key": inflight_key, "sleeve_source": sleeve_src,
+                "expiry_ts": exp_ts, "velocity_bps_hr": round(((1.0 - anc_bid_px) * 10000.0) / max(0.08, (exp_ts - now_int_ts) / 3600.0), 2) if exp_ts > now_int_ts else 0.0,
             }
             _t_b1 = time.perf_counter()
             post_res = await asyncio.to_thread(
@@ -9194,14 +9228,27 @@ class PolymarketLiveHarvester:
         if not asset_str and self.dry_run:
             asset_str = "BTC"  # Dry-run / test fixture simulation fallback
         base_allowed = self.get_graduated_allowed_assets()
-        _paused_dir_s3 = {
-            str(x).upper()
-            for x in (GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}).get("paused_directional_assets") or [])
-        }
+        _dir_gov_s = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}) if self._is_v5_live_strict() else {}
+        _paused_dir_s3 = {str(x).upper() for x in (_dir_gov_s.get("paused_directional_assets") or [])}
         effective_allowed_assets = ((base_allowed | {"SOL"}) - _paused_dir_s3) if is_sleeve3_strike else base_allowed
-        if not asset_str or asset_str not in effective_allowed_assets:
-            if asset_str in ("ETH", "SOL", "XRP"):
-                # Priority A: Record ETH/SOL candidate in shadow mode without live capital risk
+        _min_dir_eq = float(_dir_gov_s.get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
+        _enforce_seed_dir_gate = bool(
+            getattr(self, "enforce_seed_directional_shadow_gate", False)
+            or (
+                not self.dry_run
+                and self._is_v5_live_strict()
+                and getattr(self.executor, "client", None) is not None
+                and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+                and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
+            )
+        )
+        _cur_eq_dir = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
+            float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if isinstance(p, dict)
+        )
+        _seed_dir_paused = bool(_enforce_seed_dir_gate and _min_dir_eq > 0.0 and _cur_eq_dir < _min_dir_eq)
+        if not asset_str or asset_str not in effective_allowed_assets or _seed_dir_paused:
+            if asset_str in ("BTC", "ETH", "SOL", "XRP") and (_seed_dir_paused or asset_str in ("ETH", "SOL", "XRP")):
+                # Priority A: Record candidate in shadow mode without live capital risk
                 shadow_cand = {
                     "logged_at_utc": datetime.now(timezone.utc).isoformat(),
                     "asset": asset_str,
@@ -9222,7 +9269,7 @@ class PolymarketLiveHarvester:
                     "twap_60s_open": shock.get("twap_60s_open"),
                     "resolution_source": shock.get("resolution_source", ""),
                     "expiry_ts": close_ts_val,
-                    "reason_blocked": "ASSET_PAUSED_SHADOW_ONLY",
+                    "reason_blocked": f"SEED_REBUILD_SHADOW_UNTIL_${_min_dir_eq:.0f}" if _seed_dir_paused else "ASSET_PAUSED_SHADOW_ONLY",
                 }
                 _sh_line = json.dumps(shadow_cand) + "\n"
 
@@ -9238,8 +9285,11 @@ class PolymarketLiveHarvester:
                 except RuntimeError:
                     _write_shadow_cand()
                 logger.info(f"[SHADOW_{asset_str}_COLLECTED] {shock.get('title')} {target_token} recorded for shadow research (live trading paused).")
-            _g("SHADOW_ASSET_PAUSED" if asset_str in ("ETH", "SOL", "XRP") else "ASSET_DISALLOWED", f"{asset_str} paused (shadow only)", asset=asset_str)
-            logger.debug(f"[TIER GUARD] Asset {asset_str!r} not in ALLOWED_ASSETS ({self.allowed_assets}). Skipping.")
+            if _seed_dir_paused:
+                _g("SHADOW_SEED_REBUILD_GATE", f"Shadow-only until equity >= ${_min_dir_eq:.0f} (now ${_cur_eq_dir:.2f}); 100% live capital in 0-loss Arb & Carry", asset=asset_str)
+            else:
+                _g("SHADOW_ASSET_PAUSED" if asset_str in ("ETH", "SOL", "XRP") else "ASSET_DISALLOWED", f"{asset_str} paused (shadow only)", asset=asset_str)
+            logger.debug(f"[TIER GUARD] Asset {asset_str!r} paused/shadow-gated (eq={_cur_eq_dir:.2f}). Skipping.")
             return
 
         # Real Polygon CTF ERC-1155 conditional token IDs are 20+ digit base-10 uint256 strings.

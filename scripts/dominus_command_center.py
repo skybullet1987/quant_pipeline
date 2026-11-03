@@ -532,17 +532,22 @@ if lh_path.exists():
     _t15_hi = int(float(_dcfg.get("max_tte_15m_taker_sec", 510) or 510))
     _z1h = float(_dcfg.get("min_z_1h_regime_b", _dcfg.get("min_z_1h", 1.00)) or 1.00)
     _z15 = float(_dcfg.get("min_z_15m_taker", 1.20) or 1.20)
-    _s1h_desc = (
-        f"{_a1h} 1h Core (Taker <=${_tk1h:.2f} + Maker <=${_mk1h:.2f}, Z>={_z1h:.2f}, $0.93 MFE Lock)"
-        if _mk1h_on
-        else f"{_a1h} 1h Taker-Only ([150-900s] <=${_tk1h:.2f}, Z>={_z1h:.2f}, 0 Maker, $0.93 MFE Lock)"
-    )
-    if _tk15_on and _mk15_on:
-        _s15_desc = f"{_a15} 15m Taker [{_t15_lo}-{_t15_hi}s <=${_tk15_px:.2f}] + 0%-Fee Maker (<=${_mk15:.2f})"
-    elif _tk15_on:
-        _s15_desc = f"{_a15} 15m Taker-Only ([{_t15_lo}-{_t15_hi}s] <=${_tk15_px:.2f}, Z>={_z15:.2f}, 0 Maker)"
+    _min_dir_eq_d = float(_dcfg.get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
+    if _min_dir_eq_d > 0.0 and _live_equity_usd < _min_dir_eq_d:
+        _s1h_desc = f"SHADOW-ONLY (<${_min_dir_eq_d:.0f} Rebuild Gate — 100% Capital in 0-Loss Arb & Carry)"
+        _s15_desc = f"SHADOW-ONLY (<${_min_dir_eq_d:.0f} Rebuild Gate — 100% Capital in 0-Loss Arb & Carry)"
     else:
-        _s15_desc = f"{_a15} 15m Subordinate Maker-Only (<=${_mk15:.2f}, 0.80x; Taker OFF)"
+        _s1h_desc = (
+            f"{_a1h} 1h Core (Taker <=${_tk1h:.2f} + Maker <=${_mk1h:.2f}, Z>={_z1h:.2f}, $0.93 MFE Lock)"
+            if _mk1h_on
+            else f"{_a1h} 1h Taker-Only ([150-900s] <=${_tk1h:.2f}, Z>={_z1h:.2f}, 0 Maker, $0.93 MFE Lock)"
+        )
+        if _tk15_on and _mk15_on:
+            _s15_desc = f"{_a15} 15m Taker [{_t15_lo}-{_t15_hi}s <=${_tk15_px:.2f}] + 0%-Fee Maker (<=${_mk15:.2f})"
+        elif _tk15_on:
+            _s15_desc = f"{_a15} 15m Taker-Only ([{_t15_lo}-{_t15_hi}s] <=${_tk15_px:.2f}, Z>={_z15:.2f}, 0 Maker)"
+        else:
+            _s15_desc = f"{_a15} 15m Subordinate Maker-Only (<=${_mk15:.2f}, 0.80x; Taker OFF)"
     live_strat_meta = [
         ("SLEEVE_1_CORE_302", _s1h_desc),
         ("SLEEVE_1_SUBHOURLY_15M", _s15_desc),
@@ -2252,7 +2257,9 @@ async function refreshNow(force=false) {
         const sh = Number(o.shares || 0);
         const nt = Number(o.notional_usd || 0);
         const edgeUsd = Math.max(0, sh * 1.0 - nt);
-        const remTxt = (o.rem_min !== null && o.rem_min !== undefined) ? `${Number(o.rem_min).toFixed(0)} min` : '-';
+        const remMin = (o.rem_min !== null && o.rem_min !== undefined) ? Number(o.rem_min) : null;
+        const velBpsHr = (remMin !== null && remMin > 0) ? (((1 - px) * 10000) / Math.max(0.08, remMin / 60)) : null;
+        const remTxt = remMin !== null ? `${remMin.toFixed(0)} min (${velBpsHr.toFixed(0)} bps/h)` : '-';
         const oidShort = String(o.order_id || '').slice(0, 14) + '...';
         const outLbl = o.outcome ? `${o.side} (${o.outcome})` : o.side;
         return `<tr>
@@ -2265,8 +2272,12 @@ async function refreshNow(force=false) {
         </tr>`;
       }).join('') + `</tbody></table>`
     );
+    const minDirEq = Number(dcfg.min_live_equity_for_unhedged_directional_usd || 0);
+    const dirModeBanner = (minDirEq > 0 && eqNow < minDirEq)
+      ? `<b>100% Zero-Loss Focus (&lt;$${minDirEq.toFixed(0)} Rebuild Gate)</b>: Unhedged 15m/1h Dir Paused in Shadow | <b>92% Pool</b> in <code>BOND1/MKR_LOCK1/D1/CAL1/COND1/CM_B3</code>`
+      : `<b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/MKR_LOCK1/COND1/D1/CAL1 Live`;
     const openPosHtml = acts.length === 0
-      ? `<div class="sub" style="${restOrds.length > 0 ? 'margin-bottom:6px;' : ''}">Filled Open Positions: <b>0</b> &mdash; <b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/MKR_LOCK1/COND1/D1/CAL1 Live</div>`
+      ? `<div class="sub" style="${restOrds.length > 0 ? 'margin-bottom:6px;' : ''}">Filled Open Positions: <b>0</b> &mdash; ${dirModeBanner}</div>`
       : `<div style="margin-bottom:4px;"><b>LIVE OPEN POSITIONS (${acts.length} Active &mdash; Cost Basis $${acts.reduce((s, x) => s + Number(x.notional_usd || 0), 0).toFixed(2)} &bull; Live Bid Value $${acts.reduce((s, x) => s + Number(x.mtm_bid_usd || 0), 0).toFixed(2)} &bull; @Resting TP $${acts.reduce((s, x) => s + Number(x.tp_val_usd || 0), 0).toFixed(2)}):</b></div>
          <table><thead><tr><th>Market</th><th>Side / Shares</th><th>Entry / Cost</th><th>Live Bid / Ask</th><th>Resting Exit</th><th>MTM Bid (uPnL)</th></tr></thead><tbody>` +
         acts.map(a => {
