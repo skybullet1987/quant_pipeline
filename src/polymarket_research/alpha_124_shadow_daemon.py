@@ -11493,7 +11493,6 @@ class Alpha124ShadowDaemon:
                             if (
                                 bid_w_v4 >= 0.940 - 1e-9
                                 and bid_usd_v4 >= 10.0 - 1e-6
-                                and self.is_sleeve_grad8_ready("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER")
                                 and self._can_emit_zero_loss_math_live("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", close_v4, now, p_model=p_lk_v4)
                             ):
                                 self.emit_live_single_leg_maker_lock_candidate(

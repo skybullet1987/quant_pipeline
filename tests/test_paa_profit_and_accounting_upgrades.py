@@ -249,3 +249,84 @@ def test_bond1_live_daemon_reemits_when_shadow_already_entered_and_allows_0996(t
     assert emitted[0]["anchor_bid_px"] == pytest.approx(0.996)
     assert emitted[0]["max_box_cost_net"] == pytest.approx(0.996)
     assert opps == []
+
+
+def test_harvester_bond1_survives_book_poll_timeout_and_cancels_on_shutdown(tmp_path, monkeypatch):
+    a124_state = tmp_path / "alpha124_shadow_state.json"
+    a124_state.write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 33, "wins": 33, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 173.6},
+            "BOND1_UMA_RESOLUTION_CARRY": {"closed": 25, "wins": 25, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 12.8},
+        }
+    }), encoding="utf-8")
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_state.json")
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h._startup_reconciled = True
+    h.enforce_bond1_smart_queue = True
+    h.executor.auth_mode = "LIVE"
+    h._last_known_collateral = 60.94
+    h.executor.get_collateral_balance = lambda: 60.94
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+    for _cfg_d in (plh.RISK_CONFIG, h.risk_config):
+        monkeypatch.setitem(_cfg_d, "bond1_maker_ttl_sec", 2.0)
+        monkeypatch.setitem(_cfg_d, "bond1_maker_max_keep_sec", 2.0)
+        monkeypatch.setitem(_cfg_d, "bond1_book_poll_sec", 0.05)
+
+    calls = {"book": 0, "cancel": 0}
+
+    def _flaky_book(_s, tok):
+        calls["book"] += 1
+        if calls["book"] >= 3:
+            raise TimeoutError("HTTPSConnectionPool Read timed out (read timeout=3.0)")
+        if tok == "tok_w_tmo":
+            return {"bids": [{"price": "0.994", "size": "40"}], "asks": [{"price": "0.998", "size": "100"}], "minimum_tick_size": "0.001"}
+        return {"bids": [{"price": "0.001", "size": "50"}], "asks": []}
+
+    def _post(_s, token_id, price, notional_usd=0.0, **kw):
+        return {"success": True, "orderID": "0xoid_tmo", "price": price, "shares": int(notional_usd / price)}
+
+    def _cancel(_s, oid):
+        calls["cancel"] += 1
+        return {"is_canceled": True, "outcome": "CANCELED_ZERO_FILL", "matched": 0.0}
+
+    monkeypatch.setattr(type(h.executor), "get_market_book", _flaky_book)
+    monkeypatch.setattr(type(h.executor), "post_maker_entry_order", _post)
+    monkeypatch.setattr(type(h.executor), "cancel_order", _cancel)
+    monkeypatch.setattr(type(h.executor), "get_order_fill_summary", lambda _s, oid, tok: {"terminal": True, "resting": False, "matched": 0.0})
+
+    async def _drive():
+        now = time.time()
+        t = asyncio.create_task(h.maybe_execute_graduated_single_leg_maker_lock({
+            "box_id": "B1_TMO_LIVE",
+            "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+            "dedupe_key": "BOND1_MKR_TMO",
+            "pair_dedupe_key": "BOND1_TMO",
+            "leg_a_market_id": "996002",
+            "leg_a_condition_id": "0xcondtmo",
+            "leg_a_token_id": "tok_w_tmo",
+            "leg_a_opp_token_id": "tok_l_tmo",
+            "leg_a_side": "YES",
+            "leg_a_neg_risk": False,
+            "anchor_bid_px": 0.995,
+            "min_resting_bid": 0.940,
+            "max_box_cost_net": 0.996,
+            "min_maker_edge": 0.004,
+            "max_opp_bid": 0.008,
+            "p_model": 1.0,
+            "expiry_ts": now + 3600.0,
+            "ts_unix": now,
+        }))
+        await asyncio.sleep(0.18)
+        assert calls["book"] >= 3  # Timeout fired inside monitoring loop without crashing!
+        h._shutdown_requested = True
+        return await t
+
+    res = asyncio.run(_drive())
+    assert res["executed"] is False
+    assert calls["cancel"] == 1  # Order was cleanly canceled on CLOB, NEVER orphaned!
+    assert h.pending_entry_intents == {}
+

@@ -6192,15 +6192,22 @@ class PolymarketLiveHarvester:
                 collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
                 rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
                 if box_type != "DOMINANCE" and rem_tte_s > 0.0:
-                    fast_recycle_sl = zero_fee_box and sleeve_src in {
-                        "COND1_MACRO_PARTITION_BOX",
-                        "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
-                        "M3_LADDER_MONO_BOX",
-                        "N1_NEGRISK_CROSS_BOX",
-                        "TW1_COUNTING_TRUNCATION_AND_BOX",
-                        "FED1_CENTRAL_BANK_LP_BOX",
-                        "C1_BINARY_COMPLETE_SET",
-                    }
+                    fast_recycle_sl = zero_fee_box and (
+                        sleeve_src in {
+                            "COND1_MACRO_PARTITION_BOX",
+                            "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+                            "M3_LADDER_MONO_BOX",
+                            "N1_NEGRISK_CROSS_BOX",
+                            "TW1_COUNTING_TRUNCATION_AND_BOX",
+                            "FED1_CENTRAL_BANK_LP_BOX",
+                            "C1_BINARY_COMPLETE_SET",
+                        }
+                        or (
+                            sleeve_src == "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"
+                            and own_grad
+                            and rem_tte_s <= 86400.0
+                        )
+                    )
                     vel_ok, vel_reason = passes_capital_velocity_hurdle(
                         collat_usd=collat_f, rem_tte_sec=rem_tte_s, box_cost_net=fresh_box_net,
                         box_type=box_type, sleeve_src=sleeve_src, fast_recycle_eligible=fast_recycle_sl,
@@ -8273,112 +8280,130 @@ class PolymarketLiveHarvester:
                 buried_since_mono: Optional[float] = None
                 outbid_repeg_px: Optional[float] = None
                 ws_filled = False
-                while time.monotonic() < deadline:
-                    if preempt_ev.is_set() or self._is_d1_box_halted() or (exp_ts > 0.0 and (exp_ts - time.time()) <= 60.0):
-                        break
-                    if intent_id in self.pending_entry_intents:
-                        self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
-                    rem_w = max(0.05, min(0.10, deadline - time.monotonic()))
-                    if uws is not None and uws.is_healthy():
-                        await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
-                        snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
-                        if self._ws_snap_fully_filled(snap_o, posted_sh):
-                            ws_filled = True
+                try:
+                    while time.monotonic() < deadline:
+                        if (
+                            preempt_ev.is_set()
+                            or getattr(self, "_shutdown_requested", False)
+                            or self._is_d1_box_halted()
+                            or (exp_ts > 0.0 and (exp_ts - time.time()) <= 60.0)
+                        ):
                             break
-                    else:
-                        await asyncio.sleep(rem_w)
-                    if preempt_ev.is_set():
-                        break
-                    if hasattr(self.executor, "get_market_book") and (time.monotonic() - last_opp_chk) >= _b1_poll_s:
-                        last_opp_chk = time.monotonic()
-                        custom_bk_l = "get_market_book" in getattr(self.executor, "__dict__", {})
-                        bk_oc = mkt_ws_s.get_book(opp_a, max_age_sec=2.0) if (mkt_ws_s and not custom_bk_l) else None
-                        bk_wc = mkt_ws_s.get_book(tok_a, max_age_sec=2.0) if (mkt_ws_s and not custom_bk_l) else None
-                        if bk_oc is None or bk_wc is None:
-                            bk_oc, bk_wc = await asyncio.gather(
-                                asyncio.to_thread(self.executor.get_market_book, opp_a) if bk_oc is None else asyncio.sleep(0, result=bk_oc),
-                                asyncio.to_thread(self.executor.get_market_book, tok_a) if bk_wc is None else asyncio.sleep(0, result=bk_wc),
-                            )
-                        opp_b_live = max((float(x["price"] if isinstance(x, dict) else x[0]) for x in ((bk_oc or {}).get("bids") or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0), default=0.0)
-                        bids_wc = [
-                            (float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1]))
-                            for x in ((bk_wc or {}).get("bids") or [])
-                            if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
-                        ]
-                        asks_wc = sorted([
-                            (float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1]))
-                            for x in ((bk_wc or {}).get("asks") or [])
-                            if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
-                        ])
-                        win_b_live = max((px for px, _ in bids_wc), default=posted_px)
-                        win_a_live = asks_wc[0][0] if asks_wc else 1.000
-                        if opp_b_live > max(0.010, max_opp + 0.002) or win_b_live < 0.900:
-                            adverse_cancelled = True
-                            logger.warning(
-                                f"[BOND1 DISPUTE/COLLAPSE VETO] {box_id}: opp_bid=${opp_b_live:.4f}, win_bid=${win_b_live:.4f}; canceling {maker_oid} immediately."
-                            )
-                            break
-                        if _enforce_b1_v53:
-                            if win_b_live > posted_px + 1e-6:
-                                tb_l = max(0.001 if win_b_live >= 0.96 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
-                                ta_l = max(0.001 if win_a_live > 0.96 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
-                                step_l = round(win_b_live + tb_l, 4) if (win_a_live - win_b_live) >= (2.0 * tb_l - 1e-9) else win_b_live
-                                ceil_l = min(
-                                    round(win_a_live - ta_l, 4),
-                                    max_rb,
-                                    round(
-                                        float(candidate_box.get("p_model") or 0.9985)
-                                        + max(0.0, float(candidate_box.get("maker_rebate_ps") or 0.0))
-                                        - float(candidate_box.get("min_maker_edge") or 0.004),
-                                        4,
-                                    ),
-                                )
-                                tsnap_l = max(0.001 if min(step_l, ceil_l) >= 0.96 - 1e-9 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
-                                cand_rp = round(math.floor((min(step_l, ceil_l) + 1e-9) / tsnap_l) * tsnap_l, 4)
-                                l1_q_l = sum(px * sz for px, sz in bids_wc if abs(px - win_b_live) <= 1e-6)
-                                if (
-                                    _repost_n_in < 2
-                                    and min_rb <= cand_rp <= max_rb
-                                    and cand_rp >= round(win_b_live - 1e-9, 4)
-                                    and cand_rp > posted_px + 1e-6
-                                    and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, _b1_q_cap) + 1e-6)
-                                    and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
-                                ):
-                                    outbid_repeg_px = cand_rp
-                                    logger.info(
-                                        f"[BOND1 OUTBID REPEG] {box_id}: outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}."
-                                    )
-                                    break
-                                if buried_since_mono is None:
-                                    buried_since_mono = time.monotonic()
-                                elif (time.monotonic() - buried_since_mono) >= _b1_buried_s:
-                                    buried_cancelled = True
-                                    logger.info(
-                                        f"[BOND1 BURIED RELEASE] {box_id}: outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {_b1_buried_s:.0f}s; canceling {maker_oid}."
-                                    )
-                                    break
-                            else:
-                                buried_since_mono = None
-                    if hasattr(self.executor, "get_order_fill_summary") and (time.monotonic() - last_fill_poll) >= 15.0:
-                        last_fill_poll = time.monotonic()
-                        poll_s = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, tok_a)
-                        if isinstance(poll_s, dict):
-                            if float(poll_s.get("matched") or 0.0) >= posted_sh - 0.01:
+                        if intent_id in self.pending_entry_intents:
+                            self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
+                        rem_w = max(0.05, min(0.10, deadline - time.monotonic()))
+                        if uws is not None and uws.is_healthy():
+                            await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
+                            snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
+                            if self._ws_snap_fully_filled(snap_o, posted_sh):
                                 ws_filled = True
                                 break
-                            if poll_s.get("terminal"):
-                                break
-                    if (
-                        not adverse_cancelled
-                        and buried_since_mono is None
-                        and outbid_repeg_px is None
-                        and not preempt_ev.is_set()
-                        and uws is not None
-                        and uws.is_healthy()
-                        and time.monotonic() >= deadline - 0.05
-                        and (time.monotonic() - t_sll_0) < max_keep_s
-                    ):
-                        deadline = min(t_sll_0 + max_keep_s, time.monotonic() + 15.0)
+                        else:
+                            await asyncio.sleep(rem_w)
+                        if preempt_ev.is_set() or getattr(self, "_shutdown_requested", False):
+                            break
+                        if hasattr(self.executor, "get_market_book") and (time.monotonic() - last_opp_chk) >= _b1_poll_s:
+                            last_opp_chk = time.monotonic()
+                            custom_bk_l = "get_market_book" in getattr(self.executor, "__dict__", {})
+                            bk_oc = mkt_ws_s.get_book(opp_a, max_age_sec=2.0) if (mkt_ws_s and not custom_bk_l) else None
+                            bk_wc = mkt_ws_s.get_book(tok_a, max_age_sec=2.0) if (mkt_ws_s and not custom_bk_l) else None
+                            if bk_oc is None or bk_wc is None:
+                                try:
+                                    bk_oc, bk_wc = await asyncio.gather(
+                                        asyncio.to_thread(self.executor.get_market_book, opp_a) if bk_oc is None else asyncio.sleep(0, result=bk_oc),
+                                        asyncio.to_thread(self.executor.get_market_book, tok_a) if bk_wc is None else asyncio.sleep(0, result=bk_wc),
+                                    )
+                                except Exception as _bk_poll_exc:
+                                    logger.debug(f"[BOND1 BOOK POLL TIMEOUT] {box_id}: {_bk_poll_exc}; preserving resting Maker order {maker_oid}.")
+                                    bk_oc, bk_wc = None, None
+                            if bk_oc is not None and bk_wc is not None:
+                                opp_b_live = max((float(x["price"] if isinstance(x, dict) else x[0]) for x in ((bk_oc or {}).get("bids") or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0), default=0.0)
+                                bids_wc = [
+                                    (float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1]))
+                                    for x in ((bk_wc or {}).get("bids") or [])
+                                    if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
+                                ]
+                                asks_wc = sorted([
+                                    (float(x["price"] if isinstance(x, dict) else x[0]), float(x["size"] if isinstance(x, dict) else x[1]))
+                                    for x in ((bk_wc or {}).get("asks") or [])
+                                    if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
+                                ])
+                                win_b_live = max((px for px, _ in bids_wc), default=posted_px)
+                                win_a_live = asks_wc[0][0] if asks_wc else 1.000
+                                if opp_b_live > max(0.010, max_opp + 0.002) or win_b_live < 0.900:
+                                    adverse_cancelled = True
+                                    logger.warning(
+                                        f"[BOND1 DISPUTE/COLLAPSE VETO] {box_id}: opp_bid=${opp_b_live:.4f}, win_bid=${win_b_live:.4f}; canceling {maker_oid} immediately."
+                                    )
+                                    break
+                                if _enforce_b1_v53:
+                                    if win_b_live > posted_px + 1e-6:
+                                        tb_l = max(0.001 if win_b_live >= 0.96 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
+                                        ta_l = max(0.001 if win_a_live > 0.96 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
+                                        step_l = round(win_b_live + tb_l, 4) if (win_a_live - win_b_live) >= (2.0 * tb_l - 1e-9) else win_b_live
+                                        ceil_l = min(
+                                            round(win_a_live - ta_l, 4),
+                                            max_rb,
+                                            round(
+                                                float(candidate_box.get("p_model") or 0.9985)
+                                                + max(0.0, float(candidate_box.get("maker_rebate_ps") or 0.0))
+                                                - float(candidate_box.get("min_maker_edge") or 0.004),
+                                                4,
+                                            ),
+                                        )
+                                        tsnap_l = max(0.001 if min(step_l, ceil_l) >= 0.96 - 1e-9 else 0.01, _tk_wf if _tk_wf >= 0.01 else 0.0)
+                                        cand_rp = round(math.floor((min(step_l, ceil_l) + 1e-9) / tsnap_l) * tsnap_l, 4)
+                                        l1_q_l = sum(px * sz for px, sz in bids_wc if abs(px - win_b_live) <= 1e-6)
+                                        if (
+                                            _repost_n_in < 2
+                                            and min_rb <= cand_rp <= max_rb
+                                            and cand_rp >= round(win_b_live - 1e-9, 4)
+                                            and cand_rp > posted_px + 1e-6
+                                            and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, _b1_q_cap) + 1e-6)
+                                            and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
+                                        ):
+                                            outbid_repeg_px = cand_rp
+                                            logger.info(
+                                                f"[BOND1 OUTBID REPEG] {box_id}: outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}."
+                                            )
+                                            break
+                                        if buried_since_mono is None:
+                                            buried_since_mono = time.monotonic()
+                                        elif (time.monotonic() - buried_since_mono) >= _b1_buried_s:
+                                            buried_cancelled = True
+                                            logger.info(
+                                                f"[BOND1 BURIED RELEASE] {box_id}: outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {_b1_buried_s:.0f}s; canceling {maker_oid}."
+                                            )
+                                            break
+                                    else:
+                                        buried_since_mono = None
+                        if hasattr(self.executor, "get_order_fill_summary") and (time.monotonic() - last_fill_poll) >= 15.0:
+                            last_fill_poll = time.monotonic()
+                            try:
+                                poll_s = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, tok_a)
+                            except Exception as _poll_exc:
+                                logger.debug(f"[BOND1 FILL POLL TIMEOUT] {box_id}: {_poll_exc}; preserving resting Maker order {maker_oid}.")
+                                poll_s = None
+                            if isinstance(poll_s, dict):
+                                if float(poll_s.get("matched") or 0.0) >= posted_sh - 0.01:
+                                    ws_filled = True
+                                    break
+                                if poll_s.get("terminal"):
+                                    break
+                        if (
+                            not adverse_cancelled
+                            and buried_since_mono is None
+                            and outbid_repeg_px is None
+                            and not preempt_ev.is_set()
+                            and not getattr(self, "_shutdown_requested", False)
+                            and uws is not None
+                            and uws.is_healthy()
+                            and time.monotonic() >= deadline - 0.05
+                            and (time.monotonic() - t_sll_0) < max_keep_s
+                        ):
+                            deadline = min(t_sll_0 + max_keep_s, time.monotonic() + 15.0)
+                except BaseException as _mon_exc:
+                    logger.warning(f"[BOND1 MONITOR INTERRUPTED] {box_id}: {_mon_exc}; reconciling/canceling {maker_oid} before releasing intent.")
 
                 cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px)
                 self.pending_entry_intents.pop(intent_id, None)
@@ -8398,14 +8423,15 @@ class PolymarketLiveHarvester:
                         self.save_state()
                     return {"executed": False, "reason": "BOND1_CANCEL_OUTCOME_UNKNOWN"}
                 if matched_sh < 0.01:
-                    if outbid_repeg_px is not None and not self.dry_run:
+                    if outbid_repeg_px is not None and not self.dry_run and not getattr(self, "_shutdown_requested", False):
                         retry_cd.pop(dedupe_k, None)
                         _rp_px_target = float(outbid_repeg_px)
 
                         async def _repost_outbid_bond1() -> None:
                             await asyncio.sleep(0.20)
                             if (
-                                self._is_d1_box_halted()
+                                getattr(self, "_shutdown_requested", False)
+                                or self._is_d1_box_halted()
                                 or dedupe_k in seen_boxes
                                 or pair_dedupe_k in seen_boxes
                                 or (exp_ts > 0.0 and (exp_ts - time.time()) < 120.0)
@@ -8453,6 +8479,8 @@ class PolymarketLiveHarvester:
                     if (
                         was_preempted
                         and not self.dry_run
+                        and not getattr(self, "_shutdown_requested", False)
+                        and preempt_why != "SHUTDOWN"
                         and _repost_n_in < 3
                         and (full_max_keep_s - (time.time() - first_post_ts)) >= 30.0
                         and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
@@ -8463,7 +8491,8 @@ class PolymarketLiveHarvester:
                         async def _repost_preempted_bond1() -> None:
                             await asyncio.sleep(_repost_delay)
                             if (
-                                self._is_d1_box_halted()
+                                getattr(self, "_shutdown_requested", False)
+                                or self._is_d1_box_halted()
                                 or dedupe_k in seen_boxes
                                 or pair_dedupe_k in seen_boxes
                                 or (exp_ts > 0.0 and (exp_ts - time.time()) < 120.0)
@@ -14008,11 +14037,14 @@ class PolymarketLiveHarvester:
                 # Graceful SIGTERM/SIGINT shutdown: flush state atomically and leave with exit code 0.
                 if self._shutdown_requested:
                     self._shutdown_status = "STOPPED_GRACEFULLY"
+                    self._preempt_resting_maker_anchors(reason="SHUTDOWN")
                     fast_shock_event.set()
                     if fast_consumer_task is not None and not fast_consumer_task.done():
                         await asyncio.gather(fast_consumer_task, return_exceptions=True)
                     if getattr(self, "_bg_shock_tasks", None):
                         await asyncio.gather(*list(self._bg_shock_tasks), return_exceptions=True)
+                    if getattr(self, "_maker_anchor_bg_tasks", None):
+                        await asyncio.gather(*list(self._maker_anchor_bg_tasks), return_exceptions=True)
                     logger.warning(
                         f"[SHUTDOWN] Graceful stop: {len(self.active_positions)} active position(s) persisted to state; "
                         f"resting exit orders (if any) remain on the exchange for restart reconciliation."
