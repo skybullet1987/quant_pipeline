@@ -37,7 +37,7 @@ from scripts.paa_autonomous_controller import (
     build_strategy_scorecard,
     reconcile_authoritative_ledger,
 )
-from scripts.weekly_wfo_governance import run_weekly_governance
+from scripts.weekly_wfo_governance import evaluate_ledger_file
 from src.paa_os.accountant import PAAAccountant
 from src.paa_os.budget import BudgetManager
 from src.paa_os.director import PAADirector
@@ -289,7 +289,18 @@ def cmd_weekly_review(args: argparse.Namespace) -> int:
     """Weekly broader research, Purged WFO/CPCV governance & architecture review."""
     _ensure_systemd_user_env()
     director = PAADirector()
-    wfo_out = run_weekly_governance(data_dir=director.data_dir)
+    ledgers = [
+        director.data_dir / "ledger_shadow_sol_v392.jsonl",
+        director.data_dir / "ledger_shadow_hybrid_zsplit.jsonl",
+        director.data_dir / "ledger_shadow_xau_15m.jsonl",
+        director.data_dir / "ledger_shadow_btc_5m.jsonl",
+        director.data_dir / "ledger_shadow_sol_5m.jsonl",
+    ]
+    evals = [evaluate_ledger_file(p) for p in ledgers]
+    wfo_out = {
+        "shadow_evaluations": evals,
+        "promoted_candidates": [e["ledger"] for e in evals if e.get("verdict") == "PROMOTE"],
+    }
     dash = director.generate_dashboard_and_report()
     day_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     rep_dir = director.paa_dir / "reports"
