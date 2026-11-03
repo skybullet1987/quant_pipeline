@@ -373,12 +373,14 @@ class DeploymentController:
 
         return True, "ALL_CANARY_CHECKS_PASSED", (time.perf_counter() - t0) * 1000.0
 
-    def ensure_baseline_staging_release(self) -> Dict[str, Any]:
-        """Seeds an initial `BASELINE` staging release if none exists yet so rollbacks always have a verified target."""
+    def ensure_baseline_staging_release(self, *, refresh_if_baseline: bool = False) -> Dict[str, Any]:
+        """Seeds an initial `BASELINE` staging release (or advances a QA-verified `REL_BASELINE_*` pointer when requested)."""
         cur = self.get_active_staging_pointer()
-        if cur and Path(cur["release_path"]).exists():
-            return cur
         head_sha = self._git(["rev-parse", "HEAD"]).stdout.strip() or "WORKING_TREE_BASELINE"
+        if cur and Path(cur["release_path"]).exists():
+            is_base_rel = str(cur.get("active_release_id") or "").startswith("REL_BASELINE_")
+            if not (refresh_if_baseline and is_base_rel and str(cur.get("commit_sha") or "") != head_sha):
+                return cur
         rel_id = f"REL_BASELINE_{head_sha[:8]}"
         rel_dir = self.releases_dir / rel_id
         rel_dir.mkdir(parents=True, exist_ok=True)

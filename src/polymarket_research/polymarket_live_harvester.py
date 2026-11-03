@@ -6210,6 +6210,7 @@ class PolymarketLiveHarvester:
                             "TW1_COUNTING_TRUNCATION_AND_BOX",
                             "FED1_CENTRAL_BANK_LP_BOX",
                             "C1_BINARY_COMPLETE_SET",
+                            "NR0_ZERO_FEE_SLATE_ARB",
                         }
                         or (
                             sleeve_src == "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"
@@ -8315,13 +8316,13 @@ class PolymarketLiveHarvester:
                 uws = getattr(self.executor, "_user_ws_cache", None)
                 _explicit_ttl = _rcfg_sll.get("bond1_maker_ttl_sec")
                 base_ttl = float(_explicit_ttl if _explicit_ttl is not None else 90.0) or 90.0
-                _default_max_keep = 300.0 if (_explicit_ttl is None or base_ttl >= 90.0) else base_ttl
+                _default_max_keep = ((900.0 if _is_mlk1 else 1800.0) if (_explicit_ttl is None or base_ttl >= 90.0) else base_ttl)
                 full_max_keep_s = (
                     float(_rcfg_sll.get("bond1_maker_max_keep_sec", _default_max_keep) or _default_max_keep)
                     if (uws is not None and uws.is_healthy())
                     else base_ttl
                 )
-                if _is_mlk1:
+                if _is_mlk1 and _explicit_ttl is not None and base_ttl < 90.0:
                     full_max_keep_s = min(full_max_keep_s, 90.0)
                 first_post_ts = float(candidate_box.get("_bond1_first_post_ts") or time.time())
                 max_keep_s = (

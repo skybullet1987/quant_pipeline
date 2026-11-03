@@ -236,6 +236,8 @@ def cmd_six_hour_eval(args: argparse.Namespace) -> int:
     )
     qa_ms = round((time.perf_counter() - t0) * 1000.0, 1)
     qa_ok = pt.returncode == 0
+    if qa_ok:
+        baseline_ptr = director.deployer.ensure_baseline_staging_release(refresh_if_baseline=True)
     if not qa_ok:
         director.db.enqueue_task(
             category="ENGINEERING_REPAIR",

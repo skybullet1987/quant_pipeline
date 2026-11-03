@@ -1,12 +1,12 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-03 22:47:42 UTC | Repo: C:/Users/Anton/source/repos/Dominus
+Generated: 2026-11-03 23:02:46 UTC | Repo: C:/Users/Anton/source/repos/Dominus
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,606B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 5,350B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,934B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 37,584B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4546 | 891,629B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
+  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4546 | 891,761B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (L4547-7028 | 456,135B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
   - [src/polymarket_research/polymarket_terminal_recorder.py] (L7029-8004 | 184,670B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (L8005-8172 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
@@ -2238,7 +2238,7 @@ class PolymarketLiveHarvester:
      except Exception:G=None
     B=sum(float(i.get("notional_usd",.0)or.0)for i in getattr(a,"pending_entry_intents",{}).values()if isinstance(i,dict));_as=max(.0,float(G or.0)-B);_ac=max(1.,_a4-_bb)if _a4>.0 else.0;_B=min(float(candidate_box.get("leg_a_expiry_ts")or _a4),float(candidate_box.get("leg_b_expiry_ts")or _a4));_ab=(max(1.,_B-_bb)if(_6=="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"and _B>.0)else _ac)
     if _aA!="DOMINANCE"and _ac>.0:
-     S=_G and(_6 in{"COND1_MACRO_PARTITION_BOX","LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","M3_LADDER_MONO_BOX","N1_NEGRISK_CROSS_BOX","TW1_COUNTING_TRUNCATION_AND_BOX","FED1_CENTRAL_BANK_LP_BOX","C1_BINARY_COMPLETE_SET"}or(_6=="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"and P and _ab<=86400.));_a3,_Z=passes_capital_velocity_hurdle(collat_usd=_as,rem_tte_sec=_ab,box_cost_net=e,box_type=_aA,sleeve_src=_6,fast_recycle_eligible=S)
+     S=_G and(_6 in{"COND1_MACRO_PARTITION_BOX","LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","M3_LADDER_MONO_BOX","N1_NEGRISK_CROSS_BOX","TW1_COUNTING_TRUNCATION_AND_BOX","FED1_CENTRAL_BANK_LP_BOX","C1_BINARY_COMPLETE_SET","NR0_ZERO_FEE_SLATE_ARB"}or(_6=="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"and P and _ab<=86400.));_a3,_Z=passes_capital_velocity_hurdle(collat_usd=_as,rem_tte_sec=_ab,box_cost_net=e,box_type=_aA,sleeve_src=_6,fast_recycle_eligible=S)
      if not _a3:return{"executed":False,"reason":_Z}
     _A=sum(float(p.get("notional_usd",.0)or.0)for p in a.active_positions.values()if not position_is_settlement_receivable(p))+B
     if a._is_v5_unleashed_active():
@@ -2775,8 +2775,8 @@ class PolymarketLiveHarvester:
    if _0 in self.pending_entry_intents:self.pending_entry_intents[_0]["entry_order_id"]=_V;self.pending_entry_intents[_0]["anchor_bid_px"]=_U;self.pending_entry_intents[_0]["notional_usd"]=round(_T*_U,4);self.pending_entry_intents[_0]["velocity_bps_hr"]=round(((1.-_U)*1e4)/max(_y,(exp_ts-time.time())/3600.),2)if exp_ts>time.time()else.0;self.pending_entry_intents[_0]["heartbeat_ts"]=time.time()
    if self.dry_run:y,_d=_T,_U;U={"matched":y,"avg_price":_d,"cash":round(y*_d,4),"fee":.0,"terminal":True}
    else:
-    uws=getattr(self.executor,"_user_ws_cache",None);_a=_6.get("bond1_maker_ttl_sec");_8=float(_a if _a is not None else 90.)or 90.;G=3e2 if(_a is None or _8>=90.)else _8;g=(float(_6.get("bond1_maker_max_keep_sec",G)or G)if(uws is not None and uws.is_healthy())else _8)
-    if _ag:g=min(g,90.)
+    uws=getattr(self.executor,"_user_ws_cache",None);_a=_6.get("bond1_maker_ttl_sec");_8=float(_a if _a is not None else 90.)or 90.;G=((9e2 if _ag else 1800.)if(_a is None or _8>=90.)else _8);g=(float(_6.get("bond1_maker_max_keep_sec",G)or G)if(uws is not None and uws.is_healthy())else _8)
+    if _ag and _a is not None and _8<90.:g=min(g,90.)
     first_post_ts=float(candidate_box.get("_bond1_first_post_ts")or time.time());_G=(max(.05,g-max(.0,time.time()-first_post_ts))if"_bond1_first_post_ts"in candidate_box else g);_F=float(_6.get("bond1_book_poll_sec",4.)or 4.);_aq=time.monotonic();H=_aq+min(_8,_G);q=_aq;n=_aq;d=False;e=False;a=None;f=None;o=False
     try:
      while time.monotonic()<H:

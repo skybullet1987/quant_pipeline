@@ -729,4 +729,120 @@ def test_paa_zero_loss_shadow_benchmark_and_hourly_opt_latency_fallback(tmp_path
     assert hr_sum["latency_p50_ms"] == pytest.approx(110.2)
 
 
+def test_shadow_reward_carry_outbid_repeg_and_zero_lookahead_tape_fill(tmp_path, monkeypatch):
+    """Verifies MKR_REWARD_LOCKED_CARRY re-pegs when outbid without retroactively claiming pre-repeg tape prints, then fills on post-repeg tape prints."""
+    monkeypatch.setattr(a124_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(a124_mod, "STATE_FILE", tmp_path / "a124_rp_state.json")
+    monkeypatch.setattr(a124_mod, "OPPS_FILE", tmp_path / "a124_rp_opps.json")
+    monkeypatch.setattr(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", tmp_path / "mirror_rp_state.json")
+    d = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+
+    now = time.time()
+    oid = "MKR_MKR_REWARD_LOCKED_CARRY_TEST_WELLINGTON"
+    d.pending_maker_orders[oid] = {
+        "order_id": oid,
+        "dedupe_key": "MKR_RW_W_6564320",
+        "sleeve": "MKR_REWARD_LOCKED_CARRY",
+        "asset_or_city": "Wellington_NZWN",
+        "title": "Lowest temperature in Wellington on November 4? [Dead NO 16C]",
+        "side": "NO",
+        "token_id": "tok_rw_no",
+        "resting_bid": 0.989,
+        "best_bid_at_post": 0.988,
+        "best_ask_at_post": 0.999,
+        "l1_bid_usd": 45.0,
+        "queue_ahead_usd": 0.0,
+        "p_model_at_post": 1.0,
+        "maker_edge_at_post": 0.011,
+        "spot_at_post": 0.0,
+        "created_ts": now - 600.0,
+        "created_utc": "2026-11-03T22:00:00+00:00",
+        "close_ts": now + 14400.0,
+        "ttl_override_sec": None,
+        "extra": {"market_id": "6564320", "condition_id": "0xcond_rw", "opp_token_id": "tok_rw_yes"},
+    }
+
+    tape_prints = [
+        {"transactionHash": "0xold", "timestamp": int(now - 120), "asset": "tok_rw_no", "price": "0.992", "size": "40"},
+    ]
+
+    async def _fake_fetch(url, timeout=3.0):
+        if "tok_rw_yes" in url:
+            return {"bids": [{"price": "0.001", "size": "100"}], "asks": [{"price": "0.009", "size": "100"}]}
+        if "tok_rw_no" in url:
+            return {"bids": [{"price": "0.992", "size": "80"}], "asks": [{"price": "0.999", "size": "150"}]}
+        if "/trades?market=0xcond_rw" in url:
+            return tape_prints
+        return None
+
+    d.fetch_json = _fake_fetch
+    # Cycle 1: Outbid at 0.992 -> re-pegs 0.989 -> 0.993 and sets last_repeg_ts = now
+    asyncio.run(d.manage_pending_maker_orders())
+    assert oid in d.pending_maker_orders
+    assert d.pending_maker_orders[oid]["resting_bid"] == pytest.approx(0.993)
+    assert d.pending_maker_orders[oid]["queue_ahead_usd"] == pytest.approx(0.0)
+    repeg_ts = float(d.pending_maker_orders[oid]["last_repeg_ts"])
+    assert repeg_ts >= now
+
+    # Cycle 2: Old print at 0.992 (ts = now - 120 < last_repeg_ts + 2) MUST NOT retroactively fill our new 0.993 bid!
+    d._last_trade_tape_chk_ts.clear()
+    asyncio.run(d.manage_pending_maker_orders())
+    assert oid in d.pending_maker_orders
+    assert len(d.open_positions) == 0
+
+    # Cycle 3: Post-repeg print at 0.993 (ts = int(repeg_ts) + 5) fills cleanly via trade tape!
+    tape_prints.append(
+        {"transactionHash": "0xnew", "timestamp": int(repeg_ts) + 5, "asset": "tok_rw_no", "price": "0.993", "size": "35"}
+    )
+    d._last_trade_tape_chk_ts.clear()
+    asyncio.run(d.manage_pending_maker_orders())
+    assert oid not in d.pending_maker_orders
+    assert len(d.open_positions) == 1
+    pos_rw = next(iter(d.open_positions.values()))
+    assert pos_rw["sleeve"] == "MKR_REWARD_LOCKED_CARRY"
+    assert pos_rw["entry_vwap_t1000"] == pytest.approx(0.993)
+    assert pos_rw["extra"].get("filled_via_trade_tape") is True
+
+
+def test_paa_baseline_staging_refresh_preserves_staged_and_advances_baseline(tmp_path):
+    """Verifies ensure_baseline_staging_release(refresh_if_baseline=True) updates stale REL_BASELINE_* pointers without clobbering active REL_* releases."""
+    import subprocess as _sp
+    from src.paa_os.builder_and_deployer import DeploymentController
+    from src.paa_os.permissions import PermissionGate
+    from src.paa_os.task_db import PAATaskDB
+
+    repo = tmp_path / "repo"
+    (repo / "config").mkdir(parents=True)
+    (repo / "config" / "polymarket_strategy_and_risk.json").write_text("{}", encoding="utf-8")
+    (repo / "config" / "polymarket_risk_config.json").write_text("{}", encoding="utf-8")
+
+    db = PAATaskDB(tmp_path / "paa.sqlite")
+    gate = PermissionGate(approvals_dir=tmp_path / "approvals")
+    dep = DeploymentController(db=db, permission_gate=gate, repo_root=repo, staging_root=tmp_path / "staging")
+
+    sha_state = {"sha": "11111111aaaaaaaabbbbbbbbccccccccdddddddd"}
+    dep._git = lambda args: _sp.CompletedProcess(args, 0, stdout=sha_state["sha"] + "\n", stderr="")
+
+    p1 = dep.ensure_baseline_staging_release()
+    assert p1["active_release_id"] == "REL_BASELINE_11111111"
+
+    sha_state["sha"] = "22222222eeeeeeeeffffffff0000000011111111"
+    # Default refresh_if_baseline=False preserves existing baseline pointer
+    p2 = dep.ensure_baseline_staging_release()
+    assert p2["active_release_id"] == "REL_BASELINE_11111111"
+    # Explicit refresh_if_baseline=True advances stale REL_BASELINE_* to verified HEAD
+    p3 = dep.ensure_baseline_staging_release(refresh_if_baseline=True)
+    assert p3["active_release_id"] == "REL_BASELINE_22222222"
+    assert p3["commit_sha"] == sha_state["sha"]
+
+    # Non-baseline staged release MUST NEVER be clobbered by refresh_if_baseline=True
+    cand_dir = dep.releases_dir / "REL_CAND_999"
+    cand_dir.mkdir(parents=True)
+    dep._set_active_staging_pointer("REL_CAND_999", cand_dir, "99999999")
+    sha_state["sha"] = "33333333aaaaaaaa"
+    p4 = dep.ensure_baseline_staging_release(refresh_if_baseline=True)
+    assert p4["active_release_id"] == "REL_CAND_999"
+
+
+
 

@@ -1238,7 +1238,7 @@ class Alpha124ShadowDaemon:
                     if pid not in self.open_positions and pid not in closed_ids:
                         self.open_positions[pid] = pos_rec
                 for oid, m_rec in ledger_maker.items():
-                    if oid not in self.pending_maker_orders:
+                    if oid not in self.pending_maker_orders or float(m_rec.get("last_repeg_ts") or 0.0) > float(self.pending_maker_orders[oid].get("last_repeg_ts") or 0.0):
                         self.pending_maker_orders[oid] = m_rec
             except Exception as exc:
                 logger.warning(f"Ledger hydrate notice: {exc}")
@@ -2593,9 +2593,7 @@ class Alpha124ShadowDaemon:
             # 2. Evaluate adverse-selection triggers (`F-03` / `M-04`: verify CLOB didn't already sweep us during cancel RTT!)
             adverse_cancel_reason: Optional[str] = None
             p_fair_now = float(m_ord["p_model_at_post"])
-            if is_reward_carry:
-                pass
-            elif sleeve in ("W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK"):
+            if sleeve in ("W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK"):
                 ev_id_str = str(extra.get("event_id") or "")
                 sp_w = self.weather_events.get(ev_id_str)
                 if sp_w is not None:
@@ -2620,8 +2618,12 @@ class Alpha124ShadowDaemon:
                             adverse_cancel_reason = "SOLAR_LOCK_INVALIDATED"
                         elif (p_fair_now - resting_bid) < 0.020:
                             adverse_cancel_reason = "ADVERSE_METAR_OR_EDGE_DECAY"
-            elif sleeve in ("BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"):
-                p_fair_now = float(m_ord.get("p_model_at_post") or 0.998) if sleeve == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" else 1.0
+            elif sleeve in ("BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER") or is_reward_carry:
+                p_fair_now = (
+                    float(m_ord.get("p_model_at_post") or 1.0)
+                    if is_reward_carry
+                    else (float(m_ord.get("p_model_at_post") or 0.998) if sleeve == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" else 1.0)
+                )
                 opp_tok_uma = str(extra.get("opp_token_id") or "")
                 if opp_tok_uma and (now - float(m_ord.get("_last_opp_chk_ts") or 0.0)) >= 12.0:
                     m_ord["_last_opp_chk_ts"] = now
@@ -2631,7 +2633,7 @@ class Alpha124ShadowDaemon:
                         max_opp_cap = (
                             0.008
                             if sleeve == "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"
-                            else (0.030 if sleeve == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" else 0.012)
+                            else (0.030 if (sleeve == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" or is_reward_carry) else 0.012)
                         )
                         if lose_bid_uma > max_opp_cap:
                             adverse_cancel_reason = "UMA_COMPLEMENT_DISPUTE_BID"
@@ -2720,7 +2722,7 @@ class Alpha124ShadowDaemon:
                 if valid_asks and best_ask_now <= resting_bid
                 else 0.0
             )
-            if crossing_shares <= 0.0 and is_locked_maker:
+            if crossing_shares <= 0.0 and (is_locked_maker or is_reward_carry):
                 cond_id_tr = str(extra.get("condition_id") or "")
                 last_tape_ts = float(self._last_trade_tape_chk_ts.get(cond_id_tr) or 0.0)
                 if cond_id_tr and (now - last_tape_ts) >= 12.0:
@@ -2729,7 +2731,7 @@ class Alpha124ShadowDaemon:
                     if isinstance(trades_raw, list) and trades_raw:
                         seen_keys = set(m_ord.get("_seen_trade_keys") or [])
                         opp_tok_tr = str(extra.get("opp_token_id") or "")
-                        min_print_ts = int(float(m_ord["created_ts"])) + 2
+                        min_print_ts = int(float(m_ord.get("last_repeg_ts") or m_ord["created_ts"])) + 2
                         tape_sh = 0.0
                         for tr in trades_raw:
                             ts_tr = int(float(tr.get("timestamp") or 0))
@@ -2754,6 +2756,55 @@ class Alpha124ShadowDaemon:
                             crossing_shares = tape_sh
                             best_ask_now = resting_bid
                             extra["filled_via_trade_tape"] = True
+
+            if (
+                crossing_shares <= 0.0
+                and (is_locked_maker or is_reward_carry)
+                and (now - float(m_ord.get("last_repeg_ts") or m_ord["created_ts"])) >= 15.0
+                and rem_tte >= 180.0
+            ):
+                best_bid_now, l1_bid_now = extract_best_bid(bk.get("bids") or [])
+                if best_bid_now > resting_bid + 1e-6:
+                    if is_reward_carry:
+                        max_rb_rp = 0.994 if p_fair_now >= 0.999 else 0.990
+                        min_edge_rp = 0.006 if p_fair_now >= 0.999 else 0.008
+                        ta_rp = 0.002 if best_ask_now > 0.990 else 0.005
+                    elif sleeve == "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":
+                        max_rb_rp, min_edge_rp, ta_rp = 0.996, 0.004, (0.001 if best_ask_now > 0.96 else 0.01)
+                    elif sleeve == "BOND1_UMA_RESOLUTION_CARRY":
+                        max_rb_rp, min_edge_rp, ta_rp = 0.995, 0.005, (0.001 if best_ask_now > 0.96 else 0.01)
+                    elif sleeve == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":
+                        max_rb_rp, min_edge_rp, ta_rp = 0.993, 0.0045, (0.001 if best_ask_now > 0.96 else 0.01)
+                    else:
+                        max_rb_rp, min_edge_rp, ta_rp = 0.0, 1.0, 0.01
+                    if max_rb_rp > 0.0:
+                        tb_rp = 0.001 if best_bid_now >= 0.96 else 0.01
+                        step_rp = (
+                            round(best_bid_now + tb_rp, 4)
+                            if (best_ask_now - best_bid_now) >= (tb_rp + ta_rp - 1e-9)
+                            else best_bid_now
+                        )
+                        ceil_rp = min(round(best_ask_now - ta_rp, 4), max_rb_rp, round(p_fair_now - min_edge_rp, 4))
+                        tsnap_rp = 0.001 if min(step_rp, ceil_rp) >= 0.96 - 1e-9 else 0.01
+                        new_rb = round(math.floor((min(step_rp, ceil_rp) + 1e-9) / tsnap_rp) * tsnap_rp, 4)
+                        if (
+                            new_rb > resting_bid + 1e-6
+                            and new_rb >= round(best_bid_now - 1e-9, 4)
+                            and new_rb <= max_rb_rp + 1e-9
+                            and (p_fair_now - new_rb) >= min_edge_rp - 1e-9
+                        ):
+                            old_rb = resting_bid
+                            m_ord["resting_bid"] = new_rb
+                            m_ord["l1_bid_usd"] = l1_bid_now
+                            m_ord["queue_ahead_usd"] = 0.0 if new_rb > best_bid_now + 1e-6 else round(min(l1_bid_now * 0.50, 60.0), 2)
+                            m_ord["maker_edge_at_post"] = round(p_fair_now - new_rb, 4)
+                            m_ord["last_repeg_ts"] = now
+                            self._append_ledger({"event": "SHADOW_MAKER_POST", **m_ord})
+                            logger.info(
+                                f"[MAKER_OUTBID_REPEG:{sleeve}] {asset} | {m_ord['title']} ({side_lbl}) "
+                                f"${old_rb:.3f} -> ${new_rb:.3f} (outbid=${best_bid_now:.3f}, ask=${best_ask_now:.3f})"
+                            )
+                            continue
 
             if crossing_shares > 0.0:
                 queue_ahead_usd = float(m_ord.get("queue_ahead_usd") or 0.0)
@@ -3143,7 +3194,7 @@ class Alpha124ShadowDaemon:
                                     b_i.no_token,
                                     1.0,
                                     end_ts,
-                                    {"market_id": b_i.market_id, "condition_id": b_i.condition_id, "resting_bid_override": rw_w["resting_bid"]},
+                                    {"market_id": b_i.market_id, "condition_id": b_i.condition_id, "opp_token_id": b_i.yes_token, "resting_bid_override": rw_w["resting_bid"]},
                                     prefetched_book=bk_n_i,
                                 )
                                 if self.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY") and getattr(b_i, "neg_risk", None) is not None and bk_i is not None:
@@ -11674,7 +11725,7 @@ class Alpha124ShadowDaemon:
                     rw_ev = evaluate_locked_market_reward_carry(1.0, bid_dn, ask_dn, dbr.rewards_min_size, dbr.rewards_max_spread, fr_dbr)
                     if rw_ev.get("eligible"):
                         opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"{sl_c.handle} Locked Carry NO[{dbr.label}] @ ${rw_ev['resting_bid']:.3f}", "ask_vwap": rw_ev["resting_bid"], "p_model": 1.0, "net_edge": rw_ev["carry_edge"], "l1_usd": 50.0, "close_ts": sl_c.window_end_ts})
-                        await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_{dbr.market_id}", sl_c.handle.upper(), f"{sl_c.title} [Reward Carry NO {dbr.label}]", "NO", dbr.no_token, 1.0, sl_c.window_end_ts, {"market_id": dbr.market_id, "condition_id": dbr.condition_id, "resting_bid_override": rw_ev["resting_bid"]}, prefetched_book=bk_dno)
+                        await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_{dbr.market_id}", sl_c.handle.upper(), f"{sl_c.title} [Reward Carry NO {dbr.label}]", "NO", dbr.no_token, 1.0, sl_c.window_end_ts, {"market_id": dbr.market_id, "condition_id": dbr.condition_id, "opp_token_id": dbr.yes_token, "resting_bid_override": rw_ev["resting_bid"]}, prefetched_book=bk_dno)
                         if self.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY") and getattr(dbr, "neg_risk", None) is not None:
                             self.emit_live_single_leg_maker_lock_candidate(
                                 sleeve_source="MKR_REWARD_LOCKED_CARRY",
@@ -11845,7 +11896,7 @@ class Alpha124ShadowDaemon:
                             opp_tok_g = tk_g[1] if side_g == "YES" else tk_g[0]
                             nr_g = mg.get("negRisk") if mg.get("negRisk") is not None else ev_g.get("negRisk")
                             opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"AAA Gas Locked Carry {side_g}[{lbl_g}] @ ${rw_g['resting_bid']:.3f}", "ask_vwap": rw_g["resting_bid"], "p_model": 0.998, "net_edge": rw_g["carry_edge"], "l1_usd": 50.0, "close_ts": end_g})
-                            await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
+                            await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "opp_token_id": opp_tok_g, "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
                             if self.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY") and nr_g is not None and g_bks.get(opp_tok_g) is not None:
                                 self.emit_live_single_leg_maker_lock_candidate(
                                     sleeve_source="MKR_REWARD_LOCKED_CARRY",
