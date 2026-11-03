@@ -294,9 +294,13 @@ class DeploymentController:
     def _materialize_commit_files(self, commit_sha: str, target_dir: Path, files_to_extract: List[str]) -> None:
         target_dir.mkdir(parents=True, exist_ok=True)
         # Always include strategy & autonomy configs plus changed files for self-contained canary verification
-        base_files = set(files_to_extract) | {"config/polymarket_strategy_and_risk.json", "config/polymarket_risk_config.json"}
+        base_files = set(files_to_extract) | {
+            "src/__init__.py",
+            "config/polymarket_strategy_and_risk.json",
+            "config/polymarket_risk_config.json",
+        }
         for rel in sorted(base_files):
-            rel_norm = rel.replace("\\", "/").lstrip("./")
+            rel_norm = rel.replace("\\", "/").removeprefix("./").lstrip("/")
             show = self._git(["show", f"{commit_sha}:{rel_norm}"])
             if show.returncode == 0:
                 dst = target_dir / rel_norm
@@ -347,7 +351,7 @@ class DeploymentController:
 
         # Auto-execute any changed python module that defines a `paa_canary_health_check()` function
         for rel in changed_files:
-            rel_norm = rel.replace("\\", "/").lstrip("./")
+            rel_norm = rel.replace("\\", "/").removeprefix("./").lstrip("/")
             if rel_norm.endswith(".py") and (release_dir / rel_norm).exists():
                 code_txt = (release_dir / rel_norm).read_text(encoding="utf-8", errors="ignore")
                 if "def paa_canary_health_check" in code_txt:
@@ -582,7 +586,7 @@ class DeploymentController:
                     except Exception:
                         open_cnt = 1
                 only_hot_reload_cfg = all(
-                    f.replace("\\", "/").lstrip("./") == "config/polymarket_strategy_and_risk.json"
+                    f.replace("\\", "/").removeprefix("./").lstrip("/") == "config/polymarket_strategy_and_risk.json"
                     for f in changed_files
                 )
                 if open_cnt > 0 and not only_hot_reload_cfg:

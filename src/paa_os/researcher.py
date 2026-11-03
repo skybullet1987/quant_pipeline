@@ -23,6 +23,7 @@ from scripts.weekly_wfo_governance import evaluate_ledger_file
 from src.paa_os.budget import BudgetManager
 from src.paa_os.permissions import PermissionClass, load_autonomy_config
 from src.paa_os.task_db import PAATaskDB, utc_now_iso
+from src.paa_os.zero_trust import EpistemicStatus, EvidenceStage, detect_prompt_injection, sanitize_untrusted_text
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 DATA_PM = PIPELINE_ROOT / "data" / "polymarket"
@@ -68,24 +69,34 @@ class PAAResearcher:
         # 1. Evaluate UMA Proposed Maker Carries (BOND1 across Politics, Sports, Weather, Macro)
         uma_cands = uni.get("ranked_uma_proposed_carries") or []
         if uma_cands:
-            top_uma = uma_cands[0]
+            top_uma = dict(uma_cands[0])
+            raw_q = str(top_uma.get("question") or "")
+            clean_q, inj_hits = sanitize_untrusted_text(raw_q, source_label="gamma_market_question", max_chars=180)
+            if inj_hits:
+                self.db.log_event("researcher", "PROMPT_INJECTION_NEUTRALIZED", {"market_id": top_uma.get("market_id"), "hits": inj_hits})
+            top_uma["sanitized_question"] = clean_q
             edge_bps = float(top_uma.get("net_edge_bps_maker_0pct") or 0.0)
             liq = float(top_uma.get("liquidity_usd") or 0.0)
             # Realistic net EV on $25 capital assuming 2 cycles/day and 65% maker fill rate
             est_ev_day = round(25.0 * (edge_bps / 10000.0) * 2.0 * 0.65, 4)
             passed = edge_bps >= 50.0 and liq >= 100.0
             fid = f"RF_UMA_{top_uma.get('market_id', 'TOP')}"
+            safe_q_short = re.sub(r"\[REDACTED_INJECTION:[^\]]+\]", "[REDACTED]", raw_q) if "re" in globals() else raw_q
+            for pat_name in inj_hits:
+                safe_q_short = f"[SANITIZED:{pat_name}]"
             self.db.record_research_finding(
                 finding_id=fid,
                 category=f"UMA_CARRY:{top_uma.get('category', 'multi')}",
-                hypothesis=f"Post-outcome UMA proposed 0%-fee Maker carry on {top_uma.get('question', '')[:60]} yields {edge_bps:.1f} bps.",
+                hypothesis=f"Post-outcome UMA proposed 0%-fee Maker carry on {safe_q_short[:60]} yields {edge_bps:.1f} bps.",
                 validation_method="Live Gamma + CLOB L1 Bid/Ask + Objective UMA Domain Filter",
                 sample_size=len(uma_cands),
                 expected_net_ev_usd_per_day=est_ev_day if passed else 0.0,
                 metrics=top_uma,
                 succeeded=passed,
                 verdict="PROMOTED_CANDIDATE" if passed else "REJECTED_THIN_EDGE_OR_LIQUIDITY",
-                notes="Authorized under BOND1_UMA_RESOLUTION_CARRY when on-chain OO proposal verified.",
+                notes="Authorized under BOND1_UMA_RESOLUTION_CARRY when on-chain OO proposal verified (never claimed LIVE_VERIFIED without settled live trades).",
+                evidence_stage=EvidenceStage.SHADOW_VALIDATED.value if passed else EvidenceStage.HYPOTHESIS.value,
+                epistemic_status=EpistemicStatus.OBSERVATION.value if passed else EpistemicStatus.HYPOTHESIS.value,
             )
             if passed:
                 accepted_count += 1
@@ -94,7 +105,14 @@ class PAAResearcher:
 
         # 2. Evaluate Intraday <=8h High-Probability Carries (including negative/rejected hypotheses!)
         intra = uni.get("ranked_intraday_high_prob_carries") or []
-        for idx, cand in enumerate(intra[:3]):
+        for idx, cand_raw in enumerate(intra[:3]):
+            cand = dict(cand_raw)
+            raw_iq = str(cand.get("question") or "")
+            clean_iq, inj_i = sanitize_untrusted_text(raw_iq, source_label="gamma_market_question", max_chars=180)
+            if inj_i:
+                self.db.log_event("researcher", "PROMPT_INJECTION_NEUTRALIZED", {"market_id": cand.get("market_id"), "hits": inj_i})
+            cand["sanitized_question"] = clean_iq
+            disp_iq = "[SANITIZED_EXTERNAL_TITLE]" if inj_i else raw_iq[:55]
             bps_hr = float(cand.get("est_bps_per_hour") or 0.0)
             liq = float(cand.get("liquidity_usd") or 0.0)
             v24 = float(cand.get("volume_24h_usd") or 0.0)
@@ -105,14 +123,16 @@ class PAAResearcher:
             self.db.record_research_finding(
                 finding_id=fid,
                 category=f"INTRADAY_CARRY:{cand.get('category', 'general')}",
-                hypothesis=f"Intraday <=8h Maker carry ({cand.get('side')}) on '{cand.get('question', '')[:55]}' @ {bps_hr:.1f} bps/hr.",
+                hypothesis=f"Intraday <=8h Maker carry ({cand.get('side')}) on '{disp_iq}' @ {bps_hr:.1f} bps/hr.",
                 validation_method="Live Gamma Velocity & Turnover Screen (bps/hr >= 20, vol24h >= $1.5k)",
                 sample_size=1,
                 expected_net_ev_usd_per_day=est_ev,
                 metrics=cand,
                 succeeded=viable,
                 verdict="SHADOW_CANDIDATE" if viable else "REJECTED_ADVERSE_SELECTION_LOW_TURNOVER",
-                notes="Stored in research ledger to prevent chasing illiquid unhedged tail carries.",
+                notes="Stored in Tier-C research memory as HYPOTHESIS (never conflated with live verified profit).",
+                evidence_stage=EvidenceStage.HYPOTHESIS.value,
+                epistemic_status=EpistemicStatus.ESTIMATE.value if viable else EpistemicStatus.HYPOTHESIS.value,
             )
             if viable:
                 accepted_count += 1
@@ -121,7 +141,14 @@ class PAAResearcher:
 
         # 3. Evaluate Small-Cap USDC `clobRewards` Liquidity Pools
         rw_pools = uni.get("ranked_clob_usdc_reward_pools") or []
-        for idx, rw in enumerate(rw_pools[:2]):
+        for idx, rw_raw in enumerate(rw_pools[:2]):
+            rw = dict(rw_raw)
+            raw_rq = str(rw.get("question") or "")
+            clean_rq, inj_r = sanitize_untrusted_text(raw_rq, source_label="gamma_market_question", max_chars=180)
+            if inj_r:
+                self.db.log_event("researcher", "PROMPT_INJECTION_NEUTRALIZED", {"market_id": rw.get("market_id"), "hits": inj_r})
+            rw["sanitized_question"] = clean_rq
+            disp_rq = "[SANITIZED_EXTERNAL_TITLE]" if inj_r else raw_rq[:55]
             spread_c = round((float(rw.get("best_ask") or 1.0) - float(rw.get("best_bid") or 0.0)) * 100.0, 2)
             min_cap = float(rw.get("min_capital_est_usd") or 999.0)
             ratio = float(rw.get("daily_pool_to_liq_ratio") or 0.0)
@@ -132,7 +159,7 @@ class PAAResearcher:
             self.db.record_research_finding(
                 finding_id=fid,
                 category=f"CLOB_REWARDS:{rw.get('category', 'general')}",
-                hypothesis=f"Passive USDC clobRewards harvesting on '{rw.get('question', '')[:55]}' (pool=${rw.get('daily_reward_pool_usd')}/d).",
+                hypothesis=f"Passive USDC clobRewards harvesting on '{disp_rq}' (pool=${rw.get('daily_reward_pool_usd')}/d).",
                 validation_method="Small-Bankroll Min-Size & Spread Adverse-Selection Filter",
                 sample_size=len(rw_pools),
                 expected_net_ev_usd_per_day=est_ev_rw,
@@ -140,6 +167,8 @@ class PAAResearcher:
                 succeeded=viable_rw,
                 verdict="SHADOW_REWARD_CANDIDATE" if viable_rw else "REJECTED_SPREAD_OR_MIN_CAPITAL_TRAP",
                 notes="Two-sided unhedged reward quoting rejected when spread > 6c or min_cap > $15.",
+                evidence_stage=EvidenceStage.HYPOTHESIS.value,
+                epistemic_status=EpistemicStatus.HYPOTHESIS.value,
             )
             if viable_rw:
                 accepted_count += 1
@@ -159,6 +188,11 @@ class PAAResearcher:
             verdict = str(rep["verdict"])
             fid = f"RF_WFO_{sl_name}"
             est_daily_ev = round(max(-1.0, float(rep["net_pnl_usd"]) / max(1.0, n_tr / 6.0)), 4) if n_tr > 0 else 0.0
+            ev_stage = (
+                EvidenceStage.SHADOW_VALIDATED.value
+                if verdict == "PROMOTE"
+                else (EvidenceStage.OOS_TESTED.value if n_tr > 0 else EvidenceStage.HYPOTHESIS.value)
+            )
             self.db.record_research_finding(
                 finding_id=fid,
                 category="SHADOW_WFO_CPCV",
@@ -170,6 +204,8 @@ class PAAResearcher:
                 succeeded=(verdict == "PROMOTE"),
                 verdict=verdict,
                 notes=f"Trades={n_tr}, PF={rep['profit_factor']}, CI95=[{rep['bootstrap_ci95_lo_per_trade']}, {rep['bootstrap_ci95_hi_per_trade']}], PBO={rep['pbo_estimate']}",
+                evidence_stage=ev_stage,
+                epistemic_status=EpistemicStatus.OBSERVATION.value if n_tr > 0 else EpistemicStatus.HYPOTHESIS.value,
             )
             if verdict == "PROMOTE":
                 accepted_count += 1

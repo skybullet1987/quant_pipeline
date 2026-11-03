@@ -129,3 +129,20 @@ Your objective is to maximize sustainable, verified net profitability across the
 * **Production Independence**: `polymarket-live-harvester.service` operates independently of AI cycles; AI interruptions or engineering jobs never leave CLOB orders unmanaged or restart the live harvester while `open_positions_count > 0`.
 * **Strict Permission & Credential Isolation**: Engineering workers execute in credential-stripped isolated Git worktrees (`/home/skybullet1987/paa_worktrees/`) without `.env` or wallet signing keys. Increases in capital exposure, weakening risk safeguards, or new live trading authorizations (subject to Polymarket geographic/operator eligibility) are hard-blocked (`EXPLICIT_AUTHORIZATION_REQUIRED`) by `src/paa_os/permissions.py`.
 * **Authoritative Mandate**: Loaded on every cycle from `config/paa_master_mandate.md` and `config/paa_autonomy_config.json`.
+
+---
+
+## 5. PAA — ZERO-TRUST AUTONOMY AND CONTEXT MANAGEMENT POLICY (P0 — MANDATORY INFRASTRUCTURE REQUIREMENT)
+
+**Core Principle**: *Never trust the AI agent's memory, conclusions, or claims of completion without independent verification.*
+
+1. **Stateless Short-Lived Sessions & Bounded Context (`60%` Ceiling)**:
+   * Never rely on a long-running conversation as memory. Run every bounded stage (`Session A: Investigate` -> `Session B: Isolated Worktree Patch` -> `Session C: Independent Review`) as a fresh AI session (`conversation_id=None`) receiving only compact Tier-A policy rules (`config/policies/PAA_*.md`), bounded acceptance criteria, non-stale Tier-B `verified_facts`, and bounded source slices (`<= 60%` context utilization before checkpointing and rotating).
+2. **Three Distinct Memory Tiers**:
+   * **Tier A — Permanent Operating Memory**: `config/policies/{PAA_MISSION,PAA_AUTONOMY_POLICY,PAA_RISK_POLICY,PAA_DEPLOYMENT_POLICY,PAA_VERIFICATION_POLICY}.md` (immutable to AI workers via `PermissionGate`).
+   * **Tier B — Verified Operational Memory**: SQLite `verified_facts` with explicit `source_ref`, `observed_at_utc`, `epistemic_status`, and `ttl_sec` / `expires_at_utc` revalidation rules.
+   * **Tier C — Research & Hypothesis Memory**: SQLite `research_findings` classified across `HYPOTHESIS -> BACKTESTED -> OOS_TESTED -> SHADOW_VALIDATED -> LIVE_VERIFIED` (`LIVE_VERIFIED` requires reconciled real-money live trades).
+3. **Zero-Trust Claims & Five Deterministic Verification Gates (`src/paa_os/zero_trust.py`)**:
+   * Explicitly classify claims as `VERIFIED_FACT`, `OBSERVATION`, `HYPOTHESIS`, `ESTIMATE`, `UNKNOWN`, or `CONTRADICTED`.
+   * Enforce `PENDING -> CLAIMED -> RUNNING -> PENDING_VERIFICATION -> VERIFIED_COMPLETE` (`FAILED` / `BLOCKED` / `REJECTED`): AI workers submit evidence to `PENDING_VERIFICATION`, and **only** the non-AI `DeterministicVerificationController` transitions tasks to `VERIFIED_COMPLETE` after passing the **Evidence**, **Executed Test**, **Independent Review**, **Authorization**, and **Financial/Contradiction** gates (plus `<UNTRUSTED_DATA_ONLY>` prompt-injection sanitization).
+   * **Invariants**: `NO EVIDENCE = NO VERIFIED CLAIM` · `NO VERIFIED RELEASE = NO PRODUCTION PROMOTION` · `NO CONTEXT DEPENDENCY = NO FORGOTTEN WORK`.

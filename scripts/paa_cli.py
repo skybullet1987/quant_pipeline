@@ -369,6 +369,22 @@ def cmd_emergency_stop(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_zero_trust_status(args: argparse.Namespace) -> int:
+    _ensure_systemd_user_env()
+    director = PAADirector()
+    pol_ok, pol_missing = director.context_manager.verify_tier_a_policies_present()
+    out = {
+        "checked_at_utc": utc_now_iso(),
+        "tier_a_policies_intact": pol_ok,
+        "tier_a_missing_policies": pol_missing,
+        "zero_trust_summary": director.db.get_zero_trust_summary(),
+        "verified_facts": director.db.list_verified_facts(include_stale=True, limit=25),
+        "recent_stateless_sessions": director.db.list_session_runs(limit=12),
+    }
+    print(json.dumps(out, indent=2, default=str))
+    return 0
+
+
 def cmd_resume(args: argparse.Namespace) -> int:
     _ensure_systemd_user_env()
     stop_file = PIPELINE_ROOT / "data" / "polymarket" / "paa" / "PAA_MASTER_STOP"
@@ -424,6 +440,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_st = sub.add_parser("status", help="Generate and print live PAA dashboard JSON")
     p_st.set_defaults(func=cmd_status)
+
+    p_zt = sub.add_parser("zero-trust-status", help="Inspect Tier-A/B/C Zero-Trust memory, TTLs & stateless sessions")
+    p_zt.set_defaults(func=cmd_zero_trust_status)
 
     p_enq = sub.add_parser("enqueue", help="Enqueue a durable task into paa_tasks.db")
     p_enq.add_argument("--category", default="RESEARCH_DISCOVERY")

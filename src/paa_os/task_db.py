@@ -41,16 +41,24 @@ DEFAULT_DB_PATH = DEFAULT_PAA_DIR / "paa_tasks.db"
 ACTIVE_TASK_STATES = (
     "PENDING",
     "READY",
+    "CLAIMED",
     "RUNNING",
+    "PENDING_VERIFICATION",
     "CHECKPOINTED",
     "BLOCKED_DEPENDENCY",
     "VALIDATING",
 )
 TERMINAL_TASK_STATES = (
+    "VERIFIED_COMPLETE",
     "COMPLETED",
+    "FAILED",
     "FAILED_PERMANENT",
+    "BLOCKED",
+    "BLOCKED_AUTHORIZATION",
+    "REJECTED",
     "CANCELLED",
 )
+VERIFICATION_CONTROLLER_SEAL = "PAA_DETERMINISTIC_VERIFICATION_CONTROLLER_V2"
 PRIORITY_MAP = {
     "P0": 100,
     "P1": 80,
@@ -323,8 +331,70 @@ class PAATaskDB:
                     cycle_count INTEGER NOT NULL DEFAULT 0,
                     details_json TEXT NOT NULL DEFAULT '{}'
                 );
+
+                CREATE TABLE IF NOT EXISTS verified_facts (
+                    fact_key TEXT PRIMARY KEY,
+                    category TEXT NOT NULL,
+                    value_json TEXT NOT NULL,
+                    epistemic_status TEXT NOT NULL DEFAULT 'VERIFIED_FACT',
+                    source_type TEXT NOT NULL,
+                    source_ref TEXT NOT NULL,
+                    observed_at_utc TEXT NOT NULL,
+                    verified_by TEXT NOT NULL,
+                    ttl_sec REAL NOT NULL DEFAULT 300.0,
+                    expires_at_utc TEXT NOT NULL,
+                    revalidation_rule TEXT NOT NULL DEFAULT 'REQUERY_AUTHORITATIVE_SOURCE',
+                    contradicted_reason TEXT NOT NULL DEFAULT ''
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_verified_facts_cat
+                    ON verified_facts(category, epistemic_status);
+
+                CREATE TABLE IF NOT EXISTS session_runs (
+                    session_id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    stage_role TEXT NOT NULL,
+                    conversation_id TEXT,
+                    fresh_session INTEGER NOT NULL DEFAULT 1,
+                    model_name TEXT NOT NULL DEFAULT '',
+                    prompt_chars INTEGER NOT NULL DEFAULT 0,
+                    est_prompt_tokens INTEGER NOT NULL DEFAULT 0,
+                    actual_input_tokens INTEGER NOT NULL DEFAULT 0,
+                    output_tokens INTEGER NOT NULL DEFAULT 0,
+                    context_budget_tokens INTEGER NOT NULL DEFAULT 16000,
+                    context_utilization_pct REAL NOT NULL DEFAULT 0.0,
+                    checkpoint_triggered INTEGER NOT NULL DEFAULT 0,
+                    status TEXT NOT NULL,
+                    created_at_utc TEXT NOT NULL,
+                    details_json TEXT NOT NULL DEFAULT '{}'
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_session_runs_task
+                    ON session_runs(task_id, created_at_utc DESC);
                 """
             )
+            # Safe idempotent schema migrations for existing SQLite databases
+            existing_task_cols = {
+                r["name"] for r in conn.execute("PRAGMA table_info(paa_tasks)").fetchall()
+            }
+            for col_name, col_ddl in (
+                ("worker_submission_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("verification_receipt_json", "TEXT NOT NULL DEFAULT '{}'"),
+                ("epistemic_status", "TEXT NOT NULL DEFAULT 'UNKNOWN'"),
+                ("session_count", "INTEGER NOT NULL DEFAULT 0"),
+            ):
+                if col_name not in existing_task_cols:
+                    conn.execute(f"ALTER TABLE paa_tasks ADD COLUMN {col_name} {col_ddl}")
+
+            existing_rf_cols = {
+                r["name"] for r in conn.execute("PRAGMA table_info(research_findings)").fetchall()
+            }
+            for col_name, col_ddl in (
+                ("evidence_stage", "TEXT NOT NULL DEFAULT 'HYPOTHESIS'"),
+                ("epistemic_status", "TEXT NOT NULL DEFAULT 'HYPOTHESIS'"),
+            ):
+                if col_name not in existing_rf_cols:
+                    conn.execute(f"ALTER TABLE research_findings ADD COLUMN {col_name} {col_ddl}")
 
     def _row_to_task(self, row: sqlite3.Row) -> Dict[str, Any]:
         d = dict(row)
@@ -335,6 +405,8 @@ class PAATaskDB:
             ("last_checkpoint_json", "last_checkpoint"),
             ("validation_requirements_json", "validation_requirements"),
             ("completion_evidence_json", "completion_evidence"),
+            ("worker_submission_json", "worker_submission"),
+            ("verification_receipt_json", "verification_receipt"),
             ("payload_json", "payload"),
         ):
             raw = d.get(jkey)
@@ -487,6 +559,7 @@ class PAATaskDB:
         next_action: str = "EXECUTE_INITIAL_STEP",
         payload: Optional[Dict[str, Any]] = None,
         max_retries: int = 3,
+        initial_state_override: Optional[str] = None,
     ) -> Tuple[Dict[str, Any], bool]:
         """
         Inserts a durable task or deduplicates against an existing active task with the same `dedupe_key`.
@@ -529,12 +602,12 @@ class PAATaskDB:
                     existing = conn.execute("SELECT * FROM paa_tasks WHERE task_id = ?", (existing["task_id"],)).fetchone()
                 return self._row_to_task(existing), False
 
-            # Check if dependencies are already completed
-            initial_state = "READY"
+            # Check if dependencies are already completed / verified
+            initial_state = initial_state_override if initial_state_override in ("PENDING", "READY") else "READY"
             if deps:
                 dep_ph = ",".join("?" for _ in deps)
                 done_cnt = conn.execute(
-                    f"SELECT COUNT(*) AS c FROM paa_tasks WHERE task_id IN ({dep_ph}) AND execution_state = 'COMPLETED'",
+                    f"SELECT COUNT(*) AS c FROM paa_tasks WHERE task_id IN ({dep_ph}) AND execution_state IN ('COMPLETED', 'VERIFIED_COMPLETE')",
                     tuple(deps),
                 ).fetchone()["c"]
                 if int(done_cnt) < len(set(deps)):
@@ -696,7 +769,19 @@ class PAATaskDB:
                     unblocked.append(tid)
                     continue
                 missing_or_broken = [
-                    d for d in deps if state_map.get(d) in ("FAILED_PERMANENT", "ESCALATED", "CANCELLED", "BLOCKED_AUTHORIZATION", None)
+                    d
+                    for d in deps
+                    if state_map.get(d)
+                    in (
+                        "FAILED",
+                        "FAILED_PERMANENT",
+                        "REJECTED",
+                        "BLOCKED",
+                        "ESCALATED",
+                        "CANCELLED",
+                        "BLOCKED_AUTHORIZATION",
+                        None,
+                    )
                 ]
                 if missing_or_broken:
                     conn.execute(
@@ -711,7 +796,7 @@ class PAATaskDB:
                         (f"UPSTREAM_DEPENDENCY_BLOCKED:{missing_or_broken}", now_s, tid),
                     )
                     upstream_failed.append(tid)
-                elif all(state_map.get(d) == "COMPLETED" for d in deps):
+                elif all(state_map.get(d) in ("COMPLETED", "VERIFIED_COMPLETE") for d in deps):
                     conn.execute(
                         "UPDATE paa_tasks SET execution_state = 'READY', updated_at_utc = ? WHERE task_id = ?",
                         (now_s, tid),
@@ -946,7 +1031,12 @@ class PAATaskDB:
         task_id: str,
         completion_evidence: Dict[str, Any],
         next_action: str = "NONE_TASK_COMPLETE",
+        caller_is_ai_worker: bool = False,
     ) -> None:
+        if caller_is_ai_worker:
+            raise PermissionError(
+                "ZERO_TRUST_VIOLATION: AI worker cannot mark a task COMPLETED or VERIFIED_COMPLETE; use submit_for_verification()."
+            )
         now_s = utc_now_iso()
         with self._connect(immediate=True) as conn:
             conn.execute(
@@ -954,6 +1044,7 @@ class PAATaskDB:
                 UPDATE paa_tasks
                 SET execution_state = 'COMPLETED',
                     completion_evidence_json = ?,
+                    epistemic_status = 'VERIFIED_FACT',
                     next_action = ?,
                     worker_pid = NULL,
                     lease_expires_utc = NULL,
@@ -968,6 +1059,185 @@ class PAATaskDB:
                 "INSERT INTO task_events(timestamp_utc, task_id, component, event_type, details_json) VALUES (?, ?, ?, ?, ?)",
                 (now_s, task_id, "worker", "TASK_COMPLETED", json.dumps(completion_evidence, default=str)),
             )
+
+    def claim_task_transaction(
+        self,
+        task_id: str,
+        worker_pid: Optional[int] = None,
+        lease_ttl_sec: float = 480.0,
+    ) -> Optional[Dict[str, Any]]:
+        """Explicit Zero-Trust transition `PENDING`/`READY`/`CHECKPOINTED` -> `CLAIMED`."""
+        now = utc_now()
+        now_s = now.isoformat()
+        exp_s = (now + timedelta(seconds=max(0.05, float(lease_ttl_sec)))).isoformat()
+        wpid = int(worker_pid if worker_pid is not None else os.getpid())
+        with self._connect(immediate=True) as conn:
+            cur = conn.execute(
+                """
+                UPDATE paa_tasks
+                SET execution_state = 'CLAIMED',
+                    worker_pid = ?,
+                    worker_host = ?,
+                    lease_expires_utc = ?,
+                    last_heartbeat_utc = ?,
+                    updated_at_utc = ?
+                WHERE task_id = ? AND execution_state IN ('PENDING', 'READY', 'CHECKPOINTED')
+                """,
+                (wpid, self.hostname, exp_s, now_s, now_s, task_id),
+            )
+            if cur.rowcount == 0:
+                return None
+            conn.execute(
+                "INSERT INTO task_events(timestamp_utc, task_id, component, event_type, details_json) VALUES (?, ?, ?, ?, ?)",
+                (now_s, task_id, "zero_trust", "STATE_CLAIMED", json.dumps({"worker_pid": wpid})),
+            )
+            row = conn.execute("SELECT * FROM paa_tasks WHERE task_id = ?", (task_id,)).fetchone()
+            return self._row_to_task(row) if row else None
+
+    def start_claimed_task(self, task_id: str, lease_ttl_sec: float = 480.0) -> Optional[Dict[str, Any]]:
+        """Explicit Zero-Trust transition `CLAIMED` -> `RUNNING`."""
+        now = utc_now()
+        now_s = now.isoformat()
+        exp_s = (now + timedelta(seconds=max(0.05, float(lease_ttl_sec)))).isoformat()
+        with self._connect(immediate=True) as conn:
+            cur = conn.execute(
+                """
+                UPDATE paa_tasks
+                SET execution_state = 'RUNNING',
+                    lease_expires_utc = ?,
+                    last_heartbeat_utc = ?,
+                    updated_at_utc = ?
+                WHERE task_id = ? AND execution_state IN ('CLAIMED', 'READY', 'PENDING', 'CHECKPOINTED')
+                """,
+                (exp_s, now_s, now_s, task_id),
+            )
+            if cur.rowcount == 0:
+                return None
+            conn.execute(
+                "INSERT INTO task_events(timestamp_utc, task_id, component, event_type, details_json) VALUES (?, ?, ?, ?, ?)",
+                (now_s, task_id, "zero_trust", "STATE_RUNNING", json.dumps({"lease_expires_utc": exp_s})),
+            )
+            row = conn.execute("SELECT * FROM paa_tasks WHERE task_id = ?", (task_id,)).fetchone()
+            return self._row_to_task(row) if row else None
+
+    def submit_for_verification(
+        self,
+        task_id: str,
+        worker_claims: Dict[str, Any],
+        evidence: Optional[Dict[str, Any]] = None,
+        epistemic_status: str = "OBSERVATION",
+    ) -> Dict[str, Any]:
+        """
+        Zero-Trust worker submission boundary:
+        An AI worker may ONLY submit claims/evidence and request verification (`PENDING_VERIFICATION`).
+        It CANNOT set `VERIFIED_COMPLETE`.
+        """
+        now_s = utc_now_iso()
+        submission = {
+            "submitted_at_utc": now_s,
+            "worker_claims": worker_claims,
+            "proposed_evidence": evidence or {},
+            "worker_epistemic_status": epistemic_status,
+        }
+        with self._connect(immediate=True) as conn:
+            conn.execute(
+                """
+                UPDATE paa_tasks
+                SET execution_state = 'PENDING_VERIFICATION',
+                    worker_submission_json = ?,
+                    epistemic_status = ?,
+                    worker_pid = NULL,
+                    lease_expires_utc = NULL,
+                    next_action = 'AWAITING_DETERMINISTIC_VERIFICATION_CONTROLLER',
+                    updated_at_utc = ?
+                WHERE task_id = ?
+                """,
+                (json.dumps(submission, default=str), epistemic_status, now_s, task_id),
+            )
+            conn.execute(
+                "INSERT INTO task_events(timestamp_utc, task_id, component, event_type, details_json) VALUES (?, ?, ?, ?, ?)",
+                (now_s, task_id, "ai_worker", "SUBMITTED_FOR_VERIFICATION", json.dumps(submission, default=str)),
+            )
+            row = conn.execute("SELECT * FROM paa_tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                raise KeyError(f"Task {task_id} not found")
+            return self._row_to_task(row)
+
+    def record_verification_verdict(
+        self,
+        task_id: str,
+        *,
+        passed: bool,
+        verifier_receipt: Dict[str, Any],
+        controller_seal: str,
+        terminal_state: Optional[str] = None,
+        epistemic_status: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Authoritative non-AI verification verdict gate:
+        ONLY `DeterministicVerificationController` (holding `VERIFICATION_CONTROLLER_SEAL`) may transition
+        a task to `VERIFIED_COMPLETE` (or terminal `REJECTED` / `BLOCKED` / `FAILED`).
+        """
+        if controller_seal != VERIFICATION_CONTROLLER_SEAL:
+            raise PermissionError(
+                "ZERO_TRUST_VIOLATION: Only DeterministicVerificationController may finalize task verification!"
+            )
+        now_s = utc_now_iso()
+        if passed:
+            t_state = "VERIFIED_COMPLETE"
+            epi = epistemic_status or "VERIFIED_FACT"
+            nxt = "NONE_VERIFIED_COMPLETE"
+            err = ""
+            comp_ts: Optional[str] = now_s
+        else:
+            t_state = terminal_state if terminal_state in ("REJECTED", "BLOCKED", "FAILED", "BLOCKED_AUTHORIZATION") else "REJECTED"
+            epi = epistemic_status or ("CONTRADICTED" if t_state == "REJECTED" else "UNKNOWN")
+            nxt = f"REMEDIATION_OR_REVIEW_{t_state}"
+            err = str(verifier_receipt.get("summary_reason") or "VERIFICATION_GATES_FAILED")[:2000]
+            comp_ts = None
+
+        with self._connect(immediate=True) as conn:
+            conn.execute(
+                """
+                UPDATE paa_tasks
+                SET execution_state = ?,
+                    verification_receipt_json = ?,
+                    completion_evidence_json = ?,
+                    epistemic_status = ?,
+                    worker_pid = NULL,
+                    lease_expires_utc = NULL,
+                    last_error = ?,
+                    next_action = ?,
+                    updated_at_utc = ?,
+                    completed_at_utc = COALESCE(?, completed_at_utc)
+                WHERE task_id = ?
+                """,
+                (
+                    t_state,
+                    json.dumps(verifier_receipt, default=str),
+                    json.dumps(verifier_receipt, default=str),
+                    epi,
+                    err,
+                    nxt,
+                    now_s,
+                    comp_ts,
+                    task_id,
+                ),
+            )
+            conn.execute(
+                "INSERT INTO task_events(timestamp_utc, task_id, component, event_type, details_json) VALUES (?, ?, ?, ?, ?)",
+                (
+                    now_s,
+                    task_id,
+                    "verification_controller",
+                    f"VERIFICATION_{t_state}",
+                    json.dumps({"epistemic_status": epi, **verifier_receipt}, default=str),
+                ),
+            )
+            row = conn.execute("SELECT * FROM paa_tasks WHERE task_id = ?", (task_id,)).fetchone()
+            if not row:
+                raise KeyError(f"Task {task_id} not found")
+            return self._row_to_task(row)
 
     def block_task_authorization(
         self,
@@ -1054,15 +1324,20 @@ class PAATaskDB:
         succeeded: bool,
         verdict: str,
         notes: str = "",
+        evidence_stage: str = "HYPOTHESIS",
+        epistemic_status: str = "HYPOTHESIS",
     ) -> None:
         now_s = utc_now_iso()
+        valid_stages = ("HYPOTHESIS", "BACKTESTED", "OOS_TESTED", "SHADOW_VALIDATED", "LIVE_VERIFIED")
+        st_norm = evidence_stage.upper() if evidence_stage.upper() in valid_stages else "HYPOTHESIS"
         with self._connect(immediate=True) as conn:
             conn.execute(
                 """
                 INSERT INTO research_findings(
                     finding_id, created_at_utc, category, hypothesis, validation_method,
-                    sample_size, expected_net_ev_usd_per_day, metrics_json, succeeded, verdict, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sample_size, expected_net_ev_usd_per_day, metrics_json, succeeded, verdict, notes,
+                    evidence_stage, epistemic_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(finding_id) DO UPDATE SET
                     created_at_utc = excluded.created_at_utc,
                     sample_size = excluded.sample_size,
@@ -1070,7 +1345,9 @@ class PAATaskDB:
                     metrics_json = excluded.metrics_json,
                     succeeded = excluded.succeeded,
                     verdict = excluded.verdict,
-                    notes = excluded.notes
+                    notes = excluded.notes,
+                    evidence_stage = excluded.evidence_stage,
+                    epistemic_status = excluded.epistemic_status
                 """,
                 (
                     finding_id,
@@ -1084,6 +1361,8 @@ class PAATaskDB:
                     1 if succeeded else 0,
                     verdict,
                     notes,
+                    st_norm,
+                    epistemic_status,
                 ),
             )
 
@@ -1221,17 +1500,306 @@ class PAATaskDB:
             ).fetchall()
             counts = {r["execution_state"]: int(r["cnt"]) for r in rows}
             active = conn.execute(
-                "SELECT task_id, category, priority_label, title, worker_pid, updated_at_utc, next_action FROM paa_tasks WHERE execution_state = 'RUNNING' ORDER BY updated_at_utc DESC"
+                "SELECT task_id, category, priority_label, title, worker_pid, execution_state, session_count, epistemic_status, updated_at_utc, next_action FROM paa_tasks WHERE execution_state IN ('RUNNING', 'CLAIMED', 'PENDING_VERIFICATION') ORDER BY updated_at_utc DESC"
             ).fetchall()
             pending = conn.execute(
-                "SELECT task_id, category, priority_label, ev_priority_score, title, execution_state, next_action FROM paa_tasks WHERE execution_state IN ('CHECKPOINTED', 'READY', 'PENDING', 'BLOCKED_DEPENDENCY') ORDER BY priority_rank DESC, ev_priority_score DESC LIMIT 15"
+                "SELECT task_id, category, priority_label, ev_priority_score, title, execution_state, session_count, epistemic_status, next_action FROM paa_tasks WHERE execution_state IN ('CHECKPOINTED', 'READY', 'PENDING', 'BLOCKED_DEPENDENCY') ORDER BY priority_rank DESC, ev_priority_score DESC LIMIT 15"
             ).fetchall()
             blocked_auth = conn.execute(
-                "SELECT task_id, category, priority_label, title, last_error, updated_at_utc FROM paa_tasks WHERE execution_state IN ('BLOCKED_AUTHORIZATION', 'ESCALATED') ORDER BY updated_at_utc DESC LIMIT 15"
+                "SELECT task_id, category, priority_label, title, execution_state, epistemic_status, last_error, updated_at_utc FROM paa_tasks WHERE execution_state IN ('BLOCKED_AUTHORIZATION', 'BLOCKED', 'REJECTED', 'ESCALATED', 'FAILED') ORDER BY updated_at_utc DESC LIMIT 15"
             ).fetchall()
         return {
             "counts_by_state": counts,
             "active_tasks": [dict(x) for x in active],
             "pending_tasks": [dict(x) for x in pending],
             "blocked_or_escalated_tasks": [dict(x) for x in blocked_auth],
+        }
+
+    # ------------------------------------------------------------------
+    # Tier-B Verified Operational Memory & Stateless Session Telemetry
+    # ------------------------------------------------------------------
+    def upsert_verified_fact(
+        self,
+        *,
+        fact_key: str,
+        category: str,
+        value: Any,
+        epistemic_status: str = "VERIFIED_FACT",
+        source_type: str,
+        source_ref: str,
+        verified_by: str,
+        ttl_sec: float = 300.0,
+        revalidation_rule: str = "REQUERY_AUTHORITATIVE_SOURCE",
+        observed_at_utc: Optional[str] = None,
+        contradicted_reason: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Records a Tier-B operational fact with explicit source, timestamp, epistemic class, and TTL expiry.
+        Point-in-time measurements (e.g. CLOB HTTP latency) automatically degrade to
+        `STALE_REVALIDATION_REQUIRED` once `expires_at_utc` passes.
+        """
+        obs_dt = parse_iso(observed_at_utc) if observed_at_utc else utc_now()
+        if obs_dt is None:
+            obs_dt = utc_now()
+        obs_s = obs_dt.isoformat()
+        exp_s = (obs_dt + timedelta(seconds=max(1.0, float(ttl_sec)))).isoformat()
+        with self._connect(immediate=True) as conn:
+            conn.execute(
+                """
+                INSERT INTO verified_facts(
+                    fact_key, category, value_json, epistemic_status, source_type, source_ref,
+                    observed_at_utc, verified_by, ttl_sec, expires_at_utc, revalidation_rule, contradicted_reason
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(fact_key) DO UPDATE SET
+                    category = excluded.category,
+                    value_json = excluded.value_json,
+                    epistemic_status = excluded.epistemic_status,
+                    source_type = excluded.source_type,
+                    source_ref = excluded.source_ref,
+                    observed_at_utc = excluded.observed_at_utc,
+                    verified_by = excluded.verified_by,
+                    ttl_sec = excluded.ttl_sec,
+                    expires_at_utc = excluded.expires_at_utc,
+                    revalidation_rule = excluded.revalidation_rule,
+                    contradicted_reason = excluded.contradicted_reason
+                """,
+                (
+                    fact_key,
+                    category,
+                    json.dumps(value, default=str),
+                    epistemic_status,
+                    source_type,
+                    source_ref,
+                    obs_s,
+                    verified_by,
+                    float(ttl_sec),
+                    exp_s,
+                    revalidation_rule,
+                    contradicted_reason,
+                ),
+            )
+        return self.get_verified_fact(fact_key, allow_stale=True) or {}
+
+    def _hydrate_fact_row(self, row: sqlite3.Row, now: Optional[datetime] = None) -> Dict[str, Any]:
+        now_dt = now or utc_now()
+        d = dict(row)
+        try:
+            d["value"] = json.loads(d.get("value_json") or "null")
+        except Exception:
+            d["value"] = d.get("value_json")
+        obs_dt = parse_iso(d.get("observed_at_utc"))
+        exp_dt = parse_iso(d.get("expires_at_utc"))
+        d["age_sec"] = round((now_dt - obs_dt).total_seconds(), 2) if obs_dt else None
+        rem = round((exp_dt - now_dt).total_seconds(), 2) if exp_dt else -1.0
+        d["ttl_remaining_sec"] = rem
+        is_stale = rem <= 0.0
+        d["is_stale"] = is_stale
+        if d.get("epistemic_status") == "CONTRADICTED":
+            d["effective_status"] = "CONTRADICTED"
+        elif is_stale:
+            d["effective_status"] = "STALE_REVALIDATION_REQUIRED"
+        else:
+            d["effective_status"] = str(d.get("epistemic_status") or "UNKNOWN")
+        return d
+
+    def get_verified_fact(self, fact_key: str, allow_stale: bool = False) -> Optional[Dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute("SELECT * FROM verified_facts WHERE fact_key = ?", (fact_key,)).fetchone()
+        if not row:
+            return None
+        hyd = self._hydrate_fact_row(row)
+        if not allow_stale and (hyd["is_stale"] or hyd["effective_status"] == "CONTRADICTED"):
+            return None
+        return hyd
+
+    def list_verified_facts(
+        self,
+        *,
+        include_stale: bool = True,
+        category: Optional[str] = None,
+        limit: int = 60,
+    ) -> List[Dict[str, Any]]:
+        now_dt = utc_now()
+        with self._connect() as conn:
+            if category:
+                rows = conn.execute(
+                    "SELECT * FROM verified_facts WHERE category = ? ORDER BY observed_at_utc DESC LIMIT ?",
+                    (category, int(limit)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM verified_facts ORDER BY observed_at_utc DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            h = self._hydrate_fact_row(r, now=now_dt)
+            if not include_stale and h["is_stale"]:
+                continue
+            out.append(h)
+        return out
+
+    def mark_fact_contradicted(
+        self,
+        fact_key: str,
+        *,
+        reason: str,
+        claimed_value: Any = None,
+        authoritative_source_ref: str = "",
+        category: str = "CONTRADICTION_AUDIT",
+    ) -> Dict[str, Any]:
+        rec = self.upsert_verified_fact(
+            fact_key=fact_key,
+            category=category,
+            value={"claimed": claimed_value, "contradicted_reason": reason},
+            epistemic_status="CONTRADICTED",
+            source_type="CONTRADICTION_DETECTOR",
+            source_ref=authoritative_source_ref or "DeterministicVerificationController",
+            verified_by="DeterministicVerificationController",
+            ttl_sec=86400.0,
+            revalidation_rule="DO_NOT_TRUST_CONTRADICTED_CLAIM",
+            contradicted_reason=reason,
+        )
+        self.log_event(
+            "verification_controller",
+            "CLAIM_CONTRADICTED",
+            {"fact_key": fact_key, "reason": reason, "claimed_value": claimed_value, "source_ref": authoritative_source_ref},
+        )
+        return rec
+
+    def record_session_run(
+        self,
+        *,
+        task_id: str,
+        stage_role: str,
+        conversation_id: Optional[str],
+        fresh_session: bool,
+        model_name: str,
+        prompt_chars: int,
+        est_prompt_tokens: int,
+        actual_input_tokens: int,
+        output_tokens: int,
+        context_budget_tokens: int,
+        context_utilization_pct: float,
+        checkpoint_triggered: bool,
+        status: str,
+        details: Optional[Dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        sid = session_id or f"SES_{int(time.time()*1000)}_{uuid.uuid4().hex[:6].upper()}"
+        now_s = utc_now_iso()
+        with self._connect(immediate=True) as conn:
+            conn.execute(
+                """
+                INSERT INTO session_runs(
+                    session_id, task_id, stage_role, conversation_id, fresh_session, model_name,
+                    prompt_chars, est_prompt_tokens, actual_input_tokens, output_tokens,
+                    context_budget_tokens, context_utilization_pct, checkpoint_triggered,
+                    status, created_at_utc, details_json
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    sid,
+                    task_id,
+                    stage_role,
+                    conversation_id,
+                    1 if fresh_session else 0,
+                    model_name,
+                    int(prompt_chars),
+                    int(est_prompt_tokens),
+                    int(actual_input_tokens),
+                    int(output_tokens),
+                    int(context_budget_tokens),
+                    round(float(context_utilization_pct), 2),
+                    1 if checkpoint_triggered else 0,
+                    status,
+                    now_s,
+                    json.dumps(details or {}, default=str),
+                ),
+            )
+            conn.execute(
+                "UPDATE paa_tasks SET session_count = COALESCE(session_count, 0) + 1, updated_at_utc = ? WHERE task_id = ?",
+                (now_s, task_id),
+            )
+        return {
+            "session_id": sid,
+            "task_id": task_id,
+            "stage_role": stage_role,
+            "conversation_id": conversation_id,
+            "fresh_session": fresh_session,
+            "context_utilization_pct": round(float(context_utilization_pct), 2),
+            "checkpoint_triggered": checkpoint_triggered,
+            "status": status,
+            "created_at_utc": now_s,
+        }
+
+    def list_session_runs(self, task_id: Optional[str] = None, limit: int = 30) -> List[Dict[str, Any]]:
+        with self._connect() as conn:
+            if task_id:
+                rows = conn.execute(
+                    "SELECT * FROM session_runs WHERE task_id = ? ORDER BY created_at_utc ASC LIMIT ?",
+                    (task_id, int(limit)),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM session_runs ORDER BY created_at_utc DESC LIMIT ?",
+                    (int(limit),),
+                ).fetchall()
+        out = []
+        for r in rows:
+            d = dict(r)
+            d["fresh_session"] = bool(d.get("fresh_session"))
+            d["checkpoint_triggered"] = bool(d.get("checkpoint_triggered"))
+            try:
+                d["details"] = json.loads(d.get("details_json") or "{}")
+            except Exception:
+                d["details"] = {}
+            out.append(d)
+        return out
+
+    def get_zero_trust_summary(self) -> Dict[str, Any]:
+        facts = self.list_verified_facts(include_stale=True, limit=200)
+        fresh_cnt = sum(1 for f in facts if f["effective_status"] in ("VERIFIED_FACT", "OBSERVATION") and not f["is_stale"])
+        stale_cnt = sum(1 for f in facts if f["effective_status"] == "STALE_REVALIDATION_REQUIRED")
+        contra_cnt = sum(1 for f in facts if f["effective_status"] == "CONTRADICTED")
+
+        with self._connect() as conn:
+            sr_row = conn.execute(
+                """
+                SELECT COUNT(*) AS total_sessions,
+                       SUM(CASE WHEN fresh_session = 1 THEN 1 ELSE 0 END) AS fresh_sessions,
+                       MAX(context_utilization_pct) AS max_ctx_pct,
+                       AVG(context_utilization_pct) AS avg_ctx_pct,
+                       SUM(CASE WHEN checkpoint_triggered = 1 THEN 1 ELSE 0 END) AS ctx_rotations
+                FROM session_runs
+                """
+            ).fetchone()
+            rf_rows = conn.execute(
+                "SELECT COALESCE(evidence_stage, 'HYPOTHESIS') AS stg, COUNT(*) AS cnt FROM research_findings GROUP BY COALESCE(evidence_stage, 'HYPOTHESIS')"
+            ).fetchall()
+            tk_rows = conn.execute(
+                "SELECT execution_state, COUNT(*) AS cnt FROM paa_tasks GROUP BY execution_state"
+            ).fetchall()
+
+        total_s = int((sr_row["total_sessions"] if sr_row else 0) or 0)
+        fresh_s = int((sr_row["fresh_sessions"] if sr_row else 0) or 0)
+        ladder = {r["stg"]: int(r["cnt"]) for r in rf_rows}
+        t_counts = {r["execution_state"]: int(r["cnt"]) for r in tk_rows}
+        return {
+            "verified_facts_fresh": fresh_cnt,
+            "verified_facts_stale": stale_cnt,
+            "verified_facts_contradicted": contra_cnt,
+            "stateless_sessions_total": total_s,
+            "fresh_session_ratio_pct": round(100.0 * fresh_s / max(1, total_s), 1) if total_s > 0 else 100.0,
+            "max_context_utilization_pct": round(float((sr_row["max_ctx_pct"] if sr_row else 0.0) or 0.0), 2),
+            "avg_context_utilization_pct": round(float((sr_row["avg_ctx_pct"] if sr_row else 0.0) or 0.0), 2),
+            "context_checkpoint_rotations": int((sr_row["ctx_rotations"] if sr_row else 0) or 0),
+            "research_evidence_ladder": {
+                "HYPOTHESIS": ladder.get("HYPOTHESIS", 0),
+                "BACKTESTED": ladder.get("BACKTESTED", 0),
+                "OOS_TESTED": ladder.get("OOS_TESTED", 0),
+                "SHADOW_VALIDATED": ladder.get("SHADOW_VALIDATED", 0),
+                "LIVE_VERIFIED": ladder.get("LIVE_VERIFIED", 0),
+            },
+            "task_states": t_counts,
         }

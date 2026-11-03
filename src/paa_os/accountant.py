@@ -355,6 +355,55 @@ class PAAAccountant:
             },
         }
         self.db.record_financial_snapshot(snapshot)
+        zt_cfg = self.cfg.get("zero_trust") or {}
+        fin_ttl = float(zt_cfg.get("financial_fact_ttl_sec", 300.0))
+        lat_ttl = float(zt_cfg.get("latency_fact_ttl_sec", 180.0))
+        src_type = "POLYGON_RPC_AND_STATE_LEDGER" if live_rpc_check else "AUTHORITATIVE_STATE_LEDGER"
+        self.db.upsert_verified_fact(
+            fact_key="wallet.free_cash_pusd",
+            category="FINANCIAL_TRUTH",
+            value=round(snapshot["free_cash_pusd"], 4),
+            epistemic_status="VERIFIED_FACT",
+            source_type=src_type,
+            source_ref="financial_snapshots:free_cash_pusd",
+            verified_by="PAAAccountant",
+            ttl_sec=fin_ttl,
+            revalidation_rule="REQUERY_POLYGON_WALLET_AND_HARVESTER_STATE",
+        )
+        self.db.upsert_verified_fact(
+            fact_key="wallet.verified_realized_net_pnl_usd",
+            category="FINANCIAL_TRUTH",
+            value=round(snapshot["verified_realized_net_pnl_usd"], 4),
+            epistemic_status="VERIFIED_FACT",
+            source_type=src_type,
+            source_ref="financial_snapshots:verified_realized_net_pnl_usd",
+            verified_by="PAAAccountant",
+            ttl_sec=fin_ttl,
+            revalidation_rule="RECONCILE_SETTLED_POSITIONS_NET_OF_FEES",
+        )
+        self.db.upsert_verified_fact(
+            fact_key="wallet.accounting_reconciled_ok",
+            category="FINANCIAL_TRUTH",
+            value=bool(acct_ok),
+            epistemic_status="VERIFIED_FACT",
+            source_type=src_type,
+            source_ref="PAAAccountant.verify_accounting_integrity",
+            verified_by="PAAAccountant",
+            ttl_sec=fin_ttl,
+            revalidation_rule="REVERIFY_CASH_AND_CTF_SHARES",
+        )
+        if exec_m.get("clob_post_p50_ms") is not None:
+            self.db.upsert_verified_fact(
+                fact_key="clob.http_post_p50_ms",
+                category="EXCHANGE_OBSERVATION",
+                value=exec_m["clob_post_p50_ms"],
+                epistemic_status="OBSERVATION",
+                source_type="LIVE_ORDERS_TELEMETRY",
+                source_ref="data/polymarket/live_orders.jsonl:clob_http_post_ms",
+                verified_by="PAAAccountant",
+                ttl_sec=lat_ttl,
+                revalidation_rule="EXPIRES_AFTER_180S_DO_NOT_TREAT_AS_PERMANENT_TRUTH",
+            )
         self.db.record_heartbeat(
             "paa_accountant",
             status="OK" if acct_ok else "ACCOUNTING_SAFEGUARD",

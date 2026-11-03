@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from src.paa_os.budget import BudgetManager
 from src.paa_os.permissions import PermissionDeniedError, build_isolated_worker_env, load_autonomy_config
 from src.paa_os.task_db import PAATaskDB
+from src.paa_os.zero_trust import estimate_tokens
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 
@@ -107,10 +108,14 @@ class HeadlessAgentRunner:
         allow_worktree_edits: bool = False,
         timeout_sec: int = 180,
         conversation_id: Optional[str] = None,
+        allow_explicit_continuation: bool = False,
+        stage_role: str = "STATELESS_WORKER",
+        context_packet: Optional[Dict[str, Any]] = None,
         task_record: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
-        Invokes `agy` headlessly with strict workspace, credential, and budget enforcement.
+        Invokes `agy` headlessly with strict workspace, credential, context-budget,
+        and stateless fresh-session enforcement.
         """
         cwd_resolved = Path(cwd).resolve()
         if mode != "plan" or allow_worktree_edits:
@@ -124,6 +129,25 @@ class HeadlessAgentRunner:
         ok_budget, budget_reason = self.budget.can_invoke_ai_agent(task_record)
         if not ok_budget:
             raise HeadlessAgentError(budget_reason)
+
+        zt_cfg = self.cfg.get("zero_trust") or {}
+        max_prompt_toks = int(zt_cfg.get("max_prompt_tokens", 16000))
+        ckpt_ratio = float(zt_cfg.get("context_checkpoint_threshold_ratio", 0.60))
+        enforce_fresh = bool(zt_cfg.get("enforce_fresh_session_per_stage", True))
+
+        # Enforce Stateless Agent Execution (Rule 1): never inherit long multi-cycle conversations
+        eff_conv_id = conversation_id if (allow_explicit_continuation and not enforce_fresh) else None
+        fresh_session = eff_conv_id is None
+
+        # Enforce Context Management (Rule 5): cap prompt budget and checkpoint before exhaustion
+        est_tok = int((context_packet or {}).get("est_prompt_tokens") or estimate_tokens(prompt))
+        eff_prompt = prompt
+        checkpoint_triggered = False
+        if est_tok > max_prompt_toks:
+            max_chars = int(max_prompt_toks * ckpt_ratio * 3.6)
+            eff_prompt = prompt[:max_chars] + "\n...[BOUNDED_BY_ZERO_TRUST_CONTEXT_BUDGET]..."
+            est_tok = estimate_tokens(eff_prompt)
+            checkpoint_triggered = True
 
         agy_bin = self.resolve_agy_binary()
         chosen_model = model or str(self.rt_cfg.get("fast_triage_model") or "gemini-3.8-flash-low")
@@ -146,9 +170,9 @@ class HeadlessAgentRunner:
             cmd.append("--sandbox")
         if allow_worktree_edits and mode in ("auto", "accept-edits"):
             cmd.append("--dangerously-skip-permissions")
-        if conversation_id:
-            cmd.extend(["--conversation", str(conversation_id)])
-        cmd.append(f"-p={prompt}")
+        if eff_conv_id:
+            cmd.extend(["--conversation", str(eff_conv_id)])
+        cmd.append(f"-p={eff_prompt}")
 
         t0 = time.monotonic()
         try:
@@ -208,13 +232,39 @@ class HeadlessAgentRunner:
         usage = parsed.get("usage") or {}
         in_tok = int(usage.get("input_tokens") or 0)
         out_tok = int(usage.get("output_tokens") or 0) + int(usage.get("thinking_tokens") or 0)
+        eff_used_tok = max(est_tok, in_tok)
+        ctx_util_pct = round(100.0 * float(eff_used_tok) / float(max(1, max_prompt_toks)), 2)
+        if ctx_util_pct >= ckpt_ratio * 100.0:
+            checkpoint_triggered = True
         cost_usd = self.budget.record_ai_usage(
             model_name=chosen_model,
             task_id=task_id,
             input_tokens=in_tok,
             output_tokens=out_tok,
             duration_sec=dur,
-            details={"conversation_id": parsed.get("conversation_id"), "num_turns": parsed.get("num_turns", 1)},
+            details={
+                "conversation_id": parsed.get("conversation_id"),
+                "stage_role": stage_role,
+                "fresh_session": fresh_session,
+                "context_utilization_pct": ctx_util_pct,
+                "num_turns": parsed.get("num_turns", 1),
+            },
+        )
+        self.db.record_session_run(
+            task_id=task_id,
+            stage_role=stage_role,
+            conversation_id=parsed.get("conversation_id"),
+            fresh_session=fresh_session,
+            model_name=chosen_model,
+            prompt_chars=len(eff_prompt),
+            est_prompt_tokens=est_tok,
+            actual_input_tokens=in_tok,
+            output_tokens=out_tok,
+            context_budget_tokens=max_prompt_toks,
+            context_utilization_pct=ctx_util_pct,
+            checkpoint_triggered=checkpoint_triggered,
+            status="SUCCESS",
+            details={"duration_sec": round(dur, 3), "cost_usd": cost_usd},
         )
 
         resp_txt = str(parsed.get("response") if parsed else stdout_s)
@@ -231,6 +281,10 @@ class HeadlessAgentRunner:
         return {
             "status": "SUCCESS",
             "conversation_id": parsed.get("conversation_id"),
+            "fresh_session": fresh_session,
+            "stage_role": stage_role,
+            "context_utilization_pct": ctx_util_pct,
+            "checkpoint_triggered": checkpoint_triggered,
             "model": chosen_model,
             "response": resp_txt,
             "duration_seconds": round(float(parsed.get("duration_seconds") or dur), 3),

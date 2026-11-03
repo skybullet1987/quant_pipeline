@@ -35,6 +35,7 @@ from src.paa_os.monitor import PAAMonitor, _atomic_write_json
 from src.paa_os.permissions import PermissionClass, PermissionDeniedError, PermissionGate, load_autonomy_config
 from src.paa_os.researcher import PAAResearcher
 from src.paa_os.task_db import PAATaskDB, utc_now_iso
+from src.paa_os.zero_trust import DeterministicVerificationController, EpistemicStatus, StatelessContextManager
 
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 DATA_PM = PIPELINE_ROOT / "data" / "polymarket"
@@ -78,6 +79,15 @@ class PAADirector:
             autonomy_cfg=self.cfg,
         )
         self.monitor = PAAMonitor(self.db, self.accountant, self.budget, data_dir=self.data_dir, autonomy_cfg=self.cfg)
+        self.context_manager = StatelessContextManager(self.db, repo_root=self.repo_root, autonomy_cfg=self.cfg)
+        self.verifier = DeterministicVerificationController(
+            self.db,
+            self.permission_gate,
+            accountant=self.accountant,
+            deployer=self.deployer,
+            repo_root=self.repo_root,
+            autonomy_cfg=self.cfg,
+        )
         self._custom_handlers: Dict[str, Callable[[Dict[str, Any]], Dict[str, Any]]] = {}
 
     def register_task_handler(self, category: str, fn: Callable[[Dict[str, Any]], Dict[str, Any]]) -> None:
@@ -236,25 +246,33 @@ class PAADirector:
             if allow_headless_ai and payload.get("run_ai_synthesis", False) and "ai_synthesis" not in completed_steps:
                 ok_b, _ = self.budget.can_invoke_ai_agent(task)
                 if ok_b:
-                    prompt = (
-                        f"You are PAA Research Analyst.\nMandate Summary: Maximize net Polymarket EV.\n"
-                        f"Latest scan metrics: {json.dumps(step_outputs['universe_scan'])}\n"
-                        "In 2 concise sentences, state the top category opportunity and top risk filter to maintain."
+                    pkt = self.context_manager.build_fresh_session_packet(
+                        task=task,
+                        stage_role="RESEARCH_SYNTHESIS",
+                        prior_verified_checkpoint={"universe_scan": step_outputs["universe_scan"]},
+                        stage_instructions=(
+                            "In 2 concise sentences, state the top Polymarket category opportunity from `universe_scan` "
+                            "and the top risk filter to maintain. Never claim simulated findings are LIVE_VERIFIED."
+                        ),
                     )
                     ai_res = self.agent_runner.invoke(
-                        prompt=prompt,
+                        prompt=pkt["prompt"],
                         task_id=tid,
                         cwd=self.repo_root,
                         mode="plan",
                         model=str((self.cfg.get("runtime") or {}).get("fast_triage_model") or "gemini-3.8-flash-low"),
                         sandbox=True,
                         timeout_sec=60,
-                        conversation_id=ckpt.get("conversation_id"),
+                        conversation_id=None,
+                        stage_role="RESEARCH_SYNTHESIS",
+                        context_packet=pkt,
                         task_record=task,
                     )
                     completed_steps.append("ai_synthesis")
                     step_outputs["ai_synthesis"] = {
                         "conversation_id": ai_res.get("conversation_id"),
+                        "fresh_session": True,
+                        "context_utilization_pct": ai_res.get("context_utilization_pct"),
                         "summary": ai_res.get("response", "").strip()[:600],
                         "cost_usd": ai_res.get("estimated_cost_usd"),
                     }
@@ -263,7 +281,6 @@ class PAADirector:
                         {
                             "completed_steps": completed_steps,
                             "step_outputs": step_outputs,
-                            "conversation_id": ai_res.get("conversation_id"),
                         },
                         next_action="COMPLETE",
                     )
@@ -355,19 +372,48 @@ class PAADirector:
                         promote_to_live_files=bool(st_def.get("promote_to_live_files", False)),
                     )
                     step_outputs[sid] = {"release_id": rel_rec["release_id"], "state": rel_rec["state"], "rolled_back": rel_rec["rolled_back"]}
+                elif act == "ZERO_TRUST_MULTI_SESSION_BUILD":
+                    ms_res = self.verifier.execute_multi_session_engineering_task(
+                        task_id=tid,
+                        context_mgr=self.context_manager,
+                        agent_runner=self.agent_runner,
+                        builder=self.builder,
+                        deployer=self.deployer,
+                        target_rel_file=str(st_def.get("target_rel_file") or "src/paa_os/__init__.py"),
+                        pytest_targets=list(st_def.get("pytest_targets") or []),
+                        use_live_headless_ai=bool(allow_headless_ai),
+                    )
+                    return {
+                        "task_id": tid,
+                        "outcome": ms_res["task"]["state"],
+                        "evidence": ms_res["task"]["verification_receipt"],
+                    }
                 elif act == "HEADLESS_AI_ANALYSIS" and allow_headless_ai:
+                    pkt_s = self.context_manager.build_fresh_session_packet(
+                        task=task,
+                        stage_role=f"STATELESS_STEP_{sid.upper()}",
+                        prior_verified_checkpoint={"completed_steps": completed_steps, "step_outputs": step_outputs},
+                        stage_instructions=str(st_def.get("prompt") or f"Analyze task: {task['title']}"),
+                    )
                     ai_out = self.agent_runner.invoke(
-                        prompt=str(st_def.get("prompt") or f"Analyze task: {task['title']}"),
+                        prompt=pkt_s["prompt"],
                         task_id=tid,
                         cwd=self.repo_root,
                         mode="plan",
                         sandbox=True,
                         timeout_sec=int(st_def.get("timeout_sec", 90)),
-                        conversation_id=ckpt.get("conversation_id"),
+                        conversation_id=None,
+                        stage_role=f"STATELESS_STEP_{sid.upper()}",
+                        context_packet=pkt_s,
                         task_record=task,
                     )
-                    ckpt["conversation_id"] = ai_out.get("conversation_id")
-                    step_outputs[sid] = {"response": ai_out["response"].strip()[:800], "cost_usd": ai_out["estimated_cost_usd"]}
+                    step_outputs[sid] = {
+                        "conversation_id": ai_out.get("conversation_id"),
+                        "fresh_session": True,
+                        "context_utilization_pct": ai_out.get("context_utilization_pct"),
+                        "response": ai_out["response"].strip()[:800],
+                        "cost_usd": ai_out["estimated_cost_usd"],
+                    }
                 else:
                     step_outputs[sid] = {"executed_at_utc": utc_now_iso(), "action": act}
 
@@ -377,6 +423,19 @@ class PAADirector:
                 ckpt["completed_steps"] = completed_steps
                 ckpt["step_outputs"] = step_outputs
                 self.db.save_checkpoint(tid, ckpt, next_action=f"COMPLETED_{sid}")
+
+            if payload.get("zero_trust_verify"):
+                self.db.submit_for_verification(
+                    tid,
+                    worker_claims=dict(payload.get("worker_claims") or {}),
+                    evidence={"completed_steps": completed_steps, "step_outputs": step_outputs},
+                    epistemic_status=EpistemicStatus.OBSERVATION.value,
+                )
+                ver_task = self.verifier.verify_and_finalize_task(
+                    tid,
+                    pytest_targets=list(payload.get("pytest_targets") or []),
+                )
+                return {"task_id": tid, "outcome": ver_task["state"], "evidence": ver_task["verification_receipt"]}
 
             self.db.complete_task(tid, {"completed_steps": completed_steps, "step_outputs": step_outputs})
             return {"task_id": tid, "outcome": "COMPLETED", "evidence": step_outputs}
@@ -395,6 +454,10 @@ class PAADirector:
         findings = self.db.list_research_findings(limit=20)
         budget_s = self.budget.get_usage_summary()
         sched = self._query_systemd_schedules()
+        zt_sum = self.db.get_zero_trust_summary()
+        v_facts = self.db.list_verified_facts(include_stale=True, limit=15)
+        recent_sessions = self.db.list_session_runs(limit=10)
+        pol_ok, pol_missing = self.context_manager.verify_tier_a_policies_present()
 
         scorecard_p = self.paa_dir / "strategy_inventory_and_scorecard.json"
         if scorecard_p.exists():
@@ -455,6 +518,13 @@ class PAADirector:
                 },
             },
             "budget_and_resources": budget_s,
+            "zero_trust_telemetry": {
+                **zt_sum,
+                "tier_a_policies_intact": pol_ok,
+                "tier_a_missing_policies": pol_missing,
+                "verified_facts": v_facts,
+                "recent_stateless_sessions": recent_sessions,
+            },
             "recent_improvements": recent_ok_deploys[:10],
             "failed_and_rolled_back_releases": rolled_back[:10],
             "remaining_authorization_blockers": {

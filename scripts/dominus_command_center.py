@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
 
 REMOTE_PROBE_PY = r"""# -*- coding: utf-8 -*-
-import calendar, json, os, pathlib, re, statistics, subprocess, sys, time, urllib.request
+import calendar, json, os, pathlib, re, sqlite3, statistics, subprocess, sys, time, urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -97,7 +97,7 @@ try:
 except Exception:
     out["mem_mb"] = {}
 
-# 2. Services (single batched systemctl call for consolidated v5.0 topology)
+# 2. Services (single batched systemctl call for consolidated v5.0 + PAA topology)
 svcs = [
     "polymarket-live-harvester.service",
     "polymarket-alpha124-shadow.service",
@@ -106,6 +106,11 @@ svcs = [
     "polymarket-trader.service",
     "apex-perp.service",
     "apex-oversight-audit.timer",
+    "polymarket-paa-monitor.timer",
+    "polymarket-paa-supervisor.timer",
+    "polymarket-paa-watchdog.timer",
+    "polymarket-paa-director.timer",
+    "polymarket-paa-director-event.path",
 ]
 shm_ages = {}
 shm_spots = {}
@@ -1119,24 +1124,311 @@ if j_path.exists():
 else:
     out["apex_testnet"] = {}
 
-# 6. PAA Autonomous Operating System Snapshot
-paa_dash_p = root / "data/polymarket/paa/paa_dashboard.json"
-if paa_dash_p.exists():
+# 6. PAA Autonomous Operating System & Zero-Trust Live SQLite + Systemd Telemetry
+paa_dir = root / "data/polymarket/paa"
+paa_db_p = paa_dir / "paa_tasks.db"
+paa_dash_p = paa_dir / "paa_dashboard.json"
+now_probe_u = time.time()
+
+def _parse_utc_epoch(ts_val):
+    if not ts_val:
+        return None
+    try:
+        s = str(ts_val).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        return None
+
+paa_out = {
+    "live_probed_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now_probe_u)),
+    "live_probed_at_et": _fmt_et(now_probe_u, "%Y-%m-%d %H:%M:%S"),
+    "master_stop_engaged": (paa_dir / "PAA_MASTER_STOP").exists(),
+    "accounting_safeguard_active": (paa_dir / "ACCOUNTING_SAFEGUARD_ACTIVE.json").exists(),
+    "tier_a_policies": [],
+    "tier_a_intact_count": 0,
+    "heartbeats": {},
+    "systemd_timers": [],
+    "task_counts_by_state": {},
+    "recent_tasks": [],
+    "recent_events": [],
+    "zero_trust": {
+        "verified_facts_fresh": 0,
+        "verified_facts_stale": 0,
+        "verified_facts_contradicted": 0,
+        "sessions_total": 0,
+        "fresh_session_pct": 100.0,
+        "max_context_pct": 0.0,
+        "avg_context_pct": 0.0,
+        "context_rotations": 0,
+        "context_cap_pct": 60.0,
+    },
+    "verified_facts": [],
+    "recent_sessions": [],
+    "research_ladder": {"HYPOTHESIS": 0, "BACKTESTED": 0, "OOS_TESTED": 0, "SHADOW_VALIDATED": 0, "LIVE_VERIFIED": 0},
+    "recent_findings": [],
+    "deployments": [],
+    "verified_financial_performance": {},
+    "budget_and_resources": {"daily_ai_calls": 0, "daily_ai_cost_usd": 0.0, "max_daily_ai_cost_usd": 2.50, "max_daily_ai_calls": 96},
+}
+
+# 6a. Tier-A Immutable Policy Files Check
+pol_dir = root / "config/policies"
+for _pf in ("PAA_MISSION.md", "PAA_AUTONOMY_POLICY.md", "PAA_RISK_POLICY.md", "PAA_DEPLOYMENT_POLICY.md", "PAA_VERIFICATION_POLICY.md"):
+    _ok = (pol_dir / _pf).exists()
+    paa_out["tier_a_policies"].append({"file": _pf, "present": _ok})
+    if _ok:
+        paa_out["tier_a_intact_count"] += 1
+
+# 6b. Live systemd timer countdowns (`NEXT` / `LAST` microsecond timestamps)
+try:
+    _tm_proc = subprocess.run(
+        ["systemctl", "--user", "list-timers", "--all", "--no-pager", "--output=json"],
+        capture_output=True,
+        text=True,
+        timeout=3.0,
+    )
+    if _tm_proc.returncode == 0 and _tm_proc.stdout.strip().startswith("["):
+        for _t in json.loads(_tm_proc.stdout):
+            _u = str(_t.get("unit") or "")
+            if "polymarket-paa-" not in _u:
+                continue
+            _nxt_us = _t.get("next")
+            _lst_us = _t.get("last")
+            _nxt_s = (_nxt_us / 1e6) if isinstance(_nxt_us, (int, float)) and _nxt_us > 0 else None
+            _lst_s = (_lst_us / 1e6) if isinstance(_lst_us, (int, float)) and _lst_us > 0 else None
+            paa_out["systemd_timers"].append({
+                "unit": _u.replace("polymarket-paa-", "").replace(".timer", ""),
+                "full_unit": _u,
+                "next_in_sec": round(max(0.0, _nxt_s - now_probe_u), 1) if _nxt_s else None,
+                "last_ago_sec": round(max(0.0, now_probe_u - _lst_s), 1) if _lst_s else None,
+                "last_et": _fmt_et(_lst_s, "%H:%M:%S") if _lst_s else "-",
+                "next_et": _fmt_et(_nxt_s, "%H:%M:%S") if _nxt_s else "-",
+            })
+    _sys_sup = subprocess.run(["systemctl", "is-active", "paa-system-supervisor.timer"], capture_output=True, text=True, timeout=2.0)
+    paa_out["pid1_supervisor_timer"] = _sys_sup.stdout.strip() or "unknown"
+except Exception:
+    paa_out["pid1_supervisor_timer"] = "unknown"
+
+# 6c. Direct read-only SQLite WAL query against `paa_tasks.db` for 0-lag live accuracy
+if paa_db_p.exists():
+    try:
+        _conn = sqlite3.connect(f"file:{paa_db_p}?mode=ro", uri=True, timeout=3.0)
+        _conn.row_factory = sqlite3.Row
+        _tables = {r["name"] for r in _conn.execute("PRAGMA main.table_info(paa_tasks)").fetchall()}
+        _all_tbls = {r[0] for r in _conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+
+        # Heartbeats (with exact real-time age_sec!)
+        if "heartbeats" in _all_tbls:
+            for r in _conn.execute("SELECT * FROM heartbeats").fetchall():
+                _ts = _parse_utc_epoch(r["last_seen_utc"])
+                _age = round(max(0.0, now_probe_u - _ts), 1) if _ts else None
+                try:
+                    _det = json.loads(r["details_json"] or "{}")
+                except Exception:
+                    _det = {}
+                paa_out["heartbeats"][r["component"]] = {
+                    "component": r["component"],
+                    "status": r["status"],
+                    "cycle_count": int(r["cycle_count"] or 0),
+                    "pid": r["pid"],
+                    "last_seen_utc": r["last_seen_utc"],
+                    "last_seen_et": _fmt_et(r["last_seen_utc"], "%H:%M:%S"),
+                    "age_sec": _age,
+                    "details": _det,
+                }
+        paa_out["director_heartbeat"] = paa_out["heartbeats"].get("paa_director") or {}
+        paa_out["monitoring_health"] = {
+            "paa_monitor": paa_out["heartbeats"].get("paa_monitor") or {},
+            "paa_supervisor": paa_out["heartbeats"].get("paa_supervisor") or {},
+            "accounting_safeguard_active": paa_out["accounting_safeguard_active"],
+        }
+
+        # Task counts & recent tasks
+        for r in _conn.execute("SELECT execution_state, COUNT(*) AS cnt FROM paa_tasks GROUP BY execution_state").fetchall():
+            paa_out["task_counts_by_state"][r["execution_state"]] = int(r["cnt"])
+
+        _has_zt_cols = "epistemic_status" in _tables and "session_count" in _tables
+        _t_sql = (
+            "SELECT task_id, category, priority_label, execution_state, epistemic_status, session_count, title, next_action, last_error, updated_at_utc FROM paa_tasks ORDER BY updated_at_utc DESC LIMIT 10"
+            if _has_zt_cols else
+            "SELECT task_id, category, priority_label, execution_state, 'VERIFIED_FACT' AS epistemic_status, 1 AS session_count, title, next_action, last_error, updated_at_utc FROM paa_tasks ORDER BY updated_at_utc DESC LIMIT 10"
+        )
+        for r in _conn.execute(_t_sql).fetchall():
+            paa_out["recent_tasks"].append({
+                "task_id": r["task_id"],
+                "category": r["category"],
+                "priority": r["priority_label"],
+                "state": r["execution_state"],
+                "epistemic_status": r["epistemic_status"],
+                "sessions": int(r["session_count"] or 0),
+                "title": str(r["title"] or "")[:72],
+                "next_action": str(r["next_action"] or "")[:40],
+                "last_error": str(r["last_error"] or "")[:80],
+                "updated_et": _fmt_et(r["updated_at_utc"], "%m-%d %H:%M:%S"),
+            })
+
+        # Recent task events audit trail
+        if "task_events" in _all_tbls:
+            for r in _conn.execute("SELECT timestamp_utc, task_id, component, event_type, details_json FROM task_events ORDER BY event_id DESC LIMIT 10").fetchall():
+                paa_out["recent_events"].append({
+                    "ts_et": _fmt_et(r["timestamp_utc"], "%H:%M:%S"),
+                    "task_id": r["task_id"] or "-",
+                    "component": r["component"],
+                    "event_type": r["event_type"],
+                    "details": str(r["details_json"] or "")[:95],
+                })
+
+        # Tier-B Verified Facts (with live TTL countdown & stale detection!)
+        if "verified_facts" in _all_tbls:
+            _fresh_n, _stale_n, _contra_n = 0, 0, 0
+            for idx_f, r in enumerate(_conn.execute("SELECT * FROM verified_facts ORDER BY observed_at_utc DESC LIMIT 50").fetchall()):
+                _obs_u = _parse_utc_epoch(r["observed_at_utc"])
+                _exp_u = _parse_utc_epoch(r["expires_at_utc"])
+                _rem_s = round(_exp_u - now_probe_u, 1) if _exp_u else -1.0
+                _age_s = round(max(0.0, now_probe_u - _obs_u), 1) if _obs_u else None
+                _epi = str(r["epistemic_status"] or "UNKNOWN")
+                if _epi == "CONTRADICTED":
+                    _eff = "CONTRADICTED"
+                    _contra_n += 1
+                elif _rem_s <= 0:
+                    _eff = "STALE_REVALIDATION_REQUIRED"
+                    _stale_n += 1
+                else:
+                    _eff = _epi
+                    _fresh_n += 1
+                if idx_f < 10:
+                    try:
+                        _val = json.loads(r["value_json"])
+                    except Exception:
+                        _val = r["value_json"]
+                    paa_out["verified_facts"].append({
+                        "fact_key": r["fact_key"],
+                        "category": r["category"],
+                        "value": _val,
+                        "effective_status": _eff,
+                        "age_sec": _age_s,
+                        "ttl_remaining_sec": _rem_s,
+                        "source_ref": str(r["source_ref"] or "")[:44],
+                        "verified_by": r["verified_by"],
+                    })
+            paa_out["zero_trust"]["verified_facts_fresh"] = _fresh_n
+            paa_out["zero_trust"]["verified_facts_stale"] = _stale_n
+            paa_out["zero_trust"]["verified_facts_contradicted"] = _contra_n
+
+        # Stateless Session Runs & Context Utilization (% vs 60% ceiling)
+        if "session_runs" in _all_tbls:
+            _sr = _conn.execute(
+                "SELECT COUNT(*) AS n, SUM(CASE WHEN fresh_session=1 THEN 1 ELSE 0 END) AS fn, MAX(context_utilization_pct) AS mx, AVG(context_utilization_pct) AS av, SUM(CASE WHEN checkpoint_triggered=1 THEN 1 ELSE 0 END) AS rot FROM session_runs"
+            ).fetchone()
+            if _sr and int(_sr["n"] or 0) > 0:
+                _tot_s = int(_sr["n"] or 0)
+                paa_out["zero_trust"]["sessions_total"] = _tot_s
+                paa_out["zero_trust"]["fresh_session_pct"] = round(100.0 * int(_sr["fn"] or 0) / max(1, _tot_s), 1)
+                paa_out["zero_trust"]["max_context_pct"] = round(float(_sr["mx"] or 0.0), 2)
+                paa_out["zero_trust"]["avg_context_pct"] = round(float(_sr["av"] or 0.0), 2)
+                paa_out["zero_trust"]["context_rotations"] = int(_sr["rot"] or 0)
+            for r in _conn.execute("SELECT * FROM session_runs ORDER BY created_at_utc DESC LIMIT 6").fetchall():
+                paa_out["recent_sessions"].append({
+                    "session_id": r["session_id"],
+                    "task_id": r["task_id"],
+                    "stage_role": r["stage_role"],
+                    "fresh_session": bool(r["fresh_session"]),
+                    "model_name": r["model_name"],
+                    "context_pct": round(float(r["context_utilization_pct"] or 0.0), 2),
+                    "status": r["status"],
+                    "created_et": _fmt_et(r["created_at_utc"], "%H:%M:%S"),
+                })
+
+        # Tier-C Research Findings & 5-Stage Evidence Ladder
+        if "research_findings" in _all_tbls:
+            _rf_cols = {r["name"] for r in _conn.execute("PRAGMA main.table_info(research_findings)").fetchall()}
+            if "evidence_stage" in _rf_cols:
+                for r in _conn.execute("SELECT COALESCE(evidence_stage,'HYPOTHESIS') AS stg, COUNT(*) AS cnt FROM research_findings GROUP BY COALESCE(evidence_stage,'HYPOTHESIS')").fetchall():
+                    if r["stg"] in paa_out["research_ladder"]:
+                        paa_out["research_ladder"][r["stg"]] = int(r["cnt"])
+                _rf_q = "SELECT finding_id, category, evidence_stage, epistemic_status, expected_net_ev_usd_per_day, succeeded, verdict, hypothesis, created_at_utc FROM research_findings ORDER BY created_at_utc DESC LIMIT 8"
+            else:
+                _rf_q = "SELECT finding_id, category, 'HYPOTHESIS' AS evidence_stage, 'HYPOTHESIS' AS epistemic_status, expected_net_ev_usd_per_day, succeeded, verdict, hypothesis, created_at_utc FROM research_findings ORDER BY created_at_utc DESC LIMIT 8"
+            for r in _conn.execute(_rf_q).fetchall():
+                paa_out["recent_findings"].append({
+                    "finding_id": r["finding_id"],
+                    "category": r["category"],
+                    "evidence_stage": r["evidence_stage"],
+                    "epistemic_status": r["epistemic_status"],
+                    "ev_day": round(float(r["expected_net_ev_usd_per_day"] or 0.0), 4),
+                    "succeeded": bool(r["succeeded"]),
+                    "verdict": r["verdict"],
+                    "hypothesis": str(r["hypothesis"] or "")[:74],
+                    "created_et": _fmt_et(r["created_at_utc"], "%H:%M:%S"),
+                })
+
+        # Deployments & Rollbacks
+        if "deployments" in _all_tbls:
+            for r in _conn.execute("SELECT release_id, candidate_sha, target_env, state, qa_passed, canary_passed, rolled_back, rollback_reason, updated_at_utc FROM deployments ORDER BY updated_at_utc DESC LIMIT 6").fetchall():
+                paa_out["deployments"].append({
+                    "release_id": r["release_id"],
+                    "sha": str(r["candidate_sha"] or "")[:8],
+                    "env": r["target_env"],
+                    "state": r["state"],
+                    "qa_passed": bool(r["qa_passed"]),
+                    "canary_passed": bool(r["canary_passed"]),
+                    "rolled_back": bool(r["rolled_back"]),
+                    "rollback_reason": str(r["rollback_reason"] or "")[:50],
+                    "updated_et": _fmt_et(r["updated_at_utc"], "%m-%d %H:%M:%S"),
+                })
+
+        # Authoritative Financial Snapshot & Today's Budget Ledger
+        if "financial_snapshots" in _all_tbls:
+            _fs = _conn.execute("SELECT * FROM financial_snapshots ORDER BY snapshot_id DESC LIMIT 1").fetchone()
+            if _fs:
+                paa_out["verified_financial_performance"] = {
+                    "recorded_et": _fmt_et(_fs["recorded_at_utc"], "%H:%M:%S"),
+                    "free_cash_pusd": round(float(_fs["free_cash_pusd"] or 0.0), 2),
+                    "nav_mark_to_bid_usd": round(float(_fs["nav_mark_to_bid_usd"] or 0.0), 2),
+                    "realized_onchain_net_pnl_usd": round(float(_fs["verified_realized_net_pnl_usd"] or 0.0), 2),
+                    "raw_state_ledger_pnl_usd": round(float(_fs["raw_ledger_pnl_usd"] or 0.0), 2),
+                    "non_cash_unfilled_artifact_adj_usd": round(float(_fs["phantom_adjustment_usd"] or 0.0), 2),
+                    "realized_fees_usd": round(float(_fs["realized_fees_usd"] or 0.0), 2),
+                    "research_ai_cost_usd": round(float(_fs["research_ai_cost_usd"] or 0.0), 4),
+                    "daily_infra_vm_cost_usd": round(float(_fs["infra_cost_usd"] or 0.0), 4),
+                    "net_economic_profit_after_ops_usd": round(float(_fs["net_economic_profit_usd"] or 0.0), 2),
+                    "accounting_ok": bool(_fs["accounting_ok"]),
+                    "accounting_discrepancy_usd": round(float(_fs["accounting_discrepancy_usd"] or 0.0), 4),
+                    "simulated_shadow_t1000_pnl_usd": round(float(_fs["simulated_shadow_t1000_pnl_usd"] or 0.0), 2),
+                    "simulated_paper_oos_pnl_usd": round(float(_fs["simulated_paper_oos_pnl_usd"] or 0.0), 2),
+                }
+        if "budget_ledger" in _all_tbls:
+            _today_utc = time.strftime("%Y-%m-%d", time.gmtime(now_probe_u))
+            _br = _conn.execute(
+                "SELECT COUNT(*) AS calls, COALESCE(SUM(estimated_cost_usd), 0.0) AS usd, COALESCE(SUM(input_tokens), 0) AS in_tok, COALESCE(SUM(output_tokens), 0) AS out_tok FROM budget_ledger WHERE date_utc = ? AND cost_type = 'AI_CLI_CALL'",
+                (_today_utc,),
+            ).fetchone()
+            if _br:
+                paa_out["budget_and_resources"] = {
+                    "daily_ai_calls": int(_br["calls"] or 0),
+                    "daily_ai_cost_usd": round(float(_br["usd"] or 0.0), 4),
+                    "daily_input_tokens": int(_br["in_tok"] or 0),
+                    "daily_output_tokens": int(_br["out_tok"] or 0),
+                    "max_daily_ai_cost_usd": 2.50,
+                    "max_daily_ai_calls": 96,
+                }
+        _conn.close()
+    except Exception as _db_exc:
+        paa_out["db_probe_warning"] = str(_db_exc)[:200]
+elif paa_dash_p.exists():
     try:
         pd_j = json.loads(paa_dash_p.read_text(encoding="utf-8"))
-        out["paa_autonomy"] = {
-            "generated_at_utc": pd_j.get("generated_at_utc"),
-            "master_stop_engaged": bool(pd_j.get("master_stop_engaged", False)),
-            "director_heartbeat": pd_j.get("director_heartbeat") or {},
-            "monitoring_health": pd_j.get("monitoring_health") or {},
-            "task_counts_by_state": pd_j.get("task_counts_by_state") or {},
-            "verified_financial_performance": pd_j.get("verified_financial_performance") or {},
-            "budget_and_resources": pd_j.get("budget_and_resources") or {},
-        }
+        paa_out["director_heartbeat"] = pd_j.get("director_heartbeat") or {}
+        paa_out["task_counts_by_state"] = pd_j.get("task_counts_by_state") or {}
+        paa_out["verified_financial_performance"] = pd_j.get("verified_financial_performance") or {}
+        paa_out["budget_and_resources"] = pd_j.get("budget_and_resources") or paa_out["budget_and_resources"]
     except Exception:
-        out["paa_autonomy"] = {}
-else:
-    out["paa_autonomy"] = {}
+        pass
+
+out["paa_autonomy"] = paa_out
 
 print(json.dumps(out))
 """
@@ -1169,7 +1461,11 @@ HTML_PAGE = """<!DOCTYPE html>
   .neg { color: var(--red); }
   .warn { color: var(--amber); }
   .two-col { display: grid; grid-template-columns: 1.35fr 1fr; gap: 16px; margin-bottom: 16px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1.15fr 1.25fr; gap: 14px; }
+  @media (max-width: 1150px) { .three-col { grid-template-columns: 1fr; } }
   @media (max-width: 1000px) { .two-col { grid-template-columns: 1fr; } }
+  .ctx-bar-bg { display: inline-block; width: 72px; height: 8px; background: #1c2638; border-radius: 4px; overflow: hidden; vertical-align: middle; margin-left: 5px; border: 1px solid var(--border); }
+  .ctx-bar-fg { height: 100%; background: var(--green-bright); transition: width 0.3s ease; }
   h2 { font-size: 13px; margin: 0 0 10px 0; color: var(--blue); text-transform: uppercase; letter-spacing: 0.5px; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); }
@@ -1231,6 +1527,63 @@ HTML_PAGE = """<!DOCTYPE html>
       <thead><tr><th>Ottawa (ET)</th><th>Market / Shock</th><th>Path</th><th>Attribution Verdict</th><th>Quote Drift (t0 &rarr; Eval &rarr; Post)</th><th>Stage Latency (ms)</th><th>Why / Root-Cause Diagnosis</th></tr></thead>
       <tbody id="sf_rows"></tbody>
     </table>
+  </div>
+</div>
+
+<div class="card" style="margin-bottom:16px;border-color:#2f4668;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+    <div>
+      <h2 style="margin:0;">PAA Autonomous Operating System &amp; Zero-Trust Verification Center</h2>
+      <div class="sub" style="margin-top:2px;">Stateless Short-Lived AI Sessions (60% Context Cap) &bull; Tier-A/B/C Separated Memory &bull; 5-Gate Non-AI Verification Controller (<code>NO EVIDENCE = NO VERIFIED CLAIM</code>)</div>
+    </div>
+    <div class="sub" id="paa_live_pulse" style="margin:0;color:var(--green-bright);font-weight:600;"></div>
+  </div>
+  <div class="sf-strip" id="paa_strip"></div>
+  <div class="three-col">
+    <div>
+      <h2 style="margin-top:4px;">Live Schedules &amp; Heartbeats (1s Tick)</h2>
+      <div style="max-height:245px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Cadence Unit</th><th>Last (ET)</th><th>Age</th><th>Next Fire</th></tr></thead>
+          <tbody id="paa_timers"></tbody>
+        </table>
+      </div>
+      <h2 style="margin-top:10px;">Recent Releases &amp; Rollbacks</h2>
+      <div style="max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Release</th><th>SHA</th><th>Gates</th><th>State</th></tr></thead>
+          <tbody id="paa_deploys"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2 style="margin-top:4px;">Tier-B Verified Facts (Live TTL Revalidation)</h2>
+      <div style="max-height:245px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Fact Key</th><th>Value</th><th>Status</th><th>TTL Left</th></tr></thead>
+          <tbody id="paa_facts"></tbody>
+        </table>
+      </div>
+      <h2 style="margin-top:10px;">Stateless AI Sessions (&le;60% Context Cap)</h2>
+      <div style="max-height:130px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>ET</th><th>Stage Role</th><th>Fresh</th><th>Ctx %</th></tr></thead>
+          <tbody id="paa_sessions"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2 style="margin-top:4px;">Durable Zero-Trust Tasks &amp; 5-Stage Ladder</h2>
+      <div id="paa_ladder" style="font-size:11.5px;margin-bottom:6px;"></div>
+      <div style="max-height:215px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Prio</th><th>Task / Category</th><th>Ses</th><th>Zero-Trust State</th></tr></thead>
+          <tbody id="paa_tasks"></tbody>
+        </table>
+      </div>
+      <h2 style="margin-top:10px;">Live Verification &amp; Supervisor Audit Trail</h2>
+      <div class="log-box" id="paa_events" style="max-height:125px;"></div>
+    </div>
   </div>
 </div>
 
@@ -1378,6 +1731,173 @@ function drawSpark(pts) {
 let _inFlight = false;
 let _sfFilter = 'meaningful';
 let _lastSfData = null;
+let _lastPaaData = null;
+let _lastSyncClientMs = 0;
+let _pollSeq = 0;
+let _lastMetaPrefix = '';
+
+function fmtSecCompact(sec) {
+  if (sec === null || sec === undefined || Number.isNaN(Number(sec))) return '-';
+  const s = Math.max(0, Math.round(Number(sec)));
+  if (s >= 86400) return `${Math.floor(s / 86400)}d ${Math.floor((s % 86400) / 3600)}h`;
+  if (s >= 3600) return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+  if (s >= 60) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${s}s`;
+}
+
+function ztPillClass(st) {
+  const s = String(st || '').toUpperCase();
+  if (s === 'VERIFIED_COMPLETE' || s === 'COMPLETED' || s === 'VERIFIED_FACT' || s === 'DEPLOYED_VERIFIED') return 'pill-ok';
+  if (s === 'OBSERVATION' || s === 'PENDING_VERIFICATION' || s === 'RUNNING' || s === 'CLAIMED') return 'pill-info';
+  if (s === 'STALE_REVALIDATION_REQUIRED' || s === 'CHECKPOINTED' || s === 'PENDING' || s === 'READY' || s === 'BLOCKED' || s === 'BLOCKED_AUTHORIZATION') return 'pill-warn';
+  if (s === 'CONTRADICTED' || s === 'REJECTED' || s === 'FAILED' || s === 'FAILED_PERMANENT' || s === 'ROLLED_BACK' || s === 'ESCALATED') return 'pill-bad';
+  return 'pill-muted';
+}
+
+function renderPaaAutonomy(paa, elapsedSec=0) {
+  if (!paa) return;
+  const hbs = paa.heartbeats || {};
+  const dirHb = hbs.paa_director || paa.director_heartbeat || {};
+  const monHb = hbs.paa_monitor || ((paa.monitoring_health || {}).paa_monitor) || {};
+  const supHb = hbs.paa_supervisor || ((paa.monitoring_health || {}).paa_supervisor) || {};
+  const zt = paa.zero_trust || {};
+  const tc = paa.task_counts_by_state || {};
+  const vf = paa.verified_financial_performance || {};
+  const br = paa.budget_and_resources || {};
+  const lad = paa.research_ladder || {};
+
+  const dirAge = dirHb.age_sec !== undefined && dirHb.age_sec !== null ? (Number(dirHb.age_sec) + elapsedSec) : null;
+  const monAge = monHb.age_sec !== undefined && monHb.age_sec !== null ? (Number(monHb.age_sec) + elapsedSec) : null;
+  const supAge = supHb.age_sec !== undefined && supHb.age_sec !== null ? (Number(supHb.age_sec) + elapsedSec) : null;
+
+  const pulseEl = document.getElementById('paa_live_pulse');
+  if (pulseEl) {
+    pulseEl.innerHTML = `VM SQLite Live Probe: <b>${esc(paa.live_probed_at_et || '-')} ET</b> (${Math.round(elapsedSec)}s ago &bull; Poll #${_pollSeq}) &bull; PID-1 Sup: <b class="${paa.pid1_supervisor_timer === 'active' ? 'pos' : 'warn'}">${esc(paa.pid1_supervisor_timer || 'active')}</b>`;
+  }
+
+  const verDone = (tc.VERIFIED_COMPLETE || 0) + (tc.COMPLETED || 0);
+  const pendVer = tc.PENDING_VERIFICATION || 0;
+  const rejCnt = tc.REJECTED || 0;
+  const blkCnt = (tc.BLOCKED || 0) + (tc.BLOCKED_AUTHORIZATION || 0);
+  const runCnt = (tc.RUNNING || 0) + (tc.CLAIMED || 0) + (tc.PENDING || 0) + (tc.READY || 0) + (tc.CHECKPOINTED || 0);
+  const maxCtx = Number(zt.max_context_pct || 0);
+  const ctxCap = Number(zt.context_cap_pct || 60);
+  const ctxFillW = Math.min(100, Math.round((maxCtx / Math.max(1, ctxCap)) * 100));
+  const ctxColor = maxCtx >= ctxCap ? '#d29922' : '#3fb950';
+
+  const stripEl = document.getElementById('paa_strip');
+  if (stripEl) {
+    const stopOk = !paa.master_stop_engaged && !paa.accounting_safeguard_active;
+    stripEl.innerHTML =
+      `<span class="sf-chip">Director: <b class="${dirHb.status === 'OK' || dirHb.status === 'RUNNING_CYCLE' ? 'pos' : 'warn'}">${esc(dirHb.status || 'INIT')}</b> (#${dirHb.cycle_count ?? 0}, ${fmtSecCompact(dirAge)})</span>` +
+      `<span class="sf-chip">1m Monitor: <b class="${monHb.status === 'OK' ? 'pos' : 'warn'}">${esc(monHb.status || 'INIT')}</b> (${fmtSecCompact(monAge)}) &bull; 2m Sup: <b>${fmtSecCompact(supAge)}</b></span>` +
+      `<span class="sf-chip">Safeguards: <b class="${stopOk ? 'pos' : 'neg'}">${paa.master_stop_engaged ? 'MASTER STOP' : (paa.accounting_safeguard_active ? 'ACCT FREEZE' : 'CLEAR')}</b></span>` +
+      `<span class="sf-chip">Tier-A Policies: <b class="${(paa.tier_a_intact_count || 0) >= 5 ? 'pos' : 'neg'}">${paa.tier_a_intact_count ?? 0}/5 IMMUTABLE</b></span>` +
+      `<span class="sf-chip">Tier-B Facts: <b class="pos">${zt.verified_facts_fresh ?? 0} Fresh</b> &bull; <span class="warn">${zt.verified_facts_stale ?? 0} Stale</span> &bull; <b class="${(zt.verified_facts_contradicted || 0) > 0 ? 'neg' : 'sub'}">${zt.verified_facts_contradicted ?? 0} Contradicted</b></span>` +
+      `<span class="sf-chip">Stateless Sessions: <b class="pos">${zt.fresh_session_pct ?? 100}% Fresh</b> (N=${zt.sessions_total ?? 0}) &bull; Peak Ctx <b>${maxCtx.toFixed(1)}%</b>/${ctxCap}%<span class="ctx-bar-bg"><span class="ctx-bar-fg" style="width:${ctxFillW}%;background:${ctxColor};"></span></span></span>` +
+      `<span class="sf-chip">Tasks: <b class="pos">${verDone} Verified</b> &bull; <span class="warn">${runCnt} Queue/Run</span> &bull; <b>${pendVer} PendVerif</b> &bull; <span class="${rejCnt ? 'neg' : 'sub'}">${rejCnt} Rej</span> &bull; <span class="${blkCnt ? 'warn' : 'sub'}">${blkCnt} Blocked</span></span>` +
+      `<span class="sf-chip">AI Spend Today: <b>$${Number(br.daily_ai_cost_usd || 0).toFixed(4)}</b> / $${Number(br.max_daily_ai_cost_usd || 2.5).toFixed(2)} (${br.daily_ai_calls ?? 0}/${br.max_daily_ai_calls ?? 96} calls)</span>` +
+      `<span class="sf-chip">Reconciled Cash vs Sim: <b>$${Number(vf.free_cash_pusd || 0).toFixed(2)} pUSD</b> (Realized <b class="${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg'}">${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(vf.realized_onchain_net_pnl_usd || 0).toFixed(2)}</b> vs Sim Shadow +$${Number(vf.simulated_shadow_t1000_pnl_usd || 0).toFixed(0)} <i>non-cash</i>)</span>`;
+  }
+
+  const timersEl = document.getElementById('paa_timers');
+  if (timersEl) {
+    const tRows = (paa.systemd_timers || []).slice().sort((a, b) => (a.next_in_sec ?? 999999) - (b.next_in_sec ?? 999999));
+    timersEl.innerHTML = tRows.map(t => {
+      const nxtRem = t.next_in_sec !== null && t.next_in_sec !== undefined ? Math.max(0, Number(t.next_in_sec) - elapsedSec) : null;
+      const lstAgo = t.last_ago_sec !== null && t.last_ago_sec !== undefined ? (Number(t.last_ago_sec) + elapsedSec) : null;
+      const fireCls = nxtRem !== null && nxtRem <= 15 ? 'pos' : 'warn';
+      return `<tr>
+        <td><b>${esc(t.unit)}</b></td>
+        <td style="white-space:nowrap;">${esc(t.last_et || '-')}</td>
+        <td class="sub">${fmtSecCompact(lstAgo)}</td>
+        <td class="${fireCls}"><b>${nxtRem !== null && nxtRem <= 0.5 ? 'FIRING...' : fmtSecCompact(nxtRem)}</b></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="sub">No systemd PAA timers found</td></tr>';
+  }
+
+  const depEl = document.getElementById('paa_deploys');
+  if (depEl) {
+    depEl.innerHTML = (paa.deployments || []).map(d => {
+      const gatesLbl = `${d.qa_passed ? 'QA✓' : 'QA✗'} ${d.canary_passed ? 'Canary✓' : 'Canary✗'}`;
+      return `<tr>
+        <td title="${esc(d.updated_et)}"><b>${esc(String(d.release_id || '').slice(0, 18))}</b></td>
+        <td><code>${esc(d.sha || '-')}</code></td>
+        <td class="sub">${esc(gatesLbl)}</td>
+        <td><span class="pill ${ztPillClass(d.state)}">${esc(d.state)}</span></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="sub">No releases recorded yet</td></tr>';
+  }
+
+  const factsEl = document.getElementById('paa_facts');
+  if (factsEl) {
+    factsEl.innerHTML = (paa.verified_facts || []).map(f => {
+      const rem = f.ttl_remaining_sec !== null && f.ttl_remaining_sec !== undefined ? (Number(f.ttl_remaining_sec) - elapsedSec) : -1;
+      const effSt = f.effective_status === 'CONTRADICTED' ? 'CONTRADICTED' : (rem <= 0 ? 'STALE_REVALIDATION_REQUIRED' : f.effective_status);
+      const valStr = typeof f.value === 'object' ? JSON.stringify(f.value).slice(0, 34) : String(f.value);
+      return `<tr>
+        <td title="Source: ${esc(f.source_ref)} (${esc(f.verified_by)})"><b>${esc(f.fact_key)}</b></td>
+        <td><code>${esc(valStr)}</code></td>
+        <td><span class="pill ${ztPillClass(effSt)}">${esc(effSt === 'STALE_REVALIDATION_REQUIRED' ? 'STALE_TTL' : effSt)}</span></td>
+        <td class="${rem <= 0 ? 'warn' : 'pos'}">${rem <= 0 ? 'expired' : fmtSecCompact(rem)}</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="4" class="sub">Awaiting next Monitor/Accountant cycle</td></tr>';
+  }
+
+  const sesEl = document.getElementById('paa_sessions');
+  if (sesEl) {
+    sesEl.innerHTML = (paa.recent_sessions || []).map(s => `
+      <tr>
+        <td style="white-space:nowrap;">${esc(s.created_et || '-')}</td>
+        <td title="${esc(s.task_id)}"><b>${esc(String(s.stage_role || '').slice(0, 24))}</b></td>
+        <td class="${s.fresh_session ? 'pos' : 'warn'}"><b>${s.fresh_session ? 'FRESH' : 'CONT'}</b></td>
+        <td>${Number(s.context_pct || 0).toFixed(1)}%</td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" class="sub">0 stateless AI sessions invoked yet</td></tr>';
+  }
+
+  const ladEl = document.getElementById('paa_ladder');
+  if (ladEl) {
+    ladEl.innerHTML =
+      `Tier-C Evidence Ladder: <span class="pill pill-muted">HYPOTHESIS: ${lad.HYPOTHESIS ?? 0}</span> &rarr; ` +
+      `<span class="pill pill-muted">BACKTEST: ${lad.BACKTESTED ?? 0}</span> &rarr; ` +
+      `<span class="pill pill-info">OOS: ${lad.OOS_TESTED ?? 0}</span> &rarr; ` +
+      `<span class="pill pill-warn">SHADOW: ${lad.SHADOW_VALIDATED ?? 0}</span> &rarr; ` +
+      `<span class="pill pill-ok">LIVE_VERIFIED: ${lad.LIVE_VERIFIED ?? 0}</span>`;
+  }
+
+  const tskEl = document.getElementById('paa_tasks');
+  if (tskEl) {
+    tskEl.innerHTML = (paa.recent_tasks || []).map(t => `
+      <tr>
+        <td><b>${esc(t.priority)}</b></td>
+        <td title="${esc(t.task_id)} | ${esc(t.last_error || t.next_action)}"><b>${esc(t.category)}</b>: ${esc(t.title)}</td>
+        <td>${esc(t.sessions)}</td>
+        <td><span class="pill ${ztPillClass(t.state)}">${esc(t.state)}</span></td>
+      </tr>
+    `).join('') || '<tr><td colspan="4" class="sub">No tasks in SQLite queue</td></tr>';
+  }
+
+  const evEl = document.getElementById('paa_events');
+  if (evEl) {
+    evEl.innerHTML = (paa.recent_events || []).map(e =>
+      `<div><span class="sub">${esc(e.ts_et)}</span> [<b>${esc(e.component)}</b>] <span class="pos">${esc(e.event_type)}</span> ${esc(e.details)}</div>`
+    ).join('') || '<div class="sub">No task events logged yet</div>';
+  }
+}
+
+function tickPaaLiveCounters() {
+  if (!_lastSyncClientMs) return;
+  const elapsed = Math.max(0, (Date.now() - _lastSyncClientMs) / 1000.0);
+  if (_lastMetaPrefix) {
+    const mEl = document.getElementById('meta');
+    if (mEl) mEl.textContent = `${_lastMetaPrefix} | Live Poll #${_pollSeq} (${Math.floor(elapsed)}s ago)`;
+  }
+  if (_lastPaaData) {
+    renderPaaAutonomy(_lastPaaData, elapsed);
+  }
+}
+setInterval(tickPaaLiveCounters, 1000);
 
 function setSfFilter(mode) {
   _sfFilter = mode;
@@ -1505,8 +2025,12 @@ async function refreshNow(force=false) {
     const bcfg = scfg.riskless_boxes || {};
     const cfgVer = scfg.schema_version || '5.4.1';
     const syncEt = d.fetched_at_et || fmtOttawa(d.unix_ts || d.fetched_at_utc, 'full');
-    document.getElementById('meta').textContent =
-      `Synced: ${syncEt} (Ottawa) | Schema v${cfgVer} Hot-Reload | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB`;
+    _pollSeq += 1;
+    _lastSyncClientMs = Date.now();
+    _lastMetaPrefix = `Synced: ${syncEt} (Ottawa) | Schema v${cfgVer} Hot-Reload | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Avail: ${mem.available || '?'} / ${mem.total || '?'} MB`;
+    document.getElementById('meta').textContent = `${_lastMetaPrefix} | Live Poll #${_pollSeq} (0s ago)`;
+    _lastPaaData = d.paa_autonomy || null;
+    if (_lastPaaData) renderPaaAutonomy(_lastPaaData, 0);
     const pmHdr = document.getElementById('pm_harvester_hdr');
     if (pmHdr) pmHdr.textContent = `Polymarket v${cfgVer} Live Harvester & Hot-Reload Strategy W/L`;
 
@@ -1711,7 +2235,7 @@ async function refreshNow(force=false) {
 }
 updateD1Countdown();
 refreshNow();
-setInterval(() => refreshNow(false), 10000);
+setInterval(() => refreshNow(false), 6000);
 </script>
 </body>
 </html>
@@ -1719,7 +2243,7 @@ setInterval(() => refreshNow(false), 10000);
 
 
 class SnapshotCache:
-    def __init__(self, host: str, ttl_sec: float = 7.0, start_bg: bool = False) -> None:
+    def __init__(self, host: str, ttl_sec: float = 5.0, start_bg: bool = False) -> None:
         self.host = host
         self.ttl_sec = ttl_sec
         self._fetch_lock = threading.Lock()
@@ -1845,11 +2369,26 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         mh = (paa.get("monitoring_health") or {}).get("paa_monitor") or {}
         tc = paa.get("task_counts_by_state") or {}
         br = paa.get("budget_and_resources") or {}
+        zt = paa.get("zero_trust") or {}
+        lad = paa.get("research_ladder") or {}
+        tm_short = ", ".join(
+            f"{t['unit']}={t['next_in_sec']}s"
+            for t in sorted(paa.get("systemd_timers") or [], key=lambda x: x.get("next_in_sec") or 999999)[:4]
+        )
         print("-" * 78)
         print(
             f" PAA Autonomy OS  : Director={dh.get('status', 'INIT')} (Cycle #{dh.get('cycle_count', 0)}, age={dh.get('age_sec')}s) | "
-            f"Monitor={mh.get('status', 'INIT')} | Stop={paa.get('master_stop_engaged')} | "
-            f"Tasks={json.dumps(tc)} | AI Cost Today=${br.get('daily_ai_cost_usd', 0.0):.4f}"
+            f"Monitor={mh.get('status', 'INIT')} (age={mh.get('age_sec')}s) | Stop={paa.get('master_stop_engaged')} | "
+            f"AI Cost Today=${br.get('daily_ai_cost_usd', 0.0):.4f}/{br.get('max_daily_ai_cost_usd', 2.50):.2f}"
+        )
+        print(
+            f" Zero-Trust State : Policies={paa.get('tier_a_intact_count', 0)}/5 | "
+            f"Facts(Fresh={zt.get('verified_facts_fresh', 0)}, Stale={zt.get('verified_facts_stale', 0)}, Contra={zt.get('verified_facts_contradicted', 0)}) | "
+            f"Sessions={zt.get('sessions_total', 0)} ({zt.get('fresh_session_pct', 100.0)}% fresh, peak_ctx={zt.get('max_context_pct', 0.0)}%/60%) | "
+            f"Tasks={json.dumps(tc)}"
+        )
+        print(
+            f" Schedules & TierC: Next=[{tm_short}] | Ladder={json.dumps(lad)}"
         )
     print("=" * 78)
 

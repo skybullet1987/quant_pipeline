@@ -292,6 +292,30 @@ class PAAMonitor:
         }
         _atomic_write_json(self.monitor_heartbeat_file, summary)
         _atomic_write_json(self.paa_dir / "operational_status.json", {**op_status, "monitor_summary": summary})
+        svc_ttl = float((self.cfg.get("zero_trust") or {}).get("service_fact_ttl_sec", 120.0))
+        self.db.upsert_verified_fact(
+            fact_key="services.all_core_units_active",
+            category="OPERATIONAL_HEALTH",
+            value=bool(op_status.get("all_core_units_active", True)),
+            epistemic_status="VERIFIED_FACT",
+            source_type="SYSTEMCTL_PROBE",
+            source_ref="operational_status.json:systemd_units",
+            verified_by="PAAMonitor",
+            ttl_sec=svc_ttl,
+            revalidation_rule="RECHECK_SYSTEMD_EVERY_60S",
+        )
+        if check_network and rtt_ms > 0:
+            self.db.upsert_verified_fact(
+                fact_key="clob.rest_time_rtt_ms",
+                category="EXCHANGE_OBSERVATION",
+                value=round(float(rtt_ms), 2),
+                epistemic_status="OBSERVATION",
+                source_type="HTTPS_CLOB_TIME_PING",
+                source_ref="https://clob.polymarket.com/time",
+                verified_by="PAAMonitor",
+                ttl_sec=float((self.cfg.get("zero_trust") or {}).get("latency_fact_ttl_sec", 180.0)),
+                revalidation_rule="TRANSIENT_NETWORK_MEASUREMENT_EXPIRES_IN_180S",
+            )
         self.db.record_heartbeat("paa_monitor", status=summary["status"], details={"anomalies_count": len(anomalies)})
         return summary
 

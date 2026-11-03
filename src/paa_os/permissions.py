@@ -135,15 +135,22 @@ class PermissionGate:
         self.approvals_dir = Path(approvals_dir) if approvals_dir is not None else DEFAULT_APPROVALS_DIR
         perm = self.cfg.get("permissions") or {}
         self.protected_files = {
-            str(x).replace("\\", "/").lstrip("./")
+            str(x).replace("\\", "/").removeprefix("./").lstrip("/")
             for x in (
                 perm.get("protected_files")
                 or [
                     ".env",
                     "src/paa_os/permissions.py",
+                    "src/paa_os/zero_trust.py",
                     "src/polymarket_research/execute_approvals.py",
                     "src/polymarket_research/setup_polymarket_account.py",
                     "config/paa_master_mandate.md",
+                    "config/paa_autonomy_config.json",
+                    "config/policies/PAA_MISSION.md",
+                    "config/policies/PAA_AUTONOMY_POLICY.md",
+                    "config/policies/PAA_RISK_POLICY.md",
+                    "config/policies/PAA_DEPLOYMENT_POLICY.md",
+                    "config/policies/PAA_VERIFICATION_POLICY.md",
                 ]
             )
         }
@@ -274,10 +281,10 @@ class PermissionGate:
         and unauthorized risk/exposure/live-trading expansion.
         """
         violations: List[str] = []
-        norm_files = [str(f).replace("\\", "/").lstrip("./") for f in changed_files]
+        norm_files = [str(f).replace("\\", "/").removeprefix("./").lstrip("/") for f in changed_files]
 
         for nf in norm_files:
-            if nf in self.protected_files or nf.endswith((".env", ".key", ".pem")):
+            if nf in self.protected_files or nf.startswith("config/policies/") or nf.endswith((".env", ".key", ".pem")):
                 violations.append(f"PROTECTED_FILE_MODIFIED:{nf}")
             if "data/polymarket/paa/approvals" in nf:
                 violations.append(f"SELF_APPROVAL_TAMPERING_FORBIDDEN:{nf}")

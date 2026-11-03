@@ -1,5 +1,5 @@
 {
-  "schema_version": "1.0.0",
+  "schema_version": "2.0.0",
   "runtime": {
     "agy_binary_linux": "/home/skybullet1987/.local/bin/agy",
     "agy_binary_windows": "C:\\Users\\Anton\\.gemini\\bin\\agy.exe",
@@ -10,6 +10,19 @@
     "engineering_model": "gemini-4-argon-high",
     "worktree_root_linux": "/home/skybullet1987/paa_worktrees",
     "staging_root_linux": "/home/skybullet1987/paa_staging"
+  },
+  "zero_trust": {
+    "policy_dir": "config/policies",
+    "enforce_fresh_session_per_stage": true,
+    "max_prompt_tokens": 16000,
+    "model_context_window_tokens": 32000,
+    "context_checkpoint_threshold_ratio": 0.60,
+    "max_file_slice_lines": 160,
+    "max_verified_facts_in_prompt": 20,
+    "default_fact_ttl_sec": 300,
+    "latency_fact_ttl_sec": 180,
+    "service_fact_ttl_sec": 120,
+    "financial_fact_ttl_sec": 300
   },
   "schedules": {
     "monitor_interval_sec": 60,
@@ -61,9 +74,16 @@
     "protected_files": [
       ".env",
       "src/paa_os/permissions.py",
+      "src/paa_os/zero_trust.py",
       "src/polymarket_research/execute_approvals.py",
       "src/polymarket_research/setup_polymarket_account.py",
-      "config/paa_master_mandate.md"
+      "config/paa_master_mandate.md",
+      "config/paa_autonomy_config.json",
+      "config/policies/PAA_MISSION.md",
+      "config/policies/PAA_AUTONOMY_POLICY.md",
+      "config/policies/PAA_RISK_POLICY.md",
+      "config/policies/PAA_DEPLOYMENT_POLICY.md",
+      "config/policies/PAA_VERIFICATION_POLICY.md"
     ],
     "forbidden_diff_patterns": [
       "POLYGON_PRIVATE_KEY",
