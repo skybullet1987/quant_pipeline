@@ -6191,6 +6191,15 @@ class PolymarketLiveHarvester:
                 )
                 collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
                 rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
+                early_exp_ts = min(
+                    float(candidate_box.get("leg_a_expiry_ts") or exp_ts),
+                    float(candidate_box.get("leg_b_expiry_ts") or exp_ts),
+                )
+                vel_tte_s = (
+                    max(1.0, early_exp_ts - now_ts)
+                    if (sleeve_src == "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX" and early_exp_ts > 0.0)
+                    else rem_tte_s
+                )
                 if box_type != "DOMINANCE" and rem_tte_s > 0.0:
                     fast_recycle_sl = zero_fee_box and (
                         sleeve_src in {
@@ -6205,11 +6214,11 @@ class PolymarketLiveHarvester:
                         or (
                             sleeve_src == "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"
                             and own_grad
-                            and rem_tte_s <= 86400.0
+                            and vel_tte_s <= 86400.0
                         )
                     )
                     vel_ok, vel_reason = passes_capital_velocity_hurdle(
-                        collat_usd=collat_f, rem_tte_sec=rem_tte_s, box_cost_net=fresh_box_net,
+                        collat_usd=collat_f, rem_tte_sec=vel_tte_s, box_cost_net=fresh_box_net,
                         box_type=box_type, sleeve_src=sleeve_src, fast_recycle_eligible=fast_recycle_sl,
                     )
                     if not vel_ok:
@@ -6394,7 +6403,8 @@ class PolymarketLiveHarvester:
                     elif sleeve_src == "COND1_MACRO_PARTITION_BOX" and own_grad and 0.0 < rem_tte_s <= 172800.0:
                         live_walk_cap = 0.992 if zero_fee_box else 0.988
                     elif zero_fee_box:
-                        live_walk_cap = float(_rcfg_d1_w.get("cm_b3_max_walk_cap", 0.990)) if box_type == "BARRIER_MONO" else (0.992 if (fresh_quiet or (own_grad and 0.0 < rem_tte_s <= 172800.0)) else 0.990)
+                        _grad_cap_max_tte = 604800.0 if sleeve_src in _v3_7d else 172800.0
+                        live_walk_cap = float(_rcfg_d1_w.get("cm_b3_max_walk_cap", 0.990)) if box_type == "BARRIER_MONO" else (0.992 if (fresh_quiet or (own_grad and 0.0 < rem_tte_s <= _grad_cap_max_tte)) else 0.990)
                     elif box_type in {"SPORTS_CORRIDOR", "MACRO_DOMINANCE", "NBA_DOMINANCE", "NEGRISK_2LEG", "LADDER_MONO", "COUNTING_DOMINANCE"} or sleeve_src == "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":
                         live_walk_cap = 0.988
                     elif sleeve_src == "D1_QUIET_BOOK_BOX" and fresh_quiet and self._is_v5_unleashed_active():
@@ -8105,25 +8115,38 @@ class PolymarketLiveHarvester:
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
         if not (min_rb <= anc_bid_px <= max_rb):
             return {"executed": False, "reason": f"RESTING_BID_OUT_OF_BAND:{anc_bid_px:.4f}"}
-        cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(0.08, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
+        uma_floor_h = 0.35 if _is_mlk1 else 1.25
+        cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
         sh_int = int(math.floor(budget / anc_bid_px))
-        if sh_int < 12 and not self.dry_run and cand_vel_bps >= 40.0 and self._is_v5_unleashed_active():
+        if sh_int < 12 and not self.dry_run and anc_bid_px >= 0.990 and cand_vel_bps >= 40.0 and self._is_v5_unleashed_active():
             _vel_mult = float(_b1_gov.get("bond1_velocity_preempt_mult", 1.80) or 1.80)
             _pe_map = getattr(self, "_maker_anchor_preempt_events", {})
+            _claimed_pe = self.__dict__.setdefault("_claimed_velocity_preempts", set())
+            _now_pe = time.time()
             _slow_cands = [
                 (float(it.get("velocity_bps_hr") or 0.0), str(it.get("inflight_key") or ""), it)
                 for it in getattr(self, "pending_entry_intents", {}).values()
-                if isinstance(it, dict) and it.get("live_maker_anchor_inflight") and (time.time() - float(it.get("ts") or 0.0)) >= 20.0
+                if isinstance(it, dict)
+                and it.get("live_maker_anchor_inflight")
+                and str(it.get("inflight_key") or "") not in _claimed_pe
+                and (_now_pe - float(it.get("ts") or 0.0)) >= (
+                    90.0 if (float(it.get("anchor_bid_px") or 0.0) >= 0.991 and float(it.get("velocity_bps_hr") or 0.0) >= 55.0) else 20.0
+                )
             ]
             if _slow_cands:
                 _slow_vel, _slow_k, _ = min(_slow_cands, key=lambda x: x[0])
-                if _slow_k in _pe_map and cand_vel_bps >= max(_slow_vel * _vel_mult, _slow_vel + 25.0):
-                    logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_slow_k} ({_slow_vel:.1f} bps/h) -> {dedupe_k} ({cand_vel_bps:.1f} bps/h)")
-                    _pe_map[_slow_k].set()
-                    for _ in range(16):
-                        await asyncio.sleep(0.06)
-                        if not any(isinstance(i, dict) and i.get("inflight_key") == _slow_k for i in self.pending_entry_intents.values()):
-                            break
+                if _slow_k and _slow_k in _pe_map and cand_vel_bps >= max(_slow_vel * _vel_mult, _slow_vel + 25.0):
+                    _claimed_pe.add(_slow_k)
+                    try:
+                        (self.__dict__.setdefault("_maker_anchor_preempt_reasons", {}))[_slow_k] = f"VELOCITY_UPGRADE:{dedupe_k}"
+                        logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_slow_k} ({_slow_vel:.1f} bps/h) -> {dedupe_k} ({cand_vel_bps:.1f} bps/h @ ${anc_bid_px:.3f})")
+                        _pe_map[_slow_k].set()
+                        for _ in range(16):
+                            await asyncio.sleep(0.06)
+                            if not any(isinstance(i, dict) and i.get("inflight_key") == _slow_k for i in self.pending_entry_intents.values()):
+                                break
+                    finally:
+                        _claimed_pe.discard(_slow_k)
                     inflight_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict)) + sum(float(v or 0.0) for v in _prepost_res.values())
                     collat_f = max(0.0, float(collat or 0.0) - inflight_u)
                     sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
@@ -8253,10 +8276,10 @@ class PolymarketLiveHarvester:
             _prepost_res.pop(intent_id, None)
             _prepost_mkts.pop(intent_id, None)
             self.pending_entry_intents[intent_id] = {
-                "trade_id": intent_id, "market_id": mid_a, "token_id": tok_a,
+                "trade_id": intent_id, "market_id": mid_a, "token_id": tok_a, "anchor_bid_px": anc_bid_px,
                 "notional_usd": round(sh_int * anc_bid_px, 4), "ts": now_int_ts, "heartbeat_ts": now_int_ts,
                 "live_maker_anchor_inflight": True, "inflight_key": inflight_key, "sleeve_source": sleeve_src,
-                "expiry_ts": exp_ts, "velocity_bps_hr": round(((1.0 - anc_bid_px) * 10000.0) / max(0.08, (exp_ts - now_int_ts) / 3600.0), 2) if exp_ts > now_int_ts else 0.0,
+                "expiry_ts": exp_ts, "velocity_bps_hr": round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_int_ts) / 3600.0), 2) if exp_ts > now_int_ts else 0.0,
             }
             _t_b1 = time.perf_counter()
             post_res = await asyncio.to_thread(
@@ -8280,7 +8303,9 @@ class PolymarketLiveHarvester:
             posted_sh = float(post_res.get("shares") or sh_int)
             if intent_id in self.pending_entry_intents:
                 self.pending_entry_intents[intent_id]["entry_order_id"] = maker_oid
+                self.pending_entry_intents[intent_id]["anchor_bid_px"] = posted_px
                 self.pending_entry_intents[intent_id]["notional_usd"] = round(posted_sh * posted_px, 4)
+                self.pending_entry_intents[intent_id]["velocity_bps_hr"] = round(((1.0 - posted_px) * 10000.0) / max(uma_floor_h, (exp_ts - time.time()) / 3600.0), 2) if exp_ts > time.time() else 0.0
                 self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
 
             if self.dry_run:
@@ -8515,6 +8540,7 @@ class PolymarketLiveHarvester:
                         and not self.dry_run
                         and not getattr(self, "_shutdown_requested", False)
                         and preempt_why != "SHUTDOWN"
+                        and not preempt_why.startswith("VELOCITY_UPGRADE:")
                         and _repost_n_in < 3
                         and (full_max_keep_s - (time.time() - first_post_ts)) >= 30.0
                         and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
@@ -9240,6 +9266,7 @@ class PolymarketLiveHarvester:
                 and getattr(self.executor, "client", None) is not None
                 and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
                 and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
+                and "place_passive_maker_entry" not in getattr(self.executor, "__dict__", {})
             )
         )
         _cur_eq_dir = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
@@ -9273,9 +9300,9 @@ class PolymarketLiveHarvester:
                 }
                 _sh_line = json.dumps(shadow_cand) + "\n"
 
-                def _write_shadow_cand(_ln: str = _sh_line) -> None:
+                def _write_shadow_cand(_ln: str = _sh_line, _p: Path = COUNTERFACTUAL_CANDIDATES_FILE) -> None:
                     try:
-                        with open(COUNTERFACTUAL_CANDIDATES_FILE, "a") as f:
+                        with open(_p, "a") as f:
                             f.write(_ln)
                     except Exception as e:
                         logger.debug(f"Failed to record {asset_str} shadow candidate: {e}")

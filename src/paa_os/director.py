@@ -190,22 +190,45 @@ class PAADirector:
         cand_p = self.data_dir / "d1_live_box_candidates.jsonl"
         cfg_p = self.repo_root / "config" / "polymarket_strategy_and_risk.json"
         by_slv: Dict[str, Any] = {}
+        active_shadow_sleeves: set[str] = set()
         if a124_p.exists():
             try:
                 raw_a = json.loads(a124_p.read_text(encoding="utf-8"))
                 by_slv = raw_a.get("by_sleeve") or raw_a.get("per_strategy") or {}
+                for _op in (raw_a.get("open_positions") or []):
+                    if isinstance(_op, dict) and _op.get("sleeve"):
+                        active_shadow_sleeves.add(str(_op["sleeve"]))
+                for _mo in (raw_a.get("pending_maker_orders") or []):
+                    if isinstance(_mo, dict) and _mo.get("sleeve"):
+                        active_shadow_sleeves.add(str(_mo["sleeve"]))
             except Exception:
                 by_slv = {}
+        for opps_cand in (
+            self.data_dir / "alpha124_live_opportunities.json",
+            self.data_dir.parent / "alpha124" / "alpha124_live_opportunities.json",
+        ):
+            if opps_cand.exists():
+                try:
+                    raw_op = json.loads(opps_cand.read_text(encoding="utf-8"))
+                    for _o in (raw_op.get("top_opportunities") if isinstance(raw_op, dict) else (raw_op if isinstance(raw_op, list) else [])):
+                        if isinstance(_o, dict) and _o.get("sleeve"):
+                            active_shadow_sleeves.add(str(_o["sleeve"]))
+                except Exception:
+                    pass
+                break
         closed_live: List[Dict[str, Any]] = []
         live_cash = 0.0
+        live_wins_by_slv: Dict[str, int] = {}
         if harv_p.exists():
             try:
                 raw_h = json.loads(harv_p.read_text(encoding="utf-8"))
                 closed_live = list(raw_h.get("closed_positions") or [])
                 live_cash = float(raw_h.get("live_bankroll", 0.0) or 0.0)
+                for _ps_k, _ps_v in (raw_h.get("per_strategy") or {}).items():
+                    if isinstance(_ps_v, dict) and int(_ps_v.get("wins", 0) or 0) > 0:
+                        live_wins_by_slv[str(_ps_k)] = max(live_wins_by_slv.get(str(_ps_k), 0), int(_ps_v["wins"]))
             except Exception:
                 pass
-        live_wins_by_slv: Dict[str, int] = {}
         for rec in closed_live:
             if isinstance(rec, dict) and float(rec.get("net_pnl_usd", 0.0) or 0.0) > 0:
                 sl = str(rec.get("sleeve") or rec.get("sleeve_source") or "")
@@ -246,11 +269,15 @@ class PAADirector:
                 min_dir_eq = float(((json.loads(cfg_p.read_text(encoding="utf-8")).get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd")) or 0.0)
             except Exception:
                 min_dir_eq = 0.0
+        active_conv_gaps = sorted(sl for sl in zero_live_gaps if sl in active_shadow_sleeves)
+        regime_quiet_grad8 = sorted(sl for sl in zero_live_gaps if sl not in active_shadow_sleeves)
         summary = {
             "audited_at_utc": utc_now_iso(),
             "grad8_ready_count": len(grad8_ready),
             "grad8_ready_sleeves": sorted(grad8_ready),
             "grad8_zero_live_conversion_gaps": sorted(zero_live_gaps),
+            "grad8_active_shadow_conversion_gaps": active_conv_gaps,
+            "grad8_regime_quiet_sleeves": regime_quiet_grad8,
             "near_grad8_candidates": near_grad8,
             "live_wins_by_sleeve": live_wins_by_slv,
             "recent_live_candidate_counts": cand_counts,
@@ -598,7 +625,7 @@ class PAADirector:
                     next_action="VERIFY_CONVERSION_AUDIT",
                 )
             conv_out = step_outputs["conversion_audit"]
-            if allow_headless_ai and payload.get("run_ai_synthesis", False) and conv_out.get("grad8_zero_live_conversion_gaps") and "ai_conversion_plan" not in completed_steps:
+            if allow_headless_ai and payload.get("run_ai_synthesis", False) and conv_out.get("grad8_active_shadow_conversion_gaps") and "ai_conversion_plan" not in completed_steps:
                 ok_b, _ = self.budget.can_invoke_ai_agent(task)
                 if ok_b:
                     pkt = self.context_manager.build_fresh_session_packet(
@@ -705,6 +732,14 @@ class PAADirector:
                 "net_economic_profit_after_ops_usd": fin["net_economic_profit_usd"],
                 "simulated_non_cash_benchmarks": {
                     "alpha124_shadow_t1000_pnl_usd": fin["simulated_shadow_t1000_pnl_usd"],
+                    "zero_loss_shadow_t1000_pnl_usd": fin.get(
+                        "zero_loss_shadow_t1000_pnl_usd",
+                        ((fin.get("details") or {}).get("simulated_benchmarks") or {}).get("zero_loss_shadow_t1000_pnl_usd", 0.0),
+                    ),
+                    "zero_loss_shadow_wins": fin.get(
+                        "zero_loss_shadow_wins",
+                        ((fin.get("details") or {}).get("simulated_benchmarks") or {}).get("zero_loss_shadow_wins", 0),
+                    ),
                     "paper_oos_validation_pnl_usd": fin["simulated_paper_oos_pnl_usd"],
                     "is_real_money": False,
                 },
@@ -750,7 +785,7 @@ class PAADirector:
             f"- **Portfolio NAV (Mark-to-Bid / Resting Maker)**: `${vf['nav_mark_to_bid_usd']:.2f}` / `${vf['nav_resting_maker_usd']:.2f}`",
             f"- **Verified Realized Cash Net PnL**: `${vf['realized_onchain_net_pnl_usd']:+.2f}` (Fees: `${vf['realized_fees_usd']:.2f}`, Est. Slippage: `${vf['estimated_slippage_usd']:.2f}`, Non-Cash Artifact Adj: `${vf['non_cash_unfilled_artifact_adj_usd']:+.2f}`)",
             f"- **Autonomous Ops Cost**: AI Research `${vf['research_ai_cost_usd']:.4f}` + Prorated VM Infra `${vf['daily_infra_vm_cost_usd']:.4f}` -> **Net Economic Result**: `${vf['net_economic_profit_after_ops_usd']:+.2f}`",
-            f"- **Simulated Non-Cash Benchmarks (Not Real Money)**: Alpha-124 Shadow T1000 `${vf['simulated_non_cash_benchmarks']['alpha124_shadow_t1000_pnl_usd']:+.2f}` | Forward Paper OOS `${vf['simulated_non_cash_benchmarks']['paper_oos_validation_pnl_usd']:+.2f}`",
+            f"- **Simulated Non-Cash Benchmarks (Not Real Money)**: Zero-Loss Shadow T1000 `${vf['simulated_non_cash_benchmarks'].get('zero_loss_shadow_t1000_pnl_usd', 0.0):+.2f}` (`{vf['simulated_non_cash_benchmarks'].get('zero_loss_shadow_wins', 0)}W / 0L`, Legacy All-Sleeves `${vf['simulated_non_cash_benchmarks']['alpha124_shadow_t1000_pnl_usd']:+.2f}`) | Forward Paper OOS `${vf['simulated_non_cash_benchmarks']['paper_oos_validation_pnl_usd']:+.2f}`",
             "",
             "## 3. Durable Task Queue & Releases",
             f"- **Task Counts by State**: `{json.dumps(dashboard['task_counts_by_state'])}`",
@@ -805,7 +840,8 @@ class PAADirector:
             ready_now = self.db.list_tasks(states=("CHECKPOINTED", "READY", "PENDING"), limit=5)
             if run_proactive_research_if_idle:
                 hr_bucket = time.strftime("%Y%m%d_%H", time.gmtime())
-                if not ready_now:
+                res_dkey = f"SCHEDULED_RESEARCH:UNIVERSE_AND_WFO_SCAN:{hr_bucket}"
+                if not ready_now and not self.db.has_dedupe_key(res_dkey, include_completed=True):
                     hbs = self.db.get_heartbeats()
                     res_hb = hbs.get("paa_research")
                     res_age = float(res_hb["age_sec"]) if (res_hb and res_hb.get("age_sec") is not None) else 99999.0
@@ -814,24 +850,26 @@ class PAADirector:
                             category="RESEARCH_DISCOVERY",
                             priority_label="P2",
                             expected_net_ev_usd_per_day=1.25,
-                            dedupe_key=f"SCHEDULED_RESEARCH:UNIVERSE_AND_WFO_SCAN:{hr_bucket}",
+                            dedupe_key=res_dkey,
                             title="Continuous Polymarket Multi-Category Opportunity & Shadow WFO Scan",
                             financial_impact_hypothesis="Discover positive-EV UMA carries, intraday carries, and graduated shadow sleeves.",
                             required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
                             payload={"max_events": 600, "run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
                             next_action="SCAN_POLYMARKET_UNIVERSE",
                         )
-                self.db.enqueue_task(
-                    category="PROFIT_CONVERSION_AUDIT",
-                    priority_label="P2",
-                    expected_net_ev_usd_per_day=2.50,
-                    dedupe_key=f"PROFIT_CONVERSION_AUDIT:{hr_bucket}",
-                    title=f"Hourly Shadow-to-Live Profit Conversion & Velocity Audit ({hr_bucket}Z)",
-                    financial_impact_hypothesis="Ensure all 8/8 zero-loss shadow sleeves convert to live CLOB candidates and maximize bps/hr velocity.",
-                    required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
-                    payload={"run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
-                    next_action="AUDIT_SHADOW_TO_LIVE_CONVERSION",
-                )
+                conv_dkey = f"PROFIT_CONVERSION_AUDIT:{hr_bucket}"
+                if not self.db.has_dedupe_key(conv_dkey, include_completed=True):
+                    self.db.enqueue_task(
+                        category="PROFIT_CONVERSION_AUDIT",
+                        priority_label="P2",
+                        expected_net_ev_usd_per_day=2.50,
+                        dedupe_key=conv_dkey,
+                        title=f"Hourly Shadow-to-Live Profit Conversion & Velocity Audit ({hr_bucket}Z)",
+                        financial_impact_hypothesis="Ensure all 8/8 zero-loss shadow sleeves convert to live CLOB candidates and maximize bps/hr velocity.",
+                        required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                        payload={"run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
+                        next_action="AUDIT_SHADOW_TO_LIVE_CONVERSION",
+                    )
 
             # Policy B3 / B6: Claim and execute highest-priority eligible tasks
             executed_results: List[Dict[str, Any]] = []

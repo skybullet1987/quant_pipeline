@@ -130,6 +130,8 @@ class PAAAccountant:
             if alt.exists():
                 a124_p = alt
         sh_t1000_pnl = 0.0
+        zl_sh_t1000_pnl = 0.0
+        zl_sh_wins = 0
         sh_sleeves = 0
         if a124_p.exists():
             try:
@@ -144,6 +146,15 @@ class PAAAccountant:
                     ),
                     2,
                 )
+                for v in by_sl.values():
+                    if not isinstance(v, dict):
+                        continue
+                    w_sl = int(v.get("wins", 0) or 0)
+                    l_sl = int(v.get("losses", 0) or 0)
+                    p_sl = float(v.get("realized_pnl_t1000_usd", v.get("pnl_t1000_usd", v.get("net_pnl_t1000", 0.0))) or 0.0)
+                    if l_sl == 0 and w_sl > 0 and p_sl > 0.0:
+                        zl_sh_t1000_pnl += p_sl
+                        zl_sh_wins += w_sl
             except Exception:
                 pass
 
@@ -174,6 +185,8 @@ class PAAAccountant:
             "performance_origin": "SIMULATED_NON_CASH_BENCHMARK",
             "alpha124_shadow_sleeves_count": sh_sleeves,
             "simulated_shadow_t1000_pnl_usd": round(sh_t1000_pnl, 2),
+            "zero_loss_shadow_t1000_pnl_usd": round(zl_sh_t1000_pnl, 2),
+            "zero_loss_shadow_wins": zl_sh_wins,
             "simulated_paper_oos_trades": paper_trades,
             "simulated_paper_oos_pnl_usd": round(paper_pnl, 2),
         }
@@ -350,10 +363,13 @@ class PAAAccountant:
             "accounting_discrepancy_usd": disc_usd,
             "accounting_ok": acct_ok,
             "simulated_shadow_t1000_pnl_usd": sim_m["simulated_shadow_t1000_pnl_usd"],
+            "zero_loss_shadow_t1000_pnl_usd": sim_m["zero_loss_shadow_t1000_pnl_usd"],
+            "zero_loss_shadow_wins": sim_m["zero_loss_shadow_wins"],
             "simulated_paper_oos_pnl_usd": sim_m["simulated_paper_oos_pnl_usd"],
             "details": {
                 "anomalies": anomalies,
                 "execution_metrics": exec_m,
+                "simulated_benchmarks": sim_m,
                 "budget_summary": budget_m,
                 "watchdog_alerts": ledger.get("watchdog_alerts") or [],
             },

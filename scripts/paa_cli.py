@@ -133,11 +133,18 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
         return 0
 
     fin = director.accountant.measure_and_record(live_rpc_check=True)
-    lat_path = director.data_dir / "live_latency_traces.jsonl"
+    lat_candidates = [
+        (director.data_dir / "latency_trace.jsonl", ("total_loop_ms", "total_ms", "latency_ms", "rtt_ms", "http_post_ms"), 250.0),
+        (director.data_dir / "live_latency_traces.jsonl", ("total_loop_ms", "latency_ms", "rtt_ms"), 250.0),
+        (director.data_dir / "live_orders.jsonl", ("clob_http_post_ms", "http_ms", "latency_ms"), 350.0),
+    ]
     p50_ms = 0.0
     p95_ms = 0.0
     sample_n = 0
-    if lat_path.exists():
+    lat_source = "NONE"
+    for lat_path, lat_keys, p95_thresh_ms in lat_candidates:
+        if not lat_path.exists():
+            continue
         vals: List[float] = []
         for ln in lat_path.read_text(encoding="utf-8", errors="ignore").splitlines()[-500:]:
             ln = ln.strip()
@@ -145,28 +152,35 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
                 continue
             try:
                 rec = json.loads(ln)
-                ms = float(rec.get("total_loop_ms") or rec.get("latency_ms") or rec.get("rtt_ms") or 0.0)
-                if ms > 0:
+                ms = 0.0
+                for lk in lat_keys:
+                    v_ms = rec.get(lk)
+                    if v_ms is not None and float(v_ms or 0.0) > 0.0:
+                        ms = float(v_ms)
+                        break
+                if ms > 0.0:
                     vals.append(ms)
             except Exception:
                 continue
         if vals:
             vals.sort()
             sample_n = len(vals)
+            lat_source = lat_path.name
             p50_ms = round(vals[int(0.50 * (sample_n - 1))], 2)
             p95_ms = round(vals[int(0.95 * (sample_n - 1))], 2)
-            if p95_ms > 250.0:
+            if p95_ms > p95_thresh_ms:
                 director.db.enqueue_task(
                     category="ENGINEERING_OPTIMIZATION",
                     priority_label="P2",
                     expected_net_ev_usd_per_day=1.50,
                     dedupe_key="HOURLY_OPT:HIGH_LOOP_LATENCY",
-                    title=f"Investigate Elevated Live Loop Latency (p95={p95_ms}ms)",
-                    financial_impact_hypothesis="Keep p95 execution loop <250ms to preserve Maker queue priority.",
-                    evidence={"p50_ms": p50_ms, "p95_ms": p95_ms, "samples": sample_n},
+                    title=f"Investigate Elevated Live Latency ({lat_source} p95={p95_ms}ms)",
+                    financial_impact_hypothesis=f"Keep p95 latency <{p95_thresh_ms:.0f}ms to preserve Maker queue priority.",
+                    evidence={"source": lat_source, "p50_ms": p50_ms, "p95_ms": p95_ms, "samples": sample_n},
                     required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
                     next_action="PROFILE_HOT_LOOP_LATENCY",
                 )
+            break
 
     forensic_ids = director._check_strategy_degradation_and_losses()
     summary = {
@@ -174,6 +188,9 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
         "free_cash_pusd": fin["free_cash_pusd"],
         "realized_net_pnl_usd": fin["verified_realized_net_pnl_usd"],
         "simulated_shadow_t1000_pnl_usd": fin["simulated_shadow_t1000_pnl_usd"],
+        "zero_loss_shadow_t1000_pnl_usd": fin.get("zero_loss_shadow_t1000_pnl_usd", 0.0),
+        "zero_loss_shadow_wins": fin.get("zero_loss_shadow_wins", 0),
+        "latency_source": lat_source,
         "latency_samples": sample_n,
         "latency_p50_ms": p50_ms,
         "latency_p95_ms": p95_ms,
@@ -204,6 +221,8 @@ def cmd_six_hour_eval(args: argparse.Namespace) -> int:
         "tests/test_v50_holistic_overhaul.py",
         "tests/test_zero_trust_forensic_audit.py",
         "tests/test_paa_autonomy_os.py",
+        "tests/test_paa_zero_trust_and_dashboard.py",
+        "tests/test_paa_profit_and_accounting_upgrades.py",
     ]
     existing_targets = [t for t in targets if (PIPELINE_ROOT / t).exists()]
     t0 = time.perf_counter()

@@ -2258,7 +2258,8 @@ async function refreshNow(force=false) {
         const nt = Number(o.notional_usd || 0);
         const edgeUsd = Math.max(0, sh * 1.0 - nt);
         const remMin = (o.rem_min !== null && o.rem_min !== undefined) ? Number(o.rem_min) : null;
-        const velBpsHr = (remMin !== null && remMin > 0) ? (((1 - px) * 10000) / Math.max(0.08, remMin / 60)) : null;
+        const umaFloorHr = String(o.sleeve || '').includes('MKR_LOCK1') ? 0.35 : 1.25;
+        const velBpsHr = (remMin !== null && remMin > 0) ? (((1 - px) * 10000) / Math.max(umaFloorHr, remMin / 60)) : null;
         const remTxt = remMin !== null ? `${remMin.toFixed(0)} min (${velBpsHr.toFixed(0)} bps/h)` : '-';
         const oidShort = String(o.order_id || '').slice(0, 14) + '...';
         const outLbl = o.outcome ? `${o.side} (${o.outcome})` : o.side;

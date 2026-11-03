@@ -541,6 +541,25 @@ class PAATaskDB:
             )
             return cur.rowcount > 0
 
+    def has_dedupe_key(self, dedupe_key: str, *, include_completed: bool = True) -> bool:
+        """Checks whether a task with `dedupe_key` already exists (including completed same-hour buckets when `include_completed=True`)."""
+        dkey = str(dedupe_key or "").strip()[:180]
+        if not dkey:
+            return False
+        with self._connect(immediate=False) as conn:
+            if include_completed:
+                row = conn.execute(
+                    "SELECT 1 FROM paa_tasks WHERE dedupe_key = ? LIMIT 1",
+                    (dkey,),
+                ).fetchone()
+            else:
+                placeholders = ",".join("?" for _ in ACTIVE_TASK_STATES + ("BLOCKED_AUTHORIZATION",))
+                row = conn.execute(
+                    f"SELECT 1 FROM paa_tasks WHERE dedupe_key = ? AND execution_state IN ({placeholders}) LIMIT 1",
+                    (dkey, *ACTIVE_TASK_STATES, "BLOCKED_AUTHORIZATION"),
+                ).fetchone()
+            return row is not None
+
     def enqueue_task(
         self,
         *,

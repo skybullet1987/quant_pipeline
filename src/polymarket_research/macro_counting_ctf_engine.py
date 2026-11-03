@@ -842,11 +842,15 @@ def evaluate_locked_market_reward_carry(
     """
     if p_lock < 0.995 or rewards_min_size <= 0.0 or best_ask <= 0.96:
         return {"eligible": False}
-    bid_px = round(min(max(best_bid, 0.96), min(best_ask - 0.005, 0.989)), 3)
+    ta = 0.002 if best_ask > 0.990 else 0.005
+    step_b = round(best_bid + 0.001, 3) if (best_bid >= 0.988 and (best_ask - best_bid) >= 0.003) else max(best_bid, 0.96)
+    max_cap_rw = 0.994 if p_lock >= 0.999 else 0.989
+    min_edge_rw = 0.006 if p_lock >= 0.999 else 0.008
+    bid_px = round(min(step_b, min(best_ask - ta, max_cap_rw)), 3)
     max_spr = float(rewards_max_spread_cents) / 100.0 if rewards_max_spread_cents > 0.5 else float(rewards_max_spread_cents or 0.03)
     in_reward_zone = (best_ask - bid_px) <= max(0.02, max_spr + 1e-6)
     carry_edge = round(p_lock - bid_px, 4)
-    if not (0.955 <= bid_px < best_ask and carry_edge >= 0.008 and in_reward_zone):
+    if not (0.955 <= bid_px < best_ask and carry_edge >= min_edge_rw and in_reward_zone):
         return {"eligible": False}
     return {
         "eligible": True,

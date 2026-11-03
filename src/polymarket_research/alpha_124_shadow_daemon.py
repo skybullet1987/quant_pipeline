@@ -276,9 +276,12 @@ from src.polymarket_research.riskless_frontier_v4_engine import (
 
 DATA_DIR = PROJECT_ROOT / "data" / "alpha124"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
+_DEFAULT_DATA_DIR = DATA_DIR
 
 STATE_FILE = DATA_DIR / "alpha124_shadow_state.json"
+_DEFAULT_STATE_FILE = STATE_FILE
 LEDGER_FILE = DATA_DIR / "alpha124_shadow_ledger.jsonl"
+_DEFAULT_LEDGER_FILE = LEDGER_FILE
 MARKET_TELEMETRY_FILE = DATA_DIR / "alpha124_market_telemetry.jsonl"
 OPPS_FILE = DATA_DIR / "alpha124_live_opportunities.json"
 LOG_FILE = DATA_DIR / "alpha124_shadow.log"
@@ -1103,13 +1106,40 @@ class Alpha124ShadowDaemon:
         except Exception as exc:
             logger.warning(f"Calibration load notice: {exc}")
 
+    @staticmethod
+    def _resolve_ledger_path() -> Path:
+        if LEDGER_FILE != _DEFAULT_LEDGER_FILE:
+            return LEDGER_FILE
+        if DATA_DIR != _DEFAULT_DATA_DIR:
+            return DATA_DIR / "alpha124_shadow_ledger.jsonl"
+        if STATE_FILE != _DEFAULT_STATE_FILE:
+            return STATE_FILE.parent / "alpha124_shadow_ledger.jsonl"
+        return LEDGER_FILE
+
+    @staticmethod
+    def _is_leaked_unit_test_artifact(rec: Dict[str, Any]) -> bool:
+        """Detects synthetic unit-test fixtures (`SP4_SUB_st1_st2` / `st1`/`st2`) when hydrating the live state file."""
+        if STATE_FILE != _DEFAULT_STATE_FILE:
+            return False
+        dk = str(rec.get("dedupe_key") or rec.get("position_id") or "")
+        if dk.startswith("SP4_SUB_st1_st2"):
+            return True
+        extra = rec.get("extra") or {}
+        if str(extra.get("market_id") or "") in {"st1", "st2"}:
+            return True
+        la = extra.get("leg_a") or {}
+        lb = extra.get("leg_b") or {}
+        if str(la.get("market_id") or "") in {"st1", "st2"} or str(lb.get("market_id") or "") in {"st1", "st2"}:
+            return True
+        return False
+
     def _hydrate_state(self) -> None:
         if STATE_FILE.exists():
             try:
                 st = json.loads(STATE_FILE.read_text(encoding="utf-8"))
                 self.started_at = st.get("started_at", self.started_at)
                 for p in st.get("open_positions", []):
-                    if isinstance(p, dict) and p.get("position_id"):
+                    if isinstance(p, dict) and p.get("position_id") and not self._is_leaked_unit_test_artifact(p):
                         self.open_positions[p["position_id"]] = p
                         self.entered_keys.add(str(p.get("dedupe_key") or p["position_id"]))
                         ev_id = (p.get("extra") or {}).get("event_id")
@@ -1119,7 +1149,7 @@ class Alpha124ShadowDaemon:
                             elif p.get("sleeve") == "W2_MAKER_OVERROUND":
                                 self.entered_keys.add(f"W2M_EVENT_{ev_id}")
                 for m_ord in st.get("pending_maker_orders", []):
-                    if isinstance(m_ord, dict) and m_ord.get("order_id"):
+                    if isinstance(m_ord, dict) and m_ord.get("order_id") and not self._is_leaked_unit_test_artifact(m_ord):
                         self.pending_maker_orders[m_ord["order_id"]] = m_ord
                         if m_ord.get("dedupe_key"):
                             self.entered_keys.add(str(m_ord["dedupe_key"]))
@@ -1127,7 +1157,7 @@ class Alpha124ShadowDaemon:
                         if ev_id and m_ord.get("sleeve") == "W2_MAKER_OVERROUND":
                             self.entered_keys.add(f"W2M_EVENT_{ev_id}")
                 for p in st.get("recent_closed_positions", []):
-                    if isinstance(p, dict):
+                    if isinstance(p, dict) and not self._is_leaked_unit_test_artifact(p):
                         self.closed_positions.append(p)
                         if p.get("dedupe_key"):
                             self.entered_keys.add(str(p["dedupe_key"]))
@@ -1140,12 +1170,13 @@ class Alpha124ShadowDaemon:
             except Exception as exc:
                 logger.warning(f"State hydrate notice: {exc}")
 
-        if LEDGER_FILE.exists():
+        ledger_path = self._resolve_ledger_path()
+        if ledger_path.exists():
             try:
                 ledger_open: Dict[str, Dict[str, Any]] = {}
                 ledger_maker: Dict[str, Dict[str, Any]] = {}
                 closed_ids = {str(p.get("position_id")) for p in self.closed_positions if isinstance(p, dict) and p.get("position_id")}
-                with open(LEDGER_FILE, "r", encoding="utf-8", errors="ignore") as f:
+                with open(ledger_path, "r", encoding="utf-8", errors="ignore") as f:
                     for line in f:
                         if not line.strip():
                             continue
@@ -1153,6 +1184,8 @@ class Alpha124ShadowDaemon:
                             r = json.loads(line)
                         except Exception:
                             # Skip truncated/corrupt JSONL line without aborting ledger hydration (`F-19`)
+                            continue
+                        if isinstance(r, dict) and self._is_leaked_unit_test_artifact(r):
                             continue
                         ev = r.get("event")
                         if ev in ("SHADOW_ENTRY", "SHADOW_CLOSE") and r.get("dedupe_key"):
@@ -1224,7 +1257,9 @@ class Alpha124ShadowDaemon:
             self.pending_zero_fee_maker_anchors.clear()
 
     def _append_ledger(self, rec: Dict[str, Any]) -> None:
-        with open(LEDGER_FILE, "a", encoding="utf-8") as f:
+        ledger_path = self._resolve_ledger_path()
+        ledger_path.parent.mkdir(parents=True, exist_ok=True)
+        with open(ledger_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(rec) + "\n")
 
     async def get_session(self) -> aiohttp.ClientSession:
@@ -2454,18 +2489,19 @@ class Alpha124ShadowDaemon:
                     return False
             else:
                 if is_reward_carry and extra.get("resting_bid_override"):
-                    resting_bid = round(min(float(extra["resting_bid_override"]), best_ask - 0.005), 4)
+                    ta_rw = 0.002 if best_ask > 0.990 else 0.005
+                    resting_bid = round(min(float(extra["resting_bid_override"]), best_ask - ta_rw), 4)
                 else:
                     # Post-only Maker bid: step +1c inside wide spread or join best_bid when 1c tight, strictly < best_ask
                     cand_bid = best_bid + 0.01 if (best_ask - best_bid) >= 0.02 else best_bid
                     resting_bid = round(min(cand_bid, best_ask - 0.01), 4)
                 min_rb = 0.950 if is_reward_carry else (0.14 if is_weather_maker else 0.18)
-                max_rb = 0.990 if is_reward_carry else (0.65 if is_weather_maker else 0.80)
+                max_rb = (0.994 if p_model >= 0.999 else 0.990) if is_reward_carry else (0.65 if is_weather_maker else 0.80)
                 if not (min_rb <= resting_bid <= max_rb):
                     return False
                 maker_edge = p_model - resting_bid
-                min_edge = 0.008 if is_reward_carry else (0.085 if is_weather_maker else 0.060)
-                if maker_edge < min_edge:
+                min_edge = (0.006 if p_model >= 0.999 else 0.008) if is_reward_carry else (0.085 if is_weather_maker else 0.060)
+                if maker_edge < min_edge - 1e-9:
                     return False
 
             # Price-improving +1c establishes top-of-queue (`0.0` ahead); joining existing best_bid sits behind L1 queue
@@ -3128,8 +3164,8 @@ class Alpha124ShadowDaemon:
                                         close_ts=float(end_ts),
                                         now_ts=now_s,
                                         min_resting_bid=0.940,
-                                        max_resting_bid=0.990,
-                                        min_maker_edge=0.008,
+                                        max_resting_bid=0.994,
+                                        min_maker_edge=0.006,
                                         max_opp_bid=0.030,
                                         hold_to_maturity=True,
                                         p_model=1.0,
@@ -5618,7 +5654,16 @@ class Alpha124ShadowDaemon:
             max_cap = (0.992 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
         elif box_type == "BARRIER_MONO":
             max_cap = 0.993
-        elif max(fee_a, fee_b) == 0.0 and self.is_sleeve_grad8_ready(sleeve_source) and rem_sec <= 172800.0:
+        elif max(fee_a, fee_b) == 0.0 and self.is_sleeve_grad8_ready(sleeve_source) and rem_sec <= (
+            604800.0
+            if sleeve_source in {
+                "LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",
+                "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                "LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",
+                "CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",
+            }
+            else 172800.0
+        ):
             max_cap = 0.992
         else:
             max_cap = 0.990 if max(fee_a, fee_b) == 0.0 else 0.988
@@ -8304,6 +8349,7 @@ class Alpha124ShadowDaemon:
                 extra_w = pos.get("extra") or {}
                 legs = extra_w.get("legs") or []
                 if now < close_ts_f + 30.0:
+                    bks_w = None
                     if (now - float(pos.get("_last_book_poll_ts") or 0.0)) >= 30.0 and legs:
                         pos["_last_book_poll_ts"] = now
                         bks_w = await asyncio.gather(
@@ -8318,8 +8364,11 @@ class Alpha124ShadowDaemon:
                             )
                             if uw_w is not None:
                                 to_close.append((pid, "EARLY_OVERROUND_BID_UNWIND", uw_w[0], uw_w[1]))
-                    continue
-                if now >= close_ts_f + 30.0:
+                                continue
+                    if (now - float(pos.get("_last_gamma_chk_ts") or 0.0)) < (30.0 if (bks_w is not None and not all(bks_w)) else 120.0):
+                        continue
+                    pos["_last_gamma_chk_ts"] = now
+                if legs:
                     guar_pay_w = float(extra_w.get("guaranteed_payout") or 1.0)
                     resolved_vals = await asyncio.gather(
                         *[
@@ -8456,6 +8505,7 @@ class Alpha124ShadowDaemon:
                 legs = extra.get("legs") or []
                 close_ts_f = float(pos["close_ts"])
                 if now < close_ts_f + 20.0:
+                    bks_m = None
                     if (now - float(pos.get("_last_book_poll_ts") or 0.0)) >= 30.0 and legs:
                         pos["_last_book_poll_ts"] = now
                         bks_m = await asyncio.gather(
@@ -8480,7 +8530,10 @@ class Alpha124ShadowDaemon:
                             )
                             if uw_m is not None:
                                 to_close.append((pid, "EARLY_OVERROUND_BID_UNWIND", uw_m[0], uw_m[1]))
-                    continue
+                                continue
+                    if (now - float(pos.get("_last_gamma_chk_ts") or 0.0)) < (30.0 if (bks_m is not None and not all(bks_m)) else 120.0):
+                        continue
+                    pos["_last_gamma_chk_ts"] = now
                 resolved_vals = await asyncio.gather(
                     *[
                         self.resolve_via_gamma_market(
@@ -8615,6 +8668,20 @@ class Alpha124ShadowDaemon:
                     st_lbl = "SETTLED_GAMMA_WIN" if g_pay >= 0.99 else "SETTLED_GAMMA_LOSS"
                     to_close.append((pid, st_lbl, g_pay, 0.0))
                     continue
+
+                if bk and sleeve in ("BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY") and now >= float(pos["close_ts"]) + 900.0:
+                    best_bid_b1, l1_bid_u_b1 = extract_best_bid(bk.get("bids") or [])
+                    entry_eff_b1 = float(pos.get("entry_eff_px_t1000") or pos.get("entry_vwap_t1000") or 0.995)
+                    fr_b1 = float(pos.get("fee_rate") or 0.0)
+                    fe_b1 = float((pos.get("extra") or {}).get("fee_exponent") or 1.0)
+                    net_bid_b1 = best_bid_b1 - (fr_b1 * ((best_bid_b1 * (1.0 - best_bid_b1)) ** fe_b1) if fr_b1 > 0.0 else 0.0)
+                    if best_bid_b1 >= 0.997 and l1_bid_u_b1 >= 25.0 and net_bid_b1 >= entry_eff_b1 + 0.002:
+                        m_id_b1 = str((pos.get("extra") or {}).get("market_id") or "")
+                        gm_b1 = await self.fetch_json(f"{GAMMA_URL}/markets/{m_id_b1}", timeout=3.5) if m_id_b1 else None
+                        uma_b1 = str((gm_b1 or {}).get("umaResolutionStatus") or "").strip().lower() if isinstance(gm_b1, dict) else ""
+                        if uma_b1 == "disputed" or now >= float(pos["close_ts"]) + 14400.0:
+                            to_close.append((pid, "UMA_DISPUTED_LOCK_PROFIT_RECYCLE", round(net_bid_b1, 4), 0.0))
+                            continue
 
                 if bk and sleeve not in ("BOND1_UMA_RESOLUTION_CARRY", "SP2_NBA_ENDGAME_LOCK"):
                     best_bid, _ = extract_best_bid(bk.get("bids") or [])
@@ -11626,8 +11693,8 @@ class Alpha124ShadowDaemon:
                                 close_ts=float(sl_c.window_end_ts),
                                 now_ts=now,
                                 min_resting_bid=0.940,
-                                max_resting_bid=0.990,
-                                min_maker_edge=0.008,
+                                max_resting_bid=0.994,
+                                min_maker_edge=0.006,
                                 max_opp_bid=0.030,
                                 hold_to_maturity=True,
                                 p_model=1.0,

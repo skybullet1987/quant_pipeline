@@ -484,6 +484,7 @@ def test_frontier_v3_strict_grad8_auto_promotion_producer_and_consumer(tmp_path,
 
     monkeypatch.setattr(a124, "DATA_DIR", tmp_path)
     monkeypatch.setattr(a124, "STATE_FILE", st_file)
+    monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "alpha124_shadow_ledger.jsonl")
     monkeypatch.setattr(a124, "OPPS_FILE", opps_file)
     monkeypatch.setattr(a124, "LIVE_POLYMARKET_DIR", mirror_dir)
     monkeypatch.setattr(a124, "LIVE_ALPHA124_STATE_MIRROR_FILE", mirror_file)

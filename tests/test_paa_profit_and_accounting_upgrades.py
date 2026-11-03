@@ -372,6 +372,11 @@ def test_seed_rebuild_directional_shadow_gate_below_150(tmp_path, monkeypatch):
         }
         asyncio.run(h.evaluate_shock_and_execute(shk))
     assert taker_calls == []
+    plh._get_hot_io_pool().submit(lambda: None).result(timeout=2.0)
+    for _ in range(20):
+        if cf_file.exists() and len([x for x in cf_file.read_text(encoding="utf-8").splitlines() if x.strip()]) >= 2:
+            break
+        time.sleep(0.02)
     rows = [json.loads(x) for x in cf_file.read_text(encoding="utf-8").splitlines() if x.strip()]
     assert len(rows) == 2
     assert all(r["reason_blocked"] == "SEED_REBUILD_SHADOW_UNTIL_$150" for r in rows)
@@ -389,7 +394,12 @@ def test_cal1_grad8_emits_up_to_0992(tmp_path, monkeypatch):
 
     d = a124.Alpha124ShadowDaemon(single_scan=True)
     for i in range(12):
-        d.closed_positions.append({"sleeve": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "won": True, "pnl_t1000": 3.4})
+        d.closed_positions.append({
+            "sleeve": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+            "won": True,
+            "tier_pnls_usd": {"T1000": 3.4},
+            "legging_adjusted_tier_pnls_usd": {"T1000": 3.4},
+        })
     assert d.is_sleeve_grad8_ready("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX") is True
 
     now = time.time()
@@ -528,5 +538,195 @@ def test_paa_director_proactive_profit_conversion_audit(tmp_path):
     val = facts["profit.conversion_and_velocity_audit"]["value"]
     assert "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX" in val["grad8_zero_live_conversion_gaps"]
     assert val["seed_zero_loss_focus_active"] is True
+    # Running a 2nd cycle in the same UTC hour must NOT re-enqueue a duplicate completed PROFIT_CONVERSION_AUDIT!
+    rep2 = director.run_cycle(max_tasks_per_cycle=3, allow_headless_ai=False, run_proactive_research_if_idle=True)
+    assert rep2["status"] == "OK"
+    assert not any(t.get("evidence", {}).get("conversion_audit") for t in rep2["tasks_executed"])
+
+
+def test_ghost_wide_spread_bid_cannot_preempt_tight_bond1_order(tmp_path, monkeypatch):
+    """Verifies <$0.990 wide-spread props ($0.980) cannot preempt tight $0.993 BOND1 orders, and concurrent tasks cannot double-claim."""
+    monkeypatch.setattr(plh, "PIPELINE_ROOT", tmp_path)
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "ghost_vel_state.json")
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    (tmp_path / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 33, "wins": 33, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 173.6, "legging_adjusted_pnl_t1000_usd": 171.7},
+            "BOND1_UMA_RESOLUTION_CARRY": {"closed": 25, "wins": 25, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 12.8, "legging_adjusted_pnl_t1000_usd": 12.8},
+        }
+    }), encoding="utf-8")
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h._startup_reconciled = True
+    h.holistic_v5_live_mode = True
+    h.enforce_bond1_smart_queue = True
+    h.executor.auth_mode = "LIVE"
+    h.executor.signature_type = 2
+    h.executor.is_heartbeat_healthy = lambda: True
+    h.check_recorder_freshness = lambda *a, **kw: (True, 0.05, "OK")
+    h._last_known_collateral = 60.94
+    h.executor.get_collateral_balance = lambda: 60.94
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+
+    now = time.time()
+    tight_ev = plh.threading.Event()
+    h._inflight_maker_anchor_keys = {"TIGHT_BOND1_993"}
+    h._inflight_maker_anchor_types = {"SINGLE_LEG_MAKER_LOCK:9101"}
+    h._maker_anchor_preempt_events = {"TIGHT_BOND1_993": tight_ev}
+    h.pending_entry_intents["TIGHT_INTENT"] = {
+        "trade_id": "TIGHT_INTENT", "market_id": "9101", "token_id": "tok_tight",
+        "anchor_bid_px": 0.993, "notional_usd": 55.0, "ts": now - 40.0, "heartbeat_ts": now,
+        "live_maker_anchor_inflight": True, "inflight_key": "TIGHT_BOND1_993",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "velocity_bps_hr": 56.0,
+    }
+
+    # Wide-spread $0.980 near-expiry prop (3 min remaining) MUST NOT preempt a working tight $0.993 order!
+    res_ghost = asyncio.run(h.maybe_execute_graduated_single_leg_maker_lock({
+        "box_id": "GHOST_980", "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "dedupe_key": "GHOST_B1_KEY",
+        "pair_dedupe_key": "GHOST_B1_PAIR", "leg_a_market_id": "9102", "leg_a_condition_id": "0x9102",
+        "leg_a_token_id": "tok_ghost", "leg_a_opp_token_id": "tok_ghost_opp",
+        "leg_a_side": "NO", "leg_a_neg_risk": False, "anchor_bid_px": 0.980,
+        "min_resting_bid": 0.940, "max_box_cost_net": 0.996, "min_maker_edge": 0.004,
+        "max_opp_bid": 0.008, "p_model": 1.0, "expiry_ts": now + 180.0, "ts_unix": now,
+    }))
+    assert res_ghost["executed"] is False
+    assert tight_ev.is_set() is False
+
+
+def test_alpha124_early_multileg_settlement_disputed_recycle_and_reward_carry_0993(tmp_path, monkeypatch):
+    """Verifies early pre-endDate NR0 settlement, shadow disputed BOND1 recycle, $0.993 reward carry, and ledger path isolation."""
+    from src.polymarket_research.macro_counting_ctf_engine import evaluate_locked_market_reward_carry
+
+    # 1. Reward carry preserves 0.975 on 0.975/0.990 AND steps to 0.993 on 0.992/0.996 tight locked books!
+    rw_classic = evaluate_locked_market_reward_carry(1.0, 0.975, 0.990, 50.0, 3.5, 0.0)
+    assert rw_classic["eligible"] is True and rw_classic["resting_bid"] == pytest.approx(0.975)
+    rw_tight = evaluate_locked_market_reward_carry(1.0, 0.992, 0.996, 50.0, 3.0, 0.0)
+    assert rw_tight["eligible"] is True and rw_tight["resting_bid"] == pytest.approx(0.993)
+
+    # 2. Monkeypatching DATA_DIR + STATE_FILE automatically isolates _resolve_ledger_path() away from production LEDGER_FILE
+    monkeypatch.setattr(a124_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(a124_mod, "STATE_FILE", tmp_path / "a124_state.json")
+    monkeypatch.setattr(a124_mod, "OPPS_FILE", tmp_path / "a124_opps.json")
+    monkeypatch.setattr(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", tmp_path / "mirror_state.json")
+    d = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+    assert d._resolve_ledger_path() == tmp_path / "alpha124_shadow_ledger.jsonl"
+
+    now = time.time()
+    # Early-resolved NR0 slate (6.7h before close_ts)
+    d.open_positions["NR0_EARLY_RBA"] = {
+        "position_id": "NR0_EARLY_RBA",
+        "dedupe_key": "NR0_EARLY_RBA",
+        "sleeve": "NR0_ZERO_FEE_SLATE_ARB",
+        "asset_or_city": "RBA",
+        "title": "RBA Decision in November",
+        "side": "YES_BASKET",
+        "token_id": "rba_1|rba_2",
+        "fee_rate": 0.0,
+        "entry_ts": now - 7200.0,
+        "close_ts": now + 24000.0,
+        "entry_vwap_t1000": 0.990,
+        "entry_eff_px_t1000": 0.990,
+        "p_model_entry": 1.0,
+        "tier_fills": {"T1000": {"shares": 100.0, "spent_usd": 99.0, "fee_usd": 0.0, "eff_px": 0.990}},
+        "extra": {
+            "legs": [
+                {"token_id": "rba_1", "market_id": "m_rba_1", "side": "YES", "fee_rate": 0.0},
+                {"token_id": "rba_2", "market_id": "m_rba_2", "side": "YES", "fee_rate": 0.0},
+            ],
+            "guaranteed_payout": 1.0,
+        },
+    }
+    # Disputed BOND1 past close_ts + 900s with $0.998 live bid
+    d.open_positions["BOND1_DISPUTED_ETH"] = {
+        "position_id": "BOND1_DISPUTED_ETH",
+        "dedupe_key": "BOND1_DISPUTED_ETH",
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "asset_or_city": "ETH",
+        "title": "Ethereum Up or Down on November 2",
+        "side": "YES",
+        "token_id": "tok_eth_disp",
+        "fee_rate": 0.0,
+        "entry_ts": now - 108000.0,
+        "close_ts": now - 100000.0,
+        "entry_vwap_t1000": 0.995,
+        "entry_eff_px_t1000": 0.995,
+        "p_model_entry": 0.999,
+        "tier_fills": {"T1000": {"shares": 50.0, "spent_usd": 49.75, "fee_usd": 0.0, "eff_px": 0.995}},
+        "extra": {"market_id": "6476073"},
+    }
+
+    async def _fake_fetch(url: str, timeout: float = 3.0):
+        if "/markets/m_rba_1" in url:
+            return {"closed": True, "umaResolutionStatus": "resolved", "clobTokenIds": ["rba_1", "rba_1n"], "outcomePrices": ["1", "0"]}
+        if "/markets/m_rba_2" in url:
+            return {"closed": True, "umaResolutionStatus": "resolved", "clobTokenIds": ["rba_2", "rba_2n"], "outcomePrices": ["0", "1"]}
+        if "/markets/6476073" in url:
+            return {"closed": False, "umaResolutionStatus": "disputed", "clobTokenIds": ["tok_eth_disp", "tok_eth_n"], "outcomePrices": ["0.998", "0.002"]}
+        if "token_id=tok_eth_disp" in url:
+            return {"bids": [{"price": "0.998", "size": "100"}], "asks": [{"price": "0.999", "size": "100"}]}
+        return None
+
+    d.fetch_json = _fake_fetch
+    asyncio.run(d.manage_open_positions())
+    assert "NR0_EARLY_RBA" not in d.open_positions
+    assert "BOND1_DISPUTED_ETH" not in d.open_positions
+    by_id = {c["position_id"]: c for c in d.closed_positions}
+    assert by_id["NR0_EARLY_RBA"]["won"] is True and by_id["NR0_EARLY_RBA"]["status"] == "SETTLED_MULTI_LEG_ARB"
+    assert by_id["BOND1_DISPUTED_ETH"]["won"] is True and by_id["BOND1_DISPUTED_ETH"]["status"] == "UMA_DISPUTED_LOCK_PROFIT_RECYCLE"
+
+
+def test_paa_zero_loss_shadow_benchmark_and_hourly_opt_latency_fallback(tmp_path, monkeypatch):
+    """Verifies PAAAccountant zero-loss shadow PnL separation and paa_cli hourly-opt latency extraction."""
+    import argparse
+    import scripts.paa_cli as pcli
+    from src.paa_os.director import PAADirector
+
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    (data_dir / "alpha124_shadow_state.json").write_text(json.dumps({
+        "by_sleeve": {
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"wins": 33, "losses": 0, "realized_pnl_t1000_usd": 173.60},
+            "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX": {"wins": 12, "losses": 0, "realized_pnl_t1000_usd": 40.85},
+            "M4_SHOCK_STRIKE_CATCHUP": {"wins": 10, "losses": 28, "realized_pnl_t1000_usd": -2500.00},
+        }
+    }), encoding="utf-8")
+    (data_dir / "live_harvester_state.json").write_text(json.dumps({"live_bankroll": 43.01, "closed_positions": []}), encoding="utf-8")
+    (data_dir / "live_orders.jsonl").write_text(
+        "\n".join(json.dumps({"clob_http_post_ms": ms}) for ms in [82.5, 95.0, 110.2, 134.8, 165.0]) + "\n",
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr(
+        "src.paa_os.accountant.reconcile_authoritative_ledger",
+        lambda live_rpc_check=False: {
+            "verified_realized_net_profit_usd": 0.56,
+            "raw_state_ledger_realized_pnl_usd": 0.56,
+            "non_cash_unfilled_artifact_adjustment_usd": 0.0,
+            "total_realized_fees_paid_usd": 0.0,
+            "free_cash_pusd": 43.01,
+            "open_cost_basis_usd": 17.93,
+            "portfolio_nav_mark_to_bid_usd": 60.94,
+            "portfolio_nav_at_resting_maker_usd": 61.01,
+            "unrealized_pnl_mark_to_bid_usd": 0.0,
+            "unrealized_pnl_at_maker_ask_usd": 0.07,
+            "drawdown_from_hwm_usd": 0.0,
+            "capital_utilization_pct": 29.4,
+            "live_by_sleeve": {},
+        },
+    )
+    director_inst = PAADirector(repo_root=tmp_path, data_dir=data_dir)
+    monkeypatch.setattr(pcli, "PAADirector", lambda: director_inst)
+    rc = pcli.cmd_hourly_opt(argparse.Namespace())
+    assert rc == 0
+    hr_sum = json.loads((director_inst.paa_dir / "hourly_optimization_summary.json").read_text(encoding="utf-8"))
+    assert hr_sum["zero_loss_shadow_t1000_pnl_usd"] == pytest.approx(214.45)
+    assert hr_sum["zero_loss_shadow_wins"] == 45
+    assert hr_sum["latency_source"] == "live_orders.jsonl"
+    assert hr_sum["latency_samples"] == 5
+    assert hr_sum["latency_p50_ms"] == pytest.approx(110.2)
+
 
 
