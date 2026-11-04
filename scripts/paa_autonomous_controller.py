@@ -164,6 +164,7 @@ def check_operational_status(auto_recover_safe: bool = True) -> Tuple[Dict[str, 
     if not a124_path.exists() and (DATA_A124 / "alpha124_shadow_state.json").exists():
         a124_path = DATA_A124 / "alpha124_shadow_state.json"
     a124_age_s = round(now - a124_path.stat().st_mtime, 2) if a124_path.exists() else None
+    a124_uptime_s: Optional[float] = None
     if (
         auto_recover_safe
         and sys.platform.startswith("linux")
@@ -171,16 +172,22 @@ def check_operational_status(auto_recover_safe: bool = True) -> Tuple[Dict[str, 
         and a124_age_s > 360.0
         and unit_states.get("polymarket-alpha124-shadow.service") == "active"
     ):
-        _sh("systemctl --user restart polymarket-alpha124-shadow.service", timeout=15.0)
-        new_incidents.append({
-            "timestamp_utc": _utc_now_iso(),
-            "incident_id": f"STALE_ALPHA124_RESTART_{int(now)}",
-            "severity": "WARN",
-            "component": "polymarket-alpha124-shadow.service",
-            "root_cause": f"alpha124_shadow_state.json stale ({a124_age_s:.1f}s > 360s).",
-            "action_taken": "Restarted polymarket-alpha124-shadow.service safely (zero impact on live CLOB orders).",
-            "status": "VERIFIED COMPLETE",
-        })
+        _, pid_str = _sh("systemctl --user show -p MainPID --value polymarket-alpha124-shadow.service", timeout=5.0)
+        if pid_str.strip().isdigit() and int(pid_str.strip()) > 0:
+            _, et_str = _sh(f"ps -o etimes= -p {int(pid_str.strip())}", timeout=5.0)
+            if et_str.strip().isdigit():
+                a124_uptime_s = float(et_str.strip())
+        if a124_uptime_s is None or a124_uptime_s >= 300.0:
+            _sh("systemctl --user restart polymarket-alpha124-shadow.service", timeout=15.0)
+            new_incidents.append({
+                "timestamp_utc": _utc_now_iso(),
+                "incident_id": f"STALE_ALPHA124_RESTART_{int(now)}",
+                "severity": "WARN",
+                "component": "polymarket-alpha124-shadow.service",
+                "root_cause": f"alpha124_shadow_state.json stale ({a124_age_s:.1f}s > 360s, unit_uptime={a124_uptime_s}s).",
+                "action_taken": "Restarted polymarket-alpha124-shadow.service safely (zero impact on live CLOB orders).",
+                "status": "VERIFIED COMPLETE",
+            })
 
     _, load_str = _sh("uptime") if sys.platform.startswith("linux") else (0, "windows_local")
     _, mem_str = _sh("free -m") if sys.platform.startswith("linux") else (0, "")

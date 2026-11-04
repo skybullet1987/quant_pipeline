@@ -1,62 +1,62 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-04 13:30:47 UTC
+Generated: 2026-11-04 15:22:38 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [01] config/polymarket_risk_config.json (Lines 64 - 122 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
-  [02] config/polymarket_strategy_and_risk.json (Lines 123 - 308 | 6,261 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
-  [03] systemd/polymarket-live-harvester.service (Lines 309 - 348 | 1,935 B) :: Live Harvester v5.3 systemd Unit
-  [04] systemd/polymarket-alpha124-shadow.service (Lines 349 - 383 | 897 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
-  [05] systemd/polymarket-recorder.service (Lines 384 - 415 | 973 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
-  [06] systemd/polymarket-recorder-eth.service (Lines 416 - 446 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [07] systemd/polymarket-recorder-sol.service (Lines 447 - 477 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [08] systemd/polymarket-recorder-xrp.service (Lines 478 - 508 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [09] systemd/polymarket-trader.service (Lines 509 - 539 | 720 B) :: Forward Paper Trader systemd Unit
-  [10] systemd/polymarket-exp316-shadow.service (Lines 540 - 565 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 566 - 1,379 | 38,571 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,380 - 15,877 | 896,510 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,878 - 24,621 | 442,131 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,622 - 25,698 | 49,647 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 25,699 - 26,418 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 26,419 - 29,859 | 185,898 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 29,860 - 30,438 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 30,439 - 32,829 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 32,830 - 32,942 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 32,943 - 33,059 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,060 - 33,406 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 33,407 - 33,672 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 33,673 - 34,155 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,156 - 35,633 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 35,634 - 37,180 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,181 - 38,570 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 38,571 - 39,695 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 39,696 - 41,148 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,149 - 41,704 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 41,705 - 42,428 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 42,429 - 43,420 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 43,421 - 43,759 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 43,760 - 45,516 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 45,517 - 46,584 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 46,585 - 47,333 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 47,334 - 49,055 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,056 - 51,313 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 51,314 - 53,573 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 53,574 - 66,627 | 722,093 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 66,628 - 67,488 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 67,489 - 68,711 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 68,712 - 68,790 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 68,791 - 68,940 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 68,941 - 73,020 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,021 - 74,915 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 74,916 - 80,643 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 80,644 - 81,400 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 81,401 - 82,243 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,244 - 83,023 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,024 - 83,824 | 44,778 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [02] config/polymarket_strategy_and_risk.json (Lines 123 - 309 | 6,306 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
+  [03] systemd/polymarket-live-harvester.service (Lines 310 - 349 | 1,935 B) :: Live Harvester v5.3 systemd Unit
+  [04] systemd/polymarket-alpha124-shadow.service (Lines 350 - 384 | 897 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
+  [05] systemd/polymarket-recorder.service (Lines 385 - 416 | 973 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
+  [06] systemd/polymarket-recorder-eth.service (Lines 417 - 447 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [07] systemd/polymarket-recorder-sol.service (Lines 448 - 478 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [08] systemd/polymarket-recorder-xrp.service (Lines 479 - 509 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [09] systemd/polymarket-trader.service (Lines 510 - 540 | 720 B) :: Forward Paper Trader systemd Unit
+  [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
+  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,620 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,883 | 897,921 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,884 - 24,629 | 442,211 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,630 - 25,706 | 49,647 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 25,707 - 26,426 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 26,427 - 29,867 | 185,898 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 29,868 - 30,446 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 30,447 - 32,837 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 32,838 - 32,950 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 32,951 - 33,067 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,068 - 33,414 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 33,415 - 33,680 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 33,681 - 34,163 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,164 - 35,641 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 35,642 - 37,188 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,189 - 38,578 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 38,579 - 39,703 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 39,704 - 41,156 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,157 - 41,712 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 41,713 - 42,436 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 42,437 - 43,428 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 43,429 - 43,767 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 43,768 - 45,524 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 45,525 - 46,592 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 46,593 - 47,341 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 47,342 - 49,063 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,064 - 51,321 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 51,322 - 53,581 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 53,582 - 66,639 | 723,746 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 66,640 - 67,500 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 67,501 - 68,723 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 68,724 - 68,802 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 68,803 - 68,952 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 68,953 - 73,032 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,033 - 74,927 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 74,928 - 80,655 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 80,656 - 81,412 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 81,413 - 82,255 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,256 - 83,035 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,036 - 83,836 | 44,778 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -291,7 +291,8 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
     "gatling_base_clip_d1_usd": 22.0,
     "gatling_base_clip_core_usd": 20.0,
     "gatling_base_clip_bridge_usd": 18.5,
-    "enable_s2_twap_lock_live": true
+    "enable_s2_twap_lock_live": true,
+    "enable_ungraduated_v3_math_live": true
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,
@@ -759,6 +760,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "gatling_base_clip_core_usd": 20.0,
         "gatling_base_clip_bridge_usd": 18.5,
         "enable_s2_twap_lock_live": True,
+        "enable_ungraduated_v3_math_live": True,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -7437,7 +7439,7 @@ class PolymarketLiveHarvester:
             own_asset_grad = True
             from src.polymarket_research.riskless_protocol_v2_expansion import PROTOCOL_V2_MATH_SLEEVES
             _v3_7d = {"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG", "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX", "CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"}
-            _v3_g8 = _v3_7d | PROTOCOL_V2_MATH_SLEEVES | {"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH", "TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR", "AFF1_FROZEN_SUBPERIOD_COLLAPSE", "SOC2_EXACT_SCORE_2D_LATTICE", "NFL_PRP1_MILESTONE_AND_MAX_LOCKS", "SUM1_FRECHET_SUM_TRIANGLES"}
+            _v3_g8 = _v3_7d | PROTOCOL_V2_MATH_SLEEVES | {"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH", "TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR", "AFF1_FROZEN_SUBPERIOD_COLLAPSE", "SOC2_EXACT_SCORE_2D_LATTICE", "NFL_PRP1_MILESTONE_AND_MAX_LOCKS", "SUM1_FRECHET_SUM_TRIANGLES", "B3_BARRIER_MONO_BOX", "B4_TOUCHED_BARRIER_WICK_LOCK", "D2_12PM_BINANCE_BOX", "GAS1_AAA_GASOLINE_LOCK", "API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK", "W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK", "SP2_NBA_ENDGAME_LOCK", "U1_DAILY_UPDOWN_LOCK", "CM_B2_PYTH_SESSION_NO_LOCK", "CM_U1_PYTH_CLOSE_LOCK"}
             if box_type == "DOMINANCE":
                 d1_core_ok = _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
                 d1_quiet_ok = sleeve_src == "D1_QUIET_BOOK_BOX" and _grad8(by_sl_map.get("D1_QUIET_BOOK_BOX") or {})
@@ -7466,14 +7468,15 @@ class PolymarketLiveHarvester:
                 d1_zf_bridge = _2l_ok and (zero_fee_box or fee_2l_ok) and sleeve_src not in _v3_g8 and d1_g8
                 _v3_max_rem = 604800.0 if sleeve_src in _v3_7d else 129600.0
                 _v2_sp_ok = box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_graduated_d1_box", True))
-                v3_math_ok = (bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) or _v2_sp_ok) and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and (box_type == "CTF_OVERROUND" or 0.0 < cand_rem_zf <= _v3_max_rem) and ((_2l_ok and c_net <= (0.990 if zero_fee_box else 0.988)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.994) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= (0.9975 if (zero_fee_box and cand_rem_zf <= 28800.0) else 0.990)))
+                _v3_en = bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) or bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_ungraduated_v3_math_live", False)) or _v2_sp_ok
+                v3_math_ok = _v3_en and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and (box_type == "CTF_OVERROUND" or 0.0 < cand_rem_zf <= _v3_max_rem) and ((_2l_ok and c_net <= (0.992 if zero_fee_box else 0.989)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.9955) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= (0.9975 if (zero_fee_box and cand_rem_zf <= 28800.0) else 0.992)))
                 _nr_mode = str(candidate_box.get("convert_mode") or "")
                 nr2_pure_cash_bridge = box_type == "NEGRISK_CONVERT" and bool(_rcfg_b1.get("enable_nr2_pure_cash_bridge", True)) and (
                     (_nr_mode in {"NR2_PURE_CASH_CONVERT", "NR2_SUBSET_LIQUID_YES_CONVERT", "NR2_SUBSET_CONVERT_FREE_TAIL", "NR4_FULL_SWEEP", "NR5_NEGATIVE_COST_FREEROLL"} and 2 <= len(candidate_box.get("no_legs") or []) <= 15)
                     or (_nr_mode == "NR3_SYNTHETIC_ALL_YES_OVERROUND" and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_nr3_synthetic_overround", True)) and 2 <= len(candidate_box.get("yes_sell_legs") or []) <= 15)
                 ) and no_loss and d1_g8
                 bond1_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"} and bool(_rcfg_b1.get("enable_bond1_live_bridge", True)) and no_loss and float(sl_rec.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec.get("closed", 0) or 0) == 0 or float(sl_rec.get("win_rate_pct", 100.0) or 0.0) >= 100.0) and d1_g8
-                s2_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)) and not self.dry_run and no_loss and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and c_net <= 0.996 and d1_g8
+                s2_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)) and not self.dry_run and no_loss and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and c_net <= 0.9972 and d1_g8
                 if not (own_grad or d1_zf_bridge or v3_math_ok or nr2_pure_cash_bridge or bond1_live_bridge or s2_live_bridge):
                     return {"executed": False, "reason": f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}
         except Exception as exc:
@@ -8204,8 +8207,8 @@ class PolymarketLiveHarvester:
                 collat_f * (0.32 if collat_f >= 160.0 else float(_rcfg.get("d1_box_bankroll_pct", 0.25))),
                 max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_exp),
             )
-        from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
-        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "SINGLE_LEG_LOCK", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"))
+        from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
+        budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_exp, "SINGLE_LEG_LOCK", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), rem_tte_sec=exp_ts - now_ts, now_ts=now_ts, cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)))
         if budget < 5.05:
             return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
         custom_bk = "get_market_book" in getattr(self.executor, "__dict__", {})
@@ -8308,7 +8311,7 @@ class PolymarketLiveHarvester:
                 self._pending_collateral_refresh = True
             self.save_state()
             logger.info(f"✓ [SINGLE-LEG LOCK ENTERED] {lid} ({sleeve_src}) | {f_sh:.0f} sh @ eff=${eff_px:.4f} (hold_to_maturity={h_mat})")
-        return {"executed": not unk, "result": o_res, "leg_trade_ids": [] if (unk or h_mat) else [lid]}
+        return {"executed": not unk, "reason": "ENTRY_PENDING_ONCHAIN_RECONCILIATION" if unk else "OK", "result": o_res, "leg_trade_ids": [] if (unk or h_mat) else [lid]}
 
     def _finish_negrisk_convert_arb(
         self,
@@ -8376,7 +8379,7 @@ class PolymarketLiveHarvester:
                 max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_exp),
             )
         from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
-        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"))
+        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)), reserve_u=0.50, override_legacy_cap=True)
         if budget < 5.05:
             return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
 
@@ -9172,7 +9175,7 @@ class PolymarketLiveHarvester:
         inflight_mkr_types = self.__dict__.setdefault("_inflight_maker_anchor_types", set())
         dedupe_k = str(candidate_box.get("dedupe_key") or f"BOND1_MKR_{mid_a}")
         pair_dedupe_k = str(candidate_box.get("pair_dedupe_key") or f"BOND1_{mid_a}")
-        if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and not self.dry_run:
+        if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and not self.dry_run and float(getattr(self, "_last_known_collateral", 99.0) or 99.0) >= 27.5:
             _pe_map = getattr(self, "_maker_anchor_preempt_events", None) or {}
             _mlk1_iks = [
                 str(_iv.get("inflight_key") or "")
@@ -9271,9 +9274,9 @@ class PolymarketLiveHarvester:
                 no_l_s
                 and d1_s_ok
                 and (
-                    (sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and _rcfg_sll.get("enable_bond1_live_bridge", True) and float(sl_rec_s.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec_s.get("closed", 0) or 0) == 0 or float(sl_rec_s.get("win_rate_pct", 100.0) or 0.0) >= 100.0))
+                    (sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"} and _rcfg_sll.get("enable_bond1_live_bridge", True) and float(sl_rec_s.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec_s.get("closed", 0) or 0) == 0 or float(sl_rec_s.get("win_rate_pct", 100.0) or 0.0) >= 100.0))
                     or (not self.dry_run and self._is_v5_unleashed_active() and _is_mlk1 and float(candidate_box.get("p_model") or 0.0) >= 0.998)
-                    or (not self.dry_run and _is_rw_carry and float(candidate_box.get("p_model") or 0.999) >= 0.999 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True)))
+                    or (not self.dry_run and _is_rw_carry and float(candidate_box.get("p_model") or 0.998) >= 0.998 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True)))
                     or (not self.dry_run and _is_s2_mkr and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)))
                     or (not self.dry_run and self._is_v5_unleashed_active() and _is_wp_mkr and float(candidate_box.get("p_model") or 0.0) >= 0.999)
                 )
@@ -9285,7 +9288,7 @@ class PolymarketLiveHarvester:
 
         exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
         cand_ts = float(candidate_box.get("ts_unix") or now_ts)
-        _min_sll_tte = 5.5 if _is_s2_mkr else (60.0 if _is_mlk1 else 110.0)
+        _min_sll_tte = 4.8 if _is_s2_mkr else (60.0 if (_is_mlk1 or sleeve_src == "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY") else 110.0)
         _max_sll_tte = 25.0 if _is_s2_mkr else (86400.0 if _is_rw_carry else (28800.0 if _is_wp_mkr else (14400.0 if _is_mlk1 else 9000.0)))
         if not self.dry_run and ((now_ts - cand_ts) > (2.5 if _is_s2_mkr else 8.0) or (exp_ts > 0.0 and not (_min_sll_tte <= (exp_ts - now_ts) <= _max_sll_tte))):
             return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
@@ -9392,9 +9395,8 @@ class PolymarketLiveHarvester:
                     max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
                     port_headroom_u,
                 )
-                from src.polymarket_research.riskless_protocol_v2_expansion import cap_bond1_maker_for_gatling_reserve
-                if not _is_s2_mkr:
-                    budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
+                from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
+                budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
             else:
                 budget = min(
                     lot_cap_sll,
@@ -9460,8 +9462,8 @@ class PolymarketLiveHarvester:
                     sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
                     sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
                     budget = min(lot_cap_sll, mkt_cap_u if _enforce_b1_v53 else lot_cap_sll, sll_pool_rem if _enforce_b1_v53 else collat_f * _sll_pct, collat_f)
-                    if _enforce_b1_v53 and not _is_s2_mkr:
-                        budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
+                    if _enforce_b1_v53:
+                        budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, sll_used_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
                     if _is_mlk1:
                         budget = min(budget, 22.0, round((collat_f + sll_used_u) * 0.32, 2))
                     if _is_rw_carry:
@@ -13782,6 +13784,10 @@ class PolymarketLiveHarvester:
                         # CRIT-02: Final-45s Capital Recycling is handled exclusively by the unified Phase B
                         # `final_45s_triggered` state machine (STOP_CANCEL_PENDING cancel-and-reconcile gate) below.
                         entry_px = float(pos.get("entry_price") or 0.0)
+                        if pos.get("hold_to_maturity_lock") and tte_rem >= 300.0 and best_b >= 0.998:
+                            from src.polymarket_research.riskless_protocol_v2_expansion import maybe_early_profit_recycle_htm_lock
+                            if await maybe_early_profit_recycle_htm_lock(self, tid, pos, book, now_ts):
+                                continue
                         _is_dom_box = bool(pos.get("is_dominance_box") or pos.get("is_single_leg_lock"))
 
                         # PAA_Q2: Pre-Kickoff Maker Step-Down (T-30m / T-15m / undercut) for unhedged SPORTS_CORRIDOR legs
@@ -16233,6 +16239,8 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "max_total_portfolio_slots": 4,
     "unlimited_slots": False,
     "enable_graduated_alt_sleeves": True,
+    "enable_ungraduated_v3_math_live": False,
+    "enable_exp_d1_bridge": True,
     "max_daily_loss": 20.00,
     "max_exposure": 35.00,
     "max_concurrent_positions": 2,
@@ -54582,7 +54590,7 @@ class Alpha124ShadowDaemon:
         } else 129600.0
         if float(p_model) < 0.998 or not (0.0 < (float(close_ts) - float(now_ts)) <= _max_rem_zl):
             return False
-        if any(not p.get("won") for p in self.closed_positions if p.get("sleeve") == sleeve):
+        if any(not p.get("won") for p in _filter_epoch_closed_positions(sleeve, [p for p in self.closed_positions if p.get("sleeve") == sleeve])):
             return False
         return self.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX")
 
@@ -59564,7 +59572,7 @@ class Alpha124ShadowDaemon:
             max_cap = (0.992 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
         elif box_type == "BARRIER_MONO":
             max_cap = 0.993
-        elif max(fee_a, fee_b) == 0.0 and self.is_sleeve_grad8_ready(sleeve_source) and rem_sec <= (
+        elif max(fee_a, fee_b) == 0.0 and (self.is_sleeve_grad8_ready(sleeve_source) or self._can_emit_zero_loss_math_live(sleeve_source, close_ts, now_ts)) and rem_sec <= (
             604800.0
             if sleeve_source in {
                 "LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",
@@ -61354,9 +61362,15 @@ class Alpha124ShadowDaemon:
             return
         async with s2_lock:
             now = float(now_ts if now_ts is not None else time.time())
+            _is_mock_s2 = bool(self.single_scan or "fetch_json" in self.__dict__)
+            shm_bks: Dict[str, Dict[str, Any]] = {}
+            if not _is_mock_s2:
+                from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm
+                shm_bks = hydrate_fast_s2_from_shm(self, now)
             rem_5m = (math.ceil(now / 300.0) * 300.0) - now
             disc_iv = 8.0 if rem_5m <= 30.0 else 12.0
-            if 3.5 <= rem_5m <= (75.0 if (self.single_scan or "fetch_json" in self.__dict__) else 95.0) and (now - self.last_twap_discovery_ts) >= disc_iv:
+            _skip_lock_disc = (not _is_mock_s2) and rem_5m <= 24.0 and any(abs(sp.end_ts - math.ceil(now / 300.0) * 300.0) <= 2.0 for sp in self.twap_candles.values())
+            if not _skip_lock_disc and 3.5 <= rem_5m <= (75.0 if _is_mock_s2 else 95.0) and (now - self.last_twap_discovery_ts) >= disc_iv:
                 self.last_twap_discovery_ts = now
                 await self.discover_active_twap_candles(now)
 
@@ -61386,8 +61400,8 @@ class Alpha124ShadowDaemon:
             for sp, _ in valid_pairs:
                 s2_toks.extend([sp.up_token, sp.down_token])
             bks_s2 = (
-                await self.fetch_books_batch(s2_toks, timeout=2.0)
-                if not (self.single_scan or "fetch_json" in self.__dict__)
+                {**shm_bks, **(await self.fetch_books_batch(s2_toks, timeout=1.5) or {})}
+                if not _is_mock_s2
                 else {}
             )
 
@@ -61431,6 +61445,12 @@ class Alpha124ShadowDaemon:
                     for t_w, p_w in samples:
                         merged_s2[round(float(t_w), 1)] = float(p_w)
                     samples = sorted(merged_s2.items(), key=lambda x: x[0])
+                if not _is_mock_s2 and 3.8 <= rem_sec <= 22.0 and self._strike_is_rest_verified(spec) and len(samples) >= 6:
+                    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
+                    maybe_emit_s2_live_locks(
+                        self, spec=spec, k_open=k_open, eval_now=eval_now, rem_sec=rem_sec, samples=samples,
+                        off_twap_60=off_twap_60, bks_s2=bks_s2 or {}, logger_obj=logger,
+                    )
                 lock_ev = compute_exact_twap_lock_probability(
                     asset=spec.asset,
                     open_price=k_open,
@@ -61455,32 +61475,6 @@ class Alpha124ShadowDaemon:
                 if not bk:
                     continue
                 bk_opp = bks_s2.get(opp_tok) if bks_s2 else None
-
-                # LIVE Gatling S2 Exact 60s-TWAP Mathematical Lock Zone (`3.8s <= rem_sec <= 22.0s`: Taker + Final-22s Post-Only Maker)
-                if (
-                    not self.single_scan
-                    and not ("fetch_json" in self.__dict__)
-                    and 3.8 <= rem_sec <= 22.0
-                    and self._strike_is_rest_verified(spec)
-                    and len(samples) >= 8
-                ):
-                    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
-                    maybe_emit_s2_live_locks(
-                        self,
-                        spec=spec,
-                        k_open=k_open,
-                        eval_now=eval_now,
-                        rem_sec=rem_sec,
-                        samples=samples,
-                        off_twap_60=off_twap_60,
-                        win_side=win_side,
-                        tok=tok,
-                        opp_tok=opp_tok,
-                        bk=bk,
-                        bk_opp=bk_opp,
-                        bks_s2=bks_s2 or {},
-                        logger_obj=logger,
-                    )
 
                 w_chk = walk_l2_book_asks(
                     bk.get("asks") or [],
@@ -65578,7 +65572,7 @@ class Alpha124ShadowDaemon:
                             nr_g = mg.get("negRisk") if mg.get("negRisk") is not None else ev_g.get("negRisk")
                             opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"AAA Gas Locked Carry {side_g}[{lbl_g}] @ ${rw_g['resting_bid']:.3f}", "ask_vwap": rw_g["resting_bid"], "p_model": 0.998, "net_edge": rw_g["carry_edge"], "l1_usd": 50.0, "close_ts": end_g})
                             await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "opp_token_id": opp_tok_g, "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
-                            if self.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY") and nr_g is not None and g_bks.get(opp_tok_g) is not None:
+                            if self.is_reward_locked_carry_live_ready() and nr_g is not None and g_bks.get(opp_tok_g) is not None:
                                 self.emit_live_single_leg_maker_lock_candidate(
                                     sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                     asset="AAA_GAS",
@@ -66005,6 +65999,24 @@ class Alpha124ShadowDaemon:
                                 tp_target_px=None,
                                 prefetched_book=bk_w,
                             )
+                        elif _is_live_uma_daemon:
+                            self.emit_live_single_leg_maker_lock_candidate(
+                                sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
+                                dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,
+                                market_id=mid, condition_id=str(m.get("conditionId") or ""), side_label=str(ver2["win_label"]),
+                                display_label=f"MOOv2_WL Maker {ver2['domain']} {ver2['win_outcome_name']}",
+                                bk_win=bk_w, bk_opp=bk_l, neg_risk=bool(m.get("negRisk")), close_ts=close_est, now_ts=now,
+                                min_resting_bid=0.950, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.006, p_model=1.0,
+                            )
+                    elif _is_live_uma_daemon:
+                        self.emit_live_single_leg_maker_lock_candidate(
+                            sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
+                            dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,
+                            market_id=mid, condition_id=str(m.get("conditionId") or ""), side_label=str(ver2["win_label"]),
+                            display_label=f"MOOv2_WL Maker {ver2['domain']} {ver2['win_outcome_name']}",
+                            bk_win=bk_w, bk_opp=bk_l, neg_risk=bool(m.get("negRisk")), close_ts=close_est, now_ts=now,
+                            min_resting_bid=0.950, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.006, p_model=1.0,
+                        )
 
     async def scan_nba_endgame_locks(
         self,

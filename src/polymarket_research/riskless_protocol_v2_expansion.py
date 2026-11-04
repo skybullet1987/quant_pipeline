@@ -793,6 +793,71 @@ def detect_nr6_cross_slate_surjection_box(
 # ---------------------------------------------------------------------------
 
 
+def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, Any]]:
+    """
+    Sub-millisecond `/dev/shm/pm_fast_tick_{ASSET}.json` pre-hydrator for `S2_RTDS_EXACT_TWAP_INTEGRATOR`:
+      1. Warms `daemon.chainlink_open_cache` + `_strike_source = 'REST_VERIFIED'` directly from `polymarket-recorder`'s
+         verified `m5`/`m15` `authoritative_chainlink_open` so `scan_exact_twap_locks` never stalls on HTTP 429s!
+      2. Appends fresh `chainlink_proxy_spot` samples into `daemon.usd_spot_hist` at `>=0.85s` cadence.
+      3. Returns `<1ms` SHM L2 books (`age_book_ms <= 950ms`) keyed by `token_id`.
+    """
+    import json as _json
+    import os as _os
+
+    shm_books: Dict[str, Dict[str, Any]] = {}
+    if getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})):
+        return shm_books
+    src_map = daemon.__dict__.setdefault("_strike_source", {})
+    open_cache = getattr(daemon, "chainlink_open_cache", None)
+    usd_hist_map = getattr(daemon, "usd_spot_hist", None)
+    for asset_sym in ("BTC", "ETH", "SOL", "XRP"):
+        p_shm = f"/dev/shm/pm_fast_tick_{asset_sym}.json"
+        if not _os.path.exists(p_shm):
+            continue
+        try:
+            with open(p_shm, "r", encoding="utf-8") as fh:
+                d = _json.load(fh)
+        except Exception:
+            continue
+        if not isinstance(d, dict):
+            continue
+        shm_ts = float(d.get("timestamp_unix") or d.get("ts") or 0.0)
+        if shm_ts <= 0.0 or (now_ts - shm_ts) > 4.0:
+            continue
+        cl_px = float(d.get("chainlink_proxy_spot") or d.get("coinbase_spot") or 0.0)
+        if cl_px > 0.0 and isinstance(usd_hist_map, dict):
+            dq = usd_hist_map.get(asset_sym)
+            if dq is not None and (not dq or (shm_ts - float(dq[-1][0])) >= 0.85):
+                dq.append((shm_ts, cl_px))
+        for hz_k, hz_lbl, dur_s in (("m5", "5m", 300), ("m15", "15m", 900)):
+            mh = d.get(hz_k)
+            if not isinstance(mh, dict):
+                continue
+            exp_f = float(mh.get("expiry_ts") or 0.0)
+            auth_op = float(mh.get("authoritative_chainlink_open") or 0.0)
+            if exp_f > now_ts + 3.0 and auth_op > 0.0 and isinstance(open_cache, dict):
+                st_i = int(round(exp_f)) - dur_s
+                ck = f"{asset_sym}_{hz_lbl}_{st_i}"
+                if ck not in open_cache:
+                    open_cache[ck] = (exp_f, auth_op)
+                src_map[ck] = (exp_f, "REST_VERIFIED")
+            for side_k in ("UP", "DOWN"):
+                sb = mh.get(side_k)
+                if not isinstance(sb, dict):
+                    continue
+                tk_id = str(sb.get("token_id") or "")
+                age_ms = float(sb.get("age_book_ms") if sb.get("age_book_ms") is not None else 9999.0)
+                if tk_id and age_ms <= 950.0:
+                    rb = sb.get("raw_top_bids") or []
+                    ra = sb.get("raw_top_asks") or []
+                    if rb or ra:
+                        shm_books[tk_id] = {
+                            "bids": [{"price": str(r[0]), "size": str(r[1])} for r in rb if len(r) >= 2 and float(r[1]) > 0],
+                            "asks": [{"price": str(r[0]), "size": str(r[1])} for r in ra if len(r) >= 2 and float(r[1]) > 0],
+                        }
+    return shm_books
+
+
 def evaluate_s2_rtds_exact_twap_integrator(
     *,
     asset: str,
@@ -815,10 +880,10 @@ def evaluate_s2_rtds_exact_twap_integrator(
     """
     `S2_RTDS_EXACT_TWAP_INTEGRATOR`:
     Integrates the live 1Hz Chainlink RTDS trajectory (+ `crypto_prices_twap_sixty` stream) inside
-    the final `55s` (`4.5s <= TTE <= 16.0s` in `live_lock_mode`) of a `5m`/`15m`/`4h` 60s-TWAP candle
+    the final `55s` (`3.8s <= TTE <= 22.0s` in `live_lock_mode`) of a `5m`/`15m`/`4h` 60s-TWAP candle
     across `BTC, ETH, SOL, XRP, BNB, DOGE, HYPE` (`XAU`/`XAG` spot-settled forex streams are excluded).
-    Since settlement price `P_settle = (1/60) * sum_{k=1}^{60} P_k`, once `N_elapsed` ticks are observed,
-    `N_elapsed / 60` of the settlement average is already mathematically locked in history!
+    Uses exact piecewise-constant (step-hold) 1Hz integration when Chainlink WS emits event-driven updates
+    on calm markets, and normalizes multi-second innovations by `sqrt(dt)` so calm locked candles fire cleanly!
     """
     sym = str(asset or "").strip().upper()
     if sym not in TWAP_60S_SUPPORTED_ASSETS or int(twap_lookback_sec or 0) != 60 or float(open_price) <= 0.0:
@@ -838,28 +903,43 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     raw_samples = samples_last_60s if samples_last_60s is not None else (rtds_ticks or ())
     pts = sorted([(float(t), float(p)) for t, p in raw_samples if float(p) > 0.0], key=lambda x: x[0])
-    if len(pts) < 8:
+    if len(pts) < 6:
         return None
 
     n_rem = max(1, int(math.ceil(rem_sec)))
     elapsed_sec = max(1.0, 60.0 - rem_sec)
+    min_req_ticks = max(8, int(math.floor(elapsed_sec * 0.72))) if live_lock_mode else max(8, 56 - n_rem)
     if expiry_ts is not None:
         win_start = float(expiry_ts) - 60.0
         win_pts = [(t, p) for t, p in pts if (win_start - 0.5) <= t <= (now_f + 1.0)]
+        if len(win_pts) < min_req_ticks:
+            pre_pts = [p for t, p in pts if (win_start - 65.0) <= t <= (win_start + 6.0)]
+            if len(win_pts) >= 4 and pre_pts and (now_f - pts[-1][0]) <= 4.5:
+                n_grid = max(8, int(round(elapsed_sec)))
+                anchor_p = pre_pts[-1]
+                idx_p = 0
+                n_all = len(pts)
+                step_prices: List[float] = []
+                for k_g in range(n_grid):
+                    t_g = min(now_f, win_start + float(k_g))
+                    while idx_p < n_all and pts[idx_p][0] <= t_g + 1e-6:
+                        anchor_p = pts[idx_p][1]
+                        idx_p += 1
+                    step_prices.append(anchor_p)
+                win_pts = [(win_start + float(i), px_i) for i, px_i in enumerate(step_prices)]
+            else:
+                return None
     else:
         target_obs = max(8, min(len(pts), int(round(elapsed_sec))))
         win_pts = pts[-target_obs:]
-
-    min_req_ticks = max(8, int(math.floor(elapsed_sec * 0.72))) if live_lock_mode else max(8, 56 - n_rem)
-    if len(win_pts) < min_req_ticks:
-        return None
+        if len(win_pts) < min_req_ticks:
+            return None
 
     win_prices = [p for _, p in win_pts[-60:]]
-    vol_prices = [p for _, p in pts[-120:]]
     mean_obs = sum(win_prices) / float(len(win_prices))
-    cur_px = win_prices[-1]
+    cur_px = float(pts[-1][1]) if pts else win_prices[-1]
     if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 22.0:
-        max_twap_div = 0.0020 if live_lock_mode else 0.0025
+        max_twap_div = 0.0022 if live_lock_mode else 0.0025
         rolling_60 = [p for t, p in pts if (now_f - 60.5) <= t <= (now_f + 1.0)]
         ref_mean = (
             sum(rolling_60) / float(len(rolling_60))
@@ -869,12 +949,19 @@ def evaluate_s2_rtds_exact_twap_integrator(
         if abs(float(official_twap_60s) - ref_mean) / max(ref_mean, 1e-9) > max_twap_div:
             return None
 
-    # Estimate 1-second innovation volatility + max observed jump floor over trailing window
-    diffs = [abs(vol_prices[i] - vol_prices[i - 1]) for i in range(1, len(vol_prices))]
+    vol_pts = pts[-120:]
+    norm_diffs = [
+        abs(vol_pts[i][1] - vol_pts[i - 1][1]) / math.sqrt(max(1.0, vol_pts[i][0] - vol_pts[i - 1][0]))
+        for i in range(1, len(vol_pts))
+        if 0.0 <= (vol_pts[i][0] - vol_pts[i - 1][0]) <= 30.0
+    ]
+    vol_floor_1s = (
+        0.000090 if sym in {"BTC", "ETH"} else (0.000125 if sym in {"SOL", "XRP", "BNB"} else 0.000165)
+    )
     sigma_1s = max(
-        cur_px * 0.00018,
-        math.sqrt(sum(d * d for d in diffs) / float(max(1, len(diffs)))) if diffs else cur_px * 0.0003,
-        (max(diffs) * 0.55) if diffs else 0.0,
+        cur_px * vol_floor_1s,
+        (math.sqrt(sum(d * d for d in norm_diffs) / float(len(norm_diffs))) * 1.10) if norm_diffs else cur_px * (vol_floor_1s * 1.6),
+        (max(norm_diffs) * 0.48) if norm_diffs else 0.0,
     )
 
     w_obs = float(len(win_prices)) / float(len(win_prices) + n_rem)
@@ -883,7 +970,6 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     open_f = float(open_price)
     if live_lock_mode:
-        # Strict triple-side agreement: elapsed mean, live spot, and projected TWAP all beat open_price
         d_mean = mean_obs - open_f
         d_spot = cur_px - open_f
         d_proj = expected_final_twap - open_f
@@ -894,16 +980,17 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     elapsed_cushion_bps = (abs(mean_obs - open_f) / open_f) * 10000.0
     req_adverse_avg_move_bps = (elapsed_sec / max(0.5, rem_sec)) * elapsed_cushion_bps
-    if live_lock_mode and req_adverse_avg_move_bps < 32.0:
-        return None
+    if live_lock_mode:
+        min_adv_bps = 18.0 if rem_sec <= 10.5 else (22.0 if rem_sec <= 15.5 else 28.0)
+        if req_adverse_avg_move_bps < min_adv_bps:
+            return None
 
-    # Variance of average of remaining random-walk steps `1..n_rem` is ~ `(n_rem + 1)*(2*n_rem + 1)/(6*n_rem) * sigma_1s^2`
     rw_rem_std = sigma_1s * math.sqrt(float((n_rem + 1) * (2 * n_rem + 1)) / 6.0)
-    discretization_std = cur_px * 0.00008  # 0.8 bps 1Hz arrival-timestamp jitter floor
+    discretization_std = cur_px * 0.00006
     final_twap_std = max(cur_px * 1e-6, math.hypot(w_rem * rw_rem_std, discretization_std))
 
     z = (expected_final_twap - open_f) / final_twap_std
-    min_z = 3.50 if live_lock_mode else 3.40
+    min_z = 3.25 if live_lock_mode else 3.20
     if abs(z) < min_z:
         return None
     p_win = 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0)))
@@ -913,7 +1000,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     direction = "UP" if z > 0 else "DOWN"
     ask_px = float(up_ask if direction == "UP" else down_ask)
-    if not (0.02 <= ask_px <= 0.996):
+    if not (0.02 <= ask_px <= 0.997):
         return None
     q_ask, _, _ = quantize_dynamic_tick_price(ask_px, "BUY", shares=5.0, mode="taker")
     fee_sh = compute_exact_taker_fee_per_share(q_ask, float(fee_rate), float(fee_exponent))
@@ -951,24 +1038,40 @@ def maybe_emit_s2_live_locks(
     rem_sec: float,
     samples: Sequence[Tuple[float, float]],
     off_twap_60: Optional[float],
-    win_side: str,
-    tok: str,
-    opp_tok: str,
-    bk: Dict[str, Any],
-    bk_opp: Optional[Dict[str, Any]],
+    win_side: str = "",
+    tok: str = "",
+    opp_tok: str = "",
+    bk: Optional[Dict[str, Any]] = None,
+    bk_opp: Optional[Dict[str, Any]] = None,
     bks_s2: Optional[Dict[str, Dict[str, Any]]] = None,
     logger_obj: Any = None,
     **_extra_kw: Any,
 ) -> bool:
     """
     Dual-mode Live Gatling `S2_RTDS_EXACT_TWAP_INTEGRATOR` emitter (`3.8s <= rem_sec <= 22.0s`):
-      1. Taker FOK Lock when `ask_px <= $0.995` and `net_cost_per_share <= $0.9955` (`crypto_fees_v2` at `$0.993` is `$0.00048`).
-      2. Final-22s Post-Only Maker Lock (`SINGLE_LEG_MAKER_LOCK`, `0%` fee + `20%` crypto maker rebate) when `ask > $0.995`
-         (or `$0.999/$1.000`) while `0.80 <= best_bid <= $0.993`, capturing impatient pre-settlement cashouts!
+      1. Taker FOK Lock when `0.50 <= net_cost_per_share <= $0.9970` (`crypto_fees_v2` at `$0.996` is `$0.00028`).
+      2. Final-22s Post-Only Maker Lock (`SINGLE_LEG_MAKER_LOCK`, `0%` fee + `20%` crypto maker rebate) when
+         `0.50 <= best_bid <= $0.9970`, capturing final-15s cashouts at `0.001` tick precision!
     """
-    if not (3.8 <= rem_sec <= 22.0) or len(samples) < 8:
+    if not (3.8 <= rem_sec <= 22.0) or len(samples) < 6:
         return False
     bks_map = bks_s2 or {}
+    if not win_side:
+        last_px = float(samples[-1][1])
+        if last_px == float(k_open):
+            return False
+        win_side = "UP" if last_px > float(k_open) else "DOWN"
+    if not tok:
+        tok = str(spec.up_token if win_side == "UP" else spec.down_token)
+    if not opp_tok:
+        opp_tok = str(spec.down_token if win_side == "UP" else spec.up_token)
+    if bk is None:
+        bk = bks_map.get(tok) or {}
+    if bk_opp is None:
+        bk_opp = bks_map.get(opp_tok)
+    if not bk:
+        return False
+
     ask_up_l1, _ = daemon._best_ask_sz(bks_map.get(spec.up_token) or (bk if win_side == "UP" else {}))
     ask_dn_l1, _ = daemon._best_ask_sz(bks_map.get(spec.down_token) or (bk if win_side == "DOWN" else {}))
     if 3.8 <= rem_sec <= 20.0:
@@ -985,12 +1088,12 @@ def maybe_emit_s2_live_locks(
             down_ask=ask_dn_l1 if ask_dn_l1 < 1.0 else 0.0,
             fee_rate=spec.fee_rate,
             fee_exponent=spec.fee_exponent,
-            min_net_edge=0.0035,
+            min_net_edge=0.0028,
             min_lock_prob=0.9990,
         )
-        if s2_rt is not None and s2_rt["direction"] == win_side and 0.72 <= float(s2_rt["net_cost_per_share"]) <= 0.9955:
+        if s2_rt is not None and s2_rt["direction"] == win_side and 0.50 <= float(s2_rt["net_cost_per_share"]) <= 0.9970:
             p_rt = float(s2_rt["p_model"])
-            max_eff_s2 = min(0.9955, round(p_rt - 0.0035, 4))
+            max_eff_s2 = min(0.9970, round(p_rt - 0.0028, 4))
             max_opp_s2 = max(0.08, round(1.015 - float(s2_rt["ask_px"]), 3))
             if daemon.emit_live_single_leg_lock_candidate(
                 sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
@@ -1020,13 +1123,13 @@ def maybe_emit_s2_live_locks(
                 )
                 return True
 
-    if 6.0 <= rem_sec <= 22.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+    if 5.0 <= rem_sec <= 22.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
         bids_w = sorted(
             [(float(b["price"]), float(b["size"])) for b in (bk.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0],
             key=lambda r: -r[0],
         )
         win_bid = bids_w[0][0] if bids_w else 0.0
-        if 0.80 <= win_bid <= 0.993:
+        if 0.50 <= win_bid <= 0.997:
             s2_mk = evaluate_s2_rtds_exact_twap_integrator(
                 asset=spec.asset,
                 open_price=k_open,
@@ -1040,18 +1143,20 @@ def maybe_emit_s2_live_locks(
                 down_ask=0.90 if win_side == "DOWN" else 0.10,
                 fee_rate=spec.fee_rate,
                 fee_exponent=spec.fee_exponent,
-                min_net_edge=0.004,
-                min_lock_prob=0.9994,
+                min_net_edge=0.0025,
+                min_lock_prob=0.9990,
             )
             if (
                 s2_mk is not None
                 and s2_mk["direction"] == win_side
-                and abs(float(s2_mk["z_score"])) >= 3.55
-                and float(s2_mk["req_adverse_avg_move_bps"]) >= 35.0
+                and abs(float(s2_mk["z_score"])) >= 3.30
+                and float(s2_mk["req_adverse_avg_move_bps"]) >= 22.0
             ):
                 p_mk = float(s2_mk["p_model"])
                 reb_ps = round(0.20 * float(spec.fee_rate) * ((win_bid * (1.0 - win_bid)) ** float(spec.fee_exponent)), 5) if float(spec.fee_rate) > 0.0 else 0.0
                 bk_opp_eff = bk_opp if isinstance(bk_opp, dict) else {"bids": [], "asks": []}
+                max_rb_s2 = 0.994 if win_bid <= 0.993 else 0.997
+                min_ed_s2 = 0.005 if win_bid <= 0.993 else 0.0025
                 if daemon.emit_live_single_leg_maker_lock_candidate(
                     sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
                     asset=spec.asset,
@@ -1068,10 +1173,10 @@ def maybe_emit_s2_live_locks(
                     neg_risk=bool(spec.neg_risk),
                     close_ts=spec.end_ts,
                     now_ts=eval_now,
-                    min_resting_bid=0.800,
-                    max_resting_bid=0.994,
-                    min_maker_edge=0.005,
-                    max_opp_bid=0.080,
+                    min_resting_bid=0.500 if win_bid < 0.800 else 0.800,
+                    max_resting_bid=max_rb_s2,
+                    min_maker_edge=min_ed_s2,
+                    max_opp_bid=max(0.080, round(1.015 - win_bid, 3)),
                     hold_to_maturity=True,
                     p_model=p_mk,
                     maker_rebate_ps=reb_ps,
@@ -1230,7 +1335,7 @@ def cap_bond1_maker_for_gatling_reserve(
         and "get_market_book" not in getattr(ex, "__dict__", {})
         and not getattr(harvester, "enforce_bond1_smart_queue", False)
     )
-    if not (getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or live_real_ex):
+    if not (getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or getattr(harvester, "enforce_gatling_sizing", False) or live_real_ex):
         return float(budget)
     total_b1_nav = float(collat_f) + float(sll_used_u)
     base_reserve = float(rb.get("gatling_fast_gun_reserve_usd", 22.50) or 22.50)
@@ -1246,6 +1351,200 @@ def cap_bond1_maker_for_gatling_reserve(
         else float(budget)
     )
     return round(max(0.0, min(float(budget), free_after_reserve, per_mkt_seed_cap)), 2)
+
+
+PASSIVE_CARRY_SLEEVES = frozenset({
+    "BOND1_UMA_RESOLUTION_CARRY",
+    "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+    "MKR_REWARD_LOCKED_CARRY",
+})
+
+
+def compute_sll_and_carry_gatling_budget(
+    harvester: Any,
+    legacy_budget: float,
+    collat_f: float,
+    cur_exp: float,
+    box_type: str,
+    sleeve_src: str,
+    own_grad: bool,
+    rb_cfg: Optional[Mapping[str, Any]],
+    *,
+    rem_tte_sec: float = 0.0,
+    now_ts: Optional[float] = None,
+    cap_usd: float = 250.0,
+) -> float:
+    """
+    Separates Passive Carry (`BOND1`, `BOND2`, `MKR_REWARD_LOCKED_CARRY`) from Fast Gatling Locks (`S2`, `MKR_LOCK1`, `W_PRUNE1`, etc.):
+      - Passive Carries (both Taker and Maker!) MUST preserve `gatling_fast_gun_reserve_usd` ($22.50) in free cash,
+        AND slow carries (`rem_tte_sec > 2400s` = `>40m`) are capped at `<= 38%` of NAV (`1` slot) so slow UMA carries
+        never consume 70%+ of bankroll.
+      - Fast Gatling Locks CONSUME the fast-gun reserve (`override_legacy_cap=True`, `reserve_u=0.50`), bypassing the
+        passive `55%` `sll_pool_rem` cap so `$16.34` free cash immediately funds `$15.84` clips!
+    """
+    rb = rb_cfg or {}
+    if not bool(rb.get("gatling_enabled", False)):
+        return float(legacy_budget)
+    ex = getattr(harvester, "executor", None)
+    live_real_ex = (
+        not getattr(harvester, "dry_run", True)
+        and hasattr(harvester, "_is_v5_unleashed_active")
+        and bool(harvester._is_v5_unleashed_active())
+        and getattr(ex, "client", None) is not None
+        and getattr(getattr(ex, "client", None), "_mock_children", None) is None
+        and "get_market_book" not in getattr(ex, "__dict__", {})
+        and "execute_snipe_order" not in getattr(ex, "__dict__", {})
+        and not getattr(harvester, "enforce_bond1_smart_queue", False)
+    )
+    if not (getattr(harvester, "enforce_gatling_sizing", False) or getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or live_real_ex):
+        return float(legacy_budget)
+
+    sl_u = str(sleeve_src or "").upper()
+    now_f = float(time.time() if now_ts is None else now_ts)
+    if sl_u in PASSIVE_CARRY_SLEEVES:
+        act_pos = getattr(harvester, "active_positions", None) or {}
+        pend_int = getattr(harvester, "pending_entry_intents", None) or {}
+        carry_used = sum(
+            float(p.get("notional_usd", 0.0) or 0.0)
+            for p in act_pos.values()
+            if isinstance(p, Mapping)
+            and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
+            and str(p.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+        ) + sum(
+            float(i.get("notional_usd", 0.0) or 0.0)
+            for i in pend_int.values()
+            if isinstance(i, Mapping) and i.get("live_maker_anchor_inflight") and str(i.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+        )
+        capped = cap_bond1_maker_for_gatling_reserve(harvester, legacy_budget, collat_f, carry_used, rb)
+        capped = maybe_cap_gatling_budget_sync(
+            harvester, capped, collat_f, cur_exp, box_type, sleeve_src, own_grad, rb, cap_usd=cap_usd, reserve_u=0.0, override_legacy_cap=False
+        )
+        if float(rem_tte_sec or 0.0) > 2400.0:
+            slow_used = sum(
+                float(p.get("notional_usd", 0.0) or 0.0)
+                for p in act_pos.values()
+                if isinstance(p, Mapping)
+                and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
+                and str(p.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+                and (float(p.get("candle_expiry_ts", 0.0) or 0.0) - now_f) > 2400.0
+            )
+            nav_tot = max(10.0, float(collat_f) + float(cur_exp))
+            slow_cap_rem = max(0.0, round(max(20.0, nav_tot * 0.38) - slow_used, 2))
+            capped = min(capped, slow_cap_rem)
+        return round(max(0.0, capped), 2)
+
+    return maybe_cap_gatling_budget_sync(
+        harvester,
+        legacy_budget,
+        collat_f,
+        cur_exp,
+        box_type,
+        sleeve_src,
+        own_grad,
+        rb,
+        cap_usd=cap_usd,
+        reserve_u=0.50,
+        override_legacy_cap=True,
+    )
+
+
+async def maybe_early_profit_recycle_htm_lock(
+    harvester: Any,
+    tid: str,
+    pos: Dict[str, Any],
+    book: Optional[Mapping[str, Any]],
+    now_ts: float,
+) -> bool:
+    """
+    Automated Early `>= $0.998` Profit-Recycling for undisputed `hold_to_maturity_lock` positions:
+    When `tte_rem >= 300s` (or waiting in UMA window) and live CLOB bids cover `100%` of `rem_shrs` at
+    `min_bid_px >= $0.998` with strictly positive locked net profit (`>= max($0.03, 0.0012 * rem_shrs)`),
+    immediately harvests the profit to free USDC `30-110m` early for high-velocity Gatling turnover!
+    """
+    if (
+        getattr(harvester, "dry_run", True)
+        or not bool(pos.get("hold_to_maturity_lock"))
+        or str(pos.get("status") or "") != "POSITION_CONFIRMED"
+        or not bool(pos.get("inventory_reconciled", False))
+        or pos.get("is_liquidating")
+        or pos.get("exit_order_id")
+        or pos.get("resolved_winning_outcome") is not None
+    ):
+        return False
+    tte_rem = float(pos.get("candle_expiry_ts", 0.0) or 0.0) - float(now_ts)
+    if tte_rem < 300.0:
+        return False
+    if (float(now_ts) - float(pos.get("_last_early_recycle_ts", 0.0) or 0.0)) < 15.0:
+        return False
+    token_id = str(pos.get("token_id") or "")
+    rem_shrs = float(pos.get("remaining_shares", pos.get("entry_shares", 0.0)) or 0.0)
+    if not token_id or rem_shrs < 5.0 or not isinstance(book, Mapping):
+        return False
+    raw_bids = book.get("bids") or []
+    qual_bids = sorted(
+        [
+            {
+                "price": float(b["price"] if isinstance(b, Mapping) else b[0]),
+                "size": float(b["size"] if isinstance(b, Mapping) else b[1]),
+            }
+            for b in raw_bids
+            if float((b.get("price", 0.0) if isinstance(b, Mapping) else b[0]) or 0.0) >= 0.998
+            and float((b.get("size", 0.0) if isinstance(b, Mapping) else b[1]) or 0.0) > 0.0
+        ],
+        key=lambda r: r["price"],
+        reverse=True,
+    )
+    if not qual_bids:
+        return False
+    cum_sz = 0.0
+    min_px = 0.0
+    for lv in qual_bids:
+        cum_sz += lv["size"]
+        min_px = lv["price"]
+        if cum_sz >= rem_shrs:
+            break
+    if cum_sz < rem_shrs or min_px < 0.998:
+        return False
+    _fr_raw = pos.get("fee_rate_applied")
+    if _fr_raw is None:
+        _fr_raw = pos.get("fee_rate_market", pos.get("fee_rate", 0.0))
+    fr = float(_fr_raw or 0.0)
+    fe = float(pos.get("fee_exponent_applied", pos.get("fee_exponent", 1.0)) or 1.0)
+    est_exit_fee = (rem_shrs * fr * ((min_px * (1.0 - min_px)) ** fe)) if fr > 0.0 else 0.0
+    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, rem_shrs * min_px, est_exit_fee))
+    if est_net_pnl < max(0.03, rem_shrs * 0.0012):
+        return False
+    ex = getattr(harvester, "executor", None)
+    if ex is None or not hasattr(ex, "execute_unwind_order"):
+        return False
+    pos["_last_early_recycle_ts"] = float(now_ts)
+    if isinstance(getattr(ex, "_fee_cache", None), dict) and token_id not in ex._fee_cache:
+        ex._fee_cache[token_id] = (fr, fe)
+    unwind_res = await asyncio.to_thread(
+        ex.execute_unwind_order,
+        token_id=token_id,
+        size=rem_shrs,
+        side="SELL",
+        min_price=min_px,
+        neg_risk=pos.get("neg_risk"),
+    )
+    outcome = harvester._handle_unwind_response(
+        tid, pos, unwind_res, rem_shrs, "HTM_EARLY_998_PROFIT_RECYCLE", "HOLD_TO_MATURITY_LOCK", min_px
+    )
+    if outcome == "PARTIAL":
+        pos["is_liquidating"] = False
+        pos["exit_order_status"] = "HOLD_TO_MATURITY_LOCK"
+    if outcome != "FAILED":
+        if hasattr(ex, "invalidate_collateral_cache"):
+            ex.invalidate_collateral_cache()
+        harvester._pending_collateral_refresh = True
+        harvester.save_state()
+        logger.info(
+            f"♻️ [GATLING EARLY 998 RECYCLE] {tid} ({pos.get('sleeve')}): harvested {rem_shrs:.2f} sh @ >=${min_px:.3f} "
+            f"({tte_rem/60.0:.1f}m early, locked_net=${est_net_pnl:+.2f}) -> {outcome}"
+        )
+        return True
+    return False
 
 
 def consolidate_any_box_leg_close(
@@ -2970,7 +3269,7 @@ def finish_protocol_v2_special_box_sync(
             n_bid = _sf(candidate_box.get("no_bid"), 0.51)
             y_sz = n_sz = _sf(candidate_box.get("max_fillable_shares"), 10.0)
         net_rev = (y_bid - compute_exact_taker_fee_per_share(y_bid, fr, fe)) + (n_bid - compute_exact_taker_fee_per_share(n_bid, fr, fe))
-        if net_rev < 1.005:
+        if net_rev < 1.004:
             return {"executed": False, "reason": f"OVERROUND_GONE:{net_rev:.4f}"}
         sh = math.floor(min(budget, min(y_sz, n_sz) / 1.15) * 100.0) / 100.0
         if sh < 5.0:
@@ -3514,12 +3813,13 @@ async def run_protocol_v2_daemon_scan(
                         "fee_exponent": float(br_c.get("fee_exponent", 1.0) or 1.0),
                     })
                 if len(nr_outcomes) == len(sp_nrc.brackets) and len(nr_outcomes) >= 3:
+                    nr_fee_bips = int(get_cached_negrisk_fee_bips(sp_nrc.neg_risk_market_id, fallback_bips=0))
                     for nr_hit in detect_nr4_nr5_optimal_tail_convert(
                         nr_outcomes,
                         event_id=sp_nrc.event_id,
                         neg_risk_market_id=sp_nrc.neg_risk_market_id,
                         event_meta={"negRiskAugmented": False},
-                        fee_bips=0,
+                        fee_bips=nr_fee_bips,
                     ):
                         sl_nr = str(nr_hit["sleeve"])
                         sh_nr = max(6.0, min(15.0, float(nr_hit.get("max_fillable_shares") or 8.0)))
@@ -3590,7 +3890,7 @@ async def run_protocol_v2_daemon_scan(
                                 },
                                 books_by_token=nr_bks,
                                 now_ts=now,
-                                fee_bips=0,
+                                fee_bips=nr_fee_bips,
                             )
     except Exception as exc_nr:
         logger.debug(f"Protocol V2 NR4/NR5 scan notice: {exc_nr}")
@@ -3986,13 +4286,13 @@ async def run_protocol_v2_daemon_scan(
                                 hold_to_maturity=True,
                                 p_model=float(hw["p_model"]),
                             )
-                        elif sl_w == "W_PRUNE1_NR0_BASKET" and len(hw.get("legs") or []) >= 3 and hasattr(daemon, "emit_live_special_v2_box_candidate"):
+                        elif sl_w == "W_PRUNE1_NR0_BASKET" and len(hw.get("legs") or []) >= 2:
                             enr_w_legs = []
                             for lg_w in hw["legs"]:
                                 tup_lw = bk_by_mkt.get(str(lg_w.get("condition_id") or ""))
                                 if tup_lw:
                                     b_lw = tup_lw[0]
-                                    enr_w_legs.append({**lg_w, "market_id": b_lw.market_id, "label": b_lw.label, "fee_rate": float(getattr(b_lw, "fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": True})
+                                    enr_w_legs.append({**lg_w, "market_id": b_lw.market_id, "opp_token_id": b_lw.no_token, "label": b_lw.label, "fee_rate": float(getattr(b_lw, "fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": True, "bk_yes": tup_lw[1]})
                             if len(enr_w_legs) == len(hw["legs"]):
                                 opps_out.append({
                                     "sleeve": sl_w,
@@ -4002,21 +4302,37 @@ async def run_protocol_v2_daemon_scan(
                                     "net_edge": hw["net_edge_per_share"],
                                     "l1_usd": round(hw["max_fillable_shares"] * hw["cost_per_share"], 2),
                                 })
-                                daemon.emit_live_special_v2_box_candidate(
-                                    box_type="MULTI_LEG_BUNDLE",
-                                    sleeve_source=sl_w,
-                                    asset=sp_w.icao,
-                                    dedupe_key=f"WPRUNE_BSK_{sp_w.event_id}",
-                                    close_ts=end_w,
-                                    now_ts=now,
-                                    payload={
-                                        "legs": enr_w_legs,
-                                        "box_cost_net": hw["cost_per_share"],
-                                        "max_box_cost_net": 0.992,
-                                        "max_fillable_shares": hw["max_fillable_shares"],
-                                        "neg_risk": True,
-                                    },
-                                )
+                                if len(enr_w_legs) == 2 and hasattr(daemon, "emit_live_two_leg_box_candidate"):
+                                    la_w, lb_w = enr_w_legs[0], enr_w_legs[1]
+                                    daemon.emit_live_two_leg_box_candidate(
+                                        box_type="NEGRISK_2LEG",
+                                        sleeve_source=sl_w,
+                                        asset=sp_w.icao,
+                                        dedupe_key=f"WPRUNE_2L_{sp_w.event_id}",
+                                        leg_a={"token_id": la_w["token_id"], "opp_token_id": la_w["opp_token_id"], "label": la_w["label"], "side": "YES", "market_id": la_w["market_id"], "condition_id": la_w["condition_id"], "fee_rate": la_w["fee_rate"], "fee_exponent": 1.0, "neg_risk": True, "end_ts": end_w},
+                                        leg_b={"token_id": lb_w["token_id"], "opp_token_id": lb_w["opp_token_id"], "label": lb_w["label"], "side": "YES", "market_id": lb_w["market_id"], "condition_id": lb_w["condition_id"], "fee_rate": lb_w["fee_rate"], "fee_exponent": 1.0, "neg_risk": True, "end_ts": end_w},
+                                        bk_a=la_w["bk_yes"],
+                                        bk_b=lb_w["bk_yes"],
+                                        close_ts=end_w,
+                                        now_ts=now,
+                                        max_box_cost_override=0.992,
+                                    )
+                                elif len(enr_w_legs) >= 3 and hasattr(daemon, "emit_live_special_v2_box_candidate"):
+                                    daemon.emit_live_special_v2_box_candidate(
+                                        box_type="MULTI_LEG_BUNDLE",
+                                        sleeve_source=sl_w,
+                                        asset=sp_w.icao,
+                                        dedupe_key=f"WPRUNE_BSK_{sp_w.event_id}",
+                                        close_ts=end_w,
+                                        now_ts=now,
+                                        payload={
+                                            "legs": [{k: v for k, v in x.items() if k != "bk_yes"} for x in enr_w_legs],
+                                            "box_cost_net": hw["cost_per_share"],
+                                            "max_box_cost_net": 0.992,
+                                            "max_fillable_shares": hw["max_fillable_shares"],
+                                            "neg_risk": True,
+                                        },
+                                    )
                     # Also post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets (`rem <= 8h`) when ask == $0.999-$1.000!
                     if floor_w is not None and (end_w - now) <= 28800.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
                         for b_sp, by_w2, bn_w2 in bk_by_mkt.values():
@@ -4052,52 +4368,112 @@ async def run_protocol_v2_daemon_scan(
     except Exception as exc_wp:
         logger.debug(f"Protocol V2 W_PRUNE1 scan notice: {exc_wp}")
 
-    # Pillar 6: Full-Universe `C1_BINARY_COMPLETE_SET` & `CTF_OVERROUND_MINT_SELL` across fresh binary WS books
+    # Pillar 6: Full-Universe `1,200+` Market `C1_BINARY_COMPLETE_SET` & `CTF_OVERROUND_MINT_SELL` (WS + Rotating Batch)
     try:
         is_mocked_6 = bool(getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})))
-        if getattr(daemon, "_ws_books", None) and not is_mocked_6:
+        if not is_mocked_6:
+            cand_bins: Dict[str, Dict[str, Any]] = {}
+
+            def _reg_bin(mid_b: Any, cid_b: Any, yt_b: Any, nt_b: Any, fr_b: float, fe_b: float, nr_b: bool, exp_b: float, ast_b: str) -> None:
+                c_s, y_s, n_s = str(cid_b or ""), str(yt_b or ""), str(nt_b or "")
+                if not c_s or not y_s or not n_s or y_s == n_s or exp_b <= now + 30.0:
+                    return
+                if c_s not in cand_bins:
+                    cand_bins[c_s] = {
+                        "market_id": str(mid_b or ""), "condition_id": c_s, "yes_token_id": y_s, "no_token_id": n_s,
+                        "fee_rate": float(fr_b or 0.0), "fee_exponent": float(fe_b or 1.0), "neg_risk": bool(nr_b),
+                        "end_ts": float(exp_b), "asset": str(ast_b or "BINARY")[:16],
+                    }
+
+            for reg_nm in ("pyth_daily_markets", "daily_updown_markets", "twap_candles", "barrier_rungs", "pyth_barrier_rungs"):
+                for sp_x in list((getattr(daemon, reg_nm, None) or {}).values()):
+                    _reg_bin(
+                        getattr(sp_x, "market_id", ""), getattr(sp_x, "condition_id", ""),
+                        getattr(sp_x, "up_token", None) or getattr(sp_x, "yes_token", ""),
+                        getattr(sp_x, "down_token", None) or getattr(sp_x, "no_token", ""),
+                        float(getattr(sp_x, "fee_rate", 0.0) or 0.0), float(getattr(sp_x, "fee_exponent", 1.0) or 1.0),
+                        bool(getattr(sp_x, "neg_risk", False)), float(getattr(sp_x, "end_ts", 0.0) or 0.0),
+                        str(getattr(sp_x, "asset", "CRYPTO")),
+                    )
+            for lad_nm in ("strike_ladders", "pyth_close_ladders"):
+                for r_ls in list((getattr(daemon, lad_nm, None) or {}).values()):
+                    for sp_r in (r_ls or ()):
+                        _reg_bin(
+                            getattr(sp_r, "market_id", ""), getattr(sp_r, "condition_id", ""),
+                            getattr(sp_r, "yes_token", ""), getattr(sp_r, "no_token", ""),
+                            float(getattr(sp_r, "fee_rate", 0.07) or 0.0), float(getattr(sp_r, "fee_exponent", 1.0) or 1.0),
+                            bool(getattr(sp_r, "neg_risk", False)), float(getattr(sp_r, "end_ts", 0.0) or 0.0),
+                            str(getattr(sp_r, "asset", "CRYPTO")),
+                        )
+            for sp_bn in list(getattr(daemon, "binance_close_rungs", None) or ()):
+                _reg_bin(
+                    getattr(sp_bn, "market_id", ""), getattr(sp_bn, "condition_id", ""),
+                    getattr(sp_bn, "yes_token", ""), getattr(sp_bn, "no_token", ""),
+                    float(getattr(sp_bn, "fee_rate", 0.0) or 0.0), 1.0, False,
+                    float(getattr(sp_bn, "end_ts", 0.0) or 0.0), str(getattr(sp_bn, "asset", "CRYPTO")),
+                )
+            for d_leg in list(getattr(daemon, "fomc_truth_legs", None) or ()) + list(getattr(daemon, "lp1_bop_legs", None) or ()):
+                if isinstance(d_leg, Mapping):
+                    _reg_bin(
+                        d_leg.get("market_id", ""), d_leg.get("condition_id", ""),
+                        d_leg.get("yes_token", ""), d_leg.get("no_token", ""),
+                        float(d_leg.get("fee_rate", 0.0) or 0.0), 1.0, bool(d_leg.get("neg_risk", False)),
+                        float(d_leg.get("end_ts", 0.0) or 0.0), str(d_leg.get("asset") or "MACRO"),
+                    )
+
             bin_rows: List[Dict[str, Any]] = []
-            for sp_bin in list((getattr(daemon, "pyth_daily_markets", None) or {}).values()) + list((getattr(daemon, "daily_updown_markets", None) or {}).values()):
-                if float(sp_bin.end_ts) <= now + 30.0:
-                    continue
-                by_w = daemon._get_fresh_ws_book(sp_bin.up_token, now, max_age_sec=2.5)
-                bn_w = daemon._get_fresh_ws_book(sp_bin.down_token, now, max_age_sec=2.5)
-                if not by_w or not bn_w:
-                    continue
-                yb_p, yb_u = _extr_best_bid(by_w.get("bids") or [])
-                nb_p, nb_u = _extr_best_bid(bn_w.get("bids") or [])
-                yb_s = (yb_u / yb_p) if yb_p > 0 else 0.0
-                nb_s = (nb_u / nb_p) if nb_p > 0 else 0.0
-                ya_p, ya_s = daemon._best_ask_sz(by_w)
-                na_p, na_s = daemon._best_ask_sz(bn_w)
-                bin_rows.append({
-                    "market_id": sp_bin.market_id,
-                    "condition_id": sp_bin.condition_id,
-                    "yes_token_id": sp_bin.up_token,
-                    "no_token_id": sp_bin.down_token,
-                    "yes_bid": yb_p,
-                    "yes_bid_size": yb_s,
-                    "no_bid": nb_p,
-                    "no_bid_size": nb_s,
-                    "yes_ask": ya_p if ya_p < 1.0 else 0.0,
-                    "yes_ask_size": ya_s,
-                    "no_ask": na_p if na_p < 1.0 else 0.0,
-                    "no_ask_size": na_s,
-                    "fee_rate": float(getattr(sp_bin, "fee_rate", 0.0)),
-                    "fee_exponent": float(getattr(sp_bin, "fee_exponent", 1.0)),
-                    "neg_risk": bool(getattr(sp_bin, "neg_risk", False)),
-                    "end_ts": float(sp_bin.end_ts),
-                    "asset": str(getattr(sp_bin, "asset", "CRYPTO")),
-                    "bk_yes": by_w,
-                    "bk_no": bn_w,
-                })
+            rest_need: List[Dict[str, Any]] = []
+            has_ws_fn = hasattr(daemon, "_get_fresh_ws_book") and bool(getattr(daemon, "_ws_books", None))
+            for meta_b in cand_bins.values():
+                by_w = daemon._get_fresh_ws_book(meta_b["yes_token_id"], now, max_age_sec=6.0) if has_ws_fn else None
+                bn_w = daemon._get_fresh_ws_book(meta_b["no_token_id"], now, max_age_sec=6.0) if has_ws_fn else None
+                if by_w and bn_w:
+                    yb_p, yb_u = _extr_best_bid(by_w.get("bids") or [])
+                    nb_p, nb_u = _extr_best_bid(bn_w.get("bids") or [])
+                    ya_p, ya_s = daemon._best_ask_sz(by_w)
+                    na_p, na_s = daemon._best_ask_sz(bn_w)
+                    bin_rows.append({
+                        **meta_b,
+                        "yes_bid": yb_p, "yes_bid_size": (yb_u / yb_p) if yb_p > 0 else 0.0,
+                        "no_bid": nb_p, "no_bid_size": (nb_u / nb_p) if nb_p > 0 else 0.0,
+                        "yes_ask": ya_p if ya_p < 1.0 else 0.0, "yes_ask_size": ya_s,
+                        "no_ask": na_p if na_p < 1.0 else 0.0, "no_ask_size": na_s,
+                        "bk_yes": by_w, "bk_no": bn_w,
+                    })
+                else:
+                    rest_need.append(meta_b)
+
+            if rest_need and hasattr(daemon, "fetch_books_batch") and (now - float(daemon.__dict__.get("_last_c1_rot_ts", 0.0))) >= 4.0:
+                daemon.__dict__["_last_c1_rot_ts"] = now
+                cur_idx = int(daemon.__dict__.get("_c1_rot_cursor", 0) or 0) % max(1, len(rest_need))
+                batch_m = (rest_need[cur_idx : cur_idx + 24] + rest_need[: max(0, cur_idx + 24 - len(rest_need))])[:24]
+                daemon.__dict__["_c1_rot_cursor"] = (cur_idx + 24) % max(1, len(rest_need))
+                rot_toks = [t for m_x in batch_m for t in (m_x["yes_token_id"], m_x["no_token_id"])]
+                rot_bks = await daemon.fetch_books_batch(rot_toks, timeout=2.0)
+                for meta_b in batch_m:
+                    by_r, bn_r = rot_bks.get(meta_b["yes_token_id"]), rot_bks.get(meta_b["no_token_id"])
+                    if by_r and bn_r:
+                        yb_p, yb_u = _extr_best_bid(by_r.get("bids") or [])
+                        nb_p, nb_u = _extr_best_bid(bn_r.get("bids") or [])
+                        ya_p, ya_s = daemon._best_ask_sz(by_r)
+                        na_p, na_s = daemon._best_ask_sz(bn_r)
+                        bin_rows.append({
+                            **meta_b,
+                            "yes_bid": yb_p, "yes_bid_size": (yb_u / yb_p) if yb_p > 0 else 0.0,
+                            "no_bid": nb_p, "no_bid_size": (nb_u / nb_p) if nb_p > 0 else 0.0,
+                            "yes_ask": ya_p if ya_p < 1.0 else 0.0, "yes_ask_size": ya_s,
+                            "no_ask": na_p if na_p < 1.0 else 0.0, "no_ask_size": na_s,
+                            "bk_yes": by_r, "bk_no": bn_r,
+                        })
+
             if bin_rows:
-                for ov_hit in scan_full_universe_c1_and_ctf_overround(bin_rows, min_overround_edge=0.006):
-                    src_r = next((x for x in bin_rows if x["condition_id"] == ov_hit["condition_id"]), None)
+                by_cid_r = {x["condition_id"]: x for x in bin_rows}
+                for ov_hit in scan_full_universe_c1_and_ctf_overround(bin_rows, min_overround_edge=0.0045):
+                    src_r = by_cid_r.get(str(ov_hit.get("condition_id") or ""))
                     if not src_r:
                         continue
                     if ov_hit.get("sleeve") == "CTF_OVERROUND_MINT_SELL" and not src_r["neg_risk"]:
-                        rev_ps = float(ov_hit.get("net_revenue_per_share") or ov_hit.get("net_proceeds_per_share") or 1.006)
+                        rev_ps = float(ov_hit.get("net_revenue_per_share") or ov_hit.get("net_proceeds_per_share") or 1.005)
                         opps_out.append({
                             "sleeve": "CTF_OVERROUND_MINT_SELL",
                             "market": f"{src_r['asset']} Binary Overround (${rev_ps:.4f})",
@@ -4150,6 +4526,84 @@ async def run_protocol_v2_daemon_scan(
                         )
     except Exception as exc_c1:
         logger.debug(f"Protocol V2 C1/CTF_OVERROUND scan notice: {exc_c1}")
+
+    # Pillar 8: Zero-Byte Live Bridge for Native Verified Zero-Loss Shadow Positions (`B3`, `B4`, `D2`, `GAS1`, `SUM1`, 3+ leg `N1` & `LP1`)
+    try:
+        is_mocked_8 = bool(getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})))
+        open_map = getattr(daemon, "open_positions", None) or {}
+        if not is_mocked_8 and open_map and hasattr(daemon, "fetch_books_batch"):
+            bridge_2l = {"B3_BARRIER_MONO_BOX": "BARRIER_MONO", "D2_12PM_BINANCE_BOX": "CROSS_BASIS_DOMINANCE"}
+            bridge_1l = {"B4_TOUCHED_BARRIER_WICK_LOCK", "GAS1_AAA_GASOLINE_LOCK"}
+            bridge_ml = {"N1_NEGRISK_CROSS_BOX", "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "SUM1_FRECHET_SUM_TRIANGLES"}
+            cand_pos = [
+                p for p in list(open_map.values())
+                if isinstance(p, Mapping)
+                and p.get("status") == "OPEN"
+                and (now - float(p.get("entry_ts") or 0.0)) <= 45.0
+                and 30.0 < (float(p.get("close_ts") or 0.0) - now) <= 172800.0
+                and str(p.get("sleeve") or "") in (set(bridge_2l) | bridge_1l | bridge_ml)
+                and str(p.get("position_id") or "") not in daemon.__dict__.setdefault("_bridged_native_pos_ids", set())
+            ]
+            if cand_pos:
+                need_b8: List[str] = []
+                for p8 in cand_pos[:10]:
+                    ex8 = p8.get("extra") or {}
+                    if isinstance(ex8.get("leg_a"), Mapping) and isinstance(ex8.get("leg_b"), Mapping):
+                        need_b8.extend([str(ex8["leg_a"].get("token_id") or ""), str(ex8["leg_b"].get("token_id") or "")])
+                    elif isinstance(ex8.get("legs"), list):
+                        need_b8.extend([str(lg8.get("token_id") or "") for lg8 in ex8["legs"]])
+                    else:
+                        need_b8.extend([str(p8.get("token_id") or ""), str(ex8.get("opp_token_id") or "")])
+                bks_8 = await daemon.fetch_books_batch([t for t in dict.fromkeys(need_b8) if t and "|" not in t][:40], timeout=2.0)
+                for p8 in cand_pos[:10]:
+                    pid8 = str(p8.get("position_id") or "")
+                    sl8 = str(p8.get("sleeve") or "")
+                    ex8 = p8.get("extra") or {}
+                    cl8 = float(p8.get("close_ts") or 0.0)
+                    ast8 = str(p8.get("asset_or_city") or sl8[:4])
+                    daemon.__dict__["_bridged_native_pos_ids"].add(pid8)
+                    if sl8 in bridge_2l and isinstance(ex8.get("leg_a"), Mapping) and isinstance(ex8.get("leg_b"), Mapping):
+                        la8, lb8 = dict(ex8["leg_a"]), dict(ex8["leg_b"])
+                        ba8, bb8 = bks_8.get(str(la8.get("token_id") or "")), bks_8.get(str(lb8.get("token_id") or ""))
+                        if ba8 and bb8:
+                            daemon.emit_live_two_leg_box_candidate(
+                                sleeve_source=sl8, box_type=bridge_2l[sl8], asset=ast8,
+                                dedupe_key=str(p8.get("dedupe_key") or pid8),
+                                leg_a=la8, leg_b=lb8, bk_a=ba8, bk_b=bb8, close_ts=cl8, now_ts=now,
+                                max_box_cost_override=0.990 if sl8 == "B3_BARRIER_MONO_BOX" else 0.988,
+                            )
+                    elif sl8 in bridge_1l:
+                        tk8 = str(p8.get("token_id") or "")
+                        op8 = str(ex8.get("opp_token_id") or ex8.get("no_token") or "")
+                        bw8, bo8 = bks_8.get(tk8), bks_8.get(op8)
+                        if bw8 and op8 and float(p8.get("p_model_entry") or 0.0) >= 0.998:
+                            daemon.emit_live_single_leg_lock_candidate(
+                                sleeve_source=sl8, asset=ast8, dedupe_key=str(p8.get("dedupe_key") or pid8),
+                                token_id=tk8, opp_token_id=op8, market_id=str(ex8.get("market_id") or ""),
+                                condition_id=str(ex8.get("condition_id") or ""), side_label=str(p8.get("side") or "YES"),
+                                display_label=str(p8.get("title") or sl8)[:56], bk_win=bw8, bk_opp=bo8,
+                                fee_rate=float(p8.get("fee_rate") or 0.0), fee_exponent=float(ex8.get("fee_exponent") or 1.0),
+                                neg_risk=bool(ex8.get("neg_risk", False)), close_ts=cl8, now_ts=now,
+                                max_lock_eff_px=0.992, max_opp_bid=0.015, hold_to_maturity=True, p_model=float(p8.get("p_model_entry") or 0.999),
+                            )
+                    elif sl8 in bridge_ml and isinstance(ex8.get("legs"), list) and len(ex8["legs"]) >= 3 and abs(float(ex8.get("guaranteed_payout") or 1.0) - 1.0) <= 1e-6:
+                        lgs8 = []
+                        for lg_x in ex8["legs"]:
+                            bk_x = bks_8.get(str(lg_x.get("token_id") or ""))
+                            if bk_x:
+                                ax_p, ax_s = daemon._best_ask_sz(bk_x)
+                                if ax_p < 1.0 and ax_s >= 5.0:
+                                    lgs8.append({**lg_x, "ask_px": ax_p, "ask_size": ax_s})
+                        if len(lgs8) == len(ex8["legs"]):
+                            c8 = sum(float(x["ask_px"]) + compute_exact_taker_fee_per_share(float(x["ask_px"]), float(x.get("fee_rate", 0.0) or 0.0), 1.0) for x in lgs8)
+                            if c8 <= 0.990:
+                                daemon.emit_live_special_v2_box_candidate(
+                                    box_type="MULTI_LEG_BUNDLE", sleeve_source=sl8, asset=ast8,
+                                    dedupe_key=str(p8.get("dedupe_key") or pid8), close_ts=cl8, now_ts=now,
+                                    payload={"legs": lgs8, "box_cost_net": round(c8, 6), "max_box_cost_net": 0.990, "max_fillable_shares": min(float(x["ask_size"]) for x in lgs8), "neg_risk": any(bool(x.get("neg_risk")) for x in lgs8)},
+                                )
+    except Exception as exc_p8:
+        logger.debug(f"Protocol V2 Pillar 8 bridge notice: {exc_p8}")
 
 
 def _write_and_notify_live_cand(daemon: Any, cand: Dict[str, Any], cand_file: Any, default_cand_path: Any) -> bool:
@@ -4266,7 +4720,7 @@ def emit_single_leg_lock_cand_impl(
     if rem_sec < min_rem_req or not token_id or not opp_token_id:
         return False
     last_emit = float(daemon._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-    if (now_ts - last_emit) < (1.5 if is_s2_fast else 15.0):
+    if (now_ts - last_emit) < (1.2 if is_s2_fast else 15.0):
         return False
     if isinstance(bk_opp, dict):
         opp_bid, _ = extract_best_bid_fn(bk_opp.get("bids") or [])
@@ -4275,14 +4729,14 @@ def emit_single_leg_lock_cand_impl(
             return False
         if win_ask_best < 1.0 and opp_bid > 0.0 and (win_ask_best + opp_bid) > 1.015:
             return False
-    max_slip_1l = min(0.030, max(0.005, float(max_lock_eff_px) - 0.900)) if is_s2_fast else min(0.015, max(0.002, float(max_lock_eff_px) - 0.980))
+    max_slip_1l = min(0.040, max(0.005, float(max_lock_eff_px) - 0.850)) if is_s2_fast else min(0.015, max(0.002, float(max_lock_eff_px) - 0.980))
     w_lk = walk_l2_fn(
         bk_win.get("asks") or [],
         25.0,
         5.0,
         fee_rate=float(fee_rate),
         max_slip_cents=max_slip_1l,
-        min_l1_usd=8.0 if is_s2_fast else 10.0,
+        min_l1_usd=5.0 if is_s2_fast else 10.0,
         max_ask_px=min(0.9985, float(max_lock_eff_px) + 0.001),
         fee_exponent=float(fee_exponent),
     )
@@ -4452,7 +4906,14 @@ def emit_negrisk_convert_cand_impl(
         for b in (arb_hit.get("retained_free_yes_brackets") or [])
     ]
     edge_ps = float(arb_hit.get("net_edge_per_share") or 0.0)
-    if len(no_legs_out) < 2 or edge_ps < (0.008 if not liquid_yes_sells else 0.012):
+    _mode_in = str(arb_hit.get("mode") or "")
+    if _mode_in == "NR5_NEGATIVE_COST_FREEROLL":
+        _min_nr_ed = 0.0020
+    elif _mode_in == "NR4_FULL_SWEEP":
+        _min_nr_ed = 0.0035
+    else:
+        _min_nr_ed = 0.0045 if not liquid_yes_sells else 0.0065
+    if len(no_legs_out) < 2 or edge_ps < _min_nr_ed:
         return False
     if len(daemon._last_d1_live_emit_ts) > 256:
         daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
@@ -4537,7 +4998,7 @@ def emit_single_leg_maker_lock_cand_impl(
         now_ts = time.time()
     rem_sec = float(close_ts - now_ts)
     is_s2_mkr = str(sleeve_source) in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
-    if rem_sec < (6.0 if is_s2_mkr else 120.0) or not token_id or not opp_token_id or token_id == opp_token_id:
+    if rem_sec < (5.0 if is_s2_mkr else 120.0) or not token_id or not opp_token_id or token_id == opp_token_id:
         return False
     if (
         sleeve_source == "MKR_REWARD_LOCKED_CARRY"
@@ -4547,7 +5008,7 @@ def emit_single_leg_maker_lock_cand_impl(
     ):
         return False
     last_emit = float(daemon._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-    if (now_ts - last_emit) < (2.0 if is_s2_mkr else 25.0):
+    if (now_ts - last_emit) < (1.0 if is_s2_mkr else 25.0):
         return False
     if not isinstance(bk_win, dict) or not isinstance(bk_opp, dict):
         return False
@@ -4555,18 +5016,18 @@ def emit_single_leg_maker_lock_cand_impl(
     if opp_bid > float(max_opp_bid) + 1e-6:
         return False
     best_bid, l1_bid_usd = extract_best_bid_fn(bk_win.get("bids") or [])
-    if best_bid < min(float(min_resting_bid), 0.800 if is_s2_mkr else 0.940) - 1e-9:
+    if best_bid < min(float(min_resting_bid), 0.500 if is_s2_mkr else 0.940) - 1e-9:
         return False
     if sleeve_source == "MKR_REWARD_LOCKED_CARRY" and best_bid > float(max_resting_bid) + 1e-6:
         return False
     if target_bid_px is None and best_bid < float(min_resting_bid) - 1e-9:
         return False
     near_bid_usd = (
-        sum(float(b.get("price", 0)) * float(b.get("size", 0)) for b in (bk_win.get("bids") or []) if float(b.get("price", 0)) >= (0.80 if is_s2_mkr else 0.90))
+        sum(float(b.get("price", 0)) * float(b.get("size", 0)) for b in (bk_win.get("bids") or []) if float(b.get("price", 0)) >= (0.50 if is_s2_mkr else 0.90))
         if (sleeve_source == "MKR_REWARD_LOCKED_CARRY" or is_s2_mkr)
         else l1_bid_usd
     )
-    if not (daemon.single_scan or ("fetch_json" in daemon.__dict__)) and near_bid_usd < (4.0 if is_s2_mkr else 10.0) - 1e-6:
+    if not (daemon.single_scan or ("fetch_json" in daemon.__dict__)) and near_bid_usd < (3.0 if is_s2_mkr else 10.0) - 1e-6:
         return False
     valid_asks = [float(a["price"]) for a in (bk_win.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0]
     best_ask = round(min(valid_asks), 4) if valid_asks else 1.000

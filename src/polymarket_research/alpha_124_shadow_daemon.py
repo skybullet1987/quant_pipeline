@@ -1004,7 +1004,7 @@ class Alpha124ShadowDaemon:
         } else 129600.0
         if float(p_model) < 0.998 or not (0.0 < (float(close_ts) - float(now_ts)) <= _max_rem_zl):
             return False
-        if any(not p.get("won") for p in self.closed_positions if p.get("sleeve") == sleeve):
+        if any(not p.get("won") for p in _filter_epoch_closed_positions(sleeve, [p for p in self.closed_positions if p.get("sleeve") == sleeve])):
             return False
         return self.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX")
 
@@ -5986,7 +5986,7 @@ class Alpha124ShadowDaemon:
             max_cap = (0.992 if rem_sec <= 108000.0 else 0.988) if self.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX") else 0.985
         elif box_type == "BARRIER_MONO":
             max_cap = 0.993
-        elif max(fee_a, fee_b) == 0.0 and self.is_sleeve_grad8_ready(sleeve_source) and rem_sec <= (
+        elif max(fee_a, fee_b) == 0.0 and (self.is_sleeve_grad8_ready(sleeve_source) or self._can_emit_zero_loss_math_live(sleeve_source, close_ts, now_ts)) and rem_sec <= (
             604800.0
             if sleeve_source in {
                 "LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",
@@ -7776,9 +7776,15 @@ class Alpha124ShadowDaemon:
             return
         async with s2_lock:
             now = float(now_ts if now_ts is not None else time.time())
+            _is_mock_s2 = bool(self.single_scan or "fetch_json" in self.__dict__)
+            shm_bks: Dict[str, Dict[str, Any]] = {}
+            if not _is_mock_s2:
+                from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm
+                shm_bks = hydrate_fast_s2_from_shm(self, now)
             rem_5m = (math.ceil(now / 300.0) * 300.0) - now
             disc_iv = 8.0 if rem_5m <= 30.0 else 12.0
-            if 3.5 <= rem_5m <= (75.0 if (self.single_scan or "fetch_json" in self.__dict__) else 95.0) and (now - self.last_twap_discovery_ts) >= disc_iv:
+            _skip_lock_disc = (not _is_mock_s2) and rem_5m <= 24.0 and any(abs(sp.end_ts - math.ceil(now / 300.0) * 300.0) <= 2.0 for sp in self.twap_candles.values())
+            if not _skip_lock_disc and 3.5 <= rem_5m <= (75.0 if _is_mock_s2 else 95.0) and (now - self.last_twap_discovery_ts) >= disc_iv:
                 self.last_twap_discovery_ts = now
                 await self.discover_active_twap_candles(now)
 
@@ -7808,8 +7814,8 @@ class Alpha124ShadowDaemon:
             for sp, _ in valid_pairs:
                 s2_toks.extend([sp.up_token, sp.down_token])
             bks_s2 = (
-                await self.fetch_books_batch(s2_toks, timeout=2.0)
-                if not (self.single_scan or "fetch_json" in self.__dict__)
+                {**shm_bks, **(await self.fetch_books_batch(s2_toks, timeout=1.5) or {})}
+                if not _is_mock_s2
                 else {}
             )
 
@@ -7853,6 +7859,12 @@ class Alpha124ShadowDaemon:
                     for t_w, p_w in samples:
                         merged_s2[round(float(t_w), 1)] = float(p_w)
                     samples = sorted(merged_s2.items(), key=lambda x: x[0])
+                if not _is_mock_s2 and 3.8 <= rem_sec <= 22.0 and self._strike_is_rest_verified(spec) and len(samples) >= 6:
+                    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
+                    maybe_emit_s2_live_locks(
+                        self, spec=spec, k_open=k_open, eval_now=eval_now, rem_sec=rem_sec, samples=samples,
+                        off_twap_60=off_twap_60, bks_s2=bks_s2 or {}, logger_obj=logger,
+                    )
                 lock_ev = compute_exact_twap_lock_probability(
                     asset=spec.asset,
                     open_price=k_open,
@@ -7877,32 +7889,6 @@ class Alpha124ShadowDaemon:
                 if not bk:
                     continue
                 bk_opp = bks_s2.get(opp_tok) if bks_s2 else None
-
-                # LIVE Gatling S2 Exact 60s-TWAP Mathematical Lock Zone (`3.8s <= rem_sec <= 22.0s`: Taker + Final-22s Post-Only Maker)
-                if (
-                    not self.single_scan
-                    and not ("fetch_json" in self.__dict__)
-                    and 3.8 <= rem_sec <= 22.0
-                    and self._strike_is_rest_verified(spec)
-                    and len(samples) >= 8
-                ):
-                    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
-                    maybe_emit_s2_live_locks(
-                        self,
-                        spec=spec,
-                        k_open=k_open,
-                        eval_now=eval_now,
-                        rem_sec=rem_sec,
-                        samples=samples,
-                        off_twap_60=off_twap_60,
-                        win_side=win_side,
-                        tok=tok,
-                        opp_tok=opp_tok,
-                        bk=bk,
-                        bk_opp=bk_opp,
-                        bks_s2=bks_s2 or {},
-                        logger_obj=logger,
-                    )
 
                 w_chk = walk_l2_book_asks(
                     bk.get("asks") or [],
@@ -12000,7 +11986,7 @@ class Alpha124ShadowDaemon:
                             nr_g = mg.get("negRisk") if mg.get("negRisk") is not None else ev_g.get("negRisk")
                             opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"AAA Gas Locked Carry {side_g}[{lbl_g}] @ ${rw_g['resting_bid']:.3f}", "ask_vwap": rw_g["resting_bid"], "p_model": 0.998, "net_edge": rw_g["carry_edge"], "l1_usd": 50.0, "close_ts": end_g})
                             await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "opp_token_id": opp_tok_g, "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
-                            if self.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY") and nr_g is not None and g_bks.get(opp_tok_g) is not None:
+                            if self.is_reward_locked_carry_live_ready() and nr_g is not None and g_bks.get(opp_tok_g) is not None:
                                 self.emit_live_single_leg_maker_lock_candidate(
                                     sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                     asset="AAA_GAS",
@@ -12427,6 +12413,24 @@ class Alpha124ShadowDaemon:
                                 tp_target_px=None,
                                 prefetched_book=bk_w,
                             )
+                        elif _is_live_uma_daemon:
+                            self.emit_live_single_leg_maker_lock_candidate(
+                                sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
+                                dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,
+                                market_id=mid, condition_id=str(m.get("conditionId") or ""), side_label=str(ver2["win_label"]),
+                                display_label=f"MOOv2_WL Maker {ver2['domain']} {ver2['win_outcome_name']}",
+                                bk_win=bk_w, bk_opp=bk_l, neg_risk=bool(m.get("negRisk")), close_ts=close_est, now_ts=now,
+                                min_resting_bid=0.950, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.006, p_model=1.0,
+                            )
+                    elif _is_live_uma_daemon:
+                        self.emit_live_single_leg_maker_lock_candidate(
+                            sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
+                            dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,
+                            market_id=mid, condition_id=str(m.get("conditionId") or ""), side_label=str(ver2["win_label"]),
+                            display_label=f"MOOv2_WL Maker {ver2['domain']} {ver2['win_outcome_name']}",
+                            bk_win=bk_w, bk_opp=bk_l, neg_risk=bool(m.get("negRisk")), close_ts=close_est, now_ts=now,
+                            min_resting_bid=0.950, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.006, p_model=1.0,
+                        )
 
     async def scan_nba_endgame_locks(
         self,

@@ -1430,5 +1430,164 @@ def test_gatling_4_barrel_unblocking_nr4_s2_bond1_lpcomp1_presplit(tmp_path: Pat
         rmg_mod.attempt_onchain_split_position = orig_split
 
 
+def test_gatling_burst_v56_shm_step_hold_s2_and_carry_recycle(tmp_path):
+    from types import SimpleNamespace
+    import asyncio
+    import time
+    from src.polymarket_research.polymarket_live_executor import load_risk_config
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        evaluate_s2_rtds_exact_twap_integrator,
+        maybe_emit_s2_live_locks,
+        compute_sll_and_carry_gatling_budget,
+        maybe_early_profit_recycle_htm_lock,
+        emit_negrisk_convert_cand_impl,
+    )
+    from src.polymarket_research.riskless_machine_gun_engine import PreSplitInventoryGun
+    import src.polymarket_research.riskless_machine_gun_engine as rmg_mod
+
+    # 1. load_risk_config() preserves enable_ungraduated_v3_math_live from config/polymarket_risk_config.json
+    rcfg = load_risk_config()
+    assert rcfg.get("enable_ungraduated_v3_math_live") is True
+
+    # 2. Step-hold 1Hz S2 integrator on sparse 6-tick Chainlink window + auto-direction Taker ($0.65) & Maker ($0.996 -> 0.997 cap)
+    end_ts = 1793805000.0
+    now_f = end_ts - 9.5
+    k_open = 78000.0
+    sparse_pts = [
+        (end_ts - 65.0, 78180.0),
+        (end_ts - 52.0, 78182.0),
+        (end_ts - 38.0, 78185.0),
+        (end_ts - 25.0, 78184.0),
+        (end_ts - 14.0, 78188.0),
+        (now_f - 0.5, 78190.0),
+    ]
+    ev_s2 = evaluate_s2_rtds_exact_twap_integrator(
+        asset="BTC", open_price=k_open, samples_last_60s=sparse_pts, now_ts=now_f, expiry_ts=end_ts,
+        live_lock_mode=True, up_ask=0.65, fee_rate=0.072, fee_exponent=1.0, min_net_edge=0.0028,
+    )
+    assert ev_s2 is not None
+    assert ev_s2["direction"] == "UP"
+    assert ev_s2["p_model"] >= 0.999
+
+    tkr_calls, mkr_calls = [], []
+    dm_s2 = SimpleNamespace(
+        _best_ask_sz=lambda b: ((float(b["asks"][0]["price"]), float(b["asks"][0]["size"])) if (b and b.get("asks")) else (1.0, 0.0)),
+        emit_live_single_leg_lock_candidate=lambda **kw: tkr_calls.append(kw) or True,
+        emit_live_single_leg_maker_lock_candidate=lambda **kw: mkr_calls.append(kw) or True,
+    )
+    spec_s2 = SimpleNamespace(
+        asset="BTC", horizon="5m", twap_lookback_sec=60, market_id="m_s2", condition_id="c_s2",
+        up_token="up_t", down_token="dn_t", fee_rate=0.072, fee_exponent=1.0, neg_risk=False, end_ts=end_ts,
+    )
+    maybe_emit_s2_live_locks(
+        dm_s2, spec=spec_s2, k_open=k_open, eval_now=now_f, rem_sec=9.5, samples=sparse_pts, off_twap_60=None,
+        bks_s2={
+            "up_t": {"asks": [{"price": 0.65, "size": 30.0}], "bids": [{"price": 0.64, "size": 30.0}]},
+            "dn_t": {"bids": [{"price": 0.002, "size": 30.0}], "asks": [{"price": 0.35, "size": 30.0}]},
+        },
+        logger_obj=SimpleNamespace(info=lambda *a, **k: None),
+    )
+    assert len(tkr_calls) == 1 and tkr_calls[0]["side_label"] == "UP"
+
+    maybe_emit_s2_live_locks(
+        dm_s2, spec=spec_s2, k_open=k_open, eval_now=now_f, rem_sec=9.5, samples=sparse_pts, off_twap_60=None,
+        bks_s2={
+            "up_t": {"asks": [{"price": 0.999, "size": 30.0}], "bids": [{"price": 0.996, "size": 30.0}]},
+            "dn_t": {"bids": [{"price": 0.001, "size": 30.0}], "asks": [{"price": 0.004, "size": 30.0}]},
+        },
+        logger_obj=SimpleNamespace(info=lambda *a, **k: None),
+    )
+    assert len(mkr_calls) == 1 and mkr_calls[0]["min_resting_bid"] == 0.80 and mkr_calls[0]["max_resting_bid"] == 0.997
+    maybe_emit_s2_live_locks(
+        dm_s2, spec=spec_s2, k_open=k_open, eval_now=now_f, rem_sec=9.5, samples=sparse_pts, off_twap_60=None,
+        bks_s2={
+            "up_t": {"asks": [{"price": 0.999, "size": 30.0}], "bids": [{"price": 0.64, "size": 30.0}]},
+            "dn_t": {"bids": [{"price": 0.001, "size": 30.0}], "asks": [{"price": 0.36, "size": 30.0}]},
+        },
+        logger_obj=SimpleNamespace(info=lambda *a, **k: None),
+    )
+    assert len(mkr_calls) == 2 and mkr_calls[1]["min_resting_bid"] == 0.50
+
+    # 3. compute_sll_and_carry_gatling_budget separates slow passive carry vs fast Gatling locks
+    rb_cfg = {"gatling_enabled": True, "gatling_fast_gun_reserve_usd": 22.50}
+    harv_b = SimpleNamespace(
+        dry_run=False, enforce_gatling_sizing=True, max_exposure=100.0, pending_entry_intents={},
+        active_positions={"p1": {"sleeve": "BOND1_UMA_RESOLUTION_CARRY", "notional_usd": 44.58, "candle_expiry_ts": now_f + 3600.0, "status": "POSITION_CONFIRMED"}},
+        _is_v5_unleashed_active=lambda: True,
+    )
+    # Slow BOND1 blocked when free_cash=$16.34 (< $22.50 reserve) AND when slow_used=$44.58 (> 38% of $60.92 NAV)
+    assert compute_sll_and_carry_gatling_budget(harv_b, 16.0, 16.34, 44.58, "SINGLE_LEG_LOCK", "BOND1_UMA_RESOLUTION_CARRY", True, rb_cfg, rem_tte_sec=3000.0, now_ts=now_f) == 0.0
+    assert compute_sll_and_carry_gatling_budget(harv_b, 20.0, 40.0, 44.58, "SINGLE_LEG_MAKER_LOCK", "BOND1_UMA_RESOLUTION_CARRY", True, rb_cfg, rem_tte_sec=3600.0, now_ts=now_f) == 0.0
+    # Fast S2 / MKR_LOCK1 / W_PRUNE1 overrides legacy sll_pool_rem=0.0 and consumes free cash down to $0.50 reserve ($15.84)
+    s2_bud = compute_sll_and_carry_gatling_budget(harv_b, 0.0, 16.34, 44.58, "SINGLE_LEG_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR", False, rb_cfg, rem_tte_sec=10.0, now_ts=now_f)
+    assert s2_bud == 15.84
+
+    # 4. maybe_early_profit_recycle_htm_lock harvests undisputed BOND1 at $0.998 with positive net PnL
+    closed_recs = []
+    harv_r = SimpleNamespace(
+        dry_run=False,
+        active_positions={
+            "b1_pos": {
+                "sleeve": "BOND1_UMA_RESOLUTION_CARRY", "hold_to_maturity_lock": True, "inventory_reconciled": True,
+                "status": "POSITION_CONFIRMED", "token_id": "tok_b1", "side": "YES", "market_id": "m_b1", "condition_id": "c_b1",
+                "entry_shares": 25.0, "remaining_shares": 25.0, "notional_usd": 24.825, "entry_fee_cash_usd": 0.0,
+                "entry_price": 0.993, "fee_rate_applied": 0.0, "fee_exponent": 1.0, "neg_risk": False, "candle_expiry_ts": now_f + 2400.0,
+            }
+        },
+        _last_known_collateral=16.0,
+        _pending_collateral_refresh=False,
+        executor=SimpleNamespace(
+            execute_unwind_order=lambda **kw: SimpleNamespace(success=True, price=0.998, size=25.0, notional_usd=24.95, fee_usd=0.0),
+            invalidate_collateral_cache=lambda: None,
+        ),
+        calculate_realized_cash_pnl=lambda p, gross, fee: round(float(gross) - float(fee) - float(p["notional_usd"]), 6),
+        _handle_unwind_response=lambda tid, p, ures, sh, rsn, st, px: closed_recs.append((tid, round(24.95 - float(p["notional_usd"]), 6))) or "CLOSED",
+        save_state=lambda: None,
+    )
+    assert asyncio.run(maybe_early_profit_recycle_htm_lock(harv_r, "b1_pos", harv_r.active_positions["b1_pos"], {"bids": [{"price": 0.997, "size": 30.0}]}, now_f)) is False
+    assert asyncio.run(maybe_early_profit_recycle_htm_lock(harv_r, "b1_pos", harv_r.active_positions["b1_pos"], {"bids": [{"price": 0.998, "size": 30.0}]}, now_f)) is True
+    assert len(closed_recs) == 1 and closed_recs[0][1] == 0.125
+
+    # 5. NR4/NR5 mode-aware edge floors & adaptive PreSplitInventoryGun at $15.00 free cash
+    cand_nr = tmp_path / "nr_cands.jsonl"
+    st_nr = tmp_path / "nr_st.json"
+    st_nr.write_text('{"closed_positions": []}', encoding="utf-8")
+    dm_nr = SimpleNamespace(single_scan=True, _last_d1_live_emit_ts={})
+    spec_nr = SimpleNamespace(end_ts=now_f + 3600.0, is_closed_convert_safe=True, event_id="ev5", neg_risk_market_id="0x" + "1" * 64)
+    arb_nr5 = {
+        "mode": "NR5_NEGATIVE_COST_FREEROLL",
+        "net_edge_per_share": 0.0025,
+        "shares": 10.0,
+        "no_legs": [
+            {"token_id": "n1", "bracket": {"market_id": "m1", "condition_id": "c1", "question_index": 0, "label": "A"}, "walk": {"worst_px": 0.498}},
+            {"token_id": "n2", "bracket": {"market_id": "m2", "condition_id": "c2", "question_index": 1, "label": "B"}, "walk": {"worst_px": 0.499}},
+        ],
+        "yes_sell_legs": [{"token_id": "y3", "bracket": {"market_id": "m3", "label": "C"}, "walk": {"worst_px": 0.006}}],
+        "retained_free_yes_brackets": [{"yes_token": "y4", "market_id": "m4", "question_index": 3, "label": "D"}],
+    }
+    assert emit_negrisk_convert_cand_impl(
+        dm_nr, sleeve_source="NR2_CONVERT_NO_SUBSET_ARB", spec=spec_nr, dedupe_key="NR5_TEST",
+        arb_hit=arb_nr5, books_by_token={}, now_ts=now_f, fee_bips=0,
+        cand_file=cand_nr, default_cand_path=cand_nr, state_file=st_nr, default_state_path=st_nr,
+    ) is True
+
+    split_sz = []
+    orig_sp = rmg_mod.attempt_onchain_split_position
+    rmg_mod.attempt_onchain_split_position = lambda ex, cid, amt, neg_risk=False, **kw: split_sz.append(amt) or {"success": True, "tx_hash": "0x1"}
+    try:
+        ps15 = PreSplitInventoryGun(cap_usd=15.0)
+        harv15 = SimpleNamespace(
+            dry_run=False, _startup_reconciled=True, global_halt_active=False, active_positions={}, pending_entry_intents={},
+            closed_positions=[], pre_split_inventory_state={}, _last_known_collateral=15.0, _pending_collateral_refresh=False,
+            executor=SimpleNamespace(invalidate_collateral_cache=lambda: None), save_state=lambda: None, risk_controller=None,
+        )
+        shm15 = {"timestamp_unix": now_f, "spot_price": 78000.0, "m15": {"market_id": "m15_btc", "condition_id": "0x" + "2" * 64, "fee_rate": 0.0, "fee_exponent": 1.0, "expiry_ts": now_f + 300.0, "finalized_open": 78000.0, "UP": {"token_id": "1" * 24, "best_bid": 0.504, "bid_depth_1c_shares": 25.0, "best_ask": 0.51, "ask_depth_1c_shares": 25.0}, "DOWN": {"token_id": "2" * 24, "best_bid": 0.503, "bid_depth_1c_shares": 25.0, "best_ask": 0.51, "ask_depth_1c_shares": 25.0}}}
+        assert asyncio.run(ps15.tick(harv15, now_f, fast_tick_reader=lambda a: shm15 if a == "BTC" else None)) == "ARMED"
+        assert split_sz == [12.0]
+    finally:
+        rmg_mod.attempt_onchain_split_position = orig_sp
+
+
+
 
 

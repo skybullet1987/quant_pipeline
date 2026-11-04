@@ -1758,9 +1758,18 @@ class PreSplitInventoryGun:
         if float(st.get("cooldown_until", 0.0) or 0.0) > now_ts:
             return None
         collat = getattr(harvester, "_last_known_collateral", None)
-        min_mult = 2.5 if self._explicit_min_free_cash is not None else 1.5
-        need_cash = max(min_free_req, cap_shares * min_mult)
-        if not isinstance(collat, (int, float)) or float(collat) < need_cash:
+        if not isinstance(collat, (int, float)):
+            return None
+        if self._explicit_min_free_cash is not None:
+            need_cash = max(min_free_req, cap_shares * 2.5)
+        else:
+            if float(collat) < min_free_req:
+                return None
+            cap_shares = min(cap_shares, float(math.floor(float(collat) - 2.0)))
+            if cap_shares < 5.0:
+                return None
+            need_cash = max(min_free_req, cap_shares + 1.5)
+        if float(collat) < need_cash:
             return None
         if fast_tick_reader is None:
             return None
@@ -2284,7 +2293,13 @@ def finish_nr2_subset_convert_arb(
         })
 
     proceeds_ps = float(len(verified_no_legs) - 1) * eff_mult + yes_net_ps
-    min_edge_req = 0.008 if not verified_yes_sells else 0.012
+    _cm_nr = str(cand.get("convert_mode") or "")
+    if _cm_nr == "NR5_NEGATIVE_COST_FREEROLL":
+        min_edge_req = 0.0020
+    elif _cm_nr == "NR4_FULL_SWEEP":
+        min_edge_req = 0.0035
+    else:
+        min_edge_req = 0.0045 if not verified_yes_sells else 0.0065
     if (proceeds_ps - worst_no_cost_ps) < min_edge_req:
         return {"executed": False, "reason": f"FRESH_BOOK_WALK_REJECT:EDGE_BELOW_MIN:{proceeds_ps - worst_no_cost_ps:.4f}"}
 

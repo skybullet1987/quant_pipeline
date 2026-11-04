@@ -189,6 +189,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "gatling_base_clip_core_usd": 20.0,
         "gatling_base_clip_bridge_usd": 18.5,
         "enable_s2_twap_lock_live": True,
+        "enable_ungraduated_v3_math_live": True,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,

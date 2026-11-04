@@ -351,6 +351,8 @@ _RISK_CONFIG_DEFAULTS: Dict[str, Any] = {
     "max_total_portfolio_slots": 4,
     "unlimited_slots": False,
     "enable_graduated_alt_sleeves": True,
+    "enable_ungraduated_v3_math_live": False,
+    "enable_exp_d1_bridge": True,
     "max_daily_loss": 20.00,
     "max_exposure": 35.00,
     "max_concurrent_positions": 2,

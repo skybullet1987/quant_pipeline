@@ -6053,7 +6053,7 @@ class PolymarketLiveHarvester:
             own_asset_grad = True
             from src.polymarket_research.riskless_protocol_v2_expansion import PROTOCOL_V2_MATH_SLEEVES
             _v3_7d = {"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG", "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX", "CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"}
-            _v3_g8 = _v3_7d | PROTOCOL_V2_MATH_SLEEVES | {"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH", "TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR", "AFF1_FROZEN_SUBPERIOD_COLLAPSE", "SOC2_EXACT_SCORE_2D_LATTICE", "NFL_PRP1_MILESTONE_AND_MAX_LOCKS", "SUM1_FRECHET_SUM_TRIANGLES"}
+            _v3_g8 = _v3_7d | PROTOCOL_V2_MATH_SLEEVES | {"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH", "TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR", "AFF1_FROZEN_SUBPERIOD_COLLAPSE", "SOC2_EXACT_SCORE_2D_LATTICE", "NFL_PRP1_MILESTONE_AND_MAX_LOCKS", "SUM1_FRECHET_SUM_TRIANGLES", "B3_BARRIER_MONO_BOX", "B4_TOUCHED_BARRIER_WICK_LOCK", "D2_12PM_BINANCE_BOX", "GAS1_AAA_GASOLINE_LOCK", "API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK", "W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK", "SP2_NBA_ENDGAME_LOCK", "U1_DAILY_UPDOWN_LOCK", "CM_B2_PYTH_SESSION_NO_LOCK", "CM_U1_PYTH_CLOSE_LOCK"}
             if box_type == "DOMINANCE":
                 d1_core_ok = _grad8(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
                 d1_quiet_ok = sleeve_src == "D1_QUIET_BOOK_BOX" and _grad8(by_sl_map.get("D1_QUIET_BOOK_BOX") or {})
@@ -6082,14 +6082,15 @@ class PolymarketLiveHarvester:
                 d1_zf_bridge = _2l_ok and (zero_fee_box or fee_2l_ok) and sleeve_src not in _v3_g8 and d1_g8
                 _v3_max_rem = 604800.0 if sleeve_src in _v3_7d else 129600.0
                 _v2_sp_ok = box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_graduated_d1_box", True))
-                v3_math_ok = (bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) or _v2_sp_ok) and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and (box_type == "CTF_OVERROUND" or 0.0 < cand_rem_zf <= _v3_max_rem) and ((_2l_ok and c_net <= (0.990 if zero_fee_box else 0.988)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.994) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= (0.9975 if (zero_fee_box and cand_rem_zf <= 28800.0) else 0.990)))
+                _v3_en = bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) or bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_ungraduated_v3_math_live", False)) or _v2_sp_ok
+                v3_math_ok = _v3_en and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and (box_type == "CTF_OVERROUND" or 0.0 < cand_rem_zf <= _v3_max_rem) and ((_2l_ok and c_net <= (0.992 if zero_fee_box else 0.989)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.9955) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= (0.9975 if (zero_fee_box and cand_rem_zf <= 28800.0) else 0.992)))
                 _nr_mode = str(candidate_box.get("convert_mode") or "")
                 nr2_pure_cash_bridge = box_type == "NEGRISK_CONVERT" and bool(_rcfg_b1.get("enable_nr2_pure_cash_bridge", True)) and (
                     (_nr_mode in {"NR2_PURE_CASH_CONVERT", "NR2_SUBSET_LIQUID_YES_CONVERT", "NR2_SUBSET_CONVERT_FREE_TAIL", "NR4_FULL_SWEEP", "NR5_NEGATIVE_COST_FREEROLL"} and 2 <= len(candidate_box.get("no_legs") or []) <= 15)
                     or (_nr_mode == "NR3_SYNTHETIC_ALL_YES_OVERROUND" and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_nr3_synthetic_overround", True)) and 2 <= len(candidate_box.get("yes_sell_legs") or []) <= 15)
                 ) and no_loss and d1_g8
                 bond1_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"} and bool(_rcfg_b1.get("enable_bond1_live_bridge", True)) and no_loss and float(sl_rec.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec.get("closed", 0) or 0) == 0 or float(sl_rec.get("win_rate_pct", 100.0) or 0.0) >= 100.0) and d1_g8
-                s2_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)) and not self.dry_run and no_loss and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and c_net <= 0.996 and d1_g8
+                s2_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)) and not self.dry_run and no_loss and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and c_net <= 0.9972 and d1_g8
                 if not (own_grad or d1_zf_bridge or v3_math_ok or nr2_pure_cash_bridge or bond1_live_bridge or s2_live_bridge):
                     return {"executed": False, "reason": f"SLEEVE_NOT_YET_8_OF_8_GRADUATED:{sleeve_src}"}
         except Exception as exc:
@@ -6820,8 +6821,8 @@ class PolymarketLiveHarvester:
                 collat_f * (0.32 if collat_f >= 160.0 else float(_rcfg.get("d1_box_bankroll_pct", 0.25))),
                 max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_exp),
             )
-        from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
-        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "SINGLE_LEG_LOCK", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"))
+        from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
+        budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_exp, "SINGLE_LEG_LOCK", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), rem_tte_sec=exp_ts - now_ts, now_ts=now_ts, cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)))
         if budget < 5.05:
             return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
         custom_bk = "get_market_book" in getattr(self.executor, "__dict__", {})
@@ -6924,7 +6925,7 @@ class PolymarketLiveHarvester:
                 self._pending_collateral_refresh = True
             self.save_state()
             logger.info(f"✓ [SINGLE-LEG LOCK ENTERED] {lid} ({sleeve_src}) | {f_sh:.0f} sh @ eff=${eff_px:.4f} (hold_to_maturity={h_mat})")
-        return {"executed": not unk, "result": o_res, "leg_trade_ids": [] if (unk or h_mat) else [lid]}
+        return {"executed": not unk, "reason": "ENTRY_PENDING_ONCHAIN_RECONCILIATION" if unk else "OK", "result": o_res, "leg_trade_ids": [] if (unk or h_mat) else [lid]}
 
     def _finish_negrisk_convert_arb(
         self,
@@ -6992,7 +6993,7 @@ class PolymarketLiveHarvester:
                 max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_exp),
             )
         from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
-        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"))
+        budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)), reserve_u=0.50, override_legacy_cap=True)
         if budget < 5.05:
             return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
 
@@ -7788,7 +7789,7 @@ class PolymarketLiveHarvester:
         inflight_mkr_types = self.__dict__.setdefault("_inflight_maker_anchor_types", set())
         dedupe_k = str(candidate_box.get("dedupe_key") or f"BOND1_MKR_{mid_a}")
         pair_dedupe_k = str(candidate_box.get("pair_dedupe_key") or f"BOND1_{mid_a}")
-        if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and not self.dry_run:
+        if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and not self.dry_run and float(getattr(self, "_last_known_collateral", 99.0) or 99.0) >= 27.5:
             _pe_map = getattr(self, "_maker_anchor_preempt_events", None) or {}
             _mlk1_iks = [
                 str(_iv.get("inflight_key") or "")
@@ -7887,9 +7888,9 @@ class PolymarketLiveHarvester:
                 no_l_s
                 and d1_s_ok
                 and (
-                    (sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and _rcfg_sll.get("enable_bond1_live_bridge", True) and float(sl_rec_s.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec_s.get("closed", 0) or 0) == 0 or float(sl_rec_s.get("win_rate_pct", 100.0) or 0.0) >= 100.0))
+                    (sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"} and _rcfg_sll.get("enable_bond1_live_bridge", True) and float(sl_rec_s.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec_s.get("closed", 0) or 0) == 0 or float(sl_rec_s.get("win_rate_pct", 100.0) or 0.0) >= 100.0))
                     or (not self.dry_run and self._is_v5_unleashed_active() and _is_mlk1 and float(candidate_box.get("p_model") or 0.0) >= 0.998)
-                    or (not self.dry_run and _is_rw_carry and float(candidate_box.get("p_model") or 0.999) >= 0.999 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True)))
+                    or (not self.dry_run and _is_rw_carry and float(candidate_box.get("p_model") or 0.998) >= 0.998 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True)))
                     or (not self.dry_run and _is_s2_mkr and float(candidate_box.get("p_model") or 0.0) >= 0.9985 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_s2_twap_lock_live", True)))
                     or (not self.dry_run and self._is_v5_unleashed_active() and _is_wp_mkr and float(candidate_box.get("p_model") or 0.0) >= 0.999)
                 )
@@ -7901,7 +7902,7 @@ class PolymarketLiveHarvester:
 
         exp_ts = float(candidate_box.get("expiry_ts") or 0.0)
         cand_ts = float(candidate_box.get("ts_unix") or now_ts)
-        _min_sll_tte = 5.5 if _is_s2_mkr else (60.0 if _is_mlk1 else 110.0)
+        _min_sll_tte = 4.8 if _is_s2_mkr else (60.0 if (_is_mlk1 or sleeve_src == "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY") else 110.0)
         _max_sll_tte = 25.0 if _is_s2_mkr else (86400.0 if _is_rw_carry else (28800.0 if _is_wp_mkr else (14400.0 if _is_mlk1 else 9000.0)))
         if not self.dry_run and ((now_ts - cand_ts) > (2.5 if _is_s2_mkr else 8.0) or (exp_ts > 0.0 and not (_min_sll_tte <= (exp_ts - now_ts) <= _max_sll_tte))):
             return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
@@ -8008,9 +8009,8 @@ class PolymarketLiveHarvester:
                     max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
                     port_headroom_u,
                 )
-                from src.polymarket_research.riskless_protocol_v2_expansion import cap_bond1_maker_for_gatling_reserve
-                if not _is_s2_mkr:
-                    budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
+                from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
+                budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
             else:
                 budget = min(
                     lot_cap_sll,
@@ -8076,8 +8076,8 @@ class PolymarketLiveHarvester:
                     sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
                     sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
                     budget = min(lot_cap_sll, mkt_cap_u if _enforce_b1_v53 else lot_cap_sll, sll_pool_rem if _enforce_b1_v53 else collat_f * _sll_pct, collat_f)
-                    if _enforce_b1_v53 and not _is_s2_mkr:
-                        budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
+                    if _enforce_b1_v53:
+                        budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, sll_used_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
                     if _is_mlk1:
                         budget = min(budget, 22.0, round((collat_f + sll_used_u) * 0.32, 2))
                     if _is_rw_carry:
@@ -12398,6 +12398,10 @@ class PolymarketLiveHarvester:
                         # CRIT-02: Final-45s Capital Recycling is handled exclusively by the unified Phase B
                         # `final_45s_triggered` state machine (STOP_CANCEL_PENDING cancel-and-reconcile gate) below.
                         entry_px = float(pos.get("entry_price") or 0.0)
+                        if pos.get("hold_to_maturity_lock") and tte_rem >= 300.0 and best_b >= 0.998:
+                            from src.polymarket_research.riskless_protocol_v2_expansion import maybe_early_profit_recycle_htm_lock
+                            if await maybe_early_profit_recycle_htm_lock(self, tid, pos, book, now_ts):
+                                continue
                         _is_dom_box = bool(pos.get("is_dominance_box") or pos.get("is_single_leg_lock"))
 
                         # PAA_Q2: Pre-Kickoff Maker Step-Down (T-30m / T-15m / undercut) for unhedged SPORTS_CORRIDOR legs
