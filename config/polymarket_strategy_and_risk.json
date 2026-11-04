@@ -132,7 +132,7 @@
     "bond1_per_market_cap_pct": 0.65,
     "bond1_maker_per_market_cap_pct": 0.365,
     "bond1_max_join_queue_usd": 350.0,
-    "bond1_buried_cancel_sec": 15.0,
+    "bond1_buried_cancel_sec": 90.0,
     "bridged_zero_fee_cap_usd_seed": 60.0,
     "bridged_zero_fee_cap_usd_growth": 120.0,
     "enable_reward_locked_carry_live_bridge": true,

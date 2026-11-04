@@ -538,10 +538,11 @@ def detect_nr4_nr5_optimal_tail_convert(
 
         # Marginal advantage of placing outcome `idx` into NO-buy set `S` vs leaving in `S^c`
         marginal_s_adv = one_minus_c * (1.0 - yes_net_bid) - no_cost
+        q_idx_p = int(item.get("question_index") if item.get("question_index") is not None else item.get("index", idx))
         parsed.append(
             {
-                "index": idx,
-                "label": str(item.get("label") or item.get("groupItemTitle") or item.get("outcome") or f"idx_{idx}"),
+                "index": q_idx_p,
+                "label": str(item.get("label") or item.get("groupItemTitle") or item.get("outcome") or f"idx_{q_idx_p}"),
                 "condition_id": str(item.get("condition_id") or item.get("conditionId") or ""),
                 "yes_token_id": str(item.get("yes_token_id") or item.get("token_id_yes") or ""),
                 "no_token_id": str(item.get("no_token_id") or item.get("token_id_no") or ""),
@@ -830,7 +831,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
     else:
         rem_sec = float(tte_sec)
     if live_lock_mode:
-        if not (4.5 <= rem_sec <= 16.0):
+        if not (3.8 <= rem_sec <= 22.0):
             return None
     elif not (0.8 <= rem_sec <= 55.0):
         return None
@@ -857,7 +858,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
     vol_prices = [p for _, p in pts[-120:]]
     mean_obs = sum(win_prices) / float(len(win_prices))
     cur_px = win_prices[-1]
-    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 16.0:
+    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 22.0:
         max_twap_div = 0.0020 if live_lock_mode else 0.0025
         rolling_60 = [p for t, p in pts if (now_f - 60.5) <= t <= (now_f + 1.0)]
         ref_mean = (
@@ -893,7 +894,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     elapsed_cushion_bps = (abs(mean_obs - open_f) / open_f) * 10000.0
     req_adverse_avg_move_bps = (elapsed_sec / max(0.5, rem_sec)) * elapsed_cushion_bps
-    if live_lock_mode and req_adverse_avg_move_bps < 45.0:
+    if live_lock_mode and req_adverse_avg_move_bps < 32.0:
         return None
 
     # Variance of average of remaining random-walk steps `1..n_rem` is ~ `(n_rem + 1)*(2*n_rem + 1)/(6*n_rem) * sigma_1s^2`
@@ -912,7 +913,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
 
     direction = "UP" if z > 0 else "DOWN"
     ask_px = float(up_ask if direction == "UP" else down_ask)
-    if not (0.02 <= ask_px <= 0.990):
+    if not (0.02 <= ask_px <= 0.996):
         return None
     q_ask, _, _ = quantize_dynamic_tick_price(ask_px, "BUY", shares=5.0, mode="taker")
     fee_sh = compute_exact_taker_fee_per_share(q_ask, float(fee_rate), float(fee_exponent))
@@ -939,6 +940,148 @@ def evaluate_s2_rtds_exact_twap_integrator(
         "net_cost_per_share": round(net_cost, 6),
         "net_edge_per_share": round(ev_edge, 6),
     }
+
+
+def maybe_emit_s2_live_locks(
+    daemon: Any,
+    *,
+    spec: Any,
+    k_open: float,
+    eval_now: float,
+    rem_sec: float,
+    samples: Sequence[Tuple[float, float]],
+    off_twap_60: Optional[float],
+    win_side: str,
+    tok: str,
+    opp_tok: str,
+    bk: Dict[str, Any],
+    bk_opp: Optional[Dict[str, Any]],
+    bks_s2: Optional[Dict[str, Dict[str, Any]]] = None,
+    logger_obj: Any = None,
+    **_extra_kw: Any,
+) -> bool:
+    """
+    Dual-mode Live Gatling `S2_RTDS_EXACT_TWAP_INTEGRATOR` emitter (`3.8s <= rem_sec <= 22.0s`):
+      1. Taker FOK Lock when `ask_px <= $0.995` and `net_cost_per_share <= $0.9955` (`crypto_fees_v2` at `$0.993` is `$0.00048`).
+      2. Final-22s Post-Only Maker Lock (`SINGLE_LEG_MAKER_LOCK`, `0%` fee + `20%` crypto maker rebate) when `ask > $0.995`
+         (or `$0.999/$1.000`) while `0.80 <= best_bid <= $0.993`, capturing impatient pre-settlement cashouts!
+    """
+    if not (3.8 <= rem_sec <= 22.0) or len(samples) < 8:
+        return False
+    bks_map = bks_s2 or {}
+    ask_up_l1, _ = daemon._best_ask_sz(bks_map.get(spec.up_token) or (bk if win_side == "UP" else {}))
+    ask_dn_l1, _ = daemon._best_ask_sz(bks_map.get(spec.down_token) or (bk if win_side == "DOWN" else {}))
+    if 3.8 <= rem_sec <= 20.0:
+        s2_rt = evaluate_s2_rtds_exact_twap_integrator(
+            asset=spec.asset,
+            open_price=k_open,
+            expiry_ts=spec.end_ts,
+            now_ts=eval_now,
+            rtds_ticks=samples,
+            official_twap_60s=off_twap_60,
+            twap_lookback_sec=spec.twap_lookback_sec,
+            live_lock_mode=True,
+            up_ask=ask_up_l1 if ask_up_l1 < 1.0 else 0.0,
+            down_ask=ask_dn_l1 if ask_dn_l1 < 1.0 else 0.0,
+            fee_rate=spec.fee_rate,
+            fee_exponent=spec.fee_exponent,
+            min_net_edge=0.0035,
+            min_lock_prob=0.9990,
+        )
+        if s2_rt is not None and s2_rt["direction"] == win_side and 0.72 <= float(s2_rt["net_cost_per_share"]) <= 0.9955:
+            p_rt = float(s2_rt["p_model"])
+            max_eff_s2 = min(0.9955, round(p_rt - 0.0035, 4))
+            max_opp_s2 = max(0.08, round(1.015 - float(s2_rt["ask_px"]), 3))
+            if daemon.emit_live_single_leg_lock_candidate(
+                sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
+                asset=spec.asset,
+                dedupe_key=f"S2LIVE_{spec.asset}_{spec.horizon}_{spec.market_id}",
+                token_id=tok,
+                opp_token_id=opp_tok,
+                market_id=spec.market_id,
+                condition_id=spec.condition_id,
+                side_label=win_side,
+                display_label=f"{spec.asset} {spec.horizon} {win_side} TWAP Lock (TTE={rem_sec:.1f}s, z={s2_rt['z_score']:.1f})",
+                bk_win=bk,
+                bk_opp=bk_opp,
+                fee_rate=spec.fee_rate,
+                fee_exponent=spec.fee_exponent,
+                neg_risk=spec.neg_risk,
+                close_ts=spec.end_ts,
+                now_ts=eval_now,
+                max_lock_eff_px=max_eff_s2,
+                max_opp_bid=max_opp_s2,
+                hold_to_maturity=True,
+                p_model=p_rt,
+            ):
+                (logger_obj or logger).info(
+                    f"🔫 [GATLING S2 TAKER LOCK] {spec.asset} {spec.horizon} {win_side} | TTE={rem_sec:.1f}s | "
+                    f"req_crash={s2_rt['req_adverse_avg_move_bps']:.0f}bps | z={s2_rt['z_score']:.2f} | net=${s2_rt['net_cost_per_share']:.4f}"
+                )
+                return True
+
+    if 6.0 <= rem_sec <= 22.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+        bids_w = sorted(
+            [(float(b["price"]), float(b["size"])) for b in (bk.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0],
+            key=lambda r: -r[0],
+        )
+        win_bid = bids_w[0][0] if bids_w else 0.0
+        if 0.80 <= win_bid <= 0.993:
+            s2_mk = evaluate_s2_rtds_exact_twap_integrator(
+                asset=spec.asset,
+                open_price=k_open,
+                expiry_ts=spec.end_ts,
+                now_ts=eval_now,
+                rtds_ticks=samples,
+                official_twap_60s=off_twap_60,
+                twap_lookback_sec=spec.twap_lookback_sec,
+                live_lock_mode=True,
+                up_ask=0.90 if win_side == "UP" else 0.10,
+                down_ask=0.90 if win_side == "DOWN" else 0.10,
+                fee_rate=spec.fee_rate,
+                fee_exponent=spec.fee_exponent,
+                min_net_edge=0.004,
+                min_lock_prob=0.9994,
+            )
+            if (
+                s2_mk is not None
+                and s2_mk["direction"] == win_side
+                and abs(float(s2_mk["z_score"])) >= 3.55
+                and float(s2_mk["req_adverse_avg_move_bps"]) >= 35.0
+            ):
+                p_mk = float(s2_mk["p_model"])
+                reb_ps = round(0.20 * float(spec.fee_rate) * ((win_bid * (1.0 - win_bid)) ** float(spec.fee_exponent)), 5) if float(spec.fee_rate) > 0.0 else 0.0
+                bk_opp_eff = bk_opp if isinstance(bk_opp, dict) else {"bids": [], "asks": []}
+                if daemon.emit_live_single_leg_maker_lock_candidate(
+                    sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
+                    asset=spec.asset,
+                    dedupe_key=f"S2MKR_{spec.asset}_{spec.horizon}_{spec.market_id}",
+                    pair_dedupe_key=f"S2LIVE_{spec.asset}_{spec.horizon}_{spec.market_id}",
+                    token_id=tok,
+                    opp_token_id=opp_tok,
+                    market_id=spec.market_id,
+                    condition_id=spec.condition_id,
+                    side_label=win_side,
+                    display_label=f"{spec.asset} {spec.horizon} {win_side} TWAP Maker Lock (TTE={rem_sec:.1f}s)",
+                    bk_win=bk,
+                    bk_opp=bk_opp_eff,
+                    neg_risk=bool(spec.neg_risk),
+                    close_ts=spec.end_ts,
+                    now_ts=eval_now,
+                    min_resting_bid=0.800,
+                    max_resting_bid=0.994,
+                    min_maker_edge=0.005,
+                    max_opp_bid=0.080,
+                    hold_to_maturity=True,
+                    p_model=p_mk,
+                    maker_rebate_ps=reb_ps,
+                ):
+                    (logger_obj or logger).info(
+                        f"🔫 [GATLING S2 MAKER LOCK] {spec.asset} {spec.horizon} {win_side} | TTE={rem_sec:.1f}s | "
+                        f"bid=${win_bid:.3f} | req_crash={s2_mk['req_adverse_avg_move_bps']:.0f}bps | z={s2_mk['z_score']:.2f}"
+                    )
+                    return True
+    return False
 
 
 def compute_gatling_clip_budget_usd(
@@ -998,7 +1141,9 @@ def compute_gatling_clip_budget_usd(
 
 PROTOCOL_V2_MATH_SLEEVES = {
     "B1_INTRADAY_ONETOUCH_NOON_BOX",
+    "B1_ITO_BARRIER_DIGITAL_DOMINANCE",
     "EQ1_PYTH_EQUITY_DOMINANCE_BOX",
+    "EQ1_TERMINAL_EQUITY_CLOSE_LOCK",
     "DC1_DOUBLE_CHANCE_1X2_PARITY",
     "LP_COMP1_SPORTS_TRIANGLES",
     "HALFTIME_FREEZE_OFFSET_BOX",
@@ -1008,6 +1153,8 @@ PROTOCOL_V2_MATH_SLEEVES = {
     "W_PRUNE1_NR0_BASKET",
     "W_PRUNE1_DEAD_NO_BOND",
     "W_SOLAR1_POST_2351_LOCK",
+    "UMA_READY1_LIVENESS_PRIORITY",
+    "TW1_COUNTING_TRUNCATION_AND_BOX",
 }
 
 
@@ -1822,6 +1969,7 @@ def detect_lp_comp1_sports_triangles(
     is_halftime: bool = False,
     min_net_edge_usd: float = 0.005,
     min_shares: float = 5.0,
+    **_extra_kwargs: Any,
 ) -> List[Dict[str, Any]]:
     """
     `LP_COMP1_SPORTS_TRIANGLES`:
@@ -1870,8 +2018,13 @@ def detect_lp_comp1_sports_triangles(
                         "sleeve": "LP_COMP1_SPORTS_TRIANGLES",
                         "box_type": "DOMINANCE",
                         "pattern": "NO_BTTS_PLUS_YES_OVER_1_5",
-                        "leg_a": {"token_id": ta, "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa},
-                        "leg_b": {"token_id": tb, "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb},
+                        "triangle_id": "NO_BTTS_PLUS_YES_OVER_1_5",
+                        "leg_a": {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa},
+                        "leg_b": {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb},
+                        "legs": [
+                            {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa},
+                            {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb},
+                        ],
                         "guaranteed_payout_per_share": 1.0,
                         "cost_per_share": round(qpa + qpb, 6),
                         "net_edge_per_share": round(edge, 6),
@@ -1913,6 +2066,7 @@ def detect_lp_comp1_sports_triangles(
                         "sleeve": "LP_COMP1_SPORTS_TRIANGLES",
                         "box_type": "MULTI_LEG_BUNDLE",
                         "pattern": "NO_DRAW_YES_BTTS_YES_UNDER_1_5",
+                        "triangle_id": "NO_DRAW_YES_BTTS_YES_UNDER_1_5",
                         "legs": [
                             {"token_id": t1, "condition_id": str(draw_m.get("condition_id") or ""), "market_id": str(draw_m.get("market_id") or ""), "ask_px": qp1, "net_cost": qp1, "ask_size": s_min, "neg_risk": bool(draw_m.get("neg_risk", False))},
                             {"token_id": t2, "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qp2, "net_cost": qp2, "ask_size": s_min, "neg_risk": bool(btts_m.get("neg_risk", False))},
@@ -3234,7 +3388,7 @@ async def run_protocol_v2_daemon_scan(
             b1_pairs: List[Tuple[Any, Any]] = []
             for br in daemon.barrier_rungs.values():
                 dir_br = str(getattr(br, "direction", "DOWN" if getattr(br, "is_downward", False) else "UP")).upper()
-                if dir_br != "UP" or not (120.0 < (float(br.end_ts) - now) <= 57600.0):
+                if dir_br != "UP" or not (120.0 < (float(br.end_ts) - now) <= 604800.0):
                     continue
                 for rgs_m in daemon.strike_ladders.values():
                     for sr in rgs_m:
@@ -3300,120 +3454,144 @@ async def run_protocol_v2_daemon_scan(
     except Exception as exc_b1:
         logger.debug(f"Protocol V2 B1 scan notice: {exc_b1}")
 
-    # Pillar 3: `NR4`/`NR5` Optimal Tail Convert on Closed NegRisk Slates
+    # Pillar 3: `NR4`/`NR5` Optimal Tail Convert on Closed NegRisk Slates (WS + Batch REST Fallback)
     try:
-        for sp_nrc in list((getattr(daemon, "negrisk_convert_slates", None) or {}).values())[:20]:
-            if not sp_nrc.is_closed_convert_safe or not (120.0 < (float(sp_nrc.end_ts) - now) <= 172800.0) or len(sp_nrc.brackets) > 15:
-                continue
-            nr_outcomes: List[Dict[str, Any]] = []
-            nr_bks: Dict[str, Dict[str, Any]] = {}
-            for idx_b, br_c in enumerate(sp_nrc.brackets):
-                yt, nt = str(br_c.get("yes_token") or ""), str(br_c.get("no_token") or "")
-                by_c, bn_c = daemon._get_fresh_ws_book(yt, now, max_age_sec=8.0), daemon._get_fresh_ws_book(nt, now, max_age_sec=8.0)
-                if not by_c or not bn_c:
-                    break
-                nr_bks[yt], nr_bks[nt] = by_c, bn_c
-                ya, ys = daemon._best_ask_sz(by_c)
-                na, ns = daemon._best_ask_sz(bn_c)
-                yb, _ = _extr_best_bid(by_c.get("bids") or [])
-                yb_sz = float((by_c.get("bids") or [{}])[0].get("size", 0.0)) if (by_c.get("bids") or []) else 0.0
-                q_idx_c = int(br_c.get("question_index") if br_c.get("question_index") is not None else idx_b)
-                nr_outcomes.append({
-                    "index": q_idx_c,
-                    "question_index": q_idx_c,
-                    "label": str(br_c.get("label") or f"B{idx_b}"),
-                    "market_id": str(br_c.get("market_id") or ""),
-                    "condition_id": str(br_c.get("condition_id") or ""),
-                    "yes_token_id": yt,
-                    "no_token_id": nt,
-                    "yes_ask": ya if ya < 1.0 else 0.0,
-                    "yes_ask_size": ys,
-                    "no_ask": na if na < 1.0 else 0.0,
-                    "no_ask_size": ns,
-                    "yes_bid": yb,
-                    "yes_bid_size": yb_sz,
-                    "fee_rate": float(br_c.get("fee_rate", 0.0) or 0.0),
-                    "fee_exponent": float(br_c.get("fee_exponent", 1.0) or 1.0),
-                })
-            if len(nr_outcomes) == len(sp_nrc.brackets) and len(nr_outcomes) >= 3:
-                for nr_hit in detect_nr4_nr5_optimal_tail_convert(
-                    nr_outcomes,
-                    event_id=sp_nrc.event_id,
-                    neg_risk_market_id=sp_nrc.neg_risk_market_id,
-                    event_meta={"negRiskAugmented": False},
-                    fee_bips=0,
-                ):
-                    sl_nr = str(nr_hit["sleeve"])
-                    sh_nr = max(6.0, min(15.0, float(nr_hit.get("max_fillable_shares") or 8.0)))
-                    opps_out.append({
-                        "sleeve": sl_nr,
-                        "market": f"{sp_nrc.title[:42]} [{sl_nr}]",
-                        "ask_vwap": round(1.0 - float(nr_hit["net_edge_per_share"]), 4),
-                        "p_model": 1.0,
-                        "net_edge": float(nr_hit["net_edge_per_share"]),
-                        "l1_usd": round(sh_nr * max(0.20, 1.0 - float(nr_hit["net_edge_per_share"])), 2),
+        cand_nr_slates = [
+            sp_c
+            for sp_c in (getattr(daemon, "negrisk_convert_slates", None) or {}).values()
+            if sp_c.is_closed_convert_safe
+            and 120.0 < (float(sp_c.end_ts) - now) <= 259200.0
+            and 3 <= len(sp_c.brackets) <= 15
+        ]
+        cand_nr_slates.sort(key=lambda s: float(s.end_ts))
+        cand_nr_slates = cand_nr_slates[:50]
+        if cand_nr_slates:
+            nr_all_bks: Dict[str, Dict[str, Any]] = {}
+            nr_missing: List[str] = []
+            for sp_nrc in cand_nr_slates:
+                for br_c in sp_nrc.brackets:
+                    for tk_c in (str(br_c.get("yes_token") or ""), str(br_c.get("no_token") or "")):
+                        if not tk_c or tk_c in nr_all_bks:
+                            continue
+                        wb_c = daemon._get_fresh_ws_book(tk_c, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None
+                        if wb_c:
+                            nr_all_bks[tk_c] = wb_c
+                        else:
+                            nr_missing.append(tk_c)
+            if nr_missing and hasattr(daemon, "fetch_books_batch"):
+                fetched_nr = await daemon.fetch_books_batch(list(dict.fromkeys(nr_missing))[:120], timeout=2.5)
+                if isinstance(fetched_nr, dict):
+                    nr_all_bks.update(fetched_nr)
+            for sp_nrc in cand_nr_slates:
+                nr_outcomes: List[Dict[str, Any]] = []
+                nr_bks: Dict[str, Dict[str, Any]] = {}
+                for idx_b, br_c in enumerate(sp_nrc.brackets):
+                    yt, nt = str(br_c.get("yes_token") or ""), str(br_c.get("no_token") or "")
+                    by_c, bn_c = nr_all_bks.get(yt), nr_all_bks.get(nt)
+                    if not by_c or not bn_c:
+                        break
+                    nr_bks[yt], nr_bks[nt] = by_c, bn_c
+                    ya, ys = daemon._best_ask_sz(by_c)
+                    na, ns = daemon._best_ask_sz(bn_c)
+                    yb, yb_u = _extr_best_bid(by_c.get("bids") or [])
+                    yb_sz = (yb_u / yb) if yb > 0.0 else 0.0
+                    q_idx_c = int(br_c.get("question_index") if br_c.get("question_index") is not None else idx_b)
+                    nr_outcomes.append({
+                        "index": q_idx_c,
+                        "question_index": q_idx_c,
+                        "label": str(br_c.get("label") or f"B{idx_b}"),
+                        "market_id": str(br_c.get("market_id") or ""),
+                        "condition_id": str(br_c.get("condition_id") or ""),
+                        "yes_token_id": yt,
+                        "no_token_id": nt,
+                        "yes_ask": ya if ya < 1.0 else 0.0,
+                        "yes_ask_size": ys,
+                        "no_ask": na if na < 1.0 else 0.0,
+                        "no_ask_size": ns,
+                        "yes_bid": yb,
+                        "yes_bid_size": yb_sz,
+                        "fee_rate": float(br_c.get("fee_rate", 0.0) or 0.0),
+                        "fee_exponent": float(br_c.get("fee_exponent", 1.0) or 1.0),
                     })
-                    if hasattr(daemon, "emit_live_negrisk_convert_candidate"):
-                        by_idx_o = {int(o["question_index"]): o for o in nr_outcomes}
-                        no_lgs_emit = [
-                            {
-                                "token_id": lg_n["token_id"],
-                                "bracket": {
-                                    "no_token": lg_n["token_id"],
-                                    "market_id": by_idx_o[int(lg_n["index"])]["market_id"],
-                                    "condition_id": by_idx_o[int(lg_n["index"])]["condition_id"],
-                                    "question_index": int(lg_n["index"]),
-                                    "label": lg_n["label"],
-                                    "fee_rate": by_idx_o[int(lg_n["index"])]["fee_rate"],
-                                    "fee_exponent": by_idx_o[int(lg_n["index"])]["fee_exponent"],
+                if len(nr_outcomes) == len(sp_nrc.brackets) and len(nr_outcomes) >= 3:
+                    for nr_hit in detect_nr4_nr5_optimal_tail_convert(
+                        nr_outcomes,
+                        event_id=sp_nrc.event_id,
+                        neg_risk_market_id=sp_nrc.neg_risk_market_id,
+                        event_meta={"negRiskAugmented": False},
+                        fee_bips=0,
+                    ):
+                        sl_nr = str(nr_hit["sleeve"])
+                        sh_nr = max(6.0, min(15.0, float(nr_hit.get("max_fillable_shares") or 8.0)))
+                        opps_out.append({
+                            "sleeve": sl_nr,
+                            "market": f"{sp_nrc.title[:42]} [{sl_nr}]",
+                            "ask_vwap": round(1.0 - float(nr_hit["net_edge_per_share"]), 4),
+                            "p_model": 1.0,
+                            "net_edge": float(nr_hit["net_edge_per_share"]),
+                            "l1_usd": round(sh_nr * max(0.20, 1.0 - float(nr_hit["net_edge_per_share"])), 2),
+                        })
+                        if hasattr(daemon, "emit_live_negrisk_convert_candidate"):
+                            by_idx_o = {int(o["question_index"]): o for o in nr_outcomes}
+                            no_lgs_emit = [
+                                {
+                                    "token_id": lg_n["no_token_id"],
+                                    "bracket": {
+                                        "no_token": lg_n["no_token_id"],
+                                        "market_id": by_idx_o[int(lg_n["index"])]["market_id"],
+                                        "condition_id": by_idx_o[int(lg_n["index"])]["condition_id"],
+                                        "question_index": int(lg_n["index"]),
+                                        "label": lg_n["label"],
+                                        "fee_rate": by_idx_o[int(lg_n["index"])]["fee_rate"],
+                                        "fee_exponent": by_idx_o[int(lg_n["index"])]["fee_exponent"],
+                                    },
+                                    "walk": {"worst_px": float(lg_n["no_ask_px"])},
+                                }
+                                for lg_n in (nr_hit.get("s_no_legs") or [])
+                                if int(lg_n["index"]) in by_idx_o
+                            ]
+                            yes_sells_emit = [
+                                {
+                                    "token_id": lg_y["yes_token_id"],
+                                    "bracket": {
+                                        "yes_token": lg_y["yes_token_id"],
+                                        "market_id": by_idx_o[int(lg_y["index"])]["market_id"],
+                                        "label": lg_y["label"],
+                                        "fee_rate": by_idx_o[int(lg_y["index"])]["fee_rate"],
+                                        "fee_exponent": by_idx_o[int(lg_y["index"])]["fee_exponent"],
+                                    },
+                                    "walk": {"worst_px": float(lg_y["yes_bid_px"])},
+                                }
+                                for lg_y in (nr_hit.get("sc_yes_sell_legs") or [])
+                                if int(lg_y["index"]) in by_idx_o
+                            ]
+                            ret_tail_emit = [
+                                {
+                                    "yes_token": lg_r["yes_token_id"],
+                                    "market_id": by_idx_o[int(lg_r["index"])]["market_id"],
+                                    "condition_id": by_idx_o[int(lg_r["index"])]["condition_id"],
+                                    "question_index": int(lg_r["index"]),
+                                    "label": lg_r["label"],
+                                }
+                                for lg_r in (nr_hit.get("freeroll_yes_legs") or [])
+                                if int(lg_r["index"]) in by_idx_o
+                            ]
+                            daemon.emit_live_negrisk_convert_candidate(
+                                sleeve_source=sl_nr,
+                                spec=sp_nrc,
+                                dedupe_key=f"{sl_nr[:3]}_{sp_nrc.event_id}_{nr_hit['index_set_bitmask']}",
+                                arb_hit={
+                                    "mode": nr_hit.get("convert_mode"),
+                                    "shares": sh_nr,
+                                    "net_edge_per_share": nr_hit["net_edge_per_share"],
+                                    "no_legs": no_lgs_emit,
+                                    "yes_sell_legs": yes_sells_emit,
+                                    "retained_free_yes_brackets": ret_tail_emit,
                                 },
-                                "walk": {"worst_px": float(lg_n["ask"])},
-                            }
-                            for lg_n in (nr_hit.get("no_buy_legs") or [])
-                            if int(lg_n["index"]) in by_idx_o
-                        ]
-                        yes_sells_emit = [
-                            {
-                                "token_id": lg_y["token_id"],
-                                "bracket": {
-                                    "yes_token": lg_y["token_id"],
-                                    "market_id": by_idx_o[int(lg_y["index"])]["market_id"],
-                                    "label": lg_y["label"],
-                                    "fee_rate": by_idx_o[int(lg_y["index"])]["fee_rate"],
-                                    "fee_exponent": by_idx_o[int(lg_y["index"])]["fee_exponent"],
-                                },
-                                "walk": {"worst_px": float(lg_y["bid"])},
-                            }
-                            for lg_y in (nr_hit.get("yes_sell_legs") or [])
-                            if int(lg_y["index"]) in by_idx_o
-                        ]
-                        ret_tail_emit = [
-                            {
-                                "yes_token": lg_r["token_id"],
-                                "market_id": by_idx_o[int(lg_r["index"])]["market_id"],
-                                "condition_id": by_idx_o[int(lg_r["index"])]["condition_id"],
-                                "question_index": int(lg_r["index"]),
-                                "label": lg_r["label"],
-                            }
-                            for lg_r in (nr_hit.get("retained_free_yes_legs") or [])
-                            if int(lg_r["index"]) in by_idx_o
-                        ]
-                        daemon.emit_live_negrisk_convert_candidate(
-                            sleeve_source=sl_nr,
-                            spec=sp_nrc,
-                            dedupe_key=f"{sl_nr[:3]}_{sp_nrc.event_id}_{nr_hit['index_set_int']}",
-                            arb_hit={
-                                "mode": nr_hit.get("convert_mode"),
-                                "shares": sh_nr,
-                                "net_edge_per_share": nr_hit["net_edge_per_share"],
-                                "no_legs": no_lgs_emit,
-                                "yes_sell_legs": yes_sells_emit,
-                                "retained_free_yes_brackets": ret_tail_emit,
-                            },
-                            books_by_token=nr_bks,
-                            now_ts=now,
-                            fee_bips=0,
-                        )
+                                books_by_token=nr_bks,
+                                now_ts=now,
+                                fee_bips=0,
+                            )
     except Exception as exc_nr:
         logger.debug(f"Protocol V2 NR4/NR5 scan notice: {exc_nr}")
 
@@ -3510,7 +3688,7 @@ async def run_protocol_v2_daemon_scan(
     except Exception as exc_m1:
         logger.debug(f"Protocol V2 MENTION1 scan notice: {exc_m1}")
 
-    # Pillar 5: Strictly Pre-Match Dead-Ball Soccer (`DC1` & `LP_COMP1`, `now <= kickoff_ts - 300s`)
+    # Pillar 5: Strictly Pre-Match Dead-Ball Soccer (`DC1` 3-Way Parity & `LP_COMP1` Triangles, `now <= kickoff_ts - 300s`)
     try:
         prematch_soc: List[Tuple[Any, float]] = []
         for tr in (getattr(daemon, "soccer_trees", None) or {}).values():
@@ -3536,54 +3714,65 @@ async def run_protocol_v2_daemon_scan(
                 if not (bh_y and bh_n and bd_y and bd_n and ba_y and ba_n):
                     continue
                 hy_p, hy_s = daemon._best_ask_sz(bh_y)
-                hn_p, hn_s = daemon._best_ask_sz(bh_n)
                 dy_p, dy_s = daemon._best_ask_sz(bd_y)
                 dn_p, dn_s = daemon._best_ask_sz(bd_n)
                 ay_p, ay_s = daemon._best_ask_sz(ba_y)
-                an_p, an_s = daemon._best_ask_sz(ba_n)
-                dc_hits = detect_dc1_double_chance_1x2_parity(
-                    one_x2={
-                        "HOME": {"yes_token_id": tr_p.home_leg["yes_token"], "condition_id": tr_p.home_leg.get("condition_id", ""), "yes_ask": hy_p, "yes_ask_size": hy_s},
-                        "DRAW": {"yes_token_id": tr_p.draw_leg["yes_token"], "condition_id": tr_p.draw_leg.get("condition_id", ""), "yes_ask": dy_p, "yes_ask_size": dy_s},
-                        "AWAY": {"yes_token_id": tr_p.away_leg["yes_token"], "condition_id": tr_p.away_leg.get("condition_id", ""), "yes_ask": ay_p, "yes_ask_size": ay_s},
-                    },
-                    double_chance={
-                        "1X": {"yes_token_id": tr_p.away_leg["no_token"], "condition_id": tr_p.away_leg.get("condition_id", ""), "yes_ask": an_p, "yes_ask_size": an_s},
-                        "X2": {"yes_token_id": tr_p.home_leg["no_token"], "condition_id": tr_p.home_leg.get("condition_id", ""), "yes_ask": hn_p, "yes_ask_size": hn_s},
-                        "12": {"yes_token_id": tr_p.draw_leg["no_token"], "condition_id": tr_p.draw_leg.get("condition_id", ""), "yes_ask": dn_p, "yes_ask_size": dn_s},
-                    },
-                    event_title=tr_p.title,
-                    is_live_in_play=False,
-                )
-                for dh in dc_hits:
-                    ta_d, tb_d = dh["leg_a"]["token_id"], dh["leg_b"]["token_id"]
-                    bka_d, bkb_d = pm_bks.get(ta_d), pm_bks.get(tb_d)
-                    if bka_d and bkb_d:
-                        leg_src = tr_p.away_leg if ta_d == tr_p.away_leg["no_token"] else (tr_p.home_leg if ta_d == tr_p.home_leg["no_token"] else tr_p.draw_leg)
-                        mkt_d = str(leg_src.get("market_id") or "")
-                        cid_d = str(leg_src.get("condition_id") or "")
+                mids_3w = {
+                    str(tr_p.home_leg.get("market_id") or ""),
+                    str(tr_p.draw_leg.get("market_id") or ""),
+                    str(tr_p.away_leg.get("market_id") or ""),
+                }
+                if (
+                    len(mids_3w) == 3
+                    and "" not in mids_3w
+                    and 0.005 <= hy_p < 1.0
+                    and 0.005 <= dy_p < 1.0
+                    and 0.005 <= ay_p < 1.0
+                    and min(hy_s, dy_s, ay_s) >= 5.0
+                ):
+                    qh_3, _, _ = quantize_dynamic_tick_price(hy_p, "BUY", shares=5.0, mode="taker")
+                    qd_3, _, _ = quantize_dynamic_tick_price(dy_p, "BUY", shares=5.0, mode="taker")
+                    qa_3, _, _ = quantize_dynamic_tick_price(ay_p, "BUY", shares=5.0, mode="taker")
+                    fr_3 = max(
+                        float(tr_p.home_leg.get("fee_rate", 0.0) or 0.0),
+                        float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0),
+                        float(tr_p.away_leg.get("fee_rate", 0.0) or 0.0),
+                    )
+                    c_3w = (
+                        qh_3 + compute_exact_taker_fee_per_share(qh_3, fr_3, 1.0)
+                        + qd_3 + compute_exact_taker_fee_per_share(qd_3, fr_3, 1.0)
+                        + qa_3 + compute_exact_taker_fee_per_share(qa_3, fr_3, 1.0)
+                    )
+                    if c_3w <= 0.992:
+                        sh_3w = round(min(hy_s, dy_s, ay_s), 2)
                         opps_out.append({
                             "sleeve": "DC1_DOUBLE_CHANCE_1X2_PARITY",
-                            "market": f"{tr_p.title[:36]} [{dh['pair']}]",
-                            "ask_vwap": dh["cost_per_share"],
+                            "market": f"{tr_p.title[:36]} [1X2_3WAY]",
+                            "ask_vwap": round(c_3w, 4),
                             "p_model": 1.0,
-                            "net_edge": dh["net_edge_per_share"],
-                            "l1_usd": round(dh["max_fillable_shares"] * dh["cost_per_share"], 2),
+                            "net_edge": round(1.0 - c_3w, 4),
+                            "l1_usd": round(sh_3w * c_3w, 2),
                         })
-                        if mkt_d:
-                            daemon.emit_live_two_leg_box_candidate(
-                                box_type="COMPLETE_SET",
+                        if hasattr(daemon, "emit_live_special_v2_box_candidate"):
+                            daemon.emit_live_special_v2_box_candidate(
+                                box_type="MULTI_LEG_BUNDLE",
                                 sleeve_source="DC1_DOUBLE_CHANCE_1X2_PARITY",
                                 asset="SOCCER",
-                                dedupe_key=f"DC1_{tr_p.game_id}_{dh['pair']}",
-                                leg_a={"token_id": ta_d, "opp_token_id": tb_d, "label": dh["pair"].split("+")[0], "side": "NO", "market_id": mkt_d, "condition_id": cid_d, "fee_rate": float(leg_src.get("fee_rate", 0.0)), "fee_exponent": 1.0, "neg_risk": True, "end_ts": tr_p.end_ts},
-                                leg_b={"token_id": tb_d, "opp_token_id": ta_d, "label": dh["pair"].split("+")[1], "side": "YES", "market_id": mkt_d, "condition_id": cid_d, "fee_rate": float(leg_src.get("fee_rate", 0.0)), "fee_exponent": 1.0, "neg_risk": True, "end_ts": tr_p.end_ts},
-                                bk_a=bka_d,
-                                bk_b=bkb_d,
+                                dedupe_key=f"DC1_3W_{tr_p.game_id}",
                                 close_ts=float(tr_p.end_ts),
                                 now_ts=now,
-                                max_box_cost_override=0.990,
-                                extra_fields={"game_start_ts": kickoff_ts, "game_phase": "PREGAME"},
+                                payload={
+                                    "legs": [
+                                        {"token_id": tr_p.home_leg["yes_token"], "market_id": tr_p.home_leg["market_id"], "condition_id": tr_p.home_leg.get("condition_id", ""), "label": "HOME_YES", "ask_px": qh_3, "ask_size": hy_s, "fee_rate": float(tr_p.home_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.home_leg.get("neg_risk", True))},
+                                        {"token_id": tr_p.draw_leg["yes_token"], "market_id": tr_p.draw_leg["market_id"], "condition_id": tr_p.draw_leg.get("condition_id", ""), "label": "DRAW_YES", "ask_px": qd_3, "ask_size": dy_s, "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.draw_leg.get("neg_risk", True))},
+                                        {"token_id": tr_p.away_leg["yes_token"], "market_id": tr_p.away_leg["market_id"], "condition_id": tr_p.away_leg.get("condition_id", ""), "label": "AWAY_YES", "ask_px": qa_3, "ask_size": ay_s, "fee_rate": float(tr_p.away_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.away_leg.get("neg_risk", True))},
+                                    ],
+                                    "box_cost_net": round(c_3w, 6),
+                                    "max_box_cost_net": 0.992,
+                                    "max_fillable_shares": sh_3w,
+                                    "neg_risk": True,
+                                    "game_start_ts": kickoff_ts,
+                                },
                             )
                 btts_l = getattr(tr_p, "btts_leg", None)
                 tot_15 = next((tl for tl in (getattr(tr_p, "totals", None) or []) if abs(float(tl.get("line", 0.0)) - 1.5) <= 1e-6), None)
@@ -3595,13 +3784,19 @@ async def run_protocol_v2_daemon_scan(
                         btn_p, btn_s = daemon._best_ask_sz(bk_btts_n)
                         o15_p, o15_s = daemon._best_ask_sz(bk_o15)
                         u15_p, u15_s = daemon._best_ask_sz(bk_u15)
+                        tok_meta_lp = {
+                            str(btts_l["yes_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["no_token"], "YES", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0)),
+                            str(btts_l["no_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["yes_token"], "NO", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0)),
+                            str(tot_15["over_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["under_token"], "YES", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0)),
+                            str(tot_15["under_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["over_token"], "NO", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0)),
+                            str(tr_p.draw_leg["no_token"]): (tr_p.draw_leg.get("market_id", ""), tr_p.draw_leg.get("condition_id", ""), tr_p.draw_leg["yes_token"], "NO", bool(tr_p.draw_leg.get("neg_risk", True)), float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0)),
+                        }
                         for tri_h in detect_lp_comp1_sports_triangles(
                             quotes={
-                                "BTTS_YES": {"token_id": btts_l["yes_token"], "ask": bty_p, "size": bty_s, "market_id": btts_l.get("market_id", ""), "condition_id": btts_l.get("condition_id", ""), "fee_rate": float(btts_l.get("fee_rate", 0.0))},
-                                "BTTS_NO": {"token_id": btts_l["no_token"], "ask": btn_p, "size": btn_s, "market_id": btts_l.get("market_id", ""), "condition_id": btts_l.get("condition_id", ""), "fee_rate": float(btts_l.get("fee_rate", 0.0))},
-                                "OVER_1_5": {"token_id": tot_15["over_token"], "ask": o15_p, "size": o15_s, "market_id": tot_15.get("market_id", ""), "condition_id": tot_15.get("condition_id", ""), "fee_rate": float(tot_15.get("fee_rate", 0.0))},
-                                "UNDER_1_5": {"token_id": tot_15["under_token"], "ask": u15_p, "size": u15_s, "market_id": tot_15.get("market_id", ""), "condition_id": tot_15.get("condition_id", ""), "fee_rate": float(tot_15.get("fee_rate", 0.0))},
-                                "DRAW": {"token_id": tr_p.draw_leg["yes_token"], "ask": dy_p, "size": dy_s, "market_id": tr_p.draw_leg.get("market_id", ""), "condition_id": tr_p.draw_leg.get("condition_id", ""), "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0))},
+                                "BTTS": {"yes_token_id": btts_l["yes_token"], "no_token_id": btts_l["no_token"], "yes_ask": bty_p if bty_p < 1.0 else 0.0, "yes_ask_size": bty_s, "no_ask": btn_p if btn_p < 1.0 else 0.0, "no_ask_size": btn_s, "fee_rate": float(btts_l.get("fee_rate", 0.0) or 0.0)},
+                                "OVER_1_5": {"yes_token_id": tot_15["over_token"], "yes_ask": o15_p if o15_p < 1.0 else 0.0, "yes_ask_size": o15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0)},
+                                "UNDER_1_5": {"yes_token_id": tot_15["under_token"], "yes_ask": u15_p if u15_p < 1.0 else 0.0, "yes_ask_size": u15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0)},
+                                "DRAW": {"no_token_id": tr_p.draw_leg["no_token"], "no_ask": dn_p if dn_p < 1.0 else 0.0, "no_ask_size": dn_s, "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0)},
                             },
                             event_title=tr_p.title,
                             expiry_ts=float(tr_p.end_ts),
@@ -3616,25 +3811,246 @@ async def run_protocol_v2_daemon_scan(
                                 "net_edge": tri_h["net_edge_per_share"],
                                 "l1_usd": round(tri_h["max_fillable_shares"] * tri_h["cost_per_share"], 2),
                             })
-                            if len(tri_h.get("legs") or []) >= 3 and hasattr(daemon, "emit_live_special_v2_box_candidate"):
-                                daemon.emit_live_special_v2_box_candidate(
-                                    box_type="MULTI_LEG_BUNDLE",
-                                    sleeve_source="LP_COMP1_SPORTS_TRIANGLES",
-                                    asset="SOCCER",
-                                    dedupe_key=f"LPCOMP1_{tr_p.game_id}_{tri_h['triangle_id']}",
-                                    close_ts=float(tr_p.end_ts),
-                                    now_ts=now,
-                                    payload={
-                                        "legs": tri_h["legs"],
-                                        "box_cost_net": tri_h["cost_per_share"],
-                                        "max_box_cost_net": 0.990,
-                                        "max_fillable_shares": tri_h["max_fillable_shares"],
-                                        "neg_risk": False,
-                                        "game_start_ts": kickoff_ts,
-                                    },
-                                )
+                            t_legs = list(tri_h.get("legs") or ([tri_h["leg_a"], tri_h["leg_b"]] if ("leg_a" in tri_h and "leg_b" in tri_h) else []))
+                            if len(t_legs) == 2:
+                                ta_lp, tb_lp = str(t_legs[0]["token_id"]), str(t_legs[1]["token_id"])
+                                ma_lp, ca_lp, oa_lp, sa_lp, nra_lp, fra_lp = tok_meta_lp.get(ta_lp, ("", "", "", "YES", False, 0.0))
+                                mb_lp, cb_lp, ob_lp, sb_lp, nrb_lp, frb_lp = tok_meta_lp.get(tb_lp, ("", "", "", "YES", False, 0.0))
+                                bka_lp, bkb_lp = pm_bks.get(ta_lp), pm_bks.get(tb_lp)
+                                if ma_lp and mb_lp and ma_lp != mb_lp and bka_lp and bkb_lp:
+                                    daemon.emit_live_two_leg_box_candidate(
+                                        box_type="SPORTS_CORRIDOR",
+                                        sleeve_source="LP_COMP1_SPORTS_TRIANGLES",
+                                        asset="SOCCER",
+                                        dedupe_key=f"LPCOMP1_{tr_p.game_id}_{tri_h['triangle_id']}",
+                                        leg_a={"token_id": ta_lp, "opp_token_id": oa_lp, "label": t_legs[0].get("role", "LEG_A"), "side": sa_lp, "market_id": ma_lp, "condition_id": ca_lp, "fee_rate": fra_lp, "fee_exponent": 1.0, "neg_risk": nra_lp, "end_ts": tr_p.end_ts},
+                                        leg_b={"token_id": tb_lp, "opp_token_id": ob_lp, "label": t_legs[1].get("role", "LEG_B"), "side": sb_lp, "market_id": mb_lp, "condition_id": cb_lp, "fee_rate": frb_lp, "fee_exponent": 1.0, "neg_risk": nrb_lp, "end_ts": tr_p.end_ts},
+                                        bk_a=bka_lp,
+                                        bk_b=bkb_lp,
+                                        close_ts=float(tr_p.end_ts),
+                                        now_ts=now,
+                                        max_box_cost_override=0.990,
+                                        extra_fields={"game_start_ts": kickoff_ts, "game_phase": "PREGAME"},
+                                    )
+                            elif len(t_legs) >= 3 and hasattr(daemon, "emit_live_special_v2_box_candidate"):
+                                enr_legs = []
+                                for lg_t in t_legs:
+                                    tk_t = str(lg_t.get("token_id") or "")
+                                    mt_t, ct_t, _, _, nrt_t, frt_t = tok_meta_lp.get(tk_t, ("", "", "", "YES", False, 0.0))
+                                    enr_legs.append({**lg_t, "market_id": mt_t, "condition_id": ct_t, "neg_risk": nrt_t, "fee_rate": frt_t, "fee_exponent": 1.0})
+                                if len({x["market_id"] for x in enr_legs if x["market_id"]}) == len(enr_legs):
+                                    daemon.emit_live_special_v2_box_candidate(
+                                        box_type="MULTI_LEG_BUNDLE",
+                                        sleeve_source="LP_COMP1_SPORTS_TRIANGLES",
+                                        asset="SOCCER",
+                                        dedupe_key=f"LPCOMP1_{tr_p.game_id}_{tri_h['triangle_id']}",
+                                        close_ts=float(tr_p.end_ts),
+                                        now_ts=now,
+                                        payload={
+                                            "legs": enr_legs,
+                                            "box_cost_net": tri_h["cost_per_share"],
+                                            "max_box_cost_net": 0.990,
+                                            "max_fillable_shares": tri_h["max_fillable_shares"],
+                                            "neg_risk": False,
+                                            "game_start_ts": kickoff_ts,
+                                        },
+                                    )
     except Exception as exc_soc:
         logger.debug(f"Protocol V2 Soccer DC1/LP_COMP1 scan notice: {exc_soc}")
+
+    # Pillar 7: `W_PRUNE1` Monotonic METAR Ratchet (`W_PRUNE1_DEAD_NO_BOND`, `W_SOLAR1_POST_2351_LOCK`, `W_PRUNE1_NR0_BASKET`)
+    try:
+        is_mocked_w = bool(getattr(daemon, "single_scan", False) or ("fetch_json" in getattr(daemon, "__dict__", {})))
+        w_evts = [
+            sp_w
+            for sp_w in (getattr(daemon, "weather_events", None) or {}).values()
+            if getattr(sp_w, "metric", "") == "HIGH" and len(getattr(sp_w, "buckets", ()) or ()) >= 3
+        ]
+        if w_evts and not is_mocked_w and (now - float(daemon.__dict__.get("_last_w_prune1_scan_ts", 0.0))) >= 15.0:
+            daemon.__dict__["_last_w_prune1_scan_ts"] = now
+            from src.polymarket_research.weather_metar_engine import fetch_metar_observations_sync
+            now_utc_w = datetime.fromtimestamp(now, tz=timezone.utc)
+            w_ready: List[Tuple[Any, float, Tuple[int, int], List[str]]] = []
+            w_toks: List[str] = []
+            m_cache = getattr(daemon, "metar_cache", None)
+            for sp_w in w_evts[:25]:
+                try:
+                    end_w = datetime.fromisoformat(sp_w.end_date_iso.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    end_w = now + 86400.0
+                if not (120.0 < (end_w - now) <= 86400.0):
+                    continue
+                try:
+                    loc_dt = now_utc_w.astimezone(ZoneInfo(sp_w.tz_name))
+                except Exception:
+                    loc_dt = now_utc_w
+                if loc_dt.date() < sp_w.obs_date:
+                    continue
+                m_key = f"{sp_w.icao}_{sp_w.obs_date.isoformat()}"
+                c_ent = m_cache.get(m_key) if isinstance(m_cache, dict) else None
+                if c_ent is None or (now - float(c_ent[0])) >= 300.0:
+                    obs_l = await asyncio.to_thread(fetch_metar_observations_sync, sp_w.icao, sp_w.obs_date, sp_w.tz_name)
+                    if isinstance(m_cache, dict):
+                        m_cache[m_key] = (now, obs_l)
+                else:
+                    obs_l = c_ent[1]
+                raw_lines = [
+                    str(m.raw_line)
+                    for m in (obs_l or [])
+                    if getattr(m, "raw_line", None) and not bool(getattr(m, "is_corrected", False))
+                ]
+                if not raw_lines:
+                    continue
+                loc_hm = (23, 55) if loc_dt.date() > sp_w.obs_date else (loc_dt.hour, loc_dt.minute)
+                w_ready.append((sp_w, end_w, loc_hm, raw_lines))
+                for bk_spec in sp_w.buckets:
+                    w_toks.extend((bk_spec.yes_token, bk_spec.no_token))
+            if w_ready and w_toks:
+                w_bks = await daemon.fetch_books_batch(list(dict.fromkeys(w_toks))[:160], timeout=2.5)
+                for sp_w, end_w, loc_hm, raw_lines in w_ready:
+                    br_rows: List[Dict[str, Any]] = []
+                    bk_by_mkt: Dict[str, Tuple[Any, Dict[str, Any], Dict[str, Any]]] = {}
+                    for b_sp in sp_w.buckets:
+                        by_w2, bn_w2 = w_bks.get(b_sp.yes_token), w_bks.get(b_sp.no_token)
+                        if not by_w2 or not bn_w2:
+                            br_rows = []
+                            break
+                        ya_w, ys_w = daemon._best_ask_sz(by_w2)
+                        na_w, ns_w = daemon._best_ask_sz(bn_w2)
+                        bk_by_mkt[str(b_sp.condition_id)] = (b_sp, by_w2, bn_w2)
+                        br_rows.append({
+                            "label": b_sp.label,
+                            "market_id": b_sp.market_id,
+                            "condition_id": b_sp.condition_id,
+                            "yes_token_id": b_sp.yes_token,
+                            "no_token_id": b_sp.no_token,
+                            "low": int(round(b_sp.low_bound)) if math.isfinite(b_sp.low_bound) else None,
+                            "high": int(round(b_sp.high_bound)) if math.isfinite(b_sp.high_bound) else None,
+                            "yes_ask": ya_w if ya_w < 1.0 else 0.0,
+                            "yes_ask_size": ys_w,
+                            "no_ask": na_w if na_w < 1.0 else 0.0,
+                            "no_ask_size": ns_w,
+                            "expiry_ts": end_w,
+                        })
+                    if not br_rows:
+                        continue
+                    ext_w = compute_running_metar_extrema(raw_lines, unit=sp_w.unit)
+                    floor_w = int(ext_w["confirmed_running_high_floor"]) if ext_w else None
+                    hits_w = detect_w_prune1_metar_slate_arb(
+                        br_rows,
+                        raw_lines,
+                        station_icao=sp_w.icao,
+                        unit=sp_w.unit,
+                        local_hour_minute=loc_hm,
+                        event_meta={"negRiskAugmented": False},
+                        min_net_edge_usd=0.0025,
+                    )
+                    taker_cids: set = set()
+                    for hw in hits_w:
+                        sl_w = str(hw["sleeve"])
+                        if sl_w in {"W_PRUNE1_DEAD_NO_BOND", "W_SOLAR1_POST_2351_LOCK"}:
+                            cid_w = str(hw["condition_id"])
+                            tup_w = bk_by_mkt.get(cid_w)
+                            if not tup_w:
+                                continue
+                            b_sp, by_w2, bn_w2 = tup_w
+                            is_no_w = sl_w == "W_PRUNE1_DEAD_NO_BOND"
+                            taker_cids.add(cid_w)
+                            opps_out.append({
+                                "sleeve": sl_w,
+                                "market": f"{sp_w.city} ({sp_w.icao}) {b_sp.label} [{'NO' if is_no_w else 'YES'}]",
+                                "ask_vwap": hw["ask_px"],
+                                "p_model": hw["p_model"],
+                                "net_edge": hw["net_edge_per_share"],
+                                "l1_usd": round(hw["max_fillable_shares"] * hw["ask_px"], 2),
+                            })
+                            daemon.emit_live_single_leg_lock_candidate(
+                                sleeve_source=sl_w,
+                                asset=sp_w.icao,
+                                dedupe_key=f"{sl_w[:8]}_{b_sp.market_id}",
+                                token_id=b_sp.no_token if is_no_w else b_sp.yes_token,
+                                opp_token_id=b_sp.yes_token if is_no_w else b_sp.no_token,
+                                market_id=b_sp.market_id,
+                                condition_id=b_sp.condition_id,
+                                side_label="NO" if is_no_w else "YES",
+                                display_label=f"{sp_w.city} {b_sp.label} {'DEAD_NO' if is_no_w else 'SOLAR_YES'}",
+                                bk_win=bn_w2 if is_no_w else by_w2,
+                                bk_opp=by_w2 if is_no_w else bn_w2,
+                                fee_rate=float(getattr(b_sp, "fee_rate", 0.0) or 0.0),
+                                fee_exponent=1.0,
+                                neg_risk=bool(b_sp.neg_risk if b_sp.neg_risk is not None else True),
+                                close_ts=end_w,
+                                now_ts=now,
+                                max_lock_eff_px=0.9975 if is_no_w else 0.9960,
+                                max_opp_bid=0.008,
+                                hold_to_maturity=True,
+                                p_model=float(hw["p_model"]),
+                            )
+                        elif sl_w == "W_PRUNE1_NR0_BASKET" and len(hw.get("legs") or []) >= 3 and hasattr(daemon, "emit_live_special_v2_box_candidate"):
+                            enr_w_legs = []
+                            for lg_w in hw["legs"]:
+                                tup_lw = bk_by_mkt.get(str(lg_w.get("condition_id") or ""))
+                                if tup_lw:
+                                    b_lw = tup_lw[0]
+                                    enr_w_legs.append({**lg_w, "market_id": b_lw.market_id, "label": b_lw.label, "fee_rate": float(getattr(b_lw, "fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": True})
+                            if len(enr_w_legs) == len(hw["legs"]):
+                                opps_out.append({
+                                    "sleeve": sl_w,
+                                    "market": f"{sp_w.city} ({sp_w.icao}) Pruned Basket ({len(enr_w_legs)} alive)",
+                                    "ask_vwap": hw["cost_per_share"],
+                                    "p_model": 1.0,
+                                    "net_edge": hw["net_edge_per_share"],
+                                    "l1_usd": round(hw["max_fillable_shares"] * hw["cost_per_share"], 2),
+                                })
+                                daemon.emit_live_special_v2_box_candidate(
+                                    box_type="MULTI_LEG_BUNDLE",
+                                    sleeve_source=sl_w,
+                                    asset=sp_w.icao,
+                                    dedupe_key=f"WPRUNE_BSK_{sp_w.event_id}",
+                                    close_ts=end_w,
+                                    now_ts=now,
+                                    payload={
+                                        "legs": enr_w_legs,
+                                        "box_cost_net": hw["cost_per_share"],
+                                        "max_box_cost_net": 0.992,
+                                        "max_fillable_shares": hw["max_fillable_shares"],
+                                        "neg_risk": True,
+                                    },
+                                )
+                    # Also post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets (`rem <= 8h`) when ask == $0.999-$1.000!
+                    if floor_w is not None and (end_w - now) <= 28800.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+                        for b_sp, by_w2, bn_w2 in bk_by_mkt.values():
+                            if str(b_sp.condition_id) in taker_cids or not math.isfinite(b_sp.high_bound):
+                                continue
+                            if int(round(b_sp.high_bound)) < floor_w:
+                                nb_w, nb_u_w = _extr_best_bid(bn_w2.get("bids") or [])
+                                yb_w, _ = _extr_best_bid(by_w2.get("bids") or [])
+                                if 0.940 <= nb_w <= 0.9975 and nb_u_w >= 10.0 and yb_w <= 0.006:
+                                    daemon.emit_live_single_leg_maker_lock_candidate(
+                                        sleeve_source="W_PRUNE1_DEAD_NO_BOND",
+                                        asset=sp_w.icao,
+                                        dedupe_key=f"W_PRUNE1_MKR_{b_sp.market_id}",
+                                        pair_dedupe_key=f"W_PRUNE1_{b_sp.market_id}",
+                                        token_id=b_sp.no_token,
+                                        opp_token_id=b_sp.yes_token,
+                                        market_id=b_sp.market_id,
+                                        condition_id=b_sp.condition_id,
+                                        side_label="NO",
+                                        display_label=f"{sp_w.city} {b_sp.label} DEAD_NO",
+                                        bk_win=bn_w2,
+                                        bk_opp=by_w2,
+                                        neg_risk=bool(b_sp.neg_risk if b_sp.neg_risk is not None else True),
+                                        close_ts=end_w,
+                                        now_ts=now,
+                                        min_resting_bid=0.940,
+                                        max_resting_bid=0.9975,
+                                        min_maker_edge=0.0024,
+                                        max_opp_bid=0.006,
+                                        hold_to_maturity=True,
+                                        p_model=0.9999,
+                                    )
+    except Exception as exc_wp:
+        logger.debug(f"Protocol V2 W_PRUNE1 scan notice: {exc_wp}")
 
     # Pillar 6: Full-Universe `C1_BINARY_COMPLETE_SET` & `CTF_OVERROUND_MINT_SELL` across fresh binary WS books
     try:
@@ -3846,7 +4262,7 @@ def emit_single_leg_lock_cand_impl(
         now_ts = time.time()
     rem_sec = float(close_ts - now_ts)
     is_s2_fast = str(sleeve_source) in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
-    min_rem_req = 4.0 if is_s2_fast else 25.0
+    min_rem_req = 3.8 if is_s2_fast else 25.0
     if rem_sec < min_rem_req or not token_id or not opp_token_id:
         return False
     last_emit = float(daemon._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
@@ -3866,14 +4282,15 @@ def emit_single_leg_lock_cand_impl(
         5.0,
         fee_rate=float(fee_rate),
         max_slip_cents=max_slip_1l,
-        min_l1_usd=15.0,
-        max_ask_px=min(0.998, float(max_lock_eff_px) + 0.001),
+        min_l1_usd=8.0 if is_s2_fast else 10.0,
+        max_ask_px=min(0.9985, float(max_lock_eff_px) + 0.001),
         fee_exponent=float(fee_exponent),
     )
     if not w_lk.get("filled"):
         return False
     eff_px = float(w_lk["eff_px"])
-    if eff_px > float(max_lock_eff_px) + 1e-6 or float(w_lk["shares"]) < 5.0 or (float(p_model) - eff_px) < 0.0045:
+    min_req_edge = max(0.002, round(float(p_model) - float(max_lock_eff_px), 6))
+    if eff_px > float(max_lock_eff_px) + 1e-6 or float(w_lk["shares"]) < 5.0 or (float(p_model) - eff_px) < min_req_edge - 1e-6:
         return False
     if len(daemon._last_d1_live_emit_ts) > 256:
         daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
@@ -4119,7 +4536,8 @@ def emit_single_leg_maker_lock_cand_impl(
     if not (daemon.single_scan or ("fetch_json" in daemon.__dict__)):
         now_ts = time.time()
     rem_sec = float(close_ts - now_ts)
-    if rem_sec < 120.0 or not token_id or not opp_token_id or token_id == opp_token_id:
+    is_s2_mkr = str(sleeve_source) in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+    if rem_sec < (6.0 if is_s2_mkr else 120.0) or not token_id or not opp_token_id or token_id == opp_token_id:
         return False
     if (
         sleeve_source == "MKR_REWARD_LOCKED_CARRY"
@@ -4129,7 +4547,7 @@ def emit_single_leg_maker_lock_cand_impl(
     ):
         return False
     last_emit = float(daemon._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-    if (now_ts - last_emit) < 35.0:
+    if (now_ts - last_emit) < (2.0 if is_s2_mkr else 25.0):
         return False
     if not isinstance(bk_win, dict) or not isinstance(bk_opp, dict):
         return False
@@ -4137,18 +4555,18 @@ def emit_single_leg_maker_lock_cand_impl(
     if opp_bid > float(max_opp_bid) + 1e-6:
         return False
     best_bid, l1_bid_usd = extract_best_bid_fn(bk_win.get("bids") or [])
-    if best_bid < min(float(min_resting_bid), 0.940) - 1e-9:
+    if best_bid < min(float(min_resting_bid), 0.800 if is_s2_mkr else 0.940) - 1e-9:
         return False
     if sleeve_source == "MKR_REWARD_LOCKED_CARRY" and best_bid > float(max_resting_bid) + 1e-6:
         return False
     if target_bid_px is None and best_bid < float(min_resting_bid) - 1e-9:
         return False
     near_bid_usd = (
-        sum(float(b.get("price", 0)) * float(b.get("size", 0)) for b in (bk_win.get("bids") or []) if float(b.get("price", 0)) >= 0.90)
-        if sleeve_source == "MKR_REWARD_LOCKED_CARRY"
+        sum(float(b.get("price", 0)) * float(b.get("size", 0)) for b in (bk_win.get("bids") or []) if float(b.get("price", 0)) >= (0.80 if is_s2_mkr else 0.90))
+        if (sleeve_source == "MKR_REWARD_LOCKED_CARRY" or is_s2_mkr)
         else l1_bid_usd
     )
-    if not (daemon.single_scan or ("fetch_json" in daemon.__dict__)) and near_bid_usd < 10.0 - 1e-6:
+    if not (daemon.single_scan or ("fetch_json" in daemon.__dict__)) and near_bid_usd < (4.0 if is_s2_mkr else 10.0) - 1e-6:
         return False
     valid_asks = [float(a["price"]) for a in (bk_win.get("asks") or []) if float(a.get("price", 0)) > 0 and float(a.get("size", 0)) > 0]
     best_ask = round(min(valid_asks), 4) if valid_asks else 1.000

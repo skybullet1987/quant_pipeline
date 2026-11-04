@@ -1657,10 +1657,12 @@ def _shm_side_to_clob_book(side_obj: Any) -> Optional[Dict[str, Any]]:
         for lv in (side_obj.get("raw_top_asks") or ())
         if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0
     ]
-    if not bids and side_obj.get("best_bid") and side_obj.get("bid_size_l1"):
-        bids = [{"price": float(side_obj["best_bid"]), "size": float(side_obj["bid_size_l1"])}]
-    if not asks and side_obj.get("best_ask") and side_obj.get("ask_size_l1"):
-        asks = [{"price": float(side_obj["best_ask"]), "size": float(side_obj["ask_size_l1"])}]
+    bsz1 = side_obj.get("bid_size_l1") or side_obj.get("bid_depth_1c_shares")
+    if not bids and side_obj.get("best_bid") and bsz1:
+        bids = [{"price": float(side_obj["best_bid"]), "size": float(bsz1)}]
+    asz1 = side_obj.get("ask_size_l1") or side_obj.get("ask_depth_1c_shares")
+    if not asks and side_obj.get("best_ask") and asz1:
+        asks = [{"price": float(side_obj["best_ask"]), "size": float(asz1)}]
     return {"bids": bids, "asks": asks}
 
 
@@ -1715,7 +1717,7 @@ class PreSplitInventoryGun:
         bks = ft.get("books")
         if isinstance(bks, dict) and (up_tok in bks or dn_tok in bks):
             return bks.get(up_tok), bks.get(dn_tok)
-        for hk in ("m15", "m5", "h4"):
+        for hk in ("m15", "m5", "h1", "h4"):
             sub = ft.get(hk)
             if isinstance(sub, dict):
                 u_o, d_o = sub.get("UP"), sub.get("DOWN")
@@ -1762,55 +1764,85 @@ class PreSplitInventoryGun:
             return None
         if fast_tick_reader is None:
             return None
-        ft = fast_tick_reader("BTC")
-        if not isinstance(ft, dict):
-            return None
-        ts_ft = float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)
-        if (now_ts - ts_ft) > 1.2:
-            return None
-
-        cid = str(ft.get("condition_id") or "").strip()
-        up_tok = str(ft.get("up_token_id") or (ft.get("tokens") or {}).get("UP") or "").strip()
-        dn_tok = str(ft.get("down_token_id") or (ft.get("tokens") or {}).get("DOWN") or "").strip()
-        exp_ts = float(ft.get("candle_expiry_ts") or ft.get("expiry_ts") or 0.0)
-        open_spot = float(ft.get("candle_open_spot") or ft.get("open_spot") or 0.0)
-        tte = exp_ts - now_ts
-        top_level_ok = bool(cid and len(up_tok) >= 20 and len(dn_tok) >= 20 and 150.0 <= tte <= 840.0 and open_spot > 0.0)
-
-        if not top_level_ok:
-            req_ovr = bool(snap.get("pre_split_require_live_overround", True))
-            best_cand = None
-            for hk, min_t, max_t in (("m15", 150.0, 840.0), ("m5", 95.0, 285.0)):
+        req_ovr = bool(snap.get("pre_split_require_live_overround", True))
+        asset_sel = "BTC"
+        fr_sel = 0.07
+        fe_sel = 1.0
+        cid = ""
+        up_tok = ""
+        dn_tok = ""
+        exp_ts = 0.0
+        open_spot = 0.0
+        best_cand = None
+        for asset_sym in ("BTC", "ETH", "SOL", "XRP", "XAU", "XAG"):
+            ft = fast_tick_reader(asset_sym)
+            if not isinstance(ft, dict):
+                continue
+            ts_ft = float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)
+            if (now_ts - ts_ft) > 1.5:
+                continue
+            cid_t = str(ft.get("condition_id") or "").strip()
+            ut_t = str(ft.get("up_token_id") or (ft.get("tokens") or {}).get("UP") or "").strip()
+            dt_t = str(ft.get("down_token_id") or (ft.get("tokens") or {}).get("DOWN") or "").strip()
+            exp_t = float(ft.get("candle_expiry_ts") or ft.get("expiry_ts") or 0.0)
+            op_t = float(ft.get("candle_open_spot") or ft.get("open_spot") or 0.0)
+            tte_t = exp_t - now_ts
+            if cid_t and len(ut_t) >= 20 and len(dt_t) >= 20 and 150.0 <= tte_t <= 840.0 and op_t > 0.0:
+                def_fr_t = 0.0 if asset_sym in {"XAU", "XAG"} else 0.07
+                fr_t = float(ft.get("fee_rate") if ft.get("fee_rate") is not None else def_fr_t)
+                fe_t = float(ft.get("fee_exponent") or 1.0)
+                eff_req_ovr_t = req_ovr and (self._explicit_min_free_cash is None)
+                if eff_req_ovr_t and isinstance(ft.get("books"), dict):
+                    bk_ut, bk_dt = ft["books"].get(ut_t), ft["books"].get(dt_t)
+                    w_t = _walk_dual_leg_overround_bids(
+                        (bk_ut or {}).get("bids") or [], (bk_dt or {}).get("bids") or [], cap_shares, fr_t, fe_t, fr_t, fe_t, 1.05
+                    )
+                    net_t = float(w_t.get("net_sum_per_share") or 0.0) if w_t.get("fillable") else 0.0
+                    min_ovr_t = 1.003 if fr_t == 0.0 else 1.004
+                    if net_t >= min_ovr_t and (best_cand is None or net_t > best_cand[0]):
+                        best_cand = (net_t, "", ut_t, dt_t, exp_t, op_t, asset_sym, cid_t, fr_t, fe_t)
+                elif not eff_req_ovr_t:
+                    best_cand = (1.01, "", ut_t, dt_t, exp_t, op_t, asset_sym, cid_t, fr_t, fe_t)
+                    break
+                continue
+            for hk, min_t, max_t in (("m15", 150.0, 840.0), ("m5", 85.0, 285.0), ("h1", 180.0, 3300.0)):
                 sub = ft.get(hk)
                 if not isinstance(sub, dict):
                     continue
                 mid_s = str(sub.get("market_id") or "").strip()
+                cid_s = str(sub.get("condition_id") or sub.get("conditionId") or "").strip()
                 exp_s = float(sub.get("expiry_ts") or 0.0)
                 tte_s = exp_s - now_ts
                 op_s = float(sub.get("authoritative_chainlink_open") or sub.get("finalized_open") or ft.get("spot_price") or 0.0)
                 u_o, d_o = sub.get("UP"), sub.get("DOWN")
-                if not (mid_s and min_t <= tte_s <= max_t and op_s > 0.0 and isinstance(u_o, dict) and isinstance(d_o, dict)):
+                if not ((mid_s or cid_s) and min_t <= tte_s <= max_t and op_s > 0.0 and isinstance(u_o, dict) and isinstance(d_o, dict)):
                     continue
                 ut_s = str(u_o.get("token_id") or "").strip()
                 dt_s = str(d_o.get("token_id") or "").strip()
                 if len(ut_s) < 20 or len(dt_s) < 20:
                     continue
+                fm_s = sub.get("fee_metadata") if isinstance(sub.get("fee_metadata"), dict) else {}
+                def_fr = 0.0 if asset_sym in {"XAU", "XAG"} else 0.07
+                fees_en = fm_s.get("fees_enabled", asset_sym not in {"XAU", "XAG"})
+                fr_s = float(sub.get("fee_rate") if sub.get("fee_rate") is not None else (fm_s.get("rate", def_fr) if fees_en else 0.0))
+                fe_s = float(sub.get("fee_exponent") if sub.get("fee_exponent") is not None else fm_s.get("exponent", 1.0))
                 bk_u_s = _shm_side_to_clob_book(u_o)
                 bk_d_s = _shm_side_to_clob_book(d_o)
                 w_s = _walk_dual_leg_overround_bids(
-                    (bk_u_s or {}).get("bids") or [], (bk_d_s or {}).get("bids") or [], cap_shares, 0.07, 1.0, 0.07, 1.0, 1.50
+                    (bk_u_s or {}).get("bids") or [], (bk_d_s or {}).get("bids") or [], cap_shares, fr_s, fe_s, fr_s, fe_s, 1.05
                 )
                 net_s = float(w_s.get("net_sum_per_share") or 0.0) if w_s.get("fillable") else 0.0
-                if req_ovr and net_s < 1.004:
+                min_ovr_s = 1.003 if fr_s == 0.0 else 1.004
+                if req_ovr and net_s < min_ovr_s:
                     continue
                 if best_cand is None or net_s > best_cand[0]:
-                    best_cand = (net_s, mid_s, ut_s, dt_s, exp_s, op_s)
-            if best_cand is None:
-                return None
-            _, mid_sel, up_tok, dn_tok, exp_ts, open_spot = best_cand
-            cid = await asyncio.to_thread(self._resolve_cid_for_market, mid_sel)
-            if not cid:
-                return None
+                    best_cand = (net_s, mid_s, ut_s, dt_s, exp_s, op_s, asset_sym, cid_s, fr_s, fe_s)
+        if best_cand is None:
+            return None
+        _, mid_sel, up_tok, dn_tok, exp_ts, open_spot, asset_sel, cid_sub, fr_sel, fe_sel = best_cand
+        cid = cid_sub if (cid_sub.startswith("0x") and len(cid_sub) >= 42) else await asyncio.to_thread(self._resolve_cid_for_market, mid_sel)
+        if not cid:
+            return None
 
         inflight_u = sum(
             float(i.get("notional_usd", 0.0) or 0.0)
@@ -1832,14 +1864,18 @@ class PreSplitInventoryGun:
         if cid in busy_cids:
             return None
 
-        sp_res = await asyncio.to_thread(attempt_onchain_split_position, ex, cid, cap_shares, neg_risk=False)
+        sp_res = await asyncio.to_thread(
+            attempt_onchain_split_position, ex, cid, cap_shares, neg_risk=False, up_token_id=up_tok, down_token_id=dn_tok
+        )
         if not sp_res.get("success"):
             st["cooldown_until"] = now_ts + 30.0
             return None
         st.clear()
         st.update({
             "active": True,
-            "asset": "BTC",
+            "asset": asset_sel,
+            "fee_rate": fr_sel,
+            "fee_exponent": fe_sel,
             "condition_id": cid,
             "up_token_id": up_tok,
             "down_token_id": dn_tok,
@@ -1861,7 +1897,7 @@ class PreSplitInventoryGun:
         if getattr(harvester, "_last_known_collateral", None) is not None:
             harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - cap_shares)
         await asyncio.to_thread(harvester.save_state)
-        logger.info(f"✓ [PRE-SPLIT GUN ARMED] BTC cid={cid[:12]} | {cap_shares:.0f} UP + {cap_shares:.0f} DOWN minted (tx={sp_res.get('tx_hash')}).")
+        logger.info(f"✓ [PRE-SPLIT GUN ARMED] {asset_sel} cid={cid[:12]} | {cap_shares:.0f} UP + {cap_shares:.0f} DOWN minted (tx={sp_res.get('tx_hash')}).")
         return "ARMED"
 
     async def _cancel_resting_asks(self, ex: Any, st: Dict[str, Any]) -> None:
@@ -1902,8 +1938,11 @@ class PreSplitInventoryGun:
         dir_snap: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         tte = float(st.get("expiry_ts") or 0.0) - now_ts
-        ft = fast_tick_reader("BTC") if callable(fast_tick_reader) else None
-        spot_fresh = isinstance(ft, dict) and (now_ts - float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)) <= 1.2
+        asset_st = str(st.get("asset") or "BTC").upper()
+        fr_st = float(st.get("fee_rate") if st.get("fee_rate") is not None else (0.0 if asset_st in {"XAU", "XAG"} else 0.07))
+        fe_st = float(st.get("fee_exponent") or 1.0)
+        ft = fast_tick_reader(asset_st) if callable(fast_tick_reader) else None
+        spot_fresh = isinstance(ft, dict) and (now_ts - float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)) <= 1.5
 
         # Reconcile any fills on resting maker asks first
         for side_k, oid_k, px_k, tok_k in (
@@ -1950,7 +1989,7 @@ class PreSplitInventoryGun:
             )
             if bids_r:
                 b_top = bids_r[0][0]
-                fee_r = 0.07 * b_top * (1.0 - b_top)
+                fee_r = (fr_st * ((b_top * (1.0 - b_top)) ** fe_st)) if fr_st > 0.0 else 0.0
                 need_net = max(0.02, (float(st["cost_usd"]) - float(st["realized_cash_usd"])) / max(rem_sh, 1.0) + 0.002)
                 if (b_top - fee_r) >= need_net:
                     await self._cancel_resting_asks(ex, st)
@@ -1968,8 +2007,9 @@ class PreSplitInventoryGun:
 
         paired = round(min(float(st.get("up_rem") or 0.0), float(st.get("dn_rem") or 0.0)), 2)
         if paired >= 5.0 and isinstance(bk_up, dict) and isinstance(bk_dn, dict):
-            walk = _walk_dual_leg_overround_bids(bk_up.get("bids") or [], bk_dn.get("bids") or [], paired, 0.07, 1.0, 0.07, 1.0, 1.15)
-            if walk.get("fillable") and float(walk.get("net_sum_per_share") or 0.0) >= 1.004:
+            walk = _walk_dual_leg_overround_bids(bk_up.get("bids") or [], bk_dn.get("bids") or [], paired, fr_st, fe_st, fr_st, fe_st, 1.05)
+            min_ovr_sw = 1.003 if fr_st == 0.0 else 1.004
+            if walk.get("fillable") and float(walk.get("net_sum_per_share") or 0.0) >= min_ovr_sw:
                 await self._cancel_resting_asks(ex, st)
                 paired = round(min(float(st.get("up_rem") or 0.0), float(st.get("dn_rem") or 0.0)), 2)
                 if paired >= 5.0:
@@ -1983,10 +2023,10 @@ class PreSplitInventoryGun:
                         paired,
                         False,
                         False,
-                        0.07,
-                        1.0,
-                        0.07,
-                        1.0,
+                        fr_st,
+                        fe_st,
+                        fr_st,
+                        fe_st,
                     )
                     if (u_res or {}).get("success"):
                         la, lb = u_res["leg_a"], u_res["leg_b"]

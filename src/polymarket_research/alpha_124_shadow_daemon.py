@@ -1573,8 +1573,8 @@ class Alpha124ShadowDaemon:
                 _add_tok(b_c.get("no_token"), is_nr=True)
                 if sp_nrc.is_closed_convert_safe:
                     _add_tok(b_c.get("yes_token"), is_nr=True)
-        for sp_cm in sorted(self.counting_slates.values(), key=lambda s: float(s.end_ts)):
-            if float(sp_cm.end_ts) <= now_ts + 60.0 or len(sp_cm.brackets) > 15:
+        for sp_cm in sorted(self.counting_slates.values(), key=lambda s: float(getattr(s, "window_end_ts", None) or getattr(s, "end_ts", 0.0) or 0.0)):
+            if float(getattr(sp_cm, "window_end_ts", None) or getattr(sp_cm, "end_ts", 0.0) or 0.0) <= now_ts + 60.0 or len(sp_cm.brackets) > 15:
                 continue
             for b_m in sp_cm.brackets:
                 _add_tok(b_m.get("no_token"), is_nr=True)
@@ -1808,8 +1808,7 @@ class Alpha124ShadowDaemon:
             if (
                 ws_entry is not None
                 and (now_b - ws_entry[0]) <= 1.5
-                and ws_entry[1].get("bids")
-                and ws_entry[1].get("asks")
+                and (ws_entry[1].get("bids") or ws_entry[1].get("asks"))
             ):
                 out[t] = ws_entry[1]
             else:
@@ -7879,65 +7878,31 @@ class Alpha124ShadowDaemon:
                     continue
                 bk_opp = bks_s2.get(opp_tok) if bks_s2 else None
 
-                # LIVE Gatling S2 Exact 60s-TWAP Mathematical Lock Zone (`4.5s <= rem_sec <= 16.0s`, 73%-92.5% TWAP locked!)
+                # LIVE Gatling S2 Exact 60s-TWAP Mathematical Lock Zone (`3.8s <= rem_sec <= 22.0s`: Taker + Final-22s Post-Only Maker)
                 if (
                     not self.single_scan
                     and not ("fetch_json" in self.__dict__)
-                    and 4.5 <= rem_sec <= 16.0
+                    and 3.8 <= rem_sec <= 22.0
                     and self._strike_is_rest_verified(spec)
                     and len(samples) >= 8
                 ):
-                    ask_up_l1, _ = self._best_ask_sz(bks_s2.get(spec.up_token) or (bk if win_side == "UP" else {}))
-                    ask_dn_l1, _ = self._best_ask_sz(bks_s2.get(spec.down_token) or (bk if win_side == "DOWN" else {}))
-                    s2_rt = evaluate_s2_rtds_exact_twap_integrator(
-                        asset=spec.asset,
-                        open_price=k_open,
-                        expiry_ts=spec.end_ts,
-                        now_ts=eval_now,
-                        rtds_ticks=samples,
-                        official_twap_60s=off_twap_60,
-                        twap_lookback_sec=spec.twap_lookback_sec,
-                        live_lock_mode=True,
-                        up_ask=ask_up_l1 if ask_up_l1 < 1.0 else 0.0,
-                        down_ask=ask_dn_l1 if ask_dn_l1 < 1.0 else 0.0,
-                        fee_rate=spec.fee_rate,
-                        fee_exponent=spec.fee_exponent,
-                        min_net_edge=0.008,
-                        min_lock_prob=0.9990,
+                    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
+                    maybe_emit_s2_live_locks(
+                        self,
+                        spec=spec,
+                        k_open=k_open,
+                        eval_now=eval_now,
+                        rem_sec=rem_sec,
+                        samples=samples,
+                        off_twap_60=off_twap_60,
+                        win_side=win_side,
+                        tok=tok,
+                        opp_tok=opp_tok,
+                        bk=bk,
+                        bk_opp=bk_opp,
+                        bks_s2=bks_s2 or {},
+                        logger_obj=logger,
                     )
-                    if s2_rt is not None and s2_rt["direction"] == win_side and 0.72 <= float(s2_rt["net_cost_per_share"]) <= 0.985:
-                        p_rt = float(s2_rt["p_model"])
-                        max_eff_s2 = min(0.985, round(p_rt - 0.008, 4))
-                        max_opp_s2 = max(0.08, round(1.015 - float(s2_rt["ask_px"]), 3))
-                        emitted_s2 = self.emit_live_single_leg_lock_candidate(
-                            sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
-                            asset=spec.asset,
-                            dedupe_key=f"S2LIVE_{spec.asset}_{spec.horizon}_{spec.market_id}",
-                            token_id=tok,
-                            opp_token_id=opp_tok,
-                            market_id=spec.market_id,
-                            condition_id=spec.condition_id,
-                            side_label=win_side,
-                            display_label=f"{spec.asset} {spec.horizon} {win_side} TWAP Lock (TTE={rem_sec:.1f}s, z={s2_rt['z_score']:.1f})",
-                            bk_win=bk,
-                            bk_opp=bk_opp,
-                            fee_rate=spec.fee_rate,
-                            fee_exponent=spec.fee_exponent,
-                            neg_risk=spec.neg_risk,
-                            close_ts=spec.end_ts,
-                            now_ts=eval_now,
-                            max_lock_eff_px=max_eff_s2,
-                            max_opp_bid=max_opp_s2,
-                            hold_to_maturity=True,
-                            p_model=p_rt,
-                        )
-                        if emitted_s2:
-                            logger.info(
-                                f"🔫 [GATLING S2 LIVE LOCK EMIT] {spec.asset} {spec.horizon} {win_side} | "
-                                f"TTE={rem_sec:.1f}s | locked={s2_rt['locked_fraction']*100:.0f}% | "
-                                f"req_crash={s2_rt['req_adverse_avg_move_bps']:.0f}bps | z={s2_rt['z_score']:.2f} | "
-                                f"net_cost=${s2_rt['net_cost_per_share']:.4f}"
-                            )
 
                 w_chk = walk_l2_book_asks(
                     bk.get("asks") or [],
@@ -11714,8 +11679,8 @@ class Alpha124ShadowDaemon:
                         bid_w_v4, bid_usd_v4 = extract_best_bid(bk_w_v4.get("bids") or [])
                         ask_w_v4, _ = self._best_ask_sz(bk_w_v4)
                         _mkr_reb_sh = 0.15 if str(clk["asset"]).upper() in ("BTC", "ETH", "SOL", "XRP", "DOGE", "BNB", "HYPE", "XAU") else 0.20
-                        _mkr_hi_cap = 0.995 if (_is_live_daemon_mkr and p_lk_v4 >= 0.999 and (close_v4 - now) <= 7200.0) else 0.991
-                        _mkr_min_ed = 0.004 if _mkr_hi_cap >= 0.995 else 0.006
+                        _mkr_hi_cap = 0.997 if (_is_live_daemon_mkr and p_lk_v4 >= 0.999 and (close_v4 - now) <= 7200.0) else 0.991
+                        _mkr_min_ed = 0.0025 if _mkr_hi_cap >= 0.997 else 0.006
                         mkr_ev = evaluate_mkr_lock1_post_clinch_rebate_bid(
                             token_id=tok_w,
                             opp_token_id=tok_o,
@@ -11768,7 +11733,7 @@ class Alpha124ShadowDaemon:
                                     neg_risk=bool(clk.get("neg_risk", False)),
                                     close_ts=close_v4,
                                     now_ts=now,
-                                    min_resting_bid=0.960,
+                                    min_resting_bid=0.940,
                                     max_resting_bid=_mkr_hi_cap,
                                     min_maker_edge=_mkr_min_ed,
                                     max_opp_bid=0.030,
@@ -12186,7 +12151,7 @@ class Alpha124ShadowDaemon:
             else:
                 bb_p = float(m.get("bestBid") or 0.0)
                 ba_p = float(m.get("bestAsk") or 1.0)
-                tradeable_score = (1000000.0 if (0.90 <= bb_p <= 0.996 or 0.004 <= ba_p <= 0.10 or 0.90 <= ba_p <= 0.996) else 0.0) + float(m.get("volume24hr") or 0.0)
+                tradeable_score = (1000000.0 if (0.90 <= bb_p <= 0.9985 or 0.002 <= ba_p <= 0.10 or 0.90 <= ba_p <= 0.9985) else 0.0) + float(m.get("volume24hr") or 0.0)
                 uncached_batch.append((tradeable_score, mid, m))
 
         if uncached_batch:
@@ -12232,7 +12197,7 @@ class Alpha124ShadowDaemon:
                 BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],
                 fee_rate=float(ver["fee_rate"]),
                 min_l1_usd=6.0 if _is_live_uma_daemon else 15.0,
-                max_ask_px=0.9956,
+                max_ask_px=0.9976 if _is_live_uma_daemon else 0.9956,
                 fee_exponent=float(ver["fee_exponent"]),
             )
             eff_b = float(w_bond["eff_px"]) if w_bond.get("filled") else None
@@ -12271,13 +12236,32 @@ class Alpha124ShadowDaemon:
             dkey_b1 = f"BOND1_{mid}"
             _shadow_b1_free = dkey_b1 not in self.entered_keys and dkey_b1 not in self.inflight_keys
             _b1_rem_s = close_est - now
-            _b1_max_mkr = 0.996 if (_is_live_uma_daemon and _b1_rem_s <= 7200.0) else 0.994
-            _b1_min_ed = 0.004 if _b1_max_mkr >= 0.996 else 0.006
+            _b1_tkr_cap = 0.9975 if (_is_live_uma_daemon and _b1_rem_s <= 3600.0) else (0.9965 if (_is_live_uma_daemon and _b1_rem_s <= 7200.0) else 0.9955)
+            _b1_max_mkr = 0.9980 if (_is_live_uma_daemon and _b1_rem_s <= 3600.0) else (0.9975 if (_is_live_uma_daemon and _b1_rem_s <= 7200.0) else 0.9950)
+            _b1_min_ed = round(1.0 - _b1_max_mkr, 4)
+            if _is_live_uma_daemon and _shadow_b1_free and 180.0 <= float(ver.get("rem_challenge_sec") or 0.0) <= 1500.0:
+                from src.polymarket_research.riskless_protocol_v2_expansion import score_uma_ready1_liveness_priority
+                _uma_r1 = score_uma_ready1_liveness_priority(
+                    ask_price=eff_b if eff_b is not None else min(0.9975, win_bid),
+                    remaining_liveness_sec=float(ver["rem_challenge_sec"]),
+                    disputed=False,
+                    proposal_bond_posted=True,
+                )
+                if _uma_r1 is not None:
+                    opps_out.append({
+                        "sleeve": "UMA_READY1_LIVENESS_PRIORITY",
+                        "market": f"[UMA_READY1:{ver['domain']}] {q_str[:56]} ({ver['rem_challenge_sec']/60:.0f}m rem)",
+                        "ask_vwap": _uma_r1["ask_px"],
+                        "p_model": 1.0,
+                        "net_edge": _uma_r1["net_edge_per_share"],
+                        "l1_usd": w_bond["l1_usd"] if w_bond.get("filled") else 25.0,
+                        "close_ts": close_est,
+                    })
             opened_bond = False
-            taker_bond_qual = bool(w_bond.get("filled") and eff_b is not None and (0.950 <= eff_b <= 0.9955) and round(1.0 - eff_b, 4) >= 0.0045)
+            taker_bond_qual = bool(w_bond.get("filled") and eff_b is not None and (0.950 <= eff_b <= _b1_tkr_cap) and round(1.0 - eff_b, 4) >= round(1.0 - _b1_tkr_cap, 4))
             if taker_bond_qual:
                 carry_edge = round(1.0 - eff_b, 4)
-                if _shadow_b1_free:
+                if _shadow_b1_free and eff_b <= 0.9955:
                     opps_out.append({
                         "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
                         "market": f"[{ver['domain']}] {q_str[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)",
@@ -12304,12 +12288,12 @@ class Alpha124ShadowDaemon:
                     neg_risk=bool(m.get("negRisk")),
                     close_ts=close_est,
                     now_ts=now,
-                    max_lock_eff_px=0.9955,
+                    max_lock_eff_px=_b1_tkr_cap,
                     max_opp_bid=0.008,
                     hold_to_maturity=True,
                     p_model=1.0,
                 )
-                if _shadow_b1_free:
+                if _shadow_b1_free and eff_b <= 0.9955:
                     opened_bond = await self.open_shadow_position(
                         sleeve="BOND1_UMA_RESOLUTION_CARRY",
                         dedupe_key=dkey_b1,
@@ -12384,19 +12368,20 @@ class Alpha124ShadowDaemon:
             ):
                 ver2 = await asyncio.to_thread(verify_bond2_moov2_final_hour_sync, m, None, now)
                 if ver2.get("verified"):
+                    _b2_cap = 0.9975 if _is_live_uma_daemon else 0.9962
                     w_b2 = walk_l2_book_asks_depth_capped(
                         bk_w.get("asks") or [],
                         BANKROLL_TICKETS["T1000"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],
                         BANKROLL_TICKETS["T100"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],
                         fee_rate=float(ver2["fee_rate"]),
-                        min_l1_usd=15.0,
-                        max_ask_px=0.9963,
+                        min_l1_usd=10.0 if _is_live_uma_daemon else 15.0,
+                        max_ask_px=round(_b2_cap + 0.0001, 4),
                         fee_exponent=float(ver2["fee_exponent"]),
                     )
-                    if w_b2.get("filled") and 0.950 <= float(w_b2["eff_px"]) <= 0.9962:
+                    if w_b2.get("filled") and 0.950 <= float(w_b2["eff_px"]) <= _b2_cap:
                         eff_b2 = float(w_b2["eff_px"])
                         edg_b2 = round(1.0 - eff_b2, 4)
-                        if edg_b2 >= 0.0038:
+                        if edg_b2 >= (0.0025 if _is_live_uma_daemon else 0.0038):
                             opps_out.append({
                                 "sleeve": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
                                 "market": f"[MOOv2_WL:{ver2['domain']}] {q_str[:60]} -> {ver2['win_outcome_name']} ({ver2['rem_challenge_sec']/60:.0f}m rem)",
@@ -12423,7 +12408,7 @@ class Alpha124ShadowDaemon:
                                 neg_risk=bool(m.get("negRisk")),
                                 close_ts=close_est,
                                 now_ts=now,
-                                max_lock_eff_px=0.995,
+                                max_lock_eff_px=_b2_cap,
                                 max_opp_bid=0.006,
                                 hold_to_maturity=True,
                                 p_model=1.0,

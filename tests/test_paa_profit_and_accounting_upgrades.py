@@ -248,7 +248,7 @@ def test_bond1_live_daemon_reemits_when_shadow_already_entered_and_allows_0996(t
     assert len(emitted) == 1
     assert emitted[0]["box_type"] == "SINGLE_LEG_MAKER_LOCK"
     assert emitted[0]["anchor_bid_px"] == pytest.approx(0.996)
-    assert emitted[0]["max_box_cost_net"] == pytest.approx(0.996)
+    assert emitted[0]["max_box_cost_net"] == pytest.approx(0.9975)
     assert opps == []
 
 

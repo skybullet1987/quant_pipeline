@@ -1197,3 +1197,238 @@ def test_paa_accountant_readonly_safeguard_preservation_and_presplit_flat_guard(
     assert not acct.safeguard_file.exists()
 
 
+def test_gatling_4_barrel_unblocking_nr4_s2_bond1_lpcomp1_presplit(tmp_path: Path) -> None:
+    from types import SimpleNamespace
+    from src.polymarket_research.riskless_machine_gun_engine import PreSplitInventoryGun
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        emit_single_leg_lock_cand_impl,
+        emit_single_leg_maker_lock_cand_impl,
+        maybe_emit_s2_live_locks,
+        run_protocol_v2_daemon_scan,
+    )
+
+    now_t = 1_760_000_288.0  # 12.0s remaining to 1_760_000_300.0 (5m boundary)
+    exp_5m = 1_760_000_300.0
+
+    # 1. NR4/NR5 live daemon scan with REST batch fallback + non-contiguous question_index + LP_COMP1 2-leg corridor
+    nr_slate = SimpleNamespace(
+        event_id="ev_nr4",
+        title="Closed NegRisk 3-Outcome Slate",
+        neg_risk_market_id="0x" + "1" * 64,
+        is_closed_convert_safe=True,
+        end_ts=now_t + 7200.0,
+        brackets=[
+            {"question_index": 0, "label": "Out0", "market_id": "m0", "condition_id": "c0", "yes_token": "y0", "no_token": "n0", "fee_rate": 0.0, "fee_exponent": 1.0},
+            {"question_index": 2, "label": "Out2", "market_id": "m2", "condition_id": "c2", "yes_token": "y2", "no_token": "n2", "fee_rate": 0.0, "fee_exponent": 1.0},
+            {"question_index": 5, "label": "Out5", "market_id": "m5", "condition_id": "c5", "yes_token": "y5", "no_token": "n5", "fee_rate": 0.0, "fee_exponent": 1.0},
+        ],
+    )
+    soc_tree = SimpleNamespace(
+        game_id="g_lp",
+        title="Liverpool vs Man City",
+        start_ts=now_t + 3600.0,
+        end_ts=now_t + 10800.0,
+        home_leg={"yes_token": "sh", "no_token": "shn", "market_id": "sm1", "condition_id": "sc1", "fee_rate": 0.0},
+        draw_leg={"yes_token": "sd", "no_token": "sdn", "market_id": "sm2", "condition_id": "sc2", "fee_rate": 0.0},
+        away_leg={"yes_token": "sa", "no_token": "san", "market_id": "sm3", "condition_id": "sc3", "fee_rate": 0.0},
+        btts_leg={"yes_token": "by", "no_token": "bn", "market_id": "sm4", "condition_id": "sc4", "fee_rate": 0.0},
+        totals=[{"line": 1.5, "over_token": "o15", "under_token": "u15", "market_id": "sm5", "condition_id": "sc5", "fee_rate": 0.0}],
+    )
+    rest_books = {
+        "y0": {"asks": [{"price": 0.65, "size": 30}], "bids": [{"price": 0.63, "size": 30}]},
+        "n0": {"asks": [{"price": 0.37, "size": 30}], "bids": [{"price": 0.35, "size": 30}]},
+        "y2": {"asks": [{"price": 0.25, "size": 30}], "bids": [{"price": 0.24, "size": 30}]},
+        "n2": {"asks": [{"price": 0.60, "size": 30}], "bids": [{"price": 0.58, "size": 30}]},
+        "y5": {"asks": [{"price": 0.20, "size": 30}], "bids": [{"price": 0.19, "size": 30}]},
+        "n5": {"asks": [{"price": 0.62, "size": 30}], "bids": [{"price": 0.60, "size": 30}]},
+        "sh": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+        "shn": {"asks": [{"price": 0.56, "size": 30}], "bids": [{"price": 0.55, "size": 30}]},
+        "sd": {"asks": [{"price": 0.28, "size": 30}], "bids": [{"price": 0.27, "size": 30}]},
+        "sdn": {"asks": [{"price": 0.73, "size": 30}], "bids": [{"price": 0.72, "size": 30}]},
+        "sa": {"asks": [{"price": 0.30, "size": 30}], "bids": [{"price": 0.29, "size": 30}]},
+        "san": {"asks": [{"price": 0.71, "size": 30}], "bids": [{"price": 0.70, "size": 30}]},
+        "by": {"asks": [{"price": 0.52, "size": 30}], "bids": [{"price": 0.51, "size": 30}]},
+        "bn": {"asks": [{"price": 0.42, "size": 30}], "bids": [{"price": 0.41, "size": 30}]},
+        "o15": {"asks": [{"price": 0.55, "size": 30}], "bids": [{"price": 0.54, "size": 30}]},
+        "u15": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+    }
+
+    async def _fetch_batch(toks, timeout=2.5):
+        return {t: rest_books[t] for t in toks if t in rest_books}
+
+    def _best_ask_sz(bk):
+        asks = sorted([(float(a["price"]), float(a["size"])) for a in (bk.get("asks") or [])], key=lambda x: x[0])
+        return asks[0] if asks else (1.0, 0.0)
+
+    nr_emits, lp_2l_emits = [], []
+    dm_v2 = SimpleNamespace(
+        single_scan=True,
+        pyth_close_ladders={},
+        barrier_rungs={},
+        strike_ladders={},
+        negrisk_convert_slates={"ev_nr4": nr_slate},
+        soccer_trees={"g_lp": soc_tree},
+        weather_events={},
+        pyth_daily_markets={},
+        daily_updown_markets={},
+        _ws_books={},
+        fetch_books_batch=_fetch_batch,
+        _best_ask_sz=_best_ask_sz,
+        _get_fresh_ws_book=lambda tid, nt, max_age_sec=8.0: None,  # Force REST fallback!
+        emit_live_negrisk_convert_candidate=lambda **kw: nr_emits.append(kw) or True,
+        emit_live_two_leg_box_candidate=lambda **kw: lp_2l_emits.append(kw) or True,
+        emit_live_special_v2_box_candidate=lambda **kw: True,
+    )
+    opps_v2 = []
+    asyncio.run(run_protocol_v2_daemon_scan(dm_v2, opps_v2, now_ts=now_t))
+    assert len(nr_emits) >= 1
+    assert nr_emits[0]["arb_hit"]["no_legs"][0]["bracket"]["question_index"] in {2, 5}
+    assert any(e["sleeve_source"] == "LP_COMP1_SPORTS_TRIANGLES" and e["leg_a"]["market_id"] != e["leg_b"]["market_id"] for e in lp_2l_emits)
+
+    # 2. S2 Dual-Mode: Taker at $0.993 AND Final-22s Post-Only Maker Lock when ask == $0.999
+    ticks_s2 = [(exp_5m - 60.0 + i, 100_250.0) for i in range(49)]
+    s2_spec = SimpleNamespace(
+        asset="BTC",
+        horizon="5m",
+        market_id="m_s2",
+        condition_id="0x" + "2" * 64,
+        up_token="s2_up",
+        down_token="s2_dn",
+        end_ts=exp_5m,
+        twap_lookback_sec=60.0,
+        fee_rate=0.07,
+        fee_exponent=1.0,
+        neg_risk=False,
+    )
+    tkr_s2, mkr_s2 = [], []
+    dm_s2 = SimpleNamespace(
+        _best_ask_sz=_best_ask_sz,
+        emit_live_single_leg_lock_candidate=lambda **kw: tkr_s2.append(kw) or True,
+        emit_live_single_leg_maker_lock_candidate=lambda **kw: mkr_s2.append(kw) or True,
+    )
+    bk_s2_tkr = {"asks": [{"price": 0.993, "size": 30}], "bids": [{"price": 0.991, "size": 30}]}
+    bk_s2_opp = {"asks": [{"price": 0.010, "size": 30}], "bids": [{"price": 0.005, "size": 30}]}
+    maybe_emit_s2_live_locks(
+        dm_s2, spec=s2_spec, k_open=100_000.0, eval_now=now_t, rem_sec=12.0, samples=ticks_s2,
+        off_twap_60=100_250.0, win_side="UP", tok="s2_up", opp_token="s2_dn" if False else None,
+        opp_tok="s2_dn", bk=bk_s2_tkr, bk_opp=bk_s2_opp, bks_s2={"s2_up": bk_s2_tkr, "s2_dn": bk_s2_opp},
+    ) if False else maybe_emit_s2_live_locks(
+        dm_s2, spec=s2_spec, k_open=100_000.0, eval_now=now_t, rem_sec=12.0, samples=ticks_s2,
+        off_twap_60=100_250.0, win_side="UP", tok="s2_up", opp_tok="s2_dn",
+        bk=bk_s2_tkr, bk_opp=bk_s2_opp, bks_s2={"s2_up": bk_s2_tkr, "s2_dn": bk_s2_opp},
+    )
+    assert len(tkr_s2) == 1 and tkr_s2[0]["max_lock_eff_px"] >= 0.9935
+
+    bk_s2_mkr = {"asks": [{"price": 0.999, "size": 30}], "bids": [{"price": 0.992, "size": 20}]}
+    maybe_emit_s2_live_locks(
+        dm_s2, spec=s2_spec, k_open=100_000.0, eval_now=now_t, rem_sec=12.0, samples=ticks_s2,
+        off_twap_60=100_250.0, win_side="UP", tok="s2_up", opp_tok="s2_dn",
+        bk=bk_s2_mkr, bk_opp=bk_s2_opp, bks_s2={"s2_up": bk_s2_mkr, "s2_dn": bk_s2_opp},
+        logger_obj=SimpleNamespace(info=lambda *a, **k: None),
+    )
+    assert len(mkr_s2) == 1 and mkr_s2[0]["max_resting_bid"] == 0.994
+
+    # 3. BOND1 $0.9980 Maker + $0.9975 Taker candidate emission
+    cand_out = tmp_path / "cands.jsonl"
+    st_out = tmp_path / "state.json"
+    dm_emit = SimpleNamespace(
+        single_scan=True,
+        _last_d1_live_emit_ts={},
+        _ws_books={},
+        _best_ask_sz=_best_ask_sz,
+        _get_fresh_ws_book=lambda *a, **k: None,
+    )
+
+    def _extr_b(bids):
+        if not bids:
+            return 0.0, 0.0
+        b0 = max(bids, key=lambda x: float(x["price"]))
+        return float(b0["price"]), float(b0["price"]) * float(b0["size"])
+
+    def _walk_1l(asks, ref_n, t100_n, fee_rate=0.0, max_slip_cents=0.01, min_l1_usd=10.0, max_ask_px=0.9985, fee_exponent=1.0):
+        px, sz = float(asks[0]["price"]), float(asks[0]["size"])
+        if px > max_ask_px or px * sz < min_l1_usd:
+            return {"filled": False}
+        return {"filled": True, "eff_px": px, "shares": sz, "best_ask": px, "worst_px": px}
+
+    ok_tkr_997 = emit_single_leg_lock_cand_impl(
+        dm_emit, sleeve_source="BOND1_UMA_RESOLUTION_CARRY", asset="SPORTS", dedupe_key="B1_TKR_997",
+        token_id="tw", opp_token_id="tl", market_id="m_b1", condition_id="c_b1", side_label="YES", display_label="Test BOND1",
+        bk_win={"asks": [{"price": 0.997, "size": 25}], "bids": [{"price": 0.996, "size": 25}]},
+        bk_opp={"bids": [{"price": 0.002, "size": 25}], "asks": [{"price": 0.004, "size": 25}]},
+        fee_rate=0.0, fee_exponent=1.0, neg_risk=False, close_ts=now_t + 1800.0, now_ts=now_t,
+        max_lock_eff_px=0.9975, max_opp_bid=0.008, hold_to_maturity=True, p_model=1.0,
+        extract_best_bid_fn=_extr_b, walk_l2_fn=_walk_1l,
+        cand_file=cand_out, default_cand_path=cand_out, state_file=st_out, default_state_path=st_out,
+    )
+    assert ok_tkr_997 is True
+
+    ok_mkr_998 = emit_single_leg_maker_lock_cand_impl(
+        dm_emit, sleeve_source="BOND1_UMA_RESOLUTION_CARRY", asset="SPORTS", dedupe_key="B1_MKR_998", pair_dedupe_key="B1_TKR_997",
+        token_id="tw", opp_token_id="tl", market_id="m_b1", condition_id="c_b1", side_label="YES", display_label="Test BOND1 MKR",
+        bk_win={"asks": [{"price": 0.999, "size": 25}], "bids": [{"price": 0.997, "size": 25}]},
+        bk_opp={"bids": [{"price": 0.001, "size": 25}], "asks": [{"price": 0.003, "size": 25}]},
+        neg_risk=False, close_ts=now_t + 1800.0, now_ts=now_t,
+        min_resting_bid=0.940, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.008,
+        hold_to_maturity=True, p_model=1.0, target_bid_px=None, maker_rebate_ps=0.0,
+        extract_best_bid_fn=_extr_b, cand_file=cand_out, default_cand_path=cand_out, state_file=st_out, default_state_path=st_out,
+    )
+    assert ok_mkr_998 is True
+
+    # 4. PreSplitInventoryGun arms on 0%-fee XAU nested SHM with overround 1.005 (>= 1.003) and passes up/down token IDs
+    import src.polymarket_research.riskless_machine_gun_engine as rmg_mod
+    split_calls = []
+    orig_split = rmg_mod.attempt_onchain_split_position
+    rmg_mod.attempt_onchain_split_position = lambda ex, cid, amt, neg_risk=False, **kw: split_calls.append((cid, amt, kw)) or {"success": True, "tx_hash": "0xabc"}
+    try:
+        ps_gun = PreSplitInventoryGun(cap_usd=10.0)
+        up_xau = "3" * 24
+        dn_xau = "4" * 24
+        harv_ps = SimpleNamespace(
+            dry_run=False,
+            _startup_reconciled=True,
+            global_halt_active=False,
+            active_positions={},
+            pending_entry_intents={},
+            closed_positions=[],
+            pre_split_inventory_state={},
+            _last_known_collateral=60.0,
+            _pending_collateral_refresh=False,
+            executor=SimpleNamespace(
+                execute_atomic_box_overround_unwind=lambda *a, **k: {
+                    "success": True,
+                    "leg_a": {"filled": True, "taking_amount": 5.03, "fee_usd": 0.0},
+                    "leg_b": {"filled": True, "taking_amount": 5.02, "fee_usd": 0.0},
+                },
+                invalidate_collateral_cache=lambda: None,
+            ),
+            save_state=lambda: None,
+            risk_controller=None,
+        )
+        shm_xau = {
+            "timestamp_unix": now_t,
+            "spot_price": 4040.0,
+            "m15": {
+                "market_id": "xau_m15",
+                "condition_id": "0x" + "9" * 64,
+                "fee_rate": 0.0,
+                "fee_exponent": 1.0,
+                "expiry_ts": now_t + 300.0,
+                "finalized_open": 4038.0,
+                "UP": {"token_id": up_xau, "best_bid": 0.503, "bid_depth_1c_shares": 25.0, "best_ask": 0.510, "ask_depth_1c_shares": 25.0},
+                "DOWN": {"token_id": dn_xau, "best_bid": 0.502, "bid_depth_1c_shares": 25.0, "best_ask": 0.510, "ask_depth_1c_shares": 25.0},
+            },
+        }
+        r_xau1 = asyncio.run(ps_gun.tick(harv_ps, now_t, fast_tick_reader=lambda a: shm_xau if a == "XAU" else None))
+        assert r_xau1 == "ARMED"
+        assert len(split_calls) == 1
+        assert split_calls[0][2]["up_token_id"] == up_xau and split_calls[0][2]["down_token_id"] == dn_xau
+        shm_xau["timestamp_unix"] = now_t + 0.5
+        r_xau2 = asyncio.run(ps_gun.tick(harv_ps, now_t + 0.5, fast_tick_reader=lambda a: shm_xau if a == "XAU" else None))
+        assert r_xau2 == "PRE_SPLIT_OVERROUND_SWEEP"
+    finally:
+        rmg_mod.attempt_onchain_split_position = orig_split
+
+
+
+
