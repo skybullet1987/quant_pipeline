@@ -354,8 +354,25 @@ QUARANTINED_SHADOW_SLEEVES = frozenset({
     "CTF_OVERROUND_MINT_SELL",
 })
 
+# Clean shadow graduation epoch for sleeves upgraded with deterministic oracle/TWAP fixes
+STRATEGY_EPOCH_MIN_TS: Dict[str, float] = {
+    "S2_EXACT_TWAP_LOCK": 1793758800.0,
+}
+
+
+def _filter_epoch_closed_positions(sleeve: str, closed_list: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    min_ts = STRATEGY_EPOCH_MIN_TS.get(str(sleeve))
+    if not min_ts:
+        return closed_list
+    return [
+        p for p in closed_list
+        if not (1790000000.0 <= float(p.get("entry_ts") or 0.0) < min_ts)
+    ]
+
 
 def is_shadow_sleeve_quarantined(sleeve: str) -> bool:
+    if sleeve == "S2_EXACT_TWAP_LOCK" and os.getenv("PM_UNQUARANTINE_S2_TWAP_LOCK", "0") == "1":
+        return False
     return os.getenv("PM_QUARANTINE_LOSING_SLEEVES", "1") == "1" and sleeve in QUARANTINED_SHADOW_SLEEVES
 
 
@@ -853,6 +870,10 @@ class Alpha124ShadowDaemon:
         self._ws_rest_seeded: set[str] = set()
         # Priority-1 D1/S2 tokens (from `_desired_d1_ws_tokens`): only their WS updates trigger `_ws_d1_wakeup`.
         self._ws_d1_priority_tokens: set[str] = set()
+        # Priority-2 NegRisk/Counting/UMA tokens: WS updates trigger `_ws_nr_wakeup` (`<=250ms` reactive scan).
+        self._ws_nr_priority_tokens: set[str] = set()
+        self._ws_shard_tokens: Dict[int, set[str]] = {}
+        self._instant_arb_cooldown_until: Dict[str, float] = {}
         self._bg_chainlink_ws_task: Optional[asyncio.Task] = None
         self._chainlink_ws: Optional[Any] = (
             PolymarketChainlinkLiveStream(on_tick=self._on_chainlink_ws_tick)
@@ -860,6 +881,7 @@ class Alpha124ShadowDaemon:
             else None
         )
         self._ws_d1_wakeup = asyncio.Event()
+        self._ws_nr_wakeup = asyncio.Event()
         self._bg_clob_ws_task: Optional[asyncio.Task] = None
         self._strike_fail_backoff_ts: Dict[str, float] = {}
         self._last_telem_ts_by_key: Dict[str, float] = {}
@@ -883,7 +905,9 @@ class Alpha124ShadowDaemon:
         """
         if is_shadow_sleeve_quarantined(sleeve):
             return False
-        closed_sl = [p for p in self.closed_positions if p.get("sleeve") == sleeve]
+        closed_sl = _filter_epoch_closed_positions(
+            sleeve, [p for p in self.closed_positions if p.get("sleeve") == sleeve]
+        )
         n_cl = len(closed_sl)
         wins = sum(1 for p in closed_sl if p.get("won"))
         losses = n_cl - wins
@@ -1434,17 +1458,22 @@ class Alpha124ShadowDaemon:
                 self._rebuild_ws_book_dict(asset_id, bids_map, asks_map, now_ts)
         return changed
 
-    def _desired_d1_ws_tokens(self, now_ts: float) -> List[str]:
+    def _desired_d1_ws_tokens(self, now_ts: float, max_cap: int = 600) -> List[str]:
         out: List[str] = []
         seen: set[str] = set()
+        nr_prio: set[str] = set()
 
-        def _add_tok(tok: Any, max_cap: int = 110) -> bool:
+        def _add_tok(tok: Any, *, is_nr: bool = False) -> bool:
             if len(out) >= max_cap:
                 return False
             t_s = str(tok or "").strip()
             if t_s and t_s not in seen:
                 seen.add(t_s)
                 out.append(t_s)
+                if is_nr:
+                    nr_prio.add(t_s)
+            elif t_s and is_nr:
+                nr_prio.add(t_s)
             return len(out) < max_cap
 
         # Priority 1: Active D1 (15m/5m + 4h) and S2 TWAP Lock tokens
@@ -1460,7 +1489,7 @@ class Alpha124ShadowDaemon:
                     _add_tok(sp_tw.down_token)
         self._ws_d1_priority_tokens = set(out)
 
-        # Priority 2: zero-hold C1 Daily Complete Sets + near-ATM M3 Multi-Strike & N1 NegRisk Brackets
+        # Priority 1B: zero-hold C1 Daily Complete Sets + near-ATM M3 Multi-Strike & N1 NegRisk Brackets
         for sp_d in list(self.pyth_daily_markets.values()) + list(self.daily_updown_markets.values()):
             if float(sp_d.end_ts) > now_ts + 60.0:
                 _add_tok(sp_d.up_token)
@@ -1481,16 +1510,65 @@ class Alpha124ShadowDaemon:
             for b in ranked_b[:4]:
                 _add_tok(b.yes_token)
                 _add_tok(b.no_token)
+
+        # Priority 2: Active Zero-Fee NegRisk Slates (`NR0`), Closed Convert Slates (`NR2`/`NR3`), Counting Slates (`CM`), & `BOND1`/`BOND2` UMA
+        for sp_nr in sorted(self.negrisk_zero_slates.values(), key=lambda s: float(s.end_ts)):
+            if float(sp_nr.end_ts) <= now_ts + 60.0 or len(sp_nr.brackets) > 15:
+                continue
+            for b_z in sp_nr.brackets:
+                _add_tok(b_z.get("no_token"), is_nr=True)
+                _add_tok(b_z.get("yes_token"), is_nr=True)
+        for sp_nrc in sorted(self.negrisk_convert_slates.values(), key=lambda s: (not bool(s.is_closed_convert_safe), float(s.end_ts))):
+            if float(sp_nrc.end_ts) <= now_ts + 60.0 or len(sp_nrc.brackets) > 15:
+                continue
+            for b_c in sp_nrc.brackets:
+                _add_tok(b_c.get("no_token"), is_nr=True)
+                if sp_nrc.is_closed_convert_safe:
+                    _add_tok(b_c.get("yes_token"), is_nr=True)
+        for sp_cm in sorted(self.counting_slates.values(), key=lambda s: float(s.end_ts)):
+            if float(sp_cm.end_ts) <= now_ts + 60.0 or len(sp_cm.brackets) > 15:
+                continue
+            for b_m in sp_cm.brackets:
+                _add_tok(b_m.get("no_token"), is_nr=True)
+                _add_tok(b_m.get("yes_token"), is_nr=True)
+        for uma_m in list(self.uma_proposed_markets.values())[:25]:
+            if isinstance(uma_m, dict):
+                _add_tok(uma_m.get("win_token") or uma_m.get("yes_token"), is_nr=True)
+                _add_tok(uma_m.get("lose_token") or uma_m.get("no_token"), is_nr=True)
+        self._ws_nr_priority_tokens = nr_prio
+
+        # Priority 3: Active Sports Corridors (`SP1`/`SP2`/`SP4`) within 6h of close
+        for gm_s in list(self.multi_sport_games.values()) + list(self.nba_games.values()):
+            end_g = float(getattr(gm_s, "end_ts", 0.0) or 0.0)
+            if 60.0 < (end_g - now_ts) <= 21600.0:
+                for attr_t in ("ml_a_token", "ml_b_token"):
+                    _add_tok(getattr(gm_s, attr_t, None))
+                for sp_r in (getattr(gm_s, "spreads", None) or ())[:3]:
+                    if isinstance(sp_r, dict):
+                        _add_tok(sp_r.get("yes_token"))
+                        _add_tok(sp_r.get("no_token"))
         return out
 
-    async def _run_clob_d1_ws_loop(self) -> None:
-        """Maintains a live Polymarket CLOB Market WebSocket L2 book cache for active D1 pairs."""
+    def _partition_ws_shards(self, now_ts: float, max_shards: int = 3, per_shard: int = 200) -> List[List[str]]:
+        desired = self._desired_d1_ws_tokens(now_ts, max_cap=max_shards * per_shard)
+        return [desired[i * per_shard : (i + 1) * per_shard] for i in range(max_shards)]
+
+    def _sync_ws_subscribed_union(self) -> None:
+        union_s: set[str] = set()
+        for st_i in self._ws_shard_tokens.values():
+            union_s.update(st_i)
+        self._ws_subscribed_tokens = union_s
+
+    async def _run_single_clob_ws_shard(self, shard_idx: int) -> None:
+        """Runs 1 shard (`<= 200` tokens) of the 3-shard `600`-token Polymarket CLOB L2 WebSocket Matrix."""
         while not self.single_scan:
-            now_0 = time.time()
-            desired_0 = self._desired_d1_ws_tokens(now_0)
+            shards_0 = self._partition_ws_shards(time.time())
+            desired_0 = shards_0[shard_idx] if shard_idx < len(shards_0) else []
             if not desired_0:
-                self._ws_subscribed_tokens.clear()
-                await asyncio.sleep(1.0)
+                for old_t in list(self._ws_shard_tokens.pop(shard_idx, set())):
+                    self._drop_ws_book(old_t)
+                self._sync_ws_subscribed_union()
+                await asyncio.sleep(1.5)
                 continue
             try:
                 sess = await self.get_session()
@@ -1500,11 +1578,12 @@ class Alpha124ShadowDaemon:
                     max_msg_size=4 * 1024 * 1024,
                     timeout=aiohttp.ClientWSTimeout(ws_close=5.0),
                 ) as ws:
-                    # Fresh connection: discard every book reconstructed on the previous socket (deltas may have been missed)
-                    self._ws_books.clear()
-                    self._ws_raw_levels.clear()
-                    self._ws_rest_seeded.clear()
-                    self._ws_subscribed_tokens = set(desired_0)
+                    prev_shard = self._ws_shard_tokens.get(shard_idx, set())
+                    for old_t in list(prev_shard | set(desired_0)):
+                        self._drop_ws_book(old_t)
+                    shard_sub = set(desired_0)
+                    self._ws_shard_tokens[shard_idx] = shard_sub
+                    self._sync_ws_subscribed_union()
                     await ws.send_str(json.dumps({"assets_ids": desired_0, "type": "market"}))
                     last_sub_chk = time.time()
                     last_rx_ts = last_sub_chk
@@ -1512,17 +1591,26 @@ class Alpha124ShadowDaemon:
                         now_w = time.time()
                         if (now_w - last_sub_chk) >= 2.0:
                             last_sub_chk = now_w
-                            cur_desired = set(self._desired_d1_ws_tokens(now_w))
-                            for stale_tok in list(self._ws_books.keys()):
-                                if stale_tok not in cur_desired:
+                            shards_w = self._partition_ws_shards(now_w)
+                            cur_desired = set(shards_w[shard_idx] if shard_idx < len(shards_w) else [])
+                            other_subs: set[str] = set()
+                            for k_idx, st_other in self._ws_shard_tokens.items():
+                                if k_idx != shard_idx:
+                                    other_subs.update(st_other)
+                            cur_desired -= other_subs
+                            for stale_tok in list(shard_sub - cur_desired):
+                                shard_sub.discard(stale_tok)
+                                if stale_tok not in other_subs:
                                     self._drop_ws_book(stale_tok)
+                            self._sync_ws_subscribed_union()
                             if not cur_desired:
                                 break
-                            added = sorted(cur_desired - self._ws_subscribed_tokens)
+                            added = sorted(cur_desired - shard_sub)
                             if added:
                                 await ws.send_str(json.dumps({"assets_ids": added, "operation": "subscribe"}))
-                                self._ws_subscribed_tokens.update(added)
-                            elif len(self._ws_subscribed_tokens) > len(cur_desired) + 28:
+                                shard_sub.update(added)
+                                self._sync_ws_subscribed_union()
+                            elif len(shard_sub) > len(cur_desired) + 32:
                                 break
                         if (now_w - last_rx_ts) > 30.0:
                             break
@@ -1541,44 +1629,105 @@ class Alpha124ShadowDaemon:
                         now_rx = time.time()
                         last_rx_ts = now_rx
                         data = _orjson.loads(raw_payload) if _orjson is not None else json.loads(raw_payload)
-                        woke = False
+                        woke_d1 = False
+                        woke_nr = False
                         d1_wake_toks = self._ws_d1_priority_tokens
+                        nr_wake_toks = self._ws_nr_priority_tokens
                         if isinstance(data, list):
                             for item in data:
                                 if isinstance(item, dict):
                                     aid = str(item.get("asset_id") or "")
-                                    if aid in self._ws_subscribed_tokens:
+                                    if aid in shard_sub:
                                         self._apply_ws_book_snapshot(aid, item.get("bids") or [], item.get("asks") or [], now_rx)
-                                        woke = woke or (aid in d1_wake_toks)
+                                        woke_d1 = woke_d1 or (aid in d1_wake_toks)
+                                        woke_nr = woke_nr or (aid in nr_wake_toks)
                         elif isinstance(data, dict):
                             ev_t = data.get("event_type")
                             if ev_t == "book":
                                 aid = str(data.get("asset_id") or "")
-                                if aid in self._ws_subscribed_tokens:
+                                if aid in shard_sub:
                                     self._apply_ws_book_snapshot(aid, data.get("bids") or [], data.get("asks") or [], now_rx)
-                                    woke = woke or (aid in d1_wake_toks)
+                                    woke_d1 = woke_d1 or (aid in d1_wake_toks)
+                                    woke_nr = woke_nr or (aid in nr_wake_toks)
                             elif ev_t == "price_change":
                                 grouped: Dict[str, List[Dict[str, Any]]] = {}
                                 for pc in data.get("price_changes") or ():
                                     aid = str(pc.get("asset_id") or "")
-                                    if aid in self._ws_subscribed_tokens:
+                                    if aid in shard_sub:
                                         grouped.setdefault(aid, []).append(pc)
                                 for aid, pcs in grouped.items():
-                                    if self._apply_ws_price_changes(aid, pcs, now_rx) and aid in d1_wake_toks:
-                                        woke = True
-                        # D1 overlap-window or active resting Maker-Anchor updates wake the fast D1 sub-scan (<=8.3 Hz)
+                                    if self._apply_ws_price_changes(aid, pcs, now_rx):
+                                        if aid in d1_wake_toks:
+                                            woke_d1 = True
+                                        if aid in nr_wake_toks:
+                                            woke_nr = True
                         if (
-                            woke
+                            woke_d1
                             and (self.is_in_same_oracle_overlap_window(now_rx) or bool(self.pending_maker_anchors))
                             and (now_rx - getattr(self, "_last_ws_d1_wake_ts", 0.0)) >= 0.12
                         ):
                             self._last_ws_d1_wake_ts = now_rx
                             self._ws_d1_wakeup.set()
+                        if woke_nr and (now_rx - getattr(self, "_last_ws_nr_wake_ts", 0.0)) >= 0.25:
+                            self._last_ws_nr_wake_ts = now_rx
+                            self._ws_nr_wakeup.set()
+                            self._ws_d1_wakeup.set()
             except asyncio.CancelledError:
                 raise
             except Exception as exc_ws:
-                logger.debug(f"D1 CLOB WS reconnect notice: {exc_ws}")
+                logger.debug(f"CLOB WS shard {shard_idx} reconnect notice: {exc_ws}")
                 await asyncio.sleep(1.0)
+
+    async def _scan_ws_reactive_negrisk_arbs(self, now_ts: float) -> None:
+        """Zero-REST reactive NegRisk (`NR_CONV`, `NR2`, `NR3`) subscan triggered by 3-shard CLOB WS deltas."""
+        from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround
+
+        opps_tmp: List[Dict[str, Any]] = []
+        for sp_nrc in list(self.negrisk_convert_slates.values()):
+            if not sp_nrc.is_closed_convert_safe or sp_nrc.end_ts <= now_ts + 65.0 or len(sp_nrc.brackets) > 15:
+                continue
+            ws_map: Dict[str, Dict[str, Any]] = {}
+            all_fresh = True
+            for b_c in sp_nrc.brackets:
+                for tk_c in (b_c.get("no_token"), b_c.get("yes_token")):
+                    t_str = str(tk_c or "")
+                    ws_ent = self._ws_books.get(t_str) if t_str else None
+                    if ws_ent is None or (now_ts - float(ws_ent[0])) > 2.5 or t_str in self._ws_rest_seeded:
+                        all_fresh = False
+                        break
+                    ws_map[t_str] = ws_ent[1]
+                if not all_fresh:
+                    break
+            if not all_fresh:
+                continue
+            conv_arbs = detect_negrisk_convert_positions_arbs(
+                sp_nrc, ws_map, target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"], min_net_edge_per_share=0.005, min_shares=8
+            )
+            if conv_arbs:
+                await self.execute_negrisk_convert_positions_arb(sp_nrc, conv_arbs[0], ws_map, opps_tmp)
+            nr2_arbs = detect_nr2_convert_no_subset_arbs(
+                sp_nrc, ws_map, target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"], min_edge_pure_cash=0.012, min_edge_with_yes_sell=0.015, min_shares=6
+            )
+            if nr2_arbs:
+                await self.execute_nr2_subset_convert_arb(sp_nrc, nr2_arbs[0], ws_map, opps_tmp)
+            nr3_hit = detect_nr3_synthetic_all_yes_overround(
+                sp_nrc, ws_map, target_budget_usd=30.0, min_net_edge_per_set=0.008, min_shares=5
+            )
+            if nr3_hit is not None:
+                self.emit_live_negrisk_convert_candidate(
+                    sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",
+                    spec=sp_nrc,
+                    dedupe_key=f"NR3_OVR_{sp_nrc.event_id}",
+                    arb_hit=nr3_hit,
+                    books_by_token=ws_map,
+                    now_ts=now_ts,
+                )
+
+    async def _run_clob_d1_ws_loop(self) -> None:
+        """Maintains a 3-shard (`600`-token) Polymarket CLOB Market WebSocket L2 book matrix."""
+        if self.single_scan:
+            return
+        await asyncio.gather(*(self._run_single_clob_ws_shard(idx) for idx in range(3)))
 
     async def fetch_books_batch(self, token_ids: List[str], timeout: float = 3.0) -> Dict[str, Dict[str, Any]]:
         uniq = list(dict.fromkeys(str(t) for t in token_ids if t))
@@ -4404,11 +4553,12 @@ class Alpha124ShadowDaemon:
             "l1_usd": arb_probe["l1_usd"],
             "close_ts": spec.end_ts,
         })
+        if float(self._instant_arb_cooldown_until.get(dedupe_key, 0.0) or 0.0) > time.time():
+            return False
         acq = self._try_acquire_keys(dedupe_key)
         if not acq:
             return False
         try:
-            await asyncio.sleep(0.25)
             req_toks = [b["no_token"] for b in spec.brackets] + [b["yes_token"] for b in spec.brackets]
             fresh_bks = await self.fetch_books_batch(req_toks, timeout=3.0)
             eval_bks = fresh_bks if all(t in fresh_bks for t in req_toks) else books_by_token
@@ -4477,8 +4627,11 @@ class Alpha124ShadowDaemon:
                 },
                 "status": "INSTANT_CONVERT_AND_SELL_FILLED",
             }
-            for k_acq in acq:
-                self.entered_keys.add(k_acq)
+            if self.single_scan and not getattr(self, "_enable_multiclip_instant_arb", False):
+                for k_acq in acq:
+                    self.entered_keys.add(k_acq)
+            else:
+                self._instant_arb_cooldown_until[dedupe_key] = now + 3.0
             self.emit_live_negrisk_convert_candidate(
                 sleeve_source="NR_CONV_NO_BASKET_ARB",
                 spec=spec,
@@ -4525,6 +4678,8 @@ class Alpha124ShadowDaemon:
             "l1_usd": arb_probe["l1_usd"],
             "close_ts": spec.end_ts,
         })
+        if float(self._instant_arb_cooldown_until.get(dedupe_key, 0.0) or 0.0) > time.time():
+            return False
         acq = self._try_acquire_keys(dedupe_key)
         if not acq:
             return False
@@ -4534,7 +4689,6 @@ class Alpha124ShadowDaemon:
             )
             if not ok_nr:
                 return False
-            await asyncio.sleep(0.25)
             req_toks = [b["no_token"] for b in spec.brackets] + [b["yes_token"] for b in spec.brackets]
             fresh_bks = await self.fetch_books_batch(req_toks, timeout=3.0)
             eval_bks = fresh_bks if all(t in fresh_bks for t in req_toks) else books_by_token
@@ -4606,8 +4760,11 @@ class Alpha124ShadowDaemon:
                 },
                 "status": "INSTANT_SUBSET_CONVERT_FREE_TAIL_LOCKED",
             }
-            for k_acq in acq:
-                self.entered_keys.add(k_acq)
+            if self.single_scan and not getattr(self, "_enable_multiclip_instant_arb", False):
+                for k_acq in acq:
+                    self.entered_keys.add(k_acq)
+            else:
+                self._instant_arb_cooldown_until[dedupe_key] = now + 3.0
             self.emit_live_negrisk_convert_candidate(
                 sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",
                 spec=spec,
@@ -4955,13 +5112,15 @@ class Alpha124ShadowDaemon:
     @staticmethod
     def is_in_same_oracle_overlap_window(now_ts: float) -> bool:
         """
-        True during the final 5m sub-window of every 15m candle (`:10-:15`, `:25-:30`,
-        `:40-:45`, `:55-:00`), where the active `15m` and `5m` Chainlink 60s-TWAP markets
-        share the exact same terminal timestamp `target_end_ts`.
+        True during:
+          - the final 5m sub-window of every 15m candle (`:10-:15`, `:25-:30`, `:40-:45`, `:55-:00`), OR
+          - the final 15m overlap window of every 4h candle (`:45-:00` at 00/04/08/12/16/20 UTC),
+        where active `4h`/`15m`/`5m` Chainlink 60s-TWAP markets share the exact same terminal timestamp!
         """
         target_end_ts = math.ceil(now_ts / 900.0) * 900.0
         rem_sec = target_end_ts - now_ts
-        return 8.0 <= rem_sec <= 305.0
+        rem_4h = (math.ceil(now_ts / 14400.0) * 14400.0) - now_ts
+        return (8.0 <= rem_sec <= 305.0) or (8.0 <= rem_4h <= 905.0)
 
     async def discover_dominance_pairs(self, now_ts: Optional[float] = None) -> None:
         now = float(now_ts if now_ts is not None else time.time())
@@ -5995,8 +6154,63 @@ class Alpha124ShadowDaemon:
         if rem_sec < 65.0 or not spec.is_closed_convert_safe:
             return False
         last_emit = float(self._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-        if (now_ts - last_emit) < 12.0:
+        if (now_ts - last_emit) < 2.5:
             return False
+        if str(arb_hit.get("mode") or "") == "NR3_SYNTHETIC_ALL_YES_OVERROUND":
+            raw_ys = list(arb_hit.get("yes_sell_legs") or [])
+            edge_nr3 = float(arb_hit.get("net_edge_per_share") or 0.0)
+            if len(raw_ys) < 2 or len(raw_ys) > 15 or edge_nr3 < 0.008:
+                return False
+            self._last_d1_live_emit_ts[dedupe_key] = now_ts
+            rel_y = [str(y["yes_token"]) for y in raw_ys]
+            ws_snap_y = {t: books_by_token[t] for t in rel_y if isinstance(books_by_token.get(t), dict)}
+            cand = {
+                "box_id": f"NR3_LIVE_{spec.event_id}_{int(now_ts)}",
+                "dedupe_key": dedupe_key,
+                "box_type": "NEGRISK_CONVERT",
+                "convert_mode": "NR3_SYNTHETIC_ALL_YES_OVERROUND",
+                "ts_unix": round(now_ts, 3),
+                "asset": "NEGRISK_NR3",
+                "sleeve_source": str(sleeve_source),
+                "neg_risk_market_id": str(spec.neg_risk_market_id),
+                "fee_bips": int(fee_bips),
+                "expiry_ts": float(spec.end_ts),
+                "rem_sec": round(rem_sec, 2),
+                "shares": int(math.floor(float(arb_hit.get("shares") or 8.0))),
+                "net_edge_per_share": round(edge_nr3, 5),
+                "box_cost_net": round(max(0.01, 1.0 - edge_nr3), 4),
+                "split_cond_0": str(arb_hit.get("split_cond_0") or ""),
+                "split_cond_1": str(arb_hit.get("split_cond_1") or ""),
+                "split_q_idx_0": int(arb_hit.get("split_q_idx_0") or 0),
+                "split_q_idx_1": int(arb_hit.get("split_q_idx_1") or 1),
+                "no_legs": [],
+                "yes_sell_legs": raw_ys,
+                "liquid_yes_sells": raw_ys,
+                "retained_tail_tokens": [],
+                "ws_books": ws_snap_y if len(ws_snap_y) == len(rel_y) else None,
+                "ws_books_ts": round(now_ts, 3),
+            }
+            try:
+                line_s = json.dumps(cand, separators=(",", ":")) + "\n"
+                raw_b = line_s.encode("utf-8")
+                if os.name != "nt" and D1_LIVE_CANDIDATES_FILE == default_cand_path:
+                    try:
+                        import socket
+                        s_ipc = getattr(self, "_d1_ipc_sock", None)
+                        if s_ipc is None:
+                            s_ipc = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+                            s_ipc.setblocking(False)
+                            self._d1_ipc_sock = s_ipc
+                        ipc_nm = os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME", "polymarket_d1_box_notify")
+                        s_ipc.sendto(raw_b, f"\x00{ipc_nm}".encode("utf-8"))
+                    except Exception:
+                        pass
+                D1_LIVE_CANDIDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
+                with open(D1_LIVE_CANDIDATES_FILE, "a", encoding="utf-8") as fp:
+                    fp.write(line_s)
+                return True
+            except Exception:
+                return False
         no_legs_out: List[Dict[str, Any]] = []
         for item in (arb_hit.get("no_legs") or []):
             b = item.get("bracket") or {}
@@ -6048,7 +6262,11 @@ class Alpha124ShadowDaemon:
         ws_snap = {t: books_by_token[t] for t in rel_toks if isinstance(books_by_token.get(t), dict)}
         conv_mode = str(
             arb_hit.get("mode")
-            or ("NR2_PURE_CASH_CONVERT" if not liquid_yes_sells and not retained_tail_tokens else "NR2_SUBSET_CONVERT_FREE_TAIL")
+            or (
+                "NR2_PURE_CASH_CONVERT"
+                if not liquid_yes_sells and not retained_tail_tokens
+                else ("NR2_SUBSET_LIQUID_YES_CONVERT" if liquid_yes_sells and not retained_tail_tokens else "NR2_SUBSET_CONVERT_FREE_TAIL")
+            )
         )
         cand = {
             "box_id": f"NRCONV_LIVE_{spec.event_id}_{int(now_ts)}",
@@ -6289,15 +6507,24 @@ class Alpha124ShadowDaemon:
         default_cand_path = LIVE_POLYMARKET_DIR / "d1_live_box_candidates.jsonl"
         if STATE_FILE != (DATA_DIR / "alpha124_shadow_state.json") and D1_LIVE_CANDIDATES_FILE == default_cand_path:
             return False
+        is_rebate_mg = str(sleeve_source) == "D1_REBATE_MACHINE_GUN"
         if D1_LIVE_CANDIDATES_FILE == default_cand_path:
-            if os.environ.get("PM_DISABLE_LIVE_MAKER_ANCHOR_BOX", "0") == "1":
-                return False
-            try:
-                _rc_p = PIPELINE_ROOT / "config" / "polymarket_risk_config.json"
-                if _rc_p.exists() and not bool(json.loads(_rc_p.read_text(encoding="utf-8")).get("enable_live_maker_anchor_boxes", True)):
+            if is_rebate_mg:
+                try:
+                    _u_p = PIPELINE_ROOT / "config" / "polymarket_strategy_and_risk.json"
+                    if _u_p.exists() and not bool((json.loads(_u_p.read_text(encoding="utf-8")).get("riskless_boxes") or {}).get("enable_d1_rebate_maker_canary", False)):
+                        return False
+                except Exception:
+                    pass
+            else:
+                if os.environ.get("PM_DISABLE_LIVE_MAKER_ANCHOR_BOX", "0") == "1":
                     return False
-            except Exception:
-                pass
+                try:
+                    _rc_p = PIPELINE_ROOT / "config" / "polymarket_risk_config.json"
+                    if _rc_p.exists() and not bool(json.loads(_rc_p.read_text(encoding="utf-8")).get("enable_live_maker_anchor_boxes", True)):
+                        return False
+                except Exception:
+                    pass
         if not (self.single_scan or ("fetch_json" in self.__dict__)):
             now_ts = time.time()
         rem_sec = float(close_ts - now_ts)
@@ -6306,7 +6533,7 @@ class Alpha124ShadowDaemon:
         if not (min_rem <= rem_sec <= max_rem):
             return False
         last_emit = float(self._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-        if (now_ts - last_emit) < 12.0:
+        if (now_ts - last_emit) < (2.5 if is_rebate_mg else 12.0):
             return False
         fee_a = float(leg_a.get("fee_rate", 0.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else CRYPTO_FEE_RATE))
         fee_b = float(leg_b.get("fee_rate", 0.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else CRYPTO_FEE_RATE))
@@ -6317,9 +6544,13 @@ class Alpha124ShadowDaemon:
         h_hdg = min(0.95, fr_hdg * ((hedge_limit_px * (1.0 - hedge_limit_px)) ** fe_hdg) / max(1e-9, hedge_limit_px)) if (fr_hdg > 0.0 and 0.0 < hedge_limit_px < 1.0) else 0.0
         pair_est = round(anchor_bid_px + (hedge_limit_px / max(0.05, 1.0 - h_hdg)), 4)
         max_cap = (
-            (0.992 if str(regime) == "ZF_SP1_NBA" else (0.985 if rem_sec > 3600.0 else 0.990))
-            if box_type == "ZERO_FEE_MAKER_ANCHOR"
-            else 0.988
+            0.998
+            if is_rebate_mg
+            else (
+                (0.992 if str(regime) == "ZF_SP1_NBA" else (0.985 if rem_sec > 3600.0 else 0.990))
+                if box_type == "ZERO_FEE_MAKER_ANCHOR"
+                else 0.988
+            )
         )
         if not (0.860 <= pair_est <= max_cap):
             return False
@@ -6532,6 +6763,53 @@ class Alpha124ShadowDaemon:
                 candidates.append((pair_est - (0.0005 if q_front else 0.0), anchor_is_a, q_front, bid_px, round(hdg_eff, 4), req_sh_t100))
 
         if not candidates:
+            if (
+                not self.single_scan
+                and obi_a >= -0.15
+                and obi_b >= -0.15
+                and self._strike_is_rest_verified(m15)
+                and self._strike_is_rest_verified(m5)
+            ):
+                from src.polymarket_research.riskless_machine_gun_engine import evaluate_d1_maker_rebate_anchor
+                uh_r = self.usd_spot_hist.get(m15.asset)
+                sp_age_ms = max(0.0, (now_ts - float(uh_r[-1][0])) * 1000.0) if (uh_r and len(uh_r) > 0) else 999.0
+                av_a_r = sum(sz for px, sz in asks_a if px <= ask_a + 0.01)
+                av_b_r = sum(sz for px, sz in asks_b if px <= ask_b + 0.01)
+                for anc_a_r in (True, False):
+                    reb_ev = evaluate_d1_maker_rebate_anchor(
+                        anchor_bid_px=bid_a if anc_a_r else bid_b,
+                        anchor_ask_px=ask_a if anc_a_r else ask_b,
+                        hedge_ask_px=ask_b if anc_a_r else ask_a,
+                        hedge_avail_shares=av_b_r if anc_a_r else av_a_r,
+                        req_shares=req_sh_t100,
+                        fee_rate=float((leg_b if anc_a_r else leg_a).get("fee_rate", CRYPTO_FEE_RATE)),
+                        fee_exponent=float((leg_b if anc_a_r else leg_a).get("fee_exponent", 1.0)),
+                        spot_age_ms=sp_age_ms,
+                    )
+                    if reb_ev.get("eligible"):
+                        emitted_r = self.emit_live_maker_anchor_box_candidate(
+                            sleeve_source="D1_REBATE_MACHINE_GUN",
+                            box_type="DOMINANCE_MAKER_ANCHOR",
+                            asset=m15.asset,
+                            dedupe_key=f"D1_REBMG_{m15.asset}_{m15.market_id}_{m5.market_id}",
+                            regime=str(dom_info["regime"]),
+                            pair_horizons=f"{m15.horizon}_{m5.horizon}",
+                            leg_a=leg_a,
+                            leg_b=leg_b,
+                            anchor_is_a=anc_a_r,
+                            queue_front=True,
+                            anchor_bid_px=float(reb_ev["anchor_bid_px"]),
+                            hedge_limit_px=float(ask_b if anc_a_r else ask_a),
+                            avail_a_shares=av_a_r,
+                            avail_b_shares=av_b_r,
+                            close_ts=float(m5.end_ts),
+                            now_ts=now_ts,
+                            k_low=float(dom_info["k_low"]),
+                            k_high=float(dom_info["k_high"]),
+                            corridor_bps=float(dom_info["corridor_bps"]),
+                            posted_spot=self._latest_spot_px(m15.asset),
+                        )
+                        return emitted_r if live_emit_only else False
             return False
         candidates.sort(key=lambda z: z[0])
         _, anchor_is_a, q_front, bid_px, hdg_eff, req_sh = candidates[0]
@@ -8861,7 +9139,9 @@ class Alpha124ShadowDaemon:
 
         for sl in BANKROLL_TICKETS["T1000"].keys():
             is_d1_sl = str(sl).startswith("D1_")
-            all_closed_sl = [p for p in self.closed_positions if p.get("sleeve") == sl]
+            all_closed_sl = _filter_epoch_closed_positions(
+                str(sl), [p for p in self.closed_positions if p.get("sleeve") == sl]
+            )
             # Graduation stats must never count pre-fix inverted anti-box entries (net < $0.900): lucky wins there are not validation
             # Maker-anchor unhedged scratches record a single-leg bid (~$0.40) as entry_eff_px: they are real losses,
             # never anti-box entries, so they must never be dropped (survivorship bias in graduation stats).
@@ -9836,7 +10116,7 @@ class Alpha124ShadowDaemon:
                                 close_ts=float(sp_nr.end_ts),
                                 now_ts=now,
                             )
-                        elif n_br == 3:
+                        elif 3 <= n_br <= 15:
                             sp_nrc_z = self.negrisk_convert_slates.get(sp_nr.event_id)
                             if sp_nrc_z is not None and sp_nrc_z.is_closed_convert_safe:
                                 w_legs_z = w_nrn.get("leg_walks") or []
@@ -9854,7 +10134,7 @@ class Alpha124ShadowDaemon:
                                 self.emit_live_negrisk_convert_candidate(
                                     sleeve_source="NR0_ZERO_FEE_SLATE_ARB",
                                     spec=sp_nrc_z,
-                                    dedupe_key=f"NR0_N3_{sp_nr.event_id}",
+                                    dedupe_key=f"NR0_N{n_br}_{sp_nr.event_id}",
                                     arb_hit=arb_z,
                                     books_by_token=nr_bks,
                                     now_ts=now,
@@ -10012,6 +10292,31 @@ class Alpha124ShadowDaemon:
                         min_edge_with_yes_sell=0.015,
                         min_shares=6,
                     )
+                    try:
+                        from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround
+                        nr3_hit = detect_nr3_synthetic_all_yes_overround(
+                            sp_nrc, nrc_bks, target_budget_usd=30.0, min_net_edge_per_set=0.008, min_shares=5
+                        )
+                        if nr3_hit is not None:
+                            opps_out.append({
+                                "sleeve": "NR2_CONVERT_NO_SUBSET_ARB",
+                                "market": f"{sp_nrc.title[:50]} [NR3 All-YES Overround]",
+                                "ask_vwap": round(max(0.01, 1.0 - float(nr3_hit["net_edge_per_share"])), 4),
+                                "p_model": 1.0,
+                                "net_edge": nr3_hit["net_edge_per_share"],
+                                "l1_usd": nr3_hit["l1_usd"],
+                                "close_ts": sp_nrc.end_ts,
+                            })
+                            self.emit_live_negrisk_convert_candidate(
+                                sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",
+                                spec=sp_nrc,
+                                dedupe_key=f"NR3_OVR_{sp_nrc.event_id}",
+                                arb_hit=nr3_hit,
+                                books_by_token=nrc_bks,
+                                now_ts=now,
+                            )
+                    except Exception:
+                        pass
                     if nr2_arbs:
                         na0 = nr2_arbs[0]
                         self._record_market_telemetry(
@@ -11255,7 +11560,8 @@ class Alpha124ShadowDaemon:
                                 "close_ts": sbx["close_ts"],
                             })
                             if (
-                                self._can_emit_zero_loss_math_live("SOC2_EXACT_SCORE_2D_LATTICE", float(sbx["close_ts"]), now)
+                                bool(sbx.get("exhaustive_partition_verified"))
+                                and self._can_emit_zero_loss_math_live("SOC2_EXACT_SCORE_2D_LATTICE", float(sbx["close_ts"]), now)
                                 and la_s.get("market_id") != lb_s.get("market_id")
                                 and float(w_s2["box_cost_net"]) <= 0.988
                                 and 0.0 < (float(sbx["close_ts"]) - now) <= 172800.0
@@ -12781,6 +13087,9 @@ class Alpha124ShadowDaemon:
                     ws_triggered = self._ws_d1_wakeup.is_set()
                     if ws_triggered:
                         self._ws_d1_wakeup.clear()
+                    nr_ws_triggered = self._ws_nr_wakeup.is_set()
+                    if nr_ws_triggered:
+                        self._ws_nr_wakeup.clear()
                     # Event-driven (<=120ms on CLOB WS delta, 500ms fallback) D1 overlap box scan without state-file churn
                     min_d1_gap = 0.12 if ws_triggered else 0.50
                     if self.is_in_same_oracle_overlap_window(now_s) and (now_s - last_fast_d1_subscan) >= min_d1_gap:
@@ -12797,6 +13106,9 @@ class Alpha124ShadowDaemon:
                             await self.manage_pending_maker_anchors(now_ts=now_s)
                         if self.pending_zero_fee_maker_anchors:
                             await self.manage_pending_zero_fee_maker_anchors(now_ts=now_s)
+                    if nr_ws_triggered and (now_s - getattr(self, "_last_fast_nr_subscan", 0.0)) >= 0.25:
+                        self._last_fast_nr_subscan = now_s
+                        await self._scan_ws_reactive_negrisk_arbs(now_s)
                     # Sample /dev/shm USD anchor at 1 Hz during the 65s TWAP integral window (0 REST calls)
                     rem_5m_s = (math.ceil(now_s / 300.0) * 300.0) - now_s
                     if _s2_live_active and rem_5m_s <= 65.0 and (now_s - self.last_usd_sample_ts) >= 1.0:

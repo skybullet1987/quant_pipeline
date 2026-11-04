@@ -172,6 +172,12 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "growth_min_bps_per_hour": 6.0,
         "scale_max_lockup_hours": 168.0,
         "scale_min_bps_per_hour": 3.5,
+        "enable_pre_split_overround_gun": True,
+        "pre_split_inventory_cap_usd": 12.0,
+        "enable_nr3_synthetic_overround": True,
+        "enable_cross_condition_complement_merge": True,
+        "enable_d1_rebate_maker_canary": True,
+        "d1_rebate_maker_cap_usd": 12.0,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,

@@ -145,7 +145,13 @@
     "growth_max_lockup_hours": 72.0,
     "growth_min_bps_per_hour": 6.0,
     "scale_max_lockup_hours": 168.0,
-    "scale_min_bps_per_hour": 3.5
+    "scale_min_bps_per_hour": 3.5,
+    "enable_pre_split_overround_gun": true,
+    "pre_split_inventory_cap_usd": 12.0,
+    "enable_nr3_synthetic_overround": true,
+    "enable_cross_condition_complement_merge": true,
+    "enable_d1_rebate_maker_canary": true,
+    "d1_rebate_maker_cap_usd": 12.0
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,

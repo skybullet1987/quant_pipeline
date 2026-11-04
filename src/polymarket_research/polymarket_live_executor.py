@@ -3265,7 +3265,8 @@ class PolymarketLiveExecutor:
             return None
         try:
             from web3 import Web3
-            w3 = Web3(Web3.HTTPProvider(os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"), request_kwargs={"timeout": 5}))
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+            w3 = get_fast_polygon_web3(timeout=5.0)
             funder_cs = Web3.to_checksum_address(self.funder_address)
             signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
             if sig_type in (0, 1, 2):
@@ -3470,7 +3471,8 @@ class PolymarketLiveExecutor:
             return None
         try:
             from web3 import Web3
-            w3 = Web3(Web3.HTTPProvider(os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"), request_kwargs={"timeout": 5}))
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+            w3 = get_fast_polygon_web3(timeout=5.0)
             funder_cs = Web3.to_checksum_address(self.funder_address)
             signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
             if sig_type in (0, 1, 2):
@@ -3605,7 +3607,8 @@ class PolymarketLiveExecutor:
             return {"success": False, "tx_hash": None, "error": "MISSING_CREDENTIALS_OR_UNSUPPORTED_SIG_TYPE", "call": call}
         try:
             from web3 import Web3
-            w3 = Web3(Web3.HTTPProvider(os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com"), request_kwargs={"timeout": 5}))
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+            w3 = get_fast_polygon_web3(timeout=5.0)
             funder_cs = Web3.to_checksum_address(self.funder_address)
             signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
             if sig_type in (0, 1, 2) and w3.eth.get_balance(funder_cs if sig_type == 0 else signer_cs) < int(0.05 * 1e18):
@@ -3664,287 +3667,17 @@ class PolymarketLiveExecutor:
         liquid_yes_sells: Optional[List[Dict[str, Any]]] = None,
         fee_bips: int = 0,
     ) -> Dict[str, Any]:
-        """
-        Executes `NR2_CONVERT_NO_SUBSET_ARB` / `NR_CONV_NO_BASKET_ARB` end-to-end:
-          1. Pre-signs and dispatches `m >= 2` atomic FOK BUY orders on selected `NO` tokens (`neg_risk=True`).
-          2. If fewer than `m` legs fill, unwinds any filled leg(s) immediately via FAK SELL.
-          3. Calls Polygon `NegRiskAdapterV2.convertPositions` (`0xadA2...`, `0xc64748c4`) to burn `m` NO sets
-             into `(m - 1)` `pUSD` cash + `(N - m)` complement YES tokens.
-          4. Optionally sweeps `liquid_yes_sells` into live L2 bids while retaining free `$1.00` tail YES tokens.
-        """
-        m_legs = list(no_legs or [])
-        yes_sells = list(liquid_yes_sells or [])
-        sh_int = float(math.floor(max(0.0, float(shares or 0.0)) + 1e-9))
-        if len(m_legs) < 2 or sh_int < 5.0:
-            return {"success": False, "error": "INVALID_NR_CONVERT_LEGS_OR_SHARES", "legged_out": False, "outcome_unknown": False}
-        try:
-            q_indices = [int(lg["question_index"]) for lg in m_legs]
-            toks = [str(lg["token_id"]) for lg in m_legs]
-        except Exception:
-            return {"success": False, "error": "INVALID_NR_CONVERT_METADATA", "legged_out": False, "outcome_unknown": False}
-        if len(set(q_indices)) != len(m_legs) or len(set(toks)) != len(m_legs) or any(not t for t in toks):
-            return {"success": False, "error": "DUPLICATE_OR_EMPTY_NR_CONVERT_LEGS", "legged_out": False, "outcome_unknown": False}
-
-        prep_legs: List[Dict[str, Any]] = []
-        worst_cost_ps = 0.0
-        for lg in m_legs:
-            tok_i = str(lg["token_id"])
-            px_i = self.quantize_order_price(float(lg["limit_price"]), tok_i, rounding=ROUND_CEILING)
-            fr_i = float(lg.get("fee_rate", 0.0) or 0.0)
-            fe_i = float(lg.get("fee_exponent", 1.0) or 1.0)
-            fee_ps = fr_i * ((px_i * (1.0 - px_i)) ** fe_i) if fr_i > 0.0 else 0.0
-            h_i = min(0.25, max(0.0, fee_ps / max(px_i, 1e-6))) if fr_i > 0.0 else 0.0
-            gross_sh_i = (
-                float(math.ceil((sh_int / max(1.0 - h_i, 1e-6)) * 100.0 - 1e-9) / 100.0)
-                if h_i > 0.0
-                else float(sh_int)
-            )
-            worst_cost_ps += (gross_sh_i * px_i) / max(sh_int, 1e-6)
-            prep_legs.append({
-                "token_id": tok_i,
-                "market_id": str(lg.get("market_id") or ""),
-                "condition_id": str(lg.get("condition_id") or ""),
-                "question_index": int(lg["question_index"]),
-                "label": str(lg.get("label") or f"NO_{lg['question_index']}"),
-                "px": px_i,
-                "fee_rate": fr_i,
-                "fee_exponent": fe_i,
-                "fee_ps": fee_ps,
-                "share_haircut": h_i,
-                "gross_shares_req": gross_sh_i,
-            })
-        if worst_cost_ps > float(max_no_cost_per_share) + 1e-6:
-            return {
-                "success": False,
-                "error": f"NR_CONVERT_WORST_COST_EXCEEDS_CAP ({worst_cost_ps:.4f} > {float(max_no_cost_per_share):.4f})",
-                "legged_out": False,
-                "outcome_unknown": False,
-            }
-
-        eff_mult = 1.0 - max(0, int(fee_bips)) / 10000.0
-        cash_from_convert_ps = float(len(prep_legs) - 1) * eff_mult
-        if self.dry_run:
-            conv_r = self.attempt_negrisk_convert_positions(neg_risk_market_id, q_indices, sh_int)
-            conv_ok_dry = bool(conv_r.get("success", True))
-            yes_net_usd = 0.0
-            for yl in yes_sells:
-                y_px = float(yl.get("min_bid_price") or yl.get("bid_vwap") or 0.0)
-                y_fr = float(yl.get("fee_rate", 0.0) or 0.0)
-                y_fe = float(yl.get("fee_exponent", 1.0) or 1.0)
-                y_fee = y_fr * ((y_px * (1.0 - y_px)) ** y_fe) if y_fr > 0.0 else 0.0
-                yes_net_usd += sh_int * max(0.0, (y_px - y_fee) * eff_mult)
-            spent_u = round(sum(float(x["gross_shares_req"]) * float(x["px"]) for x in prep_legs), 4)
-            conv_u = round(sh_int * cash_from_convert_ps, 4) if conv_ok_dry else 0.0
-            net_pnl_u = round(conv_u + (yes_net_usd if conv_ok_dry else 0.0) - spent_u, 4) if conv_ok_dry else 0.0
-            return {
-                "success": conv_ok_dry,
-                "mode": "DRY_RUN",
-                "convert_id": convert_id,
-                "shares": sh_int,
-                "m_no_legs": len(prep_legs),
-                "spent_usd": spent_u,
-                "converted_cash_usd": conv_u,
-                "yes_sell_net_usd": round(yes_net_usd, 4) if conv_ok_dry else 0.0,
-                "net_profit_usd": net_pnl_u,
-                "convert_tx_hash": conv_r.get("tx_hash"),
-                "convert_executed": conv_ok_dry,
-                "convert_error": conv_r.get("error"),
-                "legged_out": False,
-                "outcome_unknown": False,
-                "leg_fills": [
-                    {
-                        "token_id": x["token_id"],
-                        "label": x["label"],
-                        "price": x["px"],
-                        "gross_shares": x["gross_shares_req"],
-                        "matched_shares": sh_int,
-                        "orderID": f"MOCK_NRC_{i}",
-                    }
-                    for i, x in enumerate(prep_legs)
-                ],
-            }
-
-        if not self.is_authenticated or self.client is None or OrderArgsV2 is None:
-            return {"success": False, "error": f"UNAUTHENTICATED_NR_CONVERT ({self.auth_mode})", "legged_out": False, "outcome_unknown": False}
-
-        _hot_held = True
-        _HOT_DISPATCH_ACTIVE.enter()
-
-        def _release_hot_nr() -> None:
-            nonlocal _hot_held
-            if _hot_held:
-                _hot_held = False
-                _HOT_DISPATCH_ACTIVE.leave()
-
-        try:
-            signed_orders: List[Any] = []
-            with _UrgentSignPriority():
-                for lg_p in prep_legs:
-                    tok_i = lg_p["token_id"]
-                    try:
-                        tk_i = self.get_token_tick_size(tok_i, price_hint=lg_p["px"])
-                    except TypeError:
-                        tk_i = self.get_token_tick_size(tok_i)
-                    self.get_token_neg_risk(tok_i, True)
-                    op_i = PartialCreateOrderOptions(tick_size=str(tk_i), neg_risk=True, version=2) if PartialCreateOrderOptions else None
-                    sg_i = _safe_create_order(
-                        self.client.create_order,
-                        OrderArgsV2(price=lg_p["px"], size=float(lg_p["gross_shares_req"]), side="BUY", token_id=tok_i),
-                        op_i,
-                    )
-                    signed_orders.append(sg_i)
-
-            def _post_fok_one(sg_x: Any) -> Tuple[Any, Optional[Exception]]:
-                try:
-                    try:
-                        return self.client.post_order(sg_x, OrderType.FOK, False, True), None
-                    except TypeError:
-                        return self.client.post_order(sg_x, OrderType.FOK), None
-                except Exception as ex_o:
-                    return None, ex_o
-
-            pool = _get_hot_io_pool()
-            futs = [pool.submit(_post_fok_one, sg_x) for sg_x in signed_orders]
-            raw_results = [f.result(timeout=7.0) for f in futs]
-            _release_hot_nr()
-
-            leg_evals: List[Dict[str, Any]] = []
-            any_unknown = False
-            filled_count = 0
-            for lg_p, (rx, ex_o) in zip(prep_legs, raw_results):
-                if ex_o is not None:
-                    em = str(getattr(ex_o, "error_message", "") or str(ex_o))
-                    clean = is_clob_400_rejection(ex_o) or any(
-                        k in em.lower() for k in ("fok", "couldn't be fully filled", "fully filled", "not enough balance")
-                    )
-                    if not clean:
-                        any_unknown = True
-                    leg_evals.append({**lg_p, "filled": False, "outcome_unknown": not clean, "matched_shares": 0.0, "gross_matched_shares": 0.0, "orderID": None, "error": em})
-                    continue
-                if not isinstance(rx, dict):
-                    any_unknown = True
-                    leg_evals.append({**lg_p, "filled": False, "outcome_unknown": True, "matched_shares": 0.0, "gross_matched_shares": 0.0, "orderID": None, "error": "MISSING_RESP"})
-                    continue
-                err_s = rx.get("errorMsg") or rx.get("error")
-                oid_s = rx.get("orderID") or rx.get("id")
-                if err_s and not oid_s:
-                    leg_evals.append({**lg_p, "filled": False, "outcome_unknown": False, "matched_shares": 0.0, "gross_matched_shares": 0.0, "orderID": None, "error": str(err_s)})
-                    continue
-                gross_req_i = float(lg_p["gross_shares_req"])
-                m_sh_gross = self._extract_fok_matched_shares(rx, gross_req_i) if (oid_s and not err_s) else None
-                if m_sh_gross is None:
-                    any_unknown = True
-                    leg_evals.append({**lg_p, "filled": False, "outcome_unknown": True, "matched_shares": 0.0, "gross_matched_shares": 0.0, "orderID": oid_s, "error": str(err_s or rx.get("status"))})
-                    continue
-                if m_sh_gross <= 0.0:
-                    leg_evals.append({**lg_p, "filled": False, "outcome_unknown": False, "matched_shares": 0.0, "gross_matched_shares": 0.0, "orderID": oid_s, "error": "ZERO_MATCH"})
-                    continue
-                h_leg = float(lg_p.get("share_haircut", 0.0) or 0.0)
-                net_sh_i = (
-                    float(math.floor(float(m_sh_gross) * (1.0 - h_leg) * 100.0 + 1e-9) / 100.0)
-                    if h_leg > 0.0
-                    else float(m_sh_gross)
-                )
-                filled_count += 1
-                leg_evals.append({
-                    **lg_p,
-                    "filled": True,
-                    "outcome_unknown": False,
-                    "gross_matched_shares": float(m_sh_gross),
-                    "matched_shares": net_sh_i,
-                    "orderID": str(oid_s),
-                    "raw": rx,
-                })
-
-            if filled_count == 0 and not any_unknown:
-                return {
-                    "success": False,
-                    "stage": "ALL_LEGS_REJECTED_CLEAN",
-                    "legged_out": False,
-                    "outcome_unknown": False,
-                    "error": "; ".join(str(x.get("error") or "") for x in leg_evals[:2]),
-                }
-
-            if filled_count < len(prep_legs) or any_unknown:
-                residuals: List[Dict[str, Any]] = []
-                for ev in leg_evals:
-                    if ev.get("filled") and float(ev.get("matched_shares") or 0.0) > 0.01:
-                        uw = self.execute_unwind_order(
-                            ev["token_id"],
-                            size=float(ev["matched_shares"]),
-                            side="SELL",
-                            min_price=max(0.01, round(float(ev["px"]) - 0.03, 2)),
-                            neg_risk=True,
-                        )
-                        uw_ok = bool(isinstance(uw, dict) and (uw.get("success") or uw.get("partial")) and not uw.get("outcome_unknown"))
-                        unw_sh = float(uw.get("matched_size") or 0.0) if uw_ok else 0.0
-                        rem_sh = round(max(0.0, float(ev["matched_shares"]) - unw_sh), 4)
-                        residuals.append({
-                            "token_id": ev["token_id"],
-                            "market_id": ev["market_id"],
-                            "condition_id": ev["condition_id"],
-                            "label": ev["label"],
-                            "price": ev["px"],
-                            "matched_shares": ev["matched_shares"],
-                            "unwound_shares": unw_sh,
-                            "residual_shares": rem_sh,
-                            "orderID": ev["orderID"],
-                            "unwind_outcome_unknown": bool(isinstance(uw, dict) and uw.get("outcome_unknown")),
-                            "unwind_result": uw,
-                        })
-                return {
-                    "success": False,
-                    "stage": "PARTIAL_NR_CONVERT_UNWOUND",
-                    "legged_out": bool(residuals),
-                    "outcome_unknown": any_unknown,
-                    "residuals": residuals,
-                    "leg_evals": leg_evals,
-                    "error": f"PARTIAL_NR_FILL ({filled_count}/{len(prep_legs)})",
-                }
-
-            paired_sh = float(math.floor(min(float(ev["matched_shares"]) for ev in leg_evals) * 100.0 + 1e-9) / 100.0)
-            spent_usd = round(sum(float(ev.get("gross_matched_shares") or ev["matched_shares"]) * float(ev["px"]) for ev in leg_evals), 4)
-            conv_res = self.attempt_negrisk_convert_positions(
-                neg_risk_market_id, q_indices, paired_sh, prefer_v2_pusd_adapter=True
-            )
-            conv_ok = bool(conv_res.get("success"))
-            yes_net_usd = 0.0
-            yes_sell_results: List[Dict[str, Any]] = []
-            if conv_ok and yes_sells:
-                for yl in yes_sells:
-                    y_tok = str(yl.get("yes_token") or yl.get("token_id") or "")
-                    if not y_tok:
-                        continue
-                    min_b = max(0.01, round(float(yl.get("min_bid_price") or yl.get("bid_vwap") or 0.02) - 0.01, 2))
-                    ys_r = self.execute_unwind_order(y_tok, size=paired_sh, side="SELL", min_price=min_b, neg_risk=True)
-                    if isinstance(ys_r, dict) and (ys_r.get("success") or ys_r.get("partial")) and not ys_r.get("outcome_unknown"):
-                        m_y = float(ys_r.get("matched_size") or 0.0)
-                        p_y = float(ys_r.get("price") or min_b)
-                        f_y = float(ys_r.get("fee_usd") or 0.0)
-                        yes_net_usd += max(0.0, m_y * p_y - f_y)
-                    yes_sell_results.append({"token_id": y_tok, "result": ys_r})
-
-            conv_cash = round(paired_sh * cash_from_convert_ps, 4) if conv_ok else 0.0
-            return {
-                "success": True,
-                "convert_id": convert_id,
-                "shares": paired_sh,
-                "m_no_legs": len(prep_legs),
-                "spent_usd": spent_usd,
-                "converted_cash_usd": conv_cash,
-                "yes_sell_net_usd": round(yes_net_usd, 4),
-                "net_profit_usd": round(conv_cash + yes_net_usd - spent_usd, 4) if conv_ok else 0.0,
-                "convert_executed": conv_ok,
-                "convert_tx_hash": conv_res.get("tx_hash"),
-                "convert_error": conv_res.get("error"),
-                "adapter_used": conv_res.get("adapter_used"),
-                "legged_out": False,
-                "outcome_unknown": False,
-                "leg_fills": leg_evals,
-                "yes_sell_results": yes_sell_results,
-            }
-        finally:
-            _release_hot_nr()
+        from src.polymarket_research.riskless_machine_gun_engine import execute_negrisk_subset_convert_arb_impl
+        return execute_negrisk_subset_convert_arb_impl(
+            self,
+            convert_id=convert_id,
+            neg_risk_market_id=neg_risk_market_id,
+            no_legs=no_legs,
+            shares=shares,
+            max_no_cost_per_share=max_no_cost_per_share,
+            liquid_yes_sells=liquid_yes_sells,
+            fee_bips=fee_bips,
+        )
 
     def merge_complete_set_positions(
         self,
@@ -3973,6 +3706,14 @@ class PolymarketLiveExecutor:
         if isinstance(res, tuple) and len(res) == 2 and res[0]:
             return {"merged": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
         return {"merged": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
+
+    def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False) -> Dict[str, Any]:
+        from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp
+        return _sp(self, condition_id, shares, neg_risk=neg_risk)
+
+    def execute_nr3_synthetic_all_yes_overround(self, **kwargs: Any) -> Dict[str, Any]:
+        from src.polymarket_research.riskless_machine_gun_engine import execute_nr3_synthetic_all_yes_overround as _nr3
+        return _nr3(self, **kwargs)
 
     def simulate_fok_sweep(
         self,
@@ -7446,7 +7187,7 @@ class PolymarketLiveExecutor:
                 "orderID": anchor_order_id, "raw": anchor_raw, "unwind_outcome_unknown": uw_unk, "unwind_result": uw_res,
             }
 
-        if shares_int < 5.0 or worst_box_cost_net < 0.900 - 1e-6 or worst_box_cost_net > cap_in + 1e-6:
+        if shares_int < 5.0 or worst_box_cost_net < 0.050 - 1e-6 or worst_box_cost_net > cap_in + 1e-6:
             uw_r, res_i = _unwind_anchor_leg()
             return {
                 "success": False, "stage": "ANCHOR_PARTIAL_OR_CAP_UNWOUND", "legged_out": True, "outcome_unknown": False,
