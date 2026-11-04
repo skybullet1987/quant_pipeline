@@ -224,20 +224,26 @@ class PAADirector:
         closed_live: List[Dict[str, Any]] = []
         live_cash = 0.0
         live_wins_by_slv: Dict[str, int] = {}
+        active_live: Dict[str, Any] = {}
         if harv_p.exists():
             try:
                 raw_h = json.loads(harv_p.read_text(encoding="utf-8"))
                 closed_live = list(raw_h.get("closed_positions") or [])
+                active_live = dict(raw_h.get("active_positions") or {})
                 live_cash = float(raw_h.get("live_bankroll", 0.0) or 0.0)
                 for _ps_k, _ps_v in (raw_h.get("per_strategy") or {}).items():
                     if isinstance(_ps_v, dict) and int(_ps_v.get("wins", 0) or 0) > 0:
                         live_wins_by_slv[str(_ps_k)] = max(live_wins_by_slv.get(str(_ps_k), 0), int(_ps_v["wins"]))
             except Exception:
                 pass
-        for rec in closed_live:
+        from src.paa_os.optimizer import group_closed_positions_by_box
+        grouped_wins_by_slv: Dict[str, int] = {}
+        for rec in group_closed_positions_by_box(closed_live, active_live):
             if isinstance(rec, dict) and float(rec.get("net_pnl_usd", 0.0) or 0.0) > 0:
                 sl = str(rec.get("sleeve") or rec.get("sleeve_source") or "")
-                live_wins_by_slv[sl] = live_wins_by_slv.get(sl, 0) + 1
+                grouped_wins_by_slv[sl] = grouped_wins_by_slv.get(sl, 0) + 1
+        for sl, w_cnt in grouped_wins_by_slv.items():
+            live_wins_by_slv[sl] = max(live_wins_by_slv.get(sl, 0), w_cnt)
         cand_counts: Dict[str, int] = {}
         if cand_p.exists():
             try:
@@ -568,6 +574,8 @@ class PAADirector:
                         promote_to_live_files=bool(st_def.get("promote_to_live_files", False)),
                     )
                     step_outputs[sid] = {"release_id": rel_rec["release_id"], "state": rel_rec["state"], "rolled_back": rel_rec["rolled_back"]}
+                    if rel_rec.get("rolled_back") or str(rel_rec.get("state") or "") not in ("DEPLOYED_VERIFIED", "DEPLOYED"):
+                        raise RuntimeError(f"RELEASE_NOT_DEPLOYED:{rel_rec.get('state')}")
                 elif act == "ZERO_TRUST_MULTI_SESSION_BUILD":
                     ms_res = self.verifier.execute_multi_session_engineering_task(
                         task_id=tid,

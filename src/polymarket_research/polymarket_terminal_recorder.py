@@ -1202,6 +1202,7 @@ class PolymarketDualFeed1HRecorder:
                 tw_m, tw_w = self.get_settlement_twap_slice(exp_h, now) if exp_h > 0 else (0.0, 0.0)
                 snap[snap_k] = {
                     "market_id": mh.get("market_id"),
+                    "condition_id": mh.get("condition_id"),
                     "horizon": hz,
                     "expiry_ts": exp_h,
                     "finalized_open": mh.get("finalized_open", mh.get("finalized_15m_open")),
@@ -1215,9 +1216,12 @@ class PolymarketDualFeed1HRecorder:
                 mid_h = str(mh.get("market_id"))
                 markets_map[mid_h] = {
                     "market_id": mid_h,
+                    "condition_id": mh.get("condition_id"),
                     "asset": self.asset,
                     "horizon": hz,
                     "expiry_ts": exp_h,
+                    "finalized_open": mh.get("finalized_open", mh.get("finalized_15m_open")),
+                    "authoritative_chainlink_open": mh.get("authoritative_chainlink_open"),
                     "timestamp_unix": now,
                     "spot_price": self.spot_price,
                     "futures_price": self.futures_price,

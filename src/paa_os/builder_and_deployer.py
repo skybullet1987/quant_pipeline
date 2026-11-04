@@ -595,6 +595,8 @@ class DeploymentController:
                     try:
                         st_j = json.loads(st_f.read_text(encoding="utf-8"))
                         open_cnt = int(st_j.get("active_positions_count") or len(st_j.get("active_positions") or {}))
+                        if bool((st_j.get("pre_split_inventory_state") or {}).get("active")):
+                            open_cnt += 1
                     except Exception:
                         open_cnt = 1
                 only_hot_reload_cfg = all(

@@ -109,6 +109,10 @@ def group_closed_positions_by_box(
             out.append(passthrough[key])
             continue
         legs = box_buckets[key]
+        exp_legs = max((int(x.get("box_expected_legs") or 0) for x in legs), default=0)
+        b_id_chk = str(legs[0].get("box_id") or "").strip()
+        if exp_legs > len(legs) and b_id_chk and b_id_chk in open_box_ids:
+            continue
         if len(legs) == 1:
             leg0 = dict(legs[0])
             partner_0 = str(leg0.get("box_partner_trade_id") or "").strip()
@@ -121,7 +125,7 @@ def group_closed_positions_by_box(
         b_id = str(first.get("box_id") or "")
         tot_notional = round(sum(_sf(x.get("notional_usd")) for x in legs), 4)
         tot_payout = round(sum(_sf(x.get("payout_usd")) for x in legs), 4)
-        tot_fee = round(sum(_sf(x.get("fee_usd")) for x in legs), 4)
+        tot_fee = round(sum(_sf(x.get("fee_usd")) + _sf(x.get("realized_exit_fee")) for x in legs), 4)
         tot_pnl = round(
             sum(_sf(x.get("net_pnl_usd", x.get("realized_pnl_usd", 0.0))) for x in legs),
             4,
@@ -147,8 +151,8 @@ def group_closed_positions_by_box(
                 "realized_pnl_usd": tot_pnl,
                 "won": bool(tot_pnl >= -1e-6),
                 "exit_fee_estimated": False,
-                "entry_time_utc": max(
-                    (str(x.get("entry_time_utc") or "") for x in legs),
+                "entry_time_utc": min(
+                    (s for s in (str(x.get("entry_time_utc") or "") for x in legs) if s),
                     default=str(first.get("entry_time_utc") or ""),
                 ),
                 "settled_at_utc": max(
@@ -198,10 +202,11 @@ class PAAOptimizer:
         )
 
         by_sl = a124.get("by_sleeve") or a124.get("per_strategy") or {}
+        paused_rl = {str(s) for s in ((cfg.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []) if s}
         grad8_zero_loss: List[str] = []
         near_grad8_zero_loss: List[Dict[str, Any]] = []
         for sl_name, rec in sorted(by_sl.items()):
-            if not isinstance(rec, dict):
+            if not isinstance(rec, dict) or sl_name in paused_rl:
                 continue
             closed_n = int(rec.get("closed", 0) or 0)
             losses_n = int(rec.get("losses", 0) or 0)

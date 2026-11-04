@@ -15,4 +15,4 @@ CPUWeight=50
 IOWeight=50
 MemoryMax=1536M
 TimeoutStartSec=600
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python /home/skybullet1987/quant_pipeline/scripts/paa_cli.py director-cycle
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python /home/skybullet1987/quant_pipeline/scripts/paa_cli.py director-cycle --live-rpc

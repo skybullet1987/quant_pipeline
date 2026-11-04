@@ -232,6 +232,8 @@ def cmd_six_hour_eval(args: argparse.Namespace) -> int:
         "tests/test_paa_autonomy_os.py",
         "tests/test_paa_zero_trust_and_dashboard.py",
         "tests/test_paa_profit_and_accounting_upgrades.py",
+        "tests/test_riskless_machine_gun.py",
+        "tests/test_riskless_protocol_v2_and_paa.py",
     ]
     existing_targets = [t for t in targets if (PIPELINE_ROOT / t).exists()]
     t0 = time.perf_counter()

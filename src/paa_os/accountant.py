@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import math
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -218,8 +219,11 @@ class PAAAccountant:
             for i in (st.get("pending_entry_intents") or {}).values()
             if isinstance(i, dict)
         )
-        raw_cash_diff = abs(onchain_cash - state_cash)
-        post_fill_cash_diff = abs(onchain_cash - max(0.0, state_cash - inflight_usd))
+        ps_st = st.get("pre_split_inventory_state") if isinstance(st.get("pre_split_inventory_state"), dict) else {}
+        ps_realized = float(ps_st.get("realized_cash_usd") or 0.0) if ps_st.get("active") else 0.0
+        eff_state_cash = state_cash + ps_realized
+        raw_cash_diff = abs(onchain_cash - eff_state_cash)
+        post_fill_cash_diff = abs(onchain_cash - max(0.0, eff_state_cash - inflight_usd))
         # Resting EIP-712 Maker limit orders keep pUSD in wallet until matched on-chain (`onchain_cash == state_cash`),
         # while freshly matched intents briefly drop `onchain_cash` toward `state_cash - inflight_usd`.
         cash_diff = min(raw_cash_diff, post_fill_cash_diff) if inflight_usd > 0.0 else raw_cash_diff
@@ -316,6 +320,10 @@ class PAAAccountant:
             if not isinstance(c, dict):
                 continue
             ts_c = str(c.get("entry_time_utc") or c.get("settled_at_utc") or c.get("exit_time_utc") or "")
+            if not ts_c:
+                raw_ts = float(c.get("entry_ts") or c.get("exit_ts") or 0.0)
+                if raw_ts > 0.0:
+                    ts_c = datetime.fromtimestamp(raw_ts, tz=timezone.utc).isoformat()
             if ts_c < rl_epoch_cut:
                 continue
             if (
@@ -395,7 +403,9 @@ class PAAAccountant:
 
         if not acct_ok:
             self.enforce_accounting_safeguard(disc_usd, anomalies)
-        else:
+        elif (live_rpc_check or ledger_override is not None) and "POLYGON_RPC_READONLY_FALLBACK_TO_STATE" not in (
+            ledger.get("watchdog_alerts") or []
+        ):
             self.clear_accounting_safeguard_if_resolved(True)
 
         realized_pnl = float(ledger.get("verified_realized_net_profit_usd") or 0.0)

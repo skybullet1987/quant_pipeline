@@ -994,6 +994,8 @@ def attempt_onchain_split_position(
     shares: float,
     *,
     neg_risk: bool = False,
+    up_token_id: str = "",
+    down_token_id: str = "",
 ) -> Dict[str, Any]:
     """
     Mints `shares` complete sets (`1 YES + 1 NO` per `$1.00` `pUSD` / `USDC.e`) via Polygon
@@ -1004,7 +1006,7 @@ def attempt_onchain_split_position(
 
     sh = round(max(0.0, float(shares or 0.0)), 6)
     if not condition_id or sh <= 0.0:
-        return {"success": False, "error": "INVALID_SPLIT_ARGS", "tx_hash": None}
+        return {"success": False, "error": "INVALID_SPLIT_ARGS", "reason": "INVALID_SPLIT_ARGS", "tx_hash": None}
     if getattr(executor, "dry_run", True):
         tgt, cd = encode_ctf_merge_or_split_calldata(condition_id, sh, collateral=PUSD_ADDRESS, is_split=True, neg_risk=neg_risk)
         return {"success": True, "dry_run": True, "shares": sh, "target": tgt, "calldata": cd, "tx_hash": f"0xdry_split_{int(time.time())}"}
@@ -1012,7 +1014,7 @@ def attempt_onchain_split_position(
     sig_type = 1 if getattr(executor, "signature_type", None) is None else int(executor.signature_type)
     pk = (os.getenv("POLYGON_PRIVATE_KEY") or getattr(executor, "private_key", "") or "").strip()
     if sig_type not in (0, 1, 2, 3) or not pk or not getattr(executor, "funder_address", None):
-        return {"success": False, "error": "MISSING_CREDENTIALS_FOR_SPLIT", "tx_hash": None}
+        return {"success": False, "error": "MISSING_CREDENTIALS_FOR_SPLIT", "reason": "MISSING_CREDENTIALS_FOR_SPLIT", "tx_hash": None}
     try:
         from web3 import Web3
 
@@ -1045,12 +1047,23 @@ def attempt_onchain_split_position(
                     rc = w3.eth.wait_for_transaction_receipt(tx_h, timeout=60, poll_latency=1.5)
                     if int(rc.get("status", 0)) == 1:
                         executor.invalidate_collateral_cache()
+                        clob_cli = getattr(executor, "client", None)
+                        if clob_cli is not None and hasattr(clob_cli, "update_balance_allowance"):
+                            try:
+                                from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+                                for tid_s in (up_token_id, down_token_id):
+                                    if tid_s:
+                                        clob_cli.update_balance_allowance(
+                                            BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(tid_s))
+                                        )
+                            except Exception:
+                                pass
                         return {"success": True, "shares": sh, "collateral": chosen_col, "target": chosen_target, "tx_hash": tx_h}
-                return {"success": False, "error": "SPLIT_TX_FAILED_OR_REVERTED", "tx_hash": tx_h}
-        return {"success": False, "error": "INSUFFICIENT_PUSD_OR_USDC_FOR_SPLIT", "tx_hash": None}
+                return {"success": False, "error": "SPLIT_TX_FAILED_OR_REVERTED", "reason": "SPLIT_TX_FAILED_OR_REVERTED", "tx_hash": tx_h}
+        return {"success": False, "error": "INSUFFICIENT_PUSD_OR_USDC_FOR_SPLIT", "reason": "INSUFFICIENT_PUSD_OR_USDC_FOR_SPLIT", "tx_hash": None}
     except Exception as exc:
         GLOBAL_POLYGON_RPC_POOL.report_failure(getattr(locals().get("w3"), "_dominus_rpc_url", ""))
-        return {"success": False, "error": str(exc), "tx_hash": None}
+        return {"success": False, "error": str(exc), "reason": str(exc), "tx_hash": None}
 
 
 def build_nr3_atomic_mint_all_yes_calls(
@@ -1430,7 +1443,10 @@ def finish_nr3_convert_arb(
         fee_bips=fee_bips,
     )
     if c_res.get("success") and c_res.get("convert_executed"):
+        from datetime import datetime, timezone
         net_pnl = round(float(c_res.get("net_profit_usd") or 0.0), 4)
+        spent_u = float(c_res["spent_usd"])
+        exit_f = time.time()
         harvester.closed_positions.append({
             "trade_id": cid_nr3,
             "box_id": cid_nr3,
@@ -1439,15 +1455,20 @@ def finish_nr3_convert_arb(
             "market_id": str((raw_y_nr3[0] if raw_y_nr3 else {}).get("market_id") or nrm_id[:16]),
             "token_id": "|".join(str(x.get("yes_token") or "") for x in raw_y_nr3),
             "entry_shares": float(c_res["shares"]),
-            "notional_usd": float(c_res["spent_usd"]),
+            "notional_usd": spent_u,
+            "fee_usd": 0.0,
+            "payout_usd": round(spent_u + net_pnl, 4),
             "net_pnl_usd": net_pnl,
-            "won": net_pnl >= 0.0,
+            "won": bool(net_pnl >= 0.0),
             "status": "CLOSED",
             "close_reason": "NR3_SYNTHETIC_OVERROUND_COMPLETED",
             "convert_tx_hash": c_res.get("convert_tx_hash"),
             "entry_ts": now_ts,
-            "exit_ts": time.time(),
+            "exit_ts": exit_f,
+            "entry_time_utc": datetime.fromtimestamp(float(now_ts), tz=timezone.utc).isoformat(),
+            "settled_at_utc": datetime.fromtimestamp(float(exit_f), tz=timezone.utc).isoformat(),
         })
+        harvester.closed_positions = harvester.closed_positions[-600:]
         release_recycled_box_dedupe_keys(harvester, None, extra_keys=[dedupe_k], cooldown_sec=2.5)
         harvester.executor.invalidate_collateral_cache()
         harvester._pending_collateral_refresh = True
@@ -1987,8 +2008,11 @@ class PreSplitInventoryGun:
                             st["dn_rem"] = round(max(0.0, float(st["dn_rem"]) - m_b), 4)
                         await asyncio.to_thread(harvester.save_state)
 
-        # Pre-expiry or stale-spot safety merge (`TTE <= 75s`) -> $1.00/pair cash!
-        if tte <= 75.0 or not spot_fresh:
+        # Strictly gate naked dual Maker Asks off when `riskless_only_mode` is True (prevents 1-leg adverse sniping!)
+        allow_dual_mkr = bool((snap or {}).get("enable_pre_split_dual_maker_asks", False)) and not bool((dir_snap or {}).get("riskless_only_mode", False))
+
+        # Pre-expiry (`TTE <= 75s`) or dual-maker stale-spot safety merge -> $1.00/pair cash!
+        if tte <= 75.0 or (allow_dual_mkr and not spot_fresh):
             await self._cancel_resting_asks(ex, st)
             paired = round(min(float(st.get("up_rem") or 0.0), float(st.get("dn_rem") or 0.0)), 2)
             if paired >= 4.99:
@@ -1999,10 +2023,32 @@ class PreSplitInventoryGun:
                     st["dn_rem"] = round(max(0.0, float(st["dn_rem"]) - float(m_res[1])), 4)
                     if float(st["up_rem"]) <= 0.05 and float(st["dn_rem"]) <= 0.05:
                         return await self._finalize_cycle(harvester, st, "PRE_SPLIT_PRE_EXPIRY_MERGED", now_ts)
+            elif float(st.get("up_rem") or 0.0) <= 0.05 and float(st.get("dn_rem") or 0.0) <= 0.05:
+                return await self._finalize_cycle(harvester, st, "PRE_SPLIT_PRE_EXPIRY_MERGED", now_ts)
+            if tte <= -30.0:
+                cid_h = str(st.get("condition_id") or "")
+                exp_h = float(st.get("expiry_ts") or now_ts)
+                rem_cost = max(0.0, float(st.get("cost_usd") or 0.0) - float(st.get("realized_cash_usd") or 0.0))
+                legs_h = [("UP", str(st.get("up_token_id") or ""), float(st.get("up_rem") or 0.0)), ("DOWN", str(st.get("down_token_id") or ""), float(st.get("dn_rem") or 0.0))]
+                tot_rem_sh = sum(s for _, _, s in legs_h if s > 0.05)
+                for side_h, tok_h, sh_h in legs_h:
+                    if sh_h > 0.05 and tok_h and hasattr(harvester, "active_positions"):
+                        hid = f"PRESPLIT_SETTLE_{side_h}_{cid_h[:8]}_{int(now_ts)}"
+                        alloc_cost = round(rem_cost * (sh_h / max(tot_rem_sh, 0.01)), 4)
+                        if hasattr(harvester, "_make_single_leg_lock_pos"):
+                            p_h = harvester._make_single_leg_lock_pos(
+                                hid, "COMPLETE_SET", "PRE_SPLIT_OVERROUND_MACHINE_GUN", str(st.get("asset") or "BTC"),
+                                "15m", cid_h, cid_h, tok_h, side_h, False, sh_h, alloc_cost, 0.0, 0.07, 1.0,
+                                "crypto_fees_v2", exp_h, float(st.get("opened_ts") or now_ts), 0.0, None, True, unk=False,
+                            )
+                            p_h["box_id"] = f"PRESPLIT_SETTLE_{cid_h[:8]}_{int(now_ts)}"
+                            p_h["is_dominance_box"] = tot_rem_sh > sh_h + 0.05
+                            harvester.active_positions[hid] = p_h
+                st.clear()
+                st["cooldown_until"] = now_ts + 5.0
+                await asyncio.to_thread(harvester.save_state)
             return None
 
-        # Strictly gate naked dual Maker Asks off when `riskless_only_mode` is True (prevents 1-leg adverse sniping!)
-        allow_dual_mkr = bool((snap or {}).get("enable_pre_split_dual_maker_asks", False)) and not bool((dir_snap or {}).get("riskless_only_mode", False))
         if not allow_dual_mkr:
             return "SUPERVISED"
 
@@ -2038,29 +2084,47 @@ class PreSplitInventoryGun:
         return "SUPERVISED"
 
     async def _finalize_cycle(self, harvester: Any, st: Dict[str, Any], reason: str, now_ts: float) -> str:
+        from datetime import datetime, timezone
+
         realized = round(float(st.get("realized_cash_usd") or 0.0), 4)
         cost = round(float(st.get("cost_usd") or 0.0), 4)
         net_pnl = round(realized - cost, 4)
+        opened_f = float(st.get("opened_ts") or now_ts)
+        uniq_tid = f"PRESPLIT_{st.get('condition_id', 'BTC')[:10]}_{int(now_ts)}"
         rec = {
-            "trade_id": f"PRESPLIT_{st.get('condition_id', 'BTC')[:10]}_{int(now_ts)}",
-            "box_id": f"PRESPLIT_{st.get('condition_id', 'BTC')[:10]}",
-            "is_dominance_box": True,
+            "trade_id": uniq_tid,
+            "box_id": uniq_tid,
+            "is_dominance_box": False,
             "sleeve": "PRE_SPLIT_OVERROUND_MACHINE_GUN",
             "asset": str(st.get("asset") or "BTC"),
             "condition_id": str(st.get("condition_id") or ""),
             "token_id": f"{st.get('up_token_id')}|{st.get('down_token_id')}",
             "entry_shares": float(st.get("initial_shares") or 12.0),
             "notional_usd": cost,
+            "fee_usd": 0.0,
             "payout_usd": realized,
             "net_pnl_usd": net_pnl,
             "estimated_maker_rebate_usd": float(st.get("rebate_est_usd") or 0.0),
             "won": bool(net_pnl >= -0.01),
             "status": "CLOSED",
             "close_reason": reason,
-            "entry_ts": float(st.get("opened_ts") or now_ts),
+            "entry_ts": opened_f,
             "exit_ts": now_ts,
+            "entry_time_utc": datetime.fromtimestamp(opened_f, tz=timezone.utc).isoformat(),
+            "settled_at_utc": datetime.fromtimestamp(float(now_ts), tz=timezone.utc).isoformat(),
         }
         harvester.closed_positions.append(rec)
+        harvester.closed_positions = harvester.closed_positions[-600:]
+        if getattr(harvester, "risk_controller", None) is not None and hasattr(harvester.risk_controller, "record_trade_pnl"):
+            try:
+                harvester.risk_controller.record_trade_pnl(
+                    "PRE_SPLIT_OVERROUND_MACHINE_GUN",
+                    net_pnl,
+                    current_equity=float(getattr(harvester, "_last_known_collateral", None) or 0.0) + realized,
+                    is_non_directional=True,
+                )
+            except Exception:
+                pass
         if getattr(harvester, "_last_known_collateral", None) is not None:
             harvester._last_known_collateral = float(harvester._last_known_collateral) + realized
         harvester.executor.invalidate_collateral_cache()
@@ -2070,3 +2134,216 @@ class PreSplitInventoryGun:
         await asyncio.to_thread(harvester.save_state)
         logger.info(f"✓ [PRE-SPLIT CYCLE CLOSED] {reason} | Cost=${cost:.2f} -> Cash=${realized:.2f} | Net PnL=${net_pnl:+.2f}")
         return reason
+
+
+def finish_nr2_subset_convert_arb(
+    harvester: Any,
+    cand: Dict[str, Any],
+    *,
+    sleeve_src: str,
+    nrm_id: str,
+    dedupe_k: str,
+    retry_cd: Dict[str, float],
+    budget: float,
+    fee_bips: int,
+    exp_ts: float,
+    now_ts: float,
+) -> Dict[str, Any]:
+    """Fresh L2 book walk + `NegRiskAdapterV2.convertPositions` execution + `NR5` freeroll tail registration."""
+    from datetime import datetime, timezone
+
+    raw_no_legs = list(cand.get("no_legs") or [])
+    raw_yes_sells = list(cand.get("liquid_yes_sells") or [])
+    all_toks = [str(lg["token_id"]) for lg in raw_no_legs] + [str(yl["yes_token"]) for yl in raw_yes_sells if yl.get("yes_token")]
+    custom_bk = "get_market_book" in getattr(harvester.executor, "__dict__", {})
+    ws_bks = cand.get("ws_books") if not custom_bk else None
+    if isinstance(ws_bks, dict) and (time.time() - float(cand.get("ws_books_ts") or 0.0)) <= 1.5 and all(isinstance(ws_bks.get(t), dict) for t in all_toks):
+        bk_map = {t: ws_bks[t] for t in all_toks}
+    elif not custom_bk and hasattr(harvester.executor, "get_market_books_batch"):
+        bk_map = harvester.executor.get_market_books_batch(all_toks) or {}
+    else:
+        bk_map = {t: (harvester.executor.get_market_book(t) or {}) for t in all_toks}
+
+    def _norm(ls: Any) -> List[Dict[str, float]]:
+        return [
+            {"price": float(x["price"] if isinstance(x, dict) else x[0]), "size": float(x["size"] if isinstance(x, dict) else x[1])}
+            for x in (ls or [])
+            if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
+        ]
+
+    avail_per_leg: List[float] = []
+    best_asks: List[Tuple[Dict[str, Any], List[Dict[str, float]]]] = []
+    for lg in raw_no_legs:
+        asks_i = sorted(_norm((bk_map.get(str(lg["token_id"])) or {}).get("asks")), key=lambda r: r["price"])
+        if not asks_i:
+            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:EMPTY_NO_ASK_BOOK"}
+        avail_per_leg.append(sum(x["size"] for x in asks_i[:3]))
+        best_asks.append((lg, asks_i))
+
+    est_sum_px = max(0.50, sum(asks_i[0]["price"] for _, asks_i in best_asks))
+    sh_int = int(math.floor(min(min(avail_per_leg) / 1.15, budget / est_sum_px)))
+    if sh_int < 5:
+        return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_SHARES"}
+
+    verified_no_legs: List[Dict[str, Any]] = []
+    worst_no_cost_ps = 0.0
+    for lg, asks_i in best_asks:
+        cum_s, w_px = 0.0, asks_i[0]["price"]
+        for lv in asks_i:
+            w_px = lv["price"]
+            cum_s += lv["size"]
+            if cum_s >= sh_int:
+                break
+        if cum_s < sh_int:
+            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:INSUFFICIENT_NO_DEPTH"}
+        fr_i = float(lg.get("fee_rate", 0.0) or 0.0)
+        fe_i = float(lg.get("fee_exponent", 1.0) or 1.0)
+        fee_i = fr_i * ((w_px * (1.0 - w_px)) ** fe_i) if fr_i > 0.0 else 0.0
+        h_i = min(0.25, max(0.0, fee_i / max(w_px, 1e-6))) if fr_i > 0.0 else 0.0
+        worst_no_cost_ps += w_px / max(1.0 - h_i, 1e-6)
+        verified_no_legs.append({
+            "token_id": str(lg["token_id"]),
+            "market_id": str(lg.get("market_id") or ""),
+            "condition_id": str(lg.get("condition_id") or ""),
+            "question_index": int(lg["question_index"]),
+            "label": str(lg.get("label") or f"NO_{lg['question_index']}"),
+            "limit_price": w_px,
+            "fee_rate": fr_i,
+            "fee_exponent": fe_i,
+        })
+
+    eff_mult = 1.0 - max(0, fee_bips) / 10000.0
+    verified_yes_sells: List[Dict[str, Any]] = []
+    yes_net_ps = 0.0
+    for yl in raw_yes_sells:
+        y_tok = str(yl.get("yes_token") or "")
+        bids_y = sorted(_norm((bk_map.get(y_tok) or {}).get("bids")), key=lambda r: r["price"], reverse=True)
+        if not bids_y:
+            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:EMPTY_YES_BID_BOOK"}
+        cum_y, min_b, gross_y = 0.0, bids_y[0]["price"], 0.0
+        for lv in bids_y:
+            take_y = min(lv["size"], sh_int - cum_y)
+            gross_y += take_y * lv["price"]
+            min_b = lv["price"]
+            cum_y += take_y
+            if cum_y >= sh_int - 1e-6:
+                break
+        if cum_y < sh_int - 1e-6:
+            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:INSUFFICIENT_YES_BID_DEPTH"}
+        vwap_y = gross_y / sh_int
+        fr_y = float(yl.get("fee_rate", 0.0) or 0.0)
+        fe_y = float(yl.get("fee_exponent", 1.0) or 1.0)
+        fee_y = fr_y * ((vwap_y * (1.0 - vwap_y)) ** fe_y) if fr_y > 0.0 else 0.0
+        yes_net_ps += max(0.0, (vwap_y - fee_y) * eff_mult)
+        verified_yes_sells.append({
+            "yes_token": y_tok,
+            "min_bid_price": min_b,
+            "bid_vwap": vwap_y,
+            "fee_rate": fr_y,
+            "fee_exponent": fe_y,
+        })
+
+    proceeds_ps = float(len(verified_no_legs) - 1) * eff_mult + yes_net_ps
+    min_edge_req = 0.008 if not verified_yes_sells else 0.012
+    if (proceeds_ps - worst_no_cost_ps) < min_edge_req:
+        return {"executed": False, "reason": f"FRESH_BOOK_WALK_REJECT:EDGE_BELOW_MIN:{proceeds_ps - worst_no_cost_ps:.4f}"}
+
+    cid_conv = str(cand.get("box_id") or f"NRCONV_{int(now_ts)}")
+    c_res = harvester.executor.execute_negrisk_subset_convert_arb(
+        convert_id=cid_conv,
+        neg_risk_market_id=nrm_id,
+        no_legs=verified_no_legs,
+        shares=float(sh_int),
+        max_no_cost_per_share=worst_no_cost_ps + 0.002,
+        liquid_yes_sells=verified_yes_sells,
+        fee_bips=fee_bips,
+    )
+    with getattr(harvester, "_state_save_lock", None) or harvester._GLOBAL_STATE_SAVE_LOCK:
+        if not c_res.get("success"):
+            if dedupe_k and not c_res.get("legged_out") and not c_res.get("outcome_unknown"):
+                retry_cd[dedupe_k] = now_ts + 9.5
+            elif dedupe_k:
+                harvester._record_seen_d1_box_key(dedupe_k)
+            for r_idx, resid in enumerate(c_res.get("residuals") or []):
+                if float(resid.get("residual_shares") or 0.0) > 0.01 or resid.get("unwind_outcome_unknown"):
+                    r_tid = f"{cid_conv}_LEG_RESID_{r_idx}"
+                    harvester.active_positions[r_tid] = harvester._make_single_leg_lock_pos(
+                        r_tid, "NEGRISK_CONVERT_RESIDUAL", sleeve_src, "NEGRISK", "nr_conv",
+                        str(resid.get("market_id") or ""), str(resid.get("condition_id") or ""), str(resid["token_id"]),
+                        "NO", True, float(resid["residual_shares"]),
+                        round(float(resid["residual_shares"]) * float(resid["price"]), 4),
+                        0.0, 0.0, 1.0, "zero_fees", exp_ts, now_ts, 0.0, resid.get("orderID"), False,
+                        unk=bool(resid.get("unwind_outcome_unknown")),
+                    )
+            if c_res.get("outcome_unknown"):
+                harvester._refresh_global_halt()
+            harvester.save_state()
+            return {"executed": False, "reason": f"NR_CONVERT_ABORT:{c_res.get('error')}", "result": c_res}
+
+        if dedupe_k:
+            retry_cd.pop(dedupe_k, None)
+            harvester._record_seen_d1_box_key(dedupe_k)
+        harvester.executor.invalidate_collateral_cache()
+        harvester._pending_collateral_refresh = True
+        if c_res.get("convert_executed"):
+            net_pnl = round(float(c_res.get("net_profit_usd") or 0.0), 4)
+            exit_c = time.time()
+            spent_c = float(c_res["spent_usd"])
+            tail_toks = cand.get("retained_tail_tokens") or []
+            closed_rec = {
+                "trade_id": cid_conv,
+                "box_id": cid_conv,
+                "sleeve": sleeve_src,
+                "asset": "NEGRISK",
+                "market_id": str(verified_no_legs[0].get("market_id") or nrm_id[:16]),
+                "token_id": "|".join(x["token_id"] for x in verified_no_legs),
+                "entry_shares": float(c_res["shares"]),
+                "notional_usd": spent_c,
+                "fee_usd": 0.0,
+                "payout_usd": round(spent_c + net_pnl, 4),
+                "net_pnl_usd": net_pnl,
+                "won": net_pnl >= 0.0,
+                "status": "CLOSED",
+                "close_reason": "ONCHAIN_NEGRISK_CONVERT_COMPLETED",
+                "convert_tx_hash": c_res.get("convert_tx_hash"),
+                "adapter_used": c_res.get("adapter_used"),
+                "retained_tail_tokens": tail_toks,
+                "entry_ts": now_ts,
+                "exit_ts": exit_c,
+                "entry_time_utc": datetime.fromtimestamp(float(now_ts), tz=timezone.utc).isoformat(),
+                "settled_at_utc": datetime.fromtimestamp(float(exit_c), tz=timezone.utc).isoformat(),
+            }
+            harvester.closed_positions.append(closed_rec)
+            harvester.closed_positions = harvester.closed_positions[-600:]
+            if hasattr(harvester, "risk_controller"):
+                try:
+                    harvester.risk_controller.record_trade_pnl(net_pnl, is_non_directional=True)
+                except Exception:
+                    pass
+            for t_idx, rt in enumerate(tail_toks):
+                if isinstance(rt, dict) and rt.get("yes_token"):
+                    t_id_f = f"{cid_conv}_FREEROLL_{t_idx}"
+                    f_sh = round(float(c_res["shares"]) * max(0.0, 1.0 - float(cand.get("fee_bips", 0) or 0) / 10000.0), 4)
+                    harvester.active_positions[t_id_f] = harvester._make_single_leg_lock_pos(
+                        t_id_f, "SINGLE_LEG_LOCK", sleeve_src, "NEGRISK", "freeroll",
+                        str(rt.get("market_id") or ""), str(rt.get("condition_id") or ""), str(rt["yes_token"]),
+                        "YES", True, f_sh, 0.0, 0.0, 0.0, 1.0, "zero_fees", exp_ts, now_ts, 0.0, None, True, unk=False,
+                    )
+            release_recycled_box_dedupe_keys(harvester, None, extra_keys=[dedupe_k], cooldown_sec=2.5)
+            logger.info(
+                f"✓ [NEGRISK CONVERT COMPLETED] {cid_conv} ({sleeve_src}) | {c_res['shares']:.0f} sh | "
+                f"m={c_res['m_no_legs']} | net_pnl=${net_pnl:+.2f} | tx={c_res.get('convert_tx_hash')}"
+            )
+        else:
+            for l_idx, lf in enumerate(c_res.get("leg_fills") or []):
+                l_tid = f"{cid_conv}_HOLD_NO_{l_idx}"
+                sh_l = float(lf["matched_shares"])
+                px_l = float(lf["price"])
+                harvester.active_positions[l_tid] = harvester._make_single_leg_lock_pos(
+                    l_tid, "SINGLE_LEG_LOCK", sleeve_src, "NEGRISK", "nr_conv_hold",
+                    str(lf.get("market_id") or ""), str(lf.get("condition_id") or ""), str(lf["token_id"]),
+                    "NO", True, sh_l, round(sh_l * px_l, 4), 0.0, 0.0, 1.0, "zero_fees",
+                    exp_ts, now_ts, 0.0, lf.get("orderID"), True, unk=False,
+                )
+        harvester.save_state()
+    return {"executed": True, "result": c_res, "leg_trade_ids": []}

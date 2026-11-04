@@ -176,6 +176,17 @@ def classify_losing_trade_forensics(rec: Dict[str, Any]) -> Dict[str, str]:
 
 
 def fetch_kraken_live_state() -> Dict[str, Any]:
+    local_state = Path("/home/skybullet1987/quant_pipeline/data/polymarket/live_harvester_state.json")
+    if os.name != "nt" and local_state.exists():
+        res = subprocess.run(
+            ["systemctl", "--user", "is-active", "polymarket-live-harvester.service"],
+            capture_output=True,
+            text=True,
+            timeout=5.0,
+        )
+        svc_line = (res.stdout or "").strip().splitlines()
+        svc_status = svc_line[0].strip() if svc_line else "unknown"
+        return {"service_status": svc_status, "state": json.loads(local_state.read_text(encoding="utf-8"))}
     cmd = [
         "ssh", "-n", "-o", "ConnectTimeout=5", "kraken-finland",
         "systemctl --user is-active polymarket-live-harvester.service ; cat /home/skybullet1987/quant_pipeline/data/polymarket/live_harvester_state.json"
@@ -403,9 +414,10 @@ def redeploy_daemon(force: bool = False) -> None:
     if not force:
         pre = fetch_kraken_live_state()["state"]
         open_cnt = int(pre.get("active_positions_count", 0) or 0)
-        if open_cnt > 0:
+        ps_active = bool((pre.get("pre_split_inventory_state") or {}).get("active", False))
+        if open_cnt > 0 or ps_active:
             raise RuntimeError(
-                f"Refusing to restart live harvester with {open_cnt} open position(s): "
+                f"Refusing to restart live harvester with {open_cnt} open position(s) / pre_split_active={ps_active}: "
                 f"{pre.get('active_position_ids', [])}. Wait until flat."
             )
 
@@ -413,6 +425,9 @@ def redeploy_daemon(force: bool = False) -> None:
         "ssh", "-n", "kraken-finland",
         (
             "/home/skybullet1987/quant_pipeline/venv/bin/python -m py_compile "
+            "/home/skybullet1987/quant_pipeline/src/polymarket_research/holistic_strategy_governance.py "
+            "/home/skybullet1987/quant_pipeline/src/polymarket_research/riskless_machine_gun_engine.py "
+            "/home/skybullet1987/quant_pipeline/src/polymarket_research/riskless_protocol_v2_expansion.py "
             "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_terminal_recorder.py "
             "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_live_executor.py "
             "/home/skybullet1987/quant_pipeline/src/polymarket_research/polymarket_live_harvester.py && "

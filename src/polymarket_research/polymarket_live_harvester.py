@@ -1427,8 +1427,8 @@ class PolymarketLiveHarvester:
                 asset_map.pop(h, None)
 
         # Cap in-memory closed_positions to last 200 records
-        if len(self.closed_positions) > 200:
-            self.closed_positions = self.closed_positions[-200:]
+        if len(self.closed_positions) > 500:
+            self.closed_positions = self.closed_positions[-500:]
 
     def effective_risk_pct(self, equity: float) -> float:
         """Dynamic sizing pct: base pct (18%) until equity crosses scale_up_equity_threshold, then scale_up_risk_pct (22%)."""
@@ -3900,51 +3900,8 @@ class PolymarketLiveHarvester:
     def _consolidate_dominance_box_close(
         self, tid: str, pos: Dict[str, Any], cum_cash: float, cum_fee: float, net_pnl: float, reason: str, record_pnl: bool
     ) -> Tuple[bool, float]:
-        """Consolidates 2-leg D1 Dominance Box PnL so hedged OTM legs never trigger false loss counts."""
-        if not pos.get("is_dominance_box") or not record_pnl:
-            return False, net_pnl
-        partner_tid = str(pos.get("box_partner_trade_id") or "")
-        if partner_tid and partner_tid in self.active_positions:
-            self.active_positions[partner_tid]["_closed_partner_leg"] = {
-                "trade_id": tid,
-                "target_token": pos.get("target_token"),
-                "market_id": pos.get("market_id"),
-                "notional_usd": round(float(pos.get("notional_usd", 0.0) or 0.0), 4),
-                "payout_usd": round(cum_cash, 4),
-                "exit_fee_usd": round(cum_fee, 4),
-                "net_pnl_usd": round(net_pnl, 4),
-                "close_reason": reason,
-            }
-            self.active_positions.pop(tid, None)
-            self.save_state()
-            self._pending_collateral_refresh = True
-            logger.info(f"[D1 BOX LEG 1 CLOSED] {tid} ({reason}) | Leg Cash=${cum_cash:.2f} | Awaiting partner {partner_tid}")
-            return True, net_pnl
-        p1 = pos.pop("_closed_partner_leg", None)
-        if isinstance(p1, dict):
-            tot_notional = round(float(p1.get("notional_usd", 0.0)) + float(pos.get("notional_usd", 0.0) or 0.0), 4)
-            tot_payout = round(float(p1.get("payout_usd", 0.0)) + cum_cash, 2)
-            tot_pnl = round(float(p1.get("net_pnl_usd", 0.0)) + net_pnl, 2)
-            pos["trade_id"] = str(pos.get("box_id") or tid)
-            pos["notional_usd"] = tot_notional
-            pos["payout_usd"] = tot_payout
-            pos["net_pnl_usd"] = tot_pnl
-            pos["won"] = tot_pnl >= 0.0
-            pos["close_reason"] = f"D1_BOX_CONSOLIDATED({p1.get('close_reason')}+{reason})"
-            pos["exit_decomposition_bucket"] = "DOMINANCE_BOX_ARB"
-            pos["box_legs_summary"] = [
-                p1,
-                {
-                    "trade_id": tid,
-                    "target_token": pos.get("target_token"),
-                    "market_id": pos.get("market_id"),
-                    "payout_usd": round(cum_cash, 4),
-                    "net_pnl_usd": round(net_pnl, 4),
-                    "close_reason": reason,
-                },
-            ]
-            return False, tot_pnl
-        return False, net_pnl
+        from src.polymarket_research.riskless_protocol_v2_expansion import consolidate_any_box_leg_close
+        return consolidate_any_box_leg_close(self, tid, pos, cum_cash, cum_fee, net_pnl, reason, record_pnl)
 
     def _close_position(self, tid: str, pos: Dict[str, Any], status: str, reason: str,
                         won: Optional[bool] = None, record_pnl: bool = True) -> Optional[float]:
@@ -5781,7 +5738,9 @@ class PolymarketLiveHarvester:
         lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
         with lock:
             now_ts = time.time()
-            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values())
+            _ps_st = getattr(self, "pre_split_inventory_state", None) or {}
+            _ps_eq = min(float(_ps_st.get("up_rem", 0.0) or 0.0), float(_ps_st.get("dn_rem", 0.0) or 0.0)) if _ps_st.get("active") else 0.0
+            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values()) + _ps_eq
             tot_equity = (
                 (float(self._last_known_collateral) + active_market_equity)
                 if getattr(self, "_last_known_collateral", None) is not None
@@ -5814,7 +5773,7 @@ class PolymarketLiveHarvester:
                 "redeemed_tx_hashes": list(getattr(self, "redeemed_tx_hashes", []) or [])[-1000:],
                 "redeemed_tx_consumed_usd": dict(getattr(self, "redeemed_tx_consumed_usd", {}) or {}),
                 "pre_split_inventory_state": dict(getattr(self, "pre_split_inventory_state", {}) or {}),
-                "closed_positions": self.closed_positions[-200:], "seen_shock_ids": seen_shocks_list,
+                "closed_positions": self.closed_positions[-500:], "seen_shock_ids": seen_shocks_list,
                 "seen_d1_box_keys": seen_d1_list,
                 "traded_market_ids": list(self.traded_market_ids)[-100:], "trades_per_market": dict(self.trades_per_market),
                 "trades_per_market_direction": {f"{k[0]}_{k[1]}": v for k, v in getattr(self, "trades_per_market_direction", {}).items()},
@@ -6018,7 +5977,7 @@ class PolymarketLiveHarvester:
         if len(active_box_ids) >= max_conc_boxes or (not self.dry_run and (len(active_box_ids) + len(self._risk_bearing_positions())) >= max_tot_slots):
             return {"executed": False, "reason": "MAX_CONCURRENT_BOXES_REACHED"}
         cand_exp_slot = float(candidate_box.get("expiry_ts") or 0.0)
-        if box_type not in {"DOMINANCE", "NEGRISK_CONVERT"} and max_conc_boxes >= 2 and cand_exp_slot > 0.0 and (cand_exp_slot - now_ts) > 3600.0:
+        if box_type not in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND"} and max_conc_boxes >= 2 and cand_exp_slot > 0.0 and (cand_exp_slot - now_ts) > 3600.0:
             if len(active_box_ids) >= (max_conc_boxes - 1):
                 return {"executed": False, "reason": "INTRADAY_D1_SLOT_RESERVED"}
         dedupe_k = str(candidate_box.get("dedupe_key") or "")
@@ -6118,10 +6077,11 @@ class PolymarketLiveHarvester:
                 _2l_ok = box_type in _2l_t and sleeve_src != "NR_CONV_NO_BASKET_ARB" and (sleeve_src != "COND1_MACRO_PARTITION_BOX" or cond1_short_ok)
                 d1_zf_bridge = _2l_ok and (zero_fee_box or fee_2l_ok) and sleeve_src not in _v3_g8 and d1_g8
                 _v3_max_rem = 604800.0 if sleeve_src in _v3_7d else 129600.0
-                v3_math_ok = bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and 0.0 < cand_rem_zf <= _v3_max_rem and ((_2l_ok and c_net <= (0.990 if zero_fee_box else 0.988)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.994) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= 0.988))
+                _v2_sp_ok = box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_graduated_d1_box", True))
+                v3_math_ok = (bool(_rcfg_b1.get("enable_ungraduated_v3_math_live", False)) or _v2_sp_ok) and not self.dry_run and self._is_v5_unleashed_active() and no_loss and d1_g8 and (box_type == "CTF_OVERROUND" or 0.0 < cand_rem_zf <= _v3_max_rem) and ((_2l_ok and c_net <= (0.990 if zero_fee_box else 0.988)) or (box_type in {"CTF_OVERROUND", "MULTI_LEG_BUNDLE"} and c_net <= 0.994) or (box_type == "SINGLE_LEG_LOCK" and (sleeve_src in _v3_g8 or sleeve_src.startswith("SP4_")) and float(candidate_box.get("p_model") or 0.998) >= 0.998 and c_net <= 0.988))
                 _nr_mode = str(candidate_box.get("convert_mode") or "")
                 nr2_pure_cash_bridge = box_type == "NEGRISK_CONVERT" and bool(_rcfg_b1.get("enable_nr2_pure_cash_bridge", True)) and (
-                    (_nr_mode in {"NR2_PURE_CASH_CONVERT", "NR2_SUBSET_LIQUID_YES_CONVERT"} and 2 <= len(candidate_box.get("no_legs") or []) <= 15)
+                    (_nr_mode in {"NR2_PURE_CASH_CONVERT", "NR2_SUBSET_LIQUID_YES_CONVERT", "NR2_SUBSET_CONVERT_FREE_TAIL", "NR4_FULL_SWEEP", "NR5_NEGATIVE_COST_FREEROLL"} and 2 <= len(candidate_box.get("no_legs") or []) <= 15)
                     or (_nr_mode == "NR3_SYNTHETIC_ALL_YES_OVERROUND" and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_nr3_synthetic_overround", True)) and 2 <= len(candidate_box.get("yes_sell_legs") or []) <= 15)
                 ) and no_loss and d1_g8
                 bond1_live_bridge = box_type == "SINGLE_LEG_LOCK" and sleeve_src in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"} and bool(_rcfg_b1.get("enable_bond1_live_bridge", True)) and no_loss and float(sl_rec.get("realized_pnl_t1000_usd", 0.0) or 0.0) >= 0.0 and (int(sl_rec.get("closed", 0) or 0) == 0 or float(sl_rec.get("win_rate_pct", 100.0) or 0.0) >= 100.0) and d1_g8
@@ -6886,7 +6846,7 @@ class PolymarketLiveHarvester:
             if (x["price"] + (fr_a * ((x["price"] * (1.0 - x["price"])) ** fe_a) if fr_a > 0.0 else 0.0)) <= max_eff + 1e-6
         ]
         avail_sh = sum(x["size"] for x in qual)
-        if not qual or sum(x["price"] * x["size"] for x in qual) < 15.0 or avail_sh < 5.75:
+        if not qual or sum(x["price"] * x["size"] for x in qual) < (8.0 if s2_fast else 15.0) or avail_sh < 5.75:
             return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:INSUFFICIENT_DEPTH"}
         worst_px, cum_sh, cap_sh = qual[0]["price"], 0.0, min(avail_sh / 1.15, budget / max(qual[0]["price"], 0.50))
         for lv in qual:
@@ -6906,9 +6866,11 @@ class PolymarketLiveHarvester:
                 tk_sz = self.executor.get_token_tick_size(tok_a)
         else:
             tk_sz = 0.01
+        if not use_mock_lock_tk and (worst_px >= 0.96 or any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual)):
+            tk_sz = min(float(tk_sz or 0.001), 0.001)
         if hasattr(self.executor, "prewarm_token_market_cache"):
             self.executor.prewarm_token_market_cache(
-                token_id=tok_a, tick_size=tk_sz if use_mock_lock_tk else None, neg_risk=bool(cand.get("leg_a_neg_risk")),
+                token_id=tok_a, tick_size=tk_sz if (use_mock_lock_tk or float(tk_sz or 0.01) < 0.01) else None, neg_risk=bool(cand.get("leg_a_neg_risk")),
                 fee_rate_bps=int(round(fr_a * 10000)), condition_id=cid_a or mid_a, fee_rate=fr_a, fee_exponent=fe_a,
             )
         pre_b = 0.0 if self.dry_run else float(self._wallet_token_balance(tok_a)[0] or 0.0)
@@ -6928,7 +6890,7 @@ class PolymarketLiveHarvester:
         with getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK:
             if not o_res.success and not unk:
                 if dedupe_k:
-                    retry_cd[dedupe_k] = now_ts + (2.5 if s2_fast else 9.5)
+                    retry_cd[dedupe_k] = now_ts + (1.0 if s2_fast else 9.5)
                 return {"executed": False, "reason": f"ORDER_REJECTED:{o_res.error}", "result": o_res}
             if dedupe_k:
                 retry_cd.pop(dedupe_k, None)
@@ -7032,175 +6994,11 @@ class PolymarketLiveHarvester:
             from src.polymarket_research.riskless_machine_gun_engine import finish_nr3_convert_arb
             return finish_nr3_convert_arb(self, cand, sleeve_src=sleeve_src, nrm_id=nrm_id, dedupe_k=dedupe_k, budget=budget, collat_f=collat_f, fee_bips=fee_bips, now_ts=now_ts)
 
-        all_toks = [str(lg["token_id"]) for lg in raw_no_legs] + [str(yl["yes_token"]) for yl in raw_yes_sells if yl.get("yes_token")]
-        custom_bk = "get_market_book" in getattr(self.executor, "__dict__", {})
-        ws_bks = cand.get("ws_books") if not custom_bk else None
-        if isinstance(ws_bks, dict) and (time.time() - float(cand.get("ws_books_ts") or 0.0)) <= 0.85 and all(isinstance(ws_bks.get(t), dict) for t in all_toks):
-            bk_map = {t: ws_bks[t] for t in all_toks}
-        elif not custom_bk and hasattr(self.executor, "get_market_books_batch"):
-            bk_map = self.executor.get_market_books_batch(all_toks) or {}
-        else:
-            bk_map = {t: (self.executor.get_market_book(t) or {}) for t in all_toks}
-
-        norm = lambda ls: [
-            {"price": float(x["price"] if isinstance(x, dict) else x[0]), "size": float(x["size"] if isinstance(x, dict) else x[1])}
-            for x in (ls or []) if float(x.get("size", 0) if isinstance(x, dict) else x[1]) > 0
-        ]
-        avail_per_leg: List[float] = []
-        best_asks: List[Tuple[Dict[str, Any], List[Dict[str, float]]]] = []
-        for lg in raw_no_legs:
-            asks_i = sorted(norm((bk_map.get(str(lg["token_id"])) or {}).get("asks")), key=lambda r: r["price"])
-            if not asks_i:
-                return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:EMPTY_NO_ASK_BOOK"}
-            avail_per_leg.append(sum(x["size"] for x in asks_i[:3]))
-            best_asks.append((lg, asks_i))
-
-        est_sum_px = max(0.50, sum(asks_i[0]["price"] for _, asks_i in best_asks))
-        sh_int = int(math.floor(min(min(avail_per_leg) / 1.15, budget / est_sum_px)))
-        if sh_int < 5:
-            return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_SHARES"}
-
-        verified_no_legs: List[Dict[str, Any]] = []
-        worst_no_cost_ps = 0.0
-        for lg, asks_i in best_asks:
-            cum_s, w_px = 0.0, asks_i[0]["price"]
-            for lv in asks_i:
-                w_px = lv["price"]
-                cum_s += lv["size"]
-                if cum_s >= sh_int:
-                    break
-            if cum_s < sh_int:
-                return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:INSUFFICIENT_NO_DEPTH"}
-            fr_i = float(lg.get("fee_rate", 0.0) or 0.0)
-            fe_i = float(lg.get("fee_exponent", 1.0) or 1.0)
-            fee_i = fr_i * ((w_px * (1.0 - w_px)) ** fe_i) if fr_i > 0.0 else 0.0
-            h_i = min(0.25, max(0.0, fee_i / max(w_px, 1e-6))) if fr_i > 0.0 else 0.0
-            worst_no_cost_ps += w_px / max(1.0 - h_i, 1e-6)
-            verified_no_legs.append({
-                "token_id": str(lg["token_id"]),
-                "market_id": str(lg.get("market_id") or ""),
-                "condition_id": str(lg.get("condition_id") or ""),
-                "question_index": int(lg["question_index"]),
-                "label": str(lg.get("label") or f"NO_{lg['question_index']}"),
-                "limit_price": w_px,
-                "fee_rate": fr_i,
-                "fee_exponent": fe_i,
-            })
-
-        eff_mult = 1.0 - max(0, fee_bips) / 10000.0
-        verified_yes_sells: List[Dict[str, Any]] = []
-        yes_net_ps = 0.0
-        for yl in raw_yes_sells:
-            y_tok = str(yl.get("yes_token") or "")
-            bids_y = sorted(norm((bk_map.get(y_tok) or {}).get("bids")), key=lambda r: r["price"], reverse=True)
-            if not bids_y:
-                return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:EMPTY_YES_BID_BOOK"}
-            cum_y, min_b, gross_y = 0.0, bids_y[0]["price"], 0.0
-            for lv in bids_y:
-                take_y = min(lv["size"], sh_int - cum_y)
-                gross_y += take_y * lv["price"]
-                min_b = lv["price"]
-                cum_y += take_y
-                if cum_y >= sh_int - 1e-6:
-                    break
-            if cum_y < sh_int - 1e-6:
-                return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:INSUFFICIENT_YES_BID_DEPTH"}
-            vwap_y = gross_y / sh_int
-            fr_y = float(yl.get("fee_rate", 0.0) or 0.0)
-            fe_y = float(yl.get("fee_exponent", 1.0) or 1.0)
-            fee_y = fr_y * ((vwap_y * (1.0 - vwap_y)) ** fe_y) if fr_y > 0.0 else 0.0
-            yes_net_ps += max(0.0, (vwap_y - fee_y) * eff_mult)
-            verified_yes_sells.append({
-                "yes_token": y_tok,
-                "min_bid_price": min_b,
-                "bid_vwap": vwap_y,
-                "fee_rate": fr_y,
-                "fee_exponent": fe_y,
-            })
-
-        proceeds_ps = float(len(verified_no_legs) - 1) * eff_mult + yes_net_ps
-        min_edge_req = 0.008 if not verified_yes_sells else 0.012
-        if (proceeds_ps - worst_no_cost_ps) < min_edge_req:
-            return {"executed": False, "reason": f"FRESH_BOOK_WALK_REJECT:EDGE_BELOW_MIN:{proceeds_ps - worst_no_cost_ps:.4f}"}
-
-        cid_conv = str(cand.get("box_id") or f"NRCONV_{int(now_ts)}")
-        c_res = self.executor.execute_negrisk_subset_convert_arb(
-            convert_id=cid_conv,
-            neg_risk_market_id=nrm_id,
-            no_legs=verified_no_legs,
-            shares=float(sh_int),
-            max_no_cost_per_share=worst_no_cost_ps + 0.002,
-            liquid_yes_sells=verified_yes_sells,
-            fee_bips=fee_bips,
+        from src.polymarket_research.riskless_machine_gun_engine import finish_nr2_subset_convert_arb
+        return finish_nr2_subset_convert_arb(
+            self, cand, sleeve_src=sleeve_src, nrm_id=nrm_id, dedupe_k=dedupe_k,
+            retry_cd=retry_cd, budget=budget, fee_bips=fee_bips, exp_ts=exp_ts, now_ts=now_ts,
         )
-        with getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK:
-            if not c_res.get("success"):
-                if dedupe_k and not c_res.get("legged_out") and not c_res.get("outcome_unknown"):
-                    retry_cd[dedupe_k] = now_ts + 9.5
-                elif dedupe_k:
-                    self._record_seen_d1_box_key(dedupe_k)
-                for r_idx, resid in enumerate(c_res.get("residuals") or []):
-                    if float(resid.get("residual_shares") or 0.0) > 0.01 or resid.get("unwind_outcome_unknown"):
-                        r_tid = f"{cid_conv}_LEG_RESID_{r_idx}"
-                        self.active_positions[r_tid] = self._make_single_leg_lock_pos(
-                            r_tid, "NEGRISK_CONVERT_RESIDUAL", sleeve_src, "NEGRISK", "nr_conv",
-                            str(resid.get("market_id") or ""), str(resid.get("condition_id") or ""), str(resid["token_id"]),
-                            "NO", True, float(resid["residual_shares"]),
-                            round(float(resid["residual_shares"]) * float(resid["price"]), 4),
-                            0.0, 0.0, 1.0, "zero_fees", exp_ts, now_ts, 0.0, resid.get("orderID"), False,
-                            unk=bool(resid.get("unwind_outcome_unknown")),
-                        )
-                if c_res.get("outcome_unknown"):
-                    self._refresh_global_halt()
-                self.save_state()
-                return {"executed": False, "reason": f"NR_CONVERT_ABORT:{c_res.get('error')}", "result": c_res}
-
-            if dedupe_k:
-                retry_cd.pop(dedupe_k, None)
-                self._record_seen_d1_box_key(dedupe_k)
-            self.executor.invalidate_collateral_cache()
-            self._pending_collateral_refresh = True
-            if c_res.get("convert_executed"):
-                net_pnl = round(float(c_res.get("net_profit_usd") or 0.0), 4)
-                closed_rec = {
-                    "trade_id": cid_conv,
-                    "box_id": cid_conv,
-                    "sleeve": sleeve_src,
-                    "asset": "NEGRISK",
-                    "market_id": str(verified_no_legs[0].get("market_id") or nrm_id[:16]),
-                    "token_id": "|".join(x["token_id"] for x in verified_no_legs),
-                    "entry_shares": float(c_res["shares"]),
-                    "notional_usd": float(c_res["spent_usd"]),
-                    "net_pnl_usd": net_pnl,
-                    "won": net_pnl >= 0.0,
-                    "status": "CLOSED",
-                    "close_reason": "ONCHAIN_NEGRISK_CONVERT_COMPLETED",
-                    "convert_tx_hash": c_res.get("convert_tx_hash"),
-                    "adapter_used": c_res.get("adapter_used"),
-                    "retained_tail_tokens": cand.get("retained_tail_tokens") or [],
-                    "entry_ts": now_ts,
-                    "exit_ts": time.time(),
-                }
-                self.closed_positions.append(closed_rec)
-                from src.polymarket_research.riskless_machine_gun_engine import release_recycled_box_dedupe_keys
-                release_recycled_box_dedupe_keys(self, None, extra_keys=[dedupe_k], cooldown_sec=2.5)
-                logger.info(
-                    f"✓ [NEGRISK CONVERT COMPLETED] {cid_conv} ({sleeve_src}) | {c_res['shares']:.0f} sh | "
-                    f"m={c_res['m_no_legs']} | net_pnl=${net_pnl:+.2f} | tx={c_res.get('convert_tx_hash')}"
-                )
-            else:
-                for l_idx, lf in enumerate(c_res.get("leg_fills") or []):
-                    l_tid = f"{cid_conv}_HOLD_NO_{l_idx}"
-                    sh_l = float(lf["matched_shares"])
-                    px_l = float(lf["price"])
-                    self.active_positions[l_tid] = self._make_single_leg_lock_pos(
-                        l_tid, "SINGLE_LEG_LOCK", sleeve_src, "NEGRISK", "nr_conv_hold",
-                        str(lf.get("market_id") or ""), str(lf.get("condition_id") or ""), str(lf["token_id"]),
-                        "NO", True, sh_l, round(sh_l * px_l, 4), 0.0, 0.0, 1.0, "zero_fees",
-                        exp_ts, now_ts, 0.0, lf.get("orderID"), True, unk=False,
-                    )
-            self.save_state()
-        return {"executed": True, "result": c_res, "leg_trade_ids": []}
 
     def _record_inline_d1_legged_out_close(
         self, box_id: str, cand: Dict[str, Any], resid: Dict[str, Any], res: Dict[str, Any]
@@ -7291,8 +7089,8 @@ class PolymarketLiveHarvester:
             "exit_decomposition_bucket": "SALVAGE_UNWIND",
         }
         self.closed_positions.append(closed_rec)
-        if len(self.closed_positions) > 200:
-            self.closed_positions = self.closed_positions[-200:]
+        if len(self.closed_positions) > 500:
+            self.closed_positions = self.closed_positions[-500:]
         try:
             self.risk_controller.record_trade_pnl(net_pnl, is_non_directional=True)
         except Exception:
@@ -7367,7 +7165,7 @@ class PolymarketLiveHarvester:
                 )
             )
             leg_records.append((tid, {
-                "trade_id": tid, "box_id": box_id, "box_partner_trade_id": partner_tid, "is_dominance_box": True, "is_locked_arbitrage_box": True,
+                "trade_id": tid, "box_id": box_id, "box_expected_legs": 2, "box_partner_trade_id": partner_tid, "is_dominance_box": True, "is_locked_arbitrage_box": True,
                 "opp_token_id": str(cand.get(f"{pfx}_opp_token_id") or ""), "dedupe_key": str(cand.get("dedupe_key") or ""), "pair_dedupe_key": str(cand.get("pair_dedupe_key") or ""),
                 "sleeve": slv_rec, "sleeve_source": str(cand.get("sleeve_source") or slv_rec),
                 "entry_tte": max(1.0, exp_ts - now_ts), "event_id": box_id,
@@ -8200,6 +7998,8 @@ class PolymarketLiveHarvester:
                     max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
                     port_headroom_u,
                 )
+                from src.polymarket_research.riskless_protocol_v2_expansion import cap_bond1_maker_for_gatling_reserve
+                budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
             else:
                 budget = min(
                     lot_cap_sll,
@@ -8265,6 +8065,8 @@ class PolymarketLiveHarvester:
                     sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
                     sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
                     budget = min(lot_cap_sll, mkt_cap_u if _enforce_b1_v53 else lot_cap_sll, sll_pool_rem if _enforce_b1_v53 else collat_f * _sll_pct, collat_f)
+                    if _enforce_b1_v53:
+                        budget = cap_bond1_maker_for_gatling_reserve(self, budget, collat_f, sll_used_u, _b1_gov)
                     if _is_mlk1:
                         budget = min(budget, 22.0, round((collat_f + sll_used_u) * 0.32, 2))
                     if _is_rw_carry:
@@ -9381,9 +9183,11 @@ class PolymarketLiveHarvester:
                 not self.dry_run
                 and self._is_v5_live_strict()
                 and getattr(self.executor, "client", None) is not None
+                and type(getattr(self.executor, "client", None)) is not object
                 and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
                 and "execute_snipe_order_async" not in getattr(self.executor, "__dict__", {})
                 and "place_passive_maker_entry" not in getattr(self.executor, "__dict__", {})
+                and "get_market_book_async" not in getattr(self.executor, "__dict__", {})
             )
         )
         _cur_eq_dir = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
@@ -10473,7 +10277,9 @@ class PolymarketLiveHarvester:
                 return
 
             now_ts = time.time()
-            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values())
+            _ps_st = getattr(self, "pre_split_inventory_state", None) or {}
+            _ps_eq = min(float(_ps_st.get("up_rem", 0.0) or 0.0), float(_ps_st.get("dn_rem", 0.0) or 0.0)) if _ps_st.get("active") else 0.0
+            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values()) + _ps_eq
             total_account_value = float(live_bankroll) + active_market_equity
             tier_limits = self._update_equity_tier(total_account_value)
             self.risk_controller.check_equity_drawdown(float(total_account_value))
@@ -12237,6 +12043,13 @@ class PolymarketLiveHarvester:
     async def check_resolutions_and_manage_positions(self):
         """Monitors active positions for delta settlements, maker scalp fills, time-decay unwind, or finalized resolutions."""
         self._main_loop = asyncio.get_running_loop()
+        if not self.dry_run:
+            try:
+                from src.polymarket_research.riskless_machine_gun_engine import PreSplitInventoryGun
+                _psg = self.__dict__.get("_pre_split_gun") or setattr(self, "_pre_split_gun", PreSplitInventoryGun()) or self._pre_split_gun
+                await _psg.tick(self, time.time(), fast_tick_reader=read_fast_tick if callable(read_fast_tick) else None)
+            except Exception as psg_exc:
+                logger.debug(f"[PRE-SPLIT GUN] supervision notice: {psg_exc}")
         if not self.active_positions:
             self._refresh_global_halt()
             return
@@ -12396,15 +12209,6 @@ class PolymarketLiveHarvester:
                 await self._try_atomic_box_overround_unwind(now_ts, open_oids)
             except Exception as ovr_exc:
                 logger.exception(f"[BOX OVERROUND] dual-leg unwind pass failed (supervision continues): {ovr_exc}")
-            try:
-                from src.polymarket_research.riskless_machine_gun_engine import PreSplitInventoryGun
-                _psg = self.__dict__.get("_pre_split_gun")
-                if _psg is None:
-                    _psg = PreSplitInventoryGun()
-                    self._pre_split_gun = _psg
-                await _psg.tick(self, now_ts, fast_tick_reader=read_fast_tick if callable(read_fast_tick) else None)
-            except Exception as psg_exc:
-                logger.debug(f"[PRE-SPLIT GUN] supervision notice: {psg_exc}")
             for tid, pos in list(self.active_positions.items()):
                 if tid not in self.active_positions:
                     continue
@@ -12492,10 +12296,17 @@ class PolymarketLiveHarvester:
                         bal_h, src_h = await asyncio.to_thread(self._wallet_token_balance, token_id)
                         pre_h = float(pos.get("pre_token_balance", 0.0) or 0.0)
                         exp_h = float(pos.get("entry_shares", 0.0) or 0.0)
-                        if bal_h is not None and src_h in {self.ONCHAIN_SOURCE, "CLOB_BALANCE_API"} and (bal_h - pre_h) >= max(0.01, exp_h - 0.05):
-                            pos["status"] = ExecutionStatus.POSITION_CONFIRMED
-                            pos["inventory_reconciled"] = True
-                            self.save_state()
+                        if bal_h is not None and src_h in {self.ONCHAIN_SOURCE, "CLOB_BALANCE_API"}:
+                            d_h = bal_h - pre_h
+                            fr_h = float(pos.get("fee_rate_applied", 0.0) or 0.0)
+                            if d_h >= max(0.01, exp_h - 0.05):
+                                pos["status"], pos["inventory_reconciled"] = ExecutionStatus.POSITION_CONFIRMED, True
+                                self.save_state()
+                            elif fr_h > 0.0 and d_h >= max(0.01, exp_h * (1.0 - fr_h * 0.30) - 0.05):
+                                pos["entry_shares"] = pos["remaining_shares"] = pos["remaining_exit_shares"] = round(d_h, 4)
+                                pos["entry_fee_asset"], pos["entry_fee_cash_usd"] = "SHARES", 0.0
+                                pos["status"], pos["inventory_reconciled"] = ExecutionStatus.POSITION_CONFIRMED, True
+                                self.save_state()
 
                     # Phase A: entry finality + maker exit via the single shared gate (P0-02 / P0-04)
                     eff_cancel_win = 5.0 if pos.get("sleeve") == "SLEEVE_4_BOUNDARY_SNIPE" else self.tte_cancel_window

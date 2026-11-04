@@ -115,7 +115,11 @@ def check_operational_status(auto_recover_safe: bool = True) -> Tuple[Dict[str, 
     shm_dir = Path("/dev/shm")
     if shm_dir.exists():
         for p in sorted(shm_dir.glob("*")):
-            if p.is_file() and ("polymarket" in p.name or "shm" in p.name or "spot" in p.name or "tick" in p.name or p.suffix == ".json"):
+            if (
+                p.is_file()
+                and not p.name.endswith(".tmp")
+                and ("polymarket" in p.name or "shm" in p.name or "spot" in p.name or "tick" in p.name or p.suffix == ".json")
+            ):
                 try:
                     shm_freshness[p.name] = round(now - p.stat().st_mtime, 3)
                 except Exception:
@@ -428,6 +432,14 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
             "unrealized_pnl_at_maker_ask_usd": round(mkr_val - cost_u, 2),
             "mins_to_kickoff": mins_to_kickoff,
         })
+
+    ps_st = st.get("pre_split_inventory_state") if isinstance(st.get("pre_split_inventory_state"), dict) else {}
+    if ps_st.get("active"):
+        ps_rem_cost = max(0.0, float(ps_st.get("cost_usd") or 0.0) - float(ps_st.get("realized_cash_usd") or 0.0))
+        ps_paired_val = max(ps_rem_cost, min(float(ps_st.get("up_rem") or 0.0), float(ps_st.get("dn_rem") or 0.0)))
+        cost_basis_open += ps_rem_cost
+        mark_to_bid_value += ps_paired_val
+        resting_maker_exit_value += ps_paired_val
 
     cash_usd = float(onchain_pusd if onchain_pusd is not None else (st.get("live_bankroll") or 0.0))
     nav_mark_to_bid = round(cash_usd + mark_to_bid_value, 4)

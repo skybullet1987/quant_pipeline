@@ -31,6 +31,8 @@ def _safe_to_restart(st: dict) -> bool:
     act = st.get("active_positions") or {}
     if len(act) > 0:
         return False
+    if bool((st.get("pre_split_inventory_state") or {}).get("active")):
+        return False
     pend = st.get("pending_entry_intents") or {}
     # Resting post-only Maker anchors (`live_maker_anchor_inflight`) are cleanly preempted & canceled
     # on SIGTERM in <0.2s; only block if a non-maker/directional order is mid-submission.

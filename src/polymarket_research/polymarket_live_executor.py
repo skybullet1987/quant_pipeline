@@ -3693,19 +3693,19 @@ class PolymarketLiveExecutor:
         """
         sh = round(max(0.0, float(amount_shares or 0.0)), 6)
         if not condition_id or sh <= 0.0:
-            return {"merged": False, "merged_pairs": 0.0, "target_contract": "", "calldata": "", "tx_hash": None}
+            return {"merged": False, "success": False, "merged_pairs": 0.0, "target_contract": "", "calldata": "", "tx_hash": None}
         from src.polymarket_research.redeem_settled_positions import encode_ctf_merge_or_split_calldata
         tgt, cd = encode_ctf_merge_or_split_calldata(
             condition_id, sh, neg_risk=bool(neg_risk), is_merge=True
         )
         if self.dry_run:
-            return {"merged": True, "dry_run": True, "merged_pairs": sh, "target_contract": tgt, "calldata": cd, "tx_hash": None}
+            return {"merged": True, "success": True, "dry_run": True, "merged_pairs": sh, "target_contract": tgt, "calldata": cd, "tx_hash": None}
         res = self.attempt_onchain_complete_set_merge(
             condition_id, min_pairs=min(5.0, sh), max_pairs=sh, neg_risk=neg_risk
         )
         if isinstance(res, tuple) and len(res) == 2 and res[0]:
-            return {"merged": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
-        return {"merged": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
+            return {"merged": True, "success": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
+        return {"merged": False, "success": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
 
     def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False) -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp

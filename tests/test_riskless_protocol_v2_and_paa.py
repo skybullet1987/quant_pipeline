@@ -846,3 +846,354 @@ def test_gatling_high_vol_machine_gun_s2_live_panel_a_panel_b_xau_d1_and_bundles
         assert pos_ml["candle_expiry_ts"] > now_s2
         assert pos_ml["entry_shares"] == pos_ml["remaining_shares"] > 0
 
+
+def test_gatling_fast_gun_reserve_cap_and_3leg_consolidation() -> None:
+    from types import SimpleNamespace
+    from src.paa_os.optimizer import group_closed_positions_by_box
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        cap_bond1_maker_for_gatling_reserve,
+        consolidate_any_box_leg_close,
+    )
+
+    rb_cfg = {
+        "gatling_enabled": True,
+        "gatling_fast_gun_reserve_usd": 22.50,
+    }
+    mock_h = SimpleNamespace(dry_run=False, enforce_gatling_fast_gun_reserve=True)
+    # On $61.01 NAV with $0 resting BOND1, per-market seed cap is round((61.01 - 22.50) * 0.55, 2) = $21.18
+    b1_cap1 = cap_bond1_maker_for_gatling_reserve(mock_h, 54.91, 61.01, 0.0, rb_cfg)
+    assert b1_cap1 == pytest.approx(21.18, abs=0.02)
+
+    # Once $38.51 is already in BOND1 (`collat_f=22.50`, `sll_used_u=38.51`), remaining BOND1 budget is $0.00 so $22.50 stays 100% free!
+    b1_cap2 = cap_bond1_maker_for_gatling_reserve(mock_h, 54.91, 22.50, 38.51, rb_cfg)
+    assert b1_cap2 == pytest.approx(0.0, abs=0.01)
+
+    # 3-leg MULTI_LEG_BUNDLE consolidation: 2 losing legs ($0 payout) + 1 winning leg ($20 payout) -> 1 net WIN (+$0.80), 0 losses!
+    harv = SimpleNamespace(
+        active_positions={
+            "L1": {"trade_id": "L1", "box_id": "MLBOX_3", "is_dominance_box": True, "box_expected_legs": 3, "notional_usd": 6.20, "sleeve": "LP_COMP1_SPORTS_TRIANGLES"},
+            "L2": {"trade_id": "L2", "box_id": "MLBOX_3", "is_dominance_box": True, "box_expected_legs": 3, "notional_usd": 6.40, "sleeve": "LP_COMP1_SPORTS_TRIANGLES"},
+            "L3": {"trade_id": "L3", "box_id": "MLBOX_3", "is_dominance_box": True, "box_expected_legs": 3, "notional_usd": 6.60, "sleeve": "LP_COMP1_SPORTS_TRIANGLES"},
+        },
+        closed_positions=[],
+        _pending_collateral_refresh=False,
+        save_state=lambda: None,
+    )
+    handled1, _ = consolidate_any_box_leg_close(harv, "L1", harv.active_positions["L1"], 0.0, 0.0, -6.20, "OTM_LEG_1", True)
+    assert handled1 is True
+    assert "L1" not in harv.active_positions
+
+    handled2, _ = consolidate_any_box_leg_close(harv, "L2", harv.active_positions["L2"], 0.0, 0.0, -6.40, "OTM_LEG_2", True)
+    assert handled2 is True
+    assert "L2" not in harv.active_positions
+
+    # Also verify PAA optimizer holds back partial 2-of-3 legs if L3 is still open
+    leg_c1 = {"trade_id": "L1", "box_id": "MLBOX_3", "is_dominance_box": True, "box_expected_legs": 3, "notional_usd": 6.20, "net_pnl_usd": -6.20}
+    leg_c2 = {"trade_id": "L2", "box_id": "MLBOX_3", "is_dominance_box": True, "box_expected_legs": 3, "notional_usd": 6.40, "net_pnl_usd": -6.40}
+    assert group_closed_positions_by_box([leg_c1, leg_c2], {"L3": {"box_id": "MLBOX_3", "box_expected_legs": 3}}) == []
+
+    pos_l3 = harv.active_positions.pop("L3")
+    handled3, tot_pnl = consolidate_any_box_leg_close(harv, "L3", pos_l3, 20.00, 0.0, 13.40, "WIN_LEG_3", True)
+    assert handled3 is False
+    assert tot_pnl == pytest.approx(0.80, abs=1e-4)
+    assert pos_l3["won"] is True
+    assert pos_l3["net_pnl_usd"] == pytest.approx(0.80, abs=1e-4)
+    assert len(pos_l3["box_legs_summary"]) == 3
+
+
+def test_s2_rtds_rolling_twap_and_ctf_overround_partial_unwind_registration() -> None:
+    from types import SimpleNamespace
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        evaluate_s2_rtds_exact_twap_integrator,
+        execute_binary_ctf_overround_mint_sell,
+        finish_protocol_v2_special_box_sync,
+    )
+
+    # Smooth 20 bps/10s rally across 113s (`1.8 bps/s` realistic 1Hz step, no jump spike):
+    # At `rem_sec = 15.0s` (`45s` elapsed in settlement window vs `60s` rolling official TWAP),
+    # `rolling_60` differs from `mean_obs` by > 20 bps yet matches `official_twap_60s` with 0 drift!
+    b_ts = 1_762_000_200.0
+    now_t = b_ts - 15.0
+    ticks_120 = [(b_ts - 120.0 + i, 98_200.0 + i * 28.0) for i in range(106)]
+    rolling_60_vals = [p for t, p in ticks_120 if (now_t - 60.5) <= t <= (now_t + 1.0)]
+    official_60 = sum(rolling_60_vals) / len(rolling_60_vals)
+    s2 = evaluate_s2_rtds_exact_twap_integrator(
+        asset="BTC",
+        open_price=100_000.0,
+        expiry_ts=b_ts,
+        now_ts=now_t,
+        rtds_ticks=ticks_120,
+        official_twap_60s=official_60,
+        live_lock_mode=True,
+        up_ask=0.955,
+        down_ask=0.04,
+        fee_rate=0.07,
+        fee_exponent=1.0,
+    )
+    assert s2 is not None
+    assert s2["direction"] == "UP"
+    assert s2["net_edge_per_share"] >= 0.010
+
+    # Partial unwind registration test: YES fills 10sh, NO FOK rejects, unwind fails -> 10sh NO residual registered!
+    class _PartialUnwindExec:
+        def split_collateral_to_complete_set(self, condition_id: str, amount_usd: float, neg_risk: bool = False) -> Dict[str, Any]:
+            return {"success": True}
+
+        def merge_complete_set_to_collateral(self, condition_id: str, shares: float, neg_risk: bool = False) -> Dict[str, Any]:
+            return {"success": False}
+
+        def execute_atomic_box_overround_unwind(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+            return {
+                "success": False,
+                "partial_leg_unwind": True,
+                "leg_a": {"filled": True, "success": True, "taking_amount": 5.40, "fee_usd": 0.0},
+                "leg_b": {"filled": False, "success": False},
+            }
+
+        def execute_unwind_order(self, token_id: str, size: float, side: str = "SELL", **kwargs: Any) -> Dict[str, Any]:
+            return {"success": False}
+
+        def get_market_book(self, token_id: str) -> Dict[str, Any]:
+            return {"bids": [{"price": "0.54", "size": "40"}], "asks": [{"price": "0.56", "size": "40"}]}
+
+        def invalidate_collateral_cache(self) -> None:
+            pass
+
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+
+    h_async = SimpleNamespace(active_positions={})
+    res_pu = asyncio.run(
+        execute_binary_ctf_overround_mint_sell(
+            _PartialUnwindExec(),
+            condition_id="0x" + "d" * 64,
+            yes_token_id="9" * 28,
+            no_token_id="8" * 28,
+            yes_min_bid=0.53,
+            no_min_bid=0.49,
+            shares=10.0,
+            harvester=h_async,
+            expiry_ts=now_t + 3600.0,
+        )
+    )
+    assert res_pu["success"] is False
+    assert res_pu["reason"] == "OVERROUND_PARTIAL_LEG_UNWOUND"
+    assert len(h_async.active_positions) == 1
+
+    h_pu = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+    h_pu.dry_run = False
+    h_pu.active_positions = {}
+    h_pu.closed_positions = []
+    h_pu.pending_entry_intents = {}
+    h_pu._executed_d1_box_keys = set()
+    h_pu._last_known_collateral = 60.0
+    h_pu._pending_collateral_refresh = False
+    h_pu.max_exposure = 100.0
+    h_pu.executor = _PartialUnwindExec()
+    h_pu.save_state = lambda: None
+    h_pu.risk_controller = SimpleNamespace(record_trade_pnl=lambda *a, **k: None)
+
+    out_pu = finish_protocol_v2_special_box_sync(
+        h_pu,
+        {
+            "box_id": "CTF_PU_TEST",
+            "box_type": "CTF_OVERROUND",
+            "sleeve_source": "CTF_OVERROUND_MINT_SELL",
+            "asset": "POLY",
+            "condition_id": "0x" + "d" * 64,
+            "yes_token_id": "9" * 28,
+            "no_token_id": "8" * 28,
+            "yes_bid": 0.54,
+            "no_bid": 0.54,
+            "max_fillable_shares": 10.0,
+            "expiry_ts": now_t + 3600.0,
+        },
+        dedupe_k="CTF_PU_1",
+        retry_cd={},
+        now_ts=now_t,
+        rcfg={},
+        own_grad=False,
+    )
+    assert out_pu["executed"] is False
+    assert len(h_pu.active_positions) == 1
+    res_pos = next(iter(h_pu.active_positions.values()))
+    assert res_pos["token_id"] == "8" * 28
+    assert res_pos["remaining_shares"] >= 5.0
+
+
+def test_alpha124_ws_book_helper_and_protocol_v2_daemon_scan_qa_guards() -> None:
+    from datetime import datetime, timedelta, timezone
+    from types import SimpleNamespace
+    from src.polymarket_research.alpha_124_shadow_daemon import Alpha124ShadowDaemon, BANKROLL_TICKETS
+    from src.polymarket_research.riskless_protocol_v2_expansion import run_protocol_v2_daemon_scan
+
+    for req_sl in (
+        "NR4_OPTIMAL_CHANNEL_CONVERT",
+        "NR5_LOTTERY_FREEROLL_CONVERT",
+        "CTF_OVERROUND_MINT_SELL",
+        "C1_BINARY_COMPLETE_SET",
+    ):
+        assert req_sl in BANKROLL_TICKETS["T1000"]
+
+    # Choose timestamp inside 15:00 ET (19:00 UTC in EDT / 20:00 UTC in EST) so EQ1 window is active;
+    # we also test B1 at 11:00 ET separately.
+    now_eq = datetime(2026, 11, 4, 20, 0, 0, tzinfo=timezone.utc).timestamp()  # 15:00 EST
+    now_b1 = datetime(2026, 11, 4, 16, 0, 0, tzinfo=timezone.utc).timestamp()  # 11:00 EST
+
+    dm = Alpha124ShadowDaemon.__new__(Alpha124ShadowDaemon)
+    dm._ws_rest_seeded = {"tok_rest_seeded"}
+    dm._ws_books = {
+        "tok_fresh": (now_eq - 0.8, {"bids": [{"price": 0.54, "size": 30}], "asks": [{"price": 0.56, "size": 30}]}),
+        "tok_stale": (now_eq - 9.0, {"bids": [{"price": 0.54, "size": 30}], "asks": [{"price": 0.56, "size": 30}]}),
+        "tok_rest_seeded": (now_eq - 0.2, {"bids": [{"price": 0.54, "size": 30}], "asks": [{"price": 0.56, "size": 30}]}),
+    }
+    bk_f = dm._get_fresh_ws_book("tok_fresh", now_eq, max_age_sec=5.0)
+    assert bk_f is not None and bk_f["bids"][0]["price"] == 0.54
+    assert dm._get_fresh_ws_book("tok_stale", now_eq, max_age_sec=5.0) is None
+    assert dm._get_fresh_ws_book("tok_rest_seeded", now_eq, max_age_sec=5.0) is None
+    assert dm._get_fresh_ws_book("tok_missing", now_eq, max_age_sec=5.0) is None
+
+    # Verify QA guards inside `run_protocol_v2_daemon_scan`:
+    #   1) EQ1 ignores `is_downward=True` strikes (`NVDA < $200`)
+    #   2) DC1 blocks live in-play (`kickoff_ts = end_ts - 9000 < now + 300`) while allowing pre-match (`now + 3600`)
+    eq_down_1 = SimpleNamespace(asset="NVDA", end_ts=now_eq + 3600.0, strike=200.0, is_downward=True, yes_token="d1y", no_token="d1n", market_id="1", condition_id="c1", fee_rate=0.0, fee_exponent=1.0)
+    eq_down_2 = SimpleNamespace(asset="NVDA", end_ts=now_eq + 3600.0, strike=210.0, is_downward=True, yes_token="d2y", no_token="d2n", market_id="2", condition_id="c2", fee_rate=0.0, fee_exponent=1.0)
+    live_inplay_tree = SimpleNamespace(
+        game_id="ev_live",
+        title="Arsenal vs Chelsea",
+        end_ts=now_eq + 3600.0,  # kickoff_ts = end_ts - 9000 = now_eq - 5400 (in-play -> MUST BLOCK!)
+        home_leg={"yes_token": "lh", "no_token": "lhn", "market_id": "11", "condition_id": "lc1", "fee_rate": 0.0},
+        draw_leg={"yes_token": "ld", "no_token": "ldn", "market_id": "12", "condition_id": "lc2", "fee_rate": 0.0},
+        away_leg={"yes_token": "la", "no_token": "lan", "market_id": "13", "condition_id": "lc3", "fee_rate": 0.0},
+        btts_leg=None,
+        totals=[],
+    )
+    prematch_tree = SimpleNamespace(
+        game_id="ev_pre",
+        title="Real Madrid vs Barcelona",
+        end_ts=now_eq + 12600.0,  # kickoff_ts = now_eq + 3600 (+60m pre-match -> ALLOWED!)
+        home_leg={"yes_token": "ph", "no_token": "phn", "market_id": "21", "condition_id": "pc1", "fee_rate": 0.0},
+        draw_leg={"yes_token": "pd", "no_token": "pdn", "market_id": "22", "condition_id": "pc2", "fee_rate": 0.0},
+        away_leg={"yes_token": "pa", "no_token": "pan", "market_id": "23", "condition_id": "pc3", "fee_rate": 0.0},
+        btts_leg=None,
+        totals=[],
+    )
+    ws_map = {
+        "d1y": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+        "d1n": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+        "d2y": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+        "d2n": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+        "lh": {"asks": [{"price": 0.40, "size": 30}], "bids": [{"price": 0.39, "size": 30}]},
+        "lhn": {"asks": [{"price": 0.54, "size": 30}], "bids": [{"price": 0.53, "size": 30}]},
+        "ld": {"asks": [{"price": 0.28, "size": 30}], "bids": [{"price": 0.27, "size": 30}]},
+        "ldn": {"asks": [{"price": 0.70, "size": 30}], "bids": [{"price": 0.69, "size": 30}]},
+        "la": {"asks": [{"price": 0.30, "size": 30}], "bids": [{"price": 0.29, "size": 30}]},
+        "lan": {"asks": [{"price": 0.68, "size": 30}], "bids": [{"price": 0.67, "size": 30}]},
+        "ph": {"asks": [{"price": 0.40, "size": 30}], "bids": [{"price": 0.39, "size": 30}]},
+        "phn": {"asks": [{"price": 0.54, "size": 30}], "bids": [{"price": 0.53, "size": 30}]},
+        "pd": {"asks": [{"price": 0.28, "size": 30}], "bids": [{"price": 0.27, "size": 30}]},
+        "pdn": {"asks": [{"price": 0.70, "size": 30}], "bids": [{"price": 0.69, "size": 30}]},
+        "pa": {"asks": [{"price": 0.30, "size": 30}], "bids": [{"price": 0.29, "size": 30}]},
+        "pan": {"asks": [{"price": 0.68, "size": 30}], "bids": [{"price": 0.67, "size": 30}]},
+    }
+
+    async def _mock_fetch_batch(toks: List[str], timeout: float = 2.5) -> Dict[str, Any]:
+        return {t: ws_map[t] for t in toks if t in ws_map}
+
+    def _best_ask_sz(bk: Dict[str, Any]) -> Tuple[float, float]:
+        asks = sorted([(float(a["price"]), float(a["size"])) for a in (bk.get("asks") or [])], key=lambda x: x[0])
+        return asks[0] if asks else (1.0, 0.0)
+
+    emitted_2l: List[Dict[str, Any]] = []
+    scan_dm = SimpleNamespace(
+        single_scan=True,
+        pyth_close_ladders={"NVDA": [eq_down_1, eq_down_2]},
+        barrier_rungs={},
+        strike_ladders={},
+        negrisk_convert_slates={},
+        soccer_trees={"ev_live": live_inplay_tree, "ev_pre": prematch_tree},
+        pyth_daily_markets={},
+        daily_updown_markets={},
+        _ws_books={},
+        fetch_books_batch=_mock_fetch_batch,
+        _best_ask_sz=_best_ask_sz,
+        _get_fresh_ws_book=lambda tid, nt, max_age_sec=5.0: ws_map.get(tid),
+        emit_live_two_leg_box_candidate=lambda **kw: emitted_2l.append(kw) or True,
+    )
+    opps: List[Dict[str, Any]] = []
+    asyncio.run(run_protocol_v2_daemon_scan(scan_dm, opps, now_ts=now_eq))
+    sleeves_found = [o["sleeve"] for o in opps]
+    assert "EQ1_PYTH_EQUITY_DOMINANCE_BOX" not in sleeves_found
+    assert set(sleeves_found) == {"DC1_DOUBLE_CHANCE_1X2_PARITY"}
+    assert all("Real Madrid" in o["market"] for o in opps)
+
+    # Also verify B1 downward barrier (`direction="DOWN"`) is rejected at 11:00 ET
+    b1_down = SimpleNamespace(asset="BTC", strike=90_000.0, direction="DOWN", end_ts=now_b1 + 7200.0, yes_token="bdy", no_token="bdn", market_id="3", condition_id="c3", fee_rate=0.0)
+    b1_snap = SimpleNamespace(asset="BTC", strike=90_000.0, is_downward=False, end_ts=now_b1 + 3600.0, yes_token="bsy", no_token="bsn", market_id="4", condition_id="c4", fee_rate=0.0)
+    ws_map.update({
+        "bdy": {"asks": [{"price": 0.40, "size": 30}], "bids": [{"price": 0.39, "size": 30}]},
+        "bdn": {"asks": [{"price": 0.58, "size": 30}], "bids": [{"price": 0.57, "size": 30}]},
+        "bsy": {"asks": [{"price": 0.52, "size": 30}], "bids": [{"price": 0.51, "size": 30}]},
+        "bsn": {"asks": [{"price": 0.45, "size": 30}], "bids": [{"price": 0.44, "size": 30}]},
+    })
+    scan_dm.pyth_close_ladders = {}
+    scan_dm.soccer_trees = {}
+    scan_dm.barrier_rungs = {"b1d": b1_down}
+    scan_dm.strike_ladders = {"btc": [b1_snap]}
+    opps_b1: List[Dict[str, Any]] = []
+    asyncio.run(run_protocol_v2_daemon_scan(scan_dm, opps_b1, now_ts=now_b1))
+    assert opps_b1 == []
+
+
+def test_paa_accountant_readonly_safeguard_preservation_and_presplit_flat_guard(tmp_path: Path) -> None:
+    from scripts.paa_flat_harvester_redeploy_once import _safe_to_restart
+    from src.paa_os.accountant import PAAAccountant
+    from src.paa_os.budget import BudgetManager
+    from src.paa_os.permissions import load_autonomy_config
+    from src.paa_os.task_db import PAATaskDB
+
+    assert _safe_to_restart({"active_positions": {}, "pre_split_inventory_state": {"active": True}}) is False
+    assert _safe_to_restart({"active_positions": {}, "pre_split_inventory_state": {"active": False}}) is True
+
+    cfg = load_autonomy_config()
+    db = PAATaskDB(tmp_path / "paa_tasks.db")
+    budget = BudgetManager(db, autonomy_cfg=cfg)
+    acct = PAAAccountant(db, budget, autonomy_cfg=cfg, data_dir=tmp_path)
+
+    # Active PreSplitInventoryGun with $5.20 realized mid-cycle cash must NOT trigger false CASH_LEDGER_MISMATCH
+    st_ps = {
+        "live_bankroll": 50.0,
+        "active_positions": {},
+        "pending_entry_intents": {},
+        "pre_split_inventory_state": {"active": True, "cost_usd": 10.0, "realized_cash_usd": 5.20, "up_rem": 0.0, "dn_rem": 10.0},
+    }
+    ok_ps, disc_ps, anom_ps = acct.verify_accounting_integrity({"free_cash_pusd": 55.20, "open_positions": []}, state_override=st_ps)
+    assert ok_ps is True, anom_ps
+    assert disc_ps < 0.05
+
+    # Read-only fallback (`POLYGON_RPC_READONLY_FALLBACK_TO_STATE`) must NOT clear an active accounting safeguard!
+    acct.enforce_accounting_safeguard(4.0, ["CASH_LEDGER_MISMATCH:test"])
+    assert acct.safeguard_file.exists()
+    acct.measure_and_record(
+        live_rpc_check=False,
+        ledger_override={
+            "free_cash_pusd": 50.0,
+            "open_positions": [],
+            "watchdog_alerts": ["POLYGON_RPC_READONLY_FALLBACK_TO_STATE"],
+        },
+        state_override={"live_bankroll": 50.0, "active_positions": {}, "pending_entry_intents": {}},
+    )
+    assert acct.safeguard_file.exists(), "Read-only RPC fallback must never clear ACCOUNTING_SAFEGUARD_ACTIVE.json!"
+
+    # Genuine live RPC reconciliation with 0 discrepancy clears the safeguard cleanly
+    acct.measure_and_record(
+        live_rpc_check=True,
+        ledger_override={
+            "free_cash_pusd": 50.0,
+            "open_positions": [],
+            "watchdog_alerts": [],
+        },
+        state_override={"live_bankroll": 50.0, "active_positions": {}, "pending_entry_intents": {}},
+    )
+    assert not acct.safeguard_file.exists()
+
+

@@ -611,7 +611,12 @@ class PolymarketChainlinkLiveStream:
             d = _loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
         except Exception:
             return False
-        if not isinstance(d, dict) or d.get("topic") not in ("crypto_prices_chainlink", "crypto_prices_twap_sixty"):
+        if not isinstance(d, dict) or d.get("topic") not in (
+            "crypto_prices_chainlink",
+            "crypto_prices_twap_sixty",
+            "forex_prices_chainlink",
+            "metals_prices_chainlink",
+        ):
             return False
         topic = str(d.get("topic"))
         pl = d.get("payload")
@@ -767,7 +772,7 @@ class PolymarketChainlinkLiveStream:
                         self._connected = True
                         self._last_rx_mono = time.monotonic()
                     backoff = 0.5
-                    logger.info("[CHAINLINK-WS] Connected to live Polymarket Chainlink 1Hz stream (7 coins).")
+                    logger.info(f"[CHAINLINK-WS] Connected to live Polymarket Chainlink 1Hz stream ({len(CHAINLINK_SYMBOL_MAP)} symbols).")
                     while not (stop_check and stop_check()):
                         try:
                             msg = await asyncio.wait_for(ws.recv(), timeout=5.0)

@@ -22,6 +22,7 @@ import subprocess
 import sys
 import time
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -234,6 +235,10 @@ class PAAMonitor:
                         if not isinstance(c_rec, dict):
                             continue
                         ts_e = str(c_rec.get("entry_time_utc") or c_rec.get("settled_at_utc") or "")
+                        if not ts_e:
+                            raw_e = float(c_rec.get("entry_ts") or c_rec.get("exit_ts") or 0.0)
+                            if raw_e > 0.0:
+                                ts_e = datetime.fromtimestamp(raw_e, tz=timezone.utc).isoformat()
                         if ts_e < rl_cut:
                             continue
                         if (
