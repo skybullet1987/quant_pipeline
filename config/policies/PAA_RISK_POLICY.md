@@ -1,6 +1,9 @@
-# PAA PERMANENT OPERATING MEMORY — RISK & FINANCIAL POLICY (`PAA_RISK_POLICY.md`)
+# RISKLESS PAA PERMANENT OPERATING MEMORY — RISK & FINANCIAL POLICY (`PAA_RISK_POLICY.md`)
 **Authority Level**: Immutable Tier-A Policy (Protected by `PermissionGate` — AI Workers Cannot Modify)
 
+0. **Pure Riskless Live Lock (`riskless_only_mode = true`)**:
+   - AI workers MUST NEVER disable `directional.riskless_only_mode` or remove sleeves from `riskless_boxes.paused_riskless_sleeves` (`SOC2`, `SOC1`, `SP3`).
+   - Unclinched directional carries, mid-book unhedged `clobRewards`, and directional shadow promotions are blocked from live capital; focus 100% on mathematical `0`-loss arbitrage, post-outcome `0%`-fee carries, locked dead-bracket rewards, and Machine-Gun Riskless velocity.
 1. **Authoritative Financial Truth**:
    - Strictly separate:
      1. `REALIZED_ONCHAIN_WALLET_CASH` (`pUSD` + `USDC.e` + redeemed settlements net of fees),

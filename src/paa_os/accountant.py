@@ -22,7 +22,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from scripts.paa_autonomous_controller import reconcile_authoritative_ledger
+from scripts.paa_autonomous_controller import _load_riskless_governance_flags, reconcile_authoritative_ledger
 from src.paa_os.budget import BudgetManager
 from src.paa_os.permissions import load_autonomy_config
 from src.paa_os.task_db import PAATaskDB, utc_now_iso
@@ -289,6 +289,95 @@ class PAAAccountant:
             return True
         return False
 
+    def _compute_riskless_live_and_quoting_metrics(self, ledger: Dict[str, Any]) -> Dict[str, Any]:
+        """Computes pure zero-loss live W/L, post-lock sentinel stats, and live working CLOB Maker quoting utilization."""
+        riskless_only_mode, paused_sleeves = _load_riskless_governance_flags()
+        directional_sleeves = {"SLEEVE_1_CORE_302", "SLEEVE_1_SUBHOURLY_15M"}
+        live_by_sl = ledger.get("live_by_sleeve") or {}
+
+        pure_rl_trades, pure_rl_wins, pure_rl_losses, pure_rl_pnl = 0, 0, 0, 0.0
+        for sl, rec in live_by_sl.items():
+            if not isinstance(rec, dict):
+                continue
+            if sl in directional_sleeves or sl.upper() in paused_sleeves:
+                continue
+            n_tr = int(rec.get("real_trades") or 0)
+            pure_rl_trades += n_tr
+            pure_rl_wins += int(rec.get("wins") or 0)
+            pure_rl_losses += int(rec.get("losses") or 0)
+            pure_rl_pnl += float(rec.get("verified_net_pnl_usd") or 0.0)
+
+        st_path = self.data_dir / "live_harvester_state.json"
+        st = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
+        rl_epoch_cut = str((self.cfg.get("riskless_mandate") or {}).get("riskless_epoch_start_utc") or "2026-11-04T02:05:00Z")
+        post_lock_w, post_lock_l, post_lock_pnl = 0, 0, 0.0
+        for c in (st.get("closed_positions") or []):
+            if not isinstance(c, dict):
+                continue
+            ts_c = str(c.get("entry_time_utc") or c.get("settled_at_utc") or c.get("exit_time_utc") or "")
+            if ts_c < rl_epoch_cut:
+                continue
+            if (
+                c.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
+                and not bool(c.get("inventory_reconciled", True))
+                and str(c.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
+            ):
+                continue
+            p_u = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+            post_lock_pnl += p_u
+            if p_u > 0 or c.get("won") is True:
+                post_lock_w += 1
+            elif p_u < -1e-6:
+                post_lock_l += 1
+
+        intents_usd = sum(
+            float(i.get("notional_usd", 0.0) or 0.0)
+            for i in (st.get("pending_entry_intents") or {}).values()
+            if isinstance(i, dict)
+        )
+        intents_cnt = len(st.get("pending_entry_intents") or {})
+        ord_cache_p = Path("/tmp/dominus_clob_open_orders_cache.json")
+        if ord_cache_p.exists() and (time.time() - ord_cache_p.stat().st_mtime) <= 60.0:
+            try:
+                raw_ords = json.loads(ord_cache_p.read_text(encoding="utf-8"))
+                buy_ords = [
+                    o for o in (raw_ords or [])
+                    if isinstance(o, dict)
+                    and str(o.get("status") or "").upper() in ("LIVE", "OPEN")
+                    and str(o.get("side") or "BUY").upper() == "BUY"
+                ]
+                cache_usd = sum(
+                    max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) * float(o.get("price") or 0.0)
+                    for o in buy_ords
+                )
+                if cache_usd > intents_usd:
+                    intents_usd = cache_usd
+                    intents_cnt = max(intents_cnt, len(buy_ords))
+            except Exception:
+                pass
+
+        nav_book = max(0.01, float(ledger.get("portfolio_nav_book_usd") or ledger.get("free_cash_pusd") or 0.01))
+        open_cost = float(ledger.get("open_cost_basis_usd") or 0.0)
+        eff_deploy_pct = round(min(100.0, 100.0 * (open_cost + intents_usd) / nav_book), 2)
+
+        return {
+            "operating_mode": "RISKLESS_PAA" if riskless_only_mode else "HYBRID_PAA",
+            "riskless_only_mode": riskless_only_mode,
+            "paused_riskless_sleeves": sorted(paused_sleeves),
+            "pure_riskless_live_trades": pure_rl_trades,
+            "pure_riskless_live_wins": pure_rl_wins,
+            "pure_riskless_live_losses": pure_rl_losses,
+            "pure_riskless_live_wr_pct": round(100.0 * pure_rl_wins / pure_rl_trades, 2) if pure_rl_trades > 0 else 100.0,
+            "pure_riskless_realized_pnl_usd": round(pure_rl_pnl, 4),
+            "riskless_epoch_start_utc": rl_epoch_cut,
+            "post_lock_wins": post_lock_w,
+            "post_lock_losses": post_lock_l,
+            "post_lock_net_pnl_usd": round(post_lock_pnl, 4),
+            "working_maker_buy_orders_count": intents_cnt,
+            "working_maker_quoting_usd": round(intents_usd, 2),
+            "effective_deploy_or_quoting_pct": eff_deploy_pct,
+        }
+
     def measure_and_record(
         self,
         live_rpc_check: bool = True,
@@ -299,6 +388,7 @@ class PAAAccountant:
         ledger = ledger_override if ledger_override is not None else reconcile_authoritative_ledger(live_rpc_check=live_rpc_check)
         exec_m = self._compute_execution_and_slippage_metrics()
         sim_m = self._compute_simulated_benchmarks()
+        riskless_m = self._compute_riskless_live_and_quoting_metrics(ledger)
         budget_m = self.budget.get_usage_summary()
         acct_ok, disc_usd, anomalies = self.verify_accounting_integrity(ledger, state_override=state_override)
 
@@ -366,10 +456,12 @@ class PAAAccountant:
             "zero_loss_shadow_t1000_pnl_usd": sim_m["zero_loss_shadow_t1000_pnl_usd"],
             "zero_loss_shadow_wins": sim_m["zero_loss_shadow_wins"],
             "simulated_paper_oos_pnl_usd": sim_m["simulated_paper_oos_pnl_usd"],
+            "riskless_metrics": riskless_m,
             "details": {
                 "anomalies": anomalies,
                 "execution_metrics": exec_m,
                 "simulated_benchmarks": sim_m,
+                "riskless_metrics": riskless_m,
                 "budget_summary": budget_m,
                 "watchdog_alerts": ledger.get("watchdog_alerts") or [],
             },
@@ -379,6 +471,28 @@ class PAAAccountant:
         fin_ttl = float(zt_cfg.get("financial_fact_ttl_sec", 300.0))
         lat_ttl = float(zt_cfg.get("latency_fact_ttl_sec", 180.0))
         src_type = "POLYGON_RPC_AND_STATE_LEDGER" if live_rpc_check else "AUTHORITATIVE_STATE_LEDGER"
+        self.db.upsert_verified_fact(
+            fact_key="riskless.mode_locked",
+            category="RISKLESS_GOVERNANCE",
+            value=bool(riskless_m["riskless_only_mode"]),
+            epistemic_status="VERIFIED_FACT",
+            source_type="GOVERNANCE_CONFIG",
+            source_ref="config/polymarket_strategy_and_risk.json:directional.riskless_only_mode",
+            verified_by="PAAAccountant",
+            ttl_sec=fin_ttl,
+            revalidation_rule="RECHECK_GOVERNANCE_CONFIG_EVERY_CYCLE",
+        )
+        self.db.upsert_verified_fact(
+            fact_key="riskless.pure_live_win_rate_pct",
+            category="FINANCIAL_TRUTH",
+            value=riskless_m["pure_riskless_live_wr_pct"],
+            epistemic_status="VERIFIED_FACT",
+            source_type=src_type,
+            source_ref="PAAAccountant._compute_riskless_live_and_quoting_metrics",
+            verified_by="PAAAccountant",
+            ttl_sec=fin_ttl,
+            revalidation_rule="RECOMPUTE_FROM_RECONCILED_PURE_RISKLESS_SLEEVES",
+        )
         self.db.upsert_verified_fact(
             fact_key="wallet.free_cash_pusd",
             category="FINANCIAL_TRUTH",

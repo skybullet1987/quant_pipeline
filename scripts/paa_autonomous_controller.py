@@ -426,22 +426,108 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     }
 
 
-def build_strategy_scorecard(ledger: Dict[str, Any]) -> Dict[str, Any]:
-    """Maps all Live + Shadow strategies with evidence-based net profitability and graduation state."""
-    a124_path = DATA_PM / "alpha124_shadow_state.json"
-    if not a124_path.exists() and (DATA_A124 / "alpha124_shadow_state.json").exists():
-        a124_path = DATA_A124 / "alpha124_shadow_state.json"
+def _load_riskless_governance_flags(repo_root: Optional[Path] = None) -> Tuple[bool, set[str]]:
+    root = Path(repo_root) if repo_root is not None else PIPELINE_ROOT
+    cfg_p = root / "config" / "polymarket_strategy_and_risk.json"
+    riskless_only = True
+    paused_sleeves: set[str] = set()
+    if cfg_p.exists():
+        try:
+            d = json.loads(cfg_p.read_text(encoding="utf-8"))
+            riskless_only = bool((d.get("directional") or {}).get("riskless_only_mode", False))
+            paused_sleeves = {
+                str(x).strip().upper()
+                for x in ((d.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or [])
+                if str(x).strip()
+            }
+        except Exception:
+            pass
+    return riskless_only, paused_sleeves
+
+
+def discover_machine_gun_sleeves(data_dir: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
+    """Auto-discovers any Machine-Gun Riskless shadow/live state or JSONL ledgers without coupling to its branch."""
+    ddir = Path(data_dir) if data_dir is not None else DATA_PM
+    found: Dict[str, Dict[str, Any]] = {}
+    if not ddir.exists():
+        return found
+    for fp in sorted(ddir.glob("*machine_gun*")) + sorted(ddir.glob("*mg_riskless*")):
+        if not fp.is_file():
+            continue
+        try:
+            if fp.suffix == ".json":
+                doc = json.loads(fp.read_text(encoding="utf-8"))
+                if isinstance(doc, dict):
+                    sub_map = doc.get("by_sleeve") or doc.get("per_strategy")
+                    if isinstance(sub_map, dict) and sub_map:
+                        for sub_k, sub_v in sub_map.items():
+                            if isinstance(sub_v, dict):
+                                found[str(sub_k)] = {
+                                    "wins": int(sub_v.get("wins", sub_v.get("winning_trades", 0)) or 0),
+                                    "losses": int(sub_v.get("losses", sub_v.get("losing_trades", 0)) or 0),
+                                    "open": int(sub_v.get("open", sub_v.get("active_open_positions_count", 0)) or 0),
+                                    "realized_pnl_t1000_usd": float(sub_v.get("realized_pnl_t1000_usd", sub_v.get("realized_pnl", 0.0)) or 0.0),
+                                    "source_file": fp.name,
+                                }
+                    else:
+                        sl_name = str(doc.get("sleeve") or fp.stem.upper())
+                        found[sl_name] = {
+                            "wins": int(doc.get("wins", doc.get("winning_trades", 0)) or 0),
+                            "losses": int(doc.get("losses", doc.get("losing_trades", 0)) or 0),
+                            "open": int(doc.get("open", doc.get("active_open_positions_count", 0)) or 0),
+                            "realized_pnl_t1000_usd": float(doc.get("realized_pnl_t1000_usd", doc.get("realized_pnl", 0.0)) or 0.0),
+                            "source_file": fp.name,
+                        }
+            elif fp.suffix == ".jsonl":
+                wins_j, losses_j, pnl_j = 0, 0, 0.0
+                for ln in fp.read_text(encoding="utf-8", errors="ignore").splitlines()[-500:]:
+                    if not ln.strip().startswith("{"):
+                        continue
+                    r = json.loads(ln)
+                    p_u = float(r.get("net_pnl_usd", r.get("pnl_usd", 0.0)) or 0.0)
+                    pnl_j += p_u
+                    if p_u > 0 or r.get("won") is True:
+                        wins_j += 1
+                    elif p_u < 0:
+                        losses_j += 1
+                sl_name = fp.stem.upper()
+                found[sl_name] = {
+                    "wins": wins_j,
+                    "losses": losses_j,
+                    "open": 0,
+                    "realized_pnl_t1000_usd": round(pnl_j, 2),
+                    "source_file": fp.name,
+                }
+        except Exception:
+            continue
+    return found
+
+
+def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """Maps all Live + Shadow strategies with evidence-based net profitability and RISKLESS PAA graduation state."""
+    ddir = Path(data_dir) if data_dir is not None else DATA_PM
+    a124_path = ddir / "alpha124_shadow_state.json"
+    if not a124_path.exists() and (ddir.parent / "alpha124" / "alpha124_shadow_state.json").exists():
+        a124_path = ddir.parent / "alpha124" / "alpha124_shadow_state.json"
     a124 = json.loads(a124_path.read_text(encoding="utf-8")) if a124_path.exists() else {}
-    by_sl_shadow = a124.get("by_sleeve") or {}
+    by_sl_shadow = dict(a124.get("by_sleeve") or {})
+    mg_discovered = discover_machine_gun_sleeves(ddir)
+    for mg_k, mg_v in mg_discovered.items():
+        by_sl_shadow.setdefault(mg_k, mg_v)
+
     open_sh = a124.get("open_positions") or {}
     open_cnt_by_sl = Counter(
         p.get("sleeve") for p in (open_sh.values() if isinstance(open_sh, dict) else open_sh) if isinstance(p, dict)
     )
+    riskless_only_mode, paused_sleeves = _load_riskless_governance_flags()
+    directional_sleeves = {"SLEEVE_1_CORE_302", "SLEEVE_1_SUBHOURLY_15M"}
 
-    live_map = ledger.get("live_by_sleeve") or {}
+    live_map = ledger.get("live_by_sleeve") or ledger.get("by_sleeve_live") or {}
     all_sleeves = sorted(set(live_map.keys()) | set(by_sl_shadow.keys()))
     rows: List[Dict[str, Any]] = []
     grad8_live_ready: List[str] = []
+    near_grad8_sleeves: List[Dict[str, Any]] = []
+    pure_rl_trades, pure_rl_wins, pure_rl_losses, pure_rl_pnl = 0, 0, 0, 0.0
 
     for sl in all_sleeves:
         lv = live_map.get(sl) or {}
@@ -449,22 +535,41 @@ def build_strategy_scorecard(ledger: Dict[str, Any]) -> Dict[str, Any]:
         sh_w = int(sh.get("wins") or 0)
         sh_l = int(sh.get("losses") or 0)
         sh_n = sh_w + sh_l
-        sh_pnl = float(sh.get("pnl_t1000_usd", sh.get("net_pnl_t1000", 0.0)) or 0.0)
-        is_grad8 = (sh_w >= 8 and sh_l == 0)
-        if is_grad8:
-            grad8_live_ready.append(sl)
+        sh_pnl = float(
+            sh.get("realized_pnl_t1000_usd", sh.get("pnl_t1000_usd", sh.get("net_pnl_t1000", 0.0))) or 0.0
+        )
 
         lv_n = int(lv.get("real_trades") or 0)
         lv_w = int(lv.get("wins") or 0)
         lv_l = int(lv.get("losses") or 0)
         lv_pnl = float(lv.get("verified_net_pnl_usd") or 0.0)
 
+        is_paused_rl = sl.upper() in paused_sleeves
+        is_dir_sl = sl in directional_sleeves
+        is_grad8 = (sh_w >= 8 and sh_l == 0 and sh_pnl >= 0.0 and not is_paused_rl and lv_l == 0 and not is_dir_sl)
         if is_grad8:
+            grad8_live_ready.append(sl)
+        elif 5 <= sh_w < 8 and sh_l == 0 and sh_pnl > 0.0 and not is_paused_rl and not is_dir_sl:
+            near_grad8_sleeves.append({"sleeve": sl, "wins": sh_w, "needed_for_grad8": 8 - sh_w, "shadow_pnl_t1000_usd": round(sh_pnl, 2)})
+
+        if not is_dir_sl and not is_paused_rl and lv_n > 0:
+            pure_rl_trades += lv_n
+            pure_rl_wins += lv_w
+            pure_rl_losses += lv_l
+            pure_rl_pnl += lv_pnl
+
+        if is_dir_sl and riskless_only_mode:
+            status_tag = "PAUSED_RISKLESS_ONLY_MODE"
+        elif is_paused_rl or (not is_dir_sl and lv_l > 0):
+            status_tag = "PAUSED_FEE_SPORTS_LEGGING_GUARD"
+        elif is_grad8:
             status_tag = "LIVE_AUTHORIZED_GRAD8_100WR"
-        elif sl in ("SLEEVE_1_CORE_302", "SLEEVE_1_SUBHOURLY_15M"):
+        elif is_dir_sl:
             status_tag = "LIVE_V542_WFO_GATED"
         elif sh_l > 0:
             status_tag = "SHADOW_QUARANTINED_HAS_LOSS" if sh_pnl <= 0 else "SHADOW_DIRECTIONAL_NON_RISKLESS"
+        elif sh_w >= 5:
+            status_tag = f"SHADOW_NEAR_GRAD8_{sh_w}_OF_8"
         elif sh_w > 0:
             status_tag = f"SHADOW_ACCUMULATING_{sh_w}_OF_8"
         else:
@@ -480,7 +585,7 @@ def build_strategy_scorecard(ledger: Dict[str, Any]) -> Dict[str, Any]:
             "live_wr_pct": round(100.0 * lv_w / lv_n, 1) if lv_n > 0 else None,
             "live_verified_net_pnl_usd": round(lv_pnl, 4),
             "live_fees_usd": round(float(lv.get("fees_usd") or 0.0), 4),
-            "shadow_open": int(open_cnt_by_sl.get(sl, 0)),
+            "shadow_open": int(open_cnt_by_sl.get(sl, int(sh.get("open") or 0))),
             "shadow_wins": sh_w,
             "shadow_losses": sh_l,
             "shadow_wr_pct": round(100.0 * sh_w / sh_n, 1) if sh_n > 0 else None,
@@ -490,15 +595,28 @@ def build_strategy_scorecard(ledger: Dict[str, Any]) -> Dict[str, Any]:
     rows.sort(key=lambda r: (-int(r["grad8_ready"]), -float(r["live_verified_net_pnl_usd"]), -float(r["shadow_pnl_t1000_usd"])))
     return {
         "generated_at_utc": _utc_now_iso(),
+        "operating_mode": "RISKLESS_PAA" if riskless_only_mode else "HYBRID_PAA",
+        "riskless_only_mode": riskless_only_mode,
+        "paused_riskless_sleeves": sorted(paused_sleeves),
         "total_sleeves_tracked": len(rows),
         "grad8_live_authorized_sleeves": grad8_live_ready,
+        "near_grad8_zero_loss_sleeves": near_grad8_sleeves,
+        "machine_gun_sleeves_detected": sorted(mg_discovered.keys()),
+        "pure_riskless_live_summary": {
+            "trades": pure_rl_trades,
+            "wins": pure_rl_wins,
+            "losses": pure_rl_losses,
+            "win_rate_pct": round(100.0 * pure_rl_wins / pure_rl_trades, 2) if pure_rl_trades > 0 else 100.0,
+            "verified_net_pnl_usd": round(pure_rl_pnl, 4),
+            "realized_pnl_usd": round(pure_rl_pnl, 4),
+        },
         "shadow_open_positions_total": sum(open_cnt_by_sl.values()),
         "strategies": rows,
     }
 
 
 def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
-    """Scans across ALL Polymarket categories without restriction and ranks opportunities by Net EV & Velocity."""
+    """Scans across ALL Polymarket categories and ranks mathematical Riskless Arbitrage & 0%-Fee Carry opportunities."""
     from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
 
     now = time.time()
@@ -526,9 +644,12 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
     fee_free_mkts = 0
 
     uma_candidates: List[Dict[str, Any]] = []
+    post_clinch_sweepers: List[Dict[str, Any]] = []
+    locked_clob_rewards: List[Dict[str, Any]] = []
     intraday_high_prob: List[Dict[str, Any]] = []
     clob_reward_pools: List[Dict[str, Any]] = []
     negrisk_arbs: List[Dict[str, Any]] = []
+    maker_anchor_slate_arbs: List[Dict[str, Any]] = []
 
     for ev in events:
         if not isinstance(ev, dict):
@@ -539,6 +660,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
         cat_events[cat] += 1
         cat_vol24[cat] += ev_v24
         ev_nr = ev.get("negRisk")
+        is_nr_event = bool(ev.get("negRisk") or ev.get("enableNegRisk"))
         active_nr_legs: List[Dict[str, Any]] = []
 
         for m in (ev.get("markets") or []):
@@ -546,6 +668,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                 continue
             total_mkts += 1
             fees_en = bool(m.get("feesEnabled", False)) or float(m.get("takerBaseFee") or 0.0) > 0
+            fee_rate = float(m.get("takerBaseFee") or (0.02 if fees_en else 0.0))
             if fees_en:
                 fee_enabled_mkts += 1
             else:
@@ -563,7 +686,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                 except Exception:
                     rem_h = 9999.0
 
-            # 1. Objective UMA proposed carry candidates (`BOND1` universe)
+            # 1. Objective UMA proposed carry candidates (`BOND1` / `BOND2` 0%-fee Maker universe)
             m_chk = {**m, "negRisk": ev_nr} if ("negRisk" not in m and ev_nr is not None) else m
             ok_uma, dom_uma = is_objective_uma_market(m_chk)
             if ok_uma:
@@ -581,20 +704,41 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                         "est_bps_per_hour": round(edge_bps / 1.5, 1),
                         "liquidity_usd": round(liq, 0),
                         "volume_24h_usd": round(v24, 0),
+                        "zero_maker_fee": True,
                         "authorized_live": True,
                     })
 
-            # 2. Intraday <= 8h high-probability resolution carry
+            # 2. Post-Clinch 0%-Fee Maker Sweeper (`MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER`)
+            win_clinch_bid = bb if bb >= 0.993 else (round(1.0 - ba, 4) if 0.0 < ba <= 0.007 else 0.0)
+            win_clinch_side = "YES" if bb >= 0.993 else "NO"
+            if 0.993 <= win_clinch_bid <= 0.998 and rem_h <= 1.5 and liq >= 200.0:
+                ebps_cl = round((1.0 - win_clinch_bid) * 10000.0, 1)
+                eff_settle_h = max(0.35, rem_h + 0.50 if rem_h > 0 else 0.50)
+                post_clinch_sweepers.append({
+                    "opportunity_type": "MKR_LOCK1_POST_CLINCH_SWEEPER",
+                    "category": cat,
+                    "side": win_clinch_side,
+                    "market_id": str(m.get("id")),
+                    "question": str(m.get("question") or "")[:85],
+                    "maker_bid_px": win_clinch_bid,
+                    "net_edge_bps_maker_0pct": ebps_cl,
+                    "est_bps_per_hour": round(ebps_cl / eff_settle_h, 1),
+                    "rem_hours": round(rem_h, 2),
+                    "liquidity_usd": round(liq, 0),
+                    "volume_24h_usd": round(v24, 0),
+                    "authorized_live": True,
+                })
+
+            # 3. Intraday <= 8h unclinched carry (tracked SOLELY to log explicit Riskless-PAA rejection!)
             if 0.10 <= rem_h <= 8.0 and liq >= 300.0:
                 for side_lbl, ask_px in (("YES", ba), ("NO", round(1.0 - bb, 4) if bb > 0 else 1.0)):
                     if 0.94 <= ask_px <= 0.992:
-                        # Maker post-only 1 tick below ask pays 0% fee
                         mkr_px = round(ask_px - 0.001, 4)
                         edge_bps = round((1.0 - mkr_px) * 10000.0, 1)
                         bps_hr = round(edge_bps / max(0.25, rem_h), 1)
                         if bps_hr >= 15.0:
                             intraday_high_prob.append({
-                                "opportunity_type": "INTRADAY_HIGH_CERTAINTY_MAKER_CARRY",
+                                "opportunity_type": "INTRADAY_UNHEDGED_CARRY_REJECT_IN_RISKLESS_MODE",
                                 "category": cat,
                                 "side": side_lbl,
                                 "market_id": str(m.get("id")),
@@ -605,56 +749,158 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                                 "est_bps_per_hour": bps_hr,
                                 "liquidity_usd": round(liq, 0),
                                 "volume_24h_usd": round(v24, 0),
+                                "is_unhedged_directional": True,
                             })
 
-            # 3. High-yield small-cap CLOB USDC Liquidity Rewards (`clobRewards`)
+            # 4. Locked Dead-Bracket `clobRewards` (`MKR_REWARD_LOCKED_CARRY`) vs Unhedged Mid-Book `clobRewards`
             rw_min = float(m.get("rewardsMinSize") or 0.0)
             rw_spd = float(m.get("rewardsMaxSpread") or 0.0)
             daily_rw = sum(float(r.get("rewardsDailyRate") or 0.0) for r in (m.get("clobRewards") or []) if isinstance(r, dict))
-            if daily_rw >= 10.0 and 0.0 < rw_min <= 50.0 and 0.08 <= bb < ba <= 0.92:
-                min_cap_usd = round(rw_min * min(bb, 1.0 - ba), 2)
-                yield_pool_ratio = round(daily_rw / max(100.0, liq), 4)
-                clob_reward_pools.append({
-                    "opportunity_type": "CLOB_USDC_LIQUIDITY_REWARD_POOL",
-                    "category": cat,
-                    "market_id": str(m.get("id")),
-                    "question": str(m.get("question") or "")[:85],
-                    "daily_reward_pool_usd": round(daily_rw, 2),
-                    "min_size_shares": rw_min,
-                    "min_capital_est_usd": min_cap_usd,
-                    "max_reward_spread_cents": rw_spd,
-                    "best_bid": bb,
-                    "best_ask": ba,
-                    "book_liquidity_usd": round(liq, 0),
-                    "daily_pool_to_liq_ratio": yield_pool_ratio,
-                    "est_bps_per_hour": round((yield_pool_ratio * 10000.0) / 24.0, 1),
-                    "authorized_live": False,
-                })
+            if daily_rw >= 5.0 and 0.0 < rw_min <= 100.0:
+                locked_px = bb if bb >= 0.965 else (round(1.0 - ba, 4) if 0.0 < ba <= 0.035 else 0.0)
+                locked_side = "YES" if bb >= 0.965 else "NO"
+                if 0.965 <= locked_px <= 0.998 and rem_h <= 72.0:
+                    carry_bps = round((1.0 - locked_px) * 10000.0, 1)
+                    rw_ratio = round(daily_rw / max(100.0, liq), 4)
+                    rw_bps_hr = round((rw_ratio * 10000.0) / 24.0, 1)
+                    tot_bps_hr = round((carry_bps / max(1.0, rem_h if rem_h > 0 else 2.0)) + rw_bps_hr, 1)
+                    locked_clob_rewards.append({
+                        "opportunity_type": "MKR_REWARD_LOCKED_CARRY",
+                        "category": cat,
+                        "side": locked_side,
+                        "market_id": str(m.get("id")),
+                        "question": str(m.get("question") or "")[:85],
+                        "locked_maker_bid_px": locked_px,
+                        "carry_edge_bps": carry_bps,
+                        "daily_reward_pool_usd": round(daily_rw, 2),
+                        "min_size_shares": rw_min,
+                        "min_capital_est_usd": round(rw_min * locked_px, 2),
+                        "est_bps_per_hour": tot_bps_hr,
+                        "rem_hours": round(max(0.5, rem_h), 1),
+                        "book_liquidity_usd": round(liq, 0),
+                    })
+                elif daily_rw >= 10.0 and rw_min <= 50.0 and 0.08 <= bb < ba <= 0.92:
+                    min_cap_usd = round(rw_min * min(bb, 1.0 - ba), 2)
+                    yield_pool_ratio = round(daily_rw / max(100.0, liq), 4)
+                    clob_reward_pools.append({
+                        "opportunity_type": "CLOB_USDC_MIDBOOK_REWARD_POOL",
+                        "category": cat,
+                        "market_id": str(m.get("id")),
+                        "question": str(m.get("question") or "")[:85],
+                        "daily_reward_pool_usd": round(daily_rw, 2),
+                        "min_size_shares": rw_min,
+                        "min_capital_est_usd": min_cap_usd,
+                        "max_reward_spread_cents": rw_spd,
+                        "best_bid": bb,
+                        "best_ask": ba,
+                        "book_liquidity_usd": round(liq, 0),
+                        "daily_pool_to_liq_ratio": yield_pool_ratio,
+                        "est_bps_per_hour": round((yield_pool_ratio * 10000.0) / 24.0, 1),
+                        "authorized_live": False,
+                    })
 
-            if (ev.get("negRisk") or ev.get("enableNegRisk")) and ba > 0:
-                active_nr_legs.append({"bb": bb, "ba": ba, "fees": fees_en, "rem_h": rem_h})
+            if is_nr_event and (ba > 0 or bb > 0):
+                taker_fee_ya = round(ba * (1.0 - ba) * fee_rate, 5) if (fees_en and 0.0 < ba < 1.0) else 0.0
+                no_ask = round(1.0 - bb, 4) if bb > 0 else 1.0
+                taker_fee_na = round(no_ask * (1.0 - no_ask) * fee_rate, 5) if (fees_en and 0.0 < no_ask < 1.0) else 0.0
+                active_nr_legs.append({
+                    "market_id": str(m.get("id")),
+                    "bb": bb,
+                    "ba": ba if ba > 0 else 1.0,
+                    "no_ask": no_ask,
+                    "fee_ya": taker_fee_ya,
+                    "fee_na": taker_fee_na,
+                    "fees": fees_en,
+                    "rem_h": rem_h,
+                    "liq": liq,
+                })
 
         if len(active_nr_legs) >= 2:
             aug = bool(ev.get("negRiskAugmented", False))
-            sum_ya = sum(x["ba"] for x in active_nr_legs)
-            if not aug and 0.50 < sum_ya < 0.992:
-                rem_min = max(0.25, min(x["rem_h"] for x in active_nr_legs))
-                ebps = round((1.0 - sum_ya) * 10000.0, 1)
-                negrisk_arbs.append({
-                    "opportunity_type": "NEGRISK_EXHAUSTIVE_YES_SLATE_ARB",
-                    "category": cat,
-                    "title": str(ev.get("title") or "")[:80],
-                    "legs": len(active_nr_legs),
-                    "sum_yes_ask": round(sum_ya, 4),
-                    "net_edge_bps": ebps,
-                    "rem_hours": round(rem_min, 1),
-                    "est_bps_per_hour": round(ebps / rem_min, 1),
-                })
+            rem_min = max(0.25, min(x["rem_h"] for x in active_nr_legs))
+            all_zero_fee = all(not x["fees"] for x in active_nr_legs)
+            min_leg_liq = round(min(x["liq"] for x in active_nr_legs), 0)
+
+            # 5a. Exhaustive NegRisk YES Complete-Set Arb (`NR0_ZERO_FEE_SLATE_ARB` / Machine-Gun Taker Slate)
+            if not aug and all(x["ba"] < 1.0 for x in active_nr_legs):
+                sum_ya_net = sum(x["ba"] + x["fee_ya"] for x in active_nr_legs)
+                if 0.50 < sum_ya_net < 0.996:
+                    ebps = round((1.0 - sum_ya_net) * 10000.0, 1)
+                    negrisk_arbs.append({
+                        "opportunity_type": "NEGRISK_EXHAUSTIVE_YES_SLATE_ARB",
+                        "category": cat,
+                        "title": str(ev.get("title") or "")[:80],
+                        "legs": len(active_nr_legs),
+                        "all_legs_zero_fee": all_zero_fee,
+                        "sum_yes_ask": round(sum_ya_net, 4),
+                        "net_edge_bps": ebps,
+                        "rem_hours": round(rem_min, 1),
+                        "est_bps_per_hour": round(ebps / rem_min, 2),
+                        "min_leg_liquidity_usd": min_leg_liq,
+                    })
+                elif 0.996 <= sum_ya_net <= 1.025:
+                    # 5b. Maker-Anchor Complete-Set Arb (`MAKER_ANCHOR_SLATE_ARB`: 0%-fee Maker on widest spread leg + Taker sweep)
+                    best_anchor_saving = 0.0
+                    for lg in active_nr_legs:
+                        if lg["bb"] > 0 and (lg["ba"] - lg["bb"]) >= 0.004:
+                            mkr_anchor_px = round(lg["bb"] + 0.001, 4)
+                            saving = (lg["ba"] + lg["fee_ya"]) - mkr_anchor_px
+                            if saving > best_anchor_saving:
+                                best_anchor_saving = saving
+                    maker_slate_cost = round(sum_ya_net - best_anchor_saving, 4)
+                    if 0.50 < maker_slate_cost < 0.994 and rem_min <= 168.0:
+                        ebps_m = round((1.0 - maker_slate_cost) * 10000.0, 1)
+                        maker_anchor_slate_arbs.append({
+                            "opportunity_type": "MAKER_ANCHOR_COMPLETE_SET_ARB",
+                            "category": cat,
+                            "title": str(ev.get("title") or "")[:80],
+                            "legs": len(active_nr_legs),
+                            "all_legs_zero_fee": all_zero_fee,
+                            "maker_slate_net_cost": maker_slate_cost,
+                            "taker_slate_net_cost": round(sum_ya_net, 4),
+                            "net_edge_bps": ebps_m,
+                            "rem_hours": round(rem_min, 1),
+                            "est_bps_per_hour": round(ebps_m / rem_min, 2),
+                        })
+
+            # 5c. Instant NegRisk NO-Subset Convert Arb (`NR2_CONVERT_NO_SUBSET_ARB`: sum_k(NO_ask + fee) < K - 1 -> instant USDC!)
+            legs_by_bid = sorted(
+                [x for x in active_nr_legs if x["bb"] > 0.02],
+                key=lambda x: -(x["bb"] - x["fee_na"]),
+            )
+            if len(legs_by_bid) >= 2:
+                cum_no_cost = 0.0
+                best_conv: Optional[Dict[str, Any]] = None
+                for k_idx, lg in enumerate(legs_by_bid, start=1):
+                    cum_no_cost += lg["no_ask"] + lg["fee_na"]
+                    if k_idx >= 2:
+                        guaranteed_usdc = float(k_idx - 1)
+                        net_gain = guaranteed_usdc - cum_no_cost
+                        if net_gain >= 0.004:
+                            ebps_c = round((net_gain / max(0.10, cum_no_cost)) * 10000.0, 1)
+                            best_conv = {
+                                "opportunity_type": "NR2_INSTANT_NO_CONVERT_ARB",
+                                "category": cat,
+                                "title": str(ev.get("title") or "")[:80],
+                                "legs": k_idx,
+                                "all_legs_zero_fee": all_zero_fee,
+                                "sum_no_ask_net": round(cum_no_cost, 4),
+                                "instant_convert_usdc": guaranteed_usdc,
+                                "net_edge_bps": ebps_c,
+                                "rem_hours": 0.1,
+                                "est_bps_per_hour": round(ebps_c / 0.25, 1),
+                                "min_leg_liquidity_usd": min_leg_liq,
+                            }
+                if best_conv is not None:
+                    negrisk_arbs.append(best_conv)
 
     uma_candidates.sort(key=lambda x: (-x["net_edge_bps_maker_0pct"], -x["volume_24h_usd"]))
+    post_clinch_sweepers.sort(key=lambda x: (-x["est_bps_per_hour"], -x["liquidity_usd"]))
+    locked_clob_rewards.sort(key=lambda x: (-x["est_bps_per_hour"], -x["daily_reward_pool_usd"]))
     intraday_high_prob.sort(key=lambda x: -x["est_bps_per_hour"])
     clob_reward_pools.sort(key=lambda x: -x["daily_pool_to_liq_ratio"])
-    negrisk_arbs.sort(key=lambda x: -x["net_edge_bps"])
+    negrisk_arbs.sort(key=lambda x: (-x["est_bps_per_hour"], -x["net_edge_bps"]))
+    maker_anchor_slate_arbs.sort(key=lambda x: (-x["est_bps_per_hour"], -x["net_edge_bps"]))
 
     a124_live_opps = []
     opps_f = DATA_A124 / "alpha124_live_opportunities.json"
@@ -666,6 +912,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
 
     return {
         "scanned_at_utc": _utc_now_iso(),
+        "operating_mode": "RISKLESS_PAA",
         "events_scanned": len(events),
         "active_markets_scanned": total_mkts,
         "fee_enabled_markets": fee_enabled_mkts,
@@ -676,9 +923,12 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
             key=lambda x: -x["volume_24h_usd"],
         )[:20],
         "ranked_uma_proposed_carries": uma_candidates[:20],
+        "ranked_post_clinch_sweepers": post_clinch_sweepers[:20],
+        "ranked_locked_clob_rewards": locked_clob_rewards[:20],
+        "ranked_negrisk_slate_arbs": negrisk_arbs[:20],
+        "ranked_maker_anchor_slate_arbs": maker_anchor_slate_arbs[:20],
         "ranked_intraday_high_prob_carries": intraday_high_prob[:20],
         "ranked_clob_usdc_reward_pools": clob_reward_pools[:20],
-        "ranked_negrisk_slate_arbs": negrisk_arbs[:15],
         "alpha124_realtime_top_opportunities": a124_live_opps,
     }
 

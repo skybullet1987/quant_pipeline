@@ -26,7 +26,11 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 import audit_losing_trades
-from scripts.paa_autonomous_controller import build_strategy_scorecard, reconcile_authoritative_ledger
+from scripts.paa_autonomous_controller import (
+    build_strategy_scorecard,
+    discover_machine_gun_sleeves,
+    reconcile_authoritative_ledger,
+)
 from src.paa_os.accountant import PAAAccountant
 from src.paa_os.agent_runtime import AuthExpiredError, HeadlessAgentError, HeadlessAgentRunner
 from src.paa_os.budget import BudgetManager
@@ -250,19 +254,12 @@ class PAADirector:
                         pass
             except Exception:
                 pass
-        grad8_ready, near_grad8, zero_live_gaps = [], [], []
-        for sl, rec in by_slv.items():
-            if not isinstance(rec, dict):
-                continue
-            w = int(rec.get("wins", 0) or 0)
-            l = int(rec.get("losses", 0) or 0)
-            pnl = float(rec.get("realized_pnl_t1000_usd", 0.0) or 0.0)
-            if w >= 8 and l == 0 and pnl > 0:
-                grad8_ready.append(sl)
-                if live_wins_by_slv.get(sl, 0) == 0 and cand_counts.get(sl, 0) == 0:
-                    zero_live_gaps.append(sl)
-            elif 5 <= w < 8 and l == 0 and pnl > 0:
-                near_grad8.append({"sleeve": sl, "wins": w, "remaining": 8 - w, "shadow_pnl_t1000": round(pnl, 2)})
+        mg_sleeves = discover_machine_gun_sleeves(self.data_dir)
+        for _mg_k, _mg_v in mg_sleeves.items():
+            if _mg_k not in by_slv and isinstance(_mg_v, dict):
+                by_slv[_mg_k] = _mg_v
+                if int(_mg_v.get("open", 0) or 0) > 0:
+                    active_shadow_sleeves.add(_mg_k)
         min_dir_eq = 0.0
         riskless_only_mode = False
         paused_rb_sleeves: set[str] = set()
@@ -274,14 +271,28 @@ class PAADirector:
                 paused_rb_sleeves = {str(x).strip().upper() for x in ((_cfg_d.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []) if str(x).strip()}
             except Exception:
                 min_dir_eq = 0.0
-        zero_live_gaps = [sl for sl in zero_live_gaps if sl.upper() not in paused_rb_sleeves]
+        grad8_ready, near_grad8, zero_live_gaps = [], [], []
+        for sl, rec in by_slv.items():
+            if not isinstance(rec, dict) or sl.upper() in paused_rb_sleeves:
+                continue
+            w = int(rec.get("wins", 0) or 0)
+            l = int(rec.get("losses", 0) or 0)
+            pnl = float(rec.get("realized_pnl_t1000_usd", rec.get("pnl_t1000_usd", 0.0)) or 0.0)
+            if w >= 8 and l == 0 and pnl > 0:
+                grad8_ready.append(sl)
+                if live_wins_by_slv.get(sl, 0) == 0 and cand_counts.get(sl, 0) == 0:
+                    zero_live_gaps.append(sl)
+            elif 5 <= w < 8 and l == 0 and pnl > 0:
+                near_grad8.append({"sleeve": sl, "wins": w, "remaining": 8 - w, "shadow_pnl_t1000": round(pnl, 2)})
         active_conv_gaps = sorted(sl for sl in zero_live_gaps if sl in active_shadow_sleeves)
         regime_quiet_grad8 = sorted(sl for sl in zero_live_gaps if sl not in active_shadow_sleeves)
         summary = {
             "audited_at_utc": utc_now_iso(),
+            "operating_mode": str(self.cfg.get("operating_mode") or "RISKLESS_PAA"),
             "grad8_ready_count": len(grad8_ready),
             "grad8_ready_sleeves": sorted(grad8_ready),
             "paused_riskless_sleeves": sorted(paused_rb_sleeves),
+            "machine_gun_sleeves_detected": sorted(mg_sleeves.keys()),
             "grad8_zero_live_conversion_gaps": sorted(zero_live_gaps),
             "grad8_active_shadow_conversion_gaps": active_conv_gaps,
             "grad8_regime_quiet_sleeves": regime_quiet_grad8,
@@ -374,8 +385,10 @@ class PAADirector:
                         stage_role="RESEARCH_SYNTHESIS",
                         prior_verified_checkpoint={"universe_scan": step_outputs["universe_scan"]},
                         stage_instructions=(
-                            "In 2 concise sentences, state the top Polymarket category opportunity from `universe_scan` "
-                            "and the top risk filter to maintain. Never claim simulated findings are LIVE_VERIFIED."
+                            "In 2 concise sentences under RISKLESS PAA (100% zero-loss mandate), state the highest-velocity "
+                            "riskless opportunity from `universe_scan` (UMA carry, NegRisk/complete-set slate arb, post-clinch sweeper, "
+                            "locked dead-bracket reward, or Grad-8 box) and the top adverse-selection/legging guard to maintain. "
+                            "Never claim simulated findings are LIVE_VERIFIED."
                         ),
                     )
                     ai_res = self.agent_runner.invoke(
@@ -699,8 +712,31 @@ class PAADirector:
         recent_ok_deploys = [d for d in deploys if d.get("state") == "DEPLOYED_VERIFIED"]
         blocked_deploys = [d for d in deploys if "BLOCKED" in str(d.get("state"))]
 
+        fin_details = fin.get("details") if isinstance(fin.get("details"), dict) else {}
+        fin_rl = fin.get("riskless_metrics") or fin_details.get("riskless_metrics") or {}
+        sc_pure = sc.get("pure_riskless_live_summary") or {}
+        op_mode = str(self.cfg.get("operating_mode") or "RISKLESS_PAA")
+        riskless_kpis = {
+            "operating_mode": op_mode,
+            "riskless_only_mode": bool(fin_rl.get("riskless_only_mode", sc.get("riskless_only_mode", True))),
+            "paused_riskless_sleeves": list(fin_rl.get("paused_riskless_sleeves") or sc.get("paused_riskless_sleeves") or []),
+            "pure_riskless_live_wins": int(fin_rl.get("pure_riskless_live_wins", sc_pure.get("wins", 0)) or 0),
+            "pure_riskless_live_losses": int(fin_rl.get("pure_riskless_live_losses", sc_pure.get("losses", 0)) or 0),
+            "pure_riskless_live_wr_pct": float(fin_rl.get("pure_riskless_live_wr_pct", sc_pure.get("win_rate_pct", 100.0)) or 100.0),
+            "pure_riskless_realized_pnl_usd": float(fin_rl.get("pure_riskless_realized_pnl_usd", sc_pure.get("realized_pnl_usd", 0.0)) or 0.0),
+            "post_lock_wins": int(fin_rl.get("post_lock_wins", 0) or 0),
+            "post_lock_losses": int(fin_rl.get("post_lock_losses", 0) or 0),
+            "post_lock_net_pnl_usd": float(fin_rl.get("post_lock_net_pnl_usd", 0.0) or 0.0),
+            "working_maker_quoting_usd": float(fin_rl.get("working_maker_quoting_usd", 0.0) or 0.0),
+            "effective_deploy_or_quoting_pct": float(fin_rl.get("effective_deploy_or_quoting_pct", 0.0) or 0.0),
+            "near_grad8_zero_loss_sleeves": list(sc.get("near_grad8_zero_loss_sleeves") or []),
+            "machine_gun_sleeves_detected": list(sc.get("machine_gun_sleeves_detected") or []),
+        }
+
         dashboard = {
             "generated_at_utc": utc_now_iso(),
+            "operating_mode": op_mode,
+            "riskless_paa_kpis": riskless_kpis,
             "master_stop_engaged": (self.paa_dir / "PAA_MASTER_STOP").exists(),
             "director_heartbeat": hbs.get("paa_director"),
             "last_successful_automation_cycle_utc": (hbs.get("paa_director") or {}).get("last_seen_utc"),
@@ -722,7 +758,11 @@ class PAADirector:
             },
             "strategy_deployment_states": {
                 "total_sleeves_tracked": sc.get("total_sleeves_tracked", 0),
+                "riskless_only_mode": riskless_kpis["riskless_only_mode"],
+                "paused_riskless_sleeves": riskless_kpis["paused_riskless_sleeves"],
                 "grad8_live_authorized_sleeves": sc.get("grad8_live_authorized_sleeves", []),
+                "near_grad8_zero_loss_sleeves": riskless_kpis["near_grad8_zero_loss_sleeves"],
+                "machine_gun_sleeves_detected": riskless_kpis["machine_gun_sleeves_detected"],
                 "shadow_open_positions_total": sc.get("shadow_open_positions_total", 0),
                 "compliance_gate": (self.cfg.get("permissions") or {}).get("jurisdiction_compliance_gate"),
             },
@@ -780,7 +820,13 @@ class PAADirector:
         vf = dashboard["verified_financial_performance"]
 
         md = [
-            f"# PAA Autonomous Operating System Status ({dashboard['generated_at_utc']})",
+            f"# RISKLESS PAA Autonomous Operating System Status ({dashboard['generated_at_utc']})",
+            "",
+            "## 0. RISKLESS PAA Mandate & Zero-Loss Scorecard",
+            f"- **Operating Mode**: `{op_mode}` | **100% Pure Riskless Live Lock**: `{riskless_kpis['riskless_only_mode']}`",
+            f"- **Pure Riskless Live Record**: `{riskless_kpis['pure_riskless_live_wins']}W / {riskless_kpis['pure_riskless_live_losses']}L` (`{riskless_kpis['pure_riskless_live_wr_pct']:.1f}%` WR, `${riskless_kpis['pure_riskless_realized_pnl_usd']:+.2f}`) | **Post-Lock Record**: `{riskless_kpis['post_lock_wins']}W / {riskless_kpis['post_lock_losses']}L` (`${riskless_kpis['post_lock_net_pnl_usd']:+.2f}`)",
+            f"- **Grad-8 Zero-Loss Live Sleeves (`{len(sc.get('grad8_live_authorized_sleeves') or [])}`)**: `{', '.join(sc.get('grad8_live_authorized_sleeves') or []) or 'NONE'}`",
+            f"- **Paused Legging-Risk Sleeves**: `{', '.join(riskless_kpis['paused_riskless_sleeves']) or 'NONE'}` | **Machine-Gun Riskless Sleeves Detected**: `{', '.join(riskless_kpis['machine_gun_sleeves_detected']) or 'AWAITING_AGENT_INTEGRATION'}`",
             "",
             "## 1. Supervision & Heartbeats",
             f"- **Director Heartbeat**: `{dir_hb.get('status', 'INIT')}` at `{dir_hb.get('last_seen_utc', 'N/A')}` (Cycle `#{dir_hb.get('cycle_count', 0)}`)",
@@ -857,10 +903,10 @@ class PAADirector:
                         self.db.enqueue_task(
                             category="RESEARCH_DISCOVERY",
                             priority_label="P2",
-                            expected_net_ev_usd_per_day=1.25,
+                            expected_net_ev_usd_per_day=1.50,
                             dedupe_key=res_dkey,
-                            title="Continuous Polymarket Multi-Category Opportunity & Shadow WFO Scan",
-                            financial_impact_hypothesis="Discover positive-EV UMA carries, intraday carries, and graduated shadow sleeves.",
+                            title="Continuous RISKLESS PAA Arbitrage, Carry & Grad-8 Universe Scan",
+                            financial_impact_hypothesis="Discover highest-bps/hr UMA carries, NegRisk/complete-set slate arbs, post-clinch sweepers, locked dead-bracket rewards, and Grad-8 zero-loss sleeves.",
                             required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
                             payload={"max_events": 600, "run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
                             next_action="SCAN_POLYMARKET_UNIVERSE",
@@ -872,8 +918,8 @@ class PAADirector:
                         priority_label="P2",
                         expected_net_ev_usd_per_day=2.50,
                         dedupe_key=conv_dkey,
-                        title=f"Hourly Shadow-to-Live Profit Conversion & Velocity Audit ({hr_bucket}Z)",
-                        financial_impact_hypothesis="Ensure all 8/8 zero-loss shadow sleeves convert to live CLOB candidates and maximize bps/hr velocity.",
+                        title=f"Hourly RISKLESS PAA Shadow-to-Live Conversion & Velocity Audit ({hr_bucket}Z)",
+                        financial_impact_hypothesis="Ensure all Grad-8 zero-loss & Machine-Gun Riskless sleeves convert cleanly to live CLOB candidates and maximize bps/hr velocity.",
                         required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
                         payload={"run_ai_synthesis": bool(allow_headless_ai and auth_ok)},
                         next_action="AUDIT_SHADOW_TO_LIVE_CONVERSION",

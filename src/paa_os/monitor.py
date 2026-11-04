@@ -222,6 +222,68 @@ class PAAMonitor:
                 if bool(st.get("risk_halt")) or bool((st.get("risk_state") or {}).get("halted")):
                     halt_r = str((st.get("risk_state") or {}).get("halt_reason") or "RISK_HALT_ACTIVE")
                     anomalies.append(f"RISK_BREACH_HALT:{halt_r}")
+
+                # RISKLESS PAA Sentinel 1: Post-lock Zero-Loss Live Invariant Check
+                rl_mandate = self.cfg.get("riskless_mandate") or {}
+                rl_cut = str(rl_mandate.get("riskless_epoch_start_utc") or "2026-11-04T02:05:00Z")
+                loss_alert_usd = float(rl_mandate.get("live_loss_alert_threshold_usd", -0.05))
+                if bool(rl_mandate.get("enforce_riskless_only_live", True)):
+                    for c_rec in (st.get("closed_positions") or [])[-30:]:
+                        if not isinstance(c_rec, dict):
+                            continue
+                        ts_e = str(c_rec.get("entry_time_utc") or c_rec.get("settled_at_utc") or "")
+                        if ts_e < rl_cut:
+                            continue
+                        if (
+                            c_rec.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
+                            and not bool(c_rec.get("inventory_reconciled", True))
+                            and str(c_rec.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
+                        ):
+                            continue
+                        pnl_c = float(c_rec.get("net_pnl_usd", c_rec.get("realized_pnl_usd", 0.0)) or 0.0)
+                        tid_c = str(c_rec.get("trade_id") or "")
+                        if tid_c and pnl_c < loss_alert_usd:
+                            anomalies.append(f"RISKLESS_ZERO_LOSS_BREACH:{tid_c}:${pnl_c:.2f}")
+                            _, created_b = self.db.enqueue_task(
+                                category="TRADE_FORENSICS",
+                                priority_label="P0",
+                                expected_net_ev_usd_per_day=25.0,
+                                dedupe_key=f"RISKLESS_BREACH_FORENSICS:{tid_c}",
+                                title=f"URGENT P0: Riskless Zero-Loss Invariant Breach on {tid_c} (${pnl_c:.2f})",
+                                financial_impact_hypothesis="Immediately root-cause any real-money loss occurring under 100% Riskless-Only Mode.",
+                                evidence={"trade": c_rec, "riskless_epoch_start_utc": rl_cut},
+                                required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                                payload={"trade_id": tid_c, "trade": c_rec},
+                                next_action="CLASSIFY_LOSS_AND_QUEUE_ACTION",
+                            )
+                            if created_b:
+                                event_wakeup_reasons.append(f"RISKLESS_ZERO_LOSS_BREACH:{tid_c}")
+
+                # RISKLESS PAA Sentinel 2: Stale Unredeemed Post-Expiry CTF Position Watchdog
+                max_unred_s = float(rl_mandate.get("max_unredeemed_post_expiry_sec", 2700.0))
+                stale_unredeemed = []
+                for tid_a, p_act in (st.get("active_positions") or {}).items():
+                    if not isinstance(p_act, dict):
+                        continue
+                    exp_u = float(p_act.get("candle_expiry_ts", 0.0) or 0.0)
+                    st_a = str(p_act.get("status") or "").upper()
+                    if exp_u > 0.0 and (now_u - exp_u) > max_unred_s and "DISPUTE" not in st_a:
+                        stale_unredeemed.append(tid_a)
+                if stale_unredeemed:
+                    anomalies.append(f"UNREDEEMED_POST_EXPIRY_POSITIONS:{stale_unredeemed}")
+                    _, created_r = self.db.enqueue_task(
+                        category="SERVICE_RECOVERY",
+                        priority_label="P1",
+                        expected_net_ev_usd_per_day=6.0,
+                        dedupe_key=f"REDEMPTION_RECYCLE:{','.join(sorted(stale_unredeemed)[:3])}",
+                        title="Audit & Recycle Unredeemed Post-Expiry CTF Positions for Capital Velocity",
+                        financial_impact_hypothesis="Unlock settled CTF collateral back into free pUSD for next riskless cycle.",
+                        evidence={"stale_unredeemed_trade_ids": stale_unredeemed},
+                        required_permission_class=PermissionClass.AUTOMATICALLY_PERMITTED.value,
+                        next_action="AUDIT_ONCHAIN_CTF_REDEMPTION_READY",
+                    )
+                    if created_r:
+                        event_wakeup_reasons.append("STALE_UNREDEEMED_CTF")
             except Exception:
                 pass
 

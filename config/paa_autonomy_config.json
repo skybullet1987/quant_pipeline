@@ -1,5 +1,27 @@
 {
-  "schema_version": "2.0.0",
+  "schema_version": "2.1.0",
+  "operating_mode": "RISKLESS_PAA",
+  "riskless_mandate": {
+    "enforce_riskless_only_live": true,
+    "riskless_epoch_start_utc": "2026-11-04T02:05:00Z",
+    "target_live_win_rate_pct": 100.0,
+    "live_loss_alert_threshold_usd": -0.05,
+    "max_unredeemed_post_expiry_sec": 2700,
+    "prioritized_alpha_families": [
+      "MACHINE_GUN_COMPLETE_SET_ARB",
+      "NEGRISK_CONVERT_AND_SLATE_ARB",
+      "BOND1_UMA_PROPOSED_MAKER_CARRY",
+      "MKR_LOCK1_POST_CLINCH_SWEEPER",
+      "MKR_REWARD_LOCKED_CARRY",
+      "SAME_ORACLE_AND_CALENDAR_DOMINANCE_BOX"
+    ],
+    "forbidden_live_families_in_riskless_mode": [
+      "UNHEDGED_CRYPTO_DIRECTIONAL",
+      "UNHEDGED_INTRADAY_SPORTS_CARRY",
+      "UNHEDGED_MIDBOOK_CLOB_REWARDS",
+      "FEE_BEARING_NON_ATOMIC_SPORTS_LEGGING"
+    ]
+  },
   "runtime": {
     "agy_binary_linux": "/home/skybullet1987/.local/bin/agy",
     "agy_binary_windows": "C:\\Users\\Anton\\.gemini\\bin\\agy.exe",

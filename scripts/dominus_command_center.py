@@ -552,6 +552,7 @@ if lh_path.exists():
             _s15_desc = f"{_a15} 15m Taker-Only ([{_t15_lo}-{_t15_hi}s] <=${_tk15_px:.2f}, Z>={_z15:.2f}, 0 Maker)"
         else:
             _s15_desc = f"{_a15} 15m Subordinate Maker-Only (<=${_mk15:.2f}, 0.80x; Taker OFF)"
+    _paused_rb_d = {str(x).strip().upper() for x in ((_bcfg.get("paused_riskless_sleeves") or [])) if str(x).strip()}
     live_strat_meta = [
         ("SLEEVE_1_CORE_302", _s1h_desc),
         ("SLEEVE_1_SUBHOURLY_15M", _s15_desc),
@@ -562,7 +563,12 @@ if lh_path.exists():
         ("CM_B3_PYTH_BARRIER_BOX", f"Live 0%-Fee Pyth Commodity Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
         ("D1_SAME_ORACLE_DOMINANCE_BOX", f"Live 32/32 Same-Oracle Crypto Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
         ("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "Live 0%-Fee Cross-Market Implication Box"),
-        ("SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX", "Live Fee-Exact Soccer 3-Way Synthetic Box"),
+        (
+            "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",
+            "PAUSED — Fee-Sports Legging Guard (Shadow Only; Zero Live Exposure)"
+            if "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX" in _paused_rb_d
+            else "Live Fee-Exact Soccer 3-Way Synthetic Box",
+        ),
         ("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", "Live 0%-Fee In-Game Milestone Lock"),
     ]
     live_strategies = []
@@ -573,7 +579,12 @@ if lh_path.exists():
         live_strategies.append({**st_d, "desc": desc_s})
     for sl_k, st_d in strat_stats.items():
         if sl_k not in seen_ls:
-            live_strategies.append({**st_d, "desc": "Live Harvester Sleeve"})
+            _extra_desc = (
+                "PAUSED — Fee-Sports Legging Guard (Shadow Only; Zero Live Exposure)"
+                if str(sl_k).strip().upper() in _paused_rb_d
+                else "Live Harvester Sleeve"
+            )
+            live_strategies.append({**st_d, "desc": _extra_desc})
 
     _rk_st = s.get("risk_state") or {}
     out["polymarket_live"] = {
@@ -1025,6 +1036,32 @@ if a_path.exists():
         "U1_DAILY_UPDOWN_LOCK",
         "W1_SOLAR_PEAK_LOCK",
     ]
+    # Auto-discover Machine-Gun Riskless state files & sleeves without touching bundled files
+    for _mg_pat in ("*machine_gun*.json", "*mg_riskless*.json"):
+        for _mg_fp in sorted((root / "data/polymarket").glob(_mg_pat)):
+            try:
+                _mg_j = json.loads(_mg_fp.read_text(encoding="utf-8"))
+                if isinstance(_mg_j, dict):
+                    _mg_sub = _mg_j.get("by_sleeve") or _mg_j.get("per_strategy") or {}
+                    if isinstance(_mg_sub, dict) and _mg_sub:
+                        for _mk, _mv in _mg_sub.items():
+                            if _mk not in by_slv and isinstance(_mv, dict):
+                                by_slv[_mk] = _mv
+                    elif "wins" in _mg_j or "closed" in _mg_j:
+                        _mk = str(_mg_j.get("sleeve") or _mg_fp.stem.upper())
+                        if _mk not in by_slv:
+                            by_slv[_mk] = _mg_j
+            except Exception:
+                pass
+    _watch_set = set(watch_sleeves)
+    for _extra_slv, _extra_m in sorted(by_slv.items()):
+        if _extra_slv in _watch_set or not isinstance(_extra_m, dict):
+            continue
+        _up_slv = str(_extra_slv).upper()
+        if ("MACHINE_GUN" in _up_slv or _up_slv.startswith("MG_") or int(_extra_m.get("wins", 0) or 0) >= 5) and int(_extra_m.get("losses", 0) or 0) == 0:
+            watch_sleeves.append(_extra_slv)
+            _watch_set.add(_extra_slv)
+    _paused_rb_a124 = {str(x).strip().upper() for x in (((strat_cfg.get("riskless_boxes") or {}).get("paused_riskless_sleeves")) or []) if str(x).strip()}
     slv_rows = []
     promoted_cnt = 0
     for slv in watch_sleeves:
@@ -1039,13 +1076,17 @@ if a_path.exists():
             else pend_zf_mkr if slv == "ZF_INTRADAY_MAKER_BOX"
             else pend_by_slv.get(slv, 0)
         )
-        g8_prom = bool(mm.get("grad8_live_promoted") or m.get("grad8_live_promoted") or (c_n >= 8 and l_n == 0 and float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0))
+        _is_paused_rb = slv.upper() in _paused_rb_a124
+        g8_prom = (not _is_paused_rb) and bool(mm.get("grad8_live_promoted") or m.get("grad8_live_promoted") or (c_n >= 8 and l_n == 0 and float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0))
         if g8_prom:
             promoted_cnt += 1
         is_v3 = slv in frontier_v3_grad8
-        is_bridged = (slv in live_bridged_sleeves) and (l_n == 0 or g8_prom)
+        is_bridged = (not _is_paused_rb) and (slv in live_bridged_sleeves) and (l_n == 0 or g8_prom)
         is_live_slv = bool(g8_prom or is_bridged)
-        if g8_prom:
+        if _is_paused_rb:
+            grad_lbl = f"PAUSED ({w_n}/{l_n})"
+            tier_tag = "PAUSED"
+        elif g8_prom:
             grad_lbl = f"LIVE 8/8 ({w_n}/0)"
             tier_tag = "PROMOTED"
         elif is_v3:
@@ -1310,6 +1351,11 @@ paa_out = {
     "research_ladder": {"HYPOTHESIS": 0, "BACKTESTED": 0, "OOS_TESTED": 0, "SHADOW_VALIDATED": 0, "LIVE_VERIFIED": 0},
     "recent_findings": [],
     "deployments": [],
+    "operating_mode": "RISKLESS_PAA",
+    "riskless_kpis": {
+        "riskless_only_mode": bool((strat_cfg.get("directional") or {}).get("riskless_only_mode", True)),
+        "paused_riskless_sleeves": list((strat_cfg.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []),
+    },
     "verified_financial_performance": {},
     "budget_and_resources": {"daily_ai_calls": 0, "daily_ai_cost_usd": 0.0, "max_daily_ai_cost_usd": 2.50, "max_daily_ai_calls": 96},
 }
@@ -1524,6 +1570,14 @@ if paa_db_p.exists():
         if "financial_snapshots" in _all_tbls:
             _fs = _conn.execute("SELECT * FROM financial_snapshots ORDER BY snapshot_id DESC LIMIT 1").fetchone()
             if _fs:
+                try:
+                    _fs_det = json.loads(_fs["details_json"] or "{}") if "details_json" in _fs.keys() else {}
+                except Exception:
+                    _fs_det = {}
+                _sim_b = _fs_det.get("simulated_benchmarks") if isinstance(_fs_det, dict) else {}
+                _rl_m = _fs_det.get("riskless_metrics") if isinstance(_fs_det, dict) else {}
+                if isinstance(_rl_m, dict) and _rl_m:
+                    paa_out["riskless_kpis"].update(_rl_m)
                 paa_out["verified_financial_performance"] = {
                     "recorded_et": _fmt_et(_fs["recorded_at_utc"], "%H:%M:%S"),
                     "free_cash_pusd": round(float(_fs["free_cash_pusd"] or 0.0), 2),
@@ -1538,6 +1592,8 @@ if paa_db_p.exists():
                     "accounting_ok": bool(_fs["accounting_ok"]),
                     "accounting_discrepancy_usd": round(float(_fs["accounting_discrepancy_usd"] or 0.0), 4),
                     "simulated_shadow_t1000_pnl_usd": round(float(_fs["simulated_shadow_t1000_pnl_usd"] or 0.0), 2),
+                    "zero_loss_shadow_t1000_pnl_usd": round(float((_sim_b or {}).get("zero_loss_shadow_t1000_pnl_usd", 0.0) or 0.0), 2),
+                    "zero_loss_shadow_wins": int((_sim_b or {}).get("zero_loss_shadow_wins", 0) or 0),
                     "simulated_paper_oos_pnl_usd": round(float(_fs["simulated_paper_oos_pnl_usd"] or 0.0), 2),
                 }
         if "budget_ledger" in _all_tbls:
@@ -1673,8 +1729,8 @@ HTML_PAGE = """<!DOCTYPE html>
 <div class="card" style="margin-bottom:16px;border-color:#2f4668;">
   <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
     <div>
-      <h2 style="margin:0;">PAA Autonomous Operating System &amp; Zero-Trust Verification Center</h2>
-      <div class="sub" style="margin-top:2px;">Stateless Short-Lived AI Sessions (60% Context Cap) &bull; Tier-A/B/C Separated Memory &bull; 5-Gate Non-AI Verification Controller (<code>NO EVIDENCE = NO VERIFIED CLAIM</code>)</div>
+      <h2 style="margin:0;">RISKLESS PAA — Autonomous Zero-Loss Profit &amp; Verification OS</h2>
+      <div class="sub" style="margin-top:2px;">100% Pure Riskless Live Lock &bull; Stateless Short-Lived AI Sessions (60% Ctx Cap) &bull; Tier-A/B/C Memory &bull; 5-Gate Non-AI Verifier (<code>NO EVIDENCE = NO VERIFIED CLAIM</code>)</div>
     </div>
     <div class="sub" id="paa_live_pulse" style="margin:0;color:var(--green-bright);font-weight:600;"></div>
   </div>
@@ -1929,7 +1985,18 @@ function renderPaaAutonomy(paa, elapsedSec=0) {
   const stripEl = document.getElementById('paa_strip');
   if (stripEl) {
     const stopOk = !paa.master_stop_engaged && !paa.accounting_safeguard_active;
+    const rl = paa.riskless_kpis || {};
+    const rlOn = rl.riskless_only_mode !== false;
+    const pureW = Number(rl.pure_riskless_live_wins ?? 0);
+    const pureL = Number(rl.pure_riskless_live_losses ?? 0);
+    const purePnl = Number(rl.pure_riskless_realized_pnl_usd ?? 0);
+    const zlShdw = Number(vf.zero_loss_shadow_t1000_pnl_usd || 0);
+    const zlWins = Number(vf.zero_loss_shadow_wins || 0);
+    const simLbl = zlWins > 0
+      ? `Zero-Loss Shadow <b class="pos">+$${zlShdw.toFixed(0)}</b> (${zlWins}W/0L <i>non-cash</i>)`
+      : `Sim Shadow +$${Number(vf.simulated_shadow_t1000_pnl_usd || 0).toFixed(0)} <i>non-cash</i>`;
     stripEl.innerHTML =
+      `<span class="sf-chip">Mode: <b class="${rlOn ? 'pos' : 'warn'}">${rlOn ? '100% RISKLESS LOCK' : 'HYBRID'}</b> (Pure Live <b class="${pureL === 0 ? 'pos' : 'warn'}">${pureW}W/${pureL}L</b> ${purePnl >= 0 ? '+' : ''}$${purePnl.toFixed(2)})</span>` +
       `<span class="sf-chip">Director: <b class="${dirHb.status === 'OK' || dirHb.status === 'RUNNING_CYCLE' ? 'pos' : 'warn'}">${esc(dirHb.status || 'INIT')}</b> (#${dirHb.cycle_count ?? 0}, ${fmtSecCompact(dirAge)})</span>` +
       `<span class="sf-chip">1m Monitor: <b class="${monHb.status === 'OK' ? 'pos' : 'warn'}">${esc(monHb.status || 'INIT')}</b> (${fmtSecCompact(monAge)}) &bull; 2m Sup: <b>${fmtSecCompact(supAge)}</b></span>` +
       `<span class="sf-chip">Safeguards: <b class="${stopOk ? 'pos' : 'neg'}">${paa.master_stop_engaged ? 'MASTER STOP' : (paa.accounting_safeguard_active ? 'ACCT FREEZE' : 'CLEAR')}</b></span>` +
@@ -1938,7 +2005,7 @@ function renderPaaAutonomy(paa, elapsedSec=0) {
       `<span class="sf-chip">Stateless Sessions: <b class="pos">${zt.fresh_session_pct ?? 100}% Fresh</b> (N=${zt.sessions_total ?? 0}) &bull; Peak Ctx <b>${maxCtx.toFixed(1)}%</b>/${ctxCap}%<span class="ctx-bar-bg"><span class="ctx-bar-fg" style="width:${ctxFillW}%;background:${ctxColor};"></span></span></span>` +
       `<span class="sf-chip">Tasks: <b class="pos">${verDone} Verified</b> &bull; <span class="warn">${runCnt} Queue/Run</span> &bull; <b>${pendVer} PendVerif</b> &bull; <span class="${rejCnt ? 'neg' : 'sub'}">${rejCnt} Rej</span> &bull; <span class="${blkCnt ? 'warn' : 'sub'}">${blkCnt} Blocked</span></span>` +
       `<span class="sf-chip">AI Spend Today: <b>$${Number(br.daily_ai_cost_usd || 0).toFixed(4)}</b> / $${Number(br.max_daily_ai_cost_usd || 2.5).toFixed(2)} (${br.daily_ai_calls ?? 0}/${br.max_daily_ai_calls ?? 96} calls)</span>` +
-      `<span class="sf-chip">Reconciled Cash vs Sim: <b>$${Number(vf.free_cash_pusd || 0).toFixed(2)} pUSD</b> (Realized <b class="${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg'}">${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(vf.realized_onchain_net_pnl_usd || 0).toFixed(2)}</b> vs Sim Shadow +$${Number(vf.simulated_shadow_t1000_pnl_usd || 0).toFixed(0)} <i>non-cash</i>)</span>`;
+      `<span class="sf-chip">Reconciled Cash vs Sim: <b>$${Number(vf.free_cash_pusd || 0).toFixed(2)} pUSD</b> (Realized <b class="${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? 'pos' : 'neg'}">${Number(vf.realized_onchain_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(vf.realized_onchain_net_pnl_usd || 0).toFixed(2)}</b> vs ${simLbl})</span>`;
   }
 
   const timersEl = document.getElementById('paa_timers');
@@ -2558,10 +2625,13 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
             f"{t['unit']}={t['next_in_sec']}s"
             for t in sorted(paa.get("systemd_timers") or [], key=lambda x: x.get("next_in_sec") or 999999)[:4]
         )
+        rl = paa.get("riskless_kpis") or {}
         print("-" * 78)
         print(
-            f" PAA Autonomy OS  : Director={dh.get('status', 'INIT')} (Cycle #{dh.get('cycle_count', 0)}, age={dh.get('age_sec')}s) | "
-            f"Monitor={mh.get('status', 'INIT')} (age={mh.get('age_sec')}s) | Stop={paa.get('master_stop_engaged')} | "
+            f" RISKLESS PAA OS  : Lock={rl.get('riskless_only_mode', True)} (Pure Live {rl.get('pure_riskless_live_wins', 0)}W/{rl.get('pure_riskless_live_losses', 0)}L "
+            f"{float(rl.get('pure_riskless_realized_pnl_usd', 0.0) or 0.0):+.2f} USD) | "
+            f"Director={dh.get('status', 'INIT')} (Cycle #{dh.get('cycle_count', 0)}, age={dh.get('age_sec')}s) | "
+            f"Monitor={mh.get('status', 'INIT')} (age={mh.get('age_sec')}s) | "
             f"AI Cost Today=${br.get('daily_ai_cost_usd', 0.0):.4f}/{br.get('max_daily_ai_cost_usd', 2.50):.2f}"
         )
         print(

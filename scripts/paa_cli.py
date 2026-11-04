@@ -183,13 +183,19 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
             break
 
     forensic_ids = director._check_strategy_degradation_and_losses()
+    conv = director._audit_profit_conversion_and_velocity()
+    scorecard = build_strategy_scorecard(reconcile_authoritative_ledger(live_rpc_check=False))
+    _atomic_write_json(director.paa_dir / "strategy_inventory_and_scorecard.json", scorecard)
     summary = {
         "evaluated_at_utc": utc_now_iso(),
+        "operating_mode": str(director.cfg.get("operating_mode") or "RISKLESS_PAA"),
         "free_cash_pusd": fin["free_cash_pusd"],
         "realized_net_pnl_usd": fin["verified_realized_net_pnl_usd"],
         "simulated_shadow_t1000_pnl_usd": fin["simulated_shadow_t1000_pnl_usd"],
         "zero_loss_shadow_t1000_pnl_usd": fin.get("zero_loss_shadow_t1000_pnl_usd", 0.0),
         "zero_loss_shadow_wins": fin.get("zero_loss_shadow_wins", 0),
+        "riskless_metrics": fin.get("riskless_metrics") or {},
+        "conversion_and_velocity": conv,
         "latency_source": lat_source,
         "latency_samples": sample_n,
         "latency_p50_ms": p50_ms,
@@ -278,9 +284,12 @@ def cmd_daily_report(args: argparse.Namespace) -> int:
     rep_dir.mkdir(parents=True, exist_ok=True)
 
     vf = dash["verified_financial_performance"]
+    rl_kpis = dash.get("riskless_paa_kpis") or {}
     report_payload = {
         "report_date_utc": day_str,
         "generated_at_utc": utc_now_iso(),
+        "operating_mode": dash.get("operating_mode", "RISKLESS_PAA"),
+        "riskless_paa_kpis": rl_kpis,
         "verified_financial_performance": vf,
         "budget_and_resources": dash["budget_and_resources"],
         "strategy_deployment_states": dash["strategy_deployment_states"],
@@ -288,9 +297,10 @@ def cmd_daily_report(args: argparse.Namespace) -> int:
     }
     _atomic_write_json(rep_dir / f"daily_profit_report_{day_str}.json", report_payload)
     md = [
-        f"# PAA Daily Verified Profitability & Portfolio Review ({day_str})",
+        f"# RISKLESS PAA Daily Verified Profitability & Portfolio Review ({day_str})",
         "",
-        f"- **Generated At**: `{report_payload['generated_at_utc']}`",
+        f"- **Generated At**: `{report_payload['generated_at_utc']}` | **Operating Mode**: `{report_payload['operating_mode']}`",
+        f"- **Pure Riskless Live Record**: `{rl_kpis.get('pure_riskless_live_wins', 0)}W / {rl_kpis.get('pure_riskless_live_losses', 0)}L` (`{rl_kpis.get('pure_riskless_live_wr_pct', 100.0):.1f}%` WR, `${rl_kpis.get('pure_riskless_realized_pnl_usd', 0.0):+.2f}`)",
         f"- **Free Wallet Cash (`pUSD + USDC.e`)**: `${vf['free_cash_pusd']:.4f}`",
         f"- **Portfolio NAV (Mark-to-Bid / Resting Maker)**: `${vf['nav_mark_to_bid_usd']:.2f}` / `${vf['nav_resting_maker_usd']:.2f}`",
         f"- **Verified On-Chain Realized Net PnL**: `${vf['realized_onchain_net_pnl_usd']:+.2f}`",
@@ -298,7 +308,7 @@ def cmd_daily_report(args: argparse.Namespace) -> int:
         f"- **Fees & Slippage**: Fees `${vf['realized_fees_usd']:.2f}`, Est. Slippage `${vf['estimated_slippage_usd']:.2f}`",
         f"- **Autonomous Operations Cost (24h)**: AI `${vf['research_ai_cost_usd']:.4f}` + VM Infra `${vf['daily_infra_vm_cost_usd']:.4f}`",
         f"- **Net Economic Result After Ops**: `${vf['net_economic_profit_after_ops_usd']:+.2f}`",
-        f"- **Simulated Non-Cash Benchmarks**: Shadow T1000 `${vf['simulated_non_cash_benchmarks']['alpha124_shadow_t1000_pnl_usd']:+.2f}`, Paper OOS `${vf['simulated_non_cash_benchmarks']['paper_oos_validation_pnl_usd']:+.2f}` (`is_real_money=False`)",
+        f"- **Simulated Non-Cash Benchmarks**: Zero-Loss Shadow T1000 `${vf['simulated_non_cash_benchmarks'].get('zero_loss_shadow_t1000_pnl_usd', 0.0):+.2f}` (`{vf['simulated_non_cash_benchmarks'].get('zero_loss_shadow_wins', 0)}W / 0L`, Legacy All-Sleeves `${vf['simulated_non_cash_benchmarks']['alpha124_shadow_t1000_pnl_usd']:+.2f}`), Paper OOS `${vf['simulated_non_cash_benchmarks']['paper_oos_validation_pnl_usd']:+.2f}` (`is_real_money=False`)",
     ]
     (rep_dir / f"daily_profit_report_{day_str}.md").write_text("\n".join(md) + "\n", encoding="utf-8")
     director.db.record_heartbeat("paa_daily_report", status="OK", details={"report_date_utc": day_str})
@@ -318,9 +328,17 @@ def cmd_weekly_review(args: argparse.Namespace) -> int:
         director.data_dir / "ledger_shadow_sol_5m.jsonl",
     ]
     evals = [evaluate_ledger_file(p) for p in ledgers]
+    scorecard = build_strategy_scorecard(reconcile_authoritative_ledger(live_rpc_check=False))
+    raw_prom = [e["ledger"] for e in evals if e.get("verdict") == "PROMOTE"]
+    rl_locked = bool(scorecard.get("riskless_only_mode", True))
     wfo_out = {
+        "operating_mode": scorecard.get("operating_mode", "RISKLESS_PAA"),
+        "riskless_only_mode": rl_locked,
         "shadow_evaluations": evals,
-        "promoted_candidates": [e["ledger"] for e in evals if e.get("verdict") == "PROMOTE"],
+        "promoted_candidates": [] if rl_locked else raw_prom,
+        "held_shadow_only_directional_candidates": raw_prom if rl_locked else [],
+        "grad8_zero_loss_live_sleeves": scorecard.get("grad8_live_authorized_sleeves", []),
+        "machine_gun_sleeves_detected": scorecard.get("machine_gun_sleeves_detected", []),
     }
     dash = director.generate_dashboard_and_report()
     day_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")

@@ -920,6 +920,322 @@ def test_strict_riskless_only_mode_and_paused_fee_sports_sleeves(tmp_path, monke
     assert any("SOC2_EXACT_SCORE_2D_LATTICE" in v for v in viol)
 
 
+def test_riskless_paa_scorecard_shadow_pnl_fix_paused_disqualification_and_machine_gun_autodiscovery(tmp_path, monkeypatch):
+    """Verifies build_strategy_scorecard reads realized_pnl_t1000_usd, disqualifies SOC2/live-loss sleeves, tags directional as PAUSED_RISKLESS_ONLY_MODE, and auto-discovers Machine-Gun Riskless."""
+    import scripts.paa_autonomous_controller as pac
+
+    monkeypatch.setattr(pac, "DATA_PM", tmp_path)
+    (tmp_path / "alpha124_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "open_positions": [{"sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX"}],
+                "by_sleeve": {
+                    "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                        "closed": 32,
+                        "wins": 32,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 173.60,
+                    },
+                    "BOND1_UMA_RESOLUTION_CARRY": {
+                        "closed": 23,
+                        "wins": 23,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 18.45,
+                    },
+                    "SOC2_EXACT_SCORE_2D_LATTICE": {
+                        "closed": 12,
+                        "wins": 12,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 48.00,
+                    },
+                    "AFF1_FROZEN_SUBPERIOD_COLLAPSE": {
+                        "closed": 7,
+                        "wins": 7,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 21.50,
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Simulate the separate Machine-Gun Riskless agent writing its shadow state file!
+    (tmp_path / "machine_gun_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "by_sleeve": {
+                    "MG_RISKLESS_COMPLETE_SET_SWEEPER": {
+                        "closed": 10,
+                        "wins": 10,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 62.25,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    fin_ledger = {
+        "by_sleeve_live": {
+            "SLEEVE_1_SUBHOURLY_15M": {"real_trades": 32, "wins": 24, "losses": 8, "verified_net_pnl_usd": -69.77, "fees_usd": 3.10},
+            "BOND1_UMA_RESOLUTION_CARRY": {"real_trades": 5, "wins": 5, "losses": 0, "verified_net_pnl_usd": 0.63, "fees_usd": 0.0},
+            "CM_B3_PYTH_BARRIER_BOX": {"real_trades": 1, "wins": 1, "losses": 0, "verified_net_pnl_usd": 0.32, "fees_usd": 0.0},
+            "SOC2_EXACT_SCORE_2D_LATTICE": {"real_trades": 4, "wins": 0, "losses": 4, "verified_net_pnl_usd": -8.67, "fees_usd": 0.55},
+        }
+    }
+    sc = pac.build_strategy_scorecard(fin_ledger)
+    assert sc["operating_mode"] == "RISKLESS_PAA"
+    assert sc["riskless_only_mode"] is True
+    assert "D1_SAME_ORACLE_DOMINANCE_BOX" in sc["grad8_live_authorized_sleeves"]
+    assert "BOND1_UMA_RESOLUTION_CARRY" in sc["grad8_live_authorized_sleeves"]
+    assert "MG_RISKLESS_COMPLETE_SET_SWEEPER" in sc["grad8_live_authorized_sleeves"]
+    assert "MG_RISKLESS_COMPLETE_SET_SWEEPER" in sc["machine_gun_sleeves_detected"]
+    # SOC2 MUST be disqualified from grad8_live_authorized_sleeves!
+    assert "SOC2_EXACT_SCORE_2D_LATTICE" not in sc["grad8_live_authorized_sleeves"]
+
+    by_name = {s["sleeve"]: s for s in sc["strategies"]}
+    assert by_name["D1_SAME_ORACLE_DOMINANCE_BOX"]["shadow_pnl_t1000_usd"] == pytest.approx(173.60)
+    assert by_name["SLEEVE_1_SUBHOURLY_15M"]["deployment_tier"] == "PAUSED_RISKLESS_ONLY_MODE"
+    assert by_name["SOC2_EXACT_SCORE_2D_LATTICE"]["deployment_tier"] == "PAUSED_FEE_SPORTS_LEGGING_GUARD"
+
+    pure = sc["pure_riskless_live_summary"]
+    assert pure["wins"] == 6
+    assert pure["losses"] == 0
+    assert pure["win_rate_pct"] == pytest.approx(100.0)
+    assert pure["realized_pnl_usd"] == pytest.approx(0.95)
+    assert any(x["sleeve"] == "AFF1_FROZEN_SUBPERIOD_COLLAPSE" and x["needed_for_grad8"] == 1 for x in sc["near_grad8_zero_loss_sleeves"])
+
+
+def test_riskless_paa_researcher_accepts_slate_and_post_clinch_rejects_unhedged_carries_and_holds_directional(tmp_path, monkeypatch):
+    """Verifies PAAResearcher strictly rejects unclinched <99.5c intraday bets & mid-book rewards while promoting slate arbs, post-clinch sweepers, locked rewards, and Machine-Gun Grad-8 sleeves."""
+    import src.paa_os.researcher as res_mod
+    from src.paa_os.budget import BudgetManager
+    from src.paa_os.permissions import load_autonomy_config
+    from src.paa_os.task_db import PAATaskDB
+
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    # Create a Machine-Gun Riskless 10/10 zero-loss sleeve to verify Researcher promotes it automatically
+    (data_dir / "machine_gun_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "by_sleeve": {
+                    "MG_RISKLESS_SLATE_SNIPER": {
+                        "closed": 10,
+                        "wins": 10,
+                        "losses": 0,
+                        "realized_pnl_t1000_usd": 55.0,
+                    }
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    # Create a fake directional shadow ledger that returns verdict="PROMOTE" -> must be HELD_SHADOW_ONLY_RISKLESS_MODE!
+    (data_dir / "ledger_shadow_sol_v392.jsonl").write_text("{}\n", encoding="utf-8")
+    monkeypatch.setattr(
+        res_mod,
+        "evaluate_ledger_file",
+        lambda p, **_kw: {
+            "ledger": p.name,
+            "exists": True,
+            "trades": 180,
+            "verdict": "PROMOTE" if p.name == "ledger_shadow_sol_v392.jsonl" else "HOLD_COLLECTING_OOS",
+            "profit_factor": 2.45,
+            "pbo_estimate": 0.05,
+            "net_pnl_usd": 145.0,
+        },
+    )
+
+    cfg = load_autonomy_config()
+    db = PAATaskDB(data_dir / "paa" / "paa_tasks.db")
+    budget = BudgetManager(db, autonomy_cfg=cfg)
+    researcher = res_mod.PAAResearcher(db, budget, data_dir=data_dir, autonomy_cfg=cfg)
+
+    out = researcher.run_research_cycle(
+        universe_override={
+            "active_markets_scanned": 1200,
+            "events_scanned": 200,
+            "ranked_uma_proposed_carries": [
+                {"market_id": "UMA_1", "category": "sports", "question": "Verified Game 1 Winner?", "net_edge_bps_maker_0pct": 55.0, "liquidity_usd": 1500.0}
+            ],
+            "ranked_negrisk_slate_arbs": [
+                {
+                    "title": "RBI December Rate Decision",
+                    "category": "macro_fed",
+                    "opportunity_type": "NR2_INSTANT_NO_CONVERT_ARB",
+                    "legs": 4,
+                    "net_edge_bps": 115.0,
+                    "rem_hours": 48.0,
+                    "est_bps_per_hour": 115.0,
+                }
+            ],
+            "ranked_maker_anchor_slate_arbs": [],
+            "ranked_post_clinch_sweepers": [
+                {
+                    "market_id": "CLINCH_1",
+                    "category": "politics",
+                    "question": "Did deadline pass cleanly?",
+                    "side": "NO",
+                    "maker_bid_px": 0.994,
+                    "net_edge_bps_maker_0pct": 60.0,
+                    "liquidity_usd": 900.0,
+                }
+            ],
+            "ranked_locked_clob_rewards": [
+                {
+                    "market_id": "LRW_1",
+                    "category": "crypto",
+                    "question": "Eliminated dead bracket?",
+                    "daily_reward_usdc": 25.0,
+                    "min_capital_est_usd": 12.0,
+                    "est_bps_per_hour": 24.0,
+                }
+            ],
+            # High-volume in-play 94c sports bet that old PAA accepted -> RISKLESS PAA MUST REJECT!
+            "ranked_intraday_high_prob_carries": [
+                {
+                    "market_id": "GALATASARAY_94C",
+                    "category": "sports",
+                    "question": "Spread: Galatasaray SK (-3.5)",
+                    "best_bid": 0.93,
+                    "best_ask": 0.94,
+                    "rem_hours": 1.5,
+                    "liquidity_usd": 5000.0,
+                    "volume_24h_usd": 25000.0,
+                    "est_bps_per_hour": 400.0,
+                }
+            ],
+            # Tight mid-book unhedged reward pool -> RISKLESS PAA MUST REJECT!
+            "ranked_clob_usdc_reward_pools": [
+                {
+                    "market_id": "MIDBOOK_RW_1",
+                    "category": "politics",
+                    "question": "50/50 tossup market",
+                    "best_bid": 0.49,
+                    "best_ask": 0.51,
+                    "daily_reward_pool_usd": 50.0,
+                    "daily_pool_to_liq_ratio": 0.05,
+                    "min_capital_est_usd": 10.0,
+                }
+            ],
+        }
+    )
+
+    assert out["operating_mode"] == "RISKLESS_PAA"
+    assert out["riskless_only_mode"] is True
+    # Zero directional live promotion tasks enqueued!
+    assert all("WFO_GRADUATION_REVIEW" not in str(t.get("dedupe_key")) for t in db.list_tasks(limit=20))
+
+    by_fid = {f["finding_id"]: f for f in db.list_research_findings(limit=30)}
+    assert by_fid["RF_UMA_UMA_1"]["succeeded"] is True
+    assert by_fid["RF_POST_CLINCH_CLINCH_1"]["succeeded"] is True
+    assert by_fid["RF_LOCKED_REWARD_LRW_1"]["succeeded"] is True
+    assert by_fid["RF_GRAD8_MG_RISKLESS_SLATE_SNIPER"]["succeeded"] is True
+    assert any(k.startswith("RF_SLATE_") and v["succeeded"] is True for k, v in by_fid.items())
+
+    # Unhedged 94c carry & midbook reward MUST be rejected!
+    assert by_fid["RF_INTRADAY_GALATASARAY_94C"]["succeeded"] is False
+    assert by_fid["RF_INTRADAY_GALATASARAY_94C"]["verdict"] == "REJECTED_UNHEDGED_CARRY_RISKLESS_PAA"
+    assert by_fid["RF_REWARD_POOL_MIDBOOK_RW_1"]["succeeded"] is False
+    assert by_fid["RF_REWARD_POOL_MIDBOOK_RW_1"]["verdict"] == "REJECTED_UNHEDGED_MIDBOOK_REWARD_RISKLESS_PAA"
+    assert by_fid["RF_WFO_SLEEVE_SOL_V392_SHADOW"]["verdict"] == "HELD_SHADOW_ONLY_RISKLESS_MODE"
+
+
+def test_riskless_paa_monitor_zero_loss_breach_and_unredeemed_post_expiry_sentinels(tmp_path):
+    """Verifies PAAMonitor raises P0 RISKLESS_ZERO_LOSS_BREACH on post-lock losses and P1 UNREDEEMED_POST_EXPIRY_POSITIONS on stale >45m settled tokens."""
+    from src.paa_os.accountant import PAAAccountant
+    from src.paa_os.budget import BudgetManager
+    from src.paa_os.monitor import PAAMonitor
+    from src.paa_os.permissions import load_autonomy_config
+    from src.paa_os.task_db import PAATaskDB
+
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    now_u = time.time()
+    (data_dir / "live_harvester_state.json").write_text(
+        json.dumps(
+            {
+                "live_bankroll": 61.01,
+                "active_positions": {
+                    "STALE_REDEEM_1": {
+                        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                        "token_id": "12345",
+                        "remaining_shares": 10.0,
+                        "remaining_cost_basis": 9.95,
+                        "candle_expiry_ts": now_u - 3600.0,  # 60m past expiry (> 45m threshold)
+                        "status": "HOLDING_TO_RESOLUTION",
+                    }
+                },
+                "closed_positions": [
+                    {
+                        "trade_id": "PRE_LOCK_HIST_LOSS",
+                        "sleeve": "SOC2_EXACT_SCORE_2D_LATTICE",
+                        "entry_time_utc": "2026-11-03T18:00:00Z",
+                        "net_pnl_usd": -3.31,
+                        "inventory_reconciled": True,
+                    },
+                    {
+                        "trade_id": "POST_LOCK_BREACH_1",
+                        "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+                        "entry_time_utc": "2026-11-04T05:00:00Z",
+                        "net_pnl_usd": -0.42,
+                        "inventory_reconciled": True,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_autonomy_config()
+    db = PAATaskDB(data_dir / "paa" / "paa_tasks.db")
+    db.record_heartbeat("paa_director", status="OK", details={})
+    budget = BudgetManager(db, autonomy_cfg=cfg)
+    acct = PAAAccountant(db, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    acct._reconcile_fn = lambda live_rpc_check=False: {
+        "free_wallet_cash_pusd": 61.01,
+        "authoritative_portfolio_nav_mark_to_bid_usd": 70.96,
+        "authoritative_portfolio_nav_resting_maker_usd": 70.96,
+        "verified_onchain_realized_net_pnl_usd": -87.48,
+        "raw_state_ledger_pnl_usd": -99.38,
+        "phantom_unfilled_ledger_adjustment_usd": 11.90,
+        "realized_fees_usd": 4.10,
+        "state_vs_onchain_cash_diff_usd": 0.0,
+        "simulated_non_cash_benchmarks": {
+            "alpha124_shadow_t1000_pnl_usd": -4235.0,
+            "zero_loss_shadow_t1000_pnl_usd": 441.65,
+            "zero_loss_shadow_wins": 137,
+            "paper_trader_oos_pnl_usd": 12.0,
+        },
+    }
+    mon = PAAMonitor(db, acct, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    mon._ping_clob_ms = lambda: 12.5
+    mon._check_vm_resources = lambda: []
+    mon._check_failed_systemd_jobs = lambda: []
+
+    res = mon.run_monitor_cycle(auto_recover_safe=False, live_rpc_check=False)
+    assert any("RISKLESS_ZERO_LOSS_BREACH:POST_LOCK_BREACH_1" in a for a in res["anomalies"])
+    assert not any("PRE_LOCK_HIST_LOSS" in a for a in res["anomalies"])
+    assert any("UNREDEEMED_POST_EXPIRY_POSITIONS" in a for a in res["anomalies"])
+    assert mon.wakeup_trigger_file.exists()
+
+    tasks = db.list_tasks(limit=10)
+    breach_t = [t for t in tasks if t["dedupe_key"] == "RISKLESS_BREACH_FORENSICS:POST_LOCK_BREACH_1"]
+    assert len(breach_t) == 1
+    assert breach_t[0]["priority_label"] == "P0"
+    redeem_t = [t for t in tasks if str(t["dedupe_key"]).startswith("REDEMPTION_RECYCLE:")]
+    assert len(redeem_t) == 1
+    assert redeem_t[0]["priority_label"] == "P1"
+
+
+
 
 
 
