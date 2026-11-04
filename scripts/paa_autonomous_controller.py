@@ -213,10 +213,19 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     for c in closed:
         tid = str(c.get("trade_id") or "")
         sl = str(c.get("sleeve") or "UNKNOWN")
-        pnl = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+        raw_pnl_c = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+        pnl = raw_pnl_c
         fee = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0) + float(c.get("realized_exit_fee", 0.0) or 0.0)
         notional = float(c.get("notional_usd", 0.0) or 0.0)
-        raw_ledger_pnl += pnl
+        raw_ledger_pnl += raw_pnl_c
+        if (
+            c.get("is_dominance_box")
+            and float(c.get("fee_rate_applied", 0.07) or 0.0) == 0.0
+            and c.get("exit_fee_estimated")
+            and float(c.get("payout_usd", 0.0) or 0.0) > notional
+        ):
+            pnl = round(float(c.get("payout_usd", 0.0)) - notional - float(c.get("fee_usd", 0.0) or 0.0), 4)
+            phantom_unfilled_adjustment += round(pnl - raw_pnl_c, 4)
 
         is_phantom_unfilled = (
             c.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
@@ -237,7 +246,7 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
             "notional_usd": 0.0,
             "phantom_unfilled_ignored": 0,
         })
-        rec["raw_ledger_pnl_usd"] = round(rec["raw_ledger_pnl_usd"] + pnl, 4)
+        rec["raw_ledger_pnl_usd"] = round(rec["raw_ledger_pnl_usd"] + raw_pnl_c, 4)
         if is_phantom_unfilled:
             phantom_unfilled_adjustment -= pnl  # e.g. -(-11.90) = +11.90 reconciliation back to true wallet cash
             rec["phantom_unfilled_ignored"] += 1
