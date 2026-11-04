@@ -14,7 +14,7 @@ WorkingDirectory=/home/skybullet1987/quant_pipeline
 # Option B (v5.4.0) enforces Z>=0.90, Ask<=$0.82 Taker-Only across [150s, 900s] 1h + [120s, 510s] 15m (while BOND1 Maker stays 100% live),
 # and --allowed-assets BTC ETH SOL promotes BTC (1.0x) + ETH (0.85x canary) + SOL (0.85x canary) across 2->3->4 directional slots.
 Environment="PM_ENFORCE_V5_TIER_SLOTS=1"
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --exit-policy hold_98 --max-concurrent 99 --max-ticket-cap 200.0 --max-trades-per-market 4 --max-trades-per-hour 60 --min-price-floor 0.52 --max-price-ceiling 0.82 --max-tte 2400.0 --allowed-assets BTC ETH SOL
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/polymarket_live_harvester.py --dynamic-sizing --no-hold-to-maturity --exit-policy hold_98 --max-concurrent 99 --max-ticket-cap 200.0 --max-trades-per-market 4 --max-trades-per-hour 180 --min-price-floor 0.52 --max-price-ceiling 0.82 --max-tte 2400.0 --allowed-assets BTC ETH SOL
 # Exit 0 (circuit breaker / graceful SIGTERM) stays down; non-zero (crash) restarts after 3s.
 Restart=on-failure
 RestartSec=3

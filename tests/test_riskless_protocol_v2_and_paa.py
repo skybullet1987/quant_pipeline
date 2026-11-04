@@ -578,3 +578,271 @@ def test_live_bottleneck_fixes_and_riskless_paa_box_grouping(tmp_path: Path) -> 
     ok_env, viols = pg.inspect_config_envelope(strat_cfg, cand_bad)
     assert ok_env is False
     assert any("min_live_equity_for_unhedged_directional_usd" in v for v in viols)
+
+
+def test_gatling_high_vol_machine_gun_s2_live_panel_a_panel_b_xau_d1_and_bundles(tmp_path, monkeypatch):
+    """
+    End-to-end verification of:
+      1. Panel A Micro-Level Physics (`evaluate_s2_rtds_exact_twap_integrator` in `live_lock_mode=True`):
+         - Exact `(elapsed_sec / rem_sec) * elapsed_cushion_bps` matching `75 / 125 / 165 / 275 bps` curves!
+         - Rejects `XAU`/`XAG` spot-settled assets (`twap_lookback_sec=0`) from `S2` 60s-TWAP!
+         - Rejects outside `4.5s <= rem_sec <= 16.0s` or when `official_twap_60s` diverges > 20 bps!
+      2. Panel B Macro-Level Bankroll Trajectory (`$60.92` starting NAV, `90 clips/d`, `$22/clip`, `+58 bps`, `0.65` depth factor):
+         - Exact Day 1 `+$11.48 (+18.85%/d)`, 30d Linear `$405.44`, 30d Scaled-Compounded `~$1,953` (`32.1x` NAV)!
+         - `compute_gatling_clip_budget_usd` yields `$22.00` (`D1`/`S2`/`CTF_OVERROUND`), `$20.00` (`NEGRISK_CONVERT`/`MULTI_LEG_BUNDLE`), `$18.50` (bridged 0-fee math) at `$60.92` NAV and scales as `(NAV / 60.92) ** 0.65`.
+      3. `XAU`/`XAG` `1h/15m` Same-Oracle Dominance (`parse_metal_forex_candle_event` + `verify_same_oracle_pair`)
+         while strictly blocking `BTC` `1h` (Binance) vs `15m` (Chainlink).
+      4. Live `PolymarketLiveHarvester` execution of `S2_EXACT_TWAP_LOCK` (`s2_live_bridge`, `TTE=9.0s`, `$22.00` Gatling clip)
+         AND `MULTI_LEG_BUNDLE` (`neg_risk=False` for pre-match Sports `LP_COMP1` + full `active_positions` schema).
+    """
+    from types import SimpleNamespace
+    import src.polymarket_research.polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        compute_gatling_clip_budget_usd,
+        compute_gatling_trajectory_projection,
+        evaluate_s2_rtds_exact_twap_integrator,
+        finish_protocol_v2_special_box_sync,
+    )
+    from src.polymarket_research.same_oracle_dominance_box import (
+        parse_metal_forex_candle_event,
+        parse_twap_candle_event,
+        verify_same_oracle_pair,
+    )
+
+    # 1. Panel A Physics: +25 bps elapsed cushion at 15s (-75 bps), 10s (-125 bps), 5s (-275 bps); +15 bps at 5s (-165 bps)
+    strike = 100_000.0
+    for rem_s, cush_bps, expected_req_bps in (
+        (15.0, 25.0, 75.0),
+        (10.0, 25.0, 125.0),
+        (5.0, 25.0, 275.0),
+        (10.0, 15.0, 75.0),
+        (5.0, 15.0, 165.0),
+    ):
+        exp_t = 2_000_000.0
+        now_t = exp_t - rem_s
+        spot_c = strike * (1.0 + cush_bps / 10000.0)
+        pts = [(exp_t - 60.0 + float(k), spot_c) for k in range(int(60.0 - rem_s) + 1)]
+        s2_ok = evaluate_s2_rtds_exact_twap_integrator(
+            asset="BTC",
+            open_price=strike,
+            expiry_ts=exp_t,
+            now_ts=now_t,
+            rtds_ticks=pts,
+            official_twap_60s=spot_c,
+            up_ask=0.950,
+            down_ask=0.060,
+            live_lock_mode=True,
+            min_net_edge=0.008,
+            min_lock_prob=0.9990,
+        )
+        assert s2_ok is not None, f"Expected lock at rem={rem_s}s cush={cush_bps}bps"
+        assert abs(float(s2_ok["req_adverse_avg_move_bps"]) - expected_req_bps) < 0.25
+        assert float(s2_ok["p_model"]) >= 0.9990
+
+    # Spot-settled XAU MUST be rejected by 60s-TWAP S2 integrator
+    assert (
+        evaluate_s2_rtds_exact_twap_integrator(
+            asset="XAU",
+            open_price=2700.0,
+            expiry_ts=2_000_000.0,
+            now_ts=1_999_990.0,
+            rtds_ticks=[(1_999_940.0 + k, 2710.0) for k in range(51)],
+            up_ask=0.94,
+            down_ask=0.07,
+            live_lock_mode=True,
+        )
+        is None
+    )
+
+    # 2. Panel B Trajectory & Gatling Concave Clip Sizing
+    proj = compute_gatling_trajectory_projection(
+        starting_nav_usd=60.92, clips_per_day=90.0, base_clip_usd=22.0, net_edge_bps=58.0, depth_exp=0.65, days=30
+    )
+    assert proj["day1_linear_profit_usd"] == 11.48
+    assert proj["day1_yield_pct"] == 18.85
+    assert proj["linear_30d_nav_usd"] == 405.44
+    assert 1940.0 <= proj["scaled_comp_30d_nav_usd"] <= 1965.0
+    assert 31.8 <= proj["nav_multiple_30d"] <= 32.3
+
+    assert compute_gatling_clip_budget_usd(live_equity=60.92, free_cash=60.92, box_type="DOMINANCE", sleeve_src="D1_SAME_ORACLE_DOMINANCE_BOX", reserve_usd=0.0) == 22.0
+    assert compute_gatling_clip_budget_usd(live_equity=60.92, free_cash=60.92, box_type="SINGLE_LEG_LOCK", sleeve_src="S2_EXACT_TWAP_LOCK", own_grad=False, reserve_usd=0.0) == 22.0
+    assert compute_gatling_clip_budget_usd(live_equity=60.92, free_cash=60.92, box_type="BARRIER_MONO", sleeve_src="EQ1_PYTH_EQUITY_DOMINANCE_BOX", own_grad=False, reserve_usd=0.0) == 18.5
+    # At 4x NAV ($243.68), 0.65 exponent scales $22 -> $22 * 4**0.65 = $54.17 (bounded well below 4x linear $88!)
+    scaled_4x = compute_gatling_clip_budget_usd(live_equity=243.68, free_cash=243.68, box_type="DOMINANCE", reserve_usd=0.0)
+    assert 53.5 <= scaled_4x <= 55.0
+
+    # 3. XAU 1h vs 15m Same-Oracle Dominance passes while BTC 1h (Binance) vs 15m (Chainlink) is blocked
+    xau_1h = parse_metal_forex_candle_event(
+        {
+            "id": "ev_xau_1h",
+            "slug": "xau-updown-1h-1793772000",
+            "markets": [
+                {
+                    "id": "910001",
+                    "conditionId": "0x" + "a" * 64,
+                    "eventStartTime": "2026-11-04T05:00:00Z",
+                    "endDate": "2026-11-04T06:00:00Z",
+                    "resolutionSource": "https://data.chain.link/streams/xau-usd-forexprice-streams",
+                    "outcomes": '["Up","Down"]',
+                    "clobTokenIds": '["11111111111111111111111111","22222222222222222222222222"]',
+                }
+            ],
+        },
+        "XAU",
+        "1h",
+    )
+    xau_15m = parse_metal_forex_candle_event(
+        {
+            "id": "ev_xau_15m",
+            "slug": "xau-updown-15m-1793774700",
+            "markets": [
+                {
+                    "id": "910002",
+                    "conditionId": "0x" + "b" * 64,
+                    "eventStartTime": "2026-11-04T05:45:00Z",
+                    "endDate": "2026-11-04T06:00:00Z",
+                    "resolutionSource": "https://data.chain.link/streams/xau-usd-forexprice-streams",
+                    "outcomes": '["Up","Down"]',
+                    "clobTokenIds": '["33333333333333333333333333","44444444444444444444444444"]',
+                }
+            ],
+        },
+        "XAU",
+        "15m",
+    )
+    assert xau_1h is not None and xau_15m is not None
+    assert xau_1h.twap_lookback_sec == 0 and xau_15m.twap_lookback_sec == 0
+    assert verify_same_oracle_pair(xau_1h, xau_15m) is True
+
+    # 4. Live Harvester S2_EXACT_TWAP_LOCK (`TTE=9.0s`, `$22.00` Gatling clip) & MULTI_LEG_BUNDLE (`neg_risk=False`)
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_state.json")
+    (tmp_path / "alpha124_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "by_sleeve": {
+                    "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                        "closed": 32,
+                        "wins": 32,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 173.60,
+                        "legging_adjusted_pnl_t1000_usd": 170.10,
+                    },
+                    "S2_EXACT_TWAP_LOCK": {"closed": 0, "wins": 0, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 0.0},
+                },
+                "by_d1_asset": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    h = PolymarketLiveHarvester(dry_run=True, allowed_assets={"BTC", "ETH", "SOL"})
+    h.dry_run = False
+    h.holistic_v5_live_mode = True
+    h.enforce_gatling_sizing = True
+    h._startup_reconciled = True
+    h._last_known_collateral = 61.01
+    h.executor.auth_mode = "LIVE"
+    h.executor.get_collateral_balance = lambda *a, **kw: 61.01
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+    h.executor.get_token_tick_size = lambda _tok, price_hint=None: 0.001 if (price_hint or 0.0) >= 0.96 else 0.01
+    h.executor.prewarm_token_market_cache = lambda **kw: None
+    h.executor.invalidate_collateral_cache = lambda: None
+
+    wtok, ltok = "7" * 28, "8" * 28
+    h.executor.get_market_book = lambda tid: (
+        {"asks": [{"price": "0.965", "size": "80"}], "bids": [{"price": "0.960", "size": "80"}]}
+        if tid == wtok
+        else {"asks": [{"price": "0.040", "size": "80"}], "bids": [{"price": "0.015", "size": "80"}]}
+    )
+    snipe_calls = []
+
+    def _mock_snipe(**kw):
+        snipe_calls.append(kw)
+        sh = round(float(kw["notional_usd"]) / float(kw["target_price"]), 4)
+        return SimpleNamespace(
+            success=True,
+            execution_status="FILLED",
+            size=sh,
+            price=float(kw["target_price"]),
+            notional_usd=float(kw["notional_usd"]),
+            fee_usd=0.0,
+            order_id="0xS2LOCK",
+            error="",
+            details={},
+        )
+
+    h.executor.execute_snipe_order = _mock_snipe
+    now_s2 = time.time()
+    res_s2 = h.maybe_execute_graduated_d1_box(
+        {
+            "box_id": "LOCK1_LIVE_BTC_S2",
+            "dedupe_key": "S2_BTC_TEST_1",
+            "box_type": "SINGLE_LEG_LOCK",
+            "sleeve_source": "S2_EXACT_TWAP_LOCK",
+            "asset": "BTC",
+            "ts_unix": now_s2,
+            "expiry_ts": now_s2 + 9.0,
+            "p_model": 0.9994,
+            "box_cost_net": 0.967,
+            "max_box_cost_net": 0.985,
+            "max_opp_bid": 0.035,
+            "hold_to_maturity": True,
+            "leg_a_token_id": wtok,
+            "leg_a_opp_token_id": ltok,
+            "leg_a_market_id": "990011",
+            "leg_a_condition_id": "0x" + "c" * 64,
+            "leg_a_side": "UP",
+            "leg_a_fee_rate": 0.07,
+            "leg_a_fee_exponent": 1.0,
+            "leg_a_neg_risk": False,
+        }
+    )
+    assert res_s2["executed"] is True, res_s2
+    assert len(snipe_calls) == 1
+    # Gatling caps live S2 clip to <= $22.00 on $61.01 NAV (leaving ~$39 free for 2 more clips!)
+    assert 18.0 <= float(snipe_calls[0]["notional_usd"]) <= 22.05
+
+    # Now test 3-leg pre-match Sports MULTI_LEG_BUNDLE (`neg_risk=False`) registration & PAA schema
+    t1, t2, t3 = "3" * 28, "4" * 28, "5" * 28
+    bundle_books = {
+        t1: {"asks": [{"price": "0.31", "size": "60"}], "bids": [{"price": "0.30", "size": "60"}]},
+        t2: {"asks": [{"price": "0.33", "size": "60"}], "bids": [{"price": "0.32", "size": "60"}]},
+        t3: {"asks": [{"price": "0.34", "size": "60"}], "bids": [{"price": "0.33", "size": "60"}]},
+    }
+    h.executor.get_market_book = lambda tid: bundle_books[tid]
+    snipe_calls.clear()
+    res_ml = finish_protocol_v2_special_box_sync(
+        h,
+        {
+            "box_id": "MLBOX_LP_COMP1_1",
+            "box_type": "MULTI_LEG_BUNDLE",
+            "sleeve_source": "LP_COMP1_SPORTS_TRIANGLES",
+            "asset": "SOCCER",
+            "neg_risk": False,
+            "expiry_ts": now_s2 + 7200.0,
+            "max_box_cost_net": 0.990,
+            "legs": [
+                {"token_id": t1, "market_id": "7701", "condition_id": "0x" + "1" * 64, "side": "NO", "neg_risk": False},
+                {"token_id": t2, "market_id": "7702", "condition_id": "0x" + "2" * 64, "side": "YES", "neg_risk": False},
+                {"token_id": t3, "market_id": "7703", "condition_id": "0x" + "3" * 64, "side": "YES", "neg_risk": False},
+            ],
+        },
+        dedupe_k="LP_COMP1_TEST_1",
+        retry_cd={},
+        now_ts=now_s2,
+        rcfg={},
+        own_grad=False,
+    )
+    assert res_ml["executed"] is True, res_ml
+    assert len(snipe_calls) == 3
+    assert all(c["neg_risk"] is False for c in snipe_calls)
+    for tid_ml in res_ml["leg_trade_ids"]:
+        pos_ml = h.active_positions[tid_ml]
+        assert pos_ml["is_dominance_box"] is True
+        assert pos_ml["hold_to_maturity_lock"] is True
+        assert pos_ml["box_id"] == "MLBOX_LP_COMP1_1"
+        assert pos_ml["candle_expiry_ts"] > now_s2
+        assert pos_ml["entry_shares"] == pos_ml["remaining_shares"] > 0
+

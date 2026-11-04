@@ -155,7 +155,13 @@
     "enable_nr3_synthetic_overround": true,
     "enable_cross_condition_complement_merge": true,
     "enable_d1_rebate_maker_canary": false,
-    "d1_rebate_maker_cap_usd": 12.0
+    "d1_rebate_maker_cap_usd": 12.0,
+    "gatling_enabled": true,
+    "gatling_concave_exp": 0.65,
+    "gatling_base_clip_d1_usd": 22.0,
+    "gatling_base_clip_core_usd": 20.0,
+    "gatling_base_clip_bridge_usd": 18.5,
+    "enable_s2_twap_lock_live": true
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,

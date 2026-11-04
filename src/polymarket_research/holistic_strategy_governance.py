@@ -182,6 +182,12 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "enable_cross_condition_complement_merge": True,
         "enable_d1_rebate_maker_canary": False,
         "d1_rebate_maker_cap_usd": 12.0,
+        "gatling_enabled": True,
+        "gatling_concave_exp": 0.65,
+        "gatling_base_clip_d1_usd": 22.0,
+        "gatling_base_clip_core_usd": 20.0,
+        "gatling_base_clip_bridge_usd": 18.5,
+        "enable_s2_twap_lock_live": True,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -683,7 +689,9 @@ def passes_capital_velocity_hurdle(
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT"}:
+    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND", "COMPLETE_SET"} or (
+        str(box_type or "").upper() == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
+    ):
         return True, "OK"
 
     prof = get_unleashed_v5_tier_profile(collat_usd, cfg=cfg)

@@ -1655,7 +1655,7 @@ class PreSplitInventoryGun:
     def __init__(self, cap_usd: float = 12.0, min_free_cash_usd: Optional[float] = None) -> None:
         self.cap_usd = float(cap_usd)
         self._explicit_min_free_cash = float(min_free_cash_usd) if min_free_cash_usd is not None else None
-        self.min_free_cash_usd = float(min_free_cash_usd) if min_free_cash_usd is not None else 18.0
+        self.min_free_cash_usd = float(min_free_cash_usd) if min_free_cash_usd is not None else 14.0
         self.last_tick_ts = 0.0
         self._cid_cache: Dict[str, str] = {}
 

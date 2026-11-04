@@ -208,6 +208,7 @@ def compute_exact_twap_lock_probability(
     shm_twap_60s: Optional[float] = None,
     iv_annual: Optional[float] = None,
     usd_direct_feed: bool = False,
+    authoritative_chainlink_ws: bool = False,
     min_rem_seconds: float = 8.0,
     max_rem_seconds: float = 45.0,
     jump_vol_mult: float = 1.35,
@@ -302,7 +303,7 @@ def compute_exact_twap_lock_probability(
     sigma_rem_usd = rem_weight * current_usd_spot * sigma_1s * math.sqrt(max(1.0, rem_seconds) * kv_factor)
 
     # Chainlink Data Streams USD 60s TWAP vs exchange spot basis uncertainty floor
-    basis_bps = 4.5 if usd_direct_feed else 8.5
+    basis_bps = 1.0 if authoritative_chainlink_ws else (4.5 if usd_direct_feed else 8.5)
     sigma_basis_usd = current_usd_spot * (basis_bps / 10000.0)
     sigma_total_usd = math.hypot(sigma_rem_usd, sigma_basis_usd)
 
@@ -312,6 +313,7 @@ def compute_exact_twap_lock_probability(
     z_lock = abs(twap_diff) / sigma_total_usd
     p_lock = student_t_df5_cdf(z_lock)
     cushion_bps = (abs(twap_diff) / open_price) * 10000.0
+    p_cap = 0.9995 if authoritative_chainlink_ws else 0.996
 
     return {
         "eligible": True,
@@ -324,7 +326,7 @@ def compute_exact_twap_lock_probability(
         "rem_seconds": round(rem_seconds, 2),
         "sigma_total_usd": round(sigma_total_usd, 6),
         "z_lock": round(z_lock, 4),
-        "p_lock": round(min(0.996, p_lock), 4),
+        "p_lock": round(min(p_cap, p_lock), 4),
         "cushion_bps": round(cushion_bps, 2),
         "basis_bps_floor": basis_bps,
         "samples_in_window": len(in_window),

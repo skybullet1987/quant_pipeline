@@ -47,6 +47,12 @@ DOMINANCE_SERIES_SLUGS: Dict[str, Dict[str, str]] = {
     "HYPE": {"4h": "hype-up-or-down-4h", "15m": "hype-up-or-down-15m", "5m": "hype-up-or-down-5m"},
 }
 
+METAL_DOMINANCE_ASSETS: Tuple[str, ...] = ("XAU", "XAG")
+METAL_DOMINANCE_SERIES_SLUGS: Dict[str, Dict[str, str]] = {
+    "XAU": {"1h": "gold-up-or-down-1h", "15m": "gold-up-or-down-15m"},
+    "XAG": {"1h": "silver-up-or-down-1h", "15m": "silver-up-or-down-15m"},
+}
+
 EMPIRICAL_BOX_ASSET_CAPS_USD: Dict[str, float] = {
     "BTC": 150.0,
     "ETH": 75.0,
@@ -55,6 +61,8 @@ EMPIRICAL_BOX_ASSET_CAPS_USD: Dict[str, float] = {
     "BNB": 22.0,
     "HYPE": 15.0,
     "DOGE": 15.0,
+    "XAU": 22.0,
+    "XAG": 22.0,
 }
 
 MIN_CORRIDOR_BPS_BY_ASSET: Dict[str, float] = {
@@ -65,17 +73,21 @@ MIN_CORRIDOR_BPS_BY_ASSET: Dict[str, float] = {
     "BNB": 5.0,
     "DOGE": 5.0,
     "HYPE": 5.0,
+    "XAU": 4.0,
+    "XAG": 4.0,
 }
 
 POLYMARKET_CRYPTO_PRICE_URL = "https://polymarket.com/api/crypto/crypto-price"
 GAMMA_EVENTS_URL = "https://gamma-api.polymarket.com/events"
 HORIZON_TO_VARIANT: Dict[str, str] = {
     "4h": "fourhour",
+    "1h": "hourly",
     "15m": "fifteen",
     "5m": "fiveminute",
 }
 HORIZON_TO_DURATION_SEC: Dict[str, float] = {
     "4h": 14400.0,
+    "1h": 3600.0,
     "15m": 900.0,
     "5m": 300.0,
 }
@@ -193,11 +205,85 @@ def parse_twap_candle_event(event: Dict[str, Any], asset: str, horizon: str) -> 
     )
 
 
+def parse_metal_forex_candle_event(event: Dict[str, Any], asset: str, horizon: str) -> Optional[TwapCandleMarketSpec]:
+    """
+    Parses a Polymarket Gamma `1h` or `15m` Up/Down event for `XAU`/`XAG` (`forexprice-streams`).
+    Both `1h` and `15m` settle on the identical Chainlink point-in-time stream (`twap_lookback_sec=0`),
+    enabling exact co-expiring `D1` Same-Oracle Dominance Boxes while keeping `S2` 60s-TWAP excluded.
+    """
+    sym = str(asset or "").strip().upper()
+    if sym not in METAL_DOMINANCE_ASSETS or horizon not in ("1h", "15m"):
+        return None
+    markets = event.get("markets") or []
+    if not markets or not isinstance(markets[0], dict):
+        return None
+    m = markets[0]
+    if m.get("closed") or m.get("acceptingOrders") is False:
+        return None
+    start_iso = str(m.get("eventStartTime") or "").strip()
+    end_iso = str(m.get("endDate") or event.get("endDate") or "").strip()
+    if not start_iso or not end_iso:
+        return None
+    try:
+        start_ts = _parse_iso_ts(start_iso)
+        end_ts = _parse_iso_ts(end_iso)
+    except Exception:
+        return None
+    if abs((end_ts - start_ts) - HORIZON_TO_DURATION_SEC[horizon]) > 5.0:
+        return None
+    res_src = str(m.get("resolutionSource") or "").strip().lower()
+    desc = str(m.get("description") or "").lower()
+    expected_stream = f"{sym.lower()}-usd-forexprice-streams"
+    if expected_stream not in res_src and expected_stream not in desc:
+        return None
+    toks = m.get("clobTokenIds")
+    if isinstance(toks, str):
+        try:
+            toks = json.loads(toks)
+        except Exception:
+            toks = []
+    outcomes = m.get("outcomes")
+    if isinstance(outcomes, str):
+        try:
+            outcomes = json.loads(outcomes)
+        except Exception:
+            outcomes = []
+    if not isinstance(toks, list) or len(toks) < 2:
+        return None
+    up_idx, dn_idx = 0, 1
+    if isinstance(outcomes, list) and len(outcomes) >= 2:
+        norm_out = [str(o).strip().upper() for o in outcomes]
+        if "UP" in norm_out and "DOWN" in norm_out:
+            up_idx = norm_out.index("UP")
+            dn_idx = norm_out.index("DOWN")
+    fee_sched = m.get("feeSchedule") or {}
+    fee_rate = float(fee_sched.get("rate", 0.07) if m.get("feesEnabled", True) else 0.0)
+    fee_exp = float(fee_sched.get("exponent", 1.0))
+    return TwapCandleMarketSpec(
+        asset=sym,
+        horizon=horizon,
+        market_id=str(m.get("id") or ""),
+        condition_id=str(m.get("conditionId") or ""),
+        title=str(m.get("question") or event.get("title") or ""),
+        start_iso=start_iso,
+        end_iso=end_iso,
+        start_ts=start_ts,
+        end_ts=end_ts,
+        up_token=str(toks[up_idx]),
+        down_token=str(toks[dn_idx]),
+        fee_rate=fee_rate,
+        fee_exponent=fee_exp,
+        neg_risk=bool(m.get("negRisk", False)),
+        twap_lookback_sec=0,
+        resolution_source=res_src or f"https://data.chain.link/streams/{expected_stream}",
+    )
+
+
 def verify_same_oracle_pair(m_long: TwapCandleMarketSpec, m_short: TwapCandleMarketSpec) -> bool:
     """
-    Verifies two distinct Chainlink TWAP candle markets (`4h`, `15m`, `5m`) belong to the same
-    asset, share the exact same terminal settlement timestamp (`end_ts` within 2s), and both
-    settle on the identical 60s Chainlink TWAP stream (`twapLookbackSeconds == 60`).
+    Verifies two distinct Chainlink candle markets belong to the same asset, share the exact same
+    terminal settlement timestamp (`end_ts` within 2s), and settle on the identical Chainlink stream
+    (`twapLookbackSeconds == 60` for crypto, or `*-usd-forexprice-streams` for `XAU`/`XAG` `1h` vs `15m`).
     """
     if m_long.asset != m_short.asset:
         return False
@@ -209,13 +295,25 @@ def verify_same_oracle_pair(m_long: TwapCandleMarketSpec, m_short: TwapCandleMar
         return False
     if abs(m_long.end_ts - m_short.end_ts) > 2.0:
         return False
-    if m_long.twap_lookback_sec != 60 or m_short.twap_lookback_sec != 60:
-        return False
     s_l = str(m_long.resolution_source or "").strip().lower()
     s_s = str(m_short.resolution_source or "").strip().lower()
     if not s_l or not s_s or s_l != s_s:
         return False
+    if m_long.asset in METAL_DOMINANCE_ASSETS:
+        return (
+            m_long.twap_lookback_sec == 0
+            and m_short.twap_lookback_sec == 0
+            and f"{m_long.asset.lower()}-usd-forexprice-streams" in s_l
+        )
+    if m_long.twap_lookback_sec != 60 or m_short.twap_lookback_sec != 60:
+        return False
     return True
+
+
+def build_prev_15m_gamma_event_url(spec: TwapCandleMarketSpec) -> str:
+    """Returns the Gamma event URL for the immediately preceding 15m candle (`start_ts - 900`)."""
+    prev_15m_start = int(round(spec.start_ts)) - 900
+    return f"{GAMMA_EVENTS_URL}?slug={spec.asset.lower()}-updown-15m-{prev_15m_start}"
 
 
 def build_prev_5m_gamma_event_url(spec: TwapCandleMarketSpec) -> str:

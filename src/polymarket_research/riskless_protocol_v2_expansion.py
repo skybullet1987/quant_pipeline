@@ -92,6 +92,18 @@ RTDS_SUPPORTED_ASSETS: Tuple[str, ...] = (
     "XAG",
 )
 
+TWAP_60S_SUPPORTED_ASSETS: Tuple[str, ...] = (
+    "BTC",
+    "ETH",
+    "SOL",
+    "XRP",
+    "BNB",
+    "DOGE",
+    "HYPE",
+)
+
+GATLING_REF_NAV_USD: float = 60.92
+
 PYTH_EQUITY_SYMBOLS: Tuple[str, ...] = (
     "SPY",
     "QQQ",
@@ -776,6 +788,8 @@ def evaluate_s2_rtds_exact_twap_integrator(
     now_ts: Optional[float] = None,
     rtds_ticks: Optional[Sequence[Tuple[float, float]]] = None,
     official_twap_60s: Optional[float] = None,
+    twap_lookback_sec: int = 60,
+    live_lock_mode: bool = False,
     up_ask: float = 0.0,
     down_ask: float = 0.0,
     fee_rate: float = 0.07,
@@ -786,57 +800,94 @@ def evaluate_s2_rtds_exact_twap_integrator(
     """
     `S2_RTDS_EXACT_TWAP_INTEGRATOR`:
     Integrates the live 1Hz Chainlink RTDS trajectory (+ `crypto_prices_twap_sixty` stream) inside
-    the final `55s` of a `5m`/`15m`/`1h`/`4h` candle across `BTC, ETH, SOL, XRP, BNB, DOGE, HYPE, XAU, XAG`.
+    the final `55s` (`4.5s <= TTE <= 16.0s` in `live_lock_mode`) of a `5m`/`15m`/`4h` 60s-TWAP candle
+    across `BTC, ETH, SOL, XRP, BNB, DOGE, HYPE` (`XAU`/`XAG` spot-settled forex streams are excluded).
     Since settlement price `P_settle = (1/60) * sum_{k=1}^{60} P_k`, once `N_elapsed` ticks are observed,
     `N_elapsed / 60` of the settlement average is already mathematically locked in history!
     """
     sym = str(asset or "").strip().upper()
-    if sym not in RTDS_SUPPORTED_ASSETS or float(open_price) <= 0.0:
+    if sym not in TWAP_60S_SUPPORTED_ASSETS or int(twap_lookback_sec or 0) != 60 or float(open_price) <= 0.0:
         return None
+    now_f = float(time.time() if now_ts is None else now_ts)
     if tte_sec is None:
         if expiry_ts is None:
             return None
-        now_f = float(time.time() if now_ts is None else now_ts)
         rem_sec = float(expiry_ts) - now_f
     else:
         rem_sec = float(tte_sec)
-    if not (0.8 <= rem_sec <= 55.0):
-        return None
-    raw_samples = samples_last_60s if samples_last_60s is not None else (rtds_ticks or ())
-    pts = [(float(t), float(p)) for t, p in raw_samples if float(p) > 0.0]
-    n_obs = len(pts)
-    n_rem = max(1, int(math.ceil(rem_sec)))
-    if n_obs < max(8, 56 - n_rem):
+    if live_lock_mode:
+        if not (4.5 <= rem_sec <= 16.0):
+            return None
+    elif not (0.8 <= rem_sec <= 55.0):
         return None
 
-    prices = [p for _, p in pts[-60:]]
-    mean_obs = sum(prices) / float(len(prices))
-    cur_px = prices[-1]
-    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 15.0:
-        # Cross-check local 1Hz accumulator against official `crypto_prices_twap_sixty` feed
-        if abs(float(official_twap_60s) - mean_obs) / max(mean_obs, 1e-9) > 0.0025:
+    raw_samples = samples_last_60s if samples_last_60s is not None else (rtds_ticks or ())
+    pts = sorted([(float(t), float(p)) for t, p in raw_samples if float(p) > 0.0], key=lambda x: x[0])
+    if len(pts) < 8:
+        return None
+
+    n_rem = max(1, int(math.ceil(rem_sec)))
+    elapsed_sec = max(1.0, 60.0 - rem_sec)
+    if expiry_ts is not None:
+        win_start = float(expiry_ts) - 60.0
+        win_pts = [(t, p) for t, p in pts if (win_start - 0.5) <= t <= (now_f + 1.0)]
+    else:
+        target_obs = max(8, min(len(pts), int(round(elapsed_sec))))
+        win_pts = pts[-target_obs:]
+
+    min_req_ticks = max(8, int(math.floor(elapsed_sec * 0.72))) if live_lock_mode else max(8, 56 - n_rem)
+    if len(win_pts) < min_req_ticks:
+        return None
+
+    win_prices = [p for _, p in win_pts[-60:]]
+    vol_prices = [p for _, p in pts[-120:]]
+    mean_obs = sum(win_prices) / float(len(win_prices))
+    cur_px = win_prices[-1]
+    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 16.0:
+        max_twap_div = 0.0020 if live_lock_mode else 0.0025
+        if abs(float(official_twap_60s) - mean_obs) / max(mean_obs, 1e-9) > max_twap_div:
             return None
 
-    # Estimate 1-second innovation volatility + max observed jump floor
-    diffs = [abs(prices[i] - prices[i - 1]) for i in range(1, len(prices))]
+    # Estimate 1-second innovation volatility + max observed jump floor over trailing window
+    diffs = [abs(vol_prices[i] - vol_prices[i - 1]) for i in range(1, len(vol_prices))]
     sigma_1s = max(
         cur_px * 0.00018,
         math.sqrt(sum(d * d for d in diffs) / float(max(1, len(diffs)))) if diffs else cur_px * 0.0003,
         (max(diffs) * 0.55) if diffs else 0.0,
     )
 
-    w_obs = float(len(prices)) / float(len(prices) + n_rem)
-    w_rem = float(n_rem) / float(len(prices) + n_rem)
+    w_obs = float(len(win_prices)) / float(len(win_prices) + n_rem)
+    w_rem = float(n_rem) / float(len(win_prices) + n_rem)
     expected_final_twap = w_obs * mean_obs + w_rem * cur_px
+
+    open_f = float(open_price)
+    if live_lock_mode:
+        # Strict triple-side agreement: elapsed mean, live spot, and projected TWAP all beat open_price
+        d_mean = mean_obs - open_f
+        d_spot = cur_px - open_f
+        d_proj = expected_final_twap - open_f
+        if d_mean == 0.0 or d_spot == 0.0 or d_proj == 0.0:
+            return None
+        if not ((d_mean > 0.0) == (d_spot > 0.0) == (d_proj > 0.0)):
+            return None
+
+    elapsed_cushion_bps = (abs(mean_obs - open_f) / open_f) * 10000.0
+    req_adverse_avg_move_bps = (elapsed_sec / max(0.5, rem_sec)) * elapsed_cushion_bps
+    if live_lock_mode and req_adverse_avg_move_bps < 45.0:
+        return None
+
     # Variance of average of remaining random-walk steps `1..n_rem` is ~ `(n_rem + 1)*(2*n_rem + 1)/(6*n_rem) * sigma_1s^2`
     rw_rem_std = sigma_1s * math.sqrt(float((n_rem + 1) * (2 * n_rem + 1)) / 6.0)
-    final_twap_std = max(cur_px * 1e-6, w_rem * rw_rem_std)
+    discretization_std = cur_px * 0.00008  # 0.8 bps 1Hz arrival-timestamp jitter floor
+    final_twap_std = max(cur_px * 1e-6, math.hypot(w_rem * rw_rem_std, discretization_std))
 
-    z = (expected_final_twap - float(open_price)) / final_twap_std
-    if abs(z) < 3.4:
+    z = (expected_final_twap - open_f) / final_twap_std
+    min_z = 3.50 if live_lock_mode else 3.40
+    if abs(z) < min_z:
         return None
     p_win = 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0)))
-    if p_win < float(min_lock_prob):
+    req_prob = max(float(min_lock_prob), 0.9990) if live_lock_mode else float(min_lock_prob)
+    if p_win < req_prob:
         return None
 
     direction = "UP" if z > 0 else "DOWN"
@@ -855,15 +906,175 @@ def evaluate_s2_rtds_exact_twap_integrator(
         "asset": sym,
         "direction": direction,
         "tte_sec": round(rem_sec, 2),
-        "n_locked_ticks": len(prices),
+        "n_locked_ticks": len(win_prices),
         "n_remaining_ticks": n_rem,
+        "locked_fraction": round(w_obs, 4),
+        "elapsed_cushion_bps": round(elapsed_cushion_bps, 2),
+        "req_adverse_avg_move_bps": round(req_adverse_avg_move_bps, 2),
         "expected_settlement_twap": round(expected_final_twap, 6),
-        "open_price": float(open_price),
+        "open_price": open_f,
         "z_score": round(z, 3),
         "p_model": round(min(0.9999, p_win), 6),
         "ask_px": q_ask,
         "net_cost_per_share": round(net_cost, 6),
         "net_edge_per_share": round(ev_edge, 6),
+    }
+
+
+def compute_gatling_clip_budget_usd(
+    *,
+    live_equity: float,
+    free_cash: float,
+    cur_open_exp: float = 0.0,
+    box_type: str = "DOMINANCE",
+    sleeve_src: str = "",
+    own_grad: bool = True,
+    concave_exp: float = 0.65,
+    base_clip_d1: float = 22.0,
+    base_clip_core: float = 20.0,
+    base_clip_bridge: float = 18.5,
+    single_clip_cap_usd: float = 250.0,
+    reserve_usd: float = 0.50,
+    max_exposure_usd: float = 0.0,
+) -> float:
+    """
+    Gatling High-Velocity Burst Gun Sizing (`0.65` book-depth concave reinvestment scaling):
+    At `$60.92` starting NAV:
+      - Core `D1` / `S2_EXACT_TWAP_LOCK` / `COMPLETE_SET` / `CTF_OVERROUND`: `$22.00/clip` (`3` concurrent slots!)
+      - Core `NEGRISK_CONVERT` / `MULTI_LEG_BUNDLE` / `BOND1` / graduated locks: `$20.00/clip`
+      - Bridged 0%-fee math boxes (`SPORTS_CORRIDOR`, `BARRIER_MONO`, `COUNTING_DOMINANCE`, etc.): `$18.50/clip`
+    Scales smoothly with `clip_usd = base_clip * (NAV / 60.92) ** 0.65` so order size never outgrows L1/L2 depth
+    while still compounding daily clip notional across `90+ clips/day`.
+    """
+    nav = max(10.0, float(live_equity or 0.0))
+    cash = max(0.0, float(free_cash or 0.0))
+    btype_u = str(box_type or "").upper()
+    sl_u = str(sleeve_src or "").upper()
+
+    if btype_u in {"DOMINANCE", "COMPLETE_SET", "CTF_OVERROUND"} or sl_u in {
+        "S2_EXACT_TWAP_LOCK",
+        "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_QUIET_BOOK_BOX",
+        "D1_4H_DOMINANCE_BOX",
+    }:
+        base_clip = float(base_clip_d1)
+    elif btype_u in {"NEGRISK_CONVERT", "MULTI_LEG_BUNDLE"} or own_grad or sl_u in {
+        "BOND1_UMA_RESOLUTION_CARRY",
+        "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+    }:
+        base_clip = float(base_clip_core)
+    else:
+        base_clip = float(base_clip_bridge)
+
+    exp_f = min(0.90, max(0.35, float(concave_exp or 0.65)))
+    depth_scale = (nav / GATLING_REF_NAV_USD) ** exp_f
+    desired_clip = min(float(single_clip_cap_usd), round(base_clip * depth_scale, 2))
+    port_cap = max(float(max_exposure_usd or 0.0), nav * 0.98)
+    port_headroom = max(0.0, port_cap - max(0.0, float(cur_open_exp or 0.0)))
+    avail_cash = max(0.0, cash - max(0.0, float(reserve_usd or 0.0)))
+    return round(max(0.0, min(desired_clip, avail_cash, port_headroom)), 2)
+
+
+PROTOCOL_V2_MATH_SLEEVES = {
+    "B1_INTRADAY_ONETOUCH_NOON_BOX",
+    "EQ1_PYTH_EQUITY_DOMINANCE_BOX",
+    "DC1_DOUBLE_CHANCE_1X2_PARITY",
+    "LP_COMP1_SPORTS_TRIANGLES",
+    "HALFTIME_FREEZE_OFFSET_BOX",
+    "MENTION1_CUMULATIVE_LADDER_BOX",
+    "NR6_CROSS_SLATE_SURJECTION_BOX",
+    "CTF_OVERROUND_MINT_SELL",
+    "W_PRUNE1_NR0_BASKET",
+    "W_PRUNE1_DEAD_NO_BOND",
+    "W_SOLAR1_POST_2351_LOCK",
+}
+
+
+def maybe_cap_gatling_budget_sync(
+    harvester: Any,
+    budget: float,
+    collat_f: float,
+    cur_exp: float,
+    box_type: str,
+    sleeve_src: str,
+    own_grad: bool,
+    rb_cfg: Optional[Mapping[str, Any]],
+    *,
+    cap_usd: float = 250.0,
+    reserve_u: float = 0.0,
+    override_legacy_cap: bool = False,
+) -> float:
+    """Compact live Gatling clip-budget adapter keeping `polymarket_all_in_one.py < 1,000,000` bytes."""
+    rb = rb_cfg or {}
+    if not bool(rb.get("gatling_enabled", False)):
+        return budget
+    ex = getattr(harvester, "executor", None)
+    live_real_ex = (
+        not getattr(harvester, "dry_run", True)
+        and bool(harvester._is_v5_unleashed_active())
+        and getattr(ex, "client", None) is not None
+        and getattr(getattr(ex, "client", None), "_mock_children", None) is None
+        and "get_market_book" not in getattr(ex, "__dict__", {})
+        and not getattr(harvester, "enforce_bond1_smart_queue", False)
+    )
+    if not (getattr(harvester, "enforce_gatling_sizing", False) or live_real_ex):
+        return budget
+    g_clip = compute_gatling_clip_budget_usd(
+        live_equity=float(collat_f) + float(cur_exp),
+        free_cash=float(collat_f),
+        cur_open_exp=float(cur_exp),
+        box_type=box_type,
+        sleeve_src=sleeve_src,
+        own_grad=own_grad,
+        concave_exp=float(rb.get("gatling_concave_exp", 0.65)),
+        base_clip_d1=float(rb.get("gatling_base_clip_d1_usd", 22.0)),
+        base_clip_core=float(rb.get("gatling_base_clip_core_usd", 20.0)),
+        base_clip_bridge=float(rb.get("gatling_base_clip_bridge_usd", 18.5)),
+        single_clip_cap_usd=float(cap_usd),
+        reserve_usd=float(reserve_u),
+        max_exposure_usd=float(getattr(harvester, "max_exposure", 100.0)),
+    )
+    return g_clip if override_legacy_cap else min(float(budget), g_clip)
+
+
+def compute_gatling_trajectory_projection(
+    *,
+    starting_nav_usd: float = GATLING_REF_NAV_USD,
+    clips_per_day: float = 90.0,
+    base_clip_usd: float = 22.0,
+    net_edge_bps: float = 58.0,
+    depth_exp: float = 0.65,
+    days: int = 30,
+) -> Dict[str, Any]:
+    """
+    Computes exact 30-day Linear vs. Depth-Scaled Compounded (`0.65` book-depth exponent) NAV trajectory
+    across daily clip-velocity regimes (`Legacy Musket`, `Phase 1-2`, `Phase 3 Target Gun`, `High-Vol Burst Gun`).
+    """
+    nav0 = max(1.0, float(starting_nav_usd))
+    cpd = max(0.0, float(clips_per_day))
+    c0 = max(0.0, float(base_clip_usd))
+    edge_frac = max(0.0, float(net_edge_bps)) / 10000.0
+    exp_f = min(1.0, max(0.25, float(depth_exp)))
+
+    daily_linear_profit = cpd * c0 * edge_frac
+    linear_nav = round(nav0 + float(days) * daily_linear_profit, 2)
+    daily_scaled_rate = (daily_linear_profit / nav0) * exp_f
+    comp_nav = round(nav0 * ((1.0 + daily_scaled_rate) ** float(days)), 2)
+
+    return {
+        "starting_nav_usd": round(nav0, 2),
+        "clips_per_day": round(cpd, 1),
+        "base_clip_usd": round(c0, 2),
+        "net_edge_bps": round(float(net_edge_bps), 2),
+        "depth_factor": round(exp_f, 2),
+        "day1_linear_profit_usd": round(daily_linear_profit, 2),
+        "day1_yield_pct": round(100.0 * daily_linear_profit / nav0, 2),
+        "days": int(days),
+        "linear_30d_nav_usd": linear_nav,
+        "scaled_comp_30d_nav_usd": comp_nav,
+        "net_profit_comp_30d_usd": round(comp_nav - nav0, 2),
+        "nav_multiple_30d": round(comp_nav / nav0, 2),
     }
 
 
@@ -1974,6 +2185,9 @@ async def execute_binary_ctf_overround_mint_sell(
             neg_risk=False,
         )
         merged_ok = bool(isinstance(m_res, tuple) and m_res[0])
+    elif hasattr(executor, "merge_complete_set_positions"):
+        m_res = await asyncio.to_thread(executor.merge_complete_set_positions, condition_id, sh, neg_risk=False)
+        merged_ok = bool(isinstance(m_res, Mapping) and m_res.get("success"))
     elif hasattr(executor, "merge_complete_set_to_collateral"):
         m_res = await asyncio.to_thread(executor.merge_complete_set_to_collateral, condition_id, sh, neg_risk=False)
         merged_ok = bool(isinstance(m_res, Mapping) and m_res.get("success"))
@@ -1986,7 +2200,7 @@ async def execute_binary_ctf_overround_mint_sell(
     }
 
 
-async def execute_multi_leg_all_yes_bundle(
+def _execute_multi_leg_bundle_sync(
     executor: Any,
     legs: Sequence[Mapping[str, Any]],
     *,
@@ -1994,11 +2208,6 @@ async def execute_multi_leg_all_yes_bundle(
     bundle_id: str = "BUNDLE",
     neg_risk: bool = True,
 ) -> Dict[str, Any]:
-    """
-    Execute a `3..12` leg equal-share FOK bundle (`NR0`, `W_PRUNE1_NR0_BASKET`, `NR6`, `LP_COMP1`),
-    ordering legs from thinnest book depth to deepest so the hardest leg fills first, and immediately
-    unwinding filled legs via FOK sell if any subsequent leg rejects.
-    """
     sh = round(float(shares), 2)
     if sh < 5.0 or not (3 <= len(legs) <= 12):
         return {"success": False, "reason": "INVALID_MULTI_LEG_SPEC"}
@@ -2006,51 +2215,74 @@ async def execute_multi_leg_all_yes_bundle(
     filled: List[Tuple[Mapping[str, Any], Dict[str, Any]]] = []
     total_spent = 0.0
 
-    for leg in ordered:
+    for idx, leg in enumerate(ordered):
         tok = str(leg.get("token_id") or "").strip()
+        leg_nr = bool(leg["neg_risk"]) if "neg_risk" in leg and leg.get("neg_risk") is not None else bool(neg_risk)
+        leg_fr = _sf(leg.get("fee_rate"), 0.0)
+        leg_fe = _sf(leg.get("fee_exponent"), 1.0)
         px, _, _ = quantize_dynamic_tick_price(_sf(leg.get("ask_px"), 0.0), "BUY", shares=sh, mode="taker")
         if hasattr(executor, "execute_fok_order"):
-            res = await asyncio.to_thread(
-                executor.execute_fok_order,
-                tok,
-                px,
-                sh * px,
-                "BUY",
-                neg_risk=neg_risk,
+            raw_res = executor.execute_fok_order(tok, px, sh * px, "BUY", neg_risk=leg_nr)
+            ok = bool(isinstance(raw_res, Mapping) and raw_res.get("success"))
+            res = dict(raw_res) if isinstance(raw_res, Mapping) else {"success": ok}
+        elif hasattr(executor, "place_fok_order"):
+            raw_res = executor.place_fok_order(tok, "BUY", sh, px, neg_risk=leg_nr)
+            ok = bool(isinstance(raw_res, Mapping) and raw_res.get("success"))
+            res = dict(raw_res) if isinstance(raw_res, Mapping) else {"success": ok}
+        elif hasattr(executor, "execute_snipe_order"):
+            o_res = executor.execute_snipe_order(
+                trade_id=f"{bundle_id}_L{idx}",
+                token_id=tok,
+                target_token=str(leg.get("side") or leg.get("label") or "YES").upper(),
+                notional_usd=round(sh * px, 4),
+                target_price=px,
+                side="BUY",
+                depth_hurdle=1.02,
+                market_id=str(leg.get("market_id") or ""),
+                condition_id=str(leg.get("condition_id") or leg.get("market_id") or ""),
+                market_fee_rate=leg_fr,
+                market_fee_exponent=leg_fe,
+                max_price_ceiling=px,
+                max_ticket_cap=max(40.0, round(sh * px + 2.0, 2)),
+                min_price_floor=0.01,
+                neg_risk=leg_nr,
+                max_book_buffer=0.0,
             )
+            ok = bool(getattr(o_res, "success", False))
+            res = {
+                "success": ok,
+                "making_amount": float(getattr(o_res, "notional_usd", 0.0) or (sh * px)),
+                "fee_usd": float(getattr(o_res, "fee_usd", 0.0) or 0.0),
+                "size": float(getattr(o_res, "size", 0.0) or sh),
+                "price": float(getattr(o_res, "price", 0.0) or px),
+                "order_id": getattr(o_res, "order_id", None),
+                "error": getattr(o_res, "error", None),
+            }
         else:
-            res = await asyncio.to_thread(
-                executor.place_fok_order,
-                tok,
-                "BUY",
-                sh,
-                px,
-                neg_risk=neg_risk,
-            )
-        if not isinstance(res, dict) or not res.get("success"):
-            # Unwind any prior filled legs immediately
-            for f_leg, _ in filled:
+            ok = False
+            res = {"success": False, "error": "NO_EXECUTOR_FOK_METHOD"}
+
+        if not ok:
+            for f_leg, f_res in filled:
                 f_tok = str(f_leg.get("token_id") or "")
-                f_px = max(0.01, round(_sf(f_leg.get("ask_px"), 0.1) - 0.02, 3))
+                f_nr = bool(f_leg["neg_risk"]) if "neg_risk" in f_leg and f_leg.get("neg_risk") is not None else bool(neg_risk)
+                f_sh = float(f_res.get("size") or sh)
+                f_px = max(0.01, round(_sf(f_leg.get("ask_px"), 0.1) - 0.03, 3))
                 if hasattr(executor, "execute_unwind_order"):
-                    await asyncio.to_thread(
-                        executor.execute_unwind_order,
-                        f_tok,
-                        size=sh,
-                        side="SELL",
-                        min_price=f_px,
-                        neg_risk=neg_risk,
-                    )
+                    try:
+                        executor.execute_unwind_order(
+                            f_tok,
+                            size=f_sh,
+                            side="SELL",
+                            min_price=f_px,
+                            neg_risk=f_nr,
+                        )
+                    except TypeError:
+                        executor.execute_unwind_order(f"UNW_{bundle_id}", f_tok, f_sh, f_px)
                 elif hasattr(executor, "place_fok_order"):
-                    await asyncio.to_thread(
-                        executor.place_fok_order,
-                        f_tok,
-                        "SELL",
-                        sh,
-                        f_px,
-                        neg_risk=neg_risk,
-                    )
+                    executor.place_fok_order(f_tok, "SELL", f_sh, f_px, neg_risk=f_nr)
             return {"success": False, "reason": f"LEG_FOK_REJECTED:{tok[:12]}", "unwound_legs": len(filled)}
+
         filled.append((leg, res))
         total_spent += float(res.get("making_amount") or (sh * px)) + float(res.get("fee_usd") or 0.0)
 
@@ -2060,8 +2292,339 @@ async def execute_multi_leg_all_yes_bundle(
         "leg_count": len(filled),
         "shares": sh,
         "total_cost_usd": round(total_spent, 4),
+        "filled_details": filled,
         "filled_legs": [str(f[0].get("token_id")) for f in filled],
     }
+
+
+async def execute_multi_leg_all_yes_bundle(
+    executor: Any,
+    legs: Sequence[Mapping[str, Any]],
+    *,
+    shares: float,
+    bundle_id: str = "BUNDLE",
+    neg_risk: bool = True,
+) -> Dict[str, Any]:
+    """
+    Execute a `3..12` leg equal-share FOK bundle (`NR0`, `W_PRUNE1_NR0_BASKET`, `NR6`, `LP_COMP1`, `DC1`),
+    ordering legs from thinnest book depth to deepest so the hardest leg fills first, and immediately
+    unwinding filled legs via FOK sell if any subsequent leg rejects.
+    """
+    return await asyncio.to_thread(
+        _execute_multi_leg_bundle_sync,
+        executor,
+        legs,
+        shares=shares,
+        bundle_id=bundle_id,
+        neg_risk=neg_risk,
+    )
+
+
+def _register_bundle_leg_positions(
+    harvester: Any,
+    *,
+    bundle_id: str,
+    sleeve_src: str,
+    cand_asset: str,
+    legs: Sequence[Mapping[str, Any]],
+    filled_details: Sequence[Tuple[Mapping[str, Any], Dict[str, Any]]],
+    shares: float,
+    total_cost_usd: float,
+    exp_ts: float,
+    now_ts: float,
+    default_neg_risk: bool = True,
+) -> List[str]:
+    eff_bundle_cost = round(float(total_cost_usd) / max(0.01, float(shares)), 5)
+    detail_by_tok = {str(lg.get("token_id") or ""): rs for lg, rs in (filled_details or [])}
+    per_leg_fallback = float(total_cost_usd) / float(max(1, len(legs)))
+    tids: List[str] = []
+    for idx, leg in enumerate(legs):
+        tok = str(leg.get("token_id") or "")
+        lid = f"{bundle_id}_L{idx}_{tok[:8]}"
+        rs = detail_by_tok.get(tok) or {}
+        not_u = round(float(rs.get("making_amount") or per_leg_fallback), 4)
+        fee_u = round(float(rs.get("fee_usd") or 0.0), 4)
+        f_sh = float(rs.get("size") or shares)
+        leg_nr = bool(leg["neg_risk"]) if "neg_risk" in leg and leg.get("neg_risk") is not None else bool(default_neg_risk)
+        leg_fr = _sf(leg.get("fee_rate"), 0.0)
+        leg_fe = _sf(leg.get("fee_exponent"), 1.0)
+        mid = str(leg.get("market_id") or "")
+        cid = str(leg.get("condition_id") or mid)
+        side_s = str(leg.get("side") or leg.get("label") or "YES").upper()
+        if hasattr(harvester, "_make_single_leg_lock_pos"):
+            pos = harvester._make_single_leg_lock_pos(
+                lid,
+                "MULTI_LEG_BUNDLE",
+                sleeve_src,
+                cand_asset,
+                "bundle",
+                mid,
+                cid,
+                tok,
+                side_s,
+                leg_nr,
+                f_sh,
+                not_u,
+                fee_u,
+                leg_fr,
+                leg_fe,
+                "crypto_fees_v2",
+                exp_ts,
+                now_ts,
+                0.0,
+                rs.get("order_id"),
+                True,
+                unk=False,
+            )
+            pos["box_id"] = bundle_id
+            pos["is_dominance_box"] = True
+            pos["is_single_leg_lock"] = False
+            pos["box_cost_net"] = eff_bundle_cost
+            pos["box_total_cost_usd"] = round(float(total_cost_usd), 4)
+            pos["shares"] = f_sh
+        else:
+            pos = {
+                "trade_id": lid,
+                "token_id": tok,
+                "market_id": mid,
+                "condition_id": cid,
+                "target_token": side_s,
+                "asset": cand_asset,
+                "box_id": bundle_id,
+                "is_dominance_box": True,
+                "is_single_leg_lock": False,
+                "hold_to_maturity_lock": True,
+                "box_type": "MULTI_LEG_BUNDLE",
+                "box_cost_net": eff_bundle_cost,
+                "box_total_cost_usd": round(float(total_cost_usd), 4),
+                "sleeve": sleeve_src,
+                "shares": f_sh,
+                "entry_shares": f_sh,
+                "remaining_shares": f_sh,
+                "entry_price": round(not_u / max(f_sh, 0.01), 6),
+                "notional_usd": not_u,
+                "fee_usd": fee_u,
+                "entry_ts": now_ts,
+                "candle_expiry_ts": exp_ts,
+                "status": "MATCHED_PENDING_SETTLEMENT",
+                "neg_risk": leg_nr,
+            }
+        harvester.active_positions[lid] = pos
+        tids.append(lid)
+    return tids
+
+
+def finish_protocol_v2_special_box_sync(
+    harvester: Any,
+    candidate_box: Mapping[str, Any],
+    dedupe_k: str,
+    retry_cd: Dict[str, float],
+    now_ts: float,
+    rcfg: Mapping[str, Any],
+    *,
+    own_grad: bool = True,
+) -> Dict[str, Any]:
+    """
+    Synchronous execution finisher called inside `PolymarketLiveHarvester.maybe_execute_graduated_d1_box`
+    for `CTF_OVERROUND` (`splitPosition + dual bid FOK`) and `MULTI_LEG_BUNDLE` (`3..12` leg bundles).
+    """
+    if getattr(harvester, "dry_run", True):
+        return {"executed": False, "reason": "DRY_RUN_SKIP_SPECIAL_V2_BOX"}
+    ex = getattr(harvester, "executor", None)
+    if ex is None:
+        return {"executed": False, "reason": "NO_LIVE_EXECUTOR"}
+    btype = str(candidate_box.get("box_type") or "").upper()
+    sleeve_src = str(candidate_box.get("sleeve_source") or candidate_box.get("sleeve") or "NR0_ALL_YES_COMPLETE_SET")
+    cand_asset = str(candidate_box.get("asset") or sleeve_src[:4]).upper()
+    cand_ts = float(candidate_box.get("ts_unix") or now_ts)
+    exp_ts = float(candidate_box.get("expiry_ts") or (now_ts + 7200.0))
+    if (now_ts - cand_ts) > 6.5 or (btype == "MULTI_LEG_BUNDLE" and (exp_ts - now_ts) < 20.0):
+        return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
+
+    if "SPORTS" in sleeve_src or sleeve_src in {"DC1_DOUBLE_CHANCE_1X2_PARITY", "LP_COMP1_SPORTS_TRIANGLES", "HALFTIME_FREEZE_OFFSET_BOX"}:
+        try:
+            from src.polymarket_research.riskless_machine_gun_engine import is_sports_dead_ball_safe
+            if not is_sports_dead_ball_safe(dict(candidate_box)):
+                return {"executed": False, "reason": "LIVE_BALL_SPORTS_ORACLE_LAG_VETO"}
+        except Exception:
+            pass
+
+    collat = getattr(harvester, "_last_known_collateral", None)
+    if collat is None and hasattr(ex, "get_collateral_balance"):
+        try:
+            c_raw = ex.get_collateral_balance()
+            if isinstance(c_raw, (int, float)) and not isinstance(c_raw, bool) and math.isfinite(float(c_raw)):
+                collat = float(c_raw)
+                harvester._last_known_collateral = collat
+        except Exception:
+            collat = 0.0
+    collat_f = max(0.0, float(collat or 0.0))
+    cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in harvester.active_positions.values())
+    budget = compute_gatling_clip_budget_usd(
+        live_equity=collat_f + cur_exp,
+        free_cash=collat_f,
+        cur_open_exp=cur_exp,
+        box_type=btype,
+        sleeve_src=sleeve_src,
+        own_grad=own_grad,
+        single_clip_cap_usd=float(rcfg.get("d1_box_max_budget_usd", 250.0)),
+        max_exposure_usd=float(getattr(harvester, "max_exposure", 100.0) or 100.0),
+    )
+    if budget < 5.0:
+        return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
+
+    if btype == "CTF_OVERROUND":
+        cid = str(candidate_box.get("condition_id") or candidate_box.get("leg_a_condition_id") or "")
+        y_tok = str(candidate_box.get("yes_token_id") or candidate_box.get("leg_a_token_id") or "")
+        n_tok = str(candidate_box.get("no_token_id") or candidate_box.get("leg_b_token_id") or "")
+        fr = _sf(candidate_box.get("fee_rate") or candidate_box.get("leg_a_fee_rate"), 0.0)
+        fe = _sf(candidate_box.get("fee_exponent") or candidate_box.get("leg_a_fee_exponent"), 1.0)
+        if not cid or not y_tok or not n_tok:
+            return {"executed": False, "reason": "INVALID_CTF_OVERROUND_SPEC"}
+        if hasattr(ex, "get_market_book"):
+            by = ex.get_market_book(y_tok) or {}
+            bn = ex.get_market_book(n_tok) or {}
+            bids_y = sorted([(float(b["price"]), float(b["size"])) for b in (by.get("bids") or []) if float(b.get("size", 0)) > 0], reverse=True)
+            bids_n = sorted([(float(b["price"]), float(b["size"])) for b in (bn.get("bids") or []) if float(b.get("size", 0)) > 0], reverse=True)
+            if not bids_y or not bids_n:
+                return {"executed": False, "reason": "EMPTY_OVERROUND_BIDS"}
+            y_bid, y_sz = bids_y[0]
+            n_bid, n_sz = bids_n[0]
+        else:
+            y_bid = _sf(candidate_box.get("yes_bid"), 0.51)
+            n_bid = _sf(candidate_box.get("no_bid"), 0.51)
+            y_sz = n_sz = _sf(candidate_box.get("max_fillable_shares"), 10.0)
+        net_rev = (y_bid - compute_exact_taker_fee_per_share(y_bid, fr, fe)) + (n_bid - compute_exact_taker_fee_per_share(n_bid, fr, fe))
+        if net_rev < 1.005:
+            return {"executed": False, "reason": f"OVERROUND_GONE:{net_rev:.4f}"}
+        sh = math.floor(min(budget, min(y_sz, n_sz) / 1.15) * 100.0) / 100.0
+        if sh < 5.0:
+            return {"executed": False, "reason": "OVERROUND_MIN_SHARES"}
+        # Run split + dual bid sweep synchronously via helper thread / event-loop safe runner
+        sp = (
+            ex.split_collateral_to_complete_set(cid, sh, neg_risk=False)
+            if hasattr(ex, "split_collateral_to_complete_set")
+            else (attempt_onchain_split_position(ex, cid, sh, neg_risk=False) if attempt_onchain_split_position is not None else {"success": False})
+        )
+        if not (sp or {}).get("success"):
+            retry_cd[dedupe_k] = now_ts + 8.0
+            return {"executed": False, "reason": f"SPLIT_FAILED:{(sp or {}).get('reason')}"}
+        u_res = (
+            ex.execute_atomic_box_overround_unwind(f"CTFOVR_{cid[:10]}", y_tok, y_bid, n_tok, n_bid, sh, False, False, fr, fe, fr, fe)
+            if hasattr(ex, "execute_atomic_box_overround_unwind")
+            else {"success": False}
+        )
+        if not (u_res or {}).get("success"):
+            if hasattr(ex, "merge_complete_set_positions"):
+                ex.merge_complete_set_positions(cid, sh, neg_risk=False)
+            retry_cd[dedupe_k] = now_ts + 8.0
+            return {"executed": False, "reason": "OVERROUND_SWEEP_REJECTED_MERGED_BACK"}
+        la, lb = u_res["leg_a"], u_res["leg_b"]
+        realized = round(
+            (float(la.get("taking_amount") or 0.0) - float(la.get("fee_usd") or 0.0))
+            + (float(lb.get("taking_amount") or 0.0) - float(lb.get("fee_usd") or 0.0)),
+            4,
+        )
+        tid = f"CTFOVR_{cid[:10]}_{int(now_ts)}"
+        harvester.closed_positions.append(
+            {
+                "trade_id": tid,
+                "box_id": tid,
+                "is_dominance_box": True,
+                "box_type": "CTF_OVERROUND",
+                "sleeve": "CTF_OVERROUND_MINT_SELL",
+                "asset": cand_asset,
+                "condition_id": cid,
+                "entry_shares": sh,
+                "notional_usd": sh,
+                "payout_usd": realized,
+                "net_pnl_usd": round(realized - sh, 4),
+                "won": (realized - sh) >= -0.01,
+                "status": "CLOSED",
+                "close_reason": "CTF_OVERROUND_INSTANT_MINT_SELL",
+                "entry_ts": now_ts,
+                "exit_ts": now_ts,
+            }
+        )
+        if dedupe_k and hasattr(harvester, "_record_seen_d1_box_key"):
+            harvester._record_seen_d1_box_key(dedupe_k)
+        if hasattr(ex, "invalidate_collateral_cache"):
+            ex.invalidate_collateral_cache()
+        harvester._pending_collateral_refresh = True
+        harvester.save_state()
+        return {"executed": True, "result": u_res, "leg_trade_ids": [tid]}
+
+    if btype == "MULTI_LEG_BUNDLE":
+        raw_legs = [dict(lg) for lg in (candidate_box.get("legs") or []) if isinstance(lg, Mapping)]
+        if not (3 <= len(raw_legs) <= 12):
+            return {"executed": False, "reason": "INVALID_MULTI_LEG_COUNT"}
+        busy = {str(p.get("market_id") or "") for p in harvester.active_positions.values()}
+        if any(str(lg.get("market_id") or "") in busy for lg in raw_legs if lg.get("market_id")):
+            return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+        max_cost_cap = float(candidate_box.get("max_box_cost_net") or 0.992)
+        default_nr = bool(candidate_box.get("neg_risk", True))
+        if hasattr(ex, "get_market_book"):
+            refreshed_legs: List[Dict[str, Any]] = []
+            tot_net_ps = 0.0
+            min_sh_avail = 999999.0
+            for lg in raw_legs:
+                tok = str(lg.get("token_id") or "")
+                bk = ex.get_market_book(tok) or {}
+                asks = sorted([(float(a["price"]), float(a["size"])) for a in (bk.get("asks") or []) if float(a.get("size", 0)) > 0])
+                if not asks:
+                    return {"executed": False, "reason": f"EMPTY_LEG_ASK:{tok[:10]}"}
+                best_px, best_sz = asks[0]
+                q_px, _, _ = quantize_dynamic_tick_price(best_px, "BUY", shares=5.0, mode="taker")
+                fr = _sf(lg.get("fee_rate"), 0.0)
+                fe = _sf(lg.get("fee_exponent"), 1.0)
+                tot_net_ps += q_px + compute_exact_taker_fee_per_share(q_px, fr, fe)
+                min_sh_avail = min(min_sh_avail, best_sz)
+                lg_up = dict(lg)
+                lg_up["ask_px"] = q_px
+                lg_up["ask_size"] = best_sz
+                refreshed_legs.append(lg_up)
+            if tot_net_ps > max_cost_cap + 1e-6:
+                return {"executed": False, "reason": f"FRESH_BUNDLE_COST_EXCEEDED:{tot_net_ps:.4f}"}
+        else:
+            refreshed_legs = raw_legs
+            tot_net_ps = max(0.20, _sf(candidate_box.get("cost_per_share") or candidate_box.get("box_cost_net"), 0.985))
+            min_sh_avail = _sf(candidate_box.get("max_fillable_shares"), 10.0)
+
+        sh = float(int(math.floor(min(budget / max(tot_net_ps, 0.25), min_sh_avail / 1.15))))
+        if sh < 5.0:
+            return {"executed": False, "reason": "BUNDLE_MIN_SHARES"}
+        bid = str(candidate_box.get("box_id") or f"MLBOX_{int(now_ts)}")
+        res = _execute_multi_leg_bundle_sync(ex, refreshed_legs, shares=sh, bundle_id=bid, neg_risk=default_nr)
+        if not res.get("success"):
+            if dedupe_k:
+                retry_cd[dedupe_k] = now_ts + 4.5
+            return {"executed": False, "reason": str(res.get("reason") or "BUNDLE_EXEC_FAILED"), "result": res}
+        if dedupe_k:
+            retry_cd.pop(dedupe_k, None)
+            if hasattr(harvester, "_record_seen_d1_box_key"):
+                harvester._record_seen_d1_box_key(dedupe_k)
+        tids = _register_bundle_leg_positions(
+            harvester,
+            bundle_id=bid,
+            sleeve_src=sleeve_src,
+            cand_asset=cand_asset,
+            legs=refreshed_legs,
+            filled_details=res.get("filled_details") or [],
+            shares=sh,
+            total_cost_usd=float(res["total_cost_usd"]),
+            exp_ts=exp_ts,
+            now_ts=now_ts,
+            default_neg_risk=default_nr,
+        )
+        if getattr(harvester, "_last_known_collateral", None) is not None:
+            harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - float(res["total_cost_usd"]))
+        if hasattr(ex, "invalidate_collateral_cache"):
+            ex.invalidate_collateral_cache()
+        harvester._pending_collateral_refresh = True
+        harvester.save_state()
+        return {"executed": True, "result": res, "leg_trade_ids": tids}
+
+    return {"executed": False, "reason": f"UNSUPPORTED_SPECIAL_BOX:{btype}"}
 
 
 async def dispatch_protocol_v2_harvester_candidate(
@@ -2101,6 +2664,7 @@ async def dispatch_protocol_v2_harvester_candidate(
                     "trade_id": f"CTFOVR_{cid[:10]}_{int(now_ts)}",
                     "box_id": f"CTFOVR_{cid[:10]}_{int(now_ts)}",
                     "is_dominance_box": True,
+                    "box_type": "CTF_OVERROUND",
                     "sleeve": "CTF_OVERROUND_MINT_SELL",
                     "condition_id": cid,
                     "entry_shares": sh,
@@ -2125,24 +2689,23 @@ async def dispatch_protocol_v2_harvester_candidate(
         if sh < 5.0 or not (3 <= len(legs) <= 12):
             return False
         bid = f"MLBOX_{int(now_ts)}"
-        res = await execute_multi_leg_all_yes_bundle(ex, legs, shares=sh, bundle_id=bid, neg_risk=True)
+        default_nr = bool(box.get("neg_risk", True))
+        res = await execute_multi_leg_all_yes_bundle(ex, legs, shares=sh, bundle_id=bid, neg_risk=default_nr)
         if res.get("success"):
-            per_leg_cost = float(res["total_cost_usd"]) / float(len(legs))
-            for idx, leg in enumerate(legs):
-                tok = str(leg.get("token_id") or "")
-                harvester.active_positions[f"{bid}_L{idx}_{tok[:8]}"] = {
-                    "token_id": tok,
-                    "condition_id": str(leg.get("condition_id") or ""),
-                    "box_id": bid,
-                    "is_dominance_box": True,
-                    "box_type": "MULTI_LEG_BUNDLE",
-                    "sleeve": str(box.get("sleeve") or "NR0_ALL_YES_COMPLETE_SET"),
-                    "shares": sh,
-                    "entry_price": round(per_leg_cost / sh, 6),
-                    "notional_usd": round(per_leg_cost, 4),
-                    "entry_ts": now_ts,
-                    "neg_risk": True,
-                }
+            exp_ts = float(box.get("expiry_ts") or (now_ts + 7200.0))
+            _register_bundle_leg_positions(
+                harvester,
+                bundle_id=bid,
+                sleeve_src=str(box.get("sleeve") or "NR0_ALL_YES_COMPLETE_SET"),
+                cand_asset=str(box.get("asset") or "NR0"),
+                legs=legs,
+                filled_details=res.get("filled_details") or [],
+                shares=sh,
+                total_cost_usd=float(res["total_cost_usd"]),
+                exp_ts=exp_ts,
+                now_ts=now_ts,
+                default_neg_risk=default_nr,
+            )
             ex.invalidate_collateral_cache()
             harvester._pending_collateral_refresh = True
             await asyncio.to_thread(harvester.save_state)

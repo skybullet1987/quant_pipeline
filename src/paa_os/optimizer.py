@@ -71,7 +71,20 @@ def group_closed_positions_by_box(
                 or rec.get("is_locked_arbitrage_box")
                 or partner_tid
                 or str(rec.get("box_type") or "").upper()
-                in {"DOMINANCE", "COMPLETE_SET", "NEGRISK_2LEG", "MULTI_LEG_BUNDLE", "SPORTS_CORRIDOR", "NBA_DOMINANCE", "BARRIER_MONO", "LADDER_MONO"}
+                in {
+                    "DOMINANCE",
+                    "COMPLETE_SET",
+                    "NEGRISK_2LEG",
+                    "MULTI_LEG_BUNDLE",
+                    "SPORTS_CORRIDOR",
+                    "NBA_DOMINANCE",
+                    "BARRIER_MONO",
+                    "LADDER_MONO",
+                    "COUNTING_DOMINANCE",
+                    "MACRO_DOMINANCE",
+                    "CROSS_BASIS_DOMINANCE",
+                    "CTF_OVERROUND",
+                }
             )
         )
         if not is_box_leg:
