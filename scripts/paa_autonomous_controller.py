@@ -33,6 +33,12 @@ PIPELINE_ROOT = Path(__file__).resolve().parents[1]
 if str(PIPELINE_ROOT) not in sys.path:
     sys.path.insert(0, str(PIPELINE_ROOT))
 
+try:
+    from src.paa_os.optimizer import group_closed_positions_by_box
+except Exception:
+    def group_closed_positions_by_box(closed_positions, active_positions=None):  # type: ignore[misc]
+        return list(closed_positions or [])
+
 DATA_PM = PIPELINE_ROOT / "data" / "polymarket"
 DATA_A124 = PIPELINE_ROOT / "data" / "alpha124"
 PAA_DIR = DATA_PM / "paa"
@@ -210,6 +216,7 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     phantom_records: List[Dict[str, Any]] = []
 
     by_sleeve_live: Dict[str, Dict[str, Any]] = {}
+    real_closed_legs: List[Dict[str, Any]] = []
     for c in closed:
         tid = str(c.get("trade_id") or "")
         sl = str(c.get("sleeve") or "UNKNOWN")
@@ -261,14 +268,34 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
 
         verified_cash_pnl += pnl
         total_fees_usd += fee
-        rec["real_trades"] += 1
-        if bool(c.get("won")) or pnl > 0:
-            rec["wins"] += 1
-        elif pnl < 0:
-            rec["losses"] += 1
         rec["verified_net_pnl_usd"] = round(rec["verified_net_pnl_usd"] + pnl, 4)
         rec["fees_usd"] = round(rec["fees_usd"] + fee, 4)
         rec["notional_usd"] = round(rec["notional_usd"] + notional, 2)
+        c_norm = dict(c)
+        c_norm["net_pnl_usd"] = pnl
+        real_closed_legs.append(c_norm)
+
+    # Collapse multi-leg riskless boxes by `box_id` so `$0.00` hedge legs never count as false losses
+    grouped_boxes = group_closed_positions_by_box(real_closed_legs, active)
+    for gb in grouped_boxes:
+        sl_g = str(gb.get("sleeve") or "UNKNOWN")
+        rec_g = by_sleeve_live.setdefault(sl_g, {
+            "sleeve": sl_g,
+            "real_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "verified_net_pnl_usd": 0.0,
+            "raw_ledger_pnl_usd": 0.0,
+            "fees_usd": 0.0,
+            "notional_usd": 0.0,
+            "phantom_unfilled_ignored": 0,
+        })
+        pnl_g = float(gb.get("net_pnl_usd", gb.get("realized_pnl_usd", 0.0)) or 0.0)
+        rec_g["real_trades"] += 1
+        if bool(gb.get("won")) or pnl_g > 0:
+            rec_g["wins"] += 1
+        elif pnl_g < -0.01:
+            rec_g["losses"] += 1
 
     onchain_pusd: Optional[float] = None
     onchain_tok_balances: Dict[str, float] = {}

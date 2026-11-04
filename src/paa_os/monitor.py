@@ -228,7 +228,9 @@ class PAAMonitor:
                 rl_cut = str(rl_mandate.get("riskless_epoch_start_utc") or "2026-11-04T02:05:00Z")
                 loss_alert_usd = float(rl_mandate.get("live_loss_alert_threshold_usd", -0.05))
                 if bool(rl_mandate.get("enforce_riskless_only_live", True)):
-                    for c_rec in (st.get("closed_positions") or [])[-30:]:
+                    from src.paa_os.optimizer import group_closed_positions_by_box
+                    _grouped_c = group_closed_positions_by_box(st.get("closed_positions") or [], st.get("active_positions") or {})
+                    for c_rec in _grouped_c[-30:]:
                         if not isinstance(c_rec, dict):
                             continue
                         ts_e = str(c_rec.get("entry_time_utc") or c_rec.get("settled_at_utc") or "")

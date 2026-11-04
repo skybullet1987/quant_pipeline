@@ -243,6 +243,12 @@ class PermissionGate:
         c_dir = candidate_cfg.get("directional") or {}
         if bool(b_dir.get("riskless_only_mode")) and not bool(c_dir.get("riskless_only_mode")):
             violations.append("NEW_LIVE_TRADING_ACTIVATION: riskless_only_mode cannot be disabled without explicit approval")
+        if "min_live_equity_for_unhedged_directional_usd" in b_dir and float(
+            c_dir.get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0
+        ) < float(b_dir["min_live_equity_for_unhedged_directional_usd"]) - 1e-6:
+            violations.append(
+                "RISK_CONTROL_WEAKENED: directional.min_live_equity_for_unhedged_directional_usd lowered without explicit approval"
+            )
         if bool(c_dir.get("enable_5m_directional")) and not bool(b_dir.get("enable_5m_directional")):
             violations.append("NEW_LIVE_TRADING_ACTIVATION: enable_5m_directional cannot be enabled without explicit approval")
         if bool(c_dir.get("enable_1h_shielded_maker")) and not bool(b_dir.get("enable_1h_shielded_maker")):

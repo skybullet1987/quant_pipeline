@@ -605,11 +605,28 @@ class DeterministicVerificationController:
         # Gate 4 (checked early & authoritatively): Authorization & Protected Policy Gate
         ok_task_auth, auth_msg = self.permission_gate.check_task_authorization(task)
         ch_files = list(changed_files if changed_files is not None else (claims.get("changed_files") or []))
+        eff_base_cfg = baseline_cfg
+        eff_cand_cfg = candidate_cfg
+        if eff_base_cfg is None or eff_cand_cfg is None:
+            norm_ch = {str(x).replace("\\", "/").removeprefix("./").lstrip("/") for x in ch_files}
+            if "config/polymarket_strategy_and_risk.json" in norm_ch:
+                b_path = self.repo_root / "config" / "polymarket_strategy_and_risk.json"
+                c_path = repo_eval / "config" / "polymarket_strategy_and_risk.json"
+                if eff_base_cfg is None and b_path.exists():
+                    try:
+                        eff_base_cfg = json.loads(b_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
+                if eff_cand_cfg is None and c_path.exists():
+                    try:
+                        eff_cand_cfg = json.loads(c_path.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
         ok_diff, diff_violations = self.permission_gate.inspect_candidate_diff(
             changed_files=ch_files,
             diff_text=diff_text or str(proposed_ev.get("diff_text") or ""),
-            baseline_cfg=baseline_cfg,
-            candidate_cfg=candidate_cfg,
+            baseline_cfg=eff_base_cfg,
+            candidate_cfg=eff_cand_cfg,
             release_id=claims.get("release_id"),
         )
         gates["gate_4_authorization"] = {
@@ -940,9 +957,17 @@ class DeterministicVerificationController:
                     "findings": raw_c.strip()[:500],
                 }
             else:
+                b_cfg_c: Optional[Dict[str, Any]] = None
+                b_cfg_p = self.repo_root / "config" / "polymarket_strategy_and_risk.json"
+                if b_cfg_p.exists():
+                    try:
+                        b_cfg_c = json.loads(b_cfg_p.read_text(encoding="utf-8"))
+                    except Exception:
+                        pass
                 ok_d, viol_d = self.permission_gate.inspect_candidate_diff(
                     changed_files=cand_info["changed_files"],
                     diff_text=cand_info["diff_text"],
+                    baseline_cfg=b_cfg_c,
                 )
                 c_conv = f"local_stateless_C_{task_id[-6:]}"
                 self.db.record_session_run(

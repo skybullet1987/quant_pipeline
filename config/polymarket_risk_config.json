@@ -36,6 +36,7 @@
   "max_total_portfolio_slots": 99,
   "unlimited_slots": true,
   "enable_graduated_alt_sleeves": true,
+  "enable_ungraduated_v3_math_live": true,
   "max_daily_loss": 20.0,
   "max_exposure": 100.0,
   "max_concurrent_positions": 2,

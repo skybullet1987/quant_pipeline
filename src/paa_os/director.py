@@ -161,7 +161,8 @@ class PAADirector:
             audit_st = audit_losing_trades.load_audit_state()
             audited = audit_st.get("audited_trades") or {}
             st = json.loads(st_path.read_text(encoding="utf-8"))
-            for rec in st.get("closed_positions") or []:
+            from src.paa_os.optimizer import group_closed_positions_by_box
+            for rec in group_closed_positions_by_box(st.get("closed_positions") or [], st.get("active_positions") or []):
                 tid = str(rec.get("trade_id") or "")
                 pnl = rec.get("net_pnl_usd")
                 if not tid or tid in audited or pnl is None:

@@ -68,6 +68,7 @@ CHAINLINK_SYMBOL_MAP: Dict[str, str] = {
     "doge/usd": "DOGE",
     "hype/usd": "HYPE",
     "xau/usd": "XAU",
+    "xag/usd": "XAG",
 }
 
 
@@ -550,6 +551,9 @@ class PolymarketChainlinkLiveStream:
         self._ticks: Dict[str, Deque[Tuple[float, float]]] = {
             sym: deque(maxlen=600) for sym in CHAINLINK_SYMBOL_MAP.values()
         }
+        self._official_twap_ticks: Dict[str, Deque[Tuple[float, float]]] = {
+            sym: deque(maxlen=180) for sym in CHAINLINK_SYMBOL_MAP.values()
+        }
         self._boundary_twaps: Dict[Tuple[str, int], float] = {}
         self._connected = False
         self._last_rx_mono = 0.0
@@ -607,8 +611,9 @@ class PolymarketChainlinkLiveStream:
             d = _loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
         except Exception:
             return False
-        if not isinstance(d, dict) or d.get("topic") != "crypto_prices_chainlink":
+        if not isinstance(d, dict) or d.get("topic") not in ("crypto_prices_chainlink", "crypto_prices_twap_sixty"):
             return False
+        topic = str(d.get("topic"))
         pl = d.get("payload")
         if not isinstance(pl, dict):
             return False
@@ -633,6 +638,15 @@ class PolymarketChainlinkLiveStream:
             px = _safe_float(pl.get("value"), 0.0)
         if px <= 0.0:
             return False
+        if topic == "crypto_prices_twap_sixty":
+            with self._lock:
+                self._last_rx_mono = time.monotonic()
+                dq_tw = self._official_twap_ticks.setdefault(asset, deque(maxlen=180))
+                dq_tw.append((ts_sec, px))
+                b_cand = int(round(ts_sec / 300.0) * 300)
+                if 0.0 <= abs(ts_sec - b_cand) <= 1.5:
+                    self._boundary_twaps[(asset, b_cand)] = px
+            return True
         self.ingest_tick(asset, ts_sec, px)
         return True
 
@@ -691,6 +705,34 @@ class PolymarketChainlinkLiveStream:
                 return []
             return [(t, p) for t, p in dq if t >= since_ts]
 
+    def _ingest_official_twap(self, raw_sym_or_asset: str, price_usd: float, ts_ms_or_sec: float) -> bool:
+        raw_s = str(raw_sym_or_asset or "").strip()
+        asset = CHAINLINK_SYMBOL_MAP.get(raw_s.lower()) or raw_s.upper()
+        if not asset or float(price_usd) <= 0.0:
+            return False
+        ts_f = float(ts_ms_or_sec)
+        ts_sec = ts_f / 1000.0 if ts_f > 1e11 else ts_f
+        with self._lock:
+            self._last_rx_mono = time.monotonic()
+            dq_tw = self._official_twap_ticks.setdefault(asset, deque(maxlen=180))
+            dq_tw.append((ts_sec, float(price_usd)))
+            b_cand = int(round(ts_sec / 300.0) * 300)
+            if 0.0 <= abs(ts_sec - b_cand) <= 1.5:
+                self._boundary_twaps[(asset, b_cand)] = float(price_usd)
+        return True
+
+    def get_latest_official_twap_60s(self, asset: str, now_ts: Optional[float] = None, max_age_sec: float = 5.0) -> Optional[float]:
+        sym = str(asset or "").strip().upper()
+        now_f = float(time.time() if now_ts is None else now_ts)
+        with self._lock:
+            dq = self._official_twap_ticks.get(sym)
+            if not dq:
+                return None
+            t_last, p_last = dq[-1]
+            if -2.0 <= (now_f - t_last) <= max_age_sec:
+                return p_last
+            return None
+
     async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
         try:
             import websockets
@@ -702,6 +744,7 @@ class PolymarketChainlinkLiveStream:
                 "action": "subscribe",
                 "subscriptions": [
                     {"topic": "crypto_prices_chainlink", "type": "*", "filters": ""},
+                    {"topic": "crypto_prices_twap_sixty", "type": "*", "filters": ""},
                 ],
             }
         )
@@ -1011,8 +1054,9 @@ class PolymarketClobMarketWsTracker:
                             else:
                                 continue
                     finally:
-                        if recv_t is not None and not recv_t.done():
-                            recv_t.cancel()
+                        if recv_t is not None:
+                            if not recv_t.done():
+                                recv_t.cancel()
                             await asyncio.gather(recv_t, return_exceptions=True)
             except asyncio.CancelledError:
                 break

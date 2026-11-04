@@ -311,7 +311,8 @@ class PAAAccountant:
         st = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
         rl_epoch_cut = str((self.cfg.get("riskless_mandate") or {}).get("riskless_epoch_start_utc") or "2026-11-04T02:05:00Z")
         post_lock_w, post_lock_l, post_lock_pnl = 0, 0, 0.0
-        for c in (st.get("closed_positions") or []):
+        from src.paa_os.optimizer import group_closed_positions_by_box
+        for c in group_closed_positions_by_box(st.get("closed_positions") or [], st.get("active_positions") or []):
             if not isinstance(c, dict):
                 continue
             ts_c = str(c.get("entry_time_utc") or c.get("settled_at_utc") or c.get("exit_time_utc") or "")

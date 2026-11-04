@@ -184,6 +184,8 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
 
     forensic_ids = director._check_strategy_degradation_and_losses()
     conv = director._audit_profit_conversion_and_velocity()
+    from src.paa_os.optimizer import PAAOptimizer
+    opt_report = PAAOptimizer(PIPELINE_ROOT, director.data_dir).run_hourly_optimization()
     scorecard = build_strategy_scorecard(reconcile_authoritative_ledger(live_rpc_check=False))
     _atomic_write_json(director.paa_dir / "strategy_inventory_and_scorecard.json", scorecard)
     summary = {
@@ -196,6 +198,7 @@ def cmd_hourly_opt(args: argparse.Namespace) -> int:
         "zero_loss_shadow_wins": fin.get("zero_loss_shadow_wins", 0),
         "riskless_metrics": fin.get("riskless_metrics") or {},
         "conversion_and_velocity": conv,
+        "riskless_optimizer": opt_report,
         "latency_source": lat_source,
         "latency_samples": sample_n,
         "latency_p50_ms": p50_ms,

@@ -322,6 +322,16 @@ class DeploymentController:
         """
         t0 = time.perf_counter()
         for pyf in release_dir.rglob("*.py"):
+            if pyf.name == "polymarket_all_in_one.py":
+                raw_aio = pyf.read_bytes()
+                if len(raw_aio) >= 1_000_000:
+                    return (
+                        False,
+                        f"BUNDLE_SIZE_CEILING_EXCEEDED:{len(raw_aio)}_bytes",
+                        (time.perf_counter() - t0) * 1000.0,
+                    )
+                if b"\r\n" in raw_aio:
+                    return False, "BUNDLE_CRLF_DETECTED:polymarket_all_in_one.py", (time.perf_counter() - t0) * 1000.0
             try:
                 py_compile.compile(str(pyf), doraise=True)
             except Exception as exc:

@@ -367,7 +367,16 @@ class PAAResearcher:
             ("SLEEVE_XAU_15M_MAKER_SHADOW", self.data_dir / "ledger_shadow_xau_15m.jsonl"),
         ]
         for sl_name, lpath in shadow_ledgers:
-            rep = evaluate_ledger_file(lpath, min_trades=50, min_pf=1.45, max_pbo=0.20)
+            if riskless_only and (not lpath.exists() or lpath.stat().st_size == 0):
+                rep = {
+                    "trades": 0,
+                    "net_pnl_usd": 0.0,
+                    "profit_factor": 0.0,
+                    "pbo_estimate": 1.0,
+                    "verdict": "HELD_SHADOW_ONLY_RISKLESS_MODE",
+                }
+            else:
+                rep = evaluate_ledger_file(lpath, min_trades=50, min_pf=1.45, max_pbo=0.20)
             n_tr = int(rep["trades"])
             raw_verdict = str(rep["verdict"])
             verdict = "HELD_SHADOW_ONLY_RISKLESS_MODE" if (riskless_only and raw_verdict == "PROMOTE") else raw_verdict

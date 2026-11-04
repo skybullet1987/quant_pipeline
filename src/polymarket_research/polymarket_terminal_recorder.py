@@ -383,7 +383,7 @@ ASSET_CONFIGS = {
         "pid_file": DATA_DIR / "recorder_hype.pid",
     },
     "XAU": {
-        "series_slug": "xau-up-or-down-hourly",
+        "series_slug": "gold-up-or-down-1h",
         "binance_symbol": "XAUUSDT",
         "binance_spot_ws": "",
         "binance_futures_ws": "wss://fstream.binance.com:443/ws/xauusdt@trade",
@@ -395,6 +395,20 @@ ASSET_CONFIGS = {
         "correlations_file": DATA_DIR / "leadlag_cross_correlations_xau.jsonl",
         "log_file": DATA_DIR / "recorder_xau.log",
         "pid_file": DATA_DIR / "recorder_xau.pid",
+    },
+    "XAG": {
+        "series_slug": "silver-up-or-down-1h",
+        "binance_symbol": "XAGUSDT",
+        "binance_spot_ws": "",
+        "binance_futures_ws": "wss://fstream.binance.com:443/ws/xagusdt@trade",
+        "futures_only_ref": True,
+        "coinbase_product": "USDT-USD",
+        "default_shock_threshold": 150_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_xag.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_xag.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_xag.jsonl",
+        "log_file": DATA_DIR / "recorder_xag.log",
+        "pid_file": DATA_DIR / "recorder_xag.pid",
     },
 }
 
@@ -1443,10 +1457,14 @@ class PolymarketDualFeed1HRecorder:
         max_secs = {"5m": 600, "15m": 1800, "4h": 28800}.get(hz, 1800)
         session = await self.get_session()
         asset_lower = self.asset.lower()
+        _alias_map = {"xau": "gold", "xag": "silver", "sol": "solana", "btc": "bitcoin", "eth": "ethereum"}
+        _alias = _alias_map.get(asset_lower)
         slug_candidates = [
             f"{asset_lower}-up-or-down-{hz}",
             f"{asset_lower}-{hz}",
         ]
+        if _alias:
+            slug_candidates = [f"{_alias}-up-or-down-{hz}", f"{_alias}-{hz}"] + slug_candidates
         now = datetime.now(timezone.utc)
         now_iso = now.strftime("%Y-%m-%dT%H:%M:%SZ")
         for s_slug in slug_candidates:

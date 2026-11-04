@@ -69,19 +69,23 @@ def main() -> int:
                     )
                     try:
                         sys.path.insert(0, str(ROOT))
-                        from src.paa_os.database import PAADatabase
+                        from src.paa_os.task_db import PAATaskDB
 
-                        db = PAADatabase(ROOT / "data/paa_os/paa_state.db")
-                        db.record_fact(
+                        db = PAATaskDB()
+                        db.upsert_verified_fact(
                             fact_key="live_harvester_deployed_sha",
-                            fact_value={
+                            category="DEPLOYMENT",
+                            value={
                                 "git_sha": target_sha,
                                 "service": act_s,
                                 "status": st3.get("status"),
                                 "risk_halt": st3.get("risk_halt"),
                             },
-                            source="paa_flat_harvester_redeploy_once",
-                            ttl_sec=86400,
+                            epistemic_status="VERIFIED_FACT",
+                            source_type="SYSTEMD_PROBE",
+                            source_ref="paa_flat_harvester_redeploy_once",
+                            verified_by="paa_flat_harvester_redeploy_once",
+                            ttl_sec=86400.0,
                         )
                     except Exception as db_exc:
                         log(f"DB receipt note: {db_exc}")

@@ -1986,7 +1986,7 @@ def test_oct27_0655_strike_inversion_and_antibox_veto(tmp_path: Path) -> None:
     assert asyncio.run(d_fc._passes_complement_anti_box_check(la, lb)) is False
 
 
-def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path):
+def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path, monkeypatch):
     """Verify 7-coin D1 expansion, t+35s Gamma strike fallback, B3 barrier boxes, W3 ALL_BUCKETS_NO, Pyth 0%-fee, and D1_MAKER_ANCHOR_BOX."""
     import asyncio
     import time
@@ -2051,10 +2051,10 @@ def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path):
     assert determine_dominance_legs(dg15, 0.20000, dg5, 0.20014, min_corridor_bps=MIN_CORRIDOR_BPS_BY_ASSET["DOGE"]) is not None
 
     # 2. Proactive t+35s prev_5m Gamma eventMetadata.finalPrice strike recovery when crypto-price returns HTTP 429 (None)
-    a124_exp.STATE_FILE = tmp_path / "exp_state.json"
-    a124_exp.LEDGER_FILE = tmp_path / "exp_ledger.jsonl"
-    a124_exp.LIVE_ALPHA124_STATE_MIRROR_FILE = tmp_path / "exp_mirror.json"
-    a124_exp.D1_LIVE_CANDIDATES_FILE = tmp_path / "exp_d1_cands.jsonl"
+    monkeypatch.setattr(a124_exp, "STATE_FILE", tmp_path / "exp_state.json")
+    monkeypatch.setattr(a124_exp, "LEDGER_FILE", tmp_path / "exp_ledger.jsonl")
+    monkeypatch.setattr(a124_exp, "LIVE_ALPHA124_STATE_MIRROR_FILE", tmp_path / "exp_mirror.json")
+    monkeypatch.setattr(a124_exp, "D1_LIVE_CANDIDATES_FILE", tmp_path / "exp_d1_cands.jsonl")
     d_exp = a124_exp.Alpha124ShadowDaemon(single_scan=False)
     prev_slug = f"doge-updown-5m-{int(dg15.start_ts) - 300}"
 

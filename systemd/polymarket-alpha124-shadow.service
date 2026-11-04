@@ -9,6 +9,7 @@ WorkingDirectory=/home/skybullet1987/quant_pipeline
 Environment=PYTHONUNBUFFERED=1
 Environment=PM_DISABLE_SHADOW_M4_CATCHUP=1
 Environment=PM_DISABLE_SHADOW_W2_TAKER=1
+Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
 # 2-vCPU host: keep below the live harvester + BTC/ETH recorders (1000) so shadow scans never starve
 # the latency-critical live path (CPU starvation caused recorder WS ping timeouts / slow-consumer drops).
 CPUWeight=300

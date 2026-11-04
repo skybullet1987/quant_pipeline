@@ -679,7 +679,7 @@ def passes_capital_velocity_hurdle(
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT"}:
+    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "COMPLETE_SET", "CTF_OVERROUND", "MULTI_LEG_BUNDLE"}:
         return True, "OK"
 
     prof = get_unleashed_v5_tier_profile(collat_usd, cfg=cfg)
