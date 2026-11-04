@@ -264,24 +264,32 @@ class PAADirector:
             elif 5 <= w < 8 and l == 0 and pnl > 0:
                 near_grad8.append({"sleeve": sl, "wins": w, "remaining": 8 - w, "shadow_pnl_t1000": round(pnl, 2)})
         min_dir_eq = 0.0
+        riskless_only_mode = False
+        paused_rb_sleeves: set[str] = set()
         if cfg_p.exists():
             try:
-                min_dir_eq = float(((json.loads(cfg_p.read_text(encoding="utf-8")).get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd")) or 0.0)
+                _cfg_d = json.loads(cfg_p.read_text(encoding="utf-8"))
+                min_dir_eq = float(((_cfg_d.get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd")) or 0.0)
+                riskless_only_mode = bool((_cfg_d.get("directional") or {}).get("riskless_only_mode", False))
+                paused_rb_sleeves = {str(x).strip().upper() for x in ((_cfg_d.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []) if str(x).strip()}
             except Exception:
                 min_dir_eq = 0.0
+        zero_live_gaps = [sl for sl in zero_live_gaps if sl.upper() not in paused_rb_sleeves]
         active_conv_gaps = sorted(sl for sl in zero_live_gaps if sl in active_shadow_sleeves)
         regime_quiet_grad8 = sorted(sl for sl in zero_live_gaps if sl not in active_shadow_sleeves)
         summary = {
             "audited_at_utc": utc_now_iso(),
             "grad8_ready_count": len(grad8_ready),
             "grad8_ready_sleeves": sorted(grad8_ready),
+            "paused_riskless_sleeves": sorted(paused_rb_sleeves),
             "grad8_zero_live_conversion_gaps": sorted(zero_live_gaps),
             "grad8_active_shadow_conversion_gaps": active_conv_gaps,
             "grad8_regime_quiet_sleeves": regime_quiet_grad8,
             "near_grad8_candidates": near_grad8,
             "live_wins_by_sleeve": live_wins_by_slv,
             "recent_live_candidate_counts": cand_counts,
-            "seed_zero_loss_focus_active": bool(min_dir_eq > 0.0 and live_cash < min_dir_eq),
+            "riskless_only_mode": riskless_only_mode,
+            "seed_zero_loss_focus_active": bool(riskless_only_mode or (min_dir_eq > 0.0 and live_cash < min_dir_eq)),
             "min_live_equity_for_unhedged_directional_usd": min_dir_eq,
         }
         self.db.upsert_verified_fact(

@@ -64,6 +64,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "max_spread": 0.03,
         "respect_configured_exit_policy_on_safe": True,
         "min_live_equity_for_unhedged_directional_usd": 150.0,
+        "riskless_only_mode": False,
     },
     "routing": {
         "z_immediate_taker_cut": 1.00,
@@ -141,6 +142,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "enable_graduated_d1_box": True,
         "enable_single_leg_maker_bond1": True,
         "enable_two_leg_maker_anchor_boxes": False,
+        "paused_riskless_sleeves": [],
         "d1_max_box_cost_net": 0.985,
         "cm_b3_max_walk_cap": 0.990,
         "d1_free_cash_pct_seed": 0.90,

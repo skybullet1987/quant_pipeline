@@ -241,6 +241,8 @@ class PermissionGate:
 
         b_dir = baseline_cfg.get("directional") or {}
         c_dir = candidate_cfg.get("directional") or {}
+        if bool(b_dir.get("riskless_only_mode")) and not bool(c_dir.get("riskless_only_mode")):
+            violations.append("NEW_LIVE_TRADING_ACTIVATION: riskless_only_mode cannot be disabled without explicit approval")
         if bool(c_dir.get("enable_5m_directional")) and not bool(b_dir.get("enable_5m_directional")):
             violations.append("NEW_LIVE_TRADING_ACTIVATION: enable_5m_directional cannot be enabled without explicit approval")
         if bool(c_dir.get("enable_1h_shielded_maker")) and not bool(b_dir.get("enable_1h_shielded_maker")):
@@ -258,6 +260,11 @@ class PermissionGate:
         c_bx = candidate_cfg.get("riskless_boxes") or {}
         if bool(c_bx.get("enable_two_leg_maker_anchor_boxes")) and not bool(b_bx.get("enable_two_leg_maker_anchor_boxes")):
             violations.append("UNGRADUATED_LIVE_ACTIVATION: enable_two_leg_maker_anchor_boxes is forbidden unattended")
+        b_paused_rb = {str(s).strip().upper() for s in (b_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
+        c_paused_rb = {str(s).strip().upper() for s in (c_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
+        unpaused_rb = sorted(b_paused_rb - c_paused_rb)
+        if unpaused_rb:
+            violations.append(f"NEW_LIVE_TRADING_ACTIVATION: unpausing {unpaused_rb} requires explicit operator approval")
 
         if violations:
             ok_exp, _ = has_explicit_operator_approval("INCREASE_CAPITAL_EXPOSURE", release_id, self.approvals_dir)

@@ -33,7 +33,8 @@
     "min_l1_ask_depth_usd": 20.0,
     "max_spread": 0.03,
     "respect_configured_exit_policy_on_safe": true,
-    "min_live_equity_for_unhedged_directional_usd": 150.0
+    "min_live_equity_for_unhedged_directional_usd": 150.0,
+    "riskless_only_mode": true
   },
   "routing": {
     "z_immediate_taker_cut": 1.00,
@@ -111,6 +112,11 @@
     "enable_graduated_d1_box": true,
     "enable_single_leg_maker_bond1": true,
     "enable_two_leg_maker_anchor_boxes": false,
+    "paused_riskless_sleeves": [
+      "SOC2_EXACT_SCORE_2D_LATTICE",
+      "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",
+      "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"
+    ],
     "d1_max_box_cost_net": 0.985,
     "cm_b3_max_walk_cap": 0.990,
     "d1_free_cash_pct_seed": 0.90,

@@ -5913,6 +5913,17 @@ class PolymarketLiveHarvester:
             return {"executed": False, "reason": "DISABLED_OR_HALTED"}
         box_type = str(candidate_box.get("box_type") or "DOMINANCE").strip().upper()
         sleeve_src = str(candidate_box.get("sleeve_source") or ("D1_SAME_ORACLE_DOMINANCE_BOX" if box_type != "SINGLE_LEG_LOCK" else "")).strip()
+        _enforce_paused_rb = bool(
+            getattr(self, "enforce_paused_riskless_sleeves", False)
+            or (
+                not self.dry_run
+                and getattr(self.executor, "client", None) is not None
+                and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+                and "get_market_book" not in getattr(self.executor, "__dict__", {})
+            )
+        )
+        if _enforce_paused_rb and sleeve_src.upper() in set(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("paused_riskless_sleeves") or []):
+            return {"executed": False, "reason": f"PAUSED_RISKLESS_SLEEVE:{sleeve_src}"}
         cand_asset = str(candidate_box.get("asset") or "").strip().upper()
         core_d1 = {"BTC", "ETH", "XRP"} | ({"SOL"} if RISK_CONFIG.get("enable_sol_d1_box", True) else set())
         exp_d1 = {"BNB", "DOGE", "HYPE"}
@@ -7967,6 +7978,16 @@ class PolymarketLiveHarvester:
 
             _is_mlk1 = sleeve_src == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
             _is_rw_carry = sleeve_src == "MKR_REWARD_LOCKED_CARRY"
+            if (
+                getattr(self, "enforce_paused_riskless_sleeves", False)
+                or (
+                    not self.dry_run
+                    and getattr(self.executor, "client", None) is not None
+                    and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+                    and "post_maker_entry_order" not in getattr(self.executor, "__dict__", {})
+                )
+            ) and sleeve_src.upper() in set(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("paused_riskless_sleeves") or []):
+                return {"executed": False, "reason": f"PAUSED_RISKLESS_SLEEVE:{sleeve_src}"}
             sl_rec_s = by_sl_map.get(sleeve_src) or {}
             no_l_s = int(sl_rec_s.get("losses", 0) or 0) == 0
             d1_s_ok = _grad8_s(by_sl_map.get("D1_SAME_ORACLE_DOMINANCE_BOX") or {})
@@ -8057,7 +8078,10 @@ class PolymarketLiveHarvester:
             _v5_sll = get_unleashed_v5_tier_profile(_tot_eq_sll)
             _sll_pct = float(_v5_sll["bond1_free_cash_pct"])
             _min_dir_eq_sll = float(_gsn_s.get("directional", {}).get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
-            _zf_focus_sll = bool(_enforce_b1_v53 and _min_dir_eq_sll > 0.0 and _tot_eq_sll < _min_dir_eq_sll)
+            _zf_focus_sll = bool(
+                _enforce_b1_v53
+                and (bool(_gsn_s.get("directional", {}).get("riskless_only_mode", False)) or (_min_dir_eq_sll > 0.0 and _tot_eq_sll < _min_dir_eq_sll))
+            )
             if _zf_focus_sll:
                 _sll_pct = max(_sll_pct, float(_b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
             port_headroom_u = max(0.0, max(float(self.max_exposure), _tot_eq_sll * 0.96) - cur_open_u)
@@ -9273,7 +9297,11 @@ class PolymarketLiveHarvester:
         _cur_eq_dir = float(getattr(self, "_last_known_collateral", 0.0) or 0.0) + sum(
             float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if isinstance(p, dict)
         )
-        _seed_dir_paused = bool(_enforce_seed_dir_gate and _min_dir_eq > 0.0 and _cur_eq_dir < _min_dir_eq)
+        _riskless_only_dir = bool(_dir_gov_s.get("riskless_only_mode", False))
+        _seed_dir_paused = bool(
+            _enforce_seed_dir_gate
+            and (_riskless_only_dir or (_min_dir_eq > 0.0 and _cur_eq_dir < _min_dir_eq))
+        )
         if not asset_str or asset_str not in effective_allowed_assets or _seed_dir_paused:
             if asset_str in ("BTC", "ETH", "SOL", "XRP") and (_seed_dir_paused or asset_str in ("ETH", "SOL", "XRP")):
                 # Priority A: Record candidate in shadow mode without live capital risk
@@ -9297,7 +9325,11 @@ class PolymarketLiveHarvester:
                     "twap_60s_open": shock.get("twap_60s_open"),
                     "resolution_source": shock.get("resolution_source", ""),
                     "expiry_ts": close_ts_val,
-                    "reason_blocked": f"SEED_REBUILD_SHADOW_UNTIL_${_min_dir_eq:.0f}" if _seed_dir_paused else "ASSET_PAUSED_SHADOW_ONLY",
+                    "reason_blocked": (
+                        "RISKLESS_ONLY_MODE_SHADOW"
+                        if (_seed_dir_paused and _riskless_only_dir)
+                        else (f"SEED_REBUILD_SHADOW_UNTIL_${_min_dir_eq:.0f}" if _seed_dir_paused else "ASSET_PAUSED_SHADOW_ONLY")
+                    ),
                 }
                 _sh_line = json.dumps(shadow_cand) + "\n"
 

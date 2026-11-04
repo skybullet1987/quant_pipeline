@@ -342,6 +342,7 @@ def test_seed_rebuild_directional_shadow_gate_below_150(tmp_path, monkeypatch):
     monkeypatch.setattr(plh, "read_fast_tick", lambda *a, **kw: None)
     plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
     assert plh.GLOBAL_GOVERNANCE_MANAGER.snapshot["directional"]["min_live_equity_for_unhedged_directional_usd"] == pytest.approx(150.0)
+    monkeypatch.setitem(plh.GLOBAL_GOVERNANCE_MANAGER._snapshot["directional"], "riskless_only_mode", False)
 
     h = plh.PolymarketLiveHarvester(dry_run=True, max_price_ceiling=0.81, max_tte=2400.0, allowed_assets={"BTC", "ETH", "SOL"})
     h.dry_run = False
@@ -842,6 +843,82 @@ def test_paa_baseline_staging_refresh_preserves_staged_and_advances_baseline(tmp
     sha_state["sha"] = "33333333aaaaaaaa"
     p4 = dep.ensure_baseline_staging_release(refresh_if_baseline=True)
     assert p4["active_release_id"] == "REL_CAND_999"
+
+
+def test_strict_riskless_only_mode_and_paused_fee_sports_sleeves(tmp_path, monkeypatch):
+    """Verifies riskless_only_mode blocks unhedged directional even above $150 equity, blocks SOC2/SOC1/SP3 live, and PermissionGate locks both."""
+    from src.paa_os.permissions import PermissionGate
+
+    cf_rl = tmp_path / "strict_rl_shadow_cands.jsonl"
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "strict_rl_state.json")
+    monkeypatch.setattr(plh, "COUNTERFACTUAL_CANDIDATES_FILE", cf_rl)
+    monkeypatch.setattr(plh, "read_fast_tick", lambda *a, **kw: None)
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    snap = plh.GLOBAL_GOVERNANCE_MANAGER.snapshot
+    assert snap["directional"]["riskless_only_mode"] is True
+    assert "SOC2_EXACT_SCORE_2D_LATTICE" in snap["riskless_boxes"]["paused_riskless_sleeves"]
+    assert "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX" in snap["riskless_boxes"]["paused_riskless_sleeves"]
+    assert "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX" in snap["riskless_boxes"]["paused_riskless_sleeves"]
+
+    h = plh.PolymarketLiveHarvester(dry_run=True, max_price_ceiling=0.81, max_tte=2400.0, allowed_assets={"BTC", "ETH", "SOL"})
+    h.dry_run = False
+    h.holistic_v5_live_mode = True
+    h.enforce_seed_directional_shadow_gate = True
+    h.enforce_paused_riskless_sleeves = True
+    h._last_known_collateral = 500.0  # Even well above $150, riskless_only_mode MUST keep directional in shadow!
+
+    sent = []
+
+    async def _never_snipe(**kw):
+        sent.append(kw)
+
+    h.executor.execute_snipe_order_async = _never_snipe
+    now = time.time()
+    asyncio.run(h.evaluate_shock_and_execute({
+        "event_id": "RL_1H", "market_id": "9901", "condition_id": "0x9901", "t0_unix": now,
+        "title": "Bitcoin Up or Down - 1h", "asset": "BTC", "horizon": "1h", "shock_direction": "BUY",
+        "seconds_to_expiry": 360.0, "spot_at_t0": 70250.0, "trigger_price": 70250.0,
+        "candle_open_spot": 70000.0, "twap_60s_open": 70000.0, "candle_distance_pct": 0.35,
+        "candle_sigma": 0.0030, "shock_volume_100ms": 1_800_000.0, "shock_ofi": 0.90,
+        "pre_shock_features_t0": {
+            "UP": {
+                "token_id": "1" * 26, "raw_top_asks": [[0.76, 120.0]], "raw_top_bids": [[0.74, 120.0]],
+                "effective_price_$25": 0.76, "vwap_$25": 0.76, "age_ask_ms": 100.0, "obi_l1": 0.25,
+                "age_book_ms": 20.0, "book_timestamp": now,
+            }
+        },
+    }))
+    plh._get_hot_io_pool().submit(lambda: None).result(timeout=2.0)
+    for _ in range(20):
+        if cf_rl.exists() and cf_rl.read_text(encoding="utf-8").strip():
+            break
+        time.sleep(0.02)
+    assert len(sent) == 0
+    cand_lines = cf_rl.read_text(encoding="utf-8").strip().splitlines()
+    assert len(cand_lines) == 1
+    assert json.loads(cand_lines[0])["reason_blocked"] == "RISKLESS_ONLY_MODE_SHADOW"
+
+    # Paused fee-sports legging sleeves (SOC2, SOC1, SP3) are deterministically blocked in live mode
+    for sl_paused in ("SOC2_EXACT_SCORE_2D_LATTICE", "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX", "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"):
+        res_b = h.maybe_execute_graduated_d1_box({
+            "box_id": f"TEST_{sl_paused}", "box_type": "SPORTS_CORRIDOR",
+            "sleeve_source": sl_paused, "asset": "SOCCER",
+            "leg_a_market_id": "1", "leg_b_market_id": "2",
+            "leg_a_token_id": "1" * 28, "leg_b_token_id": "2" * 28,
+        })
+        assert res_b == {"executed": False, "reason": f"PAUSED_RISKLESS_SLEEVE:{sl_paused}"}
+
+    # PermissionGate prevents unattended disabling of riskless_only_mode or unpausing SOC2
+    gate = PermissionGate(approvals_dir=tmp_path / "approvals")
+    cand_bad = json.loads(json.dumps(snap))
+    cand_bad["directional"]["riskless_only_mode"] = False
+    cand_bad["riskless_boxes"]["paused_riskless_sleeves"] = []
+    ok_g, viol = gate.inspect_config_envelope(snap, cand_bad)
+    assert ok_g is False
+    assert any("riskless_only_mode" in v for v in viol)
+    assert any("SOC2_EXACT_SCORE_2D_LATTICE" in v for v in viol)
+
 
 
 

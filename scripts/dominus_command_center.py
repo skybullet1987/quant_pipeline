@@ -533,7 +533,11 @@ if lh_path.exists():
     _z1h = float(_dcfg.get("min_z_1h_regime_b", _dcfg.get("min_z_1h", 1.00)) or 1.00)
     _z15 = float(_dcfg.get("min_z_15m_taker", 1.20) or 1.20)
     _min_dir_eq_d = float(_dcfg.get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
-    if _min_dir_eq_d > 0.0 and _live_equity_usd < _min_dir_eq_d:
+    _riskless_only_d = bool(_dcfg.get("riskless_only_mode", False))
+    if _riskless_only_d:
+        _s1h_desc = "PAUSED — 100% Riskless-Only Mode (Shadow Only; Awaiting Machine-Gun Riskless)"
+        _s15_desc = "PAUSED — 100% Riskless-Only Mode (Shadow Only; Awaiting Machine-Gun Riskless)"
+    elif _min_dir_eq_d > 0.0 and _live_equity_usd < _min_dir_eq_d:
         _s1h_desc = f"SHADOW-ONLY (<${_min_dir_eq_d:.0f} Rebuild Gate — 100% Capital in 0-Loss Arb & Carry)"
         _s15_desc = f"SHADOW-ONLY (<${_min_dir_eq_d:.0f} Rebuild Gate — 100% Capital in 0-Loss Arb & Carry)"
     else:
@@ -2274,9 +2278,12 @@ async function refreshNow(force=false) {
       }).join('') + `</tbody></table>`
     );
     const minDirEq = Number(dcfg.min_live_equity_for_unhedged_directional_usd || 0);
-    const dirModeBanner = (minDirEq > 0 && eqNow < minDirEq)
-      ? `<b>100% Zero-Loss Focus (&lt;$${minDirEq.toFixed(0)} Rebuild Gate)</b>: Unhedged 15m/1h Dir Paused in Shadow | <b>92% Pool</b> in <code>BOND1/MKR_LOCK1/D1/CAL1/COND1/CM_B3</code>`
-      : `<b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/MKR_LOCK1/COND1/D1/CAL1 Live`;
+    const risklessOnly = Boolean(dcfg.riskless_only_mode);
+    const dirModeBanner = risklessOnly
+      ? `<b>100% Riskless-Only Mode Armed</b>: All Unhedged Directional &amp; Fee-Sports Legging OFF (Shadow Only) | <b>0%-Fee Carry &amp; Pure Dominance Boxes Only</b> (Awaiting Machine-Gun Riskless)`
+      : ((minDirEq > 0 && eqNow < minDirEq)
+        ? `<b>100% Zero-Loss Focus (&lt;$${minDirEq.toFixed(0)} Rebuild Gate)</b>: Unhedged 15m/1h Dir Paused in Shadow | <b>92% Pool</b> in <code>BOND1/MKR_LOCK1/D1/CAL1/COND1/CM_B3</code>`
+        : `<b>v${esc(cfgVer)} Armed</b>: <code>${esc(liveAssets1h)}</code> ${h1Desc} + ${m15Desc} + <code>${esc(exitPol)}</code> ($0.93 MFE Lock) | <code>${esc(pausedDir)}</code> Dir Paused (Shadow) | BOND1/MKR_LOCK1/COND1/D1/CAL1 Live`);
     const openPosHtml = acts.length === 0
       ? `<div class="sub" style="${restOrds.length > 0 ? 'margin-bottom:6px;' : ''}">Filled Open Positions: <b>0</b> &mdash; ${dirModeBanner}</div>`
       : `<div style="margin-bottom:4px;"><b>LIVE OPEN POSITIONS (${acts.length} Active &mdash; Cost Basis $${acts.reduce((s, x) => s + Number(x.notional_usd || 0), 0).toFixed(2)} &bull; Live Bid Value $${acts.reduce((s, x) => s + Number(x.mtm_bid_usd || 0), 0).toFixed(2)} &bull; @Resting TP $${acts.reduce((s, x) => s + Number(x.tp_val_usd || 0), 0).toFixed(2)}):</b></div>
