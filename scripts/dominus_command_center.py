@@ -610,7 +610,10 @@ if lh_path.exists():
         _s1h_desc = "Live 1h Crypto Directional"
         _s15_desc = "Live 15m Crypto Directional"
     live_strat_meta = [
-        ("BOND1_UMA_RESOLUTION_CARRY", "LIVE ACTIVE — 0%-Fee UMA Resolution Carry (Maker + Post-End Taker <=$25, Disputed Recycle)"),
+        ("BOND1_UMA_RESOLUTION_CARRY", "LIVE ACTIVE — 0%-Fee UMA Resolution Carry (68% Pool Cap, <=$21/mkt, Preemptable)"),
+        ("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)"),
+        ("PRE_SPLIT_OVERROUND_MACHINE_GUN", "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"),
+        ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
         ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
         ("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
         ("D1_SAME_ORACLE_DOMINANCE_BOX", f"LIVE ACTIVE — 32/32 Same-Oracle Crypto Dominance Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
@@ -1015,10 +1018,14 @@ if a_path.exists():
         "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",
         "BOND1_UMA_RESOLUTION_CARRY",
         "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+        "MKR_REWARD_LOCKED_CARRY",
         "NR2_CONVERT_NO_SUBSET_ARB",
+        "PRE_SPLIT_OVERROUND_MACHINE_GUN",
     }
     watch_sleeves = [
         "BOND1_UMA_RESOLUTION_CARRY",
+        "MKR_REWARD_LOCKED_CARRY",
+        "PRE_SPLIT_OVERROUND_MACHINE_GUN",
         "CM_B3_PYTH_BARRIER_BOX",
         "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
         "COND1_MACRO_PARTITION_BOX",
@@ -1296,7 +1303,7 @@ def _push_radar(bucket, sleeve_lbl, mkt_id, title, side_lbl, entry_px, edge_bps,
         return
     radar_seen.add(key)
     radar_summary["counts"][bucket] = radar_summary["counts"].get(bucket, 0) + 1
-    if bps_hr and float(bps_hr) > radar_summary["top_bps_per_hr"]:
+    if auth_live and bps_hr and float(bps_hr) > radar_summary["top_bps_per_hr"]:
         radar_summary["top_bps_per_hr"] = round(float(bps_hr), 1)
     radar_opps.append({
         "bucket": bucket,
@@ -1429,7 +1436,31 @@ if rk_path.exists():
                 _pc.get("authorized_live", True),
                 str(_pc.get("category") or ""),
             )
+        for _rwq in (a.get("pending_maker_orders") if 'a' in locals() and isinstance(a, dict) else []) or []:
+            if not isinstance(_rwq, dict) or _rwq.get("sleeve") != "MKR_REWARD_LOCKED_CARRY":
+                continue
+            if float(_rwq.get("p_model_at_post") or 0.0) < 0.999 or float(_rwq.get("best_bid_at_post") or 1.0) > 0.995:
+                continue
+            _rpx = float(_rwq.get("resting_bid") or 0.993)
+            _reb = round(max(0.0, 1.0 - _rpx) * 10000.0, 1)
+            _rrem = max(0.25, (float(_rwq.get("close_ts") or 0.0) - time.time()) / 3600.0)
+            _rmid = str((_rwq.get("extra") or {}).get("market_id") or "")
+            _push_radar(
+                "LOCKED_REWARD",
+                "MKR_REWARD_LOCKED_CARRY",
+                _rmid,
+                _rwq.get("title") or _rwq.get("asset_or_city"),
+                f"{_rwq.get('side', 'NO')} (100% Dead)",
+                _rpx,
+                _reb,
+                round(_reb / max(1.25, _rrem), 1),
+                float(_rwq.get("l1_bid_usd") or 25.0),
+                _rrem,
+                True,
+                f"Queue ${float(_rwq.get('queue_ahead_usd') or 0.0):.0f}",
+            )
         for _lr in (rk.get("ranked_locked_clob_rewards") or [])[:6]:
+            _lr_locked = bool(_lr.get("uma_locked") or float(_lr.get("p_lock") or 0.0) >= 0.999)
             _push_radar(
                 "LOCKED_REWARD",
                 "MKR_LOCKED_REWARD",
@@ -1441,8 +1472,8 @@ if rk_path.exists():
                 _lr.get("est_bps_per_hour", 0),
                 _lr.get("book_liquidity_usd", 0),
                 _lr.get("rem_hours", 1.0),
-                True,
-                f"${int(float(_lr.get('daily_reward_pool_usd') or 0))}/d pool",
+                _lr_locked,
+                f"${int(float(_lr.get('daily_reward_pool_usd') or 0))}/d ({'Locked' if _lr_locked else 'Uncalled'})",
             )
         for _na in ((rk.get("ranked_negrisk_slate_arbs") or []) + (rk.get("ranked_maker_anchor_slate_arbs") or []))[:6]:
             _push_radar(

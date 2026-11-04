@@ -1581,20 +1581,83 @@ def _walk_dual_leg_overround_bids(
     }
 
 
+def is_reward_locked_carry_live_ready(daemon: Any, p_model: float = 1.0) -> bool:
+    """
+    Allows 100%-mathematically-locked (`p_model >= 0.999`, e.g. physical METAR passed high/low by >=2 deg
+    or monotonic counter passed bracket) `MKR_REWARD_LOCKED_CARRY` quotes with 0 shadow losses to bridge
+    into live `SINGLE_LEG_MAKER_LOCK` once `D1` is `8/8` graduated.
+    """
+    if hasattr(daemon, "is_sleeve_grad8_ready") and daemon.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY"):
+        return True
+    if float(p_model or 0.0) < 0.999:
+        return False
+    if not (hasattr(daemon, "is_sleeve_grad8_ready") and daemon.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX")):
+        return False
+    if any(
+        isinstance(p, dict) and p.get("sleeve") == "MKR_REWARD_LOCKED_CARRY" and not bool(p.get("won", True))
+        for p in (getattr(daemon, "closed_positions", None) or ())
+    ):
+        return False
+    try:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+        return bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True))
+    except Exception:
+        return True
+
+
+def read_shm_spot_age_ms(asset: str, now_ts: float, fallback_age_ms: float = 999.0) -> float:
+    """Reads `/dev/shm/pm_fast_tick_{ASSET}.json` timestamp so Alpha-124 sees true sub-10ms SHM spot age."""
+    shm_p = f"/dev/shm/pm_fast_tick_{str(asset or '').strip().upper()}.json"
+    try:
+        if os.path.exists(shm_p):
+            import json as _json
+
+            with open(shm_p, "r", encoding="utf-8") as fh:
+                d = _json.load(fh)
+            ts = float(d.get("timestamp_unix") or d.get("ts") or 0.0)
+            if ts > 0.0:
+                return min(float(fallback_age_ms), max(0.0, (float(now_ts) - ts) * 1000.0))
+    except Exception:
+        pass
+    return float(fallback_age_ms)
+
+
+def _shm_side_to_clob_book(side_obj: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(side_obj, dict):
+        return None
+    bids = [
+        {"price": float(lv[0]), "size": float(lv[1])}
+        for lv in (side_obj.get("raw_top_bids") or ())
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0
+    ]
+    asks = [
+        {"price": float(lv[0]), "size": float(lv[1])}
+        for lv in (side_obj.get("raw_top_asks") or ())
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0
+    ]
+    if not bids and side_obj.get("best_bid") and side_obj.get("bid_size_l1"):
+        bids = [{"price": float(side_obj["best_bid"]), "size": float(side_obj["bid_size_l1"])}]
+    if not asks and side_obj.get("best_ask") and side_obj.get("ask_size_l1"):
+        asks = [{"price": float(side_obj["best_ask"]), "size": float(side_obj["ask_size_l1"])}]
+    return {"bids": bids, "asks": asks}
+
+
 class PreSplitInventoryGun:
     """
-    Revolving `$12` Pre-Split Complete-Set Overround & Maker-Rebate Machine Gun for active `BTC 15m/5m` candles:
-      - Mints `Q = 12` complete sets (`12 UP + 12 DOWN` = `$12.00` value, `$0` directional risk) when free cash >= `$36`.
-      - Sweeps dual-leg L2 bid overrounds (`net_sum >= $1.004`) in `<40ms` (`0s` split wait!).
-      - Posts Chainlink-anchored dual `postOnly` maker asks (`ask_up + ask_dn >= $1.012`) earning `20%` Maker Rebates,
-        auto-completing the second leg as soon as the first leg fills!
-      - Automatically merges remaining `UP + DOWN -> $1.00/pair` `pUSD` at `TTE <= 75s` (`$0` expiry gamble).
+    Revolving `$12` Pre-Split Complete-Set Overround Machine Gun for active `BTC 15m/5m` candles:
+      - Watches `/dev/shm/pm_fast_tick_BTC.json` (`m15` / `m5` L2 `raw_top_bids` or synthetic top-level books).
+      - Under `riskless_only_mode: true` (`enable_pre_split_dual_maker_asks: false`), NEVER posts naked 1-leg
+        maker asks that can be adversely sniped; strictly executes atomic dual-leg L2 bid overround sweeps
+        (`net_sum >= $1.004`) and merges `UP + DOWN -> $1.00/pair` `pUSD` at `TTE <= 75s` (`$0` loss).
     """
 
-    def __init__(self, cap_usd: float = 12.0, min_free_cash_usd: float = 14.0) -> None:
+    def __init__(self, cap_usd: float = 12.0, min_free_cash_usd: Optional[float] = None) -> None:
         self.cap_usd = float(cap_usd)
-        self.min_free_cash_usd = float(min_free_cash_usd)
+        self._explicit_min_free_cash = float(min_free_cash_usd) if min_free_cash_usd is not None else None
+        self.min_free_cash_usd = float(min_free_cash_usd) if min_free_cash_usd is not None else 18.0
         self.last_tick_ts = 0.0
+        self._cid_cache: Dict[str, str] = {}
 
     @staticmethod
     def _state(harvester: Any) -> Dict[str, Any]:
@@ -1604,64 +1667,148 @@ class PreSplitInventoryGun:
             setattr(harvester, "pre_split_inventory_state", st)
         return st
 
+    def _resolve_cid_for_market(self, market_id: str) -> str:
+        mid = str(market_id or "").strip()
+        if not mid:
+            return ""
+        if mid in self._cid_cache:
+            return self._cid_cache[mid]
+        try:
+            resp = requests.get(
+                f"https://gamma-api.polymarket.com/markets/{mid}",
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=2.5,
+            )
+            if resp.status_code == 200:
+                cid = str((resp.json() or {}).get("conditionId") or "").strip()
+                if cid.startswith("0x") and len(cid) >= 42:
+                    self._cid_cache[mid] = cid
+                    return cid
+        except Exception:
+            pass
+        return ""
+
+    def _extract_shm_books_for_tokens(self, ft: Optional[Dict[str, Any]], up_tok: str, dn_tok: str) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        if not isinstance(ft, dict):
+            return None, None
+        bks = ft.get("books")
+        if isinstance(bks, dict) and (up_tok in bks or dn_tok in bks):
+            return bks.get(up_tok), bks.get(dn_tok)
+        for hk in ("m15", "m5", "h4"):
+            sub = ft.get(hk)
+            if isinstance(sub, dict):
+                u_o, d_o = sub.get("UP"), sub.get("DOWN")
+                if isinstance(u_o, dict) and isinstance(d_o, dict):
+                    if str(u_o.get("token_id") or "") == up_tok and str(d_o.get("token_id") or "") == dn_tok:
+                        return _shm_side_to_clob_book(u_o), _shm_side_to_clob_book(d_o)
+        return None, None
+
     async def tick(self, harvester: Any, now_ts: float, *, fast_tick_reader: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None) -> Optional[str]:
         if (now_ts - self.last_tick_ts) < 0.35:
             return None
         self.last_tick_ts = now_ts
-        snap = {}
+        snap: Dict[str, Any] = {}
+        dir_snap: Dict[str, Any] = {}
         try:
             from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
 
             snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}) or {}
+            dir_snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}) or {}
         except Exception:
             pass
         if not bool(snap.get("enable_pre_split_overround_gun", True)):
             return None
         cap_shares = float(math.floor(min(20.0, max(5.0, float(snap.get("pre_split_inventory_cap_usd", self.cap_usd))))))
+        min_free_req = (
+            self._explicit_min_free_cash
+            if self._explicit_min_free_cash is not None
+            else float(snap.get("pre_split_min_free_cash_usd", self.min_free_cash_usd))
+        )
         ex = harvester.executor
         st = self._state(harvester)
 
         if st.get("active"):
-            return await self._supervise_active_inventory(harvester, ex, st, now_ts, fast_tick_reader)
+            return await self._supervise_active_inventory(harvester, ex, st, now_ts, fast_tick_reader, snap=snap, dir_snap=dir_snap)
 
         if harvester.dry_run or not getattr(harvester, "_startup_reconciled", False) or getattr(harvester, "global_halt_active", False):
             return None
         if float(st.get("cooldown_until", 0.0) or 0.0) > now_ts:
             return None
         collat = getattr(harvester, "_last_known_collateral", None)
-        if not isinstance(collat, (int, float)):
-            return None
-        collat_f = float(collat)
-        if collat_f < 36.0:
-            cap_shares = min(cap_shares, 10.0)
-        if collat_f < max(self.min_free_cash_usd, cap_shares + 3.5):
+        min_mult = 2.5 if self._explicit_min_free_cash is not None else 1.5
+        need_cash = max(min_free_req, cap_shares * min_mult)
+        if not isinstance(collat, (int, float)) or float(collat) < need_cash:
             return None
         if fast_tick_reader is None:
             return None
+        ft = fast_tick_reader("BTC")
+        if not isinstance(ft, dict):
+            return None
+        ts_ft = float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)
+        if (now_ts - ts_ft) > 1.2:
+            return None
+
+        cid = str(ft.get("condition_id") or "").strip()
+        up_tok = str(ft.get("up_token_id") or (ft.get("tokens") or {}).get("UP") or "").strip()
+        dn_tok = str(ft.get("down_token_id") or (ft.get("tokens") or {}).get("DOWN") or "").strip()
+        exp_ts = float(ft.get("candle_expiry_ts") or ft.get("expiry_ts") or 0.0)
+        open_spot = float(ft.get("candle_open_spot") or ft.get("open_spot") or 0.0)
+        tte = exp_ts - now_ts
+        top_level_ok = bool(cid and len(up_tok) >= 20 and len(dn_tok) >= 20 and 150.0 <= tte <= 840.0 and open_spot > 0.0)
+
+        if not top_level_ok:
+            req_ovr = bool(snap.get("pre_split_require_live_overround", True))
+            best_cand = None
+            for hk, min_t, max_t in (("m15", 150.0, 840.0), ("m5", 95.0, 285.0)):
+                sub = ft.get(hk)
+                if not isinstance(sub, dict):
+                    continue
+                mid_s = str(sub.get("market_id") or "").strip()
+                exp_s = float(sub.get("expiry_ts") or 0.0)
+                tte_s = exp_s - now_ts
+                op_s = float(sub.get("authoritative_chainlink_open") or sub.get("finalized_open") or ft.get("spot_price") or 0.0)
+                u_o, d_o = sub.get("UP"), sub.get("DOWN")
+                if not (mid_s and min_t <= tte_s <= max_t and op_s > 0.0 and isinstance(u_o, dict) and isinstance(d_o, dict)):
+                    continue
+                ut_s = str(u_o.get("token_id") or "").strip()
+                dt_s = str(d_o.get("token_id") or "").strip()
+                if len(ut_s) < 20 or len(dt_s) < 20:
+                    continue
+                bk_u_s = _shm_side_to_clob_book(u_o)
+                bk_d_s = _shm_side_to_clob_book(d_o)
+                w_s = _walk_dual_leg_overround_bids(
+                    (bk_u_s or {}).get("bids") or [], (bk_d_s or {}).get("bids") or [], cap_shares, 0.07, 1.0, 0.07, 1.0, 1.50
+                )
+                net_s = float(w_s.get("net_sum_per_share") or 0.0) if w_s.get("fillable") else 0.0
+                if req_ovr and net_s < 1.004:
+                    continue
+                if best_cand is None or net_s > best_cand[0]:
+                    best_cand = (net_s, mid_s, ut_s, dt_s, exp_s, op_s)
+            if best_cand is None:
+                return None
+            _, mid_sel, up_tok, dn_tok, exp_ts, open_spot = best_cand
+            cid = await asyncio.to_thread(self._resolve_cid_for_market, mid_sel)
+            if not cid:
+                return None
+
+        inflight_u = sum(
+            float(i.get("notional_usd", 0.0) or 0.0)
+            for i in (getattr(harvester, "pending_entry_intents", None) or {}).values()
+            if isinstance(i, dict)
+        )
+        if (float(collat) - inflight_u) < need_cash and callable(getattr(harvester, "_preempt_resting_maker_anchors", None)):
+            if harvester._preempt_resting_maker_anchors(reason="PRE_SPLIT_OVERROUND", market_ids=None) > 0:
+                await asyncio.sleep(0.12)
+                inflight_u = sum(
+                    float(i.get("notional_usd", 0.0) or 0.0)
+                    for i in (getattr(harvester, "pending_entry_intents", None) or {}).values()
+                    if isinstance(i, dict)
+                )
+        if (float(collat) - inflight_u) < need_cash:
+            return None
+
         busy_cids = {str(p.get("condition_id") or "") for p in harvester.active_positions.values()}
-        chosen_sym = ""
-        ft = None
-        cid = up_tok = dn_tok = ""
-        exp_ts = open_spot = 0.0
-        mkt_fee_rate = 0.07
-        for cand_sym in ("BTC", "ETH", "SOL", "XAU", "XAG"):
-            ft_c = fast_tick_reader(cand_sym)
-            if not isinstance(ft_c, dict):
-                continue
-            ts_ft = float(ft_c.get("timestamp_unix") or ft_c.get("ts") or 0.0)
-            if (now_ts - ts_ft) > 1.8:
-                continue
-            cid_c = str(ft_c.get("condition_id") or "").strip()
-            up_c = str(ft_c.get("up_token_id") or (ft_c.get("tokens") or {}).get("UP") or "").strip()
-            dn_c = str(ft_c.get("down_token_id") or (ft_c.get("tokens") or {}).get("DOWN") or "").strip()
-            exp_c = float(ft_c.get("candle_expiry_ts") or ft_c.get("expiry_ts") or 0.0)
-            open_c = float(ft_c.get("candle_open_spot") or ft_c.get("open_spot") or 0.0)
-            tte_c = exp_c - now_ts
-            if cid_c and cid_c not in busy_cids and len(up_c) >= 20 and len(dn_c) >= 20 and 90.0 <= tte_c <= 3300.0 and open_c > 0.0:
-                chosen_sym, ft, cid, up_tok, dn_tok, exp_ts, open_spot = cand_sym, ft_c, cid_c, up_c, dn_c, exp_c, open_c
-                mkt_fee_rate = float((ft_c.get("fee_metadata") or {}).get("fee_rate_market", ft_c.get("fee_rate", 0.07)) or 0.0)
-                break
-        if not chosen_sym or ft is None:
+        if cid in busy_cids:
             return None
 
         sp_res = await asyncio.to_thread(attempt_onchain_split_position, ex, cid, cap_shares, neg_risk=False)
@@ -1671,8 +1818,7 @@ class PreSplitInventoryGun:
         st.clear()
         st.update({
             "active": True,
-            "asset": chosen_sym,
-            "fee_rate": mkt_fee_rate,
+            "asset": "BTC",
             "condition_id": cid,
             "up_token_id": up_tok,
             "down_token_id": dn_tok,
@@ -1694,7 +1840,7 @@ class PreSplitInventoryGun:
         if getattr(harvester, "_last_known_collateral", None) is not None:
             harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - cap_shares)
         await asyncio.to_thread(harvester.save_state)
-        logger.info(f"✓ [PRE-SPLIT GUN ARMED] {chosen_sym} cid={cid[:12]} | {cap_shares:.0f} UP + {cap_shares:.0f} DOWN minted (tx={sp_res.get('tx_hash')}).")
+        logger.info(f"✓ [PRE-SPLIT GUN ARMED] BTC cid={cid[:12]} | {cap_shares:.0f} UP + {cap_shares:.0f} DOWN minted (tx={sp_res.get('tx_hash')}).")
         return "ARMED"
 
     async def _cancel_resting_asks(self, ex: Any, st: Dict[str, Any]) -> None:
@@ -1730,12 +1876,13 @@ class PreSplitInventoryGun:
         st: Dict[str, Any],
         now_ts: float,
         fast_tick_reader: Optional[Callable[[str], Optional[Dict[str, Any]]]],
+        *,
+        snap: Optional[Dict[str, Any]] = None,
+        dir_snap: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         tte = float(st.get("expiry_ts") or 0.0) - now_ts
-        st_asset = str(st.get("asset") or "BTC")
-        st_fee_r = float(st.get("fee_rate", 0.07) or 0.0)
-        ft = fast_tick_reader(st_asset) if callable(fast_tick_reader) else None
-        spot_fresh = isinstance(ft, dict) and (now_ts - float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)) <= 1.8
+        ft = fast_tick_reader("BTC") if callable(fast_tick_reader) else None
+        spot_fresh = isinstance(ft, dict) and (now_ts - float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)) <= 1.2
 
         # Reconcile any fills on resting maker asks first
         for side_k, oid_k, px_k, tok_k in (
@@ -1752,7 +1899,7 @@ class PreSplitInventoryGun:
                     st[side_k] = round(max(0.0, float(st[side_k]) - m_sh), 4)
                     st["realized_cash_usd"] = round(float(st.get("realized_cash_usd") or 0.0) + cash_f, 4)
                     st["rebate_est_usd"] = round(
-                        float(st.get("rebate_est_usd") or 0.0) + m_sh * compute_crypto_maker_rebate_per_share(px_f, st_fee_r, 1.0), 4
+                        float(st.get("rebate_est_usd") or 0.0) + m_sh * compute_crypto_maker_rebate_per_share(px_f, 0.07, 1.0), 4
                     )
                     ex.release_inventory(reservation_id=str(oid))
                     st[oid_k] = None
@@ -1764,14 +1911,13 @@ class PreSplitInventoryGun:
         if up_rem <= 0.05 and dn_rem <= 0.05:
             return await self._finalize_cycle(harvester, st, "PRE_SPLIT_DUAL_MAKER_OVERROUND_FILLED", now_ts)
 
-        bk_up = (ft.get("books") or {}).get(st["up_token_id"]) if isinstance(ft, dict) and isinstance(ft.get("books"), dict) else None
-        bk_dn = (ft.get("books") or {}).get(st["down_token_id"]) if isinstance(ft, dict) and isinstance(ft.get("books"), dict) else None
+        bk_up, bk_dn = self._extract_shm_books_for_tokens(ft, str(st["up_token_id"]), str(st["down_token_id"]))
         if bk_up is None:
             bk_up = await ex.get_market_book_async(st["up_token_id"])
         if bk_dn is None:
             bk_dn = await ex.get_market_book_async(st["down_token_id"])
 
-        # Asymmetric 1-leg maker fill: immediately sweep remaining leg bid if net >= cost + $0.002!
+        # Asymmetric 1-leg fill: ONLY sweep remaining leg when strictly profitable (`net >= cost + $0.002`) — NEVER dump at a loss!
         if abs(up_rem - dn_rem) >= 4.95 and isinstance(bk_up, dict) and isinstance(bk_dn, dict):
             rem_tok = st["up_token_id"] if up_rem > dn_rem else st["down_token_id"]
             rem_sh = abs(up_rem - dn_rem)
@@ -1783,11 +1929,11 @@ class PreSplitInventoryGun:
             )
             if bids_r:
                 b_top = bids_r[0][0]
-                fee_r = st_fee_r * b_top * (1.0 - b_top)
+                fee_r = 0.07 * b_top * (1.0 - b_top)
                 need_net = max(0.02, (float(st["cost_usd"]) - float(st["realized_cash_usd"])) / max(rem_sh, 1.0) + 0.002)
-                if (b_top - fee_r) >= need_net or tte <= 75.0:
+                if (b_top - fee_r) >= need_net:
                     await self._cancel_resting_asks(ex, st)
-                    uw = await asyncio.to_thread(ex.execute_unwind_order, rem_tok, size=rem_sh, side="SELL", min_price=max(0.01, round(b_top - 0.02, 2)), neg_risk=False)
+                    uw = await asyncio.to_thread(ex.execute_unwind_order, rem_tok, size=rem_sh, side="SELL", min_price=max(0.01, round(need_net, 2)), neg_risk=False)
                     if isinstance(uw, dict) and (uw.get("success") or uw.get("partial")):
                         m_u = float(uw.get("matched_size") or rem_sh)
                         c_u = float(uw.get("taking_amount") or (m_u * b_top)) - float(uw.get("fee_usd") or 0.0)
@@ -1801,7 +1947,7 @@ class PreSplitInventoryGun:
 
         paired = round(min(float(st.get("up_rem") or 0.0), float(st.get("dn_rem") or 0.0)), 2)
         if paired >= 5.0 and isinstance(bk_up, dict) and isinstance(bk_dn, dict):
-            walk = _walk_dual_leg_overround_bids(bk_up.get("bids") or [], bk_dn.get("bids") or [], paired, st_fee_r, 1.0, st_fee_r, 1.0, 1.15)
+            walk = _walk_dual_leg_overround_bids(bk_up.get("bids") or [], bk_dn.get("bids") or [], paired, 0.07, 1.0, 0.07, 1.0, 1.15)
             if walk.get("fillable") and float(walk.get("net_sum_per_share") or 0.0) >= 1.004:
                 await self._cancel_resting_asks(ex, st)
                 paired = round(min(float(st.get("up_rem") or 0.0), float(st.get("dn_rem") or 0.0)), 2)
@@ -1816,9 +1962,9 @@ class PreSplitInventoryGun:
                         paired,
                         False,
                         False,
-                        st_fee_r,
+                        0.07,
                         1.0,
-                        st_fee_r,
+                        0.07,
                         1.0,
                     )
                     if (u_res or {}).get("success"):
@@ -1829,6 +1975,17 @@ class PreSplitInventoryGun:
                         st["up_rem"] = round(max(0.0, float(st["up_rem"]) - paired), 4)
                         st["dn_rem"] = round(max(0.0, float(st["dn_rem"]) - paired), 4)
                         return await self._finalize_cycle(harvester, st, "PRE_SPLIT_OVERROUND_SWEEP", now_ts)
+                    elif (u_res or {}).get("partial_leg_unwind"):
+                        la, lb = (u_res or {}).get("leg_a") or {}, (u_res or {}).get("leg_b") or {}
+                        if la.get("filled"):
+                            m_a = float(la.get("matched_size") or paired)
+                            st["realized_cash_usd"] = round(float(st["realized_cash_usd"]) + max(0.0, float(la.get("taking_amount") or 0.0) - float(la.get("fee_usd") or 0.0)), 4)
+                            st["up_rem"] = round(max(0.0, float(st["up_rem"]) - m_a), 4)
+                        if lb.get("filled"):
+                            m_b = float(lb.get("matched_size") or paired)
+                            st["realized_cash_usd"] = round(float(st["realized_cash_usd"]) + max(0.0, float(lb.get("taking_amount") or 0.0) - float(lb.get("fee_usd") or 0.0)), 4)
+                            st["dn_rem"] = round(max(0.0, float(st["dn_rem"]) - m_b), 4)
+                        await asyncio.to_thread(harvester.save_state)
 
         # Pre-expiry or stale-spot safety merge (`TTE <= 75s`) -> $1.00/pair cash!
         if tte <= 75.0 or not spot_fresh:
@@ -1840,8 +1997,14 @@ class PreSplitInventoryGun:
                     st["realized_cash_usd"] = round(float(st["realized_cash_usd"]) + float(m_res[1]), 4)
                     st["up_rem"] = round(max(0.0, float(st["up_rem"]) - float(m_res[1])), 4)
                     st["dn_rem"] = round(max(0.0, float(st["dn_rem"]) - float(m_res[1])), 4)
-                    return await self._finalize_cycle(harvester, st, "PRE_SPLIT_PRE_EXPIRY_MERGED", now_ts)
+                    if float(st["up_rem"]) <= 0.05 and float(st["dn_rem"]) <= 0.05:
+                        return await self._finalize_cycle(harvester, st, "PRE_SPLIT_PRE_EXPIRY_MERGED", now_ts)
             return None
+
+        # Strictly gate naked dual Maker Asks off when `riskless_only_mode` is True (prevents 1-leg adverse sniping!)
+        allow_dual_mkr = bool((snap or {}).get("enable_pre_split_dual_maker_asks", False)) and not bool((dir_snap or {}).get("riskless_only_mode", False))
+        if not allow_dual_mkr:
+            return "SUPERVISED"
 
         # Chainlink-anchored dual postOnly Maker Asks (`ask_up + ask_dn >= $1.012`)
         spot_now = float((ft or {}).get("spot_price") or (ft or {}).get("chainlink_spot") or st.get("open_spot") or 0.0)

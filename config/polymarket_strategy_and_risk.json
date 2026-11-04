@@ -135,6 +135,7 @@
     "bond1_buried_cancel_sec": 15.0,
     "bridged_zero_fee_cap_usd_seed": 60.0,
     "bridged_zero_fee_cap_usd_growth": 120.0,
+    "enable_reward_locked_carry_live_bridge": true,
     "reward_harvester_cap_usd_seed": 12.0,
     "box_collateral_reserve_usd": 0.0,
     "max_concurrent_riskless_boxes": 10,
@@ -147,10 +148,13 @@
     "scale_max_lockup_hours": 168.0,
     "scale_min_bps_per_hour": 3.5,
     "enable_pre_split_overround_gun": true,
+    "enable_pre_split_dual_maker_asks": false,
+    "pre_split_require_live_overround": true,
+    "pre_split_min_free_cash_usd": 18.0,
     "pre_split_inventory_cap_usd": 12.0,
     "enable_nr3_synthetic_overround": true,
     "enable_cross_condition_complement_merge": true,
-    "enable_d1_rebate_maker_canary": true,
+    "enable_d1_rebate_maker_canary": false,
     "d1_rebate_maker_cap_usd": 12.0
   },
   "shadow_governance": {

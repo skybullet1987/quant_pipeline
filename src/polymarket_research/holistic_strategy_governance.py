@@ -161,6 +161,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "bond1_buried_cancel_sec": 15.0,
         "bridged_zero_fee_cap_usd_seed": 60.0,
         "bridged_zero_fee_cap_usd_growth": 120.0,
+        "enable_reward_locked_carry_live_bridge": True,
         "reward_harvester_cap_usd_seed": 12.0,
         "box_collateral_reserve_usd": 0.0,
         "max_concurrent_riskless_boxes": 10,
@@ -173,10 +174,13 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "scale_max_lockup_hours": 168.0,
         "scale_min_bps_per_hour": 3.5,
         "enable_pre_split_overround_gun": True,
+        "enable_pre_split_dual_maker_asks": False,
+        "pre_split_require_live_overround": True,
+        "pre_split_min_free_cash_usd": 18.0,
         "pre_split_inventory_cap_usd": 12.0,
         "enable_nr3_synthetic_overround": True,
         "enable_cross_condition_complement_merge": True,
-        "enable_d1_rebate_maker_canary": True,
+        "enable_d1_rebate_maker_canary": False,
         "d1_rebate_maker_cap_usd": 12.0,
     },
     "shadow_governance": {
@@ -679,7 +683,7 @@ def passes_capital_velocity_hurdle(
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "COMPLETE_SET", "CTF_OVERROUND", "MULTI_LEG_BUNDLE"}:
+    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT"}:
         return True, "OK"
 
     prof = get_unleashed_v5_tier_profile(collat_usd, cfg=cfg)

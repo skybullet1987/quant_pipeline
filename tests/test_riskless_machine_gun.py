@@ -454,3 +454,89 @@ def test_alpha124_4h_overlap_wakeup_and_3shard_600_token_ws_matrix(tmp_path: Pat
     assert len(shards[2]) == 200
     assert len(set(shards[0]) | set(shards[1]) | set(shards[2])) == 600
     assert len(d._ws_nr_priority_tokens) == 600
+
+
+def test_production_shm_subdict_pre_split_zero_loss_and_dead_no_reward_bridge(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+    from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
+
+    # 1. Production `/dev/shm/pm_fast_tick_BTC.json` (`m15` subdict) skips idle split until overround >= $1.004,
+    #    NEVER posts naked 1-leg maker asks under `riskless_only_mode`, and sweeps overround cleanly.
+    ex_dry = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "psg_shm.jsonl")
+    maker_exit_calls: List[Any] = []
+    ex_dry.post_maker_exit_order = lambda **kw: (maker_exit_calls.append(kw) or {"success": True, "orderID": "BAD_NAKED_ASK"})
+    ex_dry.attempt_onchain_complete_set_merge = lambda cid, min_pairs=5.0, max_pairs=None, neg_risk=False: (
+        "0xdry_merge_shm",
+        float(max_pairs or min_pairs),
+    )
+
+    gun = PreSplitInventoryGun(cap_usd=12.0)
+    gun._cid_cache["6624916"] = "0x" + "cc" * 32
+    now = 1793767000.0
+    up_tok = "101047705223554566556690137231700604189599157098181477001735400979375505855882"
+    dn_tok = "31007079463241544411876302509175691935057850031139968483533287340779867204003"
+
+    class HarvProdStub:
+        dry_run = False
+        _startup_reconciled = True
+        global_halt_active = False
+        executor = ex_dry
+        active_positions: Dict[str, Any] = {}
+        pending_entry_intents: Dict[str, Any] = {"B1": {"notional_usd": 40.0}}
+        closed_positions: List[Dict[str, Any]] = []
+        pre_split_inventory_state: Dict[str, Any] = {}
+        _last_known_collateral = 61.01  # $21.01 free cash after $40 BOND1 intent (>= $18.0 min_free_cash_usd!)
+        _pending_collateral_refresh = False
+
+        def save_state(self) -> None:
+            pass
+
+    harv_p = HarvProdStub()
+    shm_normal = {
+        "ts": now,
+        "timestamp_unix": now,
+        "asset": "BTC",
+        "spot_price": 76642.0,
+        "m15": {
+            "market_id": "6624916",
+            "horizon": "15m",
+            "expiry_ts": now + 500.0,
+            "authoritative_chainlink_open": 76600.0,
+            "UP": {"token_id": up_tok, "raw_top_bids": [[0.49, 80.0]], "raw_top_asks": [[0.51, 80.0]]},
+            "DOWN": {"token_id": dn_tok, "raw_top_bids": [[0.49, 80.0]], "raw_top_asks": [[0.51, 80.0]]},
+        },
+    }
+    # Normal book (`0.49 + 0.49 = 0.98 < 1.004`) -> $0 split, $0 gas, $0 capital locked!
+    assert asyncio.run(gun.tick(harv_p, now_ts=now, fast_tick_reader=lambda _a: shm_normal)) is None
+    assert not harv_p.pre_split_inventory_state.get("active")
+
+    # Overround book (`0.53 + 0.52 = 1.05` gross -> net > 1.004) -> splits $12 on Tick 1, sweeps on Tick 2, 0 naked maker asks!
+    shm_ovr = {
+        **shm_normal,
+        "timestamp_unix": now + 1.0,
+        "m15": {
+            **shm_normal["m15"],
+            "UP": {"token_id": up_tok, "raw_top_bids": [[0.53, 80.0]], "raw_top_asks": [[0.54, 80.0]]},
+            "DOWN": {"token_id": dn_tok, "raw_top_bids": [[0.52, 80.0]], "raw_top_asks": [[0.53, 80.0]]},
+        },
+    }
+    assert asyncio.run(gun.tick(harv_p, now_ts=now + 1.0, fast_tick_reader=lambda _a: shm_ovr)) == "ARMED"
+    # Even if book normalizes mid-candle, supervision NEVER posts naked 1-leg maker asks under riskless_only_mode!
+    shm_mid = {**shm_normal, "timestamp_unix": now + 2.0}
+    assert asyncio.run(gun.tick(harv_p, now_ts=now + 2.0, fast_tick_reader=lambda _a: shm_mid)) == "SUPERVISED"
+    assert maker_exit_calls == []
+    # Next overround spike sweeps both legs atomically!
+    shm_ovr["timestamp_unix"] = now + 3.0
+    assert asyncio.run(gun.tick(harv_p, now_ts=now + 3.0, fast_tick_reader=lambda _a: shm_ovr)) == "PRE_SPLIT_OVERROUND_SWEEP"
+    assert len(harv_p.closed_positions) == 1 and harv_p.closed_positions[-1]["net_pnl_usd"] > 0.10
+
+    # 2. Dead-NO `MKR_REWARD_LOCKED_CARRY` live bridge gate (`p_model == 1.0` unlocked, `p_model == 0.998` gated)
+    fake_daemon = SimpleNamespace(
+        is_sleeve_grad8_ready=lambda sl: sl == "D1_SAME_ORACLE_DOMINANCE_BOX",
+        closed_positions=[],
+    )
+    assert is_reward_locked_carry_live_ready(fake_daemon, 1.0) is True
+    assert is_reward_locked_carry_live_ready(fake_daemon, 0.998) is False
+    fake_daemon.closed_positions.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "won": False})
+    assert is_reward_locked_carry_live_ready(fake_daemon, 1.0) is False
+
