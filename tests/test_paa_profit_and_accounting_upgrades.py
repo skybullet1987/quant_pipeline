@@ -27,9 +27,10 @@ import src.polymarket_research.alpha_124_shadow_daemon as a124_mod
 
 
 @pytest.fixture(autouse=True)
-def _offline_clob_env(monkeypatch):
+def _offline_clob_env(tmp_path, monkeypatch):
     monkeypatch.setattr(ex_mod, "ClobClient", MagicMock(name="OfflineClobClient"))
     monkeypatch.setattr(ex_mod, "PY_CLOB_AVAILABLE", True)
+    monkeypatch.setattr(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", tmp_path / "_isolated_a124_mirror.json")
     monkeypatch.setenv("POLYGON_PRIVATE_KEY", "0x" + "11" * 32)
     monkeypatch.setenv("POLYGON_FUNDER_ADDRESS", "0x" + "22" * 20)
     monkeypatch.setenv("POLYGON_SIGNATURE_TYPE", "3")
