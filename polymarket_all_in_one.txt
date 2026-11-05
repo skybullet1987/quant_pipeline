@@ -1,20 +1,20 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 11:00:48 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-05 11:22:22 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,306B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,935B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,620B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4589 | 902,489B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (L4590-7060 | 447,726B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7061-8064 | 188,338B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (L8065-8232 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (L8233-8966 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (L8967-9001 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/redeem_settled_positions.py] (L9002-9100 | 14,780B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (L9101-9214 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (L9215-9617 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4595 | 902,858B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (L4596-7066 | 447,726B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7067-8070 | 188,338B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (L8071-8238 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (L8239-8972 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (L8973-9007 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/redeem_settled_positions.py] (L9008-9106 | 14,780B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (L9107-9220 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (L9221-9623 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # [01/13] config/polymarket_risk_config.json
@@ -2761,7 +2761,9 @@ class PolymarketLiveHarvester:
     if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_X or"BOND1","horizon":"box","side":_aS,"market_id":_a6,"title":str(candidate_box.get("title")or _aK),"sleeve":_Y,"path_type":"MAKER_BOX","target_px":float((_af or{}).get("price")or C),"notional_usd":_p,"http_ms":_D,"stage_outcome":"BOND1_MAKER_POST_FAILED","gate_detail":str((_af or{}).get("error")or"")})
     return{"executed":False,"reason":f"BOND1_MAKER_POST_FAILED:{(_af or{}).get('error')}"}
    _3=float(_af.get("price")or C);_2=float(_af.get("shares")or H)
-   if _7 in a.pending_entry_intents:a.pending_entry_intents[_7]["entry_order_id"]=_4;a.pending_entry_intents[_7]["anchor_bid_px"]=_3;a.pending_entry_intents[_7]["notional_usd"]=round(_2*_3,4);a.pending_entry_intents[_7]["velocity_bps_hr"]=round(((1.-_3)*1e4)/max(_H,(_aO-time.time())/3600.),2)if _aO>time.time()else.0;a.pending_entry_intents[_7]["heartbeat_ts"]=time.time()
+   if _7 in a.pending_entry_intents:
+    a.pending_entry_intents[_7]["entry_order_id"]=_4;a.pending_entry_intents[_7]["anchor_bid_px"]=_3;a.pending_entry_intents[_7]["notional_usd"]=round(_2*_3,4);a.pending_entry_intents[_7]["velocity_bps_hr"]=round(((1.-_3)*1e4)/max(_H,(_aO-time.time())/3600.),2)if _aO>time.time()else.0;a.pending_entry_intents[_7]["heartbeat_ts"]=time.time()
+    if not a.dry_run:a.save_state()
    if a.dry_run:B,_m=_2,_3;Y={"matched":B,"avg_price":_m,"cash":round(B*_m,4),"fee":.0,"terminal":True}
    else:
     uws=getattr(a.executor,"_user_ws_cache",None);_h=float(candidate_box.get("_bond1_first_post_ts")or time.time());_M=.35 if _S else(float(_ac.get("bond1_book_poll_sec",4.)or 4.));_au=time.monotonic();T,r,_=compute_sll_maker_keep_and_renew(_Y,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_aO,now_ts=time.time(),created_mono=_au,rcfg=_ac,first_post_elapsed_s=max(.0,time.time()-_h)if"_bond1_first_post_ts"in candidate_box else.0);s=_au;n=_au;j=_3;c=False;g=False;e=None;l=None;o=False
@@ -2797,12 +2799,16 @@ class PolymarketLiveHarvester:
        except Exception as _poll_exc:_n=None
        if isinstance(_n,dict):
         _as=float(_n.get("matched")or.0)
-        if _7 in a.pending_entry_intents:a.pending_entry_intents[_7]["notional_usd"]=round(max(.0,float(_2)-_as)*float(_3),4)
+        if _7 in a.pending_entry_intents:
+         a.pending_entry_intents[_7]["notional_usd"]=round(max(.0,float(_2)-_as)*float(_3),4);a.pending_entry_intents[_7]["heartbeat_ts"]=time.time()
+         if not a.dry_run:a.save_state()
         if _as>=_2-.01:o=True;break
         if _n.get("terminal"):break
         _,r,_=compute_sll_maker_keep_and_renew(_Y,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_aO,now_ts=time.time(),created_mono=_au,now_mono=time.monotonic(),deadline_mono=r,posted_px=_3,cur_best_bid=j,buried_since_mono=e,rcfg=_ac)
     except BaseException as _mon_exc:logger.warning(f"[BOND1 MONITOR INTERRUPTED] {_aK}: {_mon_exc}; reconciling/canceling {_4} before releasing intent.")
-    _L,Y,B,_m=await a._reconcile_maker_entry_fill(_4,_a4,o,_2,_3,_6);a.pending_entry_intents.pop(_7,None);_ar=str((_L or{}).get("outcome")or"");G=bool((_L or{}).get("is_canceled"))
+    _L,Y,B,_m=await a._reconcile_maker_entry_fill(_4,_a4,o,_2,_3,_6);a.pending_entry_intents.pop(_7,None)
+    if not a.dry_run:a.save_state()
+    _ar=str((_L or{}).get("outcome")or"");G=bool((_L or{}).get("is_canceled"))
     if(not G and _ar!="FILLED"and B<.01 and"already canceled or matched"in str((_L or{}).get("not_canceled_reason")or"").lower()):
      _aX,_aG=await asyncio.to_thread(a._wallet_token_balance,_a4)
      if _aG in(a.ONCHAIN_SOURCE,"CLOB_BALANCE_API")and(float(_aX or.0)-_6)<=1e-4:G=True

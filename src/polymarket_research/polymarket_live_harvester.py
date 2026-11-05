@@ -8225,6 +8225,8 @@ class PolymarketLiveHarvester:
                 self.pending_entry_intents[intent_id]["notional_usd"] = round(posted_sh * posted_px, 4)
                 self.pending_entry_intents[intent_id]["velocity_bps_hr"] = round(((1.0 - posted_px) * 10000.0) / max(uma_floor_h, (exp_ts - time.time()) / 3600.0), 2) if exp_ts > time.time() else 0.0
                 self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
+                if not self.dry_run:
+                    self.save_state()
 
             if self.dry_run:
                 matched_sh, avg_px = posted_sh, posted_px
@@ -8335,6 +8337,9 @@ class PolymarketLiveHarvester:
                                 _m_poll = float(poll_s.get("matched") or 0.0)
                                 if intent_id in self.pending_entry_intents:
                                     self.pending_entry_intents[intent_id]["notional_usd"] = round(max(0.0, float(posted_sh) - _m_poll) * float(posted_px), 4)
+                                    self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
+                                    if not self.dry_run:
+                                        self.save_state()
                                 if _m_poll >= posted_sh - 0.01:
                                     ws_filled = True
                                     break
@@ -8351,6 +8356,8 @@ class PolymarketLiveHarvester:
 
                 cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px, pre_bal_a)
                 self.pending_entry_intents.pop(intent_id, None)
+                if not self.dry_run:
+                    self.save_state()
                 c_out_s = str((cancel_res or {}).get("outcome") or "")
                 is_canc_s = bool((cancel_res or {}).get("is_canceled"))
                 if (
