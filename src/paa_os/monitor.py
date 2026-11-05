@@ -203,11 +203,19 @@ class PAAMonitor:
             try:
                 st = json.loads(st_path.read_text(encoding="utf-8"))
                 now_u = time.time()
-                # Detect stuck pending entry intents (> 60s)
+                # Detect stuck pending entry intents (> 60s without heartbeat; > 90s for live resting maker anchors)
                 stuck_intents = [
                     oid
                     for oid, it in (st.get("pending_entry_intents") or {}).items()
-                    if isinstance(it, dict) and (now_u - float(it.get("created_ts", now_u) or now_u)) > 60.0
+                    if isinstance(it, dict)
+                    and (
+                        now_u
+                        - max(
+                            float(it.get("heartbeat_ts") or 0.0),
+                            float(it.get("ts", it.get("created_ts", now_u)) or now_u),
+                        )
+                    )
+                    > (90.0 if it.get("live_maker_anchor_inflight") else 60.0)
                 ]
                 if stuck_intents:
                     anomalies.append(f"UNRESOLVED_ENTRY_INTENTS:{stuck_intents}")

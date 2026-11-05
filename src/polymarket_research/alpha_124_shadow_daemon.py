@@ -92,6 +92,7 @@ from src.polymarket_research.orderflow_wfo_simulators import (
     compute_d1_legging_drag_haircut,
     compute_d1_maker_anchor_drag_haircut,
 )
+from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
 from src.polymarket_research.same_oracle_dominance_box import (
     DOMINANCE_ASSETS,
     DOMINANCE_SERIES_SLUGS,
@@ -3405,7 +3406,6 @@ class Alpha124ShadowDaemon:
                                     {"market_id": b_i.market_id, "condition_id": b_i.condition_id, "opp_token_id": b_i.yes_token, "resting_bid_override": rw_w["resting_bid"]},
                                     prefetched_book=bk_n_i,
                                 )
-                                from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
                                 if is_reward_locked_carry_live_ready(self, 1.0) and getattr(b_i, "neg_risk", None) is not None and bk_i is not None:
                                     self.emit_live_single_leg_maker_lock_candidate(
                                         sleeve_source="MKR_REWARD_LOCKED_CARRY",
@@ -7737,7 +7737,10 @@ class Alpha124ShadowDaemon:
             min_s2_z = 2.65 if s2_strict else 0.0
 
             cand_specs = [
-                spec for spec in list(self.twap_candles.values())
+                spec for _, spec in sorted(
+                    self.twap_candles.items(),
+                    key=lambda kv: ({"BTC": 0, "ETH": 1, "SOL": 2}.get(getattr(kv[1], "asset", ""), 9), getattr(kv[1], "end_ts", 0.0)),
+                )
                 if int(spec.twap_lookback_sec) == 60
                 and (min_s2_rem <= (spec.end_ts - now) <= max_s2_rem)
                 and (now >= spec.start_ts + 60.0)
@@ -11708,6 +11711,13 @@ class Alpha124ShadowDaemon:
                                 )
 
     async def _scan_phase2_macro_counting_gas(self, opps_out: List[Dict[str, Any]], now: float) -> None:
+        try:
+            await self._scan_phase2_macro_counting_gas_core(opps_out, now)
+        except Exception as _p2_exc:
+            logger.warning(f"[ALPHA-124] Phase-2 macro/counting/gas scan notice: {_p2_exc}")
+        await self.scan_uma_resolution_bonds(opps_out, now_ts=now)
+
+    async def _scan_phase2_macro_counting_gas_core(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 6A. `TW1_COUNTING_TRUNCATION_AND_BOX` + `MKR_REWARD_LOCKED_CARRY`
         active_cnt = [s for s in self.counting_slates.values() if s.window_end_ts > now + 60]
         if active_cnt:
@@ -11771,7 +11781,6 @@ class Alpha124ShadowDaemon:
                     if rw_ev.get("eligible"):
                         opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"{sl_c.handle} Locked Carry NO[{dbr.label}] @ ${rw_ev['resting_bid']:.3f}", "ask_vwap": rw_ev["resting_bid"], "p_model": 1.0, "net_edge": rw_ev["carry_edge"], "l1_usd": 50.0, "close_ts": sl_c.window_end_ts})
                         await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_{dbr.market_id}", sl_c.handle.upper(), f"{sl_c.title} [Reward Carry NO {dbr.label}]", "NO", dbr.no_token, 1.0, sl_c.window_end_ts, {"market_id": dbr.market_id, "condition_id": dbr.condition_id, "opp_token_id": dbr.yes_token, "resting_bid_override": rw_ev["resting_bid"]}, prefetched_book=bk_dno)
-                        from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
                         if is_reward_locked_carry_live_ready(self, 1.0) and getattr(dbr, "neg_risk", None) is not None:
                             self.emit_live_single_leg_maker_lock_candidate(
                                 sleeve_source="MKR_REWARD_LOCKED_CARRY",
@@ -11943,7 +11952,7 @@ class Alpha124ShadowDaemon:
                             nr_g = mg.get("negRisk") if mg.get("negRisk") is not None else ev_g.get("negRisk")
                             opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"AAA Gas Locked Carry {side_g}[{lbl_g}] @ ${rw_g['resting_bid']:.3f}", "ask_vwap": rw_g["resting_bid"], "p_model": 0.998, "net_edge": rw_g["carry_edge"], "l1_usd": 50.0, "close_ts": end_g})
                             await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "opp_token_id": opp_tok_g, "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
-                            if self.is_reward_locked_carry_live_ready() and nr_g is not None and g_bks.get(opp_tok_g) is not None:
+                            if is_reward_locked_carry_live_ready(self, 0.998) and nr_g is not None and g_bks.get(opp_tok_g) is not None:
                                 self.emit_live_single_leg_maker_lock_candidate(
                                     sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                     asset="AAA_GAS",
@@ -11968,9 +11977,6 @@ class Alpha124ShadowDaemon:
                                     p_model=0.998,
                                     target_bid_px=float(rw_g["resting_bid"]),
                                 )
-
-        # 6D. `BOND1_UMA_RESOLUTION_CARRY`: Evergreen On-Chain UMA Challenge-Window Bond Harvester
-        await self.scan_uma_resolution_bonds(opps_out, now_ts=now)
 
     def has_live_nba_window(self, now_ts: float) -> bool:
         return any(
@@ -12166,7 +12172,7 @@ class Alpha124ShadowDaemon:
                 },
             )
             q_str = str(m.get("question") or f"Market {mid}")
-            close_est = max(now + 120.0, float(ver["expiration_ts"]) + 60.0)
+            close_est = max(now + 900.0, float(ver["expiration_ts"]) + 600.0)
             bond_extra = {
                 "market_id": mid,
                 "condition_id": str(m.get("conditionId") or ""),
@@ -12204,6 +12210,7 @@ class Alpha124ShadowDaemon:
                         "close_ts": close_est,
                     })
             opened_bond = False
+            _b1_mkr_emitted = False
             taker_bond_qual = bool(w_bond.get("filled") and eff_b is not None and (0.950 <= eff_b <= _b1_tkr_cap) and round(1.0 - eff_b, 4) >= round(1.0 - _b1_tkr_cap, 4))
             if taker_bond_qual:
                 carry_edge = round(1.0 - eff_b, 4)
@@ -12255,28 +12262,30 @@ class Alpha124ShadowDaemon:
                         prefetched_book=bk_w,
                     )
             if not taker_bond_qual and not opened_bond and 0.940 <= win_bid <= _b1_max_mkr and lose_bid <= 0.008 and _b1_rem_s > 120.0:
-                self.emit_live_single_leg_maker_lock_candidate(
-                    sleeve_source="BOND1_UMA_RESOLUTION_CARRY",
-                    asset=str(ver["domain"]),
-                    dedupe_key=f"BOND1_MKR_{mid}",
-                    pair_dedupe_key=dkey_b1,
-                    token_id=wtok,
-                    opp_token_id=ltok,
-                    market_id=mid,
-                    condition_id=str(m.get("conditionId") or ""),
-                    side_label=str(ver["win_label"]),
-                    display_label=f"{ver['domain']} {ver['win_outcome_name']}",
-                    bk_win=bk_w,
-                    bk_opp=bk_l,
-                    neg_risk=bool(m.get("negRisk")),
-                    close_ts=close_est,
-                    now_ts=now,
-                    min_resting_bid=0.940,
-                    max_resting_bid=_b1_max_mkr,
-                    min_maker_edge=_b1_min_ed,
-                    max_opp_bid=0.008,
-                    hold_to_maturity=True,
-                    p_model=1.0,
+                _b1_mkr_emitted = bool(
+                    self.emit_live_single_leg_maker_lock_candidate(
+                        sleeve_source="BOND1_UMA_RESOLUTION_CARRY",
+                        asset=str(ver["domain"]),
+                        dedupe_key=f"BOND1_MKR_{mid}",
+                        pair_dedupe_key=dkey_b1,
+                        token_id=wtok,
+                        opp_token_id=ltok,
+                        market_id=mid,
+                        condition_id=str(m.get("conditionId") or ""),
+                        side_label=str(ver["win_label"]),
+                        display_label=f"{ver['domain']} {ver['win_outcome_name']}",
+                        bk_win=bk_w,
+                        bk_opp=bk_l,
+                        neg_risk=bool(m.get("negRisk")),
+                        close_ts=close_est,
+                        now_ts=now,
+                        min_resting_bid=0.940,
+                        max_resting_bid=_b1_max_mkr,
+                        min_maker_edge=_b1_min_ed,
+                        max_opp_bid=0.008,
+                        hold_to_maturity=True,
+                        p_model=1.0,
+                    )
                 )
                 if _shadow_b1_free:
                     posted_bond = await self.post_shadow_maker_entry(
@@ -12304,8 +12313,9 @@ class Alpha124ShadowDaemon:
 
             # `BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY`: Hardened final-hour (`180s..3300s`, `age>=3600s`) Whitelisted MOOv2 carry
             dk_b2 = f"BOND2_{mid}"
+            _shadow_b2_free = dk_b2 not in self.entered_keys and dk_b2 not in self.inflight_keys
             if (
-                dk_b2 not in self.entered_keys
+                not (not _is_live_uma_daemon and dk_b2 in self.entered_keys)
                 and dk_b2 not in self.inflight_keys
                 and float(ver.get("proposal_age_sec") or 0.0) >= 3600.0
                 and 180.0 <= float(ver.get("rem_challenge_sec") or 0.0) <= 3300.0
@@ -12328,15 +12338,16 @@ class Alpha124ShadowDaemon:
                         eff_b2 = float(w_b2["eff_px"])
                         edg_b2 = round(1.0 - eff_b2, 4)
                         if edg_b2 >= (0.0025 if _is_live_uma_daemon else 0.0038):
-                            opps_out.append({
-                                "sleeve": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
-                                "market": f"[MOOv2_WL:{ver2['domain']}] {q_str[:60]} -> {ver2['win_outcome_name']} ({ver2['rem_challenge_sec']/60:.0f}m rem)",
-                                "ask_vwap": eff_b2,
-                                "p_model": 1.0,
-                                "net_edge": edg_b2,
-                                "l1_usd": w_b2["l1_usd"],
-                                "close_ts": close_est,
-                            })
+                            if _shadow_b2_free:
+                                opps_out.append({
+                                    "sleeve": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+                                    "market": f"[MOOv2_WL:{ver2['domain']}] {q_str[:60]} -> {ver2['win_outcome_name']} ({ver2['rem_challenge_sec']/60:.0f}m rem)",
+                                    "ask_vwap": eff_b2,
+                                    "p_model": 1.0,
+                                    "net_edge": edg_b2,
+                                    "l1_usd": w_b2["l1_usd"],
+                                    "close_ts": close_est,
+                                })
                             self.emit_live_single_leg_lock_candidate(
                                 sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
                                 asset=str(ver2["domain"]),
@@ -12359,21 +12370,22 @@ class Alpha124ShadowDaemon:
                                 hold_to_maturity=True,
                                 p_model=1.0,
                             )
-                            await self.open_shadow_position(
-                                sleeve="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
-                                dedupe_key=dk_b2,
-                                asset_or_city=str(ver2["domain"]),
-                                title=f"{q_str} [MOOv2 Whitelisted {ver2['win_outcome_name']}]",
-                                side_label=str(ver2["win_label"]),
-                                token_id=wtok,
-                                fee_rate=float(ver2["fee_rate"]),
-                                p_model=1.0,
-                                close_ts=close_est,
-                                extra={**bond_extra, "proposer_whitelisted": True, "oo_address": ver2["oo_address"]},
-                                tp_target_px=None,
-                                prefetched_book=bk_w,
-                            )
-                        elif _is_live_uma_daemon:
+                            if _shadow_b2_free:
+                                await self.open_shadow_position(
+                                    sleeve="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+                                    dedupe_key=dk_b2,
+                                    asset_or_city=str(ver2["domain"]),
+                                    title=f"{q_str} [MOOv2 Whitelisted {ver2['win_outcome_name']}]",
+                                    side_label=str(ver2["win_label"]),
+                                    token_id=wtok,
+                                    fee_rate=float(ver2["fee_rate"]),
+                                    p_model=1.0,
+                                    close_ts=close_est,
+                                    extra={**bond_extra, "proposer_whitelisted": True, "oo_address": ver2["oo_address"]},
+                                    tp_target_px=None,
+                                    prefetched_book=bk_w,
+                                )
+                        elif _is_live_uma_daemon and not _b1_mkr_emitted:
                             self.emit_live_single_leg_maker_lock_candidate(
                                 sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
                                 dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,
@@ -12382,7 +12394,7 @@ class Alpha124ShadowDaemon:
                                 bk_win=bk_w, bk_opp=bk_l, neg_risk=bool(m.get("negRisk")), close_ts=close_est, now_ts=now,
                                 min_resting_bid=0.950, max_resting_bid=0.9980, min_maker_edge=0.0020, max_opp_bid=0.006, p_model=1.0,
                             )
-                    elif _is_live_uma_daemon:
+                    elif _is_live_uma_daemon and not _b1_mkr_emitted:
                         self.emit_live_single_leg_maker_lock_candidate(
                             sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", asset=str(ver2["domain"]),
                             dedupe_key=f"{dk_b2}_MKR", pair_dedupe_key=dk_b2, token_id=wtok, opp_token_id=ltok,

@@ -8157,7 +8157,14 @@ class PolymarketLiveExecutor:
         futs = {oid: pool.submit(self.cancel_order, oid) for oid in clean}
         return {oid: f.result(timeout=6.0) for oid, f in futs.items()}
 
-    def cancel_order(self, order_id: str) -> Dict[str, Any]:
+    def cancel_order(
+        self,
+        order_id: str,
+        *,
+        token_id: Optional[str] = None,
+        pre_token_balance: Optional[float] = None,
+        market_closed: bool = False,
+    ) -> Dict[str, Any]:
         """
         Cancels an active order by ID and releases its reserved inventory only upon terminal cancellation proof (Round 11 P1-09).
         Distinguishes CANCELED, FILLED, PARTIALLY_FILLED_CANCELED, and UNKNOWN.
@@ -8245,6 +8252,18 @@ class PolymarketLiveExecutor:
                     read_replica_stale_live=stale_live_read,
                 )
             else:
+                from src.polymarket_research.riskless_protocol_v2_expansion import is_verified_zero_fill_cancel_purge
+                if is_verified_zero_fill_cancel_purge(
+                    self, str(order_id), matched, not_canceled_reason, order_info,
+                    token_id=token_id, pre_token_balance=pre_token_balance, market_closed=market_closed,
+                ):
+                    self.release_inventory(reservation_id=order_id)
+                    logger.info(f"[PM-EXEC] Order {order_id} purged zero-fill verified CANCELED ({not_canceled_reason}).")
+                    return CancelOrderResult(
+                        {"canceled": [order_id]}, order_id=str(order_id), outcome="CANCELED", is_canceled=True,
+                        matched=0.0, not_canceled_reason=not_canceled_reason, raw=res, canceled=[order_id],
+                        read_replica_stale_live=(status == "LIVE"),
+                    )
                 outcome = "UNKNOWN"
                 logger.warning(
                     f"[PM-EXEC] Order {order_id} cancellation could NOT be verified terminally "

@@ -374,25 +374,64 @@ class PAAAccountant:
                 post_lock_l += 1
 
         now_q = time.time()
+        pend_map = st.get("pending_entry_intents") or {}
+        act_map = st.get("active_positions") or {}
         fresh_intents = [
-            i for i in (st.get("pending_entry_intents") or {}).values()
+            i for i in pend_map.values()
             if isinstance(i, dict)
-            and (now_q - float(i.get("ts", i.get("created_ts", 0.0)) or 0.0)) <= 90.0
+            and (now_q - max(float(i.get("heartbeat_ts") or 0.0), float(i.get("ts", i.get("created_ts", 0.0)) or 0.0))) <= 90.0
         ]
         intents_usd = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in fresh_intents)
         intents_cnt = len(fresh_intents)
+        tracked_clob_oids = {
+            str(v).strip()
+            for rec_d in (*pend_map.values(), *act_map.values())
+            if isinstance(rec_d, dict)
+            for v in (
+                rec_d.get("entry_order_id"),
+                rec_d.get("order_id"),
+                rec_d.get("exit_order_id"),
+                rec_d.get("unwind_order_id"),
+                rec_d.get("maker_order_id"),
+            )
+            if v
+        }
+
+        def _clob_created_ts(ord_d: Dict[str, Any]) -> float:
+            raw_ct = ord_d.get("created_at")
+            if isinstance(raw_ct, (int, float)):
+                v_ct = float(raw_ct)
+                return v_ct / 1000.0 if v_ct > 1e12 else v_ct
+            if isinstance(raw_ct, str) and raw_ct.strip():
+                s_ct = raw_ct.strip()
+                if s_ct.isdigit():
+                    v_ct = float(s_ct)
+                    return v_ct / 1000.0 if v_ct > 1e12 else v_ct
+                try:
+                    return datetime.fromisoformat(s_ct.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    return 0.0
+            return 0.0
+
         ord_cache_p = Path("/tmp/dominus_clob_open_orders_cache.json")
         if ord_cache_p.exists() and (now_q - ord_cache_p.stat().st_mtime) <= 60.0:
             try:
                 raw_ords = json.loads(ord_cache_p.read_text(encoding="utf-8"))
                 if isinstance(raw_ords, list):
-                    buy_ords = [
-                        o for o in raw_ords
-                        if isinstance(o, dict)
-                        and str(o.get("status") or "").upper() in ("LIVE", "OPEN")
-                        and str(o.get("side") or "BUY").upper() == "BUY"
-                        and max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) > 0.001
-                    ]
+                    buy_ords = []
+                    for o in raw_ords:
+                        if (
+                            not isinstance(o, dict)
+                            or str(o.get("status") or "").upper() not in ("LIVE", "OPEN")
+                            or str(o.get("side") or "BUY").upper() != "BUY"
+                            or max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) <= 0.001
+                        ):
+                            continue
+                        oid_o = str(o.get("id") or o.get("orderID") or "").strip()
+                        cts_o = _clob_created_ts(o)
+                        if cts_o > 0.0 and (now_q - cts_o) > 3600.0 and (not oid_o or oid_o not in tracked_clob_oids):
+                            continue
+                        buy_ords.append(o)
                     intents_usd = sum(
                         max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) * float(o.get("price") or 0.0)
                         for o in buy_ords

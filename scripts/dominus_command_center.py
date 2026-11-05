@@ -321,8 +321,26 @@ if lh_path.exists():
             except Exception:
                 pass
         _meta_dirty = False
+        _tracked_oids_cc = {
+            str(_v_id).strip()
+            for _d_rec in (*(s.get("pending_entry_intents") or {}).values(), *(s.get("active_positions") or {}).values())
+            if isinstance(_d_rec, dict)
+            for _v_id in (
+                _d_rec.get("entry_order_id"),
+                _d_rec.get("order_id"),
+                _d_rec.get("exit_order_id"),
+                _d_rec.get("unwind_order_id"),
+                _d_rec.get("maker_order_id"),
+            )
+            if _v_id
+        }
         for _o in (_raw_ords or []):
             if not isinstance(_o, dict) or str(_o.get("status") or "").upper() not in ("LIVE", "OPEN"):
+                continue
+            _oid_cc = str(_o.get("id") or _o.get("orderID") or "").strip()
+            _cts_dt = _to_ottawa_dt(_o.get("created_at"))
+            _cts_o = _cts_dt.timestamp() if _cts_dt is not None else 0.0
+            if _cts_o > 0.0 and (time.time() - _cts_o) > 3600.0 and (not _oid_cc or _oid_cc not in _tracked_oids_cc):
                 continue
             _aid = str(_o.get("asset_id") or "")
             _side_o = str(_o.get("side") or "BUY").upper()
@@ -371,10 +389,8 @@ if lh_path.exists():
             _hold_hr = max(_uma_floor_hr, (_rem_min / 60.0) if (_rem_min is not None and _rem_min > 0) else 1.5)
             _edge_bps = round(max(0.0, (1.0 - _px_o) * 10000.0), 1)
             _bps_hr = round(_edge_bps / max(0.25, _hold_hr), 1)
-            _cts_dt = _to_ottawa_dt(_o.get("created_at"))
-            _cts_o = _cts_dt.timestamp() if _cts_dt is not None else 0.0
             resting_orders.append({
-                "order_id": str(_o.get("id") or ""),
+                "order_id": _oid_cc,
                 "market_id": _mid_o,
                 "title": _ttl_o,
                 "sleeve": _slv_o,
@@ -408,7 +424,8 @@ if lh_path.exists():
             sum(
                 float(i.get("notional_usd", 0.0) or 0.0)
                 for i in (s.get("pending_entry_intents") or {}).values()
-                if isinstance(i, dict) and (_now_int - float(i.get("ts", i.get("created_ts", 0.0)) or 0.0)) <= 90.0
+                if isinstance(i, dict)
+                and (_now_int - max(float(i.get("heartbeat_ts") or 0.0), float(i.get("ts", i.get("created_ts", 0.0)) or 0.0))) <= 90.0
             ),
             2,
         )

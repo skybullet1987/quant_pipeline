@@ -1396,10 +1396,12 @@ def cap_bond1_maker_for_gatling_reserve(
     collat_f: float,
     sll_used_u: float,
     rb_cfg: Optional[Mapping[str, Any]],
+    inflight_s2_usd: float = 0.0,
 ) -> float:
     """
     Reserves `max($20.00, 28% * NAV, gatling_fast_gun_reserve_usd)` of unencumbered free cash
-    against `TTE > 10m` `BOND1` carry fills so passive carry never starves `<=90s` `S2` / `<15m` `D1` bursts.
+    against `TTE > 10m` `BOND1` carry fills so passive carry never starves `<=90s` `S2` / `<15m` `D1` bursts,
+    subtracting `inflight_s2_usd` because `collat_f` already deducted active `S2` Maker intents.
     """
     rb = rb_cfg or {}
     if not bool(rb.get("gatling_enabled", False)):
@@ -1416,12 +1418,14 @@ def cap_bond1_maker_for_gatling_reserve(
     )
     if not (getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or getattr(harvester, "enforce_gatling_sizing", False) or live_real_ex):
         return float(budget)
-    total_b1_nav = float(collat_f) + float(sll_used_u)
+    s2_in_f = max(0.0, float(inflight_s2_usd or 0.0))
+    total_b1_nav = float(collat_f) + float(sll_used_u) + s2_in_f
     base_reserve = max(20.0, float(rb.get("gatling_fast_gun_reserve_usd", 20.0) or 20.0))
-    eff_reserve = max(base_reserve, round(total_b1_nav * 0.28, 2))
+    gatling_reserve_usd = max(base_reserve, round(total_b1_nav * 0.28, 2))
+    eff_reserve = max(0.0, round(gatling_reserve_usd - s2_in_f, 2))
     free_after_reserve = max(0.0, float(collat_f) - eff_reserve)
     per_mkt_seed_cap = (
-        round(max(18.0, (total_b1_nav - eff_reserve) * 0.55), 2)
+        round(max(18.0, (total_b1_nav - gatling_reserve_usd) * 0.55), 2)
         if total_b1_nav <= 120.0
         else float(budget)
     )
@@ -1493,6 +1497,13 @@ def compute_sll_and_carry_gatling_budget(
     if not is_fast_gun_tier and (sl_u in PASSIVE_CARRY_SLEEVES or rem_f > 600.0):
         act_pos = getattr(harvester, "active_positions", None) or {}
         pend_int = getattr(harvester, "pending_entry_intents", None) or {}
+        inflight_s2_u = sum(
+            float(i.get("notional_usd", 0.0) or 0.0)
+            for i in pend_int.values()
+            if isinstance(i, Mapping)
+            and i.get("live_maker_anchor_inflight")
+            and str(i.get("sleeve_source") or i.get("sleeve") or "").upper() in FAST_GUN_S2_SLEEVES
+        )
         carry_used = sum(
             float(p.get("notional_usd", 0.0) or 0.0)
             for p in act_pos.values()
@@ -1509,9 +1520,10 @@ def compute_sll_and_carry_gatling_budget(
             and i.get("live_maker_anchor_inflight")
             and str(i.get("sleeve_source") or i.get("sleeve") or "").upper() not in FAST_GUN_S2_SLEEVES
         )
+        non_s2_used = max(carry_used, max(0.0, float(cur_exp) - inflight_s2_u))
         base_for_cap = float(legacy_budget) if float(legacy_budget) > 0.0 else float(collat_f)
         capped = cap_bond1_maker_for_gatling_reserve(
-            harvester, base_for_cap, collat_f, max(carry_used, float(cur_exp)), rb
+            harvester, base_for_cap, collat_f, non_s2_used, rb, inflight_s2_usd=inflight_s2_u
         )
         capped = maybe_cap_gatling_budget_sync(
             harvester,
@@ -1539,6 +1551,11 @@ def compute_sll_and_carry_gatling_budget(
             capped = min(capped, slow_cap_rem)
         return round(max(0.0, capped), 2)
 
+    eff_fast_cap = (
+        min(float(cap_usd), 22.50)
+        if (bt_u == "SINGLE_LEG_MAKER_LOCK" and sl_u in FAST_GUN_S2_SLEEVES and not own_grad)
+        else float(cap_usd)
+    )
     return maybe_cap_gatling_budget_sync(
         harvester,
         legacy_budget,
@@ -1548,7 +1565,7 @@ def compute_sll_and_carry_gatling_budget(
         sleeve_src,
         own_grad,
         rb,
-        cap_usd=cap_usd,
+        cap_usd=eff_fast_cap,
         reserve_u=0.50,
         override_legacy_cap=True,
     )
@@ -6214,13 +6231,42 @@ def attach_ws_books_and_write_d1_cand(
     return _write_and_notify_live_cand(daemon, cand, cand_file, default_cand_path)
 
 
+UMA_EXEMPT_EXPIRY_SLEEVES = frozenset({
+    "BOND1_UMA_RESOLUTION_CARRY",
+    "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+})
+
+PRE_PROPOSAL_CARRY_SLEEVES = frozenset({
+    "W_PRUNE1_DEAD_NO_BOND",
+    "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+    "MKR_REWARD_LOCKED_CARRY",
+    "UMA_READY1_LIVENESS_PRIORITY",
+})
+
+
+def sll_settlement_lag_floor_hours(sleeve_src: str) -> float:
+    sl_u = str(sleeve_src or "").upper()
+    if sl_u in FAST_GUN_S2_SLEEVES:
+        return 0.02
+    if sl_u in UMA_EXEMPT_EXPIRY_SLEEVES:
+        return 0.25
+    if sl_u in PRE_PROPOSAL_CARRY_SLEEVES:
+        return 1.50
+    return 0.50
+
+
 def select_sll_velocity_preempt_target(
     harvester: Any,
     cand_edge_hr: float,
-    is_s2_mkr: bool,
-    vel_mult: float,
+    is_s2_mkr: bool = False,
+    vel_mult: float = 1.80,
     now_pe: Optional[float] = None,
+    *,
+    cand_sleeve: str = "",
 ) -> Tuple[float, str]:
+    cand_sl_u = str(cand_sleeve or "").upper()
+    if cand_sl_u in FAST_GUN_S2_SLEEVES:
+        return 0.0, ""
     pe_map = getattr(harvester, "_maker_anchor_preempt_events", None) or {}
     claimed_pe = harvester.__dict__.setdefault("_claimed_velocity_preempts", set())
     now_t = float(now_pe if now_pe is not None else time.time())
@@ -6228,27 +6274,268 @@ def select_sll_velocity_preempt_target(
     def _it_edge_hr(it: Mapping[str, Any]) -> float:
         ib = float(it.get("anchor_bid_px") or 0.0)
         ie = float(it.get("expiry_ts") or 0.0)
+        sl_it = str(it.get("sleeve_source") or "")
+        fl_h = sll_settlement_lag_floor_hours(sl_it)
         if 0.0 < ib < 1.0 and ie > now_t:
-            return round(((1.0 - ib) * 10000.0) / max(0.02, (ie - now_t) / 3600.0), 2)
+            return round(((1.0 - ib) * 10000.0) / max(fl_h, (ie - now_t) / 3600.0), 2)
+        if 0.0 < ib < 1.0 and fl_h > 0.0:
+            return round(((1.0 - ib) * 10000.0) / fl_h, 2)
         return float(it.get("velocity_bps_hr") or 0.0)
 
-    slow_cands = [
-        (_it_edge_hr(it), str(it.get("inflight_key") or ""))
-        for it in getattr(harvester, "pending_entry_intents", {}).values()
-        if isinstance(it, Mapping)
-        and it.get("live_maker_anchor_inflight")
-        and str(it.get("inflight_key") or "") not in claimed_pe
-        and str(it.get("sleeve_source") or "") not in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
-        and (now_t - float(it.get("ts") or 0.0)) >= (
-            90.0 if (not is_s2_mkr and float(it.get("anchor_bid_px") or 0.0) >= 0.991 and float(it.get("velocity_bps_hr") or 0.0) >= 55.0) else 20.0
-        )
-    ]
+    def _req_age_s(iv: float) -> float:
+        if is_s2_mkr and not cand_sl_u:
+            return 20.0
+        if iv <= 35.0 and float(cand_edge_hr) >= max(iv * 8.0, iv + 200.0):
+            return 30.0
+        return 180.0
+
+    slow_cands = []
+    for it in getattr(harvester, "pending_entry_intents", {}).values():
+        if not (
+            isinstance(it, Mapping)
+            and it.get("live_maker_anchor_inflight")
+            and str(it.get("inflight_key") or "") not in claimed_pe
+            and str(it.get("sleeve_source") or "") not in FAST_GUN_S2_SLEEVES
+        ):
+            continue
+        iv = _it_edge_hr(it)
+        if (now_t - float(it.get("ts") or 0.0)) >= _req_age_s(iv):
+            slow_cands.append((iv, str(it.get("inflight_key") or "")))
     if not slow_cands:
         return 0.0, ""
     slow_vel, slow_k = min(slow_cands, key=lambda x: x[0])
-    if slow_k and slow_k in pe_map and cand_edge_hr >= max(slow_vel * vel_mult, slow_vel + 25.0):
+    req_mult = max(3.0, float(vel_mult or 0.0))
+    if slow_k and slow_k in pe_map and float(cand_edge_hr) >= max(slow_vel * req_mult, slow_vel + 50.0):
         return slow_vel, slow_k
     return 0.0, ""
+
+
+async def maybe_preempt_mlk1_if_bond1_starved(
+    harvester: Any,
+    sleeve_src: str,
+    budget: float,
+    collat: float,
+    own_mkr_grad: bool,
+    enforce_b1_v53: bool,
+    b1_gov: Mapping[str, Any],
+    rcfg_sll: Mapping[str, Any],
+    gsn_s: Mapping[str, Any],
+    open_mid_u: float,
+    rem_tte_sec: float,
+    now_ts: float,
+    per_mkt_cap_u: float = 0.0,
+) -> float:
+    """
+    Starvation-only post-validation `BOND1 -> MKR_LOCK1` upgrade:
+      - Runs strictly AFTER all dedupe, cooldown, market-occupied, TTE, and `RESTING_BID_OUT_OF_BAND` checks.
+      - On live Gatling wallets (`enforce_b1_v53=True`), NEVER cancels resting `MKR_LOCK1` when free cash
+        already covers a viable `BOND1` clip (`budget >= $12.00`), eliminating `Heat @ $0.961` churn!
+      - Preempts `MKR_LOCK1` ONLY when resting `MKR_LOCK1` genuinely starves `BOND1` (`budget < $12.00` in
+        Gatling smart-queue mode, or below the unstarved `bond1_free_cash_pct` clip in legacy mode).
+    """
+    if (
+        str(sleeve_src or "") != "BOND1_UMA_RESOLUTION_CARRY"
+        or getattr(harvester, "dry_run", True)
+        or not hasattr(harvester, "_is_v5_unleashed_active")
+        or not bool(harvester._is_v5_unleashed_active())
+    ):
+        return float(budget)
+    pe_map = getattr(harvester, "_maker_anchor_preempt_events", None) or {}
+    mlk_keys = [
+        str(it.get("inflight_key") or "")
+        for it in getattr(harvester, "pending_entry_intents", {}).values()
+        if isinstance(it, Mapping)
+        and str(it.get("sleeve_source") or "") == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
+        and str(it.get("inflight_key") or "") in pe_map
+    ]
+    if not mlk_keys:
+        return float(budget)
+
+    from src.polymarket_research.holistic_strategy_governance import get_unleashed_v5_tier_profile
+
+    def _is_recv(p: Mapping[str, Any]) -> bool:
+        return str(p.get("status") or "") == "AWAITING_ONCHAIN_SETTLEMENT"
+
+    prepost_res = getattr(harvester, "_maker_prepost_reserved_usd", None) or {}
+    act_non_recv = sum(
+        float(p.get("notional_usd", 0.0) or 0.0)
+        for p in getattr(harvester, "active_positions", {}).values()
+        if isinstance(p, Mapping) and not _is_recv(p)
+    )
+    tot_eq = float(collat or 0.0) + act_non_recv
+    v5_p = get_unleashed_v5_tier_profile(tot_eq)
+    sll_pct = float(v5_p["bond1_free_cash_pct"])
+    if enforce_b1_v53:
+        if float(budget) >= 12.0:
+            return float(budget)
+    else:
+        target_unstarved = min(
+            max(75.0, round(float(collat or 0.0) * sll_pct, 2)) if own_mkr_grad else float(v5_p["bridged_zero_fee_cap_usd"]),
+            max(0.0, float(collat or 0.0) - float(v5_p["box_collateral_reserve_usd"])),
+            float(collat or 0.0) * sll_pct,
+        )
+        if float(budget) >= max(0.0, target_unstarved - 2.0):
+            return float(budget)
+
+    pe_reasons = harvester.__dict__.setdefault("_maker_anchor_preempt_reasons", {})
+    for mk in mlk_keys:
+        pe_reasons[mk] = "BOND1_MAKER_PREEMPTED"
+        pe_map[mk].set()
+    for _ in range(20):
+        await asyncio.sleep(0.03)
+        if not any(
+            isinstance(it, Mapping) and str(it.get("sleeve_source") or "") == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
+            for it in getattr(harvester, "pending_entry_intents", {}).values()
+        ):
+            break
+
+    inflight_u = sum(
+        float(it.get("notional_usd", 0.0) or 0.0)
+        for it in getattr(harvester, "pending_entry_intents", {}).values()
+        if isinstance(it, Mapping)
+    ) + sum(float(v or 0.0) for v in prepost_res.values())
+    collat_f = max(0.0, float(collat or 0.0) - inflight_u)
+    cur_open_u = act_non_recv + inflight_u
+    tot_eq_sll = collat_f + cur_open_u
+    v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+    sll_pct_new = float(v5_sll["bond1_free_cash_pct"])
+    min_dir_eq = float((gsn_s.get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
+    zf_focus = bool(
+        enforce_b1_v53
+        and (bool((gsn_s.get("directional") or {}).get("riskless_only_mode", False)) or (min_dir_eq > 0.0 and tot_eq_sll < min_dir_eq))
+    )
+    if zf_focus:
+        sll_pct_new = max(sll_pct_new, float(b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
+    port_headroom_u = max(0.0, max(float(getattr(harvester, "max_exposure", 100.0)), tot_eq_sll * 0.96) - cur_open_u)
+    lot_cap_sll = max(75.0, round(collat_f * sll_pct_new, 2)) if own_mkr_grad else float(v5_sll["bridged_zero_fee_cap_usd"])
+    if enforce_b1_v53:
+        sll_used_u = (
+            sum(
+                float(p.get("notional_usd", 0.0) or 0.0)
+                for p in getattr(harvester, "active_positions", {}).values()
+                if isinstance(p, Mapping)
+                and not _is_recv(p)
+                and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}
+            )
+            + sum(
+                float(it.get("notional_usd", 0.0) or 0.0)
+                for it in getattr(harvester, "pending_entry_intents", {}).values()
+                if isinstance(it, Mapping) and it.get("live_maker_anchor_inflight")
+            )
+            + sum(float(v or 0.0) for v in prepost_res.values())
+        )
+        sll_pool_rem = max(0.0, (collat_f + sll_used_u) * sll_pct_new - sll_used_u)
+        mkt_cap_u = float(
+            rcfg_sll.get("bond1_per_market_cap_usd")
+            or v5_sll.get("bond1_maker_per_market_cap_usd", v5_sll.get("bond1_per_market_cap_usd", 25.0))
+        )
+        if zf_focus and not rcfg_sll.get("bond1_per_market_cap_usd"):
+            mkt_cap_u = min(float(b1_gov.get("bond1_per_market_cap_usd_seed", 45.0)), max(mkt_cap_u, round((collat_f + sll_used_u) * 0.46, 2)))
+        new_b = min(
+            lot_cap_sll,
+            mkt_cap_u,
+            sll_pool_rem,
+            max(0.0, collat_f - float(v5_sll["box_collateral_reserve_usd"])),
+            port_headroom_u,
+        )
+        new_b = compute_sll_and_carry_gatling_budget(
+            harvester, new_b, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, b1_gov, rem_tte_sec=rem_tte_sec, now_ts=now_ts
+        )
+    else:
+        new_b = min(
+            lot_cap_sll,
+            max(0.0, collat_f - float(v5_sll["box_collateral_reserve_usd"])),
+            collat_f * sll_pct_new,
+            port_headroom_u,
+        )
+    if open_mid_u > 0.0 and per_mkt_cap_u > 0.0:
+        new_b = min(new_b, max(0.0, per_mkt_cap_u - open_mid_u))
+    return float(new_b)
+
+
+def compute_sll_maker_keep_and_renew(
+    sleeve_src: str,
+    *,
+    uws_ok: bool = True,
+    exp_ts: float = 0.0,
+    now_ts: Optional[float] = None,
+    created_mono: float = 0.0,
+    now_mono: Optional[float] = None,
+    deadline_mono: Optional[float] = None,
+    posted_px: float = 0.0,
+    cur_best_bid: Optional[float] = None,
+    buried_since_mono: Optional[float] = None,
+    rcfg: Optional[Mapping[str, Any]] = None,
+    first_post_elapsed_s: float = 0.0,
+) -> Tuple[float, float, bool]:
+    """
+    Computes `(max_keep_s, updated_deadline_mono, cancel_near_expiry)` for passive single-leg Maker orders:
+      - `S2`: `max_keep_s = min(35.0, max(6.0, exp_ts - now_ts - 4.0))`; self-cancels when `(exp_ts - now_ts) <= 1.5s`.
+      - Passive carries (`BOND1`, `BOND2`, `W_PRUNE1`, `MKR_LOCK1`, `MKR_REWARD_LOCKED_CARRY`, `UMA_READY1`):
+        initial `max_keep_s = 1800.0` when `uws_ok` (`300.0` fallback if `not uws_ok`, honoring `<90s` test overrides).
+        While resting at `#1` top-of-book (`cur_best_bid <= posted_px + 1e-6` and `buried_since_mono is None`),
+        auto-renews `deadline_mono = min(created_mono + 7200.0, max(deadline_mono, now_mono + 900.0))`.
+      - `BOND1` / `BOND2` are exempt from the `(exp_ts - now_ts) <= 60.0s` pre-expiry self-cancel.
+    """
+    sl_u = str(sleeve_src or "").upper()
+    is_s2 = sl_u in FAST_GUN_S2_SLEEVES
+    now_f = float(time.time() if now_ts is None else now_ts)
+    exp_f = float(exp_ts or 0.0)
+    c_m = float(created_mono or 0.0)
+    n_m = float(c_m if now_mono is None else now_mono)
+    cfg = rcfg or {}
+    exp_ttl = cfg.get("bond1_maker_ttl_sec")
+    exp_mk = cfg.get("bond1_maker_max_keep_sec")
+    test_short_ttl = exp_ttl is not None and 0.0 < float(exp_ttl) < 90.0
+
+    if is_s2:
+        max_keep_s = min(35.0, max(6.0, exp_f - now_f - 4.0)) if exp_f > 0.0 else 15.0
+    elif test_short_ttl:
+        max_keep_s = float(exp_ttl)
+    else:
+        max_keep_s = 1800.0 if uws_ok else 300.0
+        if exp_mk is not None and 0.0 < float(exp_mk) < max_keep_s:
+            max_keep_s = float(exp_mk)
+        if first_post_elapsed_s > 0.0:
+            max_keep_s = max(0.05, max_keep_s - float(first_post_elapsed_s))
+
+    dl = (c_m + max_keep_s) if (deadline_mono is None or float(deadline_mono) <= 0.0) else float(deadline_mono)
+    if (
+        not is_s2
+        and not test_short_ttl
+        and uws_ok
+        and cur_best_bid is not None
+        and float(posted_px) > 0.0
+        and buried_since_mono is None
+        and float(cur_best_bid) <= float(posted_px) + 1e-6
+    ):
+        dl = min(c_m + 7200.0, max(dl, n_m + 900.0))
+
+    if exp_f <= 0.0:
+        cancel_near_exp = False
+    elif is_s2:
+        cancel_near_exp = (exp_f - now_f) <= 1.5
+    elif sl_u in UMA_EXEMPT_EXPIRY_SLEEVES:
+        cancel_near_exp = False
+    else:
+        cancel_near_exp = (exp_f - now_f) <= 60.0
+    return max_keep_s, dl, cancel_near_exp
+
+
+def extract_top_bid_from_book(bk_wc: Any) -> Optional[float]:
+    if not isinstance(bk_wc, Mapping):
+        return None
+    bids = bk_wc.get("bids") or []
+    best: Optional[float] = None
+    for row in bids:
+        try:
+            px = float(row["price"] if isinstance(row, Mapping) else row[0])
+            sz = float(row.get("size", 0.0) if isinstance(row, Mapping) else row[1])
+        except (KeyError, IndexError, TypeError, ValueError):
+            continue
+        if sz > 0.0 and (best is None or px > best):
+            best = px
+    return best
 
 
 def eval_sll_fresh_book_and_peg(
@@ -6554,4 +6841,42 @@ def register_live_d1_box_positions_impl(
         f"(cost=${tot_box_cost:.2f}, min_floor=+${sh * max(0.0, 1.0 - box_unit):.2f})"
     )
     return [tid for tid, _ in leg_records]
+
+
+def is_verified_zero_fill_cancel_purge(
+    executor: Any,
+    order_id: str,
+    matched: float,
+    not_canceled_reason: Optional[str],
+    order_info: Optional[Mapping[str, Any]],
+    *,
+    token_id: Optional[str] = None,
+    pre_token_balance: Optional[float] = None,
+    market_closed: bool = False,
+) -> bool:
+    """
+    Returns True ONLY when CLOB `cancel_order` returned a `not_canceled` purge message
+    (`"already canceled or matched"` / `"market is closed"`) with `size_matched == 0` AND
+    either the market is already closed OR both on-chain ERC-1155 balance delta == 0 and
+    CLOB account fills for `order_id` are empty. Stays fail-closed (`False`) if balance
+    delta > 0, fills exist, or the balance probe returns None.
+    """
+    nc_low = str(not_canceled_reason or "").lower()
+    if (
+        matched > 1e-6
+        or bool((order_info or {}).get("associate_trades"))
+        or ("already canceled or matched" not in nc_low and "market is closed" not in nc_low)
+    ):
+        return False
+    if market_closed or "market is closed" in nc_low:
+        return True
+    tok_c = str(token_id or (order_info or {}).get("asset_id") or (order_info or {}).get("token_id") or "").strip()
+    if not tok_c or not hasattr(executor, "get_conditional_balance"):
+        return False
+    cur_b = executor.get_conditional_balance(tok_c)
+    base_b = float(pre_token_balance) if pre_token_balance is not None else 0.0
+    if cur_b is None or (float(cur_b) - base_b) > 1e-6:
+        return False
+    fills_chk = executor.get_account_fills(tok_c, 0.0, "BUY", str(order_id)) if hasattr(executor, "get_account_fills") else []
+    return fills_chk is not None and len(fills_chk) == 0
 

@@ -1619,12 +1619,24 @@ class PolymarketLiveHarvester:
         return req_sh <= 0.0 or float(snap_o.get("size_matched") or 0.0) >= req_sh - 1e-6
 
     async def _reconcile_maker_entry_fill(
-        self, maker_oid: str, token_id: str, ws_filled: bool, posted_sh: float, fallback_px: float
+        self,
+        maker_oid: str,
+        token_id: str,
+        ws_filled: bool,
+        posted_sh: float,
+        fallback_px: float,
+        pre_bal: Optional[float] = None,
     ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], float, float]:
-        cancel_res = {"is_canceled": False, "outcome": "FILLED"} if ws_filled else await asyncio.to_thread(self.executor.cancel_order, maker_oid)
+        def _canc_one() -> Dict[str, Any]:
+            try:
+                return self.executor.cancel_order(maker_oid, token_id=token_id, pre_token_balance=pre_bal)
+            except TypeError:
+                return self.executor.cancel_order(maker_oid)
+
+        cancel_res = {"is_canceled": False, "outcome": "FILLED"} if ws_filled else await asyncio.to_thread(_canc_one)
         summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
         if ws_filled and (summary is None or bool(summary.get("resting")) or float((summary or {}).get("matched") or 0.0) < 0.01):
-            cancel_res = await asyncio.to_thread(self.executor.cancel_order, maker_oid)
+            cancel_res = await asyncio.to_thread(_canc_one)
             summary = await asyncio.to_thread(self.executor.get_order_fill_summary, maker_oid, token_id)
         _uws_rec = getattr(self.executor, "_user_ws_cache", None)
         _uws_snap = _uws_rec.get_order_snapshot(maker_oid, max_age_sec=10.0) if (_uws_rec is not None and hasattr(_uws_rec, "get_order_snapshot")) else None
@@ -7793,36 +7805,21 @@ class PolymarketLiveHarvester:
 
         inflight_mkr = self.__dict__.setdefault("_inflight_maker_anchor_keys", set())
         inflight_mkr_types = self.__dict__.setdefault("_inflight_maker_anchor_types", set())
+        inflight_s2_mkr = self.__dict__.setdefault("_inflight_s2_maker_keys", set())
         dedupe_k = str(candidate_box.get("dedupe_key") or f"BOND1_MKR_{mid_a}")
         pair_dedupe_k = str(candidate_box.get("pair_dedupe_key") or f"BOND1_{mid_a}")
-        if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and not self.dry_run and float(getattr(self, "_last_known_collateral", 99.0) or 99.0) >= 27.5:
-            _pe_map = getattr(self, "_maker_anchor_preempt_events", None) or {}
-            _mlk1_iks = [
-                str(_iv.get("inflight_key") or "")
-                for _iv in getattr(self, "pending_entry_intents", {}).values()
-                if isinstance(_iv, dict)
-                and _iv.get("live_maker_anchor_inflight")
-                and _iv.get("sleeve_source") == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
-            ]
-            _mlk1_preempted = False
-            for _ik in _mlk1_iks:
-                _pev = _pe_map.get(_ik)
-                if _pev is not None and not _pev.is_set():
-                    _pev.set()
-                    _mlk1_preempted = True
-            if _mlk1_preempted:
-                for _ in range(15):
-                    if not any(
-                        isinstance(_iv, dict)
-                        and _iv.get("live_maker_anchor_inflight")
-                        and _iv.get("sleeve_source") == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
-                        for _iv in getattr(self, "pending_entry_intents", {}).values()
-                    ):
-                        break
-                    await asyncio.sleep(0.02)
-                self._last_known_collateral = None
         _unlim_mkr = self._is_unlimited_slots_active() or self._is_v5_unleashed_active()
         _is_s2_early = sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+        if _is_s2_early:
+            _s2_active = len(inflight_s2_mkr) + sum(
+                1
+                for _iv in getattr(self, "pending_entry_intents", {}).values()
+                if isinstance(_iv, dict)
+                and str(_iv.get("sleeve_source") or "") in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+                and str(_iv.get("inflight_key") or "") not in inflight_s2_mkr
+            )
+            if _s2_active >= 1:
+                return {"executed": False, "reason": "S2_MAKER_CONCURRENT_CAP_1"}
         mkr_type_k = f"SINGLE_LEG_MAKER_LOCK:{mid_a}"
         sll_inflight_cnt = sum(1 for k in inflight_mkr_types if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
         if (
@@ -7842,15 +7839,20 @@ class PolymarketLiveHarvester:
         now_ts = time.time()
         from src.polymarket_research.riskless_protocol_v2_expansion import (
             check_s2_live_adverse_move_cancel,
+            check_sll_cand_dispute_guard,
             compute_d1_per_market_notional_cap,
+            compute_sll_and_carry_gatling_budget,
+            compute_sll_maker_keep_and_renew,
             eval_sll_fresh_book_and_peg,
             eval_sll_live_book_poll,
+            extract_top_bid_from_book,
             is_d1_dedupe_blocked,
             is_market_busy_for_scaling,
+            maybe_preempt_mlk1_if_bond1_starved,
             open_market_notional_usd,
             resolve_harvester_sll_tick_size,
             select_sll_velocity_preempt_target,
-            check_sll_cand_dispute_guard,
+            sll_settlement_lag_floor_hours,
         )
         _disp_mkr = check_sll_cand_dispute_guard(candidate_box)
         if _disp_mkr:
@@ -8029,7 +8031,6 @@ class PolymarketLiveHarvester:
                     max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
                     port_headroom_u,
                 )
-                from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
                 budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
             else:
                 budget = min(
@@ -8060,24 +8061,29 @@ class PolymarketLiveHarvester:
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
         if not (min_rb <= anc_bid_px <= max_rb):
             return {"executed": False, "reason": f"RESTING_BID_OUT_OF_BAND:{anc_bid_px:.4f}"}
-        uma_floor_h = 0.01 if _is_s2_mkr else (0.35 if _is_mlk1 else 1.25)
+        budget = await maybe_preempt_mlk1_if_bond1_starved(
+            self, sleeve_src, budget, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, _open_mid_u, exp_ts - now_ts, now_ts, compute_d1_per_market_notional_cap(self) if _open_mid_u > 0.0 else 0.0
+        )
+        uma_floor_h = sll_settlement_lag_floor_hours(sleeve_src)
         cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
-        _cand_edge_hr = round(((1.0 - anc_bid_px) * 10000.0) / max(0.02, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else cand_vel_bps
+        _cand_edge_hr = cand_vel_bps
         if _is_rw_carry and anc_bid_px <= 0.994:
             cand_vel_bps = max(cand_vel_bps, 110.0)
             _cand_edge_hr = max(_cand_edge_hr, 110.0)
+        min_lot_shares = 5
         sh_int = int(math.floor(budget / anc_bid_px))
         if (
-            (sh_int < (5 if _is_s2_mkr else 12) or (_is_s2_mkr and sll_inflight_cnt >= (4 if _unlim_mkr else 2)))
+            not _is_s2_mkr
+            and sh_int < 12
             and not self.dry_run
-            and (anc_bid_px >= 0.990 or _is_s2_mkr)
-            and max(cand_vel_bps, _cand_edge_hr if _is_s2_mkr else 0.0) >= 40.0
+            and anc_bid_px >= 0.990
+            and cand_vel_bps >= 40.0
             and self._is_v5_unleashed_active()
         ):
             _vel_mult = float(_b1_gov.get("bond1_velocity_preempt_mult", 1.80) or 1.80)
             _pe_map = getattr(self, "_maker_anchor_preempt_events", {})
             _claimed_pe = self.__dict__.setdefault("_claimed_velocity_preempts", set())
-            _slow_vel, _slow_k = select_sll_velocity_preempt_target(self, _cand_edge_hr, _is_s2_mkr, _vel_mult)
+            _slow_vel, _slow_k = select_sll_velocity_preempt_target(self, _cand_edge_hr, _is_s2_mkr, _vel_mult, cand_sleeve=sleeve_src)
             if _slow_k:
                 _claimed_pe.add(_slow_k)
                 try:
@@ -8104,12 +8110,25 @@ class PolymarketLiveHarvester:
                 if _is_rw_carry:
                     budget = min(budget, float(_b1_gov.get("reward_harvester_cap_usd_seed", 12.0) or 12.0))
                 sh_int = int(math.floor(budget / anc_bid_px))
-        if sh_int < 5:
+        if sh_int < min_lot_shares:
             return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
+        if _is_s2_early and (
+            len(inflight_s2_mkr)
+            + sum(
+                1
+                for _iv in getattr(self, "pending_entry_intents", {}).values()
+                if isinstance(_iv, dict)
+                and str(_iv.get("sleeve_source") or "") in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+                and str(_iv.get("inflight_key") or "") not in inflight_s2_mkr
+            )
+        ) >= 1:
+            return {"executed": False, "reason": "S2_MAKER_CONCURRENT_CAP_1"}
 
         inflight_key = dedupe_k
         inflight_mkr.add(inflight_key)
         inflight_mkr_types.add(mkr_type_k)
+        if _is_s2_early:
+            inflight_s2_mkr.add(inflight_key)
         preempt_events = self.__dict__.setdefault("_maker_anchor_preempt_events", {})
         preempt_ev = threading.Event()
         preempt_events[inflight_key] = preempt_ev
@@ -8212,30 +8231,21 @@ class PolymarketLiveHarvester:
                 summary = {"matched": matched_sh, "avg_price": avg_px, "cash": round(matched_sh * avg_px, 4), "fee": 0.0, "terminal": True}
             else:
                 uws = getattr(self.executor, "_user_ws_cache", None)
-                _explicit_ttl = _rcfg_sll.get("bond1_maker_ttl_sec")
-                base_ttl = float(_explicit_ttl if _explicit_ttl is not None else 90.0) or 90.0
-                _default_max_keep = ((900.0 if _is_mlk1 else 1800.0) if (_explicit_ttl is None or base_ttl >= 90.0) else base_ttl)
-                full_max_keep_s = (
-                    float(_rcfg_sll.get("bond1_maker_max_keep_sec", _default_max_keep) or _default_max_keep)
-                    if (uws is not None and uws.is_healthy())
-                    else base_ttl
-                )
-                if _is_mlk1 and _explicit_ttl is not None and base_ttl < 90.0:
-                    full_max_keep_s = min(full_max_keep_s, 90.0)
-                if _is_s2_mkr and exp_ts > 0.0:
-                    base_ttl = min(base_ttl, max(1.5, exp_ts - time.time() - 1.5))
-                    full_max_keep_s = base_ttl
                 first_post_ts = float(candidate_box.get("_bond1_first_post_ts") or time.time())
-                max_keep_s = (
-                    max(0.05, full_max_keep_s - max(0.0, time.time() - first_post_ts))
-                    if "_bond1_first_post_ts" in candidate_box
-                    else full_max_keep_s
-                )
                 _b1_poll_s = 0.35 if _is_s2_mkr else (float(_rcfg_sll.get("bond1_book_poll_sec", 4.0) or 4.0))
                 t_sll_0 = time.monotonic()
-                deadline = t_sll_0 + min(base_ttl, max_keep_s)
+                full_max_keep_s, deadline, _ = compute_sll_maker_keep_and_renew(
+                    sleeve_src,
+                    uws_ok=bool(uws is not None and uws.is_healthy()),
+                    exp_ts=exp_ts,
+                    now_ts=time.time(),
+                    created_mono=t_sll_0,
+                    rcfg=_rcfg_sll,
+                    first_post_elapsed_s=max(0.0, time.time() - first_post_ts) if "_bond1_first_post_ts" in candidate_box else 0.0,
+                )
                 last_opp_chk = t_sll_0
                 last_fill_poll = t_sll_0
+                last_top_bid_px: Optional[float] = posted_px
                 adverse_cancelled = False
                 buried_cancelled = False
                 buried_since_mono: Optional[float] = None
@@ -8243,11 +8253,16 @@ class PolymarketLiveHarvester:
                 ws_filled = False
                 try:
                     while time.monotonic() < deadline:
+                        _uws_live_ok = bool(uws is not None and uws.is_healthy())
+                        _, _, _near_exp = compute_sll_maker_keep_and_renew(
+                            sleeve_src, uws_ok=_uws_live_ok, exp_ts=exp_ts, now_ts=time.time(),
+                            created_mono=t_sll_0, deadline_mono=deadline, rcfg=_rcfg_sll,
+                        )
                         if (
                             preempt_ev.is_set()
                             or getattr(self, "_shutdown_requested", False)
                             or self._is_d1_box_halted()
-                            or (exp_ts > 0.0 and (exp_ts - time.time()) <= (1.5 if _is_s2_mkr else 60.0))
+                            or _near_exp
                         ):
                             break
                         if _is_s2_mkr and check_s2_live_adverse_move_cancel(cand_asset, side_s, candidate_box, exp_ts):
@@ -8257,9 +8272,13 @@ class PolymarketLiveHarvester:
                         if intent_id in self.pending_entry_intents:
                             self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
                         rem_w = max(0.05, min(0.10, deadline - time.monotonic()))
-                        if uws is not None and uws.is_healthy():
+                        if _uws_live_ok:
                             await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
                             snap_o = uws.get_order_snapshot(maker_oid, max_age_sec=5.0)
+                            if isinstance(snap_o, dict) and intent_id in self.pending_entry_intents:
+                                _ws_m_c = float(snap_o.get("size_matched") or 0.0)
+                                if _ws_m_c > 0.0:
+                                    self.pending_entry_intents[intent_id]["notional_usd"] = round(max(0.0, float(posted_sh) - _ws_m_c) * float(posted_px), 4)
                             if self._ws_snap_fully_filled(snap_o, posted_sh):
                                 ws_filled = True
                                 break
@@ -8298,6 +8317,13 @@ class PolymarketLiveHarvester:
                                     buried_cancelled = True
                                     logger.info(f"[BOND1 BURIED RELEASE] {box_id}: {_msg_l}; canceling {maker_oid}.")
                                     break
+                                last_top_bid_px = extract_top_bid_from_book(bk_wc)
+                                _, deadline, _ = compute_sll_maker_keep_and_renew(
+                                    sleeve_src, uws_ok=bool(uws is not None and uws.is_healthy()), exp_ts=exp_ts,
+                                    now_ts=time.time(), created_mono=t_sll_0, now_mono=time.monotonic(),
+                                    deadline_mono=deadline, posted_px=posted_px, cur_best_bid=last_top_bid_px,
+                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll,
+                                )
                         if hasattr(self.executor, "get_order_fill_summary") and (time.monotonic() - last_fill_poll) >= 15.0:
                             last_fill_poll = time.monotonic()
                             try:
@@ -8306,30 +8332,36 @@ class PolymarketLiveHarvester:
                                 logger.debug(f"[BOND1 FILL POLL TIMEOUT] {box_id}: {_poll_exc}; preserving resting Maker order {maker_oid}.")
                                 poll_s = None
                             if isinstance(poll_s, dict):
-                                if float(poll_s.get("matched") or 0.0) >= posted_sh - 0.01:
+                                _m_poll = float(poll_s.get("matched") or 0.0)
+                                if intent_id in self.pending_entry_intents:
+                                    self.pending_entry_intents[intent_id]["notional_usd"] = round(max(0.0, float(posted_sh) - _m_poll) * float(posted_px), 4)
+                                if _m_poll >= posted_sh - 0.01:
                                     ws_filled = True
                                     break
                                 if poll_s.get("terminal"):
                                     break
-                        if (
-                            not adverse_cancelled
-                            and buried_since_mono is None
-                            and outbid_repeg_px is None
-                            and not preempt_ev.is_set()
-                            and not getattr(self, "_shutdown_requested", False)
-                            and uws is not None
-                            and uws.is_healthy()
-                            and time.monotonic() >= deadline - 0.05
-                            and (time.monotonic() - t_sll_0) < max_keep_s
-                        ):
-                            deadline = min(t_sll_0 + max_keep_s, time.monotonic() + 15.0)
+                                _, deadline, _ = compute_sll_maker_keep_and_renew(
+                                    sleeve_src, uws_ok=bool(uws is not None and uws.is_healthy()), exp_ts=exp_ts,
+                                    now_ts=time.time(), created_mono=t_sll_0, now_mono=time.monotonic(),
+                                    deadline_mono=deadline, posted_px=posted_px, cur_best_bid=last_top_bid_px,
+                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll,
+                                )
                 except BaseException as _mon_exc:
                     logger.warning(f"[BOND1 MONITOR INTERRUPTED] {box_id}: {_mon_exc}; reconciling/canceling {maker_oid} before releasing intent.")
 
-                cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px)
+                cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px, pre_bal_a)
                 self.pending_entry_intents.pop(intent_id, None)
                 c_out_s = str((cancel_res or {}).get("outcome") or "")
                 is_canc_s = bool((cancel_res or {}).get("is_canceled"))
+                if (
+                    not is_canc_s
+                    and c_out_s != "FILLED"
+                    and matched_sh < 0.01
+                    and "already canceled or matched" in str((cancel_res or {}).get("not_canceled_reason") or "").lower()
+                ):
+                    _cb_u, _src_u = await asyncio.to_thread(self._wallet_token_balance, tok_a)
+                    if _src_u in (self.ONCHAIN_SOURCE, "CLOB_BALANCE_API") and (float(_cb_u or 0.0) - pre_bal_a) <= 1e-4:
+                        is_canc_s = True
                 if not is_canc_s and c_out_s != "FILLED" and (summary is None or not summary.get("terminal")) and matched_sh < 0.01:
                     lid_u = box_id if box_id not in self.active_positions else f"{box_id}_{int(time.time() * 1000) % 10000}"
                     not_unk = round(posted_sh * posted_px, 4)
@@ -8503,6 +8535,7 @@ class PolymarketLiveHarvester:
             self.pending_entry_intents.pop(intent_id, None)
             inflight_mkr.discard(inflight_key)
             inflight_mkr_types.discard(mkr_type_k)
+            inflight_s2_mkr.discard(inflight_key)
             preempt_events.pop(inflight_key, None)
 
     def _spawn_live_maker_anchor_box_task(self, candidate_box: Dict[str, Any]) -> bool:
@@ -8514,6 +8547,10 @@ class PolymarketLiveHarvester:
         _unlim_t = self._is_unlimited_slots_active()
         is_sll_mkr = b_type == "SINGLE_LEG_MAKER_LOCK"
         if is_sll_mkr:
+            if _is_s2_t:
+                _s2_cur = getattr(self, "_s2_mkr_bg_task", None)
+                if _s2_cur is not None and not _s2_cur.done():
+                    return False
             b_key = f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key') or candidate_box.get('leg_a_market_id') or b_type}"
             sll_running = sum(1 for k, tk in by_type.items() if str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
             _sll_lim = (6 if _is_s2_t else 4) if (_unlim_t or self._is_v5_unleashed_active()) else (4 if _is_s2_t else 2)
@@ -8537,11 +8574,15 @@ class PolymarketLiveHarvester:
         t = asyncio.create_task(coro)
         tasks.add(t)
         by_type[b_key] = t
+        if is_sll_mkr and _is_s2_t:
+            self._s2_mkr_bg_task = t
 
         def _cleanup(done_t: Any) -> None:
             tasks.discard(done_t)
             if by_type.get(b_key) is done_t:
                 by_type.pop(b_key, None)
+            if getattr(self, "_s2_mkr_bg_task", None) is done_t:
+                self._s2_mkr_bg_task = None
             try:
                 if not done_t.cancelled() and done_t.exception() is None:
                     _r = done_t.result()

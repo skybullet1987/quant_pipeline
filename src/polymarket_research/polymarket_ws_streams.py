@@ -584,6 +584,24 @@ class PolymarketUserWsCache:
             except Exception:
                 pass
 
+    async def _user_ping_loop(self, ws: Any, interval_sec: float = 12.0) -> None:
+        step_s = max(0.02, min(0.5, interval_sec * 0.25))
+        while not self._stop_event.is_set():
+            elapsed = 0.0
+            while elapsed < interval_sec and not self._stop_event.is_set():
+                await asyncio.sleep(min(step_s, interval_sec - elapsed))
+                elapsed += step_s
+            if self._stop_event.is_set():
+                try:
+                    await ws.close()
+                except Exception:
+                    pass
+                return
+            try:
+                await ws.send("PING")
+            except Exception:
+                return
+
     async def _ws_forever(self) -> None:
         try:
             import websockets
@@ -604,6 +622,7 @@ class PolymarketUserWsCache:
             }
         )
         while not self._stop_event.is_set():
+            ping_task: Optional[asyncio.Task[Any]] = None
             try:
                 async with websockets.connect(
                     self._ws_url,
@@ -625,17 +644,18 @@ class PolymarketUserWsCache:
                         self._seeded_since_connect = False
                     backoff = 0.5
                     logger.info("[USER-WS] Authenticated CLOB ws/user stream connected.")
-                    last_ping = now_m
-                    while not self._stop_event.is_set():
-                        now_step = time.monotonic()
-                        if (now_step - last_ping) >= 9.0:
-                            last_ping = now_step
-                            await ws.send("PING")
-                        try:
-                            msg = await asyncio.wait_for(ws.recv(), timeout=2.0)
-                        except asyncio.TimeoutError:
-                            continue
-                        self.process_ws_payload(msg)
+                    ping_task = asyncio.create_task(self._user_ping_loop(ws, interval_sec=12.0))
+                    try:
+                        while not self._stop_event.is_set():
+                            msg = await ws.recv()
+                            self.process_ws_payload(msg)
+                    finally:
+                        if ping_task is not None:
+                            ping_task.cancel()
+                            try:
+                                await ping_task
+                            except (asyncio.CancelledError, Exception):
+                                pass
             except Exception as exc:
                 if not self._stop_event.is_set():
                     logger.debug(f"[USER-WS] Reconnecting after notice: {exc}")
