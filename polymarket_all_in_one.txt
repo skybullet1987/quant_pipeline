@@ -1,20 +1,20 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 15:05:34 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-05 15:49:31 UTC | Repo: C:/Users/Anton/source/repos/Dominus
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,307B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,935B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,621B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
   - [src/polymarket_research/polymarket_live_harvester.py] (L206-4578 | 900,855B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (L4579-7050 | 448,407B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7051-8054 | 188,588B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (L8055-8222 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (L8223-8956 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (L8957-8991 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/redeem_settled_positions.py] (L8992-9090 | 14,780B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (L9091-9204 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (L9205-9607 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_executor.py] (L4579-7065 | 449,111B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7066-8069 | 188,608B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (L8070-8237 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (L8238-8971 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (L8972-9006 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/redeem_settled_positions.py] (L9007-9105 | 14,780B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (L9106-9219 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (L9220-9622 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # [01/13] config/polymarket_risk_config.json
@@ -5709,61 +5709,76 @@ class PolymarketLiveExecutor:
   b=getattr(a,"_onchain_tx_lock",None)
   if b is None:b=threading.RLock();a._onchain_tx_lock=b
   with b:return a._dispatch_funder_calls_locked(w3,Web3,pk,sig_type,funder_cs,signer_cs,call_targets,condition_id)
- def _dispatch_funder_calls_locked(b,w3,Web3,pk,sig_type,funder_cs,signer_cs,call_targets,condition_id):
-  if sig_type==3:r=[{"inputs":[],"name":"nonce","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}];u=w3.eth.contract(address=funder_cs,abi=r);l=int(u.functions.nonce().call());f=[{"target":w,"value":"0","data":v}for w,v in call_targets];return b._submit_deposit_wallet_relayer_redemption(pk=pk,funder_cs=funder_cs,nonce=l,calls=f,condition_id=condition_id)
-  if sig_type==2:
-   k=[{"inputs":[],"name":"getThreshold","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getOwners","outputs":[{"name":"","type":"address[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"},{"name":"operation","type":"uint8"},{"name":"safeTxGas","type":"uint256"},{"name":"baseGas","type":"uint256"},{"name":"gasPrice","type":"uint256"},{"name":"gasToken","type":"address"},{"name":"refundReceiver","type":"address"},{"name":"signatures","type":"bytes"}],"name":"execTransaction","outputs":[{"name":"success","type":"bool"}],"stateMutability":"payable","type":"function"}];s=w3.eth.contract(address=funder_cs,abi=k)
-   try:q=[Web3.to_checksum_address(o)for o in s.functions.getOwners().call()];e=int(s.functions.getThreshold().call())
-   except Exception:b._funder_is_gnosis_safe=False;return None
-   b._funder_is_gnosis_safe=True
-   if e!=1 or signer_cs not in q:return None
-   m=Web3.to_checksum_address("0x"+"00"*20);j=b"\x00"*12+bytes.fromhex(signer_cs[2:].lower())+b"\x00"*32+b"\x01"
-   for tgt_cs,d in call_targets:
+ def _dispatch_funder_calls_locked(a,w3,Web3,pk,sig_type,funder_cs,signer_cs,call_targets,condition_id):
+  if sig_type==3:l=[{"inputs":[],"name":"nonce","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}];p=w3.eth.contract(address=funder_cs,abi=l);g=int(p.functions.nonce().call());c=[{"target":r,"value":"0","data":q}for r,q in call_targets];return a._submit_deposit_wallet_relayer_redemption(pk=pk,funder_cs=funder_cs,nonce=g,calls=c,condition_id=condition_id)
+  def _exec_seq(mk_tx):
+   a=None
+   for g,(d,b)in enumerate(call_targets):
+    c=str(b).lower().startswith(("0x095ea7b3","0xa22cb465"))
     try:
-     i=bytes.fromhex(d[2:]if d.startswith("0x")else d)
-     if not s.functions.execTransaction(tgt_cs,0,i,0,0,0,0,m,m,j).call({"from":signer_cs}):continue
-     n=s.functions.execTransaction(tgt_cs,0,i,0,0,0,0,m,m,j).build_transaction({"from":signer_cs,"nonce":w3.eth.get_transaction_count(signer_cs,"pending"),"gas":300000,"gasPrice":w3.eth.gas_price,"chainId":137});c=w3.eth.account.sign_transaction(n,private_key=pk);a=w3.eth.send_raw_transaction(c.raw_transaction).hex();return a if str(a).startswith("0x")else f"0x{a}"
-    except Exception:continue
-   return None
-  if sig_type==1:p=[{"inputs":[{"components":[{"name":"typeCode","type":"uint8"},{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"}],"name":"calls","type":"tuple[]"}],"name":"proxy","outputs":[{"name":"returnValues","type":"bytes[]"}],"stateMutability":"payable","type":"function"}];t=w3.eth.contract(address=Web3.to_checksum_address(b.POLY_PROXY_FACTORY),abi=p);g=[(1,tgt_cs,0,bytes.fromhex(h[2:]if h.startswith("0x")else h))for tgt_cs,h in call_targets];t.functions.proxy(g).call({"from":signer_cs});n=t.functions.proxy(g).build_transaction({"from":signer_cs,"nonce":w3.eth.get_transaction_count(signer_cs,"pending"),"gas":320000,"gasPrice":w3.eth.gas_price,"chainId":137});c=w3.eth.account.sign_transaction(n,private_key=pk);a=w3.eth.send_raw_transaction(c.raw_transaction).hex();return a if str(a).startswith("0x")else f"0x{a}"
-  for tgt_cs,d in call_targets:
-   try:w3.eth.call({"from":funder_cs,"to":tgt_cs,"data":d});n={"from":funder_cs,"to":tgt_cs,"value":0,"data":d,"nonce":w3.eth.get_transaction_count(funder_cs,"pending"),"gas":250000,"gasPrice":w3.eth.gas_price,"chainId":137};c=w3.eth.account.sign_transaction(n,private_key=pk);a=w3.eth.send_raw_transaction(c.raw_transaction).hex();return a if str(a).startswith("0x")else f"0x{a}"
-   except Exception:continue
-  return None
+     h=mk_tx(d,b)
+     if not h:
+      if c:return None
+      continue
+     e=w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(h,private_key=pk).raw_transaction).hex();f=e if str(e).startswith("0x")else f"0x{e}"
+     if g+1<len(call_targets):
+      if int(w3.eth.wait_for_transaction_receipt(f,timeout=45,poll_latency=1.2).get("status",0))!=1:return None
+      if not c:a=f
+     else:return f
+    except Exception:
+     if c:return None
+   return a
+  if sig_type==2:
+   f=[{"inputs":[],"name":"getThreshold","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[],"name":"getOwners","outputs":[{"name":"","type":"address[]"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"},{"name":"operation","type":"uint8"},{"name":"safeTxGas","type":"uint256"},{"name":"baseGas","type":"uint256"},{"name":"gasPrice","type":"uint256"},{"name":"gasToken","type":"address"},{"name":"refundReceiver","type":"address"},{"name":"signatures","type":"bytes"}],"name":"execTransaction","outputs":[{"name":"success","type":"bool"}],"stateMutability":"payable","type":"function"}];m=w3.eth.contract(address=funder_cs,abi=f)
+   try:k=[Web3.to_checksum_address(o)for o in m.functions.getOwners().call()];b=int(m.functions.getThreshold().call())
+   except Exception:a._funder_is_gnosis_safe=False;return None
+   a._funder_is_gnosis_safe=True
+   if b!=1 or signer_cs not in k:return None
+   i=Web3.to_checksum_address("0x"+"00"*20);e=b"\x00"*12+bytes.fromhex(signer_cs[2:].lower())+b"\x00"*32+b"\x01"
+   def _mk_safe_tx(tgt_cs,inner_hex):a=m.functions.execTransaction(tgt_cs,0,bytes.fromhex(inner_hex[2:]if inner_hex.startswith("0x")else inner_hex),0,0,0,0,i,i,e);return a.build_transaction({"from":signer_cs,"nonce":w3.eth.get_transaction_count(signer_cs,"pending"),"gas":300000,"gasPrice":w3.eth.gas_price,"chainId":137})if a.call({"from":signer_cs})else None
+   return _exec_seq(_mk_safe_tx)
+  if sig_type==1:j=[{"inputs":[{"components":[{"name":"typeCode","type":"uint8"},{"name":"to","type":"address"},{"name":"value","type":"uint256"},{"name":"data","type":"bytes"}],"name":"calls","type":"tuple[]"}],"name":"proxy","outputs":[{"name":"returnValues","type":"bytes[]"}],"stateMutability":"payable","type":"function"}];n=w3.eth.contract(address=Web3.to_checksum_address(a.POLY_PROXY_FACTORY),abi=j);d=[(1,q,0,bytes.fromhex(h[2:]if h.startswith("0x")else h))for q,h in call_targets];n.functions.proxy(d).call({"from":signer_cs});tx=n.functions.proxy(d).build_transaction({"from":signer_cs,"nonce":w3.eth.get_transaction_count(signer_cs,"pending"),"gas":320000,"gasPrice":w3.eth.gas_price,"chainId":137});raw_h=w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(tx,private_key=pk).raw_transaction).hex();return raw_h if str(raw_h).startswith("0x")else f"0x{raw_h}"
+  return _exec_seq(lambda t,h:(w3.eth.call({"from":funder_cs,"to":t,"data":h}),{"from":funder_cs,"to":t,"value":0,"data":h,"nonce":w3.eth.get_transaction_count(funder_cs,"pending"),"gas":250000,"gasPrice":w3.eth.gas_price,"chainId":137})[1])
  def attempt_onchain_complete_set_merge(a,condition_id,*,min_pairs=5.,max_pairs=None,neg_risk=None):
-  f=getattr(a,"signature_type",None);n=1 if f is None else int(f)
-  if a.dry_run or not condition_id or n not in(0,1,2,3):return None
+  g=getattr(a,"signature_type",None);o=1 if g is None else int(g)
+  if a.dry_run or not condition_id or o not in(0,1,2,3):return None
   E=(os.getenv("POLY_BUILDER_API_KEY")or os.getenv("BUILDER_API_KEY")or"").strip()
-  if n==3 and not E:return None
-  if n==2 and getattr(a,"_funder_is_gnosis_safe",None)is False:return None
+  if o==3 and not E:return None
+  if o==2 and getattr(a,"_funder_is_gnosis_safe",None)is False:return None
   K=(os.getenv("POLYGON_PRIVATE_KEY")or a.private_key or"").strip()
   if not K or not a.funder_address:return None
   try:
-   from web3 import Web3;from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3;J=get_fast_polygon_web3(timeout=5.);l=Web3.to_checksum_address(a.funder_address);k=Web3.to_checksum_address(J.eth.account.from_key(K).address)
-   if n in(0,1,2):
-    d=l if n==0 else k
-    if J.eth.get_balance(d)<int(.05*1e18):return None
-   i=bytes.fromhex(condition_id.lower().replace("0x","").rjust(64,"0"));u=max(1,int(math.floor(float(min_pairs)*1e6)));t=max(u,int(math.floor(float(max_pairs)*1e6)))if max_pairs else None;s=[{"inputs":[{"name":"collateralToken","type":"address"},{"name":"parentCollectionId","type":"bytes32"},{"name":"conditionId","type":"bytes32"},{"name":"partition","type":"uint256[]"},{"name":"amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"name":"parentCollectionId","type":"bytes32"},{"name":"conditionId","type":"bytes32"},{"name":"indexSet","type":"uint256"}],"name":"getCollectionId","outputs":[{"name":"","type":"bytes32"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"collateralToken","type":"address"},{"name":"collectionId","type":"bytes32"}],"name":"getPositionId","outputs":[{"name":"","type":"uint256"}],"stateMutability":"pure","type":"function"},{"inputs":[{"name":"owner","type":"address"},{"name":"id","type":"uint256"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"account","type":"address"},{"name":"operator","type":"address"}],"name":"isApprovedForAll","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"}];z=[{"inputs":[{"name":"_conditionId","type":"bytes32"},{"name":"_amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"}];y=Web3.to_checksum_address(a.CTF_ADDRESS);H=J.eth.contract(address=y,abi=s);D=Web3.to_checksum_address(a.NEG_RISK_ADAPTER_ADDRESS);g=J.eth.contract(address=D,abi=z);c=[];b=0
+   from web3 import Web3;from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3;J=get_fast_polygon_web3(timeout=5.);m=Web3.to_checksum_address(a.funder_address);l=Web3.to_checksum_address(J.eth.account.from_key(K).address)
+   if o in(0,1,2):
+    f=m if o==0 else l
+    if J.eth.get_balance(f)<int(.05*1e18):return None
+   j=bytes.fromhex(condition_id.lower().replace("0x","").rjust(64,"0"));v=max(1,int(math.floor(float(min_pairs)*1e6)));u=max(v,int(math.floor(float(max_pairs)*1e6)))if max_pairs else None;t=[{"inputs":[{"name":"collateralToken","type":"address"},{"name":"parentCollectionId","type":"bytes32"},{"name":"conditionId","type":"bytes32"},{"name":"partition","type":"uint256[]"},{"name":"amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"},{"inputs":[{"name":"parentCollectionId","type":"bytes32"},{"name":"conditionId","type":"bytes32"},{"name":"indexSet","type":"uint256"}],"name":"getCollectionId","outputs":[{"name":"","type":"bytes32"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"collateralToken","type":"address"},{"name":"collectionId","type":"bytes32"}],"name":"getPositionId","outputs":[{"name":"","type":"uint256"}],"stateMutability":"pure","type":"function"},{"inputs":[{"name":"owner","type":"address"},{"name":"id","type":"uint256"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"},{"inputs":[{"name":"account","type":"address"},{"name":"operator","type":"address"}],"name":"isApprovedForAll","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"}];z=[{"inputs":[{"name":"_conditionId","type":"bytes32"},{"name":"_amount","type":"uint256"}],"name":"mergePositions","outputs":[],"stateMutability":"nonpayable","type":"function"}];y=Web3.to_checksum_address(a.CTF_ADDRESS);H=J.eth.contract(address=y,abi=t);D=Web3.to_checksum_address(a.NEG_RISK_ADAPTER_ADDRESS);h=J.eth.contract(address=D,abi=z);d=[];b=0
    if neg_risk is not False:
     try:
-     r=Web3.to_checksum_address(a.NEG_RISK_WRAPPED_COLLATERAL);h=int(H.functions.balanceOf(l,H.functions.getPositionId(r,H.functions.getCollectionId(b"\x00"*32,i,1).call()).call()).call());m=int(H.functions.balanceOf(l,H.functions.getPositionId(r,H.functions.getCollectionId(b"\x00"*32,i,2).call()).call()).call());G=min(h,m)if t is None else min(h,m,t)
-     if G>=u:x=g.encode_abi("mergePositions",args=[i,G])if hasattr(g,"encode_abi")else g.encodeABI(fn_name="mergePositions",args=[i,G]);c.append((D,x));b+=G
+     s=Web3.to_checksum_address(a.NEG_RISK_WRAPPED_COLLATERAL);i=int(H.functions.balanceOf(m,H.functions.getPositionId(s,H.functions.getCollectionId(b"\x00"*32,j,1).call()).call()).call());n=int(H.functions.balanceOf(m,H.functions.getPositionId(s,H.functions.getCollectionId(b"\x00"*32,j,2).call()).call()).call());G=min(i,n)if u is None else min(i,n,u)
+     if G>=v:x=h.encode_abi("mergePositions",args=[j,G])if hasattr(h,"encode_abi")else h.encodeABI(fn_name="mergePositions",args=[j,G]);d.append((D,x));b+=G
     except Exception:pass
-   if neg_risk is not True and not c:
-    q=Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");j=Web3.to_checksum_address("0xAdA100Db00Ca00073811820692005400218FcE1f")
-    for p in("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB","0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"):
+   if neg_risk is not True and not d:
+    r=Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB");k=Web3.to_checksum_address("0xAdA100Db00Ca00073811820692005400218FcE1f")
+    for q in("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB","0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"):
      try:
-      w=Web3.to_checksum_address(p);h=int(H.functions.balanceOf(l,H.functions.getPositionId(w,H.functions.getCollectionId(b"\x00"*32,i,1).call()).call()).call());m=int(H.functions.balanceOf(l,H.functions.getPositionId(w,H.functions.getCollectionId(b"\x00"*32,i,2).call()).call()).call());C=min(h,m)if t is None else min(h,m,t)
-      if C>=u:v=w!=q and bool(H.functions.isApprovedForAll(l,j).call());B=q if v else w;A=j if v else y;o=H.encode_abi("mergePositions",args=[B,b"\x00"*32,i,[1,2],C])if hasattr(H,"encode_abi")else H.encodeABI(fn_name="mergePositions",args=[B,b"\x00"*32,i,[1,2],C]);c.append((A,o));b+=C;break
+      w=Web3.to_checksum_address(q);i=int(H.functions.balanceOf(m,H.functions.getPositionId(w,H.functions.getCollectionId(b"\x00"*32,j,1).call()).call()).call());n=int(H.functions.balanceOf(m,H.functions.getPositionId(w,H.functions.getCollectionId(b"\x00"*32,j,2).call()).call()).call());C=min(i,n)if u is None else min(i,n,u)
+      if C>=v:
+       c=w!=r and bool(H.functions.isApprovedForAll(m,k).call())
+       if w!=r and not c and o==3:d.append((y,f"0xa22cb465{k[2:].lower().rjust(64,'0')}{'1'.rjust(64,'0')}"));c=True
+       B=r if c else w;A=k if c else y;p=H.encode_abi("mergePositions",args=[B,b"\x00"*32,j,[1,2],C])if hasattr(H,"encode_abi")else H.encodeABI(fn_name="mergePositions",args=[B,b"\x00"*32,j,[1,2],C]);d.append((A,p));b+=C;break
      except Exception:continue
-   if not c or b<u:return None
-   F=a._dispatch_funder_calls(J,Web3,K,n,l,k,c,condition_id)
+   if not d or b<v:return None
+   F=a._dispatch_funder_calls(J,Web3,K,o,m,l,d,condition_id)
    if F:
     a.invalidate_collateral_cache()
     try:
      I=J.eth.wait_for_transaction_receipt(F,timeout=60,poll_latency=1.5)
      if int(I.get("status",0))!=1:logger.warning(f"[MERGE] mergePositions tx {F} reverted for {condition_id}; legs remain open.");return None
     except Exception as rc_err:logger.warning(f"[MERGE] mergePositions tx {F} unconfirmed for {condition_id} ({rc_err}); legs remain open.");return None
+    try:
+     if getattr(a,"client",None)is not None and BalanceAllowanceParams is not None and AssetType is not None:a.client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL,signature_type=o))
+    except Exception:pass
     return F,round(b/1e6,6)
    return None
   except Exception as e:return None
@@ -5814,7 +5829,7 @@ class PolymarketLiveExecutor:
   b=a.attempt_onchain_complete_set_merge(condition_id,min_pairs=min(5.,e),max_pairs=e,neg_risk=neg_risk)
   if isinstance(b,tuple)and len(b)==2 and b[0]:return{"merged":True,"success":True,"dry_run":False,"merged_pairs":float(b[1]),"target_contract":c,"calldata":d,"tx_hash":str(b[0])}
   return{"merged":False,"success":False,"dry_run":False,"merged_pairs":.0,"target_contract":c,"calldata":d,"tx_hash":None}
- def attempt_onchain_split_position(self,condition_id,shares,*,neg_risk=False):from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp;return _sp(self,condition_id,shares,neg_risk=neg_risk)
+ def attempt_onchain_split_position(self,condition_id,shares,*,neg_risk=False,up_token_id="",down_token_id=""):from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp;return _sp(self,condition_id,shares,neg_risk=neg_risk,up_token_id=up_token_id,down_token_id=down_token_id)
  def execute_nr3_synthetic_all_yes_overround(self,**kwargs):from src.polymarket_research.riskless_machine_gun_engine import execute_nr3_synthetic_all_yes_overround as _nr3;return _nr3(self,**kwargs)
  def simulate_fok_sweep(h,orderbook,target_notional_usd,side="BUY",max_acceptable_price=MAX_PRICE_CEILING,min_acceptable_price=MIN_PRICE_FLOOR,return_legs=False,fee_rate=.07,fee_exponent=1.):
   k=orderbook.get("asks"if side=="BUY"else"bids",[])
@@ -7870,7 +7885,7 @@ class PolymarketDualFeed1HRecorder:
       G=time.time()
       if(G-h)>=9.:h=G;await ws.send("PING")
       if(G-f)>=1.6:
-       f=G;x=[tok_q for tok_q,role_q in k.items()if role_q in("UP","DOWN","UP_15M","DOWN_15M","UP_5M","DOWN_5M")and role_q in a.books and((G-a.books[role_q].last_book_update_ts)>=1.8 or(a.books[role_q].bids and a.books[role_q].asks and max(a.books[role_q].bids)>=min(a.books[role_q].asks)))]
+       f=G;x=[tok_q for tok_q,role_q in k.items()if role_q in("UP","DOWN","UP_15M","DOWN_15M","UP_5M","DOWN_5M","UP_4H","DOWN_4H")and role_q in a.books and((G-a.books[role_q].last_book_update_ts)>=1.8 or(a.books[role_q].bids and a.books[role_q].asks and max(a.books[role_q].bids)>=min(a.books[role_q].asks)))]
        if x:await a._refresh_quiet_books_batch(x,k)
       if time.time()-g>25.:logger.warning(f"[*] CLOB WS silent for >25s on market {b}. Reconnecting...");a.clob_ws_connected=False;break
       try:M=await asyncio.wait_for(ws.recv(),timeout=1.);g=time.time();a.last_clob_ws_msg_ts=g

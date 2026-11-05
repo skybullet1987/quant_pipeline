@@ -2868,7 +2868,7 @@ class PolymarketDualFeed1HRecorder:
                             quiet_toks = [
                                 tok_q
                                 for tok_q, role_q in subscribed_tokens.items()
-                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M")
+                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M", "UP_4H", "DOWN_4H")
                                 and role_q in self.books
                                 and (
                                     (now_loop - self.books[role_q].last_book_update_ts) >= 1.8

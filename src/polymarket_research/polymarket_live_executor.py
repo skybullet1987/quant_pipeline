@@ -3452,6 +3452,30 @@ class PolymarketLiveExecutor:
             return self._submit_deposit_wallet_relayer_redemption(
                 pk=pk, funder_cs=funder_cs, nonce=dw_nonce, calls=calls_payload, condition_id=condition_id
             )
+        def _exec_seq(mk_tx):
+            last_tx: Optional[str] = None
+            for i_c, (tgt_cs, inner_hex) in enumerate(call_targets):
+                is_appr = str(inner_hex).lower().startswith(("0x095ea7b3", "0xa22cb465"))
+                try:
+                    tx = mk_tx(tgt_cs, inner_hex)
+                    if not tx:
+                        if is_appr:
+                            return None
+                        continue
+                    raw_h = w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(tx, private_key=pk).raw_transaction).hex()
+                    tx_h = raw_h if str(raw_h).startswith("0x") else f"0x{raw_h}"
+                    if i_c + 1 < len(call_targets):
+                        if int(w3.eth.wait_for_transaction_receipt(tx_h, timeout=45, poll_latency=1.2).get("status", 0)) != 1:
+                            return None
+                        if not is_appr:
+                            last_tx = tx_h
+                    else:
+                        return tx_h
+                except Exception:
+                    if is_appr:
+                        return None
+            return last_tx
+
         if sig_type == 2:
             safe_abi = [
                 {"inputs": [], "name": "getThreshold", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
@@ -3470,21 +3494,12 @@ class PolymarketLiveExecutor:
                 return None
             zero_cs = Web3.to_checksum_address("0x" + "00" * 20)
             preval_sig = b"\x00" * 12 + bytes.fromhex(signer_cs[2:].lower()) + b"\x00" * 32 + b"\x01"
-            for tgt_cs, inner_hex in call_targets:
-                try:
-                    inner_bytes = bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex)
-                    if not safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).call({"from": signer_cs}):
-                        continue
-                    tx = safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).build_transaction({
-                        "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
-                        "gas": 300000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-                    })
-                    signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-                    return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-                except Exception:
-                    continue
-            return None
+
+            def _mk_safe_tx(tgt_cs, inner_hex):
+                fn = safe.functions.execTransaction(tgt_cs, 0, bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex), 0, 0, 0, 0, zero_cs, zero_cs, preval_sig)
+                return fn.build_transaction({"from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"), "gas": 300000, "gasPrice": w3.eth.gas_price, "chainId": 137}) if fn.call({"from": signer_cs}) else None
+
+            return _exec_seq(_mk_safe_tx)
         if sig_type == 1:
             pf_abi = [{
                 "inputs": [{"components": [{"name": "typeCode", "type": "uint8"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}, {"name": "data", "type": "bytes"}], "name": "calls", "type": "tuple[]"}],
@@ -3494,32 +3509,12 @@ class PolymarketLiveExecutor:
                 "type": "function",
             }]
             pf = w3.eth.contract(address=Web3.to_checksum_address(self.POLY_PROXY_FACTORY), abi=pf_abi)
-            tuple_calls = [
-                (1, tgt_cs, 0, bytes.fromhex(h[2:] if h.startswith("0x") else h))
-                for tgt_cs, h in call_targets
-            ]
+            tuple_calls = [(1, tgt_cs, 0, bytes.fromhex(h[2:] if h.startswith("0x") else h)) for tgt_cs, h in call_targets]
             pf.functions.proxy(tuple_calls).call({"from": signer_cs})
-            tx = pf.functions.proxy(tuple_calls).build_transaction({
-                "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
-                "gas": 320000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-            })
-            signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-            return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-        for tgt_cs, inner_hex in call_targets:
-            try:
-                w3.eth.call({"from": funder_cs, "to": tgt_cs, "data": inner_hex})
-                tx = {
-                    "from": funder_cs, "to": tgt_cs, "value": 0, "data": inner_hex,
-                    "nonce": w3.eth.get_transaction_count(funder_cs, "pending"),
-                    "gas": 250000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-                }
-                signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-                return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-            except Exception:
-                continue
-        return None
+            tx = pf.functions.proxy(tuple_calls).build_transaction({"from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"), "gas": 320000, "gasPrice": w3.eth.gas_price, "chainId": 137})
+            raw_h = w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(tx, private_key=pk).raw_transaction).hex()
+            return raw_h if str(raw_h).startswith("0x") else f"0x{raw_h}"
+        return _exec_seq(lambda t, h: (w3.eth.call({"from": funder_cs, "to": t, "data": h}), {"from": funder_cs, "to": t, "value": 0, "data": h, "nonce": w3.eth.get_transaction_count(funder_cs, "pending"), "gas": 250000, "gasPrice": w3.eth.gas_price, "chainId": 137})[1])
 
     def attempt_onchain_complete_set_merge(
         self, condition_id: str, *, min_pairs: float = 5.0, max_pairs: Optional[float] = None, neg_risk: Optional[bool] = None
@@ -3587,9 +3582,12 @@ class PolymarketLiveExecutor:
                         b_no = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call())
                         m_std = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
                         if m_std >= min_raw:
-                            use_v2 = col_cs != pusd_cs and bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call())
-                            m_col = pusd_cs if use_v2 else col_cs
-                            m_tgt = v2_ctf_cs if use_v2 else ctf_cs
+                            appr_v2 = col_cs != pusd_cs and bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call())
+                            if col_cs != pusd_cs and not appr_v2 and sig_type == 3:
+                                merge_targets.append((ctf_cs, f"0xa22cb465{v2_ctf_cs[2:].lower().rjust(64, '0')}{'1'.rjust(64, '0')}"))
+                                appr_v2 = True
+                            m_col = pusd_cs if appr_v2 else col_cs
+                            m_tgt = v2_ctf_cs if appr_v2 else ctf_cs
                             ctf_hex = ctf.encode_abi("mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std])
                             merge_targets.append((m_tgt, ctf_hex))
                             merged_raw += m_std
@@ -3610,6 +3608,11 @@ class PolymarketLiveExecutor:
                 except Exception as rc_err:
                     logger.warning(f"[MERGE] mergePositions tx {tx_h} unconfirmed for {condition_id} ({rc_err}); legs remain open.")
                     return None
+                try:
+                    if getattr(self, "client", None) is not None and BalanceAllowanceParams is not None and AssetType is not None:
+                        self.client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig_type))
+                except Exception:
+                    pass
                 return tx_h, round(merged_raw / 1e6, 6)
             return None
         except Exception as e:
@@ -3781,9 +3784,9 @@ class PolymarketLiveExecutor:
             return {"merged": True, "success": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
         return {"merged": False, "success": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
 
-    def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False) -> Dict[str, Any]:
+    def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False, up_token_id: str = "", down_token_id: str = "") -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp
-        return _sp(self, condition_id, shares, neg_risk=neg_risk)
+        return _sp(self, condition_id, shares, neg_risk=neg_risk, up_token_id=up_token_id, down_token_id=down_token_id)
 
     def execute_nr3_synthetic_all_yes_overround(self, **kwargs: Any) -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import execute_nr3_synthetic_all_yes_overround as _nr3

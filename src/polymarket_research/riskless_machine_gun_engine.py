@@ -1056,7 +1056,13 @@ def attempt_onchain_split_position(
                         clob_cli = getattr(executor, "client", None)
                         if clob_cli is not None and hasattr(clob_cli, "update_balance_allowance"):
                             try:
-                                from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+                                try:
+                                    from py_clob_client_v2.clob_types import AssetType, BalanceAllowanceParams
+                                except ImportError:
+                                    from py_clob_client.clob_types import AssetType, BalanceAllowanceParams
+                                clob_cli.update_balance_allowance(
+                                    BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig_type)
+                                )
                                 for tid_s in (up_token_id, down_token_id):
                                     if tid_s:
                                         clob_cli.update_balance_allowance(
@@ -1673,30 +1679,32 @@ def _is_clob_book_crossed(bk: Optional[Dict[str, Any]]) -> bool:
 
 
 def _shm_side_to_clob_book(side_obj: Any) -> Optional[Dict[str, Any]]:
-    if not isinstance(side_obj, dict):
+    if not isinstance(side_obj, dict) or bool(side_obj.get("is_crossed")):
         return None
     bids = [
         {"price": float(lv[0]), "size": float(lv[1])}
         for lv in (side_obj.get("raw_top_bids") or ())
-        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[0]) > 0 and float(lv[1]) > 0
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and 0.0 < float(lv[0]) < 1.0 and float(lv[1]) > 0
     ]
     asks = [
         {"price": float(lv[0]), "size": float(lv[1])}
         for lv in (side_obj.get("raw_top_asks") or ())
-        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[0]) > 0 and float(lv[1]) > 0
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and 0.0 < float(lv[0]) < 1.0 and float(lv[1]) > 0
     ]
     bsz1 = side_obj.get("bid_size_l1") or side_obj.get("bid_depth_1c_shares")
-    if not bids and side_obj.get("best_bid") and bsz1 and float(side_obj["best_bid"]) > 0 and float(bsz1) > 0:
+    if not bids and side_obj.get("best_bid") and bsz1 and 0.0 < float(side_obj["best_bid"]) < 1.0 and float(bsz1) > 0:
         bids = [{"price": float(side_obj["best_bid"]), "size": float(bsz1)}]
     asz1 = side_obj.get("ask_size_l1") or side_obj.get("ask_depth_1c_shares")
-    if not asks and side_obj.get("best_ask") and asz1 and float(side_obj["best_ask"]) > 0 and float(asz1) > 0:
+    if not asks and side_obj.get("best_ask") and asz1 and 0.0 < float(side_obj["best_ask"]) < 1.0 and float(asz1) > 0:
         asks = [{"price": float(side_obj["best_ask"]), "size": float(asz1)}]
     raw_bb = float(side_obj.get("best_bid") or 0.0)
     raw_ba_val = side_obj.get("best_ask")
     raw_ba = float(raw_ba_val) if raw_ba_val is not None else 0.0
     has_real_ba = (0.0 < raw_ba < 1.0) or (raw_ba >= 1.0 and bool(asks or (asz1 and float(asz1) > 0)))
-    top_b = max((b["price"] for b in bids), default=raw_bb)
-    top_a = min((a["price"] for a in asks), default=(raw_ba if has_real_ba else 0.0))
+    if raw_bb > 0.0 and has_real_ba and raw_bb >= raw_ba:
+        return None
+    top_b = max((b["price"] for b in bids), default=(raw_bb if 0.0 < raw_bb < 1.0 else 0.0))
+    top_a = min((a["price"] for a in asks), default=(raw_ba if 0.0 < raw_ba < 1.0 else 0.0))
     if top_b > 0.0 and top_a > 0.0 and top_b >= top_a:
         return None
     return {"bids": bids, "asks": asks}
@@ -2035,8 +2043,12 @@ class PreSplitInventoryGun:
         bk_up, bk_dn = self._extract_shm_books_for_tokens(ft, str(st["up_token_id"]), str(st["down_token_id"]))
         if bk_up is None:
             bk_up = await ex.get_market_book_async(st["up_token_id"])
+            if _is_clob_book_crossed(bk_up):
+                bk_up = None
         if bk_dn is None:
             bk_dn = await ex.get_market_book_async(st["down_token_id"])
+            if _is_clob_book_crossed(bk_dn):
+                bk_dn = None
 
         # Asymmetric 1-leg fill: ONLY sweep remaining leg when strictly profitable (`net >= cost + $0.002`) — NEVER dump at a loss!
         if abs(up_rem - dn_rem) >= 4.95 and isinstance(bk_up, dict) and isinstance(bk_dn, dict):

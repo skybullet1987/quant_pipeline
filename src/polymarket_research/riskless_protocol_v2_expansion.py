@@ -865,11 +865,17 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
                 tk_id = str(sb.get("token_id") or "")
                 age_ms = float(sb.get("age_book_ms") if sb.get("age_book_ms") is not None else 9999.0)
                 if tk_id and age_ms <= 950.0:
-                    rb = [r for r in (sb.get("raw_top_bids") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and float(r[0]) > 0 and float(r[1]) > 0]
-                    ra = [r for r in (sb.get("raw_top_asks") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and float(r[0]) > 0 and float(r[1]) > 0]
-                    bb_s = max((float(r[0]) for r in rb), default=float(sb.get("best_bid") or 0.0))
-                    ba_s = min((float(r[0]) for r in ra), default=(float(sb["best_ask"]) if sb.get("best_ask") is not None and 0.0 < float(sb["best_ask"]) < 1.0 else 0.0))
-                    if (rb or ra) and not (bb_s > 0.0 and ba_s > 0.0 and bb_s >= ba_s):
+                    rb = [r for r in (sb.get("raw_top_bids") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and 0.0 < float(r[0]) < 1.0 and float(r[1]) > 0]
+                    ra = [r for r in (sb.get("raw_top_asks") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and 0.0 < float(r[0]) < 1.0 and float(r[1]) > 0]
+                    raw_bb = float(sb.get("best_bid") or 0.0)
+                    raw_ba_v = sb.get("best_ask")
+                    raw_ba = float(raw_ba_v) if raw_ba_v is not None else 0.0
+                    asz_s = float(sb.get("ask_size_l1") or sb.get("ask_depth_1c_shares") or 0.0)
+                    has_real_ba = (0.0 < raw_ba < 1.0) or (raw_ba >= 1.0 and (bool(ra) or asz_s > 0.0))
+                    bb_s = max((float(r[0]) for r in rb), default=(raw_bb if 0.0 < raw_bb < 1.0 else 0.0))
+                    ba_s = min((float(r[0]) for r in ra), default=(raw_ba if 0.0 < raw_ba < 1.0 else 0.0))
+                    is_x = bool(sb.get("is_crossed")) or (raw_bb > 0.0 and has_real_ba and raw_bb >= raw_ba) or (bb_s > 0.0 and ba_s > 0.0 and bb_s >= ba_s)
+                    if (rb or ra) and not is_x:
                         raw_tk = sb.get("minimum_tick_size") or sb.get("tick_size")
                         if raw_tk in (None, ""):
                             has_3dec = any(

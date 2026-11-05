@@ -1,9 +1,9 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-05 15:05:36 UTC
+Generated: 2026-11-05 15:49:34 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
-Repository: /home/skybullet1987/quant_pipeline
+Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
@@ -19,44 +19,44 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
   [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,621 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
   [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,966 | 900,855 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,967 - 24,827 | 448,407 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,828 - 26,341 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 26,342 - 27,061 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,062 - 30,554 | 188,588 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,555 - 31,133 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,134 - 33,524 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,525 - 33,637 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,638 - 33,754 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,755 - 34,101 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,102 - 34,367 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 34,368 - 34,850 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,851 - 36,328 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,329 - 37,875 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,876 - 39,265 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,266 - 40,390 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,391 - 41,843 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,844 - 42,399 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,400 - 43,123 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,124 - 44,115 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,116 - 44,454 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,455 - 46,211 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,212 - 47,279 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,280 - 48,028 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,029 - 49,750 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,751 - 52,008 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,009 - 54,268 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,269 - 67,303 | 724,612 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 67,304 - 68,164 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 68,165 - 69,387 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 69,388 - 69,466 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,467 - 69,616 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 69,617 - 73,696 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,697 - 75,591 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,592 - 81,319 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,320 - 82,076 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 82,077 - 82,919 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,920 - 83,699 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,700 - 85,499 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,967 - 24,830 | 449,111 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,831 - 26,344 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 26,345 - 27,064 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,065 - 30,557 | 188,608 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,558 - 31,136 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,137 - 33,527 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,528 - 33,640 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,641 - 33,757 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,758 - 34,104 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,105 - 34,370 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 34,371 - 34,853 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,854 - 36,331 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,332 - 37,878 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,879 - 39,268 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,269 - 40,393 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,394 - 41,846 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,847 - 42,402 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,403 - 43,126 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,127 - 44,118 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,119 - 44,457 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,458 - 46,214 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,215 - 47,282 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,283 - 48,031 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,032 - 49,753 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,754 - 52,011 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,012 - 54,271 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,272 - 67,306 | 724,612 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 67,307 - 68,167 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 68,168 - 69,390 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 69,391 - 69,469 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,470 - 69,619 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 69,620 - 73,699 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,700 - 75,594 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,595 - 81,322 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,323 - 82,079 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 82,080 - 82,922 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,923 - 83,702 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,703 - 85,502 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -19423,6 +19423,30 @@ class PolymarketLiveExecutor:
             return self._submit_deposit_wallet_relayer_redemption(
                 pk=pk, funder_cs=funder_cs, nonce=dw_nonce, calls=calls_payload, condition_id=condition_id
             )
+        def _exec_seq(mk_tx):
+            last_tx: Optional[str] = None
+            for i_c, (tgt_cs, inner_hex) in enumerate(call_targets):
+                is_appr = str(inner_hex).lower().startswith(("0x095ea7b3", "0xa22cb465"))
+                try:
+                    tx = mk_tx(tgt_cs, inner_hex)
+                    if not tx:
+                        if is_appr:
+                            return None
+                        continue
+                    raw_h = w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(tx, private_key=pk).raw_transaction).hex()
+                    tx_h = raw_h if str(raw_h).startswith("0x") else f"0x{raw_h}"
+                    if i_c + 1 < len(call_targets):
+                        if int(w3.eth.wait_for_transaction_receipt(tx_h, timeout=45, poll_latency=1.2).get("status", 0)) != 1:
+                            return None
+                        if not is_appr:
+                            last_tx = tx_h
+                    else:
+                        return tx_h
+                except Exception:
+                    if is_appr:
+                        return None
+            return last_tx
+
         if sig_type == 2:
             safe_abi = [
                 {"inputs": [], "name": "getThreshold", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
@@ -19441,21 +19465,12 @@ class PolymarketLiveExecutor:
                 return None
             zero_cs = Web3.to_checksum_address("0x" + "00" * 20)
             preval_sig = b"\x00" * 12 + bytes.fromhex(signer_cs[2:].lower()) + b"\x00" * 32 + b"\x01"
-            for tgt_cs, inner_hex in call_targets:
-                try:
-                    inner_bytes = bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex)
-                    if not safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).call({"from": signer_cs}):
-                        continue
-                    tx = safe.functions.execTransaction(tgt_cs, 0, inner_bytes, 0, 0, 0, 0, zero_cs, zero_cs, preval_sig).build_transaction({
-                        "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
-                        "gas": 300000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-                    })
-                    signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-                    tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-                    return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-                except Exception:
-                    continue
-            return None
+
+            def _mk_safe_tx(tgt_cs, inner_hex):
+                fn = safe.functions.execTransaction(tgt_cs, 0, bytes.fromhex(inner_hex[2:] if inner_hex.startswith("0x") else inner_hex), 0, 0, 0, 0, zero_cs, zero_cs, preval_sig)
+                return fn.build_transaction({"from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"), "gas": 300000, "gasPrice": w3.eth.gas_price, "chainId": 137}) if fn.call({"from": signer_cs}) else None
+
+            return _exec_seq(_mk_safe_tx)
         if sig_type == 1:
             pf_abi = [{
                 "inputs": [{"components": [{"name": "typeCode", "type": "uint8"}, {"name": "to", "type": "address"}, {"name": "value", "type": "uint256"}, {"name": "data", "type": "bytes"}], "name": "calls", "type": "tuple[]"}],
@@ -19465,32 +19480,12 @@ class PolymarketLiveExecutor:
                 "type": "function",
             }]
             pf = w3.eth.contract(address=Web3.to_checksum_address(self.POLY_PROXY_FACTORY), abi=pf_abi)
-            tuple_calls = [
-                (1, tgt_cs, 0, bytes.fromhex(h[2:] if h.startswith("0x") else h))
-                for tgt_cs, h in call_targets
-            ]
+            tuple_calls = [(1, tgt_cs, 0, bytes.fromhex(h[2:] if h.startswith("0x") else h)) for tgt_cs, h in call_targets]
             pf.functions.proxy(tuple_calls).call({"from": signer_cs})
-            tx = pf.functions.proxy(tuple_calls).build_transaction({
-                "from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"),
-                "gas": 320000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-            })
-            signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-            tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-            return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-        for tgt_cs, inner_hex in call_targets:
-            try:
-                w3.eth.call({"from": funder_cs, "to": tgt_cs, "data": inner_hex})
-                tx = {
-                    "from": funder_cs, "to": tgt_cs, "value": 0, "data": inner_hex,
-                    "nonce": w3.eth.get_transaction_count(funder_cs, "pending"),
-                    "gas": 250000, "gasPrice": w3.eth.gas_price, "chainId": 137,
-                }
-                signed = w3.eth.account.sign_transaction(tx, private_key=pk)
-                tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction).hex()
-                return tx_hash if str(tx_hash).startswith("0x") else f"0x{tx_hash}"
-            except Exception:
-                continue
-        return None
+            tx = pf.functions.proxy(tuple_calls).build_transaction({"from": signer_cs, "nonce": w3.eth.get_transaction_count(signer_cs, "pending"), "gas": 320000, "gasPrice": w3.eth.gas_price, "chainId": 137})
+            raw_h = w3.eth.send_raw_transaction(w3.eth.account.sign_transaction(tx, private_key=pk).raw_transaction).hex()
+            return raw_h if str(raw_h).startswith("0x") else f"0x{raw_h}"
+        return _exec_seq(lambda t, h: (w3.eth.call({"from": funder_cs, "to": t, "data": h}), {"from": funder_cs, "to": t, "value": 0, "data": h, "nonce": w3.eth.get_transaction_count(funder_cs, "pending"), "gas": 250000, "gasPrice": w3.eth.gas_price, "chainId": 137})[1])
 
     def attempt_onchain_complete_set_merge(
         self, condition_id: str, *, min_pairs: float = 5.0, max_pairs: Optional[float] = None, neg_risk: Optional[bool] = None
@@ -19558,9 +19553,12 @@ class PolymarketLiveExecutor:
                         b_no = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call())
                         m_std = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
                         if m_std >= min_raw:
-                            use_v2 = col_cs != pusd_cs and bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call())
-                            m_col = pusd_cs if use_v2 else col_cs
-                            m_tgt = v2_ctf_cs if use_v2 else ctf_cs
+                            appr_v2 = col_cs != pusd_cs and bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call())
+                            if col_cs != pusd_cs and not appr_v2 and sig_type == 3:
+                                merge_targets.append((ctf_cs, f"0xa22cb465{v2_ctf_cs[2:].lower().rjust(64, '0')}{'1'.rjust(64, '0')}"))
+                                appr_v2 = True
+                            m_col = pusd_cs if appr_v2 else col_cs
+                            m_tgt = v2_ctf_cs if appr_v2 else ctf_cs
                             ctf_hex = ctf.encode_abi("mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std])
                             merge_targets.append((m_tgt, ctf_hex))
                             merged_raw += m_std
@@ -19581,6 +19579,11 @@ class PolymarketLiveExecutor:
                 except Exception as rc_err:
                     logger.warning(f"[MERGE] mergePositions tx {tx_h} unconfirmed for {condition_id} ({rc_err}); legs remain open.")
                     return None
+                try:
+                    if getattr(self, "client", None) is not None and BalanceAllowanceParams is not None and AssetType is not None:
+                        self.client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig_type))
+                except Exception:
+                    pass
                 return tx_h, round(merged_raw / 1e6, 6)
             return None
         except Exception as e:
@@ -19752,9 +19755,9 @@ class PolymarketLiveExecutor:
             return {"merged": True, "success": True, "dry_run": False, "merged_pairs": float(res[1]), "target_contract": tgt, "calldata": cd, "tx_hash": str(res[0])}
         return {"merged": False, "success": False, "dry_run": False, "merged_pairs": 0.0, "target_contract": tgt, "calldata": cd, "tx_hash": None}
 
-    def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False) -> Dict[str, Any]:
+    def attempt_onchain_split_position(self, condition_id: str, shares: float, *, neg_risk: bool = False, up_token_id: str = "", down_token_id: str = "") -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position as _sp
-        return _sp(self, condition_id, shares, neg_risk=neg_risk)
+        return _sp(self, condition_id, shares, neg_risk=neg_risk, up_token_id=up_token_id, down_token_id=down_token_id)
 
     def execute_nr3_synthetic_all_yes_overround(self, **kwargs: Any) -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import execute_nr3_synthetic_all_yes_overround as _nr3
@@ -29934,7 +29937,7 @@ class PolymarketDualFeed1HRecorder:
                             quiet_toks = [
                                 tok_q
                                 for tok_q, role_q in subscribed_tokens.items()
-                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M")
+                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M", "UP_4H", "DOWN_4H")
                                 and role_q in self.books
                                 and (
                                     (now_loop - self.books[role_q].last_book_update_ts) >= 1.8

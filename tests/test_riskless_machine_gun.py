@@ -660,17 +660,25 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     assert harv_q.closed_positions[-1]["won"] is False
     assert harv_q.closed_positions[-1]["net_pnl_usd"] == pytest.approx(-0.04)
 
-    # 3. Crossed SHM book rejection (`best_bid >= best_ask`) while preserving empty-ask (`best_ask=1.0, ask_size_l1=0.0`)
+    # 3. Crossed SHM book rejection (`best_bid >= best_ask` OR `bids[0] >= asks[0]` OR `is_crossed=True`) while preserving empty-ask (`best_ask=1.0, ask_size_l1=0.0`)
     assert _shm_side_to_clob_book(
         {"token_id": up_tok, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.97, 50.0]], "raw_top_asks": [[0.75, 50.0]]}
+    ) is None
+    # Desynchronized top-of-book vs raw_top_bids/asks (`best_bid >= best_ask` with uncrossed L2 array) MUST still be rejected!
+    assert _shm_side_to_clob_book(
+        {"token_id": up_tok, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.70, 50.0]], "raw_top_asks": [[0.75, 50.0]]}
+    ) is None
+    assert _shm_side_to_clob_book(
+        {"token_id": up_tok, "is_crossed": True, "best_bid": 0.49, "best_ask": 0.51, "raw_top_bids": [[0.49, 50.0]], "raw_top_asks": [[0.51, 50.0]]}
     ) is None
     assert _shm_side_to_clob_book(
         {"token_id": up_tok, "best_bid": 0.50, "bid_size_l1": 25.0, "best_ask": 0.50, "ask_size_l1": 25.0}
     ) is None
+    # Corrupt >= 1.0 levels are stripped cleanly while empty-ask sentinel (`best_ask=1.0, ask_size_l1=0.0`) stays valid
     empty_ask_bk = _shm_side_to_clob_book(
-        {"token_id": up_tok, "best_bid": 0.53, "bid_size_l1": 40.0, "raw_top_bids": [[0.53, 40.0]], "best_ask": 1.0, "ask_size_l1": 0.0, "raw_top_asks": []}
+        {"token_id": up_tok, "best_bid": 0.53, "bid_size_l1": 40.0, "raw_top_bids": [[1.0, 99.0], [0.53, 40.0]], "best_ask": 1.0, "ask_size_l1": 0.0, "raw_top_asks": [[1.0, 5.0]]}
     )
-    assert empty_ask_bk is not None and len(empty_ask_bk["bids"]) == 1 and empty_ask_bk["asks"] == []
+    assert empty_ask_bk is not None and empty_ask_bk["bids"] == [{"price": 0.53, "size": 40.0}] and empty_ask_bk["asks"] == []
 
     shm_crossed_5m = {
         "timestamp_unix": now,
@@ -681,7 +689,7 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
             "condition_id": "0x" + "ee" * 32,
             "expiry_ts": now + 180.0,
             "finalized_open": 184.9,
-            "UP": {"token_id": up_tok, "age_book_ms": 80.0, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.97, 50.0]], "raw_top_asks": [[0.75, 50.0]]},
+            "UP": {"token_id": up_tok, "age_book_ms": 80.0, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.70, 50.0]], "raw_top_asks": [[0.75, 50.0]]},
             "DOWN": {"token_id": dn_tok, "age_book_ms": 80.0, "best_bid": 0.25, "best_ask": 0.27, "raw_top_bids": [[0.25, 50.0]], "raw_top_asks": [[0.27, 50.0]]},
         },
     }
@@ -774,7 +782,7 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     assert relayer_batches[-1][0][0][0] == Web3.to_checksum_address(PUSD_ADDRESS)
     assert relayer_batches[-1][0][1][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
     assert relayer_batches[-1][0][1][1].startswith("0x72ce4275")
-    assert len(allowance_updates) == 2 and all(getattr(p, "signature_type", None) == 2 for p in allowance_updates)
+    assert len(allowance_updates) == 3 and all(getattr(p, "signature_type", None) == 2 for p in allowance_updates)
 
     # 5b. Binary pUSD with sufficient allowance -> single splitPosition call on CTF_ADAPTER_V2
     mock_state["allowance"] = 10**30
@@ -782,7 +790,12 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     assert sp_v2_b["success"] is True and len(relayer_batches[-1][0]) == 1
     assert relayer_batches[-1][0][0][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
 
-    # 5c. NegRisk pUSD -> NEG_RISK_ADAPTER_V2; Legacy USDC.e binary -> raw CTF_ADDRESS
+    # 5c. PolymarketLiveExecutor.attempt_onchain_split_position wrapper forwards up_token_id & down_token_id
+    ex_wrap = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "psg_wrap.jsonl")
+    sp_wrap = ex_wrap.attempt_onchain_split_position(cid_bin, 10.0, neg_risk=False, up_token_id=up_tok, down_token_id=dn_tok)
+    assert sp_wrap["success"] is True and sp_wrap["target"] == CTF_ADAPTER_V2
+
+    # 5d. NegRisk pUSD -> NEG_RISK_ADAPTER_V2; Legacy USDC.e binary -> raw CTF_ADDRESS
     sp_nr = attempt_onchain_split_position(ex_v2, cid_bin, 12.0, neg_risk=True)
     assert sp_nr["target"] == Web3.to_checksum_address(NEG_RISK_ADAPTER_V2)
     mock_state["pusd_bal"] = 0
@@ -791,9 +804,11 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     assert sp_legacy["target"] == Web3.to_checksum_address(CTF_ADDRESS)
 
     # 6. Symmetric binary merge in PolymarketLiveExecutor.attempt_onchain_complete_set_merge:
-    #    When USDC.e-CTF shares exist and CTF.isApprovedForAll(funder, CTF_ADAPTER_V2) is True,
-    #    routes mergePositions(PUSD_ADDRESS, ...) through CTF_ADAPTER_V2 so proceeds wrap back to pUSD!
+    #    - Approved V2 wallet -> single mergePositions(PUSD_ADDRESS, ...) on CTF_ADAPTER_V2 + refreshes COLLATERAL allowance
+    #    - Fresh DepositWallet (sig_type=3, approved_v2=False) -> prepends setApprovalForAll + mergePositions on CTF_ADAPTER_V2
+    #    - Legacy V1 wallet (sig_type=2, approved_v2=False) -> falls back to raw CTF_ADDRESS with USDC.e
     merge_dispatches: List[Any] = []
+    merge_ba_updates: List[Any] = []
     merge_state = {"approved_v2": True}
     real_w3 = Web3()
 
@@ -834,6 +849,7 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     ex_merge.private_key = "0x" + "11" * 32
     ex_merge.funder_address = "0x013A2474454fBd8738cff6a7f204eF1bc377F4e9"
     ex_merge.invalidate_collateral_cache = lambda: None
+    ex_merge.client = SimpleNamespace(update_balance_allowance=lambda p: merge_ba_updates.append(p))
     ex_merge._dispatch_funder_calls = lambda _w3, _W3, _pk, _st, _f, _s, targets, _cid: (
         merge_dispatches.append(targets) or "0xv2_merge_tx"
     )
@@ -842,9 +858,56 @@ def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_pa
     assert m_res_v2 == ("0xv2_merge_tx", 12.0)
     assert merge_dispatches[-1][0][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
     assert PUSD_ADDRESS[2:].lower() in merge_dispatches[-1][0][1].lower()
+    assert len(merge_ba_updates) == 1
 
     merge_state["approved_v2"] = False
     m_res_legacy = ex_merge.attempt_onchain_complete_set_merge(cid_bin, min_pairs=5.0, max_pairs=12.0, neg_risk=False)
     assert m_res_legacy == ("0xv2_merge_tx", 12.0)
     assert merge_dispatches[-1][0][0] == Web3.to_checksum_address(CTF_ADDRESS)
     assert USDC_E_ADDRESS[2:].lower() in merge_dispatches[-1][0][1].lower()
+
+    # Fresh DepositWallet (sig_type=3) with approved_v2=False prepends setApprovalForAll + routes via CTF_ADAPTER_V2
+    monkeypatch.setenv("POLY_BUILDER_API_KEY", "test_builder_k")
+    ex_merge.signature_type = 3
+    m_res_dw = ex_merge.attempt_onchain_complete_set_merge(cid_bin, min_pairs=5.0, max_pairs=12.0, neg_risk=False)
+    assert m_res_dw == ("0xv2_merge_tx", 12.0)
+    assert len(merge_dispatches[-1]) == 2
+    assert merge_dispatches[-1][0][0] == Web3.to_checksum_address(CTF_ADDRESS)
+    assert merge_dispatches[-1][0][1].startswith("0xa22cb465")
+    assert merge_dispatches[-1][1][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
+
+    # 7. Sequential multi-call `[approve, splitPosition]` in `_dispatch_funder_calls_locked` (`sig_type=0`)
+    #    executes BOTH calls in order and returns the final split tx_hash (not the approve tx_hash!)
+    sent_raw: List[str] = []
+    ex_seq = PolymarketLiveExecutor.__new__(PolymarketLiveExecutor)
+    w3_seq = SimpleNamespace(
+        eth=SimpleNamespace(
+            call=lambda tx: b"",
+            get_transaction_count=lambda _a, _s: len(sent_raw),
+            gas_price=30_000_000_000,
+            account=SimpleNamespace(
+                sign_transaction=lambda tx, private_key: SimpleNamespace(raw_transaction=tx["data"].encode())
+            ),
+            send_raw_transaction=lambda raw: (
+                sent_raw.append(raw.decode())
+                or SimpleNamespace(hex=lambda: f"0xtx_{len(sent_raw)}")
+            ),
+            wait_for_transaction_receipt=lambda _tx, **_kw: {"status": 1},
+        )
+    )
+    seq_res = ex_seq._dispatch_funder_calls_locked(
+        w3_seq,
+        Web3,
+        "0x" + "11" * 32,
+        0,
+        Web3.to_checksum_address(PUSD_ADDRESS),
+        Web3.to_checksum_address(PUSD_ADDRESS),
+        [
+            (Web3.to_checksum_address(PUSD_ADDRESS), "0x095ea7b3" + "0" * 128),
+            (Web3.to_checksum_address(CTF_ADAPTER_V2), "0x72ce4275" + "0" * 128),
+        ],
+        cid_bin,
+    )
+    assert seq_res == "0xtx_2"
+    assert len(sent_raw) == 2 and sent_raw[0].startswith("0x095ea7b3") and sent_raw[1].startswith("0x72ce4275")
+
