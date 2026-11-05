@@ -1,5 +1,5 @@
 {
-  "schema_version": "5.4.3",
+  "schema_version": "5.4.4",
   "directional": {
     "allowed_assets_1h": ["BTC", "SOL", "ETH"],
     "allowed_assets_15m_maker": ["BTC", "SOL", "ETH"],
@@ -131,6 +131,8 @@
     "bond1_per_market_cap_usd_recovery": 85.0,
     "bond1_per_market_cap_pct": 0.65,
     "bond1_maker_per_market_cap_pct": 0.365,
+    "bond1_maker_fanout_clip_usd_seed": 7.96,
+    "mkr_lock1_max_concurrent_slots": 3,
     "bond1_max_join_queue_usd": 350.0,
     "bond1_buried_cancel_sec": 90.0,
     "bridged_zero_fee_cap_usd_seed": 60.0,
@@ -157,7 +159,7 @@
     "enable_d1_rebate_maker_canary": false,
     "d1_rebate_maker_cap_usd": 12.0,
     "gatling_enabled": true,
-    "gatling_fast_gun_reserve_usd": 22.5,
+    "gatling_fast_gun_reserve_usd": 20.0,
     "gatling_concave_exp": 0.65,
     "gatling_base_clip_d1_usd": 22.0,
     "gatling_base_clip_core_usd": 20.0,

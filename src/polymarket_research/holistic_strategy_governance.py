@@ -157,6 +157,8 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "bond1_per_market_cap_usd_recovery": 85.0,
         "bond1_per_market_cap_pct": 0.65,
         "bond1_maker_per_market_cap_pct": 0.365,
+        "bond1_maker_fanout_clip_usd_seed": 0.0,
+        "mkr_lock1_max_concurrent_slots": 1,
         "bond1_max_join_queue_usd": 350.0,
         "bond1_buried_cancel_sec": 15.0,
         "bridged_zero_fee_cap_usd_seed": 60.0,

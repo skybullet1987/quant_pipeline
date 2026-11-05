@@ -3491,7 +3491,16 @@ class Alpha124ShadowDaemon:
                                     {"market_id": b_i.market_id, "condition_id": b_i.condition_id, "opp_token_id": b_i.yes_token, "resting_bid_override": rw_w["resting_bid"]},
                                     prefetched_book=bk_n_i,
                                 )
-                                if is_reward_locked_carry_live_ready(self, 1.0) and getattr(b_i, "neg_risk", None) is not None and bk_i is not None:
+                                if (
+                                    is_reward_locked_carry_live_ready(
+                                        self,
+                                        1.0,
+                                        min_reward_shares=float(b_i.rewards_min_size or 0.0),
+                                        resting_bid_px=float(rw_w["resting_bid"]),
+                                    )
+                                    and getattr(b_i, "neg_risk", None) is not None
+                                    and bk_i is not None
+                                ):
                                     self.emit_live_single_leg_maker_lock_candidate(
                                         sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                         asset=f"{sp.city}_{sp.icao}",
@@ -11872,7 +11881,15 @@ class Alpha124ShadowDaemon:
                     if rw_ev.get("eligible"):
                         opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"{sl_c.handle} Locked Carry NO[{dbr.label}] @ ${rw_ev['resting_bid']:.3f}", "ask_vwap": rw_ev["resting_bid"], "p_model": 1.0, "net_edge": rw_ev["carry_edge"], "l1_usd": 50.0, "close_ts": sl_c.window_end_ts})
                         await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_{dbr.market_id}", sl_c.handle.upper(), f"{sl_c.title} [Reward Carry NO {dbr.label}]", "NO", dbr.no_token, 1.0, sl_c.window_end_ts, {"market_id": dbr.market_id, "condition_id": dbr.condition_id, "opp_token_id": dbr.yes_token, "resting_bid_override": rw_ev["resting_bid"]}, prefetched_book=bk_dno)
-                        if is_reward_locked_carry_live_ready(self, 1.0) and getattr(dbr, "neg_risk", None) is not None:
+                        if (
+                            is_reward_locked_carry_live_ready(
+                                self,
+                                1.0,
+                                min_reward_shares=float(dbr.rewards_min_size or 0.0),
+                                resting_bid_px=float(rw_ev["resting_bid"]),
+                            )
+                            and getattr(dbr, "neg_risk", None) is not None
+                        ):
                             self.emit_live_single_leg_maker_lock_candidate(
                                 sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                 asset=sl_c.handle.upper(),
@@ -12043,7 +12060,16 @@ class Alpha124ShadowDaemon:
                             nr_g = mg.get("negRisk") if mg.get("negRisk") is not None else ev_g.get("negRisk")
                             opps_out.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "market": f"AAA Gas Locked Carry {side_g}[{lbl_g}] @ ${rw_g['resting_bid']:.3f}", "ask_vwap": rw_g["resting_bid"], "p_model": 0.998, "net_edge": rw_g["carry_edge"], "l1_usd": 50.0, "close_ts": end_g})
                             await self.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY", f"MKR_RW_GAS_{mid_g}_{side_g}", "AAA_GAS", f"{ev_g.get('title')} [Reward Carry {side_g} {lbl_g}]", side_g, tok_g, 0.998, end_g, {"market_id": mid_g, "condition_id": str(mg.get("conditionId") or ""), "opp_token_id": opp_tok_g, "resting_bid_override": rw_g["resting_bid"]}, prefetched_book=bk_g)
-                            if is_reward_locked_carry_live_ready(self, 0.998) and nr_g is not None and g_bks.get(opp_tok_g) is not None:
+                            if (
+                                is_reward_locked_carry_live_ready(
+                                    self,
+                                    0.998,
+                                    min_reward_shares=float(mg.get("rewardsMinSize") or 0.0),
+                                    resting_bid_px=float(rw_g["resting_bid"]),
+                                )
+                                and nr_g is not None
+                                and g_bks.get(opp_tok_g) is not None
+                            ):
                                 self.emit_live_single_leg_maker_lock_candidate(
                                     sleeve_source="MKR_REWARD_LOCKED_CARRY",
                                     asset="AAA_GAS",
@@ -12212,7 +12238,14 @@ class Alpha124ShadowDaemon:
                 if ok_nba:
                     verified_list.append((mid_u, m_u, ver))
 
-        verified_list = [(mid, m, ver) for mid, m, ver in verified_list if passes_uma_bond_dispute_guard(m, ver)]
+        verified_list = [
+            (mid, m, ver)
+            for mid, m, ver in verified_list
+            if passes_uma_bond_dispute_guard(
+                m,
+                {**ver, "allow_pre_book_fast_season": True} if isinstance(ver, dict) else ver,
+            )
+        ]
         if not verified_list:
             return
 
@@ -12226,10 +12259,23 @@ class Alpha124ShadowDaemon:
             if not bk_w or not bk_l:
                 continue
             _b1_age = max(0.0, float(ver.get("eff_liveness_sec") or 7200.0) - float(ver.get("rem_challenge_sec") or 7200.0))
-            bk_w = {**bk_w, "_s2_meta": {"proposal_age_sec": round(float(ver.get("proposal_age_sec") if ver.get("proposal_age_sec") is not None else _b1_age), 1), "dispute_risk": bool(classify_market_rule_dispute_risk(m)["dispute_risk"])}}
             win_bid, _ = extract_best_bid(bk_w.get("bids") or [])
             lose_bid, _ = extract_best_bid(bk_l.get("bids") or [])
             lose_ask, _ = self._best_ask_sz(bk_l)
+            _db_cons_b1 = bool(win_bid >= 0.980 and lose_bid <= 0.002 and (lose_ask >= 0.50 or lose_ask <= 0.010))
+            if not passes_uma_bond_dispute_guard(m, {**ver, "dual_book_consensus_confirmed": _db_cons_b1}):
+                continue
+            _risk_b1 = classify_market_rule_dispute_risk(m)
+            bk_w = {
+                **bk_w,
+                "_s2_meta": {
+                    "proposal_age_sec": round(float(ver.get("proposal_age_sec") if ver.get("proposal_age_sec") is not None else _b1_age), 1),
+                    "dispute_risk": bool(_risk_b1["dispute_risk"]),
+                    "reasons": list(_risk_b1["reasons"]),
+                    "question": str(m.get("question") or "")[:120],
+                    "dual_book_consensus_confirmed": _db_cons_b1,
+                },
+            }
             # Strict Dual-Book Consensus Gate: losing side bid <= 0.8c, winning side bid >= 94c, and active losing ask <= 2.5c
             if lose_bid > 0.008 or win_bid < 0.940 or (lose_ask < 0.50 and lose_ask > 0.025):
                 continue
@@ -12237,9 +12283,9 @@ class Alpha124ShadowDaemon:
             w_bond = walk_l2_book_asks_depth_capped(
                 bk_w.get("asks") or [],
                 ref_notional,
-                BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],
+                5.0 if _is_live_uma_daemon else BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],
                 fee_rate=float(ver["fee_rate"]),
-                min_l1_usd=6.0 if _is_live_uma_daemon else 15.0,
+                min_l1_usd=5.0 if _is_live_uma_daemon else 15.0,
                 max_ask_px=0.9976 if _is_live_uma_daemon else 0.9956,
                 fee_exponent=float(ver["fee_exponent"]),
             )
@@ -12305,7 +12351,7 @@ class Alpha124ShadowDaemon:
             taker_bond_qual = bool(w_bond.get("filled") and eff_b is not None and (0.950 <= eff_b <= _b1_tkr_cap) and round(1.0 - eff_b, 4) >= round(1.0 - _b1_tkr_cap, 4))
             if taker_bond_qual:
                 carry_edge = round(1.0 - eff_b, 4)
-                if _shadow_b1_free and eff_b <= 0.9955:
+                if _shadow_b1_free and eff_b <= 0.9955 and float(w_bond.get("spent_usd") or 0.0) >= 19.5:
                     opps_out.append({
                         "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
                         "market": f"[{ver['domain']}] {q_str[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)",
@@ -12337,7 +12383,7 @@ class Alpha124ShadowDaemon:
                     hold_to_maturity=True,
                     p_model=1.0,
                 )
-                if _shadow_b1_free and eff_b <= 0.9955:
+                if _shadow_b1_free and eff_b <= 0.9955 and float(w_bond.get("spent_usd") or 0.0) >= 19.5:
                     opened_bond = await self.open_shadow_position(
                         sleeve="BOND1_UMA_RESOLUTION_CARRY",
                         dedupe_key=dkey_b1,

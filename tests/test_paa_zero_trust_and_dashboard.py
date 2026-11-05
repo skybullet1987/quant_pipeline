@@ -717,4 +717,147 @@ def test_cross_position_exit_fill_isolation_and_dashboard_v61_riskless_cleanup(t
     assert settled_91["net_pnl_usd"] == pytest.approx(0.02, abs=0.01)
 
 
+def test_v544_riskless_frequency_unlocker_4_pillars(tmp_path: Path, monkeypatch) -> None:
+    """
+    Verifies all 4 surgical Riskless Frequency Unlocker pillars (v5.4.4):
+      1. 8-slot single-leg Maker concurrency + `$7.96` (`8` share) seed fan-out clip across `7` concurrent markets.
+      2. `MKR_REWARD_LOCKED_CARRY` `min_reward_shares` gate (blocks unrewarded `Munich_EDDM` squatting) + `45s` subordination.
+      3. `$5–$19` instant `BOND1` Taker sweep (`walk_l2_book_asks_depth_capped` `5.0` USD live floor).
+      4. Precision `600s` dual-book consensus fast-seasoning on non-walkover/non-3way-ML team totals/corners while keeping `1800s` on Tennis & 3-way Soccer ML.
+    """
+    import asyncio
+    import threading
+    from types import SimpleNamespace
+    import src.polymarket_research.polymarket_live_harvester as plh
+    from src.polymarket_research.alpha_124_shadow_daemon import walk_l2_book_asks_depth_capped
+    from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        check_sll_cand_dispute_guard,
+        compute_sll_entry_budget,
+        passes_uma_bond_dispute_guard,
+        select_sll_velocity_preempt_target,
+    )
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_v544.json")
+
+    # Pillar 1: $75.47 seed wallet fans out into 7 x ~$7.96 (8 share) Maker clips while preserving $21.13 Fast-Gun Reserve
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.holistic_v5_live_mode = True
+    h.enforce_bond1_smart_queue = True
+    h.enforce_gatling_fast_gun_reserve = True
+    now_t = 1793919000.0
+    b1_gov = dict(plh.GLOBAL_GOVERNANCE_MANAGER.snapshot["riskless_boxes"])
+    assert b1_gov["bond1_maker_fanout_clip_usd_seed"] == pytest.approx(7.96)
+    assert b1_gov["mkr_lock1_max_concurrent_slots"] == 3
+
+    for slot_i in range(6):
+        bud_i, _, _ = compute_sll_entry_budget(
+            h,
+            "BOND1_UMA_RESOLUTION_CARRY",
+            f"mkt_{slot_i}",
+            75.47,
+            True,
+            True,
+            b1_gov,
+            {},
+            plh.GLOBAL_GOVERNANCE_MANAGER.snapshot,
+            1800.0,
+            now_t,
+        )
+        sh_i = int(bud_i // 0.992)
+        assert sh_i == 8
+        h.pending_entry_intents[f"i_{slot_i}"] = {
+            "live_maker_anchor_inflight": True,
+            "inflight_key": f"B1_{slot_i}",
+            "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+            "notional_usd": round(sh_i * 0.992, 4),
+            "anchor_bid_px": 0.992,
+            "expiry_ts": now_t + 1800.0,
+            "ts": now_t - 30.0,
+        }
+    # 7th concurrent market STILL gets >= 6 shares ($6.72 remaining above $21.13 reserve)!
+    bud_7, _, _ = compute_sll_entry_budget(
+        h,
+        "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        "mkt_7",
+        75.47,
+        False,
+        True,
+        b1_gov,
+        {},
+        plh.GLOBAL_GOVERNANCE_MANAGER.snapshot,
+        1800.0,
+        now_t,
+    )
+    assert int(bud_7 // 0.992) >= 6
+
+    # Pillar 2: Munich_EDDM (min_reward_shares=20 > 8-share live clip) blocked from squatting live slots, and >=45s RW carry yields to BOND1
+    fake_d = SimpleNamespace(
+        is_sleeve_grad8_ready=lambda sl: sl == "D1_SAME_ORACLE_DOMINANCE_BOX",
+        closed_positions=[],
+    )
+    assert is_reward_locked_carry_live_ready(fake_d, 1.0, min_reward_shares=20.0, resting_bid_px=0.992) is False
+    assert is_reward_locked_carry_live_ready(fake_d, 1.0, min_reward_shares=5.0, resting_bid_px=0.992) is True
+    assert is_reward_locked_carry_live_ready(fake_d, 1.0) is True
+
+    h_rw = SimpleNamespace(
+        _maker_anchor_preempt_events={"RW_MUNICH": threading.Event()},
+        pending_entry_intents={
+            "rw1": {
+                "live_maker_anchor_inflight": True,
+                "inflight_key": "RW_MUNICH",
+                "sleeve_source": "MKR_REWARD_LOCKED_CARRY",
+                "anchor_bid_px": 0.992,
+                "expiry_ts": now_t + 5400.0,
+                "ts": now_t - 60.0,
+            }
+        },
+    )
+    _, pe_k = select_sll_velocity_preempt_target(
+        h_rw, cand_edge_hr=120.0, is_s2_mkr=False, vel_mult=1.80, now_pe=now_t, cand_sleeve="BOND1_UMA_RESOLUTION_CARRY"
+    )
+    assert pe_k == "RW_MUNICH"
+
+    # Pillar 3: $6.95 (7 shares @ $0.993) retail leftover ask fills cleanly under 5.0 USD live Taker floor
+    w_small = walk_l2_book_asks_depth_capped(
+        [{"price": "0.993", "size": "7"}],
+        400.0,
+        5.0,
+        fee_rate=0.05,
+        min_l1_usd=5.0,
+        max_ask_px=0.9976,
+        fee_exponent=1.0,
+    )
+    assert w_small["filled"] is True and w_small["eff_px"] < 0.994
+
+    # Pillar 4: Precision 600s dual-book consensus fast seasoning vs strict 1800s on Tennis & 3-way Soccer ML
+    corners_mkt = {
+        "question": "AC Milan vs Ferencvarosi TC: O/U 9.5 Total Corners",
+        "description": "Applies to 90 minutes of regular play plus stoppage time, excluding extra time and penalties.",
+    }
+    soc_ml_mkt = {
+        "question": "Will Arsenal win vs Chelsea?",
+        "description": "Applies to the first 90 minutes of regular play plus stoppage time, excluding extra time and penalties.",
+    }
+    ten_mkt = {
+        "question": "Alcaraz vs Sinner",
+        "rules_text": "If a player retires mid-match or walkover occurs, resolves 50-50.",
+    }
+    assert passes_uma_bond_dispute_guard(corners_mkt, {"proposal_age_sec": 720.0, "dual_book_consensus_confirmed": False}) is False
+    assert passes_uma_bond_dispute_guard(corners_mkt, {"proposal_age_sec": 720.0, "dual_book_consensus_confirmed": True}) is True
+    assert check_sll_cand_dispute_guard({
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "question": corners_mkt["question"],
+        "description": corners_mkt["description"],
+        "proposal_age_sec": 720.0,
+        "dispute_risk": True,
+        "dual_book_consensus_confirmed": True,
+    }) is None
+    assert passes_uma_bond_dispute_guard(soc_ml_mkt, {"proposal_age_sec": 720.0, "dual_book_consensus_confirmed": True}) is False
+    assert passes_uma_bond_dispute_guard(ten_mkt, {"proposal_age_sec": 720.0, "dual_book_consensus_confirmed": True}) is False
+
+
+
 

@@ -1557,6 +1557,9 @@ def compute_sll_and_carry_gatling_budget(
             nav_tot = max(10.0, float(collat_f) + float(cur_exp))
             slow_cap_rem = max(0.0, round(max(20.0, nav_tot * 0.38) - slow_used, 2))
             capped = min(capped, slow_cap_rem)
+        fanout_seed_u = float(rb.get("bond1_maker_fanout_clip_usd_seed") or 0.0)
+        if fanout_seed_u > 0.0 and bt_u == "SINGLE_LEG_MAKER_LOCK" and (float(collat_f) + float(cur_exp)) < 150.0:
+            capped = min(capped, fanout_seed_u)
         return round(max(0.0, capped), 2)
 
     eff_fast_cap = (
@@ -1564,6 +1567,10 @@ def compute_sll_and_carry_gatling_budget(
         if (bt_u == "SINGLE_LEG_MAKER_LOCK" and sl_u in FAST_GUN_S2_SLEEVES and not own_grad)
         else float(cap_usd)
     )
+    if bt_u == "SINGLE_LEG_MAKER_LOCK" and sl_u not in FAST_GUN_S2_SLEEVES and (float(collat_f) + float(cur_exp)) < 150.0:
+        fanout_fast_u = float(rb.get("bond1_maker_fanout_clip_usd_seed") or 0.0)
+        if fanout_fast_u > 0.0:
+            eff_fast_cap = min(eff_fast_cap, fanout_fast_u)
     return maybe_cap_gatling_budget_sync(
         harvester,
         legacy_budget,
@@ -1585,6 +1592,9 @@ def _interpret_delayed_recycle_poll_summary(
     oid: str,
     summary: Optional[Mapping[str, Any]],
     limit_price: Optional[float],
+    *,
+    fee_rate: float = 0.0,
+    fee_exp: float = 1.0,
 ) -> Optional[Dict[str, Any]]:
     if not isinstance(summary, Mapping):
         return None
@@ -1606,12 +1616,19 @@ def _interpret_delayed_recycle_poll_summary(
             "reservation_id": None,
         }
     if m > 1e-6 and not resting and (term or (st_u != "INVALID" and (is_canc or st_u in {"MATCHED", "MINED", "CONFIRMED"}))):
-        if res_id and hasattr(ex, "release_inventory"):
-            ex.release_inventory(reservation_id=str(res_id))
+        is_settl_v = summary.get("is_settled")
+        unsettled_m = (is_settl_v is False) if is_settl_v is not None else (st_u == "MATCHED")
         raw_cash = float(summary.get("cash") or 0.0)
         avg_px = float(summary.get("avg_price") or limit_price or 0.998)
         cash = raw_cash if raw_cash > 0.0 else round(m * max(float(limit_price or 0.0), avg_px), 6)
-        cash_est = bool(summary.get("cash_is_estimated", summary.get("estimated", False)) or not term or st_u == "MATCHED" or raw_cash <= 0.0)
+        cash_est = bool(summary.get("cash_is_estimated", summary.get("estimated", False)) or not term or unsettled_m or raw_cash <= 0.0)
+        raw_fee = summary.get("fee")
+        if raw_fee is not None:
+            fee_v = float(raw_fee or 0.0)
+            fee_est = bool(summary.get("fee_estimated", False))
+        else:
+            fee_v = round(m * compute_exact_taker_fee_per_share(avg_px, float(fee_rate or 0.0), float(fee_exp or 1.0)), 6)
+            fee_est = bool(summary.get("fee_estimated", fee_v > 0.0))
         return {
             **dict(res),
             "outcome_unknown": False,
@@ -1621,9 +1638,9 @@ def _interpret_delayed_recycle_poll_summary(
             "taking_amount": cash,
             "taking_amount_missing": False,
             "taking_amount_estimated": cash_est,
-            "fee_usd": float(summary.get("fee") or 0.0),
-            "fee_is_estimated": bool(summary.get("fee_estimated", True)),
-            "reservation_id": None,
+            "fee_usd": fee_v,
+            "fee_is_estimated": fee_est,
+            "reservation_id": res_id,
         }
     return None
 
@@ -1648,7 +1665,13 @@ async def poll_delayed_recycle_unwind_async(
     tok = str(pos.get("token_id") or "").strip()
     if ex is None or not oid or not hasattr(ex, "get_order_fill_summary"):
         return res
+    _fr_p = pos.get("fee_rate_applied")
+    if _fr_p is None:
+        _fr_p = pos.get("fee_rate_market", pos.get("fee_rate", 0.0))
+    _fe_p = float(pos.get("fee_exponent_applied", pos.get("fee_exponent", 1.0)) or 1.0)
     steps = max(1, int(round(max(0.5, float(max_wait_sec)) / max(0.1, float(poll_interval_sec)))))
+    last_resolved: Optional[Dict[str, Any]] = None
+    res_id = res.get("reservation_id")
     for idx in range(steps):
         if idx > 0:
             await asyncio.sleep(float(poll_interval_sec))
@@ -1656,14 +1679,27 @@ async def poll_delayed_recycle_unwind_async(
             summ = await asyncio.to_thread(ex.get_order_fill_summary, oid, tok)
         except Exception:
             summ = None
-        resolved = _interpret_delayed_recycle_poll_summary(ex, res, oid, summ, limit_price)
+        resolved = _interpret_delayed_recycle_poll_summary(
+            ex, res, oid, summ, limit_price, fee_rate=float(_fr_p or 0.0), fee_exp=_fe_p
+        )
         if resolved is not None:
-            resolved["_delayed_recycle_polled"] = True
-            logger.info(
-                f"♻️ [DELAYED RECYCLE RESOLVED] order={oid} -> success={resolved.get('success')} "
-                f"matched={resolved.get('matched_size', 0.0):.2f}"
-            )
-            return resolved
+            last_resolved = resolved
+            if not resolved.get("success") or not resolved.get("taking_amount_estimated") or idx == steps - 1:
+                if res_id and hasattr(ex, "release_inventory"):
+                    ex.release_inventory(reservation_id=str(res_id))
+                resolved["reservation_id"] = None
+                resolved["_delayed_recycle_polled"] = True
+                logger.info(
+                    f"♻️ [DELAYED RECYCLE RESOLVED] order={oid} -> success={resolved.get('success')} "
+                    f"matched={resolved.get('matched_size', 0.0):.2f} est={resolved.get('taking_amount_estimated')}"
+                )
+                return resolved
+    if last_resolved is not None:
+        if res_id and hasattr(ex, "release_inventory"):
+            ex.release_inventory(reservation_id=str(res_id))
+        last_resolved["reservation_id"] = None
+        last_resolved["_delayed_recycle_polled"] = True
+        return last_resolved
     out = dict(res)
     out["_delayed_recycle_polled"] = True
     return out
@@ -1692,7 +1728,13 @@ def resolve_delayed_recycle_unwind_sync(
     tok = str(pos.get("token_id") or "").strip()
     if ex is None or not oid or not hasattr(ex, "get_order_fill_summary"):
         return res
+    _fr_p = pos.get("fee_rate_applied")
+    if _fr_p is None:
+        _fr_p = pos.get("fee_rate_market", pos.get("fee_rate", 0.0))
+    _fe_p = float(pos.get("fee_exponent_applied", pos.get("fee_exponent", 1.0)) or 1.0)
     steps = max(1, int(round(max(0.5, float(max_wait_sec)) / max(0.1, float(poll_interval_sec)))))
+    last_resolved: Optional[Dict[str, Any]] = None
+    res_id = res.get("reservation_id")
     for idx in range(steps):
         if idx > 0:
             time.sleep(float(poll_interval_sec))
@@ -1700,10 +1742,23 @@ def resolve_delayed_recycle_unwind_sync(
             summ = ex.get_order_fill_summary(oid, tok)
         except Exception:
             summ = None
-        resolved = _interpret_delayed_recycle_poll_summary(ex, res, oid, summ, limit_price)
+        resolved = _interpret_delayed_recycle_poll_summary(
+            ex, res, oid, summ, limit_price, fee_rate=float(_fr_p or 0.0), fee_exp=_fe_p
+        )
         if resolved is not None:
-            resolved["_delayed_recycle_polled"] = True
-            return resolved
+            last_resolved = resolved
+            if not resolved.get("success") or not resolved.get("taking_amount_estimated") or idx == steps - 1:
+                if res_id and hasattr(ex, "release_inventory"):
+                    ex.release_inventory(reservation_id=str(res_id))
+                resolved["reservation_id"] = None
+                resolved["_delayed_recycle_polled"] = True
+                return resolved
+    if last_resolved is not None:
+        if res_id and hasattr(ex, "release_inventory"):
+            ex.release_inventory(reservation_id=str(res_id))
+        last_resolved["reservation_id"] = None
+        last_resolved["_delayed_recycle_polled"] = True
+        return last_resolved
     return res
 
 
@@ -2020,6 +2075,15 @@ def consolidate_any_box_leg_close(
         "exit_fee_usd": round(float(cum_fee), 4),
         "net_pnl_usd": round(float(net_pnl), 4),
         "close_reason": reason,
+        "order_id": pos.get("order_id"),
+        "entry_order_id": pos.get("entry_order_id"),
+        "exit_order_id": pos.get("exit_order_id"),
+        "unwind_order_id": pos.get("unwind_order_id"),
+        "entry_fill_ids": list(pos.get("entry_fill_ids") or ()),
+        "exit_fill_ids": list(pos.get("exit_fill_ids") or ()),
+        "trade_ids": list(pos.get("trade_ids") or ()),
+        "exit_trade_ids": list(pos.get("exit_trade_ids") or ()),
+        "canceled_maker_exit_oids": list(pos.get("canceled_maker_exit_oids") or ()),
     }
 
     active_map = getattr(harvester, "active_positions", {}) or {}
@@ -2140,6 +2204,8 @@ def detect_d1_telescoping_candle_bridge(
     max_lockup_sec: float = 300.0,
     fee_rate_outer: float = 0.07,
     fee_rate_inner: float = 0.07,
+    fee_exponent_outer: float = 1.0,
+    fee_exponent_inner: float = 1.0,
     min_net_edge_usd: float = 0.005,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -2167,35 +2233,39 @@ def detect_d1_telescoping_candle_bridge(
 
     if float(inner_open) > float(outer_open):
         # Buy inner DOWN + outer UP
-        px_a, tok_a, cid_a, fr_a, desc_a = (
+        px_a, tok_a, cid_a, fr_a, fe_a, desc_a = (
             float(inner_down_ask),
             str(inner_down_token),
             str(inner_condition_id),
             float(fee_rate_inner),
+            float(fee_exponent_inner),
             f"{inner_horizon}_DOWN",
         )
-        px_b, tok_b, cid_b, fr_b, desc_b = (
+        px_b, tok_b, cid_b, fr_b, fe_b, desc_b = (
             float(outer_up_ask),
             str(outer_up_token),
             str(outer_condition_id),
             float(fee_rate_outer),
+            float(fee_exponent_outer),
             f"{outer_horizon}_UP",
         )
         corridor = (float(outer_open), float(inner_open))
     else:
         # Buy outer DOWN + inner UP
-        px_a, tok_a, cid_a, fr_a, desc_a = (
+        px_a, tok_a, cid_a, fr_a, fe_a, desc_a = (
             float(outer_down_ask),
             str(outer_down_token),
             str(outer_condition_id),
             float(fee_rate_outer),
+            float(fee_exponent_outer),
             f"{outer_horizon}_DOWN",
         )
-        px_b, tok_b, cid_b, fr_b, desc_b = (
+        px_b, tok_b, cid_b, fr_b, fe_b, desc_b = (
             float(inner_up_ask),
             str(inner_up_token),
             str(inner_condition_id),
             float(fee_rate_inner),
+            float(fee_exponent_inner),
             f"{inner_horizon}_UP",
         )
         corridor = (float(inner_open), float(outer_open))
@@ -2204,8 +2274,8 @@ def detect_d1_telescoping_candle_bridge(
         return None
     qa, _, _ = quantize_dynamic_tick_price(px_a, "BUY", shares=5.0, mode="taker")
     qb, _, _ = quantize_dynamic_tick_price(px_b, "BUY", shares=5.0, mode="taker")
-    cost_a = qa + compute_exact_taker_fee_per_share(qa, fr_a, 1.0)
-    cost_b = qb + compute_exact_taker_fee_per_share(qb, fr_b, 1.0)
+    cost_a = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
+    cost_b = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
     total_cost = cost_a + cost_b
     net_edge = 1.0 - total_cost
     if net_edge < float(min_net_edge_usd):
@@ -2218,8 +2288,8 @@ def detect_d1_telescoping_candle_bridge(
         "outer_horizon": str(outer_horizon),
         "inner_horizon": str(inner_horizon),
         "tte_sec": round(tte, 2),
-        "leg_a": {"label": desc_a, "token_id": tok_a, "condition_id": cid_a, "ask_px": qa, "fee_rate": fr_a},
-        "leg_b": {"label": desc_b, "token_id": tok_b, "condition_id": cid_b, "ask_px": qb, "fee_rate": fr_b},
+        "leg_a": {"label": desc_a, "token_id": tok_a, "condition_id": cid_a, "ask_px": qa, "fee_rate": fr_a, "fee_exponent": fe_a},
+        "leg_b": {"label": desc_b, "token_id": tok_b, "condition_id": cid_b, "ask_px": qb, "fee_rate": fr_b, "fee_exponent": fe_b},
         "double_payout_corridor": corridor,
         "cost_per_share": round(total_cost, 6),
         "net_edge_per_share": round(net_edge, 6),
@@ -2241,6 +2311,11 @@ def detect_b1_intraday_onetouch_noon_box(
     noon_condition_id: str = "",
     et_hour_float: float = 11.0,
     fee_rate: float = 0.0,
+    fee_exponent: float = 1.0,
+    fee_rate_touch: Optional[float] = None,
+    fee_rate_noon: Optional[float] = None,
+    fee_exponent_touch: Optional[float] = None,
+    fee_exponent_noon: Optional[float] = None,
     min_net_edge_usd: float = 0.005,
 ) -> Optional[Dict[str, Any]]:
     """
@@ -2263,8 +2338,12 @@ def detect_b1_intraday_onetouch_noon_box(
         return None
     qa, _, _ = quantize_dynamic_tick_price(float(touch_yes_ask), "BUY", shares=5.0, mode="taker")
     qb, _, _ = quantize_dynamic_tick_price(float(noon_no_ask), "BUY", shares=5.0, mode="taker")
-    ca = qa + compute_exact_taker_fee_per_share(qa, float(fee_rate), 1.0)
-    cb = qb + compute_exact_taker_fee_per_share(qb, float(fee_rate), 1.0)
+    fr_a = float(fee_rate if fee_rate_touch is None else fee_rate_touch)
+    fr_b = float(fee_rate if fee_rate_noon is None else fee_rate_noon)
+    fe_a = float(fee_exponent if fee_exponent_touch is None else fee_exponent_touch)
+    fe_b = float(fee_exponent if fee_exponent_noon is None else fee_exponent_noon)
+    ca = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
+    cb = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
     net_edge = 1.0 - (ca + cb)
     if net_edge < float(min_net_edge_usd):
         return None
@@ -2273,8 +2352,8 @@ def detect_b1_intraday_onetouch_noon_box(
         "box_type": "DOMINANCE",
         "asset": str(asset).upper(),
         "strike": float(strike),
-        "leg_a": {"token_id": str(touch_yes_token), "condition_id": str(touch_condition_id), "ask_px": qa},
-        "leg_b": {"token_id": str(noon_no_token), "condition_id": str(noon_condition_id), "ask_px": qb},
+        "leg_a": {"token_id": str(touch_yes_token), "condition_id": str(touch_condition_id), "ask_px": qa, "fee_rate": fr_a, "fee_exponent": fe_a},
+        "leg_b": {"token_id": str(noon_no_token), "condition_id": str(noon_condition_id), "ask_px": qb, "fee_rate": fr_b, "fee_exponent": fe_b},
         "cost_per_share": round(ca + cb, 6),
         "net_edge_per_share": round(net_edge, 6),
     }
@@ -2857,8 +2936,49 @@ def classify_market_rule_dispute_risk(
     }
 
 
-def passes_uma_bond_dispute_guard(market: Any, ver: Mapping[str, Any]) -> bool:
-    """Enforce `proposal_age_sec >= 1800` on `BOND1` when walkover/forfeit or Soccer 90m regulation risk is present."""
+_INDIV_OR_3WAY_ML_DISPUTE_RE = re.compile(
+    r"\b(tennis|atp|wta|challenger|itf|ufc|mma|boxing|retire(?:s|d|ment)\s+mid[\s-]match|walkover\s+or\s+retirement|will\s+.+\s+win\b|moneyline)\b",
+    re.IGNORECASE,
+)
+
+
+def _bond1_boilerplate_fast_season_eligible(market_or_cand: Any, risk: Mapping[str, Any]) -> bool:
+    """True only for completed team/totals/corners/esports props whose sole flag is template text (never Tennis/UFC or 3-way ML)."""
+    q_txt = ""
+    full_txt = ""
+    if isinstance(market_or_cand, Mapping):
+        q_txt = " ".join(
+            str(market_or_cand.get(k) or "")
+            for k in ("question", "title", "display_label", "leg_a_label", "regime", "domain", "asset", "slug")
+        )
+        full_txt = " ".join(
+            str(market_or_cand.get(k) or "")
+            for k in ("question", "title", "display_label", "description", "rules", "rules_text", "ancillaryData")
+        )
+    else:
+        q_txt = str(market_or_cand or "")
+        full_txt = q_txt
+    if _INDIV_OR_3WAY_ML_DISPUTE_RE.search(q_txt):
+        return False
+    if re.search(r"\b(retire(?:s|d|ment)|walkover|disqualif|50[\s/-]*50)\b", full_txt, re.IGNORECASE):
+        return False
+    reasons = set(risk.get("reasons") or ())
+    if reasons and not re.search(
+        r"\b(corner|over|under|o/u|total|spread|handicap|card|both\s+teams\s+to\s+score|btts)\b",
+        q_txt,
+        re.IGNORECASE,
+    ):
+        return False
+    return True
+
+
+def passes_uma_bond_dispute_guard(
+    market: Any,
+    ver: Mapping[str, Any],
+    *,
+    allow_pre_book_fast_season: bool = False,
+) -> bool:
+    """Enforce `proposal_age_sec >= 1800` on `BOND1` (or `>= 600s` + verified dual-book consensus on non-ML/non-walkover boilerplate)."""
     risk = classify_market_rule_dispute_risk(market)
     if not risk["dispute_risk"]:
         return True
@@ -2869,14 +2989,24 @@ def passes_uma_bond_dispute_guard(market: Any, ver: Mapping[str, Any]) -> bool:
         eff_liv = _sf(ver.get("eff_liveness_sec") if isinstance(ver, Mapping) else None, 7200.0)
         rem_ch = _sf(ver.get("rem_challenge_sec") if isinstance(ver, Mapping) else None, 7200.0)
         age_sec = max(0.0, eff_liv - rem_ch)
-    return age_sec >= float(risk["min_proposal_age_sec"])
+    if age_sec >= float(risk["min_proposal_age_sec"]):
+        return True
+    if (
+        age_sec >= 600.0
+        and isinstance(ver, Mapping)
+        and str(ver.get("oo_state") or "PROPOSED_UNDISPUTED") == "PROPOSED_UNDISPUTED"
+        and (allow_pre_book_fast_season or bool(ver.get("allow_pre_book_fast_season")) or bool(ver.get("dual_book_consensus_confirmed")))
+        and _bond1_boilerplate_fast_season_eligible(market, risk)
+    ):
+        return True
+    return False
 
 
 def check_sll_cand_dispute_guard(cand: Mapping[str, Any]) -> Optional[str]:
     """
     Harvester & candidate-bridge defense-in-depth dispute guard:
-      - `BOND1_UMA_RESOLUTION_CARRY`: requires `proposal_age_sec >= 1800` when walkover/retirement/forfeit/LFMP
-        or Soccer 90-minute regulation vs extra-time/penalties ambiguity is detected.
+      - `BOND1_UMA_RESOLUTION_CARRY`: requires `proposal_age_sec >= 1800` (or `>= 600s` with confirmed dual-book
+        consensus on non-walkover / non-3way-ML team totals/corners/props).
       - Pre-final sports clinches (`MKR_LOCK1`, `CL1`, `AFF1`, `SOC2`, `NFL_PRP1`): vetoes pre-final execution
         when dispute-ambiguous rule clauses are present.
     """
@@ -2899,6 +3029,13 @@ def check_sll_cand_dispute_guard(cand: Mapping[str, Any]) -> Optional[str]:
         else:
             age_sec = 0.0
         if age_sec < 1800.0:
+            if (
+                age_sec >= 600.0
+                and bool(cand.get("dual_book_consensus_confirmed"))
+                and not bool(cand.get("strict_1800s_dispute_hold"))
+                and _bond1_boilerplate_fast_season_eligible(cand, risk)
+            ):
+                return None
             return f"DISPUTE_RULE_PROPOSAL_UNSEASONED:{age_sec:.0f}s<1800s"
         return None
     if slv in {
@@ -3078,7 +3215,12 @@ def detect_dc1_double_chance_1x2_parity(
             continue
         qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
         qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-        cost = qpa + qpb
+        fra, fea = _sf(qa_map.get("fee_rate"), 0.0), _sf(qa_map.get("fee_exponent"), 1.0)
+        frb, feb = _sf(qb_map.get("fee_rate"), 0.0), _sf(qb_map.get("fee_exponent"), 1.0)
+        cost = (
+            qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
+            + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
+        )
         edge = 1.0 - cost
         if edge >= float(min_net_edge_usd):
             out.append(
@@ -3087,8 +3229,8 @@ def detect_dc1_double_chance_1x2_parity(
                     "box_type": "DOMINANCE",
                     "pair": f"{k_dc}+{k_1x2}",
                     "identity": f"YES_{k_1x2}_PLUS_YES_{k_dc}",
-                    "leg_a": {"token_id": ta, "condition_id": str(qa_map.get("condition_id") or ""), "ask_px": qpa},
-                    "leg_b": {"token_id": tb, "condition_id": str(qb_map.get("condition_id") or ""), "ask_px": qpb},
+                    "leg_a": {"token_id": ta, "condition_id": str(qa_map.get("condition_id") or ""), "ask_px": qpa, "fee_rate": fra, "fee_exponent": fea},
+                    "leg_b": {"token_id": tb, "condition_id": str(qb_map.get("condition_id") or ""), "ask_px": qpb, "fee_rate": frb, "fee_exponent": feb},
                     "guaranteed_payout_per_share": 1.0,
                     "cost_per_share": round(cost, 6),
                     "net_edge_per_share": round(edge, 6),
@@ -3151,7 +3293,13 @@ def detect_lp_comp1_sports_triangles(
             if 0.005 <= pa <= 0.99 and 0.005 <= pb <= 0.99 and min(sa, sb) >= min_shares and ta and tb:
                 qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
                 qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-                edge = 1.0 - (qpa + qpb)
+                fra, fea = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
+                frb, feb = _sf(o15.get("fee_rate"), 0.0), _sf(o15.get("fee_exponent"), 1.0)
+                cost2 = (
+                    qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
+                    + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
+                )
+                edge = 1.0 - cost2
                 if edge >= float(min_net_edge_usd):
                     exp_2 = max(_sf(btts_m.get("expiry_ts"), 0.0), _sf(o15.get("expiry_ts"), 0.0))
                     rec_2: Dict[str, Any] = {
@@ -3159,14 +3307,14 @@ def detect_lp_comp1_sports_triangles(
                         "box_type": "DOMINANCE",
                         "pattern": "NO_BTTS_PLUS_YES_OVER_1_5",
                         "triangle_id": "NO_BTTS_PLUS_YES_OVER_1_5",
-                        "leg_a": {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa},
-                        "leg_b": {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb},
+                        "leg_a": {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa, "fee_rate": fra, "fee_exponent": fea},
+                        "leg_b": {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb, "fee_rate": frb, "fee_exponent": feb},
                         "legs": [
-                            {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa},
-                            {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb},
+                            {"token_id": ta, "role": "NO_BTTS", "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qpa, "fee_rate": fra, "fee_exponent": fea},
+                            {"token_id": tb, "role": "YES_OVER_1_5", "condition_id": str(o15.get("condition_id") or ""), "market_id": str(o15.get("market_id") or ""), "ask_px": qpb, "fee_rate": frb, "fee_exponent": feb},
                         ],
                         "guaranteed_payout_per_share": 1.0,
-                        "cost_per_share": round(qpa + qpb, 6),
+                        "cost_per_share": round(cost2, 6),
                         "net_edge_per_share": round(edge, 6),
                         "max_fillable_shares": round(min(sa, sb), 2),
                     }
@@ -3198,7 +3346,13 @@ def detect_lp_comp1_sports_triangles(
                 qp1, _, _ = quantize_dynamic_tick_price(p1, "BUY", shares=min_shares, mode="taker")
                 qp2, _, _ = quantize_dynamic_tick_price(p2, "BUY", shares=min_shares, mode="taker")
                 qp3, _, _ = quantize_dynamic_tick_price(p3, "BUY", shares=min_shares, mode="taker")
-                cost3 = qp1 + qp2 + qp3
+                fr1, fe1 = _sf(draw_m.get("fee_rate"), 0.0), _sf(draw_m.get("fee_exponent"), 1.0)
+                fr2, fe2 = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
+                fr3, fe3 = _sf(u15.get("fee_rate"), 0.0), _sf(u15.get("fee_exponent"), 1.0)
+                nc1 = qp1 + compute_exact_taker_fee_per_share(qp1, fr1, fe1)
+                nc2 = qp2 + compute_exact_taker_fee_per_share(qp2, fr2, fe2)
+                nc3 = qp3 + compute_exact_taker_fee_per_share(qp3, fr3, fe3)
+                cost3 = nc1 + nc2 + nc3
                 edge3 = 1.0 - cost3
                 if edge3 >= float(min_net_edge_usd):
                     exp_3 = max(_sf(draw_m.get("expiry_ts"), 0.0), _sf(btts_m.get("expiry_ts"), 0.0), _sf(u15.get("expiry_ts"), 0.0))
@@ -3208,9 +3362,9 @@ def detect_lp_comp1_sports_triangles(
                         "pattern": "NO_DRAW_YES_BTTS_YES_UNDER_1_5",
                         "triangle_id": "NO_DRAW_YES_BTTS_YES_UNDER_1_5",
                         "legs": [
-                            {"token_id": t1, "condition_id": str(draw_m.get("condition_id") or ""), "market_id": str(draw_m.get("market_id") or ""), "ask_px": qp1, "net_cost": qp1, "ask_size": s_min, "neg_risk": bool(draw_m.get("neg_risk", False))},
-                            {"token_id": t2, "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qp2, "net_cost": qp2, "ask_size": s_min, "neg_risk": bool(btts_m.get("neg_risk", False))},
-                            {"token_id": t3, "condition_id": str(u15.get("condition_id") or ""), "market_id": str(u15.get("market_id") or ""), "ask_px": qp3, "net_cost": qp3, "ask_size": s_min, "neg_risk": bool(u15.get("neg_risk", False))},
+                            {"token_id": t1, "condition_id": str(draw_m.get("condition_id") or ""), "market_id": str(draw_m.get("market_id") or ""), "ask_px": qp1, "net_cost": nc1, "ask_size": s_min, "fee_rate": fr1, "fee_exponent": fe1, "neg_risk": bool(draw_m.get("neg_risk", False))},
+                            {"token_id": t2, "condition_id": str(btts_m.get("condition_id") or ""), "market_id": str(btts_m.get("market_id") or ""), "ask_px": qp2, "net_cost": nc2, "ask_size": s_min, "fee_rate": fr2, "fee_exponent": fe2, "neg_risk": bool(btts_m.get("neg_risk", False))},
+                            {"token_id": t3, "condition_id": str(u15.get("condition_id") or ""), "market_id": str(u15.get("market_id") or ""), "ask_px": qp3, "net_cost": nc3, "ask_size": s_min, "fee_rate": fr3, "fee_exponent": fe3, "neg_risk": bool(u15.get("neg_risk", False))},
                         ],
                         "leg_count": 3,
                         "guaranteed_payout_per_share": 1.0,
@@ -4565,7 +4719,10 @@ async def run_protocol_v2_daemon_scan(
                         touch_condition_id=br.condition_id,
                         noon_condition_id=sr.condition_id,
                         et_hour_float=et_hr,
-                        fee_rate=max(float(getattr(br, "fee_rate", 0.0)), float(getattr(sr, "fee_rate", 0.0))),
+                        fee_rate_touch=float(getattr(br, "fee_rate", 0.0) or 0.0),
+                        fee_rate_noon=float(getattr(sr, "fee_rate", 0.0) or 0.0),
+                        fee_exponent_touch=float(getattr(br, "fee_exponent", 1.0) or 1.0),
+                        fee_exponent_noon=float(getattr(sr, "fee_exponent", 1.0) or 1.0),
                     )
                     if b1_hit is not None:
                         opps_out.append({
@@ -4581,8 +4738,8 @@ async def run_protocol_v2_daemon_scan(
                             sleeve_source="B1_INTRADAY_ONETOUCH_NOON_BOX",
                             asset=br.asset,
                             dedupe_key=f"B1NOON_{br.market_id}_{sr.market_id}",
-                            leg_a={"token_id": br.yes_token, "opp_token_id": br.no_token, "label": "TOUCH_YES", "side": "YES", "market_id": br.market_id, "condition_id": br.condition_id, "strike": br.strike, "fee_rate": getattr(br, "fee_rate", 0.0), "fee_exponent": 1.0, "end_ts": br.end_ts},
-                            leg_b={"token_id": sr.no_token, "opp_token_id": sr.yes_token, "label": "NOON_OPP", "side": "NO", "market_id": sr.market_id, "condition_id": sr.condition_id, "strike": sr.strike, "fee_rate": getattr(sr, "fee_rate", 0.0), "fee_exponent": 1.0, "end_ts": sr.end_ts},
+                            leg_a={"token_id": br.yes_token, "opp_token_id": br.no_token, "label": "TOUCH_YES", "side": "YES", "market_id": br.market_id, "condition_id": br.condition_id, "strike": br.strike, "fee_rate": getattr(br, "fee_rate", 0.0), "fee_exponent": float(getattr(br, "fee_exponent", 1.0) or 1.0), "end_ts": br.end_ts},
+                            leg_b={"token_id": sr.no_token, "opp_token_id": sr.yes_token, "label": "NOON_OPP", "side": "NO", "market_id": sr.market_id, "condition_id": sr.condition_id, "strike": sr.strike, "fee_rate": getattr(sr, "fee_rate", 0.0), "fee_exponent": float(getattr(sr, "fee_exponent", 1.0) or 1.0), "end_ts": sr.end_ts},
                             bk_a=bk_by,
                             bk_b=bk_sn,
                             close_ts=float(min(br.end_ts, sr.end_ts)),
@@ -4874,15 +5031,13 @@ async def run_protocol_v2_daemon_scan(
                     qh_3, _, _ = quantize_dynamic_tick_price(hy_p, "BUY", shares=5.0, mode="taker")
                     qd_3, _, _ = quantize_dynamic_tick_price(dy_p, "BUY", shares=5.0, mode="taker")
                     qa_3, _, _ = quantize_dynamic_tick_price(ay_p, "BUY", shares=5.0, mode="taker")
-                    fr_3 = max(
-                        float(tr_p.home_leg.get("fee_rate", 0.0) or 0.0),
-                        float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0),
-                        float(tr_p.away_leg.get("fee_rate", 0.0) or 0.0),
-                    )
+                    fr_h3, fe_h3 = float(tr_p.home_leg.get("fee_rate", 0.0) or 0.0), float(tr_p.home_leg.get("fee_exponent", 1.0) or 1.0)
+                    fr_d3, fe_d3 = float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0), float(tr_p.draw_leg.get("fee_exponent", 1.0) or 1.0)
+                    fr_a3, fe_a3 = float(tr_p.away_leg.get("fee_rate", 0.0) or 0.0), float(tr_p.away_leg.get("fee_exponent", 1.0) or 1.0)
                     c_3w = (
-                        qh_3 + compute_exact_taker_fee_per_share(qh_3, fr_3, 1.0)
-                        + qd_3 + compute_exact_taker_fee_per_share(qd_3, fr_3, 1.0)
-                        + qa_3 + compute_exact_taker_fee_per_share(qa_3, fr_3, 1.0)
+                        qh_3 + compute_exact_taker_fee_per_share(qh_3, fr_h3, fe_h3)
+                        + qd_3 + compute_exact_taker_fee_per_share(qd_3, fr_d3, fe_d3)
+                        + qa_3 + compute_exact_taker_fee_per_share(qa_3, fr_a3, fe_a3)
                     )
                     if c_3w <= 0.992:
                         sh_3w = round(min(hy_s, dy_s, ay_s), 2)
@@ -4904,9 +5059,9 @@ async def run_protocol_v2_daemon_scan(
                                 now_ts=now,
                                 payload={
                                     "legs": [
-                                        {"token_id": tr_p.home_leg["yes_token"], "market_id": tr_p.home_leg["market_id"], "condition_id": tr_p.home_leg.get("condition_id", ""), "label": "HOME_YES", "ask_px": qh_3, "ask_size": hy_s, "fee_rate": float(tr_p.home_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.home_leg.get("neg_risk", True))},
-                                        {"token_id": tr_p.draw_leg["yes_token"], "market_id": tr_p.draw_leg["market_id"], "condition_id": tr_p.draw_leg.get("condition_id", ""), "label": "DRAW_YES", "ask_px": qd_3, "ask_size": dy_s, "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.draw_leg.get("neg_risk", True))},
-                                        {"token_id": tr_p.away_leg["yes_token"], "market_id": tr_p.away_leg["market_id"], "condition_id": tr_p.away_leg.get("condition_id", ""), "label": "AWAY_YES", "ask_px": qa_3, "ask_size": ay_s, "fee_rate": float(tr_p.away_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": 1.0, "neg_risk": bool(tr_p.away_leg.get("neg_risk", True))},
+                                        {"token_id": tr_p.home_leg["yes_token"], "market_id": tr_p.home_leg["market_id"], "condition_id": tr_p.home_leg.get("condition_id", ""), "label": "HOME_YES", "ask_px": qh_3, "ask_size": hy_s, "fee_rate": fr_h3, "fee_exponent": fe_h3, "neg_risk": bool(tr_p.home_leg.get("neg_risk", True))},
+                                        {"token_id": tr_p.draw_leg["yes_token"], "market_id": tr_p.draw_leg["market_id"], "condition_id": tr_p.draw_leg.get("condition_id", ""), "label": "DRAW_YES", "ask_px": qd_3, "ask_size": dy_s, "fee_rate": fr_d3, "fee_exponent": fe_d3, "neg_risk": bool(tr_p.draw_leg.get("neg_risk", True))},
+                                        {"token_id": tr_p.away_leg["yes_token"], "market_id": tr_p.away_leg["market_id"], "condition_id": tr_p.away_leg.get("condition_id", ""), "label": "AWAY_YES", "ask_px": qa_3, "ask_size": ay_s, "fee_rate": fr_a3, "fee_exponent": fe_a3, "neg_risk": bool(tr_p.away_leg.get("neg_risk", True))},
                                     ],
                                     "box_cost_net": round(c_3w, 6),
                                     "max_box_cost_net": 0.992,
@@ -4925,19 +5080,22 @@ async def run_protocol_v2_daemon_scan(
                         btn_p, btn_s = daemon._best_ask_sz(bk_btts_n)
                         o15_p, o15_s = daemon._best_ask_sz(bk_o15)
                         u15_p, u15_s = daemon._best_ask_sz(bk_u15)
+                        fe_bt = float(btts_l.get("fee_exponent", 1.0) or 1.0)
+                        fe_t15 = float(tot_15.get("fee_exponent", 1.0) or 1.0)
+                        fe_dr = float(tr_p.draw_leg.get("fee_exponent", 1.0) or 1.0)
                         tok_meta_lp = {
-                            str(btts_l["yes_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["no_token"], "YES", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0)),
-                            str(btts_l["no_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["yes_token"], "NO", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0)),
-                            str(tot_15["over_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["under_token"], "YES", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0)),
-                            str(tot_15["under_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["over_token"], "NO", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0)),
-                            str(tr_p.draw_leg["no_token"]): (tr_p.draw_leg.get("market_id", ""), tr_p.draw_leg.get("condition_id", ""), tr_p.draw_leg["yes_token"], "NO", bool(tr_p.draw_leg.get("neg_risk", True)), float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0)),
+                            str(btts_l["yes_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["no_token"], "YES", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0), fe_bt),
+                            str(btts_l["no_token"]): (btts_l.get("market_id", ""), btts_l.get("condition_id", ""), btts_l["yes_token"], "NO", bool(btts_l.get("neg_risk", False)), float(btts_l.get("fee_rate", 0.0) or 0.0), fe_bt),
+                            str(tot_15["over_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["under_token"], "YES", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0), fe_t15),
+                            str(tot_15["under_token"]): (tot_15.get("market_id", ""), tot_15.get("condition_id", ""), tot_15["over_token"], "NO", bool(tot_15.get("neg_risk", False)), float(tot_15.get("fee_rate", 0.0) or 0.0), fe_t15),
+                            str(tr_p.draw_leg["no_token"]): (tr_p.draw_leg.get("market_id", ""), tr_p.draw_leg.get("condition_id", ""), tr_p.draw_leg["yes_token"], "NO", bool(tr_p.draw_leg.get("neg_risk", True)), float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0), fe_dr),
                         }
                         for tri_h in detect_lp_comp1_sports_triangles(
                             quotes={
-                                "BTTS": {"yes_token_id": btts_l["yes_token"], "no_token_id": btts_l["no_token"], "yes_ask": bty_p if bty_p < 1.0 else 0.0, "yes_ask_size": bty_s, "no_ask": btn_p if btn_p < 1.0 else 0.0, "no_ask_size": btn_s, "fee_rate": float(btts_l.get("fee_rate", 0.0) or 0.0)},
-                                "OVER_1_5": {"yes_token_id": tot_15["over_token"], "yes_ask": o15_p if o15_p < 1.0 else 0.0, "yes_ask_size": o15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0)},
-                                "UNDER_1_5": {"yes_token_id": tot_15["under_token"], "yes_ask": u15_p if u15_p < 1.0 else 0.0, "yes_ask_size": u15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0)},
-                                "DRAW": {"no_token_id": tr_p.draw_leg["no_token"], "no_ask": dn_p if dn_p < 1.0 else 0.0, "no_ask_size": dn_s, "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0)},
+                                "BTTS": {"yes_token_id": btts_l["yes_token"], "no_token_id": btts_l["no_token"], "yes_ask": bty_p if bty_p < 1.0 else 0.0, "yes_ask_size": bty_s, "no_ask": btn_p if btn_p < 1.0 else 0.0, "no_ask_size": btn_s, "fee_rate": float(btts_l.get("fee_rate", 0.0) or 0.0), "fee_exponent": fe_bt},
+                                "OVER_1_5": {"yes_token_id": tot_15["over_token"], "yes_ask": o15_p if o15_p < 1.0 else 0.0, "yes_ask_size": o15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0), "fee_exponent": fe_t15},
+                                "UNDER_1_5": {"yes_token_id": tot_15["under_token"], "yes_ask": u15_p if u15_p < 1.0 else 0.0, "yes_ask_size": u15_s, "fee_rate": float(tot_15.get("fee_rate", 0.0) or 0.0), "fee_exponent": fe_t15},
+                                "DRAW": {"no_token_id": tr_p.draw_leg["no_token"], "no_ask": dn_p if dn_p < 1.0 else 0.0, "no_ask_size": dn_s, "fee_rate": float(tr_p.draw_leg.get("fee_rate", 0.0) or 0.0), "fee_exponent": fe_dr},
                             },
                             event_title=tr_p.title,
                             expiry_ts=float(tr_p.end_ts),
@@ -4955,8 +5113,8 @@ async def run_protocol_v2_daemon_scan(
                             t_legs = list(tri_h.get("legs") or ([tri_h["leg_a"], tri_h["leg_b"]] if ("leg_a" in tri_h and "leg_b" in tri_h) else []))
                             if len(t_legs) == 2:
                                 ta_lp, tb_lp = str(t_legs[0]["token_id"]), str(t_legs[1]["token_id"])
-                                ma_lp, ca_lp, oa_lp, sa_lp, nra_lp, fra_lp = tok_meta_lp.get(ta_lp, ("", "", "", "YES", False, 0.0))
-                                mb_lp, cb_lp, ob_lp, sb_lp, nrb_lp, frb_lp = tok_meta_lp.get(tb_lp, ("", "", "", "YES", False, 0.0))
+                                ma_lp, ca_lp, oa_lp, sa_lp, nra_lp, fra_lp, fea_lp = tok_meta_lp.get(ta_lp, ("", "", "", "YES", False, 0.0, 1.0))
+                                mb_lp, cb_lp, ob_lp, sb_lp, nrb_lp, frb_lp, feb_lp = tok_meta_lp.get(tb_lp, ("", "", "", "YES", False, 0.0, 1.0))
                                 bka_lp, bkb_lp = pm_bks.get(ta_lp), pm_bks.get(tb_lp)
                                 if ma_lp and mb_lp and ma_lp != mb_lp and bka_lp and bkb_lp:
                                     daemon.emit_live_two_leg_box_candidate(
@@ -4964,8 +5122,8 @@ async def run_protocol_v2_daemon_scan(
                                         sleeve_source="LP_COMP1_SPORTS_TRIANGLES",
                                         asset="SOCCER",
                                         dedupe_key=f"LPCOMP1_{tr_p.game_id}_{tri_h['triangle_id']}",
-                                        leg_a={"token_id": ta_lp, "opp_token_id": oa_lp, "label": t_legs[0].get("role", "LEG_A"), "side": sa_lp, "market_id": ma_lp, "condition_id": ca_lp, "fee_rate": fra_lp, "fee_exponent": 1.0, "neg_risk": nra_lp, "end_ts": tr_p.end_ts},
-                                        leg_b={"token_id": tb_lp, "opp_token_id": ob_lp, "label": t_legs[1].get("role", "LEG_B"), "side": sb_lp, "market_id": mb_lp, "condition_id": cb_lp, "fee_rate": frb_lp, "fee_exponent": 1.0, "neg_risk": nrb_lp, "end_ts": tr_p.end_ts},
+                                        leg_a={"token_id": ta_lp, "opp_token_id": oa_lp, "label": t_legs[0].get("role", "LEG_A"), "side": sa_lp, "market_id": ma_lp, "condition_id": ca_lp, "fee_rate": fra_lp, "fee_exponent": fea_lp, "neg_risk": nra_lp, "end_ts": tr_p.end_ts},
+                                        leg_b={"token_id": tb_lp, "opp_token_id": ob_lp, "label": t_legs[1].get("role", "LEG_B"), "side": sb_lp, "market_id": mb_lp, "condition_id": cb_lp, "fee_rate": frb_lp, "fee_exponent": feb_lp, "neg_risk": nrb_lp, "end_ts": tr_p.end_ts},
                                         bk_a=bka_lp,
                                         bk_b=bkb_lp,
                                         close_ts=float(tr_p.end_ts),
@@ -4977,8 +5135,8 @@ async def run_protocol_v2_daemon_scan(
                                 enr_legs = []
                                 for lg_t in t_legs:
                                     tk_t = str(lg_t.get("token_id") or "")
-                                    mt_t, ct_t, _, _, nrt_t, frt_t = tok_meta_lp.get(tk_t, ("", "", "", "YES", False, 0.0))
-                                    enr_legs.append({**lg_t, "market_id": mt_t, "condition_id": ct_t, "neg_risk": nrt_t, "fee_rate": frt_t, "fee_exponent": 1.0})
+                                    mt_t, ct_t, _, _, nrt_t, frt_t, fet_t = tok_meta_lp.get(tk_t, ("", "", "", "YES", False, 0.0, 1.0))
+                                    enr_legs.append({**lg_t, "market_id": mt_t, "condition_id": ct_t, "neg_risk": nrt_t, "fee_rate": frt_t, "fee_exponent": fet_t})
                                 if len({x["market_id"] for x in enr_legs if x["market_id"]}) == len(enr_legs):
                                     daemon.emit_live_special_v2_box_candidate(
                                         box_type="MULTI_LEG_BUNDLE",
@@ -5503,6 +5661,12 @@ def _write_and_notify_live_cand(daemon: Any, cand: Dict[str, Any], cand_file: An
                 pass
         cp = _Path(cand_file)
         cp.parent.mkdir(parents=True, exist_ok=True)
+        if cp == _Path(default_cand_path) and cp.exists():
+            try:
+                if cp.stat().st_size >= 25 * 1024 * 1024:
+                    _os.replace(cp, cp.with_name(cp.name + ".1"))
+            except OSError:
+                pass
         with open(cp, "a", encoding="utf-8") as fp:
             fp.write(line_s)
         return True
@@ -6009,6 +6173,15 @@ def emit_single_leg_maker_lock_cand_impl(
         cand.update(bk_win["_s2_meta"])
     if check_sll_cand_dispute_guard(cand) is not None:
         return False
+    if not is_s2_mkr and not is_mock_emit:
+        _sig_map = daemon.__dict__.setdefault("_last_sll_quote_sig", {})
+        _cur_sig = (round(resting_bid, 4), round(best_bid, 4))
+        _prev_sig = _sig_map.get(dedupe_key) if dedupe_key in daemon._last_d1_live_emit_ts else None
+        if _prev_sig is not None and _prev_sig[1] == _cur_sig and (now_ts - float(_prev_sig[0])) < 60.0:
+            return False
+        if len(_sig_map) > 512:
+            _sig_map.clear()
+        _sig_map[dedupe_key] = (now_ts, _cur_sig)
     if len(daemon._last_d1_live_emit_ts) > 256:
         daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
     daemon._last_d1_live_emit_ts[dedupe_key] = now_ts
@@ -6298,6 +6471,8 @@ def select_sll_velocity_preempt_target(
         return 180.0
 
     slow_cands = []
+    rw_cands = []
+    _seller_flow_sl = {"BOND1_UMA_RESOLUTION_CARRY", "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "W_PRUNE1_DEAD_NO_BOND"}
     for it in getattr(harvester, "pending_entry_intents", {}).values():
         if not (
             isinstance(it, Mapping)
@@ -6307,8 +6482,16 @@ def select_sll_velocity_preempt_target(
         ):
             continue
         iv = _it_edge_hr(it)
-        if (now_t - float(it.get("ts") or 0.0)) >= _req_age_s(iv):
-            slow_cands.append((iv, str(it.get("inflight_key") or "")))
+        age_i = now_t - float(it.get("ts") or 0.0)
+        ik = str(it.get("inflight_key") or "")
+        if str(it.get("sleeve_source") or "").upper() == "MKR_REWARD_LOCKED_CARRY" and cand_sl_u in _seller_flow_sl and age_i >= 45.0:
+            rw_cands.append((iv, ik))
+        if age_i >= _req_age_s(iv):
+            slow_cands.append((iv, ik))
+    if rw_cands:
+        rw_vel, rw_k = min(rw_cands, key=lambda x: x[0])
+        if rw_k and rw_k in pe_map and float(cand_edge_hr) >= max(rw_vel * 1.15, 35.0):
+            return rw_vel, rw_k
     if not slow_cands:
         return 0.0, ""
     slow_vel, slow_k = min(slow_cands, key=lambda x: x[0])
@@ -6373,8 +6556,21 @@ async def maybe_preempt_mlk1_if_bond1_starved(
     tot_eq = float(collat or 0.0) + act_non_recv + pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
     v5_p = get_unleashed_v5_tier_profile(tot_eq)
     sll_pct = float(v5_p["bond1_free_cash_pct"])
+    _ex_h = getattr(harvester, "executor", None)
+    _gat_active = bool(
+        getattr(harvester, "enforce_gatling_sizing", False)
+        or getattr(harvester, "enforce_gatling_fast_gun_reserve", False)
+        or (
+            not getattr(harvester, "dry_run", True)
+            and getattr(_ex_h, "client", None) is not None
+            and getattr(getattr(_ex_h, "client", None), "_mock_children", None) is None
+            and "get_market_book" not in getattr(_ex_h, "__dict__", {})
+            and not getattr(harvester, "enforce_bond1_smart_queue", False)
+        )
+    )
+    _fanout_u = float(b1_gov.get("bond1_maker_fanout_clip_usd_seed") or 0.0) if _gat_active else 0.0
     if enforce_b1_v53:
-        if float(budget) >= 12.0:
+        if float(budget) >= (5.0 if (_fanout_u > 0.0 and tot_eq < 150.0) else 12.0):
             return float(budget)
     else:
         target_unstarved = min(
@@ -6444,6 +6640,8 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         new_b = compute_sll_and_carry_gatling_budget(
             harvester, new_b, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, b1_gov, rem_tte_sec=rem_tte_sec, now_ts=now_ts
         )
+        if _fanout_u > 0.0 and tot_eq_sll < 150.0:
+            new_b = min(new_b, _fanout_u)
     else:
         new_b = min(
             lot_cap_sll,
@@ -6995,6 +7193,7 @@ def eval_sll_live_book_poll(
     b1_buried_s: float,
     exp_ts: float,
     buried_since_mono: Optional[float],
+    collat_usd: float = 75.0,
 ) -> Tuple[str, Optional[float], Optional[float], str]:
     opp_b_live = max(
         (
@@ -7038,14 +7237,28 @@ def eval_sll_live_book_poll(
             cand_rp = round(math.floor((min(step_l, ceil_l) + 1e-9) / tsnap_l) * tsnap_l, 4)
             l1_q_l = sum(px * sz for px, sz in bids_wc if abs(px - win_b_live) <= 1e-6)
             _uma_ex_l = str(candidate_box.get("sleeve_source") or "").upper() in UMA_EXEMPT_EXPIRY_SLEEVES
+            now_rp = time.time()
+            _vel_rp_ok = True
+            if not is_s2_mkr and exp_ts > 0.0 and (exp_ts - now_rp) > 900.0:
+                from src.polymarket_research.holistic_strategy_governance import passes_capital_velocity_hurdle
+
+                _vel_rp_ok, _ = passes_capital_velocity_hurdle(
+                    box_type="SINGLE_LEG_MAKER_LOCK",
+                    sleeve_src=str(candidate_box.get("sleeve_source") or ""),
+                    collat_usd=max(25.0, float(collat_usd or 75.0)),
+                    rem_tte_sec=max(900.0 if _uma_ex_l else 60.0, exp_ts - now_rp),
+                    box_cost_net=cand_rp,
+                    fast_recycle_eligible=(cand_rp <= 0.995),
+                )
             if (
                 repost_n_in < 5
                 and not is_s2_mkr
+                and _vel_rp_ok
                 and min_rb <= cand_rp <= max_rb
                 and cand_rp >= round(win_b_live - 1e-9, 4)
                 and cand_rp > posted_px + 1e-6
                 and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, b1_q_cap) + 1e-6)
-                and (_uma_ex_l or exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
+                and (_uma_ex_l or exp_ts <= 0.0 or (exp_ts - now_rp) >= 150.0)
             ):
                 return "REPEG", cand_rp, buried_since_mono, f"outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}"
             if buried_since_mono is None:
@@ -7194,6 +7407,69 @@ def register_live_d1_box_positions_impl(
     return [tid for tid, _ in leg_records]
 
 
+_PURGED_GHOST_OIDS_CACHE: Dict[str, Set[str]] = {}
+
+
+def _resolve_ghost_oids_path(executor: Any, explicit_path: Optional[Any] = None) -> Optional[Any]:
+    from pathlib import Path as _Path
+
+    p = explicit_path if explicit_path is not None else getattr(executor, "_purged_ghost_orders_file", None)
+    if p is not None:
+        return _Path(p) if p else None
+    cl = getattr(executor, "client", None)
+    if getattr(executor, "dry_run", True) or cl is None or getattr(cl, "_mock_children", None) is not None:
+        return None
+    return _Path(__file__).resolve().parents[2] / "data" / "polymarket" / "purged_clob_ghost_orders.json"
+
+
+def _load_purged_ghost_oids(path_obj: Any) -> Set[str]:
+    key = str(path_obj)
+    cached = _PURGED_GHOST_OIDS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    loaded: Set[str] = set()
+    try:
+        if path_obj.exists():
+            raw = json.loads(path_obj.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                loaded = {str(x).strip() for x in raw if str(x or "").strip()}
+    except Exception:
+        loaded = set()
+    _PURGED_GHOST_OIDS_CACHE[key] = loaded
+    return loaded
+
+
+def record_purged_ghost_order(executor: Any, order_id: str, explicit_path: Optional[Any] = None) -> None:
+    oid_s = str(order_id or "").strip()
+    p = _resolve_ghost_oids_path(executor, explicit_path)
+    if not oid_s or p is None:
+        return
+    oids = _load_purged_ghost_oids(p)
+    if oid_s in oids:
+        return
+    oids.add(oid_s)
+    try:
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp_p = p.with_name(p.name + ".tmp")
+        tmp_p.write_text(json.dumps(sorted(oids)[-500:], indent=2), encoding="utf-8")
+        tmp_p.replace(p)
+    except Exception:
+        pass
+
+
+def filter_purged_ghost_orders(executor: Any, orders: Sequence[Any], explicit_path: Optional[Any] = None) -> List[Any]:
+    p = _resolve_ghost_oids_path(executor, explicit_path)
+    if p is None or not orders:
+        return list(orders or [])
+    oids = _load_purged_ghost_oids(p)
+    if not oids:
+        return list(orders)
+    return [
+        o for o in orders
+        if not (isinstance(o, Mapping) and str(o.get("id") or o.get("orderID") or "").strip() in oids)
+    ]
+
+
 def is_verified_zero_fill_cancel_purge(
     executor: Any,
     order_id: str,
@@ -7208,9 +7484,9 @@ def is_verified_zero_fill_cancel_purge(
     """
     Returns True ONLY when CLOB `cancel_order` returned a `not_canceled` purge message
     (`"already canceled or matched"` / `"market is closed"`) with `size_matched == 0` AND
-    either the market is already closed OR both on-chain ERC-1155 balance delta == 0 and
-    CLOB account fills for `order_id` are empty. Stays fail-closed (`False`) if balance
-    delta > 0, fills exist, or the balance probe returns None.
+    verified zero account fills for `order_id` AND zero ERC-1155 balance delta (when
+    `pre_token_balance` is provided or market is still open). Stays fail-closed (`False`)
+    if balance delta > 0, fills exist, or a required probe returns None.
     """
     nc_low = str(not_canceled_reason or "").lower()
     if (
@@ -7219,9 +7495,19 @@ def is_verified_zero_fill_cancel_purge(
         or ("already canceled or matched" not in nc_low and "market is closed" not in nc_low)
     ):
         return False
-    if market_closed or "market is closed" in nc_low:
-        return True
+    is_mkt_closed = bool(market_closed or "market is closed" in nc_low)
     tok_c = str(token_id or (order_info or {}).get("asset_id") or (order_info or {}).get("token_id") or "").strip()
+    if is_mkt_closed:
+        if tok_c and hasattr(executor, "get_account_fills"):
+            fills_mc = executor.get_account_fills(tok_c, 0.0, "BUY", str(order_id))
+            if fills_mc is None or len(fills_mc) > 0:
+                return False
+        if tok_c and pre_token_balance is not None and hasattr(executor, "get_conditional_balance"):
+            cur_mc = executor.get_conditional_balance(tok_c)
+            if cur_mc is None or (float(cur_mc) - float(pre_token_balance)) > 1e-6:
+                return False
+        record_purged_ghost_order(executor, order_id)
+        return True
     if not tok_c or not hasattr(executor, "get_conditional_balance"):
         return False
     cur_b = executor.get_conditional_balance(tok_c)
@@ -7242,8 +7528,9 @@ def collect_claimed_position_fill_and_order_ids(
 ) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
     """
     Collects `(claimed_fill_ids, claimed_trade_ids, claimed_buy_order_ids, claimed_sell_order_ids)`
-    across all OTHER active and closed positions (including stashed `_closed_partner_leg` records)
-    so multi-clip scaling on the same `token_id` can never double-book another position's BUY or SELL fills.
+    across all OTHER active and closed positions (including stashed `_closed_partner_leg`,
+    `_closed_bundle_legs`, and `box_legs_summary` records) so multi-clip scaling on the same
+    `token_id` can never double-book another position's BUY or SELL fills.
     """
     fill_ids: Set[str] = set()
     trade_ids: Set[str] = set()
@@ -7286,6 +7573,12 @@ def collect_claimed_position_fill_and_order_ids(
         partner = p.get("_closed_partner_leg")
         if isinstance(partner, Mapping):
             _harvest_one(partner, str(partner.get("trade_id") or ""))
+        for sub_key in ("_closed_bundle_legs", "box_legs_summary"):
+            sub_list = p.get(sub_key)
+            if isinstance(sub_list, Sequence) and not isinstance(sub_list, (str, bytes)):
+                for sub_p in sub_list:
+                    if isinstance(sub_p, Mapping):
+                        _harvest_one(sub_p, str(sub_p.get("trade_id") or ""))
 
     for k, ap in (getattr(harvester, "active_positions", None) or {}).items():
         _harvest_one(ap, str(k))
@@ -7368,7 +7661,10 @@ def filter_unclaimed_position_fills(
         oid = str(f.get("order_id") or "").strip()
         if fid and fid in c_fids:
             continue
-        if tr_id and tr_id in c_tids:
+        is_own_oid = bool(
+            oid and ((side_u == "SELL" and oid in own_exit_oids) or (side_u == "BUY" and oid in own_buy_oids))
+        )
+        if tr_id and tr_id in c_tids and not is_own_oid:
             continue
         if side_u == "SELL":
             if oid and oid in c_sell_oids and oid not in own_exit_oids:
@@ -7378,6 +7674,8 @@ def filter_unclaimed_position_fills(
                     continue
         elif side_u == "BUY":
             if oid and oid in c_buy_oids and oid not in own_buy_oids:
+                continue
+            if own_buy_oids and oid and oid not in own_buy_oids:
                 continue
         out.append(dict(f))
     return out
@@ -7502,16 +7800,26 @@ async def reconcile_resolution_fills_and_pre_redeem(
                     harvester._record_history_fills(pos, extra_fills, taker=False)
             except Exception:
                 pass
-        _has_clob_win = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) > float(pos.get("notional_usd", 0.0) or 0.0)
-        if _has_clob_win:
+        _conf_cash = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0)
+        _notional_u = float(pos.get("notional_usd", 0.0) or 0.0)
+        _ent_sh_u = float(pos.get("entry_shares", 0.0) or 0.0)
+        _ex_sh_u = float(pos.get("filled_exit_shares", 0.0) or 0.0)
+        if _conf_cash > _notional_u or (_conf_cash > 0.0 and _ent_sh_u > 0.0 and _ex_sh_u >= _ent_sh_u - 0.02):
+            _clob_won = _conf_cash >= _notional_u - 1e-6
             pos["expected_terminal_payout_usd"] = 0.0
             pos["redemption_receivable_usd"] = 0.0
             pos["winning_shares_held"] = 0.0
             pos["expected_winning_outcome"] = winning_outcome
             pos["exit_cash_estimated"] = False
             pos["estimated_exit_cash"] = 0.0
-            pos["confirmed_realized_cash"] = float(pos.get("confirmed_realized_cash") or pos.get("realized_exit_cash") or 0.0)
-            harvester._close_position(tid, pos, exec_filled, "MAKER_SCALP_FILLED_CLOB", won=True)
+            pos["confirmed_realized_cash"] = _conf_cash
+            harvester._close_position(
+                tid,
+                pos,
+                exec_filled,
+                "MAKER_SCALP_FILLED_CLOB" if _clob_won else "CLOB_EXIT_FILLED_PRE_RESOLUTION",
+                won=_clob_won,
+            )
             return ("CLOSED", 0.0)
 
         post_sell_rem = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", book_rem_shares)) or 0.0)
@@ -7559,10 +7867,16 @@ async def reconcile_resolution_fills_and_pre_redeem(
                         max(0, int(head_chk) - 15000) if isinstance(head_chk, int) else None,
                     )
                     if isinstance(pre_recs, list) and pre_recs:
-                        confirmed_pre_redeemed = min(
-                            post_sell_rem,
-                            max(float(r.get("payout_usd") or 0.0) for r in pre_recs),
-                        )
+                        _redeemed_set = {str(h) for h in (getattr(harvester, "redeemed_tx_hashes", None) or ()) if h}
+                        _consumed_map = getattr(harvester, "redeemed_tx_consumed_usd", None) or {}
+                        _fresh_avail = [
+                            max(0.0, float(r.get("payout_usd") or 0.0) - float(_consumed_map.get(str(r.get("transaction_hash") or ""), 0.0) or 0.0))
+                            for r in pre_recs
+                            if isinstance(r, Mapping)
+                            and str(r.get("transaction_hash") or "") not in _redeemed_set
+                        ]
+                        if _fresh_avail:
+                            confirmed_pre_redeemed = min(post_sell_rem, max(_fresh_avail))
                 except Exception:
                     pass
 

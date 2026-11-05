@@ -1618,17 +1618,30 @@ def _walk_dual_leg_overround_bids(
     }
 
 
-def is_reward_locked_carry_live_ready(daemon: Any, p_model: float = 1.0) -> bool:
+def is_reward_locked_carry_live_ready(
+    daemon: Any,
+    p_model: float = 1.0,
+    *,
+    min_reward_shares: float = 0.0,
+    resting_bid_px: float = 0.99,
+) -> bool:
     """
     Allows 100%-mathematically-locked (`p_model >= 0.999`, e.g. physical METAR passed high/low by >=2 deg
     or monotonic counter passed bracket) `MKR_REWARD_LOCKED_CARRY` quotes with 0 shadow losses to bridge
-    into live `SINGLE_LEG_MAKER_LOCK` once `D1` is `8/8` graduated.
+    into live `SINGLE_LEG_MAKER_LOCK` once `D1` is `8/8` graduated AND live seed clip size actually
+    qualifies for Polymarket's `rewards_min_size` share floor (preventing unrewarded zero-seller slot squatting).
     """
-    if hasattr(daemon, "is_sleeve_grad8_ready") and daemon.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY"):
-        return True
-    if float(p_model or 0.0) < 0.999:
+    if float(p_model or 0.0) < 0.999 and not (
+        hasattr(daemon, "is_sleeve_grad8_ready") and daemon.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY")
+    ):
         return False
-    if not (hasattr(daemon, "is_sleeve_grad8_ready") and daemon.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX")):
+    if not (
+        hasattr(daemon, "is_sleeve_grad8_ready")
+        and (
+            daemon.is_sleeve_grad8_ready("MKR_REWARD_LOCKED_CARRY")
+            or daemon.is_sleeve_grad8_ready("D1_SAME_ORACLE_DOMINANCE_BOX")
+        )
+    ):
         return False
     if any(
         isinstance(p, dict) and p.get("sleeve") == "MKR_REWARD_LOCKED_CARRY" and not bool(p.get("won", True))
@@ -1638,7 +1651,18 @@ def is_reward_locked_carry_live_ready(daemon: Any, p_model: float = 1.0) -> bool
     try:
         from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
 
-        return bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_reward_locked_carry_live_bridge", True))
+        rb = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+        if not bool(rb.get("enable_reward_locked_carry_live_bridge", True)):
+            return False
+        if float(min_reward_shares or 0.0) > 0.0:
+            rw_cap_u = float(rb.get("reward_harvester_cap_usd_seed", 12.0) or 12.0)
+            fan_u = float(rb.get("bond1_maker_fanout_clip_usd_seed", 0.0) or 0.0)
+            if fan_u > 0.0:
+                rw_cap_u = min(rw_cap_u, fan_u)
+            est_sh = math.floor(rw_cap_u / max(0.50, float(resting_bid_px or 0.99)))
+            if est_sh < float(min_reward_shares) - 1e-6:
+                return False
+        return True
     except Exception:
         return True
 

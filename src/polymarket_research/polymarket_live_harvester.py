@@ -7893,8 +7893,8 @@ class PolymarketLiveHarvester:
         sll_inflight_cnt = sum(1 for k in inflight_mkr_types if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
         if (
             mkr_type_k in inflight_mkr_types
-            or (not _is_s2_early and sll_inflight_cnt >= (4 if _unlim_mkr else 2))
-            or len(inflight_mkr) >= ((10 if _is_s2_early else 8) if _unlim_mkr else (6 if _is_s2_early else 4))
+            or (not _is_s2_early and sll_inflight_cnt >= (8 if _unlim_mkr else 2))
+            or len(inflight_mkr) >= ((12 if _is_s2_early else 10) if _unlim_mkr else (6 if _is_s2_early else 4))
         ):
             return {"executed": False, "reason": "SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
         if sleeve_src == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":
@@ -7903,7 +7903,20 @@ class PolymarketLiveHarvester:
                 for _iv in getattr(self, "pending_entry_intents", {}).values()
                 if isinstance(_iv, dict) and _iv.get("sleeve_source") == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
             )
-            if _mlk1_active >= 1:
+            _mlk1_cap = (
+                max(1, int(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("mkr_lock1_max_concurrent_slots", 1) or 1))
+                if (
+                    getattr(self, "enforce_bond1_smart_queue", False)
+                    or (
+                        not self.dry_run
+                        and getattr(self.executor, "client", None) is not None
+                        and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+                        and "post_maker_entry_order" not in getattr(self.executor, "__dict__", {})
+                    )
+                )
+                else 1
+            )
+            if _mlk1_active >= _mlk1_cap:
                 return {"executed": False, "reason": "MKR_LOCK1_CONCURRENT_CAP_1"}
         now_ts = time.time()
         from src.polymarket_research.riskless_protocol_v2_expansion import (
@@ -8070,14 +8083,16 @@ class PolymarketLiveHarvester:
         uma_floor_h = sll_settlement_lag_floor_hours(sleeve_src)
         cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
         _cand_edge_hr = cand_vel_bps
-        if _is_rw_carry and anc_bid_px <= 0.994:
-            cand_vel_bps = max(cand_vel_bps, 110.0)
-            _cand_edge_hr = max(_cand_edge_hr, 110.0)
         min_lot_shares = 5
         sh_int = int(math.floor(budget / anc_bid_px))
+        _fan_active_sll = bool(
+            (getattr(self, "enforce_gatling_sizing", False) or getattr(self, "enforce_gatling_fast_gun_reserve", False) or (not self.dry_run and getattr(self.executor, "client", None) is not None and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None and "get_market_book" not in getattr(self.executor, "__dict__", {}) and not getattr(self, "enforce_bond1_smart_queue", False)))
+            and float(_b1_gov.get("bond1_maker_fanout_clip_usd_seed") or 0.0) > 0.0
+            and float(collat or 0.0) < 150.0
+        )
         if (
             not _is_s2_mkr
-            and sh_int < 12
+            and sh_int < (min_lot_shares if _fan_active_sll else 12)
             and not self.dry_run
             and anc_bid_px >= 0.990
             and cand_vel_bps >= 40.0
@@ -8581,7 +8596,7 @@ class PolymarketLiveHarvester:
                     return False
             b_key = f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key') or candidate_box.get('leg_a_market_id') or b_type}"
             sll_running = sum(1 for k, tk in by_type.items() if str(k).startswith("SINGLE_LEG_MAKER_LOCK:") and not tk.done())
-            _sll_lim = (6 if _is_s2_t else 4) if (_unlim_t or self._is_v5_unleashed_active()) else (4 if _is_s2_t else 2)
+            _sll_lim = (10 if _is_s2_t else 8) if (_unlim_t or self._is_v5_unleashed_active()) else (4 if _is_s2_t else 2)
             if sll_running >= _sll_lim:
                 return False
         else:
@@ -8592,7 +8607,7 @@ class PolymarketLiveHarvester:
         cur_t = by_type.get(b_key)
         if cur_t is not None and not cur_t.done():
             return False
-        if len(tasks) >= ((12 if _is_s2_t else 10) if _unlim_t else (6 if _is_s2_t else 4)):
+        if len(tasks) >= ((12 if _is_s2_t else 10) if (_unlim_t or self._is_v5_unleashed_active()) else (6 if _is_s2_t else 4)):
             return False
         coro = (
             self.maybe_execute_graduated_single_leg_maker_lock(candidate_box)

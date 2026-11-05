@@ -1,20 +1,20 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 22:05:25 UTC | Repo: C:/Users/Anton/source/repos/Dominus
+Generated: 2026-11-05 23:21:54 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
-  - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,309B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
+  - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,396B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,935B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
-  - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,621B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4570 | 892,626B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (L4571-7077 | 451,309B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7078-8087 | 188,382B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (L8088-8255 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (L8256-8989 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (L8990-9024 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/redeem_settled_positions.py] (L9025-9123 | 14,780B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (L9124-9237 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (L9238-9640 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,715B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
+  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4568 | 893,819B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (L4569-7075 | 451,309B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7076-8085 | 188,382B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (L8086-8253 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (L8254-8987 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (L8988-9022 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/redeem_settled_positions.py] (L9023-9121 | 14,780B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (L9122-9235 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (L9236-9638 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # [01/13] config/polymarket_risk_config.json
@@ -23,7 +23,7 @@ POLYMARKET_RISK_CONFIG_JSON=r'''
 '''
 # [02/13] config/polymarket_strategy_and_risk.json
 POLYMARKET_STRATEGY_AND_RISK_JSON=r'''
-{"schema_version":"5.4.3","directional":{"allowed_assets_1h":["BTC","SOL","ETH"],"allowed_assets_15m_maker":["BTC","SOL","ETH"],"paused_directional_assets":["XRP"],"sol_canary_size_multiplier":0.85,"eth_canary_size_multiplier":0.85,"enable_1h_taker":true,"enable_1h_shielded_maker":false,"enable_15m_taker":true,"enable_15m_subordinate_maker":true,"enable_5m_directional":false,"min_tte_1h_sec":150.0,"max_tte_1h_sec":2100.0,"regime_b_max_tte_1h_sec":900.0,"min_tte_15m_maker_sec":120.0,"max_tte_15m_maker_sec":510.0,"min_tte_15m_taker_sec":120.0,"max_tte_15m_taker_sec":420.0,"max_taker_price_1h":0.81,"max_maker_price_1h":0.81,"max_taker_price_15m":0.81,"max_maker_price_15m":0.78,"min_entry_price":0.52,"min_z_1h_regime_b":1.0,"min_z_1h_regime_a":1.0,"min_z_15m_maker":0.9,"min_z_15m_taker":1.2,"min_cushion_pct_1h_regime_b":0.04,"min_cushion_pct_1h_regime_a":0.15,"min_cushion_pct_15m_maker":0.04,"min_l1_ask_depth_usd":20.0,"max_spread":0.03,"respect_configured_exit_policy_on_safe":true,"min_live_equity_for_unhedged_directional_usd":150.0,"riskless_only_mode":true},"routing":{"z_immediate_taker_cut":1.0,"maker_ttl_sec":6.0,"max_maker_join_queue_usd":350.0,"enable_phase3a_outbid_repeg":true,"shield_decay_cancel_frac":0.5,"async_clob_keepalive_interval_sec":3.5,"async_clob_keepalive_expiry_sec":45.0,"microbatch_coalesce_alt_sec":0.003},"exit_supervisor":{"policy":"ev_terminal_twap_t5","student_t_df":5.0,"jump_sigma_mult":1.45,"basis_sigma_floor":0.00025,"terminal_window_min_tte_sec":16.0,"terminal_window_max_tte_sec":105.0,"mid_window_max_tte_sec":180.0,"ev_salvage_margin":0.04,"max_salvage_bid_drop_from_entry":0.24,"terminal_hold_confirm_sec":3.0,"mid_hold_confirm_sec":8.0,"early_catastrophic_cushion_frac":0.0018,"early_hold_confirm_sec":18.0,"anti_wick_rebound_vel_pct":0.03,"enable_high_zone_mfe_ratchet":true,"high_zone_mfe_arm_bid":0.93,"high_zone_mfe_drop":0.04,"high_zone_mfe_hold_confirm_sec":2.0,"high_zone_mfe_min_tte_sec":16.0,"isolate_single_market_zero_bid":true,"global_zero_bid_halt_min_markets":2},"risk_controller":{"decouple_riskless_boxes_from_directional_halt":true,"max_daily_directional_loss_usd":16.57,"max_consecutive_directional_losses":4,"hard_ruin_floor_usd":42.0},"sizing_tiers":{"unleash_full_throttle":true,"seed_survival_max_equity":95.0,"recovery_max_equity":250.0,"growth_max_equity":1000.0,"tier_upward_hysteresis_usd":3.0,"kelly_fraction_seed":0.36,"kelly_fraction_recovery":0.4,"kelly_fraction_growth":0.36,"kelly_fraction_scale":0.3,"notional_cap_seed":0.22,"notional_cap_recovery":0.26,"notional_cap_growth":0.22,"notional_cap_scale":0.16,"salvage_stop_floor_px":0.34,"max_stop_equity_risk_seed":0.135,"max_stop_equity_risk_recovery":0.155,"max_stop_equity_risk_growth":0.13,"max_stop_equity_risk_scale":0.1,"dir_slots_seed":4,"dir_slots_recovery":4,"dir_slots_growth":4,"dir_slots_scale":4,"daily_loss_pct_seed":0.24,"daily_loss_pct_recovery":0.22,"daily_loss_pct_growth":0.2,"daily_loss_pct_scale":0.16,"portfolio_exposure_pct_seed":0.96,"portfolio_exposure_pct_recovery":0.96,"portfolio_exposure_pct_growth":0.96,"portfolio_exposure_pct_scale":0.96,"subordinate_15m_maker_size_mult":0.8},"riskless_boxes":{"enable_graduated_d1_box":true,"enable_single_leg_maker_bond1":true,"enable_two_leg_maker_anchor_boxes":false,"paused_riskless_sleeves":["SOC2_EXACT_SCORE_2D_LATTICE","SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"],"d1_max_box_cost_net":0.985,"cm_b3_max_walk_cap":0.99,"d1_free_cash_pct_seed":0.9,"d1_free_cash_pct_recovery":0.9,"d1_free_cash_pct_growth":0.9,"d1_free_cash_pct_scale":0.9,"bond1_free_cash_pct_seed":0.78,"seed_zero_loss_focus_bond1_pool_pct":0.92,"bond1_velocity_preempt_mult":1.8,"bond1_free_cash_pct_growth":0.88,"bond1_per_market_cap_usd_seed":45.0,"bond1_per_market_cap_usd_recovery":85.0,"bond1_per_market_cap_pct":0.65,"bond1_maker_per_market_cap_pct":0.365,"bond1_max_join_queue_usd":350.0,"bond1_buried_cancel_sec":90.0,"bridged_zero_fee_cap_usd_seed":60.0,"bridged_zero_fee_cap_usd_growth":120.0,"enable_reward_locked_carry_live_bridge":true,"reward_harvester_cap_usd_seed":12.0,"box_collateral_reserve_usd":0.0,"max_concurrent_riskless_boxes":10,"seed_max_lockup_hours":8.0,"seed_min_bps_per_hour":15.0,"recovery_max_lockup_hours":48.0,"recovery_min_bps_per_hour":5.0,"growth_max_lockup_hours":72.0,"growth_min_bps_per_hour":6.0,"scale_max_lockup_hours":168.0,"scale_min_bps_per_hour":3.5,"enable_pre_split_overround_gun":false,"enable_pre_split_dual_maker_asks":false,"pre_split_require_live_overround":true,"pre_split_min_free_cash_usd":14.0,"pre_split_inventory_cap_usd":12.0,"enable_nr3_synthetic_overround":true,"enable_cross_condition_complement_merge":true,"enable_d1_rebate_maker_canary":false,"d1_rebate_maker_cap_usd":12.0,"gatling_enabled":true,"gatling_fast_gun_reserve_usd":22.5,"gatling_concave_exp":0.65,"gatling_base_clip_d1_usd":22.0,"gatling_base_clip_core_usd":20.0,"gatling_base_clip_bridge_usd":18.5,"enable_s2_twap_lock_live":true,"enable_ungraduated_v3_math_live":true},"shadow_governance":{"enable_btc_5m_sniper_shadow":false,"enable_sol_5m_canary_shadow":false,"enable_hybrid_zsplit_shadow":false,"enable_xau_15m_maker_shadow":false,"weekly_wfo_min_trades":50,"weekly_wfo_min_profit_factor":1.45,"weekly_wfo_max_pbo":0.2}}
+{"schema_version":"5.4.4","directional":{"allowed_assets_1h":["BTC","SOL","ETH"],"allowed_assets_15m_maker":["BTC","SOL","ETH"],"paused_directional_assets":["XRP"],"sol_canary_size_multiplier":0.85,"eth_canary_size_multiplier":0.85,"enable_1h_taker":true,"enable_1h_shielded_maker":false,"enable_15m_taker":true,"enable_15m_subordinate_maker":true,"enable_5m_directional":false,"min_tte_1h_sec":150.0,"max_tte_1h_sec":2100.0,"regime_b_max_tte_1h_sec":900.0,"min_tte_15m_maker_sec":120.0,"max_tte_15m_maker_sec":510.0,"min_tte_15m_taker_sec":120.0,"max_tte_15m_taker_sec":420.0,"max_taker_price_1h":0.81,"max_maker_price_1h":0.81,"max_taker_price_15m":0.81,"max_maker_price_15m":0.78,"min_entry_price":0.52,"min_z_1h_regime_b":1.0,"min_z_1h_regime_a":1.0,"min_z_15m_maker":0.9,"min_z_15m_taker":1.2,"min_cushion_pct_1h_regime_b":0.04,"min_cushion_pct_1h_regime_a":0.15,"min_cushion_pct_15m_maker":0.04,"min_l1_ask_depth_usd":20.0,"max_spread":0.03,"respect_configured_exit_policy_on_safe":true,"min_live_equity_for_unhedged_directional_usd":150.0,"riskless_only_mode":true},"routing":{"z_immediate_taker_cut":1.0,"maker_ttl_sec":6.0,"max_maker_join_queue_usd":350.0,"enable_phase3a_outbid_repeg":true,"shield_decay_cancel_frac":0.5,"async_clob_keepalive_interval_sec":3.5,"async_clob_keepalive_expiry_sec":45.0,"microbatch_coalesce_alt_sec":0.003},"exit_supervisor":{"policy":"ev_terminal_twap_t5","student_t_df":5.0,"jump_sigma_mult":1.45,"basis_sigma_floor":0.00025,"terminal_window_min_tte_sec":16.0,"terminal_window_max_tte_sec":105.0,"mid_window_max_tte_sec":180.0,"ev_salvage_margin":0.04,"max_salvage_bid_drop_from_entry":0.24,"terminal_hold_confirm_sec":3.0,"mid_hold_confirm_sec":8.0,"early_catastrophic_cushion_frac":0.0018,"early_hold_confirm_sec":18.0,"anti_wick_rebound_vel_pct":0.03,"enable_high_zone_mfe_ratchet":true,"high_zone_mfe_arm_bid":0.93,"high_zone_mfe_drop":0.04,"high_zone_mfe_hold_confirm_sec":2.0,"high_zone_mfe_min_tte_sec":16.0,"isolate_single_market_zero_bid":true,"global_zero_bid_halt_min_markets":2},"risk_controller":{"decouple_riskless_boxes_from_directional_halt":true,"max_daily_directional_loss_usd":16.57,"max_consecutive_directional_losses":4,"hard_ruin_floor_usd":42.0},"sizing_tiers":{"unleash_full_throttle":true,"seed_survival_max_equity":95.0,"recovery_max_equity":250.0,"growth_max_equity":1000.0,"tier_upward_hysteresis_usd":3.0,"kelly_fraction_seed":0.36,"kelly_fraction_recovery":0.4,"kelly_fraction_growth":0.36,"kelly_fraction_scale":0.3,"notional_cap_seed":0.22,"notional_cap_recovery":0.26,"notional_cap_growth":0.22,"notional_cap_scale":0.16,"salvage_stop_floor_px":0.34,"max_stop_equity_risk_seed":0.135,"max_stop_equity_risk_recovery":0.155,"max_stop_equity_risk_growth":0.13,"max_stop_equity_risk_scale":0.1,"dir_slots_seed":4,"dir_slots_recovery":4,"dir_slots_growth":4,"dir_slots_scale":4,"daily_loss_pct_seed":0.24,"daily_loss_pct_recovery":0.22,"daily_loss_pct_growth":0.2,"daily_loss_pct_scale":0.16,"portfolio_exposure_pct_seed":0.96,"portfolio_exposure_pct_recovery":0.96,"portfolio_exposure_pct_growth":0.96,"portfolio_exposure_pct_scale":0.96,"subordinate_15m_maker_size_mult":0.8},"riskless_boxes":{"enable_graduated_d1_box":true,"enable_single_leg_maker_bond1":true,"enable_two_leg_maker_anchor_boxes":false,"paused_riskless_sleeves":["SOC2_EXACT_SCORE_2D_LATTICE","SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"],"d1_max_box_cost_net":0.985,"cm_b3_max_walk_cap":0.99,"d1_free_cash_pct_seed":0.9,"d1_free_cash_pct_recovery":0.9,"d1_free_cash_pct_growth":0.9,"d1_free_cash_pct_scale":0.9,"bond1_free_cash_pct_seed":0.78,"seed_zero_loss_focus_bond1_pool_pct":0.92,"bond1_velocity_preempt_mult":1.8,"bond1_free_cash_pct_growth":0.88,"bond1_per_market_cap_usd_seed":45.0,"bond1_per_market_cap_usd_recovery":85.0,"bond1_per_market_cap_pct":0.65,"bond1_maker_per_market_cap_pct":0.365,"bond1_maker_fanout_clip_usd_seed":7.96,"mkr_lock1_max_concurrent_slots":3,"bond1_max_join_queue_usd":350.0,"bond1_buried_cancel_sec":90.0,"bridged_zero_fee_cap_usd_seed":60.0,"bridged_zero_fee_cap_usd_growth":120.0,"enable_reward_locked_carry_live_bridge":true,"reward_harvester_cap_usd_seed":12.0,"box_collateral_reserve_usd":0.0,"max_concurrent_riskless_boxes":10,"seed_max_lockup_hours":8.0,"seed_min_bps_per_hour":15.0,"recovery_max_lockup_hours":48.0,"recovery_min_bps_per_hour":5.0,"growth_max_lockup_hours":72.0,"growth_min_bps_per_hour":6.0,"scale_max_lockup_hours":168.0,"scale_min_bps_per_hour":3.5,"enable_pre_split_overround_gun":false,"enable_pre_split_dual_maker_asks":false,"pre_split_require_live_overround":true,"pre_split_min_free_cash_usd":14.0,"pre_split_inventory_cap_usd":12.0,"enable_nr3_synthetic_overround":true,"enable_cross_condition_complement_merge":true,"enable_d1_rebate_maker_canary":false,"d1_rebate_maker_cap_usd":12.0,"gatling_enabled":true,"gatling_fast_gun_reserve_usd":20.0,"gatling_concave_exp":0.65,"gatling_base_clip_d1_usd":22.0,"gatling_base_clip_core_usd":20.0,"gatling_base_clip_bridge_usd":18.5,"enable_s2_twap_lock_live":true,"enable_ungraduated_v3_math_live":true},"shadow_governance":{"enable_btc_5m_sniper_shadow":false,"enable_sol_5m_canary_shadow":false,"enable_hybrid_zsplit_shadow":false,"enable_xau_15m_maker_shadow":false,"weekly_wfo_min_trades":50,"weekly_wfo_min_profit_factor":1.45,"weekly_wfo_max_pbo":0.2}}
 '''
 # [03/13] systemd/polymarket-live-harvester.service
 POLYMARKET_LIVE_HARVESTER_SERVICE=r'''
@@ -55,7 +55,7 @@ WantedBy=default.target
 import json;import logging;import math;import os;import signal;import threading;import time;from pathlib import Path;from typing import Any,Callable,Dict,Optional,Tuple
 try:from src.polymarket_research.exact_twap_lock_engine import compute_unit_variance_student_t_cdf
 except ImportError:from exact_twap_lock_engine import compute_unit_variance_student_t_cdf
-logger=logging.getLogger("HolisticStrategyGovernance");PIPELINE_ROOT=Path(__file__).resolve().parent.parent.parent;STRATEGY_CONFIG_PATH=Path(os.getenv("POLYMARKET_STRATEGY_CONFIG",str(PIPELINE_ROOT/"config/polymarket_strategy_and_risk.json")));DEFAULT_HOLISTIC_CONFIG={"schema_version":"5.4.3","directional":{"allowed_assets_1h":["BTC","SOL","ETH"],"allowed_assets_15m_maker":["BTC","SOL","ETH"],"paused_directional_assets":["XRP"],"sol_canary_size_multiplier":.85,"eth_canary_size_multiplier":.85,"enable_1h_taker":True,"enable_1h_shielded_maker":False,"enable_15m_taker":True,"enable_15m_subordinate_maker":True,"enable_5m_directional":False,"min_tte_1h_sec":150.,"max_tte_1h_sec":2100.,"regime_b_max_tte_1h_sec":9e2,"min_tte_15m_maker_sec":120.,"max_tte_15m_maker_sec":510.,"min_tte_15m_taker_sec":120.,"max_tte_15m_taker_sec":420.,"max_taker_price_1h":.81,"max_maker_price_1h":.81,"max_taker_price_15m":.81,"max_maker_price_15m":.78,"min_entry_price":.52,"min_z_1h_regime_b":1.,"min_z_1h_regime_a":1.,"min_z_15m_maker":.9,"min_z_15m_taker":1.2,"min_cushion_pct_1h_regime_b":.04,"min_cushion_pct_1h_regime_a":.15,"min_cushion_pct_15m_maker":.04,"min_l1_ask_depth_usd":20.,"max_spread":.03,"respect_configured_exit_policy_on_safe":True,"min_live_equity_for_unhedged_directional_usd":150.,"riskless_only_mode":False},"routing":{"z_immediate_taker_cut":1.,"maker_ttl_sec":6.,"max_maker_join_queue_usd":350.,"enable_phase3a_outbid_repeg":True,"shield_decay_cancel_frac":.5,"async_clob_keepalive_interval_sec":3.5,"async_clob_keepalive_expiry_sec":45.,"microbatch_coalesce_alt_sec":.003},"exit_supervisor":{"policy":"ev_terminal_twap_t5","student_t_df":5.,"jump_sigma_mult":1.45,"basis_sigma_floor":.00025,"terminal_window_min_tte_sec":16.,"terminal_window_max_tte_sec":105.,"mid_window_max_tte_sec":180.,"ev_salvage_margin":.04,"max_salvage_bid_drop_from_entry":.24,"terminal_hold_confirm_sec":3.,"mid_hold_confirm_sec":8.,"early_catastrophic_cushion_frac":.0018,"early_hold_confirm_sec":18.,"anti_wick_rebound_vel_pct":.03,"enable_high_zone_mfe_ratchet":True,"high_zone_mfe_arm_bid":.93,"high_zone_mfe_drop":.04,"high_zone_mfe_hold_confirm_sec":2.,"high_zone_mfe_min_tte_sec":16.,"isolate_single_market_zero_bid":True,"global_zero_bid_halt_min_markets":2},"risk_controller":{"decouple_riskless_boxes_from_directional_halt":True,"max_daily_directional_loss_usd":16.57,"max_consecutive_directional_losses":4,"hard_ruin_floor_usd":42.},"sizing_tiers":{"unleash_full_throttle":True,"seed_survival_max_equity":95.,"recovery_max_equity":250.,"growth_max_equity":1e3,"tier_upward_hysteresis_usd":3.,"kelly_fraction_seed":.36,"kelly_fraction_recovery":.4,"kelly_fraction_growth":.36,"kelly_fraction_scale":.3,"notional_cap_seed":.22,"notional_cap_recovery":.26,"notional_cap_growth":.22,"notional_cap_scale":.16,"salvage_stop_floor_px":.34,"max_stop_equity_risk_seed":.135,"max_stop_equity_risk_recovery":.155,"max_stop_equity_risk_growth":.13,"max_stop_equity_risk_scale":.1,"dir_slots_seed":4,"dir_slots_recovery":4,"dir_slots_growth":4,"dir_slots_scale":4,"daily_loss_pct_seed":.24,"daily_loss_pct_recovery":.22,"daily_loss_pct_growth":.2,"daily_loss_pct_scale":.16,"portfolio_exposure_pct_seed":.96,"portfolio_exposure_pct_recovery":.96,"portfolio_exposure_pct_growth":.96,"portfolio_exposure_pct_scale":.96,"subordinate_15m_maker_size_mult":.8},"riskless_boxes":{"enable_graduated_d1_box":True,"enable_single_leg_maker_bond1":True,"enable_two_leg_maker_anchor_boxes":False,"paused_riskless_sleeves":[],"d1_max_box_cost_net":.985,"cm_b3_max_walk_cap":.99,"d1_free_cash_pct_seed":.9,"d1_free_cash_pct_recovery":.9,"d1_free_cash_pct_growth":.9,"d1_free_cash_pct_scale":.9,"bond1_free_cash_pct_seed":.78,"seed_zero_loss_focus_bond1_pool_pct":.92,"bond1_velocity_preempt_mult":1.8,"bond1_free_cash_pct_growth":.88,"bond1_per_market_cap_usd_seed":45.,"bond1_per_market_cap_usd_recovery":85.,"bond1_per_market_cap_pct":.65,"bond1_maker_per_market_cap_pct":.365,"bond1_max_join_queue_usd":350.,"bond1_buried_cancel_sec":15.,"bridged_zero_fee_cap_usd_seed":60.,"bridged_zero_fee_cap_usd_growth":120.,"enable_reward_locked_carry_live_bridge":True,"reward_harvester_cap_usd_seed":12.,"box_collateral_reserve_usd":.0,"max_concurrent_riskless_boxes":10,"seed_max_lockup_hours":8.,"seed_min_bps_per_hour":15.,"recovery_max_lockup_hours":48.,"recovery_min_bps_per_hour":5.,"growth_max_lockup_hours":72.,"growth_min_bps_per_hour":6.,"scale_max_lockup_hours":168.,"scale_min_bps_per_hour":3.5,"enable_pre_split_overround_gun":False,"enable_pre_split_dual_maker_asks":False,"pre_split_require_live_overround":True,"pre_split_min_free_cash_usd":14.,"pre_split_inventory_cap_usd":12.,"enable_nr3_synthetic_overround":True,"enable_cross_condition_complement_merge":True,"enable_d1_rebate_maker_canary":False,"d1_rebate_maker_cap_usd":12.,"gatling_enabled":True,"gatling_fast_gun_reserve_usd":22.5,"gatling_concave_exp":.65,"gatling_base_clip_d1_usd":22.,"gatling_base_clip_core_usd":20.,"gatling_base_clip_bridge_usd":18.5,"enable_s2_twap_lock_live":True,"enable_ungraduated_v3_math_live":True},"shadow_governance":{"enable_btc_5m_sniper_shadow":False,"enable_sol_5m_canary_shadow":False,"enable_hybrid_zsplit_shadow":True,"enable_xau_15m_maker_shadow":True,"weekly_wfo_min_trades":50,"weekly_wfo_min_profit_factor":1.45,"weekly_wfo_max_pbo":.2}}
+logger=logging.getLogger("HolisticStrategyGovernance");PIPELINE_ROOT=Path(__file__).resolve().parent.parent.parent;STRATEGY_CONFIG_PATH=Path(os.getenv("POLYMARKET_STRATEGY_CONFIG",str(PIPELINE_ROOT/"config/polymarket_strategy_and_risk.json")));DEFAULT_HOLISTIC_CONFIG={"schema_version":"5.4.3","directional":{"allowed_assets_1h":["BTC","SOL","ETH"],"allowed_assets_15m_maker":["BTC","SOL","ETH"],"paused_directional_assets":["XRP"],"sol_canary_size_multiplier":.85,"eth_canary_size_multiplier":.85,"enable_1h_taker":True,"enable_1h_shielded_maker":False,"enable_15m_taker":True,"enable_15m_subordinate_maker":True,"enable_5m_directional":False,"min_tte_1h_sec":150.,"max_tte_1h_sec":2100.,"regime_b_max_tte_1h_sec":9e2,"min_tte_15m_maker_sec":120.,"max_tte_15m_maker_sec":510.,"min_tte_15m_taker_sec":120.,"max_tte_15m_taker_sec":420.,"max_taker_price_1h":.81,"max_maker_price_1h":.81,"max_taker_price_15m":.81,"max_maker_price_15m":.78,"min_entry_price":.52,"min_z_1h_regime_b":1.,"min_z_1h_regime_a":1.,"min_z_15m_maker":.9,"min_z_15m_taker":1.2,"min_cushion_pct_1h_regime_b":.04,"min_cushion_pct_1h_regime_a":.15,"min_cushion_pct_15m_maker":.04,"min_l1_ask_depth_usd":20.,"max_spread":.03,"respect_configured_exit_policy_on_safe":True,"min_live_equity_for_unhedged_directional_usd":150.,"riskless_only_mode":False},"routing":{"z_immediate_taker_cut":1.,"maker_ttl_sec":6.,"max_maker_join_queue_usd":350.,"enable_phase3a_outbid_repeg":True,"shield_decay_cancel_frac":.5,"async_clob_keepalive_interval_sec":3.5,"async_clob_keepalive_expiry_sec":45.,"microbatch_coalesce_alt_sec":.003},"exit_supervisor":{"policy":"ev_terminal_twap_t5","student_t_df":5.,"jump_sigma_mult":1.45,"basis_sigma_floor":.00025,"terminal_window_min_tte_sec":16.,"terminal_window_max_tte_sec":105.,"mid_window_max_tte_sec":180.,"ev_salvage_margin":.04,"max_salvage_bid_drop_from_entry":.24,"terminal_hold_confirm_sec":3.,"mid_hold_confirm_sec":8.,"early_catastrophic_cushion_frac":.0018,"early_hold_confirm_sec":18.,"anti_wick_rebound_vel_pct":.03,"enable_high_zone_mfe_ratchet":True,"high_zone_mfe_arm_bid":.93,"high_zone_mfe_drop":.04,"high_zone_mfe_hold_confirm_sec":2.,"high_zone_mfe_min_tte_sec":16.,"isolate_single_market_zero_bid":True,"global_zero_bid_halt_min_markets":2},"risk_controller":{"decouple_riskless_boxes_from_directional_halt":True,"max_daily_directional_loss_usd":16.57,"max_consecutive_directional_losses":4,"hard_ruin_floor_usd":42.},"sizing_tiers":{"unleash_full_throttle":True,"seed_survival_max_equity":95.,"recovery_max_equity":250.,"growth_max_equity":1e3,"tier_upward_hysteresis_usd":3.,"kelly_fraction_seed":.36,"kelly_fraction_recovery":.4,"kelly_fraction_growth":.36,"kelly_fraction_scale":.3,"notional_cap_seed":.22,"notional_cap_recovery":.26,"notional_cap_growth":.22,"notional_cap_scale":.16,"salvage_stop_floor_px":.34,"max_stop_equity_risk_seed":.135,"max_stop_equity_risk_recovery":.155,"max_stop_equity_risk_growth":.13,"max_stop_equity_risk_scale":.1,"dir_slots_seed":4,"dir_slots_recovery":4,"dir_slots_growth":4,"dir_slots_scale":4,"daily_loss_pct_seed":.24,"daily_loss_pct_recovery":.22,"daily_loss_pct_growth":.2,"daily_loss_pct_scale":.16,"portfolio_exposure_pct_seed":.96,"portfolio_exposure_pct_recovery":.96,"portfolio_exposure_pct_growth":.96,"portfolio_exposure_pct_scale":.96,"subordinate_15m_maker_size_mult":.8},"riskless_boxes":{"enable_graduated_d1_box":True,"enable_single_leg_maker_bond1":True,"enable_two_leg_maker_anchor_boxes":False,"paused_riskless_sleeves":[],"d1_max_box_cost_net":.985,"cm_b3_max_walk_cap":.99,"d1_free_cash_pct_seed":.9,"d1_free_cash_pct_recovery":.9,"d1_free_cash_pct_growth":.9,"d1_free_cash_pct_scale":.9,"bond1_free_cash_pct_seed":.78,"seed_zero_loss_focus_bond1_pool_pct":.92,"bond1_velocity_preempt_mult":1.8,"bond1_free_cash_pct_growth":.88,"bond1_per_market_cap_usd_seed":45.,"bond1_per_market_cap_usd_recovery":85.,"bond1_per_market_cap_pct":.65,"bond1_maker_per_market_cap_pct":.365,"bond1_maker_fanout_clip_usd_seed":.0,"mkr_lock1_max_concurrent_slots":1,"bond1_max_join_queue_usd":350.,"bond1_buried_cancel_sec":15.,"bridged_zero_fee_cap_usd_seed":60.,"bridged_zero_fee_cap_usd_growth":120.,"enable_reward_locked_carry_live_bridge":True,"reward_harvester_cap_usd_seed":12.,"box_collateral_reserve_usd":.0,"max_concurrent_riskless_boxes":10,"seed_max_lockup_hours":8.,"seed_min_bps_per_hour":15.,"recovery_max_lockup_hours":48.,"recovery_min_bps_per_hour":5.,"growth_max_lockup_hours":72.,"growth_min_bps_per_hour":6.,"scale_max_lockup_hours":168.,"scale_min_bps_per_hour":3.5,"enable_pre_split_overround_gun":False,"enable_pre_split_dual_maker_asks":False,"pre_split_require_live_overround":True,"pre_split_min_free_cash_usd":14.,"pre_split_inventory_cap_usd":12.,"enable_nr3_synthetic_overround":True,"enable_cross_condition_complement_merge":True,"enable_d1_rebate_maker_canary":False,"d1_rebate_maker_cap_usd":12.,"gatling_enabled":True,"gatling_fast_gun_reserve_usd":22.5,"gatling_concave_exp":.65,"gatling_base_clip_d1_usd":22.,"gatling_base_clip_core_usd":20.,"gatling_base_clip_bridge_usd":18.5,"enable_s2_twap_lock_live":True,"enable_ungraduated_v3_math_live":True},"shadow_governance":{"enable_btc_5m_sniper_shadow":False,"enable_sol_5m_canary_shadow":False,"enable_hybrid_zsplit_shadow":True,"enable_xau_15m_maker_shadow":True,"weekly_wfo_min_trades":50,"weekly_wfo_min_profit_factor":1.45,"weekly_wfo_max_pbo":.2}}
 def _deep_merge_validated(defaults,raw):
  if not isinstance(raw,dict):raise ValueError("Root config must be a JSON object")
  j=copy.deepcopy(defaults)
@@ -2667,206 +2667,204 @@ class PolymarketLiveHarvester:
   finally:a.pending_entry_intents.pop(_F,None);_c.discard(V);B.discard(_u);L.pop(V,None)
  async def maybe_execute_graduated_single_leg_maker_lock(a,candidate_box):
   if a._is_d1_box_halted():return{"executed":False,"reason":"DISABLED_OR_HALTED"}
-  _aC=str(candidate_box.get("box_type")or"").strip().upper()
-  if _aC!="SINGLE_LEG_MAKER_LOCK":return{"executed":False,"reason":f"UNSUPPORTED_SINGLE_LEG_MAKER_TYPE:{_aC}"}
-  _ac=str(candidate_box.get("sleeve_source")or"BOND1_UMA_RESOLUTION_CARRY").strip();_ab=str(candidate_box.get("asset")or _ac[:4]).strip().upper();_bq=str(candidate_box.get("leg_a_market_id")or"");_bp=str(candidate_box.get("leg_a_condition_id")or"");_bo=str(candidate_box.get("leg_a_token_id")or"");_bn=str(candidate_box.get("leg_a_opp_token_id")or"");_bb=str(candidate_box.get("leg_a_side")or"YES").upper()
-  if not _ac or not _bq or not _bo or not _bn or _bo==_bn:return{"executed":False,"reason":"INVALID_SINGLE_LEG_MAKER_INVARIANTS"}
-  _P=a.__dict__.setdefault("_inflight_maker_anchor_keys",set());_c=a.__dict__.setdefault("_inflight_maker_anchor_types",set());_m=a.__dict__.setdefault("_inflight_s2_maker_keys",set());_aB=str(candidate_box.get("dedupe_key")or f"BOND1_MKR_{_bq}");_A=str(candidate_box.get("pair_dedupe_key")or f"BOND1_{_bq}");_aa=a._is_unlimited_slots_active()or a._is_v5_unleashed_active();_O=_ac in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}
-  if _O:
-   _9=len(_m)+sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and str(_iv.get("sleeve_source")or"")in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}and str(_iv.get("inflight_key")or"")not in _m)
-   if _9>=1:return{"executed":False,"reason":"S2_MAKER_CONCURRENT_CAP_1"}
-  _8=f"SINGLE_LEG_MAKER_LOCK:{_bq}";_h=sum(1 for k in _c if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
-  if(_8 in _c or(not _O and _h>=(4 if _aa else 2))or len(_P)>=((10 if _O else 8)if _aa else(6 if _O else 4))):return{"executed":False,"reason":"SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
-  if _ac=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":
-   _N=sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and _iv.get("sleeve_source")=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER")
-   if _N>=1:return{"executed":False,"reason":"MKR_LOCK1_CONCURRENT_CAP_1"}
-  _ba=time.time();from src.polymarket_research.riskless_protocol_v2_expansion import(check_s2_live_adverse_move_cancel as u,check_sll_cand_dispute_guard as D,compute_d1_per_market_notional_cap as r,compute_sll_entry_budget as j,compute_sll_maker_keep_and_renew as b,debit_sll_collateral_after_fill as w,eval_sll_fresh_book_and_peg as F,eval_sll_live_book_poll as Q,extract_top_bid_from_book as J,is_d1_dedupe_blocked as e,is_market_busy_for_scaling as H,maybe_preempt_mlk1_if_bond1_starved as q,release_sll_pending_intent as c,resolve_harvester_sll_tick_size as y,select_sll_velocity_preempt_target as s,sll_repost_expiry_and_ok as d,sll_settlement_lag_floor_hours as z,sync_pending_intents_on_collateral_refresh as m,update_sll_intent_partial_fill as g);_ar=D(candidate_box)
-  if _ar:return{"executed":False,"reason":_ar}
-  _7=a.__dict__.setdefault("_seen_d1_box_keys",set());_aA=a.__dict__.setdefault("_d1_retry_cooldown_until",{})
-  if(e(a,_aB,_A,[_bq],_ba)or(_aB and float(_aA.get(_aB,.0)or.0)>_ba)or(_A and float(_aA.get(_A,.0)or.0)>_ba)):return{"executed":False,"reason":"ALREADY_SEEN_OR_COOLDOWN"}
-  if not a.dry_run and(not getattr(a,"_startup_reconciled",False)or a._global_halt_reasons()or _bq in a._reconciling_market_ids()):return{"executed":False,"reason":"NOT_READY_OR_GLOBAL_HALT"}
-  _aq=getattr(a,"risk_config",None)or RISK_CONFIG
+  _aE=str(candidate_box.get("box_type")or"").strip().upper()
+  if _aE!="SINGLE_LEG_MAKER_LOCK":return{"executed":False,"reason":f"UNSUPPORTED_SINGLE_LEG_MAKER_TYPE:{_aE}"}
+  _ad=str(candidate_box.get("sleeve_source")or"BOND1_UMA_RESOLUTION_CARRY").strip();_ac=str(candidate_box.get("asset")or _ad[:4]).strip().upper();_bs=str(candidate_box.get("leg_a_market_id")or"");_br=str(candidate_box.get("leg_a_condition_id")or"");_bq=str(candidate_box.get("leg_a_token_id")or"");_bp=str(candidate_box.get("leg_a_opp_token_id")or"");_bd=str(candidate_box.get("leg_a_side")or"YES").upper()
+  if not _ad or not _bs or not _bq or not _bp or _bq==_bp:return{"executed":False,"reason":"INVALID_SINGLE_LEG_MAKER_INVARIANTS"}
+  _Q=a.__dict__.setdefault("_inflight_maker_anchor_keys",set());_a=a.__dict__.setdefault("_inflight_maker_anchor_types",set());_l=a.__dict__.setdefault("_inflight_s2_maker_keys",set());_aD=str(candidate_box.get("dedupe_key")or f"BOND1_MKR_{_bs}");_A=str(candidate_box.get("pair_dedupe_key")or f"BOND1_{_bs}");_ab=a._is_unlimited_slots_active()or a._is_v5_unleashed_active();_P=_ad in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+  if _P:
+   _aa=len(_l)+sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and str(_iv.get("sleeve_source")or"")in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}and str(_iv.get("inflight_key")or"")not in _l)
+   if _aa>=1:return{"executed":False,"reason":"S2_MAKER_CONCURRENT_CAP_1"}
+  _9=f"SINGLE_LEG_MAKER_LOCK:{_bs}";_f=sum(1 for k in _a if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
+  if(_9 in _a or(not _P and _f>=(8 if _ab else 2))or len(_Q)>=((12 if _P else 10)if _ab else(6 if _P else 4))):return{"executed":False,"reason":"SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
+  if _ad=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":
+   _O=sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and _iv.get("sleeve_source")=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER");_at=(max(1,int(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("mkr_lock1_max_concurrent_slots",1)or 1))if(getattr(a,"enforce_bond1_smart_queue",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"post_maker_entry_order"not in getattr(a.executor,"__dict__",{})))else 1)
+   if _O>=_at:return{"executed":False,"reason":"MKR_LOCK1_CONCURRENT_CAP_1"}
+  _bc=time.time();from src.polymarket_research.riskless_protocol_v2_expansion import(check_s2_live_adverse_move_cancel as u,check_sll_cand_dispute_guard as D,compute_d1_per_market_notional_cap as r,compute_sll_entry_budget as j,compute_sll_maker_keep_and_renew as b,debit_sll_collateral_after_fill as w,eval_sll_fresh_book_and_peg as F,eval_sll_live_book_poll as O,extract_top_bid_from_book as I,is_d1_dedupe_blocked as e,is_market_busy_for_scaling as H,maybe_preempt_mlk1_if_bond1_starved as q,release_sll_pending_intent as c,resolve_harvester_sll_tick_size as y,select_sll_velocity_preempt_target as s,sll_repost_expiry_and_ok as d,sll_settlement_lag_floor_hours as z,sync_pending_intents_on_collateral_refresh as m,update_sll_intent_partial_fill as g);_as=D(candidate_box)
+  if _as:return{"executed":False,"reason":_as}
+  _8=a.__dict__.setdefault("_seen_d1_box_keys",set());_aC=a.__dict__.setdefault("_d1_retry_cooldown_until",{})
+  if(e(a,_aD,_A,[_bs],_bc)or(_aD and float(_aC.get(_aD,.0)or.0)>_bc)or(_A and float(_aC.get(_A,.0)or.0)>_bc)):return{"executed":False,"reason":"ALREADY_SEEN_OR_COOLDOWN"}
+  if not a.dry_run and(not getattr(a,"_startup_reconciled",False)or a._global_halt_reasons()or _bs in a._reconciling_market_ids()):return{"executed":False,"reason":"NOT_READY_OR_GLOBAL_HALT"}
+  _ar=getattr(a,"risk_config",None)or RISK_CONFIG
   try:
-   _t=DATA_DIR/"alpha124_shadow_state.json"
-   if not _t.exists()and DATA_DIR==(PIPELINE_ROOT/"data"/"polymarket"):
-    _bm=PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json"
-    if _bm.exists():_t=_bm
-   if not _t.exists()or(time.time()-_t.stat().st_mtime)>3e2:return{"executed":False,"reason":"ALPHA124_STATE_MISSING_OR_STALE"}
-   _a9=_json_loads(_t.read_text(encoding="utf-8"));_ap=_a9.get("by_sleeve")or _a9.get("per_strategy")or{}
-   def L(rec):a=rec.get("legging_adjusted_pnl_t1000_usd",rec.get("realized_pnl_t1000_usd",.0));return bool(int(rec.get("closed",0)or 0)>=8 and float(rec.get("win_rate_pct",.0)or.0)>=1e2 and float(rec.get("realized_pnl_t1000_usd",.0)or.0)>.0 and float(a or.0)>.0)
-   _az=_ac=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER";_M=_ac=="MKR_REWARD_LOCKED_CARRY";_6=_ac in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"};_5=_ac in{"W_PRUNE1_DEAD_NO_BOND","UMA_READY1_LIVENESS_PRIORITY"}
-   if(getattr(a,"enforce_paused_riskless_sleeves",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"post_maker_entry_order"not in getattr(a.executor,"__dict__",{})))and _ac.upper()in set(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("paused_riskless_sleeves")or[]):return{"executed":False,"reason":f"PAUSED_RISKLESS_SLEEVE:{_ac}"}
-   _ay=_ap.get(_ac)or{};_a8=int(_ay.get("losses",0)or 0)==0;_aT=L(_ap.get("D1_SAME_ORACLE_DOMINANCE_BOX")or{});_L=L(_ay)and _a8;_g=bool(_a8 and _aT and((_ac in{"BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}and _aq.get("enable_bond1_live_bridge",True)and float(_ay.get("realized_pnl_t1000_usd",.0)or.0)>=.0 and(int(_ay.get("closed",0)or 0)==0 or float(_ay.get("win_rate_pct",1e2)or.0)>=1e2))or(not a.dry_run and a._is_v5_unleashed_active()and _az and float(candidate_box.get("p_model")or.0)>=.998)or(not a.dry_run and _M and float(candidate_box.get("p_model")or.998)>=.998 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_reward_locked_carry_live_bridge",True)))or(not a.dry_run and _6 and float(candidate_box.get("p_model")or.0)>=.9985 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_s2_twap_lock_live",True)))or(not a.dry_run and a._is_v5_unleashed_active()and _5 and float(candidate_box.get("p_model")or.0)>=.999)))
-   if not(_L or _g):return{"executed":False,"reason":f"SINGLE_LEG_MAKER_NOT_GRADUATED:{_ac}"}
-  except Exception as _Y:return{"executed":False,"reason":f"STATE_READ_ERROR:{_Y}"}
-  _a7=float(candidate_box.get("expiry_ts")or.0);_aS=float(candidate_box.get("ts_unix")or _ba);_K=4.8 if _6 else(60. if(_az or _ac=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY")else 110.);_J=39. if _6 else(86400. if _M else(28800. if _5 else(14400. if _az else 9e3)))
-  if not a.dry_run and((_ba-_aS)>(2.5 if _6 else 8.)or(_a7>.0 and not(_K<=(_a7-_ba)<=_J))):return{"executed":False,"reason":"STALE_OR_OUTSIDE_TTE_WINDOW"}
-  _I=a.__dict__.setdefault("_prepost_sll_reserved_usd",{});_z=a.__dict__.setdefault("_prepost_sll_markets",{})
-  if H(a,_bq,extra_busy_markets=list(_z.values())):return{"executed":False,"reason":"MARKET_ALREADY_OCCUPIED"}
-  _s=a._active_box_ids();_a6=GLOBAL_GOVERNANCE_MANAGER.snapshot;_aR=_a6.get("riskless_boxes",{});P=int(_aq.get("max_concurrent_d1_boxes",4));T=int(_aq.get("max_total_portfolio_slots",4))
-  if a._is_v5_unleashed_active():P=int(_aR.get("max_concurrent_riskless_boxes",10));T=int(_a6.get("sizing_tiers",{}).get("max_total_slots",12))
-  if len(_s)>=P or(not a.dry_run and(len(_s)+len(a._risk_bearing_positions()))>=T):return{"executed":False,"reason":"MAX_CONCURRENT_BOXES_REACHED"}
-  if P>=2 and _a7>.0 and(_a7-_ba)>3600. and len(_s)>=(P-1):return{"executed":False,"reason":"INTRADAY_D1_SLOT_RESERVED"}
-  _H=int(candidate_box.get("_bond1_repost_count")or 0);_b=getattr(a,"_last_known_collateral",None)
-  if not a.dry_run and(_b is None or _H>0)and hasattr(a.executor,"get_collateral_balance"):
-   _X=_b
+   _s=DATA_DIR/"alpha124_shadow_state.json"
+   if not _s.exists()and DATA_DIR==(PIPELINE_ROOT/"data"/"polymarket"):
+    _bo=PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json"
+    if _bo.exists():_s=_bo
+   if not _s.exists()or(time.time()-_s.stat().st_mtime)>3e2:return{"executed":False,"reason":"ALPHA124_STATE_MISSING_OR_STALE"}
+   _bb=_json_loads(_s.read_text(encoding="utf-8"));_aq=_bb.get("by_sleeve")or _bb.get("per_strategy")or{}
+   def K(rec):a=rec.get("legging_adjusted_pnl_t1000_usd",rec.get("realized_pnl_t1000_usd",.0));return bool(int(rec.get("closed",0)or 0)>=8 and float(rec.get("win_rate_pct",.0)or.0)>=1e2 and float(rec.get("realized_pnl_t1000_usd",.0)or.0)>.0 and float(a or.0)>.0)
+   _aB=_ad=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER";_N=_ad=="MKR_REWARD_LOCKED_CARRY";_7=_ad in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"};_6=_ad in{"W_PRUNE1_DEAD_NO_BOND","UMA_READY1_LIVENESS_PRIORITY"}
+   if(getattr(a,"enforce_paused_riskless_sleeves",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"post_maker_entry_order"not in getattr(a.executor,"__dict__",{})))and _ad.upper()in set(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("paused_riskless_sleeves")or[]):return{"executed":False,"reason":f"PAUSED_RISKLESS_SLEEVE:{_ad}"}
+   _aA=_aq.get(_ad)or{};_ba=int(_aA.get("losses",0)or 0)==0;_aV=K(_aq.get("D1_SAME_ORACLE_DOMINANCE_BOX")or{});_M=K(_aA)and _ba;_e=bool(_ba and _aV and((_ad in{"BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}and _ar.get("enable_bond1_live_bridge",True)and float(_aA.get("realized_pnl_t1000_usd",.0)or.0)>=.0 and(int(_aA.get("closed",0)or 0)==0 or float(_aA.get("win_rate_pct",1e2)or.0)>=1e2))or(not a.dry_run and a._is_v5_unleashed_active()and _aB and float(candidate_box.get("p_model")or.0)>=.998)or(not a.dry_run and _N and float(candidate_box.get("p_model")or.998)>=.998 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_reward_locked_carry_live_bridge",True)))or(not a.dry_run and _7 and float(candidate_box.get("p_model")or.0)>=.9985 and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_s2_twap_lock_live",True)))or(not a.dry_run and a._is_v5_unleashed_active()and _6 and float(candidate_box.get("p_model")or.0)>=.999)))
+   if not(_M or _e):return{"executed":False,"reason":f"SINGLE_LEG_MAKER_NOT_GRADUATED:{_ad}"}
+  except Exception as _Z:return{"executed":False,"reason":f"STATE_READ_ERROR:{_Z}"}
+  _a9=float(candidate_box.get("expiry_ts")or.0);_aU=float(candidate_box.get("ts_unix")or _bc);_L=4.8 if _7 else(60. if(_aB or _ad=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY")else 110.);_K=39. if _7 else(86400. if _N else(28800. if _6 else(14400. if _aB else 9e3)))
+  if not a.dry_run and((_bc-_aU)>(2.5 if _7 else 8.)or(_a9>.0 and not(_L<=(_a9-_bc)<=_K))):return{"executed":False,"reason":"STALE_OR_OUTSIDE_TTE_WINDOW"}
+  _J=a.__dict__.setdefault("_prepost_sll_reserved_usd",{});_z=a.__dict__.setdefault("_prepost_sll_markets",{})
+  if H(a,_bs,extra_busy_markets=list(_z.values())):return{"executed":False,"reason":"MARKET_ALREADY_OCCUPIED"}
+  _r=a._active_box_ids();_a8=GLOBAL_GOVERNANCE_MANAGER.snapshot;_aT=_a8.get("riskless_boxes",{});N=int(_ar.get("max_concurrent_d1_boxes",4));R=int(_ar.get("max_total_portfolio_slots",4))
+  if a._is_v5_unleashed_active():N=int(_aT.get("max_concurrent_riskless_boxes",10));R=int(_a8.get("sizing_tiers",{}).get("max_total_slots",12))
+  if len(_r)>=N or(not a.dry_run and(len(_r)+len(a._risk_bearing_positions()))>=R):return{"executed":False,"reason":"MAX_CONCURRENT_BOXES_REACHED"}
+  if N>=2 and _a9>.0 and(_a9-_bc)>3600. and len(_r)>=(N-1):return{"executed":False,"reason":"INTRADAY_D1_SLOT_RESERVED"}
+  _I=int(candidate_box.get("_bond1_repost_count")or 0);Z=getattr(a,"_last_known_collateral",None)
+  if not a.dry_run and(Z is None or _I>0)and hasattr(a.executor,"get_collateral_balance"):
+   _Y=Z
    try:
-    _ax=await asyncio.to_thread(a.executor.get_collateral_balance)
-    if isinstance(_ax,(int,float))and not isinstance(_ax,bool)and math.isfinite(float(_ax))and float(_ax)>=.0:_b=float(_ax);a._last_known_collateral=_b;m(a,_X,_b)
+    _az=await asyncio.to_thread(a.executor.get_collateral_balance)
+    if isinstance(_az,(int,float))and not isinstance(_az,bool)and math.isfinite(float(_az))and float(_az)>=.0:Z=float(_az);a._last_known_collateral=Z;m(a,_Y,Z)
    except Exception:
-    if _b is None:_b=.0
-   if(_aB in _P or _8 in _c or _bq in _z.values()or any(str(i.get("market_id")or"")==_bq for i in getattr(a,"pending_entry_intents",{}).values()if isinstance(i,dict))):return{"executed":False,"reason":"SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
-  _l=bool(getattr(a,"enforce_bond1_smart_queue",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"post_maker_entry_order"not in getattr(a.executor,"__dict__",{})));_ao=float(_aq.get("bond1_max_join_queue_usd",_aR.get("bond1_max_join_queue_usd",350.))or 350.);_G=float(_aq.get("bond1_buried_cancel_sec",_aR.get("bond1_buried_cancel_sec",15.))or 15.);_a,S,_=j(a,_ac,_bq,_b,_L,_l,_aR,_aq,_a6,_a7-_ba,_ba);_a5=float(candidate_box.get("min_resting_bid",.94)or.94);_a4=min(.998,float(candidate_box.get("max_box_cost_net",.994)or.994));_aQ=float(candidate_box.get("max_opp_bid",.008)or.008);V=float(candidate_box.get("anchor_bid_px")or candidate_box.get("leg_a_limit_price")or.0)
-  if not(_a5<=V<=_a4):return{"executed":False,"reason":f"RESTING_BID_OUT_OF_BAND:{V:.4f}"}
-  _a=await q(a,_ac,_a,_b,_L,_l,_aR,_aq,_a6,S,_a7-_ba,_ba,r(a)if S>.0 else.0);_W=z(_ac);O=round(((1.-V)*1e4)/max(_W,(_a7-_ba)/3600.),2)if _a7>_ba else.0;I=O
-  if _M and V<=.994:O=max(O,110.);I=max(I,110.)
-  _r=5;Z=int(math.floor(_a/V))
-  if(not _6 and Z<12 and not a.dry_run and V>=.99 and O>=40. and a._is_v5_unleashed_active()):
-   _an=float(_aR.get("bond1_velocity_preempt_mult",1.8)or 1.8);_aP=getattr(a,"_maker_anchor_preempt_events",{});_V=a.__dict__.setdefault("_claimed_velocity_preempts",set());_am,_aO=s(a,I,_6,_an,cand_sleeve=_ac)
-   if _aO:
-    _V.add(_aO)
+    if Z is None:Z=.0
+   if(_aD in _Q or _9 in _a or _bs in _z.values()or any(str(i.get("market_id")or"")==_bs for i in getattr(a,"pending_entry_intents",{}).values()if isinstance(i,dict))):return{"executed":False,"reason":"SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
+  _k=bool(getattr(a,"enforce_bond1_smart_queue",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"post_maker_entry_order"not in getattr(a.executor,"__dict__",{})));_ap=float(_ar.get("bond1_max_join_queue_usd",_aT.get("bond1_max_join_queue_usd",350.))or 350.);_H=float(_ar.get("bond1_buried_cancel_sec",_aT.get("bond1_buried_cancel_sec",15.))or 15.);Y,Q,_=j(a,_ad,_bs,Z,_M,_k,_aT,_ar,_a8,_a9-_bc,_bc);_a7=float(candidate_box.get("min_resting_bid",.94)or.94);_a6=min(.998,float(candidate_box.get("max_box_cost_net",.994)or.994));_aS=float(candidate_box.get("max_opp_bid",.008)or.008);T=float(candidate_box.get("anchor_bid_px")or candidate_box.get("leg_a_limit_price")or.0)
+  if not(_a7<=T<=_a6):return{"executed":False,"reason":f"RESTING_BID_OUT_OF_BAND:{T:.4f}"}
+  Y=await q(a,_ad,Y,Z,_M,_k,_aT,_ar,_a8,Q,_a9-_bc,_bc,r(a)if Q>.0 else.0);_X=z(_ad);_G=round(((1.-T)*1e4)/max(_X,(_a9-_bc)/3600.),2)if _a9>_bc else.0;_y=_G;_q=5;X=int(math.floor(Y/T));_j=bool((getattr(a,"enforce_gatling_sizing",False)or getattr(a,"enforce_gatling_fast_gun_reserve",False)or(not a.dry_run and getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None and"get_market_book"not in getattr(a.executor,"__dict__",{})and not getattr(a,"enforce_bond1_smart_queue",False)))and float(_aT.get("bond1_maker_fanout_clip_usd_seed")or.0)>.0 and float(Z or.0)<150.)
+  if(not _7 and X<(_q if _j else 12)and not a.dry_run and T>=.99 and _G>=40. and a._is_v5_unleashed_active()):
+   _ao=float(_aT.get("bond1_velocity_preempt_mult",1.8)or 1.8);_aR=getattr(a,"_maker_anchor_preempt_events",{});_W=a.__dict__.setdefault("_claimed_velocity_preempts",set());_an,_aQ=s(a,_y,_7,_ao,cand_sleeve=_ad)
+   if _aQ:
+    _W.add(_aQ)
     try:
-     (a.__dict__.setdefault("_maker_anchor_preempt_reasons",{}))[_aO]=f"VELOCITY_UPGRADE:{_aB}";logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_aO} ({_am:.1f} bps/h) -> {_aB} ({I:.1f} bps/h @ ${V:.3f})");_aP[_aO].set()
+     (a.__dict__.setdefault("_maker_anchor_preempt_reasons",{}))[_aQ]=f"VELOCITY_UPGRADE:{_aD}";logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_aQ} ({_an:.1f} bps/h) -> {_aD} ({_y:.1f} bps/h @ ${T:.3f})");_aR[_aQ].set()
      for _ in range(16):
       await asyncio.sleep(.06)
-      if not any(isinstance(i,dict)and i.get("inflight_key")==_aO for i in a.pending_entry_intents.values()):break
-    finally:_V.discard(_aO)
-    _a,S,_=j(a,_ac,_bq,_b,_L,_l,_aR,_aq,_a6,_a7-_ba,_ba,post_vel_preempt=True);Z=int(math.floor(_a/V))
-  if Z<_r:return{"executed":False,"reason":"INSUFFICIENT_MAKER_BOX_BUDGET"}
-  if _O and(len(_m)+sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and str(_iv.get("sleeve_source")or"")in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}and str(_iv.get("inflight_key")or"")not in _m))>=1:return{"executed":False,"reason":"S2_MAKER_CONCURRENT_CAP_1"}
-  _F=_aB;_P.add(_F);_c.add(_8)
-  if _O:_m.add(_F)
-  _q=a.__dict__.setdefault("_maker_anchor_preempt_events",{});_4=threading.Event();_q[_F]=_4;_a3=str(candidate_box.get("box_id")or f"MKR_LOCK1_{int(_ba)}");_al=f"{_a3}_SLL_INTENT";_I[_al]=round(Z*V,4);_z[_al]=_bq;p=.0;_aw=getattr(a,"_pos_market_ws",None)
-  if _aw is not None and hasattr(_aw,"subscribe_tokens_immediate"):_aw.subscribe_tokens_immediate([_bo,_bn])
+      if not any(isinstance(i,dict)and i.get("inflight_key")==_aQ for i in a.pending_entry_intents.values()):break
+    finally:_W.discard(_aQ)
+    Y,Q,_=j(a,_ad,_bs,Z,_M,_k,_aT,_ar,_a8,_a9-_bc,_bc,post_vel_preempt=True);X=int(math.floor(Y/T))
+  if X<_q:return{"executed":False,"reason":"INSUFFICIENT_MAKER_BOX_BUDGET"}
+  if _P and(len(_l)+sum(1 for _iv in getattr(a,"pending_entry_intents",{}).values()if isinstance(_iv,dict)and str(_iv.get("sleeve_source")or"")in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"}and str(_iv.get("inflight_key")or"")not in _l))>=1:return{"executed":False,"reason":"S2_MAKER_CONCURRENT_CAP_1"}
+  _F=_aD;_Q.add(_F);_a.add(_9)
+  if _P:_l.add(_F)
+  _p=a.__dict__.setdefault("_maker_anchor_preempt_events",{});_5=threading.Event();_p[_F]=_5;_a5=str(candidate_box.get("box_id")or f"MKR_LOCK1_{int(_bc)}");_am=f"{_a5}_SLL_INTENT";_J[_am]=round(X*T,4);_z[_am]=_bs;p=.0;_ay=getattr(a,"_pos_market_ws",None)
+  if _ay is not None and hasattr(_ay,"subscribe_tokens_immediate"):_ay.subscribe_tokens_immediate([_bq,_bp])
   try:
-   _ak=.0 if a.dry_run else float((await asyncio.to_thread(a._wallet_token_balance,_bo))[0]or.0)
+   _al=.0 if a.dry_run else float((await asyncio.to_thread(a._wallet_token_balance,_bq))[0]or.0)
    if not a.dry_run and hasattr(a.executor,"get_market_book"):
-    _U="get_market_book"in getattr(a.executor,"__dict__",{});_av=candidate_box.get("ws_books")if not _U else None;_3=isinstance(_av,dict)and(time.time()-float(candidate_box.get("ws_books_ts")or.0))<=.65;_f=_av.get(_bo)if _3 else(_aw.get_book(_bo,max_age_sec=1.5)if(_aw and not _U and _H<=0)else None);_e=_av.get(_bn)if _3 else(_aw.get_book(_bn,max_age_sec=1.5)if(_aw and not _U and _H<=0)else None)
-    if _f is None or _e is None:_f,_e=await asyncio.gather(asyncio.to_thread(a.executor.get_market_book,_bo)if _f is None else asyncio.sleep(0,result=_f),asyncio.to_thread(a.executor.get_market_book,_bn)if _e is None else asyncio.sleep(0,result=_e))
-    _p=(getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None);_y="get_token_tick_size"in getattr(a.executor,"__dict__",{});p=y(a.executor,_bo,candidate_box,bk_win=_f,mkt_ws=_aw,real_clob=_p,custom_tk_fn=_y,price_hint=V)
-    if p<=.0 and hasattr(a.executor,"get_token_tick_size")and(_p or _y):
-     try:p=float((await asyncio.to_thread(a.executor.get_token_tick_size,_bo,V))or.0)
-     except TypeError:p=float((await asyncio.to_thread(a.executor.get_token_tick_size,_bo))or.0)
+    _V="get_market_book"in getattr(a.executor,"__dict__",{});_ax=candidate_box.get("ws_books")if not _V else None;_4=isinstance(_ax,dict)and(time.time()-float(candidate_box.get("ws_books_ts")or.0))<=.65;_d=_ax.get(_bq)if _4 else(_ay.get_book(_bq,max_age_sec=1.5)if(_ay and not _V and _I<=0)else None);_c=_ax.get(_bp)if _4 else(_ay.get_book(_bp,max_age_sec=1.5)if(_ay and not _V and _I<=0)else None)
+    if _d is None or _c is None:_d,_c=await asyncio.gather(asyncio.to_thread(a.executor.get_market_book,_bq)if _d is None else asyncio.sleep(0,result=_d),asyncio.to_thread(a.executor.get_market_book,_bp)if _c is None else asyncio.sleep(0,result=_c))
+    _o=(getattr(a.executor,"client",None)is not None and getattr(getattr(a.executor,"client",None),"_mock_children",None)is None);_x="get_token_tick_size"in getattr(a.executor,"__dict__",{});p=y(a.executor,_bq,candidate_box,bk_win=_d,mkt_ws=_ay,real_clob=_o,custom_tk_fn=_x,price_hint=T)
+    if p<=.0 and hasattr(a.executor,"get_token_tick_size")and(_o or _x):
+     try:p=float((await asyncio.to_thread(a.executor.get_token_tick_size,_bq,T))or.0)
+     except TypeError:p=float((await asyncio.to_thread(a.executor.get_token_tick_size,_bq))or.0)
      except Exception:p=.0
-    _aN,_bl,V,Z,p=F(_f,_e,candidate_box,V,_a5,_a4,_aQ,_a,p,_p,_l,_az,_6,_H,_ao)
-    if _aN is not None:
-     if _bl>.0:_aA[_aB]=time.time()+_bl
-     return{"executed":False,"reason":_aN}
-    _I[_al]=round(Z*V,4)
-   _aj=candidate_box.get("leg_a_neg_risk");_bs=_aj if isinstance(_aj,bool)else None
-   if hasattr(a.executor,"prewarm_token_market_cache"):_T=a.dry_run or hasattr(getattr(a.executor,"client",None),"_mock_children");_aM=candidate_box.get("leg_a_tick_size")if _T else(p if p>.0 else None);a.executor.prewarm_token_market_cache(token_id=_bo,tick_size=_aM,neg_risk=bool(_bs),fee_rate_bps=0,condition_id=_bp or _bq,fee_rate=.0,fee_exponent=1.)
-   _E=round((Z+.01)*V,4);_2=time.time();_I.pop(_al,None);_z.pop(_al,None);a.pending_entry_intents[_al]={"trade_id":_al,"market_id":_bq,"token_id":_bo,"anchor_bid_px":V,"notional_usd":round(Z*V,4),"ts":_2,"heartbeat_ts":_2,"live_maker_anchor_inflight":True,"inflight_key":_F,"sleeve_source":_ac,"expiry_ts":_a7,"velocity_bps_hr":round(((1.-V)*1e4)/max(_W,(_a7-_2)/3600.),2)if _a7>_2 else.0};_bk=time.perf_counter();_au=await asyncio.to_thread(a.executor.post_maker_entry_order,token_id=_bo,price=V,notional_usd=_E,side="BUY",neg_risk=_bs,min_price_floor=max(.5 if _6 else.9,_a5),max_price_ceiling=max(.995,_a4));_S=round((time.perf_counter()-_bk)*1e3,2);_ai=str((_au or{}).get("orderID")or"").strip()
-   if not isinstance(_au,dict)or not _au.get("success")or not _ai:
-    a.pending_entry_intents.pop(_al,None)
-    if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ab or"BOND1","horizon":"box","side":_bb,"market_id":_bq,"title":str(candidate_box.get("title")or _a3),"sleeve":_ac,"path_type":"MAKER_BOX","target_px":float((_au or{}).get("price")or V),"notional_usd":_E,"http_ms":_S,"stage_outcome":"BOND1_MAKER_POST_FAILED","gate_detail":str((_au or{}).get("error")or"")})
-    return{"executed":False,"reason":f"BOND1_MAKER_POST_FAILED:{(_au or{}).get('error')}"}
-   _ah=float(_au.get("price")or V);_ag=float(_au.get("shares")or Z)
-   if _al in a.pending_entry_intents:
-    _bj=a.pending_entry_intents[_al];_a2=time.time();_bj["entry_order_id"]=_ai;_bj["anchor_bid_px"]=_ah;_bj["posted_shares"]=_ag;_bj["posted_notional_usd"]=round(_ag*_ah,4);_bj["notional_usd"]=round(_ag*_ah,4);_bj["matched_notional_usd"]=.0;_bj["collat_drop_usd"]=.0;_bj["velocity_bps_hr"]=round(((1.-_ah)*1e4)/max(_W,(_a7-_a2)/3600.),2)if _a7>_a2 else.0;_bj["heartbeat_ts"]=_a2;_bj["_last_persist_ts"]=_a2
+    _aP,_bn,T,X,p=F(_d,_c,candidate_box,T,_a7,_a6,_aS,Y,p,_o,_k,_aB,_7,_I,_ap)
+    if _aP is not None:
+     if _bn>.0:_aC[_aD]=time.time()+_bn
+     return{"executed":False,"reason":_aP}
+    _J[_am]=round(X*T,4)
+   _ak=candidate_box.get("leg_a_neg_risk");_bu=_ak if isinstance(_ak,bool)else None
+   if hasattr(a.executor,"prewarm_token_market_cache"):_U=a.dry_run or hasattr(getattr(a.executor,"client",None),"_mock_children");_aO=candidate_box.get("leg_a_tick_size")if _U else(p if p>.0 else None);a.executor.prewarm_token_market_cache(token_id=_bq,tick_size=_aO,neg_risk=bool(_bu),fee_rate_bps=0,condition_id=_br or _bs,fee_rate=.0,fee_exponent=1.)
+   _E=round((X+.01)*T,4);_3=time.time();_J.pop(_am,None);_z.pop(_am,None);a.pending_entry_intents[_am]={"trade_id":_am,"market_id":_bs,"token_id":_bq,"anchor_bid_px":T,"notional_usd":round(X*T,4),"ts":_3,"heartbeat_ts":_3,"live_maker_anchor_inflight":True,"inflight_key":_F,"sleeve_source":_ad,"expiry_ts":_a9,"velocity_bps_hr":round(((1.-T)*1e4)/max(_X,(_a9-_3)/3600.),2)if _a9>_3 else.0};_bm=time.perf_counter();_aw=await asyncio.to_thread(a.executor.post_maker_entry_order,token_id=_bq,price=T,notional_usd=_E,side="BUY",neg_risk=_bu,min_price_floor=max(.5 if _7 else.9,_a7),max_price_ceiling=max(.995,_a6));_T=round((time.perf_counter()-_bm)*1e3,2);_aj=str((_aw or{}).get("orderID")or"").strip()
+   if not isinstance(_aw,dict)or not _aw.get("success")or not _aj:
+    a.pending_entry_intents.pop(_am,None)
+    if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ac or"BOND1","horizon":"box","side":_bd,"market_id":_bs,"title":str(candidate_box.get("title")or _a5),"sleeve":_ad,"path_type":"MAKER_BOX","target_px":float((_aw or{}).get("price")or T),"notional_usd":_E,"http_ms":_T,"stage_outcome":"BOND1_MAKER_POST_FAILED","gate_detail":str((_aw or{}).get("error")or"")})
+    return{"executed":False,"reason":f"BOND1_MAKER_POST_FAILED:{(_aw or{}).get('error')}"}
+   _ai=float(_aw.get("price")or T);_ah=float(_aw.get("shares")or X)
+   if _am in a.pending_entry_intents:
+    _bl=a.pending_entry_intents[_am];_a4=time.time();_bl["entry_order_id"]=_aj;_bl["anchor_bid_px"]=_ai;_bl["posted_shares"]=_ah;_bl["posted_notional_usd"]=round(_ah*_ai,4);_bl["notional_usd"]=round(_ah*_ai,4);_bl["matched_notional_usd"]=.0;_bl["collat_drop_usd"]=.0;_bl["velocity_bps_hr"]=round(((1.-_ai)*1e4)/max(_X,(_a9-_a4)/3600.),2)if _a9>_a4 else.0;_bl["heartbeat_ts"]=_a4;_bl["_last_persist_ts"]=_a4
     if not a.dry_run:a.save_state()
    o=None
-   if a.dry_run:U,_B=_ag,_ah;_o={"matched":U,"avg_price":_B,"cash":round(U*_B,4),"fee":.0,"terminal":True};o=c(a.pending_entry_intents,_al,round(U*_B,4))
+   if a.dry_run:S,_B=_ah,_ai;_n={"matched":S,"avg_price":_B,"cash":round(S*_B,4),"fee":.0,"terminal":True};o=c(a.pending_entry_intents,_am,round(S*_B,4))
    else:
-    uws=getattr(a.executor,"_user_ws_cache",None);_x=float(candidate_box.get("_bond1_first_post_ts")or time.time());_a1=max(.0,time.time()-_x)if"_bond1_first_post_ts"in candidate_box else.0;_1=.35 if _6 else(float(_aq.get("bond1_book_poll_sec",4.)or 4.));_aL=time.monotonic();_k,M,_=b(_ac,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a7,now_ts=time.time(),created_mono=_aL,rcfg=_aq,first_post_elapsed_s=_a1);N=_aL;E=_aL;B=_ah;h=False;v=False;t=None;C=None;G=False
+    uws=getattr(a.executor,"_user_ws_cache",None);_w=float(candidate_box.get("_bond1_first_post_ts")or time.time());_a3=max(.0,time.time()-_w)if"_bond1_first_post_ts"in candidate_box else.0;_2=.35 if _7 else(float(_ar.get("bond1_book_poll_sec",4.)or 4.));_aN=time.monotonic();_i,L,_=b(_ad,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a9,now_ts=time.time(),created_mono=_aN,rcfg=_ar,first_post_elapsed_s=_a3);M=_aN;E=_aN;B=_ai;h=False;v=False;t=None;C=None;G=False
     try:
-     while time.monotonic()<M:
-      _D=bool(uws is not None and uws.is_healthy());_,_,_af=b(_ac,uws_ok=_D,exp_ts=_a7,now_ts=time.time(),created_mono=_aL,deadline_mono=M,rcfg=_aq,first_post_elapsed_s=_a1)
-      if(_4.is_set()or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or _af):break
-      if _6 and u(_ab,_bb,candidate_box,_a7):h=True;logger.warning(f"[S2 TWAP SIGMA VETO] {_a3}: SHM cushion < 2.5 sigma; canceling {_ai} immediately.");break
-      if _al in a.pending_entry_intents:
-       _aK=time.time();_a0=a.pending_entry_intents[_al];_a0["heartbeat_ts"]=_aK
-       if not a.dry_run and(_aK-float(_a0.get("_last_persist_ts",.0)or.0))>=30.:_a0["_last_persist_ts"]=_aK;a.save_state()
-      _bi=max(.05,min(.1,M-time.monotonic()))
+     while time.monotonic()<L:
+      _D=bool(uws is not None and uws.is_healthy());_,_,_ag=b(_ad,uws_ok=_D,exp_ts=_a9,now_ts=time.time(),created_mono=_aN,deadline_mono=L,rcfg=_ar,first_post_elapsed_s=_a3)
+      if(_5.is_set()or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or _ag):break
+      if _7 and u(_ac,_bd,candidate_box,_a9):h=True;logger.warning(f"[S2 TWAP SIGMA VETO] {_a5}: SHM cushion < 2.5 sigma; canceling {_aj} immediately.");break
+      if _am in a.pending_entry_intents:
+       _aM=time.time();_a2=a.pending_entry_intents[_am];_a2["heartbeat_ts"]=_aM
+       if not a.dry_run and(_aM-float(_a2.get("_last_persist_ts",.0)or.0))>=30.:_a2["_last_persist_ts"]=_aM;a.save_state()
+      _bk=max(.05,min(.1,L-time.monotonic()))
       if _D:
-       await uws.wait_for_fill_or_timeout(_bi,prev_seq=uws.fill_sequence);_aZ=uws.get_order_snapshot(_ai,max_age_sec=5.)
-       if isinstance(_aZ,dict)and _al in a.pending_entry_intents:
-        _aJ=float(_aZ.get("size_matched")or.0)
-        if _aJ>.0:
-         if g(a.pending_entry_intents,_al,_ag,_ah,_aJ,time.time())and not a.dry_run:a.save_state()
-       if a._ws_snap_fully_filled(_aZ,_ag):G=True;break
-      else:await asyncio.sleep(_bi)
-      if _4.is_set()or getattr(a,"_shutdown_requested",False):break
-      if hasattr(a.executor,"get_market_book")and(time.monotonic()-N)>=_1:
-       N=time.monotonic();_R="get_market_book"in getattr(a.executor,"__dict__",{});_j=_aw.get_book(_bn,max_age_sec=2.)if(_aw and not _R)else None;_i=_aw.get_book(_bo,max_age_sec=2.)if(_aw and not _R)else None
-       if _j is None or _i is None:
-        try:_j,_i=await asyncio.gather(asyncio.to_thread(a.executor.get_market_book,_bn)if _j is None else asyncio.sleep(0,result=_j),asyncio.to_thread(a.executor.get_market_book,_bo)if _i is None else asyncio.sleep(0,result=_i))
-        except Exception as K:_j,_i=None,None
-       if _j is not None and _i is not None:
-        _aY,_bh,t,_aX=Q(_j,_i,candidate_box,_ah,_a5,_a4,_aQ,p,_l,_6,_H,_ao,_G,_a7,t)
-        if _aY=="ADVERSE":h=True;logger.warning(f"[BOND1 DISPUTE/COLLAPSE VETO] {_a3}: {_aX}; canceling {_ai} immediately.");break
-        if _aY=="REPEG":C=_bh;logger.info(f"[BOND1 OUTBID REPEG] {_a3}: {_aX}.");break
-        if _aY=="BURIED":v=True;logger.info(f"[BOND1 BURIED RELEASE] {_a3}: {_aX}; canceling {_ai}.");break
-        B=J(_i);_,M,_=b(_ac,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a7,now_ts=time.time(),created_mono=_aL,now_mono=time.monotonic(),deadline_mono=M,posted_px=_ah,cur_best_bid=B,buried_since_mono=t,rcfg=_aq,first_post_elapsed_s=_a1)
+       await uws.wait_for_fill_or_timeout(_bk,prev_seq=uws.fill_sequence);_a1=uws.get_order_snapshot(_aj,max_age_sec=5.)
+       if isinstance(_a1,dict)and _am in a.pending_entry_intents:
+        _aL=float(_a1.get("size_matched")or.0)
+        if _aL>.0:
+         if g(a.pending_entry_intents,_am,_ah,_ai,_aL,time.time())and not a.dry_run:a.save_state()
+       if a._ws_snap_fully_filled(_a1,_ah):G=True;break
+      else:await asyncio.sleep(_bk)
+      if _5.is_set()or getattr(a,"_shutdown_requested",False):break
+      if hasattr(a.executor,"get_market_book")and(time.monotonic()-M)>=_2:
+       M=time.monotonic();_S="get_market_book"in getattr(a.executor,"__dict__",{});_h=_ay.get_book(_bp,max_age_sec=2.)if(_ay and not _S)else None;_g=_ay.get_book(_bq,max_age_sec=2.)if(_ay and not _S)else None
+       if _h is None or _g is None:
+        try:_h,_g=await asyncio.gather(asyncio.to_thread(a.executor.get_market_book,_bp)if _h is None else asyncio.sleep(0,result=_h),asyncio.to_thread(a.executor.get_market_book,_bq)if _g is None else asyncio.sleep(0,result=_g))
+        except Exception as J:_h,_g=None,None
+       if _h is not None and _g is not None:
+        _a0,_bj,t,_aZ=O(_h,_g,candidate_box,_ai,_a7,_a6,_aS,p,_k,_7,_I,_ap,_H,_a9,t)
+        if _a0=="ADVERSE":h=True;logger.warning(f"[BOND1 DISPUTE/COLLAPSE VETO] {_a5}: {_aZ}; canceling {_aj} immediately.");break
+        if _a0=="REPEG":C=_bj;logger.info(f"[BOND1 OUTBID REPEG] {_a5}: {_aZ}.");break
+        if _a0=="BURIED":v=True;logger.info(f"[BOND1 BURIED RELEASE] {_a5}: {_aZ}; canceling {_aj}.");break
+        B=I(_g);_,L,_=b(_ad,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a9,now_ts=time.time(),created_mono=_aN,now_mono=time.monotonic(),deadline_mono=L,posted_px=_ai,cur_best_bid=B,buried_since_mono=t,rcfg=_ar,first_post_elapsed_s=_a3)
       if hasattr(a.executor,"get_order_fill_summary")and(time.monotonic()-E)>=15.:
        E=time.monotonic()
-       try:_C=await asyncio.to_thread(a.executor.get_order_fill_summary,_ai,_bo)
-       except Exception as W:_C=None
+       try:_C=await asyncio.to_thread(a.executor.get_order_fill_summary,_aj,_bq)
+       except Exception as U:_C=None
        if isinstance(_C,dict):
-        _aI=float(_C.get("matched")or.0)
-        if g(a.pending_entry_intents,_al,_ag,_ah,_aI,time.time())and not a.dry_run:a.save_state()
-        if _aI>=_ag-.01:G=True;break
+        _aK=float(_C.get("matched")or.0)
+        if g(a.pending_entry_intents,_am,_ah,_ai,_aK,time.time())and not a.dry_run:a.save_state()
+        if _aK>=_ah-.01:G=True;break
         if _C.get("terminal"):break
-        _,M,_=b(_ac,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a7,now_ts=time.time(),created_mono=_aL,now_mono=time.monotonic(),deadline_mono=M,posted_px=_ah,cur_best_bid=B,buried_since_mono=t,rcfg=_aq,first_post_elapsed_s=_a1)
-    except BaseException as _d:logger.warning(f"[BOND1 MONITOR INTERRUPTED] {_a3}: {_d}; reconciling/canceling {_ai} before releasing intent.")
-    _0,_o,U,_B=await a._reconcile_maker_entry_fill(_ai,_bo,G,_ag,_ah,_ak);_at=round(float((_o or{}).get("cash")or(max(.0,U)*_B)),4)if U>=.01 else.0;o=c(a.pending_entry_intents,_al,_at)
+        _,L,_=b(_ad,uws_ok=bool(uws is not None and uws.is_healthy()),exp_ts=_a9,now_ts=time.time(),created_mono=_aN,now_mono=time.monotonic(),deadline_mono=L,posted_px=_ai,cur_best_bid=B,buried_since_mono=t,rcfg=_ar,first_post_elapsed_s=_a3)
+    except BaseException as _b:logger.warning(f"[BOND1 MONITOR INTERRUPTED] {_a5}: {_b}; reconciling/canceling {_aj} before releasing intent.")
+    _1,_n,S,_B=await a._reconcile_maker_entry_fill(_aj,_bq,G,_ah,_ai,_al);_av=round(float((_n or{}).get("cash")or(max(.0,S)*_B)),4)if S>=.01 else.0;o=c(a.pending_entry_intents,_am,_av)
     if not a.dry_run:a.save_state()
-    _aH=str((_0 or{}).get("outcome")or"");Y=bool((_0 or{}).get("is_canceled"))
-    if(not Y and _aH!="FILLED"and U<.01 and"already canceled or matched"in str((_0 or{}).get("not_canceled_reason")or"").lower()):
-     _bg,_aW=await asyncio.to_thread(a._wallet_token_balance,_bo)
-     if _aW in(a.ONCHAIN_SOURCE,"CLOB_BALANCE_API")and(float(_bg or.0)-_ak)<=1e-4:Y=True
-    if not Y and _aH!="FILLED"and(_o is None or not _o.get("terminal"))and U<.01:
-     _bf=_a3 if _a3 not in a.active_positions else f"{_a3}_{int(time.time()*1000)%10000}";_aG=round(_ag*_ah,4);_n=getattr(a,"_state_save_lock",None)or a._GLOBAL_STATE_SAVE_LOCK
-     with _n:_aV=a._make_single_leg_lock_pos(_bf,"SINGLE_LEG_MAKER_LOCK",_ac,_ab,"maker_lock_1leg",_bq,_bp,_bo,_bb,bool(_bs),_ag,_aG,.0,.0,1.,"maker_post_only_0pct",_a7,time.time(),_ak,_ai,True,unk=True,sub_ts=_2);_aV["dedupe_key"],_aV["pair_dedupe_key"]=_aB,_A;a.active_positions[_bf]=_aV;a._refresh_global_halt();a.save_state()
+    _aJ=str((_1 or{}).get("outcome")or"");W=bool((_1 or{}).get("is_canceled"))
+    if(not W and _aJ!="FILLED"and S<.01 and"already canceled or matched"in str((_1 or{}).get("not_canceled_reason")or"").lower()):
+     _bi,_aY=await asyncio.to_thread(a._wallet_token_balance,_bq)
+     if _aY in(a.ONCHAIN_SOURCE,"CLOB_BALANCE_API")and(float(_bi or.0)-_al)<=1e-4:W=True
+    if not W and _aJ!="FILLED"and(_n is None or not _n.get("terminal"))and S<.01:
+     _bh=_a5 if _a5 not in a.active_positions else f"{_a5}_{int(time.time()*1000)%10000}";_aI=round(_ah*_ai,4);_m=getattr(a,"_state_save_lock",None)or a._GLOBAL_STATE_SAVE_LOCK
+     with _m:_aX=a._make_single_leg_lock_pos(_bh,"SINGLE_LEG_MAKER_LOCK",_ad,_ac,"maker_lock_1leg",_bs,_br,_bq,_bd,bool(_bu),_ah,_aI,.0,.0,1.,"maker_post_only_0pct",_a9,time.time(),_al,_aj,True,unk=True,sub_ts=_3);_aX["dedupe_key"],_aX["pair_dedupe_key"]=_aD,_A;a.active_positions[_bh]=_aX;a._refresh_global_halt();a.save_state()
      return{"executed":False,"reason":"BOND1_CANCEL_OUTCOME_UNKNOWN"}
-    if U<.01:
+    if S<.01:
      if C is not None and not a.dry_run and not getattr(a,"_shutdown_requested",False):
-      _aA.pop(_aB,None);_w=float(C)
+      _aC.pop(_aD,None);_v=float(C)
       async def n():
-       await asyncio.sleep(.2);b=time.time();c,a=d(_ac,_a7,b,120.,first_post_ts=_x,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_aq)
-       if(not c or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or e(a,_aB,_A,[_bq],b)):return
-       a._spawn_live_maker_anchor_box_task({**candidate_box,"expiry_ts":a,"anchor_bid_px":_w,"box_cost_net":_w,"ws_books":None,"ts_unix":b,"_bond1_repost_count":_H+1,"_bond1_first_post_ts":_x})
-      X=a.__dict__.setdefault("_bond1_repost_bg_tasks",set());_Z=asyncio.create_task(n());X.add(_Z);_Z.add_done_callback(X.discard);return{"executed":False,"reason":"BOND1_OUTBID_REPEGGED","repeg_px":_w}
-     _v=bool(_4.is_set()and not h and not v);R=str((getattr(a,"_maker_anchor_preempt_reasons",None)or{}).pop(_F,"")or"")
-     if v and not R:R=f"outbid_buried_{_G:.0f}s"
-     _ae="BOND1_MAKER_ADVERSE_CANCELLED"if h else("BOND1_MAKER_OUTBID_RELEASED"if v else("BOND1_MAKER_PREEMPTED"if _v else"BOND1_MAKER_EXPIRED_UNFILLED"))
-     if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ab or"BOND1","horizon":"box","side":_bb,"market_id":_bq,"title":str(candidate_box.get("title")or _a3),"sleeve":_ac,"path_type":"MAKER_BOX","target_px":_ah,"notional_usd":round(_ag*_ah,2),"http_ms":_S,"ttl_ms":round((time.monotonic()-_aL)*1e3,1),"stage_outcome":_ae,"gate_detail":R})
-     _aF,_=d(_ac,_a7,time.time(),150.,first_post_ts=_x,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_aq)
-     if(_v and not a.dry_run and not getattr(a,"_shutdown_requested",False)and R!="SHUTDOWN"and not R.startswith("VELOCITY_UPGRADE:")and _H<3 and _aF):
-      _u=float(_aq.get("bond1_preempt_repost_delay_sec",6.)or 6.);_aA[_aB]=time.time()+min(1.,_u*.5)
+       await asyncio.sleep(.2);b=time.time();c,a=d(_ad,_a9,b,120.,first_post_ts=_w,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_ar)
+       if(not c or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or e(a,_aD,_A,[_bs],b)):return
+       a._spawn_live_maker_anchor_box_task({**candidate_box,"expiry_ts":a,"anchor_bid_px":_v,"box_cost_net":_v,"ws_books":None,"ts_unix":b,"_bond1_repost_count":_I+1,"_bond1_first_post_ts":_w})
+      V=a.__dict__.setdefault("_bond1_repost_bg_tasks",set());_0=asyncio.create_task(n());V.add(_0);_0.add_done_callback(V.discard);return{"executed":False,"reason":"BOND1_OUTBID_REPEGGED","repeg_px":_v}
+     _u=bool(_5.is_set()and not h and not v);P=str((getattr(a,"_maker_anchor_preempt_reasons",None)or{}).pop(_F,"")or"")
+     if v and not P:P=f"outbid_buried_{_H:.0f}s"
+     _af="BOND1_MAKER_ADVERSE_CANCELLED"if h else("BOND1_MAKER_OUTBID_RELEASED"if v else("BOND1_MAKER_PREEMPTED"if _u else"BOND1_MAKER_EXPIRED_UNFILLED"))
+     if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ac or"BOND1","horizon":"box","side":_bd,"market_id":_bs,"title":str(candidate_box.get("title")or _a5),"sleeve":_ad,"path_type":"MAKER_BOX","target_px":_ai,"notional_usd":round(_ah*_ai,2),"http_ms":_T,"ttl_ms":round((time.monotonic()-_aN)*1e3,1),"stage_outcome":_af,"gate_detail":P})
+     _aH,_=d(_ad,_a9,time.time(),150.,first_post_ts=_w,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_ar)
+     if(_u and not a.dry_run and not getattr(a,"_shutdown_requested",False)and P!="SHUTDOWN"and not P.startswith("VELOCITY_UPGRADE:")and _I<3 and _aH):
+      _t=float(_ar.get("bond1_preempt_repost_delay_sec",6.)or 6.);_aC[_aD]=time.time()+min(1.,_t*.5)
       async def l():
-       await asyncio.sleep(_u);c=time.time();b,a=d(_ac,_a7,c,120.,first_post_ts=_x,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_aq)
-       if(not b or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or e(a,_aB,_A,[_bq],c)):return
-       a._spawn_live_maker_anchor_box_task({**candidate_box,"expiry_ts":a,"ts_unix":c,"_bond1_repost_count":_H+1,"_bond1_first_post_ts":_x})
-      X=a.__dict__.setdefault("_bond1_repost_bg_tasks",set());_Z=asyncio.create_task(l());X.add(_Z);_Z.add_done_callback(X.discard)
-     else:_aA[_aB]=time.time()+(45. if v else(30. if h else 4.))
-     return{"executed":False,"reason":_ae}
-   _br=round(U,4);_be=round(float((_o or{}).get("cash")or(_br*_B)),4)
-   if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ab or"BOND1","horizon":"box","side":_bb,"market_id":_bq,"title":str(candidate_box.get("title")or _a3),"sleeve":_ac,"path_type":"MAKER_BOX","target_px":_ah,"fill_px":_B,"notional_usd":_be,"http_ms":_S,"stage_outcome":"FILLED_BOX"})
-   _bd=round(float((_o or{}).get("fee")or.0),4);_aU=round((_be+_bd)/max(_br,.01),5);_bc=bool(candidate_box.get("hold_to_maturity",True)or _B>=.982);A=list((_o or{}).get("fills")or[])
+       await asyncio.sleep(_t);c=time.time();b,a=d(_ad,_a9,c,120.,first_post_ts=_w,uws_ok=bool(uws is not None and uws.is_healthy()),rcfg=_ar)
+       if(not b or getattr(a,"_shutdown_requested",False)or a._is_d1_box_halted()or e(a,_aD,_A,[_bs],c)):return
+       a._spawn_live_maker_anchor_box_task({**candidate_box,"expiry_ts":a,"ts_unix":c,"_bond1_repost_count":_I+1,"_bond1_first_post_ts":_w})
+      V=a.__dict__.setdefault("_bond1_repost_bg_tasks",set());_0=asyncio.create_task(l());V.add(_0);_0.add_done_callback(V.discard)
+     else:_aC[_aD]=time.time()+(45. if v else(30. if h else 4.))
+     return{"executed":False,"reason":_af}
+   _bt=round(S,4);_bg=round(float((_n or{}).get("cash")or(_bt*_B)),4)
+   if _emit_shock_attempt is not None:_emit_shock_attempt({"dry_run":a.dry_run,"asset":_ac or"BOND1","horizon":"box","side":_bd,"market_id":_bs,"title":str(candidate_box.get("title")or _a5),"sleeve":_ad,"path_type":"MAKER_BOX","target_px":_ai,"fill_px":_B,"notional_usd":_bg,"http_ms":_T,"stage_outcome":"FILLED_BOX"})
+   _bf=round(float((_n or{}).get("fee")or.0),4);_aW=round((_bg+_bf)/max(_bt,.01),5);_be=bool(candidate_box.get("hold_to_maturity",True)or _B>=.982);A=list((_n or{}).get("fills")or[])
    if not A and not a.dry_run and hasattr(a.executor,"get_account_fills"):
-    try:A=list((await asyncio.to_thread(a.executor.get_account_fills,_bo,max(.0,_2-60.),"BUY",_ai))or[])
+    try:A=list((await asyncio.to_thread(a.executor.get_account_fills,_bq,max(.0,_3-60.),"BUY",_aj))or[])
     except Exception:A=[]
-   _ad=list(dict.fromkeys([str(x)for x in((_o or{}).get("trade_ids")or(_au or{}).get("tradeIDs")or[])if x]+[str(f.get("trade_id")or f.get("id"))for f in A if isinstance(f,dict)and(f.get("trade_id")or f.get("id"))]));_as=list(dict.fromkeys([str(x)for x in((_o or{}).get("transactions_hashes")or(_au or{}).get("transactionsHashes")or[])if x]+[str(f.get("transaction_hash"))for f in A if isinstance(f,dict)and f.get("transaction_hash")]));_Q=time.time();lid=_a3 if _a3 not in a.active_positions else f"{_a3}_{int(_Q*1000)%10000}";_n=getattr(a,"_state_save_lock",None)or a._GLOBAL_STATE_SAVE_LOCK
-   with _n:
-    for _aE in(_aB,_A):
-     if _aE:_aA.pop(_aE,None);a._record_seen_d1_box_key(_aE)
-    _aD=a._make_single_leg_lock_pos(lid,"SINGLE_LEG_MAKER_LOCK",_ac,_ab,"maker_lock_1leg",_bq,_bp,_bo,_bb,bool(_bs),_br,_be,_bd,.0,1.,"maker_post_only_0pct",_a7,_Q,_ak,_ai,_bc,unk=False);_aD["trade_ids"],_aD["transactions_hashes"]=_ad,_as;_aD["dedupe_key"],_aD["pair_dedupe_key"]=_aB,_A;a.active_positions[lid]=_aD;w(a,o,_be+_bd,time.time());a.executor.invalidate_collateral_cache();a._pending_collateral_refresh=True;a.save_state();logger.info(f"✓ [SINGLE-LEG MAKER LOCK FILLED] {lid} ({_ac}) | {_br:.2f} sh @ ${_aU:.4f} (0% Maker fee, hold_to_maturity={_bc})")
-   return{"executed":True,"result":_o or _au,"leg_trade_ids":[]if _bc else[lid]}
-  finally:_I.pop(_al,None);_z.pop(_al,None);c(a.pending_entry_intents,_al,.0);_P.discard(_F);_c.discard(_8);_m.discard(_F);_q.pop(_F,None)
+   _ae=list(dict.fromkeys([str(x)for x in((_n or{}).get("trade_ids")or(_aw or{}).get("tradeIDs")or[])if x]+[str(f.get("trade_id")or f.get("id"))for f in A if isinstance(f,dict)and(f.get("trade_id")or f.get("id"))]));_au=list(dict.fromkeys([str(x)for x in((_n or{}).get("transactions_hashes")or(_aw or{}).get("transactionsHashes")or[])if x]+[str(f.get("transaction_hash"))for f in A if isinstance(f,dict)and f.get("transaction_hash")]));_R=time.time();lid=_a5 if _a5 not in a.active_positions else f"{_a5}_{int(_R*1000)%10000}";_m=getattr(a,"_state_save_lock",None)or a._GLOBAL_STATE_SAVE_LOCK
+   with _m:
+    for _aG in(_aD,_A):
+     if _aG:_aC.pop(_aG,None);a._record_seen_d1_box_key(_aG)
+    _aF=a._make_single_leg_lock_pos(lid,"SINGLE_LEG_MAKER_LOCK",_ad,_ac,"maker_lock_1leg",_bs,_br,_bq,_bd,bool(_bu),_bt,_bg,_bf,.0,1.,"maker_post_only_0pct",_a9,_R,_al,_aj,_be,unk=False);_aF["trade_ids"],_aF["transactions_hashes"]=_ae,_au;_aF["dedupe_key"],_aF["pair_dedupe_key"]=_aD,_A;a.active_positions[lid]=_aF;w(a,o,_bg+_bf,time.time());a.executor.invalidate_collateral_cache();a._pending_collateral_refresh=True;a.save_state();logger.info(f"✓ [SINGLE-LEG MAKER LOCK FILLED] {lid} ({_ad}) | {_bt:.2f} sh @ ${_aW:.4f} (0% Maker fee, hold_to_maturity={_be})")
+   return{"executed":True,"result":_n or _aw,"leg_trade_ids":[]if _be else[lid]}
+  finally:_J.pop(_am,None);_z.pop(_am,None);c(a.pending_entry_intents,_am,.0);_Q.discard(_F);_a.discard(_9);_l.discard(_F);_p.pop(_F,None)
  def _spawn_live_maker_anchor_box_task(a,candidate_box):
   o=a.__dict__.setdefault("_maker_anchor_bg_tasks",set());l=a.__dict__.setdefault("_maker_anchor_bg_tasks_by_type",{});m=str(candidate_box.get("box_type")or"DOMINANCE_MAKER_ANCHOR").strip().upper();q=str(candidate_box.get("sleeve_source")or"").strip();i=q in{"S2_EXACT_TWAP_LOCK","S2_RTDS_EXACT_TWAP_INTEGRATOR"};h=a._is_unlimited_slots_active();f=m=="SINGLE_LEG_MAKER_LOCK"
   if f:
    if i:
     j=getattr(a,"_s2_mkr_bg_task",None)
     if j is not None and not j.done():return False
-   e=f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key')or candidate_box.get('leg_a_market_id')or m}";d=sum(1 for k,tk in l.items()if str(k).startswith("SINGLE_LEG_MAKER_LOCK:")and not tk.done());g=(6 if i else 4)if(h or a._is_v5_unleashed_active())else(4 if i else 2)
+   e=f"SINGLE_LEG_MAKER_LOCK:{candidate_box.get('dedupe_key')or candidate_box.get('leg_a_market_id')or m}";d=sum(1 for k,tk in l.items()if str(k).startswith("SINGLE_LEG_MAKER_LOCK:")and not tk.done());g=(10 if i else 8)if(h or a._is_v5_unleashed_active())else(4 if i else 2)
    if d>=g:return False
   else:
    e=f"{m}:{candidate_box.get('dedupe_key')or candidate_box.get('asset')or m}"if h else m;c=sum(1 for k,tk in l.items()if not str(k).startswith("SINGLE_LEG_MAKER_LOCK:")and not tk.done())
    if c>=(8 if h else 2):return False
   n=l.get(e)
   if n is not None and not n.done():return False
-  if len(o)>=((12 if i else 10)if h else(6 if i else 4)):return False
+  if len(o)>=((12 if i else 10)if(h or a._is_v5_unleashed_active())else(6 if i else 4)):return False
   p=(a.maybe_execute_graduated_single_leg_maker_lock(candidate_box)if f else a.maybe_execute_graduated_maker_anchor_box(candidate_box));t=asyncio.create_task(p);o.add(t);l[e]=t
   if f and i:a._s2_mkr_bg_task=t
   def b(done_t):
