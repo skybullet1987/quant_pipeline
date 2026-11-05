@@ -2070,7 +2070,229 @@ def test_tier_p1_reserve_s2_weather_dedupe_fifo_and_delayed_recycle(tmp_path, mo
     assert h_rec._global_halt_reasons() == []
 
 
+def test_adversarial_qa_invalid_matched_shm_basis_weather_tz_hko_and_mixed_d1(tmp_path, monkeypatch) -> None:
+    import collections
+    import datetime as _dt
+    import json
+    import time
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
 
+    import src.polymarket_research.polymarket_live_harvester as plh_mod
+    from src.polymarket_research.polymarket_live_executor import ExecutionStatus, PolymarketLiveExecutor
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.polymarket_ws_streams import PolymarketUserWsCache
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        compute_running_metar_extrema,
+        detect_w_prune1_metar_slate_arb,
+        eval_sll_fresh_book_and_peg,
+        hydrate_fast_s2_from_shm,
+        is_cme_metals_maintenance_window,
+        parse_routine_metar_temp_c,
+        resolve_delayed_recycle_unwind_sync,
+        resolve_weather_effective_end_ts,
+    )
 
+    # 1. P0-1 Adversarial: status="INVALID" with size_matched > 0 (reverted settlement) NEVER certifies phantom cash or drops fills
+    ex = PolymarketLiveExecutor(dry_run=False, ledger_path=str(tmp_path / "orders_inv.jsonl"))
+    ex.auth_mode = "LIVE"
+    ex.is_authenticated = True
+    ex.client = MagicMock()
+    ex.get_order_status = MagicMock(
+        return_value={
+            "id": "0xINV_REV",
+            "status": "INVALID",
+            "original_size": "15",
+            "size_matched": "15",
+            "taking_amount": "14.85",
+            "price": "0.99",
+            "side": "SELL",
+        }
+    )
+    ex.client.get_trades.return_value = [
+        {"id": "TR_REV", "taker_order_id": "0xINV_REV", "asset_id": "0xTOK_INV", "side": "SELL", "size": "15", "price": "0.99", "status": "FAILED"}
+    ]
+    ex.get_onchain_erc1155_balance = MagicMock(return_value=0.0)
+    summ_inv = ex.get_order_fill_summary("0xINV_REV", token_id="0xTOK_INV")
+    assert summ_inv is not None
+    assert summ_inv["is_canceled"] is False
+    assert summ_inv["is_settled"] is False
+    assert summ_inv["terminal"] is False
+    assert summ_inv["cash_is_estimated"] is True
+    ex.get_onchain_erc1155_balance.assert_not_called()
 
+    # User WS cache evicts status="INVALID" from _open_orders and overrides stale REST "LIVE" when matched == 0
+    uws = PolymarketUserWsCache("k", "s", "p")
+    uws._connected = True
+    uws._last_rx_mono = time.monotonic()
+    uws.seed_open_orders([{"id": "0xWS_INV0", "status": "LIVE", "original_size": "12", "size_matched": "0", "asset_id": "0xTOK_WS"}])
+    assert len(uws.get_open_orders_snapshot() or []) == 1
+    uws.process_ws_payload({"event_type": "order", "type": "UPDATE", "id": "0xWS_INV0", "status": "INVALID", "original_size": "12", "size_matched": "0"})
+    assert uws.get_open_orders_snapshot() == []
+    ex._user_ws_cache = uws
+    ex.client.cancel.return_value = {"canceled": [], "not_canceled": {"0xWS_INV0": "INVALID"}}
+    ex.get_order_status = MagicMock(return_value={"id": "0xWS_INV0", "status": "LIVE", "original_size": "12", "size_matched": "0"})
+    ex.reserve_inventory("0xTOK_WS", 12.0, reservation_id="0xWS_INV0")
+    cr_ws = ex.cancel_order("0xWS_INV0")
+    assert cr_ws.is_canceled is True and cr_ws.outcome == "CANCELED"
 
+    # Harvester startup reconciliation: STOP_CANCEL_PENDING & offline RESTING exit with INVALID + size_matched > 0 route to FILL_RECONCILIATION_REQUIRED
+    monkeypatch.setattr(plh_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_inv_rec.json")
+    h_inv = PolymarketLiveHarvester(dry_run=True)
+    h_inv.dry_run = False
+    h_inv.executor.dry_run = False
+    h_inv.executor.is_authenticated = True
+    h_inv.executor.get_collateral_balance = lambda: 75.0
+    h_inv._strict_open_orders = lambda: []
+    h_inv.executor.rebuild_reservations_from_open_orders = lambda *a, **kw: None
+    released_ids = []
+    h_inv.executor.release_inventory = lambda reservation_id=None, **kw: released_ids.append(reservation_id)
+    h_inv.executor.get_order_status = lambda oid: (
+        {"id": oid, "status": "INVALID", "original_size": "15", "size_matched": "12", "price": "0.99"}
+        if oid == "0xSTOP_INV_PARTIAL"
+        else {"id": oid, "status": "INVALID", "original_size": "15", "size_matched": "15", "taking_amount": "14.85", "price": "0.99"}
+    )
+    now_t = 1793832000.0
+    h_inv.active_positions["P_STOP_INV"] = {
+        "trade_id": "P_STOP_INV", "token_id": "tok_s1", "market_id": "m_s1", "entry_shares": 15.0, "remaining_shares": 15.0,
+        "filled_exit_shares": 0.0, "notional_usd": 14.25, "target_exit_price": 0.99, "exit_order_size": 15.0,
+        "exit_order_id": "0xSTOP_INV_PARTIAL", "exit_order_status": "STOP_CANCEL_PENDING", "status": "EXIT_RESTING",
+        "candle_expiry_ts": now_t + 600.0,
+    }
+    h_inv.active_positions["P_REST_INV"] = {
+        "trade_id": "P_REST_INV", "token_id": "tok_s2", "market_id": "m_s2", "entry_shares": 15.0, "remaining_shares": 15.0,
+        "filled_exit_shares": 0.0, "notional_usd": 14.25, "target_exit_price": 0.99, "exit_order_size": 15.0,
+        "exit_order_id": "0xREST_INV_FULL", "exit_order_status": "RESTING", "status": "EXIT_RESTING",
+        "candle_expiry_ts": now_t + 600.0,
+    }
+    h_inv.reconcile_with_exchange()
+    assert h_inv.active_positions["P_STOP_INV"]["exit_order_status"] == "FILL_RECONCILIATION_REQUIRED"
+    assert "0xSTOP_INV_PARTIAL" not in released_ids
+    assert "P_REST_INV" in h_inv.active_positions  # NEVER closed as phantom FILLED_OFFLINE!
+    assert h_inv.active_positions["P_REST_INV"]["exit_order_status"] == "FILL_RECONCILIATION_REQUIRED"
+    assert h_inv.active_positions["P_REST_INV"]["filled_exit_shares"] == 0.0
+
+    # 2. P1-6a Adversarial: XAU unanchored Binance perp proxy (`chainlink_basis_anchored=False`) hydrates books without polluting usd_spot_hist,
+    #    and daily 17:00-18:00 ET / weekend CME maintenance vetoes XAU/XAG even when 24/7 spot_ts is <0.3s fresh!
+    shm_d = tmp_path / "shm_adv"
+    shm_d.mkdir()
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(shm_d))
+    ts_1430_et = _dt.datetime(2026, 11, 4, 19, 30, 0, tzinfo=_dt.timezone.utc).timestamp()  # Wed 14:30 EST (open)
+    ts_1730_et = _dt.datetime(2026, 11, 4, 22, 30, 0, tzinfo=_dt.timezone.utc).timestamp()  # Wed 17:30 EST (daily break)
+    assert is_cme_metals_maintenance_window(ts_1430_et) is False
+    assert is_cme_metals_maintenance_window(ts_1730_et) is True
+    (shm_d / "pm_fast_tick_XAU.json").write_text(
+        json.dumps({
+            "timestamp_unix": ts_1430_et - 0.1,
+            "spot_ts": ts_1430_et - 0.1,
+            "chainlink_proxy_spot": 4139.50,
+            "chainlink_basis_anchored": False,
+            "m15": {
+                "expiry_ts": ts_1430_et + 600.0,
+                "authoritative_chainlink_open": 4135.00,
+                "UP": {"token_id": "tok_xau_open", "age_book_ms": 80.0, "minimum_tick_size": "0.01", "raw_top_bids": [[0.52, 60.0]], "raw_top_asks": [[0.54, 60.0]]},
+            },
+        }),
+        encoding="utf-8",
+    )
+    dm_xau = SimpleNamespace(single_scan=False, chainlink_open_cache={}, usd_spot_hist={"XAU": collections.deque(maxlen=60)})
+    bks_open = hydrate_fast_s2_from_shm(dm_xau, ts_1430_et)
+    assert "tok_xau_open" in bks_open
+    assert len(dm_xau.usd_spot_hist["XAU"]) == 0  # Unanchored Binance perp basis NEVER pollutes usd_spot_hist!
+    (shm_d / "pm_fast_tick_XAU.json").write_text(
+        json.dumps({
+            "timestamp_unix": ts_1730_et - 0.1,
+            "spot_ts": ts_1730_et - 0.1,
+            "chainlink_proxy_spot": 4139.50,
+            "chainlink_basis_anchored": True,
+            "m15": {"expiry_ts": ts_1730_et + 600.0, "UP": {"token_id": "tok_xau_maint", "age_book_ms": 80.0, "raw_top_bids": [[0.52, 60.0]], "raw_top_asks": [[0.54, 60.0]]}},
+        }),
+        encoding="utf-8",
+    )
+    bks_maint = hydrate_fast_s2_from_shm(dm_xau, ts_1730_et)
+    assert "tok_xau_maint" not in bks_maint and len(dm_xau.usd_spot_hist["XAU"]) == 0
+
+    # 3. P1-7 Adversarial: NZWN (UTC+13), US DST fall-back (2026-11-01), HKO_MAX/HKO_MIN, and COR rejection
+    sp_nzwn = SimpleNamespace(end_date_iso="2026-11-04T12:00:00Z", obs_date=_dt.date(2026, 11, 4), tz_name="Pacific/Auckland", buckets=())
+    nzwn_end = resolve_weather_effective_end_ts(sp_nzwn, ts_1430_et)
+    # 2026-11-04 23:59:59 NZDT (UTC+13) == 2026-11-04T10:59:59Z (< 12:00:00Z!)
+    assert nzwn_end == pytest.approx(_dt.datetime(2026, 11, 4, 10, 59, 59, tzinfo=_dt.timezone.utc).timestamp())
+    sp_dst = SimpleNamespace(end_date_iso="2026-11-01T00:00:00Z", obs_date=_dt.date(2026, 11, 1), tz_name="America/New_York", buckets=())
+    dst_end = resolve_weather_effective_end_ts(sp_dst, ts_1430_et)
+    assert dst_end == pytest.approx(_dt.datetime(2026, 11, 2, 4, 59, 59, tzinfo=_dt.timezone.utc).timestamp())
+    assert parse_routine_metar_temp_c("METAR KLGA 041854Z COR 18010KT 10SM CLR 29/12 A2994 RMK AO2 T02900122") is None
+    ext_hko = compute_running_metar_extrema(["HKO_MIN 22.1C", "HKO_MAX 27.8C", "HKO_1M 24.3C"], unit="C")
+    assert ext_hko is not None and ext_hko["confirmed_running_high_floor"] == 28 and ext_hko["confirmed_running_low_ceil"] == 22
+    hits_hko = detect_w_prune1_metar_slate_arb(
+        [
+            {"label": "26C", "market_id": "hk1", "condition_id": "chk1", "yes_token_id": "yhk1", "no_token_id": "nhk1", "low": 26, "high": 26, "yes_ask": 0.01, "yes_ask_size": 20.0, "no_ask": 0.992, "no_ask_size": 20.0},
+            {"label": "28C", "market_id": "hk2", "condition_id": "chk2", "yes_token_id": "yhk2", "no_token_id": "nhk2", "low": 28, "high": 28, "yes_ask": 0.98, "yes_ask_size": 20.0, "no_ask": 0.03, "no_ask_size": 20.0},
+        ],
+        ["HKO_MIN 22.1C", "HKO_MAX 27.8C", "HKO_1M 24.3C"],
+        station_icao="HKO",
+        unit="C",
+        metric="HIGH",
+        local_hour_minute=(11, 15),
+    )
+    assert any(x["sleeve"] == "W_PRUNE1_DEAD_NO_BOND" and x["condition_id"] == "chk1" for x in hits_hko)
+
+    # 4. S2 INSUFFICIENT_MAKER_BOX_BUDGET returns 2.0s retry cooldown (and 8.0s for non-S2)
+    vr_s2, cd_s2, *_ = eval_sll_fresh_book_and_peg(
+        {"bids": [{"price": 0.96, "size": 50.0}], "asks": [{"price": 0.98, "size": 50.0}]},
+        {"bids": [{"price": 0.01, "size": 50.0}]},
+        {"p_model": 0.999, "min_maker_edge": 0.01},
+        0.97, 0.50, 0.985, 0.02, 2.50, 0.01, True, True, False, True, 0, 350.0,
+    )
+    assert vr_s2 == "INSUFFICIENT_MAKER_BOX_BUDGET" and cd_s2 == pytest.approx(2.0)
+
+    # 5. Mixed-expiry 2-leg D1 Dominance Box (`leg_a` >900s CLOB $0.99 fill + `leg_b` <=900s $0.00 terminal OTM) consolidates with won=True
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_mix_d1.json")
+    h_mix = PolymarketLiveHarvester(dry_run=True)
+    h_mix._last_known_collateral = 80.0
+    h_mix._record_seen_d1_box_key("DK_MIX_D1")
+    cand_mix = {
+        "box_type": "DOMINANCE", "asset": "BTC", "dedupe_key": "DK_MIX_D1",
+        "expiry_ts": time.time() + 7200.0, "leg_a_expiry_ts": time.time() + 7200.0, "leg_b_expiry_ts": time.time() + 300.0,
+        "leg_a_token_id": "tok_ma", "leg_b_token_id": "tok_mb", "leg_a_fee_rate": 0.0, "leg_b_fee_rate": 0.0,
+        "shares": 10.0,
+    }
+    res_mix = {
+        "net_paired_shares": 10.0,
+        "leg_1": {"token_id": "tok_ma", "price": 0.46, "matched_shares": 10.0, "orderID": "om1"},
+        "leg_2": {"token_id": "tok_mb", "price": 0.47, "matched_shares": 10.0, "orderID": "om2"},
+    }
+    t1, t2 = h_mix._register_live_d1_box_positions("D1_MIX_BOX", cand_mix, res_mix, 0.0, 0.0)
+    assert h_mix.active_positions[t1]["hold_to_maturity_lock"] is False and h_mix.active_positions[t1]["target_exit_price"] == 0.99
+    assert h_mix.active_positions[t2]["hold_to_maturity_lock"] is True and h_mix.active_positions[t2]["target_exit_price"] == 1.0
+    # Leg 1 fills $0.99 maker scalp ($9.90 cash), then Leg 2 expires OTM ($0.00 cash) -> net +$0.60 consolidated win!
+    p1 = h_mix.active_positions[t1]
+    h_mix.record_fill_and_update_position(p1, "ex_m1", 10.0, 9.90, 0.0, cash_is_estimated=False)
+    h_mix._close_position(t1, p1, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
+    assert t1 not in h_mix.active_positions and "_closed_partner_leg" in h_mix.active_positions[t2]
+    p2 = h_mix.active_positions[t2]
+    h_mix._close_position(t2, p2, ExecutionStatus.SETTLED, "DETERMINISTIC_EXPIRY_OTM", won=False)
+    assert t2 not in h_mix.active_positions
+    assert len(h_mix.closed_positions) == 1
+    assert h_mix.closed_positions[0]["won"] is True and h_mix.closed_positions[0]["net_pnl_usd"] == pytest.approx(0.60)
+    assert "DK_MIX_D1" not in h_mix._seen_d1_box_keys
+
+    # 6. P1-8c Adversarial: Partial FAK CANCELED (`matched=10/20`) resolves cleanly as estimated partial without [GLOBAL HALT],
+    #    whereas reverted `status="INVALID"` (`matched=20, terminal=False`) refuses to certify phantom cash!
+    h_mix.executor.get_order_fill_summary = lambda oid, tok: {
+        "order_id": oid, "status": "CANCELED", "matched": 10.0, "cash": 9.98, "resting": False, "terminal": False, "is_canceled": True,
+    }
+    h_mix.executor.release_inventory = lambda *a, **kw: None
+    res_part = resolve_delayed_recycle_unwind_sync(
+        h_mix, {"token_id": "tok_p"}, {"outcome_unknown": True, "orderID": "oid_pfak", "reservation_id": "r_pfak"},
+        "HTM_EARLY_998_PROFIT_RECYCLE", 0.998, max_wait_sec=0.5, poll_interval_sec=0.1,
+    )
+    assert res_part["outcome_unknown"] is False and res_part["matched_size"] == 10.0 and res_part["taking_amount_estimated"] is True
+    h_mix.executor.get_order_fill_summary = lambda oid, tok: {
+        "order_id": oid, "status": "INVALID", "matched": 20.0, "cash": 19.96, "resting": False, "terminal": False, "is_canceled": False,
+    }
+    res_inv_del = resolve_delayed_recycle_unwind_sync(
+        h_mix, {"token_id": "tok_p"}, {"outcome_unknown": True, "orderID": "oid_inv_del"},
+        "HTM_EARLY_998_PROFIT_RECYCLE", 0.998, max_wait_sec=0.2, poll_interval_sec=0.1,
+    )
+    assert res_inv_del["outcome_unknown"] is True

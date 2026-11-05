@@ -129,7 +129,7 @@ svcs = [
 shm_ages = {}
 shm_spots = {}
 shm_anchored = {}
-for _sym in ("BTC", "ETH", "SOL", "XAU"):
+for _sym in ("BTC", "ETH", "SOL", "XAU", "XAG", "XRP"):
     _fp = pathlib.Path(f"/dev/shm/pm_fast_tick_{_sym}.json")
     if _fp.exists():
         shm_ages[_sym] = round(time.time() - _fp.stat().st_mtime, 2)
@@ -141,7 +141,7 @@ for _sym in ("BTC", "ETH", "SOL", "XAU"):
             shm_anchored[_sym] = bool(_fd.get("chainlink_basis_anchored", False))
         except Exception:
             pass
-    else:
+    elif _sym in ("BTC", "ETH", "SOL", "XAU"):
         shm_ages[_sym] = None
 out["shm_fast_tick_age_sec"] = shm_ages
 out["shm_spots"] = shm_spots
@@ -269,6 +269,7 @@ if lh_path.exists():
     resting_orders = []
     _clob_buy_quoting_usd = 0.0
     _resting_redeem_edge_usd = 0.0
+    _clob_orders_ok = False
     try:
         import contextlib, io as _io
         _ord_cache_p = pathlib.Path("/tmp/dominus_clob_open_orders_cache.json")
@@ -295,6 +296,8 @@ if lh_path.exists():
                 _ord_cache_p.write_text(json.dumps(_raw_ords), encoding="utf-8")
             except Exception:
                 pass
+        if isinstance(_raw_ords, list):
+            _clob_orders_ok = True
         _tok_meta = {}
         if _tok_meta_cache_p.exists():
             try:
@@ -397,18 +400,22 @@ if lh_path.exists():
     except Exception:
         pass
 
-    _inflight_intents_usd = max(
-        _clob_buy_quoting_usd,
-        sum(
-            float(i.get("notional_usd", 0.0) or 0.0)
-            for i in (s.get("pending_entry_intents") or {}).values()
-            if isinstance(i, dict)
-        ),
-    )
+    if _clob_orders_ok:
+        _inflight_intents_usd = round(_clob_buy_quoting_usd, 2)
+    else:
+        _now_int = time.time()
+        _inflight_intents_usd = round(
+            sum(
+                float(i.get("notional_usd", 0.0) or 0.0)
+                for i in (s.get("pending_entry_intents") or {}).values()
+                if isinstance(i, dict) and (_now_int - float(i.get("ts", i.get("created_ts", 0.0)) or 0.0)) <= 90.0
+            ),
+            2,
+        )
     _free_cash_usd = round(max(0.0, _wallet_cash - _inflight_intents_usd), 2)
     _quoting_util_pct = round(min(100.0, 100.0 * _inflight_intents_usd / max(0.01, _wallet_cash)), 1) if _wallet_cash > 0 else 0.0
     _act_map = s.get("active_positions") or {}
-    _active_book_usd = sum(float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0) for p in _act_map.values() if isinstance(p, dict))
+    _active_book_usd = round(sum(float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0) for p in _act_map.values() if isinstance(p, dict)), 2)
     _live_equity_usd = round(_wallet_cash + _active_book_usd, 2) if _onchain_cash is not None else round(float(s.get("total_account_equity", 0.0) or 0.0), 2)
     _box_groups = {}
     for _p_act in _act_map.values():
@@ -430,11 +437,41 @@ if lh_path.exists():
     _ONCHAIN_WALLET_RECON = {
         "LIVE_6399804_1793391806_DOWN": {"pnl": -18.63, "notional": 18.63, "entry_px": 0.81},
     }
-    def _true_pnl(c: dict) -> tuple[float, float, bool]:
+    def _reconcile_closed_leg(c: dict) -> tuple[float, float, bool, dict]:
         raw = round(float(c.get("net_pnl_usd", 0.0) or 0.0), 2)
+        cn = dict(c)
         ovr = _ONCHAIN_WALLET_RECON.get(str(c.get("trade_id") or ""))
         if ovr is not None:
-            return ovr["pnl"], raw, True
+            cn["net_pnl_usd"] = ovr["pnl"]
+            cn["realized_pnl_usd"] = ovr["pnl"]
+            cn["notional_usd"] = ovr["notional"]
+            cn["entry_price"] = ovr["entry_px"]
+            cn["wallet_reconciled"] = True
+            return ovr["pnl"], raw, True, cn
+        _tgt_t = str(c.get("target_token") or "").strip().upper()
+        _res_w = str(c.get("resolved_winning_outcome") or "").strip().upper()
+        _ent_sh = float(c.get("entry_shares", 0.0) or 0.0)
+        if (
+            str(c.get("close_reason") or "") == "MARKET_RESOLVED_NO_INVENTORY"
+            and bool(c.get("inventory_reconciled", False))
+            and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
+            and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
+            and _ent_sh > 0.0
+            and _tgt_t != ""
+            and _tgt_t == _res_w
+        ):
+            _pay_u = round(_ent_sh * 1.0, 4)
+            _fee_u = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0) + float(c.get("realized_exit_fee", 0.0) or 0.0)
+            wallet_pnl = round(_pay_u - float(c.get("notional_usd", 0.0) or 0.0) - _fee_u, 2)
+            cn["payout_usd"] = _pay_u
+            cn["net_pnl_usd"] = wallet_pnl
+            cn["realized_pnl_usd"] = wallet_pnl
+            cn["won"] = True
+            cn["average_exit_price"] = 1.0
+            cn["exit_price"] = 1.0
+            cn["close_reason"] = "ONCHAIN_AUTO_REDEEMED_RECONCILED"
+            cn["wallet_reconciled"] = True
+            return wallet_pnl, raw, True, cn
         if (
             c.get("is_dominance_box")
             and float(c.get("fee_rate_applied", 0.07) or 0.0) == 0.0
@@ -442,17 +479,38 @@ if lh_path.exists():
             and float(c.get("payout_usd", 0.0) or 0.0) > float(c.get("notional_usd", 0.0) or 0.0)
         ):
             wallet_pnl = round(float(c.get("payout_usd", 0.0)) - float(c.get("notional_usd", 0.0)) - float(c.get("fee_usd", 0.0) or 0.0), 2)
-            return wallet_pnl, raw, True
-        return raw, raw, False
+            cn["net_pnl_usd"] = wallet_pnl
+            cn["realized_pnl_usd"] = wallet_pnl
+            cn["wallet_reconciled"] = True
+            return wallet_pnl, raw, True, cn
+        cn["net_pnl_usd"] = raw
+        return raw, raw, False, cn
 
     wins_raw = sum(1 for c in closed if float(c.get("net_pnl_usd", 0.0)) > 0)
     tot_pnl_raw = round(sum(float(c.get("net_pnl_usd", 0.0)) for c in closed), 2)
     tot_fees = round(sum(float(c.get("fee_usd", 0.0)) for c in closed), 2)
-    wins_wallet = 0
+    closed_norm = []
     tot_pnl_wallet = 0.0
-    pure_rl_w, pure_rl_l, pure_rl_pnl = 0, 0, 0.0
+    for c in closed:
+        wp_c, rp_c, adj_c, cn_c = _reconcile_closed_leg(c)
+        cn_c["_raw_pnl_usd"] = rp_c
+        cn_c["_fee_reconciled"] = adj_c
+        tot_pnl_wallet = round(tot_pnl_wallet + wp_c, 2)
+        closed_norm.append(cn_c)
+
+    try:
+        if str(root) not in sys.path:
+            sys.path.insert(0, str(root))
+        from src.paa_os.optimizer import group_closed_positions_by_box as _grp_boxes
+        grouped_closed = _grp_boxes(closed_norm, _act_map)
+    except Exception:
+        grouped_closed = closed_norm
+
+    wins_wallet = 0
+    losses_wallet = 0
+    pure_rl_w, pure_rl_l, pure_rl_flat, pure_rl_pnl = 0, 0, 0, 0.0
     pure_rl_curve = [0.0]
-    post_lock_cut = "2026-11-03T18:00:00"
+    post_lock_cut = "2026-11-04T02:05:00"
     post_lock_w, post_lock_l, post_lock_pnl = 0, 0, 0.0
     today_utc_date = time.strftime("%Y-%m-%d", time.gmtime())
     today_et_date = _now_et.strftime("%Y-%m-%d")
@@ -461,40 +519,49 @@ if lh_path.exists():
     today_w, today_l, today_pnl = 0, 0, 0.0
     v51_w, v51_l, v51_pnl = 0, 0, 0.0
     strat_stats = {}
-    for c in closed:
-        wp, rp, adj = _true_pnl(c)
-        tot_pnl_wallet = round(tot_pnl_wallet + wp, 2)
-        is_w = wp > 0
+    for g in grouped_closed:
+        wp = round(float(g.get("net_pnl_usd", g.get("realized_pnl_usd", 0.0)) or 0.0), 2)
+        rsn_g = str(g.get("close_reason") or "").upper()
+        is_flat = abs(wp) <= 1e-6 and (bool(g.get("won")) or "MERGED" in rsn_g)
+        is_w = (not is_flat) and (wp > 0 or bool(g.get("won")))
+        is_l = (not is_flat) and (wp < -0.01)
         if is_w:
             wins_wallet += 1
-        sl = str(c.get("sleeve") or "UNKNOWN")
+        elif is_l:
+            losses_wallet += 1
+        sl = str(g.get("sleeve") or "UNKNOWN")
         is_pure_rl = _is_pure_riskless_sleeve(sl)
         if is_pure_rl:
-            if is_w:
+            if is_flat:
+                pure_rl_flat += 1
+            elif is_w:
                 pure_rl_w += 1
-            elif wp < 0:
+            elif is_l:
                 pure_rl_l += 1
             pure_rl_pnl = round(pure_rl_pnl + wp, 2)
-            pure_rl_curve.append(pure_rl_pnl)
-        rec_s = strat_stats.setdefault(sl, {"sleeve": sl, "open": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0})
-        if is_w:
+            if not is_flat:
+                pure_rl_curve.append(pure_rl_pnl)
+        rec_s = strat_stats.setdefault(sl, {"sleeve": sl, "open": 0, "flat_merges": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0})
+        if is_flat:
+            rec_s["flat_merges"] += 1
+        elif is_w:
             rec_s["epoch_w"] += 1
-        else:
+        elif is_l:
             rec_s["epoch_l"] += 1
         rec_s["epoch_pnl"] = round(rec_s["epoch_pnl"] + wp, 2)
-        ts_e = str(c.get("entry_time_utc") or "")
-        ts_x = str(c.get("exit_time_utc") or c.get("settled_at_utc") or ts_e)
-        if ts_x >= post_lock_cut and is_pure_rl:
+        ts_e = str(g.get("entry_time_utc") or "")
+        ts_x = str(g.get("exit_time_utc") or g.get("settled_at_utc") or ts_e)
+        if ts_e >= post_lock_cut and is_pure_rl:
             if is_w:
                 post_lock_w += 1
-            elif wp < 0:
+            elif is_l:
                 post_lock_l += 1
             post_lock_pnl = round(post_lock_pnl + wp, 2)
         if ts_e >= today_cut:
             if is_w:
                 today_w += 1
                 rec_s["today_w"] += 1
-            else:
+            elif is_l:
                 today_l += 1
                 rec_s["today_l"] += 1
             today_pnl = round(today_pnl + wp, 2)
@@ -503,7 +570,7 @@ if lh_path.exists():
             if is_w:
                 v51_w += 1
                 rec_s["v51_w"] += 1
-            else:
+            elif is_l:
                 v51_l += 1
                 rec_s["v51_l"] += 1
             v51_pnl = round(v51_pnl + wp, 2)
@@ -514,7 +581,7 @@ if lh_path.exists():
     _tp_val_total = 0.0
     for tid, p in (s.get("active_positions") or {}).items():
         sl_a = str(p.get("sleeve") or "UNKNOWN")
-        strat_stats.setdefault(sl_a, {"sleeve": sl_a, "open": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0})["open"] += 1
+        strat_stats.setdefault(sl_a, {"sleeve": sl_a, "open": 0, "flat_merges": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0})["open"] += 1
         _sh_a = float(p.get("remaining_shares", p.get("entry_shares", 0.0)) or 0.0)
         _not_a = round(float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0), 2)
         _tp_a = float(p.get("target_exit_price") or 0.0)
@@ -569,27 +636,30 @@ if lh_path.exists():
     recent_closed = []
     cum = round(_live_equity_usd - tot_pnl_wallet, 2)
     equity_curve = [cum]
-    for c in closed:
-        wp, _, _ = _true_pnl(c)
-        cum = round(cum + wp, 2)
+    for c in closed_norm:
+        cum = round(cum + float(c.get("net_pnl_usd", 0.0) or 0.0), 2)
         equity_curve.append(cum)
-    for c in reversed(closed[-24:]):
-        wp, rp, adj = _true_pnl(c)
-        ovr_c = _ONCHAIN_WALLET_RECON.get(str(c.get("trade_id") or "")) or {}
+    for c in reversed(grouped_closed[-24:]):
+        wp = round(float(c.get("net_pnl_usd", 0.0) or 0.0), 2)
+        rp = round(float(c.get("_raw_pnl_usd", wp) or 0.0), 2)
+        adj = bool(c.get("wallet_reconciled") or c.get("_fee_reconciled"))
         _raw_ts_c = c.get("exit_time_utc") or c.get("settled_at_utc") or c.get("closed_at_ts") or c.get("exit_ts") or c.get("entry_time_utc") or c.get("entry_ts") or ""
-        _ex_px_c = c.get("average_exit_price") or c.get("exit_price")
+        _is_mleg = int(c.get("box_leg_count") or 1) > 1
+        _ex_px_c = "BOX" if _is_mleg else (c.get("average_exit_price") or c.get("exit_price"))
+        _en_px_c = round(float(c.get("notional_usd") or 0.0) / max(0.01, float(c.get("entry_shares") or 1.0)), 3) if _is_mleg else c.get("entry_price")
         _sl_c = str(c.get("sleeve") or "")
+        _asset_lbl = f"{c.get('asset','')} BOX ({c.get('box_leg_count')}L)".strip() if _is_mleg else f"{c.get('asset','')} {c.get('horizon','')} {c.get('target_token','')}".strip()
         recent_closed.append({
             "time_utc": str(c.get("exit_time_utc") or c.get("settled_at_utc") or c.get("entry_time_utc") or "")[:19].replace("T", " "),
             "time_et": _fmt_et(_raw_ts_c, "%m-%d %H:%M:%S"),
             "unix_ts": float(c.get("exit_ts") or c.get("closed_at_ts") or c.get("entry_ts") or 0.0),
             "trade_id": c.get("trade_id"),
-            "asset": f"{c.get('asset','')} {c.get('horizon','')} {c.get('target_token','')}".strip(),
+            "asset": _asset_lbl or str(c.get("trade_id") or "")[:20],
             "sleeve": _sl_c,
             "is_active_riskless": _is_pure_riskless_sleeve(_sl_c),
-            "entry_px": ovr_c.get("entry_px", c.get("entry_price")),
+            "entry_px": _en_px_c,
             "exit_px": _ex_px_c,
-            "notional_usd": round(float(ovr_c.get("notional", c.get("notional_usd", 0.0)) or 0.0), 2),
+            "notional_usd": round(float(c.get("notional_usd", 0.0) or 0.0), 2),
             "fee_usd": round(float(c.get("fee_usd", 0.0) or 0.0), 2),
             "net_pnl_usd": wp,
             "raw_pnl_usd": rp,
@@ -609,8 +679,10 @@ if lh_path.exists():
     else:
         _s1h_desc = "Live 1h Crypto Directional"
         _s15_desc = "Live 15m Crypto Directional"
+    _b1_pool_pct = int(round(100.0 * float(_bcfg.get("bond1_max_pool_fraction", 0.78) or 0.78)))
+    _b1_mkt_cap = int(round(float(_bcfg.get("bond1_max_notional_per_market_usd", 45.0) or 45.0)))
     live_strat_meta = [
-        ("BOND1_UMA_RESOLUTION_CARRY", "LIVE ACTIVE — 0%-Fee UMA Resolution Carry (68% Pool Cap, <=$21/mkt, Preemptable)"),
+        ("BOND1_UMA_RESOLUTION_CARRY", f"LIVE ACTIVE — 0%-Fee UMA Resolution Carry ({_b1_pool_pct}% Pool Cap, <=${_b1_mkt_cap}/mkt, Preemptable)"),
         ("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)"),
         ("PRE_SPLIT_OVERROUND_MACHINE_GUN", "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"),
         ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
@@ -627,6 +699,12 @@ if lh_path.exists():
             if "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX" in _PAUSED_RB_SET
             else "Live Fee-Exact Soccer 3-Way Synthetic Box",
         ),
+        (
+            "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",
+            "PAUSED — Sports Corridor Legging Guard (Shadow Only; Zero Live Exposure)"
+            if "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX" in _PAUSED_RB_SET
+            else "Live Sports Corridor Box",
+        ),
         ("SLEEVE_1_CORE_302", _s1h_desc),
         ("SLEEVE_1_SUBHOURLY_15M", _s15_desc),
     ]
@@ -634,7 +712,7 @@ if lh_path.exists():
     seen_ls = set()
     for sl_k, desc_s in live_strat_meta:
         seen_ls.add(sl_k)
-        st_d = strat_stats.get(sl_k) or {"sleeve": sl_k, "open": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0}
+        st_d = strat_stats.get(sl_k) or {"sleeve": sl_k, "open": 0, "flat_merges": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0}
         _act_rl = _is_pure_riskless_sleeve(sl_k) and (not (_riskless_only_d and sl_k.upper() in _UNHEDGED_DIR_SLEEVES))
         live_strategies.append({**st_d, "desc": desc_s, "is_active_riskless": _act_rl})
     for sl_k, st_d in strat_stats.items():
@@ -651,6 +729,7 @@ if lh_path.exists():
     _pure_tot = pure_rl_w + pure_rl_l
     out["polymarket_live"] = {
         "bankroll_usd": round(_wallet_cash, 2),
+        "open_book_usd": _active_book_usd,
         "free_cash_usd": _free_cash_usd,
         "quoting_cash_usd": round(_inflight_intents_usd, 2),
         "quoting_utilization_pct": _quoting_util_pct,
@@ -658,6 +737,7 @@ if lh_path.exists():
         "wallet_cash_usd": round(_wallet_cash, 2),
         "state_bankroll_usd": round(_state_cash, 2),
         "onchain_verified": _onchain_cash is not None,
+        "clob_orders_verified": _clob_orders_ok,
         "equity_usd": _live_equity_usd,
         "mtm_bid_equity_usd": round(_wallet_cash + _mtm_bid_total, 2),
         "tp_target_equity_usd": round(_wallet_cash + _tp_val_total, 2),
@@ -672,6 +752,7 @@ if lh_path.exists():
         "daily_realized_loss_usd": round(float(_rk_st.get("daily_realized_loss", 0.0) or 0.0), 2),
         "pure_riskless_wins": pure_rl_w,
         "pure_riskless_losses": pure_rl_l,
+        "pure_riskless_flat_merges": pure_rl_flat,
         "pure_riskless_wr_pct": round(100.0 * pure_rl_w / _pure_tot, 1) if _pure_tot > 0 else 100.0,
         "pure_riskless_pnl_usd": pure_rl_pnl,
         "pure_riskless_curve": pure_rl_curve,
@@ -686,9 +767,9 @@ if lh_path.exists():
         "v51_wins": v51_w,
         "v51_losses": v51_l,
         "v51_net_pnl_usd": v51_pnl,
-        "epoch_closed_count": len(closed),
+        "epoch_closed_count": len(grouped_closed),
         "epoch_wins": wins_wallet,
-        "epoch_losses": len(closed) - wins_wallet,
+        "epoch_losses": losses_wallet,
         "epoch_wins_raw": wins_raw,
         "epoch_net_pnl_usd": tot_pnl_wallet,
         "epoch_net_pnl_raw_usd": tot_pnl_raw,
@@ -1737,10 +1818,13 @@ if paa_db_p.exists():
 
         if "verified_facts" in _all_tbls:
             _fresh_n, _stale_n, _contra_n = 0, 0, 0
-            for idx_f, r in enumerate(_conn.execute("SELECT * FROM verified_facts ORDER BY observed_at_utc DESC LIMIT 50").fetchall()):
+            _vis_f = 0
+            for r in _conn.execute("SELECT * FROM verified_facts ORDER BY observed_at_utc DESC LIMIT 50").fetchall():
                 _obs_u = _parse_utc_epoch(r["observed_at_utc"])
                 _exp_u = _parse_utc_epoch(r["expires_at_utc"])
                 _rem_s = round(_exp_u - now_probe_u, 1) if _exp_u else -1.0
+                if str(r["fact_key"] or "").startswith("cert.") and _rem_s < -3600.0:
+                    continue
                 _age_s = round(max(0.0, now_probe_u - _obs_u), 1) if _obs_u else None
                 _epi = str(r["epistemic_status"] or "UNKNOWN")
                 if _epi == "CONTRADICTED":
@@ -1752,7 +1836,8 @@ if paa_db_p.exists():
                 else:
                     _eff = _epi
                     _fresh_n += 1
-                if idx_f < 10:
+                if _vis_f < 10:
+                    _vis_f += 1
                     try:
                         _val = json.loads(r["value_json"])
                     except Exception:
@@ -1832,6 +1917,24 @@ if paa_db_p.exists():
 
         if "financial_snapshots" in _all_tbls:
             _fs = _conn.execute("SELECT * FROM financial_snapshots ORDER BY snapshot_id DESC LIMIT 1").fetchone()
+            _cut_24h_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now_probe_u - 86400.0))
+            _fs_24h = _conn.execute(
+                "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE recorded_at_utc <= ? ORDER BY snapshot_id DESC LIMIT 1",
+                (_cut_24h_iso,),
+            ).fetchone()
+            if not _fs_24h:
+                _fs_24h = _conn.execute(
+                    "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots ORDER BY snapshot_id ASC LIMIT 1"
+                ).fetchone()
+            if _fs_24h and out.get("polymarket_live"):
+                _eq_24h_ago = round(float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0), 2)
+                if _eq_24h_ago > 0:
+                    _cur_eq = float(out["polymarket_live"].get("equity_usd") or 0.0)
+                    _d24 = round(_cur_eq - _eq_24h_ago, 2)
+                    out["polymarket_live"]["equity_24h_ago_usd"] = _eq_24h_ago
+                    out["polymarket_live"]["equity_24h_delta_usd"] = _d24
+                    out["polymarket_live"]["equity_24h_pct"] = round(100.0 * _d24 / _eq_24h_ago, 2)
+                    out["polymarket_live"]["equity_24h_since_et"] = _fmt_et(_fs_24h["recorded_at_utc"], "%m-%d %H:%M")
             if _fs:
                 try:
                     _fs_det = json.loads(_fs["details_json"] or "{}") if "details_json" in _fs.keys() else {}
@@ -1839,6 +1942,7 @@ if paa_db_p.exists():
                     _fs_det = {}
                 _sim_b = _fs_det.get("simulated_benchmarks") if isinstance(_fs_det, dict) else {}
                 _rl_m = _fs_det.get("riskless_metrics") if isinstance(_fs_det, dict) else {}
+                _ex_m = _fs_det.get("execution_metrics") if isinstance(_fs_det, dict) else {}
                 if isinstance(_rl_m, dict) and _rl_m:
                     paa_out["riskless_kpis"].update(_rl_m)
                 paa_out["verified_financial_performance"] = {
@@ -1854,6 +1958,8 @@ if paa_db_p.exists():
                     "net_economic_profit_after_ops_usd": round(float(_fs["net_economic_profit_usd"] or 0.0), 2),
                     "accounting_ok": bool(_fs["accounting_ok"]),
                     "accounting_discrepancy_usd": round(float(_fs["accounting_discrepancy_usd"] or 0.0), 4),
+                    "clob_post_p50_ms": (_ex_m or {}).get("clob_post_p50_ms"),
+                    "clob_post_p90_ms": (_ex_m or {}).get("clob_post_p90_ms"),
                     "simulated_shadow_t1000_pnl_usd": round(float(_fs["simulated_shadow_t1000_pnl_usd"] or 0.0), 2),
                     "zero_loss_shadow_t1000_pnl_usd": round(float((_sim_b or {}).get("zero_loss_shadow_t1000_pnl_usd", 0.0) or 0.0), 2),
                     "zero_loss_shadow_wins": int((_sim_b or {}).get("zero_loss_shadow_wins", 0) or 0),
@@ -1861,18 +1967,25 @@ if paa_db_p.exists():
                 }
         if "budget_ledger" in _all_tbls:
             _today_utc = time.strftime("%Y-%m-%d", time.gmtime(now_probe_u))
+            _hr_utc = time.strftime("%Y-%m-%dT%H", time.gmtime(now_probe_u))
             _br = _conn.execute(
-                "SELECT COUNT(*) AS calls, COALESCE(SUM(estimated_cost_usd), 0.0) AS usd, COALESCE(SUM(input_tokens), 0) AS in_tok, COALESCE(SUM(output_tokens), 0) AS out_tok FROM budget_ledger WHERE date_utc = ? AND cost_type = 'AI_CLI_CALL'",
+                "SELECT COUNT(*) AS calls, COALESCE(SUM(estimated_cost_usd), 0.0) AS usd, COALESCE(SUM(input_tokens), 0) AS in_tok, COALESCE(SUM(output_tokens), 0) AS out_tok FROM budget_ledger WHERE date_utc = ? AND cost_type IN ('AI_AGENT_CALL', 'AI_CLI_CALL')",
                 (_today_utc,),
+            ).fetchone()
+            _hr_r = _conn.execute(
+                "SELECT COUNT(*) AS calls FROM budget_ledger WHERE hour_utc = ? AND cost_type IN ('AI_AGENT_CALL', 'AI_CLI_CALL')",
+                (_hr_utc,),
             ).fetchone()
             if _br:
                 paa_out["budget_and_resources"] = {
                     "daily_ai_calls": int(_br["calls"] or 0),
+                    "hourly_ai_calls": int(_hr_r["calls"] or 0) if _hr_r else 0,
                     "daily_ai_cost_usd": round(float(_br["usd"] or 0.0), 4),
                     "daily_input_tokens": int(_br["in_tok"] or 0),
                     "daily_output_tokens": int(_br["out_tok"] or 0),
                     "max_daily_ai_cost_usd": 2.50,
                     "max_daily_ai_calls": 96,
+                    "max_hourly_ai_calls": 8,
                 }
         _conn.close()
     except Exception as _db_exc:
@@ -2607,7 +2720,9 @@ function renderPmTables(pm) {
   if (_pmFilter === 'riskless') {
     const curve = (pm.pure_riskless_curve && pm.pure_riskless_curve.length >= 2) ? pm.pure_riskless_curve : [0, Number(pm.pure_riskless_pnl_usd || 0)];
     drawSpark(curve);
-    if (sparkLbl) sparkLbl.innerHTML = `Pure Riskless Realized Curve: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W / ${pm.pure_riskless_losses ?? 0}L &bull; 100% WR)`;
+    const flatN = Number(pm.pure_riskless_flat_merges || 0);
+    const flatTxt = flatN > 0 ? ` &bull; ${flatN} Flat Merges` : '';
+    if (sparkLbl) sparkLbl.innerHTML = `Pure Riskless Realized Curve: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W / ${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR${flatTxt})`;
   } else {
     drawSpark(pm.equity_curve || []);
     if (sparkLbl) sparkLbl.innerHTML = `All-Time Account Curve (Incl. Paused Legacy Directional): <b>${Number(pm.epoch_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(pm.epoch_net_pnl_usd || 0).toFixed(2)}</b>`;
@@ -2622,13 +2737,15 @@ function renderPmTables(pm) {
       const rCnt = restBySlv[st.sleeve] || 0;
       const openCell = rCnt > 0 ? `${st.open || 0} <span class="pill pill-ok" style="padding:1px 6px;font-size:10px;">${rCnt} quoting</span>` : `${st.open || 0}`;
       const stBadge = st.is_active_riskless ? '' : ' <span class="pill pill-muted" style="font-size:9.5px;padding:1px 5px;">PAUSED</span>';
+      const flCnt = Number(st.flat_merges || 0);
+      const flTag = flCnt > 0 ? ` <span class="sub" title="${flCnt} pre-expiry $0.00 complete-set merge(s)">(${flCnt} flat)</span>` : '';
       return `<tr>
         <td><b>${esc(shortSlv(st.sleeve))}</b>${stBadge}</td>
         <td class="sub">${esc(st.desc || '')}</td>
         <td>${openCell}</td>
-        <td><b>${st.v51_w || 0}W / ${st.v51_l || 0}L</b></td>
+        <td><b>${st.v51_w || 0}W / ${st.v51_l || 0}L</b>${flTag}</td>
         <td class="${vp >= 0 ? 'pos' : 'neg'}">${vp >= 0 ? '+' : ''}$${vp.toFixed(2)}</td>
-        <td>${st.epoch_w || 0}W / ${st.epoch_l || 0}L</td>
+        <td>${st.epoch_w || 0}W / ${st.epoch_l || 0}L${flTag}</td>
         <td class="${ep >= 0 ? 'pos' : 'neg'}"><b>${ep >= 0 ? '+' : ''}$${ep.toFixed(2)}</b></td>
       </tr>`;
     }).join('') || '<tr><td colspan="7" class="sub">No strategy rows match filter.</td></tr>';
@@ -2973,7 +3090,7 @@ async function refreshNow(force=false) {
 
     const spots = Object.assign({}, a124.spots || {}, d.shm_spots || {});
     const shmAnc = d.shm_anchored || {};
-    document.getElementById('spots').innerHTML = ['BTC', 'SOL', 'ETH', 'XAU'].filter(k => spots[k] !== undefined).map(k => {
+    document.getElementById('spots').innerHTML = ['BTC', 'SOL', 'ETH', 'XAU', 'XAG', 'XRP'].filter(k => spots[k] !== undefined && Number(spots[k]) > 0).map(k => {
       const ancTag = shmAnc[k] ? ' <span class="pos" title="Chainlink Basis Anchored">CL</span>' : '';
       const modeTag = risklessOnly ? ' <span class="cyan" title="Oracle Feed Active for D1/Barrier Boxes (Unhedged Dir OFF)">BOX</span>' : '';
       return `<span class="spot-chip"><b>${esc(k)}</b> $${spots[k]}${ancTag}${modeTag}</span>`;
@@ -2981,6 +3098,13 @@ async function refreshNow(force=false) {
 
     // 6 Institutional Riskless-First KPI Cards
     const cash = Number(pm.bankroll_usd ?? 0);
+    const openBook = Number(pm.open_book_usd ?? 0);
+    const totalEq = Number(pm.equity_usd ?? (cash + openBook));
+    const d24Usd = pm.equity_24h_delta_usd !== undefined && pm.equity_24h_delta_usd !== null ? Number(pm.equity_24h_delta_usd) : null;
+    const d24Pct = pm.equity_24h_pct !== undefined && pm.equity_24h_pct !== null ? Number(pm.equity_24h_pct) : null;
+    const d24Badge = d24Usd !== null
+      ? `<span class="pill ${d24Usd >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;">${d24Usd >= 0 ? '+' : ''}$${d24Usd.toFixed(2)} (${d24Pct >= 0 ? '+' : ''}${d24Pct.toFixed(1)}% 24h)</span>`
+      : `<span class="sub" style="font-size:12px;">(${Number(pm.quoting_utilization_pct || 0).toFixed(1)}% Quoting)</span>`;
     const quoteCash = Number(pm.quoting_cash_usd ?? 0);
     const freeCash = Number(pm.free_cash_usd ?? cash);
     const utilPct = Number(pm.quoting_utilization_pct ?? (cash > 0 ? (100 * quoteCash / cash) : 0));
@@ -2991,6 +3115,7 @@ async function refreshNow(force=false) {
 
     const prW = Number(pm.pure_riskless_wins ?? 0);
     const prL = Number(pm.pure_riskless_losses ?? 0);
+    const prFlat = Number(pm.pure_riskless_flat_merges ?? 0);
     const prWr = Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1);
     const prPnl = Number(pm.pure_riskless_pnl_usd ?? 0);
     const plL = Number(pm.post_lock_losses ?? 0);
@@ -3004,23 +3129,24 @@ async function refreshNow(force=false) {
     const svcEntries = Object.entries(svcs);
     const svcOkCnt = svcEntries.filter(([, v]) => v === 'active').length;
     const acctDiff = Number(vf.accounting_discrepancy_usd ?? 0);
+    const p50Ms = vf.clob_post_p50_ms !== undefined && vf.clob_post_p50_ms !== null ? `${Number(vf.clob_post_p50_ms).toFixed(0)}ms` : '-';
 
     document.getElementById('kpis').innerHTML = `
       <div class="card">
-        <div class="label">On-Chain Wallet Cash &amp; Quoting</div>
-        <div class="val pos">$${cash.toFixed(2)} <span class="sub" style="font-size:12px;">(${utilPct.toFixed(1)}% Quoting)</span></div>
+        <div class="label">Total Account Equity &amp; On-Chain Cash</div>
+        <div class="val pos">$${totalEq.toFixed(2)} ${d24Badge}</div>
         <div class="util-bar"><div class="util-fill" style="width:${Math.min(100, utilPct)}%;"></div></div>
-        <div class="sub">Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> @ 0% Fee &bull; Free: <b>$${freeCash.toFixed(2)}</b> &bull; Floor: $${ruinFloor.toFixed(0)}</div>
+        <div class="sub">Cash: <b>$${cash.toFixed(2)}</b> &bull; Open: <b>$${openBook.toFixed(2)}</b> &bull; Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> (${utilPct.toFixed(0)}%) &bull; Free: <b>$${freeCash.toFixed(2)}</b></div>
       </div>
       <div class="card">
         <div class="label">Pure Riskless Live Record</div>
         <div class="val ${prL === 0 ? 'pos' : 'warn'}">${prW}W / ${prL}L (${prWr}%)</div>
-        <div class="sub">Pure Riskless Net: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Post-Lock Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b> &bull; Legacy Net: $${Number(pm.epoch_net_pnl_usd || 0).toFixed(2)}</div>
+        <div class="sub">Riskless Net: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b>${prFlat > 0 ? ` &bull; Flat Merges: <b>${prFlat}</b>` : ''} &bull; Post-Lock Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
       </div>
       <div class="card">
         <div class="label">Working CLOB Orders &amp; Book</div>
         <div class="val cyan">${restOrds.length} Resting &bull; ${openCnt} Filled</div>
-        <div class="sub">Locked Redeem Edge: <b class="pos">+$${restEdge.toFixed(2)}</b> (@ $1.00) &bull; Recent Posts: <b>${pm.live_maker_posts_tail ?? 0}</b></div>
+        <div class="sub">Locked Redeem Edge: <b class="pos">+$${restEdge.toFixed(2)}</b> (@ $1.00) &bull; Floor: $${ruinFloor.toFixed(0)} &bull; Posts: <b>${pm.live_maker_posts_tail ?? 0}</b></div>
       </div>
       <div class="card">
         <div class="label">Live Riskless Radar (5m Scan)</div>
@@ -3035,7 +3161,7 @@ async function refreshNow(force=false) {
       <div class="card">
         <div class="label">RISKLESS PAA OS &amp; Fleet Health</div>
         <div class="val ${!pm.risk_halt && svcOkCnt >= svcEntries.length ? 'pos' : 'warn'}">${svcOkCnt}/${svcEntries.length} Active</div>
-        <div class="sub">Acct Diff: <b class="pos">$${acctDiff.toFixed(4)}</b> &bull; Halt: <b class="${pm.risk_halt ? 'neg' : 'pos'}">${pm.risk_halt ? 'HALTED' : 'CLEAR'}</b> &bull; RAM: ${mem.available || 0}MB</div>
+        <div class="sub">Acct Diff: <b class="pos">$${acctDiff.toFixed(4)}</b> &bull; CLOB p50: <b>${p50Ms}</b> &bull; Halt: <b class="${pm.risk_halt ? 'neg' : 'pos'}">${pm.risk_halt ? 'HALTED' : 'CLEAR'}</b></div>
       </div>
     `;
 
@@ -3208,13 +3334,22 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         f"RAM Available: {mem.get('available')} / {mem.get('total')} MB  |  "
         f"Halt={pm.get('risk_halt')}"
     )
-    print(
-        f" Wallet & Quoting   : ${pm.get('bankroll_usd', 0):.2f} Cash "
-        f"(Quoting ${pm.get('quoting_cash_usd', 0):.2f} [{pm.get('quoting_utilization_pct', 0):.1f}%] across {len(pm.get('resting_orders') or [])} CLOB orders "
-        f"| Free ${pm.get('free_cash_usd', 0):.2f} | Locked Redeem Edge +${pm.get('resting_redeem_edge_usd', 0):.2f})"
+    _d24_s = (
+        f" [{pm.get('equity_24h_delta_usd', 0):+.2f} USD / {pm.get('equity_24h_pct', 0):+.1f}% 24h]"
+        if pm.get("equity_24h_delta_usd") is not None
+        else ""
     )
     print(
-        f" Pure Riskless Live : {pm.get('pure_riskless_wins', 0)}W / {pm.get('pure_riskless_losses', 0)}L "
+        f" Equity & Wallet    : ${pm.get('equity_usd', 0):.2f} Total Equity{_d24_s}  |  "
+        f"${pm.get('bankroll_usd', 0):.2f} Cash + ${pm.get('open_book_usd', 0):.2f} Open Book"
+    )
+    print(
+        f" CLOB Maker Quoting : Quoting ${pm.get('quoting_cash_usd', 0):.2f} [{pm.get('quoting_utilization_pct', 0):.1f}%] across {len(pm.get('resting_orders') or [])} CLOB orders "
+        f"| Free ${pm.get('free_cash_usd', 0):.2f} | Locked Redeem Edge +${pm.get('resting_redeem_edge_usd', 0):.2f}"
+    )
+    _flat_s = f", +{pm.get('pure_riskless_flat_merges', 0)} flat merges" if pm.get("pure_riskless_flat_merges") else ""
+    print(
+        f" Pure Riskless Live : {pm.get('pure_riskless_wins', 0)}W / {pm.get('pure_riskless_losses', 0)}L{_flat_s} "
         f"({pm.get('pure_riskless_wr_pct', 100.0):.1f}% WR | {pm.get('pure_riskless_pnl_usd', 0):+.2f} USD)  |  "
         f"Post-Lock Losses: {pm.get('post_lock_losses', 0)}  |  "
         f"All-Time Epoch (incl. paused legacy): {pm.get('epoch_wins', 0)}W/{pm.get('epoch_losses', 0)}L ({pm.get('epoch_net_pnl_usd', 0):+.2f} USD)"

@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-05 01:07:32 UTC
+Generated: 2026-11-05 02:39:51 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -18,45 +18,45 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [09] systemd/polymarket-trader.service (Lines 510 - 540 | 720 B) :: Forward Paper Trader systemd Unit
   [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
   [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,620 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,879 | 896,057 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,880 - 24,625 | 442,297 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,626 - 25,702 | 49,647 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 25,703 - 26,422 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 26,423 - 29,863 | 185,898 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 29,864 - 30,442 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 30,443 - 32,833 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 32,834 - 32,946 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 32,947 - 33,063 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,064 - 33,410 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 33,411 - 33,676 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 33,677 - 34,159 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,160 - 35,637 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 35,638 - 37,184 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,185 - 38,574 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 38,575 - 39,699 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 39,700 - 41,152 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,153 - 41,708 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 41,709 - 42,432 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 42,433 - 43,424 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 43,425 - 43,763 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 43,764 - 45,520 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 45,521 - 46,588 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 46,589 - 47,337 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 47,338 - 49,059 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,060 - 51,317 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 51,318 - 53,577 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 53,578 - 66,575 | 721,869 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 66,576 - 67,436 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 67,437 - 68,659 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 68,660 - 68,738 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 68,739 - 68,888 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 68,889 - 72,968 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 72,969 - 74,863 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 74,864 - 80,591 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 80,592 - 81,348 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 81,349 - 82,191 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,192 - 82,971 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 82,972 - 83,772 | 44,778 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,768 | 888,466 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,769 - 24,518 | 442,495 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,519 - 25,595 | 49,670 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 25,596 - 26,315 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 26,316 - 29,756 | 185,898 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 29,757 - 30,335 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 30,336 - 32,726 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 32,727 - 32,839 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 32,840 - 32,956 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 32,957 - 33,303 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 33,304 - 33,569 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 33,570 - 34,052 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,053 - 35,530 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 35,531 - 37,077 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,078 - 38,467 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 38,468 - 39,592 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 39,593 - 41,045 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,046 - 41,601 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 41,602 - 42,325 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 42,326 - 43,317 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 43,318 - 43,656 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 43,657 - 45,413 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 45,414 - 46,481 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 46,482 - 47,230 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 47,231 - 48,952 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 48,953 - 51,210 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 51,211 - 53,470 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 53,471 - 66,468 | 721,869 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 66,469 - 67,329 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 67,330 - 68,552 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 68,553 - 68,631 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 68,632 - 68,781 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 68,782 - 72,861 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 72,862 - 74,756 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 74,757 - 80,484 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 80,485 - 81,241 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 81,242 - 82,084 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,085 - 82,864 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 82,865 - 83,665 | 44,778 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -8553,138 +8553,12 @@ class PolymarketLiveHarvester:
         self, box_id: str, cand: Dict[str, Any], res: Dict[str, Any], pre_bal_a: float, pre_bal_b: float
     ) -> List[str]:
         """Registers both filled legs of a live D1 Dominance Box ($1.00 DETERMINISTIC_TERMINAL_HOLD for <=900s DOMINANCE)."""
-        now_ts = time.time()
-        sh = float(res.get("net_paired_shares") or res.get("shares") or cand.get("net_paired_shares") or cand.get("shares") or 12.0)
-        exp_ts = float(cand.get("expiry_ts") or (now_ts + 180.0))
-        asset_sym = str(cand.get("asset") or "BTC").upper()
-        meta_by_tok = {
-            str(cand.get("leg_a_token_id")): ("leg_a", pre_bal_a),
-            str(cand.get("leg_b_token_id")): ("leg_b", pre_bal_b),
-        }
-        if f"{box_id}_L1" in self.active_positions or f"{box_id}_L2" in self.active_positions:
-            box_id = f"{box_id}_{int(now_ts * 1000) % 100000}"
-        tids = (f"{box_id}_L1", f"{box_id}_L2")
-        legs_in = (res["leg_1"], res["leg_2"])
-        leg_records = []
-        tot_box_cost = 0.0
-        excess_info = res.get("excess_leg") if isinstance(res.get("excess_leg"), dict) else None
-        excess_tok = str((excess_info or {}).get("token_id") or "")
-        excess_sh = float((excess_info or {}).get("shares") if (excess_info or {}).get("shares") is not None else ((excess_info or {}).get("excess_shares") or 0.0))
-        _htm_enabled = self._is_v5_live_strict() or bool(getattr(self, "hold_to_maturity", True))
-        _cand_bt_u = str(cand.get("box_type") or "DOMINANCE").upper()
-        for idx, (tid, lg) in enumerate(zip(tids, legs_in)):
-            partner_tid = tids[1 - idx]
-            tok = str(lg["token_id"])
-            pfx, pre_b = meta_by_tok.get(tok, ("leg_a" if idx == 0 else "leg_b", 0.0))
-            leg_exp = float(cand.get(f"{pfx}_expiry_ts") or exp_ts)
-            d1_htm = bool(
-                cand.get("hold_to_maturity")
-                or (_cand_bt_u == "DOMINANCE" and 0.0 < (leg_exp - now_ts) <= 900.0 and _htm_enabled)
-            )
-            px = float(lg.get("price") or cand.get(f"{pfx}_limit_price") or 0.48)
-            raw_r = lg.get("raw") if isinstance(lg.get("raw"), dict) else {}
-            mk_raw = self._num(raw_r.get("makingAmount") or raw_r.get("making_amount"))
-            if mk_raw is not None and mk_raw >= 1e4:
-                mk_raw = mk_raw / 1e6
-            m_leg = float(lg.get("matched_shares") or sh)
-            leg_sh = round(sh + excess_sh, 4) if (tok == excess_tok and 0.05 <= excess_sh < 5.0) else sh
-            gross_sh_explicit = lg.get("gross_shares")
-            is_share_fee_leg = (
-                str(lg.get("entry_fee_asset") or "").upper() == "SHARES"
-                or (gross_sh_explicit is not None and float(gross_sh_explicit) > leg_sh + 1e-4)
-            )
-            gross_leg_sh = round(float(gross_sh_explicit), 4) if gross_sh_explicit is not None else leg_sh
-            if mk_raw is not None and m_leg > max(leg_sh, gross_leg_sh) + 0.05:
-                mk_raw = mk_raw * (max(leg_sh, gross_leg_sh) / m_leg)
-            notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (gross_leg_sh * px), 4)
-            leg_fr_raw = cand.get(f"{pfx}_fee_rate")
-            fr = 0.0 if lg.get("is_maker_anchor") else (float(leg_fr_raw) if leg_fr_raw is not None else 0.07)
-            fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
-            fee_u = 0.0 if is_share_fee_leg else (round(leg_sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0)
-            entry_fee_asset = "SHARES" if is_share_fee_leg else "USDC"
-            tot_box_cost += notional + fee_u
-            side_str = str(cand.get(f"{pfx}_side") or ("UP" if "UP" in str(lg.get("label", "")).upper() else "DOWN"))
-            strike_k = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
-            oid = lg.get("orderID")
-            txs = raw_r.get("transactionsHashes") or raw_r.get("transactions_hashes") or []
-            _cand_slv_src = str(cand.get("sleeve_source") or "")
-            slv_rec = (
-                _cand_slv_src
-                if _cand_slv_src in {"D1_QUIET_BOOK_BOX", "D1_4H_DOMINANCE_BOX"}
-                else (
-                    "D1_SAME_ORACLE_DOMINANCE_BOX"
-                    if _cand_bt_u == "DOMINANCE"
-                    else (_cand_slv_src or "D1_SAME_ORACLE_DOMINANCE_BOX")
-                )
-            )
-            leg_records.append((tid, {
-                "trade_id": tid, "box_id": box_id, "box_expected_legs": 2, "box_partner_trade_id": partner_tid, "is_dominance_box": True, "is_locked_arbitrage_box": True,
-                "hold_to_maturity_lock": d1_htm,
-                "opp_token_id": str(cand.get(f"{pfx}_opp_token_id") or ""), "dedupe_key": str(cand.get("dedupe_key") or ""), "pair_dedupe_key": str(cand.get("pair_dedupe_key") or ""),
-                "sleeve": slv_rec, "sleeve_source": str(cand.get("sleeve_source") or slv_rec),
-                "entry_tte": max(1.0, leg_exp - now_ts), "event_id": box_id,
-                "market_id": str(cand.get(f"{pfx}_market_id") or f"{box_id}_{idx}"),
-                "condition_id": str(cand.get(f"{pfx}_condition_id") or ""),
-                "token_id": tok, "target_token": side_str, "asset": asset_sym,
-                "horizon": str(cand.get(f"{pfx}_horizon") or "15m"), "is_subhourly": True,
-                "candle_open_spot": strike_k, "entry_spot_ref": strike_k, "spot_denomination": "USD",
-                "candle_sigma": 0.0025 if asset_sym == "BTC" else 0.0035,
-                "entry_price": round(notional / max(leg_sh, 0.01), 4), "entry_shares": leg_sh, "gross_entry_shares": gross_leg_sh,
-                "remaining_shares": leg_sh, "filled_exit_shares": 0.0, "remaining_exit_shares": leg_sh,
-                "remaining_cost_basis": notional, "realized_exit_cash": 0.0, "realized_exit_fee": 0.0,
-                "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
-                "notional_usd": notional, "fee_usd": fee_u, "entry_fee_cash_usd": fee_u,
-                "entry_fee_asset": entry_fee_asset, "fee_source": "crypto_fees_v2",
-                "fee_rate_applied": fr, "fee_exponent_applied": fe,
-                "target_exit_price": 1.0 if d1_htm else 0.99, "exit_order_size": leg_sh,
-                "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": now_ts,
-                "candle_expiry_ts": leg_exp, "pre_token_balance": pre_b,
-                "order_id": oid, "entry_order_id": oid, "trade_ids": [], "transactions_hashes": list(txs),
-                "status": ExecutionStatus.POSITION_CONFIRMED if self.dry_run else ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
-                "inventory_reconciled": bool(self.dry_run),
-                "exit_order_id": None,
-                "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else ("NONE" if self.dry_run else "AWAITING_DELTA_SETTLEMENT"),
-                "terminal_policy": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else None,
-                "is_liquidating": False, "unwind_order_id": None, "unwind_start_time": 0.0,
-            }))
-        box_unit = round(tot_box_cost / max(sh, 1.0), 5)
-        box_tp_u = _cand_bt_u
-        k_lo_b = float(cand.get("k_low") or 0.0)
-        k_hi_b = float(cand.get("k_high") or 0.0)
-        for tid, rec in leg_records:
-            rec["box_type"] = box_tp_u
-            rec["box_k_low"] = k_lo_b
-            rec["box_k_high"] = k_hi_b
-            rec["box_cost_net"] = box_unit
-            rec["box_total_cost_usd"] = round(tot_box_cost, 4)
-            self.active_positions[tid] = rec
-        if excess_info is not None and excess_sh >= 5.0:
-            self._register_legged_out_d1_residual(
-                f"{box_id}_EXCESS", cand,
-                {
-                    "token_id": excess_tok, "label": excess_info.get("label"),
-                    "matched_shares": excess_sh, "residual_shares": excess_sh,
-                    "price": excess_info.get("price"), "is_maker_anchor": bool(excess_info.get("is_maker_anchor")),
-                },
-                pre_bal_a + (sh if excess_tok == str(cand.get("leg_a_token_id")) else 0.0),
-                pre_bal_b + (sh if excess_tok == str(cand.get("leg_b_token_id")) else 0.0),
-            )
-        self._last_exit_credit_window = None
-        if getattr(self, "_last_known_collateral", None) is not None:
-            self._last_known_collateral = max(0.0, float(self._last_known_collateral) - tot_box_cost)
-            self._last_entry_debit_window = (time.time(), float(self._last_known_collateral))
-        self.executor.invalidate_collateral_cache()
-        self._pending_collateral_refresh = True
-        self.save_state()
-        if not self.dry_run:
-            for tid, rec in leg_records:
-                if not rec.get("hold_to_maturity_lock"):
-                    self._spawn_fast_confirm(tid)
-        logger.info(
-            f"✓ [D1 LIVE DOMINANCE BOX ENTERED] {box_id} ({asset_sym}) | {sh:.0f} pairs @ box_net=${box_unit:.4f} "
-            f"(cost=${tot_box_cost:.2f}, min_floor=+${sh * max(0.0, 1.0 - box_unit):.2f})"
+        from src.polymarket_research.riskless_protocol_v2_expansion import register_live_d1_box_positions_impl
+
+        return register_live_d1_box_positions_impl(
+            self, box_id, cand, res, pre_bal_a, pre_bal_b,
+            ExecutionStatus.POSITION_CONFIRMED, ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
         )
-        return [tid for tid, _ in leg_records]
 
     def _register_legged_out_d1_residual(
         self, box_id: str, cand: Dict[str, Any], resid: Dict[str, Any], pre_bal_a: float, pre_bal_b: float
@@ -12982,15 +12856,16 @@ class PolymarketLiveHarvester:
                             logger.warning(f"Cannot reconcile pending cancellation {exit_oid} for {tid}; retaining position.")
                             continue
                         terminal = str(order_info.get("status", "")).upper()
-                        if terminal not in {"MATCHED", "FILLED", "CONFIRMED"} and not (
-                            terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED", "INVALID"}
+                        matched_pre = float(self._num(order_info.get("size_matched")) or 0.0)
+                        if terminal in {"MATCHED", "FILLED", "CONFIRMED"} or (
+                            matched_pre > 1e-6 and (terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED", "INVALID"})
                         ):
-                            logger.warning(f"Cancellation not terminal: {exit_oid} (status={terminal}); retaining position.")
-                            continue
-                        if terminal in {"MATCHED", "FILLED", "CONFIRMED"}:
                             pos["exit_order_status"] = "FILL_RECONCILIATION_REQUIRED"
                             pos["pending_canceled_order_id"] = exit_oid
                             self.save_state()
+                            continue
+                        if not (terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED"} or (terminal == "INVALID" and matched_pre <= 1e-6)):
+                            logger.warning(f"Cancellation not terminal: {exit_oid} (status={terminal}); retaining position.")
                             continue
                         try:
                             self.executor.release_inventory(reservation_id=exit_oid)
@@ -13017,6 +12892,15 @@ class PolymarketLiveHarvester:
                     order_size = float(pos.get("exit_order_size", pos.get("entry_shares", 0.0)) or 0.0)
                     order_matched = float(self._num(order_info.get("size_matched")) or 0.0)
                     order_status_str = str(order_info.get("status", "")).upper()
+                    if order_status_str == "INVALID" and order_matched > 1e-6:
+                        pos["exit_order_status"] = "FILL_RECONCILIATION_REQUIRED"
+                        pos["pending_canceled_order_id"] = exit_oid
+                        pos["status"] = "UNRESOLVED_SETTLEMENT"
+                        self.save_state()
+                        logger.warning(
+                            f"[RECONCILIATION] {tid}: INVALID exit {exit_oid} has size_matched={order_matched:.2f}; deferring to fill reconciliation."
+                        )
+                        continue
                     raw_taking = order_info.get("taking_amount") or order_info.get("takingAmount")
                     total_order_taking = self._num(raw_taking)
                     is_taking_estimated = False
@@ -13038,10 +12922,15 @@ class PolymarketLiveHarvester:
                     is_order_terminal = (
                         order_status_str in {"MATCHED", "FILLED", "CONFIRMED"}
                         or order_status_str.startswith("CANCEL")
-                        or order_status_str in {"EXPIRED", "REJECTED", "INVALID"}
+                        or order_status_str in {"EXPIRED", "REJECTED"}
+                        or (order_status_str == "INVALID" and order_matched <= 1e-6)
                         or order_matched >= order_size - 1e-4
                     )
-                    is_canceled = order_status_str.startswith("CANCEL") or order_status_str in {"EXPIRED", "REJECTED", "INVALID"}
+                    is_canceled = (
+                        order_status_str.startswith("CANCEL")
+                        or order_status_str in {"EXPIRED", "REJECTED"}
+                        or (order_status_str == "INVALID" and order_matched <= 1e-6)
+                    )
                     is_position_complete = rem_shares <= 0.01 or total_filled_shares >= float(pos["entry_shares"]) - 1e-4
 
                     if is_position_complete:
@@ -18725,8 +18614,8 @@ class PolymarketLiveExecutor:
             or (orig_size > 0 and matched >= orig_size - 1e-4)
         )
 
-        # Terminal status requires either cancellation/expiration/rejection/invalid OR authoritative settlement finality
-        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED", "INVALID"}
+        # Terminal status requires either cancellation/expiration/rejection/invalid-zero-match OR authoritative settlement finality
+        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (status == "INVALID" and matched <= 1e-6)
         has_reverted_fills = any(str(f.get("status", "")).upper() in {"FAILED", "RETRYING"} for f in all_fills)
         if is_canceled:
             if matched <= 1e-6 or is_settled:
@@ -18755,7 +18644,7 @@ class PolymarketLiveExecutor:
             else:
                 terminal = False
                 estimated = True
-        elif is_settled and (status in {"MATCHED", "FILLED", "CONFIRMED", "MINED"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
+        elif is_settled and (status in {"MATCHED", "FILLED", "CONFIRMED", "MINED", "INVALID"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
             terminal = True
             estimated = False
         elif (
@@ -18791,6 +18680,7 @@ class PolymarketLiveExecutor:
             "order_id": str(order_id),
             "status": status,
             "resting": not no_longer_resting,
+            "is_canceled": is_canceled,
             "is_matched": matched > 0.0,
             "is_settled": is_settled,
             "has_reverted_fills": has_reverted_fills,
@@ -23998,7 +23888,10 @@ class PolymarketLiveExecutor:
                     orig_size = float(ws_snap.get("original_size", 0.0) or 0.0)
                 ws_st = str(ws_snap.get("status", "")).upper()
                 ws_full = orig_size <= 0.0 or matched >= orig_size - 1e-4
-                if not status or (status == "LIVE" and (ws_st in {"CANCELED", "CANCELLED"} or (ws_st in {"MATCHED", "FILLED"} and ws_full))):
+                if not status or (
+                    status == "LIVE"
+                    and (ws_st in {"CANCELED", "CANCELLED"} or (ws_st == "INVALID" and matched <= 1e-6) or (ws_st in {"MATCHED", "FILLED"} and ws_full))
+                ):
                     status = ws_st
 
             ord_t_c = str((order_info or {}).get("order_type") or (order_info or {}).get("type") or "").upper()
@@ -24961,7 +24854,7 @@ class PolymarketUserWsCache:
                         "_updated_mono": now_m,
                     }
                     self._orders_by_id[oid] = norm
-                    if msg_type == "CANCELLATION" or status in TERMINAL_CANCEL_STATUSES or status in TERMINAL_FILL_STATUSES:
+                    if msg_type == "CANCELLATION" or status in TERMINAL_CANCEL_STATUSES or status in TERMINAL_FILL_STATUSES or status == "INVALID":
                         self._open_orders.pop(oid, None)
                     elif status in OPEN_ORDER_STATUSES:
                         clean_open = dict(norm)

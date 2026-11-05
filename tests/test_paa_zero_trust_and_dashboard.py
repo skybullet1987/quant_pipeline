@@ -433,3 +433,108 @@ def test_research_ladder_and_command_center_live_panel(tmp_path: Path) -> None:
         "renderPaaAutonomy",
     ):
         assert dom_id in dcc.HTML_PAGE
+
+
+def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(tmp_path: Path, monkeypatch) -> None:
+    import scripts.paa_autonomous_controller as pac
+    from src.paa_os.monitor import PAAMonitor
+
+    cfg = copy.deepcopy(load_autonomy_config())
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    monkeypatch.setattr(pac, "DATA_PM", data_dir)
+
+    state_payload = {
+        "live_bankroll": 73.03,
+        "active_positions": {},
+        "pending_entry_intents": {},
+        "closed_positions": [
+            {
+                "trade_id": "MKR_LOCK1_LIVE_SPORTS_CHILD_MONEYLINE_1793831467_59042",
+                "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                "entry_shares": 18.0,
+                "notional_usd": 17.856,
+                "fee_usd": 0.0,
+                "net_pnl_usd": -17.86,
+                "won": False,
+                "close_reason": "MARKET_RESOLVED_NO_INVENTORY",
+                "inventory_reconciled": True,
+                "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD",
+                "filled_exit_shares": 0.0,
+                "target_token": "YES",
+                "resolved_winning_outcome": "YES",
+                "entry_time_utc": "2026-11-04T20:15:00+00:00",
+                "settled_at_utc": "2026-11-04T22:34:44+00:00",
+            },
+            {
+                "trade_id": "PRESPLIT_0x15434a92_1793844225",
+                "sleeve": "PRE_SPLIT_OVERROUND_MACHINE_GUN",
+                "notional_usd": 12.0,
+                "fee_usd": 0.0,
+                "net_pnl_usd": 0.0,
+                "won": True,
+                "close_reason": "PRE_SPLIT_PRE_EXPIRY_MERGED",
+                "entry_time_utc": "2026-11-05T01:55:00+00:00",
+                "settled_at_utc": "2026-11-05T01:57:00+00:00",
+            },
+        ],
+    }
+    (data_dir / "live_harvester_state.json").write_text(json.dumps(state_payload), encoding="utf-8")
+    (data_dir / "live_orders.jsonl").write_text(
+        json.dumps({"success": True, "latency_ms": 68.79, "mode": "LIVE_MAKER_ENTRY"}) + "\n"
+        + json.dumps({"success": True, "latency_ms": 59.35, "mode": "LIVE_MAKER_ENTRY"}) + "\n",
+        encoding="utf-8",
+    )
+
+    ledger = pac.reconcile_authoritative_ledger(live_rpc_check=False)
+    b1 = ledger["live_by_sleeve"]["BOND1_UMA_RESOLUTION_CARRY"]
+    assert b1["wins"] == 1
+    assert b1["losses"] == 0
+    assert b1["verified_net_pnl_usd"] == pytest.approx(0.144, abs=1e-4)
+    assert ledger["non_cash_unfilled_artifact_adjustment_usd"] == pytest.approx(18.004, abs=1e-3)
+
+    ps = ledger["live_by_sleeve"]["PRE_SPLIT_OVERROUND_MACHINE_GUN"]
+    assert ps["flat_merges"] == 1
+    assert ps["real_trades"] == 0
+    assert ps["wins"] == 0
+    assert ps["losses"] == 0
+
+    db = PAATaskDB(data_dir / "paa" / "paa_tasks.db")
+    budget = BudgetManager(db, autonomy_cfg=cfg)
+    accountant = PAAAccountant(db, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    snap = accountant.measure_and_record(live_rpc_check=False, ledger_override=ledger, state_override=state_payload)
+    rl = snap["riskless_metrics"]
+    assert rl["pure_riskless_live_wins"] == 1
+    assert rl["pure_riskless_live_losses"] == 0
+    assert rl["pure_riskless_flat_merges"] == 1
+    assert rl["pure_riskless_live_wr_pct"] == pytest.approx(100.0)
+    assert rl["post_lock_losses"] == 0
+    assert snap["details"]["execution_metrics"]["clob_post_p50_ms"] == pytest.approx(68.79)
+
+    mon = PAAMonitor(db, accountant, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    monkeypatch.setattr("src.paa_os.monitor.check_operational_status", lambda **_kw: ({"all_core_units_active": True}, []))
+    hb = mon.run_monitor_cycle(live_rpc_check=False, auto_recover_safe=False, check_network=False)
+    assert not any("RISKLESS_ZERO_LOSS_BREACH" in a for a in (hb.get("anomalies") or []))
+
+    # Multi-fill scale-in legs on the same ERC-1155 token_id must aggregate shares cleanly against on-chain balanceOf
+    multi_fill_ledger = {
+        "free_cash_pusd": 58.47,
+        "open_positions": [
+            {"trade_id": "LEG_A", "token_id": "tok_shared_1", "shares_ledger": 1.75, "shares_onchain": 16.38, "best_bid": 0.995},
+            {"trade_id": "LEG_B", "token_id": "tok_shared_1", "shares_ledger": 14.63, "shares_onchain": 16.38, "best_bid": 0.995},
+        ],
+    }
+    multi_fill_state = {
+        "live_bankroll": 58.47,
+        "active_positions": {
+            "LEG_A": {"token_id": "tok_shared_1", "remaining_shares": 1.75},
+            "LEG_B": {"token_id": "tok_shared_1", "remaining_shares": 14.63},
+        },
+        "pending_entry_intents": {},
+    }
+    ok_mf, disc_mf, anom_mf = accountant.verify_accounting_integrity(multi_fill_ledger, multi_fill_state)
+    assert ok_mf is True
+    assert disc_mf == pytest.approx(0.0, abs=1e-4)
+    assert anom_mf == []
+
+

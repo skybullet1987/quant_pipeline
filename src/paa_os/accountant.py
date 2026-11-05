@@ -23,7 +23,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from scripts.paa_autonomous_controller import _load_riskless_governance_flags, reconcile_authoritative_ledger
+from scripts.paa_autonomous_controller import (
+    _load_riskless_governance_flags,
+    is_phantom_unfilled_position,
+    reconcile_authoritative_ledger,
+    reconcile_closed_position_record,
+)
 from src.paa_os.budget import BudgetManager
 from src.paa_os.permissions import load_autonomy_config
 from src.paa_os.task_db import PAATaskDB, utc_now_iso
@@ -95,11 +100,17 @@ class PAAAccountant:
                         continue
                     status_u = str(rec.get("status") or rec.get("order_status") or "").upper()
                     sent_orders += 1
-                    if status_u in ("MATCHED", "FILLED", "LIVE", "RESTING", "POSITION_CONFIRMED"):
+                    if status_u in ("MATCHED", "FILLED", "LIVE", "RESTING", "POSITION_CONFIRMED") or rec.get("success") is True:
                         filled_orders += 1
-                    elif "ERROR" in status_u or "EXCEPTION" in status_u or "TIMEOUT" in status_u:
+                    elif (
+                        "ERROR" in status_u
+                        or "EXCEPTION" in status_u
+                        or "TIMEOUT" in status_u
+                        or rec.get("success") is False
+                        or bool(rec.get("error"))
+                    ):
                         error_orders += 1
-                    ms = rec.get("clob_http_post_ms")
+                    ms = rec.get("clob_http_post_ms") if rec.get("clob_http_post_ms") is not None else rec.get("latency_ms")
                     if isinstance(ms, (int, float)) and 1.0 <= float(ms) <= 30000.0:
                         post_ms_samples.append(float(ms))
             except Exception:
@@ -239,16 +250,36 @@ class PAAAccountant:
             )
 
         max_share_usd_gap = 0.0
-        for op in ledger.get("open_positions") or []:
-            sh_led = float(op.get("shares_ledger") or 0.0)
-            sh_chain = op.get("shares_onchain")
+        tok_groups: Dict[str, Dict[str, Any]] = {}
+        for idx_op, op in enumerate(ledger.get("open_positions") or []):
+            if not isinstance(op, dict):
+                continue
+            tk_key = str(op.get("token_id") or "").strip() or f"__single__:{op.get('trade_id') or idx_op}"
+            grp = tok_groups.setdefault(
+                tk_key,
+                {
+                    "trade_ids": [],
+                    "shares_ledger": 0.0,
+                    "shares_onchain": op.get("shares_onchain"),
+                    "best_bid": float(op.get("best_bid") or 0.50),
+                },
+            )
+            grp["trade_ids"].append(str(op.get("trade_id") or ""))
+            grp["shares_ledger"] += float(op.get("shares_ledger") or 0.0)
+            if grp["shares_onchain"] is None and op.get("shares_onchain") is not None:
+                grp["shares_onchain"] = op.get("shares_onchain")
+            grp["best_bid"] = max(grp["best_bid"], float(op.get("best_bid") or 0.50))
+
+        for grp in tok_groups.values():
+            sh_led = float(grp["shares_ledger"] or 0.0)
+            sh_chain = grp["shares_onchain"]
             if sh_chain is not None and not settling_open:
                 sh_diff = abs(sh_led - float(sh_chain))
                 if sh_diff > sh_tol:
-                    est_usd = sh_diff * max(0.50, float(op.get("best_bid") or 0.50))
+                    est_usd = sh_diff * max(0.50, float(grp["best_bid"] or 0.50))
                     max_share_usd_gap = max(max_share_usd_gap, est_usd)
                     anomalies.append(
-                        f"CTF_SHARE_DISCREPANCY:{op.get('trade_id')}:ledger={sh_led:.2f}_vs_onchain={float(sh_chain):.2f}"
+                        f"CTF_SHARE_DISCREPANCY:{'+'.join(grp['trade_ids'])}:ledger={sh_led:.2f}_vs_onchain={float(sh_chain):.2f}"
                     )
 
         for tid, p in (st.get("active_positions") or {}).items():
@@ -299,7 +330,7 @@ class PAAAccountant:
         directional_sleeves = {"SLEEVE_1_CORE_302", "SLEEVE_1_SUBHOURLY_15M"}
         live_by_sl = ledger.get("live_by_sleeve") or {}
 
-        pure_rl_trades, pure_rl_wins, pure_rl_losses, pure_rl_pnl = 0, 0, 0, 0.0
+        pure_rl_trades, pure_rl_wins, pure_rl_losses, pure_rl_flat_merges, pure_rl_pnl = 0, 0, 0, 0, 0.0
         for sl, rec in live_by_sl.items():
             if not isinstance(rec, dict):
                 continue
@@ -309,14 +340,20 @@ class PAAAccountant:
             pure_rl_trades += n_tr
             pure_rl_wins += int(rec.get("wins") or 0)
             pure_rl_losses += int(rec.get("losses") or 0)
+            pure_rl_flat_merges += int(rec.get("flat_merges") or 0)
             pure_rl_pnl += float(rec.get("verified_net_pnl_usd") or 0.0)
 
         st_path = self.data_dir / "live_harvester_state.json"
         st = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
         rl_epoch_cut = str((self.cfg.get("riskless_mandate") or {}).get("riskless_epoch_start_utc") or "2026-11-04T02:05:00Z")
-        post_lock_w, post_lock_l, post_lock_pnl = 0, 0, 0.0
+        post_lock_w, post_lock_l, post_lock_flat, post_lock_pnl = 0, 0, 0, 0.0
         from src.paa_os.optimizer import group_closed_positions_by_box
-        for c in group_closed_positions_by_box(st.get("closed_positions") or [], st.get("active_positions") or []):
+        norm_closed_for_lock = [
+            reconcile_closed_position_record(raw_c)[0]
+            for raw_c in (st.get("closed_positions") or [])
+            if isinstance(raw_c, dict) and not is_phantom_unfilled_position(raw_c)
+        ]
+        for c in group_closed_positions_by_box(norm_closed_for_lock, st.get("active_positions") or []):
             if not isinstance(c, dict):
                 continue
             ts_c = str(c.get("entry_time_utc") or c.get("settled_at_utc") or c.get("exit_time_utc") or "")
@@ -326,42 +363,41 @@ class PAAAccountant:
                     ts_c = datetime.fromtimestamp(raw_ts, tz=timezone.utc).isoformat()
             if ts_c < rl_epoch_cut:
                 continue
-            if (
-                c.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
-                and not bool(c.get("inventory_reconciled", True))
-                and str(c.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
-            ):
-                continue
             p_u = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+            rsn_u = str(c.get("close_reason") or "").upper()
             post_lock_pnl += p_u
-            if p_u > 0 or c.get("won") is True:
+            if abs(p_u) <= 1e-6 and (c.get("won") is True or "MERGED" in rsn_u):
+                post_lock_flat += 1
+            elif p_u > 0 or c.get("won") is True:
                 post_lock_w += 1
             elif p_u < -1e-6:
                 post_lock_l += 1
 
-        intents_usd = sum(
-            float(i.get("notional_usd", 0.0) or 0.0)
-            for i in (st.get("pending_entry_intents") or {}).values()
+        now_q = time.time()
+        fresh_intents = [
+            i for i in (st.get("pending_entry_intents") or {}).values()
             if isinstance(i, dict)
-        )
-        intents_cnt = len(st.get("pending_entry_intents") or {})
+            and (now_q - float(i.get("ts", i.get("created_ts", 0.0)) or 0.0)) <= 90.0
+        ]
+        intents_usd = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in fresh_intents)
+        intents_cnt = len(fresh_intents)
         ord_cache_p = Path("/tmp/dominus_clob_open_orders_cache.json")
-        if ord_cache_p.exists() and (time.time() - ord_cache_p.stat().st_mtime) <= 60.0:
+        if ord_cache_p.exists() and (now_q - ord_cache_p.stat().st_mtime) <= 60.0:
             try:
                 raw_ords = json.loads(ord_cache_p.read_text(encoding="utf-8"))
-                buy_ords = [
-                    o for o in (raw_ords or [])
-                    if isinstance(o, dict)
-                    and str(o.get("status") or "").upper() in ("LIVE", "OPEN")
-                    and str(o.get("side") or "BUY").upper() == "BUY"
-                ]
-                cache_usd = sum(
-                    max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) * float(o.get("price") or 0.0)
-                    for o in buy_ords
-                )
-                if cache_usd > intents_usd:
-                    intents_usd = cache_usd
-                    intents_cnt = max(intents_cnt, len(buy_ords))
+                if isinstance(raw_ords, list):
+                    buy_ords = [
+                        o for o in raw_ords
+                        if isinstance(o, dict)
+                        and str(o.get("status") or "").upper() in ("LIVE", "OPEN")
+                        and str(o.get("side") or "BUY").upper() == "BUY"
+                        and max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) > 0.001
+                    ]
+                    intents_usd = sum(
+                        max(0.0, float(o.get("original_size") or 0.0) - float(o.get("size_matched") or 0.0)) * float(o.get("price") or 0.0)
+                        for o in buy_ords
+                    )
+                    intents_cnt = len(buy_ords)
             except Exception:
                 pass
 
@@ -376,11 +412,13 @@ class PAAAccountant:
             "pure_riskless_live_trades": pure_rl_trades,
             "pure_riskless_live_wins": pure_rl_wins,
             "pure_riskless_live_losses": pure_rl_losses,
+            "pure_riskless_flat_merges": pure_rl_flat_merges,
             "pure_riskless_live_wr_pct": round(100.0 * pure_rl_wins / pure_rl_trades, 2) if pure_rl_trades > 0 else 100.0,
             "pure_riskless_realized_pnl_usd": round(pure_rl_pnl, 4),
             "riskless_epoch_start_utc": rl_epoch_cut,
             "post_lock_wins": post_lock_w,
             "post_lock_losses": post_lock_l,
+            "post_lock_flat_merges": post_lock_flat,
             "post_lock_net_pnl_usd": round(post_lock_pnl, 4),
             "working_maker_buy_orders_count": intents_cnt,
             "working_maker_quoting_usd": round(intents_usd, 2),

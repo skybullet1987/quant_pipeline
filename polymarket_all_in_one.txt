@@ -1,20 +1,20 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 00:50:35 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-05 02:39:49 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,306B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,935B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,620B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4548 | 896,057B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (L4549-6972 | 442,297B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L6973-7950 | 185,898B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (L7951-8118 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (L8119-8852 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (L8853-8887 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/redeem_settled_positions.py] (L8888-8986 | 14,780B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (L8987-9100 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (L9101-9503 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4531 | 888,466B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (L4532-6955 | 442,495B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L6956-7933 | 185,898B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (L7934-8101 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (L8102-8835 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (L8836-8870 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/redeem_settled_positions.py] (L8871-8969 | 14,780B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (L8970-9083 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (L9084-9486 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # [01/13] config/polymarket_risk_config.json
@@ -2476,26 +2476,7 @@ class PolymarketLiveHarvester:
   except Exception:pass
   if hasattr(a.executor,"invalidate_collateral_cache"):a.executor.invalidate_collateral_cache()
   a._pending_collateral_refresh=True;a.save_state();logger.warning(f"[D1 INLINE LEGGED-OUT UNWIND RECORDED] {n} ({j}): Sold {u:.2f} sh | Cost=${k+g:.2f} -> NetOut=${f-i:.2f} | Net PnL=${m:+.2f}");return n
- def _register_live_d1_box_positions(a,box_id,cand,res,pre_bal_a,pre_bal_b):
-  G=time.time();V=float(res.get("net_paired_shares")or res.get("shares")or cand.get("net_paired_shares")or cand.get("shares")or 12.);F=float(cand.get("expiry_ts")or(G+180.));r=str(cand.get("asset")or"BTC").upper();m={str(cand.get("leg_a_token_id")):("leg_a",pre_bal_a),str(cand.get("leg_b_token_id")):("leg_b",pre_bal_b)}
-  if f"{box_id}_L1"in a.active_positions or f"{box_id}_L2"in a.active_positions:box_id=f"{box_id}_{int(G*1000)%100000}"
-  L=(f"{box_id}_L1",f"{box_id}_L2");z=(res["leg_1"],res["leg_2"]);l=[];b=.0;k=res.get("excess_leg")if isinstance(res.get("excess_leg"),dict)else None;p=str((k or{}).get("token_id")or"");q=float((k or{}).get("shares")if(k or{}).get("shares")is not None else((k or{}).get("excess_shares")or.0));i=a._is_v5_live_strict()or bool(getattr(a,"hold_to_maturity",True));o=str(cand.get("box_type")or"DOMINANCE").upper()
-  for Q,(tid,U)in enumerate(zip(L,z)):
-   j=L[1-Q];P=str(U["token_id"]);O,K=m.get(P,("leg_a"if Q==0 else"leg_b",.0));y=float(cand.get(f"{O}_expiry_ts")or F);E=bool(cand.get("hold_to_maturity")or(o=="DOMINANCE"and.0<(y-G)<=9e2 and i));T=float(U.get("price")or cand.get(f"{O}_limit_price")or.48);J=U.get("raw")if isinstance(U.get("raw"),dict)else{};c=a._num(J.get("makingAmount")or J.get("making_amount"))
-   if c is not None and c>=1e4:c=c/1e6
-   I=float(U.get("matched_shares")or V);D=round(V+q,4)if(P==p and.05<=q<5.)else V;d=U.get("gross_shares");e=(str(U.get("entry_fee_asset")or"").upper()=="SHARES"or(d is not None and float(d)>D+1e-4));h=round(float(d),4)if d is not None else D
-   if c is not None and I>max(D,h)+.05:c=c*(max(D,h)/I)
-   w=round(float(c)if(c is not None and c>.0)else(h*T),4);n=cand.get(f"{O}_fee_rate");S=.0 if U.get("is_maker_anchor")else(float(n)if n is not None else.07);R=float(cand.get(f"{O}_fee_exponent",1.)or 1.);H=.0 if e else(round(D*S*((T*(1.-T))**R),4)if S>.0 else.0);f="SHARES"if e else"USDC";b+=w+H;v=str(cand.get(f"{O}_side")or("UP"if"UP"in str(U.get("label","")).upper()else"DOWN"));u=float(cand.get(f"{O}_strike")or cand.get("k_low"if O=="leg_a"else"k_high")or 1e2);N=U.get("orderID");M=J.get("transactionsHashes")or J.get("transactions_hashes")or[];g=str(cand.get("sleeve_source")or"");x=(g if g in{"D1_QUIET_BOOK_BOX","D1_4H_DOMINANCE_BOX"}else("D1_SAME_ORACLE_DOMINANCE_BOX"if o=="DOMINANCE"else(g or"D1_SAME_ORACLE_DOMINANCE_BOX")));l.append((tid,{"trade_id":tid,"box_id":box_id,"box_expected_legs":2,"box_partner_trade_id":j,"is_dominance_box":True,"is_locked_arbitrage_box":True,"hold_to_maturity_lock":E,"opp_token_id":str(cand.get(f"{O}_opp_token_id")or""),"dedupe_key":str(cand.get("dedupe_key")or""),"pair_dedupe_key":str(cand.get("pair_dedupe_key")or""),"sleeve":x,"sleeve_source":str(cand.get("sleeve_source")or x),"entry_tte":max(1.,y-G),"event_id":box_id,"market_id":str(cand.get(f"{O}_market_id")or f"{box_id}_{Q}"),"condition_id":str(cand.get(f"{O}_condition_id")or""),"token_id":P,"target_token":v,"asset":r,"horizon":str(cand.get(f"{O}_horizon")or"15m"),"is_subhourly":True,"candle_open_spot":u,"entry_spot_ref":u,"spot_denomination":"USD","candle_sigma":.0025 if r=="BTC"else.0035,"entry_price":round(w/max(D,.01),4),"entry_shares":D,"gross_entry_shares":h,"remaining_shares":D,"filled_exit_shares":.0,"remaining_exit_shares":D,"remaining_cost_basis":w,"realized_exit_cash":.0,"realized_exit_fee":.0,"gross_exit_cash":.0,"average_exit_price":.0,"exit_trade_ids":[],"notional_usd":w,"fee_usd":H,"entry_fee_cash_usd":H,"entry_fee_asset":f,"fee_source":"crypto_fees_v2","fee_rate_applied":S,"fee_exponent_applied":R,"target_exit_price":1. if E else.99,"exit_order_size":D,"entry_time_utc":datetime.now(timezone.utc).isoformat(),"entry_ts":G,"candle_expiry_ts":y,"pre_token_balance":K,"order_id":N,"entry_order_id":N,"trade_ids":[],"transactions_hashes":list(M),"status":ExecutionStatus.POSITION_CONFIRMED if a.dry_run else ExecutionStatus.MATCHED_PENDING_SETTLEMENT,"inventory_reconciled":bool(a.dry_run),"exit_order_id":None,"exit_order_status":"DETERMINISTIC_TERMINAL_HOLD"if E else("NONE"if a.dry_run else"AWAITING_DELTA_SETTLEMENT"),"terminal_policy":"DETERMINISTIC_TERMINAL_HOLD"if E else None,"is_liquidating":False,"unwind_order_id":None,"unwind_start_time":.0}))
-  t=round(b/max(V,1.),5);s=o;C=float(cand.get("k_low")or.0);B=float(cand.get("k_high")or.0)
-  for tid,A in l:A["box_type"]=s;A["box_k_low"]=C;A["box_k_high"]=B;A["box_cost_net"]=t;A["box_total_cost_usd"]=round(b,4);a.active_positions[tid]=A
-  if k is not None and q>=5.:a._register_legged_out_d1_residual(f"{box_id}_EXCESS",cand,{"token_id":p,"label":k.get("label"),"matched_shares":q,"residual_shares":q,"price":k.get("price"),"is_maker_anchor":bool(k.get("is_maker_anchor"))},pre_bal_a+(V if p==str(cand.get("leg_a_token_id"))else.0),pre_bal_b+(V if p==str(cand.get("leg_b_token_id"))else.0))
-  a._last_exit_credit_window=None
-  if getattr(a,"_last_known_collateral",None)is not None:a._last_known_collateral=max(.0,float(a._last_known_collateral)-b);a._last_entry_debit_window=(time.time(),float(a._last_known_collateral))
-  a.executor.invalidate_collateral_cache();a._pending_collateral_refresh=True;a.save_state()
-  if not a.dry_run:
-   for tid,A in l:
-    if not A.get("hold_to_maturity_lock"):a._spawn_fast_confirm(tid)
-  logger.info(f"✓ [D1 LIVE DOMINANCE BOX ENTERED] {box_id} ({r}) | {V:.0f} pairs @ box_net=${t:.4f} (cost=${b:.2f}, min_floor=+${V*max(.0,1.-t):.2f})");return[tid for tid,_ in l]
+ def _register_live_d1_box_positions(self,box_id,cand,res,pre_bal_a,pre_bal_b):from src.polymarket_research.riskless_protocol_v2_expansion import register_live_d1_box_positions_impl;return register_live_d1_box_positions_impl(self,box_id,cand,res,pre_bal_a,pre_bal_b,ExecutionStatus.POSITION_CONFIRMED,ExecutionStatus.MATCHED_PENDING_SETTLEMENT)
  def _register_legged_out_d1_residual(a,box_id,cand,resid,pre_bal_a,pre_bal_b):
   k=time.time();j=float(cand.get("expiry_ts")or(k+180.));d=str(cand.get("asset")or"BTC").upper();q=str(resid.get("token_id")or"");c={str(cand.get("leg_a_token_id")):("leg_a",pre_bal_a),str(cand.get("leg_b_token_id")):("leg_b",pre_bal_b)};o,m=c.get(q,("leg_a",.0));n=float(resid.get("matched_shares")or cand.get("shares")or 12.);i=bool(resid.get("unwind_outcome_unknown"));h=n if i else float(resid.get("residual_shares")or.0);t=float(resid.get("price")or cand.get(f"{o}_limit_price")or.48);s=.0 if resid.get("is_maker_anchor")else(float(cand[f"{o}_fee_rate"])if cand.get(f"{o}_fee_rate")is not None else.07);r=float(cand.get(f"{o}_fee_exponent",1.)or 1.);e=round(h*t,4);l=round(h*s*((t*(1.-t))**r),4)if s>.0 else.0;g=f"{box_id}_LEG_RESID"
   if g in a.active_positions or any(p.get("trade_id")==g for p in a.closed_positions):g=f"{g}_{int(k)}"
@@ -3643,70 +3624,72 @@ class PolymarketLiveHarvester:
   try:
    try:
     m=a.executor.get_collateral_balance()
-    if m is not None and isinstance(m,(int,float))and m>0:a._last_known_collateral=float(m);a.executor.set_cached_collateral(a._last_known_collateral);logger.info(f"[RECONCILIATION] Live collateral balance: ${a._last_known_collateral:.2f}");N=time.time();f=sum(a.get_position_market_value(p,N)for p in a.active_positions.values());C=a._last_known_collateral+f;a._update_equity_tier(C);a.risk_controller.check_equity_drawdown(C,allow_auto_clear=True)
+    if m is not None and isinstance(m,(int,float))and m>0:a._last_known_collateral=float(m);a.executor.set_cached_collateral(a._last_known_collateral);logger.info(f"[RECONCILIATION] Live collateral balance: ${a._last_known_collateral:.2f}");O=time.time();f=sum(a.get_position_market_value(p,O)for p in a.active_positions.values());D=a._last_known_collateral+f;a._update_equity_tier(D);a.risk_controller.check_equity_drawdown(D,allow_auto_clear=True)
    except Exception as e:pass
-   w=a._strict_open_orders();l={o.get("id")or o.get("orderID")for o in w if o};logger.info(f"[RECONCILIATION] CLOB reports {len(l)} live open orders.")
-   for H,M in list((getattr(a,"pending_entry_intents",None)or{}).items()):
-    if H in a.active_positions:logger.info(f"[RECONCILIATION] Pending entry intent {H} already in active_positions; clearing intent.");a.pending_entry_intents.pop(H,None);a.save_state();continue
-    a._recover_pending_intent(H,M)
-   for L,K in list(a.active_positions.items()):
-    if position_requires_lifecycle_resolution(K):a._resolve_lifecycle(L,K,w,force=True)
-   for L,K in list(a.active_positions.items()):
-    if L not in a.active_positions:continue
-    if position_is_settlement_receivable(K)or position_requires_lifecycle_resolution(K):continue
-    G=K.get("exit_order_id");F=K.get("token_id")
-    if G and G in l:logger.info(f"[RECONCILIATION] Active position {L} has confirmed resting exit order {G}.");continue
-    if G:
-     j=K.get("exit_order_status","");B=a.executor.get_order_status(G)
+   y=a._strict_open_orders();l={o.get("id")or o.get("orderID")for o in y if o};logger.info(f"[RECONCILIATION] CLOB reports {len(l)} live open orders.")
+   for I,N in list((getattr(a,"pending_entry_intents",None)or{}).items()):
+    if I in a.active_positions:logger.info(f"[RECONCILIATION] Pending entry intent {I} already in active_positions; clearing intent.");a.pending_entry_intents.pop(I,None);a.save_state();continue
+    a._recover_pending_intent(I,N)
+   for M,L in list(a.active_positions.items()):
+    if position_requires_lifecycle_resolution(L):a._resolve_lifecycle(M,L,y,force=True)
+   for M,L in list(a.active_positions.items()):
+    if M not in a.active_positions:continue
+    if position_is_settlement_receivable(L)or position_requires_lifecycle_resolution(L):continue
+    H=L.get("exit_order_id");G=L.get("token_id")
+    if H and H in l:logger.info(f"[RECONCILIATION] Active position {M} has confirmed resting exit order {H}.");continue
+    if H:
+     j=L.get("exit_order_status","");C=a.executor.get_order_status(H)
      if j in{"STOP_CANCEL_PENDING","PRE_EXPIRY_CANCEL_PENDING"}:
-      if not B:logger.warning(f"Cannot reconcile pending cancellation {G} for {L}; retaining position.");continue
-      E=str(B.get("status","")).upper()
-      if E not in{"MATCHED","FILLED","CONFIRMED"}and not(E.startswith("CANCEL")or E in{"EXPIRED","REJECTED","INVALID"}):logger.warning(f"Cancellation not terminal: {G} (status={E}); retaining position.");continue
-      if E in{"MATCHED","FILLED","CONFIRMED"}:K["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";K["pending_canceled_order_id"]=G;a.save_state();continue
-      try:a.executor.release_inventory(reservation_id=G)
-      except Exception as rel_err:logger.error(f"Reservation release failed for {G}: {rel_err}");raise
-      K["exit_order_id"]=None
-      if j=="STOP_CANCEL_PENDING":K["exit_order_status"]="UNWIND_RETRY_REQUIRED";K["next_unwind_retry_ts"]=.0;K["is_liquidating"]=False
-      else:K["exit_order_status"]="PRE_EXPIRY_EVALUATION_REQUIRED"
+      if not C:logger.warning(f"Cannot reconcile pending cancellation {H} for {M}; retaining position.");continue
+      F=str(C.get("status","")).upper();w=float(a._num(C.get("size_matched"))or.0)
+      if F in{"MATCHED","FILLED","CONFIRMED"}or(w>1e-6 and(F.startswith("CANCEL")or F in{"EXPIRED","REJECTED","INVALID"})):L["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";L["pending_canceled_order_id"]=H;a.save_state();continue
+      if not(F.startswith("CANCEL")or F in{"EXPIRED","REJECTED"}or(F=="INVALID"and w<=1e-6)):logger.warning(f"Cancellation not terminal: {H} (status={F}); retaining position.");continue
+      try:a.executor.release_inventory(reservation_id=H)
+      except Exception as rel_err:logger.error(f"Reservation release failed for {H}: {rel_err}");raise
+      L["exit_order_id"]=None
+      if j=="STOP_CANCEL_PENDING":L["exit_order_status"]="UNWIND_RETRY_REQUIRED";L["next_unwind_retry_ts"]=.0;L["is_liquidating"]=False
+      else:L["exit_order_status"]="PRE_EXPIRY_EVALUATION_REQUIRED"
       a.save_state();continue
-     if not B:logger.warning(f"[RECONCILIATION] Exit order {G} for {L} absent from snapshot and status UNKNOWN; retaining.");continue
-     A=float(K.get("exit_order_size",K.get("entry_shares",.0))or.0);n=float(a._num(B.get("size_matched"))or.0);i=str(B.get("status","")).upper();z=B.get("taking_amount")or B.get("takingAmount");c=a._num(z);b=False
+     if not C:logger.warning(f"[RECONCILIATION] Exit order {H} for {M} absent from snapshot and status UNKNOWN; retaining.");continue
+     B=float(L.get("exit_order_size",L.get("entry_shares",.0))or.0);n=float(a._num(C.get("size_matched"))or.0);i=str(C.get("status","")).upper()
+     if i=="INVALID"and n>1e-6:L["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";L["pending_canceled_order_id"]=H;L["status"]="UNRESOLVED_SETTLEMENT";a.save_state();logger.warning(f"[RECONCILIATION] {M}: INVALID exit {H} has size_matched={n:.2f}; deferring to fill reconciliation.");continue
+     A=C.get("taking_amount")or C.get("takingAmount");c=a._num(A);b=False
      if c is None:
-      c=n*float(K.get("target_exit_price",.0)or.0)
-      if n>0:K["exit_cash_estimated"]=True;b=True
-     J=float(a._num(B.get("fee"))or a._num(B.get("fee_usd"))or.0);a.record_fill_and_update_position(K,G,n,c,fee_usd=J,cash_is_estimated=b);O=[str(x)for x in(B.get("fill_ids")or B.get("associate_trades")or[])if x]
-     if O:K["exit_fill_ids"]=sorted(set(K.get("exit_fill_ids")or[])|set(O))
-     y=float(K["remaining_shares"]);g=float(K["filled_exit_shares"]);h=(i in{"MATCHED","FILLED","CONFIRMED"}or i.startswith("CANCEL")or i in{"EXPIRED","REJECTED","INVALID"}or n>=A-1e-4);v=i.startswith("CANCEL")or i in{"EXPIRED","REJECTED","INVALID"};d=y<=.01 or g>=float(K["entry_shares"])-1e-4
+      c=n*float(L.get("target_exit_price",.0)or.0)
+      if n>0:L["exit_cash_estimated"]=True;b=True
+     K=float(a._num(C.get("fee"))or a._num(C.get("fee_usd"))or.0);a.record_fill_and_update_position(L,H,n,c,fee_usd=K,cash_is_estimated=b);P=[str(x)for x in(C.get("fill_ids")or C.get("associate_trades")or[])if x]
+     if P:L["exit_fill_ids"]=sorted(set(L.get("exit_fill_ids")or[])|set(P))
+     z=float(L["remaining_shares"]);g=float(L["filled_exit_shares"]);h=(i in{"MATCHED","FILLED","CONFIRMED"}or i.startswith("CANCEL")or i in{"EXPIRED","REJECTED"}or(i=="INVALID"and n<=1e-6)or n>=B-1e-4);v=(i.startswith("CANCEL")or i in{"EXPIRED","REJECTED"}or(i=="INVALID"and n<=1e-6));d=z<=.01 or g>=float(L["entry_shares"])-1e-4
      if d:
-      if b or float(K.get("estimated_exit_cash",.0))>.0:K["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";K["status"]="UNRESOLVED_SETTLEMENT";a.save_state();logger.warning(f"[RECONCILIATION] Position {L} filled offline but cash is estimated; retaining in UNRESOLVED_SETTLEMENT.")
-      else:a._close_position(L,K,ExecutionStatus.FILLED,"FILLED_OFFLINE",won=True);logger.info(f"[RECONCILIATION] Position {L} completely filled while offline.")
+      if b or float(L.get("estimated_exit_cash",.0))>.0:L["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";L["status"]="UNRESOLVED_SETTLEMENT";a.save_state();logger.warning(f"[RECONCILIATION] Position {M} filled offline but cash is estimated; retaining in UNRESOLVED_SETTLEMENT.")
+      else:a._close_position(M,L,ExecutionStatus.FILLED,"FILLED_OFFLINE",won=True);logger.info(f"[RECONCILIATION] Position {M} completely filled while offline.")
       continue
-     if h:K["exit_order_id"]=None;K["pending_canceled_order_id"]=G;K["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";K["status"]=ExecutionStatus.PARTIALLY_FILLED;a.save_state();logger.warning(f"[PARTIAL ORDER MATCH] Position {L}: order {G} filled {n:.2f} shares. Remaining unsold: {y:.2f}");continue
+     if h:L["exit_order_id"]=None;L["pending_canceled_order_id"]=H;L["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";L["status"]=ExecutionStatus.PARTIALLY_FILLED;a.save_state();logger.warning(f"[PARTIAL ORDER MATCH] Position {M}: order {H} filled {n:.2f} shares. Remaining unsold: {z:.2f}");continue
      if not v:
-      if n>0:K["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";K["pending_canceled_order_id"]=G
-      a.save_state();logger.warning(f"[RECONCILIATION] Exit order {G} for {L} non-terminal ({i}) but absent from snapshot; retaining.");continue
-     try:a.executor.release_inventory(reservation_id=G)
-     except Exception as rel_err:logger.error(f"Reservation release failed for {G}: {rel_err}");raise
-     K["exit_order_id"]=None;K["exit_order_status"]="EXIT_RECOVERY_REQUIRED"
-     if g>0:K["status"]=ExecutionStatus.PARTIALLY_FILLED
-     D=K.get("exit_tranches",[])
-     for t in D:
+      if n>0:L["exit_order_status"]="FILL_RECONCILIATION_REQUIRED";L["pending_canceled_order_id"]=H
+      a.save_state();logger.warning(f"[RECONCILIATION] Exit order {H} for {M} non-terminal ({i}) but absent from snapshot; retaining.");continue
+     try:a.executor.release_inventory(reservation_id=H)
+     except Exception as rel_err:logger.error(f"Reservation release failed for {H}: {rel_err}");raise
+     L["exit_order_id"]=None;L["exit_order_status"]="EXIT_RECOVERY_REQUIRED"
+     if g>0:L["status"]=ExecutionStatus.PARTIALLY_FILLED
+     E=L.get("exit_tranches",[])
+     for t in E:
       if t.get("status")in{"POSTED","IN_FLIGHT"}:
        u=max(.0,round(float(t["size"])-n,2))
        if u<=.01:t["status"]="FILLED"
        else:t["size"]=u;t["status"]="PENDING"
-     s=[t for t in D if t.get("status")=="PENDING"]
-     if s:K["target_exit_price"]=float(s[0]["price"])
-     a.save_state();logger.warning(f"[RECONCILIATION] Exit order {G} for {L} terminally {i}; residual {y:.2f} eligible for recovery.")
-    if F and not K.get("exit_order_id"):K.pop("recovered_from_intent",None);a._attempt_maker_exit_post(L,K)
+     s=[t for t in E if t.get("status")=="PENDING"]
+     if s:L["target_exit_price"]=float(s[0]["price"])
+     a.save_state();logger.warning(f"[RECONCILIATION] Exit order {H} for {M} terminally {i}; residual {z:.2f} eligible for recovery.")
+    if G and not L.get("exit_order_id"):L.pop("recovered_from_intent",None);a._attempt_maker_exit_post(M,L)
    r={str(p.get(k))for p in a.active_positions.values()for k in("exit_order_id","unwind_order_id","pending_canceled_order_id","cancel_pending_order_id")if p.get(k)}
-   for o in w:
-    P=o.get("id")or o.get("orderID")
-    if P and str(P)not in r:logger.warning(f"[RECONCILIATION] Orphan CLOB order {P} detected. Canceling for capital safety.");a.executor.cancel_order(P)
-   I=getattr(a.executor,"rebuild_reservations_from_exchange",None)
-   if callable(I):
+   for o in y:
+    Q=o.get("id")or o.get("orderID")
+    if Q and str(Q)not in r:logger.warning(f"[RECONCILIATION] Orphan CLOB order {Q} detected. Canceling for capital safety.");a.executor.cancel_order(Q)
+   J=getattr(a.executor,"rebuild_reservations_from_exchange",None)
+   if callable(J):
     q=a._strict_open_orders()
-    if I(q)is False:raise RuntimeError("Reservation book could not be rebuilt from the exchange")
+    if J(q)is False:raise RuntimeError("Reservation book could not be rebuilt from the exchange")
    a._startup_reconciled=True;a._refresh_global_halt(authoritative=True);a.save_state();logger.info(f"[RECONCILIATION] Exchange state reconciled. Global halt={a.risk_halt} reasons={a.global_halt_reasons}")
   except Exception as e:logger.critical(f"[RECONCILIATION] Exchange/local state is UNKNOWN; refusing to mutate orders: {e}");raise RuntimeError("Live exchange reconciliation failed; safe startup refused")from e
  def _strict_open_orders(b):
@@ -5489,7 +5472,7 @@ class PolymarketLiveExecutor:
     else:a=True
    elif y>.0:h=round(z*y,6);a=True
    else:h=None
-  s=str(B.get("order_type")or B.get("type")or"GTC").upper();r=x<=.0 or z>=x-1e-4 or s in{"FAK","FOK"};n=(A.startswith("CANCEL")or A in{"CONFIRMED","EXPIRED","REJECTED","INVALID"}or(A in{"MATCHED","FILLED"}and r)or(x>0 and z>=x-1e-4));t=A.startswith("CANCEL")or A in{"EXPIRED","REJECTED","INVALID"};k=any(str(f.get("status","")).upper()in{"FAILED","RETRYING"}for f in i)
+  s=str(B.get("order_type")or B.get("type")or"GTC").upper();r=x<=.0 or z>=x-1e-4 or s in{"FAK","FOK"};n=(A.startswith("CANCEL")or A in{"CONFIRMED","EXPIRED","REJECTED","INVALID"}or(A in{"MATCHED","FILLED"}and r)or(x>0 and z>=x-1e-4));t=A.startswith("CANCEL")or A in{"EXPIRED","REJECTED"}or(A=="INVALID"and z<=1e-6);k=any(str(f.get("status","")).upper()in{"FAILED","RETRYING"}for f in i)
   if t:
    if z<=1e-6 or d:b=True;a=False if(z<=1e-6 or h is not None)else True
    elif(not g.dry_run and g.is_authenticated and g.client is not None and str(B.get("side","SELL")).upper()=="SELL"and not k and y>.0 and C):
@@ -5500,7 +5483,7 @@ class PolymarketLiveExecutor:
      a=not(c or e or s=="GTC")
     else:b=False;a=True
    else:b=False;a=True
-  elif d and(A in{"MATCHED","FILLED","CONFIRMED","MINED"}or(x>0 and z>=x-1e-4)):b=True;a=False
+  elif d and(A in{"MATCHED","FILLED","CONFIRMED","MINED","INVALID"}or(x>0 and z>=x-1e-4)):b=True;a=False
   elif(not g.dry_run and g.is_authenticated and g.client is not None and str(B.get("side","SELL")).upper()=="SELL"and not k and A in{"MATCHED","FILLED","CONFIRMED","MINED"}and x>0 and z>=x-.01 and y>.0 and C):
    j=g.get_onchain_erc1155_balance(C)
    if j is not None and j<=max(.0,x-z)+.01:
@@ -5509,7 +5492,7 @@ class PolymarketLiveExecutor:
     a=not(c or e or s=="GTC")
    else:b=False;a=True
   else:b=False;a=True
-  return{"order_id":str(order_id),"status":A,"resting":not n,"is_matched":z>.0,"is_settled":d,"has_reverted_fills":k,"terminal":b,"original_size":x,"matched":z,"cash":h,"cash_is_estimated":a,"cash_from_reported_taking":e,"limit_price":y,"avg_price":round(h/z,6)if(h is not None and z>1e-9)else(y if y>.0 else None),"trade_ids":m,"transactions_hashes":l,"fill_ids":q,"raw":B}
+  return{"order_id":str(order_id),"status":A,"resting":not n,"is_canceled":t,"is_matched":z>.0,"is_settled":d,"has_reverted_fills":k,"terminal":b,"original_size":x,"matched":z,"cash":h,"cash_is_estimated":a,"cash_from_reported_taking":e,"limit_price":y,"avg_price":round(h/z,6)if(h is not None and z>1e-9)else(y if y>.0 else None),"trade_ids":m,"transactions_hashes":l,"fill_ids":q,"raw":B}
  CTF_ADDRESS="0x4D97DCd97eC945f40cF65F87097ACe5EA0476045";NEG_RISK_ADAPTER_ADDRESS="0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296";NEG_RISK_ADAPTER_V2_ADDRESS="0xadA2005600Dec949baf300f4C6120000bDB6eAab";NEG_RISK_WRAPPED_COLLATERAL="0x3A3BD7bb9528E159577F7C2e685CC81A765002E2";DEPOSIT_WALLET_FACTORY="0x00000000000Fb5C9ADea0298D729A0CB3823Cc07";POLY_PROXY_FACTORY="0xaB45c5A4B0c941a2F231C04C3f49182e1A254052";RELAYER_V2_URL="https://relayer-v2.polymarket.com"
  @staticmethod
  def _payout_redemption_topic():from eth_utils import keccak;return"0x"+keccak(text="PayoutRedemption(address,address,bytes32,bytes32,uint256[],uint256)").hex().replace("0x","")
@@ -6729,7 +6712,7 @@ class PolymarketLiveExecutor:
     if q>i:i=q
     if g<=.0:g=float(o.get("original_size",.0)or.0)
     p=str(o.get("status","")).upper();n=g<=.0 or i>=g-1e-4
-    if not k or(k=="LIVE"and(p in{"CANCELED","CANCELLED"}or(p in{"MATCHED","FILLED"}and n))):k=p
+    if not k or(k=="LIVE"and(p in{"CANCELED","CANCELLED"}or(p=="INVALID"and i<=1e-6)or(p in{"MATCHED","FILLED"}and n))):k=p
    m=str((d or{}).get("order_type")or(d or{}).get("type")or"").upper()
    if(k in{"MATCHED","FILLED"}and(g<=.0 or i>=g-1e-4 or m in{"FAK","FOK"}))or(g>.0 and i>=g-1e-4):c="FILLED";logger.warning(f"[PM-EXEC] Order {order_id} cancellation returned FILLED/MATCHED (matched={i:.2f}). " "Retaining reservation until caller reconciles filled quantity.");return CancelOrderResult(u or{},order_id=str(order_id),outcome=c,is_canceled=False,matched=i,not_canceled_reason=a,raw=u)
    elif k.startswith("CANCEL")or k in{"EXPIRED","REJECTED"}or(k=="INVALID"and i<=1e-6)or(f and(b.dry_run or d is not None)):

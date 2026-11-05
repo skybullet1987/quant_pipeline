@@ -2841,8 +2841,8 @@ class PolymarketLiveExecutor:
             or (orig_size > 0 and matched >= orig_size - 1e-4)
         )
 
-        # Terminal status requires either cancellation/expiration/rejection/invalid OR authoritative settlement finality
-        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED", "INVALID"}
+        # Terminal status requires either cancellation/expiration/rejection/invalid-zero-match OR authoritative settlement finality
+        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (status == "INVALID" and matched <= 1e-6)
         has_reverted_fills = any(str(f.get("status", "")).upper() in {"FAILED", "RETRYING"} for f in all_fills)
         if is_canceled:
             if matched <= 1e-6 or is_settled:
@@ -2871,7 +2871,7 @@ class PolymarketLiveExecutor:
             else:
                 terminal = False
                 estimated = True
-        elif is_settled and (status in {"MATCHED", "FILLED", "CONFIRMED", "MINED"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
+        elif is_settled and (status in {"MATCHED", "FILLED", "CONFIRMED", "MINED", "INVALID"} or (orig_size > 0 and matched >= orig_size - 1e-4)):
             terminal = True
             estimated = False
         elif (
@@ -2907,6 +2907,7 @@ class PolymarketLiveExecutor:
             "order_id": str(order_id),
             "status": status,
             "resting": not no_longer_resting,
+            "is_canceled": is_canceled,
             "is_matched": matched > 0.0,
             "is_settled": is_settled,
             "has_reverted_fills": has_reverted_fills,
@@ -8114,7 +8115,10 @@ class PolymarketLiveExecutor:
                     orig_size = float(ws_snap.get("original_size", 0.0) or 0.0)
                 ws_st = str(ws_snap.get("status", "")).upper()
                 ws_full = orig_size <= 0.0 or matched >= orig_size - 1e-4
-                if not status or (status == "LIVE" and (ws_st in {"CANCELED", "CANCELLED"} or (ws_st in {"MATCHED", "FILLED"} and ws_full))):
+                if not status or (
+                    status == "LIVE"
+                    and (ws_st in {"CANCELED", "CANCELLED"} or (ws_st == "INVALID" and matched <= 1e-6) or (ws_st in {"MATCHED", "FILLED"} and ws_full))
+                ):
                     status = ws_st
 
             ord_t_c = str((order_info or {}).get("order_type") or (order_info or {}).get("type") or "").upper()

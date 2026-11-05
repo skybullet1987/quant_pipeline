@@ -331,7 +331,7 @@ class PolymarketUserWsCache:
                         "_updated_mono": now_m,
                     }
                     self._orders_by_id[oid] = norm
-                    if msg_type == "CANCELLATION" or status in TERMINAL_CANCEL_STATUSES or status in TERMINAL_FILL_STATUSES:
+                    if msg_type == "CANCELLATION" or status in TERMINAL_CANCEL_STATUSES or status in TERMINAL_FILL_STATUSES or status == "INVALID":
                         self._open_orders.pop(oid, None)
                     elif status in OPEN_ORDER_STATUSES:
                         clean_open = dict(norm)

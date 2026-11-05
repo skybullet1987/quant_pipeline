@@ -26,7 +26,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from scripts.paa_autonomous_controller import check_operational_status
+from scripts.paa_autonomous_controller import (
+    check_operational_status,
+    is_phantom_unfilled_position,
+    reconcile_closed_position_record,
+)
 from src.paa_os.accountant import PAAAccountant
 from src.paa_os.budget import BudgetManager
 from src.paa_os.permissions import PermissionClass, load_autonomy_config
@@ -230,7 +234,12 @@ class PAAMonitor:
                 loss_alert_usd = float(rl_mandate.get("live_loss_alert_threshold_usd", -0.05))
                 if bool(rl_mandate.get("enforce_riskless_only_live", True)):
                     from src.paa_os.optimizer import group_closed_positions_by_box
-                    _grouped_c = group_closed_positions_by_box(st.get("closed_positions") or [], st.get("active_positions") or {})
+                    _norm_closed = [
+                        reconcile_closed_position_record(raw_c)[0]
+                        for raw_c in (st.get("closed_positions") or [])
+                        if isinstance(raw_c, dict) and not is_phantom_unfilled_position(raw_c)
+                    ]
+                    _grouped_c = group_closed_positions_by_box(_norm_closed, st.get("active_positions") or {})
                     for c_rec in _grouped_c[-30:]:
                         if not isinstance(c_rec, dict):
                             continue
@@ -240,12 +249,6 @@ class PAAMonitor:
                             if raw_e > 0.0:
                                 ts_e = datetime.fromtimestamp(raw_e, tz=timezone.utc).isoformat()
                         if ts_e < rl_cut:
-                            continue
-                        if (
-                            c_rec.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
-                            and not bool(c_rec.get("inventory_reconciled", True))
-                            and str(c_rec.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
-                        ):
                             continue
                         pnl_c = float(c_rec.get("net_pnl_usd", c_rec.get("realized_pnl_usd", 0.0)) or 0.0)
                         tid_c = str(c_rec.get("trade_id") or "")
@@ -339,7 +342,7 @@ class PAAMonitor:
         budget_sum = self.budget.get_usage_summary()
         if not budget_sum["budget_healthy"]:
             anomalies.append(
-                f"BUDGET_CAP_TRIGGERED:calls={budget_sum['daily_ai_calls']}/{budget_sum['max_daily_ai_calls']},usd=${budget_sum['daily_ai_cost_usd']:.4f}"
+                f"AI_THROTTLE_ENGAGED:hr={budget_sum.get('hourly_ai_calls', 0)}/{budget_sum.get('max_hourly_ai_calls', 8)},day={budget_sum['daily_ai_calls']}/{budget_sum['max_daily_ai_calls']},usd=${budget_sum['daily_ai_cost_usd']:.4f}"
             )
 
         if event_wakeup_reasons:

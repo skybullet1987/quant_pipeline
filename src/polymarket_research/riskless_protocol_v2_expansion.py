@@ -39,7 +39,7 @@ import math
 import re
 import time
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
@@ -794,12 +794,20 @@ def detect_nr6_cross_slate_surjection_box(
 # ---------------------------------------------------------------------------
 
 
+def is_cme_metals_maintenance_window(ts: float) -> bool:
+    """True during daily `17:00–18:00 ET` CME Globex / Chainlink Forex break and `Fri 17:00 ET..Sun 18:00 ET` close."""
+    et_dt = datetime.fromtimestamp(float(ts), tz=timezone.utc).astimezone(ZoneInfo("America/New_York"))
+    wd, hr = et_dt.weekday(), et_dt.hour
+    return bool(hr == 17 or wd == 5 or (wd == 4 and hr >= 17) or (wd == 6 and hr < 18))
+
+
 def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, Any]]:
     """
     Sub-millisecond `/dev/shm/pm_fast_tick_{ASSET}.json` pre-hydrator for `S2_RTDS_EXACT_TWAP_INTEGRATOR`:
       1. Warms `daemon.chainlink_open_cache` + `_strike_source = 'REST_VERIFIED'` directly from `polymarket-recorder`'s
          verified `m5`/`m15` `authoritative_chainlink_open` so `scan_exact_twap_locks` never stalls on HTTP 429s!
-      2. Appends fresh `chainlink_proxy_spot` samples into `daemon.usd_spot_hist` at `>=0.85s` cadence.
+      2. Appends fresh `chainlink_proxy_spot` samples into `daemon.usd_spot_hist` at `>=0.85s` cadence (strictly skipping
+         unanchored `chainlink_basis_anchored is False` perp proxies so `XAU`/`XAG` `usd_spot_hist` is never polluted).
       3. Returns `<1ms` SHM L2 books (`age_book_ms <= 950ms`) keyed by `token_id`.
     """
     import json as _json
@@ -830,9 +838,11 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
         if cl_px <= 0.0:
             continue
         spot_ts = float(d.get("spot_ts") or shm_ts)
-        if asset_sym in {"XAU", "XAG"} and (now_ts - spot_ts) > 15.0:
+        if asset_sym in {"XAU", "XAG"} and (
+            (now_ts - spot_ts) > 15.0 or ("chainlink_basis_anchored" in d and is_cme_metals_maintenance_window(now_ts))
+        ):
             continue
-        if isinstance(usd_hist_map, dict):
+        if isinstance(usd_hist_map, dict) and d.get("chainlink_basis_anchored") is not False:
             dq = usd_hist_map.get(asset_sym)
             if dq is not None and (not dq or (shm_ts - float(dq[-1][0])) >= 0.85):
                 dq.append((shm_ts, cl_px))
@@ -1570,13 +1580,13 @@ def _interpret_delayed_recycle_poll_summary(
             "taking_amount": 0.0,
             "reservation_id": None,
         }
-    if m > 1e-6 and not resting and (term or st_u in {"MATCHED", "MINED", "CONFIRMED"}):
+    if m > 1e-6 and not resting and (term or (st_u != "INVALID" and (is_canc or st_u in {"MATCHED", "MINED", "CONFIRMED"}))):
         if res_id and hasattr(ex, "release_inventory"):
             ex.release_inventory(reservation_id=str(res_id))
         raw_cash = float(summary.get("cash") or 0.0)
         avg_px = float(summary.get("avg_price") or limit_price or 0.998)
         cash = raw_cash if raw_cash > 0.0 else round(m * max(float(limit_price or 0.0), avg_px), 6)
-        cash_est = bool(summary.get("cash_is_estimated", summary.get("estimated", False)) or st_u == "MATCHED" or raw_cash <= 0.0)
+        cash_est = bool(summary.get("cash_is_estimated", summary.get("estimated", False)) or not term or st_u == "MATCHED" or raw_cash <= 0.0)
         return {
             **dict(res),
             "outcome_unknown": False,
@@ -2329,6 +2339,7 @@ def detect_eq1_pyth_equity_dominance_box(
 
 _METAR_T_REMARK_RE = re.compile(r"\bRMK\b.*?\bT([01])(\d{3})(?:[01]\d{3})?\b")
 _METAR_BODY_TEMP_RE = re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)")
+_HKO_SYNTH_RE = re.compile(r"^HKO_(?:MIN|MAX|1M)\s+(-?\d+(?:\.\d+)?)C$", re.IGNORECASE)
 
 
 def _round_half_away_from_zero(val: float) -> int:
@@ -2338,26 +2349,28 @@ def _round_half_away_from_zero(val: float) -> int:
 
 def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
     """
-    Parse a routine `METAR` observation string while **strictly rejecting unscheduled `SPECI` reports**.
-    Extracts exact `0.1°C` `RMK T[01]\\d{3}` temperature when present (uncertainty `±0.05°C`),
-    falling back to integer body `TT/TdTd` with conservative `±0.55°C` uncertainty band so boundary
-    rounding ambiguity can NEVER prune a live bracket.
+    Parse a routine `METAR` (or official `0.1°C` `HKO_MIN`/`HKO_MAX`/`HKO_1M`) observation string while
+    **strictly rejecting unscheduled `SPECI` and `COR` reports**.
     """
     txt = str(raw_metar or "").strip()
     if not txt:
         return None
-    head_tokens = txt.upper().split()[:3]
-    if "SPECI" in head_tokens:
+    up_tokens = txt.upper().split()
+    if "SPECI" in up_tokens[:3] or "COR" in up_tokens[:5]:
         return None
 
-    m_rmk = _METAR_T_REMARK_RE.search(txt.upper())
-    if m_rmk:
+    m_hko = _HKO_SYNTH_RE.match(txt)
+    m_rmk = None if m_hko else _METAR_T_REMARK_RE.search(txt.upper())
+    if m_hko:
+        temp_c = float(m_hko.group(1))
+        unc_c = 0.05
+        has_t_group = True
+    elif m_rmk:
         sign = -1.0 if m_rmk.group(1) == "1" else 1.0
         temp_c = sign * (int(m_rmk.group(2)) / 10.0)
         unc_c = 0.05
         has_t_group = True
     else:
-        # Search body before `RMK`
         body_part = txt.upper().split("RMK")[0]
         m_body = _METAR_BODY_TEMP_RE.search(body_part)
         if not m_body:
@@ -2386,7 +2399,7 @@ def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
 
 def resolve_weather_effective_end_ts(sp_w: Any, fallback_ts: float) -> float:
     """
-    Gamma populates `endDate: YYYY-MM-DDT12:00:00Z` (noon UTC) on unresolved daily weather events even though
+    Gamma populates `endDate: YYYY-MM-DDT12:00:00Z` (or `00:00:00Z`) on unresolved daily weather events even though
     daily station highs/lows settle at `23:59:59` local station time (`ZoneInfo(sp_w.tz_name)`).
     """
     raw_iso = str(getattr(sp_w, "end_date_iso", "") or "").strip()
@@ -2401,13 +2414,16 @@ def resolve_weather_effective_end_ts(sp_w: Any, fallback_ts: float) -> float:
         getattr(b, "outcome_yes_resolved", None) is not None or getattr(b, "resolved_winner", None) is not None
         for b in (getattr(sp_w, "buckets", ()) or ())
     )
-    if obs_d is not None and not has_resolved and (dt_end is None or (dt_end.date() <= obs_d and dt_end.hour == 12 and dt_end.minute == 0)):
+    if obs_d is not None and not has_resolved and (
+        dt_end is None or (dt_end.date() <= obs_d and dt_end.minute == 0 and dt_end.second == 0 and dt_end.hour in (0, 12))
+    ):
         try:
             tz_w = ZoneInfo(str(getattr(sp_w, "tz_name", "UTC") or "UTC"))
         except Exception:
             tz_w = timezone.utc
-        loc_eod = datetime(obs_d.year, obs_d.month, obs_d.day, 23, 59, 59, tzinfo=tz_w).timestamp()
-        return max(parsed_ts, float(loc_eod))
+        next_d = obs_d + timedelta(days=1)
+        loc_eod = datetime(next_d.year, next_d.month, next_d.day, 0, 0, 0, tzinfo=tz_w).timestamp() - 1.0
+        return float(loc_eod)
     return parsed_ts
 
 
@@ -4667,7 +4683,7 @@ async def run_protocol_v2_daemon_scan(
                     loc_dt = now_utc_w.astimezone(ZoneInfo(sp_w.tz_name))
                 except Exception:
                     loc_dt = now_utc_w
-                if loc_dt.date() < sp_w.obs_date:
+                if loc_dt.date() != sp_w.obs_date:
                     continue
                 w_active.append((end_w, sp_w, loc_dt))
             w_active.sort(key=lambda r: r[0])
@@ -4683,13 +4699,15 @@ async def run_protocol_v2_daemon_scan(
                         m_cache[m_key] = (now, obs_l)
                 else:
                     obs_l = c_ent[1]
-                valid_obs = [m for m in (obs_l or []) if not bool(getattr(m, "is_corrected", False))]
+                if any(bool(getattr(m, "is_corrected", False)) for m in (obs_l or [])):
+                    continue
+                valid_obs = list(obs_l or [])
                 raw_lines = [str(m.raw_line) for m in valid_obs if getattr(m, "raw_line", None)]
                 cur_tc = float(valid_obs[-1].temp_c) if (valid_obs and getattr(valid_obs[-1], "temp_c", None) is not None) else None
                 cur_tg = bool(getattr(valid_obs[-1], "has_t_remark", False)) if valid_obs else False
                 if not raw_lines and cur_tc is None:
                     continue
-                loc_hm = (23, 55) if loc_dt.date() > sp_w.obs_date else (loc_dt.hour, loc_dt.minute)
+                loc_hm = (loc_dt.hour, loc_dt.minute)
                 w_ready.append((sp_w, end_w, loc_hm, raw_lines, cur_tc, cur_tg))
                 for bk_spec in sp_w.buckets:
                     w_toks.extend((bk_spec.yes_token, bk_spec.no_token))
@@ -5512,7 +5530,7 @@ def emit_single_leg_maker_lock_cand_impl(
     ):
         return False
     last_emit = float(daemon._last_d1_live_emit_ts.get(dedupe_key, 0.0) or 0.0)
-    if (now_ts - last_emit) < (1.0 if is_s2_mkr else 25.0):
+    if (now_ts - last_emit) < (2.0 if is_s2_mkr else 25.0):
         return False
     if not isinstance(bk_win, dict) or not isinstance(bk_opp, dict):
         return False
@@ -5977,7 +5995,7 @@ def eval_sll_fresh_book_and_peg(
         return f"FRESH_BOOK_CROSS_OR_CEILING:{anc_bid_px:.4f}", 0.0, anc_bid_px, 0, tk_wf
     sh_int = int(math.floor(budget / anc_bid_px))
     if sh_int < 5:
-        return "INSUFFICIENT_MAKER_BOX_BUDGET", 0.0, anc_bid_px, sh_int, tk_wf
+        return "INSUFFICIENT_MAKER_BOX_BUDGET", (2.0 if is_s2_mkr else 8.0), anc_bid_px, sh_int, tk_wf
     return None, 0.0, anc_bid_px, sh_int, tk_wf
 
 
@@ -6056,4 +6074,141 @@ def eval_sll_live_book_poll(
         else:
             buried_since_mono = None
     return "OK", None, buried_since_mono, ""
+
+
+def register_live_d1_box_positions_impl(
+    harvester: Any,
+    box_id: str,
+    cand: Dict[str, Any],
+    res: Dict[str, Any],
+    pre_bal_a: float,
+    pre_bal_b: float,
+    pos_confirmed_status: Any,
+    matched_pending_status: Any,
+) -> List[str]:
+    """Registers both filled legs of a live D1 Dominance Box (`$1.00` `DETERMINISTIC_TERMINAL_HOLD` for `<=900s` `DOMINANCE`)."""
+    now_ts = time.time()
+    sh = float(res.get("net_paired_shares") or res.get("shares") or cand.get("net_paired_shares") or cand.get("shares") or 12.0)
+    exp_ts = float(cand.get("expiry_ts") or (now_ts + 180.0))
+    asset_sym = str(cand.get("asset") or "BTC").upper()
+    meta_by_tok = {
+        str(cand.get("leg_a_token_id")): ("leg_a", pre_bal_a),
+        str(cand.get("leg_b_token_id")): ("leg_b", pre_bal_b),
+    }
+    if f"{box_id}_L1" in harvester.active_positions or f"{box_id}_L2" in harvester.active_positions:
+        box_id = f"{box_id}_{int(now_ts * 1000) % 100000}"
+    tids = (f"{box_id}_L1", f"{box_id}_L2")
+    legs_in = (res["leg_1"], res["leg_2"])
+    leg_records = []
+    tot_box_cost = 0.0
+    excess_info = res.get("excess_leg") if isinstance(res.get("excess_leg"), dict) else None
+    excess_tok = str((excess_info or {}).get("token_id") or "")
+    excess_sh = float((excess_info or {}).get("shares") if (excess_info or {}).get("shares") is not None else ((excess_info or {}).get("excess_shares") or 0.0))
+    htm_enabled = harvester._is_v5_live_strict() or bool(getattr(harvester, "hold_to_maturity", True))
+    cand_bt_u = str(cand.get("box_type") or "DOMINANCE").upper()
+    for idx, (tid, lg) in enumerate(zip(tids, legs_in)):
+        partner_tid = tids[1 - idx]
+        tok = str(lg["token_id"])
+        pfx, pre_b = meta_by_tok.get(tok, ("leg_a" if idx == 0 else "leg_b", 0.0))
+        leg_exp = float(cand.get(f"{pfx}_expiry_ts") or exp_ts)
+        d1_htm = bool(cand.get("hold_to_maturity") or (cand_bt_u == "DOMINANCE" and 0.0 < (leg_exp - now_ts) <= 900.0 and htm_enabled))
+        px = float(lg.get("price") or cand.get(f"{pfx}_limit_price") or 0.48)
+        raw_r = lg.get("raw") if isinstance(lg.get("raw"), dict) else {}
+        mk_raw = harvester._num(raw_r.get("makingAmount") or raw_r.get("making_amount"))
+        if mk_raw is not None and mk_raw >= 1e4:
+            mk_raw = mk_raw / 1e6
+        m_leg = float(lg.get("matched_shares") or sh)
+        leg_sh = round(sh + excess_sh, 4) if (tok == excess_tok and 0.05 <= excess_sh < 5.0) else sh
+        gross_sh_explicit = lg.get("gross_shares")
+        is_share_fee_leg = (
+            str(lg.get("entry_fee_asset") or "").upper() == "SHARES"
+            or (gross_sh_explicit is not None and float(gross_sh_explicit) > leg_sh + 1e-4)
+        )
+        gross_leg_sh = round(float(gross_sh_explicit), 4) if gross_sh_explicit is not None else leg_sh
+        if mk_raw is not None and m_leg > max(leg_sh, gross_leg_sh) + 0.05:
+            mk_raw = mk_raw * (max(leg_sh, gross_leg_sh) / m_leg)
+        notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (gross_leg_sh * px), 4)
+        leg_fr_raw = cand.get(f"{pfx}_fee_rate")
+        fr = 0.0 if lg.get("is_maker_anchor") else (float(leg_fr_raw) if leg_fr_raw is not None else 0.07)
+        fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
+        fee_u = 0.0 if is_share_fee_leg else (round(leg_sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0)
+        entry_fee_asset = "SHARES" if is_share_fee_leg else "USDC"
+        tot_box_cost += notional + fee_u
+        side_str = str(cand.get(f"{pfx}_side") or ("UP" if "UP" in str(lg.get("label", "")).upper() else "DOWN"))
+        strike_k = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
+        oid = lg.get("orderID")
+        txs = raw_r.get("transactionsHashes") or raw_r.get("transactions_hashes") or []
+        cand_slv_src = str(cand.get("sleeve_source") or "")
+        slv_rec = (
+            cand_slv_src
+            if cand_slv_src in {"D1_QUIET_BOOK_BOX", "D1_4H_DOMINANCE_BOX"}
+            else ("D1_SAME_ORACLE_DOMINANCE_BOX" if cand_bt_u == "DOMINANCE" else (cand_slv_src or "D1_SAME_ORACLE_DOMINANCE_BOX"))
+        )
+        leg_records.append((tid, {
+            "trade_id": tid, "box_id": box_id, "box_expected_legs": 2, "box_partner_trade_id": partner_tid, "is_dominance_box": True, "is_locked_arbitrage_box": True,
+            "hold_to_maturity_lock": d1_htm,
+            "opp_token_id": str(cand.get(f"{pfx}_opp_token_id") or ""), "dedupe_key": str(cand.get("dedupe_key") or ""), "pair_dedupe_key": str(cand.get("pair_dedupe_key") or ""),
+            "sleeve": slv_rec, "sleeve_source": str(cand.get("sleeve_source") or slv_rec),
+            "entry_tte": max(1.0, leg_exp - now_ts), "event_id": box_id,
+            "market_id": str(cand.get(f"{pfx}_market_id") or f"{box_id}_{idx}"),
+            "condition_id": str(cand.get(f"{pfx}_condition_id") or ""),
+            "token_id": tok, "target_token": side_str, "asset": asset_sym,
+            "horizon": str(cand.get(f"{pfx}_horizon") or "15m"), "is_subhourly": True,
+            "candle_open_spot": strike_k, "entry_spot_ref": strike_k, "spot_denomination": "USD",
+            "candle_sigma": 0.0025 if asset_sym == "BTC" else 0.0035,
+            "entry_price": round(notional / max(leg_sh, 0.01), 4), "entry_shares": leg_sh, "gross_entry_shares": gross_leg_sh,
+            "remaining_shares": leg_sh, "filled_exit_shares": 0.0, "remaining_exit_shares": leg_sh,
+            "remaining_cost_basis": notional, "realized_exit_cash": 0.0, "realized_exit_fee": 0.0,
+            "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
+            "notional_usd": notional, "fee_usd": fee_u, "entry_fee_cash_usd": fee_u,
+            "entry_fee_asset": entry_fee_asset, "fee_source": "crypto_fees_v2",
+            "fee_rate_applied": fr, "fee_exponent_applied": fe,
+            "target_exit_price": 1.0 if d1_htm else 0.99, "exit_order_size": leg_sh,
+            "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": now_ts,
+            "candle_expiry_ts": leg_exp, "pre_token_balance": pre_b,
+            "order_id": oid, "entry_order_id": oid, "trade_ids": [], "transactions_hashes": list(txs),
+            "status": pos_confirmed_status if harvester.dry_run else matched_pending_status,
+            "inventory_reconciled": bool(harvester.dry_run),
+            "exit_order_id": None,
+            "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else ("NONE" if harvester.dry_run else "AWAITING_DELTA_SETTLEMENT"),
+            "terminal_policy": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else None,
+            "is_liquidating": False, "unwind_order_id": None, "unwind_start_time": 0.0,
+        }))
+    box_unit = round(tot_box_cost / max(sh, 1.0), 5)
+    k_lo_b = float(cand.get("k_low") or 0.0)
+    k_hi_b = float(cand.get("k_high") or 0.0)
+    for tid, rec in leg_records:
+        rec["box_type"] = cand_bt_u
+        rec["box_k_low"] = k_lo_b
+        rec["box_k_high"] = k_hi_b
+        rec["box_cost_net"] = box_unit
+        rec["box_total_cost_usd"] = round(tot_box_cost, 4)
+        harvester.active_positions[tid] = rec
+    if excess_info is not None and excess_sh >= 5.0:
+        harvester._register_legged_out_d1_residual(
+            f"{box_id}_EXCESS", cand,
+            {
+                "token_id": excess_tok, "label": excess_info.get("label"),
+                "matched_shares": excess_sh, "residual_shares": excess_sh,
+                "price": excess_info.get("price"), "is_maker_anchor": bool(excess_info.get("is_maker_anchor")),
+            },
+            pre_bal_a + (sh if excess_tok == str(cand.get("leg_a_token_id")) else 0.0),
+            pre_bal_b + (sh if excess_tok == str(cand.get("leg_b_token_id")) else 0.0),
+        )
+    harvester._last_exit_credit_window = None
+    if getattr(harvester, "_last_known_collateral", None) is not None:
+        harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - tot_box_cost)
+        harvester._last_entry_debit_window = (time.time(), float(harvester._last_known_collateral))
+    harvester.executor.invalidate_collateral_cache()
+    harvester._pending_collateral_refresh = True
+    harvester.save_state()
+    if not harvester.dry_run:
+        for tid, rec in leg_records:
+            if not rec.get("hold_to_maturity_lock"):
+                harvester._spawn_fast_confirm(tid)
+    logger.info(
+        f"✓ [D1 LIVE DOMINANCE BOX ENTERED] {box_id} ({asset_sym}) | {sh:.0f} pairs @ box_net=${box_unit:.4f} "
+        f"(cost=${tot_box_cost:.2f}, min_floor=+${sh * max(0.0, 1.0 - box_unit):.2f})"
+    )
+    return [tid for tid, _ in leg_records]
 

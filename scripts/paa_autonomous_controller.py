@@ -207,12 +207,83 @@ def check_operational_status(auto_recover_safe: bool = True) -> Tuple[Dict[str, 
     }, new_incidents
 
 
+def is_phantom_unfilled_position(c: Dict[str, Any]) -> bool:
+    """Returns True when a closed ledger entry was an unexecuted 0-fill order with zero wallet cash impact."""
+    if str(c.get("status") or "").upper() == "NOT_EXECUTED":
+        return True
+    return bool(
+        c.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
+        and not bool(c.get("inventory_reconciled", True))
+        and str(c.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
+        and not (c.get("trade_ids") or [])
+        and not (c.get("transactions_hashes") or [])
+        and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
+    )
+
+
+def reconcile_closed_position_record(c: Dict[str, Any]) -> Tuple[Dict[str, Any], float, float, bool]:
+    """
+    Normalizes a closed harvester position to authoritative on-chain wallet cash PnL:
+      1. Confirmed terminal-hold winners already auto-redeemed on-chain before the resolution poll
+         (`MARKET_RESOLVED_NO_INVENTORY` + `inventory_reconciled=True` + `DETERMINISTIC_TERMINAL_HOLD` +
+         `target_token == resolved_winning_outcome`) -> redeemed at `$1.00/sh` (`entry_shares - notional - fee`).
+      2. Legacy 0%-fee Dominance Box records where an estimated 7% exit fee was subtracted pre-fix.
+    Returns `(normalized_copy, verified_pnl_usd, raw_ledger_pnl_usd, was_reconciled)`.
+    """
+    raw_pnl_c = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+    pnl = raw_pnl_c
+    notional = float(c.get("notional_usd", 0.0) or 0.0)
+    fee = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0) + float(c.get("realized_exit_fee", 0.0) or 0.0)
+    c_norm = dict(c)
+    was_reconciled = False
+
+    tgt_tok = str(c.get("target_token") or "").strip().upper()
+    res_win = str(c.get("resolved_winning_outcome") or "").strip().upper()
+    ent_sh = float(c.get("entry_shares", 0.0) or 0.0)
+    if (
+        str(c.get("close_reason") or "") == "MARKET_RESOLVED_NO_INVENTORY"
+        and bool(c.get("inventory_reconciled", False))
+        and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
+        and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
+        and ent_sh > 0.0
+        and tgt_tok != ""
+        and tgt_tok == res_win
+    ):
+        payout = round(ent_sh * 1.0, 4)
+        pnl = round(payout - notional - fee, 4)
+        c_norm["payout_usd"] = payout
+        c_norm["net_pnl_usd"] = pnl
+        c_norm["realized_pnl_usd"] = pnl
+        c_norm["won"] = True
+        c_norm["average_exit_price"] = 1.0
+        c_norm["exit_price"] = 1.0
+        c_norm["close_reason"] = "ONCHAIN_AUTO_REDEEMED_RECONCILED"
+        c_norm["wallet_reconciled"] = True
+        was_reconciled = True
+    elif (
+        c.get("is_dominance_box")
+        and float(c.get("fee_rate_applied", 0.07) or 0.0) == 0.0
+        and c.get("exit_fee_estimated")
+        and float(c.get("payout_usd", 0.0) or 0.0) > notional
+    ):
+        pnl = round(float(c.get("payout_usd", 0.0)) - notional - float(c.get("fee_usd", 0.0) or 0.0), 4)
+        c_norm["net_pnl_usd"] = pnl
+        c_norm["realized_pnl_usd"] = pnl
+        c_norm["wallet_reconciled"] = True
+        was_reconciled = True
+    else:
+        c_norm["net_pnl_usd"] = pnl
+
+    return c_norm, pnl, raw_pnl_c, was_reconciled
+
+
 def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any]:
     """
     Produces the PAA Section 8 Authoritative Financial Ledger:
       Verified Net Profit = Realized Trading PnL - Fees - Slippage - Execution Costs - Operational Costs
     Explicitly separates non-cash unfilled ledger artifacts (e.g. `inventory_reconciled=False` +
-    `exit_order_status="ENTRY_OUTCOME_UNKNOWN"` + `MARKET_RESOLVED_NO_INVENTORY`) from real wallet cash flows.
+    `exit_order_status="ENTRY_OUTCOME_UNKNOWN"` + `MARKET_RESOLVED_NO_INVENTORY`) and reconciles
+    already auto-redeemed confirmed terminal-hold winners to real wallet cash flows.
     """
     now = time.time()
     st_path = DATA_PM / "live_harvester_state.json"
@@ -231,33 +302,18 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     for c in closed:
         tid = str(c.get("trade_id") or "")
         sl = str(c.get("sleeve") or "UNKNOWN")
-        raw_pnl_c = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
-        pnl = raw_pnl_c
+        c_norm, pnl, raw_pnl_c, was_reconciled = reconcile_closed_position_record(c)
         fee = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0) + float(c.get("realized_exit_fee", 0.0) or 0.0)
         notional = float(c.get("notional_usd", 0.0) or 0.0)
         raw_ledger_pnl += raw_pnl_c
-        if (
-            c.get("is_dominance_box")
-            and float(c.get("fee_rate_applied", 0.07) or 0.0) == 0.0
-            and c.get("exit_fee_estimated")
-            and float(c.get("payout_usd", 0.0) or 0.0) > notional
-        ):
-            pnl = round(float(c.get("payout_usd", 0.0)) - notional - float(c.get("fee_usd", 0.0) or 0.0), 4)
-            phantom_unfilled_adjustment += round(pnl - raw_pnl_c, 4)
 
-        is_phantom_unfilled = (
-            c.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
-            and not bool(c.get("inventory_reconciled", True))
-            and str(c.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
-            and not (c.get("trade_ids") or [])
-            and not (c.get("transactions_hashes") or [])
-            and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
-        )
+        is_phantom_unfilled = is_phantom_unfilled_position(c)
         rec = by_sleeve_live.setdefault(sl, {
             "sleeve": sl,
             "real_trades": 0,
             "wins": 0,
             "losses": 0,
+            "flat_merges": 0,
             "verified_net_pnl_usd": 0.0,
             "raw_ledger_pnl_usd": 0.0,
             "fees_usd": 0.0,
@@ -266,24 +322,33 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
         })
         rec["raw_ledger_pnl_usd"] = round(rec["raw_ledger_pnl_usd"] + raw_pnl_c, 4)
         if is_phantom_unfilled:
-            phantom_unfilled_adjustment -= pnl  # e.g. -(-11.90) = +11.90 reconciliation back to true wallet cash
+            phantom_unfilled_adjustment -= raw_pnl_c  # e.g. -(-11.90) = +11.90 reconciliation back to true wallet cash
             rec["phantom_unfilled_ignored"] += 1
             phantom_records.append({
                 "trade_id": tid,
                 "sleeve": sl,
-                "booked_ledger_pnl_usd": pnl,
+                "booked_ledger_pnl_usd": raw_pnl_c,
                 "true_wallet_cash_impact_usd": 0.0,
                 "proof": "Post-only Maker BUY never matched (0 fills, 0 tx hashes, inventory_reconciled=False); patched for future resolutions.",
             })
             continue
+
+        if was_reconciled:
+            phantom_unfilled_adjustment += round(pnl - raw_pnl_c, 4)
+            if c_norm.get("close_reason") == "ONCHAIN_AUTO_REDEEMED_RECONCILED":
+                phantom_records.append({
+                    "trade_id": tid,
+                    "sleeve": sl,
+                    "booked_ledger_pnl_usd": raw_pnl_c,
+                    "true_wallet_cash_impact_usd": pnl,
+                    "proof": "Confirmed terminal-hold winner auto-redeemed on-chain at $1.00/sh prior to resolution balance poll.",
+                })
 
         verified_cash_pnl += pnl
         total_fees_usd += fee
         rec["verified_net_pnl_usd"] = round(rec["verified_net_pnl_usd"] + pnl, 4)
         rec["fees_usd"] = round(rec["fees_usd"] + fee, 4)
         rec["notional_usd"] = round(rec["notional_usd"] + notional, 2)
-        c_norm = dict(c)
-        c_norm["net_pnl_usd"] = pnl
         real_closed_legs.append(c_norm)
 
     # Collapse multi-leg riskless boxes by `box_id` so `$0.00` hedge legs never count as false losses
@@ -295,6 +360,7 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
             "real_trades": 0,
             "wins": 0,
             "losses": 0,
+            "flat_merges": 0,
             "verified_net_pnl_usd": 0.0,
             "raw_ledger_pnl_usd": 0.0,
             "fees_usd": 0.0,
@@ -302,8 +368,13 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
             "phantom_unfilled_ignored": 0,
         })
         pnl_g = float(gb.get("net_pnl_usd", gb.get("realized_pnl_usd", 0.0)) or 0.0)
+        rsn_g = str(gb.get("close_reason") or "").upper()
+        is_flat_merge = abs(pnl_g) <= 1e-6 and (bool(gb.get("won")) or "MERGED" in rsn_g)
+        if is_flat_merge:
+            rec_g["flat_merges"] = int(rec_g.get("flat_merges", 0) or 0) + 1
+            continue
         rec_g["real_trades"] += 1
-        if bool(gb.get("won")) or pnl_g > 0:
+        if pnl_g > 0 or bool(gb.get("won")):
             rec_g["wins"] += 1
         elif pnl_g < -0.01:
             rec_g["losses"] += 1
@@ -366,9 +437,17 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     resting_maker_exit_value = 0.0
     cost_basis_open = 0.0
     verified_resting_orders = 0
+    ledger_sh_by_tok: Dict[str, float] = {}
+    for _p_sum in active.values():
+        if isinstance(_p_sum, dict):
+            _tk_sum = str(_p_sum.get("token_id") or "").strip()
+            if _tk_sum:
+                ledger_sh_by_tok[_tk_sum] = ledger_sh_by_tok.get(_tk_sum, 0.0) + float(
+                    _p_sum.get("remaining_shares", _p_sum.get("entry_shares", 0.0)) or 0.0
+                )
 
     for tid, pos in active.items():
-        tok = str(pos.get("token_id") or "")
+        tok = str(pos.get("token_id") or "").strip()
         sh = float(pos.get("remaining_shares", pos.get("entry_shares", 0.0)) or 0.0)
         cost_u = float(pos.get("remaining_cost_basis", pos.get("notional_usd", 0.0)) or 0.0)
         tp_px = float(pos.get("target_exit_price", 0.99) or 0.99)
@@ -377,6 +456,7 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
         cost_basis_open += cost_u
 
         onchain_sh = onchain_tok_balances.get(tok) if tok else None
+        tok_tot_ledger_sh = ledger_sh_by_tok.get(tok, sh) if tok else sh
         best_bid, best_ask, second_ask = 0.0, 1.0, None
         ask_sz_at_tp = 0.0
         try:
@@ -396,7 +476,10 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
         except Exception:
             pass
 
-        eff_sh = float(onchain_sh) if (onchain_sh is not None and onchain_sh > 0) else sh
+        if onchain_sh is not None and onchain_sh > 0 and tok_tot_ledger_sh > 0:
+            eff_sh = sh * (float(onchain_sh) / tok_tot_ledger_sh)
+        else:
+            eff_sh = float(onchain_sh) if (onchain_sh is not None and onchain_sh > 0) else sh
         bid_val = round(eff_sh * best_bid, 4)
         mkr_val = round(eff_sh * tp_px, 4)
         mark_to_bid_value += bid_val
@@ -418,10 +501,12 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
 
         open_pos_audit.append({
             "trade_id": tid,
+            "token_id": tok,
             "sleeve": pos.get("sleeve"),
             "market_id": pos.get("market_id"),
             "side": pos.get("target_token"),
             "shares_ledger": sh,
+            "token_ledger_shares_total": round(tok_tot_ledger_sh, 4),
             "shares_onchain": onchain_sh,
             "cost_basis_usd": round(cost_u, 4),
             "resting_exit_oid": exit_oid,

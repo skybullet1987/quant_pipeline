@@ -7167,138 +7167,12 @@ class PolymarketLiveHarvester:
         self, box_id: str, cand: Dict[str, Any], res: Dict[str, Any], pre_bal_a: float, pre_bal_b: float
     ) -> List[str]:
         """Registers both filled legs of a live D1 Dominance Box ($1.00 DETERMINISTIC_TERMINAL_HOLD for <=900s DOMINANCE)."""
-        now_ts = time.time()
-        sh = float(res.get("net_paired_shares") or res.get("shares") or cand.get("net_paired_shares") or cand.get("shares") or 12.0)
-        exp_ts = float(cand.get("expiry_ts") or (now_ts + 180.0))
-        asset_sym = str(cand.get("asset") or "BTC").upper()
-        meta_by_tok = {
-            str(cand.get("leg_a_token_id")): ("leg_a", pre_bal_a),
-            str(cand.get("leg_b_token_id")): ("leg_b", pre_bal_b),
-        }
-        if f"{box_id}_L1" in self.active_positions or f"{box_id}_L2" in self.active_positions:
-            box_id = f"{box_id}_{int(now_ts * 1000) % 100000}"
-        tids = (f"{box_id}_L1", f"{box_id}_L2")
-        legs_in = (res["leg_1"], res["leg_2"])
-        leg_records = []
-        tot_box_cost = 0.0
-        excess_info = res.get("excess_leg") if isinstance(res.get("excess_leg"), dict) else None
-        excess_tok = str((excess_info or {}).get("token_id") or "")
-        excess_sh = float((excess_info or {}).get("shares") if (excess_info or {}).get("shares") is not None else ((excess_info or {}).get("excess_shares") or 0.0))
-        _htm_enabled = self._is_v5_live_strict() or bool(getattr(self, "hold_to_maturity", True))
-        _cand_bt_u = str(cand.get("box_type") or "DOMINANCE").upper()
-        for idx, (tid, lg) in enumerate(zip(tids, legs_in)):
-            partner_tid = tids[1 - idx]
-            tok = str(lg["token_id"])
-            pfx, pre_b = meta_by_tok.get(tok, ("leg_a" if idx == 0 else "leg_b", 0.0))
-            leg_exp = float(cand.get(f"{pfx}_expiry_ts") or exp_ts)
-            d1_htm = bool(
-                cand.get("hold_to_maturity")
-                or (_cand_bt_u == "DOMINANCE" and 0.0 < (leg_exp - now_ts) <= 900.0 and _htm_enabled)
-            )
-            px = float(lg.get("price") or cand.get(f"{pfx}_limit_price") or 0.48)
-            raw_r = lg.get("raw") if isinstance(lg.get("raw"), dict) else {}
-            mk_raw = self._num(raw_r.get("makingAmount") or raw_r.get("making_amount"))
-            if mk_raw is not None and mk_raw >= 1e4:
-                mk_raw = mk_raw / 1e6
-            m_leg = float(lg.get("matched_shares") or sh)
-            leg_sh = round(sh + excess_sh, 4) if (tok == excess_tok and 0.05 <= excess_sh < 5.0) else sh
-            gross_sh_explicit = lg.get("gross_shares")
-            is_share_fee_leg = (
-                str(lg.get("entry_fee_asset") or "").upper() == "SHARES"
-                or (gross_sh_explicit is not None and float(gross_sh_explicit) > leg_sh + 1e-4)
-            )
-            gross_leg_sh = round(float(gross_sh_explicit), 4) if gross_sh_explicit is not None else leg_sh
-            if mk_raw is not None and m_leg > max(leg_sh, gross_leg_sh) + 0.05:
-                mk_raw = mk_raw * (max(leg_sh, gross_leg_sh) / m_leg)
-            notional = round(float(mk_raw) if (mk_raw is not None and mk_raw > 0.0) else (gross_leg_sh * px), 4)
-            leg_fr_raw = cand.get(f"{pfx}_fee_rate")
-            fr = 0.0 if lg.get("is_maker_anchor") else (float(leg_fr_raw) if leg_fr_raw is not None else 0.07)
-            fe = float(cand.get(f"{pfx}_fee_exponent", 1.0) or 1.0)
-            fee_u = 0.0 if is_share_fee_leg else (round(leg_sh * fr * ((px * (1.0 - px)) ** fe), 4) if fr > 0.0 else 0.0)
-            entry_fee_asset = "SHARES" if is_share_fee_leg else "USDC"
-            tot_box_cost += notional + fee_u
-            side_str = str(cand.get(f"{pfx}_side") or ("UP" if "UP" in str(lg.get("label", "")).upper() else "DOWN"))
-            strike_k = float(cand.get(f"{pfx}_strike") or cand.get("k_low" if pfx == "leg_a" else "k_high") or 100.0)
-            oid = lg.get("orderID")
-            txs = raw_r.get("transactionsHashes") or raw_r.get("transactions_hashes") or []
-            _cand_slv_src = str(cand.get("sleeve_source") or "")
-            slv_rec = (
-                _cand_slv_src
-                if _cand_slv_src in {"D1_QUIET_BOOK_BOX", "D1_4H_DOMINANCE_BOX"}
-                else (
-                    "D1_SAME_ORACLE_DOMINANCE_BOX"
-                    if _cand_bt_u == "DOMINANCE"
-                    else (_cand_slv_src or "D1_SAME_ORACLE_DOMINANCE_BOX")
-                )
-            )
-            leg_records.append((tid, {
-                "trade_id": tid, "box_id": box_id, "box_expected_legs": 2, "box_partner_trade_id": partner_tid, "is_dominance_box": True, "is_locked_arbitrage_box": True,
-                "hold_to_maturity_lock": d1_htm,
-                "opp_token_id": str(cand.get(f"{pfx}_opp_token_id") or ""), "dedupe_key": str(cand.get("dedupe_key") or ""), "pair_dedupe_key": str(cand.get("pair_dedupe_key") or ""),
-                "sleeve": slv_rec, "sleeve_source": str(cand.get("sleeve_source") or slv_rec),
-                "entry_tte": max(1.0, leg_exp - now_ts), "event_id": box_id,
-                "market_id": str(cand.get(f"{pfx}_market_id") or f"{box_id}_{idx}"),
-                "condition_id": str(cand.get(f"{pfx}_condition_id") or ""),
-                "token_id": tok, "target_token": side_str, "asset": asset_sym,
-                "horizon": str(cand.get(f"{pfx}_horizon") or "15m"), "is_subhourly": True,
-                "candle_open_spot": strike_k, "entry_spot_ref": strike_k, "spot_denomination": "USD",
-                "candle_sigma": 0.0025 if asset_sym == "BTC" else 0.0035,
-                "entry_price": round(notional / max(leg_sh, 0.01), 4), "entry_shares": leg_sh, "gross_entry_shares": gross_leg_sh,
-                "remaining_shares": leg_sh, "filled_exit_shares": 0.0, "remaining_exit_shares": leg_sh,
-                "remaining_cost_basis": notional, "realized_exit_cash": 0.0, "realized_exit_fee": 0.0,
-                "gross_exit_cash": 0.0, "average_exit_price": 0.0, "exit_trade_ids": [],
-                "notional_usd": notional, "fee_usd": fee_u, "entry_fee_cash_usd": fee_u,
-                "entry_fee_asset": entry_fee_asset, "fee_source": "crypto_fees_v2",
-                "fee_rate_applied": fr, "fee_exponent_applied": fe,
-                "target_exit_price": 1.0 if d1_htm else 0.99, "exit_order_size": leg_sh,
-                "entry_time_utc": datetime.now(timezone.utc).isoformat(), "entry_ts": now_ts,
-                "candle_expiry_ts": leg_exp, "pre_token_balance": pre_b,
-                "order_id": oid, "entry_order_id": oid, "trade_ids": [], "transactions_hashes": list(txs),
-                "status": ExecutionStatus.POSITION_CONFIRMED if self.dry_run else ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
-                "inventory_reconciled": bool(self.dry_run),
-                "exit_order_id": None,
-                "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else ("NONE" if self.dry_run else "AWAITING_DELTA_SETTLEMENT"),
-                "terminal_policy": "DETERMINISTIC_TERMINAL_HOLD" if d1_htm else None,
-                "is_liquidating": False, "unwind_order_id": None, "unwind_start_time": 0.0,
-            }))
-        box_unit = round(tot_box_cost / max(sh, 1.0), 5)
-        box_tp_u = _cand_bt_u
-        k_lo_b = float(cand.get("k_low") or 0.0)
-        k_hi_b = float(cand.get("k_high") or 0.0)
-        for tid, rec in leg_records:
-            rec["box_type"] = box_tp_u
-            rec["box_k_low"] = k_lo_b
-            rec["box_k_high"] = k_hi_b
-            rec["box_cost_net"] = box_unit
-            rec["box_total_cost_usd"] = round(tot_box_cost, 4)
-            self.active_positions[tid] = rec
-        if excess_info is not None and excess_sh >= 5.0:
-            self._register_legged_out_d1_residual(
-                f"{box_id}_EXCESS", cand,
-                {
-                    "token_id": excess_tok, "label": excess_info.get("label"),
-                    "matched_shares": excess_sh, "residual_shares": excess_sh,
-                    "price": excess_info.get("price"), "is_maker_anchor": bool(excess_info.get("is_maker_anchor")),
-                },
-                pre_bal_a + (sh if excess_tok == str(cand.get("leg_a_token_id")) else 0.0),
-                pre_bal_b + (sh if excess_tok == str(cand.get("leg_b_token_id")) else 0.0),
-            )
-        self._last_exit_credit_window = None
-        if getattr(self, "_last_known_collateral", None) is not None:
-            self._last_known_collateral = max(0.0, float(self._last_known_collateral) - tot_box_cost)
-            self._last_entry_debit_window = (time.time(), float(self._last_known_collateral))
-        self.executor.invalidate_collateral_cache()
-        self._pending_collateral_refresh = True
-        self.save_state()
-        if not self.dry_run:
-            for tid, rec in leg_records:
-                if not rec.get("hold_to_maturity_lock"):
-                    self._spawn_fast_confirm(tid)
-        logger.info(
-            f"✓ [D1 LIVE DOMINANCE BOX ENTERED] {box_id} ({asset_sym}) | {sh:.0f} pairs @ box_net=${box_unit:.4f} "
-            f"(cost=${tot_box_cost:.2f}, min_floor=+${sh * max(0.0, 1.0 - box_unit):.2f})"
+        from src.polymarket_research.riskless_protocol_v2_expansion import register_live_d1_box_positions_impl
+
+        return register_live_d1_box_positions_impl(
+            self, box_id, cand, res, pre_bal_a, pre_bal_b,
+            ExecutionStatus.POSITION_CONFIRMED, ExecutionStatus.MATCHED_PENDING_SETTLEMENT,
         )
-        return [tid for tid, _ in leg_records]
 
     def _register_legged_out_d1_residual(
         self, box_id: str, cand: Dict[str, Any], resid: Dict[str, Any], pre_bal_a: float, pre_bal_b: float
@@ -11596,15 +11470,16 @@ class PolymarketLiveHarvester:
                             logger.warning(f"Cannot reconcile pending cancellation {exit_oid} for {tid}; retaining position.")
                             continue
                         terminal = str(order_info.get("status", "")).upper()
-                        if terminal not in {"MATCHED", "FILLED", "CONFIRMED"} and not (
-                            terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED", "INVALID"}
+                        matched_pre = float(self._num(order_info.get("size_matched")) or 0.0)
+                        if terminal in {"MATCHED", "FILLED", "CONFIRMED"} or (
+                            matched_pre > 1e-6 and (terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED", "INVALID"})
                         ):
-                            logger.warning(f"Cancellation not terminal: {exit_oid} (status={terminal}); retaining position.")
-                            continue
-                        if terminal in {"MATCHED", "FILLED", "CONFIRMED"}:
                             pos["exit_order_status"] = "FILL_RECONCILIATION_REQUIRED"
                             pos["pending_canceled_order_id"] = exit_oid
                             self.save_state()
+                            continue
+                        if not (terminal.startswith("CANCEL") or terminal in {"EXPIRED", "REJECTED"} or (terminal == "INVALID" and matched_pre <= 1e-6)):
+                            logger.warning(f"Cancellation not terminal: {exit_oid} (status={terminal}); retaining position.")
                             continue
                         try:
                             self.executor.release_inventory(reservation_id=exit_oid)
@@ -11631,6 +11506,15 @@ class PolymarketLiveHarvester:
                     order_size = float(pos.get("exit_order_size", pos.get("entry_shares", 0.0)) or 0.0)
                     order_matched = float(self._num(order_info.get("size_matched")) or 0.0)
                     order_status_str = str(order_info.get("status", "")).upper()
+                    if order_status_str == "INVALID" and order_matched > 1e-6:
+                        pos["exit_order_status"] = "FILL_RECONCILIATION_REQUIRED"
+                        pos["pending_canceled_order_id"] = exit_oid
+                        pos["status"] = "UNRESOLVED_SETTLEMENT"
+                        self.save_state()
+                        logger.warning(
+                            f"[RECONCILIATION] {tid}: INVALID exit {exit_oid} has size_matched={order_matched:.2f}; deferring to fill reconciliation."
+                        )
+                        continue
                     raw_taking = order_info.get("taking_amount") or order_info.get("takingAmount")
                     total_order_taking = self._num(raw_taking)
                     is_taking_estimated = False
@@ -11652,10 +11536,15 @@ class PolymarketLiveHarvester:
                     is_order_terminal = (
                         order_status_str in {"MATCHED", "FILLED", "CONFIRMED"}
                         or order_status_str.startswith("CANCEL")
-                        or order_status_str in {"EXPIRED", "REJECTED", "INVALID"}
+                        or order_status_str in {"EXPIRED", "REJECTED"}
+                        or (order_status_str == "INVALID" and order_matched <= 1e-6)
                         or order_matched >= order_size - 1e-4
                     )
-                    is_canceled = order_status_str.startswith("CANCEL") or order_status_str in {"EXPIRED", "REJECTED", "INVALID"}
+                    is_canceled = (
+                        order_status_str.startswith("CANCEL")
+                        or order_status_str in {"EXPIRED", "REJECTED"}
+                        or (order_status_str == "INVALID" and order_matched <= 1e-6)
+                    )
                     is_position_complete = rem_shares <= 0.01 or total_filled_shares >= float(pos["entry_shares"]) - 1e-4
 
                     if is_position_complete:
