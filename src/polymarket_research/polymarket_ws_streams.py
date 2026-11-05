@@ -51,9 +51,25 @@ except ImportError:
 
 logger = logging.getLogger("PolymarketWSStreams")
 
+import os
+from pathlib import Path
+
 USER_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user"
 MARKET_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
 LIVE_DATA_WS_URL = "wss://ws-live-data.polymarket.com"
+POLYBOLT_V2_WS_URL = "wss://ws-live-v2.polymarket.com/ws"
+
+POLYBOLT_CRYPTO_SYMBOLS: Tuple[str, ...] = (
+    "btcusd",
+    "ethusd",
+    "solusd",
+    "xrpusd",
+    "dogeusd",
+    "bnbusd",
+    "zecusd",
+    "hypeusd",
+    "xauusd",
+)
 
 OPEN_ORDER_STATUSES = {"LIVE", "OPEN", "DELAYED", "UNMATCHED"}
 TERMINAL_CANCEL_STATUSES = {"CANCELED", "CANCELLED", "EXPIRED", "REJECTED", "CANCELLATION"}
@@ -66,10 +82,98 @@ CHAINLINK_SYMBOL_MAP: Dict[str, str] = {
     "xrp/usd": "XRP",
     "bnb/usd": "BNB",
     "doge/usd": "DOGE",
+    "zec/usd": "ZEC",
     "hype/usd": "HYPE",
     "xau/usd": "XAU",
     "xag/usd": "XAG",
+    "btcusd": "BTC",
+    "ethusd": "ETH",
+    "solusd": "SOL",
+    "xrpusd": "XRP",
+    "bnbusd": "BNB",
+    "dogeusd": "DOGE",
+    "zecusd": "ZEC",
+    "hypeusd": "HYPE",
+    "xauusd": "XAU",
+    "xagusd": "XAG",
 }
+
+_CACHED_POLYBOLT_CREDS: Optional[Tuple[str, str, str]] = None
+_CREDS_LOCK = threading.Lock()
+
+
+def resolve_polybolt_l2_creds(
+    api_key: Optional[str] = None,
+    api_secret: Optional[str] = None,
+    api_passphrase: Optional[str] = None,
+) -> Optional[Tuple[str, str, str]]:
+    """
+    Resolves Polymarket CLOB L2 `(api_key, api_secret, api_passphrase)` for PolyBolt V2 authentication:
+      1. Explicit arguments if supplied
+      2. Explicit environment variables (`POLY_API_KEY` / `CLOB_API_KEY`, etc., loading `.env` if present)
+      3. Deterministic L2 derivation from `POLYGON_PRIVATE_KEY` via `ClobClient.create_or_derive_api_creds()`
+    """
+    global _CACHED_POLYBOLT_CREDS
+    ak = str(api_key or "").strip()
+    sec = str(api_secret or "").strip()
+    pp = str(api_passphrase or "").strip()
+    if ak and sec and pp:
+        return (ak, sec, pp)
+    with _CREDS_LOCK:
+        if _CACHED_POLYBOLT_CREDS is not None:
+            return _CACHED_POLYBOLT_CREDS
+        try:
+            from dotenv import load_dotenv
+
+            repo_env = Path(__file__).resolve().parents[2] / ".env"
+            if repo_env.exists():
+                load_dotenv(repo_env, override=False)
+        except Exception:
+            pass
+        ak = (os.environ.get("POLY_API_KEY") or os.environ.get("CLOB_API_KEY") or "").strip()
+        sec = (
+            os.environ.get("POLY_SECRET")
+            or os.environ.get("POLY_API_SECRET")
+            or os.environ.get("CLOB_SECRET")
+            or ""
+        ).strip()
+        pp = (
+            os.environ.get("POLY_PASSPHRASE")
+            or os.environ.get("POLY_API_PASSPHRASE")
+            or os.environ.get("CLOB_PASS_PHRASE")
+            or ""
+        ).strip()
+        if ak and sec and pp:
+            _CACHED_POLYBOLT_CREDS = (ak, sec, pp)
+            return _CACHED_POLYBOLT_CREDS
+        pk = (os.environ.get("POLYGON_PRIVATE_KEY") or os.environ.get("POLY_PRIVATE_KEY") or "").strip()
+        if pk and os.environ.get("PM_DISABLE_POLYBOLT_CRED_DERIVE", "0") != "1":
+            try:
+                from py_clob_client.client import ClobClient
+
+                funder = (
+                    os.environ.get("POLYGON_FUNDER_ADDRESS")
+                    or os.environ.get("POLYGON_PROXY_ADDRESS")
+                    or None
+                )
+                sig_type = int(os.environ.get("POLYGON_SIGNATURE_TYPE") or 1)
+                c = ClobClient(
+                    "https://clob.polymarket.com",
+                    key=pk,
+                    chain_id=137,
+                    signature_type=sig_type,
+                    funder=funder,
+                )
+                creds = c.create_or_derive_api_creds()
+                d_ak = str(getattr(creds, "api_key", "") or "").strip()
+                d_sec = str(getattr(creds, "api_secret", "") or "").strip()
+                d_pp = str(getattr(creds, "api_passphrase", "") or "").strip()
+                if d_ak and d_sec and d_pp:
+                    _CACHED_POLYBOLT_CREDS = (d_ak, d_sec, d_pp)
+                    return _CACHED_POLYBOLT_CREDS
+            except Exception as exc:
+                logger.debug(f"[POLYBOLT-V2] L2 credential derivation skipped: {exc}")
+        return None
 
 
 def _loads(raw: Any) -> Any:
@@ -531,32 +635,44 @@ class PolymarketUserWsCache:
 
 class PolymarketChainlinkLiveStream:
     """
-    Real-time Polymarket Chainlink Data Streams client (`wss://ws-live-data.polymarket.com`).
-    Captures exact 1Hz 18-decimal `crypto_prices_chainlink` USD reports for all 7 dominance coins,
-    computing exact 60-second boundary TWAPs at `t = +0.2s` (bypassing `/api/crypto/crypto-price` 429s)
-    and continuous path-integral samples for `S2_EXACT_TWAP_LOCK`.
+    Real-time Polymarket Chainlink Data Streams client supporting PolyBolt V2
+    (`wss://ws-live-v2.polymarket.com/ws`, `price.crypto` 120s 1Hz snapshot + live 1Hz ticks)
+    with automatic fallback to legacy RTDS (`wss://ws-live-data.polymarket.com`).
     """
 
     def __init__(
         self,
         *,
         ws_url: str = LIVE_DATA_WS_URL,
+        prefer_polybolt_v2: bool = True,
+        l2_creds: Optional[Tuple[str, str, str]] = None,
         history_sec: float = 420.0,
         on_tick: Optional[Callable[[str, float, float], None]] = None,
     ) -> None:
         self._ws_url = ws_url
+        self._prefer_polybolt_v2 = bool(
+            prefer_polybolt_v2 and ws_url in (LIVE_DATA_WS_URL, POLYBOLT_V2_WS_URL)
+        )
+        self._l2_creds = l2_creds
         self._history_sec = float(history_sec)
         self._on_tick = on_tick
         self._lock = threading.RLock()
         self._ticks: Dict[str, Deque[Tuple[float, float]]] = {
-            sym: deque(maxlen=600) for sym in CHAINLINK_SYMBOL_MAP.values()
+            sym: deque(maxlen=600) for sym in set(CHAINLINK_SYMBOL_MAP.values())
         }
         self._official_twap_ticks: Dict[str, Deque[Tuple[float, float]]] = {
-            sym: deque(maxlen=180) for sym in CHAINLINK_SYMBOL_MAP.values()
+            sym: deque(maxlen=180) for sym in set(CHAINLINK_SYMBOL_MAP.values())
         }
         self._boundary_twaps: Dict[Tuple[str, int], float] = {}
         self._connected = False
         self._last_rx_mono = 0.0
+        self._active_source: str = "none"
+        self._dropped_frames: int = 0
+
+    @property
+    def active_source(self) -> str:
+        with self._lock:
+            return self._active_source
 
     def is_healthy(self, max_silence_sec: float = 8.0) -> bool:
         with self._lock:
@@ -602,6 +718,24 @@ class PolymarketChainlinkLiveStream:
             except Exception:
                 pass
 
+    @staticmethod
+    def _parse_polybolt_price(item: Dict[str, Any]) -> float:
+        full_acc = item.get("full_accuracy_value")
+        px = 0.0
+        if full_acc not in (None, ""):
+            try:
+                dec_v = Decimal(str(full_acc))
+                # Live PolyBolt V2 `price.crypto` emits unscaled decimal strings (e.g. "80496.97358448358");
+                # guard > 1e12 so any 1e18-scaled integer string is also normalized safely.
+                if dec_v > Decimal("1e12"):
+                    dec_v = dec_v / Decimal("1e18")
+                px = float(dec_v)
+            except Exception:
+                px = 0.0
+        if px <= 0.0:
+            px = _safe_float(item.get("value"), 0.0)
+        return px
+
     def process_ws_message(self, raw_msg: Any) -> bool:
         if not raw_msg or raw_msg in ("PONG", b"PONG"):
             with self._lock:
@@ -611,7 +745,62 @@ class PolymarketChainlinkLiveStream:
             d = _loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
         except Exception:
             return False
-        if not isinstance(d, dict) or d.get("topic") not in (
+        if not isinstance(d, dict):
+            return False
+
+        # PolyBolt V2 (`wss://ws-live-v2.polymarket.com/ws`) `price.crypto` frames
+        if d.get("channel") == "price.crypto":
+            dropped = int(d.get("dropped") or 0)
+            if dropped > 0:
+                with self._lock:
+                    self._dropped_frames += dropped
+                logger.warning(f"[POLYBOLT-V2] Server reported dropped={dropped} frames on price.crypto")
+                return False
+            pl = d.get("payload")
+            if not isinstance(pl, dict):
+                return False
+            raw_sym = str(pl.get("symbol") or "").strip().lower()
+            asset = CHAINLINK_SYMBOL_MAP.get(raw_sym)
+            if not asset:
+                return False
+            if bool(d.get("snapshot")) or isinstance(pl.get("data"), list):
+                ingested = 0
+                for pt in pl.get("data") or ():
+                    if not isinstance(pt, dict):
+                        continue
+                    ts_raw = pt.get("timestamp")
+                    if ts_raw is None:
+                        continue
+                    ts_f = _safe_float(ts_raw, 0.0)
+                    ts_sec = ts_f / 1000.0 if ts_f > 1e11 else ts_f
+                    px = self._parse_polybolt_price(pt)
+                    if ts_sec > 0.0 and px > 0.0:
+                        self.ingest_tick(asset, ts_sec, px)
+                        ingested += 1
+                if ingested > 0:
+                    with self._lock:
+                        self._active_source = "polybolt_v2"
+                    return True
+                return False
+            ts_raw = pl.get("timestamp") if pl.get("timestamp") is not None else d.get("ts")
+            if ts_raw is None:
+                return False
+            ts_f = _safe_float(ts_raw, 0.0)
+            ts_sec = ts_f / 1000.0 if ts_f > 1e11 else ts_f
+            px = self._parse_polybolt_price(pl)
+            if ts_sec <= 0.0 or px <= 0.0:
+                return False
+            with self._lock:
+                self._active_source = "polybolt_v2"
+            self.ingest_tick(asset, ts_sec, px)
+            return True
+
+        if d.get("op") in ("authed", "subscribed", "pong"):
+            with self._lock:
+                self._last_rx_mono = time.monotonic()
+            return False
+
+        if d.get("topic") not in (
             "crypto_prices_chainlink",
             "crypto_prices_twap_sixty",
             "forex_prices_chainlink",
@@ -643,6 +832,8 @@ class PolymarketChainlinkLiveStream:
             px = _safe_float(pl.get("value"), 0.0)
         if px <= 0.0:
             return False
+        with self._lock:
+            self._active_source = "rtds"
         if topic == "crypto_prices_twap_sixty":
             with self._lock:
                 self._last_rx_mono = time.monotonic()
@@ -702,6 +893,52 @@ class PolymarketChainlinkLiveStream:
                 return p_last
             return None
 
+    def get_rolling_twap_60s(
+        self,
+        asset: str,
+        now_ts: Optional[float] = None,
+        max_age_sec: float = 4.5,
+    ) -> Optional[float]:
+        """Authoritative 60-second rolling USD TWAP from 1Hz Chainlink reports (warm from t=0s via PolyBolt 120s snapshot)."""
+        sym = str(asset or "").strip().upper()
+        now_f = float(time.time() if now_ts is None else now_ts)
+        with self._lock:
+            dq = self._ticks.get(sym)
+            if dq:
+                t_last, p_last = dq[-1]
+                if -2.0 <= (now_f - t_last) <= max_age_sec:
+                    pts = [p for t, p in dq if (now_f - 60.0) <= t <= (now_f + 1.0) and p > 0.0]
+                    if len(pts) >= 2:
+                        return round(sum(pts) / len(pts), 4)
+                    return round(p_last, 4)
+        return self.get_latest_official_twap_60s(sym, now_ts=now_f, max_age_sec=max_age_sec)
+
+    def get_settlement_twap_slice(
+        self,
+        asset: str,
+        end_ts: float,
+        now_ts: Optional[float] = None,
+        max_age_sec: float = 4.5,
+    ) -> Optional[Tuple[float, float]]:
+        """Authoritative `[end_ts - 60, now]` banked 1Hz Chainlink TWAP slice `(mean_usd, locked_weight)`."""
+        sym = str(asset or "").strip().upper()
+        now_f = float(time.time() if now_ts is None else now_ts)
+        rem = float(end_ts) - now_f
+        if not (0.0 < rem < 60.0):
+            return None
+        with self._lock:
+            dq = self._ticks.get(sym)
+            if not dq:
+                return None
+            t_last, _ = dq[-1]
+            if not (-2.0 <= (now_f - t_last) <= max_age_sec):
+                return None
+            w0 = float(end_ts) - 60.0
+            pts = [p for t, p in dq if (w0 - 0.5) <= t <= (now_f + 0.5) and p > 0.0]
+            if not pts:
+                return None
+            return round(sum(pts) / len(pts), 4), round((60.0 - rem) / 60.0, 4)
+
     def get_recent_samples(self, asset: str, since_ts: float) -> List[Tuple[float, float]]:
         sym = str(asset or "").strip().upper()
         with self._lock:
@@ -738,12 +975,72 @@ class PolymarketChainlinkLiveStream:
                 return p_last
             return None
 
-    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
-        try:
-            import websockets
-        except ImportError:
-            logger.warning("[CHAINLINK-WS] websockets unavailable; skipping live Chainlink stream.")
-            return
+    async def _stream_polybolt_v2_once(
+        self,
+        websockets_mod: Any,
+        creds: Tuple[str, str, str],
+        stop_check: Optional[Callable[[], bool]] = None,
+    ) -> bool:
+        pb_url = self._ws_url if self._ws_url == POLYBOLT_V2_WS_URL else POLYBOLT_V2_WS_URL
+        ak, sec, pp = creds
+        auth_msg = json.dumps(
+            {
+                "op": "auth",
+                "rid": "a1",
+                "auth": {"apiKey": ak, "secret": sec, "passphrase": pp},
+            }
+        )
+        got_ticks = False
+        async with websockets_mod.connect(
+            pb_url,
+            ping_interval=12,
+            ping_timeout=12,
+            open_timeout=6,
+            close_timeout=3,
+            max_size=4 * 1024 * 1024,
+            max_queue=512,
+            compression=None,
+        ) as ws:
+            _enable_ws_nodelay(ws)
+            await ws.send(auth_msg)
+            auth_raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
+            auth_resp = _loads(auth_raw) if isinstance(auth_raw, (str, bytes, bytearray)) else auth_raw
+            if not isinstance(auth_resp, dict) or auth_resp.get("op") != "authed":
+                raise RuntimeError(f"PolyBolt V2 auth rejected: {auth_resp}")
+            for idx, sym in enumerate(POLYBOLT_CRYPTO_SYMBOLS):
+                await ws.send(
+                    json.dumps(
+                        {
+                            "op": "subscribe",
+                            "rid": f"s_{idx}",
+                            "subscriptions": [{"channel": "price.crypto", "filter": {"symbol": sym}}],
+                        }
+                    )
+                )
+            with self._lock:
+                self._connected = True
+                self._active_source = "polybolt_v2"
+                self._last_rx_mono = time.monotonic()
+            logger.info(
+                f"[CHAINLINK-WS] Connected to PolyBolt V2 1Hz authoritative stream ({len(POLYBOLT_CRYPTO_SYMBOLS)} symbols, 120s snapshot)."
+            )
+            while not (stop_check and stop_check()):
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    if (time.monotonic() - self._last_rx_mono) > 15.0:
+                        break
+                    continue
+                if self.process_ws_message(msg):
+                    got_ticks = True
+        return got_ticks
+
+    async def _stream_rtds_once(
+        self,
+        websockets_mod: Any,
+        stop_check: Optional[Callable[[], bool]] = None,
+    ) -> None:
+        rtds_url = LIVE_DATA_WS_URL if self._ws_url == POLYBOLT_V2_WS_URL else self._ws_url
         sub_msg = json.dumps(
             {
                 "action": "subscribe",
@@ -753,45 +1050,105 @@ class PolymarketChainlinkLiveStream:
                 ],
             }
         )
+        async with websockets_mod.connect(
+            rtds_url,
+            ping_interval=12,
+            ping_timeout=12,
+            open_timeout=6,
+            close_timeout=3,
+            max_size=2 * 1024 * 1024,
+            max_queue=512,
+            compression=None,
+        ) as ws:
+            _enable_ws_nodelay(ws)
+            await ws.send(sub_msg)
+            with self._lock:
+                self._connected = True
+                self._active_source = "rtds"
+                self._last_rx_mono = time.monotonic()
+            logger.info(
+                f"[CHAINLINK-WS] Connected to RTDS fallback Chainlink 1Hz stream ({len(set(CHAINLINK_SYMBOL_MAP.values()))} symbols)."
+            )
+            while not (stop_check and stop_check()):
+                try:
+                    msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
+                except asyncio.TimeoutError:
+                    if (time.monotonic() - self._last_rx_mono) > 15.0:
+                        break
+                    continue
+                self.process_ws_message(msg)
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        try:
+            import websockets
+        except ImportError:
+            logger.warning("[CHAINLINK-WS] websockets unavailable; skipping live Chainlink stream.")
+            return
         backoff = 0.5
+        creds = self._l2_creds
         while not (stop_check and stop_check()):
-            try:
-                async with websockets.connect(
-                    self._ws_url,
-                    ping_interval=12,
-                    ping_timeout=12,
-                    open_timeout=6,
-                    close_timeout=3,
-                    max_size=2 * 1024 * 1024,
-                    max_queue=512,
-                    compression=None,
-                ) as ws:
-                    _enable_ws_nodelay(ws)
-                    await ws.send(sub_msg)
-                    with self._lock:
-                        self._connected = True
-                        self._last_rx_mono = time.monotonic()
-                    backoff = 0.5
-                    logger.info(f"[CHAINLINK-WS] Connected to live Polymarket Chainlink 1Hz stream ({len(CHAINLINK_SYMBOL_MAP)} symbols).")
-                    while not (stop_check and stop_check()):
-                        try:
-                            msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
-                        except asyncio.TimeoutError:
-                            if (time.monotonic() - self._last_rx_mono) > 15.0:
-                                break
-                            continue
-                        self.process_ws_message(msg)
-            except asyncio.CancelledError:
+            used_pb_ok = False
+            if self._prefer_polybolt_v2:
+                if creds is None:
+                    try:
+                        creds = await asyncio.to_thread(resolve_polybolt_l2_creds)
+                    except Exception:
+                        creds = None
+                if creds is not None:
+                    try:
+                        used_pb_ok = await self._stream_polybolt_v2_once(websockets, creds, stop_check)
+                        if used_pb_ok:
+                            backoff = 0.5
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as exc:
+                        logger.debug(f"[POLYBOLT-V2] Falling back to RTDS after notice: {exc}")
+                    finally:
+                        with self._lock:
+                            self._connected = False
+            if stop_check and stop_check():
                 break
-            except Exception as exc:
-                logger.debug(f"[CHAINLINK-WS] Reconnecting after notice: {exc}")
-            finally:
-                with self._lock:
-                    self._connected = False
+            if not used_pb_ok:
+                try:
+                    await self._stream_rtds_once(websockets, stop_check)
+                    backoff = 0.5
+                except asyncio.CancelledError:
+                    break
+                except Exception as exc:
+                    logger.debug(f"[CHAINLINK-WS] Reconnecting after notice: {exc}")
+                finally:
+                    with self._lock:
+                        self._connected = False
             if stop_check and stop_check():
                 break
             await asyncio.sleep(min(5.0, backoff + random.uniform(0.0, 0.2)))
             backoff = min(5.0, backoff * 1.7)
+
+
+_SHARED_CHAINLINK_LOCK = threading.RLock()
+_SHARED_CHAINLINK_STREAM: Optional[PolymarketChainlinkLiveStream] = None
+_SHARED_CHAINLINK_TASK: Optional[asyncio.Task] = None
+
+
+def get_shared_chainlink_stream() -> PolymarketChainlinkLiveStream:
+    global _SHARED_CHAINLINK_STREAM
+    with _SHARED_CHAINLINK_LOCK:
+        if _SHARED_CHAINLINK_STREAM is None:
+            _SHARED_CHAINLINK_STREAM = PolymarketChainlinkLiveStream()
+        return _SHARED_CHAINLINK_STREAM
+
+
+def ensure_shared_chainlink_stream_started() -> PolymarketChainlinkLiveStream:
+    global _SHARED_CHAINLINK_TASK
+    stream = get_shared_chainlink_stream()
+    with _SHARED_CHAINLINK_LOCK:
+        if _SHARED_CHAINLINK_TASK is None or _SHARED_CHAINLINK_TASK.done():
+            try:
+                loop = asyncio.get_running_loop()
+                _SHARED_CHAINLINK_TASK = loop.create_task(stream.run_forever())
+            except RuntimeError:
+                pass
+    return stream
 
 
 class PolymarketClobMarketWsTracker:
@@ -809,17 +1166,27 @@ class PolymarketClobMarketWsTracker:
         recycle_bid_trigger: float = 0.985,
         on_urgent_bid: Optional[Callable[[str, float], None]] = None,
         on_book_change: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_tick_size_change: Optional[Callable[[str, float], None]] = None,
     ) -> None:
         self._ws_url = ws_url
         self._recycle_bid_trigger = float(recycle_bid_trigger)
         self._on_urgent_bid = on_urgent_bid
         self._on_book_change = on_book_change
+        self._on_tick_size_change = on_tick_size_change
         self._lock = threading.RLock()
         self._desired_tokens: Set[str] = set()
         self._books: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._raw_levels: Dict[str, Tuple[Dict[float, float], Dict[float, float]]] = {}
+        self._tick_sizes: Dict[str, float] = {}
         self._sub_wakeup: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    def get_tick_size(self, token_id: str) -> Optional[float]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        with self._lock:
+            return self._tick_sizes.get(tok)
 
     def set_desired_tokens(self, tokens: Iterable[str]) -> None:
         clean = {str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()}
@@ -879,15 +1246,38 @@ class PolymarketClobMarketWsTracker:
         items = data if isinstance(data, list) else ([data] if isinstance(data, dict) else [])
 
         changed_books: List[Tuple[str, Dict[str, Any]]] = []
+        tick_changes: List[Tuple[str, float]] = []
         with self._lock:
             for item in items:
                 if not isinstance(item, dict):
                     continue
                 ev = str(item.get("event_type") or "")
+                if ev == "tick_size_change" or "new_tick_size" in item:
+                    aid = str(item.get("asset_id") or "").strip()
+                    tk_f = _safe_float(
+                        item.get("new_tick_size") or item.get("tick_size") or item.get("minimum_tick_size"),
+                        0.0,
+                    )
+                    if aid and 0.0001 <= tk_f <= 0.1 and (not self._desired_tokens or aid in self._desired_tokens):
+                        self._tick_sizes[aid] = tk_f
+                        if aid in self._books:
+                            self._books[aid][1]["minimum_tick_size"] = tk_f
+                        tick_changes.append((aid, tk_f))
+                    continue
                 if "bids" in item and "asks" in item and item.get("asset_id"):
                     aid = str(item["asset_id"])
                     if aid in self._desired_tokens:
                         bb = self._apply_snapshot_locked(aid, item.get("bids") or [], item.get("asks") or [], now_m)
+                        snap_tk = _safe_float(item.get("minimum_tick_size") or item.get("tick_size"), 0.0)
+                        if 0.0001 <= snap_tk <= 0.1:
+                            prev_tk = self._tick_sizes.get(aid)
+                            self._tick_sizes[aid] = snap_tk
+                            if aid in self._books:
+                                self._books[aid][1]["minimum_tick_size"] = snap_tk
+                            if prev_tk is None or abs(prev_tk - snap_tk) > 1e-7:
+                                tick_changes.append((aid, snap_tk))
+                        elif aid in self._tick_sizes and aid in self._books:
+                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
                         if self._on_book_change is not None and aid in self._books:
                             changed_books.append((aid, self._books[aid][1]))
                         if bb >= self._recycle_bid_trigger:
@@ -901,10 +1291,19 @@ class PolymarketClobMarketWsTracker:
                                 by_aid.setdefault(aid, []).append(pc)
                     for aid, pcs in by_aid.items():
                         bb = self._apply_changes_locked(aid, pcs, now_m)
+                        if aid in self._tick_sizes and aid in self._books:
+                            self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
                         if self._on_book_change is not None and aid in self._books:
                             changed_books.append((aid, self._books[aid][1]))
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
+
+        if self._on_tick_size_change is not None and tick_changes:
+            for aid, tk_f in tick_changes:
+                try:
+                    self._on_tick_size_change(aid, tk_f)
+                except Exception:
+                    pass
 
         if self._on_book_change is not None and changed_books:
             for aid, bk_snap in changed_books:

@@ -110,6 +110,21 @@ try:
 except Exception:  # pragma: no cover - graceful fallback
     _orjson = None
 
+try:
+    from src.polymarket_research.polymarket_ws_streams import (
+        get_shared_chainlink_stream as _get_shared_cl_stream,
+        ensure_shared_chainlink_stream_started as _ensure_shared_cl_stream,
+    )
+except Exception:
+    try:
+        from polymarket_ws_streams import (  # type: ignore
+            get_shared_chainlink_stream as _get_shared_cl_stream,
+            ensure_shared_chainlink_stream_started as _ensure_shared_cl_stream,
+        )
+    except Exception:
+        _get_shared_cl_stream = None  # type: ignore
+        _ensure_shared_cl_stream = None  # type: ignore
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 DATA_DIR = PROJECT_ROOT / "data" / "polymarket"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -944,6 +959,7 @@ class PolymarketDualFeed1HRecorder:
         self._cl_basis_anchor_ts: float = 0.0
         self._cl_proxy_history: collections.deque = collections.deque(maxlen=1200)  # (t_unix, cl_proxy_px) for 60s USD TWAP
         self.chainlink_last_updated_ts: float = 0.0
+        self.chainlink_stream = _get_shared_cl_stream() if _get_shared_cl_stream is not None else None
         self.fast_tick_file: Path = fast_tick_path(self.asset)
         self._last_fast_tick_write: float = 0.0
         self._fast_tick_enabled: bool = SHM_DIR.is_dir()
@@ -993,14 +1009,23 @@ class PolymarketDualFeed1HRecorder:
             return round(raw_div - statistics.median(hist), 2)
         return raw_div
 
+    def _get_live_cl_spot(self, now_ts: float) -> Optional[float]:
+        cl_s = getattr(self, "chainlink_stream", None)
+        if cl_s is None:
+            return None
+        px = cl_s.get_latest_spot(self.asset, now_ts=now_ts, max_age_sec=4.5)
+        return float(px) if px is not None and px > 0.0 else None
+
     def is_chainlink_basis_anchored(self, now: Optional[float] = None) -> bool:
         now_ts = now if now is not None else time.time()
+        if self._get_live_cl_spot(now_ts) is not None:
+            return True
         a_ts = float(getattr(self, "_cl_basis_anchor_ts", 0.0) or 0.0)
         r = float(getattr(self, "_cl_to_raw_usd_ratio", 1.0) or 1.0)
         return a_ts > 0.0 and -5.0 <= (now_ts - a_ts) <= 1800.0 and 0.975 <= r <= 1.025
 
     def get_chainlink_proxy_spot(self, now: Optional[float] = None) -> float:
-        """True-USD Chainlink oracle proxy causally anchored to Polymarket's 60s Chainlink TWAP boundary."""
+        """Authoritative 1Hz Chainlink spot (PolyBolt V2 / RTDS) with causal CEX true-USD proxy fallback."""
         now_ts = now if now is not None else time.time()
         cb = self.get_coinbase_spot(now_ts)
         hist_div = getattr(self, "_venue_div_history", None)
@@ -1010,16 +1035,23 @@ class PolymarketDualFeed1HRecorder:
             else 0.0
         )
         raw_usd_px = 0.5 * (cb + bn_usd) if (cb > 0 and bn_usd > 0) else (cb if cb > 0 else bn_usd)
-        if raw_usd_px <= 0:
-            return 0.0
         raw_hist = getattr(self, "_raw_usd_history", None)
-        if raw_hist is not None:
+        if raw_hist is not None and raw_usd_px > 0:
             if not raw_hist or (now_ts - raw_hist[-1][0]) >= 0.20:
                 raw_hist.append((now_ts, round(raw_usd_px, 4)))
             while raw_hist and (now_ts - raw_hist[0][0]) > 240.0:
                 raw_hist.popleft()
-        ratio = float(getattr(self, "_cl_to_raw_usd_ratio", 1.0) or 1.0) if self.is_chainlink_basis_anchored(now_ts) else 1.0
-        cl_px = round(raw_usd_px * ratio, 4)
+        live_cl = self._get_live_cl_spot(now_ts)
+        if live_cl is not None:
+            if raw_usd_px > 0 and 0.975 <= (live_cl / raw_usd_px) <= 1.025:
+                self._cl_to_raw_usd_ratio = live_cl / raw_usd_px
+                self._cl_basis_anchor_ts = now_ts
+            cl_px = round(live_cl, 4)
+        else:
+            if raw_usd_px <= 0:
+                return 0.0
+            ratio = float(getattr(self, "_cl_to_raw_usd_ratio", 1.0) or 1.0) if self.is_chainlink_basis_anchored(now_ts) else 1.0
+            cl_px = round(raw_usd_px * ratio, 4)
         hist = getattr(self, "_cl_proxy_history", None)
         if hist is not None and cl_px > 0:
             if not hist or (now_ts - hist[-1][0]) >= 0.20:
@@ -1029,9 +1061,14 @@ class PolymarketDualFeed1HRecorder:
         return cl_px
 
     def get_chainlink_twap_60s(self, now: Optional[float] = None) -> float:
-        """v3.9 R07: Real-time 60-second rolling USD TWAP mirroring Chainlink's btc-usd-twap-60s-streams."""
+        """Authoritative 60-second rolling USD TWAP (PolyBolt V2 120s snapshot + 1Hz stream, CEX fallback)."""
         now_ts = now if now is not None else time.time()
         cl_now = self.get_chainlink_proxy_spot(now_ts)
+        cl_s = getattr(self, "chainlink_stream", None)
+        if cl_s is not None:
+            tw_live = cl_s.get_rolling_twap_60s(self.asset, now_ts=now_ts, max_age_sec=4.5)
+            if tw_live is not None and tw_live > 0:
+                return round(float(tw_live), 4)
         hist = getattr(self, "_cl_proxy_history", None)
         if not hist:
             return cl_now
@@ -1043,6 +1080,11 @@ class PolymarketDualFeed1HRecorder:
     def get_settlement_twap_slice(self, end_ts: float, now: Optional[float] = None) -> Tuple[float, float]:
         """Exact `[end_ts - 60, now]` banked Chainlink TWAP slice `(mean_usd, locked_weight)` for final-60s settlement."""
         now_ts = now if now is not None else time.time()
+        cl_s = getattr(self, "chainlink_stream", None)
+        if cl_s is not None:
+            sl_live = cl_s.get_settlement_twap_slice(self.asset, end_ts, now_ts=now_ts, max_age_sec=4.5)
+            if sl_live is not None:
+                return sl_live
         rem = float(end_ts) - now_ts
         if not (0.0 < rem < 60.0):
             return 0.0, 0.0
@@ -1150,6 +1192,9 @@ class PolymarketDualFeed1HRecorder:
     # ------------------------------------------------------------------
     def build_fast_tick_snapshot(self, now: Optional[float] = None) -> Dict[str, Any]:
         now = now if now is not None else time.time()
+        cl_spot_val = self.get_chainlink_proxy_spot(now)
+        cl_live_ok = self._get_live_cl_spot(now) is not None
+        cl_src = getattr(getattr(self, "chainlink_stream", None), "active_source", "none") if cl_live_ok else "cex_proxy"
         snap: Dict[str, Any] = {
             "ts": now,
             "timestamp_unix": now,
@@ -1164,8 +1209,10 @@ class PolymarketDualFeed1HRecorder:
             "spot_ts": round(self.spot_price_ts, 3) if getattr(self, "spot_price_ts", 0.0) > 0.0 else None,
             "futures_ts": round(self.futures_price_ts, 3) if getattr(self, "futures_price_ts", 0.0) > 0.0 else None,
             "coinbase_spot": self.get_coinbase_spot(now),
-            "chainlink_proxy_spot": self.get_chainlink_proxy_spot(now),
+            "chainlink_spot": cl_spot_val,
+            "chainlink_proxy_spot": cl_spot_val,
             "chainlink_twap_60s": self.get_chainlink_twap_60s(now),
+            "chainlink_source": cl_src,
             "chainlink_basis_anchored": self.is_chainlink_basis_anchored(now),
             "venue_divergence_bps": self.get_venue_divergence_bps(now),
             "venue_divergence_centered_bps": self.get_venue_divergence_centered_bps(now),
@@ -3387,7 +3434,9 @@ class PolymarketDualFeed1HRecorder:
         self._pid_lock_fh.write(str(os.getpid()))
         self._pid_lock_fh.flush()
 
-        # Initial clock offset calibration
+        # Initial clock offset calibration + shared PolyBolt V2 / RTDS 1Hz Chainlink stream
+        if _ensure_shared_cl_stream is not None:
+            self.chainlink_stream = _ensure_shared_cl_stream()
         await self.calibrate_binance_clock_offset()
 
         await asyncio.gather(

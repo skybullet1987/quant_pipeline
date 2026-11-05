@@ -278,6 +278,7 @@ from src.polymarket_research.riskless_frontier_v4_engine import (
     parse_nfl_player_props_event,
 )
 from src.polymarket_research.riskless_protocol_v2_expansion import (
+    classify_market_rule_dispute_risk,
     compute_gatling_trajectory_projection,
     detect_b1_intraday_onetouch_noon_box,
     detect_d1_telescoping_candle_bridge,
@@ -290,6 +291,7 @@ from src.polymarket_research.riskless_protocol_v2_expansion import (
     detect_nr6_cross_slate_surjection_box,
     detect_w_prune1_metar_slate_arb,
     evaluate_s2_rtds_exact_twap_integrator,
+    passes_uma_bond_dispute_guard,
     scan_full_universe_c1_and_ctf_overround,
 )
 
@@ -1691,6 +1693,9 @@ class Alpha124ShadowDaemon:
                                 if isinstance(item, dict):
                                     aid = str(item.get("asset_id") or "")
                                     if aid in shard_sub:
+                                        tk_i = item.get("tick_size") or item.get("minimum_tick_size")
+                                        if tk_i:
+                                            self.__dict__.setdefault("_token_tick_sizes", {})[aid] = str(tk_i)
                                         self._apply_ws_book_snapshot(aid, item.get("bids") or [], item.get("asks") or [], now_rx)
                                         woke_d1 = woke_d1 or (aid in d1_wake_toks)
                                         woke_nr = woke_nr or (aid in nr_wake_toks)
@@ -1800,7 +1805,7 @@ class Alpha124ShadowDaemon:
         if ws_ent is None or (float(now_ts) - float(ws_ent[0])) > float(max_age_sec):
             return None
         bk = ws_ent[1]
-        if isinstance(bk, dict) and "minimum_tick_size" not in bk:
+        if isinstance(bk, dict):
             tk_c = (self.__dict__.get("_token_tick_sizes") or {}).get(t_str)
             if tk_c:
                 bk["minimum_tick_size"] = tk_c
@@ -1825,7 +1830,7 @@ class Alpha124ShadowDaemon:
                 and (now_b - ws_entry[0]) <= 1.5
                 and (ws_entry[1].get("bids") or ws_entry[1].get("asks"))
             ):
-                if t in tk_cache and "minimum_tick_size" not in ws_entry[1]:
+                if t in tk_cache:
                     ws_entry[1]["minimum_tick_size"] = tk_cache[t]
                 out[t] = ws_entry[1]
             else:
@@ -11534,6 +11539,8 @@ class Alpha124ShadowDaemon:
                 timeout=3.0,
             )
             for clk in pending_v4_lks:
+                if "FINAL" not in str(clk.get("mode") or "").upper() and classify_market_rule_dispute_risk(clk)["veto_pre_final_clinch"]:
+                    continue
                 tok_w, tok_o = str(clk["token_id"]), str(clk["opp_token_id"])
                 bk_w_v4, bk_o_v4 = v4_lk_bks.get(tok_w), v4_lk_bks.get(tok_o)
                 if not bk_w_v4 or not bk_o_v4:
@@ -12098,6 +12105,7 @@ class Alpha124ShadowDaemon:
                 if ok_nba:
                     verified_list.append((mid_u, m_u, ver))
 
+        verified_list = [(mid, m, ver) for mid, m, ver in verified_list if passes_uma_bond_dispute_guard(m, ver)]
         if not verified_list:
             return
 

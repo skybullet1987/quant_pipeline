@@ -2340,6 +2340,17 @@ def detect_eq1_pyth_equity_dominance_box(
 _METAR_T_REMARK_RE = re.compile(r"\bRMK\b.*?\bT([01])(\d{3})(?:[01]\d{3})?\b")
 _METAR_BODY_TEMP_RE = re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)")
 _HKO_SYNTH_RE = re.compile(r"^HKO_(?:MIN|MAX|1M)\s+(-?\d+(?:\.\d+)?)C$", re.IGNORECASE)
+_METAR_ICAO_RE = re.compile(r"^(?:METAR\s+)?([A-Z]{4})\b")
+
+WUNDERGROUND_INTL_INTEGER_STATIONS = frozenset(
+    {
+        "EGLC", "EGLL", "LFPG", "LFPB", "RKSI", "RKPK", "SBGR", "RJTT", "EDDM",
+        "LEMD", "EHAM", "EPWA", "WSSS", "ZBAA", "ZSPD", "ZSQD", "ZUUU", "ZHHH",
+        "ZUCK", "ZGGG", "ZGSZ", "ZSJN", "ZHCC", "LTFM", "LTAC", "LIMC", "EFHK",
+        "LLBG", "OEJN", "OPKC", "VILK", "WMKK", "RCSS", "RPLL", "SAEZ", "NZWN",
+        "CYYZ", "MMMX", "MPMG", "UUWW", "FACT",
+    }
+)
 
 
 def _round_half_away_from_zero(val: float) -> int:
@@ -2347,7 +2358,77 @@ def _round_half_away_from_zero(val: float) -> int:
     return int(d.quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
+def classify_weather_station_oracle_rule(
+    station_icao: str,
+    *,
+    unit: str = "F",
+    rules_text: str = "",
+    event_meta: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Distinguish Polymarket daily weather settlement oracle rules by station & rule text:
+      1. `HKO_OFFICIAL_01C`: Hong Kong Observatory (`HKO`) 0.1°C official daily max/min.
+      2. `US_NWS_CLI_01C_BEFORE_ROUNDING`: US NWS Daily Climate Report (`CLI`) — monotonic dead-bracket
+         `NO` pruning remains sound, while `W_SOLAR1_POST_2351_LOCK` (`YES`) is vetoed due to inter-hour 1m ASOS max.
+      3. `US_ASOS_01C_BEFORE_ROUNDING`: US `K*` ASOS (`0.1°C` `T`-group converted to `°F` BEFORE half-up rounding;
+         `±0.55°C` safety bound when `T`-group absent).
+      4. `WUNDERGROUND_INTEGER_METAR`: International airport routine METAR (`EGLC`, `LFPG`/`LFPB`, `RKSI`, `SBGR`, etc.)
+         or explicit Wunderground whole-degree integer `°C` settlement (`unc_c = 0.0` on routine body integer `°C`).
+    """
+    icao = str(station_icao or "").strip().upper()
+    u = str(unit or "F").strip().upper()
+    meta_r = ""
+    if isinstance(event_meta, Mapping):
+        meta_r = f"{event_meta.get('rules_text') or ''} {event_meta.get('description') or ''}"
+    txt = f"{rules_text} {meta_r}".lower()
+
+    if icao == "HKO" or "hko.gov.hk" in txt or "hong kong observatory" in txt:
+        return {
+            "oracle_regime": "HKO_OFFICIAL_01C",
+            "station_icao": icao or "HKO",
+            "unit": u,
+            "prefer_body_integer_c": False,
+            "body_integer_exact_c": False,
+            "allow_solar_lock": True,
+        }
+    if any(k in txt for k in ("climate report", "nws cli", "daily climate", "weather.gov/wrh/climate")):
+        return {
+            "oracle_regime": "US_NWS_CLI_01C_BEFORE_ROUNDING",
+            "station_icao": icao,
+            "unit": u,
+            "prefer_body_integer_c": False,
+            "body_integer_exact_c": False,
+            "allow_solar_lock": False,
+        }
+    explicit_wu = "wunderground" in txt or "weather underground" in txt
+    explicit_int_c = "whole degree" in txt or "integer metar" in txt
+    is_us_k = len(icao) == 4 and icao.startswith("K")
+    if explicit_int_c or (not is_us_k and (explicit_wu or (u == "C" and (icao in WUNDERGROUND_INTL_INTEGER_STATIONS or len(icao) == 4)))):
+        return {
+            "oracle_regime": "WUNDERGROUND_INTEGER_METAR",
+            "station_icao": icao,
+            "unit": u,
+            "prefer_body_integer_c": True,
+            "body_integer_exact_c": True,
+            "allow_solar_lock": True,
+        }
+    return {
+        "oracle_regime": "US_ASOS_01C_BEFORE_ROUNDING",
+        "station_icao": icao,
+        "unit": u,
+        "prefer_body_integer_c": False,
+        "body_integer_exact_c": False,
+        "allow_solar_lock": True,
+    }
+
+
+def parse_routine_metar_temp_c(
+    raw_metar: str,
+    *,
+    station_icao: str = "",
+    unit: str = "F",
+    rules_text: str = "",
+) -> Optional[Dict[str, Any]]:
     """
     Parse a routine `METAR` (or official `0.1°C` `HKO_MIN`/`HKO_MAX`/`HKO_1M`) observation string while
     **strictly rejecting unscheduled `SPECI` and `COR` reports**.
@@ -2359,8 +2440,21 @@ def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
     if "SPECI" in up_tokens[:3] or "COR" in up_tokens[:5]:
         return None
 
+    inferred_icao = str(station_icao or "").strip().upper()
+    if not inferred_icao:
+        m_ic = _METAR_ICAO_RE.match(txt.upper())
+        if m_ic:
+            inferred_icao = m_ic.group(1)
+    rule_cfg = (
+        classify_weather_station_oracle_rule(inferred_icao, unit=unit, rules_text=rules_text)
+        if (station_icao or rules_text or (inferred_icao in WUNDERGROUND_INTL_INTEGER_STATIONS and str(unit or "F").upper() == "C"))
+        else None
+    )
+    prefer_body = bool(rule_cfg and rule_cfg.get("prefer_body_integer_c"))
+    exact_body_c = bool(rule_cfg and rule_cfg.get("body_integer_exact_c"))
+
     m_hko = _HKO_SYNTH_RE.match(txt)
-    m_rmk = None if m_hko else _METAR_T_REMARK_RE.search(txt.upper())
+    m_rmk = None if (m_hko or prefer_body) else _METAR_T_REMARK_RE.search(txt.upper())
     if m_hko:
         temp_c = float(m_hko.group(1))
         unc_c = 0.05
@@ -2377,13 +2471,14 @@ def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
             return None
         t_tok = m_body.group(1)
         temp_c = -float(t_tok[1:]) if t_tok.startswith("M") else float(t_tok)
-        unc_c = 0.55
+        unc_c = 0.0 if exact_body_c else 0.55
         has_t_group = False
 
     min_c = temp_c - unc_c
     max_c = temp_c + unc_c
-    min_f = min_c * 9.0 / 5.0 + 32.0
-    max_f = max_c * 9.0 / 5.0 + 32.0
+    f_unc_c = 0.55 if (not has_t_group and unc_c == 0.0 and not prefer_body) else unc_c
+    min_f = (temp_c - f_unc_c) * 9.0 / 5.0 + 32.0
+    max_f = (temp_c + f_unc_c) * 9.0 / 5.0 + 32.0
     temp_f = temp_c * 9.0 / 5.0 + 32.0
 
     return {
@@ -2432,12 +2527,14 @@ def _current_temp_bounds(
     current_temp_f: Optional[float] = None,
     current_temp_c: Optional[float] = None,
     current_has_t_group: bool = False,
+    body_integer_exact_c: bool = False,
 ) -> Optional[Dict[str, int]]:
     if current_temp_c is not None and math.isfinite(float(current_temp_c)):
         tc = float(current_temp_c)
-        unc_c = 0.05 if current_has_t_group else 0.55
+        unc_c = 0.05 if current_has_t_group else (0.0 if (body_integer_exact_c and abs(tc - round(tc)) < 1e-6) else 0.55)
         min_c, max_c = tc - unc_c, tc + unc_c
-        min_f, max_f = min_c * 9.0 / 5.0 + 32.0, max_c * 9.0 / 5.0 + 32.0
+        f_unc = 0.05 if current_has_t_group else 0.55
+        min_f, max_f = (tc - f_unc) * 9.0 / 5.0 + 32.0, (tc + f_unc) * 9.0 / 5.0 + 32.0
     elif current_temp_f is not None and math.isfinite(float(current_temp_f)):
         tf = float(current_temp_f)
         unc_f = 0.10 if current_has_t_group else 1.00
@@ -2457,6 +2554,8 @@ def compute_running_metar_extrema(
     metar_lines: Sequence[str],
     *,
     unit: str = "F",
+    station_icao: str = "",
+    rules_text: str = "",
     current_temp_f: Optional[float] = None,
     current_temp_c: Optional[float] = None,
     current_has_t_group: bool = False,
@@ -2464,14 +2563,23 @@ def compute_running_metar_extrema(
     """
     Aggregate a station's intraday routine `METAR` reports (`SPECI` excluded) plus optional latest
     routine observation (`max(obs_max_f, current_temp_f)` / `min(obs_min_f, current_temp_f)`) with strict
-    ASOS/integer rounding safety to bound both daily maximum (`HIGH`) and daily minimum (`LOW`).
+    station-specific ASOS / Wunderground integer rounding safety to bound daily `HIGH` and `LOW`.
     """
     u = str(unit or "F").strip().upper()
-    parsed = [p for p in (parse_routine_metar_temp_c(line) for line in (metar_lines or [])) if p is not None]
+    rule_cfg = classify_weather_station_oracle_rule(station_icao, unit=u, rules_text=rules_text)
+    parsed = [
+        p
+        for p in (
+            parse_routine_metar_temp_c(line, station_icao=station_icao, unit=u, rules_text=rules_text)
+            for line in (metar_lines or [])
+        )
+        if p is not None
+    ]
     cur_b = _current_temp_bounds(
         current_temp_f=current_temp_f,
         current_temp_c=current_temp_c,
         current_has_t_group=current_has_t_group,
+        body_integer_exact_c=bool(rule_cfg["body_integer_exact_c"]),
     )
     if cur_b is not None:
         parsed.append({**cur_b, "has_t_group": bool(current_has_t_group)})
@@ -2489,6 +2597,7 @@ def compute_running_metar_extrema(
         ceil_lo = min(int(p["confirmed_ceil_int_f"]) for p in parsed)
     return {
         "unit": u,
+        "oracle_regime": rule_cfg["oracle_regime"],
         "routine_obs_count": len(parsed),
         "confirmed_running_high_floor": floor_hi,
         "confirmed_running_high_ceil": ceil_hi,
@@ -2507,6 +2616,7 @@ def detect_w_prune1_metar_slate_arb(
     metric: str = "HIGH",
     local_hour_minute: Tuple[int, int] = (15, 0),
     event_meta: Optional[Mapping[str, Any]] = None,
+    rules_text: str = "",
     min_net_edge_usd: float = 0.005,
     min_shares: float = 5.0,
     current_temp_f: Optional[float] = None,
@@ -2516,16 +2626,22 @@ def detect_w_prune1_metar_slate_arb(
     """
     `W_PRUNE1` Monotonic METAR Ratchet + `W_SOLAR1` Post-`23:51` Local Lock:
       - `HIGH` metric: any bracket with `high < confirmed_running_high_floor` (`max(obs_max, current_temp)`)
-        is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
+         is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
       - `LOW` metric: any bracket with `low > confirmed_running_low_ceil` (`min(obs_min, current_temp)`)
-        is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
+         is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
     """
     m_mode = str(metric or "HIGH").strip().upper()
     if m_mode not in {"HIGH", "LOW"}:
         return []
+    oracle_rule = classify_weather_station_oracle_rule(
+        station_icao, unit=unit, rules_text=rules_text, event_meta=event_meta
+    )
+    eff_rules = f"{rules_text} {(event_meta or {}).get('rules_text', '')} {(event_meta or {}).get('description', '')}".strip()
     ext = compute_running_metar_extrema(
         metar_lines,
         unit=unit,
+        station_icao=station_icao,
+        rules_text=eff_rules,
         current_temp_f=current_temp_f,
         current_temp_c=current_temp_c,
         current_has_t_group=current_has_t_group,
@@ -2569,6 +2685,7 @@ def detect_w_prune1_metar_slate_arb(
                         {
                             "sleeve": "W_PRUNE1_DEAD_NO_BOND",
                             "station": str(station_icao).upper(),
+                            "oracle_regime": oracle_rule["oracle_regime"],
                             "metric": m_mode,
                             "token_id": no_tok,
                             "condition_id": cid,
@@ -2600,7 +2717,7 @@ def detect_w_prune1_metar_slate_arb(
                 alive_complete = False
 
             locked_val = floor_hi if (m_mode == "HIGH" and floor_hi == ceil_hi) else (floor_lo if (m_mode == "LOW" and floor_lo == ceil_lo) else None)
-            if (loc_h == 23 and loc_m >= 52) and locked_val is not None and low_i <= locked_val <= high_i:
+            if bool(oracle_rule["allow_solar_lock"]) and (loc_h == 23 and loc_m >= 52) and locked_val is not None and low_i <= locked_val <= high_i:
                 if 0.01 <= yes_ask <= (1.0 - float(min_net_edge_usd)) and yes_sz >= min_shares and yes_tok:
                     q_win, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
                     if (1.0 - q_win) >= float(min_net_edge_usd):
@@ -2608,6 +2725,7 @@ def detect_w_prune1_metar_slate_arb(
                             {
                                 "sleeve": "W_SOLAR1_POST_2351_LOCK",
                                 "station": str(station_icao).upper(),
+                                "oracle_regime": oracle_rule["oracle_regime"],
                                 "metric": m_mode,
                                 "token_id": yes_tok,
                                 "condition_id": cid,
@@ -2628,6 +2746,7 @@ def detect_w_prune1_metar_slate_arb(
                 "sleeve": "W_PRUNE1_NR0_BASKET",
                 "box_type": "DOMINANCE" if len(alive_legs) == 2 else "MULTI_LEG_BUNDLE",
                 "station": str(station_icao).upper(),
+                "oracle_regime": oracle_rule["oracle_regime"],
                 "metric": m_mode,
                 "legs": alive_legs,
                 "leg_count": len(alive_legs),
@@ -2642,6 +2761,90 @@ def detect_w_prune1_metar_slate_arb(
                 b_rec["expiry_ts"] = exp_w
             signals.append(b_rec)
     return signals
+
+
+_WALKOVER_FORFEIT_DISPUTE_RE = re.compile(
+    r"\b("
+    r"walkover|walk-over|forfeit(?:ed|s|ure)?|disqualif(?:ied|ication)|defaulted|"
+    r"no[\s-]contest|technical\s+loss|chronobreak|lfmp|last\s+fair\s+market\s+price|"
+    r"(?:player|fighter|competitor|team|match|opponent)\s+retire(?:s|d|ment)?|"
+    r"retire(?:s|d|ment)\s+(?:mid[\s-]match|during|from\s+the\s+match|before\s+(?:the\s+)?(?:end|completion|final\s+whistle|full\s+time))|"
+    r"(?:in[\s-]match|injury|mid[\s-]match)\s+retirement|"
+    r"walkover\s+or\s+retirement|retirement\s+or\s+walkover|"
+    r"match\s+is\s+abandoned|abandoned\s+match"
+    r")\b",
+    re.IGNORECASE,
+)
+_SOCCER_90M_REGULATION_RE = re.compile(
+    r"\b("
+    r"90[\s-]minutes?|first\s+90\s+minutes|regular\s+play\s+plus\s+stoppage|"
+    r"regulation\s+time\s+only|regular\s+time\s+only|"
+    r"(?:excludes?|excluding|not\s+include)\s+extra\s+time|"
+    r"stoppage\s+time\s*(?:,\s*and\s*)?(?:does\s+not|excludes?)|"
+    r"extra\s+time\s+(?:and|or)\s+penalt(?:y|ies)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def classify_market_rule_dispute_risk(
+    market_or_text: Any,
+    *,
+    extra_text: str = "",
+) -> Dict[str, Any]:
+    """
+    Identify walkover/retirement/forfeit/LFMP and Soccer 90-minute regulation vs extra-time/penalties
+    rule clauses that require >= 1800s UMA proposal seasoning on `BOND1` and veto pre-final `MKR_LOCK1` clinches.
+    """
+    parts: List[str] = []
+    if isinstance(market_or_text, Mapping):
+        for k in ("question", "title", "display_label", "description", "rules", "rules_text", "slug", "eventSlug"):
+            v = market_or_text.get(k)
+            if v:
+                parts.append(str(v))
+        anc = str(market_or_text.get("ancillaryData") or "").strip()
+        if anc:
+            if anc.startswith("0x") and len(anc) > 4:
+                try:
+                    parts.append(bytes.fromhex(anc[2:]).decode("utf-8", errors="ignore"))
+                except Exception:
+                    parts.append(anc)
+            else:
+                parts.append(anc)
+    elif market_or_text:
+        parts.append(str(market_or_text))
+    if extra_text:
+        parts.append(str(extra_text))
+    blob = " ".join(parts)
+
+    reasons: List[str] = []
+    if _WALKOVER_FORFEIT_DISPUTE_RE.search(blob):
+        reasons.append("WALKOVER_FORFEIT_RETIREMENT_RULE")
+    if _SOCCER_90M_REGULATION_RE.search(blob):
+        reasons.append("SOCCER_90M_REGULATION_EXTRA_TIME_RULE")
+
+    has_risk = bool(reasons)
+    return {
+        "dispute_risk": has_risk,
+        "min_proposal_age_sec": 1800.0 if has_risk else 0.0,
+        "veto_pre_final_clinch": has_risk,
+        "reasons": reasons,
+    }
+
+
+def passes_uma_bond_dispute_guard(market: Any, ver: Mapping[str, Any]) -> bool:
+    """Enforce `proposal_age_sec >= 1800` on `BOND1` when walkover/forfeit or Soccer 90m regulation risk is present."""
+    risk = classify_market_rule_dispute_risk(market)
+    if not risk["dispute_risk"]:
+        return True
+    raw_age = ver.get("proposal_age_sec") if isinstance(ver, Mapping) else None
+    if raw_age is not None:
+        age_sec = _sf(raw_age, 0.0)
+    else:
+        eff_liv = _sf(ver.get("eff_liveness_sec") if isinstance(ver, Mapping) else None, 7200.0)
+        rem_ch = _sf(ver.get("rem_challenge_sec") if isinstance(ver, Mapping) else None, 7200.0)
+        age_sec = max(0.0, eff_liv - rem_ch)
+    return age_sec >= float(risk["min_proposal_age_sec"])
 
 
 # ---------------------------------------------------------------------------
@@ -4741,7 +4944,15 @@ async def run_protocol_v2_daemon_scan(
                         })
                     if not br_rows:
                         continue
-                    ext_w = compute_running_metar_extrema(raw_lines, unit=sp_w.unit, current_temp_c=cur_tc, current_has_t_group=cur_tg)
+                    _w_rules = str(getattr(sp_w, "rules_text", "") or getattr(sp_w, "description", "") or getattr(sp_w, "title", "") or "")
+                    ext_w = compute_running_metar_extrema(
+                        raw_lines,
+                        unit=sp_w.unit,
+                        current_temp_c=cur_tc,
+                        current_has_t_group=cur_tg,
+                        station_icao=sp_w.icao,
+                        rules_text=_w_rules,
+                    )
                     floor_w = int(ext_w["confirmed_running_high_floor"]) if ext_w else None
                     ceil_lo_w = int(ext_w["confirmed_running_low_ceil"]) if ext_w else None
                     hits_w = detect_w_prune1_metar_slate_arb(
@@ -4755,6 +4966,7 @@ async def run_protocol_v2_daemon_scan(
                         min_net_edge_usd=0.0025,
                         current_temp_c=cur_tc,
                         current_has_t_group=cur_tg,
+                        rules_text=_w_rules,
                     )
                     taker_cids: set = set()
                     for hw in hits_w:
@@ -5557,10 +5769,10 @@ def emit_single_leg_maker_lock_cand_impl(
         return False
     is_mock_emit = bool(daemon.single_scan or ("fetch_json" in daemon.__dict__))
     raw_bk_tk = (
-        bk_win.get("minimum_tick_size")
+        (getattr(daemon, "_token_tick_sizes", None) or {}).get(str(token_id))
+        or bk_win.get("minimum_tick_size")
         or bk_win.get("tick_size")
         or bk_win.get("min_tick_size")
-        or (daemon.__dict__.get("_token_tick_sizes") or {}).get(str(token_id))
     )
     try:
         bk_tk_f = float(raw_bk_tk) if raw_bk_tk not in (None, "") else 0.0
@@ -5575,17 +5787,18 @@ def emit_single_leg_maker_lock_cand_impl(
         bk_tk_f = 0.001
     elif bk_tk_f <= 0.0 and not is_mock_emit:
         bk_tk_f = 0.01
-    tb = max(0.001 if best_bid >= 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
-    ta = max(0.001 if best_ask > 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
+    explicit_subcent_tk = 0.0001 <= bk_tk_f < 0.01
+    tb = bk_tk_f if explicit_subcent_tk else max(0.001 if best_bid >= 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
+    ta = bk_tk_f if explicit_subcent_tk else max(0.001 if best_ask > 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
     reb_f = max(0.0, float(maker_rebate_ps or 0.0))
     if target_bid_px is not None:
         raw_tgt = min(float(target_bid_px), round(best_ask - ta, 4), float(max_resting_bid))
-        t_snap = max(0.001 if raw_tgt >= 0.96 - 1e-9 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
+        t_snap = bk_tk_f if explicit_subcent_tk else max(0.001 if raw_tgt >= 0.96 - 1e-9 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
         resting_bid = round(math.floor((raw_tgt + 1e-9) / t_snap) * t_snap, 4)
     else:
         step_cand = round(best_bid + tb, 4) if (best_ask - best_bid) >= (2.0 * tb - 1e-9) else best_bid
         hard_ceil = min(round(best_ask - ta, 4), float(max_resting_bid), round(float(p_model) + reb_f - float(min_maker_edge), 4))
-        t_snap = max(0.001 if min(step_cand, hard_ceil) >= 0.96 - 1e-9 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
+        t_snap = bk_tk_f if explicit_subcent_tk else max(0.001 if min(step_cand, hard_ceil) >= 0.96 - 1e-9 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
         resting_bid = round(math.floor((min(step_cand, hard_ceil) + 1e-9) / t_snap) * t_snap, 4)
     if (best_bid > 0.0 and resting_bid < round(best_bid - 1e-9, 4) and target_bid_px is None) or not (float(min_resting_bid) <= resting_bid <= float(max_resting_bid)):
         return False

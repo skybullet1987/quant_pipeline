@@ -1554,6 +1554,9 @@ class PolymarketLiveExecutor:
     @property
     def _sync_session(self) -> requests.Session:
         """Thread-safe per-thread requests.Session for concurrent asyncio.to_thread workers."""
+        ovr = getattr(self, "_sync_session_override", None)
+        if ovr is not None:
+            return ovr
         sess = getattr(self._thread_local, "session", None)
         if sess is None:
             sess = requests.Session()
@@ -1562,6 +1565,7 @@ class PolymarketLiveExecutor:
 
     @_sync_session.setter
     def _sync_session(self, sess: requests.Session) -> None:
+        self._sync_session_override = sess
         self._thread_local.session = sess
 
     def _initialize_client(self):
@@ -2655,6 +2659,7 @@ class PolymarketLiveExecutor:
         """
         fills: List[Dict[str, Any]] = []
         me = str(self.funder_address or "").lower()
+        signer_me = str(getattr(self, "signer_address", "") or "").lower()
         api_owner = str(getattr(getattr(self.client, "creds", None), "api_key", "") or "")
         target_oid_str = str(target_order_id) if target_order_id else None
         for raw in trades or []:
@@ -2680,14 +2685,18 @@ class PolymarketLiveExecutor:
                     "cash": round(size * price, 6), "transaction_hash": tx, "status": status,
                     "match_ts": match_ts, "role": "TAKER",
                 })
-                continue
+                if t_asset == str(token_id):
+                    continue
             for mo in t.get("maker_orders", []) or []:
                 mo_oid = str(mo.get("order_id") or "")
                 exact_oid_match = bool(target_oid_str and mo_oid == target_oid_str)
+                mo_addr = str(mo.get("maker_address", "") or "").lower()
+                mo_owner = str(mo.get("owner") or mo.get("api_key") or "")
                 owner_match = (
                     exact_oid_match
-                    or (me and str(mo.get("maker_address", "")).lower() == me)
-                    or (api_owner and str(mo.get("owner", "")) == api_owner)
+                    or (me and mo_addr == me)
+                    or (signer_me and mo_addr == signer_me)
+                    or (api_owner and mo_owner == api_owner)
                 )
                 mo_asset = str(mo.get("asset_id") or "")
                 asset_match = (mo_asset == str(token_id)) or (not mo_asset and t_asset == str(token_id)) or exact_oid_match
@@ -2698,10 +2707,10 @@ class PolymarketLiveExecutor:
                 side = str(mo.get("side", "")).upper()
                 if not side:
                     taker_side = str(t.get("side", "")).upper()
-                    side = {"BUY": "SELL", "SELL": "BUY"}.get(taker_side, "") if str(mo.get("asset_id", t_asset)) == t_asset else taker_side
+                    side = {"BUY": "SELL", "SELL": "BUY"}.get(taker_side, "") if (mo_asset or t_asset) == t_asset else taker_side
                 fills.append({
-                    "fill_id": f"{trade_id}:{mo.get('order_id')}",
-                    "trade_id": trade_id, "order_id": str(mo.get("order_id") or ""),
+                    "fill_id": f"{trade_id}:{mo_oid}",
+                    "trade_id": trade_id, "order_id": mo_oid,
                     "side": side, "size": size, "price": price,
                     "cash": round(size * price, 6), "transaction_hash": tx, "status": status,
                     "match_ts": match_ts, "role": "MAKER",
@@ -2725,34 +2734,47 @@ class PolymarketLiveExecutor:
             return []
         if not self.client or not self.is_authenticated or not hasattr(self.client, "get_trades"):
             return None
+
+        def _flt(items: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            res: List[Dict[str, Any]] = []
+            seen_f: set = set()
+            for f in items:
+                fid = f.get("fill_id")
+                if fid in seen_f:
+                    continue
+                if not include_failed and f["status"] == "FAILED":
+                    continue
+                if side and f["side"] != side.upper():
+                    continue
+                if order_id and f["order_id"] != str(order_id):
+                    continue
+                if after_ts and f["match_ts"] and f["match_ts"] < float(after_ts) - 1.0:
+                    continue
+                seen_f.add(fid)
+                res.append(f)
+            return res
+
         try:
-            params = None
-            if TradeParams is not None:
-                params = TradeParams(asset_id=str(token_id), after=int(after_ts) if after_ts else None)
+            after_i = int(after_ts) if after_ts else None
+            params = TradeParams(asset_id=str(token_id), after=after_i) if TradeParams is not None else None
             raw = self.client.get_trades(params=params) if params is not None else self.client.get_trades()
             if not isinstance(raw, list):
                 return None
-            fills = self.extract_account_fills(raw, token_id, target_order_id=order_id)
-            if order_id and not any(f["order_id"] == str(order_id) for f in fills):
-                # Fallback unfiltered query for complementary-token matches where parent trade asset_id is opposite token
-                raw_all = self.client.get_trades()
+            out = _flt(self.extract_account_fills(raw, token_id, target_order_id=order_id))
+            if not out:
+                # Unfiltered fallback catches MatchType.MINT / MERGE fills whose parent trade asset_id is the opposite token
+                fb_params = TradeParams(after=after_i) if (TradeParams is not None and after_i) else None
+                raw_all = self.client.get_trades(params=fb_params) if fb_params is not None else self.client.get_trades()
                 if isinstance(raw_all, list):
-                    fills = self.extract_account_fills(raw_all, token_id, target_order_id=order_id)
+                    out = _flt(self.extract_account_fills(raw_all, token_id, target_order_id=order_id))
+                if not out and fb_params is not None and order_id:
+                    raw_full = self.client.get_trades()
+                    if isinstance(raw_full, list):
+                        out = _flt(self.extract_account_fills(raw_full, token_id, target_order_id=order_id))
+            return out
         except Exception as e:
             logger.error(f"[PM-EXEC] Trade history unavailable for {token_id}: {e}")
             return None
-        out = []
-        for f in fills:
-            if not include_failed and f["status"] == "FAILED":
-                continue
-            if side and f["side"] != side.upper():
-                continue
-            if order_id and f["order_id"] != str(order_id):
-                continue
-            if after_ts and f["match_ts"] and f["match_ts"] < float(after_ts) - 1.0:
-                continue
-            out.append(f)
-        return out
 
     def get_order_fill_summary(self, order_id: str, token_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
@@ -2931,6 +2953,9 @@ class PolymarketLiveExecutor:
     CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
     NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
     NEG_RISK_ADAPTER_V2_ADDRESS = "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
+    AUTOREDEEMER_ADDRESS = "0xa1200000d0002264c9a1698e001292d00e1b00af"
+    AUTO_REDEEM_CTF_TOPIC0 = "0xb434294b5904213c83a167af0068ab82637c6fd4fac945e2abc74ed8d3f4d52a"
+    AUTO_REDEEM_NEGRISK_TOPIC0 = "0x74a51ebefec30281ec6849b727ec7916f9b1a3e5e148d6771d98315215b38b96"
     NEG_RISK_WRAPPED_COLLATERAL = "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
     DEPOSIT_WALLET_FACTORY = "0x00000000000Fb5C9ADea0298D729A0CB3823Cc07"
     POLY_PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052"
@@ -3068,8 +3093,11 @@ class PolymarketLiveExecutor:
         }
 
     def _rpc(self, method: str, params: list) -> Optional[Any]:
-        primary = os.getenv("POLYGON_RPC_URL", "https://polygon-bor-rpc.publicnode.com")
-        rpcs = [primary] + [u for u in ("https://polygon-rpc.com", "https://1rpc.io/matic") if u != primary]
+        primary = (os.getenv("POLYGON_RPC_URL") or "https://polygon-bor-rpc.publicnode.com").strip()
+        rpcs: List[str] = []
+        for u in (primary, "https://polygon-bor-rpc.publicnode.com", "https://polygon-rpc.com", "https://1rpc.io/matic"):
+            if u and u not in rpcs:
+                rpcs.append(u)
         session = getattr(self, "_sync_session", requests)
         for rpc_url in rpcs:
             try:
@@ -3077,9 +3105,12 @@ class PolymarketLiveExecutor:
                 if resp.status_code != 200:
                     continue
                 body = resp.json()
-                if "error" in body:
+                if not isinstance(body, dict) or "error" in body:
                     continue
-                return body.get("result")
+                res = body.get("result")
+                if res is None:
+                    continue
+                return res
             except Exception as e:
                 logger.debug(f"RPC {method} via {rpc_url} failed: {e}")
         return None
@@ -3094,14 +3125,16 @@ class PolymarketLiveExecutor:
     def parse_payout_redemption_logs(self, logs: List[Dict[str, Any]], condition_id: str) -> List[Dict[str, Any]]:
         """
         Extracts this account's PayoutRedemption events for `condition_id` (payout in USD),
-        supporting BOTH standard ConditionalTokens (`CTF_ADDRESS`) AND `NegRiskAdapter`
-        (`NEG_RISK_ADAPTER_ADDRESS`, used by multi-bucket Weather `#1` markets).
+        supporting standard ConditionalTokens (`CTF_ADDRESS`), `NegRiskAdapter`
+        (`NEG_RISK_ADAPTER_ADDRESS`), and Polymarket `AutoRedeemer` (`AUTOREDEEMER_ADDRESS`).
         """
         out = []
         ctf_topic0 = self._payout_redemption_topic().lower()
         nr_topic0 = self._neg_risk_payout_redemption_topic().lower()
+        ar_topics = {self.AUTO_REDEEM_CTF_TOPIC0.lower(), self.AUTO_REDEEM_NEGRISK_TOPIC0.lower()}
         me = str(self.funder_address or "").lower().replace("0x", "").rjust(64, "0")
         cond = str(condition_id or "").lower().replace("0x", "").rjust(64, "0")
+        seen_keys: set = set()
         for lg in logs or []:
             topics = [str(t).lower() for t in (lg.get("topics") or [])]
             addr = str(lg.get("address", "")).lower()
@@ -3120,8 +3153,20 @@ class PolymarketLiveExecutor:
                 if len(data) < 128:
                     continue
                 payout = int(data[64:128], 16) / 1e6
+            elif len(topics) >= 3 and topics[0] in ar_topics and addr == self.AUTOREDEEMER_ADDRESS.lower():
+                if topics[1].replace("0x", "").rjust(64, "0") != me:
+                    continue
+                if topics[2].replace("0x", "").rjust(64, "0") != cond:
+                    continue
+                if len(data) < 64:
+                    continue
+                payout = int.from_bytes(bytes.fromhex(data[0:64]), "big") / 1e6
             else:
                 continue
+            dedupe_k = (lg.get("transactionHash"), lg.get("logIndex"))
+            if dedupe_k != (None, None) and dedupe_k in seen_keys:
+                continue
+            seen_keys.add(dedupe_k)
             out.append({
                 "transaction_hash": lg.get("transactionHash"),
                 "block_number": int(str(lg.get("blockNumber", "0x0")), 16) if str(lg.get("blockNumber", "")).startswith("0x") else lg.get("blockNumber"),
@@ -3135,12 +3180,12 @@ class PolymarketLiveExecutor:
         condition_id: str,
         from_block: Optional[int] = None,
         tx_hash: Optional[str] = None,
-        max_span: int = 9000,
+        max_span: int = 15000,
     ) -> Optional[List[Dict[str, Any]]]:
         """
         Returns verified PayoutRedemption receipts for this account and condition, either
         from a specific transaction receipt or by scanning logs from `from_block` across
-        both standard `CTF` and `NegRiskAdapter`.
+        standard `CTF`, `NegRiskAdapter`, and `AutoRedeemer`.
         None = could not verify (RPC unavailable); [] = verified absence.
         """
         if self.dry_run or not self.funder_address or not condition_id:
@@ -3155,12 +3200,13 @@ class PolymarketLiveExecutor:
         head = self.get_current_block_number()
         if head is None:
             return None
-        lookback = max(int(max_span), 3000)
+        lookback = max(int(max_span), 15000)
         chunk_span = min(int(max_span), 1000) if int(max_span) > 0 else 1000
         start = int(from_block) if from_block else max(0, head - lookback)
-        found: List[Dict[str, Any]] = []
+        raw_logs: List[Dict[str, Any]] = []
         me_topic = "0x" + str(self.funder_address).lower().replace("0x", "").rjust(64, "0")
         cond_topic = "0x" + str(condition_id).lower().replace("0x", "").rjust(64, "0")
+        ar_topic0_or = [self.AUTO_REDEEM_CTF_TOPIC0, self.AUTO_REDEEM_NEGRISK_TOPIC0]
         cursor = start
         while cursor <= head:
             end = min(head, cursor + chunk_span)
@@ -3172,7 +3218,8 @@ class PolymarketLiveExecutor:
             }])
             if logs is None:
                 return None
-            found.extend(self.parse_payout_redemption_logs(logs, condition_id))
+            if logs:
+                raw_logs.extend(logs)
             nr_logs = self._rpc("eth_getLogs", [{
                 "address": self.NEG_RISK_ADAPTER_ADDRESS,
                 "fromBlock": hex(cursor),
@@ -3182,9 +3229,19 @@ class PolymarketLiveExecutor:
             if nr_logs is None:
                 return None
             if nr_logs:
-                found.extend(self.parse_payout_redemption_logs(nr_logs, condition_id))
+                raw_logs.extend(nr_logs)
+            ar_logs = self._rpc("eth_getLogs", [{
+                "address": self.AUTOREDEEMER_ADDRESS,
+                "fromBlock": hex(cursor),
+                "toBlock": hex(end),
+                "topics": [ar_topic0_or, me_topic, cond_topic],
+            }])
+            if ar_logs is None:
+                return None
+            if ar_logs:
+                raw_logs.extend(ar_logs)
             cursor = end + 1
-        return found
+        return self.parse_payout_redemption_logs(raw_logs, condition_id)
 
     def _submit_deposit_wallet_relayer_redemption(
         self, *, pk: str, funder_cs: str, nonce: int, calls: List[Dict[str, str]], condition_id: str,
@@ -5950,6 +6007,19 @@ class PolymarketLiveExecutor:
                 self.client._ClobClient__tick_sizes[token_id] = str(tick_str)
             except Exception:
                 pass
+
+    def update_ws_tick_size(self, token_id: str, tick_size: Any, ttl_sec: float = 120.0) -> Optional[float]:
+        if not token_id or tick_size in (None, "") or isinstance(tick_size, bool):
+            return None
+        try:
+            parsed = float(tick_size)
+        except (TypeError, ValueError):
+            return None
+        for vt, vs in self._CANONICAL_CLOB_TICKS:
+            if abs(parsed - vt) < 1e-9:
+                self._apply_enforced_tick_size(str(token_id), vt, vs, ttl_sec=ttl_sec)
+                return vt
+        return None
 
     def _evict_tick_size_if_tick_err(self, token_id: str, err_obj: Any) -> None:
         if not token_id:

@@ -639,16 +639,21 @@ def transform_module(rel_path: str, code: str) -> str:
                 continue
             sub_nodes, nested_defs = _shallow_walk(fn_nd.body)
             nested_scopes = [x for x in sub_nodes if isinstance(x, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))]
+            eh_names = {x.name for x in full_nodes if isinstance(x, ast.ExceptHandler) and x.name}
+            all_arg_names = {x.arg for x in full_nodes if isinstance(x, ast.arg)}
             comp_bound_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
                 | {y.arg for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.arg)}
                 | {ndf.name for ndf in nested_defs}
-                | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name)}
+                | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
                 | {y.arg for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.arg)}
+                | eh_names
             )
             nested_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name)}
+                | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name)}
                 | comp_bound_ids
+                | all_arg_names
             )
             p_names = {a.arg for a in (fn_nd.args.posonlyargs + fn_nd.args.args + fn_nd.args.kwonlyargs + ([fn_nd.args.vararg] if fn_nd.args.vararg else []) + ([fn_nd.args.kwarg] if fn_nd.args.kwarg else []))}
             imp_names = {al.asname or al.name.split(".")[0] for x in full_nodes if isinstance(x, (ast.Import, ast.ImportFrom)) for al in x.names}
@@ -668,7 +673,7 @@ def transform_module(rel_path: str, code: str) -> str:
                 else None
             )
             if self_arg_nd is not None:
-                self_uses = sum(1 for x in sub_nodes if isinstance(x, ast.Name) and x.id == "self")
+                self_uses = sum(1 for x in full_nodes if isinstance(x, ast.Name) and x.id == "self")
                 if self_uses >= 2:
                     stored["self"] = self_uses + 1
             for x in sub_nodes:
@@ -697,16 +702,52 @@ def transform_module(rel_path: str, code: str) -> str:
                 r_sa = self_arg_nd.lineno - 1
                 if lv_b[r_sa][self_arg_nd.col_offset:self_arg_nd.end_col_offset] == b"self":
                     lv_edits.setdefault(r_sa, []).append((self_arg_nd.col_offset, self_arg_nd.end_col_offset, ren_map["self"]))
-            for x in sub_nodes:
+            for x in full_nodes:
                 if isinstance(x, ast.Name) and x.id in ren_map and x.lineno == x.end_lineno and x.end_col_offset is not None:
                     r_lv = x.lineno - 1
                     if lv_b[r_lv][x.col_offset:x.end_col_offset] == x.id.encode("utf-8"):
                         lv_edits.setdefault(r_lv, []).append((x.col_offset, x.end_col_offset, ren_map[x.id]))
+            for ns in nested_scopes:
+                if sum(1 for z in ast.walk(ns) if isinstance(z, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))) != 1:
+                    continue
+                ns_ids = {id(z) for z in ast.walk(ns)}
+                outer_names = {x.id for x in sub_nodes if isinstance(x, ast.Name) and id(x) not in ns_ids} | p_names | imp_names | set(ren_map.keys())
+                iter0_names = {z.id for z in ast.walk(ns.generators[0].iter) if isinstance(z, ast.Name)} if hasattr(ns, "generators") and ns.generators else set()
+                ns_bound = {z.id for z in ast.walk(ns) if isinstance(z, ast.Name) and isinstance(z.ctx, ast.Store)}
+                lam_args = [a for a in (ns.args.posonlyargs + ns.args.args) if len(a.arg) >= 2] if isinstance(ns, ast.Lambda) and not ns.args.kwonlyargs and not ns.args.vararg and not ns.args.kwarg and not ns.args.defaults else []
+                ns_used = {z.id for z in ast.walk(ns) if isinstance(z, ast.Name)} | {a.arg for a in lam_args} | used_all
+                ns_ren: dict[str, bytes] = {}
+                c_idx = 0
+                cand_b = [b for b in sorted(ns_bound) if len(b) >= 2 and b not in outer_names and b not in iter0_names and not b.startswith("__")] + [
+                    a.arg for a in lam_args if a.arg not in outer_names and not a.arg.startswith("__")
+                ]
+                for bn in cand_b:
+                    while c_idx < len(_ID1):
+                        sn = _ID1[c_idx]
+                        c_idx += 1
+                        if sn not in ns_used:
+                            ns_used.add(sn)
+                            ns_ren[bn] = sn.encode("ascii")
+                            break
+                if ns_ren:
+                    for a_l in lam_args:
+                        if a_l.arg in ns_ren and a_l.lineno == a_l.end_lineno and a_l.end_col_offset is not None:
+                            rl = a_l.lineno - 1
+                            if lv_b[rl][a_l.col_offset:a_l.end_col_offset] == a_l.arg.encode("utf-8"):
+                                lv_edits.setdefault(rl, []).append((a_l.col_offset, a_l.end_col_offset, ns_ren[a_l.arg]))
+                    for z in ast.walk(ns):
+                        if isinstance(z, ast.Name) and z.id in ns_ren and z.lineno == z.end_lineno and z.end_col_offset is not None:
+                            rz = z.lineno - 1
+                            if lv_b[rz][z.col_offset:z.end_col_offset] == z.id.encode("utf-8"):
+                                lv_edits.setdefault(rz, []).append((z.col_offset, z.end_col_offset, ns_ren[z.id]))
         if lv_edits:
             for r_lv, eds_lv in lv_edits.items():
                 lb_lv = lv_b[r_lv]
-                for c0_l, c1_l, rep_b in sorted(eds_lv, reverse=True):
-                    lb_lv = lb_lv[:c0_l] + rep_b + lb_lv[c1_l:]
+                last_c = 10**9
+                for c0_l, c1_l, rep_b in sorted(eds_lv, key=lambda t: (t[0], t[1]), reverse=True):
+                    if c1_l <= last_c:
+                        lb_lv = lb_lv[:c0_l] + rep_b + lb_lv[c1_l:]
+                        last_c = c0_l
                 lv_b[r_lv] = lb_lv
             cand_lv = b"".join(lv_b).decode("utf-8")
             compile(cand_lv, rel_path, "exec")

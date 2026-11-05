@@ -3730,6 +3730,8 @@ class PolymarketLiveHarvester:
         self, token_id: str, pre_bal: float, submitted_ts: float,
         entry_order_id: Optional[str], exclude_tid: Optional[str],
         market_resolved: bool = False,
+        condition_id: Optional[str] = None,
+        resolution_seen_at_ts: float = 0.0,
     ) -> Dict[str, Any]:
         """
         Classifies an entry whose exchange outcome is not locally known:
@@ -3753,6 +3755,29 @@ class PolymarketLiveHarvester:
         if evidence is not None and evidence["shares"] > 0.0:
             out["verdict"] = "MATCHED_UNSETTLED"
             return out
+        now_ts = time.time()
+        age = now_ts - float(submitted_ts or 0.0)
+        res_age = (now_ts - float(resolution_seen_at_ts)) if float(resolution_seen_at_ts or 0.0) > 0.0 else age
+
+        def _resolved_purged_zero_fill(nc_reason_raw: Any, matched_qty: float, assoc_trades: Any) -> bool:
+            if not market_resolved or matched_qty > 1e-4 or bool(assoc_trades):
+                return False
+            if evidence is None or evidence.get("fills") or src != self.ONCHAIN_SOURCE:
+                return False
+            if age < ENTRY_UNEXECUTED_PROOF_AGE_S or res_age < 15.0:
+                return False
+            nc_r = str(nc_reason_raw or "").lower()
+            if not any(p in nc_r for p in ("can't be found", "cannot be found", "already canceled", "already cancelled", "market is closed")):
+                return False
+            if condition_id and hasattr(self.executor, "redemption_payouts"):
+                try:
+                    rp = self.executor.redemption_payouts(str(condition_id), float(submitted_ts or 0.0))
+                except Exception:
+                    return False
+                if rp is None or len(rp) > 0:
+                    return False
+            return True
+
         if entry_order_id:
             try:
                 info = self.executor.get_order_status(str(entry_order_id))
@@ -3767,6 +3792,10 @@ class PolymarketLiveHarvester:
                     except Exception:
                         c_res = {}
                     if not (c_res or {}).get("is_canceled"):
+                        if _resolved_purged_zero_fill((c_res or {}).get("not_canceled_reason"), matched, info.get("associate_trades")):
+                            self.executor.release_inventory(reservation_id=str(entry_order_id))
+                            out["verdict"] = "NOT_EXECUTED"
+                            out["proof"] = "RESOLVED_MARKET_PURGED_ORDER_ZERO_FILL"
                         return out
                     try:
                         info = self.executor.get_order_status(str(entry_order_id)) or info
@@ -3785,7 +3814,6 @@ class PolymarketLiveHarvester:
                     out["verdict"] = "NOT_EXECUTED"
                     out["proof"] = "TERMINAL_ZERO_FILL_ORDER_STATUS"
                     return out
-        age = time.time() - float(submitted_ts or 0.0)
         if (
             evidence is not None and not evidence["fills"]
             and src in (self.ONCHAIN_SOURCE, "CLOB_BALANCE_API") and (age >= ENTRY_UNEXECUTED_PROOF_AGE_S or market_resolved)
@@ -3813,8 +3841,11 @@ class PolymarketLiveHarvester:
                                     c_b = self.executor.cancel_order(o_bid)
                                 except Exception:
                                     c_b = {}
-                                if not (c_b or {}).get("is_canceled") or (self._num((c_b or {}).get("matched")) or 0.0) > 1e-4:
-                                    return out
+                                _b_matched = max(self._num((c_b or {}).get("matched")) or 0.0, self._num((o_b or {}).get("size_matched")) or 0.0)
+                                if not (c_b or {}).get("is_canceled") or _b_matched > 1e-4:
+                                    if not _resolved_purged_zero_fill((c_b or {}).get("not_canceled_reason"), _b_matched, (o_b or {}).get("associate_trades")):
+                                        return out
+                                    self.executor.release_inventory(reservation_id=o_bid)
             out["verdict"] = "NOT_EXECUTED"
             out["proof"] = "ONCHAIN_UNCHANGED_AND_NO_ACCOUNT_FILLS"
         return out
@@ -3950,6 +3981,32 @@ class PolymarketLiveHarvester:
             self.save_state()
             return None
 
+        if (
+            not getattr(self, "dry_run", True)
+            and not bool(pos.get("inventory_reconciled"))
+            and (
+                str(pos.get("status") or "") in {"ENTRY_OUTCOME_UNKNOWN", "NOT_EXECUTED"}
+                or str(pos.get("exit_order_status") or "") == "ENTRY_OUTCOME_UNKNOWN"
+            )
+            and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
+            and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
+            and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
+        ):
+            status = "NOT_EXECUTED"
+            if status != reason and "NOT_EXECUTED" not in str(reason or "").upper() and "UNFILLED" not in str(reason or "").upper():
+                reason = (
+                    "UNFILLED_MAKER_EXPIRED_NO_FILL"
+                    if "MAKER" in str(pos.get("box_type") or pos.get("fee_source") or "").upper()
+                    else "ENTRY_NOT_EXECUTED_AT_RESOLUTION"
+                )
+            won = False
+            record_pnl = False
+            pos["entry_shares"] = 0.0
+            pos["notional_usd"] = 0.0
+            pos["remaining_cost_basis"] = 0.0
+            pos["fee_usd"] = 0.0
+            pos["entry_fee_cash_usd"] = 0.0
+
         cum_cash = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0)
         cum_fee = float(pos.get("realized_exit_fee", 0.0) or 0.0)
         filled = float(pos.get("filled_exit_shares", 0.0) or 0.0)
@@ -3981,12 +4038,16 @@ class PolymarketLiveHarvester:
         pos["remaining_exit_shares"] = 0.0
         pos["is_liquidating"] = False
         r_up = str(reason or "").upper()
-        if "MAKER_SCALP" in r_up or "FILLED_OFFLINE" in r_up:
+        if status == "NOT_EXECUTED":
+            pos["exit_decomposition_bucket"] = "NOT_EXECUTED"
+        elif "MAKER_SCALP" in r_up or "FILLED_OFFLINE" in r_up:
             pos["exit_decomposition_bucket"] = "MAKER_SCALP"
         elif "RATCHET" in r_up:
             pos["exit_decomposition_bucket"] = "PROFIT_RATCHET"
         elif "STOP" in r_up or "UNWIND" in r_up or "SALVAGE" in r_up:
             pos["exit_decomposition_bucket"] = "SALVAGE_UNWIND"
+        elif "AUTOREDEEM" in r_up:
+            pos["exit_decomposition_bucket"] = "TERMINAL_HOLD_WIN"
         elif "REDEMPTION" in r_up or (pos.get("won") and "RESOLVED" in r_up):
             pos["exit_decomposition_bucket"] = "TERMINAL_SETTLEMENT"
         else:
@@ -4251,6 +4312,8 @@ class PolymarketLiveHarvester:
             float(pos.get("submitted_at_ts") or pos.get("entry_ts") or 0.0),
             pos.get("entry_order_id"), tid,
             market_resolved=bool(pos.get("resolved_winning_outcome") is not None),
+            condition_id=pos.get("condition_id"),
+            resolution_seen_at_ts=float(pos.get("resolution_seen_at_ts") or 0.0),
         )
         verdict = cls["verdict"]
         p_tid = str(pos.get("box_partner_trade_id") or "")
@@ -6908,6 +6971,9 @@ class PolymarketLiveHarvester:
         if sh_int < 5:
             return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_SHARES"}
         use_mock_lock_tk = self.dry_run or hasattr(getattr(self.executor, "client", None), "_mock_children")
+        cand_tk_1l = float(cand.get("leg_a_tick_size") or 0.0)
+        if 0.0001 <= cand_tk_1l <= 0.1 and hasattr(self.executor, "update_ws_tick_size") and not use_mock_lock_tk:
+            self.executor.update_ws_tick_size(tok_a, cand_tk_1l)
         if use_mock_lock_tk:
             tk_sz = cand.get("leg_a_tick_size") or 0.01
         elif hasattr(self.executor, "get_token_tick_size"):
@@ -6961,6 +7027,9 @@ class PolymarketLiveHarvester:
                 bool(cand.get("leg_a_neg_risk")), f_sh, not_u, fee_u, fr_a, fe_a,
                 "crypto_fees_v2", exp_ts, now_ts, pre_b, o_res.order_id, h_mat, unk=unk,
             )
+            _det_1l = o_res.details if isinstance(o_res.details, dict) else {}
+            pos_1l["trade_ids"] = list(dict.fromkeys(str(x) for x in (_det_1l.get("trade_ids") or []) if x))
+            pos_1l["transactions_hashes"] = list(dict.fromkeys(str(x) for x in (_det_1l.get("transactions_hashes") or _det_1l.get("transaction_hashes") or []) if x))
             pos_1l["dedupe_key"] = str(dedupe_k or "")
             pos_1l["pair_dedupe_key"] = str(
                 cand.get("pair_dedupe_key") or (f"BOND1_{mid_a}" if sleeve_src == "BOND1_UMA_RESOLUTION_CARRY" and mid_a else "")
@@ -8066,12 +8135,20 @@ class PolymarketLiveHarvester:
                     getattr(self.executor, "client", None) is not None
                     and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
                 )
-                _raw_tk_w = (bk_win_f or {}).get("minimum_tick_size") or (bk_win_f or {}).get("tick_size")
+                _custom_tk_fn = "get_token_tick_size" in getattr(self.executor, "__dict__", {})
+                _raw_tk_w = (
+                    (bk_win_f or {}).get("minimum_tick_size")
+                    or (bk_win_f or {}).get("tick_size")
+                    or (mkt_ws_s.get_tick_size(tok_a) if (mkt_ws_s and hasattr(mkt_ws_s, "get_tick_size") and not _custom_tk_fn) else None)
+                    or (candidate_box.get("leg_a_tick_size") if not _custom_tk_fn else None)
+                )
                 try:
                     _tk_wf = float(_raw_tk_w) if _raw_tk_w not in (None, "") else 0.0
                 except (TypeError, ValueError):
                     _tk_wf = 0.0
-                if _tk_wf <= 0.0 and hasattr(self.executor, "get_token_tick_size") and (_real_clob_sll or "get_token_tick_size" in getattr(self.executor, "__dict__", {})):
+                if 0.0001 <= _tk_wf <= 0.1 and _real_clob_sll and hasattr(self.executor, "update_ws_tick_size"):
+                    self.executor.update_ws_tick_size(tok_a, _tk_wf)
+                if _tk_wf <= 0.0 and hasattr(self.executor, "get_token_tick_size") and (_real_clob_sll or _custom_tk_fn):
                     try:
                         _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a)) or 0.0)
                     except Exception:
@@ -8375,6 +8452,27 @@ class PolymarketLiveHarvester:
             fee_u = round(float((summary or {}).get("fee") or 0.0), 4)
             eff_px = round((not_u + fee_u) / max(f_sh, 0.01), 5)
             h_mat = bool(candidate_box.get("hold_to_maturity", True) or avg_px >= 0.982)
+            _mkr_fills = list((summary or {}).get("fills") or [])
+            if not _mkr_fills and not self.dry_run and hasattr(self.executor, "get_account_fills"):
+                try:
+                    _mkr_fills = list(
+                        (await asyncio.to_thread(self.executor.get_account_fills, tok_a, max(0.0, now_int_ts - 60.0), "BUY", maker_oid))
+                        or []
+                    )
+                except Exception:
+                    _mkr_fills = []
+            _mkr_tids = list(
+                dict.fromkeys(
+                    [str(x) for x in ((summary or {}).get("trade_ids") or (post_res or {}).get("tradeIDs") or []) if x]
+                    + [str(f.get("id")) for f in _mkr_fills if isinstance(f, dict) and f.get("id")]
+                )
+            )
+            _mkr_txs = list(
+                dict.fromkeys(
+                    [str(x) for x in ((summary or {}).get("transactions_hashes") or (post_res or {}).get("transactionsHashes") or []) if x]
+                    + [str(f.get("transaction_hash")) for f in _mkr_fills if isinstance(f, dict) and f.get("transaction_hash")]
+                )
+            )
             now_fill_ts = time.time()
             lid = box_id if box_id not in self.active_positions else f"{box_id}_{int(now_fill_ts * 1000) % 10000}"
             st_lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
@@ -8388,6 +8486,7 @@ class PolymarketLiveHarvester:
                     mid_a, cid_a, tok_a, side_s, bool(nr_a), f_sh, not_u, fee_u, 0.0, 1.0,
                     "maker_post_only_0pct", exp_ts, now_fill_ts, pre_bal_a, maker_oid, h_mat, unk=False,
                 )
+                _pos_ok["trade_ids"], _pos_ok["transactions_hashes"] = _mkr_tids, _mkr_txs
                 _pos_ok["dedupe_key"], _pos_ok["pair_dedupe_key"] = dedupe_k, pair_dedupe_k
                 self.active_positions[lid] = _pos_ok
                 if getattr(self, "_last_known_collateral", None) is not None:
@@ -11715,11 +11814,68 @@ class PolymarketLiveHarvester:
                 self.executor.release_inventory(reservation_id=exit_oid)
             pos["exit_order_id"] = None
             pos["exit_order_status"] = "CANCELED_FOR_RESOLUTION"
+        _prev_exit_oid = str(exit_oid or pos.get("unwind_order_id") or "").strip() or None
+        _entry_oid_res = str(pos.get("entry_order_id") or pos.get("order_id") or "").strip() or None
 
         book_rem_shares = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", pos.get("entry_shares", 0.0))) or 0.0)
         rem_shares = book_rem_shares
         if not self.dry_run:
             if not won:
+                if (
+                    not bool(pos.get("inventory_reconciled"))
+                    and (
+                        pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
+                        or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
+                    )
+                    and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
+                    and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
+                    and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
+                ):
+                    _unk_buy_sh = 0.0
+                    if token_id and hasattr(self.executor, "get_account_fills"):
+                        try:
+                            _bf_u = await asyncio.to_thread(
+                                self.executor.get_account_fills,
+                                token_id,
+                                max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                                "BUY",
+                                _entry_oid_res,
+                            )
+                            if not _bf_u and _entry_oid_res is not None:
+                                _bf_u = await asyncio.to_thread(
+                                    self.executor.get_account_fills,
+                                    token_id,
+                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                                    "BUY",
+                                    None,
+                                )
+                            if isinstance(_bf_u, list) and _bf_u:
+                                _unk_buy_sh = sum(
+                                    float(f.get("size", 0.0) or 0.0)
+                                    for f in _bf_u
+                                    if isinstance(f, dict)
+                                    and str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
+                                )
+                                if _unk_buy_sh >= 0.02:
+                                    pos["inventory_reconciled"] = True
+                                    pos["trade_ids"] = list(dict.fromkeys(str(f.get("trade_id") or f.get("id")) for f in _bf_u if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))))
+                                    pos["transactions_hashes"] = list(dict.fromkeys(str(f.get("transaction_hash")) for f in _bf_u if isinstance(f, dict) and f.get("transaction_hash")))
+                        except Exception:
+                            _unk_buy_sh = 0.0
+                    _bal_u = None
+                    if _unk_buy_sh < 0.02 and token_id:
+                        try:
+                            _bal_u, _ = await asyncio.to_thread(self._wallet_token_balance, token_id)
+                        except Exception:
+                            _bal_u = None
+                    if _unk_buy_sh < 0.02 and (_bal_u is None or float(_bal_u) < 0.02):
+                        for _zk in ("expected_terminal_payout_usd", "redemption_receivable_usd", "winning_shares_held", "entry_shares", "notional_usd", "remaining_cost_basis", "fee_usd", "entry_fee_cash_usd"):
+                            pos[_zk] = 0.0
+                        pos["expected_winning_outcome"] = winning_outcome
+                        _no_exec_r = "UNFILLED_MAKER_EXPIRED_NO_FILL" if "MAKER" in str(pos.get("box_type") or pos.get("fee_source") or "").upper() else "ENTRY_NOT_EXECUTED_AT_RESOLUTION"
+                        self._close_position(tid, pos, "NOT_EXECUTED", _no_exec_r, won=False, record_pnl=False)
+                        return
+                    pos["inventory_reconciled"] = True
                 pos["expected_terminal_payout_usd"] = 0.0
                 pos["redemption_receivable_usd"] = 0.0
                 pos["winning_shares_held"] = 0.0
@@ -11742,8 +11898,12 @@ class PolymarketLiveHarvester:
                 if float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0 and token_id:
                     try:
                         extra_fills = await asyncio.to_thread(
-                            self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", None
+                            self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", _prev_exit_oid
                         )
+                        if not extra_fills and _prev_exit_oid is not None:
+                            extra_fills = await asyncio.to_thread(
+                                self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", None
+                            )
                         if isinstance(extra_fills, list) and extra_fills:
                             self._record_history_fills(pos, extra_fills, taker=False)
                     except Exception:
@@ -11771,9 +11931,19 @@ class PolymarketLiveHarvester:
                                 token_id,
                                 max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
                                 "BUY",
-                                None,
+                                _entry_oid_res,
                             )
+                            if not buy_fills and _entry_oid_res is not None:
+                                buy_fills = await asyncio.to_thread(
+                                    self.executor.get_account_fills,
+                                    token_id,
+                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                                    "BUY",
+                                    None,
+                                )
                             if isinstance(buy_fills, list) and buy_fills:
+                                pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("id")) for f in buy_fills if isinstance(f, dict) and f.get("id")]))
+                                pos["transactions_hashes"] = list(dict.fromkeys([str(x) for x in (pos.get("transactions_hashes") or []) if x] + [str(f.get("transaction_hash")) for f in buy_fills if isinstance(f, dict) and f.get("transaction_hash")]))
                                 conf_buy_sh = sum(
                                     float(f.get("size", 0.0) or 0.0)
                                     for f in buy_fills
@@ -11790,7 +11960,7 @@ class PolymarketLiveHarvester:
                             pre_recs = await asyncio.to_thread(
                                 self.executor.find_redemption_payouts,
                                 str(pos.get("condition_id") or ""),
-                                max(0, int(head_chk) - 2500) if isinstance(head_chk, int) else None,
+                                max(0, int(head_chk) - 15000) if isinstance(head_chk, int) else None,
                             )
                             if isinstance(pre_recs, list) and pre_recs:
                                 confirmed_pre_redeemed = min(
@@ -11835,7 +12005,7 @@ class PolymarketLiveHarvester:
                     self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_NO_INVENTORY", won=False)
                     return
             head = await asyncio.to_thread(self.executor.get_current_block_number)
-            _lookback_blks = 2500 if pos.get("_pre_redeemed_onchain") else 300
+            _lookback_blks = 15000 if pos.get("_pre_redeemed_onchain") else 2500
             pos["status"] = "AWAITING_ONCHAIN_SETTLEMENT"
             pos["exit_order_status"] = "AWAITING_REDEMPTION"
             pos["is_liquidating"] = False
@@ -11956,11 +12126,13 @@ class PolymarketLiveHarvester:
             return
 
         # 1. Check finalized candle resolutions from stream (binary buffered read)
-        if RESOLUTIONS_FILE.exists():
+        _default_res = PIPELINE_ROOT / "data/polymarket/finalized_market_resolutions.jsonl"
+        _res_file = RESOLUTIONS_FILE if (RESOLUTIONS_FILE.parent == DATA_DIR or RESOLUTIONS_FILE != _default_res) else (DATA_DIR / "finalized_market_resolutions.jsonl")
+        if _res_file.exists():
             try:
-                current_res_size = RESOLUTIONS_FILE.stat().st_size
+                current_res_size = _res_file.stat().st_size
                 if current_res_size > self.last_res_file_pos:
-                    with open(RESOLUTIONS_FILE, "rb") as f:
+                    with open(_res_file, "rb") as f:
                         f.seek(self.last_res_file_pos)
                         chunk = f.read()
                     complete_end = chunk.rfind(b"\n") + 1
@@ -13785,11 +13957,13 @@ class PolymarketLiveHarvester:
                 self.last_shock_file_pos = SHOCK_FILE.stat().st_size
                 logger.info(f"Tailing shock responses fallback from byte offset: {self.last_shock_file_pos}")
 
-            if RESOLUTIONS_FILE.exists():
+            _default_res = PIPELINE_ROOT / "data/polymarket/finalized_market_resolutions.jsonl"
+            _res_file = RESOLUTIONS_FILE if (RESOLUTIONS_FILE.parent == DATA_DIR or RESOLUTIONS_FILE != _default_res) else (DATA_DIR / "finalized_market_resolutions.jsonl")
+            if _res_file.exists():
                 # Replay pre-existing resolutions first: active positions may have resolved while daemon was down
                 self.last_res_file_pos = 0
                 await self.check_resolutions_and_manage_positions()
-                self.last_res_file_pos = RESOLUTIONS_FILE.stat().st_size
+                self.last_res_file_pos = _res_file.stat().st_size
                 logger.info(f"Tailing new resolutions from byte offset: {self.last_res_file_pos}")
 
             # P1: Zero-Polling Fast IPC via Linux inotify file descriptor
@@ -13952,6 +14126,11 @@ class PolymarketLiveHarvester:
                     recycle_bid_trigger=0.985,
                     on_urgent_bid=_on_ws_recycle_bid,
                     on_book_change=_on_ws_book_change,
+                    on_tick_size_change=(
+                        (lambda _tok, _tk: self.executor.update_ws_tick_size(_tok, _tk))
+                        if hasattr(self.executor, "update_ws_tick_size")
+                        else None
+                    ),
                 )
                 self._pos_market_ws.set_desired_tokens([str(p.get("token_id") or "") for p in self.active_positions.values()])
                 pos_ws_task = asyncio.create_task(self._pos_market_ws.run_forever(lambda: bool(self._shutdown_requested)))
