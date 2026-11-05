@@ -540,3 +540,311 @@ def test_production_shm_subdict_pre_split_zero_loss_and_dead_no_reward_bridge(tm
     fake_daemon.closed_positions.append({"sleeve": "MKR_REWARD_LOCKED_CARRY", "won": False})
     assert is_reward_locked_carry_live_ready(fake_daemon, 1.0) is False
 
+
+def test_pre_split_quarantine_v2_ctf_adapter_hot_reload_and_crossed_books(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from web3 import Web3
+    from src.polymarket_research.holistic_strategy_governance import DEFAULT_HOLISTIC_CONFIG
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+    from src.polymarket_research.riskless_machine_gun_engine import (
+        CTF_ADDRESS,
+        CTF_ADAPTER_V2,
+        NEG_RISK_ADAPTER_V2,
+        PUSD_ADDRESS,
+        USDC_E_ADDRESS,
+        _shm_side_to_clob_book,
+        attempt_onchain_split_position,
+    )
+    from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm
+
+    # 1. Config & default governance strictly quarantine PreSplitInventoryGun
+    assert DEFAULT_HOLISTIC_CONFIG["riskless_boxes"]["enable_pre_split_overround_gun"] is False
+    cfg_json = json.loads((PROJECT_ROOT / "config" / "polymarket_strategy_and_risk.json").read_text(encoding="utf-8"))
+    assert cfg_json["riskless_boxes"]["enable_pre_split_overround_gun"] is False
+
+    now = 1793880000.0
+    up_tok = "101047705223554566556690137231700604189599157098181477001735400979375505855882"
+    dn_tok = "31007079463241544411876302509175691935057850031139968483533287340779867204003"
+    shm_big_ovr = {
+        "timestamp_unix": now,
+        "spot_price": 80000.0,
+        "m15": {
+            "market_id": "6624916",
+            "condition_id": "0x" + "dd" * 32,
+            "expiry_ts": now + 450.0,
+            "authoritative_chainlink_open": 79950.0,
+            "UP": {"token_id": up_tok, "raw_top_bids": [[0.55, 80.0]], "raw_top_asks": [[0.56, 80.0]]},
+            "DOWN": {"token_id": dn_tok, "raw_top_bids": [[0.55, 80.0]], "raw_top_asks": [[0.56, 80.0]]},
+        },
+    }
+    ex_dry = PolymarketLiveExecutor(dry_run=True, ledger_path=tmp_path / "psg_quar.jsonl")
+    ex_dry.attempt_onchain_complete_set_merge = lambda cid, min_pairs=5.0, max_pairs=None, neg_risk=False: (
+        "0xdry_merge_q",
+        float(max_pairs or min_pairs),
+    )
+    harv_q = SimpleNamespace(
+        dry_run=False,
+        holistic_v5_live_mode=True,
+        _startup_reconciled=True,
+        global_halt_active=False,
+        executor=ex_dry,
+        active_positions={},
+        pending_entry_intents={},
+        closed_positions=[],
+        pre_split_inventory_state={},
+        _last_known_collateral=75.01,
+        _pending_collateral_refresh=False,
+        save_state=lambda: None,
+        risk_controller=None,
+    )
+    gun_prod = PreSplitInventoryGun()
+    assert asyncio.run(gun_prod.tick(harv_q, now_ts=now, fast_tick_reader=lambda _a: shm_big_ovr)) is None
+    assert not harv_q.pre_split_inventory_state.get("active")
+
+    # 2. Mid-cycle hot-reload disable (`enable_pre_split_overround_gun=False` while `active=True`)
+    #    supervises & merges at TTE <= 75s without stranding inventory AND skips $0.00 flat-merge ledger bloat!
+    harv_q.governance_snapshot = {"riskless_boxes": {"enable_pre_split_overround_gun": False}}
+    harv_q.pre_split_inventory_state.update(
+        {
+            "active": True,
+            "asset": "BTC",
+            "condition_id": "0x" + "dd" * 32,
+            "up_token_id": up_tok,
+            "down_token_id": dn_tok,
+            "expiry_ts": now + 200.0,
+            "open_spot": 79950.0,
+            "initial_shares": 12.0,
+            "up_rem": 12.0,
+            "dn_rem": 12.0,
+            "cost_usd": 12.0,
+            "realized_cash_usd": 0.0,
+            "rebate_est_usd": 0.0,
+            "opened_ts": now - 60.0,
+        }
+    )
+    harv_q._last_known_collateral = 63.01
+    shm_normal = {
+        **shm_big_ovr,
+        "timestamp_unix": now + 1.0,
+        "m15": {
+            **shm_big_ovr["m15"],
+            "expiry_ts": now + 200.0,
+            "UP": {"token_id": up_tok, "raw_top_bids": [[0.49, 80.0]], "raw_top_asks": [[0.51, 80.0]]},
+            "DOWN": {"token_id": dn_tok, "raw_top_bids": [[0.49, 80.0]], "raw_top_asks": [[0.51, 80.0]]},
+        },
+    }
+    assert asyncio.run(gun_prod.tick(harv_q, now_ts=now + 1.0, fast_tick_reader=lambda _a: shm_normal)) == "SUPERVISED"
+    shm_normal["timestamp_unix"] = now + 140.0  # TTE = 60s <= 75s -> mergePositions!
+    assert (
+        asyncio.run(gun_prod.tick(harv_q, now_ts=now + 140.0, fast_tick_reader=lambda _a: shm_normal))
+        == "PRE_SPLIT_PRE_EXPIRY_MERGED"
+    )
+    assert not harv_q.pre_split_inventory_state.get("active")
+    assert harv_q._last_known_collateral == pytest.approx(75.01)
+    # 0-fill $0.00 PRE_SPLIT_PRE_EXPIRY_MERGED no-op must NOT clutter harvester.closed_positions!
+    assert harv_q.closed_positions == []
+    # Next tick remains strictly quarantined
+    shm_big_ovr["timestamp_unix"] = now + 150.0
+    shm_big_ovr["m15"]["expiry_ts"] = now + 500.0
+    assert asyncio.run(gun_prod.tick(harv_q, now_ts=now + 150.0, fast_tick_reader=lambda _a: shm_big_ovr)) is None
+
+    # Real non-zero cycles still record accurately with strict won=(net_pnl > 0.005)
+    asyncio.run(
+        gun_prod._finalize_cycle(
+            harv_q,
+            {"asset": "BTC", "condition_id": "0x11", "initial_shares": 12.0, "cost_usd": 12.0, "realized_cash_usd": 11.96, "opened_ts": now},
+            "PRE_SPLIT_PRE_EXPIRY_MERGED",
+            now + 160.0,
+        )
+    )
+    assert len(harv_q.closed_positions) == 1
+    assert harv_q.closed_positions[-1]["won"] is False
+    assert harv_q.closed_positions[-1]["net_pnl_usd"] == pytest.approx(-0.04)
+
+    # 3. Crossed SHM book rejection (`best_bid >= best_ask`) while preserving empty-ask (`best_ask=1.0, ask_size_l1=0.0`)
+    assert _shm_side_to_clob_book(
+        {"token_id": up_tok, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.97, 50.0]], "raw_top_asks": [[0.75, 50.0]]}
+    ) is None
+    assert _shm_side_to_clob_book(
+        {"token_id": up_tok, "best_bid": 0.50, "bid_size_l1": 25.0, "best_ask": 0.50, "ask_size_l1": 25.0}
+    ) is None
+    empty_ask_bk = _shm_side_to_clob_book(
+        {"token_id": up_tok, "best_bid": 0.53, "bid_size_l1": 40.0, "raw_top_bids": [[0.53, 40.0]], "best_ask": 1.0, "ask_size_l1": 0.0, "raw_top_asks": []}
+    )
+    assert empty_ask_bk is not None and len(empty_ask_bk["bids"]) == 1 and empty_ask_bk["asks"] == []
+
+    shm_crossed_5m = {
+        "timestamp_unix": now,
+        "spot_price": 185.0,
+        "chainlink_proxy_spot": 185.0,
+        "m5": {
+            "market_id": "sol_5m_crossed",
+            "condition_id": "0x" + "ee" * 32,
+            "expiry_ts": now + 180.0,
+            "finalized_open": 184.9,
+            "UP": {"token_id": up_tok, "age_book_ms": 80.0, "best_bid": 0.97, "best_ask": 0.75, "raw_top_bids": [[0.97, 50.0]], "raw_top_asks": [[0.75, 50.0]]},
+            "DOWN": {"token_id": dn_tok, "age_book_ms": 80.0, "best_bid": 0.25, "best_ask": 0.27, "raw_top_bids": [[0.25, 50.0]], "raw_top_asks": [[0.27, 50.0]]},
+        },
+    }
+    gun_test = PreSplitInventoryGun(cap_usd=12.0)
+    harv_x = SimpleNamespace(
+        dry_run=False, _startup_reconciled=True, global_halt_active=False, executor=ex_dry,
+        active_positions={}, pending_entry_intents={}, closed_positions=[], pre_split_inventory_state={},
+        _last_known_collateral=60.0, _pending_collateral_refresh=False, save_state=lambda: None, risk_controller=None,
+    )
+    assert asyncio.run(gun_test.tick(harv_x, now_ts=now, fast_tick_reader=lambda _a: shm_crossed_5m)) is None
+    (tmp_path / "pm_fast_tick_SOL.json").write_text(json.dumps(shm_crossed_5m), encoding="utf-8")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    bks_s2 = hydrate_fast_s2_from_shm(SimpleNamespace(), now_ts=now)
+    assert up_tok not in bks_s2
+    assert dn_tok in bks_s2
+
+    # 4. PreSplitInventoryGun NEVER calls _preempt_resting_maker_anchors when free cash is tied up in resting Maker orders
+    preempt_calls: List[Any] = []
+    harv_no_preempt = SimpleNamespace(
+        dry_run=False,
+        _startup_reconciled=True,
+        global_halt_active=False,
+        executor=ex_dry,
+        active_positions={},
+        pending_entry_intents={"MKR1": {"notional_usd": 52.0}},
+        closed_positions=[],
+        pre_split_inventory_state={},
+        _last_known_collateral=60.0,  # $8.00 free < $14.00 required
+        _pending_collateral_refresh=False,
+        _preempt_resting_maker_anchors=lambda **kw: preempt_calls.append(kw) or 1,
+        save_state=lambda: None,
+        risk_controller=None,
+    )
+    assert asyncio.run(gun_test.tick(harv_no_preempt, now_ts=now + 5.0, fast_tick_reader=lambda _a: shm_big_ovr)) is None
+    assert preempt_calls == []
+
+    # 5. Live-mocked attempt_onchain_split_position routes binary pUSD splits through CTF_ADAPTER_V2 + allowance check + sig_type
+    import src.polymarket_research.riskless_machine_gun_engine as rmg_mod
+
+    relayer_batches: List[Any] = []
+    allowance_updates: List[Any] = []
+    mock_state = {"pusd_bal": 75_000_000, "usdce_bal": 0, "allowance": 0}
+
+    class _MockFn:
+        def __init__(self, val: Any) -> None:
+            self._val = val
+
+        def call(self) -> Any:
+            return self._val
+
+    class _MockErc20:
+        def __init__(self, addr: str) -> None:
+            self._addr = addr.lower()
+
+        @property
+        def functions(self) -> Any:
+            addr = self._addr
+            return SimpleNamespace(
+                balanceOf=lambda _f: _MockFn(
+                    mock_state["pusd_bal"] if addr == PUSD_ADDRESS.lower() else mock_state["usdce_bal"]
+                ),
+                allowance=lambda _f, _s: _MockFn(mock_state["allowance"]),
+            )
+
+    mock_w3 = SimpleNamespace(
+        eth=SimpleNamespace(
+            contract=lambda address, abi: _MockErc20(address),
+            account=SimpleNamespace(from_key=lambda _pk: SimpleNamespace(address="0x" + "22" * 20)),
+            wait_for_transaction_receipt=lambda _tx, **_kw: {"status": 1},
+        )
+    )
+    monkeypatch.setattr(rmg_mod, "get_fast_polygon_web3", lambda **_kw: mock_w3)
+    ex_v2 = SimpleNamespace(
+        dry_run=False,
+        funder_address="0x013A2474454fBd8738cff6a7f204eF1bc377F4e9",
+        private_key="0x" + "11" * 32,
+        signature_type=2,
+        _dispatch_funder_calls=lambda _w3, _W3, _pk, _st, _f, _s, calls, label="": (
+            relayer_batches.append((calls, label)) or "0xv2_split_tx"
+        ),
+        invalidate_collateral_cache=lambda: None,
+        client=SimpleNamespace(update_balance_allowance=lambda params: allowance_updates.append(params)),
+    )
+    cid_bin = "0x" + "ab" * 32
+    # 5a. Binary pUSD with allowance == 0 -> prepends approve(CTF_ADAPTER_V2, MAX_UINT256) + splitPosition on CTF_ADAPTER_V2
+    sp_v2_a = attempt_onchain_split_position(ex_v2, cid_bin, 12.0, neg_risk=False, up_token_id=up_tok, down_token_id=dn_tok)
+    assert sp_v2_a["success"] is True
+    assert sp_v2_a["target"] == Web3.to_checksum_address(CTF_ADAPTER_V2)
+    assert len(relayer_batches[-1][0]) == 2
+    assert relayer_batches[-1][0][0][0] == Web3.to_checksum_address(PUSD_ADDRESS)
+    assert relayer_batches[-1][0][1][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
+    assert relayer_batches[-1][0][1][1].startswith("0x72ce4275")
+    assert len(allowance_updates) == 2 and all(getattr(p, "signature_type", None) == 2 for p in allowance_updates)
+
+    # 5b. Binary pUSD with sufficient allowance -> single splitPosition call on CTF_ADAPTER_V2
+    mock_state["allowance"] = 10**30
+    sp_v2_b = attempt_onchain_split_position(ex_v2, cid_bin, 12.0, neg_risk=False, up_token_id=up_tok, down_token_id=dn_tok)
+    assert sp_v2_b["success"] is True and len(relayer_batches[-1][0]) == 1
+    assert relayer_batches[-1][0][0][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
+
+    # 5c. NegRisk pUSD -> NEG_RISK_ADAPTER_V2; Legacy USDC.e binary -> raw CTF_ADDRESS
+    sp_nr = attempt_onchain_split_position(ex_v2, cid_bin, 12.0, neg_risk=True)
+    assert sp_nr["target"] == Web3.to_checksum_address(NEG_RISK_ADAPTER_V2)
+    mock_state["pusd_bal"] = 0
+    mock_state["usdce_bal"] = 75_000_000
+    sp_legacy = attempt_onchain_split_position(ex_v2, cid_bin, 12.0, neg_risk=False)
+    assert sp_legacy["target"] == Web3.to_checksum_address(CTF_ADDRESS)
+
+    # 6. Symmetric binary merge in PolymarketLiveExecutor.attempt_onchain_complete_set_merge:
+    #    When USDC.e-CTF shares exist and CTF.isApprovedForAll(funder, CTF_ADAPTER_V2) is True,
+    #    routes mergePositions(PUSD_ADDRESS, ...) through CTF_ADAPTER_V2 so proceeds wrap back to pUSD!
+    merge_dispatches: List[Any] = []
+    merge_state = {"approved_v2": True}
+    real_w3 = Web3()
+
+    class _MockCtfContract:
+        def __init__(self, real_c: Any) -> None:
+            self._real_c = real_c
+
+        def encode_abi(self, fn_name: str, args: List[Any]) -> str:
+            return self._real_c.encode_abi(fn_name, args=args)
+
+        @property
+        def functions(self) -> Any:
+            return SimpleNamespace(
+                getCollectionId=lambda _p, _c, idx: _MockFn((b"\x01" if idx == 1 else b"\x02") * 32),
+                getPositionId=lambda col, col_id: _MockFn(
+                    (1000 if col.lower() == USDC_E_ADDRESS.lower() else 2000) + col_id[0]
+                ),
+                balanceOf=lambda _f, pid: _MockFn(12_000_000 if pid in (1001, 1002) else 0),
+                isApprovedForAll=lambda _f, _op: _MockFn(merge_state["approved_v2"]),
+            )
+
+    def _mock_merge_contract(address: str, abi: Any) -> Any:
+        return _MockCtfContract(real_w3.eth.contract(address=address, abi=abi))
+
+    mock_merge_w3 = SimpleNamespace(
+        eth=SimpleNamespace(
+            contract=_mock_merge_contract,
+            account=SimpleNamespace(from_key=lambda _pk: SimpleNamespace(address="0x" + "22" * 20)),
+            get_balance=lambda _a: int(1e18),
+            wait_for_transaction_receipt=lambda _tx, **_kw: {"status": 1},
+        )
+    )
+    monkeypatch.setattr(rmg_mod, "get_fast_polygon_web3", lambda **_kw: mock_merge_w3)
+    ex_merge = PolymarketLiveExecutor.__new__(PolymarketLiveExecutor)
+    ex_merge.dry_run = False
+    ex_merge.signature_type = 2
+    ex_merge._funder_is_gnosis_safe = True
+    ex_merge.private_key = "0x" + "11" * 32
+    ex_merge.funder_address = "0x013A2474454fBd8738cff6a7f204eF1bc377F4e9"
+    ex_merge.invalidate_collateral_cache = lambda: None
+    ex_merge._dispatch_funder_calls = lambda _w3, _W3, _pk, _st, _f, _s, targets, _cid: (
+        merge_dispatches.append(targets) or "0xv2_merge_tx"
+    )
+
+    m_res_v2 = ex_merge.attempt_onchain_complete_set_merge(cid_bin, min_pairs=5.0, max_pairs=12.0, neg_risk=False)
+    assert m_res_v2 == ("0xv2_merge_tx", 12.0)
+    assert merge_dispatches[-1][0][0] == Web3.to_checksum_address(CTF_ADAPTER_V2)
+    assert PUSD_ADDRESS[2:].lower() in merge_dispatches[-1][0][1].lower()
+
+    merge_state["approved_v2"] = False
+    m_res_legacy = ex_merge.attempt_onchain_complete_set_merge(cid_bin, min_pairs=5.0, max_pairs=12.0, neg_risk=False)
+    assert m_res_legacy == ("0xv2_merge_tx", 12.0)
+    assert merge_dispatches[-1][0][0] == Web3.to_checksum_address(CTF_ADDRESS)
+    assert USDC_E_ADDRESS[2:].lower() in merge_dispatches[-1][0][1].lower()

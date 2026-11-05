@@ -865,19 +865,21 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
                 tk_id = str(sb.get("token_id") or "")
                 age_ms = float(sb.get("age_book_ms") if sb.get("age_book_ms") is not None else 9999.0)
                 if tk_id and age_ms <= 950.0:
-                    rb = sb.get("raw_top_bids") or []
-                    ra = sb.get("raw_top_asks") or []
-                    if rb or ra:
+                    rb = [r for r in (sb.get("raw_top_bids") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and float(r[0]) > 0 and float(r[1]) > 0]
+                    ra = [r for r in (sb.get("raw_top_asks") or []) if isinstance(r, (list, tuple)) and len(r) >= 2 and float(r[0]) > 0 and float(r[1]) > 0]
+                    bb_s = max((float(r[0]) for r in rb), default=float(sb.get("best_bid") or 0.0))
+                    ba_s = min((float(r[0]) for r in ra), default=(float(sb["best_ask"]) if sb.get("best_ask") is not None and 0.0 < float(sb["best_ask"]) < 1.0 else 0.0))
+                    if (rb or ra) and not (bb_s > 0.0 and ba_s > 0.0 and bb_s >= ba_s):
                         raw_tk = sb.get("minimum_tick_size") or sb.get("tick_size")
                         if raw_tk in (None, ""):
                             has_3dec = any(
-                                len(r) >= 2 and float(r[1]) > 0 and abs(round(float(r[0]) * 100.0) - float(r[0]) * 100.0) > 1e-6
-                                for r in (list(rb) + list(ra))
+                                abs(round(float(r[0]) * 100.0) - float(r[0]) * 100.0) > 1e-6
+                                for r in (rb + ra)
                             )
                             raw_tk = "0.001" if has_3dec else "0.01"
                         shm_books[tk_id] = {
-                            "bids": [{"price": str(r[0]), "size": str(r[1])} for r in rb if len(r) >= 2 and float(r[1]) > 0],
-                            "asks": [{"price": str(r[0]), "size": str(r[1])} for r in ra if len(r) >= 2 and float(r[1]) > 0],
+                            "bids": [{"price": str(r[0]), "size": str(r[1])} for r in rb],
+                            "asks": [{"price": str(r[0]), "size": str(r[1])} for r in ra],
                             "minimum_tick_size": str(raw_tk),
                         }
     return shm_books

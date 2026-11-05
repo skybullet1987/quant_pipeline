@@ -656,8 +656,20 @@ if lh_path.exists():
     for c in closed_norm:
         cum = round(cum + float(c.get("net_pnl_usd", 0.0) or 0.0), 2)
         equity_curve.append(cum)
-    for c in reversed(grouped_closed[-24:]):
-        wp = round(float(c.get("net_pnl_usd", 0.0) or 0.0), 2)
+    _BENIGN_BOX_UNWINDS = {
+        "PRE_SPLIT_PRE_EXPIRY_MERGED",
+        "COMPLETE_SET_ONCHAIN_MERGED",
+        "SYNTHETIC_COMPLEMENT_MERGED",
+        "CROSS_CONDITION_COMPLEMENT_MERGED",
+        "CTF_COMPLETE_SET_MERGED",
+        "OVERROUND_SWEEP_REJECTED_MERGED_BACK",
+    }
+    for c in reversed(grouped_closed):
+        _pnl_v = float(c.get("net_pnl_usd", c.get("realized_pnl_usd", 0.0)) or 0.0)
+        _rsn_c = str(c.get("close_reason") or c.get("status") or "").strip().upper()
+        if abs(_pnl_v) < 0.005 and (_rsn_c in _BENIGN_BOX_UNWINDS or "MERGED" in _rsn_c):
+            continue
+        wp = round(_pnl_v, 2)
         rp = round(float(c.get("_raw_pnl_usd", wp) or 0.0), 2)
         adj = bool(c.get("wallet_reconciled") or c.get("_fee_reconciled"))
         _raw_ts_c = c.get("exit_time_utc") or c.get("settled_at_utc") or c.get("closed_at_ts") or c.get("exit_ts") or c.get("entry_time_utc") or c.get("entry_ts") or ""
@@ -683,8 +695,11 @@ if lh_path.exists():
             "fee_reconciled": adj,
             "reason": c.get("close_reason") or c.get("status"),
         })
+        if len(recent_closed) >= 24:
+            break
     _dcfg = strat_cfg.get("directional") or {}
     _bcfg = strat_cfg.get("riskless_boxes") or {}
+    _ps_en = bool(_bcfg.get("enable_pre_split_overround_gun", False))
     _min_dir_eq_d = float(_dcfg.get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
     _riskless_only_d = bool(_dcfg.get("riskless_only_mode", False))
     if _riskless_only_d:
@@ -701,7 +716,12 @@ if lh_path.exists():
     live_strat_meta = [
         ("BOND1_UMA_RESOLUTION_CARRY", f"LIVE ACTIVE — 0%-Fee UMA Resolution Carry ({_b1_pool_pct}% Pool Cap, <=${_b1_mkt_cap}/mkt, Preemptable)"),
         ("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)"),
-        ("PRE_SPLIT_OVERROUND_MACHINE_GUN", "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"),
+        (
+            "PRE_SPLIT_OVERROUND_MACHINE_GUN",
+            "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"
+            if _ps_en
+            else "PAUSED — 7% Crypto Fee & Split-Latency Quarantine (Zero Capital Lockup)",
+        ),
         ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
         ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
         ("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
@@ -730,7 +750,11 @@ if lh_path.exists():
     for sl_k, desc_s in live_strat_meta:
         seen_ls.add(sl_k)
         st_d = strat_stats.get(sl_k) or {"sleeve": sl_k, "open": 0, "flat_merges": 0, "today_w": 0, "today_l": 0, "today_pnl": 0.0, "v51_w": 0, "v51_l": 0, "v51_pnl": 0.0, "epoch_w": 0, "epoch_l": 0, "epoch_pnl": 0.0}
-        _act_rl = _is_pure_riskless_sleeve(sl_k) and (not (_riskless_only_d and sl_k.upper() in _UNHEDGED_DIR_SLEEVES))
+        _act_rl = (
+            _is_pure_riskless_sleeve(sl_k)
+            and (not (_riskless_only_d and sl_k.upper() in _UNHEDGED_DIR_SLEEVES))
+            and (sl_k != "PRE_SPLIT_OVERROUND_MACHINE_GUN" or _ps_en)
+        )
         live_strategies.append({**st_d, "desc": desc_s, "is_active_riskless": _act_rl})
     for sl_k, st_d in strat_stats.items():
         if sl_k not in seen_ls:
@@ -1213,7 +1237,10 @@ if a_path.exists():
             else pend_zf_mkr if slv == "ZF_INTRADAY_MAKER_BOX"
             else pend_by_slv.get(slv, 0)
         )
-        _is_paused_rb = slv.upper() in _PAUSED_RB_SET
+        _is_paused_rb = slv.upper() in _PAUSED_RB_SET or (
+            slv.upper() == "PRE_SPLIT_OVERROUND_MACHINE_GUN"
+            and not bool((strat_cfg.get("riskless_boxes") or {}).get("enable_pre_split_overround_gun", False))
+        )
         _is_mg = ("MACHINE_GUN" in slv.upper()) or slv.upper().startswith("MG_") or (slv in machine_gun_sleeves)
         g8_prom = (not _is_paused_rb) and bool(mm.get("grad8_live_promoted") or m.get("grad8_live_promoted") or (c_n >= 8 and l_n == 0 and float(m.get("realized_pnl_t1000_usd", 0.0) or 0.0) > 0))
         if g8_prom:

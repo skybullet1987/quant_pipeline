@@ -2868,9 +2868,12 @@ class PolymarketDualFeed1HRecorder:
                             quiet_toks = [
                                 tok_q
                                 for tok_q, role_q in subscribed_tokens.items()
-                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M")
+                                if role_q in ("UP", "DOWN", "UP_15M", "DOWN_15M", "UP_5M", "DOWN_5M")
                                 and role_q in self.books
-                                and (now_loop - self.books[role_q].last_book_update_ts) >= 1.8
+                                and (
+                                    (now_loop - self.books[role_q].last_book_update_ts) >= 1.8
+                                    or (self.books[role_q].bids and self.books[role_q].asks and max(self.books[role_q].bids) >= min(self.books[role_q].asks))
+                                )
                             ]
                             if quiet_toks:
                                 await self._refresh_quiet_books_batch(quiet_toks, subscribed_tokens)

@@ -147,7 +147,7 @@
     "growth_min_bps_per_hour": 6.0,
     "scale_max_lockup_hours": 168.0,
     "scale_min_bps_per_hour": 3.5,
-    "enable_pre_split_overround_gun": true,
+    "enable_pre_split_overround_gun": false,
     "enable_pre_split_dual_maker_asks": false,
     "pre_split_require_live_overround": true,
     "pre_split_min_free_cash_usd": 14.0,

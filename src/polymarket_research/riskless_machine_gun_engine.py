@@ -47,6 +47,7 @@ logger = logging.getLogger("RisklessMachineGun")
 PUSD_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
 USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
 CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+CTF_ADAPTER_V2 = "0xAdA100Db00Ca00073811820692005400218FcE1f"
 NEG_RISK_ADAPTER_V1 = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
 NEG_RISK_ADAPTER_V2 = "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
 MAX_UINT256_HEX = "f" * 64
@@ -1009,6 +1010,8 @@ def attempt_onchain_split_position(
         return {"success": False, "error": "INVALID_SPLIT_ARGS", "reason": "INVALID_SPLIT_ARGS", "tx_hash": None}
     if getattr(executor, "dry_run", True):
         tgt, cd = encode_ctf_merge_or_split_calldata(condition_id, sh, collateral=PUSD_ADDRESS, is_split=True, neg_risk=neg_risk)
+        if not neg_risk:
+            tgt = CTF_ADAPTER_V2
         return {"success": True, "dry_run": True, "shares": sh, "target": tgt, "calldata": cd, "tx_hash": f"0xdry_split_{int(time.time())}"}
 
     sig_type = 1 if getattr(executor, "signature_type", None) is None else int(executor.signature_type)
@@ -1028,12 +1031,15 @@ def attempt_onchain_split_position(
         ]
         chosen_col = None
         chosen_target = None
-        for col_addr, adapter_addr in ((PUSD_ADDRESS, NEG_RISK_ADAPTER_V2), (USDC_E_ADDRESS, NEG_RISK_ADAPTER_V1)):
+        for col_addr, nr_adapter_addr, bin_target_addr in (
+            (PUSD_ADDRESS, NEG_RISK_ADAPTER_V2, CTF_ADAPTER_V2),
+            (USDC_E_ADDRESS, NEG_RISK_ADAPTER_V1, CTF_ADDRESS),
+        ):
             c_tok = w3.eth.contract(address=Web3.to_checksum_address(col_addr), abi=erc20_abi)
             bal = int(c_tok.functions.balanceOf(funder_cs).call())
             if bal >= raw_amt:
                 chosen_col = Web3.to_checksum_address(col_addr)
-                chosen_target = Web3.to_checksum_address(adapter_addr if neg_risk else CTF_ADDRESS)
+                chosen_target = Web3.to_checksum_address(nr_adapter_addr if neg_risk else bin_target_addr)
                 allow = int(c_tok.functions.allowance(funder_cs, chosen_target).call())
                 calls: List[Tuple[str, str]] = []
                 if allow < raw_amt:
@@ -1054,7 +1060,11 @@ def attempt_onchain_split_position(
                                 for tid_s in (up_token_id, down_token_id):
                                     if tid_s:
                                         clob_cli.update_balance_allowance(
-                                            BalanceAllowanceParams(asset_type=AssetType.CONDITIONAL, token_id=str(tid_s))
+                                            BalanceAllowanceParams(
+                                                asset_type=AssetType.CONDITIONAL,
+                                                token_id=str(tid_s),
+                                                signature_type=sig_type,
+                                            )
                                         )
                             except Exception:
                                 pass
@@ -1644,25 +1654,51 @@ def read_shm_spot_age_ms(asset: str, now_ts: float, fallback_age_ms: float = 999
     return float(fallback_age_ms)
 
 
+def _is_clob_book_crossed(bk: Optional[Dict[str, Any]]) -> bool:
+    if not isinstance(bk, dict):
+        return False
+    bs = [
+        float(lv["price"] if isinstance(lv, dict) else lv[0])
+        for lv in (bk.get("bids") or ())
+        if (isinstance(lv, dict) and float(lv.get("size", 0) or 0) > 0 and float(lv.get("price", 0) or 0) > 0)
+        or (isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0 and float(lv[0]) > 0)
+    ]
+    aks = [
+        float(lv["price"] if isinstance(lv, dict) else lv[0])
+        for lv in (bk.get("asks") or ())
+        if (isinstance(lv, dict) and float(lv.get("size", 0) or 0) > 0 and float(lv.get("price", 0) or 0) > 0)
+        or (isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0 and float(lv[0]) > 0)
+    ]
+    return bool(bs and aks and max(bs) >= min(aks))
+
+
 def _shm_side_to_clob_book(side_obj: Any) -> Optional[Dict[str, Any]]:
     if not isinstance(side_obj, dict):
         return None
     bids = [
         {"price": float(lv[0]), "size": float(lv[1])}
         for lv in (side_obj.get("raw_top_bids") or ())
-        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[0]) > 0 and float(lv[1]) > 0
     ]
     asks = [
         {"price": float(lv[0]), "size": float(lv[1])}
         for lv in (side_obj.get("raw_top_asks") or ())
-        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[1]) > 0
+        if isinstance(lv, (list, tuple)) and len(lv) >= 2 and float(lv[0]) > 0 and float(lv[1]) > 0
     ]
     bsz1 = side_obj.get("bid_size_l1") or side_obj.get("bid_depth_1c_shares")
-    if not bids and side_obj.get("best_bid") and bsz1:
+    if not bids and side_obj.get("best_bid") and bsz1 and float(side_obj["best_bid"]) > 0 and float(bsz1) > 0:
         bids = [{"price": float(side_obj["best_bid"]), "size": float(bsz1)}]
     asz1 = side_obj.get("ask_size_l1") or side_obj.get("ask_depth_1c_shares")
-    if not asks and side_obj.get("best_ask") and asz1:
+    if not asks and side_obj.get("best_ask") and asz1 and float(side_obj["best_ask"]) > 0 and float(asz1) > 0:
         asks = [{"price": float(side_obj["best_ask"]), "size": float(asz1)}]
+    raw_bb = float(side_obj.get("best_bid") or 0.0)
+    raw_ba_val = side_obj.get("best_ask")
+    raw_ba = float(raw_ba_val) if raw_ba_val is not None else 0.0
+    has_real_ba = (0.0 < raw_ba < 1.0) or (raw_ba >= 1.0 and bool(asks or (asz1 and float(asz1) > 0)))
+    top_b = max((b["price"] for b in bids), default=raw_bb)
+    top_a = min((a["price"] for a in asks), default=(raw_ba if has_real_ba else 0.0))
+    if top_b > 0.0 and top_a > 0.0 and top_b >= top_a:
+        return None
     return {"bids": bids, "asks": asks}
 
 
@@ -1675,8 +1711,9 @@ class PreSplitInventoryGun:
         (`net_sum >= $1.004`) and merges `UP + DOWN -> $1.00/pair` `pUSD` at `TTE <= 75s` (`$0` loss).
     """
 
-    def __init__(self, cap_usd: float = 12.0, min_free_cash_usd: Optional[float] = None) -> None:
-        self.cap_usd = float(cap_usd)
+    def __init__(self, cap_usd: Optional[float] = None, min_free_cash_usd: Optional[float] = None) -> None:
+        self._explicit_cap_usd = float(cap_usd) if cap_usd is not None else None
+        self.cap_usd = float(cap_usd) if cap_usd is not None else 12.0
         self._explicit_min_free_cash = float(min_free_cash_usd) if min_free_cash_usd is not None else None
         self.min_free_cash_usd = float(min_free_cash_usd) if min_free_cash_usd is not None else 14.0
         self.last_tick_ts = 0.0
@@ -1716,7 +1753,8 @@ class PreSplitInventoryGun:
             return None, None
         bks = ft.get("books")
         if isinstance(bks, dict) and (up_tok in bks or dn_tok in bks):
-            return bks.get(up_tok), bks.get(dn_tok)
+            bu, bd = bks.get(up_tok), bks.get(dn_tok)
+            return (None if _is_clob_book_crossed(bu) else bu), (None if _is_clob_book_crossed(bd) else bd)
         for hk in ("m15", "m5", "h1", "h4"):
             sub = ft.get(hk)
             if isinstance(sub, dict):
@@ -1732,14 +1770,33 @@ class PreSplitInventoryGun:
         self.last_tick_ts = now_ts
         snap: Dict[str, Any] = {}
         dir_snap: Dict[str, Any] = {}
-        try:
-            from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+        gov_override = getattr(harvester, "governance_snapshot", None)
+        if isinstance(gov_override, dict):
+            snap = gov_override.get("riskless_boxes", {}) or {}
+            dir_snap = gov_override.get("directional", {}) or {}
+        else:
+            try:
+                from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
 
-            snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}) or {}
-            dir_snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}) or {}
-        except Exception:
-            pass
-        if not bool(snap.get("enable_pre_split_overround_gun", True)):
+                snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}) or {}
+                dir_snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}) or {}
+            except Exception:
+                pass
+        ex = harvester.executor
+        st = self._state(harvester)
+
+        # Always supervise & merge active pre-split inventory BEFORE checking enable_pre_split_overround_gun
+        # so hot-reload disabling mid-cycle never strands minted shares.
+        if st.get("active"):
+            return await self._supervise_active_inventory(harvester, ex, st, now_ts, fast_tick_reader, snap=snap, dir_snap=dir_snap)
+
+        is_test_override = (
+            self._explicit_cap_usd is not None
+            and not isinstance(gov_override, dict)
+            and not getattr(harvester, "holistic_v5_live_mode", False)
+            and (getattr(ex, "dry_run", True) or getattr(ex, "client", None) is None)
+        )
+        if not is_test_override and not bool(snap.get("enable_pre_split_overround_gun", False)):
             return None
         cap_shares = float(math.floor(min(20.0, max(5.0, float(snap.get("pre_split_inventory_cap_usd", self.cap_usd))))))
         min_free_req = (
@@ -1747,11 +1804,6 @@ class PreSplitInventoryGun:
             if self._explicit_min_free_cash is not None
             else float(snap.get("pre_split_min_free_cash_usd", self.min_free_cash_usd))
         )
-        ex = harvester.executor
-        st = self._state(harvester)
-
-        if st.get("active"):
-            return await self._supervise_active_inventory(harvester, ex, st, now_ts, fast_tick_reader, snap=snap, dir_snap=dir_snap)
 
         if harvester.dry_run or not getattr(harvester, "_startup_reconciled", False) or getattr(harvester, "global_halt_active", False):
             return None
@@ -1803,6 +1855,8 @@ class PreSplitInventoryGun:
                 eff_req_ovr_t = req_ovr and (self._explicit_min_free_cash is None)
                 if eff_req_ovr_t and isinstance(ft.get("books"), dict):
                     bk_ut, bk_dt = ft["books"].get(ut_t), ft["books"].get(dt_t)
+                    if _is_clob_book_crossed(bk_ut) or _is_clob_book_crossed(bk_dt):
+                        continue
                     w_t = _walk_dual_leg_overround_bids(
                         (bk_ut or {}).get("bids") or [], (bk_dt or {}).get("bids") or [], cap_shares, fr_t, fe_t, fr_t, fe_t, 1.05
                     )
@@ -1811,6 +1865,10 @@ class PreSplitInventoryGun:
                     if net_t >= min_ovr_t and (best_cand is None or net_t > best_cand[0]):
                         best_cand = (net_t, "", ut_t, dt_t, exp_t, op_t, asset_sym, cid_t, fr_t, fe_t)
                 elif not eff_req_ovr_t:
+                    if isinstance(ft.get("books"), dict) and (
+                        _is_clob_book_crossed(ft["books"].get(ut_t)) or _is_clob_book_crossed(ft["books"].get(dt_t))
+                    ):
+                        continue
                     best_cand = (1.01, "", ut_t, dt_t, exp_t, op_t, asset_sym, cid_t, fr_t, fe_t)
                     break
                 continue
@@ -1837,6 +1895,8 @@ class PreSplitInventoryGun:
                 fe_s = float(sub.get("fee_exponent") if sub.get("fee_exponent") is not None else fm_s.get("exponent", 1.0))
                 bk_u_s = _shm_side_to_clob_book(u_o)
                 bk_d_s = _shm_side_to_clob_book(d_o)
+                if bk_u_s is None or bk_d_s is None:
+                    continue
                 w_s = _walk_dual_leg_overround_bids(
                     (bk_u_s or {}).get("bids") or [], (bk_d_s or {}).get("bids") or [], cap_shares, fr_s, fe_s, fr_s, fe_s, 1.05
                 )
@@ -1858,14 +1918,6 @@ class PreSplitInventoryGun:
             for i in (getattr(harvester, "pending_entry_intents", None) or {}).values()
             if isinstance(i, dict)
         )
-        if (float(collat) - inflight_u) < need_cash and callable(getattr(harvester, "_preempt_resting_maker_anchors", None)):
-            if harvester._preempt_resting_maker_anchors(reason="PRE_SPLIT_OVERROUND", market_ids=None) > 0:
-                await asyncio.sleep(0.12)
-                inflight_u = sum(
-                    float(i.get("notional_usd", 0.0) or 0.0)
-                    for i in (getattr(harvester, "pending_entry_intents", None) or {}).values()
-                    if isinstance(i, dict)
-                )
         if (float(collat) - inflight_u) < need_cash:
             return None
 
@@ -2140,6 +2192,7 @@ class PreSplitInventoryGun:
         net_pnl = round(realized - cost, 4)
         opened_f = float(st.get("opened_ts") or now_ts)
         uniq_tid = f"PRESPLIT_{st.get('condition_id', 'BTC')[:10]}_{int(now_ts)}"
+        is_noop_flat_merge = reason == "PRE_SPLIT_PRE_EXPIRY_MERGED" and abs(net_pnl) < 0.005
         rec = {
             "trade_id": uniq_tid,
             "box_id": uniq_tid,
@@ -2154,7 +2207,7 @@ class PreSplitInventoryGun:
             "payout_usd": realized,
             "net_pnl_usd": net_pnl,
             "estimated_maker_rebate_usd": float(st.get("rebate_est_usd") or 0.0),
-            "won": bool(net_pnl >= -0.01),
+            "won": bool(net_pnl > 0.005),
             "status": "CLOSED",
             "close_reason": reason,
             "entry_ts": opened_f,
@@ -2162,18 +2215,19 @@ class PreSplitInventoryGun:
             "entry_time_utc": datetime.fromtimestamp(opened_f, tz=timezone.utc).isoformat(),
             "settled_at_utc": datetime.fromtimestamp(float(now_ts), tz=timezone.utc).isoformat(),
         }
-        harvester.closed_positions.append(rec)
-        harvester.closed_positions = harvester.closed_positions[-600:]
-        if getattr(harvester, "risk_controller", None) is not None and hasattr(harvester.risk_controller, "record_trade_pnl"):
-            try:
-                harvester.risk_controller.record_trade_pnl(
-                    "PRE_SPLIT_OVERROUND_MACHINE_GUN",
-                    net_pnl,
-                    current_equity=float(getattr(harvester, "_last_known_collateral", None) or 0.0) + realized,
-                    is_non_directional=True,
-                )
-            except Exception:
-                pass
+        if not is_noop_flat_merge:
+            harvester.closed_positions.append(rec)
+            harvester.closed_positions = harvester.closed_positions[-600:]
+            if getattr(harvester, "risk_controller", None) is not None and hasattr(harvester.risk_controller, "record_trade_pnl"):
+                try:
+                    harvester.risk_controller.record_trade_pnl(
+                        "PRE_SPLIT_OVERROUND_MACHINE_GUN",
+                        net_pnl,
+                        current_equity=float(getattr(harvester, "_last_known_collateral", None) or 0.0) + realized,
+                        is_non_directional=True,
+                    )
+                except Exception:
+                    pass
         if getattr(harvester, "_last_known_collateral", None) is not None:
             harvester._last_known_collateral = float(harvester._last_known_collateral) + realized
         harvester.executor.invalidate_collateral_cache()

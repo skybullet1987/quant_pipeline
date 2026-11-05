@@ -3556,6 +3556,7 @@ class PolymarketLiveExecutor:
                 {"inputs": [{"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSet", "type": "uint256"}], "name": "getCollectionId", "outputs": [{"name": "", "type": "bytes32"}], "stateMutability": "view", "type": "function"},
                 {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "collectionId", "type": "bytes32"}], "name": "getPositionId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "pure", "type": "function"},
                 {"inputs": [{"name": "owner", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "account", "type": "address"}, {"name": "operator", "type": "address"}], "name": "isApprovedForAll", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
             ]
             nr_abi = [{"inputs": [{"name": "_conditionId", "type": "bytes32"}, {"name": "_amount", "type": "uint256"}], "name": "mergePositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"}]
             ctf_cs = Web3.to_checksum_address(self.CTF_ADDRESS)
@@ -3577,6 +3578,8 @@ class PolymarketLiveExecutor:
                 except Exception:
                     pass
             if neg_risk is not True and not merge_targets:
+                pusd_cs = Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB")
+                v2_ctf_cs = Web3.to_checksum_address("0xAdA100Db00Ca00073811820692005400218FcE1f")
                 for col_hex in ("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB", "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"):
                     try:
                         col_cs = Web3.to_checksum_address(col_hex)
@@ -3584,8 +3587,11 @@ class PolymarketLiveExecutor:
                         b_no = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call())
                         m_std = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
                         if m_std >= min_raw:
-                            ctf_hex = ctf.encode_abi("mergePositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2], m_std])
-                            merge_targets.append((ctf_cs, ctf_hex))
+                            use_v2 = col_cs != pusd_cs and bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call())
+                            m_col = pusd_cs if use_v2 else col_cs
+                            m_tgt = v2_ctf_cs if use_v2 else ctf_cs
+                            ctf_hex = ctf.encode_abi("mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std])
+                            merge_targets.append((m_tgt, ctf_hex))
                             merged_raw += m_std
                             break
                     except Exception:

@@ -173,7 +173,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "growth_min_bps_per_hour": 6.0,
         "scale_max_lockup_hours": 168.0,
         "scale_min_bps_per_hour": 3.5,
-        "enable_pre_split_overround_gun": True,
+        "enable_pre_split_overround_gun": False,
         "enable_pre_split_dual_maker_asks": False,
         "pre_split_require_live_overround": True,
         "pre_split_min_free_cash_usd": 14.0,

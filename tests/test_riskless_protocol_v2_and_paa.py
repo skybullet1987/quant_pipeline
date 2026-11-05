@@ -1729,7 +1729,9 @@ def test_tier_p0_invalid_status_htm_d1_xau_fees_and_parallel_asym(tmp_path, monk
         shm_xau_wide = json.loads(json.dumps(shm_xau_thin))
         shm_xau_wide["timestamp_unix"] = now_u + 1.0
         shm_xau_wide["m15"]["UP"]["best_bid"] = 0.53
+        shm_xau_wide["m15"]["UP"]["best_ask"] = 0.55
         shm_xau_wide["m15"]["DOWN"]["best_bid"] = 0.53
+        shm_xau_wide["m15"]["DOWN"]["best_ask"] = 0.55
         assert asyncio.run(ps_xau.tick(harv_xau, now_u + 1.0, fast_tick_reader=lambda a: shm_xau_wide if a == "XAU" else None)) == "ARMED"
         assert harv_xau.pre_split_inventory_state["fee_rate"] == pytest.approx(0.07)
     finally:
