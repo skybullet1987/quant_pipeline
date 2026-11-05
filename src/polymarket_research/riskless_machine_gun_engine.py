@@ -1797,7 +1797,7 @@ class PreSplitInventoryGun:
             op_t = float(ft.get("candle_open_spot") or ft.get("open_spot") or 0.0)
             tte_t = exp_t - now_ts
             if cid_t and len(ut_t) >= 20 and len(dt_t) >= 20 and 150.0 <= tte_t <= 840.0 and op_t > 0.0:
-                def_fr_t = 0.0 if asset_sym in {"XAU", "XAG"} else 0.07
+                def_fr_t = 0.07
                 fr_t = float(ft.get("fee_rate") if ft.get("fee_rate") is not None else def_fr_t)
                 fe_t = float(ft.get("fee_exponent") or 1.0)
                 eff_req_ovr_t = req_ovr and (self._explicit_min_free_cash is None)
@@ -1831,8 +1831,8 @@ class PreSplitInventoryGun:
                 if len(ut_s) < 20 or len(dt_s) < 20:
                     continue
                 fm_s = sub.get("fee_metadata") if isinstance(sub.get("fee_metadata"), dict) else {}
-                def_fr = 0.0 if asset_sym in {"XAU", "XAG"} else 0.07
-                fees_en = fm_s.get("fees_enabled", asset_sym not in {"XAU", "XAG"})
+                def_fr = 0.07
+                fees_en = fm_s.get("fees_enabled", True)
                 fr_s = float(sub.get("fee_rate") if sub.get("fee_rate") is not None else (fm_s.get("rate", def_fr) if fees_en else 0.0))
                 fe_s = float(sub.get("fee_exponent") if sub.get("fee_exponent") is not None else fm_s.get("exponent", 1.0))
                 bk_u_s = _shm_side_to_clob_book(u_o)
@@ -1948,7 +1948,7 @@ class PreSplitInventoryGun:
     ) -> Optional[str]:
         tte = float(st.get("expiry_ts") or 0.0) - now_ts
         asset_st = str(st.get("asset") or "BTC").upper()
-        fr_st = float(st.get("fee_rate") if st.get("fee_rate") is not None else (0.0 if asset_st in {"XAU", "XAG"} else 0.07))
+        fr_st = float(st.get("fee_rate") if st.get("fee_rate") is not None else 0.07)
         fe_st = float(st.get("fee_exponent") or 1.0)
         ft = fast_tick_reader(asset_st) if callable(fast_tick_reader) else None
         spot_fresh = isinstance(ft, dict) and (now_ts - float(ft.get("timestamp_unix") or ft.get("ts") or 0.0)) <= 1.5

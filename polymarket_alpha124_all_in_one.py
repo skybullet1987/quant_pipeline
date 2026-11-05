@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)
-Generated: 2026-11-04 15:13:38 UTC
+Generated: 2026-11-05 01:09:03 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -22,12 +22,12 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [13] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 3,030 - 3,460 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
   [14] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 3,461 - 4,121 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
   [15] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 4,122 - 4,677 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,678 - 7,925 | 723,746 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [17] scripts/backtest_alpha_124.py (Lines 7,926 - 8,150 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [18] scripts/polymarket_daily_projections.py (Lines 8,151 - 8,285 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [19] scripts/alpha124_status.py (Lines 8,286 - 8,314 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,315 - 8,331 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [21] tests/test_alpha_124_oracles.py (Lines 8,332 - 8,590 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,678 - 7,912 | 721,869 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [17] scripts/backtest_alpha_124.py (Lines 7,913 - 8,137 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [18] scripts/polymarket_daily_projections.py (Lines 8,138 - 8,272 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [19] scripts/alpha124_status.py (Lines 8,273 - 8,301 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,302 - 8,318 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [21] tests/test_alpha_124_oracles.py (Lines 8,319 - 8,577 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 """
 
 from __future__ import annotations
@@ -5070,11 +5070,11 @@ class Alpha124ShadowDaemon:
     for l in list(a._ws_shard_tokens.pop(shard_idx,set())):a._drop_ws_book(l)
     a._sync_ws_subscribed_union();await asyncio.sleep(1.5);continue
    try:
-    B=await a.get_session()
-    async with B.ws_connect(CLOB_WS_URL,heartbeat=15.,max_msg_size=4*1024*1024,timeout=aiohttp.ClientWSTimeout(ws_close=5.))as F:
+    C=await a.get_session()
+    async with C.ws_connect(CLOB_WS_URL,heartbeat=15.,max_msg_size=4*1024*1024,timeout=aiohttp.ClientWSTimeout(ws_close=5.))as H:
      m=a._ws_shard_tokens.get(shard_idx,set())
      for l in list(m|set(p)):a._drop_ws_book(l)
-     o=set(p);a._ws_shard_tokens[shard_idx]=o;a._sync_ws_subscribed_union();await F.send_str(json.dumps({"assets_ids":p,"type":"market"}));e=time.time();b=e
+     o=set(p);a._ws_shard_tokens[shard_idx]=o;a._sync_ws_subscribed_union();await H.send_str(json.dumps({"assets_ids":p,"type":"market"}));e=time.time();b=e
      while not a.single_scan:
       x=time.time()
       if(x-e)>=2.:
@@ -5088,33 +5088,41 @@ class Alpha124ShadowDaemon:
        a._sync_ws_subscribed_union()
        if not f:break
        v=sorted(f-o)
-       if v:await F.send_str(json.dumps({"assets_ids":v,"operation":"subscribe"}));o.update(v);a._sync_ws_subscribed_union()
+       if v:await H.send_str(json.dumps({"assets_ids":v,"operation":"subscribe"}));o.update(v);a._sync_ws_subscribed_union()
        elif len(o)>len(f)+32:break
       if(x-b)>30.:break
-      try:D=await asyncio.wait_for(F.receive(),timeout=2.)
+      try:F=await asyncio.wait_for(H.receive(),timeout=2.)
       except asyncio.TimeoutError:continue
-      if D.type in(aiohttp.WSMsgType.CLOSED,aiohttp.WSMsgType.CLOSING,aiohttp.WSMsgType.ERROR):break
-      if D.type not in(aiohttp.WSMsgType.TEXT,aiohttp.WSMsgType.BINARY):continue
-      j=D.data
+      if F.type in(aiohttp.WSMsgType.CLOSED,aiohttp.WSMsgType.CLOSING,aiohttp.WSMsgType.ERROR):break
+      if F.type not in(aiohttp.WSMsgType.TEXT,aiohttp.WSMsgType.BINARY):continue
+      j=F.data
       if not j or j in("PONG",b"PONG"):b=time.time();continue
-      u=time.time();b=u;A=_orjson.loads(j)if _orjson is not None else json.loads(j);d=False;c=False;i=a._ws_d1_priority_tokens;h=a._ws_nr_priority_tokens
-      if isinstance(A,list):
-       for z in A:
-        if isinstance(z,dict):
-         g=str(z.get("asset_id")or"")
-         if g in o:a._apply_ws_book_snapshot(g,z.get("bids")or[],z.get("asks")or[],u);d=d or(g in i);c=c or(g in h)
-      elif isinstance(A,dict):
-       y=A.get("event_type")
-       if y=="book":
-        g=str(A.get("asset_id")or"")
-        if g in o:a._apply_ws_book_snapshot(g,A.get("bids")or[],A.get("asks")or[],u);d=d or(g in i);c=c or(g in h)
-       elif y=="price_change":
+      u=time.time();b=u;B=_orjson.loads(j)if _orjson is not None else json.loads(j);d=False;c=False;i=a._ws_d1_priority_tokens;h=a._ws_nr_priority_tokens
+      if isinstance(B,list):
+       for A in B:
+        if isinstance(A,dict):
+         g=str(A.get("asset_id")or"")
+         if g in o:a._apply_ws_book_snapshot(g,A.get("bids")or[],A.get("asks")or[],u);d=d or(g in i);c=c or(g in h)
+      elif isinstance(B,dict):
+       z=B.get("event_type")
+       if z=="book":
+        g=str(B.get("asset_id")or"")
+        if g in o:
+         y=B.get("tick_size")or B.get("minimum_tick_size")
+         if y:a.__dict__.setdefault("_token_tick_sizes",{})[g]=str(y)
+         a._apply_ws_book_snapshot(g,B.get("bids")or[],B.get("asks")or[],u);d=d or(g in i);c=c or(g in h)
+       elif z=="tick_size_change":
+        g=str(B.get("asset_id")or"");E=B.get("new_tick_size")or B.get("tick_size")
+        if g and E:
+         a.__dict__.setdefault("_token_tick_sizes",{})[g]=str(E)
+         if g in a._ws_books and isinstance(a._ws_books[g][1],dict):a._ws_books[g][1]["minimum_tick_size"]=str(E)
+       elif z=="price_change":
         t={}
-        for E in A.get("price_changes")or():
-         g=str(E.get("asset_id")or"")
-         if g in o:t.setdefault(g,[]).append(E)
-        for g,C in t.items():
-         if a._apply_ws_price_changes(g,C,u):
+        for G in B.get("price_changes")or():
+         g=str(G.get("asset_id")or"")
+         if g in o:t.setdefault(g,[]).append(G)
+        for g,D in t.items():
+         if a._apply_ws_price_changes(g,D,u):
           if g in i:d=True
           if g in h:c=True
       if(d and(a.is_in_same_oracle_overlap_window(u)or bool(a.pending_maker_anchors))and(u-getattr(a,"_last_ws_d1_wake_ts",.0))>=.12):a._last_ws_d1_wake_ts=u;a._ws_d1_wakeup.set()
@@ -5147,36 +5155,47 @@ class Alpha124ShadowDaemon:
   if not c or c in getattr(a,"_ws_rest_seeded",set()):return None
   b=a._ws_books.get(c)if getattr(a,"_ws_books",None)is not None else None
   if b is None or(float(now_ts)-float(b[0]))>float(max_age_sec):return None
-  d=b[1];return d if isinstance(d,dict)and(d.get("asks")or d.get("bids"))else None
+  e=b[1]
+  if isinstance(e,dict)and"minimum_tick_size"not in e:
+   d=(a.__dict__.get("_token_tick_sizes")or{}).get(c)
+   if d:e["minimum_tick_size"]=d
+  return e if isinstance(e,dict)and(e.get("asks")or e.get("bids"))else None
  async def fetch_books_batch(a,token_ids,timeout=3.):
-  n=list(dict.fromkeys(str(t)for t in token_ids if t))
-  if not n:return{}
-  if"fetch_json"in a.__dict__:e=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in n));return{t:bk for t,bk in zip(n,e)if isinstance(bk,dict)}
-  p={};f=[];j=time.time();g=not a.single_scan
-  for t in n:
-   d=a._ws_books.get(t)if g else None
-   if(d is not None and(j-d[0])<=1.5 and(d[1].get("bids")or d[1].get("asks"))):p[t]=d[1]
-   else:f.append(t)
-  if not f:return p
-  m=await a.get_session()
-  for o in range(0,len(f),50):
-   i=f[o:o+50]
+  q=list(dict.fromkeys(str(t)for t in token_ids if t))
+  if not q:return{}
+  if"fetch_json"in a.__dict__:f=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in q));return{t:bk for t,bk in zip(q,f)if isinstance(bk,dict)}
+  u={};g=[];l=time.time();h=not a.single_scan;e=a.__dict__.setdefault("_token_tick_sizes",{})
+  for t in q:
+   d=a._ws_books.get(t)if h else None
+   if(d is not None and(l-d[0])<=1.5 and(d[1].get("bids")or d[1].get("asks"))):
+    if t in e and"minimum_tick_size"not in d[1]:d[1]["minimum_tick_size"]=e[t]
+    u[t]=d[1]
+   else:g.append(t)
+  if not g:return u
+  p=await a.get_session()
+  for s in range(0,len(g),50):
+   k=g[s:s+50]
    try:
-    async with m.post(f"{CLOB_URL}/books",json=[{"token_id":t}for t in i],timeout=aiohttp.ClientTimeout(total=timeout))as l:
-     if l.status==200:
-      b=await l.read();k=_orjson.loads(b)if _orjson is not None else json.loads(b)
-      if isinstance(k,list):
+    async with p.post(f"{CLOB_URL}/books",json=[{"token_id":t}for t in k],timeout=aiohttp.ClientTimeout(total=timeout))as o:
+     if o.status==200:
+      b=await o.read();n=_orjson.loads(b)if _orjson is not None else json.loads(b)
+      if isinstance(n,list):
        c=time.time()
-       for r in k:
+       for r in n:
         if isinstance(r,dict)and r.get("asset_id"):
-         h=str(r["asset_id"]);p[h]=r
-         if g and h in a._ws_subscribed_tokens and h not in a._ws_raw_levels:a._apply_ws_book_snapshot(h,r.get("bids")or[],r.get("asks")or[],c,from_rest=True)
+         j=str(r["asset_id"]);m=r.get("minimum_tick_size")or r.get("tick_size")
+         if m:e[j]=str(m)
+         u[j]=r
+         if h and j in a._ws_subscribed_tokens and j not in a._ws_raw_levels:a._apply_ws_book_snapshot(j,r.get("bids")or[],r.get("asks")or[],c,from_rest=True)
        continue
    except Exception:pass
-   q=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in i))
-   for t,bk in zip(i,q):
-    if isinstance(bk,dict):p[t]=bk
-  return p
+   v=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in k))
+   for t,bk in zip(k,v):
+    if isinstance(bk,dict):
+     i=bk.get("minimum_tick_size")or bk.get("tick_size")
+     if i:e[t]=str(i)
+     u[t]=bk
+  return u
  def record_usd_spot_samples(a,now_ts=None):
   f=float(now_ts if now_ts is not None else time.time());a.last_usd_sample_ts=f
   for c in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS):
@@ -5212,240 +5231,219 @@ class Alpha124ShadowDaemon:
   return((c-a)/a)*1e4 if a>0 else.0
  def get_return_bps(a,asset,lookback_sec):b=a._hist_return_bps(a.spot_hist.get(asset),lookback_sec);c=a._hist_return_bps(a.usd_spot_hist.get(asset),lookback_sec);return c if abs(c)>abs(b)else b
  async def discover_all_markets(a):
-  logger.info("Discovering active Weather (#1), Barrier Hit (#2), Multi-Strike (#4), NegRisk, and Daily Up/Down markets...");I={};now_w_disc=time.time()
-  def _weather_still_live(sp_w):
-   try:return datetime.fromisoformat(sp_w.end_date_iso.replace("Z","+00:00")).timestamp()>now_w_disc
-   except Exception:return True
-  def _parse_neg_risk_flag(v):
-   if isinstance(v,bool):return v
-   if isinstance(v,str)and v.strip().lower()in("true","false"):return v.strip().lower()=="true"
-   return None
-  def _attach_weather_neg_risk(sp_w,ev_raw):
-   if not isinstance(ev_raw,dict):return
-   d=_parse_neg_risk_flag(ev_raw.get("negRisk"));c={}
-   for g in ev_raw.get("markets")or():
-    if not isinstance(g,dict):continue
-    a=_parse_neg_risk_flag(g.get("negRisk"))
-    if a is None:a=d
-    for e in(g.get("id"),g.get("conditionId")):
-     if e not in(None,""):c[str(e)]=a
-   for f in sp_w.buckets:
-    b=c.get(str(f.market_id))
-    if b is None:b=c.get(str(f.condition_id))
-    if b is None and getattr(f,"neg_risk",None)is not None:continue
-    try:setattr(f,"neg_risk",b)
-    except Exception:pass
-  Y=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?tag_slug=weather&closed=false&limit=100&offset={w_off}",timeout=7.)for w_off in(0,100,200,300,400)))
-  for _0 in Y:
-   if isinstance(_0,list):
-    for c in _0:
-     sp=parse_weather_event(c)
-     if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);I[sp.event_id]=sp
-  j=[]
-  for _as in range(0,600,100):
-   P=await a.fetch_json(f"{GAMMA_URL}/events?closed=false&order=volume24hr&ascending=false&limit=100&offset={_as}",timeout=7.)
-   if not isinstance(P,list)or not P:break
-   j.extend(P)
-   for c in P:
-    sp=parse_weather_event(c)
-    if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);I[sp.event_id]=sp
-  H={sp.series_slug for sp in I.values()if sp.series_slug}
-  for _ar in HIGH_VOLUME_WEATHER_SERIES:
-   if _ar in H:continue
-   _aq=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={_ar}&closed=false&limit=3",timeout=5.)
-   if isinstance(_aq,list):
-    for c in _aq:
-     sp=parse_weather_event(c,series_slug_hint=_ar)
-     if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);I[sp.event_id]=sp
-  a.weather_events=I;G={}
-  for d,_aL,slug in HIT_SERIES:
-   P=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5",timeout=6.)
-   if isinstance(P,list):
-    for c in P:
-     for r in parse_hit_event(c,d,_aL,slug):
-      if r.resolved_yes is None and r.end_ts>time.time()+60:G[r.market_id]=r
-  a.barrier_rungs=G;Q={};u=[]
-  for d,slug in STRIKE_SERIES:
-   P=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5",timeout=6.)
-   if isinstance(P,list):
-    u.extend(P)
-    for c in P:
-     _aK=parse_multistrike_event(c,d,slug)
-     if _aK and _aK[0].end_ts>time.time()+60:Q[f"{d}_{c.get('id')}"]=_aK
-  a.strike_ladders=Q;F={}
-  for d,slug in NEGRISK_SERIES:
-   _Z=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4",timeout=6.)
+  logger.info("Discovering active Weather (#1), Barrier Hit (#2), Multi-Strike (#4), NegRisk, and Daily Up/Down markets...");H={};now_w_disc=time.time();from src.polymarket_research.riskless_protocol_v2_expansion import(attach_weather_neg_risk_from_gamma as _attach_weather_neg_risk,resolve_weather_effective_end_ts)
+  def _weather_still_live(sp_w):return resolve_weather_effective_end_ts(sp_w,now_w_disc+86400.)>now_w_disc
+  X=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?tag_slug=weather&closed=false&limit=100&offset={w_off}",timeout=7.)for w_off in(0,100,200,300,400)))
+  for _Z in X:
    if isinstance(_Z,list):
     for c in _Z:
-     brs=parse_negrisk_bracket_event(c,d,slug)
-     if brs and brs[0].end_ts>time.time()+60:F[f"{d}_{int(brs[0].end_ts)}"]=brs
-  a.negrisk_ladders=F;O={}
-  for d,slug in DAILY_UPDOWN_SERIES:
-   _Y=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)
+     sp=parse_weather_event(c)
+     if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);H[sp.event_id]=sp
+  j=[]
+  for _ar in range(0,600,100):
+   O=await a.fetch_json(f"{GAMMA_URL}/events?closed=false&order=volume24hr&ascending=false&limit=100&offset={_ar}",timeout=7.)
+   if not isinstance(O,list)or not O:break
+   j.extend(O)
+   for c in O:
+    sp=parse_weather_event(c)
+    if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);H[sp.event_id]=sp
+  G={sp.series_slug for sp in H.values()if sp.series_slug}
+  for _aq in HIGH_VOLUME_WEATHER_SERIES:
+   if _aq in G:continue
+   _ap=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={_aq}&closed=false&limit=3",timeout=5.)
+   if isinstance(_ap,list):
+    for c in _ap:
+     sp=parse_weather_event(c,series_slug_hint=_aq)
+     if sp is not None and _weather_still_live(sp):_attach_weather_neg_risk(sp,c);H[sp.event_id]=sp
+  a.weather_events=H;F={}
+  for d,_aK,slug in HIT_SERIES:
+   O=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5",timeout=6.)
+   if isinstance(O,list):
+    for c in O:
+     for r in parse_hit_event(c,d,_aK,slug):
+      if r.resolved_yes is None and r.end_ts>time.time()+60:F[r.market_id]=r
+  a.barrier_rungs=F;P={};u=[]
+  for d,slug in STRIKE_SERIES:
+   O=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=5",timeout=6.)
+   if isinstance(O,list):
+    u.extend(O)
+    for c in O:
+     _aJ=parse_multistrike_event(c,d,slug)
+     if _aJ and _aJ[0].end_ts>time.time()+60:P[f"{d}_{c.get('id')}"]=_aJ
+  a.strike_ladders=P;E={}
+  for d,slug in NEGRISK_SERIES:
+   _Y=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4",timeout=6.)
    if isinstance(_Y,list):
     for c in _Y:
-     _aJ=parse_daily_updown_event(c,d,slug)
-     if _aJ is not None and _aJ.end_ts>time.time()+60:O[_aJ.market_id]=_aJ
-  a.daily_updown_markets=O;_g={}
-  for d,slug in ZERO_FEE_PYTH_DAILY_SERIES:
-   _X=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=2",timeout=5.)
+     brs=parse_negrisk_bracket_event(c,d,slug)
+     if brs and brs[0].end_ts>time.time()+60:E[f"{d}_{int(brs[0].end_ts)}"]=brs
+  a.negrisk_ladders=E;N={}
+  for d,slug in DAILY_UPDOWN_SERIES:
+   _X=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)
    if isinstance(_X,list):
     for c in _X:
      _aI=parse_daily_updown_event(c,d,slug)
-     if _aI is not None and _aI.end_ts>time.time()+60:_g[_aI.market_id]=_aI
-  a.pyth_daily_markets=_g;N=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)for _,_,slug in PYTH_HIT_SERIES));y={};_B=time.time()
-  for(_W,_V,_ap),_U in zip(PYTH_HIT_SERIES,N):
-   if isinstance(_U,list):
-    for c in _U:
-     for rp in parse_pyth_hit_event(c,_W,_V,_ap):
-      if rp.end_ts>_B+60:y[rp.market_id]=rp
-  a.pyth_barrier_rungs=y;X=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)for _,slug in PYTH_CLOSE_SERIES));E={}
-  for(_T,_ao),_S in zip(PYTH_CLOSE_SERIES,X):
-   if isinstance(_S,list):
-    for c in _S:
-     _R=parse_pyth_close_event(c,_T,_ao)
-     if _R and _R[0].end_ts>_B+60:E[f"{_T}_{c.get('id')}"]=_R
-  a.pyth_close_ladders=E;_s={};_A={};_f={};D={};q={};_e={}
-  for _z in NBA_SERIES_SLUGS:
-   _y=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={_z}&closed=false&limit=40",timeout=6.5)
-   if isinstance(_y,list):
-    for c in _y:
-     _aH=str(c.get("slug")or"").lower()
-     if _aH.endswith("-exact-margin"):_e[_aH[:-13]]=c;continue
-     q[_aH]=c;_an=parse_nba_zero_fee_event(c,now_ts=_B)
-     if _an is not None:_s[_an.event_id]=_an
-     _aG=parse_nba_player_props_from_event(c,now_ts=_B)
-     if _aG is not None:_f[_aG.event_id]=_aG
-     _am=parse_nba_subperiod_and_ext_props(c,now_ts=_B)
-     if _am is not None:D[_am.event_id]=_am
-     _r=parse_multi_sport_corridor_event(c,sport_hint="NBA",now_ts=_B,skip_nba_fg_zero_fee=True)
-     if _r is not None:_A[_r.event_id]=_r
-  p=[sl for sl in list(q.keys())[:10]if sl not in _e]
+     if _aI is not None and _aI.end_ts>time.time()+60:N[_aI.market_id]=_aI
+  a.daily_updown_markets=N;_f={}
+  for d,slug in ZERO_FEE_PYTH_DAILY_SERIES:
+   _W=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=2",timeout=5.)
+   if isinstance(_W,list):
+    for c in _W:
+     _aH=parse_daily_updown_event(c,d,slug)
+     if _aH is not None and _aH.end_ts>time.time()+60:_f[_aH.market_id]=_aH
+  a.pyth_daily_markets=_f;M=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)for _,_,slug in PYTH_HIT_SERIES));x={};_A=time.time()
+  for(_V,_U,_ao),_T in zip(PYTH_HIT_SERIES,M):
+   if isinstance(_T,list):
+    for c in _T:
+     for rp in parse_pyth_hit_event(c,_V,_U,_ao):
+      if rp.end_ts>_A+60:x[rp.market_id]=rp
+  a.pyth_barrier_rungs=x;W=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=3",timeout=5.)for _,slug in PYTH_CLOSE_SERIES));D={}
+  for(_S,_an),_R in zip(PYTH_CLOSE_SERIES,W):
+   if isinstance(_R,list):
+    for c in _R:
+     _Q=parse_pyth_close_event(c,_S,_an)
+     if _Q and _Q[0].end_ts>_A+60:D[f"{_S}_{c.get('id')}"]=_Q
+  a.pyth_close_ladders=D;_r={};_z={};_e={};C={};q={};_d={}
+  for _y in NBA_SERIES_SLUGS:
+   _x=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={_y}&closed=false&limit=40",timeout=6.5)
+   if isinstance(_x,list):
+    for c in _x:
+     _aG=str(c.get("slug")or"").lower()
+     if _aG.endswith("-exact-margin"):_d[_aG[:-13]]=c;continue
+     q[_aG]=c;_am=parse_nba_zero_fee_event(c,now_ts=_A)
+     if _am is not None:_r[_am.event_id]=_am
+     _aF=parse_nba_player_props_from_event(c,now_ts=_A)
+     if _aF is not None:_e[_aF.event_id]=_aF
+     _al=parse_nba_subperiod_and_ext_props(c,now_ts=_A)
+     if _al is not None:C[_al.event_id]=_al
+     _q=parse_multi_sport_corridor_event(c,sport_hint="NBA",now_ts=_A,skip_nba_fg_zero_fee=True)
+     if _q is not None:_z[_q.event_id]=_q
+  p=[sl for sl in list(q.keys())[:10]if sl not in _d]
   if p:
-   _d=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl}-exact-margin",timeout=4.5)for sl in p))
-   for _aV,_al in zip(p,_d):
-    if isinstance(_al,list)and _al:_e[_aV]=_al[0]
+   _c=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl}-exact-margin",timeout=4.5)for sl in p))
+   for _aU,_ak in zip(p,_c):
+    if isinstance(_ak,list)and _ak:_d[_aU]=_ak[0]
   o={}
-  for _aU,_aT in q.items():
-   _aS=_e.get(_aU)
-   if _aS is not None:
-    _aR=build_lp1_nba_exact_margin_bundle(_aT,_aS)
-    if _aR is not None and float(_aR["end_ts"])>_B+60:o[_aR["event_id"]]=_aR
-  a.nba_games=_s;a.nba_prop_slates=_f;a.nba_subperiod_slates=D;a.lp1_nba_em_bundles=o;g=[(sl_s,sp_t)for sp_t,sl_s in MULTI_SPORT_CORRIDOR_SERIES if sl_s not in NBA_SERIES_SLUGS];_ak=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={sl_s}&closed=false&limit=25",timeout=5.5)for sl_s,_ in g),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=sports&closed=false&order=volume24hr&ascending=false&limit=40",timeout=6.));M={};L={}
-  for(_,_aj),_Q in zip(g,_ak[:len(g)]):
-   if isinstance(_Q,list):
-    for c in _Q:
-     _c=parse_multi_sport_corridor_event(c,sport_hint=_aj,now_ts=_B,skip_nba_fg_zero_fee=True)
-     if _c is not None:_A[_c.event_id]=_c
-     _P=str(c.get("id")or"")
-     if _P and _aj in("NFL","CFB","NHL"):L[_P]=(_aj,c)
-     if _aj=="NFL":
-      _aF=build_lp1_nfl_exact_margin_bundle(c,now_ts=_B)
-      if _aF is not None:M[_aF["event_id"]]=_aF
-  a.lp1_nfl_em_bundles=M;a.multisport_raw_events=L;n=(_ak[-1]if isinstance(_ak[-1],list)else[])+[e for e in j if isinstance(e,dict)and not e.get("negRisk")and len(e.get("markets")or())>=8]
+  for _aT,_aS in q.items():
+   _aR=_d.get(_aT)
+   if _aR is not None:
+    _aQ=build_lp1_nba_exact_margin_bundle(_aS,_aR)
+    if _aQ is not None and float(_aQ["end_ts"])>_A+60:o[_aQ["event_id"]]=_aQ
+  a.nba_games=_r;a.nba_prop_slates=_e;a.nba_subperiod_slates=C;a.lp1_nba_em_bundles=o;g=[(sl_s,sp_t)for sp_t,sl_s in MULTI_SPORT_CORRIDOR_SERIES if sl_s not in NBA_SERIES_SLUGS];_aj=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={sl_s}&closed=false&limit=25",timeout=5.5)for sl_s,_ in g),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=sports&closed=false&order=volume24hr&ascending=false&limit=40",timeout=6.));L={};K={}
+  for(_,_ai),_P in zip(g,_aj[:len(g)]):
+   if isinstance(_P,list):
+    for c in _P:
+     _b=parse_multi_sport_corridor_event(c,sport_hint=_ai,now_ts=_A,skip_nba_fg_zero_fee=True)
+     if _b is not None:_z[_b.event_id]=_b
+     _O=str(c.get("id")or"")
+     if _O and _ai in("NFL","CFB","NHL"):K[_O]=(_ai,c)
+     if _ai=="NFL":
+      _aE=build_lp1_nfl_exact_margin_bundle(c,now_ts=_A)
+      if _aE is not None:L[_aE["event_id"]]=_aE
+  a.lp1_nfl_em_bundles=L;a.multisport_raw_events=K;n=(_aj[-1]if isinstance(_aj[-1],list)else[])+[e for e in j if isinstance(e,dict)and not e.get("negRisk")and len(e.get("markets")or())>=8]
   for c in n:
-   _O=str(c.get("id")or"")
-   if _O and _O not in _A:
-    _c=parse_multi_sport_corridor_event(c,now_ts=_B,skip_nba_fg_zero_fee=True)
-    if _c is not None:_A[_c.event_id]=_c
-  a.multi_sport_games=_A;_N=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4",timeout=5.)for slug in ZERO_FEE_NEGRISK_SERIES));_q={};C={}
-  for _ai,_M in zip(ZERO_FEE_NEGRISK_SERIES,_N):
-   if isinstance(_M,list):
-    C[_ai]=_M;_x=_ai in("best-ai-company","chinese-ai-1")
-    for c in _M:
-     _aE=parse_zero_fee_negrisk_slate(c,_ai,allow_mixed_fees=_x)
-     if _aE is not None and _aE.end_ts>_B+60:_q[_aE.event_id]=_aE
-  a.negrisk_zero_slates=_q;x={}
-  for _ah in(j+[e for lst in C.values()for e in(lst or[])]+[e for lst in Y if isinstance(lst,list)for e in lst]):
-   if not isinstance(_ah,dict):continue
-   _ag=parse_negrisk_convert_event(_ah)
-   if _ag is not None and _ag.end_ts>_B+60 and len(_ag.brackets)<=45:x[_ag.event_id]=_ag
-  _b=sorted(x.values(),key=lambda s:(not s.is_closed_convert_safe,(s.end_ts-_B)>172800.,s.end_ts))[:40];a.negrisk_convert_slates={s.event_id:s for s in _b};_p={}
-  for _af,_w in COUNTING_SERIES_HANDLES:
-   for _aQ in(C.get(_af)or[]):
-    _aP=parse_counting_slate_event(_aQ,_af,_w)
-    if _aP is not None and _aP.window_end_ts>_B+60:_p[_aP.event_id]=_aP
-  a.counting_slates=_p;a.fomc_truth_legs=build_fomc_truth_table_legs(C.get("fomc")or[],C.get("fed-3-parlay")or[],sep_2026_realized_action=(os.getenv("PM_SEP_2026_FOMC_ACTION")or"").strip().upper()or None);_ae=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_os}",timeout=5.)for sl_os in OIL_SENATE_SLUGS),a.fetch_json(f"{GAMMA_URL}/events?series_slug=gas-price-hits-weekly&closed=false&limit=2",timeout=5.));_a={}
-  for sl_os,_ad in zip(OIL_SENATE_SLUGS,_ae[:len(OIL_SENATE_SLUGS)]):
-   if isinstance(_ad,list)and _ad:
-    _aO=_ad[0];_a[sl_os]=_aO
+   _N=str(c.get("id")or"")
+   if _N and _N not in _z:
+    _b=parse_multi_sport_corridor_event(c,now_ts=_A,skip_nba_fg_zero_fee=True)
+    if _b is not None:_z[_b.event_id]=_b
+  a.multi_sport_games=_z;_M=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={slug}&closed=false&limit=4",timeout=5.)for slug in ZERO_FEE_NEGRISK_SERIES));_p={};B={}
+  for _ah,_L in zip(ZERO_FEE_NEGRISK_SERIES,_M):
+   if isinstance(_L,list):
+    B[_ah]=_L;_w=_ah in("best-ai-company","chinese-ai-1")
+    for c in _L:
+     _aD=parse_zero_fee_negrisk_slate(c,_ah,allow_mixed_fees=_w)
+     if _aD is not None and _aD.end_ts>_A+60:_p[_aD.event_id]=_aD
+  a.negrisk_zero_slates=_p;w={}
+  for _ag in(j+[e for lst in B.values()for e in(lst or[])]+[e for lst in X if isinstance(lst,list)for e in lst]):
+   if not isinstance(_ag,dict):continue
+   _af=parse_negrisk_convert_event(_ag)
+   if _af is not None and _af.end_ts>_A+60 and len(_af.brackets)<=45:w[_af.event_id]=_af
+  _a=sorted(w.values(),key=lambda s:(not s.is_closed_convert_safe,(s.end_ts-_A)>172800.,s.end_ts))[:40];a.negrisk_convert_slates={s.event_id:s for s in _a};_o={}
+  for _ae,_v in COUNTING_SERIES_HANDLES:
+   for _aP in(B.get(_ae)or[]):
+    _aO=parse_counting_slate_event(_aP,_ae,_v)
+    if _aO is not None and _aO.window_end_ts>_A+60:_o[_aO.event_id]=_aO
+  a.counting_slates=_o;a.fomc_truth_legs=build_fomc_truth_table_legs(B.get("fomc")or[],B.get("fed-3-parlay")or[],sep_2026_realized_action=(os.getenv("PM_SEP_2026_FOMC_ACTION")or"").strip().upper()or None);_ad=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_os}",timeout=5.)for sl_os in OIL_SENATE_SLUGS),a.fetch_json(f"{GAMMA_URL}/events?series_slug=gas-price-hits-weekly&closed=false&limit=2",timeout=5.));Z={}
+  for sl_os,_ac in zip(OIL_SENATE_SLUGS,_ad[:len(OIL_SENATE_SLUGS)]):
+   if isinstance(_ac,list)and _ac:
+    _aN=_ac[0];Z[sl_os]=_aN
     if"pending-oil"in sl_os:
-     _v=parse_zero_fee_negrisk_slate(_aO,sl_os)
-     if _v is not None and _v.end_ts>_B+60:a.negrisk_zero_slates[_v.event_id]=_v
-  a.oil_senate_truth_legs=build_oil_senate_truth_table_legs(_a);a.gas_events_raw={"us-gas-price-daily":C.get("us-gas-price-daily")or[],"gas-price-hits-weekly":_ae[-1]if isinstance(_ae[-1],list)else[]};m={int(round(sp.end_ts))for sp in a.daily_updown_markets.values()}|{int(round(rgs[0].end_ts))for rgs in a.strike_ladders.values()if rgs};_ac=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={h_slug}&closed=false&limit=6",timeout=4.5)for h_slug in HOURLY_BINANCE_SERIES.values()));_o={}
-  for(_L,h_slug),_ab in zip(HOURLY_BINANCE_SERIES.items(),_ac):
-   if isinstance(_ab,list):
-    for _aN in _ab:
-     _aM=parse_daily_updown_event(_aN,_L,h_slug)
-     if _aM is not None and _aM.end_ts>_B+30 and any(abs(_aM.end_ts-te)<=5. for te in m):_o[_aM.market_id]=_aM
-  a.hourly_12pm_markets=_o;W=datetime.fromtimestamp(_B-4.*3600.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");_K=await asyncio.gather(a.fetch_json(f"{GAMMA_URL}/events?tag_id=100350&active=true&closed=false&order=volume24hr&ascending=false&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=100350&active=true&closed=false&end_date_min={W}&order=endDate&ascending=true&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=64&active=true&closed=false&order=volume24hr&ascending=false&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=64&active=true&closed=false&end_date_min={W}&order=endDate&ascending=true&limit=100",timeout=5.5),*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_b}",timeout=5.)for sl_b in BOP_2026_SLUGS));_n=(_K[0]if isinstance(_K[0],list)else[])+(_K[1]if isinstance(_K[1],list)else[]);_m=(_K[2]if isinstance(_K[2],list)else[])+(_K[3]if isinstance(_K[3],list)else[]);_J=list({str(e.get("id")):e for e in _n if isinstance(e,dict)and e.get("id")}.values());_I=list({str(e.get("id")):e for e in _m if isinstance(e,dict)and e.get("id")}.values());a.soccer_trees=link_and_parse_soccer_regulation_trees(_J,now_ts=_B);_l={}
-  for _aa in _I:
-   _9=parse_esports_bo3_event(_aa,now_ts=_B)
-   if _9 is not None:_l[_9.event_id]=_9
-  a.esports_bo3_specs=_l;V={}
-  for sl_b,_aD in zip(BOP_2026_SLUGS,_K[4:]):
-   if isinstance(_aD,list)and _aD:V[sl_b]=_aD[0]
-  a.lp1_bop_legs=build_lp1_bop_2026_truth_legs(V)
-  for U in list(_e.values())+list(V.values()):
-   _u=parse_negrisk_convert_event(U)
-   if _u is not None and _u.is_closed_convert_safe and _u.end_ts>_B+60:a.negrisk_convert_slates[_u.event_id]=_u
-  B=list(dict.fromkeys(list(LP2_MIDTERM_CORE_SLUGS)+[LP2_TOSSUP_CUBE_SLUG]+list(LP2_TOSSUP_STATE_SLUGS.values())));_H=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_l2}",timeout=5.)for sl_l2 in B),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=tennis&active=true&closed=false&order=volume24hr&ascending=false&limit=45",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=midterms&active=true&closed=false&order=volume24hr&ascending=false&limit=60",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=politics&active=true&closed=false&order=volume24hr&ascending=false&limit=60",timeout=5.5));T=dict(V)
-  for sl_l2,_8 in zip(B,_H[:len(B)]):
-   if isinstance(_8,list)and _8:T[sl_l2]=_8[0]
-  _G=_H[len(B)]if isinstance(_H[len(B)],list)else[];_F=_H[len(B)+1]if isinstance(_H[len(B)+1],list)else[];_E=_H[len(B)+2]if isinstance(_H[len(B)+2],list)else[]
-  for _aC in _F+_E:
-   if isinstance(_aC,dict)and _aC.get("slug"):T.setdefault(str(_aC["slug"]),_aC)
-  a.lp2_events_by_slug=T;Z=[];_D=build_lp2_house_seats_truth_legs(T)
-  if _D:Z.append(("LP2_HOUSE_SEATS",_D))
-  _C=build_lp2_senate_seats_truth_legs(T)
-  if _C:Z.append(("LP2_SENATE_SEATS",_C))
-  Z.extend(build_lp2_pending_senate_conditional_groups(list(T.values()),T.get("which-party-will-win-the-senate-in-2026")));Z.extend(build_lp2_tossup_state_implication_groups(T));a.lp2_implication_groups=Z
-  for _k in T.values():
-   _j=parse_negrisk_convert_event(_k)
-   if _j is not None and _j.is_closed_convert_safe and _j.end_ts>_B+60 and len(_j.brackets)<=45:a.negrisk_convert_slates[_j.event_id]=_j
-  _i={};K=set()
-  for _7 in j+_F+_E:
-   if not isinstance(_7,dict):continue
-   _aB=str(_7.get("id")or"")
-   if not _aB or _aB in K:continue
-   K.add(_aB)
-   for _6 in parse_cal1_monotonic_ladder_event(_7,now_ts=_B):_i[_6.event_id]=_6
-  a.cal1_ladders=_i;_h={}
-  for _5 in _G+n:
-   if not isinstance(_5,dict):continue
-   _4=parse_tennis_retirement_safe_event(_5,now_ts=_B)
-   if _4 is not None:_h[_4.event_id]=_4
-  a.tennis_specs=_h;w=[sl for sl,ev_n in sorted(q.items(),key=lambda kv:_parse_iso_ts(kv[1].get("startTime")or kv[1].get("endDate"))or 9e12)if not sl.endswith("-more-markets")][:12];i=[];h=[]
-  for _aA,_az in L.values():
-   _ay=str(_az.get("slug")or"").lower()
-   if not _ay or any(_ay.endswith(sfx)for sfx in("-more-markets","-player-props","-exact-margin")):continue
-   if _aA in("NFL","CFB")and len(i)<12:i.append(_ay)
-   if _aA=="NFL"and len(h)<10:h.append(_ay)
-  f={str(e.get("slug")or"").lower()for e in _J if isinstance(e,dict)};l=[f"{tr.slug_3way}-exact-score"for tr in sorted(a.soccer_trees.values(),key=lambda t:t.end_ts)[:16]if tr.slug_3way and f"{tr.slug_3way}-exact-score"not in f];k=list(dict.fromkeys([f"{sl}-more-markets"for sl in(w+i)]+[f"{sl}-player-props"for sl in h]+l));J=[]
+     _u=parse_zero_fee_negrisk_slate(_aN,sl_os)
+     if _u is not None and _u.end_ts>_A+60:a.negrisk_zero_slates[_u.event_id]=_u
+  a.oil_senate_truth_legs=build_oil_senate_truth_table_legs(Z);a.gas_events_raw={"us-gas-price-daily":B.get("us-gas-price-daily")or[],"gas-price-hits-weekly":_ad[-1]if isinstance(_ad[-1],list)else[]};m={int(round(sp.end_ts))for sp in a.daily_updown_markets.values()}|{int(round(rgs[0].end_ts))for rgs in a.strike_ladders.values()if rgs};_ab=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?series_slug={h_slug}&closed=false&limit=6",timeout=4.5)for h_slug in HOURLY_BINANCE_SERIES.values()));_n={}
+  for(_K,h_slug),_aa in zip(HOURLY_BINANCE_SERIES.items(),_ab):
+   if isinstance(_aa,list):
+    for _aM in _aa:
+     _aL=parse_daily_updown_event(_aM,_K,h_slug)
+     if _aL is not None and _aL.end_ts>_A+30 and any(abs(_aL.end_ts-te)<=5. for te in m):_n[_aL.market_id]=_aL
+  a.hourly_12pm_markets=_n;V=datetime.fromtimestamp(_A-4.*3600.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");_J=await asyncio.gather(a.fetch_json(f"{GAMMA_URL}/events?tag_id=100350&active=true&closed=false&order=volume24hr&ascending=false&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=100350&active=true&closed=false&end_date_min={V}&order=endDate&ascending=true&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=64&active=true&closed=false&order=volume24hr&ascending=false&limit=100",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_id=64&active=true&closed=false&end_date_min={V}&order=endDate&ascending=true&limit=100",timeout=5.5),*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_b}",timeout=5.)for sl_b in BOP_2026_SLUGS));_m=(_J[0]if isinstance(_J[0],list)else[])+(_J[1]if isinstance(_J[1],list)else[]);_l=(_J[2]if isinstance(_J[2],list)else[])+(_J[3]if isinstance(_J[3],list)else[]);_I=list({str(e.get("id")):e for e in _m if isinstance(e,dict)and e.get("id")}.values());_H=list({str(e.get("id")):e for e in _l if isinstance(e,dict)and e.get("id")}.values());a.soccer_trees=link_and_parse_soccer_regulation_trees(_I,now_ts=_A);_k={}
+  for _9 in _H:
+   _8=parse_esports_bo3_event(_9,now_ts=_A)
+   if _8 is not None:_k[_8.event_id]=_8
+  a.esports_bo3_specs=_k;U={}
+  for sl_b,_aC in zip(BOP_2026_SLUGS,_J[4:]):
+   if isinstance(_aC,list)and _aC:U[sl_b]=_aC[0]
+  a.lp1_bop_legs=build_lp1_bop_2026_truth_legs(U)
+  for T in list(_d.values())+list(U.values()):
+   _t=parse_negrisk_convert_event(T)
+   if _t is not None and _t.is_closed_convert_safe and _t.end_ts>_A+60:a.negrisk_convert_slates[_t.event_id]=_t
+  A=list(dict.fromkeys(list(LP2_MIDTERM_CORE_SLUGS)+[LP2_TOSSUP_CUBE_SLUG]+list(LP2_TOSSUP_STATE_SLUGS.values())));_G=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_l2}",timeout=5.)for sl_l2 in A),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=tennis&active=true&closed=false&order=volume24hr&ascending=false&limit=45",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=midterms&active=true&closed=false&order=volume24hr&ascending=false&limit=60",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/events?tag_slug=politics&active=true&closed=false&order=volume24hr&ascending=false&limit=60",timeout=5.5));S=dict(U)
+  for sl_l2,_7 in zip(A,_G[:len(A)]):
+   if isinstance(_7,list)and _7:S[sl_l2]=_7[0]
+  _F=_G[len(A)]if isinstance(_G[len(A)],list)else[];_E=_G[len(A)+1]if isinstance(_G[len(A)+1],list)else[];_D=_G[len(A)+2]if isinstance(_G[len(A)+2],list)else[]
+  for _aB in _E+_D:
+   if isinstance(_aB,dict)and _aB.get("slug"):S.setdefault(str(_aB["slug"]),_aB)
+  a.lp2_events_by_slug=S;Y=[];_C=build_lp2_house_seats_truth_legs(S)
+  if _C:Y.append(("LP2_HOUSE_SEATS",_C))
+  _B=build_lp2_senate_seats_truth_legs(S)
+  if _B:Y.append(("LP2_SENATE_SEATS",_B))
+  Y.extend(build_lp2_pending_senate_conditional_groups(list(S.values()),S.get("which-party-will-win-the-senate-in-2026")));Y.extend(build_lp2_tossup_state_implication_groups(S));a.lp2_implication_groups=Y
+  for _j in S.values():
+   _i=parse_negrisk_convert_event(_j)
+   if _i is not None and _i.is_closed_convert_safe and _i.end_ts>_A+60 and len(_i.brackets)<=45:a.negrisk_convert_slates[_i.event_id]=_i
+  _h={};J=set()
+  for _6 in j+_E+_D:
+   if not isinstance(_6,dict):continue
+   _aA=str(_6.get("id")or"")
+   if not _aA or _aA in J:continue
+   J.add(_aA)
+   for _5 in parse_cal1_monotonic_ladder_event(_6,now_ts=_A):_h[_5.event_id]=_5
+  a.cal1_ladders=_h;_g={}
+  for _4 in _F+n:
+   if not isinstance(_4,dict):continue
+   _3=parse_tennis_retirement_safe_event(_4,now_ts=_A)
+   if _3 is not None:_g[_3.event_id]=_3
+  a.tennis_specs=_g;v=[sl for sl,ev_n in sorted(q.items(),key=lambda kv:_parse_iso_ts(kv[1].get("startTime")or kv[1].get("endDate"))or 9e12)if not sl.endswith("-more-markets")][:12];i=[];h=[]
+  for _az,_ay in K.values():
+   _ax=str(_ay.get("slug")or"").lower()
+   if not _ax or any(_ax.endswith(sfx)for sfx in("-more-markets","-player-props","-exact-margin")):continue
+   if _az in("NFL","CFB")and len(i)<12:i.append(_ax)
+   if _az=="NFL"and len(h)<10:h.append(_ax)
+  f={str(e.get("slug")or"").lower()for e in _I if isinstance(e,dict)};l=[f"{tr.slug_3way}-exact-score"for tr in sorted(a.soccer_trees.values(),key=lambda t:t.end_ts)[:16]if tr.slug_3way and f"{tr.slug_3way}-exact-score"not in f];k=list(dict.fromkeys([f"{sl}-more-markets"for sl in(v+i)]+[f"{sl}-player-props"for sl in h]+l));I=[]
   if k:
-   S=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_v4}",timeout=4.5)for sl_v4 in k))
-   for _3 in S:
-    if isinstance(_3,list)and _3 and isinstance(_3[0],dict):J.append(_3[0])
-  A=(list(q.values())+[ev_m for sp_tm,ev_m in L.values()if sp_tm in("NFL","CFB")]+n+J);a.aff1_bundles={b.event_id:b for b in parse_affine_game_bundle(A,now_ts=_B)}
-  for _2 in J:
-   _ax=str(_2.get("slug")or"").lower()
-   if _ax.startswith("nba-"):
-    _t=parse_nba_subperiod_and_ext_props(_2,now_ts=_B)
-    if _t is not None and _t.event_id not in a.nba_subperiod_slates:a.nba_subperiod_slates[_t.event_id]=_t
-  a.soc2_lattices=link_and_parse_soc2_exact_score_lattices(_J+J,now_ts=_B)
-  for _1 in a.soc2_lattices.values():
-   if _1.convert_spec is not None and _1.convert_spec.end_ts>_B+60:a.negrisk_convert_slates[_1.convert_spec.event_id]=_1.convert_spec
-  z={}
-  for _aw in[ev_m for sp_tm,ev_m in L.values()if sp_tm=="NFL"]+J+n:
-   if not isinstance(_aw,dict):continue
-   _av=parse_nfl_player_props_event(_aw,now_ts=_B)
-   if _av is not None:z[_av.event_id]=_av
-  a.nfl_prop_slates=z;R={}
-  for _au in u+j:
-   if isinstance(_au,dict):
-    for _at in parse_binance_terminal_close_event(_au):
-     if _at.close_ts>_B+120:R[_at.market_id]=_at
-  a.binance_close_rungs=list(R.values());a.last_discovery_ts=time.time();logger.info(f"Discovery complete: {len(a.weather_events)} Weather city-events, {len(a.barrier_rungs)} Barrier Hit rungs, {len(a.strike_ladders)} Multi-Strike ladders, {len(a.negrisk_ladders)} NegRisk ladders, {len(a.daily_updown_markets)} Crypto Daily Up/Down, {len(a.pyth_daily_markets)} Zero-Fee Pyth FX/Metals Daily, {len(a.pyth_barrier_rungs)} Pyth Hit rungs, {len(a.pyth_close_ladders)} Pyth Close ladders, {len(a.nba_games)} NBA games ({len(a.nba_prop_slates)} Prop, {len(a.nba_subperiod_slates)} SubPer, {len(a.lp1_nba_em_bundles)} EM), {len(a.multi_sport_games)} Multi-Sport ({len(a.lp1_nfl_em_bundles)} NFL EM, {len(a.nfl_prop_slates)} NFL Prop, {len(a.aff1_bundles)} AFF1/SUM1), {len(a.soccer_trees)} Soccer trees ({len(a.soc2_lattices)} SOC2 Exact-Score), {len(a.tennis_specs)} Tennis BO3, {len(a.esports_bo3_specs)} Esports BO3, {len(a.lp2_implication_groups)} LP2 DAG groups, {len(a.cal1_ladders)} CAL1 ladders, {len(a.binance_close_rungs)} Binance Close rungs, {len(a.lp1_bop_legs)//2} BOP/Chamber mkts, {len(a.negrisk_zero_slates)} NegRisk Slates, {len(a.negrisk_convert_slates)} NegRisk Convert slates, {len(a.counting_slates)} Counting slates, {len(a.fomc_truth_legs)//2} FOMC LP mkts, {len(a.oil_senate_truth_legs)//2} Oil-Senate mkts, {len(a.hourly_12pm_markets)} 12PM 1h pairs.")
+   R=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_v4}",timeout=4.5)for sl_v4 in k))
+   for _2 in R:
+    if isinstance(_2,list)and _2 and isinstance(_2[0],dict):I.append(_2[0])
+  z=(list(q.values())+[ev_m for sp_tm,ev_m in K.values()if sp_tm in("NFL","CFB")]+n+I);a.aff1_bundles={b.event_id:b for b in parse_affine_game_bundle(z,now_ts=_A)}
+  for _1 in I:
+   _aw=str(_1.get("slug")or"").lower()
+   if _aw.startswith("nba-"):
+    _s=parse_nba_subperiod_and_ext_props(_1,now_ts=_A)
+    if _s is not None and _s.event_id not in a.nba_subperiod_slates:a.nba_subperiod_slates[_s.event_id]=_s
+  a.soc2_lattices=link_and_parse_soc2_exact_score_lattices(_I+I,now_ts=_A)
+  for _0 in a.soc2_lattices.values():
+   if _0.convert_spec is not None and _0.convert_spec.end_ts>_A+60:a.negrisk_convert_slates[_0.convert_spec.event_id]=_0.convert_spec
+  y={}
+  for _av in[ev_m for sp_tm,ev_m in K.values()if sp_tm=="NFL"]+I+n:
+   if not isinstance(_av,dict):continue
+   _au=parse_nfl_player_props_event(_av,now_ts=_A)
+   if _au is not None:y[_au.event_id]=_au
+  a.nfl_prop_slates=y;Q={}
+  for _at in u+j:
+   if isinstance(_at,dict):
+    for _as in parse_binance_terminal_close_event(_at):
+     if _as.close_ts>_A+120:Q[_as.market_id]=_as
+  a.binance_close_rungs=list(Q.values());a.last_discovery_ts=time.time();logger.info(f"Discovery complete: {len(a.weather_events)} Weather city-events, {len(a.barrier_rungs)} Barrier Hit rungs, {len(a.strike_ladders)} Multi-Strike ladders, {len(a.negrisk_ladders)} NegRisk ladders, {len(a.daily_updown_markets)} Crypto Daily Up/Down, {len(a.pyth_daily_markets)} Zero-Fee Pyth FX/Metals Daily, {len(a.pyth_barrier_rungs)} Pyth Hit rungs, {len(a.pyth_close_ladders)} Pyth Close ladders, {len(a.nba_games)} NBA games ({len(a.nba_prop_slates)} Prop, {len(a.nba_subperiod_slates)} SubPer, {len(a.lp1_nba_em_bundles)} EM), {len(a.multi_sport_games)} Multi-Sport ({len(a.lp1_nfl_em_bundles)} NFL EM, {len(a.nfl_prop_slates)} NFL Prop, {len(a.aff1_bundles)} AFF1/SUM1), {len(a.soccer_trees)} Soccer trees ({len(a.soc2_lattices)} SOC2 Exact-Score), {len(a.tennis_specs)} Tennis BO3, {len(a.esports_bo3_specs)} Esports BO3, {len(a.lp2_implication_groups)} LP2 DAG groups, {len(a.cal1_ladders)} CAL1 ladders, {len(a.binance_close_rungs)} Binance Close rungs, {len(a.lp1_bop_legs)//2} BOP/Chamber mkts, {len(a.negrisk_zero_slates)} NegRisk Slates, {len(a.negrisk_convert_slates)} NegRisk Convert slates, {len(a.counting_slates)} Counting slates, {len(a.fomc_truth_legs)//2} FOMC LP mkts, {len(a.oil_senate_truth_legs)//2} Oil-Senate mkts, {len(a.hourly_12pm_markets)} 12PM 1h pairs.")
  async def open_shadow_position(c,sleeve,dedupe_key,asset_or_city,title,side_label,token_id,fee_rate,p_model,close_ts,extra,tp_target_px=None,prefetched_book=None):
   if is_shadow_sleeve_quarantined(sleeve):return False
   k=[dedupe_key]
@@ -5634,100 +5632,103 @@ class Alpha124ShadowDaemon:
     if h:_K["adverse_fill_during_cancel_window"]=True;_K["adverse_trigger"]=b
     _P={"position_id":_q,"dedupe_key":_N["dedupe_key"],"sleeve":_C,"asset_or_city":_M,"title":_N["title"],"side":_h,"token_id":_Q,"fee_rate":.0,"entry_ts":_S,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":_i,"p_model_entry":round(d,4),"entry_eff_px_t1000":H,"entry_vwap_t1000":F,"realized_edge_t1000":round(d-H,4),"entry_best_bid":F,"last_bid":F,"maker_tp_px":n,"tier_fills":G,"extra":_K,"status":"OPEN"};self.open_positions[_q]=_P;self._append_ledger({"event":"SHADOW_ENTRY",**_P});_p=f"${n:.3f}"if n is not None else"HOLD_SETTLE";logger.info(f"[MAKER_FILLED:{_C}] {_M} | {_P['title']} ({_h}) @ resting=${F:.3f} -> TP={_p} (p_mod={d:.3f}, adverse={h})")
  async def scan_weather_markets(c,opps_out):
-  _s=datetime.now(timezone.utc);_T=asyncio.get_running_loop()
-  for sp in list(c.weather_events.values()):
-   _N=time.time()
-   try:h=datetime.fromisoformat(sp.end_date_iso.replace("Z","+00:00")).timestamp()
-   except Exception:h=_N+86400.
-   if h<=_N:c.weather_events.pop(sp.event_id,None);continue
-   O=not c.single_scan and is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND")
-   if O:
-    try:j=_s.astimezone(ZoneInfo(sp.tz_name))
-    except Exception:j=_s
-    _j=j.hour+j.minute/60.
-    if sp.metric=="LOW":d=j.date()>sp.obs_date or(j.date()==sp.obs_date and _j>=9.25)
-    else:d=j.date()>sp.obs_date or(j.date()==sp.obs_date and _j>=15.25)
-   else:d=True
-   if O and not d:_r=max(1,len(sp.buckets));L=[round(1./_r,4)]*len(sp.buckets);_G={"is_solar_lock":False,"locked_bucket_idx":None,"p_locked_bucket":.0,"obs_count":0,"latest_temp_c":None,"running_ext_c":None,"peak_iqr_c":None,"cooling_cushion_c":.0,"convective_cold_pool":False,"probs":L}
+  from src.polymarket_research.riskless_protocol_v2_expansion import resolve_weather_effective_end_ts;_u=datetime.now(timezone.utc);_R=time.time();o=[]
+  for _Y in list(c.weather_events.values()):
+   _Q=resolve_weather_effective_end_ts(_Y,_R+86400.)
+   if _Q<=_R:c.weather_events.pop(_Y.event_id,None);continue
+   try:_l=_u.astimezone(ZoneInfo(_Y.tz_name))
+   except Exception:_l=_u
+   if(_Y.obs_date-_l.date()).days>1 and not c.single_scan:continue
+   o.append((0 if _l.date()>=_Y.obs_date else 1,_Q,_Y))
+  o.sort(key=lambda r:(r[0],r[1]))
+  for _,_,sp in o[:45]:
+   _P=time.time();v=resolve_weather_effective_end_ts(sp,_P+86400.)
+   if v<=_P:c.weather_events.pop(sp.event_id,None);continue
+   Q=not c.single_scan and is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND")
+   if Q:
+    try:h=_u.astimezone(ZoneInfo(sp.tz_name))
+    except Exception:h=_u
+    g=h.date()>=sp.obs_date
+   else:g=True
+   if Q and not g:_t=max(1,len(sp.buckets));N=[round(1./_t,4)]*len(sp.buckets);_I={"is_solar_lock":False,"locked_bucket_idx":None,"p_locked_bucket":.0,"obs_count":0,"latest_temp_c":None,"running_ext_c":None,"peak_iqr_c":None,"cooling_cushion_c":.0,"convective_cold_pool":False,"probs":N}
    else:
-    _M=f"{sp.icao}_{sp.obs_date.isoformat()}";_i=c.metar_cache.get(_M);Z=compute_adaptive_metar_poll_ttl(sp.icao,_i[1]if _i else None,_s)
-    if _i is None or(_N-_i[0])>=Z:u=await asyncio.to_thread(fetch_metar_observations_sync,sp.icao,sp.obs_date,sp.tz_name);c.metar_cache[_M]=(_N,u)
-    else:u=_i[1]
-    N=c.taf_cache.get(_M)
-    if N is None or(_N-N[0])>=1800.:o=await asyncio.to_thread(fetch_taf_extremes_sync,sp.icao,sp.obs_date,sp.tz_name);c.taf_cache[_M]=(_N,o)
-    else:o=N[1]
-    _h=c.ensemble_cache.get(sp.icao);_q=1500. if(_h and _h[1])else 60.
-    if _h is None or(_N-_h[0])>=_q:
-     async with c._open_meteo_sem:M=await asyncio.to_thread(fetch_live_ensemble_hourly_sync,sp.lat,sp.lon);await asyncio.sleep(.18)
-     c.ensemble_cache[sp.icao]=(_N,M)
-    else:M=_h[1]
-    if not M and not u:continue
-    _G=compute_weather_probabilities(sp,_s,u,M,forecast_sigma_base_c=c.weather_sigma_c,taf_extreme_c=(o or{}).get(sp.metric));L=_G["probs"]
-   try:h=datetime.fromisoformat(sp.end_date_iso.replace("Z","+00:00")).timestamp()
-   except Exception:h=_N+86400.
-   if _G["is_solar_lock"]and _G["locked_bucket_idx"]is not None:
-    _F=sp.buckets[_G["locked_bucket_idx"]];_E=_G["p_locked_bucket"];_D=float(getattr(_F,"fee_rate",.0)or.0);A=sp.metric=="LOW";Y="W1_LOW_TROUGH_LOCK"if A else"W1_SOLAR_PEAK_LOCK";K=.96 if A else.94;z=.03 if A else.035;_p=f"W1LOW_{sp.event_id}_{_F.market_id}"if A else f"W1_{sp.event_id}_{_F.market_id}";bk=await c.fetch_json(f"{CLOB_URL}/book?token_id={_F.yes_token}",timeout=3.5)
+    _O=f"{sp.icao}_{sp.obs_date.isoformat()}";_k=c.metar_cache.get(_O);_b=compute_adaptive_metar_poll_ttl(sp.icao,_k[1]if _k else None,_u)
+    if _k is None or(_P-_k[0])>=_b:w=await asyncio.to_thread(fetch_metar_observations_sync,sp.icao,sp.obs_date,sp.tz_name);c.metar_cache[_O]=(_P,w)
+    else:w=_k[1]
+    P=c.taf_cache.get(_O)
+    if P is None or(_P-P[0])>=1800.:n=await asyncio.to_thread(fetch_taf_extremes_sync,sp.icao,sp.obs_date,sp.tz_name);c.taf_cache[_O]=(_P,n)
+    else:n=P[1]
+    _j=c.ensemble_cache.get(sp.icao);_s=1500. if(_j and _j[1])else 60.
+    if _j is None or(_P-_j[0])>=_s:
+     async with c._open_meteo_sem:O=await asyncio.to_thread(fetch_live_ensemble_hourly_sync,sp.lat,sp.lon);await asyncio.sleep(.18)
+     c.ensemble_cache[sp.icao]=(_P,O)
+    else:O=_j[1]
+    if not O and not w:continue
+    _I=compute_weather_probabilities(sp,_u,w,O,forecast_sigma_base_c=c.weather_sigma_c,taf_extreme_c=(n or{}).get(sp.metric));N=_I["probs"]
+   v=resolve_weather_effective_end_ts(sp,_P+86400.)
+   if _I["is_solar_lock"]and _I["locked_bucket_idx"]is not None:
+    _H=sp.buckets[_I["locked_bucket_idx"]];_G=_I["p_locked_bucket"];_F=float(getattr(_H,"fee_rate",.0)or.0);C=sp.metric=="LOW";_a="W1_LOW_TROUGH_LOCK"if C else"W1_SOLAR_PEAK_LOCK";M=.96 if C else.94;B=.03 if C else.035;_r=f"W1LOW_{sp.event_id}_{_H.market_id}"if C else f"W1_{sp.event_id}_{_H.market_id}";bk=await c.fetch_json(f"{CLOB_URL}/book?token_id={_H.yes_token}",timeout=3.5)
     if bk:
-     C=walk_l2_book_asks_depth_capped(bk.get("asks")or[],BANKROLL_TICKETS["T1000"][Y],BANKROLL_TICKETS["T100"][Y],fee_rate=_D,min_l1_usd=(15. if A else 20.),max_ask_px=K+1e-4);_C,J=extract_best_bid(bk.get("bids")or[]);c._record_market_telemetry(key=f"W1_LOCK_{sp.event_id}_{_F.market_id}",min_interval_sec=45.,now_ts=_N,sig=(C.get("eff_px"),_C,round(float(_E),3)),payload={"type":"WEATHER_SOLAR_LOCK_SNAP","sleeve":Y,"event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket":_F.label,"obs_count":_G["obs_count"],"running_ext_c":_G["running_ext_c"],"cushion_c":_G["cooling_cushion_c"],"p_lock":_E,"ask_eff":C.get("eff_px")if C.get("filled")else None,"bid":_C if _C>0 else None,"l1_usd":C.get("l1_usd",.0)});_g={"event_id":sp.event_id,"market_id":_F.market_id,"condition_id":_F.condition_id,"opp_token_id":_F.no_token,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket_label":_F.label,"running_ext_c":_G["running_ext_c"],"cooling_cushion_c":_G["cooling_cushion_c"]};k=False
-     if C.get("filled")and.52<=C["eff_px"]<=K:
-      _a=_E-C["eff_px"];opps_out.append({"sleeve":Y,"market":f"{sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_F.label}","ask_vwap":C["eff_px"],"p_model":_E,"net_edge":round(_a,4),"l1_usd":C["l1_usd"]})
-      if _a>=z:
-       _L=getattr(_F,"neg_risk",None)
-       if float(_E)>=.985 and _L is not None and(h-_N)<=86400.:X=await c.fetch_json(f"{CLOB_URL}/book?token_id={_F.no_token}",timeout=2.5);c.emit_live_single_leg_lock_candidate(sleeve_source=Y,asset=f"{sp.city}_{sp.icao}",dedupe_key=_p,token_id=_F.yes_token,opp_token_id=_F.no_token,market_id=_F.market_id,condition_id=_F.condition_id,side_label="YES",display_label=f"{sp.city} {sp.metric} [{_F.label}]",bk_win=bk,bk_opp=X if isinstance(X,dict)else None,fee_rate=_D,fee_exponent=1.,neg_risk=bool(_L),close_ts=h,now_ts=_N,max_lock_eff_px=K,max_opp_bid=.045,hold_to_maturity=False,p_model=float(_E))
-       k=await c.open_shadow_position(sleeve=Y,dedupe_key=_p,asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_F.label}]",side_label="YES",token_id=_F.yes_token,fee_rate=_D,p_model=_E,close_ts=h,extra=_g,prefetched_book=bk)
-     if(not k and not _G.get("convective_cold_pool")and(h-_N)>9e2 and.25<=_C<=K and(_E-_C)>=z):
-      W=await c.post_shadow_maker_entry(sleeve=Y,dedupe_key=_p,asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_F.label}]",side_label="YES",token_id=_F.yes_token,p_model=_E,close_ts=h,extra=_g,prefetched_book=bk)
-      if W and not C.get("filled"):opps_out.append({"sleeve":Y,"market":f"[MAKER] {sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_F.label}","ask_vwap":_C,"p_model":_E,"net_edge":round(_E-_C,4),"l1_usd":J,"close_ts":h})
-   V=f"W3_SLATE_{sp.event_id}";y=float(c._last_w3_slate_chk_ts.get(sp.event_id)or.0);w=45. if(sp.series_slug in HIGH_VOLUME_WEATHER_SERIES or(h-_N)<=21600.)else 120.
-   if(V not in c.entered_keys and V not in c.inflight_keys and len(sp.buckets)>=3 and(c.single_scan or(_N-y)>=w)):
-    c._last_w3_slate_chk_ts[sp.event_id]=_N;_B=[b_i.yes_token for b_i in sp.buckets]+[b_i.no_token for b_i in sp.buckets];_f=await c.fetch_books_batch(_B,timeout=3.);m={};f={}
+     E=walk_l2_book_asks_depth_capped(bk.get("asks")or[],BANKROLL_TICKETS["T1000"][_a],BANKROLL_TICKETS["T100"][_a],fee_rate=_F,min_l1_usd=(15. if C else 20.),max_ask_px=M+1e-4);_E,L=extract_best_bid(bk.get("bids")or[]);c._record_market_telemetry(key=f"W1_LOCK_{sp.event_id}_{_H.market_id}",min_interval_sec=45.,now_ts=_P,sig=(E.get("eff_px"),_E,round(float(_G),3)),payload={"type":"WEATHER_SOLAR_LOCK_SNAP","sleeve":_a,"event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket":_H.label,"obs_count":_I["obs_count"],"running_ext_c":_I["running_ext_c"],"cushion_c":_I["cooling_cushion_c"],"p_lock":_G,"ask_eff":E.get("eff_px")if E.get("filled")else None,"bid":_E if _E>0 else None,"l1_usd":E.get("l1_usd",.0)});_i={"event_id":sp.event_id,"market_id":_H.market_id,"condition_id":_H.condition_id,"opp_token_id":_H.no_token,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket_label":_H.label,"running_ext_c":_I["running_ext_c"],"cooling_cushion_c":_I["cooling_cushion_c"]};j=False
+     if E.get("filled")and.52<=E["eff_px"]<=M:
+      _c=_G-E["eff_px"];opps_out.append({"sleeve":_a,"market":f"{sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_H.label}","ask_vwap":E["eff_px"],"p_model":_G,"net_edge":round(_c,4),"l1_usd":E["l1_usd"]})
+      if _c>=B:
+       _N=getattr(_H,"neg_risk",None)
+       if float(_G)>=.985 and _N is not None and(v-_P)<=86400.:Z=await c.fetch_json(f"{CLOB_URL}/book?token_id={_H.no_token}",timeout=2.5);c.emit_live_single_leg_lock_candidate(sleeve_source=_a,asset=f"{sp.city}_{sp.icao}",dedupe_key=_r,token_id=_H.yes_token,opp_token_id=_H.no_token,market_id=_H.market_id,condition_id=_H.condition_id,side_label="YES",display_label=f"{sp.city} {sp.metric} [{_H.label}]",bk_win=bk,bk_opp=Z if isinstance(Z,dict)else None,fee_rate=_F,fee_exponent=1.,neg_risk=bool(_N),close_ts=v,now_ts=_P,max_lock_eff_px=M,max_opp_bid=.045,hold_to_maturity=False,p_model=float(_G))
+       j=await c.open_shadow_position(sleeve=_a,dedupe_key=_r,asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_H.label}]",side_label="YES",token_id=_H.yes_token,fee_rate=_F,p_model=_G,close_ts=v,extra=_i,prefetched_book=bk)
+     if(not j and not _I.get("convective_cold_pool")and(v-_P)>9e2 and.25<=_E<=M and(_G-_E)>=B):
+      Y=await c.post_shadow_maker_entry(sleeve=_a,dedupe_key=_r,asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_H.label}]",side_label="YES",token_id=_H.yes_token,p_model=_G,close_ts=v,extra=_i,prefetched_book=bk)
+      if Y and not E.get("filled"):opps_out.append({"sleeve":_a,"market":f"[MAKER] {sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_H.label}","ask_vwap":_E,"p_model":_G,"net_edge":round(_G-_E,4),"l1_usd":L,"close_ts":v})
+   X=f"W3_SLATE_{sp.event_id}";A=float(c._last_w3_slate_chk_ts.get(sp.event_id)or.0);z=45. if(sp.series_slug in HIGH_VOLUME_WEATHER_SERIES or(v-_P)<=21600.)else 120.
+   if(X not in c.entered_keys and X not in c.inflight_keys and len(sp.buckets)>=3 and(c.single_scan or(_P-A)>=z)):
+    c._last_w3_slate_chk_ts[sp.event_id]=_P;_D=[b_i.yes_token for b_i in sp.buckets]+[b_i.no_token for b_i in sp.buckets];_h=await c.fetch_books_batch(_D,timeout=3.);l={};e={}
     for b_i in sp.buckets:
-     _S=_f.get(b_i.yes_token);_A=_f.get(b_i.no_token);_K={}
-     if _S:
-      f[b_i.market_id]=_S;_z=sorted([(float(a["price"]),float(a["size"]))for a in(_S.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
-      if _z:_K["ask_yes"]=_z[0][0];_K["ask_yes_shares"]=_z[0][1]
-     if _A:
-      _y=sorted([(float(a["price"]),float(a["size"]))for a in(_A.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
-      if _y:_K["ask_no"]=_y[0][0];_K["ask_no_shares"]=_y[0][1]
-     if _K:m[b_i.market_id]=_K
-     if(_A and int(_G.get("obs_count")or 0)>=1 and _G.get("running_ext_c")is not None and not _G.get("has_corrected_obs")and float(getattr(b_i,"rewards_min_size",.0)or.0)>.0 and(h-_N)>3e2):
-      U=celsius_to_market_int(float(_G["running_ext_c"]),b_i.unit);T=((sp.metric=="HIGH"and b_i.high_bound<=U-2)or(sp.metric=="LOW"and b_i.low_bound>=U+2))
-      if T:
-       _x,_=extract_best_bid(_A.get("bids")or[]);_w=float(_K.get("ask_no",1.)or 1.);_R=evaluate_locked_market_reward_carry(1.,_x,_w,float(b_i.rewards_min_size),float(b_i.rewards_max_spread),float(getattr(b_i,"fee_rate",.0)or.0))
-       if _R.get("eligible"):
-        opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{sp.city} ({sp.icao}) Dead NO[{b_i.label}] @ ${_R['resting_bid']:.3f}","ask_vwap":_R["resting_bid"],"p_model":1.,"net_edge":_R["carry_edge"],"l1_usd":50.,"close_ts":h});await c.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_W_{b_i.market_id}",f"{sp.city}_{sp.icao}",f"{sp.title} [Dead NO {b_i.label}]","NO",b_i.no_token,1.,h,{"market_id":b_i.market_id,"condition_id":b_i.condition_id,"opp_token_id":b_i.yes_token,"resting_bid_override":_R["resting_bid"]},prefetched_book=_A);from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
-        if is_reward_locked_carry_live_ready(c,1.)and getattr(b_i,"neg_risk",None)is not None and _S is not None:c.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"MKR_RW_W_{b_i.market_id}",pair_dedupe_key=f"MKR_RW_WPAIR_{b_i.market_id}",token_id=b_i.no_token,opp_token_id=b_i.yes_token,market_id=b_i.market_id,condition_id=b_i.condition_id,side_label="NO",display_label=f"{sp.city} Reward Carry NO[{b_i.label}]",bk_win=_A,bk_opp=_S,neg_risk=bool(b_i.neg_risk),close_ts=float(h),now_ts=_N,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=float(_R["resting_bid"]))
-     if _S and _A and float(getattr(b_i,"fee_rate",.0)or.0)==.0:
-      _Q=scan_binary_complete_set_arb(market_id=b_i.market_id,condition_id=b_i.condition_id,yes_token=b_i.yes_token,no_token=b_i.no_token,asks_yes_raw=_S.get("asks")or[],asks_no_raw=_A.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=.0,max_box_cost_net=.995)
-      if _Q.get("filled"):
-       opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{sp.city} ({sp.icao}) Complete-Set [{b_i.label}]","ask_vwap":_Q["box_cost_net"],"p_model":1.,"net_edge":_Q["riskless_floor_per_pair"],"l1_usd":_Q["l1_usd"],"close_ts":h});I=getattr(b_i,"neg_risk",None);_o={"token_id":b_i.yes_token,"opp_token_id":b_i.no_token,"condition_id":b_i.condition_id,"side":"YES","label":"YES","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(I)};_n={"token_id":b_i.no_token,"opp_token_id":b_i.yes_token,"condition_id":b_i.condition_id,"side":"NO","label":"NO","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(I)};await c.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_W_{b_i.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} YES+NO Complete Set [{b_i.label}]",leg_a=_o,leg_b=_n,bk_a=_S,bk_b=_A,close_ts=h,max_box_cost_net=.995,extra={"is_complete_set":True,"market_id":b_i.market_id,"condition_id":b_i.condition_id})
-       if I is not None and(h-_N)<=86400. and float(_Q["box_cost_net"])<=.99:c.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"C1_W_{b_i.market_id}",leg_a=_o,leg_b=_n,bk_a=_S,bk_b=_A,close_ts=float(h),now_ts=_N)
-    _e=evaluate_weather_event_slate(sp,L,m,target_budget_usd=BANKROLL_TICKETS["T1000"]["W3_WEATHER_SLATE_ARB"]);_d=_e.get("full_slate_arb")
-    if len(m)==len(sp.buckets):S=all(m[b.market_id].get("ask_yes",0)>0 for b in sp.buckets);R=all(m[b.market_id].get("ask_no",0)>0 for b in sp.buckets);_c=round(sum(float(m[b.market_id]["ask_yes"])for b in sp.buckets),4)if S else None;_b=round(sum(float(m[b.market_id]["ask_no"])for b in sp.buckets),4)if R else None;_m=max(range(len(sp.buckets)),key=lambda idx_b:float(L[idx_b]))if L else 0;_l=sp.buckets[_m]if sp.buckets else None;Q=float(m[_l.market_id].get("ask_yes")or.0)if _l else.0;c._record_market_telemetry(key=f"W_SLATE_{sp.event_id}",min_interval_sec=45. if(h-_N)<=7200. else 90.,now_ts=_N,sig=(_c,_b,_G["running_ext_c"],round(Q,3),(_d or{}).get("mode")),payload={"type":"WEATHER_SLATE","event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"n_buckets":len(sp.buckets),"tte_sec":round(h-_N,0),"obs_count":_G["obs_count"],"latest_c":_G["latest_temp_c"],"running_ext_c":_G["running_ext_c"],"ens_iqr_c":_G["peak_iqr_c"],"solar_lock":_G["is_solar_lock"],"top_bucket":_l.label if _l else None,"top_p":round(float(L[_m]),4)if L else None,"top_ask_yes":round(Q,4)if Q>0 else None,"sum_yes_l1":_c,"sum_no_l1":_b,"no_payout":len(sp.buckets)-1,"arb_mode":(_d or{}).get("mode")})
-    if _d:_P=float(_d.get("guaranteed_payout_per_set")or 1.);opps_out.append({"sleeve":"W3_WEATHER_SLATE_ARB","market":f"{sp.city} ({sp.icao}) {sp.obs_date} Full-Slate ({len(sp.buckets)} buckets, {_d.get('side','ALL_BUCKETS_YES')})","ask_vwap":round(float(_d["sum_asks"])/_P,4),"p_model":1.,"net_edge":round(float(_d["guaranteed_edge_per_set"])/_P,4),"l1_usd":_d["total_cost_usd"]});await c.open_shadow_weather_slate(sp,_d,h)
-    if all(b.market_id in f for b in sp.buckets):await c.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_W_{sp.event_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} {sp.obs_date} Weather NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":f[b.market_id].get("bids")or[],"fee_rate":float(getattr(b,"fee_rate",.0)or.0),"fee_exponent":1.}for b in sp.buckets],close_ts=h,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"WEATHER_NEGRISK","event_id":sp.event_id})
-   else:f={}
+     _W=_h.get(b_i.yes_token);_C=_h.get(b_i.no_token);_M={}
+     if _W:
+      e[b_i.market_id]=_W;_B=sorted([(float(a["price"]),float(a["size"]))for a in(_W.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
+      if _B:_M["ask_yes"]=_B[0][0];_M["ask_yes_shares"]=_B[0][1]
+     if _C:
+      _A=sorted([(float(a["price"]),float(a["size"]))for a in(_C.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
+      if _A:_M["ask_no"]=_A[0][0];_M["ask_no_shares"]=_A[0][1]
+     if _M:l[b_i.market_id]=_M
+     if(_C and int(_I.get("obs_count")or 0)>=1 and _I.get("running_ext_c")is not None and not _I.get("has_corrected_obs")and float(getattr(b_i,"rewards_min_size",.0)or.0)>.0 and(v-_P)>3e2):
+      W=celsius_to_market_int(float(_I["running_ext_c"]),b_i.unit);V=((sp.metric=="HIGH"and b_i.high_bound<=W-2)or(sp.metric=="LOW"and b_i.low_bound>=W+2))
+      if V:
+       _z,_=extract_best_bid(_C.get("bids")or[]);_y=float(_M.get("ask_no",1.)or 1.);_V=evaluate_locked_market_reward_carry(1.,_z,_y,float(b_i.rewards_min_size),float(b_i.rewards_max_spread),float(getattr(b_i,"fee_rate",.0)or.0))
+       if _V.get("eligible"):
+        opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{sp.city} ({sp.icao}) Dead NO[{b_i.label}] @ ${_V['resting_bid']:.3f}","ask_vwap":_V["resting_bid"],"p_model":1.,"net_edge":_V["carry_edge"],"l1_usd":50.,"close_ts":v});await c.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_W_{b_i.market_id}",f"{sp.city}_{sp.icao}",f"{sp.title} [Dead NO {b_i.label}]","NO",b_i.no_token,1.,v,{"market_id":b_i.market_id,"condition_id":b_i.condition_id,"opp_token_id":b_i.yes_token,"resting_bid_override":_V["resting_bid"]},prefetched_book=_C);from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready
+        if is_reward_locked_carry_live_ready(c,1.)and getattr(b_i,"neg_risk",None)is not None and _W is not None:c.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"MKR_RW_W_{b_i.market_id}",pair_dedupe_key=f"MKR_RW_WPAIR_{b_i.market_id}",token_id=b_i.no_token,opp_token_id=b_i.yes_token,market_id=b_i.market_id,condition_id=b_i.condition_id,side_label="NO",display_label=f"{sp.city} Reward Carry NO[{b_i.label}]",bk_win=_C,bk_opp=_W,neg_risk=bool(b_i.neg_risk),close_ts=float(v),now_ts=_P,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=float(_V["resting_bid"]))
+     if _W and _C and float(getattr(b_i,"fee_rate",.0)or.0)==.0:
+      _U=scan_binary_complete_set_arb(market_id=b_i.market_id,condition_id=b_i.condition_id,yes_token=b_i.yes_token,no_token=b_i.no_token,asks_yes_raw=_W.get("asks")or[],asks_no_raw=_C.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=.0,max_box_cost_net=.995)
+      if _U.get("filled"):
+       opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{sp.city} ({sp.icao}) Complete-Set [{b_i.label}]","ask_vwap":_U["box_cost_net"],"p_model":1.,"net_edge":_U["riskless_floor_per_pair"],"l1_usd":_U["l1_usd"],"close_ts":v});K=getattr(b_i,"neg_risk",None);_q={"token_id":b_i.yes_token,"opp_token_id":b_i.no_token,"condition_id":b_i.condition_id,"side":"YES","label":"YES","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(K)};_p={"token_id":b_i.no_token,"opp_token_id":b_i.yes_token,"condition_id":b_i.condition_id,"side":"NO","label":"NO","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(K)};await c.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_W_{b_i.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} YES+NO Complete Set [{b_i.label}]",leg_a=_q,leg_b=_p,bk_a=_W,bk_b=_C,close_ts=v,max_box_cost_net=.995,extra={"is_complete_set":True,"market_id":b_i.market_id,"condition_id":b_i.condition_id})
+       if K is not None and(v-_P)<=86400. and float(_U["box_cost_net"])<=.99:c.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"C1_W_{b_i.market_id}",leg_a=_q,leg_b=_p,bk_a=_W,bk_b=_C,close_ts=float(v),now_ts=_P)
+    _g=evaluate_weather_event_slate(sp,N,l,target_budget_usd=BANKROLL_TICKETS["T1000"]["W3_WEATHER_SLATE_ARB"]);_f=_g.get("full_slate_arb")
+    if len(l)==len(sp.buckets):U=all(l[b.market_id].get("ask_yes",0)>0 for b in sp.buckets);T=all(l[b.market_id].get("ask_no",0)>0 for b in sp.buckets);_e=round(sum(float(l[b.market_id]["ask_yes"])for b in sp.buckets),4)if U else None;_d=round(sum(float(l[b.market_id]["ask_no"])for b in sp.buckets),4)if T else None;_o=max(range(len(sp.buckets)),key=lambda idx_b:float(N[idx_b]))if N else 0;_n=sp.buckets[_o]if sp.buckets else None;S=float(l[_n.market_id].get("ask_yes")or.0)if _n else.0;c._record_market_telemetry(key=f"W_SLATE_{sp.event_id}",min_interval_sec=45. if(v-_P)<=7200. else 90.,now_ts=_P,sig=(_e,_d,_I["running_ext_c"],round(S,3),(_f or{}).get("mode")),payload={"type":"WEATHER_SLATE","event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"n_buckets":len(sp.buckets),"tte_sec":round(v-_P,0),"obs_count":_I["obs_count"],"latest_c":_I["latest_temp_c"],"running_ext_c":_I["running_ext_c"],"ens_iqr_c":_I["peak_iqr_c"],"solar_lock":_I["is_solar_lock"],"top_bucket":_n.label if _n else None,"top_p":round(float(N[_o]),4)if N else None,"top_ask_yes":round(S,4)if S>0 else None,"sum_yes_l1":_e,"sum_no_l1":_d,"no_payout":len(sp.buckets)-1,"arb_mode":(_f or{}).get("mode")})
+    if _f:_T=float(_f.get("guaranteed_payout_per_set")or 1.);opps_out.append({"sleeve":"W3_WEATHER_SLATE_ARB","market":f"{sp.city} ({sp.icao}) {sp.obs_date} Full-Slate ({len(sp.buckets)} buckets, {_f.get('side','ALL_BUCKETS_YES')})","ask_vwap":round(float(_f["sum_asks"])/_T,4),"p_model":1.,"net_edge":round(float(_f["guaranteed_edge_per_set"])/_T,4),"l1_usd":_f["total_cost_usd"]});await c.open_shadow_weather_slate(sp,_f,v)
+    if all(b.market_id in e for b in sp.buckets):await c.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_W_{sp.event_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} {sp.obs_date} Weather NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":e[b.market_id].get("bids")or[],"fee_rate":float(getattr(b,"fee_rate",.0)or.0),"fee_exponent":1.}for b in sp.buckets],close_ts=v,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"WEATHER_NEGRISK","event_id":sp.event_id})
+   else:e={}
    if is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND"):continue
-   q=int(_G.get("ensemble_member_count")or 0);H=float(_G.get("peak_iqr_c")or.0);n=f"W2_EVENT_{sp.event_id}"in c.entered_keys or f"W2_EVENT_{sp.event_id}"in c.inflight_keys;l=f"W2M_EVENT_{sp.event_id}"in c.entered_keys or f"W2M_EVENT_{sp.event_id}"in c.inflight_keys;g=None;e=None;v=sorted(range(len(L)),key=lambda i:-L[i])[:2]
-   for _U in v:
-    _J=L[_U]
-    if _J<.24:continue
-    b=sp.buckets[_U];_I=float(getattr(b,"fee_rate",.0)or.0);bk=f.get(b.market_id)or await c.fetch_json(f"{CLOB_URL}/book?token_id={b.yes_token}",timeout=3.5)
+   q=int(_I.get("ensemble_member_count")or 0);J=float(_I.get("peak_iqr_c")or.0);m=f"W2_EVENT_{sp.event_id}"in c.entered_keys or f"W2_EVENT_{sp.event_id}"in c.inflight_keys;k=f"W2M_EVENT_{sp.event_id}"in c.entered_keys or f"W2M_EVENT_{sp.event_id}"in c.inflight_keys;f=None;d=None;y=sorted(range(len(N)),key=lambda i:-N[i])[:2]
+   for _X in y:
+    _L=N[_X]
+    if _L<.24:continue
+    b=sp.buckets[_X];_K=float(getattr(b,"fee_rate",.0)or.0);bk=e.get(b.market_id)or await c.fetch_json(f"{CLOB_URL}/book?token_id={b.yes_token}",timeout=3.5)
     if not bk:continue
-    G=bk.get("asks")or[];F=bk.get("bids")or[];E,t=extract_best_bid(F);s=[float(a["price"])for a in G if float(a.get("price",0))>0 and float(a.get("size",0))>0]
-    if _I==.0 and s and E>0 and(min(s)-E)>=.02:
-     D=round(min(s),4);p=round(min(E+.01,D-.01),4);r=_J-p
-     if.14<=p<=.65 and r>=.055 and q>=50 and t>=10.:opps_out.append({"sleeve":"W2_MAKER_OVERROUND","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label} [MakerBid]","ask_vwap":p,"p_model":round(_J,4),"net_edge":round(r,4),"l1_usd":t})
-     if(not n and not l and(h-_N)>=5400. and q>=50 and H<=2.2 and not _G.get("convective_cold_pool")and t>=10. and.14<=p<=.62 and _J>=.3 and r>=.085):
-      if e is None or r>e[0]:e=(r,_J,p,b,bk)
-    C=walk_l2_book_asks(G,50.,fee_rate=_I)
-    if not C.get("filled"):continue
-    _v=C["eff_px"];_a=_J-_v
-    if.1<=_v<=.62 and _a>=.04 and q>=50:opps_out.append({"sleeve":"W2_ENSEMBLE_VALUE","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label}","ask_vwap":_v,"p_model":round(_J,4),"net_edge":round(_a,4),"l1_usd":C["l1_usd"]})
-    if(not n and not l and q>=50 and H<=2.2 and not _G.get("convective_cold_pool")and.16<=_v<=.62 and _J>=.34 and _a>=.095):
-     if g is None or _a>g[0]:g=(_a,_J,_v,b,bk)
-   if g is not None and os.getenv("PM_DISABLE_SHADOW_W2_TAKER","0")!="1":_,B,_,_u,_k=g;await c.open_shadow_position(sleeve="W2_ENSEMBLE_VALUE",dedupe_key=f"W2_{sp.event_id}_{_u.market_id}",asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_u.label}]",side_label="YES",token_id=_u.yes_token,fee_rate=float(getattr(_u,"fee_rate",.0)or.0),p_model=B,close_ts=h,extra={"event_id":sp.event_id,"market_id":_u.market_id,"condition_id":_u.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_u.label,"bias_c":_G["bias_c"],"ensemble_members":q,"peak_iqr_c":H},prefetched_book=_k)
-   elif e is not None:_,P,_,_H,_t=e;await c.post_shadow_maker_entry(sleeve="W2_MAKER_OVERROUND",dedupe_key=f"W2M_{sp.event_id}_{_H.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_H.label}]",side_label="YES",token_id=_H.yes_token,p_model=P,close_ts=h,extra={"execution_mode":"POST_ONLY_WEATHER_MAKER_ZERO_FEE","event_id":sp.event_id,"market_id":_H.market_id,"condition_id":_H.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_H.label,"bias_c":_G["bias_c"],"ensemble_members":q,"peak_iqr_c":H},prefetched_book=_t)
+    I=bk.get("asks")or[];H=bk.get("bids")or[];G,u=extract_best_bid(H);t=[float(a["price"])for a in I if float(a.get("price",0))>0 and float(a.get("size",0))>0]
+    if _K==.0 and t and G>0 and(min(t)-G)>=.02:
+     F=round(min(t),4);p=round(min(G+.01,F-.01),4);s=_L-p
+     if.14<=p<=.65 and s>=.055 and q>=50 and u>=10.:opps_out.append({"sleeve":"W2_MAKER_OVERROUND","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label} [MakerBid]","ask_vwap":p,"p_model":round(_L,4),"net_edge":round(s,4),"l1_usd":u})
+     if(not m and not k and(v-_P)>=5400. and q>=50 and J<=2.2 and not _I.get("convective_cold_pool")and u>=10. and.14<=p<=.62 and _L>=.3 and s>=.085):
+      if d is None or s>d[0]:d=(s,_L,p,b,bk)
+    E=walk_l2_book_asks(I,50.,fee_rate=_K)
+    if not E.get("filled"):continue
+    _x=E["eff_px"];_c=_L-_x
+    if.1<=_x<=.62 and _c>=.04 and q>=50:opps_out.append({"sleeve":"W2_ENSEMBLE_VALUE","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label}","ask_vwap":_x,"p_model":round(_L,4),"net_edge":round(_c,4),"l1_usd":E["l1_usd"]})
+    if(not m and not k and q>=50 and J<=2.2 and not _I.get("convective_cold_pool")and.16<=_x<=.62 and _L>=.34 and _c>=.095):
+     if f is None or _c>f[0]:f=(_c,_L,_x,b,bk)
+   if f is not None and os.getenv("PM_DISABLE_SHADOW_W2_TAKER","0")!="1":_,D,_,_w,_m=f;await c.open_shadow_position(sleeve="W2_ENSEMBLE_VALUE",dedupe_key=f"W2_{sp.event_id}_{_w.market_id}",asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_w.label}]",side_label="YES",token_id=_w.yes_token,fee_rate=float(getattr(_w,"fee_rate",.0)or.0),p_model=D,close_ts=v,extra={"event_id":sp.event_id,"market_id":_w.market_id,"condition_id":_w.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_w.label,"bias_c":_I["bias_c"],"ensemble_members":q,"peak_iqr_c":J},prefetched_book=_m)
+   elif d is not None:_,R,_,_J,_v=d;await c.post_shadow_maker_entry(sleeve="W2_MAKER_OVERROUND",dedupe_key=f"W2M_{sp.event_id}_{_J.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_J.label}]",side_label="YES",token_id=_J.yes_token,p_model=R,close_ts=v,extra={"execution_mode":"POST_ONLY_WEATHER_MAKER_ZERO_FEE","event_id":sp.event_id,"market_id":_J.market_id,"condition_id":_J.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_J.label,"bias_c":_I["bias_c"],"ensemble_members":q,"peak_iqr_c":J},prefetched_book=_v)
  async def scan_barrier_markets(a,opps_out):
   _d=time.time();X=asyncio.get_running_loop();o=collections.defaultdict(list)
   for r in a.barrier_rungs.values():
@@ -6173,30 +6174,14 @@ class Alpha124ShadowDaemon:
   if not(a.single_scan or("fetch_json"in a.__dict__)):
    now_ts=time.time()
    if float(m5.end_ts-now_ts)<16.:return False
-  p=f"{m15.asset}_{m15.market_id}_{m5.market_id}";o=float(a._last_d1_live_emit_ts.get(p,.0)or.0)
-  if(now_ts-o)<10.:return False
-  v=dom_info["leg_a"];u=dom_info["leg_b"];y=w_live["leg_a_walk"];x=w_live["leg_b_walk"];m=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());n=compute_d1_legging_drag_haircut(shares=float(w_live["shares"]),box_cost_net=float(w_live["box_cost_net"]),avail_a_shares=float(w_live["avail_a_shares"]),avail_b_shares=float(w_live["avail_b_shares"]),px_a=float(y["worst_px"]),px_b=float(x["worst_px"]),fee_rate_a=float(v["fee_rate"]),fee_rate_b=float(u["fee_rate"]),is_4h_mixed=m)
-  if n["legging_adjusted_net_ev_per_pair"]<=.0:return False
-  a._last_d1_live_emit_ts[p]=now_ts
-  for t,s in list(a._last_d1_live_emit_ts.items()):
-   if(now_ts-s)>1200.:a._last_d1_live_emit_ts.pop(t,None)
-  r="D1_4H_LIVE"if str(m15.horizon).lower()=="4h"else"D1_LIVE";w={"box_id":f"{r}_{m15.asset}_{int(m5.end_ts)}_{m5.market_id[-5:]}","dedupe_key":f"D1_{m15.asset}_{m15.market_id}_{m5.market_id}","ts_unix":round(now_ts,3),"asset":m15.asset,"regime":dom_info["regime"],"pair_horizons":f"{m15.horizon}_{m5.horizon}","sleeve_source":str(sleeve_source),"is_quiet_book":bool(is_quiet_book),"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"expiry_ts":float(m5.end_ts),"rem_sec":round(float(m5.end_ts-now_ts),2),"shares":int(w_live["shares"]),"net_paired_shares":float(w_live.get("net_paired_shares",w_live["shares"])),"leg_a_gross_shares":float(w_live.get("leg_a_gross_shares",w_live["shares"])),"leg_b_gross_shares":float(w_live.get("leg_b_gross_shares",w_live["shares"])),"box_cost_net":float(w_live["box_cost_net"]),"legging_drag_per_pair":n["legging_drag_per_pair"],"legging_adjusted_net_ev_per_pair":n["legging_adjusted_net_ev_per_pair"],"max_box_cost_net":a._d1_live_max_box_cost(),"leg_a_token_id":str(v["token_id"]),"leg_a_opp_token_id":str(v.get("opp_token_id")or""),"leg_a_label":str(v["label"]),"leg_a_side":str(v["side"]),"leg_a_horizon":str(v["horizon"]),"leg_a_market_id":str(v["market_id"]),"leg_a_condition_id":str(v["condition_id"]),"leg_a_strike":float(v["strike"]),"leg_a_limit_price":float(y["worst_px"]),"leg_a_avail_shares":float(w_live["avail_a_shares"]),"leg_a_fee_rate":float(v["fee_rate"]),"leg_a_fee_exponent":float(v["fee_exponent"]),"leg_a_neg_risk":bool(v["neg_risk"]),"leg_b_token_id":str(u["token_id"]),"leg_b_opp_token_id":str(u.get("opp_token_id")or""),"leg_b_label":str(u["label"]),"leg_b_side":str(u["side"]),"leg_b_horizon":str(u["horizon"]),"leg_b_market_id":str(u["market_id"]),"leg_b_condition_id":str(u["condition_id"]),"leg_b_strike":float(u["strike"]),"leg_b_limit_price":float(x["worst_px"]),"leg_b_avail_shares":float(w_live["avail_b_shares"]),"leg_b_fee_rate":float(u["fee_rate"]),"leg_b_fee_exponent":float(u["fee_exponent"]),"leg_b_neg_risk":bool(u["neg_risk"])}
-  if not a.single_scan and a._ws_books:
-   i=[str(v["token_id"]),str(u["token_id"])];h=[t_id for t_id in(str(v.get("opp_token_id")or""),str(u.get("opp_token_id")or""))if t_id];g=i+h;f=time.time();d=getattr(a,"_ws_rest_seeded",set());l=[None if t_id in d else a._ws_books.get(t_id)for t_id in g]
-   if len(g)>=2 and all(e is not None and(f-e[0])<=(.65 if idx<2 else 2.5)and e[1].get("bids")and e[1].get("asks")for idx,e in enumerate(l)):w["ws_books_ts"]=round(min(float(e[0])for e in l[:2]if e is not None),4);w["ws_books"]={t_id:{"bids":(e[1].get("bids")or[])[:12],"asks":(e[1].get("asks")or[])[:12]}for t_id,e in zip(g,l)if e is not None}
-  try:
-   try:import orjson as _orj;k=_orj.dumps(w)+b"\n";c=k.decode("utf-8")
-   except Exception:c=json.dumps(w,separators=(",",":"))+"\n";k=c.encode("utf-8")
-   if os.name!="nt"and D1_LIVE_CANDIDATES_FILE==b:
-    try:
-     import socket;j=getattr(a,"_d1_ipc_sock",None)
-     if j is None:j=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM);j.setblocking(False);a._d1_ipc_sock=j
-     q=os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME","polymarket_d1_box_notify");j.sendto(k,f"\x00{q}".encode("utf-8"))
-    except Exception:pass
-   D1_LIVE_CANDIDATES_FILE.parent.mkdir(parents=True,exist_ok=True)
-   with open(D1_LIVE_CANDIDATES_FILE,"a",encoding="utf-8")as z:z.write(c)
-   return True
-  except Exception as exc:return False
+  f=f"{m15.asset}_{m15.market_id}_{m5.market_id}";e=float(a._last_d1_live_emit_ts.get(f,.0)or.0)
+  if(now_ts-e)<10.:return False
+  k=dom_info["leg_a"];j=dom_info["leg_b"];n=w_live["leg_a_walk"];m=w_live["leg_b_walk"];c=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());d=compute_d1_legging_drag_haircut(shares=float(w_live["shares"]),box_cost_net=float(w_live["box_cost_net"]),avail_a_shares=float(w_live["avail_a_shares"]),avail_b_shares=float(w_live["avail_b_shares"]),px_a=float(n["worst_px"]),px_b=float(m["worst_px"]),fee_rate_a=float(k["fee_rate"]),fee_rate_b=float(j["fee_rate"]),is_4h_mixed=c)
+  if d["legging_adjusted_net_ev_per_pair"]<=.0:return False
+  a._last_d1_live_emit_ts[f]=now_ts
+  for i,h in list(a._last_d1_live_emit_ts.items()):
+   if(now_ts-h)>1200.:a._last_d1_live_emit_ts.pop(i,None)
+  g="D1_4H_LIVE"if str(m15.horizon).lower()=="4h"else"D1_LIVE";l={"box_id":f"{g}_{m15.asset}_{int(m5.end_ts)}_{m5.market_id[-5:]}","dedupe_key":f"D1_{m15.asset}_{m15.market_id}_{m5.market_id}","ts_unix":round(now_ts,3),"asset":m15.asset,"regime":dom_info["regime"],"pair_horizons":f"{m15.horizon}_{m5.horizon}","sleeve_source":str(sleeve_source),"is_quiet_book":bool(is_quiet_book),"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"expiry_ts":float(m5.end_ts),"rem_sec":round(float(m5.end_ts-now_ts),2),"shares":int(w_live["shares"]),"net_paired_shares":float(w_live.get("net_paired_shares",w_live["shares"])),"leg_a_gross_shares":float(w_live.get("leg_a_gross_shares",w_live["shares"])),"leg_b_gross_shares":float(w_live.get("leg_b_gross_shares",w_live["shares"])),"box_cost_net":float(w_live["box_cost_net"]),"legging_drag_per_pair":d["legging_drag_per_pair"],"legging_adjusted_net_ev_per_pair":d["legging_adjusted_net_ev_per_pair"],"max_box_cost_net":a._d1_live_max_box_cost(),"leg_a_token_id":str(k["token_id"]),"leg_a_opp_token_id":str(k.get("opp_token_id")or""),"leg_a_label":str(k["label"]),"leg_a_side":str(k["side"]),"leg_a_horizon":str(k["horizon"]),"leg_a_market_id":str(k["market_id"]),"leg_a_condition_id":str(k["condition_id"]),"leg_a_strike":float(k["strike"]),"leg_a_limit_price":float(n["worst_px"]),"leg_a_avail_shares":float(w_live["avail_a_shares"]),"leg_a_fee_rate":float(k["fee_rate"]),"leg_a_fee_exponent":float(k["fee_exponent"]),"leg_a_neg_risk":bool(k["neg_risk"]),"leg_b_token_id":str(j["token_id"]),"leg_b_opp_token_id":str(j.get("opp_token_id")or""),"leg_b_label":str(j["label"]),"leg_b_side":str(j["side"]),"leg_b_horizon":str(j["horizon"]),"leg_b_market_id":str(j["market_id"]),"leg_b_condition_id":str(j["condition_id"]),"leg_b_strike":float(j["strike"]),"leg_b_limit_price":float(m["worst_px"]),"leg_b_avail_shares":float(w_live["avail_b_shares"]),"leg_b_fee_rate":float(j["fee_rate"]),"leg_b_fee_exponent":float(j["fee_exponent"]),"leg_b_neg_risk":bool(j["neg_risk"])};from src.polymarket_research.riskless_protocol_v2_expansion import attach_ws_books_and_write_d1_cand;return attach_ws_books_and_write_d1_cand(a,l,k,j,D1_LIVE_CANDIDATES_FILE,b)
  def emit_live_two_leg_box_candidate(a,*,sleeve_source,box_type,asset,dedupe_key,leg_a,leg_b,bk_a,bk_b,close_ts,now_ts,k_low=1e2,k_high=1e2,max_box_cost_override=None,extra_fields=None):
   c=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl"
   if STATE_FILE!=(DATA_DIR/"alpha124_shadow_state.json")and D1_LIVE_CANDIDATES_FILE==c:return False
@@ -6619,39 +6604,41 @@ class Alpha124ShadowDaemon:
   E=a.__dict__.setdefault("_s2_scan_lock",asyncio.Lock())
   if E.locked():return
   async with E:
-   S=float(now_ts if now_ts is not None else time.time());h=bool(a.single_scan or"fetch_json"in a.__dict__);e={}
-   if not h:from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm;e=hydrate_fast_s2_from_shm(a,S)
-   K=math.ceil(S/3e2)*3e2-S;D=8. if K<=30. else 12.;c=(not h)and K<=24. and any(abs(sp.end_ts-math.ceil(S/3e2)*3e2)<=2. for sp in a.twap_candles.values())
-   if not c and 3.5<=K<=(75. if h else 95.)and(S-a.last_twap_discovery_ts)>=D:a.last_twap_discovery_ts=S;await a.discover_active_twap_candles(S)
-   q=os.getenv("PM_QUARANTINE_LOSING_SLEEVES","1")=="1";n=28. if q else 45.;m=8. if a.single_scan else 4.2;w=.975 if q else.965;v=2.65 if q else.0;l=[spec for spec in list(a.twap_candles.values())if int(spec.twap_lookback_sec)==60 and(m<=(spec.end_ts-S)<=n)and(S>=spec.start_ts+60.)]
+   U=float(now_ts if now_ts is not None else time.time());h=bool(a.single_scan or"fetch_json"in a.__dict__);e={}
+   if not h:from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm;e=hydrate_fast_s2_from_shm(a,U)
+   K=math.ceil(U/3e2)*3e2-U;D=8. if K<=40. else 12.;c=(not h)and K<=40. and any(abs(sp.end_ts-math.ceil(U/3e2)*3e2)<=2. for sp in a.twap_candles.values())
+   if not c and 3.5<=K<=(75. if h else 95.)and(U-a.last_twap_discovery_ts)>=D:a.last_twap_discovery_ts=U;await a.discover_active_twap_candles(U)
+   q=os.getenv("PM_QUARANTINE_LOSING_SLEEVES","1")=="1";n=38.5 if q else 45.;m=8. if a.single_scan else 4.2;w=.975 if q else.965;v=2.65 if q else.0;l=[spec for spec in list(a.twap_candles.values())if int(spec.twap_lookback_sec)==60 and(m<=(spec.end_ts-U)<=n)and(U>=spec.start_ts+60.)]
    if not l:return
    C=await asyncio.gather(*(a.get_authoritative_open_strike(sp)for sp in l));g=[(sp,k_op)for sp,k_op in zip(l,C)if k_op is not None and k_op>.0]
    if not g:return
    B=[]
    for sp,_ in g:B.extend([sp.up_token,sp.down_token])
    J=({**e,**(await a.fetch_books_batch(B,timeout=1.5)or{})}if not h else{})
+   for O,N in e.items():
+    if isinstance(J.get(O),dict)and"minimum_tick_size"not in J[O]and N.get("minimum_tick_size"):J[O]["minimum_tick_size"]=N["minimum_tick_size"]
    for spec,I in g:
     u=float(now_ts)if(a.single_scan and now_ts is not None)else time.time();A=spec.end_ts-u
     if not(m<=A<=n):continue
-    R=(read_shm_usd_anchor(spec.asset,u,max_age_sec=2.5)if not(a.single_scan and a.usd_spot_hist.get(spec.asset))else{});t=getattr(a,"_chainlink_ws",None)if not a.single_scan else None;k=t.get_latest_spot(spec.asset,now_ts=u,max_age_sec=2.5)if t is not None else None;f=(t.get_latest_official_twap_60s(spec.asset,now_ts=u,max_age_sec=3.5)if(t is not None and hasattr(t,"get_latest_official_twap_60s"))else None);s=a.usd_spot_hist.get(spec.asset);b=k or R.get("usd_spot")
+    T=(read_shm_usd_anchor(spec.asset,u,max_age_sec=2.5)if not(a.single_scan and a.usd_spot_hist.get(spec.asset))else{});t=getattr(a,"_chainlink_ws",None)if not a.single_scan else None;k=t.get_latest_spot(spec.asset,now_ts=u,max_age_sec=2.5)if t is not None else None;f=(t.get_latest_official_twap_60s(spec.asset,now_ts=u,max_age_sec=3.5)if(t is not None and hasattr(t,"get_latest_official_twap_60s"))else None);s=a.usd_spot_hist.get(spec.asset);b=k or T.get("usd_spot")
     if(not b or float(b)<=.0)and s and(u-float(s[-1][0]))<=5.:b=float(s[-1][1])
     if(not b or float(b)<=.0)and a.usd_direct_flags.get(spec.asset,False):b=a.spots.get(spec.asset,.0)
     if not b or float(b)<=.0:continue
-    p=float(b);j=bool(k is not None or R.get("source")in("shm_chainlink_proxy","shm_coinbase_usd")or a.usd_direct_flags.get(spec.asset,False));M,_=get_wing_implied_vol(spec.asset,p,I,86400.);d=t.get_recent_samples(spec.asset,spec.end_ts-125.)if t is not None else[];i=sum(1 for t_s,_ in d if t_s>=(spec.end_ts-60.5))
+    p=float(b);j=bool(k is not None or T.get("source")in("shm_chainlink_proxy","shm_coinlink_usd","shm_coinbase_usd")or a.usd_direct_flags.get(spec.asset,False));M,_=get_wing_implied_vol(spec.asset,p,I,86400.);d=t.get_recent_samples(spec.asset,spec.end_ts-125.)if t is not None else[];i=sum(1 for t_s,_ in d if t_s>=(spec.end_ts-60.5))
     if len(d)<2 or(A<=55. and s and i<int(max(3.,(60.-A)*.72))):
      o={round(float(t_u),1):float(p_u)for t_u,p_u in(s or[])if t_u>=(spec.end_ts-125.)}
-     for Q,P in d:o[round(float(Q),1)]=float(P)
+     for S,R in d:o[round(float(S),1)]=float(R)
      d=sorted(o.items(),key=lambda x:x[0])
-    if not h and 3.8<=A<=22. and a._strike_is_rest_verified(spec)and len(d)>=6:from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks;maybe_emit_s2_live_locks(a,spec=spec,k_open=I,eval_now=u,rem_sec=A,samples=d,off_twap_60=f,bks_s2=J or{},logger_obj=logger)
-    z=compute_exact_twap_lock_probability(asset=spec.asset,open_price=I,current_usd_spot=p,rem_seconds=A,now_ts=u,end_ts=spec.end_ts,spot_samples=d,shm_twap_60s=f or R.get("twap_60s"),iv_annual=M,usd_direct_feed=j,authoritative_chainlink_ws=bool(k is not None),min_rem_seconds=m)
+    if not h and 3.8<=A<=38. and a._strike_is_rest_verified(spec)and len(d)>=6:from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks;maybe_emit_s2_live_locks(a,spec=spec,k_open=I,eval_now=u,rem_sec=A,samples=d,off_twap_60=f,bks_s2=J or{},logger_obj=logger)
+    z=compute_exact_twap_lock_probability(asset=spec.asset,open_price=I,current_usd_spot=p,rem_seconds=A,now_ts=u,end_ts=spec.end_ts,spot_samples=d,shm_twap_60s=f or T.get("twap_60s"),iv_annual=M,usd_direct_feed=j,authoritative_chainlink_ws=bool(k is not None),min_rem_seconds=m)
     if not z.get("eligible")or float(z["p_lock"])<.94 or float(z.get("z_lock",.0))<v:continue
-    r=str(z["side"]);O=spec.up_token if r=="UP"else spec.down_token;y=spec.down_token if r=="UP"else spec.up_token;T=J.get(O)if J else await a.fetch_json(f"{CLOB_URL}/book?token_id={O}",timeout=2.5)
-    if not T:continue
-    H=J.get(y)if J else None;L=walk_l2_book_asks(T.get("asks")or[],BANKROLL_TICKETS["T1000"]["S2_EXACT_TWAP_LOCK"],fee_rate=spec.fee_rate,min_l1_usd=15.)
+    r=str(z["side"]);Q=spec.up_token if r=="UP"else spec.down_token;y=spec.down_token if r=="UP"else spec.up_token;V=J.get(Q)if J else await a.fetch_json(f"{CLOB_URL}/book?token_id={Q}",timeout=2.5)
+    if not V:continue
+    H=J.get(y)if J else None;L=walk_l2_book_asks(V.get("asks")or[],BANKROLL_TICKETS["T1000"]["S2_EXACT_TWAP_LOCK"],fee_rate=spec.fee_rate,min_l1_usd=15.)
     if not L.get("filled"):continue
-    G=float(L["eff_px"]);F=float(z["p_lock"]);N=F-G
-    if.74<=G<=.955 and N>=.015:opps_out.append({"sleeve":"S2_EXACT_TWAP_LOCK","market":f"{spec.asset} {spec.horizon} {r} (TTE={A:.0f}s, alpha={z['eff_alpha']:.2f}, z={z['z_lock']:.2f})","ask_vwap":G,"p_model":F,"net_edge":round(N,4),"l1_usd":L["l1_usd"]})
-    if F>=w and.76<=G<=.95 and N>=.03:await a.open_shadow_position(sleeve="S2_EXACT_TWAP_LOCK",dedupe_key=f"S2_{spec.asset}_{spec.horizon}_{spec.market_id}",asset_or_city=spec.asset,title=f"{spec.title} [{spec.horizon} TWAP Lock]",side_label=r,token_id=O,fee_rate=spec.fee_rate,p_model=F,close_ts=spec.end_ts,extra={"market_id":spec.market_id,"condition_id":spec.condition_id,"horizon":spec.horizon,"start_iso":spec.start_iso,"end_iso":spec.end_iso,"open_price":I,"mu_twap":z["mu_twap"],"eff_alpha":z["eff_alpha"],"z_lock":z["z_lock"],"cushion_bps":z["cushion_bps"],"rem_seconds_at_entry":z["rem_seconds"]},tp_target_px=None,prefetched_book=T)
+    G=float(L["eff_px"]);F=float(z["p_lock"]);P=F-G
+    if.74<=G<=.955 and P>=.015:opps_out.append({"sleeve":"S2_EXACT_TWAP_LOCK","market":f"{spec.asset} {spec.horizon} {r} (TTE={A:.0f}s, alpha={z['eff_alpha']:.2f}, z={z['z_lock']:.2f})","ask_vwap":G,"p_model":F,"net_edge":round(P,4),"l1_usd":L["l1_usd"]})
+    if F>=w and.76<=G<=.95 and P>=.03:await a.open_shadow_position(sleeve="S2_EXACT_TWAP_LOCK",dedupe_key=f"S2_{spec.asset}_{spec.horizon}_{spec.market_id}",asset_or_city=spec.asset,title=f"{spec.title} [{spec.horizon} TWAP Lock]",side_label=r,token_id=Q,fee_rate=spec.fee_rate,p_model=F,close_ts=spec.end_ts,extra={"market_id":spec.market_id,"condition_id":spec.condition_id,"horizon":spec.horizon,"start_iso":spec.start_iso,"end_iso":spec.end_iso,"open_price":I,"mu_twap":z["mu_twap"],"eff_alpha":z["eff_alpha"],"z_lock":z["z_lock"],"cushion_bps":z["cushion_bps"],"rem_seconds_at_entry":z["rem_seconds"]},tp_target_px=None,prefetched_book=V)
  async def discover_s5m_candles(a,now_ts):
   for k,h in list(a.s5m_candles.items()):
    if h.end_ts<now_ts-3e2:a.s5m_candles.pop(k,None)

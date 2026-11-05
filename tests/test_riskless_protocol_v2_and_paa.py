@@ -1588,6 +1588,489 @@ def test_gatling_burst_v56_shm_step_hold_s2_and_carry_recycle(tmp_path):
         rmg_mod.attempt_onchain_split_position = orig_sp
 
 
+def test_tier_p0_invalid_status_htm_d1_xau_fees_and_parallel_asym(tmp_path, monkeypatch) -> None:
+    import asyncio
+    import json
+    import time
+    from types import SimpleNamespace
+    import src.polymarket_research.polymarket_live_harvester as plh_mod
+    import src.polymarket_research.riskless_machine_gun_engine as rmg_mod
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.riskless_machine_gun_engine import PreSplitInventoryGun
+    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_early_profit_recycle_htm_lock
+
+    monkeypatch.setattr(plh_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_p0.json")
+
+    # P0-1: CLOB status="INVALID" handled as terminal non-resting when matched_size == 0,
+    #       but NOT treated as canceled if matched_size > 0!
+    ex = PolymarketLiveExecutor.__new__(PolymarketLiveExecutor)
+    ex.dry_run = False
+    ex.is_authenticated = True
+    ex.auth_mode = "AUTHENTICATED_L2"
+    ex._user_ws_cache = None
+    ex._get_account_trades_cached = lambda **_kw: []
+    ex.release_inventory = lambda **_kw: None
+    ex.client = SimpleNamespace(
+        get_order=lambda oid: {"id": oid, "status": "INVALID", "side": "BUY", "size_matched": "0", "original_size": "15"},
+        cancel_orders=lambda oids: {"not_canceled": {oids[0]: "ORDER_DOES_NOT_EXIST_OR_INVALID"}},
+    )
+    sum_zero = ex.get_order_fill_summary("oid_inv_0", "tok_xau")
+    assert sum_zero is not None
+    assert sum_zero["status"] == "INVALID"
+    assert sum_zero["is_matched"] is False
+    assert sum_zero["terminal"] is True
+    assert sum_zero["resting"] is False
+
+    canc_zero = ex.cancel_order("oid_inv_0")
+    assert canc_zero["is_canceled"] is True and canc_zero["outcome"] == "CANCELED"
+
+    ex.client = SimpleNamespace(
+        get_order=lambda oid: {"id": oid, "status": "INVALID", "side": "BUY", "size_matched": "12", "original_size": "15", "price": "0.99"},
+        cancel_orders=lambda oids: {"not_canceled": {oids[0]: "ALREADY_MATCHED"}},
+    )
+    sum_filled = ex.get_order_fill_summary("oid_inv_fill", "tok_xau")
+    assert sum_filled is not None
+    assert sum_filled["matched"] == 12.0
+    assert sum_filled["is_matched"] is True
+    assert sum_filled["terminal"] is False
+    canc_filled = ex.cancel_order("oid_inv_fill")
+    assert canc_filled["is_canceled"] is False
+
+    # P0-2: Short-TTE (<=900s) D1 Dominance Box registers $1.00 DETERMINISTIC_TERMINAL_HOLD per leg; >900s leg keeps $0.99
+    now_u = time.time()
+    h = PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.executor.dry_run = False
+    h._startup_reconciled = True
+    h._last_known_collateral = 74.32
+    fast_confirm_called = []
+    h._spawn_fast_confirm = lambda tid: fast_confirm_called.append(tid)
+    cand_short = {
+        "box_id": "D1_XAU_SHORT",
+        "box_type": "DOMINANCE",
+        "asset": "XAU",
+        "shares": 12,
+        "expiry_ts": now_u + 180.0,
+        "leg_a_token_id": "1" * 24,
+        "leg_b_token_id": "2" * 24,
+        "leg_a_opp_token_id": "3" * 24,
+        "leg_b_opp_token_id": "4" * 24,
+        "leg_a_market_id": "m_xau_15m",
+        "leg_b_market_id": "m_xau_5m",
+        "leg_a_expiry_ts": now_u + 720.0,
+        "leg_b_expiry_ts": now_u + 180.0,
+        "leg_a_horizon": "15m",
+        "leg_b_horizon": "5m",
+        "leg_a_side": "UP",
+        "leg_b_side": "DOWN",
+        "leg_a_strike": 2650.0,
+        "leg_b_strike": 2652.5,
+        "k_low": 2650.0,
+        "k_high": 2652.5,
+    }
+    res_box = {
+        "success": True,
+        "net_paired_shares": 12.0,
+        "leg_1": {"token_id": "1" * 24, "price": 0.45, "matched_shares": 12.0, "orderID": "o1"},
+        "leg_2": {"token_id": "2" * 24, "price": 0.46, "matched_shares": 12.0, "orderID": "o2"},
+    }
+    tids = h._register_live_d1_box_positions("D1_XAU_SHORT", cand_short, res_box, 0.0, 0.0)
+    assert len(tids) == 2 and fast_confirm_called == []
+    p_l1, p_l2 = h.active_positions[tids[0]], h.active_positions[tids[1]]
+    assert p_l1["hold_to_maturity_lock"] is True and p_l2["hold_to_maturity_lock"] is True
+    assert p_l1["target_exit_price"] == 1.0 and p_l2["target_exit_price"] == 1.0
+    assert p_l1["exit_order_status"] == "DETERMINISTIC_TERMINAL_HOLD"
+    assert p_l1["candle_expiry_ts"] == pytest.approx(now_u + 720.0, abs=1.0)
+    assert p_l2["candle_expiry_ts"] == pytest.approx(now_u + 180.0, abs=1.0)
+    # Early $0.998 recycle must NEVER touch a 2-leg is_dominance_box leg!
+    p_l1["status"] = "POSITION_CONFIRMED"
+    p_l1["inventory_reconciled"] = True
+    assert asyncio.run(maybe_early_profit_recycle_htm_lock(h, tids[0], p_l1, {"bids": [{"price": 0.999, "size": 50.0}]}, now_u)) is False
+
+    # 4h + 15m hybrid: >900s leg_a keeps $0.99 Maker exit while <=900s leg_b uses $1.00 HTM
+    cand_4h = {**cand_short, "box_id": "D1_BTC_4H", "leg_a_expiry_ts": now_u + 7200.0, "leg_b_expiry_ts": now_u + 600.0}
+    tids_4h = h._register_live_d1_box_positions("D1_BTC_4H", cand_4h, res_box, 0.0, 0.0)
+    assert h.active_positions[tids_4h[0]]["hold_to_maturity_lock"] is False
+    assert h.active_positions[tids_4h[0]]["target_exit_price"] == 0.99
+    assert h.active_positions[tids_4h[1]]["hold_to_maturity_lock"] is True
+    assert h.active_positions[tids_4h[1]]["target_exit_price"] == 1.0
+    assert fast_confirm_called == [tids_4h[0]]
+
+    # P0-3: PreSplitInventoryGun applies crypto_fees_v2 rate=0.07 to XAU / XAG when fee_rate is omitted
+    split_calls_xau = []
+    orig_sp = rmg_mod.attempt_onchain_split_position
+    rmg_mod.attempt_onchain_split_position = lambda ex_o, cid, amt, neg_risk=False, **kw: split_calls_xau.append((cid, amt)) or {"success": True, "tx_hash": "0xxau"}
+    try:
+        ps_xau = PreSplitInventoryGun(cap_usd=15.0)
+        harv_xau = SimpleNamespace(
+            dry_run=False, _startup_reconciled=True, global_halt_active=False, active_positions={}, pending_entry_intents={},
+            closed_positions=[], pre_split_inventory_state={}, _last_known_collateral=25.0, _pending_collateral_refresh=False,
+            executor=SimpleNamespace(invalidate_collateral_cache=lambda: None), save_state=lambda: None, risk_controller=None,
+        )
+        # 0.504 + 0.503 = 1.007 gross, which would look profitable at 0% fee, but loses money after 0.07 XAU taker fee -> must NOT arm!
+        shm_xau_thin = {
+            "timestamp_unix": now_u,
+            "spot_price": 2650.0,
+            "m15": {
+                "market_id": "m_xau_ps",
+                "condition_id": "0x" + "a" * 64,
+                "fee_rate": None,
+                "expiry_ts": now_u + 300.0,
+                "finalized_open": 2650.0,
+                "UP": {"token_id": "5" * 24, "best_bid": 0.504, "bid_depth_1c_shares": 30.0, "best_ask": 0.52, "ask_depth_1c_shares": 30.0},
+                "DOWN": {"token_id": "6" * 24, "best_bid": 0.503, "bid_depth_1c_shares": 30.0, "best_ask": 0.52, "ask_depth_1c_shares": 30.0},
+            },
+        }
+        assert asyncio.run(ps_xau.tick(harv_xau, now_u, fast_tick_reader=lambda a: shm_xau_thin if a == "XAU" else None)) != "ARMED"
+        assert split_calls_xau == []
+        # Genuine wide overround (0.53 + 0.53 = 1.06 -> >1.025 net of 0.07 fee) arms cleanly with stored fee_rate=0.07
+        shm_xau_wide = json.loads(json.dumps(shm_xau_thin))
+        shm_xau_wide["timestamp_unix"] = now_u + 1.0
+        shm_xau_wide["m15"]["UP"]["best_bid"] = 0.53
+        shm_xau_wide["m15"]["DOWN"]["best_bid"] = 0.53
+        assert asyncio.run(ps_xau.tick(harv_xau, now_u + 1.0, fast_tick_reader=lambda a: shm_xau_wide if a == "XAU" else None)) == "ARMED"
+        assert harv_xau.pre_split_inventory_state["fee_rate"] == pytest.approx(0.07)
+    finally:
+        rmg_mod.attempt_onchain_split_position = orig_sp
+
+    # P0-4: XAG 15m+5m D1 box with 7.5x depth asymmetry (300 vs 40 sh, both >= 1.50x) dispatches via parallel_dispatch=True
+    st_grad = tmp_path / "alpha124_shadow_state.json"
+    st_grad.write_text(
+        json.dumps({
+            "by_sleeve": {
+                "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                    "closed": 20, "settled": 20, "wins": 20, "losses": 0,
+                    "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 45.0, "legging_adjusted_pnl_t1000_usd": 45.0,
+                }
+            },
+            "by_d1_asset": {
+                "XAG": {
+                    "closed": 12, "losses": 0, "win_rate_pct": 100.0,
+                    "realized_pnl_t1000_usd": 18.0, "legging_adjusted_pnl_t1000_usd": 18.0,
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_xag.json")
+    h_xag = PolymarketLiveHarvester(dry_run=True)
+    h_xag._last_known_collateral = 80.0
+    dispatched_xag = []
+    h_xag.executor.execute_atomic_dominance_box = lambda **kw: dispatched_xag.append(kw) or {
+        "success": True,
+        "net_paired_shares": 10.0,
+        "leg_1": {"token_id": kw["leg_a_token_id"], "price": 0.45, "matched_shares": 10.0, "orderID": "xa1"},
+        "leg_2": {"token_id": kw["leg_b_token_id"], "price": 0.46, "matched_shares": 10.0, "orderID": "xa2"},
+    }
+    cand_xag = {
+        "box_id": "D1_XAG_ASYM",
+        "dedupe_key": "D1_XAG_K1",
+        "asset": "XAG",
+        "box_type": "DOMINANCE",
+        "corridor_bps": 6.5,
+        "ts_unix": now_u,
+        "expiry_ts": now_u + 180.0,
+        "shares": 10,
+        "box_cost_net": 0.94,
+        "max_box_cost_net": 0.975,
+        "leg_a_token_id": "7" * 24,
+        "leg_b_token_id": "8" * 24,
+        "leg_a_opp_token_id": "9" * 24,
+        "leg_b_opp_token_id": "10" * 12,
+        "leg_a_market_id": "xag_15m",
+        "leg_b_market_id": "xag_5m",
+        "leg_a_horizon": "15m",
+        "leg_b_horizon": "5m",
+        "leg_a_side": "UP",
+        "leg_b_side": "DOWN",
+        "leg_a_strike": 31.10,
+        "leg_b_strike": 31.15,
+        "leg_a_limit_price": 0.45,
+        "leg_b_limit_price": 0.46,
+        "leg_a_avail_shares": 300.0,
+        "leg_b_avail_shares": 40.0,
+    }
+    r_xag = h_xag.maybe_execute_graduated_d1_box(cand_xag)
+    assert r_xag["executed"] is True
+    assert len(dispatched_xag) == 1 and dispatched_xag[0]["parallel_dispatch"] is True
+
+
+def test_tier_p1_reserve_s2_weather_dedupe_fifo_and_delayed_recycle(tmp_path, monkeypatch) -> None:
+    import asyncio
+    import collections
+    import json
+    import threading
+    import time
+    from types import SimpleNamespace
+    import src.polymarket_research.polymarket_live_harvester as plh_mod
+    from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        check_s2_live_adverse_move_cancel,
+        clear_d1_dedupe_on_close,
+        compute_running_metar_extrema,
+        compute_sll_and_carry_gatling_budget,
+        detect_w_prune1_metar_slate_arb,
+        emit_single_leg_maker_lock_cand_impl,
+        evaluate_s2_rtds_exact_twap_integrator,
+        hydrate_fast_s2_from_shm,
+        is_d1_dedupe_blocked,
+        is_market_busy_for_scaling,
+        poll_delayed_recycle_unwind_async,
+        resolve_weather_effective_end_ts,
+        select_sll_velocity_preempt_target,
+    )
+
+    monkeypatch.setattr(plh_mod, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_p1.json")
+    now_f = 1793832000.0
+
+    # P1-5: Two-Tier Fast-Gun Reserve (`max($20.00, 28% * NAV)`)
+    rb_cfg = {"gatling_enabled": True, "gatling_fast_gun_reserve_usd": 20.0}
+    harv_nav100 = SimpleNamespace(
+        dry_run=False,
+        enforce_gatling_fast_gun_reserve=True,
+        max_exposure=120.0,
+        pending_entry_intents={},
+        active_positions={
+            "b1_open": {"sleeve": "BOND1_UMA_RESOLUTION_CARRY", "notional_usd": 73.0, "candle_expiry_ts": now_f + 600.0, "status": "POSITION_CONFIRMED"}
+        },
+        _is_v5_unleashed_active=lambda: True,
+    )
+    # On $100 NAV ($27 free cash + $73 BOND1), 28% * NAV = $28.00 > $27.00 -> even post-clinch BOND1 (rem_tte_sec=120s) gets $0.00!
+    assert compute_sll_and_carry_gatling_budget(
+        harv_nav100, 25.0, 27.0, 73.0, "SINGLE_LEG_LOCK", "BOND1_UMA_RESOLUTION_CARRY", True, rb_cfg, rem_tte_sec=120.0, now_ts=now_f
+    ) == 0.0
+    # Meanwhile <=90s S2 AND <15m D1 Dominance Box CAN consume the $27.00 Fast-Gun Reserve!
+    assert compute_sll_and_carry_gatling_budget(
+        harv_nav100, 0.0, 27.0, 73.0, "SINGLE_LEG_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR", True, rb_cfg, rem_tte_sec=28.0, now_ts=now_f
+    ) >= 18.0
+    assert compute_sll_and_carry_gatling_budget(
+        harv_nav100, 0.0, 27.0, 73.0, "DOMINANCE", "D1_SAME_ORACLE_DOMINANCE_BOX", True, rb_cfg, rem_tte_sec=300.0, now_ts=now_f
+    ) >= 18.0
+
+    # P1-6: S2 9-asset SHM hydration + XAU maintenance guard + T-38s..T-5s >=4.5 sigma + <2.5 sigma cancel + real CLOB tick + queue-cap/slot bypass
+    shm_dir = tmp_path / "shm"
+    shm_dir.mkdir()
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(shm_dir))
+    for sym, px, spot_ts in (
+        ("BNB", 610.0, now_f - 0.3),
+        ("DOGE", 0.185, now_f - 0.3),
+        ("HYPE", 24.5, now_f - 0.3),
+        ("XAU", 2655.0, now_f - 0.3),
+        ("XAG", 0.0, now_f - 0.3),  # CME 17:00 ET maintenance cl_spot=0 -> must be skipped!
+    ):
+        (shm_dir / f"pm_fast_tick_{sym}.json").write_text(
+            json.dumps({
+                "timestamp_unix": now_f - 0.2,
+                "spot_ts": spot_ts,
+                "chainlink_proxy_spot": px,
+                "m5": {
+                    "expiry_ts": now_f + 32.0,
+                    "authoritative_chainlink_open": px * 0.995 if px > 0 else 31.0,
+                    "UP": {"token_id": f"tok_{sym}", "age_book_ms": 120.0, "minimum_tick_size": "0.01", "raw_top_bids": [[0.97, 800.0]], "raw_top_asks": [[0.99, 50.0]]},
+                },
+            }),
+            encoding="utf-8",
+        )
+    dm_s2 = SimpleNamespace(
+        single_scan=False,
+        chainlink_open_cache={},
+        usd_spot_hist={k: collections.deque(maxlen=120) for k in ("BNB", "DOGE", "HYPE", "XAU", "XAG")},
+    )
+    bks_shm = hydrate_fast_s2_from_shm(dm_s2, now_f)
+    for ok_sym in ("BNB", "DOGE", "HYPE", "XAU"):
+        assert f"tok_{ok_sym}" in bks_shm and len(dm_s2.usd_spot_hist[ok_sym]) == 1
+        assert bks_shm[f"tok_{ok_sym}"]["minimum_tick_size"] == "0.01"
+    assert "tok_XAG" not in bks_shm and len(dm_s2.usd_spot_hist["XAG"]) == 0
+    # Stale XAU spot_ts (>15s old) during maintenance freeze is also rejected
+    (shm_dir / "pm_fast_tick_XAU.json").write_text(
+        json.dumps({"timestamp_unix": now_f - 0.2, "spot_ts": now_f - 25.0, "chainlink_proxy_spot": 2655.0}),
+        encoding="utf-8",
+    )
+    dm_s2.usd_spot_hist["XAU"].clear()
+    hydrate_fast_s2_from_shm(dm_s2, now_f)
+    assert len(dm_s2.usd_spot_hist["XAU"]) == 0
+
+    # S2 at T-32s (>22s) requires >= 4.5 sigma and emits cleanly when deep ITM
+    exp_s2 = now_f + 32.0
+    ticks_s2 = [(exp_s2 - 60.0 + i, 612.50 + (0.01 if i % 2 == 0 else -0.01)) for i in range(29)]
+    ev_s2 = evaluate_s2_rtds_exact_twap_integrator(
+        asset="BNB", open_price=608.00, expiry_ts=exp_s2, now_ts=now_f, samples_last_60s=ticks_s2,
+        live_lock_mode=True, up_ask=0.97, fee_rate=0.0,
+    )
+    assert ev_s2 is not None and ev_s2["z_score"] >= 4.5
+    # Adverse move cancel fires if SHM spot drops across open or <2.5 sigma
+    (shm_dir / "pm_fast_tick_BNB.json").write_text(
+        json.dumps({"timestamp_unix": now_f, "chainlink_proxy_spot": 607.90}),
+        encoding="utf-8",
+    )
+    assert check_s2_live_adverse_move_cancel(
+        "BNB", "UP", {"s2_open_price": 608.00, "s2_sigma_1s": 0.12, "s2_n_locked": 28, "s2_mean_obs": 612.5}, exp_s2, now_f
+    ) is True
+
+    # Real CLOB 0.01 tick size vs 0.001 tick size + S2 exemption from $350 queue cap
+    cand_s2_out = tmp_path / "s2_mkr.jsonl"
+    st_s2_out = tmp_path / "s2_st.json"
+    st_s2_out.write_text("{}", encoding="utf-8")
+    dm_emit = SimpleNamespace(single_scan=False, _last_d1_live_emit_ts={}, _token_tick_sizes={"tok_01": 0.01})
+    extr_bid = lambda bids: (float(bids[0]["price"]), float(bids[0]["price"]) * float(bids[0]["size"])) if bids else (0.0, 0.0)
+    now_real = time.time()
+    # Book has $776 L1 bid (> $350 cap!) and minimum_tick_size="0.01" at 0.97/0.99 -> S2 emits at 0.98 (0.01 tick, NOT 0.989!)
+    ok_emit = emit_single_leg_maker_lock_cand_impl(
+        dm_emit,
+        sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        asset="BNB",
+        dedupe_key="S2_MKR_01",
+        pair_dedupe_key="S2_PAIR_01",
+        token_id="tok_01",
+        opp_token_id="tok_01_opp",
+        market_id="m_01",
+        condition_id="c_01",
+        side_label="UP",
+        display_label="BNB 5m UP",
+        bk_win={"bids": [{"price": 0.97, "size": 800.0}], "asks": [{"price": 0.99, "size": 40.0}], "minimum_tick_size": "0.01"},
+        bk_opp={"bids": [{"price": 0.01, "size": 50.0}], "asks": [{"price": 0.03, "size": 50.0}]},
+        neg_risk=False,
+        close_ts=now_real + 25.0,
+        now_ts=now_real,
+        min_resting_bid=0.50,
+        max_resting_bid=0.985,
+        min_maker_edge=0.010,
+        max_opp_bid=0.02,
+        hold_to_maturity=True,
+        p_model=0.999,
+        target_bid_px=0.984,
+        maker_rebate_ps=0.0,
+        extract_best_bid_fn=extr_bid,
+        cand_file=cand_s2_out,
+        default_cand_path=cand_s2_out,
+        state_file=st_s2_out,
+        default_state_path=st_s2_out,
+    )
+    assert ok_emit is True
+    emitted_row = json.loads(cand_s2_out.read_text(encoding="utf-8").strip())
+    assert emitted_row["anchor_bid_px"] == 0.98 and emitted_row["leg_a_tick_size"] == 0.01
+
+    # P1-7: Weather noon-UTC placeholder -> 23:59:59 local + HIGH/LOW current_temp extrema
+    import datetime as _dt
+    noon_utc_ts = _dt.datetime(2026, 11, 4, 12, 0, 0, tzinfo=_dt.timezone.utc).timestamp()
+    sp_klga = SimpleNamespace(
+        end_date_iso="2026-11-04T12:00:00Z",
+        obs_date=_dt.date(2026, 11, 4),
+        tz_name="America/New_York",
+        buckets=(),
+    )
+    eff_klga_end = resolve_weather_effective_end_ts(sp_klga, noon_utc_ts)
+    # 2026-11-04 23:59:59 EST (UTC-5) = 2026-11-05T04:59:59Z = noon_utc_ts + 17h - 1s
+    assert eff_klga_end > noon_utc_ts + 15 * 3600.0
+    ext_low = compute_running_metar_extrema(["METAR KLGA 041251Z 31008KT 10SM CLR 10/02 A3012"], unit="F", current_temp_c=4.0, current_has_t_group=False)
+    # Integer 4C + 0.55C ASOS bound = 4.55C = 40.19F -> NWS half-up integer round = 40F upper bound on running daily LOW!
+    assert ext_low is not None and ext_low["confirmed_running_low_ceil"] == 40
+    hits_low = detect_w_prune1_metar_slate_arb(
+        [
+            {"label": "44-45F", "market_id": "mw1", "condition_id": "cw1", "yes_token_id": "yw1", "no_token_id": "nw1", "low": 44, "high": 45, "yes_ask": 0.01, "yes_ask_size": 20.0, "no_ask": 0.992, "no_ask_size": 20.0},
+            {"label": "40-41F", "market_id": "mw2", "condition_id": "cw2", "yes_token_id": "yw2", "no_token_id": "nw2", "low": 40, "high": 41, "yes_ask": 0.99, "yes_ask_size": 20.0, "no_ask": 0.02, "no_ask_size": 20.0},
+        ],
+        ["METAR KLGA 041251Z 31008KT 10SM CLR 10/02 A3012"],
+        station_icao="KLGA",
+        unit="F",
+        metric="LOW",
+        local_hour_minute=(9, 30),
+        current_temp_c=4.0,
+        current_has_t_group=False,
+    )
+    assert any(x["sleeve"] == "W_PRUNE1_DEAD_NO_BOND" and x["condition_id"] == "cw1" for x in hits_low)
+
+    # P1-8a: 15s dedupe cooldown + multi-clip scaling under per-market cap + clear on close
+    h_dd = PolymarketLiveHarvester(dry_run=True)
+    h_dd._last_known_collateral = 80.0
+    h_dd.risk_config = {"bond1_per_market_cap_usd": 25.0}
+    h_dd._record_seen_d1_box_key("DK_SCALE_1")
+    h_dd._seen_d1_box_ts["DK_SCALE_1"] = now_f - 5.0
+    assert is_d1_dedupe_blocked(h_dd, "DK_SCALE_1", "", ["mkt_scale"], now_f) is True
+    # After 16s with reconciled HTM position of $11.50 (< $25.00 - $4.85 = $20.15), scaling is UNBLOCKED!
+    h_dd.active_positions["P_CLIP1"] = {
+        "trade_id": "P_CLIP1",
+        "market_id": "mkt_scale",
+        "notional_usd": 11.50,
+        "remaining_shares": 12.0,
+        "status": "POSITION_CONFIRMED",
+        "hold_to_maturity_lock": True,
+        "inventory_reconciled": True,
+        "dedupe_key": "DK_SCALE_1",
+    }
+    assert is_d1_dedupe_blocked(h_dd, "DK_SCALE_1", "", ["mkt_scale"], now_f + 16.0) is False
+    assert is_market_busy_for_scaling(h_dd, "mkt_scale") is False
+    # Once notional reaches $22.00 (>= $20.15), further clips on mkt_scale are blocked until close!
+    h_dd._record_seen_d1_box_key("DK_SCALE_1")
+    h_dd._seen_d1_box_ts["DK_SCALE_1"] = now_f
+    h_dd.active_positions["P_CLIP1"]["notional_usd"] = 22.00
+    assert is_d1_dedupe_blocked(h_dd, "DK_SCALE_1", "", ["mkt_scale"], now_f + 20.0) is True
+    assert is_market_busy_for_scaling(h_dd, "mkt_scale") is True
+    # Closing P_CLIP1 immediately clears DK_SCALE_1
+    h_dd.active_positions.pop("P_CLIP1")
+    cleared_ks = clear_d1_dedupe_on_close(h_dd, {"trade_id": "P_CLIP1", "dedupe_key": "DK_SCALE_1"})
+    assert "DK_SCALE_1" in cleared_ks and "DK_SCALE_1" not in h_dd._seen_d1_box_keys
+
+    # P1-8b: BOND1 velocity/FIFO preemption skips <20s orders and preempts lowest (1 - bid) / TTE_hr first
+    h_dd._maker_anchor_preempt_events = {
+        "IK_YOUNG": threading.Event(),
+        "IK_LOW_YIELD": threading.Event(),
+        "IK_HIGH_YIELD": threading.Event(),
+    }
+    h_dd.pending_entry_intents = {
+        "young_b1": {"live_maker_anchor_inflight": True, "inflight_key": "IK_YOUNG", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "ts": now_f - 6.0, "anchor_bid_px": 0.996, "expiry_ts": now_f + 7200.0},
+        "low_yield_b1": {"live_maker_anchor_inflight": True, "inflight_key": "IK_LOW_YIELD", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "ts": now_f - 45.0, "anchor_bid_px": 0.995, "expiry_ts": now_f + 7200.0},
+        "high_yield_b1": {"live_maker_anchor_inflight": True, "inflight_key": "IK_HIGH_YIELD", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "ts": now_f - 60.0, "anchor_bid_px": 0.985, "expiry_ts": now_f + 900.0},
+    }
+    slow_vel, slow_k = select_sll_velocity_preempt_target(h_dd, cand_edge_hr=180.0, is_s2_mkr=True, vel_mult=1.80, now_pe=now_f)
+    assert slow_k == "IK_LOW_YIELD" and slow_vel == pytest.approx(25.0)
+
+    # P1-8c: HTM_EARLY_998_PROFIT_RECYCLE Status: delayed 5s poll resolves both filled & 0-fill canceled without [GLOBAL HALT]
+    monkeypatch.setattr(plh_mod, "STATE_FILE", tmp_path / "st_rec.json")
+    h_rec = PolymarketLiveHarvester(dry_run=True)
+    h_rec.dry_run = False
+    h_rec.executor.dry_run = False
+    h_rec._startup_reconciled = True
+    h_rec._last_known_collateral = 40.0
+    poll_seq = [
+        None,
+        {"order_id": "oid_del_1", "status": "CONFIRMED", "matched": 20.0, "cash": 19.96, "fee": 0.0, "estimated": False, "fee_estimated": False, "resting": False, "terminal": True, "is_canceled": False},
+    ]
+    h_rec.executor.get_order_fill_summary = lambda oid, tok: poll_seq.pop(0) if poll_seq else None
+    h_rec.executor.release_inventory = lambda *a, **kw: None
+    pos_rec = h_rec._make_single_leg_lock_pos(
+        "LOCK_DEL_1", "SINGLE_LEG_LOCK", "BOND1_UMA_RESOLUTION_CARRY", "SPORTS", "lock",
+        "m_del", "c_del", "tok_del", "YES", False, 20.0, 19.86, 0.0, 0.0, 1.0,
+        "crypto_fees_v2", now_f + 3600.0, now_f - 120.0, 0.0, "oid_in", True, unk=False,
+    )
+    pos_rec["status"] = "POSITION_CONFIRMED"
+    pos_rec["inventory_reconciled"] = True
+    h_rec.active_positions["LOCK_DEL_1"] = pos_rec
+    delayed_raw = {"success": False, "outcome_unknown": True, "orderID": "oid_del_1", "error": "Status: delayed", "reservation_id": "res_1"}
+    polled_res = asyncio.run(poll_delayed_recycle_unwind_async(h_rec, pos_rec, delayed_raw, 0.998, max_wait_sec=1.0, poll_interval_sec=0.05))
+    assert polled_res["outcome_unknown"] is False and polled_res["success"] is True
+    out_st = h_rec._handle_unwind_response("LOCK_DEL_1", pos_rec, polled_res, 20.0, "HTM_EARLY_998_PROFIT_RECYCLE", "HOLD_TO_MATURITY_LOCK", 0.998)
+    assert out_st == "CLOSED" and "LOCK_DEL_1" not in h_rec.active_positions
+    assert h_rec._global_halt_reasons() == []
+
+    # Also test 0-fill terminal cancel after Status: delayed -> returns FAILED, keeps HOLD_TO_MATURITY_LOCK, 0 halts!
+    h_rec.executor.get_order_fill_summary = lambda oid, tok: {
+        "order_id": oid, "status": "CANCELED", "matched": 0.0, "cash": 0.0, "resting": False, "terminal": True, "is_canceled": True
+    }
+    pos_rec2 = dict(pos_rec, trade_id="LOCK_DEL_2", remaining_shares=20.0, filled_exit_shares=0.0, exit_order_status="HOLD_TO_MATURITY_LOCK", is_liquidating=False)
+    h_rec.active_positions["LOCK_DEL_2"] = pos_rec2
+    out_st2 = h_rec._handle_unwind_response(
+        "LOCK_DEL_2", pos_rec2, {"success": False, "outcome_unknown": True, "orderID": "oid_del_2", "error": "Status: delayed"},
+        20.0, "HTM_EARLY_998_PROFIT_RECYCLE", "HOLD_TO_MATURITY_LOCK", 0.998,
+    )
+    assert out_st2 == "FAILED" and pos_rec2["exit_order_status"] == "HOLD_TO_MATURITY_LOCK"
+    assert h_rec._global_halt_reasons() == []
+
+
+
 
 
 

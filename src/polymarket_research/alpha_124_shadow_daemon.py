@@ -1699,9 +1699,19 @@ class Alpha124ShadowDaemon:
                             if ev_t == "book":
                                 aid = str(data.get("asset_id") or "")
                                 if aid in shard_sub:
+                                    tk_b = data.get("tick_size") or data.get("minimum_tick_size")
+                                    if tk_b:
+                                        self.__dict__.setdefault("_token_tick_sizes", {})[aid] = str(tk_b)
                                     self._apply_ws_book_snapshot(aid, data.get("bids") or [], data.get("asks") or [], now_rx)
                                     woke_d1 = woke_d1 or (aid in d1_wake_toks)
                                     woke_nr = woke_nr or (aid in nr_wake_toks)
+                            elif ev_t == "tick_size_change":
+                                aid = str(data.get("asset_id") or "")
+                                ntk = data.get("new_tick_size") or data.get("tick_size")
+                                if aid and ntk:
+                                    self.__dict__.setdefault("_token_tick_sizes", {})[aid] = str(ntk)
+                                    if aid in self._ws_books and isinstance(self._ws_books[aid][1], dict):
+                                        self._ws_books[aid][1]["minimum_tick_size"] = str(ntk)
                             elif ev_t == "price_change":
                                 grouped: Dict[str, List[Dict[str, Any]]] = {}
                                 for pc in data.get("price_changes") or ():
@@ -1790,6 +1800,10 @@ class Alpha124ShadowDaemon:
         if ws_ent is None or (float(now_ts) - float(ws_ent[0])) > float(max_age_sec):
             return None
         bk = ws_ent[1]
+        if isinstance(bk, dict) and "minimum_tick_size" not in bk:
+            tk_c = (self.__dict__.get("_token_tick_sizes") or {}).get(t_str)
+            if tk_c:
+                bk["minimum_tick_size"] = tk_c
         return bk if isinstance(bk, dict) and (bk.get("asks") or bk.get("bids")) else None
 
     async def fetch_books_batch(self, token_ids: List[str], timeout: float = 3.0) -> Dict[str, Dict[str, Any]]:
@@ -1803,6 +1817,7 @@ class Alpha124ShadowDaemon:
         missing: List[str] = []
         now_b = time.time()
         use_ws = not self.single_scan
+        tk_cache = self.__dict__.setdefault("_token_tick_sizes", {})
         for t in uniq:
             ws_entry = self._ws_books.get(t) if use_ws else None
             if (
@@ -1810,6 +1825,8 @@ class Alpha124ShadowDaemon:
                 and (now_b - ws_entry[0]) <= 1.5
                 and (ws_entry[1].get("bids") or ws_entry[1].get("asks"))
             ):
+                if t in tk_cache and "minimum_tick_size" not in ws_entry[1]:
+                    ws_entry[1]["minimum_tick_size"] = tk_cache[t]
                 out[t] = ws_entry[1]
             else:
                 missing.append(t)
@@ -1832,6 +1849,9 @@ class Alpha124ShadowDaemon:
                             for r in rows:
                                 if isinstance(r, dict) and r.get("asset_id"):
                                     aid_r = str(r["asset_id"])
+                                    tk_r = r.get("minimum_tick_size") or r.get("tick_size")
+                                    if tk_r:
+                                        tk_cache[aid_r] = str(tk_r)
                                     out[aid_r] = r
                                     if use_ws and aid_r in self._ws_subscribed_tokens and aid_r not in self._ws_raw_levels:
                                         self._apply_ws_book_snapshot(aid_r, r.get("bids") or [], r.get("asks") or [], now_seed, from_rest=True)
@@ -1841,6 +1861,9 @@ class Alpha124ShadowDaemon:
             fb = await asyncio.gather(*(self.fetch_json(f"{CLOB_URL}/book?token_id={t}", timeout=timeout) for t in chunk))
             for t, bk in zip(chunk, fb):
                 if isinstance(bk, dict):
+                    tk_b2 = bk.get("minimum_tick_size") or bk.get("tick_size")
+                    if tk_b2:
+                        tk_cache[t] = str(tk_b2)
                     out[t] = bk
         return out
 
@@ -1927,44 +1950,12 @@ class Alpha124ShadowDaemon:
         # 1. Scan top 600 active events by 24h volume + explicit high-volume Asian/Global METAR series (`Chengdu`, `Beijing`, `Seoul`)
         weather_found: Dict[str, WeatherEventSpec] = {}
         now_w_disc = time.time()
+        from src.polymarket_research.riskless_protocol_v2_expansion import (
+            attach_weather_neg_risk_from_gamma as _attach_weather_neg_risk,
+            resolve_weather_effective_end_ts,
+        )
         def _weather_still_live(sp_w: WeatherEventSpec) -> bool:
-            try:
-                return datetime.fromisoformat(sp_w.end_date_iso.replace("Z", "+00:00")).timestamp() > now_w_disc
-            except Exception:
-                return True
-
-        def _parse_neg_risk_flag(v: Any) -> Optional[bool]:
-            if isinstance(v, bool):
-                return v
-            if isinstance(v, str) and v.strip().lower() in ("true", "false"):
-                return v.strip().lower() == "true"
-            return None
-
-        def _attach_weather_neg_risk(sp_w: WeatherEventSpec, ev_raw: Any) -> None:
-            # Gamma `negRisk` (market-level overrides event-level) -> `bucket.neg_risk`; unknown stays None (blocks LIVE C1 emits)
-            if not isinstance(ev_raw, dict):
-                return
-            ev_nr = _parse_neg_risk_flag(ev_raw.get("negRisk"))
-            nr_by_id: Dict[str, Optional[bool]] = {}
-            for mk in ev_raw.get("markets") or ():
-                if not isinstance(mk, dict):
-                    continue
-                mk_nr = _parse_neg_risk_flag(mk.get("negRisk"))
-                if mk_nr is None:
-                    mk_nr = ev_nr
-                for id_k in (mk.get("id"), mk.get("conditionId")):
-                    if id_k not in (None, ""):
-                        nr_by_id[str(id_k)] = mk_nr
-            for bkt in sp_w.buckets:
-                nr_v = nr_by_id.get(str(bkt.market_id))
-                if nr_v is None:
-                    nr_v = nr_by_id.get(str(bkt.condition_id))
-                if nr_v is None and getattr(bkt, "neg_risk", None) is not None:
-                    continue  # keep a value already parsed upstream (e.g. by `parse_weather_event`)
-                try:
-                    setattr(bkt, "neg_risk", nr_v)
-                except Exception:
-                    pass
+            return resolve_weather_effective_end_ts(sp_w, now_w_disc + 86400.0) > now_w_disc
 
         w_tag_pages = await asyncio.gather(
             *(self.fetch_json(f"{GAMMA_URL}/events?tag_slug=weather&closed=false&limit=100&offset={w_off}", timeout=7.0) for w_off in (0, 100, 200, 300, 400))
@@ -3093,15 +3084,27 @@ class Alpha124ShadowDaemon:
                 )
 
     async def scan_weather_markets(self, opps_out: List[Dict[str, Any]]) -> None:
+        from src.polymarket_research.riskless_protocol_v2_expansion import resolve_weather_effective_end_ts
         now_utc = datetime.now(timezone.utc)
-        loop = asyncio.get_running_loop()
-
-        for sp in list(self.weather_events.values()):
-            now_s = time.time()
+        now_0 = time.time()
+        active_w_specs: List[Tuple[int, float, WeatherEventSpec]] = []
+        for sp0 in list(self.weather_events.values()):
+            e_ts0 = resolve_weather_effective_end_ts(sp0, now_0 + 86400.0)
+            if e_ts0 <= now_0:
+                self.weather_events.pop(sp0.event_id, None)
+                continue
             try:
-                end_ts = datetime.fromisoformat(sp.end_date_iso.replace("Z", "+00:00")).timestamp()
+                loc0 = now_utc.astimezone(ZoneInfo(sp0.tz_name))
             except Exception:
-                end_ts = now_s + 86400.0
+                loc0 = now_utc
+            if (sp0.obs_date - loc0.date()).days > 1 and not self.single_scan:
+                continue
+            active_w_specs.append((0 if loc0.date() >= sp0.obs_date else 1, e_ts0, sp0))
+        active_w_specs.sort(key=lambda r: (r[0], r[1]))
+
+        for _, _, sp in active_w_specs[:45]:
+            now_s = time.time()
+            end_ts = resolve_weather_effective_end_ts(sp, now_s + 86400.0)
             if end_ts <= now_s:
                 self.weather_events.pop(sp.event_id, None)
                 continue
@@ -3115,15 +3118,7 @@ class Alpha124ShadowDaemon:
                     eval_local = now_utc.astimezone(ZoneInfo(sp.tz_name))
                 except Exception:
                     eval_local = now_utc
-                local_hr = eval_local.hour + eval_local.minute / 60.0
-                if sp.metric == "LOW":
-                    in_w1_window = eval_local.date() > sp.obs_date or (
-                        eval_local.date() == sp.obs_date and local_hr >= 9.25
-                    )
-                else:
-                    in_w1_window = eval_local.date() > sp.obs_date or (
-                        eval_local.date() == sp.obs_date and local_hr >= 15.25
-                    )
+                in_w1_window = eval_local.date() >= sp.obs_date
             else:
                 in_w1_window = True
 
@@ -3188,10 +3183,7 @@ class Alpha124ShadowDaemon:
                     taf_extreme_c=(taf_ext or {}).get(sp.metric),
                 )
                 probs = res["probs"]
-            try:
-                end_ts = datetime.fromisoformat(sp.end_date_iso.replace("Z", "+00:00")).timestamp()
-            except Exception:
-                end_ts = now_s + 86400.0
+            end_ts = resolve_weather_effective_end_ts(sp, now_s + 86400.0)
 
             # 1. Check W1_SOLAR_PEAK_LOCK (HIGH) & W1_LOW_TROUGH_LOCK (LOW)
             if res["is_solar_lock"] and res["locked_bucket_idx"] is not None:
@@ -5889,63 +5881,8 @@ class Alpha124ShadowDaemon:
             "leg_b_fee_exponent": float(leg_b["fee_exponent"]),
             "leg_b_neg_risk": bool(leg_b["neg_risk"]),
         }
-        if not self.single_scan and self._ws_books:
-            act_ws_toks = [str(leg_a["token_id"]), str(leg_b["token_id"])]
-            opp_ws_toks = [
-                t_id
-                for t_id in (
-                    str(leg_a.get("opp_token_id") or ""),
-                    str(leg_b.get("opp_token_id") or ""),
-                )
-                if t_id
-            ]
-            req_ws_toks = act_ws_toks + opp_ws_toks
-            now_ws_emit = time.time()
-            rest_seeded = getattr(self, "_ws_rest_seeded", set())
-            ws_entries = [None if t_id in rest_seeded else self._ws_books.get(t_id) for t_id in req_ws_toks]
-            if len(req_ws_toks) >= 2 and all(
-                e is not None
-                and (now_ws_emit - e[0]) <= (0.65 if idx < 2 else 2.50)
-                and e[1].get("bids")
-                and e[1].get("asks")
-                for idx, e in enumerate(ws_entries)
-            ):
-                cand["ws_books_ts"] = round(min(float(e[0]) for e in ws_entries[:2] if e is not None), 4)
-                cand["ws_books"] = {
-                    t_id: {
-                        "bids": (e[1].get("bids") or [])[:12],
-                        "asks": (e[1].get("asks") or [])[:12],
-                    }
-                    for t_id, e in zip(req_ws_toks, ws_entries)
-                    if e is not None
-                }
-        try:
-            try:
-                import orjson as _orj
-                raw_b = _orj.dumps(cand) + b"\n"
-                line_s = raw_b.decode("utf-8")
-            except Exception:
-                line_s = json.dumps(cand, separators=(",", ":")) + "\n"
-                raw_b = line_s.encode("utf-8")
-            if os.name != "nt" and D1_LIVE_CANDIDATES_FILE == default_cand_path:
-                try:
-                    import socket
-                    s_ipc = getattr(self, "_d1_ipc_sock", None)
-                    if s_ipc is None:
-                        s_ipc = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-                        s_ipc.setblocking(False)
-                        self._d1_ipc_sock = s_ipc
-                    ipc_nm = os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME", "polymarket_d1_box_notify")
-                    s_ipc.sendto(raw_b, f"\x00{ipc_nm}".encode("utf-8"))
-                except Exception:
-                    pass
-            D1_LIVE_CANDIDATES_FILE.parent.mkdir(parents=True, exist_ok=True)
-            with open(D1_LIVE_CANDIDATES_FILE, "a", encoding="utf-8") as fp:
-                fp.write(line_s)
-            return True
-        except Exception as exc:
-            logger.debug(f"D1 live candidate write notice: {exc}")
-            return False
+        from src.polymarket_research.riskless_protocol_v2_expansion import attach_ws_books_and_write_d1_cand
+        return attach_ws_books_and_write_d1_cand(self, cand, leg_a, leg_b, D1_LIVE_CANDIDATES_FILE, default_cand_path)
 
     def emit_live_two_leg_box_candidate(
         self,
@@ -7782,14 +7719,14 @@ class Alpha124ShadowDaemon:
                 from src.polymarket_research.riskless_protocol_v2_expansion import hydrate_fast_s2_from_shm
                 shm_bks = hydrate_fast_s2_from_shm(self, now)
             rem_5m = (math.ceil(now / 300.0) * 300.0) - now
-            disc_iv = 8.0 if rem_5m <= 30.0 else 12.0
-            _skip_lock_disc = (not _is_mock_s2) and rem_5m <= 24.0 and any(abs(sp.end_ts - math.ceil(now / 300.0) * 300.0) <= 2.0 for sp in self.twap_candles.values())
+            disc_iv = 8.0 if rem_5m <= 40.0 else 12.0
+            _skip_lock_disc = (not _is_mock_s2) and rem_5m <= 40.0 and any(abs(sp.end_ts - math.ceil(now / 300.0) * 300.0) <= 2.0 for sp in self.twap_candles.values())
             if not _skip_lock_disc and 3.5 <= rem_5m <= (75.0 if _is_mock_s2 else 95.0) and (now - self.last_twap_discovery_ts) >= disc_iv:
                 self.last_twap_discovery_ts = now
                 await self.discover_active_twap_candles(now)
 
             s2_strict = os.getenv("PM_QUARANTINE_LOSING_SLEEVES", "1") == "1"
-            max_s2_rem = 28.0 if s2_strict else 45.0
+            max_s2_rem = 38.5 if s2_strict else 45.0
             min_s2_rem = 8.0 if self.single_scan else 4.2
             min_s2_p = 0.975 if s2_strict else 0.965
             min_s2_z = 2.65 if s2_strict else 0.0
@@ -7818,6 +7755,9 @@ class Alpha124ShadowDaemon:
                 if not _is_mock_s2
                 else {}
             )
+            for tk_s2, sh_bk in shm_bks.items():
+                if isinstance(bks_s2.get(tk_s2), dict) and "minimum_tick_size" not in bks_s2[tk_s2] and sh_bk.get("minimum_tick_size"):
+                    bks_s2[tk_s2]["minimum_tick_size"] = sh_bk["minimum_tick_size"]
 
             for spec, k_open in valid_pairs:
                 eval_now = float(now_ts) if (self.single_scan and now_ts is not None) else time.time()
@@ -7848,7 +7788,7 @@ class Alpha124ShadowDaemon:
                 cur_usd_f = float(cur_usd)
                 usd_direct = bool(
                     ws_spot_s2 is not None
-                    or shm.get("source") in ("shm_chainlink_proxy", "shm_coinbase_usd")
+                    or shm.get("source") in ("shm_chainlink_proxy", "shm_coinlink_usd", "shm_coinbase_usd")
                     or self.usd_direct_flags.get(spec.asset, False)
                 )
                 iv_1d, _ = get_wing_implied_vol(spec.asset, cur_usd_f, k_open, 86400.0)
@@ -7859,7 +7799,7 @@ class Alpha124ShadowDaemon:
                     for t_w, p_w in samples:
                         merged_s2[round(float(t_w), 1)] = float(p_w)
                     samples = sorted(merged_s2.items(), key=lambda x: x[0])
-                if not _is_mock_s2 and 3.8 <= rem_sec <= 22.0 and self._strike_is_rest_verified(spec) and len(samples) >= 6:
+                if not _is_mock_s2 and 3.8 <= rem_sec <= 38.0 and self._strike_is_rest_verified(spec) and len(samples) >= 6:
                     from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_s2_live_locks
                     maybe_emit_s2_live_locks(
                         self, spec=spec, k_open=k_open, eval_now=eval_now, rem_sec=rem_sec, samples=samples,

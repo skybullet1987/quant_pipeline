@@ -2836,13 +2836,13 @@ class PolymarketLiveExecutor:
         is_full_or_ioc = orig_size <= 0.0 or matched >= orig_size - 1e-4 or order_type_str in {"FAK", "FOK"}
         no_longer_resting = (
             status.startswith("CANCEL")
-            or status in {"CONFIRMED", "EXPIRED", "REJECTED"}
+            or status in {"CONFIRMED", "EXPIRED", "REJECTED", "INVALID"}
             or (status in {"MATCHED", "FILLED"} and is_full_or_ioc)
             or (orig_size > 0 and matched >= orig_size - 1e-4)
         )
 
-        # Terminal status requires either cancellation/expiration/rejection OR authoritative settlement finality
-        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"}
+        # Terminal status requires either cancellation/expiration/rejection/invalid OR authoritative settlement finality
+        is_canceled = status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED", "INVALID"}
         has_reverted_fills = any(str(f.get("status", "")).upper() in {"FAILED", "RETRYING"} for f in all_fills)
         if is_canceled:
             if matched <= 1e-6 or is_settled:
@@ -7921,7 +7921,7 @@ class PolymarketLiveExecutor:
                 is_terminal_rejection = (
                     mkt_closed
                     or status_str.startswith("CANCEL")
-                    or status_str in {"EXPIRED", "REJECTED", "UNMATCHED"}
+                    or status_str in {"EXPIRED", "REJECTED", "UNMATCHED", "INVALID"}
                     or is_fak_killed_no_match(None, resp)
                     or is_clob_400_rejection(None, resp)
                 )
@@ -8133,7 +8133,7 @@ class PolymarketLiveExecutor:
                     not_canceled_reason=not_canceled_reason,
                     raw=res,
                 )
-            elif status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (
+            elif status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (status == "INVALID" and matched <= 1e-6) or (
                 is_in_canceled_list and (self.dry_run or order_info is not None)
             ):
                 stale_live_read = bool(is_in_canceled_list and status == "LIVE")

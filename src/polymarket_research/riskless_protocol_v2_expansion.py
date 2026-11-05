@@ -42,6 +42,7 @@ import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
+from zoneinfo import ZoneInfo
 
 
 def _iso_utc(ts: float) -> str:
@@ -810,8 +811,9 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
     src_map = daemon.__dict__.setdefault("_strike_source", {})
     open_cache = getattr(daemon, "chainlink_open_cache", None)
     usd_hist_map = getattr(daemon, "usd_spot_hist", None)
-    for asset_sym in ("BTC", "ETH", "SOL", "XRP"):
-        p_shm = f"/dev/shm/pm_fast_tick_{asset_sym}.json"
+    shm_dir = _os.environ.get("PM_FAST_TICK_DIR", "/dev/shm")
+    for asset_sym in ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE", "XAU", "XAG"):
+        p_shm = _os.path.join(shm_dir, f"pm_fast_tick_{asset_sym}.json")
         if not _os.path.exists(p_shm):
             continue
         try:
@@ -825,11 +827,16 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
         if shm_ts <= 0.0 or (now_ts - shm_ts) > 4.0:
             continue
         cl_px = float(d.get("chainlink_proxy_spot") or d.get("coinbase_spot") or 0.0)
-        if cl_px > 0.0 and isinstance(usd_hist_map, dict):
+        if cl_px <= 0.0:
+            continue
+        spot_ts = float(d.get("spot_ts") or shm_ts)
+        if asset_sym in {"XAU", "XAG"} and (now_ts - spot_ts) > 15.0:
+            continue
+        if isinstance(usd_hist_map, dict):
             dq = usd_hist_map.get(asset_sym)
             if dq is not None and (not dq or (shm_ts - float(dq[-1][0])) >= 0.85):
                 dq.append((shm_ts, cl_px))
-        for hz_k, hz_lbl, dur_s in (("m5", "5m", 300), ("m15", "15m", 900)):
+        for hz_k, hz_lbl, dur_s in (("m5", "5m", 300), ("m15", "15m", 900), ("h4", "4h", 14400)):
             mh = d.get(hz_k)
             if not isinstance(mh, dict):
                 continue
@@ -851,11 +858,64 @@ def hydrate_fast_s2_from_shm(daemon: Any, now_ts: float) -> Dict[str, Dict[str, 
                     rb = sb.get("raw_top_bids") or []
                     ra = sb.get("raw_top_asks") or []
                     if rb or ra:
+                        raw_tk = sb.get("minimum_tick_size") or sb.get("tick_size")
+                        if raw_tk in (None, ""):
+                            has_3dec = any(
+                                len(r) >= 2 and float(r[1]) > 0 and abs(round(float(r[0]) * 100.0) - float(r[0]) * 100.0) > 1e-6
+                                for r in (list(rb) + list(ra))
+                            )
+                            raw_tk = "0.001" if has_3dec else "0.01"
                         shm_books[tk_id] = {
                             "bids": [{"price": str(r[0]), "size": str(r[1])} for r in rb if len(r) >= 2 and float(r[1]) > 0],
                             "asks": [{"price": str(r[0]), "size": str(r[1])} for r in ra if len(r) >= 2 and float(r[1]) > 0],
+                            "minimum_tick_size": str(raw_tk),
                         }
     return shm_books
+
+
+def check_s2_live_adverse_move_cancel(
+    cand_asset: str,
+    side_s: str,
+    candidate_box: Mapping[str, Any],
+    exp_ts: float,
+    now_ts: Optional[float] = None,
+) -> bool:
+    """Fast SHM spot + remaining-TWAP sigma monitor: cancels resting S2 Maker order if cushion drops `< 2.5 sigma`."""
+    import json as _json
+    import os as _os
+
+    s2_open = float(candidate_box.get("s2_open_price") or 0.0)
+    s2_sig = float(candidate_box.get("s2_sigma_1s") or 0.0)
+    if s2_open <= 0.0 or s2_sig <= 0.0 or not cand_asset:
+        return False
+    shm_dir = _os.environ.get("PM_FAST_TICK_DIR", "/dev/shm")
+    p_shm = _os.path.join(shm_dir, f"pm_fast_tick_{str(cand_asset).strip().upper()}.json")
+    if not _os.path.exists(p_shm):
+        return False
+    try:
+        with open(p_shm, "r", encoding="utf-8") as fh:
+            d = _json.load(fh)
+    except Exception:
+        return False
+    if not isinstance(d, dict):
+        return False
+    now_f = float(time.time() if now_ts is None else now_ts)
+    shm_ts = float(d.get("timestamp_unix") or d.get("ts") or 0.0)
+    cl_px = float(d.get("chainlink_proxy_spot") or d.get("coinbase_spot") or 0.0)
+    if shm_ts <= 0.0 or (now_f - shm_ts) > 3.5 or cl_px <= 0.0:
+        return False
+    sgn = 1.0 if str(side_s or "UP").strip().upper() == "UP" else -1.0
+    if sgn * (cl_px - s2_open) <= 0.0:
+        return True
+    n_rem = max(1, int(math.ceil(max(1.0, float(exp_ts) - now_f))))
+    n_locked = max(0, min(59, int(candidate_box.get("s2_n_locked") or max(0, 60 - n_rem))))
+    mean_obs = float(candidate_box.get("s2_mean_obs") or cl_px)
+    tot_n = float(max(1, n_locked + n_rem))
+    proj_twap = (float(n_locked) * mean_obs + float(n_rem) * cl_px) / tot_n
+    rw_rem_std = s2_sig * math.sqrt(float((n_rem + 1) * (2 * n_rem + 1)) / 6.0)
+    final_std = max(cl_px * 1e-6, math.hypot((float(n_rem) / tot_n) * rw_rem_std, cl_px * 0.00006))
+    z_live = sgn * (proj_twap - s2_open) / final_std
+    return bool(z_live < 2.5)
 
 
 def evaluate_s2_rtds_exact_twap_integrator(
@@ -880,10 +940,8 @@ def evaluate_s2_rtds_exact_twap_integrator(
     """
     `S2_RTDS_EXACT_TWAP_INTEGRATOR`:
     Integrates the live 1Hz Chainlink RTDS trajectory (+ `crypto_prices_twap_sixty` stream) inside
-    the final `55s` (`3.8s <= TTE <= 22.0s` in `live_lock_mode`) of a `5m`/`15m`/`4h` 60s-TWAP candle
-    across `BTC, ETH, SOL, XRP, BNB, DOGE, HYPE` (`XAU`/`XAG` spot-settled forex streams are excluded).
-    Uses exact piecewise-constant (step-hold) 1Hz integration when Chainlink WS emits event-driven updates
-    on calm markets, and normalizes multi-second innovations by `sqrt(dt)` so calm locked candles fire cleanly!
+    the final `55s` (`3.8s <= TTE <= 38.0s` in `live_lock_mode`, requiring `>= 4.5 sigma` for `TTE > 22s`)
+    of a `5m`/`15m`/`4h` 60s-TWAP candle across `BTC, ETH, SOL, XRP, BNB, DOGE, HYPE`.
     """
     sym = str(asset or "").strip().upper()
     if sym not in TWAP_60S_SUPPORTED_ASSETS or int(twap_lookback_sec or 0) != 60 or float(open_price) <= 0.0:
@@ -896,7 +954,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
     else:
         rem_sec = float(tte_sec)
     if live_lock_mode:
-        if not (3.8 <= rem_sec <= 22.0):
+        if not (3.8 <= rem_sec <= 38.0):
             return None
     elif not (0.8 <= rem_sec <= 55.0):
         return None
@@ -938,8 +996,8 @@ def evaluate_s2_rtds_exact_twap_integrator(
     win_prices = [p for _, p in win_pts[-60:]]
     mean_obs = sum(win_prices) / float(len(win_prices))
     cur_px = float(pts[-1][1]) if pts else win_prices[-1]
-    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 22.0:
-        max_twap_div = 0.0022 if live_lock_mode else 0.0025
+    if official_twap_60s is not None and float(official_twap_60s) > 0.0 and rem_sec <= 38.0:
+        max_twap_div = (0.0025 if rem_sec > 22.0 else 0.0022) if live_lock_mode else 0.0025
         rolling_60 = [p for t, p in pts if (now_f - 60.5) <= t <= (now_f + 1.0)]
         ref_mean = (
             sum(rolling_60) / float(len(rolling_60))
@@ -981,7 +1039,7 @@ def evaluate_s2_rtds_exact_twap_integrator(
     elapsed_cushion_bps = (abs(mean_obs - open_f) / open_f) * 10000.0
     req_adverse_avg_move_bps = (elapsed_sec / max(0.5, rem_sec)) * elapsed_cushion_bps
     if live_lock_mode:
-        min_adv_bps = 18.0 if rem_sec <= 10.5 else (22.0 if rem_sec <= 15.5 else 28.0)
+        min_adv_bps = 18.0 if rem_sec <= 10.5 else (22.0 if rem_sec <= 15.5 else (28.0 if rem_sec <= 22.0 else 34.0))
         if req_adverse_avg_move_bps < min_adv_bps:
             return None
 
@@ -990,11 +1048,11 @@ def evaluate_s2_rtds_exact_twap_integrator(
     final_twap_std = max(cur_px * 1e-6, math.hypot(w_rem * rw_rem_std, discretization_std))
 
     z = (expected_final_twap - open_f) / final_twap_std
-    min_z = 3.25 if live_lock_mode else 3.20
+    min_z = (4.50 if rem_sec > 22.0 else 3.25) if live_lock_mode else 3.20
     if abs(z) < min_z:
         return None
     p_win = 0.5 * (1.0 + math.erf(abs(z) / math.sqrt(2.0)))
-    req_prob = max(float(min_lock_prob), 0.9990) if live_lock_mode else float(min_lock_prob)
+    req_prob = max(float(min_lock_prob), 0.9995 if rem_sec > 22.0 else 0.9990) if live_lock_mode else float(min_lock_prob)
     if p_win < req_prob:
         return None
 
@@ -1020,6 +1078,8 @@ def evaluate_s2_rtds_exact_twap_integrator(
         "elapsed_cushion_bps": round(elapsed_cushion_bps, 2),
         "req_adverse_avg_move_bps": round(req_adverse_avg_move_bps, 2),
         "expected_settlement_twap": round(expected_final_twap, 6),
+        "mean_obs_twap": round(mean_obs, 6),
+        "sigma_1s": round(sigma_1s, 6),
         "open_price": open_f,
         "z_score": round(z, 3),
         "p_model": round(min(0.9999, p_win), 6),
@@ -1048,12 +1108,12 @@ def maybe_emit_s2_live_locks(
     **_extra_kw: Any,
 ) -> bool:
     """
-    Dual-mode Live Gatling `S2_RTDS_EXACT_TWAP_INTEGRATOR` emitter (`3.8s <= rem_sec <= 22.0s`):
-      1. Taker FOK Lock when `0.50 <= net_cost_per_share <= $0.9970` (`crypto_fees_v2` at `$0.996` is `$0.00028`).
-      2. Final-22s Post-Only Maker Lock (`SINGLE_LEG_MAKER_LOCK`, `0%` fee + `20%` crypto maker rebate) when
-         `0.50 <= best_bid <= $0.9970`, capturing final-15s cashouts at `0.001` tick precision!
+    Dual-mode Live Gatling `S2_RTDS_EXACT_TWAP_INTEGRATOR` emitter (`3.8s <= rem_sec <= 38.0s`):
+      1. Taker FOK Lock when `0.50 <= net_cost_per_share <= $0.9970`.
+      2. `T-38s..T-5s` Post-Only Maker Lock (`SINGLE_LEG_MAKER_LOCK`, `0%` fee + `20%` crypto maker rebate) when
+         `0.50 <= best_bid <= $0.9970` and `z >= 4.5` (`>22s`) / `z >= 3.30` (`<=22s`).
     """
-    if not (3.8 <= rem_sec <= 22.0) or len(samples) < 6:
+    if not (3.8 <= rem_sec <= 38.0) or len(samples) < 6:
         return False
     bks_map = bks_s2 or {}
     if not win_side:
@@ -1074,7 +1134,7 @@ def maybe_emit_s2_live_locks(
 
     ask_up_l1, _ = daemon._best_ask_sz(bks_map.get(spec.up_token) or (bk if win_side == "UP" else {}))
     ask_dn_l1, _ = daemon._best_ask_sz(bks_map.get(spec.down_token) or (bk if win_side == "DOWN" else {}))
-    if 3.8 <= rem_sec <= 20.0:
+    if 3.8 <= rem_sec <= 38.0:
         s2_rt = evaluate_s2_rtds_exact_twap_integrator(
             asset=spec.asset,
             open_price=k_open,
@@ -1123,7 +1183,7 @@ def maybe_emit_s2_live_locks(
                 )
                 return True
 
-    if 5.0 <= rem_sec <= 22.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+    if 5.0 <= rem_sec <= 38.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
         bids_w = sorted(
             [(float(b["price"]), float(b["size"])) for b in (bk.get("bids") or []) if float(b.get("price", 0)) > 0 and float(b.get("size", 0)) > 0],
             key=lambda r: -r[0],
@@ -1146,17 +1206,26 @@ def maybe_emit_s2_live_locks(
                 min_net_edge=0.0025,
                 min_lock_prob=0.9990,
             )
+            req_z_mk = 4.50 if rem_sec > 22.0 else 3.30
+            req_adv_mk = 34.0 if rem_sec > 22.0 else 22.0
             if (
                 s2_mk is not None
                 and s2_mk["direction"] == win_side
-                and abs(float(s2_mk["z_score"])) >= 3.30
-                and float(s2_mk["req_adverse_avg_move_bps"]) >= 22.0
+                and abs(float(s2_mk["z_score"])) >= req_z_mk
+                and float(s2_mk["req_adverse_avg_move_bps"]) >= req_adv_mk
             ):
                 p_mk = float(s2_mk["p_model"])
                 reb_ps = round(0.20 * float(spec.fee_rate) * ((win_bid * (1.0 - win_bid)) ** float(spec.fee_exponent)), 5) if float(spec.fee_rate) > 0.0 else 0.0
                 bk_opp_eff = bk_opp if isinstance(bk_opp, dict) else {"bids": [], "asks": []}
                 max_rb_s2 = 0.994 if win_bid <= 0.993 else 0.997
                 min_ed_s2 = 0.005 if win_bid <= 0.993 else 0.0025
+                bk_s2_m = dict(bk)
+                bk_s2_m["_s2_meta"] = {
+                    "s2_open_price": float(k_open),
+                    "s2_sigma_1s": float(s2_mk["sigma_1s"]),
+                    "s2_mean_obs": float(s2_mk["mean_obs_twap"]),
+                    "s2_n_locked": int(s2_mk["n_locked_ticks"]),
+                }
                 if daemon.emit_live_single_leg_maker_lock_candidate(
                     sleeve_source="S2_RTDS_EXACT_TWAP_INTEGRATOR",
                     asset=spec.asset,
@@ -1168,7 +1237,7 @@ def maybe_emit_s2_live_locks(
                     condition_id=spec.condition_id,
                     side_label=win_side,
                     display_label=f"{spec.asset} {spec.horizon} {win_side} TWAP Maker Lock (TTE={rem_sec:.1f}s)",
-                    bk_win=bk,
+                    bk_win=bk_s2_m,
                     bk_opp=bk_opp_eff,
                     neg_risk=bool(spec.neg_risk),
                     close_ts=spec.end_ts,
@@ -1291,7 +1360,7 @@ def maybe_cap_gatling_budget_sync(
         and "get_market_book" not in getattr(ex, "__dict__", {})
         and not getattr(harvester, "enforce_bond1_smart_queue", False)
     )
-    if not (getattr(harvester, "enforce_gatling_sizing", False) or live_real_ex):
+    if not (getattr(harvester, "enforce_gatling_sizing", False) or getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or live_real_ex):
         return budget
     g_clip = compute_gatling_clip_budget_usd(
         live_equity=float(collat_f) + float(cur_exp),
@@ -1319,8 +1388,8 @@ def cap_bond1_maker_for_gatling_reserve(
     rb_cfg: Optional[Mapping[str, Any]],
 ) -> float:
     """
-    Reserves `gatling_fast_gun_reserve_usd` ($22.50 on ~$61 seed NAV) of 100% unencumbered free cash
-    so passive `BOND1` maker carry orders never starve `0ms` Gatling `S2` / `D1` / `PreSplit` bursts.
+    Reserves `max($20.00, 28% * NAV, gatling_fast_gun_reserve_usd)` of unencumbered free cash
+    against `TTE > 10m` `BOND1` carry fills so passive carry never starves `<=90s` `S2` / `<15m` `D1` bursts.
     """
     rb = rb_cfg or {}
     if not bool(rb.get("gatling_enabled", False)):
@@ -1338,12 +1407,8 @@ def cap_bond1_maker_for_gatling_reserve(
     if not (getattr(harvester, "enforce_gatling_fast_gun_reserve", False) or getattr(harvester, "enforce_gatling_sizing", False) or live_real_ex):
         return float(budget)
     total_b1_nav = float(collat_f) + float(sll_used_u)
-    base_reserve = float(rb.get("gatling_fast_gun_reserve_usd", 22.50) or 22.50)
-    scaled_reserve = min(
-        total_b1_nav * 0.40,
-        round(base_reserve * ((max(10.0, total_b1_nav) / GATLING_REF_NAV_USD) ** 0.65), 2),
-    )
-    eff_reserve = base_reserve if total_b1_nav <= 75.0 else max(base_reserve, scaled_reserve)
+    base_reserve = max(20.0, float(rb.get("gatling_fast_gun_reserve_usd", 20.0) or 20.0))
+    eff_reserve = max(base_reserve, round(total_b1_nav * 0.28, 2))
     free_after_reserve = max(0.0, float(collat_f) - eff_reserve)
     per_mkt_seed_cap = (
         round(max(18.0, (total_b1_nav - eff_reserve) * 0.55), 2)
@@ -1357,6 +1422,11 @@ PASSIVE_CARRY_SLEEVES = frozenset({
     "BOND1_UMA_RESOLUTION_CARRY",
     "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
     "MKR_REWARD_LOCKED_CARRY",
+})
+
+FAST_GUN_S2_SLEEVES = frozenset({
+    "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+    "S2_EXACT_TWAP_LOCK",
 })
 
 
@@ -1375,12 +1445,13 @@ def compute_sll_and_carry_gatling_budget(
     cap_usd: float = 250.0,
 ) -> float:
     """
-    Separates Passive Carry (`BOND1`, `BOND2`, `MKR_REWARD_LOCKED_CARRY`) from Fast Gatling Locks (`S2`, `MKR_LOCK1`, `W_PRUNE1`, etc.):
-      - Passive Carries (both Taker and Maker!) MUST preserve `gatling_fast_gun_reserve_usd` ($22.50) in free cash,
-        AND slow carries (`rem_tte_sec > 2400s` = `>40m`) are capped at `<= 38%` of NAV (`1` slot) so slow UMA carries
-        never consume 70%+ of bankroll.
-      - Fast Gatling Locks CONSUME the fast-gun reserve (`override_legacy_cap=True`, `reserve_u=0.50`), bypassing the
-        passive `55%` `sll_pool_rem` cap so `$16.34` free cash immediately funds `$15.84` clips!
+    Two-tier Fast-Gun Reserve (`max($20.00, 28% * NAV)`):
+      - Tier 1 (Passive `BOND1`/`BOND2`/`MKR_REWARD` UMA carries — whose true UMA resolution lockup is always `>10m` —
+        and any single-leg carry with `rem_tte_sec > 600s` / `>10m`):
+        MUST preserve `max($20.00, 28% * NAV, gatling_fast_gun_reserve_usd)` in free cash (`cap_bond1_maker_for_gatling_reserve`),
+        and ultra-slow carries (`rem_tte_sec > 2400s` = `>40m`) are capped at `<= 38%` of NAV.
+      - Tier 2 (`TTE <= 90s` `S2` locks, any non-UMA `0 < TTE <= 90s` lock, and `<15m` instant taker `D1` boxes):
+        Explicitly ALLOWED to utilize the fast-gun reserve (`override_legacy_cap=True`, `reserve_u=0.50`).
     """
     rb = rb_cfg or {}
     if not bool(rb.get("gatling_enabled", False)):
@@ -1400,8 +1471,16 @@ def compute_sll_and_carry_gatling_budget(
         return float(legacy_budget)
 
     sl_u = str(sleeve_src or "").upper()
+    bt_u = str(box_type or "").upper()
+    rem_f = float(rem_tte_sec or 0.0)
     now_f = float(time.time() if now_ts is None else now_ts)
-    if sl_u in PASSIVE_CARRY_SLEEVES:
+
+    is_fast_gun_tier = (
+        sl_u in FAST_GUN_S2_SLEEVES
+        or (0.0 < rem_f <= 90.0 and sl_u not in PASSIVE_CARRY_SLEEVES)
+        or (bt_u == "DOMINANCE" and (rem_f <= 0.0 or rem_f <= 900.0))
+    )
+    if not is_fast_gun_tier and (sl_u in PASSIVE_CARRY_SLEEVES or rem_f > 600.0):
         act_pos = getattr(harvester, "active_positions", None) or {}
         pend_int = getattr(harvester, "pending_entry_intents", None) or {}
         carry_used = sum(
@@ -1409,23 +1488,40 @@ def compute_sll_and_carry_gatling_budget(
             for p in act_pos.values()
             if isinstance(p, Mapping)
             and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
-            and str(p.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+            and (
+                str(p.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+                or (float(p.get("candle_expiry_ts", 0.0) or 0.0) - now_f) > 600.0
+            )
         ) + sum(
             float(i.get("notional_usd", 0.0) or 0.0)
             for i in pend_int.values()
-            if isinstance(i, Mapping) and i.get("live_maker_anchor_inflight") and str(i.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
+            if isinstance(i, Mapping)
+            and i.get("live_maker_anchor_inflight")
+            and str(i.get("sleeve_source") or i.get("sleeve") or "").upper() not in FAST_GUN_S2_SLEEVES
         )
-        capped = cap_bond1_maker_for_gatling_reserve(harvester, legacy_budget, collat_f, carry_used, rb)
+        base_for_cap = float(legacy_budget) if float(legacy_budget) > 0.0 else float(collat_f)
+        capped = cap_bond1_maker_for_gatling_reserve(
+            harvester, base_for_cap, collat_f, max(carry_used, float(cur_exp)), rb
+        )
         capped = maybe_cap_gatling_budget_sync(
-            harvester, capped, collat_f, cur_exp, box_type, sleeve_src, own_grad, rb, cap_usd=cap_usd, reserve_u=0.0, override_legacy_cap=False
+            harvester,
+            capped,
+            collat_f,
+            cur_exp,
+            box_type,
+            sleeve_src,
+            own_grad,
+            rb,
+            cap_usd=cap_usd,
+            reserve_u=0.0,
+            override_legacy_cap=(sl_u not in PASSIVE_CARRY_SLEEVES),
         )
-        if float(rem_tte_sec or 0.0) > 2400.0:
+        if rem_f > 2400.0:
             slow_used = sum(
                 float(p.get("notional_usd", 0.0) or 0.0)
                 for p in act_pos.values()
                 if isinstance(p, Mapping)
                 and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
-                and str(p.get("sleeve") or "").upper() in PASSIVE_CARRY_SLEEVES
                 and (float(p.get("candle_expiry_ts", 0.0) or 0.0) - now_f) > 2400.0
             )
             nav_tot = max(10.0, float(collat_f) + float(cur_exp))
@@ -1448,6 +1544,307 @@ def compute_sll_and_carry_gatling_budget(
     )
 
 
+def _interpret_delayed_recycle_poll_summary(
+    ex: Any,
+    res: Mapping[str, Any],
+    oid: str,
+    summary: Optional[Mapping[str, Any]],
+    limit_price: Optional[float],
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(summary, Mapping):
+        return None
+    m = float(summary.get("matched") or 0.0)
+    resting = bool(summary.get("resting"))
+    term = bool(summary.get("terminal"))
+    is_canc = bool(summary.get("is_canceled"))
+    st_u = str(summary.get("status") or "").upper()
+    res_id = res.get("reservation_id")
+    if m <= 1e-6 and (term or is_canc) and not resting:
+        if res_id and hasattr(ex, "release_inventory"):
+            ex.release_inventory(reservation_id=str(res_id))
+        return {
+            **dict(res),
+            "outcome_unknown": False,
+            "success": False,
+            "matched_size": 0.0,
+            "taking_amount": 0.0,
+            "reservation_id": None,
+        }
+    if m > 1e-6 and not resting and (term or st_u in {"MATCHED", "MINED", "CONFIRMED"}):
+        if res_id and hasattr(ex, "release_inventory"):
+            ex.release_inventory(reservation_id=str(res_id))
+        raw_cash = float(summary.get("cash") or 0.0)
+        avg_px = float(summary.get("avg_price") or limit_price or 0.998)
+        cash = raw_cash if raw_cash > 0.0 else round(m * max(float(limit_price or 0.0), avg_px), 6)
+        cash_est = bool(summary.get("cash_is_estimated", summary.get("estimated", False)) or st_u == "MATCHED" or raw_cash <= 0.0)
+        return {
+            **dict(res),
+            "outcome_unknown": False,
+            "success": True,
+            "orderID": oid,
+            "matched_size": m,
+            "taking_amount": cash,
+            "taking_amount_missing": False,
+            "taking_amount_estimated": cash_est,
+            "fee_usd": float(summary.get("fee") or 0.0),
+            "fee_is_estimated": bool(summary.get("fee_estimated", True)),
+            "reservation_id": None,
+        }
+    return None
+
+
+async def poll_delayed_recycle_unwind_async(
+    harvester: Any,
+    pos: Mapping[str, Any],
+    res: Any,
+    limit_price: Optional[float],
+    *,
+    max_wait_sec: float = 5.0,
+    poll_interval_sec: float = 0.5,
+) -> Any:
+    """
+    Polls CLOB `get_order_fill_summary` for up to `5.0s` when `HTM_EARLY_998_PROFIT_RECYCLE` receives
+    a transient `Status: delayed` (`outcome_unknown=True`) response before escalating to `[GLOBAL HALT]`.
+    """
+    if not isinstance(res, Mapping) or not bool(res.get("outcome_unknown")):
+        return res
+    ex = getattr(harvester, "executor", None)
+    oid = str(res.get("orderID") or res.get("order_id") or "").strip()
+    tok = str(pos.get("token_id") or "").strip()
+    if ex is None or not oid or not hasattr(ex, "get_order_fill_summary"):
+        return res
+    steps = max(1, int(round(max(0.5, float(max_wait_sec)) / max(0.1, float(poll_interval_sec)))))
+    for idx in range(steps):
+        if idx > 0:
+            await asyncio.sleep(float(poll_interval_sec))
+        try:
+            summ = await asyncio.to_thread(ex.get_order_fill_summary, oid, tok)
+        except Exception:
+            summ = None
+        resolved = _interpret_delayed_recycle_poll_summary(ex, res, oid, summ, limit_price)
+        if resolved is not None:
+            resolved["_delayed_recycle_polled"] = True
+            logger.info(
+                f"♻️ [DELAYED RECYCLE RESOLVED] order={oid} -> success={resolved.get('success')} "
+                f"matched={resolved.get('matched_size', 0.0):.2f}"
+            )
+            return resolved
+    out = dict(res)
+    out["_delayed_recycle_polled"] = True
+    return out
+
+
+def resolve_delayed_recycle_unwind_sync(
+    harvester: Any,
+    pos: Mapping[str, Any],
+    res: Any,
+    close_reason: str,
+    limit_price: Optional[float],
+    *,
+    max_wait_sec: float = 5.0,
+    poll_interval_sec: float = 0.5,
+) -> Any:
+    """Synchronous fallback inside `_handle_unwind_response` when `HTM_EARLY_998_PROFIT_RECYCLE` is delayed."""
+    if (
+        str(close_reason or "") != "HTM_EARLY_998_PROFIT_RECYCLE"
+        or not isinstance(res, Mapping)
+        or not bool(res.get("outcome_unknown"))
+        or bool(res.get("_delayed_recycle_polled"))
+    ):
+        return res
+    ex = getattr(harvester, "executor", None)
+    oid = str(res.get("orderID") or res.get("order_id") or "").strip()
+    tok = str(pos.get("token_id") or "").strip()
+    if ex is None or not oid or not hasattr(ex, "get_order_fill_summary"):
+        return res
+    steps = max(1, int(round(max(0.5, float(max_wait_sec)) / max(0.1, float(poll_interval_sec)))))
+    for idx in range(steps):
+        if idx > 0:
+            time.sleep(float(poll_interval_sec))
+        try:
+            summ = ex.get_order_fill_summary(oid, tok)
+        except Exception:
+            summ = None
+        resolved = _interpret_delayed_recycle_poll_summary(ex, res, oid, summ, limit_price)
+        if resolved is not None:
+            resolved["_delayed_recycle_polled"] = True
+            return resolved
+    return res
+
+
+def compute_d1_per_market_notional_cap(harvester: Any) -> float:
+    rcfg = getattr(harvester, "risk_config", None) or {}
+    explicit = float(rcfg.get("bond1_per_market_cap_usd", 0.0) or 0.0)
+    if explicit > 0.0:
+        return explicit
+    collat = float(getattr(harvester, "_last_known_collateral", 0.0) or 0.0)
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    open_u = sum(
+        float(p.get("notional_usd", 0.0) or 0.0)
+        for p in act_pos.values()
+        if isinstance(p, Mapping) and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
+    )
+    nav = max(collat + open_u, float(getattr(harvester, "max_exposure", 35.0) or 35.0))
+    is_v5 = bool(hasattr(harvester, "_is_v5_unleashed_active") and harvester._is_v5_unleashed_active())
+    if is_v5:
+        return round(min(45.0, max(25.0, nav * 0.46)), 2)
+    return 25.0
+
+
+def open_market_notional_usd(harvester: Any, market_ids: Sequence[str]) -> float:
+    mset = {str(m).strip() for m in (market_ids or ()) if str(m or "").strip()}
+    if not mset:
+        return 0.0
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    pend_int = getattr(harvester, "pending_entry_intents", None) or {}
+    used = sum(
+        float(p.get("notional_usd", 0.0) or 0.0)
+        for p in act_pos.values()
+        if isinstance(p, Mapping)
+        and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
+        and p.get("resolved_winning_outcome") is None
+        and str(p.get("market_id") or "").strip() in mset
+    ) + sum(
+        float(i.get("notional_usd", 0.0) or 0.0)
+        for i in pend_int.values()
+        if isinstance(i, Mapping) and str(i.get("market_id") or "").strip() in mset
+    )
+    return round(used, 4)
+
+
+def is_market_busy_for_scaling(
+    harvester: Any,
+    market_id: str,
+    *,
+    extra_busy_markets: Sequence[str] = (),
+) -> bool:
+    """
+    Returns True if `market_id` has an in-flight entry, pending settlement/exit/liquidation, un-reconciled inventory,
+    or open notional within `$4.85` of `compute_d1_per_market_notional_cap(harvester)`.
+    Reconciled `hold_to_maturity_lock` positions below the per-market cap allow multi-clip scaling after cooldown.
+    """
+    mid = str(market_id or "").strip()
+    if not mid:
+        return False
+    if mid in {str(x).strip() for x in (extra_busy_markets or ()) if str(x or "").strip()}:
+        return True
+    pend_int = getattr(harvester, "pending_entry_intents", None) or {}
+    if any(isinstance(i, Mapping) and str(i.get("market_id") or "").strip() == mid for i in pend_int.values()):
+        return True
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    has_open_on_mkt = False
+    for p in act_pos.values():
+        if not isinstance(p, Mapping) or str(p.get("market_id") or "").strip() != mid:
+            continue
+        if str(p.get("status") or "") in {"AWAITING_ONCHAIN_SETTLEMENT", "SETTLED", "FILLED", "CLOSED"} or p.get("resolved_winning_outcome") is not None:
+            continue
+        has_open_on_mkt = True
+        if (
+            not bool(p.get("hold_to_maturity_lock"))
+            or not bool(p.get("inventory_reconciled"))
+            or bool(p.get("is_liquidating"))
+            or bool(p.get("exit_order_id"))
+            or bool(p.get("unwind_order_id"))
+            or str(p.get("status") or "") in {"ENTRY_OUTCOME_UNKNOWN", "UNRESOLVED_SETTLEMENT", "MATCHED_PENDING_SETTLEMENT"}
+        ):
+            return True
+    if not has_open_on_mkt:
+        return False
+    cap_u = compute_d1_per_market_notional_cap(harvester)
+    return open_market_notional_usd(harvester, [mid]) >= max(5.0, cap_u - 4.85)
+
+
+def _evict_order_q_key(order_q: Any, key: str) -> None:
+    if order_q is None:
+        return
+    if isinstance(order_q, dict):
+        order_q.pop(key, None)
+        return
+    try:
+        while key in order_q:
+            order_q.remove(key)
+    except Exception:
+        pass
+
+
+def is_d1_dedupe_blocked(
+    harvester: Any,
+    dedupe_k: str,
+    pair_dedupe_k: str,
+    market_ids: Sequence[str],
+    now_ts: float,
+    *,
+    cooldown_sec: float = 15.0,
+) -> bool:
+    """
+    Replaces permanent `dedupe_k in seen_boxes` blocking with a `15s` cooldown + per-market open-notional cap:
+      - Within `cooldown_sec` (`15s`) of the last execution/attempt on `dedupe_k` or `pair_dedupe_k`: blocked (`True`).
+      - After `cooldown_sec` (`15s`): if any target market has open non-receivable notional >= `per_mkt_cap - $4.85`,
+        stays blocked (`True`); otherwise evicts the expired key(s) so multi-clip scaling and post-recycle re-entry proceed!
+    """
+    seen: set = harvester.__dict__.setdefault("_seen_d1_box_keys", set())
+    keys = [str(k).strip() for k in (dedupe_k, pair_dedupe_k) if str(k or "").strip()]
+    matched = [k for k in keys if k in seen]
+    if not matched:
+        return False
+    ts_map: Dict[str, float] = harvester.__dict__.setdefault("_seen_d1_box_ts", {})
+    now_f = float(now_ts or time.time())
+    for k in matched:
+        t_rec = ts_map.get(k)
+        if t_rec is None:
+            ts_map[k] = now_f
+            return True
+        if (now_f - float(t_rec)) < float(cooldown_sec):
+            return True
+    cap_u = compute_d1_per_market_notional_cap(harvester)
+    mids = [str(m).strip() for m in (market_ids or ()) if str(m or "").strip()]
+    if mids and any(open_market_notional_usd(harvester, [m]) >= max(5.0, cap_u - 4.85) for m in mids):
+        return True
+    order_q = harvester.__dict__.get("_seen_d1_box_order")
+    for k in matched:
+        seen.discard(k)
+        ts_map.pop(k, None)
+        _evict_order_q_key(order_q, k)
+    return False
+
+
+def clear_d1_dedupe_on_close(harvester: Any, pos: Optional[Mapping[str, Any]]) -> List[str]:
+    """
+    Clears `dedupe_key` and `pair_dedupe_key` on merge / early-recycle / settlement redemption when no remaining
+    active non-receivable position shares that key.
+    """
+    if not isinstance(pos, Mapping):
+        return []
+    seen: set = harvester.__dict__.setdefault("_seen_d1_box_keys", set())
+    ts_map: Dict[str, float] = harvester.__dict__.setdefault("_seen_d1_box_ts", {})
+    order_q = harvester.__dict__.get("_seen_d1_box_order")
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    closing_tid = str(pos.get("trade_id") or "")
+    cleared: List[str] = []
+    for k_raw in (pos.get("dedupe_key"), pos.get("pair_dedupe_key")):
+        k = str(k_raw or "").strip()
+        if not k:
+            continue
+        still_open = any(
+            sid != closing_tid
+            and isinstance(sp, Mapping)
+            and str(sp.get("status") or "") not in {"AWAITING_ONCHAIN_SETTLEMENT", "SETTLED", "FILLED", "CLOSED"}
+            and sp.get("resolved_winning_outcome") is None
+            and float(sp.get("remaining_shares", 1.0) or 0.0) > 0.01
+            and k in {str(sp.get("dedupe_key") or "").strip(), str(sp.get("pair_dedupe_key") or "").strip()}
+            for sid, sp in act_pos.items()
+        )
+        if still_open:
+            continue
+        if k in seen or k in ts_map:
+            cleared.append(k)
+        seen.discard(k)
+        ts_map.pop(k, None)
+        _evict_order_q_key(order_q, k)
+    return cleared
+
+
+
 async def maybe_early_profit_recycle_htm_lock(
     harvester: Any,
     tid: str,
@@ -1464,6 +1861,7 @@ async def maybe_early_profit_recycle_htm_lock(
     if (
         getattr(harvester, "dry_run", True)
         or not bool(pos.get("hold_to_maturity_lock"))
+        or bool(pos.get("is_dominance_box"))
         or str(pos.get("status") or "") != "POSITION_CONFIRMED"
         or not bool(pos.get("inventory_reconciled", False))
         or pos.get("is_liquidating")
@@ -1528,6 +1926,8 @@ async def maybe_early_profit_recycle_htm_lock(
         min_price=min_px,
         neg_risk=pos.get("neg_risk"),
     )
+    if isinstance(unwind_res, Mapping) and bool(unwind_res.get("outcome_unknown")):
+        unwind_res = await poll_delayed_recycle_unwind_async(harvester, pos, unwind_res, min_px)
     outcome = harvester._handle_unwind_response(
         tid, pos, unwind_res, rem_shrs, "HTM_EARLY_998_PROFIT_RECYCLE", "HOLD_TO_MATURITY_LOCK", min_px
     )
@@ -1620,6 +2020,7 @@ def consolidate_any_box_leg_close(
         logger.info(f"[D1/BUNDLE LEG CLOSED] {tid} ({reason}) | Leg Cash=${cum_cash:.2f} | Awaiting sibling {target_sib_id}")
         return True, net_pnl
 
+    clear_d1_dedupe_on_close(harvester, pos)
     if prior_legs:
         all_legs = prior_legs + [this_leg]
         tot_notional = round(sum(float(x.get("notional_usd", 0.0) or 0.0) for x in all_legs), 4)
@@ -1983,30 +2384,100 @@ def parse_routine_metar_temp_c(raw_metar: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def resolve_weather_effective_end_ts(sp_w: Any, fallback_ts: float) -> float:
+    """
+    Gamma populates `endDate: YYYY-MM-DDT12:00:00Z` (noon UTC) on unresolved daily weather events even though
+    daily station highs/lows settle at `23:59:59` local station time (`ZoneInfo(sp_w.tz_name)`).
+    """
+    raw_iso = str(getattr(sp_w, "end_date_iso", "") or "").strip()
+    obs_d = getattr(sp_w, "obs_date", None)
+    try:
+        dt_end = datetime.fromisoformat(raw_iso.replace("Z", "+00:00")).astimezone(timezone.utc)
+        parsed_ts = float(dt_end.timestamp())
+    except Exception:
+        dt_end = None
+        parsed_ts = float(fallback_ts)
+    has_resolved = any(
+        getattr(b, "outcome_yes_resolved", None) is not None or getattr(b, "resolved_winner", None) is not None
+        for b in (getattr(sp_w, "buckets", ()) or ())
+    )
+    if obs_d is not None and not has_resolved and (dt_end is None or (dt_end.date() <= obs_d and dt_end.hour == 12 and dt_end.minute == 0)):
+        try:
+            tz_w = ZoneInfo(str(getattr(sp_w, "tz_name", "UTC") or "UTC"))
+        except Exception:
+            tz_w = timezone.utc
+        loc_eod = datetime(obs_d.year, obs_d.month, obs_d.day, 23, 59, 59, tzinfo=tz_w).timestamp()
+        return max(parsed_ts, float(loc_eod))
+    return parsed_ts
+
+
+def _current_temp_bounds(
+    *,
+    current_temp_f: Optional[float] = None,
+    current_temp_c: Optional[float] = None,
+    current_has_t_group: bool = False,
+) -> Optional[Dict[str, int]]:
+    if current_temp_c is not None and math.isfinite(float(current_temp_c)):
+        tc = float(current_temp_c)
+        unc_c = 0.05 if current_has_t_group else 0.55
+        min_c, max_c = tc - unc_c, tc + unc_c
+        min_f, max_f = min_c * 9.0 / 5.0 + 32.0, max_c * 9.0 / 5.0 + 32.0
+    elif current_temp_f is not None and math.isfinite(float(current_temp_f)):
+        tf = float(current_temp_f)
+        unc_f = 0.10 if current_has_t_group else 1.00
+        min_f, max_f = tf - unc_f, tf + unc_f
+        min_c, max_c = (min_f - 32.0) * 5.0 / 9.0, (max_f - 32.0) * 5.0 / 9.0
+    else:
+        return None
+    return {
+        "confirmed_floor_int_c": _round_half_away_from_zero(min_c),
+        "confirmed_ceil_int_c": _round_half_away_from_zero(max_c),
+        "confirmed_floor_int_f": _round_half_away_from_zero(min_f),
+        "confirmed_ceil_int_f": _round_half_away_from_zero(max_f),
+    }
+
+
 def compute_running_metar_extrema(
     metar_lines: Sequence[str],
     *,
     unit: str = "F",
+    current_temp_f: Optional[float] = None,
+    current_temp_c: Optional[float] = None,
+    current_has_t_group: bool = False,
 ) -> Optional[Dict[str, Any]]:
     """
-    Aggregate a station's intraday routine `METAR` reports (`SPECI` excluded) to obtain the
-    monotonically non-decreasing lower bound `confirmed_running_high_floor` on the daily maximum.
+    Aggregate a station's intraday routine `METAR` reports (`SPECI` excluded) plus optional latest
+    routine observation (`max(obs_max_f, current_temp_f)` / `min(obs_min_f, current_temp_f)`) with strict
+    ASOS/integer rounding safety to bound both daily maximum (`HIGH`) and daily minimum (`LOW`).
     """
     u = str(unit or "F").strip().upper()
     parsed = [p for p in (parse_routine_metar_temp_c(line) for line in (metar_lines or [])) if p is not None]
+    cur_b = _current_temp_bounds(
+        current_temp_f=current_temp_f,
+        current_temp_c=current_temp_c,
+        current_has_t_group=current_has_t_group,
+    )
+    if cur_b is not None:
+        parsed.append({**cur_b, "has_t_group": bool(current_has_t_group)})
     if not parsed:
         return None
     if u == "C":
         floor_hi = max(int(p["confirmed_floor_int_c"]) for p in parsed)
         ceil_hi = max(int(p["confirmed_ceil_int_c"]) for p in parsed)
+        floor_lo = min(int(p["confirmed_floor_int_c"]) for p in parsed)
+        ceil_lo = min(int(p["confirmed_ceil_int_c"]) for p in parsed)
     else:
         floor_hi = max(int(p["confirmed_floor_int_f"]) for p in parsed)
         ceil_hi = max(int(p["confirmed_ceil_int_f"]) for p in parsed)
+        floor_lo = min(int(p["confirmed_floor_int_f"]) for p in parsed)
+        ceil_lo = min(int(p["confirmed_ceil_int_f"]) for p in parsed)
     return {
         "unit": u,
         "routine_obs_count": len(parsed),
         "confirmed_running_high_floor": floor_hi,
         "confirmed_running_high_ceil": ceil_hi,
+        "confirmed_running_low_floor": floor_lo,
+        "confirmed_running_low_ceil": ceil_lo,
         "all_have_t_group": all(bool(p["has_t_group"]) for p in parsed),
     }
 
@@ -2017,22 +2488,32 @@ def detect_w_prune1_metar_slate_arb(
     *,
     station_icao: str,
     unit: str = "F",
+    metric: str = "HIGH",
     local_hour_minute: Tuple[int, int] = (15, 0),
     event_meta: Optional[Mapping[str, Any]] = None,
     min_net_edge_usd: float = 0.005,
     min_shares: float = 5.0,
+    current_temp_f: Optional[float] = None,
+    current_temp_c: Optional[float] = None,
+    current_has_t_group: bool = False,
 ) -> List[Dict[str, Any]]:
     """
     `W_PRUNE1` Monotonic METAR Ratchet + `W_SOLAR1` Post-`23:51` Local Lock:
-      - Any daily-high bracket `[low, high]` with `high < confirmed_running_high_floor` is mathematically
-        DEAD (`YES == $0.00`, `NO == $1.00`) right now because `max_{day} T >= max_{t <= now} T`.
-      - Emits:
-          1. `W_PRUNE1_DEAD_NO_BOND`: Buy `NO` on dead brackets (`ask_no < 1.0 - min_net_edge_usd`).
-          2. `W_PRUNE1_NR0_BASKET`: Buy `YES` ONLY on surviving brackets (`sum_{alive} ask_yes < 1.0 - min_net_edge_usd`).
-          3. `W_SOLAR1_POST_2351_LOCK`: After `23:52` local station time (all hourly routine `:51/:53` METARs
-             for the day have printed) when `floor == ceil`, locks the unique winning bracket `YES`.
+      - `HIGH` metric: any bracket with `high < confirmed_running_high_floor` (`max(obs_max, current_temp)`)
+        is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
+      - `LOW` metric: any bracket with `low > confirmed_running_low_ceil` (`min(obs_min, current_temp)`)
+        is mathematically DEAD (`YES == $0.00`, `NO == $1.00`).
     """
-    ext = compute_running_metar_extrema(metar_lines, unit=unit)
+    m_mode = str(metric or "HIGH").strip().upper()
+    if m_mode not in {"HIGH", "LOW"}:
+        return []
+    ext = compute_running_metar_extrema(
+        metar_lines,
+        unit=unit,
+        current_temp_f=current_temp_f,
+        current_temp_c=current_temp_c,
+        current_has_t_group=current_has_t_group,
+    )
     if ext is None:
         return []
     ok_part, _ = verify_v2_negrisk_other_partition(brackets, event_meta=event_meta)
@@ -2041,6 +2522,8 @@ def detect_w_prune1_metar_slate_arb(
 
     floor_hi = int(ext["confirmed_running_high_floor"])
     ceil_hi = int(ext["confirmed_running_high_ceil"])
+    floor_lo = int(ext["confirmed_running_low_floor"])
+    ceil_lo = int(ext["confirmed_running_low_ceil"])
     loc_h, loc_m = int(local_hour_minute[0]), int(local_hour_minute[1])
     signals: List[Dict[str, Any]] = []
 
@@ -2060,8 +2543,8 @@ def detect_w_prune1_metar_slate_arb(
         yes_tok = str(b.get("yes_token_id") or "").strip()
         cid = str(b.get("condition_id") or "").strip()
 
-        if high_i < floor_hi:
-            # Dead bracket! NO is guaranteed $1.00
+        is_dead_bracket = (high_i < floor_hi) if m_mode == "HIGH" else (low_i > ceil_lo)
+        if is_dead_bracket:
             if 0.01 <= no_ask <= (1.0 - float(min_net_edge_usd)) and no_sz >= min_shares and no_tok:
                 q_no, _, _ = quantize_dynamic_tick_price(no_ask, "BUY", shares=min_shares, mode="taker")
                 edge_no = 1.0 - q_no
@@ -2070,6 +2553,7 @@ def detect_w_prune1_metar_slate_arb(
                         {
                             "sleeve": "W_PRUNE1_DEAD_NO_BOND",
                             "station": str(station_icao).upper(),
+                            "metric": m_mode,
                             "token_id": no_tok,
                             "condition_id": cid,
                             "ask_px": q_no,
@@ -2077,11 +2561,12 @@ def detect_w_prune1_metar_slate_arb(
                             "net_edge_per_share": round(edge_no, 6),
                             "max_fillable_shares": round(no_sz, 2),
                             "confirmed_running_high_floor": floor_hi,
+                            "confirmed_running_low_ceil": ceil_lo,
                             "bracket_high": high_i,
+                            "bracket_low": low_i,
                         }
                     )
         else:
-            # Surviving bracket
             if 0.001 <= yes_ask <= 0.995 and yes_sz >= min_shares and yes_tok:
                 q_yes, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
                 alive_legs.append(
@@ -2098,8 +2583,8 @@ def detect_w_prune1_metar_slate_arb(
             else:
                 alive_complete = False
 
-            # W_SOLAR1 post-23:52 local station lock when floor == ceil falls cleanly inside [low_i, high_i]
-            if (loc_h == 23 and loc_m >= 52) and floor_hi == ceil_hi and low_i <= floor_hi <= high_i:
+            locked_val = floor_hi if (m_mode == "HIGH" and floor_hi == ceil_hi) else (floor_lo if (m_mode == "LOW" and floor_lo == ceil_lo) else None)
+            if (loc_h == 23 and loc_m >= 52) and locked_val is not None and low_i <= locked_val <= high_i:
                 if 0.01 <= yes_ask <= (1.0 - float(min_net_edge_usd)) and yes_sz >= min_shares and yes_tok:
                     q_win, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
                     if (1.0 - q_win) >= float(min_net_edge_usd):
@@ -2107,13 +2592,14 @@ def detect_w_prune1_metar_slate_arb(
                             {
                                 "sleeve": "W_SOLAR1_POST_2351_LOCK",
                                 "station": str(station_icao).upper(),
+                                "metric": m_mode,
                                 "token_id": yes_tok,
                                 "condition_id": cid,
                                 "ask_px": q_win,
                                 "p_model": 0.9995,
                                 "net_edge_per_share": round(1.0 - q_win, 6),
                                 "max_fillable_shares": round(yes_sz, 2),
-                                "locked_high": floor_hi,
+                                "locked_high": locked_val,
                             }
                         )
 
@@ -2126,10 +2612,12 @@ def detect_w_prune1_metar_slate_arb(
                 "sleeve": "W_PRUNE1_NR0_BASKET",
                 "box_type": "DOMINANCE" if len(alive_legs) == 2 else "MULTI_LEG_BUNDLE",
                 "station": str(station_icao).upper(),
+                "metric": m_mode,
                 "legs": alive_legs,
                 "leg_count": len(alive_legs),
                 "pruned_dead_count": len(brackets) - len(alive_legs),
                 "confirmed_running_high_floor": floor_hi,
+                "confirmed_running_low_ceil": ceil_lo,
                 "cost_per_share": round(sum_alive, 6),
                 "net_edge_per_share": round(edge_basket, 6),
                 "max_fillable_shares": round(min(x["ask_size"] for x in alive_legs), 2),
@@ -4164,20 +4652,15 @@ async def run_protocol_v2_daemon_scan(
         w_evts = [
             sp_w
             for sp_w in (getattr(daemon, "weather_events", None) or {}).values()
-            if getattr(sp_w, "metric", "") == "HIGH" and len(getattr(sp_w, "buckets", ()) or ()) >= 3
+            if str(getattr(sp_w, "metric", "") or "").upper() in {"HIGH", "LOW"} and len(getattr(sp_w, "buckets", ()) or ()) >= 3
         ]
         if w_evts and not is_mocked_w and (now - float(daemon.__dict__.get("_last_w_prune1_scan_ts", 0.0))) >= 15.0:
             daemon.__dict__["_last_w_prune1_scan_ts"] = now
             from src.polymarket_research.weather_metar_engine import fetch_metar_observations_sync
             now_utc_w = datetime.fromtimestamp(now, tz=timezone.utc)
-            w_ready: List[Tuple[Any, float, Tuple[int, int], List[str]]] = []
-            w_toks: List[str] = []
-            m_cache = getattr(daemon, "metar_cache", None)
-            for sp_w in w_evts[:25]:
-                try:
-                    end_w = datetime.fromisoformat(sp_w.end_date_iso.replace("Z", "+00:00")).timestamp()
-                except Exception:
-                    end_w = now + 86400.0
+            w_active: List[Tuple[float, Any, Any]] = []
+            for sp_w in w_evts:
+                end_w = resolve_weather_effective_end_ts(sp_w, now + 86400.0)
                 if not (120.0 < (end_w - now) <= 86400.0):
                     continue
                 try:
@@ -4186,6 +4669,12 @@ async def run_protocol_v2_daemon_scan(
                     loc_dt = now_utc_w
                 if loc_dt.date() < sp_w.obs_date:
                     continue
+                w_active.append((end_w, sp_w, loc_dt))
+            w_active.sort(key=lambda r: r[0])
+            w_ready: List[Tuple[Any, float, Tuple[int, int], List[str], Optional[float], bool]] = []
+            w_toks: List[str] = []
+            m_cache = getattr(daemon, "metar_cache", None)
+            for end_w, sp_w, loc_dt in w_active[:30]:
                 m_key = f"{sp_w.icao}_{sp_w.obs_date.isoformat()}"
                 c_ent = m_cache.get(m_key) if isinstance(m_cache, dict) else None
                 if c_ent is None or (now - float(c_ent[0])) >= 300.0:
@@ -4194,20 +4683,20 @@ async def run_protocol_v2_daemon_scan(
                         m_cache[m_key] = (now, obs_l)
                 else:
                     obs_l = c_ent[1]
-                raw_lines = [
-                    str(m.raw_line)
-                    for m in (obs_l or [])
-                    if getattr(m, "raw_line", None) and not bool(getattr(m, "is_corrected", False))
-                ]
-                if not raw_lines:
+                valid_obs = [m for m in (obs_l or []) if not bool(getattr(m, "is_corrected", False))]
+                raw_lines = [str(m.raw_line) for m in valid_obs if getattr(m, "raw_line", None)]
+                cur_tc = float(valid_obs[-1].temp_c) if (valid_obs and getattr(valid_obs[-1], "temp_c", None) is not None) else None
+                cur_tg = bool(getattr(valid_obs[-1], "has_t_remark", False)) if valid_obs else False
+                if not raw_lines and cur_tc is None:
                     continue
                 loc_hm = (23, 55) if loc_dt.date() > sp_w.obs_date else (loc_dt.hour, loc_dt.minute)
-                w_ready.append((sp_w, end_w, loc_hm, raw_lines))
+                w_ready.append((sp_w, end_w, loc_hm, raw_lines, cur_tc, cur_tg))
                 for bk_spec in sp_w.buckets:
                     w_toks.extend((bk_spec.yes_token, bk_spec.no_token))
             if w_ready and w_toks:
-                w_bks = await daemon.fetch_books_batch(list(dict.fromkeys(w_toks))[:160], timeout=2.5)
-                for sp_w, end_w, loc_hm, raw_lines in w_ready:
+                w_bks = await daemon.fetch_books_batch(list(dict.fromkeys(w_toks))[:200], timeout=2.5)
+                for sp_w, end_w, loc_hm, raw_lines, cur_tc, cur_tg in w_ready:
+                    m_mode_w = str(getattr(sp_w, "metric", "HIGH") or "HIGH").upper()
                     br_rows: List[Dict[str, Any]] = []
                     bk_by_mkt: Dict[str, Tuple[Any, Dict[str, Any], Dict[str, Any]]] = {}
                     for b_sp in sp_w.buckets:
@@ -4234,16 +4723,20 @@ async def run_protocol_v2_daemon_scan(
                         })
                     if not br_rows:
                         continue
-                    ext_w = compute_running_metar_extrema(raw_lines, unit=sp_w.unit)
+                    ext_w = compute_running_metar_extrema(raw_lines, unit=sp_w.unit, current_temp_c=cur_tc, current_has_t_group=cur_tg)
                     floor_w = int(ext_w["confirmed_running_high_floor"]) if ext_w else None
+                    ceil_lo_w = int(ext_w["confirmed_running_low_ceil"]) if ext_w else None
                     hits_w = detect_w_prune1_metar_slate_arb(
                         br_rows,
                         raw_lines,
                         station_icao=sp_w.icao,
                         unit=sp_w.unit,
+                        metric=m_mode_w,
                         local_hour_minute=loc_hm,
                         event_meta={"negRiskAugmented": False},
                         min_net_edge_usd=0.0025,
+                        current_temp_c=cur_tc,
+                        current_has_t_group=cur_tg,
                     )
                     taker_cids: set = set()
                     for hw in hits_w:
@@ -4264,6 +4757,13 @@ async def run_protocol_v2_daemon_scan(
                                 "net_edge": hw["net_edge_per_share"],
                                 "l1_usd": round(hw["max_fillable_shares"] * hw["ask_px"], 2),
                             })
+                            recycle_998_sh = sum(
+                                float(b.get("size", 0.0) if isinstance(b, Mapping) else b[1])
+                                for b in ((bn_w2 if is_no_w else by_w2).get("bids") or [])
+                                if float((b.get("price", 0.0) if isinstance(b, Mapping) else b[0]) or 0.0) >= 0.998
+                            )
+                            if is_no_w and (end_w - now) > 7200.0 and recycle_998_sh < 5.0:
+                                continue
                             daemon.emit_live_single_leg_lock_candidate(
                                 sleeve_source=sl_w,
                                 asset=sp_w.icao,
@@ -4286,7 +4786,7 @@ async def run_protocol_v2_daemon_scan(
                                 hold_to_maturity=True,
                                 p_model=float(hw["p_model"]),
                             )
-                        elif sl_w == "W_PRUNE1_NR0_BASKET" and len(hw.get("legs") or []) >= 2:
+                        elif sl_w == "W_PRUNE1_NR0_BASKET" and len(hw.get("legs") or []) >= 2 and (end_w - now) <= 7200.0:
                             enr_w_legs = []
                             for lg_w in hw["legs"]:
                                 tup_lw = bk_by_mkt.get(str(lg_w.get("condition_id") or ""))
@@ -4333,12 +4833,16 @@ async def run_protocol_v2_daemon_scan(
                                             "neg_risk": True,
                                         },
                                     )
-                    # Also post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets (`rem <= 8h`) when ask == $0.999-$1.000!
-                    if floor_w is not None and (end_w - now) <= 28800.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+                    # Post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets only when `TTE <= 120m` (`7200s`)!
+                    if (end_w - now) <= 7200.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
                         for b_sp, by_w2, bn_w2 in bk_by_mkt.values():
-                            if str(b_sp.condition_id) in taker_cids or not math.isfinite(b_sp.high_bound):
+                            if str(b_sp.condition_id) in taker_cids:
                                 continue
-                            if int(round(b_sp.high_bound)) < floor_w:
+                            dead_mkr = (
+                                (m_mode_w == "HIGH" and floor_w is not None and math.isfinite(b_sp.high_bound) and int(round(b_sp.high_bound)) < floor_w)
+                                or (m_mode_w == "LOW" and ceil_lo_w is not None and math.isfinite(b_sp.low_bound) and int(round(b_sp.low_bound)) > ceil_lo_w)
+                            )
+                            if dead_mkr:
                                 nb_w, nb_u_w = _extr_best_bid(bn_w2.get("bids") or [])
                                 yb_w, _ = _extr_best_bid(by_w2.get("bids") or [])
                                 if 0.940 <= nb_w <= 0.9975 and nb_u_w >= 10.0 and yb_w <= 0.006:
@@ -5033,11 +5537,26 @@ def emit_single_leg_maker_lock_cand_impl(
     best_ask = round(min(valid_asks), 4) if valid_asks else 1.000
     if best_ask < 1.0 and opp_bid > 0.0 and (best_ask + opp_bid) > 1.015:
         return False
-    raw_bk_tk = bk_win.get("minimum_tick_size") or bk_win.get("tick_size") or bk_win.get("min_tick_size")
+    is_mock_emit = bool(daemon.single_scan or ("fetch_json" in daemon.__dict__))
+    raw_bk_tk = (
+        bk_win.get("minimum_tick_size")
+        or bk_win.get("tick_size")
+        or bk_win.get("min_tick_size")
+        or (daemon.__dict__.get("_token_tick_sizes") or {}).get(str(token_id))
+    )
     try:
         bk_tk_f = float(raw_bk_tk) if raw_bk_tk not in (None, "") else 0.0
     except (TypeError, ValueError):
         bk_tk_f = 0.0
+    has_subcent_lv = any(
+        abs(round(float(lv.get("price", 0.0)) * 100.0) - float(lv.get("price", 0.0)) * 100.0) > 1e-6
+        for lv in ((bk_win.get("bids") or []) + (bk_win.get("asks") or []))
+        if isinstance(lv, Mapping) and float(lv.get("size", 0.0) or 0.0) > 0.0
+    )
+    if has_subcent_lv and (bk_tk_f <= 0.0 or bk_tk_f > 0.001):
+        bk_tk_f = 0.001
+    elif bk_tk_f <= 0.0 and not is_mock_emit:
+        bk_tk_f = 0.01
     tb = max(0.001 if best_bid >= 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
     ta = max(0.001 if best_ask > 0.96 else 0.01, bk_tk_f if bk_tk_f >= 0.01 else 0.0)
     reb_f = max(0.0, float(maker_rebate_ps or 0.0))
@@ -5057,7 +5576,7 @@ def emit_single_leg_maker_lock_cand_impl(
     eff_net_bid = round(max(0.001, resting_bid - reb_f), 6)
     if (float(p_model) - eff_net_bid) < float(min_maker_edge) - 1e-9:
         return False
-    if abs(resting_bid - best_bid) <= 1e-6 and l1_bid_usd > 350.0 and not (daemon.single_scan or ("fetch_json" in daemon.__dict__)):
+    if not is_s2_mkr and abs(resting_bid - best_bid) <= 1e-6 and l1_bid_usd > 350.0 and not is_mock_emit:
         return False
     if len(daemon._last_d1_live_emit_ts) > 256:
         daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
@@ -5105,6 +5624,8 @@ def emit_single_leg_maker_lock_cand_impl(
         "ws_books": ({str(token_id): fw_w, str(opp_token_id): fw_o} if (fw_w and fw_o) else None),
         "ws_books_ts": round(now_ts, 3),
     }
+    if isinstance(bk_win.get("_s2_meta"), Mapping):
+        cand.update(bk_win["_s2_meta"])
     return _write_and_notify_live_cand(daemon, cand, cand_file, default_cand_path)
 
 
@@ -5261,4 +5782,278 @@ def emit_maker_anchor_box_cand_impl(
             }
             cand["ws_books_ts"] = round(min(daemon._ws_books[t_x][0] for t_x in req_ws_m[:2]), 3)
     return _write_and_notify_live_cand(daemon, cand, cand_file, default_cand_path)
+
+
+def _parse_gamma_neg_risk_flag(v: Any) -> Optional[bool]:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, str) and v.strip().lower() in ("true", "false"):
+        return v.strip().lower() == "true"
+    return None
+
+
+def attach_weather_neg_risk_from_gamma(sp_w: Any, ev_raw: Any) -> None:
+    if not isinstance(ev_raw, dict):
+        return
+    ev_nr = _parse_gamma_neg_risk_flag(ev_raw.get("negRisk"))
+    nr_by_id: Dict[str, Optional[bool]] = {}
+    for mk in ev_raw.get("markets") or ():
+        if not isinstance(mk, dict):
+            continue
+        mk_nr = _parse_gamma_neg_risk_flag(mk.get("negRisk"))
+        if mk_nr is None:
+            mk_nr = ev_nr
+        for id_k in (mk.get("id"), mk.get("conditionId")):
+            if id_k not in (None, ""):
+                nr_by_id[str(id_k)] = mk_nr
+    for bkt in getattr(sp_w, "buckets", ()):
+        nr_v = nr_by_id.get(str(bkt.market_id))
+        if nr_v is None:
+            nr_v = nr_by_id.get(str(bkt.condition_id))
+        if nr_v is None and getattr(bkt, "neg_risk", None) is not None:
+            continue
+        try:
+            setattr(bkt, "neg_risk", nr_v)
+        except Exception:
+            pass
+
+
+def attach_ws_books_and_write_d1_cand(
+    daemon: Any,
+    cand: Dict[str, Any],
+    leg_a: Mapping[str, Any],
+    leg_b: Mapping[str, Any],
+    cand_file: Path,
+    default_cand_path: Path,
+) -> bool:
+    if not daemon.single_scan and daemon._ws_books:
+        act_ws_toks = [str(leg_a["token_id"]), str(leg_b["token_id"])]
+        opp_ws_toks = [
+            t_id
+            for t_id in (str(leg_a.get("opp_token_id") or ""), str(leg_b.get("opp_token_id") or ""))
+            if t_id
+        ]
+        req_ws_toks = act_ws_toks + opp_ws_toks
+        now_ws_emit = time.time()
+        rest_seeded = getattr(daemon, "_ws_rest_seeded", set())
+        ws_entries = [None if t_id in rest_seeded else daemon._ws_books.get(t_id) for t_id in req_ws_toks]
+        if len(req_ws_toks) >= 2 and all(
+            e is not None
+            and (now_ws_emit - e[0]) <= (0.65 if idx < 2 else 2.50)
+            and e[1].get("bids")
+            and e[1].get("asks")
+            for idx, e in enumerate(ws_entries)
+        ):
+            cand["ws_books_ts"] = round(min(float(e[0]) for e in ws_entries[:2] if e is not None), 4)
+            cand["ws_books"] = {
+                t_id: {"bids": (e[1].get("bids") or [])[:12], "asks": (e[1].get("asks") or [])[:12]}
+                for t_id, e in zip(req_ws_toks, ws_entries)
+                if e is not None
+            }
+    return _write_and_notify_live_cand(daemon, cand, cand_file, default_cand_path)
+
+
+def select_sll_velocity_preempt_target(
+    harvester: Any,
+    cand_edge_hr: float,
+    is_s2_mkr: bool,
+    vel_mult: float,
+    now_pe: Optional[float] = None,
+) -> Tuple[float, str]:
+    pe_map = getattr(harvester, "_maker_anchor_preempt_events", None) or {}
+    claimed_pe = harvester.__dict__.setdefault("_claimed_velocity_preempts", set())
+    now_t = float(now_pe if now_pe is not None else time.time())
+
+    def _it_edge_hr(it: Mapping[str, Any]) -> float:
+        ib = float(it.get("anchor_bid_px") or 0.0)
+        ie = float(it.get("expiry_ts") or 0.0)
+        if 0.0 < ib < 1.0 and ie > now_t:
+            return round(((1.0 - ib) * 10000.0) / max(0.02, (ie - now_t) / 3600.0), 2)
+        return float(it.get("velocity_bps_hr") or 0.0)
+
+    slow_cands = [
+        (_it_edge_hr(it), str(it.get("inflight_key") or ""))
+        for it in getattr(harvester, "pending_entry_intents", {}).values()
+        if isinstance(it, Mapping)
+        and it.get("live_maker_anchor_inflight")
+        and str(it.get("inflight_key") or "") not in claimed_pe
+        and str(it.get("sleeve_source") or "") not in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
+        and (now_t - float(it.get("ts") or 0.0)) >= (
+            90.0 if (not is_s2_mkr and float(it.get("anchor_bid_px") or 0.0) >= 0.991 and float(it.get("velocity_bps_hr") or 0.0) >= 55.0) else 20.0
+        )
+    ]
+    if not slow_cands:
+        return 0.0, ""
+    slow_vel, slow_k = min(slow_cands, key=lambda x: x[0])
+    if slow_k and slow_k in pe_map and cand_edge_hr >= max(slow_vel * vel_mult, slow_vel + 25.0):
+        return slow_vel, slow_k
+    return 0.0, ""
+
+
+def eval_sll_fresh_book_and_peg(
+    bk_win_f: Any,
+    bk_opp_f: Any,
+    candidate_box: Mapping[str, Any],
+    anc_bid_px: float,
+    min_rb: float,
+    max_rb: float,
+    max_opp: float,
+    budget: float,
+    tk_wf: float,
+    real_clob_sll: bool,
+    enforce_b1_v53: bool,
+    is_mlk1: bool,
+    is_s2_mkr: bool,
+    repost_n_in: int,
+    b1_q_cap: float,
+) -> Tuple[Optional[str], float, float, int, float]:
+    if tk_wf <= 0.0:
+        try:
+            tk_wf = float(candidate_box.get("leg_a_tick_size") or 0.0)
+        except (TypeError, ValueError):
+            tk_wf = 0.0
+    bids_wf = [
+        (float(x["price"] if isinstance(x, Mapping) else x[0]), float(x["size"] if isinstance(x, Mapping) else x[1]))
+        for x in ((bk_win_f or {}).get("bids") or [])
+        if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+    ]
+    asks_wf = sorted([
+        (float(x["price"] if isinstance(x, Mapping) else x[0]), float(x["size"] if isinstance(x, Mapping) else x[1]))
+        for x in ((bk_win_f or {}).get("asks") or [])
+        if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+    ])
+    if any(abs(round(px * 100.0) - px * 100.0) > 1e-6 for px, _ in (bids_wf + asks_wf)):
+        tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
+    elif tk_wf <= 0.0 and real_clob_sll:
+        tk_wf = 0.01
+    bids_of = [
+        float(x["price"] if isinstance(x, Mapping) else x[0])
+        for x in ((bk_opp_f or {}).get("bids") or [])
+        if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+    ]
+    opp_bid_f = max(bids_of, default=0.0)
+    best_bid_f = max((px for px, _ in bids_wf), default=0.0)
+    best_ask_f = asks_wf[0][0] if asks_wf else 1.000
+    near_bid_usd_f = sum(px * sz for px, sz in bids_wf if px >= (0.50 if is_s2_mkr else 0.90))
+    if (
+        opp_bid_f > max_opp + 1e-6
+        or best_bid_f < min(min_rb, 0.500 if is_s2_mkr else 0.940) - 1e-9
+        or (not (is_mlk1 or is_s2_mkr) and best_bid_f < min_rb - 1e-9)
+        or (is_mlk1 and near_bid_usd_f < 10.0 - 1e-6)
+        or (is_s2_mkr and near_bid_usd_f < 4.0 - 1e-6)
+        or (best_ask_f < 1.0 and (best_ask_f + opp_bid_f) > 1.015)
+    ):
+        return f"DUAL_BOOK_CONSENSUS_VETO:bid={best_bid_f:.4f},opp_bid={opp_bid_f:.4f}", 0.0, anc_bid_px, 0, tk_wf
+    if enforce_b1_v53:
+        tb_f = max(0.001 if best_bid_f >= 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+        ta_f = max(0.001 if best_ask_f > 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+        step_f = round(best_bid_f + tb_f, 4) if (best_ask_f - best_bid_f) >= (2.0 * tb_f - 1e-9) else best_bid_f
+        if is_mlk1 or is_s2_mkr or repost_n_in > 0:
+            step_f = max(anc_bid_px, step_f)
+        ceil_f = min(
+            round(best_ask_f - ta_f, 4),
+            max_rb,
+            round(
+                float(candidate_box.get("p_model") or 0.9985)
+                + max(0.0, float(candidate_box.get("maker_rebate_ps") or 0.0))
+                - float(candidate_box.get("min_maker_edge") or 0.004),
+                4,
+            ),
+        )
+        tsnap_f = max(0.001 if min(step_f, ceil_f) >= 0.96 - 1e-9 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+        anc_bid_px = round(math.floor((min(step_f, ceil_f) + 1e-9) / tsnap_f) * tsnap_f, 4)
+        if anc_bid_px < round(best_bid_f - 1e-9, 4):
+            return f"BOND1_OUTBID_ABOVE_CAP:{best_bid_f:.4f}>{max_rb:.4f}", 30.0, anc_bid_px, 0, tk_wf
+        l1_q_usd = sum(px * sz for px, sz in bids_wf if abs(px - best_bid_f) <= 1e-6)
+        if not is_s2_mkr and abs(anc_bid_px - best_bid_f) <= 1e-6 and l1_q_usd > b1_q_cap + 1e-6:
+            return f"BOND1_QUEUE_TOO_DEEP:{l1_q_usd:.1f}>{b1_q_cap:.1f}", 45.0, anc_bid_px, 0, tk_wf
+    else:
+        if best_ask_f < 1.0 and anc_bid_px >= best_ask_f - 1e-9:
+            ta_f = max(0.001 if best_ask_f > 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+            anc_bid_px = round(min(max_rb, best_ask_f - ta_f), 4)
+        if tk_wf >= 0.01:
+            anc_bid_px = round(math.floor((anc_bid_px + 1e-9) / tk_wf) * tk_wf, 4)
+    if not (min_rb <= anc_bid_px <= max_rb):
+        return f"FRESH_BOOK_CROSS_OR_CEILING:{anc_bid_px:.4f}", 0.0, anc_bid_px, 0, tk_wf
+    sh_int = int(math.floor(budget / anc_bid_px))
+    if sh_int < 5:
+        return "INSUFFICIENT_MAKER_BOX_BUDGET", 0.0, anc_bid_px, sh_int, tk_wf
+    return None, 0.0, anc_bid_px, sh_int, tk_wf
+
+
+def eval_sll_live_book_poll(
+    bk_oc: Any,
+    bk_wc: Any,
+    candidate_box: Mapping[str, Any],
+    posted_px: float,
+    min_rb: float,
+    max_rb: float,
+    max_opp: float,
+    tk_wf: float,
+    enforce_b1_v53: bool,
+    is_s2_mkr: bool,
+    repost_n_in: int,
+    b1_q_cap: float,
+    b1_buried_s: float,
+    exp_ts: float,
+    buried_since_mono: Optional[float],
+) -> Tuple[str, Optional[float], Optional[float], str]:
+    opp_b_live = max(
+        (
+            float(x["price"] if isinstance(x, Mapping) else x[0])
+            for x in ((bk_oc or {}).get("bids") or [])
+            if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+        ),
+        default=0.0,
+    )
+    bids_wc = [
+        (float(x["price"] if isinstance(x, Mapping) else x[0]), float(x["size"] if isinstance(x, Mapping) else x[1]))
+        for x in ((bk_wc or {}).get("bids") or [])
+        if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+    ]
+    asks_wc = sorted([
+        (float(x["price"] if isinstance(x, Mapping) else x[0]), float(x["size"] if isinstance(x, Mapping) else x[1]))
+        for x in ((bk_wc or {}).get("asks") or [])
+        if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
+    ])
+    win_b_live = max((px for px, _ in bids_wc), default=posted_px)
+    win_a_live = asks_wc[0][0] if asks_wc else 1.000
+    win_floor_l = max(0.450, posted_px - 0.080) if is_s2_mkr else 0.900
+    if opp_b_live > max(0.010, max_opp + 0.002) or win_b_live < win_floor_l:
+        return "ADVERSE", None, buried_since_mono, f"opp_bid=${opp_b_live:.4f}, win_bid=${win_b_live:.4f}"
+    if enforce_b1_v53:
+        if win_b_live > posted_px + 1e-6:
+            tb_l = max(0.001 if win_b_live >= 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+            ta_l = max(0.001 if win_a_live > 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+            step_l = round(win_b_live + tb_l, 4) if (win_a_live - win_b_live) >= (2.0 * tb_l - 1e-9) else win_b_live
+            ceil_l = min(
+                round(win_a_live - ta_l, 4),
+                max_rb,
+                round(
+                    float(candidate_box.get("p_model") or 0.9985)
+                    + max(0.0, float(candidate_box.get("maker_rebate_ps") or 0.0))
+                    - float(candidate_box.get("min_maker_edge") or 0.004),
+                    4,
+                ),
+            )
+            tsnap_l = max(0.001 if min(step_l, ceil_l) >= 0.96 - 1e-9 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+            cand_rp = round(math.floor((min(step_l, ceil_l) + 1e-9) / tsnap_l) * tsnap_l, 4)
+            l1_q_l = sum(px * sz for px, sz in bids_wc if abs(px - win_b_live) <= 1e-6)
+            if (
+                repost_n_in < 5
+                and not is_s2_mkr
+                and min_rb <= cand_rp <= max_rb
+                and cand_rp >= round(win_b_live - 1e-9, 4)
+                and cand_rp > posted_px + 1e-6
+                and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, b1_q_cap) + 1e-6)
+                and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
+            ):
+                return "REPEG", cand_rp, buried_since_mono, f"outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}"
+            if buried_since_mono is None:
+                buried_since_mono = time.monotonic()
+            elif (time.monotonic() - buried_since_mono) >= b1_buried_s:
+                return "BURIED", None, buried_since_mono, f"outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {b1_buried_s:.0f}s"
+        else:
+            buried_since_mono = None
+    return "OK", None, buried_since_mono, ""
 

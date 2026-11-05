@@ -1206,9 +1206,9 @@ def test_wfo_v43_hybrid_d1_fak2c_and_correlated_growth_guard(tmp_path, monkeypat
         "leg_a_strike": 80000.0, "leg_b_strike": 80080.0,
         "leg_a_limit_price": 0.46, "leg_b_limit_price": 0.46,
     }
-    # 150 / 90 = 1.667 > 1.20 -> asymmetric pair MUST switch to sequential fragile_first (parallel_dispatch=False)
+    # 150 / 90 = 1.667 > 1.20 -> both legs satisfy >= 1.50x depth (90 >= 30), so D1 dispatches atomically via parallel batch FOK (parallel_dispatch=True)
     h.maybe_execute_graduated_d1_box(base_cand)
-    assert len(captured_d1) == 1 and captured_d1[-1]["parallel_dispatch"] is False
+    assert len(captured_d1) == 1 and captured_d1[-1]["parallel_dispatch"] is True
 
     # 150 / 140 = 1.071 <= 1.20 -> symmetric deep pair keeps parallel_dispatch=True
     books[tok_a]["asks"] = [{"price": "0.46", "size": "140"}]
