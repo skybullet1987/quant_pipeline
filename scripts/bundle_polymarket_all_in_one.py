@@ -639,15 +639,17 @@ def transform_module(rel_path: str, code: str) -> str:
                 continue
             sub_nodes, nested_defs = _shallow_walk(fn_nd.body)
             nested_scopes = [x for x in sub_nodes if isinstance(x, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))]
-            eh_names = {x.name for x in full_nodes if isinstance(x, ast.ExceptHandler) and x.name}
+            nested_eh_names = {
+                y.name for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.ExceptHandler) and y.name
+            }
+            eh_nodes = [x for x in sub_nodes if isinstance(x, ast.ExceptHandler) and x.name and len(x.name) >= 2]
             all_arg_names = {x.arg for x in full_nodes if isinstance(x, ast.arg)}
             comp_bound_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
                 | {y.arg for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.arg)}
-                | {ndf.name for ndf in nested_defs}
                 | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
                 | {y.arg for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.arg)}
-                | eh_names
+                | nested_eh_names
             )
             nested_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name)}
@@ -657,27 +659,60 @@ def transform_module(rel_path: str, code: str) -> str:
             )
             p_names = {a.arg for a in (fn_nd.args.posonlyargs + fn_nd.args.args + fn_nd.args.kwonlyargs + ([fn_nd.args.vararg] if fn_nd.args.vararg else []) + ([fn_nd.args.kwarg] if fn_nd.args.kwarg else []))}
             imp_names = {al.asname or al.name.split(".")[0] for x in full_nodes if isinstance(x, (ast.Import, ast.ImportFrom)) for al in x.names}
-            used_all = all_names | p_names | imp_names | nested_ids
+            used_all = all_names | p_names | imp_names | nested_ids | {eh.name for eh in eh_nodes} | {ndf.name for ndf in nested_defs}
             stored = {}
             self_arg_nd = (
                 fn_nd.args.args[0]
                 if (
                     fn_nd.args.args
                     and not fn_nd.args.posonlyargs
-                    and fn_nd.args.args[0].arg == "self"
+                    and fn_nd.args.args[0].arg in ("self", "cls")
                     and "super" not in all_names
-                    and "self" not in comp_bound_ids
-                    and "self" not in imp_names
+                    and fn_nd.args.args[0].arg not in comp_bound_ids
+                    and fn_nd.args.args[0].arg not in imp_names
                     and not any(isinstance(d, ast.Name) and d.id == "staticmethod" for d in fn_nd.decorator_list)
                 )
                 else None
             )
             if self_arg_nd is not None:
-                self_uses = sum(1 for x in full_nodes if isinstance(x, ast.Name) and x.id == "self")
+                s_nm = self_arg_nd.arg
+                self_uses = sum(1 for x in full_nodes if isinstance(x, ast.Name) and x.id == s_nm)
                 if self_uses >= 2:
-                    stored["self"] = self_uses + 1
+                    stored[s_nm] = self_uses + 1
+            for eh in eh_nodes:
+                if eh.name not in p_names and eh.name not in imp_names and eh.name not in comp_bound_ids and not eh.name.startswith("__"):
+                    stored[eh.name] = stored.get(eh.name, 0) + 2
+            renamable_ndefs = [
+                ndf for ndf in nested_defs
+                if isinstance(ndf, (ast.FunctionDef, ast.AsyncFunctionDef))
+                and len(ndf.name) >= 2
+                and ndf.name not in p_names
+                and ndf.name not in imp_names
+                and ndf.name not in comp_bound_ids
+                and not ndf.name.startswith("__")
+            ]
+            for ndf in renamable_ndefs:
+                ndf_uses = sum(1 for x in full_nodes if isinstance(x, ast.Name) and x.id == ndf.name)
+                stored[ndf.name] = stored.get(ndf.name, 0) + ndf_uses + 1
+            imp_alias_targets: list[tuple[ast.alias, int, str, bool]] = []
+            for st_imp in sub_nodes:
+                if isinstance(st_imp, ast.ImportFrom) and st_imp.lineno == st_imp.end_lineno:
+                    for al in st_imp.names:
+                        if al.name == "*" or al.lineno != st_imp.lineno or al.end_col_offset is None:
+                            continue
+                        bnd = al.asname or al.name
+                        if bnd in p_names or bnd in comp_bound_ids or bnd.startswith("__"):
+                            continue
+                        uses_i = sum(1 for x in full_nodes if isinstance(x, ast.Name) and x.id == bnd)
+                        if al.asname and len(bnd) >= 2 and uses_i >= 1:
+                            imp_alias_targets.append((al, st_imp.lineno - 1, bnd, True))
+                            stored[bnd] = stored.get(bnd, 0) + uses_i + 1
+                        elif al.asname is None and len(bnd) >= 6 and (uses_i * (len(bnd) - 1)) > 5:
+                            imp_alias_targets.append((al, st_imp.lineno - 1, bnd, False))
+                            stored[bnd] = stored.get(bnd, 0) + uses_i
+            imp_ren_set = {t[2] for t in imp_alias_targets}
             for x in sub_nodes:
-                if isinstance(x, ast.Name) and len(x.id) >= 2 and x.id not in p_names and x.id not in imp_names and x.id not in comp_bound_ids and not x.id.startswith("__"):
+                if isinstance(x, ast.Name) and len(x.id) >= 2 and x.id not in p_names and (x.id not in imp_names or x.id in imp_ren_set) and x.id not in comp_bound_ids and not x.id.startswith("__"):
                     if isinstance(x.ctx, ast.Store):
                         stored[x.id] = stored.get(x.id, 0) + 1
             if not stored:
@@ -698,10 +733,41 @@ def transform_module(rel_path: str, code: str) -> str:
                         used_all.add(short_nm)
                         ren_map[old_nm] = short_nm.encode("ascii")
                         break
-            if self_arg_nd is not None and "self" in ren_map and self_arg_nd.lineno == self_arg_nd.end_lineno and self_arg_nd.end_col_offset is not None:
+            if self_arg_nd is not None and self_arg_nd.arg in ren_map and self_arg_nd.lineno == self_arg_nd.end_lineno and self_arg_nd.end_col_offset is not None:
                 r_sa = self_arg_nd.lineno - 1
-                if lv_b[r_sa][self_arg_nd.col_offset:self_arg_nd.end_col_offset] == b"self":
-                    lv_edits.setdefault(r_sa, []).append((self_arg_nd.col_offset, self_arg_nd.end_col_offset, ren_map["self"]))
+                s_b = self_arg_nd.arg.encode("utf-8")
+                if lv_b[r_sa][self_arg_nd.col_offset:self_arg_nd.end_col_offset] == s_b:
+                    lv_edits.setdefault(r_sa, []).append((self_arg_nd.col_offset, self_arg_nd.end_col_offset, ren_map[self_arg_nd.arg]))
+            for eh in eh_nodes:
+                if eh.name in ren_map:
+                    r_eh = eh.lineno - 1
+                    lb_eh = lv_b[r_eh]
+                    eh_b = eh.name.encode("utf-8")
+                    colon_i = lb_eh.find(b":", eh.col_offset)
+                    if colon_i > 0:
+                        m_eh = re.search(rb"\bas\s+(" + re.escape(eh_b) + rb")\s*:", lb_eh[eh.col_offset:colon_i + 1])
+                        if m_eh:
+                            c0_eh = eh.col_offset + m_eh.start(1)
+                            c1_eh = eh.col_offset + m_eh.end(1)
+                            lv_edits.setdefault(r_eh, []).append((c0_eh, c1_eh, ren_map[eh.name]))
+            for ndf in renamable_ndefs:
+                if ndf.name in ren_map:
+                    r_nd = ndf.lineno - 1
+                    lb_nd = lv_b[r_nd]
+                    nd_b = ndf.name.encode("utf-8")
+                    m_nd = re.search(rb"\bdef\s+(" + re.escape(nd_b) + rb")\s*\(", lb_nd[ndf.col_offset:])
+                    if m_nd:
+                        c0_nd = ndf.col_offset + m_nd.start(1)
+                        c1_nd = ndf.col_offset + m_nd.end(1)
+                        lv_edits.setdefault(r_nd, []).append((c0_nd, c1_nd, ren_map[ndf.name]))
+            for al, r_im, bnd, had_as in imp_alias_targets:
+                if bnd in ren_map and al.end_col_offset is not None:
+                    lb_im = lv_b[r_im]
+                    bnd_b = bnd.encode("utf-8")
+                    if had_as and lb_im[al.end_col_offset - len(bnd_b):al.end_col_offset] == bnd_b:
+                        lv_edits.setdefault(r_im, []).append((al.end_col_offset - len(bnd_b), al.end_col_offset, ren_map[bnd]))
+                    elif not had_as and lb_im[al.col_offset:al.end_col_offset] == bnd_b:
+                        lv_edits.setdefault(r_im, []).append((al.end_col_offset, al.end_col_offset, b" as " + ren_map[bnd]))
             for x in full_nodes:
                 if isinstance(x, ast.Name) and x.id in ren_map and x.lineno == x.end_lineno and x.end_col_offset is not None:
                     r_lv = x.lineno - 1
@@ -786,6 +852,48 @@ def transform_module(rel_path: str, code: str) -> str:
                 compacted = cand_s2
     except Exception:
         pass
+    for _ in range(3):
+        try:
+            t_in2 = ast.parse(compacted)
+            t_in2_d = ast.dump(t_in2)
+            in2_lns = compacted.splitlines(keepends=True)
+            mstr2: set[int] = set()
+            for tok in tokenize.generate_tokens(io.StringIO(compacted).readline):
+                if tok.type == tokenize.STRING and tok.end[0] > tok.start[0]:
+                    for r_m in range(tok.start[0] - 1, tok.end[0]):
+                        mstr2.add(r_m)
+            out_in2: list[str] = []
+            idx_i2 = 0
+            chg_i2 = False
+            while idx_i2 < len(in2_lns):
+                if (
+                    idx_i2 + 1 < len(in2_lns)
+                    and idx_i2 not in mstr2
+                    and (idx_i2 + 1) not in mstr2
+                    and in2_lns[idx_i2].rstrip("\r\n").endswith(":")
+                    and not in2_lns[idx_i2 + 1].rstrip("\r\n").endswith(":")
+                ):
+                    ns2 = in2_lns[idx_i2 + 1].lstrip(" \t")
+                    if ns2 and not _KW_BLK_RE.match(ns2):
+                        ic2 = len(in2_lns[idx_i2]) - len(in2_lns[idx_i2].lstrip(" "))
+                        in_n2 = len(in2_lns[idx_i2 + 1]) - len(in2_lns[idx_i2 + 1].lstrip(" "))
+                        i_22 = (len(in2_lns[idx_i2 + 2]) - len(in2_lns[idx_i2 + 2].lstrip(" "))) if (idx_i2 + 2) < len(in2_lns) else -1
+                        if in_n2 > ic2 and i_22 <= ic2:
+                            out_in2.append(in2_lns[idx_i2].rstrip("\r\n") + ns2)
+                            idx_i2 += 2
+                            chg_i2 = True
+                            continue
+                out_in2.append(in2_lns[idx_i2])
+                idx_i2 += 1
+            if not chg_i2:
+                break
+            cand_in2 = "".join(out_in2)
+            if ast.dump(ast.parse(cand_in2)) == t_in2_d:
+                compacted = cand_in2
+            else:
+                break
+        except Exception:
+            break
     return compacted.rstrip("\n") + "\n"
 
 

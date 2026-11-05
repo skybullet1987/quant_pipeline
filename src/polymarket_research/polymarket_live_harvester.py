@@ -7535,6 +7535,16 @@ class PolymarketLiveHarvester:
         _raw_nr_hdg = candidate_box.get("leg_b_neg_risk" if anc_is_a else "leg_a_neg_risk")
         nr_anc = _raw_nr_anc if isinstance(_raw_nr_anc, bool) else None
         nr_hdg = _raw_nr_hdg if isinstance(_raw_nr_hdg, bool) else None
+        if hasattr(self.executor, "prewarm_token_market_cache"):
+            for _tm, _cm, _nrm, _frm, _fem in (
+                (tok_a, str(candidate_box.get("leg_a_condition_id") or ""), candidate_box.get("leg_a_neg_risk"), fr_a, fe_a),
+                (tok_b, str(candidate_box.get("leg_b_condition_id") or ""), candidate_box.get("leg_b_neg_risk"), fr_b, fe_b),
+            ):
+                if _cm and isinstance(_nrm, bool):
+                    self.executor.prewarm_token_market_cache(
+                        token_id=_tm, neg_risk=_nrm, fee_rate_bps=int(round(_frm * 10000)),
+                        condition_id=_cm, fee_rate=_frm, fee_exponent=_fem,
+                    )
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or (candidate_box["leg_a_limit_price"] if anc_is_a else candidate_box["leg_b_limit_price"]))
         hdg_lim_px = float(candidate_box.get("hedge_limit_px") or (candidate_box["leg_b_limit_price"] if anc_is_a else candidate_box["leg_a_limit_price"]))
         max_pair_cap = (
@@ -13898,6 +13908,9 @@ class PolymarketLiveHarvester:
             await asyncio.sleep(0)
         return len(dispatched_tasks)
 
+    def _is_riskless_only_mode(self) -> bool:
+        return bool(not self.dry_run and GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}).get("riskless_only_mode", False))
+
     async def _fast_trigger_consumer_loop(
         self,
         fast_shock_event: asyncio.Event,
@@ -13910,6 +13923,18 @@ class PolymarketLiveHarvester:
         try:
             while not self._shutdown_requested:
                 fast_shock_event.clear()
+                if self._is_riskless_only_mode() and not getattr(self, "_fast_trigger_lines", None):
+                    if trigger_fp is not None:
+                        try:
+                            trigger_fp.seek(0, os.SEEK_END)
+                            self.last_trigger_file_pos = trigger_fp.tell()
+                        except Exception:
+                            pass
+                    try:
+                        await asyncio.wait_for(fast_shock_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
                 await self._drain_and_dispatch_shock_triggers(
                     trigger_fp=trigger_fp,
                     wakeup_supervision_event=wakeup_supervision_event,
@@ -13927,19 +13952,11 @@ class PolymarketLiveHarvester:
     async def run(self):
         if not self.dry_run and _alerts_file_path() is not None:
             _ensure_file_logging()
-        logger.info("=====================================================================")
-        logger.info("       POLYMARKET LIVE MONEY HARVESTER (REGIME 4 ARMED)              ")
-        logger.info("=====================================================================")
-        logger.info(f"Wallet Address:   {self.executor.funder_address}")
-        logger.info(f"Auth Mode:        {self.executor.auth_mode}")
-        logger.info(f"Ticket Floor:     ${self.ticket_notional:.2f} USD (Half-Kelly Sizing, λ={self.kelly_fraction:.2f}, Cap: {self.max_notional_cap_pct*100:.1f}%)")
-        logger.info(f"Price Boundary:   [${self.min_price_floor:.2f}, ${self.max_price_ceiling:.2f}]")
-        logger.info(f"Dynamic Sizing:   {self.dynamic_sizing} (Floor: ${MIN_LOT_SIZE_USD:.2f}, Hurdle: {self.depth_hurdle:.2f}x)")
-        logger.info(f"Portfolio Cap:    ${self.max_exposure:.2f} USD (Max Concurrent: {self.max_concurrent_positions})")
-        logger.info(f"Profit Target:    +{self.profit_theta*100:.0f}¢ per share")
-        logger.info(f"Exit Policy:      Spot-Delta Decoupled (K={self.spot_delta_k}σ) + Passive Midpoint Maker")
-        logger.info(f"Mode:             {'DRY-RUN' if self.dry_run else 'LIVE REAL-MONEY TRADING'}")
-        logger.info("=====================================================================")
+        logger.info(
+            f"[LIVE HARVESTER] Wallet={self.executor.funder_address} | Auth={self.executor.auth_mode} | "
+            f"Ticket=${self.ticket_notional:.2f} | Cap=${self.max_exposure:.2f} (slots={self.max_concurrent_positions}) | "
+            f"Mode={'DRY-RUN' if self.dry_run else 'LIVE'} | RisklessOnly={self._is_riskless_only_mode()}"
+        )
 
         lock_path = PID_FILE.with_suffix(".lock")
         self._instance_lock_fd = open(lock_path, "a+")
@@ -14321,7 +14338,11 @@ class PolymarketLiveHarvester:
                             _gc.collect(0)
                         except Exception:
                             pass
-                    if GLOBAL_SVI_ENGINE is not None and (now_ts - getattr(self, "_last_svi_refresh", 0.0) >= 60.0):
+                    if (
+                        GLOBAL_SVI_ENGINE is not None
+                        and not self._is_riskless_only_mode()
+                        and (now_ts - getattr(self, "_last_svi_refresh", 0.0) >= 60.0)
+                    ):
                         self._last_svi_refresh = now_ts
                         asyncio.create_task(asyncio.to_thread(GLOBAL_SVI_ENGINE.get_surface, "BTC"))
                         asyncio.create_task(asyncio.to_thread(GLOBAL_SVI_ENGINE.get_surface, "ETH"))
@@ -14374,7 +14395,7 @@ class PolymarketLiveHarvester:
                     last_mgmt_check = now_ts
                     try:
                         await self.check_resolutions_and_manage_positions()
-                        if not self.dry_run:
+                        if not self.dry_run and not self._is_riskless_only_mode():
                             self._step_shadow_phase3_4_tracker(now_ts)
                     except StatePersistenceError:
                         raise
@@ -14383,6 +14404,22 @@ class PolymarketLiveHarvester:
 
                 if time.time() - last_heartbeat >= 300:
                     last_heartbeat = time.time()
+                    for _cd_attr, _ttl_s in (("_d1_retry_cooldown_until", 0.0), ("_ovr_unwind_cd", 600.0)):
+                        _cd_m = getattr(self, _cd_attr, None)
+                        if isinstance(_cd_m, dict):
+                            for _k, _v in list(_cd_m.items()):
+                                if float(_v or 0.0) < (last_heartbeat - _ttl_s):
+                                    _cd_m.pop(_k, None)
+                    _pb_m = getattr(self, "_d1_clean_pre_bal_cache", None)
+                    if isinstance(_pb_m, dict):
+                        for _k, _v in list(_pb_m.items()):
+                            if isinstance(_v, tuple) and (last_heartbeat - float(_v[1] or 0.0)) > 3600.0:
+                                _pb_m.pop(_k, None)
+                    _lc = getattr(self.executor, "order_ladder_cache", None)
+                    if _lc is not None and hasattr(_lc, "prune_expired"):
+                        _lc.prune_expired()
+                    import gc as _gc
+                    _gc.collect()
                     active_exp = sum(p.get("notional_usd", 0.0) for p in self.active_positions.values())
                     logger.info(
                         f"[HEARTBEAT] Harvester active | Triggers scanned: {self._triggers_scanned_count} | "

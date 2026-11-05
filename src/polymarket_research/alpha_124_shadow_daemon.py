@@ -790,8 +790,11 @@ class _LazyWsBooksDict(dict):
 
 
 class Alpha124ShadowDaemon:
-    def __init__(self, single_scan: bool = False):
+    def __init__(self, single_scan: bool = False, riskless_bridge_only: bool = False):
         self.single_scan = single_scan
+        self.riskless_bridge_only: bool = bool(
+            riskless_bridge_only or os.environ.get("PM_RISKLESS_BRIDGE_ONLY") == "1"
+        )
         self.session: Optional[aiohttp.ClientSession] = None
         self.started_at = datetime.now(timezone.utc).isoformat()
 
@@ -1027,6 +1030,86 @@ class Alpha124ShadowDaemon:
         for k in keys:
             self.inflight_keys.discard(k)
 
+    def _evict_stale_caches(self, now_ts: Optional[float] = None) -> Dict[str, int]:
+        """Periodic 300s memory maintenance: evicts expired WS books & TTL caches without touching _grad8 fields."""
+        now = float(now_ts if now_ts is not None else time.time())
+        ev_books = 0
+        ev_caches = 0
+        if self._ws_subscribed_tokens:
+            keep_toks = set(self._ws_subscribed_tokens)
+            for p in (
+                *self.open_positions.values(),
+                *self.pending_maker_orders.values(),
+                *self.pending_maker_anchors.values(),
+                *self.pending_zero_fee_maker_anchors.values(),
+            ):
+                for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
+                    tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
+                    if tv:
+                        keep_toks.add(str(tv))
+            for t_old in [t for t in list(self._ws_raw_levels.keys()) if t not in keep_toks]:
+                self._ws_raw_levels.pop(t_old, None)
+                self._ws_books.pop(t_old, None)
+                self._ws_rest_seeded.discard(t_old)
+                ev_books += 1
+            for t_old in [t for t in list(dict.keys(self._ws_books)) if t not in keep_toks]:
+                self._ws_books.pop(t_old, None)
+                self._ws_rest_seeded.discard(t_old)
+                ev_books += 1
+        for c_map in (
+            self.uma_onchain_cache,
+            self.bond2_onchain_cache,
+            self.nba_boxscore_cache,
+            self.nba_ext_summary_cache,
+            self.nfl_summary_cache,
+            self.pyth_intraday_cache,
+            self.metar_cache,
+            self.taf_cache,
+            self.ensemble_cache,
+            self.barrier_ext_cache,
+        ):
+            for k_c, v_c in list(c_map.items()):
+                if isinstance(v_c, tuple) and len(v_c) >= 1 and (now - float(v_c[0] or 0.0)) > 3600.0:
+                    c_map.pop(k_c, None)
+                    ev_caches += 1
+        for o_map in (self.chainlink_open_cache, self.daily_open_cache):
+            for k_o, v_o in list(o_map.items()):
+                if isinstance(v_o, tuple) and len(v_o) >= 1 and 0.0 < float(v_o[0] or 0.0) < (now - 7200.0):
+                    o_map.pop(k_o, None)
+                    ev_caches += 1
+        for ts_map, max_age in (
+            (self._instant_arb_cooldown_until, 600.0),
+            (self._last_d1_live_emit_ts, 3600.0),
+            (self._strike_fail_backoff_ts, 3600.0),
+            (self._last_w3_slate_chk_ts, 3600.0),
+            (self._last_trade_tape_chk_ts, 3600.0),
+            (self._last_telem_ts_by_key, 3600.0),
+        ):
+            for k_t, ts_v in list(ts_map.items()):
+                if (now - float(ts_v or 0.0)) > max_age:
+                    ts_map.pop(k_t, None)
+                    ev_caches += 1
+        for k_sig in list(self._last_telem_sig_by_key.keys()):
+            if k_sig not in self._last_telem_ts_by_key:
+                self._last_telem_sig_by_key.pop(k_sig, None)
+        if len(self.entered_keys) > 6000:
+            protected = (
+                set(self.open_positions.keys())
+                | set(self.pending_maker_orders.keys())
+                | set(self.pending_maker_anchors.keys())
+                | set(self.pending_zero_fee_maker_anchors.keys())
+                | set(self.inflight_keys)
+            )
+            for p_cl in self.closed_positions[-2500:]:
+                for kf in ("dedupe_key", "position_id", "event_dedupe_key"):
+                    kv = p_cl.get(kf) or (p_cl.get("extra") or {}).get(kf)
+                    if kv:
+                        protected.add(str(kv))
+            self.entered_keys.intersection_update(protected)
+        import gc as _gc
+        _gc.collect()
+        return {"evicted_books": ev_books, "evicted_cache_entries": ev_caches}
+
     def _record_market_telemetry(
         self,
         key: str,
@@ -1036,6 +1119,8 @@ class Alpha124ShadowDaemon:
         sig: Optional[Any] = None,
         unchanged_heartbeat_sec: float = 600.0,
     ) -> None:
+        if getattr(self, "riskless_bridge_only", False):
+            return
         now = float(now_ts if now_ts is not None else time.time())
         last_ts = float(self._last_telem_ts_by_key.get(key) or 0.0)
         if (now - last_ts) < min_interval_sec:
@@ -9054,6 +9139,7 @@ class Alpha124ShadowDaemon:
     async def _run_bg_discovery(self) -> None:
         try:
             await self.discover_all_markets()
+            self._evict_stale_caches()
         except Exception as exc:
             logger.warning(f"Background discovery notice: {exc}")
 
@@ -12816,7 +12902,7 @@ class Alpha124ShadowDaemon:
                     self._bg_discovery_task = asyncio.create_task(self._run_bg_discovery())
 
                 # Reactive drain of any fresh Binance shock triggers before periodic scans
-                fresh_shocks = self.poll_fresh_shock_triggers(now_ts=t0)
+                fresh_shocks = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=t0)
                 if fresh_shocks:
                     shock_opps: List[Dict[str, Any]] = []
                     await self.handle_shock_triggers(fresh_shocks, shock_opps, now_ts=t0)
@@ -12829,8 +12915,10 @@ class Alpha124ShadowDaemon:
                 p1_opps: List[Dict[str, Any]] = []
                 await self.scan_same_oracle_dominance_boxes(dom_opps)
                 await self.scan_exact_twap_locks(twap_opps)
-                await self.scan_s5m_chainlink_sniper(s5m_opps)
-                await self.scan_and_manage_preopen_maker_straddles(p1_opps)
+                if not self.riskless_bridge_only:
+                    await self.scan_s5m_chainlink_sniper(s5m_opps)
+                if not self.riskless_bridge_only or self.pending_preopen_straddles:
+                    await self.scan_and_manage_preopen_maker_straddles(p1_opps)
 
                 if self.single_scan:
                     mid_opps: List[Dict[str, Any]] = []
@@ -12962,7 +13050,7 @@ class Alpha124ShadowDaemon:
                     if _s2_live_active and rem_5m_s <= 65.0 and (now_s - self.last_usd_sample_ts) >= 1.0:
                         self.record_usd_spot_samples(now_s)
                     # Wake immediately (<250ms) if a live Binance shock arrives
-                    shocks_w = self.poll_fresh_shock_triggers(now_ts=now_s)
+                    shocks_w = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=now_s)
                     if shocks_w:
                         prev_mkr_keys = set(self.pending_maker_orders)
                         prev_open_n = len(self.open_positions)
@@ -13014,6 +13102,7 @@ class Alpha124ShadowDaemon:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polymarket Alpha-124 Shadow Daemon")
     parser.add_argument("--single-scan", action="store_true", help="Run one full scan cycle and exit")
+    parser.add_argument("--riskless-bridge-only", action="store_true", help="Skip quarantined directional shock/sniper scans & disk telemetry")
     args = parser.parse_args()
     if os.name != "nt":
         try:
@@ -13021,7 +13110,7 @@ def main() -> None:
             uvloop.install()
         except Exception:
             pass
-    daemon = Alpha124ShadowDaemon(single_scan=args.single_scan)
+    daemon = Alpha124ShadowDaemon(single_scan=args.single_scan, riskless_bridge_only=args.riskless_bridge_only)
     asyncio.run(daemon.run_forever())
 
 

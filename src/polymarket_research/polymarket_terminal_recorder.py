@@ -870,10 +870,18 @@ class L2OrderBook:
 
 
 class PolymarketDualFeed1HRecorder:
-    def __init__(self, asset: str = "BTC", shock_threshold: Optional[float] = None):
+    def __init__(
+        self,
+        asset: str = "BTC",
+        shock_threshold: Optional[float] = None,
+        riskless_bus_only: bool = False,
+    ):
         self.asset = asset.upper()
         if self.asset not in ASSET_CONFIGS:
             raise ValueError(f"Unsupported asset {self.asset}. Must be one of: {list(ASSET_CONFIGS.keys())}")
+        self.riskless_bus_only: bool = bool(
+            riskless_bus_only or os.environ.get("POLYMARKET_RISKLESS_BUS_ONLY") == "1"
+        )
         self.cfg = ASSET_CONFIGS[self.asset]
         self.series_slug = self.cfg["series_slug"]
         self.binance_symbol = self.cfg["binance_symbol"]
@@ -896,9 +904,10 @@ class PolymarketDualFeed1HRecorder:
         self.books: Dict[str, L2OrderBook] = {}
 
         # Trade queues: (t_local_ns, exchange_event_ms, exchange_trade_ms, notional, is_buyer, px)
-        self.spot_trades: collections.deque = collections.deque(maxlen=30000)
-        self.futures_trades: collections.deque = collections.deque(maxlen=30000)
-        self.basis_history: collections.deque = collections.deque(maxlen=2000)  # (t_mono_ns, basis_bps)
+        _q_cap = 64 if self.riskless_bus_only else 30000
+        self.spot_trades: collections.deque = collections.deque(maxlen=_q_cap)
+        self.futures_trades: collections.deque = collections.deque(maxlen=_q_cap)
+        self.basis_history: collections.deque = collections.deque(maxlen=128 if self.riskless_bus_only else 2000)  # (t_mono_ns, basis_bps)
 
         # Real-time state
         self.spot_price: float = 0.0
@@ -972,7 +981,7 @@ class PolymarketDualFeed1HRecorder:
         self._last_btc_flow_z: float = 0.0
 
         # v3.4 Adaptive session-volume threshold: 1-second dollar-volume buckets (spot + futures)
-        self._vol_buckets: collections.deque = collections.deque(maxlen=ADAPTIVE_THRESH_WINDOW_SEC + 2)  # [sec, usd]
+        self._vol_buckets: collections.deque = collections.deque(maxlen=16 if self.riskless_bus_only else (ADAPTIVE_THRESH_WINDOW_SEC + 2))  # [sec, usd]
         self._vol_first_sec: Optional[int] = None
         self._adaptive_cache: Tuple[float, float] = (0.0, float(self.shock_threshold_usd))  # (computed_at, value)
 
@@ -1299,7 +1308,7 @@ class PolymarketDualFeed1HRecorder:
             logger.debug(f"[FAST TICK] shm write notice: {e}")
             return False
         # Low-frequency (1s) read-only EXP-306 boundary/merge evaluation piggybacks on the tick bus
-        if now - self._last_exp306_eval >= 1.0:
+        if not self.riskless_bus_only and now - self._last_exp306_eval >= 1.0:
             self._last_exp306_eval = now
             self._run_exp306_realtime_eval(snap)
         return True
@@ -1943,12 +1952,12 @@ class PolymarketDualFeed1HRecorder:
                             self.spot_price_ts = now_s
                             self._update_rolling_sigma(px)
                             self.update_basis()
-                            self.spot_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
-
-                            if idx == n_frames - 1 or notional >= big_frame_usd:
-                                self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="SPOT")
-                            else:
-                                self._record_volume(notional, now_s)
+                            if not self.riskless_bus_only:
+                                self.spot_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
+                                if idx == n_frames - 1 or notional >= big_frame_usd:
+                                    self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="SPOT")
+                                else:
+                                    self._record_volume(notional, now_s)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
                         if (burst_frames & 31) == 0:
@@ -1998,12 +2007,12 @@ class PolymarketDualFeed1HRecorder:
                                         while self.coinbase_history and now_f - self.coinbase_history[0][0] > 30.0:
                                             self.coinbase_history.popleft()
                             self.update_basis()
-                            self.futures_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
-
-                            if idx == n_frames - 1 or notional >= big_frame_usd:
-                                self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="FUTURES")
-                            else:
-                                self._record_volume(notional, now_f)
+                            if not self.riskless_bus_only:
+                                self.futures_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
+                                if idx == n_frames - 1 or notional >= big_frame_usd:
+                                    self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="FUTURES")
+                                else:
+                                    self._record_volume(notional, now_f)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
                         if (burst_frames & 31) == 0:
@@ -2931,7 +2940,7 @@ class PolymarketDualFeed1HRecorder:
 
     def _maybe_emit_boundary_lock_trigger(self) -> None:
         """Rank #4: Emits a BOUNDARY_LOCK trigger when TTE in [12s, 75s], |z_strike| >= 3.0, and discounted retail asks (<=0.94) offer >=2.5c net edge."""
-        if self.spot_price <= 0:
+        if self.riskless_bus_only or self.spot_price <= 0:
             return
         now_sec = time.time()
         if now_sec - getattr(self, "_last_boundary_check_ts", 0.0) < 0.25:
@@ -3177,14 +3186,10 @@ class PolymarketDualFeed1HRecorder:
                             open_px = self.spot_price
                             self._open_1h_provisional = True
                         self.finalized_1h_open = open_px
-                        logger.info(f"\n==============================================================================="
-                                    f"\n[ACTIVE 1H PRODUCT LOADED: {self.asset}] {market['title']}"
-                                    f"\n  Market ID: {market['market_id']} | End: {market['end_date_iso']}"
-                                    f"\n  UP Token: {market['tokens']['UP']}"
-                                    f"\n  DOWN Token: {market['tokens']['DOWN']}"
-                                    f"\n  Binance Spot 1H Finalized Open: ${self.finalized_1h_open:,.2f}"
-                                    f"\n  Fee Rate: {self.fee_rate_market * 100:.1f}% ({self.fee_source})"
-                                    f"\n===============================================================================\n")
+                        logger.info(
+                            f"[ACTIVE 1H LOADED: {self.asset}] {market['title']} (ID={market['market_id']}, End={market['end_date_iso']}, "
+                            f"UP={market['tokens']['UP']}, DOWN={market['tokens']['DOWN']}, Open=${self.finalized_1h_open:,.2f}, Fee={self.fee_rate_market*100:.1f}%)"
+                        )
                     elif self.current_market is not None:
                         logger.info(
                             f"[*] [{self.asset}] 1H market {self.current_market.get('market_id')} expired and no active 1H "
@@ -3285,7 +3290,7 @@ class PolymarketDualFeed1HRecorder:
                         down_metrics["best_ask"],
                     )
                     prev_1h = self._last_telem_bbo_by_hz.get("1h")
-                    if (
+                    if not self.riskless_bus_only and (
                         prev_1h is None
                         or prev_1h[1] != bbo_1h
                         or secs_left <= 900.0
@@ -3327,11 +3332,11 @@ class PolymarketDualFeed1HRecorder:
 
                 cb_now = self.get_coinbase_spot(now_ts_u)
                 cl_now = self.get_chainlink_proxy_spot(now_ts_u)
-                for hz, attr_n, up_k, dn_k, out_f in (
+                for hz, attr_n, up_k, dn_k, out_f in (() if self.riskless_bus_only else (
                     ("5m", "market_5m", "UP_5M", "DOWN_5M", self.telemetry_5m_file),
                     ("15m", "market_15m", "UP_15M", "DOWN_15M", self.telemetry_15m_file),
                     ("4h", "market_4h", "UP_4H", "DOWN_4H", self.telemetry_4h_file),
-                ):
+                )):
                     mh = getattr(self, attr_n, None)
                     if mh and up_k in self.books and dn_k in self.books:
                         secs_h = (mh["end_dt"] - now).total_seconds()
@@ -3396,7 +3401,7 @@ class PolymarketDualFeed1HRecorder:
                             )
 
                 # Periodic 60s cross-correlation estimation on flow innovations (offloaded from WS event loop)
-                if time.time() - self.last_cross_corr_ts > 60.0:
+                if not self.riskless_bus_only and time.time() - self.last_cross_corr_ts > 60.0:
                     self.last_cross_corr_ts = time.time()
                     # Snapshot deques on the loop thread (WS coroutines mutate them concurrently)
                     spot_snap = list(self.spot_trades)
@@ -3405,6 +3410,9 @@ class PolymarketDualFeed1HRecorder:
 
                 # Periodic 300s clock synchronization
                 if time.time() - self.last_clock_sync_ts > 300.0:
+                    if self.riskless_bus_only and self.asset == "BTC":
+                        import gc as _gc
+                        _gc.collect()
                     asyncio.create_task(self.calibrate_binance_clock_offset())
 
                 await asyncio.sleep(10.0)
@@ -3413,18 +3421,10 @@ class PolymarketDualFeed1HRecorder:
                 await asyncio.sleep(10.0)
 
     async def run(self):
-        logger.info("===============================================================================")
-        logger.info(f"   ROUTE 3: FUTURES/SPOT -> POLYMARKET 1H RECORDER ({self.asset}) (v2.8)       ")
-        logger.info(f"   Asset: {self.asset} | Binance: {self.binance_symbol} | Shock: ${self.shock_threshold_usd:,.0f} ")
-        logger.info("   Dual Feeds: Binance Spot (Settlement Ref) + Futures (Routed /market)        ")
-        logger.info("   Invariants: OBI/q_micro Reconciled + Invariant Assertions Enforced          ")
-        logger.info("   Quote Ages: Tripartite (Age_book, Age_bid, Age_ask)                         ")
-        logger.info("   Clock Sync: Cristian's Algorithm Calibrated Offset (Tokyo <-> Binance)      ")
-        logger.info("   Econometrics: Strict Causal t0 Anchor + Lead/Lag Innovation Grid            ")
-        logger.info("   Capacity Surface: Fill-Level Fees & Crossing Cost [$1, $5, $20, $50, $100]  ")
-        logger.info("   Resolution Truth: Finalized Binance Spot 1H Candle Open & Close             ")
-        logger.info("   Operational: Read-Only (Does not circumvent geographic restrictions)        ")
-        logger.info("===============================================================================")
+        logger.info(
+            f"[RECORDER v2.8 {self.asset}] {self.binance_symbol} | Shock=${self.shock_threshold_usd:,.0f} | "
+            f"Mode={'RISKLESS_SHM_BUS_ONLY' if self.riskless_bus_only else 'FULL_TELEMETRY'}"
+        )
 
         self._pid_lock_fh = open(self.pid_file, "w")
         if os.name != "nt":
@@ -3462,6 +3462,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--shock-threshold", type=float, default=None, help="Volume shock threshold in USD over 100ms")
     parser.add_argument("--co-assets", type=str, default="", help="Comma-separated co-resident assets sharing this uvloop process")
+    parser.add_argument("--riskless-bus-only", action="store_true", help="Lean /dev/shm fast-tick bus only (no shock/JSONL disk telemetry)")
     args = parser.parse_args()
 
     setup_logging(args.asset)
@@ -3472,8 +3473,10 @@ if __name__ == "__main__":
         except Exception:
             pass
     co_syms = [s.strip().upper() for s in str(args.co_assets or "").split(",") if s.strip() and s.strip().upper() in ASSET_CONFIGS and s.strip().upper() != args.asset]
-    recorders = [PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold)] + [
-        PolymarketDualFeed1HRecorder(asset=sym) for sym in co_syms
+    recorders = [
+        PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold, riskless_bus_only=args.riskless_bus_only)
+    ] + [
+        PolymarketDualFeed1HRecorder(asset=sym, riskless_bus_only=args.riskless_bus_only) for sym in co_syms
     ]
 
     async def _run_multi_recorders() -> None:

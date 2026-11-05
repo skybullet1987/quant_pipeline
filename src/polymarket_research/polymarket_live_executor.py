@@ -2132,6 +2132,108 @@ class PolymarketLiveExecutor:
             return False
         return True
 
+    def _can_use_hot_async_bridge(self) -> bool:
+        loop = getattr(self, "_hot_order_async_loop", None)
+        if not self._can_use_native_async_post_order() or loop is None or not loop.is_running():
+            return False
+        try:
+            return asyncio.get_running_loop() is not loop
+        except RuntimeError:
+            return True
+
+    def _serialize_signed_order_payload(
+        self, signed: Any, order_type: Any, post_only: bool = False, defer_exec: bool = True
+    ) -> Dict[str, Any]:
+        if _clob_is_v2_order is not None and _clob_order_to_json_v2 is not None and _clob_order_to_json_v1 is not None:
+            _is_v2_fn, _to_j_v1, _to_j_v2 = _clob_is_v2_order, _clob_order_to_json_v1, _clob_order_to_json_v2
+        else:
+            from py_clob_client_v2.client import _is_v2_order as _is_v2_fn, order_to_json_v1 as _to_j_v1, order_to_json_v2 as _to_j_v2
+        owner = self._fast_l2_api_key
+        return (
+            _to_j_v2(signed, owner, order_type, bool(post_only), bool(defer_exec))
+            if _is_v2_fn(signed)
+            else _to_j_v1(signed, owner, order_type, bool(post_only), bool(defer_exec))
+        )
+
+    async def _exec_hot_async_post(
+        self, endpoint: str, headers: Dict[str, str], body_bytes: bytes, stage: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Any, Optional[str], float]:
+        host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+        endpoint_url = f"{host}{endpoint}"
+        cli = self.get_hot_order_async_client()
+        t_post_start = time.perf_counter()
+        if stage is not None:
+            stage["submitted"] = True
+            stage["t_post_start"] = t_post_start
+        self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
+        _holding_inflight = True
+        try:
+            try:
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+                if _holding_inflight:
+                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
+                    _holding_inflight = False
+                await self._retire_hot_async_client(cli)
+                cli = self.get_hot_order_async_client()
+                self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
+                _holding_inflight = True
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+        except httpx.RequestError as exc:
+            if _holding_inflight:
+                self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
+                _holding_inflight = False
+            await self._retire_hot_async_client(cli)
+            logger.error("[py_clob_client_v2] async request error: %s", exc)
+            if PolyApiException is not None:
+                raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
+            raise
+        finally:
+            if _holding_inflight:
+                self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 0) or 0) - 1)
+        t2 = time.perf_counter()
+        self._hot_order_last_touch_mono = time.monotonic()
+        cf_ray = resp.headers.get("cf-ray") if hasattr(resp, "headers") else None
+        if stage is not None:
+            stage["cf_ray"] = cf_ray
+        if resp.status_code != 200:
+            logger.error("[py_clob_client_v2] request error status=%s url=%s body=%s", resp.status_code, endpoint_url, resp.text)
+            if PolyApiException is not None:
+                raise PolyApiException(resp)
+            raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
+        post_resp = _orjson.loads(resp.content) if _orjson is not None else resp.json()
+        if hasattr(self.client, "_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
+            try:
+                self.client._ClobClient__resolve_version(force_update=True)
+            except Exception:
+                pass
+        return post_resp, cf_ray, t2
+
+    def _encode_fast_l2_request(self, endpoint: str, payload: Any) -> Tuple[Dict[str, str], bytes]:
+        if _orjson is not None:
+            body_bytes = _orjson.dumps(payload)
+            serialized = body_bytes.decode("utf-8")
+        else:
+            serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+            body_bytes = serialized.encode("utf-8")
+        ts_val = (
+            int(self.client._get_timestamp())
+            if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
+            else int(time.time())
+        )
+        return self._build_fast_l2_headers("POST", endpoint, serialized, ts_override=ts_val), body_bytes
+
+    def _post_json_hot_async_bridge(self, endpoint: str, payload: Any) -> Any:
+        """Routes worker-thread FOK box / hedge POSTs onto the <3.5s warm uvloop `_hot_order_async_client`."""
+        loop = getattr(self, "_hot_order_async_loop", None)
+        if loop is None or not loop.is_running():
+            raise RuntimeError("Hot async loop not active")
+        headers, body_bytes = self._encode_fast_l2_request(endpoint, payload)
+        out, _, _ = asyncio.run_coroutine_threadsafe(
+            self._exec_hot_async_post(endpoint, headers, body_bytes), loop
+        ).result(timeout=8.5)
+        return out
+
     async def _sign_and_post_async_zero_hop(
         self,
         token_id: str,
@@ -2186,30 +2288,8 @@ class PolymarketLiveExecutor:
                     signed = _safe_create_order(self.client.create_order, order_args, create_options)
                 if signed is None:
                     raise RuntimeError("create_order returned no signed order")
-
-                if _clob_is_v2_order is not None and _clob_order_to_json_v2 is not None and _clob_order_to_json_v1 is not None:
-                    _is_v2_fn, _to_j_v1, _to_j_v2 = _clob_is_v2_order, _clob_order_to_json_v1, _clob_order_to_json_v2
-                else:
-                    from py_clob_client_v2.client import _is_v2_order as _is_v2_fn, order_to_json_v1 as _to_j_v1, order_to_json_v2 as _to_j_v2
-                owner = self._fast_l2_api_key
-                _po = bool(post_only)
-                order_payload = (
-                    _to_j_v2(signed, owner, order_type, _po, True)
-                    if _is_v2_fn(signed)
-                    else _to_j_v1(signed, owner, order_type, _po, True)
-                )
-                if _orjson is not None:
-                    body_bytes = _orjson.dumps(order_payload)
-                    serialized = body_bytes.decode("utf-8")
-                else:
-                    serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
-                    body_bytes = serialized.encode("utf-8")
-                ts_val = (
-                    int(self.client._get_timestamp())
-                    if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
-                    else int(time.time())
-                )
-                headers = self._build_fast_l2_headers("POST", "/order", serialized, ts_override=ts_val)
+                order_payload = self._serialize_signed_order_payload(signed, order_type, post_only, True)
+                headers, body_bytes = self._encode_fast_l2_request("/order", order_payload)
             except Exception as exc:
                 raise PreSubmitError(f"Order signing failed before submission: {exc}") from exc
             finally:
@@ -2222,60 +2302,8 @@ class PolymarketLiveExecutor:
             stage["thread_hop_ms"] = 0.0
             stage["cache_hit"] = cache_hit
             stage["signed_shares"] = actual_signed_shares
-
-            host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
-            endpoint_url = f"{host}/order"
-            cli = self.get_hot_order_async_client()
-            stage["submitted"] = True
-            t_post_start = time.perf_counter()
-            stage["t_post_start"] = t_post_start
-            self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
-            _holding_inflight = True
-            try:
-                try:
-                    resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
-                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
-                    # Pre-wire failure (0 bytes sent): safe single retry on a fresh socket without aborting sibling requests
-                    if _holding_inflight:
-                        self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
-                        _holding_inflight = False
-                    await self._retire_hot_async_client(cli)
-                    cli = self.get_hot_order_async_client()
-                    self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
-                    _holding_inflight = True
-                    resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
-            except httpx.RequestError as exc:
-                if _holding_inflight:
-                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
-                    _holding_inflight = False
-                await self._retire_hot_async_client(cli)
-                logger.error("[py_clob_client_v2] async request error: %s", exc)
-                if PolyApiException is not None:
-                    raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
-                raise
-            finally:
-                if _holding_inflight:
-                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 0) or 0) - 1)
-            t2 = time.perf_counter()
-            self._hot_order_last_touch_mono = time.monotonic()
-            cf_ray = resp.headers.get("cf-ray") if hasattr(resp, "headers") else None
-            stage["cf_ray"] = cf_ray
-
-            if resp.status_code != 200:
-                logger.error(
-                    "[py_clob_client_v2] request error status=%s url=%s body=%s",
-                    resp.status_code, endpoint_url, resp.text,
-                )
-                if PolyApiException is not None:
-                    raise PolyApiException(resp)
-                raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
-
-            post_resp = _orjson.loads(resp.content) if _orjson is not None else resp.json()
-            if hasattr(self.client, "_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
-                try:
-                    self.client._ClobClient__resolve_version(force_update=True)
-                except Exception:
-                    pass
+            post_resp, cf_ray, t2 = await self._exec_hot_async_post("/order", headers, body_bytes, stage=stage)
+            t_post_start = float(stage.get("t_post_start") or t1)
             return {
                 "post_resp": post_resp or {},
                 "sign_ms": sign_ms,
@@ -6900,14 +6928,23 @@ class PolymarketLiveExecutor:
                     disp_mode = "BATCH_POST_ORDERS_FOK"
                     skew_ms = 0.0
                     try:
-                        batch_resp = self.client.post_orders(
-                            [
-                                PostOrdersV2Args(order=signed_1, orderType=OrderType.FOK, deferExec=True),
-                                PostOrdersV2Args(order=signed_2, orderType=OrderType.FOK, deferExec=True),
-                            ],
-                            post_only=False,
-                            defer_exec=True,
-                        )
+                        if self._can_use_hot_async_bridge():
+                            batch_resp = self._post_json_hot_async_bridge(
+                                "/orders",
+                                [
+                                    self._serialize_signed_order_payload(signed_1, OrderType.FOK, False, True),
+                                    self._serialize_signed_order_payload(signed_2, OrderType.FOK, False, True),
+                                ],
+                            )
+                        else:
+                            batch_resp = self.client.post_orders(
+                                [
+                                    PostOrdersV2Args(order=signed_1, orderType=OrderType.FOK, deferExec=True),
+                                    PostOrdersV2Args(order=signed_2, orderType=OrderType.FOK, deferExec=True),
+                                ],
+                                post_only=False,
+                                defer_exec=True,
+                            )
                         if isinstance(batch_resp, list) and len(batch_resp) == 2:
                             resp_1, exc_1 = batch_resp[0], None
                             resp_2, exc_2 = batch_resp[1], None
@@ -7323,7 +7360,12 @@ class PolymarketLiveExecutor:
             with _UrgentSignPriority():
                 signed_h = _safe_create_order(self.client.create_order, OrderArgsV2(price=px_hdg, size=hedge_gross_sh, side="BUY", token_id=hedge_token_id), opts_h)
             try:
-                resp_2 = self.client.post_order(signed_h, OrderType.FOK, False, True)
+                if self._can_use_hot_async_bridge():
+                    resp_2 = self._post_json_hot_async_bridge(
+                        "/order", self._serialize_signed_order_payload(signed_h, OrderType.FOK, False, True)
+                    )
+                else:
+                    resp_2 = self.client.post_order(signed_h, OrderType.FOK, False, True)
             except TypeError:
                 resp_2 = self.client.post_order(signed_h, OrderType.FOK)
             except Exception as e2:

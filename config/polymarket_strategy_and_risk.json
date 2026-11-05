@@ -168,8 +168,8 @@
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,
     "enable_sol_5m_canary_shadow": false,
-    "enable_hybrid_zsplit_shadow": true,
-    "enable_xau_15m_maker_shadow": true,
+    "enable_hybrid_zsplit_shadow": false,
+    "enable_xau_15m_maker_shadow": false,
     "weekly_wfo_min_trades": 50,
     "weekly_wfo_min_profit_factor": 1.45,
     "weekly_wfo_max_pbo": 0.20

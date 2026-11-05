@@ -1,62 +1,62 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-05 15:49:34 UTC
+Generated: 2026-11-05 16:51:50 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
-Repository: C:/Users/Anton/source/repos/Dominus
+Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [01] config/polymarket_risk_config.json (Lines 64 - 122 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
-  [02] config/polymarket_strategy_and_risk.json (Lines 123 - 309 | 6,307 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
+  [02] config/polymarket_strategy_and_risk.json (Lines 123 - 309 | 6,309 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
   [03] systemd/polymarket-live-harvester.service (Lines 310 - 349 | 1,935 B) :: Live Harvester v5.3 systemd Unit
-  [04] systemd/polymarket-alpha124-shadow.service (Lines 350 - 384 | 897 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
-  [05] systemd/polymarket-recorder.service (Lines 385 - 416 | 973 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
+  [04] systemd/polymarket-alpha124-shadow.service (Lines 350 - 384 | 920 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
+  [05] systemd/polymarket-recorder.service (Lines 385 - 416 | 993 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
   [06] systemd/polymarket-recorder-eth.service (Lines 417 - 447 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [07] systemd/polymarket-recorder-sol.service (Lines 448 - 478 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [08] systemd/polymarket-recorder-xrp.service (Lines 479 - 509 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
   [09] systemd/polymarket-trader.service (Lines 510 - 540 | 720 B) :: Forward Paper Trader systemd Unit
   [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
   [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,621 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,966 | 900,855 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,967 - 24,830 | 449,111 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,831 - 26,344 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 26,345 - 27,064 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,065 - 30,557 | 188,608 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,558 - 31,136 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,137 - 33,527 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,528 - 33,640 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,641 - 33,757 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,758 - 34,104 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,105 - 34,370 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 34,371 - 34,853 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,854 - 36,331 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,332 - 37,878 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,879 - 39,268 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,269 - 40,393 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,394 - 41,846 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,847 - 42,402 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,403 - 43,126 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,127 - 44,118 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,119 - 44,457 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,458 - 46,214 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,215 - 47,282 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,283 - 48,031 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,032 - 49,753 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,754 - 52,011 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,012 - 54,271 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,272 - 67,306 | 724,612 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 67,307 - 68,167 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 68,168 - 69,390 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 69,391 - 69,469 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,470 - 69,619 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 69,620 - 73,699 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,700 - 75,594 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,595 - 81,322 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,323 - 82,079 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 82,080 - 82,922 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,923 - 83,702 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,703 - 85,502 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 16,003 | 902,557 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 16,004 - 24,909 | 451,309 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,910 - 26,423 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 26,424 - 27,143 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,144 - 30,639 | 188,174 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,640 - 31,218 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,219 - 33,609 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,610 - 33,722 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,723 - 33,839 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,840 - 34,186 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,187 - 34,452 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 34,453 - 34,935 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,936 - 36,413 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,414 - 37,960 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,961 - 39,350 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,351 - 40,475 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,476 - 41,928 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,929 - 42,484 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,485 - 43,208 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,209 - 44,200 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,201 - 44,539 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,540 - 46,296 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,297 - 47,364 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,365 - 48,113 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,114 - 49,835 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,836 - 52,093 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,094 - 54,353 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,354 - 67,477 | 729,177 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 67,478 - 68,338 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 68,339 - 69,561 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 69,562 - 69,640 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,641 - 69,790 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 69,791 - 73,870 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,871 - 75,765 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,766 - 81,493 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,494 - 82,250 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 82,251 - 83,093 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 83,094 - 83,873 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,874 - 85,673 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -297,8 +297,8 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,
     "enable_sol_5m_canary_shadow": false,
-    "enable_hybrid_zsplit_shadow": true,
-    "enable_xau_15m_maker_shadow": true,
+    "enable_hybrid_zsplit_shadow": false,
+    "enable_xau_15m_maker_shadow": false,
     "weekly_wfo_min_trades": 50,
     "weekly_wfo_min_profit_factor": 1.45,
     "weekly_wfo_max_pbo": 0.20
@@ -370,7 +370,7 @@ Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
 # the latency-critical live path (CPU starvation caused recorder WS ping timeouts / slow-consumer drops).
 CPUWeight=300
 IOWeight=300
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py --riskless-bridge-only
 Restart=always
 RestartSec=10
 KillSignal=SIGTERM
@@ -398,7 +398,7 @@ Conflicts=polymarket-recorder-eth.service polymarket-recorder-sol.service polyma
 [Service]
 Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
-ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC --co-assets ETH,SOL,XAU,XAG,XRP,BNB,DOGE,HYPE
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python3 src/polymarket_research/polymarket_terminal_recorder.py --asset BTC --co-assets ETH,SOL,XAU,XAG,XRP,BNB,DOGE,HYPE --riskless-bus-only
 Restart=on-failure
 RestartSec=3
 CPUWeight=1000
@@ -8921,6 +8921,16 @@ class PolymarketLiveHarvester:
         _raw_nr_hdg = candidate_box.get("leg_b_neg_risk" if anc_is_a else "leg_a_neg_risk")
         nr_anc = _raw_nr_anc if isinstance(_raw_nr_anc, bool) else None
         nr_hdg = _raw_nr_hdg if isinstance(_raw_nr_hdg, bool) else None
+        if hasattr(self.executor, "prewarm_token_market_cache"):
+            for _tm, _cm, _nrm, _frm, _fem in (
+                (tok_a, str(candidate_box.get("leg_a_condition_id") or ""), candidate_box.get("leg_a_neg_risk"), fr_a, fe_a),
+                (tok_b, str(candidate_box.get("leg_b_condition_id") or ""), candidate_box.get("leg_b_neg_risk"), fr_b, fe_b),
+            ):
+                if _cm and isinstance(_nrm, bool):
+                    self.executor.prewarm_token_market_cache(
+                        token_id=_tm, neg_risk=_nrm, fee_rate_bps=int(round(_frm * 10000)),
+                        condition_id=_cm, fee_rate=_frm, fee_exponent=_fem,
+                    )
         anc_bid_px = float(candidate_box.get("anchor_bid_px") or (candidate_box["leg_a_limit_price"] if anc_is_a else candidate_box["leg_b_limit_price"]))
         hdg_lim_px = float(candidate_box.get("hedge_limit_px") or (candidate_box["leg_b_limit_price"] if anc_is_a else candidate_box["leg_a_limit_price"]))
         max_pair_cap = (
@@ -15284,6 +15294,9 @@ class PolymarketLiveHarvester:
             await asyncio.sleep(0)
         return len(dispatched_tasks)
 
+    def _is_riskless_only_mode(self) -> bool:
+        return bool(not self.dry_run and GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional", {}).get("riskless_only_mode", False))
+
     async def _fast_trigger_consumer_loop(
         self,
         fast_shock_event: asyncio.Event,
@@ -15296,6 +15309,18 @@ class PolymarketLiveHarvester:
         try:
             while not self._shutdown_requested:
                 fast_shock_event.clear()
+                if self._is_riskless_only_mode() and not getattr(self, "_fast_trigger_lines", None):
+                    if trigger_fp is not None:
+                        try:
+                            trigger_fp.seek(0, os.SEEK_END)
+                            self.last_trigger_file_pos = trigger_fp.tell()
+                        except Exception:
+                            pass
+                    try:
+                        await asyncio.wait_for(fast_shock_event.wait(), timeout=1.0)
+                    except asyncio.TimeoutError:
+                        pass
+                    continue
                 await self._drain_and_dispatch_shock_triggers(
                     trigger_fp=trigger_fp,
                     wakeup_supervision_event=wakeup_supervision_event,
@@ -15313,19 +15338,11 @@ class PolymarketLiveHarvester:
     async def run(self):
         if not self.dry_run and _alerts_file_path() is not None:
             _ensure_file_logging()
-        logger.info("=====================================================================")
-        logger.info("       POLYMARKET LIVE MONEY HARVESTER (REGIME 4 ARMED)              ")
-        logger.info("=====================================================================")
-        logger.info(f"Wallet Address:   {self.executor.funder_address}")
-        logger.info(f"Auth Mode:        {self.executor.auth_mode}")
-        logger.info(f"Ticket Floor:     ${self.ticket_notional:.2f} USD (Half-Kelly Sizing, λ={self.kelly_fraction:.2f}, Cap: {self.max_notional_cap_pct*100:.1f}%)")
-        logger.info(f"Price Boundary:   [${self.min_price_floor:.2f}, ${self.max_price_ceiling:.2f}]")
-        logger.info(f"Dynamic Sizing:   {self.dynamic_sizing} (Floor: ${MIN_LOT_SIZE_USD:.2f}, Hurdle: {self.depth_hurdle:.2f}x)")
-        logger.info(f"Portfolio Cap:    ${self.max_exposure:.2f} USD (Max Concurrent: {self.max_concurrent_positions})")
-        logger.info(f"Profit Target:    +{self.profit_theta*100:.0f}¢ per share")
-        logger.info(f"Exit Policy:      Spot-Delta Decoupled (K={self.spot_delta_k}σ) + Passive Midpoint Maker")
-        logger.info(f"Mode:             {'DRY-RUN' if self.dry_run else 'LIVE REAL-MONEY TRADING'}")
-        logger.info("=====================================================================")
+        logger.info(
+            f"[LIVE HARVESTER] Wallet={self.executor.funder_address} | Auth={self.executor.auth_mode} | "
+            f"Ticket=${self.ticket_notional:.2f} | Cap=${self.max_exposure:.2f} (slots={self.max_concurrent_positions}) | "
+            f"Mode={'DRY-RUN' if self.dry_run else 'LIVE'} | RisklessOnly={self._is_riskless_only_mode()}"
+        )
 
         lock_path = PID_FILE.with_suffix(".lock")
         self._instance_lock_fd = open(lock_path, "a+")
@@ -15707,7 +15724,11 @@ class PolymarketLiveHarvester:
                             _gc.collect(0)
                         except Exception:
                             pass
-                    if GLOBAL_SVI_ENGINE is not None and (now_ts - getattr(self, "_last_svi_refresh", 0.0) >= 60.0):
+                    if (
+                        GLOBAL_SVI_ENGINE is not None
+                        and not self._is_riskless_only_mode()
+                        and (now_ts - getattr(self, "_last_svi_refresh", 0.0) >= 60.0)
+                    ):
                         self._last_svi_refresh = now_ts
                         asyncio.create_task(asyncio.to_thread(GLOBAL_SVI_ENGINE.get_surface, "BTC"))
                         asyncio.create_task(asyncio.to_thread(GLOBAL_SVI_ENGINE.get_surface, "ETH"))
@@ -15760,7 +15781,7 @@ class PolymarketLiveHarvester:
                     last_mgmt_check = now_ts
                     try:
                         await self.check_resolutions_and_manage_positions()
-                        if not self.dry_run:
+                        if not self.dry_run and not self._is_riskless_only_mode():
                             self._step_shadow_phase3_4_tracker(now_ts)
                     except StatePersistenceError:
                         raise
@@ -15769,6 +15790,22 @@ class PolymarketLiveHarvester:
 
                 if time.time() - last_heartbeat >= 300:
                     last_heartbeat = time.time()
+                    for _cd_attr, _ttl_s in (("_d1_retry_cooldown_until", 0.0), ("_ovr_unwind_cd", 600.0)):
+                        _cd_m = getattr(self, _cd_attr, None)
+                        if isinstance(_cd_m, dict):
+                            for _k, _v in list(_cd_m.items()):
+                                if float(_v or 0.0) < (last_heartbeat - _ttl_s):
+                                    _cd_m.pop(_k, None)
+                    _pb_m = getattr(self, "_d1_clean_pre_bal_cache", None)
+                    if isinstance(_pb_m, dict):
+                        for _k, _v in list(_pb_m.items()):
+                            if isinstance(_v, tuple) and (last_heartbeat - float(_v[1] or 0.0)) > 3600.0:
+                                _pb_m.pop(_k, None)
+                    _lc = getattr(self.executor, "order_ladder_cache", None)
+                    if _lc is not None and hasattr(_lc, "prune_expired"):
+                        _lc.prune_expired()
+                    import gc as _gc
+                    _gc.collect()
                     active_exp = sum(p.get("notional_usd", 0.0) for p in self.active_positions.values())
                     logger.info(
                         f"[HEARTBEAT] Harvester active | Triggers scanned: {self._triggers_scanned_count} | "
@@ -18103,6 +18140,108 @@ class PolymarketLiveExecutor:
             return False
         return True
 
+    def _can_use_hot_async_bridge(self) -> bool:
+        loop = getattr(self, "_hot_order_async_loop", None)
+        if not self._can_use_native_async_post_order() or loop is None or not loop.is_running():
+            return False
+        try:
+            return asyncio.get_running_loop() is not loop
+        except RuntimeError:
+            return True
+
+    def _serialize_signed_order_payload(
+        self, signed: Any, order_type: Any, post_only: bool = False, defer_exec: bool = True
+    ) -> Dict[str, Any]:
+        if _clob_is_v2_order is not None and _clob_order_to_json_v2 is not None and _clob_order_to_json_v1 is not None:
+            _is_v2_fn, _to_j_v1, _to_j_v2 = _clob_is_v2_order, _clob_order_to_json_v1, _clob_order_to_json_v2
+        else:
+            from py_clob_client_v2.client import _is_v2_order as _is_v2_fn, order_to_json_v1 as _to_j_v1, order_to_json_v2 as _to_j_v2
+        owner = self._fast_l2_api_key
+        return (
+            _to_j_v2(signed, owner, order_type, bool(post_only), bool(defer_exec))
+            if _is_v2_fn(signed)
+            else _to_j_v1(signed, owner, order_type, bool(post_only), bool(defer_exec))
+        )
+
+    async def _exec_hot_async_post(
+        self, endpoint: str, headers: Dict[str, str], body_bytes: bytes, stage: Optional[Dict[str, Any]] = None
+    ) -> Tuple[Any, Optional[str], float]:
+        host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
+        endpoint_url = f"{host}{endpoint}"
+        cli = self.get_hot_order_async_client()
+        t_post_start = time.perf_counter()
+        if stage is not None:
+            stage["submitted"] = True
+            stage["t_post_start"] = t_post_start
+        self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
+        _holding_inflight = True
+        try:
+            try:
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
+                if _holding_inflight:
+                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
+                    _holding_inflight = False
+                await self._retire_hot_async_client(cli)
+                cli = self.get_hot_order_async_client()
+                self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
+                _holding_inflight = True
+                resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
+        except httpx.RequestError as exc:
+            if _holding_inflight:
+                self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
+                _holding_inflight = False
+            await self._retire_hot_async_client(cli)
+            logger.error("[py_clob_client_v2] async request error: %s", exc)
+            if PolyApiException is not None:
+                raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
+            raise
+        finally:
+            if _holding_inflight:
+                self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 0) or 0) - 1)
+        t2 = time.perf_counter()
+        self._hot_order_last_touch_mono = time.monotonic()
+        cf_ray = resp.headers.get("cf-ray") if hasattr(resp, "headers") else None
+        if stage is not None:
+            stage["cf_ray"] = cf_ray
+        if resp.status_code != 200:
+            logger.error("[py_clob_client_v2] request error status=%s url=%s body=%s", resp.status_code, endpoint_url, resp.text)
+            if PolyApiException is not None:
+                raise PolyApiException(resp)
+            raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
+        post_resp = _orjson.loads(resp.content) if _orjson is not None else resp.json()
+        if hasattr(self.client, "_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
+            try:
+                self.client._ClobClient__resolve_version(force_update=True)
+            except Exception:
+                pass
+        return post_resp, cf_ray, t2
+
+    def _encode_fast_l2_request(self, endpoint: str, payload: Any) -> Tuple[Dict[str, str], bytes]:
+        if _orjson is not None:
+            body_bytes = _orjson.dumps(payload)
+            serialized = body_bytes.decode("utf-8")
+        else:
+            serialized = json.dumps(payload, separators=(",", ":"), ensure_ascii=False)
+            body_bytes = serialized.encode("utf-8")
+        ts_val = (
+            int(self.client._get_timestamp())
+            if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
+            else int(time.time())
+        )
+        return self._build_fast_l2_headers("POST", endpoint, serialized, ts_override=ts_val), body_bytes
+
+    def _post_json_hot_async_bridge(self, endpoint: str, payload: Any) -> Any:
+        """Routes worker-thread FOK box / hedge POSTs onto the <3.5s warm uvloop `_hot_order_async_client`."""
+        loop = getattr(self, "_hot_order_async_loop", None)
+        if loop is None or not loop.is_running():
+            raise RuntimeError("Hot async loop not active")
+        headers, body_bytes = self._encode_fast_l2_request(endpoint, payload)
+        out, _, _ = asyncio.run_coroutine_threadsafe(
+            self._exec_hot_async_post(endpoint, headers, body_bytes), loop
+        ).result(timeout=8.5)
+        return out
+
     async def _sign_and_post_async_zero_hop(
         self,
         token_id: str,
@@ -18157,30 +18296,8 @@ class PolymarketLiveExecutor:
                     signed = _safe_create_order(self.client.create_order, order_args, create_options)
                 if signed is None:
                     raise RuntimeError("create_order returned no signed order")
-
-                if _clob_is_v2_order is not None and _clob_order_to_json_v2 is not None and _clob_order_to_json_v1 is not None:
-                    _is_v2_fn, _to_j_v1, _to_j_v2 = _clob_is_v2_order, _clob_order_to_json_v1, _clob_order_to_json_v2
-                else:
-                    from py_clob_client_v2.client import _is_v2_order as _is_v2_fn, order_to_json_v1 as _to_j_v1, order_to_json_v2 as _to_j_v2
-                owner = self._fast_l2_api_key
-                _po = bool(post_only)
-                order_payload = (
-                    _to_j_v2(signed, owner, order_type, _po, True)
-                    if _is_v2_fn(signed)
-                    else _to_j_v1(signed, owner, order_type, _po, True)
-                )
-                if _orjson is not None:
-                    body_bytes = _orjson.dumps(order_payload)
-                    serialized = body_bytes.decode("utf-8")
-                else:
-                    serialized = json.dumps(order_payload, separators=(",", ":"), ensure_ascii=False)
-                    body_bytes = serialized.encode("utf-8")
-                ts_val = (
-                    int(self.client._get_timestamp())
-                    if getattr(self.client, "use_server_time", False) and hasattr(self.client, "_get_timestamp")
-                    else int(time.time())
-                )
-                headers = self._build_fast_l2_headers("POST", "/order", serialized, ts_override=ts_val)
+                order_payload = self._serialize_signed_order_payload(signed, order_type, post_only, True)
+                headers, body_bytes = self._encode_fast_l2_request("/order", order_payload)
             except Exception as exc:
                 raise PreSubmitError(f"Order signing failed before submission: {exc}") from exc
             finally:
@@ -18193,60 +18310,8 @@ class PolymarketLiveExecutor:
             stage["thread_hop_ms"] = 0.0
             stage["cache_hit"] = cache_hit
             stage["signed_shares"] = actual_signed_shares
-
-            host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
-            endpoint_url = f"{host}/order"
-            cli = self.get_hot_order_async_client()
-            stage["submitted"] = True
-            t_post_start = time.perf_counter()
-            stage["t_post_start"] = t_post_start
-            self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
-            _holding_inflight = True
-            try:
-                try:
-                    resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
-                except (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout):
-                    # Pre-wire failure (0 bytes sent): safe single retry on a fresh socket without aborting sibling requests
-                    if _holding_inflight:
-                        self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
-                        _holding_inflight = False
-                    await self._retire_hot_async_client(cli)
-                    cli = self.get_hot_order_async_client()
-                    self._hot_async_inflight = int(getattr(self, "_hot_async_inflight", 0) or 0) + 1
-                    _holding_inflight = True
-                    resp = await cli.post(endpoint_url, headers=headers, content=body_bytes)
-            except httpx.RequestError as exc:
-                if _holding_inflight:
-                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 1) or 1) - 1)
-                    _holding_inflight = False
-                await self._retire_hot_async_client(cli)
-                logger.error("[py_clob_client_v2] async request error: %s", exc)
-                if PolyApiException is not None:
-                    raise PolyApiException(error_msg=f"Request exception: {exc}") from exc
-                raise
-            finally:
-                if _holding_inflight:
-                    self._hot_async_inflight = max(0, int(getattr(self, "_hot_async_inflight", 0) or 0) - 1)
-            t2 = time.perf_counter()
-            self._hot_order_last_touch_mono = time.monotonic()
-            cf_ray = resp.headers.get("cf-ray") if hasattr(resp, "headers") else None
-            stage["cf_ray"] = cf_ray
-
-            if resp.status_code != 200:
-                logger.error(
-                    "[py_clob_client_v2] request error status=%s url=%s body=%s",
-                    resp.status_code, endpoint_url, resp.text,
-                )
-                if PolyApiException is not None:
-                    raise PolyApiException(resp)
-                raise RuntimeError(f"CLOB HTTP {resp.status_code}: {resp.text}")
-
-            post_resp = _orjson.loads(resp.content) if _orjson is not None else resp.json()
-            if hasattr(self.client, "_is_order_version_mismatch") and self.client._is_order_version_mismatch(post_resp):
-                try:
-                    self.client._ClobClient__resolve_version(force_update=True)
-                except Exception:
-                    pass
+            post_resp, cf_ray, t2 = await self._exec_hot_async_post("/order", headers, body_bytes, stage=stage)
+            t_post_start = float(stage.get("t_post_start") or t1)
             return {
                 "post_resp": post_resp or {},
                 "sign_ms": sign_ms,
@@ -22871,14 +22936,23 @@ class PolymarketLiveExecutor:
                     disp_mode = "BATCH_POST_ORDERS_FOK"
                     skew_ms = 0.0
                     try:
-                        batch_resp = self.client.post_orders(
-                            [
-                                PostOrdersV2Args(order=signed_1, orderType=OrderType.FOK, deferExec=True),
-                                PostOrdersV2Args(order=signed_2, orderType=OrderType.FOK, deferExec=True),
-                            ],
-                            post_only=False,
-                            defer_exec=True,
-                        )
+                        if self._can_use_hot_async_bridge():
+                            batch_resp = self._post_json_hot_async_bridge(
+                                "/orders",
+                                [
+                                    self._serialize_signed_order_payload(signed_1, OrderType.FOK, False, True),
+                                    self._serialize_signed_order_payload(signed_2, OrderType.FOK, False, True),
+                                ],
+                            )
+                        else:
+                            batch_resp = self.client.post_orders(
+                                [
+                                    PostOrdersV2Args(order=signed_1, orderType=OrderType.FOK, deferExec=True),
+                                    PostOrdersV2Args(order=signed_2, orderType=OrderType.FOK, deferExec=True),
+                                ],
+                                post_only=False,
+                                defer_exec=True,
+                            )
                         if isinstance(batch_resp, list) and len(batch_resp) == 2:
                             resp_1, exc_1 = batch_resp[0], None
                             resp_2, exc_2 = batch_resp[1], None
@@ -23294,7 +23368,12 @@ class PolymarketLiveExecutor:
             with _UrgentSignPriority():
                 signed_h = _safe_create_order(self.client.create_order, OrderArgsV2(price=px_hdg, size=hedge_gross_sh, side="BUY", token_id=hedge_token_id), opts_h)
             try:
-                resp_2 = self.client.post_order(signed_h, OrderType.FOK, False, True)
+                if self._can_use_hot_async_bridge():
+                    resp_2 = self._post_json_hot_async_bridge(
+                        "/order", self._serialize_signed_order_payload(signed_h, OrderType.FOK, False, True)
+                    )
+                else:
+                    resp_2 = self.client.post_order(signed_h, OrderType.FOK, False, True)
             except TypeError:
                 resp_2 = self.client.post_order(signed_h, OrderType.FOK)
             except Exception as e2:
@@ -27939,10 +28018,18 @@ class L2OrderBook:
 
 
 class PolymarketDualFeed1HRecorder:
-    def __init__(self, asset: str = "BTC", shock_threshold: Optional[float] = None):
+    def __init__(
+        self,
+        asset: str = "BTC",
+        shock_threshold: Optional[float] = None,
+        riskless_bus_only: bool = False,
+    ):
         self.asset = asset.upper()
         if self.asset not in ASSET_CONFIGS:
             raise ValueError(f"Unsupported asset {self.asset}. Must be one of: {list(ASSET_CONFIGS.keys())}")
+        self.riskless_bus_only: bool = bool(
+            riskless_bus_only or os.environ.get("POLYMARKET_RISKLESS_BUS_ONLY") == "1"
+        )
         self.cfg = ASSET_CONFIGS[self.asset]
         self.series_slug = self.cfg["series_slug"]
         self.binance_symbol = self.cfg["binance_symbol"]
@@ -27965,9 +28052,10 @@ class PolymarketDualFeed1HRecorder:
         self.books: Dict[str, L2OrderBook] = {}
 
         # Trade queues: (t_local_ns, exchange_event_ms, exchange_trade_ms, notional, is_buyer, px)
-        self.spot_trades: collections.deque = collections.deque(maxlen=30000)
-        self.futures_trades: collections.deque = collections.deque(maxlen=30000)
-        self.basis_history: collections.deque = collections.deque(maxlen=2000)  # (t_mono_ns, basis_bps)
+        _q_cap = 64 if self.riskless_bus_only else 30000
+        self.spot_trades: collections.deque = collections.deque(maxlen=_q_cap)
+        self.futures_trades: collections.deque = collections.deque(maxlen=_q_cap)
+        self.basis_history: collections.deque = collections.deque(maxlen=128 if self.riskless_bus_only else 2000)  # (t_mono_ns, basis_bps)
 
         # Real-time state
         self.spot_price: float = 0.0
@@ -28041,7 +28129,7 @@ class PolymarketDualFeed1HRecorder:
         self._last_btc_flow_z: float = 0.0
 
         # v3.4 Adaptive session-volume threshold: 1-second dollar-volume buckets (spot + futures)
-        self._vol_buckets: collections.deque = collections.deque(maxlen=ADAPTIVE_THRESH_WINDOW_SEC + 2)  # [sec, usd]
+        self._vol_buckets: collections.deque = collections.deque(maxlen=16 if self.riskless_bus_only else (ADAPTIVE_THRESH_WINDOW_SEC + 2))  # [sec, usd]
         self._vol_first_sec: Optional[int] = None
         self._adaptive_cache: Tuple[float, float] = (0.0, float(self.shock_threshold_usd))  # (computed_at, value)
 
@@ -28368,7 +28456,7 @@ class PolymarketDualFeed1HRecorder:
             logger.debug(f"[FAST TICK] shm write notice: {e}")
             return False
         # Low-frequency (1s) read-only EXP-306 boundary/merge evaluation piggybacks on the tick bus
-        if now - self._last_exp306_eval >= 1.0:
+        if not self.riskless_bus_only and now - self._last_exp306_eval >= 1.0:
             self._last_exp306_eval = now
             self._run_exp306_realtime_eval(snap)
         return True
@@ -29012,12 +29100,12 @@ class PolymarketDualFeed1HRecorder:
                             self.spot_price_ts = now_s
                             self._update_rolling_sigma(px)
                             self.update_basis()
-                            self.spot_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
-
-                            if idx == n_frames - 1 or notional >= big_frame_usd:
-                                self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="SPOT")
-                            else:
-                                self._record_volume(notional, now_s)
+                            if not self.riskless_bus_only:
+                                self.spot_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
+                                if idx == n_frames - 1 or notional >= big_frame_usd:
+                                    self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="SPOT")
+                                else:
+                                    self._record_volume(notional, now_s)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
                         if (burst_frames & 31) == 0:
@@ -29067,12 +29155,12 @@ class PolymarketDualFeed1HRecorder:
                                         while self.coinbase_history and now_f - self.coinbase_history[0][0] > 30.0:
                                             self.coinbase_history.popleft()
                             self.update_basis()
-                            self.futures_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
-
-                            if idx == n_frames - 1 or notional >= big_frame_usd:
-                                self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="FUTURES")
-                            else:
-                                self._record_volume(notional, now_f)
+                            if not self.riskless_bus_only:
+                                self.futures_trades.append((recv_mono_ns, e_ts, t_ts, notional, is_buyer, px))
+                                if idx == n_frames - 1 or notional >= big_frame_usd:
+                                    self.evaluate_shock(recv_mono_ns, t_ts or e_ts, source="FUTURES")
+                                else:
+                                    self._record_volume(notional, now_f)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
                         if (burst_frames & 31) == 0:
@@ -30000,7 +30088,7 @@ class PolymarketDualFeed1HRecorder:
 
     def _maybe_emit_boundary_lock_trigger(self) -> None:
         """Rank #4: Emits a BOUNDARY_LOCK trigger when TTE in [12s, 75s], |z_strike| >= 3.0, and discounted retail asks (<=0.94) offer >=2.5c net edge."""
-        if self.spot_price <= 0:
+        if self.riskless_bus_only or self.spot_price <= 0:
             return
         now_sec = time.time()
         if now_sec - getattr(self, "_last_boundary_check_ts", 0.0) < 0.25:
@@ -30246,14 +30334,10 @@ class PolymarketDualFeed1HRecorder:
                             open_px = self.spot_price
                             self._open_1h_provisional = True
                         self.finalized_1h_open = open_px
-                        logger.info(f"\n==============================================================================="
-                                    f"\n[ACTIVE 1H PRODUCT LOADED: {self.asset}] {market['title']}"
-                                    f"\n  Market ID: {market['market_id']} | End: {market['end_date_iso']}"
-                                    f"\n  UP Token: {market['tokens']['UP']}"
-                                    f"\n  DOWN Token: {market['tokens']['DOWN']}"
-                                    f"\n  Binance Spot 1H Finalized Open: ${self.finalized_1h_open:,.2f}"
-                                    f"\n  Fee Rate: {self.fee_rate_market * 100:.1f}% ({self.fee_source})"
-                                    f"\n===============================================================================\n")
+                        logger.info(
+                            f"[ACTIVE 1H LOADED: {self.asset}] {market['title']} (ID={market['market_id']}, End={market['end_date_iso']}, "
+                            f"UP={market['tokens']['UP']}, DOWN={market['tokens']['DOWN']}, Open=${self.finalized_1h_open:,.2f}, Fee={self.fee_rate_market*100:.1f}%)"
+                        )
                     elif self.current_market is not None:
                         logger.info(
                             f"[*] [{self.asset}] 1H market {self.current_market.get('market_id')} expired and no active 1H "
@@ -30354,7 +30438,7 @@ class PolymarketDualFeed1HRecorder:
                         down_metrics["best_ask"],
                     )
                     prev_1h = self._last_telem_bbo_by_hz.get("1h")
-                    if (
+                    if not self.riskless_bus_only and (
                         prev_1h is None
                         or prev_1h[1] != bbo_1h
                         or secs_left <= 900.0
@@ -30396,11 +30480,11 @@ class PolymarketDualFeed1HRecorder:
 
                 cb_now = self.get_coinbase_spot(now_ts_u)
                 cl_now = self.get_chainlink_proxy_spot(now_ts_u)
-                for hz, attr_n, up_k, dn_k, out_f in (
+                for hz, attr_n, up_k, dn_k, out_f in (() if self.riskless_bus_only else (
                     ("5m", "market_5m", "UP_5M", "DOWN_5M", self.telemetry_5m_file),
                     ("15m", "market_15m", "UP_15M", "DOWN_15M", self.telemetry_15m_file),
                     ("4h", "market_4h", "UP_4H", "DOWN_4H", self.telemetry_4h_file),
-                ):
+                )):
                     mh = getattr(self, attr_n, None)
                     if mh and up_k in self.books and dn_k in self.books:
                         secs_h = (mh["end_dt"] - now).total_seconds()
@@ -30465,7 +30549,7 @@ class PolymarketDualFeed1HRecorder:
                             )
 
                 # Periodic 60s cross-correlation estimation on flow innovations (offloaded from WS event loop)
-                if time.time() - self.last_cross_corr_ts > 60.0:
+                if not self.riskless_bus_only and time.time() - self.last_cross_corr_ts > 60.0:
                     self.last_cross_corr_ts = time.time()
                     # Snapshot deques on the loop thread (WS coroutines mutate them concurrently)
                     spot_snap = list(self.spot_trades)
@@ -30474,6 +30558,9 @@ class PolymarketDualFeed1HRecorder:
 
                 # Periodic 300s clock synchronization
                 if time.time() - self.last_clock_sync_ts > 300.0:
+                    if self.riskless_bus_only and self.asset == "BTC":
+                        import gc as _gc
+                        _gc.collect()
                     asyncio.create_task(self.calibrate_binance_clock_offset())
 
                 await asyncio.sleep(10.0)
@@ -30482,18 +30569,10 @@ class PolymarketDualFeed1HRecorder:
                 await asyncio.sleep(10.0)
 
     async def run(self):
-        logger.info("===============================================================================")
-        logger.info(f"   ROUTE 3: FUTURES/SPOT -> POLYMARKET 1H RECORDER ({self.asset}) (v2.8)       ")
-        logger.info(f"   Asset: {self.asset} | Binance: {self.binance_symbol} | Shock: ${self.shock_threshold_usd:,.0f} ")
-        logger.info("   Dual Feeds: Binance Spot (Settlement Ref) + Futures (Routed /market)        ")
-        logger.info("   Invariants: OBI/q_micro Reconciled + Invariant Assertions Enforced          ")
-        logger.info("   Quote Ages: Tripartite (Age_book, Age_bid, Age_ask)                         ")
-        logger.info("   Clock Sync: Cristian's Algorithm Calibrated Offset (Tokyo <-> Binance)      ")
-        logger.info("   Econometrics: Strict Causal t0 Anchor + Lead/Lag Innovation Grid            ")
-        logger.info("   Capacity Surface: Fill-Level Fees & Crossing Cost [$1, $5, $20, $50, $100]  ")
-        logger.info("   Resolution Truth: Finalized Binance Spot 1H Candle Open & Close             ")
-        logger.info("   Operational: Read-Only (Does not circumvent geographic restrictions)        ")
-        logger.info("===============================================================================")
+        logger.info(
+            f"[RECORDER v2.8 {self.asset}] {self.binance_symbol} | Shock=${self.shock_threshold_usd:,.0f} | "
+            f"Mode={'RISKLESS_SHM_BUS_ONLY' if self.riskless_bus_only else 'FULL_TELEMETRY'}"
+        )
 
         self._pid_lock_fh = open(self.pid_file, "w")
         if os.name != "nt":
@@ -30531,6 +30610,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--shock-threshold", type=float, default=None, help="Volume shock threshold in USD over 100ms")
     parser.add_argument("--co-assets", type=str, default="", help="Comma-separated co-resident assets sharing this uvloop process")
+    parser.add_argument("--riskless-bus-only", action="store_true", help="Lean /dev/shm fast-tick bus only (no shock/JSONL disk telemetry)")
     args = parser.parse_args()
 
     setup_logging(args.asset)
@@ -30541,8 +30621,10 @@ if __name__ == "__main__":
         except Exception:
             pass
     co_syms = [s.strip().upper() for s in str(args.co_assets or "").split(",") if s.strip() and s.strip().upper() in ASSET_CONFIGS and s.strip().upper() != args.asset]
-    recorders = [PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold)] + [
-        PolymarketDualFeed1HRecorder(asset=sym) for sym in co_syms
+    recorders = [
+        PolymarketDualFeed1HRecorder(asset=args.asset, shock_threshold=args.shock_threshold, riskless_bus_only=args.riskless_bus_only)
+    ] + [
+        PolymarketDualFeed1HRecorder(asset=sym, riskless_bus_only=args.riskless_bus_only) for sym in co_syms
     ]
 
     async def _run_multi_recorders() -> None:
@@ -55066,8 +55148,11 @@ class _LazyWsBooksDict(dict):
 
 
 class Alpha124ShadowDaemon:
-    def __init__(self, single_scan: bool = False):
+    def __init__(self, single_scan: bool = False, riskless_bridge_only: bool = False):
         self.single_scan = single_scan
+        self.riskless_bridge_only: bool = bool(
+            riskless_bridge_only or os.environ.get("PM_RISKLESS_BRIDGE_ONLY") == "1"
+        )
         self.session: Optional[aiohttp.ClientSession] = None
         self.started_at = datetime.now(timezone.utc).isoformat()
 
@@ -55303,6 +55388,86 @@ class Alpha124ShadowDaemon:
         for k in keys:
             self.inflight_keys.discard(k)
 
+    def _evict_stale_caches(self, now_ts: Optional[float] = None) -> Dict[str, int]:
+        """Periodic 300s memory maintenance: evicts expired WS books & TTL caches without touching _grad8 fields."""
+        now = float(now_ts if now_ts is not None else time.time())
+        ev_books = 0
+        ev_caches = 0
+        if self._ws_subscribed_tokens:
+            keep_toks = set(self._ws_subscribed_tokens)
+            for p in (
+                *self.open_positions.values(),
+                *self.pending_maker_orders.values(),
+                *self.pending_maker_anchors.values(),
+                *self.pending_zero_fee_maker_anchors.values(),
+            ):
+                for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
+                    tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
+                    if tv:
+                        keep_toks.add(str(tv))
+            for t_old in [t for t in list(self._ws_raw_levels.keys()) if t not in keep_toks]:
+                self._ws_raw_levels.pop(t_old, None)
+                self._ws_books.pop(t_old, None)
+                self._ws_rest_seeded.discard(t_old)
+                ev_books += 1
+            for t_old in [t for t in list(dict.keys(self._ws_books)) if t not in keep_toks]:
+                self._ws_books.pop(t_old, None)
+                self._ws_rest_seeded.discard(t_old)
+                ev_books += 1
+        for c_map in (
+            self.uma_onchain_cache,
+            self.bond2_onchain_cache,
+            self.nba_boxscore_cache,
+            self.nba_ext_summary_cache,
+            self.nfl_summary_cache,
+            self.pyth_intraday_cache,
+            self.metar_cache,
+            self.taf_cache,
+            self.ensemble_cache,
+            self.barrier_ext_cache,
+        ):
+            for k_c, v_c in list(c_map.items()):
+                if isinstance(v_c, tuple) and len(v_c) >= 1 and (now - float(v_c[0] or 0.0)) > 3600.0:
+                    c_map.pop(k_c, None)
+                    ev_caches += 1
+        for o_map in (self.chainlink_open_cache, self.daily_open_cache):
+            for k_o, v_o in list(o_map.items()):
+                if isinstance(v_o, tuple) and len(v_o) >= 1 and 0.0 < float(v_o[0] or 0.0) < (now - 7200.0):
+                    o_map.pop(k_o, None)
+                    ev_caches += 1
+        for ts_map, max_age in (
+            (self._instant_arb_cooldown_until, 600.0),
+            (self._last_d1_live_emit_ts, 3600.0),
+            (self._strike_fail_backoff_ts, 3600.0),
+            (self._last_w3_slate_chk_ts, 3600.0),
+            (self._last_trade_tape_chk_ts, 3600.0),
+            (self._last_telem_ts_by_key, 3600.0),
+        ):
+            for k_t, ts_v in list(ts_map.items()):
+                if (now - float(ts_v or 0.0)) > max_age:
+                    ts_map.pop(k_t, None)
+                    ev_caches += 1
+        for k_sig in list(self._last_telem_sig_by_key.keys()):
+            if k_sig not in self._last_telem_ts_by_key:
+                self._last_telem_sig_by_key.pop(k_sig, None)
+        if len(self.entered_keys) > 6000:
+            protected = (
+                set(self.open_positions.keys())
+                | set(self.pending_maker_orders.keys())
+                | set(self.pending_maker_anchors.keys())
+                | set(self.pending_zero_fee_maker_anchors.keys())
+                | set(self.inflight_keys)
+            )
+            for p_cl in self.closed_positions[-2500:]:
+                for kf in ("dedupe_key", "position_id", "event_dedupe_key"):
+                    kv = p_cl.get(kf) or (p_cl.get("extra") or {}).get(kf)
+                    if kv:
+                        protected.add(str(kv))
+            self.entered_keys.intersection_update(protected)
+        import gc as _gc
+        _gc.collect()
+        return {"evicted_books": ev_books, "evicted_cache_entries": ev_caches}
+
     def _record_market_telemetry(
         self,
         key: str,
@@ -55312,6 +55477,8 @@ class Alpha124ShadowDaemon:
         sig: Optional[Any] = None,
         unchanged_heartbeat_sec: float = 600.0,
     ) -> None:
+        if getattr(self, "riskless_bridge_only", False):
+            return
         now = float(now_ts if now_ts is not None else time.time())
         last_ts = float(self._last_telem_ts_by_key.get(key) or 0.0)
         if (now - last_ts) < min_interval_sec:
@@ -63330,6 +63497,7 @@ class Alpha124ShadowDaemon:
     async def _run_bg_discovery(self) -> None:
         try:
             await self.discover_all_markets()
+            self._evict_stale_caches()
         except Exception as exc:
             logger.warning(f"Background discovery notice: {exc}")
 
@@ -67092,7 +67260,7 @@ class Alpha124ShadowDaemon:
                     self._bg_discovery_task = asyncio.create_task(self._run_bg_discovery())
 
                 # Reactive drain of any fresh Binance shock triggers before periodic scans
-                fresh_shocks = self.poll_fresh_shock_triggers(now_ts=t0)
+                fresh_shocks = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=t0)
                 if fresh_shocks:
                     shock_opps: List[Dict[str, Any]] = []
                     await self.handle_shock_triggers(fresh_shocks, shock_opps, now_ts=t0)
@@ -67105,8 +67273,10 @@ class Alpha124ShadowDaemon:
                 p1_opps: List[Dict[str, Any]] = []
                 await self.scan_same_oracle_dominance_boxes(dom_opps)
                 await self.scan_exact_twap_locks(twap_opps)
-                await self.scan_s5m_chainlink_sniper(s5m_opps)
-                await self.scan_and_manage_preopen_maker_straddles(p1_opps)
+                if not self.riskless_bridge_only:
+                    await self.scan_s5m_chainlink_sniper(s5m_opps)
+                if not self.riskless_bridge_only or self.pending_preopen_straddles:
+                    await self.scan_and_manage_preopen_maker_straddles(p1_opps)
 
                 if self.single_scan:
                     mid_opps: List[Dict[str, Any]] = []
@@ -67238,7 +67408,7 @@ class Alpha124ShadowDaemon:
                     if _s2_live_active and rem_5m_s <= 65.0 and (now_s - self.last_usd_sample_ts) >= 1.0:
                         self.record_usd_spot_samples(now_s)
                     # Wake immediately (<250ms) if a live Binance shock arrives
-                    shocks_w = self.poll_fresh_shock_triggers(now_ts=now_s)
+                    shocks_w = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=now_s)
                     if shocks_w:
                         prev_mkr_keys = set(self.pending_maker_orders)
                         prev_open_n = len(self.open_positions)
@@ -67290,6 +67460,7 @@ class Alpha124ShadowDaemon:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Polymarket Alpha-124 Shadow Daemon")
     parser.add_argument("--single-scan", action="store_true", help="Run one full scan cycle and exit")
+    parser.add_argument("--riskless-bridge-only", action="store_true", help="Skip quarantined directional shock/sniper scans & disk telemetry")
     args = parser.parse_args()
     if os.name != "nt":
         try:
@@ -67297,7 +67468,7 @@ def main() -> None:
             uvloop.install()
         except Exception:
             pass
-    daemon = Alpha124ShadowDaemon(single_scan=args.single_scan)
+    daemon = Alpha124ShadowDaemon(single_scan=args.single_scan, riskless_bridge_only=args.riskless_bridge_only)
     asyncio.run(daemon.run_forever())
 
 
