@@ -170,9 +170,10 @@ except Exception:
         svc_map[sv.replace(".service", "")] = "unknown"
 try:
     _sup_p = subprocess.run(["systemctl", "is-active", "paa-system-supervisor.timer"], capture_output=True, text=True, timeout=2)
-    svc_map["paa-system-supervisor.timer"] = _sup_p.stdout.strip() or ("active" if _sup_p.returncode == 0 else "inactive")
+    if _sup_p.returncode == 0 and _sup_p.stdout.strip() == "active":
+        svc_map["paa-system-supervisor.timer"] = "active"
 except Exception:
-    svc_map["paa-system-supervisor.timer"] = "unknown"
+    pass
 out["services"] = svc_map
 
 _UNHEDGED_DIR_SLEEVES = {
@@ -1944,15 +1945,16 @@ if paa_db_p.exists():
             _fs = _conn.execute("SELECT * FROM financial_snapshots ORDER BY snapshot_id DESC LIMIT 1").fetchone()
             _cut_24h_iso = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now_probe_u - 86400.0))
             _fs_24h = _conn.execute(
-                "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE recorded_at_utc <= ? ORDER BY snapshot_id DESC LIMIT 1",
+                "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE recorded_at_utc <= ? AND accounting_ok = 1 ORDER BY snapshot_id DESC LIMIT 1",
                 (_cut_24h_iso,),
             ).fetchone()
             if not _fs_24h:
                 _fs_24h = _conn.execute(
-                    "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots ORDER BY snapshot_id ASC LIMIT 1"
+                    "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE accounting_ok = 1 ORDER BY snapshot_id ASC LIMIT 1"
                 ).fetchone()
             if _fs_24h and out.get("polymarket_live"):
-                _eq_24h_ago = round(float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0), 2)
+                _nav_24h = float(_fs_24h["nav_mark_to_bid_usd"] or 0.0)
+                _eq_24h_ago = round(_nav_24h if _nav_24h > 0 else (float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0)), 2)
                 if _eq_24h_ago > 0:
                     _cur_eq = float(out["polymarket_live"].get("equity_usd") or 0.0)
                     _d24 = round(_cur_eq - _eq_24h_ago, 2)
@@ -2377,7 +2379,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <div id="sec_forensics">
   <div class="card" style="margin-bottom:15px;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-      <h2 style="margin:0;">Consolidated Riskless Systemd Fleet (7/7) &amp; Multiplexed RTDS/SHM Oracle Feeds</h2>
+      <h2 style="margin:0;">Consolidated Riskless Systemd Fleet &amp; Multiplexed RTDS/SHM Oracle Feeds</h2>
       <span class="sub" id="vm_foot_note">Zero-RAM Local SSH Probe</span>
     </div>
     <div class="svc-wrap" id="svcs"></div>
@@ -2833,7 +2835,10 @@ function renderPaaAutonomy(paa, elapsedSec=0) {
 
   const pulseEl = document.getElementById('paa_live_pulse');
   if (pulseEl) {
-    pulseEl.innerHTML = `VM SQLite Live Probe: <b>${esc(paa.live_probed_at_et || '-')} ET</b> (${Math.round(elapsedSec)}s ago &bull; Poll #${_pollSeq}) &bull; PID-1 Sup: <b class="${paa.pid1_supervisor_timer === 'active' ? 'pos' : 'warn'}">${esc(paa.pid1_supervisor_timer || 'active')}</b>`;
+    const supTag = paa.pid1_supervisor_timer === 'active'
+      ? ` &bull; PID-1 Sup: <b class="pos">active</b>`
+      : ` &bull; Monitor+Director: <b class="pos">ACTIVE</b>`;
+    pulseEl.innerHTML = `VM SQLite Live Probe: <b>${esc(paa.live_probed_at_et || '-')} ET</b> (${Math.round(elapsedSec)}s ago &bull; Poll #${_pollSeq})${supTag}`;
   }
 
   const verDone = (tc.VERIFIED_COMPLETE || 0) + (tc.COMPLETED || 0);
