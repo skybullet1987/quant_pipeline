@@ -9094,7 +9094,19 @@ class Alpha124ShadowDaemon:
         NBA Full-Game Dominance Boxes (`SP1_NBA_ZERO_FEE_BOX`), and Zero-Fee NegRisk Slates (`NR0`).
         """
         now = time.time()
+        for _st_name, _st_fn in (
+            ("tradfi_sports_nr", self._scan_tradfi_sports_nr_core),
+            ("phase2_macro_uma", self._scan_phase2_macro_counting_gas),
+            ("frontier_v2", self._scan_frontier_v2_sleeves),
+            ("frontier_v3", self._scan_frontier_v3_sleeves),
+            ("frontier_v4", self._scan_frontier_v4_sleeves),
+        ):
+            try:
+                await _st_fn(opps_out, now)
+            except Exception as _st_exc:
+                logger.warning(f"[ALPHA-124] Sub-scanner {_st_name} notice: {_st_exc}")
 
+    async def _scan_tradfi_sports_nr_core(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 1. Refresh Yahoo 1m intraday anchors across active Pyth assets
         active_pyth_assets = sorted(
             {r.asset for r in self.pyth_barrier_rungs.values() if r.end_ts > now + 120}
@@ -10065,13 +10077,6 @@ class Alpha124ShadowDaemon:
                             },
                         )
                         await self.execute_nr2_subset_convert_arb(sp_nrc, na0, nrc_bks, opps_out)
-
-        # 6. Phase-2 Macro LP (`FED1`), Oil-Senate (`COND1`), Counting (`TW1` + `MKR_REWARD`), & AAA Gas (`GAS1`)
-        await self._scan_phase2_macro_counting_gas(opps_out, now)
-        # 7. Riskless Frontier v2 (`SP4-3B`, `SOC1`, `LP1-6B/6C`, `API1`), v3 (`LP2`, `SP4+`, `CAL1`, `LP1_NFL`, `TEN1`, `CL1`), & v4 (`AFF1`, `SOC2`, `NFL_PRP1`, `SUM1`, `CRY_INC1`, `MKR_LOCK1`)
-        await self._scan_frontier_v2_sleeves(opps_out, now)
-        await self._scan_frontier_v3_sleeves(opps_out, now)
-        await self._scan_frontier_v4_sleeves(opps_out, now)
 
     async def _scan_frontier_v2_sleeves(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 7A. `SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK` Sub-Mode 3B: Fee-Exact NBA Player Milestone Polish Middles

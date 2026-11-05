@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-05 11:22:24 UTC
+Generated: 2026-11-05 12:49:31 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -18,45 +18,45 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [09] systemd/polymarket-trader.service (Lines 510 - 540 | 720 B) :: Forward Paper Trader systemd Unit
   [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
   [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,620 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,992 | 902,858 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,993 - 24,847 | 447,726 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,848 - 26,360 | 67,374 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 26,361 - 27,080 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,081 - 30,570 | 188,338 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,571 - 31,149 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,150 - 33,540 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,541 - 33,653 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,654 - 33,770 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,771 - 34,117 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,118 - 34,383 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 34,384 - 34,866 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,867 - 36,344 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,345 - 37,891 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,892 - 39,281 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,282 - 40,406 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,407 - 41,859 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,860 - 42,415 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,416 - 43,139 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,140 - 44,131 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,132 - 44,470 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,471 - 46,227 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,228 - 47,295 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,296 - 48,044 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,045 - 49,766 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,767 - 52,024 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,025 - 54,284 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,285 - 67,314 | 724,510 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 67,315 - 68,175 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 68,176 - 69,398 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 69,399 - 69,477 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,478 - 69,627 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 69,628 - 73,707 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,708 - 75,602 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,603 - 81,330 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,331 - 82,087 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 82,088 - 82,930 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,931 - 83,710 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,711 - 85,510 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,966 | 900,855 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,967 - 24,821 | 447,726 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,822 - 26,335 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 26,336 - 27,055 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,056 - 30,545 | 188,338 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,546 - 31,124 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,125 - 33,515 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,516 - 33,628 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,629 - 33,745 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,746 - 34,092 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,093 - 34,358 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 34,359 - 34,841 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,842 - 36,319 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,320 - 37,866 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,867 - 39,256 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,257 - 40,381 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,382 - 41,834 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,835 - 42,390 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,391 - 43,114 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,115 - 44,106 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,107 - 44,445 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,446 - 46,202 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,203 - 47,270 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,271 - 48,019 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,020 - 49,741 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,742 - 51,999 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,000 - 54,259 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,260 - 67,294 | 724,612 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 67,295 - 68,155 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 68,156 - 69,378 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 69,379 - 69,457 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,458 - 69,607 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 69,608 - 73,687 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,688 - 75,582 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,583 - 81,310 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,311 - 82,067 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 82,068 - 82,910 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,911 - 83,690 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,691 - 85,490 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -4719,6 +4719,11 @@ class PolymarketLiveHarvester:
                 persisted_bal = getattr(self, "_last_persisted_collateral", prev_bal)
                 self._last_known_collateral = float(bal)
                 self._collateral_sync_seq = int(getattr(self, "_collateral_sync_seq", 0) or 0) + 1
+                from src.polymarket_research.riskless_protocol_v2_expansion import (
+                    pending_intents_synced_equity_usd,
+                    sync_pending_intents_on_collateral_refresh,
+                )
+                sync_pending_intents_on_collateral_refresh(self, prev_bal, float(bal))
                 for _p_sync in self.active_positions.values():
                     if isinstance(_p_sync, dict) and not _p_sync.get("exit_cash_estimated", False):
                         _sync_exit_c = max(
@@ -4732,7 +4737,8 @@ class PolymarketLiveHarvester:
                                 _sync_exit_c,
                             )
                 self.executor.set_cached_collateral(float(bal))
-                active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values())
+                _pend_sync_eq = pending_intents_synced_equity_usd(getattr(self, "pending_entry_intents", None))
+                active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values()) + _pend_sync_eq
                 in_flight_unwind_cash = sum(
                     max(
                         float(p.get("confirmed_realized_cash", 0.0) or 0.0),
@@ -4742,7 +4748,7 @@ class PolymarketLiveHarvester:
                     if p.get("status") == "UNRESOLVED_SETTLEMENT"
                 )
                 tot_equity = float(bal) + active_market_equity + in_flight_unwind_cash
-                allow_ratchet = (in_flight_unwind_cash <= 0.0) and (not self._has_unsettled_collateral_overlap(now_ts))
+                allow_ratchet = (in_flight_unwind_cash <= 0.0) and (_pend_sync_eq <= 0.0) and (not self._has_unsettled_collateral_overlap(now_ts))
                 prev_tier_sync = getattr(self, "_current_equity_tier", None) or getattr(self, "current_equity_tier", None)
                 tier_limits = self._update_equity_tier(tot_equity, allow_hwm_ratchet=allow_ratchet)
                 prev_halted = bool(self.risk_controller.halted)
@@ -7231,9 +7237,10 @@ class PolymarketLiveHarvester:
         lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
         with lock:
             now_ts = time.time()
+            from src.polymarket_research.riskless_protocol_v2_expansion import pending_intents_synced_equity_usd
             _ps_st = getattr(self, "pre_split_inventory_state", None) or {}
             _ps_eq = min(float(_ps_st.get("up_rem", 0.0) or 0.0), float(_ps_st.get("dn_rem", 0.0) or 0.0)) if _ps_st.get("active") else 0.0
-            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values()) + _ps_eq
+            active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values()) + _ps_eq + pending_intents_synced_equity_usd(getattr(self, "pending_entry_intents", None))
             tot_equity = (
                 (float(self._last_known_collateral) + active_market_equity)
                 if getattr(self, "_last_known_collateral", None) is not None
@@ -7682,22 +7689,24 @@ class PolymarketLiveHarvester:
                     compute_sll_and_carry_gatling_budget,
                     is_market_busy_for_scaling,
                     open_market_notional_usd,
+                    pending_intents_cash_reserved_usd,
+                    pending_intents_synced_equity_usd,
+                    sync_pending_intents_on_collateral_refresh,
                 )
                 if (m_a and is_market_busy_for_scaling(self, m_a)) or (m_b and is_market_busy_for_scaling(self, m_b)):
                     return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
-                collat = None if (_signaled_d1 > 0 and not self.dry_run) else getattr(self, "_last_known_collateral", None)
+                _prev_c_d1 = getattr(self, "_last_known_collateral", None)
+                collat = None if (_signaled_d1 > 0 and not self.dry_run) else _prev_c_d1
                 if collat is None:
                     try:
                         collat = self.executor.get_collateral_balance()
                         if isinstance(collat, (int, float)) and not isinstance(collat, bool) and math.isfinite(float(collat)) and float(collat) >= 0.0:
                             self._last_known_collateral = float(collat)
+                            sync_pending_intents_on_collateral_refresh(self, _prev_c_d1, float(collat))
                     except Exception:
                         collat = None
-                inflight_intent_usd = sum(
-                    float(i.get("notional_usd", 0.0) or 0.0)
-                    for i in getattr(self, "pending_entry_intents", {}).values()
-                    if isinstance(i, dict)
-                )
+                _pend_d1 = getattr(self, "pending_entry_intents", None)
+                inflight_intent_usd = pending_intents_cash_reserved_usd(_pend_d1)
                 collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
                 rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
                 early_exp_ts = min(
@@ -7742,7 +7751,7 @@ class PolymarketLiveHarvester:
                     float(p.get("notional_usd", 0.0) or 0.0)
                     for p in self.active_positions.values()
                     if not position_is_settlement_receivable(p)
-                ) + inflight_intent_usd
+                ) + inflight_intent_usd + pending_intents_synced_equity_usd(_pend_d1)
                 if self._is_v5_unleashed_active():
                     _tot_eq_box = collat_f + cur_open_exp
                     _v5_box_prof = get_unleashed_v5_tier_profile(_tot_eq_box)
@@ -8237,7 +8246,10 @@ class PolymarketLiveHarvester:
             compute_sll_and_carry_gatling_budget,
             is_market_busy_for_scaling,
             open_market_notional_usd,
+            pending_intents_cash_reserved_usd,
+            pending_intents_synced_equity_usd,
             resolve_harvester_sll_tick_size,
+            sync_pending_intents_on_collateral_refresh,
         )
         _disp_1l = check_sll_cand_dispute_guard(cand)
         if _disp_1l:
@@ -8271,16 +8283,21 @@ class PolymarketLiveHarvester:
         fe_a = float(cand.get("leg_a_fee_exponent", 1.0) or 1.0)
         max_eff = float(cand.get("max_box_cost_net", 0.995) or 0.995)
         max_opp = float(cand.get("max_opp_bid", 0.025) or 0.025)
-        collat = None if (_signaled_1l > 0 and not self.dry_run) else getattr(self, "_last_known_collateral", None)
+        _prev_c_1l = getattr(self, "_last_known_collateral", None)
+        collat = None if (_signaled_1l > 0 and not self.dry_run) else _prev_c_1l
         if collat is None and not self.dry_run:
             try:
                 collat = self.executor.get_collateral_balance()
                 if isinstance(collat, (int, float)) and not isinstance(collat, bool) and math.isfinite(float(collat)) and float(collat) >= 0.0:
                     self._last_known_collateral = float(collat)
+                    sync_pending_intents_on_collateral_refresh(self, _prev_c_1l, float(collat))
             except Exception:
                 collat = None
-        collat_f = float(collat if collat is not None else (200.0 if self.dry_run else 0.0))
-        cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p))
+        _pend_1l = getattr(self, "pending_entry_intents", None)
+        _inf_1l_u = 0.0 if self.dry_run else pending_intents_cash_reserved_usd(_pend_1l)
+        _sync_1l_u = 0.0 if self.dry_run else pending_intents_synced_equity_usd(_pend_1l)
+        collat_f = max(0.0, float(collat if collat is not None else (200.0 if self.dry_run else 0.0)) - _inf_1l_u)
+        cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p)) + _inf_1l_u + _sync_1l_u
         if self._is_v5_unleashed_active():
             _v5_1l = get_unleashed_v5_tier_profile(collat_f + cur_exp)
             _b1_pct = float(_v5_1l["bond1_free_cash_pct"])
@@ -8302,11 +8319,8 @@ class PolymarketLiveHarvester:
                         if not position_is_settlement_receivable(p)
                         and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}
                     )
-                    + sum(
-                        float(i.get("notional_usd", 0.0) or 0.0)
-                        for i in getattr(self, "pending_entry_intents", {}).values()
-                        if isinstance(i, dict) and i.get("live_maker_anchor_inflight")
-                    )
+                    + pending_intents_cash_reserved_usd(_pend_1l, only_maker_anchor=True)
+                    + _sync_1l_u
                 )
                 sll_pool_rem_1l = max(0.0, (collat_f + sll_used_1l) * _b1_pct - sll_used_1l)
                 mkt_cap_1l = float(_rcfg.get("bond1_per_market_cap_usd") or _v5_1l.get("bond1_per_market_cap_usd", 25.0))
@@ -8941,24 +8955,32 @@ class PolymarketLiveHarvester:
             if (max_conc_mkr >= 2 and len(active_mkr_box_ids) >= (max_conc_mkr - 1)) or (not own_mkr_grad and len(long_tte_mkr_ids) >= 1):
                 return {"executed": False, "reason": "INTRADAY_D1_SLOT_RESERVED"}
 
+        from src.polymarket_research.riskless_protocol_v2_expansion import (
+            pending_intents_cash_reserved_usd,
+            pending_intents_synced_equity_usd,
+            sync_pending_intents_on_collateral_refresh,
+        )
         _repost_n_in = int(candidate_box.get("_bond1_repost_count") or 0)
         collat = getattr(self, "_last_known_collateral", None)
         if not self.dry_run and (collat is None or _repost_n_in > 0) and hasattr(self.executor, "get_collateral_balance"):
+            _prev_c_ma = collat
             try:
                 _fresh_c = await asyncio.to_thread(self.executor.get_collateral_balance)
                 if isinstance(_fresh_c, (int, float)) and not isinstance(_fresh_c, bool) and math.isfinite(float(_fresh_c)) and float(_fresh_c) >= 0.0:
                     collat = float(_fresh_c)
                     self._last_known_collateral = collat
+                    sync_pending_intents_on_collateral_refresh(self, _prev_c_ma, collat)
             except Exception:
                 if collat is None:
                     collat = 0.0
-        inflight_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
+        _pend_ma = getattr(self, "pending_entry_intents", None)
+        inflight_u = pending_intents_cash_reserved_usd(_pend_ma)
         collat_f = 100.0 if self.dry_run else max(0.0, float(collat or 0.0) - inflight_u)
         cur_open_mkr = sum(
             float(p.get("notional_usd", 0.0) or 0.0)
             for p in self.active_positions.values()
             if not position_is_settlement_receivable(p)
-        ) + inflight_u
+        ) + inflight_u + pending_intents_synced_equity_usd(_pend_ma)
         port_headroom_mkr = 100.0 if self.dry_run else max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_open_mkr)
         asset_cap = {"BTC": 18.0, "ETH": 18.0, "SOL": 16.5, "XRP": 16.5, "BNB": 15.0, "DOGE": 15.0, "HYPE": 15.0, "NBA": 18.0}.get(cand_asset, 16.5)
         if cand_asset in exp_d1 and not own_asset_grad_m:
@@ -9227,18 +9249,22 @@ class PolymarketLiveHarvester:
             check_s2_live_adverse_move_cancel,
             check_sll_cand_dispute_guard,
             compute_d1_per_market_notional_cap,
-            compute_sll_and_carry_gatling_budget,
+            compute_sll_entry_budget,
             compute_sll_maker_keep_and_renew,
+            debit_sll_collateral_after_fill,
             eval_sll_fresh_book_and_peg,
             eval_sll_live_book_poll,
             extract_top_bid_from_book,
             is_d1_dedupe_blocked,
             is_market_busy_for_scaling,
             maybe_preempt_mlk1_if_bond1_starved,
-            open_market_notional_usd,
+            release_sll_pending_intent,
             resolve_harvester_sll_tick_size,
             select_sll_velocity_preempt_target,
+            sll_repost_expiry_and_ok,
             sll_settlement_lag_floor_hours,
+            sync_pending_intents_on_collateral_refresh,
+            update_sll_intent_partial_fill,
         )
         _disp_mkr = check_sll_cand_dispute_guard(candidate_box)
         if _disp_mkr:
@@ -9340,11 +9366,13 @@ class PolymarketLiveHarvester:
         _repost_n_in = int(candidate_box.get("_bond1_repost_count") or 0)
         collat = getattr(self, "_last_known_collateral", None)
         if not self.dry_run and (collat is None or _repost_n_in > 0) and hasattr(self.executor, "get_collateral_balance"):
+            _prev_c_sll = collat
             try:
                 _fresh_c = await asyncio.to_thread(self.executor.get_collateral_balance)
                 if isinstance(_fresh_c, (int, float)) and not isinstance(_fresh_c, bool) and math.isfinite(float(_fresh_c)) and float(_fresh_c) >= 0.0:
                     collat = float(_fresh_c)
                     self._last_known_collateral = collat
+                    sync_pending_intents_on_collateral_refresh(self, _prev_c_sll, collat)
             except Exception:
                 if collat is None:
                     collat = 0.0
@@ -9366,81 +9394,9 @@ class PolymarketLiveHarvester:
         )
         _b1_q_cap = float(_rcfg_sll.get("bond1_max_join_queue_usd", _b1_gov.get("bond1_max_join_queue_usd", 350.0)) or 350.0)
         _b1_buried_s = float(_rcfg_sll.get("bond1_buried_cancel_sec", _b1_gov.get("bond1_buried_cancel_sec", 15.0)) or 15.0)
-        inflight_u = (
-            sum(float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
-            + sum(float(v or 0.0) for v in _prepost_res.values())
+        budget, _open_mid_u, _ = compute_sll_entry_budget(
+            self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts
         )
-        collat_f = 100.0 if self.dry_run else max(0.0, float(collat or 0.0) - inflight_u)
-        cur_open_u = sum(
-            float(p.get("notional_usd", 0.0) or 0.0)
-            for p in self.active_positions.values()
-            if not position_is_settlement_receivable(p)
-        ) + inflight_u
-        if self._is_v5_unleashed_active():
-            _tot_eq_sll = collat_f + cur_open_u
-            _v5_sll = get_unleashed_v5_tier_profile(_tot_eq_sll)
-            _sll_pct = float(_v5_sll["bond1_free_cash_pct"])
-            _min_dir_eq_sll = float(_gsn_s.get("directional", {}).get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
-            _zf_focus_sll = bool(
-                _enforce_b1_v53
-                and (bool(_gsn_s.get("directional", {}).get("riskless_only_mode", False)) or (_min_dir_eq_sll > 0.0 and _tot_eq_sll < _min_dir_eq_sll))
-            )
-            if _zf_focus_sll:
-                _sll_pct = max(_sll_pct, float(_b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
-            port_headroom_u = max(0.0, max(float(self.max_exposure), _tot_eq_sll * 0.96) - cur_open_u)
-            lot_cap_sll = max(75.0, round(collat_f * _sll_pct, 2)) if own_mkr_grad else float(_v5_sll["bridged_zero_fee_cap_usd"])
-            if _enforce_b1_v53:
-                sll_used_u = (
-                    sum(
-                        float(p.get("notional_usd", 0.0) or 0.0)
-                        for p in self.active_positions.values()
-                        if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}
-                    )
-                    + sum(
-                        float(i.get("notional_usd", 0.0) or 0.0)
-                        for i in getattr(self, "pending_entry_intents", {}).values()
-                        if isinstance(i, dict) and i.get("live_maker_anchor_inflight")
-                    )
-                    + sum(float(v or 0.0) for v in _prepost_res.values())
-                )
-                sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
-                mkt_cap_u = float(
-                    _rcfg_sll.get("bond1_per_market_cap_usd")
-                    or _v5_sll.get("bond1_maker_per_market_cap_usd", _v5_sll.get("bond1_per_market_cap_usd", 25.0))
-                )
-                if _zf_focus_sll and not _rcfg_sll.get("bond1_per_market_cap_usd"):
-                    mkt_cap_u = min(float(_b1_gov.get("bond1_per_market_cap_usd_seed", 45.0)), max(mkt_cap_u, round((collat_f + sll_used_u) * 0.46, 2)))
-                budget = min(
-                    lot_cap_sll,
-                    mkt_cap_u,
-                    sll_pool_rem,
-                    max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
-                    port_headroom_u,
-                )
-                budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
-            else:
-                budget = min(
-                    lot_cap_sll,
-                    max(0.0, collat_f - float(_v5_sll["box_collateral_reserve_usd"])),
-                    collat_f * _sll_pct,
-                    port_headroom_u,
-                )
-        else:
-            port_headroom_u = 100.0 if self.dry_run else max(0.0, max(float(self.max_exposure), collat_f * 0.55) - cur_open_u)
-            lot_cap_sll = 24.0 if own_mkr_grad else 16.50
-            budget = min(
-                lot_cap_sll,
-                max(0.0, collat_f - float(_rcfg_sll.get("d1_box_collateral_reserve_usd", 16.50))),
-                collat_f * 0.25,
-                port_headroom_u,
-            )
-        _open_mid_u = open_market_notional_usd(self, [mid_a])
-        if _open_mid_u > 0.0:
-            budget = min(budget, max(0.0, compute_d1_per_market_notional_cap(self) - _open_mid_u))
-        if _is_mlk1 and not self.dry_run:
-            budget = min(budget, 22.0, round((collat_f + cur_open_u) * 0.32, 2))
-        if _is_rw_carry and not self.dry_run:
-            budget = min(budget, float(_b1_gov.get("reward_harvester_cap_usd_seed", 12.0) or 12.0))
         min_rb = float(candidate_box.get("min_resting_bid", 0.940) or 0.940)
         max_rb = min(0.998, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
         max_opp = float(candidate_box.get("max_opp_bid", 0.008) or 0.008)
@@ -9482,19 +9438,9 @@ class PolymarketLiveHarvester:
                             break
                 finally:
                     _claimed_pe.discard(_slow_k)
-                inflight_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict)) + sum(float(v or 0.0) for v in _prepost_res.values())
-                collat_f = max(0.0, float(collat or 0.0) - inflight_u)
-                sll_used_u = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p) and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}) + sum(float(i.get("notional_usd", 0.0) or 0.0) for i in self.pending_entry_intents.values() if isinstance(i, dict) and i.get("live_maker_anchor_inflight")) + sum(float(v or 0.0) for v in _prepost_res.values())
-                sll_pool_rem = max(0.0, (collat_f + sll_used_u) * _sll_pct - sll_used_u)
-                budget = min(lot_cap_sll, mkt_cap_u if _enforce_b1_v53 else lot_cap_sll, sll_pool_rem if _enforce_b1_v53 else collat_f * _sll_pct, collat_f)
-                if _enforce_b1_v53:
-                    budget = compute_sll_and_carry_gatling_budget(self, budget, collat_f, sll_used_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, _b1_gov, rem_tte_sec=exp_ts - now_ts, now_ts=now_ts)
-                if _open_mid_u > 0.0:
-                    budget = min(budget, max(0.0, compute_d1_per_market_notional_cap(self) - _open_mid_u))
-                if _is_mlk1:
-                    budget = min(budget, 22.0, round((collat_f + sll_used_u) * 0.32, 2))
-                if _is_rw_carry:
-                    budget = min(budget, float(_b1_gov.get("reward_harvester_cap_usd_seed", 12.0) or 12.0))
+                budget, _open_mid_u, _ = compute_sll_entry_budget(
+                    self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts, post_vel_preempt=True
+                )
                 sh_int = int(math.floor(budget / anc_bid_px))
         if sh_int < min_lot_shares:
             return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
@@ -9606,20 +9552,30 @@ class PolymarketLiveHarvester:
             posted_px = float(post_res.get("price") or anc_bid_px)
             posted_sh = float(post_res.get("shares") or sh_int)
             if intent_id in self.pending_entry_intents:
-                self.pending_entry_intents[intent_id]["entry_order_id"] = maker_oid
-                self.pending_entry_intents[intent_id]["anchor_bid_px"] = posted_px
-                self.pending_entry_intents[intent_id]["notional_usd"] = round(posted_sh * posted_px, 4)
-                self.pending_entry_intents[intent_id]["velocity_bps_hr"] = round(((1.0 - posted_px) * 10000.0) / max(uma_floor_h, (exp_ts - time.time()) / 3600.0), 2) if exp_ts > time.time() else 0.0
-                self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
+                _it_p = self.pending_entry_intents[intent_id]
+                _now_p = time.time()
+                _it_p["entry_order_id"] = maker_oid
+                _it_p["anchor_bid_px"] = posted_px
+                _it_p["posted_shares"] = posted_sh
+                _it_p["posted_notional_usd"] = round(posted_sh * posted_px, 4)
+                _it_p["notional_usd"] = round(posted_sh * posted_px, 4)
+                _it_p["matched_notional_usd"] = 0.0
+                _it_p["collat_drop_usd"] = 0.0
+                _it_p["velocity_bps_hr"] = round(((1.0 - posted_px) * 10000.0) / max(uma_floor_h, (exp_ts - _now_p) / 3600.0), 2) if exp_ts > _now_p else 0.0
+                _it_p["heartbeat_ts"] = _now_p
+                _it_p["_last_persist_ts"] = _now_p
                 if not self.dry_run:
                     self.save_state()
 
+            _saved_intent: Optional[Dict[str, Any]] = None
             if self.dry_run:
                 matched_sh, avg_px = posted_sh, posted_px
                 summary = {"matched": matched_sh, "avg_price": avg_px, "cash": round(matched_sh * avg_px, 4), "fee": 0.0, "terminal": True}
+                _saved_intent = release_sll_pending_intent(self.pending_entry_intents, intent_id, round(matched_sh * avg_px, 4))
             else:
                 uws = getattr(self.executor, "_user_ws_cache", None)
                 first_post_ts = float(candidate_box.get("_bond1_first_post_ts") or time.time())
+                _fp_el = max(0.0, time.time() - first_post_ts) if "_bond1_first_post_ts" in candidate_box else 0.0
                 _b1_poll_s = 0.35 if _is_s2_mkr else (float(_rcfg_sll.get("bond1_book_poll_sec", 4.0) or 4.0))
                 t_sll_0 = time.monotonic()
                 full_max_keep_s, deadline, _ = compute_sll_maker_keep_and_renew(
@@ -9629,7 +9585,7 @@ class PolymarketLiveHarvester:
                     now_ts=time.time(),
                     created_mono=t_sll_0,
                     rcfg=_rcfg_sll,
-                    first_post_elapsed_s=max(0.0, time.time() - first_post_ts) if "_bond1_first_post_ts" in candidate_box else 0.0,
+                    first_post_elapsed_s=_fp_el,
                 )
                 last_opp_chk = t_sll_0
                 last_fill_poll = t_sll_0
@@ -9645,6 +9601,7 @@ class PolymarketLiveHarvester:
                         _, _, _near_exp = compute_sll_maker_keep_and_renew(
                             sleeve_src, uws_ok=_uws_live_ok, exp_ts=exp_ts, now_ts=time.time(),
                             created_mono=t_sll_0, deadline_mono=deadline, rcfg=_rcfg_sll,
+                            first_post_elapsed_s=_fp_el,
                         )
                         if (
                             preempt_ev.is_set()
@@ -9658,7 +9615,12 @@ class PolymarketLiveHarvester:
                             logger.warning(f"[S2 TWAP SIGMA VETO] {box_id}: SHM cushion < 2.5 sigma; canceling {maker_oid} immediately.")
                             break
                         if intent_id in self.pending_entry_intents:
-                            self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
+                            _hb_now = time.time()
+                            _it_hb = self.pending_entry_intents[intent_id]
+                            _it_hb["heartbeat_ts"] = _hb_now
+                            if not self.dry_run and (_hb_now - float(_it_hb.get("_last_persist_ts", 0.0) or 0.0)) >= 30.0:
+                                _it_hb["_last_persist_ts"] = _hb_now
+                                self.save_state()
                         rem_w = max(0.05, min(0.10, deadline - time.monotonic()))
                         if _uws_live_ok:
                             await uws.wait_for_fill_or_timeout(rem_w, prev_seq=uws.fill_sequence)
@@ -9666,7 +9628,8 @@ class PolymarketLiveHarvester:
                             if isinstance(snap_o, dict) and intent_id in self.pending_entry_intents:
                                 _ws_m_c = float(snap_o.get("size_matched") or 0.0)
                                 if _ws_m_c > 0.0:
-                                    self.pending_entry_intents[intent_id]["notional_usd"] = round(max(0.0, float(posted_sh) - _ws_m_c) * float(posted_px), 4)
+                                    if update_sll_intent_partial_fill(self.pending_entry_intents, intent_id, posted_sh, posted_px, _ws_m_c, time.time()) and not self.dry_run:
+                                        self.save_state()
                             if self._ws_snap_fully_filled(snap_o, posted_sh):
                                 ws_filled = True
                                 break
@@ -9710,7 +9673,7 @@ class PolymarketLiveHarvester:
                                     sleeve_src, uws_ok=bool(uws is not None and uws.is_healthy()), exp_ts=exp_ts,
                                     now_ts=time.time(), created_mono=t_sll_0, now_mono=time.monotonic(),
                                     deadline_mono=deadline, posted_px=posted_px, cur_best_bid=last_top_bid_px,
-                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll,
+                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll, first_post_elapsed_s=_fp_el,
                                 )
                         if hasattr(self.executor, "get_order_fill_summary") and (time.monotonic() - last_fill_poll) >= 15.0:
                             last_fill_poll = time.monotonic()
@@ -9721,11 +9684,8 @@ class PolymarketLiveHarvester:
                                 poll_s = None
                             if isinstance(poll_s, dict):
                                 _m_poll = float(poll_s.get("matched") or 0.0)
-                                if intent_id in self.pending_entry_intents:
-                                    self.pending_entry_intents[intent_id]["notional_usd"] = round(max(0.0, float(posted_sh) - _m_poll) * float(posted_px), 4)
-                                    self.pending_entry_intents[intent_id]["heartbeat_ts"] = time.time()
-                                    if not self.dry_run:
-                                        self.save_state()
+                                if update_sll_intent_partial_fill(self.pending_entry_intents, intent_id, posted_sh, posted_px, _m_poll, time.time()) and not self.dry_run:
+                                    self.save_state()
                                 if _m_poll >= posted_sh - 0.01:
                                     ws_filled = True
                                     break
@@ -9735,13 +9695,14 @@ class PolymarketLiveHarvester:
                                     sleeve_src, uws_ok=bool(uws is not None and uws.is_healthy()), exp_ts=exp_ts,
                                     now_ts=time.time(), created_mono=t_sll_0, now_mono=time.monotonic(),
                                     deadline_mono=deadline, posted_px=posted_px, cur_best_bid=last_top_bid_px,
-                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll,
+                                    buried_since_mono=buried_since_mono, rcfg=_rcfg_sll, first_post_elapsed_s=_fp_el,
                                 )
                 except BaseException as _mon_exc:
                     logger.warning(f"[BOND1 MONITOR INTERRUPTED] {box_id}: {_mon_exc}; reconciling/canceling {maker_oid} before releasing intent.")
 
                 cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px, pre_bal_a)
-                self.pending_entry_intents.pop(intent_id, None)
+                _fin_m_u = round(float((summary or {}).get("cash") or (max(0.0, matched_sh) * avg_px)), 4) if matched_sh >= 0.01 else 0.0
+                _saved_intent = release_sll_pending_intent(self.pending_entry_intents, intent_id, _fin_m_u)
                 if not self.dry_run:
                     self.save_state()
                 c_out_s = str((cancel_res or {}).get("outcome") or "")
@@ -9777,20 +9738,26 @@ class PolymarketLiveHarvester:
 
                         async def _repost_outbid_bond1() -> None:
                             await asyncio.sleep(0.20)
+                            _now_rp = time.time()
+                            _ok_rp, _next_exp_rp = sll_repost_expiry_and_ok(
+                                sleeve_src, exp_ts, _now_rp, 120.0,
+                                first_post_ts=first_post_ts, uws_ok=bool(uws is not None and uws.is_healthy()), rcfg=_rcfg_sll,
+                            )
                             if (
-                                getattr(self, "_shutdown_requested", False)
+                                not _ok_rp
+                                or getattr(self, "_shutdown_requested", False)
                                 or self._is_d1_box_halted()
-                                or is_d1_dedupe_blocked(self, dedupe_k, pair_dedupe_k, [mid_a], time.time())
-                                or (exp_ts > 0.0 and (exp_ts - time.time()) < 120.0)
+                                or is_d1_dedupe_blocked(self, dedupe_k, pair_dedupe_k, [mid_a], _now_rp)
                             ):
                                 return
                             self._spawn_live_maker_anchor_box_task(
                                 {
                                     **candidate_box,
+                                    "expiry_ts": _next_exp_rp,
                                     "anchor_bid_px": _rp_px_target,
                                     "box_cost_net": _rp_px_target,
                                     "ws_books": None,
-                                    "ts_unix": time.time(),
+                                    "ts_unix": _now_rp,
                                     "_bond1_repost_count": _repost_n_in + 1,
                                     "_bond1_first_post_ts": first_post_ts,
                                 }
@@ -9823,6 +9790,10 @@ class PolymarketLiveHarvester:
                             "stage_outcome": out_stage,
                             "gate_detail": preempt_why,
                         })
+                    _ok_pe0, _ = sll_repost_expiry_and_ok(
+                        sleeve_src, exp_ts, time.time(), 150.0,
+                        first_post_ts=first_post_ts, uws_ok=bool(uws is not None and uws.is_healthy()), rcfg=_rcfg_sll,
+                    )
                     if (
                         was_preempted
                         and not self.dry_run
@@ -9830,25 +9801,30 @@ class PolymarketLiveHarvester:
                         and preempt_why != "SHUTDOWN"
                         and not preempt_why.startswith("VELOCITY_UPGRADE:")
                         and _repost_n_in < 3
-                        and (full_max_keep_s - (time.time() - first_post_ts)) >= 30.0
-                        and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
+                        and _ok_pe0
                     ):
                         _repost_delay = float(_rcfg_sll.get("bond1_preempt_repost_delay_sec", 6.0) or 6.0)
                         retry_cd[dedupe_k] = time.time() + min(1.0, _repost_delay * 0.5)
 
                         async def _repost_preempted_bond1() -> None:
                             await asyncio.sleep(_repost_delay)
+                            _now_pe = time.time()
+                            _ok_pe1, _next_exp_pe = sll_repost_expiry_and_ok(
+                                sleeve_src, exp_ts, _now_pe, 120.0,
+                                first_post_ts=first_post_ts, uws_ok=bool(uws is not None and uws.is_healthy()), rcfg=_rcfg_sll,
+                            )
                             if (
-                                getattr(self, "_shutdown_requested", False)
+                                not _ok_pe1
+                                or getattr(self, "_shutdown_requested", False)
                                 or self._is_d1_box_halted()
-                                or is_d1_dedupe_blocked(self, dedupe_k, pair_dedupe_k, [mid_a], time.time())
-                                or (exp_ts > 0.0 and (exp_ts - time.time()) < 120.0)
+                                or is_d1_dedupe_blocked(self, dedupe_k, pair_dedupe_k, [mid_a], _now_pe)
                             ):
                                 return
                             self._spawn_live_maker_anchor_box_task(
                                 {
                                     **candidate_box,
-                                    "ts_unix": time.time(),
+                                    "expiry_ts": _next_exp_pe,
+                                    "ts_unix": _now_pe,
                                     "_bond1_repost_count": _repost_n_in + 1,
                                     "_bond1_first_post_ts": first_post_ts,
                                 }
@@ -9911,9 +9887,7 @@ class PolymarketLiveHarvester:
                 _pos_ok["trade_ids"], _pos_ok["transactions_hashes"] = _mkr_tids, _mkr_txs
                 _pos_ok["dedupe_key"], _pos_ok["pair_dedupe_key"] = dedupe_k, pair_dedupe_k
                 self.active_positions[lid] = _pos_ok
-                if getattr(self, "_last_known_collateral", None) is not None:
-                    self._last_known_collateral = max(0.0, float(self._last_known_collateral) - (not_u + fee_u))
-                    self._last_entry_debit_window = (time.time(), float(self._last_known_collateral))
+                debit_sll_collateral_after_fill(self, _saved_intent, not_u + fee_u, time.time())
                 self.executor.invalidate_collateral_cache()
                 self._pending_collateral_refresh = True
                 self.save_state()
@@ -9925,7 +9899,7 @@ class PolymarketLiveHarvester:
         finally:
             _prepost_res.pop(intent_id, None)
             _prepost_mkts.pop(intent_id, None)
-            self.pending_entry_intents.pop(intent_id, None)
+            release_sll_pending_intent(self.pending_entry_intents, intent_id, 0.0)
             inflight_mkr.discard(inflight_key)
             inflight_mkr_types.discard(mkr_type_k)
             inflight_s2_mkr.discard(inflight_key)
@@ -25498,8 +25472,9 @@ class PolymarketUserWsCache:
                     logger.info("[USER-WS] Authenticated CLOB ws/user stream connected.")
                     ping_task = asyncio.create_task(self._user_ping_loop(ws, interval_sec=12.0))
                     try:
+                        rx_to = float(getattr(self, "_rx_timeout_sec", 28.0) or 28.0)
                         while not self._stop_event.is_set():
-                            msg = await ws.recv()
+                            msg = await asyncio.wait_for(ws.recv(), timeout=rx_to)
                             self.process_ws_payload(msg)
                     finally:
                         if ping_task is not None:
@@ -63383,7 +63358,19 @@ class Alpha124ShadowDaemon:
         NBA Full-Game Dominance Boxes (`SP1_NBA_ZERO_FEE_BOX`), and Zero-Fee NegRisk Slates (`NR0`).
         """
         now = time.time()
+        for _st_name, _st_fn in (
+            ("tradfi_sports_nr", self._scan_tradfi_sports_nr_core),
+            ("phase2_macro_uma", self._scan_phase2_macro_counting_gas),
+            ("frontier_v2", self._scan_frontier_v2_sleeves),
+            ("frontier_v3", self._scan_frontier_v3_sleeves),
+            ("frontier_v4", self._scan_frontier_v4_sleeves),
+        ):
+            try:
+                await _st_fn(opps_out, now)
+            except Exception as _st_exc:
+                logger.warning(f"[ALPHA-124] Sub-scanner {_st_name} notice: {_st_exc}")
 
+    async def _scan_tradfi_sports_nr_core(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 1. Refresh Yahoo 1m intraday anchors across active Pyth assets
         active_pyth_assets = sorted(
             {r.asset for r in self.pyth_barrier_rungs.values() if r.end_ts > now + 120}
@@ -64354,13 +64341,6 @@ class Alpha124ShadowDaemon:
                             },
                         )
                         await self.execute_nr2_subset_convert_arb(sp_nrc, na0, nrc_bks, opps_out)
-
-        # 6. Phase-2 Macro LP (`FED1`), Oil-Senate (`COND1`), Counting (`TW1` + `MKR_REWARD`), & AAA Gas (`GAS1`)
-        await self._scan_phase2_macro_counting_gas(opps_out, now)
-        # 7. Riskless Frontier v2 (`SP4-3B`, `SOC1`, `LP1-6B/6C`, `API1`), v3 (`LP2`, `SP4+`, `CAL1`, `LP1_NFL`, `TEN1`, `CL1`), & v4 (`AFF1`, `SOC2`, `NFL_PRP1`, `SUM1`, `CRY_INC1`, `MKR_LOCK1`)
-        await self._scan_frontier_v2_sleeves(opps_out, now)
-        await self._scan_frontier_v3_sleeves(opps_out, now)
-        await self._scan_frontier_v4_sleeves(opps_out, now)
 
     async def _scan_frontier_v2_sleeves(self, opps_out: List[Dict[str, Any]], now: float) -> None:
         # 7A. `SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK` Sub-Mode 3B: Fee-Exact NBA Player Milestone Polish Middles

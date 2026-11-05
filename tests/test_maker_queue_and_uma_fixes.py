@@ -1169,3 +1169,478 @@ def test_live_gatling_mkr_lock1_coexists_with_bond1_without_preempt_churn(tmp_pa
     asyncio.run(_run_coexist())
 
 
+def test_repeg_after_2200s_and_post_liveness_uma_rolling_expiry_repost(tmp_path, monkeypatch):
+    """
+    Regression test for:
+      1. Repeg after `2200s` (`> 1800s` initial slice) gets `max_keep_s == 1800.0` (NOT `0.05s`!)
+         and auto-renews up to `origin_mono + 7200.0`, while after `6800s` it is capped at `400.0s`.
+      2. Post-liveness UMA `BOND1`/`BOND2` whose initial `expiry_ts` has drifted `< 150s` / `< 110s`
+         still repegs in `eval_sll_live_book_poll` and refreshes rolling `"expiry_ts": max(exp_ts, now + 900.0)`
+         on repost so `maybe_execute_graduated_single_leg_maker_lock` never rejects with `STALE_OR_OUTSIDE_TTE_WINDOW`.
+    """
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        eval_sll_live_book_poll,
+        sll_repost_expiry_and_ok,
+    )
+
+    now = time.time()
+    # 1a. Repeg at t=2200s elapsed -> full 1800s slice (5000s remaining out of 7200s), NOT 0.05s!
+    mk_2200, dl_2200, near_2200 = compute_sll_maker_keep_and_renew(
+        "BOND1_UMA_RESOLUTION_CARRY",
+        uws_ok=True,
+        exp_ts=now - 30.0,
+        now_ts=now,
+        created_mono=3000.0,
+        first_post_elapsed_s=2200.0,
+    )
+    assert mk_2200 == pytest.approx(1800.0)
+    assert dl_2200 == pytest.approx(4800.0)
+    assert near_2200 is False
+
+    # 1b. Auto-renewal on the repegged order caps at origin_mono + 7200.0 = (3000.0 - 2200.0) + 7200.0 = 8000.0
+    _, dl_cap, _ = compute_sll_maker_keep_and_renew(
+        "BOND1_UMA_RESOLUTION_CARRY",
+        uws_ok=True,
+        exp_ts=now - 30.0,
+        now_ts=now + 4500.0,
+        created_mono=3000.0,
+        now_mono=7500.0,
+        deadline_mono=7600.0,
+        posted_px=0.994,
+        cur_best_bid=0.994,
+        buried_since_mono=None,
+        first_post_elapsed_s=2200.0,
+    )
+    assert dl_cap == pytest.approx(8000.0)
+
+    # 1c. Repeg at t=6800s elapsed -> bounded by remaining 400s of 7200s cap
+    mk_6800, _, _ = compute_sll_maker_keep_and_renew(
+        "BOND1_UMA_RESOLUTION_CARRY",
+        uws_ok=True,
+        exp_ts=now + 600.0,
+        now_ts=now,
+        created_mono=7000.0,
+        first_post_elapsed_s=6800.0,
+    )
+    assert mk_6800 == pytest.approx(400.0)
+
+    mk_live_cfg, _, _ = compute_sll_maker_keep_and_renew(
+        "BOND1_UMA_RESOLUTION_CARRY",
+        uws_ok=True,
+        exp_ts=now + 600.0,
+        now_ts=now,
+        created_mono=100.0,
+        rcfg=plh.RISK_CONFIG,
+    )
+    assert mk_live_cfg == pytest.approx(1800.0)
+
+    # 2a. Post-liveness UMA poll repegs even when (exp_ts - now) < 150s
+    act_p, rp_px, _, _ = eval_sll_live_book_poll(
+        {"bids": [{"price": "0.001", "size": "50"}], "asks": []},
+        {"bids": [{"price": "0.994", "size": "40"}], "asks": [{"price": "0.999", "size": "80"}]},
+        {"sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "p_model": 1.0, "min_maker_edge": 0.004},
+        0.993,
+        0.940,
+        0.996,
+        0.008,
+        0.001,
+        True,
+        False,
+        0,
+        350.0,
+        15.0,
+        now - 25.0,
+        None,
+    )
+    assert act_p == "REPEG" and rp_px == pytest.approx(0.995)
+
+    ok_rp, next_exp = sll_repost_expiry_and_ok(
+        "BOND1_UMA_RESOLUTION_CARRY",
+        now + 40.0,
+        now,
+        120.0,
+        first_post_ts=now - 2200.0,
+        uws_ok=True,
+        rcfg=plh.RISK_CONFIG,
+    )
+    assert ok_rp is True and next_exp == pytest.approx(now + 900.0)
+    ok_non_uma, _ = sll_repost_expiry_and_ok(
+        "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        now + 40.0,
+        now,
+        120.0,
+        first_post_ts=now - 200.0,
+        uws_ok=True,
+        rcfg=plh.RISK_CONFIG,
+    )
+    assert ok_non_uma is False
+
+    # 2b. End-to-end harvester outbid repeg after 2200s when initial post-liveness exp_ts is down to now + 115s
+    a124_state = tmp_path / "alpha124_shadow_state.json"
+    a124_state.write_text(
+        json.dumps(
+            {
+                "by_sleeve": {
+                    "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 32, "wins": 32, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 140.0},
+                    "BOND1_UMA_RESOLUTION_CARRY": {"closed": 20, "wins": 20, "losses": 0, "win_rate_pct": 100.0, "realized_pnl_t1000_usd": 15.0},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_repeg_2200.json")
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h._startup_reconciled = True
+    h.holistic_v5_live_mode = True
+    h.enforce_bond1_smart_queue = True
+    h.risk_config = dict(h.risk_config or {}, bond1_book_poll_sec=0.05)
+    h.executor.auth_mode = "LIVE"
+    h._last_known_collateral = 75.01
+    h.executor.get_collateral_balance = lambda: 75.01
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+
+    class _HealthyUws:
+        fill_sequence = 0
+
+        def is_healthy(self, max_age_sec=25.0):
+            return True
+
+        async def wait_for_fill_or_timeout(self, timeout_sec, prev_seq=None):
+            await asyncio.sleep(min(timeout_sec, 0.03))
+            return self.fill_sequence
+
+        def get_order_snapshot(self, oid, max_age_sec=5.0):
+            return None
+
+    h.executor._user_ws_cache = _HealthyUws()
+    posted_prices = []
+    call_n = {"bk": 0}
+
+    def _bk_seq(_s, tok):
+        if tok != "tok_rp_w":
+            return {"bids": [{"price": "0.001", "size": "50"}], "asks": []}
+        call_n["bk"] += 1
+        # Initial fresh book has top bid 0.992 -> pegs 0.993; poll sees outbid 0.994 -> repegs 0.995!
+        bid_p = "0.992" if call_n["bk"] == 1 else "0.994"
+        return {"bids": [{"price": bid_p, "size": "40"}], "asks": [{"price": "0.999", "size": "80"}], "minimum_tick_size": "0.001"}
+
+    monkeypatch.setattr(type(h.executor), "get_market_book", _bk_seq)
+    monkeypatch.setattr(
+        type(h.executor),
+        "post_maker_entry_order",
+        lambda _s, token_id, price, notional_usd=0.0, **kw: posted_prices.append(price)
+        or {"success": True, "orderID": f"0xrp_{len(posted_prices)}", "price": price, "shares": 20},
+    )
+    monkeypatch.setattr(
+        type(h.executor),
+        "cancel_order",
+        lambda _s, oid, **kw: {"is_canceled": True, "outcome": "CANCELED", "matched": 0.0},
+    )
+    monkeypatch.setattr(
+        type(h.executor),
+        "get_order_fill_summary",
+        lambda _s, oid, tok: {"terminal": True, "resting": False, "matched": 0.0},
+    )
+
+    spawned_bg = []
+    _orig_spawn = h._spawn_live_maker_anchor_box_task
+
+    def _track_spawn(cbox):
+        ok = _orig_spawn(cbox)
+        for tk in getattr(h, "_maker_anchor_bg_tasks", set()):
+            if tk not in spawned_bg:
+                spawned_bg.append(tk)
+        return ok
+
+    h._spawn_live_maker_anchor_box_task = _track_spawn
+
+    async def _drive_repeg():
+        now_u = time.time()
+        res1 = await h.maybe_execute_graduated_single_leg_maker_lock(
+            {
+                "box_id": "B1_RP_2200",
+                "box_type": "SINGLE_LEG_MAKER_LOCK",
+                "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                "dedupe_key": "DK_RP_2200",
+                "pair_dedupe_key": "PK_RP_2200",
+                "asset": "NBA",
+                "leg_a_market_id": "m_rp_2200",
+                "leg_a_condition_id": "0xrp2200",
+                "leg_a_token_id": "tok_rp_w",
+                "leg_a_opp_token_id": "tok_rp_l",
+                "leg_a_side": "YES",
+                "anchor_bid_px": 0.993,
+                "min_resting_bid": 0.940,
+                "max_box_cost_net": 0.996,
+                "min_maker_edge": 0.004,
+                "max_opp_bid": 0.008,
+                "p_model": 1.0,
+                "expiry_ts": now_u + 115.0,  # < 150s & < 120s -> previously blocked both poll REPEG and _repost_outbid_bond1!
+                "ts_unix": now_u,
+                "_bond1_first_post_ts": now_u - 2200.0,  # > 1800s -> previously self-canceled in 50ms!
+            }
+        )
+        assert res1["reason"] == "BOND1_OUTBID_REPEGGED"
+        for t_rp in list(getattr(h, "_bond1_repost_bg_tasks", set())):
+            await t_rp
+        for _ in range(30):
+            if len(posted_prices) >= 2 or (spawned_bg and all(t.done() for t in spawned_bg)):
+                break
+            await asyncio.sleep(0.03)
+        h._shutdown_requested = True
+        return [await t_bg for t_bg in spawned_bg]
+
+    bg_results = asyncio.run(_drive_repeg())
+    assert len(posted_prices) == 2, f"spawned={len(spawned_bg)}, bg_results={bg_results}"
+    assert posted_prices[0] == pytest.approx(0.993)
+    assert posted_prices[1] == pytest.approx(0.995)
+
+
+def test_long_resting_partial_fill_accounting_no_phantom_drawdown_or_double_debit(tmp_path, monkeypatch):
+    """
+    Verifies exact cash & equity conservation across all 3 phases + race orderings of a partially filled
+    long-resting Maker order (`$75.01` bankroll, `20 sh @ $0.995 = $19.90`, `8 sh = $7.96` partial fill):
+      - Phase A (WS partial fill BEFORE RPC collateral sync): `PAAAccountant` reports `0` `CASH_LEDGER_MISMATCH`
+        and `pending_intents_cash_reserved_usd` reserves the full `$19.90`.
+      - Phase B (`_async_refresh_collateral` mid-rest, both RPC-first and WS-first): `tot_equity` stays `$75.01`
+        (`0` phantom drawdown), `pending_intents_cash_reserved_usd` becomes `$11.94`, and `PAAAccountant` stays green.
+      - Phase C (Terminal exit after mid-rest collateral sync): `_last_known_collateral` stays `$67.05`
+        (NOT double-debited to `$59.09`!).
+    """
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        debit_sll_collateral_after_fill,
+        pending_intents_cash_reserved_usd,
+        pending_intents_synced_equity_usd,
+        release_sll_pending_intent,
+        update_sll_intent_partial_fill,
+    )
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    st_file = tmp_path / "live_harvester_state.json"
+    monkeypatch.setattr(plh, "STATE_FILE", st_file)
+    db = PAATaskDB(tmp_path / "paa_pf.sqlite")
+    cfg = {"monitoring": {"accounting_discrepancy_threshold_usd": 1.50, "accounting_share_tolerance": 0.75}}
+    acct = PAAAccountant(db=db, budget=BudgetManager(db, autonomy_cfg=cfg), data_dir=tmp_path, autonomy_cfg=cfg)
+
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.executor.dry_run = False
+    h.executor.is_authenticated = True
+    h._startup_reconciled = True
+    h._last_known_collateral = 75.01
+    h.peak_equity_hwm = 75.01
+
+    now = time.time()
+    iid = "B1_PF_SYNC_SLL_INTENT"
+    h.pending_entry_intents[iid] = {
+        "trade_id": iid,
+        "entry_order_id": "0xoid_sync",
+        "market_id": "m_sync",
+        "token_id": "tok_sync",
+        "anchor_bid_px": 0.995,
+        "posted_shares": 20.0,
+        "posted_notional_usd": 19.90,
+        "notional_usd": 19.90,
+        "matched_notional_usd": 0.0,
+        "collat_drop_usd": 0.0,
+        "ts": now - 40.0,
+        "heartbeat_ts": now,
+        "_last_persist_ts": now - 40.0,
+        "live_maker_anchor_inflight": True,
+        "inflight_key": "IK_SYNC",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+    }
+
+    # --- Phase A: User-WS reports 8 sh ($7.96) partial fill BEFORE RPC collateral refresh ---
+    assert update_sll_intent_partial_fill(h.pending_entry_intents, iid, 20.0, 0.995, 8.0, now) is True
+    h.save_state()
+    assert pending_intents_cash_reserved_usd(h.pending_entry_intents) == pytest.approx(19.90)
+    assert pending_intents_synced_equity_usd(h.pending_entry_intents) == pytest.approx(0.0)
+    ok_a, disc_a, anom_a = acct.verify_accounting_integrity({"free_cash_pusd": 67.05, "open_positions": []})
+    assert ok_a is True and disc_a == pytest.approx(0.0) and anom_a == []
+
+    # --- Phase B1: RPC collateral refresh runs (`75.01 -> 67.05`) mid-rest ---
+    h.executor.get_collateral_balance = lambda *_a, **_kw: 67.05
+    asyncio.run(h._async_refresh_collateral())
+    assert h._last_known_collateral == pytest.approx(67.05)
+    assert h.pending_entry_intents[iid]["collat_drop_usd"] == pytest.approx(7.96)
+    assert pending_intents_cash_reserved_usd(h.pending_entry_intents) == pytest.approx(11.94)
+    assert pending_intents_synced_equity_usd(h.pending_entry_intents) == pytest.approx(7.96)
+    saved_b1 = json.loads(st_file.read_text(encoding="utf-8"))
+    assert saved_b1["total_account_equity"] == pytest.approx(75.01)
+    assert h.peak_equity_hwm == pytest.approx(75.01)
+    ok_b1, disc_b1, anom_b1 = acct.verify_accounting_integrity({"free_cash_pusd": 67.05, "open_positions": []})
+    assert ok_b1 is True and disc_b1 == pytest.approx(0.0) and anom_b1 == []
+
+    # --- Phase B2: Verify RPC-first race (RPC sees additional 4 sh = $3.98 drop to $63.07 BEFORE WS updates!) ---
+    h.executor.get_collateral_balance = lambda *_a, **_kw: 63.07
+    asyncio.run(h._async_refresh_collateral())
+    assert h._last_known_collateral == pytest.approx(63.07)
+    assert h.pending_entry_intents[iid]["collat_drop_usd"] == pytest.approx(11.94)
+    saved_b2 = json.loads(st_file.read_text(encoding="utf-8"))
+    assert saved_b2["total_account_equity"] == pytest.approx(75.01)  # zero phantom drawdown even on RPC-first race!
+    # Now WS catches up (`12.0 sh` matched = `$11.94`) -> cash reserved stays exact (`$7.96` remaining unfilled)
+    update_sll_intent_partial_fill(h.pending_entry_intents, iid, 20.0, 0.995, 12.0, now + 5.0)
+    assert pending_intents_cash_reserved_usd(h.pending_entry_intents) == pytest.approx(7.96)
+    assert pending_intents_synced_equity_usd(h.pending_entry_intents) == pytest.approx(11.94)
+
+    # --- Phase C: Monitor exits and registers 12 sh ($11.94) partial fill -> ZERO double-debit! ---
+    saved_it = release_sll_pending_intent(h.pending_entry_intents, iid, 11.94)
+    h.active_positions["B1_PF_POS"] = {"trade_id": "B1_PF_POS", "notional_usd": 11.94, "status": "POSITION_CONFIRMED"}
+    debit_sll_collateral_after_fill(h, saved_it, 11.94, now + 6.0)
+    h.save_state()
+    assert h._last_known_collateral == pytest.approx(63.07)  # NOT 63.07 - 11.94 = 51.13!
+    saved_c = json.loads(st_file.read_text(encoding="utf-8"))
+    assert saved_c["total_account_equity"] == pytest.approx(75.01)
+
+
+def test_tradfi_sports_substage_crash_never_starves_uma_bonds_or_mkr_lock1(tmp_path, monkeypatch):
+    """
+    Verifies every sub-stage inside `scan_tradfi_and_sports_markets` is fault-isolated so an exception
+    in `_scan_tradfi_sports_nr_core` or `_scan_phase2_macro_counting_gas_core` can NEVER prevent
+    `scan_uma_resolution_bonds` (`BOND1`/`BOND2`) or `_scan_frontier_v4_sleeves` (`MKR_LOCK1`) from running.
+    """
+    d = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+    ran_stages = []
+
+    async def _boom_core(*_a, **_kw):
+        raise RuntimeError("simulated nr_core crash")
+
+    async def _boom_p2_core(*_a, **_kw):
+        raise AttributeError("simulated phase2_core crash")
+
+    async def _rec(lbl):
+        ran_stages.append(lbl)
+
+    monkeypatch.setattr(d, "_scan_tradfi_sports_nr_core", _boom_core)
+    monkeypatch.setattr(d, "_scan_phase2_macro_counting_gas_core", _boom_p2_core)
+    monkeypatch.setattr(d, "scan_uma_resolution_bonds", lambda *_a, **_kw: _rec("uma_bonds"))
+    monkeypatch.setattr(d, "_scan_frontier_v2_sleeves", lambda *_a, **_kw: _rec("v2"))
+    monkeypatch.setattr(d, "_scan_frontier_v3_sleeves", lambda *_a, **_kw: _rec("v3"))
+    monkeypatch.setattr(d, "_scan_frontier_v4_sleeves", lambda *_a, **_kw: _rec("v4"))
+
+    asyncio.run(d.scan_tradfi_and_sports_markets([]))
+    assert ran_stages == ["uma_bonds", "v2", "v3", "v4"]
+
+
+def test_user_ws_reconnects_on_silent_rx_blackhole(monkeypatch):
+    """
+    Verifies `PolymarketUserWsCache._ws_forever` enforces `asyncio.wait_for(ws.recv(), timeout=_rx_timeout_sec)`
+    so a half-open TCP blackhole that silently drops `"PONG"` frames triggers a clean reconnect.
+    """
+    conn_count = {"n": 0}
+    second_pong = asyncio.Event()
+    u = ws_mod.PolymarketUserWsCache(api_key="k", api_secret="s", api_passphrase="p", ws_url="wss://fake.example/ws/user")
+    u._rx_timeout_sec = 0.05
+    monkeypatch.setattr(
+        u,
+        "_user_ping_loop",
+        lambda ws, interval_sec=12.0: ws_mod.PolymarketUserWsCache._user_ping_loop(u, ws, interval_sec=0.02),
+    )
+
+    class _BlackholeThenGoodWs:
+        def __init__(self, idx: int):
+            self.idx = idx
+            self.sent = []
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_a):
+            return False
+
+        async def send(self, msg: str):
+            self.sent.append(msg)
+
+        async def recv(self) -> str:
+            if self.idx == 1:
+                await asyncio.sleep(10.0)  # blackhole: never replies PONG -> triggers _rx_timeout_sec!
+            while "PING" not in self.sent:
+                await asyncio.sleep(0.005)
+            second_pong.set()
+            await asyncio.sleep(0.05)
+            return "PONG"
+
+    fake_websockets = SimpleNamespace(connect=lambda *_a, **_kw: (conn_count.__setitem__("n", conn_count["n"] + 1) or _BlackholeThenGoodWs(conn_count["n"])))
+    monkeypatch.setitem(sys.modules, "websockets", fake_websockets)
+
+    orig_sleep = asyncio.sleep
+
+    async def _fast_sleep(sec):
+        await orig_sleep(0.02 if sec >= 0.4 and sec <= 1.1 else sec)
+
+    async def _run_bh():
+        monkeypatch.setattr(asyncio, "sleep", _fast_sleep)
+        t = asyncio.create_task(u._ws_forever())
+        await asyncio.wait_for(second_pong.wait(), timeout=2.0)
+        await orig_sleep(0.01)
+        assert u.is_healthy(max_silence_sec=5.0) is True
+        u._stop_event.set()
+        t.cancel()
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(_run_bh())
+    assert conn_count["n"] == 2
+
+
+def test_maybe_preempt_mlk1_honors_prepost_sll_reserved_usd():
+    """Verifies `maybe_preempt_mlk1_if_bond1_starved` subtracts `_prepost_sll_reserved_usd` when recomputing budget."""
+    import threading
+    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_preempt_mlk1_if_bond1_starved
+
+    ev = threading.Event()
+    h = SimpleNamespace(
+        dry_run=False,
+        max_exposure=200.0,
+        active_positions={},
+        pending_entry_intents={
+            "mlk_1": {
+                "live_maker_anchor_inflight": True,
+                "inflight_key": "IK_MLK",
+                "sleeve_source": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+                "notional_usd": 20.0,
+            }
+        },
+        _maker_anchor_preempt_events={"IK_MLK": ev},
+        _prepost_sll_reserved_usd={"other_prepost": 30.0},
+        _is_v5_unleashed_active=lambda: True,
+        enforce_gatling_fast_gun_reserve=False,
+    )
+
+    async def _clear_on_preempt():
+        while not ev.is_set():
+            await asyncio.sleep(0.005)
+        h.pending_entry_intents.clear()
+
+    async def _run():
+        t_c = asyncio.create_task(_clear_on_preempt())
+        new_b = await maybe_preempt_mlk1_if_bond1_starved(
+            h,
+            "BOND1_UMA_RESOLUTION_CARRY",
+            budget=8.0,  # starved (< $12.00) -> triggers preemption of MKR_LOCK1
+            collat=75.0,
+            own_mkr_grad=False,
+            enforce_b1_v53=True,
+            b1_gov={"seed_zero_loss_focus_bond1_pool_pct": 0.92, "bond1_per_market_cap_usd_seed": 45.0},
+            rcfg_sll={},
+            gsn_s={"directional": {"riskless_only_mode": True}},
+            open_mid_u=0.0,
+            rem_tte_sec=1200.0,
+            now_ts=time.time(),
+        )
+        await t_c
+        return new_b
+
+    out_b = asyncio.run(_run())
+    # With $75 collat and $30 _prepost_sll_reserved_usd, collat_f == $45.0 (NOT $75.0!), so reserve-capped budget <= $37.0
+    assert ev.is_set() is True
+    assert 20.0 <= out_b <= 38.0
+
+
+
+

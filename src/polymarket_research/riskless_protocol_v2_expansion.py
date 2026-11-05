@@ -6356,13 +6356,13 @@ async def maybe_preempt_mlk1_if_bond1_starved(
     def _is_recv(p: Mapping[str, Any]) -> bool:
         return str(p.get("status") or "") == "AWAITING_ONCHAIN_SETTLEMENT"
 
-    prepost_res = getattr(harvester, "_maker_prepost_reserved_usd", None) or {}
+    prepost_res = getattr(harvester, "_prepost_sll_reserved_usd", None) or {}
     act_non_recv = sum(
         float(p.get("notional_usd", 0.0) or 0.0)
         for p in getattr(harvester, "active_positions", {}).values()
         if isinstance(p, Mapping) and not _is_recv(p)
     )
-    tot_eq = float(collat or 0.0) + act_non_recv
+    tot_eq = float(collat or 0.0) + act_non_recv + pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
     v5_p = get_unleashed_v5_tier_profile(tot_eq)
     sll_pct = float(v5_p["bond1_free_cash_pct"])
     if enforce_b1_v53:
@@ -6389,13 +6389,11 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         ):
             break
 
-    inflight_u = sum(
-        float(it.get("notional_usd", 0.0) or 0.0)
-        for it in getattr(harvester, "pending_entry_intents", {}).values()
-        if isinstance(it, Mapping)
-    ) + sum(float(v or 0.0) for v in prepost_res.values())
+    inflight_u = pending_intents_cash_reserved_usd(getattr(harvester, "pending_entry_intents", None)) + sum(
+        float(v or 0.0) for v in prepost_res.values()
+    )
     collat_f = max(0.0, float(collat or 0.0) - inflight_u)
-    cur_open_u = act_non_recv + inflight_u
+    cur_open_u = act_non_recv + inflight_u + pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
     tot_eq_sll = collat_f + cur_open_u
     v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
     sll_pct_new = float(v5_sll["bond1_free_cash_pct"])
@@ -6417,11 +6415,8 @@ async def maybe_preempt_mlk1_if_bond1_starved(
                 and not _is_recv(p)
                 and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}
             )
-            + sum(
-                float(it.get("notional_usd", 0.0) or 0.0)
-                for it in getattr(harvester, "pending_entry_intents", {}).values()
-                if isinstance(it, Mapping) and it.get("live_maker_anchor_inflight")
-            )
+            + pending_intents_cash_reserved_usd(getattr(harvester, "pending_entry_intents", None), only_maker_anchor=True)
+            + pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
             + sum(float(v or 0.0) for v in prepost_res.values())
         )
         sll_pool_rem = max(0.0, (collat_f + sll_used_u) * sll_pct_new - sll_used_u)
@@ -6453,6 +6448,347 @@ async def maybe_preempt_mlk1_if_bond1_starved(
     return float(new_b)
 
 
+def pending_intents_cash_reserved_usd(intents: Any, *, only_maker_anchor: bool = False) -> float:
+    if not isinstance(intents, Mapping):
+        return 0.0
+    tot = 0.0
+    for it in intents.values():
+        if not isinstance(it, Mapping):
+            continue
+        if only_maker_anchor and not it.get("live_maker_anchor_inflight"):
+            continue
+        unfilled = max(0.0, float(it.get("notional_usd", 0.0) or 0.0))
+        matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
+        synced = min(matched, max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0)))
+        tot += unfilled + max(0.0, matched - synced)
+    return round(tot, 4)
+
+
+def pending_intents_synced_equity_usd(intents: Any) -> float:
+    if not isinstance(intents, Mapping):
+        return 0.0
+    tot = 0.0
+    for it in intents.values():
+        if not isinstance(it, Mapping) or not it.get("live_maker_anchor_inflight"):
+            continue
+        matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
+        drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+        posted_cap = max(matched, float(it.get("posted_notional_usd", 0.0) or 0.0))
+        # `drop_u` is actual wallet cash already deducted on-chain while resting; clamp to `posted_cap`
+        # so equity stays invariant even during the sub-poll window before `matched_notional_usd` catches up.
+        tot += min(posted_cap, drop_u) if drop_u > 0.0 else 0.0
+    return round(tot, 4)
+
+
+def rebalance_pending_intent_collat_drops(intents: Any) -> None:
+    if not isinstance(intents, Mapping):
+        return
+    mkr_items = [it for it in intents.values() if isinstance(it, dict) and it.get("live_maker_anchor_inflight")]
+    if len(mkr_items) < 2:
+        return
+    surplus = 0.0
+    for it in mkr_items:
+        matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
+        drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+        if drop_u > matched + 1e-6:
+            surplus += drop_u - matched
+            it["collat_drop_usd"] = round(matched, 4)
+    if surplus <= 1e-6:
+        return
+    for it in mkr_items:
+        if surplus <= 1e-6:
+            break
+        matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
+        drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+        need = max(0.0, matched - drop_u)
+        if need > 1e-6:
+            add_u = min(need, surplus)
+            it["collat_drop_usd"] = round(drop_u + add_u, 4)
+            surplus -= add_u
+    if surplus > 1e-6:
+        for it in mkr_items:
+            if surplus <= 1e-6:
+                break
+            drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+            cap_u = max(drop_u, float(it.get("posted_notional_usd", 0.0) or 0.0))
+            room = max(0.0, cap_u - drop_u)
+            if room > 1e-6:
+                add_u = min(room, surplus)
+                it["collat_drop_usd"] = round(drop_u + add_u, 4)
+                surplus -= add_u
+
+
+def sync_pending_intents_on_collateral_refresh(
+    harvester: Any, prev_bal: Optional[float], new_bal: Optional[float]
+) -> bool:
+    intents = getattr(harvester, "pending_entry_intents", None)
+    if not isinstance(intents, Mapping) or not intents:
+        return False
+    # Do not attribute collateral drops to passive maker intents while a fast directional/taker entry is mid-wire.
+    if any(isinstance(v, Mapping) and not v.get("live_maker_anchor_inflight") for v in intents.values()):
+        return False
+    ex = getattr(harvester, "executor", None)
+    uws = getattr(ex, "_user_ws_cache", None) if ex is not None else None
+    if uws is not None and hasattr(uws, "get_order_snapshot"):
+        for it in intents.values():
+            if not isinstance(it, dict) or not it.get("live_maker_anchor_inflight"):
+                continue
+            oid = str(it.get("entry_order_id") or "").strip()
+            p_sh = float(it.get("posted_shares", 0.0) or 0.0)
+            p_px = float(it.get("anchor_bid_px", 0.0) or 0.0)
+            if oid and p_sh > 0.0 and p_px > 0.0:
+                snap = uws.get_order_snapshot(oid, max_age_sec=60.0)
+                if isinstance(snap, Mapping):
+                    m_ws = min(p_sh, max(0.0, float(snap.get("size_matched") or 0.0)))
+                    if m_ws > 0.0:
+                        it["notional_usd"] = round(max(0.0, p_sh - m_ws) * p_px, 4)
+                        it["matched_notional_usd"] = round(m_ws * p_px, 4)
+    if prev_bal is None or new_bal is None:
+        rebalance_pending_intent_collat_drops(intents)
+        return False
+    rem_drop = max(0.0, float(prev_bal) - float(new_bal))
+    changed = False
+    if rem_drop > 1e-6:
+        for it in intents.values():
+            if not isinstance(it, dict) or not it.get("live_maker_anchor_inflight") or rem_drop <= 1e-6:
+                continue
+            matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
+            drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+            need = max(0.0, matched - drop_u)
+            if need > 1e-6:
+                add_u = min(need, rem_drop)
+                it["collat_drop_usd"] = round(drop_u + add_u, 4)
+                rem_drop -= add_u
+                changed = True
+        if rem_drop > 1e-6:
+            for it in intents.values():
+                if not isinstance(it, dict) or not it.get("live_maker_anchor_inflight") or rem_drop <= 1e-6:
+                    continue
+                drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+                cap_u = max(drop_u, float(it.get("posted_notional_usd", 0.0) or 0.0))
+                room = max(0.0, cap_u - drop_u)
+                if room > 1e-6:
+                    add_u = min(room, rem_drop)
+                    it["collat_drop_usd"] = round(drop_u + add_u, 4)
+                    rem_drop -= add_u
+                    changed = True
+    rebalance_pending_intent_collat_drops(intents)
+    return changed
+
+
+def update_sll_intent_partial_fill(
+    intents: Any,
+    intent_id: str,
+    posted_sh: float,
+    posted_px: float,
+    matched_sh: float,
+    now_ts: float,
+    *,
+    heartbeat_persist_sec: float = 30.0,
+) -> bool:
+    if not isinstance(intents, Mapping) or intent_id not in intents:
+        return False
+    it = intents[intent_id]
+    if not isinstance(it, dict):
+        return False
+    m_clamped = min(max(0.0, float(matched_sh or 0.0)), max(0.0, float(posted_sh or 0.0)))
+    unfilled_u = round(max(0.0, float(posted_sh) - m_clamped) * float(posted_px), 4)
+    matched_u = round(m_clamped * float(posted_px), 4)
+    prev_persisted_m = float(it.get("_persisted_matched_usd", 0.0) or 0.0)
+    last_save_ts = float(it.get("_last_persist_ts", it.get("ts", 0.0)) or 0.0)
+    it["notional_usd"] = unfilled_u
+    it["matched_notional_usd"] = matched_u
+    it["heartbeat_ts"] = now_ts
+    rebalance_pending_intent_collat_drops(intents)
+    if abs(matched_u - prev_persisted_m) >= 0.01 or (now_ts - last_save_ts) >= heartbeat_persist_sec:
+        it["_persisted_matched_usd"] = matched_u
+        it["_last_persist_ts"] = now_ts
+        return True
+    return False
+
+
+def release_sll_pending_intent(
+    intents: Any, intent_id: str, final_matched_usd: float = 0.0
+) -> Optional[Dict[str, Any]]:
+    if not isinstance(intents, dict):
+        return None
+    popped = intents.pop(intent_id, None)
+    if not isinstance(popped, dict):
+        return None
+    drop_u = max(0.0, float(popped.get("collat_drop_usd", 0.0) or 0.0))
+    used_drop = min(drop_u, max(0.0, float(final_matched_usd or 0.0)))
+    popped["collat_drop_usd"] = round(used_drop, 4)
+    leftover = max(0.0, drop_u - used_drop)
+    if leftover > 1e-6 and intents:
+        for it in intents.values():
+            if not isinstance(it, dict) or not it.get("live_maker_anchor_inflight") or leftover <= 1e-6:
+                continue
+            cur_d = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
+            cap_u = max(cur_d, float(it.get("posted_notional_usd", 0.0) or 0.0))
+            add_u = min(max(0.0, cap_u - cur_d), leftover)
+            if add_u > 1e-6:
+                it["collat_drop_usd"] = round(cur_d + add_u, 4)
+                leftover -= add_u
+        rebalance_pending_intent_collat_drops(intents)
+    return popped
+
+
+def debit_sll_collateral_after_fill(
+    harvester: Any,
+    saved_intent: Optional[Mapping[str, Any]],
+    total_debit_usd: float,
+    now_ts: float,
+) -> None:
+    cur_c = getattr(harvester, "_last_known_collateral", None)
+    if cur_c is None:
+        return
+    already_debited_u = min(
+        max(0.0, float(total_debit_usd or 0.0)),
+        max(0.0, float((saved_intent or {}).get("collat_drop_usd", 0.0) or 0.0)),
+    )
+    rem_debit = max(0.0, float(total_debit_usd or 0.0) - already_debited_u)
+    harvester._last_known_collateral = max(0.0, float(cur_c) - rem_debit)
+    harvester._last_entry_debit_window = (now_ts, float(harvester._last_known_collateral))
+
+
+def compute_sll_entry_budget(
+    harvester: Any,
+    sleeve_src: str,
+    mid_a: str,
+    collat: Optional[float],
+    own_mkr_grad: bool,
+    enforce_b1_v53: bool,
+    b1_gov: Mapping[str, Any],
+    rcfg_sll: Mapping[str, Any],
+    gsn_s: Mapping[str, Any],
+    rem_tte_sec: float,
+    now_ts: float,
+    *,
+    post_vel_preempt: bool = False,
+) -> Tuple[float, float, float]:
+    """Returns `(budget, open_mid_u, sll_pct)` preserving 100% of v5.3 SLL & Gatling sizing rules."""
+    dry_run = bool(getattr(harvester, "dry_run", True))
+    is_mlk1 = sleeve_src == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
+    is_rw_carry = sleeve_src == "MKR_REWARD_LOCKED_CARRY"
+    prepost_res = getattr(harvester, "_prepost_sll_reserved_usd", None) or {}
+    intents = getattr(harvester, "pending_entry_intents", None)
+    inflight_u = pending_intents_cash_reserved_usd(intents) + sum(float(v or 0.0) for v in prepost_res.values())
+    synced_eq_u = pending_intents_synced_equity_usd(intents)
+    collat_f = 100.0 if dry_run else max(0.0, float(collat or 0.0) - inflight_u)
+
+    def _is_recv(p: Mapping[str, Any]) -> bool:
+        return str(p.get("status") or "") == "AWAITING_ONCHAIN_SETTLEMENT"
+
+    cur_open_u = (
+        sum(
+            float(p.get("notional_usd", 0.0) or 0.0)
+            for p in (getattr(harvester, "active_positions", None) or {}).values()
+            if isinstance(p, Mapping) and not _is_recv(p)
+        )
+        + inflight_u
+        + synced_eq_u
+    )
+    sll_pct = 0.25
+    if bool(harvester._is_v5_unleashed_active()):
+        from src.polymarket_research.holistic_strategy_governance import get_unleashed_v5_tier_profile
+
+        tot_eq_sll = collat_f + cur_open_u
+        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+        sll_pct = float(v5_sll["bond1_free_cash_pct"])
+        min_dir_eq = float((gsn_s.get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd", 0.0) or 0.0)
+        zf_focus = bool(
+            enforce_b1_v53
+            and (bool((gsn_s.get("directional") or {}).get("riskless_only_mode", False)) or (min_dir_eq > 0.0 and tot_eq_sll < min_dir_eq))
+        )
+        if zf_focus:
+            sll_pct = max(sll_pct, float(b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
+        port_headroom_u = max(0.0, max(float(getattr(harvester, "max_exposure", 100.0)), tot_eq_sll * 0.96) - cur_open_u)
+        lot_cap_sll = max(75.0, round(collat_f * sll_pct, 2)) if own_mkr_grad else float(v5_sll["bridged_zero_fee_cap_usd"])
+        if enforce_b1_v53:
+            sll_used_u = (
+                sum(
+                    float(p.get("notional_usd", 0.0) or 0.0)
+                    for p in (getattr(harvester, "active_positions", None) or {}).values()
+                    if isinstance(p, Mapping)
+                    and not _is_recv(p)
+                    and str(p.get("box_type") or "") in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}
+                )
+                + pending_intents_cash_reserved_usd(intents, only_maker_anchor=True)
+                + synced_eq_u
+                + sum(float(v or 0.0) for v in prepost_res.values())
+            )
+            sll_pool_rem = max(0.0, (collat_f + sll_used_u) * sll_pct - sll_used_u)
+            mkt_cap_u = float(
+                rcfg_sll.get("bond1_per_market_cap_usd")
+                or v5_sll.get("bond1_maker_per_market_cap_usd", v5_sll.get("bond1_per_market_cap_usd", 25.0))
+            )
+            if zf_focus and not rcfg_sll.get("bond1_per_market_cap_usd"):
+                mkt_cap_u = min(float(b1_gov.get("bond1_per_market_cap_usd_seed", 45.0)), max(mkt_cap_u, round((collat_f + sll_used_u) * 0.46, 2)))
+            budget = min(
+                lot_cap_sll,
+                mkt_cap_u,
+                sll_pool_rem,
+                collat_f if post_vel_preempt else max(0.0, collat_f - float(v5_sll["box_collateral_reserve_usd"])),
+                collat_f if post_vel_preempt else port_headroom_u,
+            )
+            budget = compute_sll_and_carry_gatling_budget(
+                harvester, budget, collat_f, cur_open_u, "SINGLE_LEG_MAKER_LOCK", sleeve_src, own_mkr_grad, b1_gov, rem_tte_sec=rem_tte_sec, now_ts=now_ts
+            )
+        else:
+            budget = min(
+                lot_cap_sll,
+                collat_f if post_vel_preempt else max(0.0, collat_f - float(v5_sll["box_collateral_reserve_usd"])),
+                collat_f * sll_pct,
+                collat_f if post_vel_preempt else port_headroom_u,
+            )
+    else:
+        port_headroom_u = 100.0 if dry_run else max(0.0, max(float(getattr(harvester, "max_exposure", 100.0)), collat_f * 0.55) - cur_open_u)
+        lot_cap_sll = 24.0 if own_mkr_grad else 16.50
+        budget = min(
+            lot_cap_sll,
+            max(0.0, collat_f - float(rcfg_sll.get("d1_box_collateral_reserve_usd", 16.50))),
+            collat_f * 0.25,
+            port_headroom_u,
+        )
+    open_mid_u = open_market_notional_usd(harvester, [mid_a])
+    if open_mid_u > 0.0:
+        budget = min(budget, max(0.0, compute_d1_per_market_notional_cap(harvester) - open_mid_u))
+    if is_mlk1 and not dry_run:
+        budget = min(budget, 22.0, round((collat_f + cur_open_u) * 0.32, 2))
+    if is_rw_carry and not dry_run:
+        budget = min(budget, float(b1_gov.get("reward_harvester_cap_usd_seed", 12.0) or 12.0))
+    return float(budget), float(open_mid_u), float(sll_pct)
+
+
+def sll_repost_expiry_and_ok(
+    sleeve_src: str,
+    exp_ts: float,
+    now_ts: float,
+    min_rem_sec: float = 120.0,
+    *,
+    first_post_ts: Optional[float] = None,
+    uws_ok: bool = True,
+    rcfg: Optional[Mapping[str, Any]] = None,
+) -> Tuple[bool, float]:
+    sl_u = str(sleeve_src or "").upper()
+    uma_ex = sl_u in UMA_EXEMPT_EXPIRY_SLEEVES
+    exp_f = float(exp_ts or 0.0)
+    if not uma_ex and exp_f > 0.0 and (exp_f - now_ts) < min_rem_sec:
+        return False, exp_f
+    if first_post_ts is not None:
+        cfg = rcfg or {}
+        short_caps = [
+            float(v)
+            for v in (cfg.get("bond1_maker_ttl_sec"), cfg.get("bond1_maker_max_keep_sec"))
+            if v is not None and 0.0 < float(v) < 90.0
+        ]
+        tot_cap = min(short_caps) if short_caps else (7200.0 if uws_ok else 300.0)
+        if (tot_cap - max(0.0, now_ts - float(first_post_ts))) < min(30.0, tot_cap * 0.15):
+            return False, exp_f
+    next_exp = max(exp_f, now_ts + 900.0) if (uma_ex and exp_f > 0.0) else exp_f
+    return True, next_exp
+
+
 def compute_sll_maker_keep_and_renew(
     sleeve_src: str,
     *,
@@ -6472,9 +6808,10 @@ def compute_sll_maker_keep_and_renew(
     Computes `(max_keep_s, updated_deadline_mono, cancel_near_expiry)` for passive single-leg Maker orders:
       - `S2`: `max_keep_s = min(35.0, max(6.0, exp_ts - now_ts - 4.0))`; self-cancels when `(exp_ts - now_ts) <= 1.5s`.
       - Passive carries (`BOND1`, `BOND2`, `W_PRUNE1`, `MKR_LOCK1`, `MKR_REWARD_LOCKED_CARRY`, `UMA_READY1`):
-        initial `max_keep_s = 1800.0` when `uws_ok` (`300.0` fallback if `not uws_ok`, honoring `<90s` test overrides).
-        While resting at `#1` top-of-book (`cur_best_bid <= posted_px + 1e-6` and `buried_since_mono is None`),
-        auto-renews `deadline_mono = min(created_mono + 7200.0, max(deadline_mono, now_mono + 900.0))`.
+        initial `max_keep_s = 1800.0` when `uws_ok` (`300.0` fallback if `not uws_ok`, honoring `<90s` test overrides),
+        bounded by remaining `7200.0s - first_post_elapsed_s` total lifetime so a repeg after `>=1800s` never self-cancels
+        in `50ms`. While resting at `#1` top-of-book (`cur_best_bid <= posted_px + 1e-6` and `buried_since_mono is None`),
+        auto-renews `deadline_mono = min(origin_mono + 7200.0, max(deadline_mono, now_mono + 900.0))`.
       - `BOND1` / `BOND2` are exempt from the `(exp_ts - now_ts) <= 60.0s` pre-expiry self-cancel.
     """
     sl_u = str(sleeve_src or "").upper()
@@ -6483,21 +6820,26 @@ def compute_sll_maker_keep_and_renew(
     exp_f = float(exp_ts or 0.0)
     c_m = float(created_mono or 0.0)
     n_m = float(c_m if now_mono is None else now_mono)
+    el_s = max(0.0, float(first_post_elapsed_s or 0.0))
+    origin_m = c_m - el_s
     cfg = rcfg or {}
-    exp_ttl = cfg.get("bond1_maker_ttl_sec")
-    exp_mk = cfg.get("bond1_maker_max_keep_sec")
-    test_short_ttl = exp_ttl is not None and 0.0 < float(exp_ttl) < 90.0
+    short_caps = [
+        float(v)
+        for v in (cfg.get("bond1_maker_ttl_sec"), cfg.get("bond1_maker_max_keep_sec"))
+        if v is not None and 0.0 < float(v) < 90.0
+    ]
+    test_short_ttl = bool(short_caps)
 
     if is_s2:
         max_keep_s = min(35.0, max(6.0, exp_f - now_f - 4.0)) if exp_f > 0.0 else 15.0
+        tot_cap_s = max_keep_s
     elif test_short_ttl:
-        max_keep_s = float(exp_ttl)
+        tot_cap_s = min(short_caps)
+        max_keep_s = max(0.05, tot_cap_s - el_s)
     else:
-        max_keep_s = 1800.0 if uws_ok else 300.0
-        if exp_mk is not None and 0.0 < float(exp_mk) < max_keep_s:
-            max_keep_s = float(exp_mk)
-        if first_post_elapsed_s > 0.0:
-            max_keep_s = max(0.05, max_keep_s - float(first_post_elapsed_s))
+        base_keep_s = 1800.0 if uws_ok else 300.0
+        tot_cap_s = 7200.0 if uws_ok else 300.0
+        max_keep_s = min(base_keep_s, max(0.05, tot_cap_s - el_s))
 
     dl = (c_m + max_keep_s) if (deadline_mono is None or float(deadline_mono) <= 0.0) else float(deadline_mono)
     if (
@@ -6509,7 +6851,7 @@ def compute_sll_maker_keep_and_renew(
         and buried_since_mono is None
         and float(cur_best_bid) <= float(posted_px) + 1e-6
     ):
-        dl = min(c_m + 7200.0, max(dl, n_m + 900.0))
+        dl = min(origin_m + tot_cap_s, max(dl, n_m + 900.0))
 
     if exp_f <= 0.0:
         cancel_near_exp = False
@@ -6687,6 +7029,7 @@ def eval_sll_live_book_poll(
             tsnap_l = max(0.001 if min(step_l, ceil_l) >= 0.96 - 1e-9 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
             cand_rp = round(math.floor((min(step_l, ceil_l) + 1e-9) / tsnap_l) * tsnap_l, 4)
             l1_q_l = sum(px * sz for px, sz in bids_wc if abs(px - win_b_live) <= 1e-6)
+            _uma_ex_l = str(candidate_box.get("sleeve_source") or "").upper() in UMA_EXEMPT_EXPIRY_SLEEVES
             if (
                 repost_n_in < 5
                 and not is_s2_mkr
@@ -6694,7 +7037,7 @@ def eval_sll_live_book_poll(
                 and cand_rp >= round(win_b_live - 1e-9, 4)
                 and cand_rp > posted_px + 1e-6
                 and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, b1_q_cap) + 1e-6)
-                and (exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
+                and (_uma_ex_l or exp_ts <= 0.0 or (exp_ts - time.time()) >= 150.0)
             ):
                 return "REPEG", cand_rp, buried_since_mono, f"outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}"
             if buried_since_mono is None:

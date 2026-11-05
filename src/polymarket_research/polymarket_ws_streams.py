@@ -646,8 +646,9 @@ class PolymarketUserWsCache:
                     logger.info("[USER-WS] Authenticated CLOB ws/user stream connected.")
                     ping_task = asyncio.create_task(self._user_ping_loop(ws, interval_sec=12.0))
                     try:
+                        rx_to = float(getattr(self, "_rx_timeout_sec", 28.0) or 28.0)
                         while not self._stop_event.is_set():
-                            msg = await ws.recv()
+                            msg = await asyncio.wait_for(ws.recv(), timeout=rx_to)
                             self.process_ws_payload(msg)
                     finally:
                         if ping_task is not None:

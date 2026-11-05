@@ -225,19 +225,24 @@ class PAAAccountant:
         anomalies: List[str] = []
         onchain_cash = float(ledger.get("free_cash_pusd") or 0.0)
         state_cash = float(st.get("live_bankroll") if st.get("live_bankroll") is not None else onchain_cash)
-        inflight_usd = sum(
-            float(i.get("notional_usd", 0.0) or 0.0)
-            for i in (st.get("pending_entry_intents") or {}).values()
-            if isinstance(i, dict)
-        )
+        pend_dicts = [i for i in (st.get("pending_entry_intents") or {}).values() if isinstance(i, dict)]
+        inflight_usd = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in pend_dicts)
+        matched_intent_usd = sum(float(i.get("matched_notional_usd", 0.0) or 0.0) for i in pend_dicts)
         ps_st = st.get("pre_split_inventory_state") if isinstance(st.get("pre_split_inventory_state"), dict) else {}
         ps_realized = float(ps_st.get("realized_cash_usd") or 0.0) if ps_st.get("active") else 0.0
         eff_state_cash = state_cash + ps_realized
         raw_cash_diff = abs(onchain_cash - eff_state_cash)
-        post_fill_cash_diff = abs(onchain_cash - max(0.0, eff_state_cash - inflight_usd))
-        # Resting EIP-712 Maker limit orders keep pUSD in wallet until matched on-chain (`onchain_cash == state_cash`),
-        # while freshly matched intents briefly drop `onchain_cash` toward `state_cash - inflight_usd`.
-        cash_diff = min(raw_cash_diff, post_fill_cash_diff) if inflight_usd > 0.0 else raw_cash_diff
+        if inflight_usd > 0.0 or matched_intent_usd > 0.0:
+            # Resting EIP-712 Maker limit orders keep unfilled pUSD in wallet (`inflight_usd`) while any
+            # already-matched partial fills (`matched_intent_usd`) drop `onchain_cash` before or during collateral sync.
+            cash_diff = min(
+                raw_cash_diff,
+                abs(onchain_cash - max(0.0, eff_state_cash - matched_intent_usd)),
+                abs(onchain_cash - max(0.0, eff_state_cash - inflight_usd)),
+                abs(onchain_cash - max(0.0, eff_state_cash - matched_intent_usd - inflight_usd)),
+            )
+        else:
+            cash_diff = raw_cash_diff
         # Ignore transient settlement lag if an active position is in MATCHED_PENDING_SETTLEMENT / AWAITING_REDEMPTION
         settling_open = any(
             str(p.get("status") or "").upper() in ("MATCHED_PENDING_SETTLEMENT", "AWAITING_ONCHAIN_SETTLEMENT", "PENDING_CONFIRMATION")

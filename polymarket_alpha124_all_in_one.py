@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)
-Generated: 2026-11-05 11:24:05 UTC
+Generated: 2026-11-05 12:51:11 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
 Repository: /home/skybullet1987/quant_pipeline
 ========================================================================================
@@ -22,12 +22,12 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [13] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 3,030 - 3,460 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
   [14] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 3,461 - 4,121 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
   [15] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 4,122 - 4,677 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,678 - 7,925 | 724,510 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [17] scripts/backtest_alpha_124.py (Lines 7,926 - 8,150 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [18] scripts/polymarket_daily_projections.py (Lines 8,151 - 8,285 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [19] scripts/alpha124_status.py (Lines 8,286 - 8,314 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,315 - 8,331 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [21] tests/test_alpha_124_oracles.py (Lines 8,332 - 8,590 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,678 - 7,929 | 724,612 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [17] scripts/backtest_alpha_124.py (Lines 7,930 - 8,154 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [18] scripts/polymarket_daily_projections.py (Lines 8,155 - 8,289 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [19] scripts/alpha124_status.py (Lines 8,290 - 8,318 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,319 - 8,335 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [21] tests/test_alpha_124_oracles.py (Lines 8,336 - 8,594 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 """
 
 from __future__ import annotations
@@ -6968,7 +6968,12 @@ class Alpha124ShadowDaemon:
   if e is not None:a.pyth_intraday_cache[d]=(now_ts,e)
   return e
  async def scan_tradfi_and_sports_markets(a,opps_out):
-  now=time.time();f=sorted({r.asset for r in a.pyth_barrier_rungs.values()if r.end_ts>now+120}|{rgs[0].asset for rgs in a.pyth_close_ladders.values()if rgs and rgs[0].end_ts>now+120});u={}
+  d=time.time()
+  for b,c in(("tradfi_sports_nr",a._scan_tradfi_sports_nr_core),("phase2_macro_uma",a._scan_phase2_macro_counting_gas),("frontier_v2",a._scan_frontier_v2_sleeves),("frontier_v3",a._scan_frontier_v3_sleeves),("frontier_v4",a._scan_frontier_v4_sleeves)):
+   try:await c(opps_out,d)
+   except Exception as _st_exc:logger.warning(f"[ALPHA-124] Sub-scanner {b} notice: {_st_exc}")
+ async def _scan_tradfi_sports_nr_core(a,opps_out,now):
+  f=sorted({r.asset for r in a.pyth_barrier_rungs.values()if r.end_ts>now+120}|{rgs[0].asset for rgs in a.pyth_close_ladders.values()if rgs and rgs[0].end_ts>now+120});u={}
   for a_p in f:
    fd=await a._get_pyth_intraday(a_p,now)
    if fd:u[a_p]=fd
@@ -7169,7 +7174,6 @@ class Alpha124ShadowDaemon:
       if _t is not None:opps_out.append({"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","market":f"{_S.title[:50]} [NR3 All-YES Overround]","ask_vwap":round(max(.01,1.-float(_t["net_edge_per_share"])),4),"p_model":1.,"net_edge":_t["net_edge_per_share"],"l1_usd":_t["l1_usd"],"close_ts":_S.end_ts});a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=_S,dedupe_key=f"NR3_OVR_{_S.event_id}",arb_hit=_t,books_by_token=_v,now_ts=now)
      except Exception:pass
      if X:na0=X[0];a._record_market_telemetry(key=f"NR2_SUB_{_S.event_id}",min_interval_sec=60.,now_ts=now,sig=(na0["m_no_legs"],na0["net_edge_per_share"],na0["retained_tail_count"]),payload={"type":"NR2_SUBSET_CONVERT_SNAP","event_id":_S.event_id,"title":_S.title[:80],"m_no_legs":na0["m_no_legs"],"n_total":na0["n_total"],"retained_tail_count":na0["retained_tail_count"],"net_edge_per_share":na0["net_edge_per_share"]});await a.execute_nr2_subset_convert_arb(_S,na0,_v,opps_out)
-  await a._scan_phase2_macro_counting_gas(opps_out,now);await a._scan_frontier_v2_sleeves(opps_out,now);await a._scan_frontier_v3_sleeves(opps_out,now);await a._scan_frontier_v4_sleeves(opps_out,now)
  async def _scan_frontier_v2_sleeves(a,opps_out,now):
   b=[s for s in a.nba_prop_slates.values()if s.settle_est_ts>now+120]
   for _d in b[:10]:
