@@ -1426,3 +1426,369 @@ def test_v531_resolved_market_purged_live_zombie_order_reconciled(tmp_path, monk
     assert rec_z["non_execution_proof"] == "RESOLVED_MARKET_PURGED_ORDER_ZERO_FILL"
     assert rec_z["net_pnl_usd"] == pytest.approx(0.0)
     assert rec_z["notional_usd"] == pytest.approx(0.0)
+
+
+def test_v531_mixed_normal_and_self_laddered_mint_fills_plus_trade_ids_persistence(tmp_path, monkeypatch):
+    """
+    Verifies adversarial review fixes (Bugs 2, 3, 6):
+      1. `get_account_fills` merges direct `MatchType.NORMAL` fills with opposite-token `MatchType.MINT` fills
+         even when a partial direct fill exists, AND preserves all self-laddered `maker_orders[]` for our funder
+         even when `order_id` is omitted (`""`) on multiple maker orders in the same sweep.
+      2. `_apply_market_resolution` persists `trade_id` from `get_account_fills` into `pos["trade_ids"]`
+         (fixing `f.get("trade_id") or f.get("id")`).
+      3. `find_redemption_payouts` clamps ancient `from_block` values to `head - 50000`.
+    """
+    import src.polymarket_research.polymarket_live_harvester as plh
+    from src.polymarket_research.polymarket_live_executor import ExecutionStatus, PolymarketLiveExecutor
+
+    funder = "0x11c72ca19854132a4f5433b9aa9746159a4a6354"
+    win_tok = "102991566039815573634495392488635789304041380501887303505995890983596993640413"
+    opp_tok = "999999999999999999999999999999999999999999999999999999999999999999999999999999"
+
+    ex = PolymarketLiveExecutor(dry_run=True)
+    ex.dry_run = False
+    ex.is_authenticated = True
+    ex.funder_address = funder
+
+    norm_trade = {
+        "id": "NORM_TR_1",
+        "status": "CONFIRMED",
+        "asset_id": win_tok,
+        "side": "SELL",
+        "match_time": "1793831468",
+        "transaction_hash": "0x" + "11" * 32,
+        "maker_orders": [
+            {
+                "order_id": "0xLADDER_A",
+                "maker_address": funder,
+                "asset_id": win_tok,
+                "side": "BUY",
+                "matched_amount": "6",
+                "price": "0.991",
+            }
+        ],
+    }
+    mint_sweep_trade = {
+        "id": "MINT_SWEEP_2",
+        "type": "MINT",
+        "status": "CONFIRMED",
+        "asset_id": opp_tok,
+        "side": "BUY",
+        "match_time": "1793831469",
+        "transaction_hash": "0x" + "22" * 32,
+        "maker_orders": [
+            {
+                "order_id": "",
+                "maker_address": funder.upper(),
+                "asset_id": win_tok,
+                "side": "BUY",
+                "matched_amount": "7",
+                "price": "0.992",
+            },
+            {
+                "order_id": "",
+                "maker_address": funder,
+                "asset_id": win_tok,
+                "side": "BUY",
+                "matched_amount": "5",
+                "price": "0.993",
+            },
+        ],
+    }
+
+    class _MixedClob:
+        def get_trades(self, params=None):
+            aid = getattr(params, "asset_id", None) if params is not None else None
+            if aid == win_tok:
+                return [norm_trade]
+            return [norm_trade, mint_sweep_trade]
+
+    ex.client = _MixedClob()
+    fills = ex.get_account_fills(token_id=win_tok, after_ts=1793831400, side="BUY", order_id=None)
+    assert fills is not None and len(fills) == 3
+    assert sum(f["size"] for f in fills) == pytest.approx(18.0)
+    assert {f["trade_id"] for f in fills} == {"NORM_TR_1", "MINT_SWEEP_2"}
+
+    # Verify _apply_market_resolution persists recovered `trade_id`s into closed_positions
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_tids.json")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    h.executor = ex
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+    ex.get_order_fill_summary = lambda *_a, **_kw: None
+    ex.get_current_block_number = lambda: 96_800_000
+    ex.find_redemption_payouts = lambda *_a, **_kw: [{"payout_usd": 18.0, "transaction_hash": "0x" + "aa" * 32}]
+
+    tid_w = "MKR_LOCK1_TRADE_IDS_TEST"
+    h.active_positions[tid_w] = {
+        "trade_id": tid_w, "market_id": "59042", "condition_id": "0x" + "67" * 32,
+        "token_id": win_tok, "target_token": "YES",
+        "is_dominance_box": True, "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        "entry_price": 0.992, "entry_shares": 18.0, "remaining_shares": 18.0,
+        "notional_usd": 17.856, "remaining_cost_basis": 17.856, "fee_usd": 0.0,
+        "entry_ts": 1793831460.0, "trade_ids": [], "transactions_hashes": [],
+        "status": ExecutionStatus.POSITION_CONFIRMED, "inventory_reconciled": True,
+    }
+    asyncio.run(h._apply_market_resolution(tid_w, h.active_positions[tid_w], "YES"))
+    closed_w = h.closed_positions[-1]
+    assert closed_w["won"] is True
+    assert closed_w["trade_ids"] == ["NORM_TR_1", "MINT_SWEEP_2"]
+    assert len(closed_w["transactions_hashes"]) == 2
+
+    # Verify ancient from_block clamp in find_redemption_payouts
+    ex_blk = PolymarketLiveExecutor(dry_run=True)
+    ex_blk.dry_run = False
+    ex_blk.funder_address = funder
+    queried_from = []
+    ex_blk._rpc = lambda method, params: (
+        hex(96_800_000)
+        if method == "eth_blockNumber"
+        else (queried_from.append(int(params[0]["fromBlock"], 16)) or [])
+    )
+    out_ev = ex_blk.find_redemption_payouts("0x" + "67" * 32, from_block=96_000_000)
+    assert out_ev == []
+    assert queried_from[0] == 96_800_000 - 50_000
+
+
+def test_v531_ws_tick_precedence_over_stale_rest_book_and_ladder_eviction(tmp_path):
+    """
+    Verifies adversarial review fixes (Bugs 1A & 1B):
+      1. `update_ws_tick_size(tok, 0.001)` evicts stale `"0.01"` pre-signed ladder orders while keeping `"0.001"` orders.
+      2. Live WS tick size (`0.001`) beats stale REST `/book` `"minimum_tick_size": "0.01"` in `resolve_harvester_sll_tick_size`.
+      3. Non-WS heuristic `leg_a_tick_size` (`0.01`) does NOT set `leg_a_ws_tick_size` or poison
+         `get_token_tick_size(..., price_hint=0.965)` dynamic `>=0.96` boundary re-verification.
+    """
+    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+    from src.polymarket_research.polymarket_ws_streams import PolymarketClobMarketWsTracker
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        emit_single_leg_maker_lock_cand_impl,
+        resolve_harvester_sll_tick_size,
+    )
+
+    ex = PolymarketLiveExecutor(dry_run=True)
+    tok = "7171717171717171717171717171717171717171"
+    opp = "8181818181818181818181818181818181818181"
+    now_s = time.time()
+    ex.order_ladder_cache._cache[(tok, 96, 18, "0.01", False)] = (now_s, "SIGNED_OLD_001")
+    ex.order_ladder_cache._cache[(tok, 96, 18, "0.001", False)] = (now_s, "SIGNED_NEW_0001")
+
+    tracker = PolymarketClobMarketWsTracker(on_tick_size_change=ex.update_ws_tick_size)
+    tracker.set_desired_tokens([tok])
+    tracker.process_ws_payload({"event_type": "tick_size_change", "asset_id": tok, "old_tick_size": "0.01", "new_tick_size": "0.001"})
+
+    assert ex.order_ladder_cache.get_presigned_order(tok, price=0.96, shares=18, tick_size="0.01") is None
+    assert ex.order_ladder_cache.get_presigned_order(tok, price=0.96, shares=18, tick_size="0.001") == "SIGNED_NEW_0001"
+
+    # Stale REST `/book` still says "0.01", but WS tracker has 0.001 -> WS 0.001 MUST win!
+    resolved_tk = resolve_harvester_sll_tick_size(
+        ex, tok, {"leg_a_tick_size": 0.01},
+        bk_win={"minimum_tick_size": "0.01"}, mkt_ws=tracker, real_clob=True, price_hint=0.962,
+    )
+    assert resolved_tk == pytest.approx(0.001)
+
+    # Non-WS candidate (empty `_token_tick_sizes`) must NOT emit `leg_a_ws_tick_size` or block `>=0.96` dynamic recheck
+    cand_file = tmp_path / "no_ws_cands.jsonl"
+    state_file = tmp_path / "st_nows.json"
+
+    class _NoWsDaemon:
+        single_scan = True
+        _last_d1_live_emit_ts = {}
+        _token_tick_sizes = {}
+
+    ok = emit_single_leg_maker_lock_cand_impl(
+        _NoWsDaemon(),
+        sleeve_source="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        asset="NBA",
+        dedupe_key="MKR_NO_WS_TK",
+        pair_dedupe_key="PAIR_NO_WS_TK",
+        token_id=tok,
+        opp_token_id=opp,
+        market_id="55102",
+        condition_id="0x" + "52" * 32,
+        side_label="YES",
+        display_label="Lakers vs Celtics",
+        bk_win={"minimum_tick_size": "0.01", "bids": [{"price": "0.94", "size": "40"}], "asks": [{"price": "0.96", "size": "40"}]},
+        bk_opp={"bids": [{"price": "0.004", "size": "20"}], "asks": [{"price": "0.05", "size": "40"}]},
+        neg_risk=False,
+        close_ts=now_s + 1800.0,
+        now_ts=now_s,
+        min_resting_bid=0.940,
+        max_resting_bid=0.991,
+        min_maker_edge=0.006,
+        max_opp_bid=0.008,
+        hold_to_maturity=True,
+        p_model=0.999,
+        target_bid_px=None,
+        maker_rebate_ps=0.0,
+        extract_best_bid_fn=lambda bids: (float(bids[0]["price"]), float(bids[0]["price"]) * float(bids[0]["size"])) if bids else (0.0, 0.0),
+        cand_file=cand_file,
+        default_cand_path=tmp_path / "default_nows.jsonl",
+        state_file=state_file,
+        default_state_path=state_file,
+    )
+    assert ok is True
+    emitted = json.loads(cand_file.read_text(encoding="utf-8").strip().splitlines()[-1])
+    assert "leg_a_ws_tick_size" not in emitted
+
+    ex2 = PolymarketLiveExecutor(dry_run=True)
+    ex2.update_ws_tick_size(tok, 0.01)
+    sdk_calls = []
+    ex2.client = type("_TickSdk", (), {"get_tick_size": lambda self, tid: (sdk_calls.append(tid), "0.001")[1]})()
+    assert ex2.get_token_tick_size(tok, price_hint=0.965) == pytest.approx(0.001)
+    assert sdk_calls == [tok]
+
+
+def test_v531_harvester_dispute_guard_and_polybolt_mid_session_401_failover(tmp_path, monkeypatch):
+    """
+    Verifies adversarial review fixes (Bugs 4, 5A, 5B) + prior untested edge cases:
+      1. Harvester `_finish_single_leg_lock` and `maybe_execute_graduated_single_leg_maker_lock` enforce
+         `proposal_age_sec >= 1800` on `BOND1` and veto pre-final `MKR_LOCK1` clinches on Tennis/Esports/90m-Soccer,
+         while allowing seasoned `BOND1` (`>=1800s`), `FINAL` clinches, and NBA/NFL/MLB/NHL markets.
+      2. `PolymarketChainlinkLiveStream.run_forever` survives a mid-session PolyBolt V2 `401` auth rejection by
+         failing over immediately to RTDS (handling unscaled decimal RTDS `full_accuracy_value` without `1e18` corruption),
+         refreshing rotated L2 credentials, and reconnecting to PolyBolt V2 without stalling `get_rolling_twap_60s`.
+    """
+    from aiohttp import web
+    import src.polymarket_research.polymarket_live_harvester as plh
+    import src.polymarket_research.polymarket_ws_streams as pws
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_disp.json")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    now_u = time.time()
+
+    # 1a. Harvester _finish_single_leg_lock blocks unseasoned (<1800s) BOND1 with 90m Soccer rule text
+    unseasoned_b1 = {
+        "box_id": "B1_UNSEASONED_SOC", "box_type": "SINGLE_LEG_LOCK",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "asset": "SOCCER",
+        "leg_a_token_id": "1" * 40, "leg_a_opp_token_id": "2" * 40,
+        "leg_a_market_id": "9001", "leg_a_condition_id": "0x" + "91" * 32,
+        "rules_text": "Resolves to 90 minutes of regular play plus stoppage time, excluding extra time and penalties.",
+        "proposal_age_sec": 600.0, "ts_unix": now_u, "expiry_ts": now_u + 1800.0,
+    }
+    rej_b1 = h._finish_single_leg_lock(unseasoned_b1, "BOND1_UMA_RESOLUTION_CARRY", "1" * 40, "9001", "DK_B1_SOC", {}, now_u, {})
+    assert rej_b1["executed"] is False and "DISPUTE_RULE_PROPOSAL_UNSEASONED" in rej_b1["reason"]
+
+    # 1b. Harvester maybe_execute_graduated_single_leg_maker_lock blocks pre-final MKR_LOCK1 with walkover/retirement clause
+    prefinal_mkr = {
+        "box_id": "MLK_TENNIS_PRE", "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve_source": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "dedupe_key": "DK_MLK_TEN", "pair_dedupe_key": "PK_MLK_TEN",
+        "asset": "TENNIS", "mode": "SET_CLINCH_IN_PLAY",
+        "rules_text": "If a player retires mid-match or walkover occurs before completion, resolves 50-50.",
+        "leg_a_token_id": "1" * 40, "leg_a_opp_token_id": "2" * 40, "leg_a_market_id": "9002",
+        "anchor_bid_px": 0.985, "p_model": 0.999, "ts_unix": now_u, "expiry_ts": now_u + 1800.0,
+    }
+    rej_mkr = asyncio.run(h.maybe_execute_graduated_single_leg_maker_lock(prefinal_mkr))
+    assert rej_mkr["executed"] is False and rej_mkr["reason"] == "DISPUTE_RULE_PRE_FINAL_CLINCH_VETO"
+
+    # 2. PolyBolt V2 mid-session 401 -> immediate RTDS failover (unscaled decimal) -> credential refresh -> PolyBolt V2 recovery
+    async def _run_failover_and_cred_refresh():
+        pb_auths = []
+        rtds_hits = []
+        t0_ms = int(time.time() * 1000)
+        pb_conn_idx = 0
+
+        async def _pb_handler(request):
+            nonlocal pb_conn_idx
+            pb_conn_idx += 1
+            c_no = pb_conn_idx
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            msg = await ws.receive_json()
+            ak = (msg.get("auth") or {}).get("apiKey")
+            pb_auths.append(ak)
+            if c_no == 1:
+                await ws.send_json({"op": "authed", "rid": "a1"})
+                for _ in range(len(pws.POLYBOLT_CRYPTO_SYMBOLS)):
+                    sub = await ws.receive_json()
+                    sym = sub["subscriptions"][0]["filter"]["symbol"]
+                    await ws.send_json({"op": "subscribed", "rid": sub["rid"], "channel": "price.crypto"})
+                    if sym.lower() == "btcusd":
+                        pts = [
+                            {"timestamp": t0_ms - (65 - i) * 1000, "value": 80500.0, "full_accuracy_value": "80500.00"}
+                            for i in range(65)
+                        ]
+                        await ws.send_json({
+                            "v": 2, "channel": "price.crypto", "snapshot": True,
+                            "payload": {"symbol": "btcusd", "source": "chainlink", "data": pts},
+                        })
+                # Rotate env creds while connected, then close session to force mid-session reconnect
+                monkeypatch.setenv("POLY_API_KEY", "rotated_k2")
+                await ws.close()
+                return ws
+            if ak != "rotated_k2":
+                # Simulate HTTP 401 / auth rejection on stale cached credentials
+                await ws.send_json({"op": "error", "code": 401, "message": "401 Unauthorized: invalid api key"})
+                await ws.close()
+                return ws
+            await ws.send_json({"op": "authed", "rid": "a2"})
+            for _ in range(len(pws.POLYBOLT_CRYPTO_SYMBOLS)):
+                sub = await ws.receive_json()
+                sym = sub["subscriptions"][0]["filter"]["symbol"]
+                await ws.send_json({"op": "subscribed", "rid": sub["rid"], "channel": "price.crypto"})
+                if sym.lower() == "btcusd":
+                    await ws.send_json({
+                        "v": 2, "channel": "price.crypto", "dropped": 0,
+                        "payload": {"symbol": "btcusd", "source": "chainlink", "timestamp": t0_ms + 2000, "full_accuracy_value": "80610.50"},
+                    })
+            await asyncio.sleep(0.15)
+            await ws.close()
+            return ws
+
+        async def _rtds_handler(request):
+            ws = web.WebSocketResponse()
+            await ws.prepare(request)
+            _ = await ws.receive_json()
+            rtds_hits.append(True)
+            # Send unscaled decimal string on RTDS fallback to ensure no 1e18 underflow!
+            await ws.send_json({
+                "topic": "crypto_prices_chainlink",
+                "payload": {"symbol": "btc/usd", "timestamp": t0_ms + 1000, "full_accuracy_value": "80575.25", "value": 80575.25},
+            })
+            await asyncio.sleep(0.05)
+            await ws.close()
+            return ws
+
+        app = web.Application()
+        app.router.add_get("/pb", _pb_handler)
+        app.router.add_get("/rtds", _rtds_handler)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "127.0.0.1", 0)
+        await site.start()
+        port = site._server.sockets[0].getsockname()[1]
+
+        pb_url = f"ws://127.0.0.1:{port}/pb"
+        rtds_url = f"ws://127.0.0.1:{port}/rtds"
+        monkeypatch.setattr(pws, "POLYBOLT_V2_WS_URL", pb_url)
+        monkeypatch.setattr(pws, "LIVE_DATA_WS_URL", rtds_url)
+        monkeypatch.setenv("POLY_API_KEY", "initial_k1")
+        monkeypatch.setenv("POLY_SECRET", "sec_1")
+        monkeypatch.setenv("POLY_PASSPHRASE", "pass_1")
+        pws.invalidate_polybolt_l2_creds()
+
+        stop_ev = False
+        stream = pws.PolymarketChainlinkLiveStream(ws_url=pb_url, prefer_polybolt_v2=True, l2_creds=None)
+        task = asyncio.create_task(stream.run_forever(stop_check=lambda: stop_ev))
+        try:
+            for _ in range(80):
+                if stream.get_latest_spot("BTC") == pytest.approx(80610.50):
+                    break
+                await asyncio.sleep(0.05)
+            assert rtds_hits, "Stream must fail over to RTDS immediately after PolyBolt disconnect/401"
+            assert "initial_k1" in pb_auths and "rotated_k2" in pb_auths
+            assert stream.get_latest_spot("BTC") == pytest.approx(80610.50)
+            twap = stream.get_rolling_twap_60s("BTC", max_age_sec=10.0)
+            assert twap is not None and 80500.0 <= twap <= 80611.0
+        finally:
+            stop_ev = True
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+            await runner.cleanup()
+
+    asyncio.run(_run_failover_and_cred_refresh())
+

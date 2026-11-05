@@ -1118,6 +1118,14 @@ class PreSignedOrderLadderCache:
             entry = self._cache.get(key)
         return bool(entry) and (time.time() - entry[0]) <= (self.ttl_seconds - min_remaining_sec)
 
+    def evict_mismatched_tick(self, token_id: str, valid_tick_str: str) -> int:
+        tok_s, valid_s = str(token_id), str(valid_tick_str or "0.01")
+        with self._lock:
+            drop = [k for k in self._cache if k[0] == tok_s and k[3] != valid_s]
+            for k in drop:
+                self._cache.pop(k, None)
+            return len(drop)
+
     def filter_missing_or_stale(
         self,
         token_id: str,
@@ -2687,7 +2695,7 @@ class PolymarketLiveExecutor:
                 })
                 if t_asset == str(token_id):
                     continue
-            for mo in t.get("maker_orders", []) or []:
+            for idx, mo in enumerate(t.get("maker_orders", []) or []):
                 mo_oid = str(mo.get("order_id") or "")
                 exact_oid_match = bool(target_oid_str and mo_oid == target_oid_str)
                 mo_addr = str(mo.get("maker_address", "") or "").lower()
@@ -2709,7 +2717,7 @@ class PolymarketLiveExecutor:
                     taker_side = str(t.get("side", "")).upper()
                     side = {"BUY": "SELL", "SELL": "BUY"}.get(taker_side, "") if (mo_asset or t_asset) == t_asset else taker_side
                 fills.append({
-                    "fill_id": f"{trade_id}:{mo_oid}",
+                    "fill_id": f"{trade_id}:{mo_oid or f'm{idx}'}",
                     "trade_id": trade_id, "order_id": mo_oid,
                     "side": side, "size": size, "price": price,
                     "cash": round(size * price, 6), "transaction_hash": tx, "status": status,
@@ -2760,17 +2768,17 @@ class PolymarketLiveExecutor:
             raw = self.client.get_trades(params=params) if params is not None else self.client.get_trades()
             if not isinstance(raw, list):
                 return None
-            out = _flt(self.extract_account_fills(raw, token_id, target_order_id=order_id))
-            if not out:
-                # Unfiltered fallback catches MatchType.MINT / MERGE fills whose parent trade asset_id is the opposite token
-                fb_params = TradeParams(after=after_i) if (TradeParams is not None and after_i) else None
+            raw_items = list(raw)
+            if params is not None:
+                fb_params = TradeParams(after=after_i) if after_i else None
                 raw_all = self.client.get_trades(params=fb_params) if fb_params is not None else self.client.get_trades()
                 if isinstance(raw_all, list):
-                    out = _flt(self.extract_account_fills(raw_all, token_id, target_order_id=order_id))
-                if not out and fb_params is not None and order_id:
-                    raw_full = self.client.get_trades()
-                    if isinstance(raw_full, list):
-                        out = _flt(self.extract_account_fills(raw_full, token_id, target_order_id=order_id))
+                    raw_items.extend(raw_all)
+            out = _flt(self.extract_account_fills(raw_items, token_id, target_order_id=order_id))
+            if not out and params is not None and after_i and order_id:
+                raw_full = self.client.get_trades()
+                if isinstance(raw_full, list):
+                    out = _flt(self.extract_account_fills(raw_full, token_id, target_order_id=order_id))
             return out
         except Exception as e:
             logger.error(f"[PM-EXEC] Trade history unavailable for {token_id}: {e}")
@@ -3202,7 +3210,7 @@ class PolymarketLiveExecutor:
             return None
         lookback = max(int(max_span), 15000)
         chunk_span = min(int(max_span), 1000) if int(max_span) > 0 else 1000
-        start = int(from_block) if from_block else max(0, head - lookback)
+        start = max(int(from_block), max(0, head - max(lookback, 50000))) if from_block else max(0, head - lookback)
         raw_logs: List[Dict[str, Any]] = []
         me_topic = "0x" + str(self.funder_address).lower().replace("0x", "").rjust(64, "0")
         cond_topic = "0x" + str(condition_id).lower().replace("0x", "").rjust(64, "0")
@@ -6002,6 +6010,9 @@ class PolymarketLiveExecutor:
         overrides = self.__dict__.setdefault("_enforced_tick_override_until", {})
         overrides[token_id] = (float(tick_val), time.monotonic() + max(1.0, float(ttl_sec)))
         self._tick_size_cache[token_id] = float(tick_val)
+        lc = getattr(self, "order_ladder_cache", None)
+        if lc is not None and hasattr(lc, "evict_mismatched_tick"):
+            lc.evict_mismatched_tick(token_id, str(tick_str))
         if self.client is not None and hasattr(self.client, "_ClobClient__tick_sizes"):
             try:
                 self.client._ClobClient__tick_sizes[token_id] = str(tick_str)
@@ -6015,9 +6026,14 @@ class PolymarketLiveExecutor:
             parsed = float(tick_size)
         except (TypeError, ValueError):
             return None
+        tok_s = str(token_id)
         for vt, vs in self._CANONICAL_CLOB_TICKS:
             if abs(parsed - vt) < 1e-9:
-                self._apply_enforced_tick_size(str(token_id), vt, vs, ttl_sec=ttl_sec)
+                if vt < 0.01:
+                    self._apply_enforced_tick_size(tok_s, vt, vs, ttl_sec=ttl_sec)
+                else:
+                    self._apply_enforced_tick_size(tok_s, vt, vs, ttl_sec=1.0)
+                    getattr(self, "_enforced_tick_override_until", {}).pop(tok_s, None)
                 return vt
         return None
 

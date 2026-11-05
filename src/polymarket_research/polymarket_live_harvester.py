@@ -6834,11 +6834,16 @@ class PolymarketLiveHarvester:
     ) -> Dict[str, Any]:
         """Executes fresh dual-book verified single-leg deterministic lock inside _d1_inflight_exec_lock."""
         from src.polymarket_research.riskless_protocol_v2_expansion import (
+            check_sll_cand_dispute_guard,
             compute_d1_per_market_notional_cap,
             compute_sll_and_carry_gatling_budget,
             is_market_busy_for_scaling,
             open_market_notional_usd,
+            resolve_harvester_sll_tick_size,
         )
+        _disp_1l = check_sll_cand_dispute_guard(cand)
+        if _disp_1l:
+            return {"executed": False, "reason": _disp_1l}
         opp_a = str(cand.get("leg_a_opp_token_id") or "")
         cid_a = str(cand.get("leg_a_condition_id") or "")
         cand_ts = float(cand.get("ts_unix") or now_ts)
@@ -6971,18 +6976,11 @@ class PolymarketLiveHarvester:
         if sh_int < 5:
             return {"executed": False, "reason": "FRESH_BOOK_WALK_REJECT:MIN_SHARES"}
         use_mock_lock_tk = self.dry_run or hasattr(getattr(self.executor, "client", None), "_mock_children")
-        cand_tk_1l = float(cand.get("leg_a_tick_size") or 0.0)
-        if 0.0001 <= cand_tk_1l <= 0.1 and hasattr(self.executor, "update_ws_tick_size") and not use_mock_lock_tk:
-            self.executor.update_ws_tick_size(tok_a, cand_tk_1l)
-        if use_mock_lock_tk:
-            tk_sz = cand.get("leg_a_tick_size") or 0.01
-        elif hasattr(self.executor, "get_token_tick_size"):
-            try:
-                tk_sz = self.executor.get_token_tick_size(tok_a, price_hint=worst_px)
-            except TypeError:
-                tk_sz = self.executor.get_token_tick_size(tok_a)
-        else:
-            tk_sz = 0.01
+        _cust_tk_1l = "get_token_tick_size" in getattr(self.executor, "__dict__", {})
+        tk_sz = resolve_harvester_sll_tick_size(
+            self.executor, tok_a, cand, bk_win=raw_ba, mkt_ws=getattr(self, "_pos_market_ws", None),
+            real_clob=not use_mock_lock_tk, custom_tk_fn=_cust_tk_1l, price_hint=worst_px, allow_sync_sdk=True,
+        ) or (cand.get("leg_a_tick_size") or 0.01 if use_mock_lock_tk else 0.01)
         if not use_mock_lock_tk and any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual):
             tk_sz = min(float(tk_sz or 0.001), 0.001)
         if hasattr(self.executor, "prewarm_token_market_cache"):
@@ -7850,8 +7848,13 @@ class PolymarketLiveHarvester:
             is_d1_dedupe_blocked,
             is_market_busy_for_scaling,
             open_market_notional_usd,
+            resolve_harvester_sll_tick_size,
             select_sll_velocity_preempt_target,
+            check_sll_cand_dispute_guard,
         )
+        _disp_mkr = check_sll_cand_dispute_guard(candidate_box)
+        if _disp_mkr:
+            return {"executed": False, "reason": _disp_mkr}
         seen_boxes = self.__dict__.setdefault("_seen_d1_box_keys", set())
         retry_cd = self.__dict__.setdefault("_d1_retry_cooldown_until", {})
         if (
@@ -8136,20 +8139,14 @@ class PolymarketLiveHarvester:
                     and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
                 )
                 _custom_tk_fn = "get_token_tick_size" in getattr(self.executor, "__dict__", {})
-                _raw_tk_w = (
-                    (bk_win_f or {}).get("minimum_tick_size")
-                    or (bk_win_f or {}).get("tick_size")
-                    or (mkt_ws_s.get_tick_size(tok_a) if (mkt_ws_s and hasattr(mkt_ws_s, "get_tick_size") and not _custom_tk_fn) else None)
-                    or (candidate_box.get("leg_a_tick_size") if not _custom_tk_fn else None)
+                _tk_wf = resolve_harvester_sll_tick_size(
+                    self.executor, tok_a, candidate_box, bk_win=bk_win_f, mkt_ws=mkt_ws_s,
+                    real_clob=_real_clob_sll, custom_tk_fn=_custom_tk_fn, price_hint=anc_bid_px,
                 )
-                try:
-                    _tk_wf = float(_raw_tk_w) if _raw_tk_w not in (None, "") else 0.0
-                except (TypeError, ValueError):
-                    _tk_wf = 0.0
-                if 0.0001 <= _tk_wf <= 0.1 and _real_clob_sll and hasattr(self.executor, "update_ws_tick_size"):
-                    self.executor.update_ws_tick_size(tok_a, _tk_wf)
                 if _tk_wf <= 0.0 and hasattr(self.executor, "get_token_tick_size") and (_real_clob_sll or _custom_tk_fn):
                     try:
+                        _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a, anc_bid_px)) or 0.0)
+                    except TypeError:
                         _tk_wf = float((await asyncio.to_thread(self.executor.get_token_tick_size, tok_a)) or 0.0)
                     except Exception:
                         _tk_wf = 0.0
@@ -8464,7 +8461,7 @@ class PolymarketLiveHarvester:
             _mkr_tids = list(
                 dict.fromkeys(
                     [str(x) for x in ((summary or {}).get("trade_ids") or (post_res or {}).get("tradeIDs") or []) if x]
-                    + [str(f.get("id")) for f in _mkr_fills if isinstance(f, dict) and f.get("id")]
+                    + [str(f.get("trade_id") or f.get("id")) for f in _mkr_fills if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))]
                 )
             )
             _mkr_txs = list(
@@ -11942,7 +11939,7 @@ class PolymarketLiveHarvester:
                                     None,
                                 )
                             if isinstance(buy_fills, list) and buy_fills:
-                                pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("id")) for f in buy_fills if isinstance(f, dict) and f.get("id")]))
+                                pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("trade_id") or f.get("id")) for f in buy_fills if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))]))
                                 pos["transactions_hashes"] = list(dict.fromkeys([str(x) for x in (pos.get("transactions_hashes") or []) if x] + [str(f.get("transaction_hash")) for f in buy_fills if isinstance(f, dict) and f.get("transaction_hash")]))
                                 conf_buy_sh = sum(
                                     float(f.get("size", 0.0) or 0.0)

@@ -10915,16 +10915,18 @@ class Alpha124ShadowDaemon:
                 for lk_s in evaluate_cl1_soccer_tree_clinch_locks(tr, boards_now["SOCCER"], self.score_confirm_tracker, now):
                     dk_cl = f"CL1_SOC_{lk_s['market_id']}"
                     if dk_cl not in self.entered_keys and dk_cl not in self.inflight_keys:
-                        cl1_cands.append({**lk_s, "dedupe_key": dk_cl})
+                        cl1_cands.append({**lk_s, "dedupe_key": dk_cl, "title": getattr(tr, "title", ""), "rules_text": getattr(tr, "rules_text", "")})
         for ms_sp in self.multi_sport_games.values():
             if ms_sp.sport in boards_now and boards_now[ms_sp.sport]:
                 for lk_m in evaluate_cl1_multisport_corridor_clinch_locks(ms_sp, boards_now, self.score_confirm_tracker, now):
                     dk_clm = f"CL1_{ms_sp.sport}_{lk_m['market_id']}"
                     if dk_clm not in self.entered_keys and dk_clm not in self.inflight_keys:
-                        cl1_cands.append({**lk_m, "dedupe_key": dk_clm})
+                        cl1_cands.append({**lk_m, "dedupe_key": dk_clm, "title": getattr(ms_sp, "title", ""), "rules_text": getattr(ms_sp, "rules_text", "")})
         if cl1_cands:
             cl1_bks = await self.fetch_books_batch(sorted({t for c in cl1_cands for t in (c["token_id"], c["opp_token_id"])}), timeout=3.0)
             for c_cl in cl1_cands:
+                if "FINAL" not in str(c_cl.get("mode") or "").upper() and classify_market_rule_dispute_risk(c_cl)["veto_pre_final_clinch"]:
+                    continue
                 bk_w_cl, bk_o_cl = cl1_bks.get(c_cl["token_id"]), cl1_bks.get(c_cl["opp_token_id"])
                 if not bk_w_cl or not bk_o_cl:
                     continue
@@ -11212,6 +11214,8 @@ class Alpha124ShadowDaemon:
                             "asset": b.sport,
                             "dedupe_key": dk_alk,
                             "max_eff_px": 0.988,
+                            "title": getattr(b, "title", ""),
+                            "rules_text": getattr(b, "rules_text", ""),
                         })
 
         # 8B. `SOC2_EXACT_SCORE_2D_LATTICE` (`83`-state lattice boxes + `NR2` convert + post-VAR dead-score `NO` locks)
@@ -11228,6 +11232,8 @@ class Alpha124ShadowDaemon:
                         "asset": "SOCCER",
                         "dedupe_key": dk_slk,
                         "max_eff_px": 0.986,
+                        "title": getattr(lat, "title", ""),
+                        "rules_text": getattr(lat, "rules_text", ""),
                     })
         pre_soc2 = [lat for lat in self.soc2_lattices.values() if lat.end_ts > now + 120.0][:10]
         if pre_soc2:
@@ -11448,6 +11454,8 @@ class Alpha124ShadowDaemon:
                                     "asset": "NFL",
                                     "dedupe_key": dk_nlk,
                                     "max_eff_px": 0.988,
+                                    "title": getattr(sl, "title", ""),
+                                    "rules_text": getattr(sl, "rules_text", ""),
                                 })
 
         # 8D. `CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION` (`Close subset Hit` & `Daily subset Weekly subset Monthly`)
@@ -11539,12 +11547,14 @@ class Alpha124ShadowDaemon:
                 timeout=3.0,
             )
             for clk in pending_v4_lks:
-                if "FINAL" not in str(clk.get("mode") or "").upper() and classify_market_rule_dispute_risk(clk)["veto_pre_final_clinch"]:
+                _clk_risk = classify_market_rule_dispute_risk(clk)
+                if "FINAL" not in str(clk.get("mode") or "").upper() and _clk_risk["veto_pre_final_clinch"]:
                     continue
                 tok_w, tok_o = str(clk["token_id"]), str(clk["opp_token_id"])
                 bk_w_v4, bk_o_v4 = v4_lk_bks.get(tok_w), v4_lk_bks.get(tok_o)
                 if not bk_w_v4 or not bk_o_v4:
                     continue
+                bk_w_v4 = {**bk_w_v4, "_s2_meta": {"mode": str(clk.get("mode") or ""), "dispute_risk": bool(_clk_risk["dispute_risk"])}}
                 opp_bid_v4, _ = extract_best_bid(bk_o_v4.get("bids") or [])
                 if opp_bid_v4 > 0.035:
                     continue
@@ -12118,6 +12128,8 @@ class Alpha124ShadowDaemon:
             bk_w, bk_l = bks_uma.get(wtok), bks_uma.get(ltok)
             if not bk_w or not bk_l:
                 continue
+            _b1_age = max(0.0, float(ver.get("eff_liveness_sec") or 7200.0) - float(ver.get("rem_challenge_sec") or 7200.0))
+            bk_w = {**bk_w, "_s2_meta": {"proposal_age_sec": round(float(ver.get("proposal_age_sec") if ver.get("proposal_age_sec") is not None else _b1_age), 1), "dispute_risk": bool(classify_market_rule_dispute_risk(m)["dispute_risk"])}}
             win_bid, _ = extract_best_bid(bk_w.get("bids") or [])
             lose_bid, _ = extract_best_bid(bk_l.get("bids") or [])
             lose_ask, _ = self._best_ask_sz(bk_l)

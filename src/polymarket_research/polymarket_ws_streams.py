@@ -102,10 +102,19 @@ _CACHED_POLYBOLT_CREDS: Optional[Tuple[str, str, str]] = None
 _CREDS_LOCK = threading.Lock()
 
 
+def invalidate_polybolt_l2_creds() -> None:
+    global _CACHED_POLYBOLT_CREDS
+    with _CREDS_LOCK:
+        _CACHED_POLYBOLT_CREDS = None
+
+
 def resolve_polybolt_l2_creds(
     api_key: Optional[str] = None,
     api_secret: Optional[str] = None,
     api_passphrase: Optional[str] = None,
+    *,
+    force_refresh: bool = False,
+    stale_creds: Optional[Tuple[str, str, str]] = None,
 ) -> Optional[Tuple[str, str, str]]:
     """
     Resolves Polymarket CLOB L2 `(api_key, api_secret, api_passphrase)` for PolyBolt V2 authentication:
@@ -120,6 +129,8 @@ def resolve_polybolt_l2_creds(
     if ak and sec and pp:
         return (ak, sec, pp)
     with _CREDS_LOCK:
+        if force_refresh:
+            _CACHED_POLYBOLT_CREDS = None
         if _CACHED_POLYBOLT_CREDS is not None:
             return _CACHED_POLYBOLT_CREDS
         try:
@@ -127,7 +138,7 @@ def resolve_polybolt_l2_creds(
 
             repo_env = Path(__file__).resolve().parents[2] / ".env"
             if repo_env.exists():
-                load_dotenv(repo_env, override=False)
+                load_dotenv(repo_env, override=bool(force_refresh))
         except Exception:
             pass
         ak = (os.environ.get("POLY_API_KEY") or os.environ.get("CLOB_API_KEY") or "").strip()
@@ -143,8 +154,9 @@ def resolve_polybolt_l2_creds(
             or os.environ.get("CLOB_PASS_PHRASE")
             or ""
         ).strip()
-        if ak and sec and pp:
-            _CACHED_POLYBOLT_CREDS = (ak, sec, pp)
+        env_creds = (ak, sec, pp) if (ak and sec and pp) else None
+        if env_creds is not None and (not force_refresh or env_creds != stale_creds):
+            _CACHED_POLYBOLT_CREDS = env_creds
             return _CACHED_POLYBOLT_CREDS
         pk = (os.environ.get("POLYGON_PRIVATE_KEY") or os.environ.get("POLY_PRIVATE_KEY") or "").strip()
         if pk and os.environ.get("PM_DISABLE_POLYBOLT_CRED_DERIVE", "0") != "1":
@@ -173,6 +185,9 @@ def resolve_polybolt_l2_creds(
                     return _CACHED_POLYBOLT_CREDS
             except Exception as exc:
                 logger.debug(f"[POLYBOLT-V2] L2 credential derivation skipped: {exc}")
+        if env_creds is not None:
+            _CACHED_POLYBOLT_CREDS = env_creds
+            return _CACHED_POLYBOLT_CREDS
         return None
 
 
@@ -821,15 +836,7 @@ class PolymarketChainlinkLiveStream:
         ts_f = float(ts_raw)
         ts_sec = ts_f / 1000.0 if ts_f > 1e11 else ts_f
 
-        full_acc = pl.get("full_accuracy_value")
-        px = 0.0
-        if full_acc not in (None, ""):
-            try:
-                px = float(Decimal(str(full_acc)) / Decimal("1e18"))
-            except Exception:
-                px = 0.0
-        if px <= 0.0:
-            px = _safe_float(pl.get("value"), 0.0)
+        px = self._parse_polybolt_price(pl)
         if px <= 0.0:
             return False
         with self._lock:
@@ -1086,14 +1093,20 @@ class PolymarketChainlinkLiveStream:
             return
         backoff = 0.5
         creds = self._l2_creds
+        force_cred_refresh = False
         while not (stop_check and stop_check()):
             used_pb_ok = False
             if self._prefer_polybolt_v2:
-                if creds is None:
+                if creds is None or force_cred_refresh:
                     try:
-                        creds = await asyncio.to_thread(resolve_polybolt_l2_creds)
+                        creds = await asyncio.to_thread(
+                            resolve_polybolt_l2_creds,
+                            force_refresh=force_cred_refresh,
+                            stale_creds=creds,
+                        )
                     except Exception:
                         creds = None
+                    force_cred_refresh = False
                 if creds is not None:
                     try:
                         used_pb_ok = await self._stream_polybolt_v2_once(websockets, creds, stop_check)
@@ -1102,6 +1115,10 @@ class PolymarketChainlinkLiveStream:
                     except asyncio.CancelledError:
                         break
                     except Exception as exc:
+                        err_l = str(exc).lower()
+                        if any(k in err_l for k in ("auth", "401", "403", "unauthorized", "forbidden", "invalid api")):
+                            invalidate_polybolt_l2_creds()
+                            force_cred_refresh = True
                         logger.debug(f"[POLYBOLT-V2] Falling back to RTDS after notice: {exc}")
                     finally:
                         with self._lock:

@@ -2847,6 +2847,115 @@ def passes_uma_bond_dispute_guard(market: Any, ver: Mapping[str, Any]) -> bool:
     return age_sec >= float(risk["min_proposal_age_sec"])
 
 
+def check_sll_cand_dispute_guard(cand: Mapping[str, Any]) -> Optional[str]:
+    """
+    Harvester & candidate-bridge defense-in-depth dispute guard:
+      - `BOND1_UMA_RESOLUTION_CARRY`: requires `proposal_age_sec >= 1800` when walkover/retirement/forfeit/LFMP
+        or Soccer 90-minute regulation vs extra-time/penalties ambiguity is detected.
+      - Pre-final sports clinches (`MKR_LOCK1`, `CL1`, `AFF1`, `SOC2`, `NFL_PRP1`): vetoes pre-final execution
+        when dispute-ambiguous rule clauses are present.
+    """
+    if not isinstance(cand, Mapping):
+        return None
+    risk = classify_market_rule_dispute_risk(
+        cand,
+        extra_text=f"{cand.get('leg_a_label') or ''} {cand.get('regime') or ''}",
+    )
+    has_risk = bool(risk["dispute_risk"] or cand.get("dispute_risk"))
+    if not has_risk:
+        return None
+    slv = str(cand.get("sleeve_source") or cand.get("sleeve") or "").upper()
+    if slv == "BOND1_UMA_RESOLUTION_CARRY":
+        raw_age = cand.get("proposal_age_sec")
+        if raw_age is not None:
+            age_sec = _sf(raw_age, 0.0)
+        elif cand.get("rem_challenge_sec") is not None:
+            age_sec = max(0.0, _sf(cand.get("eff_liveness_sec"), 7200.0) - _sf(cand.get("rem_challenge_sec"), 7200.0))
+        else:
+            age_sec = 0.0
+        if age_sec < 1800.0:
+            return f"DISPUTE_RULE_PROPOSAL_UNSEASONED:{age_sec:.0f}s<1800s"
+        return None
+    if slv in {
+        "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",
+        "AFF1_FROZEN_SUBPERIOD_COLLAPSE",
+        "SOC2_EXACT_SCORE_2D_LATTICE",
+        "NFL_PRP1_MILESTONE_AND_MAX_LOCKS",
+    }:
+        mode_u = str(cand.get("mode") or cand.get("clinch_mode") or "").upper()
+        if not bool(cand.get("is_final")) and "FINAL" not in mode_u:
+            return "DISPUTE_RULE_PRE_FINAL_CLINCH_VETO"
+    return None
+
+
+def resolve_harvester_sll_tick_size(
+    executor: Any,
+    tok_a: str,
+    cand: Mapping[str, Any],
+    *,
+    bk_win: Optional[Mapping[str, Any]] = None,
+    mkt_ws: Any = None,
+    real_clob: bool = False,
+    custom_tk_fn: bool = False,
+    price_hint: Optional[float] = None,
+    allow_sync_sdk: bool = False,
+) -> float:
+    """Resolve single-leg lock tick size with strict WS precedence over stale REST `/book` metadata."""
+    tok_s = str(tok_a or "")
+    ws_raw = None
+    if not custom_tk_fn:
+        if mkt_ws is not None and hasattr(mkt_ws, "get_tick_size"):
+            ws_raw = mkt_ws.get_tick_size(tok_s)
+        if ws_raw in (None, ""):
+            ws_raw = cand.get("leg_a_ws_tick_size")
+        if ws_raw in (None, ""):
+            ov = getattr(executor, "_enforced_tick_override_until", None)
+            if isinstance(ov, Mapping) and tok_s in ov:
+                ov_tk, ov_exp = ov[tok_s]
+                if time.monotonic() < float(ov_exp):
+                    ws_raw = ov_tk
+    try:
+        ws_f = float(ws_raw) if ws_raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        ws_f = 0.0
+    if 0.0001 <= ws_f <= 0.1:
+        if real_clob and hasattr(executor, "update_ws_tick_size"):
+            executor.update_ws_tick_size(tok_s, ws_f)
+        return ws_f
+
+    bk_raw = (bk_win or {}).get("minimum_tick_size") or (bk_win or {}).get("tick_size") if isinstance(bk_win, Mapping) else None
+    try:
+        bk_f = float(bk_raw) if bk_raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        bk_f = 0.0
+    ph = float(price_hint) if (price_hint is not None and math.isfinite(float(price_hint))) else None
+    needs_boundary_recheck = (
+        abs(bk_f - 0.01) < 1e-9
+        and (real_clob or custom_tk_fn)
+        and hasattr(executor, "get_token_tick_size")
+        and ph is not None
+        and (ph >= 0.96 or ph <= 0.04 or abs(round(ph, 2) - round(ph, 4)) > 1e-6)
+    )
+    if 0.0001 <= bk_f <= 0.1 and not needs_boundary_recheck and not custom_tk_fn:
+        return bk_f
+    if allow_sync_sdk and hasattr(executor, "get_token_tick_size") and (real_clob or custom_tk_fn):
+        try:
+            return float(executor.get_token_tick_size(tok_s, price_hint=ph) or 0.0)
+        except TypeError:
+            return float(executor.get_token_tick_size(tok_s) or 0.0)
+        except Exception:
+            return 0.0
+    if not real_clob and not custom_tk_fn:
+        try:
+            cand_f = float(cand.get("leg_a_tick_size") or 0.0)
+            if 0.0001 <= cand_f <= 0.1:
+                return cand_f
+        except (TypeError, ValueError):
+            pass
+    return 0.0
+
+
 # ---------------------------------------------------------------------------
 # 5. Family IV: Sports (`DC1`, `LP_COMP1`, `HALFTIME`) & Mentions (`MENTION1`)
 # ---------------------------------------------------------------------------
@@ -5480,9 +5589,11 @@ def emit_single_leg_lock_cand_impl(
     min_req_edge = max(0.002, round(float(p_model) - float(max_lock_eff_px), 6))
     if eff_px > float(max_lock_eff_px) + 1e-6 or float(w_lk["shares"]) < 5.0 or (float(p_model) - eff_px) < min_req_edge - 1e-6:
         return False
-    if len(daemon._last_d1_live_emit_ts) > 256:
-        daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
-    daemon._last_d1_live_emit_ts[dedupe_key] = now_ts
+    _ws_tk_1l_raw = (getattr(daemon, "_token_tick_sizes", None) or {}).get(str(token_id))
+    try:
+        _ws_tk_1l = float(_ws_tk_1l_raw) if _ws_tk_1l_raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        _ws_tk_1l = 0.0
     cand = {
         "box_id": f"LOCK1_LIVE_{asset}_{int(close_ts)}_{str(market_id or '0')[-5:]}",
         "dedupe_key": dedupe_key,
@@ -5516,6 +5627,16 @@ def emit_single_leg_lock_cand_impl(
         "leg_a_neg_risk": bool(neg_risk),
         "leg_a_expiry_ts": float(close_ts),
     }
+    if 0.0001 <= _ws_tk_1l <= 0.1:
+        cand["leg_a_tick_size"] = _ws_tk_1l
+        cand["leg_a_ws_tick_size"] = _ws_tk_1l
+    if isinstance(bk_win.get("_s2_meta"), Mapping):
+        cand.update(bk_win["_s2_meta"])
+    if check_sll_cand_dispute_guard(cand) is not None:
+        return False
+    if len(daemon._last_d1_live_emit_ts) > 256:
+        daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
+    daemon._last_d1_live_emit_ts[dedupe_key] = now_ts
     if not daemon.single_scan and daemon._ws_books:
         rest_seeded_1l = getattr(daemon, "_ws_rest_seeded", set())
         if all(
@@ -5768,8 +5889,13 @@ def emit_single_leg_maker_lock_cand_impl(
     if best_ask < 1.0 and opp_bid > 0.0 and (best_ask + opp_bid) > 1.015:
         return False
     is_mock_emit = bool(daemon.single_scan or ("fetch_json" in daemon.__dict__))
+    _ws_tk_mkr_raw = (getattr(daemon, "_token_tick_sizes", None) or {}).get(str(token_id))
+    try:
+        _ws_tk_mkr = float(_ws_tk_mkr_raw) if _ws_tk_mkr_raw not in (None, "") else 0.0
+    except (TypeError, ValueError):
+        _ws_tk_mkr = 0.0
     raw_bk_tk = (
-        (getattr(daemon, "_token_tick_sizes", None) or {}).get(str(token_id))
+        _ws_tk_mkr_raw
         or bk_win.get("minimum_tick_size")
         or bk_win.get("tick_size")
         or bk_win.get("min_tick_size")
@@ -5809,9 +5935,6 @@ def emit_single_leg_maker_lock_cand_impl(
         return False
     if not is_s2_mkr and abs(resting_bid - best_bid) <= 1e-6 and l1_bid_usd > 350.0 and not is_mock_emit:
         return False
-    if len(daemon._last_d1_live_emit_ts) > 256:
-        daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
-    daemon._last_d1_live_emit_ts[dedupe_key] = now_ts
     fw_w = daemon._get_fresh_ws_book(token_id, now_ts, 2.5) if hasattr(daemon, "_get_fresh_ws_book") else None
     fw_o = daemon._get_fresh_ws_book(opp_token_id, now_ts, 2.5) if hasattr(daemon, "_get_fresh_ws_book") else None
     cand = {
@@ -5855,8 +5978,15 @@ def emit_single_leg_maker_lock_cand_impl(
         "ws_books": ({str(token_id): fw_w, str(opp_token_id): fw_o} if (fw_w and fw_o) else None),
         "ws_books_ts": round(now_ts, 3),
     }
+    if 0.0001 <= _ws_tk_mkr <= 0.1:
+        cand["leg_a_ws_tick_size"] = _ws_tk_mkr
     if isinstance(bk_win.get("_s2_meta"), Mapping):
         cand.update(bk_win["_s2_meta"])
+    if check_sll_cand_dispute_guard(cand) is not None:
+        return False
+    if len(daemon._last_d1_live_emit_ts) > 256:
+        daemon._last_d1_live_emit_ts = {k: v for k, v in daemon._last_d1_live_emit_ts.items() if (now_ts - float(v)) <= 1200.0}
+    daemon._last_d1_live_emit_ts[dedupe_key] = now_ts
     return _write_and_notify_live_cand(daemon, cand, cand_file, default_cand_path)
 
 
