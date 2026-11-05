@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """
-DOMINUS — RISKLESS PAA COMMAND CENTER v6.0 (24/7 Zero-Overhead Local Web Dashboard & CLI).
+DOMINUS — RISKLESS PAA COMMAND CENTER v6.1 (24/7 Zero-Overhead Local Web Dashboard & CLI).
 
 Replaces heavy VM Chrome Remote Desktop (which consumed ~1.74 GB RAM + ~45% CPU on
 kraken-finland) with an institutional local command center at http://127.0.0.1:8787 that
 fetches bounded read-only JSON snapshots over SSH using 0 MB persistent VM RAM.
 
-v6.0 Architecture:
+v6.1 Architecture:
+  - Penny-Exact Wallet-to-PnL Reconciliation ($60.92 Pure Riskless Lock Start + Post-Lock Cash Gain == Live Polygon pUSD)
   - 100% Riskless-First KPIs: Pure Riskless Live W/L, Post-Lock Zero-Loss Streak, On-Chain Cash & CLOB Quoting Utilization
   - Hero #1: Live Working CLOB Orders (with Cloudflare-safe Gamma title resolution & 1s live order-age tick) + Active Positions
   - Hero #2: Live Riskless Opportunity Radar (Live Harvester IPC, Machine-Gun Auto-Discovery, BOND1 UMA Carry, MKR_LOCK1 Clinch, Locked Rewards, NegRisk Slate Arbs)
-  - Active-Riskless vs Historical-Legacy Filters on Strategy Breakdown & Closed Trades
-  - RISKLESS PAA Zero-Trust OS Telemetry (1s timer/TTL countdowns, Tier-A/B/C memory, 5-Gate Non-AI Verifier)
+  - Active-Riskless vs Historical-Legacy Filters on Strategy Breakdown & Closed Trades (with cached Gamma Market Questions)
+  - RISKLESS PAA Zero-Trust OS Telemetry (7/7 Active Fleet + 9 RTDS/SHM Feeds, 1s timer/TTL countdowns, Tier-A/B/C memory, 5-Gate Verifier)
 
 Usage:
   # Launch 24/7 auto-refreshing browser dashboard on Windows:
@@ -85,7 +86,7 @@ out = {
     "fetched_at_et": _now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
     "ottawa_tz_abbr": _now_et.strftime("%Z"),
     "unix_ts": time.time(),
-    "dashboard_version": "6.0.0",
+    "dashboard_version": "6.1.0",
 }
 
 # 1. Host load & memory
@@ -111,25 +112,19 @@ try:
 except Exception:
     out["mem_mb"] = {}
 
-# 2. Services (single batched systemctl call for consolidated v5.4 + RISKLESS PAA topology)
+# 2. Services (single batched systemctl call for consolidated Riskless PAA 7-unit topology)
 svcs = [
     "polymarket-live-harvester.service",
     "polymarket-alpha124-shadow.service",
     "polymarket-recorder.service",
     "polymarket-telemetry-compactor.timer",
-    "polymarket-trader.service",
-    "apex-perp.service",
-    "apex-oversight-audit.timer",
     "polymarket-paa-monitor.timer",
-    "polymarket-paa-supervisor.timer",
-    "polymarket-paa-watchdog.timer",
     "polymarket-paa-director.timer",
-    "polymarket-paa-director-event.path",
 ]
 shm_ages = {}
 shm_spots = {}
 shm_anchored = {}
-for _sym in ("BTC", "ETH", "SOL", "XAU", "XAG", "XRP"):
+for _sym in ("BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE", "XAU", "XAG"):
     _fp = pathlib.Path(f"/dev/shm/pm_fast_tick_{_sym}.json")
     if _fp.exists():
         shm_ages[_sym] = round(time.time() - _fp.stat().st_mtime, 2)
@@ -174,10 +169,10 @@ except Exception:
     for sv in svcs:
         svc_map[sv.replace(".service", "")] = "unknown"
 try:
-    ap = subprocess.run(["pgrep", "-f", "production_apex_daemon.py"], capture_output=True, text=True, timeout=2)
-    svc_map["hyperliquid-apex-testnet"] = "active" if ap.returncode == 0 and ap.stdout.strip() else "inactive"
+    _sup_p = subprocess.run(["systemctl", "is-active", "paa-system-supervisor.timer"], capture_output=True, text=True, timeout=2)
+    svc_map["paa-system-supervisor.timer"] = _sup_p.stdout.strip() or ("active" if _sup_p.returncode == 0 else "inactive")
 except Exception:
-    svc_map["hyperliquid-apex-testnet"] = "unknown"
+    svc_map["paa-system-supervisor.timer"] = "unknown"
 out["services"] = svc_map
 
 _UNHEDGED_DIR_SLEEVES = {
@@ -468,11 +463,12 @@ if lh_path.exists():
         _tgt_t = str(c.get("target_token") or "").strip().upper()
         _res_w = str(c.get("resolved_winning_outcome") or "").strip().upper()
         _ent_sh = float(c.get("entry_shares", 0.0) or 0.0)
+        _fill_ex_sh = float(c.get("filled_exit_shares", 0.0) or 0.0)
         if (
             str(c.get("close_reason") or "") == "MARKET_RESOLVED_NO_INVENTORY"
             and bool(c.get("inventory_reconciled", False))
             and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
-            and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
+            and _fill_ex_sh <= 0.0
             and _ent_sh > 0.0
             and _tgt_t != ""
             and _tgt_t == _res_w
@@ -487,6 +483,29 @@ if lh_path.exists():
             cn["average_exit_price"] = 1.0
             cn["exit_price"] = 1.0
             cn["close_reason"] = "ONCHAIN_AUTO_REDEEMED_RECONCILED"
+            cn["wallet_reconciled"] = True
+            return wallet_pnl, raw, True, cn
+        if (
+            _ent_sh > 0.0
+            and _fill_ex_sh > _ent_sh + 0.05
+            and not (c.get("box_legs_summary") or [])
+            and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
+            and _tgt_t != ""
+            and _tgt_t == _res_w
+        ):
+            _pay_u = round(_ent_sh * 1.0, 4)
+            _fee_u = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0)
+            wallet_pnl = round(_pay_u - float(c.get("notional_usd", 0.0) or 0.0) - _fee_u, 2)
+            cn["filled_exit_shares"] = 0.0
+            cn["realized_exit_cash"] = 0.0
+            cn["confirmed_realized_cash"] = _pay_u
+            cn["payout_usd"] = _pay_u
+            cn["net_pnl_usd"] = wallet_pnl
+            cn["realized_pnl_usd"] = wallet_pnl
+            cn["won"] = True
+            cn["average_exit_price"] = 1.0
+            cn["exit_price"] = 1.0
+            cn["close_reason"] = "ONCHAIN_AUTOREDEEM_CONFIRMED"
             cn["wallet_reconciled"] = True
             return wallet_pnl, raw, True, cn
         if (
@@ -678,11 +697,34 @@ if lh_path.exists():
         _en_px_c = round(float(c.get("notional_usd") or 0.0) / max(0.01, float(c.get("entry_shares") or 1.0)), 3) if _is_mleg else c.get("entry_price")
         _sl_c = str(c.get("sleeve") or "")
         _asset_lbl = f"{c.get('asset','')} BOX ({c.get('box_leg_count')}L)".strip() if _is_mleg else f"{c.get('asset','')} {c.get('horizon','')} {c.get('target_token','')}".strip()
+        _tok_c = str(c.get("token_id") or "")
+        _mid_c = str(c.get("market_id") or "")
+        _q_c = str(c.get("title") or c.get("question") or "").strip()
+        if _is_raw_stub_title(_q_c) and '_tok_meta' in locals():
+            _tm_c = _tok_meta.get(_tok_c) or _tok_meta.get(f"mid:{_mid_c}") or {}
+            _q_c = str(_tm_c.get("title") or "").strip()
+            if _is_raw_stub_title(_q_c) and _mid_c.isdigit() and locals().get("_closed_g_fetches", 0) < 4:
+                _closed_g_fetches = locals().get("_closed_g_fetches", 0) + 1
+                try:
+                    _rq_mc = urllib.request.Request(f"https://gamma-api.polymarket.com/markets/{_mid_c}", headers={"User-Agent": _HTTP_UA, "Accept": "application/json"})
+                    with urllib.request.urlopen(_rq_mc, timeout=1.0) as _rmc:
+                        _gj_c = json.loads(_rmc.read().decode("utf-8"))
+                    if isinstance(_gj_c, dict) and _gj_c.get("question"):
+                        _q_c = str(_gj_c["question"]).strip()
+                        _tok_meta[f"mid:{_mid_c}"] = {"market_id": _mid_c, "title": _q_c}
+                        if _tok_c:
+                            _tok_meta[_tok_c] = {"market_id": _mid_c, "title": _q_c}
+                        _meta_dirty = True
+                except Exception:
+                    pass
         recent_closed.append({
             "time_utc": str(c.get("exit_time_utc") or c.get("settled_at_utc") or c.get("entry_time_utc") or "")[:19].replace("T", " "),
             "time_et": _fmt_et(_raw_ts_c, "%m-%d %H:%M:%S"),
             "unix_ts": float(c.get("exit_ts") or c.get("closed_at_ts") or c.get("entry_ts") or 0.0),
             "trade_id": c.get("trade_id"),
+            "market_id": _mid_c,
+            "title": "" if _is_raw_stub_title(_q_c) else _q_c,
+            "side_tag": f"{c.get('target_token','')} ({'Maker' if 'maker' in str(c.get('horizon','')).lower() else ('Box' if _is_mleg else 'Lock')})".strip(),
             "asset": _asset_lbl or str(c.get("trade_id") or "")[:20],
             "sleeve": _sl_c,
             "is_active_riskless": _is_pure_riskless_sleeve(_sl_c),
@@ -697,6 +739,11 @@ if lh_path.exists():
         })
         if len(recent_closed) >= 24:
             break
+    if locals().get("_meta_dirty") and '_tok_meta_cache_p' in locals():
+        try:
+            _tok_meta_cache_p.write_text(json.dumps(_tok_meta), encoding="utf-8")
+        except Exception:
+            pass
     _dcfg = strat_cfg.get("directional") or {}
     _bcfg = strat_cfg.get("riskless_boxes") or {}
     _ps_en = bool(_bcfg.get("enable_pre_split_overround_gun", False))
@@ -715,21 +762,22 @@ if lh_path.exists():
     _b1_mkt_cap = int(round(float(_bcfg.get("bond1_max_notional_per_market_usd", 45.0) or 45.0)))
     live_strat_meta = [
         ("BOND1_UMA_RESOLUTION_CARRY", f"LIVE ACTIVE — 0%-Fee UMA Resolution Carry ({_b1_pool_pct}% Pool Cap, <=${_b1_mkt_cap}/mkt, Preemptable)"),
+        ("D1_SAME_ORACLE_DOMINANCE_BOX", f"LIVE ACTIVE — 32/32 Same-Oracle Crypto Dominance Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
+        ("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
+        ("S2_RTDS_EXACT_TWAP_INTEGRATOR", "LIVE ACTIVE — PolyBolt V2 1Hz Chainlink Final-45s Exact TWAP Lock"),
+        ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
         ("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)"),
+        ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
+        ("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LIVE ACTIVE — 12/12 Deadline & Scalar Dominance Box (<=24h Fast-Recycle)"),
+        ("COND1_MACRO_PARTITION_BOX", "LIVE ACTIVE — 9/9 Macro Partition Dominance Box (<=24h, <=$0.985 net)"),
+        ("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "LIVE ACTIVE — 0%-Fee Cross-Market Implication Box"),
+        ("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", "LIVE ACTIVE — 0%-Fee In-Game Milestone Irreversible Lock"),
         (
             "PRE_SPLIT_OVERROUND_MACHINE_GUN",
             "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"
             if _ps_en
             else "PAUSED — 7% Crypto Fee & Split-Latency Quarantine (Zero Capital Lockup)",
         ),
-        ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
-        ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
-        ("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
-        ("D1_SAME_ORACLE_DOMINANCE_BOX", f"LIVE ACTIVE — 32/32 Same-Oracle Crypto Dominance Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
-        ("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LIVE ACTIVE — 12/12 Deadline & Scalar Dominance Box (<=24h Fast-Recycle)"),
-        ("COND1_MACRO_PARTITION_BOX", "LIVE ACTIVE — 9/9 Macro Partition Dominance Box (<=24h, <=$0.985 net)"),
-        ("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "LIVE ACTIVE — 0%-Fee Cross-Market Implication Box"),
-        ("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", "LIVE ACTIVE — 0%-Fee In-Game Milestone Irreversible Lock"),
         (
             "SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",
             "PAUSED — Fee-Sports Legging Guard (Shadow Only; Zero Live Exposure)"
@@ -768,8 +816,13 @@ if lh_path.exists():
 
     _rk_st = s.get("risk_state") or {}
     _pure_tot = pure_rl_w + pure_rl_l
+    _lock_start_eq = 60.92
+    _post_lock_cash_delta = round(_live_equity_usd - _lock_start_eq, 2)
     out["polymarket_live"] = {
         "bankroll_usd": round(_wallet_cash, 2),
+        "riskless_lock_start_usd": _lock_start_eq,
+        "post_lock_cash_delta_usd": _post_lock_cash_delta,
+        "post_lock_cash_pct": round(100.0 * _post_lock_cash_delta / _lock_start_eq, 1),
         "open_book_usd": _active_book_usd,
         "free_cash_usd": _free_cash_usd,
         "quoting_cash_usd": round(_inflight_intents_usd, 2),
@@ -1530,7 +1583,8 @@ if rk_path.exists():
             _bhr = round(float(_rt.get("ev_per_dollar_hour") or 0.0) * 10000.0, 1)
             _cts = float(_rt.get("close_ts") or 0.0)
             _rhr = (_cts - time.time()) / 3600.0 if _cts > time.time() else 0.5
-            _push_radar("LIVE_IPC", str(_rt.get("sleeve") or "ALPHA124_RT"), "", _rt.get("market"), "MAKER", _epx, _eb, _bhr, _rt.get("l1_usd", 0), _rhr, True, "A124 RT")
+            _rt_lbl = re.sub(r"^\[[A-Z0-9_]+\]\s*", "", str(_rt.get("market") or "").strip())
+            _push_radar("LIVE_IPC", str(_rt.get("sleeve") or "ALPHA124_RT"), "", _rt_lbl, "MAKER", _epx, _eb, _bhr, _rt.get("l1_usd", 0), _rhr, True, "A124 RT")
         for _u in (rk.get("ranked_uma_proposed_carries") or [])[:8]:
             _push_radar(
                 "UMA_CARRY",
@@ -1618,91 +1672,18 @@ if rk_path.exists():
     except Exception:
         pass
 
-radar_opps.sort(key=lambda x: (0 if x["bucket"] in ("LIVE_IPC", "MACHINE_GUN") else 1, -float(x.get("bps_per_hr") or 0.0)))
+radar_opps.sort(
+    key=lambda x: (
+        0 if x.get("authorized_live") else 1,
+        0 if x["bucket"] in ("LIVE_IPC", "MACHINE_GUN") else 1,
+        -float(x.get("bps_per_hr") or 0.0),
+    )
+)
 out["riskless_radar"] = {
     "summary": radar_summary,
     "opportunities": radar_opps[:36],
 }
-
-# 5. Hyperliquid APEX Testnet (bounded 512 KB tail read)
-j_path = root / "data/papertrade_journal.jsonl"
-if j_path.exists():
-    audits = []
-    audit_total = 0
-    cb_state = "RUNNING"
-    cb_reason = ""
-    hwm_nav = 609.0
-    _jsz = j_path.stat().st_size
-    with open(j_path, "rb") as _jf:
-        if _jsz > 524288:
-            while True:
-                _blk = _jf.read(262144)
-                if not _blk:
-                    break
-                audit_total += _blk.count(b'"IMPLEMENTATION_AUDIT_RECORD"')
-            _jf.seek(max(0, _jsz - 524288))
-            _jlines = _jf.read().decode("utf-8", errors="replace").splitlines()[1:]
-        else:
-            _jlines = _jf.read().decode("utf-8", errors="replace").splitlines()
-    for ln in _jlines:
-        if not ln.strip():
-            continue
-        try:
-            ev = json.loads(ln)
-        except Exception:
-            continue
-        et = ev.get("event_type")
-        pl = ev.get("payload") or {}
-        if et == "CIRCUIT_BREAKER":
-            cb_state = pl.get("state", cb_state)
-            cb_reason = pl.get("reason", "")
-        elif et == "HWM_UPDATE":
-            hwm_nav = float(pl.get("hwm", hwm_nav))
-        elif et == "IMPLEMENTATION_AUDIT_RECORD":
-            audits.append(pl)
-    if _jsz <= 524288:
-        audit_total = len(audits)
-    maker_n = sum(1 for x in audits if x.get("order_type") == "RESTING_ALO")
-    recent_hl = []
-    for x in reversed(audits[-6:]):
-        recent_hl.append({
-            "time_utc": x.get("timestamp_utc", ""),
-            "time_et": _fmt_et(x.get("timestamp_utc"), "%H:%M:%S"),
-            "symbol": x.get("symbol"),
-            "side": x.get("side"),
-            "order_type": x.get("order_type"),
-            "px": x.get("actual_fill_price"),
-            "sz": x.get("filled_size"),
-            "shortfall_bps": round(float(x.get("total_shortfall_bps", 0.0)), 2),
-        })
-    st_path = root / "data/papertrade_state.json"
-    st_obj = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
-    eq_obj = st_obj.get("equity") or {}
-    acct_obj = st_obj.get("accounting_ledger") or {}
-    ws_obj = st_obj.get("ws_market_cache") or {}
-    sh_path = root / "data/apex/champion_challenger_shadow.json"
-    sh_obj = json.loads(sh_path.read_text(encoding="utf-8")) if sh_path.exists() else {}
-    sh_hist = sh_obj.get("history") or []
-    latest_regime = (sh_hist[-1].get("regime") or {}).get("regime", "UNKNOWN") if sh_hist else "UNKNOWN"
-    post_v51_n = sum(1 for x in audits if str(x.get("timestamp_utc", "")) >= "2026-10-29T02:06:00Z")
-    out["apex_testnet"] = {
-        "version": st_obj.get("version", "v5.2.0"),
-        "nav_usd": round(float(eq_obj.get("current_strategy_equity") or st_obj.get("current_strategy_equity") or hwm_nav), 2),
-        "reconciliation_status": acct_obj.get("reconciliation_status") or (st_obj.get("last_reconciliation") or {}).get("status") or "EXACT",
-        "regime": latest_regime,
-        "ws_connected": bool(ws_obj.get("connected", False)),
-        "ws_msgs": int(ws_obj.get("messages_received", 0) or 0),
-        "circuit_breaker": st_obj.get("circuit_breaker", cb_state),
-        "halt_reason": cb_reason if cb_state != "RUNNING" else "",
-        "hwm_nav_usd": round(float(eq_obj.get("historical_hwm") or st_obj.get("high_water_mark") or hwm_nav), 2),
-        "canary_fills": f"{post_v51_n}/100",
-        "gate2_fills": f"{audit_total}/500",
-        "maker_pct": round(100.0 * maker_n / len(audits), 1) if audits else 0.0,
-        "shadow_tracks": {k: round(float(v.get("nav", 1000.0)), 2) for k, v in (sh_obj.get("tracks") or {}).items()},
-        "recent_fills": recent_hl,
-    }
-else:
-    out["apex_testnet"] = {}
+out["apex_testnet"] = {}
 
 # 6. PAA Autonomous Operating System & Zero-Trust Live SQLite + Systemd Telemetry
 paa_dir = root / "data/polymarket/paa"
@@ -2056,7 +2037,7 @@ HTML_PAGE = """<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<title>DOMINUS — RISKLESS PAA COMMAND CENTER v6.0</title>
+<title>DOMINUS — RISKLESS PAA COMMAND CENTER v6.1</title>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <style>
   :root {
@@ -2168,7 +2149,7 @@ HTML_PAGE = """<!DOCTYPE html>
   h2 { font-size: 12.5px; margin: 0 0 9px 0; color: var(--blue); text-transform: uppercase; letter-spacing: 0.55px; }
   table { width: 100%; border-collapse: collapse; font-size: 11.8px; }
   th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid rgba(34,49,74,0.75); }
-  th { color: var(--muted); font-weight: 600; font-size: 11px; background: rgba(13,20,33,0.65); position: sticky; top: 0; z-index: 1; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; background: #0d1421; position: sticky; top: 0; z-index: 3; box-shadow: inset 0 -1px 0 var(--border); }
   tbody tr:hover { background: rgba(88,166,255,0.045); }
   .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10.8px; font-weight: 600; white-space: nowrap; }
   .pill-ok { background: rgba(46,160,67,0.2); color: var(--green-bright); border: 1px solid rgba(63,185,80,0.45); }
@@ -2196,7 +2177,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <h1>
       <span class="dot" id="live_dot"></span>
       <span>DOMINUS &mdash; RISKLESS PAA COMMAND CENTER</span>
-      <span class="lock-badge" id="hdr_mode_badge">100% PURE RISKLESS LOCK &bull; v6.0</span>
+      <span class="lock-badge" id="hdr_mode_badge">100% PURE RISKLESS LOCK &bull; v6.1</span>
     </h1>
     <div class="sub" id="meta">Connecting to kraken-finland over zero-RAM SSH pipe...</div>
   </div>
@@ -2212,7 +2193,7 @@ HTML_PAGE = """<!DOCTYPE html>
   <button class="tab-btn" id="tab_radar" onclick="setViewTab('radar')">Riskless Opportunity Radar</button>
   <button class="tab-btn" id="tab_a124" onclick="setViewTab('a124')">Alpha-124 &amp; Machine-Gun Grad-8</button>
   <button class="tab-btn" id="tab_paa" onclick="setViewTab('paa')">RISKLESS PAA Zero-Trust OS</button>
-  <button class="tab-btn" id="tab_forensics" onclick="setViewTab('forensics')">Forensics &amp; Testnet Lab</button>
+  <button class="tab-btn" id="tab_forensics" onclick="setViewTab('forensics')">Execution &amp; Fleet Diagnostics</button>
 </div>
 
 <div class="grid" id="kpis"></div>
@@ -2324,9 +2305,8 @@ HTML_PAGE = """<!DOCTYPE html>
         <tbody id="a124_open"></tbody>
       </table>
     </div>
-    <h2 style="margin-top:13px;">Recent Closed Shadow Boxes &amp; Paused Directional Shadow</h2>
-    <div id="dir_shdw_meta" style="font-size:11.3px;color:var(--muted);margin-bottom:6px;"></div>
-    <div style="max-height:195px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+    <h2 style="margin-top:13px;">Recent Closed Zero-Loss Shadow Boxes</h2>
+    <div style="max-height:215px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
       <table>
         <thead><tr><th>Closed (ET)</th><th>Sleeve</th><th>Market</th><th>In&rarr;Out</th><th>T100 / T1000</th></tr></thead>
         <tbody id="a124_closed"></tbody>
@@ -2393,48 +2373,35 @@ HTML_PAGE = """<!DOCTYPE html>
   </div>
 </div>
 
-<!-- SYSTEM DAEMONS, SHOCK FORENSICS & HYPERLIQUID TESTNET LAB -->
+<!-- SYSTEM DAEMONS & MAKER/ORDER EXECUTION DIAGNOSTICS -->
 <div id="sec_forensics">
   <div class="card" style="margin-bottom:15px;">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-      <h2 style="margin:0;">Consolidated Systemd Daemon Fleet &amp; Multiplexed SHM Oracle Feeds</h2>
+      <h2 style="margin:0;">Consolidated Riskless Systemd Fleet (7/7) &amp; Multiplexed RTDS/SHM Oracle Feeds</h2>
       <span class="sub" id="vm_foot_note">Zero-RAM Local SSH Probe</span>
     </div>
     <div class="svc-wrap" id="svcs"></div>
   </div>
 
-  <div class="two-col">
-    <div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-        <div>
-          <h2 style="margin:0;">Order Attempt &amp; Shock Forensics (Maker TTL + Historical Speed Attribution)</h2>
-          <div class="sub" style="margin-top:2px;">Tracks BOND1/LOCK1 Maker postings &amp; historical crypto shock speed vs gate attribution</div>
-        </div>
-        <div style="display:flex;gap:5px;flex-wrap:wrap;">
-          <button class="flt-btn active" id="sf_flt_attempts" onclick="setSfFilter('attempts')">Order Attempts</button>
-          <button class="flt-btn" id="sf_flt_meaningful" onclick="setSfFilter('meaningful')">Meaningful</button>
-          <button class="flt-btn" id="sf_flt_slow" onclick="setSfFilter('slow')">Speed Misses</button>
-          <button class="flt-btn" id="sf_flt_all" onclick="setSfFilter('all')">All</button>
-        </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+      <div>
+        <h2 style="margin:0;">Order Attempt &amp; Maker Queue Diagnostics (CLOB Latency &amp; TTL Telemetry)</h2>
+        <div class="sub" style="margin-top:2px;">Tracks BOND1 / LOCK1 / S2 Maker postings, FIFO queue lifecycle &amp; hot-path CLOB execution latency</div>
       </div>
-      <div class="sf-strip" id="sf_summary"></div>
-      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
-        <table>
-          <thead><tr><th>Ottawa (ET)</th><th>Market / Shock</th><th>Path</th><th>Verdict</th><th>Quote / Limit</th><th>Latency</th><th>Diagnosis</th></tr></thead>
-          <tbody id="sf_rows"></tbody>
-        </table>
+      <div style="display:flex;gap:5px;flex-wrap:wrap;">
+        <button class="flt-btn active" id="sf_flt_attempts" onclick="setSfFilter('attempts')">Order Attempts</button>
+        <button class="flt-btn" id="sf_flt_meaningful" onclick="setSfFilter('meaningful')">Meaningful</button>
+        <button class="flt-btn" id="sf_flt_slow" onclick="setSfFilter('slow')">Speed Misses</button>
+        <button class="flt-btn" id="sf_flt_all" onclick="setSfFilter('all')">All</button>
       </div>
     </div>
-
-    <div class="card">
-      <h2 id="apex_hdr">Hyperliquid APEX (Testnet &mdash; $0 Mainnet, 4H Bar Cadence)</h2>
-      <div id="apex_meta" style="font-size:12px;margin-bottom:8px;"></div>
-      <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
-        <table>
-          <thead><tr><th>Ottawa (ET)</th><th>Asset</th><th>Side</th><th>Type</th><th>Shortfall</th></tr></thead>
-          <tbody id="apex_fills"></tbody>
-        </table>
-      </div>
+    <div class="sf-strip" id="sf_summary"></div>
+    <div style="max-height:260px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+      <table>
+        <thead><tr><th>Ottawa (ET)</th><th>Market / Sleeve</th><th>Path</th><th>Verdict</th><th>Quote / Limit</th><th>Latency</th><th>Diagnosis</th></tr></thead>
+        <tbody id="sf_rows"></tbody>
+      </table>
     </div>
   </div>
 </div>
@@ -2641,7 +2608,7 @@ function renderRisklessRadar(rad) {
       `<span class="sf-chip">Peak Carry Velocity: <b class="pos">${Number(s.top_bps_per_hr || 0).toFixed(0)} bps/hr</b></span>`;
   }
   const allOpps = _lastRadarData.opportunities || [];
-  const rows = allOpps.filter(o => _radarFilter === 'ALL' ? true : o.bucket === _radarFilter);
+  const rows = allOpps.filter(o => _radarFilter === 'ALL' ? !(o.bucket === 'LOCKED_REWARD' && !o.authorized_live) : o.bucket === _radarFilter);
   const tb = document.getElementById('radar_rows');
   if (!tb) return;
   if (!rows.length) {
@@ -2764,16 +2731,22 @@ function renderPmTables(pm) {
   if (_pmFilter === 'riskless') {
     const curve = (pm.pure_riskless_curve && pm.pure_riskless_curve.length >= 2) ? pm.pure_riskless_curve : [0, Number(pm.pure_riskless_pnl_usd || 0)];
     drawSpark(curve);
-    const flatN = Number(pm.pure_riskless_flat_merges || 0);
-    const flatTxt = flatN > 0 ? ` &bull; ${flatN} Flat Merges` : '';
-    if (sparkLbl) sparkLbl.innerHTML = `Pure Riskless Realized Curve: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W / ${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR${flatTxt})`;
+    const lockStart = Number(pm.riskless_lock_start_usd || 60.92);
+    const curEq = Number(pm.equity_usd || pm.bankroll_usd || 0);
+    const postCash = Number(pm.post_lock_cash_delta_usd ?? (curEq - lockStart));
+    if (sparkLbl) sparkLbl.innerHTML = `All-Time Riskless: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W/${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR) &bull; Post-Lock Cash: <b class="pos">${postCash >= 0 ? '+' : ''}$${postCash.toFixed(2)}</b> ($${lockStart.toFixed(2)} &rarr; $${curEq.toFixed(2)})`;
   } else {
     drawSpark(pm.equity_curve || []);
     if (sparkLbl) sparkLbl.innerHTML = `All-Time Account Curve (Incl. Paused Legacy Directional): <b>${Number(pm.epoch_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(pm.epoch_net_pnl_usd || 0).toFixed(2)}</b>`;
   }
 
   const allStrats = pm.live_strategies || [];
-  const strats = _pmFilter === 'riskless' ? allStrats.filter(s => s.is_active_riskless) : allStrats;
+  const strats = (_pmFilter === 'riskless' ? allStrats.filter(s => s.is_active_riskless) : allStrats).slice().sort((a, b) => {
+    const qa = Number(a.open || 0) * 100 + (restBySlv[a.sleeve] || 0) * 10 + (Number(a.epoch_w || 0) > 0 ? 5 : 0);
+    const qb = Number(b.open || 0) * 100 + (restBySlv[b.sleeve] || 0) * 10 + (Number(b.epoch_w || 0) > 0 ? 5 : 0);
+    if (qb !== qa) return qb - qa;
+    return Number(b.epoch_pnl || 0) - Number(a.epoch_pnl || 0);
+  });
   const stEl = document.getElementById('pm_strats');
   if (stEl) {
     stEl.innerHTML = strats.map(st => {
@@ -2800,13 +2773,17 @@ function renderPmTables(pm) {
   const trEl = document.getElementById('pm_trades');
   if (trEl) {
     trEl.innerHTML = trades.slice(0, 14).map(c => {
-      const recBadge = c.fee_reconciled ? ` <span class="cyan" title="On-chain wallet +$${Number(c.net_pnl_usd).toFixed(2)} (raw JSON $${Number(c.raw_pnl_usd).toFixed(2)} pre-fix est fee)">*wallet</span>` : '';
+      const recBadge = c.fee_reconciled ? ` <span class="cyan" title="On-chain wallet +$${Number(c.net_pnl_usd).toFixed(2)} (raw JSON $${Number(c.raw_pnl_usd).toFixed(2)})">*wallet</span>` : '';
       const tsClosed = c.time_et || fmtOttawa(c.unix_ts || c.time_utc, 'md_hms');
+      const mktHtml = c.title
+        ? `<b>${esc(c.title.length > 54 ? c.title.slice(0, 52) + '…' : c.title)}</b><div class="sub">${esc(c.side_tag || c.asset)}${c.market_id ? ` • #${esc(c.market_id)}` : ''}</div>`
+        : `<b>${esc(c.asset)}</b>`;
+      const exPxTxt = (c.exit_px !== null && c.exit_px !== undefined && c.exit_px !== '') ? esc(c.exit_px) : '1.000';
       return `<tr>
         <td style="white-space:nowrap;">${esc(tsClosed)}</td>
-        <td><b>${esc(c.asset)}</b></td>
+        <td>${mktHtml}</td>
         <td class="sub">${esc(shortSlv(c.sleeve || '').slice(0, 20))}</td>
-        <td>${esc(c.entry_px)} &rarr; ${esc(c.exit_px)}</td>
+        <td>${esc(c.entry_px)} &rarr; ${exPxTxt}</td>
         <td>$${Number(c.notional_usd || 0).toFixed(2)}</td>
         <td class="${c.net_pnl_usd >= 0 ? 'pos' : 'neg'}"><b>${c.net_pnl_usd >= 0 ? '+' : ''}$${Number(c.net_pnl_usd || 0).toFixed(2)}</b>${recBadge}</td>
         <td>${esc((c.reason || '').slice(0, 26))}</td>
@@ -3114,13 +3091,13 @@ async function refreshNow(force=false) {
 
     const modeBadge = document.getElementById('hdr_mode_badge');
     if (modeBadge) {
-      modeBadge.textContent = risklessOnly ? '100% PURE RISKLESS LOCK • v6.0' : `HYBRID MODE v${cfgVer}`;
+      modeBadge.textContent = risklessOnly ? '100% PURE RISKLESS LOCK • v6.1' : `HYBRID MODE v${cfgVer}`;
     }
 
     const syncEt = d.fetched_at_et || fmtOttawa(d.unix_ts || d.fetched_at_utc, 'full');
     _pollSeq += 1;
     _lastSyncClientMs = Date.now();
-    _lastMetaPrefix = `Synced: ${syncEt} (Ottawa) | Schema v${cfgVer} | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Free: ${mem.available || '?'} / ${mem.total || '?'} MB`;
+    _lastMetaPrefix = `Synced: ${syncEt} (Ottawa) | Load: ${la[0]} (${la[1]}, ${la[2]}) | RAM Free: ${mem.available || '?'} / ${mem.total || '?'} MB`;
     document.getElementById('meta').textContent = `${_lastMetaPrefix} | Live Poll #${_pollSeq} (0s ago)`;
 
     _lastPaaData = paa;
@@ -3130,25 +3107,24 @@ async function refreshNow(force=false) {
     renderPmTables(pm);
 
     const pmHdr = document.getElementById('pm_harvester_hdr');
-    if (pmHdr) pmHdr.textContent = `Polymarket v${cfgVer} Harvester — Wallet-Reconciled W/L`;
+    if (pmHdr) pmHdr.textContent = `Polymarket Riskless Harvester — Wallet-Reconciled W/L`;
 
     const spots = Object.assign({}, a124.spots || {}, d.shm_spots || {});
     const shmAnc = d.shm_anchored || {};
-    document.getElementById('spots').innerHTML = ['BTC', 'SOL', 'ETH', 'XAU', 'XAG', 'XRP'].filter(k => spots[k] !== undefined && Number(spots[k]) > 0).map(k => {
+    document.getElementById('spots').innerHTML = ['BTC', 'ETH', 'SOL', 'XRP', 'HYPE', 'XAU', 'XAG'].filter(k => spots[k] !== undefined && Number(spots[k]) > 0).map(k => {
       const ancTag = shmAnc[k] ? ' <span class="pos" title="Chainlink Basis Anchored">CL</span>' : '';
-      const modeTag = risklessOnly ? ' <span class="cyan" title="Oracle Feed Active for D1/Barrier Boxes (Unhedged Dir OFF)">BOX</span>' : '';
-      return `<span class="spot-chip"><b>${esc(k)}</b> $${spots[k]}${ancTag}${modeTag}</span>`;
+      return `<span class="spot-chip"><b>${esc(k)}</b> $${spots[k]}${ancTag}</span>`;
     }).join('');
 
-    // 6 Institutional Riskless-First KPI Cards
+    // 6 Institutional Riskless-First KPI Cards (Penny-Exact Wallet-to-PnL Reconciliation)
     const cash = Number(pm.bankroll_usd ?? 0);
     const openBook = Number(pm.open_book_usd ?? 0);
     const totalEq = Number(pm.equity_usd ?? (cash + openBook));
+    const lockStartEq = Number(pm.riskless_lock_start_usd || 60.92);
+    const postLockDelta = Number(pm.post_lock_cash_delta_usd ?? (totalEq - lockStartEq));
+    const postLockPct = Number(pm.post_lock_cash_pct ?? (100.0 * postLockDelta / Math.max(0.01, lockStartEq)));
     const d24Usd = pm.equity_24h_delta_usd !== undefined && pm.equity_24h_delta_usd !== null ? Number(pm.equity_24h_delta_usd) : null;
-    const d24Pct = pm.equity_24h_pct !== undefined && pm.equity_24h_pct !== null ? Number(pm.equity_24h_pct) : null;
-    const d24Badge = d24Usd !== null
-      ? `<span class="pill ${d24Usd >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;">${d24Usd >= 0 ? '+' : ''}$${d24Usd.toFixed(2)} (${d24Pct >= 0 ? '+' : ''}${d24Pct.toFixed(1)}% 24h)</span>`
-      : `<span class="sub" style="font-size:12px;">(${Number(pm.quoting_utilization_pct || 0).toFixed(1)}% Quoting)</span>`;
+    const lockBadge = `<span class="pill ${postLockDelta >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="Exact wallet gain since $${lockStartEq.toFixed(2)} Pure Riskless Lock">$${lockStartEq.toFixed(2)} &rarr; ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} (${postLockPct >= 0 ? '+' : ''}${postLockPct.toFixed(1)}%)</span>`;
     const quoteCash = Number(pm.quoting_cash_usd ?? 0);
     const freeCash = Number(pm.free_cash_usd ?? cash);
     const utilPct = Number(pm.quoting_utilization_pct ?? (cash > 0 ? (100 * quoteCash / cash) : 0));
@@ -3159,10 +3135,12 @@ async function refreshNow(force=false) {
 
     const prW = Number(pm.pure_riskless_wins ?? 0);
     const prL = Number(pm.pure_riskless_losses ?? 0);
-    const prFlat = Number(pm.pure_riskless_flat_merges ?? 0);
     const prWr = Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1);
     const prPnl = Number(pm.pure_riskless_pnl_usd ?? 0);
+    const plW = Number(pm.post_lock_wins ?? 0);
     const plL = Number(pm.post_lock_losses ?? 0);
+    const d24Sub = d24Usd !== null ? ` (24h: <b class="${d24Usd >= 0 ? 'pos' : 'warn'}">${d24Usd >= 0 ? '+' : ''}$${d24Usd.toFixed(2)}</b>)` : '';
+    const openSub = openBook > 0.005 ? ` &bull; Open: <b>$${openBook.toFixed(2)}</b>` : '';
 
     const zlPnl = Number(a124.zero_loss_t1000_pnl_usd || vf.zero_loss_shadow_t1000_pnl_usd || 0);
     const zlWins = Number(a124.zero_loss_wins_total || vf.zero_loss_shadow_wins || 0);
@@ -3177,15 +3155,15 @@ async function refreshNow(force=false) {
 
     document.getElementById('kpis').innerHTML = `
       <div class="card">
-        <div class="label">Total Account Equity &amp; On-Chain Cash</div>
-        <div class="val pos">$${totalEq.toFixed(2)} ${d24Badge}</div>
+        <div class="label">On-Chain Cash &amp; Account Equity</div>
+        <div class="val pos">$${totalEq.toFixed(2)} ${lockBadge}</div>
         <div class="util-bar"><div class="util-fill" style="width:${Math.min(100, utilPct)}%;"></div></div>
-        <div class="sub">Cash: <b>$${cash.toFixed(2)}</b> &bull; Open: <b>$${openBook.toFixed(2)}</b> &bull; Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> (${utilPct.toFixed(0)}%) &bull; Free: <b>$${freeCash.toFixed(2)}</b></div>
+        <div class="sub">Cash: <b>$${cash.toFixed(2)}</b>${d24Sub}${openSub} &bull; Quoting: <b class="pos">$${quoteCash.toFixed(2)}</b> (${utilPct.toFixed(0)}%) &bull; Free: <b>$${freeCash.toFixed(2)}</b></div>
       </div>
       <div class="card">
         <div class="label">Pure Riskless Live Record</div>
         <div class="val ${prL === 0 ? 'pos' : 'warn'}">${prW}W / ${prL}L (${prWr}%)</div>
-        <div class="sub">Riskless Net: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b>${prFlat > 0 ? ` &bull; Flat Merges: <b>${prFlat}</b>` : ''} &bull; Post-Lock Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
+        <div class="sub">Post-Lock Cash: <b class="pos">${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)}</b> (${plW}W/${plL}L) &bull; All-Time Riskless: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
       </div>
       <div class="card">
         <div class="label">Working CLOB Orders &amp; Book</div>
@@ -3245,15 +3223,6 @@ async function refreshNow(force=false) {
       </tr>
     `).join('') || '<tr><td colspan="5" class="sub">No open shadow boxes</td></tr>';
 
-    const dsmEl = document.getElementById('dir_shdw_meta');
-    if (dsmEl) {
-      const ca = ds.cand_a_zsplit || {}, xau = ds.xau_15m || {}, sl = ds.sol_v395 || {};
-      dsmEl.innerHTML =
-        `<span class="pill pill-info" style="margin-right:5px;">SHADOW-ONLY (0% Live Allocation)</span> ` +
-        `Dir OOS (${esc(ds.spec_version || 'v3.1')}): <b>+$${Number(ds.oos_pnl_usd || 0).toFixed(0)}</b> (${ds.oos_wins ?? 0}W/${ds.oos_losses ?? 0}L) &bull; ` +
-        `XAU 15m: ${xau.wins ?? 0}W/${xau.losses ?? 0}L &bull; z-Split: ${ca.wins ?? 0}W/${ca.losses ?? 0}L &bull; SOL Shadow: ${sl.wins ?? 0}W/${sl.losses ?? 0}L (<b>Paused Live</b>)`;
-    }
-
     document.getElementById('a124_closed').innerHTML = (a124.recent_closed || []).map(p => `
       <tr>
         <td style="white-space:nowrap;">${esc(p.closed_et || fmtOttawa(p.closed_utc, 'md_hm'))}</td>
@@ -3263,21 +3232,6 @@ async function refreshNow(force=false) {
         <td class="${p.won ? 'pos' : 'neg'}"><b>${p.t100_pnl >= 0 ? '+' : ''}$${Number(p.t100_pnl || 0).toFixed(2)}</b> / ${p.t1000_pnl >= 0 ? '+' : ''}$${Number(p.t1000_pnl || 0).toFixed(2)}</td>
       </tr>
     `).join('') || '<tr><td colspan="5" class="sub">No closed shadow boxes recorded yet</td></tr>';
-
-    const apVer = ap.version || 'v5.2.0';
-    const apHdr = document.getElementById('apex_hdr');
-    if (apHdr) apHdr.textContent = `Hyperliquid APEX ${apVer} (Testnet — $0 Mainnet, 4H Bar Cadence)`;
-    document.getElementById('apex_meta').innerHTML =
-      `State: <b>${esc(ap.circuit_breaker || '-')}</b> (${esc(ap.reconciliation_status || '-')}) | NAV: <b class="pos">$${Number(ap.nav_usd || 0).toFixed(2)}</b> | Regime: <b>${esc(ap.regime || '-')}</b> | Gate 2: <b>${esc(ap.gate2_fills || '-')}</b> (${ap.maker_pct ?? 0}% Maker) | Next 4H: <b>${next4hCountdown()}</b>`;
-    document.getElementById('apex_fills').innerHTML = (ap.recent_fills || []).map(f => `
-      <tr>
-        <td style="white-space:nowrap;">${esc(f.time_et || fmtOttawa(f.time_utc, 'hms'))}</td>
-        <td>${esc(f.symbol)}</td>
-        <td>${esc(f.side)}</td>
-        <td>${esc(f.order_type)}</td>
-        <td class="${f.shortfall_bps <= 5 ? 'pos' : 'warn'}">${f.shortfall_bps} bps</td>
-      </tr>
-    `).join('');
   } catch (e) {
     document.getElementById('meta').textContent = 'Dashboard fetch error: ' + e;
   } finally {
@@ -3456,7 +3410,7 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="DOMINUS — RISKLESS PAA Command Center v6.0")
+    parser = argparse.ArgumentParser(description="DOMINUS — RISKLESS PAA Command Center v6.1")
     parser.add_argument("--host", default="kraken-finland", help="SSH host alias")
     parser.add_argument("--port", type=int, default=8787, help="Local HTTP dashboard port")
     parser.add_argument("--once", action="store_true", help="Print CLI summary once and exit")
@@ -3513,7 +3467,7 @@ def main() -> None:
     url = f"http://127.0.0.1:{args.port}"
     srv = ExclusiveThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     srv.daemon_threads = True
-    print(f"Dominus Riskless PAA Command Center v6.0 running locally at {url} (Background SSH cache=5s, Ctrl+C to stop)", flush=True)
+    print(f"Dominus Riskless PAA Command Center v6.1 running locally at {url} (Background SSH cache=5s, Ctrl+C to stop)", flush=True)
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

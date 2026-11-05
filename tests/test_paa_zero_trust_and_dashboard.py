@@ -538,3 +538,183 @@ def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(
     assert anom_mf == []
 
 
+def test_cross_position_exit_fill_isolation_and_dashboard_v61_riskless_cleanup(tmp_path: Path, monkeypatch) -> None:
+    import asyncio
+    import ast
+    import scripts.dominus_command_center as dcc
+    import scripts.paa_autonomous_controller as pac
+    import src.polymarket_research.polymarket_live_harvester as plh
+
+    # 1. Command Center v6.1 probe syntax + 100% Riskless UI cleanup invariants
+    ast.parse(dcc.REMOTE_PROBE_PY)
+    assert '"dashboard_version": "6.1.0"' in dcc.REMOTE_PROBE_PY
+    assert '"paa-system-supervisor.timer"' in dcc.REMOTE_PROBE_PY
+    assert '"HYPE"' in dcc.REMOTE_PROBE_PY
+    assert "apex-perp.service" not in dcc.REMOTE_PROBE_PY
+    assert "polymarket-trader.service" not in dcc.REMOTE_PROBE_PY
+    assert "background: #0d1421; position: sticky; top: 0; z-index: 3" in dcc.HTML_PAGE
+    assert "apex_hdr" not in dcc.HTML_PAGE
+    assert "dir_shdw_meta" not in dcc.HTML_PAGE
+    assert "100% PURE RISKLESS LOCK" in dcc.HTML_PAGE
+
+    # 2. PAA Controller normalization repairs pre-fix cross-position stolen SELL records (#91) without touching valid 2-leg D1 boxes (#64)
+    raw_91 = {
+        "trade_id": "LOCK1_LIVE_SPORTS_CHILD_MONEYLINE_1793913711_00471",
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "is_dominance_box": True,
+        "is_single_leg_lock": True,
+        "hold_to_maturity_lock": True,
+        "entry_shares": 5.0,
+        "filled_exit_shares": 23.0,
+        "notional_usd": 4.98,
+        "fee_usd": 0.001,
+        "entry_fee_cash_usd": 0.001,
+        "payout_usd": 22.977,
+        "net_pnl_usd": 18.0,
+        "won": True,
+        "close_reason": "MAKER_SCALP_FILLED_CLOB",
+        "inventory_reconciled": True,
+        "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD",
+        "target_token": "YES",
+        "resolved_winning_outcome": "YES",
+    }
+    norm_91, ver_pnl_91, raw_pnl_91, was_rec_91 = pac.reconcile_closed_position_record(raw_91)
+    assert was_rec_91 is True
+    assert raw_pnl_91 == pytest.approx(18.0)
+    assert ver_pnl_91 == pytest.approx(0.019, abs=1e-4)
+    assert norm_91["payout_usd"] == pytest.approx(5.0)
+    assert norm_91["filled_exit_shares"] == pytest.approx(0.0)
+
+    valid_d1_box = {
+        "trade_id": "D1_LIVE_BTC_BOX_64",
+        "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "is_dominance_box": True,
+        "box_legs_summary": [{"leg": "A"}, {"leg": "B"}],
+        "entry_shares": 15.0,
+        "filled_exit_shares": 15.0,
+        "notional_usd": 17.65,
+        "fee_usd": 0.0,
+        "payout_usd": 29.85,
+        "net_pnl_usd": 12.20,
+        "won": True,
+        "close_reason": "D1_BOX_CONSOLIDATED",
+    }
+    _, ver_d1, _, was_rec_d1 = pac.reconcile_closed_position_record(valid_d1_box)
+    assert was_rec_d1 is False
+    assert ver_d1 == pytest.approx(12.20)
+
+    # 3. Live Harvester exact #90 + #91 cross-position SELL fill isolation at resolution
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "harv_90_91.json")
+    monkeypatch.setenv("PM_FAST_TICK_DIR", str(tmp_path))
+    h = plh.PolymarketLiveHarvester(dry_run=True)
+    h.dry_run = False
+    shared_tok = "98322534555686367170337960803589961128812732324210236318000270203482848737145"
+    cond_id = "0x5f8e784f928505ceb0aeebbf43bcc3d8bcd95121dea96b1acc8910452821957c"
+    oid_90_sell = "0xf449be2d925c2efedff6679c9758666012c309f3a48fbab50edac39fbaf32df6"
+    oid_91_buy = "0xeb06897f111122223333444455556666777788889999aaaabbbbccccddddeeee"
+
+    # #90 already closed via immediate FAK early profit recycle (oid recorded in order_records)
+    h.closed_positions.append({
+        "trade_id": "MKR_LOCK1_LIVE_SPORTS_CHILD_MONEYLINE_1793910000_00471",
+        "market_id": "6700471",
+        "condition_id": cond_id,
+        "token_id": shared_tok,
+        "target_token": "YES",
+        "entry_shares": 23.0,
+        "filled_exit_shares": 23.0,
+        "notional_usd": 22.862,
+        "payout_usd": 22.977,
+        "net_pnl_usd": 0.11,
+        "order_records": {oid_90_sell: {"matched": 23.0, "cash": 22.977, "fee": 0.0, "cash_is_estimated": False}},
+        "close_reason": "HTM_EARLY_998_PROFIT_RECYCLE",
+        "won": True,
+    })
+
+    sell_90_fill = {
+        "fill_id": f"3987b954-accc-4679-90cb-c63e79258837:{oid_90_sell}",
+        "trade_id": "3987b954-accc-4679-90cb-c63e79258837",
+        "order_id": oid_90_sell,
+        "size": 23.0,
+        "cash": 22.977,
+        "price": 0.999,
+        "status": "CONFIRMED",
+        "transaction_hash": "0x" + "11" * 32,
+    }
+    buy_91_fill = {
+        "fill_id": f"buy91:{oid_91_buy}",
+        "trade_id": "buy91-trade",
+        "order_id": oid_91_buy,
+        "size": 5.0,
+        "cash": 4.98,
+        "price": 0.996,
+        "status": "CONFIRMED",
+        "transaction_hash": "0x" + "22" * 32,
+    }
+
+    def _fake_fills(token_id, after_ts=0.0, side="SELL", order_id=None):
+        if str(side).upper() == "SELL":
+            if order_id in (None, "", oid_90_sell):
+                return [sell_90_fill]
+            return []
+        if order_id in (None, "", oid_91_buy):
+            return [buy_91_fill]
+        return []
+
+    h._wallet_token_balance = lambda _tok: (0.0, h.ONCHAIN_SOURCE)
+    h.executor.get_account_fills = _fake_fills
+    h.executor.get_current_block_number = lambda: 96_805_200
+    h.executor.find_redemption_payouts = lambda *_a, **_kw: [{
+        "transaction_hash": "0x185e8022b69da6cae104548bde023783f6622f4609191bd86a7016882f35d250",
+        "block_number": 96805158,
+        "payout_usd": 5.0,
+    }]
+
+    tid_91 = "LOCK1_LIVE_SPORTS_CHILD_MONEYLINE_1793913711_00471"
+    pos_91 = {
+        "trade_id": tid_91,
+        "box_id": tid_91,
+        "is_dominance_box": True,
+        "is_single_leg_lock": True,
+        "hold_to_maturity_lock": True,
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "market_id": "6700471",
+        "condition_id": cond_id,
+        "token_id": shared_tok,
+        "target_token": "YES",
+        "asset": "SPORTS_CHILD_MONEYLINE",
+        "horizon": "lock_1leg",
+        "entry_order_id": oid_91_buy,
+        "entry_price": 0.996,
+        "entry_shares": 5.0,
+        "gross_entry_shares": 5.0,
+        "remaining_shares": 5.0,
+        "remaining_exit_shares": 5.0,
+        "filled_exit_shares": 0.0,
+        "notional_usd": 4.98,
+        "remaining_cost_basis": 4.98,
+        "fee_usd": 0.001,
+        "entry_fee_cash_usd": 0.001,
+        "entry_ts": 1793913711.0,
+        "status": plh.ExecutionStatus.POSITION_CONFIRMED,
+        "inventory_reconciled": True,
+        "exit_order_id": None,
+        "exit_order_status": "DETERMINISTIC_TERMINAL_HOLD",
+    }
+    h.active_positions[tid_91] = pos_91
+
+    # Direct _record_history_fills call must ALSO reject #90's claimed SELL fill
+    assert h._record_history_fills(pos_91, [sell_90_fill], taker=False) == 0
+    assert float(pos_91.get("filled_exit_shares", 0.0) or 0.0) == pytest.approx(0.0)
+
+    asyncio.run(h._apply_market_resolution(tid_91, pos_91, "YES"))
+    assert tid_91 not in h.active_positions
+    settled_91 = h.closed_positions[-1]
+    assert settled_91["trade_id"] == tid_91
+    assert settled_91["won"] is True
+    assert settled_91["close_reason"] == "ONCHAIN_REDEMPTION_CONFIRMED"
+    assert settled_91["payout_usd"] == pytest.approx(5.0, abs=0.01)
+    assert settled_91["net_pnl_usd"] == pytest.approx(0.02, abs=0.01)
+
+
+

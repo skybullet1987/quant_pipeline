@@ -1,20 +1,20 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 17:22:17 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-05 22:05:25 UTC | Repo: C:/Users/Anton/source/repos/Dominus
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,309B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
   - [systemd/polymarket-live-harvester.service] (L28-52 | 1,935B) :: Graceful systemd Production Unit (Restart=on-failure, --max-tte 2400.0)
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,621B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4604 | 902,557B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
-  - [src/polymarket_research/polymarket_live_executor.py] (L4605-7111 | 451,309B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7112-8121 | 188,382B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
-  - [src/polymarket_research/deribit_svi_surface.py] (L8122-8289 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
-  - [src/polymarket_research/polymarket_paper_trader.py] (L8290-9023 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  - [src/polymarket_research/check_polymarket_balance.py] (L9024-9058 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  - [src/polymarket_research/redeem_settled_positions.py] (L9059-9157 | 14,780B) :: CTF Settled Position Redemption Engine
-  - [audit_losing_trades.py] (L9158-9271 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  - [scripts/honest_purged_wfo_optimizer.py] (L9272-9674 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  - [src/polymarket_research/polymarket_live_harvester.py] (L206-4570 | 892,626B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
+  - [src/polymarket_research/polymarket_live_executor.py] (L4571-7077 | 451,309B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7078-8087 | 188,382B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/deribit_svi_surface.py] (L8088-8255 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
+  - [src/polymarket_research/polymarket_paper_trader.py] (L8256-8989 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  - [src/polymarket_research/check_polymarket_balance.py] (L8990-9024 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  - [src/polymarket_research/redeem_settled_positions.py] (L9025-9123 | 14,780B) :: CTF Settled Position Redemption Engine
+  - [audit_losing_trades.py] (L9124-9237 | 21,575B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  - [scripts/honest_purged_wfo_optimizer.py] (L9238-9640 | 66,113B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 """
 from __future__ import annotations
 # [01/13] config/polymarket_risk_config.json
@@ -1366,18 +1366,24 @@ class PolymarketLiveHarvester:
    if exclude_tid is not None and d==exclude_tid:continue
    e.update(str(x)for x in(p.get("entry_fill_ids")or[]));e.update(str(x)for x in(p.get("exit_fill_ids")or[]))
   return e
- def _fetch_account_fills(a,token_id,after_ts,side,order_id=None,exclude_tid=None):
-  g=getattr(a.executor,"get_account_fills",None)
-  if g is None:return None
-  try:c=g(token_id,after_ts=float(after_ts),side=side,order_id=order_id or None)
+ def _fetch_account_fills(b,token_id,after_ts,side,order_id=None,exclude_tid=None):
+  p=getattr(b.executor,"get_account_fills",None)
+  if p is None:return None
+  try:n=p(token_id,after_ts=float(after_ts),side=side,order_id=order_id or None)
   except Exception as e:logger.error(f"[LIFECYCLE] Trade history unavailable for {token_id}: {e}");return None
-  if not isinstance(c,list):return None
-  b=a._known_fill_ids(exclude_tid);d=[]
-  for f in c:
-   if not isinstance(f,dict)or str(f.get("fill_id"))in b:continue
-   if(a._num(f.get("size"))or.0)<=.0:continue
-   d.append(f)
-  return d
+  if not isinstance(n,list):return None
+  from src.polymarket_research.riskless_protocol_v2_expansion import collect_claimed_position_fill_and_order_ids as a;j,i,d,c=a(b,exclude_tid=exclude_tid);m=b._known_fill_ids(exclude_tid)|j;h=str(side or"").upper();g=str(order_id or"").strip();o=[]
+  for f in n:
+   if not isinstance(f,dict)or str(f.get("fill_id"))in m:continue
+   l=str(f.get("trade_id")or f.get("id")or"").strip()
+   if l and l in i:continue
+   k=str(f.get("order_id")or"").strip()
+   if not g and k:
+    if h=="SELL"and k in c:continue
+    if h=="BUY"and k in d:continue
+   if(b._num(f.get("size"))or.0)<=.0:continue
+   o.append(f)
+  return o
  def _fetch_entry_evidence(a,token_id,submitted_ts,entry_order_id=None,exclude_tid=None):
   b=a._fetch_account_fills(token_id,submitted_ts-5.,"BUY",entry_order_id,exclude_tid)
   if b is None:return None
@@ -1548,16 +1554,24 @@ class PolymarketLiveHarvester:
   else:a.executor.update_reservation(y,f)
   return True
  def _record_history_fills(a,pos,fills,taker):
-  k=defaultdict(list)
-  for f in fills:k[str(f.get("order_id")or f.get("fill_id"))].append(f)
-  c=0;h=a._exit_taker_fee_rate(pos);g=float(pos.get("fee_exponent_applied")or 1.)
-  for s,o in k.items():
-   n=(pos.get("order_records")or{}).get(s)or{};d=.0 if n.get("cash_is_estimated")else float(n.get("matched",.0)or.0);e=.0 if n.get("cash_is_estimated")else float(n.get("cash",.0)or.0);j=.0 if n.get("cash_is_estimated")else float(n.get("fee",.0)or.0);q=sum(a._num(f.get("size"))or.0 for f in o);m=sum(a._num(f.get("cash"))or.0 for f in o);l=d+q;p=e+m;r=j+(a._estimated_taker_fee(q,m,fee_rate=h,fee_exponent=g)if taker else.0);b=all(bool(f.get("transaction_hash"))and str(f.get("status","")).upper()in{"MINED","CONFIRMED"}for f in o);i=a.record_fill_and_update_position(pos,s,l,p,r,cash_is_estimated=(not b and not a.dry_run))
-   if isinstance(i,dict):i["is_taker"]=bool(taker)
-   c+=len(o)
-  pos["exit_fill_ids"]=sorted(set(pos.get("exit_fill_ids")or[])|{str(f.get("fill_id"))for f in fills});pos["exit_trade_ids"]=sorted(set(pos.get("exit_trade_ids")or[])|{str(f.get("trade_id"))for f in fills if f.get("trade_id")})
-  if taker and c:pos["exit_fee_estimated"]=True
-  return c
+  from src.polymarket_research.riskless_protocol_v2_expansion import filter_unclaimed_position_fills as b;fills=b(a,pos,fills,side="SELL",exclude_tid=str(pos.get("trade_id")or""))
+  if not fills:return 0
+  u=defaultdict(list)
+  for f in fills:u[str(f.get("order_id")or f.get("fill_id"))].append(f)
+  d=0;o=a._exit_taker_fee_rate(pos);n=float(pos.get("fee_exponent_applied")or 1.);i=float(pos.get("entry_shares")or.0);h=[]
+  for z,x in u.items():
+   w=(pos.get("order_records")or{}).get(z)or{};j=.0 if w.get("cash_is_estimated")else float(w.get("matched",.0)or.0);m=.0 if w.get("cash_is_estimated")else float(w.get("cash",.0)or.0);t=.0 if w.get("cash_is_estimated")else float(w.get("fee",.0)or.0);q=sum(a._num(f.get("size"))or.0 for f in x);g=sum(a._num(f.get("cash"))or.0 for f in x);e=j+q;r=m+g
+   if i>.0:
+    s=sum(float((v or{}).get("matched",.0)or.0)for k,v in(pos.get("order_records")or{}).items()if str(k)!=z and isinstance(v,dict));l=max(.0,i-s)
+    if e>l+.02:
+     if l<=1e-6:continue
+     r=r*(l/e);q=max(.0,l-j);g=max(.0,r-m);e=l
+   y=t+(a._estimated_taker_fee(q,g,fee_rate=o,fee_exponent=n)if taker else.0);c=all(bool(f.get("transaction_hash"))and str(f.get("status","")).upper()in{"MINED","CONFIRMED"}for f in x);p=a.record_fill_and_update_position(pos,z,e,r,y,cash_is_estimated=(not c and not a.dry_run))
+   if isinstance(p,dict):p["is_taker"]=bool(taker)
+   d+=len(x);h.extend(x)
+  if h:pos["exit_fill_ids"]=sorted(set(pos.get("exit_fill_ids")or[])|{str(f.get("fill_id"))for f in h if f.get("fill_id")});pos["exit_trade_ids"]=sorted(set(pos.get("exit_trade_ids")or[])|{str(f.get("trade_id"))for f in h if f.get("trade_id")})
+  if taker and d:pos["exit_fee_estimated"]=True
+  return d
  def _after_unwind_reconciled(a,tid,pos,reason_default):
   pos["unwind_order_id"]=None;pos["is_liquidating"]=False;pos.pop("unwind_attempt_ts",None)
   if float(pos.get("remaining_shares",.0)or.0)<=.01:a._close_position(tid,pos,ExecutionStatus.SETTLED,pos.get("unwind_reason")or reason_default,won=None);return
@@ -3727,8 +3741,8 @@ class PolymarketLiveHarvester:
   return a
  async def _apply_market_resolution(a,tid,pos,winning_outcome):
   if tid not in a.active_positions:return
-  t=winning_outcome.get("winning_outcome")if isinstance(winning_outcome,dict)else str(winning_outcome or"")
-  if pos.get("resolved_winning_outcome")is None:pos["resolved_winning_outcome"]=t;pos["resolution_seen_at_ts"]=time.time();a.save_state()
+  j=winning_outcome.get("winning_outcome")if isinstance(winning_outcome,dict)else str(winning_outcome or"")
+  if pos.get("resolved_winning_outcome")is None:pos["resolved_winning_outcome"]=j;pos["resolution_seen_at_ts"]=time.time();a.save_state()
   if position_is_settlement_receivable(pos):return
   if pos.get("status")=="UNRESOLVED_SETTLEMENT"and not a.dry_run and bool(pos.get("exit_cash_estimated")):logger.info(f"[RESOLUTION DEFERRED] {tid}: awaiting CLOB fill confirmation for in-flight UNRESOLVED_SETTLEMENT exit.");return
   if pos.get("status")=="LIQUIDITY_CRISIS"or pos.get("exit_order_status")=="LIQUIDITY_CRISIS":pos["status"]=ExecutionStatus.POSITION_CONFIRMED;pos["exit_order_status"]="RESTING"if pos.get("exit_order_id")else"NONE"
@@ -3736,83 +3750,35 @@ class PolymarketLiveHarvester:
    await asyncio.to_thread(a._resolve_lifecycle,tid,pos,None,True)
    if tid not in a.active_positions:return
    if position_requires_lifecycle_resolution(pos)and pos.get("exit_order_status")!="RESOLUTION_CANCEL_UNCONFIRMED":logger.warning(f"[RESOLUTION DEFERRED] {tid}: unresolved execution outcome {pos.get('exit_order_status')}; settling after reconciliation.");return
-  L=(pos.get("target_token")==t);C=pos.get("token_id");B=pos.get("exit_order_id")
-  if B:
-   y=await asyncio.to_thread(a.executor.cancel_order,B)
+  u=(pos.get("target_token")==j);p=pos.get("token_id");n=pos.get("exit_order_id")
+  if n:
+   l=await asyncio.to_thread(a.executor.cancel_order,n)
    if not a.dry_run:
-    if(y or{}).get("error"):pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
-    F=await asyncio.to_thread(a.executor.get_order_fill_summary,B,C)
-    if F is None:
-     try:M=await asyncio.to_thread(a._strict_open_orders);q={o.get("id")or o.get("orderID")for o in M if o};w=await asyncio.to_thread(a.executor.get_account_fills,C,float(pos.get("entry_ts",.0)or.0),"SELL",B)
-     except Exception:q,w={B},None
-     if B in q or w is None:pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
-     if w:a._record_history_fills(pos,w,taker=False)
+    if(l or{}).get("error"):pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
+    r=await asyncio.to_thread(a.executor.get_order_fill_summary,n,p)
+    if r is None:
+     try:v=await asyncio.to_thread(a._strict_open_orders);i={o.get("id")or o.get("orderID")for o in v if o};k=await asyncio.to_thread(a.executor.get_account_fills,p,float(pos.get("entry_ts",.0)or.0),"SELL",n)
+     except Exception:i,k={n},None
+     if n in i or k is None:pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
+     if k:a._record_history_fills(pos,k,taker=False)
      if float(pos.get("remaining_shares",.0)or.0)<=.02:a._close_position(tid,pos,ExecutionStatus.FILLED,"MAKER_SCALP_FILLED_CLOB",won=True);return
     else:
-     a._record_order_summary(pos,F,float(pos.get("target_exit_price",.0)or.0),taker=False)
+     a._record_order_summary(pos,r,float(pos.get("target_exit_price",.0)or.0),taker=False)
      if float(pos.get("remaining_shares",.0)or.0)<=.02:a._close_position(tid,pos,ExecutionStatus.FILLED,"MAKER_SCALP_FILLED_CLOB",won=True);return
-     if not F["terminal"]:pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
-    a.executor.release_inventory(reservation_id=B)
+     if not r["terminal"]:pos["exit_order_status"]="RESOLUTION_CANCEL_UNCONFIRMED";a.save_state();return
+    a.executor.release_inventory(reservation_id=n)
    pos["exit_order_id"]=None;pos["exit_order_status"]="CANCELED_FOR_RESOLUTION"
-  m=str(B or pos.get("unwind_order_id")or"").strip()or None;l=str(pos.get("entry_order_id")or pos.get("order_id")or"").strip()or None;j=float(pos.get("remaining_shares",pos.get("remaining_exit_shares",pos.get("entry_shares",.0)))or.0);d=j
+  h=str(n or pos.get("unwind_order_id")or"").strip()or None;g=str(pos.get("entry_order_id")or pos.get("order_id")or"").strip()or None;e=float(pos.get("remaining_shares",pos.get("remaining_exit_shares",pos.get("entry_shares",.0)))or.0);d=e
   if not a.dry_run:
-   if not L:
-    if(not bool(pos.get("inventory_reconciled"))and(pos.get("status")!=ExecutionStatus.POSITION_CONFIRMED or pos.get("exit_order_status")=="ENTRY_OUTCOME_UNKNOWN")and not(pos.get("trade_ids")or pos.get("transactions_hashes"))and float(pos.get("filled_exit_shares",.0)or.0)<.01 and float(pos.get("confirmed_realized_cash",pos.get("realized_exit_cash",.0))or.0)<=.0):
-     c=.0
-     if C and hasattr(a.executor,"get_account_fills"):
-      try:
-       v=await asyncio.to_thread(a.executor.get_account_fills,C,max(.0,float(pos.get("entry_ts",.0)or.0)-3e2),"BUY",l)
-       if not v and l is not None:v=await asyncio.to_thread(a.executor.get_account_fills,C,max(.0,float(pos.get("entry_ts",.0)or.0)-3e2),"BUY",None)
-       if isinstance(v,list)and v:
-        c=sum(float(f.get("size",.0)or.0)for f in v if isinstance(f,dict)and str(f.get("status","CONFIRMED")).upper()in("CONFIRMED","MINED","MATCHED",""))
-        if c>=.02:pos["inventory_reconciled"]=True;pos["trade_ids"]=list(dict.fromkeys(str(f.get("trade_id")or f.get("id"))for f in v if isinstance(f,dict)and(f.get("trade_id")or f.get("id"))));pos["transactions_hashes"]=list(dict.fromkeys(str(f.get("transaction_hash"))for f in v if isinstance(f,dict)and f.get("transaction_hash")))
-      except Exception:c=.0
-     i=None
-     if c<.02 and C:
-      try:i,_=await asyncio.to_thread(a._wallet_token_balance,C)
-      except Exception:i=None
-     if c<.02 and(i is None or float(i)<.02):
-      for K in("expected_terminal_payout_usd","redemption_receivable_usd","winning_shares_held","entry_shares","notional_usd","remaining_cost_basis","fee_usd","entry_fee_cash_usd"):pos[K]=.0
-      pos["expected_winning_outcome"]=winning_outcome;u="UNFILLED_MAKER_EXPIRED_NO_FILL"if"MAKER"in str(pos.get("box_type")or pos.get("fee_source")or"").upper()else"ENTRY_NOT_EXECUTED_AT_RESOLUTION";a._close_position(tid,pos,"NOT_EXECUTED",u,won=False,record_pnl=False);return
-     pos["inventory_reconciled"]=True
-    pos["expected_terminal_payout_usd"]=.0;pos["redemption_receivable_usd"]=.0;pos["winning_shares_held"]=.0;pos["expected_winning_outcome"]=winning_outcome;a._close_position(tid,pos,ExecutionStatus.SETTLED,"MARKET_RESOLVED_LOSS",won=False);return
-   J,I=await asyncio.to_thread(a._wallet_token_balance,C)
-   if I!=a.ONCHAIN_SOURCE and(J is None or J<.01):logger.warning(f"[RESOLUTION DEFERRED] {tid}: Winning position on-chain ERC-1155 balance unavailable (bal={J}, src={I}). Deferring resolution closeout until Polygon RPC responds.");return
-   if J is not None and I==a.ONCHAIN_SOURCE:d=min(d,J)
-   if d<.02:
-    if float(pos.get("confirmed_realized_cash",pos.get("realized_exit_cash",.0))or.0)<=.0 and C:
-     try:
-      g=await asyncio.to_thread(a.executor.get_account_fills,C,float(pos.get("entry_ts",.0)or.0),"SELL",m)
-      if not g and m is not None:g=await asyncio.to_thread(a.executor.get_account_fills,C,float(pos.get("entry_ts",.0)or.0),"SELL",None)
-      if isinstance(g,list)and g:a._record_history_fills(pos,g,taker=False)
-     except Exception:pass
-    p=float(pos.get("confirmed_realized_cash",pos.get("realized_exit_cash",.0))or.0)>float(pos.get("notional_usd",.0)or.0)
-    if p:pos["expected_terminal_payout_usd"]=.0;pos["redemption_receivable_usd"]=.0;pos["winning_shares_held"]=.0;pos["expected_winning_outcome"]=winning_outcome;pos["exit_cash_estimated"]=False;pos["estimated_exit_cash"]=.0;pos["confirmed_realized_cash"]=float(pos.get("confirmed_realized_cash")or pos.get("realized_exit_cash")or.0);a._close_position(tid,pos,ExecutionStatus.FILLED,"MAKER_SCALP_FILLED_CLOB",won=True);return
-    n=float(pos.get("remaining_shares",pos.get("remaining_exit_shares",j))or.0);b=.0
-    if n>=.02 and J is not None and I==a.ONCHAIN_SOURCE and float(J)<=1e-4:
-     if C and hasattr(a.executor,"get_account_fills"):
-      try:
-       h=await asyncio.to_thread(a.executor.get_account_fills,C,max(.0,float(pos.get("entry_ts",.0)or.0)-3e2),"BUY",l)
-       if not h and l is not None:h=await asyncio.to_thread(a.executor.get_account_fills,C,max(.0,float(pos.get("entry_ts",.0)or.0)-3e2),"BUY",None)
-       if isinstance(h,list)and h:pos["trade_ids"]=list(dict.fromkeys([str(x)for x in(pos.get("trade_ids")or[])if x]+[str(f.get("trade_id")or f.get("id"))for f in h if isinstance(f,dict)and(f.get("trade_id")or f.get("id"))]));pos["transactions_hashes"]=list(dict.fromkeys([str(x)for x in(pos.get("transactions_hashes")or[])if x]+[str(f.get("transaction_hash"))for f in h if isinstance(f,dict)and f.get("transaction_hash")]));s=sum(float(f.get("size",.0)or.0)for f in h if isinstance(f,dict)and str(f.get("status","CONFIRMED")).upper()in("CONFIRMED","MINED","MATCHED",""));E=float(pos.get("filled_exit_shares",.0)or.0);b=min(n,max(.0,s-E))
-      except Exception:b=.0
-     if b<.02 and hasattr(a.executor,"find_redemption_payouts"):
-      try:
-       A=await asyncio.to_thread(a.executor.get_current_block_number);z=await asyncio.to_thread(a.executor.find_redemption_payouts,str(pos.get("condition_id")or""),max(0,int(A)-15000)if isinstance(A,int)else None)
-       if isinstance(z,list)and z:b=min(n,max(float(r.get("payout_usd")or.0)for r in z))
-      except Exception:pass
-    if b>=.02:d=b;pos["_pre_redeemed_onchain"]=True;pos["_collateral_exit_credited"]=True;logger.info(f"[PRE-REDEEMED WIN DETECTED] {tid}: Confirmed {d:.2f} unexited BUY shares with 0 ERC-1155 balance after {winning_outcome} win -> settling as pre-redeemed on-chain payout.")
-    else:
-     pos["expected_terminal_payout_usd"]=.0;pos["redemption_receivable_usd"]=.0;pos["winning_shares_held"]=.0;pos["expected_winning_outcome"]=winning_outcome
-     if(not bool(pos.get("inventory_reconciled"))and(pos.get("status")!=ExecutionStatus.POSITION_CONFIRMED or pos.get("exit_order_status")=="ENTRY_OUTCOME_UNKNOWN")and not(pos.get("trade_ids")or pos.get("transactions_hashes"))and float(pos.get("filled_exit_shares",.0)or.0)<.01 and float(pos.get("confirmed_realized_cash",pos.get("realized_exit_cash",.0))or.0)<=.0):pos["entry_shares"]=.0;pos["notional_usd"]=.0;pos["remaining_cost_basis"]=.0;pos["fee_usd"]=.0;pos["entry_fee_cash_usd"]=.0;a._close_position(tid,pos,"NOT_EXECUTED","ENTRY_NOT_EXECUTED_AT_RESOLUTION",won=False,record_pnl=False);return
-     a._close_position(tid,pos,ExecutionStatus.SETTLED,"MARKET_RESOLVED_NO_INVENTORY",won=False);return
-   H=await asyncio.to_thread(a.executor.get_current_block_number);k=15000 if pos.get("_pre_redeemed_onchain")else 2500;pos["status"]="AWAITING_ONCHAIN_SETTLEMENT";pos["exit_order_status"]="AWAITING_REDEMPTION";pos["is_liquidating"]=False;pos["expected_terminal_payout_usd"]=round(d,4);pos["redemption_receivable_usd"]=round(d,4);pos["winning_shares_held"]=round(d,6);pos["expected_winning_outcome"]=winning_outcome;pos["resolution_block"]=max(0,int(H)-k)if isinstance(H,int)else None;a.save_state();logger.info(f"[RESOLVED - RECEIVABLE] {tid}: {d:.2f} winning shares held. Expected ${d:.2f} is a " "receivable, NOT realized cash, until a verified on-chain redemption receipt.")
+   from src.polymarket_research.riskless_protocol_v2_expansion import reconcile_resolution_fills_and_pre_redeem as b;m,d=await b(a,tid,pos,winning_outcome,u,p,h,g,e)
+   if m!="RECEIVABLE":return
+   t=await asyncio.to_thread(a.executor.get_current_block_number);f=15000 if pos.get("_pre_redeemed_onchain")else 2500;pos["status"]="AWAITING_ONCHAIN_SETTLEMENT";pos["exit_order_status"]="AWAITING_REDEMPTION";pos["is_liquidating"]=False;pos["expected_terminal_payout_usd"]=round(d,4);pos["redemption_receivable_usd"]=round(d,4);pos["winning_shares_held"]=round(d,6);pos["expected_winning_outcome"]=winning_outcome;pos["resolution_block"]=max(0,int(t)-f)if isinstance(t,int)else None;a.save_state();logger.info(f"[RESOLVED - RECEIVABLE] {tid}: {d:.2f} winning shares held. Expected ${d:.2f} is a " "receivable, NOT realized cash, until a verified on-chain redemption receipt.")
    try:await asyncio.to_thread(a.poll_onchain_redemptions,True)
-   except Exception as e:pass
+   except Exception as c:pass
    return
-  G=d*1. if(L and d>=.01)else.0
-  if G>.0:a.record_fill_and_update_position(pos,"SETTLEMENT_RESOLUTION_PAYOUT",d,G,.0)
-  D=a._close_position(tid,pos,ExecutionStatus.SETTLED,"MARKET_RESOLVED",won=None);logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={L} | RemShares={d:.2f} | Net PnL=${D:+.2f}")
+  s=d*1. if(u and d>=.01)else.0
+  if s>.0:a.record_fill_and_update_position(pos,"SETTLEMENT_RESOLUTION_PAYOUT",d,s,.0)
+  q=a._close_position(tid,pos,ExecutionStatus.SETTLED,"MARKET_RESOLVED",won=None);logger.info(f"✓ POSITION RESOLVED AT MATURITY: {tid} | Won={u} | RemShares={d:.2f} | Net PnL=${q:+.2f}")
  async def _maybe_recycle_disputed_htm_lock(a,tid,pos,now_ts):
   if(a.dry_run or pos.get("is_liquidating")or pos.get("status")=="UNRESOLVED_SETTLEMENT"or position_is_settlement_receivable(pos)or not bool(pos.get("inventory_reconciled",False))):return False
   if(now_ts-float(pos.get("_last_disputed_recycle_ts",.0)or.0))<60.:return False

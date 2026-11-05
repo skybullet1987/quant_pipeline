@@ -1,9 +1,9 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-05 17:22:19 UTC
+Generated: 2026-11-05 22:05:27 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
-Repository: /home/skybullet1987/quant_pipeline
+Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
@@ -18,45 +18,45 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [09] systemd/polymarket-trader.service (Lines 510 - 540 | 720 B) :: Forward Paper Trader systemd Unit
   [10] systemd/polymarket-exp316-shadow.service (Lines 541 - 566 | 531 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
   [11] src/polymarket_research/holistic_strategy_governance.py (Lines 567 - 1,381 | 38,621 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 16,003 | 902,557 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 16,004 - 24,909 | 451,309 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,910 - 26,423 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
-  [15] src/polymarket_research/latency_trace.py (Lines 26,424 - 27,143 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,144 - 30,641 | 188,382 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,642 - 31,220 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,221 - 33,611 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,612 - 33,724 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,725 - 33,841 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,842 - 34,188 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,189 - 34,454 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [23] audit_losing_trades.py (Lines 34,455 - 34,937 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,938 - 36,415 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,416 - 37,962 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,963 - 39,352 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,353 - 40,477 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,478 - 41,930 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,931 - 42,486 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,487 - 43,210 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,211 - 44,202 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,203 - 44,541 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,542 - 46,298 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,299 - 47,366 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,367 - 48,115 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 48,116 - 49,837 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,838 - 52,095 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 52,096 - 54,355 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,356 - 67,479 | 729,177 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [40] scripts/backtest_alpha_124.py (Lines 67,480 - 68,340 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [41] scripts/polymarket_daily_projections.py (Lines 68,341 - 69,563 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [42] scripts/alpha124_status.py (Lines 69,564 - 69,642 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,643 - 69,792 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [44] tests/test_alpha_124_oracles.py (Lines 69,793 - 73,872 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,873 - 75,767 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,768 - 81,495 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,496 - 82,252 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [48] tests/test_riskless_frontier_v4.py (Lines 82,253 - 83,095 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 83,096 - 83,875 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,876 - 85,675 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,382 - 15,862 | 892,626 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 15,863 - 24,768 | 451,309 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/polymarket_ws_streams.py (Lines 24,769 - 26,282 | 67,493 B) :: Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)
+  [15] src/polymarket_research/latency_trace.py (Lines 26,283 - 27,002 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [16] src/polymarket_research/polymarket_terminal_recorder.py (Lines 27,003 - 30,500 | 188,382 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [17] src/polymarket_research/deribit_svi_surface.py (Lines 30,501 - 31,079 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [18] src/polymarket_research/polymarket_paper_trader.py (Lines 31,080 - 33,470 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [19] src/polymarket_research/check_polymarket_balance.py (Lines 33,471 - 33,583 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [20] src/polymarket_research/verify_onchain_allowances.py (Lines 33,584 - 33,700 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [21] src/polymarket_research/redeem_settled_positions.py (Lines 33,701 - 34,047 | 14,780 B) :: CTF Settled Position Redemption CLI
+  [22] src/polymarket_research/setup_polymarket_account.py (Lines 34,048 - 34,313 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [23] audit_losing_trades.py (Lines 34,314 - 34,796 | 21,575 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [24] scripts/honest_purged_wfo_optimizer.py (Lines 34,797 - 36,274 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [25] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 36,275 - 37,821 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [26] src/polymarket_research/orderflow_wfo_simulators.py (Lines 37,822 - 39,211 | 66,622 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [27] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 39,212 - 40,336 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [28] src/polymarket_research/weather_metar_engine.py (Lines 40,337 - 41,789 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [29] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 41,790 - 42,345 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [30] src/polymarket_research/multistrike_svi_scalper.py (Lines 42,346 - 43,069 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [31] src/polymarket_research/same_oracle_dominance_box.py (Lines 43,070 - 44,061 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [32] src/polymarket_research/exact_twap_lock_engine.py (Lines 44,062 - 44,400 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [33] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 44,401 - 46,157 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [34] src/polymarket_research/macro_counting_ctf_engine.py (Lines 46,158 - 47,225 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [35] src/polymarket_research/uma_nba_endgame_engine.py (Lines 47,226 - 47,974 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [36] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 47,975 - 49,696 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [37] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 49,697 - 51,954 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [38] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 51,955 - 54,214 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [39] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 54,215 - 67,338 | 729,177 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [40] scripts/backtest_alpha_124.py (Lines 67,339 - 68,199 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [41] scripts/polymarket_daily_projections.py (Lines 68,200 - 69,422 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [42] scripts/alpha124_status.py (Lines 69,423 - 69,501 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [43] scripts/polymarket_scorecard_snapshot.py (Lines 69,502 - 69,651 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [44] tests/test_alpha_124_oracles.py (Lines 69,652 - 73,731 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [45] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 73,732 - 75,626 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [46] tests/test_polymarket_wfo_5fixes.py (Lines 75,627 - 81,354 | 293,411 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [47] tests/test_zero_trust_forensic_audit.py (Lines 81,355 - 82,111 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [48] tests/test_riskless_frontier_v4.py (Lines 82,112 - 82,954 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [49] tests/test_v530_forensic_plumbing_fixes.py (Lines 82,955 - 83,734 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [50] tests/test_v531_qa_audit_fixes.py (Lines 83,735 - 85,534 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 """
 
 from __future__ import annotations
@@ -5102,11 +5102,24 @@ class PolymarketLiveHarvester:
             return None
         if not isinstance(fills, list):
             return None
-        known = self._known_fill_ids(exclude_tid)
+        from src.polymarket_research.riskless_protocol_v2_expansion import collect_claimed_position_fill_and_order_ids
+        c_fids, c_tids, c_buy_oids, c_sell_oids = collect_claimed_position_fill_and_order_ids(self, exclude_tid=exclude_tid)
+        known = self._known_fill_ids(exclude_tid) | c_fids
+        side_u = str(side or "").upper()
+        req_oid = str(order_id or "").strip()
         out = []
         for f in fills:
             if not isinstance(f, dict) or str(f.get("fill_id")) in known:
                 continue
+            tr_id = str(f.get("trade_id") or f.get("id") or "").strip()
+            if tr_id and tr_id in c_tids:
+                continue
+            f_oid = str(f.get("order_id") or "").strip()
+            if not req_oid and f_oid:
+                if side_u == "SELL" and f_oid in c_sell_oids:
+                    continue
+                if side_u == "BUY" and f_oid in c_buy_oids:
+                    continue
             if (self._num(f.get("size")) or 0.0) <= 0.0:
                 continue
             out.append(f)
@@ -5587,12 +5600,20 @@ class PolymarketLiveHarvester:
 
     def _record_history_fills(self, pos: Dict[str, Any], fills: List[Dict[str, Any]], taker: bool) -> int:
         """Books exchange-history SELL fills grouped by order id; returns number of fills booked."""
+        from src.polymarket_research.riskless_protocol_v2_expansion import filter_unclaimed_position_fills
+        fills = filter_unclaimed_position_fills(
+            self, pos, fills, side="SELL", exclude_tid=str(pos.get("trade_id") or "")
+        )
+        if not fills:
+            return 0
         by_order: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for f in fills:
             by_order[str(f.get("order_id") or f.get("fill_id"))].append(f)
         booked = 0
         applied_r = self._exit_taker_fee_rate(pos)
         applied_e = float(pos.get("fee_exponent_applied") or 1.0)
+        entry_sh_cap = float(pos.get("entry_shares") or 0.0)
+        booked_fills: List[Dict[str, Any]] = []
         for oid, group in by_order.items():
             prior = (pos.get("order_records") or {}).get(oid) or {}
             # AUDIT-13-06 Fix: If prior record was an unconfirmed estimate, replace rather than double-count
@@ -5603,6 +5624,20 @@ class PolymarketLiveHarvester:
             g_cash = sum(self._num(f.get("cash")) or 0.0 for f in group)
             shares = base_shares + g_sh
             cash = base_cash + g_cash
+            if entry_sh_cap > 0.0:
+                other_sh = sum(
+                    float((v or {}).get("matched", 0.0) or 0.0)
+                    for k, v in (pos.get("order_records") or {}).items()
+                    if str(k) != oid and isinstance(v, dict)
+                )
+                max_oid_sh = max(0.0, entry_sh_cap - other_sh)
+                if shares > max_oid_sh + 0.02:
+                    if max_oid_sh <= 1e-6:
+                        continue
+                    cash = cash * (max_oid_sh / shares)
+                    g_sh = max(0.0, max_oid_sh - base_shares)
+                    g_cash = max(0.0, cash - base_cash)
+                    shares = max_oid_sh
             fee = base_fee + (self._estimated_taker_fee(g_sh, g_cash, fee_rate=applied_r, fee_exponent=applied_e) if taker else 0.0)
             group_settled = all(
                 bool(f.get("transaction_hash")) and str(f.get("status", "")).upper() in {"MINED", "CONFIRMED"}
@@ -5614,8 +5649,10 @@ class PolymarketLiveHarvester:
             if isinstance(rec_meta, dict):
                 rec_meta["is_taker"] = bool(taker)
             booked += len(group)
-        pos["exit_fill_ids"] = sorted(set(pos.get("exit_fill_ids") or []) | {str(f.get("fill_id")) for f in fills})
-        pos["exit_trade_ids"] = sorted(set(pos.get("exit_trade_ids") or []) | {str(f.get("trade_id")) for f in fills if f.get("trade_id")})
+            booked_fills.extend(group)
+        if booked_fills:
+            pos["exit_fill_ids"] = sorted(set(pos.get("exit_fill_ids") or []) | {str(f.get("fill_id")) for f in booked_fills if f.get("fill_id")})
+            pos["exit_trade_ids"] = sorted(set(pos.get("exit_trade_ids") or []) | {str(f.get("trade_id")) for f in booked_fills if f.get("trade_id")})
         if taker and booked:
             pos["exit_fee_estimated"] = True
         return booked
@@ -13235,190 +13272,12 @@ class PolymarketLiveHarvester:
         book_rem_shares = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", pos.get("entry_shares", 0.0))) or 0.0)
         rem_shares = book_rem_shares
         if not self.dry_run:
-            if not won:
-                if (
-                    not bool(pos.get("inventory_reconciled"))
-                    and (
-                        pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
-                        or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
-                    )
-                    and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
-                    and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
-                    and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
-                ):
-                    _unk_buy_sh = 0.0
-                    if token_id and hasattr(self.executor, "get_account_fills"):
-                        try:
-                            _bf_u = await asyncio.to_thread(
-                                self.executor.get_account_fills,
-                                token_id,
-                                max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                "BUY",
-                                _entry_oid_res,
-                            )
-                            if not _bf_u and _entry_oid_res is not None:
-                                _bf_u = await asyncio.to_thread(
-                                    self.executor.get_account_fills,
-                                    token_id,
-                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                    "BUY",
-                                    None,
-                                )
-                            if isinstance(_bf_u, list) and _bf_u:
-                                _unk_buy_sh = sum(
-                                    float(f.get("size", 0.0) or 0.0)
-                                    for f in _bf_u
-                                    if isinstance(f, dict)
-                                    and str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
-                                )
-                                if _unk_buy_sh >= 0.02:
-                                    pos["inventory_reconciled"] = True
-                                    pos["trade_ids"] = list(dict.fromkeys(str(f.get("trade_id") or f.get("id")) for f in _bf_u if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))))
-                                    pos["transactions_hashes"] = list(dict.fromkeys(str(f.get("transaction_hash")) for f in _bf_u if isinstance(f, dict) and f.get("transaction_hash")))
-                        except Exception:
-                            _unk_buy_sh = 0.0
-                    _bal_u = None
-                    if _unk_buy_sh < 0.02 and token_id:
-                        try:
-                            _bal_u, _ = await asyncio.to_thread(self._wallet_token_balance, token_id)
-                        except Exception:
-                            _bal_u = None
-                    if _unk_buy_sh < 0.02 and (_bal_u is None or float(_bal_u) < 0.02):
-                        for _zk in ("expected_terminal_payout_usd", "redemption_receivable_usd", "winning_shares_held", "entry_shares", "notional_usd", "remaining_cost_basis", "fee_usd", "entry_fee_cash_usd"):
-                            pos[_zk] = 0.0
-                        pos["expected_winning_outcome"] = winning_outcome
-                        _no_exec_r = "UNFILLED_MAKER_EXPIRED_NO_FILL" if "MAKER" in str(pos.get("box_type") or pos.get("fee_source") or "").upper() else "ENTRY_NOT_EXECUTED_AT_RESOLUTION"
-                        self._close_position(tid, pos, "NOT_EXECUTED", _no_exec_r, won=False, record_pnl=False)
-                        return
-                    pos["inventory_reconciled"] = True
-                pos["expected_terminal_payout_usd"] = 0.0
-                pos["redemption_receivable_usd"] = 0.0
-                pos["winning_shares_held"] = 0.0
-                pos["expected_winning_outcome"] = winning_outcome
-                self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_LOSS", won=False)
+            from src.polymarket_research.riskless_protocol_v2_expansion import reconcile_resolution_fills_and_pre_redeem
+            res_state, rem_shares = await reconcile_resolution_fills_and_pre_redeem(
+                self, tid, pos, winning_outcome, won, token_id, _prev_exit_oid, _entry_oid_res, book_rem_shares
+            )
+            if res_state != "RECEIVABLE":
                 return
-
-            # For WINNING positions, require authoritative on-chain ERC-1155 balance (never trust a 0.0 CLOB API fallback!)
-            bal, src = await asyncio.to_thread(self._wallet_token_balance, token_id)
-            if src != self.ONCHAIN_SOURCE and (bal is None or bal < 0.01):
-                logger.warning(
-                    f"[RESOLUTION DEFERRED] {tid}: Winning position on-chain ERC-1155 balance unavailable "
-                    f"(bal={bal}, src={src}). Deferring resolution closeout until Polygon RPC responds."
-                )
-                return
-            if bal is not None and src == self.ONCHAIN_SOURCE:
-                rem_shares = min(rem_shares, bal)
-            if rem_shares < 0.02:
-                # Reconcile any unrecorded SELL fills before concluding no inventory
-                if float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0 and token_id:
-                    try:
-                        extra_fills = await asyncio.to_thread(
-                            self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", _prev_exit_oid
-                        )
-                        if not extra_fills and _prev_exit_oid is not None:
-                            extra_fills = await asyncio.to_thread(
-                                self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", None
-                            )
-                        if isinstance(extra_fills, list) and extra_fills:
-                            self._record_history_fills(pos, extra_fills, taker=False)
-                    except Exception:
-                        pass
-                _has_clob_win = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) > float(pos.get("notional_usd", 0.0) or 0.0)
-                if _has_clob_win:
-                    pos["expected_terminal_payout_usd"] = 0.0
-                    pos["redemption_receivable_usd"] = 0.0
-                    pos["winning_shares_held"] = 0.0
-                    pos["expected_winning_outcome"] = winning_outcome
-                    pos["exit_cash_estimated"] = False
-                    pos["estimated_exit_cash"] = 0.0
-                    pos["confirmed_realized_cash"] = float(pos.get("confirmed_realized_cash") or pos.get("realized_exit_cash") or 0.0)
-                    self._close_position(tid, pos, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
-                    return
-
-                # Check if Polymarket pUSD/Safe settlement auto-redeemed winning shares BEFORE our resolution poll ran
-                post_sell_rem = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", book_rem_shares)) or 0.0)
-                confirmed_pre_redeemed = 0.0
-                if post_sell_rem >= 0.02 and bal is not None and src == self.ONCHAIN_SOURCE and float(bal) <= 0.0001:
-                    if token_id and hasattr(self.executor, "get_account_fills"):
-                        try:
-                            buy_fills = await asyncio.to_thread(
-                                self.executor.get_account_fills,
-                                token_id,
-                                max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                "BUY",
-                                _entry_oid_res,
-                            )
-                            if not buy_fills and _entry_oid_res is not None:
-                                buy_fills = await asyncio.to_thread(
-                                    self.executor.get_account_fills,
-                                    token_id,
-                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                    "BUY",
-                                    None,
-                                )
-                            if isinstance(buy_fills, list) and buy_fills:
-                                pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("trade_id") or f.get("id")) for f in buy_fills if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))]))
-                                pos["transactions_hashes"] = list(dict.fromkeys([str(x) for x in (pos.get("transactions_hashes") or []) if x] + [str(f.get("transaction_hash")) for f in buy_fills if isinstance(f, dict) and f.get("transaction_hash")]))
-                                conf_buy_sh = sum(
-                                    float(f.get("size", 0.0) or 0.0)
-                                    for f in buy_fills
-                                    if isinstance(f, dict)
-                                    and str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
-                                )
-                                sold_sh = float(pos.get("filled_exit_shares", 0.0) or 0.0)
-                                confirmed_pre_redeemed = min(post_sell_rem, max(0.0, conf_buy_sh - sold_sh))
-                        except Exception:
-                            confirmed_pre_redeemed = 0.0
-                    if confirmed_pre_redeemed < 0.02 and hasattr(self.executor, "find_redemption_payouts"):
-                        try:
-                            head_chk = await asyncio.to_thread(self.executor.get_current_block_number)
-                            pre_recs = await asyncio.to_thread(
-                                self.executor.find_redemption_payouts,
-                                str(pos.get("condition_id") or ""),
-                                max(0, int(head_chk) - 15000) if isinstance(head_chk, int) else None,
-                            )
-                            if isinstance(pre_recs, list) and pre_recs:
-                                confirmed_pre_redeemed = min(
-                                    post_sell_rem,
-                                    max(float(r.get("payout_usd") or 0.0) for r in pre_recs),
-                                )
-                        except Exception:
-                            pass
-
-                if confirmed_pre_redeemed >= 0.02:
-                    rem_shares = confirmed_pre_redeemed
-                    pos["_pre_redeemed_onchain"] = True
-                    pos["_collateral_exit_credited"] = True
-                    logger.info(
-                        f"[PRE-REDEEMED WIN DETECTED] {tid}: Confirmed {rem_shares:.2f} unexited BUY shares with 0 "
-                        f"ERC-1155 balance after {winning_outcome} win -> settling as pre-redeemed on-chain payout."
-                    )
-                else:
-                    pos["expected_terminal_payout_usd"] = 0.0
-                    pos["redemption_receivable_usd"] = 0.0
-                    pos["winning_shares_held"] = 0.0
-                    pos["expected_winning_outcome"] = winning_outcome
-                    if (
-                        not bool(pos.get("inventory_reconciled"))
-                        and (
-                            pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
-                            or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
-                        )
-                        and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
-                        and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
-                        and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
-                    ):
-                        pos["entry_shares"] = 0.0
-                        pos["notional_usd"] = 0.0
-                        pos["remaining_cost_basis"] = 0.0
-                        pos["fee_usd"] = 0.0
-                        pos["entry_fee_cash_usd"] = 0.0
-                        self._close_position(
-                            tid, pos, "NOT_EXECUTED", "ENTRY_NOT_EXECUTED_AT_RESOLUTION", won=False, record_pnl=False
-                        )
-                        return
-                    self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_NO_INVENTORY", won=False)
-                    return
             head = await asyncio.to_thread(self.executor.get_current_block_number)
             _lookback_blks = 15000 if pos.get("_pre_redeemed_onchain") else 2500
             pos["status"] = "AWAITING_ONCHAIN_SETTLEMENT"

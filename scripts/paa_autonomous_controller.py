@@ -255,17 +255,41 @@ def reconcile_closed_position_record(c: Dict[str, Any]) -> Tuple[Dict[str, Any],
     tgt_tok = str(c.get("target_token") or "").strip().upper()
     res_win = str(c.get("resolved_winning_outcome") or "").strip().upper()
     ent_sh = float(c.get("entry_shares", 0.0) or 0.0)
+    fill_ex_sh = float(c.get("filled_exit_shares", 0.0) or 0.0)
+    entry_only_fee = float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0)
     if (
         str(c.get("close_reason") or "") == "MARKET_RESOLVED_NO_INVENTORY"
         and bool(c.get("inventory_reconciled", False))
         and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
-        and float(c.get("filled_exit_shares", 0.0) or 0.0) <= 0.0
+        and fill_ex_sh <= 0.0
         and ent_sh > 0.0
         and tgt_tok != ""
         and tgt_tok == res_win
     ):
         payout = round(ent_sh * 1.0, 4)
         pnl = round(payout - notional - fee, 4)
+        c_norm["payout_usd"] = payout
+        c_norm["net_pnl_usd"] = pnl
+        c_norm["realized_pnl_usd"] = pnl
+        c_norm["won"] = True
+        c_norm["average_exit_price"] = 1.0
+        c_norm["exit_price"] = 1.0
+        c_norm["close_reason"] = "ONCHAIN_AUTO_REDEEMED_RECONCILED"
+        c_norm["wallet_reconciled"] = True
+        was_reconciled = True
+    elif (
+        ent_sh > 0.0
+        and fill_ex_sh > ent_sh + 0.05
+        and not (c.get("box_legs_summary") or [])
+        and str(c.get("exit_order_status") or "").upper() == "DETERMINISTIC_TERMINAL_HOLD"
+        and tgt_tok != ""
+        and tgt_tok == res_win
+    ):
+        payout = round(ent_sh * 1.0, 4)
+        pnl = round(payout - notional - entry_only_fee, 4)
+        c_norm["filled_exit_shares"] = 0.0
+        c_norm["realized_exit_cash"] = 0.0
+        c_norm["confirmed_realized_cash"] = payout
         c_norm["payout_usd"] = payout
         c_norm["net_pnl_usd"] = pnl
         c_norm["realized_pnl_usd"] = pnl

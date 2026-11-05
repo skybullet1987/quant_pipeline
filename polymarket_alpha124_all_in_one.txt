@@ -1,9 +1,9 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)
-Generated: 2026-11-05 17:23:52 UTC
+Generated: 2026-11-05 22:06:35 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
-Repository: /home/skybullet1987/quant_pipeline
+Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):

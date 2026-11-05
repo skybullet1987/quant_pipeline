@@ -7231,3 +7231,369 @@ def is_verified_zero_fill_cancel_purge(
     fills_chk = executor.get_account_fills(tok_c, 0.0, "BUY", str(order_id)) if hasattr(executor, "get_account_fills") else []
     return fills_chk is not None and len(fills_chk) == 0
 
+
+_SYNTHETIC_ORDER_RECORD_KEYS = {"SETTLEMENT_RESOLUTION_PAYOUT", "PRE_SPLIT_MERGE"}
+
+
+def collect_claimed_position_fill_and_order_ids(
+    harvester: Any,
+    exclude_tid: Optional[str] = None,
+    exclude_pos: Optional[Mapping[str, Any]] = None,
+) -> Tuple[Set[str], Set[str], Set[str], Set[str]]:
+    """
+    Collects `(claimed_fill_ids, claimed_trade_ids, claimed_buy_order_ids, claimed_sell_order_ids)`
+    across all OTHER active and closed positions (including stashed `_closed_partner_leg` records)
+    so multi-clip scaling on the same `token_id` can never double-book another position's BUY or SELL fills.
+    """
+    fill_ids: Set[str] = set()
+    trade_ids: Set[str] = set()
+    buy_oids: Set[str] = set()
+    sell_oids: Set[str] = set()
+    excl = str(exclude_tid or "").strip()
+
+    def _harvest_one(p: Optional[Mapping[str, Any]], tid_hint: str = "") -> None:
+        if not isinstance(p, Mapping) or (exclude_pos is not None and p is exclude_pos):
+            return
+        p_tid = str(tid_hint or p.get("trade_id") or "").strip()
+        if excl and p_tid == excl:
+            return
+        for fk in ("entry_fill_ids", "exit_fill_ids"):
+            for v in (p.get(fk) or ()):
+                if v:
+                    fill_ids.add(str(v))
+        for tk in ("trade_ids", "exit_trade_ids"):
+            for v in (p.get(tk) or ()):
+                if v:
+                    trade_ids.add(str(v))
+        for bk in ("entry_order_id", "order_id"):
+            bv = str(p.get(bk) or "").strip()
+            if bv:
+                buy_oids.add(bv)
+        for sk in ("exit_order_id", "unwind_order_id", "pending_settlement_order_id"):
+            sv = str(p.get(sk) or "").strip()
+            if sv and sv not in _SYNTHETIC_ORDER_RECORD_KEYS:
+                sell_oids.add(sv)
+        for cv in (p.get("canceled_maker_exit_oids") or ()):
+            cs = str(cv or "").strip()
+            if cs and cs not in _SYNTHETIC_ORDER_RECORD_KEYS:
+                sell_oids.add(cs)
+        ord_recs = p.get("order_records")
+        if isinstance(ord_recs, Mapping):
+            for ok in ord_recs.keys():
+                oks = str(ok or "").strip()
+                if oks and oks not in _SYNTHETIC_ORDER_RECORD_KEYS:
+                    sell_oids.add(oks)
+        partner = p.get("_closed_partner_leg")
+        if isinstance(partner, Mapping):
+            _harvest_one(partner, str(partner.get("trade_id") or ""))
+
+    for k, ap in (getattr(harvester, "active_positions", None) or {}).items():
+        _harvest_one(ap, str(k))
+    for cp in (getattr(harvester, "closed_positions", None) or ()):
+        _harvest_one(cp, "")
+    return fill_ids, trade_ids, buy_oids, sell_oids
+
+
+def position_own_exit_order_ids(pos: Mapping[str, Any]) -> Set[str]:
+    """Returns all CLOB exit/unwind order IDs explicitly belonging to `pos`."""
+    own: Set[str] = set()
+    for sk in ("exit_order_id", "unwind_order_id", "pending_settlement_order_id"):
+        sv = str(pos.get(sk) or "").strip()
+        if sv and sv not in _SYNTHETIC_ORDER_RECORD_KEYS:
+            own.add(sv)
+    for cv in (pos.get("canceled_maker_exit_oids") or ()):
+        cs = str(cv or "").strip()
+        if cs and cs not in _SYNTHETIC_ORDER_RECORD_KEYS:
+            own.add(cs)
+    ord_recs = pos.get("order_records")
+    if isinstance(ord_recs, Mapping):
+        for ok in ord_recs.keys():
+            oks = str(ok or "").strip()
+            if oks and oks not in _SYNTHETIC_ORDER_RECORD_KEYS:
+                own.add(oks)
+    return own
+
+
+def position_attempted_wildcard_sell(pos: Mapping[str, Any]) -> bool:
+    """True only when `pos` genuinely attempted a CLOB exit/unwind whose order ID may be unknown."""
+    if any(
+        float(pos.get(k) or 0.0) > 0.0
+        for k in ("exit_post_attempt_ts", "unwind_attempt_ts", "unwind_last_attempt_ts", "unwind_start_time")
+    ):
+        return True
+    st = str(pos.get("exit_order_status") or "").strip().upper()
+    return st in {
+        "EXIT_POST_UNKNOWN",
+        "UNWIND_EXECUTION_OUTCOME_UNKNOWN",
+        "UNWIND_UNKNOWN",
+        "UNWIND_RETRY_REQUIRED",
+        "CANCELED_FOR_RESOLUTION",
+        "RESOLUTION_CANCEL_UNCONFIRMED",
+    }
+
+
+def filter_unclaimed_position_fills(
+    harvester: Any,
+    pos: Mapping[str, Any],
+    fills: Optional[Sequence[Mapping[str, Any]]],
+    *,
+    side: str = "SELL",
+    exclude_tid: Optional[str] = None,
+    allow_wildcard_sell: bool = True,
+) -> List[Dict[str, Any]]:
+    """
+    Filters CLOB account fills so a position NEVER claims fills or order IDs belonging to
+    another clip on the same `token_id`, and rejects wildcard SELL fills on terminal-hold
+    positions that never submitted an exit/unwind order.
+    """
+    if not fills:
+        return []
+    tid_eff = str(exclude_tid or pos.get("trade_id") or "").strip() or None
+    c_fids, c_tids, c_buy_oids, c_sell_oids = collect_claimed_position_fill_and_order_ids(
+        harvester, exclude_tid=tid_eff, exclude_pos=pos
+    )
+    side_u = str(side or "").upper()
+    own_exit_oids = position_own_exit_order_ids(pos) if side_u == "SELL" else set()
+    own_buy_oids = {
+        str(pos.get(k) or "").strip()
+        for k in ("entry_order_id", "order_id")
+        if str(pos.get(k) or "").strip()
+    }
+    out: List[Dict[str, Any]] = []
+    for f in fills:
+        if not isinstance(f, Mapping):
+            continue
+        fid = str(f.get("fill_id") or "").strip()
+        tr_id = str(f.get("trade_id") or f.get("id") or "").strip()
+        oid = str(f.get("order_id") or "").strip()
+        if fid and fid in c_fids:
+            continue
+        if tr_id and tr_id in c_tids:
+            continue
+        if side_u == "SELL":
+            if oid and oid in c_sell_oids and oid not in own_exit_oids:
+                continue
+            if not allow_wildcard_sell:
+                if not oid or (own_exit_oids and oid not in own_exit_oids) or not own_exit_oids:
+                    continue
+        elif side_u == "BUY":
+            if oid and oid in c_buy_oids and oid not in own_buy_oids:
+                continue
+        out.append(dict(f))
+    return out
+
+
+async def reconcile_resolution_fills_and_pre_redeem(
+    harvester: Any,
+    tid: str,
+    pos: Dict[str, Any],
+    winning_outcome: str,
+    won: bool,
+    token_id: Optional[str],
+    prev_exit_oid: Optional[str],
+    entry_oid_res: Optional[str],
+    book_rem_shares: float,
+) -> Tuple[str, float]:
+    """
+    Isolated resolution reconciliation helper for `PolymarketLiveHarvester._apply_market_resolution`.
+    Prevents cross-position SELL/BUY fill theft across multi-clip positions on the same `token_id`.
+    Returns `("CLOSED", 0.0)`, `("DEFERRED", 0.0)`, or `("RECEIVABLE", rem_shares)`.
+    """
+    exec_settled = "SETTLED"
+    exec_filled = "FILLED"
+    exec_pos_conf = "POSITION_CONFIRMED"
+    if not won:
+        if (
+            not bool(pos.get("inventory_reconciled"))
+            and (pos.get("status") != exec_pos_conf or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN")
+            and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
+            and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
+            and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
+        ):
+            _unk_buy_sh = 0.0
+            if token_id and hasattr(harvester.executor, "get_account_fills"):
+                try:
+                    _bf_u = await asyncio.to_thread(
+                        harvester.executor.get_account_fills,
+                        token_id,
+                        max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                        "BUY",
+                        entry_oid_res,
+                    )
+                    if not _bf_u and entry_oid_res is not None:
+                        _bf_u = await asyncio.to_thread(
+                            harvester.executor.get_account_fills,
+                            token_id,
+                            max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                            "BUY",
+                            None,
+                        )
+                    _bf_u = filter_unclaimed_position_fills(harvester, pos, _bf_u, side="BUY", exclude_tid=tid)
+                    if _bf_u:
+                        _unk_buy_sh = sum(
+                            float(f.get("size", 0.0) or 0.0)
+                            for f in _bf_u
+                            if str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
+                        )
+                        if _unk_buy_sh >= 0.02:
+                            pos["inventory_reconciled"] = True
+                            pos["trade_ids"] = list(dict.fromkeys(str(f.get("trade_id") or f.get("id")) for f in _bf_u if (f.get("trade_id") or f.get("id"))))
+                            pos["transactions_hashes"] = list(dict.fromkeys(str(f.get("transaction_hash")) for f in _bf_u if f.get("transaction_hash")))
+                except Exception:
+                    _unk_buy_sh = 0.0
+            _bal_u = None
+            if _unk_buy_sh < 0.02 and token_id:
+                try:
+                    _bal_u, _ = await asyncio.to_thread(harvester._wallet_token_balance, token_id)
+                except Exception:
+                    _bal_u = None
+            if _unk_buy_sh < 0.02 and (_bal_u is None or float(_bal_u) < 0.02):
+                for _zk in ("expected_terminal_payout_usd", "redemption_receivable_usd", "winning_shares_held", "entry_shares", "notional_usd", "remaining_cost_basis", "fee_usd", "entry_fee_cash_usd"):
+                    pos[_zk] = 0.0
+                pos["expected_winning_outcome"] = winning_outcome
+                _no_exec_r = "UNFILLED_MAKER_EXPIRED_NO_FILL" if "MAKER" in str(pos.get("box_type") or pos.get("fee_source") or "").upper() else "ENTRY_NOT_EXECUTED_AT_RESOLUTION"
+                harvester._close_position(tid, pos, "NOT_EXECUTED", _no_exec_r, won=False, record_pnl=False)
+                return ("CLOSED", 0.0)
+            pos["inventory_reconciled"] = True
+        pos["expected_terminal_payout_usd"] = 0.0
+        pos["redemption_receivable_usd"] = 0.0
+        pos["winning_shares_held"] = 0.0
+        pos["expected_winning_outcome"] = winning_outcome
+        harvester._close_position(tid, pos, exec_settled, "MARKET_RESOLVED_LOSS", won=False)
+        return ("CLOSED", 0.0)
+
+    bal, src = await asyncio.to_thread(harvester._wallet_token_balance, token_id)
+    if src != harvester.ONCHAIN_SOURCE and (bal is None or bal < 0.01):
+        logger.warning(
+            f"[RESOLUTION DEFERRED] {tid}: Winning position on-chain ERC-1155 balance unavailable "
+            f"(bal={bal}, src={src}). Deferring resolution closeout until Polygon RPC responds."
+        )
+        return ("DEFERRED", 0.0)
+    rem_shares = min(book_rem_shares, bal) if (bal is not None and src == harvester.ONCHAIN_SOURCE) else book_rem_shares
+    if rem_shares < 0.02:
+        if float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0 and token_id:
+            own_exit_oids = position_own_exit_order_ids(pos)
+            if prev_exit_oid:
+                own_exit_oids.add(str(prev_exit_oid))
+            can_wildcard_sell = position_attempted_wildcard_sell(pos)
+            try:
+                collected_sells: List[Dict[str, Any]] = []
+                for q_oid in sorted(own_exit_oids):
+                    qf = await asyncio.to_thread(
+                        harvester.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", q_oid
+                    )
+                    if isinstance(qf, list) and qf:
+                        collected_sells.extend(qf)
+                if not collected_sells and can_wildcard_sell:
+                    wf = await asyncio.to_thread(
+                        harvester.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", None
+                    )
+                    if isinstance(wf, list) and wf:
+                        collected_sells.extend(wf)
+                extra_fills = filter_unclaimed_position_fills(
+                    harvester,
+                    pos,
+                    collected_sells,
+                    side="SELL",
+                    exclude_tid=tid,
+                    allow_wildcard_sell=can_wildcard_sell,
+                )
+                if extra_fills:
+                    harvester._record_history_fills(pos, extra_fills, taker=False)
+            except Exception:
+                pass
+        _has_clob_win = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) > float(pos.get("notional_usd", 0.0) or 0.0)
+        if _has_clob_win:
+            pos["expected_terminal_payout_usd"] = 0.0
+            pos["redemption_receivable_usd"] = 0.0
+            pos["winning_shares_held"] = 0.0
+            pos["expected_winning_outcome"] = winning_outcome
+            pos["exit_cash_estimated"] = False
+            pos["estimated_exit_cash"] = 0.0
+            pos["confirmed_realized_cash"] = float(pos.get("confirmed_realized_cash") or pos.get("realized_exit_cash") or 0.0)
+            harvester._close_position(tid, pos, exec_filled, "MAKER_SCALP_FILLED_CLOB", won=True)
+            return ("CLOSED", 0.0)
+
+        post_sell_rem = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", book_rem_shares)) or 0.0)
+        confirmed_pre_redeemed = 0.0
+        if post_sell_rem >= 0.02 and bal is not None and src == harvester.ONCHAIN_SOURCE and float(bal) <= 0.0001:
+            if token_id and hasattr(harvester.executor, "get_account_fills"):
+                try:
+                    buy_fills = await asyncio.to_thread(
+                        harvester.executor.get_account_fills,
+                        token_id,
+                        max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                        "BUY",
+                        entry_oid_res,
+                    )
+                    if not buy_fills and entry_oid_res is not None:
+                        buy_fills = await asyncio.to_thread(
+                            harvester.executor.get_account_fills,
+                            token_id,
+                            max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
+                            "BUY",
+                            None,
+                        )
+                    buy_fills = filter_unclaimed_position_fills(harvester, pos, buy_fills, side="BUY", exclude_tid=tid)
+                    if buy_fills:
+                        pos["entry_fill_ids"] = sorted(
+                            set(pos.get("entry_fill_ids") or []) | {str(f.get("fill_id")) for f in buy_fills if f.get("fill_id")}
+                        )
+                        pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("trade_id") or f.get("id")) for f in buy_fills if (f.get("trade_id") or f.get("id"))]))
+                        pos["transactions_hashes"] = list(dict.fromkeys([str(x) for x in (pos.get("transactions_hashes") or []) if x] + [str(f.get("transaction_hash")) for f in buy_fills if f.get("transaction_hash")]))
+                        conf_buy_sh = sum(
+                            float(f.get("size", 0.0) or 0.0)
+                            for f in buy_fills
+                            if str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
+                        )
+                        sold_sh = float(pos.get("filled_exit_shares", 0.0) or 0.0)
+                        confirmed_pre_redeemed = min(post_sell_rem, max(0.0, conf_buy_sh - sold_sh))
+                except Exception:
+                    confirmed_pre_redeemed = 0.0
+            if confirmed_pre_redeemed < 0.02 and hasattr(harvester.executor, "find_redemption_payouts"):
+                try:
+                    head_chk = await asyncio.to_thread(harvester.executor.get_current_block_number)
+                    pre_recs = await asyncio.to_thread(
+                        harvester.executor.find_redemption_payouts,
+                        str(pos.get("condition_id") or ""),
+                        max(0, int(head_chk) - 15000) if isinstance(head_chk, int) else None,
+                    )
+                    if isinstance(pre_recs, list) and pre_recs:
+                        confirmed_pre_redeemed = min(
+                            post_sell_rem,
+                            max(float(r.get("payout_usd") or 0.0) for r in pre_recs),
+                        )
+                except Exception:
+                    pass
+
+        if confirmed_pre_redeemed >= 0.02:
+            rem_shares = confirmed_pre_redeemed
+            pos["_pre_redeemed_onchain"] = True
+            pos["_collateral_exit_credited"] = True
+            logger.info(
+                f"[PRE-REDEEMED WIN DETECTED] {tid}: Confirmed {rem_shares:.2f} unexited BUY shares with 0 "
+                f"ERC-1155 balance after {winning_outcome} win -> settling as pre-redeemed on-chain payout."
+            )
+        else:
+            pos["expected_terminal_payout_usd"] = 0.0
+            pos["redemption_receivable_usd"] = 0.0
+            pos["winning_shares_held"] = 0.0
+            pos["expected_winning_outcome"] = winning_outcome
+            if (
+                not bool(pos.get("inventory_reconciled"))
+                and (pos.get("status") != exec_pos_conf or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN")
+                and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
+                and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
+                and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
+            ):
+                for _zk in ("entry_shares", "notional_usd", "remaining_cost_basis", "fee_usd", "entry_fee_cash_usd"):
+                    pos[_zk] = 0.0
+                harvester._close_position(
+                    tid, pos, "NOT_EXECUTED", "ENTRY_NOT_EXECUTED_AT_RESOLUTION", won=False, record_pnl=False
+                )
+                return ("CLOSED", 0.0)
+            harvester._close_position(tid, pos, exec_settled, "MARKET_RESOLVED_NO_INVENTORY", won=False)
+            return ("CLOSED", 0.0)
+    return ("RECEIVABLE", rem_shares)
+
+

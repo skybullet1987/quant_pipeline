@@ -3716,11 +3716,24 @@ class PolymarketLiveHarvester:
             return None
         if not isinstance(fills, list):
             return None
-        known = self._known_fill_ids(exclude_tid)
+        from src.polymarket_research.riskless_protocol_v2_expansion import collect_claimed_position_fill_and_order_ids
+        c_fids, c_tids, c_buy_oids, c_sell_oids = collect_claimed_position_fill_and_order_ids(self, exclude_tid=exclude_tid)
+        known = self._known_fill_ids(exclude_tid) | c_fids
+        side_u = str(side or "").upper()
+        req_oid = str(order_id or "").strip()
         out = []
         for f in fills:
             if not isinstance(f, dict) or str(f.get("fill_id")) in known:
                 continue
+            tr_id = str(f.get("trade_id") or f.get("id") or "").strip()
+            if tr_id and tr_id in c_tids:
+                continue
+            f_oid = str(f.get("order_id") or "").strip()
+            if not req_oid and f_oid:
+                if side_u == "SELL" and f_oid in c_sell_oids:
+                    continue
+                if side_u == "BUY" and f_oid in c_buy_oids:
+                    continue
             if (self._num(f.get("size")) or 0.0) <= 0.0:
                 continue
             out.append(f)
@@ -4201,12 +4214,20 @@ class PolymarketLiveHarvester:
 
     def _record_history_fills(self, pos: Dict[str, Any], fills: List[Dict[str, Any]], taker: bool) -> int:
         """Books exchange-history SELL fills grouped by order id; returns number of fills booked."""
+        from src.polymarket_research.riskless_protocol_v2_expansion import filter_unclaimed_position_fills
+        fills = filter_unclaimed_position_fills(
+            self, pos, fills, side="SELL", exclude_tid=str(pos.get("trade_id") or "")
+        )
+        if not fills:
+            return 0
         by_order: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
         for f in fills:
             by_order[str(f.get("order_id") or f.get("fill_id"))].append(f)
         booked = 0
         applied_r = self._exit_taker_fee_rate(pos)
         applied_e = float(pos.get("fee_exponent_applied") or 1.0)
+        entry_sh_cap = float(pos.get("entry_shares") or 0.0)
+        booked_fills: List[Dict[str, Any]] = []
         for oid, group in by_order.items():
             prior = (pos.get("order_records") or {}).get(oid) or {}
             # AUDIT-13-06 Fix: If prior record was an unconfirmed estimate, replace rather than double-count
@@ -4217,6 +4238,20 @@ class PolymarketLiveHarvester:
             g_cash = sum(self._num(f.get("cash")) or 0.0 for f in group)
             shares = base_shares + g_sh
             cash = base_cash + g_cash
+            if entry_sh_cap > 0.0:
+                other_sh = sum(
+                    float((v or {}).get("matched", 0.0) or 0.0)
+                    for k, v in (pos.get("order_records") or {}).items()
+                    if str(k) != oid and isinstance(v, dict)
+                )
+                max_oid_sh = max(0.0, entry_sh_cap - other_sh)
+                if shares > max_oid_sh + 0.02:
+                    if max_oid_sh <= 1e-6:
+                        continue
+                    cash = cash * (max_oid_sh / shares)
+                    g_sh = max(0.0, max_oid_sh - base_shares)
+                    g_cash = max(0.0, cash - base_cash)
+                    shares = max_oid_sh
             fee = base_fee + (self._estimated_taker_fee(g_sh, g_cash, fee_rate=applied_r, fee_exponent=applied_e) if taker else 0.0)
             group_settled = all(
                 bool(f.get("transaction_hash")) and str(f.get("status", "")).upper() in {"MINED", "CONFIRMED"}
@@ -4228,8 +4263,10 @@ class PolymarketLiveHarvester:
             if isinstance(rec_meta, dict):
                 rec_meta["is_taker"] = bool(taker)
             booked += len(group)
-        pos["exit_fill_ids"] = sorted(set(pos.get("exit_fill_ids") or []) | {str(f.get("fill_id")) for f in fills})
-        pos["exit_trade_ids"] = sorted(set(pos.get("exit_trade_ids") or []) | {str(f.get("trade_id")) for f in fills if f.get("trade_id")})
+            booked_fills.extend(group)
+        if booked_fills:
+            pos["exit_fill_ids"] = sorted(set(pos.get("exit_fill_ids") or []) | {str(f.get("fill_id")) for f in booked_fills if f.get("fill_id")})
+            pos["exit_trade_ids"] = sorted(set(pos.get("exit_trade_ids") or []) | {str(f.get("trade_id")) for f in booked_fills if f.get("trade_id")})
         if taker and booked:
             pos["exit_fee_estimated"] = True
         return booked
@@ -11849,190 +11886,12 @@ class PolymarketLiveHarvester:
         book_rem_shares = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", pos.get("entry_shares", 0.0))) or 0.0)
         rem_shares = book_rem_shares
         if not self.dry_run:
-            if not won:
-                if (
-                    not bool(pos.get("inventory_reconciled"))
-                    and (
-                        pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
-                        or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
-                    )
-                    and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
-                    and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
-                    and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
-                ):
-                    _unk_buy_sh = 0.0
-                    if token_id and hasattr(self.executor, "get_account_fills"):
-                        try:
-                            _bf_u = await asyncio.to_thread(
-                                self.executor.get_account_fills,
-                                token_id,
-                                max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                "BUY",
-                                _entry_oid_res,
-                            )
-                            if not _bf_u and _entry_oid_res is not None:
-                                _bf_u = await asyncio.to_thread(
-                                    self.executor.get_account_fills,
-                                    token_id,
-                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                    "BUY",
-                                    None,
-                                )
-                            if isinstance(_bf_u, list) and _bf_u:
-                                _unk_buy_sh = sum(
-                                    float(f.get("size", 0.0) or 0.0)
-                                    for f in _bf_u
-                                    if isinstance(f, dict)
-                                    and str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
-                                )
-                                if _unk_buy_sh >= 0.02:
-                                    pos["inventory_reconciled"] = True
-                                    pos["trade_ids"] = list(dict.fromkeys(str(f.get("trade_id") or f.get("id")) for f in _bf_u if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))))
-                                    pos["transactions_hashes"] = list(dict.fromkeys(str(f.get("transaction_hash")) for f in _bf_u if isinstance(f, dict) and f.get("transaction_hash")))
-                        except Exception:
-                            _unk_buy_sh = 0.0
-                    _bal_u = None
-                    if _unk_buy_sh < 0.02 and token_id:
-                        try:
-                            _bal_u, _ = await asyncio.to_thread(self._wallet_token_balance, token_id)
-                        except Exception:
-                            _bal_u = None
-                    if _unk_buy_sh < 0.02 and (_bal_u is None or float(_bal_u) < 0.02):
-                        for _zk in ("expected_terminal_payout_usd", "redemption_receivable_usd", "winning_shares_held", "entry_shares", "notional_usd", "remaining_cost_basis", "fee_usd", "entry_fee_cash_usd"):
-                            pos[_zk] = 0.0
-                        pos["expected_winning_outcome"] = winning_outcome
-                        _no_exec_r = "UNFILLED_MAKER_EXPIRED_NO_FILL" if "MAKER" in str(pos.get("box_type") or pos.get("fee_source") or "").upper() else "ENTRY_NOT_EXECUTED_AT_RESOLUTION"
-                        self._close_position(tid, pos, "NOT_EXECUTED", _no_exec_r, won=False, record_pnl=False)
-                        return
-                    pos["inventory_reconciled"] = True
-                pos["expected_terminal_payout_usd"] = 0.0
-                pos["redemption_receivable_usd"] = 0.0
-                pos["winning_shares_held"] = 0.0
-                pos["expected_winning_outcome"] = winning_outcome
-                self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_LOSS", won=False)
+            from src.polymarket_research.riskless_protocol_v2_expansion import reconcile_resolution_fills_and_pre_redeem
+            res_state, rem_shares = await reconcile_resolution_fills_and_pre_redeem(
+                self, tid, pos, winning_outcome, won, token_id, _prev_exit_oid, _entry_oid_res, book_rem_shares
+            )
+            if res_state != "RECEIVABLE":
                 return
-
-            # For WINNING positions, require authoritative on-chain ERC-1155 balance (never trust a 0.0 CLOB API fallback!)
-            bal, src = await asyncio.to_thread(self._wallet_token_balance, token_id)
-            if src != self.ONCHAIN_SOURCE and (bal is None or bal < 0.01):
-                logger.warning(
-                    f"[RESOLUTION DEFERRED] {tid}: Winning position on-chain ERC-1155 balance unavailable "
-                    f"(bal={bal}, src={src}). Deferring resolution closeout until Polygon RPC responds."
-                )
-                return
-            if bal is not None and src == self.ONCHAIN_SOURCE:
-                rem_shares = min(rem_shares, bal)
-            if rem_shares < 0.02:
-                # Reconcile any unrecorded SELL fills before concluding no inventory
-                if float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0 and token_id:
-                    try:
-                        extra_fills = await asyncio.to_thread(
-                            self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", _prev_exit_oid
-                        )
-                        if not extra_fills and _prev_exit_oid is not None:
-                            extra_fills = await asyncio.to_thread(
-                                self.executor.get_account_fills, token_id, float(pos.get("entry_ts", 0.0) or 0.0), "SELL", None
-                            )
-                        if isinstance(extra_fills, list) and extra_fills:
-                            self._record_history_fills(pos, extra_fills, taker=False)
-                    except Exception:
-                        pass
-                _has_clob_win = float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) > float(pos.get("notional_usd", 0.0) or 0.0)
-                if _has_clob_win:
-                    pos["expected_terminal_payout_usd"] = 0.0
-                    pos["redemption_receivable_usd"] = 0.0
-                    pos["winning_shares_held"] = 0.0
-                    pos["expected_winning_outcome"] = winning_outcome
-                    pos["exit_cash_estimated"] = False
-                    pos["estimated_exit_cash"] = 0.0
-                    pos["confirmed_realized_cash"] = float(pos.get("confirmed_realized_cash") or pos.get("realized_exit_cash") or 0.0)
-                    self._close_position(tid, pos, ExecutionStatus.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
-                    return
-
-                # Check if Polymarket pUSD/Safe settlement auto-redeemed winning shares BEFORE our resolution poll ran
-                post_sell_rem = float(pos.get("remaining_shares", pos.get("remaining_exit_shares", book_rem_shares)) or 0.0)
-                confirmed_pre_redeemed = 0.0
-                if post_sell_rem >= 0.02 and bal is not None and src == self.ONCHAIN_SOURCE and float(bal) <= 0.0001:
-                    if token_id and hasattr(self.executor, "get_account_fills"):
-                        try:
-                            buy_fills = await asyncio.to_thread(
-                                self.executor.get_account_fills,
-                                token_id,
-                                max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                "BUY",
-                                _entry_oid_res,
-                            )
-                            if not buy_fills and _entry_oid_res is not None:
-                                buy_fills = await asyncio.to_thread(
-                                    self.executor.get_account_fills,
-                                    token_id,
-                                    max(0.0, float(pos.get("entry_ts", 0.0) or 0.0) - 300.0),
-                                    "BUY",
-                                    None,
-                                )
-                            if isinstance(buy_fills, list) and buy_fills:
-                                pos["trade_ids"] = list(dict.fromkeys([str(x) for x in (pos.get("trade_ids") or []) if x] + [str(f.get("trade_id") or f.get("id")) for f in buy_fills if isinstance(f, dict) and (f.get("trade_id") or f.get("id"))]))
-                                pos["transactions_hashes"] = list(dict.fromkeys([str(x) for x in (pos.get("transactions_hashes") or []) if x] + [str(f.get("transaction_hash")) for f in buy_fills if isinstance(f, dict) and f.get("transaction_hash")]))
-                                conf_buy_sh = sum(
-                                    float(f.get("size", 0.0) or 0.0)
-                                    for f in buy_fills
-                                    if isinstance(f, dict)
-                                    and str(f.get("status", "CONFIRMED")).upper() in ("CONFIRMED", "MINED", "MATCHED", "")
-                                )
-                                sold_sh = float(pos.get("filled_exit_shares", 0.0) or 0.0)
-                                confirmed_pre_redeemed = min(post_sell_rem, max(0.0, conf_buy_sh - sold_sh))
-                        except Exception:
-                            confirmed_pre_redeemed = 0.0
-                    if confirmed_pre_redeemed < 0.02 and hasattr(self.executor, "find_redemption_payouts"):
-                        try:
-                            head_chk = await asyncio.to_thread(self.executor.get_current_block_number)
-                            pre_recs = await asyncio.to_thread(
-                                self.executor.find_redemption_payouts,
-                                str(pos.get("condition_id") or ""),
-                                max(0, int(head_chk) - 15000) if isinstance(head_chk, int) else None,
-                            )
-                            if isinstance(pre_recs, list) and pre_recs:
-                                confirmed_pre_redeemed = min(
-                                    post_sell_rem,
-                                    max(float(r.get("payout_usd") or 0.0) for r in pre_recs),
-                                )
-                        except Exception:
-                            pass
-
-                if confirmed_pre_redeemed >= 0.02:
-                    rem_shares = confirmed_pre_redeemed
-                    pos["_pre_redeemed_onchain"] = True
-                    pos["_collateral_exit_credited"] = True
-                    logger.info(
-                        f"[PRE-REDEEMED WIN DETECTED] {tid}: Confirmed {rem_shares:.2f} unexited BUY shares with 0 "
-                        f"ERC-1155 balance after {winning_outcome} win -> settling as pre-redeemed on-chain payout."
-                    )
-                else:
-                    pos["expected_terminal_payout_usd"] = 0.0
-                    pos["redemption_receivable_usd"] = 0.0
-                    pos["winning_shares_held"] = 0.0
-                    pos["expected_winning_outcome"] = winning_outcome
-                    if (
-                        not bool(pos.get("inventory_reconciled"))
-                        and (
-                            pos.get("status") != ExecutionStatus.POSITION_CONFIRMED
-                            or pos.get("exit_order_status") == "ENTRY_OUTCOME_UNKNOWN"
-                        )
-                        and not (pos.get("trade_ids") or pos.get("transactions_hashes"))
-                        and float(pos.get("filled_exit_shares", 0.0) or 0.0) < 0.01
-                        and float(pos.get("confirmed_realized_cash", pos.get("realized_exit_cash", 0.0)) or 0.0) <= 0.0
-                    ):
-                        pos["entry_shares"] = 0.0
-                        pos["notional_usd"] = 0.0
-                        pos["remaining_cost_basis"] = 0.0
-                        pos["fee_usd"] = 0.0
-                        pos["entry_fee_cash_usd"] = 0.0
-                        self._close_position(
-                            tid, pos, "NOT_EXECUTED", "ENTRY_NOT_EXECUTED_AT_RESOLUTION", won=False, record_pnl=False
-                        )
-                        return
-                    self._close_position(tid, pos, ExecutionStatus.SETTLED, "MARKET_RESOLVED_NO_INVENTORY", won=False)
-                    return
             head = await asyncio.to_thread(self.executor.get_current_block_number)
             _lookback_blks = 15000 if pos.get("_pre_redeemed_onchain") else 2500
             pos["status"] = "AWAITING_ONCHAIN_SETTLEMENT"
