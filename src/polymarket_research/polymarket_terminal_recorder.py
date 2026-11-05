@@ -1294,7 +1294,7 @@ class PolymarketDualFeed1HRecorder:
         if not self._fast_tick_enabled:
             return False
         now = time.time()
-        if not force and (now - self._last_fast_tick_write) < FAST_TICK_THROTTLE_SEC:
+        if not force and (now - self._last_fast_tick_write) < (0.10 if self.riskless_bus_only else FAST_TICK_THROTTLE_SEC):
             return False
         self._last_fast_tick_write = now
         try:
@@ -1938,8 +1938,9 @@ class PolymarketDualFeed1HRecorder:
                         recv_mono_ns = time.monotonic_ns()
                         now_s = time.time()
                         big_frame_usd = 0.25 * float(self.shock_threshold_usd)
-                        n_frames = len(frames)
-                        for idx, msg_str in enumerate(frames):
+                        iter_s = (frames[-1],) if self.riskless_bus_only else frames
+                        n_frames = len(iter_s)
+                        for idx, msg_str in enumerate(iter_s):
                             msg = _orjson.loads(msg_str) if _orjson is not None else json.loads(msg_str)
                             px = float(msg.get("p", 0))
                             sz = float(msg.get("q", 0))
@@ -1983,8 +1984,9 @@ class PolymarketDualFeed1HRecorder:
                         recv_mono_ns = time.monotonic_ns()
                         now_f = time.time()
                         big_frame_usd = 0.25 * float(self.shock_threshold_usd)
-                        n_frames = len(frames)
-                        for idx, msg_str in enumerate(frames):
+                        iter_f = (frames[-1],) if self.riskless_bus_only else frames
+                        n_frames = len(iter_f)
+                        for idx, msg_str in enumerate(iter_f):
                             msg = _orjson.loads(msg_str) if _orjson is not None else json.loads(msg_str)
                             px = float(msg.get("p", 0))
                             sz = float(msg.get("q", 0))

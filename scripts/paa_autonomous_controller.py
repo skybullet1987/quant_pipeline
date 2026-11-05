@@ -73,24 +73,39 @@ def _atomic_write_json(path: Path, payload: Any) -> None:
     tmp.replace(path)
 
 
-def check_operational_status(auto_recover_safe: bool = True) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+def _is_riskless_only_config(cfg_path: Optional[Path] = None) -> bool:
+    p = cfg_path or (PIPELINE_ROOT / "config" / "polymarket_strategy_and_risk.json")
+    try:
+        return bool((json.loads(p.read_text(encoding="utf-8")).get("directional") or {}).get("riskless_only_mode", False))
+    except Exception:
+        return False
+
+
+def check_operational_status(
+    auto_recover_safe: bool = True,
+    riskless_only: Optional[bool] = None,
+) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
     """Audits VM resources, systemd units, SHM feed freshness, and executes safe non-live recovery."""
     now = time.time()
     new_incidents: List[Dict[str, Any]] = []
+    rl_only = _is_riskless_only_config() if riskless_only is None else bool(riskless_only)
     units = [
         "polymarket-live-harvester.service",
         "polymarket-alpha124-shadow.service",
         "polymarket-recorder.service",
-        "polymarket-trader.service",
-        "apex-perp.service",
         "polymarket-telemetry-compactor.timer",
-        "apex-oversight-audit.timer",
     ]
     safe_auto_restart_units = {
         "polymarket-alpha124-shadow.service",
         "polymarket-recorder.service",
-        "polymarket-trader.service",
     }
+    if not rl_only:
+        units.extend([
+            "polymarket-trader.service",
+            "apex-perp.service",
+            "apex-oversight-audit.timer",
+        ])
+        safe_auto_restart_units.add("polymarket-trader.service")
     unit_states: Dict[str, str] = {}
     if sys.platform.startswith("linux"):
         for u in units:

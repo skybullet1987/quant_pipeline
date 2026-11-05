@@ -37,6 +37,8 @@ def test_recorder_riskless_bus_only_caps_memory_and_preserves_shm_tick(tmp_path:
 
     with patch.object(rec, "_run_exp306_realtime_eval") as mock_exp306:
         assert rec._maybe_write_fast_tick(force=True) is True
+        # Immediate non-forced call within 100ms is throttled in riskless_bus_only mode
+        assert rec._maybe_write_fast_tick(force=False) is False
         mock_exp306.assert_not_called()
 
     snap = json.loads(rec.fast_tick_file.read_text(encoding="utf-8"))
@@ -201,3 +203,16 @@ def test_governance_riskless_only_and_systemd_lean_flags() -> None:
     dir_unit = (REPO_ROOT / "systemd" / "polymarket-paa-director.service").read_text(encoding="utf-8")
     assert "--no-ai" in dir_unit
     assert "--no-proactive-research" in dir_unit
+
+    from scripts.paa_autonomous_controller import _is_riskless_only_config, check_operational_status
+
+    assert _is_riskless_only_config() is True
+    with patch("scripts.paa_autonomous_controller.sys.platform", "linux"), patch(
+        "scripts.paa_autonomous_controller._sh", return_value=(0, "active")
+    ) as mock_sh:
+        op_rl, inc_rl = check_operational_status(auto_recover_safe=True, riskless_only=True)
+        checked_cmds = [c.args[0] for c in mock_sh.call_args_list]
+        assert not any("polymarket-trader.service" in cmd for cmd in checked_cmds)
+        assert not any("apex-perp.service" in cmd for cmd in checked_cmds)
+        assert op_rl["all_core_units_active"] is True
+        assert inc_rl == []

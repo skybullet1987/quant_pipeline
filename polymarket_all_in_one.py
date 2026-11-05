@@ -1,6 +1,6 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-05 16:51:48 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-05 17:22:17 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,309B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config
@@ -8,7 +8,7 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [src/polymarket_research/holistic_strategy_governance.py] (L53-205 | 38,621B) :: v5.0 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
   - [src/polymarket_research/polymarket_live_harvester.py] (L206-4604 | 902,557B) :: v5.0 Live Harvester Engine, Dual-Budget Risk & Unified Exit Supervisor
   - [src/polymarket_research/polymarket_live_executor.py] (L4605-7111 | 451,309B) :: Polymarket CLOB L2 Client, Priority EIP-712 Signing & pUSD/CTF Adapter
-  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7112-8121 | 188,174B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
+  - [src/polymarket_research/polymarket_terminal_recorder.py] (L7112-8121 | 188,382B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock Detection & CLOB L2 SHM Recorder
   - [src/polymarket_research/deribit_svi_surface.py] (L8122-8289 | 24,417B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Engine
   - [src/polymarket_research/polymarket_paper_trader.py] (L8290-9023 | 126,393B) :: Forward Paper Trader & Production-Parity Simulation Engine
   - [src/polymarket_research/check_polymarket_balance.py] (L9024-9058 | 3,757B) :: Polygon pUSD + USDC.e Collateral Balance Checker
@@ -7429,7 +7429,7 @@ class PolymarketDualFeed1HRecorder:
  def _maybe_write_fast_tick(a,force=False):
   if not a._fast_tick_enabled:return False
   e=time.time()
-  if not force and(e-a._last_fast_tick_write)<FAST_TICK_THROTTLE_SEC:return False
+  if not force and(e-a._last_fast_tick_write)<(.1 if a.riskless_bus_only else FAST_TICK_THROTTLE_SEC):return False
   a._last_fast_tick_write=e
   try:
    c=a.build_fast_tick_snapshot(e);b=_orjson.dumps(c)if _orjson else json.dumps(c).encode("utf-8");d=a.fast_tick_file.with_suffix(f".tmp.{os.getpid()}")
@@ -7658,18 +7658,18 @@ class PolymarketDualFeed1HRecorder:
   while a.running:
    try:
     logger.info(f"Connecting to Binance Spot @trade ({a.binance_spot_ws})...")
-    async with websockets.connect(a.binance_spot_ws,ping_interval=20,ping_timeout=10,max_queue=512,compression=None)as s:
-     _enable_ws_nodelay(s);logger.info(f"[+] Subscribed to Binance Spot @trade stream ({a.binance_symbol}).");b=0
+    async with websockets.connect(a.binance_spot_ws,ping_interval=20,ping_timeout=10,max_queue=512,compression=None)as t:
+     _enable_ws_nodelay(t);logger.info(f"[+] Subscribed to Binance Spot @trade stream ({a.binance_symbol}).");b=0
      while a.running:
-      f=await asyncio.wait_for(s.recv(),timeout=15.)
+      f=await asyncio.wait_for(t.recv(),timeout=15.)
       if not a.running:break
-      k=await _drain_ws_frames(s,f,max_batch=64);d=time.monotonic_ns();l=time.time();c=.25*float(a.shock_threshold_usd);i=len(k)
-      for p,j in enumerate(k):
-       o=_orjson.loads(j)if _orjson is not None else json.loads(j);r=float(o.get("p",0));q=float(o.get("q",0));h=not o.get("m",False);n=int(o.get("E",0));m=int(o.get("T",0));g=r*q;a.spot_price=r;a.spot_price_ts=l;a._update_rolling_sigma(r);a.update_basis()
+      l=await _drain_ws_frames(t,f,max_batch=64);d=time.monotonic_ns();m=time.time();c=.25*float(a.shock_threshold_usd);k=(l[-1],)if a.riskless_bus_only else l;i=len(k)
+      for q,j in enumerate(k):
+       p=_orjson.loads(j)if _orjson is not None else json.loads(j);s=float(p.get("p",0));r=float(p.get("q",0));h=not p.get("m",False);o=int(p.get("E",0));n=int(p.get("T",0));g=s*r;a.spot_price=s;a.spot_price_ts=m;a._update_rolling_sigma(s);a.update_basis()
        if not a.riskless_bus_only:
-        a.spot_trades.append((d,n,m,g,h,r))
-        if p==i-1 or g>=c:a.evaluate_shock(d,m or n,source="SPOT")
-        else:a._record_volume(g,l)
+        a.spot_trades.append((d,o,n,g,h,s))
+        if q==i-1 or g>=c:a.evaluate_shock(d,n or o,source="SPOT")
+        else:a._record_volume(g,m)
       a._maybe_write_fast_tick();b+=1
       if(b&31)==0:await asyncio.sleep(0)
    except Exception as e:logger.warning(f"Binance Spot feed disconnected: {e}. Reconnecting in 3s...");await asyncio.sleep(3)
@@ -7677,25 +7677,25 @@ class PolymarketDualFeed1HRecorder:
   while a.running:
    try:
     logger.info(f"Connecting to Binance Futures @trade ({a.binance_futures_ws})...")
-    async with websockets.connect(a.binance_futures_ws,ping_interval=20,ping_timeout=10,max_queue=512,compression=None)as s:
-     _enable_ws_nodelay(s);logger.info(f"[+] Subscribed to Binance Futures @trade stream ({a.binance_symbol} unbatched /ws).");b=0
+    async with websockets.connect(a.binance_futures_ws,ping_interval=20,ping_timeout=10,max_queue=512,compression=None)as t:
+     _enable_ws_nodelay(t);logger.info(f"[+] Subscribed to Binance Futures @trade stream ({a.binance_symbol} unbatched /ws).");b=0
      while a.running:
-      f=await asyncio.wait_for(s.recv(),timeout=15.)
+      f=await asyncio.wait_for(t.recv(),timeout=15.)
       if not a.running:break
-      k=await _drain_ws_frames(s,f,max_batch=64);d=time.monotonic_ns();l=time.time();c=.25*float(a.shock_threshold_usd);i=len(k)
-      for p,j in enumerate(k):
-       o=_orjson.loads(j)if _orjson is not None else json.loads(j);r=float(o.get("p",0));q=float(o.get("q",0));h=not o.get("m",False);n=int(o.get("E",0));m=int(o.get("T",0));g=r*q;a.futures_price=r;a.futures_price_ts=l
+      l=await _drain_ws_frames(t,f,max_batch=64);d=time.monotonic_ns();m=time.time();c=.25*float(a.shock_threshold_usd);k=(l[-1],)if a.riskless_bus_only else l;i=len(k)
+      for q,j in enumerate(k):
+       p=_orjson.loads(j)if _orjson is not None else json.loads(j);s=float(p.get("p",0));r=float(p.get("q",0));h=not p.get("m",False);o=int(p.get("E",0));n=int(p.get("T",0));g=s*r;a.futures_price=s;a.futures_price_ts=m
        if a.futures_only_ref:
-        a.spot_price=r;a.spot_price_ts=l;a._update_rolling_sigma(r)
+        a.spot_price=s;a.spot_price_ts=m;a._update_rolling_sigma(s)
         if a.coinbase_product=="USDT-USD"and.95<=a.coinbase_spot<=1.05:
-         if(l-a.coinbase_spot_ts)<=COINBASE_STALE_SEC and(not a.coinbase_history or(l-a.coinbase_history[-1][0])>=.2):
-          a.coinbase_history.append((l,round(r*a.coinbase_spot,4)))
-          while a.coinbase_history and l-a.coinbase_history[0][0]>30.:a.coinbase_history.popleft()
+         if(m-a.coinbase_spot_ts)<=COINBASE_STALE_SEC and(not a.coinbase_history or(m-a.coinbase_history[-1][0])>=.2):
+          a.coinbase_history.append((m,round(s*a.coinbase_spot,4)))
+          while a.coinbase_history and m-a.coinbase_history[0][0]>30.:a.coinbase_history.popleft()
        a.update_basis()
        if not a.riskless_bus_only:
-        a.futures_trades.append((d,n,m,g,h,r))
-        if p==i-1 or g>=c:a.evaluate_shock(d,m or n,source="FUTURES")
-        else:a._record_volume(g,l)
+        a.futures_trades.append((d,o,n,g,h,s))
+        if q==i-1 or g>=c:a.evaluate_shock(d,n or o,source="FUTURES")
+        else:a._record_volume(g,m)
       a._maybe_write_fast_tick();b+=1
       if(b&31)==0:await asyncio.sleep(0)
    except Exception as e:logger.warning(f"Binance Futures feed disconnected: {e}. Reconnecting in 3s...");await asyncio.sleep(3)
