@@ -36,6 +36,7 @@ import asyncio
 import json
 import logging
 import math
+import os
 import re
 import time
 import urllib.request
@@ -49,9 +50,13 @@ def _iso_utc(ts: float) -> str:
     return datetime.fromtimestamp(float(ts), tz=timezone.utc).isoformat()
 
 try:
-    from src.polymarket_research.riskless_machine_gun_engine import attempt_onchain_split_position
+    from src.polymarket_research.riskless_machine_gun_engine import (
+        attempt_onchain_split_position,
+        wait_for_erc1155_delivery,
+    )
 except Exception:
     attempt_onchain_split_position = None  # type: ignore
+    wait_for_erc1155_delivery = None  # type: ignore
 
 
 def compute_exact_taker_fee_per_share(
@@ -2037,6 +2042,210 @@ async def maybe_early_profit_recycle_htm_lock(
     return False
 
 
+_HTM_PASSIVE_MAKER_RECYCLE_SLEEVES: frozenset[str] = frozenset({
+    "BOND1_UMA_RESOLUTION_CARRY",
+    "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+    "MKR_LOCK1_POST_CLINCH_SWEEPER",
+    "W_PRUNE1_DEAD_NO_BOND",
+    "W_SOLAR1_POST_2351_LOCK",
+    "MKR_REWARD_LOCKED_CARRY",
+    "SP2_NBA_ENDGAME_LOCK",
+    "SP4_INGAME_LOCK",
+})
+
+
+async def maybe_manage_passive_htm_early_maker_recycle(
+    harvester: Any,
+    tid: str,
+    pos: Dict[str, Any],
+    book: Optional[Mapping[str, Any]],
+    now_ts: float,
+    open_oids: Optional[Set[str]] = None,
+) -> bool:
+    """
+    v5.4.5 Passive `0%`-Fee Maker Early-Recycle Ladder (`$0.998 / $0.999`) for `hold_to_maturity_lock`:
+      - Posts a `0%`-fee `postOnly=True` Maker `SELL` on reconciled, undisputed `0%`-fee single-leg locks:
+          * `$0.998` when `entry_px <= 0.9935` and `tte_rem >= 1800s` (jumps ahead of `$0.999` asks for `5-15m` turnover)
+          * `$0.999` when `entry_px <= 0.9965` and `tte_rem >= 480s`
+      - Polls fills on every supervision tick (even if resting bids drop to `0`), closing immediately on fill.
+      - Automatically cancels & releases inventory at `tte_rem < 360s` (`T-6m`) or when `best_b >= 0.998` covers
+        full size so `AutoRedeemer` `$1.00` payout or instant `$0.998` Taker sweep is never encumbered.
+    """
+    if (
+        getattr(harvester, "dry_run", True)
+        or not bool(pos.get("hold_to_maturity_lock"))
+        or not bool(pos.get("is_single_leg_lock"))
+        or bool(pos.get("is_dominance_box"))
+        or pos.get("is_liquidating")
+        or pos.get("resolved_winning_outcome") is not None
+    ):
+        return False
+    ex = getattr(harvester, "executor", None)
+    if ex is None:
+        return False
+    token_id = str(pos.get("token_id") or "").strip()
+    if not token_id:
+        return False
+    tte_rem = float(pos.get("candle_expiry_ts", 0.0) or 0.0) - float(now_ts)
+    rem_shrs = float(pos.get("remaining_shares", pos.get("entry_shares", 0.0)) or 0.0)
+    raw_bids = (book.get("bids") or []) if isinstance(book, Mapping) else []
+    best_b = max(
+        (
+            float(b["price"] if isinstance(b, Mapping) else b[0])
+            for b in raw_bids
+            if float((b.get("size", 0.0) if isinstance(b, Mapping) else b[1]) or 0.0) > 0.0
+        ),
+        default=0.0,
+    )
+    bid_998_sh = sum(
+        float(b["size"] if isinstance(b, Mapping) else b[1])
+        for b in raw_bids
+        if float((b.get("price", 0.0) if isinstance(b, Mapping) else b[0]) or 0.0) >= 0.998
+        and float((b.get("size", 0.0) if isinstance(b, Mapping) else b[1]) or 0.0) > 0.0
+    )
+
+    exit_oid = str(pos.get("exit_order_id") or "").strip()
+    if exit_oid and bool(pos.get("_htm_passive_recycle_active")):
+        summary = (
+            await asyncio.to_thread(ex.get_order_fill_summary, exit_oid, token_id)
+            if hasattr(ex, "get_order_fill_summary")
+            else None
+        )
+        if isinstance(summary, Mapping) and hasattr(harvester, "_record_order_summary"):
+            if harvester._record_order_summary(pos, dict(summary), float(pos.get("target_exit_price", 0.999) or 0.999), taker=False):
+                harvester.save_state()
+        filled_s = float(pos.get("filled_exit_shares", 0.0) or 0.0)
+        if filled_s > 0.0:
+            pos["average_exit_price"] = round(float(pos.get("realized_exit_cash", 0.0) or 0.0) / filled_s, 4)
+        rem_shrs = float(pos.get("remaining_shares", rem_shrs) or 0.0)
+        if rem_shrs <= 0.02:
+            if hasattr(ex, "release_inventory"):
+                ex.release_inventory(reservation_id=exit_oid)
+            pos["exit_order_id"] = None
+            pos["_htm_passive_recycle_active"] = False
+            if hasattr(ex, "invalidate_collateral_cache"):
+                ex.invalidate_collateral_cache()
+            harvester._pending_collateral_refresh = True
+            logger.info(
+                f"♻️ [HTM PASSIVE MAKER RECYCLE FILLED] {tid} ({pos.get('sleeve')}): "
+                f"filled {filled_s:.2f} sh @ ${float(pos.get('average_exit_price') or pos.get('target_exit_price') or 0.998):.3f} (0% fee)"
+            )
+            harvester._close_position(tid, pos, "FILLED", "HTM_PASSIVE_MAKER_RECYCLE_FILLED", won=True)
+            return True
+
+        sweep_998_ready = (tte_rem >= 300.0 and bid_998_sh >= rem_shrs and float(pos.get("target_exit_price") or 0.999) > 0.9981)
+        need_cancel = (tte_rem < 360.0) or sweep_998_ready or bool((summary or {}).get("terminal"))
+        if need_cancel:
+            cancel_res = (
+                await asyncio.to_thread(ex.cancel_order, exit_oid)
+                if (not bool((summary or {}).get("terminal")) and hasattr(ex, "cancel_order"))
+                else {"is_canceled": True}
+            )
+            sum2 = (
+                await asyncio.to_thread(ex.get_order_fill_summary, exit_oid, token_id)
+                if hasattr(ex, "get_order_fill_summary")
+                else summary
+            )
+            if isinstance(sum2, Mapping) and hasattr(harvester, "_record_order_summary"):
+                harvester._record_order_summary(pos, dict(sum2), float(pos.get("target_exit_price", 0.999) or 0.999), taker=False)
+            rem_shrs = float(pos.get("remaining_shares", rem_shrs) or 0.0)
+            if rem_shrs <= 0.02:
+                if hasattr(ex, "release_inventory"):
+                    ex.release_inventory(reservation_id=exit_oid)
+                pos["exit_order_id"] = None
+                pos["_htm_passive_recycle_active"] = False
+                if hasattr(ex, "invalidate_collateral_cache"):
+                    ex.invalidate_collateral_cache()
+                harvester._pending_collateral_refresh = True
+                harvester._close_position(tid, pos, "FILLED", "HTM_PASSIVE_MAKER_RECYCLE_FILLED", won=True)
+                return True
+            term_ok = bool(
+                (isinstance(sum2, Mapping) and sum2.get("terminal"))
+                or (isinstance(cancel_res, Mapping) and (cancel_res.get("is_canceled") or exit_oid in (cancel_res.get("canceled") or [])))
+                or (open_oids is not None and exit_oid not in open_oids and not (cancel_res or {}).get("error"))
+            )
+            if term_ok:
+                if hasattr(ex, "release_inventory"):
+                    ex.release_inventory(reservation_id=exit_oid)
+                pos["exit_order_id"] = None
+                pos["_htm_passive_recycle_active"] = False
+                pos["status"] = "POSITION_CONFIRMED"
+                pos["exit_order_status"] = "HOLD_TO_MATURITY_LOCK"
+                pos["_last_htm_mkr_post_ts"] = float(now_ts)
+                harvester.save_state()
+                if sweep_998_ready:
+                    return await maybe_early_profit_recycle_htm_lock(harvester, tid, pos, book, now_ts)
+        return False
+
+    if (
+        exit_oid
+        or str(pos.get("status") or "") != "POSITION_CONFIRMED"
+        or not bool(pos.get("inventory_reconciled", False))
+        or rem_shrs < 5.0
+        or tte_rem < 480.0
+    ):
+        return False
+    sl_u = str(pos.get("sleeve") or "").strip().upper()
+    if sl_u not in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES:
+        return False
+    _fr_raw = pos.get("fee_rate_applied")
+    if _fr_raw is None:
+        _fr_raw = pos.get("fee_rate_market", pos.get("fee_rate", 0.0))
+    if float(_fr_raw or 0.0) > 1e-9:
+        return False
+    if (float(now_ts) - float(pos.get("_last_htm_mkr_post_ts", 0.0) or 0.0)) < 20.0:
+        return False
+    entry_px = float(pos.get("entry_price") or 0.0)
+    if entry_px <= 0.0 or entry_px > 0.9965:
+        return False
+    target_px = 0.998 if (entry_px <= 0.9935 and tte_rem >= 1800.0) else 0.999
+    if target_px < entry_px + 0.0020 or best_b >= target_px - 1e-6:
+        return False
+    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, rem_shrs * target_px, 0.0))
+    if est_net_pnl < max(0.02, rem_shrs * 0.0012):
+        return False
+    if not hasattr(ex, "post_maker_exit_order"):
+        return False
+    tick_sz = 0.001
+    if hasattr(ex, "get_token_tick_size"):
+        try:
+            tick_sz = float(ex.get_token_tick_size(token_id, price_hint=target_px))
+        except TypeError:
+            tick_sz = float(ex.get_token_tick_size(token_id))
+        except Exception:
+            tick_sz = 0.01
+    if tick_sz > 0.001 + 1e-9:
+        return False
+    pos["_last_htm_mkr_post_ts"] = float(now_ts)
+    m_res = await asyncio.to_thread(
+        ex.post_maker_exit_order,
+        token_id=token_id,
+        price=target_px,
+        size=rem_shrs,
+        side="SELL",
+        neg_risk=pos.get("neg_risk"),
+    )
+    if isinstance(m_res, Mapping) and m_res.get("success") and m_res.get("orderID"):
+        posted_px = float(m_res.get("price") or target_px)
+        if posted_px < entry_px + 0.0015:
+            await asyncio.to_thread(ex.cancel_order, str(m_res["orderID"]))
+            if hasattr(ex, "release_inventory"):
+                ex.release_inventory(reservation_id=str(m_res["orderID"]))
+            return False
+        pos["exit_order_id"] = str(m_res["orderID"])
+        pos["exit_order_size"] = float(rem_shrs)
+        pos["target_exit_price"] = posted_px
+        pos["exit_order_status"] = "RESTING_HTM_PASSIVE_RECYCLE"
+        pos["_htm_passive_recycle_active"] = True
+        harvester.save_state()
+        logger.info(
+            f"📌 [HTM PASSIVE MAKER RECYCLE POSTED] {tid} ({sl_u}): resting 0%-fee SELL {rem_shrs:.2f} sh "
+            f"@ ${posted_px:.3f} (entry=${entry_px:.4f}, locked_early_net=${est_net_pnl:+.2f}, TTE={tte_rem/60.0:.1f}m)"
+        )
+        return True
+    return False
+
+
 def consolidate_any_box_leg_close(
     harvester: Any,
     tid: str,
@@ -3540,6 +3749,13 @@ def scan_full_universe_c1_and_ctf_overround(
         na = _sf(m.get("no_ask"), 0.0)
         ysz_a = _sf(m.get("yes_ask_size"), 0.0)
         nsz_a = _sf(m.get("no_ask_size"), 0.0)
+        yb = _sf(m.get("yes_bid"), 0.0)
+        nb = _sf(m.get("no_bid"), 0.0)
+        ysz_b = _sf(m.get("yes_bid_size"), 0.0)
+        nsz_b = _sf(m.get("no_bid_size"), 0.0)
+        crossed_bk = bool((yb > 0.0 and ya > 0.0 and yb >= ya - 1e-9) or (nb > 0.0 and na > 0.0 and nb >= na - 1e-9))
+        if crossed_bk:
+            continue
         if 0.002 <= ya <= 0.995 and 0.002 <= na <= 0.995 and min(ysz_a, nsz_a) >= min_shares:
             qya, _, _ = quantize_dynamic_tick_price(ya, "BUY", shares=min_shares, mode="taker")
             qna, _, _ = quantize_dynamic_tick_price(na, "BUY", shares=min_shares, mode="taker")
@@ -3570,11 +3786,7 @@ def scan_full_universe_c1_and_ctf_overround(
                     c1_rec["expiry_ts"] = _sf(m.get("expiry_ts"), 0.0)
                 results.append(c1_rec)
 
-        yb = _sf(m.get("yes_bid"), 0.0)
-        nb = _sf(m.get("no_bid"), 0.0)
-        ysz_b = _sf(m.get("yes_bid_size"), 0.0)
-        nsz_b = _sf(m.get("no_bid_size"), 0.0)
-        if 0.002 <= yb <= 0.995 and 0.002 <= nb <= 0.995 and min(ysz_b, nsz_b) >= min_shares * 1.25:
+        if f_r <= 1e-9 and 0.002 <= yb <= 0.995 and 0.002 <= nb <= 0.995 and min(ysz_b, nsz_b) >= min_shares * 1.25:
             qyb, _, _ = quantize_dynamic_tick_price(yb, "SELL", shares=min_shares, mode="taker")
             qnb, _, _ = quantize_dynamic_tick_price(nb, "SELL", shares=min_shares, mode="taker")
             rev_over = (
@@ -4249,6 +4461,8 @@ def finish_protocol_v2_special_box_sync(
         fe = _sf(candidate_box.get("fee_exponent") or candidate_box.get("leg_a_fee_exponent"), 1.0)
         if not cid or not y_tok or not n_tok:
             return {"executed": False, "reason": "INVALID_CTF_OVERROUND_SPEC"}
+        if fr > 1e-9:
+            return {"executed": False, "reason": "NON_ZERO_FEE_CTF_OVERROUND"}
         books_ovr = _fetch_books_fast_sync(ex, [y_tok, n_tok])
         if books_ovr:
             by = books_ovr.get(y_tok) or {}
@@ -4257,8 +4471,22 @@ def finish_protocol_v2_special_box_sync(
             bids_n = sorted([(float(b["price"]), float(b["size"])) for b in (bn.get("bids") or []) if float(b.get("size", 0)) > 0], reverse=True)
             if not bids_y or not bids_n:
                 return {"executed": False, "reason": "EMPTY_OVERROUND_BIDS"}
+            asks_y = sorted([float(a["price"]) for a in (by.get("asks") or []) if float(a.get("size", 0)) > 0])
+            asks_n = sorted([float(a["price"]) for a in (bn.get("asks") or []) if float(a.get("size", 0)) > 0])
+            if (asks_y and bids_y[0][0] >= asks_y[0] - 1e-9) or (asks_n and bids_n[0][0] >= asks_n[0] - 1e-9):
+                return {"executed": False, "reason": "CROSSED_OVERROUND_BOOK"}
             y_bid, y_sz = bids_y[0]
             n_bid, n_sz = bids_n[0]
+            for py_i, sy_i in bids_y[1:4]:
+                if py_i + n_bid >= 1.0045:
+                    y_bid, y_sz = py_i, y_sz + sy_i
+                else:
+                    break
+            for pn_i, sn_i in bids_n[1:4]:
+                if y_bid + pn_i >= 1.0045:
+                    n_bid, n_sz = pn_i, n_sz + sn_i
+                else:
+                    break
         else:
             y_bid = _sf(candidate_box.get("yes_bid"), 0.51)
             n_bid = _sf(candidate_box.get("no_bid"), 0.51)
@@ -4269,9 +4497,10 @@ def finish_protocol_v2_special_box_sync(
         sh = math.floor(min(budget, min(y_sz, n_sz) / 1.15) * 100.0) / 100.0
         if sh < 5.0:
             return {"executed": False, "reason": "OVERROUND_MIN_SHARES"}
+        has_custom_split = hasattr(ex, "split_collateral_to_complete_set")
         sp = (
             ex.split_collateral_to_complete_set(cid, sh, neg_risk=False)
-            if hasattr(ex, "split_collateral_to_complete_set")
+            if has_custom_split
             else (
                 attempt_onchain_split_position(ex, cid, sh, neg_risk=False, up_token_id=y_tok, down_token_id=n_tok)
                 if attempt_onchain_split_position is not None
@@ -4281,6 +4510,8 @@ def finish_protocol_v2_special_box_sync(
         if not (sp or {}).get("success"):
             retry_cd[dedupe_k] = now_ts + 8.0
             return {"executed": False, "reason": f"SPLIT_FAILED:{(sp or {}).get('reason') or (sp or {}).get('error')}"}
+        if not has_custom_split and wait_for_erc1155_delivery is not None:
+            wait_for_erc1155_delivery(ex, [y_tok, n_tok], sh, timeout_sec=3.5)
         u_res = (
             ex.execute_atomic_box_overround_unwind(f"CTFOVR_{cid[:10]}", y_tok, y_bid, n_tok, n_bid, sh, False, False, fr, fe, fr, fe)
             if hasattr(ex, "execute_atomic_box_overround_unwind")
@@ -5355,10 +5586,10 @@ async def run_protocol_v2_daemon_scan(
                                             "neg_risk": True,
                                         },
                                     )
-                    # Post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets only when `TTE <= 120m` (`7200s`)!
-                    if (end_w - now) <= 7200.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
+                    # Post 0%-fee Maker bids (`<= $0.9975`) on METAR-dead `NO` brackets when `TTE <= 240m` (`14400s`, 0% fee)!
+                    if (end_w - now) <= 14400.0 and hasattr(daemon, "emit_live_single_leg_maker_lock_candidate"):
                         for b_sp, by_w2, bn_w2 in bk_by_mkt.values():
-                            if str(b_sp.condition_id) in taker_cids:
+                            if str(b_sp.condition_id) in taker_cids or float(getattr(b_sp, "fee_rate", 0.0) or 0.0) > 1e-9:
                                 continue
                             dead_mkr = (
                                 (m_mode_w == "HIGH" and floor_w is not None and math.isfinite(b_sp.high_bound) and int(round(b_sp.high_bound)) < floor_w)
@@ -5367,7 +5598,8 @@ async def run_protocol_v2_daemon_scan(
                             if dead_mkr:
                                 nb_w, nb_u_w = _extr_best_bid(bn_w2.get("bids") or [])
                                 yb_w, _ = _extr_best_bid(by_w2.get("bids") or [])
-                                if 0.940 <= nb_w <= 0.9975 and nb_u_w >= 10.0 and yb_w <= 0.006:
+                                max_rb_w = 0.9975 if (end_w - now) <= 7200.0 else 0.9950
+                                if 0.940 <= nb_w <= max_rb_w and nb_u_w >= 5.0 and yb_w <= 0.006:
                                     daemon.emit_live_single_leg_maker_lock_candidate(
                                         sleeve_source="W_PRUNE1_DEAD_NO_BOND",
                                         asset=sp_w.icao,
@@ -5385,8 +5617,8 @@ async def run_protocol_v2_daemon_scan(
                                         close_ts=end_w,
                                         now_ts=now,
                                         min_resting_bid=0.940,
-                                        max_resting_bid=0.9975,
-                                        min_maker_edge=0.0024,
+                                        max_resting_bid=max_rb_w,
+                                        min_maker_edge=0.0024 if (end_w - now) <= 7200.0 else 0.0048,
                                         max_opp_bid=0.006,
                                         hold_to_maturity=True,
                                         p_model=0.9999,
@@ -5469,13 +5701,19 @@ async def run_protocol_v2_daemon_scan(
                 else:
                     rest_need.append(meta_b)
 
-            if rest_need and hasattr(daemon, "fetch_books_batch") and (now - float(daemon.__dict__.get("_last_c1_rot_ts", 0.0))) >= 4.0:
+            if rest_need and hasattr(daemon, "fetch_books_batch") and (now - float(daemon.__dict__.get("_last_c1_rot_ts", 0.0))) >= 3.0:
                 daemon.__dict__["_last_c1_rot_ts"] = now
+                rest_need.sort(
+                    key=lambda mx: (
+                        0 if (not mx.get("neg_risk") and float(mx.get("fee_rate") or 0.0) <= 1e-9) else 1,
+                        max(0.0, float(mx.get("end_ts") or (now + 86400.0)) - now),
+                    )
+                )
                 cur_idx = int(daemon.__dict__.get("_c1_rot_cursor", 0) or 0) % max(1, len(rest_need))
-                batch_m = (rest_need[cur_idx : cur_idx + 24] + rest_need[: max(0, cur_idx + 24 - len(rest_need))])[:24]
-                daemon.__dict__["_c1_rot_cursor"] = (cur_idx + 24) % max(1, len(rest_need))
+                batch_m = (rest_need[cur_idx : cur_idx + 48] + rest_need[: max(0, cur_idx + 48 - len(rest_need))])[:48]
+                daemon.__dict__["_c1_rot_cursor"] = (cur_idx + 48) % max(1, len(rest_need))
                 rot_toks = [t for m_x in batch_m for t in (m_x["yes_token_id"], m_x["no_token_id"])]
-                rot_bks = await daemon.fetch_books_batch(rot_toks, timeout=2.0)
+                rot_bks = await daemon.fetch_books_batch(rot_toks, timeout=2.2)
                 for meta_b in batch_m:
                     by_r, bn_r = rot_bks.get(meta_b["yes_token_id"]), rot_bks.get(meta_b["no_token_id"])
                     if by_r and bn_r:
@@ -5768,7 +6006,7 @@ def emit_single_leg_lock_cand_impl(
         5.0,
         fee_rate=float(fee_rate),
         max_slip_cents=max_slip_1l,
-        min_l1_usd=5.0 if is_s2_fast else 10.0,
+        min_l1_usd=5.0,
         max_ask_px=min(0.9985, float(max_lock_eff_px) + 0.001),
         fee_exponent=float(fee_exponent),
     )
@@ -6871,13 +7109,19 @@ def compute_sll_entry_budget(
     now_ts: float,
     *,
     post_vel_preempt: bool = False,
+    exclude_inflight_key: str = "",
 ) -> Tuple[float, float, float]:
     """Returns `(budget, open_mid_u, sll_pct)` preserving 100% of v5.3 SLL & Gatling sizing rules."""
     dry_run = bool(getattr(harvester, "dry_run", True))
     is_mlk1 = sleeve_src == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"
     is_rw_carry = sleeve_src == "MKR_REWARD_LOCKED_CARRY"
     prepost_res = getattr(harvester, "_prepost_sll_reserved_usd", None) or {}
-    intents = getattr(harvester, "pending_entry_intents", None)
+    raw_intents = getattr(harvester, "pending_entry_intents", None)
+    intents = (
+        {k: v for k, v in raw_intents.items() if not (isinstance(v, Mapping) and v.get("inflight_key") == exclude_inflight_key)}
+        if (exclude_inflight_key and isinstance(raw_intents, Mapping))
+        else raw_intents
+    )
     inflight_u = pending_intents_cash_reserved_usd(intents) + sum(float(v or 0.0) for v in prepost_res.values())
     synced_eq_u = pending_intents_synced_equity_usd(intents)
     collat_f = 100.0 if dry_run else max(0.0, float(collat or 0.0) - inflight_u)
@@ -7267,6 +7511,58 @@ def eval_sll_live_book_poll(
                 return "BURIED", None, buried_since_mono, f"outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {b1_buried_s:.0f}s"
         else:
             buried_since_mono = None
+            if isinstance(candidate_box, dict) and not is_s2_mkr and abs(win_b_live - posted_px) <= 1e-6:
+                l1_q_same = sum(px * sz for px, sz in bids_wc if abs(px - posted_px) <= 1e-6)
+                init_q = candidate_box.get("_init_l1_q_usd")
+                if init_q is None:
+                    candidate_box["_init_l1_q_usd"] = float(l1_q_same)
+                    init_q = float(l1_q_same)
+                own_notional = float(candidate_box.get("_posted_notional_usd") or 8.0)
+                ahead_q = max(0.0, min(float(init_q), float(l1_q_same)) - own_notional)
+                if ahead_q >= max(250.0, float(b1_q_cap) * 1.25) and repost_n_in < 3:
+                    wq_mono = candidate_box.get("_whale_q_since_mono")
+                    now_m = time.monotonic()
+                    if wq_mono is None:
+                        candidate_box["_whale_q_since_mono"] = now_m
+                    elif (now_m - float(wq_mono)) >= 20.0:
+                        tb_w = max(0.001 if posted_px >= 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+                        ta_w = max(0.001 if win_a_live > 0.96 else 0.01, tk_wf if tk_wf >= 0.01 else 0.0)
+                        step_w = round(posted_px + tb_w, 4)
+                        ceil_w = min(
+                            round(win_a_live - ta_w, 4),
+                            max_rb,
+                            round(
+                                float(candidate_box.get("p_model") or 0.9985)
+                                + max(0.0, float(candidate_box.get("maker_rebate_ps") or 0.0))
+                                - float(candidate_box.get("min_maker_edge") or 0.004),
+                                4,
+                            ),
+                        )
+                        now_w = time.time()
+                        _uma_ex_w = str(candidate_box.get("sleeve_source") or "").upper() in UMA_EXEMPT_EXPIRY_SLEEVES
+                        _vel_w_ok = True
+                        if exp_ts > 0.0 and (exp_ts - now_w) > 900.0:
+                            from src.polymarket_research.holistic_strategy_governance import passes_capital_velocity_hurdle
+
+                            _vel_w_ok, _ = passes_capital_velocity_hurdle(
+                                box_type="SINGLE_LEG_MAKER_LOCK",
+                                sleeve_src=str(candidate_box.get("sleeve_source") or ""),
+                                collat_usd=max(25.0, float(collat_usd or 75.0)),
+                                rem_tte_sec=max(900.0 if _uma_ex_w else 60.0, exp_ts - now_w),
+                                box_cost_net=step_w,
+                                fast_recycle_eligible=(step_w <= 0.995),
+                            )
+                        if (
+                            _vel_w_ok
+                            and min_rb <= step_w <= ceil_w
+                            and (win_a_live - posted_px) >= (2.0 * tb_w - 1e-9)
+                            and (_uma_ex_w or exp_ts <= 0.0 or (exp_ts - now_w) >= 150.0)
+                        ):
+                            candidate_box["_whale_q_since_mono"] = None
+                            candidate_box["_init_l1_q_usd"] = None
+                            return "REPEG", step_w, buried_since_mono, f"whale_queue_ahead (${ahead_q:.0f} @ ${posted_px:.4f}); micro-stepping -> ${step_w:.4f}"
+                else:
+                    candidate_box["_whale_q_since_mono"] = None
     return "OK", None, buried_since_mono, ""
 
 
@@ -7515,7 +7811,10 @@ def is_verified_zero_fill_cancel_purge(
     if cur_b is None or (float(cur_b) - base_b) > 1e-6:
         return False
     fills_chk = executor.get_account_fills(tok_c, 0.0, "BUY", str(order_id)) if hasattr(executor, "get_account_fills") else []
-    return fills_chk is not None and len(fills_chk) == 0
+    if fills_chk is not None and len(fills_chk) == 0:
+        record_purged_ghost_order(executor, order_id)
+        return True
+    return False
 
 
 _SYNTHETIC_ORDER_RECORD_KEYS = {"SETTLEMENT_RESOLUTION_PAYOUT", "PRE_SPLIT_MERGE"}
@@ -7909,5 +8208,237 @@ async def reconcile_resolution_fills_and_pre_redeem(
             harvester._close_position(tid, pos, exec_settled, "MARKET_RESOLVED_NO_INVENTORY", won=False)
             return ("CLOSED", 0.0)
     return ("RECEIVABLE", rem_shares)
+
+
+_POLYGON_OO_ADDRESSES: Tuple[str, ...] = (
+    "0x2c0367a9db231ddebd88a94b4f6461a6e47c58b1",  # Polymarket MOOV2 (UmaCtfAdapter v3 & NegRiskUmaCtfAdapter)
+    "0xee3afe347d5c74317041e2618c49534daf887c24",  # Polymarket Classic OptimisticOracleV2
+)
+_TOPIC_OO_PROPOSE_PRICE: str = "0x6e51dd00371aabffa82cd401592f76ed51e98a9ea4b58751c70463a2c78b5ca1"
+_TOPIC_OO_DISPUTE_PRICE: str = "0x5165909c3d1c01c5d1e121ac6f6d01dda1ba24bc9e1f975b5a375339c15be7f3"
+_ANC_MARKET_ID_RE = re.compile(r"market_id:\s*(\d{5,9})")
+
+
+def _poll_polygon_oo_proposal_and_dispute_mids_sync(
+    last_bn: int,
+    rpc_url: Optional[str] = None,
+    timeout: float = 4.0,
+) -> Tuple[int, List[str], List[str]]:
+    """
+    Polls Polygon `OptimisticOracleV2` (`MOOV2` + `OOV2`) `ProposePrice` and `DisputePrice` logs:
+      - Extracts every newly proposed `market_id` from UTF-8 `ancillaryData` (including low-volume
+        Challenger tennis, Europa League props, NCAA, and esports derivatives invisible to Gamma top-1500).
+      - Extracts any disputed `market_id` within seconds of block inclusion for instant cache eviction.
+    """
+    rpcs = [
+        r
+        for r in (
+            rpc_url,
+            os.getenv("POLYGON_RPC_URL"),
+            "https://polygon-bor-rpc.publicnode.com",
+            "https://1rpc.io/matic",
+        )
+        if r
+    ]
+    for rpc in rpcs:
+        try:
+            req_bn = urllib.request.Request(
+                rpc,
+                json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_blockNumber", "params": []}).encode("utf-8"),
+                {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+            )
+            with urllib.request.urlopen(req_bn, timeout=timeout) as r_b:
+                bn_hex = (json.loads(r_b.read()) or {}).get("result")
+            if not bn_hex:
+                continue
+            bn = int(str(bn_hex), 16)
+            if last_bn <= 0:
+                mid_bn = max(0, bn - 900)
+                windows = ([(max(0, bn - 1800), mid_bn - 1)] if mid_bn > max(0, bn - 1800) else []) + [(mid_bn, bn)]
+            else:
+                from_bn = max(last_bn - 2, bn - 240)
+                if from_bn > bn:
+                    return bn, [], []
+                windows = [(from_bn, bn)]
+            logs: List[Any] = []
+            any_ok = False
+            for w_from, w_to in windows:
+                if w_from > w_to:
+                    continue
+                req_lg = urllib.request.Request(
+                    rpc,
+                    json.dumps(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": 2,
+                            "method": "eth_getLogs",
+                            "params": [
+                                {
+                                    "address": list(_POLYGON_OO_ADDRESSES),
+                                    "topics": [[_TOPIC_OO_PROPOSE_PRICE, _TOPIC_OO_DISPUTE_PRICE]],
+                                    "fromBlock": hex(w_from),
+                                    "toBlock": hex(w_to),
+                                }
+                            ],
+                        }
+                    ).encode("utf-8"),
+                    {"Content-Type": "application/json", "User-Agent": "Dominus/1.0"},
+                )
+                try:
+                    with urllib.request.urlopen(req_lg, timeout=timeout) as r_l:
+                        part = (json.loads(r_l.read()) or {}).get("result")
+                    if isinstance(part, list):
+                        logs.extend(part)
+                        any_ok = True
+                except Exception:
+                    continue
+            if not any_ok:
+                continue
+            proposed_ids: List[str] = []
+            disputed_ids: List[str] = []
+            seen_p: Set[str] = set()
+            seen_d: Set[str] = set()
+            for lg in logs:
+                if not isinstance(lg, Mapping):
+                    continue
+                tops = lg.get("topics") or []
+                t0 = str(tops[0] if tops else "").lower()
+                data_hex = str(lg.get("data") or "")
+                if not data_hex.startswith("0x") or len(data_hex) < 10:
+                    continue
+                raw_txt = bytes.fromhex(data_hex[2:]).decode("utf-8", errors="ignore")
+                for m_id in _ANC_MARKET_ID_RE.findall(raw_txt):
+                    if t0 == _TOPIC_OO_DISPUTE_PRICE:
+                        if m_id not in seen_d:
+                            seen_d.add(m_id)
+                            disputed_ids.append(m_id)
+                    elif t0 == _TOPIC_OO_PROPOSE_PRICE:
+                        if m_id not in seen_p:
+                            seen_p.add(m_id)
+                            proposed_ids.append(m_id)
+            return bn, proposed_ids, disputed_ids
+        except Exception:
+            continue
+    return last_bn, [], []
+
+
+async def augment_uma_proposed_from_universe_and_polygon(
+    daemon: Any,
+    now_ts: float,
+    *,
+    gamma_url: str = "https://gamma-api.polymarket.com",
+    poll_fn: Optional[Callable[[int], Tuple[int, List[str], List[str]]]] = None,
+) -> Dict[str, int]:
+    """
+    Augments `daemon.uma_proposed_markets` every `>= 10s` via Polygon `OptimisticOracleV2`
+    `ProposePrice` / `DisputePrice` logs + batch Gamma market hydration, catching low-volume
+    child sports/tennis/esports props within seconds of on-chain proposal and instantly
+    evicting any disputed `market_id` from `uma_onchain_cache` and `uma_proposed_markets`.
+    """
+    proposed_map: Dict[str, Dict[str, Any]] = getattr(daemon, "uma_proposed_markets", None)
+    if not isinstance(proposed_map, dict):
+        proposed_map = {}
+        daemon.uma_proposed_markets = proposed_map
+    onchain_cache: Dict[str, Any] = getattr(daemon, "uma_onchain_cache", {})
+    disputed_map: Dict[str, float] = daemon.__dict__.setdefault("_uma_poly_disputed_ids", {})
+    evicted = 0
+    if disputed_map:
+        for d_k, d_exp in list(disputed_map.items()):
+            if float(d_exp or 0.0) <= float(now_ts):
+                disputed_map.pop(d_k, None)
+            else:
+                if d_k in proposed_map:
+                    proposed_map.pop(d_k, None)
+                    evicted += 1
+                if isinstance(onchain_cache, dict):
+                    onchain_cache.pop(d_k, None)
+
+    is_mocked = bool(
+        getattr(daemon, "single_scan", False)
+        or any(k in getattr(daemon, "__dict__", {}) for k in ("fetch_json", "fetch_books_batch"))
+    )
+    if is_mocked and poll_fn is None:
+        return {"added": 0, "disputed_evicted": evicted}
+    last_ts = float(daemon.__dict__.get("_last_uma_poly_log_ts", 0.0) or 0.0)
+    if poll_fn is None and (float(now_ts) - last_ts) < 10.0:
+        return {"added": 0, "disputed_evicted": evicted}
+    daemon.__dict__["_last_uma_poly_log_ts"] = float(now_ts)
+
+    from src.polymarket_research.uma_nba_endgame_engine import is_objective_uma_market
+
+    last_bn = int(daemon.__dict__.get("_last_uma_poly_bn", 0) or 0)
+    runner = poll_fn or _poll_polygon_oo_proposal_and_dispute_mids_sync
+    new_bn, prop_mids, disp_mids = await asyncio.to_thread(runner, last_bn)
+    if new_bn > 0:
+        daemon.__dict__["_last_uma_poly_bn"] = int(new_bn)
+
+    neg_ids: Dict[str, float] = daemon.__dict__.setdefault("_uma_poly_reject_ids", {})
+    if len(neg_ids) > 4000:
+        cutoff_n = float(now_ts) - 1800.0
+        for k_n in [k for k, ts_k in neg_ids.items() if ts_k < cutoff_n]:
+            neg_ids.pop(k_n, None)
+
+    for d_mid in disp_mids:
+        disputed_map[d_mid] = float(now_ts) + 7200.0
+        neg_ids[d_mid] = float(now_ts) + 7200.0
+        if d_mid in proposed_map:
+            proposed_map.pop(d_mid, None)
+            evicted += 1
+        if isinstance(onchain_cache, dict):
+            onchain_cache.pop(d_mid, None)
+
+    need_mids = [
+        m_id
+        for m_id in reversed(prop_mids)
+        if m_id not in proposed_map and float(neg_ids.get(m_id, 0.0) or 0.0) <= float(now_ts)
+    ][:120]
+    for ex_mid in prop_mids:
+        if isinstance(onchain_cache, dict) and ex_mid in onchain_cache:
+            c_ent = onchain_cache.get(ex_mid)
+            if isinstance(c_ent, tuple) and len(c_ent) >= 2 and isinstance(c_ent[1], Mapping):
+                if not c_ent[1].get("verified") and "UNINITIALIZED" in str(c_ent[1].get("reason") or ""):
+                    onchain_cache.pop(ex_mid, None)
+
+    added = 0
+    if need_mids and hasattr(daemon, "fetch_json"):
+        chunks = [need_mids[i : i + 40] for i in range(0, len(need_mids), 40)]
+        pages = await asyncio.gather(
+            *(
+                daemon.fetch_json(
+                    f"{gamma_url}/markets?limit=50&" + "&".join(f"id={x}" for x in ch),
+                    timeout=4.5,
+                )
+                for ch in chunks
+            ),
+            return_exceptions=True,
+        )
+        seen_ret: Set[str] = set()
+        for pg in pages:
+            if not isinstance(pg, list):
+                continue
+            for cm in pg:
+                if not isinstance(cm, dict):
+                    continue
+                mid_c = str(cm.get("id") or "").strip()
+                if not mid_c:
+                    continue
+                seen_ret.add(mid_c)
+                if cm.get("closed") or cm.get("enableOrderBook") is False:
+                    neg_ids[mid_c] = float(now_ts) + 3600.0
+                    continue
+                ust_c = str(cm.get("umaResolutionStatus") or "").strip().lower()
+                if ust_c in ("", "none"):
+                    cm = {**cm, "umaResolutionStatus": "proposed"}
+                ok_c, _ = is_objective_uma_market(cm)
+                if ok_c:
+                    proposed_map[mid_c] = cm
+                    added += 1
+                else:
+                    neg_ids[mid_c] = float(now_ts) + 3600.0
+        for m_miss in need_mids:
+            if m_miss not in seen_ret:
+                neg_ids[m_miss] = float(now_ts) + 300.0
+    return {"added": added, "disputed_evicted": evicted}
+
 
 

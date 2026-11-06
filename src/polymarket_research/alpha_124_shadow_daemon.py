@@ -1859,8 +1859,12 @@ class Alpha124ShadowDaemon:
             )
             if conv_arbs:
                 await self.execute_negrisk_convert_positions_arb(sp_nrc, conv_arbs[0], ws_map, opps_tmp)
+            _nr2_fast = (all(float(b.get("fee_rate", 0.0) or 0.0) <= 1e-9 for b in sp_nrc.brackets) and (sp_nrc.end_ts - now_ts) <= 172800.0)
             nr2_arbs = detect_nr2_convert_no_subset_arbs(
-                sp_nrc, ws_map, target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"], min_edge_pure_cash=0.012, min_edge_with_yes_sell=0.015, min_shares=6
+                sp_nrc, ws_map, target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],
+                min_edge_pure_cash=0.006 if _nr2_fast else 0.012,
+                min_edge_with_yes_sell=0.0085 if _nr2_fast else 0.015,
+                min_shares=5 if _nr2_fast else 6,
             )
             if nr2_arbs:
                 await self.execute_nr2_subset_convert_arb(sp_nrc, nr2_arbs[0], ws_map, opps_tmp)
@@ -10121,13 +10125,14 @@ class Alpha124ShadowDaemon:
                             },
                         )
                         await self.execute_negrisk_convert_positions_arb(sp_nrc, ca0, nrc_bks, opps_out)
+                    _nr2_fast_p = (all(float(b.get("fee_rate", 0.0) or 0.0) <= 1e-9 for b in sp_nrc.brackets) and (sp_nrc.end_ts - now) <= 172800.0)
                     nr2_arbs = detect_nr2_convert_no_subset_arbs(
                         sp_nrc,
                         nrc_bks,
                         target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],
-                        min_edge_pure_cash=0.012,
-                        min_edge_with_yes_sell=0.015,
-                        min_shares=6,
+                        min_edge_pure_cash=0.006 if _nr2_fast_p else 0.012,
+                        min_edge_with_yes_sell=0.0085 if _nr2_fast_p else 0.015,
+                        min_shares=5 if _nr2_fast_p else 6,
                     )
                     try:
                         from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround
@@ -10792,7 +10797,7 @@ class Alpha124ShadowDaemon:
                         )
 
         # 7H. `LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX`: 11-State NFL Exact-Margin + Multi-Sport Tie-Proof Polish Middles
-        for nfl_b in list(self.lp1_nfl_em_bundles.values())[:12]:
+        for nfl_b in list(self.lp1_nfl_em_bundles.values())[:32]:
             if float(nfl_b["end_ts"]) <= now + 60:
                 continue
             nfl_toks = sorted({str(lg["token_id"]) for lg in nfl_b["legs"]})
@@ -12190,8 +12195,10 @@ class Alpha124ShadowDaemon:
         now_ts: Optional[float] = None,
     ) -> None:
         now = float(now_ts if now_ts is not None else time.time())
-        if self.single_scan or not self.uma_proposed_markets or (now - self.last_uma_discovery_ts) >= 90.0:
+        if self.single_scan or not self.uma_proposed_markets or (now - self.last_uma_discovery_ts) >= 30.0:
             await self.discover_uma_proposed_markets(now)
+        from src.polymarket_research.riskless_protocol_v2_expansion import augment_uma_proposed_from_universe_and_polygon
+        await augment_uma_proposed_from_universe_and_polygon(self, now, gamma_url=GAMMA_URL)
         if not self.uma_proposed_markets:
             return
 

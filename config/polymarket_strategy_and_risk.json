@@ -1,5 +1,5 @@
 {
-  "schema_version": "5.4.4",
+  "schema_version": "5.4.5",
   "directional": {
     "allowed_assets_1h": ["BTC", "SOL", "ETH"],
     "allowed_assets_15m_maker": ["BTC", "SOL", "ETH"],

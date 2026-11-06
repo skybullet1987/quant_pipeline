@@ -1139,7 +1139,7 @@ def test_v540_option_b_z90_px82_taker_only_routing(tmp_path, monkeypatch):
 
     plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
     snap = plh.GLOBAL_GOVERNANCE_MANAGER.snapshot
-    assert snap["schema_version"] == "5.4.4"
+    assert snap["schema_version"] == "5.4.5"
     assert snap["riskless_boxes"]["reward_harvester_cap_usd_seed"] == pytest.approx(12.0)
     assert snap["directional"]["enable_1h_shielded_maker"] is False
     assert snap["directional"]["enable_15m_subordinate_maker"] is True

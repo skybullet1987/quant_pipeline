@@ -859,5 +859,291 @@ def test_v544_riskless_frequency_unlocker_4_pillars(tmp_path: Path, monkeypatch)
     assert passes_uma_bond_dispute_guard(ten_mkt, {"proposal_age_sec": 720.0, "dual_book_consensus_confirmed": True}) is False
 
 
+def test_v545_velocity_recycle_polygon_uma_ctf_overround_and_nr2_unlocks(tmp_path: Path) -> None:
+    import asyncio
+    import time
+    from types import SimpleNamespace
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        augment_uma_proposed_from_universe_and_polygon,
+        emit_single_leg_lock_cand_impl,
+        eval_sll_live_book_poll,
+        finish_protocol_v2_special_box_sync,
+        maybe_manage_passive_htm_early_maker_recycle,
+        scan_full_universe_c1_and_ctf_overround,
+    )
+    from src.polymarket_research.alpha_124_shadow_daemon import walk_l2_book_asks_depth_capped
+
+    def _extract_best_bid_usd(bids):
+        if not bids:
+            return (0.0, 0.0)
+        bp = max(float(b["price"]) for b in bids)
+        bu = sum(float(b["price"]) * float(b["size"]) for b in bids if abs(float(b["price"]) - bp) <= 1e-6)
+        return (bp, bu)
+
+    now_t = time.time()
+
+    # Pillar 1: Passive 0%-fee Maker Early-Recycle Ladder ($0.998 / $0.999) + 0.01-tick veto + T-6m release + full-fill close
+    class _MockExec:
+        def __init__(self, tick: float = 0.001) -> None:
+            self.tick = tick
+            self.posted = []
+            self.canceled = []
+            self.released = []
+            self.summary = {"status": "LIVE", "matched": 0.0, "cash": 0.0, "terminal": False}
+
+        def get_token_tick_size(self, token_id: str, price_hint: float = 0.998) -> float:
+            return self.tick
+
+        def post_maker_exit_order(self, token_id: str, price: float, size: float, side: str = "SELL", neg_risk=None):
+            self.posted.append((token_id, price, size, side))
+            return {"success": True, "orderID": "OID_HTM_998", "price": price}
+
+        def get_order_fill_summary(self, oid: str, token_id: str):
+            return dict(self.summary)
+
+        def cancel_order(self, oid: str):
+            self.canceled.append(oid)
+            self.summary["terminal"] = True
+            return {"is_canceled": True, "canceled": [oid]}
+
+        def release_inventory(self, reservation_id: str):
+            self.released.append(reservation_id)
+
+        def invalidate_collateral_cache(self):
+            pass
+
+    class _MockHarv:
+        def __init__(self, ex) -> None:
+            self.dry_run = False
+            self.executor = ex
+            self.closed = []
+            self._pending_collateral_refresh = False
+
+        def calculate_realized_cash_pnl(self, pos, cash_out: float, exit_fee: float) -> float:
+            return round(cash_out - exit_fee - float(pos["notional_usd"]), 4)
+
+        def _record_order_summary(self, pos, summary, fb_px: float, taker: bool = False) -> bool:
+            m = float(summary.get("matched") or 0.0)
+            if m > 0.0:
+                pos["filled_exit_shares"] = m
+                pos["remaining_shares"] = max(0.0, float(pos["entry_shares"]) - m)
+                pos["realized_exit_cash"] = float(summary.get("cash") or (m * fb_px))
+                return True
+            return False
+
+        def _close_position(self, tid, pos, status, reason, won=None):
+            self.closed.append((tid, status, reason, won))
+
+        def save_state(self):
+            pass
+
+    pos_htm = {
+        "trade_id": "T_HTM_1",
+        "token_id": "1" * 30,
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "hold_to_maturity_lock": True,
+        "is_single_leg_lock": True,
+        "is_dominance_box": False,
+        "status": "POSITION_CONFIRMED",
+        "inventory_reconciled": True,
+        "entry_shares": 10.0,
+        "remaining_shares": 10.0,
+        "entry_price": 0.991,
+        "notional_usd": 9.91,
+        "fee_rate_applied": 0.0,
+        "candle_expiry_ts": now_t + 3600.0,
+    }
+    bk_htm = {"bids": [{"price": "0.992", "size": "25"}], "asks": [{"price": "0.999", "size": "25"}]}
+
+    # 0.01-tick market must strictly refuse passive 0.998 post so it can never clamp to 0.99
+    harv_bad_tick = _MockHarv(_MockExec(tick=0.01))
+    assert asyncio.run(maybe_manage_passive_htm_early_maker_recycle(harv_bad_tick, "T_HTM_1", dict(pos_htm), bk_htm, now_t)) is False
+    assert harv_bad_tick.executor.posted == []
+
+    # 0.001-tick market posts 0%-fee SELL @ $0.998 (ahead of $0.999 asks!)
+    ex_ok = _MockExec(tick=0.001)
+    harv_ok = _MockHarv(ex_ok)
+    assert asyncio.run(maybe_manage_passive_htm_early_maker_recycle(harv_ok, "T_HTM_1", pos_htm, bk_htm, now_t)) is True
+    assert ex_ok.posted == [("1" * 30, 0.998, 10.0, "SELL")]
+    assert pos_htm["exit_order_id"] == "OID_HTM_998"
+    assert pos_htm["_htm_passive_recycle_active"] is True
+
+    # T-6m (< 360s) auto-cancels & releases inventory cleanly for AutoRedeemer $1.00 redemption
+    pos_htm["candle_expiry_ts"] = now_t + 240.0
+    assert asyncio.run(maybe_manage_passive_htm_early_maker_recycle(harv_ok, "T_HTM_1", pos_htm, bk_htm, now_t, {"OID_HTM_998"})) is False
+    assert ex_ok.canceled == ["OID_HTM_998"]
+    assert ex_ok.released == ["OID_HTM_998"]
+    assert pos_htm["exit_order_id"] is None and pos_htm["exit_order_status"] == "HOLD_TO_MATURITY_LOCK"
+
+    # Entry @ 0.995 posts @ $0.999 and closes immediately when matched on CLOB
+    pos_995 = {**pos_htm, "entry_price": 0.995, "notional_usd": 9.95, "candle_expiry_ts": now_t + 900.0, "_last_htm_mkr_post_ts": 0.0}
+    ex_fill = _MockExec(tick=0.001)
+    harv_fill = _MockHarv(ex_fill)
+    assert asyncio.run(maybe_manage_passive_htm_early_maker_recycle(harv_fill, "T_HTM_2", pos_995, bk_htm, now_t)) is True
+    assert ex_fill.posted[-1][1] == pytest.approx(0.999)
+    ex_fill.summary = {"status": "MATCHED", "matched": 10.0, "cash": 9.99, "terminal": True}
+    assert asyncio.run(maybe_manage_passive_htm_early_maker_recycle(harv_fill, "T_HTM_2", pos_995, {"bids": [], "asks": []}, now_t)) is True
+    assert harv_fill.closed == [("T_HTM_2", "FILLED", "HTM_PASSIVE_MAKER_RECYCLE_FILLED", True)]
+
+    # Pillar 2: Queue-aware whale-ahead micro-step vs #1 FIFO priority retention
+    bk_opp_q = {"bids": [{"price": 0.002, "size": 50}]}
+    bk_whale_ahead = {"bids": [{"price": 0.991, "size": 450}], "asks": [{"price": 0.998, "size": 50}]}
+    cand_ahead = {
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "p_model": 0.999,
+        "min_maker_edge": 0.004,
+        "_posted_notional_usd": 7.93,
+    }
+    act1, _, _, _ = eval_sll_live_book_poll(
+        bk_opp_q, bk_whale_ahead, cand_ahead, 0.991, 0.940, 0.995, 0.008, 0.001, True, False, 0, 200.0, 45.0, now_t + 1800.0, None
+    )
+    assert act1 == "OK"
+    cand_ahead["_whale_q_since_mono"] = time.monotonic() - 25.0
+    act2, rp2, _, msg2 = eval_sll_live_book_poll(
+        bk_opp_q, bk_whale_ahead, cand_ahead, 0.991, 0.940, 0.995, 0.008, 0.001, True, False, 0, 200.0, 45.0, now_t + 1800.0, None
+    )
+    assert act2 == "REPEG" and rp2 == pytest.approx(0.992) and "whale_queue_ahead" in msg2
+
+    # When we posted FIRST (_init_l1_q_usd == $8) and a $450 whale joined BEHIND us, keep #1 FIFO at $0.991!
+    cand_first = {
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "p_model": 0.999,
+        "min_maker_edge": 0.004,
+        "_posted_notional_usd": 7.93,
+        "_init_l1_q_usd": 7.93,
+        "_whale_q_since_mono": time.monotonic() - 30.0,
+    }
+    act_keep, _, _, _ = eval_sll_live_book_poll(
+        bk_opp_q, bk_whale_ahead, cand_first, 0.991, 0.940, 0.995, 0.008, 0.001, True, False, 0, 200.0, 45.0, now_t + 1800.0, None
+    )
+    assert act_keep == "OK"
+
+    # Pillar 3: Polygon OptimisticOracleV2 ProposePrice discovery + DisputePrice instant cache eviction
+    async def _fake_gamma_fetch(url: str, timeout: float = 4.5):
+        return [
+            {
+                "id": "6668201",
+                "question": "Monteiro vs. Cecchinato: Set 2 Games O/U 9.5",
+                "description": "Official atptour.com scoreboard.",
+                "outcomes": '["Over", "Under"]',
+                "clobTokenIds": json.dumps(["1" * 28, "2" * 28]),
+                "resolvedBy": "0x65070be91477460d8a7aeeb94ef92fe056c2f2a7",
+                "questionID": "0x" + "a" * 64,
+                "enableOrderBook": True,
+                "acceptingOrders": True,
+                "closed": False,
+            }
+        ]
+
+    dm_poly = SimpleNamespace(
+        single_scan=False,
+        uma_proposed_markets={"9999999": {"id": "9999999"}},
+        uma_onchain_cache={
+            "9999999": (now_t, {"verified": True}),
+            "6668201": (now_t, {"verified": False, "reason": "UNINITIALIZED_QUESTION"}),
+        },
+        fetch_json=_fake_gamma_fetch,
+    )
+    res_poly = asyncio.run(
+        augment_uma_proposed_from_universe_and_polygon(
+            dm_poly,
+            now_t,
+            poll_fn=lambda _bn: (96811200, ["6668201"], ["9999999"]),
+        )
+    )
+    assert res_poly == {"added": 1, "disputed_evicted": 1}
+    assert "6668201" in dm_poly.uma_proposed_markets
+    assert "6668201" not in dm_poly.uma_onchain_cache
+    assert "9999999" not in dm_poly.uma_proposed_markets and "9999999" not in dm_poly.uma_onchain_cache
+
+    # Pillar 4: Crossed-book veto & zero-fee enforcement on CTF_OVERROUND_MINT_SELL
+    assert scan_full_universe_c1_and_ctf_overround([
+        {
+            "condition_id": "cond_crossed",
+            "yes_token_id": "yc",
+            "no_token_id": "nc",
+            "yes_bid": 0.55,
+            "yes_ask": 0.54,
+            "yes_bid_size": 20,
+            "no_bid": 0.50,
+            "no_ask": 0.52,
+            "no_bid_size": 20,
+            "enableOrderBook": True,
+        },
+        {
+            "condition_id": "cond_fee_ovr",
+            "yes_token_id": "yf",
+            "no_token_id": "nf",
+            "yes_bid": 0.54,
+            "yes_bid_size": 20,
+            "no_bid": 0.50,
+            "no_bid_size": 20,
+            "fee_rate": 0.05,
+            "enableOrderBook": True,
+        },
+    ]) == []
+    out_fee_veto = finish_protocol_v2_special_box_sync(
+        SimpleNamespace(dry_run=False, _last_known_collateral=75.0, executor=SimpleNamespace(dry_run=True), active_positions={}, closed_positions=[]),
+        {
+            "box_type": "CTF_OVERROUND",
+            "sleeve_source": "CTF_OVERROUND_MINT_SELL",
+            "condition_id": "0x" + "1" * 64,
+            "yes_token_id": "1" * 28,
+            "no_token_id": "2" * 28,
+            "fee_rate": 0.05,
+            "yes_bid": 0.55,
+            "no_bid": 0.55,
+            "max_fillable_shares": 10.0,
+        },
+        dedupe_k="K_FEE_OVR",
+        retry_cd={},
+        now_ts=now_t,
+        rcfg={"live_bankroll_usd": 75.0},
+        own_grad=False,
+    )
+    assert out_fee_veto["executed"] is False and out_fee_veto["reason"] == "NON_ZERO_FEE_CTF_OVERROUND"
+
+    # Pillar 5: $5.97 (6 shares @ $0.995) single-leg lock Taker sweep emits cleanly under $5.0 L1 floor
+    cand_p = tmp_path / "cands_v545.jsonl"
+    st_p = tmp_path / "st_v545.json"
+    dm_1l = SimpleNamespace(
+        single_scan=True,
+        _last_d1_live_emit_ts={},
+        _best_ask_sz=lambda bk: (0.995, 6.0),
+        _token_tick_sizes={},
+    )
+    emitted_1l = emit_single_leg_lock_cand_impl(
+        dm_1l,
+        sleeve_source="W_PRUNE1_DEAD_NO_BOND",
+        asset="KJFK",
+        dedupe_key="WPRUNE_6USD",
+        token_id="3" * 28,
+        opp_token_id="4" * 28,
+        market_id="777777",
+        condition_id="0x" + "7" * 64,
+        side_label="NO",
+        display_label="NYC Dead NO",
+        bk_win={"asks": [{"price": "0.995", "size": "6"}], "bids": [{"price": "0.991", "size": "20"}]},
+        bk_opp={"bids": [{"price": "0.002", "size": "20"}], "asks": [{"price": "0.008", "size": "20"}]},
+        fee_rate=0.0,
+        fee_exponent=1.0,
+        neg_risk=True,
+        close_ts=now_t + 3600.0,
+        now_ts=now_t,
+        max_lock_eff_px=0.9975,
+        max_opp_bid=0.008,
+        hold_to_maturity=True,
+        p_model=0.9999,
+        extract_best_bid_fn=_extract_best_bid_usd,
+        walk_l2_fn=walk_l2_book_asks_depth_capped,
+        cand_file=cand_p,
+        default_cand_path=tmp_path / "def_cands.jsonl",
+        state_file=st_p,
+        default_state_path=tmp_path / "def_st.json",
+    )
+    assert emitted_1l is True and cand_p.exists()
+
+
+
 
 
