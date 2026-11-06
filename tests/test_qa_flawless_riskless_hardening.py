@@ -33,11 +33,17 @@ from src.polymarket_research.polymarket_live_executor import (
 )
 from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
 from src.polymarket_research.riskless_protocol_v2_expansion import (
+    _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES,
     augment_uma_proposed_from_universe_and_polygon,
     compute_sll_entry_budget,
+    eval_sll_live_book_poll,
+    execute_binary_ctf_overround_mint_sell,
     filter_purged_ghost_orders,
+    finish_protocol_v2_special_box_sync,
     is_verified_zero_fill_cancel_purge,
     maybe_early_profit_recycle_htm_lock,
+    maybe_manage_passive_htm_early_maker_recycle,
+    position_own_exit_order_ids,
 )
 
 
@@ -384,3 +390,286 @@ def test_simulator_1leg_filtering_and_command_center_probe_compiles(tmp_path: Pa
 
     code_obj = compile(dcc.REMOTE_PROBE_PY, "<dominus_remote_probe>", "exec")
     assert code_obj is not None
+
+
+def test_mkr_lock1_passive_recycle_sleeves_resting_guard_and_cancel_ownership(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for real_sl in (
+        "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",
+        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+        "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",
+        "API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",
+        "TW1_COUNTING_TRUNCATION_AND_BOX",
+        "W1_SOLAR_PEAK_LOCK",
+        "W1_LOW_TROUGH_LOCK",
+        "NFL_PRP1_MILESTONE_AND_MAX_LOCKS",
+        "SOC2_EXACT_SCORE_2D_LATTICE",
+    ):
+        assert real_sl in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES
+
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "state_mkr_lk1.json")
+    harv = PolymarketLiveHarvester(dry_run=True)
+    harv.dry_run = False
+    now_t = time.time()
+    pos = {
+        "trade_id": "T_MLK1_1",
+        "market_id": "m_mlk1",
+        "token_id": "tok_mlk1",
+        "sleeve": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+        "status": "POSITION_CONFIRMED",
+        "inventory_reconciled": True,
+        "hold_to_maturity_lock": True,
+        "is_single_leg_lock": True,
+        "is_dominance_box": False,
+        "entry_price": 0.992,
+        "entry_shares": 10.0,
+        "remaining_shares": 10.0,
+        "notional_usd": 9.92,
+        "fee_rate_applied": 0.0,
+        "candle_expiry_ts": now_t + 2400.0,
+    }
+    harv.active_positions["T_MLK1_1"] = pos
+    harv.executor.get_token_tick_size = lambda *a, **k: 0.001  # type: ignore[method-assign]
+    harv.executor.post_maker_exit_order = MagicMock(  # type: ignore[method-assign]
+        return_value={"success": True, "orderID": "oid_mlk1_998", "price": 0.998}
+    )
+
+    # 1. Posts $0.998 passive Maker exit on MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER
+    posted = asyncio.run(
+        maybe_manage_passive_htm_early_maker_recycle(
+            harv, "T_MLK1_1", pos, {"bids": [{"price": 0.992, "size": 20.0}]}, now_t, set()
+        )
+    )
+    assert posted is True
+    assert pos["exit_order_id"] == "oid_mlk1_998"
+    assert pos["_htm_passive_recycle_active"] is True
+
+    # 2. Resting poll with partial fill (3.0 shares) returns True (preventing Phase D fallthrough) & sets PARTIALLY_FILLED
+    harv.executor.get_order_fill_summary = MagicMock(  # type: ignore[method-assign]
+        return_value={"order_id": "oid_mlk1_998", "status": "LIVE", "matched": 3.0, "cash": 2.994, "terminal": False}
+    )
+    handled_resting = asyncio.run(
+        maybe_manage_passive_htm_early_maker_recycle(
+            harv, "T_MLK1_1", pos, {"bids": [{"price": 0.992, "size": 20.0}]}, now_t + 10.0, {"oid_mlk1_998"}
+        )
+    )
+    assert handled_resting is True
+    assert pos["status"] == "PARTIALLY_FILLED"
+    assert pos["remaining_shares"] == pytest.approx(7.0)
+
+    # 3. T-6m (< 360s) cancels resting order, records `oid_mlk1_998` in `canceled_maker_exit_oids`, and allows Taker 998 sweep
+    harv.executor.cancel_order = MagicMock(return_value={"is_canceled": True, "canceled": ["oid_mlk1_998"]})  # type: ignore[method-assign]
+    harv.executor.get_order_fill_summary = MagicMock(  # type: ignore[method-assign]
+        return_value={"order_id": "oid_mlk1_998", "status": "CANCELED", "matched": 3.0, "cash": 2.994, "terminal": True}
+    )
+    pos["candle_expiry_ts"] = (now_t + 20.0) + 320.0
+    handled_cancel = asyncio.run(
+        maybe_manage_passive_htm_early_maker_recycle(
+            harv, "T_MLK1_1", pos, {"bids": [{"price": 0.992, "size": 20.0}]}, now_t + 20.0, set()
+        )
+    )
+    assert handled_cancel is False
+    assert pos["exit_order_id"] is None
+    assert pos["_htm_passive_recycle_active"] is False
+    assert "oid_mlk1_998" in pos["canceled_maker_exit_oids"]
+    assert "oid_mlk1_998" in position_own_exit_order_ids(pos)
+    assert pos["status"] == "PARTIALLY_FILLED"
+
+    # 4. `maybe_early_profit_recycle_htm_lock` accepts `PARTIALLY_FILLED` when $0.998 bid arrives at TTE >= 300s
+    pos["candle_expiry_ts"] = (now_t + 40.0) + 600.0
+    harv.executor.execute_unwind_order = MagicMock(  # type: ignore[method-assign]
+        return_value={"success": True, "orderID": "oid_sweep_998", "matched_size": 7.0, "taking_amount": 6.986, "outcome_unknown": False}
+    )
+    swept = asyncio.run(
+        maybe_early_profit_recycle_htm_lock(
+            harv, "T_MLK1_1", pos, {"bids": [{"price": 0.998, "size": 25.0}]}, now_t + 40.0
+        )
+    )
+    assert swept is True
+    assert harv.executor.execute_unwind_order.call_count == 1
+
+
+def test_ctf_overround_failed_merge_and_residual_supervision(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(plh, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(plh, "STATE_FILE", tmp_path / "state_ctfovr.json")
+    now_t = time.time()
+    cid = "0x" + "a" * 64
+
+    # Case A: Both FOK sells reject after `splitPosition`, AND `attempt_onchain_complete_set_merge` fails (`None`):
+    # BOTH `YES` and `NO` legs MUST be registered in `active_positions` as a reconciled `COMPLETE_SET` (zero stranded tokens!).
+    class _FailedMergeExec:
+        def get_collateral_balance(self) -> float:
+            return 60.0
+
+        def get_market_book(self, token_id: str) -> dict:
+            return {"bids": [{"price": "0.54", "size": "40"}], "asks": [{"price": "0.56", "size": "40"}]}
+
+        def split_collateral_to_complete_set(self, condition_id: str, shares: float, neg_risk: bool = False) -> dict:
+            return {"success": True, "tx_hash": "0xsplit_ok_1"}
+
+        def execute_atomic_box_overround_unwind(self, *args, **kwargs) -> dict:
+            return {
+                "success": False,
+                "partial_leg_unwind": False,
+                "outcome_unknown": False,
+                "leg_a": {"filled": False, "outcome_unknown": False},
+                "leg_b": {"filled": False, "outcome_unknown": False},
+            }
+
+        def attempt_onchain_complete_set_merge(self, *args, **kwargs):
+            return None
+
+        def invalidate_collateral_cache(self) -> None:
+            pass
+
+    harv_fm = PolymarketLiveHarvester(dry_run=True)
+    harv_fm.dry_run = False
+    harv_fm._last_known_collateral = 60.0
+    harv_fm.executor = _FailedMergeExec()  # type: ignore[assignment]
+
+    out_fm = finish_protocol_v2_special_box_sync(
+        harv_fm,
+        {
+            "box_id": "CTF_FM_1",
+            "box_type": "CTF_OVERROUND",
+            "sleeve_source": "CTF_OVERROUND_MINT_SELL",
+            "asset": "POLY",
+            "leg_a_market_id": "998877",
+            "condition_id": cid,
+            "yes_token_id": "1" * 28,
+            "no_token_id": "2" * 28,
+            "yes_bid": 0.54,
+            "no_bid": 0.54,
+            "max_fillable_shares": 10.0,
+            "expiry_ts": now_t + 3600.0,
+        },
+        dedupe_k="DK_FM_1",
+        retry_cd={},
+        now_ts=now_t,
+        rcfg={},
+        own_grad=False,
+    )
+    assert out_fm["executed"] is False
+    assert out_fm["merged_back"] is False
+    assert out_fm["complete_set_supervised"] is True
+    assert len(harv_fm.active_positions) == 2
+    legs_fm = list(harv_fm.active_positions.values())
+    assert {lg["target_token"] for lg in legs_fm} == {"YES", "NO"}
+    assert all(
+        lg["box_type"] == "COMPLETE_SET"
+        and lg["is_dominance_box"] is True
+        and lg["inventory_reconciled"] is True
+        and lg["market_id"] == "998877"
+        and lg["exit_order_status"] == "DETERMINISTIC_TERMINAL_HOLD"
+        for lg in legs_fm
+    )
+
+    # Async helper parity when merge fails
+    harv_fm_async = SimpleNamespace(active_positions={}, _last_known_collateral=50.0)
+    res_fm_async = asyncio.run(
+        execute_binary_ctf_overround_mint_sell(
+            _FailedMergeExec(),
+            condition_id=cid,
+            yes_token_id="1" * 28,
+            no_token_id="2" * 28,
+            yes_min_bid=0.54,
+            no_min_bid=0.54,
+            shares=10.0,
+            harvester=harv_fm_async,
+            expiry_ts=now_t + 3600.0,
+        )
+    )
+    assert res_fm_async["merged_back"] is False
+    assert res_fm_async["complete_set_supervised"] is True
+    assert len(harv_fm_async.active_positions) == 2
+
+    # Case B: Partial leg unwind failure registers `is_legged_out_residual=True`, `hold_to_maturity_lock=False`, `UNWIND_RETRY_REQUIRED`
+    class _PartialFailExec(_FailedMergeExec):
+        def execute_atomic_box_overround_unwind(self, *args, **kwargs) -> dict:
+            return {
+                "success": False,
+                "partial_leg_unwind": True,
+                "outcome_unknown": False,
+                "leg_a": {"filled": True, "taking_amount": 5.40, "fee_usd": 0.0, "outcome_unknown": False},
+                "leg_b": {"filled": False, "outcome_unknown": False},
+            }
+
+        def execute_unwind_order(self, *args, **kwargs) -> dict:
+            return {"success": False, "outcome_unknown": False}
+
+    harv_pf = PolymarketLiveHarvester(dry_run=True)
+    harv_pf.dry_run = False
+    harv_pf._last_known_collateral = 60.0
+    harv_pf.executor = _PartialFailExec()  # type: ignore[assignment]
+    out_pf = finish_protocol_v2_special_box_sync(
+        harv_pf,
+        {
+            "box_id": "CTF_PF_1",
+            "box_type": "CTF_OVERROUND",
+            "sleeve_source": "CTF_OVERROUND_MINT_SELL",
+            "asset": "POLY",
+            "leg_a_market_id": "554433",
+            "condition_id": cid,
+            "yes_token_id": "1" * 28,
+            "no_token_id": "2" * 28,
+            "yes_bid": 0.54,
+            "no_bid": 0.54,
+            "max_fillable_shares": 10.0,
+            "expiry_ts": now_t + 3600.0,
+        },
+        dedupe_k="DK_PF_1",
+        retry_cd={},
+        now_ts=now_t,
+        rcfg={},
+        own_grad=False,
+    )
+    assert out_pf["executed"] is False
+    assert len(harv_pf.active_positions) == 1
+    r_pf = next(iter(harv_pf.active_positions.values()))
+    assert r_pf["is_legged_out_residual"] is True
+    assert r_pf["hold_to_maturity_lock"] is False
+    assert r_pf["is_single_leg_lock"] is False
+    assert r_pf["inventory_reconciled"] is True
+    assert r_pf["exit_order_status"] == "UNWIND_RETRY_REQUIRED"
+    assert r_pf["market_id"] == "554433"
+
+
+def test_eval_sll_live_book_poll_outbid_repeg_resets_whale_queue_baseline() -> None:
+    now_t = time.time()
+    cand_box = {
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "p_model": 0.9985,
+        "min_maker_edge": 0.004,
+        "maker_rebate_ps": 0.0,
+        "_posted_notional_usd": 15.0,
+        "_init_l1_q_usd": 950.0,
+        "_whale_q_since_mono": time.monotonic() - 25.0,
+    }
+    action, next_px, _, reason = eval_sll_live_book_poll(
+        bk_oc={"bids": [{"price": 0.002, "size": 50.0}]},
+        bk_wc={"bids": [{"price": 0.991, "size": 20.0}], "asks": [{"price": 0.995, "size": 40.0}]},
+        candidate_box=cand_box,
+        posted_px=0.990,
+        min_rb=0.950,
+        max_rb=0.994,
+        max_opp=0.015,
+        tk_wf=0.001,
+        enforce_b1_v53=True,
+        is_s2_mkr=False,
+        repost_n_in=0,
+        b1_q_cap=250.0,
+        b1_buried_s=15.0,
+        exp_ts=now_t + 600.0,
+        buried_since_mono=None,
+        collat_usd=75.0,
+    )
+    assert action == "REPEG"
+    assert next_px == pytest.approx(0.992)
+    assert "outbid" in reason
+    assert cand_box["_init_l1_q_usd"] is None
+    assert cand_box["_whale_q_since_mono"] is None

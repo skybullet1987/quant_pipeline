@@ -1957,7 +1957,7 @@ async def maybe_early_profit_recycle_htm_lock(
         getattr(harvester, "dry_run", True)
         or not bool(pos.get("hold_to_maturity_lock"))
         or bool(pos.get("is_dominance_box"))
-        or str(pos.get("status") or "") != "POSITION_CONFIRMED"
+        or str(pos.get("status") or "") not in {"POSITION_CONFIRMED", "PARTIALLY_FILLED"}
         or not bool(pos.get("inventory_reconciled", False))
         or pos.get("is_liquidating")
         or pos.get("exit_order_id")
@@ -2004,7 +2004,9 @@ async def maybe_early_profit_recycle_htm_lock(
     fr = float(_fr_raw or 0.0)
     fe = float(pos.get("fee_exponent_applied", pos.get("fee_exponent", 1.0)) or 1.0)
     est_exit_fee = (rem_shrs * fr * ((min_px * (1.0 - min_px)) ** fe)) if fr > 0.0 else 0.0
-    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, rem_shrs * min_px, est_exit_fee))
+    prior_cash = float(pos.get("realized_exit_cash", 0.0) or 0.0)
+    prior_fee = float(pos.get("realized_exit_fee", pos.get("realized_exit_fees", 0.0)) or 0.0)
+    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, prior_cash + rem_shrs * min_px, prior_fee + est_exit_fee))
     if est_net_pnl < max(0.03, rem_shrs * 0.0012):
         return False
     ex = getattr(harvester, "executor", None)
@@ -2046,11 +2048,27 @@ _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES: frozenset[str] = frozenset({
     "BOND1_UMA_RESOLUTION_CARRY",
     "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
     "MKR_LOCK1_POST_CLINCH_SWEEPER",
+    "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
     "W_PRUNE1_DEAD_NO_BOND",
     "W_SOLAR1_POST_2351_LOCK",
+    "W1_SOLAR_PEAK_LOCK",
+    "W1_LOW_TROUGH_LOCK",
+    "W1_METAR_FINAL_HIGH_LOCK",
+    "W1_METAR_IRREVERSIBLE_NO_LOCK",
     "MKR_REWARD_LOCKED_CARRY",
     "SP2_NBA_ENDGAME_LOCK",
     "SP4_INGAME_LOCK",
+    "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",
+    "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+    "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",
+    "API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",
+    "TW1_COUNTING_TRUNCATION_AND_BOX",
+    "UMA_READY1_LIVENESS_PRIORITY",
+    "AFF1_FROZEN_SUBPERIOD_COLLAPSE",
+    "SOC2_EXACT_SCORE_2D_LATTICE",
+    "NFL_PRP1_MILESTONE_AND_MAX_LOCKS",
+    "B4_TOUCHED_BARRIER_WICK_LOCK",
+    "GAS1_AAA_GASOLINE_LOCK",
 })
 
 
@@ -2117,10 +2135,15 @@ async def maybe_manage_passive_htm_early_maker_recycle(
         filled_s = float(pos.get("filled_exit_shares", 0.0) or 0.0)
         if filled_s > 0.0:
             pos["average_exit_price"] = round(float(pos.get("realized_exit_cash", 0.0) or 0.0) / filled_s, 4)
+            if pos.get("status") == "POSITION_CONFIRMED":
+                pos["status"] = "PARTIALLY_FILLED"
         rem_shrs = float(pos.get("remaining_shares", rem_shrs) or 0.0)
         if rem_shrs <= 0.02:
             if hasattr(ex, "release_inventory"):
                 ex.release_inventory(reservation_id=exit_oid)
+            _cm_oids = pos.setdefault("canceled_maker_exit_oids", [])
+            if exit_oid not in _cm_oids:
+                _cm_oids.append(exit_oid)
             pos["exit_order_id"] = None
             pos["_htm_passive_recycle_active"] = False
             if hasattr(ex, "invalidate_collateral_cache"):
@@ -2152,6 +2175,9 @@ async def maybe_manage_passive_htm_early_maker_recycle(
             if rem_shrs <= 0.02:
                 if hasattr(ex, "release_inventory"):
                     ex.release_inventory(reservation_id=exit_oid)
+                _cm_oids = pos.setdefault("canceled_maker_exit_oids", [])
+                if exit_oid not in _cm_oids:
+                    _cm_oids.append(exit_oid)
                 pos["exit_order_id"] = None
                 pos["_htm_passive_recycle_active"] = False
                 if hasattr(ex, "invalidate_collateral_cache"):
@@ -2167,19 +2193,23 @@ async def maybe_manage_passive_htm_early_maker_recycle(
             if term_ok:
                 if hasattr(ex, "release_inventory"):
                     ex.release_inventory(reservation_id=exit_oid)
+                _cm_oids = pos.setdefault("canceled_maker_exit_oids", [])
+                if exit_oid not in _cm_oids:
+                    _cm_oids.append(exit_oid)
                 pos["exit_order_id"] = None
                 pos["_htm_passive_recycle_active"] = False
-                pos["status"] = "POSITION_CONFIRMED"
+                pos["status"] = "PARTIALLY_FILLED" if float(pos.get("filled_exit_shares", 0.0) or 0.0) > 0.0 else "POSITION_CONFIRMED"
                 pos["exit_order_status"] = "HOLD_TO_MATURITY_LOCK"
                 pos["_last_htm_mkr_post_ts"] = float(now_ts)
                 harvester.save_state()
                 if sweep_998_ready:
                     return await maybe_early_profit_recycle_htm_lock(harvester, tid, pos, book, now_ts)
-        return False
+                return False
+        return True
 
     if (
         exit_oid
-        or str(pos.get("status") or "") != "POSITION_CONFIRMED"
+        or str(pos.get("status") or "") not in {"POSITION_CONFIRMED", "PARTIALLY_FILLED"}
         or not bool(pos.get("inventory_reconciled", False))
         or rem_shrs < 5.0
         or tte_rem < 480.0
@@ -2201,7 +2231,9 @@ async def maybe_manage_passive_htm_early_maker_recycle(
     target_px = 0.998 if (entry_px <= 0.9935 and tte_rem >= 1800.0) else 0.999
     if target_px < entry_px + 0.0020 or best_b >= target_px - 1e-6:
         return False
-    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, rem_shrs * target_px, 0.0))
+    prior_mkr_cash = float(pos.get("realized_exit_cash", 0.0) or 0.0)
+    prior_mkr_fee = float(pos.get("realized_exit_fee", pos.get("realized_exit_fees", 0.0)) or 0.0)
+    est_net_pnl = float(harvester.calculate_realized_cash_pnl(pos, prior_mkr_cash + rem_shrs * target_px, prior_mkr_fee))
     if est_net_pnl < max(0.02, rem_shrs * 0.0012):
         return False
     if not hasattr(ex, "post_maker_exit_order"):
@@ -3928,6 +3960,188 @@ class CompleteSetRewardShield:
 # ---------------------------------------------------------------------------
 
 
+def _register_ctf_overround_residual(
+    harvester: Any,
+    executor: Any,
+    *,
+    cid: str,
+    market_id: str,
+    unsold_tok: str,
+    unsold_side: str,
+    cand_asset: str,
+    sh: float,
+    rem_cost: float,
+    fr: float,
+    fe: float,
+    exp_ts: float,
+    now_ts: float,
+    uw_unk: bool = False,
+    uw_oid: Any = None,
+    sp_tx: str = "",
+) -> str:
+    rid = f"CTFOVR_RESID_{cid[:8]}_{int(now_ts)}"
+    if rid in harvester.active_positions:
+        rid = f"{rid}_{int(now_ts * 1000) % 10000}"
+    mid_u = str(market_id or cid)
+    if hasattr(harvester, "_make_single_leg_lock_pos"):
+        rpos = harvester._make_single_leg_lock_pos(
+            rid, "CTF_OVERROUND_RESIDUAL", "CTF_OVERROUND_MINT_SELL", cand_asset, "resid",
+            mid_u, cid, unsold_tok, unsold_side, False, sh, rem_cost, 0.0, fr, fe,
+            "crypto_fees_v2", exp_ts, now_ts, 0.0, None, False, unk=False,
+        )
+    else:
+        rpos = {
+            "trade_id": rid, "box_id": rid, "token_id": unsold_tok, "condition_id": cid, "market_id": mid_u,
+            "target_token": unsold_side, "asset": cand_asset, "sleeve": "CTF_OVERROUND_MINT_SELL",
+            "shares": sh, "entry_shares": sh, "gross_entry_shares": sh, "remaining_shares": sh,
+            "remaining_exit_shares": sh, "filled_exit_shares": 0.0, "remaining_cost_basis": rem_cost,
+            "entry_price": round(rem_cost / max(sh, 0.01), 4), "notional_usd": rem_cost,
+            "fee_rate_applied": fr, "fee_exponent_applied": fe,
+            "entry_ts": now_ts, "candle_expiry_ts": exp_ts, "neg_risk": False,
+        }
+    rpos.update({
+        "market_id": mid_u,
+        "is_dominance_box": False,
+        "is_single_leg_lock": False,
+        "hold_to_maturity_lock": False,
+        "is_legged_out_residual": True,
+        "pending_unwind_tag": "CTF_OVERROUND_RESIDUAL_UNWIND",
+        "status": "POSITION_CONFIRMED",
+        "inventory_reconciled": True,
+        "exit_order_status": "UNWIND_EXECUTION_OUTCOME_UNKNOWN" if uw_unk else "UNWIND_RETRY_REQUIRED",
+        "terminal_policy": None,
+        "stop_triggered_ts": now_ts,
+        "next_unwind_retry_ts": now_ts + 0.35,
+        "unwind_attempt_ts": now_ts,
+        "unwind_order_id": uw_oid if uw_unk else None,
+        "unwind_start_time": now_ts,
+        "transactions_hashes": [sp_tx] if sp_tx else [],
+    })
+    harvester.active_positions[rid] = rpos
+    if getattr(harvester, "_last_known_collateral", None) is not None:
+        harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - rem_cost)
+    if executor is not None and hasattr(executor, "invalidate_collateral_cache"):
+        executor.invalidate_collateral_cache()
+    harvester._pending_collateral_refresh = True
+    if hasattr(harvester, "_refresh_global_halt") and hasattr(harvester, "risk_halt"):
+        harvester._refresh_global_halt()
+    if hasattr(harvester, "save_state"):
+        harvester.save_state()
+    return rid
+
+
+def _register_ctf_overround_unmerged_pair(
+    harvester: Any,
+    executor: Any,
+    *,
+    cid: str,
+    market_id: str,
+    y_tok: str,
+    n_tok: str,
+    cand_asset: str,
+    sh: float,
+    fr: float,
+    fe: float,
+    exp_ts: float,
+    now_ts: float,
+    la_d: Optional[Mapping[str, Any]] = None,
+    lb_d: Optional[Mapping[str, Any]] = None,
+    sp_tx: str = "",
+) -> Tuple[str, str]:
+    bid = f"CTFOVR_CSET_{cid[:8]}_{int(now_ts)}"
+    if f"{bid}_L1" in harvester.active_positions or f"{bid}_L2" in harvester.active_positions:
+        bid = f"{bid}_{int(now_ts * 1000) % 10000}"
+    t1, t2 = f"{bid}_L1", f"{bid}_L2"
+    mid_u = str(market_id or cid)
+    leg_notional = round(0.5 * sh, 4)
+    tot_cost = round(sh, 4)
+    iso_t = _iso_utc(now_ts)
+    for tid, p_tid, tok, opp_tok, side_s, lg_d in (
+        (t1, t2, y_tok, n_tok, "YES", la_d),
+        (t2, t1, n_tok, y_tok, "NO", lb_d),
+    ):
+        lg_unk = bool((lg_d or {}).get("outcome_unknown"))
+        lg_oid = (lg_d or {}).get("orderID")
+        harvester.active_positions[tid] = {
+            "trade_id": tid,
+            "box_id": bid,
+            "box_expected_legs": 2,
+            "box_partner_trade_id": p_tid,
+            "box_type": "COMPLETE_SET",
+            "box_cost_net": 1.0,
+            "box_total_cost_usd": tot_cost,
+            "is_dominance_box": True,
+            "is_locked_arbitrage_box": True,
+            "is_single_leg_lock": False,
+            "hold_to_maturity_lock": False,
+            "sleeve": "CTF_OVERROUND_MINT_SELL",
+            "sleeve_source": "CTF_OVERROUND_MINT_SELL",
+            "entry_tte": max(1.0, exp_ts - now_ts),
+            "event_id": bid,
+            "market_id": mid_u,
+            "condition_id": cid,
+            "token_id": tok,
+            "opp_token_id": opp_tok,
+            "target_token": side_s,
+            "asset": cand_asset,
+            "horizon": "cset",
+            "is_subhourly": False,
+            "neg_risk": False,
+            "candle_open_spot": 100.0,
+            "entry_spot_ref": 100.0,
+            "spot_denomination": "USD",
+            "candle_sigma": 0.0,
+            "entry_price": 0.5,
+            "entry_shares": sh,
+            "gross_entry_shares": sh,
+            "remaining_shares": sh,
+            "filled_exit_shares": 0.0,
+            "remaining_exit_shares": sh,
+            "remaining_cost_basis": leg_notional,
+            "realized_exit_cash": 0.0,
+            "realized_exit_fee": 0.0,
+            "gross_exit_cash": 0.0,
+            "average_exit_price": 0.0,
+            "exit_trade_ids": [],
+            "notional_usd": leg_notional,
+            "fee_usd": 0.0,
+            "entry_fee_cash_usd": 0.0,
+            "entry_fee_asset": "USDC",
+            "fee_source": "crypto_fees_v2",
+            "fee_rate_applied": fr,
+            "fee_exponent_applied": fe,
+            "target_exit_price": 1.0,
+            "exit_order_size": sh,
+            "entry_time_utc": iso_t,
+            "entry_ts": now_ts,
+            "candle_expiry_ts": exp_ts,
+            "pre_token_balance": 0.0,
+            "order_id": None,
+            "entry_order_id": None,
+            "trade_ids": [],
+            "transactions_hashes": [sp_tx] if sp_tx else [],
+            "status": "POSITION_CONFIRMED",
+            "inventory_reconciled": True,
+            "exit_order_id": None,
+            "exit_order_status": "UNWIND_EXECUTION_OUTCOME_UNKNOWN" if lg_unk else "DETERMINISTIC_TERMINAL_HOLD",
+            "terminal_policy": None if lg_unk else "DETERMINISTIC_TERMINAL_HOLD",
+            "is_liquidating": False,
+            "unwind_order_id": lg_oid if lg_unk else None,
+            "unwind_attempt_ts": now_ts if lg_unk else 0.0,
+            "unwind_start_time": now_ts if lg_unk else 0.0,
+        }
+    if getattr(harvester, "_last_known_collateral", None) is not None:
+        harvester._last_known_collateral = max(0.0, float(harvester._last_known_collateral) - tot_cost)
+    if executor is not None and hasattr(executor, "invalidate_collateral_cache"):
+        executor.invalidate_collateral_cache()
+    harvester._pending_collateral_refresh = True
+    if hasattr(harvester, "_refresh_global_halt") and hasattr(harvester, "risk_halt"):
+        harvester._refresh_global_halt()
+    if hasattr(harvester, "save_state"):
+        harvester.save_state()
+    return t1, t2
+
+
 async def execute_binary_ctf_overround_mint_sell(
     executor: Any,
     *,
@@ -4018,14 +4232,18 @@ async def execute_binary_ctf_overround_mint_sell(
 
     if (u_res or {}).get("partial_leg_unwind"):
         la_d = (u_res or {}).get("leg_a") or {}
+        lb_d = (u_res or {}).get("leg_b") or {}
         a_sold = bool(la_d.get("filled") or la_d.get("success"))
-        sold_d = la_d if a_sold else ((u_res or {}).get("leg_b") or {})
+        sold_d = la_d if a_sold else lb_d
+        unsold_d = lb_d if a_sold else la_d
         unsold_tok = no_token_id if a_sold else yes_token_id
         unsold_side = "NO" if a_sold else "YES"
         sold_cash = max(0.0, float(sold_d.get("taking_amount") or 0.0) - float(sold_d.get("fee_usd") or 0.0))
+        uw_unk = bool(unsold_d.get("outcome_unknown"))
+        uw_oid = unsold_d.get("orderID")
         unw_cash = 0.0
         unw_ok = False
-        if hasattr(executor, "execute_unwind_order"):
+        if not uw_unk and hasattr(executor, "execute_unwind_order"):
             try:
                 uw = await asyncio.to_thread(
                     executor.execute_unwind_order, unsold_tok, size=sh, side="SELL", min_price=0.02, neg_risk=False
@@ -4033,34 +4251,43 @@ async def execute_binary_ctf_overround_mint_sell(
             except TypeError:
                 uw = await asyncio.to_thread(executor.execute_unwind_order, f"UNW_OVR_{condition_id[:8]}", unsold_tok, sh, 0.02)
             unw_ok = bool(getattr(uw, "success", False) or (isinstance(uw, Mapping) and uw.get("success")))
+            if not unw_ok and isinstance(uw, Mapping) and uw.get("outcome_unknown"):
+                uw_unk = True
+                uw_oid = uw.get("orderID") or uw_oid
             unw_cash = float(
                 getattr(uw, "notional_usd", 0.0)
                 or (uw.get("taking_amount", 0.0) if isinstance(uw, Mapping) else 0.0)
                 or 0.0
             )
-        elif hasattr(executor, "place_fok_order"):
+        elif not uw_unk and hasattr(executor, "place_fok_order"):
             uw = await asyncio.to_thread(executor.place_fok_order, unsold_tok, "SELL", sh, 0.02)
             unw_ok = bool((uw or {}).get("success"))
+            if not unw_ok and isinstance(uw, Mapping) and uw.get("outcome_unknown"):
+                uw_unk = True
+                uw_oid = uw.get("orderID") or uw_oid
             unw_cash = float((uw or {}).get("taking_amount") or 0.0) - float((uw or {}).get("fee_usd") or 0.0)
         if not unw_ok and harvester is not None:
-            rem_cost = round(max(0.01, sh - sold_cash), 4)
-            rid = f"CTFOVR_RESID_{condition_id[:8]}_{int(time.time())}"
             now_r = time.time()
-            exp_r = float(expiry_ts or (now_r + 7200.0))
-            if hasattr(harvester, "_make_single_leg_lock_pos"):
-                rpos = harvester._make_single_leg_lock_pos(
-                    rid, "CTF_OVERROUND_RESIDUAL", "CTF_OVERROUND_MINT_SELL", cand_asset, "resid",
-                    condition_id, condition_id, unsold_tok, unsold_side, False, sh, rem_cost, 0.0,
-                    float(fee_rate), float(fee_exponent), "crypto_fees_v2", exp_r, now_r, 0.0, None, True, unk=False,
-                )
-            else:
-                rpos = {
-                    "trade_id": rid, "token_id": unsold_tok, "condition_id": condition_id, "market_id": condition_id,
-                    "target_token": unsold_side, "asset": cand_asset, "sleeve": "CTF_OVERROUND_MINT_SELL",
-                    "shares": sh, "entry_shares": sh, "remaining_shares": sh, "notional_usd": rem_cost,
-                    "entry_ts": now_r, "candle_expiry_ts": exp_r, "status": "POSITION_CONFIRMED", "neg_risk": False,
-                }
-            harvester.active_positions[rid] = rpos
+            _register_ctf_overround_residual(
+                harvester,
+                executor,
+                cid=condition_id,
+                market_id=condition_id,
+                unsold_tok=unsold_tok,
+                unsold_side=unsold_side,
+                cand_asset=cand_asset,
+                sh=sh,
+                rem_cost=round(max(0.01, sh - sold_cash), 4),
+                fr=float(fee_rate),
+                fe=float(fee_exponent),
+                exp_ts=float(expiry_ts or (now_r + 7200.0)),
+                now_ts=now_r,
+                uw_unk=uw_unk,
+                uw_oid=uw_oid,
+                sp_tx=str((sp or {}).get("tx_hash") or ""),
+            )
+        elif unw_ok and executor is not None and hasattr(executor, "invalidate_collateral_cache"):
+            executor.invalidate_collateral_cache()
         return {
             "success": False,
             "reason": "OVERROUND_PARTIAL_LEG_UNWOUND",
@@ -4068,8 +4295,11 @@ async def execute_binary_ctf_overround_mint_sell(
             "residual_registered": bool(not unw_ok and harvester is not None),
         }
 
-    # Immediate on-chain `mergePositions` rollback on unsold pair
-    if hasattr(executor, "attempt_onchain_complete_set_merge"):
+    # Immediate on-chain `mergePositions` rollback on unsold pair (only when neither SELL is outcome_unknown)
+    sell_unk = bool((u_res or {}).get("outcome_unknown"))
+    if sell_unk:
+        merged_ok = False
+    elif hasattr(executor, "attempt_onchain_complete_set_merge"):
         m_res = await asyncio.to_thread(
             executor.attempt_onchain_complete_set_merge,
             condition_id,
@@ -4077,7 +4307,7 @@ async def execute_binary_ctf_overround_mint_sell(
             max_pairs=sh,
             neg_risk=False,
         )
-        merged_ok = bool(isinstance(m_res, tuple) and m_res[0])
+        merged_ok = bool(isinstance(m_res, tuple) and len(m_res) >= 2 and m_res[0] and float(m_res[1] or 0.0) >= max(1.0, sh - 0.05))
     elif hasattr(executor, "merge_complete_set_positions"):
         m_res = await asyncio.to_thread(executor.merge_complete_set_positions, condition_id, sh, neg_risk=False)
         merged_ok = bool(isinstance(m_res, Mapping) and (m_res.get("success") or m_res.get("merged")))
@@ -4086,10 +4316,35 @@ async def execute_binary_ctf_overround_mint_sell(
         merged_ok = bool(isinstance(m_res, Mapping) and (m_res.get("success") or m_res.get("merged")))
     else:
         merged_ok = False
+    if merged_ok:
+        if executor is not None and hasattr(executor, "invalidate_collateral_cache"):
+            executor.invalidate_collateral_cache()
+        if harvester is not None:
+            harvester._pending_collateral_refresh = True
+    elif harvester is not None:
+        now_m = time.time()
+        _register_ctf_overround_unmerged_pair(
+            harvester,
+            executor,
+            cid=condition_id,
+            market_id=condition_id,
+            y_tok=yes_token_id,
+            n_tok=no_token_id,
+            cand_asset=cand_asset,
+            sh=sh,
+            fr=float(fee_rate),
+            fe=float(fee_exponent),
+            exp_ts=float(expiry_ts or (now_m + 7200.0)),
+            now_ts=now_m,
+            la_d=(u_res or {}).get("leg_a") if isinstance(u_res, Mapping) else None,
+            lb_d=(u_res or {}).get("leg_b") if isinstance(u_res, Mapping) else None,
+            sp_tx=str((sp or {}).get("tx_hash") or ""),
+        )
     return {
         "success": False,
         "reason": "OVERROUND_SWEEP_REJECTED_MERGED_BACK",
         "merged_back": merged_ok,
+        "complete_set_supervised": bool(not merged_ok and harvester is not None),
     }
 
 
@@ -4518,45 +4773,94 @@ def finish_protocol_v2_special_box_sync(
             else {"success": False}
         )
         if not (u_res or {}).get("success"):
+            mid_ovr = str(candidate_box.get("leg_a_market_id") or candidate_box.get("market_id") or cid)
+            sp_tx_s = str((sp or {}).get("tx_hash") or "")
             if (u_res or {}).get("partial_leg_unwind"):
                 la_d = (u_res or {}).get("leg_a") or {}
+                lb_d = (u_res or {}).get("leg_b") or {}
                 a_sold = bool(la_d.get("filled") or la_d.get("success"))
-                sold_d = la_d if a_sold else ((u_res or {}).get("leg_b") or {})
+                sold_d = la_d if a_sold else lb_d
+                unsold_d = lb_d if a_sold else la_d
                 unsold_tok = n_tok if a_sold else y_tok
                 unsold_side = "NO" if a_sold else "YES"
                 sold_cash = max(0.0, float(sold_d.get("taking_amount") or 0.0) - float(sold_d.get("fee_usd") or 0.0))
+                uw_unk = bool(unsold_d.get("outcome_unknown"))
+                uw_oid = unsold_d.get("orderID")
                 unw_ok = False
-                if hasattr(ex, "execute_unwind_order"):
+                if not uw_unk and hasattr(ex, "execute_unwind_order"):
                     try:
                         uw = ex.execute_unwind_order(unsold_tok, size=sh, side="SELL", min_price=0.02, neg_risk=False)
                     except TypeError:
                         uw = ex.execute_unwind_order(f"UNW_OVR_{cid[:8]}", unsold_tok, sh, 0.02)
                     unw_ok = bool(getattr(uw, "success", False) or (isinstance(uw, Mapping) and uw.get("success")))
+                    if not unw_ok and isinstance(uw, Mapping) and uw.get("outcome_unknown"):
+                        uw_unk = True
+                        uw_oid = uw.get("orderID") or uw_oid
                 if not unw_ok:
-                    rid = f"CTFOVR_RESID_{cid[:8]}_{int(now_ts)}"
-                    rem_cost = round(max(0.01, sh - sold_cash), 4)
-                    if hasattr(harvester, "_make_single_leg_lock_pos"):
-                        harvester.active_positions[rid] = harvester._make_single_leg_lock_pos(
-                            rid, "CTF_OVERROUND_RESIDUAL", "CTF_OVERROUND_MINT_SELL", cand_asset, "resid",
-                            cid, cid, unsold_tok, unsold_side, False, sh, rem_cost, 0.0, fr, fe,
-                            "crypto_fees_v2", exp_ts, now_ts, 0.0, None, True, unk=False,
-                        )
-                    else:
-                        harvester.active_positions[rid] = {
-                            "trade_id": rid, "token_id": unsold_tok, "condition_id": cid, "market_id": cid,
-                            "target_token": unsold_side, "asset": cand_asset, "sleeve": "CTF_OVERROUND_MINT_SELL",
-                            "shares": sh, "entry_shares": sh, "remaining_shares": sh, "notional_usd": rem_cost,
-                            "entry_ts": now_ts, "candle_expiry_ts": exp_ts, "status": "POSITION_CONFIRMED", "neg_risk": False,
-                        }
-                    harvester.save_state()
+                    _register_ctf_overround_residual(
+                        harvester,
+                        ex,
+                        cid=cid,
+                        market_id=mid_ovr,
+                        unsold_tok=unsold_tok,
+                        unsold_side=unsold_side,
+                        cand_asset=cand_asset,
+                        sh=sh,
+                        rem_cost=round(max(0.01, sh - sold_cash), 4),
+                        fr=fr,
+                        fe=fe,
+                        exp_ts=exp_ts,
+                        now_ts=now_ts,
+                        uw_unk=uw_unk,
+                        uw_oid=uw_oid,
+                        sp_tx=sp_tx_s,
+                    )
+                else:
+                    if hasattr(ex, "invalidate_collateral_cache"):
+                        ex.invalidate_collateral_cache()
+                    harvester._pending_collateral_refresh = True
                 retry_cd[dedupe_k] = now_ts + 8.0
                 return {"executed": False, "reason": "OVERROUND_PARTIAL_LEG_UNWOUND"}
-            if hasattr(ex, "attempt_onchain_complete_set_merge"):
-                ex.attempt_onchain_complete_set_merge(cid, min_pairs=max(1.0, sh - 0.05), max_pairs=sh, neg_risk=False)
-            elif hasattr(ex, "merge_complete_set_positions"):
-                ex.merge_complete_set_positions(cid, sh, neg_risk=False)
+            sell_unk_s = bool((u_res or {}).get("outcome_unknown"))
+            merged_ok_s = False
+            if not sell_unk_s:
+                if hasattr(ex, "attempt_onchain_complete_set_merge"):
+                    m_out_s = ex.attempt_onchain_complete_set_merge(cid, min_pairs=max(1.0, sh - 0.05), max_pairs=sh, neg_risk=False)
+                    merged_ok_s = bool(
+                        isinstance(m_out_s, tuple) and len(m_out_s) >= 2 and m_out_s[0] and float(m_out_s[1] or 0.0) >= max(1.0, sh - 0.05)
+                    )
+                elif hasattr(ex, "merge_complete_set_positions"):
+                    m_out_s = ex.merge_complete_set_positions(cid, sh, neg_risk=False)
+                    merged_ok_s = bool((isinstance(m_out_s, Mapping) and (m_out_s.get("success") or m_out_s.get("merged"))) or getattr(m_out_s, "success", False))
+            if merged_ok_s:
+                if hasattr(ex, "invalidate_collateral_cache"):
+                    ex.invalidate_collateral_cache()
+                harvester._pending_collateral_refresh = True
+            else:
+                _register_ctf_overround_unmerged_pair(
+                    harvester,
+                    ex,
+                    cid=cid,
+                    market_id=mid_ovr,
+                    y_tok=y_tok,
+                    n_tok=n_tok,
+                    cand_asset=cand_asset,
+                    sh=sh,
+                    fr=fr,
+                    fe=fe,
+                    exp_ts=exp_ts,
+                    now_ts=now_ts,
+                    la_d=(u_res or {}).get("leg_a") if isinstance(u_res, Mapping) else None,
+                    lb_d=(u_res or {}).get("leg_b") if isinstance(u_res, Mapping) else None,
+                    sp_tx=sp_tx_s,
+                )
             retry_cd[dedupe_k] = now_ts + 8.0
-            return {"executed": False, "reason": "OVERROUND_SWEEP_REJECTED_MERGED_BACK"}
+            return {
+                "executed": False,
+                "reason": "OVERROUND_SWEEP_REJECTED_MERGED_BACK",
+                "merged_back": merged_ok_s,
+                "complete_set_supervised": not merged_ok_s,
+            }
         la, lb = u_res["leg_a"], u_res["leg_b"]
         fee_tot = round(float(la.get("fee_usd") or 0.0) + float(lb.get("fee_usd") or 0.0), 4)
         realized = round(
@@ -7504,6 +7808,9 @@ def eval_sll_live_book_poll(
                 and (abs(cand_rp - win_b_live) > 1e-6 or l1_q_l <= min(120.0, b1_q_cap) + 1e-6)
                 and (_uma_ex_l or exp_ts <= 0.0 or (exp_ts - now_rp) >= 150.0)
             ):
+                if isinstance(candidate_box, dict):
+                    candidate_box["_init_l1_q_usd"] = None
+                    candidate_box["_whale_q_since_mono"] = None
                 return "REPEG", cand_rp, buried_since_mono, f"outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}"
             if buried_since_mono is None:
                 buried_since_mono = time.monotonic()

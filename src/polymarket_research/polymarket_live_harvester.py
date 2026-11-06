@@ -11917,6 +11917,9 @@ class PolymarketLiveHarvester:
                         self.save_state()
                         return
                 self.executor.release_inventory(reservation_id=exit_oid)
+            if str(exit_oid) not in pos.setdefault("canceled_maker_exit_oids", []):
+                pos["canceled_maker_exit_oids"].append(str(exit_oid))
+            pos.pop("_htm_passive_recycle_active", None)
             pos["exit_order_id"] = None
             pos["exit_order_status"] = "CANCELED_FOR_RESOLUTION"
         _prev_exit_oid = str(exit_oid or pos.get("unwind_order_id") or "").strip() or None
@@ -12010,7 +12013,9 @@ class PolymarketLiveHarvester:
         fr = float(_fr_raw or 0.0)
         fe = float(pos.get("fee_exponent_applied", pos.get("fee_exponent", 1.0)) or 1.0)
         est_exit_fee = (rem_shrs * fr * ((min_px * (1.0 - min_px)) ** fe)) if fr > 0.0 else 0.0
-        est_net_pnl = self.calculate_realized_cash_pnl(pos, rem_shrs * min_px, est_exit_fee)
+        est_net_pnl = self.calculate_realized_cash_pnl(
+            pos, float(pos.get("realized_exit_cash", 0.0) or 0.0) + rem_shrs * min_px, float(pos.get("realized_exit_fee", 0.0) or 0.0) + est_exit_fee
+        )
         if est_net_pnl < 0.02:
             return False
         if pos.get("exit_order_id"):
@@ -12039,6 +12044,8 @@ class PolymarketLiveHarvester:
             if not _term_d:
                 return False
             self.executor.release_inventory(reservation_id=_ex_d)
+            if _ex_d not in pos.setdefault("canceled_maker_exit_oids", []):
+                pos["canceled_maker_exit_oids"].append(_ex_d)
             pos["exit_order_id"] = None
             pos["_htm_passive_recycle_active"] = False
             if rem_shrs < 5.0:
@@ -12420,6 +12427,7 @@ class PolymarketLiveHarvester:
                             from src.polymarket_research.riskless_protocol_v2_expansion import maybe_early_profit_recycle_htm_lock, maybe_manage_passive_htm_early_maker_recycle
                             if (tte_rem >= 300.0 and best_b >= 0.998 and await maybe_early_profit_recycle_htm_lock(self, tid, pos, book, now_ts)) or await maybe_manage_passive_htm_early_maker_recycle(self, tid, pos, book, now_ts, open_oids):
                                 continue
+                            exit_oid = pos.get("exit_order_id")
                         _is_dom_box = bool(pos.get("is_dominance_box") or pos.get("is_single_leg_lock"))
 
                         # PAA_Q2: Pre-Kickoff Maker Step-Down (T-30m / T-15m / undercut) for unhedged SPORTS_CORRIDOR legs
