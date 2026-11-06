@@ -661,12 +661,14 @@ def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = 
         return True
     if err is not None:
         sc = getattr(err, "status_code", None)
-        if sc == 400 or sc == "400":
+        if sc in (400, 425, 429, "400", "425", "429"):
             return True
         err_str = str(err).lower()
         if (
             "status_code=400" in err_str
             or "status=400" in err_str
+            or "status_code=425" in err_str
+            or "status_code=429" in err_str
             or "invalid amounts" in err_str
             or "fok_order_not_filled" in err_str
             or "couldn't be fully filled" in err_str
@@ -696,7 +698,7 @@ def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = 
                 return True
     if raw_resp and isinstance(raw_resp, dict):
         status = raw_resp.get("status") or raw_resp.get("statusCode") or raw_resp.get("status_code")
-        if status == 400 or status == "400":
+        if status in (400, 425, 429, "400", "425", "429"):
             return True
         err_str = str(raw_resp.get("error") or raw_resp.get("errorMsg") or raw_resp.get("error_message") or "").lower()
         if "invalid amounts" in err_str or "supports a max accuracy" in err_str or "bad request" in err_str:
@@ -1623,11 +1625,18 @@ class PolymarketLiveExecutor:
                 funder=self.funder_address if self.funder_address else None,
             )
 
-            # Derive or create L2 API credentials
-            if hasattr(self.client, "create_or_derive_api_key"):
-                api_creds = self.client.create_or_derive_api_key()
-            else:
-                api_creds = self.client.create_or_derive_api_creds()
+            # Derive existing L2 API credentials first to avoid noisy 400 POST /auth/api-key on restart
+            api_creds = None
+            if getattr(self.client, "_mock_children", None) is None and hasattr(self.client, "derive_api_key"):
+                try:
+                    api_creds = self.client.derive_api_key()
+                except Exception:
+                    api_creds = None
+            if not api_creds:
+                if hasattr(self.client, "create_or_derive_api_key"):
+                    api_creds = self.client.create_or_derive_api_key()
+                else:
+                    api_creds = self.client.create_or_derive_api_creds()
             self.client.set_api_creds(api_creds)
             # Proactively cache version=2 to prevent synchronous GET /version on the hot path
             try:
@@ -2040,12 +2049,13 @@ class PolymarketLiveExecutor:
         cli = getattr(self, "_hot_order_async_client", None)
         if cli is None or cli.is_closed or (cur_loop is not None and getattr(self, "_hot_order_async_loop", None) is not cur_loop):
             limits = httpx.Limits(max_keepalive_connections=8, max_connections=16, keepalive_expiry=45.0)
+            _hot_to = httpx.Timeout(connect=2.0, write=3.0, read=5.0, pool=2.0)
             try:
                 sock_opts = [(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1), (socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)]
                 transport = httpx.AsyncHTTPTransport(http2=False, limits=limits, socket_options=sock_opts)
-                cli = httpx.AsyncClient(http2=False, timeout=8.0, transport=transport)
+                cli = httpx.AsyncClient(http2=False, timeout=_hot_to, transport=transport)
             except Exception:
-                cli = httpx.AsyncClient(http2=False, timeout=8.0, limits=limits)
+                cli = httpx.AsyncClient(http2=False, timeout=_hot_to, limits=limits)
             self._hot_order_async_client = cli
             self._hot_order_async_loop = cur_loop
         return cli
@@ -2233,6 +2243,20 @@ class PolymarketLiveExecutor:
             self._exec_hot_async_post(endpoint, headers, body_bytes), loop
         ).result(timeout=8.5)
         return out
+
+    def _post_signed_order_bridge_or_sync(
+        self, signed: Any, order_type: Any, post_only: bool = False, defer_exec: bool = True
+    ) -> Any:
+        if self._can_use_hot_async_bridge():
+            return self._post_json_hot_async_bridge(
+                "/order", self._serialize_signed_order_payload(signed, order_type, post_only, defer_exec)
+            )
+        if post_only:
+            return self.client.post_order(signed, order_type, post_only=True, defer_exec=defer_exec)
+        try:
+            return self.client.post_order(signed, order_type, False, defer_exec)
+        except TypeError:
+            return self.client.post_order(signed, order_type)
 
     async def _sign_and_post_async_zero_hop(
         self,
@@ -6249,7 +6273,7 @@ class PolymarketLiveExecutor:
                     with _UrgentSignPriority():
                         s_ord = _safe_create_order(self.client.create_order, o_args, create_opts)
                 order_submitted = True
-                return self.client.post_order(s_ord, OrderType.GTC, post_only=True, defer_exec=True)
+                return self._post_signed_order_bridge_or_sync(s_ord, OrderType.GTC, post_only=True, defer_exec=True)
 
             try:
                 resp = _sign_and_post_maker(quantized_price, shares_int)
@@ -6549,6 +6573,31 @@ class PolymarketLiveExecutor:
         if str(resp.get("status", "")).upper() in {"DELAYED", "LIVE", "UNMATCHED"}:
             return None
         return default_shares
+
+    def _resolve_deferred_fok_gross(self, oid_v: Any, tok_v: str, resp_v: Any) -> Optional[float]:
+        if not oid_v or not isinstance(resp_v, dict) or str(resp_v.get("status", "")).upper() not in {"DELAYED", "LIVE", "UNMATCHED"}:
+            return None
+        can_poll = (
+            hasattr(self.client, "get_order")
+            or "get_order_fill_summary" in self.__dict__
+            or getattr(self, "_user_ws_cache", None) is not None
+        )
+        if not can_poll or not hasattr(self, "get_order_fill_summary"):
+            return None
+        for attempt_i in range(5):
+            if attempt_i > 0:
+                time.sleep(0.12)
+            try:
+                s_f = self.get_order_fill_summary(str(oid_v), tok_v)
+            except Exception:
+                s_f = None
+            if isinstance(s_f, dict):
+                m_v = float(s_f.get("matched") or 0.0)
+                if m_v > 0.0:
+                    return m_v
+                if s_f.get("terminal"):
+                    return 0.0
+        return None
 
     def execute_atomic_dominance_box(
         self,
@@ -6886,6 +6935,10 @@ class PolymarketLiveExecutor:
             _supports_defer = True
 
         def _post_fok_fast(signed_ord: Any) -> Any:
+            if self._can_use_hot_async_bridge():
+                return self._post_json_hot_async_bridge(
+                    "/order", self._serialize_signed_order_payload(signed_ord, OrderType.FOK, False, True)
+                )
             if _supports_defer:
                 return _po_fn(signed_ord, OrderType.FOK, False, True)  # post_only=False, defer_exec=True
             return _po_fn(signed_ord, OrderType.FOK)
@@ -6972,31 +7025,6 @@ class PolymarketLiveExecutor:
                     resp_2, exc_2, ts_2 = f2.result()
                     skew_ms = round(abs(ts_2 - ts_1) * 1000.0, 3)
 
-                def _resolve_deferred_fok(oid_v: Any, tok_v: str, resp_v: Dict[str, Any]) -> Optional[float]:
-                    if not oid_v or str(resp_v.get("status", "")).upper() not in {"DELAYED", "LIVE", "UNMATCHED"}:
-                        return None
-                    can_poll = (
-                        hasattr(self.client, "get_order")
-                        or "get_order_fill_summary" in self.__dict__
-                        or getattr(self, "_user_ws_cache", None) is not None
-                    )
-                    if not can_poll or not hasattr(self, "get_order_fill_summary"):
-                        return None
-                    for attempt_i in range(5):
-                        if attempt_i > 0:
-                            time.sleep(0.12)
-                        try:
-                            s_f = self.get_order_fill_summary(str(oid_v), tok_v)
-                        except Exception:
-                            s_f = None
-                        if isinstance(s_f, dict):
-                            m_v = float(s_f.get("matched") or 0.0)
-                            if m_v > 0.0:
-                                return m_v
-                            if s_f.get("terminal"):
-                                return 0.0
-                    return None
-
                 def _eval_leg(resp_x: Optional[Dict[str, Any]], exc_x: Optional[Exception], exp_sz: float, tok_x: str) -> Tuple[str, float, Optional[str], str]:
                     if exc_x is not None:
                         em = str(getattr(exc_x, "error_message", "") or str(exc_x))
@@ -7014,7 +7042,7 @@ class PolymarketLiveExecutor:
                         return "UNKNOWN", 0.0, oid_x, str(err_x or "missing orderID")
                     m_sh = self._extract_fok_matched_shares(resp_x, exp_sz)
                     if m_sh is None:
-                        m_sh = _resolve_deferred_fok(oid_x, tok_x, resp_x)
+                        m_sh = self._resolve_deferred_fok_gross(oid_x, tok_x, resp_x)
                     if m_sh is None:
                         return "UNKNOWN", 0.0, oid_x, f"NON_IMMEDIATE_STATUS ({resp_x.get('status')})"
                     if m_sh <= 0.0:
@@ -7110,34 +7138,9 @@ class PolymarketLiveExecutor:
             if err_1 or not oid_1:
                 return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"AMBIGUOUS_LEG_1_RESPONSE: {err_1 or 'missing orderID'}", "raw_leg_1": resp_1}
 
-            def _resolve_seq_deferred_fok(oid_v: Any, tok_v: str, resp_v: Dict[str, Any]) -> Optional[float]:
-                if not oid_v or str(resp_v.get("status", "")).upper() not in {"DELAYED", "LIVE", "UNMATCHED"}:
-                    return None
-                can_poll = (
-                    hasattr(self.client, "get_order")
-                    or "get_order_fill_summary" in self.__dict__
-                    or getattr(self, "_user_ws_cache", None) is not None
-                )
-                if not can_poll or not hasattr(self, "get_order_fill_summary"):
-                    return None
-                for attempt_i in range(5):
-                    if attempt_i > 0:
-                        time.sleep(0.12)
-                    try:
-                        s_f = self.get_order_fill_summary(str(oid_v), tok_v)
-                    except Exception:
-                        s_f = None
-                    if isinstance(s_f, dict):
-                        m_v = float(s_f.get("matched") or 0.0)
-                        if m_v > 0.0:
-                            return m_v
-                        if s_f.get("terminal"):
-                            return 0.0
-                return None
-
             matched_1_gross = self._extract_fok_matched_shares(resp_1, sz_1)
             if matched_1_gross is None:
-                matched_1_gross = _resolve_seq_deferred_fok(oid_1, tok_1, resp_1)
+                matched_1_gross = self._resolve_deferred_fok_gross(oid_1, tok_1, resp_1)
             if matched_1_gross is None:
                 return {"success": False, "stage": "LEG_1_UNKNOWN", "legged_out": False, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_1_token_id": tok_1, "error": f"LEG_1_NON_IMMEDIATE_STATUS ({resp_1.get('status')})", "raw_leg_1": resp_1}
             if matched_1_gross <= 0.0:
@@ -7169,7 +7172,7 @@ class PolymarketLiveExecutor:
             if not err_2 and oid_2:
                 matched_2_gross = self._extract_fok_matched_shares(resp_2, sz_2 if _explicit_gross else matched_1)
                 if matched_2_gross is None:
-                    matched_2_gross = _resolve_seq_deferred_fok(oid_2, tok_2, resp_2)
+                    matched_2_gross = self._resolve_deferred_fok_gross(oid_2, tok_2, resp_2)
                 if matched_2_gross is None:
                     return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": oid_1, "leg_2_order_id": oid_2, "leg_1_token_id": tok_1, "leg_2_token_id": tok_2, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
                 if matched_2_gross <= 0.0:
@@ -7383,6 +7386,8 @@ class PolymarketLiveExecutor:
             if not err_2 and oid_2:
                 matched_2_gross = self._extract_fok_matched_shares(resp_2, hedge_gross_sh)
                 if matched_2_gross is None:
+                    matched_2_gross = self._resolve_deferred_fok_gross(oid_2, hedge_token_id, resp_2)
+                if matched_2_gross is None:
                     return {"success": False, "stage": "LEG_2_UNKNOWN", "legged_out": True, "outcome_unknown": True, "leg_1_order_id": anchor_order_id, "leg_2_order_id": oid_2, "leg_1_token_id": anchor_token_id, "leg_2_token_id": hedge_token_id, "error": f"LEG_2_NON_IMMEDIATE_STATUS ({resp_2.get('status')})", "raw_leg_2": resp_2}
                 if matched_2_gross <= 0.0:
                     uw_r, res_i = _unwind_anchor_leg()
@@ -7433,9 +7438,7 @@ class PolymarketLiveExecutor:
             with _UrgentSignPriority():
                 signed = _safe_create_order(self.client.create_order, OrderArgsV2(price=px_q, size=sh_q, side="BUY", token_id=token_id), opts)
             try:
-                resp = self.client.post_order(signed, OrderType.FAK, False, True)
-            except TypeError:
-                resp = self.client.post_order(signed, OrderType.FAK)
+                resp = self._post_signed_order_bridge_or_sync(signed, OrderType.FAK, False, True)
             except Exception as exc:
                 return {"success": False, "matched_shares": 0.0, "error": str(exc)}
             err = (resp or {}).get("errorMsg") or (resp or {}).get("error")
@@ -7515,14 +7518,23 @@ class PolymarketLiveExecutor:
             )
             if can_batch_ov:
                 try:
-                    b_ov = self.client.post_orders(
-                        [
-                            PostOrdersV2Args(order=sg_a, orderType=OrderType.FOK, deferExec=True),
-                            PostOrdersV2Args(order=sg_b, orderType=OrderType.FOK, deferExec=True),
-                        ],
-                        post_only=False,
-                        defer_exec=True,
-                    )
+                    if self._can_use_hot_async_bridge():
+                        b_ov = self._post_json_hot_async_bridge(
+                            "/orders",
+                            [
+                                self._serialize_signed_order_payload(sg_a, OrderType.FOK, False, True),
+                                self._serialize_signed_order_payload(sg_b, OrderType.FOK, False, True),
+                            ],
+                        )
+                    else:
+                        b_ov = self.client.post_orders(
+                            [
+                                PostOrdersV2Args(order=sg_a, orderType=OrderType.FOK, deferExec=True),
+                                PostOrdersV2Args(order=sg_b, orderType=OrderType.FOK, deferExec=True),
+                            ],
+                            post_only=False,
+                            defer_exec=True,
+                        )
                     if isinstance(b_ov, list) and len(b_ov) == 2:
                         ra, ea = b_ov[0], None
                         rb, eb = b_ov[1], None
@@ -7536,10 +7548,7 @@ class PolymarketLiveExecutor:
             else:
                 def _post_sell_fok(sg_x: Any) -> Tuple[Any, Optional[Exception]]:
                     try:
-                        try:
-                            return self.client.post_order(sg_x, OrderType.FOK, False, True), None
-                        except TypeError:
-                            return self.client.post_order(sg_x, OrderType.FOK), None
+                        return self._post_signed_order_bridge_or_sync(sg_x, OrderType.FOK, False, True), None
                     except Exception as ex:
                         return None, ex
 
@@ -7701,7 +7710,7 @@ class PolymarketLiveExecutor:
                     signed_order = _safe_create_order(self.client.create_order, order_args, create_opts)
             # Enforce post_only=True and defer_exec=True to guarantee non-blocking maker status
             order_submitted = True
-            resp = self.client.post_order(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
+            resp = self._post_signed_order_bridge_or_sync(signed_order, OrderType.GTC, post_only=True, defer_exec=True)
             has_err = resp.get("errorMsg") or resp.get("error")
             order_id = resp.get("orderID") or resp.get("id")
             
@@ -7752,7 +7761,7 @@ class PolymarketLiveExecutor:
                         logger.debug(f"Post-only price improvement book/sign skipped: {repr_err}")
                     if signed_2 is not None:
                         order_submitted = True
-                        resp_2 = self.client.post_order(signed_2, OrderType.GTC, post_only=True, defer_exec=True)
+                        resp_2 = self._post_signed_order_bridge_or_sync(signed_2, OrderType.GTC, post_only=True, defer_exec=True)
                         err_2 = resp_2.get("errorMsg") or resp_2.get("error") if isinstance(resp_2, dict) else "INVALID_MAKER_REPRICE_RESP"
                         oid_2 = (resp_2.get("orderID") or resp_2.get("id")) if isinstance(resp_2, dict) else None
                         if err_2 and oid_2:
@@ -8146,6 +8155,17 @@ class PolymarketLiveExecutor:
                     return retry_resp if isinstance(retry_resp, dict) else {"heartbeat_id": self.last_heartbeat_id}
                 except Exception as retry_err:
                     logger.warning(f"[HEARTBEAT RESYNC WARN] Retry with server heartbeat_id {server_hid} failed: {retry_err}")
+            elif hid and ("invalid heartbeat" in str(e).lower() or "expired" in str(e).lower()):
+                try:
+                    with _CLOB_HTTP_LOCK:
+                        retry_resp = self.client.post_heartbeat(heartbeat_id="")
+                    new_id = retry_resp.get("heartbeat_id") if isinstance(retry_resp, dict) else None
+                    self.last_heartbeat_id = str(new_id or "")
+                    self.heartbeat_failures = 0
+                    logger.info(f"[HEARTBEAT SESSION RESET] Re-initialized expired CLOB heartbeat session (-> {self.last_heartbeat_id}).")
+                    return retry_resp if isinstance(retry_resp, dict) else {"heartbeat_id": self.last_heartbeat_id}
+                except Exception as reset_err:
+                    logger.warning(f"[HEARTBEAT RESET WARN] Fresh heartbeat_id='' retry failed: {reset_err}")
 
             self.last_heartbeat_id = ""
             self.heartbeat_failures += 1
@@ -8164,6 +8184,7 @@ class PolymarketLiveExecutor:
             if strict:
                 raise RuntimeError("Cannot establish authoritative open-order state in live mode")
             return None
+        from src.polymarket_research.riskless_protocol_v2_expansion import filter_purged_ghost_orders
         uws = getattr(self, "_user_ws_cache", None)
         can_use_uws = (
             uws is not None
@@ -8173,11 +8194,12 @@ class PolymarketLiveExecutor:
         if can_use_uws:
             snap = uws.get_open_orders_snapshot(max_age_sec=15.0)
             if snap is not None:
-                return snap
+                return filter_purged_ghost_orders(self, snap)
         try:
             result = self.client.get_open_orders()
             if not isinstance(result, list):
                 raise RuntimeError(f"Unexpected open-orders response type: {type(result).__name__}")
+            result = filter_purged_ghost_orders(self, result)
             if can_use_uws:
                 uws.seed_open_orders(result)
             return result

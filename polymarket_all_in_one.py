@@ -1,6 +1,6 @@
 """
 POLYMARKET COMPLETE UNIFIED SYSTEM CODEBASE (ALL-IN-ONE BUNDLE)
-Generated: 2026-11-06 00:11:23 UTC | Repo: /home/skybullet1987/quant_pipeline
+Generated: 2026-11-06 00:34:03 UTC | Repo: /home/skybullet1987/quant_pipeline
 TABLE OF CONTENTS (Exact 1-Based Line Ranges):
   - [config/polymarket_risk_config.json] (L20-23 | 1,649B) :: Centralized Risk & Sizing Limits (Backward-Compatible Floor/Caps)
   - [config/polymarket_strategy_and_risk.json] (L24-27 | 6,396B) :: v5.0 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Config

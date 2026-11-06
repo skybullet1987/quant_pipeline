@@ -441,9 +441,21 @@ def simulate_d1_box_with_latency_skew(
 
 def _default_d1_calibration_events(data_dir: Optional[Path] = None) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
+    _non_2leg_btypes = {
+        "SINGLE_LEG_MAKER_LOCK",
+        "SINGLE_LEG_LOCK",
+        "NEGRISK_CONVERT",
+        "MULTI_LEG_BUNDLE",
+        "CTF_OVERROUND",
+        "COMPLETE_SET",
+    }
     if data_dir is not None:
-        cand_p = Path(data_dir) / "d1_live_box_candidates.jsonl"
-        if cand_p.exists():
+        for cand_p in (
+            Path(data_dir) / "d1_live_box_candidates.jsonl.1",
+            Path(data_dir) / "d1_live_box_candidates.jsonl",
+        ):
+            if not cand_p.exists():
+                continue
             try:
                 raw_lines = cand_p.read_text(encoding="utf-8", errors="ignore").splitlines()
             except Exception:
@@ -455,6 +467,11 @@ def _default_d1_calibration_events(data_dir: Optional[Path] = None) -> List[Dict
                 try:
                     d = json.loads(ln)
                     if not isinstance(d, dict):
+                        continue
+                    bt_u = str(d.get("box_type") or "").strip().upper()
+                    if bt_u in _non_2leg_btypes:
+                        continue
+                    if bt_u and not (d.get("leg_b_token_id") or d.get("leg_b_avail_shares") is not None):
                         continue
                     sh = max(5.0, float(d.get("shares") or 12.0))
                     av_a = float(d.get("leg_a_avail_shares") or sh * 1.8)

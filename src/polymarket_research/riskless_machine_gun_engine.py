@@ -2256,12 +2256,7 @@ class PreSplitInventoryGun:
             harvester.closed_positions = harvester.closed_positions[-600:]
             if getattr(harvester, "risk_controller", None) is not None and hasattr(harvester.risk_controller, "record_trade_pnl"):
                 try:
-                    harvester.risk_controller.record_trade_pnl(
-                        "PRE_SPLIT_OVERROUND_MACHINE_GUN",
-                        net_pnl,
-                        current_equity=float(getattr(harvester, "_last_known_collateral", None) or 0.0) + realized,
-                        is_non_directional=True,
-                    )
+                    harvester.risk_controller.record_trade_pnl(net_pnl, is_non_directional=True)
                 except Exception:
                     pass
         if getattr(harvester, "_last_known_collateral", None) is not None:

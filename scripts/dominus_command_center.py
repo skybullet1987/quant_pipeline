@@ -428,11 +428,30 @@ if lh_path.exists():
     _free_cash_usd = round(max(0.0, _wallet_cash - _inflight_intents_usd), 2)
     _quoting_util_pct = round(min(100.0, 100.0 * _inflight_intents_usd / max(0.01, _wallet_cash)), 1) if _wallet_cash > 0 else 0.0
     _act_map = s.get("active_positions") or {}
-    _active_book_usd = round(sum(float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0) for p in _act_map.values() if isinstance(p, dict)), 2)
+    def _pos_live_book_val(p: dict) -> float:
+        if not isinstance(p, dict):
+            return 0.0
+        if _onchain_cash is not None:
+            if bool(p.get("_pre_redeemed_onchain")):
+                return 0.0
+            if str(p.get("pending_settlement_close_reason") or "").upper() in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}:
+                return 0.0
+        return float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0)
+
+    _pending_synced_eq_usd = (
+        sum(
+            max(0.0, float(i.get("synced_equity_usd", 0.0) or 0.0))
+            for i in (s.get("pending_entry_intents") or {}).values()
+            if isinstance(i, dict)
+        )
+        if _onchain_cash is not None
+        else 0.0
+    )
+    _active_book_usd = round(sum(_pos_live_book_val(p) for p in _act_map.values() if isinstance(p, dict)) + _pending_synced_eq_usd, 2)
     _live_equity_usd = round(_wallet_cash + _active_book_usd, 2) if _onchain_cash is not None else round(float(s.get("total_account_equity", 0.0) or 0.0), 2)
     _box_groups = {}
     for _p_act in _act_map.values():
-        if isinstance(_p_act, dict) and _p_act.get("is_dominance_box") and _p_act.get("box_id"):
+        if isinstance(_p_act, dict) and _p_act.get("is_dominance_box") and _p_act.get("box_id") and not (_onchain_cash is not None and _p_act.get("_pre_redeemed_onchain")):
             _box_groups.setdefault(str(_p_act["box_id"]), []).append(_p_act)
     _paired_box_ids = {
         bid for bid, legs in _box_groups.items()
@@ -442,10 +461,10 @@ if lh_path.exists():
         min(float(lg.get("remaining_shares", lg.get("entry_shares", 0.0)) or 0.0) for lg in _box_groups[bid])
         for bid in _paired_box_ids
     ) + sum(
-        float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0)
+        _pos_live_book_val(p)
         for p in _act_map.values()
         if isinstance(p, dict) and str(p.get("box_id") or "") not in _paired_box_ids
-    )
+    ) + _pending_synced_eq_usd
     _guaranteed_redeem_equity_usd = round(_wallet_cash + _redeem_floor_positions, 2)
     _ONCHAIN_WALLET_RECON = {
         "LIVE_6399804_1793391806_DOWN": {"pnl": -18.63, "notional": 18.63, "entry_px": 0.81},
