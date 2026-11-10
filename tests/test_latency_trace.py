@@ -498,14 +498,14 @@ def test_harvester_recorder_freshness_ram_short_circuit_and_expired_d1_slot_rele
     res_slot = h.maybe_execute_graduated_d1_box({
         "box_id": "NEW_BOX_AFTER_EXPIRY",
         "dedupe_key": "D1_BTC_SLOT_CHECK",
-        "asset": "ZEC",
+        "asset": "PEPE",
         "corridor_bps": 10.0,
         "leg_a_market_id": "m1",
         "leg_b_market_id": "m2",
         "leg_a_token_id": "1" * 30,
         "leg_b_token_id": "2" * 30,
     })
-    assert res_slot["reason"] == "UNSUPPORTED_D1_ASSET:ZEC"
+    assert res_slot["reason"] == "UNSUPPORTED_D1_ASSET:PEPE"
 
 
 def test_weather_slate_dynamic_bucket_fee_accounting():

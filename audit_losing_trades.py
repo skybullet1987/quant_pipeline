@@ -24,7 +24,8 @@ from typing import Any, Dict, Iterator, List, Optional
 REPO_DIR = Path(os.getenv("DOMINUS_REPO_DIR") or Path(__file__).resolve().parent)
 DATA_DIR = REPO_DIR / "data" / "polymarket"
 AUDIT_STATE_FILE = DATA_DIR / "forensic_audit_state.json"
-AUDIT_LOCK_FILE = DATA_DIR / "forensic_audit_state.lock"
+_DEFAULT_AUDIT_LOCK_FILE = DATA_DIR / "forensic_audit_state.lock"
+AUDIT_LOCK_FILE = _DEFAULT_AUDIT_LOCK_FILE
 AUDIT_LEDGER_FILE = DATA_DIR / "forensic_audit_ledger.jsonl"
 WFO_HYPOTHESIS_QUEUE_FILE = DATA_DIR / "wfo_hypothesis_queue.jsonl"
 
@@ -33,7 +34,13 @@ WFO_HYPOTHESIS_QUEUE_FILE = DATA_DIR / "wfo_hypothesis_queue.jsonl"
 def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
     """Cross-process atomic file lock preventing concurrent monitor/PAA races on forensic_audit_state.json."""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    fh = open(AUDIT_LOCK_FILE, "a+b")
+    lock_path = (
+        (Path(DATA_DIR) / "forensic_audit_state.lock")
+        if AUDIT_LOCK_FILE == _DEFAULT_AUDIT_LOCK_FILE
+        else Path(AUDIT_LOCK_FILE)
+    )
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    fh = open(lock_path, "a+b")
     deadline = time.monotonic() + max(0.5, timeout_sec)
     locked = False
     try:

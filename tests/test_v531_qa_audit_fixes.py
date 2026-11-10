@@ -549,7 +549,9 @@ def test_v540_wfo_parity_unchoke_and_fok_2dec_box_quantizer(tmp_path, monkeypatc
     assert snipe_calls[0]["target_price"] == pytest.approx(0.80)  # +1c headroom for 1.00 <= z < 1.25
 
     # 3c. High Z (>= 1.25) on SOL 15m at $0.80 ask -> +2c headroom capped strictly at $0.81 (v5.4.2 WFO cap)!
-    h.active_positions.pop("SLOT_1_OPEN", None)
+    _popped_slot1 = h.active_positions.pop("SLOT_1_OPEN", None)
+    if isinstance(_popped_slot1, dict) and getattr(h, "_last_known_collateral", None) is not None:
+        h._last_known_collateral = round(float(h._last_known_collateral) + float(_popped_slot1.get("notional_usd", 15.0) or 15.0), 2)
     shk_z_high = dict(
         shk_15m_marg,
         event_id="V541_15M_Z220", market_id="2002", condition_id="0x2002",

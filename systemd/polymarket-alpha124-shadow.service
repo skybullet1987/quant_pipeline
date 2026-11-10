@@ -12,8 +12,12 @@ Environment=PM_DISABLE_SHADOW_W2_TAKER=1
 Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
 # 2-vCPU host: keep below the live harvester + BTC/ETH recorders (1000) so shadow scans never starve
 # the latency-critical live path (CPU starvation caused recorder WS ping timeouts / slow-consumer drops).
-CPUWeight=300
-IOWeight=300
+CPUWeight=200
+IOWeight=200
+Nice=10
+OOMScoreAdjust=500
+MemoryHigh=1300M
+MemoryMax=1550M
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py --riskless-bridge-only
 Restart=always
 RestartSec=10

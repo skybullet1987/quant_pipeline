@@ -397,6 +397,19 @@ ASSET_CONFIGS = {
         "log_file": DATA_DIR / "recorder_hype.log",
         "pid_file": DATA_DIR / "recorder_hype.pid",
     },
+    "ZEC": {
+        "series_slug": "zec-up-or-down-15m",
+        "binance_symbol": "ZECUSDT",
+        "binance_spot_ws": "wss://stream.binance.com:443/ws/zecusdt@trade",
+        "binance_futures_ws": "wss://fstream.binance.com:443/ws/zecusdt@trade",
+        "coinbase_product": "ZEC-USD",
+        "default_shock_threshold": 50_000.0,
+        "telemetry_file": DATA_DIR / "polymarket_hourly_telemetry_zec.jsonl",
+        "shock_file": DATA_DIR / "shock_responses_zec.jsonl",
+        "correlations_file": DATA_DIR / "leadlag_cross_correlations_zec.jsonl",
+        "log_file": DATA_DIR / "recorder_zec.log",
+        "pid_file": DATA_DIR / "recorder_zec.pid",
+    },
     "XAU": {
         "series_slug": "gold-up-or-down-1h",
         "binance_symbol": "XAUUSDT",
@@ -569,7 +582,7 @@ def setup_logging(asset: str = "BTC"):
     global logger
     logger = logging.getLogger(f"PolymarketDualFeed1H-{asset.upper()}")
 
-DEFAULT_FEE_RATE = 0.07  # Documented Polymarket crypto fee parameter
+DEFAULT_FEE_RATE = 0.072  # 2026 Polymarket crypto fee parameter (7.2% * p * (1 - p))
 TICKET_CAPACITY_LEVELS = [1.0, 5.0, 20.0, 25.0, 50.0, 100.0, 150.0, 200.0, 250.0]  # USD Notional capacity surface
 CORRELATION_LAGS_MS = [-1000, -500, -250, -100, -50, 0, 50, 100, 250, 500, 1000]
 
@@ -711,6 +724,7 @@ class L2OrderBook:
             "bid_size_l1": round(bid_sz, 2),
             "ask_size_l1": round(ask_sz, 2),
             "spread": round(best_ask - best_bid, 4),
+            "is_crossed": bool(best_bid > 0.0 and best_ask < 1.0 and best_bid >= best_ask),
             "q_mid": round((best_bid + best_ask) / 2.0, 4),
             "obi_l1": round((bid_sz - ask_sz) / denom, 3) if denom > 0 else 0.0,
             "age_book_ms": round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None,
@@ -885,8 +899,16 @@ class PolymarketDualFeed1HRecorder:
         self.cfg = ASSET_CONFIGS[self.asset]
         self.series_slug = self.cfg["series_slug"]
         self.binance_symbol = self.cfg["binance_symbol"]
-        self.binance_spot_ws = self.cfg["binance_spot_ws"]
-        self.binance_futures_ws = self.cfg["binance_futures_ws"]
+        self.binance_spot_ws = (
+            self.cfg["binance_spot_ws"].replace("@trade", "@aggTrade")
+            if self.riskless_bus_only and self.cfg.get("binance_spot_ws")
+            else self.cfg["binance_spot_ws"]
+        )
+        self.binance_futures_ws = (
+            self.cfg["binance_futures_ws"].replace("@trade", "@aggTrade")
+            if self.riskless_bus_only and self.cfg.get("binance_futures_ws")
+            else self.cfg["binance_futures_ws"]
+        )
         self.futures_only_ref: bool = bool(self.cfg.get("futures_only_ref", False))
         self.shock_threshold_usd = shock_threshold if shock_threshold is not None else self.cfg["default_shock_threshold"]
         
@@ -1155,46 +1177,78 @@ class PolymarketDualFeed1HRecorder:
             return 0.0
         return round((cb - ref) / ref * 10000.0, 2)
 
+    _SHARED_CB_USDT_STATE: Dict[str, Any] = {"owner": None, "px": 0.0, "ts": 0.0}
+
     async def _coinbase_stream_worker(self):
         """Coinbase spot ticker stream for BTC-USD / ETH-USD. Fail-open: entries are never blocked by its absence."""
-        backoff = 2.0
-        while self.running:
-            try:
-                async with websockets.connect(COINBASE_WS_URL, ping_interval=20, ping_timeout=10, max_queue=512, compression=None) as ws:
-                    _enable_ws_nodelay(ws)
-                    await ws.send(json.dumps({
-                        "type": "subscribe",
-                        "product_ids": [self.coinbase_product],
-                        "channels": ["ticker"],
-                    }))
-                    logger.info(f"[+] Subscribed to Coinbase ticker ({self.coinbase_product}) for composite venue filter.")
-                    backoff = 2.0
-                    async for msg_str in ws:
-                        if not self.running:
-                            break
-                        data = _orjson.loads(msg_str) if _orjson else json.loads(msg_str)
-                        if data.get("type") != "ticker" or data.get("product_id") != self.coinbase_product:
-                            continue
-                        px = float(data.get("price") or 0.0)
-                        if px > 0:
-                            now = time.time()
-                            self.coinbase_spot = px
-                            self.coinbase_spot_ts = now
-                            eff_cb = (
-                                round(self.spot_price * px, 4)
-                                if (self.coinbase_product == "USDT-USD" and self.spot_price > 0 and 0.95 <= px <= 1.05)
-                                else (0.0 if self.coinbase_product == "USDT-USD" else px)
-                            )
-                            if eff_cb > 0:
-                                self.coinbase_history.append((now, eff_cb))
-                                if self.spot_price > 0:
-                                    self._venue_div_history.append(round((self.spot_price - eff_cb) / eff_cb * 10000.0, 2))
-                            while self.coinbase_history and now - self.coinbase_history[0][0] > 30.0:
+        is_shared_usdt = self.riskless_bus_only and getattr(self, "coinbase_product", "") == "USDT-USD"
+        if is_shared_usdt:
+            sh_cb = self._SHARED_CB_USDT_STATE
+            if sh_cb.get("owner") not in (None, self.asset):
+                while self.running:
+                    await asyncio.sleep(0.5)
+                    px_s = float(sh_cb.get("px") or 0.0)
+                    ts_s = float(sh_cb.get("ts") or 0.0)
+                    now_c = time.time()
+                    if px_s > 0.0 and (now_c - ts_s) <= 15.0:
+                        self.coinbase_spot = px_s
+                        self.coinbase_spot_ts = ts_s
+                        if self.spot_price > 0.0 and 0.95 <= px_s <= 1.05:
+                            self.coinbase_history.append((now_c, round(self.spot_price * px_s, 4)))
+                            while self.coinbase_history and now_c - self.coinbase_history[0][0] > 30.0:
                                 self.coinbase_history.popleft()
-            except Exception as e:
-                logger.warning(f"Coinbase feed disconnected ({e}); fail-open, retrying in {backoff:.0f}s...")
-                await asyncio.sleep(backoff)
-                backoff = min(30.0, backoff * 2.0)
+                    elif sh_cb.get("owner") is None:
+                        sh_cb["owner"] = self.asset
+                        break
+                if not self.running:
+                    return
+            else:
+                sh_cb["owner"] = self.asset
+        backoff = 2.0
+        try:
+            while self.running:
+                try:
+                    async with websockets.connect(COINBASE_WS_URL, ping_interval=20, ping_timeout=10, max_queue=512, compression=None) as ws:
+                        _enable_ws_nodelay(ws)
+                        await ws.send(json.dumps({
+                            "type": "subscribe",
+                            "product_ids": [self.coinbase_product],
+                            "channels": ["ticker"],
+                        }))
+                        logger.info(f"[+] Subscribed to Coinbase ticker ({self.coinbase_product}) for composite venue filter.")
+                        backoff = 2.0
+                        async for msg_str in ws:
+                            if not self.running:
+                                break
+                            data = _orjson.loads(msg_str) if _orjson else json.loads(msg_str)
+                            if data.get("type") != "ticker" or data.get("product_id") != self.coinbase_product:
+                                continue
+                            px = float(data.get("price") or 0.0)
+                            if px > 0:
+                                now = time.time()
+                                self.coinbase_spot = px
+                                self.coinbase_spot_ts = now
+                                if is_shared_usdt:
+                                    self._SHARED_CB_USDT_STATE["px"] = px
+                                    self._SHARED_CB_USDT_STATE["ts"] = now
+                                eff_cb = (
+                                    round(self.spot_price * px, 4)
+                                    if (self.coinbase_product == "USDT-USD" and self.spot_price > 0 and 0.95 <= px <= 1.05)
+                                    else (0.0 if self.coinbase_product == "USDT-USD" else px)
+                                )
+                                if eff_cb > 0:
+                                    self.coinbase_history.append((now, eff_cb))
+                                    if self.spot_price > 0:
+                                        self._venue_div_history.append(round((self.spot_price - eff_cb) / eff_cb * 10000.0, 2))
+                                while self.coinbase_history and now - self.coinbase_history[0][0] > 30.0:
+                                    self.coinbase_history.popleft()
+                except Exception as e:
+                    logger.warning(f"Coinbase feed disconnected ({e}); fail-open, retrying in {backoff:.0f}s...")
+                    await asyncio.sleep(backoff)
+                    backoff = min(30.0, backoff * 2.0)
+        finally:
+            if is_shared_usdt and self._SHARED_CB_USDT_STATE.get("owner") == self.asset:
+                self._SHARED_CB_USDT_STATE["owner"] = None
 
     # ------------------------------------------------------------------
     # v3.3 /dev/shm 25ms fast tick bus
@@ -1236,6 +1290,8 @@ class PolymarketDualFeed1HRecorder:
             if self.current_market and "tokens" in self.current_market:
                 snap["UP"]["token_id"] = self.current_market["tokens"].get("UP")
                 snap["DOWN"]["token_id"] = self.current_market["tokens"].get("DOWN")
+                if "end_dt" in self.current_market:
+                    snap["expiry_ts_1h"] = self.current_market["end_dt"].timestamp()
                 mid = str(self.current_market.get("market_id"))
                 markets_map[mid] = {
                     "market_id": mid,
@@ -1289,12 +1345,64 @@ class PolymarketDualFeed1HRecorder:
         snap["markets"] = markets_map
         return snap
 
+    def _has_urgent_c1_arb_raw(self) -> bool:
+        def _bk_pair(mh: Any, up_role: str, dn_role: str) -> Tuple[Any, Any]:
+            if not isinstance(mh, dict):
+                return None, None
+            bu = self.books.get(up_role) or (self.books.get(mh.get("up_id")) if mh.get("up_id") else None)
+            bd = self.books.get(dn_role) or (self.books.get(mh.get("down_id")) if mh.get("down_id") else None)
+            return bu, bd
+
+        def _mh_exp(mh: Any) -> float:
+            if not isinstance(mh, dict):
+                return 0.0
+            if "end_dt" in mh and hasattr(mh["end_dt"], "timestamp"):
+                return float(mh["end_dt"].timestamp())
+            return float(mh.get("expiry_ts") or mh.get("candle_close_ts") or 0.0)
+
+        m5 = getattr(self, "market_5m", None)
+        m15 = getattr(self, "market_15m", None)
+        m1h = getattr(self, "current_market", None)
+        for mh, ur, dr in ((m5, "UP_5M", "DOWN_5M"), (m15, "UP_15M", "DOWN_15M"), (m1h, "UP", "DOWN")):
+            b_u, b_d = _bk_pair(mh, ur, dr)
+            if b_u is None or b_d is None:
+                continue
+            ua = float(b_u.prev_best_ask[0])
+            da = float(b_d.prev_best_ask[0])
+            if 0.01 <= ua < 1.0 and 0.01 <= da < 1.0 and (ua + da) <= 0.992:
+                return True
+        for ml, url, drl, ms, urs, drs in (
+            (m15, "UP_15M", "DOWN_15M", m5, "UP_5M", "DOWN_5M"),
+            (m1h, "UP", "DOWN", m15, "UP_15M", "DOWN_15M"),
+        ):
+            exp_l, exp_s = _mh_exp(ml), _mh_exp(ms)
+            if exp_l > 0.0 and exp_s > 0.0 and abs(exp_l - exp_s) <= 2.0:
+                ul, dl = _bk_pair(ml, url, drl)
+                us, ds = _bk_pair(ms, urs, drs)
+                if ul is not None and ds is not None:
+                    a1, a2 = float(ul.prev_best_ask[0]), float(ds.prev_best_ask[0])
+                    if 0.01 <= a1 < 1.0 and 0.01 <= a2 < 1.0 and (a1 + a2) <= 0.9925:
+                        return True
+                if us is not None and dl is not None:
+                    a1, a2 = float(us.prev_best_ask[0]), float(dl.prev_best_ask[0])
+                    if 0.01 <= a1 < 1.0 and 0.01 <= a2 < 1.0 and (a1 + a2) <= 0.9925:
+                        return True
+        return False
+
+    def _fast_tick_throttle_sec(self, now: float) -> float:
+        if not self.riskless_bus_only:
+            return FAST_TICK_THROTTLE_SEC
+        if self._has_urgent_c1_arb_raw():
+            return FAST_TICK_THROTTLE_SEC
+        rem_5m = 300.0 - (now % 300.0)
+        return 0.05 if (0.0 < rem_5m <= 75.0) else 0.15
+
     def _maybe_write_fast_tick(self, force: bool = False) -> bool:
-        """Atomic (tmp + os.replace) RAM snapshot, throttled to 25ms. Never raises."""
+        """Atomic (tmp + os.replace) RAM snapshot, throttled to 25ms (or 50ms/150ms in riskless_bus_only). Never raises."""
         if not self._fast_tick_enabled:
             return False
         now = time.time()
-        if not force and (now - self._last_fast_tick_write) < (0.10 if self.riskless_bus_only else FAST_TICK_THROTTLE_SEC):
+        if not force and (now - self._last_fast_tick_write) < self._fast_tick_throttle_sec(now):
             return False
         self._last_fast_tick_write = now
         try:
@@ -1307,6 +1415,12 @@ class PolymarketDualFeed1HRecorder:
         except Exception as e:
             logger.debug(f"[FAST TICK] shm write notice: {e}")
             return False
+        try:
+            from src.polymarket_research.riskless_protocol_v2_expansion import maybe_emit_recorder_fast_riskless_ipc
+
+            maybe_emit_recorder_fast_riskless_ipc(self, snap, now)
+        except Exception:
+            pass
         # Low-frequency (1s) read-only EXP-306 boundary/merge evaluation piggybacks on the tick bus
         if not self.riskless_bus_only and now - self._last_exp306_eval >= 1.0:
             self._last_exp306_eval = now
@@ -1961,7 +2075,9 @@ class PolymarketDualFeed1HRecorder:
                                     self._record_volume(notional, now_s)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
-                        if (burst_frames & 31) == 0:
+                        if self.riskless_bus_only:
+                            await asyncio.sleep(0.025)
+                        elif (burst_frames & 31) == 0:
                             await asyncio.sleep(0)
             except Exception as e:
                 logger.warning(f"Binance Spot feed disconnected: {e}. Reconnecting in 3s...")
@@ -2017,7 +2133,9 @@ class PolymarketDualFeed1HRecorder:
                                     self._record_volume(notional, now_f)
                         self._maybe_write_fast_tick()
                         burst_frames += 1
-                        if (burst_frames & 31) == 0:
+                        if self.riskless_bus_only:
+                            await asyncio.sleep(0.025)
+                        elif (burst_frames & 31) == 0:
                             await asyncio.sleep(0)
             except Exception as e:
                 logger.warning(f"Binance Futures feed disconnected: {e}. Reconnecting in 3s...")

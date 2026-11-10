@@ -1,0 +1,42 @@
+[Unit]
+Description=Dominus Stage G Read-Only Multi-Venue Pure-Riskless Shadow Probe (All 6 Venues)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=PYTHONUNBUFFERED=1
+# Optional read-only shadow config & API keys (chmod 0600; 0 wallet private keys ever permitted):
+EnvironmentFile=-/etc/polymarket-shadow.env
+EnvironmentFile=-%h/.config/dominus/polymarket-shadow.env
+
+# Strict Finland 2-vCPU / 4GB RAM resource fence so live Polymarket harvester suffers 0.00ms contention:
+MemoryHigh=450M
+MemoryMax=512M
+CPUQuota=35%
+CPUWeight=100
+IOWeight=100
+Nice=19
+
+# Systemd filesystem & privilege sandboxing (read-only code, write access limited strictly to shadow telemetry dir):
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/skybullet1987/quant_pipeline/data/cross_venue_shadow
+
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/cross_venue_shadow/shadow_collector.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/cross_venue_shadow/shadow_collector.log
+
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python scripts/shadow_cross_venue_riskless_probe.py --enforce-venue-auth --env-file /etc/polymarket-shadow.env --allow-missing-env-file --interval-sec 15 --clip-usd 25 --limitless-pages 12 --limitless-orderbook-top-n 48 --predict-testnet-smoke
+Restart=on-failure
+RestartSec=15
+# Exit status 78 (EX_CONFIG / P0 Gate 0 compliance block or invalid env) halts cleanly without crash-looping:
+RestartPreventExitStatus=78
+KillSignal=SIGTERM
+KillMode=process
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=default.target

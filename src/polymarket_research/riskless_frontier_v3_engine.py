@@ -1159,6 +1159,11 @@ def _canon_clause_stem(desc: str, group_title: str) -> Tuple[str, str]:
         s = s.replace(gt, " <RUNG> ")
     s = _MONTH_DATE_STRIP_RE.sub(" <DATE> ", s)
     s = re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmb]|million|billion)?", " <STRIKE> ", s)
+    s = re.sub(
+        r"\b(greater\s+than|at\s+least|more\s+than|above|over|exceeds?)\s+[0-9][0-9,]*(?:\.[0-9]+)?\s*%?",
+        r"\1 <STRIKE>",
+        s,
+    )
     s = re.sub(r"\s+", " ", s).strip()
     return s, tz_tag
 
@@ -1236,7 +1241,10 @@ def parse_cal1_monotonic_ladder_event(ev: Dict[str, Any], now_ts: Optional[float
     elif not has_reset_window and (any(k in slug_l for k in ("-by", "before-")) or any(k in title_l for k in (" by ", " before "))):
         if "resolve" in desc_l and ("by " in desc_l or "before " in desc_l or "between market creation and" in desc_l):
             ladder_kind = "DEADLINE_BY"
-    elif any(k in title_l for k in ("fdv above", "total commitments", "market cap above", "box office", "revenue above")):
+    elif any(
+        k in title_l
+        for k in ("fdv above", "total commitments", "market cap above", "box office", "revenue above", "rotten tomatoes", "tomatometer")
+    ):
         ladder_kind = "SCALAR_ABOVE"
 
     if ladder_kind is None:
@@ -1268,7 +1276,7 @@ def parse_cal1_monotonic_ladder_event(ev: Dict[str, Any], now_ts: Optional[float
                 ord_v = lbl_dt if lbl_dt is not None else end_ts
         else:
             desc_ml = desc_m.lower()
-            if not any(w in desc_ml for w in ("above", "greater than", "exceed", "at least", "more than", "over ")):
+            if not any(w in desc_ml for w in ("above", "greater than", "exceed", "at least", "more than", "over ", "or higher")):
                 continue
             if re.search(r"\b(?:less\s+than\s+\$|fewer\s+than|at\s+most)\b", desc_ml):
                 continue
@@ -1887,15 +1895,18 @@ def evaluate_cl1_multisport_corridor_clinch_locks(
     board = live_boards.get(sp) or []
     matched: Optional[LiveMultiSportGame] = None
     swapped = False
+    best_dt_cl = float("inf")
+    max_dt_cl = 10800.0 if float(ms_spec.start_ts or 0.0) > 0.0 else (8.0 * 3600.0)
     for g in board:
-        if abs(g.start_ts - float(ms_spec.start_ts)) > 8.0 * 3600.0:
+        dt_g = abs(float(g.start_ts) - float(ms_spec.start_ts)) if (g.start_ts > 0.0 and float(ms_spec.start_ts or 0.0) > 0.0) else 0.0
+        if g.start_ts > 0.0 and float(ms_spec.start_ts or 0.0) > 0.0 and dt_g > max_dt_cl:
             continue
         if _teams_match_fuzzy(ms_spec.team_a, g.away_name) and _teams_match_fuzzy(ms_spec.team_b, g.home_name):
-            matched, swapped = g, False
-            break
-        if _teams_match_fuzzy(ms_spec.team_a, g.home_name) and _teams_match_fuzzy(ms_spec.team_b, g.away_name):
-            matched, swapped = g, True
-            break
+            if dt_g < best_dt_cl:
+                matched, swapped, best_dt_cl = g, False, dt_g
+        elif _teams_match_fuzzy(ms_spec.team_a, g.home_name) and _teams_match_fuzzy(ms_spec.team_b, g.away_name):
+            if dt_g < best_dt_cl:
+                matched, swapped, best_dt_cl = g, True, dt_g
     if matched is None:
         return []
 

@@ -1,0 +1,11 @@
+/home/skybullet1987/quant_pipeline/data/cross_venue_shadow/*.log
+/home/skybullet1987/quant_pipeline/data/cross_venue_shadow/*.jsonl {
+    daily
+    rotate 14
+    size 50M
+    missingok
+    notifempty
+    compress
+    delaycompress
+    copytruncate
+}

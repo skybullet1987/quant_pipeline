@@ -673,3 +673,468 @@ def test_eval_sll_live_book_poll_outbid_repeg_resets_whale_queue_baseline() -> N
     assert "outbid" in reason
     assert cand_box["_init_l1_q_usd"] is None
     assert cand_box["_whale_q_since_mono"] is None
+
+
+def test_upgrade1_mlk1_protected_from_low_velocity_or_saturated_bond1() -> None:
+    import threading
+    from src.polymarket_research.riskless_protocol_v2_expansion import maybe_preempt_mlk1_if_bond1_starved
+
+    now_t = time.time()
+    ev = threading.Event()
+    h = SimpleNamespace(
+        dry_run=False,
+        active_positions={},
+        pending_entry_intents={
+            "mlk_heat": {
+                "live_maker_anchor_inflight": True,
+                "inflight_key": "MLK_HEAT_965",
+                "sleeve_source": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+                "anchor_bid_px": 0.965,  # 350 bps / 1.5h floor => 233.33 bps/hr
+                "expiry_ts": now_t + 900.0,
+                "notional_usd": 19.30,
+            }
+        },
+        _maker_anchor_preempt_events={"MLK_HEAT_965": ev},
+        _prepost_sll_reserved_usd={},
+        _is_v5_unleashed_active=lambda: True,
+        enforce_gatling_fast_gun_reserve=False,
+    )
+    # Slow BOND1 @ $0.992 (80 bps / 1.2h => 66.7 bps/hr << 233.33 * 1.25) MUST NOT cancel MLK_HEAT_965!
+    out_slow = asyncio.run(
+        maybe_preempt_mlk1_if_bond1_starved(
+            h,
+            "BOND1_UMA_RESOLUTION_CARRY",
+            budget=4.0,
+            collat=55.0,
+            own_mkr_grad=True,
+            enforce_b1_v53=True,
+            b1_gov={"seed_zero_loss_focus_bond1_pool_pct": 0.92, "bond1_per_market_cap_usd_seed": 45.0},
+            rcfg_sll={},
+            gsn_s={"directional": {"riskless_only_mode": True}},
+            open_mid_u=0.0,
+            rem_tte_sec=4320.0,
+            now_ts=now_t,
+            cand_bid_px=0.992,
+        )
+    )
+    assert out_slow == pytest.approx(4.0)
+    assert ev.is_set() is False
+
+    # Even if BOND1 is high-velocity ($0.950), if BOND1 ALREADY holds >= 45% of wallet equity ($40 / $75), do NOT cancel MLK1!
+    h.active_positions["b1_open"] = {
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "status": "POSITION_CONFIRMED",
+        "notional_usd": 40.0,
+    }
+    out_sat = asyncio.run(
+        maybe_preempt_mlk1_if_bond1_starved(
+            h,
+            "BOND1_UMA_RESOLUTION_CARRY",
+            budget=4.0,
+            collat=35.0,
+            own_mkr_grad=True,
+            enforce_b1_v53=True,
+            b1_gov={"seed_zero_loss_focus_bond1_pool_pct": 0.92, "bond1_per_market_cap_usd_seed": 45.0},
+            rcfg_sll={},
+            gsn_s={"directional": {"riskless_only_mode": True}},
+            open_mid_u=0.0,
+            rem_tte_sec=900.0,
+            now_ts=now_t,
+            cand_bid_px=0.950,
+        )
+    )
+    assert out_sat == pytest.approx(4.0)
+    assert ev.is_set() is False
+
+
+def test_upgrade2_deep_discount_sub_990_velocity_preemption_and_45s_fast_upgrade() -> None:
+    import threading
+    from src.polymarket_research.riskless_protocol_v2_expansion import select_sll_velocity_preempt_target
+
+    now_t = time.time()
+    h = SimpleNamespace(
+        _maker_anchor_preempt_events={"BOND1_SLOW_993": threading.Event()},
+        active_positions={},
+        pending_entry_intents={
+            "b1": {
+                "live_maker_anchor_inflight": True,
+                "inflight_key": "BOND1_SLOW_993",
+                "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                "anchor_bid_px": 0.993,  # 70 bps / 1.4h => 50 bps/hr
+                "expiry_ts": now_t + 5040.0,
+                "ts": now_t - 50.0,  # only 50s old (< 180s!), eligible under >=5x & +250 fast-upgrade!
+            }
+        },
+    )
+    # Deep-discount $0.950 post-clinch lock (~333 bps/hr >= max(50*5=250, 50+250=300)) preempts 50s-old $0.993 BOND1!
+    vel, pk = select_sll_velocity_preempt_target(
+        h,
+        cand_edge_hr=340.0,
+        is_s2_mkr=False,
+        vel_mult=1.80,
+        now_pe=now_t,
+        cand_sleeve="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+    )
+    assert pk == "BOND1_SLOW_993"
+    assert vel == pytest.approx(50.0, abs=0.5)
+
+
+def test_upgrade3_s2_flow_weighted_ranking_and_dual_slot_reserve_split() -> None:
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        compute_sll_and_carry_gatling_budget,
+        resolve_s2_maker_concurrent_cap,
+        score_live_candidate_velocity_ev,
+    )
+
+    now_t = time.time()
+    # Ghost-spread DOGE @ $0.700 with $0 ask depth MUST NOT outrank real two-sided BTC @ $0.985!
+    doge_ghost = {
+        "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve_source": "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        "asset": "DOGE",
+        "box_cost_net": 0.700,
+        "shares": 16,
+        "expiry_ts": now_t + 25.0,
+        "queue_front": True,
+        "ask_depth_usd": 0.0,
+        "maker_rebate_ps": 0.0,
+    }
+    btc_real = {
+        "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve_source": "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        "asset": "BTC",
+        "box_cost_net": 0.985,
+        "shares": 16,
+        "expiry_ts": now_t + 25.0,
+        "queue_front": True,
+        "ask_depth_usd": 28.0,
+        "maker_rebate_ps": 0.0002,
+    }
+    assert score_live_candidate_velocity_ev(btc_real, True, now_t) > score_live_candidate_velocity_ev(doge_ghost, True, now_t)
+
+    # Offline MagicMock preserves 1-slot cap, whereas live real CLOB / enforce_s2_multi_slot unlocks 2 slots & splits $21.16 reserve!
+    h_mock = SimpleNamespace(dry_run=False, executor=SimpleNamespace(client=MagicMock()))
+    assert resolve_s2_maker_concurrent_cap(h_mock, {"s2_maker_max_concurrent_slots": 2}) == 1
+
+    class _RealStubClient:
+        pass
+
+    h_live = SimpleNamespace(
+        dry_run=False,
+        max_exposure=250.0,
+        active_positions={},
+        pending_entry_intents={},
+        _inflight_s2_maker_keys=set(),
+        _is_v5_unleashed_active=lambda: True,
+        executor=SimpleNamespace(client=_RealStubClient()),
+    )
+    rb = {"gatling_enabled": True, "s2_maker_max_concurrent_slots": 2}
+    assert resolve_s2_maker_concurrent_cap(h_live, rb) == 2
+    b_slot1 = compute_sll_and_carry_gatling_budget(
+        h_live,
+        21.16,
+        21.16,
+        54.40,
+        "SINGLE_LEG_MAKER_LOCK",
+        "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        False,
+        rb,
+        rem_tte_sec=25.0,
+        now_ts=now_t,
+    )
+    assert 10.50 <= b_slot1 <= 11.20  # Leaves ~$10.15 for concurrent S2 Slot #2 (ETH/SOL)!
+
+
+def test_upgrade4_dedicated_reward_carry_micro_slot_and_anti_churn() -> None:
+    import threading
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        cap_bond1_maker_for_gatling_reserve,
+        select_sll_velocity_preempt_target,
+    )
+
+    now_t = time.time()
+    rb = {
+        "gatling_enabled": True,
+        "gatling_fast_gun_reserve_usd": 20.0,
+        "enable_reward_locked_carry_live_bridge": True,
+        "reward_reserved_slot_usd_seed": 7.96,
+        "reward_harvester_cap_usd_seed": 12.0,
+    }
+    h = SimpleNamespace(
+        dry_run=False,
+        enforce_gatling_fast_gun_reserve=True,
+        enforce_reward_slot_reserve=True,
+        _is_v5_unleashed_active=lambda: True,
+        active_positions={},
+        pending_entry_intents={},
+    )
+    # With $29.12 free cash + $46.44 BOND1 ($75.56 NAV -> $21.16 S2 reserve), $7.96 remains:
+    # BOND1 is capped to $0.00 so the $7.96 dedicated reward slot stays free, while MKR_REWARD_LOCKED_CARRY gets $7.96!
+    b_b1 = cap_bond1_maker_for_gatling_reserve(
+        h, 20.0, 29.12, 46.44, rb, sleeve_src="BOND1_UMA_RESOLUTION_CARRY"
+    )
+    b_rw = cap_bond1_maker_for_gatling_reserve(
+        h, 12.0, 29.12, 46.44, rb, sleeve_src="MKR_REWARD_LOCKED_CARRY"
+    )
+    assert b_b1 == pytest.approx(0.0)
+    assert b_rw == pytest.approx(7.96)
+
+    # Once 1 RW slot + >=2 BOND1 slots are resting, 80 bps/hr BOND1 CANNOT evict RW every 45s, but 200 bps/hr CAN!
+    h._maker_anchor_preempt_events = {"RW_SLOT_1": threading.Event()}
+    h.pending_entry_intents = {
+        "rw1": {
+            "live_maker_anchor_inflight": True,
+            "inflight_key": "RW_SLOT_1",
+            "sleeve_source": "MKR_REWARD_LOCKED_CARRY",
+            "anchor_bid_px": 0.992,
+            "expiry_ts": now_t + 5400.0,
+            "ts": now_t - 60.0,
+        },
+        "b1_a": {"live_maker_anchor_inflight": True, "inflight_key": "B1_A", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "ts": now_t - 10.0},
+        "b1_b": {"live_maker_anchor_inflight": True, "inflight_key": "B1_B", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "ts": now_t - 10.0},
+    }
+    assert select_sll_velocity_preempt_target(
+        h, cand_edge_hr=80.0, is_s2_mkr=False, vel_mult=1.80, now_pe=now_t, cand_sleeve="BOND1_UMA_RESOLUTION_CARRY"
+    ) == (0.0, "")
+    assert select_sll_velocity_preempt_target(
+        h, cand_edge_hr=200.0, is_s2_mkr=False, vel_mult=1.80, now_pe=now_t, cand_sleeve="BOND1_UMA_RESOLUTION_CARRY"
+    )[1] == "RW_SLOT_1"
+
+
+def test_upgrade5_bond1_queue_ranking_998_stepdown_and_fast_reconcile() -> None:
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        score_live_candidate_velocity_ev,
+        spawn_fast_htm_maker_fill_reconcile,
+    )
+
+    now_t = time.time()
+    c_empty = {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY", "box_cost_net": 0.992, "shares": 10, "expiry_ts": now_t + 1800.0, "queue_front": True, "queue_ahead_usd": 0.0}
+    c_mid = {**c_empty, "queue_ahead_usd": 45.0}
+    c_deep = {**c_empty, "queue_ahead_usd": 260.0, "queue_front": False}
+    assert score_live_candidate_velocity_ev(c_empty, True, now_t) > score_live_candidate_velocity_ev(c_mid, True, now_t) > score_live_candidate_velocity_ev(c_deep, True, now_t)
+
+    posted_prices: list[float] = []
+
+    class _MockRecycleExec:
+        def get_open_orders(self):
+            return [{"id": "OID_999"}]
+
+        def get_order_fill_summary(self, oid, tok):
+            return {"matched": 0.0, "terminal": False}
+
+        def cancel_order(self, oid):
+            return {"is_canceled": True}
+
+        def release_inventory(self, reservation_id=None):
+            pass
+
+        def get_market_book(self, tok):
+            return {"bids": [{"price": 0.994, "size": 50.0}], "asks": [{"price": 0.999, "size": 20.0}], "minimum_tick_size": 0.001}
+
+        def post_maker_exit_order(self, token_id, price, size, **kwargs):
+            posted_prices.append(float(price))
+            return {"success": True, "orderID": f"OID_{len(posted_prices)}"}
+
+    h = SimpleNamespace(
+        dry_run=False,
+        ONCHAIN_SOURCE="ONCHAIN_ERC1155",
+        executor=_MockRecycleExec(),
+        active_positions={},
+        save_state=lambda: None,
+        _record_order_summary=lambda *a, **k: None,
+        _wallet_token_balance=lambda tok: (10.0, "ONCHAIN_ERC1155"),
+        calculate_realized_cash_pnl=lambda pos, gross_cash, exit_fee: float(gross_cash) - float(exit_fee) - float(pos.get("entry_shares", 0.0)) * float(pos.get("entry_price", 0.0)),
+    )
+    # 1) Entry @ $0.994 (<= 0.9945) posts $0.998 immediately upon fast ERC-1155 reconciliation!
+    h.active_positions["T_994"] = {
+        "trade_id": "T_994",
+        "is_single_leg_lock": True,
+        "hold_to_maturity_lock": True,
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "token_id": "tok_994",
+        "status": "MATCHED_PENDING_SETTLEMENT",
+        "inventory_reconciled": False,
+        "pre_token_balance": 0.0,
+        "entry_shares": 10.0,
+        "remaining_shares": 10.0,
+        "entry_price": 0.994,
+        "candle_expiry_ts": now_t + 3600.0,
+        "fee_rate_applied": 0.0,
+    }
+
+    async def _run_fast():
+        spawn_fast_htm_maker_fill_reconcile(h, "T_994")
+        await asyncio.sleep(0.95)
+
+    asyncio.run(_run_fast())
+    assert h.active_positions["T_994"]["inventory_reconciled"] is True
+    assert h.active_positions["T_994"]["target_exit_price"] == pytest.approx(0.998)
+    assert posted_prices[-1] == pytest.approx(0.998)
+
+    # 2) Entry @ $0.995 resting @ $0.999 for >= 300s steps down cleanly to $0.998!
+    pos_995 = {
+        "trade_id": "T_995",
+        "is_single_leg_lock": True,
+        "hold_to_maturity_lock": True,
+        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+        "token_id": "tok_995",
+        "status": "POSITION_CONFIRMED",
+        "inventory_reconciled": True,
+        "entry_shares": 10.0,
+        "remaining_shares": 10.0,
+        "entry_price": 0.995,
+        "candle_expiry_ts": now_t + 3600.0,
+        "fee_rate_applied": 0.0,
+        "exit_order_id": "OID_999",
+        "target_exit_price": 0.999,
+        "_htm_passive_recycle_active": True,
+        "_htm_passive_post_ts": now_t - 305.0,
+    }
+    bk_step = {"bids": [{"price": 0.995, "size": 40.0}], "asks": [{"price": 0.999, "size": 10.0}], "minimum_tick_size": 0.001}
+    ok_step = asyncio.run(maybe_manage_passive_htm_early_maker_recycle(h, "T_995", pos_995, bk_step, now_t))
+    assert ok_step is True
+    assert pos_995["target_exit_price"] == pytest.approx(0.998)
+
+
+def test_upgrade6_est_4h_dominance_alignment_and_nr0_closed_multi_leg_bridge(tmp_path, monkeypatch) -> None:
+    from datetime import datetime, timezone
+    import src.polymarket_research.alpha_124_shadow_daemon as a124
+    from src.polymarket_research.riskless_protocol_v2_expansion import (
+        next_et_4h_boundary_ts,
+        resolve_active_4h_target_end_ts,
+    )
+    from src.polymarket_research.tradfi_sports_zero_fee_engine import parse_zero_fee_negrisk_slate
+
+    # Nov 5, 2026 04:50:00 UTC == Nov 4, 2026 23:50:00 EST -> next 4h ET close is 05:00:00 UTC!
+    ts_est = datetime(2026, 11, 5, 4, 50, 0, tzinfo=timezone.utc).timestamp()
+    exp_est_close = int(datetime(2026, 11, 5, 5, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert next_et_4h_boundary_ts(ts_est) == exp_est_close
+    tgt_est, rem_est = resolve_active_4h_target_end_ts(ts_est)
+    assert tgt_est == exp_est_close and rem_est == pytest.approx(600.0)
+
+    # July 15, 2026 03:50:00 UTC == July 14, 2026 23:50:00 EDT -> next 4h ET close is 04:00:00 UTC!
+    ts_edt = datetime(2026, 7, 15, 3, 50, 0, tzinfo=timezone.utc).timestamp()
+    exp_edt_close = int(datetime(2026, 7, 15, 4, 0, 0, tzinfo=timezone.utc).timestamp())
+    assert next_et_4h_boundary_ts(ts_edt) == exp_edt_close
+
+    # Synthetic 14400 * k UTC epoch fixture (Jan 2027) still resolves cleanly!
+    tgt_syn, rem_syn = resolve_active_4h_target_end_ts(14400.0 * 125000 - 600.0)
+    assert tgt_syn == 14400 * 125000 and rem_syn == pytest.approx(600.0)
+
+    # Verify parse_zero_fee_negrisk_slate captures negRiskAugmented flag accurately
+    now_iso_end = "2027-06-01T18:00:00Z"
+    mkts = [
+        {"id": f"m{i}", "conditionId": f"0x{i:064x}", "question": f"Bracket {i}?", "outcomes": '["Yes","No"]', "clobTokenIds": f'["y{i}","n{i}"]', "endDate": now_iso_end, "enableOrderBook": True}
+        for i in range(3)
+    ]
+    sp_closed = parse_zero_fee_negrisk_slate({"id": "ev_c", "title": "FOMC", "negRisk": True, "negRiskAugmented": False, "endDate": now_iso_end, "markets": mkts}, "fomc")
+    sp_aug = parse_zero_fee_negrisk_slate({"id": "ev_a", "title": "Tweets", "negRisk": True, "negRiskAugmented": True, "endDate": now_iso_end, "markets": mkts}, "elon-tweets")
+    assert sp_closed is not None and sp_closed.neg_risk_augmented is False
+    assert sp_aug is not None and sp_aug.neg_risk_augmented is True
+
+    # Verify discover_4h_dominance_pairs pairs 05:00Z EST 4h + 15m BTC Chainlink candles!
+    d = a124.Alpha124ShadowDaemon(single_scan=True)
+
+    async def _fake_fetch(url: str, timeout: float = 4.0):
+        if "btc-up-or-down-4h" in url:
+            return [{
+                "id": "ev4",
+                "slug": f"btc-updown-4h-{exp_est_close - 14400}",
+                "endDate": "2026-11-05T05:00:00Z",
+                "markets": [{
+                    "id": "m4",
+                    "conditionId": "0x" + "4" * 64,
+                    "outcomes": '["Up","Down"]',
+                    "clobTokenIds": '["u4","d4"]',
+                    "eventStartTime": "2026-11-05T01:00:00Z",
+                    "endDate": "2026-11-05T05:00:00Z",
+                    "resolutionSource": "https://data.chain.link/streams/btc-usd",
+                    "cryptoMarketConfig": {"twapEnabled": True, "twapLookbackSeconds": 60},
+                    "feesEnabled": True,
+                }],
+            }]
+        if "btc-up-or-down-15m" in url:
+            return [{
+                "id": "ev15",
+                "slug": f"btc-updown-15m-{exp_est_close - 900}",
+                "endDate": "2026-11-05T05:00:00Z",
+                "markets": [{
+                    "id": "m15",
+                    "conditionId": "0x" + "5" * 64,
+                    "outcomes": '["Up","Down"]',
+                    "clobTokenIds": '["u15","d15"]',
+                    "eventStartTime": "2026-11-05T04:45:00Z",
+                    "endDate": "2026-11-05T05:00:00Z",
+                    "resolutionSource": "https://data.chain.link/streams/btc-usd",
+                    "cryptoMarketConfig": {"twapEnabled": True, "twapLookbackSeconds": 60},
+                    "feesEnabled": True,
+                }],
+            }]
+        return []
+
+    d.fetch_json = _fake_fetch  # type: ignore[assignment]
+    asyncio.run(d.discover_4h_dominance_pairs(ts_est))
+    assert f"BTC_4h15m_{exp_est_close}" in d.dominance_4h_pairs
+
+
+def test_upgrade7_seed_tier_structural_box_slot_carveout_unclamps_cal1() -> None:
+    from src.polymarket_research.riskless_protocol_v2_expansion import compute_sll_and_carry_gatling_budget
+
+    now_t = time.time()
+    rb = {"gatling_enabled": True, "gatling_fast_gun_reserve_usd": 20.0}
+    h = SimpleNamespace(
+        dry_run=False,
+        max_exposure=250.0,
+        enforce_gatling_fast_gun_reserve=True,
+        _is_v5_unleashed_active=lambda: True,
+        active_positions={
+            "b1_1": {
+                "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                "box_type": "SINGLE_LEG_MAKER_LOCK",
+                "status": "POSITION_CONFIRMED",
+                "notional_usd": 46.40,
+                "candle_expiry_ts": now_t + 7200.0,
+            }
+        },
+        pending_entry_intents={},
+    )
+    # On $75.56 NAV ($29.16 cash + $46.40 BOND1), 24h graduated CAL1 BARRIER_MONO box gets ~$16.62 (>= 8 shares)
+    # while strictly preserving >= $10.50 unencumbered S2 Fast-Gun cash!
+    b_cal1 = compute_sll_and_carry_gatling_budget(
+        h,
+        18.50,
+        29.16,
+        46.40,
+        "BARRIER_MONO",
+        "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+        True,
+        rb,
+        rem_tte_sec=86400.0,
+        now_ts=now_t,
+    )
+    assert 15.0 <= b_cal1 <= 18.66
+    assert (29.16 - b_cal1) >= 10.50
+
+    # Once 1 structural box ($16.62) is open, a 2nd structural box is blocked so S2 cash is never drained!
+    h.active_positions["cal1_open"] = {
+        "sleeve": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+        "box_type": "BARRIER_MONO",
+        "status": "POSITION_CONFIRMED",
+        "notional_usd": b_cal1,
+        "candle_expiry_ts": now_t + 86400.0,
+    }
+    b_cal1_second = compute_sll_and_carry_gatling_budget(
+        h,
+        18.50,
+        round(29.16 - b_cal1, 2),
+        round(46.40 + b_cal1, 2),
+        "NEGRISK_2LEG",
+        "COND1_MACRO_PARTITION_BOX",
+        True,
+        rb,
+        rem_tte_sec=43200.0,
+        now_ts=now_t,
+    )
+    assert b_cal1_second < 5.0
+

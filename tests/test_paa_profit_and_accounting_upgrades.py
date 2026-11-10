@@ -14,6 +14,7 @@ Regression tests for PAA Live Profit Conversion & Zero-Phantom-Loss Accounting U
 """
 
 import asyncio
+import copy
 import json
 import time
 from unittest.mock import MagicMock
@@ -289,35 +290,69 @@ def test_harvester_bond1_survives_book_poll_timeout_and_cancels_on_shutdown(tmp_
     def _post(_s, token_id, price, notional_usd=0.0, **kw):
         return {"success": True, "orderID": "0xoid_tmo", "price": price, "shares": int(notional_usd / price)}
 
-    def _cancel(_s, oid):
+    def _cancel(_s, oid, **_kw):
         calls["cancel"] += 1
         return {"is_canceled": True, "outcome": "CANCELED_ZERO_FILL", "matched": 0.0}
 
     monkeypatch.setattr(type(h.executor), "get_market_book", _flaky_book)
     monkeypatch.setattr(type(h.executor), "post_maker_entry_order", _post)
     monkeypatch.setattr(type(h.executor), "cancel_order", _cancel)
+    monkeypatch.setattr(type(h.executor), "cancel_order_fast", _cancel)
     monkeypatch.setattr(type(h.executor), "get_order_fill_summary", lambda _s, oid, tok: {"terminal": True, "resting": False, "matched": 0.0})
+
+    bond1_cand = {
+        "box_id": "B1_TMO_LIVE",
+        "box_type": "SINGLE_LEG_MAKER_LOCK",
+        "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+        "dedupe_key": "BOND1_MKR_TMO",
+        "pair_dedupe_key": "BOND1_TMO",
+        "leg_a_market_id": "996002",
+        "leg_a_condition_id": "0xcondtmo",
+        "leg_a_token_id": "tok_w_tmo",
+        "leg_a_opp_token_id": "tok_l_tmo",
+        "leg_a_side": "YES",
+        "leg_a_neg_risk": False,
+        "anchor_bid_px": 0.995,
+        "min_resting_bid": 0.940,
+        "max_box_cost_net": 0.996,
+        "min_maker_edge": 0.004,
+        "max_opp_bid": 0.008,
+        "p_model": 1.0,
+        "expiry_ts": time.time() + 3600.0,
+        "ts_unix": time.time(),
+    }
+    # Verify evaluate_strict_pure_riskless_candidate permits live Row-2 BOND1 under default production config
+    # AND honors explicit operator `enable_single_leg_maker_bond1=False` toggle:
+    from src.polymarket_research.stage_c_zero_loss_velocity import evaluate_strict_pure_riskless_candidate
+
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    ok_pure_b1, why_pure_b1 = evaluate_strict_pure_riskless_candidate(bond1_cand, plh.GLOBAL_GOVERNANCE_MANAGER.snapshot)
+    assert ok_pure_b1 is True
+    assert why_pure_b1 == "OK"
+    ok_disabled_b1, why_disabled_b1 = evaluate_strict_pure_riskless_candidate(
+        bond1_cand,
+        {"riskless_boxes": {**plh.GLOBAL_GOVERNANCE_MANAGER.snapshot["riskless_boxes"], "enable_single_leg_maker_bond1": False}},
+    )
+    assert ok_disabled_b1 is False
+    assert "PURE_RISKLESS" in why_disabled_b1
+    assert calls["cancel"] == 0
+
+    # Now isolate inner Maker poll-timeout + shutdown-cancel safety mechanics with strict lock explicitly relaxed:
+    rb_snap = copy.deepcopy(plh.GLOBAL_GOVERNANCE_MANAGER._snapshot["riskless_boxes"])
+    rb_snap["strict_pure_riskless_mode"] = False
+    rb_snap["enable_single_leg_maker_bond1"] = True
+    rb_snap["paused_riskless_sleeves"] = [s for s in rb_snap.get("paused_riskless_sleeves", []) if s != "BOND1_UMA_RESOLUTION_CARRY"]
+    monkeypatch.setitem(plh.GLOBAL_GOVERNANCE_MANAGER._snapshot, "riskless_boxes", rb_snap)
+    h.enable_single_leg_maker_bond1 = True
+    calls["book"] = 0
+    calls["cancel"] = 0
 
     async def _drive():
         now = time.time()
         t = asyncio.create_task(h.maybe_execute_graduated_single_leg_maker_lock({
-            "box_id": "B1_TMO_LIVE",
-            "box_type": "SINGLE_LEG_MAKER_LOCK",
-            "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
-            "dedupe_key": "BOND1_MKR_TMO",
-            "pair_dedupe_key": "BOND1_TMO",
-            "leg_a_market_id": "996002",
-            "leg_a_condition_id": "0xcondtmo",
-            "leg_a_token_id": "tok_w_tmo",
-            "leg_a_opp_token_id": "tok_l_tmo",
-            "leg_a_side": "YES",
-            "leg_a_neg_risk": False,
-            "anchor_bid_px": 0.995,
-            "min_resting_bid": 0.940,
-            "max_box_cost_net": 0.996,
-            "min_maker_edge": 0.004,
-            "max_opp_bid": 0.008,
-            "p_model": 1.0,
+            **bond1_cand,
+            "dedupe_key": "BOND1_MKR_TMO_INNER",
+            "pair_dedupe_key": "BOND1_TMO_INNER",
             "expiry_ts": now + 3600.0,
             "ts_unix": now,
         }))
@@ -959,6 +994,13 @@ def test_riskless_paa_scorecard_shadow_pnl_fix_paused_disqualification_and_machi
                         "win_rate_pct": 100.0,
                         "realized_pnl_t1000_usd": 21.50,
                     },
+                    "C1_BINARY_COMPLETE_SET": {
+                        "closed": 7,
+                        "wins": 7,
+                        "losses": 0,
+                        "win_rate_pct": 100.0,
+                        "realized_pnl_t1000_usd": 19.25,
+                    },
                 },
             }
         ),
@@ -985,6 +1027,7 @@ def test_riskless_paa_scorecard_shadow_pnl_fix_paused_disqualification_and_machi
     fin_ledger = {
         "by_sleeve_live": {
             "SLEEVE_1_SUBHOURLY_15M": {"real_trades": 32, "wins": 24, "losses": 8, "verified_net_pnl_usd": -69.77, "fees_usd": 3.10},
+            "D1_SAME_ORACLE_DOMINANCE_BOX": {"real_trades": 3, "wins": 3, "losses": 0, "verified_net_pnl_usd": 12.72, "fees_usd": 0.41},
             "BOND1_UMA_RESOLUTION_CARRY": {"real_trades": 5, "wins": 5, "losses": 0, "verified_net_pnl_usd": 0.63, "fees_usd": 0.0},
             "CM_B3_PYTH_BARRIER_BOX": {"real_trades": 1, "wins": 1, "losses": 0, "verified_net_pnl_usd": 0.32, "fees_usd": 0.0},
             "SOC2_EXACT_SCORE_2D_LATTICE": {"real_trades": 4, "wins": 0, "losses": 4, "verified_net_pnl_usd": -8.67, "fees_usd": 0.55},
@@ -995,6 +1038,7 @@ def test_riskless_paa_scorecard_shadow_pnl_fix_paused_disqualification_and_machi
     assert sc["riskless_only_mode"] is True
     assert "D1_SAME_ORACLE_DOMINANCE_BOX" in sc["grad8_live_authorized_sleeves"]
     assert "BOND1_UMA_RESOLUTION_CARRY" in sc["grad8_live_authorized_sleeves"]
+    assert "CM_B3_PYTH_BARRIER_BOX" not in sc["grad8_live_authorized_sleeves"]
     assert "MG_RISKLESS_COMPLETE_SET_SWEEPER" in sc["grad8_live_authorized_sleeves"]
     assert "MG_RISKLESS_COMPLETE_SET_SWEEPER" in sc["machine_gun_sleeves_detected"]
     # SOC2 MUST be disqualified from grad8_live_authorized_sleeves!
@@ -1004,12 +1048,14 @@ def test_riskless_paa_scorecard_shadow_pnl_fix_paused_disqualification_and_machi
     assert by_name["D1_SAME_ORACLE_DOMINANCE_BOX"]["shadow_pnl_t1000_usd"] == pytest.approx(173.60)
     assert by_name["SLEEVE_1_SUBHOURLY_15M"]["deployment_tier"] == "PAUSED_RISKLESS_ONLY_MODE"
     assert by_name["SOC2_EXACT_SCORE_2D_LATTICE"]["deployment_tier"] == "PAUSED_FEE_SPORTS_LEGGING_GUARD"
+    assert by_name["BOND1_UMA_RESOLUTION_CARRY"]["deployment_tier"] == "LIVE_AUTHORIZED_GRAD8_100WR"
 
     pure = sc["pure_riskless_live_summary"]
-    assert pure["wins"] == 6
+    assert pure["wins"] == 8
     assert pure["losses"] == 0
     assert pure["win_rate_pct"] == pytest.approx(100.0)
-    assert pure["realized_pnl_usd"] == pytest.approx(0.95)
+    assert pure["realized_pnl_usd"] == pytest.approx(13.35)
+    assert any(x["sleeve"] == "C1_BINARY_COMPLETE_SET" and x["needed_for_grad8"] == 1 for x in sc["near_grad8_zero_loss_sleeves"])
     assert any(x["sleeve"] == "AFF1_FROZEN_SUBPERIOD_COLLAPSE" and x["needed_for_grad8"] == 1 for x in sc["near_grad8_zero_loss_sleeves"])
 
 
@@ -1234,6 +1280,151 @@ def test_riskless_paa_monitor_zero_loss_breach_and_unredeemed_post_expiry_sentin
     redeem_t = [t for t in tasks if str(t["dedupe_key"]).startswith("REDEMPTION_RECYCLE:")]
     assert len(redeem_t) == 1
     assert redeem_t[0]["priority_label"] == "P1"
+
+
+def test_riskless_paa_uma_disputed_post_expiry_classification_and_machine_gun_sync(tmp_path, monkeypatch):
+    """
+    Verifies:
+      1. PAAMonitor classifies Gamma `closed=False, umaResolutionStatus='disputed'` post-expiry positions
+         into `pending_uma_settlement_positions` (`status == 'OK'`) rather than false-positive
+         `UNREDEEMED_POST_EXPIRY_POSITIONS`, while still flagging `closed=True` unredeemed positions.
+      2. PAADirector executes `AUDIT_ONCHAIN_CTF_REDEMPTION_READY` with structured per-position classification.
+      3. `sync_machine_gun_telemetry_snapshot` + `build_strategy_scorecard` populate `machine_gun_sleeves_detected`
+         and hold non-allowlisted `CAL1` / `COND1` sleeves as `HELD_SHADOW_ONLY_PURE_RISKLESS_LOCK`.
+    """
+    import scripts.paa_autonomous_controller as pac
+    from src.paa_os.accountant import PAAAccountant
+    from src.paa_os.budget import BudgetManager
+    from src.paa_os.director import PAADirector
+    from src.paa_os.monitor import PAAMonitor
+    from src.paa_os.permissions import load_autonomy_config
+    from src.paa_os.task_db import PAATaskDB
+
+    data_dir = tmp_path / "data" / "polymarket"
+    data_dir.mkdir(parents=True)
+    monkeypatch.setattr(pac, "DATA_PM", data_dir)
+
+    now_u = time.time()
+    (data_dir / "live_harvester_state.json").write_text(
+        json.dumps(
+            {
+                "live_bankroll": 27.07,
+                "active_positions": {
+                    "WS_SNIPE_Miami_KMIA_242960": {
+                        "sleeve": "W_PRUNE1_DEAD_NO_BOND",
+                        "market_id": "6707503",
+                        "token_id": "111",
+                        "remaining_shares": 20.0,
+                        "remaining_cost_basis": 19.54,
+                        "candle_expiry_ts": now_u - 7200.0,
+                        "status": "POSITION_CONFIRMED",
+                    },
+                    "SETTLED_READY_99": {
+                        "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+                        "market_id": "6707999",
+                        "token_id": "222",
+                        "remaining_shares": 10.0,
+                        "remaining_cost_basis": 9.92,
+                        "candle_expiry_ts": now_u - 7200.0,
+                        "status": "POSITION_CONFIRMED",
+                    },
+                },
+                "closed_positions": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "alpha124_shadow_state.json").write_text(
+        json.dumps(
+            {
+                "open_positions": {"1": {"sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX"}},
+                "by_sleeve": {
+                    "D1_SAME_ORACLE_DOMINANCE_BOX": {"closed": 35, "wins": 35, "losses": 0, "realized_pnl_t1000_usd": 177.26},
+                    "C1_BINARY_COMPLETE_SET": {"closed": 23, "wins": 23, "losses": 0, "realized_pnl_t1000_usd": 82.88},
+                    "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX": {"closed": 29, "wins": 29, "losses": 0, "realized_pnl_t1000_usd": 52.71},
+                    "COND1_MACRO_PARTITION_BOX": {"closed": 8, "wins": 8, "losses": 0, "realized_pnl_t1000_usd": 5.56},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cfg = load_autonomy_config()
+    db = PAATaskDB(data_dir / "paa" / "paa_tasks.db")
+    db.record_heartbeat("paa_director", status="OK", details={})
+    budget = BudgetManager(db, autonomy_cfg=cfg)
+    acct = PAAAccountant(db, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    acct._reconcile_fn = lambda live_rpc_check=False: {
+        "free_wallet_cash_pusd": 27.07,
+        "authoritative_portfolio_nav_mark_to_bid_usd": 37.00,
+        "authoritative_portfolio_nav_resting_maker_usd": 37.00,
+        "verified_onchain_realized_net_pnl_usd": 16.76,
+        "raw_state_ledger_pnl_usd": 16.76,
+        "phantom_unfilled_ledger_adjustment_usd": 0.0,
+        "realized_fees_usd": 0.25,
+        "state_vs_onchain_cash_diff_usd": 0.0,
+        "simulated_non_cash_benchmarks": {
+            "alpha124_shadow_t1000_pnl_usd": 318.41,
+            "zero_loss_shadow_t1000_pnl_usd": 318.41,
+            "zero_loss_shadow_wins": 95,
+            "paper_trader_oos_pnl_usd": 0.0,
+        },
+    }
+    mon = PAAMonitor(db, acct, budget, data_dir=data_dir, autonomy_cfg=cfg)
+    mon._check_connectivity = lambda: (True, 45.0, "OK")
+    mon._check_vm_resources = lambda: []
+    mon._check_failed_systemd_jobs = lambda: []
+    mon._probe_gamma_market_settlement = lambda mid, ttl_sec=300.0: (
+        {"market_id": "6707503", "closed": False, "uma_resolution_status": "disputed", "accepting_orders": False}
+        if str(mid) == "6707503"
+        else {"market_id": "6707999", "closed": True, "uma_resolution_status": "resolved", "accepting_orders": False}
+    )
+
+    res_mixed = mon.run_monitor_cycle(auto_recover_safe=False, live_rpc_check=False, check_network=True)
+    assert len(res_mixed["pending_uma_settlement_positions"]) == 1
+    assert res_mixed["pending_uma_settlement_positions"][0]["trade_id"] == "WS_SNIPE_Miami_KMIA_242960"
+    # Only the closed=True settled position is flagged as UNREDEEMED_POST_EXPIRY_POSITIONS!
+    assert any("SETTLED_READY_99" in a and "WS_SNIPE_Miami_KMIA_242960" not in a for a in res_mixed["anomalies"])
+
+    # Now remove SETTLED_READY_99 so only the UMA-disputed position remains -> Monitor status MUST be OK!
+    st_only_disputed = json.loads((data_dir / "live_harvester_state.json").read_text(encoding="utf-8"))
+    st_only_disputed["active_positions"].pop("SETTLED_READY_99", None)
+    (data_dir / "live_harvester_state.json").write_text(json.dumps(st_only_disputed), encoding="utf-8")
+    res_ok = mon.run_monitor_cycle(auto_recover_safe=False, live_rpc_check=False, check_network=True)
+    assert res_ok["status"] == "OK"
+    assert res_ok["anomalies"] == []
+    assert len(res_ok["pending_uma_settlement_positions"]) == 1
+
+    # Verify PAADirector executes the queued REDEMPTION_RECYCLE task deterministically
+    director = PAADirector(data_dir=data_dir, db=db, autonomy_cfg=cfg)
+    director.accountant = acct
+    cyc = director.run_cycle(max_tasks_per_cycle=2, allow_headless_ai=False, run_proactive_research_if_idle=False)
+    assert cyc["status"] == "OK"
+    assert any(
+        r["outcome"] == "COMPLETED"
+        and r["evidence"]["default_diagnostic"]["action"] == "AUDIT_ONCHAIN_CTF_REDEMPTION_READY"
+        for r in cyc["tasks_executed"]
+    )
+
+    # Verify Machine-Gun telemetry sync + strict_pure_riskless_mode scorecard filtering
+    mg_doc = pac.sync_machine_gun_telemetry_snapshot(data_dir=data_dir)
+    assert "D1_SAME_ORACLE_DOMINANCE_BOX" in mg_doc["by_sleeve"]
+    assert mg_doc["quarantined_engines"]["PRE_SPLIT_INVENTORY_GUN"] == "QUARANTINED_STRICT_ZERO_LEGGING_LOCK"
+
+    sc = pac.build_strategy_scorecard({"by_sleeve_live": {}}, data_dir=data_dir)
+    assert "D1_SAME_ORACLE_DOMINANCE_BOX" in sc["machine_gun_sleeves_detected"]
+    assert "D1_SAME_ORACLE_DOMINANCE_BOX" in sc["grad8_live_authorized_sleeves"]
+    assert "C1_BINARY_COMPLETE_SET" in sc["grad8_live_authorized_sleeves"]
+    assert "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX" not in sc["grad8_live_authorized_sleeves"]
+    assert "COND1_MACRO_PARTITION_BOX" not in sc["grad8_live_authorized_sleeves"]
+    assert "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX" in sc["held_shadow_only_pure_riskless_sleeves"]
+
+    # Verify scan_entire_polymarket_universe executes cleanly with mocked Gamma page fetch (guards against NameError)
+    monkeypatch.setattr(pac, "_http_get_json", lambda url, timeout=8.0: [])
+    uni_out = pac.scan_entire_polymarket_universe(max_events=100)
+    assert uni_out["operating_mode"] == "RISKLESS_PAA"
+    assert uni_out["events_scanned"] == 0
+
 
 
 

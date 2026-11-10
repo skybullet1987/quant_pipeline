@@ -261,6 +261,8 @@ class PAADirector:
                         pass
             except Exception:
                 pass
+        from src.polymarket_research.stage_c_zero_loss_velocity import PURE_RISKLESS_ALLOWED_LIVE_SLEEVES
+
         mg_sleeves = discover_machine_gun_sleeves(self.data_dir)
         for _mg_k, _mg_v in mg_sleeves.items():
             if _mg_k not in by_slv and isinstance(_mg_v, dict):
@@ -269,22 +271,35 @@ class PAADirector:
                     active_shadow_sleeves.add(_mg_k)
         min_dir_eq = 0.0
         riskless_only_mode = False
+        strict_pure_riskless_mode = False
         paused_rb_sleeves: set[str] = set()
         if cfg_p.exists():
             try:
                 _cfg_d = json.loads(cfg_p.read_text(encoding="utf-8"))
                 min_dir_eq = float(((_cfg_d.get("directional") or {}).get("min_live_equity_for_unhedged_directional_usd")) or 0.0)
                 riskless_only_mode = bool((_cfg_d.get("directional") or {}).get("riskless_only_mode", False))
-                paused_rb_sleeves = {str(x).strip().upper() for x in ((_cfg_d.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []) if str(x).strip()}
+                _rb_d = _cfg_d.get("riskless_boxes") or {}
+                strict_pure_riskless_mode = bool(_rb_d.get("strict_pure_riskless_mode", False))
+                paused_rb_sleeves = {str(x).strip().upper() for x in (_rb_d.get("paused_riskless_sleeves") or []) if str(x).strip()}
             except Exception:
                 min_dir_eq = 0.0
-        grad8_ready, near_grad8, zero_live_gaps = [], [], []
+        mg_upper = {str(k).upper() for k in mg_sleeves.keys()}
+        grad8_ready, near_grad8, zero_live_gaps, held_shadow_pure = [], [], [], []
         for sl, rec in by_slv.items():
             if not isinstance(rec, dict) or sl.upper() in paused_rb_sleeves:
                 continue
             w = int(rec.get("wins", 0) or 0)
             l = int(rec.get("losses", 0) or 0)
             pnl = float(rec.get("realized_pnl_t1000_usd", rec.get("pnl_t1000_usd", 0.0)) or 0.0)
+            if (
+                strict_pure_riskless_mode
+                and sl.upper() not in PURE_RISKLESS_ALLOWED_LIVE_SLEEVES
+                and sl.upper() not in mg_upper
+                and not sl.upper().startswith("MG_RISKLESS")
+            ):
+                if w >= 5 and l == 0 and pnl > 0:
+                    held_shadow_pure.append(sl)
+                continue
             if w >= 8 and l == 0 and pnl > 0:
                 grad8_ready.append(sl)
                 if live_wins_by_slv.get(sl, 0) == 0 and cand_counts.get(sl, 0) == 0:
@@ -299,6 +314,7 @@ class PAADirector:
             "grad8_ready_count": len(grad8_ready),
             "grad8_ready_sleeves": sorted(grad8_ready),
             "paused_riskless_sleeves": sorted(paused_rb_sleeves),
+            "held_shadow_only_pure_riskless_sleeves": sorted(held_shadow_pure),
             "machine_gun_sleeves_detected": sorted(mg_sleeves.keys()),
             "grad8_zero_live_conversion_gaps": sorted(zero_live_gaps),
             "grad8_active_shadow_conversion_gaps": active_conv_gaps,
@@ -307,6 +323,7 @@ class PAADirector:
             "live_wins_by_sleeve": live_wins_by_slv,
             "recent_live_candidate_counts": cand_counts,
             "riskless_only_mode": riskless_only_mode,
+            "strict_pure_riskless_mode": strict_pure_riskless_mode,
             "seed_zero_loss_focus_active": bool(riskless_only_mode or (min_dir_eq > 0.0 and live_cash < min_dir_eq)),
             "min_live_equity_for_unhedged_directional_usd": min_dir_eq,
         }
@@ -618,6 +635,77 @@ class PAADirector:
                         "response": ai_out["response"].strip()[:800],
                         "cost_usd": ai_out["estimated_cost_usd"],
                     }
+                elif act == "AUDIT_ONCHAIN_CTF_REDEMPTION_READY" or (
+                    act == "RUN_DIAGNOSTIC" and str(task.get("next_action") or "") == "AUDIT_ONCHAIN_CTF_REDEMPTION_READY"
+                ):
+                    ev_in = task.get("evidence") if isinstance(task.get("evidence"), dict) else {}
+                    tids_audit = list(ev_in.get("stale_unredeemed_trade_ids") or [])
+                    st_harv_p = self.data_dir / "live_harvester_state.json"
+                    act_pos_map: Dict[str, Any] = {}
+                    if st_harv_p.exists():
+                        try:
+                            act_pos_map = dict((json.loads(st_harv_p.read_text(encoding="utf-8")).get("active_positions")) or {})
+                        except Exception:
+                            act_pos_map = {}
+                    gamma_cache_p = self.paa_dir / "gamma_post_expiry_status_cache.json"
+                    gamma_cache: Dict[str, Any] = {}
+                    if gamma_cache_p.exists():
+                        try:
+                            gamma_cache = dict(json.loads(gamma_cache_p.read_text(encoding="utf-8")) or {})
+                        except Exception:
+                            gamma_cache = {}
+                    mon_helper = PAAMonitor(self.db, self.accountant, self.budget, data_dir=self.data_dir, autonomy_cfg=self.cfg)
+                    per_position: List[Dict[str, Any]] = []
+                    redeem_ready_ids: List[str] = []
+                    awaiting_uma_ids: List[str] = []
+                    already_closed_ids: List[str] = []
+                    for tid_item in tids_audit:
+                        p_rec = act_pos_map.get(tid_item)
+                        if not isinstance(p_rec, dict):
+                            already_closed_ids.append(str(tid_item))
+                            per_position.append({"trade_id": tid_item, "classification": "ALREADY_CLOSED_OR_REDEEMED"})
+                            continue
+                        mid_item = str(p_rec.get("market_id") or "").strip()
+                        st_item = str(p_rec.get("status") or "").upper()
+                        uma_item = str(p_rec.get("uma_resolution_status") or "").strip().lower()
+                        g_info = gamma_cache.get(mid_item) if mid_item else None
+                        if g_info is None and mid_item.isdigit() and payload.get("check_network", True):
+                            g_info = mon_helper._probe_gamma_market_settlement(mid_item)
+                        if "DISPUTE" in st_item or uma_item in {"disputed", "proposed", "pending"} or (
+                            isinstance(g_info, dict) and not bool(g_info.get("closed", False))
+                        ):
+                            awaiting_uma_ids.append(str(tid_item))
+                            per_position.append(
+                                {
+                                    "trade_id": tid_item,
+                                    "market_id": mid_item,
+                                    "classification": "AWAITING_UMA_ORACLE_SETTLEMENT",
+                                    "uma_resolution_status": (
+                                        (g_info or {}).get("uma_resolution_status") if isinstance(g_info, dict) else None
+                                    )
+                                    or uma_item
+                                    or "disputed",
+                                    "closed": False,
+                                }
+                            )
+                        else:
+                            redeem_ready_ids.append(str(tid_item))
+                            per_position.append(
+                                {
+                                    "trade_id": tid_item,
+                                    "market_id": mid_item,
+                                    "classification": "SETTLED_ONCHAIN_REDEMPTION_READY",
+                                    "closed": True,
+                                }
+                            )
+                    step_outputs[sid] = {
+                        "executed_at_utc": utc_now_iso(),
+                        "action": "AUDIT_ONCHAIN_CTF_REDEMPTION_READY",
+                        "redeem_ready_trade_ids": redeem_ready_ids,
+                        "awaiting_uma_settlement_trade_ids": awaiting_uma_ids,
+                        "already_closed_trade_ids": already_closed_ids,
+                        "positions": per_position,
+                    }
                 else:
                     step_outputs[sid] = {"executed_at_utc": utc_now_iso(), "action": act}
 
@@ -725,10 +813,69 @@ class PAADirector:
         fin_rl = fin.get("riskless_metrics") or fin_details.get("riskless_metrics") or {}
         sc_pure = sc.get("pure_riskless_live_summary") or {}
         op_mode = str(self.cfg.get("operating_mode") or "RISKLESS_PAA")
+
+        # Load pending UMA settlement telemetry from 1m Monitor heartbeat if present
+        mon_hb_file = self.paa_dir / "monitor_heartbeat.json"
+        pending_uma_positions: List[Dict[str, Any]] = []
+        if mon_hb_file.exists():
+            try:
+                pending_uma_positions = list(
+                    (json.loads(mon_hb_file.read_text(encoding="utf-8")).get("pending_uma_settlement_positions")) or []
+                )
+            except Exception:
+                pending_uma_positions = []
+
+        # Load Stage G Cross-Venue Shadow certification progress (`ForecastEx` 168h gate) if present
+        cv_cert_p = self.data_dir.parent / "cross_venue_shadow" / "certification_report.json"
+        cross_venue_stage_g: Dict[str, Any] = {}
+        if cv_cert_p.exists():
+            try:
+                cv_raw = json.loads(cv_cert_p.read_text(encoding="utf-8"))
+                if isinstance(cv_raw, dict):
+                    cv_venues = cv_raw.get("venues") if isinstance(cv_raw.get("venues"), dict) else {}
+                    fx_v = cv_venues.get("forecastex") if isinstance(cv_venues.get("forecastex"), dict) else {}
+                    pm_v = cv_venues.get("polymarket") if isinstance(cv_venues.get("polymarket"), dict) else {}
+                    req_h = float(
+                        cv_raw.get("target_certification_hours", cv_raw.get("required_hours", 168.0)) or 168.0
+                    )
+                    el_h = float(
+                        fx_v.get(
+                            "certified_live_hours",
+                            cv_raw.get("elapsed_hours", cv_raw.get("continuous_uptime_hours", 0.0)),
+                        )
+                        or 0.0
+                    )
+                    cert_list = list(cv_raw.get("certified_venues") or [])
+                    blocked_v = [
+                        f"{vk}:{vv.get('certification_verdict')}"
+                        for vk, vv in cv_venues.items()
+                        if isinstance(vv, dict) and str(vv.get("certification_verdict") or "").startswith("BLOCKED")
+                    ]
+                    cross_venue_stage_g = {
+                        "generated_at_utc": cv_raw.get("generated_at_utc"),
+                        "operator_jurisdiction": cv_raw.get("operator_jurisdiction") or "CA-ON",
+                        "overall_stage_g_ready": bool(cv_raw.get("overall_stage_g_ready", bool(cert_list))),
+                        "active_live_certifying_venues": list(cv_raw.get("active_live_certifying_venues") or []),
+                        "certified_venues": cert_list,
+                        "elapsed_hours": round(el_h, 4),
+                        "required_hours": req_h,
+                        "forecastex_active_markets": int(fx_v.get("active_markets", 0) or 0),
+                        "forecastex_uptime_pct": float(fx_v.get("uptime_pct", 0.0) or 0.0),
+                        "matched_pairs_count": int(
+                            pm_v.get("matched_opportunities", cv_raw.get("matched_pairs_count", 0)) or 0
+                        ),
+                        "settlement_mismatches_caught": int(pm_v.get("settlement_rule_mismatches_caught", 0) or 0),
+                        "persistent_blockers": blocked_v or list(cv_raw.get("persistent_blockers") or []),
+                    }
+            except Exception:
+                cross_venue_stage_g = {}
+
         riskless_kpis = {
             "operating_mode": op_mode,
             "riskless_only_mode": bool(fin_rl.get("riskless_only_mode", sc.get("riskless_only_mode", True))),
+            "strict_pure_riskless_mode": bool(sc.get("strict_pure_riskless_mode", True)),
             "paused_riskless_sleeves": list(fin_rl.get("paused_riskless_sleeves") or sc.get("paused_riskless_sleeves") or []),
+            "held_shadow_only_pure_riskless_sleeves": list(sc.get("held_shadow_only_pure_riskless_sleeves") or []),
             "pure_riskless_live_wins": int(fin_rl.get("pure_riskless_live_wins", sc_pure.get("wins", 0)) or 0),
             "pure_riskless_live_losses": int(fin_rl.get("pure_riskless_live_losses", sc_pure.get("losses", 0)) or 0),
             "pure_riskless_live_wr_pct": float(fin_rl.get("pure_riskless_live_wr_pct", sc_pure.get("win_rate_pct", 100.0)) or 100.0),
@@ -740,6 +887,7 @@ class PAADirector:
             "effective_deploy_or_quoting_pct": float(fin_rl.get("effective_deploy_or_quoting_pct", 0.0) or 0.0),
             "near_grad8_zero_loss_sleeves": list(sc.get("near_grad8_zero_loss_sleeves") or []),
             "machine_gun_sleeves_detected": list(sc.get("machine_gun_sleeves_detected") or []),
+            "pending_uma_settlement_positions": pending_uma_positions,
         }
 
         dashboard = {
@@ -758,7 +906,9 @@ class PAADirector:
                 "paa_monitor": hbs.get("paa_monitor"),
                 "paa_supervisor": hbs.get("paa_supervisor"),
                 "accounting_safeguard_active": (self.paa_dir / "ACCOUNTING_SAFEGUARD_ACTIVE.json").exists(),
+                "pending_uma_settlement_positions": pending_uma_positions,
             },
+            "cross_venue_stage_g_shadow": cross_venue_stage_g,
             "research_progress": {
                 "paa_research_heartbeat": hbs.get("paa_research"),
                 "recent_findings_count": len(findings),
@@ -832,16 +982,23 @@ class PAADirector:
             f"# RISKLESS PAA Autonomous Operating System Status ({dashboard['generated_at_utc']})",
             "",
             "## 0. RISKLESS PAA Mandate & Zero-Loss Scorecard",
-            f"- **Operating Mode**: `{op_mode}` | **100% Pure Riskless Live Lock**: `{riskless_kpis['riskless_only_mode']}`",
+            f"- **Operating Mode**: `{op_mode}` | **100% Pure Riskless Live Lock**: `{riskless_kpis['riskless_only_mode']}` | **Strict Pure-Riskless Firewall**: `{riskless_kpis['strict_pure_riskless_mode']}`",
             f"- **Pure Riskless Live Record**: `{riskless_kpis['pure_riskless_live_wins']}W / {riskless_kpis['pure_riskless_live_losses']}L` (`{riskless_kpis['pure_riskless_live_wr_pct']:.1f}%` WR, `${riskless_kpis['pure_riskless_realized_pnl_usd']:+.2f}`) | **Post-Lock Record**: `{riskless_kpis['post_lock_wins']}W / {riskless_kpis['post_lock_losses']}L` (`${riskless_kpis['post_lock_net_pnl_usd']:+.2f}`)",
             f"- **Grad-8 Zero-Loss Live Sleeves (`{len(sc.get('grad8_live_authorized_sleeves') or [])}`)**: `{', '.join(sc.get('grad8_live_authorized_sleeves') or []) or 'NONE'}`",
             f"- **Paused Legging-Risk Sleeves**: `{', '.join(riskless_kpis['paused_riskless_sleeves']) or 'NONE'}` | **Machine-Gun Riskless Sleeves Detected**: `{', '.join(riskless_kpis['machine_gun_sleeves_detected']) or 'AWAITING_AGENT_INTEGRATION'}`",
+            *(
+                [
+                    f"- **Stage G Cross-Venue Shadow (`ForecastEx` 168h Gate)**: `{cross_venue_stage_g.get('elapsed_hours', 0.0):.2f}h / {cross_venue_stage_g.get('required_hours', 168.0):.1f}h` (`{cross_venue_stage_g.get('forecastex_active_markets', 0)}` ForecastEx mkts, `{cross_venue_stage_g.get('matched_pairs_count', 0)}` matched pairs, `{cross_venue_stage_g.get('settlement_mismatches_caught', 0)}` rule mismatches caught) | Ready: `{cross_venue_stage_g.get('overall_stage_g_ready', False)}` | Jurisdiction Fence: `{cross_venue_stage_g.get('operator_jurisdiction', 'CA-ON')}`"
+                ]
+                if cross_venue_stage_g
+                else []
+            ),
             "",
             "## 1. Supervision & Heartbeats",
             f"- **Director Heartbeat**: `{dir_hb.get('status', 'INIT')}` at `{dir_hb.get('last_seen_utc', 'N/A')}` (Cycle `#{dir_hb.get('cycle_count', 0)}`)",
             f"- **Independent Monitor (1m)**: `{mon_hb.get('status', 'INIT')}` at `{mon_hb.get('last_seen_utc', 'N/A')}`",
             f"- **Independent Supervisor (2m)**: `{sup_hb.get('status', 'INIT')}` at `{sup_hb.get('last_seen_utc', 'N/A')}`",
-            f"- **Master Stop Engaged**: `{dashboard['master_stop_engaged']}` | **Accounting Safeguard Active**: `{dashboard['monitoring_health']['accounting_safeguard_active']}`",
+            f"- **Master Stop Engaged**: `{dashboard['master_stop_engaged']}` | **Accounting Safeguard Active**: `{dashboard['monitoring_health']['accounting_safeguard_active']}` | **Pending UMA Settlement Positions**: `{len(pending_uma_positions)}`",
             "",
             "## 2. Verified Financial Ledger (Realized Cash Strictly Separated from Simulated)",
             f"- **Free Wallet Cash (`pUSD + USDC.e`)**: `${vf['free_cash_pusd']:.4f}`",

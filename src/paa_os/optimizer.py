@@ -124,12 +124,37 @@ def group_closed_positions_by_box(
         first = dict(legs[0])
         b_id = str(first.get("box_id") or "")
         tot_notional = round(sum(_sf(x.get("notional_usd")) for x in legs), 4)
-        tot_payout = round(sum(_sf(x.get("payout_usd")) for x in legs), 4)
+        tot_payout = round(sum(_sf(x.get("payout_usd", x.get("confirmed_realized_cash", 0.0))) for x in legs), 4)
         tot_fee = round(sum(_sf(x.get("fee_usd")) + _sf(x.get("realized_exit_fee")) for x in legs), 4)
-        tot_pnl = round(
+        sum_leg_pnl = round(
             sum(_sf(x.get("net_pnl_usd", x.get("realized_pnl_usd", 0.0))) for x in legs),
             4,
         )
+        tot_pnl = sum_leg_pnl
+        if (
+            tot_notional > 0.0
+            and any(("payout_usd" in x or "confirmed_realized_cash" in x) for x in legs)
+            and not any(bool(x.get("exit_cash_estimated", False)) for x in legs)
+        ):
+            tot_entry_cash_fee = sum(
+                (
+                    _sf(x.get("entry_fee_cash_usd"))
+                    if str(x.get("entry_fee_asset") or "").upper() == "SHARES"
+                    else _sf(x.get("entry_fee_cash_usd", x.get("fee_usd")))
+                )
+                for x in legs
+            )
+            tot_exit_fee_exact = sum(_sf(x.get("realized_exit_fee")) for x in legs)
+            raw_box_pnl = tot_payout - tot_notional - tot_entry_cash_fee - tot_exit_fee_exact
+            if abs(raw_box_pnl - sum_leg_pnl) <= (0.005 * len(legs) + 1e-6) and (
+                sum_leg_pnl <= 0.0 < raw_box_pnl or abs(raw_box_pnl) < 0.01
+            ):
+                cent_box_pnl = round(raw_box_pnl, 2)
+                if cent_box_pnl != 0.0:
+                    tot_pnl = cent_box_pnl
+                else:
+                    sub_box_pnl = round(raw_box_pnl, 4)
+                    tot_pnl = sub_box_pnl if abs(sub_box_pnl) >= 0.0001 else 0.0
         all_phantom = all(
             x.get("close_reason") == "MARKET_RESOLVED_NO_INVENTORY"
             and not bool(x.get("inventory_reconciled", True))
@@ -201,23 +226,31 @@ class PAAOptimizer:
             if isinstance(p, dict) and not str(p.get("sleeve") or "").startswith("BOND1")
         )
 
+        from src.polymarket_research.stage_c_zero_loss_velocity import PURE_RISKLESS_ALLOWED_LIVE_SLEEVES
+
         by_sl = a124.get("by_sleeve") or a124.get("per_strategy") or {}
-        paused_rl = {str(s) for s in ((cfg.get("riskless_boxes") or {}).get("paused_riskless_sleeves") or []) if s}
+        rl_boxes_cfg = cfg.get("riskless_boxes") or {}
+        strict_pure_rl = bool(rl_boxes_cfg.get("strict_pure_riskless_mode", False))
+        paused_rl = {str(s).upper() for s in (rl_boxes_cfg.get("paused_riskless_sleeves") or []) if s}
         grad8_zero_loss: List[str] = []
         near_grad8_zero_loss: List[Dict[str, Any]] = []
+        held_shadow_pure_rl: List[str] = []
         for sl_name, rec in sorted(by_sl.items()):
-            if not isinstance(rec, dict) or sl_name in paused_rl:
+            if not isinstance(rec, dict) or sl_name.upper() in paused_rl:
                 continue
             closed_n = int(rec.get("closed", 0) or 0)
             losses_n = int(rec.get("losses", 0) or 0)
             pnl_u = _sf(rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0)))
             if losses_n == 0 and pnl_u > 0.0:
+                if strict_pure_rl and sl_name.upper() not in PURE_RISKLESS_ALLOWED_LIVE_SLEEVES and not sl_name.upper().startswith("MG_RISKLESS"):
+                    if closed_n >= 4:
+                        held_shadow_pure_rl.append(sl_name)
+                    continue
                 if closed_n >= 8:
                     grad8_zero_loss.append(sl_name)
                 elif 4 <= closed_n < 8:
                     near_grad8_zero_loss.append({"sleeve": sl_name, "closed": closed_n, "pnl_t1000_usd": round(pnl_u, 2)})
 
-        rl_boxes_cfg = cfg.get("riskless_boxes") or {}
         bond1_pool_pct = _sf(rl_boxes_cfg.get("seed_zero_loss_focus_bond1_pool_pct"), 0.92)
         dir_cfg = cfg.get("directional") or {}
         riskless_locked = bool(dir_cfg.get("riskless_only_mode", False))
@@ -233,12 +266,14 @@ class PAAOptimizer:
         return {
             "ts_unix": round(time.time(), 2),
             "riskless_only_mode_verified": riskless_locked,
+            "strict_pure_riskless_mode_verified": strict_pure_rl,
             "live_bankroll_usd": round(bankroll, 2),
             "bond1_deployed_usd": round(bond1_deployed, 2),
             "fast_box_deployed_usd": round(box_deployed, 2),
             "box_grouped_closed_count": len(grouped_closed),
             "grad8_zero_loss_sleeves": grad8_zero_loss,
             "near_grad8_zero_loss_sleeves": near_grad8_zero_loss,
+            "held_shadow_only_pure_riskless_sleeves": held_shadow_pure_rl,
             "bond1_pool_pct": bond1_pool_pct,
             "recommendations": recommendations,
         }

@@ -29,7 +29,7 @@ STRATEGY_CONFIG_PATH = Path(
 )
 
 DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
-    "schema_version": "5.4.3",
+    "schema_version": "5.5.0",
     "directional": {
         "allowed_assets_1h": ["BTC", "SOL", "ETH"],
         "allowed_assets_15m_maker": ["BTC", "SOL", "ETH"],
@@ -159,12 +159,14 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "bond1_maker_per_market_cap_pct": 0.365,
         "bond1_maker_fanout_clip_usd_seed": 0.0,
         "mkr_lock1_max_concurrent_slots": 1,
+        "s2_maker_max_concurrent_slots": 1,
         "bond1_max_join_queue_usd": 350.0,
         "bond1_buried_cancel_sec": 15.0,
         "bridged_zero_fee_cap_usd_seed": 60.0,
         "bridged_zero_fee_cap_usd_growth": 120.0,
         "enable_reward_locked_carry_live_bridge": True,
         "reward_harvester_cap_usd_seed": 12.0,
+        "reward_reserved_slot_usd_seed": 0.0,
         "box_collateral_reserve_usd": 0.0,
         "max_concurrent_riskless_boxes": 10,
         "seed_max_lockup_hours": 8.0,
@@ -192,6 +194,46 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "gatling_base_clip_bridge_usd": 18.5,
         "enable_s2_twap_lock_live": True,
         "enable_ungraduated_v3_math_live": True,
+        "enable_c1_gasless_batch_merge": True,
+        "enable_partial_fak_single_leg_sweep": True,
+        "partial_fak_min_shares": 5.0,
+        "enable_nr_m1_dead_seed_fanout": True,
+        "enable_xtrack1_expanded_handles": True,
+        "enable_xtrack1_6handle_dead_no": True,
+        "enable_zerofee1_mergeable_sweeper": True,
+        "zerofee1_min_net_edge_bps": 45.0,
+        "enable_esports1_bo3_intermission_box": True,
+        "enable_esports1_intermission_hc_total_box": True,
+        "enable_rt_mono1_scalar_ladders": True,
+        "enable_perp1_maker_precancel_leadlag": True,
+        "perp1_adverse_move_bps_300ms": 8.0,
+        "d1_short_tte_max_box_cost_net": 0.9925,
+        "d1_short_tte_threshold_sec": 180.0,
+        "sll_sticky_fifo_rank1_min_hold_sec": 900.0,
+        "bond1_max_outbid_repegs": 3,
+        "enable_ws_clinch_sniper": True,
+        "ws_clinch_watchlist_max_tokens": 450,
+        "enable_uma_liveness_2h_recycle": True,
+        "enable_event_slot_diversification": True,
+        "reward_dynamic_unlock_equity_usd": 125.0,
+        "pre_split_dynamic_unlock_equity_usd": 140.0,
+        "ws_market_num_shards": 4,
+        "enable_recorder_d1fast_ipc": True,
+        "enable_official_league_direct_feeds": True,
+        "enable_auto_wrap_legacy_usdce_to_pusd": True,
+        "pre_split_max_concurrent_slots": 3,
+        "strict_zero_legging_pre_split_lock": False,
+        "strict_pure_riskless_mode": False,
+        "enable_zero_loss_open_carry_velocity_recycle": True,
+        "enable_clinched_dead_leg_split_sell": True,
+        "enable_fast_1rtt_cancel": True,
+        "enable_ws_zero_rest_maker_hedge": True,
+        "enable_synthetic_maker_ws_shield": True,
+        "synthetic_maker_min_hedge_depth_mult": 4.0,
+        "synthetic_maker_unwind_breaker_usd": 0.50,
+        "synthetic_maker_repeg_debounce_sec": 0.50,
+        "paused_s2_reserve_floor_usd": 2.00,
+        "sll_preempt_birth_grace_sec": 45.0,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -275,8 +317,38 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("risk_controller loss/ruin bounds invalid")
 
     b_cfg = out["riskless_boxes"]
-    if not (0.90 <= b_cfg["d1_max_box_cost_net"] <= 0.996) or not (0.90 <= b_cfg["cm_b3_max_walk_cap"] <= 0.996):
-        raise ValueError("riskless_boxes walk caps out of [0.90, 0.996] range")
+    if (
+        not (0.90 <= b_cfg["d1_max_box_cost_net"] <= 0.996)
+        or not (0.90 <= b_cfg["cm_b3_max_walk_cap"] <= 0.996)
+        or not (0.90 <= b_cfg["d1_short_tte_max_box_cost_net"] <= 0.995)
+    ):
+        raise ValueError("riskless_boxes walk caps out of safe range")
+    if not (15.0 <= b_cfg["d1_short_tte_threshold_sec"] <= 600.0):
+        raise ValueError("riskless_boxes.d1_short_tte_threshold_sec must be in [15.0, 600.0]")
+    if not (30.0 <= b_cfg["sll_sticky_fifo_rank1_min_hold_sec"] <= 3600.0):
+        raise ValueError("riskless_boxes.sll_sticky_fifo_rank1_min_hold_sec must be in [30.0, 3600.0]")
+    if not (1 <= int(b_cfg["bond1_max_outbid_repegs"]) <= 10):
+        raise ValueError("riskless_boxes.bond1_max_outbid_repegs must be in [1, 10]")
+    if not (4 <= int(b_cfg["ws_clinch_watchlist_max_tokens"]) <= 460):
+        raise ValueError("riskless_boxes.ws_clinch_watchlist_max_tokens must be in [4, 460]")
+    if not (50.0 <= float(b_cfg["reward_dynamic_unlock_equity_usd"]) <= 5000.0):
+        raise ValueError("riskless_boxes.reward_dynamic_unlock_equity_usd must be in [50.0, 5000.0]")
+    if not (50.0 <= float(b_cfg["pre_split_dynamic_unlock_equity_usd"]) <= 5000.0):
+        raise ValueError("riskless_boxes.pre_split_dynamic_unlock_equity_usd must be in [50.0, 5000.0]")
+    if not (1 <= int(b_cfg["ws_market_num_shards"]) <= 8):
+        raise ValueError("riskless_boxes.ws_market_num_shards must be in [1, 8]")
+    if not (1 <= int(b_cfg["pre_split_max_concurrent_slots"]) <= 4):
+        raise ValueError("riskless_boxes.pre_split_max_concurrent_slots must be in [1, 4]")
+    if not (2.0 <= float(b_cfg["synthetic_maker_min_hedge_depth_mult"]) <= 10.0):
+        raise ValueError("riskless_boxes.synthetic_maker_min_hedge_depth_mult must be in [2.0, 10.0]")
+    if not (0.10 <= float(b_cfg["synthetic_maker_unwind_breaker_usd"]) <= 5.00):
+        raise ValueError("riskless_boxes.synthetic_maker_unwind_breaker_usd must be in [0.10, 5.00]")
+    if not (0.10 <= float(b_cfg["synthetic_maker_repeg_debounce_sec"]) <= 5.00):
+        raise ValueError("riskless_boxes.synthetic_maker_repeg_debounce_sec must be in [0.10, 5.00]")
+    if not (0.0 <= float(b_cfg["paused_s2_reserve_floor_usd"]) <= 50.0):
+        raise ValueError("riskless_boxes.paused_s2_reserve_floor_usd must be in [0.0, 50.0]")
+    if not (0.0 <= float(b_cfg["sll_preempt_birth_grace_sec"]) <= 600.0):
+        raise ValueError("riskless_boxes.sll_preempt_birth_grace_sec must be in [0.0, 600.0]")
     return out
 
 
@@ -379,10 +451,15 @@ class HotReloadConfigManager:
                     rst = self.risk_config_path.stat()
                     rst_sig = (rst.st_mtime_ns, rst.st_size)
                     if self._last_risk_sig == (-1, -1):
+                        raw_rk = json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        if isinstance(raw_rk, dict):
+                            self._risk_snapshot = raw_rk
                         self._last_risk_sig = rst_sig
                         self._last_risk_mtime_ns = rst.st_mtime_ns
                     elif rst_sig != self._last_risk_sig:
-                        json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        raw_rk = json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        if isinstance(raw_rk, dict):
+                            self._risk_snapshot = raw_rk
                         self._last_risk_sig = rst_sig
                         self._last_risk_mtime_ns = rst.st_mtime_ns
                         changed = True
@@ -394,6 +471,10 @@ class HotReloadConfigManager:
                 except Exception as cb_exc:
                     logger.error("[CONFIG_HOT_RELOAD] Callback error: %s", cb_exc)
             return changed, self._snapshot
+
+    @property
+    def risk_snapshot(self) -> Dict[str, Any]:
+        return getattr(self, "_risk_snapshot", None) or {}
 
 
 GLOBAL_GOVERNANCE_MANAGER = HotReloadConfigManager()
@@ -545,6 +626,30 @@ def evaluate_ev_terminal_twap_t5_salvage(
     return False, wrong_side_pct, diag
 
 
+_CASHFLOW_WD_CACHE: Dict[str, Any] = {"mtime_ns": -1, "val": 0.0, "checked_ts": 0.0}
+
+
+def _cached_post_lock_net_withdrawals_usd() -> float:
+    now_t = time.time()
+    if (now_t - float(_CASHFLOW_WD_CACHE.get("checked_ts") or 0.0)) < 5.0:
+        return float(_CASHFLOW_WD_CACHE.get("val") or 0.0)
+    _CASHFLOW_WD_CACHE["checked_ts"] = now_t
+    try:
+        from src.polymarket_research.economic_attribution_ledger import (
+            external_cashflows_config_path,
+            load_external_cashflows_summary,
+        )
+        p = external_cashflows_config_path()
+        mt = p.stat().st_mtime_ns if p.exists() else 0
+        if mt != _CASHFLOW_WD_CACHE.get("mtime_ns"):
+            s = load_external_cashflows_summary()
+            _CASHFLOW_WD_CACHE["val"] = max(0.0, -float(s.get("net_deposits_post_lock_usd") or 0.0))
+            _CASHFLOW_WD_CACHE["mtime_ns"] = mt
+    except Exception:
+        pass
+    return float(_CASHFLOW_WD_CACHE.get("val") or 0.0)
+
+
 def get_unleashed_v5_tier_profile(
     total_equity: float,
     high_water_mark_equity: Optional[float] = None,
@@ -569,8 +674,11 @@ def get_unleashed_v5_tier_profile(
     b_cfg = snap.get("riskless_boxes", DEFAULT_HOLISTIC_CONFIG["riskless_boxes"])
 
     eq = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
+    _net_wd = float(snap.get("_net_withdrawals_post_lock_usd", 0.0) or 0.0)
+    if _net_wd <= 0.0 and cfg is None:
+        _net_wd = _cached_post_lock_net_withdrawals_usd()
     hwm = (
-        float(high_water_mark_equity)
+        max(0.0, float(high_water_mark_equity) - _net_wd)
         if (high_water_mark_equity is not None and math.isfinite(float(high_water_mark_equity)) and float(high_water_mark_equity) > 0.0)
         else eq
     )
@@ -580,7 +688,7 @@ def get_unleashed_v5_tier_profile(
     b1 = float(s_cfg.get("seed_survival_max_equity", 95.0)) + (hyst if previous_tier == "UNLEASHED_LAUNCH" else 0.0)
     b2 = float(s_cfg.get("recovery_max_equity", 250.0)) + (hyst if previous_tier == "HYPER_GROWTH" else 0.0)
     b3 = float(s_cfg.get("growth_max_equity", 1000.0)) + (hyst if previous_tier == "SCALE" else 0.0)
-    hard_floor = float(r_cfg.get("hard_ruin_floor_usd", 42.0))
+    hard_floor = max(5.0, round(float(r_cfg.get("hard_ruin_floor_usd", 42.0)) - _net_wd, 2))
 
     bond1_mkt_pct = float(b_cfg.get("bond1_per_market_cap_pct", 0.65))
     bond1_mkr_mkt_pct = float(b_cfg.get("bond1_maker_per_market_cap_pct", 0.365))
@@ -693,7 +801,7 @@ def passes_capital_velocity_hurdle(
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND", "COMPLETE_SET"} or (
+    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} or (
         str(box_type or "").upper() == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
     ):
         return True, "OK"
@@ -703,7 +811,17 @@ def passes_capital_velocity_hurdle(
     min_bps_hr = float(prof["min_bps_per_hour"])
 
     raw_hrs = max(0.05, float(rem_tte_sec) / 3600.0)
-    eff_hrs = min(raw_hrs, 4.0) if fast_recycle_eligible else raw_hrs
+    _sl_vel_u = str(sleeve_src or "").strip().upper()
+    _rb_vel = (cfg or GLOBAL_GOVERNANCE_MANAGER.snapshot).get("riskless_boxes", {})
+    _uma_2h_cap = (
+        2.0
+        if (
+            _sl_vel_u in {"BOND1_UMA_RESOLUTION_CARRY", "UMA_READY1_LIVENESS_PRIORITY"}
+            and bool(_rb_vel.get("enable_uma_liveness_2h_recycle", True))
+        )
+        else 4.0
+    )
+    eff_hrs = min(raw_hrs, _uma_2h_cap) if fast_recycle_eligible else raw_hrs
     floor_bps = max(0.0, (1.0 - float(box_cost_net)) * 10000.0)
     floor_bps_hr = floor_bps / max(0.10, eff_hrs)
     _seed_sports_box = (prof.get("tier") in {"UNLEASHED_LAUNCH", "SEED", "SEED_SURVIVAL"}) and (

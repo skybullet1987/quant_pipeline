@@ -86,7 +86,11 @@ SLEEVE_2_STATE_FILE = DATA_DIR / "state_sleeve_304_315.json"
 # ==============================================================================
 # SLEEVE SOL & XRP SHADOW (v3.9.2 Volatility-Normalized 15m/1h Graduation Trackers)
 # ==============================================================================
-ENABLE_SOL_SHADOW_SLEEVE = True
+try:
+    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _PT_GOV_MGR
+    ENABLE_SOL_SHADOW_SLEEVE = bool(_PT_GOV_MGR.snapshot.get("shadow_governance", {}).get("enable_sol_15m_1h_shadow", True))
+except Exception:
+    ENABLE_SOL_SHADOW_SLEEVE = True
 SOL_SHADOW_INITIAL_CAPITAL = 500.0
 SOL_SHADOW_TICKET_NOTIONAL = 12.0
 SOL_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_sol_v392.jsonl"
@@ -2226,6 +2230,7 @@ class PolymarketForwardPaperTrader:
             except (NotImplementedError, RuntimeError, ValueError):
                 pass
 
+        _last_sg_sync_ts = 0.0
         while True:
             if self._shutdown_requested:
                 self.wfo_shadow.poll_tick(True)
@@ -2233,6 +2238,17 @@ class PolymarketForwardPaperTrader:
                 print("[SHUTDOWN] Paper trader state flushed; exiting cleanly (STOPPED_GRACEFULLY).", flush=True)
                 break
             try:
+                _now_pt = time.time()
+                if (_now_pt - _last_sg_sync_ts) >= 5.0:
+                    _last_sg_sync_ts = _now_pt
+                    try:
+                        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _PT_LIVE_GOV
+                        _sg_live = _PT_LIVE_GOV.snapshot.get("shadow_governance", {}) or {}
+                        globals()["ENABLE_SLEEVE_304_315"] = bool(_sg_live.get("enable_eth_1h_shadow", False))
+                        globals()["ENABLE_SOL_SHADOW_SLEEVE"] = bool(_sg_live.get("enable_sol_15m_1h_shadow", True))
+                        globals()["ENABLE_XRP_SHADOW_SLEEVE"] = bool(_sg_live.get("enable_xrp_shadow", False))
+                    except Exception:
+                        pass
                 # 1. Ingest new zero-latency shock triggers (<1ms from recorder detection)
                 if TRIGGER_FILE.exists():
                     current_trig_size = TRIGGER_FILE.stat().st_size

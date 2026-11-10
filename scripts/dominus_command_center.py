@@ -25,14 +25,18 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import base64
+import gzip
 import json
 import os
+import queue
 import subprocess
 import threading
 import time
 import webbrowser
+import zlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 REMOTE_PROBE_PY = r"""# -*- coding: utf-8 -*-
 import calendar, json, os, pathlib, re, sqlite3, statistics, subprocess, sys, time, urllib.request
@@ -72,6 +76,10 @@ def _to_ottawa_dt(val):
 def _fmt_et(val, fmt="%m-%d %H:%M:%S"):
     dt = _to_ottawa_dt(val)
     return dt.strftime(fmt) if dt is not None else ""
+
+def _to_unix(val):
+    dt = _to_ottawa_dt(val)
+    return dt.timestamp() if dt is not None else None
 
 def _is_raw_stub_title(t):
     s = str(t or "").strip()
@@ -240,8 +248,12 @@ if lh_path.exists():
             if _eln.startswith("POLYGON_FUNDER_ADDRESS="):
                 _wallet_addr = _eln.split("=", 1)[1].strip().strip('"').strip("'")
                 break
+    _p_state = globals().get("_PERSIST") if isinstance(globals().get("_PERSIST"), dict) else None
     _onchain_cash = None
-    if _wallet_addr.startswith("0x") and len(_wallet_addr) == 42:
+    _oc_cached = (_p_state.get("onchain_cash_cache") if _p_state is not None else None)
+    if isinstance(_oc_cached, tuple) and len(_oc_cached) == 2 and (time.time() - float(_oc_cached[0])) <= 15.0:
+        _onchain_cash = _oc_cached[1]
+    elif _wallet_addr.startswith("0x") and len(_wallet_addr) == 42:
         _call_d = "0x70a08231" + _wallet_addr[2:].lower().rjust(64, "0")
         _batch = json.dumps([
             {"jsonrpc": "2.0", "method": "eth_call", "params": [{"to": "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB", "data": _call_d}, "latest"], "id": 1},
@@ -249,11 +261,17 @@ if lh_path.exists():
         ]).encode("utf-8")
         for _rpc_u in ("https://polygon-bor-rpc.publicnode.com", "https://polygon-rpc.com", "https://1rpc.io/matic"):
             try:
-                _req = urllib.request.Request(_req_u := _rpc_u, data=_batch, headers={"Content-Type": "application/json", "User-Agent": _HTTP_UA})
+                _req = urllib.request.Request(
+                    _req_u := _rpc_u,
+                    data=_batch,
+                    headers={"Content-Type": "application/json", "User-Agent": _HTTP_UA, "Connection": "close"},
+                )
                 with urllib.request.urlopen(_req, timeout=1.8) as _resp:
                     _rj = json.loads(_resp.read().decode("utf-8"))
                 if isinstance(_rj, list) and len(_rj) == 2 and all(isinstance(x, dict) and str(x.get("result") or "").startswith("0x") for x in _rj):
                     _onchain_cash = sum(int(x["result"], 16) / 1e6 for x in _rj)
+                    if _p_state is not None:
+                        _p_state["onchain_cash_cache"] = (time.time(), _onchain_cash)
                     break
             except Exception:
                 continue
@@ -261,7 +279,7 @@ if lh_path.exists():
     _state_cash = float(s.get("live_bankroll", 0.0) or 0.0)
     _wallet_cash = float(_onchain_cash) if _onchain_cash is not None else _state_cash
 
-    # Authoritative live open orders directly from Polymarket CLOB L2 (cached 12s in /tmp)
+    # Authoritative live open orders directly from Polymarket CLOB L2 (cached 15s in /tmp; single reusable read-only client)
     resting_orders = []
     _clob_buy_quoting_usd = 0.0
     _resting_redeem_edge_usd = 0.0
@@ -271,7 +289,7 @@ if lh_path.exists():
         _ord_cache_p = pathlib.Path("/tmp/dominus_clob_open_orders_cache.json")
         _tok_meta_cache_p = pathlib.Path("/tmp/dominus_clob_tok_meta_cache.json")
         _raw_ords = None
-        if _ord_cache_p.exists() and (time.time() - _ord_cache_p.stat().st_mtime) <= 12.0:
+        if _ord_cache_p.exists() and (time.time() - _ord_cache_p.stat().st_mtime) <= 15.0:
             try:
                 _raw_ords = json.loads(_ord_cache_p.read_text(encoding="utf-8"))
             except Exception:
@@ -283,11 +301,23 @@ if lh_path.exists():
                     sys.path.insert(0, str(root))
                 if str(root / "src/polymarket_research") not in sys.path:
                     sys.path.insert(0, str(root / "src/polymarket_research"))
-                from dotenv import load_dotenv as _ld_env
-                _ld_env(root / ".env")
-                from polymarket_live_executor import PolymarketLiveExecutor as _PLExec
-                _ex_ro = _PLExec(dry_run=False)
-                _raw_ords = _ex_ro.get_open_orders() or []
+                os.environ["PM_ENABLE_TLS_KEEPALIVE"] = "0"
+                os.environ["PM_ENABLE_USER_WS"] = "0"
+                os.environ["PM_DISABLE_FAST_V2_SIGNER"] = "1"
+                _ex_ro = _p_state.get("clob_ro_exec") if _p_state is not None else None
+                if _ex_ro is None:
+                    from dotenv import load_dotenv as _ld_env
+                    _ld_env(root / ".env")
+                    from polymarket_live_executor import PolymarketLiveExecutor as _PLExec
+                    _ex_ro = _PLExec(dry_run=False)
+                    if _p_state is not None:
+                        _p_state["clob_ro_exec"] = _ex_ro
+                try:
+                    _raw_ords = _ex_ro.get_open_orders() or []
+                except Exception:
+                    if _p_state is not None:
+                        _p_state.pop("clob_ro_exec", None)
+                    raise
             try:
                 _ord_cache_p.write_text(json.dumps(_raw_ords), encoding="utf-8")
             except Exception:
@@ -313,6 +343,7 @@ if lh_path.exists():
                         "expiry_ts": float(_cd.get("expiry_ts") or _prev_m.get("expiry_ts") or 0.0),
                         "title": "" if _is_raw_stub_title(_prev_ttl) else _prev_ttl,
                         "fallback_label": _fb_lbl,
+                        "neg_ts": float(_prev_m.get("neg_ts") or 0.0),
                     }
             except Exception:
                 pass
@@ -354,14 +385,18 @@ if lh_path.exists():
             _m_info = _tok_meta.get(_aid) or {}
             _mid_o = str(_m_info.get("market_id") or "")
             _ttl_o = str(_m_info.get("title") or "")
-            if _is_raw_stub_title(_ttl_o):
+            if _is_raw_stub_title(_ttl_o) and (time.time() - float(_m_info.get("neg_ts") or 0.0)) >= 3600.0:
+                _resolved_o = False
                 try:
                     _gurl = (
                         f"https://gamma-api.polymarket.com/markets/{_mid_o}"
                         if _mid_o.isdigit()
                         else f"https://gamma-api.polymarket.com/markets?clob_token_ids={_aid}"
                     )
-                    _rq_o = urllib.request.Request(_gurl, headers={"User-Agent": _HTTP_UA, "Accept": "application/json"})
+                    _rq_o = urllib.request.Request(
+                        _gurl,
+                        headers={"User-Agent": _HTTP_UA, "Accept": "application/json", "Connection": "close"},
+                    )
                     with urllib.request.urlopen(_rq_o, timeout=1.5) as _ro:
                         _gj = json.loads(_ro.read().decode("utf-8"))
                     if isinstance(_gj, list) and _gj:
@@ -370,12 +405,16 @@ if lh_path.exists():
                         _q_txt = str(_gj.get("question") or _gj.get("title") or "").strip()
                         if not _mid_o and _gj.get("id"):
                             _mid_o = str(_gj.get("id"))
-                        if _q_txt:
+                        if _q_txt and not _is_raw_stub_title(_q_txt):
                             _ttl_o = _q_txt
-                            _tok_meta[_aid] = {**_m_info, "market_id": _mid_o, "title": _ttl_o}
+                            _tok_meta[_aid] = {**_m_info, "market_id": _mid_o, "title": _ttl_o, "neg_ts": 0.0}
                             _meta_dirty = True
+                            _resolved_o = True
                 except Exception:
                     pass
+                if not _resolved_o:
+                    _tok_meta[_aid] = {**_m_info, "market_id": _mid_o, "neg_ts": time.time()}
+                    _meta_dirty = True
             if _is_raw_stub_title(_ttl_o):
                 _ttl_o = str(_m_info.get("fallback_label") or "") or f"Market #{_mid_o or _aid[:10]}"
             _exp_o = float(_m_info.get("expiry_ts") or 0.0)
@@ -645,26 +684,49 @@ if lh_path.exists():
         _tok_a = str(p.get("token_id") or "")
         _title_a = str(p.get("title") or p.get("question") or "")
         if _is_raw_stub_title(_title_a) and _mid_a.isdigit():
-            try:
-                _rq_m = urllib.request.Request(f"https://gamma-api.polymarket.com/markets/{_mid_a}", headers={"User-Agent": _HTTP_UA, "Accept": "application/json"})
-                with urllib.request.urlopen(_rq_m, timeout=1.4) as _rm:
-                    _title_a = str(json.loads(_rm.read().decode("utf-8")).get("question") or "")
-            except Exception:
-                _title_a = ""
+            _tm_a = (_tok_meta.get(f"mid:{_mid_a}") or _tok_meta.get(_tok_a) or {}) if '_tok_meta' in locals() else {}
+            _cached_ta = str(_tm_a.get("title") or "").strip()
+            if _cached_ta and not _is_raw_stub_title(_cached_ta):
+                _title_a = _cached_ta
+            elif (time.time() - float(_tm_a.get("neg_ts") or 0.0)) >= 3600.0:
+                try:
+                    _rq_m = urllib.request.Request(
+                        f"https://gamma-api.polymarket.com/markets/{_mid_a}",
+                        headers={"User-Agent": _HTTP_UA, "Accept": "application/json", "Connection": "close"},
+                    )
+                    with urllib.request.urlopen(_rq_m, timeout=1.4) as _rm:
+                        _title_a = str(json.loads(_rm.read().decode("utf-8")).get("question") or "").strip()
+                except Exception:
+                    _title_a = ""
+                if '_tok_meta' in locals():
+                    if _title_a and not _is_raw_stub_title(_title_a):
+                        _tok_meta[f"mid:{_mid_a}"] = {"market_id": _mid_a, "title": _title_a, "neg_ts": 0.0}
+                    else:
+                        _tok_meta[f"mid:{_mid_a}"] = {"market_id": _mid_a, "neg_ts": time.time()}
+                    _meta_dirty = True
         _bbid_a, _bask_a = None, None
         if _tok_a:
-            try:
-                _rq_b = urllib.request.Request(f"https://clob.polymarket.com/book?token_id={_tok_a}", headers={"User-Agent": _HTTP_UA})
-                with urllib.request.urlopen(_rq_b, timeout=1.2) as _rb:
-                    _bk_j = json.loads(_rb.read().decode("utf-8"))
-                _bds = [float(b["price"]) for b in (_bk_j.get("bids") or []) if float(b.get("size", 0) or 0) > 0]
-                _aks = [float(a["price"]) for a in (_bk_j.get("asks") or []) if float(a.get("size", 0) or 0) > 0]
-                if _bds:
-                    _bbid_a = round(max(_bds), 4)
-                if _aks:
-                    _bask_a = round(min(_aks), 4)
-            except Exception:
-                pass
+            _ab_cache = _p_state.setdefault("act_book_cache", {}) if _p_state is not None else {}
+            _ab_ent = _ab_cache.get(_tok_a)
+            if isinstance(_ab_ent, tuple) and len(_ab_ent) == 3 and (time.time() - float(_ab_ent[0])) <= 15.0:
+                _bbid_a, _bask_a = _ab_ent[1], _ab_ent[2]
+            else:
+                try:
+                    _rq_b = urllib.request.Request(
+                        f"https://clob.polymarket.com/book?token_id={_tok_a}",
+                        headers={"User-Agent": _HTTP_UA, "Connection": "close"},
+                    )
+                    with urllib.request.urlopen(_rq_b, timeout=1.2) as _rb:
+                        _bk_j = json.loads(_rb.read().decode("utf-8"))
+                    _bds = [float(b["price"]) for b in (_bk_j.get("bids") or []) if float(b.get("size", 0) or 0) > 0]
+                    _aks = [float(a["price"]) for a in (_bk_j.get("asks") or []) if float(a.get("size", 0) or 0) > 0]
+                    if _bds:
+                        _bbid_a = round(max(_bds), 4)
+                    if _aks:
+                        _bask_a = round(min(_aks), 4)
+                    _ab_cache[_tok_a] = (time.time(), _bbid_a, _bask_a)
+                except Exception:
+                    pass
         _mtm_b_u = round(_sh_a * _bbid_a, 2) if (_bbid_a is not None and _sh_a > 0) else _not_a
         _tp_v_u = round(_sh_a * _tp_a, 2) if (_tp_a > 0 and _sh_a > 0) else _mtm_b_u
         _mtm_bid_total += _mtm_b_u
@@ -723,20 +785,37 @@ if lh_path.exists():
         if _is_raw_stub_title(_q_c) and '_tok_meta' in locals():
             _tm_c = _tok_meta.get(_tok_c) or _tok_meta.get(f"mid:{_mid_c}") or {}
             _q_c = str(_tm_c.get("title") or "").strip()
-            if _is_raw_stub_title(_q_c) and _mid_c.isdigit() and locals().get("_closed_g_fetches", 0) < 4:
+            if (
+                _is_raw_stub_title(_q_c)
+                and _mid_c.isdigit()
+                and (time.time() - float(_tm_c.get("neg_ts") or 0.0)) >= 3600.0
+                and locals().get("_closed_g_fetches", 0) < 4
+            ):
                 _closed_g_fetches = locals().get("_closed_g_fetches", 0) + 1
+                _resolved_c = False
                 try:
-                    _rq_mc = urllib.request.Request(f"https://gamma-api.polymarket.com/markets/{_mid_c}", headers={"User-Agent": _HTTP_UA, "Accept": "application/json"})
+                    _rq_mc = urllib.request.Request(
+                        f"https://gamma-api.polymarket.com/markets/{_mid_c}",
+                        headers={"User-Agent": _HTTP_UA, "Accept": "application/json", "Connection": "close"},
+                    )
                     with urllib.request.urlopen(_rq_mc, timeout=1.0) as _rmc:
                         _gj_c = json.loads(_rmc.read().decode("utf-8"))
                     if isinstance(_gj_c, dict) and _gj_c.get("question"):
-                        _q_c = str(_gj_c["question"]).strip()
-                        _tok_meta[f"mid:{_mid_c}"] = {"market_id": _mid_c, "title": _q_c}
-                        if _tok_c:
-                            _tok_meta[_tok_c] = {"market_id": _mid_c, "title": _q_c}
-                        _meta_dirty = True
+                        _cand_qc = str(_gj_c["question"]).strip()
+                        if _cand_qc and not _is_raw_stub_title(_cand_qc):
+                            _q_c = _cand_qc
+                            _tok_meta[f"mid:{_mid_c}"] = {"market_id": _mid_c, "title": _q_c, "neg_ts": 0.0}
+                            if _tok_c:
+                                _tok_meta[_tok_c] = {**_tm_c, "market_id": _mid_c, "title": _q_c, "neg_ts": 0.0}
+                            _meta_dirty = True
+                            _resolved_c = True
                 except Exception:
                     pass
+                if not _resolved_c:
+                    _tok_meta[f"mid:{_mid_c}"] = {**_tm_c, "market_id": _mid_c, "neg_ts": time.time()}
+                    if _tok_c:
+                        _tok_meta[_tok_c] = {**_tm_c, "market_id": _mid_c, "neg_ts": time.time()}
+                    _meta_dirty = True
         recent_closed.append({
             "time_utc": str(c.get("exit_time_utc") or c.get("settled_at_utc") or c.get("entry_time_utc") or "")[:19].replace("T", " "),
             "time_et": _fmt_et(_raw_ts_c, "%m-%d %H:%M:%S"),
@@ -778,20 +857,49 @@ if lh_path.exists():
     else:
         _s1h_desc = "Live 1h Crypto Directional"
         _s15_desc = "Live 15m Crypto Directional"
-    _b1_pool_pct = int(round(100.0 * float(_bcfg.get("bond1_max_pool_fraction", 0.78) or 0.78)))
-    _b1_mkt_cap = int(round(float(_bcfg.get("bond1_max_notional_per_market_usd", 45.0) or 45.0)))
+    _b1_pool_pct = int(
+        round(
+            100.0
+            * float(
+                _bcfg.get("seed_zero_loss_focus_bond1_pool_pct")
+                or _bcfg.get("bond1_max_pool_fraction", 0.80)
+                or 0.80
+            )
+        )
+    )
+    _b1_mkt_cap = int(round(float(_bcfg.get("bond1_per_market_cap_usd_seed") or _bcfg.get("bond1_max_notional_per_market_usd", 45.0) or 45.0)))
+    _strict_pure_rl_d = bool(_bcfg.get("strict_pure_riskless_mode", False))
+    _rw_unlock_eq_d = float(_bcfg.get("reward_dynamic_unlock_equity_usd", 125.0) or 125.0)
+    _PURE_RL_BLOCKED_D = {
+        "S2_RTDS_EXACT_TWAP_INTEGRATOR",
+        "S2_EXACT_TWAP_LOCK",
+        "CM_B3_PYTH_BARRIER_BOX",
+        "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+        "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",
+    }
+
+    def _fmt_rl_desc(sl_id: str, live_desc: str, paused_reason: str = "Fee/Legging Quarantine (Shadow Only; Zero Live Exposure)") -> str:
+        su = sl_id.strip().upper()
+        if su in _PAUSED_RB_SET:
+            return f"PAUSED — {paused_reason}"
+        if _strict_pure_rl_d and su in _PURE_RL_BLOCKED_D:
+            return "PAUSED — Strict Pure-Riskless Lock (Shadow Only; Zero Live Exposure)"
+        if su == "MKR_REWARD_LOCKED_CARRY" and (not bool(_bcfg.get("enable_reward_locked_carry_live_bridge", False)) or _live_equity_usd < _rw_unlock_eq_d):
+            return f"GATED (<${_rw_unlock_eq_d:.0f} Equity Gate — Zero Capital Squatting)"
+        return live_desc
+
     live_strat_meta = [
-        ("BOND1_UMA_RESOLUTION_CARRY", f"LIVE ACTIVE — 0%-Fee UMA Resolution Carry ({_b1_pool_pct}% Pool Cap, <=${_b1_mkt_cap}/mkt, Preemptable)"),
-        ("D1_SAME_ORACLE_DOMINANCE_BOX", f"LIVE ACTIVE — 32/32 Same-Oracle Crypto Dominance Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)"),
-        ("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})"),
-        ("S2_RTDS_EXACT_TWAP_INTEGRATOR", "LIVE ACTIVE — PolyBolt V2 1Hz Chainlink Final-45s Exact TWAP Lock"),
-        ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)"),
-        ("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)"),
-        ("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround"),
-        ("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LIVE ACTIVE — 12/12 Deadline & Scalar Dominance Box (<=24h Fast-Recycle)"),
-        ("COND1_MACRO_PARTITION_BOX", "LIVE ACTIVE — 9/9 Macro Partition Dominance Box (<=24h, <=$0.985 net)"),
-        ("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "LIVE ACTIVE — 0%-Fee Cross-Market Implication Box"),
-        ("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", "LIVE ACTIVE — 0%-Fee In-Game Milestone Irreversible Lock"),
+        ("BOND1_UMA_RESOLUTION_CARRY", _fmt_rl_desc("BOND1_UMA_RESOLUTION_CARRY", f"LIVE ACTIVE — 0%-Fee UMA Resolution Carry ({_b1_pool_pct}% Pool Cap, <=${_b1_mkt_cap}/mkt, Preemptable)")),
+        ("D1_SAME_ORACLE_DOMINANCE_BOX", _fmt_rl_desc("D1_SAME_ORACLE_DOMINANCE_BOX", f"LIVE ACTIVE — 32/32 Same-Oracle Crypto Dominance Box (<=${float(_bcfg.get('d1_max_box_cost_net', 0.985)):.3f} net)")),
+        ("CM_B3_PYTH_BARRIER_BOX", _fmt_rl_desc("CM_B3_PYTH_BARRIER_BOX", f"LIVE ACTIVE — 0%-Fee Pyth Commodity Barrier Box (<=${float(_bcfg.get('cm_b3_max_walk_cap', 0.982)):.3f})", "Pyth Barrier Basis Quarantine (Shadow Only; Zero Live Exposure)")),
+        ("S2_RTDS_EXACT_TWAP_INTEGRATOR", _fmt_rl_desc("S2_RTDS_EXACT_TWAP_INTEGRATOR", "LIVE ACTIVE — PolyBolt V2 1Hz Chainlink Final-45s Exact TWAP Lock", "Oracle TWAP Basis Quarantine (Shadow Only; Zero Live Exposure)")),
+        ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", _fmt_rl_desc("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "LIVE ACTIVE — 0%-Fee Post-Clinch Maker Sweeper (p>=99.9%, <=$22, Preemptable)")),
+        ("MKR_REWARD_LOCKED_CARRY", _fmt_rl_desc("MKR_REWARD_LOCKED_CARRY", "LIVE ACTIVE — 100% Dead-NO Weather & Monotonic Counter Top-Queue Carry (<=$12)", "Reward Carry Slot Quarantine (Zero Capital Squatting)")),
+        ("NR2_CONVERT_NO_SUBSET_ARB", _fmt_rl_desc("NR2_CONVERT_NO_SUBSET_ARB", "LIVE ACTIVE — NegRisk NR2/NR3 Atomic Convert & Synthetic All-YES Overround")),
+        ("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", _fmt_rl_desc("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "LIVE ACTIVE — 12/12 Deadline & Scalar Dominance Box (<=24h Fast-Recycle)")),
+        ("COND1_MACRO_PARTITION_BOX", _fmt_rl_desc("COND1_MACRO_PARTITION_BOX", "LIVE ACTIVE — 9/9 Macro Partition Dominance Box (<=24h, <=$0.985 net)")),
+        ("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", _fmt_rl_desc("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX", "LIVE ACTIVE — 0%-Fee Cross-Market Implication Box")),
+        ("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", _fmt_rl_desc("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK", "LIVE ACTIVE — 0%-Fee In-Game Milestone Irreversible Lock")),
         (
             "PRE_SPLIT_OVERROUND_MACHINE_GUN",
             "LIVE ACTIVE — $12 BTC 15m/5m Atomic Complete-Set Overround Sweeper + 75s Merge"
@@ -821,7 +929,9 @@ if lh_path.exists():
         _act_rl = (
             _is_pure_riskless_sleeve(sl_k)
             and (not (_riskless_only_d and sl_k.upper() in _UNHEDGED_DIR_SLEEVES))
+            and (not (_strict_pure_rl_d and sl_k.upper() in _PURE_RL_BLOCKED_D))
             and (sl_k != "PRE_SPLIT_OVERROUND_MACHINE_GUN" or _ps_en)
+            and (sl_k != "MKR_REWARD_LOCKED_CARRY" or (bool(_bcfg.get("enable_reward_locked_carry_live_bridge", False)) and _live_equity_usd >= _rw_unlock_eq_d))
         )
         live_strategies.append({**st_d, "desc": desc_s, "is_active_riskless": _act_rl})
     for sl_k, st_d in strat_stats.items():
@@ -837,12 +947,31 @@ if lh_path.exists():
     _rk_st = s.get("risk_state") or {}
     _pure_tot = pure_rl_w + pure_rl_l
     _lock_start_eq = 60.92
-    _post_lock_cash_delta = round(_live_equity_usd - _lock_start_eq, 2)
+    _net_deposits_usd = 0.0
+    _cf_rows = []
+    _cf_path = root / "config/polymarket_external_cashflows.json"
+    if _cf_path.exists():
+        try:
+            _cf_raw = json.loads(_cf_path.read_text(encoding="utf-8"))
+            if isinstance(_cf_raw, dict):
+                _lock_start_eq = round(float(_cf_raw.get("riskless_lock_start_equity_usd") or 60.92), 2)
+                for _c in (_cf_raw.get("cashflows") or []):
+                    if isinstance(_c, dict) and float(_c.get("amount_usd") or 0.0) > 0:
+                        _cf_rows.append(_c)
+                        _sgn = -1.0 if str(_c.get("type") or "DEPOSIT").strip().upper() in ("WITHDRAWAL", "WITHDRAW", "OUTFLOW") else 1.0
+                        _net_deposits_usd += _sgn * abs(float(_c.get("amount_usd") or 0.0))
+        except Exception:
+            pass
+    _net_deposits_usd = round(_net_deposits_usd, 2)
+    _contributed_basis_usd = round(_lock_start_eq + _net_deposits_usd, 2)
+    _post_lock_cash_delta = round(_live_equity_usd - _contributed_basis_usd, 2)
     out["polymarket_live"] = {
         "bankroll_usd": round(_wallet_cash, 2),
         "riskless_lock_start_usd": _lock_start_eq,
+        "net_deposits_post_lock_usd": _net_deposits_usd,
+        "contributed_capital_basis_usd": _contributed_basis_usd,
         "post_lock_cash_delta_usd": _post_lock_cash_delta,
-        "post_lock_cash_pct": round(100.0 * _post_lock_cash_delta / _lock_start_eq, 1),
+        "post_lock_cash_pct": round(100.0 * _post_lock_cash_delta / max(0.01, _contributed_basis_usd), 1),
         "open_book_usd": _active_book_usd,
         "free_cash_usd": _free_cash_usd,
         "quoting_cash_usd": round(_inflight_intents_usd, 2),
@@ -909,7 +1038,7 @@ maker_post_cnt = 0
 _tail_lines = []
 if log_path.exists():
     try:
-        _pat_core = re.compile(r"\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[CEILING -> PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX|\[D1 LIVE|\[D1 FRESH BOOK|\[ATOMIC OVERROUND|\[MAKER ANCHOR|\[SINGLE-LEG LOCK|\[SINGLE-LEG MAKER LOCK|\[BOND1|GRAD8 AUTO|\[CONFIG_HOT_RELOAD\]|\[EV_SUPERVISOR|MACHINE_GUN")
+        _pat_core = re.compile(r"\[STARTUP\]|\[SHUTDOWN\]|\[RECONCILIATION\] Exchange state reconciled|\[CLOSED\]|\[LIVE FILL\]|\[LIVE PHASE 3A|\[CEILING -> PHASE 3A|\[AUTO-REDEEMER\]|\[RECONCILIATION\] Live collateral|\[D1 BOX|\[D1 LIVE|\[D1 FRESH BOOK|\[ATOMIC OVERROUND|\[MAKER ANCHOR|\[SINGLE-LEG LOCK|\[SINGLE-LEG MAKER LOCK|\[BOND1|GRAD8 AUTO|\[CONFIG_HOT_RELOAD\]|\[EV_SUPERVISOR|MACHINE_GUN")
         _pat_mkr = re.compile(r"\[LIVE MAKER ENTRY POSTED\]")
         with open(log_path, "rb") as _lf:
             _sz = log_path.stat().st_size
@@ -918,10 +1047,32 @@ if log_path.exists():
             _tail_lines = _lf.read().decode("utf-8", errors="replace").splitlines()
         if _off > 0 and _tail_lines:
             _tail_lines = _tail_lines[1:]
-        _core_hits = [x for x in _tail_lines if _pat_core.search(x)]
+        _last_boot_idx = -1
+        for _ti, _tln in enumerate(_tail_lines):
+            if "[RECONCILIATION] Exchange state reconciled" in _tln or "[STARTUP] PolymarketLiveHarvester" in _tln:
+                _last_boot_idx = _ti
+        _core_hits = []
+        for _ti, _tln in enumerate(_tail_lines):
+            if not _pat_core.search(_tln):
+                continue
+            if _last_boot_idx >= 0 and _ti < _last_boot_idx and "'NoneType' object is not callable" in _tln:
+                continue
+            _core_hits.append(_tln)
         _mkr_hits = [x for x in _tail_lines if _pat_mkr.search(x)]
         maker_post_cnt = len(_mkr_hits)
-        _merged = sorted(set(_core_hits[-10:] + _mkr_hits[-5:]), key=lambda ln: ln[:23])
+        # Collapse consecutive identical [ERROR] payloads so a burst does not push out surrounding events
+        _dedup_core = []
+        for _cln in _core_hits:
+            _msg_key = _cln[29:] if _cln.startswith("[20") and len(_cln) > 29 else _cln
+            if _dedup_core and "[ERROR]" in _cln and _dedup_core[-1][1] == _msg_key:
+                _dedup_core[-1] = (_cln, _msg_key, _dedup_core[-1][2] + 1)
+            else:
+                _dedup_core.append((_cln, _msg_key, 1))
+        _core_Comp = [
+            (f"{_raw_ln} (x{_cnt})" if _cnt > 1 else _raw_ln)
+            for _raw_ln, _, _cnt in _dedup_core
+        ]
+        _merged = sorted(set(_core_Comp[-10:] + _mkr_hits[-5:]), key=lambda ln: ln[:23])
         _re_log_utc = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}),\d{3} UTC\]\s*")
         for ln in _merged[-12:]:
             _m_lu = _re_log_utc.match(ln)
@@ -1518,9 +1669,16 @@ def _push_radar(bucket, sleeve_lbl, mkt_id, title, side_lbl, entry_px, edge_bps,
         "extra": str(extra_tag or ""),
     })
 
-# Real-time Live IPC candidates (most recent first)
+# Real-time Live IPC candidates (most recent first; skip stale >30m or expired markets)
+_now_rad_u = time.time()
 for _cd in reversed(_recent_ipc_cands[-45:]):
     try:
+        _ts_cd = float(_cd.get("ts_unix") or 0.0)
+        if _ts_cd > 0 and (_now_rad_u - _ts_cd) > 1800.0:
+            continue
+        _exp_cd = float(_cd.get("expiry_ts") or 0.0)
+        if _exp_cd > 0 and _exp_cd < (_now_rad_u - 300.0):
+            continue
         _slv_c = str(_cd.get("sleeve_source") or _cd.get("box_type") or "BOND1_UMA_RESOLUTION_CARRY")
         if _slv_c.upper() in _PAUSED_RB_SET:
             continue
@@ -1531,7 +1689,7 @@ for _cd in reversed(_recent_ipc_cands[-45:]):
         _mid_c = str(_cd.get("leg_a_market_id") or _cd.get("dedupe_key") or "")
         _px_c = float(_cd.get("box_cost_net") or _cd.get("anchor_bid_px") or _cd.get("leg_a_limit_price") or 0.99)
         _ebps_c = max(0.0, (1.0 - _px_c) * 10000.0)
-        _rem_hr_c = max(0.0, (float(_cd.get("expiry_ts") or 0.0) - time.time()) / 3600.0) if float(_cd.get("expiry_ts") or 0.0) > 0 else None
+        _rem_hr_c = max(0.0, (_exp_cd - _now_rad_u) / 3600.0) if _exp_cd > 0 else None
         _hold_c = max(0.5, _rem_hr_c if (_rem_hr_c is not None and _rem_hr_c > 0) else 1.25)
         _bhr_c = _ebps_c / _hold_c
         _lbl_c = str(_cd.get("question") or _cd.get("leg_a_label") or _cd.get("regime") or _mid_c).replace("SINGLE_LEG_MAKER_LOCK_", "")
@@ -1543,7 +1701,7 @@ for _cd in reversed(_recent_ipc_cands[-45:]):
             _sp_parts = _lbl_c.split(" ", 1)
             _cat_pretty = _sp_parts[0].replace("SPORTS_", "").replace("_", " ").title()
             _lbl_c = f"{_cat_pretty}: {_sp_parts[1]}" if len(_sp_parts) > 1 else _cat_pretty
-        _age_c = max(0, int(time.time() - float(_cd.get("ts_unix") or time.time())))
+        _age_c = max(0, int(_now_rad_u - (_ts_cd if _ts_cd > 0 else _now_rad_u)))
         _push_radar(
             _bkt_c,
             _slv_c,
@@ -1591,58 +1749,66 @@ rk_path = root / "data/polymarket/paa/market_opportunity_ranking.json"
 if rk_path.exists():
     try:
         rk = json.loads(rk_path.read_text(encoding="utf-8"))
+        _rk_age_s = round(max(0.0, _now_rad_u - rk_path.stat().st_mtime), 1)
         radar_summary["scanned_at_et"] = _fmt_et(rk.get("scanned_at_utc"), "%H:%M:%S")
-        radar_summary["age_sec"] = round(max(0.0, time.time() - rk_path.stat().st_mtime), 1)
+        radar_summary["age_sec"] = _rk_age_s
         radar_summary["active_markets_scanned"] = int(rk.get("active_markets_scanned", 0) or 0)
         radar_summary["events_scanned"] = int(rk.get("events_scanned", 0) or 0)
         radar_summary["fee_free_markets"] = int(rk.get("fee_free_markets", 0) or 0)
         radar_summary["fee_enabled_markets"] = int(rk.get("fee_enabled_markets", 0) or 0)
-        for _rt in (rk.get("alpha124_realtime_top_opportunities") or [])[:6]:
-            _epx = float(_rt.get("ask_vwap") or 0.99)
-            _eb = round(float(_rt.get("net_edge") or max(0.0, 1.0 - _epx)) * 10000.0, 1)
-            _bhr = round(float(_rt.get("ev_per_dollar_hour") or 0.0) * 10000.0, 1)
-            _cts = float(_rt.get("close_ts") or 0.0)
-            _rhr = (_cts - time.time()) / 3600.0 if _cts > time.time() else 0.5
-            _rt_lbl = re.sub(r"^\[[A-Z0-9_]+\]\s*", "", str(_rt.get("market") or "").strip())
-            _push_radar("LIVE_IPC", str(_rt.get("sleeve") or "ALPHA124_RT"), "", _rt_lbl, "MAKER", _epx, _eb, _bhr, _rt.get("l1_usd", 0), _rhr, True, "A124 RT")
-        for _u in (rk.get("ranked_uma_proposed_carries") or [])[:8]:
-            _push_radar(
-                "UMA_CARRY",
-                "BOND1_UMA_CARRY",
-                _u.get("market_id"),
-                _u.get("question"),
-                "PROPOSED (0% Mkr)",
-                _u.get("est_maker_entry_px", 0.985),
-                _u.get("net_edge_bps_maker_0pct", 0),
-                _u.get("est_bps_per_hour", 0),
-                _u.get("liquidity_usd", 0),
-                1.5,
-                _u.get("authorized_live", True),
-                str(_u.get("category") or ""),
-            )
-        for _pc in (rk.get("ranked_post_clinch_sweepers") or [])[:8]:
-            _push_radar(
-                "POST_CLINCH",
-                "MKR_LOCK1_SWEEPER",
-                _pc.get("market_id"),
-                _pc.get("question"),
-                f"{_pc.get('side', 'YES')} Clinch",
-                _pc.get("maker_bid_px", 0.993),
-                _pc.get("net_edge_bps_maker_0pct", 0),
-                _pc.get("est_bps_per_hour", 0),
-                _pc.get("liquidity_usd", 0),
-                0.5,
-                _pc.get("authorized_live", True),
-                str(_pc.get("category") or ""),
-            )
+        if _rk_age_s <= 900.0:
+            for _rt in (rk.get("alpha124_realtime_top_opportunities") or [])[:6]:
+                _cts = float(_rt.get("close_ts") or 0.0)
+                if _cts > 0 and _cts < (_now_rad_u - 300.0):
+                    continue
+                _epx = float(_rt.get("ask_vwap") or 0.99)
+                _eb = round(float(_rt.get("net_edge") or max(0.0, 1.0 - _epx)) * 10000.0, 1)
+                _bhr = round(float(_rt.get("ev_per_dollar_hour") or 0.0) * 10000.0, 1)
+                _rhr = (_cts - _now_rad_u) / 3600.0 if _cts > _now_rad_u else 0.5
+                _rt_lbl = re.sub(r"^\[[A-Z0-9_]+\]\s*", "", str(_rt.get("market") or "").strip())
+                _push_radar("LIVE_IPC", str(_rt.get("sleeve") or "ALPHA124_RT"), "", _rt_lbl, "MAKER", _epx, _eb, _bhr, _rt.get("l1_usd", 0), _rhr, True, "A124 RT")
+        if _rk_age_s <= 7200.0:
+            for _u in (rk.get("ranked_uma_proposed_carries") or [])[:8]:
+                _push_radar(
+                    "UMA_CARRY",
+                    "BOND1_UMA_CARRY",
+                    _u.get("market_id"),
+                    _u.get("question"),
+                    "PROPOSED (0% Mkr)",
+                    _u.get("est_maker_entry_px", 0.985),
+                    _u.get("net_edge_bps_maker_0pct", 0),
+                    _u.get("est_bps_per_hour", 0),
+                    _u.get("liquidity_usd", 0),
+                    1.5,
+                    _u.get("authorized_live", True),
+                    str(_u.get("category") or ""),
+                )
+            for _pc in (rk.get("ranked_post_clinch_sweepers") or [])[:8]:
+                _push_radar(
+                    "POST_CLINCH",
+                    "MKR_LOCK1_SWEEPER",
+                    _pc.get("market_id"),
+                    _pc.get("question"),
+                    f"{_pc.get('side', 'YES')} Clinch",
+                    _pc.get("maker_bid_px", 0.993),
+                    _pc.get("net_edge_bps_maker_0pct", 0),
+                    _pc.get("est_bps_per_hour", 0),
+                    _pc.get("liquidity_usd", 0),
+                    0.5,
+                    _pc.get("authorized_live", True),
+                    str(_pc.get("category") or ""),
+                )
         for _rwq in (a.get("pending_maker_orders") if 'a' in locals() and isinstance(a, dict) else []) or []:
             if not isinstance(_rwq, dict) or _rwq.get("sleeve") != "MKR_REWARD_LOCKED_CARRY":
+                continue
+            _rw_cts = float(_rwq.get("close_ts") or 0.0)
+            if _rw_cts > 0 and _rw_cts < (_now_rad_u - 300.0):
                 continue
             if float(_rwq.get("p_model_at_post") or 0.0) < 0.999 or float(_rwq.get("best_bid_at_post") or 1.0) > 0.995:
                 continue
             _rpx = float(_rwq.get("resting_bid") or 0.993)
             _reb = round(max(0.0, 1.0 - _rpx) * 10000.0, 1)
-            _rrem = max(0.25, (float(_rwq.get("close_ts") or 0.0) - time.time()) / 3600.0)
+            _rrem = max(0.25, (_rw_cts - _now_rad_u) / 3600.0) if _rw_cts > _now_rad_u else 0.5
             _rmid = str((_rwq.get("extra") or {}).get("market_id") or "")
             _push_radar(
                 "LOCKED_REWARD",
@@ -1658,37 +1824,41 @@ if rk_path.exists():
                 True,
                 f"Queue ${float(_rwq.get('queue_ahead_usd') or 0.0):.0f}",
             )
-        for _lr in (rk.get("ranked_locked_clob_rewards") or [])[:6]:
-            _lr_locked = bool(_lr.get("uma_locked") or float(_lr.get("p_lock") or 0.0) >= 0.999)
-            _push_radar(
-                "LOCKED_REWARD",
-                "MKR_LOCKED_REWARD",
-                _lr.get("market_id"),
-                _lr.get("question"),
-                f"{_lr.get('side', 'NO')} + Pool",
-                _lr.get("locked_maker_bid_px", 0.97),
-                _lr.get("carry_edge_bps", 0),
-                _lr.get("est_bps_per_hour", 0),
-                _lr.get("book_liquidity_usd", 0),
-                _lr.get("rem_hours", 1.0),
-                _lr_locked,
-                f"${int(float(_lr.get('daily_reward_pool_usd') or 0))}/d ({'Locked' if _lr_locked else 'Uncalled'})",
-            )
-        for _na in ((rk.get("ranked_negrisk_slate_arbs") or []) + (rk.get("ranked_maker_anchor_slate_arbs") or []))[:6]:
-            _push_radar(
-                "SLATE_ARB",
-                "NR0_SLATE_ARB",
-                _na.get("event_id") or "",
-                _na.get("title") or _na.get("question"),
-                f"{_na.get('legs', '?')}-Leg YES",
-                _na.get("sum_yes_ask") or _na.get("maker_box_cost") or 0.99,
-                _na.get("net_edge_bps", 0),
-                _na.get("est_bps_per_hour", 0),
-                _na.get("min_leg_liquidity_usd", 0),
-                _na.get("rem_hours"),
-                False,
-                "0%-Fee Slate",
-            )
+        if _rk_age_s <= 7200.0:
+            for _lr in (rk.get("ranked_locked_clob_rewards") or [])[:6]:
+                _lr_rem = float(_lr.get("rem_hours", 1.0) or 0.0)
+                if _lr_rem <= 0.0 and (_rk_age_s > 900.0):
+                    continue
+                _lr_locked = bool(_lr.get("uma_locked") or float(_lr.get("p_lock") or 0.0) >= 0.999)
+                _push_radar(
+                    "LOCKED_REWARD",
+                    "MKR_LOCKED_REWARD",
+                    _lr.get("market_id"),
+                    _lr.get("question"),
+                    f"{_lr.get('side', 'NO')} + Pool",
+                    _lr.get("locked_maker_bid_px", 0.97),
+                    _lr.get("carry_edge_bps", 0),
+                    _lr.get("est_bps_per_hour", 0),
+                    _lr.get("book_liquidity_usd", 0),
+                    _lr.get("rem_hours", 1.0),
+                    _lr_locked,
+                    f"${int(float(_lr.get('daily_reward_pool_usd') or 0))}/d ({'Locked' if _lr_locked else 'Uncalled'})",
+                )
+            for _na in ((rk.get("ranked_negrisk_slate_arbs") or []) + (rk.get("ranked_maker_anchor_slate_arbs") or []))[:6]:
+                _push_radar(
+                    "SLATE_ARB",
+                    "NR0_SLATE_ARB",
+                    _na.get("event_id") or "",
+                    _na.get("title") or _na.get("question"),
+                    f"{_na.get('legs', '?')}-Leg YES",
+                    _na.get("sum_yes_ask") or _na.get("maker_box_cost") or 0.99,
+                    _na.get("net_edge_bps", 0),
+                    _na.get("est_bps_per_hour", 0),
+                    _na.get("min_leg_liquidity_usd", 0),
+                    _na.get("rem_hours"),
+                    False,
+                    "0%-Fee Slate",
+                )
     except Exception:
         pass
 
@@ -1972,14 +2142,24 @@ if paa_db_p.exists():
                     "SELECT recorded_at_utc, free_cash_pusd, open_cost_basis_usd, nav_mark_to_bid_usd FROM financial_snapshots WHERE accounting_ok = 1 ORDER BY snapshot_id ASC LIMIT 1"
                 ).fetchone()
             if _fs_24h and out.get("polymarket_live"):
+                _book_24h = round(float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0), 2)
                 _nav_24h = float(_fs_24h["nav_mark_to_bid_usd"] or 0.0)
-                _eq_24h_ago = round(_nav_24h if _nav_24h > 0 else (float(_fs_24h["free_cash_pusd"] or 0.0) + float(_fs_24h["open_cost_basis_usd"] or 0.0)), 2)
+                _eq_24h_ago = _book_24h if _book_24h > 0 else round(_nav_24h, 2)
                 if _eq_24h_ago > 0:
                     _cur_eq = float(out["polymarket_live"].get("equity_usd") or 0.0)
-                    _d24 = round(_cur_eq - _eq_24h_ago, 2)
+                    _fs_24h_unix = _to_unix(_fs_24h["recorded_at_utc"])
+                    _dep_24h = 0.0
+                    for _c in (locals().get("_cf_rows") or []):
+                        _c_unix = _to_unix(_c.get("recorded_at_utc") or _c.get("ts_utc"))
+                        if _fs_24h_unix is not None and _c_unix is not None and _c_unix > _fs_24h_unix:
+                            _sgn = -1.0 if str(_c.get("type") or "DEPOSIT").strip().upper() in ("WITHDRAWAL", "WITHDRAW", "OUTFLOW") else 1.0
+                            _dep_24h += _sgn * abs(float(_c.get("amount_usd") or 0.0))
+                    _d24 = round(_cur_eq - _eq_24h_ago - _dep_24h, 2)
+                    _denom_24h = max(0.01, _eq_24h_ago + max(0.0, _dep_24h))
                     out["polymarket_live"]["equity_24h_ago_usd"] = _eq_24h_ago
+                    out["polymarket_live"]["deposits_24h_usd"] = round(_dep_24h, 2)
                     out["polymarket_live"]["equity_24h_delta_usd"] = _d24
-                    out["polymarket_live"]["equity_24h_pct"] = round(100.0 * _d24 / _eq_24h_ago, 2)
+                    out["polymarket_live"]["equity_24h_pct"] = round(100.0 * _d24 / _denom_24h, 2)
                     out["polymarket_live"]["equity_24h_since_et"] = _fmt_et(_fs_24h["recorded_at_utc"], "%m-%d %H:%M")
             if _fs:
                 try:
@@ -2050,6 +2230,36 @@ _vf_sync = paa_out.get("verified_financial_performance") or {}
 if out.get("polymarket_live") and "realized_onchain_net_pnl_usd" in _vf_sync:
     out["polymarket_live"]["epoch_net_pnl_usd"] = round(float(_vf_sync["realized_onchain_net_pnl_usd"]), 2)
 out["paa_autonomy"] = paa_out
+
+# 7. Stage B Institutional Economic Attribution, 6-Stage Opportunity Funnel & 10 North-Star KPIs
+try:
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from src.polymarket_research.economic_attribution_ledger import compute_stage_b_attribution_report as _comp_sb
+    _pm_sb = out.get("polymarket_live") or {}
+    _br_sb = paa_out.get("budget_and_resources") or {}
+    _act_sb = s.get("active_positions") if ("s" in locals() and isinstance(s, dict)) else {}
+    _grp_sb = locals().get("grouped_closed") or []
+    _paus_sb = locals().get("_PAUSED_RB_SET") or set()
+    out["stage_b_attribution"] = _comp_sb(
+        grouped_closed=_grp_sb,
+        active_positions=_act_sb,
+        reconciled_equity_usd=float(_pm_sb.get("equity_usd") or 0.0),
+        starting_lock_equity_usd=float(_pm_sb.get("riskless_lock_start_usd") or 60.92),
+        net_deposits_post_lock_usd=float(_pm_sb.get("net_deposits_post_lock_usd") or 0.0),
+        equity_24h_delta_usd=_pm_sb.get("equity_24h_delta_usd"),
+        vm_hourly_cost_usd=0.0730,
+        daily_infra_cost_usd=float(_vf_sync.get("daily_infra_vm_cost_usd") or (24.0 * 0.0730)),
+        all_time_ai_cost_usd=float(_vf_sync.get("research_ai_cost_usd") or 0.0),
+        daily_ai_cost_usd=float(_br_sb.get("daily_ai_cost_usd") or 0.0),
+        accounting_discrepancy_usd=float(_vf_sync.get("accounting_discrepancy_usd") or 0.0),
+        orphan_orders_count=0,
+        paused_sleeves=_paus_sb,
+        data_dir=root / "data/polymarket",
+        now_unix=now_probe_u,
+    )
+except Exception as _sb_exc:
+    out["stage_b_attribution"] = {"error": str(_sb_exc)[:200]}
 
 print(json.dumps(out))
 """
@@ -2210,6 +2420,7 @@ HTML_PAGE = """<!DOCTYPE html>
 
 <div class="nav-tabs">
   <button class="tab-btn active" id="tab_all" onclick="setViewTab('all')">Command Overview (All)</button>
+  <button class="tab-btn" id="tab_stageb" onclick="setViewTab('stageb')">Institutional Attribution &amp; Funnel</button>
   <button class="tab-btn" id="tab_orders" onclick="setViewTab('orders')">Live Orders &amp; Portfolio</button>
   <button class="tab-btn" id="tab_radar" onclick="setViewTab('radar')">Riskless Opportunity Radar</button>
   <button class="tab-btn" id="tab_a124" onclick="setViewTab('a124')">Alpha-124 &amp; Machine-Gun Grad-8</button>
@@ -2218,6 +2429,39 @@ HTML_PAGE = """<!DOCTYPE html>
 </div>
 
 <div class="grid" id="kpis"></div>
+
+<!-- STAGE B: INSTITUTIONAL 10 NORTH-STAR KPIS, 6-STAGE OPPORTUNITY FUNNEL & CAPITAL-HOUR LEDGER -->
+<div class="card" id="sec_stageb" style="margin-bottom:15px;border-color:#2b4a70;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+    <div>
+      <h2 style="margin:0;color:var(--cyan);">Institutional Economic Attribution, 6-Stage Opportunity Funnel &amp; 10 North-Star KPIs (Stage B v3.0)</h2>
+      <div class="sub" id="stageb_sub" style="margin-top:2px;">Wallet-to-Wallet Net Economic Identity (Zero Double-Counting) &bull; Sub-ms Competitor Decay Curve (&lt;5ms / 5-15ms / 15-40ms / &gt;40ms) &bull; $/Occupied Capital-Hour</div>
+    </div>
+    <span class="pill pill-info" id="stageb_rung_pill">Rung 1 Active (Finland e2-custom-2-4096)</span>
+  </div>
+  <div class="sf-strip" id="stageb_kpis_strip"></div>
+  <div class="two-col" style="margin-bottom:0;">
+    <div>
+      <h2 style="margin-top:4px;">6-Stage Opportunity Funnel &amp; 4-Bucket Competitor Decay</h2>
+      <div class="sf-strip" id="stageb_funnel_strip" style="margin-bottom:6px;"></div>
+      <div style="max-height:205px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Latency Bucket</th><th>Target Institutional Rung</th><th>Observed</th><th>Missed $</th><th>Action Gate</th></tr></thead>
+          <tbody id="stageb_decay_rows"></tbody>
+        </table>
+      </div>
+    </div>
+    <div>
+      <h2 style="margin-top:4px;">Per-Sleeve Capital-Hour &amp; Net $/1k Attribution (Reconciled)</h2>
+      <div style="max-height:240px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+        <table>
+          <thead><tr><th>Sleeve</th><th>Tr</th><th>Gross</th><th>Fees / Unwind</th><th>Net PnL</th><th>Net/$1k</th><th>Cap-Hrs (bps/hr)</th></tr></thead>
+          <tbody id="stageb_sleeve_rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- HERO #1: LIVE WORKING CLOB ORDERS & ACTIVE RISKLESS POSITIONS -->
 <div class="card card-hero" id="sec_live_orders" style="margin-bottom:15px;">
@@ -2535,7 +2779,7 @@ let _lastMetaPrefix = '';
 
 function setViewTab(tab) {
   _viewTab = tab;
-  ['all', 'orders', 'radar', 'a124', 'paa', 'forensics'].forEach(k => {
+  ['all', 'stageb', 'orders', 'radar', 'a124', 'paa', 'forensics'].forEach(k => {
     const b = document.getElementById('tab_' + k);
     if (b) b.className = 'tab-btn' + (k === tab ? ' active' : '');
   });
@@ -2543,6 +2787,7 @@ function setViewTab(tab) {
     const el = document.getElementById(id);
     if (el) el.classList.toggle('sec-hidden', !cond);
   };
+  show('sec_stageb', tab === 'all' || tab === 'stageb');
   show('sec_live_orders', tab === 'all' || tab === 'orders');
   show('sec_radar', tab === 'all' || tab === 'radar');
   show('sec_portfolio_a124', tab === 'all' || tab === 'orders' || tab === 'a124');
@@ -2554,6 +2799,105 @@ function setViewTab(tab) {
   }
   show('sec_paa', tab === 'all' || tab === 'paa');
   show('sec_forensics', tab === 'all' || tab === 'forensics');
+}
+
+function renderStageBAttribution(sb) {
+  if (!sb || sb.error) return;
+  const k = sb.north_star_kpis || {};
+  const fn = sb.opportunity_funnel || {};
+  const stg = fn.stages || {};
+  const db = fn.decay_buckets || {};
+  const dCnt = db.counts || {};
+  const dUsd = db.missed_profit_usd || {};
+  const strip = document.getElementById('stageb_kpis_strip');
+  if (strip) {
+    const gId = sb.governing_identity || {};
+    const cBas = Number(gId.contributed_capital_basis_usd ?? ((Number(gId.starting_reconciled_equity_usd || 60.92)) + Number(gId.net_deposits_usd || 0)));
+    const nDep = Number(gId.net_deposits_usd || 0);
+    const depTip = nDep !== 0 ? `Contributed Basis $${cBas.toFixed(2)} ($${Number(gId.starting_reconciled_equity_usd || 60.92).toFixed(2)} lock + $${nDep.toFixed(2)} deposit) -> ` : '';
+    const netEc = Number(k.kpi_1_net_economic_pnl_usd ?? 0);
+    const wGain = Number(k.kpi_1_wallet_gain_before_ops_usd ?? 0);
+    const opsBurn = Number(k.kpi_1_prorated_ops_cost_usd ?? 0);
+    const p1k = Number(k.kpi_2_net_pnl_per_1000_usd ?? 0);
+    const capHr = Number(k.kpi_3_net_pnl_per_capital_hour_usd ?? 0);
+    const bpsHr = Number(k.kpi_3_bps_per_capital_hour ?? 0);
+    const uwLoss = Number(k.kpi_4_partial_basket_unwind_loss_usd ?? 0);
+    const m5 = k.kpi_5_maker_markout_5s_cents !== null && k.kpi_5_maker_markout_5s_cents !== undefined ? `${Number(k.kpi_5_maker_markout_5s_cents).toFixed(2)}c` : 'armed';
+    const m30 = k.kpi_5_maker_markout_30s_cents !== null && k.kpi_5_maker_markout_30s_cents !== undefined ? `${Number(k.kpi_5_maker_markout_30s_cents).toFixed(2)}c` : 'armed';
+    const lat50 = k.kpi_6_signal_to_ack_p50_ms ?? k.kpi_6_http_post_p50_ms;
+    const lat95 = k.kpi_6_signal_to_ack_p95_ms;
+    const lat99 = k.kpi_6_signal_to_ack_p99_ms;
+    const latTxt = lat50 !== null && lat50 !== undefined ? `${Number(lat50).toFixed(0)}/${lat95 ? Number(lat95).toFixed(0) : '-'}/${lat99 ? Number(lat99).toFixed(0) : '-'}ms` : '-';
+    const capPct = k.kpi_7_expected_vs_realized_capture_pct !== null && k.kpi_7_expected_vs_realized_capture_pct !== undefined ? `${Number(k.kpi_7_expected_vs_realized_capture_pct).toFixed(1)}%` : '100.0%';
+    const infPct = k.kpi_8_infra_burn_to_gross_profit_pct !== null && k.kpi_8_infra_burn_to_gross_profit_pct !== undefined ? `${Number(k.kpi_8_infra_burn_to_gross_profit_pct).toFixed(1)}%` : '-';
+    const decMed = k.kpi_9_competitor_decay_median_ms !== null && k.kpi_9_competitor_decay_median_ms !== undefined ? `${Number(k.kpi_9_competitor_decay_median_ms).toFixed(1)}ms` : 'collecting';
+    const gt40 = k.kpi_9_finland_capturable_gt40ms_pct !== null && k.kpi_9_finland_capturable_gt40ms_pct !== undefined ? ` (${Number(k.kpi_9_finland_capturable_gt40ms_pct).toFixed(0)}% >40ms)` : '';
+    const acctGap = Number(k.kpi_10_wallet_accounting_discrepancy_usd ?? 0);
+    strip.innerHTML =
+      `<span class="sf-chip" title="${depTip}Pure Trading Gain ($${wGain.toFixed(2)}) minus Pro-Rated VM + AI Burn ($${opsBurn.toFixed(2)})">1. Net Econ PnL: <b class="${netEc >= 0 ? 'pos' : 'warn'}">${netEc >= 0 ? '+' : ''}$${netEc.toFixed(2)}</b> <span class="sub">(Trading ${wGain >= 0 ? '+' : ''}$${wGain.toFixed(2)} - Ops $${opsBurn.toFixed(2)})</span></span>` +
+      `<span class="sf-chip">2. Net/$1k: <b class="pos">+$${p1k.toFixed(2)}</b></span>` +
+      `<span class="sf-chip">3. $/Cap-Hr: <b class="cyan">$${capHr.toFixed(4)}/$-hr</b> (<b class="pos">+${bpsHr.toFixed(1)} bps/hr</b>)</span>` +
+      `<span class="sf-chip">4. Unwind Bleed: <b class="${uwLoss <= 0.01 ? 'pos' : 'warn'}">$${uwLoss.toFixed(2)}</b> (${k.kpi_4_partial_basket_unwind_count ?? 0})</span>` +
+      `<span class="sf-chip">5. Maker Markout (5s/30s): <b>${m5} / ${m30}</b> (N=${k.kpi_5_markout_samples ?? 0})</span>` +
+      `<span class="sf-chip">6. Sig&rarr;Ack (p50/95/99): <b>${latTxt}</b></span>` +
+      `<span class="sf-chip">7. Edge Capture: <b class="pos">${capPct}</b></span>` +
+      `<span class="sf-chip">8. Infra/Gross: <b>${infPct}</b> ($${Number(k.kpi_8_daily_infra_burn_usd ?? 1.752).toFixed(2)}/d)</span>` +
+      `<span class="sf-chip">9. Decay Med: <b>${decMed}</b>${gt40}</span>` +
+      `<span class="sf-chip">10. Acct Diff: <b class="${acctGap <= 0.01 ? 'pos' : 'neg'}">$${acctGap.toFixed(4)}</b> (${k.kpi_10_orphan_orders_count ?? 0} orphans)</span>`;
+  }
+  const fStrip = document.getElementById('stageb_funnel_strip');
+  if (fStrip) {
+    fStrip.innerHTML =
+      `<span class="sf-chip">Seen: <b>${stg.GROSS_ARB_SEEN ?? 0}</b></span>` +
+      `<span class="sf-chip">Net L2 Valid: <b class="cyan">${stg.EXECUTABLE_NET_L2 ?? 0}</b></span>` +
+      `<span class="sf-chip">Submitted: <b>${stg.ORDER_SUBMITTED ?? 0}</b></span>` +
+      `<span class="sf-chip">Locked: <b class="pos">${stg.COMPLETE_BASKET_LOCKED ?? 0}</b></span>` +
+      `<span class="sf-chip">Unwound: <b class="${(stg.PARTIAL_BASKET_UNWOUND || 0) > 0 ? 'warn' : 'pos'}">${stg.PARTIAL_BASKET_UNWOUND ?? 0}</b></span>` +
+      `<span class="sf-chip">Competitor Swept: <b>${stg.COMPETITOR_DECAY_OBSERVED ?? 0}</b></span>`;
+  }
+  const rungPill = document.getElementById('stageb_rung_pill');
+  if (rungPill) {
+    if (db.rung2_migration_justified) {
+      rungPill.className = 'pill pill-warn';
+      rungPill.textContent = `Rung 2 EU Proximity Triggered ($${Number(db.rung2_eu_proximity_missed_15_40ms_monthly_proj_usd || 0).toFixed(0)}/mo > $${Number(db.rung2_trigger_threshold_usd || 60).toFixed(0)})`;
+    } else {
+      rungPill.className = 'pill pill-ok';
+      rungPill.textContent = `Rung 1 Optimal (15-40ms Missed $${Number(db.rung2_eu_proximity_missed_15_40ms_monthly_proj_usd || 0).toFixed(2)}/mo < $${Number(db.rung2_trigger_threshold_usd || 60).toFixed(0)} Gate)`;
+    }
+  }
+  const dTb = document.getElementById('stageb_decay_rows');
+  if (dTb) {
+    const bMeta = [
+      ['lt_5ms', '< 5 ms (Sub-5ms)', 'Rung 4 Rust + eu-west-2 / #1 FIFO Maker', 'Quote Passive Maker #1 FIFO'],
+      ['5_15ms', '5 - 15 ms', 'Rung 4 AWS eu-west-2 Co-Lo ($25k+ KYB)', 'Hold until $25k + KYB'],
+      ['15_40ms', '15 - 40 ms', 'Rung 2 <12ms EU Proximity VM ($500+)', db.rung2_migration_justified ? 'TRIGGER RUNG 2 CUTOVER' : 'Monitor (>5x VM Delta Gate)'],
+      ['gt_40ms', '> 40 ms', 'Rung 1 Finland e2-custom-2-4096 (NOW)', 'Capturable Live Now'],
+    ];
+    dTb.innerHTML = bMeta.map(([bk, lbl, rung, act]) => `<tr>
+      <td><b>${esc(lbl)}</b></td>
+      <td class="sub">${esc(rung)}</td>
+      <td><b>${Number(dCnt[bk] || 0)}</b></td>
+      <td>$${Number(dUsd[bk] || 0).toFixed(2)}</td>
+      <td><span class="pill ${bk === 'gt_40ms' ? 'pill-ok' : 'pill-muted'}">${esc(act)}</span></td>
+    </tr>`).join('');
+  }
+  const sTb = document.getElementById('stageb_sleeve_rows');
+  if (sTb) {
+    const sRows = (sb.by_sleeve || []).filter(x => x.is_active_riskless && (x.trades > 0 || x.open_positions > 0));
+    sTb.innerHTML = sRows.slice(0, 12).map(s => {
+      const fric = Number(s.taker_fees_usd || 0) + Number(s.partial_basket_unwind_loss_usd || 0);
+      const np = Number(s.net_pnl_usd || 0);
+      return `<tr>
+        <td><b>${esc(shortSlv(s.sleeve))}</b></td>
+        <td>${s.wins}W/${s.losses}L${s.open_positions > 0 ? ` <span class="cyan">(+${s.open_positions} open)</span>` : ''}</td>
+        <td>+$${Number(s.gross_capture_usd || 0).toFixed(2)}</td>
+        <td class="${fric > 0.01 ? 'warn' : 'sub'}">-$${fric.toFixed(2)}</td>
+        <td class="${np >= 0 ? 'pos' : 'neg'}"><b>${np >= 0 ? '+' : ''}$${np.toFixed(2)}</b></td>
+        <td class="pos"><b>+$${Number(s.net_pnl_per_1000_usd || 0).toFixed(2)}</b></td>
+        <td class="cyan">${Number(s.occupied_capital_hours || 0).toFixed(1)}h (<b>+${Number(s.bps_per_capital_hour || 0).toFixed(0)} bps/h</b>)</td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="7" class="sub">Awaiting settled active-riskless sleeve trades.</td></tr>';
+  }
 }
 
 function setRadarFilter(f) {
@@ -2621,8 +2965,9 @@ function renderRisklessRadar(rad) {
     const mgBadge = mgCnt > 0
       ? `<b style="color:var(--purple);">${mgCnt} Live MG Streams</b>`
       : `<span class="sub">Armed (Auto-discovers on deploy)</span>`;
+    const scanAgeCls = (s.age_sec !== null && s.age_sec !== undefined && Number(s.age_sec) > 5400) ? 'warn' : '';
     strip.innerHTML =
-      `<span class="sf-chip">5m Universe Scan: <b>${(s.active_markets_scanned || 0).toLocaleString()}</b> Active Markets (<b>${(s.fee_free_markets || 0).toLocaleString()}</b> 0%-Fee &bull; ${s.age_sec ?? '-'}s old)</span>` +
+      `<span class="sf-chip">Universe Scan: <b>${(s.active_markets_scanned || 0).toLocaleString()}</b> Active Markets (<b>${(s.fee_free_markets || 0).toLocaleString()}</b> 0%-Fee &bull; <span class="${scanAgeCls}">${fmtSecCompact(s.age_sec)} old</span>)</span>` +
       `<span class="sf-chip">Live Harvester IPC: <b class="pos">${cnts.LIVE_IPC || 0}</b></span>` +
       `<span class="sf-chip">Machine-Gun: ${mgBadge}</span>` +
       `<span class="sf-chip">UMA Carries: <b class="cyan">${cnts.UMA_CARRY || 0}</b> &bull; Post-Clinch: <b class="pos">${cnts.POST_CLINCH || 0}</b> &bull; Locked+Pool: <b class="warn">${cnts.LOCKED_REWARD || 0}</b> &bull; Slate Arbs: <b>${cnts.SLATE_ARB || 0}</b></span>` +
@@ -2753,9 +3098,12 @@ function renderPmTables(pm) {
     const curve = (pm.pure_riskless_curve && pm.pure_riskless_curve.length >= 2) ? pm.pure_riskless_curve : [0, Number(pm.pure_riskless_pnl_usd || 0)];
     drawSpark(curve);
     const lockStart = Number(pm.riskless_lock_start_usd || 60.92);
+    const netDep = Number(pm.net_deposits_post_lock_usd || 0);
+    const basisEq = Number(pm.contributed_capital_basis_usd ?? (lockStart + netDep));
     const curEq = Number(pm.equity_usd || pm.bankroll_usd || 0);
-    const postCash = Number(pm.post_lock_cash_delta_usd ?? (curEq - lockStart));
-    if (sparkLbl) sparkLbl.innerHTML = `All-Time Riskless: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W/${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR) &bull; Post-Lock Cash: <b class="pos">${postCash >= 0 ? '+' : ''}$${postCash.toFixed(2)}</b> ($${lockStart.toFixed(2)} &rarr; $${curEq.toFixed(2)})`;
+    const postCash = Number(pm.post_lock_cash_delta_usd ?? (curEq - basisEq));
+    const depNote = netDep > 0 ? ` ($${lockStart.toFixed(2)} + $${netDep.toFixed(2)} dep = $${basisEq.toFixed(2)} basis &rarr; $${curEq.toFixed(2)})` : ` ($${lockStart.toFixed(2)} &rarr; $${curEq.toFixed(2)})`;
+    if (sparkLbl) sparkLbl.innerHTML = `All-Time Riskless: <b class="pos">+$${Number(pm.pure_riskless_pnl_usd || 0).toFixed(2)}</b> (${pm.pure_riskless_wins ?? 0}W/${pm.pure_riskless_losses ?? 0}L &bull; ${Number(pm.pure_riskless_wr_pct ?? 100).toFixed(1)}% WR) &bull; Post-Lock Trading Gain: <b class="pos">${postCash >= 0 ? '+' : ''}$${postCash.toFixed(2)}</b>${depNote}`;
   } else {
     drawSpark(pm.equity_curve || []);
     if (sparkLbl) sparkLbl.innerHTML = `All-Time Account Curve (Incl. Paused Legacy Directional): <b>${Number(pm.epoch_net_pnl_usd || 0) >= 0 ? '+' : ''}$${Number(pm.epoch_net_pnl_usd || 0).toFixed(2)}</b>`;
@@ -2883,10 +3231,11 @@ function renderPaaAutonomy(paa, elapsedSec=0) {
     const simLbl = zlWins > 0
       ? `Zero-Loss Shadow <b class="pos">+$${zlShdw.toFixed(0)}</b> (${zlWins}W/0L <i>non-cash</i>)`
       : `Sim Shadow +$${Number(vf.simulated_shadow_t1000_pnl_usd || 0).toFixed(0)} <i>non-cash</i>`;
+    const supSuffix = (supAge !== null && supAge <= 3600) ? ` &bull; 2m Sup: <b>${fmtSecCompact(supAge)}</b>` : '';
     stripEl.innerHTML =
       `<span class="sf-chip">Mode: <b class="${rlOn ? 'pos' : 'warn'}">${rlOn ? '100% RISKLESS LOCK' : 'HYBRID'}</b> (Pure Live <b class="${pureL === 0 ? 'pos' : 'warn'}">${pureW}W/${pureL}L</b> ${purePnl >= 0 ? '+' : ''}$${purePnl.toFixed(2)})</span>` +
       `<span class="sf-chip">Director: <b class="${dirHb.status === 'OK' || dirHb.status === 'RUNNING_CYCLE' ? 'pos' : 'warn'}">${esc(dirHb.status || 'INIT')}</b> (#${dirHb.cycle_count ?? 0}, ${fmtSecCompact(dirAge)})</span>` +
-      `<span class="sf-chip">1m Monitor: <b class="${monHb.status === 'OK' ? 'pos' : 'warn'}">${esc(monHb.status || 'INIT')}</b> (${fmtSecCompact(monAge)}) &bull; 2m Sup: <b>${fmtSecCompact(supAge)}</b></span>` +
+      `<span class="sf-chip">1m Monitor: <b class="${monHb.status === 'OK' ? 'pos' : 'warn'}">${esc(monHb.status || 'INIT')}</b> (${fmtSecCompact(monAge)})${supSuffix}</span>` +
       `<span class="sf-chip">Safeguards: <b class="${stopOk ? 'pos' : 'neg'}">${paa.master_stop_engaged ? 'MASTER STOP' : (paa.accounting_safeguard_active ? 'ACCT FREEZE' : 'CLEAR')}</b></span>` +
       `<span class="sf-chip">Tier-A Policies: <b class="${(paa.tier_a_intact_count || 0) >= 5 ? 'pos' : 'neg'}">${paa.tier_a_intact_count ?? 0}/5 IMMUTABLE</b></span>` +
       `<span class="sf-chip">Tier-B Facts: <b class="pos">${zt.verified_facts_fresh ?? 0} Fresh</b> &bull; <span class="warn">${zt.verified_facts_stale ?? 0} Stale</span> &bull; <b class="${(zt.verified_facts_contradicted || 0) > 0 ? 'neg' : 'sub'}">${zt.verified_facts_contradicted ?? 0} Contradicted</b></span>` +
@@ -3125,6 +3474,7 @@ async function refreshNow(force=false) {
     document.getElementById('meta').textContent = `${_lastMetaPrefix} | Live Poll #${_pollSeq} (0s ago)`;
 
     _lastPaaData = paa;
+    renderStageBAttribution(d.stage_b_attribution || {});
     renderPaaAutonomy(paa, 0);
     renderRisklessRadar(rad);
     renderLiveBook(pm, dcfg, cfgVer, 0);
@@ -3145,14 +3495,20 @@ async function refreshNow(force=false) {
     const openBook = Number(pm.open_book_usd ?? 0);
     const totalEq = Number(pm.equity_usd ?? (cash + openBook));
     const lockStartEq = Number(pm.riskless_lock_start_usd || 60.92);
-    const postLockDelta = Number(pm.post_lock_cash_delta_usd ?? (totalEq - lockStartEq));
-    const postLockPct = Number(pm.post_lock_cash_pct ?? (100.0 * postLockDelta / Math.max(0.01, lockStartEq)));
+    const netDepUsd = Number(pm.net_deposits_post_lock_usd || 0);
+    const basisEq = Number(pm.contributed_capital_basis_usd ?? (lockStartEq + netDepUsd));
+    const postLockDelta = Number(pm.post_lock_cash_delta_usd ?? (totalEq - basisEq));
+    const postLockPct = Number(pm.post_lock_cash_pct ?? (100.0 * postLockDelta / Math.max(0.01, basisEq)));
     const d24Usd = pm.equity_24h_delta_usd !== undefined && pm.equity_24h_delta_usd !== null ? Number(pm.equity_24h_delta_usd) : null;
-    const lockBadge = `<span class="pill ${postLockDelta >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="Exact wallet gain since $${lockStartEq.toFixed(2)} Pure Riskless Lock">$${lockStartEq.toFixed(2)} &rarr; ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} (${postLockPct >= 0 ? '+' : ''}${postLockPct.toFixed(1)}%)</span>`;
+    const badgeTitle = netDepUsd > 0
+      ? `Out-of-pocket principal: $${lockStartEq.toFixed(2)} lock start + $${netDepUsd.toFixed(2)} manual deposit = $${basisEq.toFixed(2)} basis -> ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} pure trading gain`
+      : `Exact wallet gain since $${lockStartEq.toFixed(2)} Pure Riskless Lock`;
+    const badgeLbl = netDepUsd > 0 ? `$${basisEq.toFixed(2)} basis` : `$${lockStartEq.toFixed(2)}`;
+    const lockBadge = `<span class="pill ${postLockDelta >= 0 ? 'pill-ok' : 'pill-warn'}" style="font-size:11px;vertical-align:middle;margin-left:4px;" title="${badgeTitle}">${badgeLbl} &rarr; ${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)} (${postLockPct >= 0 ? '+' : ''}${postLockPct.toFixed(1)}%)</span>`;
     const quoteCash = Number(pm.quoting_cash_usd ?? 0);
     const freeCash = Number(pm.free_cash_usd ?? cash);
     const utilPct = Number(pm.quoting_utilization_pct ?? (cash > 0 ? (100 * quoteCash / cash) : 0));
-    const ruinFloor = Number(rcfg.hard_ruin_floor_usd || 42.0);
+    const ruinFloor = Number(rcfg.hard_ruin_floor_usd || 62.0);
     const restOrds = pm.resting_orders || [];
     const restEdge = Number(pm.resting_redeem_edge_usd ?? 0);
     const openCnt = (pm.active_positions || []).length;
@@ -3187,7 +3543,7 @@ async function refreshNow(force=false) {
       <div class="card">
         <div class="label">Pure Riskless Live Record</div>
         <div class="val ${prL === 0 ? 'pos' : 'warn'}">${prW}W / ${prL}L (${prWr}%)</div>
-        <div class="sub">Post-Lock Cash: <b class="pos">${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)}</b> (${plW}W/${plL}L) &bull; All-Time Riskless: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
+        <div class="sub">Post-Lock Trading: <b class="pos">${postLockDelta >= 0 ? '+' : ''}$${postLockDelta.toFixed(2)}</b> (${plW}W/${plL}L) &bull; All-Time Riskless: <b class="pos">${prPnl >= 0 ? '+' : ''}$${prPnl.toFixed(2)}</b> &bull; Losses: <b class="${plL === 0 ? 'pos' : 'neg'}">${plL}</b></div>
       </div>
       <div class="card">
         <div class="label">Working CLOB Orders &amp; Book</div>
@@ -3215,8 +3571,15 @@ async function refreshNow(force=false) {
     const svcPills = svcEntries.map(([k, v]) =>
       `<span class="pill ${v === 'active' ? 'pill-ok' : 'pill-bad'}">${esc(k)}: ${esc(v)}</span>`
     );
+    const nowUtc = new Date();
+    const uDay = nowUtc.getUTCDay();
+    const uHr = nowUtc.getUTCHours();
+    const metalsWkndClosed = (uDay === 5 && uHr >= 21) || uDay === 6 || (uDay === 0 && uHr < 22);
     const shmPills = Object.entries(shmAges).map(([sym, age]) => {
       const ok = age !== null && age !== undefined && Number(age) < 10.0;
+      if (!ok && (sym === 'XAU' || sym === 'XAG') && metalsWkndClosed) {
+        return `<span class="pill pill-muted" title="CME/Pyth metals market closed for weekend (Fri 21:00–Sun 22:00 UTC)">SHM ${esc(sym)}: wknd closed</span>`;
+      }
       const lbl = age !== null && age !== undefined ? `${Number(age).toFixed(2)}s` : 'down';
       return `<span class="pill ${ok ? 'pill-ok' : 'pill-bad'}">SHM ${esc(sym)}: ${lbl}</span>`;
     });
@@ -3266,29 +3629,228 @@ async function refreshNow(force=false) {
 
 updateD1Countdown();
 refreshNow();
-setInterval(() => refreshNow(false), 6000);
+setInterval(() => { if (!document.hidden) refreshNow(false); }, 6000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) refreshNow(false); });
 </script>
 </body>
 </html>
 """
 
 
+def _build_compressed_oneshot_py(probe_src: str) -> str:
+    b64_src = base64.b64encode(zlib.compress(probe_src.encode("utf-8"), 6)).decode("ascii")
+    return (
+        "import base64, io, os, sys, zlib\n"
+        "os.environ['PM_ENABLE_TLS_KEEPALIVE'] = '0'\n"
+        "os.environ['PM_ENABLE_USER_WS'] = '0'\n"
+        "os.environ['PM_DISABLE_FAST_V2_SIGNER'] = '1'\n"
+        f"_SRC = zlib.decompress(base64.b64decode('{b64_src}')).decode('utf-8')\n"
+        "_CODE = compile(_SRC, '<dominus_probe>', 'exec')\n"
+        "_buf = io.StringIO()\n"
+        "_real_out = sys.stdout\n"
+        "sys.stdout = _buf\n"
+        "try:\n"
+        "    exec(_CODE, {'__name__': '__main__', '_PERSIST': {}})\n"
+        "finally:\n"
+        "    sys.stdout = _real_out\n"
+        "_lines = [ln.strip() for ln in _buf.getvalue().splitlines() if ln.strip().startswith('{')]\n"
+        "if _lines:\n"
+        "    _gz = base64.b64encode(zlib.compress(_lines[-1].encode('utf-8'), 6)).decode('ascii')\n"
+        "    _real_out.write('GZ:' + _gz + '\\n')\n"
+        "    _real_out.flush()\n"
+    )
+
+
+def _build_persistent_daemon_py(probe_src: str) -> str:
+    b64_src = base64.b64encode(zlib.compress(probe_src.encode("utf-8"), 6)).decode("ascii")
+    return (
+        "import base64, gc, io, json, os, sys, traceback, zlib\n"
+        "os.environ['PM_ENABLE_TLS_KEEPALIVE'] = '0'\n"
+        "os.environ['PM_ENABLE_USER_WS'] = '0'\n"
+        "os.environ['PM_DISABLE_FAST_V2_SIGNER'] = '1'\n"
+        f"_SRC = zlib.decompress(base64.b64decode('{b64_src}')).decode('utf-8')\n"
+        "_CODE = compile(_SRC, '<dominus_probe>', 'exec')\n"
+        "_PERSIST = {}\n"
+        "_real_in = sys.stdin\n"
+        "_real_out = sys.stdout\n"
+        "_real_out.write('READY\\n')\n"
+        "_real_out.flush()\n"
+        "for _cmd in _real_in:\n"
+        "    _c = _cmd.strip()\n"
+        "    if not _c:\n"
+        "        continue\n"
+        "    if _c == 'QUIT':\n"
+        "        break\n"
+        "    _buf = io.StringIO()\n"
+        "    sys.stdout = _buf\n"
+        "    try:\n"
+        "        exec(_CODE, {'__name__': '__main__', '_PERSIST': _PERSIST})\n"
+        "        _lines = [ln.strip() for ln in _buf.getvalue().splitlines() if ln.strip().startswith('{')]\n"
+        "        _payload = _lines[-1] if _lines else json.dumps({'error': 'Empty probe output'})\n"
+        "    except Exception as _exc:\n"
+        "        _payload = json.dumps({'error': f'Remote probe exception: {_exc}'})\n"
+        "    finally:\n"
+        "        sys.stdout = _real_out\n"
+        "    _gz = base64.b64encode(zlib.compress(_payload.encode('utf-8'), 6)).decode('ascii')\n"
+        "    _real_out.write('GZ:' + _gz + '\\n')\n"
+        "    _real_out.flush()\n"
+        "    gc.collect()\n"
+    )
+
+
+def _decode_wire_line(line: str) -> Optional[Dict[str, Any]]:
+    s = line.strip()
+    if s.startswith("GZ:"):
+        raw = zlib.decompress(base64.b64decode(s[3:])).decode("utf-8")
+        return json.loads(raw)
+    if s.startswith("{"):
+        return json.loads(s)
+    return None
+
+
 class SnapshotCache:
-    def __init__(self, host: str, ttl_sec: float = 5.0, start_bg: bool = False) -> None:
+    def __init__(
+        self,
+        host: str,
+        ttl_sec: float = 5.0,
+        start_bg: bool = False,
+        idle_pause_sec: float = 45.0,
+        idle_disconnect_sec: float = 300.0,
+    ) -> None:
         self.host = host
         self.ttl_sec = ttl_sec
+        self.idle_pause_sec = idle_pause_sec
+        self.idle_disconnect_sec = idle_disconnect_sec
         self._fetch_lock = threading.Lock()
         self._last_ts = 0.0
         self._last_data: Dict[str, Any] = {}
+        self._last_viewer_mono = time.monotonic()
+        self._wake_event = threading.Event()
+        self._stream_proc: Optional[subprocess.Popen[str]] = None
+        self._stream_q: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._use_persistent = start_bg
         if start_bg:
             t = threading.Thread(target=self._bg_loop, name="DominusSnapshotPoller", daemon=True)
             t.start()
 
+    def touch_viewer(self) -> None:
+        self._last_viewer_mono = time.monotonic()
+        self._wake_event.set()
+
+    def close_stream(self) -> None:
+        p = self._stream_proc
+        self._stream_proc = None
+        if p is not None:
+            try:
+                if p.stdin:
+                    p.stdin.write("QUIT\n")
+                    p.stdin.flush()
+                    p.stdin.close()
+            except Exception:
+                pass
+            try:
+                p.kill()
+            except Exception:
+                pass
+            try:
+                p.wait(timeout=1.5)
+            except Exception:
+                pass
+
+    def _ensure_persistent_stream(self, timeout: float = 12.0) -> bool:
+        if self._stream_proc is not None and self._stream_proc.poll() is None:
+            return True
+        self.close_stream()
+        q: "queue.Queue[Optional[str]]" = queue.Queue()
+        self._stream_q = q
+        # Zero-quote-escaping remote bootstrap: reads 1 base64-zlib daemon script line on stdin, compiles REMOTE_PROBE_PY once, loops on POLL\n
+        proc = subprocess.Popen(
+            [
+                "ssh",
+                "-C",
+                "-T",
+                "-o",
+                "BatchMode=yes",
+                "-o",
+                "ConnectTimeout=6",
+                "-o",
+                "ServerAliveInterval=20",
+                "-o",
+                "ServerAliveCountMax=3",
+                self.host,
+                "/home/skybullet1987/quant_pipeline/venv/bin/python3 -u -c \"import base64,sys,zlib;exec(zlib.decompress(base64.b64decode(sys.stdin.readline())).decode())\"",
+            ],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+        )
+        self._stream_proc = proc
+
+        def _reader() -> None:
+            try:
+                assert proc.stdout is not None
+                for ln in proc.stdout:
+                    q.put(ln.rstrip("\r\n"))
+            except Exception:
+                pass
+            finally:
+                q.put(None)
+
+        threading.Thread(target=_reader, name="DominusSshStreamReader", daemon=True).start()
+        try:
+            assert proc.stdin is not None
+            daemon_src = _build_persistent_daemon_py(REMOTE_PROBE_PY)
+            b64_daemon = base64.b64encode(zlib.compress(daemon_src.encode("utf-8"), 6)).decode("ascii")
+            proc.stdin.write(b64_daemon + "\n")
+            proc.stdin.flush()
+            ready_ln = q.get(timeout=timeout)
+            if ready_ln != "READY":
+                self.close_stream()
+                return False
+            return True
+        except Exception:
+            self.close_stream()
+            return False
+
+    def _probe_via_persistent_stream(self) -> Optional[Dict[str, Any]]:
+        try:
+            if not self._ensure_persistent_stream(timeout=10.0):
+                return None
+            assert self._stream_proc is not None and self._stream_proc.stdin is not None
+            while not self._stream_q.empty():
+                try:
+                    self._stream_q.get_nowait()
+                except queue.Empty:
+                    break
+            self._stream_proc.stdin.write("POLL\n")
+            self._stream_proc.stdin.flush()
+            line = self._stream_q.get(timeout=14.0)
+            if not line:
+                self.close_stream()
+                return None
+            data = _decode_wire_line(line)
+            if data is not None:
+                self._last_data = data
+                self._last_ts = time.time()
+            return data
+        except Exception:
+            self.close_stream()
+            return None
+
     def _probe_once(self) -> Dict[str, Any]:
+        if self._use_persistent:
+            stream_res = self._probe_via_persistent_stream()
+            if stream_res is not None:
+                return stream_res
         try:
             proc = subprocess.run(
                 [
                     "ssh",
+                    "-C",
                     "-o",
                     "BatchMode=yes",
                     "-o",
@@ -3296,7 +3858,7 @@ class SnapshotCache:
                     self.host,
                     "/home/skybullet1987/quant_pipeline/venv/bin/python3 -",
                 ],
-                input=REMOTE_PROBE_PY,
+                input=_build_compressed_oneshot_py(REMOTE_PROBE_PY),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -3305,24 +3867,34 @@ class SnapshotCache:
             )
             if proc.returncode != 0:
                 return {"error": (proc.stderr or proc.stdout).strip()[:400]}
-            lines = [ln.strip() for ln in proc.stdout.splitlines() if ln.strip().startswith("{")]
-            if not lines:
-                return {"error": f"Unexpected SSH output: {proc.stdout[:200]}"}
-            data = json.loads(lines[-1])
-            self._last_data = data
-            self._last_ts = time.time()
-            return data
+            for ln in reversed(proc.stdout.splitlines()):
+                decoded = _decode_wire_line(ln)
+                if decoded is not None:
+                    self._last_data = decoded
+                    self._last_ts = time.time()
+                    return decoded
+            return {"error": f"Unexpected SSH output: {proc.stdout[:200]}"}
         except Exception as exc:
             return {"error": str(exc)}
 
     def _bg_loop(self) -> None:
         while True:
+            idle_sec = time.monotonic() - self._last_viewer_mono
+            if idle_sec > self.idle_pause_sec:
+                if idle_sec > self.idle_disconnect_sec and self._stream_proc is not None:
+                    with self._fetch_lock:
+                        self.close_stream()
+                self._wake_event.wait(timeout=5.0)
+                self._wake_event.clear()
+                continue
             with self._fetch_lock:
                 self._probe_once()
-            time.sleep(self.ttl_sec)
+            self._wake_event.wait(timeout=self.ttl_sec)
+            self._wake_event.clear()
 
     def get(self, force: bool = False) -> Dict[str, Any]:
-        if not force and self._last_data:
+        self.touch_viewer()
+        if not force and self._last_data and (time.time() - self._last_ts) < max(self.ttl_sec * 2.5, 12.0):
             return self._last_data
         acquired = self._fetch_lock.acquire(timeout=0.15 if (not force and self._last_data) else 14.0)
         if not acquired:
@@ -3361,9 +3933,14 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
         if pm.get("equity_24h_delta_usd") is not None
         else ""
     )
+    _basis_s = (
+        f"  |  Basis: ${pm.get('contributed_capital_basis_usd', 60.92):.2f} (${pm.get('riskless_lock_start_usd', 60.92):.2f} + ${pm.get('net_deposits_post_lock_usd', 0.0):.2f} dep -> {pm.get('post_lock_cash_delta_usd', 0.0):+.2f} USD / {pm.get('post_lock_cash_pct', 0.0):+.1f}%)"
+        if float(pm.get("net_deposits_post_lock_usd") or 0.0) != 0.0
+        else ""
+    )
     print(
         f" Equity & Wallet    : ${pm.get('equity_usd', 0):.2f} Total Equity{_d24_s}  |  "
-        f"${pm.get('bankroll_usd', 0):.2f} Cash + ${pm.get('open_book_usd', 0):.2f} Open Book"
+        f"${pm.get('bankroll_usd', 0):.2f} Cash + ${pm.get('open_book_usd', 0):.2f} Open Book{_basis_s}"
     )
     print(
         f" CLOB Maker Quoting : Quoting ${pm.get('quoting_cash_usd', 0):.2f} [{pm.get('quoting_utilization_pct', 0):.1f}%] across {len(pm.get('resting_orders') or [])} CLOB orders "
@@ -3430,12 +4007,120 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
             f"Tasks={json.dumps(tc)}"
         )
         print(f" Schedules & TierC  : Next=[{tm_short}] | Ladder={json.dumps(lad)}")
+    sb = d.get("stage_b_attribution") or {}
+    if sb and not sb.get("error"):
+        nsk = sb.get("north_star_kpis") or {}
+        fn_s = (sb.get("opportunity_funnel") or {}).get("stages") or {}
+        db_s = (sb.get("opportunity_funnel") or {}).get("decay_buckets") or {}
+        dc_s = db_s.get("counts") or {}
+        print("-" * 84)
+        print(
+            f" STAGE B 10 KPIs    : [1] NetEcon={nsk.get('kpi_1_net_economic_pnl_usd', 0):+.2f} USD "
+            f"(Wallet {nsk.get('kpi_1_wallet_gain_before_ops_usd', 0):+.2f} - Ops ${nsk.get('kpi_1_prorated_ops_cost_usd', 0):.2f}) | "
+            f"[2] Net/$1k=+{nsk.get('kpi_2_net_pnl_per_1000_usd', 0):.2f} USD | "
+            f"[3] CapHr=+{nsk.get('kpi_3_bps_per_capital_hour', 0):.1f} bps/hr ({nsk.get('kpi_3_occupied_capital_hours', 0):.1f} $h)"
+        )
+        print(
+            f"                    : [4] UnwindBleed=${nsk.get('kpi_4_partial_basket_unwind_loss_usd', 0):.2f} | "
+            f"[5] Markout(5s/30s)={nsk.get('kpi_5_maker_markout_5s_cents')}/{nsk.get('kpi_5_maker_markout_30s_cents')}c | "
+            f"[6] Sig->Ack p50/95/99={nsk.get('kpi_6_signal_to_ack_p50_ms')}/{nsk.get('kpi_6_signal_to_ack_p95_ms')}/{nsk.get('kpi_6_signal_to_ack_p99_ms')}ms | "
+            f"[7] Capture={nsk.get('kpi_7_expected_vs_realized_capture_pct')}% | "
+            f"[8] Infra/Gross={nsk.get('kpi_8_infra_burn_to_gross_profit_pct')}% | "
+            f"[10] AcctDiff=${nsk.get('kpi_10_wallet_accounting_discrepancy_usd', 0):.4f}"
+        )
+        print(
+            f" Funnel & [9] Decay : Seen={fn_s.get('GROSS_ARB_SEEN', 0)} -> L2={fn_s.get('EXECUTABLE_NET_L2', 0)} -> "
+            f"Sub={fn_s.get('ORDER_SUBMITTED', 0)} -> Locked={fn_s.get('COMPLETE_BASKET_LOCKED', 0)} "
+            f"(Unw={fn_s.get('PARTIAL_BASKET_UNWOUND', 0)}) | "
+            f"Decay[<5ms={dc_s.get('lt_5ms', 0)}, 5-15ms={dc_s.get('5_15ms', 0)}, 15-40ms={dc_s.get('15_40ms', 0)}, >40ms={dc_s.get('gt_40ms', 0)}] "
+            f"Rung2Gate={db_s.get('rung2_migration_justified', False)}"
+        )
     print("=" * 84)
+
+
+def _reclaim_existing_dashboard_port(port: int) -> None:
+    """If an older Dominus Command Center instance is holding 127.0.0.1:<port>, stop it cleanly before binding."""
+    import socket
+    import urllib.request
+
+    def _port_in_use() -> bool:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.settimeout(0.25)
+            return s.connect_ex(("127.0.0.1", port)) == 0
+
+    if not _port_in_use():
+        return
+
+    print(f"Detected existing listener on 127.0.0.1:{port} -- reclaiming previous Dominus Command Center...", flush=True)
+    # 1. Try graceful localhost shutdown endpoint first (supported by v6.1+)
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{port}/api/shutdown",
+            data=b"",
+            headers={"Host": f"127.0.0.1:{port}"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=1.0):
+            pass
+    except Exception:
+        pass
+
+    for _ in range(10):
+        if not _port_in_use():
+            return
+        time.sleep(0.1)
+
+    # 2. Fallback on Windows/Linux for older background instances without /api/shutdown
+    if os.name == "nt":
+        try:
+            ps_cmd = (
+                f"$conns = Get-NetTCPConnection -LocalPort {int(port)} -State Listen -ErrorAction SilentlyContinue; "
+                f"foreach ($c in $conns) {{ "
+                f"  $proc = Get-CimInstance Win32_Process -Filter \"ProcessId=$($c.OwningProcess)\" -ErrorAction SilentlyContinue; "
+                f"  if ($proc -and $proc.ProcessId -ne {os.getpid()} -and $proc.CommandLine -like '*dominus_command_center*') {{ "
+                f"    Write-Output $proc.ProcessId; "
+                f"    if ($proc.ParentProcessId) {{ "
+                f"      $parent = Get-CimInstance Win32_Process -Filter \"ProcessId=$($proc.ParentProcessId)\" -ErrorAction SilentlyContinue; "
+                f"      if ($parent -and $parent.CommandLine -like '*dominus_command_center*') {{ Write-Output $parent.ProcessId }} "
+                f"    }} "
+                f"  }} "
+                f"}}"
+            )
+            res = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", ps_cmd],
+                capture_output=True,
+                text=True,
+                timeout=6.0,
+            )
+            pids = []
+            for line in (res.stdout or "").splitlines():
+                line = line.strip()
+                if line.isdigit() and int(line) not in pids and int(line) != os.getpid():
+                    pids.append(int(line))
+            for pid in reversed(pids):
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(pid)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5.0,
+                )
+        except Exception:
+            pass
+
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        if not _port_in_use():
+            return
+        time.sleep(0.15)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="DOMINUS — RISKLESS PAA Command Center v6.1")
-    parser.add_argument("--host", default="kraken-finland", help="SSH host alias")
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("DOMINUS_SSH_HOST", "kraken-finland"),
+        help="SSH host alias (default: DOMINUS_SSH_HOST env or kraken-finland; set to kraken-nl after cutover)",
+    )
     parser.add_argument("--port", type=int, default=8787, help="Local HTTP dashboard port")
     parser.add_argument("--once", action="store_true", help="Print CLI summary once and exit")
     parser.add_argument("--json", action="store_true", help="Print raw JSON snapshot once and exit")
@@ -3451,36 +4136,67 @@ def main() -> None:
         print_cli_summary(cache.get(force=True))
         return
 
+    _reclaim_existing_dashboard_port(args.port)
     cache = SnapshotCache(host=args.host, start_bg=True)
+    srv_ref: Dict[str, Any] = {"srv": None}
 
     class Handler(BaseHTTPRequestHandler):
-        def _safe_send(self, code: int, content_type: str, body: bytes, no_store: bool = False) -> None:
+        def _safe_send(self, code: int, content_type: str, body: bytes, no_store: bool = False, use_gzip: bool = False) -> None:
             try:
+                out_body = gzip.compress(body, compresslevel=5) if use_gzip and len(body) > 1024 else body
                 self.send_response(code)
                 self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(body)))
+                if out_body is not body:
+                    self.send_header("Content-Encoding", "gzip")
+                self.send_header("Content-Length", str(len(out_body)))
                 if no_store:
                     self.send_header("Cache-Control", "no-store")
                 self.send_header("X-Content-Type-Options", "nosniff")
                 self.end_headers()
-                self.wfile.write(body)
+                self.wfile.write(out_body)
             except (BrokenPipeError, ConnectionAbortedError, ConnectionResetError, OSError):
                 return
 
-        def do_GET(self) -> None:
+        def _is_allowed_local(self) -> bool:
             host_hdr = (self.headers.get("Host") or "").split(":")[0].strip().lower()
             if host_hdr and host_hdr not in ("127.0.0.1", "localhost"):
                 try:
                     self.send_error(403, "Forbidden Host")
                 except OSError:
                     pass
+                return False
+            return True
+
+        def do_POST(self) -> None:
+            if not self._is_allowed_local():
                 return
+            if self.path == "/api/shutdown" and (self.client_address[0] in ("127.0.0.1", "::1")):
+                self._safe_send(200, "application/json; charset=utf-8", b'{"status":"shutting_down"}', no_store=True)
+                def _stop() -> None:
+                    cache.close_stream()
+                    if srv_ref["srv"] is not None:
+                        srv_ref["srv"].shutdown()
+                threading.Thread(target=_stop, daemon=True).start()
+                return
+            try:
+                self.send_error(404, "Not Found")
+            except OSError:
+                pass
+
+        def do_GET(self) -> None:
+            if not self._is_allowed_local():
+                return
+            accept_gz = "gzip" in (self.headers.get("Accept-Encoding") or "").lower()
             if self.path.startswith("/api/snapshot"):
+                cache.touch_viewer()
                 force = "force=1" in self.path
                 payload = json.dumps(cache.get(force=force)).encode("utf-8")
-                self._safe_send(200, "application/json; charset=utf-8", payload, no_store=True)
+                self._safe_send(200, "application/json; charset=utf-8", payload, no_store=True, use_gzip=accept_gz)
+            elif self.path in ("/", "/index.html") or self.path.startswith("/?"):
+                cache.touch_viewer()
+                self._safe_send(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"), no_store=True, use_gzip=accept_gz)
             else:
-                self._safe_send(200, "text/html; charset=utf-8", HTML_PAGE.encode("utf-8"), no_store=True)
+                self._safe_send(204, "text/plain; charset=utf-8", b"", no_store=True, use_gzip=False)
 
         def log_message(self, fmt: str, *a: Any) -> None:
             return
@@ -3490,13 +4206,25 @@ def main() -> None:
 
     url = f"http://127.0.0.1:{args.port}"
     srv = ExclusiveThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    srv_ref["srv"] = srv
     srv.daemon_threads = True
-    print(f"Dominus Riskless PAA Command Center v6.1 running locally at {url} (Background SSH cache=5s, Ctrl+C to stop)", flush=True)
+    print(
+        f"Dominus Riskless PAA Command Center v6.1 running locally at {url} "
+        f"(host={args.host}, persistent gzipped SSH stream=5s, auto-sleep after 45s idle, Ctrl+C to stop)",
+        flush=True,
+    )
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
+        pass
+    finally:
+        cache.close_stream()
+        try:
+            srv.server_close()
+        except Exception:
+            pass
         print("\nStopped Dominus Riskless PAA Command Center.")
 
 

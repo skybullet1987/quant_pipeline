@@ -2947,10 +2947,12 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     asyncio.run(h.check_resolutions_and_manage_positions())
     assert "D1_LIVE_LEGGED_TEST_LEG_RESID" not in h.active_positions
 
-    # --- PART 6: Pre-Book Balance Order, Unlocked 7-Coin D1 Boxes, ETH Sequential Tail-First Dispatch, Inline Unwind & Restart Persistence ---
-    # 6a. Unknown assets (e.g. ZEC) rejected; expansion assets (e.g. DOGE) enforce 5.0bps corridor & 8/8 per-asset gate; ungraduated sleeves gated
-    res_zec = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "ZEC", "dedupe_key": "D1_ZEC_TEST"})
-    assert res_zec["executed"] is False and res_zec["reason"] == "UNSUPPORTED_D1_ASSET:ZEC"
+    # --- PART 6: Pre-Book Balance Order, Unlocked 8-Coin D1 Boxes, ETH Sequential Tail-First Dispatch, Inline Unwind & Restart Persistence ---
+    # 6a. Unknown assets (e.g. PEPE) rejected; expansion assets (e.g. DOGE 5.0bps, ZEC 6.0bps) enforce corridor & 8/8 per-asset gate; ungraduated sleeves gated
+    res_unk = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "PEPE", "dedupe_key": "D1_PEPE_TEST"})
+    assert res_unk["executed"] is False and res_unk["reason"] == "UNSUPPORTED_D1_ASSET:PEPE"
+    res_zec_tight = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "ZEC", "corridor_bps": 4.5, "dedupe_key": "D1_ZEC_TIGHT"})
+    assert res_zec_tight["executed"] is False and "CORRIDOR_TOO_NARROW_OR_MISSING" in res_zec_tight["reason"]
     res_doge_tight = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "corridor_bps": 3.5, "dedupe_key": "D1_DOGE_TIGHT"})
     assert res_doge_tight["executed"] is False and "CORRIDOR_TOO_NARROW_OR_MISSING" in res_doge_tight["reason"]
     if isinstance(getattr(h, "risk_config", None), dict):
@@ -2958,6 +2960,8 @@ def test_v42_d1_dominance_box_live_bridge_and_lifecycle(tmp_path, monkeypatch):
     monkeypatch.setitem(harvester_mod.RISK_CONFIG, "enable_exp_d1_bridge", False)
     res_doge = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "DOGE", "corridor_bps": 8.0, "dedupe_key": "D1_DOGE_TEST"})
     assert res_doge["executed"] is False and res_doge["reason"] == "EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:DOGE"
+    res_zec = h.maybe_execute_graduated_d1_box({**cand_obj, "asset": "ZEC", "corridor_bps": 8.0, "dedupe_key": "D1_ZEC_TEST"})
+    assert res_zec["executed"] is False and res_zec["reason"] == "EXPANSION_ASSET_NOT_YET_8_OF_8_GRADUATED:ZEC"
     if isinstance(getattr(h, "risk_config", None), dict):
         monkeypatch.setitem(h.risk_config, "enable_exp_d1_bridge", True)
     monkeypatch.setitem(harvester_mod.RISK_CONFIG, "enable_exp_d1_bridge", True)

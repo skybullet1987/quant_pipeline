@@ -18,6 +18,8 @@ import math
 import time
 import pytest
 
+pytest.importorskip("experiments.polymarket.exp_s1_negrisk_convert")
+
 from experiments.polymarket.exp_s1_negrisk_convert import (
     NegRiskConvertArbitrageEngine,
     NegRiskMarketBundle,

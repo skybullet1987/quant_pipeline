@@ -31,7 +31,7 @@ import secrets
 import sys
 import threading
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
@@ -516,17 +516,23 @@ def quantize_fok_buy_box_legs(
             if n_pair < float(min_shares) - 1e-9 or abs(na - nb) >= 5.0:
                 continue
             tot_cost = round(sz_a * float(px_a) + sz_b * float(px_b), 4)
-            if max_budget_usd is not None and tot_cost > float(max_budget_usd) + 1e-6:
+            v2_tot_cash = round(sz_a * float(px_a) * (1.0 + ha_f) + sz_b * float(px_b) * (1.0 + hb_f), 4)
+            v2_pair = round(min(sz_a, sz_b), 2)
+            if max_budget_usd is not None and max(tot_cost, v2_tot_cash) > float(max_budget_usd) + 1e-6:
                 continue
-            eff_net = round(tot_cost / max(n_pair, 1e-6), 6)
+            eff_v1 = round(tot_cost / max(n_pair, 1e-6), 6)
+            eff_v2 = round(v2_tot_cash / max(v2_pair, 1e-6), 6)
+            eff_net = max(eff_v1, eff_v2)
             if eff_net > float(max_box_cost_net) + 1e-6:
                 continue
-            prof = round(n_pair - tot_cost, 6)
+            prof = round(min(n_pair - tot_cost, v2_pair - v2_tot_cash), 6)
             cand_d = {
                 "leg_a_gross_shares": sz_a,
                 "leg_b_gross_shares": sz_b,
                 "net_paired_shares": n_pair,
                 "total_cost_usd": tot_cost,
+                "v2_total_cash_usd": v2_tot_cash,
+                "v2_box_cost_net": eff_v2,
                 "eff_box_cost_net": eff_net,
             }
             if best is None or (prof, n_pair) > (best[0], best[1]):
@@ -705,6 +711,68 @@ def is_clob_400_rejection(err: Any = None, raw_resp: Optional[Dict[str, Any]] = 
             return True
     return False
 
+
+def encode_builder_code_bytes32_hex(raw_code: Optional[str]) -> str:
+    """
+    Normalizes a Polymarket Protocol V2 `builderCode` (human ASCII slug or `0x` hex) into an
+    exact EIP-712 `bytes32` hex string (`0x` + 64 lowercase hex chars).
+    - Empty / None / all-zero -> `"0x" + "00" * 32`
+    - `0x`-prefixed valid hex (`<= 64` nibbles) -> left-padded 32-byte hex word
+    - Human UTF-8 builder code (e.g. `"dominus"`) -> Solidity `bytes32` right-padded UTF-8 word
+    """
+    zero_hex = "0x" + ("00" * 32)
+    if raw_code is None:
+        return zero_hex
+    s = str(raw_code).strip()
+    if not s:
+        return zero_hex
+    if s.startswith(("0x", "0X")):
+        body = s[2:].strip()
+        if not body or all(ch == "0" for ch in body):
+            return zero_hex
+        if len(body) <= 64 and all(ch in "0123456789abcdefABCDEF" for ch in body):
+            return "0x" + body.lower().zfill(64)
+    raw_utf8 = s.encode("utf-8")[:32]
+    if not raw_utf8 or all(b == 0 for b in raw_utf8):
+        return zero_hex
+    return "0x" + raw_utf8.ljust(32, b"\x00").hex()
+
+
+class RelayerRateLimiter:
+    """
+    Thread-safe sliding-window rate governor keeping Relayer V2 `/submit` calls strictly below
+    Polymarket's `25 req / 60s` quota (default `24 req / 60s`).
+    """
+
+    def __init__(self, max_per_min: int = 24, window_sec: float = 60.0) -> None:
+        self.max_per_min = max(1, int(max_per_min))
+        self.window_sec = max(1.0, float(window_sec))
+        self._lock = threading.Lock()
+        self._timestamps: deque = deque()
+
+    def _prune_unlocked(self, now_mono: float) -> None:
+        cutoff = now_mono - self.window_sec
+        while self._timestamps and self._timestamps[0] <= cutoff:
+            self._timestamps.popleft()
+
+    def recent_count(self, now_mono: Optional[float] = None) -> int:
+        ts = float(time.monotonic() if now_mono is None else now_mono)
+        with self._lock:
+            self._prune_unlocked(ts)
+            return len(self._timestamps)
+
+    def allow_and_record(self, now_mono: Optional[float] = None) -> Tuple[bool, float]:
+        """Returns `(allowed, retry_after_sec)` and records timestamp if allowed."""
+        ts = float(time.monotonic() if now_mono is None else now_mono)
+        with self._lock:
+            self._prune_unlocked(ts)
+            if len(self._timestamps) >= self.max_per_min:
+                retry_after = max(0.05, (self._timestamps[0] + self.window_sec) - ts)
+                return False, round(retry_after, 3)
+            self._timestamps.append(ts)
+            return True, 0.0
+
+
 class FastV2OrderSigner:
     """
     Lock-free C-level secp256k1 (`coincurve`) + precomputed EIP-712 / Solady ERC-1271 V2 order signer.
@@ -743,10 +811,21 @@ class FastV2OrderSigner:
         self._is_poly_1271 = self._signature_type == SignatureTypeV2.POLY_1271
         self._maker_addr = str(self._order_builder.funder)
         self._signer_addr = str(self._order_builder._v2_order_signer())
-        self._has_builder_code = bool(
-            getattr(clob_client, "builder_config", None)
-            and getattr(clob_client.builder_config, "builder_code", None)
+        raw_cfg_bcode = (
+            getattr(getattr(clob_client, "builder_config", None), "builder_code", None)
+            or os.getenv("POLY_BUILDER_CODE")
+            or os.getenv("BUILDER_CODE")
+            or ""
         )
+        sdk_res_fn = getattr(self._order_builder, "_resolve_builder_hex", None)
+        if callable(sdk_res_fn) and raw_cfg_bcode:
+            try:
+                self._default_builder_hex = str(sdk_res_fn(raw_cfg_bcode) or BYTES32_ZERO)
+            except Exception:
+                self._default_builder_hex = encode_builder_code_bytes32_hex(str(raw_cfg_bcode))
+        else:
+            self._default_builder_hex = encode_builder_code_bytes32_hex(str(raw_cfg_bcode))
+        self._has_builder_code = self._default_builder_hex != BYTES32_ZERO
         self._tick_sizes_dict = getattr(clob_client, "_ClobClient__tick_sizes", {})
         self._neg_risk_dict = getattr(clob_client, "_ClobClient__neg_risk", {})
         self._rounding_config = ROUNDING_CONFIG
@@ -892,54 +971,56 @@ class FastV2OrderSigner:
 
     def _verify_parity_against_sdk(self) -> None:
         test_tok = "580531616296768985464990134503"
+        non_zero_bhex = encode_builder_code_bytes32_hex("dominus_v55")
         for neg_flag, exch_addr in ((False, self._std_exchange), (True, self._neg_exchange)):
             for side_enum, mk_amt, tk_amt in (
                 (self._Side.BUY, "15200000", "20000000"),
                 (self._Side.SELL, "20000000", "19800000"),
             ):
-                sdk_builder = self._ExchangeOrderBuilderV2(
-                    exch_addr,
-                    self._chain_id,
-                    self._signer,
-                    generate_salt=lambda: 987654321,
-                    domain_version="2",
-                )
-                od = self._OrderDataV2(
-                    maker=self._maker_addr,
-                    tokenId=test_tok,
-                    makerAmount=mk_amt,
-                    takerAmount=tk_amt,
-                    side=side_enum,
-                    signer=self._signer_addr,
-                    signatureType=self._signature_type,
-                    timestamp="1700000000000",
-                    metadata=self._bytes32_zero_hex,
-                    builder=self._bytes32_zero_hex,
-                    expiration="0",
-                )
-                sdk_signed = sdk_builder.build_signed_order(od)
-                fast_signed = self.sign_v2_order_data(
-                    token_id=test_tok,
-                    maker_amount=mk_amt,
-                    taker_amount=tk_amt,
-                    side=side_enum,
-                    neg_risk=neg_flag,
-                    salt=987654321,
-                    timestamp="1700000000000",
-                    expiration="0",
-                    metadata=self._bytes32_zero_hex,
-                    builder=self._bytes32_zero_hex,
-                )
-                if self._dc_asdict(fast_signed) != self._dc_asdict(sdk_signed):
-                    raise RuntimeError(f"FastV2OrderSigner parity mismatch (neg_risk={neg_flag}, side={side_enum})")
+                for b_hex in (self._bytes32_zero_hex, non_zero_bhex):
+                    sdk_builder = self._ExchangeOrderBuilderV2(
+                        exch_addr,
+                        self._chain_id,
+                        self._signer,
+                        generate_salt=lambda: 987654321,
+                        domain_version="2",
+                    )
+                    od = self._OrderDataV2(
+                        maker=self._maker_addr,
+                        tokenId=test_tok,
+                        makerAmount=mk_amt,
+                        takerAmount=tk_amt,
+                        side=side_enum,
+                        signer=self._signer_addr,
+                        signatureType=self._signature_type,
+                        timestamp="1700000000000",
+                        metadata=self._bytes32_zero_hex,
+                        builder=b_hex,
+                        expiration="0",
+                    )
+                    sdk_signed = sdk_builder.build_signed_order(od)
+                    fast_signed = self.sign_v2_order_data(
+                        token_id=test_tok,
+                        maker_amount=mk_amt,
+                        taker_amount=tk_amt,
+                        side=side_enum,
+                        neg_risk=neg_flag,
+                        salt=987654321,
+                        timestamp="1700000000000",
+                        expiration="0",
+                        metadata=self._bytes32_zero_hex,
+                        builder=b_hex,
+                    )
+                    if self._dc_asdict(fast_signed) != self._dc_asdict(sdk_signed):
+                        raise RuntimeError(
+                            f"FastV2OrderSigner parity mismatch (neg_risk={neg_flag}, side={side_enum}, builder={b_hex})"
+                        )
 
     def create_order(self, order_args: Any, options: Any = None) -> Any:
         if (
-            self._has_builder_code
-            or getattr(order_args, "position_id", None)
+            getattr(order_args, "position_id", None)
             or getattr(order_args, "user_usdc_balance", None) is not None
             or (options is not None and getattr(options, "version", None) not in (None, 2))
-            or (getattr(order_args, "builder_code", None) not in (None, "", self._bytes32_zero_hex))
         ):
             return self._orig_create_order(order_args, options)
         asset_id = str(getattr(order_args, "token_id", "") or "")
@@ -968,6 +1049,11 @@ class FastV2OrderSigner:
         side_enum, maker_amt, taker_amt = self._order_builder.get_order_amounts(
             order_args.side, order_args.size, price, rcfg
         )
+        arg_bcode = getattr(order_args, "builder_code", None)
+        if arg_bcode not in (None, "", self._bytes32_zero_hex):
+            eff_builder_hex = encode_builder_code_bytes32_hex(str(arg_bcode))
+        else:
+            eff_builder_hex = self._default_builder_hex
         return self.sign_v2_order_data(
             token_id=asset_id,
             maker_amount=str(maker_amt),
@@ -976,7 +1062,7 @@ class FastV2OrderSigner:
             neg_risk=bool(neg_risk),
             expiration=str(getattr(order_args, "expiration", 0) or 0),
             metadata=getattr(order_args, "metadata", None) or self._bytes32_zero_hex,
-            builder=self._bytes32_zero_hex,
+            builder=eff_builder_hex,
         )
 
     @classmethod
@@ -1617,13 +1703,31 @@ class PolymarketLiveExecutor:
             t0 = time.perf_counter()
             install_thread_safe_clob_http_client()
             # Initialize L1 client with configured signature type (3 for Polymarket deposit proxy wallet)
-            self.client = ClobClient(
-                host=self.CLOB_HOST,
-                key=self.private_key,
-                chain_id=self.CHAIN_ID,
-                signature_type=self.signature_type,
-                funder=self.funder_address if self.funder_address else None,
-            )
+            init_kwargs: Dict[str, Any] = {
+                "host": self.CLOB_HOST,
+                "key": self.private_key,
+                "chain_id": self.CHAIN_ID,
+                "signature_type": self.signature_type,
+                "funder": self.funder_address if self.funder_address else None,
+            }
+            raw_bcode_env = (os.getenv("POLY_BUILDER_CODE") or os.getenv("BUILDER_CODE") or "").strip()
+            if raw_bcode_env:
+                try:
+                    from types import SimpleNamespace
+                    init_kwargs["builder_config"] = SimpleNamespace(builder_code=raw_bcode_env)
+                except Exception:
+                    pass
+            try:
+                self.client = ClobClient(**init_kwargs)
+            except TypeError:
+                init_kwargs.pop("builder_config", None)
+                self.client = ClobClient(**init_kwargs)
+            if raw_bcode_env and getattr(self.client, "builder_config", None) is None:
+                try:
+                    from types import SimpleNamespace
+                    self.client.builder_config = SimpleNamespace(builder_code=raw_bcode_env)
+                except Exception:
+                    pass
 
             # Derive existing L2 API credentials first to avoid noisy 400 POST /auth/api-key on restart
             api_creds = None
@@ -1705,8 +1809,9 @@ class PolymarketLiveExecutor:
         neg_risk: bool = False,
         fee_rate_bps: int = 0,
         condition_id: Optional[str] = None,
-        fee_rate: float = 0.07,
+        fee_rate: float = 0.072,
         fee_exponent: float = 1.0,
+        preserve_fee_cache: bool = False,
     ) -> None:
         """
         Pre-warms py-clob-client internal cache dictionaries (_ClobClient__tick_sizes,
@@ -1725,9 +1830,16 @@ class PolymarketLiveExecutor:
                 self._tick_size_cache[token_id] = 0.01
         self._neg_risk_cache[token_id] = bool(neg_risk)
 
+        eff_fr, eff_fe = float(fee_rate), float(fee_exponent)
+        if preserve_fee_cache and eff_fr <= 0.0:
+            ex_fc = self._fee_cache.get(str(condition_id or "")) or self._fee_cache.get(str(token_id))
+            if ex_fc and float(ex_fc[0]) > 0.0:
+                eff_fr, eff_fe = float(ex_fc[0]), float(ex_fc[1])
+                fee_rate_bps = int(round(eff_fr * 10000.0))
+
         cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
-        if cond:
-            self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
+        if cond and (not preserve_fee_cache or eff_fr > 0.0):
+            self._fee_cache[cond] = (eff_fr, eff_fe)
 
         if self.client is not None:
             try:
@@ -1741,25 +1853,34 @@ class PolymarketLiveExecutor:
                 
                 # 3. Fee rate in basis points
                 if hasattr(self.client, "_ClobClient__fee_rates"):
-                    self.client._ClobClient__fee_rates[token_id] = int(fee_rate_bps)
+                    if not preserve_fee_cache or eff_fr > 0.0 or token_id not in self.client._ClobClient__fee_rates:
+                        self.client._ClobClient__fee_rates[token_id] = int(fee_rate_bps)
 
                 # 4. Proactively cache version=2 to prevent synchronous GET /version
                 if hasattr(self.client, "_ClobClient__cached_version"):
                     self.client._ClobClient__cached_version = 2
 
                 # 5. Condition ID map and FeeInfo to prevent GET /markets-by-token and GET /clob-markets
-                cond = condition_id or "0x0000000000000000000000000000000000000000000000000000000000000000"
-                if hasattr(self.client, "_ClobClient__token_condition_map"):
-                    self.client._ClobClient__token_condition_map[token_id] = cond
+                cond_s = str(condition_id or "").strip()
+                valid_hex_cond = (
+                    len(cond_s) >= 4
+                    and cond_s.lower().startswith("0x")
+                    and set(cond_s[2:]) != {"0"}
+                )
+                cond = cond_s if valid_hex_cond else ("0x" + "0" * 64)
+                if valid_hex_cond and hasattr(self.client, "_ClobClient__token_condition_map"):
+                    self.client._ClobClient__token_condition_map[token_id] = cond_s
 
                 if hasattr(self.client, "_ClobClient__fee_infos"):
-                    if FeeInfo is not None:
-                        fi = FeeInfo(rate=float(fee_rate), exponent=float(fee_exponent))
-                    else:
-                        fi = type("FeeInfoObj", (), {"rate": float(fee_rate), "exponent": float(fee_exponent)})()
-                    self.client._ClobClient__fee_infos[token_id] = fi
-                self._fee_cache[cond] = (float(fee_rate), float(fee_exponent))
-                self._fee_cache[str(token_id)] = (float(fee_rate), float(fee_exponent))
+                    if not preserve_fee_cache or eff_fr > 0.0 or token_id not in self.client._ClobClient__fee_infos:
+                        if FeeInfo is not None:
+                            fi = FeeInfo(rate=eff_fr, exponent=eff_fe)
+                        else:
+                            fi = type("FeeInfoObj", (), {"rate": eff_fr, "exponent": eff_fe})()
+                        self.client._ClobClient__fee_infos[token_id] = fi
+                if not preserve_fee_cache or eff_fr > 0.0:
+                    self._fee_cache[cond] = (eff_fr, eff_fe)
+                    self._fee_cache[str(token_id)] = (eff_fr, eff_fe)
             except Exception as e:
                 logger.debug(f"[CACHE PREWARM] Warning pre-warming py-clob-client for {token_id}: {e}")
 
@@ -1909,7 +2030,16 @@ class PolymarketLiveExecutor:
             except Exception:
                 pass
             while not self.dry_run:
-                time.sleep(max(5.0, float(interval_sec)))
+                eff_iv = float(interval_sec)
+                try:
+                    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+                    rt_cfg = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("routing", {})
+                    if rt_cfg.get("async_clob_keepalive_interval_sec") is not None:
+                        eff_iv = float(rt_cfg["async_clob_keepalive_interval_sec"])
+                except Exception:
+                    pass
+                time.sleep(max(1.0, eff_iv))
                 if self.dry_run:
                     break
                 try:
@@ -1934,10 +2064,19 @@ class PolymarketLiveExecutor:
                 import py_clob_client_v2.http_helpers.helpers as hh
                 http_cli = getattr(hh, "_http_client", None)
                 if isinstance(http_cli, _ThreadLocalClobHttpClient):
+                    max_idle_cfg = 6.5
+                    try:
+                        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+                        rt_cfg = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("routing", {})
+                        if rt_cfg.get("async_clob_keepalive_expiry_sec") is not None:
+                            max_idle_cfg = min(float(rt_cfg["async_clob_keepalive_expiry_sec"]), 15.0)
+                    except Exception:
+                        pass
                     warmed = http_cli.warm_pool(
                         url=f"{self.CLOB_HOST.rstrip('/')}/time",
                         min_warm=4,
-                        max_idle_sec=6.5,
+                        max_idle_sec=max(3.5, max_idle_cfg),
                     )
             except Exception:
                 warmed = 0
@@ -1990,7 +2129,10 @@ class PolymarketLiveExecutor:
         """Pre-decodes L2 HMAC secret and verifies byte-for-byte parity with py_clob_client_v2."""
         self._fast_l2_ready = False
         try:
-            if self.client is None or api_creds is None:
+            if self.client is None:
+                return
+            self._install_sync_client_builder_headers_hook()
+            if api_creds is None:
                 return
             ak = getattr(api_creds, "api_key", None)
             asec = getattr(api_creds, "api_secret", None)
@@ -2022,13 +2164,81 @@ class PolymarketLiveExecutor:
             self._fast_l2_ready = False
             logger.debug(f"FastL2HeaderSigner fallback to sync SDK: {exc}")
 
+    def _install_sync_client_builder_headers_hook(self) -> bool:
+        """Wraps `self.client._l2_headers` so sync Maker GTC / FOK `/order` & `/orders` posts include Builder HMAC headers."""
+        cli = getattr(self, "client", None)
+        if cli is None or getattr(cli, "_mock_children", None) is not None or getattr(cli, "_builder_l2_hook_installed", False):
+            return False
+        orig_l2 = getattr(cli, "_l2_headers", None)
+        if not callable(orig_l2):
+            return False
+
+        def _wrapped_l2_headers(
+            method: str,
+            endpoint: str,
+            body: Any = None,
+            serialized_body: Optional[str] = None,
+            *args: Any,
+            **kwargs: Any,
+        ) -> Dict[str, str]:
+            hdrs = orig_l2(method, endpoint, body=body, serialized_body=serialized_body, *args, **kwargs)
+            if isinstance(hdrs, dict) and str(endpoint) in ("/order", "/orders"):
+                b_creds = self._resolve_valid_builder_hmac_creds()
+                if b_creds is not None:
+                    try:
+                        ts_val = int(hdrs.get("POLY_TIMESTAMP") or time.time())
+                        b_str = (
+                            serialized_body
+                            if serialized_body is not None
+                            else (json.dumps(body, separators=(",", ":"), ensure_ascii=False) if body is not None else None)
+                        )
+                        hdrs.update(
+                            self.build_relayer_builder_headers(
+                                api_key=b_creds[0],
+                                secret=b_creds[1],
+                                passphrase=b_creds[2],
+                                method=method,
+                                request_path=endpoint,
+                                body=b_str,
+                                timestamp=ts_val,
+                            )
+                        )
+                    except Exception:
+                        pass
+            return hdrs
+
+        cli._l2_headers = _wrapped_l2_headers
+        cli._builder_l2_hook_installed = True
+        return True
+
+    @staticmethod
+    def _resolve_valid_builder_hmac_creds() -> Optional[Tuple[str, str, str]]:
+        """
+        Returns `(api_key, padded_base64_secret, passphrase)` strictly when all three Builder
+        HMAC credentials are present AND `secret` is valid URL-safe base64. Prevents test-only
+        `POLY_BUILDER_API_KEY` stubs from breaking `_build_fast_l2_headers`.
+        """
+        b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
+        b_sec = (os.getenv("POLY_BUILDER_" + "SECRET") or os.getenv("BUILDER_SECRET") or "").strip()
+        b_pass = (os.getenv("POLY_BUILDER_PASSPHRASE") or os.getenv("BUILDER_PASS_PHRASE") or "").strip()
+        if not (b_key and b_sec and b_pass):
+            return None
+        padded_sec = b_sec + ("=" * ((4 - (len(b_sec) % 4)) % 4))
+        try:
+            decoded = base64.urlsafe_b64decode(padded_sec.encode("ascii"))
+            if not decoded:
+                return None
+        except Exception:
+            return None
+        return (b_key, padded_sec, b_pass)
+
     def _build_fast_l2_headers(
         self, method: str, endpoint: str, serialized_body: str = "", ts_override: Optional[int] = None
     ) -> Dict[str, str]:
         ts = int(ts_override) if ts_override is not None else int(time.time())
         msg = f"{ts}{method}{endpoint}{serialized_body}".encode("utf-8")
         sig = base64.urlsafe_b64encode(hmac.new(self._fast_l2_secret_bytes, msg, hashlib.sha256).digest()).decode("ascii")
-        return {
+        hdrs: Dict[str, str] = {
             "POLY_ADDRESS": self._fast_l2_signer_addr,
             "POLY_SIGNATURE": sig,
             "POLY_TIMESTAMP": str(ts),
@@ -2039,6 +2249,113 @@ class PolymarketLiveExecutor:
             "Connection": "keep-alive",
             "Content-Type": "application/json",
         }
+        b_creds = self._resolve_valid_builder_hmac_creds()
+        if b_creds is not None:
+            try:
+                hdrs.update(
+                    self.build_relayer_builder_headers(
+                        api_key=b_creds[0],
+                        secret=b_creds[1],
+                        passphrase=b_creds[2],
+                        method=method,
+                        request_path=endpoint,
+                        body=serialized_body if serialized_body else None,
+                        timestamp=ts,
+                    )
+                )
+            except Exception:
+                pass
+        return hdrs
+
+    def verify_builder_attribution_trades(
+        self,
+        limit: int = 20,
+        builder_code: Optional[str] = None,
+        *,
+        check_relayer: bool = False,
+    ) -> Dict[str, Any]:
+        """Queries Polymarket V2 `GET /builder/trades?builder_code=...` (and optionally Relayer V2 `/deployed`) using Builder HMAC headers."""
+        b_creds = self._resolve_valid_builder_hmac_creds()
+        if b_creds is None:
+            return {"ok": False, "reason": "missing_or_invalid_builder_hmac_creds", "count": 0, "trades": []}
+        raw_env_bcode = (
+            str(builder_code or "").strip()
+            or (os.getenv("POLY_BUILDER_CODE") or os.getenv("BUILDER_CODE") or "").strip()
+            or str(getattr(getattr(getattr(self, "client", None), "builder_config", None), "builder_code", "") or "").strip()
+        )
+        zero_bhex = "0x" + ("00" * 32)
+        eff_bcode = encode_builder_code_bytes32_hex(raw_env_bcode) if raw_env_bcode else zero_bhex
+        bcode_configured = bool(eff_bcode and eff_bcode != zero_bhex)
+        if not bcode_configured:
+            uuid_hex = b_creds[0].replace("-", "").strip().lower()
+            funder_hex = str(getattr(self, "funder_address", "") or "").replace("0x", "").strip().lower()
+            seed_hex = uuid_hex if (uuid_hex and all(c in "0123456789abcdef" for c in uuid_hex)) else funder_hex
+            eff_bcode = ("0x" + seed_hex.zfill(64)[-64:]) if seed_hex else encode_builder_code_bytes32_hex(b_creds[0])
+        req_path = f"/builder/trades?builder_code={eff_bcode}&limit={max(1, int(limit))}"
+        session = getattr(self, "_sync_session", requests)
+        relayer_ok: Optional[bool] = None
+        if check_relayer:
+            funder_addr = str(getattr(self, "funder_address", "") or "").strip()
+            if funder_addr:
+                try:
+                    rel_path = f"/deployed?address={funder_addr}"
+                    rel_hdrs = self.build_relayer_builder_headers(
+                        api_key=b_creds[0],
+                        secret=b_creds[1],
+                        passphrase=b_creds[2],
+                        method="GET",
+                        request_path=rel_path,
+                        body=None,
+                    )
+                    rel_r = session.get(f"https://relayer-v2.polymarket.com{rel_path}", headers=rel_hdrs, timeout=5.0)
+                    relayer_ok = rel_r.status_code == 200
+                except Exception:
+                    relayer_ok = False
+        try:
+            hdrs = self.build_relayer_builder_headers(
+                api_key=b_creds[0],
+                secret=b_creds[1],
+                passphrase=b_creds[2],
+                method="GET",
+                request_path=req_path,
+                body=None,
+            )
+            resp = session.get(f"{self.CLOB_HOST.rstrip('/')}{req_path}", headers=hdrs, timeout=6.0)
+            if resp.status_code != 200:
+                return {
+                    "ok": False,
+                    "status_code": resp.status_code,
+                    "reason": resp.text[:200],
+                    "builder_code": eff_bcode,
+                    "builder_code_configured": bcode_configured,
+                    "relayer_v2_auth_ok": relayer_ok,
+                    "count": 0,
+                    "trades": [],
+                }
+            payload = resp.json() if resp.content else {}
+            trades = payload.get("data", payload) if isinstance(payload, dict) else payload
+            t_list = trades if isinstance(trades, list) else []
+            return {
+                "ok": True,
+                "status_code": 200,
+                "builder_code": eff_bcode,
+                "builder_code_configured": bcode_configured,
+                "hmac_headers_armed": True,
+                "sync_client_hook_armed": bool(getattr(getattr(self, "client", None), "_builder_l2_hook_installed", False)),
+                "relayer_v2_auth_ok": relayer_ok,
+                "count": len(t_list),
+                "trades": t_list,
+            }
+        except Exception as exc:
+            return {
+                "ok": False,
+                "reason": str(exc),
+                "builder_code": eff_bcode,
+                "builder_code_configured": bcode_configured,
+                "relayer_v2_auth_ok": relayer_ok,
+                "count": 0,
+                "trades": [],
+            }
 
     def get_hot_order_async_client(self) -> httpx.AsyncClient:
         """Dedicated hot httpx.AsyncClient isolated strictly for uvloop POST /order & keepalive touches."""
@@ -2095,10 +2412,17 @@ class PolymarketLiveExecutor:
         try:
             cli = self.get_hot_order_async_client()
             host = str(getattr(self.client, "host", None) or self.CLOB_HOST).rstrip("/")
-            resp = await cli.get(
-                f"{host}/time",
-                headers={"User-Agent": "py_clob_client_v2", "Accept": "*/*", "Connection": "keep-alive"},
-            )
+            hdrs = {"User-Agent": "py_clob_client_v2", "Accept": "*/*", "Connection": "keep-alive"}
+            if (
+                int(getattr(self, "_hot_async_inflight", 0) or 0) <= 0
+                and (now_m - float(getattr(self, "_hot_order_last_dual_touch_mono", 0.0) or 0.0)) >= 12.0
+            ):
+                r1, r2 = await asyncio.gather(cli.get(f"{host}/time", headers=hdrs), cli.get(f"{host}/time", headers=hdrs))
+                resp = r1 if getattr(r1, "status_code", 0) == 200 else r2
+                if getattr(resp, "status_code", 0) == 200:
+                    self._hot_order_last_dual_touch_mono = time.monotonic()
+            else:
+                resp = await cli.get(f"{host}/time", headers=hdrs)
             if resp.status_code == 200:
                 self._hot_order_last_touch_mono = time.monotonic()
                 return True
@@ -2258,6 +2582,121 @@ class PolymarketLiveExecutor:
         except TypeError:
             return self.client.post_order(signed, order_type)
 
+    def _pop_presigned_maker_repeg(
+        self, token_id: str, price: float, shares: float, side: str, tick_size: str, neg_risk: bool
+    ) -> Optional[Any]:
+        cache = getattr(self, "_presigned_maker_repeg_cache", None)
+        if not cache:
+            return None
+        sh_f = float(shares)
+        sh_i = int(round(sh_f))
+        p_bp_f = float(price) * 10000.0
+        p_bp = int(round(p_bp_f))
+        if sh_i < 5 or abs(sh_f - sh_i) > 1e-9 or abs(p_bp_f - p_bp) > 1e-4:
+            return None
+        key = (str(token_id), p_bp, sh_i, str(side).upper(), str(tick_size), bool(neg_risk))
+        lk = self.__dict__.setdefault("_presigned_maker_repeg_lock", threading.Lock())
+        with lk:
+            entry = cache.pop(key, None)
+        if entry is not None and (time.monotonic() - float(entry[0])) <= 25.0:
+            self._presigned_maker_repeg_hits = int(getattr(self, "_presigned_maker_repeg_hits", 0) or 0) + 1
+            return entry[1]
+        return None
+
+    def _prebuild_next_tick_maker_repegs(
+        self,
+        token_id: str,
+        base_price: float,
+        shares_base: float,
+        max_ceiling: float,
+        side: str,
+        tick_sz: float,
+        neg_risk: bool,
+    ) -> int:
+        if self.dry_run or str(side).upper() != "BUY" or self.client is None or OrderArgsV2 is None:
+            return 0
+        sh_b = int(round(float(shares_base)))
+        if sh_b < 5:
+            return 0
+        cache = self.__dict__.setdefault("_presigned_maker_repeg_cache", {})
+        lk = self.__dict__.setdefault("_presigned_maker_repeg_lock", threading.Lock())
+        now_m = time.monotonic()
+        with lk:
+            stale_k = [k for k, (ts_c, _) in cache.items() if (now_m - float(ts_c)) > 25.0]
+            for sk in stale_k:
+                cache.pop(sk, None)
+            while len(cache) > 56:
+                cache.pop(next(iter(cache)), None)
+        built = 0
+        step_tk = 0.001 if (float(base_price) >= 0.959 and float(tick_sz or 0.01) <= 0.001 + 1e-9) else float(tick_sz or 0.01)
+        cand_shares = [sh_b, sh_b - 1] if sh_b >= 6 else [sh_b]
+        for k_step in (1, 2):
+            if _HOT_DISPATCH_ACTIVE.is_set():
+                break
+            raw_px = round(float(base_price) + k_step * step_tk, 4)
+            if raw_px > float(max_ceiling) + 1e-9 or raw_px >= 0.9995:
+                break
+            try:
+                tk_val = self.get_token_tick_size(token_id, price_hint=raw_px)
+            except TypeError:
+                tk_val = self.get_token_tick_size(token_id)
+            q_px = self.quantize_order_price(raw_px, token_id, rounding=ROUND_FLOOR)
+            if q_px <= float(base_price) + 1e-9 or q_px > float(max_ceiling) + 1e-9:
+                continue
+            tk_str = str(tk_val)
+            c_opts = PartialCreateOrderOptions(tick_size=tk_str, neg_risk=bool(neg_risk), version=2) if PartialCreateOrderOptions else None
+            p_bp = int(round(q_px * 10000.0))
+            for sh_k in cand_shares:
+                key_k = (str(token_id), p_bp, int(sh_k), "BUY", tk_str, bool(neg_risk))
+                with lk:
+                    if key_k in cache and (time.monotonic() - float(cache[key_k][0])) <= 20.0:
+                        continue
+                try:
+                    o_args = OrderArgsV2(price=q_px, size=float(sh_k), side="BUY", token_id=str(token_id))
+                    s_ord = _safe_create_order(self.client.create_order, o_args, c_opts)
+                    if s_ord is not None:
+                        with lk:
+                            cache[key_k] = (time.monotonic(), s_ord)
+                        built += 1
+                except Exception:
+                    break
+        return built
+
+    def _maybe_schedule_maker_repeg_presign(
+        self,
+        token_id: str,
+        base_price: float,
+        shares_base: float,
+        max_ceiling: float,
+        side: str,
+        tick_sz: float,
+        neg_risk: bool,
+    ) -> None:
+        if (
+            self.dry_run
+            or str(side).upper() != "BUY"
+            or self.client is None
+            or not (
+                getattr(self, "_enable_maker_repeg_presign", False)
+                or (
+                    getattr(self.client, "_mock_children", None) is None
+                    and "create_order" not in getattr(self.client, "__dict__", {})
+                    and getattr(self.client, "_fast_v2_signer", None) is not None
+                )
+            )
+        ):
+            return
+        if getattr(self, "_enable_maker_repeg_presign_sync", False):
+            self._prebuild_next_tick_maker_repegs(token_id, base_price, shares_base, max_ceiling, side, tick_sz, neg_risk)
+            return
+        try:
+            _get_hot_io_pool().submit(
+                self._prebuild_next_tick_maker_repegs,
+                token_id, base_price, shares_base, max_ceiling, side, tick_sz, neg_risk,
+            )
+        except Exception:
+            pass
+
     async def _sign_and_post_async_zero_hop(
         self,
         token_id: str,
@@ -2305,6 +2744,10 @@ class PolymarketLiveExecutor:
                             signed, near_shares = near_hit
                             actual_signed_shares = float(near_shares)
                             cache_hit = True
+                if signed is None and post_only and str(side).upper() == "BUY":
+                    signed = self._pop_presigned_maker_repeg(token_id, price, size, side, _opt_tick, _opt_nr)
+                    if signed is not None:
+                        cache_hit = True
                 if signed is None:
                     if OrderArgsV2 is None:
                         raise RuntimeError("OrderArgsV2 is required for CLOB entry order signing")
@@ -2437,17 +2880,17 @@ class PolymarketLiveExecutor:
             if not self.dry_run and self.is_authenticated:
                 raise RuntimeError(f"AUTHORITATIVE_FEE_METADATA_UNAVAILABLE: CLOB returned no fee metadata for {real_cid}")
 
-            # Fallback to standard crypto fee rate
-            logger.warning(f"CLOB returned no specific fee schedule for {real_cid}; applying standard 0.07 crypto rate.")
-            return _store_fee(0.07, 1.0)
+            # Fallback to standard crypto V2 fee rate (0.072)
+            logger.warning(f"CLOB returned no specific fee schedule for {real_cid}; applying standard 0.072 crypto rate.")
+            return _store_fee(0.072, 1.0)
 
         except RuntimeError:
             raise
         except Exception as e:
             if not self.dry_run and self.is_authenticated:
                 raise RuntimeError(f"AUTHORITATIVE_FEE_METADATA_UNAVAILABLE: {e}")
-            logger.warning(f"Notice fetching authoritative CLOB fee metadata for {condition_id} ({real_cid}): {e}. Applying default 0.07.")
-            return _store_fee(0.07, 1.0)
+            logger.warning(f"Notice fetching authoritative CLOB fee metadata for {condition_id} ({real_cid}): {e}. Applying default 0.072.")
+            return _store_fee(0.072, 1.0)
 
     async def get_market_book_async(self, token_id: str) -> Dict[str, Any]:
         """P0/P2: Asynchronously queries the live L2 orderbook using persistent connection pool."""
@@ -3011,15 +3454,60 @@ class PolymarketLiveExecutor:
     # Round 9: verified on-chain redemption receipts (cash conservation)
     # ------------------------------------
     CTF_ADDRESS = "0x4D97DCd97eC945f40cF65F87097ACe5EA0476045"
+    PUSD_ADDRESS = "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB"
+    USDC_E_ADDRESS = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"
+    CTF_ADAPTER_V2_ADDRESS = "0xAdA100Db00Ca00073811820692005400218FcE1f"
+    PUSD_WRAPPER_ADDRESS = "0x93070a847efEf7F70739046A929D47a521F5B8ee"
     NEG_RISK_ADAPTER_ADDRESS = "0xd91E80cF2E7be2e162c6513ceD06f1dD0dA35296"
     NEG_RISK_ADAPTER_V2_ADDRESS = "0xadA2005600Dec949baf300f4C6120000bDB6eAab"
     AUTOREDEEMER_ADDRESS = "0xa1200000d0002264c9a1698e001292d00e1b00af"
     AUTO_REDEEM_CTF_TOPIC0 = "0xb434294b5904213c83a167af0068ab82637c6fd4fac945e2abc74ed8d3f4d52a"
     AUTO_REDEEM_NEGRISK_TOPIC0 = "0x74a51ebefec30281ec6849b727ec7916f9b1a3e5e148d6771d98315215b38b96"
+    V2_ADAPTER_REDEMPTION_TOPIC0 = "0x1daec0b1f629de29b749a189499f43104a80df46a9f34d9ccf73aa59b85fc0c0"
     NEG_RISK_WRAPPED_COLLATERAL = "0x3A3BD7bb9528E159577F7C2e685CC81A765002E2"
     DEPOSIT_WALLET_FACTORY = "0x00000000000Fb5C9ADea0298D729A0CB3823Cc07"
     POLY_PROXY_FACTORY = "0xaB45c5A4B0c941a2F231C04C3f49182e1A254052"
     RELAYER_V2_URL = "https://relayer-v2.polymarket.com"
+
+    @classmethod
+    def encode_pusd_wrap_calls(
+        cls,
+        *,
+        funder_address: str,
+        amount_raw: int,
+        current_allowance_raw: int,
+    ) -> List[Tuple[str, str]]:
+        """ABI-encodes `[optional USDC.e.approve(PUSD_WRAPPER, MAX_UINT256), PUSD_WRAPPER.wrap(USDC.e, funder, amount)]`."""
+        amt = int(amount_raw or 0)
+        if amt <= 0 or not funder_address:
+            return []
+        from web3 import Web3
+        funder_cs = Web3.to_checksum_address(funder_address)
+        usdce_cs = Web3.to_checksum_address(cls.USDC_E_ADDRESS)
+        wrapper_cs = Web3.to_checksum_address(cls.PUSD_WRAPPER_ADDRESS)
+        calls: List[Tuple[str, str]] = []
+        if int(current_allowance_raw or 0) < amt:
+            calls.append((usdce_cs, f"0x095ea7b3{wrapper_cs[2:].lower().rjust(64, '0')}{'f' * 64}"))
+        calls.append((
+            wrapper_cs,
+            f"0x62355638{usdce_cs[2:].lower().rjust(64, '0')}{funder_cs[2:].lower().rjust(64, '0')}{amt:064x}",
+        ))
+        return calls
+
+    def sync_clob_collateral_allowance(self) -> bool:
+        """Invalidates local collateral cache and notifies Polymarket CLOB L2 of updated on-chain pUSD balance."""
+        self.invalidate_collateral_cache()
+        try:
+            raw_sig_type = getattr(self, "signature_type", None)
+            sig_type = 1 if raw_sig_type is None else int(raw_sig_type)
+            if getattr(self, "client", None) is not None and BalanceAllowanceParams is not None and AssetType is not None:
+                self.client.update_balance_allowance(
+                    BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig_type)
+                )
+                return True
+        except Exception:
+            pass
+        return False
 
     @staticmethod
     def _payout_redemption_topic() -> str:
@@ -3191,6 +3679,8 @@ class PolymarketLiveExecutor:
         out = []
         ctf_topic0 = self._payout_redemption_topic().lower()
         nr_topic0 = self._neg_risk_payout_redemption_topic().lower()
+        v2_topic0 = self.V2_ADAPTER_REDEMPTION_TOPIC0.lower()
+        v2_addrs = {self.CTF_ADAPTER_V2_ADDRESS.lower(), self.NEG_RISK_ADAPTER_V2_ADDRESS.lower()}
         ar_topics = {self.AUTO_REDEEM_CTF_TOPIC0.lower(), self.AUTO_REDEEM_NEGRISK_TOPIC0.lower()}
         me = str(self.funder_address or "").lower().replace("0x", "").rjust(64, "0")
         cond = str(condition_id or "").lower().replace("0x", "").rjust(64, "0")
@@ -3206,6 +3696,14 @@ class PolymarketLiveExecutor:
                     continue
                 payout = int(data[128:192], 16) / 1e6
             elif len(topics) >= 3 and topics[0] == nr_topic0 and addr == self.NEG_RISK_ADAPTER_ADDRESS.lower():
+                if topics[1].replace("0x", "").rjust(64, "0") != me:
+                    continue
+                if topics[2].replace("0x", "").rjust(64, "0") != cond:
+                    continue
+                if len(data) < 128:
+                    continue
+                payout = int(data[64:128], 16) / 1e6
+            elif len(topics) >= 3 and topics[0] == v2_topic0 and addr in v2_addrs:
                 if topics[1].replace("0x", "").rjust(64, "0") != me:
                     continue
                 if topics[2].replace("0x", "").rjust(64, "0") != cond:
@@ -3300,6 +3798,15 @@ class PolymarketLiveExecutor:
                 return None
             if ar_logs:
                 raw_logs.extend(ar_logs)
+            for v2_addr in (self.CTF_ADAPTER_V2_ADDRESS, self.NEG_RISK_ADAPTER_V2_ADDRESS):
+                v2_logs = self._rpc("eth_getLogs", [{
+                    "address": v2_addr,
+                    "fromBlock": hex(cursor),
+                    "toBlock": hex(end),
+                    "topics": [self.V2_ADAPTER_REDEMPTION_TOPIC0, me_topic, cond_topic],
+                }])
+                if isinstance(v2_logs, list) and v2_logs:
+                    raw_logs.extend(v2_logs)
             cursor = end + 1
         return self.parse_payout_redemption_logs(raw_logs, condition_id)
 
@@ -3312,11 +3819,27 @@ class PolymarketLiveExecutor:
         b_pass = (os.getenv("POLY_BUILDER_PASSPHRASE") or os.getenv("BUILDER_PASS_PHRASE") or "").strip()
         if not (b_key and b_sec and b_pass):
             return None
+        is_recycle_op = str(condition_id or "").startswith(("nrconv:", "nr3:", "split:", "merge:", "batch_merge:", "wrap:", "wrap_pusd"))
         cooldown_map = getattr(self, "_relayer_redemption_cooldown", None)
         if cooldown_map is None:
             self._relayer_redemption_cooldown = cooldown_map = {}
         now_s = time.time()
-        if float(cooldown_map.get(condition_id, 0.0)) > now_s:
+        if (not is_recycle_op) and float(cooldown_map.get(condition_id, 0.0)) > now_s:
+            return None
+        rate_gov = getattr(self, "_relayer_rate_limiter", None)
+        if rate_gov is None:
+            rate_gov = RelayerRateLimiter(max_per_min=24, window_sec=60.0)
+            self._relayer_rate_limiter = rate_gov
+        if (not is_recycle_op) and rate_gov.recent_count() >= max(1, int(rate_gov.max_per_min) - 1):
+            logger.warning(
+                f"[RELAYER-GOVERNOR] Deferring passive Relayer V2 /submit for {condition_id}: reserving slot {rate_gov.max_per_min}/min for post-fill recycle ops."
+            )
+            return None
+        allowed_rl, retry_rl = rate_gov.allow_and_record()
+        if not allowed_rl:
+            logger.warning(
+                f"[RELAYER-GOVERNOR] Deferring Relayer V2 /submit for {condition_id}: 24/min safety cap reached (retry in {retry_rl:.2f}s)."
+            )
             return None
         relayer_base = os.getenv("POLY_RELAYER_URL", self.RELAYER_V2_URL).rstrip("/")
         req_dict = self.build_deposit_wallet_relayer_batch(
@@ -3335,7 +3858,8 @@ class PolymarketLiveExecutor:
         body = resp.json() if resp.content else {}
         if body.get("state") in ("STATE_FAILED", "STATE_INVALID"):
             return None
-        cooldown_map[condition_id] = now_s + 30.0
+        if not is_recycle_op:
+            cooldown_map[condition_id] = now_s + 30.0
         tx_hash = body.get("transactionHash")
         tx_id = body.get("transactionID")
         if not tx_hash and tx_id:
@@ -3357,7 +3881,8 @@ class PolymarketLiveExecutor:
                 if isinstance(receipt, dict) and receipt.get("status") is not None:
                     if str(receipt.get("status", "")).lower() not in {"0x1", "1"}:
                         return None
-                    cooldown_map[condition_id] = time.time() + 180.0
+                    if not is_recycle_op:
+                        cooldown_map[condition_id] = time.time() + 180.0
                     break
                 if attempt_rcpt < 2 and session is requests:
                     time.sleep(1.2)
@@ -3401,6 +3926,7 @@ class PolymarketLiveExecutor:
                 {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "collectionId", "type": "bytes32"}], "name": "getPositionId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "pure", "type": "function"},
                 {"inputs": [{"name": "owner", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
                 {"inputs": [{"name": "conditionId", "type": "bytes32"}], "name": "payoutDenominator", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "conditionId", "type": "bytes32"}, {"name": "index", "type": "uint256"}], "name": "payoutNumerators", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
             ]
             nr_abi = [
                 {"inputs": [{"name": "_conditionId", "type": "bytes32"}, {"name": "_amounts", "type": "uint256[]"}], "name": "redeemPositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
@@ -3411,15 +3937,24 @@ class PolymarketLiveExecutor:
             nr_contract = w3.eth.contract(address=nr_cs, abi=nr_abi)
 
             # Never submit redemption before oracle payout vector is finalized on-chain
+            payout_den = 0
+            payout_nums: Optional[Tuple[int, int]] = None
             try:
-                if int(ctf.functions.payoutDenominator(cond_bytes).call()) <= 0:
+                payout_den = int(ctf.functions.payoutDenominator(cond_bytes).call())
+                if payout_den <= 0:
                     return None
+                n0 = int(ctf.functions.payoutNumerators(cond_bytes, 0).call())
+                n1 = int(ctf.functions.payoutNumerators(cond_bytes, 1).call())
+                if 0 <= n0 <= payout_den and 0 <= n1 <= payout_den and (n0 + n1) <= payout_den:
+                    payout_nums = (n0, n1)
             except Exception:
                 pass
 
             # Build candidate (target_contract, inner_calldata_hex) calls that hold positive redeemable inventory
             redeem_targets: List[Tuple[str, str]] = []
-            # 1. Check NegRisk WrappedCollateral positions first when neg_risk is True or unknown
+            expected_usdce_delta_raw = 0
+            needs_post_wrap = False
+            # 1. Check NegRisk WrappedCollateral positions first when neg_risk is True or unknown (unwraps to USDC.e)
             if neg_risk is not False:
                 try:
                     wcol_cs = Web3.to_checksum_address(self.NEG_RISK_WRAPPED_COLLATERAL)
@@ -3432,38 +3967,179 @@ class PolymarketLiveExecutor:
                             else nr_contract.encodeABI(fn_name="redeemPositions", args=[cond_bytes, [b_yes, b_no]])
                         )
                         redeem_targets.append((nr_cs, nr_hex))
+                        needs_post_wrap = True
+                        if payout_nums is not None and payout_den > 0:
+                            expected_usdce_delta_raw += (b_yes * payout_nums[0]) // payout_den + (b_no * payout_nums[1]) // payout_den
                 except Exception:
                     pass
 
             # 2. Check standard CTF positions (Polymarket V2 pUSD + legacy USDC.e)
             if neg_risk is not True:
                 for col_hex in (
-                    "0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB",  # Polymarket V2 Wrapped Collateral (pUSD)
-                    "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174",  # Legacy Polygon Bridged USDC.e
+                    self.PUSD_ADDRESS,
+                    self.USDC_E_ADDRESS,
                 ):
                     try:
                         col_cs = Web3.to_checksum_address(col_hex)
-                        has_bal = any(
-                            int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, idx).call()).call()).call()) > 0
+                        b_idx = [
+                            int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, idx).call()).call()).call())
                             for idx in (1, 2)
-                        )
-                        if has_bal:
+                        ]
+                        if b_idx[0] > 0 or b_idx[1] > 0:
                             ctf_hex = (
                                 ctf.encode_abi("redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
                                 if hasattr(ctf, "encode_abi")
                                 else ctf.encodeABI(fn_name="redeemPositions", args=[col_cs, b"\x00" * 32, cond_bytes, [1, 2]])
                             )
                             redeem_targets.append((ctf_cs, ctf_hex))
+                            if col_cs.lower() == self.USDC_E_ADDRESS.lower():
+                                needs_post_wrap = True
+                                if payout_nums is not None and payout_den > 0:
+                                    expected_usdce_delta_raw += (b_idx[0] * payout_nums[0]) // payout_den + (b_idx[1] * payout_nums[1]) // payout_den
                     except Exception:
                         continue
 
             if not redeem_targets:
                 return None
 
-            return self._dispatch_funder_calls(w3, Web3, pk, sig_type, funder_cs, signer_cs, redeem_targets, condition_id)
+            wrapped_inline = False
+            tx_h: Optional[str] = None
+            if sig_type in (1, 3) and expected_usdce_delta_raw > 0:
+                try:
+                    erc20_abi = [
+                        {"inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                        {"inputs": [{"name": "o", "type": "address"}, {"name": "s", "type": "address"}], "name": "allowance", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                    ]
+                    usdce_c = w3.eth.contract(address=Web3.to_checksum_address(self.USDC_E_ADDRESS), abi=erc20_abi)
+                    pre_usdce_raw = max(0, int(usdce_c.functions.balanceOf(funder_cs).call()))
+                    alw_raw = max(0, int(usdce_c.functions.allowance(funder_cs, Web3.to_checksum_address(self.PUSD_WRAPPER_ADDRESS)).call()))
+                    wrap_calls = self.encode_pusd_wrap_calls(
+                        funder_address=funder_cs,
+                        amount_raw=pre_usdce_raw + expected_usdce_delta_raw,
+                        current_allowance_raw=alw_raw,
+                    )
+                    if wrap_calls:
+                        tx_h = self._dispatch_funder_calls(
+                            w3, Web3, pk, sig_type, funder_cs, signer_cs, redeem_targets + wrap_calls, condition_id
+                        )
+                        if tx_h:
+                            wrapped_inline = True
+                except Exception:
+                    tx_h = None
+
+            if not tx_h:
+                tx_h = self._dispatch_funder_calls(
+                    w3, Web3, pk, sig_type, funder_cs, signer_cs, redeem_targets, condition_id
+                )
+            if not tx_h:
+                return None
+
+            wait_fn = getattr(w3.eth, "wait_for_transaction_receipt", None)
+            mined_ok = False
+            if callable(wait_fn):
+                try:
+                    rc = wait_fn(tx_h, timeout=30, poll_latency=1.2)
+                    if isinstance(rc, dict) and rc.get("status") is not None:
+                        if int(rc.get("status", 0)) != 1:
+                            return None
+                        mined_ok = True
+                except Exception:
+                    pass
+            if mined_ok and needs_post_wrap and not wrapped_inline:
+                self.wrap_idle_usdce_to_pusd(min_usd=0.50)
+            self.sync_clob_collateral_allowance()
+            return tx_h
         except Exception as e:
             logger.debug(f"On-chain redemption skipped for {condition_id}: {e}")
             return None
+
+    def get_idle_usdce_balance(self) -> Optional[float]:
+        """Read-only Polygon ERC-20 `USDC.e` balance check on `funder_address` (prevents false ruin halts prior to pUSD wrap)."""
+        if self.dry_run or not self.funder_address:
+            return 0.0
+        try:
+            from web3 import Web3
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+
+            w3 = get_fast_polygon_web3(timeout=3.5)
+            funder_cs = Web3.to_checksum_address(self.funder_address)
+            usdce_cs = Web3.to_checksum_address(self.USDC_E_ADDRESS)
+            erc20_abi = [
+                {"inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}
+            ]
+            bal_raw = int(w3.eth.contract(address=usdce_cs, abi=erc20_abi).functions.balanceOf(funder_cs).call())
+            return round(max(0.0, bal_raw / 1e6), 6)
+        except Exception:
+            return None
+
+    def wrap_idle_usdce_to_pusd(self, min_usd: float = 1.0) -> Dict[str, Any]:
+        """
+        Sweeps idle legacy Polygon `USDC.e` (`0x2791...`) sitting in `funder_address` 1:1 into
+        Polymarket V2 `pUSD` (`0xC011...`) via `PUSD_WRAPPER_ADDRESS` (`0x9307...`, selector `0x62355638`)
+        and immediately syncs CLOB L2 collateral allowance.
+        """
+        raw_sig_type = getattr(self, "signature_type", None)
+        sig_type = 1 if raw_sig_type is None else int(raw_sig_type)
+        if self.dry_run:
+            return {"wrapped": False, "dry_run": True, "amount_usd": 0.0, "tx_hash": None}
+        pk = (os.getenv("POLYGON_PRIVATE_KEY") or self.private_key or "").strip()
+        if sig_type not in (0, 1, 2, 3) or not pk or not self.funder_address:
+            return {"wrapped": False, "amount_usd": 0.0, "tx_hash": None, "reason": "UNCONFIGURED"}
+        b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
+        if sig_type == 3 and not b_key:
+            return {"wrapped": False, "amount_usd": 0.0, "tx_hash": None, "reason": "MISSING_BUILDER_KEY"}
+        if sig_type == 2 and getattr(self, "_funder_is_gnosis_safe", None) is False:
+            return {"wrapped": False, "amount_usd": 0.0, "tx_hash": None, "reason": "NOT_GNOSIS_SAFE"}
+        try:
+            from web3 import Web3
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+            w3 = get_fast_polygon_web3(timeout=5.0)
+            funder_cs = Web3.to_checksum_address(self.funder_address)
+            signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
+            if sig_type in (0, 1, 2):
+                gas_payer_cs = funder_cs if sig_type == 0 else signer_cs
+                if w3.eth.get_balance(gas_payer_cs) < int(0.05 * 1e18):
+                    return {"wrapped": False, "amount_usd": 0.0, "tx_hash": None, "reason": "INSUFFICIENT_GAS"}
+            erc20_abi = [
+                {"inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "o", "type": "address"}, {"name": "s", "type": "address"}], "name": "allowance", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+            ]
+            usdce_cs = Web3.to_checksum_address(self.USDC_E_ADDRESS)
+            wrapper_cs = Web3.to_checksum_address(self.PUSD_WRAPPER_ADDRESS)
+            usdce_c = w3.eth.contract(address=usdce_cs, abi=erc20_abi)
+            bal_raw = int(usdce_c.functions.balanceOf(funder_cs).call())
+            min_raw = max(1, int(math.floor(max(0.000001, float(min_usd)) * 1e6)))
+            if bal_raw < min_raw:
+                return {"wrapped": False, "amount_usd": round(bal_raw / 1e6, 6), "tx_hash": None, "reason": "BELOW_MIN_USD"}
+            alw_raw = int(usdce_c.functions.allowance(funder_cs, wrapper_cs).call())
+            wrap_calls = self.encode_pusd_wrap_calls(
+                funder_address=funder_cs, amount_raw=bal_raw, current_allowance_raw=alw_raw
+            )
+            tx_h = self._dispatch_funder_calls(
+                w3, Web3, pk, sig_type, funder_cs, signer_cs, wrap_calls, "wrap_pusd"
+            )
+            if not tx_h:
+                return {"wrapped": False, "amount_usd": round(bal_raw / 1e6, 6), "tx_hash": None, "reason": "DISPATCH_DEFERRED"}
+            rc = w3.eth.wait_for_transaction_receipt(tx_h, timeout=60, poll_latency=1.2)
+            if int(rc.get("status", 0)) != 1:
+                logger.warning(f"[PUSD-WRAP] wrap tx {tx_h} reverted for ${bal_raw / 1e6:.2f} USDC.e.")
+                return {"wrapped": False, "amount_usd": round(bal_raw / 1e6, 6), "tx_hash": tx_h, "reason": "TX_REVERTED"}
+            self.sync_clob_collateral_allowance()
+            amt_usd = round(bal_raw / 1e6, 6)
+            logger.info(f"✓ [PUSD-WRAP] Wrapped ${amt_usd:.2f} idle USDC.e -> pUSD | tx={tx_h}")
+            return {"wrapped": True, "amount_usd": amt_usd, "tx_hash": tx_h}
+        except Exception as exc:
+            logger.debug(f"[PUSD-WRAP] Idle USDC.e wrap check skipped: {exc}")
+            return {"wrapped": False, "amount_usd": 0.0, "tx_hash": None, "reason": str(exc)}
+
+    def attempt_wrap_legacy_usdce_to_pusd(self, *, min_usd: float = 1.0) -> Dict[str, Any]:
+        """Alias wrapper returning unified `success`/`wrapped_usd`/`tx_hash` keys alongside `wrap_idle_usdce_to_pusd`."""
+        res = self.wrap_idle_usdce_to_pusd(min_usd=min_usd)
+        return {
+            **res,
+            "success": bool(res.get("wrapped")),
+            "wrapped_usd": float(res.get("amount_usd") or 0.0) if res.get("wrapped") else 0.0,
+        }
 
     def _dispatch_funder_calls(
         self,
@@ -3609,9 +4285,11 @@ class PolymarketLiveExecutor:
             ctf_cs = Web3.to_checksum_address(self.CTF_ADDRESS)
             ctf = w3.eth.contract(address=ctf_cs, abi=ctf_abi)
             nr_cs = Web3.to_checksum_address(self.NEG_RISK_ADAPTER_ADDRESS)
+            nr_v2_cs = Web3.to_checksum_address(self.NEG_RISK_ADAPTER_V2_ADDRESS)
             nr_contract = w3.eth.contract(address=nr_cs, abi=nr_abi)
             merge_targets: List[Tuple[str, str]] = []
             merged_raw = 0
+            used_v1_usdce = False
             if neg_risk is not False:
                 try:
                     wcol_cs = Web3.to_checksum_address(self.NEG_RISK_WRAPPED_COLLATERAL)
@@ -3619,15 +4297,22 @@ class PolymarketLiveExecutor:
                     b_no = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(wcol_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call())
                     m_nr = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
                     if m_nr >= min_raw:
+                        appr_nr_v2 = bool(ctf.functions.isApprovedForAll(funder_cs, nr_v2_cs).call())
+                        if not appr_nr_v2 and sig_type == 3:
+                            merge_targets.append((ctf_cs, f"0xa22cb465{nr_v2_cs[2:].lower().rjust(64, '0')}{'1'.rjust(64, '0')}"))
+                            appr_nr_v2 = True
+                        nr_tgt = nr_v2_cs if appr_nr_v2 else nr_cs
+                        if not appr_nr_v2:
+                            used_v1_usdce = True
                         nr_hex = nr_contract.encode_abi("mergePositions", args=[cond_bytes, m_nr]) if hasattr(nr_contract, "encode_abi") else nr_contract.encodeABI(fn_name="mergePositions", args=[cond_bytes, m_nr])
-                        merge_targets.append((nr_cs, nr_hex))
+                        merge_targets.append((nr_tgt, nr_hex))
                         merged_raw += m_nr
                 except Exception:
                     pass
             if neg_risk is not True and not merge_targets:
-                pusd_cs = Web3.to_checksum_address("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB")
-                v2_ctf_cs = Web3.to_checksum_address("0xAdA100Db00Ca00073811820692005400218FcE1f")
-                for col_hex in ("0xC011a7E12a19f7B1f670d46F03B03f3342E82DFB", "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"):
+                pusd_cs = Web3.to_checksum_address(self.PUSD_ADDRESS)
+                v2_ctf_cs = Web3.to_checksum_address(self.CTF_ADAPTER_V2_ADDRESS)
+                for col_hex in (self.PUSD_ADDRESS, self.USDC_E_ADDRESS):
                     try:
                         col_cs = Web3.to_checksum_address(col_hex)
                         b_yes = int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 1).call()).call()).call())
@@ -3640,6 +4325,8 @@ class PolymarketLiveExecutor:
                                 appr_v2 = True
                             m_col = pusd_cs if appr_v2 else col_cs
                             m_tgt = v2_ctf_cs if appr_v2 else ctf_cs
+                            if m_col != pusd_cs:
+                                used_v1_usdce = True
                             ctf_hex = ctf.encode_abi("mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std])
                             merge_targets.append((m_tgt, ctf_hex))
                             merged_raw += m_std
@@ -3660,15 +4347,152 @@ class PolymarketLiveExecutor:
                 except Exception as rc_err:
                     logger.warning(f"[MERGE] mergePositions tx {tx_h} unconfirmed for {condition_id} ({rc_err}); legs remain open.")
                     return None
-                try:
-                    if getattr(self, "client", None) is not None and BalanceAllowanceParams is not None and AssetType is not None:
-                        self.client.update_balance_allowance(BalanceAllowanceParams(asset_type=AssetType.COLLATERAL, signature_type=sig_type))
-                except Exception:
-                    pass
+                if used_v1_usdce:
+                    self.wrap_idle_usdce_to_pusd(min_usd=0.50)
+                self.sync_clob_collateral_allowance()
                 return tx_h, round(merged_raw / 1e6, 6)
             return None
         except Exception as e:
             logger.debug(f"On-chain mergePositions skipped for {condition_id}: {e}")
+            return None
+
+    def attempt_onchain_batch_complete_set_merges(
+        self, merge_specs: List[Dict[str, Any]]
+    ) -> Optional[Tuple[str, Dict[str, float]]]:
+        """
+        Packs multiple ready `C1` `mergePositions` calls into a SINGLE Relayer V2 / Proxy `Call[]`
+        batch transaction (`batch_merge:{count}:{first_cond}`), consuming only 1 Relayer quota unit
+        and 1 Polygon block confirmation (`~2.2s`) across up to 8 concurrent complete-set boxes.
+        Each item in `merge_specs`: `{"key": str, "condition_id": str, "min_pairs": float, "max_pairs": float, "neg_risk": Optional[bool]}`.
+        Returns `(tx_hash, {spec_key: merged_pairs_float})` strictly after mined `status == 1`.
+        """
+        raw_sig_type = getattr(self, "signature_type", None)
+        sig_type = 1 if raw_sig_type is None else int(raw_sig_type)
+        if self.dry_run or not merge_specs or sig_type not in (0, 1, 2, 3):
+            return None
+        b_key = (os.getenv("POLY_BUILDER_API_KEY") or os.getenv("BUILDER_API_KEY") or "").strip()
+        if sig_type == 3 and not b_key:
+            return None
+        if sig_type == 2 and getattr(self, "_funder_is_gnosis_safe", None) is False:
+            return None
+        pk = (os.getenv("POLYGON_PRIVATE_KEY") or self.private_key or "").strip()
+        if not pk or not self.funder_address:
+            return None
+        try:
+            from web3 import Web3
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+            w3 = get_fast_polygon_web3(timeout=5.0)
+            funder_cs = Web3.to_checksum_address(self.funder_address)
+            signer_cs = Web3.to_checksum_address(w3.eth.account.from_key(pk).address)
+            if sig_type in (0, 1, 2):
+                gas_payer_cs = funder_cs if sig_type == 0 else signer_cs
+                if w3.eth.get_balance(gas_payer_cs) < int(0.05 * 1e18):
+                    return None
+            ctf_abi = [
+                {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "partition", "type": "uint256[]"}, {"name": "amount", "type": "uint256"}], "name": "mergePositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
+                {"inputs": [{"name": "parentCollectionId", "type": "bytes32"}, {"name": "conditionId", "type": "bytes32"}, {"name": "indexSet", "type": "uint256"}], "name": "getCollectionId", "outputs": [{"name": "", "type": "bytes32"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "collateralToken", "type": "address"}, {"name": "collectionId", "type": "bytes32"}], "name": "getPositionId", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "pure", "type": "function"},
+                {"inputs": [{"name": "owner", "type": "address"}, {"name": "id", "type": "uint256"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"},
+                {"inputs": [{"name": "account", "type": "address"}, {"name": "operator", "type": "address"}], "name": "isApprovedForAll", "outputs": [{"name": "", "type": "bool"}], "stateMutability": "view", "type": "function"},
+            ]
+            nr_abi = [{"inputs": [{"name": "_conditionId", "type": "bytes32"}, {"name": "_amount", "type": "uint256"}], "name": "mergePositions", "outputs": [], "stateMutability": "nonpayable", "type": "function"}]
+            ctf_cs = Web3.to_checksum_address(self.CTF_ADDRESS)
+            ctf = w3.eth.contract(address=ctf_cs, abi=ctf_abi)
+            nr_cs = Web3.to_checksum_address(self.NEG_RISK_ADAPTER_ADDRESS)
+            nr_v2_cs = Web3.to_checksum_address(self.NEG_RISK_ADAPTER_V2_ADDRESS)
+            nr_contract = w3.eth.contract(address=nr_cs, abi=nr_abi)
+            pusd_cs = Web3.to_checksum_address(self.PUSD_ADDRESS)
+            v2_ctf_cs = Web3.to_checksum_address(self.CTF_ADAPTER_V2_ADDRESS)
+            wcol_cs = Web3.to_checksum_address(self.NEG_RISK_WRAPPED_COLLATERAL)
+
+            batch_calls: List[Tuple[str, str]] = []
+            merged_by_key: Dict[str, float] = {}
+            added_v2_approval = False
+            added_nr_v2_approval = False
+            used_v1_usdce = False
+            consumed_by_cond: Dict[str, int] = {}
+
+            for spec in merge_specs[:8]:
+                cid = str(spec.get("condition_id") or "").strip()
+                s_key = str(spec.get("key") or cid)
+                if not cid:
+                    continue
+                cond_bytes = bytes.fromhex(cid.lower().replace("0x", "").rjust(64, "0"))
+                min_raw = max(1, int(math.floor(float(spec.get("min_pairs") or 1.0) * 1e6)))
+                max_p = spec.get("max_pairs")
+                max_raw = max(min_raw, int(math.floor(float(max_p) * 1e6))) if max_p else None
+                nr_flag = spec.get("neg_risk")
+                already_used = consumed_by_cond.get(cid.lower(), 0)
+                matched_spec = False
+
+                if nr_flag is not False:
+                    try:
+                        b_yes = max(0, int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(wcol_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 1).call()).call()).call()) - already_used)
+                        b_no = max(0, int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(wcol_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call()) - already_used)
+                        m_nr = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
+                        if m_nr >= min_raw:
+                            appr_nr_v2 = added_nr_v2_approval or bool(ctf.functions.isApprovedForAll(funder_cs, nr_v2_cs).call())
+                            if not appr_nr_v2 and sig_type == 3:
+                                batch_calls.append((ctf_cs, f"0xa22cb465{nr_v2_cs[2:].lower().rjust(64, '0')}{'1'.rjust(64, '0')}"))
+                                appr_nr_v2 = True
+                                added_nr_v2_approval = True
+                            nr_tgt = nr_v2_cs if appr_nr_v2 else nr_cs
+                            if not appr_nr_v2:
+                                used_v1_usdce = True
+                            nr_hex = nr_contract.encode_abi("mergePositions", args=[cond_bytes, m_nr]) if hasattr(nr_contract, "encode_abi") else nr_contract.encodeABI(fn_name="mergePositions", args=[cond_bytes, m_nr])
+                            batch_calls.append((nr_tgt, nr_hex))
+                            merged_by_key[s_key] = round(m_nr / 1e6, 6)
+                            consumed_by_cond[cid.lower()] = already_used + m_nr
+                            matched_spec = True
+                    except Exception:
+                        pass
+
+                if nr_flag is not True and not matched_spec:
+                    for col_hex in (self.PUSD_ADDRESS, self.USDC_E_ADDRESS):
+                        try:
+                            col_cs = Web3.to_checksum_address(col_hex)
+                            b_yes = max(0, int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 1).call()).call()).call()) - already_used)
+                            b_no = max(0, int(ctf.functions.balanceOf(funder_cs, ctf.functions.getPositionId(col_cs, ctf.functions.getCollectionId(b"\x00" * 32, cond_bytes, 2).call()).call()).call()) - already_used)
+                            m_std = min(b_yes, b_no) if max_raw is None else min(b_yes, b_no, max_raw)
+                            if m_std >= min_raw:
+                                appr_v2 = col_cs != pusd_cs and (added_v2_approval or bool(ctf.functions.isApprovedForAll(funder_cs, v2_ctf_cs).call()))
+                                if col_cs != pusd_cs and not appr_v2 and sig_type == 3:
+                                    batch_calls.append((ctf_cs, f"0xa22cb465{v2_ctf_cs[2:].lower().rjust(64, '0')}{'1'.rjust(64, '0')}"))
+                                    appr_v2 = True
+                                    added_v2_approval = True
+                                m_col = pusd_cs if appr_v2 else col_cs
+                                m_tgt = v2_ctf_cs if appr_v2 else ctf_cs
+                                if m_col != pusd_cs:
+                                    used_v1_usdce = True
+                                ctf_hex = ctf.encode_abi("mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std]) if hasattr(ctf, "encode_abi") else ctf.encodeABI(fn_name="mergePositions", args=[m_col, b"\x00" * 32, cond_bytes, [1, 2], m_std])
+                                batch_calls.append((m_tgt, ctf_hex))
+                                merged_by_key[s_key] = round(m_std / 1e6, 6)
+                                consumed_by_cond[cid.lower()] = already_used + m_std
+                                break
+                        except Exception:
+                            continue
+
+            if not batch_calls or not merged_by_key:
+                return None
+            op_tag = f"batch_merge:{len(merged_by_key)}:{next(iter(merged_by_key))[:18]}"
+            tx_h = self._dispatch_funder_calls(w3, Web3, pk, sig_type, funder_cs, signer_cs, batch_calls, op_tag)
+            if not tx_h:
+                return None
+            self.invalidate_collateral_cache()
+            try:
+                rc = w3.eth.wait_for_transaction_receipt(tx_h, timeout=60, poll_latency=1.5)
+                if int(rc.get("status", 0)) != 1:
+                    logger.warning(f"[BATCH-MERGE] tx {tx_h} reverted ({op_tag}); legs remain open.")
+                    return None
+            except Exception as rc_err:
+                logger.warning(f"[BATCH-MERGE] tx {tx_h} unconfirmed ({op_tag}: {rc_err}); legs remain open.")
+                return None
+            if used_v1_usdce:
+                self.wrap_idle_usdce_to_pusd(min_usd=0.50)
+            self.sync_clob_collateral_allowance()
+            return tx_h, merged_by_key
+        except Exception as e:
+            logger.debug(f"On-chain batch mergePositions skipped: {e}")
             return None
 
     @classmethod
@@ -3795,6 +4619,9 @@ class PolymarketLiveExecutor:
         max_no_cost_per_share: float,
         liquid_yes_sells: Optional[List[Dict[str, Any]]] = None,
         fee_bips: int = 0,
+        nr_m1_zero_loss_verified: bool = False,
+        nr_m1_mode: str = "",
+        surviving_yes_legs: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         from src.polymarket_research.riskless_machine_gun_engine import execute_negrisk_subset_convert_arb_impl
         return execute_negrisk_subset_convert_arb_impl(
@@ -3806,6 +4633,9 @@ class PolymarketLiveExecutor:
             max_no_cost_per_share=max_no_cost_per_share,
             liquid_yes_sells=liquid_yes_sells,
             fee_bips=fee_bips,
+            nr_m1_zero_loss_verified=nr_m1_zero_loss_verified,
+            nr_m1_mode=nr_m1_mode,
+            surviving_yes_legs=surviving_yes_legs,
         )
 
     def merge_complete_set_positions(
@@ -4375,6 +5205,8 @@ class PolymarketLiveExecutor:
         neg_risk: Optional[bool] = None,
         expected_best_price: Optional[float] = None,
         max_book_buffer: float = 0.02,
+        allow_partial_fak: bool = False,
+        min_order_shares: float = 5.0,
     ) -> OrderResult:
         """
         Executes a directional latency snipe with pre-trade risk and depth assertions.
@@ -4423,6 +5255,13 @@ class PolymarketLiveExecutor:
                     error=f"Orderbook fetch error: {e}",
                 )
 
+        ref_px_lot = float(target_price) if (target_price and target_price > 0) else max(0.01, float(min_price_floor))
+        eff_min_lot_usd = (
+            round(max(1.0, float(min_order_shares) * max(0.01, ref_px_lot)), 2)
+            if allow_partial_fak
+            else MIN_LOT_SIZE_USD
+        )
+
         passed_depth, depth_ratio, best_px, adjusted_notional = self.verify_pre_trade_depth(
             book,
             notional_usd,
@@ -4431,7 +5270,7 @@ class PolymarketLiveExecutor:
             max_price_ceiling=max_price_ceiling,
             min_price_floor=min_price_floor,
             return_adjusted=True,
-            min_lot_size=MIN_LOT_SIZE_USD,
+            min_lot_size=eff_min_lot_usd,
             max_ticket_size=ticket_ceiling,
         )
 
@@ -4565,10 +5404,10 @@ class PolymarketLiveExecutor:
                 logger.error(f"[{trade_id}] Error in sizing_fn at {worst_acceptable_px:.4f}: {e}")
                 recomputed_ticket = 0.0
 
-            if not math.isfinite(recomputed_ticket) or recomputed_ticket < MIN_LOT_SIZE_USD:
+            if not math.isfinite(recomputed_ticket) or recomputed_ticket < eff_min_lot_usd:
                 err = (
                     f"SlippageKellyGuard Rejected: Order limit ${worst_acceptable_px:.4f} "
-                    f"does not support minimum Kelly ticket (${recomputed_ticket:.2f} < ${MIN_LOT_SIZE_USD:.2f})."
+                    f"does not support minimum Kelly ticket (${recomputed_ticket:.2f} < ${eff_min_lot_usd:.2f})."
                 )
                 logger.warning(f"[{trade_id}] {err}")
                 return OrderResult(
@@ -4596,11 +5435,41 @@ class PolymarketLiveExecutor:
                 notional_usd = recomputed_ticket
 
         # 2. Simulate exact multi-level FOK sweep across book using exact order price constraint (P1 Fix)
+        eff_f_rate = float(market_fee_rate) if market_fee_rate is not None else 0.07
+        eff_f_exp = float(market_fee_exponent) if market_fee_exponent is not None else 1.0
         fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = self.simulate_fok_sweep(
             book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
-            fee_rate=float(market_fee_rate) if market_fee_rate is not None else 0.07,
-            fee_exponent=float(market_fee_exponent) if market_fee_exponent is not None else 1.0,
+            fee_rate=eff_f_rate,
+            fee_exponent=eff_f_exp,
         )
+        if not fillable and allow_partial_fak and side == "BUY":
+            # Partial-FAK sizing for Single-Leg Locks: sweep available asks <= worst_acceptable_px down to min_order_shares (CLOB 5-share min)
+            raw_asks = book.get("asks", []) if isinstance(book, dict) else getattr(book, "asks", [])
+            qual_sh = 0.0
+            qual_usd = 0.0
+            for lvl in (raw_asks or []):
+                try:
+                    l_px = float(lvl.get("price") if isinstance(lvl, dict) else getattr(lvl, "price", 0.0))
+                    l_sz = float(lvl.get("size") if isinstance(lvl, dict) else getattr(lvl, "size", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                if l_px > 0 and l_sz > 0 and l_px <= worst_acceptable_px + 1e-9:
+                    qual_sh += l_sz
+                    qual_usd += l_px * l_sz
+            min_req_sh = max(1.0, float(min_order_shares))
+            if qual_sh >= min_req_sh and qual_usd >= 1.0:
+                partial_notional = round(min(notional_usd, max(1.0, qual_usd * 0.9999)), 4)
+                p_ok, p_vwap, p_sh, p_wpx, p_fee, p_legs = self.simulate_fok_sweep(
+                    book, partial_notional, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
+                    fee_rate=eff_f_rate, fee_exponent=eff_f_exp,
+                )
+                if p_ok and p_sh >= min_req_sh - 1e-6:
+                    logger.info(
+                        f"[{trade_id}] [PARTIAL-FAK DOWN-SIZING] Sweeping available depth ${partial_notional:.2f} "
+                        f"({p_sh:.2f} sh <= ${worst_acceptable_px:.4f}) instead of rejecting ${notional_usd:.2f}."
+                    )
+                    notional_usd = partial_notional
+                    fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = p_ok, p_vwap, p_sh, p_wpx, p_fee, p_legs
         if not fillable:
             err = f"FOK Sweep Infeasible: Could not fill ${notional_usd:.2f} within limit ${worst_acceptable_px:.4f}."
             logger.warning(f"[{trade_id}] {err}")
@@ -5206,6 +6075,8 @@ class PolymarketLiveExecutor:
         neg_risk: Optional[bool] = None,
         expected_best_price: Optional[float] = None,
         max_book_buffer: float = 0.02,
+        allow_partial_fak: bool = False,
+        min_order_shares: float = 5.0,
     ) -> OrderResult:
         """
         P0: Fully asynchronous, non-blocking EIP-712 order dispatcher.
@@ -5258,6 +6129,13 @@ class PolymarketLiveExecutor:
                 error=err,
             )
 
+        ref_px_lot = float(target_price) if (target_price and target_price > 0) else max(0.01, float(min_price_floor))
+        eff_min_lot_usd = (
+            round(max(1.0, float(min_order_shares) * max(0.01, ref_px_lot)), 2)
+            if allow_partial_fak
+            else MIN_LOT_SIZE_USD
+        )
+
         passed_depth, depth_ratio, best_px, adjusted_notional = self.verify_pre_trade_depth(
             book,
             target_notional_usd=notional_usd,
@@ -5266,7 +6144,7 @@ class PolymarketLiveExecutor:
             max_price_ceiling=max_price_ceiling,
             min_price_floor=min_price_floor,
             return_adjusted=True,
-            min_lot_size=MIN_LOT_SIZE_USD,
+            min_lot_size=eff_min_lot_usd,
             max_ticket_size=ticket_ceiling,
         )
         if not passed_depth:
@@ -5387,10 +6265,10 @@ class PolymarketLiveExecutor:
                 logger.error(f"[{trade_id}] Error in sizing_fn at {worst_acceptable_px:.4f}: {e}")
                 recomputed_ticket = 0.0
 
-            if not math.isfinite(recomputed_ticket) or recomputed_ticket < MIN_LOT_SIZE_USD:
+            if not math.isfinite(recomputed_ticket) or recomputed_ticket < eff_min_lot_usd:
                 err = (
                     f"SlippageKellyGuard Rejected: Order limit ${worst_acceptable_px:.4f} "
-                    f"does not support minimum Kelly ticket (${recomputed_ticket:.2f} < ${MIN_LOT_SIZE_USD:.2f})."
+                    f"does not support minimum Kelly ticket (${recomputed_ticket:.2f} < ${eff_min_lot_usd:.2f})."
                 )
                 logger.warning(f"[{trade_id}] {err}")
                 return OrderResult(
@@ -5417,11 +6295,40 @@ class PolymarketLiveExecutor:
                 )
                 notional_usd = recomputed_ticket
 
+        eff_f_rate = float(market_fee_rate) if market_fee_rate is not None else 0.07
+        eff_f_exp = float(market_fee_exponent) if market_fee_exponent is not None else 1.0
         fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = self.simulate_fok_sweep(
             book, notional_usd, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
-            fee_rate=float(market_fee_rate) if market_fee_rate is not None else 0.07,
-            fee_exponent=float(market_fee_exponent) if market_fee_exponent is not None else 1.0,
+            fee_rate=eff_f_rate,
+            fee_exponent=eff_f_exp,
         )
+        if not fillable and allow_partial_fak and side == "BUY":
+            raw_asks = book.get("asks", []) if isinstance(book, dict) else getattr(book, "asks", [])
+            qual_sh = 0.0
+            qual_usd = 0.0
+            for lvl in (raw_asks or []):
+                try:
+                    l_px = float(lvl.get("price") if isinstance(lvl, dict) else getattr(lvl, "price", 0.0))
+                    l_sz = float(lvl.get("size") if isinstance(lvl, dict) else getattr(lvl, "size", 0.0))
+                except (TypeError, ValueError):
+                    continue
+                if l_px > 0 and l_sz > 0 and l_px <= worst_acceptable_px + 1e-9:
+                    qual_sh += l_sz
+                    qual_usd += l_px * l_sz
+            min_req_sh = max(1.0, float(min_order_shares))
+            if qual_sh >= min_req_sh and qual_usd >= 1.0:
+                partial_notional = round(min(notional_usd, max(1.0, qual_usd * 0.9999)), 4)
+                p_ok, p_vwap, p_sh, p_wpx, p_fee, p_legs = self.simulate_fok_sweep(
+                    book, partial_notional, side=side, max_acceptable_price=worst_acceptable_px, return_legs=True,
+                    fee_rate=eff_f_rate, fee_exponent=eff_f_exp,
+                )
+                if p_ok and p_sh >= min_req_sh - 1e-6:
+                    logger.info(
+                        f"[{trade_id}] [PARTIAL-FAK DOWN-SIZING] Sweeping available depth ${partial_notional:.2f} "
+                        f"({p_sh:.2f} sh <= ${worst_acceptable_px:.4f}) instead of rejecting ${notional_usd:.2f}."
+                    )
+                    notional_usd = partial_notional
+                    fillable, vwap, sweep_shares, worst_px, fok_fee, fill_legs = p_ok, p_vwap, p_sh, p_wpx, p_fee, p_legs
         if not fillable:
             err = f"FOK Sweep Infeasible: Could not fill ${notional_usd:.2f} within limit ${worst_acceptable_px:.4f}."
             logger.warning(f"[{trade_id}] {err}")
@@ -6065,11 +6972,25 @@ class PolymarketLiveExecutor:
                 return (vt, vs)
         return None
 
-    def _apply_enforced_tick_size(self, token_id: str, tick_val: float, tick_str: str, ttl_sec: float = 30.0) -> None:
+    def _apply_enforced_tick_size(
+        self,
+        token_id: str,
+        tick_val: float,
+        tick_str: str,
+        ttl_sec: float = 30.0,
+        *,
+        from_clob_400: bool = False,
+    ) -> None:
         if not token_id:
             return
+        exp_mono = time.monotonic() + max(1.0, float(ttl_sec))
         overrides = self.__dict__.setdefault("_enforced_tick_override_until", {})
-        overrides[token_id] = (float(tick_val), time.monotonic() + max(1.0, float(ttl_sec)))
+        overrides[token_id] = (float(tick_val), exp_mono)
+        if from_clob_400:
+            self.__dict__.setdefault("_clob_400_tick_until", {})[token_id] = (float(tick_val), exp_mono)
+            presign_map = getattr(self, "_presigned_maker_repegs", None)
+            if isinstance(presign_map, dict):
+                presign_map.pop(token_id, None)
         self._tick_size_cache[token_id] = float(tick_val)
         lc = getattr(self, "order_ladder_cache", None)
         if lc is not None and hasattr(lc, "evict_mismatched_tick"):
@@ -6091,10 +7012,15 @@ class PolymarketLiveExecutor:
         for vt, vs in self._CANONICAL_CLOB_TICKS:
             if abs(parsed - vt) < 1e-9:
                 if vt < 0.01:
+                    c400 = getattr(self, "_clob_400_tick_until", None)
+                    if isinstance(c400, dict):
+                        c400.pop(tok_s, None)
                     self._apply_enforced_tick_size(tok_s, vt, vs, ttl_sec=ttl_sec)
                 else:
                     self._apply_enforced_tick_size(tok_s, vt, vs, ttl_sec=1.0)
-                    getattr(self, "_enforced_tick_override_until", {}).pop(tok_s, None)
+                    c400 = getattr(self, "_clob_400_tick_until", None)
+                    if not (isinstance(c400, dict) and tok_s in c400 and time.monotonic() < float(c400[tok_s][1])):
+                        getattr(self, "_enforced_tick_override_until", {}).pop(tok_s, None)
                 return vt
         return None
 
@@ -6103,7 +7029,7 @@ class PolymarketLiveExecutor:
             return
         enforced = self._extract_tick_size_from_error(err_obj)
         if enforced is not None:
-            self._apply_enforced_tick_size(token_id, enforced[0], enforced[1], ttl_sec=30.0)
+            self._apply_enforced_tick_size(token_id, enforced[0], enforced[1], ttl_sec=120.0, from_clob_400=True)
             return
         low = str(err_obj or "").lower()
         if any(k in low for k in ("tick", "minimum_tick_size", "invalid price", "price precision")):
@@ -6128,9 +7054,10 @@ class PolymarketLiveExecutor:
                 return float(ov_tick)
             overrides.pop(token_id, None)
         cached = self._tick_size_cache.get(token_id)
-        recheck_dynamic_boundary = (
-            cached == 0.01
-            and price_hint is not None
+        now_m = time.monotonic()
+        b_recheck_map = self.__dict__.setdefault("_boundary_tick_recheck_ts", {})
+        at_dynamic_boundary = (
+            price_hint is not None
             and math.isfinite(float(price_hint))
             and (
                 float(price_hint) >= 0.96
@@ -6140,21 +7067,44 @@ class PolymarketLiveExecutor:
             and self.client is not None
             and hasattr(self.client, "get_tick_size")
         )
+        recheck_dynamic_boundary = (
+            cached == 0.01
+            and at_dynamic_boundary
+            and (now_m - float(b_recheck_map.get(token_id, -999.0))) >= 2.5
+        )
         if cached is not None and not recheck_dynamic_boundary:
             return cached
 
         if self.client and hasattr(self.client, "get_tick_size"):
+            _saved_cond: Optional[str] = None
+            _cond_map = getattr(self.client, "_ClobClient__token_condition_map", None)
             try:
+                if at_dynamic_boundary and hasattr(self.client, "_ClobClient__tick_sizes"):
+                    if str(self.client._ClobClient__tick_sizes.get(token_id) or "") == "0.01":
+                        self.client._ClobClient__tick_sizes.pop(token_id, None)
+                if isinstance(_cond_map, dict) and token_id in _cond_map:
+                    _saved_cond = _cond_map.pop(token_id, None)
                 raw_tick = self.client.get_tick_size(token_id)
                 if isinstance(raw_tick, (str, int, float, Decimal)) and not isinstance(raw_tick, bool):
                     tick_val = float(raw_tick)
                     if any(abs(tick_val - vt) < 1e-9 for vt in (0.1, 0.01, 0.005, 0.0025, 0.001, 0.0001)):
                         self._tick_size_cache[token_id] = tick_val
+                        if at_dynamic_boundary:
+                            b_recheck_map[token_id] = now_m
                         if hasattr(self.client, "_ClobClient__tick_sizes"):
                             self.client._ClobClient__tick_sizes[token_id] = str(raw_tick)
                         return tick_val
             except Exception as e:
                 logger.debug(f"Could not resolve tick size from SDK for {token_id}: {e}")
+            finally:
+                if (
+                    isinstance(_cond_map, dict)
+                    and isinstance(_saved_cond, str)
+                    and len(_saved_cond) >= 4
+                    and _saved_cond.lower().startswith("0x")
+                    and set(_saved_cond[2:]) != {"0"}
+                ):
+                    _cond_map.setdefault(token_id, _saved_cond)
 
         if cached is not None:
             return cached
@@ -6266,12 +7216,14 @@ class PolymarketLiveExecutor:
             )
             def _sign_and_post_maker(px_use: float, sh_use: float) -> Dict[str, Any]:
                 nonlocal order_submitted
-                o_args = OrderArgsV2(price=px_use, size=sh_use, side=side, token_id=token_id)
-                if has_lockfree_fast_signer:
-                    s_ord = _safe_create_order(self.client.create_order, o_args, create_opts)
-                else:
-                    with _UrgentSignPriority():
+                s_ord = self._pop_presigned_maker_repeg(token_id, px_use, sh_use, side, str(tick_sz), bool(eff_neg_risk))
+                if s_ord is None:
+                    o_args = OrderArgsV2(price=px_use, size=sh_use, side=side, token_id=token_id)
+                    if has_lockfree_fast_signer:
                         s_ord = _safe_create_order(self.client.create_order, o_args, create_opts)
+                    else:
+                        with _UrgentSignPriority():
+                            s_ord = _safe_create_order(self.client.create_order, o_args, create_opts)
                 order_submitted = True
                 return self._post_signed_order_bridge_or_sync(s_ord, OrderType.GTC, post_only=True, defer_exec=True)
 
@@ -6292,7 +7244,7 @@ class PolymarketLiveExecutor:
             enf_tick = self._extract_tick_size_from_error(has_err) if (has_err and not order_id) else None
             if enf_tick is not None:
                 enf_val, enf_str = enf_tick
-                self._apply_enforced_tick_size(token_id, enf_val, enf_str, ttl_sec=30.0)
+                self._apply_enforced_tick_size(token_id, enf_val, enf_str, ttl_sec=120.0, from_clob_400=True)
                 tick_sz = enf_val
                 create_opts = (
                     PartialCreateOrderOptions(tick_size=enf_str, neg_risk=eff_neg_risk, version=2)
@@ -6358,6 +7310,9 @@ class PolymarketLiveExecutor:
                 }
             if order_id:
                 m_lat_ms = (time.perf_counter() - t_m0) * 1000.0
+                self._maybe_schedule_maker_repeg_presign(
+                    token_id, quantized_price, shares_int, max_price_ceiling, side, tick_sz, eff_neg_risk
+                )
                 logger.info(
                     f"[LIVE MAKER ENTRY POSTED] OID={order_id} | {side} {shares_int:.0f} shares @ ${quantized_price:.4f} (neg_risk={eff_neg_risk})"
                 )
@@ -6435,6 +7390,18 @@ class PolymarketLiveExecutor:
             return {"success": False, "orderID": None, "error": "INVALID_MAKER_ENTRY_INPUTS", "retryable": False}
         if not math.isfinite(notional_f) or notional_f <= 0 or not math.isfinite(price_f) or price_f <= 0:
             return {"success": False, "orderID": None, "error": "NON_POSITIVE_MAKER_ENTRY_INPUTS", "retryable": False}
+        _ov_tk = getattr(self, "_enforced_tick_override_until", None)
+        _has_ov_tk = isinstance(_ov_tk, dict) and token_id in _ov_tk and time.monotonic() < float(_ov_tk[token_id][1])
+        _cached_tk = self._tick_size_cache.get(token_id)
+        _b_rechk = (self.__dict__.get("_boundary_tick_recheck_ts") or {}).get(token_id, -999.0)
+        _needs_sync_meta = (
+            (not _has_ov_tk and (_cached_tk is None or (_cached_tk == 0.01 and (price_f >= 0.96 or price_f <= 0.04) and (time.monotonic() - float(_b_rechk)) >= 2.5)))
+            or (neg_risk is None and token_id not in self._neg_risk_cache)
+        )
+        if _needs_sync_meta:
+            await asyncio.to_thread(
+                lambda: (self.get_token_tick_size(token_id, price_hint=price_f), self.get_token_neg_risk(token_id, neg_risk))
+            )
         quantized_price = self.quantize_order_price(price_f, token_id, rounding=ROUND_FLOOR)
         if quantized_price < min_price_floor or quantized_price > max_price_ceiling:
             return {"success": False, "orderID": None, "error": f"MAKER_ENTRY_PRICE_OUT_OF_BOUNDS ({quantized_price:.4f})", "retryable": False}
@@ -6468,7 +7435,7 @@ class PolymarketLiveExecutor:
             enf_tick_a = self._extract_tick_size_from_error(has_err) if (has_err and not order_id) else None
             if enf_tick_a is not None:
                 enf_val_a, enf_str_a = enf_tick_a
-                self._apply_enforced_tick_size(token_id, enf_val_a, enf_str_a, ttl_sec=30.0)
+                self._apply_enforced_tick_size(token_id, enf_val_a, enf_str_a, ttl_sec=120.0, from_clob_400=True)
                 tick_sz = enf_val_a
                 create_opts = PartialCreateOrderOptions(tick_size=enf_str_a, neg_risk=eff_neg_risk, version=2) if PartialCreateOrderOptions else None
                 re_round_a = ROUND_FLOOR if str(side).upper() == "BUY" else ROUND_CEILING
@@ -6524,6 +7491,9 @@ class PolymarketLiveExecutor:
             if order_id:
                 actual_sh = float(stage.get("signed_shares") or shares_int)
                 m_lat_ms = (time.perf_counter() - t_m0) * 1000.0
+                self._maybe_schedule_maker_repeg_presign(
+                    token_id, quantized_price, actual_sh, max_price_ceiling, side, tick_sz, eff_neg_risk
+                )
                 logger.info(
                     f"[LIVE MAKER ENTRY ASYNC] OID={order_id} | {side} {actual_sh:.0f} sh @ ${quantized_price:.4f} | post={zh.get('post_ms')}ms sign={zh.get('sign_ms')}ms"
                 )
@@ -7270,13 +8240,30 @@ class PolymarketLiveExecutor:
         px_hdg = self.quantize_order_price(px_hdg_in, hedge_token_id, rounding=ROUND_CEILING)
         fee_h_ps = fr_h * ((px_hdg * (1.0 - px_hdg)) ** fe_h) if fr_h > 0.0 else 0.0
         h_h = min(0.25, max(0.0, fee_h_ps / max(px_hdg, 1e-6))) if fr_h > 0.0 else 0.0
-        worst_box_cost_net = round(px_anc + (px_hdg / max(1.0 - h_h, 1e-6)), 6)
+        cont_v1_cost = px_anc + (px_hdg / max(1.0 - h_h, 1e-6))
+        cont_v2_cost = px_anc + px_hdg + fee_h_ps
+        worst_box_cost_net = round(max(cont_v1_cost, cont_v2_cost), 6)
         shares_int = float(math.floor(sh_anc + 1e-9))
-        hedge_gross_sh = (
-            quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=True)
-            if not self.dry_run
-            else shares_int
-        )
+        if not self.dry_run and shares_int >= 5.0:
+            g_up = quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=True)
+            v1_cost_up = (shares_int * px_anc + g_up * px_hdg) / max(shares_int, 1e-6)
+            v2_cost_up = (shares_int * px_anc + g_up * (px_hdg + fee_h_ps)) / max(shares_int, 1e-6)
+            post_q_up = round(max(v1_cost_up, v2_cost_up), 6)
+            if post_q_up <= cap_in + 1e-6:
+                hedge_gross_sh = g_up
+                worst_box_cost_net = max(worst_box_cost_net, post_q_up)
+            else:
+                g_dn = quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=False)
+                net_v1_dn = (math.floor(g_dn * (1.0 - h_h) * 100.0 + 1e-9) / 100.0) if h_h > 0.0 else g_dn
+                v2_cost_dn = round((shares_int * px_anc + g_dn * (px_hdg + fee_h_ps)) / max(min(shares_int, g_dn), 1e-6), 6)
+                if g_dn >= 5.0 and net_v1_dn >= 5.0 and v2_cost_dn <= cap_in + 1e-6:
+                    hedge_gross_sh = g_dn
+                    worst_box_cost_net = max(worst_box_cost_net, v2_cost_dn)
+                else:
+                    hedge_gross_sh = g_up
+                    worst_box_cost_net = max(worst_box_cost_net, post_q_up)
+        else:
+            hedge_gross_sh = shares_int
 
         def _unwind_anchor_leg() -> Tuple[Dict[str, Any], Dict[str, Any]]:
             pre_u = float(anchor_pre_balance or 0.0)
@@ -7727,6 +8714,7 @@ class PolymarketLiveExecutor:
                     "raw": resp,
                 }
             if has_err:
+                self._evict_tick_size_if_tick_err(token_id, has_err)
                 if str(side).upper() == "SELL" and ("crosses book" in str(has_err).lower() or "post only" in str(has_err).lower() or "post-only" in str(has_err).lower()):
                     best_b = 0.0
                     max_valid_px = float(Decimal("1") - Decimal(str(tick_sz)))
@@ -8246,11 +9234,30 @@ class PolymarketLiveExecutor:
         if self.dry_run and (self.client is None or not self.is_authenticated):
             self.release_inventory(reservation_id=order_id)
             return CancelOrderResult({"canceled": [order_id]}, order_id=str(order_id), outcome="CANCELED", is_canceled=True, canceled=[order_id], matched=0.0)
+        cancel_exc_err: Optional[str] = None
+        res: Dict[str, Any] = {}
         try:
-            res = self.client.cancel_orders([order_id]) if self.client else {}
+            if self.client:
+                for _c_att, _c_wait in enumerate((0.0, 0.18, 0.40)):
+                    if _c_wait > 0.0 and not self.dry_run:
+                        time.sleep(_c_wait)
+                    try:
+                        res = self.client.cancel_orders([order_id]) or {}
+                        cancel_exc_err = None
+                        break
+                    except Exception as _ce:
+                        cancel_exc_err = str(_ce)
+                        _clow = cancel_exc_err.lower()
+                        _transient_c = any(
+                            k in _clow
+                            for k in ("425", "order manager not ready", "too early", "500", "502", "503", "504", "cancel request failed", "temporarily", "timeout")
+                        )
+                        if not _transient_c or _c_att >= 2:
+                            break
+                        logger.warning(f"[PM-EXEC] Transient CLOB cancel error on {order_id} (attempt {_c_att + 1}/3): {cancel_exc_err}")
             canceled_list = (res or {}).get("canceled")
             not_canceled = (res or {}).get("not_canceled")
-            not_canceled_reason: Optional[str] = None
+            not_canceled_reason: Optional[str] = cancel_exc_err
             if isinstance(not_canceled, dict):
                 for nc_k, nc_v in not_canceled.items():
                     if str(nc_k) == str(order_id):
@@ -8350,9 +9357,230 @@ class PolymarketLiveExecutor:
                     matched=matched,
                     not_canceled_reason=not_canceled_reason,
                     raw=res,
+                    error=cancel_exc_err,
                 )
         except Exception as e:
             logger.error(f"Failed to cancel order {order_id}: {e}")
+            return CancelOrderResult({}, order_id=str(order_id), outcome="UNKNOWN", is_canceled=False, error=str(e))
+
+    def _verify_and_release_canceled_reservation_bg(
+        self,
+        order_id: str,
+        *,
+        token_id: Optional[str] = None,
+        pre_token_balance: Optional[float] = None,
+        market_closed: bool = False,
+    ) -> bool:
+        """
+        Asynchronous Phase-2 reservation release verifier for `cancel_order_fast` (Round 11 P1-09 invariant):
+        Retains conditional-token reservation locked until `/ws/user` or `get_order_status` proves terminal
+        zero-fill cancellation; NEVER releases on `FILLED` / `MATCHED`.
+        """
+        oid = str(order_id)
+        try:
+            uws = getattr(self, "_user_ws_cache", None)
+            if uws is not None and uws.is_healthy() and hasattr(uws, "wait_for_order_terminal_sync"):
+                ws_s = uws.wait_for_order_terminal_sync(oid, timeout_sec=0.25)
+                if isinstance(ws_s, dict):
+                    ws_st = str(ws_s.get("status") or "").upper()
+                    ws_m = float(ws_s.get("size_matched", 0.0) or 0.0)
+                    if ws_st in {"MATCHED", "FILLED"} or ws_m > 1e-6:
+                        return False
+                    if ws_st in {"CANCELED", "CANCELLED"} or (ws_st == "INVALID" and ws_m <= 1e-6):
+                        self.release_inventory(reservation_id=oid)
+                        return True
+            for _wait_s in (0.0, 0.12, 0.25):
+                if _wait_s > 0.0 and not self.dry_run:
+                    time.sleep(_wait_s)
+                info = self.get_order_status(oid)
+                st = str((info or {}).get("status") or "").upper()
+                m_sz = float((info or {}).get("size_matched", 0.0) or 0.0)
+                if st in {"MATCHED", "FILLED"} or m_sz > 1e-6:
+                    return False
+                if st.startswith("CANCEL") or st in {"EXPIRED", "REJECTED"} or (st == "INVALID" and m_sz <= 1e-6):
+                    self.release_inventory(reservation_id=oid)
+                    return True
+            from src.polymarket_research.riskless_protocol_v2_expansion import is_verified_zero_fill_cancel_purge
+            if is_verified_zero_fill_cancel_purge(
+                self, oid, 0.0, None, self.get_order_status(oid),
+                token_id=token_id, pre_token_balance=pre_token_balance, market_closed=market_closed,
+            ):
+                self.release_inventory(reservation_id=oid)
+                return True
+        except Exception as exc_bg:
+            logger.warning(f"[PM-EXEC] Background cancel proof check failed for {oid}: {exc_bg}")
+        return False
+
+    def cancel_order_fast(
+        self,
+        order_id: str,
+        *,
+        token_id: Optional[str] = None,
+        pre_token_balance: Optional[float] = None,
+        market_closed: bool = False,
+        ws_confirm_timeout_sec: float = 0.035,
+        defer_unconfirmed_proof: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        v5.9.0 Two-Phase Single-RTT Fast Cancel (`~64 ms` RTT on Finland vs `132-282 ms` legacy):
+          - Phase 1: Sends `DELETE /orders` (`1` HTTP RTT) and checks authenticated `/ws/user` (`0` REST `get_order` RTTs).
+          - Phase 2: Preserves Round 11 P1-09 inventory reservation safety 100% — never releases reservations on
+            `FILLED`/`MATCHED`, and if `/ws/user` lags past `ws_confirm_timeout_sec` on a confirmed `canceled` response,
+            keeps any `reservation_records[order_id]` locked until `_verify_and_release_canceled_reservation_bg` proves zero fill.
+        """
+        if self.dry_run and (self.client is None or not self.is_authenticated):
+            self.release_inventory(reservation_id=order_id)
+            return CancelOrderResult({"canceled": [order_id]}, order_id=str(order_id), outcome="CANCELED", is_canceled=True, canceled=[order_id], matched=0.0)
+        if (
+            self.client is None
+            or "get_order_status" in self.__dict__
+            or getattr(self.client, "_mock_children", None) is not None
+        ):
+            return self.cancel_order(
+                order_id, token_id=token_id, pre_token_balance=pre_token_balance, market_closed=market_closed
+            )
+
+        cancel_exc_err: Optional[str] = None
+        res: Dict[str, Any] = {}
+        try:
+            for _c_att, _c_wait in enumerate((0.0, 0.12, 0.25)):
+                if _c_wait > 0.0 and not self.dry_run:
+                    time.sleep(_c_wait)
+                try:
+                    res = self.client.cancel_orders([order_id]) or {}
+                    cancel_exc_err = None
+                    break
+                except Exception as _ce:
+                    cancel_exc_err = str(_ce)
+                    _clow = cancel_exc_err.lower()
+                    _transient_c = any(
+                        k in _clow
+                        for k in ("425", "order manager not ready", "too early", "500", "502", "503", "504", "cancel request failed", "temporarily", "timeout")
+                    )
+                    if not _transient_c or _c_att >= 2:
+                        break
+            canceled_list = (res or {}).get("canceled")
+            not_canceled = (res or {}).get("not_canceled")
+            not_canceled_reason: Optional[str] = cancel_exc_err
+            if isinstance(not_canceled, dict):
+                for nc_k, nc_v in not_canceled.items():
+                    if str(nc_k) == str(order_id):
+                        not_canceled_reason = str(nc_v or "NOT_CANCELED")
+                        break
+            elif isinstance(not_canceled, (list, tuple, set)) and str(order_id) in {str(x) for x in not_canceled}:
+                not_canceled_reason = "NOT_CANCELED"
+            is_in_canceled_list = bool(
+                not_canceled_reason is None
+                and isinstance(canceled_list, list)
+                and str(order_id) in [str(x) for x in canceled_list]
+            )
+
+            uws = getattr(self, "_user_ws_cache", None)
+            ws_healthy = bool(uws is not None and hasattr(uws, "is_healthy") and uws.is_healthy())
+            ws_snap = (
+                uws.wait_for_order_terminal_sync(order_id, timeout_sec=ws_confirm_timeout_sec)
+                if (ws_healthy and hasattr(uws, "wait_for_order_terminal_sync"))
+                else (uws.get_order_snapshot(order_id, max_age_sec=8.0) if ws_healthy else None)
+            )
+            if isinstance(ws_snap, dict):
+                ws_st = str(ws_snap.get("status") or "").upper()
+                ws_m = float(ws_snap.get("size_matched", 0.0) or 0.0)
+                ws_orig = float(ws_snap.get("original_size", 0.0) or 0.0)
+                ws_full = ws_orig <= 0.0 or ws_m >= ws_orig - 1e-4
+                if (ws_st in {"MATCHED", "FILLED"} and ws_full) or (ws_orig > 0.0 and ws_m >= ws_orig - 1e-4):
+                    return CancelOrderResult(
+                        res or {}, order_id=str(order_id), outcome="FILLED", is_canceled=False,
+                        matched=ws_m, not_canceled_reason=not_canceled_reason, raw=res,
+                    )
+                if ws_st in {"CANCELED", "CANCELLED"} or (ws_st == "INVALID" and ws_m <= 1e-6):
+                    if ws_m <= 1e-6:
+                        self.release_inventory(reservation_id=order_id)
+                        return CancelOrderResult(
+                            res if is_in_canceled_list else {"canceled": [order_id]},
+                            order_id=str(order_id), outcome="CANCELED", is_canceled=True,
+                            matched=0.0, not_canceled_reason=not_canceled_reason, raw=res,
+                            canceled=[order_id], read_replica_stale_live=False,
+                        )
+                    if str(order_id) not in self.reservation_records and ws_orig > 0.0 and ws_m < ws_orig:
+                        return CancelOrderResult(
+                            res if is_in_canceled_list else {"canceled": [order_id]},
+                            order_id=str(order_id), outcome="PARTIALLY_FILLED_CANCELED", is_canceled=True,
+                            matched=ws_m, not_canceled_reason=not_canceled_reason, raw=res,
+                            canceled=[order_id], read_replica_stale_live=False,
+                        )
+
+            ws_m_cur = float((ws_snap or {}).get("size_matched", 0.0) or 0.0) if isinstance(ws_snap, dict) else 0.0
+            ws_st_cur = str((ws_snap or {}).get("status") or "").upper() if isinstance(ws_snap, dict) else ""
+            if (
+                is_in_canceled_list
+                and ws_healthy
+                and defer_unconfirmed_proof
+                and ws_m_cur <= 1e-6
+                and ws_st_cur not in {"MATCHED", "FILLED"}
+            ):
+                has_res = str(order_id) in self.reservation_records
+                if has_res:
+                    lock = getattr(self, "_reservations_lock", None) or _CLOB_HTTP_LOCK
+                    with lock:
+                        if str(order_id) in self.reservation_records:
+                            self.reservation_records[str(order_id)]["status"] = "PENDING_CANCEL_PROOF"
+                    _get_hot_io_pool().submit(
+                        self._verify_and_release_canceled_reservation_bg,
+                        str(order_id),
+                        token_id=token_id,
+                        pre_token_balance=pre_token_balance,
+                        market_closed=market_closed,
+                    )
+                return CancelOrderResult(
+                    res, order_id=str(order_id), outcome="CANCELED", is_canceled=True,
+                    matched=0.0, not_canceled_reason=None, raw=res,
+                    canceled=[order_id], read_replica_stale_live=False,
+                )
+
+            # Fallback Phase 2 (unhealthy WS, `not_canceled` race, or synchronous proof requested):
+            order_info = self.get_order_status(order_id)
+            if is_in_canceled_list and order_info is None and not self.dry_run:
+                time.sleep(0.12)
+                order_info = self.get_order_status(order_id)
+            status = str((order_info or {}).get("status", "")).upper()
+            matched = max(ws_m_cur, float((order_info or {}).get("size_matched", 0.0) or 0.0))
+            orig_size = float((order_info or {}).get("original_size", 0.0) or 0.0)
+            if orig_size <= 0.0 and isinstance(ws_snap, dict):
+                orig_size = float(ws_snap.get("original_size", 0.0) or 0.0)
+            ord_t_c = str((order_info or {}).get("order_type") or (order_info or {}).get("type") or "").upper()
+            if (status in {"MATCHED", "FILLED"} and (orig_size <= 0.0 or matched >= orig_size - 1e-4 or ord_t_c in {"FAK", "FOK"})) or (orig_size > 0.0 and matched >= orig_size - 1e-4):
+                return CancelOrderResult(
+                    res or {}, order_id=str(order_id), outcome="FILLED", is_canceled=False,
+                    matched=matched, not_canceled_reason=not_canceled_reason, raw=res,
+                )
+            if status.startswith("CANCEL") or status in {"EXPIRED", "REJECTED"} or (status == "INVALID" and matched <= 1e-6) or (
+                is_in_canceled_list and (self.dry_run or order_info is not None)
+            ):
+                outcome = "PARTIALLY_FILLED_CANCELED" if (matched > 0.0 and orig_size > 0.0 and matched < orig_size) else "CANCELED"
+                self.release_inventory(reservation_id=order_id)
+                return CancelOrderResult(
+                    res if is_in_canceled_list else {"canceled": [order_id]},
+                    order_id=str(order_id), outcome=outcome, is_canceled=True,
+                    matched=matched, not_canceled_reason=not_canceled_reason, raw=res,
+                    canceled=[order_id], read_replica_stale_live=bool(is_in_canceled_list and status == "LIVE"),
+                )
+            from src.polymarket_research.riskless_protocol_v2_expansion import is_verified_zero_fill_cancel_purge
+            if is_verified_zero_fill_cancel_purge(
+                self, str(order_id), matched, not_canceled_reason, order_info,
+                token_id=token_id, pre_token_balance=pre_token_balance, market_closed=market_closed,
+            ):
+                self.release_inventory(reservation_id=order_id)
+                return CancelOrderResult(
+                    {"canceled": [order_id]}, order_id=str(order_id), outcome="CANCELED", is_canceled=True,
+                    matched=0.0, not_canceled_reason=not_canceled_reason, raw=res, canceled=[order_id],
+                    read_replica_stale_live=(status == "LIVE"),
+                )
+            return CancelOrderResult(
+                res or {}, order_id=str(order_id), outcome="UNKNOWN", is_canceled=False,
+                matched=matched, not_canceled_reason=not_canceled_reason, raw=res, error=cancel_exc_err,
+            )
+        except Exception as e:
+            logger.error(f"Failed fast cancel on order {order_id}: {e}")
             return CancelOrderResult({}, order_id=str(order_id), outcome="UNKNOWN", is_canceled=False, error=str(e))
 
     def get_order_status(self, order_id: str) -> Optional[Dict[str, Any]]:

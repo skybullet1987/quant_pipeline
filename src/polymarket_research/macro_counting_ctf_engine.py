@@ -26,17 +26,37 @@ from src.polymarket_research.tradfi_sports_zero_fee_engine import (
 
 logger = logging.getLogger("MacroCountingCTF")
 try:
-    NY_TZ = ZoneInfo("America/New_York")
+    from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+    NY_TZ = get_us_eastern_tz()
 except Exception:
-    NY_TZ = timezone(timedelta(hours=-4))
+    try:
+        NY_TZ = ZoneInfo("America/New_York")
+    except Exception:
+        NY_TZ = timezone(timedelta(hours=-4))
 CHROME_UA = (
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"
 )
 
+XTRACKER_ALL_HANDLES: Tuple[str, ...] = (
+    "elonmusk",
+    "cz_binance",
+    "WhiteHouse",
+    "ZelenskyyUa",
+    "tedcruz",
+    "realDonaldTrump",
+)
+
 COUNTING_SERIES_HANDLES: Tuple[Tuple[str, str], ...] = (
     ("elon-tweets", "elonmusk"),
     ("elon-tweets-48h", "elonmusk"),
+    ("cz-tweets", "cz_binance"),
+    ("cz-binance-tweets", "cz_binance"),
+    ("whitehouse-tweets", "WhiteHouse"),
+    ("white-house-tweets", "WhiteHouse"),
+    ("zelenskyy-tweets", "ZelenskyyUa"),
+    ("ted-cruz-tweets", "tedcruz"),
+    ("tedcruz-tweets", "tedcruz"),
     ("trump-truth-social", "realDonaldTrump"),
 )
 
@@ -291,6 +311,130 @@ def evaluate_counting_dead_no_locks(
         if math.isfinite(br.high_count) and verified_floor >= int(br.high_count) + max(1, safety_post_buffer):
             dead.append(br)
     return verified_floor, dead
+
+
+def extract_xtracker_active_event_slugs(
+    xtracker_by_handle: Dict[str, Dict[str, Dict[str, Any]]]
+) -> List[Tuple[str, str]]:
+    """
+    Returns `(event_slug, handle)` pairs directly from `xtracker.polymarket.com/api/users/{handle}`
+    active `marketLink` URLs so newly launched counting slates (`@cz_binance`, `@WhiteHouse`,
+    `@ZelenskyyUa`, `@tedcruz`, `@elonmusk`) are discovered even before static `series_slug` tags update.
+    """
+    seen: set[str] = set()
+    pairs: List[Tuple[str, str]] = []
+    for handle, by_slug in (xtracker_by_handle or {}).items():
+        for eslug in (by_slug or {}).keys():
+            s_clean = str(eslug or "").strip()
+            if s_clean and s_clean not in seen:
+                seen.add(s_clean)
+                pairs.append((s_clean, str(handle)))
+    return pairs
+
+
+def detect_counting_pruned_exhaustive_yes_slate(
+    slate: CountingSlateSpec,
+    xtracker_by_slug: Dict[str, Dict[str, Any]],
+    books_by_token: Dict[str, Dict[str, Any]],
+    *,
+    safety_post_buffer: int = 2,
+    max_bundle_cost_net: float = 0.990,
+    max_surviving_legs: int = 12,
+    min_shares: float = 5.0,
+) -> Optional[Dict[str, Any]]:
+    """
+    `NR0_PRUNED` Zero-Loss Surviving Complete-Set Basket (`XTRACK1`):
+    Strictly enforces TWO non-negotiable zero-loss invariants:
+      1. Every omitted lower bracket MUST satisfy `high_count + safety_post_buffer <= verified_floor`
+         (`100%` mathematically eliminated under monotonic `xtracker` post rules).
+      2. The surviving brackets MUST form an unbroken contiguous partition all the way up to and
+         INCLUDING the unbounded `high_count == float('inf')` top-cap bracket (`240+` / `500+`).
+         Omitting the `inf` top-cap bracket (`burst-rate pruning`) is STRICTLY FORBIDDEN!
+    """
+    verified_floor, dead_brs = evaluate_counting_dead_no_locks(
+        slate, xtracker_by_slug, safety_post_buffer=safety_post_buffer
+    )
+    dead_ids = {b.market_id for b in dead_brs}
+    surviving = [b for b in sorted(slate.brackets, key=lambda r: r.low_count) if b.market_id not in dead_ids]
+    if not (2 <= len(surviving) <= int(max_surviving_legs)):
+        return None
+    # Invariant 1: Top-cap `inf` bracket MUST be present (zero burst-truncation tail risk)
+    if not math.isinf(surviving[-1].high_count):
+        return None
+    # Invariant 2: First surviving bracket must cover `verified_floor` (or every integer < low_count was dead-eliminated)
+    if surviving[0].low_count > verified_floor:
+        return None
+    # Invariant 3: Contiguous integer partition with zero gaps between surviving brackets
+    for idx in range(len(surviving) - 1):
+        cur_hi = surviving[idx].high_count
+        nxt_lo = surviving[idx + 1].low_count
+        if not math.isfinite(cur_hi) or int(round(cur_hi)) + 1 != int(nxt_lo):
+            return None
+
+    sh_req = max(5.0, float(min_shares))
+    legs_out: List[Dict[str, Any]] = []
+    total_cost_ps = 0.0
+    min_avail_sh = float("inf")
+    for br in surviving:
+        bk = books_by_token.get(br.yes_token) or {}
+        asks = sorted(
+            [
+                (float(a["price"]), float(a["size"]))
+                for a in (bk.get("asks") or [])
+                if isinstance(a, dict) and float(a.get("price", 0.0)) > 0 and float(a.get("size", 0.0)) > 0
+            ],
+            key=lambda t: t[0],
+        )
+        if not asks:
+            return None
+        cum_s, gross_u, w_px = 0.0, 0.0, asks[0][0]
+        for px, sz in asks:
+            take = min(sz, max(0.0, sh_req - cum_s))
+            if take <= 0:
+                break
+            gross_u += take * px
+            w_px = px
+            cum_s += take
+            if cum_s >= sh_req - 1e-6:
+                break
+        if cum_s < sh_req - 1e-6:
+            return None
+        fr = float(br.fee_rate or 0.0)
+        fe = float(br.fee_exponent or 1.0)
+        fee_ps = fr * ((w_px * (1.0 - w_px)) ** fe) if fr > 0.0 else 0.0
+        leg_eff = w_px + fee_ps
+        total_cost_ps += leg_eff
+        min_avail_sh = min(min_avail_sh, sum(s for _, s in asks[:3]))
+        legs_out.append({
+            "market_id": br.market_id,
+            "condition_id": br.condition_id,
+            "token_id": br.yes_token,
+            "opp_token_id": br.no_token,
+            "label": br.label,
+            "side": "YES",
+            "limit_price": round(w_px, 4),
+            "eff_cost_ps": round(leg_eff, 6),
+            "fee_rate": fr,
+            "fee_exponent": fe,
+            "neg_risk": br.neg_risk,
+        })
+    if total_cost_ps > float(max_bundle_cost_net) + 1e-9:
+        return None
+    return {
+        "mode": "NR0_PRUNED_EXHAUSTIVE_YES_COMPLETE_SET",
+        "event_id": slate.event_id,
+        "slug": slate.slug,
+        "handle": slate.handle,
+        "verified_floor": verified_floor,
+        "pruned_dead_count": len(dead_brs),
+        "surviving_leg_count": len(legs_out),
+        "includes_unbounded_top_cap": True,
+        "bundle_cost_net_ps": round(total_cost_ps, 6),
+        "net_edge_per_share": round(1.0 - total_cost_ps, 6),
+        "shares": max(5, int(math.floor(min(25.0, min_avail_sh / 1.15)))),
+        "close_ts": slate.window_end_ts,
+        "legs": legs_out,
+    }
 
 
 def detect_counting_subwindow_boxes(

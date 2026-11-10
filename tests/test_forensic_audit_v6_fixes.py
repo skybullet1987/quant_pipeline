@@ -833,7 +833,30 @@ def test_harv_live_blocks_ungraduated_v3_and_enforces_true_sports_velocity_and_b
         "leg_b_fee_rate": 0.05,
         "leg_b_fee_exponent": 1.0,
     }
-    rej_ungrad = harv.maybe_execute_graduated_d1_box(soc2_cand)
+    # 0. Under default strict_pure_riskless_mode=True, evaluate_strict_pure_riskless_candidate hard-blocks SOC2!
+    from src.polymarket_research.stage_c_zero_loss_velocity import evaluate_strict_pure_riskless_candidate
+
+    plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
+    ok_pure_soc2, why_pure_soc2 = evaluate_strict_pure_riskless_candidate(soc2_cand, plh.GLOBAL_GOVERNANCE_MANAGER.snapshot)
+    assert ok_pure_soc2 is False
+    assert "PURE_RISKLESS_SLEEVE_BLOCKED:SOC2_EXACT_SCORE_2D_LATTICE" in why_pure_soc2
+
+    # Now isolate inner defense-in-depth layers (_GRAD8 wall, 18.7h velocity hurdle, and 28% canary cap):
+    rb_inner = dict(plh.GLOBAL_GOVERNANCE_MANAGER._snapshot["riskless_boxes"])
+    rb_inner["strict_pure_riskless_mode"] = False
+    rb_inner["seed_max_lockup_hours"] = 24.0
+    rb_inner["seed_min_bps_per_hour"] = 8.0
+    rb_inner["enable_ungraduated_v3_math_live"] = False
+    rb_inner["paused_riskless_sleeves"] = [
+        s for s in rb_inner.get("paused_riskless_sleeves", [])
+        if s not in {"SOC2_EXACT_SCORE_2D_LATTICE", "SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"}
+    ]
+    monkeypatch.setitem(plh.GLOBAL_GOVERNANCE_MANAGER._snapshot, "riskless_boxes", rb_inner)
+    monkeypatch.setitem(harv.risk_config, "enable_ungraduated_v3_math_live", False)
+    harv.enable_ungraduated_v3_math_live = False
+
+    # 1. Ungraduated SOC2 (3W/0L) in LIVE mode MUST be rejected at the _GRAD8 wall!
+    rej_ungrad = harv.maybe_execute_graduated_d1_box({**soc2_cand, "dedupe_key": "DK_SOC2_UNGRAD_INNER"})
     assert rej_ungrad["executed"] is False
     assert rej_ungrad["reason"] == "SLEEVE_NOT_YET_8_OF_8_GRADUATED:SOC2_EXACT_SCORE_2D_LATTICE"
 

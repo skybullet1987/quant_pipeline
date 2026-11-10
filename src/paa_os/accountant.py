@@ -224,6 +224,10 @@ class PAAAccountant:
 
         anomalies: List[str] = []
         onchain_cash = float(ledger.get("free_cash_pusd") or 0.0)
+        pusd_only_raw = ledger.get("free_cash_pusd_only")
+        onchain_candidates = [onchain_cash]
+        if isinstance(pusd_only_raw, (int, float)) and not isinstance(pusd_only_raw, bool):
+            onchain_candidates.append(float(pusd_only_raw))
         state_cash = float(st.get("live_bankroll") if st.get("live_bankroll") is not None else onchain_cash)
         pend_dicts = [i for i in (st.get("pending_entry_intents") or {}).values() if isinstance(i, dict)]
         inflight_usd = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in pend_dicts)
@@ -231,15 +235,15 @@ class PAAAccountant:
         ps_st = st.get("pre_split_inventory_state") if isinstance(st.get("pre_split_inventory_state"), dict) else {}
         ps_realized = float(ps_st.get("realized_cash_usd") or 0.0) if ps_st.get("active") else 0.0
         eff_state_cash = state_cash + ps_realized
-        raw_cash_diff = abs(onchain_cash - eff_state_cash)
+        raw_cash_diff = min(abs(oc - eff_state_cash) for oc in onchain_candidates)
         if inflight_usd > 0.0 or matched_intent_usd > 0.0:
             # Resting EIP-712 Maker limit orders keep unfilled pUSD in wallet (`inflight_usd`) while any
             # already-matched partial fills (`matched_intent_usd`) drop `onchain_cash` before or during collateral sync.
             cash_diff = min(
-                raw_cash_diff,
-                abs(onchain_cash - max(0.0, eff_state_cash - matched_intent_usd)),
-                abs(onchain_cash - max(0.0, eff_state_cash - inflight_usd)),
-                abs(onchain_cash - max(0.0, eff_state_cash - matched_intent_usd - inflight_usd)),
+                [raw_cash_diff]
+                + [abs(oc - max(0.0, eff_state_cash - matched_intent_usd)) for oc in onchain_candidates]
+                + [abs(oc - max(0.0, eff_state_cash - inflight_usd)) for oc in onchain_candidates]
+                + [abs(oc - max(0.0, eff_state_cash - matched_intent_usd - inflight_usd)) for oc in onchain_candidates]
             )
         else:
             cash_diff = raw_cash_diff
@@ -476,7 +480,20 @@ class PAAAccountant:
         state_override: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """Runs full financial measurement, strictly separates realized vs simulated PnL, and enforces safeguards."""
-        ledger = ledger_override if ledger_override is not None else reconcile_authoritative_ledger(live_rpc_check=live_rpc_check)
+        if ledger_override is not None:
+            ledger = ledger_override
+        elif self.data_dir != DATA_PM:
+            try:
+                ledger = reconcile_authoritative_ledger(live_rpc_check=live_rpc_check, data_dir=self.data_dir)
+            except TypeError:
+                ledger = reconcile_authoritative_ledger(live_rpc_check=live_rpc_check)
+        else:
+            ledger = reconcile_authoritative_ledger(live_rpc_check=live_rpc_check)
+        if ledger_override is None and state_override is None and isinstance(ledger, dict) and "reconciled_at_utc" in ledger:
+            ledger_file = self.paa_dir / "authoritative_financial_ledger.json"
+            tmp_lf = ledger_file.with_suffix(".json.tmp")
+            tmp_lf.write_text(json.dumps(ledger, indent=2, default=str), encoding="utf-8")
+            tmp_lf.replace(ledger_file)
         exec_m = self._compute_execution_and_slippage_metrics()
         sim_m = self._compute_simulated_benchmarks()
         riskless_m = self._compute_riskless_live_and_quoting_metrics(ledger)

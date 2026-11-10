@@ -8,6 +8,9 @@ Type=simple
 WorkingDirectory=/home/skybullet1987/quant_pipeline
 Environment=PYTHONUNBUFFERED=1
 Environment=PM_DISABLE_EXP316_LIVE_EMIT=1
+CPUWeight=100
+IOWeight=100
+Nice=15
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/exp316_macro_strike_shadow.py --daemon --no-live-triggers
 Restart=always
 RestartSec=5

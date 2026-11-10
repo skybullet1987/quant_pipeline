@@ -64,6 +64,7 @@ PYTH_ASSET_CONFIG: Dict[str, Tuple[str, str, bool, float, float]] = {
     "AMZN": ("AMZN", "EQUITY_RTH", True, 0.0015, 0.34),
     "GOOGL": ("GOOGL", "EQUITY_RTH", True, 0.0015, 0.34),
     "MSFT": ("MSFT", "EQUITY_RTH", True, 0.0015, 0.30),
+    "META": ("META", "EQUITY_RTH", True, 0.0015, 0.38),
     "AAPL": ("AAPL", "EQUITY_RTH", True, 0.0015, 0.28),
     "TSLA": ("TSLA", "EQUITY_RTH", True, 0.0015, 0.52),
     "COIN": ("COIN", "EQUITY_RTH", True, 0.0020, 0.65),
@@ -88,6 +89,7 @@ PYTH_HIT_SERIES: Tuple[Tuple[str, str, str], ...] = (
     ("AMZN", "WEEK", "amazon-hit-price-weekly"),
     ("GOOGL", "WEEK", "google-hit-price-weekly"),
     ("MSFT", "WEEK", "microsoft-hit-price-weekly"),
+    ("META", "WEEK", "meta-hit-price-weekly"),
     ("AAPL", "WEEK", "apple-hit-price-weekly"),
     ("TSLA", "WEEK", "tesla-hit-price-weekly"),
     ("COIN", "MONTH", "coin-hit-month"),
@@ -102,6 +104,20 @@ PYTH_CLOSE_SERIES: Tuple[Tuple[str, str], ...] = (
     ("NVDA", "nvda-multi-strikes-weekly"),
     ("AAPL", "aapl-multi-strikes-weekly"),
     ("TSLA", "tsla-multi-strikes-weekly"),
+    ("AMZN", "amzn-multi-strikes-weekly"),
+    ("GOOGL", "googl-multi-strikes-weekly"),
+    ("META", "meta-multi-strikes-weekly"),
+    ("COIN", "coin-multi-strikes-weekly"),
+    ("HOOD", "hood-multi-strikes-weekly"),
+    ("PLTR", "pltr-multi-strikes-weekly"),
+    ("NVDA", "nvda-above-on-daily"),
+    ("TSLA", "tsla-above-on-daily"),
+    ("AAPL", "aapl-above-on-daily"),
+    ("MSFT", "msft-above-on-daily"),
+    ("AMZN", "amzn-above-on-daily"),
+    ("GOOGL", "googl-above-on-daily"),
+    ("META", "meta-above-on-daily"),
+    ("PLTR", "pltr-above-on-daily"),
 )
 
 NBA_SERIES_SLUGS: Tuple[str, ...] = ("nba-2026",)
@@ -286,6 +302,7 @@ class ZeroFeeNegRiskSlateSpec:
     title: str
     end_ts: float
     brackets: List[Dict[str, Any]]  # market_id, condition_id, label, yes_token, no_token
+    neg_risk_augmented: bool = False
 
 
 def compute_effective_trading_hours(
@@ -1074,6 +1091,7 @@ def parse_zero_fee_negrisk_slate(
         title=str(ev.get("title") or series_slug),
         end_ts=float(end_ts),
         brackets=open_brackets,
+        neg_risk_augmented=bool(ev.get("negRiskAugmented", False)),
     )
 
 
@@ -1473,7 +1491,7 @@ def parse_negrisk_convert_event(ev: Dict[str, Any]) -> Optional[NegRiskConvertSl
         and (not has_placeholder)
         and valid_nr_hex
         and all_mkts_open
-        and 3 <= total_n <= 24
+        and 3 <= total_n <= 40
         and len(open_brackets) == total_n
         and idx_set == set(range(total_n))
     )

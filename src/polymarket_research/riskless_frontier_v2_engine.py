@@ -1606,10 +1606,12 @@ def _infer_live_map_winner(
     tok_a: Optional[str],
     tok_b: Optional[str],
     books_by_token: Dict[str, Dict[str, Any]],
+    *,
+    allow_quote_inferred: bool = False,
 ) -> Optional[str]:
     if resolved_flag in ("A", "B"):
         return resolved_flag
-    if not tok_a or not tok_b:
+    if not allow_quote_inferred or not tok_a or not tok_b:
         return None
     bk_a = books_by_token.get(tok_a) or {}
     bk_b = books_by_token.get(tok_b) or {}
@@ -1629,6 +1631,8 @@ def evaluate_api1_esports_bo3_opportunities(
     books_by_token: Dict[str, Dict[str, Any]],
     best_asks: Dict[str, float],
     max_middle_cost_net: float = 0.988,
+    *,
+    allow_quote_inferred: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates:
@@ -1644,8 +1648,12 @@ def evaluate_api1_esports_bo3_opportunities(
     locks: List[Dict[str, Any]] = []
     boxes: List[Dict[str, Any]] = []
 
-    m1_w = _infer_live_map_winner(spec.map1_resolved_winner, spec.map1_a_token, spec.map1_b_token, books_by_token)
-    m2_w = _infer_live_map_winner(spec.map2_resolved_winner, spec.map2_a_token, spec.map2_b_token, books_by_token)
+    m1_w = _infer_live_map_winner(
+        spec.map1_resolved_winner, spec.map1_a_token, spec.map1_b_token, books_by_token, allow_quote_inferred=allow_quote_inferred
+    )
+    m2_w = _infer_live_map_winner(
+        spec.map2_resolved_winner, spec.map2_a_token, spec.map2_b_token, books_by_token, allow_quote_inferred=allow_quote_inferred
+    )
 
     dog_side = "B" if spec.hc_fav_is_a else "A"
     dog_name = spec.team_b if spec.hc_fav_is_a else spec.team_a
@@ -1662,11 +1670,110 @@ def evaluate_api1_esports_bo3_opportunities(
             "condition_id": spec.hc_condition_id,
             "fee_rate": spec.hc_fee_rate,
             "fee_exponent": spec.hc_fee_exp,
-            "p_lock": 0.997,
+            "p_lock": 0.999,
             "side_label": "PLUS_1.5",
             "display_label": f"{dog_name} (+1.5 Maps) [Map 1 Won]",
             "close_ts": spec.end_ts,
         })
+
+    # Post-Map-1 Forfeit-Immune BO3 Intermission Equivalence Boxes (Fav leads 1-0, Map 2 in dead-ball intermission):
+    # CRITICAL ZERO-LOSS INVARIANT: NEVER pair Handicap/Totals against `Map 2 Winner` (a post-Map-1 forfeit grades
+    # `Map 2 Winner` 0/1 while Handicap & Total Maps 2.5 grade 50-50 = $0.50 loss!). Pairing Handicap (-1.5 / +1.5)
+    # STRICTLY with Total Maps (Over 2.5 / Under 2.5) pays >= $1.00 across EVERY played score (2-0, 2-1, 1-2) AND
+    # pays $0.50 + $0.50 = $1.0000 on any post-Map-1 forfeit/abandonment (`post_m1_forfeit_immune = True`)!
+    _enable_interm_hc_tot = True
+    try:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+        _rb_esp = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+        _enable_interm_hc_tot = bool(
+            _rb_esp.get("enable_esports1_bo3_intermission_box", True)
+            and _rb_esp.get("enable_esports1_intermission_hc_total_box", True)
+        )
+    except Exception:
+        pass
+    fav_side = "A" if spec.hc_fav_is_a else "B"
+    if (
+        _enable_interm_hc_tot
+        and m1_w == fav_side
+        and m2_w is None
+        and spec.ou25_over_token
+        and spec.ou25_under_token
+        and spec.hc_minus_token
+        and spec.hc_plus_token
+    ):
+        ask_m2_a = best_asks.get(spec.map2_a_token) if spec.map2_a_token else None
+        ask_m2_b = best_asks.get(spec.map2_b_token) if spec.map2_b_token else None
+        m2_intermission_calm = bool(
+            ask_m2_a is not None
+            and ask_m2_b is not None
+            and 0.15 <= float(ask_m2_a) <= 0.85
+            and 0.15 <= float(ask_m2_b) <= 0.85
+            and (float(ask_m2_a) + float(ask_m2_b)) <= 1.08
+        )
+        if m2_intermission_calm:
+            # Box 1: Fav (-1.5 Maps) [wins iff 2-0] + Over 2.5 Maps [wins iff 2-1 or 1-2]; post-M1 forfeit -> 0.50 + 0.50 = 1.00
+            px_fav_minus = best_asks.get(spec.hc_minus_token)
+            px_over25 = best_asks.get(spec.ou25_over_token)
+            if px_fav_minus is not None and px_over25 is not None:
+                c_hc_ov = round(
+                    _net_unit_ask(px_fav_minus, spec.hc_fee_rate, spec.hc_fee_exp)
+                    + _net_unit_ask(px_over25, spec.ou25_fee_rate, 1.0),
+                    4,
+                )
+                if c_hc_ov <= max_middle_cost_net:
+                    boxes.append({
+                        "mode": "ESPORTS1_BO3_INTERMISSION_HANDICAP_TOTAL_BOX",
+                        "event_id": spec.event_id,
+                        "title": spec.title,
+                        "box_cost_net": c_hc_ov,
+                        "post_m1_forfeit_immune": True,
+                        "close_ts": spec.end_ts,
+                        "leg_a": {
+                            "token_id": spec.hc_minus_token, "opp_token_id": spec.hc_plus_token,
+                            "condition_id": spec.hc_condition_id, "market_id": spec.hc_market_id,
+                            "side": "HANDICAP", "label": f"{fav_name}(-1.5)",
+                            "fee_rate": spec.hc_fee_rate, "fee_exponent": spec.hc_fee_exp, "neg_risk": False, "strike": -1.5,
+                        },
+                        "leg_b": {
+                            "token_id": spec.ou25_over_token, "opp_token_id": spec.ou25_under_token,
+                            "condition_id": spec.ou25_condition_id, "market_id": spec.ou25_market_id,
+                            "side": "TOTAL_OVER", "label": "Over(2.5)",
+                            "fee_rate": spec.ou25_fee_rate, "fee_exponent": 1.0, "neg_risk": False, "strike": 2.5,
+                        },
+                        "label": f"{spec.title[:38]}: {fav_name}(-1.5) + Over 2.5 [1-0 Break]",
+                    })
+            # Box 2: Dog (+1.5 Maps) [wins iff 2-1 or 1-2 when Fav leads 1-0] + Under 2.5 Maps [wins iff 2-0]; forfeit -> 0.50 + 0.50 = 1.00
+            px_dog_plus = best_asks.get(spec.hc_plus_token)
+            px_under25 = best_asks.get(spec.ou25_under_token)
+            if px_dog_plus is not None and px_under25 is not None:
+                c_hc_un = round(
+                    _net_unit_ask(px_dog_plus, spec.hc_fee_rate, spec.hc_fee_exp)
+                    + _net_unit_ask(px_under25, spec.ou25_fee_rate, 1.0),
+                    4,
+                )
+                if c_hc_un <= max_middle_cost_net:
+                    boxes.append({
+                        "mode": "ESPORTS1_BO3_INTERMISSION_HANDICAP_TOTAL_BOX",
+                        "event_id": spec.event_id,
+                        "title": spec.title,
+                        "box_cost_net": c_hc_un,
+                        "post_m1_forfeit_immune": True,
+                        "close_ts": spec.end_ts,
+                        "leg_a": {
+                            "token_id": spec.hc_plus_token, "opp_token_id": spec.hc_minus_token,
+                            "condition_id": spec.hc_condition_id, "market_id": spec.hc_market_id,
+                            "side": "HANDICAP", "label": f"{dog_name}(+1.5)",
+                            "fee_rate": spec.hc_fee_rate, "fee_exponent": spec.hc_fee_exp, "neg_risk": False, "strike": 1.5,
+                        },
+                        "leg_b": {
+                            "token_id": spec.ou25_under_token, "opp_token_id": spec.ou25_over_token,
+                            "condition_id": spec.ou25_condition_id, "market_id": spec.ou25_market_id,
+                            "side": "TOTAL_UNDER", "label": "Under(2.5)",
+                            "fee_rate": spec.ou25_fee_rate, "fee_exponent": 1.0, "neg_risk": False, "strike": 2.5,
+                        },
+                        "label": f"{spec.title[:38]}: {dog_name}(+1.5) + Under 2.5 [1-0 Break]",
+                    })
 
     if m1_w in ("A", "B") and m2_w in ("A", "B") and m1_w != m2_w and spec.ou25_over_token and spec.ou25_under_token:
         locks.append({

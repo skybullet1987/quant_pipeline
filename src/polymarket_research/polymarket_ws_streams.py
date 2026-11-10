@@ -56,8 +56,10 @@ from pathlib import Path
 
 USER_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/user"
 MARKET_WS_URL = "wss://ws-subscriptions-clob.polymarket.com/ws/market"
+CLOB_MARKET_WS_URL = MARKET_WS_URL
 LIVE_DATA_WS_URL = "wss://ws-live-data.polymarket.com"
 POLYBOLT_V2_WS_URL = "wss://ws-live-v2.polymarket.com/ws"
+PERPS_WS_URL = "wss://ws.perpetuals.polymarket.com/v1/ws"
 
 POLYBOLT_CRYPTO_SYMBOLS: Tuple[str, ...] = (
     "btcusd",
@@ -69,6 +71,22 @@ POLYBOLT_CRYPTO_SYMBOLS: Tuple[str, ...] = (
     "zecusd",
     "hypeusd",
     "xauusd",
+)
+
+POLYBOLT_EQUITY_SYMBOLS: Tuple[str, ...] = (
+    "SPY",
+    "QQQ",
+    "NVDA",
+    "TSLA",
+    "AAPL",
+    "MSFT",
+    "META",
+    "AMZN",
+    "GOOGL",
+    "NFLX",
+    "PLTR",
+    "HOOD",
+    "COIN",
 )
 
 OPEN_ORDER_STATUSES = {"LIVE", "OPEN", "DELAYED", "UNMATCHED"}
@@ -230,6 +248,7 @@ class PolymarketUserWsCache:
         self._on_fill_callback = on_fill_callback
 
         self._lock = threading.RLock()
+        self._state_cv = threading.Condition(self._lock)
         self._stop_event = threading.Event()
         self._fill_event = threading.Event()
         self._async_waiters: List[Tuple[asyncio.AbstractEventLoop, asyncio.Event]] = []
@@ -263,6 +282,8 @@ class PolymarketUserWsCache:
     def stop(self) -> None:
         self._stop_event.set()
         self._fill_event.set()
+        with self._lock:
+            self._state_cv.notify_all()
         self._notify_async_waiters()
 
     def _notify_async_waiters(self) -> None:
@@ -344,6 +365,56 @@ class PolymarketUserWsCache:
             out = dict(rec)
             out.pop("_updated_mono", None)
             return out
+
+    def wait_for_order_terminal_sync(
+        self,
+        order_id: str,
+        timeout_sec: float = 0.035,
+        max_age_sec: float = 10.0,
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Blocks synchronously up to `timeout_sec` (<0.2ms condvar wakeup on `/ws/user` frame)
+        for `order_id` to reach a terminal state (`CANCELED`, `CANCELLED`, `MATCHED`, `FILLED`, `INVALID`).
+        Returns the latest fresh snapshot (terminal or non-terminal), or None if WS is unhealthy/unknown.
+        """
+        oid = str(order_id or "").strip()
+        if not oid:
+            return None
+        deadline = time.monotonic() + max(0.0, float(timeout_sec))
+        with self._lock:
+            if not self._connected or (time.monotonic() - self._last_rx_mono) > 22.0:
+                return None
+            while True:
+                now_m = time.monotonic()
+                rec = self._orders_by_id.get(oid)
+                if isinstance(rec, dict):
+                    upd_m = float(rec.get("_updated_mono", 0.0) or 0.0)
+                    fresh_ok = not (
+                        self._connected_since_mono > 0.0
+                        and upd_m < self._connected_since_mono
+                        and not self._seeded_since_connect
+                    ) and (now_m - upd_m) <= max_age_sec
+                    if fresh_ok:
+                        st = str(rec.get("status") or "").strip().upper()
+                        orig_sz = _safe_float(rec.get("original_size"), 0.0)
+                        matched_sz = _safe_float(rec.get("size_matched"), 0.0)
+                        is_term = (
+                            st in TERMINAL_CANCEL_STATUSES
+                            or (st == "INVALID" and matched_sz <= 1e-6)
+                            or (
+                                st in TERMINAL_FILL_STATUSES
+                                and (orig_sz <= 0.0 or matched_sz >= orig_sz - 1e-4)
+                            )
+                        )
+                        if is_term:
+                            out = dict(rec)
+                            out.pop("_updated_mono", None)
+                            return out
+                rem = deadline - time.monotonic()
+                if rem <= 0.0 or self._stop_event.is_set() or not self._connected:
+                    break
+                self._state_cv.wait(timeout=rem)
+            return self.get_order_snapshot(oid, max_age_sec=max_age_sec)
 
     def has_token_fill_since(self, token_id: str, since_unix_ts: float) -> bool:
         tok = str(token_id or "").strip()
@@ -562,6 +633,9 @@ class PolymarketUserWsCache:
                     events_applied += 1
                     if tr_status in ("MATCHED", "MINED", "CONFIRMED", "FAILED", "RETRYING"):
                         fire_callbacks.append(dict(item))
+
+            if events_applied > 0:
+                self._state_cv.notify_all()
 
         if events_applied > 0:
             self._notify_async_waiters()
@@ -784,19 +858,21 @@ class PolymarketChainlinkLiveStream:
         if not isinstance(d, dict):
             return False
 
-        # PolyBolt V2 (`wss://ws-live-v2.polymarket.com/ws`) `price.crypto` frames
-        if d.get("channel") == "price.crypto":
+        # PolyBolt V2 (`wss://ws-live-v2.polymarket.com/ws`) `price.crypto` & `price.equity` frames
+        if d.get("channel") in ("price.crypto", "price.equity"):
             dropped = int(d.get("dropped") or 0)
             if dropped > 0:
                 with self._lock:
                     self._dropped_frames += dropped
-                logger.warning(f"[POLYBOLT-V2] Server reported dropped={dropped} frames on price.crypto")
+                logger.warning(f"[POLYBOLT-V2] Server reported dropped={dropped} frames on {d.get('channel')}")
                 return False
             pl = d.get("payload")
             if not isinstance(pl, dict):
                 return False
             raw_sym = str(pl.get("symbol") or "").strip().lower()
-            asset = CHAINLINK_SYMBOL_MAP.get(raw_sym)
+            asset = CHAINLINK_SYMBOL_MAP.get(raw_sym) or (
+                raw_sym.upper() if raw_sym.upper() in POLYBOLT_EQUITY_SYMBOLS else None
+            )
             if not asset:
                 return False
             if bool(d.get("snapshot")) or isinstance(pl.get("data"), list):
@@ -1045,6 +1121,16 @@ class PolymarketChainlinkLiveStream:
                         }
                     )
                 )
+            for idx_e, eq_sym in enumerate(POLYBOLT_EQUITY_SYMBOLS):
+                await ws.send(
+                    json.dumps(
+                        {
+                            "op": "subscribe",
+                            "rid": f"eq_{idx_e}",
+                            "subscriptions": [{"channel": "price.equity", "filter": {"symbol": eq_sym}}],
+                        }
+                    )
+                )
             with self._lock:
                 self._connected = True
                 self._active_source = "polybolt_v2"
@@ -1213,8 +1299,10 @@ class PolymarketClobMarketWsTracker:
         self._on_tick_size_change = on_tick_size_change
         self._lock = threading.RLock()
         self._desired_tokens: Set[str] = set()
+        self._desired_tokens_ordered: List[str] = []
         self._books: Dict[str, Tuple[float, Dict[str, Any]]] = {}
         self._raw_levels: Dict[str, Tuple[Dict[float, float], Dict[float, float]]] = {}
+        self._snapshot_tokens: Set[str] = set()
         self._tick_sizes: Dict[str, float] = {}
         self._sub_wakeup: Optional[asyncio.Event] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
@@ -1227,28 +1315,42 @@ class PolymarketClobMarketWsTracker:
             return self._tick_sizes.get(tok)
 
     def set_desired_tokens(self, tokens: Iterable[str]) -> None:
-        clean = {str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()}
+        ordered: List[str] = []
+        seen_c: Set[str] = set()
+        for t in tokens:
+            s = str(t or "").strip()
+            if len(s) >= 15 and s.isdigit() and s not in seen_c:
+                seen_c.add(s)
+                ordered.append(s)
+                if len(ordered) >= 490:
+                    break
+        clean = set(ordered)
         added = False
         with self._lock:
             if clean - self._desired_tokens:
                 added = True
+            self._desired_tokens_ordered = ordered
             self._desired_tokens = clean
             for stale in list(self._books.keys()):
                 if stale not in clean:
                     self._books.pop(stale, None)
                     self._raw_levels.pop(stale, None)
+                    self._snapshot_tokens.discard(stale)
         if added:
             self._signal_sub_wakeup()
 
     def subscribe_tokens_immediate(self, tokens: Iterable[str]) -> None:
-        clean = {str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()}
-        if not clean:
+        urgent = [str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()]
+        if not urgent:
             return
         added = False
         with self._lock:
-            if clean - self._desired_tokens:
-                self._desired_tokens.update(clean)
+            if set(urgent) - self._desired_tokens:
                 added = True
+            prev_ord = getattr(self, "_desired_tokens_ordered", None) or sorted(self._desired_tokens)
+            merged = list(dict.fromkeys(urgent + list(prev_ord)))[:490]
+            self._desired_tokens_ordered = merged
+            self._desired_tokens = set(merged)
         if added:
             self._signal_sub_wakeup()
 
@@ -1272,6 +1374,25 @@ class PolymarketClobMarketWsTracker:
                 return None
             return entry[1]
 
+    def seed_book(self, token_id: str, book: Any, *, max_existing_age_sec: float = 2.0) -> bool:
+        tok = str(token_id or "").strip()
+        if not tok or not isinstance(book, dict):
+            return False
+        b_raw = book.get("bids") if isinstance(book.get("bids"), list) else []
+        a_raw = book.get("asks") if isinstance(book.get("asks"), list) else []
+        now_m = time.monotonic()
+        with self._lock:
+            existing = self._books.get(tok)
+            if existing is not None and tok in self._snapshot_tokens and (now_m - existing[0]) <= max_existing_age_sec:
+                return False
+            self._apply_snapshot_locked(tok, b_raw, a_raw, now_m)
+            tk_s = _safe_float(book.get("minimum_tick_size") or book.get("tick_size"), 0.0)
+            if 0.0001 <= tk_s <= 0.1:
+                self._tick_sizes.setdefault(tok, tk_s)
+                if tok in self._books:
+                    self._books[tok][1]["minimum_tick_size"] = self._tick_sizes[tok]
+            return True
+
     def process_ws_payload(self, raw_payload: Any) -> bool:
         if not raw_payload or raw_payload in ("PONG", b"PONG"):
             return False
@@ -1285,6 +1406,7 @@ class PolymarketClobMarketWsTracker:
 
         changed_books: List[Tuple[str, Dict[str, Any]]] = []
         tick_changes: List[Tuple[str, float]] = []
+        matched_any = False
         with self._lock:
             for item in items:
                 if not isinstance(item, dict):
@@ -1301,10 +1423,12 @@ class PolymarketClobMarketWsTracker:
                         if aid in self._books:
                             self._books[aid][1]["minimum_tick_size"] = tk_f
                         tick_changes.append((aid, tk_f))
+                        matched_any = True
                     continue
                 if "bids" in item and "asks" in item and item.get("asset_id"):
                     aid = str(item["asset_id"])
                     if aid in self._desired_tokens:
+                        matched_any = True
                         bb = self._apply_snapshot_locked(aid, item.get("bids") or [], item.get("asks") or [], now_m)
                         snap_tk = _safe_float(item.get("minimum_tick_size") or item.get("tick_size"), 0.0)
                         if 0.0001 <= snap_tk <= 0.1:
@@ -1328,6 +1452,7 @@ class PolymarketClobMarketWsTracker:
                             if aid in self._desired_tokens:
                                 by_aid.setdefault(aid, []).append(pc)
                     for aid, pcs in by_aid.items():
+                        matched_any = True
                         bb = self._apply_changes_locked(aid, pcs, now_m)
                         if aid in self._tick_sizes and aid in self._books:
                             self._books[aid][1]["minimum_tick_size"] = self._tick_sizes[aid]
@@ -1335,6 +1460,7 @@ class PolymarketClobMarketWsTracker:
                             changed_books.append((aid, self._books[aid][1]))
                         if bb >= self._recycle_bid_trigger:
                             urgent_hits.append((aid, bb))
+        self._last_payload_matched = matched_any
 
         if self._on_tick_size_change is not None and tick_changes:
             for aid, tk_f in tick_changes:
@@ -1379,7 +1505,15 @@ class PolymarketClobMarketWsTracker:
             if px > 0.0 and sz > 0.0
         ]
         best_b = float(bids[0]["price"]) if bids else 0.0
-        self._books[aid] = (now_m, {"asset_id": aid, "bids": bids, "asks": asks})
+        self._books[aid] = (
+            now_m,
+            {
+                "asset_id": aid,
+                "bids": bids,
+                "asks": asks,
+                "is_partial_delta": (aid not in self._snapshot_tokens),
+            },
+        )
         return best_b
 
     def _apply_snapshot_locked(self, aid: str, b_raw: List[Any], a_raw: List[Any], now_m: float) -> float:
@@ -1395,14 +1529,12 @@ class PolymarketClobMarketWsTracker:
                 px, sz = round(_safe_float(r.get("price")), 4), _safe_float(r.get("size"))
                 if px > 0.0 and sz > 0.0:
                     a_map[px] = sz
+        self._snapshot_tokens.add(aid)
         self._raw_levels[aid] = (b_map, a_map)
         return self._rebuild_locked(aid, b_map, a_map, now_m)
 
     def _apply_changes_locked(self, aid: str, pcs: List[Dict[str, Any]], now_m: float) -> float:
-        lvls = self._raw_levels.get(aid)
-        if lvls is None:
-            return 0.0
-        b_map, a_map = lvls
+        b_map, a_map = self._raw_levels.setdefault(aid, ({}, {}))
         for pc in pcs:
             px = round(_safe_float(pc.get("price")), 4)
             sz = _safe_float(pc.get("size"))
@@ -1414,6 +1546,9 @@ class PolymarketClobMarketWsTracker:
                 tgt.pop(px, None)
             else:
                 tgt[px] = sz
+        if aid not in self._snapshot_tokens and not b_map and not a_map:
+            self._raw_levels.pop(aid, None)
+            return 0.0
         return self._rebuild_locked(aid, b_map, a_map, now_m)
 
     async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
@@ -1426,7 +1561,7 @@ class PolymarketClobMarketWsTracker:
         backoff = 0.5
         while not (stop_check and stop_check()):
             with self._lock:
-                desired_0 = sorted(self._desired_tokens)
+                desired_0 = list(getattr(self, "_desired_tokens_ordered", None) or sorted(self._desired_tokens))[:490]
             if not desired_0:
                 try:
                     await asyncio.wait_for(self._sub_wakeup.wait(), timeout=0.5)
@@ -1469,14 +1604,17 @@ class PolymarketClobMarketWsTracker:
                                     self._sub_wakeup.clear()
                                 last_chk = now_m
                                 with self._lock:
-                                    cur = set(self._desired_tokens)
+                                    cur_ord = list(getattr(self, "_desired_tokens_ordered", None) or sorted(self._desired_tokens))[:490]
+                                    cur = set(cur_ord)
                                 if not cur:
                                     break
-                                added = sorted(cur - subscribed)
+                                missing_sub = [t for t in cur_ord if t not in subscribed]
+                                room_sub = max(0, 495 - len(subscribed))
+                                added = missing_sub[:room_sub]
                                 if added:
                                     await ws.send(json.dumps({"assets_ids": added, "operation": "subscribe"}))
                                     subscribed.update(added)
-                                elif len(subscribed) > len(cur) + 16:
+                                elif len(subscribed - cur) > 16 or bool(missing_sub):
                                     break
                             if (now_m - last_rx) > 30.0:
                                 break
@@ -1506,3 +1644,335 @@ class PolymarketClobMarketWsTracker:
                 logger.debug(f"[HARVESTER-MKT-WS] Reconnecting after notice: {exc}")
             await asyncio.sleep(min(5.0, backoff + random.uniform(0.0, 0.2)))
             backoff = min(5.0, backoff * 1.7)
+
+
+class PolymarketShardedClobMarketWsTracker:
+    """
+    4-Shard concurrent Polymarket CLOB Market WebSocket pool (`4 x 485 = 1,940` live tokens).
+    Uses sticky token->shard routing so active positions and resting maker/watchlist tokens
+    NEVER bounce across shards or lose their L2 snapshot delta state when low-priority tokens churn.
+    """
+
+    def __init__(
+        self,
+        num_shards: int = 4,
+        per_shard_max: int = 485,
+        per_shard_max_tokens: Optional[int] = None,
+        ws_url: str = CLOB_MARKET_WS_URL,
+        recycle_bid_trigger: float = 0.985,
+        on_urgent_bid: Optional[Callable[[str, float], None]] = None,
+        on_book_change: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+        on_book_event: Optional[Callable[[str], None]] = None,
+        on_tick_size_change: Optional[Callable[[str, float], None]] = None,
+    ) -> None:
+        self.num_shards = max(1, min(8, int(num_shards)))
+        eff_shard_max = per_shard_max_tokens if per_shard_max_tokens is not None else per_shard_max
+        self.per_shard_max = max(16, min(490, int(eff_shard_max)))
+        self.max_tokens = self.num_shards * self.per_shard_max
+        self._lock = threading.Lock()
+        self._token_to_shard: Dict[str, int] = {}
+        self._desired_tokens_ordered: List[str] = []
+        self._desired_tokens: Set[str] = set()
+        if on_book_change is not None and on_book_event is not None:
+            def _combined_book_cb(aid: str, bk: Dict[str, Any]) -> None:
+                on_book_change(aid, bk)
+                on_book_event(aid)
+            eff_book_cb: Optional[Callable[[str, Dict[str, Any]], None]] = _combined_book_cb
+        elif on_book_event is not None:
+            eff_book_cb = lambda aid, _bk: on_book_event(aid)
+        else:
+            eff_book_cb = on_book_change
+        self._shards: List[PolymarketClobMarketWsTracker] = [
+            PolymarketClobMarketWsTracker(
+                ws_url=ws_url,
+                recycle_bid_trigger=recycle_bid_trigger,
+                on_urgent_bid=on_urgent_bid,
+                on_book_change=eff_book_cb,
+                on_tick_size_change=on_tick_size_change,
+            )
+            for _ in range(self.num_shards)
+        ]
+
+    def _rebalance_shards_locked(self, ordered: List[str]) -> List[List[str]]:
+        clean = set(ordered)
+        for stale in list(self._token_to_shard.keys()):
+            if stale not in clean:
+                self._token_to_shard.pop(stale, None)
+        buckets: List[List[str]] = [[] for _ in range(self.num_shards)]
+        # Pass 1: preserve existing sticky shard assignments up to per_shard_max
+        unassigned: List[str] = []
+        for tok in ordered:
+            sh_idx = self._token_to_shard.get(tok)
+            if sh_idx is not None and 0 <= sh_idx < self.num_shards and len(buckets[sh_idx]) < self.per_shard_max:
+                buckets[sh_idx].append(tok)
+            else:
+                unassigned.append(tok)
+        # Pass 2: place newly added tokens onto the least-loaded shard with capacity
+        for tok in unassigned:
+            best_idx = min(range(self.num_shards), key=lambda idx: len(buckets[idx]))
+            if len(buckets[best_idx]) < self.per_shard_max:
+                buckets[best_idx].append(tok)
+                self._token_to_shard[tok] = best_idx
+        self._desired_tokens_ordered = [t for b in buckets for t in b]
+        self._desired_tokens = set(self._desired_tokens_ordered)
+        return buckets
+
+    def set_desired_tokens(self, tokens: Iterable[str]) -> None:
+        ordered: List[str] = []
+        seen_c: Set[str] = set()
+        for t in tokens:
+            s = str(t or "").strip()
+            if len(s) >= 15 and s.isdigit() and s not in seen_c:
+                seen_c.add(s)
+                ordered.append(s)
+                if len(ordered) >= self.max_tokens:
+                    break
+        with self._lock:
+            buckets = self._rebalance_shards_locked(ordered)
+        for idx, sh in enumerate(self._shards):
+            sh.set_desired_tokens(buckets[idx])
+
+    def subscribe_tokens_immediate(self, tokens: Iterable[str]) -> None:
+        urgent = [str(t).strip() for t in tokens if t and len(str(t).strip()) >= 15 and str(t).strip().isdigit()]
+        if not urgent:
+            return
+        with self._lock:
+            merged = list(dict.fromkeys(urgent + list(self._desired_tokens_ordered)))[: self.max_tokens]
+            buckets = self._rebalance_shards_locked(merged)
+        for idx, sh in enumerate(self._shards):
+            sh.set_desired_tokens(buckets[idx])
+
+    def get_book(self, token_id: str, max_age_sec: float = 2.0) -> Optional[Dict[str, Any]]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        with self._lock:
+            sh_idx = self._token_to_shard.get(tok)
+        if sh_idx is not None and 0 <= sh_idx < self.num_shards:
+            bk = self._shards[sh_idx].get_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        for sh in self._shards:
+            bk = sh.get_book(tok, max_age_sec=max_age_sec)
+            if bk is not None:
+                return bk
+        return None
+
+    def seed_book(self, token_id: str, book: Any, *, max_existing_age_sec: float = 2.0) -> bool:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return False
+        with self._lock:
+            sh_idx = self._token_to_shard.get(tok)
+            if sh_idx is None:
+                sh_idx = min(range(self.num_shards), key=lambda i: len(self._shards[i]._desired_tokens))
+                if len(tok) >= 15 and tok.isdigit():
+                    self._token_to_shard[tok] = sh_idx
+        return self._shards[sh_idx].seed_book(tok, book, max_existing_age_sec=max_existing_age_sec)
+
+    def get_tick_size(self, token_id: str) -> Optional[float]:
+        tok = str(token_id or "").strip()
+        if not tok:
+            return None
+        with self._lock:
+            sh_idx = self._token_to_shard.get(tok)
+        if sh_idx is not None and 0 <= sh_idx < self.num_shards:
+            tk = self._shards[sh_idx].get_tick_size(tok)
+            if tk is not None:
+                return tk
+        for sh in self._shards:
+            tk = sh.get_tick_size(tok)
+            if tk is not None:
+                return tk
+        return None
+
+    def process_ws_payload(self, raw_payload: Any) -> bool:
+        hit = False
+        for sh in self._shards:
+            sh._last_payload_matched = False
+            if sh.process_ws_payload(raw_payload) or bool(getattr(sh, "_last_payload_matched", False)):
+                hit = True
+        return hit
+
+    def shard_token_counts(self) -> List[int]:
+        return [len(sh._desired_tokens) for sh in self._shards]
+
+    async def run_forever(self, stop_check: Optional[Callable[[], bool]] = None) -> None:
+        await asyncio.gather(*(sh.run_forever(stop_check) for sh in self._shards))
+
+
+class PolymarketPerpsLeadLagStream:
+    """
+    Read-only `$0`-collateral lead-lag microstructure sensor connected to Polymarket Perpetuals
+    (`wss://ws.perpetuals.polymarket.com/v1/ws`, unauthenticated `bbo` + `tickers` channels).
+    Strictly used ONLY for sub-50ms maker pre-cancel protection (`PERP1` Mode `6A`) — NEVER for
+    delta-hedging binary payoffs with linear perpetuals!
+    """
+
+    PERP_SYMBOL_MAP: Dict[str, str] = {
+        "BTC-PERP": "BTC",
+        "BTC-USD-PERP": "BTC",
+        "BTCUSD-PERP": "BTC",
+        "BTC": "BTC",
+        "ETH-PERP": "ETH",
+        "ETH-USD-PERP": "ETH",
+        "ETHUSD-PERP": "ETH",
+        "ETH": "ETH",
+        "SOL-PERP": "SOL",
+        "SOL-USD-PERP": "SOL",
+        "SOL": "SOL",
+        "XRP-PERP": "XRP",
+        "XRP-USD-PERP": "XRP",
+        "XRP": "XRP",
+        "HYPE-PERP": "HYPE",
+        "DOGE-PERP": "DOGE",
+        "BNB-PERP": "BNB",
+        "ZEC-PERP": "ZEC",
+    }
+
+    def __init__(self, ws_url: str = PERPS_WS_URL) -> None:
+        self._ws_url = str(ws_url or PERPS_WS_URL)
+        self._lock = threading.Lock()
+        self._bbo_hist: Dict[str, deque] = {}
+        self._latest_bbo: Dict[str, Tuple[float, float, float, float]] = {}  # (ts_s, bid, ask, mid)
+        self._connected = False
+        self._thread: Optional[threading.Thread] = None
+        self._stop_flag = False
+
+    def process_ws_frame(self, raw_msg: Any, now_ts: Optional[float] = None) -> bool:
+        try:
+            d = _loads(raw_msg) if isinstance(raw_msg, (str, bytes, bytearray)) else raw_msg
+        except Exception:
+            return False
+        if not isinstance(d, dict):
+            return False
+        pl = d.get("data") if isinstance(d.get("data"), dict) else (d.get("payload") if isinstance(d.get("payload"), dict) else d)
+        raw_sym = str(
+            pl.get("symbol") or pl.get("market") or pl.get("instrument") or d.get("symbol") or ""
+        ).strip().upper()
+        asset = self.PERP_SYMBOL_MAP.get(raw_sym) or (raw_sym.split("-")[0] if "-PERP" in raw_sym else "")
+        if not asset:
+            return False
+        bid = _safe_float(pl.get("bestBid") or pl.get("bidPrice") or pl.get("bid") or pl.get("b"), 0.0)
+        ask = _safe_float(pl.get("bestAsk") or pl.get("askPrice") or pl.get("ask") or pl.get("a"), 0.0)
+        mark = _safe_float(pl.get("markPrice") or pl.get("indexPrice") or pl.get("midPrice") or pl.get("lastPrice"), 0.0)
+        mid = 0.5 * (bid + ask) if (bid > 0.0 and ask > 0.0 and ask >= bid) else mark
+        if mid <= 0.0:
+            return False
+        ts_raw = _safe_float(pl.get("timestamp") or pl.get("ts") or d.get("ts"), 0.0)
+        ts_s = (ts_raw / 1000.0 if ts_raw > 1e11 else ts_raw) if ts_raw > 0.0 else float(time.time() if now_ts is None else now_ts)
+        with self._lock:
+            self._latest_bbo[asset] = (ts_s, bid if bid > 0 else mid, ask if ask > 0 else mid, mid)
+            dq = self._bbo_hist.setdefault(asset, deque(maxlen=256))
+            dq.append((ts_s, mid))
+        return True
+
+    def get_latest_mid(self, asset: str, now_ts: Optional[float] = None, max_age_sec: float = 2.0) -> Optional[float]:
+        sym = str(asset or "").strip().upper()
+        now_f = float(time.time() if now_ts is None else now_ts)
+        with self._lock:
+            rec = self._latest_bbo.get(sym)
+            if not rec:
+                return None
+            if -2.0 <= (now_f - rec[0]) <= max_age_sec:
+                return rec[3]
+            return None
+
+    def get_adverse_velocity_bps(
+        self, asset: str, window_ms: float = 300.0, now_ts: Optional[float] = None
+    ) -> Optional[float]:
+        """
+        Returns signed Perps BBO mid return `(mid_now - mid_t0) / mid_t0 * 10,000` (in bps)
+        over the trailing `window_ms` window (`None` if stale or insufficient ticks).
+        Used strictly to pre-cancel resting binary maker quotes before adverse takers arrive.
+        """
+        sym = str(asset or "").strip().upper()
+        now_f = float(time.time() if now_ts is None else now_ts)
+        win_s = max(0.05, float(window_ms) / 1000.0)
+        with self._lock:
+            dq = self._bbo_hist.get(sym)
+            if not dq or len(dq) < 2:
+                return None
+            t_now, p_now = dq[-1]
+            if (now_f - t_now) > 2.0 or p_now <= 0.0:
+                return None
+            cutoff = t_now - win_s
+            p_ref = None
+            for t_i, p_i in dq:
+                if t_i >= cutoff and p_i > 0.0:
+                    p_ref = p_i
+                    break
+            if p_ref is None or p_ref <= 0.0:
+                p_ref = dq[0][1]
+            if p_ref <= 0.0:
+                return None
+            return round(((p_now - p_ref) / p_ref) * 10000.0, 4)
+
+    def should_precancel_binary_maker(
+        self,
+        asset: str,
+        maker_direction: str,
+        *,
+        threshold_bps: float = 8.0,
+        window_ms: float = 300.0,
+        now_ts: Optional[float] = None,
+    ) -> bool:
+        """
+        True when Polymarket Perps BBO jumps adversely against a resting binary Maker BUY:
+        - Buying `UP`/`YES`: adverse when Perps mid drops `<= -threshold_bps`
+        - Buying `DOWN`/`NO`: adverse when Perps mid spikes `>= +threshold_bps`
+        """
+        vel = self.get_adverse_velocity_bps(asset, window_ms=window_ms, now_ts=now_ts)
+        if vel is None:
+            return False
+        side_u = str(maker_direction or "").strip().upper()
+        if side_u in ("UP", "YES", "LONG"):
+            return vel <= -abs(float(threshold_bps))
+        if side_u in ("DOWN", "NO", "SHORT"):
+            return vel >= abs(float(threshold_bps))
+        return abs(vel) >= abs(float(threshold_bps))
+
+    async def _run_loop(self) -> None:
+        try:
+            import websockets
+        except ImportError:
+            return
+        backoff = 1.0
+        sub_frames = [
+            {"op": "subscribe", "channel": "bbo", "symbols": ["BTC-PERP", "ETH-PERP", "SOL-PERP", "XRP-PERP"]},
+            {"type": "subscribe", "channels": ["bbo", "tickers"], "markets": ["BTC-PERP", "ETH-PERP", "SOL-PERP", "XRP-PERP"]},
+        ]
+        while not self._stop_flag:
+            try:
+                async with websockets.connect(
+                    self._ws_url,
+                    ping_interval=15,
+                    ping_timeout=10,
+                    open_timeout=5,
+                    compression=None,
+                ) as ws:
+                    self._connected = True
+                    backoff = 1.0
+                    for sf in sub_frames:
+                        try:
+                            await ws.send(json.dumps(sf))
+                        except Exception:
+                            pass
+                    while not self._stop_flag:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=20.0)
+                        self.process_ws_frame(raw)
+            except Exception:
+                self._connected = False
+            if not self._stop_flag:
+                await asyncio.sleep(min(10.0, backoff))
+                backoff = min(10.0, backoff * 1.7)
+
+    def start_background(self) -> None:
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_flag = False
+        self._thread = threading.Thread(target=lambda: asyncio.run(self._run_loop()), name="pm-perps-bbo-ws", daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_flag = True

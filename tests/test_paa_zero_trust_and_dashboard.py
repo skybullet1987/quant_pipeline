@@ -468,7 +468,7 @@ def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(
             },
             {
                 "trade_id": "PRESPLIT_0x15434a92_1793844225",
-                "sleeve": "PRE_SPLIT_OVERROUND_MACHINE_GUN",
+                "sleeve": "C1_BINARY_COMPLETE_SET",
                 "notional_usd": 12.0,
                 "fee_usd": 0.0,
                 "net_pnl_usd": 0.0,
@@ -476,6 +476,20 @@ def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(
                 "close_reason": "PRE_SPLIT_PRE_EXPIRY_MERGED",
                 "entry_time_utc": "2026-11-05T01:55:00+00:00",
                 "settled_at_utc": "2026-11-05T01:57:00+00:00",
+            },
+            {
+                "trade_id": "D1_LIVE_BTC_BOX_WIN_1",
+                "box_id": "D1_LIVE_BTC_BOX_1",
+                "is_dominance_box": True,
+                "sleeve": "D1_SAME_ORACLE_DOMINANCE_BOX",
+                "entry_shares": 14.0,
+                "notional_usd": 13.58,
+                "fee_usd": 0.10,
+                "net_pnl_usd": 0.32,
+                "won": True,
+                "close_reason": "RESOLVED_WIN",
+                "entry_time_utc": "2026-11-05T02:10:00+00:00",
+                "settled_at_utc": "2026-11-05T02:15:00+00:00",
             },
         ],
     }
@@ -493,7 +507,7 @@ def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(
     assert b1["verified_net_pnl_usd"] == pytest.approx(0.144, abs=1e-4)
     assert ledger["non_cash_unfilled_artifact_adjustment_usd"] == pytest.approx(18.004, abs=1e-3)
 
-    ps = ledger["live_by_sleeve"]["PRE_SPLIT_OVERROUND_MACHINE_GUN"]
+    ps = ledger["live_by_sleeve"]["C1_BINARY_COMPLETE_SET"]
     assert ps["flat_merges"] == 1
     assert ps["real_trades"] == 0
     assert ps["wins"] == 0
@@ -504,7 +518,7 @@ def test_auto_redeemed_winner_reconciliation_flat_merges_and_live_order_latency(
     accountant = PAAAccountant(db, budget, data_dir=data_dir, autonomy_cfg=cfg)
     snap = accountant.measure_and_record(live_rpc_check=False, ledger_override=ledger, state_override=state_payload)
     rl = snap["riskless_metrics"]
-    assert rl["pure_riskless_live_wins"] == 1
+    assert rl["pure_riskless_live_wins"] == 2
     assert rl["pure_riskless_live_losses"] == 0
     assert rl["pure_riskless_flat_merges"] == 1
     assert rl["pure_riskless_live_wr_pct"] == pytest.approx(100.0)

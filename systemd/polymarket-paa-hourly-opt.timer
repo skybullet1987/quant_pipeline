@@ -2,8 +2,8 @@
 Description=PAA 1-Hour Strategy Analysis & Optimization Timer
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=1h
+OnStartupSec=5min
+OnCalendar=*-*-* *:07:00
 AccuracySec=30s
 Persistent=true
 Unit=polymarket-paa-hourly-opt.service

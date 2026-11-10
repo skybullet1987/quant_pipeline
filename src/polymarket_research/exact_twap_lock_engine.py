@@ -34,6 +34,7 @@ DEFAULT_ANNUAL_IV_FLOORS: Dict[str, float] = {
     "XRP": 0.95,
     "BNB": 0.85,
     "DOGE": 1.15,
+    "ZEC": 1.25,
     "HYPE": 1.35,
 }
 

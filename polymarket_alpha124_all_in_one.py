@@ -1,39 +1,38 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)
-Generated: 2026-11-06 01:22:48 UTC
+Generated: 2026-11-10 02:48:36 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
-  [01] systemd/polymarket-alpha124-shadow.service (Lines 35 - 62 | 920 B) :: Alpha-124 Unified Shadow systemd Unit
-  [02] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 63 - 476 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [03] src/polymarket_research/orderflow_wfo_simulators.py (Lines 477 - 790 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [04] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 791 - 997 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [05] src/polymarket_research/weather_metar_engine.py (Lines 998 - 1,362 | 62,867 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [06] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 1,363 - 1,505 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [07] src/polymarket_research/multistrike_svi_scalper.py (Lines 1,506 - 1,678 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [08] src/polymarket_research/same_oracle_dominance_box.py (Lines 1,679 - 1,918 | 40,450 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [09] src/polymarket_research/exact_twap_lock_engine.py (Lines 1,919 - 1,981 | 13,461 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [10] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 1,982 - 2,485 | 72,523 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [11] src/polymarket_research/macro_counting_ctf_engine.py (Lines 2,486 - 2,833 | 48,790 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [12] src/polymarket_research/uma_nba_endgame_engine.py (Lines 2,834 - 3,032 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [13] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 3,033 - 3,463 | 81,101 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [14] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 3,464 - 4,124 | 109,769 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [15] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 4,125 - 4,680 | 113,267 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,681 - 7,967 | 731,942 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [17] scripts/backtest_alpha_124.py (Lines 7,968 - 8,192 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [18] scripts/polymarket_daily_projections.py (Lines 8,193 - 8,327 | 46,085 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [19] scripts/alpha124_status.py (Lines 8,328 - 8,356 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,357 - 8,373 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [21] tests/test_alpha_124_oracles.py (Lines 8,374 - 8,632 | 215,925 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [01] systemd/polymarket-alpha124-shadow.service (Lines 34 - 65 | 980 B) :: Alpha-124 Unified Shadow systemd Unit
+  [02] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 66 - 485 | 72,260 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [03] src/polymarket_research/orderflow_wfo_simulators.py (Lines 486 - 798 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [04] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 799 - 1,004 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [05] src/polymarket_research/weather_metar_engine.py (Lines 1,005 - 1,410 | 67,909 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [06] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 1,411 - 1,552 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [07] src/polymarket_research/multistrike_svi_scalper.py (Lines 1,553 - 1,724 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [08] src/polymarket_research/same_oracle_dominance_box.py (Lines 1,725 - 1,968 | 41,576 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [09] src/polymarket_research/exact_twap_lock_engine.py (Lines 1,969 - 2,030 | 13,478 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [10] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 2,031 - 2,533 | 73,289 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [11] src/polymarket_research/macro_counting_ctf_engine.py (Lines 2,534 - 2,911 | 54,579 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [12] src/polymarket_research/uma_nba_endgame_engine.py (Lines 2,912 - 3,109 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [13] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 3,110 - 3,554 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [14] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 3,555 - 4,217 | 110,352 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [15] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 4,218 - 4,798 | 118,586 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 4,799 - 8,416 | 825,162 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [17] scripts/backtest_alpha_124.py (Lines 8,417 - 8,640 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [18] scripts/polymarket_daily_projections.py (Lines 8,641 - 8,828 | 64,887 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [19] scripts/alpha124_status.py (Lines 8,829 - 8,856 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [20] scripts/polymarket_scorecard_snapshot.py (Lines 8,857 - 8,872 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
 """
 
 from __future__ import annotations
 
 # ======================================================================================
-# [01/21] MODULE: systemd/polymarket-alpha124-shadow.service
+# [01/20] MODULE: systemd/polymarket-alpha124-shadow.service
 # PURPOSE: Alpha-124 Unified Shadow systemd Unit
 # ======================================================================================
 
@@ -49,8 +48,12 @@ Environment=PYTHONUNBUFFERED=1
 Environment=PM_DISABLE_SHADOW_M4_CATCHUP=1
 Environment=PM_DISABLE_SHADOW_W2_TAKER=1
 Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
-CPUWeight=300
-IOWeight=300
+CPUWeight=200
+IOWeight=200
+Nice=10
+OOMScoreAdjust=500
+MemoryHigh=1300M
+MemoryMax=1550M
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py --riskless-bridge-only
 Restart=always
 RestartSec=10
@@ -61,12 +64,11 @@ TimeoutStopSec=15s
 WantedBy=default.target
 '''
 # ======================================================================================
-# [02/21] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
+# [02/20] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
 # PURPOSE: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;import os;import random;import re;import time;from datetime import datetime,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Set,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.exact_twap_lock_engine import should_suppress_final60s_twap_salvage;from src.polymarket_research.polymarket_live_executor import calculate_taker_fee;from src.polymarket_research.polymarket_live_harvester import evaluate_coinbase_venue_veto;SHADOW_INITIAL_CAPITAL=5e2;SHADOW_TICKET_USD=15.;SHADOW_ELASTIC_USD=12.;XAU_TICKET_USD=12.;MAX_MAKER_JOIN_QUEUE_USD=350.;TRANSIT_LATENCY_SEC=.5;MAKER_TTL_SEC=6.;SHIELD_DECAY_FRAC=.5;Z_TAKER_CUT=1.2;_NY_TZ=ZoneInfo("America/New_York")
+import json;import math;import os;import random;import re;import time;from datetime import datetime,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Set,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.exact_twap_lock_engine import should_suppress_final60s_twap_salvage;from src.polymarket_research.polymarket_live_executor import calculate_taker_fee;from src.polymarket_research.polymarket_live_harvester import evaluate_coinbase_venue_veto;SHADOW_INITIAL_CAPITAL=5e2;SHADOW_TICKET_USD=15.;SHADOW_ELASTIC_USD=12.;XAU_TICKET_USD=12.;MAX_MAKER_JOIN_QUEUE_USD=350.;TRANSIT_LATENCY_SEC=.5;MAKER_TTL_SEC=6.;SHIELD_DECAY_FRAC=.5;Z_TAKER_CUT=1.2;_NY_TZ=ZoneInfo("America/New_York")
 def compute_synthetic_xau_usd_anchor(binance_xau_usdt,coinbase_usdt_usd,swissquote_bid=.0,swissquote_ask=.0,max_basis_bps=2.5):
  e=float(binance_xau_usdt or.0);d=float(coinbase_usdt_usd or.0)
  if e<=.0:return{"valid":False,"reason":"INVALID_BINANCE_XAUUSDT","xau_usd":.0}
@@ -156,44 +158,47 @@ class DirectionalWfoShadowManager:
   return min(b)
  def on_shock_signal(a,shock,historical=False):
   if historical:return False
-  L=str(shock.get("market_id")or"")
-  if not L or L in a.hz_open or L in a.hz_pending or L in a.hz_settled_markets:return False
+  if a.production_mode:
+   from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as c
+   if not bool(c.snapshot.get("shadow_governance",{}).get("enable_hybrid_zsplit_shadow",True)):return False
+  M=str(shock.get("market_id")or"")
+  if not M or M in a.hz_open or M in a.hz_pending or M in a.hz_settled_markets:return False
   if len(a.hz_open)+len(a.hz_pending)>=2:return False
-  I=str(shock.get("title")or"");x=I.lower();d=str(shock.get("asset")or"").upper()
-  if not d:d="BTC"if("bitcoin"in x or"btc"in x)else("ETH"if("ethereum"in x or"eth"in x)else"")
-  if d not in("BTC","ETH"):return False
-  F=str(shock.get("horizon")or shock.get("candle_interval")or"").lower();K=str(shock.get("series_slug")or shock.get("slug")or"").lower();n=f"{F} {K} {x}"
-  if re.search(r"(?<![0-9])5m(?![0-9a-z])|(?<![0-9])300s(?![0-9a-z])",n):return False
-  b=False;E=re.search(r"(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(?:am|pm)",x)
-  if E:
-   P,O=int(E.group(2)),int(E.group(4));w=(O-P)%60
-   if w==15:b=True
-   elif w==5:return False
-  D=bool(re.search(r"(?<![0-9])15m(?![0-9a-z])|(?<![0-9])900s(?![0-9a-z])",n))or b;H=not D and(bool(re.search(r"(?<![0-9])(?:1h|60m)(?![0-9a-z])|hourly",n))or("am et"in x or"pm et"in x))
-  if not(D or H):return False
-  R="15m"if D else"1h";a.hz_funnel["signals_seen"]=int(a.hz_funnel.get("signals_seen",0))+1;v=float(shock.get("t0_unix")or time.time())
+  J=str(shock.get("title")or"");y=J.lower();e=str(shock.get("asset")or"").upper()
+  if not e:e="BTC"if("bitcoin"in y or"btc"in y)else("ETH"if("ethereum"in y or"eth"in y)else"")
+  if e not in("BTC","ETH"):return False
+  G=str(shock.get("horizon")or shock.get("candle_interval")or"").lower();L=str(shock.get("series_slug")or shock.get("slug")or"").lower();o=f"{G} {L} {y}"
+  if re.search(r"(?<![0-9])5m(?![0-9a-z])|(?<![0-9])300s(?![0-9a-z])",o):return False
+  b=False;F=re.search(r"(\d{1,2}):(\d{2})\s*(?:am|pm)?\s*-\s*(\d{1,2}):(\d{2})\s*(?:am|pm)",y)
+  if F:
+   Q,P=int(F.group(2)),int(F.group(4));x=(P-Q)%60
+   if x==15:b=True
+   elif x==5:return False
+  E=bool(re.search(r"(?<![0-9])15m(?![0-9a-z])|(?<![0-9])900s(?![0-9a-z])",o))or b;I=not E and(bool(re.search(r"(?<![0-9])(?:1h|60m)(?![0-9a-z])|hourly",o))or("am et"in y or"pm et"in y))
+  if not(E or I):return False
+  S="15m"if E else"1h";a.hz_funnel["signals_seen"]=int(a.hz_funnel.get("signals_seen",0))+1;w=float(shock.get("t0_unix")or time.time())
   if os.environ.get("PM_DISABLE_NYSE_BLACKOUT")!="1":
-   Q=datetime.fromtimestamp(v,tz=timezone.utc)
-   if Q.hour==13 and Q.minute>=30:return False
-  N=float(shock.get("seconds_to_expiry")or.0)
-  if R=="15m"and not((180.<=N<=390.)if a.production_mode else(90.<=N<=480.)):return False
-  if R=="1h"and not((150.<=N<=2400.)if a.production_mode else(150.<=N<=6e2)):return False
-  i=str(shock.get("shock_direction")or"").upper()
-  if i not in("BUY","SELL"):return False
-  J="UP"if i=="BUY"else"DOWN";u,_=evaluate_coinbase_venue_veto(shock,J)
-  if u:return False
-  h=abs(float(shock.get("shock_ofi")if shock.get("shock_ofi")is not None else 1.))
-  if h<.6:return False
-  t=float(shock.get("spot_at_t0")or shock.get("trigger_price")or.0);s=float(shock.get("candle_open_spot")or shock.get("finalized_1h_open")or.0);g=float(shock.get("twap_60s_open")or.0);r=float(shock.get("chainlink_proxy_usd_spot")or.0);q=float(shock.get("authoritative_chainlink_open")or.0);p=a._compute_signed_cushion(J,R,t,s,g,r,q)
-  if p is None or p<4e-4:return False
-  o=float(shock.get("candle_sigma")or.0);m=(o*2. if D else o)if o>.0 else(.005 if d=="BTC"else.0068);f=max(.00025,m*math.sqrt(max(N,30.)/3600.));l=p/f
-  if l<.78:return False
-  M=(shock.get("pre_shock_features_t0")or{}).get(J)or{};k=M.get("raw_top_asks")or[];j=M.get("raw_top_bids")or[];C=float(M.get("best_ask")or(k[0][0]if k else 1.));B=float(M.get("best_bid")or(j[0][0]if j else.0));A=float(M.get("ask_size_l1")or(k[0][1]if k else.0));e=round(C-B,4)if B>0 else.99;z=C*A;c=(.72 if D else.76)if a.production_mode else.82
-  if not(.55<=C<=c)or B<=.0 or e>.03 or z<20.:return False
-  a.hz_funnel["signals_evaluated"]+=1;y="TAKER_PLUS_P3A"if l>=Z_TAKER_CUT else"SHIELDED_MAKER_FIRST"
-  if y=="SHIELDED_MAKER_FIRST":a.hz_funnel["maker_branch_queued"]+=1
+   R=datetime.fromtimestamp(w,tz=timezone.utc)
+   if R.hour==13 and R.minute>=30:return False
+  O=float(shock.get("seconds_to_expiry")or.0)
+  if S=="15m"and not((180.<=O<=390.)if a.production_mode else(90.<=O<=480.)):return False
+  if S=="1h"and not((150.<=O<=2400.)if a.production_mode else(150.<=O<=6e2)):return False
+  j=str(shock.get("shock_direction")or"").upper()
+  if j not in("BUY","SELL"):return False
+  K="UP"if j=="BUY"else"DOWN";v,_=evaluate_coinbase_venue_veto(shock,K)
+  if v:return False
+  i=abs(float(shock.get("shock_ofi")if shock.get("shock_ofi")is not None else 1.))
+  if i<.6:return False
+  u=float(shock.get("spot_at_t0")or shock.get("trigger_price")or.0);t=float(shock.get("candle_open_spot")or shock.get("finalized_1h_open")or.0);h=float(shock.get("twap_60s_open")or.0);s=float(shock.get("chainlink_proxy_usd_spot")or.0);r=float(shock.get("authoritative_chainlink_open")or.0);q=a._compute_signed_cushion(K,S,u,t,h,s,r)
+  if q is None or q<4e-4:return False
+  p=float(shock.get("candle_sigma")or.0);n=(p*2. if E else p)if p>.0 else(.005 if e=="BTC"else.0068);g=max(.00025,n*math.sqrt(max(O,30.)/3600.));m=q/g
+  if m<.78:return False
+  N=(shock.get("pre_shock_features_t0")or{}).get(K)or{};l=N.get("raw_top_asks")or[];k=N.get("raw_top_bids")or[];D=float(N.get("best_ask")or(l[0][0]if l else 1.));C=float(N.get("best_bid")or(k[0][0]if k else.0));B=float(N.get("ask_size_l1")or(l[0][1]if l else.0));f=round(D-C,4)if C>0 else.99;A=D*B;d=(.72 if E else.76)if a.production_mode else.82
+  if not(.55<=D<=d)or C<=.0 or f>.03 or A<20.:return False
+  a.hz_funnel["signals_evaluated"]+=1;z="TAKER_PLUS_P3A"if m>=Z_TAKER_CUT else"SHIELDED_MAKER_FIRST"
+  if z=="SHIELDED_MAKER_FIRST":a.hz_funnel["maker_branch_queued"]+=1
   else:a.hz_funnel["taker_branch_queued"]+=1
-  G=time.time();a.hz_pending[L]={"sleeve":"SLEEVE_HYBRID_ZSPLIT_SHADOW","trade_id":f"HZSHDW_{L}_{int(v)}_{J}","market_id":L,"title":I,"asset":d,"horizon":R,"target_token":J,"t0_unix":v,"queued_mono":G,"arrival_mono":G+a.latency_sec,"expiry_unix":float(shock.get("candle_expiry_ts")or shock.get("expiry_ts")or(v+N)),"tte_t0":N,"ask_t0":C,"bid_t0":B,"l1_usd_t0":round(z,2),"cush_t0":p,"z_strike":round(l,4),"open_usdt":s,"twap_open_usdt":g,"auth_cl_open_usd":q,"branch":y,"phase":"IN_TRANSIT","maker_px":None,"deadline_mono":None};return True
+  H=time.time();a.hz_pending[M]={"sleeve":"SLEEVE_HYBRID_ZSPLIT_SHADOW","trade_id":f"HZSHDW_{M}_{int(w)}_{K}","market_id":M,"title":J,"asset":e,"horizon":S,"target_token":K,"t0_unix":w,"queued_mono":H,"arrival_mono":H+a.latency_sec,"expiry_unix":float(shock.get("candle_expiry_ts")or shock.get("expiry_ts")or(w+O)),"tte_t0":O,"ask_t0":D,"bid_t0":C,"l1_usd_t0":round(A,2),"cush_t0":q,"z_strike":round(m,4),"open_usdt":t,"twap_open_usdt":h,"auth_cl_open_usd":r,"branch":z,"phase":"IN_TRANSIT","maker_px":None,"deadline_mono":None};return True
  def _ingest_btc_5m_telemetry_tick(a,d):
   m=str(d.get("asset")or"").upper();z=str(d.get("horizon")or"").lower()
   if m!="BTC"or z!="5m":return
@@ -424,44 +429,48 @@ class DirectionalWfoShadowManager:
   return g
  def poll_tick(a,shutdown_requested=False):
   if shutdown_requested:a.save_states();return
-  j=time.time()
-  if not a.production_mode:
-   for h in a._tail_jsonl_file(a.b5_telem_file,"b5_file_pos"):
-    a._ingest_btc_5m_telemetry_tick(h);b=str(h.get("market_id")or"")
-    if b in a.b5_pending:a.b5_pending[b]["latest_tick"]=h
-   for h in a._tail_jsonl_file(a.s5_telem_file,"s5_file_pos"):
-    a._ingest_sol_5m_telemetry_tick(h);b=str(h.get("market_id")or"")
-    if b in a.s5_pending:a.s5_pending[b]["latest_tick"]=h
-  for h in a._tail_jsonl_file(a.xau_telem_file,"xau_file_pos"):
-   a.ingest_xau_15m_tick(h);b=str(h.get("market_id")or"")
-   if b in a.xau_pending:a.xau_pending[b]["latest_tick"]=h
-  d=((a.t15_btc_file,"t15_btc_pos"),(a.t15_eth_file,"t15_eth_pos"),(a.t1h_btc_file,"t1h_btc_pos"),(a.t1h_eth_file,"t1h_eth_pos"))
+  n=time.time();f={}
+  if a.production_mode:from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as c;f=c.snapshot.get("shadow_governance",{})or{}
+  m=bool(f.get("enable_btc_5m_sniper_shadow",f.get("enable_btc_5m_shadow",False)));l=bool(f.get("enable_sol_5m_canary_shadow",f.get("enable_sol_5m_shadow",False)))
+  if(not a.production_mode)or m:
+   for j in a._tail_jsonl_file(a.b5_telem_file,"b5_file_pos"):
+    a._ingest_btc_5m_telemetry_tick(j);b=str(j.get("market_id")or"")
+    if b in a.b5_pending:a.b5_pending[b]["latest_tick"]=j
+  if(not a.production_mode)or l:
+   for j in a._tail_jsonl_file(a.s5_telem_file,"s5_file_pos"):
+    a._ingest_sol_5m_telemetry_tick(j);b=str(j.get("market_id")or"")
+    if b in a.s5_pending:a.s5_pending[b]["latest_tick"]=j
+  if(not a.production_mode)or bool(f.get("enable_xau_15m_maker_shadow",True)):
+   for j in a._tail_jsonl_file(a.xau_telem_file,"xau_file_pos"):
+    a.ingest_xau_15m_tick(j);b=str(j.get("market_id")or"")
+    if b in a.xau_pending:a.xau_pending[b]["latest_tick"]=j
+  e=((a.t15_btc_file,"t15_btc_pos"),(a.t15_eth_file,"t15_eth_pos"),(a.t1h_btc_file,"t1h_btc_pos"),(a.t1h_eth_file,"t1h_eth_pos"))
   if a.hz_open:
-   for g,f in d:
-    for h in a._tail_jsonl_file(g,f):
-     b=str(h.get("market_id")or"")
-     if b in a.hz_open:a._check_open_position_exit(a.hz_open,b,h,sleeve_tag="hz")
+   for i,h in e:
+    for j in a._tail_jsonl_file(i,h):
+     b=str(j.get("market_id")or"")
+     if b in a.hz_open:a._check_open_position_exit(a.hz_open,b,j,sleeve_tag="hz")
   else:
-   for g,f in d:
-    if g.exists():setattr(a,f,g.stat().st_size)
-  i=time.time()
-  if a.hz_pending:a._step_hz_pending(i)
-  if a.b5_pending:a._step_b5_pending(i)
-  if a.s5_pending:a._step_s5_pending(i)
-  if a.xau_pending:a._step_xau_pending(i)
-  for b,e in list(a.hz_open.items()):
-   c=a._extract_market_view(e["asset"],b,e["horizon"])
-   if c is not None:a._check_open_position_exit(a.hz_open,b,c,sleeve_tag="hz")
-  for b,e in list(a.b5_open.items()):
-   c=a._extract_market_view("BTC",b,"5m")
-   if c is not None:a._check_open_position_exit(a.b5_open,b,c,sleeve_tag="b5")
-  for b,e in list(a.s5_open.items()):
-   c=a._extract_market_view("SOL",b,"5m")
-   if c is not None:a._check_open_position_exit(a.s5_open,b,c,sleeve_tag="s5")
-  for b,e in list(a.xau_open.items()):
-   c=a._extract_market_view("XAU",b,"15m")
-   if c is not None:a._check_open_position_exit(a.xau_open,b,c,sleeve_tag="xau")
-  if(j-a._last_state_flush_ts)>=15.:a.save_states()
+   for i,h in e:
+    if i.exists():setattr(a,h,i.stat().st_size)
+  k=time.time()
+  if a.hz_pending:a._step_hz_pending(k)
+  if a.b5_pending:a._step_b5_pending(k)
+  if a.s5_pending:a._step_s5_pending(k)
+  if a.xau_pending:a._step_xau_pending(k)
+  for b,g in list(a.hz_open.items()):
+   d=a._extract_market_view(g["asset"],b,g["horizon"])
+   if d is not None:a._check_open_position_exit(a.hz_open,b,d,sleeve_tag="hz")
+  for b,g in list(a.b5_open.items()):
+   d=a._extract_market_view("BTC",b,"5m")
+   if d is not None:a._check_open_position_exit(a.b5_open,b,d,sleeve_tag="b5")
+  for b,g in list(a.s5_open.items()):
+   d=a._extract_market_view("SOL",b,"5m")
+   if d is not None:a._check_open_position_exit(a.s5_open,b,d,sleeve_tag="s5")
+  for b,g in list(a.xau_open.items()):
+   d=a._extract_market_view("XAU",b,"15m")
+   if d is not None:a._check_open_position_exit(a.xau_open,b,d,sleeve_tag="xau")
+  if(n-a._last_state_flush_ts)>=15.:a.save_states()
  def _build_sleeve_state(self,sleeve_id,strategy_desc,min_grad_trades,trades,open_map,pending_map,funnel,ledger_path,ticket_usd=SHADOW_TICKET_USD):n=len(trades);h=[float(t.get("net_pnl_usd")or.0)for t in trades];b=[float(t.get("net_pnl_with_20pct_rebate_usd")or t.get("net_pnl_usd")or.0)for t in trades];g=sum(1 for x in h if x>0);l=round((g/n)*1e2,2)if n>0 else.0;k=sum(x for x in h if x>0);j=abs(sum(x for x in h if x<=0));i=round(k/j,3)if j>1e-6 else(99. if k>0 else.0);a=round(sum(h),2);f=round(sum(float(t.get("taker_fee_usd")or.0)+float(t.get("exit_fee_usd")or.0)for t in trades),2);d,e=_bootstrap_prob_positive(h);c=bool(n>=min_grad_trades and i>=1.5 and e[0]>.0 and d>=.95);return{"timestamp":_utc_now_str(),"sleeve_id":sleeve_id,"strategy":strategy_desc,"graduation_criteria":f"trades >= {min_grad_trades}, PF >= 1.50, bootstrap_95ci_lo > $0.00 (P(>0) >= 95%)","ready_for_live_graduation":c,"initial_capital":SHADOW_INITIAL_CAPITAL,"ticket_notional_usd":ticket_usd,"current_equity":round(SHADOW_INITIAL_CAPITAL+a,2),"realized_pnl":a,"realized_pnl_with_20pct_maker_rebate":round(sum(b),2),"profit_factor":i,"win_rate_pct":l,"bootstrap_prob_positive":d,"bootstrap_95ci_total_pnl":e,"total_fees_paid":f,"total_trades_settled":n,"winning_trades":g,"losing_trades":n-g,"active_open_positions_count":len(open_map),"open_positions":dict(open_map),"pending_orders_count":len(pending_map),"funnel_counters":dict(funnel),"status":"RUNNING","ledger_file":str(ledger_path)}
  def save_states(a):
   a._last_state_flush_ts=time.time();g=a._build_sleeve_state(sleeve_id="SLEEVE_HYBRID_ZSPLIT_SHADOW",strategy_desc="BTC/ETH 15m+1h Hybrid z-Split (0.78<=z<1.20 Shielded Maker 0% Fee + Comp-Book Shield + <=45$ Queue Cap, z>=1.20 Taker+P3A)",min_grad_trades=50,trades=a.hz_trades,open_map=a.hz_open,pending_map=a.hz_pending,funnel=a.hz_funnel,ledger_path=a.hz_ledger_file);e=a._build_sleeve_state(sleeve_id="SLEEVE_BTC_5M_SNIPER_SHADOW",strategy_desc="BTC-Only 5m Final-TWAP Sniper (TTE 60-180s, USD Chainlink + USDT Dual-Strike Cush>=3bps, z>=0.80, px<=0.85, ETH/SOL Excluded)",min_grad_trades=60,trades=a.b5_trades,open_map=a.b5_open,pending_map=a.b5_pending,funnel=a.b5_funnel,ledger_path=a.b5_ledger_file);d=a._build_sleeve_state(sleeve_id="SLEEVE_SOL_5M_CANARY_SHADOW",strategy_desc="SOL-Only 5m Isolated Canary Shadow (TTE 60-180s, sqrt(12) vol, Dual-Strike Cush>=4bps, z>=0.80, px<=0.85)",min_grad_trades=60,trades=a.s5_trades,open_map=a.s5_open,pending_map=a.s5_pending,funnel=a.s5_funnel,ledger_path=a.s5_ledger_file);c=a._build_sleeve_state(sleeve_id="SLEEVE_XAU_15M_MAKER_SHADOW",strategy_desc="XAU/USD 15m Shielded Maker-First (3-dec synth USD + Swissquote <=2.5bps, single-spot diffusion, CME/Session gated, 0% fee/0% rebate, $12 clip)",min_grad_trades=40,trades=a.xau_trades,open_map=a.xau_open,pending_map=a.xau_pending,funnel=a.xau_funnel,ledger_path=a.xau_ledger_file,ticket_usd=XAU_TICKET_USD)
@@ -475,12 +484,11 @@ class DirectionalWfoShadowManager:
      try:i.unlink()
      except Exception:pass
 # ======================================================================================
-# [03/21] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
+# [03/20] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
 # PURPOSE: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
 # ======================================================================================
 
-# from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;from pathlib import Path;from typing import Any,Dict,List,Optional,Sequence,Tuple;DEFAULT_FEE_RATE=.07
+import json;import math;from pathlib import Path;from typing import Any,Dict,List,Optional,Sequence,Tuple;DEFAULT_FEE_RATE=.07
 def v2_taker_fee_per_share(px,fee_rate=DEFAULT_FEE_RATE,fee_exponent=1.):
  if fee_rate<=.0:return.0
  a=max(.001,min(.999,float(px)));return float(fee_rate)*((a*(1.-a))**float(fee_exponent))
@@ -652,7 +660,7 @@ def simulate_d1_maker_leg1_box(ev,cfg):
  v=max(.01,w-max(.015,float(ev.get("hdg_jump_on_adverse",.02))));q=v-v2_taker_fee_per_share(v,G);u=round(H*(q-w),4);return{"posted":True,"filled":True,"hedged":False,"scratched":True,"pnl_usd":u,"adj_pnl_usd":u}
 def calibrate_d1_maker_leg1_wfo(maker_events=None,purge_gap=3):
  q=list(maker_events)if maker_events is not None else _default_d1_maker_leg1_events();n=len(q);z=max(4,int(.5*n));p=min(n,z+purge_gap);o=max(p+2,int(.75*n));m=min(n,o+purge_gap);w,v,u=q[:z],q[p:o],q[m:]
- def a(sub,cfg):g=[simulate_d1_maker_leg1_box(e,cfg)for e in sub];d=[r for r in g if r["filled"]];f=[r for r in d if r["hedged"]];a=[r for r in d if r["scratched"]];c=sum(float(r.get("adj_pnl_usd",r["pnl_usd"]))for r in d);b=sum(float(r["pnl_usd"])for r in d);return{"posted":sum(1 for r in g if r["posted"]),"fills":len(d),"wins":len(f),"scratches":len(a),"win_rate_pct":round(1e2*len(f)/len(d),2)if d else.0,"raw_pnl_usd":round(b,4),"legging_adjusted_pnl_usd":round(c,4)}
+ def a(sub,cfg):F=[simulate_d1_maker_leg1_box(e,cfg)for e in sub];D=[r for r in F if r["filled"]];E=[r for r in D if r["hedged"]];n=[r for r in D if r["scratched"]];C=sum(float(r.get("adj_pnl_usd",r["pnl_usd"]))for r in D);B=sum(float(r["pnl_usd"])for r in D);return{"posted":sum(1 for r in F if r["posted"]),"fills":len(D),"wins":len(E),"scratches":len(n),"win_rate_pct":round(1e2*len(E)/len(D),2)if D else.0,"raw_pnl_usd":round(B,4),"legging_adjusted_pnl_usd":round(C,4)}
  f=-1e9;d={"allow_join_1c_mid":True,"min_obi_join_1c":-.15,"min_obi_any":-.35,"min_hdg_depth_mult":2.5,"adverse_spot_cancel_bps":2.5,"max_post_net":.988};c={};b={};g=0
  for k in(True,False):
   for j in(2.,2.5,5.):
@@ -726,21 +734,21 @@ def run_wfo_post_selection_diagnostics(*,cands,dev_cands,holdout_cands,best_cfg,
  K=evaluate_portfolio_fn(U,dict(_a,t2_post_lag_s=5.),latency_mode="500ms");P=evaluate_portfolio_fn(U,dict(_a,t2_post_lag_s=.05),latency_mode="500ms");u=evaluate_portfolio_fn(U,dict(_a,t2_post_lag_s=.0),latency_mode="500ms");j={"mismatch_markets_identified":len(B),"mismatch_candidates_total":len(w),"mismatch_raw_trades":_j["trades"],"mismatch_raw_pnl":_j["total_pnl"],"mismatch_cl_proxy_trades":_q["trades"],"mismatch_cl_proxy_pnl":_q["total_pnl"],"full_dataset_raw_pnl":Q["total_pnl"],"full_dataset_raw_pf":Q["profit_factor"],"full_dataset_cl_proxy_pnl":E["total_pnl"],"full_dataset_cl_proxy_pf":E["profit_factor"],"blueprint1_tranche2_comparison":{"delayed_5s_pnl":K["total_pnl"],"delayed_5s_pf":K["profit_factor"],"inline_50ms_pnl":P["total_pnl"],"inline_50ms_pf":P["profit_factor"],"concurrent_0ms_pnl":u["total_pnl"],"concurrent_0ms_pf":u["profit_factor"]}};h=[p/15. for p in(best_vl["pnls"]+best_hold_500["pnls"])]
  if len(h)<20:h=[p/15. for p in best_tr["pnls"]]
  def a(label,start_eq,base_pct,min_tkt,floor_u,seed_cap=.0,corr_p=.0):
-  h=random.Random(20261025);b=0;f,e=[],[];k=max(1,len(h))
+  _8=random.Random(20261025);k=0;x,v=[],[];n_r=max(1,len(h))
   for _ in range(10000):
-   d,i,g,c,a=start_eq,start_eq,.0,False,0
-   while a<50 and h:
-    if d<floor_u:c=True;break
-    if seed_cap>.0 and d<seed_cap:d+=min(d,12.)*h[h.randrange(k)];a+=1
+   s,pk,_7,p,c=start_eq,start_eq,.0,False,0
+   while c<50 and h:
+    if s<floor_u:p=True;break
+    if seed_cap>.0 and s<seed_cap:s+=min(s,12.)*h[_8.randrange(n_r)];c+=1
     else:
-     j=min(d,max(min_tkt,round(d*base_pct,2)))
-     if corr_p>.0 and h.random()<corr_p and(a+1)<50:m=h[h.randrange(k)];l=m if h.random()<.75 else h[h.randrange(k)];d+=j*m+(j*.54)*l;a+=2
-     else:d+=j*h[h.randrange(k)];a+=1
-    i=max(i,d);g=max(g,i-d)
-    if d<floor_u:c=True;break
-   if c:b+=1
-   f.append(d);e.append(g)
-  f.sort();e.sort();return{"policy":label,"start_equity_usd":start_eq,"floor_usd":floor_u,"halt_prob_50_trades":round(b/10000,4),"median_terminal_equity_usd":round(f[5000],2),"p05_terminal_equity_usd":round(f[500],2),"p95_terminal_equity_usd":round(f[9500],2),"p95_max_drawdown_usd":round(e[9500],2)}
+     tkt=min(s,max(min_tkt,round(s*base_pct,2)))
+     if corr_p>.0 and _8.random()<corr_p and(c+1)<50:r1=h[_8.randrange(n_r)];r2=r1 if _8.random()<.75 else h[_8.randrange(n_r)];s+=tkt*r1+(tkt*.54)*r2;c+=2
+     else:s+=tkt*h[_8.randrange(n_r)];c+=1
+    pk=max(pk,s);_7=max(_7,pk-s)
+    if s<floor_u:p=True;break
+   if p:k+=1
+   x.append(s);v.append(_7)
+  x.sort();v.sort();return{"policy":label,"start_equity_usd":start_eq,"floor_usd":floor_u,"halt_prob_50_trades":round(k/10000,4),"median_terminal_equity_usd":round(x[5000],2),"p05_terminal_equity_usd":round(x[500],2),"p95_terminal_equity_usd":round(x[9500],2),"p95_max_drawdown_usd":round(v[9500],2)}
  J=[a("v3.7_UNPATCHED_22PCT_FLOOR65_CONC2",76.49,.22,12.,65.,corr_p=.25),a("CENTRAL_CFG_18PCT_FLOOR66.67_CONC2",76.49,.18,12.,66.67,corr_p=.25),a("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR48",76.49,.18,12.,48.,seed_cap=88.,corr_p=.15),a("v3.8_SEED_SURVIVAL_$12_CONC1_BELOW88_FLOOR52",76.49,.18,12.,52.,seed_cap=88.,corr_p=.15)];D=[];t=set()
  for sc,_U,_I,_H,_ in stage2_results:
   _G=(_U["assets"],_U["horizons"],_U["min_px"],_U["max_px"],_U["min_z"],_U["min_cushion"],_U["entry_mode"],_U["exit_policy"])
@@ -770,31 +778,30 @@ def run_subhourly_v395_wfo_ablation_suite(cands,evaluate_portfolio_fn,purge_sec=
  m=sorted([c for c in cands if c.get("hz")=="15m"],key=lambda x:x["t0"]);o=sorted([c for c in cands if c.get("hz")=="5m"],key=lambda x:x["t0"])
  def b(items,embargo):
   if len(items)<12:return list(items),[],[]
-  d=[c["t0"]for c in items];b=d[int(.5*len(d))];a=d[int(.75*len(d))];g=[c for c in items if c["exp_ts"]<=b];f=[c for c in items if c["t0"]>=(b+embargo)and c["exp_ts"]<=a];e=[c for c in items if c["t0"]>=(a+embargo)];return g,f,e
+  y=[c["t0"]for c in items];x=y[int(.5*len(y))];r=y[int(.75*len(y))];F=[c for c in items if c["exp_ts"]<=x];E=[c for c in items if c["t0"]>=(x+embargo)and c["exp_ts"]<=r];D=[c for c in items if c["t0"]>=(r+embargo)];return F,E,D
  w,v,u=b(m,purge_sec);C,B,A=b(o,max(3e2,purge_sec*.5));f=[c for c in(w+v)if 60.<=c["tte"]<=480. and.75<=abs(c.get("z_oracle",.0))<=2.5];h=[c for c in u if 60.<=c["tte"]<=480. and.75<=abs(c.get("z_oracle",.0))<=2.5]
  def d(rows,df_v,jvm):
   if not rows:return.25
-  a=.0
-  for r in rows:_,b=compute_v395_pricing_and_twap_gate(r,df=df_v,jump_vol_mult=jvm,use_kemna_vorst=True);y=1. if r.get("won")else.0;a+=(b-y)**2
-  return round(a/len(rows),6)
+  c=.0
+  for r in rows:_,x=compute_v395_pricing_and_twap_gate(r,df=df_v,jump_vol_mult=jvm,use_kemna_vorst=True);y=1. if r.get("won")else.0;c+=(x-y)**2
+  return round(c/len(rows),6)
  k=[];e={"df":None,"jump_vol_mult":1.,"dev_brier":1.}
  for n in(None,4.,6.,8.):
   for l in(1.,1.15,1.25):
    t=d(f,n,l);z=d(h,n,l);s={"df":"gaussian"if n is None else n,"jump_vol_mult":l,"dev_n":len(f),"dev_brier":t,"holdout_n":len(h),"holdout_brier":z};k.append(s)
    if t<e["dev_brier"]:e={"df":s["df"],"jump_vol_mult":l,"dev_brier":t,"holdout_brier":z}
  j={"assets":("BTC","ETH","SOL"),"horizons":("15m",),"min_tte_15m":90.,"max_tte_15m":480.,"min_tte_5m":60.,"max_tte_5m":180.,"min_tte_1h":150.,"max_tte_1h":6e2,"min_px":.55,"max_px":.81,"max_spread":.03,"min_l1_usd":12.,"min_cushion":6e-4,"min_z":.78,"min_ofi":.6,"use_venue_veto":True,"use_cl_proxy":True,"entry_mode":"cascade_v4","fak_buffer":.02,"cascade_ticket_usd":16.5,"elastic_downsnap_usd":12.,"min_elastic_usd":8.,"exit_policy":"hold_98","ratchet_arm":None,"ratchet_drop":.06,"salvage_mode":"spot_persist","wrong_side_thresh":9e-4,"salvage_persist_s":18.,"clob_drop_thresh":.3,"final_45s_unwind":False}
- def a(label,overrides,slices):a={**j,**overrides};g,f,e=slices;d=evaluate_portfolio_fn(g,a,latency_mode="500ms")if g else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};c=evaluate_portfolio_fn(f,a,latency_mode="500ms")if f else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};b=evaluate_portfolio_fn(e,a,latency_mode="500ms")if e else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};return{"label":label,"train":{"trades":d["trades"],"pnl":d["total_pnl"],"pf":d["profit_factor"],"wr":d["win_rate"]},"val":{"trades":c["trades"],"pnl":c["total_pnl"],"pf":c["profit_factor"],"wr":c["win_rate"]},"sealed_holdout":{"trades":b["trades"],"pnl":b["total_pnl"],"pf":b["profit_factor"],"wr":b["win_rate"]}}
+ def a(label,overrides,slices):c={**j,**overrides};F,E,D=slices;y=evaluate_portfolio_fn(F,c,latency_mode="500ms")if F else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};x=evaluate_portfolio_fn(E,c,latency_mode="500ms")if E else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};r=evaluate_portfolio_fn(D,c,latency_mode="500ms")if D else{"trades":0,"total_pnl":.0,"profit_factor":.0,"win_rate":.0};return{"label":label,"train":{"trades":y["trades"],"pnl":y["total_pnl"],"pf":y["profit_factor"],"wr":y["win_rate"]},"val":{"trades":x["trades"],"pnl":x["total_pnl"],"pf":x["profit_factor"],"wr":x["win_rate"]},"sealed_holdout":{"trades":r["trades"],"pnl":r["total_pnl"],"pf":r["profit_factor"],"wr":r["win_rate"]}}
  g=[a("BASELINE_15M_CASCADE_TAKER_90_480",{},(w,v,u)),a("KEMNA_VORST_TWAP_BRIDGE_45_480",{"min_tte_15m":45.,"use_kemna_vorst":True},(w,v,u)),a("HYBRID_ZSPLIT_1.15_UNSHIELDED_MAKER",{"hybrid_z_split":True,"z_taker_cut":1.15,"use_complement_shield":False,"include_maker_rebate":False},(w,v,u)),a("HYBRID_ZSPLIT_1.15_COMP_SHIELD_NO_REBATE",{"hybrid_z_split":True,"z_taker_cut":1.15,"use_complement_shield":True,"include_maker_rebate":False},(w,v,u)),a("HYBRID_ZSPLIT_1.15_COMP_SHIELD_WITH_20PCT_REBATE",{"hybrid_z_split":True,"z_taker_cut":1.15,"use_complement_shield":True,"include_maker_rebate":True},(w,v,u)),a("HYBRID_ZSPLIT_1.25_COMP_SHIELD_WITH_20PCT_REBATE",{"hybrid_z_split":True,"z_taker_cut":1.25,"use_complement_shield":True,"include_maker_rebate":True},(w,v,u)),a("STUDENT_T_DF4_UNIT_VAR_JVM_1.15",{"v395_df":4.,"v395_jump_vol_mult":1.15,"use_kemna_vorst":True},(w,v,u)),a("COINBASE_250MS_IMPULSE_VETO_2.5BPS",{"cb_250ms_veto_bps":-2.5},(w,v,u))];i=[]
  if o:
   for q,p in[(("BTC",),"BTC_5M_ONLY"),(("SOL",),"SOL_5M_CANARY"),(("BTC","ETH","SOL"),"ALL_CRYPTO_5M")]:i.append(a(p,{"assets":q,"horizons":("5m",),"min_z":.8,"use_kemna_vorst":True},(C,B,A)))
  return{"counts":{"subhourly_15m_total":len(m),"subhourly_5m_total":len(o)},"splits_15m":{"train":len(w),"val":len(v),"sealed_holdout":len(u)},"splits_5m":{"train":len(C),"val":len(B),"sealed_holdout":len(A)},"brier_calibration_selected_on_dev":e,"brier_calibration_grid":k,"ablations_15m":g,"ablations_5m":i}
 # ======================================================================================
-# [04/21] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
+# [04/20] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
 # PURPOSE: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;import os;import time;from pathlib import Path;from typing import Any,Dict,Iterable,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
+import json;import math;import os;import time;from pathlib import Path;from typing import Any,Dict,Iterable,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
 def _norm_cdf(x):return.5*(1.+math.erf(x*_INV_SQRT2))
 def is_real_polygon_ctf_token(token_id):s=str(token_id or"").strip();return bool(s and s.isdigit()and len(s)>=20)
 def compute_category_taker_fee_per_share(price,fee_rate=.07,fee_exponent=1.):
@@ -860,13 +867,13 @@ def scan_binary_complete_set_arb(market_id,condition_id,yes_token,no_token,asks_
  if max_box_cost_net is not None:max_complete_set_cost=float(max_box_cost_net)
  if not market_id or not yes_token or not no_token or str(yes_token)==str(no_token):return{"filled":False,"reason":"INVALID_TOKENS"}
  def b(raw):
-  b=[]
-  for a in raw or[]:
-   if isinstance(a,dict):p,s=float(a.get("price")or.0),float(a.get("size")or.0)
-   elif isinstance(a,(list,tuple))and len(a)>=2:p,s=float(a[0]),float(a[1])
+  E=[]
+  for D in raw or[]:
+   if isinstance(D,dict):p,s=float(D.get("price")or.0),float(D.get("size")or.0)
+   elif isinstance(D,(list,tuple))and len(D)>=2:p,s=float(D[0]),float(D[1])
    else:continue
-   if p>.0 and s>.0:b.append((p,s))
-  b.sort(key=lambda x:x[0]);return b
+   if p>.0 and s>.0:E.append((p,s))
+  E.sort(key=lambda x:x[0]);return E
  w=b(asks_yes_raw);v=b(asks_no_raw)
  if not w or not v:return{"filled":False,"reason":"EMPTY_SIDE_BOOK"}
  m=w[0][0]*w[0][1];l=v[0][0]*v[0][1];h=round(min(m,l),2);u,t=w[0][0],v[0][0];f=(compute_category_taker_fee_per_share(u,fee_rate,fee_exponent)+compute_category_taker_fee_per_share(t,fee_rate,fee_exponent))
@@ -874,12 +881,12 @@ def scan_binary_complete_set_arb(market_id,condition_id,yes_token,no_token,asks_
  o=sum(s for p,s in w if p<=u+.02);n=sum(s for p,s in v if p<=t+.02);e=int(math.floor(float(target_budget_usd)/max(.1,u+t)));A=int(min(e,math.floor(o),math.floor(n)))
  if A<int(min_shares):return{"filled":False,"reason":"INSUFFICIENT_EQUAL_SHARES","l1_usd":h}
  def a(levels,q_req):
-  d=q_req;b=.0;a=.0
-  for h,g in levels:
-   f=min(d,g);b+=f*h;a=max(a,h);d-=f
-   if d<=1e-6:break
-  if d>1e-5:return None
-  e=b/q_req;c=compute_category_taker_fee_per_share(e,fee_rate,fee_exponent);return e,c,a
+  D=q_req;s=.0;p=.0
+  for H,G in levels:
+   F=min(D,G);s+=F*H;p=max(p,H);D-=F
+   if D<=1e-6:break
+  if D>1e-5:return None
+  E=s/q_req;x=compute_category_taker_fee_per_share(E,fee_rate,fee_exponent);return E,x,p
  C=a(w,float(A));B=a(v,float(A))
  if C is None or B is None:return{"filled":False,"reason":"DEPTH_WALK_SHORTFALL","l1_usd":h}
  r,k,z=C;q,j,y=B;d=r+k+q+j
@@ -991,26 +998,29 @@ def evaluate_d1_15m_to_5m_corridor_conversion(pos_15m,snap_5m,*,now_ts=None,fee_
 def rank_microbatch_shock_tournament(shocks,active_positions=None):
  if len(shocks)<=1:return list(shocks)
  def a(s):
-  p=str(s.get("shock_direction")or"BUY").upper();r="UP"if p in("BUY","UP")else"DOWN";v=(s.get("pre_shock_features_t0")or{}).get(r)or{};l=float(v.get("best_ask")or v.get("vwap_$25")or v.get("effective_price_$25")or.7);l=max(.05,min(.95,l));d=abs(float(s.get("candle_distance_pct")or.0));u=max(30.,float(s.get("seconds_to_expiry")or 3e2));o=str(s.get("asset")or"BTC").upper();g=float(s.get("candle_sigma")or.0);w=str(s.get("horizon")or"").lower();k=(g*(2. if"15m"in w else(math.sqrt(12.)if w in("5m","5min","300s")or"-5m"in w else 1.))if g>.0 else(.005 if o=="BTC"else(.0068 if o=="ETH"else.009)));f=max(.00025,k*math.sqrt(u/3600.));t=min(1.,abs(float(s.get("shock_ofi")if s.get("shock_ofi")is not None else.85)));n=(d/1e2)/f+.35*t;m=.5*(1.+math.erf(n/math.sqrt(2.)));j=compute_category_taker_fee_per_share(l,.07,1.);e=m*.98+(1.-m)*.36;a=(e-l-j)/(l+j);i=float(v.get("age_ask_ms")if v.get("age_ask_ms")is not None else 3e2);h=1.15 if i>=250. else 1.;c=.015 if o=="BTC"else(.008 if o=="ETH"else.0);b=a*h+c
-  if active_positions:q=compute_capital_efficiency_utility({"asset":o,"side":r,"expiry_ts":s.get("candle_expiry_ts")or s.get("expiry_ts")or.0,"strike":s.get("candle_open_spot")or.0,"net_edge":max(.0,e-l-j),"ask_vwap":l,"p_model":m,"tte_sec":u},active_global_positions=active_positions);b+=float(q.get("corridor_completion_bonus")or.0)-float(q.get("corr_penalty")or.0)
-  return round(b,6),n
+  q=str(s.get("shock_direction")or"BUY").upper();t="UP"if q in("BUY","UP")else"DOWN";w=(s.get("pre_shock_features_t0")or{}).get(t)or{};m=float(w.get("best_ask")or w.get("vwap_$25")or w.get("effective_price_$25")or.7);m=max(.05,min(.95,m));e=abs(float(s.get("candle_distance_pct")or.0));v=max(30.,float(s.get("seconds_to_expiry")or 3e2));p=str(s.get("asset")or"BTC").upper();h=float(s.get("candle_sigma")or.0);x=str(s.get("horizon")or"").lower();l=(h*(2. if"15m"in x else(math.sqrt(12.)if x in("5m","5min","300s")or"-5m"in x else 1.))if h>.0 else(.005 if p=="BTC"else(.0068 if p=="ETH"else.009)));g=max(.00025,l*math.sqrt(v/3600.));u=min(1.,abs(float(s.get("shock_ofi")if s.get("shock_ofi")is not None else.85)));o=(e/1e2)/g+.35*u;n=.5*(1.+math.erf(o/math.sqrt(2.)));k=compute_category_taker_fee_per_share(m,.07,1.);f=n*.98+(1.-n)*.36;b=(f-m-k)/(m+k);j=float(w.get("age_ask_ms")if w.get("age_ask_ms")is not None else 3e2);i=1.15 if j>=250. else 1.;d=.015 if p=="BTC"else(.008 if p=="ETH"else.0);c=b*i+d
+  if active_positions:r=compute_capital_efficiency_utility({"asset":p,"side":t,"expiry_ts":s.get("candle_expiry_ts")or s.get("expiry_ts")or.0,"strike":s.get("candle_open_spot")or.0,"net_edge":max(.0,f-m-k),"ask_vwap":m,"p_model":n,"tte_sec":v},active_global_positions=active_positions);c+=float(r.get("corridor_completion_bonus")or.0)-float(r.get("corr_penalty")or.0)
+  return round(c,6),o
  return sorted(shocks,key=a,reverse=True)
 # ======================================================================================
-# [05/21] MODULE: src/polymarket_research/weather_metar_engine.py
+# [05/20] MODULE: src/polymarket_research/weather_metar_engine.py
 # PURPOSE: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import re;import time;import urllib.parse;import urllib.request;from dataclasses import dataclass,field;from datetime import date,datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;logger=logging.getLogger("WeatherMetarEngine");GAMMA_API_URL="https://gamma-api.polymarket.com";CLOB_API_URL="https://clob.polymarket.com";AWC_METAR_URL="https://aviationweather.gov/api/data/metar";AWC_STATION_URL="https://aviationweather.gov/api/data/stationinfo";IEM_ASOS_URL="https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py";OPEN_METEO_ENSEMBLE_URL="https://ensemble-api.open-meteo.com/v1/ensemble";OPEN_METEO_FORECAST_URL="https://api.open-meteo.com/v1/forecast";OPEN_METEO_HIST_FORECAST_URL="https://historical-forecast-api.open-meteo.com/v1/forecast";STATION_CATALOG={"RJTT":(35.5523,139.7798,"Asia/Tokyo","Tokyo"),"EGLC":(51.5053,.0553,"Europe/London","London"),"ZSPD":(31.1434,121.8052,"Asia/Shanghai","Shanghai"),"ZSQD":(36.3667,120.0944,"Asia/Shanghai","Qingdao"),"WMKK":(2.7456,101.7099,"Asia/Kuala_Lumpur","Kuala Lumpur"),"RCSS":(25.0694,121.5525,"Asia/Taipei","Taipei"),"EDDM":(48.3538,11.7861,"Europe/Berlin","Munich"),"LFPB":(48.9694,2.4414,"Europe/Paris","Paris"),"ZUUU":(30.5785,103.9471,"Asia/Shanghai","Chengdu"),"SBGR":(-23.4356,-46.4731,"America/Sao_Paulo","Sao Paulo"),"LEMD":(40.4719,-3.5626,"Europe/Madrid","Madrid"),"ZHHH":(30.7838,114.2081,"Asia/Shanghai","Wuhan"),"EHAM":(52.3086,4.7639,"Europe/Amsterdam","Amsterdam"),"EPWA":(52.1657,20.9671,"Europe/Warsaw","Warsaw"),"WSSS":(1.3502,103.994,"Asia/Singapore","Singapore"),"ZBAA":(40.0801,116.5846,"Asia/Shanghai","Beijing"),"ZUCK":(29.7192,106.6417,"Asia/Shanghai","Chongqing"),"LTFM":(41.2753,28.7519,"Europe/Istanbul","Istanbul"),"KMIA":(25.7959,-80.287,"America/New_York","Miami"),"OPKC":(24.9065,67.1608,"Asia/Karachi","Karachi"),"KLGA":(40.7769,-73.874,"America/New_York","NYC"),"RKSI":(37.4602,126.4407,"Asia/Seoul","Seoul"),"LLBG":(32.0114,34.8867,"Asia/Jerusalem","Tel Aviv"),"ZGGG":(23.3924,113.2988,"Asia/Shanghai","Guangzhou"),"OEJN":(21.6796,39.1565,"Asia/Riyadh","Jeddah"),"VILK":(26.7606,80.8893,"Asia/Kolkata","Lucknow"),"ZGSZ":(22.6393,113.8107,"Asia/Shanghai","Shenzhen"),"LIMC":(45.6306,8.7281,"Europe/Rome","Milan"),"RKPK":(35.1795,128.9382,"Asia/Seoul","Busan"),"LTAC":(40.1281,32.9951,"Europe/Istanbul","Ankara"),"SAEZ":(-34.8222,-58.5358,"America/Argentina/Buenos_Aires","Buenos Aires"),"KSEA":(47.4502,-122.3088,"America/Los_Angeles","Seattle"),"KDAL":(32.8471,-96.8518,"America/Chicago","Dallas"),"NZWN":(-41.3272,174.8053,"Pacific/Auckland","Wellington"),"KSFO":(37.6213,-122.379,"America/Los_Angeles","San Francisco"),"KORD":(41.9742,-87.9073,"America/Chicago","Chicago"),"MMMX":(19.4363,-99.0721,"America/Mexico_City","Mexico City"),"CYYZ":(43.6777,-79.6248,"America/Toronto","Toronto"),"RPLL":(14.5086,121.0194,"Asia/Manila","Manila"),"EFHK":(60.3172,24.9633,"Europe/Helsinki","Helsinki"),"KATL":(33.6407,-84.4277,"America/New_York","Atlanta"),"KHOU":(29.6454,-95.2789,"America/Chicago","Houston"),"KDEN":(39.8561,-104.6737,"America/Denver","Denver"),"UUWW":(55.5915,37.2615,"Europe/Moscow","Moscow"),"MPMG":(8.9733,-79.5556,"America/Panama","Panama City"),"KAUS":(30.1945,-97.6699,"America/Chicago","Austin"),"KLAX":(33.9425,-118.4081,"America/Los_Angeles","Los Angeles"),"FACT":(-33.9648,18.6017,"Africa/Johannesburg","Cape Town"),"HKO":(22.3019,114.1742,"Asia/Hong_Kong","Hong Kong"),"ZSJN":(36.8572,117.216,"Asia/Shanghai","Jinan"),"ZHCC":(34.5197,113.8408,"Asia/Shanghai","Zhengzhou")};HKO_1MIN_CSV_URL="https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_1min_temperature.csv";HKO_MAXMIN_CSV_URL="https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_since_midnight_maxmin.csv";HKO_RHRREAD_URL="https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en";_T_REMARK_RE=re.compile(r"(?:^|\s)T([01])(\d{3})(?:\d{4}|////)(?=\s|$)");_BODY_TEMP_RE=re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)");_METAR_TS_RE=re.compile(r"\b(\d{2})(\d{2})(\d{2})Z\b");_CONVECTIVE_WX_RE=re.compile(r"(?:^|\s)(?:[-+]|VC)?(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)*\b" r"|(?:FEW|SCT|BKN|OVC)\d{3}(?:CB|TCU)\b" r"|\b(?:CB|TCU|RAB\d{2,4}|TSB\d{2,4}|P\d{4})\b");_AWC_ICAO_RE=re.compile(r"aviationweather\.gov/api/data/metar\?ids=([A-Z0-9]{4})",re.IGNORECASE);_NOAA_ICAO_RE=re.compile(r"weather\.gov/wrh/timeseries\?site=([A-Z0-9]{4})",re.IGNORECASE);_PAREN_ICAO_RE=re.compile(r"\(([A-Z]{4})\)");_SERIES_TO_ICAO={"tokyo-daily-weather":"RJTT","tokyo-daily-lowest-temperature":"RJTT","london-daily-weather":"EGLC","london-daily-lowest-temperature":"EGLC","shanghai-daily-weather":"ZSPD","shanghai-daily-lowest-temperature":"ZSPD","chengdu-daily-weather":"ZUUU","chengdu-daily-lowest-temperature":"ZUUU","beijing-daily-weather":"ZBAA","beijing-daily-lowest-temperature":"ZBAA","wuhan-daily-weather":"ZHHH","wuhan-daily-lowest-temperature":"ZHHH","chongqing-daily-weather":"ZUCK","chongqing-daily-lowest-temperature":"ZUCK","guangzhou-daily-weather":"ZGGG","guangzhou-daily-lowest-temperature":"ZGGG","shenzhen-daily-weather":"ZGSZ","shenzhen-daily-lowest-temperature":"ZGSZ","qingdao-daily-weather":"ZSQD","qingdao-daily-lowest-temperature":"ZSQD","paris-daily-weather":"LFPB","paris-daily-lowest-temperature":"LFPB","munich-daily-weather":"EDDM","munich-daily-lowest-temperature":"EDDM","miami-daily-weather":"KMIA","miami-daily-lowest-temperature":"KMIA","nyc-daily-weather":"KLGA","nyc-daily-lowest-temperature":"KLGA","houston-daily-weather":"KHOU","houston-daily-lowest-temperature":"KHOU","austin-daily-weather":"KAUS","austin-daily-lowest-temperature":"KAUS","los-angeles-daily-weather":"KLAX","los-angeles-daily-lowest-temperature":"KLAX","seoul-daily-weather":"RKSI","seoul-daily-lowest-temperature":"RKSI","busan-daily-weather":"RKPK","busan-daily-lowest-temperature":"RKPK","chicago-daily-weather":"KORD","chicago-daily-lowest-temperature":"KORD","seattle-daily-weather":"KSEA","seattle-daily-lowest-temperature":"KSEA","dallas-daily-weather":"KDAL","dallas-daily-lowest-temperature":"KDAL","madrid-daily-weather":"LEMD","madrid-daily-lowest-temperature":"LEMD","amsterdam-daily-weather":"EHAM","amsterdam-daily-lowest-temperature":"EHAM","taipei-daily-weather":"RCSS","taipei-daily-lowest-temperature":"RCSS","singapore-daily-weather":"WSSS","singapore-daily-lowest-temperature":"WSSS","hong-kong-daily-weather":"HKO","hong-kong-daily-lowest-temperature":"HKO","wellington-daily-weather":"NZWN","wellington-daily-lowest-temperature":"NZWN","warsaw-daily-weather":"EPWA","warsaw-daily-lowest-temperature":"EPWA","buenos-aires-daily-weather":"SAEZ","buenos-aires-daily-lowest-temperature":"SAEZ","helsinki-daily-weather":"EFHK","helsinki-daily-lowest-temperature":"EFHK","denver-daily-weather":"KDEN","denver-daily-lowest-temperature":"KDEN","toronto-daily-weather":"CYYZ","toronto-daily-lowest-temperature":"CYYZ","mexico-city-daily-weather":"MMMX","mexico-city-daily-lowest-temperature":"MMMX","tel-aviv-daily-weather":"LLBG","tel-aviv-daily-lowest-temperature":"LLBG","istanbul-daily-weather":"LTFM","istanbul-daily-lowest-temperature":"LTFM","sao-paulo-daily-weather":"SBGR","sao-paulo-daily-lowest-temperature":"SBGR","manila-daily-weather":"RPLL","manila-daily-lowest-temperature":"RPLL","atlanta-daily-weather":"KATL","atlanta-daily-lowest-temperature":"KATL","san-francisco-daily-weather":"KSFO","san-francisco-daily-lowest-temperature":"KSFO","panama-daily-weather":"MPMG","panama-daily-lowest-temperature":"MPMG","milan-daily-weather":"LIMC","milan-daily-lowest-temperature":"LIMC","lucknow-daily-weather":"VILK","lucknow-daily-lowest-temperature":"VILK","karachi-daily-weather":"OPKC","karachi-daily-lowest-temperature":"OPKC","jeddah-daily-weather":"OEJN","jeddah-daily-lowest-temperature":"OEJN","ankara-daily-weather":"LTAC","ankara-daily-lowest-temperature":"LTAC","kuala-lumpur-daily-weather":"WMKK","kuala-lumpur-daily-lowest-temperature":"WMKK","moscow-daily-weather":"UUWW","moscow-daily-lowest-temperature":"UUWW","cape-town-daily-weather":"FACT","cape-town-daily-lowest-temperature":"FACT","jinan-daily-weather":"ZSJN","jinan-daily-lowest-temperature":"ZSJN","zhengzhou-daily-weather":"ZHCC","zhengzhou-daily-lowest-temperature":"ZHCC"}
-HIGH_VOLUME_WEATHER_SERIES=("hong-kong-daily-weather","hong-kong-daily-lowest-temperature","atlanta-daily-weather","atlanta-daily-lowest-temperature","san-francisco-daily-weather","san-francisco-daily-lowest-temperature","seattle-daily-weather","seattle-daily-lowest-temperature","amsterdam-daily-weather","amsterdam-daily-lowest-temperature","panama-daily-weather","manila-daily-weather","mexico-city-daily-weather","munich-daily-weather","milan-daily-weather","istanbul-daily-weather","lucknow-daily-weather","tel-aviv-daily-weather","karachi-daily-weather","sao-paulo-daily-weather","jeddah-daily-weather","ankara-daily-weather","busan-daily-weather","cape-town-daily-weather","cape-town-daily-lowest-temperature","qingdao-daily-weather","kuala-lumpur-daily-weather","moscow-daily-weather","chengdu-daily-weather","beijing-daily-weather","seoul-daily-weather","seoul-daily-lowest-temperature","shanghai-daily-weather","shanghai-daily-lowest-temperature","tokyo-daily-weather","tokyo-daily-lowest-temperature","wuhan-daily-weather","chongqing-daily-weather","guangzhou-daily-weather","shenzhen-daily-weather","taipei-daily-weather","singapore-daily-weather","nyc-daily-weather","nyc-daily-lowest-temperature","chicago-daily-weather","chicago-daily-lowest-temperature","london-daily-weather","london-daily-lowest-temperature","miami-daily-weather","miami-daily-lowest-temperature","austin-daily-weather","austin-daily-lowest-temperature","los-angeles-daily-weather","los-angeles-daily-lowest-temperature","houston-daily-weather","houston-daily-lowest-temperature","dallas-daily-weather","dallas-daily-lowest-temperature","wellington-daily-weather","wellington-daily-lowest-temperature","warsaw-daily-weather","warsaw-daily-lowest-temperature","buenos-aires-daily-weather","helsinki-daily-weather","denver-daily-weather","denver-daily-lowest-temperature","toronto-daily-weather","toronto-daily-lowest-temperature","paris-daily-weather","paris-daily-lowest-temperature","madrid-daily-weather");_MONTH_MAP={"january":1,"jan":1,"february":2,"feb":2,"march":3,"mar":3,"april":4,"apr":4,"may":5,"june":6,"jun":6,"july":7,"jul":7,"august":8,"aug":8,"september":9,"sep":9,"sept":9,"october":10,"oct":10,"november":11,"nov":11,"december":12,"dec":12}
+import json;import logging;import math;import re;import time;import urllib.parse;import urllib.request;from dataclasses import dataclass,field;from datetime import date,datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;logger=logging.getLogger("WeatherMetarEngine");GAMMA_API_URL="https://gamma-api.polymarket.com";CLOB_API_URL="https://clob.polymarket.com";AWC_METAR_URL="https://aviationweather.gov/api/data/metar";AWC_STATION_URL="https://aviationweather.gov/api/data/stationinfo";IEM_ASOS_URL="https://mesonet.agron.iastate.edu/cgi-bin/request/asos.py";OPEN_METEO_ENSEMBLE_URL="https://ensemble-api.open-meteo.com/v1/ensemble";OPEN_METEO_FORECAST_URL="https://api.open-meteo.com/v1/forecast";OPEN_METEO_HIST_FORECAST_URL="https://historical-forecast-api.open-meteo.com/v1/forecast";STATION_CATALOG={"RJTT":(35.5523,139.7798,"Asia/Tokyo","Tokyo"),"EGLC":(51.5053,.0553,"Europe/London","London"),"ZSPD":(31.1434,121.8052,"Asia/Shanghai","Shanghai"),"ZSQD":(36.3667,120.0944,"Asia/Shanghai","Qingdao"),"WMKK":(2.7456,101.7099,"Asia/Kuala_Lumpur","Kuala Lumpur"),"RCSS":(25.0694,121.5525,"Asia/Taipei","Taipei"),"EDDM":(48.3538,11.7861,"Europe/Berlin","Munich"),"LFPB":(48.9694,2.4414,"Europe/Paris","Paris"),"ZUUU":(30.5785,103.9471,"Asia/Shanghai","Chengdu"),"SBGR":(-23.4356,-46.4731,"America/Sao_Paulo","Sao Paulo"),"LEMD":(40.4719,-3.5626,"Europe/Madrid","Madrid"),"ZHHH":(30.7838,114.2081,"Asia/Shanghai","Wuhan"),"EHAM":(52.3086,4.7639,"Europe/Amsterdam","Amsterdam"),"EPWA":(52.1657,20.9671,"Europe/Warsaw","Warsaw"),"WSSS":(1.3502,103.994,"Asia/Singapore","Singapore"),"ZBAA":(40.0801,116.5846,"Asia/Shanghai","Beijing"),"ZUCK":(29.7192,106.6417,"Asia/Shanghai","Chongqing"),"LTFM":(41.2753,28.7519,"Europe/Istanbul","Istanbul"),"KMIA":(25.7959,-80.287,"America/New_York","Miami"),"OPKC":(24.9065,67.1608,"Asia/Karachi","Karachi"),"KLGA":(40.7769,-73.874,"America/New_York","NYC"),"RKSI":(37.4602,126.4407,"Asia/Seoul","Seoul"),"LLBG":(32.0114,34.8867,"Asia/Jerusalem","Tel Aviv"),"ZGGG":(23.3924,113.2988,"Asia/Shanghai","Guangzhou"),"OEJN":(21.6796,39.1565,"Asia/Riyadh","Jeddah"),"VILK":(26.7606,80.8893,"Asia/Kolkata","Lucknow"),"ZGSZ":(22.6393,113.8107,"Asia/Shanghai","Shenzhen"),"LIMC":(45.6306,8.7281,"Europe/Rome","Milan"),"RKPK":(35.1795,128.9382,"Asia/Seoul","Busan"),"LTAC":(40.1281,32.9951,"Europe/Istanbul","Ankara"),"SAEZ":(-34.8222,-58.5358,"America/Argentina/Buenos_Aires","Buenos Aires"),"KSEA":(47.4502,-122.3088,"America/Los_Angeles","Seattle"),"KDAL":(32.8471,-96.8518,"America/Chicago","Dallas"),"NZWN":(-41.3272,174.8053,"Pacific/Auckland","Wellington"),"KSFO":(37.6213,-122.379,"America/Los_Angeles","San Francisco"),"KORD":(41.9742,-87.9073,"America/Chicago","Chicago"),"MMMX":(19.4363,-99.0721,"America/Mexico_City","Mexico City"),"CYYZ":(43.6777,-79.6248,"America/Toronto","Toronto"),"RPLL":(14.5086,121.0194,"Asia/Manila","Manila"),"EFHK":(60.3172,24.9633,"Europe/Helsinki","Helsinki"),"KATL":(33.6407,-84.4277,"America/New_York","Atlanta"),"KHOU":(29.6454,-95.2789,"America/Chicago","Houston"),"KDEN":(39.8561,-104.6737,"America/Denver","Denver"),"UUWW":(55.5915,37.2615,"Europe/Moscow","Moscow"),"MPMG":(8.9733,-79.5556,"America/Panama","Panama City"),"KAUS":(30.1945,-97.6699,"America/Chicago","Austin"),"KLAX":(33.9425,-118.4081,"America/Los_Angeles","Los Angeles"),"FACT":(-33.9648,18.6017,"Africa/Johannesburg","Cape Town"),"HKO":(22.3019,114.1742,"Asia/Hong_Kong","Hong Kong"),"ZSJN":(36.8572,117.216,"Asia/Shanghai","Jinan"),"ZHCC":(34.5197,113.8408,"Asia/Shanghai","Zhengzhou")};HKO_1MIN_CSV_URL="https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_1min_temperature.csv";HKO_MAXMIN_CSV_URL="https://data.weather.gov.hk/weatherAPI/hko_data/regional-weather/latest_since_midnight_maxmin.csv";HKO_RHRREAD_URL="https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rhrread&lang=en";_T_REMARK_RE=re.compile(r"(?:^|\s)T([01])(\d{3})(?:\d{4}|////)(?=\s|$)");_BODY_TEMP_RE=re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)");_METAR_TS_RE=re.compile(r"\b(\d{2})(\d{2})(\d{2})Z\b");_SYNOPTIC_6H_MAX_RE=re.compile(r"(?:^|\s)1([01])(\d{3})(?=\s|$)");_SYNOPTIC_6H_MIN_RE=re.compile(r"(?:^|\s)2([01])(\d{3})(?=\s|$)");_SYNOPTIC_24H_EXT_RE=re.compile(r"(?:^|\s)4([01])(\d{3})([01])(\d{3})(?=\s|$)");_ASOS_AO_RE=re.compile(r"\bAO[12]\b")
+def _build_us_asos_valid_tenths_int():
+ d=set()
+ for c in range(-130,165):b=((c-32)*50.)/9.;a=int(math.floor(b+.5+1e-12))if b>=.0 else-int(math.floor(-b+.5+1e-12));d.add(a)
+ return frozenset(d)
+US_ASOS_VALID_TENTHS_INT=_build_us_asos_valid_tenths_int();_CONVECTIVE_WX_RE=re.compile(r"(?:^|\s)(?:[-+]|VC)?(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)*\b" r"|(?:FEW|SCT|BKN|OVC)\d{3}(?:CB|TCU)\b" r"|\b(?:CB|TCU|RAB\d{2,4}|TSB\d{2,4}|P\d{4})\b");_AWC_ICAO_RE=re.compile(r"aviationweather\.gov/api/data/metar\?ids=([A-Z0-9]{4})",re.IGNORECASE);_NOAA_ICAO_RE=re.compile(r"weather\.gov/wrh/timeseries\?site=([A-Z0-9]{4})",re.IGNORECASE);_PAREN_ICAO_RE=re.compile(r"\(([A-Z]{4})\)");_SERIES_TO_ICAO={"tokyo-daily-weather":"RJTT","tokyo-daily-lowest-temperature":"RJTT","london-daily-weather":"EGLC","london-daily-lowest-temperature":"EGLC","shanghai-daily-weather":"ZSPD","shanghai-daily-lowest-temperature":"ZSPD","chengdu-daily-weather":"ZUUU","chengdu-daily-lowest-temperature":"ZUUU","beijing-daily-weather":"ZBAA","beijing-daily-lowest-temperature":"ZBAA","wuhan-daily-weather":"ZHHH","wuhan-daily-lowest-temperature":"ZHHH","chongqing-daily-weather":"ZUCK","chongqing-daily-lowest-temperature":"ZUCK","guangzhou-daily-weather":"ZGGG","guangzhou-daily-lowest-temperature":"ZGGG","shenzhen-daily-weather":"ZGSZ","shenzhen-daily-lowest-temperature":"ZGSZ","qingdao-daily-weather":"ZSQD","qingdao-daily-lowest-temperature":"ZSQD","paris-daily-weather":"LFPB","paris-daily-lowest-temperature":"LFPB","munich-daily-weather":"EDDM","munich-daily-lowest-temperature":"EDDM","miami-daily-weather":"KMIA","miami-daily-lowest-temperature":"KMIA","nyc-daily-weather":"KLGA","nyc-daily-lowest-temperature":"KLGA","houston-daily-weather":"KHOU","houston-daily-lowest-temperature":"KHOU","austin-daily-weather":"KAUS","austin-daily-lowest-temperature":"KAUS","los-angeles-daily-weather":"KLAX","los-angeles-daily-lowest-temperature":"KLAX","seoul-daily-weather":"RKSI","seoul-daily-lowest-temperature":"RKSI","busan-daily-weather":"RKPK","busan-daily-lowest-temperature":"RKPK","chicago-daily-weather":"KORD","chicago-daily-lowest-temperature":"KORD","seattle-daily-weather":"KSEA","seattle-daily-lowest-temperature":"KSEA","dallas-daily-weather":"KDAL","dallas-daily-lowest-temperature":"KDAL","madrid-daily-weather":"LEMD","madrid-daily-lowest-temperature":"LEMD","amsterdam-daily-weather":"EHAM","amsterdam-daily-lowest-temperature":"EHAM","taipei-daily-weather":"RCSS","taipei-daily-lowest-temperature":"RCSS","singapore-daily-weather":"WSSS","singapore-daily-lowest-temperature":"WSSS","hong-kong-daily-weather":"HKO","hong-kong-daily-lowest-temperature":"HKO","wellington-daily-weather":"NZWN","wellington-daily-lowest-temperature":"NZWN","warsaw-daily-weather":"EPWA","warsaw-daily-lowest-temperature":"EPWA","buenos-aires-daily-weather":"SAEZ","buenos-aires-daily-lowest-temperature":"SAEZ","helsinki-daily-weather":"EFHK","helsinki-daily-lowest-temperature":"EFHK","denver-daily-weather":"KDEN","denver-daily-lowest-temperature":"KDEN","toronto-daily-weather":"CYYZ","toronto-daily-lowest-temperature":"CYYZ","mexico-city-daily-weather":"MMMX","mexico-city-daily-lowest-temperature":"MMMX","tel-aviv-daily-weather":"LLBG","tel-aviv-daily-lowest-temperature":"LLBG","istanbul-daily-weather":"LTFM","istanbul-daily-lowest-temperature":"LTFM","sao-paulo-daily-weather":"SBGR","sao-paulo-daily-lowest-temperature":"SBGR","manila-daily-weather":"RPLL","manila-daily-lowest-temperature":"RPLL","atlanta-daily-weather":"KATL","atlanta-daily-lowest-temperature":"KATL","san-francisco-daily-weather":"KSFO","san-francisco-daily-lowest-temperature":"KSFO","panama-daily-weather":"MPMG","panama-daily-lowest-temperature":"MPMG","milan-daily-weather":"LIMC","milan-daily-lowest-temperature":"LIMC","lucknow-daily-weather":"VILK","lucknow-daily-lowest-temperature":"VILK","karachi-daily-weather":"OPKC","karachi-daily-lowest-temperature":"OPKC","jeddah-daily-weather":"OEJN","jeddah-daily-lowest-temperature":"OEJN","ankara-daily-weather":"LTAC","ankara-daily-lowest-temperature":"LTAC","kuala-lumpur-daily-weather":"WMKK","kuala-lumpur-daily-lowest-temperature":"WMKK","moscow-daily-weather":"UUWW","moscow-daily-lowest-temperature":"UUWW","cape-town-daily-weather":"FACT","cape-town-daily-lowest-temperature":"FACT","jinan-daily-weather":"ZSJN","jinan-daily-lowest-temperature":"ZSJN","zhengzhou-daily-weather":"ZHCC","zhengzhou-daily-lowest-temperature":"ZHCC"};HIGH_VOLUME_WEATHER_SERIES=("hong-kong-daily-weather","hong-kong-daily-lowest-temperature","atlanta-daily-weather","atlanta-daily-lowest-temperature","san-francisco-daily-weather","san-francisco-daily-lowest-temperature","seattle-daily-weather","seattle-daily-lowest-temperature","amsterdam-daily-weather","amsterdam-daily-lowest-temperature","panama-daily-weather","manila-daily-weather","mexico-city-daily-weather","munich-daily-weather","milan-daily-weather","istanbul-daily-weather","lucknow-daily-weather","tel-aviv-daily-weather","karachi-daily-weather","sao-paulo-daily-weather","jeddah-daily-weather","ankara-daily-weather","busan-daily-weather","cape-town-daily-weather","cape-town-daily-lowest-temperature","qingdao-daily-weather","kuala-lumpur-daily-weather","moscow-daily-weather","chengdu-daily-weather","beijing-daily-weather","seoul-daily-weather","seoul-daily-lowest-temperature","shanghai-daily-weather","shanghai-daily-lowest-temperature","tokyo-daily-weather","tokyo-daily-lowest-temperature","wuhan-daily-weather","chongqing-daily-weather","guangzhou-daily-weather","shenzhen-daily-weather","taipei-daily-weather","singapore-daily-weather","nyc-daily-weather","nyc-daily-lowest-temperature","chicago-daily-weather","chicago-daily-lowest-temperature","london-daily-weather","london-daily-lowest-temperature","miami-daily-weather","miami-daily-lowest-temperature","austin-daily-weather","austin-daily-lowest-temperature","los-angeles-daily-weather","los-angeles-daily-lowest-temperature","houston-daily-weather","houston-daily-lowest-temperature","dallas-daily-weather","dallas-daily-lowest-temperature","wellington-daily-weather","wellington-daily-lowest-temperature","warsaw-daily-weather","warsaw-daily-lowest-temperature","buenos-aires-daily-weather","helsinki-daily-weather","denver-daily-weather","denver-daily-lowest-temperature","toronto-daily-weather","toronto-daily-lowest-temperature","paris-daily-weather","paris-daily-lowest-temperature","madrid-daily-weather");_MONTH_MAP={"january":1,"jan":1,"february":2,"feb":2,"march":3,"mar":3,"april":4,"apr":4,"may":5,"june":6,"jun":6,"july":7,"jul":7,"august":8,"aug":8,"september":9,"sep":9,"sept":9,"october":10,"oct":10,"november":11,"nov":11,"december":12,"dec":12}
 @dataclass
 class WeatherBucket:
- market_id:str;condition_id:str;label:str;question:str;yes_token:str;no_token:str;unit:str;low_bound:float;high_bound:float;outcome_yes_resolved=None;fee_rate=.0;fee_exponent=1.;neg_risk=None;rewards_min_size=.0;rewards_max_spread=.0
+ market_id:str;condition_id:str;label:str;question:str;yes_token:str;no_token:str;unit:str;low_bound:float;high_bound:float;outcome_yes_resolved:Optional[int]=None;fee_rate:float=.0;fee_exponent:float=1.;neg_risk:Optional[bool]=None;rewards_min_size:float=.0;rewards_max_spread:float=.0;question_index:Optional[int]=None
  def contains_rounded(a,rounded_int):return a.low_bound<=rounded_int<=a.high_bound
 @dataclass
-class WeatherEventSpec:event_id:str;slug:str;series_slug:str;title:str;icao:str;city:str;lat:float;lon:float;tz_name:str;obs_date:date;metric:str;unit:str;fee_type:str;end_date_iso:str;buckets=field(default_factory=list)
+class WeatherEventSpec:event_id:str;slug:str;series_slug:str;title:str;icao:str;city:str;lat:float;lon:float;tz_name:str;obs_date:date;metric:str;unit:str;fee_type:str;end_date_iso:str;buckets:List[WeatherBucket]=field(default_factory=list)
 @dataclass
-class MetarObservation:icao:str;utc_dt:datetime;local_dt:datetime;temp_c:float;has_t_remark:bool;raw_line:str;has_convective_precip=False;is_corrected=False
+class MetarObservation:icao:str;utc_dt:datetime;local_dt:datetime;temp_c:float;has_t_remark:bool;raw_line:str;has_convective_precip:bool=False;is_corrected:bool=False;is_anomalous:bool=False;rmk_6h_max_c:Optional[float]=None;rmk_6h_min_c:Optional[float]=None;rmk_24h_max_c:Optional[float]=None;rmk_24h_min_c:Optional[float]=None
 def round_half_up_polymarket(val):return int(math.floor(val+.5+1e-12))
 def celsius_to_market_int(temp_c,unit):
  if unit.upper()=="F":a=temp_c*9./5.+32.;return round_half_up_polymarket(a)
@@ -1033,30 +1043,63 @@ def parse_bucket_bounds(label):
  if a:v=float(int(a.group(1)));return e,v,v
  return None
 def parse_metar_line(raw_line,icao,ref_utc,tz_name,explicit_utc_dt=None):
- w=raw_line.strip()
- if not w:return None
- r=w.upper();m=r.split()
- if not m:return None
- if"SPECI"in m[:3]:return None
- if icao.upper()not in m[:4]:return None
- l="COR"in m[:5];b=explicit_utc_dt
- if b is None:
-  v=_METAR_TS_RE.search(r)
-  if not v:return None
-  q,u,p=int(v.group(1)),int(v.group(2)),int(v.group(3));f=[]
-  for o in(-32,0,32):
-   k=ref_utc+timedelta(days=o)
-   try:t=datetime(k.year,k.month,q,u,p,tzinfo=timezone.utc);f.append(t)
+ H=raw_line.strip()
+ if not H:return None
+ A=H.upper();v=A.split()
+ if not v:return None
+ if"SPECI"in v[:3]:return None
+ if icao.upper()not in v[:4]:return None
+ u="COR"in v[:5];j=explicit_utc_dt
+ if j is None:
+  G=_METAR_TS_RE.search(A)
+  if not G:return None
+  z,F,y=int(G.group(1)),int(G.group(2)),int(G.group(3));m=[]
+  for x in(-32,0,32):
+   t=ref_utc+timedelta(days=x)
+   try:E=datetime(t.year,t.month,z,F,y,tzinfo=timezone.utc);m.append(E)
    except ValueError:continue
-  if not f:return None
-  b=min(f,key=lambda c:abs((c-ref_utc).total_seconds()))
- i=r.split("RMK",1)[1]if"RMK"in r else r;n=_T_REMARK_RE.search(i)
- if n:s=-1. if n.group(1)=="1"else 1.;a=s*(int(n.group(2))/10.);e=True
+  if not m:return None
+  j=min(m,key=lambda c:abs((c-ref_utc).total_seconds()))
+ q="RMK"in A;n,p=A.split("RMK",1)if q else(A,A);s=_BODY_TEMP_RE.search(n);g=None
+ if s:I=s.group(1);g=-float(int(I[1:]))if I.startswith("M")else float(int(I))
+ r=icao.upper();a=False;w=_T_REMARK_RE.search(p)
+ if w:
+  h=(-1 if w.group(1)=="1"else 1)*int(w.group(2));i=h/10.;l=True
+  if len(r)==4 and r.startswith("K")and h not in US_ASOS_VALID_TENTHS_INT:a=True
+  if g is not None and abs(i-g)>.65:a=True
  else:
-  g=r.split("RMK",1)[0];j=_BODY_TEMP_RE.search(g)
-  if not j:return None
-  x=j.group(1);a=-float(int(x[1:]))if x.startswith("M")else float(int(x));e=False
- h=b.astimezone(ZoneInfo(tz_name));d=bool(_CONVECTIVE_WX_RE.search(r));return MetarObservation(icao=icao.upper(),utc_dt=b,local_dt=h,temp_c=a,has_t_remark=e,raw_line=w,has_convective_precip=d,is_corrected=l)
+  if g is None:return None
+  i=g;l=False
+ f=None;e=None;d=None;b=None
+ if q and _ASOS_AO_RE.search(p):
+  if j.hour in(23,0,5,6,11,12,17,18):
+   D=_SYNOPTIC_6H_MAX_RE.search(p)
+   if D:f=(-1. if D.group(1)=="1"else 1.)*(int(D.group(2))/10.)
+   C=_SYNOPTIC_6H_MIN_RE.search(p)
+   if C:e=(-1. if C.group(1)=="1"else 1.)*(int(C.group(2))/10.)
+  B=_SYNOPTIC_24H_EXT_RE.search(p)
+  if B:d=(-1. if B.group(1)=="1"else 1.)*(int(B.group(2))/10.);b=(-1. if B.group(3)=="1"else 1.)*(int(B.group(4))/10.)
+ o=j.astimezone(ZoneInfo(tz_name));k=bool(_CONVECTIVE_WX_RE.search(A));return MetarObservation(icao=r,utc_dt=j,local_dt=o,temp_c=i,has_t_remark=l,raw_line=H,has_convective_precip=k,is_corrected=u,is_anomalous=a,rmk_6h_max_c=f,rmk_6h_min_c=e,rmk_24h_max_c=d,rmk_24h_min_c=b)
+def has_metar_oracle_contradiction(obs_seq):
+ if not obs_seq:return False
+ for o in obs_seq:
+  if bool(getattr(o,"is_anomalous",False)):return True
+ for i in obs_seq:
+  h=getattr(i,"utc_dt",None)
+  if h is None:continue
+  g=getattr(i,"rmk_6h_max_c",None);f=getattr(i,"rmk_6h_min_c",None);c=getattr(i,"rmk_24h_max_c",None);b=getattr(i,"rmk_24h_min_c",None)
+  if g is None and f is None and c is None and b is None:continue
+  for e in obs_seq:
+   d=getattr(e,"utc_dt",None);a=getattr(e,"temp_c",None)
+   if d is None or a is None:continue
+   j=(h-d).total_seconds()
+   if.0<=j<=21300.:
+    if g is not None and float(a)>float(g)+.15:return True
+    if f is not None and float(a)<float(f)-.15:return True
+   if.0<=j<=85800.:
+    if c is not None and float(a)>float(c)+.15:return True
+    if b is not None and float(a)<float(b)-.15:return True
+ return False
 def parse_obs_date_from_event(title,desc,end_date_iso):
  f=re.search(r"\bon\s+(\d{1,2})\s+([A-Za-z]+)\s+'?(\d{2,4})\b",desc)
  if f:
@@ -1077,51 +1120,55 @@ def parse_obs_date_from_event(title,desc,end_date_iso):
    except ValueError:pass
  return None
 def parse_weather_event(ev,allow_historical_same_station=False,series_slug_hint=""):
- A=str(ev.get("title")or"");K=A.lower()
- if"highest temperature in"in K:g="HIGH"
- elif"lowest temperature in"in K:g="LOW"
+ C=str(ev.get("title")or"");M=C.lower()
+ if"highest temperature in"in M:h="HIGH"
+ elif"lowest temperature in"in M:h="LOW"
  else:return None
- E=ev.get("markets")or[]
- if len(E)<4:return None
- l=ev.get("series")or[];y=str(l[0].get("slug")if l else(ev.get("seriesSlug")or series_slug_hint or""));D=str(E[0].get("description")or ev.get("description")or"");c=None;x=_AWC_ICAO_RE.search(D)
- if x and"SPECI"in D:c=x.group(1).upper()
- elif"weather.gov.hk"in D.lower()and"hong kong observatory"in D.lower():c="HKO"
- elif"routine (metar)"in D.lower()or"speci"in D.lower():
-  k=_PAREN_ICAO_RE.search(D)
-  if k and k.group(1).upper()in STATION_CATALOG:c=k.group(1).upper()
+ G=ev.get("markets")or[]
+ if len(G)<4:return None
+ n=ev.get("series")or[];A=str(n[0].get("slug")if n else(ev.get("seriesSlug")or series_slug_hint or""));F=str(G[0].get("description")or ev.get("description")or"");c=None;z=_AWC_ICAO_RE.search(F)
+ if z and"SPECI"in F:c=z.group(1).upper()
+ elif"weather.gov.hk"in F.lower()and"hong kong observatory"in F.lower():c="HKO"
+ elif"routine (metar)"in F.lower()or"speci"in F.lower():
+  l=_PAREN_ICAO_RE.search(F)
+  if l and l.group(1).upper()in STATION_CATALOG:c=l.group(1).upper()
  elif allow_historical_same_station:
-  w=_NOAA_ICAO_RE.search(D);z=_PAREN_ICAO_RE.search(D)
-  if w and w.group(1).upper()in STATION_CATALOG:c=w.group(1).upper()
-  elif z and z.group(1).upper()in STATION_CATALOG:c=z.group(1).upper()
-  elif y in _SERIES_TO_ICAO:c=_SERIES_TO_ICAO[y]
+  y=_NOAA_ICAO_RE.search(F);B=_PAREN_ICAO_RE.search(F)
+  if y and y.group(1).upper()in STATION_CATALOG:c=y.group(1).upper()
+  elif B and B.group(1).upper()in STATION_CATALOG:c=B.group(1).upper()
+  elif A in _SERIES_TO_ICAO:c=_SERIES_TO_ICAO[A]
  if not c or c not in STATION_CATALOG:return None
- H,G,s,C=STATION_CATALOG[c];r=str(ev.get("endDate")or E[0].get("endDate")or"");p=parse_obs_date_from_event(A,D,r)
- if p is None:return None
- d=str(E[0].get("feeType")or"zero_fees");q=[]
- for m in E:
-  F=str(m.get("groupItemTitle")or m.get("question")or"");v=parse_bucket_bounds(F)
-  if not v:continue
-  B,J,I=v;f=m.get("clobTokenIds")
-  if isinstance(f,str):
-   try:f=json.loads(f)
-   except Exception:f=[]
-  if not f or len(f)<2:continue
+ J,I,u,E=STATION_CATALOG[c];t=str(ev.get("endDate")or G[0].get("endDate")or"");q=parse_obs_date_from_event(C,F,t)
+ if q is None:return None
+ e=str(G[0].get("feeType")or"zero_fees");s=[]
+ for m in G:
+  H=str(m.get("groupItemTitle")or m.get("question")or"");x=parse_bucket_bounds(H)
+  if not x:continue
+  D,L,K=x;g=m.get("clobTokenIds")
+  if isinstance(g,str):
+   try:g=json.loads(g)
+   except Exception:g=[]
+  if not g or len(g)<2:continue
   a=None
   if m.get("closed"):
-   u=m.get("outcomePrices")
-   if isinstance(u,str):
-    try:u=json.loads(u)
-    except Exception:u=None
-   if isinstance(u,list)and len(u)>=2:
+   w=m.get("outcomePrices")
+   if isinstance(w,str):
+    try:w=json.loads(w)
+    except Exception:w=None
+   if isinstance(w,list)and len(w)>=2:
     try:
-     if float(u[0])>=.99:a=1
-     elif float(u[1])>=.99:a=0
+     if float(w[0])>=.99:a=1
+     elif float(w[1])>=.99:a=0
     except Exception:pass
-  h=m.get("feeSchedule")if isinstance(m.get("feeSchedule"),dict)else{};e=bool(m.get("feesEnabled",False));o=float(h.get("rate")or.0);j=o if(e and o>.0)else.0;n=float(h.get("exponent")or 1.);t=m.get("negRisk")if m.get("negRisk")is not None else ev.get("negRisk");i=bool(t)if t is not None else None;q.append(WeatherBucket(market_id=str(m.get("id")or""),condition_id=str(m.get("conditionId")or""),label=F,question=str(m.get("question")or F),yes_token=str(f[0]),no_token=str(f[1]),unit=B,low_bound=J,high_bound=I,outcome_yes_resolved=a,fee_rate=j,fee_exponent=n,neg_risk=i,rewards_min_size=float(m.get("rewardsMinSize")or.0),rewards_max_spread=float(m.get("rewardsMaxSpread")or.0)))
- if len(q)<4:return None
- q.sort(key=lambda b:(b.low_bound,b.high_bound))
- if any(b.fee_rate>.0 for b in q):d="fees_enabled"
- return WeatherEventSpec(event_id=str(ev.get("id")or""),slug=str(ev.get("slug")or""),series_slug=y,title=A,icao=c,city=C,lat=H,lon=G,tz_name=s,obs_date=p,metric=g,unit=q[0].unit,fee_type=d,end_date_iso=r,buckets=q)
+  i=m.get("feeSchedule")if isinstance(m.get("feeSchedule"),dict)else{};f=bool(m.get("feesEnabled",False));p=float(i.get("rate")or.0);k=p if(f and p>.0)else.0;o=float(i.get("exponent")or 1.);v=m.get("negRisk")if m.get("negRisk")is not None else ev.get("negRisk");j=bool(v)if v is not None else None;r=str(m.get("questionID")or"").strip();d=None
+  if r.startswith("0x")and len(r)==66:
+   try:d=int(r[-2:],16)
+   except ValueError:d=None
+  s.append(WeatherBucket(market_id=str(m.get("id")or""),condition_id=str(m.get("conditionId")or""),label=H,question=str(m.get("question")or H),yes_token=str(g[0]),no_token=str(g[1]),unit=D,low_bound=L,high_bound=K,outcome_yes_resolved=a,fee_rate=k,fee_exponent=o,neg_risk=j,rewards_min_size=float(m.get("rewardsMinSize")or.0),rewards_max_spread=float(m.get("rewardsMaxSpread")or.0),question_index=d))
+ if len(s)<4:return None
+ s.sort(key=lambda b:(b.low_bound,b.high_bound))
+ if any(b.fee_rate>.0 for b in s):e="fees_enabled"
+ return WeatherEventSpec(event_id=str(ev.get("id")or""),slug=str(ev.get("slug")or""),series_slug=A,title=C,icao=c,city=E,lat=J,lon=I,tz_name=u,obs_date=q,metric=h,unit=s[0].unit,fee_type=e,end_date_iso=t,buckets=s)
 def parse_hko_csv_observations(raw_1min_csv,raw_maxmin_csv,obs_date,tz_name="Asia/Hong_Kong"):
  m=ZoneInfo(tz_name);b=datetime(obs_date.year,obs_date.month,obs_date.day,0,0,tzinfo=m);f=None;a=None;d=None;c=None
  for k in(raw_1min_csv or"").splitlines():
@@ -1149,143 +1196,144 @@ def parse_hko_csv_observations(raw_1min_csv,raw_maxmin_csv,obs_date,tz_name="Asi
  if h is not None:l.append(MetarObservation("HKO",a.astimezone(timezone.utc),a,h,True,f"HKO_1M {h:.1f}C"))
  l.sort(key=lambda o:o.utc_dt);return l
 def fetch_hko_observations_sync(obs_date,tz_name="Asia/Hong_Kong",timeout=7.):
- c="";b="";j={"User-Agent":"DominusWeatherEngine/1.0"}
- try:c=urllib.request.urlopen(urllib.request.Request(HKO_1MIN_CSV_URL,headers=j),timeout=timeout).read().decode("utf-8-sig",errors="ignore")
- except Exception as a:pass
- try:b=urllib.request.urlopen(urllib.request.Request(HKO_MAXMIN_CSV_URL,headers=j),timeout=timeout).read().decode("utf-8-sig",errors="ignore")
- except Exception as a:pass
- e=parse_hko_csv_observations(c,b,obs_date,tz_name)
- if e:return e
+ b="";a="";i={"User-Agent":"DominusWeatherEngine/1.0"}
+ try:b=urllib.request.urlopen(urllib.request.Request(HKO_1MIN_CSV_URL,headers=i),timeout=timeout).read().decode("utf-8-sig",errors="ignore")
+ except Exception:pass
+ try:a=urllib.request.urlopen(urllib.request.Request(HKO_MAXMIN_CSV_URL,headers=i),timeout=timeout).read().decode("utf-8-sig",errors="ignore")
+ except Exception:pass
+ d=parse_hko_csv_observations(b,a,obs_date,tz_name)
+ if d:return d
  try:
-  i=json.loads(urllib.request.urlopen(urllib.request.Request(HKO_RHRREAD_URL,headers=j),timeout=timeout).read().decode("utf-8"));f=i.get("temperature")or{};d=str(f.get("recordTime")or"");h=datetime.fromisoformat(d).astimezone(ZoneInfo(tz_name))if d else datetime.now(ZoneInfo(tz_name))
-  if h.date()==obs_date:
-   for g in f.get("data")or[]:
-    if"Observatory"in str(g.get("place")or""):v=float(g["value"]);return[MetarObservation("HKO",h.astimezone(timezone.utc),h,v,False,f"HKO_RHR {v:.1f}C")]
+  h=json.loads(urllib.request.urlopen(urllib.request.Request(HKO_RHRREAD_URL,headers=i),timeout=timeout).read().decode("utf-8"));e=h.get("temperature")or{};c=str(e.get("recordTime")or"");g=datetime.fromisoformat(c).astimezone(ZoneInfo(tz_name))if c else datetime.now(ZoneInfo(tz_name))
+  if g.date()==obs_date:
+   for f in e.get("data")or[]:
+    if"Observatory"in str(f.get("place")or""):v=float(f["value"]);return[MetarObservation("HKO",g.astimezone(timezone.utc),g,v,False,f"HKO_RHR {v:.1f}C")]
  except Exception:pass
  return[]
 def fetch_metar_observations_sync(icao,obs_date,tz_name,timeout=8.):
  if icao.upper()=="HKO":return fetch_hko_observations_sync(obs_date,tz_name,timeout=timeout)
- y=ZoneInfo(tz_name);f=datetime(obs_date.year,obs_date.month,obs_date.day,0,0,tzinfo=y);h=f+timedelta(days=1);b=h.astimezone(timezone.utc)+timedelta(hours=3);n=datetime.now(timezone.utc);e=min(n,b);k=(n-f.astimezone(timezone.utc)).total_seconds()/86400.;g={}
+ x=ZoneInfo(tz_name);e=datetime(obs_date.year,obs_date.month,obs_date.day,0,0,tzinfo=x);g=e+timedelta(days=1);b=g.astimezone(timezone.utc)+timedelta(hours=3);m=datetime.now(timezone.utc);d=min(m,b);j=(m-e.astimezone(timezone.utc)).total_seconds()/86400.;f={}
  def a(parsed_obs):
-  b=int(parsed_obs.utc_dt.timestamp());a=g.get(b)
-  if(a is None or parsed_obs.is_corrected or(not a.is_corrected and(parsed_obs.has_t_remark or not a.has_t_remark))):g[b]=parsed_obs
- if k<=13.5:
-  u=e.strftime("%Y-%m-%dT%H:%M:%SZ");x=f"{AWC_METAR_URL}?ids={icao.upper()}&format=raw&date={u}&hours=36"
+  y=int(parsed_obs.utc_dt.timestamp());o=f.get(y)
+  if(o is None or parsed_obs.is_corrected or(not o.is_corrected and(parsed_obs.has_t_remark or not o.has_t_remark))):f[y]=parsed_obs
+ if j<=13.5:
+  t=d.strftime("%Y-%m-%dT%H:%M:%SZ");w=f"{AWC_METAR_URL}?ids={icao.upper()}&format=raw&date={t}&hours=36"
   try:
-   q=urllib.request.Request(x,headers={"User-Agent":"DominusWeatherEngine/1.0"});j=urllib.request.urlopen(q,timeout=timeout).read().decode("utf-8",errors="ignore")
-   for v in reversed(j.splitlines()):
-    d=parse_metar_line(v,icao,e,tz_name)
-    if d and d.local_dt.date()==obs_date:a(d)
-  except Exception as c:pass
- if not g:
-  m=f.astimezone(timezone.utc)-timedelta(hours=2);t=h.astimezone(timezone.utc)+timedelta(hours=2);i=icao.upper()[1:]if(len(icao)==4 and icao.upper().startswith("K"))else icao.upper();r=urllib.parse.urlencode({"station":i,"data":"metar","year1":m.year,"month1":m.month,"day1":m.day,"year2":t.year,"month2":t.month,"day2":t.day,"tz":"Etc/UTC","format":"onlycomma","latlon":"no","elev":"no","missing":"M","trace":"T","direct":"no","report_type":["3","4"]},doseq=True)
+   p=urllib.request.Request(w,headers={"User-Agent":"DominusWeatherEngine/1.0"});i=urllib.request.urlopen(p,timeout=timeout).read().decode("utf-8",errors="ignore")
+   for u in reversed(i.splitlines()):
+    c=parse_metar_line(u,icao,d,tz_name)
+    if c and c.local_dt.date()==obs_date:a(c)
+  except Exception:pass
+ if not f:
+  l=e.astimezone(timezone.utc)-timedelta(hours=2);s=g.astimezone(timezone.utc)+timedelta(hours=2);h=icao.upper()[1:]if(len(icao)==4 and icao.upper().startswith("K"))else icao.upper();q=urllib.parse.urlencode({"station":h,"data":"metar","year1":l.year,"month1":l.month,"day1":l.day,"year2":s.year,"month2":s.month,"day2":s.day,"tz":"Etc/UTC","format":"onlycomma","latlon":"no","elev":"no","missing":"M","trace":"T","direct":"no","report_type":["3","4"]},doseq=True)
   try:
-   q=urllib.request.Request(f"{IEM_ASOS_URL}?{r}",headers={"User-Agent":"DominusWeatherEngine/1.0"});l=urllib.request.urlopen(q,timeout=timeout+4.).read().decode("utf-8",errors="ignore")
-   for w in l.splitlines()[1:]:
-    s=w.split(",",2)
-    if len(s)<3:continue
-    try:p=datetime.strptime(s[1].strip(),"%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
+   p=urllib.request.Request(f"{IEM_ASOS_URL}?{q}",headers={"User-Agent":"DominusWeatherEngine/1.0"});k=urllib.request.urlopen(p,timeout=timeout+4.).read().decode("utf-8",errors="ignore")
+   for v in k.splitlines()[1:]:
+    r=v.split(",",2)
+    if len(r)<3:continue
+    try:n=datetime.strptime(r[1].strip(),"%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc)
     except ValueError:continue
-    d=parse_metar_line(s[2],icao,p,tz_name,explicit_utc_dt=p)
-    if d and d.local_dt.date()==obs_date:a(d)
-  except Exception as c:pass
- return sorted(g.values(),key=lambda o:o.utc_dt)
+    c=parse_metar_line(r[2],icao,n,tz_name,explicit_utc_dt=n)
+    if c and c.local_dt.date()==obs_date:a(c)
+  except Exception:pass
+ return sorted(f.values(),key=lambda o:o.utc_dt)
 def compute_weather_probabilities(spec,eval_utc,metars_so_far,ensemble_hourly_c,forecast_sigma_base_c=1.15,bias_decay_tau_hr=6.,taf_extreme_c=None):
- tz=ZoneInfo(spec.tz_name);W=eval_utc.astimezone(tz);F=datetime(spec.obs_date.year,spec.obs_date.month,spec.obs_date.day,0,0,tzinfo=tz);K=F+timedelta(days=1);_a=[o for o in metars_so_far if o.utc_dt<=eval_utc and o.local_dt.date()==spec.obs_date];_b=len(_a)>0;V=_a[-1]if _b else None
- if _b:
-  if spec.metric=="HIGH":e=max(o.temp_c for o in _a)
-  else:e=min(o.temp_c for o in _a)
+ tz=ZoneInfo(spec.tz_name);Y=eval_utc.astimezone(tz);H=datetime(spec.obs_date.year,spec.obs_date.month,spec.obs_date.day,0,0,tzinfo=tz);M=H+timedelta(days=1);_c=[o for o in metars_so_far if o.utc_dt<=eval_utc and o.local_dt.date()==spec.obs_date];_d=len(_c)>0;X=_c[-1]if _d else None;A=any(bool(getattr(o,"is_corrected",False))for o in _c);q=has_metar_oracle_contradiction(_c)
+ if _d:
+  if spec.metric=="HIGH":e=max(o.temp_c for o in _c)
+  else:e=min(o.temp_c for o in _c)
   l=celsius_to_market_int(e,spec.unit)
  else:e=None;l=None
- u=.0;k=bias_decay_tau_hr;i=False;c=False
- if V is not None:
-  J=[o for o in _a if(eval_utc-o.utc_dt).total_seconds()<=12600.][-3:];i=any(o.has_convective_precip for o in _a if(eval_utc-o.utc_dt).total_seconds()<=7200.);N=W.hour+W.minute/60.;s=(spec.metric=="HIGH"and 9.<=N<=16.25 and e is not None and(e-V.temp_c)>=1.2)
-  if ensemble_hourly_c and J:
-   U=[]
-   for _j in J:
-    T=int(round(_j.utc_dt.timestamp()/3600.)*3600);S=ensemble_hourly_c.get(T)
-    if S:R=sum(S)/len(S);U.append(_j.temp_c-R)
-   if U:
-    U.sort()
-    if len(U)==3:B=U[1]
-    else:B=sum(U)/len(U)
-    u=max(-1.5,min(1.5,B))
-    if spec.metric=="HIGH"and B<-.35 and(i or s):c=True;u=max(-.45,B*.2);k=min(bias_decay_tau_hr,1.2)
-  elif i or s:c=spec.metric=="HIGH"
- Q=[];M=max(F,W.replace(minute=0,second=0,microsecond=0)+timedelta(hours=1))
- while M<K:Q.append(int(M.astimezone(timezone.utc).timestamp()));M+=timedelta(hours=1)
- if W<K and not Q:Q.append(int(K.astimezone(timezone.utc).timestamp()))
- m=[len(ensemble_hourly_c[t])for t in Q if t in ensemble_hourly_c and ensemble_hourly_c[t]]
+ x=.0;k=bias_decay_tau_hr;i=False;c=False
+ if X is not None:
+  L=[o for o in _c if(eval_utc-o.utc_dt).total_seconds()<=12600.][-3:];i=any(o.has_convective_precip for o in _c if(eval_utc-o.utc_dt).total_seconds()<=7200.);P=Y.hour+Y.minute/60.;u=(spec.metric=="HIGH"and 9.<=P<=16.25 and e is not None and(e-X.temp_c)>=1.2)
+  if ensemble_hourly_c and L:
+   W=[]
+   for _l in L:
+    V=int(round(_l.utc_dt.timestamp()/3600.)*3600);U=ensemble_hourly_c.get(V)
+    if U:T=sum(U)/len(U);W.append(_l.temp_c-T)
+   if W:
+    W.sort()
+    if len(W)==3:D=W[1]
+    else:D=sum(W)/len(W)
+    x=max(-1.5,min(1.5,D))
+    if spec.metric=="HIGH"and D<-.35 and(i or u):c=True;x=max(-.45,D*.2);k=min(bias_decay_tau_hr,1.2)
+  elif i or u:c=spec.metric=="HIGH"
+ S=[];O=max(H,Y.replace(minute=0,second=0,microsecond=0)+timedelta(hours=1))
+ while O<M:S.append(int(O.astimezone(timezone.utc).timestamp()));O+=timedelta(hours=1)
+ if Y<M and not S:S.append(int(M.astimezone(timezone.utc).timestamp()))
+ m=[len(ensemble_hourly_c[t])for t in S if t in ensemble_hourly_c and ensemble_hourly_c[t]]
  if not m and ensemble_hourly_c:m=[len(v)for v in ensemble_hourly_c.values()if v]
- _i=min(m)if m else 0;_d=[-2.1,-1.5,-1.1,-.75,-.45,-.2,.0,.2,.45,.75,1.1,1.5,2.1];I=[.0 for _ in spec.buckets];f=.0;E=[];D=len(Q)
- if W>=K and l is not None:
-  for _c,b in enumerate(spec.buckets):I[_c]=1. if b.contains_rounded(l)else.0
+ _k=min(m)if m else 0;_f=[-2.1,-1.5,-1.1,-.75,-.45,-.2,.0,.2,.45,.75,1.1,1.5,2.1];K=[.0 for _ in spec.buckets];f=.0;G=[];F=len(S)
+ if Y>=M and l is not None:
+  for _e,b in enumerate(spec.buckets):K[_e]=1. if b.contains_rounded(l)else.0
   f=1.
- elif _i>0 and D>0:
-  P=forecast_sigma_base_c*min(1.,math.sqrt(max(1.,D)/10.))
-  if _i>=15:g=max(.45,.55*P)
-  else:g=max(.75,P)
+ elif _k>0 and F>0:
+  R=forecast_sigma_base_c*min(1.,math.sqrt(max(1.,F)/10.))
+  if _k>=15:g=max(.45,.55*R)
+  else:g=max(.75,R)
   if c:g*=1.45
-  for _h in range(_i):
-   A=[]
-   for _l in Q:
-    _k=ensemble_hourly_c.get(_l)
-    if not _k:continue
-    v=_k[min(_h,len(_k)-1)];_g=max(.0,(_l-eval_utc.timestamp())/3600.);L=u*math.exp(-_g/max(.5,k));A.append(v+L)
-   if not A:continue
-   n=max(A)if spec.metric=="HIGH"else min(A)
+  for _j in range(_k):
+   C=[]
+   for _n in S:
+    _m=ensemble_hourly_c.get(_n)
+    if not _m:continue
+    v=_m[min(_j,len(_m)-1)];_i=max(.0,(_n-eval_utc.timestamp())/3600.);N=x*math.exp(-_i/max(.5,k));C.append(v+N)
+   if not C:continue
+   n=max(C)if spec.metric=="HIGH"else min(C)
    if taf_extreme_c is not None and math.isfinite(float(taf_extreme_c)):n=.85*n+.15*float(taf_extreme_c)
-   E.append(n)
-   for z in _d:
-    w=math.exp(-.5*z*z);Z=n+z*g
-    if e is not None:H=max(e,Z)if spec.metric=="HIGH"else min(e,Z)
-    else:H=Z
-    Y=celsius_to_market_int(H,spec.unit)
-    for _f,b in enumerate(spec.buckets):
-     if b.contains_rounded(Y):I[_f]+=w;break
+   G.append(n)
+   for z in _f:
+    w=math.exp(-.5*z*z);_b=n+z*g
+    if e is not None:J=max(e,_b)if spec.metric=="HIGH"else min(e,_b)
+    else:J=_b
+    _a=celsius_to_market_int(J,spec.unit)
+    for _h,b in enumerate(spec.buckets):
+     if b.contains_rounded(_a):K[_h]+=w;break
     f+=w
- q=.0
- if len(E)>=4:_e=sorted(E);_o=_e[int(.25*(len(_e)-1))];_n=_e[int(.75*(len(_e)-1))];q=max(.0,_n-_o)
- if f<=.0:C=[1./len(spec.buckets)for _ in spec.buckets]
- else:C=[max(.001,min(.998,w/f))for w in I];_m=sum(C);C=[p/_m for p in C]
+ r=.0
+ if len(G)>=4:_g=sorted(G);_q=_g[int(.25*(len(_g)-1))];_p=_g[int(.75*(len(_g)-1))];r=max(.0,_p-_q)
+ if f<=.0:E=[1./len(spec.buckets)for _ in spec.buckets]
+ else:E=[max(.001,min(.998,w/f))for w in K];_o=sum(E);E=[p/_o for p in E]
  a=False;d=.0;h=None;j=.0
- if _b and V is not None and e is not None and l is not None:
-  G=W.hour+W.minute/60.
-  for _c,b in enumerate(spec.buckets):
-   if b.contains_rounded(l):h=_c;j=C[_c];break
+ if _d and X is not None and e is not None and l is not None:
+  I=Y.hour+Y.minute/60.
+  for _e,b in enumerate(spec.buckets):
+   if b.contains_rounded(l):h=_e;j=E[_e];break
   if spec.metric=="HIGH":
-   d=e-V.temp_c;O=17.5 if(i or c)else 15.75;X=(W.date()>spec.obs_date)or(W.date()==spec.obs_date and G>=O)
-   if X and(W.date()>spec.obs_date or d>=.8)and j>=.88:a=True
+   d=e-X.temp_c;Q=17.5 if(i or c)else 15.75;Z=(Y.date()>spec.obs_date)or(Y.date()==spec.obs_date and I>=Q)
+   if Z and(Y.date()>spec.obs_date or d>=.8)and j>=.88:a=True
   else:
-   x=V.temp_c-e;d=x;y=(W.date()>spec.obs_date)or(W.date()==spec.obs_date and G>=22.5);r=(W.date()==spec.obs_date and 9.5<=G<22.5 and x>=2.5 and _i>=15 and bool(E)and min(E)>=(e+2.)and j>=.93)
-   if(y and j>=.9 and(W.date()>spec.obs_date or x>=1.))or r:a=True
- return{"probs":C,"has_obs":_b,"obs_count":len(_a),"latest_temp_c":V.temp_c if V else None,"running_ext_c":e,"running_ext_int":l,"bias_c":round(u,3),"convective_cold_pool":c,"ensemble_member_count":_i,"peak_iqr_c":round(q,3),"rem_hours_count":D,"is_solar_lock":a,"cooling_cushion_c":round(d,2),"locked_bucket_idx":h,"p_locked_bucket":round(j,4)}
+   y=X.temp_c-e;d=y;B=(Y.date()>spec.obs_date)or(Y.date()==spec.obs_date and I>=22.5);s=(Y.date()==spec.obs_date and 9.5<=I<22.5 and y>=2.5 and _k>=15 and bool(G)and min(G)>=(e+2.)and j>=.93)
+   if((B and j>=.9 and(Y.date()>spec.obs_date or y>=1.))or s):a=True
+  if A or q:a=False
+ return{"probs":E,"has_obs":_d,"obs_count":len(_c),"has_corrected_obs":A,"has_oracle_contradiction":q,"latest_temp_c":X.temp_c if X else None,"running_ext_c":e,"running_ext_int":l,"bias_c":round(x,3),"convective_cold_pool":c,"ensemble_member_count":_k,"peak_iqr_c":round(r,3),"rem_hours_count":F,"is_solar_lock":a,"cooling_cushion_c":round(d,2),"locked_bucket_idx":h,"p_locked_bucket":round(j,4)}
 def fetch_live_ensemble_hourly_sync(lat,lon,timeout=8.):
  c={};j=(f"{OPEN_METEO_ENSEMBLE_URL}?latitude={lat:.4f}&longitude={lon:.4f}&hourly=temperature_2m&models=icon_seamless,gfs_seamless&past_days=1&forecast_days=3&timeformat=unixtime")
  for i in range(2):
   try:
-   n=urllib.request.Request(j,headers={"User-Agent":"DominusWeatherEngine/1.0"});x=json.loads(urllib.request.urlopen(n,timeout=timeout).read().decode("utf-8"));q=x.get("hourly")or{};s=q.get("time")or[];f=sorted(k for k in q.keys()if k.startswith("temperature_2m"));b=[]
+   m=urllib.request.Request(j,headers={"User-Agent":"DominusWeatherEngine/1.0"});w=json.loads(urllib.request.urlopen(m,timeout=timeout).read().decode("utf-8"));p=w.get("hourly")or{};r=p.get("time")or[];f=sorted(k for k in p.keys()if k.startswith("temperature_2m"));b=[]
    for k in f:
-    y=q.get(k)or[]
-    if len(y)<len(s):continue
-    p=[];d=None;a=0
-    for r in y[:len(s)]:
-     if r is not None:d=float(r);p.append(d)
-     elif d is not None:a+=1;p.append(d)
-     else:a=len(s);break
-    if len(p)==len(s)and a<=max(2,len(s)//10):b.append(p)
-   for m,t in enumerate(s):
-    w=[z[m]for z in b]
-    if w:c[int(t)]=w
+    x=p.get(k)or[]
+    if len(x)<len(r):continue
+    o=[];d=None;a=0
+    for q in x[:len(r)]:
+     if q is not None:d=float(q);o.append(d)
+     elif d is not None:a+=1;o.append(d)
+     else:a=len(r);break
+    if len(o)==len(r)and a<=max(2,len(r)//10):b.append(o)
+   for l,s in enumerate(r):
+    u=[y[l]for y in b]
+    if u:c[int(s)]=u
    if c:break
-  except Exception as l:
+  except Exception:
    if i==0:time.sleep(.45)
    else:pass
- o=f"{OPEN_METEO_FORECAST_URL}?latitude={lat:.4f}&longitude={lon:.4f}&hourly=temperature_2m&models=ecmwf_ifs025&past_days=1&forecast_days=3&timeformat=unixtime"
+ n=f"{OPEN_METEO_FORECAST_URL}?latitude={lat:.4f}&longitude={lon:.4f}&hourly=temperature_2m&models=ecmwf_ifs025&past_days=1&forecast_days=3&timeformat=unixtime"
  try:
-  n=urllib.request.Request(o,headers={"User-Agent":"DominusWeatherEngine/1.0"});h=json.loads(urllib.request.urlopen(n,timeout=timeout).read().decode("utf-8"));u=h.get("hourly")or{};e=u.get("time")or[];g=u.get("temperature_2m")or u.get("temperature_2m_ecmwf_ifs025")or[]
-  for m,t in enumerate(e):
-   if m<len(g)and g[m]is not None:v=float(g[m]);c.setdefault(int(t),[]).extend([v]*8)
+  m=urllib.request.Request(n,headers={"User-Agent":"DominusWeatherEngine/1.0"});h=json.loads(urllib.request.urlopen(m,timeout=timeout).read().decode("utf-8"));t=h.get("hourly")or{};e=t.get("time")or[];g=t.get("temperature_2m")or t.get("temperature_2m_ecmwf_ifs025")or[]
+  for l,s in enumerate(e):
+   if l<len(g)and g[l]is not None:v=float(g[l]);c.setdefault(int(s),[]).extend([v]*8)
  except Exception:pass
  return c
 def fetch_historical_nwp_hourly_sync(lat,lon,start_date,end_date,timeout=10.):
@@ -1361,18 +1409,17 @@ def evaluate_weather_event_slate(spec,probs,bucket_books,target_budget_usd=10.,m
   if f<=.88 and e>=.72 and d>=.09 and k>=5.:D=max(5.,min(k,math.floor(float(target_budget_usd)/max(.1,f))));c={"mode":"CONSTRAINED_SUBSET_BASKET","sum_asks":round(f,5),"combined_prob":round(e,5),"expected_edge_per_set":round(d,5),"equal_shares":float(D),"total_cost_usd":round(D*f,4),"max_loss_usd":round(D*f,4),"legs":l}
  return{"partition_verified":h,"quoted_buckets":len(I),"total_buckets":len(spec.buckets),"full_slate_arb":a,"subset_basket":c}
 # ======================================================================================
-# [06/21] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
+# [06/20] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
 # PURPOSE: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import re;import urllib.request;from dataclasses import dataclass;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
+import json;import logging;import math;import re;import urllib.request;from dataclasses import dataclass;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
 def _fast_norm_cdf(x):return.5*(1.+math.erf(x*_INV_SQRT2))
 try:from src.polymarket_research.deribit_svi_surface import(GLOBAL_SVI_ENGINE,SVIParams,scale_svi_sticky_delta)
 except Exception:GLOBAL_SVI_ENGINE=None;SVIParams=Any;scale_svi_sticky_delta=None
 logger=logging.getLogger("BarrierOneTouchEngine");GAMMA_API_URL="https://gamma-api.polymarket.com";BINANCE_API_URL="https://api.binance.com";BINANCE_FAPI_URL="https://fapi.binance.com";HIT_SERIES=[("BTC","DAILY","bitcoin-hit-price-daily"),("BTC","WEEKLY","bitcoin-hit-price-weekly"),("BTC","MONTHLY","bitcoin-hit-price-monthly"),("ETH","DAILY","ethereum-hit-price-daily"),("ETH","WEEKLY","ethereum-hit-price-weekly"),("ETH","MONTHLY","ethereum-hit-price-monthly"),("SOL","DAILY","solana-hit-price-daily"),("SOL","WEEKLY","solana-hit-price-weekly"),("SOL","MONTHLY","solana-hit-price-monthly"),("XRP","DAILY","xrp-hit-price-daily"),("XRP","WEEKLY","xrp-hit-price-weekly"),("XRP","MONTHLY","xrp-hit-price-monthly"),("BNB","MONTHLY","bnb-hit-price-monthly"),("DOGE","MONTHLY","dogecoin-hit-price-monthly"),("HYPE","MONTHLY","hyperliquid-hit-price-monthly")];ASSET_BINANCE_SYMBOL={"BTC":"BTCUSDT","ETH":"ETHUSDT","SOL":"SOLUSDT","XRP":"XRPUSDT","BNB":"BNBUSDT","DOGE":"DOGEUSDT","HYPE":"HYPEUSDT"};ASSET_BINANCE_FUTURES_ONLY=frozenset({"HYPE"});ASSET_VOL_MULT_VS_BTC={"BTC":1.,"ETH":1.28,"SOL":1.75,"XRP":1.85,"BNB":1.45,"DOGE":2.1,"HYPE":2.35}
 @dataclass
-class BarrierRungSpec:event_id:str;series_slug:str;horizon_group:str;asset:str;market_id:str;condition_id:str;question:str;group_label:str;strike:float;direction:str;start_ts:float;end_ts:float;yes_token:str;no_token:str;fee_rate=.07;resolved_yes=None;fee_exponent=1.
+class BarrierRungSpec:event_id:str;series_slug:str;horizon_group:str;asset:str;market_id:str;condition_id:str;question:str;group_label:str;strike:float;direction:str;start_ts:float;end_ts:float;yes_token:str;no_token:str;fee_rate:float=.07;resolved_yes:Optional[int]=None;fee_exponent:float=1.
 _EXPLICIT_DOLLAR_STRIKE_RE=re.compile(r"\$\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\b");_ANCHORED_BARRIER_STRIKE_RE=re.compile(r"(?:↑|↓|\b(?:reach|hit|touch|dip(?:\s+to)?|drop(?:\s+to)?|above|below|over|under)\b)\s*\$?\s*" r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\b",re.IGNORECASE)
 def parse_strike_from_text(question,group_label=""):
  for d in(_EXPLICIT_DOLLAR_STRIKE_RE,_ANCHORED_BARRIER_STRIKE_RE):
@@ -1448,9 +1495,9 @@ def first_passage_touch_prob(spot,strike,tte_seconds,iv_annual,direction,wick_vo
  if tte_seconds<=1.:return.0
  i=tte_seconds/(365.25*86400.);b=abs(math.log(strike/spot));h=max(-.3,min(.4,float(forward_drift_annual or.0)))
  def a(sig):
-  d=max(.08,min(4.,sig));c=d*math.sqrt(i)
-  if c<=1e-8:return.0
-  g=(h-.5*(d**2))if direction=="UP"else(-h+.5*(d**2));f=(-b+g*i)/c;e=(-b-g*i)/c;a=max(-60.,min(60.,(2.*g*b)/(d**2)));p=_fast_norm_cdf(f)+math.exp(a)*_fast_norm_cdf(e);return max(1e-4,min(.9999,p))
+  m=max(.08,min(4.,sig));l=m*math.sqrt(i)
+  if l<=1e-8:return.0
+  q=(h-.5*(m**2))if direction=="UP"else(-h+.5*(m**2));o=(-b+q*i)/l;n=(-b-q*i)/l;k=max(-60.,min(60.,(2.*q*b)/(m**2)));p=_fast_norm_cdf(o)+math.exp(k)*_fast_norm_cdf(n);return max(1e-4,min(.9999,p))
  e=iv_annual*wick_vol_multiplier;d=a(e);j=a(e*1.65);g=max(.5,min(3.5,float(realized_vol_ratio or 1.)))**1.5;c=min(.35,max(.02,float(jump_tail_blend)*g))if abs(realized_vol_ratio-1.)>1e-6 else float(jump_tail_blend);f=(1.-c)*d+c*j;return max(1e-4,min(.9999,f))
 def evaluate_barrier_no_net_ev(p_touch,ask_no,fee_rate=.07,min_net_ev_per_share=.035,max_loss_to_gain_ratio=9.):g=max(1e-4,min(.9999,1.-float(p_touch)));h=max(.01,min(.99,float(ask_no)));f=min(.5,max(.0,float(fee_rate)*(1.-h)))if float(fee_rate)>.0 else.0;d=h/(1.-f)if f>.0 else h;b=max(1e-6,1.-d);e=g-d;a=d/b;c=bool(e>=min_net_ev_per_share and a<=max_loss_to_gain_ratio);return{"eligible":c,"p_no":round(g,5),"eff_cost_no":round(d,5),"ev_net_per_share":round(e,5),"loss_to_gain_ratio":round(a,3)}
 def get_wing_implied_vol(asset,spot,strike,tte_seconds,dvol_annual_override=None):
@@ -1504,12 +1551,11 @@ def fetch_binance_window_extremes_sync(asset,start_ts,end_ts,interval="1m",timeo
   h=max(float(r[2])for r in d);g=min(float(r[3])for r in d);a=max(d,key=lambda r:int(r[6]));f=float(a[4]);return h,g,f
  except Exception:return None
 # ======================================================================================
-# [07/21] MODULE: src/polymarket_research/multistrike_svi_scalper.py
+# [07/20] MODULE: src/polymarket_research/multistrike_svi_scalper.py
 # PURPOSE: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import re;from dataclasses import dataclass;from datetime import datetime;from typing import Any,Dict,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
+import json;import logging;import math;import re;from dataclasses import dataclass;from datetime import datetime;from typing import Any,Dict,List,Optional,Tuple;_INV_SQRT2=.7071067811865475
 def _fast_norm_cdf(x):return.5*(1.+math.erf(x*_INV_SQRT2))
 def _fast_bs_call(F,K,T,sigma):
  if T<=.0 or sigma<=.0 or K<=.0 or F<=.0:return max(.0,F-K)
@@ -1519,7 +1565,7 @@ try:from src.polymarket_research.deribit_svi_surface import(GLOBAL_SVI_ENGINE,SV
 except Exception:GLOBAL_SVI_ENGINE=None;SVIParams=Any;compute_breeden_litzenberger_digital=None;enforce_monotone_ladder_probabilities=None
 logger=logging.getLogger("MultiStrikeSVIScalper");STRIKE_SERIES=[("BTC","btc-multi-strikes-weekly"),("ETH","ethereum-multi-strikes-weekly"),("SOL","solana-multi-strikes-weekly"),("XRP","xrp-multi-strikes-weekly")];ASSET_VOL_MULT_VS_BTC={"BTC":1.,"ETH":1.28,"SOL":1.75,"XRP":1.85}
 @dataclass
-class StrikeRungSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;question:str;strike:float;is_downward:bool;end_ts:float;yes_token:str;no_token:str;fee_rate=.07;resolved_yes=None
+class StrikeRungSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;question:str;strike:float;is_downward:bool;end_ts:float;yes_token:str;no_token:str;fee_rate:float=.07;resolved_yes:Optional[int]=None
 _EXPLICIT_DOLLAR_RE=re.compile(r"\$\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\b");_ANCHORED_STRIKE_RE=re.compile(r"\b(?:above|below|over|under|less than|greater than|higher than|lower than)\s+\$?\s*" r"([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\b",re.IGNORECASE);_CLEAN_LABEL_STRIKE_RE=re.compile(r"^\s*[↑↓><]?\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s*$")
 def _extract_threshold_strike(q,gl):
  for d,c in((_EXPLICIT_DOLLAR_RE,q),(_EXPLICIT_DOLLAR_RE,gl),(_ANCHORED_STRIKE_RE,q),(_CLEAN_LABEL_STRIKE_RE,gl)):
@@ -1597,9 +1643,9 @@ def evaluate_coherent_strike_ladder(asset,spot,rungs,tte_seconds,now_ts=None):
  return{"by_market_id":a,"strikes":d["strikes"],"probs":d["probs"],"interval_probs":d["interval_probs"],"max_adjustment":d["max_adjustment"]}
 NEGRISK_SERIES=[("BTC","bitcoin-neg-risk-weekly"),("ETH","ethereum-neg-risk-weekly"),("SOL","solana-neg-risk-weekly"),("XRP","xrp-neg-risk-weekly")];DAILY_UPDOWN_SERIES=[("BTC","btc-up-or-down-daily"),("ETH","eth-up-or-down-daily"),("SOL","sol-up-or-down-daily"),("XRP","xrp-up-or-down-daily"),("BNB","bnb-up-or-down-daily"),("DOGE","dogecoin-up-or-down-daily")];ZERO_FEE_PYTH_DAILY_SERIES=[("EURUSD","eurusd-daily-up-or-down"),("GBPUSD","gbpusd-daily-up-or-down"),("USDJPY","usdjpy-daily-up-or-down"),("USDCHF","usdchf-daily-up-or-down"),("DXY","dxy-daily-up-or-down"),("GOLD","gold-daily-up-or-down"),("SILVER","silver-daily-up-or-down"),("OIL","oil-daily-up-or-down")]
 @dataclass
-class NegRiskBracketSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;question:str;bracket_kind:str;k_low:Optional[float];k_high:Optional[float];end_ts:float;yes_token:str;no_token:str;fee_rate=.07;resolution_source=""
+class NegRiskBracketSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;question:str;bracket_kind:str;k_low:Optional[float];k_high:Optional[float];end_ts:float;yes_token:str;no_token:str;fee_rate:float=.07;resolution_source:str=""
 @dataclass
-class DailyUpDownSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;start_ts:float;end_ts:float;up_token:str;down_token:str;fee_rate=.07;resolution_source=""
+class DailyUpDownSpec:event_id:str;series_slug:str;asset:str;title:str;market_id:str;condition_id:str;start_ts:float;end_ts:float;up_token:str;down_token:str;fee_rate:float=.07;resolution_source:str=""
 _RANGE_LABEL_RE=re.compile(r"^\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s*[-–—]\s*" r"\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s*$");_BETWEEN_Q_RE=re.compile(r"\bbetween\s+\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s+and\s+" r"\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\b",re.IGNORECASE);_LOWER_TAIL_LABEL_RE=re.compile(r"^\s*<\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s*$");_UPPER_TAIL_LABEL_RE=re.compile(r"^\s*>\s*\$?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.[0-9]+)?)\s*([kK])?\s*$")
 def _num_with_k(num_s,k_s):
  a=float(num_s.replace(",",""))
@@ -1677,12 +1723,16 @@ def parse_daily_updown_event(ev,asset,series_slug):
   if"UP"in h and"DOWN"in h:c=h.index("UP");b=h.index("DOWN")
  e=m.get("feeSchedule")or{};g=float(e.get("rate",.07)if m.get("feesEnabled",True)else.0);return DailyUpDownSpec(event_id=str(ev.get("id")or""),series_slug=series_slug,asset=asset.upper(),title=str(m.get("question")or ev.get("title")or""),market_id=str(m.get("id")or""),condition_id=str(m.get("conditionId")or""),start_ts=i,end_ts=k,up_token=str(d[c]),down_token=str(d[b]),fee_rate=g,resolution_source=str(m.get("resolutionSource")or"").strip().lower())
 # ======================================================================================
-# [08/21] MODULE: src/polymarket_research/same_oracle_dominance_box.py
+# [08/20] MODULE: src/polymarket_research/same_oracle_dominance_box.py
 # PURPOSE: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;from dataclasses import dataclass;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;CORE_LIVE_DOMINANCE_ASSETS=("BTC","ETH","SOL","XRP");EXPANSION_DOMINANCE_ASSETS=("BNB","DOGE","HYPE");DOMINANCE_ASSETS=CORE_LIVE_DOMINANCE_ASSETS+EXPANSION_DOMINANCE_ASSETS;DOMINANCE_SERIES_SLUGS={"BTC":{"4h":"btc-up-or-down-4h","15m":"btc-up-or-down-15m","5m":"btc-up-or-down-5m"},"ETH":{"4h":"eth-up-or-down-4h","15m":"eth-up-or-down-15m","5m":"eth-up-or-down-5m"},"SOL":{"4h":"sol-up-or-down-4h","15m":"sol-up-or-down-15m","5m":"sol-up-or-down-5m"},"XRP":{"4h":"xrp-up-or-down-4h","15m":"xrp-up-or-down-15m","5m":"xrp-up-or-down-5m"},"BNB":{"4h":"bnb-up-or-down-4h","15m":"bnb-up-or-down-15m","5m":"bnb-up-or-down-5m"},"DOGE":{"4h":"doge-up-or-down-4h","15m":"doge-up-or-down-15m","5m":"doge-up-or-down-5m"},"HYPE":{"4h":"hype-up-or-down-4h","15m":"hype-up-or-down-15m","5m":"hype-up-or-down-5m"}};METAL_DOMINANCE_ASSETS=("XAU","XAG");METAL_DOMINANCE_SERIES_SLUGS={"XAU":{"1h":"gold-up-or-down-1h","15m":"gold-up-or-down-15m"},"XAG":{"1h":"silver-up-or-down-1h","15m":"silver-up-or-down-15m"}};EMPIRICAL_BOX_ASSET_CAPS_USD={"BTC":150.,"ETH":75.,"SOL":22.,"XRP":22.,"BNB":22.,"HYPE":15.,"DOGE":15.,"XAU":22.,"XAG":22.};MIN_CORRIDOR_BPS_BY_ASSET={"BTC":3.,"ETH":3.,"SOL":3.,"XRP":3.,"BNB":5.,"DOGE":5.,"HYPE":5.,"XAU":4.,"XAG":4.};POLYMARKET_CRYPTO_PRICE_URL="https://polymarket.com/api/crypto/crypto-price";GAMMA_EVENTS_URL="https://gamma-api.polymarket.com/events";HORIZON_TO_VARIANT={"4h":"fourhour","1h":"hourly","15m":"fifteen","5m":"fiveminute"};HORIZON_TO_DURATION_SEC={"4h":14400.,"1h":3600.,"15m":9e2,"5m":3e2}
+import json;import math;from dataclasses import dataclass;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;CORE_LIVE_DOMINANCE_ASSETS=("BTC","ETH","SOL","XRP");EXPANSION_DOMINANCE_ASSETS=("BNB","DOGE","HYPE","ZEC");DOMINANCE_ASSETS=CORE_LIVE_DOMINANCE_ASSETS+EXPANSION_DOMINANCE_ASSETS;DOMINANCE_SERIES_SLUGS={"BTC":{"4h":"btc-up-or-down-4h","15m":"btc-up-or-down-15m","5m":"btc-up-or-down-5m"},"ETH":{"4h":"eth-up-or-down-4h","15m":"eth-up-or-down-15m","5m":"eth-up-or-down-5m"},"SOL":{"4h":"sol-up-or-down-4h","15m":"sol-up-or-down-15m","5m":"sol-up-or-down-5m"},"XRP":{"4h":"xrp-up-or-down-4h","15m":"xrp-up-or-down-15m","5m":"xrp-up-or-down-5m"},"BNB":{"4h":"bnb-up-or-down-4h","15m":"bnb-up-or-down-15m","5m":"bnb-up-or-down-5m"},"DOGE":{"4h":"doge-up-or-down-4h","15m":"doge-up-or-down-15m","5m":"doge-up-or-down-5m"},"HYPE":{"4h":"hype-up-or-down-4h","15m":"hype-up-or-down-15m","5m":"hype-up-or-down-5m"},"ZEC":{"4h":"zec-up-or-down-4h","15m":"zec-up-or-down-15m","5m":"zec-up-or-down-5m"}};METAL_DOMINANCE_ASSETS=("XAU","XAG");METAL_DOMINANCE_SERIES_SLUGS={"XAU":{"1h":"gold-up-or-down-1h","15m":"gold-up-or-down-15m"},"XAG":{"1h":"silver-up-or-down-1h","15m":"silver-up-or-down-15m"}};EMPIRICAL_BOX_ASSET_CAPS_USD={"BTC":150.,"ETH":75.,"SOL":22.,"XRP":22.,"BNB":22.,"HYPE":15.,"DOGE":15.,"ZEC":10.,"XAU":22.,"XAG":22.};MIN_CORRIDOR_BPS_BY_ASSET={"BTC":3.,"ETH":3.,"SOL":3.,"XRP":3.,"BNB":5.,"DOGE":5.,"HYPE":5.,"ZEC":6.,"XAU":4.,"XAG":4.}
+def build_deterministic_updown_event_slug(asset,horizon,window_end_ts):
+ e=HORIZON_TO_DURATION_SEC.get(str(horizon or"").strip().lower());d=str(asset or"").strip().upper();b={"BTC":"btc","ETH":"eth","SOL":"sol","XRP":"xrp","BNB":"bnb","DOGE":"doge","HYPE":"hype","ZEC":"zec"};c=b.get(d)
+ if not e or not c or float(window_end_ts or.0)<=e:return None
+ a=int(round(float(window_end_ts)-float(e)));return f"{c}-updown-{str(horizon).strip().lower()}-{a}"
+POLYMARKET_CRYPTO_PRICE_URL="https://polymarket.com/api/crypto/crypto-price";GAMMA_EVENTS_URL="https://gamma-api.polymarket.com/events";HORIZON_TO_VARIANT={"4h":"fourhour","1h":"hourly","15m":"fifteen","5m":"fiveminute"};HORIZON_TO_DURATION_SEC={"4h":14400.,"1h":3600.,"15m":9e2,"5m":3e2}
 @dataclass(frozen=True)
 class TwapCandleMarketSpec:asset:str;horizon:str;market_id:str;condition_id:str;title:str;start_iso:str;end_iso:str;start_ts:float;end_ts:float;up_token:str;down_token:str;fee_rate:float;fee_exponent:float;neg_risk:bool;twap_lookback_sec:int;resolution_source:str
 def _parse_iso_ts(iso_str):
@@ -1848,7 +1898,7 @@ def walk_equal_shares_dominance_box(asks_a_raw,asks_b_raw,target_budget_usd,fee_
   i=G;v=_walk_exact_shares(y,i,fee_rate_a,fee_exponent_a);u=_walk_exact_shares(x,i,fee_rate_b,fee_exponent_b)
   if v is None or u is None:return{"filled":False,"reason":"WALK_TRIM_FAILED"}
   e=v["spent_usd"]+u["spent_usd"];f=v["fee_usd"]+u["fee_usd"];d=e+f;c=d/float(i)
- def a(wa_d,wb_d):b,a=float(wa_d["worst_px"]),float(wb_d["worst_px"]);return round(_net_unit_cost_buy(b,fee_rate_a,fee_exponent_a)+_net_unit_cost_buy(a,fee_rate_b,fee_exponent_b),6)
+ def a(wa_d,wb_d):V,U=float(wa_d["worst_px"]),float(wb_d["worst_px"]);return round(_net_unit_cost_buy(V,fee_rate_a,fee_exponent_a)+_net_unit_cost_buy(U,fee_rate_b,fee_exponent_b),6)
  if a(v,u)>max_box_cost_net+1e-6:
   P=max(5,int(min_shares));F=set()
   for w in(y,x):
@@ -1866,14 +1916,14 @@ def walk_equal_shares_dominance_box(asks_a_raw,asks_b_raw,target_budget_usd,fee_
   if not l:return{"filled":False,"reason":"WORST_LIMIT_COST_ABOVE_CAP","best_a":round(I,4),"best_b":round(H,4),"box_cost_net":round(c,5),"worst_limit_cost_net":a(v,u),"l1_box_cost_net":round(h,5),"avail_pair_shares":m}
  O=float(v.get("share_haircut")or.0);N=float(u.get("share_haircut")or.0);A=max(O,N);q=math.ceil((float(i)/max(1e-6,1.-O))*1e2-1e-9)/1e2;p=math.ceil((float(i)/max(1e-6,1.-N))*1e2-1e-9)/1e2
  def b(asks_cap,req_sh,lim_px):
-  a=req_sh;b=.0
-  for e,d in asks_cap:
-   if e>lim_px+1e-9:break
-   c=min(a,d)
-   if c>.0:
-    b+=c*e;a-=c
-    if a<=1e-8:return True,b
-  return False,b
+  U=req_sh;V=.0
+  for Y,X in asks_cap:
+   if Y>lim_px+1e-9:break
+   W=min(U,X)
+   if W>.0:
+    V+=W*Y;U-=W
+    if U<=1e-8:return True,V
+  return False,V
  M,L=b(y,q,float(v["worst_px"]));K,J=b(x,p,float(u["worst_px"]))
  if M and K and(L+J)<=float(target_budget_usd)*1.02+1e-6:g=float(i);k=q;j=p
  else:g=math.floor(float(i)*(1.-A)*1e2+1e-9)/1e2;k=min(float(i),math.ceil((g/max(1e-6,1.-O))*1e2-1e-9)/1e2);j=min(float(i),math.ceil((g/max(1e-6,1.-N))*1e2-1e-9)/1e2)
@@ -1917,12 +1967,11 @@ def walk_equal_shares_multi_leg_box(legs_spec,target_budget_usd,guaranteed_payou
  if a>max_bundle_cost_net:return{"filled":False,"reason":"BUNDLE_COST_ABOVE_CAP","bundle_cost_net":round(a,5),"l1_bundle_cost_net":round(b,5)}
  g=guaranteed_payout_per_bundle-a;h=round(min(v)*sum(n),2);return{"filled":True,"shares":int(o),"best_ask":round(sum(n),4),"vwap":round(d/float(o),5),"eff_px":round(a,5),"box_cost_net":round(a,5),"guaranteed_payout_per_bundle":round(guaranteed_payout_per_bundle,4),"riskless_floor_per_pair":round(g,5),"guaranteed_min_profit_usd":round(float(o)*g,4),"spent_usd":round(d,4),"fee_usd":round(e,4),"l1_usd":h,"avail_bundle_shares":i,"leg_walks":l}
 # ======================================================================================
-# [09/21] MODULE: src/polymarket_research/exact_twap_lock_engine.py
+# [09/20] MODULE: src/polymarket_research/exact_twap_lock_engine.py
 # PURPOSE: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;import os;from pathlib import Path;from typing import Any,Dict,List,Optional,Sequence,Tuple;DEFAULT_ANNUAL_IV_FLOORS={"BTC":.55,"ETH":.7,"SOL":.9,"XRP":.95,"BNB":.85,"DOGE":1.15,"HYPE":1.35};SECONDS_PER_YEAR=365.25*86400.;SHM_DIR=Path(os.getenv("PM_FAST_TICK_DIR","/dev/shm"))
+import json;import math;import os;from pathlib import Path;from typing import Any,Dict,List,Optional,Sequence,Tuple;DEFAULT_ANNUAL_IV_FLOORS={"BTC":.55,"ETH":.7,"SOL":.9,"XRP":.95,"BNB":.85,"DOGE":1.15,"ZEC":1.25,"HYPE":1.35};SECONDS_PER_YEAR=365.25*86400.;SHM_DIR=Path(os.getenv("PM_FAST_TICK_DIR","/dev/shm"))
 def student_t_df4_cdf(z):
  if not math.isfinite(z):return.5
  b=z*z;s=math.sqrt(4.+b);a=.5+(z/(2.*s))*(1.+2./(4.+b));return max(.0,min(1.,a))
@@ -1980,15 +2029,14 @@ def compute_exact_twap_lock_probability(*,asset,open_price,current_usd_spot,rem_
  if e<=.0:return{"eligible":False,"reason":"ZERO_SIGMA"}
  F=abs(r)/e;E=student_t_df5_cdf(F);m=(abs(r)/open_price)*1e4;J=.9995 if authoritative_chainlink_ws else.996;return{"eligible":True,"side":L,"open_price":open_price,"current_usd_spot":round(current_usd_spot,6),"banked_mean":round(a,6),"mu_twap":round(z,6),"eff_alpha":round(c,4),"rem_seconds":round(rem_seconds,2),"sigma_total_usd":round(e,6),"z_lock":round(F,4),"p_lock":round(min(J,E),4),"cushion_bps":round(m,2),"basis_bps_floor":o,"samples_in_window":len(t)}
 # ======================================================================================
-# [10/21] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
+# [10/20] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
 # PURPOSE: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import re;import time;import urllib.parse;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import(detect_barrier_monotonicity_boxes,first_passage_touch_prob);logger=logging.getLogger("TradFiSportsZeroFee")
+import json;import logging;import math;import re;import time;import urllib.parse;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import(detect_barrier_monotonicity_boxes,first_passage_touch_prob);logger=logging.getLogger("TradFiSportsZeroFee")
 try:NY_TZ=ZoneInfo("America/New_York")
 except Exception:NY_TZ=timezone(timedelta(hours=-4))
-PYTH_ASSET_CONFIG={"WTI":("CL=F","CME_23H",True,.0045,.32),"NG":("NG=F","CME_23H",True,.006,.48),"GC":("GC=F","CME_23H",True,.002,.2),"SI":("SI=F","CME_23H",True,.003,.32),"XAUUSD":("GC=F","CME_23H",False,.015,.2),"XAGUSD":("SI=F","CME_23H",False,.02,.32),"SPY":("SPY","EQUITY_RTH",True,.0015,.18),"NVDA":("NVDA","EQUITY_RTH",True,.0015,.42),"AMZN":("AMZN","EQUITY_RTH",True,.0015,.34),"GOOGL":("GOOGL","EQUITY_RTH",True,.0015,.34),"MSFT":("MSFT","EQUITY_RTH",True,.0015,.3),"AAPL":("AAPL","EQUITY_RTH",True,.0015,.28),"TSLA":("TSLA","EQUITY_RTH",True,.0015,.52),"COIN":("COIN","EQUITY_RTH",True,.002,.65),"HOOD":("HOOD","EQUITY_RTH",True,.002,.58),"PLTR":("PLTR","EQUITY_RTH",True,.002,.55)};PYTH_HIT_SERIES=(("WTI","MONTH","crude-oil-cl-hit"),("WTI","WEEK","wti-crude-oil-hit-price-weekly"),("NG","WEEK","natural-gas-hit-price-weekly"),("XAUUSD","MONTH","xauusd-hit-month"),("XAUUSD","WEEK","gold-hit-price-weekly"),("GC","MONTH","what-will-gold-gc-hit"),("XAGUSD","MONTH","xagusd-hit-month"),("XAGUSD","WEEK","silver-hit-price-weekly"),("SI","MONTH","what-will-silver-si-hit"),("SPY","MONTH","spy-hit-month"),("SPY","WEEK","spy-hit-price-weekly"),("NVDA","MONTH","nvidia-hit-price-monthly"),("NVDA","WEEK","nvidia-hit-price-weekly"),("AMZN","WEEK","amazon-hit-price-weekly"),("GOOGL","WEEK","google-hit-price-weekly"),("MSFT","WEEK","microsoft-hit-price-weekly"),("AAPL","WEEK","apple-hit-price-weekly"),("TSLA","WEEK","tesla-hit-price-weekly"),("COIN","MONTH","coin-hit-month"),("HOOD","MONTH","hood-hit-month"),("PLTR","WEEK","palantir-hit-price-weekly"));PYTH_CLOSE_SERIES=(("SPY","spy-daily-close-uo"),("WTI","wti-daily-close-uo"),("MSFT","msft-multi-strikes-weekly"),("NVDA","nvda-multi-strikes-weekly"),("AAPL","aapl-multi-strikes-weekly"),("TSLA","tsla-multi-strikes-weekly"));NBA_SERIES_SLUGS=("nba-2026",);MULTI_SPORT_CORRIDOR_SERIES=(("NBA","nba-2026"),("NFL","nfl-2026"),("CFB","cfb-2026"),("NHL","nhl-2026"));ZERO_FEE_NEGRISK_SERIES=("elon-tweets","elon-tweets-48h","trump-truth-social","fomc","fed-3-parlay","bank-of-japan","bank-of-canada-decision","reserve-bank-of-australia-decision","reserve-bank-of-new-zealand-decision","us-gas-price-daily","best-ai-company","chinese-ai-1");_STRIKE_PRICE_RE=re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)");_SPREAD_FAV_RE=re.compile(r"Spread:\s*(.+?)\s*\(\s*([-+]?\d+(?:\.\d+)?)\s*\)",re.IGNORECASE);_FEE_TYPE_FALLBACK_RATES={"sports_fees_nfl_cfb_oct26":(.03,1.),"sports_fees_v2":(.03,1.),"sports_fees_v3":(.05,1.),"crypto_fees_v2":(.07,1.),"crypto_15_min":(.072,1.),"politics_fees":(.04,1.),"weather_fees":(.05,1.),"culture_fees":(.05,1.),"economics_fees":(.05,1.),"finance_prices_fees":(.04,1.),"tech_fees":(.04,1.),"mentions_fees":(.05,1.),"general_fees":(.04,1.)}
+PYTH_ASSET_CONFIG={"WTI":("CL=F","CME_23H",True,.0045,.32),"NG":("NG=F","CME_23H",True,.006,.48),"GC":("GC=F","CME_23H",True,.002,.2),"SI":("SI=F","CME_23H",True,.003,.32),"XAUUSD":("GC=F","CME_23H",False,.015,.2),"XAGUSD":("SI=F","CME_23H",False,.02,.32),"SPY":("SPY","EQUITY_RTH",True,.0015,.18),"NVDA":("NVDA","EQUITY_RTH",True,.0015,.42),"AMZN":("AMZN","EQUITY_RTH",True,.0015,.34),"GOOGL":("GOOGL","EQUITY_RTH",True,.0015,.34),"MSFT":("MSFT","EQUITY_RTH",True,.0015,.3),"META":("META","EQUITY_RTH",True,.0015,.38),"AAPL":("AAPL","EQUITY_RTH",True,.0015,.28),"TSLA":("TSLA","EQUITY_RTH",True,.0015,.52),"COIN":("COIN","EQUITY_RTH",True,.002,.65),"HOOD":("HOOD","EQUITY_RTH",True,.002,.58),"PLTR":("PLTR","EQUITY_RTH",True,.002,.55)};PYTH_HIT_SERIES=(("WTI","MONTH","crude-oil-cl-hit"),("WTI","WEEK","wti-crude-oil-hit-price-weekly"),("NG","WEEK","natural-gas-hit-price-weekly"),("XAUUSD","MONTH","xauusd-hit-month"),("XAUUSD","WEEK","gold-hit-price-weekly"),("GC","MONTH","what-will-gold-gc-hit"),("XAGUSD","MONTH","xagusd-hit-month"),("XAGUSD","WEEK","silver-hit-price-weekly"),("SI","MONTH","what-will-silver-si-hit"),("SPY","MONTH","spy-hit-month"),("SPY","WEEK","spy-hit-price-weekly"),("NVDA","MONTH","nvidia-hit-price-monthly"),("NVDA","WEEK","nvidia-hit-price-weekly"),("AMZN","WEEK","amazon-hit-price-weekly"),("GOOGL","WEEK","google-hit-price-weekly"),("MSFT","WEEK","microsoft-hit-price-weekly"),("META","WEEK","meta-hit-price-weekly"),("AAPL","WEEK","apple-hit-price-weekly"),("TSLA","WEEK","tesla-hit-price-weekly"),("COIN","MONTH","coin-hit-month"),("HOOD","MONTH","hood-hit-month"),("PLTR","WEEK","palantir-hit-price-weekly"));PYTH_CLOSE_SERIES=(("SPY","spy-daily-close-uo"),("WTI","wti-daily-close-uo"),("MSFT","msft-multi-strikes-weekly"),("NVDA","nvda-multi-strikes-weekly"),("AAPL","aapl-multi-strikes-weekly"),("TSLA","tsla-multi-strikes-weekly"),("AMZN","amzn-multi-strikes-weekly"),("GOOGL","googl-multi-strikes-weekly"),("META","meta-multi-strikes-weekly"),("COIN","coin-multi-strikes-weekly"),("HOOD","hood-multi-strikes-weekly"),("PLTR","pltr-multi-strikes-weekly"),("NVDA","nvda-above-on-daily"),("TSLA","tsla-above-on-daily"),("AAPL","aapl-above-on-daily"),("MSFT","msft-above-on-daily"),("AMZN","amzn-above-on-daily"),("GOOGL","googl-above-on-daily"),("META","meta-above-on-daily"),("PLTR","pltr-above-on-daily"));NBA_SERIES_SLUGS=("nba-2026",);MULTI_SPORT_CORRIDOR_SERIES=(("NBA","nba-2026"),("NFL","nfl-2026"),("CFB","cfb-2026"),("NHL","nhl-2026"));ZERO_FEE_NEGRISK_SERIES=("elon-tweets","elon-tweets-48h","trump-truth-social","fomc","fed-3-parlay","bank-of-japan","bank-of-canada-decision","reserve-bank-of-australia-decision","reserve-bank-of-new-zealand-decision","us-gas-price-daily","best-ai-company","chinese-ai-1");_STRIKE_PRICE_RE=re.compile(r"\$\s*([0-9][0-9,]*(?:\.[0-9]+)?)");_SPREAD_FAV_RE=re.compile(r"Spread:\s*(.+?)\s*\(\s*([-+]?\d+(?:\.\d+)?)\s*\)",re.IGNORECASE);_FEE_TYPE_FALLBACK_RATES={"sports_fees_nfl_cfb_oct26":(.03,1.),"sports_fees_v2":(.03,1.),"sports_fees_v3":(.05,1.),"crypto_fees_v2":(.07,1.),"crypto_15_min":(.072,1.),"politics_fees":(.04,1.),"weather_fees":(.05,1.),"culture_fees":(.05,1.),"economics_fees":(.05,1.),"finance_prices_fees":(.04,1.),"tech_fees":(.04,1.),"mentions_fees":(.05,1.),"general_fees":(.04,1.)}
 def _extract_market_fee_rate(m):
  b=str(m.get("feeType")or"").strip().lower()
  if b=="zero_fees"or m.get("feesEnabled")is False:return.0,1.
@@ -2026,15 +2074,15 @@ def _parse_iso_ts(raw_iso):
   return a.timestamp()
  except Exception:return None
 @dataclass
-class PythBarrierRungSpec:event_id:str;market_id:str;condition_id:str;asset:str;horizon_group:str;series_slug:str;question:str;strike:float;direction:str;yes_token:str;no_token:str;start_ts:float;end_ts:float;fee_rate=.0;fee_exponent=1.
+class PythBarrierRungSpec:event_id:str;market_id:str;condition_id:str;asset:str;horizon_group:str;series_slug:str;question:str;strike:float;direction:str;yes_token:str;no_token:str;start_ts:float;end_ts:float;fee_rate:float=.0;fee_exponent:float=1.
 @dataclass
-class PythCloseRungSpec:event_id:str;market_id:str;condition_id:str;asset:str;series_slug:str;question:str;strike:float;is_downward:bool;yes_token:str;no_token:str;end_ts:float;fee_rate=.0;fee_exponent=1.
+class PythCloseRungSpec:event_id:str;market_id:str;condition_id:str;asset:str;series_slug:str;question:str;strike:float;is_downward:bool;yes_token:str;no_token:str;end_ts:float;fee_rate:float=.0;fee_exponent:float=1.
 @dataclass
-class NbaOutcomeLeg:market_id:str;condition_id:str;market_type:str;token_id:str;opp_token_id:str;side_index:int;side_label:str;display_label:str;relation:str;threshold:float;fee_rate=.0;fee_exponent=1.
+class NbaOutcomeLeg:market_id:str;condition_id:str;market_type:str;token_id:str;opp_token_id:str;side_index:int;side_label:str;display_label:str;relation:str;threshold:float;fee_rate:float=.0;fee_exponent:float=1.
 @dataclass
-class NbaGameSpec:event_id:str;slug:str;title:str;team_a:str;team_b:str;tipoff_ts:float;settle_est_ts:float;margin_legs=field(default_factory=list);total_legs=field(default_factory=list)
+class NbaGameSpec:event_id:str;slug:str;title:str;team_a:str;team_b:str;tipoff_ts:float;settle_est_ts:float;margin_legs:List[NbaOutcomeLeg]=field(default_factory=list);total_legs:List[NbaOutcomeLeg]=field(default_factory=list)
 @dataclass
-class ZeroFeeNegRiskSlateSpec:event_id:str;series_slug:str;title:str;end_ts:float;brackets:List[Dict[str,Any]]
+class ZeroFeeNegRiskSlateSpec:event_id:str;series_slug:str;title:str;end_ts:float;brackets:List[Dict[str,Any]];neg_risk_augmented:bool=False
 def compute_effective_trading_hours(start_ts,end_ts,session_class="EQUITY_RTH"):
  if end_ts<=start_ts:return.0
  g=datetime.fromtimestamp(start_ts,tz=NY_TZ);f=datetime.fromtimestamp(end_ts,tz=NY_TZ);b=g.date();d=f.date();a=.0
@@ -2113,25 +2161,25 @@ def parse_pyth_close_event(ev,asset,series_slug):
   n.append(PythCloseRungSpec(event_id=g,market_id=str(m.get("id")or""),condition_id=str(m.get("conditionId")or""),asset=asset.upper(),series_slug=series_slug,question=q or l,strike=e,is_downward=b,yes_token=j[0],no_token=j[1],end_ts=float(d),fee_rate=a,fee_exponent=c))
  n.sort(key=lambda r:r.strike);return n
 def fetch_yahoo_1m_intraday_sync(yahoo_symbol,vol_floor_annual=.25,timeout=6.):
- w=f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol)}?interval=1m&range=5d"
+ v=f"https://query1.finance.yahoo.com/v8/finance/chart/{urllib.parse.quote(yahoo_symbol)}?interval=1m&range=5d"
  try:
-  v=urllib.request.Request(w,headers={"User-Agent":"Mozilla/5.0"});u=json.loads(urllib.request.urlopen(v,timeout=timeout).read().decode("utf-8"));q=((u.get("chart")or{}).get("result")or[None])[0]or{};p=q.get("meta")or{};c=float(p.get("regularMarketPrice")or.0);h=q.get("timestamp")or[];A=(((q.get("indicators")or{}).get("quote")or[None])[0])or{};m=A.get("high")or[];l=A.get("low")or[];k=A.get("close")or[];g=time.time();o=[]
-  for t,s in enumerate(h):
-   if t>=len(m)or t>=len(l)or t>=len(k):continue
-   z,y,x=m[t],l[t],k[t]
-   if z is None or y is None or x is None:continue
-   j=int(s)
-   if j+60<=g and float(x)>0:o.append((j,float(z),float(y),float(x)))
-  if c<=.0 and o:c=o[-1][3]
+  u=urllib.request.Request(v,headers={"User-Agent":"Mozilla/5.0"});t=json.loads(urllib.request.urlopen(u,timeout=timeout).read().decode("utf-8"));p=((t.get("chart")or{}).get("result")or[None])[0]or{};o=p.get("meta")or{};c=float(o.get("regularMarketPrice")or.0);g=p.get("timestamp")or[];z=(((p.get("indicators")or{}).get("quote")or[None])[0])or{};l=z.get("high")or[];k=z.get("low")or[];j=z.get("close")or[];f=time.time();n=[]
+  for s,q in enumerate(g):
+   if s>=len(l)or s>=len(k)or s>=len(j):continue
+   y,x,w=l[s],k[s],j[s]
+   if y is None or x is None or w is None:continue
+   h=int(q)
+   if h+60<=f and float(w)>0:n.append((h,float(y),float(x),float(w)))
+  if c<=.0 and n:c=n[-1][3]
   if c<=.0:return None
   d=[]
-  for i in range(max(1,len(o)-390),len(o)):
-   n=o[i][0]-o[i-1][0]
-   if 45<=n<=180 and o[i-1][3]>0:r=math.log(o[i][3]/o[i-1][3]);d.append(r*r)
-  if len(d)>=20:f=sum(d)/len(d);b=math.sqrt(f*98280.)
+  for i in range(max(1,len(n)-390),len(n)):
+   m=n[i][0]-n[i-1][0]
+   if 45<=m<=180 and n[i-1][3]>0:r=math.log(n[i][3]/n[i-1][3]);d.append(r*r)
+  if len(d)>=20:e=sum(d)/len(d);b=math.sqrt(e*98280.)
   else:b=vol_floor_annual
-  a=max(vol_floor_annual,min(2.,b*1.1));return{"spot":c,"sigma_session":round(a,4),"bars":o,"fetched_ts":g}
- except Exception as e:return None
+  a=max(vol_floor_annual,min(2.,b*1.1));return{"spot":c,"sigma_session":round(a,4),"bars":n,"fetched_ts":f}
+ except Exception:return None
 def window_extremes_from_bars(bars,start_ts,end_ts):
  a=[b for b in bars if start_ts<=float(b[0])<=end_ts]
  if not a:return None
@@ -2281,12 +2329,12 @@ def parse_zero_fee_negrisk_slate(ev,series_slug,allow_mixed_fees=True):
   if not d:return None
   a.append({"market_id":str(m.get("id")or""),"condition_id":str(m.get("conditionId")or""),"label":str(m.get("groupItemTitle")or m.get("question")or""),"yes_token":d[0],"no_token":d[1],"fee_rate":g,"fee_exponent":e,"rewards_min_size":float(m.get("rewardsMinSize")or.0),"rewards_max_spread":float(m.get("rewardsMaxSpread")or.0)})
  if len(a)<3:return None
- return ZeroFeeNegRiskSlateSpec(event_id=str(ev.get("id")or""),series_slug=series_slug,title=str(ev.get("title")or series_slug),end_ts=float(c),brackets=a)
+ return ZeroFeeNegRiskSlateSpec(event_id=str(ev.get("id")or""),series_slug=series_slug,title=str(ev.get("title")or series_slug),end_ts=float(c),brackets=a,neg_risk_augmented=bool(ev.get("negRiskAugmented",False)))
 @dataclass
-class MultiSportCorridorLeg:market_id:str;condition_id:str;scope_key:str;token_id:str;opp_token_id:str;side_index:int;side_label:str;display_label:str;relation:str;threshold:float;fee_rate=.0;fee_exponent=1.;neg_risk=False
+class MultiSportCorridorLeg:market_id:str;condition_id:str;scope_key:str;token_id:str;opp_token_id:str;side_index:int;side_label:str;display_label:str;relation:str;threshold:float;fee_rate:float=.0;fee_exponent:float=1.;neg_risk:bool=False
 @dataclass
 class MultiSportCorridorSpec:
- event_id:str;slug:str;sport:str;title:str;team_a:str;team_b:str;start_ts:float;settle_est_ts:float;legs_by_scope=field(default_factory=dict)
+ event_id:str;slug:str;sport:str;title:str;team_a:str;team_b:str;start_ts:float;settle_est_ts:float;legs_by_scope:Dict[str,List[MultiSportCorridorLeg]]=field(default_factory=dict)
  @property
  def legs(self):return[lg for sc_lgs in self.legs_by_scope.values()for lg in sc_lgs]
 _SPREAD_PERIOD_MAP={"spreads":"FG","first_half_spreads":"1H","second_half_spreads":"2H","q1_spreads":"Q1","q2_spreads":"Q2","q3_spreads":"Q3","q4_spreads":"Q4"};_TOTAL_PERIOD_MAP={"totals":"FG","first_half_totals":"1H","second_half_totals":"2H","q1_totals":"Q1","q2_totals":"Q2","q3_totals":"Q3","q4_totals":"Q4"};_TEAM_TOTAL_PERIOD_MAP={"team_totals":"FG_TEAM","first_half_team_totals":"1H_TEAM","second_half_team_totals":"2H_TEAM"}
@@ -2414,7 +2462,7 @@ def parse_negrisk_convert_event(ev):
    except ValueError:d=None
   e.append({"market_id":str(m.get("id")or""),"condition_id":str(m.get("conditionId")or""),"question_id":p,"question_index":d,"label":k[:48],"yes_token":r[0],"no_token":r[1],"fee_rate":t,"fee_exponent":q})
  if len(e)<2:return None
- j=len(s);i={b["question_index"]for b in e if isinstance(b.get("question_index"),int)};g=bool((not n)and(not c)and f and a and 3<=j<=24 and len(e)==j and i==set(range(j)))
+ j=len(s);i={b["question_index"]for b in e if isinstance(b.get("question_index"),int)};g=bool((not n)and(not c)and f and a and 3<=j<=40 and len(e)==j and i==set(range(j)))
  if g:e.sort(key=lambda b:int(b["question_index"]))
  return NegRiskConvertSlateSpec(event_id=str(ev.get("id")or""),slug=str(ev.get("slug")or""),title=str(ev.get("title")or ev.get("slug")or""),neg_risk_market_id=h,neg_risk_augmented=n,total_market_count=j,is_closed_convert_safe=g,end_ts=float(o),brackets=e)
 def detect_negrisk_no_pair_boxes(spec,best_no_asks,max_box_cost_net=1.04):
@@ -2484,19 +2532,20 @@ def detect_negrisk_convert_positions_arbs(spec,books_by_token,target_budget_usd=
   o=[int(B[i]["question_index"])for i in A];h=sum(1<<X for X in o);n=min([w["l1_usd"]for _,w in s]+[w["l1_usd"]for _,w in p]);L.append({"mode":"NR_CONV_POSITIONS_INSTANT","event_id":spec.event_id,"slug":spec.slug,"title":spec.title,"neg_risk_market_id":spec.neg_risk_market_id,"m_no_legs":J,"n_total":K,"question_indices":o,"no_question_indices":o,"index_set":h,"index_set_int":h,"shares":D,"no_cost_per_share":round(g,4),"no_cost_net_per_set":round(g,4),"usdc_converted_per_share":l,"usdc_released_per_set":l,"yes_bid_proceeds_per_share":round(f,4),"yes_bid_proceeds_net_per_set":round(f,4),"net_proceeds_per_share":round(e,4),"net_edge_per_share":round(y,4),"net_edge_per_set":round(y,4),"total_cost_usd":round(sum(w["net_cash_usd"]for _,w in s),2),"total_net_profit_usd":round(D*y,2),"total_fee_usd":round(sum(w["fee_usd"]for _,w in s)+sum(w["fee_usd"]for _,w in p),4),"l1_usd":round(n,2),"no_legs":[{"token_id":b["no_token"],"bracket":b,"walk":w}for b,w in s],"yes_sell_legs":[{"token_id":b["yes_token"],"bracket":b,"walk":w}for b,w in p],"close_ts":spec.end_ts,"label":f"CONV({J}xNO->${J-1}+SELL[{','.join(b['label'][:14]for b,_ in p)}])"})
  L.sort(key=lambda x:-float(x["net_edge_per_share"]));return L
 # ======================================================================================
-# [11/21] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
+# [11/20] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
 # PURPOSE: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import re;import time;import urllib.request;from dataclasses import dataclass,field;from datetime import date,datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import first_passage_touch_prob;from src.polymarket_research.tradfi_sports_zero_fee_engine import(_extract_market_fee_rate,_net_unit_ask,_parse_clob_tokens,_parse_iso_ts);logger=logging.getLogger("MacroCountingCTF")
-try:NY_TZ=ZoneInfo("America/New_York")
-except Exception:NY_TZ=timezone(timedelta(hours=-4))
-CHROME_UA=("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");COUNTING_SERIES_HANDLES=(("elon-tweets","elonmusk"),("elon-tweets-48h","elonmusk"),("trump-truth-social","realDonaldTrump"));FOMC_PARLAY_SERIES=("fomc","fed-3-parlay");OIL_SENATE_SLUGS=("which-party-will-win-the-senate-in-2026","who-wins-the-senate-pending-oil-below-85-before-the-midterms","who-wins-the-senate-pending-oil-above-or-below-80-before-the-midterms");GAS_SERIES_SLUGS=("us-gas-price-daily","gas-price-hits-weekly");AI_SERIES_SLUGS=("best-ai-company","chinese-ai-1");HOURLY_BINANCE_SERIES={"BTC":"btc-up-or-down-hourly","ETH":"eth-up-or-down-hourly","SOL":"solana-up-or-down-hourly","XRP":"xrp-up-or-down-hourly","BNB":"bnb-up-or-down-hourly","DOGE":"doge-up-or-down-hourly"};_XTRACKER_CACHE={};_AAA_GAS_CACHE=(.0,None)
+import json;import logging;import math;import re;import time;import urllib.request;from dataclasses import dataclass,field;from datetime import date,datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import first_passage_touch_prob;from src.polymarket_research.tradfi_sports_zero_fee_engine import(_extract_market_fee_rate,_net_unit_ask,_parse_clob_tokens,_parse_iso_ts);logger=logging.getLogger("MacroCountingCTF")
+try:from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz;NY_TZ=get_us_eastern_tz()
+except Exception:
+ try:NY_TZ=ZoneInfo("America/New_York")
+ except Exception:NY_TZ=timezone(timedelta(hours=-4))
+CHROME_UA=("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");XTRACKER_ALL_HANDLES=("elonmusk","cz_binance","WhiteHouse","ZelenskyyUa","tedcruz","realDonaldTrump");COUNTING_SERIES_HANDLES=(("elon-tweets","elonmusk"),("elon-tweets-48h","elonmusk"),("cz-tweets","cz_binance"),("cz-binance-tweets","cz_binance"),("whitehouse-tweets","WhiteHouse"),("white-house-tweets","WhiteHouse"),("zelenskyy-tweets","ZelenskyyUa"),("ted-cruz-tweets","tedcruz"),("tedcruz-tweets","tedcruz"),("trump-truth-social","realDonaldTrump"));FOMC_PARLAY_SERIES=("fomc","fed-3-parlay");OIL_SENATE_SLUGS=("which-party-will-win-the-senate-in-2026","who-wins-the-senate-pending-oil-below-85-before-the-midterms","who-wins-the-senate-pending-oil-above-or-below-80-before-the-midterms");GAS_SERIES_SLUGS=("us-gas-price-daily","gas-price-hits-weekly");AI_SERIES_SLUGS=("best-ai-company","chinese-ai-1");HOURLY_BINANCE_SERIES={"BTC":"btc-up-or-down-hourly","ETH":"eth-up-or-down-hourly","SOL":"solana-up-or-down-hourly","XRP":"xrp-up-or-down-hourly","BNB":"bnb-up-or-down-hourly","DOGE":"doge-up-or-down-hourly"};_XTRACKER_CACHE={};_AAA_GAS_CACHE=(.0,None)
 @dataclass
-class CountingBracket:market_id:str;condition_id:str;label:str;low_count:int;high_count:float;yes_token:str;no_token:str;fee_rate=.0;rewards_min_size=.0;rewards_max_spread=.0;neg_risk=True;fee_exponent=1.
+class CountingBracket:market_id:str;condition_id:str;label:str;low_count:int;high_count:float;yes_token:str;no_token:str;fee_rate:float=.0;rewards_min_size:float=.0;rewards_max_spread:float=.0;neg_risk:bool=True;fee_exponent:float=1.
 @dataclass
-class CountingSlateSpec:event_id:str;slug:str;series_slug:str;handle:str;title:str;window_start_ts:float;window_end_ts:float;gamma_closed_floor:int;brackets=field(default_factory=list)
+class CountingSlateSpec:event_id:str;slug:str;series_slug:str;handle:str;title:str;window_start_ts:float;window_end_ts:float;gamma_closed_floor:int;brackets:List[CountingBracket]=field(default_factory=list)
 _CNT_LT_RE=re.compile(r"^\s*(?:<|under\s+|less than\s+)(\d+)\s*$",re.IGNORECASE);_CNT_PLUS_RE=re.compile(r"^\s*(\d+)\s*\+\s*$|^\s*(\d+)\s+or\s+more\s*$",re.IGNORECASE);_CNT_RNG_RE=re.compile(r"^\s*(\d+)\s*[-–—to]+\s*(\d+)\s*$",re.IGNORECASE);_DESC_WINDOW_RE=re.compile(r"(?:from|between)\s+([A-Za-z]+\s+\d{1,2})(?:,\s*(\d{4}))?,?\s+(\d{1,2}:\d{2}\s*[AP]M)\s*ET\s+" r"(?:to|and)\s+([A-Za-z]+\s+\d{1,2}),?\s*(\d{4}),?\s+(\d{1,2}:\d{2}\s*[AP]M)\s*ET",re.IGNORECASE)
 def parse_count_bracket_bounds(label):
  s=str(label or"").strip().replace(",","");c=_CNT_LT_RE.match(s)
@@ -2545,34 +2594,63 @@ def parse_counting_slate_event(ev,series_slug,handle):
  if len(c)<2:return None
  c.sort(key=lambda b:b.low_count);return CountingSlateSpec(event_id=str(ev.get("id")or""),slug=str(ev.get("slug")or""),series_slug=series_slug,handle=handle,title=str(ev.get("title")or series_slug),window_start_ts=d,window_end_ts=g,gamma_closed_floor=a,brackets=c)
 def fetch_xtracker_user_stats_sync(handle,ttl_sec=60.):
- p=time.time();e=_XTRACKER_CACHE.get(handle)
- if e and(p-e[0])<ttl_sec:return e[1]
- o={}
+ o=time.time();d=_XTRACKER_CACHE.get(handle)
+ if d and(o-d[0])<ttl_sec:return d[1]
+ n={}
  try:
-  n=urllib.request.Request(f"https://xtracker.polymarket.com/api/users/{handle}",headers={"User-Agent":CHROME_UA})
-  with urllib.request.urlopen(n,timeout=5.)as r:d=json.loads(r.read().decode("utf-8",errors="replace")).get("data")or{}
-  for t in(d.get("trackings")or[]):
-   if not t.get("isActive"):continue
-   m=str(t.get("id")or"");j=str(t.get("marketLink")or"");i=j.rstrip("/").split("/")[-1]if j else""
-   if not m or not i:continue
-   h=urllib.request.Request(f"https://xtracker.polymarket.com/api/trackings/{m}?includeStats=true",headers={"User-Agent":CHROME_UA})
-   with urllib.request.urlopen(h,timeout=5.)as s:q=json.loads(s.read().decode("utf-8",errors="replace")).get("data")or{}
-   g=q.get("stats")or{};c=[];a=False
-   for l in(g.get("daily")or[]):
-    f=str(l.get("date")or"").strip()
-    if len(f)==10:a=True
-    k=_parse_iso_ts(f)
-    if k is not None:c.append((float(k),int(l.get("count")or 0)))
-   o[i]={"tracking_id":m,"total":int(g.get("total")or 0),"start_ts":_parse_iso_ts(q.get("startDate"))or.0,"end_ts":_parse_iso_ts(q.get("endDate"))or.0,"hourly":c,"daily_tz_pad":1.8e4 if a else.0}
-  _XTRACKER_CACHE[handle]=(p,o)
- except Exception as b:
-  if e:return e[1]
- return o
+  m=urllib.request.Request(f"https://xtracker.polymarket.com/api/users/{handle}",headers={"User-Agent":CHROME_UA})
+  with urllib.request.urlopen(m,timeout=5.)as r:c=json.loads(r.read().decode("utf-8",errors="replace")).get("data")or{}
+  for s in(c.get("trackings")or[]):
+   if not s.get("isActive"):continue
+   l=str(s.get("id")or"");i=str(s.get("marketLink")or"");h=i.rstrip("/").split("/")[-1]if i else""
+   if not l or not h:continue
+   g=urllib.request.Request(f"https://xtracker.polymarket.com/api/trackings/{l}?includeStats=true",headers={"User-Agent":CHROME_UA})
+   with urllib.request.urlopen(g,timeout=5.)as q:p=json.loads(q.read().decode("utf-8",errors="replace")).get("data")or{}
+   f=p.get("stats")or{};b=[];a=False
+   for k in(f.get("daily")or[]):
+    e=str(k.get("date")or"").strip()
+    if len(e)==10:a=True
+    j=_parse_iso_ts(e)
+    if j is not None:b.append((float(j),int(k.get("count")or 0)))
+   n[h]={"tracking_id":l,"total":int(f.get("total")or 0),"start_ts":_parse_iso_ts(p.get("startDate"))or.0,"end_ts":_parse_iso_ts(p.get("endDate"))or.0,"hourly":b,"daily_tz_pad":1.8e4 if a else.0}
+  _XTRACKER_CACHE[handle]=(o,n)
+ except Exception:
+  if d:return d[1]
+ return n
 def evaluate_counting_dead_no_locks(slate,xtracker_by_slug,safety_post_buffer=2):
  e=xtracker_by_slug.get(slate.slug)or{};b=int(e.get("total")or 0);a=max(int(slate.gamma_closed_floor),b);c=[]
  for d in slate.brackets:
   if math.isfinite(d.high_count)and a>=int(d.high_count)+max(1,safety_post_buffer):c.append(d)
  return a,c
+def extract_xtracker_active_event_slugs(xtracker_by_handle):
+ f=set();e=[]
+ for c,b in(xtracker_by_handle or{}).items():
+  for d in(b or{}).keys():
+   a=str(d or"").strip()
+   if a and a not in f:f.add(a);e.append((a,str(c)))
+ return e
+def detect_counting_pruned_exhaustive_yes_slate(slate,xtracker_by_slug,books_by_token,*,safety_post_buffer=2,max_bundle_cost_net=.99,max_surviving_legs=12,min_shares=5.):
+ f,l=evaluate_counting_dead_no_locks(slate,xtracker_by_slug,safety_post_buffer=safety_post_buffer);k={b.market_id for b in l};h=[b for b in sorted(slate.brackets,key=lambda r:r.low_count)if b.market_id not in k]
+ if not(2<=len(h)<=int(max_surviving_legs)):return None
+ if not math.isinf(h[-1].high_count):return None
+ if h[0].low_count>f:return None
+ for w in range(len(h)-1):
+  q=h[w].high_count;p=h[w+1].low_count
+  if not math.isfinite(q)or int(round(q))+1!=int(p):return None
+ o=max(5.,float(min_shares));j=[];c=.0;d=float("inf")
+ for C in h:
+  B=books_by_token.get(C.yes_token)or{};v=sorted([(float(a["price"]),float(a["size"]))for a in(B.get("asks")or[])if isinstance(a,dict)and float(a.get("price",.0))>0 and float(a.get("size",.0))>0],key=lambda t:t[0])
+  if not v:return None
+  g,e,i=.0,.0,v[0][0]
+  for A,z in v:
+   u=min(z,max(.0,o-g))
+   if u<=0:break
+   e+=u*A;i=A;g+=u
+   if g>=o-1e-6:break
+  if g<o-1e-6:return None
+  y=float(C.fee_rate or.0);x=float(C.fee_exponent or 1.);n=y*((i*(1.-i))**x)if y>.0 else.0;m=i+n;c+=m;d=min(d,sum(s for _,s in v[:3]));j.append({"market_id":C.market_id,"condition_id":C.condition_id,"token_id":C.yes_token,"opp_token_id":C.no_token,"label":C.label,"side":"YES","limit_price":round(i,4),"eff_cost_ps":round(m,6),"fee_rate":y,"fee_exponent":x,"neg_risk":C.neg_risk})
+ if c>float(max_bundle_cost_net)+1e-9:return None
+ return{"mode":"NR0_PRUNED_EXHAUSTIVE_YES_COMPLETE_SET","event_id":slate.event_id,"slug":slate.slug,"handle":slate.handle,"verified_floor":f,"pruned_dead_count":len(l),"surviving_leg_count":len(j),"includes_unbounded_top_cap":True,"bundle_cost_net_ps":round(c,6),"net_edge_per_share":round(1.-c,6),"shares":max(5,int(math.floor(min(25.,d/1.15)))),"close_ts":slate.window_end_ts,"legs":j}
 def detect_counting_subwindow_boxes(slates,best_asks_by_token,xtracker_by_handle,max_box_cost_net=1.05):
  n=[]
  for i,k in enumerate(slates):
@@ -2777,13 +2855,13 @@ def parse_aaa_gas_html(html):
  except ValueError:return None
  c=e[1]if abs(e[0]-e[1])<.02 else e[0];b=e[6]if len(e)>6 else c;return{"as_of_date":a.isoformat(),"current_regular":round(c,4),"yesterday_regular":round(b,4)}
 def fetch_aaa_national_gas_sync(ttl_sec=180.):
- global _AAA_GAS_CACHE;now=time.time()
- if _AAA_GAS_CACHE[1]is not None and(now-_AAA_GAS_CACHE[0])<ttl_sec:return _AAA_GAS_CACHE[1]
+ global _AAA_GAS_CACHE;c=time.time()
+ if _AAA_GAS_CACHE[1]is not None and(c-_AAA_GAS_CACHE[0])<ttl_sec:return _AAA_GAS_CACHE[1]
  try:
-  req=urllib.request.Request("https://gasprices.aaa.com/",headers={"User-Agent":CHROME_UA})
-  with urllib.request.urlopen(req,timeout=6.)as r:parsed=parse_aaa_gas_html(r.read().decode("utf-8",errors="replace"))
-  if parsed:_AAA_GAS_CACHE=(now,parsed);return parsed
- except Exception as exc:pass
+  b=urllib.request.Request("https://gasprices.aaa.com/",headers={"User-Agent":CHROME_UA})
+  with urllib.request.urlopen(b,timeout=6.)as r:a=parse_aaa_gas_html(r.read().decode("utf-8",errors="replace"))
+  if a:_AAA_GAS_CACHE=(c,a);return a
+ except Exception:pass
  return _AAA_GAS_CACHE[1]
 _GAS_LT_RE=re.compile(r"<\s*\$?\s*(\d+(?:\.\d+)?)");_GAS_PL_RE=re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*\+");_GAS_RG_RE=re.compile(r"\$?\s*(\d+(?:\.\d+)?)\s*(?:[-–—]|\bto\b)\s*\$?\s*(\d+(?:\.\d+)?)",re.IGNORECASE)
 def parse_gas_daily_bracket(label):
@@ -2832,14 +2910,13 @@ def detect_d2_12pm_binance_boxes(hourly_spec,k_1h,terminal_specs,min_corridor_bp
   i.append({"asset":str(hourly_spec["asset"]),"k_low":g,"k_high":f,"corridor_bps":round(c,2),"leg_a":b,"leg_b":a,"close_ts":max(d,float(e["end_ts"])),"label":f"{b['label']} + {a['label']} ({c:.0f}bps)"})
  return i
 # ======================================================================================
-# [12/21] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
+# [12/20] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
 # PURPOSE: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import logging;import math;import os;import re;import time;import urllib.request;from dataclasses import dataclass;from datetime import datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.tradfi_sports_zero_fee_engine import(NbaGameSpec,NbaOutcomeLeg,_extract_market_fee_rate,_norm_team,_parse_clob_tokens,_parse_iso_ts);logger=logging.getLogger("UmaNbaEndgameEngine");DEFAULT_POLYGON_RPC="https://polygon-bor-rpc.publicnode.com";FALLBACK_POLYGON_RPCS=("https://1rpc.io/matic","https://polygon-rpc.com");ESPN_NBA_SCOREBOARD_URL="https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";CDN_NBA_SCOREBOARD_URL="https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json";ZERO_ADDR="0x0000000000000000000000000000000000000000";ONE_E18=10**18;HALF_E18=5*(10**17);VERIFIED_UMA_ADAPTERS=frozenset({"0x65070be91477460d8a7aeeb94ef92fe056c2f2a7","0x69c47de9d4d3dad79590d61b9e05918e03775f24","0x2f5e3684cb1f318ec51b00edba38d79ac2c0aa9d","0x6a9d222616c90fca5754cd1333cfd9b7fb6a4f74","0x157ce2d672854c848c9b79c49a8cc6cc89176a49"});NEGRISK_UMA_ADAPTERS=frozenset({"0x69c47de9d4d3dad79590d61b9e05918e03775f24"});SEL_OPTIMISTIC_ORACLE="22302922";SEL_GET_QUESTION="58c039cd";SEL_GET_STATE="ba4b930c";SEL_GET_REQUEST="a9904f9b";YES_OR_NO_IDENT_HEX=b"YES_OR_NO_QUERY".ljust(32,b"\x00").hex();_OO_ADDR_CACHE={};_SUBJECTIVE_VETO_RE=re.compile(r'(\bsay\b.{0,30}["“]|\bmention\b|\btweet\b|\btruth social\b|\bceasefire\b' r'|\binvade\b|\bstrike on\b|\bpardon\b|\bresign\b|\bnominate\b' r'|\bsole discretion\b|\bplaceholder\b)',re.IGNORECASE);_OBJECTIVE_ORACLE_RE=re.compile(r"(aviationweather\.gov|weather\.gov\.hk|wunderground\.com|binance\.com|chain\.link" r"|pyth\.network|federalreserve\.gov|bls\.gov|gasprices\.aaa\.com|xtracker" r"|nba\.com|nhl\.com|mlb\.com|nfl\.com|espn\.com|premierleague\.com|uefa\.com|atptour\.com|hlTV|lol\s*esports)",re.IGNORECASE);_SPORTS_TITLE_RE=re.compile(r"(\bvs\.?\s+|\bwin on 20\d{2}-\d{2}-\d{2}\b|\bo/u\s+\d+|\bspread:\s+|\bgame\s+[1-7]\s+winner\b|\bmap\s+[1-5]\s+winner\b)",re.IGNORECASE);_EARLY_BARRIER_MARKET_RE=re.compile(r"\b(reach|hit|dip|touch|drop\s+to|fall\s+to|climb\s+to|at\s+any\s+point|before\s+20\d{2})\b",re.IGNORECASE);_HEX32_RE=re.compile(r"^0x[0-9a-fA-F]{64}$");_ANC_CORRESPONDS_RE=re.compile(r"p1\s+corresponds\s+to\s+([^,\.\n]+),\s*p2\s+to\s+([^,\.\n]+)",re.IGNORECASE)
+import json;import logging;import math;import os;import re;import time;import urllib.request;from dataclasses import dataclass;from datetime import datetime,timedelta,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.tradfi_sports_zero_fee_engine import(NbaGameSpec,NbaOutcomeLeg,_extract_market_fee_rate,_norm_team,_parse_clob_tokens,_parse_iso_ts);logger=logging.getLogger("UmaNbaEndgameEngine");DEFAULT_POLYGON_RPC="https://polygon-bor-rpc.publicnode.com";FALLBACK_POLYGON_RPCS=("https://1rpc.io/matic","https://polygon-rpc.com");ESPN_NBA_SCOREBOARD_URL="https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard";CDN_NBA_SCOREBOARD_URL="https://cdn.nba.com/static/json/liveData/scoreboard/todaysScoreboard_00.json";ZERO_ADDR="0x0000000000000000000000000000000000000000";ONE_E18=10**18;HALF_E18=5*(10**17);VERIFIED_UMA_ADAPTERS=frozenset({"0x65070be91477460d8a7aeeb94ef92fe056c2f2a7","0x69c47de9d4d3dad79590d61b9e05918e03775f24","0x2f5e3684cb1f318ec51b00edba38d79ac2c0aa9d","0x6a9d222616c90fca5754cd1333cfd9b7fb6a4f74","0x157ce2d672854c848c9b79c49a8cc6cc89176a49"});NEGRISK_UMA_ADAPTERS=frozenset({"0x69c47de9d4d3dad79590d61b9e05918e03775f24"});SEL_OPTIMISTIC_ORACLE="22302922";SEL_GET_QUESTION="58c039cd";SEL_GET_STATE="ba4b930c";SEL_GET_REQUEST="a9904f9b";YES_OR_NO_IDENT_HEX=b"YES_OR_NO_QUERY".ljust(32,b"\x00").hex();_OO_ADDR_CACHE={};_SUBJECTIVE_VETO_RE=re.compile(r'(\bsay\b.{0,30}["“]|\bmention\b|\btweet\b|\btruth social\b|\bceasefire\b' r'|\binvade\b|\bstrike on\b|\bpardon\b|\bresign\b|\bnominate\b' r'|\bsole discretion\b|\bplaceholder\b)',re.IGNORECASE);_OBJECTIVE_ORACLE_RE=re.compile(r"(aviationweather\.gov|weather\.gov\.hk|wunderground\.com|binance\.com|chain\.link" r"|pyth\.network|federalreserve\.gov|bls\.gov|gasprices\.aaa\.com|xtracker" r"|nba\.com|nhl\.com|mlb\.com|nfl\.com|espn\.com|premierleague\.com|uefa\.com|atptour\.com|hlTV|lol\s*esports)",re.IGNORECASE);_SPORTS_TITLE_RE=re.compile(r"(\bvs\.?\s+|\bwin on 20\d{2}-\d{2}-\d{2}\b|\bo/u\s+\d+|\bspread:\s+|\bgame\s+[1-7]\s+winner\b|\bmap\s+[1-5]\s+winner\b)",re.IGNORECASE);_EARLY_BARRIER_MARKET_RE=re.compile(r"\b(reach|hit|dip|touch|drop\s+to|fall\s+to|climb\s+to|at\s+any\s+point|before\s+20\d{2})\b",re.IGNORECASE);_HEX32_RE=re.compile(r"^0x[0-9a-fA-F]{64}$");_ANC_CORRESPONDS_RE=re.compile(r"p1\s+corresponds\s+to\s+([^,\.\n]+),\s*p2\s+to\s+([^,\.\n]+)",re.IGNORECASE)
 @dataclass
-class LiveNbaGameState:game_id:str;start_ts:float;state:str;completed:bool;period:int;clock_sec:float;home_name:str;home_abbr:str;home_score:int;away_name:str;away_abbr:str;away_score:int;source="espn"
+class LiveNbaGameState:game_id:str;start_ts:float;state:str;completed:bool;period:int;clock_sec:float;home_name:str;home_abbr:str;home_score:int;away_name:str;away_abbr:str;away_score:int;source:str="espn"
 def _parse_json_list(raw):
  if isinstance(raw,list):return raw
  if isinstance(raw,str):
@@ -2966,21 +3043,21 @@ def parse_espn_nba_scoreboard(data):
   if i and h:o.append(LiveNbaGameState(game_id=str(t.get("id")or""),start_ts=e,state=k,completed=d,period=j,clock_sec=f,home_name=i,home_abbr=str(q.get("abbreviation")or"").upper(),home_score=m,away_name=h,away_abbr=str(p.get("abbreviation")or"").upper(),away_score=l,source="espn"))
  return o
 def fetch_espn_nba_scoreboard_sync(timeout=4.5,now_ts=None):
- j={"User-Agent":"Mozilla/5.0","Accept":"application/json"};i=datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()),tz=ZoneInfo("America/New_York"));b=[(i-timedelta(days=1)).strftime("%Y%m%d"),i.strftime("%Y%m%d")];e={}
- for m in dict.fromkeys(b):
+ i={"User-Agent":"Mozilla/5.0","Accept":"application/json"};h=datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()),tz=ZoneInfo("America/New_York"));a=[(h-timedelta(days=1)).strftime("%Y%m%d"),h.strftime("%Y%m%d")];d={}
+ for l in dict.fromkeys(a):
   try:
-   l=f"{ESPN_NBA_SCOREBOARD_URL}?dates={m}";d=json.loads(urllib.request.urlopen(urllib.request.Request(l,headers=j),timeout=timeout).read().decode("utf-8"))
-   for g in parse_espn_nba_scoreboard(d):e[g.game_id]=g
-  except Exception as a:pass
- if e:return list(e.values())
+   k=f"{ESPN_NBA_SCOREBOARD_URL}?dates={l}";c=json.loads(urllib.request.urlopen(urllib.request.Request(k,headers=i),timeout=timeout).read().decode("utf-8"))
+   for g in parse_espn_nba_scoreboard(c):d[g.game_id]=g
+  except Exception:pass
+ if d:return list(d.values())
  try:
-  d=json.loads(urllib.request.urlopen(urllib.request.Request(ESPN_NBA_SCOREBOARD_URL,headers=j),timeout=timeout).read().decode("utf-8"));h=parse_espn_nba_scoreboard(d)
-  if h:return h
- except Exception as a:pass
+  c=json.loads(urllib.request.urlopen(urllib.request.Request(ESPN_NBA_SCOREBOARD_URL,headers=i),timeout=timeout).read().decode("utf-8"));f=parse_espn_nba_scoreboard(c)
+  if f:return f
+ except Exception:pass
  try:
-  c={**j,"Referer":"https://www.nba.com/","Origin":"https://www.nba.com"};q=json.loads(urllib.request.urlopen(urllib.request.Request(CDN_NBA_SCOREBOARD_URL,headers=c),timeout=timeout).read().decode("utf-8"));k=[]
-  for g in((q.get("scoreboard")or{}).get("games")or[]):p=int(g.get("gameStatus")or 1);f="pre"if p==1 else("in"if p==2 else"post");o,n=g.get("homeTeam")or{},g.get("awayTeam")or{};k.append(LiveNbaGameState(game_id=str(g.get("gameId")or""),start_ts=_parse_iso_ts(g.get("gameTimeUTC"))or.0,state=f,completed=(p==3),period=int(g.get("period")or 0),clock_sec=_parse_iso_clock_sec(g.get("gameClock")),home_name=str(o.get("teamName")or""),home_abbr=str(o.get("teamTricode")or"").upper(),home_score=int(o.get("score")or 0),away_name=str(n.get("teamName")or""),away_abbr=str(n.get("teamTricode")or"").upper(),away_score=int(n.get("score")or 0),source="cdn_nba"))
-  return k
+  b={**i,"Referer":"https://www.nba.com/","Origin":"https://www.nba.com"};p=json.loads(urllib.request.urlopen(urllib.request.Request(CDN_NBA_SCOREBOARD_URL,headers=b),timeout=timeout).read().decode("utf-8"));j=[]
+  for g in((p.get("scoreboard")or{}).get("games")or[]):o=int(g.get("gameStatus")or 1);e="pre"if o==1 else("in"if o==2 else"post");n,m=g.get("homeTeam")or{},g.get("awayTeam")or{};j.append(LiveNbaGameState(game_id=str(g.get("gameId")or""),start_ts=_parse_iso_ts(g.get("gameTimeUTC"))or.0,state=e,completed=(o==3),period=int(g.get("period")or 0),clock_sec=_parse_iso_clock_sec(g.get("gameClock")),home_name=str(n.get("teamName")or""),home_abbr=str(n.get("teamTricode")or"").upper(),home_score=int(n.get("score")or 0),away_name=str(m.get("teamName")or""),away_abbr=str(m.get("teamTricode")or"").upper(),away_score=int(m.get("score")or 0),source="cdn_nba"))
+  return j
  except Exception:return[]
 def match_nba_live_game(spec,live_games):
  d,c=_canon_nba_team(spec.team_a),_canon_nba_team(spec.team_b)
@@ -3008,15 +3085,15 @@ def evaluate_nba_endgame_locks(spec,game,score_a,score_b):
  if game.completed and game.state=="post"and game.period>=4 and score_a!=score_b:
   for e in spec.margin_legs:
    n=(j>e.threshold)if e.relation=="GT"else(j<e.threshold)
-   if n:o.append({"leg":e,"mode":"POST_BUZZER_FINAL","p_lock":.998,"cushion_pts":round(abs(j-e.threshold),1),"clock_sec":.0,"period":game.period,"score_str":f"{spec.team_a} {score_a}-{score_b} {spec.team_b} (FINAL)"})
+   if n:o.append({"leg":e,"mode":"POST_BUZZER_FINAL","p_lock":.999,"cushion_pts":round(abs(j-e.threshold),1),"clock_sec":.0,"period":game.period,"score_str":f"{spec.team_a} {score_a}-{score_b} {spec.team_b} (FINAL)"})
   for e in spec.total_legs:
    l=(c>e.threshold)if e.relation=="OVER"else(c<e.threshold)
-   if l and abs(c-e.threshold)>=1.5:o.append({"leg":e,"mode":"POST_BUZZER_FINAL","p_lock":.998,"cushion_pts":round(abs(c-e.threshold),1),"clock_sec":.0,"period":game.period,"score_str":f"{spec.team_a} {score_a}-{score_b} {spec.team_b} (FINAL Tot={int(c)})"})
+   if l and abs(c-e.threshold)>=1.5:o.append({"leg":e,"mode":"POST_BUZZER_FINAL","p_lock":.999,"cushion_pts":round(abs(c-e.threshold),1),"clock_sec":.0,"period":game.period,"score_str":f"{spec.team_a} {score_a}-{score_b} {spec.team_b} (FINAL Tot={int(c)})"})
   return o
  if game.state!="in":return o
  if game.period>=3:
   for e in spec.total_legs:
-   if e.relation=="OVER"and c>=e.threshold+2.5:o.append({"leg":e,"mode":"LIVE_TOTAL_OVER_LOCKED","p_lock":.997,"cushion_pts":round(c-e.threshold,1),"clock_sec":round(game.clock_sec,1),"period":game.period,"score_str":f"P{game.period} {game.clock_sec:.0f}s Tot={int(c)}>{e.threshold:g}"})
+   if e.relation=="OVER"and c>=e.threshold+2.5:o.append({"leg":e,"mode":"LIVE_TOTAL_OVER_LOCKED","p_lock":.999,"cushion_pts":round(c-e.threshold,1),"clock_sec":round(game.clock_sec,1),"period":game.period,"score_str":f"P{game.period} {game.clock_sec:.0f}s Tot={int(c)}>{e.threshold:g}"})
  if game.period>=4 and.0<game.clock_sec<=120.:
   t=max(1.,float(game.clock_sec));f=5.5 if t<=12. else(7.5 if t<=28. else(9.5 if t<=50. else 13.5));b=max(1.6,.3965*math.sqrt(t))
   for e in spec.margin_legs:
@@ -3031,12 +3108,11 @@ def evaluate_nba_endgame_locks(spec,game,score_a,score_b):
    if i>=.993:o.append({"leg":e,"mode":"LIVE_Q4_ENDGAME_LOCK","p_lock":i,"cushion_pts":round(m,1),"z_endgame":round(k,2),"clock_sec":round(t,1),"period":game.period,"score_str":f"P{game.period} {t:.0f}s {spec.team_a} {score_a}-{score_b} {spec.team_b}"})
  return o
 # ======================================================================================
-# [13/21] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
+# [13/20] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
 # PURPOSE: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import itertools
-import json;import math;import os;import re;import unicodedata;import urllib.request;from dataclasses import dataclass,field;from typing import Any,Dict,List,Optional,Tuple;from src.polymarket_research.tradfi_sports_zero_fee_engine import(NegRiskConvertSlateSpec,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts,_walk_side_exact_shares);from src.polymarket_research.uma_nba_endgame_engine import(DEFAULT_POLYGON_RPC,LiveNbaGameState,_canon_nba_team,_parse_json_list,_rpc_post,verify_uma_onchain_proposal_sync);NEGRISK_ADAPTER_ADDR="0xd91e80cf2e7be2e162c6513ced06f1dd0da35296";SEL_NR_GET_QUESTION_COUNT="b7f75d2c";SEL_NR_GET_FEE_BIPS="2582cb5e";SEL_NR_GET_DETERMINED="7ae2e67b";UMA_V4_ADAPTERS=frozenset({"0x65070be91477460d8a7aeeb94ef92fe056c2f2a7","0x69c47de9d4d3dad79590d61b9e05918e03775f24"});MOOV2_ORACLE_ADDR="0x2c0367a9db231ddebd88a94b4f6461a6e47c58b1";UMA_PROPOSER_WHITELIST_ADDR="0x9f35885ce8f67a942d7b2f4fbf937987da08c463";SEL_IS_ON_WHITELIST="3a3ab672";ESPN_NBA_SUMMARY_URL="https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}";BOP_2026_SLUGS=("balance-of-power-2026-midterms","which-party-will-win-the-senate-in-2026","which-party-will-win-the-house-in-2026");_NR_ADAPTER_CACHE={};_WHITELIST_CACHE={};_PLAYER_SUFFIX_RE=re.compile(r"\b(?:jr|sr|ii|iii|iv|v)\b\.?",re.IGNORECASE);_PROP_TITLE_RE=re.compile(r"^(.+?):\s*(Points|Rebounds|Assists|3-Pointers Made|Threes|Three Pointers)\s+O/U\s+(\d+\.5)\b",re.IGNORECASE);_NBA_EM_BAND_RE=re.compile(r"Exact\s+Margin:\s*(.+?)\s+by\s+(\d+)(?:-(\d+)|\+)",re.IGNORECASE);_SOC_ADVANCE_VETO_RE=re.compile(r"\b(?:advance|qualify|lift\s+the\s+trophy|win\s+the\s+(?:cup|final|tie|trophy)|extra\s+time\s+included|penalt(?:y|ies)\s+included)\b",re.IGNORECASE);_SPREAD_PARSE_RE=re.compile(r"^(.+?)\s*\(([+-]?\d+\.5)\)\s*$");_MAP_HC_PAIR_RE=re.compile(r"Map\s+Handicap:\s*(.+?)\s*\(([+-]\d+\.5)\)\s*vs\.?\s*(.+?)\s*\(([+-]\d+\.5)\)",re.IGNORECASE)
+import itertools;import json;import math;import os;import re;import unicodedata;import urllib.request;from dataclasses import dataclass,field;from typing import Any,Dict,List,Optional,Tuple;from src.polymarket_research.tradfi_sports_zero_fee_engine import(NegRiskConvertSlateSpec,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts,_walk_side_exact_shares);from src.polymarket_research.uma_nba_endgame_engine import(DEFAULT_POLYGON_RPC,LiveNbaGameState,_canon_nba_team,_parse_json_list,_rpc_post,verify_uma_onchain_proposal_sync);NEGRISK_ADAPTER_ADDR="0xd91e80cf2e7be2e162c6513ced06f1dd0da35296";SEL_NR_GET_QUESTION_COUNT="b7f75d2c";SEL_NR_GET_FEE_BIPS="2582cb5e";SEL_NR_GET_DETERMINED="7ae2e67b";UMA_V4_ADAPTERS=frozenset({"0x65070be91477460d8a7aeeb94ef92fe056c2f2a7","0x69c47de9d4d3dad79590d61b9e05918e03775f24"});MOOV2_ORACLE_ADDR="0x2c0367a9db231ddebd88a94b4f6461a6e47c58b1";UMA_PROPOSER_WHITELIST_ADDR="0x9f35885ce8f67a942d7b2f4fbf937987da08c463";SEL_IS_ON_WHITELIST="3a3ab672";ESPN_NBA_SUMMARY_URL="https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary?event={game_id}";BOP_2026_SLUGS=("balance-of-power-2026-midterms","which-party-will-win-the-senate-in-2026","which-party-will-win-the-house-in-2026");_NR_ADAPTER_CACHE={};_WHITELIST_CACHE={};_PLAYER_SUFFIX_RE=re.compile(r"\b(?:jr|sr|ii|iii|iv|v)\b\.?",re.IGNORECASE);_PROP_TITLE_RE=re.compile(r"^(.+?):\s*(Points|Rebounds|Assists|3-Pointers Made|Threes|Three Pointers)\s+O/U\s+(\d+\.5)\b",re.IGNORECASE);_NBA_EM_BAND_RE=re.compile(r"Exact\s+Margin:\s*(.+?)\s+by\s+(\d+)(?:-(\d+)|\+)",re.IGNORECASE);_SOC_ADVANCE_VETO_RE=re.compile(r"\b(?:advance|qualify|lift\s+the\s+trophy|win\s+the\s+(?:cup|final|tie|trophy)|extra\s+time\s+included|penalt(?:y|ies)\s+included)\b",re.IGNORECASE);_SPREAD_PARSE_RE=re.compile(r"^(.+?)\s*\(([+-]?\d+\.5)\)\s*$");_MAP_HC_PAIR_RE=re.compile(r"Map\s+Handicap:\s*(.+?)\s*\(([+-]\d+\.5)\)\s*vs\.?\s*(.+?)\s*\(([+-]\d+\.5)\)",re.IGNORECASE)
 def _net_unit_bid(px,fee_rate,fee_exp=1.):p=max(.0,min(1.,float(px)));a=float(fee_rate)*((p*(1.-p))**float(fee_exp))if fee_rate>.0 else.0;return max(.0,p-a)
 def _is_half_hook(line):
  if line is None or not math.isfinite(line):return False
@@ -3103,9 +3179,9 @@ def detect_nr2_convert_no_subset_arbs(spec,books_by_token,target_budget_usd=120.
   if a is not None:W.append(a)
  W.sort(key=lambda x:(-float(x["net_edge_per_share"]),-int(x["retained_tail_count"])));return W
 @dataclass
-class NbaPlayerPropRung:event_id:str;event_slug:str;game_title:str;market_id:str;condition_id:str;player_name:str;player_key:str;stat_type:str;line:float;yes_token:str;no_token:str;fee_rate:float;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;fee_exponent=1.
+class NbaPlayerPropRung:event_id:str;event_slug:str;game_title:str;market_id:str;condition_id:str;player_name:str;player_key:str;stat_type:str;line:float;yes_token:str;no_token:str;fee_rate:float;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;fee_exponent:float=1.
 @dataclass
-class NbaPlayerPropSlate:event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;props_by_player_stat=field(default_factory=dict)
+class NbaPlayerPropSlate:event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;props_by_player_stat:Dict[Tuple[str,str],List[NbaPlayerPropRung]]=field(default_factory=dict)
 _ALLOWED_NBA_PROP_SMTS=frozenset({"points","rebounds","assists","threes"})
 def parse_nba_player_props_from_event(ev,now_ts=None):
  if ev.get("closed")or ev.get("archived"):return None
@@ -3204,7 +3280,7 @@ def verify_bond2_moov2_final_hour_sync(m,rpc_url=None,now_ts=None,min_proposal_a
  if not verify_proposer_whitelisted_sync(str(b.get("proposer")or""),rpc_url=rpc_url):return{"verified":False,"reason":"PROPOSER_NOT_WHITELISTED"}
  c=dict(b);c["proposer_whitelisted"]=True;c["moov2_final_hour"]=True;return c
 @dataclass
-class SoccerRegulationTree:game_id:str;event_id_3way:str;slug_3way:str;title:str;neg_risk_market_id:str;end_ts:float;home_team:str;away_team:str;home_leg:Dict[str,Any];draw_leg:Dict[str,Any];away_leg:Dict[str,Any];over05_leg=None;totals=field(default_factory=list);spreads=field(default_factory=list)
+class SoccerRegulationTree:game_id:str;event_id_3way:str;slug_3way:str;title:str;neg_risk_market_id:str;end_ts:float;home_team:str;away_team:str;home_leg:Dict[str,Any];draw_leg:Dict[str,Any];away_leg:Dict[str,Any];over05_leg:Optional[Dict[str,Any]]=None;totals:List[Dict[str,Any]]=field(default_factory=list);spreads:List[Dict[str,Any]]=field(default_factory=list)
 def link_and_parse_soccer_regulation_trees(events,now_ts=None):
  A={}
  for Z in events or[]:
@@ -3333,9 +3409,9 @@ def build_lp1_bop_2026_truth_legs(events_by_slug):
  f=[]
  def a(m,event_slug,tag_lbl,yes_fn):
   if m.get("closed")or m.get("archived")or m.get("active")is False:return
-  d=_parse_clob_tokens(m)
-  if not d:return
-  i,h=_extract_market_fee_rate(m);a=_parse_iso_ts(m.get("endDate"))or.0;f=str(m.get("id")or"");e=str(m.get("conditionId")or"");g=bool(m.get("negRisk"));b=[1. if yes_fn(k,j)else.0 for k,j in BOP_9_STATES];c=[1.-x for x in b];f.append({"event_slug":event_slug,"market_id":f,"condition_id":e,"token_id":d[0],"opp_token_id":d[1],"side":"YES","label":f"YES[{tag_lbl}]","fee_rate":i,"fee_exponent":h,"neg_risk":g,"end_ts":a,"payoff_vec":b,"strike":1.});f.append({"event_slug":event_slug,"market_id":f,"condition_id":e,"token_id":d[1],"opp_token_id":d[0],"side":"NO","label":f"NO[{tag_lbl}]","fee_rate":i,"fee_exponent":h,"neg_risk":g,"end_ts":a,"payoff_vec":c,"strike":1.})
+  j=_parse_clob_tokens(m)
+  if not j:return
+  p,o=_extract_market_fee_rate(m);g=_parse_iso_ts(m.get("endDate"))or.0;l=str(m.get("id")or"");k=str(m.get("conditionId")or"");n=bool(m.get("negRisk"));h=[1. if yes_fn(r,q)else.0 for r,q in BOP_9_STATES];i=[1.-x for x in h];f.append({"event_slug":event_slug,"market_id":l,"condition_id":k,"token_id":j[0],"opp_token_id":j[1],"side":"YES","label":f"YES[{tag_lbl}]","fee_rate":p,"fee_exponent":o,"neg_risk":n,"end_ts":g,"payoff_vec":h,"strike":1.});f.append({"event_slug":event_slug,"market_id":l,"condition_id":k,"token_id":j[1],"opp_token_id":j[0],"side":"NO","label":f"NO[{tag_lbl}]","fee_rate":p,"fee_exponent":o,"neg_risk":n,"end_ts":g,"payoff_vec":i,"strike":1.})
  e=events_by_slug.get("balance-of-power-2026-midterms")or{}
  for m in e.get("markets")or[]:
   q=str(m.get("question")or m.get("groupItemTitle")or"").lower()
@@ -3399,7 +3475,7 @@ def build_lp1_nba_exact_margin_bundle(parent_ev,em_ev):
  if d!=set(range(11)):return None
  return{"event_id":str(parent_ev.get("id")or""),"em_event_id":str(em_ev.get("id")or""),"slug":str(parent_ev.get("slug")or""),"title":str(parent_ev.get("title")or""),"neg_risk_market_id":h,"end_ts":D,"legs":_d,"ml_a_token":q[0],"ml_b_token":q[1],"ml_a_label":p[0],"ml_b_label":p[1],"team_a_em_no":c,"team_b_em_no":b}
 @dataclass
-class EsportsBo3Spec:event_id:str;slug:str;title:str;end_ts:float;team_a:str;team_b:str;ml_market_id:str;ml_condition_id:str;ml_a_token:str;ml_b_token:str;ml_fee_rate:float;ml_fee_exp:float;hc_market_id:str;hc_condition_id:str;hc_fav_is_a:bool;hc_minus_token:str;hc_plus_token:str;hc_fee_rate:float;hc_fee_exp:float;map1_a_token=None;map1_b_token=None;map1_resolved_winner=None;map2_a_token=None;map2_b_token=None;map2_resolved_winner=None;ou25_over_token=None;ou25_under_token=None;ou25_market_id="";ou25_condition_id="";ou25_fee_rate=.03
+class EsportsBo3Spec:event_id:str;slug:str;title:str;end_ts:float;team_a:str;team_b:str;ml_market_id:str;ml_condition_id:str;ml_a_token:str;ml_b_token:str;ml_fee_rate:float;ml_fee_exp:float;hc_market_id:str;hc_condition_id:str;hc_fav_is_a:bool;hc_minus_token:str;hc_plus_token:str;hc_fee_rate:float;hc_fee_exp:float;map1_a_token:Optional[str]=None;map1_b_token:Optional[str]=None;map1_resolved_winner:Optional[str]=None;map2_a_token:Optional[str]=None;map2_b_token:Optional[str]=None;map2_resolved_winner:Optional[str]=None;ou25_over_token:Optional[str]=None;ou25_under_token:Optional[str]=None;ou25_market_id:str="";ou25_condition_id:str="";ou25_fee_rate:float=.03
 def parse_esports_bo3_event(ev,now_ts=None):
  if ev.get("closed")or ev.get("archived"):return None
  I=str(ev.get("title")or"");O=ev.get("markets")or[];f=bool(re.search(r"\(\s*bo3\s*\)|\bbest\s+of\s+3\b",I,re.IGNORECASE));c=any(re.search(r"\bmap\s+[45]\b",str(m.get("groupItemTitle")or m.get("question")or""),re.IGNORECASE)for m in O)
@@ -3425,17 +3501,17 @@ def parse_esports_bo3_event(ev,now_ts=None):
  if b is None:return None
  h=L if b else K;d,g=(q[0],q[1])if n==h else(q[1],q[0]);G,F=_extract_market_fee_rate(N);E,D=_extract_market_fee_rate(M);J=EsportsBo3Spec(event_id=str(ev.get("id")or""),slug=str(ev.get("slug")or""),title=I,end_ts=y,team_a=w,team_b=v,ml_market_id=str(N.get("id")or""),ml_condition_id=str(N.get("conditionId")or""),ml_a_token=s[0],ml_b_token=s[1],ml_fee_rate=G,ml_fee_exp=F,hc_market_id=str(M.get("id")or""),hc_condition_id=str(M.get("conditionId")or""),hc_fav_is_a=b,hc_minus_token=d,hc_plus_token=g,hc_fee_rate=E,hc_fee_exp=D)
  def a(cm):
-  f=_parse_clob_tokens(cm);e=[_norm_team(str(x))for x in _parse_json_list(cm.get("outcomes"))];d=_parse_json_list(cm.get("outcomePrices"));c,b=None,None
-  if f and len(e)==2 and{e[0],e[1]}=={L,K}:c,b=(f[0],f[1])if e[0]==L else(f[1],f[0])
-  a=None
-  if len(d)==2 and len(e)==2:
+  T=_parse_clob_tokens(cm);S=[_norm_team(str(x))for x in _parse_json_list(cm.get("outcomes"))];R=_parse_json_list(cm.get("outcomePrices"));Q,o=None,None
+  if T and len(S)==2 and{S[0],S[1]}=={L,K}:Q,o=(T[0],T[1])if S[0]==L else(T[1],T[0])
+  m=None
+  if len(R)==2 and len(S)==2:
    try:
-    h,g=float(d[0]),float(d[1])
-    if cm.get("closed")or(max(h,g)>=.995 and min(h,g)<=.005):
-     if h>=.995 and g<=.005:a="A"if e[0]==L else"B"
-     elif g>=.995 and h<=.005:a="A"if e[1]==L else"B"
+    V,U=float(R[0]),float(R[1])
+    if cm.get("closed")or(max(V,U)>=.995 and min(V,U)<=.005):
+     if V>=.995 and U<=.005:m="A"if S[0]==L else"B"
+     elif U>=.995 and V<=.005:m="A"if S[1]==L else"B"
    except(TypeError,ValueError):pass
-  return c,b,a
+  return Q,o,m
  for cm in O:
   C=str(cm.get("sportsMarketType")or"").lower();B=str(cm.get("groupItemTitle")or cm.get("question")or"").lower()
   if C=="child_moneyline":
@@ -3445,29 +3521,43 @@ def parse_esports_bo3_event(ev,now_ts=None):
    A=_parse_clob_tokens(cm);z=[str(x).lower()for x in _parse_json_list(cm.get("outcomes"))]
    if A and len(z)==2:J.ou25_over_token=A[0]if"over"in z[0]else A[1];J.ou25_under_token=A[1]if"over"in z[0]else A[0];J.ou25_market_id=str(cm.get("id")or"");J.ou25_condition_id=str(cm.get("conditionId")or"");J.ou25_fee_rate,_=_extract_market_fee_rate(cm)
  return J
-def _infer_live_map_winner(resolved_flag,tok_a,tok_b,books_by_token):
+def _infer_live_map_winner(resolved_flag,tok_a,tok_b,books_by_token,*,allow_quote_inferred=False):
  if resolved_flag in("A","B"):return resolved_flag
- if not tok_a or not tok_b:return None
+ if not allow_quote_inferred or not tok_a or not tok_b:return None
  h=books_by_token.get(tok_a)or{};g=books_by_token.get(tok_b)or{};f=max((float(b.get("price",0))for b in(h.get("bids")or[])if float(b.get("size",0))>0),default=.0);e=max((float(b.get("price",0))for b in(g.get("bids")or[])if float(b.get("size",0))>0),default=.0);d=min((float(a.get("price",1))for a in(h.get("asks")or[])if float(a.get("size",0))>0),default=1.);c=min((float(a.get("price",1))for a in(g.get("asks")or[])if float(a.get("size",0))>0),default=1.)
  if f>=.992 and e<=.005 and c<=.015:return"A"
  if e>=.992 and f<=.005 and d<=.015:return"B"
  return None
-def evaluate_api1_esports_bo3_opportunities(spec,books_by_token,best_asks,max_middle_cost_net=.988):
- j=[];i=[];l=_infer_live_map_winner(spec.map1_resolved_winner,spec.map1_a_token,spec.map1_b_token,books_by_token);k=_infer_live_map_winner(spec.map2_resolved_winner,spec.map2_a_token,spec.map2_b_token,books_by_token);g="B"if spec.hc_fav_is_a else"A";f=spec.team_b if spec.hc_fav_is_a else spec.team_a;e=spec.team_a if spec.hc_fav_is_a else spec.team_b;b=spec.ml_a_token if spec.hc_fav_is_a else spec.ml_b_token;a=spec.ml_b_token if spec.hc_fav_is_a else spec.ml_a_token
- if l==g:j.append({"mode":"API1_BO3_MAP1_PLUS15_LOCK","token_id":spec.hc_plus_token,"opp_token_id":spec.hc_minus_token,"market_id":spec.hc_market_id,"condition_id":spec.hc_condition_id,"fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"p_lock":.997,"side_label":"PLUS_1.5","display_label":f"{f} (+1.5 Maps) [Map 1 Won]","close_ts":spec.end_ts})
- if l in("A","B")and k in("A","B")and l!=k and spec.ou25_over_token and spec.ou25_under_token:j.append({"mode":"API1_BO3_1_1_OVER25_LOCK","token_id":spec.ou25_over_token,"opp_token_id":spec.ou25_under_token,"market_id":spec.ou25_market_id,"condition_id":spec.ou25_condition_id,"fee_rate":spec.ou25_fee_rate,"fee_exponent":1.,"p_lock":.998,"side_label":"OVER_2.5","display_label":f"{spec.title[:44]} Over 2.5 Maps [1-1 Split]","close_ts":spec.end_ts})
- d=best_asks.get(b);c=best_asks.get(spec.hc_plus_token)
- if d is not None and c is not None:
-  h=round(_net_unit_ask(d,spec.ml_fee_rate,spec.ml_fee_exp)+_net_unit_ask(c,spec.hc_fee_rate,spec.hc_fee_exp),4)
-  if h<=max_middle_cost_net:i.append({"mode":"API1_BO3_POST_M1_MIDDLE"if l==g else"API1_BO3_2_1_POLISH_MIDDLE","event_id":spec.event_id,"title":spec.title,"box_cost_net":h,"post_m1_forfeit_immune":(l==g),"close_ts":spec.end_ts,"leg_a":{"token_id":b,"opp_token_id":a,"condition_id":spec.ml_condition_id,"market_id":spec.ml_market_id,"side":"ML","label":f"ML[{e}]","fee_rate":spec.ml_fee_rate,"fee_exponent":spec.ml_fee_exp,"neg_risk":False,"strike":.0},"leg_b":{"token_id":spec.hc_plus_token,"opp_token_id":spec.hc_minus_token,"condition_id":spec.hc_condition_id,"market_id":spec.hc_market_id,"side":"HANDICAP","label":f"{f}(+1.5)","fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"neg_risk":False,"strike":1.5},"label":f"{spec.title[:42]}: ML[{e}] + {f}(+1.5)"})
- return{"single_leg_locks":j,"two_leg_boxes":i}
+def evaluate_api1_esports_bo3_opportunities(spec,books_by_token,best_asks,max_middle_cost_net=.988,*,allow_quote_inferred=False):
+ w=[];v=[];y=_infer_live_map_winner(spec.map1_resolved_winner,spec.map1_a_token,spec.map1_b_token,books_by_token,allow_quote_inferred=allow_quote_inferred);x=_infer_live_map_winner(spec.map2_resolved_winner,spec.map2_a_token,spec.map2_b_token,books_by_token,allow_quote_inferred=allow_quote_inferred);q="B"if spec.hc_fav_is_a else"A";p=spec.team_b if spec.hc_fav_is_a else spec.team_a;o=spec.team_a if spec.hc_fav_is_a else spec.team_b;h=spec.ml_a_token if spec.hc_fav_is_a else spec.ml_b_token;g=spec.ml_b_token if spec.hc_fav_is_a else spec.ml_a_token
+ if y==q:w.append({"mode":"API1_BO3_MAP1_PLUS15_LOCK","token_id":spec.hc_plus_token,"opp_token_id":spec.hc_minus_token,"market_id":spec.hc_market_id,"condition_id":spec.hc_condition_id,"fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"p_lock":.999,"side_label":"PLUS_1.5","display_label":f"{p} (+1.5 Maps) [Map 1 Won]","close_ts":spec.end_ts})
+ a=True
+ try:from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as b;t=b.snapshot.get("riskless_boxes",{});a=bool(t.get("enable_esports1_bo3_intermission_box",True)and t.get("enable_esports1_intermission_hc_total_box",True))
+ except Exception:pass
+ n="A"if spec.hc_fav_is_a else"B"
+ if(a and y==n and x is None and spec.ou25_over_token and spec.ou25_under_token and spec.hc_minus_token and spec.hc_plus_token):
+  m=best_asks.get(spec.map2_a_token)if spec.map2_a_token else None;l=best_asks.get(spec.map2_b_token)if spec.map2_b_token else None;c=bool(m is not None and l is not None and.15<=float(m)<=.85 and.15<=float(l)<=.85 and(float(m)+float(l))<=1.08)
+  if c:
+   d=best_asks.get(spec.hc_minus_token);k=best_asks.get(spec.ou25_over_token)
+   if d is not None and k is not None:
+    s=round(_net_unit_ask(d,spec.hc_fee_rate,spec.hc_fee_exp)+_net_unit_ask(k,spec.ou25_fee_rate,1.),4)
+    if s<=max_middle_cost_net:v.append({"mode":"ESPORTS1_BO3_INTERMISSION_HANDICAP_TOTAL_BOX","event_id":spec.event_id,"title":spec.title,"box_cost_net":s,"post_m1_forfeit_immune":True,"close_ts":spec.end_ts,"leg_a":{"token_id":spec.hc_minus_token,"opp_token_id":spec.hc_plus_token,"condition_id":spec.hc_condition_id,"market_id":spec.hc_market_id,"side":"HANDICAP","label":f"{o}(-1.5)","fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"neg_risk":False,"strike":-1.5},"leg_b":{"token_id":spec.ou25_over_token,"opp_token_id":spec.ou25_under_token,"condition_id":spec.ou25_condition_id,"market_id":spec.ou25_market_id,"side":"TOTAL_OVER","label":"Over(2.5)","fee_rate":spec.ou25_fee_rate,"fee_exponent":1.,"neg_risk":False,"strike":2.5},"label":f"{spec.title[:38]}: {o}(-1.5) + Over 2.5 [1-0 Break]"})
+   e=best_asks.get(spec.hc_plus_token);f=best_asks.get(spec.ou25_under_token)
+   if e is not None and f is not None:
+    r=round(_net_unit_ask(e,spec.hc_fee_rate,spec.hc_fee_exp)+_net_unit_ask(f,spec.ou25_fee_rate,1.),4)
+    if r<=max_middle_cost_net:v.append({"mode":"ESPORTS1_BO3_INTERMISSION_HANDICAP_TOTAL_BOX","event_id":spec.event_id,"title":spec.title,"box_cost_net":r,"post_m1_forfeit_immune":True,"close_ts":spec.end_ts,"leg_a":{"token_id":spec.hc_plus_token,"opp_token_id":spec.hc_minus_token,"condition_id":spec.hc_condition_id,"market_id":spec.hc_market_id,"side":"HANDICAP","label":f"{p}(+1.5)","fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"neg_risk":False,"strike":1.5},"leg_b":{"token_id":spec.ou25_under_token,"opp_token_id":spec.ou25_over_token,"condition_id":spec.ou25_condition_id,"market_id":spec.ou25_market_id,"side":"TOTAL_UNDER","label":"Under(2.5)","fee_rate":spec.ou25_fee_rate,"fee_exponent":1.,"neg_risk":False,"strike":2.5},"label":f"{spec.title[:38]}: {p}(+1.5) + Under 2.5 [1-0 Break]"})
+ if y in("A","B")and x in("A","B")and y!=x and spec.ou25_over_token and spec.ou25_under_token:w.append({"mode":"API1_BO3_1_1_OVER25_LOCK","token_id":spec.ou25_over_token,"opp_token_id":spec.ou25_under_token,"market_id":spec.ou25_market_id,"condition_id":spec.ou25_condition_id,"fee_rate":spec.ou25_fee_rate,"fee_exponent":1.,"p_lock":.998,"side_label":"OVER_2.5","display_label":f"{spec.title[:44]} Over 2.5 Maps [1-1 Split]","close_ts":spec.end_ts})
+ j=best_asks.get(h);i=best_asks.get(spec.hc_plus_token)
+ if j is not None and i is not None:
+  u=round(_net_unit_ask(j,spec.ml_fee_rate,spec.ml_fee_exp)+_net_unit_ask(i,spec.hc_fee_rate,spec.hc_fee_exp),4)
+  if u<=max_middle_cost_net:v.append({"mode":"API1_BO3_POST_M1_MIDDLE"if y==q else"API1_BO3_2_1_POLISH_MIDDLE","event_id":spec.event_id,"title":spec.title,"box_cost_net":u,"post_m1_forfeit_immune":(y==q),"close_ts":spec.end_ts,"leg_a":{"token_id":h,"opp_token_id":g,"condition_id":spec.ml_condition_id,"market_id":spec.ml_market_id,"side":"ML","label":f"ML[{o}]","fee_rate":spec.ml_fee_rate,"fee_exponent":spec.ml_fee_exp,"neg_risk":False,"strike":.0},"leg_b":{"token_id":spec.hc_plus_token,"opp_token_id":spec.hc_minus_token,"condition_id":spec.hc_condition_id,"market_id":spec.hc_market_id,"side":"HANDICAP","label":f"{p}(+1.5)","fee_rate":spec.hc_fee_rate,"fee_exponent":spec.hc_fee_exp,"neg_risk":False,"strike":1.5},"label":f"{spec.title[:42]}: ML[{o}] + {p}(+1.5)"})
+ return{"single_leg_locks":w,"two_leg_boxes":v}
 # ======================================================================================
-# [14/21] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
+# [14/20] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
 # PURPOSE: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;import re;import time;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;from src.polymarket_research.riskless_frontier_v2_engine import(ESPN_NBA_SUMMARY_URL,NbaPlayerPropRung,NbaPlayerPropSlate,_infer_live_map_winner,_is_half_hook,_net_unit_bid,canon_player_name,find_state_matrix_dominance_boxes,parse_espn_nba_boxscore_players,verify_negrisk_adapter_slate_sync);from src.polymarket_research.tradfi_sports_zero_fee_engine import(_SPREAD_FAV_RE,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts,_walk_side_exact_shares);from src.polymarket_research.uma_nba_endgame_engine import(LiveNbaGameState,_canon_nba_team,_parse_json_list);LP2_MIDTERM_CORE_SLUGS=("republican-house-seats-after-the-2026-midterm-elections","republican-senate-seats-after-the-2026-midterm-elections-927","which-party-will-win-the-house-in-2026","which-party-will-win-the-senate-in-2026","balance-of-power-2026-midterms","republican-trifecta-with-supermajority-in-the-senate","who-wins-the-senate-pending-hormuz-agreement-before-the-midterms");LP2_TOSSUP_CUBE_SLUG="which-tossup-senate-states-will-republicans-win-ak-ia-ks-me-mi-oh-tx";LP2_TOSSUP_STATE_SLUGS={"AK":"alaska-senate-election-winner","IA":"iowa-senate-election-winner","KS":"kansas-senate-election-winner","ME":"maine-senate-election-winner","MI":"michigan-senate-election-winner","OH":"ohio-senate-election-winner","TX":"texas-senate-election-winner"};ESPN_SCOREBOARD_URLS={"SOCCER":("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ksa.1/scoreboard"),"NHL":("https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",),"NFL":("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",),"CFB":("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100",)};_EXT_PROP_TITLE_RE=re.compile(r"^(.+?):\s*(Steals|Blocks)\s+O/U\s+(\d+\.5)\b",re.IGNORECASE);_NFL_EM_BAND_RE=re.compile(r"Exact\s+Margin:\s*(.+?)\s+by\s+(\d+)(?:-(\d+)|\+)",re.IGNORECASE);_GENERIC_SPREAD_LINE_RE=re.compile(r"([+-]\d+\.5)\b");_SCALAR_MAG_RE=re.compile(r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmb]|thousand|million|billion)?\b",re.IGNORECASE);_COVERED_CRYPTO_PYTH_SLUG_RE=re.compile(r"\b(?:bitcoin|btc|ethereum|eth|solana|sol|xrp|dogecoin|doge|bnb|sui|cardano|avax" r"|wti|crude-oil|xauusd|xagusd|gold-gc|silver-si|spy-hit|spy-daily|nvidia-hit|nvda-multi" r"|apple-hit|aapl-multi|tesla-hit|tsla-multi|microsoft-hit|msft-multi|amazon-hit|google-hit" r"|palantir-hit|coin-hit|hood-hit|natural-gas-hit)\b",re.IGNORECASE);_RESET_WINDOW_VETO_RE=re.compile(r"\b(?:in\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)" r"|during\s+(?:the\s+)?(?:month|week|quarter|q[1-4])|between\s+[a-z]+\s+\d+\s+and\s+[a-z]+\s+\d+)\b",re.IGNORECASE);_MONTH_DATE_STRIP_RE=re.compile(r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)" r"\s+\d{1,2}(?:,\s*20\d{2})?\b|\b20\d{2}-\d{2}-\d{2}\b|\bq[1-4]\s+20\d{2}\b",re.IGNORECASE);_TZ_DETECT_RE=re.compile(r"\b(ET|EDT|EST|UTC|GMT|PT|PDT|PST|CT|EET|CET|IRST|Iran\s+Standard\s+Time|Eastern\s+European\s+Time|Eastern\s+Time)\b",re.IGNORECASE)
+import json;import math;import re;import time;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;from src.polymarket_research.riskless_frontier_v2_engine import(ESPN_NBA_SUMMARY_URL,NbaPlayerPropRung,NbaPlayerPropSlate,_infer_live_map_winner,_is_half_hook,_net_unit_bid,canon_player_name,find_state_matrix_dominance_boxes,parse_espn_nba_boxscore_players,verify_negrisk_adapter_slate_sync);from src.polymarket_research.tradfi_sports_zero_fee_engine import(_SPREAD_FAV_RE,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts,_walk_side_exact_shares);from src.polymarket_research.uma_nba_endgame_engine import(LiveNbaGameState,_canon_nba_team,_parse_json_list);LP2_MIDTERM_CORE_SLUGS=("republican-house-seats-after-the-2026-midterm-elections","republican-senate-seats-after-the-2026-midterm-elections-927","which-party-will-win-the-house-in-2026","which-party-will-win-the-senate-in-2026","balance-of-power-2026-midterms","republican-trifecta-with-supermajority-in-the-senate","who-wins-the-senate-pending-hormuz-agreement-before-the-midterms");LP2_TOSSUP_CUBE_SLUG="which-tossup-senate-states-will-republicans-win-ak-ia-ks-me-mi-oh-tx";LP2_TOSSUP_STATE_SLUGS={"AK":"alaska-senate-election-winner","IA":"iowa-senate-election-winner","KS":"kansas-senate-election-winner","ME":"maine-senate-election-winner","MI":"michigan-senate-election-winner","OH":"ohio-senate-election-winner","TX":"texas-senate-election-winner"};ESPN_SCOREBOARD_URLS={"SOCCER":("https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ger.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ita.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/fra.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.europa/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/usa.1/scoreboard","https://site.api.espn.com/apis/site/v2/sports/soccer/ksa.1/scoreboard"),"NHL":("https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",),"NFL":("https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",),"CFB":("https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard?limit=100",)};_EXT_PROP_TITLE_RE=re.compile(r"^(.+?):\s*(Steals|Blocks)\s+O/U\s+(\d+\.5)\b",re.IGNORECASE);_NFL_EM_BAND_RE=re.compile(r"Exact\s+Margin:\s*(.+?)\s+by\s+(\d+)(?:-(\d+)|\+)",re.IGNORECASE);_GENERIC_SPREAD_LINE_RE=re.compile(r"([+-]\d+\.5)\b");_SCALAR_MAG_RE=re.compile(r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmb]|thousand|million|billion)?\b",re.IGNORECASE);_COVERED_CRYPTO_PYTH_SLUG_RE=re.compile(r"\b(?:bitcoin|btc|ethereum|eth|solana|sol|xrp|dogecoin|doge|bnb|sui|cardano|avax" r"|wti|crude-oil|xauusd|xagusd|gold-gc|silver-si|spy-hit|spy-daily|nvidia-hit|nvda-multi" r"|apple-hit|aapl-multi|tesla-hit|tsla-multi|microsoft-hit|msft-multi|amazon-hit|google-hit" r"|palantir-hit|coin-hit|hood-hit|natural-gas-hit)\b",re.IGNORECASE);_RESET_WINDOW_VETO_RE=re.compile(r"\b(?:in\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)" r"|during\s+(?:the\s+)?(?:month|week|quarter|q[1-4])|between\s+[a-z]+\s+\d+\s+and\s+[a-z]+\s+\d+)\b",re.IGNORECASE);_MONTH_DATE_STRIP_RE=re.compile(r"\b(?:january|february|march|april|may|june|july|august|september|october|november|december)" r"\s+\d{1,2}(?:,\s*20\d{2})?\b|\b20\d{2}-\d{2}-\d{2}\b|\bq[1-4]\s+20\d{2}\b",re.IGNORECASE);_TZ_DETECT_RE=re.compile(r"\b(ET|EDT|EST|UTC|GMT|PT|PDT|PST|CT|EET|CET|IRST|Iran\s+Standard\s+Time|Eastern\s+European\s+Time|Eastern\s+Time)\b",re.IGNORECASE)
 def _add_truth_leg(legs,m,event_slug,tag_lbl,v_yes,v_no=None):
  if m.get("closed")or m.get("archived")or m.get("active")is False or m.get("acceptingOrders")is False:return
  b=_parse_clob_tokens(m)
@@ -3606,9 +3696,9 @@ def detect_lp2_seat_convert_implication_arbs(events_by_slug,books_by_token,targe
   if a<=max_synthetic_box_cost_net:e=[{"token_id":n_tok,"market_id":mid_m,"side":"NO","label":f"NO[{grp}]","fee_rate":.0,"fee_exponent":1.}for _,grp,n_tok,mid_m,_ in q]+[{"token_id":g,"market_id":str(I.get("id")or""),"side":"YES","label":f"YES[{u}]","fee_rate":B,"fee_exponent":A}];Q.append({"mode":P,"seat_slug":l,"neg_risk_market_id":J,"m_no_legs":G,"index_set_int":sum(1<<T for T,*_ in q),"shares_in":v,"shares_out":round(i,4),"synthetic_box_cost_net":round(a,4),"guaranteed_floor_edge_ps":round(1.-a,4),"l1_usd":round(min([w["l1_usd"]for*_,w in q]+[F["l1_usd"]]),2),"close_ts":_parse_iso_ts(O.get("endDate"))or.0,"legs":e,"label":f"{P}: CONV({G}xNO)+YES[{u}] @ {a:.4f}"})
  return Q
 @dataclass
-class NbaSubperiodMarketSpec:event_id:str;market_id:str;condition_id:str;period_scope:str;kind:str;line:Optional[float];team_side:Optional[str];tok_0:str;tok_1:str;out_0:str;out_1:str;fee_rate:float;settle_est_ts:float;display_title:str;neg_risk=False;fee_exponent=1.
+class NbaSubperiodMarketSpec:event_id:str;market_id:str;condition_id:str;period_scope:str;kind:str;line:Optional[float];team_side:Optional[str];tok_0:str;tok_1:str;out_0:str;out_1:str;fee_rate:float;settle_est_ts:float;display_title:str;neg_risk:bool=False;fee_exponent:float=1.
 @dataclass
-class NbaSubperiodAndExtPropSlate:event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;ext_props_by_player_stat=field(default_factory=dict);subperiod_markets=field(default_factory=list)
+class NbaSubperiodAndExtPropSlate:event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;ext_props_by_player_stat:Dict[Tuple[str,str],List[NbaPlayerPropRung]]=field(default_factory=dict);subperiod_markets:List[NbaSubperiodMarketSpec]=field(default_factory=list)
 _NBA_SUBPERIOD_SMT_MAP={"first_half_moneyline":("1H","ML"),"q1_moneyline":("Q1","ML"),"first_half_spreads":("1H","SPREAD"),"q1_spreads":("Q1","SPREAD"),"q2_spreads":("Q2","SPREAD"),"q3_spreads":("Q3","SPREAD"),"first_half_totals":("1H","TOTAL"),"q1_totals":("Q1","TOTAL"),"q2_totals":("Q2","TOTAL"),"q3_totals":("Q3","TOTAL"),"q4_totals":("Q4","TOTAL"),"team_totals":("FG","TEAM_TOTAL"),"first_half_team_totals":("1H","TEAM_TOTAL"),"second_half_team_totals":("2H","TEAM_TOTAL")}
 def parse_nba_subperiod_and_ext_props(ev,now_ts=None):
  if ev.get("closed")or ev.get("archived"):return None
@@ -3739,13 +3829,13 @@ def evaluate_sp4_subperiod_and_ext_locks(slate,ext_summary):
   if p_scope in("Q1","Q2","Q3","Q4"):
    q=int(p_scope[1])
    if q not in E or q not in F:return None,None,False
-   a=i or(q==1 and y)or(p>q and(d<=6e2 or p>=q+2));return E[q],F[q],a
+   K=i or(q==1 and y)or(p>q and(d<=6e2 or p>=q+2));return E[q],F[q],K
   if p_scope=="1H":
    if 1 not in E or 1 not in F:return None,None,False
-   e=E.get(1,0)+E.get(2,0);d=F.get(1,0)+F.get(2,0);a=i or(2 in E and 2 in F and(p>=3 or y));return e,d,a
+   O=E.get(1,0)+E.get(2,0);N=F.get(1,0)+F.get(2,0);K=i or(2 in E and 2 in F and(p>=3 or y));return O,N,K
   if p_scope=="2H":
    if p<3:return None,None,False
-   c=sum(v for k,v in E.items()if k>=3);b=sum(v for k,v in F.items()if k>=3);return c,b,i
+   M=sum(v for k,v in E.items()if k>=3);L=sum(v for k,v in F.items()if k>=3);return M,L,i
   return None,None,False
  for J in slate.subperiod_markets:
   D,C,c=a(J.period_scope)
@@ -3774,13 +3864,13 @@ def evaluate_sp4_subperiod_and_ext_locks(slate,ext_summary):
     if int(r)>=int(math.floor(G.line))+2:x.append({"mode":"SP4_FINAL_EXT_STAT_LOCK","market_id":G.market_id,"condition_id":G.condition_id,"token_id":G.yes_token,"opp_token_id":G.no_token,"side_label":"YES","display_label":f"{G.player_name} {n} O{G.line} [Final={r}]","fee_rate":G.fee_rate,"fee_exponent":G.fee_exponent,"neg_risk":False,"p_lock":.998,"close_ts":G.settle_est_ts})
  return x
 @dataclass
-class MonotonicRung:market_id:str;condition_id:str;label:str;order_val:float;end_ts:float;yes_token:str;no_token:str;fee_rate:float;fee_exponent:float;clause_key:str;neg_risk=False
+class MonotonicRung:market_id:str;condition_id:str;label:str;order_val:float;end_ts:float;yes_token:str;no_token:str;fee_rate:float;fee_exponent:float;clause_key:str;neg_risk:bool=False
 @dataclass
 class CalendarOrScalarLadderSpec:event_id:str;slug:str;title:str;ladder_kind:str;rungs:List[MonotonicRung]
 def _canon_clause_stem(desc,group_title):
  s=str(desc or"").lower().replace("“",'"').replace("”",'"').replace("’","'");b=_TZ_DETECT_RE.search(desc or"");a=(b.group(1).upper().replace(" ","_")if b else"NO_TZ");c=str(group_title or"").strip().lower()
  if c and len(c)>=2:s=s.replace(c," <RUNG> ")
- s=_MONTH_DATE_STRIP_RE.sub(" <DATE> ",s);s=re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmb]|million|billion)?"," <STRIKE> ",s);s=re.sub(r"\s+"," ",s).strip();return s,a
+ s=_MONTH_DATE_STRIP_RE.sub(" <DATE> ",s);s=re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmb]|million|billion)?"," <STRIKE> ",s);s=re.sub(r"\b(greater\s+than|at\s+least|more\s+than|above|over|exceeds?)\s+[0-9][0-9,]*(?:\.[0-9]+)?\s*%?",r"\1 <STRIKE>",s);s=re.sub(r"\s+"," ",s).strip();return s,a
 _MONTH_MAP_CAL1={"january":1,"jan":1,"february":2,"feb":2,"march":3,"mar":3,"april":4,"apr":4,"may":5,"june":6,"jun":6,"july":7,"jul":7,"august":8,"aug":8,"september":9,"sep":9,"sept":9,"october":10,"oct":10,"november":11,"nov":11,"december":12,"dec":12}
 def _parse_group_label_date_ts(lbl,ref_end_ts):
  m=re.search(r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(20\d{2}))?\b",str(lbl or""),re.IGNORECASE)
@@ -3807,7 +3897,7 @@ def parse_cal1_monotonic_ladder_event(ev,now_ts=None):
  if not b and("continues-through"in q or"continues through"in h or("remains in effect"in p and"through"in p)or('resolve to "no" if'in p.replace("“",'"').replace("”",'"')and"by the specified date"in p)):a="SURVIVAL"
  elif not b and(any(k in q for k in("-by","before-"))or any(k in h for k in(" by "," before "))):
   if"resolve"in p and("by "in p or"before "in p or"between market creation and"in p):a="DEADLINE_BY"
- elif any(k in h for k in("fdv above","total commitments","market cap above","box office","revenue above")):a="SCALAR_ABOVE"
+ elif any(k in h for k in("fdv above","total commitments","market cap above","box office","revenue above","rotten tomatoes","tomatometer")):a="SCALAR_ABOVE"
  if a is None:return[]
  e={}
  for m in D:
@@ -3825,7 +3915,7 @@ def parse_cal1_monotonic_ladder_event(ev,now_ts=None):
    else:c=i if i is not None else j
   else:
    g=n.lower()
-   if not any(w in g for w in("above","greater than","exceed","at least","more than","over ")):continue
+   if not any(w in g for w in("above","greater than","exceed","at least","more than","over ","or higher")):continue
    if re.search(r"\b(?:less\s+than\s+\$|fewer\s+than|at\s+most)\b",g):continue
    z=_parse_scalar_strike(G)
    if z is None or z<=.0:continue
@@ -3920,7 +4010,7 @@ def detect_multisport_ml_spread_polish_middles(ev,best_asks,sport_hint="NFL",max
    if s<=max_box_cost_net:L.append({"mode":f"LP1_{sport_hint}_{D}_ML_SPREAD_MIDDLE","sport":sport_hint,"event_id":E,"slug":N,"title":F,"box_cost_net":s,"close_ts":g,"leg_a":{"token_id":c,"opp_token_id":b,"condition_id":str(K.get("conditionId")or""),"market_id":str(K.get("id")or""),"side":"ML_FAV","label":f"{D} ML[{e}]","fee_rate":A,"fee_exponent":z,"neg_risk":bool(K.get("negRisk")),"strike":.0,"end_ts":g},"leg_b":{"token_id":i,"opp_token_id":d,"condition_id":str(Q.get("conditionId")or""),"market_id":str(Q.get("id")or""),"side":"DOG_PLUS","label":f"{D} {f}(+{P})","fee_rate":u,"fee_exponent":t,"neg_risk":bool(Q.get("negRisk")),"strike":P,"end_ts":g},"label":f"{F[:38]}: {D} ML[{e}] + {f}(+{P})"})
  L.sort(key=lambda x:float(x["box_cost_net"]));return L
 @dataclass
-class LiveMultiSportGame:sport:str;game_id:str;start_ts:float;state:str;completed:bool;is_halftime:bool;period:int;clock_sec:float;home_name:str;away_name:str;home_score:int;away_score:int;linescores_home=field(default_factory=dict);linescores_away=field(default_factory=dict)
+class LiveMultiSportGame:sport:str;game_id:str;start_ts:float;state:str;completed:bool;is_halftime:bool;period:int;clock_sec:float;home_name:str;away_name:str;home_score:int;away_score:int;linescores_home:Dict[int,int]=field(default_factory=dict);linescores_away:Dict[int,int]=field(default_factory=dict)
 class ScoreConfirmationTracker:
  def __init__(self):self._first_seen={}
  def observe_and_confirmed_floor(a,sport,game_id,metric_key,current_val,now_ts,min_confirm_sec,is_final=False):
@@ -4011,46 +4101,49 @@ def evaluate_cl1_soccer_tree_clinch_locks(soccer_tree,live_soccer_board,tracker,
   if d>=int(math.floor(k))+1:h.append({"mode":"CL1_SOCCER_POST_VAR_OVER_LOCK","sport":"SOCCER","market_id":str(l["market_id"]),"condition_id":str(l["condition_id"]),"token_id":str(l["over_token"]),"opp_token_id":str(l["under_token"]),"fee_rate":float(l["fee_rate"]),"fee_exponent":float(l.get("fee_exponent",l.get("fee_exp",1.))),"neg_risk":bool(l.get("neg_risk",False)),"side_label":"OVER","display_label":f"{soccer_tree.title[:40]} Over {k} [Goals={d} post-VAR]","p_lock":.998,"close_ts":float(soccer_tree.end_ts)})
  return h
 def evaluate_cl1_multisport_corridor_clinch_locks(ms_spec,live_boards,tracker,now_ts):
- x=str(ms_spec.sport or"").upper()
- if x not in("NHL","NFL","CFB"):return[]
- p=live_boards.get(x)or[];c=None;b=False
- for g in p:
-  if abs(g.start_ts-float(ms_spec.start_ts))>8.*3600.:continue
-  if _teams_match_fuzzy(ms_spec.team_a,g.away_name)and _teams_match_fuzzy(ms_spec.team_b,g.home_name):c,b=g,False;break
-  if _teams_match_fuzzy(ms_spec.team_a,g.home_name)and _teams_match_fuzzy(ms_spec.team_b,g.away_name):c,b=g,True;break
- if c is None:return[]
- h=bool(c.completed and c.state=="post");v=c.home_score if b else c.away_score;u=c.away_score if b else c.home_score;t=c.linescores_home if b else c.linescores_away;s=c.linescores_away if b else c.linescores_home;o=[]
- if x=="NHL":
-  f=tracker.observe_and_confirmed_floor("NHL",c.game_id,"TOT_GOALS",v+u,now_ts,min_confirm_sec=150.,is_final=h)
-  for d in(ms_spec.legs_by_scope.get("FG:TOTAL")or[]):
-   if d.relation=="OVER"and f>=int(math.floor(d.threshold))+1:o.append({"mode":"CL1_NHL_POST_CHALLENGE_OVER_LOCK","sport":"NHL","market_id":d.market_id,"condition_id":d.condition_id,"token_id":d.token_id,"opp_token_id":d.opp_token_id,"fee_rate":d.fee_rate,"fee_exponent":d.fee_exponent,"neg_risk":bool(getattr(d,"neg_risk",False)),"side_label":d.side_label,"display_label":f"{ms_spec.title[:38]} {d.display_label} [Goals={f}]","p_lock":.998,"close_ts":float(ms_spec.settle_est_ts)})
-  return o
- m=1 if h else 9
- for d in(ms_spec.legs_by_scope.get("FG:TOTAL")or[]):
-  if d.relation=="OVER"and(v+u)>=int(math.floor(d.threshold))+m:o.append({"mode":f"CL1_{x}_SCORE_OVER_LOCK","sport":x,"market_id":d.market_id,"condition_id":d.condition_id,"token_id":d.token_id,"opp_token_id":d.opp_token_id,"fee_rate":d.fee_rate,"fee_exponent":d.fee_exponent,"neg_risk":bool(getattr(d,"neg_risk",False)),"side_label":d.side_label,"display_label":f"{ms_spec.title[:36]} {d.display_label} [Score={v}-{u}]","p_lock":.999 if h else.997,"close_ts":float(ms_spec.settle_est_ts)})
- for l,r in ms_spec.legs_by_scope.items():
-  w=l.split(":")[0];k,j,a=None,None,False
-  if w in("Q1","Q2","Q3"):
-   q=int(w[1])
-   if q in t and q in s:k,j=t[q],s[q];a=h or(q==1 and c.is_halftime)or(c.period>q and(c.clock_sec<=780. or c.period>=q+2))
-  elif w=="1H":
-   if 1 in t and 1 in s and 2 in t and 2 in s:k,j=t[1]+t[2],s[1]+s[2];a=h or c.is_halftime or c.period>=3
-  if not a or k is None or j is None:continue
-  if l.endswith(":TOTAL"):
-   n=float(k+j)
-   for d in r:
-    i=(n>d.threshold)if d.relation=="OVER"else(n<d.threshold)
-    if i and abs(n-d.threshold)>=.5:o.append({"mode":f"CL1_{x}_{w}_SETTLED_TOTAL_LOCK","sport":x,"market_id":d.market_id,"condition_id":d.condition_id,"token_id":d.token_id,"opp_token_id":d.opp_token_id,"fee_rate":d.fee_rate,"fee_exponent":d.fee_exponent,"neg_risk":bool(getattr(d,"neg_risk",False)),"side_label":d.side_label,"display_label":f"{ms_spec.title[:34]} {d.display_label} [{w}={int(n)} settled]","p_lock":.999,"close_ts":float(ms_spec.settle_est_ts)})
-  elif l.endswith(":SPREAD"):
-   e=float(k-j)
-   for d in r:
-    i=(e>d.threshold)if d.relation=="GT"else(e<d.threshold)
-    if i and abs(e-d.threshold)>=.5:o.append({"mode":f"CL1_{x}_{w}_SETTLED_SPREAD_LOCK","sport":x,"market_id":d.market_id,"condition_id":d.condition_id,"token_id":d.token_id,"opp_token_id":d.opp_token_id,"fee_rate":d.fee_rate,"fee_exponent":d.fee_exponent,"neg_risk":bool(getattr(d,"neg_risk",False)),"side_label":d.side_label,"display_label":f"{ms_spec.title[:34]} {d.display_label} [{w} M={e:+.0f}]","p_lock":.999,"close_ts":float(ms_spec.settle_est_ts)})
- return o
+ A=str(ms_spec.sport or"").upper()
+ if A not in("NHL","NFL","CFB"):return[]
+ s=live_boards.get(A)or[];d=None;c=False;a=float("inf");e=10800. if float(ms_spec.start_ts or.0)>.0 else(8.*3600.)
+ for g in s:
+  y=abs(float(g.start_ts)-float(ms_spec.start_ts))if(g.start_ts>.0 and float(ms_spec.start_ts or.0)>.0)else.0
+  if g.start_ts>.0 and float(ms_spec.start_ts or.0)>.0 and y>e:continue
+  if _teams_match_fuzzy(ms_spec.team_a,g.away_name)and _teams_match_fuzzy(ms_spec.team_b,g.home_name):
+   if y<a:d,c,a=g,False,y
+  elif _teams_match_fuzzy(ms_spec.team_a,g.home_name)and _teams_match_fuzzy(ms_spec.team_b,g.away_name):
+   if y<a:d,c,a=g,True,y
+ if d is None:return[]
+ j=bool(d.completed and d.state=="post");x=d.home_score if c else d.away_score;w=d.away_score if c else d.home_score;v=d.linescores_home if c else d.linescores_away;u=d.linescores_away if c else d.linescores_home;r=[]
+ if A=="NHL":
+  i=tracker.observe_and_confirmed_floor("NHL",d.game_id,"TOT_GOALS",x+w,now_ts,min_confirm_sec=150.,is_final=j)
+  for f in(ms_spec.legs_by_scope.get("FG:TOTAL")or[]):
+   if f.relation=="OVER"and i>=int(math.floor(f.threshold))+1:r.append({"mode":"CL1_NHL_POST_CHALLENGE_OVER_LOCK","sport":"NHL","market_id":f.market_id,"condition_id":f.condition_id,"token_id":f.token_id,"opp_token_id":f.opp_token_id,"fee_rate":f.fee_rate,"fee_exponent":f.fee_exponent,"neg_risk":bool(getattr(f,"neg_risk",False)),"side_label":f.side_label,"display_label":f"{ms_spec.title[:38]} {f.display_label} [Goals={i}]","p_lock":.998,"close_ts":float(ms_spec.settle_est_ts)})
+  return r
+ o=1 if j else 9
+ for f in(ms_spec.legs_by_scope.get("FG:TOTAL")or[]):
+  if f.relation=="OVER"and(x+w)>=int(math.floor(f.threshold))+o:r.append({"mode":f"CL1_{A}_SCORE_OVER_LOCK","sport":A,"market_id":f.market_id,"condition_id":f.condition_id,"token_id":f.token_id,"opp_token_id":f.opp_token_id,"fee_rate":f.fee_rate,"fee_exponent":f.fee_exponent,"neg_risk":bool(getattr(f,"neg_risk",False)),"side_label":f.side_label,"display_label":f"{ms_spec.title[:36]} {f.display_label} [Score={x}-{w}]","p_lock":.999 if j else.997,"close_ts":float(ms_spec.settle_est_ts)})
+ for n,t in ms_spec.legs_by_scope.items():
+  z=n.split(":")[0];m,l,b=None,None,False
+  if z in("Q1","Q2","Q3"):
+   q=int(z[1])
+   if q in v and q in u:m,l=v[q],u[q];b=j or(q==1 and d.is_halftime)or(d.period>q and(d.clock_sec<=780. or d.period>=q+2))
+  elif z=="1H":
+   if 1 in v and 1 in u and 2 in v and 2 in u:m,l=v[1]+v[2],u[1]+u[2];b=j or d.is_halftime or d.period>=3
+  if not b or m is None or l is None:continue
+  if n.endswith(":TOTAL"):
+   p=float(m+l)
+   for f in t:
+    k=(p>f.threshold)if f.relation=="OVER"else(p<f.threshold)
+    if k and abs(p-f.threshold)>=.5:r.append({"mode":f"CL1_{A}_{z}_SETTLED_TOTAL_LOCK","sport":A,"market_id":f.market_id,"condition_id":f.condition_id,"token_id":f.token_id,"opp_token_id":f.opp_token_id,"fee_rate":f.fee_rate,"fee_exponent":f.fee_exponent,"neg_risk":bool(getattr(f,"neg_risk",False)),"side_label":f.side_label,"display_label":f"{ms_spec.title[:34]} {f.display_label} [{z}={int(p)} settled]","p_lock":.999,"close_ts":float(ms_spec.settle_est_ts)})
+  elif n.endswith(":SPREAD"):
+   h=float(m-l)
+   for f in t:
+    k=(h>f.threshold)if f.relation=="GT"else(h<f.threshold)
+    if k and abs(h-f.threshold)>=.5:r.append({"mode":f"CL1_{A}_{z}_SETTLED_SPREAD_LOCK","sport":A,"market_id":f.market_id,"condition_id":f.condition_id,"token_id":f.token_id,"opp_token_id":f.opp_token_id,"fee_rate":f.fee_rate,"fee_exponent":f.fee_exponent,"neg_risk":bool(getattr(f,"neg_risk",False)),"side_label":f.side_label,"display_label":f"{ms_spec.title[:34]} {f.display_label} [{z} M={h:+.0f}]","p_lock":.999,"close_ts":float(ms_spec.settle_est_ts)})
+ return r
 @dataclass
-class TennisTotalRung:market_id:str;condition_id:str;scope:str;line:float;over_token:str;under_token:str;fee_rate:float;fee_exp:float;neg_risk=False
+class TennisTotalRung:market_id:str;condition_id:str;scope:str;line:float;over_token:str;under_token:str;fee_rate:float;fee_exp:float;neg_risk:bool=False
 @dataclass
-class TennisMatchSpec:event_id:str;slug:str;title:str;player_a:str;player_b:str;end_ts:float;totals_by_scope=field(default_factory=dict);set1_a_token=None;set1_b_token=None;set1_resolved_winner=None;set2_a_token=None;set2_b_token=None;set2_resolved_winner=None;sets_ou25_over_token=None;sets_ou25_under_token=None;sets_ou25_market_id="";sets_ou25_condition_id="";sets_ou25_fee_rate=.05;sets_ou25_fee_exp=1.;sets_ou25_neg_risk=False;comp_yes_token=None;comp_no_token=None;comp_market_id="";comp_condition_id="";comp_fee_rate=.05;comp_fee_exp=1.;comp_neg_risk=False
+class TennisMatchSpec:event_id:str;slug:str;title:str;player_a:str;player_b:str;end_ts:float;totals_by_scope:Dict[str,List[TennisTotalRung]]=field(default_factory=dict);set1_a_token:Optional[str]=None;set1_b_token:Optional[str]=None;set1_resolved_winner:Optional[str]=None;set2_a_token:Optional[str]=None;set2_b_token:Optional[str]=None;set2_resolved_winner:Optional[str]=None;sets_ou25_over_token:Optional[str]=None;sets_ou25_under_token:Optional[str]=None;sets_ou25_market_id:str="";sets_ou25_condition_id:str="";sets_ou25_fee_rate:float=.05;sets_ou25_fee_exp:float=1.;sets_ou25_neg_risk:bool=False;comp_yes_token:Optional[str]=None;comp_no_token:Optional[str]=None;comp_market_id:str="";comp_condition_id:str="";comp_fee_rate:float=.05;comp_fee_exp:float=1.;comp_neg_risk:bool=False
 def parse_tennis_retirement_safe_event(ev,now_ts=None):
  if ev.get("closed")or ev.get("archived")or ev.get("negRisk"):return None
  q=str(ev.get("slug")or"").lower();p=ev.get("markets")or[]
@@ -4067,17 +4160,17 @@ def parse_tennis_retirement_safe_event(ev,now_ts=None):
  if now_ts is not None and f<now_ts+60.:return None
  i=TennisMatchSpec(event_id=str(ev.get("id")or""),slug=q,title=str(ev.get("title")or q),player_a=A,player_b=z,end_ts=f)
  def a(cm):
-  h=_parse_clob_tokens(cm);c=[_norm_team(str(x))for x in _parse_json_list(cm.get("outcomes"))];a=_parse_json_list(cm.get("outcomePrices"));e,d=None,None
-  if h and len(c)==2 and{c[0],c[1]}=={l,j}:e,d=(h[0],h[1])if c[0]==l else(h[1],h[0])
-  b=None
-  if len(a)==2 and len(c)==2:
+  D=_parse_clob_tokens(cm);o=[_norm_team(str(x))for x in _parse_json_list(cm.get("outcomes"))];k=_parse_json_list(cm.get("outcomePrices"));v,r=None,None
+  if D and len(o)==2 and{o[0],o[1]}=={l,j}:v,r=(D[0],D[1])if o[0]==l else(D[1],D[0])
+  m=None
+  if len(k)==2 and len(o)==2:
    try:
-    g,f=float(a[0]),float(a[1])
-    if cm.get("closed")or(max(g,f)>=.995 and min(g,f)<=.005):
-     if g>=.995 and f<=.005:b="A"if c[0]==l else"B"
-     elif f>=.995 and g<=.005:b="A"if c[1]==l else"B"
+    C,B=float(k[0]),float(k[1])
+    if cm.get("closed")or(max(C,B)>=.995 and min(C,B)<=.005):
+     if C>=.995 and B<=.005:m="A"if o[0]==l else"B"
+     elif B>=.995 and C<=.005:m="A"if o[1]==l else"B"
    except(TypeError,ValueError):pass
-  return e,d,b
+  return v,r,m
  for m in p:
   t=str(m.get("sportsMarketType")or"").strip().lower();s=str(m.get("groupItemTitle")or m.get("question")or"")
   if t=="tennis_first_set_winner":i.set1_a_token,i.set1_b_token,i.set1_resolved_winner=a(m);continue
@@ -4123,17 +4216,16 @@ def evaluate_ten1_tennis_opportunities(spec,books_by_token,best_asks,max_box_cos
    if k<=max_box_cost_net:h.append({"mode":"TEN1_1_1_RETIREMENT_HEDGED_BOX","event_id":spec.event_id,"slug":spec.slug,"title":spec.title,"box_cost_net":k,"close_ts":spec.end_ts,"leg_a":{"token_id":spec.sets_ou25_over_token,"opp_token_id":spec.sets_ou25_under_token or"","condition_id":spec.sets_ou25_condition_id,"market_id":spec.sets_ou25_market_id,"side":"OVER_2.5","label":"Sets O2.5 [1-1]","fee_rate":spec.sets_ou25_fee_rate,"fee_exponent":spec.sets_ou25_fee_exp,"neg_risk":bool(spec.sets_ou25_neg_risk),"strike":2.5,"end_ts":spec.end_ts},"leg_b":{"token_id":spec.comp_no_token,"opp_token_id":spec.comp_yes_token or"","condition_id":spec.comp_condition_id,"market_id":spec.comp_market_id,"side":"NO_COMP","label":"NO[Completed Match]","fee_rate":spec.comp_fee_rate,"fee_exponent":spec.comp_fee_exp,"neg_risk":bool(spec.comp_neg_risk),"strike":.0,"end_ts":spec.end_ts},"label":f"{spec.title[:36]}: Sets O2.5 + NO[Completed] [1-1 Split]"})
  h.sort(key=lambda x:float(x["box_cost_net"]));return h
 # ======================================================================================
-# [15/21] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
+# [15/20] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
 # PURPOSE: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-import math;import re;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import(BarrierRungSpec,parse_barrier_direction,parse_hit_event,parse_strike_from_text);from src.polymarket_research.riskless_frontier_v2_engine import(NegRiskConvertSlateSpec,_is_half_hook,canon_player_name,detect_nr2_convert_no_subset_arbs,find_state_matrix_dominance_boxes);from src.polymarket_research.riskless_frontier_v3_engine import(LiveMultiSportGame,NbaSubperiodMarketSpec,ScoreConfirmationTracker,_teams_match_fuzzy,parse_nba_subperiod_and_ext_props);from src.polymarket_research.tradfi_sports_zero_fee_engine import(_SPREAD_FAV_RE,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts);from src.polymarket_research.uma_nba_endgame_engine import(_canon_nba_team,_parse_json_list);FRONTIER_V4_GRAD8_SLEEVES=("AFF1_FROZEN_SUBPERIOD_COLLAPSE","SOC2_EXACT_SCORE_2D_LATTICE","NFL_PRP1_MILESTONE_AND_MAX_LOCKS","SUM1_FRECHET_SUM_TRIANGLES","CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER");ESPN_NFL_SUMMARY_URL="https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={game_id}"
+import json;import math;import re;import urllib.request;from dataclasses import dataclass,field;from datetime import datetime,timezone;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;from src.polymarket_research.barrier_onetouch_svi_engine import(BarrierRungSpec,parse_barrier_direction,parse_hit_event,parse_strike_from_text);from src.polymarket_research.riskless_frontier_v2_engine import(NegRiskConvertSlateSpec,_is_half_hook,canon_player_name,detect_nr2_convert_no_subset_arbs,find_state_matrix_dominance_boxes);from src.polymarket_research.riskless_frontier_v3_engine import(LiveMultiSportGame,NbaSubperiodMarketSpec,ScoreConfirmationTracker,_teams_match_fuzzy,parse_nba_subperiod_and_ext_props);from src.polymarket_research.tradfi_sports_zero_fee_engine import(_SPREAD_FAV_RE,_extract_market_fee_rate,_net_unit_ask,_norm_team,_parse_clob_tokens,_parse_iso_ts);from src.polymarket_research.uma_nba_endgame_engine import(_canon_nba_team,_parse_json_list);FRONTIER_V4_GRAD8_SLEEVES=("AFF1_FROZEN_SUBPERIOD_COLLAPSE","SOC2_EXACT_SCORE_2D_LATTICE","NFL_PRP1_MILESTONE_AND_MAX_LOCKS","SUM1_FRECHET_SUM_TRIANGLES","CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER");ESPN_NFL_SUMMARY_URL="https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event={game_id}"
 @dataclass
-class FirstPassageMarketSpec:event_id:str;market_id:str;condition_id:str;kind:str;target_pts:int;away_token:str;home_token:str;away_label:str;home_label:str;fee_rate:float;fee_exponent:float;settle_est_ts:float;neg_risk=False
+class FirstPassageMarketSpec:event_id:str;market_id:str;condition_id:str;kind:str;target_pts:int;away_token:str;home_token:str;away_label:str;home_label:str;fee_rate:float;fee_exponent:float;settle_est_ts:float;neg_risk:bool=False
 @dataclass
 class AffineGameBundle:
- sport:str;event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;away_team:str;home_team:str;markets=field(default_factory=list);overtime_yes_leg=None;first_passage_markets=field(default_factory=list)
+ sport:str;event_id:str;slug:str;title:str;tipoff_ts:float;settle_est_ts:float;away_team:str;home_team:str;markets:List[NbaSubperiodMarketSpec]=field(default_factory=list);overtime_yes_leg:Optional[Dict[str,Any]]=None;first_passage_markets:List[FirstPassageMarketSpec]=field(default_factory=list)
  @property
  def start_ts(self):return self.tipoff_ts
 class SubperiodFreezeTracker:
@@ -4255,63 +4347,89 @@ def _spread_signed_legs(sm,away_team):
  if sm.team_side==away_team:return[("GT",+a,_leg_dict_from_subspec(sm,True,f"{sm.period_scope} {sm.out_0}(-{a})")),("LT",+a,_leg_dict_from_subspec(sm,False,f"{sm.period_scope} {sm.out_1}(+{a})"))]
  return[("LT",-a,_leg_dict_from_subspec(sm,True,f"{sm.period_scope} {sm.out_0}(-{a})")),("GT",-a,_leg_dict_from_subspec(sm,False,f"{sm.period_scope} {sm.out_1}(+{a})"))]
 def evaluate_aff1_frozen_subperiod_opportunities(bundle,live_summary,best_asks,freeze_tracker,now_ts,espn_game_id="",freeze_confirm_sec=45.,max_2leg_cost_net=.992,max_3leg_cost_net=.99):
- d=[];c=[];b=[];N=str(live_summary.get("state")or"pre").lower()
- if N not in("in","post"):return{"two_leg_boxes":d,"three_leg_boxes":c,"single_leg_locks":b}
- l=bool(live_summary.get("completed")and N=="post");M=bool(live_summary.get("is_halftime"));G=int(live_summary.get("period")or 0);z=int(live_summary.get("away_score")or 0);y=int(live_summary.get("home_score")or 0);_c=(live_summary.get("linescores")or{}).get("away")or{};_b=(live_summary.get("linescores")or{}).get("home")or{};_k=espn_game_id or bundle.event_id
- def a(mode,lg_a,lg_b,middle_width,desc):
+ f=[];e=[];d=[];W=str(live_summary.get("state")or"pre").lower()
+ if W not in("in","post"):return{"two_leg_boxes":f,"three_leg_boxes":e,"single_leg_locks":d}
+ w=bool(live_summary.get("completed")and W=="post");V=bool(live_summary.get("is_halftime"));P=int(live_summary.get("period")or 0);I=int(live_summary.get("away_score")or 0);H=int(live_summary.get("home_score")or 0);_l=(live_summary.get("linescores")or{}).get("away")or{};_k=(live_summary.get("linescores")or{}).get("home")or{};_t=espn_game_id or bundle.event_id
+ def b(mode,lg_a,lg_b,middle_width,desc):
   if lg_a["market_id"]==lg_b["market_id"]:return
-  c=best_asks.get(lg_a["token_id"]);b=best_asks.get(lg_b["token_id"])
-  if c is None or b is None or not(.005<=c<=.99 and.005<=b<=.99):return
-  a=round(_net_unit_ask(float(c),lg_a["fee_rate"],lg_a["fee_exponent"])+_net_unit_ask(float(b),lg_b["fee_rate"],lg_b["fee_exponent"]),4)
-  if a<=max_2leg_cost_net:d.append({"mode":mode,"sport":bundle.sport,"event_id":bundle.event_id,"slug":bundle.slug,"title":bundle.title,"box_cost_gross":round(float(c)+float(b),4),"box_cost_net":a,"middle_width":round(float(middle_width),1),"close_ts":max(float(lg_a["end_ts"]),float(lg_b["end_ts"])),"leg_a":lg_a,"leg_b":lg_b,"label":f"{bundle.title}: {desc}"})
- k=(1 in _c and 1 in _b)and(l or M or G>=2);w=freeze_tracker.confirm_frozen_pair(bundle.sport,_k,"Q1",int(_c.get(1,0)),int(_b.get(1,0)),period_ended=k,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(l or M or G>=3))
- if w is not None and not M and G<=2 and not l:
-  _a,Z=w;Y=float(_a+Z);X=float(_a-Z);W=[m for m in bundle.markets if m.period_scope=="1H"and m.kind=="TOTAL"and m.line is not None];V=[m for m in bundle.markets if m.period_scope=="Q2"and m.kind=="TOTAL"and m.line is not None]
-  for m1 in W:
-   U=float(m1.line);v=U-Y
-   for m2 in V:
-    T=float(m2.line)
-    if v<=T+1e-9:a("AFF1_POST_Q1_1H_VS_Q2_TOTAL",_leg_dict_from_subspec(m1,True,f"1H O{U:g}"),_leg_dict_from_subspec(m2,False,f"Q2 U{T:g}"),T-v,f"1H O{U:g} + Q2 U{T:g} (Q1={int(Y)} frozen)")
-    if T<=v+1e-9:a("AFF1_POST_Q1_1H_VS_Q2_TOTAL",_leg_dict_from_subspec(m1,False,f"1H U{U:g}"),_leg_dict_from_subspec(m2,True,f"Q2 O{T:g}"),v-T,f"1H U{U:g} + Q2 O{T:g} (Q1={int(Y)} frozen)")
-  L=[x for m in bundle.markets if m.period_scope=="1H"and m.kind=="SPREAD"for x in _spread_signed_legs(m,bundle.away_team)];K=[x for m in bundle.markets if m.period_scope=="Q2"and m.kind=="SPREAD"for x in _spread_signed_legs(m,bundle.away_team)]
-  for _j,_i,_h in L:
-   F=_i-X
-   for _g,_f,_e in K:
-    if _j=="GT"and _g=="LT"and F<=_f+1e-9:a("AFF1_POST_Q1_1H_VS_Q2_SPREAD",_h,_e,_f-F,f"{_h['label']} + {_e['label']} (mQ1={X:+.0f})")
-    elif _j=="LT"and _g=="GT"and _f<=F+1e-9:a("AFF1_POST_Q1_1H_VS_Q2_SPREAD",_h,_e,F-_f,f"{_h['label']} + {_e['label']} (mQ1={X:+.0f})")
+  x=best_asks.get(lg_a["token_id"]);q=best_asks.get(lg_b["token_id"])
+  if x is None or q is None or not(.005<=x<=.99 and.005<=q<=.99):return
+  m=round(_net_unit_ask(float(x),lg_a["fee_rate"],lg_a["fee_exponent"])+_net_unit_ask(float(q),lg_b["fee_rate"],lg_b["fee_exponent"]),4)
+  if m<=max_2leg_cost_net:f.append({"mode":mode,"sport":bundle.sport,"event_id":bundle.event_id,"slug":bundle.slug,"title":bundle.title,"box_cost_gross":round(float(x)+float(q),4),"box_cost_net":m,"middle_width":round(float(middle_width),1),"close_ts":max(float(lg_a["end_ts"]),float(lg_b["end_ts"])),"leg_a":lg_a,"leg_b":lg_b,"label":f"{bundle.title}: {desc}"})
+ v=(1 in _l and 1 in _k)and(w or V or P>=2);G=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"Q1",int(_l.get(1,0)),int(_k.get(1,0)),period_ended=v,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(w or V or P>=3))
+ if G is not None and not V and P<=2 and not w:
+  _j,_i=G;_h=float(_j+_i);_g=float(_j-_i);_f=[m for m in bundle.markets if m.period_scope=="1H"and m.kind=="TOTAL"and m.line is not None];_e=[m for m in bundle.markets if m.period_scope=="Q2"and m.kind=="TOTAL"and m.line is not None]
+  for m1 in _f:
+   _d=float(m1.line);F=_d-_h
+   for m2 in _e:
+    _c=float(m2.line)
+    if F<=_c+1e-9:b("AFF1_POST_Q1_1H_VS_Q2_TOTAL",_leg_dict_from_subspec(m1,True,f"1H O{_d:g}"),_leg_dict_from_subspec(m2,False,f"Q2 U{_c:g}"),_c-F,f"1H O{_d:g} + Q2 U{_c:g} (Q1={int(_h)} frozen)")
+    if _c<=F+1e-9:b("AFF1_POST_Q1_1H_VS_Q2_TOTAL",_leg_dict_from_subspec(m1,False,f"1H U{_d:g}"),_leg_dict_from_subspec(m2,True,f"Q2 O{_c:g}"),F-_c,f"1H U{_d:g} + Q2 O{_c:g} (Q1={int(_h)} frozen)")
+  U=[x for m in bundle.markets if m.period_scope=="1H"and m.kind=="SPREAD"for x in _spread_signed_legs(m,bundle.away_team)];T=[x for m in bundle.markets if m.period_scope=="Q2"and m.kind=="SPREAD"for x in _spread_signed_legs(m,bundle.away_team)]
+  for _s,_r,_q in U:
+   O=_r-_g
+   for _p,_o,_n in T:
+    if _s=="GT"and _p=="LT"and O<=_o+1e-9:b("AFF1_POST_Q1_1H_VS_Q2_SPREAD",_q,_n,_o-O,f"{_q['label']} + {_n['label']} (mQ1={_g:+.0f})")
+    elif _s=="LT"and _p=="GT"and _o<=O+1e-9:b("AFF1_POST_Q1_1H_VS_Q2_SPREAD",_q,_n,O-_o,f"{_q['label']} + {_n['label']} (mQ1={_g:+.0f})")
  if bundle.sport=="NBA":
-  j=(1 in _c and 2 in _c and 1 in _b and 2 in _b)and(l or M or G>=3);u=freeze_tracker.confirm_frozen_pair(bundle.sport,_k,"1H",int(_c.get(1,0))+int(_c.get(2,0)),int(_b.get(1,0))+int(_b.get(2,0)),period_ended=j,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(l or G>=4))
-  if u is not None and not l:
-   e={bundle.away_team:float(u[0]),bundle.home_team:float(u[1])}
-   for tm,E in e.items():
-    D=[m for m in bundle.markets if m.period_scope=="FG"and m.kind=="TEAM_TOTAL"and m.team_side==tm and m.line is not None];C=[m for m in bundle.markets if m.period_scope=="2H"and m.kind=="TEAM_TOTAL"and m.team_side==tm and m.line is not None]
-    for h in D:
-     g=float(h.line);J=g-E
-     for S in C:
-      R=float(S.line)
-      if J<=R+1e-9:a("AFF1_HT_TEAM_TOTAL_FG_VS_2H",_leg_dict_from_subspec(h,True,f"FG {tm.title()} O{g:g}"),_leg_dict_from_subspec(S,False,f"2H {tm.title()} U{R:g}"),R-J,f"{tm.title()} FG O{g:g} + 2H U{R:g} (1H={int(E)})")
-      if R<=J+1e-9:a("AFF1_HT_TEAM_TOTAL_FG_VS_2H",_leg_dict_from_subspec(h,False,f"FG {tm.title()} U{g:g}"),_leg_dict_from_subspec(S,True,f"2H {tm.title()} O{R:g}"),J-R,f"{tm.title()} FG U{g:g} + 2H O{R:g} (1H={int(E)})")
+  u=(1 in _l and 2 in _l and 1 in _k and 2 in _k)and(w or V or P>=3);E=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"1H",int(_l.get(1,0))+int(_l.get(2,0)),int(_k.get(1,0))+int(_k.get(2,0)),period_ended=u,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(w or P>=4))
+  if E is not None and not w:
+   l={bundle.away_team:float(E[0]),bundle.home_team:float(E[1])}
+   for tm,N in l.items():
+    M=[m for m in bundle.markets if m.period_scope=="FG"and m.kind=="TEAM_TOTAL"and m.team_side==tm and m.line is not None];L=[m for m in bundle.markets if m.period_scope=="2H"and m.kind=="TEAM_TOTAL"and m.team_side==tm and m.line is not None]
+    for s in M:
+     r=float(s.line);S=r-N
+     for _b in L:
+      _a=float(_b.line)
+      if S<=_a+1e-9:b("AFF1_HT_TEAM_TOTAL_FG_VS_2H",_leg_dict_from_subspec(s,True,f"FG {tm.title()} O{r:g}"),_leg_dict_from_subspec(_b,False,f"2H {tm.title()} U{_a:g}"),_a-S,f"{tm.title()} FG O{r:g} + 2H U{_a:g} (1H={int(N)})")
+      if _a<=S+1e-9:b("AFF1_HT_TEAM_TOTAL_FG_VS_2H",_leg_dict_from_subspec(s,False,f"FG {tm.title()} U{r:g}"),_leg_dict_from_subspec(_b,True,f"2H {tm.title()} O{_a:g}"),S-_a,f"{tm.title()} FG U{r:g} + 2H O{_a:g} (1H={int(N)})")
  if bundle.sport=="NBA":
-  i=all(q in _c and q in _b for q in(1,2,3))and(l or G>=4);t=freeze_tracker.confirm_frozen_pair(bundle.sport,_k,"Q1_Q3",int(_c.get(1,0))+int(_c.get(2,0))+int(_c.get(3,0)),int(_b.get(1,0))+int(_b.get(2,0))+int(_b.get(3,0)),period_ended=i,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=l)
-  if t is not None and not l and G==4:
-   I=float(t[0]+t[1]);s=[m for m in bundle.markets if m.period_scope=="FG"and m.kind=="TOTAL"and m.line is not None];r=[m for m in bundle.markets if m.period_scope=="Q4"and m.kind=="TOTAL"and m.line is not None];B=bundle.overtime_yes_leg;H=best_asks.get(B["token_id"])if B is not None else None;Q=_net_unit_ask(float(H),B["fee_rate"],B["fee_exponent"])if(B and H is not None)else None
-   for h in s:
-    g=float(h.line);A=g-I
-    for P in r:
-     O=float(P.line)
-     if A<=O+1e-9:a("AFF1_POST_Q3_FG_OVER_4Q_UNDER",_leg_dict_from_subspec(h,True,f"FG O{g:g}"),_leg_dict_from_subspec(P,False,f"4Q U{O:g}"),O-A,f"FG O{g:g} + 4Q U{O:g} (Q1..3={int(I)})")
-     if O<=A+1e-9 and B is not None and H is not None and Q is not None:
-      p=_leg_dict_from_subspec(h,False,f"FG U{g:g}");o=_leg_dict_from_subspec(P,True,f"4Q O{O:g}");pu=best_asks.get(p["token_id"]);po=best_asks.get(o["token_id"])
-      if(pu is not None and po is not None and.005<=float(pu)<=.99 and.005<=float(po)<=.99 and.005<=float(H)<=.99):
-       c3=round(_net_unit_ask(float(pu),p["fee_rate"],p["fee_exponent"])+_net_unit_ask(float(po),o["fee_rate"],o["fee_exponent"])+Q,4)
-       if c3<=max_3leg_cost_net:c.append({"mode":"AFF1_POST_Q3_OT_IMMUNIZED_3LEG","sport":bundle.sport,"event_id":bundle.event_id,"slug":bundle.slug,"title":bundle.title,"n_legs":3,"box_cost_gross":round(float(pu)+float(po)+float(H),4),"box_cost_net":c3,"middle_width":round(A-O,1),"close_ts":max(p["end_ts"],o["end_ts"],B["end_ts"]),"legs":[p,o,B],"label":f"{bundle.title}: FG U{g:g} + 4Q O{O:g} + YES[OT] (Q1..3={int(I)})"})
+  t=all(q in _l and q in _k for q in(1,2,3))and(w or P>=4);D=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"Q1_Q3",int(_l.get(1,0))+int(_l.get(2,0))+int(_l.get(3,0)),int(_k.get(1,0))+int(_k.get(2,0))+int(_k.get(3,0)),period_ended=t,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=w)
+  if D is not None and not w and P==4:
+   R=float(D[0]+D[1]);C=[m for m in bundle.markets if m.period_scope=="FG"and m.kind=="TOTAL"and m.line is not None];B=[m for m in bundle.markets if m.period_scope=="Q4"and m.kind=="TOTAL"and m.line is not None];K=bundle.overtime_yes_leg;Q=best_asks.get(K["token_id"])if K is not None else None;Z=_net_unit_ask(float(Q),K["fee_rate"],K["fee_exponent"])if(K and Q is not None)else None
+   for s in C:
+    r=float(s.line);J=r-R
+    for Y in B:
+     X=float(Y.line)
+     if J<=X+1e-9:b("AFF1_POST_Q3_FG_OVER_4Q_UNDER",_leg_dict_from_subspec(s,True,f"FG O{r:g}"),_leg_dict_from_subspec(Y,False,f"4Q U{X:g}"),X-J,f"FG O{r:g} + 4Q U{X:g} (Q1..3={int(R)})")
+     if X<=J+1e-9 and K is not None and Q is not None and Z is not None:
+      A=_leg_dict_from_subspec(s,False,f"FG U{r:g}");z=_leg_dict_from_subspec(Y,True,f"4Q O{X:g}");pu=best_asks.get(A["token_id"]);po=best_asks.get(z["token_id"])
+      if(pu is not None and po is not None and.005<=float(pu)<=.99 and.005<=float(po)<=.99 and.005<=float(Q)<=.99):
+       c3=round(_net_unit_ask(float(pu),A["fee_rate"],A["fee_exponent"])+_net_unit_ask(float(po),z["fee_rate"],z["fee_exponent"])+Z,4)
+       if c3<=max_3leg_cost_net:e.append({"mode":"AFF1_POST_Q3_OT_IMMUNIZED_3LEG","sport":bundle.sport,"event_id":bundle.event_id,"slug":bundle.slug,"title":bundle.title,"n_legs":3,"box_cost_gross":round(float(pu)+float(po)+float(Q),4),"box_cost_net":c3,"middle_width":round(J-X,1),"close_ts":max(A["end_ts"],z["end_ts"],K["end_ts"]),"legs":[A,z,K],"label":f"{bundle.title}: FG U{r:g} + 4Q O{X:g} + YES[OT] (Q1..3={int(R)})"})
  for fp in bundle.first_passage_markets:
-  _d=2 if fp.kind=="FIRST_SCORE"else 3;f=freeze_tracker.observe_and_confirm_race_winner(bundle.sport,_k,fp.target_pts,z,y,now_ts=now_ts,buffer_pts=_d,confirm_sec=freeze_confirm_sec,is_final=l)
-  if f in("AWAY","HOME"):n=f=="AWAY";b.append({"mode":f"AFF1_{fp.kind}_LOCK","sport":bundle.sport,"event_id":bundle.event_id,"market_id":fp.market_id,"condition_id":fp.condition_id,"token_id":fp.away_token if n else fp.home_token,"opp_token_id":fp.home_token if n else fp.away_token,"side_label":fp.away_label if n else fp.home_label,"display_label":(f"{bundle.title} {'First Score'if fp.kind=='FIRST_SCORE'else f'Race to {fp.target_pts}'}: {fp.away_label if n else fp.home_label} [{z}-{y}]"),"fee_rate":fp.fee_rate,"fee_exponent":fp.fee_exponent,"neg_risk":fp.neg_risk,"p_lock":.998,"close_ts":fp.settle_est_ts})
- d.sort(key=lambda x:float(x["box_cost_net"]));c.sort(key=lambda x:float(x["box_cost_net"]));return{"two_leg_boxes":d,"three_leg_boxes":c,"single_leg_locks":b}
+  _m=2 if fp.kind=="FIRST_SCORE"else 3;p=freeze_tracker.observe_and_confirm_race_winner(bundle.sport,_t,fp.target_pts,I,H,now_ts=now_ts,buffer_pts=_m,confirm_sec=freeze_confirm_sec,is_final=w)
+  if p in("AWAY","HOME"):y=p=="AWAY";d.append({"mode":f"AFF1_{fp.kind}_LOCK","sport":bundle.sport,"event_id":bundle.event_id,"market_id":fp.market_id,"condition_id":fp.condition_id,"token_id":fp.away_token if y else fp.home_token,"opp_token_id":fp.home_token if y else fp.away_token,"side_label":fp.away_label if y else fp.home_label,"display_label":(f"{bundle.title} {'First Score'if fp.kind=='FIRST_SCORE'else f'Race to {fp.target_pts}'}: {fp.away_label if y else fp.home_label} [{I}-{H}]"),"fee_rate":fp.fee_rate,"fee_exponent":fp.fee_exponent,"neg_risk":fp.neg_risk,"p_lock":.998,"close_ts":fp.settle_est_ts})
+ c={str(x["market_id"])for x in d}
+ def a(scope,a_pts,h_pts):
+  _x=float(a_pts+h_pts);_A=float(a_pts-h_pts);_z="AFF1_FINAL_SUBPERIOD_LOCK"if w else f"AFF1_{scope}_SETTLED_LOCK"
+  for sm in bundle.markets:
+   if sm.period_scope!=scope or sm.line is None or sm.market_id in c:continue
+   ln=float(sm.line);_u=None;x=None;q=None;m=""
+   if sm.kind=="TOTAL"and abs(_x-ln)>=.49:_v=_x>ln;_u=sm.tok_0 if _v else sm.tok_1;x=sm.tok_1 if _v else sm.tok_0;q=sm.out_0 if _v else sm.out_1;m=f"{scope} Total={int(_x)} vs {ln:g}"
+   elif sm.kind=="TEAM_TOTAL"and sm.team_side in(bundle.away_team,bundle.home_team):
+    _y=float(a_pts if sm.team_side==bundle.away_team else h_pts)
+    if abs(_y-ln)>=.49:_v=_y>ln;_u=sm.tok_0 if _v else sm.tok_1;x=sm.tok_1 if _v else sm.tok_0;q=sm.out_0 if _v else sm.out_1;m=f"{scope} {sm.team_side.title()}={int(_y)} vs {ln:g}"
+   elif sm.kind=="SPREAD":
+    _w=_spread_signed_legs(sm,bundle.away_team)
+    if len(_w)==2 and abs(_A-float(_w[0][1]))>=.49:
+     for _D,_C,_B in _w:
+      if(_D=="GT"and _A>_C)or(_D=="LT"and _A<_C):_u=str(_B["token_id"]);x=str(_B["opp_token_id"]);q=str(_B["label"]);m=f"{scope} Margin={a_pts}-{h_pts} ({_A:+.0f} vs {_C:+.1f})";break
+   if _u and x and q:c.add(sm.market_id);d.append({"mode":_z,"sport":bundle.sport,"event_id":bundle.event_id,"market_id":sm.market_id,"condition_id":sm.condition_id,"token_id":_u,"opp_token_id":x,"side_label":q,"display_label":f"{bundle.title} {sm.display_title} -> {q} [{m}]","fee_rate":sm.fee_rate,"fee_exponent":sm.fee_exponent,"neg_risk":bool(sm.neg_risk),"p_lock":1.,"close_ts":sm.settle_est_ts})
+ if G is not None:a("Q1",int(G[0]),int(G[1]))
+ k=(2 in _l and 2 in _k)and(w or V or P>=3);o=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"Q2_ONLY",int(_l.get(2,0)),int(_k.get(2,0)),period_ended=k,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(w or P>=4))
+ if o is not None:a("Q2",int(o[0]),int(o[1]))
+ g=(1 in _l and 2 in _l and 1 in _k and 2 in _k)and(w or V or P>=3);j=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"1H_LOCK",int(_l.get(1,0))+int(_l.get(2,0)),int(_k.get(1,0))+int(_k.get(2,0)),period_ended=g,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=(w or P>=4))
+ if j is not None:a("1H",int(j[0]),int(j[1]))
+ i=(3 in _l and 3 in _k)and(w or P>=4);n=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"Q3_ONLY",int(_l.get(3,0)),int(_k.get(3,0)),period_ended=i,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=w)
+ if n is not None:a("Q3",int(n[0]),int(n[1]))
+ if w:
+  h=freeze_tracker.confirm_frozen_pair(bundle.sport,_t,"FINAL_FG",I,H,period_ended=True,now_ts=now_ts,freeze_confirm_sec=freeze_confirm_sec,instant_settled=False)
+  if h is not None:a("FG",int(h[0]),int(h[1]))
+ f.sort(key=lambda x:float(x["box_cost_net"]));e.sort(key=lambda x:float(x["box_cost_net"]));return{"two_leg_boxes":f,"three_leg_boxes":e,"single_leg_locks":d}
 SOC2_GRID_MAX=8;SOC2_PLAYED_STATES=[(h,a)for h in range(SOC2_GRID_MAX+1)for a in range(SOC2_GRID_MAX+1)];SOC2_NUM_STATES=len(SOC2_PLAYED_STATES)+2;_EXACT_SCORE_ITEM_RE=re.compile(r"(\d+)\s*[-–:]\s*(\d+)");_SOC_ADV_VETO_RE=re.compile(r"(\badvance\b|\bqualify\b|\blift the trophy\b|\bincluding extra time\b|\bpenalties\b)",re.IGNORECASE);_SOC_SUBPERIOD_OR_PROP_VETO_RE=re.compile(r"(\bfirst[\s_-]+half\b|\bsecond[\s_-]+half\b|\b1st[\s_-]+half\b|\b2nd[\s_-]+half\b" r"|\bhalftime\b|\bhalf-time\b|\beach[\s_-]+half\b|\bboth[\s_-]+halves\b" r"|\b1h\b|\b2h\b|\bteam[\s_-]+totals?\b|\bcorners?\b|\bcards?\b|\bshots?\b|\boffsides?\b)",re.IGNORECASE)
 @dataclass
-class SoccerExactScoreLattice:game_key:str;game_id:str;title:str;end_ts:float;home_team:str;away_team:str;exact_event_id:str;exact_slug:str;exact_neg_risk_market_id:str;is_closed_37_slate:bool;score_brackets:Dict[Tuple[int,int],Dict[str,Any]];any_other_bracket:Optional[Dict[str,Any]];convert_spec:Optional[NegRiskConvertSlateSpec];matrix_legs=field(default_factory=list)
+class SoccerExactScoreLattice:game_key:str;game_id:str;title:str;end_ts:float;home_team:str;away_team:str;exact_event_id:str;exact_slug:str;exact_neg_risk_market_id:str;is_closed_37_slate:bool;score_brackets:Dict[Tuple[int,int],Dict[str,Any]];any_other_bracket:Optional[Dict[str,Any]];convert_spec:Optional[NegRiskConvertSlateSpec];matrix_legs:List[Dict[str,Any]]=field(default_factory=list)
 def _extract_soccer_slug_match_key(slug):
  s=re.sub(r"-(more-markets|exact-score|halftime-result|second-half-result|first-to-score)$","",slug.lower().strip())
  if re.search(r"-20\d{2}-\d{2}-\d{2}$",s):return s
@@ -4431,9 +4549,9 @@ def evaluate_soc2_dead_score_no_locks(lattice,live_soccer_board,tracker,now_ts,v
  if(n>=6 or m>=6)and lattice.any_other_bracket is not None and c:o=lattice.any_other_bracket;l.append({"mode":"SOC2_ANY_OTHER_SCORE_YES_LOCK","game_key":lattice.game_key,"market_id":o["market_id"],"condition_id":o["condition_id"],"token_id":o["yes_token"],"opp_token_id":o["no_token"],"side_label":"YES[Any Other]","display_label":f"{lattice.title} YES[Any Other Score] [FT {n}-{m}]","fee_rate":o["fee_rate"],"fee_exponent":o["fee_exponent"],"neg_risk":True,"p_lock":.999,"close_ts":lattice.end_ts+7200.})
  return l
 @dataclass
-class NflPlayerPropRung:event_id:str;event_slug:str;game_title:str;market_id:str;condition_id:str;player_name:str;player_key:str;stat_type:str;line:float;yes_over_token:str;no_under_token:str;fee_rate:float;fee_exponent:float;kickoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;dnp_resolves_no=False
+class NflPlayerPropRung:event_id:str;event_slug:str;game_title:str;market_id:str;condition_id:str;player_name:str;player_key:str;stat_type:str;line:float;yes_over_token:str;no_under_token:str;fee_rate:float;fee_exponent:float;kickoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;dnp_resolves_no:bool=False
 @dataclass
-class NflPlayerPropSlate:event_id:str;slug:str;title:str;kickoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;anytime_td_by_player=field(default_factory=dict);two_plus_td_by_player=field(default_factory=dict);ladders_by_player_stat=field(default_factory=dict)
+class NflPlayerPropSlate:event_id:str;slug:str;title:str;kickoff_ts:float;settle_est_ts:float;home_team:str;away_team:str;anytime_td_by_player:Dict[str,NflPlayerPropRung]=field(default_factory=dict);two_plus_td_by_player:Dict[str,NflPlayerPropRung]=field(default_factory=dict);ladders_by_player_stat:Dict[Tuple[str,str],List[NflPlayerPropRung]]=field(default_factory=dict)
 _NFL_ALLOWED_OU_SMTS=frozenset({"receptions","receiving_yards","rushing_yards","passing_yards","passing_completions","passing_attempts","passing_touchdowns","longest_reception","longest_rush"});_NFL_TD_PLAYER_RE=re.compile(r"^(.+?)\s*:\s*(?:anytime\s+touchdown|2\+\s*touchdowns|to\s+score\s+(?:a|2\+))\b",re.IGNORECASE);_NFL_WILL_TD_RE=re.compile(r"^will\s+(.+?)\s+score\s+(?:a\s+touchdown|2\+\s*touchdowns|at\s+least\s+2\s+touchdowns)",re.IGNORECASE);_NFL_COLON_PROP_RE=re.compile(r"^([^:]+?)\s*:\s*(.+?)(?:\s+O/U|\s+Over/Under|\s+\d)",re.IGNORECASE)
 def _extract_nfl_prop_player(m):
  for e in("groupItemTitle","question"):
@@ -4515,9 +4633,9 @@ def parse_espn_nfl_summary(summary_json):
     if not F:continue
     c.add(s);q=n.setdefault(w,{"rush_rec_tds":0})
     def a(key_aliases):
-     for a,b in enumerate(y):
-      if b in key_aliases and a<len(F):
-       try:return int(float(F[a].strip()))
+     for k,x in enumerate(y):
+      if x in key_aliases and k<len(F):
+       try:return int(float(F[k].strip()))
        except ValueError:return None
      return None
     if H=="passing":
@@ -4679,22 +4797,26 @@ def evaluate_mkr_lock1_post_clinch_rebate_bid(*,token_id,opp_token_id,market_id,
  if c<min_net_edge_ps:return None
  return{"mode":"MKR_LOCK1_POST_CLINCH_REBATE_BID","source_sleeve":source_sleeve,"token_id":token_id,"opp_token_id":opp_token_id,"market_id":market_id,"condition_id":condition_id,"display_label":f"MKR_LOCK[{display_label}] @{h:.3f}","post_only_bid":h,"maker_rebate_per_share":round(f,6),"effective_net_cost_per_share":d,"expected_net_edge_per_share":c,"p_lock":round(float(p_lock),5),"fee_rate":float(fee_rate),"fee_exponent":float(fee_exponent),"neg_risk":bool(neg_risk),"close_ts":float(close_ts),"tte_sec":round(k,1)}
 # ======================================================================================
-# [16/21] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
+# [16/20] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
 # PURPOSE: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import argparse
-import asyncio;import collections;import json;import logging;import math;import os;import re;import sys;import time;from datetime import datetime,timezone;from pathlib import Path;from typing import Any,Deque,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;import aiohttp;PROJECT_ROOT=Path(__file__).resolve().parent.parent.parent
+import argparse;import asyncio;import collections;import json;import logging;import math;import os;import re;import sys;import time;from datetime import datetime,timezone;from pathlib import Path;from typing import Any,Deque,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo
+try:import aiohttp
+except ImportError:aiohttp=None
+PROJECT_ROOT=Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT)not in sys.path:sys.path.insert(0,str(PROJECT_ROOT))
-from src.polymarket_research.barrier_onetouch_svi_engine import(ASSET_BINANCE_SYMBOL,BINANCE_FAPI_URL,HIT_SERIES,BarrierRungSpec,detect_barrier_monotonicity_boxes,evaluate_barrier_no_net_ev,fetch_binance_window_extremes_sync,first_passage_touch_prob,get_wing_implied_vol,parse_hit_event);from src.polymarket_research.multistrike_svi_scalper import(DAILY_UPDOWN_SERIES,NEGRISK_SERIES,STRIKE_SERIES,ZERO_FEE_PYTH_DAILY_SERIES,DailyUpDownSpec,NegRiskBracketSpec,StrikeRungSpec,_fast_norm_cdf,build_negrisk_cross_box_bundles,detect_ladder_monotonicity_boxes,evaluate_coherent_strike_ladder,evaluate_svi_digital_fair_value,parse_daily_updown_event,parse_multistrike_event,parse_negrisk_bracket_event);from src.polymarket_research.net_alpha_opportunity_engine import(publish_global_positions_shm,rank_opportunities_capital_auction,read_global_positions_shm,scan_binary_complete_set_arb);from src.polymarket_research.orderflow_wfo_simulators import(compute_d1_legging_drag_haircut,compute_d1_maker_anchor_drag_haircut);from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready;from src.polymarket_research.same_oracle_dominance_box import(DOMINANCE_ASSETS,DOMINANCE_SERIES_SLUGS,EMPIRICAL_BOX_ASSET_CAPS_USD,MIN_CORRIDOR_BPS_BY_ASSET,METAL_DOMINANCE_ASSETS,METAL_DOMINANCE_SERIES_SLUGS,TwapCandleMarketSpec,build_crypto_price_query_url,build_own_gamma_event_url,build_prev_15m_gamma_event_url,build_prev_5m_gamma_event_url,determine_dominance_legs,parse_authoritative_close_price,parse_authoritative_open_price,parse_closed_gamma_event_settlement,parse_metal_forex_candle_event,parse_twap_candle_event,verify_same_oracle_pair,walk_equal_shares_dominance_box,walk_equal_shares_multi_leg_box);from src.polymarket_research.exact_twap_lock_engine import(compute_exact_twap_lock_probability,read_shm_usd_anchor)
+from src.polymarket_research.barrier_onetouch_svi_engine import(ASSET_BINANCE_SYMBOL,BINANCE_FAPI_URL,HIT_SERIES,BarrierRungSpec,detect_barrier_monotonicity_boxes,evaluate_barrier_no_net_ev,fetch_binance_window_extremes_sync,first_passage_touch_prob,get_wing_implied_vol,parse_hit_event);from src.polymarket_research.multistrike_svi_scalper import(DAILY_UPDOWN_SERIES,NEGRISK_SERIES,STRIKE_SERIES,ZERO_FEE_PYTH_DAILY_SERIES,DailyUpDownSpec,NegRiskBracketSpec,StrikeRungSpec,_fast_norm_cdf,build_negrisk_cross_box_bundles,detect_ladder_monotonicity_boxes,evaluate_coherent_strike_ladder,evaluate_svi_digital_fair_value,parse_daily_updown_event,parse_multistrike_event,parse_negrisk_bracket_event);from src.polymarket_research.net_alpha_opportunity_engine import(publish_global_positions_shm,rank_opportunities_capital_auction,read_global_positions_shm,scan_binary_complete_set_arb);from src.polymarket_research.orderflow_wfo_simulators import(compute_d1_legging_drag_haircut,compute_d1_maker_anchor_drag_haircut);from src.polymarket_research.riskless_machine_gun_engine import is_reward_locked_carry_live_ready;from src.polymarket_research.same_oracle_dominance_box import(DOMINANCE_ASSETS,DOMINANCE_SERIES_SLUGS,EMPIRICAL_BOX_ASSET_CAPS_USD,MIN_CORRIDOR_BPS_BY_ASSET,METAL_DOMINANCE_ASSETS,METAL_DOMINANCE_SERIES_SLUGS,TwapCandleMarketSpec,build_crypto_price_query_url,build_deterministic_updown_event_slug,build_own_gamma_event_url,build_prev_15m_gamma_event_url,build_prev_5m_gamma_event_url,determine_dominance_legs,parse_authoritative_close_price,parse_authoritative_open_price,parse_closed_gamma_event_settlement,parse_metal_forex_candle_event,parse_twap_candle_event,verify_same_oracle_pair,walk_equal_shares_dominance_box,walk_equal_shares_multi_leg_box);from src.polymarket_research.exact_twap_lock_engine import(compute_exact_twap_lock_probability,read_shm_usd_anchor)
 try:from src.polymarket_research.polymarket_ws_streams import PolymarketChainlinkLiveStream
 except ImportError:
  try:from polymarket_ws_streams import PolymarketChainlinkLiveStream
  except ImportError:PolymarketChainlinkLiveStream=None
-from src.polymarket_research.weather_metar_engine import(HIGH_VOLUME_WEATHER_SERIES,MetarObservation,WeatherEventSpec,celsius_to_market_int,compute_adaptive_metar_poll_ttl,compute_weather_probabilities,evaluate_weather_event_slate,fetch_live_ensemble_hourly_sync,fetch_metar_observations_sync,fetch_taf_extremes_sync,parse_weather_event);from src.polymarket_research.tradfi_sports_zero_fee_engine import(MULTI_SPORT_CORRIDOR_SERIES,NBA_SERIES_SLUGS,PYTH_ASSET_CONFIG,PYTH_CLOSE_SERIES,PYTH_HIT_SERIES,ZERO_FEE_NEGRISK_SERIES,MultiSportCorridorSpec,NbaGameSpec,NegRiskConvertSlateSpec,PythBarrierRungSpec,PythCloseRungSpec,ZeroFeeNegRiskSlateSpec,compute_effective_trading_hours,detect_multi_sport_corridor_boxes,detect_nba_dominance_boxes,detect_negrisk_convert_positions_arbs,detect_negrisk_no_pair_boxes,detect_pyth_calendar_inclusion_boxes,detect_pyth_close_vs_hit_boxes,evaluate_pyth_session_barrier_no_lock,evaluate_pyth_session_close_lock,fetch_yahoo_1m_intraday_sync,is_same_continuous_session,parse_multi_sport_corridor_event,parse_nba_zero_fee_event,parse_negrisk_convert_event,parse_pyth_close_event,parse_pyth_hit_event,parse_zero_fee_negrisk_slate,window_extremes_from_bars,_extract_market_fee_rate,_parse_clob_tokens,_parse_iso_ts);from src.polymarket_research.macro_counting_ctf_engine import(ALL_FOMC_MASK,ALL_OIL_SENATE_MASK,COUNTING_SERIES_HANDLES,FOMC_PARLAY_SERIES,GAS_SERIES_SLUGS,HOURLY_BINANCE_SERIES,NY_TZ,OIL_SENATE_SLUGS,CountingSlateSpec,build_fomc_truth_table_legs,build_oil_senate_truth_table_legs,detect_counting_subwindow_boxes,detect_d2_12pm_binance_boxes,evaluate_counting_dead_no_locks,evaluate_locked_market_reward_carry,evaluate_pyth_catalyst_shock,fetch_aaa_national_gas_sync,fetch_xtracker_user_stats_sync,find_cross_event_bitmask_boxes,parse_counting_slate_event,parse_gas_daily_bracket,walk_equal_shares_overround_bids,walk_position_overround_bid_unwind);from src.polymarket_research.uma_nba_endgame_engine import(LiveNbaGameState,evaluate_nba_endgame_locks,fetch_espn_nba_scoreboard_sync,is_objective_uma_market,match_nba_live_game,verify_uma_against_nba_live,verify_uma_onchain_proposal_sync);from src.polymarket_research.riskless_frontier_v2_engine import(BOP_2026_SLUGS,EsportsBo3Spec,NbaPlayerPropSlate,SoccerRegulationTree,build_lp1_bop_2026_truth_legs,build_lp1_nba_exact_margin_bundle,detect_nr2_convert_no_subset_arbs,detect_soc1_regulation_boxes,detect_sp4_milestone_ladder_boxes,evaluate_api1_esports_bo3_opportunities,evaluate_sp4_ingame_clinch_locks,fetch_espn_nba_boxscore_players_sync,find_state_matrix_dominance_boxes,link_and_parse_soccer_regulation_trees,parse_esports_bo3_event,parse_nba_player_props_from_event,verify_bond2_moov2_final_hour_sync,verify_negrisk_adapter_slate_sync);from src.polymarket_research.riskless_frontier_v3_engine import(LP2_MIDTERM_CORE_SLUGS,LP2_TOSSUP_CUBE_SLUG,LP2_TOSSUP_STATE_SLUGS,CalendarOrScalarLadderSpec,LiveMultiSportGame,NbaSubperiodAndExtPropSlate,ScoreConfirmationTracker,TennisMatchSpec,build_lp1_nfl_exact_margin_bundle,build_lp2_house_seats_truth_legs,build_lp2_pending_senate_conditional_groups,build_lp2_senate_seats_truth_legs,build_lp2_tossup_state_implication_groups,detect_cal1_monotonic_boxes,detect_lp2_seat_convert_implication_arbs,detect_multisport_ml_spread_polish_middles,detect_sp4_subperiod_and_ext_prop_boxes,evaluate_cl1_multisport_corridor_clinch_locks,evaluate_cl1_soccer_tree_clinch_locks,evaluate_sp4_subperiod_and_ext_locks,evaluate_ten1_tennis_opportunities,fetch_espn_multisport_board_sync,fetch_espn_nba_full_summary_sync,parse_cal1_monotonic_ladder_event,parse_nba_subperiod_and_ext_props,parse_tennis_retirement_safe_event,_teams_match_fuzzy);from src.polymarket_research.riskless_frontier_v4_engine import(FRONTIER_V4_GRAD8_SLEEVES,AffineGameBundle,CryptoCloseRungSpec,NflPlayerPropSlate,SoccerExactScoreLattice,SubperiodFreezeTracker,detect_cry_inc1_binance_inclusion_boxes,detect_nfl_prp1_boxes,detect_soc2_lattice_boxes_and_converts,detect_sum1_frechet_triangles,evaluate_aff1_frozen_subperiod_opportunities,evaluate_mkr_lock1_post_clinch_rebate_bid,evaluate_nfl_prp1_live_locks,evaluate_soc2_dead_score_no_locks,fetch_espn_nfl_summary_sync,link_and_parse_soc2_exact_score_lattices,parse_affine_game_bundle,parse_binance_terminal_close_event,parse_nfl_player_props_event);from src.polymarket_research.riskless_protocol_v2_expansion import(classify_market_rule_dispute_risk,compute_gatling_trajectory_projection,detect_b1_intraday_onetouch_noon_box,detect_d1_telescoping_candle_bridge,detect_dc1_double_chance_1x2_parity,detect_eq1_pyth_equity_dominance_box,detect_halftime_freeze_offset_box,detect_lp_comp1_sports_triangles,detect_mention1_cumulative_ladder_box,detect_nr4_nr5_optimal_tail_convert,detect_nr6_cross_slate_surjection_box,detect_w_prune1_metar_slate_arb,evaluate_s2_rtds_exact_twap_integrator,passes_uma_bond_dispute_guard,scan_full_universe_c1_and_ctf_overround);DATA_DIR=PROJECT_ROOT/"data"/"alpha124";DATA_DIR.mkdir(parents=True,exist_ok=True);_DEFAULT_DATA_DIR=DATA_DIR;STATE_FILE=DATA_DIR/"alpha124_shadow_state.json";_DEFAULT_STATE_FILE=STATE_FILE;LEDGER_FILE=DATA_DIR/"alpha124_shadow_ledger.jsonl";_DEFAULT_LEDGER_FILE=LEDGER_FILE;MARKET_TELEMETRY_FILE=DATA_DIR/"alpha124_market_telemetry.jsonl";OPPS_FILE=DATA_DIR/"alpha124_live_opportunities.json";LOG_FILE=DATA_DIR/"alpha124_shadow.log";BACKTEST_CAL_FILE=DATA_DIR/"backtest_alpha_124_results.json";LIVE_POLYMARKET_DIR=PROJECT_ROOT/"data"/"polymarket";SHOCK_TRIGGER_FILE=LIVE_POLYMARKET_DIR/"live_shock_triggers.jsonl";LIVE_ALPHA124_STATE_MIRROR_FILE=LIVE_POLYMARKET_DIR/"alpha124_shadow_state.json";D1_LIVE_CANDIDATES_FILE=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl";logging.basicConfig(level=logging.INFO,format="[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",datefmt="%Y-%m-%d %H:%M:%S",handlers=[logging.FileHandler(LOG_FILE,encoding="utf-8"),logging.StreamHandler(sys.stdout)]);logger=logging.getLogger("Alpha124Shadow");GAMMA_URL="https://gamma-api.polymarket.com";CLOB_URL="https://clob.polymarket.com";DATA_API_URL="https://data-api.polymarket.com";CLOB_WS_URL="wss://ws-subscriptions-clob.polymarket.com/ws/market";BINANCE_URL="https://api.binance.com";LOCKED_MAKER_SLEEVES=frozenset({"W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK","BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","SP2_NBA_ENDGAME_LOCK","SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"});DEPTH_CAPPED_TAKER_SLEEVES=LOCKED_MAKER_SLEEVES|frozenset({"CM_B2_PYTH_SESSION_NO_LOCK","CM_U1_PYTH_CLOSE_LOCK","B4_TOUCHED_BARRIER_WICK_LOCK","TW1_COUNTING_TRUNCATION_AND_BOX","GAS1_AAA_GASOLINE_LOCK","API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION","CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH","AFF1_FROZEN_SUBPERIOD_COLLAPSE","SOC2_EXACT_SCORE_2D_LATTICE","NFL_PRP1_MILESTONE_AND_MAX_LOCKS"})
+try:from src.polymarket_research.economic_attribution_ledger import(GLOBAL_DECAY_TRACKER as _STAGE_B_DECAY_TRACKER,emit_funnel_event as _stage_b_emit_funnel)
+except Exception:_STAGE_B_DECAY_TRACKER=None;_stage_b_emit_funnel=None
+from src.polymarket_research.weather_metar_engine import(HIGH_VOLUME_WEATHER_SERIES,MetarObservation,WeatherEventSpec,celsius_to_market_int,compute_adaptive_metar_poll_ttl,compute_weather_probabilities,evaluate_weather_event_slate,fetch_live_ensemble_hourly_sync,fetch_metar_observations_sync,fetch_taf_extremes_sync,parse_weather_event);from src.polymarket_research.tradfi_sports_zero_fee_engine import(MULTI_SPORT_CORRIDOR_SERIES,NBA_SERIES_SLUGS,PYTH_ASSET_CONFIG,PYTH_CLOSE_SERIES,PYTH_HIT_SERIES,ZERO_FEE_NEGRISK_SERIES,MultiSportCorridorSpec,NbaGameSpec,NegRiskConvertSlateSpec,PythBarrierRungSpec,PythCloseRungSpec,ZeroFeeNegRiskSlateSpec,compute_effective_trading_hours,detect_multi_sport_corridor_boxes,detect_nba_dominance_boxes,detect_negrisk_convert_positions_arbs,detect_negrisk_no_pair_boxes,detect_pyth_calendar_inclusion_boxes,detect_pyth_close_vs_hit_boxes,evaluate_pyth_session_barrier_no_lock,evaluate_pyth_session_close_lock,fetch_yahoo_1m_intraday_sync,is_same_continuous_session,parse_multi_sport_corridor_event,parse_nba_zero_fee_event,parse_negrisk_convert_event,parse_pyth_close_event,parse_pyth_hit_event,parse_zero_fee_negrisk_slate,window_extremes_from_bars,_extract_market_fee_rate,_parse_clob_tokens,_parse_iso_ts);from src.polymarket_research.macro_counting_ctf_engine import(ALL_FOMC_MASK,ALL_OIL_SENATE_MASK,COUNTING_SERIES_HANDLES,FOMC_PARLAY_SERIES,GAS_SERIES_SLUGS,HOURLY_BINANCE_SERIES,NY_TZ,OIL_SENATE_SLUGS,XTRACKER_ALL_HANDLES,CountingSlateSpec,build_fomc_truth_table_legs,build_oil_senate_truth_table_legs,detect_counting_pruned_exhaustive_yes_slate,detect_counting_subwindow_boxes,detect_d2_12pm_binance_boxes,evaluate_counting_dead_no_locks,evaluate_locked_market_reward_carry,evaluate_pyth_catalyst_shock,extract_xtracker_active_event_slugs,fetch_aaa_national_gas_sync,fetch_xtracker_user_stats_sync,find_cross_event_bitmask_boxes,parse_counting_slate_event,parse_gas_daily_bracket,walk_equal_shares_overround_bids,walk_position_overround_bid_unwind);from src.polymarket_research.uma_nba_endgame_engine import(LiveNbaGameState,evaluate_nba_endgame_locks,fetch_espn_nba_scoreboard_sync,is_objective_uma_market,match_nba_live_game,verify_uma_against_nba_live,verify_uma_onchain_proposal_sync);from src.polymarket_research.riskless_frontier_v2_engine import(BOP_2026_SLUGS,EsportsBo3Spec,NbaPlayerPropSlate,SoccerRegulationTree,build_lp1_bop_2026_truth_legs,build_lp1_nba_exact_margin_bundle,detect_nr2_convert_no_subset_arbs,detect_soc1_regulation_boxes,detect_sp4_milestone_ladder_boxes,evaluate_api1_esports_bo3_opportunities,evaluate_sp4_ingame_clinch_locks,fetch_espn_nba_boxscore_players_sync,find_state_matrix_dominance_boxes,link_and_parse_soccer_regulation_trees,parse_esports_bo3_event,parse_nba_player_props_from_event,verify_bond2_moov2_final_hour_sync,verify_negrisk_adapter_slate_sync);from src.polymarket_research.riskless_frontier_v3_engine import(LP2_MIDTERM_CORE_SLUGS,LP2_TOSSUP_CUBE_SLUG,LP2_TOSSUP_STATE_SLUGS,CalendarOrScalarLadderSpec,LiveMultiSportGame,NbaSubperiodAndExtPropSlate,ScoreConfirmationTracker,TennisMatchSpec,build_lp1_nfl_exact_margin_bundle,build_lp2_house_seats_truth_legs,build_lp2_pending_senate_conditional_groups,build_lp2_senate_seats_truth_legs,build_lp2_tossup_state_implication_groups,detect_cal1_monotonic_boxes,detect_lp2_seat_convert_implication_arbs,detect_multisport_ml_spread_polish_middles,detect_sp4_subperiod_and_ext_prop_boxes,evaluate_cl1_multisport_corridor_clinch_locks,evaluate_cl1_soccer_tree_clinch_locks,evaluate_sp4_subperiod_and_ext_locks,evaluate_ten1_tennis_opportunities,fetch_espn_multisport_board_sync,fetch_espn_nba_full_summary_sync,parse_cal1_monotonic_ladder_event,parse_nba_subperiod_and_ext_props,parse_tennis_retirement_safe_event,_teams_match_fuzzy);from src.polymarket_research.riskless_frontier_v4_engine import(FRONTIER_V4_GRAD8_SLEEVES,AffineGameBundle,CryptoCloseRungSpec,NflPlayerPropSlate,SoccerExactScoreLattice,SubperiodFreezeTracker,detect_cry_inc1_binance_inclusion_boxes,detect_nfl_prp1_boxes,detect_soc2_lattice_boxes_and_converts,detect_sum1_frechet_triangles,evaluate_aff1_frozen_subperiod_opportunities,evaluate_mkr_lock1_post_clinch_rebate_bid,evaluate_nfl_prp1_live_locks,evaluate_soc2_dead_score_no_locks,fetch_espn_nfl_summary_sync,link_and_parse_soc2_exact_score_lattices,parse_affine_game_bundle,parse_binance_terminal_close_event,parse_nfl_player_props_event);from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER;from src.polymarket_research.riskless_protocol_v2_expansion import(classify_market_rule_dispute_risk,compute_gatling_trajectory_projection,detect_b1_intraday_onetouch_noon_box,detect_d1_telescoping_candle_bridge,detect_dc1_double_chance_1x2_parity,detect_eq1_pyth_equity_dominance_box,detect_halftime_freeze_offset_box,detect_lp_comp1_sports_triangles,detect_mention1_cumulative_ladder_box,detect_nr_m1_dead_seed_fanout,detect_nr4_nr5_optimal_tail_convert,detect_nr6_cross_slate_surjection_box,detect_w_prune1_metar_slate_arb,evaluate_s2_rtds_exact_twap_integrator,passes_uma_bond_dispute_guard,scan_full_universe_c1_and_ctf_overround);DATA_DIR=PROJECT_ROOT/"data"/"alpha124";DATA_DIR.mkdir(parents=True,exist_ok=True);_DEFAULT_DATA_DIR=DATA_DIR;STATE_FILE=DATA_DIR/"alpha124_shadow_state.json";_DEFAULT_STATE_FILE=STATE_FILE;LEDGER_FILE=DATA_DIR/"alpha124_shadow_ledger.jsonl";_DEFAULT_LEDGER_FILE=LEDGER_FILE;MARKET_TELEMETRY_FILE=DATA_DIR/"alpha124_market_telemetry.jsonl";OPPS_FILE=DATA_DIR/"alpha124_live_opportunities.json";LOG_FILE=DATA_DIR/"alpha124_shadow.log";BACKTEST_CAL_FILE=DATA_DIR/"backtest_alpha_124_results.json";LIVE_POLYMARKET_DIR=PROJECT_ROOT/"data"/"polymarket";SHOCK_TRIGGER_FILE=LIVE_POLYMARKET_DIR/"live_shock_triggers.jsonl";LIVE_ALPHA124_STATE_MIRROR_FILE=LIVE_POLYMARKET_DIR/"alpha124_shadow_state.json";D1_LIVE_CANDIDATES_FILE=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl";logging.basicConfig(level=logging.INFO,format="[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",datefmt="%Y-%m-%d %H:%M:%S",handlers=[logging.FileHandler(LOG_FILE,encoding="utf-8"),logging.StreamHandler(sys.stdout)]);logger=logging.getLogger("Alpha124Shadow");GAMMA_URL="https://gamma-api.polymarket.com";CLOB_URL="https://clob.polymarket.com";DATA_API_URL="https://data-api.polymarket.com";CLOB_WS_URL="wss://ws-subscriptions-clob.polymarket.com/ws/market";BINANCE_URL="https://api.binance.com";LOCKED_MAKER_SLEEVES=frozenset({"W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK","BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","SP2_NBA_ENDGAME_LOCK","SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"});DEPTH_CAPPED_TAKER_SLEEVES=LOCKED_MAKER_SLEEVES|frozenset({"CM_B2_PYTH_SESSION_NO_LOCK","CM_U1_PYTH_CLOSE_LOCK","B4_TOUCHED_BARRIER_WICK_LOCK","TW1_COUNTING_TRUNCATION_AND_BOX","GAS1_AAA_GASOLINE_LOCK","API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION","CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH","AFF1_FROZEN_SUBPERIOD_COLLAPSE","SOC2_EXACT_SCORE_2D_LATTICE","NFL_PRP1_MILESTONE_AND_MAX_LOCKS"})
 try:import orjson as _orjson
 except Exception:_orjson=None
-CRYPTO_FEE_RATE=.07;QUARANTINED_SHADOW_SLEEVES=frozenset({"M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","B1_CONVEX_TAIL_YES","S2_EXACT_TWAP_LOCK","S5M_CHAINLINK_SNIPER","ZERO_FEE_MAKER_ANCHOR_BOX"});STRATEGY_EPOCH_MIN_TS={"S2_EXACT_TWAP_LOCK":1793758800.}
+CRYPTO_FEE_RATE=.072;QUARANTINED_SHADOW_SLEEVES=frozenset({"M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","B1_CONVEX_TAIL_YES","B4_TOUCHED_BARRIER_WICK_LOCK","S2_EXACT_TWAP_LOCK","S5M_CHAINLINK_SNIPER","ZERO_FEE_MAKER_ANCHOR_BOX"});STRATEGY_EPOCH_MIN_TS={"S2_EXACT_TWAP_LOCK":1793758800.}
 def _filter_epoch_closed_positions(sleeve,closed_list):
  a=STRATEGY_EPOCH_MIN_TS.get(str(sleeve))
  if not a:return closed_list
@@ -4704,6 +4826,7 @@ def is_shadow_sleeve_quarantined(sleeve):
   if"PM_UNQUARANTINE_S2_TWAP_LOCK"in os.environ:return os.environ["PM_UNQUARANTINE_S2_TWAP_LOCK"]!="1"
   if"PM_QUARANTINE_LOSING_SLEEVES"in os.environ:return os.environ["PM_QUARANTINE_LOSING_SLEEVES"]=="1"
   return False
+ if sleeve=="B4_TOUCHED_BARRIER_WICK_LOCK"and os.environ.get("PM_UNQUARANTINE_B4_WICK_LOCK")=="1":return False
  return os.getenv("PM_QUARANTINE_LOSING_SLEEVES","1")=="1"and sleeve in QUARANTINED_SHADOW_SLEEVES
 FRONTIER_V3_GRAD8_SLEEVES=frozenset({"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION","CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH","TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR"});BANKROLL_TICKETS={"T100":{"W1_SOLAR_PEAK_LOCK":15.,"W2_ENSEMBLE_VALUE":10.,"W2_MAKER_OVERROUND":10.,"W3_WEATHER_SLATE_ARB":12.,"B1_CONVEX_TAIL_YES":4.,"B2_BARRIER_NO_LOCK":15.,"B3_BARRIER_MONO_BOX":18.,"M1_SVI_MAKER_SCALP":15.,"M2_STRIKE_CONVERGENCE":15.,"M3_LADDER_MONO_BOX":20.,"M4_SHOCK_STRIKE_CATCHUP":15.,"D1_SAME_ORACLE_DOMINANCE_BOX":20.,"D1_4H_DOMINANCE_BOX":20.,"D1_QUIET_BOOK_BOX":20.,"D1_MAKER_ANCHOR_BOX":18.,"S5M_CHAINLINK_SNIPER":15.,"N1_NEGRISK_CROSS_BOX":20.,"P1_PREOPEN_MAKER_STRADDLE":16.,"U1_DAILY_UPDOWN_LOCK":15.,"C1_BINARY_COMPLETE_SET":20.,"S2_EXACT_TWAP_LOCK":15.,"CM_B3_PYTH_BARRIER_BOX":20.,"CM_B2_PYTH_SESSION_NO_LOCK":15.,"CM_U1_PYTH_CLOSE_LOCK":15.,"B4_TOUCHED_BARRIER_WICK_LOCK":20.,"SP1_NBA_ZERO_FEE_BOX":20.,"NR0_ZERO_FEE_SLATE_ARB":15.,"ZERO_FEE_MAKER_ANCHOR_BOX":18.,"ZF_INTRADAY_MAKER_BOX":18.,"TW1_COUNTING_TRUNCATION_AND_BOX":18.,"FED1_CENTRAL_BANK_LP_BOX":20.,"COND1_MACRO_PARTITION_BOX":20.,"CTF_OVERROUND_MINT_SELL":20.,"D2_12PM_BINANCE_BOX":18.,"GAS1_AAA_GASOLINE_LOCK":15.,"CM_SHOCK_PYTH_CATALYST":15.,"S4H_CHAINLINK_CONVERGENCE":15.,"MKR_REWARD_LOCKED_CARRY":15.,"W1_LOW_TROUGH_LOCK":15.,"SP2_NBA_ENDGAME_LOCK":18.,"BOND1_UMA_RESOLUTION_CARRY":20.,"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX":20.,"NR_CONV_NO_BASKET_ARB":20.,"NR2_CONVERT_NO_SUBSET_ARB":20.,"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK":18.,"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":20.,"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":20.,"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX":20.,"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK":18.,"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG":20.,"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":18.,"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX":20.,"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX":20.,"CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH":18.,"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR":18.,"AFF1_FROZEN_SUBPERIOD_COLLAPSE":18.,"SOC2_EXACT_SCORE_2D_LATTICE":18.,"NFL_PRP1_MILESTONE_AND_MAX_LOCKS":18.,"SUM1_FRECHET_SUM_TRIANGLES":20.,"CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION":20.,"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":18.},"T1000":{"W1_SOLAR_PEAK_LOCK":1e2,"W2_ENSEMBLE_VALUE":50.,"W2_MAKER_OVERROUND":50.,"W3_WEATHER_SLATE_ARB":80.,"B1_CONVEX_TAIL_YES":25.,"B2_BARRIER_NO_LOCK":1e2,"B3_BARRIER_MONO_BOX":120.,"M1_SVI_MAKER_SCALP":1e2,"M2_STRIKE_CONVERGENCE":1e2,"M3_LADDER_MONO_BOX":150.,"M4_SHOCK_STRIKE_CATCHUP":1e2,"D1_SAME_ORACLE_DOMINANCE_BOX":1e2,"D1_4H_DOMINANCE_BOX":1e2,"D1_QUIET_BOOK_BOX":1e2,"D1_MAKER_ANCHOR_BOX":1e2,"S5M_CHAINLINK_SNIPER":1e2,"N1_NEGRISK_CROSS_BOX":150.,"P1_PREOPEN_MAKER_STRADDLE":96.,"U1_DAILY_UPDOWN_LOCK":1e2,"C1_BINARY_COMPLETE_SET":150.,"S2_EXACT_TWAP_LOCK":1e2,"CM_B3_PYTH_BARRIER_BOX":120.,"CM_B2_PYTH_SESSION_NO_LOCK":1e2,"CM_U1_PYTH_CLOSE_LOCK":1e2,"B4_TOUCHED_BARRIER_WICK_LOCK":120.,"SP1_NBA_ZERO_FEE_BOX":120.,"NR0_ZERO_FEE_SLATE_ARB":1e2,"ZERO_FEE_MAKER_ANCHOR_BOX":1e2,"ZF_INTRADAY_MAKER_BOX":110.,"TW1_COUNTING_TRUNCATION_AND_BOX":1e2,"FED1_CENTRAL_BANK_LP_BOX":120.,"COND1_MACRO_PARTITION_BOX":120.,"CTF_OVERROUND_MINT_SELL":120.,"D2_12PM_BINANCE_BOX":1e2,"GAS1_AAA_GASOLINE_LOCK":80.,"CM_SHOCK_PYTH_CATALYST":1e2,"S4H_CHAINLINK_CONVERGENCE":1e2,"MKR_REWARD_LOCKED_CARRY":1e2,"W1_LOW_TROUGH_LOCK":1e2,"SP2_NBA_ENDGAME_LOCK":1e2,"BOND1_UMA_RESOLUTION_CARRY":120.,"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX":120.,"NR_CONV_NO_BASKET_ARB":120.,"NR2_CONVERT_NO_SUBSET_ARB":120.,"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK":1e2,"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":120.,"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":120.,"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX":120.,"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK":1e2,"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG":120.,"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":1e2,"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX":120.,"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX":120.,"CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH":1e2,"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR":1e2,"AFF1_FROZEN_SUBPERIOD_COLLAPSE":110.,"SOC2_EXACT_SCORE_2D_LATTICE":110.,"NFL_PRP1_MILESTONE_AND_MAX_LOCKS":1e2,"SUM1_FRECHET_SUM_TRIANGLES":120.,"CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION":120.,"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":1e2},"T5000":{"W1_SOLAR_PEAK_LOCK":350.,"W2_ENSEMBLE_VALUE":175.,"W2_MAKER_OVERROUND":175.,"W3_WEATHER_SLATE_ARB":250.,"B1_CONVEX_TAIL_YES":75.,"B2_BARRIER_NO_LOCK":350.,"B3_BARRIER_MONO_BOX":4e2,"M1_SVI_MAKER_SCALP":350.,"M2_STRIKE_CONVERGENCE":350.,"M3_LADDER_MONO_BOX":5e2,"M4_SHOCK_STRIKE_CATCHUP":350.,"D1_SAME_ORACLE_DOMINANCE_BOX":3e2,"D1_4H_DOMINANCE_BOX":3e2,"D1_QUIET_BOOK_BOX":3e2,"D1_MAKER_ANCHOR_BOX":3e2,"S5M_CHAINLINK_SNIPER":3e2,"N1_NEGRISK_CROSS_BOX":5e2,"P1_PREOPEN_MAKER_STRADDLE":288.,"U1_DAILY_UPDOWN_LOCK":350.,"C1_BINARY_COMPLETE_SET":5e2,"S2_EXACT_TWAP_LOCK":3e2,"CM_B3_PYTH_BARRIER_BOX":4e2,"CM_B2_PYTH_SESSION_NO_LOCK":350.,"CM_U1_PYTH_CLOSE_LOCK":350.,"B4_TOUCHED_BARRIER_WICK_LOCK":4e2,"SP1_NBA_ZERO_FEE_BOX":4e2,"NR0_ZERO_FEE_SLATE_ARB":3e2,"ZERO_FEE_MAKER_ANCHOR_BOX":350.,"ZF_INTRADAY_MAKER_BOX":350.,"TW1_COUNTING_TRUNCATION_AND_BOX":350.,"FED1_CENTRAL_BANK_LP_BOX":4e2,"COND1_MACRO_PARTITION_BOX":4e2,"CTF_OVERROUND_MINT_SELL":4e2,"D2_12PM_BINANCE_BOX":3e2,"GAS1_AAA_GASOLINE_LOCK":250.,"CM_SHOCK_PYTH_CATALYST":3e2,"S4H_CHAINLINK_CONVERGENCE":3e2,"MKR_REWARD_LOCKED_CARRY":3e2,"W1_LOW_TROUGH_LOCK":350.,"SP2_NBA_ENDGAME_LOCK":350.,"BOND1_UMA_RESOLUTION_CARRY":4e2,"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX":4e2,"NR_CONV_NO_BASKET_ARB":4e2,"NR2_CONVERT_NO_SUBSET_ARB":4e2,"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK":350.,"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":4e2,"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX":4e2,"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX":4e2,"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK":350.,"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG":4e2,"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":350.,"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX":4e2,"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX":4e2,"CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH":350.,"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR":350.,"AFF1_FROZEN_SUBPERIOD_COLLAPSE":350.,"SOC2_EXACT_SCORE_2D_LATTICE":350.,"NFL_PRP1_MILESTONE_AND_MAX_LOCKS":350.,"SUM1_FRECHET_SUM_TRIANGLES":4e2,"CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION":4e2,"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":350.}}
 for _v2_sl in("S2_RTDS_EXACT_TWAP_INTEGRATOR","D1_TELESCOPING_CANDLE_BRIDGE","B1_INTRADAY_ONETOUCH_NOON_BOX","EQ1_PYTH_EQUITY_DOMINANCE_BOX","DC1_DOUBLE_CHANCE_1X2_PARITY","LP_COMP1_SPORTS_TRIANGLES","HALFTIME_FREEZE_OFFSET_BOX","MENTION1_CUMULATIVE_LADDER_BOX","NR6_CROSS_SLATE_SURJECTION_BOX","NR4_EXHAUSTION_TAIL_YES_CONVERT","NR5_OVERROUND_ALL_YES_SELL","NR4_OPTIMAL_CHANNEL_CONVERT","NR5_LOTTERY_FREEROLL_CONVERT","CTF_OVERROUND_MINT_SELL","C1_BINARY_COMPLETE_SET","W_PRUNE1_METAR_SLATE_ARB","W_PRUNE1_NR0_BASKET"):BANKROLL_TICKETS["T100"].setdefault(_v2_sl,20.);BANKROLL_TICKETS["T1000"].setdefault(_v2_sl,110.);BANKROLL_TICKETS["T5000"].setdefault(_v2_sl,350.)
@@ -4754,24 +4877,24 @@ class _LazyWsBooksDict(dict):
  def clear(self):self._dirty.clear();super().clear()
 class Alpha124ShadowDaemon:
  def __init__(b,single_scan=False,riskless_bridge_only=False):
-  b.single_scan=single_scan;b.riskless_bridge_only=bool(riskless_bridge_only or os.environ.get("PM_RISKLESS_BRIDGE_ONLY")=="1");b.session=None;b.started_at=datetime.now(timezone.utc).isoformat();b.weather_sigma_c=1.05;b.barrier_wick_mult=1.12;b._load_calibration();b.spots={};b.spot_hist={a:collections.deque(maxlen=600)for a in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS)};b.usd_spot_hist={a:collections.deque(maxlen=400)for a in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS)};b.usd_direct_flags={};b.weather_events={};b.barrier_rungs={};b.strike_ladders={};b.negrisk_ladders={};b.daily_updown_markets={};b.pyth_daily_markets={};b.pyth_barrier_rungs={};b.pyth_close_ladders={};b.nba_games={};b.multi_sport_games={};b.negrisk_convert_slates={};b.live_nba_board=[];b.uma_proposed_markets={};b.uma_onchain_cache={};b.bond2_onchain_cache={};b.nba_prop_slates={};b.nba_boxscore_cache={};b.nba_subperiod_slates={};b.nba_ext_summary_cache={};b.soccer_trees={};b.lp1_bop_legs=[];b.lp1_nba_em_bundles={};b.esports_bo3_specs={};b.lp2_implication_groups=[];b.lp2_events_by_slug={};b.cal1_ladders={};b.lp1_nfl_em_bundles={};b.multisport_raw_events={};b.tennis_specs={};b.score_confirm_tracker=ScoreConfirmationTracker();b.live_multisport_boards={};b.aff1_bundles={};b.soc2_lattices={};b.nfl_prop_slates={};b.binance_close_rungs=[];b.subperiod_freeze_tracker=SubperiodFreezeTracker();b.nfl_summary_cache={};b.negrisk_zero_slates={};b.counting_slates={};b.fomc_truth_legs=[];b.oil_senate_truth_legs=[];b.gas_events_raw={};b.hourly_12pm_markets={};b.s4h_candles={};b.pending_zero_fee_maker_anchors={};b.prev_pyth_spots={};b.pyth_intraday_cache={};b.dominance_pairs={};b.dominance_4h_pairs={};b.twap_candles={};b.s5m_candles={};b.preopen_15m_candles={};b.pending_preopen_straddles={};b.pending_maker_anchors={};b.chainlink_open_cache={};b.daily_open_cache={};b.metar_cache={};b.taf_cache={};b.ensemble_cache={};b.barrier_ext_cache={};b._last_w3_slate_chk_ts={};b._last_trade_tape_chk_ts={};b._open_meteo_sem=asyncio.Semaphore(2);b.last_discovery_ts=.0;b.last_weather_scan_ts=.0;b.last_crypto_mid_scan_ts=.0;b.last_tradfi_sports_scan_ts=.0;b.last_nba_endgame_scan_ts=.0;b.last_espn_board_ts=.0;b.last_uma_discovery_ts=.0;b.last_dominance_discovery_ts=.0;b.last_4h_discovery_ts=.0;b.last_twap_discovery_ts=.0;b.last_s5m_discovery_ts=.0;b.last_preopen_discovery_ts=.0;b.last_usd_sample_ts=.0;b.cached_mid_opps=[];b.cached_weather_opps=[];b.cached_tradfi_sports_opps=[];b.cached_nba_endgame_opps=[];b.cached_shock_opps=[];b.cycle_count=0
+  b.single_scan=single_scan;b.riskless_bridge_only=bool(riskless_bridge_only or os.environ.get("PM_RISKLESS_BRIDGE_ONLY")=="1");b.session=None;b.started_at=datetime.now(timezone.utc).isoformat();b.weather_sigma_c=1.05;b.barrier_wick_mult=1.12;b._load_calibration();b.spots={};b.spot_hist={a:collections.deque(maxlen=600)for a in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS)};b.usd_spot_hist={a:collections.deque(maxlen=400)for a in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS)};b.usd_direct_flags={};b.weather_events={};b.barrier_rungs={};b.strike_ladders={};b.negrisk_ladders={};b.daily_updown_markets={};b.pyth_daily_markets={};b.pyth_barrier_rungs={};b.pyth_close_ladders={};b.nba_games={};b.multi_sport_games={};b.negrisk_convert_slates={};b.live_nba_board=[];b.uma_proposed_markets={};b.uma_onchain_cache={};b.bond2_onchain_cache={};b.nba_prop_slates={};b.nba_boxscore_cache={};b.nba_subperiod_slates={};b.nba_ext_summary_cache={};b.soccer_trees={};b.lp1_bop_legs=[];b.lp1_nba_em_bundles={};b.esports_bo3_specs={};b.lp2_implication_groups=[];b.lp2_events_by_slug={};b.cal1_ladders={};b.lp1_nfl_em_bundles={};b.multisport_raw_events={};b.tennis_specs={};b.score_confirm_tracker=ScoreConfirmationTracker();b.live_multisport_boards={};b.aff1_bundles={};b.soc2_lattices={};b.nfl_prop_slates={};b.binance_close_rungs=[];b.subperiod_freeze_tracker=SubperiodFreezeTracker();b.nfl_summary_cache={};b.negrisk_zero_slates={};b.counting_slates={};b.fomc_truth_legs=[];b.zerofee_general_binaries=[];b.oil_senate_truth_legs=[];b.gas_events_raw={};b.hourly_12pm_markets={};b.s4h_candles={};b.pending_zero_fee_maker_anchors={};b.prev_pyth_spots={};b.pyth_intraday_cache={};b.dominance_pairs={};b.dominance_4h_pairs={};b.twap_candles={};b.s5m_candles={};b.preopen_15m_candles={};b.pending_preopen_straddles={};b.pending_maker_anchors={};b.chainlink_open_cache={};b.daily_open_cache={};b.metar_cache={};b.taf_cache={};b.ensemble_cache={};b.barrier_ext_cache={};b._last_w3_slate_chk_ts={};b._last_trade_tape_chk_ts={};b._open_meteo_sem=asyncio.Semaphore(2);b.last_discovery_ts=.0;b.last_weather_scan_ts=.0;b.last_crypto_mid_scan_ts=.0;b.last_tradfi_sports_scan_ts=.0;b.last_nba_endgame_scan_ts=.0;b.last_espn_board_ts=.0;b.last_uma_discovery_ts=.0;b.last_dominance_discovery_ts=.0;b.last_4h_discovery_ts=.0;b.last_twap_discovery_ts=.0;b.last_s5m_discovery_ts=.0;b.last_preopen_discovery_ts=.0;b.last_usd_sample_ts=.0;b.cached_mid_opps=[];b.cached_weather_opps=[];b.cached_tradfi_sports_opps=[];b.cached_nba_endgame_opps=[];b.cached_shock_opps=[];b.cycle_count=0
   try:b._shock_file_offset=SHOCK_TRIGGER_FILE.stat().st_size if SHOCK_TRIGGER_FILE.exists()else 0
   except Exception:b._shock_file_offset=0
-  b._seen_shock_ids=collections.deque(maxlen=256);b._last_m4_shock_ts_by_asset={};b._last_any_shock_ts_by_asset={};b._last_d1_live_emit_ts={};b._bg_discovery_task=None;b._bg_weather_task=None;b._bg_mid_task=None;b._bg_tradfi_task=None;b._bg_nba_task=None;b._ws_books=_LazyWsBooksDict(b);b._ws_raw_levels={};b._ws_subscribed_tokens=set();b._ws_rest_seeded=set();b._ws_d1_priority_tokens=set();b._ws_nr_priority_tokens=set();b._ws_shard_tokens={};b._instant_arb_cooldown_until={};b._bg_chainlink_ws_task=None;b._chainlink_ws=(PolymarketChainlinkLiveStream(on_tick=b._on_chainlink_ws_tick)if(not b.single_scan and PolymarketChainlinkLiveStream is not None)else None);b._ws_d1_wakeup=asyncio.Event();b._ws_nr_wakeup=asyncio.Event();b._bg_clob_ws_task=None;b._strike_fail_backoff_ts={};b._last_telem_ts_by_key={};b._last_telem_sig_by_key={};b.open_positions={};b.pending_maker_orders={};b.closed_positions=[];b.entered_keys=set();b.inflight_keys=set();b.top_opportunities=[];b._hydrate_state()
+  b._seen_shock_ids=collections.deque(maxlen=256);b._last_m4_shock_ts_by_asset={};b._last_any_shock_ts_by_asset={};b._last_d1_live_emit_ts={};b._bg_discovery_task=None;b._bg_weather_task=None;b._bg_mid_task=None;b._bg_tradfi_task=None;b._bg_nba_task=None;b._ws_books=_LazyWsBooksDict(b);b._ws_raw_levels={};b._ws_subscribed_tokens=set();b._ws_rest_seeded=set();b._ws_d1_priority_tokens=set();b._ws_nr_priority_tokens=set();b._ws_shard_tokens={};b._ws_shard_last_rx_ts={};b._ws_last_reconciled_ts={};b._rest_books_cache={};b._rest_empty_books_ts={};b._instant_arb_cooldown_until={};b._bg_chainlink_ws_task=None;b._chainlink_ws=(PolymarketChainlinkLiveStream(on_tick=b._on_chainlink_ws_tick)if(not b.single_scan and PolymarketChainlinkLiveStream is not None)else None);b._ws_d1_wakeup=asyncio.Event();b._ws_nr_wakeup=asyncio.Event();b._bg_clob_ws_task=None;b._strike_fail_backoff_ts={};b._last_telem_ts_by_key={};b._last_telem_sig_by_key={};b.open_positions={};b.pending_maker_orders={};b.closed_positions=[];b.entered_keys=set();b.inflight_keys=set();b.top_opportunities=[];b._hydrate_state()
  def is_sleeve_grad8_ready(a,sleeve):
   if is_shadow_sleeve_quarantined(sleeve):return False
-  b=_filter_epoch_closed_positions(sleeve,[p for p in a.closed_positions if p.get("sleeve")==sleeve]);i=len(b);h=sum(1 for p in b if p.get("won"));g=i-h;c=a.__dict__.setdefault("_grad8_promoted_logged",set())
-  if g>0:
-   if sleeve in c:c.discard(sleeve);logger.warning(f"🛑 [GRAD8 AUTO-PROMOTION REVOKED] {sleeve}: {h}/{i} ({g} loss) — live IPC bridge DISARMED.")
+  b=_filter_epoch_closed_positions(sleeve,[p for p in a.closed_positions if p.get("sleeve")==sleeve]);h=len(b);g=sum(1 for p in b if p.get("won"));f=h-g;c=a.__dict__.setdefault("_grad8_promoted_logged",set())
+  if f>0:
+   if sleeve in c:c.discard(sleeve);logger.warning(f"🛑 [GRAD8 AUTO-PROMOTION REVOKED] {sleeve}: {g}/{h} ({f} loss) — live IPC bridge DISARMED.")
    return False
-  if i<8:return False
-  f=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in b);e=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in b)
-  if f<=.0 or e<=.0:return False
+  if h<8:return False
+  e=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in b);d=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in b)
+  if e<=.0 or d<=.0:return False
   if sleeve not in c:
-   c.add(sleeve);logger.info(f"🚀 [GRAD8 AUTO-PROMOTED -> LIVE] {sleeve}: {h}/{i} wins (100.0% WR, T1000=+${f:.2f}) — live IPC bridge ARMED!")
+   c.add(sleeve);logger.info(f"🚀 [GRAD8 AUTO-PROMOTED -> LIVE] {sleeve}: {g}/{h} wins (100.0% WR, T1000=+${e:.2f}) — live IPC bridge ARMED!")
    if STATE_FILE==(DATA_DIR/"alpha124_shadow_state.json")or LIVE_ALPHA124_STATE_MIRROR_FILE!=(LIVE_POLYMARKET_DIR/"alpha124_shadow_state.json"):
     try:a.write_state_files(a.top_opportunities)
-    except Exception as d:pass
+    except Exception:pass
   return True
  def _can_emit_zero_loss_math_live(a,sleeve,close_ts,now_ts,*,p_model=1.):
   if a.is_sleeve_grad8_ready(sleeve):return True
@@ -4790,33 +4913,41 @@ class Alpha124ShadowDaemon:
  def _release_inflight_keys(self,keys):
   for k in keys:self.inflight_keys.discard(k)
  def _evict_stale_caches(a,now_ts=None):
-  v=float(now_ts if now_ts is not None else time.time());c=0;b=0
+  B=float(now_ts if now_ts is not None else time.time());c=0;b=0
   if a._ws_subscribed_tokens:
-   f=set(a._ws_subscribed_tokens)
+   h=set(a._ws_subscribed_tokens)
    for p in(*a.open_positions.values(),*a.pending_maker_orders.values(),*a.pending_maker_anchors.values(),*a.pending_zero_fee_maker_anchors.values()):
-    for n in("token_id","opp_token_id","anchor_token_id","hedge_token_id"):
-     y=p.get(n)or(p.get("extra")or{}).get(n)
-     if y:f.add(str(y))
-   for d in[t for t in list(a._ws_raw_levels.keys())if t not in f]:a._ws_raw_levels.pop(d,None);a._ws_books.pop(d,None);a._ws_rest_seeded.discard(d);c+=1
-   for d in[t for t in list(dict.keys(a._ws_books))if t not in f]:a._ws_books.pop(d,None);a._ws_rest_seeded.discard(d);c+=1
-  for k in(a.uma_onchain_cache,a.bond2_onchain_cache,a.nba_boxscore_cache,a.nba_ext_summary_cache,a.nfl_summary_cache,a.pyth_intraday_cache,a.metar_cache,a.taf_cache,a.ensemble_cache,a.barrier_ext_cache):
-   for u,s in list(k.items()):
-    if isinstance(s,tuple)and len(s)>=1 and(v-float(s[0]or.0))>3600.:k.pop(u,None);b+=1
-  for j in(a.chainlink_open_cache,a.daily_open_cache):
-   for r,q in list(j.items()):
-    if isinstance(q,tuple)and len(q)>=1 and.0<float(q[0]or.0)<(v-7200.):j.pop(r,None);b+=1
-  for h,g in((a._instant_arb_cooldown_until,6e2),(a._last_d1_live_emit_ts,3600.),(a._strike_fail_backoff_ts,3600.),(a._last_w3_slate_chk_ts,3600.),(a._last_trade_tape_chk_ts,3600.),(a._last_telem_ts_by_key,3600.)):
-   for o,m in list(h.items()):
-    if(v-float(m or.0))>g:h.pop(o,None);b+=1
-  for i in list(a._last_telem_sig_by_key.keys()):
-   if i not in a._last_telem_ts_by_key:a._last_telem_sig_by_key.pop(i,None)
+    for v in("token_id","opp_token_id","anchor_token_id","hedge_token_id"):
+     E=p.get(v)or(p.get("extra")or{}).get(v)
+     if E:h.add(str(E))
+   for f in[t for t in list(a._ws_raw_levels.keys())if t not in h]:a._ws_raw_levels.pop(f,None);a._ws_books.pop(f,None);a._ws_rest_seeded.discard(f);a.__dict__.get("_ws_last_reconciled_ts",{}).pop(f,None);c+=1
+   for f in[t for t in list(dict.keys(a._ws_books))if t not in h]:a._ws_books.pop(f,None);a._ws_rest_seeded.discard(f);a.__dict__.get("_ws_last_reconciled_ts",{}).pop(f,None);c+=1
+  d=a.__dict__.get("_rest_books_cache")
+  if isinstance(d,dict):
+   for u,s in list(d.items()):
+    if not isinstance(s,tuple)or(B-float(s[0]or.0))>120.:d.pop(u,None);b+=1
+  e=a.__dict__.get("_rest_empty_books_ts")
+  if isinstance(e,dict):
+   for r,n in list(e.items()):
+    if(B-float(n or.0))>120.:e.pop(r,None);b+=1
+  for m in(a.uma_onchain_cache,a.bond2_onchain_cache,a.nba_boxscore_cache,a.nba_ext_summary_cache,a.nfl_summary_cache,a.pyth_intraday_cache,a.metar_cache,a.taf_cache,a.ensemble_cache,a.barrier_ext_cache):
+   for A,z in list(m.items()):
+    if isinstance(z,tuple)and len(z)>=1 and(B-float(z[0]or.0))>3600.:m.pop(A,None);b+=1
+  for l in(a.chainlink_open_cache,a.daily_open_cache):
+   for y,x in list(l.items()):
+    if isinstance(x,tuple)and len(x)>=1 and.0<float(x[0]or.0)<(B-7200.):l.pop(y,None);b+=1
+  for j,i in((a._instant_arb_cooldown_until,6e2),(a._last_d1_live_emit_ts,3600.),(a._strike_fail_backoff_ts,3600.),(a._last_w3_slate_chk_ts,3600.),(a._last_trade_tape_chk_ts,3600.),(a._last_telem_ts_by_key,3600.)):
+   for w,q in list(j.items()):
+    if(B-float(q or.0))>i:j.pop(w,None);b+=1
+  for k in list(a._last_telem_sig_by_key.keys()):
+   if k not in a._last_telem_ts_by_key:a._last_telem_sig_by_key.pop(k,None)
   if len(a.entered_keys)>6000:
-   e=set(a.open_positions.keys())|set(a.pending_maker_orders.keys())|set(a.pending_maker_anchors.keys())|set(a.pending_zero_fee_maker_anchors.keys())|set(a.inflight_keys)
-   for l in a.closed_positions[-2500:]:
-    for x in("dedupe_key","position_id","event_dedupe_key"):
-     w=l.get(x)or(l.get("extra")or{}).get(x)
-     if w:e.add(str(w))
-   a.entered_keys.intersection_update(e)
+   g=set(a.open_positions.keys())|set(a.pending_maker_orders.keys())|set(a.pending_maker_anchors.keys())|set(a.pending_zero_fee_maker_anchors.keys())|set(a.inflight_keys)
+   for o in a.closed_positions[-2500:]:
+    for D in("dedupe_key","position_id","event_dedupe_key"):
+     C=o.get(D)or(o.get("extra")or{}).get(D)
+     if C:g.add(str(C))
+   a.entered_keys.intersection_update(g)
   import gc as _gc;_gc.collect();return{"evicted_books":c,"evicted_cache_entries":b}
  def _record_market_telemetry(a,key,min_interval_sec,payload,now_ts=None,sig=None,unchanged_heartbeat_sec=6e2):
   if getattr(a,"riskless_bridge_only",False):return
@@ -4980,15 +5111,37 @@ class Alpha124ShadowDaemon:
   elif b and ts_sec<float(b[-1][0]):return
   else:b.append((ts_sec,price_usd))
  async def fetch_json(a,url,timeout=5.):
-  if not a.single_scan and a._ws_books and"/book?token_id="in str(url):
-   d=str(url).split("token_id=",1)[1].split("&",1)[0].strip();b=a._ws_books.get(d)
-   if b is not None and(time.time()-b[0])<=1.5:
-    c=b[1]
-    if c.get("asks")or c.get("bids"):return c
-  f=await a.get_session()
+  c=(not a.single_scan)and("/book?token_id="in str(url));e=""
+  if c:
+   e=str(url).split("token_id=",1)[1].split("&",1)[0].strip();l=time.time()
+   if a._ws_books:
+    k=a._ws_books.get(e)
+    if k is not None and((l-k[0])<=1.5 or a._is_ws_book_live_on_healthy_shard(e,k[0],l,max_shard_silence_sec=5.)):
+     n=k[1]
+     if n.get("asks")or n.get("bids"):return n
+   d=getattr(a,"_ws_subscribed_tokens",None)or set();j=12. if e in d else 45.;i=(a.__dict__.get("_rest_books_cache")or{}).get(e)
+   if i is not None and(l-float(i[0]))<=j:
+    m=i[1]
+    if isinstance(m,dict)and(m.get("asks")or m.get("bids")):return m
+   h=(a.__dict__.get("_rest_empty_books_ts")or{}).get(e)
+   if h is not None and(l-float(h))<=(20. if e in d else 90.):return None
+  o=await a.get_session()
+  if c:
+   b=a.__dict__.get("_book_get_sem")
+   if b is None:b=asyncio.Semaphore(4);a.__dict__["_book_get_sem"]=b
+   async with b:
+    try:
+     async with o.get(url,timeout=aiohttp.ClientTimeout(total=timeout))as f:
+      if f.status==200:
+       g=await f.json()
+       if isinstance(g,dict)and e:a.__dict__.setdefault("_rest_books_cache",{})[e]=(time.time(),g);a.__dict__.setdefault("_rest_empty_books_ts",{}).pop(e,None)
+       return g
+      if f.status==404 and e:a.__dict__.setdefault("_rest_empty_books_ts",{})[e]=time.time()
+    except Exception:return None
+    return None
   try:
-   async with f.get(url,timeout=aiohttp.ClientTimeout(total=timeout))as e:
-    if e.status==200:return await e.json()
+   async with o.get(url,timeout=aiohttp.ClientTimeout(total=timeout))as f:
+    if f.status==200:return await f.json()
   except Exception:return None
   return None
  async def fetch_book_after_latency(self,token_id,latency_ms=50):
@@ -5000,18 +5153,20 @@ class Alpha124ShadowDaemon:
   c={};b={}
   for d in bids_raw or():
    try:
-    f=round(float(d.get("price",.0)),4);e=float(d.get("size",.0))
-    if f>.0 and e>.0:c[f]=e
+    g=round(float(d.get("price",.0)),4);f=float(d.get("size",.0))
+    if g>.0 and f>.0:c[g]=f
    except Exception:continue
   for d in asks_raw or():
    try:
-    f=round(float(d.get("price",.0)),4);e=float(d.get("size",.0))
-    if f>.0 and e>.0:b[f]=e
+    g=round(float(d.get("price",.0)),4);f=float(d.get("size",.0))
+    if g>.0 and f>.0:b[g]=f
    except Exception:continue
   a._ws_raw_levels[asset_id]=(c,b);a._rebuild_ws_book_dict(asset_id,c,b,now_ts)
   if from_rest:a._ws_rest_seeded.add(asset_id)
-  else:a._ws_rest_seeded.discard(asset_id)
- def _drop_ws_book(a,asset_id):a._ws_books.pop(asset_id,None);a._ws_raw_levels.pop(asset_id,None);a._ws_rest_seeded.discard(asset_id)
+  else:
+   a._ws_rest_seeded.discard(asset_id);a.__dict__.setdefault("_ws_last_reconciled_ts",{})[asset_id]=now_ts
+   if _STAGE_B_DECAY_TRACKER is not None and not a.single_scan:e=min(b.keys())if b else.0;_STAGE_B_DECAY_TRACKER.on_top_of_book_tick(asset_id,e,b.get(e,.0)if e>.0 else.0)
+ def _drop_ws_book(a,asset_id):a._ws_books.pop(asset_id,None);a._ws_raw_levels.pop(asset_id,None);a._ws_rest_seeded.discard(asset_id);a.__dict__.get("_ws_last_reconciled_ts",{}).pop(asset_id,None)
  def _apply_ws_price_changes(a,asset_id,changes,now_ts):
   m=a._ws_raw_levels.get(asset_id)
   if m is None:return False
@@ -5037,52 +5192,56 @@ class Alpha124ShadowDaemon:
    if d is not None and.0<d<1. and abs(d-f)>1e-6:b=True
   if b:a._drop_ws_book(asset_id);return False
   if c:
+   a.__dict__.setdefault("_ws_last_reconciled_ts",{})[asset_id]=now_ts
    if isinstance(a._ws_books,_LazyWsBooksDict):a._ws_books.mark_dirty(asset_id,now_ts)
    else:a._rebuild_ws_book_dict(asset_id,j,i,now_ts)
+   if _STAGE_B_DECAY_TRACKER is not None and not a.single_scan:_STAGE_B_DECAY_TRACKER.on_top_of_book_tick(asset_id,f,i.get(f,.0)if f>.0 else.0)
   return c
  def _desired_d1_ws_tokens(c,now_ts,max_cap=600):
-  D=[];y=set();h=set()
+  E=[];z=set();h=set()
   def a(tok,*,is_nr=False):
-   if len(D)>=max_cap:return False
-   a=str(tok or"").strip()
-   if a and a not in y:
-    y.add(a);D.append(a)
-    if is_nr:h.add(a)
-   elif a and is_nr:h.add(a)
-   return len(D)<max_cap
+   if len(E)>=max_cap:return False
+   b=str(tok or"").strip()
+   if b and b not in z:
+    z.add(b);E.append(b)
+    if is_nr:h.add(b)
+   elif b and is_nr:h.add(b)
+   return len(E)<max_cap
   for m,g in list(c.dominance_pairs.values())+list(c.dominance_4h_pairs.values()):
    if float(g.end_ts)<=now_ts+5.:continue
    for tok in(m.up_token,m.down_token,g.up_token,g.down_token):a(tok)
   if not is_shadow_sleeve_quarantined("S2_EXACT_TWAP_LOCK"):
    for u in list(c.twap_candles.values()):
     if float(u.end_ts)>now_ts+5.:a(u.up_token);a(u.down_token)
-  c._ws_d1_priority_tokens=set(D)
-  for x in list(c.pyth_daily_markets.values())+list(c.daily_updown_markets.values()):
-   if float(x.end_ts)>now_ts+60.:a(x.up_token);a(x.down_token)
+  c._ws_d1_priority_tokens=set(E)
+  for y in list(c.pyth_daily_markets.values())+list(c.daily_updown_markets.values()):
+   if float(y.end_ts)>now_ts+60.:a(y.up_token);a(y.down_token)
   for t in list(c.strike_ladders.values()):
    if not t or float(t[0].end_ts)<=now_ts+60.:continue
    l=float(c.spots.get(t[0].asset)or.0);e=sorted(t,key=lambda r:abs(float(r.strike)-l))if l>.0 else list(t)
    for r in e[:4]:a(r.yes_token);a(r.no_token)
-  for C in list(c.negrisk_ladders.values()):
-   if not C or float(C[0].end_ts)<=now_ts+60.:continue
-   k=float(c.spots.get(C[0].asset)or.0);d=sorted(C,key=lambda b:abs(.5*(float(b.k_low or k)+float(b.k_high or k))-k))if k>.0 else list(C)
+  for D in list(c.negrisk_ladders.values()):
+   if not D or float(D[0].end_ts)<=now_ts+60.:continue
+   k=float(c.spots.get(D[0].asset)or.0);d=sorted(D,key=lambda b:abs(.5*(float(b.k_low or k)+float(b.k_high or k))-k))if k>.0 else list(D)
    for b in d[:4]:a(b.yes_token);a(b.no_token)
   for q in sorted(c.negrisk_zero_slates.values(),key=lambda s:float(s.end_ts)):
    if float(q.end_ts)<=now_ts+60. or len(q.brackets)>15:continue
-   for B in q.brackets:a(B.get("no_token"),is_nr=True);a(B.get("yes_token"),is_nr=True)
+   for C in q.brackets:a(C.get("no_token"),is_nr=True);a(C.get("yes_token"),is_nr=True)
   for j in sorted(c.negrisk_convert_slates.values(),key=lambda s:(not bool(s.is_closed_convert_safe),float(s.end_ts))):
    if float(j.end_ts)<=now_ts+60. or len(j.brackets)>15:continue
-   for A in j.brackets:
-    a(A.get("no_token"),is_nr=True)
-    if j.is_closed_convert_safe:a(A.get("yes_token"),is_nr=True)
+   for B in j.brackets:
+    a(B.get("no_token"),is_nr=True)
+    if j.is_closed_convert_safe:a(B.get("yes_token"),is_nr=True)
   for p in sorted(c.counting_slates.values(),key=lambda s:float(getattr(s,"window_end_ts",None)or getattr(s,"end_ts",.0)or.0)):
    if float(getattr(p,"window_end_ts",None)or getattr(p,"end_ts",.0)or.0)<=now_ts+60. or len(p.brackets)>15:continue
-   for z in p.brackets:a(z.get("no_token"),is_nr=True);a(z.get("yes_token"),is_nr=True)
+   for A in p.brackets:a(A.get("no_token"),is_nr=True);a(A.get("yes_token"),is_nr=True)
   for o in list(c.uma_proposed_markets.values())[:25]:
    if isinstance(o,dict):
     f=_parse_clob_tokens(o)
     if f:a(f[0],is_nr=True);a(f[1],is_nr=True)
     else:a(o.get("win_token")or o.get("yes_token"),is_nr=True);a(o.get("lose_token")or o.get("no_token"),is_nr=True)
+  for x in sorted((c.__dict__.get("_ws_reactive_bin_metas")or()),key=lambda F:float(F.get("end_ts")or(now_ts+86400.)))[:60]:
+   if float(x.get("end_ts")or(now_ts+86400.))>now_ts+60.:a(x.get("yes_token_id"),is_nr=True);a(x.get("no_token_id"),is_nr=True)
   c._ws_nr_priority_tokens=h
   for w in list(c.multi_sport_games.values())+list(c.nba_games.values()):
    n=float(getattr(w,"end_ts",.0)or.0)
@@ -5090,16 +5249,18 @@ class Alpha124ShadowDaemon:
     for i in("ml_a_token","ml_b_token"):a(getattr(w,i,None))
     for v in(getattr(w,"spreads",None)or())[:3]:
      if isinstance(v,dict):a(v.get("yes_token"));a(v.get("no_token"))
-  return D
+  return E
  def _partition_ws_shards(self,now_ts,max_shards=3,per_shard=200):a=self._desired_d1_ws_tokens(now_ts,max_cap=max_shards*per_shard);return[a[i*per_shard:(i+1)*per_shard]for i in range(max_shards)]
  def _sync_ws_subscribed_union(a):
   b=set()
   for c in a._ws_shard_tokens.values():b.update(c)
   a._ws_subscribed_tokens=b
  async def _run_single_clob_ws_shard(a,shard_idx):
+  j=a.__dict__.setdefault("_ws_shard_last_rx_ts",{})
   while not a.single_scan:
    t=a._partition_ws_shards(time.time());q=t[shard_idx]if shard_idx<len(t)else[]
    if not q:
+    j.pop(shard_idx,None)
     for m in list(a._ws_shard_tokens.pop(shard_idx,set())):a._drop_ws_book(m)
     a._sync_ws_subscribed_union();await asyncio.sleep(1.5);continue
    try:
@@ -5107,7 +5268,7 @@ class Alpha124ShadowDaemon:
     async with E.ws_connect(CLOB_WS_URL,heartbeat=15.,max_msg_size=4*1024*1024,timeout=aiohttp.ClientWSTimeout(ws_close=5.))as J:
      n=a._ws_shard_tokens.get(shard_idx,set())
      for m in list(n|set(q)):a._drop_ws_book(m)
-     p=set(q);a._ws_shard_tokens[shard_idx]=p;a._sync_ws_subscribed_union();await J.send_str(json.dumps({"assets_ids":q,"type":"market"}));e=time.time();b=e
+     p=set(q);a._ws_shard_tokens[shard_idx]=p;a._sync_ws_subscribed_union();await J.send_str(json.dumps({"assets_ids":q,"type":"market"}));e=time.time();b=e;j[shard_idx]=b
      while not a.single_scan:
       y=time.time()
       if(y-e)>=2.:
@@ -5129,8 +5290,8 @@ class Alpha124ShadowDaemon:
       if H.type in(aiohttp.WSMsgType.CLOSED,aiohttp.WSMsgType.CLOSING,aiohttp.WSMsgType.ERROR):break
       if H.type not in(aiohttp.WSMsgType.TEXT,aiohttp.WSMsgType.BINARY):continue
       k=H.data
-      if not k or k in("PONG",b"PONG"):b=time.time();continue
-      v=time.time();b=v;D=_orjson.loads(k)if _orjson is not None else json.loads(k);d=False;c=False;j=a._ws_d1_priority_tokens;i=a._ws_nr_priority_tokens
+      if not k or k in("PONG",b"PONG"):b=time.time();j[shard_idx]=b;continue
+      v=time.time();b=v;j[shard_idx]=v;D=_orjson.loads(k)if _orjson is not None else json.loads(k);d=False;c=False;i=a._ws_d1_priority_tokens;h=a._ws_nr_priority_tokens
       if isinstance(D,list):
        for C in D:
         if isinstance(C,dict):
@@ -5138,7 +5299,7 @@ class Alpha124ShadowDaemon:
          if g in p:
           B=C.get("tick_size")or C.get("minimum_tick_size")
           if B:a.__dict__.setdefault("_token_tick_sizes",{})[g]=str(B)
-          a._apply_ws_book_snapshot(g,C.get("bids")or[],C.get("asks")or[],v);d=d or(g in j);c=c or(g in i)
+          a._apply_ws_book_snapshot(g,C.get("bids")or[],C.get("asks")or[],v);d=d or(g in i);c=c or(g in h)
       elif isinstance(D,dict):
        A=D.get("event_type")
        if A=="book":
@@ -5146,7 +5307,7 @@ class Alpha124ShadowDaemon:
         if g in p:
          z=D.get("tick_size")or D.get("minimum_tick_size")
          if z:a.__dict__.setdefault("_token_tick_sizes",{})[g]=str(z)
-         a._apply_ws_book_snapshot(g,D.get("bids")or[],D.get("asks")or[],v);d=d or(g in j);c=c or(g in i)
+         a._apply_ws_book_snapshot(g,D.get("bids")or[],D.get("asks")or[],v);d=d or(g in i);c=c or(g in h)
        elif A=="tick_size_change":
         g=str(D.get("asset_id")or"");G=D.get("new_tick_size")or D.get("tick_size")
         if g and G:
@@ -5159,79 +5320,139 @@ class Alpha124ShadowDaemon:
          if g in p:u.setdefault(g,[]).append(I)
         for g,F in u.items():
          if a._apply_ws_price_changes(g,F,v):
-          if g in j:d=True
-          if g in i:c=True
+          if g in i:d=True
+          if g in h:c=True
       if(d and(a.is_in_same_oracle_overlap_window(v)or bool(a.pending_maker_anchors))and(v-getattr(a,"_last_ws_d1_wake_ts",.0))>=.12):a._last_ws_d1_wake_ts=v;a._ws_d1_wakeup.set()
-      if c and(v-getattr(a,"_last_ws_nr_wake_ts",.0))>=.25:a._last_ws_nr_wake_ts=v;a._ws_nr_wakeup.set();a._ws_d1_wakeup.set()
-   except asyncio.CancelledError:raise
-   except Exception as h:await asyncio.sleep(1.)
- async def _scan_ws_reactive_negrisk_arbs(c,now_ts):
-  from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as a;h=[]
-  for l in list(c.negrisk_convert_slates.values()):
-   if not l.is_closed_convert_safe or l.end_ts<=now_ts+65. or len(l.brackets)>15:continue
-   k={};d=True
-   for o in l.brackets:
-    for n in(o.get("no_token"),o.get("yes_token")):
-     m=str(n or"");j=c._ws_books.get(m)if m else None
-     if j is None or(now_ts-float(j[0]))>2.5 or m in c._ws_rest_seeded:d=False;break
-     k[m]=j[1]
-    if not d:break
-   if not d:continue
-   f=detect_negrisk_convert_positions_arbs(l,k,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
-   if f:await c.execute_negrisk_convert_positions_arb(l,f[0],k,h)
-   e=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in l.brackets)and(l.end_ts-now_ts)<=172800.);g=detect_nr2_convert_no_subset_arbs(l,k,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if e else.012,min_edge_with_yes_sell=.0085 if e else.015,min_shares=5 if e else 6)
-   if g:await c.execute_nr2_subset_convert_arb(l,g[0],k,h)
-   i=a(l,k,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
-   if i is not None:c.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=l,dedupe_key=f"NR3_OVR_{l.event_id}",arb_hit=i,books_by_token=k,now_ts=now_ts)
+      if c and(v-getattr(a,"_last_ws_nr_wake_ts",.0))>=.12:a._last_ws_nr_wake_ts=v;a._ws_nr_wakeup.set();a._ws_d1_wakeup.set()
+   except asyncio.CancelledError:j.pop(shard_idx,None);raise
+   except Exception:j.pop(shard_idx,None);await asyncio.sleep(1.)
+   finally:j.pop(shard_idx,None)
+ async def _scan_ws_reactive_negrisk_arbs(a,now_ts):
+  from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as c;from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as d;o=[];v=d.snapshot.get("riskless_boxes",{});f=a.__dict__.get("_ws_dead_q_by_event")or{}
+  for u in list(a.negrisk_convert_slates.values()):
+   if not u.is_closed_convert_safe or u.end_ts<=now_ts+65. or len(u.brackets)>15:continue
+   t={};e=True
+   for N in u.brackets:
+    for J in(N.get("no_token"),N.get("yes_token")):
+     A=str(J or"");s=a._ws_books.get(A)if A else None
+     if(s is None or A in a._ws_rest_seeded or((now_ts-float(s[0]))>2.5 and not a._is_ws_book_live_on_healthy_shard(A,float(s[0]),now_ts,max_shard_silence_sec=5.))):e=False;break
+     t[A]=s[1]
+    if not e:break
+   if not e:continue
+   l=detect_negrisk_convert_positions_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
+   if l:await a.execute_negrisk_convert_positions_arb(u,l[0],t,o)
+   k=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in u.brackets)and(u.end_ts-now_ts)<=172800.);n=detect_nr2_convert_no_subset_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if k else.012,min_edge_with_yes_sell=.0085 if k else.015,min_shares=5 if k else 6)
+   if n:await a.execute_nr2_subset_convert_arb(u,n[0],t,o)
+   p=c(u,t,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
+   if p is not None:a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=u,dedupe_key=f"NR3_OVR_{u.event_id}",arb_hit=p,books_by_token=t,now_ts=now_ts)
+   r=f.get(u.event_id)
+   if r and bool(v.get("enable_nr_m1_dead_seed_fanout",True)):
+    z=detect_nr_m1_dead_seed_fanout(u,r,t,fee_bips=int(getattr(u,"fee_bips",0)or 0),min_shares=5.,min_net_edge_usd=.0035)
+    if z is not None:a.emit_live_negrisk_convert_candidate(sleeve_source="W_PRUNE1_DEAD_NO_BOND",spec=u,dedupe_key=f"NRM1_WS_{u.event_id}_Q{z['dead_question_index']}",arb_hit=z,books_by_token=t,now_ts=now_ts,fee_bips=int(getattr(u,"fee_bips",0)or 0))
+  j=a.__dict__.get("_ws_reactive_bin_metas")or()
+  if j and bool(v.get("enable_zerofee1_mergeable_sweeper",True)):
+   g=max(.0025,float(v.get("zerofee1_min_net_edge_bps",45.)or 45.)/1e4);i=round(1.-g,4);m=[]
+   for M in j:
+    if float(M.get("end_ts")or(now_ts+86400.))<=now_ts+65.:continue
+    L=a._get_fresh_ws_book(str(M["yes_token_id"]),now_ts,max_age_sec=2.5);K=a._get_fresh_ws_book(str(M["no_token_id"]),now_ts,max_age_sec=2.5)
+    if L and K:I,H=extract_best_bid(L.get("bids")or[]);G,F=extract_best_bid(K.get("bids")or[]);E,D=a._best_ask_sz(L);C,B=a._best_ask_sz(K);m.append({**M,"yes_bid":I,"yes_bid_size":(H/I)if I>0 else.0,"no_bid":G,"no_bid_size":(F/G)if G>0 else.0,"yes_ask":E if E<1. else.0,"yes_ask_size":D,"no_ask":C if C<1. else.0,"no_ask_size":B,"bk_yes":L,"bk_no":K})
+   if m:
+    h={x["condition_id"]:x for x in m}
+    for y in scan_full_universe_c1_and_ctf_overround(m,min_underround_edge=g,min_overround_edge=.0045):
+     w=h.get(str(y.get("condition_id")or""))
+     if not w:continue
+     if y.get("sleeve")=="C1_BINARY_COMPLETE_SET"and float(y["cost_per_share"])<=i+1e-6:a.emit_live_two_leg_box_candidate(box_type="COMPLETE_SET",sleeve_source="C1_BINARY_COMPLETE_SET",asset=w["asset"],dedupe_key=f"C1V2_{w['market_id']}",leg_a={"token_id":w["yes_token_id"],"opp_token_id":w["no_token_id"],"label":"YES","side":"YES","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},leg_b={"token_id":w["no_token_id"],"opp_token_id":w["yes_token_id"],"label":"NO","side":"NO","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},bk_a=w["bk_yes"],bk_b=w["bk_no"],close_ts=w["end_ts"],now_ts=now_ts,max_box_cost_override=i)
+     elif y.get("sleeve")=="CTF_OVERROUND_MINT_SELL"and not w["neg_risk"]:q=float(y.get("net_revenue_per_share")or y.get("net_proceeds_per_share")or 1.005);a.emit_live_special_v2_box_candidate(box_type="CTF_OVERROUND",sleeve_source="CTF_OVERROUND_MINT_SELL",asset=w["asset"],dedupe_key=f"CTFOVR_{w['market_id']}_{int(now_ts//15)}",close_ts=w["end_ts"],now_ts=now_ts,payload={"condition_id":w["condition_id"],"leg_a_market_id":w["market_id"],"yes_token_id":w["yes_token_id"],"no_token_id":w["no_token_id"],"yes_bid":y["yes_bid"],"no_bid":y["no_bid"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"max_fillable_shares":y["max_fillable_shares"],"box_cost_net":round(2.-q,4)})
  async def _run_clob_d1_ws_loop(a):
   if a.single_scan:return
   await asyncio.gather(*(a._run_single_clob_ws_shard(b)for b in range(3)))
+ def _is_ws_book_live_on_healthy_shard(a,token_id,book_ts,now_ts,max_shard_silence_sec=5.,max_quiet_book_age_sec=120.):
+  if not token_id or getattr(a,"single_scan",False):return False
+  if token_id in getattr(a,"_ws_rest_seeded",set()):return False
+  c=a.__dict__.get("_ws_shard_tokens");e=a.__dict__.get("_ws_shard_last_rx_ts")
+  if not c or not e:return False
+  b=float((a.__dict__.get("_ws_last_reconciled_ts")or{}).get(token_id,.0)or.0);d=max(float(book_ts),b)
+  if(float(now_ts)-d)>float(max_quiet_book_age_sec):return False
+  for g,f in c.items():
+   if token_id in f:
+    h=float(e.get(g,.0)or.0)
+    if h>.0 and(float(now_ts)-h)<=float(max_shard_silence_sec):return True
+  return False
  def _get_fresh_ws_book(a,token_id,now_ts,max_age_sec=5.):
-  c=str(token_id or"")
-  if not c or c in getattr(a,"_ws_rest_seeded",set()):return None
-  b=a._ws_books.get(c)if getattr(a,"_ws_books",None)is not None else None
-  if b is None or(float(now_ts)-float(b[0]))>float(max_age_sec):return None
-  e=b[1]
-  if isinstance(e,dict):
-   d=(a.__dict__.get("_token_tick_sizes")or{}).get(c)
-   if d:e["minimum_tick_size"]=d
-  return e if isinstance(e,dict)and(e.get("asks")or e.get("bids"))else None
+  e=str(token_id or"")
+  if not e or e in getattr(a,"_ws_rest_seeded",set()):return None
+  c=a._ws_books.get(e)if getattr(a,"_ws_books",None)is not None else None
+  if c is None:return None
+  if(float(now_ts)-float(c[0]))>float(max_age_sec)and not a._is_ws_book_live_on_healthy_shard(e,float(c[0]),float(now_ts),max_shard_silence_sec=min(float(max_age_sec),5.)):return None
+  g=c[1]
+  if isinstance(g,dict):
+   f=(a.__dict__.get("_token_tick_sizes")or{}).get(e);d=max((float(b.get("price",0)or 0)for b in(g.get("bids")or[])if isinstance(b,dict)),default=.0)
+   if d>=.96 and str(f or g.get("minimum_tick_size")or"")=="0.01":g.pop("minimum_tick_size",None)
+   elif f:g["minimum_tick_size"]=f
+  return g if isinstance(g,dict)and(g.get("asks")or g.get("bids"))else None
  async def fetch_books_batch(a,token_ids,timeout=3.):
-  q=list(dict.fromkeys(str(t)for t in token_ids if t))
-  if not q:return{}
-  if"fetch_json"in a.__dict__:f=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in q));return{t:bk for t,bk in zip(q,f)if isinstance(bk,dict)}
-  u={};g=[];l=time.time();h=not a.single_scan;e=a.__dict__.setdefault("_token_tick_sizes",{})
-  for t in q:
-   d=a._ws_books.get(t)if h else None
-   if(d is not None and(l-d[0])<=1.5 and(d[1].get("bids")or d[1].get("asks"))):
-    if t in e:d[1]["minimum_tick_size"]=e[t]
-    u[t]=d[1]
-   else:g.append(t)
-  if not g:return u
-  p=await a.get_session()
-  for s in range(0,len(g),50):
-   k=g[s:s+50]
-   try:
-    async with p.post(f"{CLOB_URL}/books",json=[{"token_id":t}for t in k],timeout=aiohttp.ClientTimeout(total=timeout))as o:
-     if o.status==200:
-      b=await o.read();n=_orjson.loads(b)if _orjson is not None else json.loads(b)
-      if isinstance(n,list):
-       c=time.time()
-       for r in n:
-        if isinstance(r,dict)and r.get("asset_id"):
-         j=str(r["asset_id"]);m=r.get("minimum_tick_size")or r.get("tick_size")
-         if m:e[j]=str(m)
-         u[j]=r
-         if h and j in a._ws_subscribed_tokens and j not in a._ws_raw_levels:a._apply_ws_book_snapshot(j,r.get("bids")or[],r.get("asks")or[],c,from_rest=True)
-       continue
-   except Exception:pass
-   v=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in k))
-   for t,bk in zip(k,v):
-    if isinstance(bk,dict):
-     i=bk.get("minimum_tick_size")or bk.get("tick_size")
-     if i:e[t]=str(i)
-     u[t]=bk
-  return u
+  C=list(dict.fromkeys(str(t)for t in token_ids if t))
+  if not C:return{}
+  if"fetch_json"in a.__dict__:q=await asyncio.gather(*(a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=timeout)for t in C));return{t:E for t,E in zip(C,q)if isinstance(E,dict)}
+  D={};u=[];A=time.time();y=not a.single_scan;p=a.__dict__.setdefault("_token_tick_sizes",{});s=a.__dict__.setdefault("_token_tick_boundary_ts",{});i=a.__dict__.setdefault("_rest_books_cache",{});g=a.__dict__.setdefault("_rest_empty_books_ts",{});f=a.__dict__.setdefault("_ws_last_reconciled_ts",{})
+  for t in C:
+   o=a._ws_books.get(t)if y else None;n=(max((float(b.get("price",0)or 0)for b in(o[1].get("bids")or[])if isinstance(b,dict)),default=.0)if o is not None and isinstance(o[1],dict)else.0)
+   if o is not None and isinstance(o[1],dict)and n>=.96 and str(o[1].get("minimum_tick_size")or"")=="0.01":o[1].pop("minimum_tick_size",None)
+   d=(n>=.96 and str(p.get(t)or"")in("","0.01")and(A-float(s.get(t,.0)))>=8.);m=o is not None and((A-o[0])<=1.5 or a._is_ws_book_live_on_healthy_shard(t,o[0],A,max_shard_silence_sec=5.))
+   if(m and(o[1].get("bids")or o[1].get("asks"))and not d):
+    if t in p and not(n>=.96 and str(p.get(t)or"")=="0.01"):o[1]["minimum_tick_size"]=p[t]
+    D[t]=o[1];continue
+   if y:
+    l=t in a._ws_subscribed_tokens;w=12. if l else 45.;k=i.get(t)
+    if k is not None and(A-float(k[0]))<=w and isinstance(k[1],dict):
+     j=max((float(b.get("price",0)or 0)for b in(k[1].get("bids")or[])if isinstance(b,dict)),default=.0);e=(j>=.96 and str(p.get(t)or"")in("","0.01")and(A-float(s.get(t,.0)))>=8.)
+     if not e:D[t]=k[1];continue
+    z=g.get(t)
+    if z is not None and(A-float(z))<=(20. if l else 90.):continue
+   u.append(t)
+  if not u:return D
+  B=await a.get_session();h=a.__dict__.get("_books_post_sem")
+  if h is None:h=asyncio.Semaphore(4);a.__dict__["_books_post_sem"]=h
+  async def c(chunk):
+   async with h:
+    b=0
+    try:
+     G=[{"token_id":t}for t in chunk];J={"timeout":aiohttp.ClientTimeout(total=timeout)}
+     if _orjson is not None:J["data"]=_orjson.dumps(G);J["headers"]={"Content-Type":"application/json"}
+     else:J["json"]=G
+     async with B.post(f"{CLOB_URL}/books",**J)as W:
+      b=int(W.status or 0)
+      if b==200:
+       F=await W.read();V=_orjson.loads(F)if _orjson is not None else json.loads(F)
+       if isinstance(V,list):
+        I=time.time();E=set()
+        for r in V:
+         if isinstance(r,dict)and r.get("asset_id"):
+          P=str(r["asset_id"]);E.add(P);U=r.get("minimum_tick_size")or r.get("tick_size")
+          if U:p[P]=str(U);s[P]=I;r["minimum_tick_size"]=str(U)
+          D[P]=r;i[P]=(I,r);g.pop(P,None);f[P]=I
+          if y and P in a._ws_subscribed_tokens:
+           if P not in a._ws_raw_levels:a._apply_ws_book_snapshot(P,r.get("bids")or[],r.get("asks")or[],I,from_rest=True)
+           else:
+            T,S=a._ws_raw_levels[P];O=max(T.keys())if T else.0;N=min(S.keys())if S else.0;R=max((round(float(x.get("price",0)or 0),4)for x in(r.get("bids")or())if float(x.get("size",0)or 0)>0),default=.0);Q=min((round(float(x.get("price",0)or 0),4)for x in(r.get("asks")or())if float(x.get("size",0)or 0)>0),default=.0)
+            if abs(O-R)>1e-4 or abs(N-Q)>1e-4:a._apply_ws_book_snapshot(P,r.get("bids")or[],r.get("asks")or[],I,from_rest=True)
+        for M in chunk:
+         if M not in E:g[M]=I;f[M]=I
+        return
+    except Exception:pass
+    H=chunk if("fetch_json"in a.__dict__)else([]if b==429 else chunk[:6])
+    if not H:return
+    K=time.time()
+    for t in H:
+     X=await a.fetch_json(f"{CLOB_URL}/book?token_id={t}",timeout=min(timeout,2.))
+     if isinstance(X,dict):
+      L=X.get("minimum_tick_size")or X.get("tick_size")
+      if L:p[t]=str(L);s[t]=K;X["minimum_tick_size"]=str(L)
+      D[t]=X;i[t]=(K,X);f[t]=K
+  v=[u[E:E+50]for E in range(0,len(u),50)]
+  if len(v)==1:await c(v[0])
+  else:await asyncio.gather(*(c(E)for E in v))
+  return D
  def record_usd_spot_samples(a,now_ts=None):
   f=float(now_ts if now_ts is not None else time.time());a.last_usd_sample_ts=f
   for c in(*DOMINANCE_ASSETS,*METAL_DOMINANCE_ASSETS):
@@ -5399,6 +5620,7 @@ class Alpha124ShadowDaemon:
    for _aT in(E.get(_ai)or[]):
     _aS=parse_counting_slate_event(_aT,_ai,_z)
     if _aS is not None and _aS.window_end_ts>_E+60:_s[_aS.event_id]=_aS
+  if not(a.single_scan or("fetch_json"in a.__dict__))and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_xtrack1_expanded_handles",True)):await a._discover_xtracker_active_counting_slates(_s,_E)
   a.counting_slates=_s;a.fomc_truth_legs=build_fomc_truth_table_legs(E.get("fomc")or[],E.get("fed-3-parlay")or[],sep_2026_realized_action=(os.getenv("PM_SEP_2026_FOMC_ACTION")or"").strip().upper()or None);_ah=await asyncio.gather(*(a.fetch_json(f"{GAMMA_URL}/events?slug={sl_os}",timeout=5.)for sl_os in OIL_SENATE_SLUGS),a.fetch_json(f"{GAMMA_URL}/events?series_slug=gas-price-hits-weekly&closed=false&limit=2",timeout=5.));_c={}
   for sl_os,_ag in zip(OIL_SENATE_SLUGS,_ah[:len(OIL_SENATE_SLUGS)]):
    if isinstance(_ag,list)and _ag:
@@ -5479,7 +5701,49 @@ class Alpha124ShadowDaemon:
    if isinstance(_ax,dict):
     for _aw in parse_binance_terminal_close_event(_ax):
      if _aw.close_ts>_E+120:T[_aw.market_id]=_aw
-  a.binance_close_rungs=list(T.values());a.last_discovery_ts=time.time();logger.info(f"Discovery complete: {len(a.weather_events)} Weather city-events, {len(a.barrier_rungs)} Barrier Hit rungs, {len(a.strike_ladders)} Multi-Strike ladders, {len(a.negrisk_ladders)} NegRisk ladders, {len(a.daily_updown_markets)} Crypto Daily Up/Down, {len(a.pyth_daily_markets)} Zero-Fee Pyth FX/Metals Daily, {len(a.pyth_barrier_rungs)} Pyth Hit rungs, {len(a.pyth_close_ladders)} Pyth Close ladders, {len(a.nba_games)} NBA games ({len(a.nba_prop_slates)} Prop, {len(a.nba_subperiod_slates)} SubPer, {len(a.lp1_nba_em_bundles)} EM), {len(a.multi_sport_games)} Multi-Sport ({len(a.lp1_nfl_em_bundles)} NFL EM, {len(a.nfl_prop_slates)} NFL Prop, {len(a.aff1_bundles)} AFF1/SUM1), {len(a.soccer_trees)} Soccer trees ({len(a.soc2_lattices)} SOC2 Exact-Score), {len(a.tennis_specs)} Tennis BO3, {len(a.esports_bo3_specs)} Esports BO3, {len(a.lp2_implication_groups)} LP2 DAG groups, {len(a.cal1_ladders)} CAL1 ladders, {len(a.binance_close_rungs)} Binance Close rungs, {len(a.lp1_bop_legs)//2} BOP/Chamber mkts, {len(a.negrisk_zero_slates)} NegRisk Slates, {len(a.negrisk_convert_slates)} NegRisk Convert slates, {len(a.counting_slates)} Counting slates, {len(a.fomc_truth_legs)//2} FOMC LP mkts, {len(a.oil_senate_truth_legs)//2} Oil-Senate mkts, {len(a.hourly_12pm_markets)} 12PM 1h pairs.")
+  a.binance_close_rungs=list(T.values())
+  if bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_zerofee1_mergeable_sweeper",True)):a.zerofee_general_binaries=a.extract_zerofee_general_binaries(m+_I+_H+[e for lst in E.values()for e in(lst or[])if isinstance(e,dict)],_E)
+  else:a.zerofee_general_binaries=[]
+  a.last_discovery_ts=time.time();logger.info(f"Discovery complete: {len(a.weather_events)} Weather city-events, {len(a.barrier_rungs)} Barrier Hit rungs, {len(a.strike_ladders)} Multi-Strike ladders, {len(a.negrisk_ladders)} NegRisk ladders, {len(a.daily_updown_markets)} Crypto Daily Up/Down, {len(a.pyth_daily_markets)} Zero-Fee Pyth FX/Metals Daily, {len(a.pyth_barrier_rungs)} Pyth Hit rungs, {len(a.pyth_close_ladders)} Pyth Close ladders, {len(a.nba_games)} NBA games ({len(a.nba_prop_slates)} Prop, {len(a.nba_subperiod_slates)} SubPer, {len(a.lp1_nba_em_bundles)} EM), {len(a.multi_sport_games)} Multi-Sport ({len(a.lp1_nfl_em_bundles)} NFL EM, {len(a.nfl_prop_slates)} NFL Prop, {len(a.aff1_bundles)} AFF1/SUM1), {len(a.soccer_trees)} Soccer trees ({len(a.soc2_lattices)} SOC2 Exact-Score), {len(a.tennis_specs)} Tennis BO3, {len(a.esports_bo3_specs)} Esports BO3, {len(a.lp2_implication_groups)} LP2 DAG groups, {len(a.cal1_ladders)} CAL1 ladders, {len(a.binance_close_rungs)} Binance Close rungs, {len(a.lp1_bop_legs)//2} BOP/Chamber mkts, {len(a.zerofee_general_binaries)} ZeroFee GenBins, {len(a.negrisk_zero_slates)} NegRisk Slates, {len(a.negrisk_convert_slates)} NegRisk Convert slates, {len(a.counting_slates)} Counting slates, {len(a.fomc_truth_legs)//2} FOMC LP mkts, {len(a.oil_senate_truth_legs)//2} Oil-Senate mkts, {len(a.hourly_12pm_markets)} 12PM 1h pairs.")
+ async def _discover_xtracker_active_counting_slates(b,cnt_found,now_disc):
+  try:
+   f=await asyncio.gather(*(asyncio.to_thread(fetch_xtracker_user_stats_sync,h)for h in XTRACKER_ALL_HANDLES),return_exceptions=True);i={}
+   for m,l in zip(XTRACKER_ALL_HANDLES,f):
+    if isinstance(l,dict)and l:i[m]=l
+   c={s.slug for s in cnt_found.values()if s.slug};a=[(eslug,hnd)for eslug,hnd in extract_xtracker_active_event_slugs(i)if eslug and eslug not in c][:24]
+   if not a:return
+   d=await asyncio.gather(*(b.fetch_json(f"{GAMMA_URL}/events?slug={eslug}",timeout=4.5)for eslug,_ in a),return_exceptions=True)
+   for(eslug,hnd),g in zip(a,d):
+    if not isinstance(g,list)or not g or not isinstance(g[0],dict):continue
+    k=g[0];j=parse_counting_slate_event(k,eslug,hnd)
+    if j is not None and j.window_end_ts>now_disc+60:cnt_found[j.event_id]=j
+    e=parse_negrisk_convert_event(k)
+    if e is not None and e.is_closed_convert_safe and e.end_ts>now_disc+60 and len(e.brackets)<=45:b.negrisk_convert_slates[e.event_id]=e
+  except Exception:pass
+ @staticmethod
+ def extract_zerofee_general_binaries(events,now_ts,max_markets=220,*,include_neg_risk_subconditions=True):
+  k={}
+  for w in(events or[]):
+   if not isinstance(w,dict)or bool(w.get("closed")):continue
+   a=isinstance(w.get("markets"),list);n=(bool(w.get("negRisk"))or bool(w.get("enableNegRisk")))if a else False
+   if n and not include_neg_risk_subconditions:continue
+   g=str(w.get("slug")or"").strip().lower();e=w.get("markets")if a else([w]if("conditionId"in w or"clobTokenIds"in w)else[])
+   for v in(e or[]):
+    if not isinstance(v,dict):continue
+    if bool(v.get("closed"))or v.get("active")is False or not bool(v.get("enableOrderBook",True)):continue
+    m=bool(v.get("negRisk"))or n
+    if(m and not include_neg_risk_subconditions)or bool(v.get("feesEnabled")):continue
+    j,f=_extract_market_fee_rate(v)
+    if float(j or.0)>1e-9:continue
+    p=_parse_clob_tokens(v);u=str(v.get("conditionId")or"").strip();t=str(v.get("id")or"").strip()
+    if not p or len(p)!=2 or not u.startswith("0x")or len(u)!=66 or not t:continue
+    i=_parse_iso_ts(v.get("endDate")or w.get("endDate"))or.0
+    if i<=now_ts+120.:continue
+    s=float(v.get("liquidityNum")or v.get("liquidity")or w.get("liquidity")or.0);l=float(v.get("volume24hr")or w.get("volume24hr")or.0)
+    if max(s,l)<5e2:continue
+    d=max(.01,(i-now_ts)/86400.);c=(.0 if not m else.5,min(d,30.),-max(l,s));b=("ZF_"+(g.split("-")[0]or"GEN").upper()[:8])if g else"ZEROFEE";q={"market_id":t,"condition_id":u,"yes_token":str(p[0]),"no_token":str(p[1]),"fee_rate":.0,"neg_risk":m,"end_ts":float(i),"asset":b,"title":str(v.get("question")or w.get("title")or t)[:96]};o=k.get(u)
+    if o is None or c<o[0]:k[u]=(c,q)
+  h=sorted(k.values(),key=lambda x:x[0])[:max(1,int(max_markets))];return[r for _,r in h]
  async def open_shadow_position(c,sleeve,dedupe_key,asset_or_city,title,side_label,token_id,fee_rate,p_model,close_ts,extra,tp_target_px=None,prefetched_book=None):
   if is_shadow_sleeve_quarantined(sleeve):return False
   k=[dedupe_key]
@@ -5557,214 +5821,249 @@ class Alpha124ShadowDaemon:
    g._append_ledger({"event":"SHADOW_MAKER_POST",**A});logger.info(f"[MAKER_POST:{sleeve}] {asset} | {title} ({side_label}) resting_bid=${f:.3f} (ask=${i:.3f}, q_ahead=${k:.0f}, p_mod={p_model:.3f}, edge={h:+.3f})");return True
   finally:g._release_inflight_keys(E)
  async def manage_pending_maker_orders(d):
-  _U=time.time();_q=datetime.now(timezone.utc)
-  for _T,_P in list(d.pending_maker_orders.items()):
-   _E=_P["sleeve"];t=_E=="W2_MAKER_OVERROUND";w=_E=="MKR_REWARD_LOCKED_CARRY";v=_E in LOCKED_MAKER_SLEEVES;_O=_P["asset_or_city"];_S=_P["token_id"];H=float(_P["resting_bid"]);_k=float(_P["close_ts"]);_p=_k-_U;_N=_U-float(_P["created_ts"]);_M=dict(_P.get("extra")or{});_D=float(_M.get("strike")or.0);_o=bool(_M.get("is_downward"));_j=_P["side"];_n=(_j=="YES"and not _o)or(_j=="NO"and _o)
+  now=time.time();_C=datetime.now(timezone.utc);D=("fetch_json"not in d.__dict__)and(not d.single_scan)and bool(d.pending_maker_orders);p={};m={}
+  if D:
+   _B=[];_a=[];Z=set()
+   for _m in d.pending_maker_orders.values():
+    _sl=str(_m.get("sleeve")or"");_tk=str(_m.get("token_id")or"");_ab=now-float(_m.get("created_ts")or.0);_aa=float(_m.get("close_ts")or.0)-now;_ex=_m.get("extra")or{}
+    if _tk and _ab>=.35:_B.append(_tk)
+    _W=_sl=="MKR_REWARD_LOCKED_CARRY";_V=_sl in LOCKED_MAKER_SLEEVES
+    if(_sl in("BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER")or _W):
+     _U=str(_ex.get("opp_token_id")or"");_A=30. if(_W and _aa>9e2)else 12.
+     if _U and(now-float(_m.get("_last_opp_chk_ts")or.0))>=_A:_B.append(_U)
+    if _V or _W:
+     _9=str(_ex.get("condition_id")or"");_T=float(d._last_trade_tape_chk_ts.get(_9)or.0);_S=45. if(_W and _aa>9e2)else 12.
+     if _9 and _9 not in Z and(now-_T)>=_S:Z.add(_9);_a.append((_T,_aa,_9))
+   if _B:p=await d.fetch_books_batch(_B,timeout=3.)
+   if _a:
+    _a.sort(key=lambda r:(r[0],r[1]));_h=[cid for _,_,cid in _a[:16]]
+    for _R in _h:d._last_trade_tape_chk_ts[_R]=now
+    _z=await asyncio.gather(*(d.fetch_json(f"{DATA_API_URL}/trades?market={cid}&limit=15",timeout=3.)for cid in _h));m={cid:tr for cid,tr in zip(_h,_z)}
+  for oid,_7 in list(d.pending_maker_orders.items()):
+   _Q=_7["sleeve"];x=_Q=="W2_MAKER_OVERROUND";A=_Q=="MKR_REWARD_LOCKED_CARRY";z=_Q in LOCKED_MAKER_SLEEVES;_6=_7["asset_or_city"];tok=_7["token_id"];N=float(_7["resting_bid"]);_t=float(_7["close_ts"]);_y=_t-now;_5=now-float(_7["created_ts"]);_4=dict(_7.get("extra")or{});_P=float(_4.get("strike")or.0);_x=bool(_4.get("is_downward"));_s=_7["side"];_w=(_s=="YES"and not _x)or(_s=="NO"and _x)
    def f(ord_obj):
     d.entered_keys.discard(ord_obj["dedupe_key"]);a=(ord_obj.get("extra")or{}).get("event_id")
     if a and ord_obj.get("sleeve")=="W2_MAKER_OVERROUND":d.entered_keys.discard(f"W2M_EVENT_{a}")
-   _C=_P.get("ttl_override_sec")
-   if _E in("SP2_NBA_ENDGAME_LOCK","SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK"):h=20.;g=float(_C)if _C is not None else 45.
-   elif _E in("BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"):h=60. if _E=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"else 90.;g=float(_C)if _C is not None else 1800.
-   elif _E in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):h=6e2;g=float(_C)if _C is not None else 3600.
-   else:h=6e2 if w else(9e2 if _C is not None else(3600. if t else 7200.));g=float(_C)if _C is not None else(7200. if w else(2700. if t else 1800.))
-   if _p<=h or _N>=g:d.pending_maker_orders.pop(_T,None);f(_P);d._append_ledger({"event":"SHADOW_MAKER_CANCEL","reason":"TTL_OR_EXPIRY",**_P});continue
-   b=None;e=float(_P["p_model_at_post"])
-   if _E in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):
-    r=str(_M.get("event_id")or"");_g=d.weather_events.get(r)
-    if _g is not None:
-     S=f"{_g.icao}_{_g.obs_date.isoformat()}";s=(d.metar_cache.get(S)or(.0,[]))[1];R=(d.ensemble_cache.get(_g.icao)or(.0,{}))[1];_L=(d.taf_cache.get(_g.icao)or(.0,{}))[1]
-     if s or R:
-      Q=compute_weather_probabilities(_g,_q,s,R,forecast_sigma_base_c=d.weather_sigma_c,taf_extreme_c=(_L or{}).get(_g.metric));n=str(_M.get("market_id")or"")
-      for P,D in enumerate(_g.buckets):
-       if str(D.market_id)==n and P<len(Q["probs"]):e=float(Q["probs"][P]);break
-      if Q.get("convective_cold_pool"):b="CONVECTIVE_COLD_POOL"
-      elif not Q.get("is_solar_lock"):b="SOLAR_LOCK_INVALIDATED"
-      elif(e-H)<.02:b="ADVERSE_METAR_OR_EDGE_DECAY"
-   elif _E in("BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER")or w:
-    e=(float(_P.get("p_model_at_post")or 1.)if w else(float(_P.get("p_model_at_post")or.998)if _E=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"else 1.));G=str(_M.get("opp_token_id")or"")
-    if G and(_U-float(_P.get("_last_opp_chk_ts")or.0))>=12.:
-     _P["_last_opp_chk_ts"]=_U;T=await d.fetch_json(f"{CLOB_URL}/book?token_id={G}",timeout=2.5)
-     if T:
-      E,_=extract_best_bid(T.get("bids")or[]);F=(.008 if _E=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"else(.03 if(_E=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"or w)else.012))
-      if E>F:b="UMA_COMPLEMENT_DISPUTE_BID"
-   elif _E=="SP2_NBA_ENDGAME_LOCK":
-    _i=d.nba_games.get(str(_M.get("event_id")or""))
-    if _i is not None and d.live_nba_board:
-     Z=match_nba_live_game(_i,d.live_nba_board)
-     if Z is not None:
-      _B,_A,_z=Z;_h=[c for c in evaluate_nba_endgame_locks(_i,_B,_A,_z)if c["leg"].token_id==_S]
-      if not _h:b="NBA_ENDGAME_LOCK_INVALIDATED"
-      else:e=float(_h[0]["p_lock"])
-   elif t:
-    r=str(_M.get("event_id")or"");_g=d.weather_events.get(r)
-    if _g is not None:
-     S=f"{_g.icao}_{_g.obs_date.isoformat()}";s=(d.metar_cache.get(S)or(.0,[]))[1];R=(d.ensemble_cache.get(_g.icao)or(.0,{}))[1]
-     if s or R:
-      Q=compute_weather_probabilities(_g,_q,s,R,forecast_sigma_base_c=d.weather_sigma_c);n=str(_M.get("market_id")or"")
-      for P,D in enumerate(_g.buckets):
-       if str(D.market_id)==n and P<len(Q["probs"]):e=float(Q["probs"][P]);break
-      if Q.get("convective_cold_pool"):b="CONVECTIVE_COLD_POOL"
-      elif(e-H)<.045:b="ADVERSE_METAR_OR_EDGE_DECAY"
+   _O=_7.get("ttl_override_sec")
+   if _Q in("SP2_NBA_ENDGAME_LOCK","SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK"):h=20.;g=float(_O)if _O is not None else 45.
+   elif _Q in("BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"):h=60. if _Q=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"else 90.;g=float(_O)if _O is not None else 1800.
+   elif _Q in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):h=6e2;g=float(_O)if _O is not None else 3600.
+   else:h=6e2 if A else(9e2 if _O is not None else(3600. if x else 7200.));g=float(_O)if _O is not None else(7200. if A else(2700. if x else 1800.))
+   if _y<=h or _5>=g:d.pending_maker_orders.pop(oid,None);f(_7);d._append_ledger({"event":"SHADOW_MAKER_CANCEL","reason":"TTL_OR_EXPIRY",**_7});continue
+   b=None;e=float(_7["p_model_at_post"])
+   if _Q in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):
+    v=str(_4.get("event_id")or"");_p=d.weather_events.get(v)
+    if _p is not None:
+     X=f"{_p.icao}_{_p.obs_date.isoformat()}";w=(d.metar_cache.get(X)or(.0,[]))[1];W=(d.ensemble_cache.get(_p.icao)or(.0,{}))[1];_3=(d.taf_cache.get(_p.icao)or(.0,{}))[1]
+     if w or W:
+      V=compute_weather_probabilities(_p,_C,w,W,forecast_sigma_base_c=d.weather_sigma_c,taf_extreme_c=(_3 or{}).get(_p.metric));q=str(_4.get("market_id")or"")
+      for U,I in enumerate(_p.buckets):
+       if str(I.market_id)==q and U<len(V["probs"]):e=float(V["probs"][U]);break
+      if V.get("convective_cold_pool"):b="CONVECTIVE_COLD_POOL"
+      elif not V.get("is_solar_lock"):b="SOLAR_LOCK_INVALIDATED"
+      elif(e-N)<.02:b="ADVERSE_METAR_OR_EDGE_DECAY"
+   elif _Q in("BOND1_UMA_RESOLUTION_CARRY","BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER")or A:
+    e=(float(_7.get("p_model_at_post")or 1.)if A else(float(_7.get("p_model_at_post")or.998)if _Q=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"else 1.));M=str(_4.get("opp_token_id")or"");L=30. if(D and A and _y>9e2)else 12.
+    if M and(now-float(_7.get("_last_opp_chk_ts")or.0))>=L:
+     _7["_last_opp_chk_ts"]=now;Y=(p.get(M)if D else await d.fetch_json(f"{CLOB_URL}/book?token_id={M}",timeout=2.5))
+     if Y:
+      J,_=extract_best_bid(Y.get("bids")or[]);K=(.008 if _Q=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"else(.03 if(_Q=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER"or A)else.012))
+      if J>K:b="UMA_COMPLEMENT_DISPUTE_BID"
+   elif _Q=="SP2_NBA_ENDGAME_LOCK":
+    _r=d.nba_games.get(str(_4.get("event_id")or""))
+    if _r is not None and d.live_nba_board:
+     _g=match_nba_live_game(_r,d.live_nba_board)
+     if _g is not None:
+      _N,_M,_L=_g;_q=[c for c in evaluate_nba_endgame_locks(_r,_N,_M,_L)if c["leg"].token_id==tok]
+      if not _q:b="NBA_ENDGAME_LOCK_INVALIDATED"
+      else:e=float(_q[0]["p_lock"])
+   elif x:
+    v=str(_4.get("event_id")or"");_p=d.weather_events.get(v)
+    if _p is not None:
+     X=f"{_p.icao}_{_p.obs_date.isoformat()}";w=(d.metar_cache.get(X)or(.0,[]))[1];W=(d.ensemble_cache.get(_p.icao)or(.0,{}))[1]
+     if w or W:
+      V=compute_weather_probabilities(_p,_C,w,W,forecast_sigma_base_c=d.weather_sigma_c);q=str(_4.get("market_id")or"")
+      for U,I in enumerate(_p.buckets):
+       if str(I.market_id)==q and U<len(V["probs"]):e=float(V["probs"][U]);break
+      if V.get("convective_cold_pool"):b="CONVECTIVE_COLD_POOL"
+      elif(e-N)<.045:b="ADVERSE_METAR_OR_EDGE_DECAY"
    else:
-    _f=d.spots.get(_O,.0);Y=float(_P.get("spot_at_post")or.0)
-    if _f>0 and _D>0:_y=evaluate_svi_digital_fair_value(_O,_f,_D,_p,is_downward=_o,now_ts=_U);e=float(_y["p_yes"]if _j=="YES"else _y["p_no"])
-    if _f>0 and Y>0:
-     _e=((_f-Y)/Y)*1e4
-     if(_n and _e<-20.)or((not _n)and _e>20.):b="ADVERSE_SPOT_IMPULSE"
-    if b is None and _f>0 and _D>0 and(e-H)<.035:b="SVI_EDGE_DECAY"
+    _o=d.spots.get(_6,.0);_f=float(_7.get("spot_at_post")or.0)
+    if _o>0 and _P>0:_K=evaluate_svi_digital_fair_value(_6,_o,_P,_y,is_downward=_x,now_ts=now);e=float(_K["p_yes"]if _s=="YES"else _K["p_no"])
+    if _o>0 and _f>0:
+     _n=((_o-_f)/_f)*1e4
+     if(_w and _n<-20.)or((not _w)and _n>20.):b="ADVERSE_SPOT_IMPULSE"
+    if b is None and _o>0 and _P>0 and(e-N)<.035:b="SVI_EDGE_DECAY"
    bk=None;j=False
    if b is not None:
-    if _N>=.35:
-     _x=await d.fetch_json(f"{CLOB_URL}/book?token_id={_S}",timeout=2.5)
-     if _x:
-      _d=[float(a["price"])for a in(_x.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]
-      if _d and min(_d)<=H:bk=_x;j=True
-    if not j:d.pending_maker_orders.pop(_T,None);f(_P);d._append_ledger({"event":"SHADOW_MAKER_CANCEL","reason":b,**_P});continue
+    if _5>=.35:
+     _J=(p.get(tok)if D else await d.fetch_json(f"{CLOB_URL}/book?token_id={tok}",timeout=2.5))
+     if _J:
+      _l=[float(a["price"])for a in(_J.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]
+      if _l and min(_l)<=N:bk=_J;j=True
+    if not j:d.pending_maker_orders.pop(oid,None);f(_7);d._append_ledger({"event":"SHADOW_MAKER_CANCEL","reason":b,**_7});continue
    if not j:
-    C=.5 if _C is not None else(4. if v else 10.)
-    if _N<C:continue
-    bk=await d.fetch_json(f"{CLOB_URL}/book?token_id={_S}",timeout=3.)
+    H=.5 if _O is not None else(4. if z else 10.)
+    if _5<H:continue
+    bk=(p.get(tok)if D else await d.fetch_json(f"{CLOB_URL}/book?token_id={tok}",timeout=3.))
    if not bk:continue
-   _c=bk.get("asks")or[];O=[float(a["price"])for a in _c if float(a.get("price",0))>0 and float(a.get("size",0))>0];q=min(O)if O else 1.;m=(sum(float(a["size"])for a in _c if.0<float(a.get("price",0))<=H+1e-9 and float(a.get("size",0))>0)if O and q<=H else.0)
-   if m<=.0 and(v or w):
-    N=str(_M.get("condition_id")or"");B=float(d._last_trade_tape_chk_ts.get(N)or.0)
-    if N and(_U-B)>=12.:
-     d._last_trade_tape_chk_ts[N]=_U;M=await d.fetch_json(f"{DATA_API_URL}/trades?market={N}&limit=15",timeout=3.)
-     if isinstance(M,list)and M:
-      X=set(_P.get("_seen_trade_keys")or[]);L=str(_M.get("opp_token_id")or"");A=int(float(_P.get("last_repeg_ts")or _P["created_ts"]))+2;y=.0
-      for tr in M:
-       _K=int(float(tr.get("timestamp")or 0))
-       if _K<A:continue
-       _Q=f"{tr.get('transactionHash')or''}_{_K}_{tr.get('asset')or''}_{tr.get('size')or''}_{tr.get('price')or''}"
-       if _Q in X:continue
-       _v=str(tr.get("asset")or"");_J=float(tr.get("price")or.0);_I=float(tr.get("size")or.0)
-       if _I<=.0 or _J<=.0:continue
-       if(_v==_S and _J<=H+1e-6)or(L and _v==L and _J>=(1.-H)-1e-6):X.add(_Q);y+=_I
-      if X:_P["_seen_trade_keys"]=list(X)[-30:]
-      if y>.0:m=y;q=H;_M["filled_via_trade_tape"]=True
-   if(m<=.0 and(v or w)and(_U-float(_P.get("last_repeg_ts")or _P["created_ts"]))>=15. and _p>=180.):
-    z,K=extract_best_bid(bk.get("bids")or[])
-    if z>H+1e-6:
-     if w:k=.994 if e>=.999 else.99;i=.006 if e>=.999 else.008;o=.002 if q>.99 else.005
-     elif _E=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":k,i,o=.996,.004,(.001 if q>.96 else.01)
-     elif _E=="BOND1_UMA_RESOLUTION_CARRY":k,i,o=.995,.005,(.001 if q>.96 else.01)
-     elif _E=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":k,i,o=.993,.0045,(.001 if q>.96 else.01)
-     else:k,i,o=.0,1.,.01
+   _k=bk.get("asks")or[];T=[float(a["price"])for a in _k if float(a.get("price",0))>0 and float(a.get("size",0))>0];u=min(T)if T else 1.;n=(sum(float(a["size"])for a in _k if.0<float(a.get("price",0))<=N+1e-9 and float(a.get("size",0))>0)if T and u<=N else.0)
+   if n<=.0 and(z or A):
+    S=str(_4.get("condition_id")or"");G=float(d._last_trade_tape_chk_ts.get(S)or.0);o=None
+    if D:o=m.get(S)
+    elif S and(now-G)>=12.:d._last_trade_tape_chk_ts[S]=now;o=await d.fetch_json(f"{DATA_API_URL}/trades?market={S}&limit=15",timeout=3.)
+    if isinstance(o,list)and o:
+     _e=set(_7.get("_seen_trade_keys")or[]);R=str(_4.get("opp_token_id")or"");F=int(float(_7.get("last_repeg_ts")or _7["created_ts"]))+2;C=.0
+     for tr in o:
+      _2=int(float(tr.get("timestamp")or 0))
+      if _2<F:continue
+      _8=f"{tr.get('transactionHash')or''}_{_2}_{tr.get('asset')or''}_{tr.get('size')or''}_{tr.get('price')or''}"
+      if _8 in _e:continue
+      _H=str(tr.get("asset")or"");_1=float(tr.get("price")or.0);_0=float(tr.get("size")or.0)
+      if _0<=.0 or _1<=.0:continue
+      if(_H==tok and _1<=N+1e-6)or(R and _H==R and _1>=(1.-N)-1e-6):_e.add(_8);C+=_0
+     if _e:_7["_seen_trade_keys"]=list(_e)[-30:]
+     if C>.0:n=C;u=N;_4["filled_via_trade_tape"]=True
+   if(n<=.0 and(z or A)and(now-float(_7.get("last_repeg_ts")or _7["created_ts"]))>=15. and _y>=180.):
+    E,Q=extract_best_bid(bk.get("bids")or[])
+    if E>N+1e-6:
+     if A:k=.994 if e>=.999 else.99;i=.006 if e>=.999 else.008;s=.002 if u>.99 else.005
+     elif _Q=="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY":k,i,s=.996,.004,(.001 if u>.96 else.01)
+     elif _Q=="BOND1_UMA_RESOLUTION_CARRY":k,i,s=.995,.005,(.001 if u>.96 else.01)
+     elif _Q=="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":k,i,s=.993,.0045,(.001 if u>.96 else.01)
+     else:k,i,s=.0,1.,.01
      if k>.0:
-      _H=.001 if z>=.96 else.01;_m=(round(z+_H,4)if(q-z)>=(_H+o-1e-9)else z);_l=min(round(q-o,4),k,round(e-i,4));_b=.001 if min(_m,_l)>=.96-1e-9 else.01;_u=round(math.floor((min(_m,_l)+1e-9)/_b)*_b,4)
-      if(_u>H+1e-6 and _u>=round(z-1e-9,4)and _u<=k+1e-9 and(e-_u)>=i-1e-9):_t=H;_P["resting_bid"]=_u;_P["l1_bid_usd"]=K;_P["queue_ahead_usd"]=.0 if _u>z+1e-6 else round(min(K*.5,60.),2);_P["maker_edge_at_post"]=round(e-_u,4);_P["last_repeg_ts"]=_U;d._append_ledger({"event":"SHADOW_MAKER_POST",**_P});logger.info(f"[MAKER_OUTBID_REPEG:{_E}] {_O} | {_P['title']} ({_j}) ${_t:.3f} -> ${_u:.3f} (outbid=${z:.3f}, ask=${q:.3f})");continue
-   if m>.0:
-    u=float(_P.get("queue_ahead_usd")or.0);x=u/max(.01,H);l=m-x
-    if j:l=max(l,m,BANKROLL_TICKETS["T5000"][_E]/max(.01,H))
-    elif l<5.:_P["queue_ahead_usd"]=round(max(.0,u-m*H),2);continue
-    d.pending_maker_orders.pop(_T,None);W=max(.0,float(_M.get("maker_rebate_ps")or.0));J=round(max(.01,H-W),6);I={}
-    for V,_G in BANKROLL_TICKETS.items():_a=_G[_E];U=_a/H;sh=round(min(U,l),4);_F=round(sh*J,2);I[V]={"filled":True,"best_ask":round(q,4),"vwap":H,"eff_px":J,"slip_cents":.0,"spent_usd":_F,"fee_usd":round(-sh*W,4),"shares":sh,"fill_ratio":round(min(1.,_F/max(.01,_a)),4),"l1_usd":_P.get("l1_bid_usd",50.),"levels":1}
-    _s=f"{_E}_{int(_U)}_{_P['dedupe_key'][-10:]}"
-    if v or w or _E in("BOND1_UMA_RESOLUTION_CARRY","SP2_NBA_ENDGAME_LOCK"):p=None
-    elif _E in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):p=.985
-    elif t:p=min(.95,round(max(H+.07,e-.015),4))
-    else:p=min(.96,round(H+.05,4))
-    if j:_M["adverse_fill_during_cancel_window"]=True;_M["adverse_trigger"]=b
-    _R={"position_id":_s,"dedupe_key":_P["dedupe_key"],"sleeve":_E,"asset_or_city":_O,"title":_P["title"],"side":_j,"token_id":_S,"fee_rate":.0,"entry_ts":_U,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":_k,"p_model_entry":round(e,4),"entry_eff_px_t1000":J,"entry_vwap_t1000":H,"realized_edge_t1000":round(e-J,4),"entry_best_bid":H,"last_bid":H,"maker_tp_px":p,"tier_fills":I,"extra":_M,"status":"OPEN"};d.open_positions[_s]=_R;d._append_ledger({"event":"SHADOW_ENTRY",**_R});_r=f"${p:.3f}"if p is not None else"HOLD_SETTLE";logger.info(f"[MAKER_FILLED:{_E}] {_O} | {_R['title']} ({_j}) @ resting=${H:.3f} -> TP={_r} (p_mod={e:.3f}, adverse={j})")
+      _Z=.001 if E>=.96 else.01;_v=(round(E+_Z,4)if(u-E)>=(_Z+s-1e-9)else E);_u=min(round(u-s,4),k,round(e-i,4));_j=.001 if min(_v,_u)>=.96-1e-9 else.01;_G=round(math.floor((min(_v,_u)+1e-9)/_j)*_j,4)
+      if(_G>N+1e-6 and _G>=round(E-1e-9,4)and _G<=k+1e-9 and(e-_G)>=i-1e-9):_F=N;_7["resting_bid"]=_G;_7["l1_bid_usd"]=Q;_7["queue_ahead_usd"]=.0 if _G>E+1e-6 else round(min(Q*.5,60.),2);_7["maker_edge_at_post"]=round(e-_G,4);_7["last_repeg_ts"]=now;d._append_ledger({"event":"SHADOW_MAKER_POST",**_7});logger.info(f"[MAKER_OUTBID_REPEG:{_Q}] {_6} | {_7['title']} ({_s}) ${_F:.3f} -> ${_G:.3f} (outbid=${E:.3f}, ask=${u:.3f})");continue
+   if n>.0:
+    y=float(_7.get("queue_ahead_usd")or.0);B=y/max(.01,N);l=n-B
+    if j:l=max(l,n,BANKROLL_TICKETS["T5000"][_Q]/max(.01,N))
+    elif l<5.:_7["queue_ahead_usd"]=round(max(.0,y-n*N),2);continue
+    d.pending_maker_orders.pop(oid,None);_d=max(.0,float(_4.get("maker_rebate_ps")or.0));P=round(max(.01,N-_d),6);O={}
+    for _c,_Y in BANKROLL_TICKETS.items():_i=_Y[_Q];_b=_i/N;sh=round(min(_b,l),4);_X=round(sh*P,2);O[_c]={"filled":True,"best_ask":round(u,4),"vwap":N,"eff_px":P,"slip_cents":.0,"spent_usd":_X,"fee_usd":round(-sh*_d,4),"shares":sh,"fill_ratio":round(min(1.,_X/max(.01,_i)),4),"l1_usd":_7.get("l1_bid_usd",50.),"levels":1}
+    _E=f"{_Q}_{int(now)}_{_7['dedupe_key'][-10:]}"
+    if z or A or _Q in("BOND1_UMA_RESOLUTION_CARRY","SP2_NBA_ENDGAME_LOCK"):t=None
+    elif _Q in("W1_SOLAR_PEAK_LOCK","W1_LOW_TROUGH_LOCK"):t=.985
+    elif x:t=min(.95,round(max(N+.07,e-.015),4))
+    else:t=min(.96,round(N+.05,4))
+    if j:_4["adverse_fill_during_cancel_window"]=True;_4["adverse_trigger"]=b
+    pos={"position_id":_E,"dedupe_key":_7["dedupe_key"],"sleeve":_Q,"asset_or_city":_6,"title":_7["title"],"side":_s,"token_id":tok,"fee_rate":.0,"entry_ts":now,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":_t,"p_model_entry":round(e,4),"entry_eff_px_t1000":P,"entry_vwap_t1000":N,"realized_edge_t1000":round(e-P,4),"entry_best_bid":N,"last_bid":N,"maker_tp_px":t,"tier_fills":O,"extra":_4,"status":"OPEN"};d.open_positions[_E]=pos;d._append_ledger({"event":"SHADOW_ENTRY",**pos});_D=f"${t:.3f}"if t is not None else"HOLD_SETTLE";logger.info(f"[MAKER_FILLED:{_Q}] {_6} | {pos['title']} ({_s}) @ resting=${N:.3f} -> TP={_D} (p_mod={e:.3f}, adverse={j})")
  async def scan_weather_markets(c,opps_out):
-  from src.polymarket_research.riskless_protocol_v2_expansion import resolve_weather_effective_end_ts as d;_v=datetime.now(timezone.utc);_S=time.time();p=[]
-  for _Z in list(c.weather_events.values()):
-   _R=d(_Z,_S+86400.)
-   if _R<=_S:c.weather_events.pop(_Z.event_id,None);continue
-   try:_m=_v.astimezone(ZoneInfo(_Z.tz_name))
-   except Exception:_m=_v
-   if(_Z.obs_date-_m.date()).days>1 and not c.single_scan:continue
-   p.append((0 if _m.date()>=_Z.obs_date else 1,_R,_Z))
-  p.sort(key=lambda r:(r[0],r[1]))
-  for _,_,sp in p[:45]:
-   _Q=time.time();w=d(sp,_Q+86400.)
-   if w<=_Q:c.weather_events.pop(sp.event_id,None);continue
-   R=not c.single_scan and is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND")
-   if R:
-    try:j=_v.astimezone(ZoneInfo(sp.tz_name))
-    except Exception:j=_v
-    h=j.date()>=sp.obs_date
-   else:h=True
-   if R and not h:_u=max(1,len(sp.buckets));O=[round(1./_u,4)]*len(sp.buckets);_J={"is_solar_lock":False,"locked_bucket_idx":None,"p_locked_bucket":.0,"obs_count":0,"latest_temp_c":None,"running_ext_c":None,"peak_iqr_c":None,"cooling_cushion_c":.0,"convective_cold_pool":False,"probs":O}
+  from src.polymarket_research.riskless_protocol_v2_expansion import resolve_weather_effective_end_ts as d;_L=datetime.now(timezone.utc);_9=time.time();v=[]
+  for sp0 in list(c.weather_events.values()):
+   _8=d(sp0,_9+86400.)
+   if _8<=_9:c.weather_events.pop(sp0.event_id,None);continue
+   try:_B=_L.astimezone(ZoneInfo(sp0.tz_name))
+   except Exception:_B=_L
+   if(sp0.obs_date-_B.date()).days>1 and not c.single_scan:continue
+   v.append((0 if _B.date()>=sp0.obs_date else 1,_8,sp0))
+  v.sort(key=lambda r:(r[0],r[1]))
+  for _,_,sp in v[:45]:
+   _7=time.time();E=d(sp,_7+86400.)
+   if E<=_7:c.weather_events.pop(sp.event_id,None);continue
+   _c=not c.single_scan and is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND")
+   if _c:
+    try:n=_L.astimezone(ZoneInfo(sp.tz_name))
+    except Exception:n=_L
+    m=n.date()>=sp.obs_date
+   else:m=True
+   if _c and not m:_K=max(1,len(sp.buckets));Z=[round(1./_K,4)]*len(sp.buckets);_Z={"is_solar_lock":False,"locked_bucket_idx":None,"p_locked_bucket":.0,"obs_count":0,"latest_temp_c":None,"running_ext_c":None,"peak_iqr_c":None,"cooling_cushion_c":.0,"convective_cold_pool":False,"probs":Z}
    else:
-    _P=f"{sp.icao}_{sp.obs_date.isoformat()}";_l=c.metar_cache.get(_P);_c=compute_adaptive_metar_poll_ttl(sp.icao,_l[1]if _l else None,_v)
-    if _l is None or(_Q-_l[0])>=_c:y=await asyncio.to_thread(fetch_metar_observations_sync,sp.icao,sp.obs_date,sp.tz_name);c.metar_cache[_P]=(_Q,y)
-    else:y=_l[1]
-    Q=c.taf_cache.get(_P)
-    if Q is None or(_Q-Q[0])>=1800.:o=await asyncio.to_thread(fetch_taf_extremes_sync,sp.icao,sp.obs_date,sp.tz_name);c.taf_cache[_P]=(_Q,o)
-    else:o=Q[1]
-    _k=c.ensemble_cache.get(sp.icao);_t=1500. if(_k and _k[1])else 60.
-    if _k is None or(_Q-_k[0])>=_t:
-     async with c._open_meteo_sem:P=await asyncio.to_thread(fetch_live_ensemble_hourly_sync,sp.lat,sp.lon);await asyncio.sleep(.18)
-     c.ensemble_cache[sp.icao]=(_Q,P)
-    else:P=_k[1]
-    if not P and not y:continue
-    _J=compute_weather_probabilities(sp,_v,y,P,forecast_sigma_base_c=c.weather_sigma_c,taf_extreme_c=(o or{}).get(sp.metric));O=_J["probs"]
-   w=d(sp,_Q+86400.)
-   if _J["is_solar_lock"]and _J["locked_bucket_idx"]is not None:
-    _I=sp.buckets[_J["locked_bucket_idx"]];_H=_J["p_locked_bucket"];_G=float(getattr(_I,"fee_rate",.0)or.0);D=sp.metric=="LOW";_b="W1_LOW_TROUGH_LOCK"if D else"W1_SOLAR_PEAK_LOCK";N=.96 if D else.94;C=.03 if D else.035;_s=f"W1LOW_{sp.event_id}_{_I.market_id}"if D else f"W1_{sp.event_id}_{_I.market_id}";bk=await c.fetch_json(f"{CLOB_URL}/book?token_id={_I.yes_token}",timeout=3.5)
+    _6=f"{sp.icao}_{sp.obs_date.isoformat()}";_A=c.metar_cache.get(_6);_o=compute_adaptive_metar_poll_ttl(sp.icao,_A[1]if _A else None,_L)
+    if _A is None or(_7-_A[0])>=_o:F=await asyncio.to_thread(fetch_metar_observations_sync,sp.icao,sp.obs_date,sp.tz_name);c.metar_cache[_6]=(_7,F)
+    else:F=_A[1]
+    _b=c.taf_cache.get(_6)
+    if _b is None or(_7-_b[0])>=1800.:u=await asyncio.to_thread(fetch_taf_extremes_sync,sp.icao,sp.obs_date,sp.tz_name);c.taf_cache[_6]=(_7,u)
+    else:u=_b[1]
+    _z=c.ensemble_cache.get(sp.icao);_J=1500. if(_z and _z[1])else 60.
+    if _z is None or(_7-_z[0])>=_J:
+     async with c._open_meteo_sem:_a=await asyncio.to_thread(fetch_live_ensemble_hourly_sync,sp.lat,sp.lon);await asyncio.sleep(.18)
+     c.ensemble_cache[sp.icao]=(_7,_a)
+    else:_a=_z[1]
+    if not _a and not F:continue
+    _Z=compute_weather_probabilities(sp,_L,F,_a,forecast_sigma_base_c=c.weather_sigma_c,taf_extreme_c=(u or{}).get(sp.metric));Z=_Z["probs"]
+   E=d(sp,_7+86400.)
+   if _Z["is_solar_lock"]and _Z["locked_bucket_idx"]is not None:
+    _Y=sp.buckets[_Z["locked_bucket_idx"]];_X=_Z["p_locked_bucket"];_W=float(getattr(_Y,"fee_rate",.0)or.0);M=sp.metric=="LOW";_n="W1_LOW_TROUGH_LOCK"if M else"W1_SOLAR_PEAK_LOCK";Y=.96 if M else.94;L=.03 if M else.035;_I=f"W1LOW_{sp.event_id}_{_Y.market_id}"if M else f"W1_{sp.event_id}_{_Y.market_id}";bk=await c.fetch_json(f"{CLOB_URL}/book?token_id={_Y.yes_token}",timeout=3.5)
     if bk:
-     F=walk_l2_book_asks_depth_capped(bk.get("asks")or[],BANKROLL_TICKETS["T1000"][_b],BANKROLL_TICKETS["T100"][_b],fee_rate=_G,min_l1_usd=(15. if D else 20.),max_ask_px=N+1e-4);_F,M=extract_best_bid(bk.get("bids")or[]);c._record_market_telemetry(key=f"W1_LOCK_{sp.event_id}_{_I.market_id}",min_interval_sec=45.,now_ts=_Q,sig=(F.get("eff_px"),_F,round(float(_H),3)),payload={"type":"WEATHER_SOLAR_LOCK_SNAP","sleeve":_b,"event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket":_I.label,"obs_count":_J["obs_count"],"running_ext_c":_J["running_ext_c"],"cushion_c":_J["cooling_cushion_c"],"p_lock":_H,"ask_eff":F.get("eff_px")if F.get("filled")else None,"bid":_F if _F>0 else None,"l1_usd":F.get("l1_usd",.0)});_j={"event_id":sp.event_id,"market_id":_I.market_id,"condition_id":_I.condition_id,"opp_token_id":_I.no_token,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket_label":_I.label,"running_ext_c":_J["running_ext_c"],"cooling_cushion_c":_J["cooling_cushion_c"]};k=False
-     if F.get("filled")and.52<=F["eff_px"]<=N:
-      _d=_H-F["eff_px"];opps_out.append({"sleeve":_b,"market":f"{sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_I.label}","ask_vwap":F["eff_px"],"p_model":_H,"net_edge":round(_d,4),"l1_usd":F["l1_usd"]})
-      if _d>=C:
-       _O=getattr(_I,"neg_risk",None)
-       if float(_H)>=.985 and _O is not None and(w-_Q)<=86400.:_a=await c.fetch_json(f"{CLOB_URL}/book?token_id={_I.no_token}",timeout=2.5);c.emit_live_single_leg_lock_candidate(sleeve_source=_b,asset=f"{sp.city}_{sp.icao}",dedupe_key=_s,token_id=_I.yes_token,opp_token_id=_I.no_token,market_id=_I.market_id,condition_id=_I.condition_id,side_label="YES",display_label=f"{sp.city} {sp.metric} [{_I.label}]",bk_win=bk,bk_opp=_a if isinstance(_a,dict)else None,fee_rate=_G,fee_exponent=1.,neg_risk=bool(_O),close_ts=w,now_ts=_Q,max_lock_eff_px=N,max_opp_bid=.045,hold_to_maturity=False,p_model=float(_H))
-       k=await c.open_shadow_position(sleeve=_b,dedupe_key=_s,asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_I.label}]",side_label="YES",token_id=_I.yes_token,fee_rate=_G,p_model=_H,close_ts=w,extra=_j,prefetched_book=bk)
-     if(not k and not _J.get("convective_cold_pool")and(w-_Q)>9e2 and.25<=_F<=N and(_H-_F)>=C):
-      Z=await c.post_shadow_maker_entry(sleeve=_b,dedupe_key=_s,asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_I.label}]",side_label="YES",token_id=_I.yes_token,p_model=_H,close_ts=w,extra=_j,prefetched_book=bk)
-      if Z and not F.get("filled"):opps_out.append({"sleeve":_b,"market":f"[MAKER] {sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_I.label}","ask_vwap":_F,"p_model":_H,"net_edge":round(_H-_F,4),"l1_usd":M,"close_ts":w})
-   Y=f"W3_SLATE_{sp.event_id}";B=float(c._last_w3_slate_chk_ts.get(sp.event_id)or.0);A=45. if(sp.series_slug in HIGH_VOLUME_WEATHER_SERIES or(w-_Q)<=21600.)else 120.
-   if(Y not in c.entered_keys and Y not in c.inflight_keys and len(sp.buckets)>=3 and(c.single_scan or(_Q-B)>=A)):
-    c._last_w3_slate_chk_ts[sp.event_id]=_Q;_E=[b_i.yes_token for b_i in sp.buckets]+[b_i.no_token for b_i in sp.buckets];_i=await c.fetch_books_batch(_E,timeout=3.);m={};f={}
+     O=walk_l2_book_asks_depth_capped(bk.get("asks")or[],BANKROLL_TICKETS["T1000"][_n],BANKROLL_TICKETS["T100"][_n],fee_rate=_W,min_l1_usd=(15. if M else 20.),max_ask_px=Y+1e-4);_V,X=extract_best_bid(bk.get("bids")or[]);c._record_market_telemetry(key=f"W1_LOCK_{sp.event_id}_{_Y.market_id}",min_interval_sec=45.,now_ts=_7,sig=(O.get("eff_px"),_V,round(float(_X),3)),payload={"type":"WEATHER_SOLAR_LOCK_SNAP","sleeve":_n,"event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket":_Y.label,"obs_count":_Z["obs_count"],"running_ext_c":_Z["running_ext_c"],"cushion_c":_Z["cooling_cushion_c"],"p_lock":_X,"ask_eff":O.get("eff_px")if O.get("filled")else None,"bid":_V if _V>0 else None,"l1_usd":O.get("l1_usd",.0)});_y={"event_id":sp.event_id,"market_id":_Y.market_id,"condition_id":_Y.condition_id,"opp_token_id":_Y.no_token,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"bucket_label":_Y.label,"running_ext_c":_Z["running_ext_c"],"cooling_cushion_c":_Z["cooling_cushion_c"]};o=False
+     if O.get("filled")and.52<=O["eff_px"]<=Y:
+      _p=_X-O["eff_px"];opps_out.append({"sleeve":_n,"market":f"{sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_Y.label}","ask_vwap":O["eff_px"],"p_model":_X,"net_edge":round(_p,4),"l1_usd":O["l1_usd"]})
+      if _p>=L:
+       _5=getattr(_Y,"neg_risk",None);D=GLOBAL_GOVERNANCE_MANAGER.snapshot;K=bool((D.get("directional")or{}).get("riskless_only_mode",False)or(D.get("riskless_boxes")or{}).get("strict_pure_riskless_mode",False));e=True
+       if K:
+        try:f=datetime.fromtimestamp(_7,tz=ZoneInfo(sp.tz_name)).date()
+        except Exception:f=sp.obs_date
+        W=(c.by_sleeve.get(_n)if hasattr(c,"by_sleeve")else None)or{};e=(f>sp.obs_date and int(_Z.get("rem_hours_count",1)or 0)==0 and not bool(_Z.get("has_corrected_obs"))and not bool(_Z.get("has_oracle_contradiction"))and int(W.get("losses",0)or 0)==0 and float(_X)>=1.)
+       if(e and float(_X)>=(1. if K else.985)and _5 is not None and(E-_7)<=86400.):_m=await c.fetch_json(f"{CLOB_URL}/book?token_id={_Y.no_token}",timeout=2.5);c.emit_live_single_leg_lock_candidate(sleeve_source=_n,asset=f"{sp.city}_{sp.icao}",dedupe_key=_I,token_id=_Y.yes_token,opp_token_id=_Y.no_token,market_id=_Y.market_id,condition_id=_Y.condition_id,side_label="YES",display_label=f"{sp.city} {sp.metric} [{_Y.label}]",bk_win=bk,bk_opp=_m if isinstance(_m,dict)else None,fee_rate=_W,fee_exponent=1.,neg_risk=bool(_5),close_ts=E,now_ts=_7,max_lock_eff_px=Y,max_opp_bid=.045,hold_to_maturity=True,p_model=float(_X))
+       o=await c.open_shadow_position(sleeve=_n,dedupe_key=_I,asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_Y.label}]",side_label="YES",token_id=_Y.yes_token,fee_rate=_W,p_model=_X,close_ts=E,extra=_y,prefetched_book=bk)
+     if(not o and not _Z.get("convective_cold_pool")and(E-_7)>9e2 and.25<=_V<=Y and(_X-_V)>=L):
+      _l=await c.post_shadow_maker_entry(sleeve=_n,dedupe_key=_I,asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_Y.label}]",side_label="YES",token_id=_Y.yes_token,p_model=_X,close_ts=E,extra=_y,prefetched_book=bk)
+      if _l and not O.get("filled"):opps_out.append({"sleeve":_n,"market":f"[MAKER] {sp.city} ({sp.icao}) {sp.metric} {sp.obs_date} -> {_Y.label}","ask_vwap":_V,"p_model":_X,"net_edge":round(_X-_V,4),"l1_usd":X,"close_ts":E})
+   _k=f"W3_SLATE_{sp.event_id}";J=float(c._last_w3_slate_chk_ts.get(sp.event_id)or.0);I=45. if(sp.series_slug in HIGH_VOLUME_WEATHER_SERIES or(E-_7)<=21600.)else 120.
+   if(_k not in c.entered_keys and _k not in c.inflight_keys and len(sp.buckets)>=3 and(c.single_scan or(_7-J)>=I)):
+    c._last_w3_slate_chk_ts[sp.event_id]=_7;_U=[b_i.yes_token for b_i in sp.buckets]+[b_i.no_token for b_i in sp.buckets];_x=await c.fetch_books_batch(_U,timeout=3.);s={};j={}
     for b_i in sp.buckets:
-     _X=_i.get(b_i.yes_token);_D=_i.get(b_i.no_token);_N={}
-     if _X:
-      f[b_i.market_id]=_X;_C=sorted([(float(a["price"]),float(a["size"]))for a in(_X.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
-      if _C:_N["ask_yes"]=_C[0][0];_N["ask_yes_shares"]=_C[0][1]
-     if _D:
-      _B=sorted([(float(a["price"]),float(a["size"]))for a in(_D.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
-      if _B:_N["ask_no"]=_B[0][0];_N["ask_no_shares"]=_B[0][1]
-     if _N:m[b_i.market_id]=_N
-     if(_D and int(_J.get("obs_count")or 0)>=1 and _J.get("running_ext_c")is not None and not _J.get("has_corrected_obs")and float(getattr(b_i,"rewards_min_size",.0)or.0)>.0 and(w-_Q)>3e2):
-      X=celsius_to_market_int(float(_J["running_ext_c"]),b_i.unit);W=((sp.metric=="HIGH"and b_i.high_bound<=X-2)or(sp.metric=="LOW"and b_i.low_bound>=X+2))
-      if W:
-       _A,_=extract_best_bid(_D.get("bids")or[]);_z=float(_N.get("ask_no",1.)or 1.);_W=evaluate_locked_market_reward_carry(1.,_A,_z,float(b_i.rewards_min_size),float(b_i.rewards_max_spread),float(getattr(b_i,"fee_rate",.0)or.0))
-       if _W.get("eligible"):
-        opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{sp.city} ({sp.icao}) Dead NO[{b_i.label}] @ ${_W['resting_bid']:.3f}","ask_vwap":_W["resting_bid"],"p_model":1.,"net_edge":_W["carry_edge"],"l1_usd":50.,"close_ts":w});await c.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_W_{b_i.market_id}",f"{sp.city}_{sp.icao}",f"{sp.title} [Dead NO {b_i.label}]","NO",b_i.no_token,1.,w,{"market_id":b_i.market_id,"condition_id":b_i.condition_id,"opp_token_id":b_i.yes_token,"resting_bid_override":_W["resting_bid"]},prefetched_book=_D)
-        if(is_reward_locked_carry_live_ready(c,1.,min_reward_shares=float(b_i.rewards_min_size or.0),resting_bid_px=float(_W["resting_bid"]))and getattr(b_i,"neg_risk",None)is not None and _X is not None):c.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"MKR_RW_W_{b_i.market_id}",pair_dedupe_key=f"MKR_RW_WPAIR_{b_i.market_id}",token_id=b_i.no_token,opp_token_id=b_i.yes_token,market_id=b_i.market_id,condition_id=b_i.condition_id,side_label="NO",display_label=f"{sp.city} Reward Carry NO[{b_i.label}]",bk_win=_D,bk_opp=_X,neg_risk=bool(b_i.neg_risk),close_ts=float(w),now_ts=_Q,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=float(_W["resting_bid"]))
-     if _X and _D and float(getattr(b_i,"fee_rate",.0)or.0)==.0:
-      _V=scan_binary_complete_set_arb(market_id=b_i.market_id,condition_id=b_i.condition_id,yes_token=b_i.yes_token,no_token=b_i.no_token,asks_yes_raw=_X.get("asks")or[],asks_no_raw=_D.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=.0,max_box_cost_net=.995)
-      if _V.get("filled"):
-       opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{sp.city} ({sp.icao}) Complete-Set [{b_i.label}]","ask_vwap":_V["box_cost_net"],"p_model":1.,"net_edge":_V["riskless_floor_per_pair"],"l1_usd":_V["l1_usd"],"close_ts":w});L=getattr(b_i,"neg_risk",None);_r={"token_id":b_i.yes_token,"opp_token_id":b_i.no_token,"condition_id":b_i.condition_id,"side":"YES","label":"YES","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(L)};_q={"token_id":b_i.no_token,"opp_token_id":b_i.yes_token,"condition_id":b_i.condition_id,"side":"NO","label":"NO","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(L)};await c.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_W_{b_i.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} YES+NO Complete Set [{b_i.label}]",leg_a=_r,leg_b=_q,bk_a=_X,bk_b=_D,close_ts=w,max_box_cost_net=.995,extra={"is_complete_set":True,"market_id":b_i.market_id,"condition_id":b_i.condition_id})
-       if L is not None and(w-_Q)<=86400. and float(_V["box_cost_net"])<=.99:c.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"C1_W_{b_i.market_id}",leg_a=_r,leg_b=_q,bk_a=_X,bk_b=_D,close_ts=float(w),now_ts=_Q)
-    _h=evaluate_weather_event_slate(sp,O,m,target_budget_usd=BANKROLL_TICKETS["T1000"]["W3_WEATHER_SLATE_ARB"]);_g=_h.get("full_slate_arb")
-    if len(m)==len(sp.buckets):V=all(m[b.market_id].get("ask_yes",0)>0 for b in sp.buckets);U=all(m[b.market_id].get("ask_no",0)>0 for b in sp.buckets);_f=round(sum(float(m[b.market_id]["ask_yes"])for b in sp.buckets),4)if V else None;_e=round(sum(float(m[b.market_id]["ask_no"])for b in sp.buckets),4)if U else None;_p=max(range(len(sp.buckets)),key=lambda idx_b:float(O[idx_b]))if O else 0;_o=sp.buckets[_p]if sp.buckets else None;T=float(m[_o.market_id].get("ask_yes")or.0)if _o else.0;c._record_market_telemetry(key=f"W_SLATE_{sp.event_id}",min_interval_sec=45. if(w-_Q)<=7200. else 90.,now_ts=_Q,sig=(_f,_e,_J["running_ext_c"],round(T,3),(_g or{}).get("mode")),payload={"type":"WEATHER_SLATE","event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"n_buckets":len(sp.buckets),"tte_sec":round(w-_Q,0),"obs_count":_J["obs_count"],"latest_c":_J["latest_temp_c"],"running_ext_c":_J["running_ext_c"],"ens_iqr_c":_J["peak_iqr_c"],"solar_lock":_J["is_solar_lock"],"top_bucket":_o.label if _o else None,"top_p":round(float(O[_p]),4)if O else None,"top_ask_yes":round(T,4)if T>0 else None,"sum_yes_l1":_f,"sum_no_l1":_e,"no_payout":len(sp.buckets)-1,"arb_mode":(_g or{}).get("mode")})
-    if _g:_U=float(_g.get("guaranteed_payout_per_set")or 1.);opps_out.append({"sleeve":"W3_WEATHER_SLATE_ARB","market":f"{sp.city} ({sp.icao}) {sp.obs_date} Full-Slate ({len(sp.buckets)} buckets, {_g.get('side','ALL_BUCKETS_YES')})","ask_vwap":round(float(_g["sum_asks"])/_U,4),"p_model":1.,"net_edge":round(float(_g["guaranteed_edge_per_set"])/_U,4),"l1_usd":_g["total_cost_usd"]});await c.open_shadow_weather_slate(sp,_g,w)
-    if all(b.market_id in f for b in sp.buckets):await c.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_W_{sp.event_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} {sp.obs_date} Weather NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":f[b.market_id].get("bids")or[],"fee_rate":float(getattr(b,"fee_rate",.0)or.0),"fee_exponent":1.}for b in sp.buckets],close_ts=w,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"WEATHER_NEGRISK","event_id":sp.event_id})
-   else:f={}
+     _ae=_x.get(b_i.yes_token);_T=_x.get(b_i.no_token);_4={}
+     if _ae:
+      j[b_i.market_id]=_ae;_S=sorted([(float(a["price"]),float(a["size"]))for a in(_ae.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
+      if _S:_4["ask_yes"]=_S[0][0];_4["ask_yes_shares"]=_S[0][1]
+     if _T:
+      _R=sorted([(float(a["price"]),float(a["size"]))for a in(_T.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0],key=lambda x:x[0])
+      if _R:_4["ask_no"]=_R[0][0];_4["ask_no_shares"]=_R[0][1]
+     if _4:s[b_i.market_id]=_4
+     if(_T and int(_Z.get("obs_count")or 0)>=1 and _Z.get("running_ext_c")is not None and not _Z.get("has_corrected_obs")and not _Z.get("has_oracle_contradiction")and(E-_7)>3e2):
+      _j=celsius_to_market_int(float(_Z["running_ext_c"]),b_i.unit);_i=((sp.metric=="HIGH"and b_i.high_bound<=_j-2)or(sp.metric=="LOW"and b_i.low_bound>=_j+2))
+      if _i:
+       _Q,_=extract_best_bid(_T.get("bids")or[]);_P=float(_4.get("ask_no",1.)or 1.);k=False
+       if float(getattr(b_i,"rewards_min_size",.0)or.0)>.0:
+        _ad=evaluate_locked_market_reward_carry(1.,_Q,_P,float(b_i.rewards_min_size),float(b_i.rewards_max_spread),float(getattr(b_i,"fee_rate",.0)or.0))
+        if _ad.get("eligible"):
+         opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{sp.city} ({sp.icao}) Dead NO[{b_i.label}] @ ${_ad['resting_bid']:.3f}","ask_vwap":_ad["resting_bid"],"p_model":1.,"net_edge":_ad["carry_edge"],"l1_usd":50.,"close_ts":E});await c.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_W_{b_i.market_id}",f"{sp.city}_{sp.icao}",f"{sp.title} [Dead NO {b_i.label}]","NO",b_i.no_token,1.,E,{"market_id":b_i.market_id,"condition_id":b_i.condition_id,"opp_token_id":b_i.yes_token,"resting_bid_override":_ad["resting_bid"]},prefetched_book=_T)
+         if(is_reward_locked_carry_live_ready(c,1.,min_reward_shares=float(b_i.rewards_min_size or.0),resting_bid_px=float(_ad["resting_bid"]))and getattr(b_i,"neg_risk",None)is not None and _ae is not None):_w=max(.0,float(getattr(b_i,"fee_rate",.0)or.0));_v=max(1.,float(getattr(b_i,"fee_exponent",1.)or 1.));_u=float(_ad["resting_bid"]);_h=round(.2*_w*((_u*(1.-_u))**_v),5)if _w>.0 else.0;k=bool(c.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"MKR_RW_W_{b_i.market_id}",pair_dedupe_key=f"MKR_RW_WPAIR_{b_i.market_id}",token_id=b_i.no_token,opp_token_id=b_i.yes_token,market_id=b_i.market_id,condition_id=b_i.condition_id,side_label="NO",display_label=f"{sp.city} Reward Carry NO[{b_i.label}]",bk_win=_T,bk_opp=_ae,neg_risk=bool(b_i.neg_risk),close_ts=float(E),now_ts=_7,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=_u,maker_rebate_ps=_h,event_id=str(sp.event_id)))
+       p=getattr(b_i,"question_index",None)
+       if p is None and sp.event_id:
+        _H=getattr(c,"negrisk_convert_slates",{}).get(str(sp.event_id))
+        if _H is not None:
+         for _3 in getattr(_H,"brackets",()):
+          if(str(_3.get("market_id")or"")==str(b_i.market_id)or(b_i.condition_id and str(_3.get("condition_id")or"")==str(b_i.condition_id)))and _3.get("question_index")is not None:p=int(_3["question_index"]);break
+       if p is not None and sp.event_id:c.__dict__.setdefault("_ws_dead_q_by_event",{}).setdefault(str(sp.event_id),set()).add(int(p))
+       if(not c.single_scan and getattr(b_i,"neg_risk",None)is not None and _ae is not None and 120.<=(E-_7)<=28800.):
+        H=c.__dict__.setdefault("_last_wprune_ws_reg_ts",{})
+        if(_7-float(H.get(b_i.market_id,.0)or.0))>=180.:H[b_i.market_id]=_7;from src.polymarket_research.riskless_protocol_v2_expansion import _write_and_notify_live_cand as g;g(c,{"box_id":f"CLINCH_WS_WPRUNE_{b_i.market_id}","dedupe_key":f"W_PRUNE1_{b_i.market_id}","pair_dedupe_key":f"W_PRUNE1_MKR_{b_i.market_id}","box_type":"CLINCH_WATCHLIST_REG","ts_unix":round(_7,3),"asset":f"{sp.city}_{sp.icao}","event_id":str(sp.event_id),"sleeve_source":"W_PRUNE1_DEAD_NO_BOND","expiry_ts":float(E),"max_box_cost_net":.994,"max_opp_bid":.025,"hold_to_maturity":True,"p_model":1.,"leg_a_token_id":str(b_i.no_token),"leg_a_opp_token_id":str(b_i.yes_token),"leg_a_label":f"{sp.city} Dead NO [{b_i.label}]","leg_a_side":"NO","leg_a_market_id":str(b_i.market_id),"leg_a_condition_id":str(b_i.condition_id),"leg_a_fee_rate":max(.0,float(getattr(b_i,"fee_rate",.0)or.0)),"leg_a_fee_exponent":max(1.,float(getattr(b_i,"fee_exponent",1.)or 1.)),"leg_a_neg_risk":bool(b_i.neg_risk),"ws_books":{str(b_i.no_token):{"bids":(_T.get("bids")or[])[:10],"asks":(_T.get("asks")or[])[:10]},str(b_i.yes_token):{"bids":(_ae.get("bids")or[])[:10],"asks":(_ae.get("asks")or[])[:10]}},"ws_books_ts":round(_7,3)},getattr(c,"d1_live_candidates_file",D1_LIVE_CANDIDATES_FILE),D1_LIVE_CANDIDATES_FILE)
+        V=.995 if(E-_7)<=1.2e4 else.994;C=round(1.-V,4)
+        if not k and(E-_7)<=28800. and.94<=_Q<=V:c.emit_live_single_leg_maker_lock_candidate(sleeve_source="W_PRUNE1_DEAD_NO_BOND",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"W_PRUNE1_MKR_{b_i.market_id}",pair_dedupe_key=f"W_PRUNE1_{b_i.market_id}",token_id=b_i.no_token,opp_token_id=b_i.yes_token,market_id=b_i.market_id,condition_id=b_i.condition_id,side_label="NO",display_label=f"{sp.city} Dead NO [{b_i.label}]",bk_win=_T,bk_opp=_ae,neg_risk=bool(b_i.neg_risk),close_ts=float(E),now_ts=_7,min_resting_bid=.94,max_resting_bid=V,min_maker_edge=C,max_opp_bid=.025,hold_to_maturity=True,p_model=1.,event_id=str(sp.event_id))
+     if _ae and _T and float(getattr(b_i,"fee_rate",.0)or.0)==.0:
+      _ac=scan_binary_complete_set_arb(market_id=b_i.market_id,condition_id=b_i.condition_id,yes_token=b_i.yes_token,no_token=b_i.no_token,asks_yes_raw=_ae.get("asks")or[],asks_no_raw=_T.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=.0,max_box_cost_net=.995)
+      if _ac.get("filled"):
+       opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{sp.city} ({sp.icao}) Complete-Set [{b_i.label}]","ask_vwap":_ac["box_cost_net"],"p_model":1.,"net_edge":_ac["riskless_floor_per_pair"],"l1_usd":_ac["l1_usd"],"close_ts":E});U=getattr(b_i,"neg_risk",None);_G={"token_id":b_i.yes_token,"opp_token_id":b_i.no_token,"condition_id":b_i.condition_id,"side":"YES","label":"YES","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(U)};_F={"token_id":b_i.no_token,"opp_token_id":b_i.yes_token,"condition_id":b_i.condition_id,"side":"NO","label":"NO","market_id":b_i.market_id,"fee_rate":.0,"strike":1e2,"neg_risk":bool(U)};await c.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_W_{b_i.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} YES+NO Complete Set [{b_i.label}]",leg_a=_G,leg_b=_F,bk_a=_ae,bk_b=_T,close_ts=E,max_box_cost_net=.995,extra={"is_complete_set":True,"market_id":b_i.market_id,"condition_id":b_i.condition_id})
+       if U is not None and(E-_7)<=86400. and float(_ac["box_cost_net"])<=.99:c.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=f"{sp.city}_{sp.icao}",dedupe_key=f"C1_W_{b_i.market_id}",leg_a=_G,leg_b=_F,bk_a=_ae,bk_b=_T,close_ts=float(E),now_ts=_7)
+    _t=evaluate_weather_event_slate(sp,Z,s,target_budget_usd=BANKROLL_TICKETS["T1000"]["W3_WEATHER_SLATE_ARB"]);_s=_t.get("full_slate_arb")
+    if len(s)==len(sp.buckets):_g=all(s[b.market_id].get("ask_yes",0)>0 for b in sp.buckets);_f=all(s[b.market_id].get("ask_no",0)>0 for b in sp.buckets);_r=round(sum(float(s[b.market_id]["ask_yes"])for b in sp.buckets),4)if _g else None;_q=round(sum(float(s[b.market_id]["ask_no"])for b in sp.buckets),4)if _f else None;_E=max(range(len(sp.buckets)),key=lambda idx_b:float(Z[idx_b]))if Z else 0;_D=sp.buckets[_E]if sp.buckets else None;_e=float(s[_D.market_id].get("ask_yes")or.0)if _D else.0;c._record_market_telemetry(key=f"W_SLATE_{sp.event_id}",min_interval_sec=45. if(E-_7)<=7200. else 90.,now_ts=_7,sig=(_r,_q,_Z["running_ext_c"],round(_e,3),(_s or{}).get("mode")),payload={"type":"WEATHER_SLATE","event_id":sp.event_id,"city":sp.city,"icao":sp.icao,"metric":sp.metric,"obs_date":sp.obs_date.isoformat(),"n_buckets":len(sp.buckets),"tte_sec":round(E-_7,0),"obs_count":_Z["obs_count"],"latest_c":_Z["latest_temp_c"],"running_ext_c":_Z["running_ext_c"],"ens_iqr_c":_Z["peak_iqr_c"],"solar_lock":_Z["is_solar_lock"],"top_bucket":_D.label if _D else None,"top_p":round(float(Z[_E]),4)if Z else None,"top_ask_yes":round(_e,4)if _e>0 else None,"sum_yes_l1":_r,"sum_no_l1":_q,"no_payout":len(sp.buckets)-1,"arb_mode":(_s or{}).get("mode")})
+    if _s:_ab=float(_s.get("guaranteed_payout_per_set")or 1.);opps_out.append({"sleeve":"W3_WEATHER_SLATE_ARB","market":f"{sp.city} ({sp.icao}) {sp.obs_date} Full-Slate ({len(sp.buckets)} buckets, {_s.get('side','ALL_BUCKETS_YES')})","ask_vwap":round(float(_s["sum_asks"])/_ab,4),"p_model":1.,"net_edge":round(float(_s["guaranteed_edge_per_set"])/_ab,4),"l1_usd":_s["total_cost_usd"]});await c.open_shadow_weather_slate(sp,_s,E)
+    if all(b.market_id in j for b in sp.buckets):await c.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_W_{sp.event_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.city} {sp.obs_date} Weather NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":j[b.market_id].get("bids")or[],"fee_rate":float(getattr(b,"fee_rate",.0)or.0),"fee_exponent":1.}for b in sp.buckets],close_ts=E,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"WEATHER_NEGRISK","event_id":sp.event_id})
+   else:j={}
    if is_shadow_sleeve_quarantined("W2_ENSEMBLE_VALUE")and is_shadow_sleeve_quarantined("W2_MAKER_OVERROUND"):continue
-   s=int(_J.get("ensemble_member_count")or 0);K=float(_J.get("peak_iqr_c")or.0);n=f"W2_EVENT_{sp.event_id}"in c.entered_keys or f"W2_EVENT_{sp.event_id}"in c.inflight_keys;l=f"W2M_EVENT_{sp.event_id}"in c.entered_keys or f"W2M_EVENT_{sp.event_id}"in c.inflight_keys;g=None;e=None;z=sorted(range(len(O)),key=lambda i:-O[i])[:2]
-   for _Y in z:
-    _M=O[_Y]
-    if _M<.24:continue
-    b=sp.buckets[_Y];_L=float(getattr(b,"fee_rate",.0)or.0);bk=f.get(b.market_id)or await c.fetch_json(f"{CLOB_URL}/book?token_id={b.yes_token}",timeout=3.5)
+   y=int(_Z.get("ensemble_member_count")or 0);T=float(_Z.get("peak_iqr_c")or.0);t=f"W2_EVENT_{sp.event_id}"in c.entered_keys or f"W2_EVENT_{sp.event_id}"in c.inflight_keys;q=f"W2M_EVENT_{sp.event_id}"in c.entered_keys or f"W2M_EVENT_{sp.event_id}"in c.inflight_keys;l=None;h=None;G=sorted(range(len(Z)),key=lambda i:-Z[i])[:2]
+   for idx in G:
+    _2=Z[idx]
+    if _2<.24:continue
+    b=sp.buckets[idx];_1=float(getattr(b,"fee_rate",.0)or.0);bk=j.get(b.market_id)or await c.fetch_json(f"{CLOB_URL}/book?token_id={b.yes_token}",timeout=3.5)
     if not bk:continue
-    J=bk.get("asks")or[];I=bk.get("bids")or[];H,v=extract_best_bid(I);u=[float(a["price"])for a in J if float(a.get("price",0))>0 and float(a.get("size",0))>0]
-    if _L==.0 and u and H>0 and(min(u)-H)>=.02:
-     G=round(min(u),4);q=round(min(H+.01,G-.01),4);t=_M-q
-     if.14<=q<=.65 and t>=.055 and s>=50 and v>=10.:opps_out.append({"sleeve":"W2_MAKER_OVERROUND","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label} [MakerBid]","ask_vwap":q,"p_model":round(_M,4),"net_edge":round(t,4),"l1_usd":v})
-     if(not n and not l and(w-_Q)>=5400. and s>=50 and K<=2.2 and not _J.get("convective_cold_pool")and v>=10. and.14<=q<=.62 and _M>=.3 and t>=.085):
-      if e is None or t>e[0]:e=(t,_M,q,b,bk)
-    F=walk_l2_book_asks(J,50.,fee_rate=_L)
-    if not F.get("filled"):continue
-    _y=F["eff_px"];_d=_M-_y
-    if.1<=_y<=.62 and _d>=.04 and s>=50:opps_out.append({"sleeve":"W2_ENSEMBLE_VALUE","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label}","ask_vwap":_y,"p_model":round(_M,4),"net_edge":round(_d,4),"l1_usd":F["l1_usd"]})
-    if(not n and not l and s>=50 and K<=2.2 and not _J.get("convective_cold_pool")and.16<=_y<=.62 and _M>=.34 and _d>=.095):
-     if g is None or _d>g[0]:g=(_d,_M,_y,b,bk)
-   if g is not None and os.getenv("PM_DISABLE_SHADOW_W2_TAKER","0")!="1":_,E,_,_x,_n=g;await c.open_shadow_position(sleeve="W2_ENSEMBLE_VALUE",dedupe_key=f"W2_{sp.event_id}_{_x.market_id}",asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_x.label}]",side_label="YES",token_id=_x.yes_token,fee_rate=float(getattr(_x,"fee_rate",.0)or.0),p_model=E,close_ts=w,extra={"event_id":sp.event_id,"market_id":_x.market_id,"condition_id":_x.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_x.label,"bias_c":_J["bias_c"],"ensemble_members":s,"peak_iqr_c":K},prefetched_book=_n)
-   elif e is not None:_,S,_,_K,_w=e;await c.post_shadow_maker_entry(sleeve="W2_MAKER_OVERROUND",dedupe_key=f"W2M_{sp.event_id}_{_K.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_K.label}]",side_label="YES",token_id=_K.yes_token,p_model=S,close_ts=w,extra={"execution_mode":"POST_ONLY_WEATHER_MAKER_ZERO_FEE","event_id":sp.event_id,"market_id":_K.market_id,"condition_id":_K.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_K.label,"bias_c":_J["bias_c"],"ensemble_members":s,"peak_iqr_c":K},prefetched_book=_w)
+    S=bk.get("asks")or[];R=bk.get("bids")or[];Q,B=extract_best_bid(R);A=[float(a["price"])for a in S if float(a.get("price",0))>0 and float(a.get("size",0))>0]
+    if _1==.0 and A and Q>0 and(min(A)-Q)>=.02:
+     P=round(min(A),4);w=round(min(Q+.01,P-.01),4);z=_2-w
+     if.14<=w<=.65 and z>=.055 and y>=50 and B>=10.:opps_out.append({"sleeve":"W2_MAKER_OVERROUND","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label} [MakerBid]","ask_vwap":w,"p_model":round(_2,4),"net_edge":round(z,4),"l1_usd":B})
+     if(not t and not q and(E-_7)>=5400. and y>=50 and T<=2.2 and not _Z.get("convective_cold_pool")and B>=10. and.14<=w<=.62 and _2>=.3 and z>=.085):
+      if h is None or z>h[0]:h=(z,_2,w,b,bk)
+    O=walk_l2_book_asks(S,50.,fee_rate=_1)
+    if not O.get("filled"):continue
+    _O=O["eff_px"];_p=_2-_O
+    if.1<=_O<=.62 and _p>=.04 and y>=50:opps_out.append({"sleeve":"W2_ENSEMBLE_VALUE","market":f"{sp.city} ({sp.icao}) {sp.obs_date} -> {b.label}","ask_vwap":_O,"p_model":round(_2,4),"net_edge":round(_p,4),"l1_usd":O["l1_usd"]})
+    if(not t and not q and y>=50 and T<=2.2 and not _Z.get("convective_cold_pool")and.16<=_O<=.62 and _2>=.34 and _p>=.095):
+     if l is None or _p>l[0]:l=(_p,_2,_O,b,bk)
+   if l is not None and os.getenv("PM_DISABLE_SHADOW_W2_TAKER","0")!="1":_,N,_,_N,_C=l;await c.open_shadow_position(sleeve="W2_ENSEMBLE_VALUE",dedupe_key=f"W2_{sp.event_id}_{_N.market_id}",asset_or_city=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_N.label}]",side_label="YES",token_id=_N.yes_token,fee_rate=float(getattr(_N,"fee_rate",.0)or.0),p_model=N,close_ts=E,extra={"event_id":sp.event_id,"market_id":_N.market_id,"condition_id":_N.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_N.label,"bias_c":_Z["bias_c"],"ensemble_members":y,"peak_iqr_c":T},prefetched_book=_C)
+   elif h is not None:_,_d,_,_0,_M=h;await c.post_shadow_maker_entry(sleeve="W2_MAKER_OVERROUND",dedupe_key=f"W2M_{sp.event_id}_{_0.market_id}",asset=f"{sp.city}_{sp.icao}",title=f"{sp.title} [{_0.label}]",side_label="YES",token_id=_0.yes_token,p_model=_d,close_ts=E,extra={"execution_mode":"POST_ONLY_WEATHER_MAKER_ZERO_FEE","event_id":sp.event_id,"market_id":_0.market_id,"condition_id":_0.condition_id,"icao":sp.icao,"obs_date":sp.obs_date.isoformat(),"bucket_label":_0.label,"bias_c":_Z["bias_c"],"ensemble_members":y,"peak_iqr_c":T},prefetched_book=_M)
  async def scan_barrier_markets(a,opps_out):
   _d=time.time();X=asyncio.get_running_loop();o=collections.defaultdict(list)
   for r in a.barrier_rungs.values():
@@ -5965,79 +6264,79 @@ class Alpha124ShadowDaemon:
    a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=spec,dedupe_key=f,arb_hit=d,books_by_token=j,now_ts=B,fee_bips=l);a._append_ledger({"event":"SHADOW_ENTRY",**A});a.closed_positions.append(A);a._append_ledger({"event":"SHADOW_CLOSE",**A});logger.info(f"[INSTANT_ARB:NR2_CONVERT_NO_SUBSET_ARB] {A['title']} | edge=+{d['net_edge_per_share']:.4f}/sh | free_tails={d['retained_tail_count']} | PnL T1000=${g.get('T1000',.0):+.2f}");return True
   finally:a._release_inflight_keys(C)
  async def scan_daily_updown_locks(a,opps_out):
-  _g=time.time();Y=asyncio.get_running_loop();b=[sp for sp in[*a.daily_updown_markets.values(),*a.pyth_daily_markets.values()]if sp.end_ts>_g+60.]
+  _h=time.time();Z=asyncio.get_running_loop();b=[sp for sp in[*a.daily_updown_markets.values(),*a.pyth_daily_markets.values()]if sp.end_ts>_h+60.]
   if b:
-   z=await a.fetch_books_batch([sp.up_token for sp in b]+[sp.down_token for sp in b],timeout=3.)
-   for I in b:
-    X=z.get(I.up_token);W=z.get(I.down_token)
-    if not X or not W:continue
-    V,U=a._best_ask_sz(X);T,S=a._best_ask_sz(W)
-    if V<1. and T<1.:_f=float(I.fee_rate);a._record_market_telemetry(key=f"DAILY_C1_{I.market_id}",min_interval_sec=60.,now_ts=_g,sig=(V,T),payload={"type":"DAILY_COMPLETE_SET","asset":I.asset,"market_id":I.market_id,"title":I.title,"fee_rate":_f,"tte_sec":round(I.end_ts-_g,0),"up_ask":V,"down_ask":T,"gross_sum_l1":round(V+T,4),"net_sum_l1":round(V+T+_f*(V*(1.-V)+T*(1.-T)),4),"l1_min_shares":round(min(U,S),2)})
-    y=.995 if I.fee_rate==.0 else.994;x=scan_binary_complete_set_arb(market_id=I.market_id,condition_id=I.condition_id,yes_token=I.up_token,no_token=I.down_token,asks_yes_raw=X.get("asks")or[],asks_no_raw=W.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=I.fee_rate,max_box_cost_net=y)
-    if x.get("filled"):
-     opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{I.asset} Complete-Set {I.title}","ask_vwap":x["box_cost_net"],"p_model":1.,"net_edge":x["riskless_floor_per_pair"],"l1_usd":x["l1_usd"],"close_ts":I.end_ts});H={"token_id":I.up_token,"opp_token_id":I.down_token,"condition_id":I.condition_id,"side":"UP","label":"UP","market_id":I.market_id,"fee_rate":I.fee_rate,"strike":1e2};G={"token_id":I.down_token,"opp_token_id":I.up_token,"condition_id":I.condition_id,"side":"DOWN","label":"DOWN","market_id":I.market_id,"fee_rate":I.fee_rate,"strike":1e2};await a.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_D_{I.market_id}",asset=I.asset,title=f"{I.asset} UP+DOWN Complete Set: {I.title}",leg_a=H,leg_b=G,bk_a=X,bk_b=W,close_ts=I.end_ts,max_box_cost_net=y,extra={"is_complete_set":True,"market_id":I.market_id,"condition_id":I.condition_id})
-     if(I.end_ts-_g)<=86400. and float(x["box_cost_net"])<=(.99 if I.fee_rate==.0 else.988):a.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=I.asset,dedupe_key=f"C1_D_{I.market_id}",leg_a=H,leg_b=G,bk_a=X,bk_b=W,close_ts=float(I.end_ts),now_ts=_g)
-    await a.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_D_{I.market_id}",asset=I.asset,title=f"{I.asset} Binary Overround Mint-Sell: {I.title}",legs_bids_spec=[{"bids":X.get("bids")or[],"fee_rate":I.fee_rate,"fee_exponent":1.},{"bids":W.get("bids")or[],"fee_rate":I.fee_rate,"fee_exponent":1.}],close_ts=I.end_ts,min_net_proceeds_per_set=1.003 if I.fee_rate==.0 else 1.004,opps_out=opps_out,extra={"overround_kind":"BINARY_DAILY","market_id":I.market_id,"condition_id":I.condition_id})
-  for _,R in list(a.hourly_12pm_markets.items()):
-   F=R.end_ts-_g
-   if not(60.<=F<=3540.)or _g<R.start_ts+20.:continue
-   w=f"H1_{R.asset}_{int(R.start_ts)}";Q=a.daily_open_cache.get(w)
-   if Q is None:
-    v=await Y.run_in_executor(None,fetch_binance_window_extremes_sync,R.asset,R.start_ts-60.,R.start_ts+60.,"1m")
-    if v is not None and v[2]>0:a.daily_open_cache[w]=(R.end_ts,float(v[2]));m=float(v[2])
+   A=await a.fetch_books_batch([sp.up_token for sp in b]+[sp.down_token for sp in b],timeout=3.)
+   for J in b:
+    Y=A.get(J.up_token);X=A.get(J.down_token)
+    if not Y or not X:continue
+    W,V=a._best_ask_sz(Y);U,T=a._best_ask_sz(X)
+    if W<1. and U<1.:_g=float(J.fee_rate);a._record_market_telemetry(key=f"DAILY_C1_{J.market_id}",min_interval_sec=60.,now_ts=_h,sig=(W,U),payload={"type":"DAILY_COMPLETE_SET","asset":J.asset,"market_id":J.market_id,"title":J.title,"fee_rate":_g,"tte_sec":round(J.end_ts-_h,0),"up_ask":W,"down_ask":U,"gross_sum_l1":round(W+U,4),"net_sum_l1":round(W+U+_g*(W*(1.-W)+U*(1.-U)),4),"l1_min_shares":round(min(V,T),2)})
+    z=.995 if J.fee_rate==.0 else.994;y=scan_binary_complete_set_arb(market_id=J.market_id,condition_id=J.condition_id,yes_token=J.up_token,no_token=J.down_token,asks_yes_raw=Y.get("asks")or[],asks_no_raw=X.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["C1_BINARY_COMPLETE_SET"],fee_rate=J.fee_rate,max_box_cost_net=z)
+    if y.get("filled"):
+     opps_out.append({"sleeve":"C1_BINARY_COMPLETE_SET","market":f"{J.asset} Complete-Set {J.title}","ask_vwap":y["box_cost_net"],"p_model":1.,"net_edge":y["riskless_floor_per_pair"],"l1_usd":y["l1_usd"],"close_ts":J.end_ts});I={"token_id":J.up_token,"opp_token_id":J.down_token,"condition_id":J.condition_id,"side":"UP","label":"UP","market_id":J.market_id,"fee_rate":J.fee_rate,"strike":1e2};H={"token_id":J.down_token,"opp_token_id":J.up_token,"condition_id":J.condition_id,"side":"DOWN","label":"DOWN","market_id":J.market_id,"fee_rate":J.fee_rate,"strike":1e2};await a.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key=f"C1_D_{J.market_id}",asset=J.asset,title=f"{J.asset} UP+DOWN Complete Set: {J.title}",leg_a=I,leg_b=H,bk_a=Y,bk_b=X,close_ts=J.end_ts,max_box_cost_net=z,extra={"is_complete_set":True,"market_id":J.market_id,"condition_id":J.condition_id})
+     if(J.end_ts-_h)<=86400. and float(y["box_cost_net"])<=(.99 if J.fee_rate==.0 else.988):a.emit_live_two_leg_box_candidate(sleeve_source="C1_BINARY_COMPLETE_SET",box_type="COMPLETE_SET",asset=J.asset,dedupe_key=f"C1_D_{J.market_id}",leg_a=I,leg_b=H,bk_a=Y,bk_b=X,close_ts=float(J.end_ts),now_ts=_h)
+    await a.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_D_{J.market_id}",asset=J.asset,title=f"{J.asset} Binary Overround Mint-Sell: {J.title}",legs_bids_spec=[{"bids":Y.get("bids")or[],"fee_rate":J.fee_rate,"fee_exponent":1.},{"bids":X.get("bids")or[],"fee_rate":J.fee_rate,"fee_exponent":1.}],close_ts=J.end_ts,min_net_proceeds_per_set=1.003 if J.fee_rate==.0 else 1.004,opps_out=opps_out,extra={"overround_kind":"BINARY_DAILY","market_id":J.market_id,"condition_id":J.condition_id})
+  for _,S in list(a.hourly_12pm_markets.items()):
+   G=S.end_ts-_h
+   if not(60.<=G<=3540.)or _h<S.start_ts+20.:continue
+   x=f"H1_{S.asset}_{int(S.start_ts)}";R=a.daily_open_cache.get(x)
+   if R is None:
+    w=await Z.run_in_executor(None,fetch_binance_window_extremes_sync,S.asset,S.start_ts-60.,S.start_ts+60.,"1m")
+    if w is not None and w[2]>0:a.daily_open_cache[x]=(S.end_ts,float(w[2]));n=float(w[2])
     else:continue
-   else:m=Q[1]
-   f=[]
-   for P in a.daily_updown_markets.values():
-    if P.asset==R.asset and abs(P.end_ts-R.end_ts)<=5.:
-     u=f"{P.asset}_{int(P.start_ts)}";O=a.daily_open_cache.get(u)
-     if O is None:
-      t=await Y.run_in_executor(None,fetch_binance_window_extremes_sync,P.asset,P.start_ts-60.,P.start_ts+60.,"1m")
-      if t is not None and t[2]>0:a.daily_open_cache[u]=(P.end_ts,float(t[2]));h=float(t[2])
-      else:h=.0
-     else:h=O[1]
-     if h>0:f.append({"market_id":P.market_id,"condition_id":P.condition_id,"end_ts":P.end_ts,"strike":h,"is_downward":False,"yes_token":P.up_token,"no_token":P.down_token,"yes_label":"UP","no_label":"DOWN","fee_rate":P.fee_rate})
-   for l in a.strike_ladders.values():
-    if l and l[0].asset==R.asset and abs(l[0].end_ts-R.end_ts)<=5.:
-     for E in l:
-      if not E.is_downward:f.append({"market_id":E.market_id,"condition_id":E.condition_id,"end_ts":E.end_ts,"strike":E.strike,"is_downward":False,"yes_token":E.yes_token,"no_token":E.no_token,"yes_label":"YES","no_label":"NO","fee_rate":CRYPTO_FEE_RATE})
-   k=detect_d2_12pm_binance_boxes({"asset":R.asset,"market_id":R.market_id,"condition_id":R.condition_id,"end_ts":R.end_ts,"up_token":R.up_token,"down_token":R.down_token,"fee_rate":R.fee_rate},m,f)
-   if k:
-    o=sorted({str(c["leg_a"]["token_id"])for c in k}|{str(c["leg_b"]["token_id"])for c in k});s=await a.fetch_books_batch(o,timeout=3.)
-    for dc in k:
-     _e,_d=dc["leg_a"],dc["leg_b"];N,M=s.get(str(_e["token_id"])),s.get(str(_d["token_id"]))
-     if not N or not M:continue
-     _c,_=a._best_ask_sz(N);_b,_=a._best_ask_sz(M)
-     if _c<1. and _b<1.:a._record_market_telemetry(key=f"D2_12PM_{_e['market_id']}_{_d['market_id']}",min_interval_sec=30.,now_ts=_g,sig=(_c,_b),payload={"type":"D2_12PM_CORRIDOR","asset":R.asset,"tte_sec":round(F,0),"k_low":dc["k_low"],"k_high":dc["k_high"],"corridor_bps":dc["corridor_bps"],"gross_box_l1":round(_c+_b,4),"label":dc["label"]})
-     L=walk_equal_shares_dominance_box(N.get("asks")or[],M.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D2_12PM_BINANCE_BOX"],fee_rate_a=float(_e["fee_rate"]),fee_rate_b=float(_d["fee_rate"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
-     if L.get("filled"):opps_out.append({"sleeve":"D2_12PM_BINANCE_BOX","market":f"{R.asset} 12PM Box {dc['label']}","ask_vwap":round(float(L["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(L["box_cost_net"]),4),"l1_usd":L["l1_usd"],"close_ts":dc["close_ts"]});await a.open_shadow_two_leg_box(sleeve="D2_12PM_BINANCE_BOX",dedupe_key=f"D2_{_e['market_id']}_{_d['market_id']}",asset=R.asset,title=f"{R.asset} 12PM Binance Box {dc['label']}",leg_a=_e,leg_b=_d,bk_a=N,bk_b=M,close_ts=float(dc["close_ts"]),max_box_cost_net=.99,extra={"is_d2_12pm_box":True,"k_low":dc["k_low"],"k_high":dc["k_high"],"corridor_bps":dc["corridor_bps"]})
+   else:n=R[1]
+   g=[]
+   for Q in a.daily_updown_markets.values():
+    if Q.asset==S.asset and abs(Q.end_ts-S.end_ts)<=5.:
+     v=f"{Q.asset}_{int(Q.start_ts)}";P=a.daily_open_cache.get(v)
+     if P is None:
+      u=await Z.run_in_executor(None,fetch_binance_window_extremes_sync,Q.asset,Q.start_ts-60.,Q.start_ts+60.,"1m")
+      if u is not None and u[2]>0:a.daily_open_cache[v]=(Q.end_ts,float(u[2]));i=float(u[2])
+      else:i=.0
+     else:i=P[1]
+     if i>0:g.append({"market_id":Q.market_id,"condition_id":Q.condition_id,"end_ts":Q.end_ts,"strike":i,"is_downward":False,"yes_token":Q.up_token,"no_token":Q.down_token,"yes_label":"UP","no_label":"DOWN","fee_rate":Q.fee_rate})
+   for m in a.strike_ladders.values():
+    if m and m[0].asset==S.asset and abs(m[0].end_ts-S.end_ts)<=5.:
+     for F in m:
+      if not F.is_downward:g.append({"market_id":F.market_id,"condition_id":F.condition_id,"end_ts":F.end_ts,"strike":F.strike,"is_downward":False,"yes_token":F.yes_token,"no_token":F.no_token,"yes_label":"YES","no_label":"NO","fee_rate":CRYPTO_FEE_RATE})
+   l=detect_d2_12pm_binance_boxes({"asset":S.asset,"market_id":S.market_id,"condition_id":S.condition_id,"end_ts":S.end_ts,"up_token":S.up_token,"down_token":S.down_token,"fee_rate":S.fee_rate},n,g)
+   if l:
+    p=sorted({str(c["leg_a"]["token_id"])for c in l}|{str(c["leg_b"]["token_id"])for c in l});t=await a.fetch_books_batch(p,timeout=3.)
+    for dc in l:
+     _f,_e=dc["leg_a"],dc["leg_b"];O,N=t.get(str(_f["token_id"])),t.get(str(_e["token_id"]))
+     if not O or not N:continue
+     _d,_=a._best_ask_sz(O);_c,_=a._best_ask_sz(N)
+     if _d<1. and _c<1.:a._record_market_telemetry(key=f"D2_12PM_{_f['market_id']}_{_e['market_id']}",min_interval_sec=30.,now_ts=_h,sig=(_d,_c),payload={"type":"D2_12PM_CORRIDOR","asset":S.asset,"tte_sec":round(G,0),"k_low":dc["k_low"],"k_high":dc["k_high"],"corridor_bps":dc["corridor_bps"],"gross_box_l1":round(_d+_c,4),"label":dc["label"]})
+     M=walk_equal_shares_dominance_box(O.get("asks")or[],N.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D2_12PM_BINANCE_BOX"],fee_rate_a=float(_f["fee_rate"]),fee_rate_b=float(_e["fee_rate"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
+     if M.get("filled"):opps_out.append({"sleeve":"D2_12PM_BINANCE_BOX","market":f"{S.asset} 12PM Box {dc['label']}","ask_vwap":round(float(M["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(M["box_cost_net"]),4),"l1_usd":M["l1_usd"],"close_ts":dc["close_ts"]});await a.open_shadow_two_leg_box(sleeve="D2_12PM_BINANCE_BOX",dedupe_key=f"D2_{_f['market_id']}_{_e['market_id']}",asset=S.asset,title=f"{S.asset} 12PM Binance Box {dc['label']}",leg_a=_f,leg_b=_e,bk_a=O,bk_b=N,close_ts=float(dc["close_ts"]),max_box_cost_net=.99,extra={"is_d2_12pm_box":True,"k_low":dc["k_low"],"k_high":dc["k_high"],"corridor_bps":dc["corridor_bps"]})
   for _,sp in list(a.daily_updown_markets.items()):
-   _a=sp.end_ts-_g
-   if not(120.<=_a<=5400.):continue
-   K=a.spots.get(sp.asset,.0)
-   if K<=.0:continue
-   D=f"{sp.asset}_{int(sp.start_ts)}";j=a.daily_open_cache.get(D)
-   if j is None:
-    C=await Y.run_in_executor(None,fetch_binance_window_extremes_sync,sp.asset,sp.start_ts-60.,sp.start_ts+60.,"1m")
-    if C is not None and C[2]>0:a.daily_open_cache[D]=(sp.end_ts,float(C[2]));d=float(C[2])
+   _b=sp.end_ts-_h
+   if not(120.<=_b<=5400.):continue
+   L=a.spots.get(sp.asset,.0)
+   if L<=.0:continue
+   E=f"{sp.asset}_{int(sp.start_ts)}";k=a.daily_open_cache.get(E)
+   if k is None:
+    D=await Z.run_in_executor(None,fetch_binance_window_extremes_sync,sp.asset,sp.start_ts-60.,sp.start_ts+60.,"1m")
+    if D is not None and D[2]>0:a.daily_open_cache[E]=(sp.end_ts,float(D[2]));d=float(D[2])
     else:continue
-   else:d=j[1]
-   r=evaluate_svi_digital_fair_value(sp.asset,K,d,_a,is_downward=False,now_ts=_g);i="UP"if K>d else"DOWN";q=float(r["p_yes"]if i=="UP"else r["p_no"]);B=abs(float(r.get("z_sigma")or.0))
-   if B<1.8 or q<.93:continue
-   n=a.get_return_bps(sp.asset,60.)
-   if(i=="UP"and n<-10.)or(i=="DOWN"and n>10.):continue
-   Z=sp.up_token if i=="UP"else sp.down_token;bk=await a.fetch_json(f"{CLOB_URL}/book?token_id={Z}",timeout=3.)
+   else:d=k[1]
+   s=evaluate_svi_digital_fair_value(sp.asset,L,d,_b,is_downward=False,now_ts=_h);j="UP"if L>d else"DOWN";r=float(s["p_yes"]if j=="UP"else s["p_no"]);C=abs(float(s.get("z_sigma")or.0))
+   if C<1.8 or r<.93:continue
+   o=a.get_return_bps(sp.asset,60.)
+   if(j=="UP"and o<-10.)or(j=="DOWN"and o>10.):continue
+   _a=sp.up_token if j=="UP"else sp.down_token;bk=await a.fetch_json(f"{CLOB_URL}/book?token_id={_a}",timeout=3.)
    if not bk:continue
-   A=walk_l2_book_asks(bk.get("asks")or[],BANKROLL_TICKETS["T1000"]["U1_DAILY_UPDOWN_LOCK"],fee_rate=sp.fee_rate)
-   if not A.get("filled"):continue
-   p=float(A["eff_px"]);J=q-p
-   if.66<=A["vwap"]<=.9 and J>=.025:opps_out.append({"sleeve":"U1_DAILY_UPDOWN_LOCK","market":f"{sp.asset} {sp.title} ({i}, TTE={_a/60:.0f}m, z={B:.2f})","ask_vwap":p,"p_model":round(q,4),"net_edge":round(J,4),"l1_usd":A["l1_usd"],"close_ts":sp.end_ts})
-   if.66<=A["vwap"]<=.9 and J>=.042:
-    e=sp.down_token if i=="UP"else sp.up_token
-    if B>=2.2 and q>=.965:g=await a.fetch_json(f"{CLOB_URL}/book?token_id={e}",timeout=2.5);a.emit_live_single_leg_lock_candidate(sleeve_source="U1_DAILY_UPDOWN_LOCK",asset=sp.asset,dedupe_key=f"U1_{sp.market_id}_{i}",token_id=Z,opp_token_id=e,market_id=sp.market_id,condition_id=sp.condition_id,side_label=i,display_label=f"{sp.asset} Daily {i}",bk_win=bk,bk_opp=g if isinstance(g,dict)else None,fee_rate=sp.fee_rate,fee_exponent=1.,neg_risk=False,close_ts=sp.end_ts,now_ts=_g,max_lock_eff_px=.9,max_opp_bid=.36,hold_to_maturity=False,p_model=float(q))
-    await a.open_shadow_position(sleeve="U1_DAILY_UPDOWN_LOCK",dedupe_key=f"U1_{sp.market_id}_{i}",asset_or_city=sp.asset,title=sp.title,side_label=i,token_id=Z,fee_rate=sp.fee_rate,p_model=q,close_ts=sp.end_ts,extra={"market_id":sp.market_id,"condition_id":sp.condition_id,"strike":d,"is_downward":(i=="DOWN"),"z_sigma":B},tp_target_px=.98,prefetched_book=bk)
+   B=walk_l2_book_asks(bk.get("asks")or[],BANKROLL_TICKETS["T1000"]["U1_DAILY_UPDOWN_LOCK"],fee_rate=sp.fee_rate)
+   if not B.get("filled"):continue
+   q=float(B["eff_px"]);K=r-q
+   if.66<=B["vwap"]<=.9 and K>=.025:opps_out.append({"sleeve":"U1_DAILY_UPDOWN_LOCK","market":f"{sp.asset} {sp.title} ({j}, TTE={_b/60:.0f}m, z={C:.2f})","ask_vwap":q,"p_model":round(r,4),"net_edge":round(K,4),"l1_usd":B["l1_usd"],"close_ts":sp.end_ts})
+   if.66<=B["vwap"]<=.9 and K>=.042:
+    f=sp.down_token if j=="UP"else sp.up_token;e=bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("directional",{}).get("riskless_only_mode",False))
+    if C>=2.2 and r>=(.999 if e else.965):h=await a.fetch_json(f"{CLOB_URL}/book?token_id={f}",timeout=2.5);a.emit_live_single_leg_lock_candidate(sleeve_source="U1_DAILY_UPDOWN_LOCK",asset=sp.asset,dedupe_key=f"U1_{sp.market_id}_{j}",token_id=_a,opp_token_id=f,market_id=sp.market_id,condition_id=sp.condition_id,side_label=j,display_label=f"{sp.asset} Daily {j}",bk_win=bk,bk_opp=h if isinstance(h,dict)else None,fee_rate=sp.fee_rate,fee_exponent=1.,neg_risk=False,close_ts=sp.end_ts,now_ts=_h,max_lock_eff_px=.9,max_opp_bid=.36,hold_to_maturity=False,p_model=float(r))
+    await a.open_shadow_position(sleeve="U1_DAILY_UPDOWN_LOCK",dedupe_key=f"U1_{sp.market_id}_{j}",asset_or_city=sp.asset,title=sp.title,side_label=j,token_id=_a,fee_rate=sp.fee_rate,p_model=r,close_ts=sp.end_ts,extra={"market_id":sp.market_id,"condition_id":sp.condition_id,"strike":d,"is_downward":(j=="DOWN"),"z_sigma":C},tp_target_px=.98,prefetched_book=bk)
  @staticmethod
- def is_in_same_oracle_overlap_window(now_ts):a=math.ceil(now_ts/9e2)*9e2;b=a-now_ts;d=math.ceil(now_ts/3600.)*3600.-now_ts;c=math.ceil(now_ts/14400.)*14400.-now_ts;return(8.<=b<=305.)or(8.<=d<=905.)or(8.<=c<=905.)
+ def is_in_same_oracle_overlap_window(now_ts):from src.polymarket_research.riskless_protocol_v2_expansion import compute_min_4h_boundary_rem_sec as a;b=math.ceil(now_ts/9e2)*9e2;c=b-now_ts;e=math.ceil(now_ts/3600.)*3600.-now_ts;d=a(now_ts);return(8.<=c<=305.)or(8.<=e<=905.)or(8.<=d<=905.)
  async def discover_dominance_pairs(b,now_ts=None):
   s=float(now_ts if now_ts is not None else time.time())
   for r,(n,_)in list(b.dominance_pairs.items()):
@@ -6053,31 +6352,46 @@ class Alpha124ShadowDaemon:
   if not(5.<=l<=j)and not(e and not g):return
   k=datetime.fromtimestamp(s-5.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
   async def d(asset):
-   d=f"{asset}_{i}"
-   if d in b.dominance_pairs:return
-   f=DOMINANCE_SERIES_SLUGS[asset];c,e=await asyncio.gather(b.fetch_json(f"{GAMMA_URL}/events?series_slug={f['15m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.),b.fetch_json(f"{GAMMA_URL}/events?series_slug={f['5m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.));a=None;b=None
-   if isinstance(c,list):
-    for g in c:
-     h=parse_twap_candle_event(g,asset,"15m")
-     if h and abs(h.end_ts-i)<=2.:a=h;break
-   if isinstance(e,list):
-    for g in e:
-     i=parse_twap_candle_event(g,asset,"5m")
-     if i and abs(i.end_ts-i)<=2.:b=i;break
-   if a and b and verify_same_oracle_pair(a,b):b.dominance_pairs[d]=(a,b)
+   v=f"{asset}_{i}"
+   if v in b.dominance_pairs:return
+   B=DOMINANCE_SERIES_SLUGS[asset];u,x=await asyncio.gather(b.fetch_json(f"{GAMMA_URL}/events?series_slug={B['15m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.),b.fetch_json(f"{GAMMA_URL}/events?series_slug={B['5m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.));a=None;m=None
+   if isinstance(u,list):
+    for D in u:
+     E=parse_twap_candle_event(D,asset,"15m")
+     if E and abs(E.end_ts-i)<=2.:a=E;break
+   if isinstance(x,list):
+    for D in x:
+     F=parse_twap_candle_event(D,asset,"5m")
+     if F and abs(F.end_ts-i)<=2.:m=F;break
+   if(a is None or m is None)and not g:
+    if a is None:
+     A=build_deterministic_updown_event_slug(asset,"15m",i)
+     if A:
+      t=await b.fetch_json(f"{GAMMA_URL}/events?slug={A}",timeout=3.5)
+      if isinstance(t,list)and t:
+       y=parse_twap_candle_event(t[0],asset,"15m")
+       if y and abs(y.end_ts-i)<=2.:a=y
+    if m is None:
+     C=build_deterministic_updown_event_slug(asset,"5m",i)
+     if C:
+      w=await b.fetch_json(f"{GAMMA_URL}/events?slug={C}",timeout=3.5)
+      if isinstance(w,list)and w:
+       z=parse_twap_candle_event(w[0],asset,"5m")
+       if z and abs(z.end_ts-i)<=2.:m=z
+   if a and m and verify_same_oracle_pair(a,m):b.dominance_pairs[v]=(a,m)
   async def c(metal):
-   e=f"{metal}_1h15m_{i}"
-   if e in b.dominance_pairs:return
-   f=METAL_DOMINANCE_SERIES_SLUGS[metal];d,c=await asyncio.gather(b.fetch_json(f"{GAMMA_URL}/events?series_slug={f['1h']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.),b.fetch_json(f"{GAMMA_URL}/events?series_slug={f['15m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.));b=None;a=None
-   if isinstance(d,list):
-    for h in d:
-     i=parse_metal_forex_candle_event(h,metal,"1h")
-     if i and abs(i.end_ts-i)<=2.:b=i;break
-   if isinstance(c,list):
-    for h in c:
-     g=parse_metal_forex_candle_event(h,metal,"15m")
-     if g and abs(g.end_ts-i)<=2.:a=g;break
-   if b and a and verify_same_oracle_pair(b,a):b.dominance_pairs[e]=(b,a)
+   v=f"{metal}_1h15m_{i}"
+   if v in b.dominance_pairs:return
+   w=METAL_DOMINANCE_SERIES_SLUGS[metal];u,t=await asyncio.gather(b.fetch_json(f"{GAMMA_URL}/events?series_slug={w['1h']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.),b.fetch_json(f"{GAMMA_URL}/events?series_slug={w['15m']}&closed=false&end_date_min={k}&order=endDate&ascending=true&limit=3",timeout=4.));m=None;a=None
+   if isinstance(u,list):
+    for y in u:
+     z=parse_metal_forex_candle_event(y,metal,"1h")
+     if z and abs(z.end_ts-i)<=2.:m=z;break
+   if isinstance(t,list):
+    for y in t:
+     x=parse_metal_forex_candle_event(y,metal,"15m")
+     if x and abs(x.end_ts-i)<=2.:a=x;break
+   if m and a and verify_same_oracle_pair(m,a):b.dominance_pairs[v]=(m,a)
   p=[]
   if 5.<=l<=j:p.extend(d(a)for a in DOMINANCE_ASSETS)
   if e and(not g or os.getenv("PM_FORCE_METAL_D1_TEST")=="1"):p.extend(c(m)for m in METAL_DOMINANCE_ASSETS)
@@ -6133,19 +6447,20 @@ class Alpha124ShadowDaemon:
    a.chainlink_open_cache[A]=(spec.end_ts,j);r[A]=(spec.end_ts,"REST_VERIFIED")
   return j
  async def _passes_complement_anti_box_check(a,leg_a,leg_b,prefetched_books=None):
-  v=str(leg_a.get("opp_token_id")or"");u=str(leg_b.get("opp_token_id")or"")
-  if not v or not u:return False
-  e=(prefetched_books or{}).get(v);d=(prefetched_books or{}).get(u)
-  if not(isinstance(e,dict)and isinstance(d,dict)):e,d=await asyncio.gather(a.fetch_json(f"{CLOB_URL}/book?token_id={v}",timeout=3.),a.fetch_json(f"{CLOB_URL}/book?token_id={u}",timeout=3.))
-  if not(isinstance(e,dict)and isinstance(d,dict)):return False
-  o,_=extract_best_bid(e.get("bids")or[]);n,_=extract_best_bid(d.get("bids")or[]);m,_=a._best_ask_sz(e);l,_=a._best_ask_sz(d);t=o>.0 or(.0<m<=.12);s=n>.0 or(.0<l<=.12);c=(o if o>.0 else m)+(n if n>.0 else l);g=str(leg_a.get("token_id")or"");f=str(leg_b.get("token_id")or"");r=(prefetched_books or{}).get(g)if g else None;q=(prefetched_books or{}).get(f)if f else None
-  if isinstance(r,dict)and isinstance(q,dict):k,_=a._best_ask_sz(r);j,_=a._best_ask_sz(q);b=((k>.0 and o>.0 and(k+o)>1.015)or(j>.0 and n>.0 and(j+n)>1.015)or(o+n)>1.16 or c>1.18)
-  else:b=(o+n)>1. or c>1.035
-  if not(t and s)or(o<=.0 and n<=.0)or b:
-   i=a.__dict__.setdefault("_anti_box_warn_ts",{});p=f"{v}:{u}";h=time.time()
-   if(h-float(i.get(p,.0)))>=30.:
-    if len(i)>512:i.clear()
-    i[p]=h;logger.warning(f"[ANTI-BOX VETO] Rejected box {leg_a.get('label')}+{leg_b.get('label')}: complement bids={o:.3f}+{n:.3f}={o+n:.3f} (ub={c:.3f}, unverified or > 1.00)")
+  C=str(leg_a.get("opp_token_id")or"");B=str(leg_b.get("opp_token_id")or"")
+  if not C or not B:return False
+  h=(prefetched_books or{}).get(C);g=(prefetched_books or{}).get(B)
+  if not(isinstance(h,dict)and isinstance(g,dict)):h,g=await asyncio.gather(a.fetch_json(f"{CLOB_URL}/book?token_id={C}",timeout=3.),a.fetch_json(f"{CLOB_URL}/book?token_id={B}",timeout=3.))
+  if not(isinstance(h,dict)and isinstance(g,dict)):return False
+  t,_=extract_best_bid(h.get("bids")or[]);s,_=extract_best_bid(g.get("bids")or[]);r,_=a._best_ask_sz(h);q,_=a._best_ask_sz(g);j=str(leg_a.get("token_id")or"");i=str(leg_b.get("token_id")or"");A=(prefetched_books or{}).get(j)if j else None;z=(prefetched_books or{}).get(i)if i else None;p,_=extract_best_bid(A.get("bids")or[])if isinstance(A,dict)else(.0,.0);o,_=extract_best_bid(z.get("bids")or[])if isinstance(z,dict)else(.0,.0);n,_=a._best_ask_sz(A)if isinstance(A,dict)else(.0,.0);m,_=a._best_ask_sz(z)if isinstance(z,dict)else(.0,.0);e=isinstance(A,dict)and p>=.88 and(.0<n<=.999);d=isinstance(z,dict)and o>=.88 and(.0<m<=.999);y=t>.0 or(.0<r<=.12)or e;x=s>.0 or(.0<q<=.12)or d;w=(t if t>.0 else(min(r,round(1.-p,4))if(e and r>.0)else(round(1.-p,4)if e else r)));v=(s if s>.0 else(min(q,round(1.-o,4))if(d and q>.0)else(round(1.-o,4)if d else q)));f=w+v
+  if isinstance(A,dict)and isinstance(z,dict):c=((n>.0 and t>.0 and(n+t)>1.015)or(m>.0 and s>.0 and(m+s)>1.015)or(t+s)>1.16 or f>1.18)
+  else:c=(t+s)>1. or f>1.035
+  b=(t<=.0 and s<=.0)and not(e or d)
+  if not(y and x)or b or c:
+   l=a.__dict__.setdefault("_anti_box_warn_ts",{});u=f"{C}:{B}";k=time.time()
+   if(k-float(l.get(u,.0)))>=30.:
+    if len(l)>512:l.clear()
+    l[u]=k;logger.warning(f"[ANTI-BOX VETO] Rejected box {leg_a.get('label')}+{leg_b.get('label')}: complement bids={t:.3f}+{s:.3f}={t+s:.3f} (ub={f:.3f}, unverified or > 1.00)")
    return False
   return True
  async def open_shadow_two_leg_box(a,sleeve,dedupe_key,asset,title,leg_a,leg_b,bk_a,bk_b,close_ts,max_box_cost_net,extra):
@@ -6178,89 +6493,119 @@ class Alpha124ShadowDaemon:
    a._append_ledger({"event":"SHADOW_ENTRY",**n});logger.info(f"[ENTRY:W3_WEATHER_SLATE_ARB] {n['title']} @ sum_asks=${g:.4f} (payout=${h:.2f})");return True
   finally:a._release_inflight_keys(p)
  async def open_shadow_dominance_box(a,asset,m15,m5,dom_info,prefetched_books=None,sleeve_override="D1_SAME_ORACLE_DOMINANCE_BOX",max_box_cost_override=.995):
-  o="D1"if sleeve_override=="D1_SAME_ORACLE_DOMINANCE_BOX"else sleeve_override.split("_")[0]+"_"+sleeve_override.split("_")[1];f=f"{o}_{asset}_{m15.market_id}_{m5.market_id}";A=a._try_acquire_keys(f)
-  if not A:return False
+  v="D1"if sleeve_override=="D1_SAME_ORACLE_DOMINANCE_BOX"else sleeve_override.split("_")[0]+"_"+sleeve_override.split("_")[1];k=f"{v}_{asset}_{m15.market_id}_{m5.market_id}";F=a._try_acquire_keys(k)
+  if not F:return False
   try:
-   w=dom_info["leg_a"];v=dom_info["leg_b"]
-   if prefetched_books is not None:j,i=prefetched_books
-   else:await asyncio.sleep(.05);j,i=await asyncio.gather(a.fetch_json(f"{CLOB_URL}/book?token_id={w['token_id']}",timeout=3.),a.fetch_json(f"{CLOB_URL}/book?token_id={v['token_id']}",timeout=3.))
-   if not j or not i:return False
-   n=j.get("asks")or[];m=i.get("asks")or[];u,_=extract_best_bid(j.get("bids")or[]);t,_=extract_best_bid(i.get("bids")or[]);c=a._strike_is_rest_verified(m15)and a._strike_is_rest_verified(m5);s=walk_equal_shares_dominance_box(n,m,target_budget_usd=BANKROLL_TICKETS["T1000"][sleeve_override],fee_rate_a=float(w["fee_rate"]),fee_rate_b=float(v["fee_rate"]),fee_exponent_a=float(w["fee_exponent"]),fee_exponent_b=float(v["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if c else.9)
-   if not s.get("filled"):return False
-   d=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());h=compute_d1_legging_drag_haircut(shares=float(s["shares"]),box_cost_net=float(s["box_cost_net"]),avail_a_shares=float(s["avail_a_shares"]),avail_b_shares=float(s["avail_b_shares"]),px_a=float(s["leg_a_walk"]["worst_px"]),px_b=float(s["leg_b_walk"]["worst_px"]),fee_rate_a=float(w["fee_rate"]),fee_rate_b=float(v["fee_rate"]),is_4h_mixed=d)
-   if h["legging_adjusted_net_ev_per_pair"]<=.0:logger.info(f"[SHADOW LEGGING PARITY REJECT] {asset} {sleeve_override}: box_net=${s['box_cost_net']:.4f} depth_mult={h['min_depth_mult']:.2f}x drag={h['legging_drag_per_pair']:.4f}/pair -> adj_ev={h['legging_adjusted_net_ev_per_pair']:+.4f}/pair <= 0");return False
-   e={};b={}
-   for g,r in BANKROLL_TICKETS.items():
-    z=walk_equal_shares_dominance_box(n,m,target_budget_usd=r[sleeve_override],fee_rate_a=float(w["fee_rate"]),fee_rate_b=float(v["fee_rate"]),fee_exponent_a=float(w["fee_exponent"]),fee_exponent_b=float(v["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5)
-    if z.get("filled"):e[g]=z;k=compute_d1_legging_drag_haircut(shares=float(z["shares"]),box_cost_net=float(z["box_cost_net"]),avail_a_shares=float(z["avail_a_shares"]),avail_b_shares=float(z["avail_b_shares"]),px_a=float(z["leg_a_walk"]["worst_px"]),px_b=float(z["leg_b_walk"]["worst_px"]),fee_rate_a=float(w["fee_rate"]),fee_rate_b=float(v["fee_rate"]),is_4h_mixed=d);b[g]=float(k["legging_drag_usd"])
-   if"T1000"not in e:return False
-   y=time.time();l=f"{sleeve_override}_{int(y)}_{m5.market_id[-6:]}";q=f"{asset} {dom_info['regime']} [{dom_info['k_low']:.4f} .. {dom_info['k_high']:.4f}]";x={"position_id":l,"dedupe_key":f,"sleeve":sleeve_override,"asset_or_city":asset,"title":q,"side":f"{w['label']}+{v['label']}","token_id":f"{w['token_id']}|{v['token_id']}","fee_rate":float(w["fee_rate"]),"entry_ts":y,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":m5.end_ts,"p_model_entry":1.,"entry_eff_px_t1000":s["eff_px"],"entry_vwap_t1000":s["vwap"],"realized_edge_t1000":s["riskless_floor_per_pair"],"legging_adjusted_edge_t1000":h["legging_adjusted_net_ev_per_pair"],"entry_best_bid":round(u+t,4),"last_bid":round(u+t,4),"maker_tp_px":None,"tier_fills":e,"extra":{"is_dominance_box":True,"regime":dom_info["regime"],"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"m15_horizon":m15.horizon,"m15_market_id":m15.market_id,"m15_start_iso":m15.start_iso,"m15_end_iso":m15.end_iso,"m5_horizon":m5.horizon,"m5_market_id":m5.market_id,"leg_a":w,"leg_b":v,"legging_drag_ref":h,"legging_drag_usd_by_tier":b},"status":"OPEN"};a.open_positions[l]=x
-   for p in A:a.entered_keys.add(p)
-   a._append_ledger({"event":"SHADOW_ENTRY",**x});logger.info(f"[ENTRY:{sleeve_override}] {q} | {s['shares']} pairs @ net=${s['eff_px']:.4f} (floor=${s['riskless_floor_per_pair']:+.4f}/pair, min_profit=${s['guaranteed_min_profit_usd']:+.2f})");return True
-  finally:a._release_inflight_keys(A)
- def _d1_live_max_box_cost(self):
+   C=dom_info["leg_a"];B=dom_info["leg_b"]
+   if prefetched_books is not None:o,n=prefetched_books
+   else:await asyncio.sleep(.05);o,n=await asyncio.gather(a.fetch_json(f"{CLOB_URL}/book?token_id={C['token_id']}",timeout=3.),a.fetch_json(f"{CLOB_URL}/book?token_id={B['token_id']}",timeout=3.))
+   if not o or not n:return False
+   u=o.get("asks")or[];t=n.get("asks")or[];A,_=extract_best_bid(o.get("bids")or[]);z,_=extract_best_bid(n.get("bids")or[]);c=a._strike_is_rest_verified(m15)and a._strike_is_rest_verified(m5);g=.86 if c else.9;f=walk_equal_shares_dominance_box(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"][sleeve_override],fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),fee_exponent_a=float(C["fee_exponent"]),fee_exponent_b=float(B["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=g)
+   if not f.get("filled")and sleeve_override=="D1_4H_DOMINANCE_BOX":f=walk_equal_shares_dominance_box(u,t,target_budget_usd=BANKROLL_TICKETS["T100"][sleeve_override],fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),fee_exponent_a=float(C["fee_exponent"]),fee_exponent_b=float(B["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=g)
+   if not f.get("filled"):return False
+   h=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());d=compute_d1_legging_drag_haircut(shares=float(f["shares"]),box_cost_net=float(f["box_cost_net"]),avail_a_shares=float(f["avail_a_shares"]),avail_b_shares=float(f["avail_b_shares"]),px_a=float(f["leg_a_walk"]["worst_px"]),px_b=float(f["leg_b_walk"]["worst_px"]),fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),is_4h_mixed=h)
+   if d["legging_adjusted_net_ev_per_pair"]<=.0 and sleeve_override=="D1_4H_DOMINANCE_BOX":
+    j=min(float(f["avail_a_shares"]),float(f["avail_b_shares"]));e=min(float(BANKROLL_TICKETS["T100"][sleeve_override]),max(8.,math.floor(j/2.3)*float(f["box_cost_net"])));s=walk_equal_shares_dominance_box(u,t,target_budget_usd=e,fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),fee_exponent_a=float(C["fee_exponent"]),fee_exponent_b=float(B["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=g)
+    if s.get("filled"):
+     m=compute_d1_legging_drag_haircut(shares=float(s["shares"]),box_cost_net=float(s["box_cost_net"]),avail_a_shares=float(s["avail_a_shares"]),avail_b_shares=float(s["avail_b_shares"]),px_a=float(s["leg_a_walk"]["worst_px"]),px_b=float(s["leg_b_walk"]["worst_px"]),fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),is_4h_mixed=h)
+     if m["legging_adjusted_net_ev_per_pair"]>.0:f=s;d=m
+   if d["legging_adjusted_net_ev_per_pair"]<=.0:logger.info(f"[SHADOW LEGGING PARITY REJECT] {asset} {sleeve_override}: box_net=${f['box_cost_net']:.4f} depth_mult={d['min_depth_mult']:.2f}x drag={d['legging_drag_per_pair']:.4f}/pair -> adj_ev={d['legging_adjusted_net_ev_per_pair']:+.4f}/pair <= 0");return False
+   i={};b={}
+   for l,y in BANKROLL_TICKETS.items():
+    r=walk_equal_shares_dominance_box(u,t,target_budget_usd=y[sleeve_override],fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),fee_exponent_a=float(C["fee_exponent"]),fee_exponent_b=float(B["fee_exponent"]),max_box_cost_net=max_box_cost_override,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=g)
+    if sleeve_override=="D1_4H_DOMINANCE_BOX"and(not r.get("filled")or float(r.get("shares")or.0)>float(f.get("shares")or.0)):r=dict(f)
+    if r.get("filled"):i[l]=r;p=compute_d1_legging_drag_haircut(shares=float(r["shares"]),box_cost_net=float(r["box_cost_net"]),avail_a_shares=float(r["avail_a_shares"]),avail_b_shares=float(r["avail_b_shares"]),px_a=float(r["leg_a_walk"]["worst_px"]),px_b=float(r["leg_b_walk"]["worst_px"]),fee_rate_a=float(C["fee_rate"]),fee_rate_b=float(B["fee_rate"]),is_4h_mixed=h);b[l]=float(p["legging_drag_usd"])
+   if"T1000"not in i:return False
+   E=time.time();q=f"{sleeve_override}_{int(E)}_{m5.market_id[-6:]}";x=f"{asset} {dom_info['regime']} [{dom_info['k_low']:.4f} .. {dom_info['k_high']:.4f}]";D={"position_id":q,"dedupe_key":k,"sleeve":sleeve_override,"asset_or_city":asset,"title":x,"side":f"{C['label']}+{B['label']}","token_id":f"{C['token_id']}|{B['token_id']}","fee_rate":float(C["fee_rate"]),"entry_ts":E,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":m5.end_ts,"p_model_entry":1.,"entry_eff_px_t1000":f["eff_px"],"entry_vwap_t1000":f["vwap"],"realized_edge_t1000":f["riskless_floor_per_pair"],"legging_adjusted_edge_t1000":d["legging_adjusted_net_ev_per_pair"],"entry_best_bid":round(A+z,4),"last_bid":round(A+z,4),"maker_tp_px":None,"tier_fills":i,"extra":{"is_dominance_box":True,"regime":dom_info["regime"],"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"m15_horizon":m15.horizon,"m15_market_id":m15.market_id,"m15_start_iso":m15.start_iso,"m15_end_iso":m15.end_iso,"m5_horizon":m5.horizon,"m5_market_id":m5.market_id,"leg_a":C,"leg_b":B,"legging_drag_ref":d,"legging_drag_usd_by_tier":b},"status":"OPEN"};a.open_positions[q]=D
+   for w in F:a.entered_keys.add(w)
+   a._append_ledger({"event":"SHADOW_ENTRY",**D});logger.info(f"[ENTRY:{sleeve_override}] {x} | {f['shares']} pairs @ net=${f['eff_px']:.4f} (floor=${f['riskless_floor_per_pair']:+.4f}/pair, min_profit=${f['guaranteed_min_profit_usd']:+.2f})");return True
+  finally:a._release_inflight_keys(F)
+ def _d1_live_max_box_cost(self,*,zero_fee=False,rem_tte_sec=None):
+  a=.985
   try:
-   b=Path(os.getenv("POLYMARKET_RISK_CONFIG",str(PROJECT_ROOT/"config/polymarket_risk_config.json")));a=json.loads(b.read_text(encoding="utf-8"));v=float(a.get("d1_max_box_cost_net",.985))
-   if.86<=v<=.995:return v
+   f=Path(os.getenv("POLYMARKET_RISK_CONFIG",str(PROJECT_ROOT/"config/polymarket_risk_config.json")));e=json.loads(f.read_text(encoding="utf-8"));v=float(e.get("d1_max_box_cost_net",.985))
+   if.86<=v<=.995:a=v
   except Exception:pass
-  return.985
+  if zero_fee:
+   d=GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{});c=float(d.get("d1_short_tte_threshold_sec",180.));b=min(.995,max(.985,float(d.get("d1_short_tte_max_box_cost_net",.9925))))
+   if rem_tte_sec is not None and.0<float(rem_tte_sec)<=c:return max(a,b)
+   return max(a,.99)
+  return a
+ @staticmethod
+ def resolve_2026_maker_rebate_share(asset_str,sleeve_str=""):
+  b=str(asset_str or"").strip().upper();a=str(sleeve_str or"").strip().upper()
+  if b in{"BTC","ETH","SOL","XRP","DOGE","BNB","HYPE","ZEC"}or a.startswith("CRY_"):return.2
+  if(a.startswith(("SP","CL1","TEN1","AFF1","SOC","NFL_","API1","ESPORTS","DC1","LP_COMP1"))or b in{"NBA","NFL","NHL","MLB","EPL","UCL","ATP","WTA","SOCCER","ESPORTS","CS2","LOL","DOTA2","VALORANT"}):return.15
+  return.25
+ @staticmethod
+ def compute_live_8e_clinch_max_eff_px(max_eff_base,p_lock,rem_sec):
+  b=float(max_eff_base)
+  if float(p_lock)<.999:return b
+  a=float(rem_sec)
+  if.0<a<=3600.:return max(b,.994)
+  if.0<a<=14400.:return max(b,.992)
+  return b
  def emit_live_d1_box_candidate(a,m15,m5,dom_info,w_live,now_ts,*,is_quiet_book=False,sleeve_source="D1_SAME_ORACLE_DOMINANCE_BOX"):
   c=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl"
   if STATE_FILE!=(DATA_DIR/"alpha124_shadow_state.json")and D1_LIVE_CANDIDATES_FILE==c:return False
   if not(a.single_scan or("fetch_json"in a.__dict__)):
    now_ts=time.time()
    if float(m5.end_ts-now_ts)<16.:return False
-  g=f"{m15.asset}_{m15.market_id}_{m5.market_id}";f=float(a._last_d1_live_emit_ts.get(g,.0)or.0)
-  if(now_ts-f)<10.:return False
-  l=dom_info["leg_a"];k=dom_info["leg_b"];o=w_live["leg_a_walk"];n=w_live["leg_b_walk"];d=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());e=compute_d1_legging_drag_haircut(shares=float(w_live["shares"]),box_cost_net=float(w_live["box_cost_net"]),avail_a_shares=float(w_live["avail_a_shares"]),avail_b_shares=float(w_live["avail_b_shares"]),px_a=float(o["worst_px"]),px_b=float(n["worst_px"]),fee_rate_a=float(l["fee_rate"]),fee_rate_b=float(k["fee_rate"]),is_4h_mixed=d)
-  if e["legging_adjusted_net_ev_per_pair"]<=.0:return False
-  a._last_d1_live_emit_ts[g]=now_ts
-  for j,i in list(a._last_d1_live_emit_ts.items()):
-   if(now_ts-i)>1200.:a._last_d1_live_emit_ts.pop(j,None)
-  h="D1_4H_LIVE"if str(m15.horizon).lower()=="4h"else"D1_LIVE";m={"box_id":f"{h}_{m15.asset}_{int(m5.end_ts)}_{m5.market_id[-5:]}","dedupe_key":f"D1_{m15.asset}_{m15.market_id}_{m5.market_id}","ts_unix":round(now_ts,3),"asset":m15.asset,"regime":dom_info["regime"],"pair_horizons":f"{m15.horizon}_{m5.horizon}","sleeve_source":str(sleeve_source),"is_quiet_book":bool(is_quiet_book),"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"expiry_ts":float(m5.end_ts),"rem_sec":round(float(m5.end_ts-now_ts),2),"shares":int(w_live["shares"]),"net_paired_shares":float(w_live.get("net_paired_shares",w_live["shares"])),"leg_a_gross_shares":float(w_live.get("leg_a_gross_shares",w_live["shares"])),"leg_b_gross_shares":float(w_live.get("leg_b_gross_shares",w_live["shares"])),"box_cost_net":float(w_live["box_cost_net"]),"legging_drag_per_pair":e["legging_drag_per_pair"],"legging_adjusted_net_ev_per_pair":e["legging_adjusted_net_ev_per_pair"],"max_box_cost_net":a._d1_live_max_box_cost(),"leg_a_token_id":str(l["token_id"]),"leg_a_opp_token_id":str(l.get("opp_token_id")or""),"leg_a_label":str(l["label"]),"leg_a_side":str(l["side"]),"leg_a_horizon":str(l["horizon"]),"leg_a_market_id":str(l["market_id"]),"leg_a_condition_id":str(l["condition_id"]),"leg_a_strike":float(l["strike"]),"leg_a_limit_price":float(o["worst_px"]),"leg_a_avail_shares":float(w_live["avail_a_shares"]),"leg_a_fee_rate":float(l["fee_rate"]),"leg_a_fee_exponent":float(l["fee_exponent"]),"leg_a_neg_risk":bool(l["neg_risk"]),"leg_b_token_id":str(k["token_id"]),"leg_b_opp_token_id":str(k.get("opp_token_id")or""),"leg_b_label":str(k["label"]),"leg_b_side":str(k["side"]),"leg_b_horizon":str(k["horizon"]),"leg_b_market_id":str(k["market_id"]),"leg_b_condition_id":str(k["condition_id"]),"leg_b_strike":float(k["strike"]),"leg_b_limit_price":float(n["worst_px"]),"leg_b_avail_shares":float(w_live["avail_b_shares"]),"leg_b_fee_rate":float(k["fee_rate"]),"leg_b_fee_exponent":float(k["fee_exponent"]),"leg_b_neg_risk":bool(k["neg_risk"])};from src.polymarket_research.riskless_protocol_v2_expansion import attach_ws_books_and_write_d1_cand as b;return b(a,m,l,k,D1_LIVE_CANDIDATES_FILE,c)
+  i=f"{m15.asset}_{m15.market_id}_{m5.market_id}";g=float(a._last_d1_live_emit_ts.get(i,.0)or.0)
+  if(now_ts-g)<10.:return False
+  n=dom_info["leg_a"];m=dom_info["leg_b"];q=w_live["leg_a_walk"];p=w_live["leg_b_walk"];d=("4h"in(str(m15.horizon).lower(),str(m5.horizon).lower()))and(str(m15.horizon).lower()!=str(m5.horizon).lower());f=compute_d1_legging_drag_haircut(shares=float(w_live["shares"]),box_cost_net=float(w_live["box_cost_net"]),avail_a_shares=float(w_live["avail_a_shares"]),avail_b_shares=float(w_live["avail_b_shares"]),px_a=float(q["worst_px"]),px_b=float(p["worst_px"]),fee_rate_a=float(n["fee_rate"]),fee_rate_b=float(m["fee_rate"]),is_4h_mixed=d)
+  if f["legging_adjusted_net_ev_per_pair"]<=.0:return False
+  a._last_d1_live_emit_ts[i]=now_ts
+  for l,k in list(a._last_d1_live_emit_ts.items()):
+   if(now_ts-k)>1200.:a._last_d1_live_emit_ts.pop(l,None)
+  j="D1_4H_LIVE"if str(m15.horizon).lower()=="4h"else"D1_LIVE";h=max(float(n["fee_rate"]),float(m["fee_rate"]))==.0;e=float(m5.end_ts-now_ts);o={"box_id":f"{j}_{m15.asset}_{int(m5.end_ts)}_{m5.market_id[-5:]}","dedupe_key":f"D1_{m15.asset}_{m15.market_id}_{m5.market_id}","ts_unix":round(now_ts,3),"asset":m15.asset,"regime":dom_info["regime"],"pair_horizons":f"{m15.horizon}_{m5.horizon}","sleeve_source":str(sleeve_source),"is_quiet_book":bool(is_quiet_book),"k_low":dom_info["k_low"],"k_high":dom_info["k_high"],"corridor_bps":dom_info["corridor_bps"],"expiry_ts":float(m5.end_ts),"rem_sec":round(e,2),"shares":int(w_live["shares"]),"net_paired_shares":float(w_live.get("net_paired_shares",w_live["shares"])),"leg_a_gross_shares":float(w_live.get("leg_a_gross_shares",w_live["shares"])),"leg_b_gross_shares":float(w_live.get("leg_b_gross_shares",w_live["shares"])),"box_cost_net":float(w_live["box_cost_net"]),"legging_drag_per_pair":f["legging_drag_per_pair"],"legging_adjusted_net_ev_per_pair":f["legging_adjusted_net_ev_per_pair"],"max_box_cost_net":a._d1_live_max_box_cost(zero_fee=h,rem_tte_sec=e),"leg_a_token_id":str(n["token_id"]),"leg_a_opp_token_id":str(n.get("opp_token_id")or""),"leg_a_label":str(n["label"]),"leg_a_side":str(n["side"]),"leg_a_horizon":str(n["horizon"]),"leg_a_market_id":str(n["market_id"]),"leg_a_condition_id":str(n["condition_id"]),"leg_a_strike":float(n["strike"]),"leg_a_limit_price":float(q["worst_px"]),"leg_a_avail_shares":float(w_live["avail_a_shares"]),"leg_a_fee_rate":float(n["fee_rate"]),"leg_a_fee_exponent":float(n["fee_exponent"]),"leg_a_neg_risk":bool(n["neg_risk"]),"leg_b_token_id":str(m["token_id"]),"leg_b_opp_token_id":str(m.get("opp_token_id")or""),"leg_b_label":str(m["label"]),"leg_b_side":str(m["side"]),"leg_b_horizon":str(m["horizon"]),"leg_b_market_id":str(m["market_id"]),"leg_b_condition_id":str(m["condition_id"]),"leg_b_strike":float(m["strike"]),"leg_b_limit_price":float(p["worst_px"]),"leg_b_avail_shares":float(w_live["avail_b_shares"]),"leg_b_fee_rate":float(m["fee_rate"]),"leg_b_fee_exponent":float(m["fee_exponent"]),"leg_b_neg_risk":bool(m["neg_risk"])};from src.polymarket_research.riskless_protocol_v2_expansion import attach_ws_books_and_write_d1_cand as b;return b(a,o,n,m,D1_LIVE_CANDIDATES_FILE,c)
  def emit_live_two_leg_box_candidate(a,*,sleeve_source,box_type,asset,dedupe_key,leg_a,leg_b,bk_a,bk_b,close_ts,now_ts,k_low=1e2,k_high=1e2,max_box_cost_override=None,extra_fields=None):
-  c=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl"
-  if STATE_FILE!=(DATA_DIR/"alpha124_shadow_state.json")and D1_LIVE_CANDIDATES_FILE==c:return False
+  e=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl"
+  if STATE_FILE!=(DATA_DIR/"alpha124_shadow_state.json")and D1_LIVE_CANDIDATES_FILE==e:return False
   if not(a.single_scan or("fetch_json"in a.__dict__)):now_ts=time.time()
-  n=float(close_ts-now_ts)
-  if n<25.:return False
-  i=float(a._last_d1_live_emit_ts.get(dedupe_key,.0)or.0)
-  if(now_ts-i)<15.:return False
-  A=float(leg_a.get("fee_rate",CRYPTO_FEE_RATE));z=float(leg_b.get("fee_rate",CRYPTO_FEE_RATE));y=float(leg_a.get("fee_exponent",1.));x=float(leg_b.get("fee_exponent",1.))
-  if sleeve_source=="COND1_MACRO_PARTITION_BOX":b=(.992 if n<=1.08e5 else.988)if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else.985
+  r=float(close_ts-now_ts)
+  if r<25.:return False
+  m=float(a._last_d1_live_emit_ts.get(dedupe_key,.0)or.0)
+  if(now_ts-m)<15.:return False
+  D=float(leg_a.get("fee_rate",CRYPTO_FEE_RATE));C=float(leg_b.get("fee_rate",CRYPTO_FEE_RATE));B=float(leg_a.get("fee_exponent",1.));A=float(leg_b.get("fee_exponent",1.));j=GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{});d=(box_type=="COMPLETE_SET"and sleeve_source=="C1_BINARY_COMPLETE_SET"and max(D,C)==.0 and not bool(leg_a.get("neg_risk"))and not bool(leg_b.get("neg_risk"))and bool(str(leg_a.get("condition_id")or"").strip())and str(leg_a.get("condition_id")or"").strip()==str(leg_b.get("condition_id")or"").strip()and bool(j.get("enable_zerofee1_mergeable_sweeper",True))and bool(j.get("enable_c1_gasless_batch_merge",True)))
+  if sleeve_source=="COND1_MACRO_PARTITION_BOX":b=(.992 if r<=1.08e5 else.988)if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else.985
   elif box_type=="BARRIER_MONO":b=.993
-  elif max(A,z)==.0 and(a.is_sleeve_grad8_ready(sleeve_source)or a._can_emit_zero_loss_math_live(sleeve_source,close_ts,now_ts))and n<=(604800. if sleeve_source in{"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"}else 172800.):b=.992
-  else:b=.99 if max(A,z)==.0 else.988
-  if max_box_cost_override is not None:b=min(b,float(max_box_cost_override))
-  s=walk_equal_shares_dominance_box(bk_a.get("asks")or[],bk_b.get("asks")or[],target_budget_usd=20.,fee_rate_a=A,fee_rate_b=z,fee_exponent_a=y,fee_exponent_b=x,max_box_cost_net=b,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
-  if not s.get("filled"):return False
+  elif d:b=round(1.-max(.0025,float(j.get("zerofee1_min_net_edge_bps",45.)or 45.)/1e4),4)
+  elif max(D,C)==.0 and(a.is_sleeve_grad8_ready(sleeve_source)or a._can_emit_zero_loss_math_live(sleeve_source,close_ts,now_ts))and r<=(604800. if sleeve_source in{"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"}else 172800.):b=.992
+  else:b=.99 if max(D,C)==.0 else.988
+  if max_box_cost_override is not None:b=min(.9965 if d else b,float(max_box_cost_override))
+  w=walk_equal_shares_dominance_box(bk_a.get("asks")or[],bk_b.get("asks")or[],target_budget_usd=20.,fee_rate_a=D,fee_rate_b=C,fee_exponent_a=B,fee_exponent_b=A,max_box_cost_net=b,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
+  if not w.get("filled"):return False
   if len(a._last_d1_live_emit_ts)>256:a._last_d1_live_emit_ts={k:v for k,v in a._last_d1_live_emit_ts.items()if(now_ts-float(v))<=1200.}
-  a._last_d1_live_emit_ts[dedupe_key]=now_ts;D=s["leg_a_walk"];C=s["leg_b_walk"];w,_=a._best_ask_sz(bk_a);u,_=a._best_ask_sz(bk_b);r,_=extract_best_bid(bk_a.get("bids")or[]);q,_=extract_best_bid(bk_b.get("bids")or[]);h=bool(r>.0 and q>.0 and(w-r)<=.041 and(u-q)<=.041 and(max(A,z)==.0 or(now_ts-float(a._last_any_shock_ts_by_asset.get(str(asset),.0)or.0))>=4.));m=round(abs(k_high-k_low)/max(1e-9,k_low)*1e4,2)if k_low>0 else.0;B={"box_id":f"{box_type}_LIVE_{asset}_{int(close_ts)}_{str(leg_a.get('market_id','0'))[-5:]}","dedupe_key":dedupe_key,"box_type":str(box_type),"ts_unix":round(now_ts,3),"asset":str(asset),"regime":f"{box_type}_{leg_a.get('label','A')}_PLUS_{leg_b.get('label','B')}","pair_horizons":str(box_type).lower(),"sleeve_source":str(sleeve_source),"is_quiet_book":h,"k_low":float(k_low),"k_high":float(k_high),"corridor_bps":m,"expiry_ts":float(close_ts),"rem_sec":round(n,2),"shares":int(s["shares"]),"net_paired_shares":float(s.get("net_paired_shares",s["shares"])),"leg_a_gross_shares":float(s.get("leg_a_gross_shares",s["shares"])),"leg_b_gross_shares":float(s.get("leg_b_gross_shares",s["shares"])),"box_cost_net":float(s["box_cost_net"]),"max_box_cost_net":b,"leg_a_token_id":str(leg_a["token_id"]),"leg_a_opp_token_id":str(leg_a.get("opp_token_id")or""),"leg_a_label":str(leg_a.get("label")or leg_a.get("side")or"YES"),"leg_a_side":str(leg_a.get("side")or"YES"),"leg_a_horizon":str(leg_a.get("horizon")or box_type.lower()),"leg_a_market_id":str(leg_a.get("market_id")or""),"leg_a_condition_id":str(leg_a.get("condition_id")or""),"leg_a_strike":float(leg_a.get("strike")or k_low),"leg_a_limit_price":float(D["worst_px"]),"leg_a_avail_shares":float(s["avail_a_shares"]),"leg_a_fee_rate":A,"leg_a_fee_exponent":y,"leg_a_neg_risk":bool(leg_a["neg_risk"])if isinstance(leg_a.get("neg_risk"),bool)else False,"leg_a_expiry_ts":float(leg_a.get("end_ts")or close_ts),"leg_b_token_id":str(leg_b["token_id"]),"leg_b_opp_token_id":str(leg_b.get("opp_token_id")or""),"leg_b_label":str(leg_b.get("label")or leg_b.get("side")or"NO"),"leg_b_side":str(leg_b.get("side")or"NO"),"leg_b_horizon":str(leg_b.get("horizon")or box_type.lower()),"leg_b_market_id":str(leg_b.get("market_id")or""),"leg_b_condition_id":str(leg_b.get("condition_id")or""),"leg_b_strike":float(leg_b.get("strike")or k_high),"leg_b_limit_price":float(C["worst_px"]),"leg_b_avail_shares":float(s["avail_b_shares"]),"leg_b_fee_rate":z,"leg_b_fee_exponent":x,"leg_b_neg_risk":bool(leg_b["neg_risk"])if isinstance(leg_b.get("neg_risk"),bool)else False,"leg_b_expiry_ts":float(leg_b.get("end_ts")or close_ts)}
-  if isinstance(extra_fields,dict):B.update(extra_fields)
+  a._last_d1_live_emit_ts[dedupe_key]=now_ts;G=w["leg_a_walk"];F=w["leg_b_walk"];z,_=a._best_ask_sz(bk_a);y,_=a._best_ask_sz(bk_b);u,_=extract_best_bid(bk_a.get("bids")or[]);t,_=extract_best_bid(bk_b.get("bids")or[]);l=bool(u>.0 and t>.0 and(z-u)<=.041 and(y-t)<=.041 and(max(D,C)==.0 or(now_ts-float(a._last_any_shock_ts_by_asset.get(str(asset),.0)or.0))>=4.));p=round(abs(k_high-k_low)/max(1e-9,k_low)*1e4,2)if k_low>0 else.0;E={"box_id":f"{box_type}_LIVE_{asset}_{int(close_ts)}_{str(leg_a.get('market_id','0'))[-5:]}","dedupe_key":dedupe_key,"box_type":str(box_type),"ts_unix":round(now_ts,3),"asset":str(asset),"regime":f"{box_type}_{leg_a.get('label','A')}_PLUS_{leg_b.get('label','B')}","pair_horizons":str(box_type).lower(),"sleeve_source":str(sleeve_source),"is_quiet_book":l,"k_low":float(k_low),"k_high":float(k_high),"corridor_bps":p,"expiry_ts":float(close_ts),"rem_sec":round(r,2),"shares":int(w["shares"]),"net_paired_shares":float(w.get("net_paired_shares",w["shares"])),"leg_a_gross_shares":float(w.get("leg_a_gross_shares",w["shares"])),"leg_b_gross_shares":float(w.get("leg_b_gross_shares",w["shares"])),"box_cost_net":float(w["box_cost_net"]),"max_box_cost_net":b,"leg_a_token_id":str(leg_a["token_id"]),"leg_a_opp_token_id":str(leg_a.get("opp_token_id")or""),"leg_a_label":str(leg_a.get("label")or leg_a.get("side")or"YES"),"leg_a_side":str(leg_a.get("side")or"YES"),"leg_a_horizon":str(leg_a.get("horizon")or box_type.lower()),"leg_a_market_id":str(leg_a.get("market_id")or""),"leg_a_condition_id":str(leg_a.get("condition_id")or""),"leg_a_strike":float(leg_a.get("strike")or k_low),"leg_a_limit_price":float(G["worst_px"]),"leg_a_avail_shares":float(w["avail_a_shares"]),"leg_a_fee_rate":D,"leg_a_fee_exponent":B,"leg_a_neg_risk":bool(leg_a["neg_risk"])if isinstance(leg_a.get("neg_risk"),bool)else False,"leg_a_expiry_ts":float(leg_a.get("end_ts")or close_ts),"leg_b_token_id":str(leg_b["token_id"]),"leg_b_opp_token_id":str(leg_b.get("opp_token_id")or""),"leg_b_label":str(leg_b.get("label")or leg_b.get("side")or"NO"),"leg_b_side":str(leg_b.get("side")or"NO"),"leg_b_horizon":str(leg_b.get("horizon")or box_type.lower()),"leg_b_market_id":str(leg_b.get("market_id")or""),"leg_b_condition_id":str(leg_b.get("condition_id")or""),"leg_b_strike":float(leg_b.get("strike")or k_high),"leg_b_limit_price":float(F["worst_px"]),"leg_b_avail_shares":float(w["avail_b_shares"]),"leg_b_fee_rate":C,"leg_b_fee_exponent":A,"leg_b_neg_risk":bool(leg_b["neg_risk"])if isinstance(leg_b.get("neg_risk"),bool)else False,"leg_b_expiry_ts":float(leg_b.get("end_ts")or close_ts)}
+  if isinstance(extra_fields,dict):E.update(extra_fields)
   if not a.single_scan and a._ws_books:
-   l=[str(leg_a["token_id"]),str(leg_b["token_id"])]
+   o=[str(leg_a["token_id"]),str(leg_b["token_id"])]
    if str(box_type)!="COMPLETE_SET":
-    for t in(str(leg_a.get("opp_token_id")or""),str(leg_b.get("opp_token_id")or"")):
-     if t:l.append(t)
-   j={str(leg_a["token_id"]),str(leg_b["token_id"])};d=getattr(a,"_ws_rest_seeded",set())
-   if all(t_x in a._ws_books and t_x not in d and(now_ts-a._ws_books[t_x][0])<=2.5 and bool(a._ws_books[t_x][1].get("asks"))and(t_x not in j or bool(a._ws_books[t_x][1].get("bids")or a._ws_books[t_x][1].get("asks")))for t_x in l):B["ws_books"]={t_x:{"bids":(a._ws_books[t_x][1].get("bids")or[])[:12],"asks":(a._ws_books[t_x][1].get("asks")or[])[:12]}for t_x in l};B["ws_books_ts"]=round(min(a._ws_books[t_x][0]for t_x in l),3)
+    for x in(str(leg_a.get("opp_token_id")or""),str(leg_b.get("opp_token_id")or"")):
+     if x:o.append(x)
+   n={str(leg_a["token_id"]),str(leg_b["token_id"])};f=getattr(a,"_ws_rest_seeded",set())
+   if all(t_x in a._ws_books and t_x not in f and(now_ts-a._ws_books[t_x][0])<=2.5 and bool(a._ws_books[t_x][1].get("asks"))and(t_x not in n or bool(a._ws_books[t_x][1].get("bids")or a._ws_books[t_x][1].get("asks")))for t_x in o):E["ws_books"]={t_x:{"bids":(a._ws_books[t_x][1].get("bids")or[])[:12],"asks":(a._ws_books[t_x][1].get("asks")or[])[:12]}for t_x in o};E["ws_books_ts"]=round(min(a._ws_books[t_x][0]for t_x in o),3)
   try:
-   try:import orjson as _orj;g=_orj.dumps(B)+b"\n";e=g.decode("utf-8")
-   except Exception:e=json.dumps(B,separators=(",",":"))+"\n";g=e.encode("utf-8")
-   if os.name!="nt"and D1_LIVE_CANDIDATES_FILE==c:
+   try:import orjson as _orj;i=_orj.dumps(E)+b"\n";g=i.decode("utf-8")
+   except Exception:g=json.dumps(E,separators=(",",":"))+"\n";i=g.encode("utf-8")
+   if os.name!="nt"and D1_LIVE_CANDIDATES_FILE==e:
+    if not str(D1_LIVE_CANDIDATES_FILE).startswith("/tmp/")and not a.single_scan:
+     from src.polymarket_research.stage_c_zero_loss_velocity import evaluate_strict_pure_riskless_candidate as c;q,_=c(E,GLOBAL_GOVERNANCE_MANAGER.snapshot)
+     if not q:return False
     try:
-     import socket;f=getattr(a,"_d1_ipc_sock",None)
-     if f is None:f=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM);f.setblocking(False);a._d1_ipc_sock=f
-     p=os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME","polymarket_d1_box_notify");f.sendto(g,f"\x00{p}".encode("utf-8"))
+     import socket;h=getattr(a,"_d1_ipc_sock",None)
+     if h is None:h=socket.socket(socket.AF_UNIX,socket.SOCK_DGRAM);h.setblocking(False);a._d1_ipc_sock=h
+     s=os.environ.get("POLYMARKET_D1_IPC_SOCKET_NAME","polymarket_d1_box_notify");h.sendto(i,f"\x00{s}".encode("utf-8"))
     except Exception:pass
    D1_LIVE_CANDIDATES_FILE.parent.mkdir(parents=True,exist_ok=True)
-   with open(D1_LIVE_CANDIDATES_FILE,"a",encoding="utf-8")as E:E.write(e)
+   with open(D1_LIVE_CANDIDATES_FILE,"a",encoding="utf-8")as H:H.write(g)
    return True
-  except Exception as o:return False
- def emit_live_single_leg_lock_candidate(self,*,sleeve_source,asset,dedupe_key,token_id,opp_token_id,market_id,condition_id,side_label,display_label,bk_win,bk_opp,fee_rate,fee_exponent,neg_risk,close_ts,now_ts,max_lock_eff_px,max_opp_bid=.025,hold_to_maturity=False,p_model=1.):from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_lock_cand_impl as a;return a(self,sleeve_source=sleeve_source,asset=asset,dedupe_key=dedupe_key,token_id=token_id,opp_token_id=opp_token_id,market_id=market_id,condition_id=condition_id,side_label=side_label,display_label=display_label,bk_win=bk_win,bk_opp=bk_opp,fee_rate=fee_rate,fee_exponent=fee_exponent,neg_risk=neg_risk,close_ts=close_ts,now_ts=now_ts,max_lock_eff_px=max_lock_eff_px,max_opp_bid=max_opp_bid,hold_to_maturity=hold_to_maturity,p_model=p_model,extract_best_bid_fn=extract_best_bid,walk_l2_fn=walk_l2_book_asks_depth_capped,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json")
+  except Exception:return False
+ def emit_live_single_leg_lock_candidate(self,*,sleeve_source,asset,dedupe_key,token_id,opp_token_id,market_id,condition_id,side_label,display_label,bk_win,bk_opp,fee_rate,fee_exponent,neg_risk,close_ts,now_ts,max_lock_eff_px,max_opp_bid=.025,hold_to_maturity=False,p_model=1.,event_id="",pair_dedupe_key=""):from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_lock_cand_impl as a;return a(self,sleeve_source=sleeve_source,asset=asset,dedupe_key=dedupe_key,token_id=token_id,opp_token_id=opp_token_id,market_id=market_id,condition_id=condition_id,side_label=side_label,display_label=display_label,bk_win=bk_win,bk_opp=bk_opp,fee_rate=fee_rate,fee_exponent=fee_exponent,neg_risk=neg_risk,close_ts=close_ts,now_ts=now_ts,max_lock_eff_px=max_lock_eff_px,max_opp_bid=max_opp_bid,hold_to_maturity=hold_to_maturity,p_model=p_model,extract_best_bid_fn=extract_best_bid,walk_l2_fn=walk_l2_book_asks_depth_capped,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json",event_id=event_id,pair_dedupe_key=pair_dedupe_key)
  def emit_live_special_v2_box_candidate(self,*,box_type,sleeve_source,asset,dedupe_key,close_ts,now_ts,payload):from src.polymarket_research.riskless_protocol_v2_expansion import emit_special_v2_box_cand_impl as a;return a(self,box_type=box_type,sleeve_source=sleeve_source,asset=asset,dedupe_key=dedupe_key,close_ts=close_ts,now_ts=now_ts,payload=payload,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json")
  def emit_live_negrisk_convert_candidate(self,*,sleeve_source,spec,dedupe_key,arb_hit,books_by_token,now_ts,fee_bips=0):from src.polymarket_research.riskless_protocol_v2_expansion import emit_negrisk_convert_cand_impl as a;return a(self,sleeve_source=sleeve_source,spec=spec,dedupe_key=dedupe_key,arb_hit=arb_hit,books_by_token=books_by_token,now_ts=now_ts,fee_bips=fee_bips,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json")
- def emit_live_single_leg_maker_lock_candidate(self,*,sleeve_source,asset,dedupe_key,pair_dedupe_key,token_id,opp_token_id,market_id,condition_id,side_label,display_label,bk_win,bk_opp,neg_risk,close_ts,now_ts,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.008,hold_to_maturity=True,p_model=1.,target_bid_px=None,maker_rebate_ps=.0):from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_maker_lock_cand_impl as a;return a(self,sleeve_source=sleeve_source,asset=asset,dedupe_key=dedupe_key,pair_dedupe_key=pair_dedupe_key,token_id=token_id,opp_token_id=opp_token_id,market_id=market_id,condition_id=condition_id,side_label=side_label,display_label=display_label,bk_win=bk_win,bk_opp=bk_opp,neg_risk=neg_risk,close_ts=close_ts,now_ts=now_ts,min_resting_bid=min_resting_bid,max_resting_bid=max_resting_bid,min_maker_edge=min_maker_edge,max_opp_bid=max_opp_bid,hold_to_maturity=hold_to_maturity,p_model=p_model,target_bid_px=target_bid_px,maker_rebate_ps=maker_rebate_ps,extract_best_bid_fn=extract_best_bid,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json")
+ def emit_live_single_leg_maker_lock_candidate(self,*,sleeve_source,asset,dedupe_key,pair_dedupe_key,token_id,opp_token_id,market_id,condition_id,side_label,display_label,bk_win,bk_opp,neg_risk,close_ts,now_ts,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.008,hold_to_maturity=True,p_model=1.,target_bid_px=None,maker_rebate_ps=.0,event_id=""):from src.polymarket_research.riskless_protocol_v2_expansion import emit_single_leg_maker_lock_cand_impl as a;return a(self,sleeve_source=sleeve_source,asset=asset,dedupe_key=dedupe_key,pair_dedupe_key=pair_dedupe_key,token_id=token_id,opp_token_id=opp_token_id,market_id=market_id,condition_id=condition_id,side_label=side_label,display_label=display_label,bk_win=bk_win,bk_opp=bk_opp,neg_risk=neg_risk,close_ts=close_ts,now_ts=now_ts,min_resting_bid=min_resting_bid,max_resting_bid=max_resting_bid,min_maker_edge=min_maker_edge,max_opp_bid=max_opp_bid,hold_to_maturity=hold_to_maturity,p_model=p_model,target_bid_px=target_bid_px,maker_rebate_ps=maker_rebate_ps,extract_best_bid_fn=extract_best_bid,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json",event_id=event_id)
  def emit_live_maker_anchor_box_candidate(self,*,sleeve_source,box_type,asset,dedupe_key,regime,pair_horizons,leg_a,leg_b,anchor_is_a,queue_front,anchor_bid_px,hedge_limit_px,avail_a_shares,avail_b_shares,close_ts,now_ts,k_low=1e2,k_high=1e2,corridor_bps=.0,posted_spot=.0):from src.polymarket_research.riskless_protocol_v2_expansion import emit_maker_anchor_box_cand_impl as a;return a(self,sleeve_source=sleeve_source,box_type=box_type,asset=asset,dedupe_key=dedupe_key,regime=regime,pair_horizons=pair_horizons,leg_a=leg_a,leg_b=leg_b,anchor_is_a=anchor_is_a,queue_front=queue_front,anchor_bid_px=anchor_bid_px,hedge_limit_px=hedge_limit_px,avail_a_shares=avail_a_shares,avail_b_shares=avail_b_shares,close_ts=close_ts,now_ts=now_ts,k_low=k_low,k_high=k_high,corridor_bps=corridor_bps,posted_spot=posted_spot,crypto_fee_rate=CRYPTO_FEE_RATE,project_root=PROJECT_ROOT,cand_file=D1_LIVE_CANDIDATES_FILE,default_cand_path=LIVE_POLYMARKET_DIR/"d1_live_box_candidates.jsonl",state_file=STATE_FILE,default_state_path=DATA_DIR/"alpha124_shadow_state.json")
  def _latest_spot_px(a,asset):
   b=a.usd_spot_hist.get(asset)
@@ -6310,132 +6655,133 @@ class Alpha124ShadowDaemon:
   logger.info(f"[MAKER_ANCHOR_POST] {m15.asset} {dom_info['regime']} | Resting post_only=${m:.3f} (qf={g}) + hedge_eff=${k:.4f} = ${m+k:.4f} (TTE={O:.0f}s)");return True
  async def manage_pending_maker_anchors(b,now_ts=None):
   if not b.pending_maker_anchors:return
-  _n=float(now_ts if now_ts is not None else time.time());n=[]
-  for st in b.pending_maker_anchors.values():di=st["dom_info"];n.extend([str(di["leg_a"]["token_id"]),str(di["leg_b"]["token_id"])])
-  _m=await b.fetch_books_batch(n,timeout=2.5)
-  for _d,st in list(b.pending_maker_anchors.items()):
-   _l=st["m15"];m5=st["m5"];di=st["dom_info"];_c,_b=di["leg_a"],di["leg_b"];H=bool(st["anchor_is_a"]);R=bool(st.get("queue_front",True));Q=_c if H else _b;P=_b if H else _c;Z=_m.get(str(Q["token_id"]));Y=_m.get(str(P["token_id"]));X=float(st["bid_px"]);W=_n-float(st["posted_ts"]);O=m5.end_ts-_n;G=(Z or{}).get("asks")or[];k=min((float(a["price"])for a in G if float(a.get("size",0))>0),default=1.);u=Z is not None and W>=.35 and k<=X
-   if u:
-    b.pending_maker_anchors.pop(_d,None);b.entered_keys.add(_d);F=sorted([(float(a["price"]),float(a["size"]))for a in((Y or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);V=F[0][0]if F else 1.;z=sum(sz for px,sz in F if px<=V+.01)if F else.0;N=float(P["fee_rate"])*((V*(1.-V))**float(P.get("fee_exponent",1.)))if V<1. else.0;E=round(X+V+N,4);m=float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(_l.asset,1e2));M="4h"in(str(_l.horizon).lower(),str(m5.horizon).lower())
-    if Y is not None and F and z>=5. and.9<=E<=.995:
-     t={};j={};c=.0
-     for i,s in BANKROLL_TICKETS.items():
-      sh=max(5.,min(z,math.floor(min(s["D1_MAKER_ANCHOR_BOX"],m)/E)));_a=round(sh*N,4);L=round(sh*(X+V),2);t[i]={"filled":True,"vwap":round(X+V,4),"eff_px":E,"spent_usd":L,"fee_usd":_a,"shares":sh,"l1_usd":round(z*E,2)};dr=compute_d1_maker_anchor_drag_haircut(shares=sh,pair_eff=E,bid_anc=X,hdg_px=V,hdg_avail_shares=z,fee_rate_anc=float(Q.get("fee_rate",CRYPTO_FEE_RATE)),fee_exponent_anc=float(Q.get("fee_exponent",1.)),queue_front=R,is_4h_mixed=M);j[i]=float(dr["legging_drag_usd"])
-      if i=="T1000":c=float(dr["maker_rebate_20pct_est_usd"])
-     y,_=extract_best_bid((_m.get(str(_c["token_id"]))or{}).get("bids")or[]);x,_=extract_best_bid((_m.get(str(_b["token_id"]))or{}).get("bids")or[]);U=f"D1_MAKER_ANCHOR_BOX_{int(_n)}_{m5.market_id[-6:]}";_k={"position_id":U,"dedupe_key":_d,"sleeve":"D1_MAKER_ANCHOR_BOX","asset_or_city":_l.asset,"title":f"{_l.asset} {di['regime']} [0%-Fee Maker Anchor @ ${X:.3f}]","side":f"{_c['label']}+{_b['label']}","token_id":f"{_c['token_id']}|{_b['token_id']}","fee_rate":float(P["fee_rate"]),"entry_ts":_n,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":m5.end_ts,"p_model_entry":1.,"entry_eff_px_t1000":E,"entry_vwap_t1000":round(X+V,4),"realized_edge_t1000":round(1.-E,4),"entry_best_bid":round(y+x,4),"last_bid":round(y+x,4),"maker_tp_px":None,"tier_fills":t,"extra":{"is_dominance_box":True,"is_maker_anchor_box":True,"queue_front":R,"legging_drag_usd_by_tier":j,"maker_rebate_20pct_est_t1000_usd":c,"regime":di["regime"],"k_low":di["k_low"],"k_high":di["k_high"],"corridor_bps":di["corridor_bps"],"m15_horizon":_l.horizon,"m15_market_id":_l.market_id,"m15_start_iso":_l.start_iso,"m15_end_iso":_l.end_iso,"m5_horizon":m5.horizon,"m5_market_id":m5.market_id,"leg_a":_c,"leg_b":_b},"status":"OPEN"};b.open_positions[U]=_k;b._append_ledger({"event":"SHADOW_ENTRY",**_k});logger.info(f"[ENTRY:D1_MAKER_ANCHOR_BOX] {_k['title']} -> Hedged @ net=${E:.4f}!")
+  _p=float(now_ts if now_ts is not None else time.time());p=[]
+  for st in b.pending_maker_anchors.values():di=st["dom_info"];p.extend([str(di["leg_a"]["token_id"]),str(di["leg_b"]["token_id"])])
+  _o=await b.fetch_books_batch(p,timeout=2.5)
+  for _f,st in list(b.pending_maker_anchors.items()):
+   _n=st["m15"];m5=st["m5"];di=st["dom_info"];_e,_d=di["leg_a"],di["leg_b"];J=bool(st["anchor_is_a"]);T=bool(st.get("queue_front",True));S=_e if J else _d;R=_d if J else _e;_b=_o.get(str(S["token_id"]));_a=_o.get(str(R["token_id"]));Z=float(st["bid_px"]);Y=_p-float(st["posted_ts"]);Q=m5.end_ts-_p;I=(_b or{}).get("asks")or[];l=min((float(a["price"])for a in I if float(a.get("size",0))>0),default=1.);w=_b is not None and Y>=.35 and l<=Z
+   if w:
+    b.pending_maker_anchors.pop(_f,None);b.entered_keys.add(_f);H=sorted([(float(a["price"]),float(a["size"]))for a in((_a or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);X=H[0][0]if H else 1.;B=sum(sz for px,sz in H if px<=X+.01)if H else.0;P=float(R["fee_rate"])*((X*(1.-X))**float(R.get("fee_exponent",1.)))if X<1. else.0;G=round(Z+X+P,4);o=float(EMPIRICAL_BOX_ASSET_CAPS_USD.get(_n.asset,1e2));O="4h"in(str(_n.horizon).lower(),str(m5.horizon).lower())
+    if _a is not None and H and B>=5. and.9<=G<=.995:
+     v={};k={};c=.0
+     for j,u in BANKROLL_TICKETS.items():
+      sh=max(5.,min(B,math.floor(min(u["D1_MAKER_ANCHOR_BOX"],o)/G)));_c=round(sh*P,4);N=round(sh*(Z+X),2);v[j]={"filled":True,"vwap":round(Z+X,4),"eff_px":G,"spent_usd":N,"fee_usd":_c,"shares":sh,"l1_usd":round(B*G,2)};dr=compute_d1_maker_anchor_drag_haircut(shares=sh,pair_eff=G,bid_anc=Z,hdg_px=X,hdg_avail_shares=B,fee_rate_anc=float(S.get("fee_rate",CRYPTO_FEE_RATE)),fee_exponent_anc=float(S.get("fee_exponent",1.)),queue_front=T,is_4h_mixed=O);k[j]=float(dr["legging_drag_usd"])
+      if j=="T1000":c=float(dr["maker_rebate_20pct_est_usd"])
+     A,_=extract_best_bid((_o.get(str(_e["token_id"]))or{}).get("bids")or[]);z,_=extract_best_bid((_o.get(str(_d["token_id"]))or{}).get("bids")or[]);h=("D1_4H_DOMINANCE_BOX"if(O and not is_shadow_sleeve_quarantined("D1_4H_DOMINANCE_BOX"))else"D1_MAKER_ANCHOR_BOX");W=f"{h}_{int(_p)}_{m5.market_id[-6:]}";_m={"position_id":W,"dedupe_key":_f,"sleeve":h,"asset_or_city":_n.asset,"title":f"{_n.asset} {di['regime']} [0%-Fee Maker Anchor @ ${Z:.3f}]","side":f"{_e['label']}+{_d['label']}","token_id":f"{_e['token_id']}|{_d['token_id']}","fee_rate":float(R["fee_rate"]),"entry_ts":_p,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":m5.end_ts,"p_model_entry":1.,"entry_eff_px_t1000":G,"entry_vwap_t1000":round(Z+X,4),"realized_edge_t1000":round(1.-G,4),"entry_best_bid":round(A+z,4),"last_bid":round(A+z,4),"maker_tp_px":None,"tier_fills":v,"extra":{"is_dominance_box":True,"is_maker_anchor_box":True,"queue_front":T,"legging_drag_usd_by_tier":k,"maker_rebate_20pct_est_t1000_usd":c,"regime":di["regime"],"k_low":di["k_low"],"k_high":di["k_high"],"corridor_bps":di["corridor_bps"],"m15_horizon":_n.horizon,"m15_market_id":_n.market_id,"m15_start_iso":_n.start_iso,"m15_end_iso":_n.end_iso,"m5_horizon":m5.horizon,"m5_market_id":m5.market_id,"leg_a":_e,"leg_b":_d},"status":"OPEN"};b.open_positions[W]=_m;b._append_ledger({"event":"SHADOW_ENTRY",**_m});logger.info(f"[ENTRY:D1_MAKER_ANCHOR_BOX] {_m['title']} -> Hedged @ net=${G:.4f}!")
     else:
-     g,_=extract_best_bid((Z or{}).get("bids")or[])
-     if g<=.0:g=max(.01,X-.03)
-     K=float(Q["fee_rate"])*((g*(1.-g))**float(Q.get("fee_exponent",1.)));J=max(.0,g-K);_g={};_f={};D=max(.9,float(st.get("pair_est")or.985))
-     for i,s in BANKROLL_TICKETS.items():_e=max(5.,float(math.floor(min(s["D1_MAKER_ANCHOR_BOX"],m)/D)));_j=round(_e*X,2);_g[i]={"filled":True,"vwap":X,"eff_px":X,"spent_usd":_j,"fee_usd":.0,"shares":_e};_f[i]=round(_e*J-_j,2)
-     I={"position_id":f"D1_MKR_SCRATCH_{int(_n)}_{m5.market_id[-6:]}","dedupe_key":_d,"sleeve":"D1_MAKER_ANCHOR_BOX","asset_or_city":_l.asset,"title":f"{_l.asset} {di['regime']} [Maker Anchor Unhedged Scratch]","side":f"{Q['label']}_SCRATCH","token_id":str(Q["token_id"]),"fee_rate":.0,"entry_ts":st["posted_ts"],"entry_utc":datetime.fromtimestamp(st["posted_ts"],tz=timezone.utc).isoformat(),"close_ts":m5.end_ts,"closed_ts":_n,"closed_utc":datetime.now(timezone.utc).isoformat(),"p_model_entry":.5,"entry_eff_px_t1000":X,"entry_vwap_t1000":X,"net_payout_per_share":round(J,4),"tier_fills":_g,"tier_pnls_usd":_f,"legging_adjusted_tier_pnls_usd":dict(_f),"won":_f.get("T1000",.0)>0,"status":"MAKER_ANCHOR_UNHEDGED_SCRATCH"};b.closed_positions.append(I);b._append_ledger({"event":"SHADOW_CLOSE",**I})
+     g,_=extract_best_bid((_b or{}).get("bids")or[])
+     if g<=.0:g=max(.01,Z-.03)
+     M=float(S["fee_rate"])*((g*(1.-g))**float(S.get("fee_exponent",1.)));L=max(.0,g-M);_i={};_h={};F=max(.9,float(st.get("pair_est")or.985))
+     for j,u in BANKROLL_TICKETS.items():_g=max(5.,float(math.floor(min(u["D1_MAKER_ANCHOR_BOX"],o)/F)));_l=round(_g*Z,2);_i[j]={"filled":True,"vwap":Z,"eff_px":Z,"spent_usd":_l,"fee_usd":.0,"shares":_g};_h[j]=round(_g*L-_l,2)
+     K={"position_id":f"D1_MKR_SCRATCH_{int(_p)}_{m5.market_id[-6:]}","dedupe_key":_f,"sleeve":"D1_MAKER_ANCHOR_BOX","asset_or_city":_n.asset,"title":f"{_n.asset} {di['regime']} [Maker Anchor Unhedged Scratch]","side":f"{S['label']}_SCRATCH","token_id":str(S["token_id"]),"fee_rate":.0,"entry_ts":st["posted_ts"],"entry_utc":datetime.fromtimestamp(st["posted_ts"],tz=timezone.utc).isoformat(),"close_ts":m5.end_ts,"closed_ts":_p,"closed_utc":datetime.now(timezone.utc).isoformat(),"p_model_entry":.5,"entry_eff_px_t1000":Z,"entry_vwap_t1000":Z,"net_payout_per_share":round(L,4),"tier_fills":_i,"tier_pnls_usd":_h,"legging_adjusted_tier_pnls_usd":dict(_h),"won":_h.get("T1000",.0)>0,"status":"MAKER_ANCHOR_UNHEDGED_SCRATCH"};b.closed_positions.append(K);b._append_ledger({"event":"SHADOW_CLOSE",**K})
     continue
-   r=sorted([(float(a["price"]),float(a["size"]))for a in((Y or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);C=r[0][0]if r else 1.;l=sum(sz for px,sz in r if px<=C+.01)if r else.0;w=float(P["fee_rate"])*((C*(1.-C))**float(P.get("fee_exponent",1.)))if C<1. else.0;q=float(st.get("req_shares_t100")or st.get("req_shares_t1000")or 15.);e=(l<max(12.,2.*q))or((X+C+w)>.993);d=.0
-   if Z is not None:
-    _,T=extract_best_bid(Z.get("bids")or[]);S=sum(float(a.get("size",0))for a in G if abs(float(a.get("price",0))-k)<1e-6)
-    if(T+S)>.0:d=(T-S)/(T+S)
-   v=float(st.get("posted_spot")or.0);B=b._latest_spot_px(_l.asset);f=((B-v)/v*1e4)if(v>.0 and B>.0)else.0;A=b.get_return_bps(_l.asset,5.);p=str(Q.get("side")or"UP").upper();o=((min(f,A)<-2.5)if p=="UP"else(max(f,A)>2.5));h=(_n-float(b._last_any_shock_ts_by_asset.get(_l.asset,.0)or.0))<4.
-   if(O<=45. or W>=(12. if b.single_scan else 90.)or o or abs(A)>8. or d<-.35 or h or e):b.pending_maker_anchors.pop(_d,None)
+   t=sorted([(float(a["price"]),float(a["size"]))for a in((_a or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);E=t[0][0]if t else 1.;n=sum(sz for px,sz in t if px<=E+.01)if t else.0;y=float(R["fee_rate"])*((E*(1.-E))**float(R.get("fee_exponent",1.)))if E<1. else.0;s=float(st.get("req_shares_t100")or st.get("req_shares_t1000")or 15.);e=(n<max(12.,2.*s))or((Z+E+y)>.993);d=.0
+   if _b is not None:
+    _,V=extract_best_bid(_b.get("bids")or[]);U=sum(float(a.get("size",0))for a in I if abs(float(a.get("price",0))-l)<1e-6)
+    if(V+U)>.0:d=(V-U)/(V+U)
+   x=float(st.get("posted_spot")or.0);D=b._latest_spot_px(_n.asset);f=((D-x)/x*1e4)if(x>.0 and D>.0)else.0;C=b.get_return_bps(_n.asset,5.);r=str(S.get("side")or"UP").upper();m=2.5 if _n.asset in("BTC","ETH")else 4.5;q=((min(f,C)<-m)if r=="UP"else(max(f,C)>m));i=(_p-float(b._last_any_shock_ts_by_asset.get(_n.asset,.0)or.0))<4.
+   if(Q<=45. or Y>=(12. if b.single_scan else 90.)or q or abs(C)>8. or d<-.35 or i or e):b.pending_maker_anchors.pop(_f,None)
  def post_zero_fee_maker_anchor_box(d,source_tag,asset,d_key,leg_a,leg_b,bk_a,bk_b,close_ts,title,now_ts,prefetched_books=None,*,live_emit_only=False):
   if is_shadow_sleeve_quarantined("ZF_INTRADAY_MAKER_BOX"):return False
-  v=float(close_ts-now_ts)
-  if not(65.<=v<=64800.):return False
-  J=d.__dict__.setdefault("_zf_maker_cooldown_until",{})
-  if not live_emit_only and(d_key in d.entered_keys or d_key in d.pending_zero_fee_maker_anchors or float(J.get(d_key,.0)or.0)>now_ts):return False
+  A=float(close_ts-now_ts);i=source_tag in{"CAL1_LADDER","NEGRISK_NO_PAIR","AFF1_DEADBALL","SP3_CORRIDOR"};o=259200. if source_tag in{"CAL1_LADDER","NEGRISK_NO_PAIR"}else 64800.
+  if not(65.<=A<=o):return False
+  M=d.__dict__.setdefault("_zf_maker_cooldown_until",{})
+  if not live_emit_only and(d_key in d.entered_keys or d_key in d.pending_zero_fee_maker_anchors or float(M.get(d_key,.0)or.0)>now_ts):return False
   if float(leg_a.get("fee_rate",.0))>.0 or float(leg_b.get("fee_rate",.0))>.0:return False
   if prefetched_books:
-   _a=str(leg_a.get("opp_token_id")or"");Z=str(leg_b.get("opp_token_id")or"")
-   if _a in prefetched_books and Z in prefetched_books:
-    _c,_=extract_best_bid((prefetched_books[_a]or{}).get("bids")or[]);_b,_=extract_best_bid((prefetched_books[Z]or{}).get("bids")or[]);I,_=d._best_ask_sz(bk_a);H,_=d._best_ask_sz(bk_b)
-    if((I>.0 and _c>.0 and(I+_c)>1.015)or(H>.0 and _b>.0 and(H+_b)>1.015)or(_c+_b)>1.16):return False
-  G=sorted([(float(b["price"]),float(b["size"]))for b in(bk_a.get("bids")or[])if float(b.get("price",0))>0 and float(b.get("size",0))>0],key=lambda x:-x[0]);F=sorted([(float(b["price"]),float(b["size"]))for b in(bk_b.get("bids")or[])if float(b.get("price",0))>0 and float(b.get("size",0))>0],key=lambda x:-x[0]);E=sorted([(float(a["price"]),float(a["size"]))for a in(bk_a.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);D=sorted([(float(a["price"]),float(a["size"]))for a in(bk_b.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0])
-  if not E or not D or not G or not F:return False
-  Y,X=G[0];W,V=F[0];U,T=E[0];S,R=D[0];Q=(X-T)/max(1e-9,X+T);P=(V-R)/max(1e-9,V+R);l=max(6.,math.floor(float(BANKROLL_TICKETS["T100"]["ZF_INTRADAY_MAKER_BOX"])/.988));i=max(6.,math.floor(float(BANKROLL_TICKETS["T1000"]["ZF_INTRADAY_MAKER_BOX"])/.988))
+   _d=str(leg_a.get("opp_token_id")or"");_c=str(leg_b.get("opp_token_id")or"")
+   if _d in prefetched_books and _c in prefetched_books:
+    _f,_=extract_best_bid((prefetched_books[_d]or{}).get("bids")or[]);_e,_=extract_best_bid((prefetched_books[_c]or{}).get("bids")or[]);L,_=d._best_ask_sz(bk_a);K,_=d._best_ask_sz(bk_b)
+    if((L>.0 and _f>.0 and(L+_f)>1.015)or(K>.0 and _e>.0 and(K+_e)>1.015)or(_f+_e)>1.16):return False
+  J=sorted([(float(b["price"]),float(b["size"]))for b in(bk_a.get("bids")or[])if float(b.get("price",0))>0 and float(b.get("size",0))>0],key=lambda x:-x[0]);I=sorted([(float(b["price"]),float(b["size"]))for b in(bk_b.get("bids")or[])if float(b.get("price",0))>0 and float(b.get("size",0))>0],key=lambda x:-x[0]);H=sorted([(float(a["price"]),float(a["size"]))for a in(bk_a.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);G=sorted([(float(a["price"]),float(a["size"]))for a in(bk_b.get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0])
+  if not H or not G or not J or not I:return False
+  _b,_a=J[0];Z,Y=I[0];X,W=H[0];V,U=G[0];T=(_a-W)/max(1e-9,_a+W);S=(Y-U)/max(1e-9,Y+U);n=max(6.,math.floor(float(BANKROLL_TICKETS["T100"]["ZF_INTRADAY_MAKER_BOX"])/.988));k=max(6.,math.floor(float(BANKROLL_TICKETS["T1000"]["ZF_INTRADAY_MAKER_BOX"])/.988))
   def c(p):p=round(float(p),4);return(math.floor((p+1e-9)*1e2)/1e2)if(.04+1e-9<p<.96-1e-9)else(math.floor((p+1e-9)*1e3)/1e3)
-  k=.992 if source_tag=="SP1_NBA"else(.985 if v>3600. else.988);q=[]
+  m=.992 if source_tag=="SP1_NBA"else(.985 if A>3600. else.988);t=[]
   for f in(True,False):
-   O=Y if f else W;u=X if f else V;N=U if f else S;t=Q if f else P;M=W if f else Y;o=D if f else E;L=o[0][0]
-   if not(.02<=N<=.999)or not(.001<=L<=.985)or t<-.25:continue
-   if M>.0 and L>.04 and(L-M)>.05:continue
-   C=.001 if(O>=.96 or O<.04)else.01;B=.001 if(N>.96 or N<=.04)else.01;A=c(O+C);K=c(N-B);n=sum(sz for px,sz in o if px<=L+.01)
-   if n<max(18.,2.5*l):continue
+   R=_b if f else Z;y=_a if f else Y;Q=X if f else V;w=T if f else S;P=Z if f else _b;s=G if f else H;O=s[0][0]
+   if not(.02<=Q<=.999)or not(.001<=O<=.985)or w<-.25:continue
+   if P>.0 and O>.04 and(O-P)>.05:continue
+   F=.001 if(R>=.96 or R<.04)else.01;E=.001 if(Q>.96 or Q<=.04)else.01;D=c(R+F);N=c(Q-E);r=sum(sz for px,sz in s if px<=O+.01);j=4. if i else 2.5
+   if r<max(24. if i else 18.,j*n):continue
    e=True
-   if A<=K+1e-9 and A>O+1e-9:h=min(A,K,c(k-L));e=h>O+1e-9
-   elif(N-O)>=.01-1e-9 and.15<=N<=.88 and t>=-.15 and u>=15.:e=False;h=min(c(O),c(k-L))
+   if D<=N+1e-9 and D>R+1e-9:h=min(D,N,c(m-O));e=h>R+1e-9
+   elif(Q-R)>=.01-1e-9 and.15<=Q<=.88 and w>=-.15 and y>=15.:e=False;h=min(c(R),c(m-O))
    else:continue
-   if h<round(O-C,3)or h<=.015 or h>=N:continue
-   g=round(h+L,4)
-   if.86<=g<=k:q.append((g,f,round(h,4),round(L,4),e))
-  if not q:return False
-  q.sort(key=lambda z:(z[0],0 if z[4]else 1));g,f,y,w,j=q[0]
-  if not live_emit_only:d.pending_zero_fee_maker_anchors[d_key]={"source_tag":source_tag,"dedupe_key":d_key,"asset":asset,"title":title,"leg_a":leg_a,"leg_b":leg_b,"anchor_is_a":f,"bid_px":y,"pair_est":g,"queue_front":j,"req_shares_t100":l,"req_shares_t1000":i,"close_ts":close_ts,"posted_ts":now_ts}
-  s=sum(sz for px,sz in E if px<=U+.01);r=sum(sz for px,sz in D if px<=S+.01);m=d.emit_live_maker_anchor_box_candidate(sleeve_source="ZF_INTRADAY_MAKER_BOX",box_type="ZERO_FEE_MAKER_ANCHOR",asset=asset,dedupe_key=d_key,regime=f"ZF_{source_tag}",pair_horizons=f"zf_{source_tag.lower()}",leg_a=leg_a,leg_b=leg_b,anchor_is_a=f,queue_front=j,anchor_bid_px=y,hedge_limit_px=w,avail_a_shares=s,avail_b_shares=r,close_ts=float(close_ts),now_ts=now_ts,k_low=float(leg_a.get("strike")or 1e2),k_high=float(leg_b.get("strike")or 1e2))
-  if live_emit_only:return m
-  logger.info(f"[ZF_INTRADAY_MAKER_POST:{source_tag}] {title} | bid=${y:.3f} + hdg=${w:.3f} = ${g:.4f} (TTE={v/3600.:.2f}h)");return True
+   if h<round(R-F,3)or h<=.015 or h>=Q:continue
+   g=round(h+O,4)
+   if.86<=g<=m:t.append((g,f,round(h,4),round(O,4),e))
+  if not t:return False
+  t.sort(key=lambda z:(z[0],0 if z[4]else 1));g,f,C,B,l=t[0]
+  if not live_emit_only:d.pending_zero_fee_maker_anchors[d_key]={"source_tag":source_tag,"dedupe_key":d_key,"asset":asset,"title":title,"leg_a":leg_a,"leg_b":leg_b,"anchor_is_a":f,"bid_px":C,"pair_est":g,"queue_front":l,"req_shares_t100":n,"req_shares_t1000":k,"close_ts":close_ts,"posted_ts":now_ts}
+  v=sum(sz for px,sz in H if px<=X+.01);u=sum(sz for px,sz in G if px<=V+.01);q=d.emit_live_maker_anchor_box_candidate(sleeve_source="ZF_INTRADAY_MAKER_BOX",box_type="ZERO_FEE_MAKER_ANCHOR",asset=asset,dedupe_key=d_key,regime=f"ZF_{source_tag}",pair_horizons=f"zf_{source_tag.lower()}",leg_a=leg_a,leg_b=leg_b,anchor_is_a=f,queue_front=l,anchor_bid_px=C,hedge_limit_px=B,avail_a_shares=v,avail_b_shares=u,close_ts=float(close_ts),now_ts=now_ts,k_low=float(leg_a.get("strike")or 1e2),k_high=float(leg_b.get("strike")or 1e2))
+  if live_emit_only:return q
+  logger.info(f"[ZF_INTRADAY_MAKER_POST:{source_tag}] {title} | bid=${C:.3f} + hdg=${B:.3f} = ${g:.4f} (TTE={A/3600.:.2f}h)");return True
  async def manage_pending_zero_fee_maker_anchors(b,now_ts=None):
   if not b.pending_zero_fee_maker_anchors:return
-  W=float(now_ts if now_ts is not None else time.time());I=b.__dict__.setdefault("_zf_maker_cooldown_until",{});R=[t for st in b.pending_zero_fee_maker_anchors.values()for t in(str(st["leg_a"]["token_id"]),str(st["leg_b"]["token_id"]))];V=await b.fetch_books_batch(R,timeout=3.)
-  for K,st in list(b.pending_zero_fee_maker_anchors.items()):
-   Z,Y=st["leg_a"],st["leg_b"];s=bool(st["anchor_is_a"]);A=Z if s else Y;z=Y if s else Z;H=V.get(str(A["token_id"]));G=V.get(str(z["token_id"]));F=float(st["bid_px"]);E=W-float(st["posted_ts"]);y=float(st["close_ts"])-W;r=(H or{}).get("asks")or[];f=min((float(a["price"])for a in r if float(a.get("size",0))>0),default=1.)
-   if H is not None and E>=.4 and f<=F:
-    b.pending_zero_fee_maker_anchors.pop(K,None);b.entered_keys.add(K);q=sorted([(float(a["price"]),float(a["size"]))for a in((G or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);D=q[0][0]if q else 1.;n=sum(sz for px,sz in q if px<=D+.01)if q else.0;p=round(F+D,4)
-    if G is not None and q and n>=5. and.9<=p<=.993:
-     J={};x={}
-     for e,l in BANKROLL_TICKETS.items():X=max(5.,min(n,math.floor(l["ZF_INTRADAY_MAKER_BOX"]/p)));J[e]={"filled":True,"vwap":p,"eff_px":p,"spent_usd":round(X*p,2),"fee_usd":.0,"shares":X,"l1_usd":round(n*p,2)};Q=compute_d1_maker_anchor_drag_haircut(shares=X,pair_eff=p,bid_anc=F,hdg_px=D,hdg_avail_shares=n,fee_rate_anc=.0,fee_exponent_anc=1.,queue_front=bool(st.get("queue_front",True)),is_4h_mixed=False);x[e]=float(Q["legging_drag_usd"])
-     P,_=extract_best_bid((V.get(str(Z["token_id"]))or{}).get("bids")or[]);O,_=extract_best_bid((V.get(str(Y["token_id"]))or{}).get("bids")or[]);U=f"ZF_INTRADAY_MKR_{int(W)}_{K[-8:]}";T={"position_id":U,"dedupe_key":K,"sleeve":"ZF_INTRADAY_MAKER_BOX","asset_or_city":st["asset"],"title":f"{st['title']} [ZF Intraday Maker @ ${F:.3f}]","side":f"{Z['label']}+{Y['label']}","token_id":f"{Z['token_id']}|{Y['token_id']}","fee_rate":.0,"entry_ts":W,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":st["close_ts"],"p_model_entry":1.,"entry_eff_px_t1000":p,"entry_vwap_t1000":p,"realized_edge_t1000":round(1.-p,4),"entry_best_bid":round(P+O,4),"last_bid":round(P+O,4),"maker_tp_px":None,"tier_fills":J,"extra":{"is_two_leg_box":True,"is_maker_anchor_box":True,"legging_drag_usd_by_tier":x,"source_tag":st["source_tag"],"leg_a":Z,"leg_b":Y},"status":"OPEN"};b.open_positions[U]=T;b._append_ledger({"event":"SHADOW_ENTRY",**T});logger.info(f"[ENTRY:ZF_INTRADAY_MAKER_BOX] {T['title']} -> Hedged @ ${p:.4f}!")
+  Z=float(now_ts if now_ts is not None else time.time());K=b.__dict__.setdefault("_zf_maker_cooldown_until",{});U=[t for st in b.pending_zero_fee_maker_anchors.values()for t in(str(st["leg_a"]["token_id"]),str(st["leg_b"]["token_id"]))];Y=await b.fetch_books_batch(U,timeout=3.)
+  for N,st in list(b.pending_zero_fee_maker_anchors.items()):
+   la,lb=st["leg_a"],st["leg_b"];v=bool(st["anchor_is_a"]);C=la if v else lb;B=lb if v else la;J=Y.get(str(C["token_id"]));I=Y.get(str(B["token_id"]));H=float(st["bid_px"]);G=Z-float(st["posted_ts"]);A=float(st["close_ts"])-Z;u=(J or{}).get("asks")or[];g=min((float(a["price"])for a in u if float(a.get("size",0))>0),default=1.)
+   if J is not None and G>=.4 and g<=H:
+    b.pending_zero_fee_maker_anchors.pop(N,None);b.entered_keys.add(N);s=sorted([(float(a["price"]),float(a["size"]))for a in((I or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);F=s[0][0]if s else 1.;p=sum(sz for px,sz in s if px<=F+.01)if s else.0;r=round(H+F,4)
+    if I is not None and s and p>=5. and.9<=r<=.993:
+     M={};z={}
+     for f,m in BANKROLL_TICKETS.items():sh=max(5.,min(p,math.floor(m["ZF_INTRADAY_MAKER_BOX"]/r)));M[f]={"filled":True,"vwap":r,"eff_px":r,"spent_usd":round(sh*r,2),"fee_usd":.0,"shares":sh,"l1_usd":round(p*r,2)};T=compute_d1_maker_anchor_drag_haircut(shares=sh,pair_eff=r,bid_anc=H,hdg_px=F,hdg_avail_shares=p,fee_rate_anc=.0,fee_exponent_anc=1.,queue_front=bool(st.get("queue_front",True)),is_4h_mixed=False);z[f]=float(T["legging_drag_usd"])
+     S,_=extract_best_bid((Y.get(str(la["token_id"]))or{}).get("bids")or[]);R,_=extract_best_bid((Y.get(str(lb["token_id"]))or{}).get("bids")or[]);X=f"ZF_INTRADAY_MKR_{int(Z)}_{N[-8:]}";W={"position_id":X,"dedupe_key":N,"sleeve":"ZF_INTRADAY_MAKER_BOX","asset_or_city":st["asset"],"title":f"{st['title']} [ZF Intraday Maker @ ${H:.3f}]","side":f"{la['label']}+{lb['label']}","token_id":f"{la['token_id']}|{lb['token_id']}","fee_rate":.0,"entry_ts":Z,"entry_utc":datetime.now(timezone.utc).isoformat(),"close_ts":st["close_ts"],"p_model_entry":1.,"entry_eff_px_t1000":r,"entry_vwap_t1000":r,"realized_edge_t1000":round(1.-r,4),"entry_best_bid":round(S+R,4),"last_bid":round(S+R,4),"maker_tp_px":None,"tier_fills":M,"extra":{"is_two_leg_box":True,"is_maker_anchor_box":True,"legging_drag_usd_by_tier":z,"source_tag":st["source_tag"],"leg_a":la,"leg_b":lb},"status":"OPEN"};b.open_positions[X]=W;b._append_ledger({"event":"SHADOW_ENTRY",**W});logger.info(f"[ENTRY:ZF_INTRADAY_MAKER_BOX] {W['title']} -> Hedged @ ${r:.4f}!")
     else:
-     w,_=extract_best_bid((H or{}).get("bids")or[]);v=w if w>0 else max(.01,F-.03);N,M={},{};h=max(.9,float(st.get("pair_est")or.986))
-     for e,l in BANKROLL_TICKETS.items():L=max(5.,float(math.floor(l["ZF_INTRADAY_MAKER_BOX"]/h)));S=round(L*F,2);N[e]={"filled":True,"vwap":F,"eff_px":F,"spent_usd":S,"fee_usd":.0,"shares":L};M[e]=round(L*v-S,2)
-     u={"position_id":f"ZF_MKR_SCRATCH_{int(W)}_{K[-8:]}","dedupe_key":K,"sleeve":"ZF_INTRADAY_MAKER_BOX","asset_or_city":st["asset"],"title":f"{st['title']} [ZF Intraday Maker Scratch]","side":f"{A['label']}_SCRATCH","token_id":str(A["token_id"]),"fee_rate":.0,"entry_ts":st["posted_ts"],"entry_utc":datetime.fromtimestamp(st["posted_ts"],tz=timezone.utc).isoformat(),"close_ts":st["close_ts"],"closed_ts":W,"closed_utc":datetime.now(timezone.utc).isoformat(),"p_model_entry":.5,"entry_eff_px_t1000":F,"entry_vwap_t1000":F,"net_payout_per_share":round(v,4),"tier_fills":N,"tier_pnls_usd":M,"legging_adjusted_tier_pnls_usd":dict(M),"won":M.get("T1000",.0)>0,"status":"MAKER_ANCHOR_UNHEDGED_SCRATCH"};b.closed_positions.append(u);b._append_ledger({"event":"SHADOW_CLOSE",**u})
+     y,_=extract_best_bid((J or{}).get("bids")or[]);x=y if y>0 else max(.01,H-.03);Q,P={},{};i=max(.9,float(st.get("pair_est")or.986))
+     for f,m in BANKROLL_TICKETS.items():O=max(5.,float(math.floor(m["ZF_INTRADAY_MAKER_BOX"]/i)));V=round(O*H,2);Q[f]={"filled":True,"vwap":H,"eff_px":H,"spent_usd":V,"fee_usd":.0,"shares":O};P[f]=round(O*x-V,2)
+     w={"position_id":f"ZF_MKR_SCRATCH_{int(Z)}_{N[-8:]}","dedupe_key":N,"sleeve":"ZF_INTRADAY_MAKER_BOX","asset_or_city":st["asset"],"title":f"{st['title']} [ZF Intraday Maker Scratch]","side":f"{C['label']}_SCRATCH","token_id":str(C["token_id"]),"fee_rate":.0,"entry_ts":st["posted_ts"],"entry_utc":datetime.fromtimestamp(st["posted_ts"],tz=timezone.utc).isoformat(),"close_ts":st["close_ts"],"closed_ts":Z,"closed_utc":datetime.now(timezone.utc).isoformat(),"p_model_entry":.5,"entry_eff_px_t1000":H,"entry_vwap_t1000":H,"net_payout_per_share":round(x,4),"tier_fills":Q,"tier_pnls_usd":P,"legging_adjusted_tier_pnls_usd":dict(P),"won":P.get("T1000",.0)>0,"status":"MAKER_ANCHOR_UNHEDGED_SCRATCH"};b.closed_positions.append(w);b._append_ledger({"event":"SHADOW_CLOSE",**w})
     continue
-   k=sorted([(float(a["price"]),float(a["size"]))for a in((G or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);o=k[0][0]if k else 1.;g=sum(sz for px,sz in k if px<=o+.01)if k else.0;j=float(st.get("req_shares_t100")or 18.);c,C=extract_best_bid((H or{}).get("bids")or[]);B=sum(float(a.get("size",0))for a in r if abs(float(a.get("price",0))-f)<1e-6);m=((C-B)/(C+B))if(C+B)>.0 else.0;d=.993 if st.get("source_tag")=="SP1_NBA"else.991;i=(y<=60. or m<-.3 or(c>.0 and c<F-.015)or g<max(12.,2.*j)or(F+o)>d)
-   if i or E>=(15. if b.single_scan else 90.):
-    b.pending_zero_fee_maker_anchors.pop(K,None)
-    if i:I[K]=W+12.
-    else:I.pop(K,None);b.last_tradfi_sports_scan_ts=min(float(b.last_tradfi_sports_scan_ts),W-16.)
+   l=sorted([(float(a["price"]),float(a["size"]))for a in((I or{}).get("asks")or[])if float(a.get("price",0))>0 and float(a.get("size",0))>0]);q=l[0][0]if l else 1.;h=sum(sz for px,sz in l if px<=q+.01)if l else.0;k=float(st.get("req_shares_t100")or 18.);d,E=extract_best_bid((J or{}).get("bids")or[]);D=sum(float(a.get("size",0))for a in u if abs(float(a.get("price",0))-g)<1e-6);o=((E-D)/(E+D))if(E+D)>.0 else.0;e=.993 if st.get("source_tag")=="SP1_NBA"else.991;from src.polymarket_research.synthetic_maker_quoter import evaluate_resting_synthetic_quote_tick as c;n=time.monotonic();L=c(posted_bid_px=H,posted_shares=k,anchor_book=J,hedge_book=I,hedge_fee_rate=.0,hedge_fee_exponent=1.,max_entry_box_cost_net=e-.002,max_keep_box_cost_net=e,min_keep_depth_mult=2.,rem_tte_sec=A,min_rem_tte_sec=60.,advance_since_mono=n-1.,now_mono=n,advance_debounce_sec=.5,repeg_count=int(st.get("_repeg_count",0)or 0),max_repegs=3);j=(A<=60. or o<-.3 or(d>.0 and d<H-.015)or h<max(12.,2.*k)or(H+q)>e or L["action"]=="CANCEL_ADVERSE")
+   if(not j and L["action"]=="REPEG_FIFO1"and L.get("repeg_bid_px")is not None and int(st.get("_repeg_count",0)or 0)<3):st["bid_px"]=float(L["repeg_bid_px"]);st["pair_est"]=round(float(st["bid_px"])+q,4);st["queue_front"]=True;st["_repeg_count"]=int(st.get("_repeg_count",0)or 0)+1;st["_last_repeg_elapsed"]=G
+   if j or G>=(15. if b.single_scan else 90.):
+    b.pending_zero_fee_maker_anchors.pop(N,None)
+    if j:K[N]=Z+12.
+    else:K.pop(N,None);b.last_tradfi_sports_scan_ts=min(float(b.last_tradfi_sports_scan_ts),Z-16.)
  async def scan_same_oracle_dominance_boxes(a,opps_out,now_ts=None):
-  P=float(now_ts if now_ts is not None else time.time())
-  if a.pending_maker_anchors:await a.manage_pending_maker_anchors(P)
-  n=int(math.ceil(P/9e2)*900);g=sum(1 for k in a.dominance_pairs if str(k).endswith(f"_{n}"));m=7. if g<len(DOMINANCE_ASSETS)else 12.;w=float(n)-P;y=math.ceil(P/3600.)*3600.-P;s=(a.is_in_same_oracle_overlap_window(P)if(a.single_scan or"fetch_json"in a.__dict__)else((5.<=w<=330.)or(5.<=y<=905.)))
-  if s and(P-a.last_dominance_discovery_ts)>=m:a.last_dominance_discovery_ts=P;await a.discover_dominance_pairs(P)
+  Q=float(now_ts if now_ts is not None else time.time())
+  if a.pending_maker_anchors:await a.manage_pending_maker_anchors(Q)
+  n=int(math.ceil(Q/9e2)*900);g=sum(1 for k in a.dominance_pairs if str(k).endswith(f"_{n}"));m=7. if g<len(DOMINANCE_ASSETS)else 12.;w=float(n)-Q;y=math.ceil(Q/3600.)*3600.-Q;s=(a.is_in_same_oracle_overlap_window(Q)if(a.single_scan or"fetch_json"in a.__dict__)else((5.<=w<=330.)or(5.<=y<=905.)))
+  if s and(Q-a.last_dominance_discovery_ts)>=m:a.last_dominance_discovery_ts=Q;await a.discover_dominance_pairs(Q)
   if now_ts is None:a.record_usd_spot_samples(time.time())
-  q=[(m15,m5)for m15,m5 in list(a.dominance_pairs.values())if(10.<=(m5.end_ts-P)<=(9e2 if m5.horizon=="15m"else 3e2))and(P>=m5.start_ts+1.)]
+  q=[(m15,m5)for m15,m5 in list(a.dominance_pairs.values())if(10.<=(m5.end_ts-Q)<=(9e2 if m5.horizon=="15m"else 3e2))and(Q>=m5.start_ts+1.)]
   if q:
    async def e(m15,m5):
-    b,c=await asyncio.gather(a.get_authoritative_open_strike(m15),a.get_authoritative_open_strike(m5))
-    if b is None or c is None:return None
-    a=float(MIN_CORRIDOR_BPS_BY_ASSET.get(m15.asset,3.));d=determine_dominance_legs(m15,b,m5,c,min_corridor_bps=a);return(m15,m5,d)if d is not None else None
+    r,T=await asyncio.gather(a.get_authoritative_open_strike(m15),a.get_authoritative_open_strike(m5))
+    if r is None or T is None:return None
+    k=float(MIN_CORRIDOR_BPS_BY_ASSET.get(m15.asset,3.));U=determine_dominance_legs(m15,r,m5,T,min_corridor_bps=k);return(m15,m5,U)if U is not None else None
    l=[r for r in await asyncio.gather(*(e(m15,m5)for m15,m5 in q))if r is not None]
    if l:
     v=[]
-    for _,_,di in l:R,Q=di["leg_a"],di["leg_b"];v.extend([str(R["token_id"]),str(Q["token_id"]),str(R.get("opp_token_id")or""),str(Q.get("opp_token_id")or"")])
+    for _,_,di in l:S,R=di["leg_a"],di["leg_b"];v.extend([str(S["token_id"]),str(R["token_id"]),str(S.get("opp_token_id")or""),str(R.get("opp_token_id")or"")])
     x=await a.fetch_books_batch(v,timeout=3.)
     for m15,m5,G in l:
-     I=m5.end_ts-P;M,L=G["leg_a"],G["leg_b"];O=x.get(str(M["token_id"]));N=x.get(str(L["token_id"]))
-     if not O or not N:continue
-     b=None;F=float(now_ts)if now_ts is not None else time.time();E=f"{m15.horizon}_{m5.horizon}";a._record_d1_corridor_telemetry(E,m15,m5,G,O,N,F);D=m5.end_ts-F;f=a._strike_is_rest_verified(m15)and a._strike_is_rest_verified(m5);d=False;p=898. if m5.horizon=="15m"else 298.
+     I=m5.end_ts-Q;N,M=G["leg_a"],G["leg_b"];P=x.get(str(N["token_id"]));O=x.get(str(M["token_id"]))
+     if not P or not O:continue
+     b=None;F=float(now_ts)if now_ts is not None else time.time();E=f"{m15.horizon}_{m5.horizon}";a._record_d1_corridor_telemetry(E,m15,m5,G,P,O,F);D=m5.end_ts-F;f=a._strike_is_rest_verified(m15)and a._strike_is_rest_verified(m5);d=False;p=898. if m5.horizon=="15m"else 298.
      if f and 16.<=D<=p:
-      j=a._d1_live_max_box_cost();u=a.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX");i=max(j,.989)if u else j;K=walk_equal_shares_dominance_box(O.get("asks")or[],N.get("asks")or[],target_budget_usd=24.,fee_rate_a=float(M["fee_rate"]),fee_rate_b=float(L["fee_rate"]),fee_exponent_a=float(M["fee_exponent"]),fee_exponent_b=float(L["fee_exponent"]),max_box_cost_net=i,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
+      L=max(float(N["fee_rate"]),float(M["fee_rate"]))==.0;j=a._d1_live_max_box_cost(zero_fee=L,rem_tte_sec=D);u=a.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX");i=max(j,.989)if u else j;K=walk_equal_shares_dominance_box(P.get("asks")or[],O.get("asks")or[],target_budget_usd=24.,fee_rate_a=float(N["fee_rate"]),fee_rate_b=float(M["fee_rate"]),fee_exponent_a=float(N["fee_exponent"]),fee_exponent_b=float(M["fee_exponent"]),max_box_cost_net=i,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
       if K.get("filled"):
-       h=a._passes_quiet_book_filter(m15.asset,O,N,K,F);o=i if(h and u)else j
+       h=a._passes_quiet_book_filter(m15.asset,P,O,K,F);o=i if(h and u)else j
        if float(K["box_cost_net"])<=o:
-        b=await a._passes_complement_anti_box_check(M,L,prefetched_books=x)
+        b=await a._passes_complement_anti_box_check(N,M,prefetched_books=x)
         if not b:continue
         d=a.emit_live_d1_box_candidate(m15,m5,G,K,F,is_quiet_book=h,sleeve_source="D1_QUIET_BOOK_BOX"if h else"D1_SAME_ORACLE_DOMINANCE_BOX")
-     J=walk_equal_shares_dominance_box(O.get("asks")or[],N.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D1_SAME_ORACLE_DOMINANCE_BOX"],fee_rate_a=float(M["fee_rate"]),fee_rate_b=float(L["fee_rate"]),fee_exponent_a=float(M["fee_exponent"]),fee_exponent_b=float(L["fee_exponent"]),max_box_cost_net=1.032,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if f else.9);c=False
+     J=walk_equal_shares_dominance_box(P.get("asks")or[],O.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D1_SAME_ORACLE_DOMINANCE_BOX"],fee_rate_a=float(N["fee_rate"]),fee_rate_b=float(M["fee_rate"]),fee_exponent_a=float(N["fee_exponent"]),fee_exponent_b=float(M["fee_exponent"]),max_box_cost_net=1.032,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if f else.9);c=False
      if J.get("filled"):
       H=float(J["box_cost_net"]);t=round(1.-H,4)
       if H<=1.005:opps_out.append({"sleeve":"D1_SAME_ORACLE_DOMINANCE_BOX","market":f"{m15.asset} {G['regime']} (TTE={I:.0f}s, {G['corridor_bps']:.1f}bps)","ask_vwap":round(H,4),"p_model":1.,"net_edge":t,"l1_usd":J["l1_usd"]})
       if H<=.995:
-       if b is None:b=await a._passes_complement_anti_box_check(M,L,prefetched_books=x)
+       if b is None:b=await a._passes_complement_anti_box_check(N,M,prefetched_books=x)
        if not b:continue
-       c=True;await a.open_shadow_dominance_box(m15.asset,m15,m5,G,prefetched_books=(O,N))
-       if a._passes_quiet_book_filter(m15.asset,O,N,J,F):await a.open_shadow_dominance_box(m15.asset,m15,m5,G,prefetched_books=(O,N),sleeve_override="D1_QUIET_BOOK_BOX",max_box_cost_override=.992)
+       c=True;await a.open_shadow_dominance_box(m15.asset,m15,m5,G,prefetched_books=(P,O))
+       if a._passes_quiet_book_filter(m15.asset,P,O,J,F):await a.open_shadow_dominance_box(m15.asset,m15,m5,G,prefetched_books=(P,O),sleeve_override="D1_QUIET_BOOK_BOX",max_box_cost_override=.992)
      if not c or not d:
-      C,_=a._best_ask_sz(O);B,_=a._best_ask_sz(N);A,_=extract_best_bid(O.get("bids")or[]);z,_=extract_best_bid(N.get("bids")or[])
+      C,_=a._best_ask_sz(P);B,_=a._best_ask_sz(O);A,_=extract_best_bid(P.get("bids")or[]);z,_=extract_best_bid(O.get("bids")or[])
       if(C+B)<=1.02 or(A>.0 and z>.0 and min(A+B,C+z)<=1.005):
-       if b is None:b=await a._passes_complement_anti_box_check(M,L,prefetched_books=x)
-       if b:a.post_maker_anchor_candidate(m15,m5,G,O,N,F,live_emit_only=bool(c))
+       if b is None:b=await a._passes_complement_anti_box_check(N,M,prefetched_books=x)
+       if b:a.post_maker_anchor_candidate(m15,m5,G,P,O,F,live_emit_only=bool(c))
   await a._scan_4h_dominance_boxes(opps_out,now_ts)
  def _passes_quiet_book_filter(a,asset,bk_a,bk_b,w_scan,now_ts):
   if abs(a.get_return_bps(asset,5.))>4.5:return False
@@ -6445,92 +6791,132 @@ class Alpha124ShadowDaemon:
   if(e-g)>.041 or(d-f)>.041:return False
   c=float(w_scan.get("shares")or 12.);b=min(float(w_scan.get("avail_a_shares")or.0),float(w_scan.get("avail_b_shares")or.0));return b>=1.5*c
  async def discover_4h_dominance_pairs(a,now_ts):
-  for r,(m,_)in list(a.dominance_4h_pairs.items()):
-   if m.end_ts<now_ts-6e2:a.dominance_4h_pairs.pop(r,None)
-  for u,q in list(a.s4h_candles.items()):
-   if q.end_ts<now_ts-6e2:a.s4h_candles.pop(u,None)
-  d=int(math.ceil(now_ts/14400.)*14400);l=float(d)-now_ts
-  if not(8.<=l<=905.):return
-  j=datetime.fromtimestamp(now_ts-5.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");i=l<=305.
-  for p in DOMINANCE_ASSETS:
-   o=DOMINANCE_SERIES_SLUGS[p];h=o.get("4h")
-   if not h:continue
-   n=f"{p}_4h15m_{d}";t=f"{p}_4h5m_{d}"
-   if n in a.dominance_4h_pairs and((not i)or t in a.dominance_4h_pairs):continue
-   g,e=await asyncio.gather(a.fetch_json(f"{GAMMA_URL}/events?series_slug={h}&closed=false&end_date_min={j}&order=endDate&ascending=true&limit=3",timeout=4.),a.fetch_json(f"{GAMMA_URL}/events?series_slug={o['15m']}&closed=false&end_date_min={j}&order=endDate&ascending=true&limit=3",timeout=4.));c=None;b=None
-   if isinstance(g,list):
-    for k in g:
-     w=parse_twap_candle_event(k,p,"4h")
-     if w and abs(w.end_ts-d)<=2.:c=w;a.s4h_candles[f"{p}_4h_{d}"]=w;break
-   if isinstance(e,list):
-    for k in e:
-     s=parse_twap_candle_event(k,p,"15m")
-     if s and abs(s.end_ts-d)<=2.:b=s;break
-   if c and b and verify_same_oracle_pair(c,b):a.dominance_4h_pairs[n]=(c,b)
-   if c and i and t not in a.dominance_4h_pairs:
-    f=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={o['5m']}&closed=false&end_date_min={j}&order=endDate&ascending=true&limit=3",timeout=4.)
-    if isinstance(f,list):
-     for k in f:
-      v=parse_twap_candle_event(k,p,"5m")
-      if v and abs(v.end_ts-d)<=2. and verify_same_oracle_pair(c,v):a.dominance_4h_pairs[t]=(c,v);break
+  for P,(I,_)in list(a.dominance_4h_pairs.items()):
+   if I.end_ts<now_ts-6e2:a.dominance_4h_pairs.pop(P,None)
+  for S,O in list(a.s4h_candles.items()):
+   if O.end_ts<now_ts-6e2:a.s4h_candles.pop(S,None)
+  from src.polymarket_research.riskless_protocol_v2_expansion import(compute_min_4h_boundary_rem_sec,resolve_active_4h_target_end_ts as c);j,H=c(now_ts)
+  if H<8.:return
+  i=8.<=H<=905.;D=datetime.fromtimestamp(now_ts-5.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");C=H<=305.
+  for N in DOMINANCE_ASSETS:
+   M=DOMINANCE_SERIES_SLUGS[N];B=M.get("4h")
+   if not B:continue
+   l=f"{N}_4h_{j}";n=f"{N}_4h15m_{j}";t=f"{N}_4h5m_{j}"
+   if not i:
+    if l in a.s4h_candles:continue
+    v=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={B}&closed=false&end_date_min={D}&order=endDate&ascending=true&limit=3",timeout=4.);h=bool(a.single_scan or("fetch_json"in a.__dict__));g=False
+    if isinstance(v,list):
+     for q in v:
+      L=parse_twap_candle_event(q,N,"4h")
+      if L and(abs(L.end_ts-j)<=2. or 8.<=(L.end_ts-now_ts)<=14405.):o=int(round(L.end_ts));a.s4h_candles[f"{N}_4h_{o}"]=L;g=True;break
+    if not g and not h:
+     G=build_deterministic_updown_event_slug(N,"4h",j)
+     if G:
+      p=await a.fetch_json(f"{GAMMA_URL}/events?slug={G}",timeout=3.5)
+      if isinstance(p,list)and p:
+       F=parse_twap_candle_event(p[0],N,"4h")
+       if F and abs(F.end_ts-j)<=2.:o=int(round(F.end_ts));a.s4h_candles[f"{N}_4h_{o}"]=F
+    continue
+   if n in a.dominance_4h_pairs and((not C)or t in a.dominance_4h_pairs):continue
+   A,u=await asyncio.gather(a.fetch_json(f"{GAMMA_URL}/events?series_slug={B}&closed=false&end_date_min={D}&order=endDate&ascending=true&limit=3",timeout=4.),a.fetch_json(f"{GAMMA_URL}/events?series_slug={M['15m']}&closed=false&end_date_min={D}&order=endDate&ascending=true&limit=3",timeout=4.));f=None;e=None;d=j;k=bool(a.single_scan or("fetch_json"in a.__dict__))
+   if isinstance(A,list):
+    for q in A:
+     U=parse_twap_candle_event(q,N,"4h")
+     if U and(abs(U.end_ts-j)<=2. or 8.<=(U.end_ts-now_ts)<=905.):f=U;d=int(round(U.end_ts));a.s4h_candles[f"{N}_4h_{d}"]=U;break
+   if f is None and not k:
+    R=build_deterministic_updown_event_slug(N,"4h",j)
+    if R:
+     z=await a.fetch_json(f"{GAMMA_URL}/events?slug={R}",timeout=3.5)
+     if isinstance(z,list)and z:
+      K=parse_twap_candle_event(z[0],N,"4h")
+      if K and abs(K.end_ts-j)<=2.:f=K;d=int(round(K.end_ts));a.s4h_candles[f"{N}_4h_{d}"]=K
+   n=f"{N}_4h15m_{d}";t=f"{N}_4h5m_{d}";m=(float(d)-now_ts)<=305.
+   if isinstance(u,list):
+    for q in u:
+     Q=parse_twap_candle_event(q,N,"15m")
+     if Q and abs(Q.end_ts-d)<=2.:e=Q;break
+   if f and e is None and not k:
+    s=build_deterministic_updown_event_slug(N,"15m",d)
+    if s:
+     r=await a.fetch_json(f"{GAMMA_URL}/events?slug={s}",timeout=3.5)
+     if isinstance(r,list)and r:
+      E=parse_twap_candle_event(r[0],N,"15m")
+      if E and abs(E.end_ts-d)<=2.:e=E
+   if f and e and verify_same_oracle_pair(f,e):a.dominance_4h_pairs[n]=(f,e)
+   if f and m and t not in a.dominance_4h_pairs:
+    y=await a.fetch_json(f"{GAMMA_URL}/events?series_slug={M['5m']}&closed=false&end_date_min={D}&order=endDate&ascending=true&limit=3",timeout=4.);b=None
+    if isinstance(y,list):
+     for q in y:
+      T=parse_twap_candle_event(q,N,"5m")
+      if T and abs(T.end_ts-d)<=2. and verify_same_oracle_pair(f,T):b=T;break
+    if b is None and not k:
+     x=build_deterministic_updown_event_slug(N,"5m",d)
+     if x:
+      w=await a.fetch_json(f"{GAMMA_URL}/events?slug={x}",timeout=3.5)
+      if isinstance(w,list)and w:
+       J=parse_twap_candle_event(w[0],N,"5m")
+       if J and abs(J.end_ts-d)<=2. and verify_same_oracle_pair(f,J):b=J
+    if b is not None:a.dominance_4h_pairs[t]=(f,b)
  async def _scan_4h_dominance_boxes(a,opps_out,now_ts=None):
-  G=float(now_ts if now_ts is not None else time.time());F=math.ceil(G/14400.)*14400.-G
-  if 8.<=F<=905. and(G-a.last_4h_discovery_ts)>=12.:a.last_4h_discovery_ts=G;await a.discover_4h_dominance_pairs(G)
-  for _,(Y,y)in list(a.dominance_4h_pairs.items()):
-   x=y.end_ts-G;w=895. if y.horizon=="15m"else 298.
-   if not(10.<=x<=w)or G<y.start_ts+1.:continue
-   R,Q=await asyncio.gather(a.get_authoritative_open_strike(Y),a.get_authoritative_open_strike(y))
-   if R is None or Q is None:continue
-   l=float(MIN_CORRIDOR_BPS_BY_ASSET.get(Y.asset,3.));t=determine_dominance_legs(Y,R,y,Q,min_corridor_bps=l)
-   if t is None:continue
-   I,H=t["leg_a"],t["leg_b"];E=await a.fetch_books_batch([str(I["token_id"]),str(H["token_id"]),str(I.get("opp_token_id")or""),str(H.get("opp_token_id")or"")],timeout=3.);P=E.get(str(I["token_id"]));O=E.get(str(H["token_id"]))
-   if not P or not O:continue
-   b=None;k=float(now_ts)if now_ts is not None else time.time();a._record_d1_corridor_telemetry(f"4h_{y.horizon}",Y,y,t,P,O,k)
-   if now_ts is None:a.record_usd_spot_samples(k)
-   j=y.end_ts-k;e=a._strike_is_rest_verified(Y)and a._strike_is_rest_verified(y);c=False
-   if e and 18.<=j<=w:
-    i=a._d1_live_max_box_cost();f=a.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX");h=max(i,.989)if f else i;n=walk_equal_shares_dominance_box(P.get("asks")or[],O.get("asks")or[],target_budget_usd=13.5,fee_rate_a=float(I["fee_rate"]),fee_rate_b=float(H["fee_rate"]),fee_exponent_a=float(I["fee_exponent"]),fee_exponent_b=float(H["fee_exponent"]),max_box_cost_net=h,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
-    if n.get("filled"):
-     g=a._passes_quiet_book_filter(Y.asset,P,O,n,k);m=h if(g and f)else i
-     if float(n["box_cost_net"])<=m:
-      b=await a._passes_complement_anti_box_check(I,H,prefetched_books=E)
+  from src.polymarket_research.riskless_protocol_v2_expansion import compute_min_4h_boundary_rem_sec as e;J=float(now_ts if now_ts is not None else time.time());I=e(J);g=12. if(8.<=I<=905.)else 180.
+  if I>=8. and(J-a.last_4h_discovery_ts)>=g:a.last_4h_discovery_ts=J;await a.discover_4h_dominance_pairs(J)
+  for _,(m4,B)in list(a.dominance_4h_pairs.items()):
+   A=B.end_ts-J;z=895. if B.horizon=="15m"else 298.
+   if not(10.<=A<=z)or J<B.start_ts+1.:continue
+   U,T=await asyncio.gather(a.get_authoritative_open_strike(m4),a.get_authoritative_open_strike(B))
+   if U is None or T is None:continue
+   o=float(MIN_CORRIDOR_BPS_BY_ASSET.get(m4.asset,3.));w=determine_dominance_legs(m4,U,B,T,min_corridor_bps=o)
+   if w is None:continue
+   L,K=w["leg_a"],w["leg_b"];H=await a.fetch_books_batch([str(L["token_id"]),str(K["token_id"]),str(L.get("opp_token_id")or""),str(K.get("opp_token_id")or"")],timeout=3.);S=H.get(str(L["token_id"]));R=H.get(str(K["token_id"]))
+   if not S or not R:continue
+   b=None;n=float(now_ts)if now_ts is not None else time.time();a._record_d1_corridor_telemetry(f"4h_{B.horizon}",m4,B,w,S,R,n)
+   if now_ts is None:a.record_usd_spot_samples(n)
+   m=B.end_ts-n;f=a._strike_is_rest_verified(m4)and a._strike_is_rest_verified(B);c=False
+   if f and 18.<=m<=z:
+    G=max(float(L["fee_rate"]),float(K["fee_rate"]))==.0;l=a._d1_live_max_box_cost(zero_fee=G,rem_tte_sec=m);h=a.is_sleeve_grad8_ready("D1_QUIET_BOOK_BOX");k=max(l,.989)if h else l;q=walk_equal_shares_dominance_box(S.get("asks")or[],R.get("asks")or[],target_budget_usd=13.5,fee_rate_a=float(L["fee_rate"]),fee_rate_b=float(K["fee_rate"]),fee_exponent_a=float(L["fee_exponent"]),fee_exponent_b=float(K["fee_exponent"]),max_box_cost_net=k,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
+    if q.get("filled"):
+     j=a._passes_quiet_book_filter(m4.asset,S,R,q,n);p=k if(j and h)else l
+     if float(q["box_cost_net"])<=p:
+      b=await a._passes_complement_anti_box_check(L,K,prefetched_books=H)
       if not b:continue
-      c=a.emit_live_d1_box_candidate(Y,y,t,n,k,is_quiet_book=g,sleeve_source="D1_QUIET_BOOK_BOX"if g else"D1_4H_DOMINANCE_BOX")
-   D=walk_equal_shares_dominance_box(P.get("asks")or[],O.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D1_4H_DOMINANCE_BOX"],fee_rate_a=float(I["fee_rate"]),fee_rate_b=float(H["fee_rate"]),fee_exponent_a=float(I["fee_exponent"]),fee_exponent_b=float(H["fee_exponent"]),max_box_cost_net=1.032,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if e else.9);d=False
-   if D.get("filled"):
-    v=float(D["box_cost_net"])
-    if v<=1.005:opps_out.append({"sleeve":"D1_4H_DOMINANCE_BOX","market":f"{Y.asset} {t['regime']} (TTE={x:.0f}s, {t['corridor_bps']:.1f}bps)","ask_vwap":round(v,4),"p_model":1.,"net_edge":round(1.-v,4),"l1_usd":D["l1_usd"]})
-    if v<=.992:
-     if b is None:b=await a._passes_complement_anti_box_check(I,H,prefetched_books=E)
+      c=a.emit_live_d1_box_candidate(m4,B,w,q,n,is_quiet_book=j,sleeve_source="D1_QUIET_BOOK_BOX"if j else"D1_4H_DOMINANCE_BOX")
+   i=walk_equal_shares_dominance_box(S.get("asks")or[],R.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["D1_4H_DOMINANCE_BOX"],fee_rate_a=float(L["fee_rate"]),fee_rate_b=float(K["fee_rate"]),fee_exponent_a=float(L["fee_exponent"]),fee_exponent_b=float(K["fee_exponent"]),max_box_cost_net=1.032,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if f else.9)
+   if not i.get("filled"):i=walk_equal_shares_dominance_box(S.get("asks")or[],R.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T100"]["D1_4H_DOMINANCE_BOX"],fee_rate_a=float(L["fee_rate"]),fee_rate_b=float(K["fee_rate"]),fee_exponent_a=float(L["fee_exponent"]),fee_exponent_b=float(K["fee_exponent"]),max_box_cost_net=1.032,min_shares=8,min_box_notional_usd=7.5,min_box_cost_net=.86 if f else.9)
+   d=False
+   if i.get("filled"):
+    y=float(i["box_cost_net"])
+    if y<=1.005:opps_out.append({"sleeve":"D1_4H_DOMINANCE_BOX","market":f"{m4.asset} {w['regime']} (TTE={A:.0f}s, {w['corridor_bps']:.1f}bps)","ask_vwap":round(y,4),"p_model":1.,"net_edge":round(1.-y,4),"l1_usd":i["l1_usd"]})
+    if y<=.995:
+     if b is None:b=await a._passes_complement_anti_box_check(L,K,prefetched_books=H)
      if not b:continue
-     d=True;await a.open_shadow_dominance_box(Y.asset,Y,y,t,prefetched_books=(P,O),sleeve_override="D1_4H_DOMINANCE_BOX",max_box_cost_override=.992)
-     if a._passes_quiet_book_filter(Y.asset,P,O,D,k):await a.open_shadow_dominance_box(Y.asset,Y,y,t,prefetched_books=(P,O),sleeve_override="D1_QUIET_BOOK_BOX",max_box_cost_override=.992)
+     d=True;await a.open_shadow_dominance_box(m4.asset,m4,B,w,prefetched_books=(S,R),sleeve_override="D1_4H_DOMINANCE_BOX",max_box_cost_override=.995)
+     if a._passes_quiet_book_filter(m4.asset,S,R,i,n):await a.open_shadow_dominance_box(m4.asset,m4,B,w,prefetched_books=(S,R),sleeve_override="D1_QUIET_BOOK_BOX",max_box_cost_override=.992)
    if not d or not c:
-    s,_=a._best_ask_sz(P);r,_=a._best_ask_sz(O);q,_=extract_best_bid(P.get("bids")or[]);p,_=extract_best_bid(O.get("bids")or[])
-    if(s+r)<=1.02 or(q>.0 and p>.0 and min(q+r,s+p)<=1.005):
-     if b is None:b=await a._passes_complement_anti_box_check(I,H,prefetched_books=E)
-     if b:a.post_maker_anchor_candidate(Y,y,t,P,O,k,live_emit_only=bool(d))
-  for _,W in list(a.s4h_candles.items()):
-   C=W.end_ts-G
-   if not(180.<=C<=9e2)or G<W.start_ts+3600.:continue
-   B=await a.get_authoritative_open_strike(W)
-   if B is None or B<=.0:continue
-   N=read_shm_usd_anchor(W.asset,G,max_age_sec=3.);V=a.usd_spot_hist.get(W.asset);A=N.get("usd_spot")or(float(V[-1][1])if V and(G-float(V[-1][0]))<=5. else a.spots.get(W.asset,.0))
-   if not A or float(A)<=.0:continue
-   o=float(A);z="UP"if o>B else"DOWN";u=a.get_return_bps(W.asset,30.)
-   if(z=="UP"and u<-6.)or(z=="DOWN"and u>6.):continue
-   M=evaluate_svi_digital_fair_value(W.asset,o,B,C,is_downward=False,now_ts=G);U=float(M["p_yes"]if z=="UP"else M["p_no"]);T=abs(float(M.get("z_sigma")or.0))
-   if T<2.3 or U<.94:continue
-   L=W.up_token if z=="UP"else W.down_token;S=await a.fetch_json(f"{CLOB_URL}/book?token_id={L}",timeout=2.5)
-   if not S:continue
-   X=walk_l2_book_asks(S.get("asks")or[],BANKROLL_TICKETS["T1000"]["S4H_CHAINLINK_CONVERGENCE"],fee_rate=W.fee_rate,min_l1_usd=18.)
-   if not X.get("filled"):continue
-   K=float(X["eff_px"]);J=U-K
-   if.62<=K<=.89 and J>=.03:opps_out.append({"sleeve":"S4H_CHAINLINK_CONVERGENCE","market":f"{W.asset} 4h {z} (TTE={C/60:.1f}m, z={T:.2f})","ask_vwap":K,"p_model":round(U,4),"net_edge":round(J,4),"l1_usd":X["l1_usd"],"close_ts":W.end_ts})
-   if.62<=K<=.89 and J>=.045:await a.open_shadow_position(sleeve="S4H_CHAINLINK_CONVERGENCE",dedupe_key=f"S4H_{W.asset}_{W.market_id}",asset_or_city=W.asset,title=f"{W.title} [4h Chainlink Convergence]",side_label=z,token_id=L,fee_rate=W.fee_rate,p_model=U,close_ts=W.end_ts,extra={"market_id":W.market_id,"condition_id":W.condition_id,"horizon":"4h","start_iso":W.start_iso,"end_iso":W.end_iso,"open_price":B,"z_sigma":T},tp_target_px=.96,prefetched_book=S)
+    v,_=a._best_ask_sz(S);u,_=a._best_ask_sz(R);t,_=extract_best_bid(S.get("bids")or[]);s,_=extract_best_bid(R.get("bids")or[])
+    if(v+u)<=1.02 or(t>.0 and s>.0 and min(t+u,v+s)<=1.005):
+     if b is None:b=await a._passes_complement_anti_box_check(L,K,prefetched_books=H)
+     if b:a.post_maker_anchor_candidate(m4,B,w,S,R,n,live_emit_only=bool(d))
+  for _,Z in list(a.s4h_candles.items()):
+   F=Z.end_ts-J
+   if not(180.<=F<=9e2)or J<Z.start_ts+3600.:continue
+   E=await a.get_authoritative_open_strike(Z)
+   if E is None or E<=.0:continue
+   Q=read_shm_usd_anchor(Z.asset,J,max_age_sec=3.);Y=a.usd_spot_hist.get(Z.asset);D=Q.get("usd_spot")or(float(Y[-1][1])if Y and(J-float(Y[-1][0]))<=5. else a.spots.get(Z.asset,.0))
+   if not D or float(D)<=.0:continue
+   r=float(D);C="UP"if r>E else"DOWN";x=a.get_return_bps(Z.asset,30.)
+   if(C=="UP"and x<-6.)or(C=="DOWN"and x>6.):continue
+   P=evaluate_svi_digital_fair_value(Z.asset,r,E,F,is_downward=False,now_ts=J);X=float(P["p_yes"]if C=="UP"else P["p_no"]);W=abs(float(P.get("z_sigma")or.0))
+   if W<2.3 or X<.94:continue
+   O=Z.up_token if C=="UP"else Z.down_token;V=await a.fetch_json(f"{CLOB_URL}/book?token_id={O}",timeout=2.5)
+   if not V:continue
+   w4=walk_l2_book_asks(V.get("asks")or[],BANKROLL_TICKETS["T1000"]["S4H_CHAINLINK_CONVERGENCE"],fee_rate=Z.fee_rate,min_l1_usd=18.)
+   if not w4.get("filled"):continue
+   N=float(w4["eff_px"]);M=X-N
+   if.62<=N<=.89 and M>=.03:opps_out.append({"sleeve":"S4H_CHAINLINK_CONVERGENCE","market":f"{Z.asset} 4h {C} (TTE={F/60:.1f}m, z={W:.2f})","ask_vwap":N,"p_model":round(X,4),"net_edge":round(M,4),"l1_usd":w4["l1_usd"],"close_ts":Z.end_ts})
+   if.62<=N<=.89 and M>=.045:await a.open_shadow_position(sleeve="S4H_CHAINLINK_CONVERGENCE",dedupe_key=f"S4H_{Z.asset}_{Z.market_id}",asset_or_city=Z.asset,title=f"{Z.title} [4h Chainlink Convergence]",side_label=C,token_id=O,fee_rate=Z.fee_rate,p_model=X,close_ts=Z.end_ts,extra={"market_id":Z.market_id,"condition_id":Z.condition_id,"horizon":"4h","start_iso":Z.start_iso,"end_iso":Z.end_iso,"open_price":E,"z_sigma":W},tp_target_px=.96,prefetched_book=V)
  def poll_fresh_shock_triggers(a,now_ts=None,max_age_sec=4.5):
   if not SHOCK_TRIGGER_FILE.exists():return[]
-  n=float(now_ts if now_ts is not None else time.time());j=[]
+  m=float(now_ts if now_ts is not None else time.time());i=[]
   try:
    e=SHOCK_TRIGGER_FILE.stat().st_size
    if e<a._shock_file_offset:a._shock_file_offset=0
@@ -6539,23 +6925,23 @@ class Alpha124ShadowDaemon:
    for c in b.splitlines():
     c=c.strip()
     if not c:continue
-    try:l=json.loads(c)
+    try:k=json.loads(c)
     except Exception:continue
-    m=str(l.get("shock_id")or l.get("event_id")or"")
-    if not m or m in a._seen_shock_ids:continue
-    a._seen_shock_ids.append(m)
-    if str(l.get("shock_source")or"").upper()=="BOUNDARY_LOCK":continue
-    i=str(l.get("asset")or"").upper()
-    if i not in DOMINANCE_ASSETS:continue
-    k=float(l.get("t0_unix")or.0)
-    if k<=.0 or(n-k)>max_age_sec:continue
-    d=float(l.get("spot_at_t0")or l.get("trigger_price")or.0)
-    if d>.0:a.spots[i]=d;a.spot_hist.setdefault(i,collections.deque(maxlen=600)).append((n,d))
-    h=l.get("chainlink_proxy_spot")or l.get("coinbase_spot")
-    if h and float(h)>.0:a.usd_spot_hist.setdefault(i,collections.deque(maxlen=400)).append((n,float(h)));a.usd_direct_flags[i]=True
-    if abs(float(l.get("shock_ofi")or.0))>=.55:a._last_any_shock_ts_by_asset[i]=n;j.append(l)
-  except Exception as g:pass
-  return j
+    l=str(k.get("shock_id")or k.get("event_id")or"")
+    if not l or l in a._seen_shock_ids:continue
+    a._seen_shock_ids.append(l)
+    if str(k.get("shock_source")or"").upper()=="BOUNDARY_LOCK":continue
+    h=str(k.get("asset")or"").upper()
+    if h not in DOMINANCE_ASSETS:continue
+    j=float(k.get("t0_unix")or.0)
+    if j<=.0 or(m-j)>max_age_sec:continue
+    d=float(k.get("spot_at_t0")or k.get("trigger_price")or.0)
+    if d>.0:a.spots[h]=d;a.spot_hist.setdefault(h,collections.deque(maxlen=600)).append((m,d))
+    g=k.get("chainlink_proxy_spot")or k.get("coinbase_spot")
+    if g and float(g)>.0:a.usd_spot_hist.setdefault(h,collections.deque(maxlen=400)).append((m,float(g)));a.usd_direct_flags[h]=True
+    if abs(float(k.get("shock_ofi")or.0))>=.55:a._last_any_shock_ts_by_asset[h]=m;i.append(k)
+  except Exception:pass
+  return i
  async def handle_shock_triggers(a,triggers,opps_out,now_ts=None):
   if not triggers:return
   Q=float(now_ts if now_ts is not None else time.time())
@@ -6614,21 +7000,21 @@ class Alpha124ShadowDaemon:
    if int(n.twap_lookback_sec)==60 and abs(n.end_ts-i)<=2.:b.twap_candles[f"{n.asset}_4h_{i}"]=n
   g=datetime.fromtimestamp(p-5.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");d=(i%900)==0
   async def c(asset):
-   c=DOMINANCE_SERIES_SLUGS[asset];h=f"{asset}_5m_{i}"
-   if h not in b.twap_candles:
-    b=await b.fetch_json(f"{GAMMA_URL}/events?series_slug={c['5m']}&closed=false&end_date_min={g}&order=endDate&ascending=true&limit=3",timeout=3.)
-    if isinstance(b,list):
-     for e in b:
-      g=parse_twap_candle_event(e,asset,"5m")
-      if g and abs(g.end_ts-i)<=2.:b.twap_candles[h]=g;break
+   r=DOMINANCE_SERIES_SLUGS[asset];w=f"{asset}_5m_{i}"
+   if w not in b.twap_candles:
+    q=await b.fetch_json(f"{GAMMA_URL}/events?series_slug={r['5m']}&closed=false&end_date_min={g}&order=endDate&ascending=true&limit=3",timeout=3.)
+    if isinstance(q,list):
+     for t in q:
+      v=parse_twap_candle_event(t,asset,"5m")
+      if v and abs(v.end_ts-i)<=2.:b.twap_candles[w]=v;break
    if d:
-    f=f"{asset}_15m_{i}"
-    if f not in b.twap_candles:
-     a=await b.fetch_json(f"{GAMMA_URL}/events?series_slug={c['15m']}&closed=false&end_date_min={g}&order=endDate&ascending=true&limit=3",timeout=3.)
+    u=f"{asset}_15m_{i}"
+    if u not in b.twap_candles:
+     a=await b.fetch_json(f"{GAMMA_URL}/events?series_slug={r['15m']}&closed=false&end_date_min={g}&order=endDate&ascending=true&limit=3",timeout=3.)
      if isinstance(a,list):
-      for e in a:
-       d=parse_twap_candle_event(e,asset,"15m")
-       if d and abs(d.end_ts-i)<=2.:b.twap_candles[f]=d;break
+      for t in a:
+       s=parse_twap_candle_event(t,asset,"15m")
+       if s and abs(s.end_ts-i)<=2.:b.twap_candles[u]=s;break
   await asyncio.gather(*(c(a)for a in DOMINANCE_ASSETS))
   if not b.single_scan and h>=22.:
    f=[sp for sp in list(b.twap_candles.values())if abs(sp.end_ts-i)<=2. and f"{sp.asset}_{sp.horizon}_{int(sp.start_ts)}"not in b.chainlink_open_cache]
@@ -6958,30 +7344,30 @@ class Alpha124ShadowDaemon:
    T=V.get("T1000",.0)>0;_n.update({"status":_o,"closed_ts":_2,"closed_utc":datetime.now(timezone.utc).isoformat(),"net_payout_per_share":round(M,4),"tier_pnls_usd":V,"legging_adjusted_tier_pnls_usd":A,"won":T});c.closed_positions.append(_n);c._append_ledger({"event":"SHADOW_CLOSE",**_n});logger.info(f"[CLOSE:{_n['sleeve']}] {_n['title']} ({_n['side']}) -> {_o} | PnL T100=${V.get('T100',0):+.2f} T1000=${V.get('T1000',0):+.2f} T5000=${V.get('T5000',0):+.2f}")
  def write_state_files(a,opps):
   if len(getattr(a,"authoritative_strike_cache",{}))>2000:
-   for J in list(a.authoritative_strike_cache.keys())[:-1500]:a.authoritative_strike_cache.pop(J,None)
-  if len(a.entered_keys)>5000:u={str(p.get("dedupe_key")or"")for p in a.open_positions.values()};a.entered_keys=u|set(list(a.entered_keys)[-3000:])
-  n=read_global_positions_shm();e=[p for K,L in(n.get("daemons")or{}).items()if K!="alpha124_shadow"and isinstance(L,dict)for p in(L.get("positions")or[])];j=rank_opportunities_capital_auction(opps,active_global_positions=list(a.open_positions.values())+e)[:25];a.top_opportunities=j;publish_global_positions_shm("alpha124_shadow",a.open_positions.values());r={};i={"T100":.0,"T1000":.0,"T5000":.0}
-  for I in BANKROLL_TICKETS["T1000"].keys():
-   t=str(I).startswith("D1_");d=_filter_epoch_closed_positions(str(I),[p for p in a.closed_positions if p.get("sleeve")==I]);q=[p for p in d if not(t and p.get("status")!="MAKER_ANCHOR_UNHEDGED_SCRATCH"and float(p.get("entry_eff_px_t1000")or 1.)<.9)];c=len(d)-len(q);w=[p for p in a.open_positions.values()if p.get("sleeve")==I];G=sum(1 for p in q if p.get("won"));x=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in q);m=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in q)
-   for H in i:i[H]=round(i[H]+sum(float(p.get("tier_pnls_usd",{}).get(H,.0))for p in q),2)
-   r[I]={"open":len(w),"closed":len(q),"wins":G,"losses":len(q)-G,"win_rate_pct":round(1e2*G/len(q),2)if q else.0,"realized_pnl_t1000_usd":round(x,2),"legging_adjusted_pnl_t1000_usd":round(m,2),"excluded_anti_box":c,"quarantined":is_shadow_sleeve_quarantined(I),"grad8_live_promoted":bool(len(q)>=8 and G==len(q)and round(x,2)>.0 and round(m,2)>.0 and not is_shadow_sleeve_quarantined(I))}
-  b={"D1_SAME_ORACLE_DOMINANCE_BOX","D1_4H_DOMINANCE_BOX","D1_QUIET_BOOK_BOX"};h={}
-  for D in DOMINANCE_ASSETS:F=[p for p in a.closed_positions if str(p.get("sleeve")or"")in b and str(p.get("asset_or_city")or"").upper()==D and(p.get("status")=="MAKER_ANCHOR_UNHEDGED_SCRATCH"or float(p.get("entry_eff_px_t1000")or 1.)>=.9)];E=[p for p in a.open_positions.values()if str(p.get("sleeve")or"")in b and str(p.get("asset_or_city")or"").upper()==D];v=sum(1 for p in F if p.get("won"));s=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in F);g=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in F);h[D]={"open":len(E),"closed":len(F),"wins":v,"losses":len(F)-v,"win_rate_pct":round(1e2*v/len(F),2)if F else.0,"realized_pnl_t1000_usd":round(s,2),"legging_adjusted_pnl_t1000_usd":round(g,2)}
-  C={"updated_at_utc":datetime.now(timezone.utc).isoformat(),"started_at":a.started_at,"cycle_count":a.cycle_count,"calibration":{"weather_sigma_c":a.weather_sigma_c,"barrier_wick_mult":a.barrier_wick_mult},"spots":a.spots,"markets_monitored":{"weather_city_events":len(a.weather_events),"barrier_hit_rungs":len(a.barrier_rungs),"multistrike_ladders":len(a.strike_ladders),"negrisk_bracket_ladders":len(a.negrisk_ladders),"daily_updown_markets":len(a.daily_updown_markets),"pyth_daily_markets":len(a.pyth_daily_markets),"pyth_barrier_rungs":len(a.pyth_barrier_rungs),"pyth_close_ladders":len(a.pyth_close_ladders),"nba_zero_fee_games":len(a.nba_games),"live_nba_scoreboard_games":len(a.live_nba_board),"uma_proposed_markets":len(a.uma_proposed_markets),"negrisk_zero_fee_slates":len(a.negrisk_zero_slates),"counting_slates":len(a.counting_slates),"fomc_lp_markets":len(a.fomc_truth_legs)//2,"oil_senate_markets":len(a.oil_senate_truth_legs)//2,"hourly_12pm_pairs":len(a.hourly_12pm_markets),"same_oracle_dominance_pairs":len(a.dominance_pairs),"dominance_4h_pairs":len(a.dominance_4h_pairs),"exact_twap_lock_candles":len(a.twap_candles),"s5m_sniper_candles":len(a.s5m_candles),"s4h_candles":len(a.s4h_candles),"preopen_15m_candles":len(a.preopen_15m_candles)},"portfolio_realized_pnl_by_bankroll_usd":i,"gatling_projection":compute_gatling_trajectory_projection(starting_nav_usd=60.92),"by_sleeve":r,"per_strategy":r,"by_d1_asset":h,"open_positions_count":len(a.open_positions),"pending_maker_orders_count":len(a.pending_maker_orders),"pending_maker_anchors_count":len(a.pending_maker_anchors),"pending_zero_fee_maker_anchors_count":len(a.pending_zero_fee_maker_anchors),"pending_preopen_straddles_count":len(a.pending_preopen_straddles),"pending_maker_orders":list(a.pending_maker_orders.values()),"open_positions":list(a.open_positions.values()),"recent_closed_positions":a.closed_positions[-30:]};B=STATE_FILE.with_suffix(".tmp");B.write_text(json.dumps(C,indent=2),encoding="utf-8");os.replace(B,STATE_FILE)
+   for I in list(a.authoritative_strike_cache.keys())[:-1500]:a.authoritative_strike_cache.pop(I,None)
+  if len(a.entered_keys)>5000:t={str(p.get("dedupe_key")or"")for p in a.open_positions.values()};a.entered_keys=t|set(list(a.entered_keys)[-3000:])
+  m=read_global_positions_shm();e=[p for J,K in(m.get("daemons")or{}).items()if J!="alpha124_shadow"and isinstance(K,dict)for p in(K.get("positions")or[])];i=rank_opportunities_capital_auction(opps,active_global_positions=list(a.open_positions.values())+e)[:25];a.top_opportunities=i;publish_global_positions_shm("alpha124_shadow",a.open_positions.values());q={};h={"T100":.0,"T1000":.0,"T5000":.0}
+  for H in BANKROLL_TICKETS["T1000"].keys():
+   s=str(H).startswith("D1_");d=_filter_epoch_closed_positions(str(H),[p for p in a.closed_positions if p.get("sleeve")==H]);o=[p for p in d if not(s and p.get("status")!="MAKER_ANCHOR_UNHEDGED_SCRATCH"and float(p.get("entry_eff_px_t1000")or 1.)<.9)];c=len(d)-len(o);v=[p for p in a.open_positions.values()if p.get("sleeve")==H];F=sum(1 for p in o if p.get("won"));w=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in o);l=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in o)
+   for G in h:h[G]=round(h[G]+sum(float(p.get("tier_pnls_usd",{}).get(G,.0))for p in o),2)
+   q[H]={"open":len(v),"closed":len(o),"wins":F,"losses":len(o)-F,"win_rate_pct":round(1e2*F/len(o),2)if o else.0,"realized_pnl_t1000_usd":round(w,2),"legging_adjusted_pnl_t1000_usd":round(l,2),"excluded_anti_box":c,"quarantined":is_shadow_sleeve_quarantined(H),"grad8_live_promoted":bool(len(o)>=8 and F==len(o)and round(w,2)>.0 and round(l,2)>.0 and not is_shadow_sleeve_quarantined(H))}
+  b={"D1_SAME_ORACLE_DOMINANCE_BOX","D1_4H_DOMINANCE_BOX","D1_QUIET_BOOK_BOX"};g={}
+  for C in DOMINANCE_ASSETS:E=[p for p in a.closed_positions if str(p.get("sleeve")or"")in b and str(p.get("asset_or_city")or"").upper()==C and(p.get("status")=="MAKER_ANCHOR_UNHEDGED_SCRATCH"or float(p.get("entry_eff_px_t1000")or 1.)>=.9)];D=[p for p in a.open_positions.values()if str(p.get("sleeve")or"")in b and str(p.get("asset_or_city")or"").upper()==C];u=sum(1 for p in E if p.get("won"));r=sum(float(p.get("tier_pnls_usd",{}).get("T1000",.0))for p in E);f=sum(float(p.get("legging_adjusted_tier_pnls_usd",p.get("tier_pnls_usd",{})).get("T1000",.0))for p in E);g[C]={"open":len(D),"closed":len(E),"wins":u,"losses":len(E)-u,"win_rate_pct":round(1e2*u/len(E),2)if E else.0,"realized_pnl_t1000_usd":round(r,2),"legging_adjusted_pnl_t1000_usd":round(f,2)}
+  B={"updated_at_utc":datetime.now(timezone.utc).isoformat(),"started_at":a.started_at,"cycle_count":a.cycle_count,"calibration":{"weather_sigma_c":a.weather_sigma_c,"barrier_wick_mult":a.barrier_wick_mult},"spots":a.spots,"markets_monitored":{"weather_city_events":len(a.weather_events),"barrier_hit_rungs":len(a.barrier_rungs),"multistrike_ladders":len(a.strike_ladders),"negrisk_bracket_ladders":len(a.negrisk_ladders),"daily_updown_markets":len(a.daily_updown_markets),"pyth_daily_markets":len(a.pyth_daily_markets),"pyth_barrier_rungs":len(a.pyth_barrier_rungs),"pyth_close_ladders":len(a.pyth_close_ladders),"nba_zero_fee_games":len(a.nba_games),"live_nba_scoreboard_games":len(a.live_nba_board),"uma_proposed_markets":len(a.uma_proposed_markets),"negrisk_zero_fee_slates":len(a.negrisk_zero_slates),"counting_slates":len(a.counting_slates),"fomc_lp_markets":len(a.fomc_truth_legs)//2,"oil_senate_markets":len(a.oil_senate_truth_legs)//2,"hourly_12pm_pairs":len(a.hourly_12pm_markets),"same_oracle_dominance_pairs":len(a.dominance_pairs),"dominance_4h_pairs":len(a.dominance_4h_pairs),"exact_twap_lock_candles":len(a.twap_candles),"s5m_sniper_candles":len(a.s5m_candles),"s4h_candles":len(a.s4h_candles),"preopen_15m_candles":len(a.preopen_15m_candles)},"portfolio_realized_pnl_by_bankroll_usd":h,"gatling_projection":compute_gatling_trajectory_projection(starting_nav_usd=60.92),"by_sleeve":q,"per_strategy":q,"by_d1_asset":g,"open_positions_count":len(a.open_positions),"pending_maker_orders_count":len(a.pending_maker_orders),"pending_maker_anchors_count":len(a.pending_maker_anchors),"pending_zero_fee_maker_anchors_count":len(a.pending_zero_fee_maker_anchors),"pending_preopen_straddles_count":len(a.pending_preopen_straddles),"pending_maker_orders":list(a.pending_maker_orders.values()),"open_positions":list(a.open_positions.values()),"recent_closed_positions":a.closed_positions[-30:]};A=STATE_FILE.with_suffix(".tmp");A.write_text(json.dumps(B,indent=2),encoding="utf-8");os.replace(A,STATE_FILE)
   if STATE_FILE==(DATA_DIR/"alpha124_shadow_state.json")or LIVE_ALPHA124_STATE_MIRROR_FILE!=(LIVE_POLYMARKET_DIR/"alpha124_shadow_state.json"):
-   try:LIVE_ALPHA124_STATE_MIRROR_FILE.parent.mkdir(parents=True,exist_ok=True);A=LIVE_ALPHA124_STATE_MIRROR_FILE.with_suffix(".tmp");A.write_text(json.dumps({"updated_at_utc":C["updated_at_utc"],"by_sleeve":r,"per_strategy":r,"by_d1_asset":h},indent=2),encoding="utf-8");os.replace(A,LIVE_ALPHA124_STATE_MIRROR_FILE)
-   except Exception as f:pass
-  z=OPPS_FILE.with_suffix(".tmp");z.write_text(json.dumps({"updated_at_utc":C["updated_at_utc"],"top_opportunities":j},indent=2),encoding="utf-8");os.replace(z,OPPS_FILE);y=time.time()
-  if(y-float(getattr(a,"_last_proj_write_ts",.0)))>=60.:
-   a._last_proj_write_ts=y
+   try:LIVE_ALPHA124_STATE_MIRROR_FILE.parent.mkdir(parents=True,exist_ok=True);z=LIVE_ALPHA124_STATE_MIRROR_FILE.with_suffix(".tmp");z.write_text(json.dumps({"updated_at_utc":B["updated_at_utc"],"by_sleeve":q,"per_strategy":q,"by_d1_asset":g},indent=2),encoding="utf-8");os.replace(z,LIVE_ALPHA124_STATE_MIRROR_FILE)
+   except Exception:pass
+  y=OPPS_FILE.with_suffix(".tmp");y.write_text(json.dumps({"updated_at_utc":B["updated_at_utc"],"top_opportunities":i},indent=2),encoding="utf-8");os.replace(y,OPPS_FILE);x=time.time()
+  if(x-float(getattr(a,"_last_proj_write_ts",.0)))>=60.:
+   a._last_proj_write_ts=x
    try:
-    import importlib;import scripts.polymarket_daily_projections as _proj_mod;l=getattr(_proj_mod,"__file__",None)
-    if l:
-     o=Path(l).stat().st_mtime_ns;k=getattr(a,"_proj_mod_mtime_ns",None)
-     if k is None:a._proj_mod_mtime_ns=o
-     elif o!=k:_proj_mod=importlib.reload(_proj_mod);a._proj_mod_mtime_ns=o
+    import importlib;import scripts.polymarket_daily_projections as _proj_mod;k=getattr(_proj_mod,"__file__",None)
+    if k:
+     n=Path(k).stat().st_mtime_ns;j=getattr(a,"_proj_mod_mtime_ns",None)
+     if j is None:a._proj_mod_mtime_ns=n
+     elif n!=j:_proj_mod=importlib.reload(_proj_mod);a._proj_mod_mtime_ns=n
     _proj_mod.write_live_projections_atomic(days=30)
-   except Exception as f:pass
+   except Exception:pass
  async def write_state_files_async(self,opps):await asyncio.to_thread(self.write_state_files,opps)
  async def _run_bg_discovery(a):
   try:await a.discover_all_markets();a._evict_stale_caches()
@@ -7010,809 +7396,862 @@ class Alpha124ShadowDaemon:
   for a_p in h:
    fd=await a._get_pyth_intraday(a_p,now)
    if fd:v[a_p]=fd
-  _u=[]
+  _v=[]
   for r in a.pyth_barrier_rungs.values():
    if r.end_ts<=now+120 or r.asset not in v:continue
    L=float(v[r.asset]["spot"])
-   if L>0 and abs(math.log(r.strike/L))<=.25:_u.append(r)
+   if L>0 and abs(math.log(r.strike/L))<=.25:_v.append(r)
   M=[]
   for rgs in a.pyth_close_ladders.values():
    for rc in rgs:
     if rc.end_ts<=now+120 or rc.asset not in v:continue
     L=float(v[rc.asset]["spot"])
     if L>0 and abs(math.log(rc.strike/L))<=.14:M.append(rc)
-  Y=([r.yes_token for r in _u]+[r.no_token for r in _u]+[rc.yes_token for rc in M]+[rc.no_token for rc in M]);_t=await a.fetch_books_batch(Y,timeout=3.5)if Y else{};A=[];i=collections.defaultdict(list)
-  for r in _u:
-   _s,z=_t.get(r.yes_token),_t.get(r.no_token)
-   if not _s or not z:continue
-   cfg=PYTH_ASSET_CONFIG[r.asset];_,l,k,f,_=cfg;fd=v[r.asset];_ah=float(fd["spot"]);m=now>=r.start_ts;_aO=window_extremes_from_bars(fd["bars"],r.start_ts,now)if m else None
-   if m and now>=r.start_ts+3e2 and k and l in("EQUITY_RTH","CME_23H")and _aO is not None and f"B4_PYTH_{r.market_id}"not in a.entered_keys:
-    _bi,_bh=_aO;_ag=.0015 if l=="EQUITY_RTH"else max(.008,2.5*f);K=.78 if l=="EQUITY_RTH"else.88
-    if(r.direction=="UP"and _bi>=r.strike*(1.+_ag))or(r.direction=="DOWN"and _bh<=r.strike*(1.-_ag)):
-     _Q,_=extract_best_bid(_s.get("bids")or[]);_aN=walk_l2_book_asks(_s.get("asks")or[],1e2,fee_rate=r.fee_rate,min_l1_usd=15.,max_ask_px=.99,fee_exponent=r.fee_exponent)
-     if _aN.get("filled")and _Q>=K and.85<=float(_aN["eff_px"])<=.986:opps_out.append({"sleeve":"B4_TOUCHED_BARRIER_WICK_LOCK","market":f"{r.asset} Pyth Breached Wick Lock: {r.question}","ask_vwap":_aN["eff_px"],"p_model":1.,"net_edge":round(1.-float(_aN["eff_px"]),4),"l1_usd":_aN["l1_usd"]});await a.open_shadow_position(sleeve="B4_TOUCHED_BARRIER_WICK_LOCK",dedupe_key=f"B4_PYTH_{r.market_id}",asset_or_city=r.asset,title=r.question,side_label="YES",token_id=r.yes_token,fee_rate=r.fee_rate,p_model=1.,close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"strike":r.strike,"direction":r.direction,"session_class":l,"fee_exponent":r.fee_exponent},prefetched_book=_s);continue
-   _r=walk_l2_book_asks(_s.get("asks")or[],35.,fee_rate=r.fee_rate,min_l1_usd=8.,fee_exponent=r.fee_exponent);_q=walk_l2_book_asks(z.get("asks")or[],35.,fee_rate=r.fee_rate,min_l1_usd=8.,fee_exponent=r.fee_exponent);_aM={"asset":r.asset,"event_id":r.event_id,"strike":r.strike,"direction":r.direction,"market_id":r.market_id,"condition_id":r.condition_id,"yes_token":r.yes_token,"no_token":r.no_token,"fee_rate":r.fee_rate,"fee_exponent":r.fee_exponent,"ask_yes":_r.get("vwap")if _r.get("filled")else None,"ask_no":_q.get("vwap")if _q.get("filled")else None,"bk_yes":_s,"bk_no":z,"start_ts":r.start_ts,"end_ts":r.end_ts};A.append(_aM);i[r.event_id].append(_aM);_P=compute_effective_trading_hours(now,r.end_ts,l);X=is_same_continuous_session(now,r.end_ts,l);C=_aO is not None and((r.direction=="UP"and _aO[0]>=r.strike*(1.-f))or(r.direction=="DOWN"and _aO[1]<=r.strike*(1.+f)))
-   if m and k and X and not C and.25<=_P<=3.5:
-    _aL=evaluate_pyth_session_barrier_no_lock(_ah,r.strike,r.direction,_P,float(fd["sigma_session"]),f);_af=float(_aL["p_no"])
-    if _af>=.94:
-     _ae,_=extract_best_bid(z.get("bids")or[]);_bg=walk_l2_book_asks(z.get("asks")or[],1e2,fee_rate=r.fee_rate,min_l1_usd=15.,fee_exponent=r.fee_exponent)
-     if _bg.get("filled")and.78<=float(_bg["eff_px"])<=.955 and _ae>0 and(float(_bg["vwap"])-_ae)<=.04:
-      _O=_af-float(_bg["eff_px"]);_bf=evaluate_barrier_no_net_ev(1.-_af,float(_bg["vwap"]),fee_rate=r.fee_rate)
-      if _O>=.025:opps_out.append({"sleeve":"CM_B2_PYTH_SESSION_NO_LOCK","market":f"{r.asset} Pyth NO ({_P:.1f}h sess): {r.question}","ask_vwap":_bg["eff_px"],"p_model":_af,"net_edge":round(_O,4),"l1_usd":_bg["l1_usd"]})
-      if _O>=.035 and _bf["eligible"]:await a.open_shadow_position(sleeve="CM_B2_PYTH_SESSION_NO_LOCK",dedupe_key=f"CMB2_{r.market_id}",asset_or_city=r.asset,title=r.question,side_label="NO",token_id=r.no_token,fee_rate=r.fee_rate,p_model=_af,close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"strike":r.strike,"direction":r.direction,"eff_session_hours":round(_P,2),"fee_exponent":r.fee_exponent},prefetched_book=z)
-   _N=a.prev_pyth_spots.get(r.asset,.0)
-   if m and k and X and not C and _N>.0:
-    _aK=evaluate_pyth_catalyst_shock(r.asset,_N,_ah,r.strike,r.direction,_P,float(fd["sigma_session"]),now)
-    if _aK.get("eligible"):
-     _M=str(_aK["side"]);_ad=r.yes_token if _M=="YES"else r.no_token;_aJ=_s if _M=="YES"else z;_be=walk_l2_book_asks(_aJ.get("asks")or[],BANKROLL_TICKETS["T1000"]["CM_SHOCK_PYTH_CATALYST"],fee_rate=r.fee_rate,min_l1_usd=15.,fee_exponent=r.fee_exponent)
-     if _be.get("filled")and.18<=float(_be["eff_px"])<=.88:
-      _L=float(_aK["p_fair"])-float(_be["eff_px"])
-      if _L>=.045:opps_out.append({"sleeve":"CM_SHOCK_PYTH_CATALYST","market":f"{r.asset} [{_aK['catalyst']}] {_M}: {r.question}","ask_vwap":_be["eff_px"],"p_model":_aK["p_fair"],"net_edge":round(_L,4),"l1_usd":_be["l1_usd"],"close_ts":r.end_ts});await a.open_shadow_position(sleeve="CM_SHOCK_PYTH_CATALYST",dedupe_key=f"CMSHK_{r.market_id}_{_M}_{int(now//900)}",asset_or_city=r.asset,title=f"{r.question} [{_aK['catalyst']}]",side_label=_M,token_id=_ad,fee_rate=r.fee_rate,p_model=float(_aK["p_fair"]),close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"catalyst":_aK["catalyst"],"delta_p":_aK["delta_p"],"ret_pct":_aK["ret_pct"],"fee_exponent":r.fee_exponent},tp_target_px=min(.95,round(float(_be["eff_px"])+.06,3)),prefetched_book=_aJ)
-  for a_p,_bd in v.items():a.prev_pyth_spots[a_p]=float(_bd["spot"])
+  Y=([r.yes_token for r in _v]+[r.no_token for r in _v]+[rc.yes_token for rc in M]+[rc.no_token for rc in M]);_u=await a.fetch_books_batch(Y,timeout=3.5)if Y else{};A=[];i=collections.defaultdict(list)
+  for r in _v:
+   _t,z=_u.get(r.yes_token),_u.get(r.no_token)
+   if not _t or not z:continue
+   cfg=PYTH_ASSET_CONFIG[r.asset];_,l,k,f,_=cfg;fd=v[r.asset];_aj=float(fd["spot"]);m=now>=r.start_ts;_aQ=window_extremes_from_bars(fd["bars"],r.start_ts,now)if m else None
+   if m and now>=r.start_ts+3e2 and k and l in("EQUITY_RTH","CME_23H")and _aQ is not None and f"B4_PYTH_{r.market_id}"not in a.entered_keys:
+    _bk,_bj=_aQ;_ai=.0015 if l=="EQUITY_RTH"else max(.008,2.5*f);K=.78 if l=="EQUITY_RTH"else.88
+    if(r.direction=="UP"and _bk>=r.strike*(1.+_ai))or(r.direction=="DOWN"and _bj<=r.strike*(1.-_ai)):
+     _S,_=extract_best_bid(_t.get("bids")or[]);_aP=walk_l2_book_asks(_t.get("asks")or[],1e2,fee_rate=r.fee_rate,min_l1_usd=15.,max_ask_px=.99,fee_exponent=r.fee_exponent)
+     if _aP.get("filled")and _S>=K and.85<=float(_aP["eff_px"])<=.986:opps_out.append({"sleeve":"B4_TOUCHED_BARRIER_WICK_LOCK","market":f"{r.asset} Pyth Breached Wick Lock: {r.question}","ask_vwap":_aP["eff_px"],"p_model":1.,"net_edge":round(1.-float(_aP["eff_px"]),4),"l1_usd":_aP["l1_usd"]});await a.open_shadow_position(sleeve="B4_TOUCHED_BARRIER_WICK_LOCK",dedupe_key=f"B4_PYTH_{r.market_id}",asset_or_city=r.asset,title=r.question,side_label="YES",token_id=r.yes_token,fee_rate=r.fee_rate,p_model=1.,close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"strike":r.strike,"direction":r.direction,"session_class":l,"fee_exponent":r.fee_exponent},prefetched_book=_t);continue
+   _s=walk_l2_book_asks(_t.get("asks")or[],35.,fee_rate=r.fee_rate,min_l1_usd=8.,fee_exponent=r.fee_exponent);_r=walk_l2_book_asks(z.get("asks")or[],35.,fee_rate=r.fee_rate,min_l1_usd=8.,fee_exponent=r.fee_exponent);_aO={"asset":r.asset,"event_id":r.event_id,"strike":r.strike,"direction":r.direction,"market_id":r.market_id,"condition_id":r.condition_id,"yes_token":r.yes_token,"no_token":r.no_token,"fee_rate":r.fee_rate,"fee_exponent":r.fee_exponent,"ask_yes":_s.get("vwap")if _s.get("filled")else None,"ask_no":_r.get("vwap")if _r.get("filled")else None,"bk_yes":_t,"bk_no":z,"start_ts":r.start_ts,"end_ts":r.end_ts};A.append(_aO);i[r.event_id].append(_aO);_R=compute_effective_trading_hours(now,r.end_ts,l);X=is_same_continuous_session(now,r.end_ts,l);C=_aQ is not None and((r.direction=="UP"and _aQ[0]>=r.strike*(1.-f))or(r.direction=="DOWN"and _aQ[1]<=r.strike*(1.+f)))
+   if m and k and X and not C and.25<=_R<=3.5:
+    _aN=evaluate_pyth_session_barrier_no_lock(_aj,r.strike,r.direction,_R,float(fd["sigma_session"]),f);_ah=float(_aN["p_no"])
+    if _ah>=.94:
+     _ag,_=extract_best_bid(z.get("bids")or[]);_bi=walk_l2_book_asks(z.get("asks")or[],1e2,fee_rate=r.fee_rate,min_l1_usd=15.,fee_exponent=r.fee_exponent)
+     if _bi.get("filled")and.78<=float(_bi["eff_px"])<=.955 and _ag>0 and(float(_bi["vwap"])-_ag)<=.04:
+      _Q=_ah-float(_bi["eff_px"]);_bh=evaluate_barrier_no_net_ev(1.-_ah,float(_bi["vwap"]),fee_rate=r.fee_rate)
+      if _Q>=.025:opps_out.append({"sleeve":"CM_B2_PYTH_SESSION_NO_LOCK","market":f"{r.asset} Pyth NO ({_R:.1f}h sess): {r.question}","ask_vwap":_bi["eff_px"],"p_model":_ah,"net_edge":round(_Q,4),"l1_usd":_bi["l1_usd"]})
+      if _Q>=.035 and _bh["eligible"]:await a.open_shadow_position(sleeve="CM_B2_PYTH_SESSION_NO_LOCK",dedupe_key=f"CMB2_{r.market_id}",asset_or_city=r.asset,title=r.question,side_label="NO",token_id=r.no_token,fee_rate=r.fee_rate,p_model=_ah,close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"strike":r.strike,"direction":r.direction,"eff_session_hours":round(_R,2),"fee_exponent":r.fee_exponent},prefetched_book=z)
+   _P=a.prev_pyth_spots.get(r.asset,.0)
+   if m and k and X and not C and _P>.0:
+    _aM=evaluate_pyth_catalyst_shock(r.asset,_P,_aj,r.strike,r.direction,_R,float(fd["sigma_session"]),now)
+    if _aM.get("eligible"):
+     _O=str(_aM["side"]);_af=r.yes_token if _O=="YES"else r.no_token;_aL=_t if _O=="YES"else z;_bg=walk_l2_book_asks(_aL.get("asks")or[],BANKROLL_TICKETS["T1000"]["CM_SHOCK_PYTH_CATALYST"],fee_rate=r.fee_rate,min_l1_usd=15.,fee_exponent=r.fee_exponent)
+     if _bg.get("filled")and.18<=float(_bg["eff_px"])<=.88:
+      _N=float(_aM["p_fair"])-float(_bg["eff_px"])
+      if _N>=.045:opps_out.append({"sleeve":"CM_SHOCK_PYTH_CATALYST","market":f"{r.asset} [{_aM['catalyst']}] {_O}: {r.question}","ask_vwap":_bg["eff_px"],"p_model":_aM["p_fair"],"net_edge":round(_N,4),"l1_usd":_bg["l1_usd"],"close_ts":r.end_ts});await a.open_shadow_position(sleeve="CM_SHOCK_PYTH_CATALYST",dedupe_key=f"CMSHK_{r.market_id}_{_O}_{int(now//900)}",asset_or_city=r.asset,title=f"{r.question} [{_aM['catalyst']}]",side_label=_O,token_id=_af,fee_rate=r.fee_rate,p_model=float(_aM["p_fair"]),close_ts=r.end_ts,extra={"market_id":r.market_id,"condition_id":r.condition_id,"catalyst":_aM["catalyst"],"delta_p":_aM["delta_p"],"ret_pct":_aM["ret_pct"],"fee_exponent":r.fee_exponent},tp_target_px=min(.95,round(float(_bg["eff_px"])+.06,3)),prefetched_book=_aL)
+  for a_p,_bf in v.items():a.prev_pyth_spots[a_p]=float(_bf["spot"])
   t=[]
   for rc in M:
-   _s,z=_t.get(rc.yes_token),_t.get(rc.no_token)
-   if not _s or not z:continue
-   _r=walk_l2_book_asks(_s.get("asks")or[],35.,fee_rate=rc.fee_rate,min_l1_usd=8.,fee_exponent=rc.fee_exponent);_q=walk_l2_book_asks(z.get("asks")or[],35.,fee_rate=rc.fee_rate,min_l1_usd=8.,fee_exponent=rc.fee_exponent);t.append({"asset":rc.asset,"strike":rc.strike,"is_downward":rc.is_downward,"market_id":rc.market_id,"condition_id":rc.condition_id,"yes_token":rc.yes_token,"no_token":rc.no_token,"fee_rate":rc.fee_rate,"fee_exponent":rc.fee_exponent,"ask_yes":_r.get("vwap")if _r.get("filled")else None,"ask_no":_q.get("vwap")if _q.get("filled")else None,"bk_yes":_s,"bk_no":z,"end_ts":rc.end_ts});cfg=PYTH_ASSET_CONFIG[rc.asset];_,l,k,f,_=cfg;fd=v[rc.asset];W=compute_effective_trading_hours(now,rc.end_ts,l)
+   _t,z=_u.get(rc.yes_token),_u.get(rc.no_token)
+   if not _t or not z:continue
+   _s=walk_l2_book_asks(_t.get("asks")or[],35.,fee_rate=rc.fee_rate,min_l1_usd=8.,fee_exponent=rc.fee_exponent);_r=walk_l2_book_asks(z.get("asks")or[],35.,fee_rate=rc.fee_rate,min_l1_usd=8.,fee_exponent=rc.fee_exponent);t.append({"asset":rc.asset,"strike":rc.strike,"is_downward":rc.is_downward,"market_id":rc.market_id,"condition_id":rc.condition_id,"yes_token":rc.yes_token,"no_token":rc.no_token,"fee_rate":rc.fee_rate,"fee_exponent":rc.fee_exponent,"ask_yes":_s.get("vwap")if _s.get("filled")else None,"ask_no":_r.get("vwap")if _r.get("filled")else None,"bk_yes":_t,"bk_no":z,"end_ts":rc.end_ts});cfg=PYTH_ASSET_CONFIG[rc.asset];_,l,k,f,_=cfg;fd=v[rc.asset];W=compute_effective_trading_hours(now,rc.end_ts,l)
    if k and is_same_continuous_session(now,rc.end_ts,l)and.08<=W<=.75:
-    _aI=evaluate_pyth_session_close_lock(float(fd["spot"]),rc.strike,rc.is_downward,W,float(fd["sigma_session"]),f)
-    if _aI["eligible"]:
-     _9=str(_aI["side"]);_aH=rc.yes_token if _9=="YES"else rc.no_token;_bc=_s if _9=="YES"else z;_8,_=extract_best_bid(_bc.get("bids")or[]);_bb=walk_l2_book_asks(_bc.get("asks")or[],1e2,fee_rate=rc.fee_rate,min_l1_usd=15.,fee_exponent=rc.fee_exponent)
-     if _bb.get("filled")and.78<=float(_bb["eff_px"])<=.955 and _8>0 and(float(_bb["vwap"])-_8)<=.04:
-      _K=float(_aI["p_lock"])-float(_bb["eff_px"])
-      if _K>=.02:opps_out.append({"sleeve":"CM_U1_PYTH_CLOSE_LOCK","market":f"{rc.asset} Close Lock ({_9}, z={_aI['z_session']:.2f}): {rc.question}","ask_vwap":_bb["eff_px"],"p_model":_aI["p_lock"],"net_edge":round(_K,4),"l1_usd":_bb["l1_usd"]})
-      if _K>=.03:await a.open_shadow_position(sleeve="CM_U1_PYTH_CLOSE_LOCK",dedupe_key=f"CMU1_{rc.market_id}_{_9}",asset_or_city=rc.asset,title=rc.question,side_label=_9,token_id=_aH,fee_rate=rc.fee_rate,p_model=float(_aI["p_lock"]),close_ts=rc.end_ts,extra={"market_id":rc.market_id,"condition_id":rc.condition_id,"strike":rc.strike,"z_session":_aI["z_session"],"fee_exponent":rc.fee_exponent},prefetched_book=_bc)
-  for _7,_J in v.items():
-   _aG=PYTH_ASSET_CONFIG.get(_7)
-   if not _aG:continue
-   _,_6,_I,_,_=_aG;J=[rh for rh in A if rh["asset"]==_7 and rh.get("ask_no")is not None]
+    _aK=evaluate_pyth_session_close_lock(float(fd["spot"]),rc.strike,rc.is_downward,W,float(fd["sigma_session"]),f)
+    if _aK["eligible"]:
+     _ab=str(_aK["side"]);_aJ=rc.yes_token if _ab=="YES"else rc.no_token;_be=_t if _ab=="YES"else z;_aa,_=extract_best_bid(_be.get("bids")or[]);_bd=walk_l2_book_asks(_be.get("asks")or[],1e2,fee_rate=rc.fee_rate,min_l1_usd=15.,fee_exponent=rc.fee_exponent)
+     if _bd.get("filled")and.78<=float(_bd["eff_px"])<=.955 and _aa>0 and(float(_bd["vwap"])-_aa)<=.04:
+      _M=float(_aK["p_lock"])-float(_bd["eff_px"])
+      if _M>=.02:opps_out.append({"sleeve":"CM_U1_PYTH_CLOSE_LOCK","market":f"{rc.asset} Close Lock ({_ab}, z={_aK['z_session']:.2f}): {rc.question}","ask_vwap":_bd["eff_px"],"p_model":_aK["p_lock"],"net_edge":round(_M,4),"l1_usd":_bd["l1_usd"]})
+      if _M>=.03:await a.open_shadow_position(sleeve="CM_U1_PYTH_CLOSE_LOCK",dedupe_key=f"CMU1_{rc.market_id}_{_ab}",asset_or_city=rc.asset,title=rc.question,side_label=_ab,token_id=_aJ,fee_rate=rc.fee_rate,p_model=float(_aK["p_lock"]),close_ts=rc.end_ts,extra={"market_id":rc.market_id,"condition_id":rc.condition_id,"strike":rc.strike,"z_session":_aK["z_session"],"fee_exponent":rc.fee_exponent},prefetched_book=_be)
+  for _9,_L in v.items():
+   _aI=PYTH_ASSET_CONFIG.get(_9)
+   if not _aI:continue
+   _,_8,_K,_,_=_aI;J=[rh for rh in A if rh["asset"]==_9 and rh.get("ask_no")is not None]
    if not J:continue
-   V=min(J,key=lambda x:(float(x["end_ts"]),abs(math.log(float(x["strike"])/max(1e-6,float(_J["spot"]))))));_H=compute_effective_trading_hours(now,float(V["end_ts"]),_6);_5=is_same_continuous_session(now,float(V["end_ts"]),_6);_p,_G=extract_best_bid(V["bk_no"].get("bids")or[]);_o,_n=a._best_ask_sz(V["bk_no"]);a._record_market_telemetry(key=f"PYTH_SNAP_{_7}",min_interval_sec=120.,now_ts=now,sig=(round(float(_J["spot"]),3),round(_o,3),round(_p,3)),payload={"type":"PYTH_ASSET_SESSION_SNAP","asset":_7,"session_class":_6,"exact_directional_ok":_I,"spot":round(float(_J["spot"]),4),"sigma_session":_J["sigma_session"],"eff_session_hours":round(_H,2),"same_session":_5,"near_strike":V["strike"],"near_dir":V["direction"],"near_ask_no":round(_o,4)if _o<1. else None,"near_bid_no":round(_p,4)if _p>0 else None,"near_ask_l1_usd":round(_o*_n,2)if _o<1. else.0})
+   V=min(J,key=lambda x:(float(x["end_ts"]),abs(math.log(float(x["strike"])/max(1e-6,float(_L["spot"]))))));_J=compute_effective_trading_hours(now,float(V["end_ts"]),_8);_7=is_same_continuous_session(now,float(V["end_ts"]),_8);_q,_I=extract_best_bid(V["bk_no"].get("bids")or[]);_p,_o=a._best_ask_sz(V["bk_no"]);a._record_market_telemetry(key=f"PYTH_SNAP_{_9}",min_interval_sec=120.,now_ts=now,sig=(round(float(_L["spot"]),3),round(_p,3),round(_q,3)),payload={"type":"PYTH_ASSET_SESSION_SNAP","asset":_9,"session_class":_8,"exact_directional_ok":_K,"spot":round(float(_L["spot"]),4),"sigma_session":_L["sigma_session"],"eff_session_hours":round(_J,2),"same_session":_7,"near_strike":V["strike"],"near_dir":V["direction"],"near_ask_no":round(_p,4)if _p<1. else None,"near_bid_no":round(_q,4)if _q>0 else None,"near_ask_l1_usd":round(_p*_o,2)if _p<1. else.0})
   o=[]
-  for _F,_E in i.items():
-   if len(_E)<2:continue
-   _4=detect_barrier_monotonicity_boxes(_E,fee_rate=.0,max_box_cost_net=1.15)
-   if _4:pd0=_4[0];a._record_market_telemetry(key=f"CMB3_DIAG_{_F}",min_interval_sec=90.,now_ts=now,sig=(pd0["direction"],pd0["low_strike"],pd0["high_strike"],pd0["box_cost_net"]),payload={"type":"PYTH_BARRIER_MONO_BEST","asset":_E[0]["asset"],"event_id":_F,"net_box_l1":pd0["box_cost_net"],"label":pd0["label"]})
-   _aF={str(q["yes_token"]):q for q in _E};_aE={str(q["no_token"]):q for q in _E}
-   for ba in _4:
+  for _H,_G in i.items():
+   if len(_G)<2:continue
+   _6=detect_barrier_monotonicity_boxes(_G,fee_rate=.0,max_box_cost_net=1.15)
+   if _6:pd0=_6[0];a._record_market_telemetry(key=f"CMB3_DIAG_{_H}",min_interval_sec=90.,now_ts=now,sig=(pd0["direction"],pd0["low_strike"],pd0["high_strike"],pd0["box_cost_net"]),payload={"type":"PYTH_BARRIER_MONO_BEST","asset":_G[0]["asset"],"event_id":_H,"net_box_l1":pd0["box_cost_net"],"label":pd0["label"]})
+   _aH={str(q["yes_token"]):q for q in _G};_aG={str(q["no_token"]):q for q in _G}
+   for ba in _6:
     if float(ba["box_cost_net"])>1.035:continue
-    qy,qn=_aF.get(ba["yes_token"]),_aE.get(ba["no_token"])
+    qy,qn=_aH.get(ba["yes_token"]),_aG.get(ba["no_token"])
     if qy and qn:la={"token_id":ba["yes_token"],"opp_token_id":ba["yes_opp_token"],"condition_id":ba["leg_yes_condition_id"],"side":"YES","label":f"YES_{ba['direction']}","market_id":ba["leg_yes_market_id"],"fee_rate":float(qy.get("fee_rate",.0)),"fee_exponent":float(qy.get("fee_exponent",1.)),"strike":float(qy["strike"])};lb={"token_id":ba["no_token"],"opp_token_id":ba["no_opp_token"],"condition_id":ba["leg_no_condition_id"],"side":"NO","label":f"NO_{ba['direction']}","market_id":ba["leg_no_market_id"],"fee_rate":float(qn.get("fee_rate",.0)),"fee_exponent":float(qn.get("fee_exponent",1.)),"strike":float(qn["strike"])};o.append((qy["asset"],f"CMB3_MONO_{ba['leg_yes_market_id']}_{ba['leg_no_market_id']}",la,lb,qy["bk_yes"],qn["bk_no"],float(qy["end_ts"]),f"{qy['asset']} Pyth Box {ba['label']}"))
-  _m=detect_pyth_calendar_inclusion_boxes(A,max_box_cost_net=1.15)
-  if _m:cd0=_m[0];a._record_market_telemetry(key=f"CMB3_CAL_BEST_{cd0['asset']}",min_interval_sec=90.,now_ts=now,sig=(cd0["direction"],cd0["strike"],cd0["box_cost_net"]),payload={"type":"PYTH_CALENDAR_BEST","asset":cd0["asset"],"net_box_l1":cd0["box_cost_net"],"label":cd0["label"]})
-  for cal in _m:
+  _n=detect_pyth_calendar_inclusion_boxes(A,max_box_cost_net=1.15)
+  if _n:cd0=_n[0];a._record_market_telemetry(key=f"CMB3_CAL_BEST_{cd0['asset']}",min_interval_sec=90.,now_ts=now,sig=(cd0["direction"],cd0["strike"],cd0["box_cost_net"]),payload={"type":"PYTH_CALENDAR_BEST","asset":cd0["asset"],"net_box_l1":cd0["box_cost_net"],"label":cd0["label"]})
+  for cal in _n:
    if float(cal["box_cost_net"])>1.035:continue
    qy,qn=cal["yes_row"],cal["no_row"];la={"token_id":qy["yes_token"],"opp_token_id":qy["no_token"],"condition_id":qy["condition_id"],"side":"YES","label":"YES_LONG","market_id":qy["market_id"],"fee_rate":float(qy.get("fee_rate",.0)),"fee_exponent":float(qy.get("fee_exponent",1.)),"strike":float(qy["strike"])};lb={"token_id":qn["no_token"],"opp_token_id":qn["yes_token"],"condition_id":qn["condition_id"],"side":"NO","label":"NO_SHORT","market_id":qn["market_id"],"fee_rate":float(qn.get("fee_rate",.0)),"fee_exponent":float(qn.get("fee_exponent",1.)),"strike":float(qn["strike"])};o.append((cal["asset"],f"CMB3_CAL_{qy['market_id']}_{qn['market_id']}",la,lb,qy["bk_yes"],qn["bk_no"],float(cal["close_ts"]),f"{cal['asset']} Calendar Box {cal['label']}"))
-  _l=detect_pyth_close_vs_hit_boxes(t,A,now_ts=now,max_box_cost_net=1.15)
-  if _l:vd0=_l[0];a._record_market_telemetry(key=f"CMB3_CVH_BEST_{vd0['asset']}",min_interval_sec=90.,now_ts=now,sig=(vd0["strike_hit"],vd0["strike_close"],vd0["box_cost_net"]),payload={"type":"PYTH_CLOSE_VS_HIT_BEST","asset":vd0["asset"],"net_box_l1":vd0["box_cost_net"],"label":vd0["label"]})
-  for cvh in _l:
+  _m=detect_pyth_close_vs_hit_boxes(t,A,now_ts=now,max_box_cost_net=1.15)
+  if _m:vd0=_m[0];a._record_market_telemetry(key=f"CMB3_CVH_BEST_{vd0['asset']}",min_interval_sec=90.,now_ts=now,sig=(vd0["strike_hit"],vd0["strike_close"],vd0["box_cost_net"]),payload={"type":"PYTH_CLOSE_VS_HIT_BEST","asset":vd0["asset"],"net_box_l1":vd0["box_cost_net"],"label":vd0["label"]})
+  for cvh in _m:
    if float(cvh["box_cost_net"])>1.035:continue
    qy,qn=cvh["yes_row"],cvh["no_row"];la={"token_id":qy["yes_token"],"opp_token_id":qy["no_token"],"condition_id":qy["condition_id"],"side":"YES","label":"YES_HIT","market_id":qy["market_id"],"fee_rate":float(qy.get("fee_rate",.0)),"fee_exponent":float(qy.get("fee_exponent",1.)),"strike":float(qy["strike"])};lb={"token_id":qn["no_token"],"opp_token_id":qn["yes_token"],"condition_id":qn["condition_id"],"side":"NO","label":"NO_CLOSE","market_id":qn["market_id"],"fee_rate":float(qn.get("fee_rate",.0)),"fee_exponent":float(qn.get("fee_exponent",1.)),"strike":float(qn["strike"])};o.append((cvh["asset"],f"CMB3_CVH_{qy['market_id']}_{qn['market_id']}",la,lb,qy["bk_yes"],qn["bk_no"],float(cvh["close_ts"]),f"{cvh['asset']} Close-vs-Hit Box {cvh['label']}"))
   o.sort(key=lambda x:((float(x[6])-now)>64800.,float(x[6])))
-  for _D,_1,la,lb,_f,_e,_ba,_C in o:
-   _a9=walk_equal_shares_dominance_box(_f.get("asks")or[],_e.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["CM_B3_PYTH_BARRIER_BOX"],fee_rate_a=float(la["fee_rate"]),fee_rate_b=float(lb["fee_rate"]),fee_exponent_a=float(la.get("fee_exponent",1.)),fee_exponent_b=float(lb.get("fee_exponent",1.)),max_box_cost_net=.994,min_shares=6,min_box_notional_usd=5.5)
-   if _a9.get("filled"):
-    opps_out.append({"sleeve":"CM_B3_PYTH_BARRIER_BOX","market":_C,"ask_vwap":round(float(_a9["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_a9["box_cost_net"]),4),"l1_usd":_a9["l1_usd"],"close_ts":_ba});e=False
-    if float(_a9["box_cost_net"])<=.993 and(_ba-now)<=172800.:e=a.emit_live_two_leg_box_candidate(sleeve_source="CM_B3_PYTH_BARRIER_BOX",box_type="BARRIER_MONO",asset=_D,dedupe_key=_1,leg_a=la,leg_b=lb,bk_a=_f,bk_b=_e,close_ts=_ba,now_ts=now,k_low=min(float(la.get("strike")or 1e2),float(lb.get("strike")or 1e2)),k_high=max(float(la.get("strike")or 1e2),float(lb.get("strike")or 1e2)))
-    if(_ba-now)<=172800.:await a.open_shadow_two_leg_box(sleeve="CM_B3_PYTH_BARRIER_BOX",dedupe_key=_1,asset=_D,title=_C,leg_a=la,leg_b=lb,bk_a=_f,bk_b=_e,close_ts=_ba,max_box_cost_net=.994,extra={"is_pyth_zero_fee_box":True})
-    if not e:a.post_zero_fee_maker_anchor_box("CM_B3",_D,f"ZFA_{_1}",la,lb,_f,_e,_ba,_C,now,live_emit_only=bool((_ba-now)<=172800.))
-   else:a.post_zero_fee_maker_anchor_box("CM_B3",_D,f"ZFA_{_1}",la,lb,_f,_e,_ba,_C,now)
-  for _0 in list(a.nba_games.values()):
-   if now>_0.tipoff_ts+6.*3600.:a.nba_games.pop(_0.event_id,None);continue
-   _i=_0.margin_legs+_0.total_legs;_h=sorted({lg.token_id for lg in _i})
-   if len(_h)<4:continue
-   _B=await a.fetch_books_batch(_h,timeout=3.5);u={}
-   for t_n,z in _B.items():
-    _a8,_a7=a._best_ask_sz(z)
-    if _a8<1. and _a7*_a8>=8.:u[t_n]=_a8
-   _g=detect_nba_dominance_boxes(_0,u,max_box_cost_net=1.12)
-   if _g:
-    nd0=_g[0];_a6,_a5=nd0["leg_a"],nd0["leg_b"];_a4=_B.get(_a6.token_id)or{};_a3=_B.get(_a5.token_id)or{};aa0,sa0=a._best_ask_sz(_a4);ab0,sb0=a._best_ask_sz(_a3);ba0,_=extract_best_bid(_a4.get("bids")or[]);bb0,_=extract_best_bid(_a3.get("bids")or[]);U=[]
+  for _F,_3,la,lb,_g,_f,_bc,_E in o:
+   _bb=walk_equal_shares_dominance_box(_g.get("asks")or[],_f.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["CM_B3_PYTH_BARRIER_BOX"],fee_rate_a=float(la["fee_rate"]),fee_rate_b=float(lb["fee_rate"]),fee_exponent_a=float(la.get("fee_exponent",1.)),fee_exponent_b=float(lb.get("fee_exponent",1.)),max_box_cost_net=.994,min_shares=6,min_box_notional_usd=5.5)
+   if _bb.get("filled"):
+    opps_out.append({"sleeve":"CM_B3_PYTH_BARRIER_BOX","market":_E,"ask_vwap":round(float(_bb["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_bb["box_cost_net"]),4),"l1_usd":_bb["l1_usd"],"close_ts":_bc});e=False
+    if float(_bb["box_cost_net"])<=.993 and(_bc-now)<=172800.:e=a.emit_live_two_leg_box_candidate(sleeve_source="CM_B3_PYTH_BARRIER_BOX",box_type="BARRIER_MONO",asset=_F,dedupe_key=_3,leg_a=la,leg_b=lb,bk_a=_g,bk_b=_f,close_ts=_bc,now_ts=now,k_low=min(float(la.get("strike")or 1e2),float(lb.get("strike")or 1e2)),k_high=max(float(la.get("strike")or 1e2),float(lb.get("strike")or 1e2)))
+    if(_bc-now)<=172800.:await a.open_shadow_two_leg_box(sleeve="CM_B3_PYTH_BARRIER_BOX",dedupe_key=_3,asset=_F,title=_E,leg_a=la,leg_b=lb,bk_a=_g,bk_b=_f,close_ts=_bc,max_box_cost_net=.994,extra={"is_pyth_zero_fee_box":True})
+    if not e:a.post_zero_fee_maker_anchor_box("CM_B3",_F,f"ZFA_{_3}",la,lb,_g,_f,_bc,_E,now,live_emit_only=bool((_bc-now)<=172800.))
+   else:a.post_zero_fee_maker_anchor_box("CM_B3",_F,f"ZFA_{_3}",la,lb,_g,_f,_bc,_E,now)
+  for _2 in list(a.nba_games.values()):
+   if now>_2.tipoff_ts+6.*3600.:a.nba_games.pop(_2.event_id,None);continue
+   _j=_2.margin_legs+_2.total_legs;_i=sorted({lg.token_id for lg in _j})
+   if len(_i)<4:continue
+   _D=await a.fetch_books_batch(_i,timeout=3.5);u={}
+   for t_n,z in _D.items():
+    _ba,_a9=a._best_ask_sz(z)
+    if _ba<1. and _a9*_ba>=8.:u[t_n]=_ba
+   _h=detect_nba_dominance_boxes(_2,u,max_box_cost_net=1.12)
+   if _h:
+    nd0=_h[0];_a8,_a7=nd0["leg_a"],nd0["leg_b"];_a6=_D.get(_a8.token_id)or{};_a5=_D.get(_a7.token_id)or{};aa0,sa0=a._best_ask_sz(_a6);ab0,sb0=a._best_ask_sz(_a5);ba0,_=extract_best_bid(_a6.get("bids")or[]);bb0,_=extract_best_bid(_a5.get("bids")or[]);U=[]
     if ba0>0 and(aa0-ba0)>=.02:U.append(round(min(ba0+.01,aa0-.01)+ab0,4))
     if bb0>0 and(ab0-bb0)>=.02:U.append(round(aa0+min(bb0+.01,ab0-.01),4))
-    T=min(U)if U else None;a._record_market_telemetry(key=f"NBA_BOX_{_0.event_id}",min_interval_sec=45.,now_ts=now,sig=(nd0["label"],nd0["box_cost_net"],T),payload={"type":"NBA_ZERO_FEE_BOX_BEST","event_id":_0.event_id,"game":_0.title,"box_kind":nd0["box_kind"],"in_play":bool(now>=_0.tipoff_ts),"sec_from_tipoff":round(now-_0.tipoff_ts,0),"best_label":nd0["label"],"leg_a_ask":round(aa0,4),"leg_a_bid":round(ba0,4)if ba0>0 else None,"leg_b_ask":round(ab0,4),"leg_b_bid":round(bb0,4)if bb0>0 else None,"net_box_l1":nd0["box_cost_net"],"maker_anchor_box_l1":T,"l1_min_usd":round(min(aa0*sa0,ab0*sb0),2),"middle_pts":nd0["middle_width_pts"]})
-   for nb in _g:
+    T=min(U)if U else None;a._record_market_telemetry(key=f"NBA_BOX_{_2.event_id}",min_interval_sec=45.,now_ts=now,sig=(nd0["label"],nd0["box_cost_net"],T),payload={"type":"NBA_ZERO_FEE_BOX_BEST","event_id":_2.event_id,"game":_2.title,"box_kind":nd0["box_kind"],"in_play":bool(now>=_2.tipoff_ts),"sec_from_tipoff":round(now-_2.tipoff_ts,0),"best_label":nd0["label"],"leg_a_ask":round(aa0,4),"leg_a_bid":round(ba0,4)if ba0>0 else None,"leg_b_ask":round(ab0,4),"leg_b_bid":round(bb0,4)if bb0>0 else None,"net_box_l1":nd0["box_cost_net"],"maker_anchor_box_l1":T,"l1_min_usd":round(min(aa0*sa0,ab0*sb0),2),"middle_pts":nd0["middle_width_pts"]})
+   for nb in _h:
     if float(nb["box_cost_net"])>1.06:continue
-    lga,lgb=nb["leg_a"],nb["leg_b"];_f,_e=_B.get(lga.token_id),_B.get(lgb.token_id)
-    if not _f or not _e:continue
-    _a2={"token_id":lga.token_id,"opp_token_id":lga.opp_token_id,"condition_id":lga.condition_id,"side":lga.side_label,"label":lga.display_label,"market_id":lga.market_id,"fee_rate":lga.fee_rate,"fee_exponent":lga.fee_exponent,"strike":float(lga.threshold)};_a1={"token_id":lgb.token_id,"opp_token_id":lgb.opp_token_id,"condition_id":lgb.condition_id,"side":lgb.side_label,"label":lgb.display_label,"market_id":lgb.market_id,"fee_rate":lgb.fee_rate,"fee_exponent":lgb.fee_exponent,"strike":float(lgb.threshold)}
-    if float(nb["box_cost_net"])>.994:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_0.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a2,_a1,_f,_e,float(nb["close_ts"]),f"{_0.title} [{nb['label']}]",now,prefetched_books=_B);continue
-    _aD=walk_equal_shares_dominance_box(_f.get("asks")or[],_e.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["SP1_NBA_ZERO_FEE_BOX"],fee_rate_a=lga.fee_rate,fee_rate_b=lgb.fee_rate,fee_exponent_a=lga.fee_exponent,fee_exponent_b=lgb.fee_exponent,max_box_cost_net=.994,min_shares=8,min_box_notional_usd=7.)
-    if _aD.get("filled"):
-     opps_out.append({"sleeve":"SP1_NBA_ZERO_FEE_BOX","market":f"NBA {_0.title}: {nb['label']} (mid={nb['middle_width_pts']}pt)","ask_vwap":round(float(_aD["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_aD["box_cost_net"]),4),"l1_usd":_aD["l1_usd"],"close_ts":nb["close_ts"]});d=False
-     if float(_aD["box_cost_net"])<=.99 and(float(nb["close_ts"])-now)<=86400.:d=a.emit_live_two_leg_box_candidate(sleeve_source="SP1_NBA_ZERO_FEE_BOX",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=f"SP1_{_0.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",leg_a=_a2,leg_b=_a1,bk_a=_f,bk_b=_e,close_ts=float(nb["close_ts"]),now_ts=now)
-     await a.open_shadow_two_leg_box(sleeve="SP1_NBA_ZERO_FEE_BOX",dedupe_key=f"SP1_{_0.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",asset="NBA",title=f"{_0.title} [{nb['label']}]",leg_a=_a2,leg_b=_a1,bk_a=_f,bk_b=_e,close_ts=float(nb["close_ts"]),max_box_cost_net=.994,extra={"is_nba_zero_fee_box":True,"box_kind":nb["box_kind"],"middle_width_pts":nb["middle_width_pts"]})
-     if not d:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_0.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a2,_a1,_f,_e,float(nb["close_ts"]),f"{_0.title} [{nb['label']}]",now,prefetched_books=_B,live_emit_only=True)
-    else:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_0.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a2,_a1,_f,_e,float(nb["close_ts"]),f"{_0.title} [{nb['label']}]",now,prefetched_books=_B)
+    lga,lgb=nb["leg_a"],nb["leg_b"];_g,_f=_D.get(lga.token_id),_D.get(lgb.token_id)
+    if not _g or not _f:continue
+    _a4={"token_id":lga.token_id,"opp_token_id":lga.opp_token_id,"condition_id":lga.condition_id,"side":lga.side_label,"label":lga.display_label,"market_id":lga.market_id,"fee_rate":lga.fee_rate,"fee_exponent":lga.fee_exponent,"strike":float(lga.threshold)};_a3={"token_id":lgb.token_id,"opp_token_id":lgb.opp_token_id,"condition_id":lgb.condition_id,"side":lgb.side_label,"label":lgb.display_label,"market_id":lgb.market_id,"fee_rate":lgb.fee_rate,"fee_exponent":lgb.fee_exponent,"strike":float(lgb.threshold)}
+    if float(nb["box_cost_net"])>.994:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_2.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a4,_a3,_g,_f,float(nb["close_ts"]),f"{_2.title} [{nb['label']}]",now,prefetched_books=_D);continue
+    _aF=walk_equal_shares_dominance_box(_g.get("asks")or[],_f.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["SP1_NBA_ZERO_FEE_BOX"],fee_rate_a=lga.fee_rate,fee_rate_b=lgb.fee_rate,fee_exponent_a=lga.fee_exponent,fee_exponent_b=lgb.fee_exponent,max_box_cost_net=.994,min_shares=8,min_box_notional_usd=7.)
+    if _aF.get("filled"):
+     opps_out.append({"sleeve":"SP1_NBA_ZERO_FEE_BOX","market":f"NBA {_2.title}: {nb['label']} (mid={nb['middle_width_pts']}pt)","ask_vwap":round(float(_aF["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_aF["box_cost_net"]),4),"l1_usd":_aF["l1_usd"],"close_ts":nb["close_ts"]});d=False
+     if float(_aF["box_cost_net"])<=.99 and(float(nb["close_ts"])-now)<=86400.:d=a.emit_live_two_leg_box_candidate(sleeve_source="SP1_NBA_ZERO_FEE_BOX",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=f"SP1_{_2.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",leg_a=_a4,leg_b=_a3,bk_a=_g,bk_b=_f,close_ts=float(nb["close_ts"]),now_ts=now)
+     await a.open_shadow_two_leg_box(sleeve="SP1_NBA_ZERO_FEE_BOX",dedupe_key=f"SP1_{_2.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",asset="NBA",title=f"{_2.title} [{nb['label']}]",leg_a=_a4,leg_b=_a3,bk_a=_g,bk_b=_f,close_ts=float(nb["close_ts"]),max_box_cost_net=.994,extra={"is_nba_zero_fee_box":True,"box_kind":nb["box_kind"],"middle_width_pts":nb["middle_width_pts"]})
+     if not d:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_2.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a4,_a3,_g,_f,float(nb["close_ts"]),f"{_2.title} [{nb['label']}]",now,prefetched_books=_D,live_emit_only=True)
+    else:a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_SP1_{_2.event_id}_{lga.token_id[-8:]}_{lgb.token_id[-8:]}",_a4,_a3,_g,_f,float(nb["close_ts"]),f"{_2.title} [{nb['label']}]",now,prefetched_books=_D)
   n=[]
   for I in list(a.multi_sport_games.values()):
    if now>I.start_ts+6.5*3600.:a.multi_sport_games.pop(I.event_id,None);continue
    if a.single_scan or("fetch_json"in a.__dict__)or now>=(I.start_ts-86400.):n.append(I)
   n.sort(key=lambda g:(now<(g.start_ts-9e2),abs(g.start_ts-now)))
   for I in n[:20]:
-   _A=sorted({lg.token_id for lgs in I.legs_by_scope.values()for lg in lgs})
-   if len(_A)<4:continue
-   _Z=await a.fetch_books_batch(_A,timeout=3.5);y={}
-   for t_m,_a0 in _Z.items():
-    _aZ,_aY=a._best_ask_sz(_a0)
-    if _aZ<1. and _aZ*_aY>=8.:y[t_m]=_aZ
-   _z=detect_multi_sport_corridor_boxes(I,y,max_box_cost_net=1.08)
-   if _z:md0=_z[0];a._record_market_telemetry(key=f"SP3_BOX_{I.event_id}",min_interval_sec=45.,now_ts=now,sig=(md0["label"],md0["box_cost_net"]),payload={"type":"MULTI_SPORT_CORRIDOR_BEST","sport":I.sport,"event_id":I.event_id,"game":I.title,"scope":md0["scope"],"in_play":bool(now>=I.start_ts),"best_label":md0["label"],"gross_box_l1":md0["box_cost_gross"],"net_box_l1":md0["box_cost_net"],"middle_pts":md0["middle_width_pts"]})
-   for cb in _z:
-    _aC,_aB=cb["leg_a"],cb["leg_b"];_d=max(float(_aC.fee_rate),float(_aB.fee_rate));S=.994 if _d==.0 else.99
-    if float(cb["box_cost_net"])>(1.045 if _d==.0 else S):continue
-    _aA,_az=_Z.get(_aC.token_id),_Z.get(_aB.token_id)
-    if not _aA or not _az:continue
-    _aX={"token_id":_aC.token_id,"opp_token_id":_aC.opp_token_id,"condition_id":_aC.condition_id,"side":_aC.side_label,"label":_aC.display_label,"market_id":_aC.market_id,"fee_rate":float(_aC.fee_rate),"fee_exponent":float(_aC.fee_exponent),"neg_risk":bool(_aC.neg_risk),"strike":float(_aC.threshold)};_aW={"token_id":_aB.token_id,"opp_token_id":_aB.opp_token_id,"condition_id":_aB.condition_id,"side":_aB.side_label,"label":_aB.display_label,"market_id":_aB.market_id,"fee_rate":float(_aB.fee_rate),"fee_exponent":float(_aB.fee_exponent),"neg_risk":bool(_aB.neg_risk),"strike":float(_aB.threshold)};_Y=f"SP3_{I.event_id}_{_aC.token_id[-8:]}_{_aB.token_id[-8:]}"
+   _C=sorted({lg.token_id for lgs in I.legs_by_scope.values()for lg in lgs})
+   if len(_C)<4:continue
+   _1=await a.fetch_books_batch(_C,timeout=3.5);y={}
+   for t_m,_a2 in _1.items():
+    _a1,_a0=a._best_ask_sz(_a2)
+    if _a1<1. and _a1*_a0>=8.:y[t_m]=_a1
+   _B=detect_multi_sport_corridor_boxes(I,y,max_box_cost_net=1.08)
+   if _B:md0=_B[0];a._record_market_telemetry(key=f"SP3_BOX_{I.event_id}",min_interval_sec=45.,now_ts=now,sig=(md0["label"],md0["box_cost_net"]),payload={"type":"MULTI_SPORT_CORRIDOR_BEST","sport":I.sport,"event_id":I.event_id,"game":I.title,"scope":md0["scope"],"in_play":bool(now>=I.start_ts),"best_label":md0["label"],"gross_box_l1":md0["box_cost_gross"],"net_box_l1":md0["box_cost_net"],"middle_pts":md0["middle_width_pts"]})
+   for cb in _B:
+    _aE,_aD=cb["leg_a"],cb["leg_b"];_e=max(float(_aE.fee_rate),float(_aD.fee_rate));S=.994 if _e==.0 else.99
+    if float(cb["box_cost_net"])>(1.045 if _e==.0 else S):continue
+    _aC,_aB=_1.get(_aE.token_id),_1.get(_aD.token_id)
+    if not _aC or not _aB:continue
+    _aZ={"token_id":_aE.token_id,"opp_token_id":_aE.opp_token_id,"condition_id":_aE.condition_id,"side":_aE.side_label,"label":_aE.display_label,"market_id":_aE.market_id,"fee_rate":float(_aE.fee_rate),"fee_exponent":float(_aE.fee_exponent),"neg_risk":bool(_aE.neg_risk),"strike":float(_aE.threshold)};_aY={"token_id":_aD.token_id,"opp_token_id":_aD.opp_token_id,"condition_id":_aD.condition_id,"side":_aD.side_label,"label":_aD.display_label,"market_id":_aD.market_id,"fee_rate":float(_aD.fee_rate),"fee_exponent":float(_aD.fee_exponent),"neg_risk":bool(_aD.neg_risk),"strike":float(_aD.threshold)};_0=f"SP3_{I.event_id}_{_aE.token_id[-8:]}_{_aD.token_id[-8:]}"
     if float(cb["box_cost_net"])>S:
-     if _d==.0:a.post_zero_fee_maker_anchor_box("SP3_SPORTS",I.sport,f"ZFA_{_Y}",_aX,_aW,_aA,_az,float(cb["close_ts"]),f"{I.title} [{cb['label']}]",now,prefetched_books=_Z)
+     if _e==.0:a.post_zero_fee_maker_anchor_box("SP3_SPORTS",I.sport,f"ZFA_{_0}",_aZ,_aY,_aC,_aB,float(cb["close_ts"]),f"{I.title} [{cb['label']}]",now,prefetched_books=_1)
      continue
-    _ay=walk_equal_shares_dominance_box(_aA.get("asks")or[],_az.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"],fee_rate_a=float(_aC.fee_rate),fee_rate_b=float(_aB.fee_rate),fee_exponent_a=float(_aC.fee_exponent),fee_exponent_b=float(_aB.fee_exponent),max_box_cost_net=S,min_shares=8,min_box_notional_usd=7.)
-    if _ay.get("filled"):
-     opps_out.append({"sleeve":"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX","market":f"{I.sport} {I.title}: {cb['label']} (mid={cb['middle_width_pts']}pt)","ask_vwap":round(float(_ay["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_ay["box_cost_net"]),4),"l1_usd":_ay["l1_usd"],"close_ts":cb["close_ts"]});w=.99 if _d==.0 else.988
-     if float(_ay["box_cost_net"])<=w and(float(cb["close_ts"])-now)<=86400.:a.emit_live_two_leg_box_candidate(sleeve_source="SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",box_type="SPORTS_CORRIDOR",asset=I.sport,dedupe_key=_Y,leg_a=_aX,leg_b=_aW,bk_a=_aA,bk_b=_az,close_ts=float(cb["close_ts"]),now_ts=now,k_low=float(_aC.threshold),k_high=float(_aB.threshold))
-     await a.open_shadow_two_leg_box(sleeve="SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",dedupe_key=_Y,asset=I.sport,title=f"{I.sport} {I.title} [{cb['label']}]",leg_a=_aX,leg_b=_aW,bk_a=_aA,bk_b=_az,close_ts=float(cb["close_ts"]),max_box_cost_net=S,extra={"is_sports_corridor_box":True,"sport":I.sport,"scope":cb["scope"],"box_kind":cb["box_kind"],"middle_width_pts":cb["middle_width_pts"]})
-  for _ax in sorted(list(a.negrisk_zero_slates.values()),key=lambda s:((float(s.end_ts)-now)>64800.,float(s.end_ts))):
-   if _ax.end_ts<=now+60:a.negrisk_zero_slates.pop(_ax.event_id,None);continue
-   _y=[b["yes_token"]for b in _ax.brackets]+[b["no_token"]for b in _ax.brackets];_X=await a.fetch_books_batch(_y,timeout=3.5)
-   if not all(b["yes_token"]in _X and b["no_token"]in _X for b in _ax.brackets):continue
-   H=[a._best_ask_sz(_X[b["yes_token"]])for b in _ax.brackets];G=[a._best_ask_sz(_X[b["no_token"]])for b in _ax.brackets];_aw=sum(p for p,_ in H);_av=sum(p for p,_ in G);R=round(min(p*s for p,s in H),2);Q=round(min(p*s for p,s in G),2);F=round(sum(extract_best_bid(_X[b["yes_token"]].get("bids")or[])[0]for b in _ax.brackets),4);E=round(sum(extract_best_bid(_X[b["no_token"]].get("bids")or[])[0]for b in _ax.brackets),4);_aV=len(_ax.brackets);a._record_market_telemetry(key=f"NR0_SLATE_{_ax.event_id}",min_interval_sec=60.,now_ts=now,sig=(round(_aw,3),round(_av,3)),payload={"type":"ZERO_FEE_NEGRISK_SLATE","series":_ax.series_slug,"title":_ax.title,"tte_sec":round(_ax.end_ts-now,0),"n_open":_aV,"sum_yes_l1":round(_aw,4),"sum_yes_bids":F,"min_yes_l1_usd":R,"sum_no_l1":round(_av,4),"sum_no_bids":E,"min_no_l1_usd":Q,"no_payout":_aV-1})
-   if _aw<=.99:
-    _W=[{"token_id":b["yes_token"],"side":"YES","label":f"YES[{b['label']}]","market_id":b["market_id"],"fee_rate":float(b.get("fee_rate",.0))}for b in _ax.brackets];_au=walk_equal_shares_multi_leg_box([{"asks":_X[b["yes_token"]].get("asks")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _ax.brackets],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR0_ZERO_FEE_SLATE_ARB"],guaranteed_payout_per_bundle=1.,max_bundle_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
-    if _au.get("filled"):
-     opps_out.append({"sleeve":"NR0_ZERO_FEE_SLATE_ARB","market":f"{_ax.title} (ALL {_aV} YES)","ask_vwap":round(float(_au["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_au["box_cost_net"]),4),"l1_usd":_au["l1_usd"],"close_ts":_ax.end_ts})
-     if _aV==2 and(float(_ax.end_ts)-now)<=172800. and a._can_emit_zero_loss_math_live("NR0_ZERO_FEE_SLATE_ARB",float(_ax.end_ts),now):_aU,_aT=_ax.brackets[0],_ax.brackets[1];a.emit_live_two_leg_box_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",box_type="NEGRISK_2LEG",asset=_ax.series_slug.upper(),dedupe_key=f"NR0_Y_{_ax.event_id}",leg_a={"token_id":_aU["yes_token"],"opp_token_id":_aU["no_token"],"condition_id":str(_aU.get("condition_id")or""),"side":"YES","label":f"YES[{_aU['label']}]","market_id":_aU["market_id"],"fee_rate":float(_aU.get("fee_rate",.0)),"fee_exponent":float(_aU.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},leg_b={"token_id":_aT["yes_token"],"opp_token_id":_aT["no_token"],"condition_id":str(_aT.get("condition_id")or""),"side":"YES","label":f"YES[{_aT['label']}]","market_id":_aT["market_id"],"fee_rate":float(_aT.get("fee_rate",.0)),"fee_exponent":float(_aT.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},bk_a=_X[_aU["yes_token"]],bk_b=_X[_aT["yes_token"]],close_ts=float(_ax.end_ts),now_ts=now)
-     await a.open_shadow_multi_leg_bundle("NR0_ZERO_FEE_SLATE_ARB",f"NR0_Y_{_ax.event_id}",_ax.series_slug.upper(),f"{_ax.title} [All-YES Partition]",_W,_X,_ax.end_ts,1.,.988,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
-   elif _av<=(_aV-1)-.01:
-    _aS=float(_aV-1);_V=[{"token_id":b["no_token"],"side":"NO","label":f"NO[{b['label']}]","market_id":b["market_id"],"fee_rate":float(b.get("fee_rate",.0))}for b in _ax.brackets];_at=walk_equal_shares_multi_leg_box([{"asks":_X[b["no_token"]].get("asks")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _ax.brackets],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR0_ZERO_FEE_SLATE_ARB"],guaranteed_payout_per_bundle=_aS,max_bundle_cost_net=round(_aS-.012,4),min_shares=6,min_box_notional_usd=5.5)
-    if _at.get("filled"):
-     opps_out.append({"sleeve":"NR0_ZERO_FEE_SLATE_ARB","market":f"{_ax.title} (ALL {_aV} NO)","ask_vwap":round(float(_at["box_cost_net"])/_aS,4),"p_model":1.,"net_edge":round((_aS-float(_at["box_cost_net"]))/_aS,4),"l1_usd":_at["l1_usd"],"close_ts":_ax.end_ts})
-     if(float(_ax.end_ts)-now)<=172800. and a._can_emit_zero_loss_math_live("NR0_ZERO_FEE_SLATE_ARB",float(_ax.end_ts),now):
-      if _aV==2:_aR,_aQ=_ax.brackets[0],_ax.brackets[1];a.emit_live_two_leg_box_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",box_type="NEGRISK_2LEG",asset=_ax.series_slug.upper(),dedupe_key=f"NR0_N_{_ax.event_id}",leg_a={"token_id":_aR["no_token"],"opp_token_id":_aR["yes_token"],"condition_id":str(_aR.get("condition_id")or""),"side":"NO","label":f"NO[{_aR['label']}]","market_id":_aR["market_id"],"fee_rate":float(_aR.get("fee_rate",.0)),"fee_exponent":float(_aR.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},leg_b={"token_id":_aQ["no_token"],"opp_token_id":_aQ["yes_token"],"condition_id":str(_aQ.get("condition_id")or""),"side":"NO","label":f"NO[{_aQ['label']}]","market_id":_aQ["market_id"],"fee_rate":float(_aQ.get("fee_rate",.0)),"fee_exponent":float(_aQ.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},bk_a=_X[_aR["no_token"]],bk_b=_X[_aQ["no_token"]],close_ts=float(_ax.end_ts),now_ts=now)
-      elif 3<=_aV<=15:
-       _c=a.negrisk_convert_slates.get(_ax.event_id)
-       if _c is not None and _c.is_closed_convert_safe:_b=_at.get("leg_walks")or[];_as={"mode":"NR2_PURE_CASH_CONVERT","shares":_at["shares"],"net_edge_per_share":round((_aS-float(_at["box_cost_net"]))/_aS,5),"no_legs":[{"token_id":b_z["no_token"],"bracket":b_z,"walk":(_b[idx_z]if idx_z<len(_b)else{"worst_px":a._best_ask_sz(_X[b_z["no_token"]])[0]})}for idx_z,b_z in enumerate(_c.brackets)],"yes_sell_legs":[],"retained_free_yes_brackets":[]};a.emit_live_negrisk_convert_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",spec=_c,dedupe_key=f"NR0_N{_aV}_{_ax.event_id}",arb_hit=_as,books_by_token=_X,now_ts=now)
-     await a.open_shadow_multi_leg_bundle("NR0_ZERO_FEE_SLATE_ARB",f"NR0_N_{_ax.event_id}",_ax.series_slug.upper(),f"{_ax.title} [All-NO Partition]",_V,_X,_ax.end_ts,_aS,round(_aS-.012,4),{"is_multi_leg_bundle":True,"guaranteed_payout":_aS})
-   if F>=1.004:await a.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_NR_{_ax.event_id}",asset=_ax.series_slug.upper(),title=f"{_ax.title} NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":_X[b["yes_token"]].get("bids")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _ax.brackets],close_ts=_ax.end_ts,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"NEGRISK_SLATE","series":_ax.series_slug,"event_id":_ax.event_id})
+    _aA=walk_equal_shares_dominance_box(_aC.get("asks")or[],_aB.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["SP3_SPORTS_CORRIDOR_DOMINANCE_BOX"],fee_rate_a=float(_aE.fee_rate),fee_rate_b=float(_aD.fee_rate),fee_exponent_a=float(_aE.fee_exponent),fee_exponent_b=float(_aD.fee_exponent),max_box_cost_net=S,min_shares=8,min_box_notional_usd=7.)
+    if _aA.get("filled"):
+     opps_out.append({"sleeve":"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX","market":f"{I.sport} {I.title}: {cb['label']} (mid={cb['middle_width_pts']}pt)","ask_vwap":round(float(_aA["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_aA["box_cost_net"]),4),"l1_usd":_aA["l1_usd"],"close_ts":cb["close_ts"]});w=.99 if _e==.0 else.988
+     if float(_aA["box_cost_net"])<=w and(float(cb["close_ts"])-now)<=86400.:a.emit_live_two_leg_box_candidate(sleeve_source="SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",box_type="SPORTS_CORRIDOR",asset=I.sport,dedupe_key=_0,leg_a=_aZ,leg_b=_aY,bk_a=_aC,bk_b=_aB,close_ts=float(cb["close_ts"]),now_ts=now,k_low=float(_aE.threshold),k_high=float(_aD.threshold))
+     await a.open_shadow_two_leg_box(sleeve="SP3_SPORTS_CORRIDOR_DOMINANCE_BOX",dedupe_key=_0,asset=I.sport,title=f"{I.sport} {I.title} [{cb['label']}]",leg_a=_aZ,leg_b=_aY,bk_a=_aC,bk_b=_aB,close_ts=float(cb["close_ts"]),max_box_cost_net=S,extra={"is_sports_corridor_box":True,"sport":I.sport,"scope":cb["scope"],"box_kind":cb["box_kind"],"middle_width_pts":cb["middle_width_pts"]})
+  for _az in sorted(list(a.negrisk_zero_slates.values()),key=lambda s:((float(s.end_ts)-now)>64800.,float(s.end_ts))):
+   if _az.end_ts<=now+60:a.negrisk_zero_slates.pop(_az.event_id,None);continue
+   _A=[b["yes_token"]for b in _az.brackets]+[b["no_token"]for b in _az.brackets];_Z=await a.fetch_books_batch(_A,timeout=3.5)
+   if not all(b["yes_token"]in _Z and b["no_token"]in _Z for b in _az.brackets):continue
+   H=[a._best_ask_sz(_Z[b["yes_token"]])for b in _az.brackets];G=[a._best_ask_sz(_Z[b["no_token"]])for b in _az.brackets];_ay=sum(p for p,_ in H);_ax=sum(p for p,_ in G);R=round(min(p*s for p,s in H),2);Q=round(min(p*s for p,s in G),2);F=round(sum(extract_best_bid(_Z[b["yes_token"]].get("bids")or[])[0]for b in _az.brackets),4);E=round(sum(extract_best_bid(_Z[b["no_token"]].get("bids")or[])[0]for b in _az.brackets),4);_aX=len(_az.brackets);a._record_market_telemetry(key=f"NR0_SLATE_{_az.event_id}",min_interval_sec=60.,now_ts=now,sig=(round(_ay,3),round(_ax,3)),payload={"type":"ZERO_FEE_NEGRISK_SLATE","series":_az.series_slug,"title":_az.title,"tte_sec":round(_az.end_ts-now,0),"n_open":_aX,"sum_yes_l1":round(_ay,4),"sum_yes_bids":F,"min_yes_l1_usd":R,"sum_no_l1":round(_ax,4),"sum_no_bids":E,"min_no_l1_usd":Q,"no_payout":_aX-1})
+   if _ay<=.99:
+    _Y=[{"token_id":b["yes_token"],"side":"YES","label":f"YES[{b['label']}]","market_id":b["market_id"],"fee_rate":float(b.get("fee_rate",.0))}for b in _az.brackets];_aw=walk_equal_shares_multi_leg_box([{"asks":_Z[b["yes_token"]].get("asks")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _az.brackets],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR0_ZERO_FEE_SLATE_ARB"],guaranteed_payout_per_bundle=1.,max_bundle_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
+    if _aw.get("filled"):
+     opps_out.append({"sleeve":"NR0_ZERO_FEE_SLATE_ARB","market":f"{_az.title} (ALL {_aX} YES)","ask_vwap":round(float(_aw["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_aw["box_cost_net"]),4),"l1_usd":_aw["l1_usd"],"close_ts":_az.end_ts})
+     if _aX==2 and(float(_az.end_ts)-now)<=172800. and a._can_emit_zero_loss_math_live("NR0_ZERO_FEE_SLATE_ARB",float(_az.end_ts),now):_aW,_aV=_az.brackets[0],_az.brackets[1];a.emit_live_two_leg_box_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",box_type="NEGRISK_2LEG",asset=_az.series_slug.upper(),dedupe_key=f"NR0_Y_{_az.event_id}",leg_a={"token_id":_aW["yes_token"],"opp_token_id":_aW["no_token"],"condition_id":str(_aW.get("condition_id")or""),"side":"YES","label":f"YES[{_aW['label']}]","market_id":_aW["market_id"],"fee_rate":float(_aW.get("fee_rate",.0)),"fee_exponent":float(_aW.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},leg_b={"token_id":_aV["yes_token"],"opp_token_id":_aV["no_token"],"condition_id":str(_aV.get("condition_id")or""),"side":"YES","label":f"YES[{_aV['label']}]","market_id":_aV["market_id"],"fee_rate":float(_aV.get("fee_rate",.0)),"fee_exponent":float(_aV.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},bk_a=_Z[_aW["yes_token"]],bk_b=_Z[_aV["yes_token"]],close_ts=float(_az.end_ts),now_ts=now)
+     elif(3<=_aX<=12 and not bool(getattr(_az,"neg_risk_augmented",False))and(float(_az.end_ts)-now)<=86400. and a._can_emit_zero_loss_math_live("NR0_ZERO_FEE_SLATE_ARB",float(_az.end_ts),now)):
+      _d=a.negrisk_convert_slates.get(_az.event_id)
+      if _d is None or bool(_d.is_closed_convert_safe):
+       _z=[{"token_id":str(b["yes_token"]),"market_id":str(b["market_id"]),"condition_id":str(b.get("condition_id")or""),"ask_px":float(H[idx][0]),"ask_size":float(H[idx][1]),"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.)),"neg_risk":True,"side":"YES","role":f"NR0_YES_{idx}","label":f"YES[{b['label']}]"}for idx,b in enumerate(_az.brackets)]
+       if all(.0<x["ask_px"]<1. and x["ask_size"]>=5. for x in _z):a.emit_live_special_v2_box_candidate(box_type="MULTI_LEG_BUNDLE",sleeve_source="NR0_ZERO_FEE_SLATE_ARB",asset=_az.series_slug.upper(),dedupe_key=f"NR0_Y{_aX}_{_az.event_id}",close_ts=float(_az.end_ts),now_ts=now,payload={"legs":_z,"box_cost_net":round(float(_aw["box_cost_net"]),6),"cost_per_share":round(float(_aw["box_cost_net"]),6),"max_box_cost_net":.988,"max_fillable_shares":min(float(x["ask_size"])for x in _z),"neg_risk":True,"leg_a_fee_rate":max((float(x["fee_rate"])for x in _z),default=.0),"leg_b_fee_rate":.0})
+     await a.open_shadow_multi_leg_bundle("NR0_ZERO_FEE_SLATE_ARB",f"NR0_Y_{_az.event_id}",_az.series_slug.upper(),f"{_az.title} [All-YES Partition]",_Y,_Z,_az.end_ts,1.,.988,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
+   elif _ax<=(_aX-1)-.01:
+    _aU=float(_aX-1);_X=[{"token_id":b["no_token"],"side":"NO","label":f"NO[{b['label']}]","market_id":b["market_id"],"fee_rate":float(b.get("fee_rate",.0))}for b in _az.brackets];_av=walk_equal_shares_multi_leg_box([{"asks":_Z[b["no_token"]].get("asks")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _az.brackets],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR0_ZERO_FEE_SLATE_ARB"],guaranteed_payout_per_bundle=_aU,max_bundle_cost_net=round(_aU-.012,4),min_shares=6,min_box_notional_usd=5.5)
+    if _av.get("filled"):
+     opps_out.append({"sleeve":"NR0_ZERO_FEE_SLATE_ARB","market":f"{_az.title} (ALL {_aX} NO)","ask_vwap":round(float(_av["box_cost_net"])/_aU,4),"p_model":1.,"net_edge":round((_aU-float(_av["box_cost_net"]))/_aU,4),"l1_usd":_av["l1_usd"],"close_ts":_az.end_ts})
+     if(float(_az.end_ts)-now)<=172800. and a._can_emit_zero_loss_math_live("NR0_ZERO_FEE_SLATE_ARB",float(_az.end_ts),now):
+      if _aX==2:_aT,_aS=_az.brackets[0],_az.brackets[1];a.emit_live_two_leg_box_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",box_type="NEGRISK_2LEG",asset=_az.series_slug.upper(),dedupe_key=f"NR0_N_{_az.event_id}",leg_a={"token_id":_aT["no_token"],"opp_token_id":_aT["yes_token"],"condition_id":str(_aT.get("condition_id")or""),"side":"NO","label":f"NO[{_aT['label']}]","market_id":_aT["market_id"],"fee_rate":float(_aT.get("fee_rate",.0)),"fee_exponent":float(_aT.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},leg_b={"token_id":_aS["no_token"],"opp_token_id":_aS["yes_token"],"condition_id":str(_aS.get("condition_id")or""),"side":"NO","label":f"NO[{_aS['label']}]","market_id":_aS["market_id"],"fee_rate":float(_aS.get("fee_rate",.0)),"fee_exponent":float(_aS.get("fee_exponent",1.)),"neg_risk":True,"strike":1e2},bk_a=_Z[_aT["no_token"]],bk_b=_Z[_aS["no_token"]],close_ts=float(_az.end_ts),now_ts=now)
+      elif 3<=_aX<=15:
+       _c=a.negrisk_convert_slates.get(_az.event_id)
+       if _c is not None and _c.is_closed_convert_safe:_b=_av.get("leg_walks")or[];_au={"mode":"NR2_PURE_CASH_CONVERT","shares":_av["shares"],"net_edge_per_share":round((_aU-float(_av["box_cost_net"]))/_aU,5),"no_legs":[{"token_id":b_z["no_token"],"bracket":b_z,"walk":(_b[idx_z]if idx_z<len(_b)else{"worst_px":a._best_ask_sz(_Z[b_z["no_token"]])[0]})}for idx_z,b_z in enumerate(_c.brackets)],"yes_sell_legs":[],"retained_free_yes_brackets":[]};a.emit_live_negrisk_convert_candidate(sleeve_source="NR0_ZERO_FEE_SLATE_ARB",spec=_c,dedupe_key=f"NR0_N{_aX}_{_az.event_id}",arb_hit=_au,books_by_token=_Z,now_ts=now)
+     await a.open_shadow_multi_leg_bundle("NR0_ZERO_FEE_SLATE_ARB",f"NR0_N_{_az.event_id}",_az.series_slug.upper(),f"{_az.title} [All-NO Partition]",_X,_Z,_az.end_ts,_aU,round(_aU-.012,4),{"is_multi_leg_bundle":True,"guaranteed_payout":_aU})
+   if F>=1.004:await a.execute_ctf_overround_mint_sell(dedupe_key=f"CTF_OVR_NR_{_az.event_id}",asset=_az.series_slug.upper(),title=f"{_az.title} NegRisk Overround Mint-Sell",legs_bids_spec=[{"bids":_Z[b["yes_token"]].get("bids")or[],"fee_rate":float(b.get("fee_rate",.0)),"fee_exponent":float(b.get("fee_exponent",1.))}for b in _az.brackets],close_ts=_az.end_ts,min_net_proceeds_per_set=1.004,opps_out=opps_out,extra={"overround_kind":"NEGRISK_SLATE","series":_az.series_slug,"event_id":_az.event_id})
   D=[s for s in a.negrisk_convert_slates.values()if s.end_ts>now+60]
   if D:
    _a=[]
-   for _ar in D:
-    for _aq in _ar.brackets:
-     _a.append(_aq["no_token"])
-     if _ar.is_closed_convert_safe:_a.append(_aq["yes_token"])
-   _x=await a.fetch_books_batch(_a,timeout=3.5);j={}
-   for _aP,_ap in _x.items():
-    _ao,_an=a._best_ask_sz(_ap)
-    if _ao<1. and _ao*_an>=8.:j[_aP]=_ao
-   for _U in D:
-    P=detect_negrisk_no_pair_boxes(_U,j,max_box_cost_net=1.04)
-    if P:pa0=P[0];a._record_market_telemetry(key=f"NRCONV_2L_{_U.event_id}",min_interval_sec=60.,now_ts=now,sig=(pa0["label"],pa0["box_cost_net"]),payload={"type":"NEGRISK_NO_PAIR_BEST","event_id":_U.event_id,"title":_U.title[:80],"augmented":_U.neg_risk_augmented,"net_box_l1":pa0["box_cost_net"],"label":pa0["label"]})
+   for _at in D:
+    for _as in _at.brackets:
+     _a.append(_as["no_token"])
+     if _at.is_closed_convert_safe:_a.append(_as["yes_token"])
+   _y=await a.fetch_books_batch(_a,timeout=3.5);j={}
+   for _aR,_ar in _y.items():
+    _aq,_ap=a._best_ask_sz(_ar)
+    if _aq<1. and _aq*_ap>=8.:j[_aR]=_aq
+   for _W in D:
+    P=detect_negrisk_no_pair_boxes(_W,j,max_box_cost_net=1.04)
+    if P:pa0=P[0];a._record_market_telemetry(key=f"NRCONV_2L_{_W.event_id}",min_interval_sec=60.,now_ts=now,sig=(pa0["label"],pa0["box_cost_net"]),payload={"type":"NEGRISK_NO_PAIR_BEST","event_id":_W.event_id,"title":_W.title[:80],"augmented":_W.neg_risk_augmented,"net_box_l1":pa0["box_cost_net"],"label":pa0["label"]})
     for pa in P:
-     _am,_al=pa["bracket_a"],pa["bracket_b"];O=max(float(_am["fee_rate"]),float(_al["fee_rate"]));_w=.992 if O==.0 else.988
-     if float(pa["box_cost_net"])>_w:continue
-     _T,_S=_x.get(_am["no_token"]),_x.get(_al["no_token"])
-     if not _T or not _S:continue
-     _ak={"token_id":_am["no_token"],"opp_token_id":_am["yes_token"],"condition_id":_am["condition_id"],"side":"NO","label":f"NO[{_am['label']}]","market_id":_am["market_id"],"fee_rate":float(_am["fee_rate"]),"fee_exponent":float(_am["fee_exponent"]),"neg_risk":True,"strike":1e2};_aj={"token_id":_al["no_token"],"opp_token_id":_al["yes_token"],"condition_id":_al["condition_id"],"side":"NO","label":f"NO[{_al['label']}]","market_id":_al["market_id"],"fee_rate":float(_al["fee_rate"]),"fee_exponent":float(_al["fee_exponent"]),"neg_risk":True,"strike":1e2};_ai=walk_equal_shares_dominance_box(_T.get("asks")or[],_S.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],fee_rate_a=float(_am["fee_rate"]),fee_rate_b=float(_al["fee_rate"]),fee_exponent_a=float(_am["fee_exponent"]),fee_exponent_b=float(_al["fee_exponent"]),max_box_cost_net=_w,min_shares=8,min_box_notional_usd=7.)
-     if _ai.get("filled"):
-      _R=f"NRCONV_2L_{_U.event_id}_{_am['market_id']}_{_al['market_id']}";opps_out.append({"sleeve":"NR_CONV_NO_BASKET_ARB","market":f"{_U.title[:50]}: {pa['label']}","ask_vwap":round(float(_ai["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_ai["box_cost_net"]),4),"l1_usd":_ai["l1_usd"],"close_ts":_U.end_ts})
-      if(_U.end_ts-now)<=172800. and float(_ai["box_cost_net"])<=(.99 if O==.0 else.988):a.emit_live_two_leg_box_candidate(sleeve_source="NR_CONV_NO_BASKET_ARB",box_type="NEGRISK_2LEG",asset="NEGRISK",dedupe_key=_R,leg_a=_ak,leg_b=_aj,bk_a=_T,bk_b=_S,close_ts=float(_U.end_ts),now_ts=now)
-      await a.open_shadow_two_leg_box(sleeve="NR_CONV_NO_BASKET_ARB",dedupe_key=_R,asset="NEGRISK",title=f"{_U.title} [{pa['label']}]",leg_a=_ak,leg_b=_aj,bk_a=_T,bk_b=_S,close_ts=float(_U.end_ts),max_box_cost_net=_w,extra={"is_negrisk_no_pair_box":True,"event_id":_U.event_id,"neg_risk_augmented":_U.neg_risk_augmented})
-    if _U.is_closed_convert_safe:
-     N=detect_negrisk_convert_positions_arbs(_U,_x,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
-     if N:ca0=N[0];a._record_market_telemetry(key=f"NRCONV_M_{_U.event_id}",min_interval_sec=60.,now_ts=now,sig=(ca0["m_no_legs"],ca0["net_edge_per_share"]),payload={"type":"NEGRISK_CONVERT_ARB_SNAP","event_id":_U.event_id,"title":_U.title[:80],"m_no_legs":ca0["m_no_legs"],"n_total":ca0["n_total"],"net_edge_per_share":ca0["net_edge_per_share"],"shares":ca0["shares"]});await a.execute_negrisk_convert_positions_arb(_U,ca0,_x,opps_out)
-     B=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in _U.brackets)and(_U.end_ts-now)<=172800.);Z=detect_nr2_convert_no_subset_arbs(_U,_x,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if B else.012,min_edge_with_yes_sell=.0085 if B else.015,min_shares=5 if B else 6)
+     _ao,_an=pa["bracket_a"],pa["bracket_b"];O=max(float(_ao["fee_rate"]),float(_an["fee_rate"]));_x=.992 if O==.0 else.988;_V,_U=_y.get(_ao["no_token"]),_y.get(_an["no_token"])
+     if not _V or not _U:continue
+     _am={"token_id":_ao["no_token"],"opp_token_id":_ao["yes_token"],"condition_id":_ao["condition_id"],"side":"NO","label":f"NO[{_ao['label']}]","market_id":_ao["market_id"],"fee_rate":float(_ao["fee_rate"]),"fee_exponent":float(_ao["fee_exponent"]),"neg_risk":True,"strike":1e2};_al={"token_id":_an["no_token"],"opp_token_id":_an["yes_token"],"condition_id":_an["condition_id"],"side":"NO","label":f"NO[{_an['label']}]","market_id":_an["market_id"],"fee_rate":float(_an["fee_rate"]),"fee_exponent":float(_an["fee_exponent"]),"neg_risk":True,"strike":1e2}
+     if float(pa["box_cost_net"])>_x:
+      if O==.0 and float(pa["box_cost_net"])<=1.035 and _ao["market_id"]!=_an["market_id"]:a.post_zero_fee_maker_anchor_box("NEGRISK_NO_PAIR","NEGRISK",f"ZF_NRPAIR_{_W.event_id}_{_ao['market_id']}_{_an['market_id']}",_am,_al,_V,_U,float(_W.end_ts),f"{_W.title[:50]}: {pa['label']}",now,prefetched_books=_y)
+      continue
+     _ak=walk_equal_shares_dominance_box(_V.get("asks")or[],_U.get("asks")or[],target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],fee_rate_a=float(_ao["fee_rate"]),fee_rate_b=float(_an["fee_rate"]),fee_exponent_a=float(_ao["fee_exponent"]),fee_exponent_b=float(_an["fee_exponent"]),max_box_cost_net=_x,min_shares=8,min_box_notional_usd=7.)
+     if _ak.get("filled"):
+      _T=f"NRCONV_2L_{_W.event_id}_{_ao['market_id']}_{_an['market_id']}";opps_out.append({"sleeve":"NR_CONV_NO_BASKET_ARB","market":f"{_W.title[:50]}: {pa['label']}","ask_vwap":round(float(_ak["box_cost_net"]),4),"p_model":1.,"net_edge":round(1.-float(_ak["box_cost_net"]),4),"l1_usd":_ak["l1_usd"],"close_ts":_W.end_ts})
+      if(_W.end_ts-now)<=172800. and float(_ak["box_cost_net"])<=(.99 if O==.0 else.988):a.emit_live_two_leg_box_candidate(sleeve_source="NR_CONV_NO_BASKET_ARB",box_type="NEGRISK_2LEG",asset="NEGRISK",dedupe_key=_T,leg_a=_am,leg_b=_al,bk_a=_V,bk_b=_U,close_ts=float(_W.end_ts),now_ts=now)
+      await a.open_shadow_two_leg_box(sleeve="NR_CONV_NO_BASKET_ARB",dedupe_key=_T,asset="NEGRISK",title=f"{_W.title} [{pa['label']}]",leg_a=_am,leg_b=_al,bk_a=_V,bk_b=_U,close_ts=float(_W.end_ts),max_box_cost_net=_x,extra={"is_negrisk_no_pair_box":True,"event_id":_W.event_id,"neg_risk_augmented":_W.neg_risk_augmented})
+    if _W.is_closed_convert_safe:
+     N=detect_negrisk_convert_positions_arbs(_W,_y,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
+     if N:ca0=N[0];a._record_market_telemetry(key=f"NRCONV_M_{_W.event_id}",min_interval_sec=60.,now_ts=now,sig=(ca0["m_no_legs"],ca0["net_edge_per_share"]),payload={"type":"NEGRISK_CONVERT_ARB_SNAP","event_id":_W.event_id,"title":_W.title[:80],"m_no_legs":ca0["m_no_legs"],"n_total":ca0["n_total"],"net_edge_per_share":ca0["net_edge_per_share"],"shares":ca0["shares"]});await a.execute_negrisk_convert_positions_arb(_W,ca0,_y,opps_out)
+     B=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in _W.brackets)and(_W.end_ts-now)<=172800.);Z=detect_nr2_convert_no_subset_arbs(_W,_y,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if B else.012,min_edge_with_yes_sell=.0085 if B else.015,min_shares=5 if B else 6)
      try:
-      from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as c;_v=c(_U,_x,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
-      if _v is not None:opps_out.append({"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","market":f"{_U.title[:50]} [NR3 All-YES Overround]","ask_vwap":round(max(.01,1.-float(_v["net_edge_per_share"])),4),"p_model":1.,"net_edge":_v["net_edge_per_share"],"l1_usd":_v["l1_usd"],"close_ts":_U.end_ts});a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=_U,dedupe_key=f"NR3_OVR_{_U.event_id}",arb_hit=_v,books_by_token=_x,now_ts=now)
+      from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as c;_w=c(_W,_y,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
+      if _w is not None:opps_out.append({"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","market":f"{_W.title[:50]} [NR3 All-YES Overround]","ask_vwap":round(max(.01,1.-float(_w["net_edge_per_share"])),4),"p_model":1.,"net_edge":_w["net_edge_per_share"],"l1_usd":_w["l1_usd"],"close_ts":_W.end_ts});a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=_W,dedupe_key=f"NR3_OVR_{_W.event_id}",arb_hit=_w,books_by_token=_y,now_ts=now)
      except Exception:pass
-     if Z:na0=Z[0];a._record_market_telemetry(key=f"NR2_SUB_{_U.event_id}",min_interval_sec=60.,now_ts=now,sig=(na0["m_no_legs"],na0["net_edge_per_share"],na0["retained_tail_count"]),payload={"type":"NR2_SUBSET_CONVERT_SNAP","event_id":_U.event_id,"title":_U.title[:80],"m_no_legs":na0["m_no_legs"],"n_total":na0["n_total"],"retained_tail_count":na0["retained_tail_count"],"net_edge_per_share":na0["net_edge_per_share"]});await a.execute_nr2_subset_convert_arb(_U,na0,_x,opps_out)
+     if Z:na0=Z[0];a._record_market_telemetry(key=f"NR2_SUB_{_W.event_id}",min_interval_sec=60.,now_ts=now,sig=(na0["m_no_legs"],na0["net_edge_per_share"],na0["retained_tail_count"]),payload={"type":"NR2_SUBSET_CONVERT_SNAP","event_id":_W.event_id,"title":_W.title[:80],"m_no_legs":na0["m_no_legs"],"n_total":na0["n_total"],"retained_tail_count":na0["retained_tail_count"],"net_edge_per_share":na0["net_edge_per_share"]});await a.execute_nr2_subset_convert_arb(_W,na0,_y,opps_out)
  async def _scan_frontier_v2_sleeves(a,opps_out,now):
-  b=[s for s in a.nba_prop_slates.values()if s.settle_est_ts>now+120]
-  for _d in b[:10]:
-   D=[t for rgs in _d.props_by_player_stat.values()if len(rgs)>=2 for r in rgs for t in(r.yes_token,r.no_token)]
-   if not D:continue
-   P=await a.fetch_books_batch(D,timeout=3.5);C={t:p for t,bk in P.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};j=detect_sp4_milestone_ladder_boxes(_d,C,max_box_cost_net=1.045)
-   if j:b0=j[0];a._record_market_telemetry(f"SP4_3B_{_d.event_id}",90.,{"type":"SP4_MILESTONE_BOX_BEST","game":_d.title[:60],"label":b0["label"],"net_box_l1":b0["box_cost_net"]},now_ts=now,sig=(b0["label"],b0["box_cost_net"]))
-   for bx in j[:8]:
-    la,lb=bx["leg_a"],bx["leg_b"];_v,_u=P.get(la["token_id"]),P.get(lb["token_id"])
-    if not _v or not _u:continue
-    O=f"SP4_3B_{la['market_id']}_{lb['market_id']}"
+  e=[s for s in a.nba_prop_slates.values()if s.settle_est_ts>now+120]
+  for _j in e[:10]:
+   I=[t for rgs in _j.props_by_player_stat.values()if len(rgs)>=2 for r in rgs for t in(r.yes_token,r.no_token)]
+   if not I:continue
+   V=await a.fetch_books_batch(I,timeout=3.5);H={t:p for t,bk in V.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};n=detect_sp4_milestone_ladder_boxes(_j,H,max_box_cost_net=1.045)
+   if n:b0=n[0];a._record_market_telemetry(f"SP4_3B_{_j.event_id}",90.,{"type":"SP4_MILESTONE_BOX_BEST","game":_j.title[:60],"label":b0["label"],"net_box_l1":b0["box_cost_net"]},now_ts=now,sig=(b0["label"],b0["box_cost_net"]))
+   for bx in n[:8]:
+    la,lb=bx["leg_a"],bx["leg_b"];_B,_A=V.get(la["token_id"]),V.get(lb["token_id"])
+    if not _B or not _A:continue
+    U=f"SP4_3B_{la['market_id']}_{lb['market_id']}"
     if float(bx["box_cost_net"])>.992:
-     if la.get("market_id")!=lb.get("market_id"):a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_{O}",la,lb,_v,_u,float(bx["close_ts"]),f"{_d.title} [{bx['label']}]",now,prefetched_books=P)
+     if la.get("market_id")!=lb.get("market_id"):a.post_zero_fee_maker_anchor_box("SP1_NBA","NBA",f"ZFA_{U}",la,lb,_B,_A,float(bx["close_ts"]),f"{_j.title} [{bx['label']}]",now,prefetched_books=V)
      continue
-    _c=walk_equal_shares_dominance_box(_v.get("asks")or[],_u.get("asks")or[],BANKROLL_TICKETS["T1000"]["SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK"],float(la["fee_rate"]),float(lb["fee_rate"]),fee_exponent_a=float(la.get("fee_exponent",1.)),fee_exponent_b=float(lb.get("fee_exponent",1.)),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-    if _c.get("filled"):
-     opps_out.append({"sleeve":"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK","market":f"NBA Prop Corridor: {bx['label']}","ask_vwap":_c["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_c["box_cost_net"]),4),"l1_usd":_c["l1_usd"],"close_ts":bx["close_ts"]})
-     if float(_c["box_cost_net"])<=.99 and(float(bx["close_ts"])-now)<=86400. and la.get("market_id")!=lb.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=O,leg_a=la,leg_b=lb,bk_a=_v,bk_b=_u,close_ts=float(bx["close_ts"]),now_ts=now,k_low=float(bx["line_low"]),k_high=float(bx["line_high"]))
-     await a.open_shadow_two_leg_box("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",O,"NBA_PROP",f"{_d.title} [{bx['label']}]",la,lb,_v,_u,float(bx["close_ts"]),.992,{"is_two_leg_box":True,"mode":bx["mode"],"player":bx["player_name"],"stat":bx["stat_type"]})
-  g=[tr for tr in a.soccer_trees.values()if tr.end_ts>now+120]
-  if g:
-   v=[]
-   for tr in g[:25]:
-    for _t in(tr.home_leg,tr.draw_leg,tr.away_leg):v.extend((_t["yes_token"],_t["no_token"]))
-    for tl in tr.totals:v.extend((tl["over_token"],tl["under_token"]))
-    for sp in tr.spreads:v.extend((sp["fav_minus_token"],sp["dog_plus_token"]))
-   B=await a.fetch_books_batch(v,timeout=3.5);u={t:p for t,bk in B.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for tr in g[:25]:
-    A=detect_soc1_regulation_boxes(tr,B,u,max_2leg_cost_net=1.035,min_conv_edge_ps=.01,target_budget_usd=BANKROLL_TICKETS["T1000"]["SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX"])
-    if A["two_leg_boxes"]:_s=A["two_leg_boxes"][0];a._record_market_telemetry(f"SOC1_{tr.game_id}",90.,{"type":"SOC1_REGULATION_BOX_BEST","game":tr.title[:60],"mode":_s["mode"],"label":_s["label"],"net_box_l1":_s["box_cost_net"]},now_ts=now,sig=(_s["label"],_s["box_cost_net"]))
-    for _q in A["two_leg_boxes"][:4]:
-     if float(_q["box_cost_net"])>.988:continue
-     _p,_o=_q["leg_a"],_q["leg_b"];_b,_a=B.get(_p["token_id"]),B.get(_o["token_id"])
-     if not _b or not _a:continue
-     Z=walk_equal_shares_dominance_box(_b.get("asks")or[],_a.get("asks")or[],BANKROLL_TICKETS["T1000"]["SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX"],float(_p["fee_rate"]),float(_o["fee_rate"]),fee_exponent_a=float(_p["fee_exponent"]),fee_exponent_b=float(_o["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
-     if Z.get("filled"):
-      N=f"SOC1_2L_{tr.game_id}_{_p['token_id'][-6:]}_{_o['token_id'][-6:]}";opps_out.append({"sleeve":"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","market":_q["label"],"ask_vwap":Z["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(Z["box_cost_net"]),4),"l1_usd":Z["l1_usd"],"close_ts":tr.end_ts})
-      if(float(tr.end_ts)-now)<=259200. and _p.get("market_id")!=_o.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",box_type="SPORTS_CORRIDOR",asset="SOCCER",dedupe_key=N,leg_a=_p,leg_b=_o,bk_a=_b,bk_b=_a,close_ts=float(tr.end_ts),now_ts=now)
-      await a.open_shadow_two_leg_box("SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",N,"SOCCER",_q["label"],_p,_o,_b,_a,float(tr.end_ts),.988,{"is_two_leg_box":True,"mode":_q["mode"],"game_id":tr.game_id})
-    for _n in A["convert_arbs"][:1]:opps_out.append({"sleeve":"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","market":_n["label"],"ask_vwap":round(1.-float(_n["net_edge_per_share"]),4),"p_model":1.,"net_edge":_n["net_edge_per_share"],"l1_usd":_n["l1_usd"],"close_ts":tr.end_ts})
-  f=[]
-  if a.lp1_bop_legs:f.append(("BOP_2026",[lg for lg in a.lp1_bop_legs if float(lg["end_ts"])>now+60]))
-  for _m in list(a.lp1_nba_em_bundles.values())[:10]:
-   if float(_m["end_ts"])>now+60:f.append((f"NBA_EM_{_m['event_id']}",_m["legs"]))
-  if f:
-   q=sorted({str(lg["token_id"])for _,g_lgs in f for lg in g_lgs});z=await a.fetch_books_batch(q,timeout=3.5);o={t:p for t,bk in z.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for Y,g_lgs in f:
+    _i=walk_equal_shares_dominance_box(_B.get("asks")or[],_A.get("asks")or[],BANKROLL_TICKETS["T1000"]["SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK"],float(la["fee_rate"]),float(lb["fee_rate"]),fee_exponent_a=float(la.get("fee_exponent",1.)),fee_exponent_b=float(lb.get("fee_exponent",1.)),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+    if _i.get("filled"):
+     opps_out.append({"sleeve":"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK","market":f"NBA Prop Corridor: {bx['label']}","ask_vwap":_i["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_i["box_cost_net"]),4),"l1_usd":_i["l1_usd"],"close_ts":bx["close_ts"]})
+     if float(_i["box_cost_net"])<=.99 and(float(bx["close_ts"])-now)<=86400. and la.get("market_id")!=lb.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=U,leg_a=la,leg_b=lb,bk_a=_B,bk_b=_A,close_ts=float(bx["close_ts"]),now_ts=now,k_low=float(bx["line_low"]),k_high=float(bx["line_high"]))
+     await a.open_shadow_two_leg_box("SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",U,"NBA_PROP",f"{_j.title} [{bx['label']}]",la,lb,_B,_A,float(bx["close_ts"]),.992,{"is_two_leg_box":True,"mode":bx["mode"],"player":bx["player_name"],"stat":bx["stat_type"]})
+  k=[tr for tr in a.soccer_trees.values()if tr.end_ts>now+120]
+  if k:
+   A=[]
+   for tr in k[:25]:
+    for _z in(tr.home_leg,tr.draw_leg,tr.away_leg):A.extend((_z["yes_token"],_z["no_token"]))
+    for tl in tr.totals:A.extend((tl["over_token"],tl["under_token"]))
+    for sp in tr.spreads:A.extend((sp["fav_minus_token"],sp["dog_plus_token"]))
+   G=await a.fetch_books_batch(A,timeout=3.5);z={t:p for t,bk in G.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for tr in k[:25]:
+    F=detect_soc1_regulation_boxes(tr,G,z,max_2leg_cost_net=1.035,min_conv_edge_ps=.01,target_budget_usd=BANKROLL_TICKETS["T1000"]["SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX"])
+    if F["two_leg_boxes"]:_y=F["two_leg_boxes"][0];a._record_market_telemetry(f"SOC1_{tr.game_id}",90.,{"type":"SOC1_REGULATION_BOX_BEST","game":tr.title[:60],"mode":_y["mode"],"label":_y["label"],"net_box_l1":_y["box_cost_net"]},now_ts=now,sig=(_y["label"],_y["box_cost_net"]))
+    for _w in F["two_leg_boxes"][:4]:
+     if float(_w["box_cost_net"])>.988:continue
+     _v,_u=_w["leg_a"],_w["leg_b"];_h,_g=G.get(_v["token_id"]),G.get(_u["token_id"])
+     if not _h or not _g:continue
+     _f=walk_equal_shares_dominance_box(_h.get("asks")or[],_g.get("asks")or[],BANKROLL_TICKETS["T1000"]["SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX"],float(_v["fee_rate"]),float(_u["fee_rate"]),fee_exponent_a=float(_v["fee_exponent"]),fee_exponent_b=float(_u["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
+     if _f.get("filled"):
+      T=f"SOC1_2L_{tr.game_id}_{_v['token_id'][-6:]}_{_u['token_id'][-6:]}";opps_out.append({"sleeve":"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","market":_w["label"],"ask_vwap":_f["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_f["box_cost_net"]),4),"l1_usd":_f["l1_usd"],"close_ts":tr.end_ts})
+      if(float(tr.end_ts)-now)<=259200. and _v.get("market_id")!=_u.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",box_type="SPORTS_CORRIDOR",asset="SOCCER",dedupe_key=T,leg_a=_v,leg_b=_u,bk_a=_h,bk_b=_g,close_ts=float(tr.end_ts),now_ts=now)
+      await a.open_shadow_two_leg_box("SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX",T,"SOCCER",_w["label"],_v,_u,_h,_g,float(tr.end_ts),.988,{"is_two_leg_box":True,"mode":_w["mode"],"game_id":tr.game_id})
+    for _t in F["convert_arbs"][:1]:opps_out.append({"sleeve":"SOC1_THREE_WAY_REGULATION_SYNTHETIC_BOX","market":_t["label"],"ask_vwap":round(1.-float(_t["net_edge_per_share"]),4),"p_model":1.,"net_edge":_t["net_edge_per_share"],"l1_usd":_t["l1_usd"],"close_ts":tr.end_ts})
+  j=[]
+  if a.lp1_bop_legs:j.append(("BOP_2026",[lg for lg in a.lp1_bop_legs if float(lg["end_ts"])>now+60]))
+  for _s in list(a.lp1_nba_em_bundles.values())[:10]:
+   if float(_s["end_ts"])>now+60:j.append((f"NBA_EM_{_s['event_id']}",_s["legs"]))
+  if j:
+   y=sorted({str(lg["token_id"])for _,g_lgs in j for lg in g_lgs});E=await a.fetch_books_batch(y,timeout=3.5);w={t:p for t,bk in E.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for _e,g_lgs in j:
     if len(g_lgs)<4:continue
-    i=Y.startswith("NBA_EM");e=find_state_matrix_dominance_boxes(g_lgs,o,max_2leg_cost_net=1.045,max_3leg_cost_net=1.03)
-    if e:d0=e[0];a._record_market_telemetry(f"LP1_{Y}",90.,{"type":"LP1_IMPLICATION_BEST","group":Y,"n_legs":d0["n_legs"],"net_box_l1":d0["box_cost_net"],"label":d0["label"]},now_ts=now,sig=(d0["label"],d0["box_cost_net"]))
-    for _l in e[:6]:
-     X=_l["legs"]
-     if int(_l["n_legs"])==2:
-      _k,_j=X[0],X[1];W,V=z.get(_k["token_id"]),z.get(_j["token_id"])
-      if not W or not V:continue
-      M=f"LP1_2L_{Y}_{_k['token_id'][-6:]}_{_j['token_id'][-6:]}";h=max(float(_k["fee_rate"]),float(_j["fee_rate"]))
-      if float(_l["box_cost_net"])>.993:
-       if h==.0 and _k.get("market_id")!=_j.get("market_id"):a.post_zero_fee_maker_anchor_box("SP1_NBA"if i else"LP1_BOP","NBA"if i else"MACRO",f"ZFA_{M}",_k,_j,W,V,float(_l["close_ts"]),f"{Y} [{_l['label']}]",now,prefetched_books=z)
+    m=_e.startswith("NBA_EM");i=find_state_matrix_dominance_boxes(g_lgs,w,max_2leg_cost_net=1.045,max_3leg_cost_net=1.03)
+    if i:d0=i[0];a._record_market_telemetry(f"LP1_{_e}",90.,{"type":"LP1_IMPLICATION_BEST","group":_e,"n_legs":d0["n_legs"],"net_box_l1":d0["box_cost_net"],"label":d0["label"]},now_ts=now,sig=(d0["label"],d0["box_cost_net"]))
+    for _r in i[:6]:
+     _d=_r["legs"]
+     if int(_r["n_legs"])==2:
+      _q,_p=_d[0],_d[1];_c,_b=E.get(_q["token_id"]),E.get(_p["token_id"])
+      if not _c or not _b:continue
+      S=f"LP1_2L_{_e}_{_q['token_id'][-6:]}_{_p['token_id'][-6:]}";l=max(float(_q["fee_rate"]),float(_p["fee_rate"]))
+      if float(_r["box_cost_net"])>.993:
+       if l==.0 and _q.get("market_id")!=_p.get("market_id"):a.post_zero_fee_maker_anchor_box("SP1_NBA"if m else"LP1_BOP","NBA"if m else"MACRO",f"ZFA_{S}",_q,_p,_c,_b,float(_r["close_ts"]),f"{_e} [{_r['label']}]",now,prefetched_books=E)
        continue
-      U=walk_equal_shares_dominance_box(W.get("asks")or[],V.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX"],float(_k["fee_rate"]),float(_j["fee_rate"]),max_box_cost_net=.993,min_shares=6,min_box_notional_usd=5.5)
-      if U.get("filled"):
-       opps_out.append({"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","market":f"{Y}: {_l['label']}","ask_vwap":U["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(U["box_cost_net"]),4),"l1_usd":U["l1_usd"],"close_ts":_l["close_ts"]});c=.99 if h==.0 else.988
-       if float(U["box_cost_net"])<=c:n="COMPLETE_SET"if _k.get("market_id")==_j.get("market_id")else("NBA_DOMINANCE"if i else"MACRO_DOMINANCE");a.emit_live_two_leg_box_candidate(sleeve_source="LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",box_type=n,asset="NBA"if i else"MACRO",dedupe_key=M,leg_a=_k,leg_b=_j,bk_a=W,bk_b=V,close_ts=float(_l["close_ts"]),now_ts=now)
-       await a.open_shadow_two_leg_box("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",M,Y,f"{Y} {_l['label']}",_k,_j,W,V,float(_l["close_ts"]),.993,{"is_two_leg_box":True,"min_payout":_l["min_payout"],"jackpot_states":_l["jackpot_states"]})
-     elif int(_l["n_legs"])==3 and float(_l["box_cost_net"])<=.991:
-      L=walk_equal_shares_multi_leg_box([{"asks":z[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":1.}for x in X],BANKROLL_TICKETS["T1000"]["LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX"],1.,.991,min_shares=6,min_box_notional_usd=5.5)
-      if L.get("filled"):K=f"LP1_3L_{Y}_{'_'.join(x['token_id'][-5:]for x in X)}";opps_out.append({"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","market":f"{Y} 3L: {_l['label']}","ask_vwap":L["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(L["box_cost_net"]),4),"l1_usd":L["l1_usd"],"close_ts":_l["close_ts"]});await a.open_shadow_multi_leg_bundle("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",K,Y,f"{Y} 3-Leg {_l['label']}",X,z,float(_l["close_ts"]),1.,.991,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
-  d=[sp for sp in a.esports_bo3_specs.values()if sp.end_ts>now+60]
-  if d:
-   m=[]
-   for k in d[:25]:
-    m.extend([k.ml_a_token,k.ml_b_token,k.hc_minus_token,k.hc_plus_token])
-    for mt in(k.map1_a_token,k.map1_b_token,k.map2_a_token,k.map2_b_token,k.ou25_over_token,k.ou25_under_token):
-     if mt:m.append(mt)
-   y=await a.fetch_books_batch(m,timeout=3.5);l={t:p for t,bk in y.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for k in d[:25]:
-    J=evaluate_api1_esports_bo3_opportunities(k,y,l,max_middle_cost_net=1.035)
-    if J["two_leg_boxes"]:_r=J["two_leg_boxes"][0];a._record_market_telemetry(f"API1_{k.event_id}",90.,{"type":"API1_ESPORTS_BO3_BEST","match":k.title[:60],"mode":_r["mode"],"net_box_l1":_r["box_cost_net"],"forfeit_immune":_r["post_m1_forfeit_immune"]},now_ts=now,sig=(_r["mode"],_r["box_cost_net"]))
-    for _i in J["single_leg_locks"]:
-     I=y.get(_i["token_id"]);H=y.get(_i["opp_token_id"])
-     if not I or not H:continue
-     w,_=extract_best_bid(H.get("bids")or[])
-     if w>.04:continue
-     G=walk_l2_book_asks_depth_capped(I.get("asks")or[],BANKROLL_TICKETS["T1000"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],BANKROLL_TICKETS["T100"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],fee_rate=float(_i["fee_rate"]),min_l1_usd=15.,max_ask_px=.978,fee_exponent=float(_i["fee_exponent"]))
-     if G.get("filled"):
-      T=float(G["eff_px"]);S=round(float(_i["p_lock"])-T,4)
-      if.72<=T<=.978 and S>=.018:_h=f"API1_LK_{k.event_id}_{_i['market_id']}";opps_out.append({"sleeve":"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","market":f"Esports BO3 Lock: {_i['display_label']}","ask_vwap":T,"p_model":_i["p_lock"],"net_edge":S,"l1_usd":G["l1_usd"],"close_ts":_i["close_ts"]});a.emit_live_single_leg_lock_candidate(sleeve_source="API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",asset="ESPORTS",dedupe_key=_h,token_id=str(_i["token_id"]),opp_token_id=str(_i["opp_token_id"]),market_id=str(_i["market_id"]),condition_id=str(_i["condition_id"]),side_label=str(_i["side_label"]),display_label=str(_i["display_label"]),bk_win=I,bk_opp=H,fee_rate=float(_i["fee_rate"]),fee_exponent=float(_i["fee_exponent"]),neg_risk=False,close_ts=float(_i["close_ts"]),now_ts=now,max_lock_eff_px=.978,max_opp_bid=.025,hold_to_maturity=True,p_model=float(_i["p_lock"]));await a.open_shadow_position("API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",_h,"ESPORTS_BO3",f"{k.title} [{_i['display_label']}]",str(_i["side_label"]),str(_i["token_id"]),float(_i["fee_rate"]),float(_i["p_lock"]),float(_i["close_ts"]),{"market_id":_i["market_id"],"condition_id":_i["condition_id"],"mode":_i["mode"]},prefetched_book=I)
-    for _g in J["two_leg_boxes"]:
-     if float(_g["box_cost_net"])>.988:continue
-     _f,_e=_g["leg_a"],_g["leg_b"];R,Q=y.get(_f["token_id"]),y.get(_e["token_id"])
-     if not R or not Q:continue
-     F=walk_equal_shares_dominance_box(R.get("asks")or[],Q.get("asks")or[],BANKROLL_TICKETS["T1000"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],float(_f["fee_rate"]),float(_e["fee_rate"]),fee_exponent_a=float(_f["fee_exponent"]),fee_exponent_b=float(_e["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
-     if F.get("filled"):
-      E=f"API1_MID_{k.event_id}_{_f['market_id']}_{_e['market_id']}";opps_out.append({"sleeve":"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","market":_g["label"],"ask_vwap":F["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(F["box_cost_net"]),4),"l1_usd":F["l1_usd"],"close_ts":_g["close_ts"]})
-      if bool(_g.get("post_m1_forfeit_immune"))and _f.get("market_id")!=_e.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",box_type="SPORTS_CORRIDOR",asset="ESPORTS",dedupe_key=E,leg_a=_f,leg_b=_e,bk_a=R,bk_b=Q,close_ts=float(_g["close_ts"]),now_ts=now)
-      await a.open_shadow_two_leg_box("API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",E,"ESPORTS_BO3",_g["label"],_f,_e,R,Q,float(_g["close_ts"]),.988,{"is_two_leg_box":True,"mode":_g["mode"],"post_m1_forfeit_immune":_g["post_m1_forfeit_immune"]})
+      _a=walk_equal_shares_dominance_box(_c.get("asks")or[],_b.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX"],float(_q["fee_rate"]),float(_p["fee_rate"]),max_box_cost_net=.993,min_shares=6,min_box_notional_usd=5.5)
+      if _a.get("filled"):
+       opps_out.append({"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","market":f"{_e}: {_r['label']}","ask_vwap":_a["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_a["box_cost_net"]),4),"l1_usd":_a["l1_usd"],"close_ts":_r["close_ts"]});g=.99 if l==.0 else.988
+       if float(_a["box_cost_net"])<=g:v="COMPLETE_SET"if _q.get("market_id")==_p.get("market_id")else("NBA_DOMINANCE"if m else"MACRO_DOMINANCE");a.emit_live_two_leg_box_candidate(sleeve_source="LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",box_type=v,asset="NBA"if m else"MACRO",dedupe_key=S,leg_a=_q,leg_b=_p,bk_a=_c,bk_b=_b,close_ts=float(_r["close_ts"]),now_ts=now)
+       await a.open_shadow_two_leg_box("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",S,_e,f"{_e} {_r['label']}",_q,_p,_c,_b,float(_r["close_ts"]),.993,{"is_two_leg_box":True,"min_payout":_r["min_payout"],"jackpot_states":_r["jackpot_states"]})
+     elif int(_r["n_legs"])==3 and float(_r["box_cost_net"])<=.991:
+      R=walk_equal_shares_multi_leg_box([{"asks":E[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":1.}for x in _d],BANKROLL_TICKETS["T1000"]["LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX"],1.,.991,min_shares=6,min_box_notional_usd=5.5)
+      if R.get("filled"):Q=f"LP1_3L_{_e}_{'_'.join(x['token_id'][-5:]for x in _d)}";opps_out.append({"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","market":f"{_e} 3L: {_r['label']}","ask_vwap":R["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(R["box_cost_net"]),4),"l1_usd":R["l1_usd"],"close_ts":_r["close_ts"]});await a.open_shadow_multi_leg_bundle("LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",Q,_e,f"{_e} 3-Leg {_r['label']}",_d,E,float(_r["close_ts"]),1.,.991,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
+  h=[sp for sp in a.esports_bo3_specs.values()if sp.end_ts>now+60]
+  if h:
+   u=[]
+   for o in h[:25]:
+    u.extend([o.ml_a_token,o.ml_b_token,o.hc_minus_token,o.hc_plus_token])
+    for mt in(o.map1_a_token,o.map1_b_token,o.map2_a_token,o.map2_b_token,o.ou25_over_token,o.ou25_under_token):
+     if mt:u.append(mt)
+   D=await a.fetch_books_batch(u,timeout=3.5);q={t:p for t,bk in D.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};b=not bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("strict_pure_riskless_mode",False))
+   for o in h[:25]:
+    P=evaluate_api1_esports_bo3_opportunities(o,D,q,max_middle_cost_net=1.035,allow_quote_inferred=b)
+    if P["two_leg_boxes"]:_x=P["two_leg_boxes"][0];a._record_market_telemetry(f"API1_{o.event_id}",90.,{"type":"API1_ESPORTS_BO3_BEST","match":o.title[:60],"mode":_x["mode"],"net_box_l1":_x["box_cost_net"],"forfeit_immune":_x["post_m1_forfeit_immune"]},now_ts=now,sig=(_x["mode"],_x["box_cost_net"]))
+    d=not(a.single_scan or("fetch_json"in a.__dict__))
+    for _o in P["single_leg_locks"]:
+     O=D.get(_o["token_id"]);N=D.get(_o["opp_token_id"])
+     if not O or not N:continue
+     C,_=extract_best_bid(N.get("bids")or[])
+     if C>.04:continue
+     _n=f"API1_LK_{o.event_id}_{_o['market_id']}";M=float(_o["p_lock"]);B=float(_o["close_ts"]);L=walk_l2_book_asks_depth_capped(O.get("asks")or[],BANKROLL_TICKETS["T1000"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],BANKROLL_TICKETS["T100"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],fee_rate=float(_o["fee_rate"]),min_l1_usd=15.,max_ask_px=.978,fee_exponent=float(_o["fee_exponent"]));f=bool(L.get("filled")and.72<=float(L["eff_px"])<=.978 and round(M-float(L["eff_px"]),4)>=.018)
+     if(f or(d and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_partial_fak_single_leg_sweep",True))))and a._can_emit_zero_loss_math_live("API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",B,now,p_model=M):c=a.compute_live_8e_clinch_max_eff_px(.978,M,B-now)if d else.978;a.emit_live_single_leg_lock_candidate(sleeve_source="API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",asset="ESPORTS",dedupe_key=_n,token_id=str(_o["token_id"]),opp_token_id=str(_o["opp_token_id"]),market_id=str(_o["market_id"]),condition_id=str(_o["condition_id"]),side_label=str(_o["side_label"]),display_label=str(_o["display_label"]),bk_win=O,bk_opp=N,fee_rate=float(_o["fee_rate"]),fee_exponent=float(_o["fee_exponent"]),neg_risk=False,close_ts=B,now_ts=now,max_lock_eff_px=c,max_opp_bid=.025,hold_to_maturity=True,p_model=M)
+     if f:Z=float(L["eff_px"]);Y=round(M-Z,4);opps_out.append({"sleeve":"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","market":f"Esports BO3 Lock: {_o['display_label']}","ask_vwap":Z,"p_model":M,"net_edge":Y,"l1_usd":L["l1_usd"],"close_ts":B});await a.open_shadow_position("API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",_n,"ESPORTS_BO3",f"{o.title} [{_o['display_label']}]",str(_o["side_label"]),str(_o["token_id"]),float(_o["fee_rate"]),M,B,{"market_id":_o["market_id"],"condition_id":_o["condition_id"],"mode":_o["mode"]},prefetched_book=O)
+    for _m in P["two_leg_boxes"]:
+     if float(_m["box_cost_net"])>.988:continue
+     _l,_k=_m["leg_a"],_m["leg_b"];X,W=D.get(_l["token_id"]),D.get(_k["token_id"])
+     if not X or not W:continue
+     K=walk_equal_shares_dominance_box(X.get("asks")or[],W.get("asks")or[],BANKROLL_TICKETS["T1000"]["API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK"],float(_l["fee_rate"]),float(_k["fee_rate"]),fee_exponent_a=float(_l["fee_exponent"]),fee_exponent_b=float(_k["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
+     if K.get("filled"):
+      J=f"API1_MID_{o.event_id}_{_l['market_id']}_{_k['market_id']}";opps_out.append({"sleeve":"API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK","market":_m["label"],"ask_vwap":K["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(K["box_cost_net"]),4),"l1_usd":K["l1_usd"],"close_ts":_m["close_ts"]})
+      if bool(_m.get("post_m1_forfeit_immune"))and _l.get("market_id")!=_k.get("market_id"):a.emit_live_two_leg_box_candidate(sleeve_source="API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",box_type="SPORTS_CORRIDOR",asset="ESPORTS",dedupe_key=J,leg_a=_l,leg_b=_k,bk_a=X,bk_b=W,close_ts=float(_m["close_ts"]),now_ts=now)
+      await a.open_shadow_two_leg_box("API1_ESPORTS_BO3_MAP1_HANDICAP_LOCK",J,"ESPORTS_BO3",_m["label"],_l,_k,X,W,float(_m["close_ts"]),.988,{"is_two_leg_box":True,"mode":_m["mode"],"post_m1_forfeit_immune":_m["post_m1_forfeit_immune"]})
  async def _scan_frontier_v3_sleeves(a,opps_out,now):
   if a.lp2_implication_groups or a.lp2_events_by_slug:
-   g={str(lg["token_id"])for _,lgs in a.lp2_implication_groups for lg in lgs if float(lg.get("end_ts")or.0)>now+60}
-   for _b in("republican-house-seats-after-the-2026-midterm-elections","republican-senate-seats-after-the-2026-midterm-elections-927","which-party-will-win-the-house-in-2026","which-party-will-win-the-senate-in-2026"):
-    _T=a.lp2_events_by_slug.get(_b)or{}
-    for _ag in _T.get("markets")or[]:
-     if not _ag.get("closed"):
-      _S=_parse_clob_tokens(_ag)
-      if _S:g.update(_S)
-   if g:
-    _a=await a.fetch_books_batch(sorted(g),timeout=4.);P={t:p for t,bk in _a.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-    for O,N in a.lp2_implication_groups:
-     _p=find_state_matrix_dominance_boxes(N,P,max_2leg_cost_net=1.045,max_3leg_cost_net=.992)
-     if _p:_R=_p[0];a._record_market_telemetry(f"LP2_{O}",90.,{"type":"LP2_DAG_BOX_BEST","group":O,"n_legs":_R["n_legs"],"label":_R["label"],"net_box_l1":_R["box_cost_net"],"jackpot_states":_R["jackpot_states"]},now_ts=now,sig=(_R["label"],_R["box_cost_net"]))
-     for bx in _p[:6]:
+   l={str(lg["token_id"])for _,lgs in a.lp2_implication_groups for lg in lgs if float(lg.get("end_ts")or.0)>now+60}
+   for _i in("republican-house-seats-after-the-2026-midterm-elections","republican-senate-seats-after-the-2026-midterm-elections-927","which-party-will-win-the-house-in-2026","which-party-will-win-the-senate-in-2026"):
+    _Z=a.lp2_events_by_slug.get(_i)or{}
+    for _am in _Z.get("markets")or[]:
+     if not _am.get("closed"):
+      _Y=_parse_clob_tokens(_am)
+      if _Y:l.update(_Y)
+   if l:
+    _h=await a.fetch_books_batch(sorted(l),timeout=4.);V={t:p for t,bk in _h.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+    for U,T in a.lp2_implication_groups:
+     _v=find_state_matrix_dominance_boxes(T,V,max_2leg_cost_net=1.045,max_3leg_cost_net=.992)
+     if _v:_X=_v[0];a._record_market_telemetry(f"LP2_{U}",90.,{"type":"LP2_DAG_BOX_BEST","group":U,"n_legs":_X["n_legs"],"label":_X["label"],"net_box_l1":_X["box_cost_net"],"jackpot_states":_X["jackpot_states"]},now_ts=now,sig=(_X["label"],_X["box_cost_net"]))
+     for bx in _v[:6]:
       if float(bx["box_cost_net"])>.992:continue
-      _Q=bx["legs"]
+      _W=bx["legs"]
       if int(bx["n_legs"])==2:
-       _af,_ae=_Q[0],_Q[1];_P,_O=_a.get(_af["token_id"]),_a.get(_ae["token_id"])
-       if not _P or not _O:continue
-       _ad=walk_equal_shares_dominance_box(_P.get("asks")or[],_O.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],float(_af["fee_rate"]),float(_ae["fee_rate"]),fee_exponent_a=float(_af["fee_exponent"]),fee_exponent_b=float(_ae["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-       if _ad.get("filled"):
-        _N=f"LP2_{O}_{_af['token_id'][-8:]}_{_ae['token_id'][-8:]}";opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":f"{O}: {bx['label']}","ask_vwap":_ad["box_cost_net"],"p_model":float(bx["min_payout"]),"net_edge":round(float(bx["min_payout"])-float(_ad["box_cost_net"]),4),"l1_usd":_ad["l1_usd"],"close_ts":bx["close_ts"]})
-        if(a._can_emit_zero_loss_math_live("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",float(bx["close_ts"]),now)and float(bx["min_payout"])>=1.-1e-6 and float(_ad["box_cost_net"])<=.99 and _af.get("market_id")!=_ae.get("market_id")and.0<(float(bx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",box_type="MACRO_DOMINANCE",asset="MACRO",dedupe_key=_N,leg_a=_af,leg_b=_ae,bk_a=_P,bk_b=_O,close_ts=float(bx["close_ts"]),now_ts=now,k_low=1e2,k_high=101. if int(bx.get("jackpot_states")or 0)>0 else 1e2)
-        await a.open_shadow_two_leg_box("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",_N,O,f"{O}: {bx['label']}",_af,_ae,_P,_O,float(bx["close_ts"]),.992,{"is_two_leg_box":True,"group":O,"guaranteed_payout":bx["min_payout"],"max_payout":bx["max_payout"],"jackpot_states":bx["jackpot_states"]})
-      elif int(bx["n_legs"])==3 and all(x["token_id"]in _a for x in _Q):
-       Z=f"LP2_3L_{O}_{'_'.join(x['token_id'][-6:]for x in _Q)}";_o=walk_equal_shares_multi_leg_box([{"asks":_a[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _Q],BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],float(bx["min_payout"]),.992,min_shares=6,min_box_notional_usd=5.5)
-       if _o.get("filled"):opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":f"{O} 3-Leg: {bx['label']}","ask_vwap":_o["box_cost_net"],"p_model":float(bx["min_payout"]),"net_edge":round(float(bx["min_payout"])-float(_o["box_cost_net"]),4),"l1_usd":_o["l1_usd"],"close_ts":bx["close_ts"]});await a.open_shadow_multi_leg_bundle("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",Z,O,f"{O} 3-Leg: {bx['label']}",_Q,_a,float(bx["close_ts"]),float(bx["min_payout"]),.992,{"is_multi_leg_bundle":True,"guaranteed_payout":bx["min_payout"],"max_payout":bx["max_payout"]})
-    Y=await asyncio.to_thread(detect_lp2_seat_convert_implication_arbs,a.lp2_events_by_slug,_a,BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],1.035)
-    if Y:
-     _M=Y[0];a._record_market_telemetry(f"LP2_CONV_{_M['mode']}",90.,{"type":"LP2_CONVERT_MIDDLE_SNAP","mode":_M["mode"],"synthetic_box_cost_net":_M["synthetic_box_cost_net"],"shares_out":_M["shares_out"]},now_ts=now,sig=(_M["mode"],_M["synthetic_box_cost_net"]))
-     for cv in Y:
-      if float(cv["synthetic_box_cost_net"])<=.992:_ac=int(cv["m_no_legs"]);q=float(_ac);A=float(_ac-1)+.992;_n=f"LP2_CV_{cv['mode']}";opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":cv["label"],"ask_vwap":cv["synthetic_box_cost_net"],"p_model":1.,"net_edge":cv["guaranteed_floor_edge_ps"],"l1_usd":cv["l1_usd"],"close_ts":cv["close_ts"]});await a.open_shadow_multi_leg_bundle("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",_n,"LP2_CONVERT",cv["label"],cv["legs"],_a,float(cv["close_ts"]),q,A,{"is_multi_leg_bundle":True,"guaranteed_payout":q,"mode":cv["mode"],"index_set_int":cv["index_set_int"]})
-  e=[s for s in a.nba_subperiod_slates.values()if s.settle_est_ts>now+120]
-  for _m in e[:10]:
-   b=[t for rgs in _m.ext_props_by_player_stat.values()if len(rgs)>=2 for r in rgs for t in(r.yes_token,r.no_token)];b+=[t for sm in _m.subperiod_markets if sm.period_scope in("1H","Q1")and sm.kind in("ML","SPREAD")for t in(sm.tok_0,sm.tok_1)]
-   if not b:continue
-   X=await a.fetch_books_batch(sorted(set(b)),timeout=3.5);M={t:p for t,bk in X.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};z=detect_sp4_subperiod_and_ext_prop_boxes(_m,M,max_box_cost_net=1.045)
-   if z:sb0=z[0];a._record_market_telemetry(f"SP4_SUB_{_m.event_id}",90.,{"type":"SP4_SUBPERIOD_BOX_BEST","game":_m.title[:60],"mode":sb0["mode"],"label":sb0["label"],"net_box_l1":sb0["box_cost_net"]},now_ts=now,sig=(sb0["label"],sb0["box_cost_net"]))
-   for sbx in z[:8]:
+       _al,_ak=_W[0],_W[1];_V,_U=_h.get(_al["token_id"]),_h.get(_ak["token_id"])
+       if not _V or not _U:continue
+       _aj=walk_equal_shares_dominance_box(_V.get("asks")or[],_U.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],float(_al["fee_rate"]),float(_ak["fee_rate"]),fee_exponent_a=float(_al["fee_exponent"]),fee_exponent_b=float(_ak["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+       if _aj.get("filled"):
+        _T=f"LP2_{U}_{_al['token_id'][-8:]}_{_ak['token_id'][-8:]}";opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":f"{U}: {bx['label']}","ask_vwap":_aj["box_cost_net"],"p_model":float(bx["min_payout"]),"net_edge":round(float(bx["min_payout"])-float(_aj["box_cost_net"]),4),"l1_usd":_aj["l1_usd"],"close_ts":bx["close_ts"]})
+        if(a._can_emit_zero_loss_math_live("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",float(bx["close_ts"]),now)and float(bx["min_payout"])>=1.-1e-6 and float(_aj["box_cost_net"])<=.99 and _al.get("market_id")!=_ak.get("market_id")and.0<(float(bx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",box_type="MACRO_DOMINANCE",asset="MACRO",dedupe_key=_T,leg_a=_al,leg_b=_ak,bk_a=_V,bk_b=_U,close_ts=float(bx["close_ts"]),now_ts=now,k_low=1e2,k_high=101. if int(bx.get("jackpot_states")or 0)>0 else 1e2)
+        await a.open_shadow_two_leg_box("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",_T,U,f"{U}: {bx['label']}",_al,_ak,_V,_U,float(bx["close_ts"]),.992,{"is_two_leg_box":True,"group":U,"guaranteed_payout":bx["min_payout"],"max_payout":bx["max_payout"],"jackpot_states":bx["jackpot_states"]})
+      elif int(bx["n_legs"])==3 and all(x["token_id"]in _h for x in _W):
+       _g=f"LP2_3L_{U}_{'_'.join(x['token_id'][-6:]for x in _W)}";_u=walk_equal_shares_multi_leg_box([{"asks":_h[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _W],BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],float(bx["min_payout"]),.992,min_shares=6,min_box_notional_usd=5.5)
+       if _u.get("filled"):opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":f"{U} 3-Leg: {bx['label']}","ask_vwap":_u["box_cost_net"],"p_model":float(bx["min_payout"]),"net_edge":round(float(bx["min_payout"])-float(_u["box_cost_net"]),4),"l1_usd":_u["l1_usd"],"close_ts":bx["close_ts"]});await a.open_shadow_multi_leg_bundle("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",_g,U,f"{U} 3-Leg: {bx['label']}",_W,_h,float(bx["close_ts"]),float(bx["min_payout"]),.992,{"is_multi_leg_bundle":True,"guaranteed_payout":bx["min_payout"],"max_payout":bx["max_payout"]})
+    _f=await asyncio.to_thread(detect_lp2_seat_convert_implication_arbs,a.lp2_events_by_slug,_h,BANKROLL_TICKETS["T1000"]["LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG"],1.035)
+    if _f:
+     _S=_f[0];a._record_market_telemetry(f"LP2_CONV_{_S['mode']}",90.,{"type":"LP2_CONVERT_MIDDLE_SNAP","mode":_S["mode"],"synthetic_box_cost_net":_S["synthetic_box_cost_net"],"shares_out":_S["shares_out"]},now_ts=now,sig=(_S["mode"],_S["synthetic_box_cost_net"]))
+     for cv in _f:
+      if float(cv["synthetic_box_cost_net"])<=.992:_ai=int(cv["m_no_legs"]);A=float(_ai);G=float(_ai-1)+.992;_t=f"LP2_CV_{cv['mode']}";opps_out.append({"sleeve":"LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG","market":cv["label"],"ask_vwap":cv["synthetic_box_cost_net"],"p_model":1.,"net_edge":cv["guaranteed_floor_edge_ps"],"l1_usd":cv["l1_usd"],"close_ts":cv["close_ts"]});await a.open_shadow_multi_leg_bundle("LP2_ELECTION_AND_CONDITIONAL_IMPLICATION_DAG",_t,"LP2_CONVERT",cv["label"],cv["legs"],_h,float(cv["close_ts"]),A,G,{"is_multi_leg_bundle":True,"guaranteed_payout":A,"mode":cv["mode"],"index_set_int":cv["index_set_int"]})
+  i=[s for s in a.nba_subperiod_slates.values()if s.settle_est_ts>now+120]
+  for _s in i[:10]:
+   g=[t for rgs in _s.ext_props_by_player_stat.values()if len(rgs)>=2 for r in rgs for t in(r.yes_token,r.no_token)];g+=[t for sm in _s.subperiod_markets if sm.period_scope in("1H","Q1")and sm.kind in("ML","SPREAD")for t in(sm.tok_0,sm.tok_1)]
+   if not g:continue
+   _e=await a.fetch_books_batch(sorted(set(g)),timeout=3.5);S={t:p for t,bk in _e.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};F=detect_sp4_subperiod_and_ext_prop_boxes(_s,S,max_box_cost_net=1.045)
+   if F:sb0=F[0];a._record_market_telemetry(f"SP4_SUB_{_s.event_id}",90.,{"type":"SP4_SUBPERIOD_BOX_BEST","game":_s.title[:60],"mode":sb0["mode"],"label":sb0["label"],"net_box_l1":sb0["box_cost_net"]},now_ts=now,sig=(sb0["label"],sb0["box_cost_net"]))
+   for sbx in F[:8]:
     if float(sbx["box_cost_net"])>.992:continue
-    _ab,_aa=sbx["leg_a"],sbx["leg_b"];_L,_K=X.get(_ab["token_id"]),X.get(_aa["token_id"])
-    if not _L or not _K:continue
-    _9=walk_equal_shares_dominance_box(_L.get("asks")or[],_K.get("asks")or[],BANKROLL_TICKETS["T1000"]["SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION"],float(_ab["fee_rate"]),float(_aa["fee_rate"]),fee_exponent_a=float(_ab.get("fee_exponent",1.)),fee_exponent_b=float(_aa.get("fee_exponent",1.)),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-    if _9.get("filled"):
-     _J=f"SP4_SUB_{_ab['market_id']}_{_aa['market_id']}";opps_out.append({"sleeve":"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION","market":f"NBA [{sbx['mode']}] {sbx['label']}","ask_vwap":_9["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_9["box_cost_net"]),4),"l1_usd":_9["l1_usd"],"close_ts":sbx["close_ts"]})
-     if(a._can_emit_zero_loss_math_live("SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",float(sbx["close_ts"]),now)and float(_9["box_cost_net"])<=.99 and _ab.get("market_id")!=_aa.get("market_id")and.0<(float(sbx["close_ts"])-now)<=259200.):a.emit_live_two_leg_box_candidate(sleeve_source="SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=_J,leg_a=_ab,leg_b=_aa,bk_a=_L,bk_b=_K,close_ts=float(sbx["close_ts"]),now_ts=now,k_low=float(_ab.get("strike")or 1e2),k_high=float(_aa.get("strike")or 101.))
-     await a.open_shadow_two_leg_box("SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",_J,"NBA_SUBPERIOD",f"{_m.title} [{sbx['label']}]",_ab,_aa,_L,_K,float(sbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":sbx["mode"]})
-  o=[sp for sp in a.cal1_ladders.values()if sp.rungs and sp.rungs[-1].end_ts>now+120]
-  if o:
-   L=sorted({t for sp in o for r in sp.rungs for t in(r.yes_token,r.no_token)});W=await a.fetch_books_batch(L,timeout=4.);K={t:p for t,bk in W.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for _l in o:
-    y=detect_cal1_monotonic_boxes(_l,K,max_box_cost_net=1.045)
-    if y:cb0=y[0];a._record_market_telemetry(f"CAL1_{_l.event_id}",90.,{"type":"CAL1_LADDER_BOX_BEST","kind":_l.ladder_kind,"label":cb0["label"],"net_box_l1":cb0["box_cost_net"]},now_ts=now,sig=(cb0["label"],cb0["box_cost_net"]))
-    for cbx in y[:6]:
-     if float(cbx["box_cost_net"])>.992:continue
-     _8,_7=cbx["leg_a"],cbx["leg_b"];_I,_H=W.get(_8["token_id"]),W.get(_7["token_id"])
-     if not _I or not _H:continue
-     _6=walk_equal_shares_dominance_box(_I.get("asks")or[],_H.get("asks")or[],BANKROLL_TICKETS["T1000"]["CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"],float(_8["fee_rate"]),float(_7["fee_rate"]),fee_exponent_a=float(_8["fee_exponent"]),fee_exponent_b=float(_7["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-     if _6.get("filled"):
-      _G=f"CAL1_{_8['market_id']}_{_7['market_id']}";opps_out.append({"sleeve":"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","market":cbx["label"],"ask_vwap":_6["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_6["box_cost_net"]),4),"l1_usd":_6["l1_usd"],"close_ts":cbx["close_ts"]})
-      if(a._can_emit_zero_loss_math_live("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",float(cbx["close_ts"]),now)and _8.get("market_id")!=_7.get("market_id")and.0<(float(cbx["close_ts"])-now)<=604800. and(float(cbx.get("early_leg_close_ts")or cbx["close_ts"])-now)>=60.):a.emit_live_two_leg_box_candidate(sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",box_type="MACRO_DOMINANCE",asset="MACRO",dedupe_key=_G,leg_a=_8,leg_b=_7,bk_a=_I,bk_b=_H,close_ts=float(cbx["close_ts"]),now_ts=now,k_low=float(_8.get("strike")or 1e2),k_high=float(_7.get("strike")or 101.))
-      await a.open_shadow_two_leg_box("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",_G,f"CAL1_{_l.ladder_kind}",cbx["label"],_8,_7,_I,_H,float(cbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":cbx["mode"],"ladder_kind":_l.ladder_kind})
-  for _F in list(a.lp1_nfl_em_bundles.values())[:32]:
-   if float(_F["end_ts"])<=now+60:continue
-   J=sorted({str(lg["token_id"])for lg in _F["legs"]});V=await a.fetch_books_batch(J,timeout=3.5);I={t:p for t,bk in V.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};w=find_state_matrix_dominance_boxes(_F["legs"],I,max_2leg_cost_net=1.045,max_3leg_cost_net=.99)
-   if w:nb0=w[0];a._record_market_telemetry(f"LP1_NFL_EM_{_F['event_id']}",90.,{"type":"LP1_NFL_EM_BOX_BEST","game":_F["title"][:60],"n_legs":nb0["n_legs"],"label":nb0["label"],"net_box_l1":nb0["box_cost_net"]},now_ts=now,sig=(nb0["label"],nb0["box_cost_net"]))
-   for nbx in w[:6]:
+    _ah,_ag=sbx["leg_a"],sbx["leg_b"];_R,_Q=_e.get(_ah["token_id"]),_e.get(_ag["token_id"])
+    if not _R or not _Q:continue
+    _af=walk_equal_shares_dominance_box(_R.get("asks")or[],_Q.get("asks")or[],BANKROLL_TICKETS["T1000"]["SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION"],float(_ah["fee_rate"]),float(_ag["fee_rate"]),fee_exponent_a=float(_ah.get("fee_exponent",1.)),fee_exponent_b=float(_ag.get("fee_exponent",1.)),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+    if _af.get("filled"):
+     _P=f"SP4_SUB_{_ah['market_id']}_{_ag['market_id']}";opps_out.append({"sleeve":"SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION","market":f"NBA [{sbx['mode']}] {sbx['label']}","ask_vwap":_af["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_af["box_cost_net"]),4),"l1_usd":_af["l1_usd"],"close_ts":sbx["close_ts"]})
+     if(a._can_emit_zero_loss_math_live("SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",float(sbx["close_ts"]),now)and float(_af["box_cost_net"])<=.99 and _ah.get("market_id")!=_ag.get("market_id")and.0<(float(sbx["close_ts"])-now)<=259200.):a.emit_live_two_leg_box_candidate(sleeve_source="SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",box_type="NBA_DOMINANCE",asset="NBA",dedupe_key=_P,leg_a=_ah,leg_b=_ag,bk_a=_R,bk_b=_Q,close_ts=float(sbx["close_ts"]),now_ts=now,k_low=float(_ah.get("strike")or 1e2),k_high=float(_ag.get("strike")or 101.))
+     await a.open_shadow_two_leg_box("SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",_P,"NBA_SUBPERIOD",f"{_s.title} [{sbx['label']}]",_ah,_ag,_R,_Q,float(sbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":sbx["mode"]})
+  f=bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_rt_mono1_scalar_ladders",True));z=[sp for sp in a.cal1_ladders.values()if sp.rungs and sp.rungs[-1].end_ts>now+120 and(f or"SCALAR"not in str(sp.ladder_kind or"").upper())]
+  if z:
+   R=sorted({t for sp in z for r in sp.rungs for t in(r.yes_token,r.no_token)});_d=await a.fetch_books_batch(R,timeout=4.);Q={t:p for t,bk in _d.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for _r in z:
+    E=detect_cal1_monotonic_boxes(_r,Q,max_box_cost_net=1.045)
+    if E:cb0=E[0];a._record_market_telemetry(f"CAL1_{_r.event_id}",90.,{"type":"CAL1_LADDER_BOX_BEST","kind":_r.ladder_kind,"label":cb0["label"],"net_box_l1":cb0["box_cost_net"]},now_ts=now,sig=(cb0["label"],cb0["box_cost_net"]))
+    for cbx in E[:6]:
+     _ae,_ad=cbx["leg_a"],cbx["leg_b"];_O,_N=_d.get(_ae["token_id"]),_d.get(_ad["token_id"])
+     if not _O or not _N:continue
+     if float(cbx["box_cost_net"])>.992:
+      if(float(cbx["box_cost_net"])<=1.035 and max(float(_ae.get("fee_rate",.0)),float(_ad.get("fee_rate",.0)))==.0 and _ae.get("market_id")!=_ad.get("market_id")and(float(cbx.get("early_leg_close_ts")or cbx["close_ts"])-now)>=65.):a.post_zero_fee_maker_anchor_box("CAL1_LADDER","MACRO",f"ZF_CAL1_{_ae['market_id']}_{_ad['market_id']}",_ae,_ad,_O,_N,float(cbx["close_ts"]),str(cbx["label"]),now,prefetched_books=_d)
+      continue
+     _ac=walk_equal_shares_dominance_box(_O.get("asks")or[],_N.get("asks")or[],BANKROLL_TICKETS["T1000"]["CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"],float(_ae["fee_rate"]),float(_ad["fee_rate"]),fee_exponent_a=float(_ae["fee_exponent"]),fee_exponent_b=float(_ad["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+     if _ac.get("filled"):
+      _M=f"CAL1_{_ae['market_id']}_{_ad['market_id']}";opps_out.append({"sleeve":"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","market":cbx["label"],"ask_vwap":_ac["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_ac["box_cost_net"]),4),"l1_usd":_ac["l1_usd"],"close_ts":cbx["close_ts"]})
+      if(a._can_emit_zero_loss_math_live("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",float(cbx["close_ts"]),now)and _ae.get("market_id")!=_ad.get("market_id")and.0<(float(cbx["close_ts"])-now)<=604800. and(float(cbx.get("early_leg_close_ts")or cbx["close_ts"])-now)>=60.):a.emit_live_two_leg_box_candidate(sleeve_source="CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",box_type="MACRO_DOMINANCE",asset="MACRO",dedupe_key=_M,leg_a=_ae,leg_b=_ad,bk_a=_O,bk_b=_N,close_ts=float(cbx["close_ts"]),now_ts=now,k_low=float(_ae.get("strike")or 1e2),k_high=float(_ad.get("strike")or 101.))
+      await a.open_shadow_two_leg_box("CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",_M,f"CAL1_{_r.ladder_kind}",cbx["label"],_ae,_ad,_O,_N,float(cbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":cbx["mode"],"ladder_kind":_r.ladder_kind})
+  for _L in list(a.lp1_nfl_em_bundles.values())[:32]:
+   if float(_L["end_ts"])<=now+60:continue
+   P=sorted({str(lg["token_id"])for lg in _L["legs"]});_c=await a.fetch_books_batch(P,timeout=3.5);O={t:p for t,bk in _c.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};D=find_state_matrix_dominance_boxes(_L["legs"],O,max_2leg_cost_net=1.045,max_3leg_cost_net=.99)
+   if D:nb0=D[0];a._record_market_telemetry(f"LP1_NFL_EM_{_L['event_id']}",90.,{"type":"LP1_NFL_EM_BOX_BEST","game":_L["title"][:60],"n_legs":nb0["n_legs"],"label":nb0["label"],"net_box_l1":nb0["box_cost_net"]},now_ts=now,sig=(nb0["label"],nb0["box_cost_net"]))
+   for nbx in D[:6]:
     if float(nbx["box_cost_net"])>.99 or int(nbx["n_legs"])!=2:continue
-    _E,_D=nbx["legs"][0],nbx["legs"][1];_k,_j=V.get(_E["token_id"]),V.get(_D["token_id"])
-    if not _k or not _j:continue
-    _5=walk_equal_shares_dominance_box(_k.get("asks")or[],_j.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX"],float(_E["fee_rate"]),float(_D["fee_rate"]),fee_exponent_a=float(_E["fee_exponent"]),fee_exponent_b=float(_D["fee_exponent"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
-    if _5.get("filled"):
-     _C=f"LP1_NFLEM_{_F['event_id']}_{_E['token_id'][-8:]}_{_D['token_id'][-8:]}";opps_out.append({"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","market":f"NFL EM [{_F['title']}]: {nbx['label']}","ask_vwap":_5["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_5["box_cost_net"]),4),"l1_usd":_5["l1_usd"],"close_ts":nbx["close_ts"]})
-     if(a._can_emit_zero_loss_math_live("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",float(nbx["close_ts"]),now)and float(nbx.get("min_payout",1.))>=1.-1e-6 and float(_5["box_cost_net"])<=.988 and _E.get("market_id")!=_D.get("market_id")and.0<(float(nbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",box_type="SPORTS_CORRIDOR",asset="NFL",dedupe_key=_C,leg_a=_E,leg_b=_D,bk_a=_k,bk_b=_j,close_ts=float(nbx["close_ts"]),now_ts=now,k_low=1e2,k_high=101. if float(nbx.get("max_payout",1.))>1.05 else 1e2)
-     await a.open_shadow_two_leg_box("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",_C,"NFL_EM",f"{_F['title']} [{nbx['label']}]",_E,_D,_k,_j,float(nbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":"NFL_EXACT_MARGIN_DOMINANCE","max_payout":nbx["max_payout"]})
-  n=list(a.multisport_raw_events.values())[:24]
-  if n:
-   m=[]
-   for _,k in n:
-    for _4 in k.get("markets")or[]:
-     if not _4.get("closed")and str(_4.get("sportsMarketType")or"").lower()in("moneyline","spreads","first_half_moneyline","first_half_spreads","q1_moneyline","q1_spreads"):
-      _B=_parse_clob_tokens(_4)
-      if _B:m.extend(_B)
-   if m:
-    v=await a.fetch_books_batch(sorted(set(m)),timeout=3.5);l={t:p for t,bk in v.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-    for H,k in n:
-     G=detect_multisport_ml_spread_polish_middles(k,l,sport_hint=H,max_box_cost_net=1.04)
-     for pbx in G[:4]:
+    _K,_J=nbx["legs"][0],nbx["legs"][1];_q,_p=_c.get(_K["token_id"]),_c.get(_J["token_id"])
+    if not _q or not _p:continue
+    _ab=walk_equal_shares_dominance_box(_q.get("asks")or[],_p.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX"],float(_K["fee_rate"]),float(_J["fee_rate"]),fee_exponent_a=float(_K["fee_exponent"]),fee_exponent_b=float(_J["fee_exponent"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
+    if _ab.get("filled"):
+     _I=f"LP1_NFLEM_{_L['event_id']}_{_K['token_id'][-8:]}_{_J['token_id'][-8:]}";opps_out.append({"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","market":f"NFL EM [{_L['title']}]: {nbx['label']}","ask_vwap":_ab["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_ab["box_cost_net"]),4),"l1_usd":_ab["l1_usd"],"close_ts":nbx["close_ts"]})
+     if(a._can_emit_zero_loss_math_live("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",float(nbx["close_ts"]),now)and float(nbx.get("min_payout",1.))>=1.-1e-6 and float(_ab["box_cost_net"])<=.988 and _K.get("market_id")!=_J.get("market_id")and.0<(float(nbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",box_type="SPORTS_CORRIDOR",asset="NFL",dedupe_key=_I,leg_a=_K,leg_b=_J,bk_a=_q,bk_b=_p,close_ts=float(nbx["close_ts"]),now_ts=now,k_low=1e2,k_high=101. if float(nbx.get("max_payout",1.))>1.05 else 1e2)
+     await a.open_shadow_two_leg_box("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",_I,"NFL_EM",f"{_L['title']} [{nbx['label']}]",_K,_J,_q,_p,float(nbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":"NFL_EXACT_MARGIN_DOMINANCE","max_payout":nbx["max_payout"]})
+  y=list(a.multisport_raw_events.values())[:24]
+  if y:
+   w=[]
+   for _,u in y:
+    for _aa in u.get("markets")or[]:
+     if not _aa.get("closed")and str(_aa.get("sportsMarketType")or"").lower()in("moneyline","spreads","first_half_moneyline","first_half_spreads","q1_moneyline","q1_spreads"):
+      _H=_parse_clob_tokens(_aa)
+      if _H:w.extend(_H)
+   if w:
+    C=await a.fetch_books_batch(sorted(set(w)),timeout=3.5);v={t:p for t,bk in C.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+    for N,u in y:
+     M=detect_multisport_ml_spread_polish_middles(u,v,sport_hint=N,max_box_cost_net=1.04)
+     for pbx in M[:4]:
       if float(pbx["box_cost_net"])>.988:continue
-      _3,_2=pbx["leg_a"],pbx["leg_b"];_A,_z=v.get(_3["token_id"]),v.get(_2["token_id"])
-      if not _A or not _z:continue
-      _1=walk_equal_shares_dominance_box(_A.get("asks")or[],_z.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX"],float(_3["fee_rate"]),float(_2["fee_rate"]),fee_exponent_a=float(_3["fee_exponent"]),fee_exponent_b=float(_2["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
-      if _1.get("filled"):
-       _y=f"LP1_MSPM_{_3['market_id']}_{_2['market_id']}";opps_out.append({"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","market":pbx["label"],"ask_vwap":_1["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_1["box_cost_net"]),4),"l1_usd":_1["l1_usd"],"close_ts":pbx["close_ts"]})
-       if(a._can_emit_zero_loss_math_live("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",float(pbx["close_ts"]),now)and _3.get("market_id")!=_2.get("market_id")and.0<(float(pbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",box_type="SPORTS_CORRIDOR",asset=str(H).upper(),dedupe_key=_y,leg_a=_3,leg_b=_2,bk_a=_A,bk_b=_z,close_ts=float(pbx["close_ts"]),now_ts=now,k_low=1e2,k_high=101.)
-       await a.open_shadow_two_leg_box("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",_y,f"{H}_MIDDLE",pbx["label"],_3,_2,_A,_z,float(pbx["close_ts"]),.988,{"is_two_leg_box":True,"mode":pbx["mode"]})
-  j=[t for t in a.tennis_specs.values()if t.end_ts>now+60]
-  if j:
-   F=[]
-   for D in j[:25]:
-    for _x in D.totals_by_scope.values():
-     for r_t in _x:F.extend([r_t.over_token,r_t.under_token])
-    for _i in(D.set1_a_token,D.set1_b_token,D.set2_a_token,D.set2_b_token,D.sets_ou25_over_token,D.sets_ou25_under_token,D.comp_yes_token,D.comp_no_token):
-     if _i:F.append(_i)
-   if F:
-    U=await a.fetch_books_batch(sorted(set(F)),timeout=3.5);E={t:p for t,bk in U.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-    for D in j[:25]:
-     T=evaluate_ten1_tennis_opportunities(D,U,E,max_box_cost_net=1.045)
-     if T:_0=T[0];a._record_market_telemetry(f"TEN1_{D.event_id}",90.,{"type":"TEN1_CORRIDOR_BEST","match":D.title[:60],"mode":_0["mode"],"label":_0["label"],"net_box_l1":_0["box_cost_net"]},now_ts=now,sig=(_0["label"],_0["box_cost_net"]))
-     for tbx in T[:4]:
+      _9,_8=pbx["leg_a"],pbx["leg_b"];_G,_F=C.get(_9["token_id"]),C.get(_8["token_id"])
+      if not _G or not _F:continue
+      _7=walk_equal_shares_dominance_box(_G.get("asks")or[],_F.get("asks")or[],BANKROLL_TICKETS["T1000"]["LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX"],float(_9["fee_rate"]),float(_8["fee_rate"]),fee_exponent_a=float(_9["fee_exponent"]),fee_exponent_b=float(_8["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
+      if _7.get("filled"):
+       _E=f"LP1_MSPM_{_9['market_id']}_{_8['market_id']}";opps_out.append({"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","market":pbx["label"],"ask_vwap":_7["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_7["box_cost_net"]),4),"l1_usd":_7["l1_usd"],"close_ts":pbx["close_ts"]})
+       if(a._can_emit_zero_loss_math_live("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",float(pbx["close_ts"]),now)and _9.get("market_id")!=_8.get("market_id")and.0<(float(pbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",box_type="SPORTS_CORRIDOR",asset=str(N).upper(),dedupe_key=_E,leg_a=_9,leg_b=_8,bk_a=_G,bk_b=_F,close_ts=float(pbx["close_ts"]),now_ts=now,k_low=1e2,k_high=101.)
+       await a.open_shadow_two_leg_box("LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX",_E,f"{N}_MIDDLE",pbx["label"],_9,_8,_G,_F,float(pbx["close_ts"]),.988,{"is_two_leg_box":True,"mode":pbx["mode"]})
+  q=[t for t in a.tennis_specs.values()if t.end_ts>now+60]
+  if q:
+   L=[]
+   for J in q[:25]:
+    for _D in J.totals_by_scope.values():
+     for r_t in _D:L.extend([r_t.over_token,r_t.under_token])
+    for _o in(J.set1_a_token,J.set1_b_token,J.set2_a_token,J.set2_b_token,J.sets_ou25_over_token,J.sets_ou25_under_token,J.comp_yes_token,J.comp_no_token):
+     if _o:L.append(_o)
+   if L:
+    _b=await a.fetch_books_batch(sorted(set(L)),timeout=3.5);K={t:p for t,bk in _b.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+    for J in q[:25]:
+     _a=evaluate_ten1_tennis_opportunities(J,_b,K,max_box_cost_net=1.045)
+     if _a:_6=_a[0];a._record_market_telemetry(f"TEN1_{J.event_id}",90.,{"type":"TEN1_CORRIDOR_BEST","match":J.title[:60],"mode":_6["mode"],"label":_6["label"],"net_box_l1":_6["box_cost_net"]},now_ts=now,sig=(_6["label"],_6["box_cost_net"]))
+     for tbx in _a[:4]:
       if float(tbx["box_cost_net"])>.988:continue
-      _w,_v=tbx["leg_a"],tbx["leg_b"];_h,_g=U.get(_w["token_id"]),U.get(_v["token_id"])
-      if not _h or not _g:continue
-      _Z=walk_equal_shares_dominance_box(_h.get("asks")or[],_g.get("asks")or[],BANKROLL_TICKETS["T1000"]["TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR"],float(_w["fee_rate"]),float(_v["fee_rate"]),fee_exponent_a=float(_w["fee_exponent"]),fee_exponent_b=float(_v["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
-      if _Z.get("filled"):
-       _u=f"TEN1_{_w['market_id']}_{_v['market_id']}";opps_out.append({"sleeve":"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR","market":tbx["label"],"ask_vwap":_Z["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_Z["box_cost_net"]),4),"l1_usd":_Z["l1_usd"],"close_ts":tbx["close_ts"]})
-       if(a._can_emit_zero_loss_math_live("TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",float(tbx["close_ts"]),now)and _w.get("market_id")!=_v.get("market_id")and.0<(float(tbx["close_ts"])-now)<=259200.):a.emit_live_two_leg_box_candidate(sleeve_source="TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",box_type="SPORTS_CORRIDOR",asset="TENNIS",dedupe_key=_u,leg_a=_w,leg_b=_v,bk_a=_h,bk_b=_g,close_ts=float(tbx["close_ts"]),now_ts=now,k_low=float(_w.get("strike")or 1e2),k_high=float(_v.get("strike")or 101.))
-       await a.open_shadow_two_leg_box("TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",_u,"TENNIS_BO3",tbx["label"],_w,_v,_h,_g,float(tbx["close_ts"]),.988,{"is_two_leg_box":True,"mode":tbx["mode"]})
-  d=[]
-  if any((tr.end_ts-3.5*3600.)<=now<=(tr.end_ts+2.*3600.)for tr in a.soccer_trees.values()):d.append("SOCCER")
+      _C,_B=tbx["leg_a"],tbx["leg_b"];_n,_m=_b.get(_C["token_id"]),_b.get(_B["token_id"])
+      if not _n or not _m:continue
+      _5=walk_equal_shares_dominance_box(_n.get("asks")or[],_m.get("asks")or[],BANKROLL_TICKETS["T1000"]["TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR"],float(_C["fee_rate"]),float(_B["fee_rate"]),fee_exponent_a=float(_C["fee_exponent"]),fee_exponent_b=float(_B["fee_exponent"]),max_box_cost_net=.988,min_shares=6,min_box_notional_usd=5.5)
+      if _5.get("filled"):
+       _A=f"TEN1_{_C['market_id']}_{_B['market_id']}";opps_out.append({"sleeve":"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR","market":tbx["label"],"ask_vwap":_5["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_5["box_cost_net"]),4),"l1_usd":_5["l1_usd"],"close_ts":tbx["close_ts"]})
+       if(a._can_emit_zero_loss_math_live("TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",float(tbx["close_ts"]),now)and _C.get("market_id")!=_B.get("market_id")and.0<(float(tbx["close_ts"])-now)<=259200.):a.emit_live_two_leg_box_candidate(sleeve_source="TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",box_type="SPORTS_CORRIDOR",asset="TENNIS",dedupe_key=_A,leg_a=_C,leg_b=_B,bk_a=_n,bk_b=_m,close_ts=float(tbx["close_ts"]),now_ts=now,k_low=float(_C.get("strike")or 1e2),k_high=float(_B.get("strike")or 101.))
+       await a.open_shadow_two_leg_box("TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR",_A,"TENNIS_BO3",tbx["label"],_C,_B,_n,_m,float(tbx["close_ts"]),.988,{"is_two_leg_box":True,"mode":tbx["mode"]})
+  h=[]
+  if any((tr.end_ts-3.5*3600.)<=now<=(tr.end_ts+2.*3600.)for tr in a.soccer_trees.values()):h.append("SOCCER")
   for sp_k in("NHL","NFL","CFB"):
-   if any(ms.sport==sp_k and(ms.start_ts-9e2)<=now<=(ms.start_ts+6.*3600.)for ms in a.multi_sport_games.values()):d.append(sp_k)
-  i={};f=[sp_k for sp_k in d if sp_k not in a.live_multisport_boards or(now-a.live_multisport_boards[sp_k][0])>=20.]
-  if f:
-   h=await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync,sp_k)for sp_k in f))
-   for sp_k,_f in zip(f,h):a.live_multisport_boards[sp_k]=(now,_f)
-  for sp_k in d:
-   if sp_k in a.live_multisport_boards:i[sp_k]=a.live_multisport_boards[sp_k][1]
-  u=[]
-  if"SOCCER"in i and i["SOCCER"]:
+   if any(ms.sport==sp_k and(ms.start_ts-9e2)<=now<=(ms.start_ts+6.*3600.)for ms in a.multi_sport_games.values()):h.append(sp_k)
+  o={};j=[sp_k for sp_k in h if sp_k not in a.live_multisport_boards or(now-a.live_multisport_boards[sp_k][0])>=(6. if any(getattr(gm,"state","")=="in"for gm in(a.live_multisport_boards[sp_k][1]or[]))else 20.)]
+  if j:
+   m=await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync,sp_k)for sp_k in j));n=not a.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_official_league_direct_feeds",True))
+   for sp_k,k in zip(j,m):
+    if n and sp_k in("NHL","MLB"):
+     try:from src.polymarket_research.polymarket_direct_feeds import(fetch_mlb_statsapi_scoreboard_sync as d,fetch_nhl_official_scoreboard_sync as e,reconcile_multisport_dual_source_boards as b);Z=e if sp_k=="NHL"else d;k=b(sp_k,k,await asyncio.to_thread(Z))
+     except Exception:pass
+    a.live_multisport_boards[sp_k]=(now,k)
+  for sp_k in h:
+   if sp_k in a.live_multisport_boards:o[sp_k]=a.live_multisport_boards[sp_k][1]
+  B=[]
+  if"SOCCER"in o and o["SOCCER"]:
    for tr in a.soccer_trees.values():
-    for _Y in evaluate_cl1_soccer_tree_clinch_locks(tr,i["SOCCER"],a.score_confirm_tracker,now):
-     _t=f"CL1_SOC_{_Y['market_id']}"
-     if _t not in a.entered_keys and _t not in a.inflight_keys:u.append({**_Y,"dedupe_key":_t,"title":getattr(tr,"title",""),"rules_text":getattr(tr,"rules_text","")})
-  for _s in a.multi_sport_games.values():
-   if _s.sport in i and i[_s.sport]:
-    for _X in evaluate_cl1_multisport_corridor_clinch_locks(_s,i,a.score_confirm_tracker,now):
-     _e=f"CL1_{_s.sport}_{_X['market_id']}"
-     if _e not in a.entered_keys and _e not in a.inflight_keys:u.append({**_X,"dedupe_key":_e,"title":getattr(_s,"title",""),"rules_text":getattr(_s,"rules_text","")})
-  if u:
-   S=await a.fetch_books_batch(sorted({t for c in u for t in(c["token_id"],c["opp_token_id"])}),timeout=3.)
-   for _W in u:
-    if"FINAL"not in str(_W.get("mode")or"").upper()and classify_market_rule_dispute_risk(_W)["veto_pre_final_clinch"]:continue
-    R,Q=S.get(_W["token_id"]),S.get(_W["opp_token_id"])
-    if not R or not Q:continue
-    C,_=extract_best_bid(Q.get("bids")or[])
-    if C>.04:continue
-    _r=float(_W.get("fee_rate")or.0);_q=float(_W.get("fee_exponent")or 1.);_V=walk_l2_book_asks_depth_capped(R.get("asks")or[],BANKROLL_TICKETS["T1000"]["CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH"],BANKROLL_TICKETS["T100"]["CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH"],fee_rate=_r,min_l1_usd=15.,max_ask_px=.9821,fee_exponent=_q)
-    if _V.get("filled"):
-     _d=float(_V["eff_px"]);_U=float(_W["p_lock"]);_c=round(_U-_d,4)
-     if.72<=_d<=.982 and _c>=.015:
-      B=max(now+6e2,float(_W["close_ts"]));opps_out.append({"sleeve":"CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH","market":f"[{_W['mode']}] {_W['display_label']}","ask_vwap":_d,"p_model":_U,"net_edge":_c,"l1_usd":_V["l1_usd"],"close_ts":B})
-      if a._can_emit_zero_loss_math_live("CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",B,now,p_model=_U):a.emit_live_single_leg_lock_candidate(sleeve_source="CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",asset=str(_W["sport"]).upper(),dedupe_key=str(_W["dedupe_key"]),token_id=str(_W["token_id"]),opp_token_id=str(_W["opp_token_id"]),market_id=str(_W["market_id"]),condition_id=str(_W["condition_id"]),side_label=str(_W["side_label"]),display_label=str(_W["display_label"]),bk_win=R,bk_opp=Q,fee_rate=_r,fee_exponent=_q,neg_risk=bool(_W.get("neg_risk",False)),close_ts=B,now_ts=now,max_lock_eff_px=.982,max_opp_bid=.025,hold_to_maturity=True,p_model=_U)
-      await a.open_shadow_position("CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",_W["dedupe_key"],_W["sport"],_W["display_label"],str(_W["side_label"]),str(_W["token_id"]),_r,_U,B,{"market_id":_W["market_id"],"condition_id":_W["condition_id"],"opp_token_id":_W["opp_token_id"],"mode":_W["mode"],"fee_exponent":_q},prefetched_book=R)
+    for _4 in evaluate_cl1_soccer_tree_clinch_locks(tr,o["SOCCER"],a.score_confirm_tracker,now):
+     _z=f"CL1_SOC_{_4['market_id']}"
+     if _z not in a.entered_keys and _z not in a.inflight_keys:B.append({**_4,"dedupe_key":_z,"title":getattr(tr,"title",""),"rules_text":getattr(tr,"rules_text","")})
+  for _y in a.multi_sport_games.values():
+   if _y.sport in o and o[_y.sport]:
+    for _3 in evaluate_cl1_multisport_corridor_clinch_locks(_y,o,a.score_confirm_tracker,now):
+     _l=f"CL1_{_y.sport}_{_3['market_id']}"
+     if _l not in a.entered_keys and _l not in a.inflight_keys:B.append({**_3,"dedupe_key":_l,"title":getattr(_y,"title",""),"rules_text":getattr(_y,"rules_text","")})
+  if B:
+   Y=await a.fetch_books_batch(sorted({t for c in B for t in(c["token_id"],c["opp_token_id"])}),timeout=3.)
+   for _2 in B:
+    if"FINAL"not in str(_2.get("mode")or"").upper()and classify_market_rule_dispute_risk(_2)["veto_pre_final_clinch"]:continue
+    X,W=Y.get(_2["token_id"]),Y.get(_2["opp_token_id"])
+    if not X or not W:continue
+    I,_=extract_best_bid(W.get("bids")or[])
+    if I>.04:continue
+    _x=float(_2.get("fee_rate")or.0);_w=float(_2.get("fee_exponent")or 1.);_1=walk_l2_book_asks_depth_capped(X.get("asks")or[],BANKROLL_TICKETS["T1000"]["CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH"],BANKROLL_TICKETS["T100"]["CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH"],fee_rate=_x,min_l1_usd=15.,max_ask_px=.9821,fee_exponent=_w)
+    if _1.get("filled"):
+     _k=float(_1["eff_px"]);_0=float(_2["p_lock"]);_j=round(_0-_k,4)
+     if.72<=_k<=.982 and _j>=.015:
+      H=max(now+6e2,float(_2["close_ts"]));opps_out.append({"sleeve":"CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH","market":f"[{_2['mode']}] {_2['display_label']}","ask_vwap":_k,"p_model":_0,"net_edge":_j,"l1_usd":_1["l1_usd"],"close_ts":H})
+      if a._can_emit_zero_loss_math_live("CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",H,now,p_model=_0):a.emit_live_single_leg_lock_candidate(sleeve_source="CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",asset=str(_2["sport"]).upper(),dedupe_key=str(_2["dedupe_key"]),token_id=str(_2["token_id"]),opp_token_id=str(_2["opp_token_id"]),market_id=str(_2["market_id"]),condition_id=str(_2["condition_id"]),side_label=str(_2["side_label"]),display_label=str(_2["display_label"]),bk_win=X,bk_opp=W,fee_rate=_x,fee_exponent=_w,neg_risk=bool(_2.get("neg_risk",False)),close_ts=H,now_ts=now,max_lock_eff_px=.982,max_opp_bid=.025,hold_to_maturity=True,p_model=_0)
+      await a.open_shadow_position("CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",_2["dedupe_key"],_2["sport"],_2["display_label"],str(_2["side_label"]),str(_2["token_id"]),_x,_0,H,{"market_id":_2["market_id"],"condition_id":_2["condition_id"],"opp_token_id":_2["opp_token_id"],"mode":_2["mode"],"fee_exponent":_w},prefetched_book=X)
  async def _scan_frontier_v4_sleeves(a,opps_out,now):
-  q=[];a.subperiod_freeze_tracker.prune(now);a.score_confirm_tracker.prune(now);k=[]
-  if any((lat.end_ts-3.5*3600.)<=now<=(lat.end_ts+2.5*3600.)for lat in a.soc2_lattices.values()):k.append("SOCCER")
-  if any((b.sport=="NFL"and(b.start_ts-9e2)<=now<=(b.start_ts+6.*3600.))for b in a.aff1_bundles.values())or any((sl.kickoff_ts-9e2)<=now<=(sl.kickoff_ts+6.*3600.)for sl in a.nfl_prop_slates.values()):k.append("NFL")
-  if any((b.sport=="CFB"and(b.start_ts-9e2)<=now<=(b.start_ts+6.*3600.))for b in a.aff1_bundles.values()):k.append("CFB")
-  E=[sp_k for sp_k in k if sp_k not in a.live_multisport_boards or(now-a.live_multisport_boards[sp_k][0])>=20.]
-  if E:
-   K=await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync,sp_k)for sp_k in E))
-   for sp_k,_0 in zip(E,K):a.live_multisport_boards[sp_k]=(now,_0)
-  J=[b for b in a.aff1_bundles.values()if b.settle_est_ts>now+120.]
-  if J:
-   _a={t for b in J for t in([tk for m in b.markets for tk in(m.tok_0,m.tok_1)]+([str(b.overtime_yes_leg["token_id"])]if b.overtime_yes_leg else[])+[tk for fp in b.first_passage_markets for tk in(fp.away_token,fp.home_token)])if t};_f=await a.fetch_books_batch(sorted(_a),timeout=3.5)if _a else{};Z={t:p for t,bk in _f.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for b in J:
-    for tri in detect_sum1_frechet_triangles(b,Z,max_3leg_cost_net=.99):
-     _Z=tri["legs"]
-     if not all(x["token_id"]in _f for x in _Z):continue
-     _z=f"SUM1_{b.event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _Z)}";_Y=walk_equal_shares_multi_leg_box([{"asks":_f[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _Z],BANKROLL_TICKETS["T1000"]["SUM1_FRECHET_SUM_TRIANGLES"],1.,.99,min_shares=6,min_box_notional_usd=5.5)
-     if _Y.get("filled"):opps_out.append({"sleeve":"SUM1_FRECHET_SUM_TRIANGLES","market":tri["label"],"ask_vwap":_Y["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_Y["box_cost_net"]),4),"l1_usd":_Y["l1_usd"],"close_ts":tri["close_ts"]});await a.open_shadow_multi_leg_bundle("SUM1_FRECHET_SUM_TRIANGLES",_z,b.sport,tri["label"],_Z,_f,float(tri["close_ts"]),1.,.99,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":tri["mode"]})
-    d=None;h=""
+  y=[];a.subperiod_freeze_tracker.prune(now);a.score_confirm_tracker.prune(now);o=[]
+  if any((lat.end_ts-3.5*3600.)<=now<=(lat.end_ts+2.5*3600.)for lat in a.soc2_lattices.values()):o.append("SOCCER")
+  if any((b.sport=="NFL"and(b.start_ts-9e2)<=now<=(b.start_ts+6.*3600.))for b in a.aff1_bundles.values())or any((sl.kickoff_ts-9e2)<=now<=(sl.kickoff_ts+6.*3600.)for sl in a.nfl_prop_slates.values()):o.append("NFL")
+  if any((b.sport=="CFB"and(b.start_ts-9e2)<=now<=(b.start_ts+6.*3600.))for b in a.aff1_bundles.values()):o.append("CFB")
+  I=[sp_k for sp_k in o if sp_k not in a.live_multisport_boards or(now-a.live_multisport_boards[sp_k][0])>=20.]
+  if I:
+   O=await asyncio.gather(*(asyncio.to_thread(fetch_espn_multisport_board_sync,sp_k)for sp_k in I))
+   for sp_k,_4 in zip(I,O):a.live_multisport_boards[sp_k]=(now,_4)
+  N=[b for b in a.aff1_bundles.values()if b.settle_est_ts>now+120.]
+  if N:
+   _e={t for b in N for t in([tk for m in b.markets for tk in(m.tok_0,m.tok_1)]+([str(b.overtime_yes_leg["token_id"])]if b.overtime_yes_leg else[])+[tk for fp in b.first_passage_markets for tk in(fp.away_token,fp.home_token)])if t};_j=await a.fetch_books_batch(sorted(_e),timeout=3.5)if _e else{};_d={t:p for t,bk in _j.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for b in N:
+    for tri in detect_sum1_frechet_triangles(b,_d,max_3leg_cost_net=.99):
+     _3=tri["legs"]
+     if not all(x["token_id"]in _j for x in _3):continue
+     _D=f"SUM1_{b.event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _3)}";_2=walk_equal_shares_multi_leg_box([{"asks":_j[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _3],BANKROLL_TICKETS["T1000"]["SUM1_FRECHET_SUM_TRIANGLES"],1.,.99,min_shares=6,min_box_notional_usd=5.5)
+     if _2.get("filled"):opps_out.append({"sleeve":"SUM1_FRECHET_SUM_TRIANGLES","market":tri["label"],"ask_vwap":_2["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_2["box_cost_net"]),4),"l1_usd":_2["l1_usd"],"close_ts":tri["close_ts"]});await a.open_shadow_multi_leg_bundle("SUM1_FRECHET_SUM_TRIANGLES",_D,b.sport,tri["label"],_3,_j,float(tri["close_ts"]),1.,.99,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":tri["mode"]})
+    d=None;i=""
     if b.sport=="NBA"and a.live_nba_board:
-     I=a.nba_games.get(b.event_id);D=match_nba_live_game(I,a.live_nba_board)if I is not None else None
-     if D is not None and D[0].state in("in","post"):
-      h=str(D[0].game_id or"")
-      if h:
-       _X=a.nba_ext_summary_cache.get(h)
-       if _X is not None and(now-_X[0])<15.:d=_X[1]
+     M=a.nba_games.get(b.event_id);H=match_nba_live_game(M,a.live_nba_board)if M is not None else None
+     if H is not None and H[0].state in("in","post"):
+      i=str(H[0].game_id or"")
+      if i:
+       _1=a.nba_ext_summary_cache.get(i)
+       if _1 is not None and(now-_1[0])<15.:d=_1[1]
        else:
-        try:_y,_W=await asyncio.to_thread(fetch_espn_nba_full_summary_sync,h);a.nba_boxscore_cache[h]=(now,_y);a.nba_ext_summary_cache[h]=(now,_W);d=_W
+        try:_C,_0=await asyncio.to_thread(fetch_espn_nba_full_summary_sync,i);a.nba_boxscore_cache[i]=(now,_C);a.nba_ext_summary_cache[i]=(now,_0);d=_0
         except Exception:d=None
     elif b.sport in("NFL","CFB")and b.sport in a.live_multisport_boards:
-     for _aa in a.live_multisport_boards[b.sport][1]:
-      if _aa.start_ts>0 and b.start_ts>0 and abs(_aa.start_ts-b.start_ts)>10.*3600.:continue
-      _x=_teams_match_fuzzy(b.away_team,_aa.away_name)and _teams_match_fuzzy(b.home_team,_aa.home_name);_w=_teams_match_fuzzy(b.away_team,_aa.home_name)and _teams_match_fuzzy(b.home_team,_aa.away_name)
-      if _x and _w:continue
-      if _x or _w:h=_aa.game_id;_V=dict(_aa.linescores_home if _w else _aa.linescores_away);_U=dict(_aa.linescores_away if _w else _aa.linescores_home);d={"state":_aa.state,"completed":_aa.completed,"is_halftime":_aa.is_halftime,"period":_aa.period,"clock_sec":_aa.clock_sec,"away_score":_aa.home_score if _w else _aa.away_score,"home_score":_aa.away_score if _w else _aa.home_score,"linescores":{"away":_V,"home":_U}};break
+     for _ae in a.live_multisport_boards[b.sport][1]:
+      if _ae.start_ts>0 and b.start_ts>0 and abs(_ae.start_ts-b.start_ts)>10.*3600.:continue
+      _B=_teams_match_fuzzy(b.away_team,_ae.away_name)and _teams_match_fuzzy(b.home_team,_ae.home_name);_A=_teams_match_fuzzy(b.away_team,_ae.home_name)and _teams_match_fuzzy(b.home_team,_ae.away_name)
+      if _B and _A:continue
+      if _B or _A:i=_ae.game_id;_Z=dict(_ae.linescores_home if _A else _ae.linescores_away);_Y=dict(_ae.linescores_away if _A else _ae.linescores_home);d={"state":_ae.state,"completed":_ae.completed,"is_halftime":_ae.is_halftime,"period":_ae.period,"clock_sec":_ae.clock_sec,"away_score":_ae.home_score if _A else _ae.away_score,"home_score":_ae.away_score if _A else _ae.home_score,"linescores":{"away":_Z,"home":_Y}};break
     if d:
-     _e=evaluate_aff1_frozen_subperiod_opportunities(b,d,Z,a.subperiod_freeze_tracker,now,espn_game_id=h,max_2leg_cost_net=.992,max_3leg_cost_net=.99)
-     for abx in _e["two_leg_boxes"]:
-      _T,_S=abx["leg_a"],abx["leg_b"];_v,_u=_f.get(_T["token_id"]),_f.get(_S["token_id"])
-      if not _v or not _u:continue
-      _t=f"AFF1_2L_{b.event_id}_{_T['token_id'][-8:]}_{_S['token_id'][-8:]}";_R=walk_equal_shares_dominance_box(_v.get("asks")or[],_u.get("asks")or[],BANKROLL_TICKETS["T1000"]["AFF1_FROZEN_SUBPERIOD_COLLAPSE"],float(_T["fee_rate"]),float(_S["fee_rate"]),fee_exponent_a=float(_T["fee_exponent"]),fee_exponent_b=float(_S["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-      if _R.get("filled"):
-       opps_out.append({"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","market":abx["label"],"ask_vwap":_R["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_R["box_cost_net"]),4),"l1_usd":_R["l1_usd"],"close_ts":abx["close_ts"]})
-       if(a._can_emit_zero_loss_math_live("AFF1_FROZEN_SUBPERIOD_COLLAPSE",float(abx["close_ts"]),now)and float(_R["box_cost_net"])<=.988 and.0<(float(abx["close_ts"])-now)<=86400.):a.emit_live_two_leg_box_candidate(sleeve_source="AFF1_FROZEN_SUBPERIOD_COLLAPSE",box_type="SPORTS_CORRIDOR",asset=b.sport,dedupe_key=_t,leg_a=_T,leg_b=_S,bk_a=_v,bk_b=_u,close_ts=float(abx["close_ts"]),now_ts=now,k_low=float(_T.get("strike")or 1e2),k_high=float(_S.get("strike")or 101.))
-       await a.open_shadow_two_leg_box("AFF1_FROZEN_SUBPERIOD_COLLAPSE",_t,b.sport,abx["label"],_T,_S,_v,_u,float(abx["close_ts"]),.992,{"is_two_leg_box":True,"mode":abx["mode"],"middle_width":abx["middle_width"]})
-     for ab3 in _e["three_leg_boxes"]:
-      _9=ab3["legs"]
-      if not all(x["token_id"]in _f for x in _9):continue
-      _s=f"AFF1_3L_{b.event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _9)}";_Q=walk_equal_shares_multi_leg_box([{"asks":_f[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _9],BANKROLL_TICKETS["T1000"]["AFF1_FROZEN_SUBPERIOD_COLLAPSE"],1.,.99,min_shares=6,min_box_notional_usd=5.5)
-      if _Q.get("filled"):opps_out.append({"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","market":ab3["label"],"ask_vwap":_Q["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_Q["box_cost_net"]),4),"l1_usd":_Q["l1_usd"],"close_ts":ab3["close_ts"]});await a.open_shadow_multi_leg_bundle("AFF1_FROZEN_SUBPERIOD_COLLAPSE",_s,b.sport,ab3["label"],_9,_f,float(ab3["close_ts"]),1.,.99,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":ab3["mode"]})
-     for alk in _e["single_leg_locks"]:_r=f"AFF1_LK_{b.event_id}_{alk['market_id']}";q.append({**alk,"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","asset":b.sport,"dedupe_key":_r,"max_eff_px":.988,"title":getattr(b,"title",""),"rules_text":getattr(b,"rules_text","")})
-  R=a.live_multisport_boards["SOCCER"][1]if"SOCCER"in a.live_multisport_boards else[]
-  if R:
+     _i=evaluate_aff1_frozen_subperiod_opportunities(b,d,_d,a.subperiod_freeze_tracker,now,espn_game_id=i,max_2leg_cost_net=1.035,max_3leg_cost_net=.99);w=bool(d.get("is_halftime"))or float(d.get("clock_sec")or.0)<=.01
+     for abx in _i["two_leg_boxes"]:
+      _X,_W=abx["leg_a"],abx["leg_b"];_z,_y=_j.get(_X["token_id"]),_j.get(_W["token_id"])
+      if not _z or not _y:continue
+      _x=f"AFF1_2L_{b.event_id}_{_X['token_id'][-8:]}_{_W['token_id'][-8:]}"
+      if float(abx["box_cost_net"])>.992:
+       if(w and not bool(d.get("completed"))and float(abx["box_cost_net"])<=1.035 and max(float(_X.get("fee_rate",.0)),float(_W.get("fee_rate",.0)))==.0):a.post_zero_fee_maker_anchor_box("AFF1_DEADBALL",str(b.sport),f"ZF_{_x}",_X,_W,_z,_y,float(abx["close_ts"]),str(abx["label"]),now,prefetched_books=_j)
+       continue
+      _V=walk_equal_shares_dominance_box(_z.get("asks")or[],_y.get("asks")or[],BANKROLL_TICKETS["T1000"]["AFF1_FROZEN_SUBPERIOD_COLLAPSE"],float(_X["fee_rate"]),float(_W["fee_rate"]),fee_exponent_a=float(_X["fee_exponent"]),fee_exponent_b=float(_W["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+      if _V.get("filled"):
+       opps_out.append({"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","market":abx["label"],"ask_vwap":_V["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_V["box_cost_net"]),4),"l1_usd":_V["l1_usd"],"close_ts":abx["close_ts"]})
+       if(a._can_emit_zero_loss_math_live("AFF1_FROZEN_SUBPERIOD_COLLAPSE",float(abx["close_ts"]),now)and float(_V["box_cost_net"])<=.988 and.0<(float(abx["close_ts"])-now)<=86400.):a.emit_live_two_leg_box_candidate(sleeve_source="AFF1_FROZEN_SUBPERIOD_COLLAPSE",box_type="SPORTS_CORRIDOR",asset=b.sport,dedupe_key=_x,leg_a=_X,leg_b=_W,bk_a=_z,bk_b=_y,close_ts=float(abx["close_ts"]),now_ts=now,k_low=float(_X.get("strike")or 1e2),k_high=float(_W.get("strike")or 101.))
+       await a.open_shadow_two_leg_box("AFF1_FROZEN_SUBPERIOD_COLLAPSE",_x,b.sport,abx["label"],_X,_W,_z,_y,float(abx["close_ts"]),.992,{"is_two_leg_box":True,"mode":abx["mode"],"middle_width":abx["middle_width"]})
+     for ab3 in _i["three_leg_boxes"]:
+      _ad=ab3["legs"]
+      if not all(x["token_id"]in _j for x in _ad):continue
+      _w=f"AFF1_3L_{b.event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _ad)}";_U=walk_equal_shares_multi_leg_box([{"asks":_j[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x["fee_exponent"])}for x in _ad],BANKROLL_TICKETS["T1000"]["AFF1_FROZEN_SUBPERIOD_COLLAPSE"],1.,.99,min_shares=6,min_box_notional_usd=5.5)
+      if _U.get("filled"):opps_out.append({"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","market":ab3["label"],"ask_vwap":_U["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_U["box_cost_net"]),4),"l1_usd":_U["l1_usd"],"close_ts":ab3["close_ts"]});await a.open_shadow_multi_leg_bundle("AFF1_FROZEN_SUBPERIOD_COLLAPSE",_w,b.sport,ab3["label"],_ad,_j,float(ab3["close_ts"]),1.,.99,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":ab3["mode"]})
+     for alk in _i["single_leg_locks"]:_v=f"AFF1_LK_{b.event_id}_{alk['market_id']}";y.append({**alk,"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","asset":b.sport,"dedupe_key":_v,"max_eff_px":.988,"title":getattr(b,"title",""),"rules_text":getattr(b,"rules_text","")})
+  V=a.live_multisport_boards["SOCCER"][1]if"SOCCER"in a.live_multisport_boards else[]
+  if V:
    for lat in a.soc2_lattices.values():
     if(lat.end_ts+7200.)<=now:continue
-    for slk in evaluate_soc2_dead_score_no_locks(lat,R,a.score_confirm_tracker,now):_q=f"SOC2_NO_{slk['market_id']}";q.append({**slk,"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","asset":"SOCCER","dedupe_key":_q,"max_eff_px":.986,"title":getattr(lat,"title",""),"rules_text":getattr(lat,"rules_text","")})
-  Y=[lat for lat in a.soc2_lattices.values()if lat.end_ts>now+120.][:10]
-  if Y:
-   Q=sorted({str(lg["token_id"])for lat in Y for lg in lat.matrix_legs if lg.get("token_id")}|{str(t_cv)for lat in Y if lat.convert_spec is not None for b_cv in lat.convert_spec.brackets for t_cv in(b_cv.get("no_token"),b_cv.get("yes_token"))if t_cv});X=await a.fetch_books_batch(Q,timeout=3.5)if Q else{};P={t:p for t,bk in X.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for lat in Y:
-    _p=detect_soc2_lattice_boxes_and_converts(lat,X,P,max_2leg_cost_net=.99,max_3leg_cost_net=.988,target_budget_usd=BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"])
-    for sbx in _p["matrix_boxes"]:
-     _P=sbx["legs"]
+    for slk in evaluate_soc2_dead_score_no_locks(lat,V,a.score_confirm_tracker,now):_u=f"SOC2_NO_{slk['market_id']}";y.append({**slk,"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","asset":"SOCCER","dedupe_key":_u,"max_eff_px":.986,"title":getattr(lat,"title",""),"rules_text":getattr(lat,"rules_text","")})
+  _c=[lat for lat in a.soc2_lattices.values()if lat.end_ts>now+120.][:10]
+  if _c:
+   U=sorted({str(lg["token_id"])for lat in _c for lg in lat.matrix_legs if lg.get("token_id")}|{str(t_cv)for lat in _c if lat.convert_spec is not None for b_cv in lat.convert_spec.brackets for t_cv in(b_cv.get("no_token"),b_cv.get("yes_token"))if t_cv});_b=await a.fetch_books_batch(U,timeout=3.5)if U else{};T={t:p for t,bk in _b.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for lat in _c:
+    _t=detect_soc2_lattice_boxes_and_converts(lat,_b,T,max_2leg_cost_net=.99,max_3leg_cost_net=.988,target_budget_usd=BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"])
+    for sbx in _t["matrix_boxes"]:
+     _T=sbx["legs"]
      if int(sbx["n_legs"])==2:
-      _8,_7=_P[0],_P[1];_O,_N=X.get(_8["token_id"]),X.get(_7["token_id"])
-      if not _O or not _N:continue
-      _M=f"SOC2_2L_{lat.exact_event_id}_{_8['token_id'][-8:]}_{_7['token_id'][-8:]}";_6=walk_equal_shares_dominance_box(_O.get("asks")or[],_N.get("asks")or[],BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"],float(_8["fee_rate"]),float(_7["fee_rate"]),fee_exponent_a=float(_8.get("fee_exponent",1.)),fee_exponent_b=float(_7.get("fee_exponent",1.)),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
-      if _6.get("filled"):
-       opps_out.append({"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","market":f"{lat.title}: {sbx['label']}","ask_vwap":_6["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_6["box_cost_net"]),4),"l1_usd":_6["l1_usd"],"close_ts":sbx["close_ts"]})
-       if(bool(sbx.get("exhaustive_partition_verified"))and a._can_emit_zero_loss_math_live("SOC2_EXACT_SCORE_2D_LATTICE",float(sbx["close_ts"]),now)and _8.get("market_id")!=_7.get("market_id")and float(_6["box_cost_net"])<=.988 and.0<(float(sbx["close_ts"])-now)<=172800.):a.emit_live_two_leg_box_candidate(sleeve_source="SOC2_EXACT_SCORE_2D_LATTICE",box_type="SPORTS_CORRIDOR",asset="SOCCER",dedupe_key=_M,leg_a=_8,leg_b=_7,bk_a=_O,bk_b=_N,close_ts=float(sbx["close_ts"]),now_ts=now,k_low=float(_8.get("strike")or 1e2),k_high=float(_7.get("strike")or 101.))
-       await a.open_shadow_two_leg_box("SOC2_EXACT_SCORE_2D_LATTICE",_M,"SOCCER",f"{lat.title}: {sbx['label']}",_8,_7,_O,_N,float(sbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":sbx["mode"]})
-     elif int(sbx["n_legs"])==3 and all(x["token_id"]in X for x in _P):
-      _L=f"SOC2_3L_{lat.exact_event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _P)}";_5=walk_equal_shares_multi_leg_box([{"asks":X[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x.get("fee_exponent",1.))}for x in _P],BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"],1.,.988,min_shares=6,min_box_notional_usd=5.5)
-      if _5.get("filled"):opps_out.append({"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","market":f"{lat.title} 3L: {sbx['label']}","ask_vwap":_5["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_5["box_cost_net"]),4),"l1_usd":_5["l1_usd"],"close_ts":sbx["close_ts"]});await a.open_shadow_multi_leg_bundle("SOC2_EXACT_SCORE_2D_LATTICE",_L,"SOCCER",f"{lat.title} 3L: {sbx['label']}",_P,X,float(sbx["close_ts"]),1.,.988,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":sbx["mode"]})
-    if lat.convert_spec is not None and _p["convert_arbs"]:await a.execute_nr2_subset_convert_arb(lat.convert_spec,_p["convert_arbs"][0],X,opps_out)
-  o=[sl for sl in a.nfl_prop_slates.values()if sl.settle_est_ts>now+120.][:8]
-  if o:
-   v=sorted({tk for sl in o for rg in(list(sl.anytime_td_by_player.values())+list(sl.two_plus_td_by_player.values())+[r for r_list in sl.ladders_by_player_stat.values()for r in r_list])for tk in(rg.yes_over_token,rg.no_under_token)if tk});C=await a.fetch_books_batch(v,timeout=3.5)if v else{};u={t:p for t,bk in C.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};O=a.live_multisport_boards["NFL"][1]if"NFL"in a.live_multisport_boards else[]
-   for sl in o:
-    for pbx in detect_nfl_prp1_boxes(sl,u,max_box_cost_net=.99):
-     _K,_J=pbx["leg_a"],pbx["leg_b"];_o,_n=C.get(_K["token_id"]),C.get(_J["token_id"])
-     if not _o or not _n:continue
-     _I=f"NFL_PRP1_2L_{sl.event_id}_{_K['token_id'][-8:]}_{_J['token_id'][-8:]}";_4=walk_equal_shares_dominance_box(_o.get("asks")or[],_n.get("asks")or[],BANKROLL_TICKETS["T1000"]["NFL_PRP1_MILESTONE_AND_MAX_LOCKS"],float(_K["fee_rate"]),float(_J["fee_rate"]),fee_exponent_a=float(_K["fee_exponent"]),fee_exponent_b=float(_J["fee_exponent"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
-     if _4.get("filled"):
-      opps_out.append({"sleeve":"NFL_PRP1_MILESTONE_AND_MAX_LOCKS","market":f"{sl.title} [{pbx['label']}]","ask_vwap":_4["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_4["box_cost_net"]),4),"l1_usd":_4["l1_usd"],"close_ts":pbx["close_ts"]})
-      if(a._can_emit_zero_loss_math_live("NFL_PRP1_MILESTONE_AND_MAX_LOCKS",float(pbx["close_ts"]),now)and _K.get("market_id")!=_J.get("market_id")and float(_4["box_cost_net"])<=.988 and.0<(float(pbx["close_ts"])-now)<=172800.):a.emit_live_two_leg_box_candidate(sleeve_source="NFL_PRP1_MILESTONE_AND_MAX_LOCKS",box_type="SPORTS_CORRIDOR",asset="NFL",dedupe_key=_I,leg_a=_K,leg_b=_J,bk_a=_o,bk_b=_n,close_ts=float(pbx["close_ts"]),now_ts=now,k_low=float(_K.get("strike")or.5),k_high=float(_J.get("strike")or 1.5))
-      await a.open_shadow_two_leg_box("NFL_PRP1_MILESTONE_AND_MAX_LOCKS",_I,"NFL",f"{sl.title} [{pbx['label']}]",_K,_J,_o,_n,float(pbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":pbx["mode"]})
-    if O:
-     B=next((g for g in O if(g.start_ts<=0 or abs(g.start_ts-sl.kickoff_ts)<=10.*3600.)and((_teams_match_fuzzy(sl.away_team,g.away_name)and _teams_match_fuzzy(sl.home_team,g.home_name))!=(_teams_match_fuzzy(sl.away_team,g.home_name)and _teams_match_fuzzy(sl.home_team,g.away_name)))),None)
-     if B is not None and B.state in("in","post"):
-      _3=a.nfl_summary_cache.get(B.game_id)
-      if _3 is not None and(now-_3[0])<15.:f=_3[1]
+      _ac,_ab=_T[0],_T[1];_S,_R=_b.get(_ac["token_id"]),_b.get(_ab["token_id"])
+      if not _S or not _R:continue
+      _Q=f"SOC2_2L_{lat.exact_event_id}_{_ac['token_id'][-8:]}_{_ab['token_id'][-8:]}";_aa=walk_equal_shares_dominance_box(_S.get("asks")or[],_R.get("asks")or[],BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"],float(_ac["fee_rate"]),float(_ab["fee_rate"]),fee_exponent_a=float(_ac.get("fee_exponent",1.)),fee_exponent_b=float(_ab.get("fee_exponent",1.)),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
+      if _aa.get("filled"):
+       opps_out.append({"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","market":f"{lat.title}: {sbx['label']}","ask_vwap":_aa["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_aa["box_cost_net"]),4),"l1_usd":_aa["l1_usd"],"close_ts":sbx["close_ts"]})
+       if(bool(sbx.get("exhaustive_partition_verified"))and a._can_emit_zero_loss_math_live("SOC2_EXACT_SCORE_2D_LATTICE",float(sbx["close_ts"]),now)and _ac.get("market_id")!=_ab.get("market_id")and float(_aa["box_cost_net"])<=.988 and.0<(float(sbx["close_ts"])-now)<=172800.):a.emit_live_two_leg_box_candidate(sleeve_source="SOC2_EXACT_SCORE_2D_LATTICE",box_type="SPORTS_CORRIDOR",asset="SOCCER",dedupe_key=_Q,leg_a=_ac,leg_b=_ab,bk_a=_S,bk_b=_R,close_ts=float(sbx["close_ts"]),now_ts=now,k_low=float(_ac.get("strike")or 1e2),k_high=float(_ab.get("strike")or 101.))
+       await a.open_shadow_two_leg_box("SOC2_EXACT_SCORE_2D_LATTICE",_Q,"SOCCER",f"{lat.title}: {sbx['label']}",_ac,_ab,_S,_R,float(sbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":sbx["mode"]})
+     elif int(sbx["n_legs"])==3 and all(x["token_id"]in _b for x in _T):
+      _P=f"SOC2_3L_{lat.exact_event_id}_{'_'.join(str(x['token_id'])[-6:]for x in _T)}";_9=walk_equal_shares_multi_leg_box([{"asks":_b[x["token_id"]].get("asks")or[],"fee_rate":float(x["fee_rate"]),"fee_exponent":float(x.get("fee_exponent",1.))}for x in _T],BANKROLL_TICKETS["T1000"]["SOC2_EXACT_SCORE_2D_LATTICE"],1.,.988,min_shares=6,min_box_notional_usd=5.5)
+      if _9.get("filled"):opps_out.append({"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","market":f"{lat.title} 3L: {sbx['label']}","ask_vwap":_9["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_9["box_cost_net"]),4),"l1_usd":_9["l1_usd"],"close_ts":sbx["close_ts"]});await a.open_shadow_multi_leg_bundle("SOC2_EXACT_SCORE_2D_LATTICE",_P,"SOCCER",f"{lat.title} 3L: {sbx['label']}",_T,_b,float(sbx["close_ts"]),1.,.988,{"is_multi_leg_bundle":True,"guaranteed_payout":1.,"mode":sbx["mode"]})
+    if lat.convert_spec is not None and _t["convert_arbs"]:await a.execute_nr2_subset_convert_arb(lat.convert_spec,_t["convert_arbs"][0],_b,opps_out)
+  v=[sl for sl in a.nfl_prop_slates.values()if sl.settle_est_ts>now+120.][:8]
+  if v:
+   A=sorted({tk for sl in v for rg in(list(sl.anytime_td_by_player.values())+list(sl.two_plus_td_by_player.values())+[r for r_list in sl.ladders_by_player_stat.values()for r in r_list])for tk in(rg.yes_over_token,rg.no_under_token)if tk});G=await a.fetch_books_batch(A,timeout=3.5)if A else{};z={t:p for t,bk in G.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.};S=a.live_multisport_boards["NFL"][1]if"NFL"in a.live_multisport_boards else[]
+   for sl in v:
+    for pbx in detect_nfl_prp1_boxes(sl,z,max_box_cost_net=.99):
+     _O,_N=pbx["leg_a"],pbx["leg_b"];_s,_r=G.get(_O["token_id"]),G.get(_N["token_id"])
+     if not _s or not _r:continue
+     _M=f"NFL_PRP1_2L_{sl.event_id}_{_O['token_id'][-8:]}_{_N['token_id'][-8:]}";_8=walk_equal_shares_dominance_box(_s.get("asks")or[],_r.get("asks")or[],BANKROLL_TICKETS["T1000"]["NFL_PRP1_MILESTONE_AND_MAX_LOCKS"],float(_O["fee_rate"]),float(_N["fee_rate"]),fee_exponent_a=float(_O["fee_exponent"]),fee_exponent_b=float(_N["fee_exponent"]),max_box_cost_net=.99,min_shares=6,min_box_notional_usd=5.5)
+     if _8.get("filled"):
+      opps_out.append({"sleeve":"NFL_PRP1_MILESTONE_AND_MAX_LOCKS","market":f"{sl.title} [{pbx['label']}]","ask_vwap":_8["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_8["box_cost_net"]),4),"l1_usd":_8["l1_usd"],"close_ts":pbx["close_ts"]})
+      if(a._can_emit_zero_loss_math_live("NFL_PRP1_MILESTONE_AND_MAX_LOCKS",float(pbx["close_ts"]),now)and _O.get("market_id")!=_N.get("market_id")and float(_8["box_cost_net"])<=.988 and.0<(float(pbx["close_ts"])-now)<=172800.):a.emit_live_two_leg_box_candidate(sleeve_source="NFL_PRP1_MILESTONE_AND_MAX_LOCKS",box_type="SPORTS_CORRIDOR",asset="NFL",dedupe_key=_M,leg_a=_O,leg_b=_N,bk_a=_s,bk_b=_r,close_ts=float(pbx["close_ts"]),now_ts=now,k_low=float(_O.get("strike")or.5),k_high=float(_N.get("strike")or 1.5))
+      await a.open_shadow_two_leg_box("NFL_PRP1_MILESTONE_AND_MAX_LOCKS",_M,"NFL",f"{sl.title} [{pbx['label']}]",_O,_N,_s,_r,float(pbx["close_ts"]),.99,{"is_two_leg_box":True,"mode":pbx["mode"]})
+    if S:
+     F=next((g for g in S if(g.start_ts<=0 or abs(g.start_ts-sl.kickoff_ts)<=10.*3600.)and((_teams_match_fuzzy(sl.away_team,g.away_name)and _teams_match_fuzzy(sl.home_team,g.home_name))!=(_teams_match_fuzzy(sl.away_team,g.home_name)and _teams_match_fuzzy(sl.home_team,g.away_name)))),None)
+     if F is not None and F.state in("in","post"):
+      _7=a.nfl_summary_cache.get(F.game_id)
+      if _7 is not None and(now-_7[0])<15.:h=_7[1]
       else:
-       try:f=await asyncio.to_thread(fetch_espn_nfl_summary_sync,B.game_id);a.nfl_summary_cache[B.game_id]=(now,f)
-       except Exception:f={}
-      if f:
-       for nlk in evaluate_nfl_prp1_live_locks(sl,f,a.score_confirm_tracker,now):_m=f"NFL_PRP1_LK_{sl.event_id}_{nlk['market_id']}";q.append({**nlk,"sleeve":"NFL_PRP1_MILESTONE_AND_MAX_LOCKS","asset":"NFL","dedupe_key":_m,"max_eff_px":.988,"title":getattr(sl,"title",""),"rules_text":getattr(sl,"rules_text","")})
+       try:h=await asyncio.to_thread(fetch_espn_nfl_summary_sync,F.game_id);a.nfl_summary_cache[F.game_id]=(now,h)
+       except Exception:h={}
+      if h:
+       for nlk in evaluate_nfl_prp1_live_locks(sl,h,a.score_confirm_tracker,now):_q=f"NFL_PRP1_LK_{sl.event_id}_{nlk['market_id']}";y.append({**nlk,"sleeve":"NFL_PRP1_MILESTONE_AND_MAX_LOCKS","asset":"NFL","dedupe_key":_q,"max_eff_px":.988,"title":getattr(sl,"title",""),"rules_text":getattr(sl,"rules_text","")})
   if a.barrier_rungs or a.binance_close_rungs:
-   N=[hr for hr in a.barrier_rungs.values()if hr.resolved_yes is None and hr.end_ts>now+120. and hr.asset!="HYPE"and(a.spots.get(hr.asset,.0)<=.0 or abs(math.log(max(1e-9,hr.strike)/a.spots[hr.asset]))<=.35)];A=[cr for cr in a.binance_close_rungs if cr.close_ts>now+120. and cr.asset!="HYPE"and(a.spots.get(cr.asset,.0)<=.0 or abs(math.log(max(1e-9,cr.strike)/a.spots[cr.asset]))<=.35)];W=sorted({t for hr in N for t in(hr.yes_token,hr.no_token)}|{cr.no_token for cr in A})
-   if W:
-    _d=await a.fetch_books_batch(W,timeout=3.5);V={t:p for t,bk in _d.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-    for cbx in detect_cry_inc1_binance_inclusion_boxes(N,A,V,now,max_box_cost_net=.992):
-     _H,_G=cbx["leg_a"],cbx["leg_b"];_l,_k=_d.get(_H["token_id"]),_d.get(_G["token_id"])
-     if not _l or not _k:continue
-     _F=f"CRY_INC1_{cbx['asset']}_{_H['market_id']}_{_G['market_id']}";_2=walk_equal_shares_dominance_box(_l.get("asks")or[],_k.get("asks")or[],BANKROLL_TICKETS["T1000"]["CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"],float(_H["fee_rate"]),float(_G["fee_rate"]),fee_exponent_a=float(_H["fee_exponent"]),fee_exponent_b=float(_G["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
-     if _2.get("filled"):
-      opps_out.append({"sleeve":"CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION","market":cbx["label"],"ask_vwap":_2["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_2["box_cost_net"]),4),"l1_usd":_2["l1_usd"],"close_ts":cbx["close_ts"]})
-      if(a._can_emit_zero_loss_math_live("CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",float(cbx["close_ts"]),now)and float(_2["box_cost_net"])<=.988 and.0<(float(cbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",box_type="BARRIER_MONO",asset=str(cbx["asset"]),dedupe_key=_F,leg_a=_H,leg_b=_G,bk_a=_l,bk_b=_k,close_ts=float(cbx["close_ts"]),now_ts=now,k_low=min(float(_H["strike"]),float(_G["strike"])),k_high=max(float(_H["strike"]),float(_G["strike"])))
-      await a.open_shadow_two_leg_box("CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",_F,str(cbx["asset"]),cbx["label"],_H,_G,_l,_k,float(cbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":cbx["mode"],"direction":cbx["direction"]})
-  n=[c for c in q if c["dedupe_key"]not in a.entered_keys and c["dedupe_key"]not in a.inflight_keys]
-  if n:
-   M=await a.fetch_books_batch(sorted({t for c in n for t in(str(c["token_id"]),str(c["opp_token_id"]))if t}),timeout=3.)
-   for clk in n:
-    L=classify_market_rule_dispute_risk(clk)
-    if"FINAL"not in str(clk.get("mode")or"").upper()and L["veto_pre_final_clinch"]:continue
-    _E,_D=str(clk["token_id"]),str(clk["opp_token_id"]);l,_c=M.get(_E),M.get(_D)
-    if not l or not _c:continue
-    l={**l,"_s2_meta":{"mode":str(clk.get("mode")or""),"dispute_risk":bool(L["dispute_risk"])}};H,_=extract_best_bid(_c.get("bids")or[])
-    if H>.035:continue
-    _C=str(clk["sleeve"]);_B=float(clk.get("fee_rate")or.0);_A=float(clk.get("fee_exponent")or 1.);G=float(clk.get("max_eff_px")or.988);_b=float(clk["p_lock"]);U=max(now+6e2,float(clk["close_ts"]));_1=walk_l2_book_asks_depth_capped(l.get("asks")or[],BANKROLL_TICKETS["T1000"][_C],BANKROLL_TICKETS["T100"][_C],fee_rate=_B,min_l1_usd=15.,max_ask_px=G+1e-4,fee_exponent=_A);e=False
-    if _1.get("filled"):
-     _j=float(_1["eff_px"]);_i=round(_b-_j,4)
-     if.72<=_j<=G and _i>=.012:
-      opps_out.append({"sleeve":_C,"market":f"[{clk['mode']}] {clk['display_label']}","ask_vwap":_j,"p_model":_b,"net_edge":_i,"l1_usd":_1["l1_usd"],"close_ts":U})
-      if a._can_emit_zero_loss_math_live(_C,U,now,p_model=_b):a.emit_live_single_leg_lock_candidate(sleeve_source=_C,asset=str(clk["asset"]).upper(),dedupe_key=str(clk["dedupe_key"]),token_id=_E,opp_token_id=_D,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),side_label=str(clk["side_label"]),display_label=str(clk["display_label"]),bk_win=l,bk_opp=_c,fee_rate=_B,fee_exponent=_A,neg_risk=bool(clk.get("neg_risk",False)),close_ts=U,now_ts=now,max_lock_eff_px=G,max_opp_bid=.025,hold_to_maturity=True,p_model=_b)
-      e=await a.open_shadow_position(_C,str(clk["dedupe_key"]),str(clk["asset"]),str(clk["display_label"]),str(clk["side_label"]),_E,_B,_b,U,{"market_id":clk["market_id"],"condition_id":clk["condition_id"],"opp_token_id":_D,"mode":clk["mode"],"fee_exponent":_A},prefetched_book=l)
-    if not e:
-     _h=f"MKR_LK1_{clk['market_id']}";j=_h not in a.entered_keys and _h not in a.inflight_keys;i=not(a.single_scan or("fetch_json"in a.__dict__))
-     if j or(i and _h not in a.inflight_keys):
-      T,F=extract_best_bid(l.get("bids")or[]);S,_=a._best_ask_sz(l);z=.15 if str(clk["asset"]).upper()in("BTC","ETH","SOL","XRP","DOGE","BNB","HYPE","XAU")else.2;y=.997 if(i and _b>=.999 and(U-now)<=7200.)else.991;w=.0025 if y>=.997 else.006;_g=evaluate_mkr_lock1_post_clinch_rebate_bid(token_id=_E,opp_token_id=_D,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),display_label=str(clk["display_label"]),source_sleeve=_C,p_lock=_b,close_ts=U,now_ts=now,best_bid=T if T>.0 else None,best_ask=S if S<1. else None,opp_best_bid=H,fee_rate=_B,fee_exponent=_A,maker_rebate_share=z,neg_risk=bool(clk.get("neg_risk",False)),max_maker_bid=y,min_net_edge_ps=w)
-      if _g is not None:
-       if j:opps_out.append({"sleeve":"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER","market":_g["display_label"],"ask_vwap":_g["effective_net_cost_per_share"],"p_model":_b,"net_edge":round(float(_g["expected_net_edge_per_share"]),4),"l1_usd":max(25.,F),"close_ts":U})
-       if(T>=.94-1e-9 and F>=10.-1e-6 and a._can_emit_zero_loss_math_live("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",U,now,p_model=_b)):a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",asset=str(clk["asset"]).upper(),dedupe_key=_h,pair_dedupe_key=str(clk["dedupe_key"]),token_id=_E,opp_token_id=_D,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),side_label=str(clk["side_label"]),display_label=str(clk["display_label"]),bk_win=l,bk_opp=_c,neg_risk=bool(clk.get("neg_risk",False)),close_ts=U,now_ts=now,min_resting_bid=.94,max_resting_bid=y,min_maker_edge=w,max_opp_bid=.03,hold_to_maturity=True,p_model=_b,target_bid_px=float(_g["post_only_bid"]),maker_rebate_ps=float(_g["maker_rebate_per_share"]))
-       if j:await a.post_shadow_maker_entry(sleeve="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",dedupe_key=_h,asset=str(clk["asset"]),title=str(_g["display_label"]),side_label=str(clk["side_label"]),token_id=_E,p_model=_b,close_ts=U,extra={"market_id":clk["market_id"],"condition_id":clk["condition_id"],"opp_token_id":_D,"source_sleeve":_C,"resting_bid_override":_g["post_only_bid"],"maker_rebate_ps":_g["maker_rebate_per_share"]},prefetched_book=l,ttl_override_sec=180.)
+   R=[hr for hr in a.barrier_rungs.values()if hr.resolved_yes is None and hr.end_ts>now+120. and hr.asset!="HYPE"and(a.spots.get(hr.asset,.0)<=.0 or abs(math.log(max(1e-9,hr.strike)/a.spots[hr.asset]))<=.35)];E=[cr for cr in a.binance_close_rungs if cr.close_ts>now+120. and cr.asset!="HYPE"and(a.spots.get(cr.asset,.0)<=.0 or abs(math.log(max(1e-9,cr.strike)/a.spots[cr.asset]))<=.35)];_a=sorted({t for hr in R for t in(hr.yes_token,hr.no_token)}|{cr.no_token for cr in E})
+   if _a:
+    _h=await a.fetch_books_batch(_a,timeout=3.5);Z={t:p for t,bk in _h.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+    for cbx in detect_cry_inc1_binance_inclusion_boxes(R,E,Z,now,max_box_cost_net=.992):
+     _L,_K=cbx["leg_a"],cbx["leg_b"];_p,_o=_h.get(_L["token_id"]),_h.get(_K["token_id"])
+     if not _p or not _o:continue
+     _J=f"CRY_INC1_{cbx['asset']}_{_L['market_id']}_{_K['market_id']}";_6=walk_equal_shares_dominance_box(_p.get("asks")or[],_o.get("asks")or[],BANKROLL_TICKETS["T1000"]["CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION"],float(_L["fee_rate"]),float(_K["fee_rate"]),fee_exponent_a=float(_L["fee_exponent"]),fee_exponent_b=float(_K["fee_exponent"]),max_box_cost_net=.992,min_shares=6,min_box_notional_usd=5.5)
+     if _6.get("filled"):
+      opps_out.append({"sleeve":"CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION","market":cbx["label"],"ask_vwap":_6["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_6["box_cost_net"]),4),"l1_usd":_6["l1_usd"],"close_ts":cbx["close_ts"]})
+      if(a._can_emit_zero_loss_math_live("CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",float(cbx["close_ts"]),now)and float(_6["box_cost_net"])<=.988 and.0<(float(cbx["close_ts"])-now)<=604800.):a.emit_live_two_leg_box_candidate(sleeve_source="CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",box_type="BARRIER_MONO",asset=str(cbx["asset"]),dedupe_key=_J,leg_a=_L,leg_b=_K,bk_a=_p,bk_b=_o,close_ts=float(cbx["close_ts"]),now_ts=now,k_low=min(float(_L["strike"]),float(_K["strike"])),k_high=max(float(_L["strike"]),float(_K["strike"])))
+      await a.open_shadow_two_leg_box("CRY_INC1_SAME_ORACLE_BINANCE_INCLUSION",_J,str(cbx["asset"]),cbx["label"],_L,_K,_p,_o,float(cbx["close_ts"]),.992,{"is_two_leg_box":True,"mode":cbx["mode"],"direction":cbx["direction"]})
+  u=[c for c in y if c["dedupe_key"]not in a.entered_keys and c["dedupe_key"]not in a.inflight_keys]
+  if u:
+   Q=await a.fetch_books_batch(sorted({t for c in u for t in(str(c["token_id"]),str(c["opp_token_id"]))if t}),timeout=3.)
+   for clk in u:
+    P=classify_market_rule_dispute_risk(clk)
+    if"FINAL"not in str(clk.get("mode")or"").upper()and P["veto_pre_final_clinch"]:continue
+    _I,_H=str(clk["token_id"]),str(clk["opp_token_id"]);q,_g=Q.get(_I),Q.get(_H)
+    if not q or not _g:continue
+    q={**q,"_s2_meta":{"mode":str(clk.get("mode")or""),"dispute_risk":bool(P["dispute_risk"]),"question":str(clk.get("question")or clk.get("display_label")or"")[:120],**({"volume24hr":round(float(clk.get("volume24hr")or.0),2)}if clk.get("volume24hr")is not None else{})}};L,_=extract_best_bid(_g.get("bids")or[])
+    if L>.035:continue
+    _G=str(clk["sleeve"]);_F=float(clk.get("fee_rate")or.0);_E=float(clk.get("fee_exponent")or 1.);K=float(clk.get("max_eff_px")or.988);_f=float(clk["p_lock"]);Y=max(now+6e2,float(clk["close_ts"]));j=not(a.single_scan or("fetch_json"in a.__dict__));_5=walk_l2_book_asks_depth_capped(q.get("asks")or[],BANKROLL_TICKETS["T1000"][_G],BANKROLL_TICKETS["T100"][_G],fee_rate=_F,min_l1_usd=15.,max_ask_px=K+1e-4,fee_exponent=_E);e=False;k=False
+    if _5.get("filled"):
+     _n=float(_5["eff_px"]);_m=round(_f-_n,4)
+     if.72<=_n<=K and _m>=.012:k=True;opps_out.append({"sleeve":_G,"market":f"[{clk['mode']}] {clk['display_label']}","ask_vwap":_n,"p_model":_f,"net_edge":_m,"l1_usd":_5["l1_usd"],"close_ts":Y})
+    f=False
+    if(k or(j and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_partial_fak_single_leg_sweep",True))))and a._can_emit_zero_loss_math_live(_G,Y,now,p_model=_f):n=(a.compute_live_8e_clinch_max_eff_px(K,_f,Y-now)if j else K);f=bool(a.emit_live_single_leg_lock_candidate(sleeve_source=_G,asset=str(clk["asset"]).upper(),dedupe_key=str(clk["dedupe_key"]),token_id=_I,opp_token_id=_H,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),side_label=str(clk["side_label"]),display_label=str(clk["display_label"]),bk_win=q,bk_opp=_g,fee_rate=_F,fee_exponent=_E,neg_risk=bool(clk.get("neg_risk",False)),close_ts=Y,now_ts=now,max_lock_eff_px=n,max_opp_bid=.025,hold_to_maturity=True,p_model=_f))
+    if k:e=await a.open_shadow_position(_G,str(clk["dedupe_key"]),str(clk["asset"]),str(clk["display_label"]),str(clk["side_label"]),_I,_F,_f,Y,{"market_id":clk["market_id"],"condition_id":clk["condition_id"],"opp_token_id":_H,"mode":clk["mode"],"fee_exponent":_E},prefetched_book=q)
+    if not e and not f:
+     _l=f"MKR_LK1_{clk['market_id']}";l=_l not in a.entered_keys and _l not in a.inflight_keys
+     if l or(j and _l not in a.inflight_keys):
+      X,J=extract_best_bid(q.get("bids")or[]);W,_=a._best_ask_sz(q);D=a.resolve_2026_maker_rebate_share(str(clk["asset"]),_G);C=.997 if(j and _f>=.999 and(Y-now)<=7200.)else.991;B=.0025 if C>=.997 else.006;_k=evaluate_mkr_lock1_post_clinch_rebate_bid(token_id=_I,opp_token_id=_H,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),display_label=str(clk["display_label"]),source_sleeve=_G,p_lock=_f,close_ts=Y,now_ts=now,best_bid=X if X>.0 else None,best_ask=W if W<1. else None,opp_best_bid=L,fee_rate=_F,fee_exponent=_E,maker_rebate_share=D,neg_risk=bool(clk.get("neg_risk",False)),max_maker_bid=C,min_net_edge_ps=B)
+      if _k is not None:
+       if l:opps_out.append({"sleeve":"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER","market":_k["display_label"],"ask_vwap":_k["effective_net_cost_per_share"],"p_model":_f,"net_edge":round(float(_k["expected_net_edge_per_share"]),4),"l1_usd":max(25.,J),"close_ts":Y})
+       if(X>=.94-1e-9 and J>=10.-1e-6 and a._can_emit_zero_loss_math_live("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",Y,now,p_model=_f)):a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",asset=str(clk["asset"]).upper(),dedupe_key=_l,pair_dedupe_key=str(clk["dedupe_key"]),token_id=_I,opp_token_id=_H,market_id=str(clk["market_id"]),condition_id=str(clk["condition_id"]),side_label=str(clk["side_label"]),display_label=str(clk["display_label"]),bk_win=q,bk_opp=_g,neg_risk=bool(clk.get("neg_risk",False)),close_ts=Y,now_ts=now,min_resting_bid=.94,max_resting_bid=C,min_maker_edge=B,max_opp_bid=.03,hold_to_maturity=True,p_model=_f,target_bid_px=float(_k["post_only_bid"]),maker_rebate_ps=float(_k["maker_rebate_per_share"]),event_id=str(clk.get("event_id")or clk.get("event_slug")or""))
+       if l:await a.post_shadow_maker_entry(sleeve="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",dedupe_key=_l,asset=str(clk["asset"]),title=str(_k["display_label"]),side_label=str(clk["side_label"]),token_id=_I,p_model=_f,close_ts=Y,extra={"market_id":clk["market_id"],"condition_id":clk["condition_id"],"opp_token_id":_H,"source_sleeve":_G,"resting_bid_override":_k["post_only_bid"],"maker_rebate_ps":_k["maker_rebate_per_share"]},prefetched_book=q,ttl_override_sec=180.)
  async def _scan_phase2_macro_counting_gas(b,opps_out,now):
   try:await b._scan_phase2_macro_counting_gas_core(opps_out,now)
   except Exception as a:logger.warning(f"[ALPHA-124] Phase-2 macro/counting/gas scan notice: {a}")
   await b.scan_uma_resolution_bonds(opps_out,now_ts=now)
  async def _scan_phase2_macro_counting_gas_core(a,opps_out,now):
-  l=[s for s in a.counting_slates.values()if s.window_end_ts>now+60]
-  if l:
-   F=sorted({s.handle for s in l});R=await asyncio.gather(*(asyncio.to_thread(fetch_xtracker_user_stats_sync,h)for h in F));j=dict(zip(F,R));z=[t for s in l for b in s.brackets for t in(b.yes_token,b.no_token)];E=await a.fetch_books_batch(z,timeout=3.5);g={}
-   for _G,_x in E.items():
-    _w,_v=a._best_ask_sz(_x)
-    if _w<1. and _w*_v>=8.:g[_G]=_w
-   for _u in l:
-    D,y=evaluate_counting_dead_no_locks(_u,j.get(_u.handle)or{});a._record_market_telemetry(key=f"TW1_SNAP_{_u.event_id}",min_interval_sec=120.,now_ts=now,sig=(D,len(y)),payload={"type":"COUNTING_TRACKER_SNAP","slug":_u.slug,"handle":_u.handle,"verified_floor":D,"dead_open_brackets":len(y),"tte_sec":round(_u.window_end_ts-now,0)})
-    for _F in y:
-     Q=E.get(_F.no_token)
-     if not Q:continue
-     P,_=extract_best_bid(Q.get("bids")or[]);O,_=a._best_ask_sz(Q);N=float(getattr(_F,"fee_rate",.0)or.0);M=float(getattr(_F,"fee_exponent",1.)or 1.);_g=walk_l2_book_asks(Q.get("asks")or[],BANKROLL_TICKETS["T1000"]["TW1_COUNTING_TRUNCATION_AND_BOX"],fee_rate=N,min_l1_usd=15.,max_ask_px=.99,fee_exponent=M)
-     if _g.get("filled")and.8<=float(_g["eff_px"])<=.99:
-      L=round(1.-float(_g["eff_px"]),4)
-      if L>=.01:
-       opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"{_u.handle} Dead Bracket NO[{_F.label}] (count>={D})","ask_vwap":_g["eff_px"],"p_model":1.,"net_edge":L,"l1_usd":_g["l1_usd"],"close_ts":_u.window_end_ts})
-       if(_u.window_end_ts-now)<=172800.:a.emit_live_single_leg_lock_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",asset=_u.handle.upper(),dedupe_key=f"TW1_NO_{_F.market_id}",token_id=_F.no_token,opp_token_id=_F.yes_token,market_id=_F.market_id,condition_id=_F.condition_id,side_label="NO",display_label=f"{_u.handle} Dead NO[{_F.label}]",bk_win=Q,bk_opp=E.get(_F.yes_token),fee_rate=N,fee_exponent=M,neg_risk=bool(_F.neg_risk),close_ts=float(_u.window_end_ts),now_ts=now,max_lock_eff_px=.99,max_opp_bid=.02,hold_to_maturity=(float(_g["eff_px"])>=.98),p_model=1.)
-       await a.open_shadow_position("TW1_COUNTING_TRUNCATION_AND_BOX",f"TW1_NO_{_F.market_id}",_u.handle.upper(),f"{_u.title} [Dead NO {_F.label}]","NO",_F.no_token,N,1.,_u.window_end_ts,{"market_id":_F.market_id,"condition_id":_F.condition_id,"verified_floor":D,"fee_exponent":M},prefetched_book=Q)
-     _f=evaluate_locked_market_reward_carry(1.,P,O,_F.rewards_min_size,_F.rewards_max_spread,N)
-     if _f.get("eligible"):
-      opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{_u.handle} Locked Carry NO[{_F.label}] @ ${_f['resting_bid']:.3f}","ask_vwap":_f["resting_bid"],"p_model":1.,"net_edge":_f["carry_edge"],"l1_usd":50.,"close_ts":_u.window_end_ts});await a.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_{_F.market_id}",_u.handle.upper(),f"{_u.title} [Reward Carry NO {_F.label}]","NO",_F.no_token,1.,_u.window_end_ts,{"market_id":_F.market_id,"condition_id":_F.condition_id,"opp_token_id":_F.yes_token,"resting_bid_override":_f["resting_bid"]},prefetched_book=Q)
-      if(is_reward_locked_carry_live_ready(a,1.,min_reward_shares=float(_F.rewards_min_size or.0),resting_bid_px=float(_f["resting_bid"]))and getattr(_F,"neg_risk",None)is not None):a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=_u.handle.upper(),dedupe_key=f"MKR_RW_{_F.market_id}",pair_dedupe_key=f"MKR_RW_PAIR_{_F.market_id}",token_id=_F.no_token,opp_token_id=_F.yes_token,market_id=_F.market_id,condition_id=_F.condition_id,side_label="NO",display_label=f"{_u.handle} Reward Carry NO[{_F.label}]",bk_win=Q,bk_opp=E.get(_F.yes_token),neg_risk=bool(_F.neg_risk),close_ts=float(_u.window_end_ts),now_ts=now,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=float(_f["resting_bid"]))
-   w=detect_counting_subwindow_boxes(l,g,j,max_box_cost_net=1.05)
-   if w:_E=w[0];a._record_market_telemetry(f"TW1_BOX_{_E['handle']}",90.,{"type":"COUNTING_SUBWINDOW_BEST","handle":_E["handle"],"net_box_l1":_E["box_cost_net"],"label":_E["label"]},now_ts=now,sig=(_E["label"],_E["box_cost_net"]))
-   for tb in w:
-    _t,_s=tb["leg_a"],tb["leg_b"];_e,_d=E.get(_t["token_id"]),E.get(_s["token_id"])
-    if not _e or not _d:continue
-    _c=f"TW1_BOX_{_t['market_id']}_{_s['market_id']}"
+  F=[s for s in a.counting_slates.values()if s.window_end_ts>now+60]
+  if F:
+   _e=sorted({s.handle for s in F});_t=await asyncio.gather(*(asyncio.to_thread(fetch_xtracker_user_stats_sync,h)for h in _e));z=dict(zip(_e,_t));X=[t for s in F for b in s.brackets for t in(b.yes_token,b.no_token)];_d=await a.fetch_books_batch(X,timeout=3.5);n={}
+   for t_c,_3 in _d.items():
+    _2,_1=a._best_ask_sz(_3)
+    if _2<1. and _2*_1>=8.:n[t_c]=_2
+   for _0 in F:
+    _c,W=evaluate_counting_dead_no_locks(_0,z.get(_0.handle)or{});a._record_market_telemetry(key=f"TW1_SNAP_{_0.event_id}",min_interval_sec=120.,now_ts=now,sig=(_c,len(W)),payload={"type":"COUNTING_TRACKER_SNAP","slug":_0.slug,"handle":_0.handle,"verified_floor":_c,"dead_open_brackets":len(W),"tte_sec":round(_0.window_end_ts-now,0)});m=GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{})
+    if W and bool(m.get("enable_xtrack1_expanded_handles",True)):
+     E=detect_counting_pruned_exhaustive_yes_slate(_0,z.get(_0.handle)or{},_d,max_bundle_cost_net=.99,max_surviving_legs=12,min_shares=5.)
+     if E is not None:
+      _s=E["legs"];opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"{_0.handle} Pruned Exhaustive YES ({len(_s)} legs, floor>={_c})","ask_vwap":E["bundle_cost_net_ps"],"p_model":1.,"net_edge":E["net_edge_per_share"],"l1_usd":round(float(E["shares"])*float(E["bundle_cost_net_ps"]),2),"close_ts":_0.window_end_ts})
+      if len(_s)==2:a.emit_live_two_leg_box_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",box_type="COUNTING_DOMINANCE",asset=_0.handle.upper(),dedupe_key=f"NR0_PRUNED2_{_0.event_id}",leg_a=_s[0],leg_b=_s[1],bk_a=_d.get(_s[0]["token_id"])or{},bk_b=_d.get(_s[1]["token_id"])or{},close_ts=float(_0.window_end_ts),now_ts=now)
+      elif 3<=len(_s)<=12:a.emit_live_special_v2_box_candidate(box_type="MULTI_LEG_BUNDLE",sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",asset=_0.handle.upper(),dedupe_key=f"NR0_PRUNED_{_0.event_id}",close_ts=float(_0.window_end_ts),now_ts=now,payload={"legs":_s,"shares":E["shares"],"max_fillable_shares":E["shares"],"cost_per_share":E["bundle_cost_net_ps"],"box_cost_net":E["bundle_cost_net_ps"],"max_box_cost_net":.99,"net_edge_per_share":E["net_edge_per_share"],"neg_risk":True,"includes_unbounded_top_cap":True})
+    y=a.negrisk_convert_slates.get(_0.event_id)
+    if(W and y is not None and y.is_closed_convert_safe and bool(m.get("enable_nr_m1_dead_seed_fanout",True))):
+     w={dbr.market_id for dbr in W};D={int(b_nr.get("question_index")if isinstance(b_nr,dict)else b_nr.question_index)for b_nr in y.brackets if(b_nr.get("market_id")if isinstance(b_nr,dict)else getattr(b_nr,"market_id",None))in w and(b_nr.get("question_index")if isinstance(b_nr,dict)else getattr(b_nr,"question_index",None))is not None}
+     if D:
+      a.__dict__.setdefault("_ws_dead_q_by_event",{})[_0.event_id]=set(D);_r=detect_nr_m1_dead_seed_fanout(y,D,_d,fee_bips=int(getattr(y,"fee_bips",0)or 0),min_shares=5.,min_net_edge_usd=.0035)
+      if _r is not None:opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"{_0.handle} NR_M1 Dead-NO Fanout (Q{_r['dead_question_index']})","ask_vwap":_r["ask_eff_per_share"],"p_model":1.,"net_edge":_r["net_edge_per_share"],"l1_usd":round(float(_r["shares"])*float(_r["ask_eff_per_share"]),2),"close_ts":_0.window_end_ts});a.emit_live_negrisk_convert_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",spec=y,dedupe_key=f"NRM1_CNT_{_0.event_id}_Q{_r['dead_question_index']}",arb_hit=_r,books_by_token=_d,now_ts=now,fee_bips=int(getattr(y,"fee_bips",0)or 0))
+    for dbr in(W if bool(m.get("enable_xtrack1_6handle_dead_no",True))else()):
+     _q=_d.get(dbr.no_token)
+     if not _q:continue
+     _p,_=extract_best_bid(_q.get("bids")or[]);_o,_=a._best_ask_sz(_q);_n=float(getattr(dbr,"fee_rate",.0)or.0);_m=float(getattr(dbr,"fee_exponent",1.)or 1.);_L=walk_l2_book_asks(_q.get("asks")or[],BANKROLL_TICKETS["T1000"]["TW1_COUNTING_TRUNCATION_AND_BOX"],fee_rate=_n,min_l1_usd=15.,max_ask_px=.99,fee_exponent=_m);C=bool(_L.get("filled")and.8<=float(_L["eff_px"])<=.99 and round(1.-float(_L["eff_px"]),4)>=.01)
+     if C:_l=round(1.-float(_L["eff_px"]),4);opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"{_0.handle} Dead Bracket NO[{dbr.label}] (count>={_c})","ask_vwap":_L["eff_px"],"p_model":1.,"net_edge":_l,"l1_usd":_L["l1_usd"],"close_ts":_0.window_end_ts})
+     v=not(a.single_scan or("fetch_json"in a.__dict__));V=float(_0.window_end_ts-now)
+     if 25.<V<=172800. and(C or(v and bool(m.get("enable_partial_fak_single_leg_sweep",True)))):u=((.995 if V<=14400. else(.992 if V<=43200. else.99))if v else.99);a.emit_live_single_leg_lock_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",asset=_0.handle.upper(),dedupe_key=f"TW1_NO_{dbr.market_id}",token_id=dbr.no_token,opp_token_id=dbr.yes_token,market_id=dbr.market_id,condition_id=dbr.condition_id,side_label="NO",display_label=f"{_0.handle} Dead NO[{dbr.label}]",bk_win=_q,bk_opp=_d.get(dbr.yes_token),fee_rate=_n,fee_exponent=_m,neg_risk=bool(dbr.neg_risk),close_ts=float(_0.window_end_ts),now_ts=now,max_lock_eff_px=u,max_opp_bid=.02,hold_to_maturity=(not C or float(_L["eff_px"])>=.98),p_model=1.)
+     if C:await a.open_shadow_position("TW1_COUNTING_TRUNCATION_AND_BOX",f"TW1_NO_{dbr.market_id}",_0.handle.upper(),f"{_0.title} [Dead NO {dbr.label}]","NO",dbr.no_token,_n,1.,_0.window_end_ts,{"market_id":dbr.market_id,"condition_id":dbr.condition_id,"verified_floor":_c,"fee_exponent":_m},prefetched_book=_q)
+     i=False;_K=evaluate_locked_market_reward_carry(1.,_p,_o,dbr.rewards_min_size,dbr.rewards_max_spread,_n)
+     if _K.get("eligible"):
+      opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"{_0.handle} Locked Carry NO[{dbr.label}] @ ${_K['resting_bid']:.3f}","ask_vwap":_K["resting_bid"],"p_model":1.,"net_edge":_K["carry_edge"],"l1_usd":50.,"close_ts":_0.window_end_ts});await a.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_{dbr.market_id}",_0.handle.upper(),f"{_0.title} [Reward Carry NO {dbr.label}]","NO",dbr.no_token,1.,_0.window_end_ts,{"market_id":dbr.market_id,"condition_id":dbr.condition_id,"opp_token_id":dbr.yes_token,"resting_bid_override":_K["resting_bid"]},prefetched_book=_q)
+      if(is_reward_locked_carry_live_ready(a,1.,min_reward_shares=float(dbr.rewards_min_size or.0),resting_bid_px=float(_K["resting_bid"]))and getattr(dbr,"neg_risk",None)is not None):_k=float(_K["resting_bid"]);B=a.resolve_2026_maker_rebate_share(_0.handle.upper(),"TW1_COUNTING_TRUNCATION_AND_BOX");_b=round(B*_n*((_k*(1.-_k))**_m),5)if _n>.0 else.0;i=bool(a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset=_0.handle.upper(),dedupe_key=f"MKR_RW_{dbr.market_id}",pair_dedupe_key=f"MKR_RW_PAIR_{dbr.market_id}",token_id=dbr.no_token,opp_token_id=dbr.yes_token,market_id=dbr.market_id,condition_id=dbr.condition_id,side_label="NO",display_label=f"{_0.handle} Reward Carry NO[{dbr.label}]",bk_win=_q,bk_opp=_d.get(dbr.yes_token),neg_risk=bool(dbr.neg_risk),close_ts=float(_0.window_end_ts),now_ts=now,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.006,max_opp_bid=.03,hold_to_maturity=True,p_model=1.,target_bid_px=_k,maker_rebate_ps=_b))
+     if(not i and not C and v and getattr(dbr,"neg_risk",None)is not None and _d.get(dbr.yes_token)is not None and 120.<(float(_0.window_end_ts)-now)<=14400. and.94<=_p<=.994 and a._can_emit_zero_loss_math_live("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",float(_0.window_end_ts),now,p_model=1.)):r=a.resolve_2026_maker_rebate_share(_0.handle.upper(),"TW1_COUNTING_TRUNCATION_AND_BOX");K=round(r*_n*((_p*(1.-_p))**_m),5)if _n>.0 else.0;a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",asset=_0.handle.upper(),dedupe_key=f"MKR_TW1_{dbr.market_id}",pair_dedupe_key=f"TW1_NO_{dbr.market_id}",token_id=dbr.no_token,opp_token_id=dbr.yes_token,market_id=dbr.market_id,condition_id=dbr.condition_id,side_label="NO",display_label=f"{_0.handle} Dead NO[{dbr.label}] FINAL",bk_win={**_q,"_s2_meta":{"is_final":True,"clinch_mode":"FINAL"}},bk_opp=_d.get(dbr.yes_token),neg_risk=bool(dbr.neg_risk),close_ts=float(_0.window_end_ts),now_ts=now,min_resting_bid=.94,max_resting_bid=.994,min_maker_edge=.005,max_opp_bid=.02,hold_to_maturity=True,p_model=1.,maker_rebate_ps=K)
+   U=detect_counting_subwindow_boxes(F,n,z,max_box_cost_net=1.05)
+   if U:tb0=U[0];a._record_market_telemetry(f"TW1_BOX_{tb0['handle']}",90.,{"type":"COUNTING_SUBWINDOW_BEST","handle":tb0["handle"],"net_box_l1":tb0["box_cost_net"],"label":tb0["label"]},now_ts=now,sig=(tb0["label"],tb0["box_cost_net"]))
+   for tb in U:
+    _Z,_Y=tb["leg_a"],tb["leg_b"];_J,_I=_d.get(_Z["token_id"]),_d.get(_Y["token_id"])
+    if not _J or not _I:continue
+    _H=f"TW1_BOX_{_Z['market_id']}_{_Y['market_id']}"
     if float(tb["box_cost_net"])<=.993:
-     _r=walk_equal_shares_dominance_box(_e.get("asks")or[],_d.get("asks")or[],BANKROLL_TICKETS["T1000"]["TW1_COUNTING_TRUNCATION_AND_BOX"],float(_t.get("fee_rate",.0)),float(_s.get("fee_rate",.0)),fee_exponent_a=float(_t.get("fee_exponent",1.)),fee_exponent_b=float(_s.get("fee_exponent",1.)),max_box_cost_net=.993,min_shares=6,min_box_notional_usd=5.5)
-     if _r.get("filled"):
-      opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"Counting Box {tb['label']}","ask_vwap":_r["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_r["box_cost_net"]),4),"l1_usd":_r["l1_usd"],"close_ts":tb["close_ts"]});d=False
-      if(float(tb["close_ts"])-now)<=86400. and float(_r["box_cost_net"])<=.99:d=a.emit_live_two_leg_box_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",box_type="COUNTING_DOMINANCE",asset=tb["handle"].upper(),dedupe_key=_c,leg_a=_t,leg_b=_s,bk_a=_e,bk_b=_d,close_ts=float(tb["close_ts"]),now_ts=now)
-      await a.open_shadow_two_leg_box("TW1_COUNTING_TRUNCATION_AND_BOX",_c,tb["handle"].upper(),f"Counting Box {tb['label']}",_t,_s,_e,_d,float(tb["close_ts"]),.993,{"is_two_leg_box":True,"banked":tb["banked"]})
-      if not d:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_c}",_t,_s,_e,_d,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=E,live_emit_only=True)
-     else:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_c}",_t,_s,_e,_d,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=E)
-    elif float(tb["box_cost_net"])<=1.035:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_c}",_t,_s,_e,_d,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=E)
-  C=[lg for lg in(a.fomc_truth_legs+a.oil_senate_truth_legs)if float(lg["end_ts"])>now+60]
-  if C:
-   K=await a.fetch_books_batch(sorted({str(lg["token_id"])for lg in C}),timeout=3.5);B={t:p for t,bk in K.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
-   for _b,v,u,r,J in(("FED1_CENTRAL_BANK_LP_BOX","FOMC",a.fomc_truth_legs,ALL_FOMC_MASK,"FOMC_LP_BEST"),("COND1_MACRO_PARTITION_BOX","OIL_SENATE",a.oil_senate_truth_legs,ALL_OIL_SENATE_MASK,"OIL_SENATE_PARTITION_BEST")):
-    if not u:continue
-    A=find_cross_event_bitmask_boxes(u,B,r,max_2leg_cost=1.05,max_3leg_cost=1.03)
-    if A:b0=A[0];a._record_market_telemetry(f"{J}_DIAG",90.,{"type":J,"n_legs":b0["n_legs"],"net_box_l1":b0["box_cost_net"],"label":b0["label"]},now_ts=now,sig=(b0["label"],b0["box_cost_net"]))
-    for bx in A:
-     _D=bx["legs"]
+     _X=walk_equal_shares_dominance_box(_J.get("asks")or[],_I.get("asks")or[],BANKROLL_TICKETS["T1000"]["TW1_COUNTING_TRUNCATION_AND_BOX"],float(_Z.get("fee_rate",.0)),float(_Y.get("fee_rate",.0)),fee_exponent_a=float(_Z.get("fee_exponent",1.)),fee_exponent_b=float(_Y.get("fee_exponent",1.)),max_box_cost_net=.993,min_shares=6,min_box_notional_usd=5.5)
+     if _X.get("filled"):
+      opps_out.append({"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","market":f"Counting Box {tb['label']}","ask_vwap":_X["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_X["box_cost_net"]),4),"l1_usd":_X["l1_usd"],"close_ts":tb["close_ts"]});g=False
+      if(float(tb["close_ts"])-now)<=86400. and float(_X["box_cost_net"])<=.99:g=a.emit_live_two_leg_box_candidate(sleeve_source="TW1_COUNTING_TRUNCATION_AND_BOX",box_type="COUNTING_DOMINANCE",asset=tb["handle"].upper(),dedupe_key=_H,leg_a=_Z,leg_b=_Y,bk_a=_J,bk_b=_I,close_ts=float(tb["close_ts"]),now_ts=now)
+      await a.open_shadow_two_leg_box("TW1_COUNTING_TRUNCATION_AND_BOX",_H,tb["handle"].upper(),f"Counting Box {tb['label']}",_Z,_Y,_J,_I,float(tb["close_ts"]),.993,{"is_two_leg_box":True,"banked":tb["banked"]})
+      if not g:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_H}",_Z,_Y,_J,_I,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=_d,live_emit_only=True)
+     else:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_H}",_Z,_Y,_J,_I,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=_d)
+    elif float(tb["box_cost_net"])<=1.035:a.post_zero_fee_maker_anchor_box("TW1",tb["handle"].upper(),f"ZFA_{_H}",_Z,_Y,_J,_I,float(tb["close_ts"]),f"Counting Box {tb['label']}",now,prefetched_books=_d)
+  _a=[lg for lg in(a.fomc_truth_legs+a.oil_senate_truth_legs)if float(lg["end_ts"])>now+60]
+  if _a:
+   _j=await a.fetch_books_batch(sorted({str(lg["token_id"])for lg in _a}),timeout=3.5);Z={t:p for t,bk in _j.items()for p,s in[a._best_ask_sz(bk)]if p<1. and p*s>=8.}
+   for _G,T,S,R,_i in(("FED1_CENTRAL_BANK_LP_BOX","FOMC",a.fomc_truth_legs,ALL_FOMC_MASK,"FOMC_LP_BEST"),("COND1_MACRO_PARTITION_BOX","OIL_SENATE",a.oil_senate_truth_legs,ALL_OIL_SENATE_MASK,"OIL_SENATE_PARTITION_BEST")):
+    if not S:continue
+    Y=find_cross_event_bitmask_boxes(S,Z,R,max_2leg_cost=1.05,max_3leg_cost=1.03)
+    if Y:b0=Y[0];a._record_market_telemetry(f"{_i}_DIAG",90.,{"type":_i,"n_legs":b0["n_legs"],"net_box_l1":b0["box_cost_net"],"label":b0["label"]},now_ts=now,sig=(b0["label"],b0["box_cost_net"]))
+    for bx in Y:
+     _9=bx["legs"]
      if int(bx["n_legs"])==2:
-      _q,_p=_D[0],_D[1];_a,Z=K.get(_q["token_id"]),K.get(_p["token_id"])
-      if not _a or not Z:continue
-      _o=f"{v}_2L_{_q['token_id'][-8:]}_{_p['token_id'][-8:]}"
+      _W,_V=_9[0],_9[1];_F,_E=_j.get(_W["token_id"]),_j.get(_V["token_id"])
+      if not _F or not _E:continue
+      _U=f"{T}_2L_{_W['token_id'][-8:]}_{_V['token_id'][-8:]}"
       if float(bx["box_cost_net"])<=.994:
-       _C=walk_equal_shares_dominance_box(_a.get("asks")or[],Z.get("asks")or[],BANKROLL_TICKETS["T1000"][_b],float(_q.get("fee_rate",.0)),float(_p.get("fee_rate",.0)),fee_exponent_a=float(_q.get("fee_exponent",1.)),fee_exponent_b=float(_p.get("fee_exponent",1.)),max_box_cost_net=.994,min_shares=6,min_box_notional_usd=5.5)
-       if _C.get("filled"):
-        opps_out.append({"sleeve":_b,"market":f"{v} {bx['label']}","ask_vwap":_C["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_C["box_cost_net"]),4),"l1_usd":_C["l1_usd"],"close_ts":bx["close_ts"]});c=False
-        if _b=="FED1_CENTRAL_BANK_LP_BOX"and(float(bx["close_ts"])-now)<=172800. and float(_C["box_cost_net"])<=.99:c=a.emit_live_two_leg_box_candidate(sleeve_source=_b,box_type="MACRO_DOMINANCE",asset=v,dedupe_key=_o,leg_a=_q,leg_b=_p,bk_a=_a,bk_b=Z,close_ts=float(bx["close_ts"]),now_ts=now)
-        elif(_b=="COND1_MACRO_PARTITION_BOX"and(float(bx["close_ts"])-now)<=(172800. if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else 1.08e5)and float(_C["box_cost_net"])<=((.992 if(float(bx["close_ts"])-now)<=1.08e5 else.988)if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else.985)):c=a.emit_live_two_leg_box_candidate(sleeve_source=_b,box_type="MACRO_DOMINANCE",asset=v,dedupe_key=_o,leg_a=_q,leg_b=_p,bk_a=_a,bk_b=Z,close_ts=float(bx["close_ts"]),now_ts=now)
-        await a.open_shadow_two_leg_box(_b,_o,v,f"{v} {bx['label']}",_q,_p,_a,Z,float(bx["close_ts"]),.994,{"is_two_leg_box":True,"double_pay_states":bx["double_pay_states"]})
-        if not c:a.post_zero_fee_maker_anchor_box(v,v,f"ZFA_{_o}",_q,_p,_a,Z,float(bx["close_ts"]),f"{v} {bx['label']}",now,prefetched_books=K,live_emit_only=True)
-       else:a.post_zero_fee_maker_anchor_box(v,v,f"ZFA_{_o}",_q,_p,_a,Z,float(bx["close_ts"]),f"{v} {bx['label']}",now,prefetched_books=K)
-      elif float(bx["box_cost_net"])<=1.035:a.post_zero_fee_maker_anchor_box(v,v,f"ZFA_{_o}",_q,_p,_a,Z,float(bx["close_ts"]),f"{v} {bx['label']}",now,prefetched_books=K)
+       _8=walk_equal_shares_dominance_box(_F.get("asks")or[],_E.get("asks")or[],BANKROLL_TICKETS["T1000"][_G],float(_W.get("fee_rate",.0)),float(_V.get("fee_rate",.0)),fee_exponent_a=float(_W.get("fee_exponent",1.)),fee_exponent_b=float(_V.get("fee_exponent",1.)),max_box_cost_net=.994,min_shares=6,min_box_notional_usd=5.5)
+       if _8.get("filled"):
+        opps_out.append({"sleeve":_G,"market":f"{T} {bx['label']}","ask_vwap":_8["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_8["box_cost_net"]),4),"l1_usd":_8["l1_usd"],"close_ts":bx["close_ts"]});d=False
+        if _G=="FED1_CENTRAL_BANK_LP_BOX"and(float(bx["close_ts"])-now)<=172800. and float(_8["box_cost_net"])<=.99:d=a.emit_live_two_leg_box_candidate(sleeve_source=_G,box_type="MACRO_DOMINANCE",asset=T,dedupe_key=_U,leg_a=_W,leg_b=_V,bk_a=_F,bk_b=_E,close_ts=float(bx["close_ts"]),now_ts=now)
+        elif(_G=="COND1_MACRO_PARTITION_BOX"and(float(bx["close_ts"])-now)<=(172800. if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else 1.08e5)and float(_8["box_cost_net"])<=((.992 if(float(bx["close_ts"])-now)<=1.08e5 else.988)if a.is_sleeve_grad8_ready("COND1_MACRO_PARTITION_BOX")else.985)):d=a.emit_live_two_leg_box_candidate(sleeve_source=_G,box_type="MACRO_DOMINANCE",asset=T,dedupe_key=_U,leg_a=_W,leg_b=_V,bk_a=_F,bk_b=_E,close_ts=float(bx["close_ts"]),now_ts=now)
+        await a.open_shadow_two_leg_box(_G,_U,T,f"{T} {bx['label']}",_W,_V,_F,_E,float(bx["close_ts"]),.994,{"is_two_leg_box":True,"double_pay_states":bx["double_pay_states"]})
+        if not d:a.post_zero_fee_maker_anchor_box(T,T,f"ZFA_{_U}",_W,_V,_F,_E,float(bx["close_ts"]),f"{T} {bx['label']}",now,prefetched_books=_j,live_emit_only=True)
+       else:a.post_zero_fee_maker_anchor_box(T,T,f"ZFA_{_U}",_W,_V,_F,_E,float(bx["close_ts"]),f"{T} {bx['label']}",now,prefetched_books=_j)
+      elif float(bx["box_cost_net"])<=1.035:a.post_zero_fee_maker_anchor_box(T,T,f"ZFA_{_U}",_W,_V,_F,_E,float(bx["close_ts"]),f"{T} {bx['label']}",now,prefetched_books=_j)
      elif int(bx["n_legs"])==3 and float(bx["box_cost_net"])<=.992:
-      _n=f"{v}_3L_{'_'.join(x['token_id'][-6:]for x in _D)}";_B=walk_equal_shares_multi_leg_box([{"asks":K[x["token_id"]].get("asks")or[],"fee_rate":float(x.get("fee_rate",.0)),"fee_exponent":float(x.get("fee_exponent",1.))}for x in _D],BANKROLL_TICKETS["T1000"][_b],1.,.992,min_shares=6,min_box_notional_usd=5.5)
-      if _B.get("filled"):opps_out.append({"sleeve":_b,"market":f"{v} 3-Leg {bx['label']}","ask_vwap":_B["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_B["box_cost_net"]),4),"l1_usd":_B["l1_usd"],"close_ts":bx["close_ts"]});await a.open_shadow_multi_leg_bundle(_b,_n,v,f"{v} 3-Leg {bx['label']}",_D,K,float(bx["close_ts"]),1.,.992,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
-  f=[e for e in(a.gas_events_raw.get("us-gas-price-daily")or[])if not e.get("closed")]
-  if f:
-   _A=await asyncio.to_thread(fetch_aaa_national_gas_sync)
-   if _A:
-    a._record_market_telemetry("AAA_GAS_SNAP",3e2,{"type":"AAA_GAS_SNAP",**_A},now_ts=now,sig=(_A["as_of_date"],_A["current_regular"]));I=float(_A["current_regular"])
-    for _m in f:
-     Y=_parse_iso_ts(_m.get("endDate"))or.0
-     if not(60.<(Y-now)<=57600.):continue
-     H=re.search(r"(20\d{2}-\d{2}-\d{2})",str(_m.get("slug")or""));G=H.group(1)if H else datetime.fromtimestamp(Y,tz=NY_TZ).date().isoformat()
-     if G!=_A["as_of_date"]:continue
-     X=[]
-     for mg in(_m.get("markets")or[]):
+      _T=f"{T}_3L_{'_'.join(x['token_id'][-6:]for x in _9)}";_7=walk_equal_shares_multi_leg_box([{"asks":_j[x["token_id"]].get("asks")or[],"fee_rate":float(x.get("fee_rate",.0)),"fee_exponent":float(x.get("fee_exponent",1.))}for x in _9],BANKROLL_TICKETS["T1000"][_G],1.,.992,min_shares=6,min_box_notional_usd=5.5)
+      if _7.get("filled"):
+       opps_out.append({"sleeve":_G,"market":f"{T} 3-Leg {bx['label']}","ask_vwap":_7["box_cost_net"],"p_model":1.,"net_edge":round(1.-float(_7["box_cost_net"]),4),"l1_usd":_7["l1_usd"],"close_ts":bx["close_ts"]})
+       if((float(bx["close_ts"])-now)<=172800. and float(_7["box_cost_net"])<=.99 and all(isinstance(x.get("neg_risk"),bool)for x in _9)):
+        Q=[]
+        for _S in _9:
+         _D=_j.get(str(_S["token_id"]))or{};_C,_B=a._best_ask_sz(_D)
+         if _C<1. and _B>=5.:Q.append({"token_id":str(_S["token_id"]),"opp_token_id":str(_S.get("opp_token_id")or""),"market_id":str(_S.get("market_id")or""),"condition_id":str(_S.get("condition_id")or""),"side":str(_S.get("side")or"YES"),"label":str(_S.get("label")or""),"fee_rate":float(_S.get("fee_rate",.0)),"fee_exponent":float(_S.get("fee_exponent",1.)),"neg_risk":bool(_S["neg_risk"]),"ask_px":_C,"ask_size":_B})
+        if len(Q)==3:a.emit_live_special_v2_box_candidate(box_type="MULTI_LEG_BUNDLE",sleeve_source=_G,asset=T,dedupe_key=_T,close_ts=float(bx["close_ts"]),now_ts=now,payload={"legs":Q,"shares":_7["shares"],"max_fillable_shares":min(float(_7["shares"]),min(float(c["ask_size"])for c in Q)),"cost_per_share":float(_7["box_cost_net"]),"box_cost_net":float(_7["box_cost_net"]),"max_box_cost_net":.99,"net_edge_per_share":round(1.-float(_7["box_cost_net"]),6),"neg_risk":any(bool(c["neg_risk"])for c in Q)})
+       await a.open_shadow_multi_leg_bundle(_G,_T,T,f"{T} 3-Leg {bx['label']}",_9,_j,float(bx["close_ts"]),1.,.992,{"is_multi_leg_bundle":True,"guaranteed_payout":1.})
+  l=[e for e in(a.gas_events_raw.get("us-gas-price-daily")or[])if not e.get("closed")]
+  if l:
+   _6=await asyncio.to_thread(fetch_aaa_national_gas_sync)
+   if _6:
+    a._record_market_telemetry("AAA_GAS_SNAP",3e2,{"type":"AAA_GAS_SNAP",**_6},now_ts=now,sig=(_6["as_of_date"],_6["current_regular"]));_h=float(_6["current_regular"])
+    for _R in l:
+     _A=_parse_iso_ts(_R.get("endDate"))or.0
+     if not(60.<(_A-now)<=57600.):continue
+     _g=re.search(r"(20\d{2}-\d{2}-\d{2})",str(_R.get("slug")or""));_f=_g.group(1)if _g else datetime.fromtimestamp(_A,tz=NY_TZ).date().isoformat()
+     if _f!=_6["as_of_date"]:continue
+     _z=[]
+     for mg in(_R.get("markets")or[]):
       if mg.get("closed"):continue
-      o,n=_extract_market_fee_rate(mg);q=_parse_clob_tokens(mg);_l=parse_gas_daily_bracket(str(mg.get("groupItemTitle")or mg.get("question")or""))
-      if q and _l:X.append((mg,q,_l,o,n))
-     if not X:continue
-     W=await a.fetch_books_batch([t for _,tk,_,_,_ in X for t in tk],timeout=3.)
-     for mg,q,(_z,_y),o,n in X:
-      V=str(mg.get("id")or"");U=str(mg.get("groupItemTitle")or"")
-      if(_z==.0 or I>=_z+.0015)and(not math.isfinite(_y)or I<=_y-.0015):i,k="YES",q[0]
-      elif I<=_z-.002 or(math.isfinite(_y)and I>=_y+.002):i,k="NO",q[1]
+      O,N=_extract_market_fee_rate(mg);P=_parse_clob_tokens(mg);_Q=parse_gas_daily_bracket(str(mg.get("groupItemTitle")or mg.get("question")or""))
+      if P and _Q:_z.append((mg,P,_Q,O,N))
+     if not _z:continue
+     _y=await a.fetch_books_batch([t for _,tk,_,_,_ in _z for t in tk],timeout=3.)
+     for mg,P,(_5,_4),O,N in _z:
+      _x=str(mg.get("id")or"");_w=str(mg.get("groupItemTitle")or"")
+      if(_5==.0 or _h>=_5+.0015)and(not math.isfinite(_4)or _h<=_4-.0015):q,A="YES",P[0]
+      elif _h<=_5-.002 or(math.isfinite(_4)and _h>=_4+.002):q,A="NO",P[1]
       else:continue
-      _j=W.get(k)
-      if not _j:continue
-      wg=walk_l2_book_asks(_j.get("asks")or[],BANKROLL_TICKETS["T1000"]["GAS1_AAA_GASOLINE_LOCK"],fee_rate=o,min_l1_usd=15.,max_ask_px=.985,fee_exponent=n)
-      if wg.get("filled")and.75<=float(wg["eff_px"])<=.983:opps_out.append({"sleeve":"GAS1_AAA_GASOLINE_LOCK","market":f"AAA Gas ${I:.4f} ({_A['as_of_date']}) -> {i}[{U}]","ask_vwap":wg["eff_px"],"p_model":.998,"net_edge":round(.998-float(wg["eff_px"]),4),"l1_usd":wg["l1_usd"],"close_ts":Y});await a.open_shadow_position("GAS1_AAA_GASOLINE_LOCK",f"GAS1_{V}_{i}","AAA_GAS",f"{_m.get('title')} [{i} {U}]",i,k,o,.998,Y,{"market_id":V,"aaa_price":I,"as_of_date":_A["as_of_date"],"fee_exponent":n},prefetched_book=_j)
-      T,_=extract_best_bid(_j.get("bids")or[]);S,_=a._best_ask_sz(_j);_i=evaluate_locked_market_reward_carry(.998,T,S,float(mg.get("rewardsMinSize")or.0),float(mg.get("rewardsMaxSpread")or.0),o)
-      if _i.get("eligible"):
-       m=q[1]if i=="YES"else q[0];_h=mg.get("negRisk")if mg.get("negRisk")is not None else _m.get("negRisk");opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"AAA Gas Locked Carry {i}[{U}] @ ${_i['resting_bid']:.3f}","ask_vwap":_i["resting_bid"],"p_model":.998,"net_edge":_i["carry_edge"],"l1_usd":50.,"close_ts":Y});await a.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_GAS_{V}_{i}","AAA_GAS",f"{_m.get('title')} [Reward Carry {i} {U}]",i,k,.998,Y,{"market_id":V,"condition_id":str(mg.get("conditionId")or""),"opp_token_id":m,"resting_bid_override":_i["resting_bid"]},prefetched_book=_j)
-       if(is_reward_locked_carry_live_ready(a,.998,min_reward_shares=float(mg.get("rewardsMinSize")or.0),resting_bid_px=float(_i["resting_bid"]))and _h is not None and W.get(m)is not None):a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset="AAA_GAS",dedupe_key=f"MKR_RW_GAS_{V}_{i}",pair_dedupe_key=f"MKR_RW_GASPAIR_{V}",token_id=k,opp_token_id=m,market_id=V,condition_id=str(mg.get("conditionId")or""),side_label=i,display_label=f"AAA Gas Reward Carry {i}[{U}]",bk_win=_j,bk_opp=W.get(m),neg_risk=bool(_h),close_ts=float(Y),now_ts=now,min_resting_bid=.94,max_resting_bid=.99,min_maker_edge=.008,max_opp_bid=.03,hold_to_maturity=True,p_model=.998,target_bid_px=float(_i["resting_bid"]))
+      J=P[1]if q=="YES"else P[0];_O=mg.get("negRisk")if mg.get("negRisk")is not None else _R.get("negRisk");_N=_y.get(A)
+      if not _N:continue
+      wg=walk_l2_book_asks(_N.get("asks")or[],BANKROLL_TICKETS["T1000"]["GAS1_AAA_GASOLINE_LOCK"],fee_rate=O,min_l1_usd=15.,max_ask_px=.985,fee_exponent=N);k=bool(wg.get("filled")and.75<=float(wg["eff_px"])<=.983)
+      if k:opps_out.append({"sleeve":"GAS1_AAA_GASOLINE_LOCK","market":f"AAA Gas ${_h:.4f} ({_6['as_of_date']}) -> {q}[{_w}]","ask_vwap":wg["eff_px"],"p_model":.998,"net_edge":round(.998-float(wg["eff_px"]),4),"l1_usd":wg["l1_usd"],"close_ts":_A});await a.open_shadow_position("GAS1_AAA_GASOLINE_LOCK",f"GAS1_{_x}_{q}","AAA_GAS",f"{_R.get('title')} [{q} {_w}]",q,A,O,.998,_A,{"market_id":_x,"condition_id":str(mg.get("conditionId")or""),"opp_token_id":J,"neg_risk":bool(_O)if isinstance(_O,bool)else False,"aaa_price":_h,"as_of_date":_6["as_of_date"],"fee_exponent":N},prefetched_book=_N)
+      o=not(a.single_scan or("fetch_json"in a.__dict__));j=(((_5==.0 or _h>=_5+.002)and(not math.isfinite(_4)or _h<=_4-.002))if q=="YES"else(_h<=_5-.002 or(math.isfinite(_4)and _h>=_4+.002)));I=.999 if j else.998
+      if(isinstance(_O,bool)and 30.<(_A-now)<=28800. and(k or(o and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_partial_fak_single_leg_sweep",True))))and a._can_emit_zero_loss_math_live("GAS1_AAA_GASOLINE_LOCK",_A,now,p_model=I)):a.emit_live_single_leg_lock_candidate(sleeve_source="GAS1_AAA_GASOLINE_LOCK",asset="AAA_GAS",dedupe_key=f"GAS1_{_x}_{q}",token_id=A,opp_token_id=J,market_id=_x,condition_id=str(mg.get("conditionId")or""),side_label=q,display_label=f"AAA Gas ${_h:.4f} {q}[{_w}]"[:56],bk_win=_N,bk_opp=_y.get(J),fee_rate=O,fee_exponent=N,neg_risk=bool(_O),close_ts=float(_A),now_ts=now,max_lock_eff_px=.992 if(_A-now)<=14400. else.988,max_opp_bid=.015,hold_to_maturity=True,p_model=I)
+      _v,_=extract_best_bid(_N.get("bids")or[]);_u,_=a._best_ask_sz(_N);f=False;H=a.resolve_2026_maker_rebate_share("AAA_GAS","GAS1_AAA_GASOLINE_LOCK");_M=evaluate_locked_market_reward_carry(I,_v,_u,float(mg.get("rewardsMinSize")or.0),float(mg.get("rewardsMaxSpread")or.0),O)
+      if _M.get("eligible"):
+       opps_out.append({"sleeve":"MKR_REWARD_LOCKED_CARRY","market":f"AAA Gas Locked Carry {q}[{_w}] @ ${_M['resting_bid']:.3f}","ask_vwap":_M["resting_bid"],"p_model":I,"net_edge":_M["carry_edge"],"l1_usd":50.,"close_ts":_A});await a.post_shadow_maker_entry("MKR_REWARD_LOCKED_CARRY",f"MKR_RW_GAS_{_x}_{q}","AAA_GAS",f"{_R.get('title')} [Reward Carry {q} {_w}]",q,A,I,_A,{"market_id":_x,"condition_id":str(mg.get("conditionId")or""),"opp_token_id":J,"resting_bid_override":_M["resting_bid"]},prefetched_book=_N)
+       if(is_reward_locked_carry_live_ready(a,I,min_reward_shares=float(mg.get("rewardsMinSize")or.0),resting_bid_px=float(_M["resting_bid"]))and _O is not None and _y.get(J)is not None):M=float(_M["resting_bid"]);G=round(H*O*((M*(1.-M))**N),5)if O>.0 else.0;f=bool(a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_REWARD_LOCKED_CARRY",asset="AAA_GAS",dedupe_key=f"MKR_RW_GAS_{_x}_{q}",pair_dedupe_key=f"MKR_RW_GASPAIR_{_x}",token_id=A,opp_token_id=J,market_id=_x,condition_id=str(mg.get("conditionId")or""),side_label=q,display_label=f"AAA Gas Reward Carry {q}[{_w}]",bk_win=_N,bk_opp=_y.get(J),neg_risk=bool(_O),close_ts=float(_A),now_ts=now,min_resting_bid=.94,max_resting_bid=.993 if I>=.999 else.99,min_maker_edge=.006 if I>=.999 else.008,max_opp_bid=.03,hold_to_maturity=True,p_model=I,target_bid_px=M,maker_rebate_ps=G,event_id=str(_R.get("id")or _R.get("slug")or"")))
+      if(not f and not k and o and I>=.999 and isinstance(_O,bool)and _y.get(J)is not None and 120.<(float(_A)-now)<=14400. and.94<=_v<=.994 and a._can_emit_zero_loss_math_live("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",float(_A),now,p_model=I)):L=round(H*O*((_v*(1.-_v))**N),5)if O>.0 else.0;a.emit_live_single_leg_maker_lock_candidate(sleeve_source="MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",asset="AAA_GAS",dedupe_key=f"MKR_GAS1_{_x}_{q}",pair_dedupe_key=f"GAS1_{_x}_{q}",token_id=A,opp_token_id=J,market_id=_x,condition_id=str(mg.get("conditionId")or""),side_label=q,display_label=f"AAA Gas ${_h:.4f} {q}[{_w}] FINAL"[:56],bk_win={**_N,"_s2_meta":{"is_final":True,"clinch_mode":"FINAL"}},bk_opp=_y.get(J),neg_risk=bool(_O),close_ts=float(_A),now_ts=now,min_resting_bid=.94,max_resting_bid=.993,min_maker_edge=.006,max_opp_bid=.015,hold_to_maturity=True,p_model=I,maker_rebate_ps=L,event_id=str(_R.get("id")or _R.get("slug")or""))
  def has_live_nba_window(self,now_ts):return any((sp.tipoff_ts-6e2)<=now_ts<=(sp.tipoff_ts+5.5*3600.)for sp in self.nba_games.values())
  def has_live_sports_window(a,now_ts):return(a.has_live_nba_window(now_ts)or any((c.start_ts-6e2)<=now_ts<=(c.start_ts+5.5*3600.)for c in a.multi_sport_games.values())or any((c.end_ts-2.5*3600.)<=now_ts<=(c.end_ts+1.5*3600.)for c in a.soccer_trees.values())or any((c.end_ts-3.5*3600.)<=now_ts<=(c.end_ts+1.*3600.)for c in a.tennis_specs.values())or any((b.start_ts-6e2)<=now_ts<=(b.start_ts+5.5*3600.)for b in a.aff1_bundles.values())or any((c.end_ts-2.5*3600.)<=now_ts<=(c.end_ts+2.*3600.)for c in a.soc2_lattices.values())or any((c.kickoff_ts-6e2)<=now_ts<=(c.kickoff_ts+5.5*3600.)for c in a.nfl_prop_slates.values()))
  async def discover_uma_proposed_markets(a,now_ts):
-  b=datetime.fromtimestamp(now_ts+12.*3600.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");d=[a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&order=volume24hr&ascending=false&limit=200&offset=0",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&order=volume24hr&ascending=false&limit=200&offset=200",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&end_date_max={b}&order=volume24hr&ascending=false&limit=200&offset=0",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&end_date_max={b}&order=volume24hr&ascending=false&limit=200&offset=200",timeout=5.5),*(a.fetch_json(f"{GAMMA_URL}/events?active=true&closed=false&order=volume24hr&ascending=false&limit=100&offset={o}",timeout=6.)for o in range(0,1500,100)),*(a.fetch_json(f"{GAMMA_URL}/events?active=true&closed=false&end_date_max={b}&order=endDate&ascending=false&limit=100&offset={o}",timeout=6.)for o in(0,100,200,300))];i=await asyncio.gather(*d);h={}
-  for n in i:
-   if not isinstance(n,list):continue
-   for l in n:
-    if not isinstance(l,dict):continue
-    c=l.get("markets")
+  b=datetime.fromtimestamp(now_ts+12.*3600.,tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ");d=[a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&order=volume24hr&ascending=false&limit=200&offset=0",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&order=volume24hr&ascending=false&limit=200&offset=200",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&end_date_max={b}&order=volume24hr&ascending=false&limit=200&offset=0",timeout=5.5),a.fetch_json(f"{GAMMA_URL}/markets?closed=false&active=true&end_date_max={b}&order=volume24hr&ascending=false&limit=200&offset=200",timeout=5.5),*(a.fetch_json(f"{GAMMA_URL}/events?active=true&closed=false&order=volume24hr&ascending=false&limit=100&offset={p}",timeout=6.)for p in range(0,1500,100)),*(a.fetch_json(f"{GAMMA_URL}/events?active=true&closed=false&end_date_max={b}&order=endDate&ascending=false&limit=100&offset={p}",timeout=6.)for p in(0,100,200,300))];j=await asyncio.gather(*d);i={}
+  for o in j:
+   if not isinstance(o,list):continue
+   for m in o:
+    if not isinstance(m,dict):continue
+    c=m.get("markets")
     if isinstance(c,list):
-     g=l.get("negRisk")
-     for k in c:
-      if not isinstance(k,dict):continue
-      f=str(k.get("id")or"").strip()
-      if not f or f in h:continue
-      if"negRisk"not in k and g is not None:k={**k,"negRisk":g}
-      j,_=is_objective_uma_market(k)
-      if j:h[f]=k
+     h=m.get("negRisk");f=str(m.get("id")or m.get("slug")or"").strip()
+     for l in c:
+      if not isinstance(l,dict):continue
+      g=str(l.get("id")or"").strip()
+      if not g or g in i:continue
+      if("negRisk"not in l and h is not None)or(f and"_parent_event_id"not in l):l={**l,**({"negRisk":h}if("negRisk"not in l and h is not None)else{}),**({"_parent_event_id":f}if(f and"_parent_event_id"not in l)else{})}
+      k,_=is_objective_uma_market(l)
+      if k:i[g]=l
     else:
-     m=str(l.get("id")or"").strip()
-     if not m or m in h:continue
-     e,_=is_objective_uma_market(l)
-     if e:h[m]=l
-  a.uma_proposed_markets=h;a.last_uma_discovery_ts=now_ts
+     n=str(m.get("id")or"").strip()
+     if not n or n in i:continue
+     e,_=is_objective_uma_market(m)
+     if e:i[n]=m
+  a.uma_proposed_markets=i;a.last_uma_discovery_ts=now_ts
  async def scan_uma_resolution_bonds(a,opps_out,now_ts=None):
-  _g=float(now_ts if now_ts is not None else time.time())
-  if a.single_scan or not a.uma_proposed_markets or(_g-a.last_uma_discovery_ts)>=30.:await a.discover_uma_proposed_markets(_g)
-  from src.polymarket_research.riskless_protocol_v2_expansion import augment_uma_proposed_from_universe_and_polygon as b;await b(a,_g,gamma_url=GAMMA_URL)
+  _p=float(now_ts if now_ts is not None else time.time())
+  if a.single_scan or not a.uma_proposed_markets or(_p-a.last_uma_discovery_ts)>=30.:await a.discover_uma_proposed_markets(_p)
+  from src.polymarket_research.riskless_protocol_v2_expansion import augment_uma_proposed_from_universe_and_polygon as b;await b(a,_p,gamma_url=GAMMA_URL)
   if not a.uma_proposed_markets:return
-  f=[];o=[];h=not(a.single_scan or("fetch_json"in a.__dict__))
+  i=[];r=[];l=not(a.single_scan or("fetch_json"in a.__dict__))
   for mid,m in list(a.uma_proposed_markets.items()):
-   _e=f"BOND1_{mid}"
-   if _e in a.inflight_keys or(not h and _e in a.entered_keys):continue
-   J=a.uma_onchain_cache.get(mid);B=60.
-   if J is not None:
-    _f=str(J[1].get("reason")or"")
-    if any(k in _f for k in("DISPUTER","TIE_50_50","QUESTION_FLAGS","PRIOR_DISPUTE","PREMATURE_PROPOSAL","MARKET_BEFORE_END_DATE")):B=3e2
-   if J is not None and(_g-J[0])<B:
-    ver=J[1]
+   _n=f"BOND1_{mid}"
+   if _n in a.inflight_keys or(not l and _n in a.entered_keys):continue
+   Q=a.uma_onchain_cache.get(mid);G=60.
+   if Q is not None:
+    _o=str(Q[1].get("reason")or"")
+    if any(k in _o for k in("DISPUTER","TIE_50_50","QUESTION_FLAGS","PRIOR_DISPUTE","PREMATURE_PROPOSAL","MARKET_BEFORE_END_DATE")):G=3e2
+   if Q is not None and(_p-Q[0])<G:
+    ver=Q[1]
     if ver.get("verified"):
-     q,_=verify_uma_against_nba_live(m,int(ver["win_index"]),a.live_nba_board)
-     if q:f.append((mid,m,ver))
-   else:_d=float(m.get("bestBid")or.0);_c=float(m.get("bestAsk")or 1.);n=(1e6 if(.9<=_d<=.9985 or.002<=_c<=.1 or.9<=_c<=.9985)else.0)+float(m.get("volume24hr")or.0);o.append((n,mid,m))
-  if o:
-   o.sort(key=lambda x:-x[0]);Q=asyncio.Semaphore(12)
-   async def d(mid_u,m_u):
-    async with Q:a=await asyncio.to_thread(verify_uma_onchain_proposal_sync,m_u,None,_g);return mid_u,m_u,a
-   w=await asyncio.gather(*(d(mid_u,m_u)for _,mid_u,m_u in o[:84]))
-   for mid_u,m_u,ver in w:
-    a.uma_onchain_cache[mid_u]=(_g,ver)
+     u,_=verify_uma_against_nba_live(m,int(ver["win_index"]),a.live_nba_board)
+     if u:i.append((mid,m,ver))
+   else:_m=float(m.get("bestBid")or.0);_l=float(m.get("bestAsk")or 1.);q=(1e6 if(.9<=_m<=.9985 or.002<=_l<=.1 or.9<=_l<=.9985)else.0)+float(m.get("volume24hr")or.0);r.append((q,mid,m))
+  if r:
+   r.sort(key=lambda x:-x[0]);X=asyncio.Semaphore(12)
+   async def f(mid_u,m_u):
+    async with X:k=await asyncio.to_thread(verify_uma_onchain_proposal_sync,m_u,None,_p);return mid_u,m_u,k
+   B=await asyncio.gather(*(f(mid_u,m_u)for _,mid_u,m_u in r[:84]))
+   for mid_u,m_u,ver in B:
+    a.uma_onchain_cache[mid_u]=(_p,ver)
     if not ver.get("verified"):continue
-    q,_=verify_uma_against_nba_live(m_u,int(ver["win_index"]),a.live_nba_board)
-    if q:f.append((mid_u,m_u,ver))
-  f=[(mid,m,ver)for mid,m,ver in f if passes_uma_bond_dispute_guard(m,{**ver,"allow_pre_book_fast_season":True}if isinstance(ver,dict)else ver)]
-  if not f:return
-  E=[t for _,_,ver in f for t in(str(ver["win_token"]),str(ver["lose_token"]))];P=await a.fetch_books_batch(E,timeout=3.5);p=BANKROLL_TICKETS["T1000"]["BOND1_UMA_RESOLUTION_CARRY"]
-  for mid,m,ver in f:
-   _b,_a=str(ver["win_token"]),str(ver["lose_token"]);F,Z=P.get(_b),P.get(_a)
-   if not F or not Z:continue
-   O=max(.0,float(ver.get("eff_liveness_sec")or 7200.)-float(ver.get("rem_challenge_sec")or 7200.));N,_=extract_best_bid(F.get("bids")or[]);I,_=extract_best_bid(Z.get("bids")or[]);H,_=a._best_ask_sz(Z);v=bool(N>=.98 and I<=.002 and(H>=.5 or H<=.01))
-   if not passes_uma_bond_dispute_guard(m,{**ver,"dual_book_consensus_confirmed":v}):continue
-   G=classify_market_rule_dispute_risk(m);F={**F,"_s2_meta":{"proposal_age_sec":round(float(ver.get("proposal_age_sec")if ver.get("proposal_age_sec")is not None else O),1),"dispute_risk":bool(G["dispute_risk"]),"reasons":list(G["reasons"]),"question":str(m.get("question")or"")[:120],"dual_book_consensus_confirmed":v}}
-   if I>.008 or N<.94 or(H<.5 and H>.025):continue
-   T=walk_l2_book_asks_depth_capped(F.get("asks")or[],p,5. if h else BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],fee_rate=float(ver["fee_rate"]),min_l1_usd=5. if h else 15.,max_ask_px=.9976 if h else.9956,fee_exponent=float(ver["fee_exponent"]));W=float(T["eff_px"])if T.get("filled")else None;a._record_market_telemetry(key=f"BOND1_SNAP_{mid}",min_interval_sec=60.,now_ts=_g,sig=(W,N,I,ver["oo_state"]),payload={"type":"UMA_BOND_PROPOSAL_SNAP","market_id":mid,"question":str(m.get("question")or"")[:90],"domain":ver["domain"],"win_outcome":ver["win_outcome_name"],"oo_state":ver["oo_state"],"rem_challenge_sec":ver["rem_challenge_sec"],"win_ask_eff":W,"win_bid":N,"lose_bid":I});V=str(m.get("question")or f"Market {mid}");D=max(_g+9e2,float(ver["expiration_ts"])+6e2);A={"market_id":mid,"condition_id":str(m.get("conditionId")or""),"opp_token_id":_a,"fee_exponent":ver["fee_exponent"],"oo_state":ver["oo_state"],"proposer":ver["proposer"],"win_outcome_name":ver["win_outcome_name"],"expiration_ts":ver["expiration_ts"],"rem_challenge_sec":ver["rem_challenge_sec"],"domain":ver["domain"]};M=f"BOND1_{mid}";l=M not in a.entered_keys and M not in a.inflight_keys;C=D-_g;u=.9975 if(h and C<=3600.)else(.9965 if(h and C<=7200.)else.9955);s=.998 if(h and C<=3600.)else(.9975 if(h and C<=7200.)else.995);z=round(1.-s,4)
-   if h and l and 180.<=float(ver.get("rem_challenge_sec")or.0)<=1500.:
-    from src.polymarket_research.riskless_protocol_v2_expansion import score_uma_ready1_liveness_priority as c;L=c(ask_price=W if W is not None else min(.9975,N),remaining_liveness_sec=float(ver["rem_challenge_sec"]),disputed=False,proposal_bond_posted=True)
-    if L is not None:opps_out.append({"sleeve":"UMA_READY1_LIVENESS_PRIORITY","market":f"[UMA_READY1:{ver['domain']}] {V[:56]} ({ver['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":L["ask_px"],"p_model":1.,"net_edge":L["net_edge_per_share"],"l1_usd":T["l1_usd"]if T.get("filled")else 25.,"close_ts":D})
-   g=False;e=False;j=bool(T.get("filled")and W is not None and(.95<=W<=u)and round(1.-W,4)>=round(1.-u,4))
-   if j:
-    y=round(1.-W,4)
-    if l and W<=.9955 and float(T.get("spent_usd")or.0)>=19.5:opps_out.append({"sleeve":"BOND1_UMA_RESOLUTION_CARRY","market":f"[{ver['domain']}] {V[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":W,"p_model":1.,"net_edge":y,"l1_usd":T["l1_usd"],"close_ts":D})
-    a.emit_live_single_leg_lock_candidate(sleeve_source="BOND1_UMA_RESOLUTION_CARRY",asset=str(ver["domain"]),dedupe_key=M,token_id=_b,opp_token_id=_a,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(ver["win_label"]),display_label=f"{ver['domain']} {ver['win_outcome_name']}",bk_win=F,bk_opp=Z,fee_rate=float(ver["fee_rate"]),fee_exponent=float(ver["fee_exponent"]),neg_risk=bool(m.get("negRisk")),close_ts=D,now_ts=_g,max_lock_eff_px=u,max_opp_bid=.008,hold_to_maturity=True,p_model=1.)
-    if l and W<=.9955 and float(T.get("spent_usd")or.0)>=19.5:g=await a.open_shadow_position(sleeve="BOND1_UMA_RESOLUTION_CARRY",dedupe_key=M,asset_or_city=str(ver["domain"]),title=f"{V} [{ver['win_outcome_name']}]",side_label=str(ver["win_label"]),token_id=_b,fee_rate=float(ver["fee_rate"]),p_model=1.,close_ts=D,extra=A,tp_target_px=None,prefetched_book=F)
-   if not j and not g and.94<=N<=s and I<=.008 and C>120.:
-    e=bool(a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND1_UMA_RESOLUTION_CARRY",asset=str(ver["domain"]),dedupe_key=f"BOND1_MKR_{mid}",pair_dedupe_key=M,token_id=_b,opp_token_id=_a,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(ver["win_label"]),display_label=f"{ver['domain']} {ver['win_outcome_name']}",bk_win=F,bk_opp=Z,neg_risk=bool(m.get("negRisk")),close_ts=D,now_ts=_g,min_resting_bid=.94,max_resting_bid=s,min_maker_edge=z,max_opp_bid=.008,hold_to_maturity=True,p_model=1.))
-    if l:
-     r=await a.post_shadow_maker_entry(sleeve="BOND1_UMA_RESOLUTION_CARRY",dedupe_key=M,asset=str(ver["domain"]),title=f"{V} [{ver['win_outcome_name']}]",side_label=str(ver["win_label"]),token_id=_b,p_model=1.,close_ts=D,extra=A,prefetched_book=F)
-     if r:opps_out.append({"sleeve":"BOND1_UMA_RESOLUTION_CARRY","market":f"[MAKER:{ver['domain']}] {V[:58]} -> {ver['win_outcome_name']}","ask_vwap":N,"p_model":1.,"net_edge":round(1.-N,4),"l1_usd":extract_best_bid(F.get("bids")or[])[1],"close_ts":D})
-   U=f"BOND2_{mid}";i=U not in a.entered_keys and U not in a.inflight_keys
-   if(not(not h and U in a.entered_keys)and U not in a.inflight_keys and float(ver.get("proposal_age_sec")or.0)>=3600. and 180.<=float(ver.get("rem_challenge_sec")or.0)<=3300. and I<=.006 and N>=.95):
-    Y=await asyncio.to_thread(verify_bond2_moov2_final_hour_sync,m,None,_g)
-    if Y.get("verified"):
-     K=.9975 if h else.9962;X=walk_l2_book_asks_depth_capped(F.get("asks")or[],BANKROLL_TICKETS["T1000"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],BANKROLL_TICKETS["T100"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],fee_rate=float(Y["fee_rate"]),min_l1_usd=10. if h else 15.,max_ask_px=round(K+1e-4,4),fee_exponent=float(Y["fee_exponent"]))
-     if X.get("filled")and.95<=float(X["eff_px"])<=K:
-      S=float(X["eff_px"]);R=round(1.-S,4)
-      if R>=(.0025 if h else.0038):
-       if i:opps_out.append({"sleeve":"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","market":f"[MOOv2_WL:{Y['domain']}] {V[:60]} -> {Y['win_outcome_name']} ({Y['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":S,"p_model":1.,"net_edge":R,"l1_usd":X["l1_usd"],"close_ts":D})
-       a.emit_live_single_leg_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(Y["domain"]),dedupe_key=U,token_id=_b,opp_token_id=_a,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(Y["win_label"]),display_label=f"MOOv2_WL {Y['domain']} {Y['win_outcome_name']}",bk_win=F,bk_opp=Z,fee_rate=float(Y["fee_rate"]),fee_exponent=float(Y["fee_exponent"]),neg_risk=bool(m.get("negRisk")),close_ts=D,now_ts=_g,max_lock_eff_px=K,max_opp_bid=.006,hold_to_maturity=True,p_model=1.)
-       if i:await a.open_shadow_position(sleeve="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",dedupe_key=U,asset_or_city=str(Y["domain"]),title=f"{V} [MOOv2 Whitelisted {Y['win_outcome_name']}]",side_label=str(Y["win_label"]),token_id=_b,fee_rate=float(Y["fee_rate"]),p_model=1.,close_ts=D,extra={**A,"proposer_whitelisted":True,"oo_address":Y["oo_address"]},tp_target_px=None,prefetched_book=F)
-      elif h and not e:a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(Y["domain"]),dedupe_key=f"{U}_MKR",pair_dedupe_key=U,token_id=_b,opp_token_id=_a,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(Y["win_label"]),display_label=f"MOOv2_WL Maker {Y['domain']} {Y['win_outcome_name']}",bk_win=F,bk_opp=Z,neg_risk=bool(m.get("negRisk")),close_ts=D,now_ts=_g,min_resting_bid=.95,max_resting_bid=.998,min_maker_edge=.002,max_opp_bid=.006,p_model=1.)
-     elif h and not e:a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(Y["domain"]),dedupe_key=f"{U}_MKR",pair_dedupe_key=U,token_id=_b,opp_token_id=_a,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(Y["win_label"]),display_label=f"MOOv2_WL Maker {Y['domain']} {Y['win_outcome_name']}",bk_win=F,bk_opp=Z,neg_risk=bool(m.get("negRisk")),close_ts=D,now_ts=_g,min_resting_bid=.95,max_resting_bid=.998,min_maker_edge=.002,max_opp_bid=.006,p_model=1.)
+    u,_=verify_uma_against_nba_live(m_u,int(ver["win_index"]),a.live_nba_board)
+    if u:i.append((mid_u,m_u,ver))
+  i=[(mid,m,ver)for mid,m,ver in i if passes_uma_bond_dispute_guard(m,{**ver,"allow_pre_book_fast_season":True}if isinstance(ver,dict)else ver)]
+  if not i:return
+  K=[t for _,_,ver in i for t in(str(ver["win_token"]),str(ver["lose_token"]))];W=await a.fetch_books_batch(K,timeout=3.5);s=BANKROLL_TICKETS["T1000"]["BOND1_UMA_RESOLUTION_CARRY"];from src.polymarket_research.riskless_protocol_v2_expansion import extract_gamma_parent_event_id as h
+  def d(entry):
+   _,_C,_B=entry;_A=W.get(str(_B["win_token"]))or{};_z=W.get(str(_B["lose_token"]))or{};_y,_x=extract_best_bid(_A.get("bids")or[]);_w,_=extract_best_bid(_z.get("bids")or[]);_v,_u=a._best_ask_sz(_A);_t=max(9e2,float(_B.get("rem_challenge_sec")or 3600.));_s=(_v*_u)if _v<1. else.0;_r=max(.0,float(_C.get("volume24hr")or.0));_q=int(.95<=_v<=.9975 and _s>=5. and _w<=.008 and _y>=.94);k=int(_s>=5. or _r>=1e3 or _x>=1e2)
+   if.94<=_y<=.998 and _w<=.008:x=(1.-_y)if _s>=5. else min(.012,1.-_y);t=1.+min(1.5,.35*math.log10(1.+_r/250.));m=(x/_t)*t*(1. if _s>=5. else.25)
+   else:m=-1.
+   return _q,k,m
+  i.sort(key=d,reverse=True)
+  for mid,m,ver in i:
+   _k,_j=str(ver["win_token"]),str(ver["lose_token"]);M,_i=W.get(_k),W.get(_j)
+   if not M or not _i:continue
+   V=max(.0,float(ver.get("eff_liveness_sec")or 7200.)-float(ver.get("rem_challenge_sec")or 7200.));U,_=extract_best_bid(M.get("bids")or[]);P,_=extract_best_bid(_i.get("bids")or[]);O,_=a._best_ask_sz(_i);A=bool(U>=.98 and P<=.002 and(O>=.5 or O<=.01))
+   if not passes_uma_bond_dispute_guard(m,{**ver,"dual_book_consensus_confirmed":A}):continue
+   N=classify_market_rule_dispute_risk(m);J=h(m);M={**M,"_s2_meta":{"proposal_age_sec":round(float(ver.get("proposal_age_sec")if ver.get("proposal_age_sec")is not None else V),1),"dispute_risk":bool(N["dispute_risk"]),"reasons":list(N["reasons"]),"question":str(m.get("question")or"")[:120],"dual_book_consensus_confirmed":A,**({"volume24hr":round(float(m.get("volume24hr")or.0),2)}if m.get("volume24hr")is not None else{}),**({"event_id":J}if J else{})}}
+   if P>.008 or U<.94 or(O<.5 and O>.025):continue
+   _c=walk_l2_book_asks_depth_capped(M.get("asks")or[],s,5. if l else BANKROLL_TICKETS["T100"]["BOND1_UMA_RESOLUTION_CARRY"],fee_rate=float(ver["fee_rate"]),min_l1_usd=5. if l else 15.,max_ask_px=.9976 if l else.9956,fee_exponent=float(ver["fee_exponent"]));_f=float(_c["eff_px"])if _c.get("filled")else None;a._record_market_telemetry(key=f"BOND1_SNAP_{mid}",min_interval_sec=60.,now_ts=_p,sig=(_f,U,P,ver["oo_state"]),payload={"type":"UMA_BOND_PROPOSAL_SNAP","market_id":mid,"question":str(m.get("question")or"")[:90],"domain":ver["domain"],"win_outcome":ver["win_outcome_name"],"oo_state":ver["oo_state"],"rem_challenge_sec":ver["rem_challenge_sec"],"win_ask_eff":_f,"win_bid":U,"lose_bid":P});_e=str(m.get("question")or f"Market {mid}");I=max(_p+9e2,float(ver["expiration_ts"])+6e2);F={"market_id":mid,"condition_id":str(m.get("conditionId")or""),"opp_token_id":_j,"fee_exponent":ver["fee_exponent"],"oo_state":ver["oo_state"],"proposer":ver["proposer"],"win_outcome_name":ver["win_outcome_name"],"expiration_ts":ver["expiration_ts"],"rem_challenge_sec":ver["rem_challenge_sec"],"domain":ver["domain"]};T=f"BOND1_{mid}";p=T not in a.entered_keys and T not in a.inflight_keys;H=I-_p;z=.9975 if(l and H<=3600.)else(.9965 if(l and H<=7200.)else.9955);y=.998 if(l and H<=3600.)else(.9975 if(l and H<=7200.)else.995);E=round(1.-y,4);_b=float(ver["fee_rate"]);_a=float(ver["fee_exponent"]);D=round(.2*_b*((U*(1.-U))**_a),5)if(_b>.0 and.0<U<1.)else.0;c=False
+   if l and 180.<=float(ver.get("rem_challenge_sec")or.0)<=1500.:
+    from src.polymarket_research.riskless_protocol_v2_expansion import score_uma_ready1_liveness_priority as e;w=.9975 if _b<=1e-9 else min(.995,z);S=e(ask_price=_f if _f is not None else min(w,U),remaining_liveness_sec=float(ver["rem_challenge_sec"]),disputed=False,proposal_bond_posted=True)
+    if S is not None:
+     if p:opps_out.append({"sleeve":"UMA_READY1_LIVENESS_PRIORITY","market":f"[UMA_READY1:{ver['domain']}] {_e[:56]} ({ver['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":S["ask_px"],"p_model":1.,"net_edge":S["net_edge_per_share"],"l1_usd":_c["l1_usd"]if _c.get("filled")else 25.,"close_ts":I})
+     if _c.get("filled")and _f is not None and.95<=_f<=w and P<=.008:c=bool(a.emit_live_single_leg_lock_candidate(sleeve_source="UMA_READY1_LIVENESS_PRIORITY",asset=str(ver["domain"]),dedupe_key=f"UMA_READY1_{mid}",pair_dedupe_key=T,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(ver["win_label"]),display_label=f"UMA_READY1 {ver['domain']} {ver['win_outcome_name']}",bk_win=M,bk_opp=_i,fee_rate=_b,fee_exponent=_a,neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,max_lock_eff_px=w,max_opp_bid=.008,hold_to_maturity=True,p_model=1.,event_id=J))
+   j=False;g=False;o=bool(_c.get("filled")and _f is not None and(.95<=_f<=z)and round(1.-_f,4)>=round(1.-z,4))
+   if o:
+    C=round(1.-_f,4)
+    if p and _f<=.9955 and float(_c.get("spent_usd")or.0)>=19.5:opps_out.append({"sleeve":"BOND1_UMA_RESOLUTION_CARRY","market":f"[{ver['domain']}] {_e[:65]} -> {ver['win_outcome_name']} ({ver['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":_f,"p_model":1.,"net_edge":C,"l1_usd":_c["l1_usd"],"close_ts":I})
+    if not c:a.emit_live_single_leg_lock_candidate(sleeve_source="BOND1_UMA_RESOLUTION_CARRY",asset=str(ver["domain"]),dedupe_key=T,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(ver["win_label"]),display_label=f"{ver['domain']} {ver['win_outcome_name']}",bk_win=M,bk_opp=_i,fee_rate=_b,fee_exponent=_a,neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,max_lock_eff_px=z,max_opp_bid=.008,hold_to_maturity=True,p_model=1.,event_id=J)
+    if p and _f<=.9955 and float(_c.get("spent_usd")or.0)>=19.5:j=await a.open_shadow_position(sleeve="BOND1_UMA_RESOLUTION_CARRY",dedupe_key=T,asset_or_city=str(ver["domain"]),title=f"{_e} [{ver['win_outcome_name']}]",side_label=str(ver["win_label"]),token_id=_k,fee_rate=_b,p_model=1.,close_ts=I,extra=F,tp_target_px=None,prefetched_book=M)
+   if not o and not j and.94<=U<=y and P<=.008 and H>120.:
+    L=dict(M);L["_s2_meta"]={**(M.get("_s2_meta")or{}),"leg_a_fee_rate":_b,"leg_a_fee_exponent":_a};g=bool(a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND1_UMA_RESOLUTION_CARRY",asset=str(ver["domain"]),dedupe_key=f"BOND1_MKR_{mid}",pair_dedupe_key=T,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(ver["win_label"]),display_label=f"{ver['domain']} {ver['win_outcome_name']}",bk_win=L,bk_opp=_i,neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,min_resting_bid=.94,max_resting_bid=y,min_maker_edge=E,max_opp_bid=.008,hold_to_maturity=True,p_model=1.,maker_rebate_ps=D,event_id=J))
+    if p:
+     v=await a.post_shadow_maker_entry(sleeve="BOND1_UMA_RESOLUTION_CARRY",dedupe_key=T,asset=str(ver["domain"]),title=f"{_e} [{ver['win_outcome_name']}]",side_label=str(ver["win_label"]),token_id=_k,p_model=1.,close_ts=I,extra=F,prefetched_book=M)
+     if v:opps_out.append({"sleeve":"BOND1_UMA_RESOLUTION_CARRY","market":f"[MAKER:{ver['domain']}] {_e[:58]} -> {ver['win_outcome_name']}","ask_vwap":U,"p_model":1.,"net_edge":round(1.-U,4),"l1_usd":extract_best_bid(M.get("bids")or[])[1],"close_ts":I})
+   _d=f"BOND2_{mid}";n=_d not in a.entered_keys and _d not in a.inflight_keys
+   if(not(not l and _d in a.entered_keys)and _d not in a.inflight_keys and float(ver.get("proposal_age_sec")or.0)>=3600. and 180.<=float(ver.get("rem_challenge_sec")or.0)<=3300. and P<=.006 and U>=.95):
+    _h=await asyncio.to_thread(verify_bond2_moov2_final_hour_sync,m,None,_p)
+    if _h.get("verified"):
+     R=.9975 if l else.9962;_g=walk_l2_book_asks_depth_capped(M.get("asks")or[],BANKROLL_TICKETS["T1000"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],BANKROLL_TICKETS["T100"]["BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"],fee_rate=float(_h["fee_rate"]),min_l1_usd=10. if l else 15.,max_ask_px=round(R+1e-4,4),fee_exponent=float(_h["fee_exponent"]))
+     if _g.get("filled")and.95<=float(_g["eff_px"])<=R:
+      Z=float(_g["eff_px"]);Y=round(1.-Z,4)
+      if Y>=(.0025 if l else.0038):
+       if n:opps_out.append({"sleeve":"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","market":f"[MOOv2_WL:{_h['domain']}] {_e[:60]} -> {_h['win_outcome_name']} ({_h['rem_challenge_sec']/60:.0f}m rem)","ask_vwap":Z,"p_model":1.,"net_edge":Y,"l1_usd":_g["l1_usd"],"close_ts":I})
+       a.emit_live_single_leg_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(_h["domain"]),dedupe_key=_d,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(_h["win_label"]),display_label=f"MOOv2_WL {_h['domain']} {_h['win_outcome_name']}",bk_win=M,bk_opp=_i,fee_rate=float(_h["fee_rate"]),fee_exponent=float(_h["fee_exponent"]),neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,max_lock_eff_px=R,max_opp_bid=.006,hold_to_maturity=True,p_model=1.)
+       if n:await a.open_shadow_position(sleeve="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",dedupe_key=_d,asset_or_city=str(_h["domain"]),title=f"{_e} [MOOv2 Whitelisted {_h['win_outcome_name']}]",side_label=str(_h["win_label"]),token_id=_k,fee_rate=float(_h["fee_rate"]),p_model=1.,close_ts=I,extra={**F,"proposer_whitelisted":True,"oo_address":_h["oo_address"]},tp_target_px=None,prefetched_book=M)
+      elif l and not g:a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(_h["domain"]),dedupe_key=f"{_d}_MKR",pair_dedupe_key=_d,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(_h["win_label"]),display_label=f"MOOv2_WL Maker {_h['domain']} {_h['win_outcome_name']}",bk_win=M,bk_opp=_i,neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,min_resting_bid=.95,max_resting_bid=.998,min_maker_edge=.002,max_opp_bid=.006,p_model=1.,event_id=J)
+     elif l and not g:a.emit_live_single_leg_maker_lock_candidate(sleeve_source="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",asset=str(_h["domain"]),dedupe_key=f"{_d}_MKR",pair_dedupe_key=_d,token_id=_k,opp_token_id=_j,market_id=mid,condition_id=str(m.get("conditionId")or""),side_label=str(_h["win_label"]),display_label=f"MOOv2_WL Maker {_h['domain']} {_h['win_outcome_name']}",bk_win=M,bk_opp=_i,neg_risk=bool(m.get("negRisk")),close_ts=I,now_ts=_p,min_resting_bid=.95,max_resting_bid=.998,min_maker_edge=.002,max_opp_bid=.006,p_model=1.,event_id=J)
  async def scan_nba_endgame_locks(a,opps_out,now_ts=None):
-  F=float(now_ts if now_ts is not None else time.time())
+  J=float(now_ts if now_ts is not None else time.time())
   if not a.nba_games:return
-  l=5.5 if a.has_live_nba_window(F)else 120.
-  if a.single_scan or not a.live_nba_board or(F-a.last_espn_board_ts)>=l:
-   A=await asyncio.to_thread(fetch_espn_nba_scoreboard_sync)
-   if A:a.live_nba_board=A;a.last_espn_board_ts=F
+  p=5.5 if a.has_live_nba_window(J)else 120.
+  if a.single_scan or not a.live_nba_board or(J-a.last_espn_board_ts)>=p:
+   i=await asyncio.to_thread(fetch_espn_nba_scoreboard_sync)
+   if not a.single_scan and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes",{}).get("enable_official_league_direct_feeds",True)):
+    try:from src.polymarket_research.polymarket_direct_feeds import(fetch_nba_cdn_scoreboard_sync as c,reconcile_nba_dual_source_boards as b);i=b(i,await asyncio.to_thread(c))
+    except Exception:pass
+   if i:a.live_nba_board=i;a.last_espn_board_ts=J
   if not a.live_nba_board:return
-  i=[]
-  for d in list(a.nba_games.values()):
-   s=match_nba_live_game(d,a.live_nba_board)
-   if s is None:continue
-   r,E,D=s
-   if r.state in("in","post"):a._record_market_telemetry(key=f"NBA_LIVE_{d.event_id}",min_interval_sec=30.,now_ts=F,sig=(r.state,r.period,int(r.clock_sec//10),E,D),payload={"type":"NBA_LIVE_SCORE_SNAP","event_id":d.event_id,"game":d.title,"state":r.state,"completed":r.completed,"period":r.period,"clock_sec":round(r.clock_sec,1),"score_a":E,"score_b":D,"source":r.source})
-   for c_lk in evaluate_nba_endgame_locks(d,r,E,D):
-    C=c_lk["leg"];y=f"SP2_{d.event_id}_{C.market_id}_{C.token_id[-8:]}"
-    if y not in a.entered_keys and y not in a.inflight_keys:i.append((d,c_lk))
-  if not i:await a._scan_sp4_live_nba_stat_locks(opps_out,F);return
-  k=[t for _,c_lk in i for t in(c_lk["leg"].token_id,c_lk["leg"].opp_token_id)];q=await a.fetch_books_batch(k,timeout=3.);p=BANKROLL_TICKETS["T1000"]["SP2_NBA_ENDGAME_LOCK"]
-  for d,c_lk in i:
-   C=c_lk["leg"];x=q.get(C.token_id);w=q.get(C.opp_token_id)
-   if not x or not w:continue
-   o,_=extract_best_bid(w.get("bids")or[])
-   if o>.18:continue
-   e,c=extract_best_bid(x.get("bids")or[]);v=float(getattr(C,"fee_rate",.0)or.0);u=float(getattr(C,"fee_exponent",1.)or 1.);z=walk_l2_book_asks_depth_capped(x.get("asks")or[],p,BANKROLL_TICKETS["T100"]["SP2_NBA_ENDGAME_LOCK"],fee_rate=v,min_l1_usd=18.,max_ask_px=.9861,fee_exponent=u);B=float(c_lk["p_lock"]);h=max(F+6e2,float(d.settle_est_ts));j=f"SP2_{d.event_id}_{C.market_id}_{C.token_id[-8:]}";g={"event_id":d.event_id,"market_id":C.market_id,"condition_id":C.condition_id,"opp_token_id":C.opp_token_id,"mode":c_lk["mode"],"score_str":c_lk["score_str"],"cushion_pts":c_lk["cushion_pts"],"clock_sec":c_lk["clock_sec"],"period":c_lk["period"],"fee_exponent":u};b=False
-   if z.get("filled"):
-    n=float(z["eff_px"]);m=round(B-n,4)
-    if o<=(1.-n)+.025 and(.78<=n<=.986)and m>=.012:opps_out.append({"sleeve":"SP2_NBA_ENDGAME_LOCK","market":f"NBA [{c_lk['mode']}] {c_lk['score_str']} -> {C.display_label}","ask_vwap":n,"p_model":B,"net_edge":m,"l1_usd":z["l1_usd"],"close_ts":h});b=await a.open_shadow_position(sleeve="SP2_NBA_ENDGAME_LOCK",dedupe_key=j,asset_or_city="NBA",title=f"{d.title} [{C.display_label} | {c_lk['mode']}]",side_label=C.side_label,token_id=C.token_id,fee_rate=v,p_model=B,close_ts=h,extra=g,tp_target_px=None,prefetched_book=x)
-   if(not b and.72<=e<=.985 and o<=(1.-e)+.025 and(B-e)>=.012):
-    f=await a.post_shadow_maker_entry(sleeve="SP2_NBA_ENDGAME_LOCK",dedupe_key=j,asset="NBA",title=f"{d.title} [{C.display_label} | {c_lk['mode']}]",side_label=C.side_label,token_id=C.token_id,p_model=B,close_ts=h,extra=g,prefetched_book=x,ttl_override_sec=45.)
-    if f:opps_out.append({"sleeve":"SP2_NBA_ENDGAME_LOCK","market":f"[MAKER] NBA [{c_lk['mode']}] {c_lk['score_str']} -> {C.display_label}","ask_vwap":e,"p_model":B,"net_edge":round(B-e,4),"l1_usd":c,"close_ts":h})
-  await a._scan_sp4_live_nba_stat_locks(opps_out,F)
+  l=[]
+  for f in list(a.nba_games.values()):
+   y=match_nba_live_game(f,a.live_nba_board)
+   if y is None:continue
+   x,I,H=y
+   if x.state in("in","post"):a._record_market_telemetry(key=f"NBA_LIVE_{f.event_id}",min_interval_sec=30.,now_ts=J,sig=(x.state,x.period,int(x.clock_sec//10),I,H),payload={"type":"NBA_LIVE_SCORE_SNAP","event_id":f.event_id,"game":f.title,"state":x.state,"completed":x.completed,"period":x.period,"clock_sec":round(x.clock_sec,1),"score_a":I,"score_b":H,"source":x.source})
+   for c_lk in evaluate_nba_endgame_locks(f,x,I,H):
+    G=c_lk["leg"];D=f"SP2_{f.event_id}_{G.market_id}_{G.token_id[-8:]}"
+    if D not in a.entered_keys and D not in a.inflight_keys:l.append((f,c_lk))
+  if not l:await a._scan_sp4_live_nba_stat_locks(opps_out,J);return
+  o=[t for _,c_lk in l for t in(c_lk["leg"].token_id,c_lk["leg"].opp_token_id)];w=await a.fetch_books_batch(o,timeout=3.);v=BANKROLL_TICKETS["T1000"]["SP2_NBA_ENDGAME_LOCK"]
+  for f,c_lk in l:
+   G=c_lk["leg"];C=w.get(G.token_id);B=w.get(G.opp_token_id)
+   if not C or not B:continue
+   u,_=extract_best_bid(B.get("bids")or[])
+   if u>.18:continue
+   g,e=extract_best_bid(C.get("bids")or[]);A=float(getattr(G,"fee_rate",.0)or.0);z=float(getattr(G,"fee_exponent",1.)or 1.);E=walk_l2_book_asks_depth_capped(C.get("asks")or[],v,BANKROLL_TICKETS["T100"]["SP2_NBA_ENDGAME_LOCK"],fee_rate=A,min_l1_usd=18.,max_ask_px=.9861,fee_exponent=z);F=float(c_lk["p_lock"]);k=max(J+6e2,float(f.settle_est_ts));n=f"SP2_{f.event_id}_{G.market_id}_{G.token_id[-8:]}";j={"event_id":f.event_id,"market_id":G.market_id,"condition_id":G.condition_id,"opp_token_id":G.opp_token_id,"mode":c_lk["mode"],"score_str":c_lk["score_str"],"cushion_pts":c_lk["cushion_pts"],"clock_sec":c_lk["clock_sec"],"period":c_lk["period"],"fee_exponent":z};d=False;s=bool(getattr(G,"neg_risk",False))
+   if E.get("filled"):
+    r=float(E["eff_px"]);q=round(F-r,4)
+    if u<=(1.-r)+.025 and(.78<=r<=.986)and q>=.012:
+     if F>=.998 and u<=.03:a.emit_live_single_leg_lock_candidate(sleeve_source="SP2_NBA_ENDGAME_LOCK",asset="NBA",dedupe_key=n,token_id=G.token_id,opp_token_id=G.opp_token_id,market_id=G.market_id,condition_id=G.condition_id,side_label=G.side_label,display_label=f"NBA {c_lk['score_str']} {G.display_label}",bk_win=C,bk_opp=B,fee_rate=A,fee_exponent=z,neg_risk=s,close_ts=k,now_ts=J,max_lock_eff_px=.988,max_opp_bid=.03,hold_to_maturity=True,p_model=F,event_id=str(f.event_id))
+     opps_out.append({"sleeve":"SP2_NBA_ENDGAME_LOCK","market":f"NBA [{c_lk['mode']}] {c_lk['score_str']} -> {G.display_label}","ask_vwap":r,"p_model":F,"net_edge":q,"l1_usd":E["l1_usd"],"close_ts":k});d=await a.open_shadow_position(sleeve="SP2_NBA_ENDGAME_LOCK",dedupe_key=n,asset_or_city="NBA",title=f"{f.title} [{G.display_label} | {c_lk['mode']}]",side_label=G.side_label,token_id=G.token_id,fee_rate=A,p_model=F,close_ts=k,extra=j,tp_target_px=None,prefetched_book=C)
+   if(not d and.72<=g<=.985 and u<=(1.-g)+.025 and(F-g)>=.012):
+    if F>=.999 and.94<=g<=.992 and u<=.025:m=round(.2*A*((g*(1.-g))**z),5)if A>.0 else.0;a.emit_live_single_leg_maker_lock_candidate(sleeve_source="SP2_NBA_ENDGAME_LOCK",asset="NBA",dedupe_key=f"{n}_MKR",pair_dedupe_key=n,token_id=G.token_id,opp_token_id=G.opp_token_id,market_id=G.market_id,condition_id=G.condition_id,side_label=G.side_label,display_label=f"NBA {c_lk['score_str']} {G.display_label}",bk_win={**C,"_s2_meta":{"leg_a_fee_rate":A,"leg_a_fee_exponent":z}},bk_opp=B,neg_risk=s,close_ts=k,now_ts=J,min_resting_bid=.94,max_resting_bid=.992,min_maker_edge=.008,max_opp_bid=.025,hold_to_maturity=True,p_model=F,maker_rebate_ps=m,event_id=str(f.event_id))
+    h=await a.post_shadow_maker_entry(sleeve="SP2_NBA_ENDGAME_LOCK",dedupe_key=n,asset="NBA",title=f"{f.title} [{G.display_label} | {c_lk['mode']}]",side_label=G.side_label,token_id=G.token_id,p_model=F,close_ts=k,extra=j,prefetched_book=C,ttl_override_sec=45.)
+    if h:opps_out.append({"sleeve":"SP2_NBA_ENDGAME_LOCK","market":f"[MAKER] NBA [{c_lk['mode']}] {c_lk['score_str']} -> {G.display_label}","ask_vwap":g,"p_model":F,"net_edge":round(F-g,4),"l1_usd":e,"close_ts":k})
+  await a._scan_sp4_live_nba_stat_locks(opps_out,J)
  async def _scan_sp4_live_nba_stat_locks(a,opps_out,now):
   if(not a.nba_prop_slates and not a.nba_subperiod_slates)or not a.live_nba_board:return
   o=[];f=[];e=sorted(set(a.nba_prop_slates.keys())|set(a.nba_subperiod_slates.keys()))
@@ -7870,16 +8309,16 @@ class Alpha124ShadowDaemon:
    try:
     j=time.time();i=math.ceil(j/3e2)*3e2-j
     if i<=65. and(j-a.last_usd_sample_ts)>=.95:a.record_usd_spot_samples(j)
-    h=.18 if(4.<=i<=22.)else 2.5
-    if(3.8<=i<=92.)and(j-c)>=h:c=j;e=[];await a.scan_exact_twap_locks(e,now_ts=j)
-    if a.is_in_same_oracle_overlap_window(j)and(j-b)>=.35:
-     f=a.__dict__.setdefault("_d1_fast_scan_lock",asyncio.Lock())
-     if not f.locked():
+    f=3.6<=i<=39.;h=.08 if f else 1.5
+    if(3.6<=i<=92.)and(j-c)>=h:c=j;e=[];await a.scan_exact_twap_locks(e,now_ts=j)
+    if a.is_in_same_oracle_overlap_window(j)and(j-b)>=.3:
+     g=a.__dict__.setdefault("_d1_fast_scan_lock",asyncio.Lock())
+     if not g.locked():
       b=j
-      async with f:d=[];await a.scan_same_oracle_dominance_boxes(d,now_ts=j)
-    await asyncio.sleep(.15 if(4.<=i<=22.)else.25)
+      async with g:d=[];await a.scan_same_oracle_dominance_boxes(d,now_ts=j)
+    await asyncio.sleep(.06 if f else.2)
    except asyncio.CancelledError:break
-   except Exception as g:await asyncio.sleep(.5)
+   except Exception:await asyncio.sleep(.5)
  async def _run_bg_nba_endgame(a):
   try:b=[];await a.scan_nba_endgame_locks(b);a.cached_nba_endgame_opps=b
   except Exception as c:logger.warning(f"Background NBA endgame scan notice: {c}")
@@ -7895,67 +8334,77 @@ class Alpha124ShadowDaemon:
   try:
    if not a.single_scan and(a._bg_clob_ws_task is None or a._bg_clob_ws_task.done()):a._bg_clob_ws_task=asyncio.create_task(a._run_clob_d1_ws_loop())
    if not a.single_scan and a._chainlink_ws is not None and(a._bg_chainlink_ws_task is None or a._bg_chainlink_ws_task.done()):a._bg_chainlink_ws_task=asyncio.create_task(a._chainlink_ws.run_forever())
-   i=getattr(a,"_bg_gatling_fast_task",None)
-   if not a.single_scan and(i is None or i.done()):a._bg_gatling_fast_task=asyncio.create_task(a._run_gatling_fast_gun_loop())
+   l=getattr(a,"_bg_gatling_fast_task",None)
+   if not a.single_scan and(l is None or l.done()):a._bg_gatling_fast_task=asyncio.create_task(a._run_gatling_fast_gun_loop())
    while True:
-    H=time.time();a.cycle_count+=1;await a.update_crypto_spots()
+    O=time.time();a.cycle_count+=1
+    if not a.single_scan and(O-float(getattr(a,"_last_live_eq_poll_ts",.0)or.0))>=30.:
+     a._last_live_eq_poll_ts=O
+     try:
+      D=LIVE_POLYMARKET_DIR/"live_harvester_state.json"
+      if D.exists()and(O-D.stat().st_mtime)<=6e2:
+       L=json.loads(D.read_text(encoding="utf-8"));K=float(L.get("total_account_equity_usd")or L.get("live_bankroll_usd")or.0)
+       if K>.0:a.live_account_equity_usd=K
+     except Exception:pass
+    await a.update_crypto_spots()
     if not a.weather_events or a.single_scan:await a.discover_all_markets()
-    elif(H-a.last_discovery_ts)>=3e2 and(a._bg_discovery_task is None or a._bg_discovery_task.done()):a.last_discovery_ts=H;a._bg_discovery_task=asyncio.create_task(a._run_bg_discovery())
-    k=[]if a.riskless_bridge_only else a.poll_fresh_shock_triggers(now_ts=H)
-    if k:q=[];await a.handle_shock_triggers(k,q,now_ts=H);a.cached_shock_opps=q
-    d=[];r=[];y=[];B=[];await a.scan_same_oracle_dominance_boxes(d);await a.scan_exact_twap_locks(r)
-    if not a.riskless_bridge_only:await a.scan_s5m_chainlink_sniper(y)
-    if not a.riskless_bridge_only or a.pending_preopen_straddles:await a.scan_and_manage_preopen_maker_straddles(B)
-    if a.single_scan:x=[];await a.scan_multistrike_markets(x);await a.scan_daily_updown_locks(x);await a.scan_barrier_markets(x);a.cached_mid_opps=x;D=[];await a.scan_weather_markets(D);a.cached_weather_opps=D;A=[];await a.scan_tradfi_and_sports_markets(A);await a.scan_protocol_v2_expansion_opportunities(A);a.cached_tradfi_sports_opps=A;w=[];await a.scan_nba_endgame_locks(w);a.cached_nba_endgame_opps=w
+    elif(O-a.last_discovery_ts)>=3e2 and(a._bg_discovery_task is None or a._bg_discovery_task.done()):a.last_discovery_ts=O;a._bg_discovery_task=asyncio.create_task(a._run_bg_discovery())
+    n=[]if a.riskless_bridge_only else a.poll_fresh_shock_triggers(now_ts=O)
+    if n:u=[];await a.handle_shock_triggers(n,u,now_ts=O);a.cached_shock_opps=u
+    f=[];v=[];C=[];G=[];await a.scan_same_oracle_dominance_boxes(f);await a.scan_exact_twap_locks(v)
+    if not a.riskless_bridge_only:await a.scan_s5m_chainlink_sniper(C)
+    if not a.riskless_bridge_only or a.pending_preopen_straddles:await a.scan_and_manage_preopen_maker_straddles(G)
+    if a.single_scan:B=[];await a.scan_multistrike_markets(B);await a.scan_daily_updown_locks(B);await a.scan_barrier_markets(B);a.cached_mid_opps=B;I=[];await a.scan_weather_markets(I);a.cached_weather_opps=I;F=[];await a.scan_tradfi_and_sports_markets(F);await a.scan_protocol_v2_expansion_opportunities(F);a.cached_tradfi_sports_opps=F;A=[];await a.scan_nba_endgame_locks(A);a.cached_nba_endgame_opps=A
     else:
-     n=6. if a.has_live_nba_window(H)else 120.
-     if(H-a.last_nba_endgame_scan_ts)>=n and(a._bg_nba_task is None or a._bg_nba_task.done()):a.last_nba_endgame_scan_ts=H;a._bg_nba_task=asyncio.create_task(a._run_bg_nba_endgame())
-     if(H-a.last_crypto_mid_scan_ts)>=18. and(a._bg_mid_task is None or a._bg_mid_task.done()):a.last_crypto_mid_scan_ts=H;a._bg_mid_task=asyncio.create_task(a._run_bg_mid_crypto())
-     g=8. if(a.has_live_sports_window(H)or a.pending_zero_fee_maker_anchors)else 20.
-     if(H-a.last_tradfi_sports_scan_ts)>=g and(a._bg_tradfi_task is None or a._bg_tradfi_task.done()):a.last_tradfi_sports_scan_ts=H;a._bg_tradfi_task=asyncio.create_task(a._run_bg_tradfi_sports())
-     if(H-a.last_weather_scan_ts)>=90. and(a._bg_weather_task is None or a._bg_weather_task.done()):a.last_weather_scan_ts=H;a._bg_weather_task=asyncio.create_task(a._run_bg_weather())
-    G=(r+d+y+B+a.cached_shock_opps+a.cached_mid_opps+a.cached_nba_endgame_opps+a.cached_tradfi_sports_opps+a.cached_weather_opps);await a.manage_pending_maker_orders();await a.manage_pending_zero_fee_maker_anchors();await a.manage_open_positions();await a.write_state_files_async(G);logger.info(f"[Cycle {a.cycle_count}] BTC=${a.spots.get('BTC',0):,.1f} ETH=${a.spots.get('ETH',0):,.1f} | Monitored(W={len(a.weather_events)}, B={len(a.barrier_rungs)}, M={len(a.strike_ladders)}, NR={len(a.negrisk_ladders)}, PythH={len(a.pyth_barrier_rungs)}, PythC={len(a.pyth_close_ladders)}, NBA={len(a.nba_games)}/{len(a.live_nba_board)}live(SP4={len(a.nba_prop_slates)},SP4+={len(a.nba_subperiod_slates)},EM={len(a.lp1_nba_em_bundles)}), SP3={len(a.multi_sport_games)}(NFLEM={len(a.lp1_nfl_em_bundles)}), SOC1={len(a.soccer_trees)}, TEN1={len(a.tennis_specs)}, API1={len(a.esports_bo3_specs)}, BOP={len(a.lp1_bop_legs)//2}, LP2={len(a.lp2_implication_groups)}, CAL1={len(a.cal1_ladders)}, UMA={len(a.uma_proposed_markets)}, NR0={len(a.negrisk_zero_slates)}, NRC={len(a.negrisk_convert_slates)}, TW={len(a.counting_slates)}, FOMC={len(a.fomc_truth_legs)//2}, OS={len(a.oil_senate_truth_legs)//2}, D2={len(a.hourly_12pm_markets)}, U1={len(a.daily_updown_markets)}, D={len(a.dominance_pairs)}, D4h={len(a.dominance_4h_pairs)}, S5m={len(a.s5m_candles)}, P1={len(a.preopen_15m_candles)}, S2={len(a.twap_candles)}) | MakerPend={len(a.pending_maker_orders)} ZFAncPend={len(a.pending_zero_fee_maker_anchors)} PreOpenPend={len(a.pending_preopen_straddles)} OpenPos={len(a.open_positions)} ClosedPos={len(a.closed_positions)} | TopOpps={len(a.top_opportunities)}")
+     q=6. if a.has_live_nba_window(O)else 120.
+     if(O-a.last_nba_endgame_scan_ts)>=q and(a._bg_nba_task is None or a._bg_nba_task.done()):a.last_nba_endgame_scan_ts=O;a._bg_nba_task=asyncio.create_task(a._run_bg_nba_endgame())
+     if(O-a.last_crypto_mid_scan_ts)>=18. and(a._bg_mid_task is None or a._bg_mid_task.done()):a.last_crypto_mid_scan_ts=O;a._bg_mid_task=asyncio.create_task(a._run_bg_mid_crypto())
+     j=8. if(a.has_live_sports_window(O)or a.pending_zero_fee_maker_anchors)else 20.
+     if(O-a.last_tradfi_sports_scan_ts)>=j and(a._bg_tradfi_task is None or a._bg_tradfi_task.done()):a.last_tradfi_sports_scan_ts=O;a._bg_tradfi_task=asyncio.create_task(a._run_bg_tradfi_sports())
+     t=int((O//60)%60);e=(t>=49 or t<=6 or 19<=t<=35);g=12. if(e and a.weather_events)else 60.
+     if(O-a.last_weather_scan_ts)>=g and(a._bg_weather_task is None or a._bg_weather_task.done()):a.last_weather_scan_ts=O;a._bg_weather_task=asyncio.create_task(a._run_bg_weather())
+    N=(v+f+C+G+a.cached_shock_opps+a.cached_mid_opps+a.cached_nba_endgame_opps+a.cached_tradfi_sports_opps+a.cached_weather_opps);await a.manage_pending_maker_orders();await a.manage_pending_zero_fee_maker_anchors();await a.manage_open_positions();await a.write_state_files_async(N);logger.info(f"[Cycle {a.cycle_count}] BTC=${a.spots.get('BTC',0):,.1f} ETH=${a.spots.get('ETH',0):,.1f} | Monitored(W={len(a.weather_events)}, B={len(a.barrier_rungs)}, M={len(a.strike_ladders)}, NR={len(a.negrisk_ladders)}, PythH={len(a.pyth_barrier_rungs)}, PythC={len(a.pyth_close_ladders)}, NBA={len(a.nba_games)}/{len(a.live_nba_board)}live(SP4={len(a.nba_prop_slates)},SP4+={len(a.nba_subperiod_slates)},EM={len(a.lp1_nba_em_bundles)}), SP3={len(a.multi_sport_games)}(NFLEM={len(a.lp1_nfl_em_bundles)}), SOC1={len(a.soccer_trees)}, TEN1={len(a.tennis_specs)}, API1={len(a.esports_bo3_specs)}, BOP={len(a.lp1_bop_legs)//2}, LP2={len(a.lp2_implication_groups)}, CAL1={len(a.cal1_ladders)}, UMA={len(a.uma_proposed_markets)}, NR0={len(a.negrisk_zero_slates)}, NRC={len(a.negrisk_convert_slates)}, TW={len(a.counting_slates)}, FOMC={len(a.fomc_truth_legs)//2}, OS={len(a.oil_senate_truth_legs)//2}, D2={len(a.hourly_12pm_markets)}, U1={len(a.daily_updown_markets)}, D={len(a.dominance_pairs)}, D4h={len(a.dominance_4h_pairs)}, S5m={len(a.s5m_candles)}, P1={len(a.preopen_15m_candles)}, S2={len(a.twap_candles)}) | MakerPend={len(a.pending_maker_orders)} ZFAncPend={len(a.pending_zero_fee_maker_anchors)} PreOpenPend={len(a.pending_preopen_straddles)} OpenPos={len(a.open_positions)} ClosedPos={len(a.closed_positions)} | TopOpps={len(a.top_opportunities)}")
     if a.single_scan:break
-    z=time.time();p=math.ceil(z/14400.)*14400.-z;f=not is_shadow_sleeve_quarantined("S2_EXACT_TWAP_LOCK")
-    if f and a.is_in_exact_twap_lock_window(z):b=3.
-    elif a.is_in_same_oracle_overlap_window(z):b=3.5
+    E=time.time();from src.polymarket_research.riskless_protocol_v2_expansion import compute_min_4h_boundary_rem_sec as d;s=d(E);i=not is_shadow_sleeve_quarantined("S2_EXACT_TWAP_LOCK")
+    if i and a.is_in_exact_twap_lock_window(E):b=3.
+    elif a.is_in_same_oracle_overlap_window(E):b=3.5
     elif a.pending_zero_fee_maker_anchors:b=4.
-    elif 8.<=p<=905. or a.pending_preopen_straddles or a.has_live_sports_window(z):b=6.
+    elif 8.<=s<=905. or a.pending_preopen_straddles or a.has_live_sports_window(E):b=6.
     else:b=12.
-    v=H+max(2.,b);c=H
+    z=O+max(2.,b);c=O
     while True:
-     E=time.time()
-     if E>=v:break
-     j=a._ws_d1_wakeup.is_set()
-     if j:a._ws_d1_wakeup.clear()
-     e=a._ws_nr_wakeup.is_set()
-     if e:a._ws_nr_wakeup.clear()
-     o=.12 if j else.5
-     if a.is_in_same_oracle_overlap_window(E)and(E-c)>=o:
-      c=E;m=[];await a.scan_same_oracle_dominance_boxes(m,now_ts=E)
-      if m:d=m
-      if a.pending_zero_fee_maker_anchors:await a.manage_pending_zero_fee_maker_anchors(now_ts=E)
-     elif(a.pending_maker_anchors or a.pending_zero_fee_maker_anchors)and(E-c)>=.5:
-      c=E
-      if a.pending_maker_anchors:await a.manage_pending_maker_anchors(now_ts=E)
-      if a.pending_zero_fee_maker_anchors:await a.manage_pending_zero_fee_maker_anchors(now_ts=E)
-     if e and(E-getattr(a,"_last_fast_nr_subscan",.0))>=.25:a._last_fast_nr_subscan=E;await a._scan_ws_reactive_negrisk_arbs(E)
-     u=math.ceil(E/3e2)*3e2-E
-     if f and u<=65. and(E-a.last_usd_sample_ts)>=1.:a.record_usd_spot_samples(E)
-     t=[]if a.riskless_bridge_only else a.poll_fresh_shock_triggers(now_ts=E)
-     if t:
-      h=set(a.pending_maker_orders);l=len(a.open_positions);C=[];await a.handle_shock_triggers(t,C,now_ts=E)
-      if C:a.cached_shock_opps=C
-      if C or set(a.pending_maker_orders)!=h or len(a.open_positions)!=l:await a.write_state_files_async(r+d+y+B+a.cached_shock_opps+a.cached_mid_opps+a.cached_nba_endgame_opps+a.cached_tradfi_sports_opps+a.cached_weather_opps)
-     if f and b>3. and a.is_in_exact_twap_lock_window(E):break
-     s=min(.2,max(.03,v-time.time()))
-     try:await asyncio.wait_for(a._ws_d1_wakeup.wait(),timeout=s)
+     J=time.time()
+     if J>=z:break
+     m=a._ws_d1_wakeup.is_set()
+     if m:a._ws_d1_wakeup.clear()
+     h=a._ws_nr_wakeup.is_set()
+     if h:a._ws_nr_wakeup.clear()
+     r=.12 if m else.5
+     if a.is_in_same_oracle_overlap_window(J)and(J-c)>=r:
+      c=J;p=[];await a.scan_same_oracle_dominance_boxes(p,now_ts=J)
+      if p:f=p
+      if a.pending_zero_fee_maker_anchors:await a.manage_pending_zero_fee_maker_anchors(now_ts=J)
+     elif(a.pending_maker_anchors or a.pending_zero_fee_maker_anchors)and(J-c)>=.5:
+      c=J
+      if a.pending_maker_anchors:await a.manage_pending_maker_anchors(now_ts=J)
+      if a.pending_zero_fee_maker_anchors:await a.manage_pending_zero_fee_maker_anchors(now_ts=J)
+     if h and(J-getattr(a,"_last_fast_nr_subscan",.0))>=.25:a._last_fast_nr_subscan=J;await a._scan_ws_reactive_negrisk_arbs(J)
+     y=math.ceil(J/3e2)*3e2-J
+     if i and y<=65. and(J-a.last_usd_sample_ts)>=1.:a.record_usd_spot_samples(J)
+     x=[]if a.riskless_bridge_only else a.poll_fresh_shock_triggers(now_ts=J)
+     if x:
+      k=set(a.pending_maker_orders);o=len(a.open_positions);H=[];await a.handle_shock_triggers(x,H,now_ts=J)
+      if H:a.cached_shock_opps=H
+      if H or set(a.pending_maker_orders)!=k or len(a.open_positions)!=o:await a.write_state_files_async(v+f+C+G+a.cached_shock_opps+a.cached_mid_opps+a.cached_nba_endgame_opps+a.cached_tradfi_sports_opps+a.cached_weather_opps)
+     if i and b>3. and a.is_in_exact_twap_lock_window(J):break
+     w=min(.2,max(.03,z-time.time()))
+     try:await asyncio.wait_for(a._ws_d1_wakeup.wait(),timeout=w)
      except asyncio.TimeoutError:pass
   finally:
-   for F in(getattr(a,"_bg_gatling_fast_task",None),a._bg_chainlink_ws_task,a._bg_clob_ws_task,a._bg_discovery_task,a._bg_mid_task,a._bg_tradfi_task,a._bg_weather_task,a._bg_nba_task):
-    if F is not None and not F.done():
-     F.cancel()
-     try:await F
+   for M in(getattr(a,"_bg_gatling_fast_task",None),a._bg_chainlink_ws_task,a._bg_clob_ws_task,a._bg_discovery_task,a._bg_mid_task,a._bg_tradfi_task,a._bg_weather_task,a._bg_nba_task):
+    if M is not None and not M.done():
+     M.cancel()
+     try:await M
      except BaseException:pass
    if a.session and not a.session.closed:await a.session.close()
 def main():
@@ -7966,12 +8415,11 @@ def main():
  a=Alpha124ShadowDaemon(single_scan=c.single_scan,riskless_bridge_only=c.riskless_bridge_only);asyncio.run(a.run_forever())
 if __name__=="__main__":main()
 # ======================================================================================
-# [17/21] MODULE: scripts/backtest_alpha_124.py
+# [17/20] MODULE: scripts/backtest_alpha_124.py
 # PURPOSE: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import concurrent.futures
-import json;import math;import os;import sys;import time;import urllib.request;from collections import defaultdict;from datetime import date,datetime,timedelta,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;PROJECT_ROOT=Path(__file__).resolve().parent.parent
+import concurrent.futures;import json;import math;import os;import sys;import time;import urllib.request;from collections import defaultdict;from datetime import date,datetime,timedelta,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Tuple;from zoneinfo import ZoneInfo;PROJECT_ROOT=Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT)not in sys.path:sys.path.insert(0,str(PROJECT_ROOT))
 from src.polymarket_research.barrier_onetouch_svi_engine import(BarrierRungSpec,first_passage_touch_prob,get_wing_implied_vol,parse_hit_event);from src.polymarket_research.multistrike_svi_scalper import(StrikeRungSpec,evaluate_svi_digital_fair_value,parse_multistrike_event);from src.polymarket_research.weather_metar_engine import(MetarObservation,WeatherEventSpec,compute_weather_probabilities,fetch_historical_nwp_hourly_sync,fetch_metar_observations_sync,parse_weather_event);GAMMA_URL="https://gamma-api.polymarket.com";CLOB_URL="https://clob.polymarket.com";BINANCE_URL="https://api.binance.com";DERIBIT_URL="https://www.deribit.com/api/v2/public/get_volatility_index_data";OUT_DIR=PROJECT_ROOT/"data"/"alpha124";OUT_DIR.mkdir(parents=True,exist_ok=True);REPORT_JSON=OUT_DIR/"backtest_alpha_124_results.json";SPLIT_CUTOFF_TS=datetime(2026,10,16,23,59,59,tzinfo=timezone.utc).timestamp();WEATHER_SERIES_SAMPLE=["tokyo-daily-weather","london-daily-weather","shanghai-daily-weather","paris-daily-weather","munich-daily-weather","miami-daily-weather","nyc-daily-weather","houston-daily-weather","seoul-daily-weather","chicago-daily-weather","seattle-daily-weather","dallas-daily-weather","madrid-daily-weather","amsterdam-daily-weather","taipei-daily-weather","singapore-daily-weather"]
 def http_get_json(url,timeout=10.):
@@ -8022,9 +8470,9 @@ def run_weather_backtest():
   try:G[Y]=fetch_historical_nwp_hourly_sync(s0.lat,s0.lon,S,R)
   except Exception:G[Y]={}
  def a(sp):
-  c=fetch_metar_observations_sync(sp.icao,sp.obs_date,sp.tz_name);a={}
-  for b in sp.buckets:a[b.market_id]=fetch_clob_history(b.yes_token,fidelity=15)
-  return sp,c,a
+  t=fetch_metar_observations_sync(sp.icao,sp.obs_date,sp.tz_name);s={}
+  for b in sp.buckets:s[b.market_id]=fetch_clob_history(b.yes_token,fidelity=15)
+  return sp,t,s
  J=[]
  with concurrent.futures.ThreadPoolExecutor(max_workers=24)as X:
   for z in X.map(a,T):
@@ -8040,12 +8488,12 @@ def run_weather_backtest():
  for sp,metars,clob_map in sorted(J,key=lambda x:x[0].obs_date):
   W=ZoneInfo(sp.tz_name);O=G.get(sp.icao,{});Q="TRAIN"if sp.obs_date<=date(2026,10,16)else"TEST"
   def c(mkt_id,ts):
-   c=clob_map.get(mkt_id)or[];a=None
-   for b,d in c:
-    if b<=ts:
-     if ts-b<=7200:a=d
+   t=clob_map.get(mkt_id)or[];b=None
+   for s,x in t:
+    if s<=ts:
+     if ts-s<=7200:b=x
     else:break
-   return a
+   return b
   f=False
   for V,U in((9,0),(11,30),(13,30)):
    if f:break
@@ -8071,26 +8519,26 @@ def run_weather_backtest():
  return{"calibrated_sigma_c":g,"events_evaluated":len(J),"W1_SOLAR_PEAK_LOCK":{"ALL":summarize_trades(F,"W1_ALL"),"TRAIN":summarize_trades([t for t in F if t["split"]=="TRAIN"],"W1_TRAIN"),"TEST_OOS":summarize_trades([t for t in F if t["split"]=="TEST"],"W1_TEST_OOS"),"sample_trades":F[-8:]},"W2_ENSEMBLE_VALUE":{"ALL":summarize_trades(E,"W2_ALL"),"TRAIN":summarize_trades([t for t in E if t["split"]=="TRAIN"],"W2_TRAIN"),"TEST_OOS":summarize_trades([t for t in E if t["split"]=="TEST"],"W2_TEST_OOS"),"sample_trades":E[-8:]}}
 def run_crypto_barrier_and_strike_backtests():
  print("[2/3] Fetching Oct 2026 Binance 5m klines + Deribit DVOL + Resolved Hit & Strike events...",flush=True);_h=int(datetime(2026,9,29,0,0,tzinfo=timezone.utc).timestamp());_t=int(datetime(2026,10,25,16,0,tzinfo=timezone.utc).timestamp());_x={"BTC":fetch_binance_5m_series("BTCUSDT",_h,_t),"ETH":fetch_binance_5m_series("ETHUSDT",_h,_t)};_G={"BTC":fetch_deribit_dvol_hourly("BTC",_h,_t),"ETH":fetch_deribit_dvol_hourly("ETH",_h,_t)}
- def c(asset,ts):b=(ts//300)*300;a=_x[asset].get(b)or _x[asset].get(b-300);return a[3]if a else None
+ def c(asset,ts):t=(ts//300)*300;r=_x[asset].get(t)or _x[asset].get(t-300);return r[3]if r else None
  def d(asset,ts):
-  f=(ts//300)*300;b=_x[asset];c=[]
-  for t in range(f-48*300,f,300):
-   e=b.get(t);d=b.get(t+300)
-   if e and d and e[3]>0 and d[3]>0:c.append(math.log(d[3]/e[3]))
-  if len(c)<12:return.0
-  a=sum(x*x for x in c)/len(c);return math.sqrt(a*(365.25*288.))
+  b5=(ts//300)*300;_C=_x[asset];_E=[]
+  for t in range(b5-48*300,b5,300):
+   r0=_C.get(t);r1=_C.get(t+300)
+   if r0 and r1 and r0[3]>0 and r1[3]>0:_E.append(math.log(r1[3]/r0[3]))
+  if len(_E)<12:return.0
+  r=sum(x*x for x in _E)/len(_E);return math.sqrt(r*(365.25*288.))
  def e(asset,ts):
-  b=(ts//3600)*3600
-  for a in(0,-3600,-7200,3600):
-   if(b+a)in _G[asset]:return _G[asset][b+a]
+  t=(ts//3600)*3600
+  for r in(0,-3600,-7200,3600):
+   if(t+r)in _G[asset]:return _G[asset][t+r]
   return.42 if asset=="BTC"else.54
  def b(asset,start_ts,now_ts,strike,direction):
-  a=(int(start_ts)//300)*300;c=(now_ts//300)*300;b=_x[asset]
-  for t in range(a,c+300,300):
-   d=b.get(t)
-   if not d:continue
-   if direction=="UP"and d[1]>=strike:return True
-   if direction=="DOWN"and d[2]<=strike:return True
+  r=(int(start_ts)//300)*300;_C=(now_ts//300)*300;x=_x[asset]
+  for t in range(r,_C+300,300):
+   _E=x.get(t)
+   if not _E:continue
+   if direction=="UP"and _E[1]>=strike:return True
+   if direction=="DOWN"and _E[2]<=strike:return True
   return False
  _g=[]
  for asset,_B,_o in[("BTC","DAILY","bitcoin-hit-price-daily"),("ETH","DAILY","ethereum-hit-price-daily"),("BTC","WEEKLY","bitcoin-hit-price-weekly"),("ETH","WEEKLY","ethereum-hit-price-weekly")]:
@@ -8191,12 +8639,11 @@ def main():
  print(f"\nSaved full JSON report -> {REPORT_JSON}")
 if __name__=="__main__":main()
 # ======================================================================================
-# [18/21] MODULE: scripts/polymarket_daily_projections.py
+# [18/20] MODULE: scripts/polymarket_daily_projections.py
 # PURPOSE: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import argparse
-import json;import os;from datetime import datetime,timedelta,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Tuple;PIPELINE_ROOT=Path(__file__).resolve().parent.parent;LIVE_STATE_FILE=PIPELINE_ROOT/"data"/"polymarket"/"live_harvester_state.json";ALPHA124_STATE_FILE=(PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json"if(PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json").exists()else PIPELINE_ROOT/"data"/"polymarket"/"alpha124_shadow_state.json");EXP316_STATE_FILE=PIPELINE_ROOT/"data"/"exp316"/"exp316_shadow_state.json";SOL_SHADOW_FILE=PIPELINE_ROOT/"data"/"polymarket"/"state_shadow_sol_v392.json";XRP_SHADOW_FILE=PIPELINE_ROOT/"data"/"polymarket"/"state_shadow_xrp_v392.json";PHASE34_TRACKER_FILE=PIPELINE_ROOT/"data"/"polymarket"/"shadow_phase3_4_tracker.jsonl";RISK_CONFIG_FILE=PIPELINE_ROOT/"config"/"polymarket_risk_config.json";OUTPUT_JSON_FILE=PIPELINE_ROOT/"data"/"polymarket"/"live_daily_projections.json";QUARANTINED_SLEEVES=frozenset({"M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","B1_CONVEX_TAIL_YES","S2_EXACT_TWAP_LOCK","ZERO_FEE_MAKER_ANCHOR_BOX","CTF_OVERROUND_MINT_SELL","SLEEVE_XRP_V392_SHADOW","D1_MAKER_ANCHOR_BOX","ZF_INTRADAY_MAKER_BOX","SHADOW_PHASE3A_MAKER","NR_CONV_NO_BASKET_ARB"});GRADUATION_SPECS=[{"sleeve":"D1_SAME_ORACLE_DOMINANCE_BOX","wave":"Wave 1 (Live Graduated)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":13.5,"l1_daily_pnl_cap_usd":140.},{"sleeve":"D1_QUIET_BOOK_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":3,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":65.},{"sleeve":"D1_4H_DOMINANCE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":60.},{"sleeve":"C1_BINARY_COMPLETE_SET","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"M3_LADDER_MONO_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"B3_BARRIER_MONO_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"D1_MAKER_ANCHOR_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"N1_NEGRISK_CROSS_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"W3_WEATHER_SLATE_ARB","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"CM_B3_PYTH_BARRIER_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"SP1_NBA_ZERO_FEE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"ZF_INTRADAY_MAKER_BOX","wave":"Wave 1 (Fast-Track Maker Box 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":92.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"NR0_ZERO_FEE_SLATE_ARB","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"B4_TOUCHED_BARRIER_WICK_LOCK","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"ZERO_FEE_MAKER_ANCHOR_BOX","wave":"Wave 1 (Fast-Track Maker Box)","target_day":5,"min_days":1.,"min_settled":8,"min_wr_pct":92.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"CTF_OVERROUND_MINT_SELL","wave":"Wave 1 (Instant Mint-Sell 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":5,"min_days":1.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"FED1_CENTRAL_BANK_LP_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"COND1_MACRO_PARTITION_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"D2_12PM_BINANCE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":5,"min_days":1.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"GAS1_AAA_GASOLINE_LOCK","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"MKR_REWARD_LOCKED_CARRY","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"BOND1_UMA_RESOLUTION_CARRY","wave":"Wave 1 (Live Graduated 8/8)","target_day":1,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":45.25,"l1_daily_pnl_cap_usd":35.},{"sleeve":"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER","wave":"Wave 1 (Liquid-Guarded Live)","target_day":1,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":22.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"SP4_MULTISPORT_CORRIDOR_DOMINANCE_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"LP2_CROSS_MARKET_PARTITION_IMPLICATION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"NR1_CLOSED_PARTITION_COMPLETE_SET","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"CRY_INC1_INTRADAY_STRIKE_INCLUSION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"SP2_NBA_ENDGAME_LOCK","wave":"Wave 2 (Day 7 NBA Endgame)","target_day":7,"min_days":3.,"min_settled":15,"min_wr_pct":93.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"W1_LOW_TROUGH_LOCK","wave":"Wave 2 (Day 8 METAR Low)","target_day":8,"min_days":4.,"min_settled":15,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":40.},{"sleeve":"SLEEVE_SOL_V392_SHADOW","wave":"Wave 2 (Day 5 SOL)","target_day":5,"min_days":1.5,"min_settled":30,"min_wr_pct":85.,"source":"sol_shadow","stage1_ticket_usd":12.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"SHADOW_PHASE3A_MAKER","wave":"Wave 2 (Day 6 Maker)","target_day":6,"min_days":2.,"min_settled":25,"min_wr_pct":80.,"source":"phase3a_shadow","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":32.},{"sleeve":"W1_SOLAR_PEAK_LOCK","wave":"Wave 2 (Day 8 METAR)","target_day":8,"min_days":5.,"min_settled":20,"min_wr_pct":86.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":95.},{"sleeve":"B2_BARRIER_NO_LOCK","wave":"Wave 2 (Day 8 Barrier)","target_day":8,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":55.},{"sleeve":"CM_B2_PYTH_SESSION_NO_LOCK","wave":"Wave 2 (Day 9 Pyth 0%-Fee)","target_day":9,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"CM_U1_PYTH_CLOSE_LOCK","wave":"Wave 2 (Day 10 Pyth Close)","target_day":10,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"EXP316_TRACK_A_LATE_LOCK","wave":"Wave 2 (Day 10 Strike)","target_day":10,"min_days":5.,"min_settled":25,"min_wr_pct":80.,"source":"exp316","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"U1_DAILY_UPDOWN_LOCK","wave":"Wave 3 (Day 15 Daily)","target_day":15,"min_days":10.,"min_settled":20,"min_wr_pct":85.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"S5M_CHAINLINK_SNIPER","wave":"Wave 3 (Day 15 5m)","target_day":15,"min_days":7.,"min_settled":35,"min_wr_pct":82.,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"S4H_CHAINLINK_CONVERGENCE","wave":"Wave 3 (Day 14 4h)","target_day":14,"min_days":7.,"min_settled":25,"min_wr_pct":85.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"CM_SHOCK_PYTH_CATALYST","wave":"Wave 3 (Day 16 Macro Jump)","target_day":16,"min_days":10.,"min_settled":25,"min_wr_pct":82.,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"S2_EXACT_TWAP_LOCK","wave":"Wave 3 (Conditional)","target_day":15,"min_days":10.,"min_settled":30,"min_wr_pct":94.,"source":"alpha124","stage1_ticket_usd":12.,"l1_daily_pnl_cap_usd":35.}]
+import argparse;import json;import os;from datetime import datetime,timedelta,timezone;from pathlib import Path;from typing import Any,Dict,List,Optional,Tuple;PIPELINE_ROOT=Path(__file__).resolve().parent.parent;LIVE_STATE_FILE=PIPELINE_ROOT/"data"/"polymarket"/"live_harvester_state.json";ALPHA124_STATE_FILE=(PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json"if(PIPELINE_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json").exists()else PIPELINE_ROOT/"data"/"polymarket"/"alpha124_shadow_state.json");EXP316_STATE_FILE=PIPELINE_ROOT/"data"/"exp316"/"exp316_shadow_state.json";SOL_SHADOW_FILE=PIPELINE_ROOT/"data"/"polymarket"/"state_shadow_sol_v392.json";XRP_SHADOW_FILE=PIPELINE_ROOT/"data"/"polymarket"/"state_shadow_xrp_v392.json";PHASE34_TRACKER_FILE=PIPELINE_ROOT/"data"/"polymarket"/"shadow_phase3_4_tracker.jsonl";RISK_CONFIG_FILE=PIPELINE_ROOT/"config"/"polymarket_risk_config.json";STRATEGY_RISK_CONFIG_FILE=PIPELINE_ROOT/"config"/"polymarket_strategy_and_risk.json";OUTPUT_JSON_FILE=PIPELINE_ROOT/"data"/"polymarket"/"live_daily_projections.json";QUARANTINED_SLEEVES=frozenset({"M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","B1_CONVEX_TAIL_YES","B4_TOUCHED_BARRIER_WICK_LOCK","ZERO_FEE_MAKER_ANCHOR_BOX","SLEEVE_XRP_V392_SHADOW","D1_MAKER_ANCHOR_BOX","ZF_INTRADAY_MAKER_BOX","SHADOW_PHASE3A_MAKER","NR_CONV_NO_BASKET_ARB"});DIRECTIONAL_ONLY_SLEEVES=frozenset({"SLEEVE_SOL_V392_SHADOW","S5M_CHAINLINK_SNIPER","S4H_CHAINLINK_CONVERGENCE","U1_DAILY_UPDOWN_LOCK","B2_BARRIER_NO_LOCK","CM_SHOCK_PYTH_CATALYST","EXP316_TRACK_A_LATE_LOCK"});GRADUATION_SPECS=[{"sleeve":"D1_SAME_ORACLE_DOMINANCE_BOX","wave":"Wave 1 (Live Graduated)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":13.5,"l1_daily_pnl_cap_usd":140.},{"sleeve":"D1_QUIET_BOOK_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":3,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":65.},{"sleeve":"D1_4H_DOMINANCE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":60.},{"sleeve":"C1_BINARY_COMPLETE_SET","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","wave":"Wave 1 (m=2 Atomic Convert)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"M3_LADDER_MONO_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"B3_BARRIER_MONO_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"D1_MAKER_ANCHOR_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"N1_NEGRISK_CROSS_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"W3_WEATHER_SLATE_ARB","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"CM_B3_PYTH_BARRIER_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"SP1_NBA_ZERO_FEE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"ZF_INTRADAY_MAKER_BOX","wave":"Wave 1 (Fast-Track Maker Box 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":92.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"NR0_ZERO_FEE_SLATE_ARB","wave":"Wave 1 (Fast-Track 8/8)","target_day":4,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"ZERO_FEE_MAKER_ANCHOR_BOX","wave":"Wave 1 (Fast-Track Maker Box)","target_day":5,"min_days":1.,"min_settled":8,"min_wr_pct":92.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"CTF_OVERROUND_MINT_SELL","wave":"Wave 1 (Instant Mint-Sell 8/8)","target_day":4,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"TW1_COUNTING_TRUNCATION_AND_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":5,"min_days":1.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"FED1_CENTRAL_BANK_LP_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"COND1_MACRO_PARTITION_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"D2_12PM_BINANCE_BOX","wave":"Wave 1 (Fast-Track 8/8)","target_day":5,"min_days":1.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"GAS1_AAA_GASOLINE_LOCK","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"MKR_REWARD_LOCKED_CARRY","wave":"Wave 1 (Fast-Track 8/8)","target_day":6,"min_days":2.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"BOND1_UMA_RESOLUTION_CARRY","wave":"Wave 1 (Live Graduated 8/8)","target_day":1,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":45.25,"l1_daily_pnl_cap_usd":35.},{"sleeve":"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"LP1_NFL_EXACT_MARGIN_AND_ML_SPREAD_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"SP3_SPORTS_CORRIDOR_DOMINANCE_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"SOC2_EXACT_SCORE_2D_LATTICE","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"AFF1_FROZEN_SUBPERIOD_COLLAPSE","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":20.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER","wave":"Wave 1 (Liquid-Guarded Live)","target_day":1,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":22.,"l1_daily_pnl_cap_usd":20.},{"sleeve":"SP4_MULTISPORT_CORRIDOR_DOMINANCE_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"LP2_CROSS_MARKET_PARTITION_IMPLICATION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"NR1_CLOSED_PARTITION_COMPLETE_SET","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"NR2_CONVERT_NO_SUBSET_ARB","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"CRY_INC1_INTRADAY_STRIKE_INCLUSION_BOX","wave":"Wave 1 (0-Loss Math Live)","target_day":1,"min_days":1.,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":25.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"SP2_NBA_ENDGAME_LOCK","wave":"Wave 2 (Day 7 NBA Endgame)","target_day":7,"min_days":3.,"min_settled":15,"min_wr_pct":93.,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"W1_LOW_TROUGH_LOCK","wave":"Wave 2 (Day 8 METAR Low)","target_day":8,"min_days":4.,"min_settled":15,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":40.},{"sleeve":"SLEEVE_SOL_V392_SHADOW","wave":"Wave 2 (Day 5 SOL)","target_day":5,"min_days":1.5,"min_settled":30,"min_wr_pct":85.,"source":"sol_shadow","stage1_ticket_usd":12.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"SHADOW_PHASE3A_MAKER","wave":"Wave 2 (Day 6 Maker)","target_day":6,"min_days":2.,"min_settled":25,"min_wr_pct":80.,"source":"phase3a_shadow","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":32.},{"sleeve":"W1_SOLAR_PEAK_LOCK","wave":"Wave 2 (Day 8 METAR)","target_day":8,"min_days":5.,"min_settled":20,"min_wr_pct":86.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":95.},{"sleeve":"B2_BARRIER_NO_LOCK","wave":"Wave 2 (Day 8 Barrier)","target_day":8,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":55.},{"sleeve":"CM_B2_PYTH_SESSION_NO_LOCK","wave":"Wave 2 (Day 9 Pyth 0%-Fee)","target_day":9,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":45.},{"sleeve":"CM_U1_PYTH_CLOSE_LOCK","wave":"Wave 2 (Day 10 Pyth Close)","target_day":10,"min_days":5.,"min_settled":25,"min_wr_pct":88.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"EXP316_TRACK_A_LATE_LOCK","wave":"Wave 2 (Day 10 Strike)","target_day":10,"min_days":5.,"min_settled":25,"min_wr_pct":80.,"source":"exp316","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"U1_DAILY_UPDOWN_LOCK","wave":"Wave 3 (Day 15 Daily)","target_day":15,"min_days":10.,"min_settled":20,"min_wr_pct":85.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"S5M_CHAINLINK_SNIPER","wave":"Wave 3 (Day 15 5m)","target_day":15,"min_days":7.,"min_settled":35,"min_wr_pct":82.,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"S4H_CHAINLINK_CONVERGENCE","wave":"Wave 3 (Day 14 4h)","target_day":14,"min_days":7.,"min_settled":25,"min_wr_pct":85.,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":30.},{"sleeve":"CM_SHOCK_PYTH_CATALYST","wave":"Wave 3 (Day 16 Macro Jump)","target_day":16,"min_days":10.,"min_settled":25,"min_wr_pct":82.,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"S2_EXACT_TWAP_LOCK","wave":"Wave 1 (Live Bridged S2MKR)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"S2_RTDS_EXACT_TWAP_INTEGRATOR","wave":"Wave 1 (Live Bridged S2MKR)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":14.,"l1_daily_pnl_cap_usd":35.},{"sleeve":"BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY","wave":"Wave 1 (Live BOND2 Carry)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":16.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"UMA_READY1_LIVENESS_PRIORITY","wave":"Wave 1 (Live BOND1 Inherited)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"W_PRUNE1_DEAD_NO_BOND","wave":"Wave 1 (Live METAR Ratchet)","target_day":1,"min_days":.25,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"TEN1_TENNIS_RETIREMENT_SAFE_SET_CORRIDOR","wave":"Wave 1 (Live Zero-Loss Math)","target_day":2,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":15.,"l1_daily_pnl_cap_usd":25.},{"sleeve":"CTF_OVERROUND_MINT_SELL","wave":"Wave 2 ($140 Pre-Split Gun)","target_day":5,"min_days":.5,"min_settled":8,"min_wr_pct":1e2,"source":"alpha124","stage1_ticket_usd":18.,"l1_daily_pnl_cap_usd":28.}]
 def _load_json(path):
  if not path.exists():return{}
  try:return json.loads(path.read_text(encoding="utf-8"))
@@ -8245,78 +8692,132 @@ def _box_concurrency_mult(equity):
 def _wilson_lcb_pct(wins,n,z=1.2816):
  if n<=0:return.0
  p=max(.0,min(1.,wins/float(n)));d=z*z;b=1.+d/n;a=p+d/(2.*n);c=z*((p*(1.-p)/n+d/(4.*n*n))**.5);return round(1e2*max(.0,(a-c)/b),2)
-def simulate_single_day_net_pnl(day_idx,equity_start,scenario,scale_up_threshold=98.,shadow_by_sleeve=None,sol_shadow=None,phase3a_shadow=None,exp316_t1k=None):
- d={"P25_CONSERVATIVE":.85,"P50_BASE_FINLAND":1.35,"P75_LONDON_UPSIDE":1.95}[scenario];b={"P25_CONSERVATIVE":.145,"P50_BASE_FINLAND":.182,"P75_LONDON_UPSIDE":.21}[scenario];c={"P25_CONSERVATIVE":.91,"P50_BASE_FINLAND":.95,"P75_LONDON_UPSIDE":.97}[scenario];o={"P25_CONSERVATIVE":.62,"P50_BASE_FINLAND":1.,"P75_LONDON_UPSIDE":1.42}[scenario];A=_box_concurrency_mult(equity_start);z=compute_v541_ticket_size(equity_start);l=1.28 if equity_start>=253. else(1.15 if equity_start>=150. else 1.);f=d*l;y=b*c*_depth_decay(z,knee_usd=65.);r={"P25_CONSERVATIVE":55.,"P50_BASE_FINLAND":95.,"P75_LONDON_UPSIDE":145.}[scenario];q=min(r,z*f*y);x=60. if equity_start<98. else(120. if equity_start<253. else(150. if equity_start<1003. else 220.));C=min(x,max(14.,equity_start*.48));n=1.95*o*(1.+.45*(A-1.));w={"P25_CONSERVATIVE":24.,"P50_BASE_FINLAND":38.,"P75_LONDON_UPSIDE":58.}[scenario];v=min(w,C*n*(.031*_depth_decay(C,knee_usd=75.)));u=(60. if equity_start<98. else(max(60.,equity_start*.4)if equity_start<253. else(120. if equity_start<1003. else 150.)));B=min(u,max(14.,equity_start*.36));m=1.2*o*A;t={"P25_CONSERVATIVE":16.,"P50_BASE_FINLAND":26.,"P75_LONDON_UPSIDE":40.}[scenario];s=min(t,B*m*(.0235*_depth_decay(B,knee_usd=80.)));k=45.25 if equity_start<98. else(85. if equity_start<253. else(130. if equity_start<1003. else 180.));p=min(k,equity_start*.42);g=2.1*o*(1.+.55*(A-1.));j={"P25_CONSERVATIVE":6.5,"P50_BASE_FINLAND":11.,"P75_LONDON_UPSIDE":17.}[scenario];i=min(j,p*g*.0082);h={"v541_high_z_directional_sniper":round(q,2),"D1_same_oracle_and_quiet_boxes":round(v,2),"V3_zero_loss_math_partition_boxes":round(s,2),"BOND1_and_liquid_MKR_LOCK1_carry":round(i,2)}
- if equity_start>=1003.:a="INSTITUTIONAL (>=$1,003): 4 Dir Slots ($160-$200 Cap) + 10 Box Slots ($150-$220 L1 Depth Cap)"
- elif equity_start>=253.:a="SCALE ($253-$1,003): 4 Dir Slots (22% Ticket) + $120-$150 Box Cap + 88% BOND1"
- elif equity_start>=150.:a="HYPER_GROWTH 3-Slot (>=$150): 3 Crypto Dir Slots (26% Ticket) + $120 D1 Cap + 48h Velocity"
- elif equity_start>=98.:a="HYPER_GROWTH ($98-$150): 26% Dir Ticket + $120 D1 / 40% ZF Box Cap + 48h Velocity"
- else:a="UNLEASHED_LAUNCH (<$98): v5.4.1 High-Z Sniper + 90% D1 ($60) + 0-Loss Math Boxes + 78% BOND1"
- e=round(sum(h.values()),2);return e,h,a
-def compute_live_equity_and_rates(live_st,fallback_equity=69.61):
- q=float(live_st.get("total_account_equity")or.0);p=float(live_st.get("live_bankroll")or.0);k=(("total_account_equity"in live_st and live_st.get("total_account_equity")is not None)or("live_bankroll"in live_st and live_st.get("live_bankroll")is not None));B=live_st.get("active_positions");v=list(B.values())if isinstance(B,dict)else[];b=.0;o={};c=.0
- for T in v:
-  if not isinstance(T,dict):continue
-  G=float(T.get("remaining_cost_basis",T.get("notional_usd",.0))or.0);n=T.get("_closed_partner_leg")
-  if(T.get("is_dominance_box")and isinstance(n,dict)and float(n.get("payout_usd",.0)or.0)<=.01):H=max(float(T.get("expected_terminal_payout_usd")or T.get("entry_shares")or.0),G+float(n.get("notional_usd",.0)or.0));b+=H;c+=H;continue
-  e=.0
-  if T.get("is_dominance_box")or T.get("is_single_leg_lock"):
-   E=str(T.get("entry_fee_asset")or"").upper()
-   if E!="SHARES":e=float(T.get("entry_fee_cash_usd")or T.get("fee_usd")or.0)
-   elif(T.get("inventory_reconciled")and float(T.get("fee_usd",.0)or.0)==.0 and float(T.get("fee_rate_applied",.0)or.0)>.0 and float(T.get("entry_shares",.0)or.0)>.0 and float(T.get("entry_shares",.0)or.0)>=float(T.get("gross_entry_shares")or T.get("entry_shares")or.0)-.02):
-    P=float(T["entry_shares"]);S=G/P
-    if.0<S<1.:O=float(T.get("fee_rate_applied")or.0);N=float(T.get("fee_exponent_applied")or 1.);e=round(P*O*((S*(1.-S))**N),4)
-  F=G+e;b+=F;L=str(T.get("box_id")or"").strip()
-  if T.get("is_dominance_box")and L:o.setdefault(L,[]).append(T)
-  else:c+=F
- d=.0;h=(live_st.get("collateral_includes_resting_maker")is False or str(live_st.get("collateral_source")or"").upper()=="CLOB_BALANCE_API")
- if h and isinstance(live_st.get("pending_entry_intents"),dict):
-  for J in live_st["pending_entry_intents"].values():
-   if isinstance(J,dict)and(J.get("live_maker_anchor_inflight")or J.get("maker_wire_inflight")or J.get("entry_order_id")):d+=max(.0,float(J.get("notional_usd")or.0))
- if k:j=p+b+d;f=max(q,j)
- else:f=float(fallback_equity)
- a=.0
- for I in o.values():
-  if len(I)>=2:D=min(float(x.get("remaining_shares",x.get("entry_shares",.0))or.0)for x in I);a+=max(D,sum(float(x.get("remaining_cost_basis",x.get("notional_usd",.0))or.0)for x in I))
-  else:a+=sum(float(x.get("remaining_cost_basis",x.get("notional_usd",.0))or.0)for x in I)
- i=(max(f,p+c+a+d)if k else f);A=max(float(live_st.get("high_water_mark_equity")or.0),f);u=[t for t in(live_st.get("closed_positions")or[])if isinstance(t,dict)];z={}
- for t in u:
-  M=str(t.get("box_id")or"").strip()
-  if M:z[M]=z.get(M,0)+1
- s={}
- for R,t in enumerate(u):
-  y=t.get("realized_pnl_usd")
-  if y is None:y=t.get("net_pnl_usd")
-  if y is not None:m=float(y)
-  else:m=(float(t.get("realized_exit_cash",.0)or.0)-float(t.get("notional_usd",.0)or.0)-float(t.get("fee_usd",.0)or.0))
-  M=str(t.get("box_id")or"").strip();l=bool(M)and(bool(t.get("is_dominance_box"))or z.get(M,0)>1);K=f"BOX::{M}"if l else f"TRD::{R}::{t.get('trade_id')or R}";Q=s.setdefault(K,{"pnl":.0,"any_won_flag":False,"legs":0});Q["pnl"]+=m;Q["legs"]+=1
-  if t.get("won")is True:Q["any_won_flag"]=True
- w=len(s);C=sum(1 for g in s.values()if g["pnl"]>.0 or(abs(g["pnl"])<=1e-9 and g["any_won_flag"]));r=round(1e2*C/w,2)if w>0 else.0;return{"live_equity":f,"locked_floor_equity":i,"hwm_equity":A,"closed_legs_count":len(u),"economic_trades_count":w,"economic_wins":C,"economic_win_rate_pct":r}
-def build_live_projections(days=30,fallback_equity=69.61):
- P=datetime.now(timezone.utc);O=_load_json(LIVE_STATE_FILE);N=_load_json(ALPHA124_STATE_FILE);D=_load_json(EXP316_STATE_FILE);V=_load_json(SOL_SHADOW_FILE);U=_load_json(XRP_SHADOW_FILE);T=_load_phase3a_summary(PHASE34_TRACKER_FILE);I=_load_json(RISK_CONFIG_FILE);H=compute_live_equity_and_rates(O,fallback_equity=fallback_equity);u=H["live_equity"];i=H["locked_floor_equity"];z=H["hwm_equity"];r=float(I.get("scale_up_equity_threshold")or 110.);n=H["economic_trades_count"];C=H["economic_wins"];t=H["economic_win_rate_pct"];q=_parse_iso(N.get("started_at"));h=(round(max(.0,(P-q).total_seconds()/86400.),2)if q else 1.);B=N.get("by_sleeve")or{};y=(D.get("tiers")or{}).get("T1000")or{};p=[]
+STRICT_PURE_RISKLESS_LIVE_SLEEVES=frozenset({"D1_SAME_ORACLE_DOMINANCE_BOX","D1_4H_DOMINANCE_BOX","D1_QUIET_BOOK_BOX","C1_BINARY_COMPLETE_SET","NR2_CONVERT_NO_SUBSET_ARB"})
+def _is_riskless_only_mode_configured(strategy_cfg=None):
+ b=strategy_cfg if isinstance(strategy_cfg,dict)else _load_json(STRATEGY_RISK_CONFIG_FILE);a=b.get("directional")if isinstance(b,dict)else None
+ if isinstance(a,dict)and"riskless_only_mode"in a:return bool(a.get("riskless_only_mode"))
+ return False
+def _is_strict_pure_riskless_configured(strategy_cfg=None):
+ b=strategy_cfg if isinstance(strategy_cfg,dict)else _load_json(STRATEGY_RISK_CONFIG_FILE);a=b.get("riskless_boxes")if isinstance(b,dict)else None
+ if isinstance(a,dict)and"strict_pure_riskless_mode"in a:return bool(a.get("strict_pure_riskless_mode"))and not bool(a.get("enable_single_leg_maker_bond1",True))
+ return False
+def simulate_single_day_net_pnl(day_idx,equity_start,scenario,scale_up_threshold=98.,shadow_by_sleeve=None,sol_shadow=None,phase3a_shadow=None,exp316_t1k=None,riskless_only=None,strict_pure_riskless=None):
+ i=_is_riskless_only_mode_configured()if riskless_only is None else bool(riskless_only);d=(i and(_is_strict_pure_riskless_configured()if strict_pure_riskless is None else bool(strict_pure_riskless)));_r=_box_concurrency_mult(equity_start)
+ if d:
+  f={"P25_CONSERVATIVE":.52,"P50_BASE_FINLAND":1.,"P75_LONDON_UPSIDE":1.82}[scenario];X=60. if equity_start<98. else(120. if equity_start<253. else(160. if equity_start<1003. else 220.));_q=min(X,max(10.,equity_start*.88));B=.92*f*(1.+.42*(_r-1.));W={"P25_CONSERVATIVE":10.5,"P50_BASE_FINLAND":19.5,"P75_LONDON_UPSIDE":36.}[scenario];V=min(W,_q*B*(.0245*_depth_decay(_q,knee_usd=85.)));U=55. if equity_start<98. else(105. if equity_start<253. else 155.);_p=min(U,max(10.,equity_start*.65));A=.16*f*_r;T={"P25_CONSERVATIVE":2.5,"P50_BASE_FINLAND":4.5,"P75_LONDON_UPSIDE":8.5}[scenario];S=min(T,_p*A*(.0145*_depth_decay(_p,knee_usd=80.)));w={"BOND1_and_BOND2_uma_resolution_carry":.0,"S2_rtds_twap_and_clinch_locks":.0,"D1_same_oracle_and_quiet_boxes":round(V,2),"V3_zero_loss_math_and_c1_merge_boxes":round(S,2),"dynamic_tier_unlock_sleeves":.0}
+  if equity_start>=1003.:h="INSTITUTIONAL_MATH_RISKLESS (>=$1,003): Depth-Capped D1 Same-Oracle + C1 Merge + m=2 NR2 Convert ($220 Box Cap)"
+  elif equity_start>=253.:h="SCALE_MATH_RISKLESS ($253-$1,003): $120-$160 D1/C1/NR2(m=2) Payoff-Dominance Only (0 Single-Leg Carries)"
+  elif equity_start>=98.:h="GROWTH_MATH_RISKLESS ($98-$253): $120 D1 Cap + C1 Instant Merge + m=2 NR2 Convert (100% Unencumbered Cash)"
+  else:h="SEED_MATH_RISKLESS (<$98): Pure Payoff-Dominance D1 + C1 Merge + m=2 NR2 (0 UMA/Single-Leg Dispute Exposure)"
+  return round(sum(w.values()),2),w,h
+ if i:
+  k={"P25_CONSERVATIVE":.52,"P50_BASE_FINLAND":1.,"P75_LONDON_UPSIDE":1.82}[scenario];n={"P25_CONSERVATIVE":.58,"P50_BASE_FINLAND":1.,"P75_LONDON_UPSIDE":1.48}[scenario];m=max(10.,equity_start*.92);v=min(85.,max(21.,equity_start*.175))if equity_start>=125. else.0;_o=min(60.,max(15.,equity_start*.12))if equity_start>=140. else.0;z=min(220.,max(10.,m-v-_o));g=.88;u=2.4*g*n*(1.+.35*(_r-1.));t={"P25_CONSERVATIVE":8.,"P50_BASE_FINLAND":14.5,"P75_LONDON_UPSIDE":23.5}[scenario];s=min(t,z*u*(.0045*_depth_decay(z*.25,knee_usd=85.)));_u=min(95.,max(9.,equity_start*.36));R=2.55*(.45*n+.55*k)*(1.+.3*(_r-1.));_n={"P25_CONSERVATIVE":11.5,"P50_BASE_FINLAND":21.,"P75_LONDON_UPSIDE":36.5}[scenario];_m=min(_n,_u*R*(.0096*_depth_decay(_u,knee_usd=70.)));Q=60. if equity_start<98. else(120. if equity_start<253. else(160. if equity_start<1003. else 220.));_l=min(Q,max(14.,equity_start*.58));y=.82*k*(1.+.42*(_r-1.));P={"P25_CONSERVATIVE":17.,"P50_BASE_FINLAND":32.,"P75_LONDON_UPSIDE":59.}[scenario];O=min(P,_l*y*(.0255*_depth_decay(_l,knee_usd=75.)));N=55. if equity_start<98. else(105. if equity_start<253. else 155.);_k=min(N,max(12.,equity_start*.4));x=.78*k*_r;M={"P25_CONSERVATIVE":11.5,"P50_BASE_FINLAND":21.,"P75_LONDON_UPSIDE":36.5}[scenario];L=min(M,_k*x*(.0205*_depth_decay(_k,knee_usd=80.)));c=.0
+  if v>.0:c+=v*.0145*n
+  if _o>.0:H=2.2*(.4*n+.6*k);_j={"P25_CONSERVATIVE":8.5,"P50_BASE_FINLAND":15.5,"P75_LONDON_UPSIDE":26.5}[scenario];c+=min(_j,_o*H*(.0115*_depth_decay(_o,knee_usd=75.)))
+  r={"BOND1_and_BOND2_uma_resolution_carry":round(s,2),"S2_rtds_twap_and_clinch_locks":round(_m,2),"D1_same_oracle_and_quiet_boxes":round(O,2),"V3_zero_loss_math_and_c1_merge_boxes":round(L,2),"dynamic_tier_unlock_sleeves":round(c,2)}
+  if equity_start>=1003.:a="INSTITUTIONAL_RISKLESS (>=$1,003): Full 5-Engine Zero-Loss Stack ($160-$220 Box Caps + Pre-Split Gun)"
+  elif equity_start>=253.:a="SCALE_RISKLESS ($253-$1,003): $120-$160 D1/C1 Caps + Multi-Asset Pre-Split Overround Gun + 88% BOND1"
+  elif equity_start>=140.:a="TIER_2_UNLOCKED (>=$140): Pre-Split Atomic Overround Gun + MKR_REWARD Carry + Full Riskless Stack"
+  elif equity_start>=125.:a="TIER_1_UNLOCKED ($125-$140): MKR_REWARD_LOCKED_CARRY Live + Cancel-on-Arb D1/S2 ($140 Pre-Split Next)"
+  else:a="SEED_PURE_RISKLESS (<$125): 0-Loss 5-Engine Velocity (Tier-1 S2MKR T-28s + <70ms Cancel-on-Arb + BOND1)"
+  return round(sum(r.values()),2),r,a
+ l={"P25_CONSERVATIVE":.85,"P50_BASE_FINLAND":1.35,"P75_LONDON_UPSIDE":1.95}[scenario];e={"P25_CONSERVATIVE":.145,"P50_BASE_FINLAND":.182,"P75_LONDON_UPSIDE":.21}[scenario];j={"P25_CONSERVATIVE":.91,"P50_BASE_FINLAND":.95,"P75_LONDON_UPSIDE":.97}[scenario];K={"P25_CONSERVATIVE":.62,"P50_BASE_FINLAND":1.,"P75_LONDON_UPSIDE":1.42}[scenario];_i=compute_v541_ticket_size(equity_start);G=1.28 if equity_start>=253. else(1.15 if equity_start>=150. else 1.);p=l*G;_h=e*j*_depth_decay(_i,knee_usd=65.);_a={"P25_CONSERVATIVE":55.,"P50_BASE_FINLAND":95.,"P75_LONDON_UPSIDE":145.}[scenario];Z=min(_a,_i*p*_h);_g=60. if equity_start<98. else(120. if equity_start<253. else(150. if equity_start<1003. else 220.));_t=min(_g,max(14.,equity_start*.48));J=1.95*K*(1.+.45*(_r-1.));_f={"P25_CONSERVATIVE":24.,"P50_BASE_FINLAND":38.,"P75_LONDON_UPSIDE":58.}[scenario];_e=min(_f,_t*J*(.031*_depth_decay(_t,knee_usd=75.)));_d=(60. if equity_start<98. else(max(60.,equity_start*.4)if equity_start<253. else(120. if equity_start<1003. else 150.)));_s=min(_d,max(14.,equity_start*.36));I=1.2*K*_r;_c={"P25_CONSERVATIVE":16.,"P50_BASE_FINLAND":26.,"P75_LONDON_UPSIDE":40.}[scenario];_b=min(_c,_s*I*(.0235*_depth_decay(_s,knee_usd=80.)));F=45.25 if equity_start<98. else(85. if equity_start<253. else(130. if equity_start<1003. else 180.));Y=min(F,equity_start*.42);q=2.1*K*(1.+.55*(_r-1.));E={"P25_CONSERVATIVE":6.5,"P50_BASE_FINLAND":11.,"P75_LONDON_UPSIDE":17.}[scenario];D=min(E,Y*q*.0082);C={"v541_high_z_directional_sniper":round(Z,2),"D1_same_oracle_and_quiet_boxes":round(_e,2),"V3_zero_loss_math_partition_boxes":round(_b,2),"BOND1_and_liquid_MKR_LOCK1_carry":round(D,2)}
+ if equity_start>=1003.:b="INSTITUTIONAL (>=$1,003): 4 Dir Slots ($160-$200 Cap) + 10 Box Slots ($150-$220 L1 Depth Cap)"
+ elif equity_start>=253.:b="SCALE ($253-$1,003): 4 Dir Slots (22% Ticket) + $120-$150 Box Cap + 88% BOND1"
+ elif equity_start>=150.:b="HYPER_GROWTH 3-Slot (>=$150): 3 Crypto Dir Slots (26% Ticket) + $120 D1 Cap + 48h Velocity"
+ elif equity_start>=98.:b="HYPER_GROWTH ($98-$150): 26% Dir Ticket + $120 D1 / 40% ZF Box Cap + 48h Velocity"
+ else:b="UNLEASHED_LAUNCH (<$98): v5.4.1 High-Z Sniper + 90% D1 ($60) + 0-Loss Math Boxes + 78% BOND1"
+ o=round(sum(C.values()),2);return o,C,b
+def compute_live_equity_and_rates(live_st,fallback_equity=75.84):
+ v=float(live_st.get("total_account_equity")or.0);u=float(live_st.get("live_bankroll")or.0);o=(("total_account_equity"in live_st and live_st.get("total_account_equity")is not None)or("live_bankroll"in live_st and live_st.get("live_bankroll")is not None));G=live_st.get("active_positions");A=list(G.values())if isinstance(G,dict)else[];d=.0;s={};e=.0
+ for P in A:
+  if not isinstance(P,dict):continue
+  l=float(P.get("remaining_cost_basis",P.get("notional_usd",.0))or.0);r=P.get("_closed_partner_leg")
+  if(P.get("is_dominance_box")and isinstance(r,dict)and float(r.get("payout_usd",.0)or.0)<=.01):N=max(float(P.get("expected_terminal_payout_usd")or P.get("entry_shares")or.0),l+float(r.get("notional_usd",.0)or.0));d+=N;e+=N;continue
+  h=.0
+  if P.get("is_dominance_box")or P.get("is_single_leg_lock"):
+   K=str(P.get("entry_fee_asset")or"").upper()
+   if K!="SHARES":h=float(P.get("entry_fee_cash_usd")or P.get("fee_usd")or.0)
+   elif(P.get("inventory_reconciled")and float(P.get("fee_usd",.0)or.0)==.0 and float(P.get("fee_rate_applied",.0)or.0)>.0 and float(P.get("entry_shares",.0)or.0)>.0 and float(P.get("entry_shares",.0)or.0)>=float(P.get("gross_entry_shares")or P.get("entry_shares")or.0)-.02):
+    Y=float(P["entry_shares"]);_b=l/Y
+    if.0<_b<1.:X=float(P.get("fee_rate_applied")or.0);W=float(P.get("fee_exponent_applied")or 1.);h=round(Y*X*((_b*(1.-_b))**W),4)
+  L=l+h;d+=L;F=str(P.get("box_id")or"").strip()
+  if P.get("is_dominance_box")and F:s.setdefault(F,[]).append(P)
+  else:e+=L
+ f=.0;a=.0;j=(live_st.get("collateral_includes_resting_maker")is False or str(live_st.get("collateral_source")or"").upper()=="CLOB_BALANCE_API")
+ if isinstance(live_st.get("pending_entry_intents"),dict):
+  for S in live_st["pending_entry_intents"].values():
+   if not isinstance(S,dict):continue
+   if j and(S.get("live_maker_anchor_inflight")or S.get("maker_wire_inflight")or S.get("entry_order_id")):f+=max(.0,float(S.get("notional_usd")or.0))
+   if S.get("live_maker_anchor_inflight"):
+    J=max(.0,float(S.get("matched_notional_usd")or.0));R=max(.0,float(S.get("collat_drop_usd")or.0));U=float(S.get("heartbeat_ts")or.0);M=float(S.get("_collat_surplus_ts")or S.get("ts")or.0)
+    if R>J+1e-6 and M>.0 and(U-M)>=25.:a+=R-J
+ if o:n=u+d+f;m=max(.0,v-a);i=max(m,n)
+ else:i=float(fallback_equity)
+ c=.0
+ for Q in s.values():
+  if len(Q)>=2:I=min(float(x.get("remaining_shares",x.get("entry_shares",.0))or.0)for x in Q);c+=max(I,sum(float(x.get("remaining_cost_basis",x.get("notional_usd",.0))or.0)for x in Q))
+  else:c+=sum(float(x.get("remaining_cost_basis",x.get("notional_usd",.0))or.0)for x in Q)
+ b=.0
+ for P in A:
+  if not isinstance(P,dict):continue
+  F=str(P.get("box_id")or"").strip()
+  if P.get("is_dominance_box")and F:continue
+  l=float(P.get("remaining_cost_basis",P.get("notional_usd",.0))or.0)
+  if P.get("is_single_leg_lock")or str(P.get("box_type")or"").upper()=="SINGLE_LEG_LOCK"or str(P.get("trade_id")or"").startswith(("WS_SNIPE_","LOCK1_","MKR_LOCK1_")):O=float(P.get("remaining_shares",P.get("entry_shares",.0))or.0);b+=max(l,O)
+  else:b+=l
+ k=(max(i,u+b+c+f)if o else i);E=max(float(live_st.get("high_water_mark_equity")or.0),i);z=[t for t in(live_st.get("closed_positions")or[])if isinstance(t,dict)];D={}
+ for t in z:
+  V=str(t.get("box_id")or"").strip()
+  if V:D[V]=D.get(V,0)+1
+ y={}
+ for _a,t in enumerate(z):
+  C=t.get("realized_pnl_usd")
+  if C is None:C=t.get("net_pnl_usd")
+  if C is not None:q=float(C)
+  else:q=(float(t.get("realized_exit_cash",.0)or.0)-float(t.get("notional_usd",.0)or.0)-float(t.get("fee_usd",.0)or.0))
+  V=str(t.get("box_id")or"").strip();p=bool(V)and(bool(t.get("is_dominance_box"))or D.get(V,0)>1);T=f"BOX::{V}"if p else f"TRD::{_a}::{t.get('trade_id')or _a}";Z=y.setdefault(T,{"pnl":.0,"any_won_flag":False,"legs":0});Z["pnl"]+=q;Z["legs"]+=1
+  if t.get("won")is True:Z["any_won_flag"]=True
+ B=len(y);H=sum(1 for g in y.values()if g["pnl"]>.0 or(abs(g["pnl"])<=1e-9 and g["any_won_flag"]));w=round(1e2*H/B,2)if B>0 else.0;return{"live_equity":i,"locked_floor_equity":k,"liquid_working_cash_usd":round(u+c,4)if o else round(i,4),"frozen_single_leg_cost_usd":round(e,4)if o else.0,"hwm_equity":E,"closed_legs_count":len(z),"economic_trades_count":B,"economic_wins":H,"economic_win_rate_pct":w}
+def _simulate_cash_horizon(start_cash,days_n,scale_up_thr,*,strict_pure_riskless=False):
+ b=("P25_CONSERVATIVE","P50_BASE_FINLAND","P75_LONDON_UPSIDE");c={sc:float(start_cash)for sc in b};f={}
+ for d in range(1,max(days_n,365)+1):
+  a=.0
+  for sc in b:
+   e,_,_=simulate_single_day_net_pnl(d,max(10.,c[sc]),sc,scale_up_threshold=scale_up_thr,riskless_only=True,strict_pure_riskless=strict_pure_riskless);c[sc]=round(c[sc]+e,2)
+   if sc=="P50_BASE_FINLAND":a=e
+  if d in(1,7,14,30,60,90,180,365):f[f"day_{d}"]={"p25_equity":c["P25_CONSERVATIVE"],"p50_equity":c["P50_BASE_FINLAND"],"p75_equity":c["P75_LONDON_UPSIDE"],"p50_daily_pnl":a,"p50_net_profit":round(c["P50_BASE_FINLAND"]-float(start_cash),2)}
+ return f
+def build_live_projections(days=30,fallback_equity=75.84,riskless_only=None,strict_pure_riskless=None):
+ X=datetime.now(timezone.utc);W=_load_json(LIVE_STATE_FILE);V=_load_json(ALPHA124_STATE_FILE);L=_load_json(EXP316_STATE_FILE);_d=_load_json(SOL_SHADOW_FILE);_c=_load_json(XRP_SHADOW_FILE);_b=_load_phase3a_summary(PHASE34_TRACKER_FILE);Q=_load_json(RISK_CONFIG_FILE);K=_load_json(STRATEGY_RISK_CONFIG_FILE);r=_is_riskless_only_mode_configured(K)if riskless_only is None else bool(riskless_only);o=(r and(_is_strict_pure_riskless_configured(K)if strict_pure_riskless is None else bool(strict_pure_riskless)));P=compute_live_equity_and_rates(W,fallback_equity=fallback_equity);B=P["live_equity"];n=P["locked_floor_equity"];l=P["liquid_working_cash_usd"];h=P["frozen_single_leg_cost_usd"];G=P["hwm_equity"];y=float(Q.get("scale_up_equity_threshold")or 110.);t=P["economic_trades_count"];J=P["economic_wins"];A=P["economic_win_rate_pct"];w=_parse_iso(V.get("started_at"));j=(round(max(.0,(X-w).total_seconds()/86400.),2)if w else 1.);I=V.get("by_sleeve")or{};F=(L.get("tiers")or{}).get("T1000")or{};i={str(x).upper()for x in((K.get("riskless_boxes")or{}).get("paused_riskless_sleeves")or[])if x};v=[]
  for sp in GRADUATION_SPECS:
   sl=sp["sleeve"]
-  if sl in QUARANTINED_SLEEVES:continue
-  _b=sp["source"]
-  if _b=="sol_shadow":a=int(V.get("total_trades_settled")or 0);g=int(V.get("winning_trades")or 0);f=int(V.get("active_open_positions_count")or 0);c=float(V.get("realized_pnl")or.0)
-  elif _b=="phase3a_shadow":a=int(T.get("closed")or 0);g=int(T.get("wins")or 0);f=0;c=float(T.get("pnl_usd")or.0)
-  elif _b=="exp316":a=int(y.get("trades")or 0);g=int(y.get("wins")or 0);f=int(D.get("active_positions")or 0);c=float(y.get("net_pnl_usd")or.0)
-  else:M=B.get(sl)or{};a=int(M.get("closed")or 0);g=int(M.get("wins")or 0);f=int(M.get("open")or 0);c=float(M.get("realized_pnl_t1000_usd")or.0)
-  S=round(1e2*g/a,2)if a>0 else.0;o=_wilson_lcb_pct(g,a);x=round(min(1e2,1e2*a/sp["min_settled"]),1);G=round(min(1e2,1e2*h/sp["min_days"]),1);Z=(a>=sp["min_settled"]and h>=sp["min_days"]and S>=sp["min_wr_pct"]and o>=max(.0,sp["min_wr_pct"]-20.)and c>.0);p.append({"sleeve":sl,"wave":sp["wave"],"source":_b,"open_now":f,"settled_now":a,"target_settled":sp["min_settled"],"sample_progress_pct":x,"days_elapsed":h,"min_days":sp["min_days"],"time_progress_pct":G,"win_rate_pct":S,"wilson_lcb90_wr_pct":o,"target_wr_pct":sp["min_wr_pct"],"realized_pnl_t1000_usd":round(c,2),"ready_for_stage1_micro_live":Z})
- A=["P25_CONSERVATIVE","P50_BASE_FINLAND","P75_LONDON_UPSIDE"];F={sc:u for sc in A};w=P.date();s=max(days,365);j=(100,250,500,1000,2500,5000,10000);l={f"usd_{m}":{}for m in j};E=[]
- for d in range(1,s+1):
-  R=(w+timedelta(days=d-1)).isoformat();_a={"day":d,"date_utc":R};e="";b={}
-  for sc in A:
-   L=F[sc];Y,X,W=simulate_single_day_net_pnl(d,L,sc,scale_up_threshold=r,shadow_by_sleeve=B,sol_shadow=V,phase3a_shadow=T,exp316_t1k=y);Q=round(L+Y,2);F[sc]=Q;K=sc.split("_")[0].lower();_a[f"{K}_daily_pnl_usd"]=Y;_a[f"{K}_end_equity_usd"]=Q
-   for m in j:
+  if o and sl not in STRICT_PURE_RISKLESS_LIVE_SLEEVES:continue
+  if sl in QUARANTINED_SLEEVES or sl.upper()in i:continue
+  if r and sl in DIRECTIONAL_ONLY_SLEEVES:continue
+  _j=sp["source"]
+  if _j=="sol_shadow":a=int(_d.get("total_trades_settled")or 0);g=int(_d.get("winning_trades")or 0);f=int(_d.get("active_open_positions_count")or 0);c=float(_d.get("realized_pnl")or.0)
+  elif _j=="phase3a_shadow":a=int(_b.get("closed")or 0);g=int(_b.get("wins")or 0);f=0;c=float(_b.get("pnl_usd")or.0)
+  elif _j=="exp316":a=int(F.get("trades")or 0);g=int(F.get("wins")or 0);f=int(L.get("active_positions")or 0);c=float(F.get("net_pnl_usd")or.0)
+  else:U=I.get(sl)or{};a=int(U.get("closed")or 0);g=int(U.get("wins")or 0);f=int(U.get("open")or 0);c=float(U.get("realized_pnl_t1000_usd")or.0)
+  _a=round(1e2*g/a,2)if a>0 else.0;u=_wilson_lcb_pct(g,a);E=round(min(1e2,1e2*a/sp["min_settled"]),1);O=round(min(1e2,1e2*j/sp["min_days"]),1);_h=(a>=sp["min_settled"]and j>=sp["min_days"]and _a>=sp["min_wr_pct"]and u>=max(.0,sp["min_wr_pct"]-20.)and c>.0);v.append({"sleeve":sl,"wave":sp["wave"],"source":_j,"open_now":f,"settled_now":a,"target_settled":sp["min_settled"],"sample_progress_pct":E,"days_elapsed":j,"min_days":sp["min_days"],"time_progress_pct":O,"win_rate_pct":_a,"wilson_lcb90_wr_pct":u,"target_wr_pct":sp["min_wr_pct"],"realized_pnl_t1000_usd":round(c,2),"ready_for_stage1_micro_live":_h})
+ H=["P25_CONSERVATIVE","P50_BASE_FINLAND","P75_LONDON_UPSIDE"];N={sc:B for sc in H};D=X.date();z=max(days,365);q=(100,250,500,1000,2500,5000,10000);s={f"usd_{m}":{}for m in q};M=[]
+ for d in range(1,z+1):
+  Z=(D+timedelta(days=d-1)).isoformat();_i={"day":d,"date_utc":Z};e="";b={}
+  for sc in H:
+   T=N[sc];p=(max(10.,T-h)if(r and h>.0)else T);_g,_f,_e=simulate_single_day_net_pnl(d,p,sc,scale_up_threshold=y,shadow_by_sleeve=I,sol_shadow=_d,phase3a_shadow=_b,exp316_t1k=F,riskless_only=r,strict_pure_riskless=o);Y=round(T+_g,2);N[sc]=Y;S=sc.split("_")[0].lower();_i[f"{S}_daily_pnl_usd"]=_g;_i[f"{S}_end_equity_usd"]=Y
+   for m in q:
     mk=f"usd_{m}"
-    if f"{K}_day"not in l[mk]and Q>=float(m):l[mk][f"{K}_day"]=d;l[mk][f"{K}_date_utc"]=R
-   if sc=="P50_BASE_FINLAND":e=W;b=X;_a["p50_v393_ticket_usd"]=compute_v541_ticket_size(L)
-  _a["active_regime_and_milestone"]=e;_a["p50_sleeve_pnl_breakdown_usd"]=b;E.append(_a)
- v=E[:days];J={"generated_at_utc":P.isoformat(),"model_version":"v5.4.1_high_z_sniper_plus_unleashed_zero_loss_boxes","quarantined_sleeves_excluded":sorted(QUARANTINED_SLEEVES),"anchor_live_state":{"live_equity_usd":round(u,2),"locked_box_payout_floor_equity_usd":round(i,2),"high_water_mark_usd":round(z,2),"current_v393_ticket_usd":compute_v541_ticket_size(u),"current_v540_btc_ticket_usd":round(min(2e2,u*(.22 if u<98. else.26)),2),"current_v540_eth_sol_ticket_usd":round(min(170.,u*(.22 if u<98. else.26)*.85),2),"distance_to_88_dynamic_sizing_usd":round(max(.0,98.-u),2),"distance_to_98_hyper_growth_usd":round(max(.0,98.-u),2),"distance_to_110_slot2_unlock_usd":round(max(.0,150.-u),2),"distance_to_150_slot3_unlock_usd":round(max(.0,150.-u),2),"distance_to_253_scale_tier_usd":round(max(.0,253.-u),2),"distance_to_1003_institutional_tier_usd":round(max(.0,1003.-u),2),"live_closed_trades":n,"live_closed_legs":H["closed_legs_count"],"live_wins":C,"live_win_rate_pct":t,"alpha124_markets_monitored":N.get("markets_monitored",{}),"alpha124_open_shadow_positions":N.get("open_positions_count",0),"alpha124_resting_maker_bids":N.get("pending_maker_orders_count",0),"sol_shadow_settled":V.get("total_trades_settled",0),"sol_shadow_win_rate_pct":V.get("win_rate_pct",.0),"phase3a_maker_settled":T.get("closed",0),"xrp_shadow_settled":U.get("total_trades_settled",0)},"summary_horizons_usd":{f"day_{k}":{"date_utc":E[k-1]["date_utc"],"p25_equity":E[k-1]["p25_end_equity_usd"],"p50_equity":E[k-1]["p50_end_equity_usd"],"p75_equity":E[k-1]["p75_end_equity_usd"],"p50_daily_pnl":E[k-1]["p50_daily_pnl_usd"],"p50_net_profit":round(E[k-1]["p50_end_equity_usd"]-u,2)}for k in(1,4,7,10,14,21,30,60,90,180,365)if k<=len(E)},"milestone_eta_days":l,"p75_jurisdiction_compliance_note":("P75 models <15ms low-latency execution; Polymarket restricts UK (eu-west-2), FR, DE, IE, and ON — keep live execution on Finland (or another verified non-restricted EU region) unless lawful eligibility is confirmed."),"sleeve_graduation_live_tracker":p,"day_by_day_schedule":v};return J
+    if f"{S}_day"not in s[mk]and Y>=float(m):s[mk][f"{S}_day"]=d;s[mk][f"{S}_date_utc"]=Z
+   if sc=="P50_BASE_FINLAND":e=_e;b=_f;_i["p50_v393_ticket_usd"]=.0 if r else compute_v541_ticket_size(T)
+  _i["active_regime_and_milestone"]=e;_i["p50_sleeve_pnl_breakdown_usd"]=b;M.append(_i)
+ C=M[:days];R={"generated_at_utc":X.isoformat(),"model_version":("v6.2.0_strict_pure_riskless_math_dominance_only"if o else("v5.7.1_pure_riskless_5_engine_velocity"if r else"v5.4.1_high_z_sniper_plus_unleashed_zero_loss_boxes")),"riskless_only_mode":r,"strict_pure_riskless_mode":o,"strict_pure_riskless_firewall_enabled":bool(((_load_json(STRATEGY_RISK_CONFIG_FILE).get("riskless_boxes"))or{}).get("strict_pure_riskless_mode",False)),"row2_post_clinch_carries_enabled":bool(((_load_json(STRATEGY_RISK_CONFIG_FILE).get("riskless_boxes"))or{}).get("enable_single_leg_maker_bond1",True)),"quarantined_sleeves_excluded":sorted(QUARANTINED_SLEEVES),"anchor_live_state":{"live_equity_usd":round(B,2),"liquid_working_cash_usd":round(l,2),"frozen_single_leg_cost_usd":round(h,2),"locked_box_payout_floor_equity_usd":round(n,2),"high_water_mark_usd":round(G,2),"riskless_only_mode":r,"strict_pure_riskless_mode":o,"current_v393_ticket_usd":.0 if r else compute_v541_ticket_size(B),"current_v540_btc_ticket_usd":.0 if r else round(min(2e2,B*(.22 if B<98. else.26)),2),"current_v540_eth_sol_ticket_usd":.0 if r else round(min(170.,B*(.22 if B<98. else.26)*.85),2),"current_cancel_on_arb_max_sweep_usd":round(min(45.,max(20.,B*.88)),2),"distance_to_125_reward_carry_unlock_usd":round(max(.0,125.-B),2),"distance_to_140_presplit_overround_unlock_usd":round(max(.0,140.-B),2),"distance_to_88_dynamic_sizing_usd":round(max(.0,88.-B),2),"distance_to_98_hyper_growth_usd":round(max(.0,98.-B),2),"distance_to_110_slot2_unlock_usd":round(max(.0,110.-B),2),"distance_to_150_slot3_unlock_usd":round(max(.0,150.-B),2),"distance_to_253_scale_tier_usd":round(max(.0,253.-B),2),"distance_to_1003_institutional_tier_usd":round(max(.0,1003.-B),2),"live_closed_trades":t,"live_closed_legs":P["closed_legs_count"],"live_wins":J,"live_win_rate_pct":A,"alpha124_markets_monitored":V.get("markets_monitored",{}),"alpha124_open_shadow_positions":V.get("open_positions_count",0),"alpha124_resting_maker_bids":V.get("pending_maker_orders_count",0),"sol_shadow_settled":_d.get("total_trades_settled",0),"sol_shadow_win_rate_pct":_d.get("win_rate_pct",.0),"phase3a_maker_settled":_b.get("closed",0),"xrp_shadow_settled":_c.get("total_trades_settled",0)},"summary_horizons_usd":{f"day_{k}":{"date_utc":M[k-1]["date_utc"],"p25_equity":M[k-1]["p25_end_equity_usd"],"p50_equity":M[k-1]["p50_end_equity_usd"],"p75_equity":M[k-1]["p75_end_equity_usd"],"p50_daily_pnl":M[k-1]["p50_daily_pnl_usd"],"p50_net_profit":round(M[k-1]["p50_end_equity_usd"]-B,2)}for k in(1,4,7,10,14,21,30,60,90,180,365)if k<=len(M)},"milestone_eta_days":s,"post_nov14_miami_scenarios_usd":{"favorable_86_87f_payout_52usd":{"starting_liquid_cash_usd":round(l+52.,2)if h>.0 else round(l,2),"horizons":_simulate_cash_horizon(l+(52. if h>.0 else.0),days,y,strict_pure_riskless=o)},"adverse_zero_payout_0usd":{"starting_liquid_cash_usd":round(l,2),"requires_circuit_breaker_floor_ack_below_48usd":bool(l<48.),"horizons":_simulate_cash_horizon(l,days,y,strict_pure_riskless=o)}},"p75_jurisdiction_compliance_note":("P75 models lawful low-latency EU execution (~8-12ms RTT in Group-2 API-open regions such as GCP europe-west4 Netherlands or AWS eu-west-1 Dublin after verifying live POST /order via check_polymarket_region_latency.py --verify-post-only, while keeping manual Web UI access on Group-1 Finland europe-north1; or ~22-25ms RTT in Group-1 Stockholm europe-north2). Never deploy unwhitelisted live order placement to Group-3 CLOB close-only regions (UK eu-west-2, DE, FR, BE, CH, US, CA-ON)."),"live_riskless_funnel":W.get("live_riskless_funnel",{}),"sleeve_graduation_live_tracker":v,"day_by_day_schedule":C};return R
 def write_live_projections_atomic(days=30):a=build_live_projections(days=days);OUTPUT_JSON_FILE.parent.mkdir(parents=True,exist_ok=True);b=OUTPUT_JSON_FILE.with_suffix(".tmp");b.write_text(json.dumps(a,indent=2),encoding="utf-8");os.replace(b,OUTPUT_JSON_FILE);return a
 def print_human_scorecard(payload):
- b=payload["anchor_live_state"];print(f"=== DOMINUS POLYMARKET LIVE DAY-BY-DAY PROJECTIONS [{payload.get('model_version')}] ({payload['generated_at_utc']}) ===");print(f"Anchor Live Equity: ${b['live_equity_usd']:.2f} (HWM ${b['high_water_mark_usd']:.2f}) | Live Epoch: {b['live_wins']}W/{b['live_closed_trades']-b['live_wins']}L ({b['live_win_rate_pct']:.1f}% WR) | To $88 Dynamic: ${b['distance_to_88_dynamic_sizing_usd']:.2f} | To $110 Slot-2: ${b['distance_to_110_slot2_unlock_usd']:.2f}");print("\n--- Clean Active Shadow Sleeve Graduation Readiness (Quarantined Sleeves Excluded) ---")
+ b=payload["anchor_live_state"];print(f"=== DOMINUS POLYMARKET LIVE DAY-BY-DAY PROJECTIONS [{payload.get('model_version')}] ({payload['generated_at_utc']}) ===")
+ if payload.get("riskless_only_mode"):print(f"Anchor Live Equity: ${b['live_equity_usd']:.2f} (HWM ${b['high_water_mark_usd']:.2f}) | Live Epoch: {b['live_wins']}W/{b['live_closed_trades']-b['live_wins']}L ({b['live_win_rate_pct']:.1f}% WR) | To $125 Reward Unlock: ${b['distance_to_125_reward_carry_unlock_usd']:.2f} | To $140 Pre-Split Gun: ${b['distance_to_140_presplit_overround_unlock_usd']:.2f}")
+ else:print(f"Anchor Live Equity: ${b['live_equity_usd']:.2f} (HWM ${b['high_water_mark_usd']:.2f}) | Live Epoch: {b['live_wins']}W/{b['live_closed_trades']-b['live_wins']}L ({b['live_win_rate_pct']:.1f}% WR) | To $88 Dynamic: ${b['distance_to_88_dynamic_sizing_usd']:.2f} | To $110 Slot-2: ${b['distance_to_110_slot2_unlock_usd']:.2f}")
+ print("\n--- Clean Active Shadow Sleeve Graduation Readiness (Quarantined Sleeves Excluded) ---")
  for g in payload["sleeve_graduation_live_tracker"]:a="READY"if g["ready_for_stage1_micro_live"]else"WAIT ";print(f"  [{a}] {g['sleeve']:28s} | {g['wave']:22s} | Settled={g['settled_now']:2d}/{g['target_settled']:2d} (Open={g['open_now']:2d}) | WR={g['win_rate_pct']:6.1f}% (req>={g['target_wr_pct']:5.1f}%) | Ref PnL=${g['realized_pnl_t1000_usd']:+7.2f}")
  print("\n--- 30-Day Live-Anchored Compounding Schedule (Post-Purge Clean Roster, Depth-Capped) ---");print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | P75 LowLat ($) | Active Regime / Graduation Milestone");print("-"*122)
  for r in payload["day_by_day_schedule"]:print(f"D{r['day']:02d} | {r['date_utc']} | ${r['p25_end_equity_usd']:9.2f} | ${r['p50_end_equity_usd']:14.2f} | ${r['p50_daily_pnl_usd']:+10.2f} | ${r['p75_end_equity_usd']:13.2f} | {r['active_regime_and_milestone']}")
@@ -8326,12 +8827,11 @@ def main():
  else:print_human_scorecard(a)
 if __name__=="__main__":main()
 # ======================================================================================
-# [19/21] MODULE: scripts/alpha124_status.py
+# [19/20] MODULE: scripts/alpha124_status.py
 # PURPOSE: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
 # ======================================================================================
 
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import json
-from pathlib import Path;PROJECT_ROOT=Path(__file__).resolve().parent.parent;STATE_FILE=PROJECT_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json";OPPS_FILE=PROJECT_ROOT/"data"/"alpha124"/"alpha124_live_opportunities.json"
+import json;from pathlib import Path;PROJECT_ROOT=Path(__file__).resolve().parent.parent;STATE_FILE=PROJECT_ROOT/"data"/"alpha124"/"alpha124_shadow_state.json";OPPS_FILE=PROJECT_ROOT/"data"/"alpha124"/"alpha124_live_opportunities.json"
 def main():
  if not STATE_FILE.exists():print("No Alpha-124 state file found yet.");return
  i=json.loads(STATE_FILE.read_text(encoding="utf-8"));print(f"=== ALPHA-124 SHADOW SCORECARD (Updated: {i.get('updated_at_utc')}) ===");print(f"Cycles: {i.get('cycle_count')} | MakerPending: {i.get('pending_maker_orders_count',0)} | Monitored: {i.get('markets_monitored')}");print(f"Spots : {i.get('spots')}");print(f"Realized PnL by Bankroll Tier: {i.get('portfolio_realized_pnl_by_bankroll_usd')}");print("\n--- Sleeve Breakdown ---")
@@ -8355,12 +8855,11 @@ def main():
    for o in d[:12]:print(f"  [{o['sleeve']:28s}] edge={o['net_edge']:+.3f} | ask=${o['ask_vwap']:.3f} vs p={o['p_model']:.3f} (L1=${o['l1_usd']:.0f}) | {o['market']}")
 if __name__=="__main__":main()
 # ======================================================================================
-# [20/21] MODULE: scripts/polymarket_scorecard_snapshot.py
+# [20/20] MODULE: scripts/polymarket_scorecard_snapshot.py
 # PURPOSE: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
 # ======================================================================================
 
-#!/usr/bin/env python3 import json
-import os;import pathlib;import subprocess;ROOT=pathlib.Path("/home/skybullet1987/quant_pipeline");SERVICES=["polymarket-live-harvester","polymarket-alpha124-shadow","polymarket-trader","polymarket-exp316-shadow","polymarket-recorder","polymarket-recorder-eth","polymarket-recorder-sol","polymarket-recorder-xrp"]
+import json;import os;import pathlib;import subprocess;ROOT=pathlib.Path("/home/skybullet1987/quant_pipeline");SERVICES=["polymarket-live-harvester","polymarket-alpha124-shadow","polymarket-trader","polymarket-exp316-shadow","polymarket-recorder","polymarket-recorder-eth","polymarket-recorder-sol","polymarket-recorder-xrp"]
 def _read_json(rel_path):
  p=ROOT/rel_path
  if not p.exists():return{}
@@ -8371,262 +8870,3 @@ def main():
  if hasattr(os,"getuid"):p.setdefault("XDG_RUNTIME_DIR",f"/run/user/{os.getuid()}")
  d={s:subprocess.run(["systemctl","--user","is-active",s],capture_output=True,text=True,env=p).stdout.strip()for s in SERVICES};l=_read_json("data/polymarket/live_harvester_state.json");c=_read_json("data/alpha124/alpha124_shadow_state.json");j=_read_json("data/polymarket/live_daily_projections.json");h=_read_json("data/polymarket/paper_trader_state.json");o=_read_json("data/polymarket/state_shadow_sol_v392.json");n=_read_json("data/polymarket/state_shadow_xrp_v392.json");f=_read_json("data/exp316/exp316_shadow_state.json");e=l.get("closed_positions")or[];i=sum(1 for t in e if float(t.get("realized_pnl_usd")or t.get("net_pnl_usd")or(float(t.get("realized_exit_cash",.0))-float(t.get("notional_usd",.0))-float(t.get("fee_usd",.0))))>0);g=subprocess.run(["journalctl","--user","-u","polymarket-live-harvester","--since","24 hours ago","--no-pager"],capture_output=True,text=True,env=p).stdout.splitlines();m=[line for line in g if"SHADOW_PHASE3A"in line][-5:];q=[line for line in g if"SHADOW_PHASE4"in line][-5:];b=["timestamp","current_equity","realized_pnl","total_trades_settled","winning_trades","losing_trades","win_rate_pct","profit_factor","active_open_positions_count","ready_for_live_graduation","graduation_criteria"];a={"services":d,"all_services_active":all(v=="active"for v in d.values()),"live_v392":{"updated_at_utc":l.get("updated_at_utc"),"live_bankroll_usd":l.get("live_bankroll"),"total_account_equity_usd":l.get("total_account_equity"),"high_water_mark_equity_usd":l.get("high_water_mark_equity"),"active_positions_count":l.get("active_positions_count"),"closed_positions_count":len(e),"closed_wins":i,"progress_to_n40_gate":f"{len(e)}/40","distance_to_88_dynamic_tier_usd":round(max(.0,88.-float(l.get("total_account_equity")or.0)),2),"distance_to_110_scaleup_tier_usd":round(max(.0,110.-float(l.get("total_account_equity")or.0)),2),"risk_halt":l.get("risk_halt"),"reconciliation_required":l.get("reconciliation_required"),"global_halt_reasons":l.get("global_halt_reasons")},"alpha124_11sleeve_shadow":{"updated_at_utc":c.get("updated_at_utc"),"markets_monitored":c.get("markets_monitored"),"open_positions_count":c.get("open_positions_count"),"pending_maker_orders_count":c.get("pending_maker_orders_count"),"portfolio_realized_pnl_by_bankroll_usd":c.get("portfolio_realized_pnl_by_bankroll_usd"),"by_sleeve":c.get("by_sleeve")},"live_daily_projections_summary":j.get("summary_horizons_usd",{}),"paper_sleeve1_benchmark":h.get("validation_oos_epoch",{}),"shadow_sol_v392":{k:o.get(k)for k in b},"shadow_xrp_v392":{k:n.get(k)for k in b},"shadow_exp316":f,"shadow_phase3a_recent_24h":m,"shadow_phase4_recent_24h":q};print(json.dumps(a,indent=2))
 if __name__=="__main__":main()
-# ======================================================================================
-# [21/21] MODULE: tests/test_alpha_124_oracles.py
-# PURPOSE: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-# ======================================================================================
-
-#!/usr/bin/env python3 # from __future__ import annotations  # (Lifted to top of consolidated bundle) import sys
-from datetime import datetime,timezone;from pathlib import Path;PROJECT_ROOT=Path(__file__).resolve().parent.parent
-if str(PROJECT_ROOT)not in sys.path:sys.path.insert(0,str(PROJECT_ROOT))
-from src.polymarket_research.barrier_onetouch_svi_engine import(first_passage_touch_prob,parse_barrier_direction,parse_strike_from_text);from src.polymarket_research.multistrike_svi_scalper import(detect_ladder_monotonicity_boxes,evaluate_svi_digital_fair_value);from src.polymarket_research.weather_metar_engine import(celsius_to_market_int,parse_bucket_bounds,parse_metar_line,round_half_up_polymarket)
-def test_polymarket_weather_rounding_spec_examples():assert round_half_up_polymarket(13.9)==14;assert round_half_up_polymarket(17.4)==17;assert round_half_up_polymarket(16.5)==17;assert round_half_up_polymarket(-1.7)==-2;assert round_half_up_polymarket(-8.5)==-8;assert celsius_to_market_int(18.3,"F")==65;assert celsius_to_market_int(17.8,"F")==64;assert celsius_to_market_int(19.,"F")==66;assert celsius_to_market_int(-22.5,"F")==-8
-def test_metar_parser_speci_and_t_remark():f=datetime(2026,10,25,16,0,tzinfo=timezone.utc);e=parse_metar_line("SPECI RJTT 251545Z 08010KT 9999 SCT015 24/20 Q1016 RMK T02440200","RJTT",f,"Asia/Tokyo");assert e is None;d=parse_metar_line("METAR KHOU 251253Z 12005KT 10SM FEW033 14/13 A3002 RMK AO2 T01390133","KHOU",f,"America/Chicago");assert d is not None and d.has_t_remark and abs(d.temp_c-13.9)<1e-6;c=parse_metar_line("KORD 251051Z 29012KT 10SM CLR M02/M02 A3015 RMK AO2 T10171022","KORD",f,"America/Chicago");assert c is not None and c.has_t_remark and abs(c.temp_c-(-1.7))<1e-6;b=parse_metar_line("METAR RJTT 250600Z 08007KT 9999 FEW020 18/12 Q1017 NOSIG","RJTT",f,"Asia/Tokyo");assert b is not None and(not b.has_t_remark)and abs(b.temp_c-18.)<1e-6;a=parse_metar_line("METAR UUWW 250300Z 18004KT 9999 OVC015 M11/M17 Q1021","UUWW",f,"Europe/Moscow");assert a is not None and abs(a.temp_c-(-11.))<1e-6
-def test_bucket_bounds_parser():assert parse_bucket_bounds("16°C or below")==("C",float("-inf"),16.);assert parse_bucket_bounds("17°C")==("C",17.,17.);assert parse_bucket_bounds("26°C or higher")==("C",26.,float("inf"));assert parse_bucket_bounds("72-73°F")==("F",72.,73.)
-def test_barrier_and_svi_monotonicity():assert parse_barrier_direction("Will Bitcoin reach $88,000 on October 25?","↑ 88,000")=="UP";assert parse_barrier_direction("Will Bitcoin dip to $76,000 on October 25?","↓ 76,000")=="DOWN";assert parse_strike_from_text("Will Bitcoin reach $88,000 on October 25?")==8.8e4;c=first_passage_touch_prob(8.2e4,8.4e4,86400.,.45,"UP",wick_vol_multiplier=1.);b=first_passage_touch_prob(8.2e4,8.6e4,86400.,.45,"UP",wick_vol_multiplier=1.);a=evaluate_svi_digital_fair_value("BTC",8.2e4,8.4e4,86400.,dvol_annual_override=.45);assert c>b>.0;assert c>a["p_yes"]*1.6;d=detect_ladder_monotonicity_boxes([{"strike":8e4,"is_downward":False,"market_id":"1","yes_token":"ty1","no_token":"tn1","ask_yes":.55,"ask_no":.46},{"strike":8.2e4,"is_downward":False,"market_id":"2","yes_token":"ty2","no_token":"tn2","ask_yes":.62,"ask_no":.39}]);assert len(d)==1 and d[0]["box_cost_net"]<.996
-def test_svi_sticky_delta_no_butterfly_arb_on_sol_and_xrp():from src.polymarket_research.deribit_svi_surface import(SVIParams as c,compute_breeden_litzenberger_digital as b,scale_svi_sticky_delta as a);i=5./365.25;h=(.44**2)*i;g=c(a=h*.82,b=h*.42,rho=-.18,m=.0,sigma=.06,t_years=i,forward_price=8.4e4,calibrated_at=1e3);f=a(g,1.75,103.5);e=a(g,1.85,2.15);assert abs(f.implied_vol(.0)-g.implied_vol(.0)*1.75)<1e-6;assert abs(e.implied_vol(.0)-g.implied_vol(.0)*1.85)<1e-6;d=b(103.5,1e2,i,f);assert.5<=d<=.68,f"Expected realistic SOL > $100 digital prob, got {d}"
-def test_kmia_convective_rain_cold_pool_bias_guard():from datetime import date,timedelta;from src.polymarket_research.weather_metar_engine import(WeatherBucket as a,WeatherEventSpec as c,compute_weather_probabilities as b);f=datetime(2026,10,25,17,0,tzinfo=timezone.utc);e=parse_metar_line("METAR KMIA 251653Z 07009KT 6SM RA SCT025CB BKN050 OVC110 25/21 A3004 RMK AO2 SLP173 CB OHD MOV SW P0004 T02500211","KMIA",f,"America/New_York");assert e is not None and e.has_convective_precip is True;i=[a("m1","c1","78-79°F","78-79°F","y1","n1","F",78.,79.),a("m2","c2","80-81°F","80-81°F","y2","n2","F",80.,81.),a("m3","c3","82-83°F","82-83°F","y3","n3","F",82.,83.),a("m4","c4","84°F or higher","84°F+","y4","n4","F",84.,float("inf"))];j=c(event_id="ev_mia",slug="miami-oct-25",series_slug="miami-daily-weather",title="Highest temperature in Miami on October 25?",icao="KMIA",city="Miami",lat=25.7959,lon=-80.287,tz_name="America/New_York",obs_date=date(2026,10,25),metric="HIGH",unit="F",fee_type="zero_fees",end_date_iso="2026-10-26T04:00:00Z",buckets=i);g=int(datetime(2026,10,25,17,0,tzinfo=timezone.utc).timestamp());d={g+h*3600:[27.3+(.9 if h in(2,3)else.2)+(m-30)*.02 for m in range(60)]for h in range(0,10)};k=b(j,f,[e],d);assert k["convective_cold_pool"]is True;assert k["bias_c"]>=-.5;assert k["ensemble_member_count"]==60;assert k["probs"][0]<.35
-def test_anchored_strike_regex_ignores_dates():from src.polymarket_research.multistrike_svi_scalper import _extract_threshold_strike as a;assert parse_strike_from_text("Will Bitcoin hit a new high on October 30, 2026?","")is None;assert parse_strike_from_text("Will Bitcoin reach 105k on October 30?","")==1.05e5;assert a("Will Solana close higher on October 30, 2026?","October 30")is None;assert a("Will Solana be above $105 on October 30?","$105")==105.
-def test_alpha124_l2_depth_maker_queue_and_gamma_404_settlement(tmp_path,monkeypatch):
- import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124;e=a124.walk_l2_book_asks([{"price":"0.22","size":"50"}],notional_usd=50.,fee_rate=.0);assert e["filled"]is False and e["reason"]=="THIN_L1_DEPTH";b=a124.walk_l2_book_asks([{"price":"0.50","size":"60"}],notional_usd=50.,fee_rate=.0);assert b["filled"]is False and b["reason"]=="INSUFFICIENT_DEPTH";c=a124.walk_l2_book_asks([{"price":"0.50","size":"250"}],notional_usd=50.,fee_rate=.0);assert c["filled"]is True and c["fill_ratio"]==1.;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"state.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"ledger.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"opps.json")
- async def a():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);d.spots["BTC"]=8.4e4;e={"tok_m1":{"bids":[{"price":"0.48","size":"200"}],"asks":[{"price":"0.50","size":"200"}]}}
-  async def a(url,timeout=5.):
-   if"/book?token_id=tok_m1"in url:return e["tok_m1"]
-   if"/book?token_id=tok_w1_closed"in url:return None
-   if"/markets/mkt_w1"in url:return{"id":"mkt_w1","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["tok_w1_closed", "tok_w1_no"]',"outcomePrices":'["1", "0"]'}
-   return None
-  monkeypatch.setattr(d,"fetch_json",a);c=await d.post_shadow_maker_entry(sleeve="M1_SVI_MAKER_SCALP",dedupe_key="M1_test_YES",asset="BTC",title="BTC above $84,000?",side_label="YES",token_id="tok_m1",p_model=.58,close_ts=1999999999.,extra={"market_id":"m_btc","strike":8.4e4,"is_downward":False});assert c is True;assert len(d.pending_maker_orders)==1;assert len(d.open_positions)==0;f=next(iter(d.pending_maker_orders));d.pending_maker_orders[f]["created_ts"]-=15.;monkeypatch.setattr(a124,"evaluate_svi_digital_fair_value",lambda*args,**kwargs:{"p_yes":.58,"p_no":.42,"iv_annual":.45,"z_sigma":.5,"source":"TEST"});await d.manage_pending_maker_orders();assert len(d.pending_maker_orders)==1 and len(d.open_positions)==0;e["tok_m1"]={"bids":[{"price":"0.48","size":"200"}],"asks":[{"price":"0.49","size":"150"}]};await d.manage_pending_maker_orders();assert len(d.pending_maker_orders)==0 and len(d.open_positions)==1;d.open_positions["W1_test"]={"position_id":"W1_test","dedupe_key":"W1_ev_mkt_w1","sleeve":"W1_SOLAR_PEAK_LOCK","asset_or_city":"Tokyo_RJTT","title":"Tokyo 21°C","side":"YES","token_id":"tok_w1_closed","fee_rate":.0,"entry_ts":1e3,"close_ts":2e3,"p_model_entry":.92,"entry_eff_px_t1000":.8,"entry_vwap_t1000":.8,"maker_tp_px":.98,"tier_fills":{"T1000":{"spent_usd":1e2,"fee_usd":.0,"shares":125.}},"extra":{"market_id":"mkt_w1"},"status":"OPEN"};await d.manage_open_positions();assert"W1_test"not in d.open_positions;b=[p for p in d.closed_positions if p["position_id"]=="W1_test"];assert len(b)==1 and b[0]["won"]is True and b[0]["tier_pnls_usd"]["T1000"]==25.
- asyncio.run(a())
-def test_live_executor_min_price_floor_zero_fees_neg_risk_and_maker_entry(tmp_path):from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor as a;e=a(dry_run=True,ledger_path=tmp_path/"dry.jsonl");b={"asks":[{"price":"0.25","size":"500"}],"bids":[{"price":"0.24","size":"500"}]};d=e.execute_snipe_order(token_id="12345678901234567890",target_token="YES",notional_usd=25.,target_price=.25,trade_id="TEST_W2_ZERO_FEE",market_fee_rate=.0,market_fee_exponent=.0,min_price_floor=.15,max_price_ceiling=.65,prefetched_book=b,neg_risk=True);assert d.success is True and d.fee_usd==.0;assert e.get_token_neg_risk("12345678901234567890")is True;c=e.post_maker_entry_order(token_id="12345678901234567890",price=.42,notional_usd=25.,neg_risk=True);assert c["success"]is True and c["shares"]==59. and c["post_only"]is True
-def test_same_oracle_dominance_box_math_equal_shares_and_strike_guard():from src.polymarket_research.same_oracle_dominance_box import(compute_dominance_box_payout_from_close as b,determine_dominance_legs as e,parse_authoritative_open_price as c,parse_twap_candle_event as d,walk_equal_shares_dominance_box as a);m={"title":"Ethereum Up or Down - 7:00PM-7:15PM ET","markets":[{"id":"6033093","conditionId":"0xc15","question":"Ethereum Up or Down - 7:00PM-7:15PM ET","eventStartTime":"2026-10-25T23:00:00Z","endDate":"2026-10-25T23:15:00Z","outcomes":'["Up", "Down"]',"clobTokenIds":'["tok_15m_up", "tok_15m_dn"]',"feesEnabled":True,"feeSchedule":{"rate":.07,"exponent":1.},"cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"resolutionSource":"https://data.chain.link/streams/eth-usd-twap-60s-streams"}]};p={"title":"Ethereum Up or Down - 7:10PM-7:15PM ET","markets":[{"id":"6033145","conditionId":"0xc5","question":"Ethereum Up or Down - 7:10PM-7:15PM ET","eventStartTime":"2026-10-25T23:10:00Z","endDate":"2026-10-25T23:15:00Z","outcomes":'["Up", "Down"]',"clobTokenIds":'["tok_5m_up", "tok_5m_dn"]',"feesEnabled":True,"feeSchedule":{"rate":.07,"exponent":1.},"cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"resolutionSource":"https://data.chain.link/streams/eth-usd-twap-60s-streams"}]};r=d(m,"ETH","15m");s=d(p,"ETH","5m");assert r is not None and s is not None;l={"markets":[{**p["markets"][0],"cryptoMarketConfig":{"twapEnabled":False},"resolutionSource":"binance"}]};assert d(l,"ETH","5m")is None;assert c({"openPrice":2393.534264,"completed":False,"cached":True})is None;assert c([{"closed":False,"eventMetadata":{"finalPrice":2393.534264}}])is None;assert c([{"closed":True,"eventMetadata":{"finalPrice":2393.534264}}])==2393.534264;q=e(r,2393.5343,s,2392.8455);assert q is not None and q["regime"]=="5M_UP_PLUS_15M_DOWN";assert q["leg_a"]["token_id"]=="tok_5m_up"and q["leg_b"]["token_id"]=="tok_15m_dn";assert b(2389.55,q["k_low"],q["k_high"])==1.;assert b(2393.1,q["k_low"],q["k_high"])==2.;assert b(2399.,q["k_low"],q["k_high"])==1.;o=a(asks_a_raw=[{"price":"0.35","size":"45"}],asks_b_raw=[{"price":"0.56","size":"200"}],target_budget_usd=1e2,max_box_cost_net=.995);assert o["filled"]is True;assert o["shares"]==45;assert o["leg_a_walk"]["shares"]==45 and o["leg_b_walk"]["shares"]==45;assert o["box_cost_net"]<.95 and o["guaranteed_min_profit_usd"]>2.;n=a(asks_a_raw=[{"price":"0.52","size":"200"}],asks_b_raw=[{"price":"0.47","size":"200"}],target_budget_usd=1e2,max_box_cost_net=.995);assert n["filled"]is False;from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor as f;j=a(asks_a_raw=[{"price":"0.90","size":"11"},{"price":"0.91","size":"138.36"}],asks_b_raw=[{"price":"0.07","size":"66.7"}],target_budget_usd=13.5,max_box_cost_net=.985,min_shares=8,min_box_notional_usd=7.);assert j["filled"]is False;assert j["reason"]=="LEG_BELOW_1USD_MIN";i=a(asks_a_raw=[{"price":"0.86","size":"11"},{"price":"0.88","size":"138.36"}],asks_b_raw=[{"price":"0.10","size":"66.7"}],target_budget_usd=13.5,max_box_cost_net=.985,min_shares=8,min_box_notional_usd=7.);assert i["filled"]is True;assert i["shares"]==11;assert i["leg_a_walk"]["worst_px"]==.86;assert i["leg_b_walk"]["worst_px"]==.1;assert i["box_cost_net"]<=.985;k=f(dry_run=True);h=k.execute_atomic_dominance_box(box_id="D1_SOL_TRIM_TEST",leg_a_token_id="tok_sol_15m_up",leg_a_label="15M_UP",leg_a_limit_price=i["leg_a_walk"]["worst_px"],leg_b_token_id="tok_sol_5m_dn",leg_b_label="5M_DOWN",leg_b_limit_price=i["leg_b_walk"]["worst_px"],shares=i["shares"],max_box_cost_net=.985);assert h["success"]is True;g=a(asks_a_raw=[{"price":"0.90","size":"4"},{"price":"0.91","size":"138.36"}],asks_b_raw=[{"price":"0.07","size":"66.7"}],target_budget_usd=13.5,max_box_cost_net=.985,min_shares=8,min_box_notional_usd=7.);assert g["filled"]is False and g["reason"]=="WORST_LIMIT_COST_ABOVE_CAP"
-def test_alpha124_d1_same_oracle_dominance_box_entry_and_settlement(tmp_path,monkeypatch):
- import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.same_oracle_dominance_box import TwapCandleMarketSpec as a;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"state_d1.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"ledger_d1.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"opps_d1.json")
- async def b():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);f=1.79297e9;e=f+180.;j=a(asset="ETH",horizon="15m",market_id="6033093",condition_id="0xc15",title="ETH 15m",start_iso="2026-10-25T23:00:00Z",end_iso="2026-10-25T23:15:00Z",start_ts=e-9e2,end_ts=e,up_token="tok_15m_up",down_token="tok_15m_dn",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/eth-usd-twap-60s-streams");k=a(asset="ETH",horizon="5m",market_id="6033145",condition_id="0xc5",title="ETH 5m",start_iso="2026-10-25T23:10:00Z",end_iso="2026-10-25T23:15:00Z",start_ts=e-3e2,end_ts=e,up_token="tok_5m_up",down_token="tok_5m_dn",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/eth-usd-twap-60s-streams");d.dominance_pairs[f"ETH_{int(e)}"]=(j,k);b=f"slug=eth-updown-5m-{int(round(j.start_ts))-300}";c=f"slug=eth-updown-5m-{int(round(k.start_ts))-300}"
-  async def a(url,timeout=5.):
-   if b in url:return[{"slug":url.split("slug=",1)[1],"closed":True,"eventMetadata":{"finalPrice":2390.}}]
-   if c in url:return[{"slug":url.split("slug=",1)[1],"closed":True,"eventMetadata":{"finalPrice":2394.}}]
-   if"token_id=tok_15m_up"in url:return{"bids":[{"price":"0.52","size":"150"}],"asks":[{"price":"0.54","size":"150"}]}
-   if"token_id=tok_5m_dn"in url:return{"bids":[{"price":"0.38","size":"150"}],"asks":[{"price":"0.40","size":"150"}]}
-   if"token_id=tok_15m_dn"in url or"token_id=tok_5m_up"in url:return{"bids":[{"price":"0.47","size":"150"}],"asks":[{"price":"0.50","size":"150"}]}
-   if"/markets/6033093"in url:return{"id":"6033093","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["tok_15m_up", "tok_15m_dn"]',"outcomePrices":'["1", "0"]'}
-   if"/markets/6033145"in url:return{"id":"6033145","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["tok_5m_up", "tok_5m_dn"]',"outcomePrices":'["0", "1"]'}
-   return None
-  monkeypatch.setattr(d,"fetch_json",a);h=[];await d.scan_same_oracle_dominance_boxes(h,now_ts=f);assert len(d.open_positions)==1;i=next(iter(d.open_positions.values()));assert i["sleeve"]=="D1_SAME_ORACLE_DOMINANCE_BOX";assert i["entry_eff_px_t1000"]<.995;i["close_ts"]=1e3;await d.manage_open_positions();assert len(d.open_positions)==0 and len(d.closed_positions)==1;g=d.closed_positions[0];assert g["status"]=="SETTLED_DOMINANCE_DOUBLE_2X";assert g["net_payout_per_share"]==2.;assert g["tier_pnls_usd"]["T1000"]>1e2
- asyncio.run(b())
-def test_live_executor_atomic_dominance_box_and_legging_unwind(tmp_path,monkeypatch):
- from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor;ex=PolymarketLiveExecutor(dry_run=True,ledger_path=tmp_path/"box.jsonl");r_ok=ex.execute_atomic_dominance_box(box_id="BOX_ETH_1",leg_a_token_id="tok_a",leg_a_label="15M_UP",leg_a_limit_price=.54,leg_b_token_id="tok_b",leg_b_label="5M_DOWN",leg_b_limit_price=.4,shares=25,max_box_cost_net=.995,leg_a_avail_shares=120.,leg_b_avail_shares=30.);assert r_ok["success"]is True and r_ok["leg_1"]["label"]=="5M_DOWN";r_cap=ex.execute_atomic_dominance_box(box_id="BOX_EXP",leg_a_token_id="tok_a",leg_a_label="15M_UP",leg_a_limit_price=.55,leg_b_token_id="tok_b",leg_b_label="5M_DOWN",leg_b_limit_price=.44,shares=25,max_box_cost_net=.995);assert r_cap["success"]is False and"WORST_LIMIT_BOX_COST_EXCEEDS_CAP"in r_cap["error"];ex.dry_run=False;ex.is_authenticated=True
- class FakeClient:
-  def __init__(self):self.posts=0
-  def create_order(self,args,options=None):return{"token_id":args.token_id,"price":args.price,"size":args.size}
-  def post_order(a,signed,order_type):
-   a.posts+=1
-   if a.posts==1:return{"orderID":"OID_LEG1_FILLED"}
-   return{"errorMsg":"FOK order couldn't be fully filled"}
- ex.client=FakeClient();monkeypatch.setattr(ex,"get_token_tick_size",lambda tid:.01);monkeypatch.setattr(ex,"get_token_neg_risk",lambda tid,explicit_neg_risk=None:False);unwind_calls=[]
- def fake_unwind(token_id,size,side="SELL",min_price=.01,neg_risk=None):unwind_calls.append((token_id,size,side,min_price));return{"success":True,"orderID":"OID_UNWIND_1","matched_size":size}
- monkeypatch.setattr(ex,"execute_unwind_order",fake_unwind);r_leg=ex.execute_atomic_dominance_box(box_id="BOX_LEG_FAIL",leg_a_token_id="tok_a",leg_a_label="15M_UP",leg_a_limit_price=.54,leg_b_token_id="tok_b",leg_b_label="5M_DOWN",leg_b_limit_price=.4,shares=20,max_box_cost_net=.995,leg_a_avail_shares=25.,leg_b_avail_shares=1e2);assert r_leg["success"]is False;assert r_leg["stage"]=="LEG_2_REJECTED_UNWOUND";assert r_leg["legged_out"]is True;assert len(unwind_calls)==1 and unwind_calls[0][0]=="tok_a"and unwind_calls[0][1]==20.
-def test_exact_twap_lock_engine_math_and_whipsaw_guard():import math;from src.polymarket_research.exact_twap_lock_engine import(compute_exact_twap_lock_probability as a,student_t_df5_cdf as b);assert abs(b(.0)-.5)<1e-12;assert abs(b(2.5)+b(-2.5)-1.)<1e-12;c=.5*(1.+math.erf(3./math.sqrt(2.)));assert.96<b(3.)<c;g=1792970300.;f=g-18.;e=[(g-60.+i,2404.5)for i in range(43)];j=a(asset="ETH",open_price=2400.123456789012,current_usd_spot=2404.6,rem_seconds=18.,now_ts=f,end_ts=g,spot_samples=e,iv_annual=.65,usd_direct_feed=True);assert j["eligible"]is True;assert j["side"]=="UP";assert j["eff_alpha"]>.65;assert j["p_lock"]>=.975;d=a(asset="ETH",open_price=2400.123456789012,current_usd_spot=2399.5,rem_seconds=18.,now_ts=f,end_ts=g,spot_samples=e,iv_annual=.65,usd_direct_feed=True);assert d["eligible"]is False and d["reason"]=="WHIPSAW_SPLIT_ACROSS_STRIKE";h=a(asset="ETH",open_price=2400.,current_usd_spot=2405.,rem_seconds=52.,now_ts=g-52.,end_ts=g,spot_samples=[]);assert h["eligible"]is False
-def test_r01_relayer_hmac_deposit_wallet_eip712_and_negrisk_payout_logs(tmp_path):
- from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor as a;j=a.build_relayer_builder_headers(api_key="test-api-key",secret="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",passphrase="test-passphrase",method="POST",request_path="/orders",body={"hash":"0x123"},timestamp=1000000);assert j["POLY_BUILDER_SIGNATURE"]=="wdXSC4akzPKG0yFk9FJrIb7-rg73v_M7QDxIBp-P1CQ=";assert j["POLY_BUILDER_TIMESTAMP"]=="1000000"
- try:from py_clob_client.signing.hmac import build_hmac_signature as b;assert j["POLY_BUILDER_SIGNATURE"]==b("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=","1000000","POST","/orders",{"hash":"0x123"})
- except ImportError:pass
- k=a(dry_run=True,ledger_path=tmp_path/"r01.jsonl");k.funder_address="0x013A2474454fBd8738cff6a7f204eF1bc377F4e9";f="0x"+"ab"*32;c="0x"+k.funder_address.lower().replace("0x","").rjust(64,"0")
- try:import eth_account;import eth_utils;import web3;e="0x"+"11"*32;i=a.build_deposit_wallet_relayer_batch(private_key=e,wallet_address=k.funder_address,nonce=7,deadline=1900000000,calls=[{"target":a.CTF_ADDRESS,"value":"0","data":"0x12345678"}],chain_id=137);assert i["type"]=="WALLET";assert i["nonce"]=="7";assert i["signature"].startswith("0x")and len(i["signature"])==132;assert i["depositWalletParams"]["depositWallet"].lower()==k.funder_address.lower();d={"address":a.CTF_ADDRESS,"topics":[a._payout_redemption_topic(),c,"0x"+"00"*32],"data":"0x"+"ab"*32+"00"*32+f"{25500000:064x}","transactionHash":"0xtx_ctf","blockNumber":"0x100"};h={"address":a.NEG_RISK_ADAPTER_ADDRESS,"topics":[a._neg_risk_payout_redemption_topic(),c,f],"data":"0x"+"00"*32+f"{42250000:064x}","transactionHash":"0xtx_nr","blockNumber":"0x101"};g=k.parse_payout_redemption_logs([d,h],f);assert len(g)==2;assert abs(g[0]["payout_usd"]-25.5)<1e-6;assert abs(g[1]["payout_usd"]-42.25)<1e-6
- except ImportError:pass
-def test_alpha124_w2_maker_overround_m4_shock_wakeup_and_s2_twap_lock(tmp_path,monkeypatch):
- import asyncio;import json;import time;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.multistrike_svi_scalper import StrikeRungSpec as c;from src.polymarket_research.same_oracle_dominance_box import TwapCandleMarketSpec as b;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"state_all.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"ledger_all.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"opps_all.json");e=tmp_path/"live_shock_triggers.jsonl";e.write_text("",encoding="utf-8");monkeypatch.setattr(a124,"SHOCK_TRIGGER_FILE",e)
- async def a():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);h=time.time();o={"tok_w2m":{"bids":[{"price":"0.26","size":"150"}],"asks":[{"price":"0.30","size":"150"}]},"tok_m1_yes":{"bids":[{"price":"0.49","size":"200"}],"asks":[{"price":"0.51","size":"200"}]},"tok_m4_no":{"bids":[{"price":"0.46","size":"250"}],"asks":[{"price":"0.48","size":"250"}]},"tok_s2_up":{"bids":[{"price":"0.86","size":"250"}],"asks":[{"price":"0.88","size":"250"}]}}
-  async def a(url,timeout=5.):
-   for a,b in o.items():
-    if f"token_id={a}"in url:return b
-   if"slug=eth-updown-5m-1792969800"in url:return[{"slug":url.split("slug=",1)[1],"closed":True,"eventMetadata":{"finalPrice":2405.8}}]
-   if"slug=eth-updown-5m-"in url:return[{"slug":url.split("slug=",1)[1],"closed":True,"eventMetadata":{"finalPrice":2400.123456789012}}]
-   return None
-  monkeypatch.setattr(d,"fetch_json",a);n=await d.post_shadow_maker_entry(sleeve="W2_MAKER_OVERROUND",dedupe_key="W2M_ev1_m1",asset="Miami_KMIA",title="Miami 82-83°F",side_label="YES",token_id="tok_w2m",p_model=.4,close_ts=h+28800.,extra={"event_id":"ev1","market_id":"m1","icao":"KMIA","obs_date":"2026-10-25"});assert n is True;g=next(iter(d.pending_maker_orders));assert d.pending_maker_orders[g]["resting_bid"]==.27;d.pending_maker_orders[g]["created_ts"]-=15.;o["tok_w2m"]={"bids":[{"price":"0.26","size":"150"}],"asks":[{"price":"0.27","size":"150"}]};await d.manage_pending_maker_orders();assert any(p["sleeve"]=="W2_MAKER_OVERROUND"for p in d.open_positions.values());d.spots["BTC"]=8.4e4;await d.post_shadow_maker_entry(sleeve="M1_SVI_MAKER_SCALP",dedupe_key="M1_btc_84k_YES",asset="BTC",title="BTC above $84,000?",side_label="YES",token_id="tok_m1_yes",p_model=.58,close_ts=h+43200.,extra={"market_id":"m_btc_84k","strike":8.4e4,"is_downward":False});assert len(d.pending_maker_orders)==1;d.strike_ladders["BTC_ev"]=[c(asset="BTC",series_slug="btc-multi-strikes",event_id="ev_btc",market_id="m_btc_84k",condition_id="0xc_btc",title="Bitcoin above ___ on Oct 25?",question="Bitcoin above $84,000 on Oct 25?",strike=8.4e4,is_downward=False,end_ts=h+43200.,yes_token="tok_m1_yes",no_token="tok_m4_no")];monkeypatch.setattr(a124,"evaluate_svi_digital_fair_value",lambda*args,**kwargs:{"p_yes":.38,"p_no":.62,"iv_annual":.45,"z_sigma":.8,"source":"TEST"});b={"shock_id":"SHK_BTC_1","t0_unix":time.time(),"shock_source":"FUTURES","asset":"BTC","shock_direction":"SELL","shock_ofi":-.88,"shock_volume_100ms":3.2e6,"spot_at_t0":83700.}
-  with open(e,"a",encoding="utf-8")as r:r.write(json.dumps(b)+"\n")
-  m=d.poll_fresh_shock_triggers();assert len(m)==1;l=[];await d.handle_shock_triggers(m,l);assert len(d.pending_maker_orders)==0;assert any(p["sleeve"]=="M4_SHOCK_STRIKE_CATCHUP"and p["side"]=="NO"for p in d.open_positions.values());k=h+18.;q=b(asset="ETH",horizon="5m",market_id="6055555",condition_id="0xc_s2",title="ETH Up or Down 5m",start_iso="2026-10-25T23:10:00Z",end_iso="2026-10-25T23:15:00Z",start_ts=k-3e2,end_ts=k,up_token="tok_s2_up",down_token="tok_s2_dn",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/eth-usd-twap-60s-streams");d.twap_candles[f"ETH_5m_{int(k)}"]=q;d.spots["ETH"]=2406.;d.usd_direct_flags["ETH"]=True
-  for i in range(43):d.usd_spot_hist["ETH"].append((k-60.+i,2405.8))
-  monkeypatch.setattr(a124,"get_wing_implied_vol",lambda*args,**kwargs:(.65,"TEST"));f=[];await d.scan_exact_twap_locks(f,now_ts=h);c=[p for p in d.open_positions.values()if p["sleeve"]=="S2_EXACT_TWAP_LOCK"];assert len(c)==1;j=c[0];assert j["side"]=="UP"and j["p_model_entry"]>=.97;j["close_ts"]=h-2e2;await d.manage_open_positions();e=[p for p in d.closed_positions if p["sleeve"]=="S2_EXACT_TWAP_LOCK"];assert len(e)==1 and e[0]["won"]is True;assert e[0]["status"]=="SETTLED_ORACLE_TWAP_WIN"
- asyncio.run(a())
-def test_live_daily_projections_working_capital_and_monotonicity():
- from scripts.polymarket_daily_projections import(_depth_decay as b,build_live_projections as c,compute_v393_ticket_size as a);assert a(60.)==12.;assert a(73.01)==13.14;assert a(76.8)==13.82;assert a(95.)==17.1;assert a(120.)==26.4;assert b(15.)==1.;assert.58<=b(150.)<.85;h=c(days=30,fallback_equity=76.8);f=h["day_by_day_schedule"];assert len(f)==30;d={"B1_CONVEX_TAIL_YES","M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","SLEEVE_XRP_V392_SHADOW"};assert all(g["sleeve"]not in d for g in h["sleeve_graduation_live_tracker"])
- for r in f:
-  assert r["p25_end_equity_usd"]<r["p50_end_equity_usd"]<r["p75_end_equity_usd"];assert r["p50_daily_pnl_usd"]>0
-  for e in("B1_convex_barrier_tails","W2_weather_maker_and_mos","M1_M4_svi_maker_and_shock"):assert e not in r["p50_sleeve_pnl_breakdown_usd"]
-def test_external_dual_audit_alpha124_and_oracle_regressions(tmp_path,monkeypatch):
- import asyncio;import json;import time;from datetime import date;from zoneinfo import ZoneInfo as y;import src.polymarket_research.alpha_124_shadow_daemon as a124;import src.polymarket_research.barrier_onetouch_svi_engine as b_eng;import src.polymarket_research.exact_twap_lock_engine as etwap;from src.polymarket_research.same_oracle_dominance_box import(TwapCandleMarketSpec as g,verify_same_oracle_pair as h);from src.polymarket_research.weather_metar_engine import(WeatherBucket as f,WeatherEventSpec as m,compute_weather_probabilities as e,parse_weather_event as j);O=datetime(2026,10,25,16,0,tzinfo=timezone.utc);u=parse_metar_line("METAR RJTT 250600Z 08007KT 9999 FEW020 02/// Q1017 RMK AO2 T0023////","RJTT",O,"Asia/Tokyo");assert u is not None and u.has_t_remark is True and abs(u.temp_c-2.3)<1e-6;t=parse_metar_line("METAR KORD 251051Z 29012KT 10SM CLR M02/// A3015 RMK AO2 T1017//// SLP210","KORD",O,"America/Chicago");assert t is not None and t.has_t_remark is True and abs(t.temp_c-(-1.7))<1e-6;N=parse_metar_line("METAR COR RJTT 250600Z 08007KT 9999 FEW020 19/12 Q1017 RMK AO2 T01940120","RJTT",O,"Asia/Tokyo");assert N is not None and N.is_corrected is True and abs(N.temp_c-19.4)<1e-6;M=y("America/New_York");D=parse_metar_line("METAR KLGA 260251Z 31012KT 10SM CLR 15/06 A3012 RMK AO2 T01500061","KLGA",datetime(2026,10,26,3,0,tzinfo=timezone.utc),"America/New_York");assert D is not None and D.local_dt.date()==date(2026,10,25);s=[f("b1","c1","14°C or below","14°C-","y1","n1","C",float("-inf"),14.),f("b2","c2","15°C","15°C","y2","n2","C",15.,15.),f("b3","c3","16°C","16°C","y3","n3","C",16.,16.),f("b4","c4","17°C or higher","17°C+","y4","n4","C",17.,float("inf"))];C=m(event_id="ev_klga_low",slug="nyc-low",series_slug="nyc-daily-weather",title="Lowest temperature in NYC on October 25?",icao="KLGA",city="NYC",lat=40.7769,lon=-73.874,tz_name="America/New_York",obs_date=date(2026,10,25),metric="LOW",unit="C",fee_type="zero_fees",end_date_iso="2026-10-26T05:00:00Z",buckets=s);o=datetime(2026,10,25,23,30,tzinfo=M).astimezone(timezone.utc);n=int(datetime(2026,10,26,0,0,tzinfo=M).astimezone(timezone.utc).timestamp());l={n:[12.]*30};B=e(C,o,[D],l);assert B["rem_hours_count"]==1;assert B["probs"][0]>.5;q=datetime(2026,10,26,0,5,tzinfo=M).astimezone(timezone.utc);k=e(C,q,[D],l);assert k["probs"][1]>.99;x={"id":"ev_fee_test","title":"Highest temperature in Tokyo on October 26?","endDate":"2026-10-26T15:00:00Z","markets":[{"id":f"m_{P}","conditionId":f"0xc_{P}","groupItemTitle":Q,"description":"Resolves via https://aviationweather.gov/api/data/metar?ids=RJTT excluding SPECI on 26 Oct '26.","clobTokenIds":f'["y_{P}", "n_{P}"]',"feesEnabled":True,"feeSchedule":{"rate":.05,"exponent":1.}}for P,Q in enumerate(["18°C or below","19°C","20°C","21°C or higher"])]};r=j(x);assert r is not None and r.fee_type=="fees_enabled";assert all(abs(b.fee_rate-.05)<1e-9 for b in r.buckets);monkeypatch.setattr(etwap,"SHM_DIR",tmp_path);L=1792975000.;H=tmp_path/"pm_fast_tick_BTC.json";H.write_text(json.dumps({"timestamp_unix":L,"spot_price":84100.}),encoding="utf-8");assert etwap.read_shm_usd_anchor("BTC",L)["usd_spot"]is None;H.write_text(json.dumps({"timestamp_unix":L+4.,"chainlink_proxy_spot":84050.}),encoding="utf-8");assert etwap.read_shm_usd_anchor("BTC",L)["usd_spot"]is None;H.write_text(json.dumps({"timestamp_unix":L-.5,"chainlink_proxy_spot":84050.}),encoding="utf-8");assert etwap.read_shm_usd_anchor("BTC",L)["usd_spot"]==84050.;K=L+30.;G=etwap.compute_exact_twap_lock_probability(asset="ETH",open_price=2400.,current_usd_spot=2403.,rem_seconds=30.,now_ts=L,end_ts=K,spot_samples=[],shm_twap_60s=2415.,usd_direct_feed=True);assert G["eff_alpha"]==.0;w=g("ETH","15m","1","0x1","ETH 15m","2026-10-25T23:00:00Z","2026-10-25T23:15:00Z",1e2,1e3,"u1","d1",.07,1.,False,60,"");A=g("ETH","5m","2","0x2","ETH 5m","2026-10-25T23:10:00Z","2026-10-25T23:15:00Z",7e2,1e3,"u2","d2",.07,1.,False,60,"");assert h(w,A)is False;v=1792931400.;J=v+48*3600.
- def i(sym,st_ms,en_ms,interval,timeout):
-  if interval=="1m"and st_ms==int(v*1000):return[[st_ms,"84000","89500","83900","84100","10",st_ms+60000]]
-  return[[int((v+3600)*1000),"84100","85000","83500","84200","100",int(J*1000)]]
- monkeypatch.setattr(b_eng,"_fetch_finalized_klines",i);F=b_eng.fetch_binance_window_extremes_sync("BTC",v,J,"1m");assert F is not None and F[0]==89500.;E=tmp_path/"a124_race_state.json";z=tmp_path/"a124_race_ledger.jsonl";I=tmp_path/"a124_race_opps.json";z.write_text('{"event": "SHADOW_ENTRY", "corrupt_json": \n'+json.dumps({"event":"SHADOW_ENTRY","position_id":"S2_VALID_HYDRATE","dedupe_key":"S2_BTC_5m_1","sleeve":"S2_EXACT_TWAP_LOCK","asset_or_city":"BTC","title":"BTC 5m","side":"UP","token_id":"tok_h","fee_rate":.07,"entry_ts":1e3,"close_ts":2e3,"tier_fills":{"T1000":{"spent_usd":1e2,"fee_usd":.5,"shares":115.}},"extra":{},"status":"OPEN"})+"\n",encoding="utf-8");monkeypatch.setattr(a124,"STATE_FILE",E);monkeypatch.setattr(a124,"LEDGER_FILE",z);monkeypatch.setattr(a124,"OPPS_FILE",I)
- async def c():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);assert"S2_VALID_HYDRATE"in d.open_positions;f={"tok_race":{"bids":[{"price":"0.84","size":"300"}],"asks":[{"price":"0.85","size":"300"}]},"tok_adv":{"bids":[{"price":"0.49","size":"200"}],"asks":[{"price":"0.51","size":"200"}]}}
-  async def b(url,timeout=5.):
-   await asyncio.sleep(.01)
-   for a,b in f.items():
-    if f"token_id={a}"in url:return b
-   return None
-  monkeypatch.setattr(d,"fetch_json",b);i,h=await asyncio.gather(d.open_shadow_position("W1_SOLAR_PEAK_LOCK","W1_RACE_KEY","Tokyo_RJTT","Tokyo 20°C","YES","tok_race",.0,.94,time.time()+7200.,{"event_id":"ev_r"}),d.open_shadow_position("W1_SOLAR_PEAK_LOCK","W1_RACE_KEY","Tokyo_RJTT","Tokyo 20°C","YES","tok_race",.0,.94,time.time()+7200.,{"event_id":"ev_r"}));assert(i,h)in((True,False),(False,True));assert sum(1 for p in d.open_positions.values()if p.get("dedupe_key")=="W1_RACE_KEY")==1;d.spots["BTC"]=8.4e4;g=await d.post_shadow_maker_entry("M1_SVI_MAKER_SCALP","M1_ADV_RACE","BTC","BTC > 84k","YES","tok_adv",.58,time.time()+43200.,{"market_id":"m_adv","strike":8.4e4,"is_downward":False});assert g is True;e=next(iter(d.pending_maker_orders));d.pending_maker_orders[e]["created_ts"]-=2.;d.spots["BTC"]=83650.;f["tok_adv"]={"bids":[{"price":"0.48","size":"200"}],"asks":[{"price":"0.49","size":"250"}]};monkeypatch.setattr(a124,"evaluate_svi_digital_fair_value",lambda*a,**kw:{"p_yes":.36,"p_no":.64,"iv_annual":.45,"z_sigma":.9,"source":"TEST"});await d.manage_pending_maker_orders();c=[p for p in d.open_positions.values()if p.get("dedupe_key")=="M1_ADV_RACE"];assert len(c)==1 and c[0]["extra"].get("adverse_fill_during_cancel_window")is True
- asyncio.run(c())
-def test_v40_profit_maximization_upgrades(tmp_path,monkeypatch):
- import asyncio;import time;from datetime import date;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.net_alpha_opportunity_engine import(estimate_quote_survival_and_net_alpha as f,evaluate_cross_oracle_basis_box_ev as n,evaluate_optimal_stopping_exit as b,fit_quote_survival_from_ledger as u,inspect_microstructure_feature_completeness as e,publish_global_positions_shm as w,rank_opportunities_capital_auction as o,read_global_positions_shm as i,scan_binary_complete_set_arb as x,select_maker_taker_skip_route as c);from src.polymarket_research.deribit_svi_surface import(DeribitSVISurfaceEngine as y,SVIParams as F,enforce_monotone_ladder_probabilities as m);from src.polymarket_research.multistrike_svi_scalper import(StrikeRungSpec as A,evaluate_coherent_strike_ladder as r);from src.polymarket_research.barrier_onetouch_svi_engine import(evaluate_barrier_no_net_ev as h,first_passage_touch_prob as j);from src.polymarket_research.weather_metar_engine import(WeatherBucket as l,WeatherEventSpec as z,compute_adaptive_metar_poll_ttl as g,evaluate_weather_event_slate as v,parse_taf_temperature_extremes as s,verify_weather_slate_partition as t);B="100434764618174237135201777197981253576172734064131101154122934005557319214073";T=e({"fee_metadata":{"fee_rate_market":.07},"shock_ofi":.9,"pre_shock_features_t0":{"UP":{"token_id":B,"age_ask_ms":None,"obi_l1":.2}}},"UP",B);assert T["hard_veto_live"]is True and"age_ask_ms"in T["missing_fields"];S=e({"fee_metadata":{"fee_rate_market":.07},"shock_ofi":None,"pre_shock_features_t0":{"UP":{"token_id":B,"age_ask_ms":180.,"obi_l1":.2}}},"UP",B);assert S["hard_veto_live"]is True and"shock_ofi"in S["missing_fields"];J=f(p_win=.9,ask_price=.74,limit_price=.74,p_max=.8,clob_rtt_ms=260.,age_ask_ms=280.);I=f(p_win=.9,ask_price=.74,limit_price=.76,p_max=.8,clob_rtt_ms=260.,age_ask_ms=280.);assert I["p_fill"]>J["p_fill"];assert I["eff_limit_px"]==.76<=.8;assert I["eligible"]is True and I["ev_net_usd"]>.0;_d=u([{"mode":"LIVE_CLOB","success":True,"latency_ms":210.},{"mode":"LIVE_CLOB","success":True,"latency_ms":225.},{"mode":"FAK_KILLED_NO_MATCH","success":False,"latency_ms":280.},{"mode":"LIVE_CLOB","success":True,"latency_ms":195.},{"mode":"FAK_KILLED_NO_MATCH","success":False,"latency_ms":265.}]);assert _d["sample_count"]==5 and abs(_d["empirical_fill_rate"]-.6)<1e-6;R=c(p_win=.92,best_bid=.73,best_ask=.74,p_max=.81,clob_rtt_ms=190.);assert R["route"]=="TAKER_PRICE_IMPROVED_FAK"and R["taker_limit_px"]==.76;Q=c(p_win=.77,best_bid=.69,best_ask=.75,p_max=.74,clob_rtt_ms=280.);assert Q["route"]=="MAKER_POST_ONLY_3P5S"and Q["maker_bid_px"]==.7;Z=c(p_win=.6,best_bid=.68,best_ask=.7,p_max=.58);assert Z["route"]=="SKIP";Y=b(entry_px=.74,rem_shares=18.,best_bid=.99,best_ask=1.,curr_target_px=.99,tte_sec=15.);assert Y["action"]=="PRE_EXPIRY_99C_RECYCLE"and Y["taker_fee_ps"]<.001;P=b(entry_px=.7,rem_shares=18.,best_bid=.84,best_ask=.93,curr_target_px=.95,tte_sec=30.,opp_ask_complement=.09);assert P["action"]=="SYNTHETIC_COMPLEMENT_MERGE"and P["net_proceeds_ps"]>.9;X=b(entry_px=.74,rem_shares=18.,best_bid=.92,best_ask=.95,curr_target_px=.95,tte_sec=90.,obi_l1=-.65,v_spot_15s_pct=-.02);assert X["action"]=="OBI_MAKER_STEP_DOWN"and X["target_px"]==.93;c1=x(market_id="m_c1",condition_id="0xc1",yes_token="tok_y_c1",no_token="tok_n_c1",asks_yes_raw=[{"price":"0.47","size":"60"}],asks_no_raw=[{"price":"0.48","size":"60"}],target_budget_usd=30.,fee_rate=.07,max_complete_set_cost=.994);assert c1["filled"]is True and c1["box_cost_net"]<.994 and c1["guaranteed_min_profit_usd"]>.0;L=n(spot_px=84100.,k_low=8.4e4,k_high=84200.,c_taker_net=.975,tte_sec=6e2);assert L["classification"]=="PROBABILISTIC_CROSS_ORACLE_RV"and L["is_riskless"]is False;monkeypatch.setenv("PM_FAST_TICK_DIR",str(tmp_path));O=time.time();assert w("live_harvester",[{"trade_id":"T1","sleeve":"LIVE","asset":"BTC","target_token":"UP","candle_open_spot":8.4e4,"candle_expiry_ts":O+6e2,"notional_usd":14.}])is True;H=i();K=H["daemons"]["live_harvester"]["positions"];assert len(K)==1 and K[0]["asset"]=="BTC";W=o([{"sleeve":"W2","asset":"NYC","side":"YES","ask_vwap":.5,"net_edge":.05,"tte_sec":3.6e4,"expiry_ts":O+3.6e4},{"sleeve":"S2","asset":"BTC","side":"DOWN","strike":84250.,"ask_vwap":.85,"net_edge":.04,"tte_sec":3e2,"expiry_ts":O+6e2}],active_global_positions=K);assert W[0]["sleeve"]=="S2"and W[0].get("synthetic_corridor_completion")is True;_c=y();_c._cache["BTC"]=F(a=4e-4,b=2e-4,rho=-.15,m=.0,sigma=.05,t_years=30./365.25,forward_price=8.6e4,index_price=8.4e4,calibrated_at=time.time());assert _c._cache["BTC"].implied_forward_drift_rate()>.15;N=_c.evaluate_strike_probability("BTC",spot=8.4e4,strike=8.5e4,tte_seconds=14*86400.,allow_sync_fetch=False);_c._cache["BTC"].index_price=8.6e4;V=_c.evaluate_strike_probability("BTC",spot=8.4e4,strike=8.5e4,tte_seconds=14*86400.,allow_sync_fetch=False);assert N["p_above_strike"]>V["p_above_strike"];_a=m([(8e4,.72),(8.2e4,.55),(8.4e4,.61),(8.6e4,.3)]);assert _a["probs"]==sorted(_a["probs"],reverse=True);assert all(iv>=.0 for iv in _a["interval_probs"])and _a["max_adjustment"]>.0;E=[A("ev1","btc-daily","BTC","BTC Daily",f"m_{k}",f"0x{k}",f"BTC > {k}",float(k),False,O+7200.,f"ty_{k}",f"tn_{k}")for k in(82000,84000,86000)];_b=r("BTC",8.4e4,E,7200.,now_ts=O);assert _b["probs"][0]>=_b["probs"][1]>=_b["probs"][2];M=j(8.4e4,8.8e4,86400.,.5,"UP",realized_vol_ratio=1.,forward_drift_annual=.0);G=j(8.4e4,8.8e4,86400.,.5,"UP",realized_vol_ratio=2.2,forward_drift_annual=.12);assert G>M;assert h(p_touch=.04,ask_no=.88)["eligible"]is True;assert h(p_touch=.01,ask_no=.95)["eligible"]is False;assert g("KLGA",None,datetime(2026,10,26,14,52,tzinfo=timezone.utc))==10.;assert g("KLGA",None,datetime(2026,10,26,14,25,tzinfo=timezone.utc))==3e2;D=s("TAF KLGA 261130Z 2612/2718 30012KT P6SM FEW050 TX19/2619Z TNM02/2710Z","KLGA",datetime(2026,10,26,12,0,tzinfo=timezone.utc),"America/New_York");assert D[date(2026,10,26)]["HIGH"]==19.;assert D[date(2026,10,27)]["LOW"]==-2.;U=z(event_id="ev_w3",slug="tokyo-w3",series_slug="tokyo-daily-weather",title="Highest temperature in Tokyo on October 26?",icao="RJTT",city="Tokyo",lat=35.5494,lon=139.7798,tz_name="Asia/Tokyo",obs_date=date(2026,10,26),metric="HIGH",unit="C",fee_type="zero_fees",end_date_iso="2026-10-26T20:00:00Z",buckets=[l("wb1","0xwb1","18°C or below","18°C or below","wy1","wn1","C",float("-inf"),18.),l("wb2","0xwb2","19°C","19°C","wy2","wn2","C",19.,19.),l("wb3","0xwb3","20°C or higher","20°C or higher","wy3","wn3","C",20.,float("inf"))]);assert t(U)is True;C=v(U,[.2,.5,.3],{"wb1":{"ask_yes":.19,"ask_yes_shares":40.},"wb2":{"ask_yes":.46,"ask_yes_shares":40.},"wb3":{"ask_yes":.31,"ask_yes_shares":40.}},target_budget_usd=10.);assert C["full_slate_arb"]is not None;assert abs(C["full_slate_arb"]["sum_asks"]-.96)<1e-6
- async def q():
-  monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"a124_v40_state.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"a124_v40_ledger.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"a124_v40_opps.json");d=a124.Alpha124ShadowDaemon(single_scan=True);d.spots["BTC"]=84500.;c={"tok_c1_y":{"bids":[{"price":"0.46","size":"80"}],"asks":[{"price":"0.47","size":"80"}]},"tok_c1_n":{"bids":[{"price":"0.47","size":"80"}],"asks":[{"price":"0.48","size":"80"}]},"tok_m3_lo":{"bids":[{"price":"0.52","size":"80"}],"asks":[{"price":"0.53","size":"80"}]},"tok_m3_hi":{"bids":[{"price":"0.41","size":"80"}],"asks":[{"price":"0.42","size":"80"}]},"tok_m4_mkr":{"bids":[{"price":"0.50","size":"60"}],"asks":[{"price":"0.54","size":"60"}]}}
-  async def b(url,timeout=5.):
-   if"/book?token_id="in url:return c.get(url.split("token_id=")[1])
-   if"/markets/m_c1"in url:return{"closed":True,"outcomePrices":'["1", "0"]'}
-   if"/markets/m_lo"in url:return{"closed":True,"outcomePrices":'["1", "0"]'}
-   if"/markets/m_hi"in url:return{"closed":True,"outcomePrices":'["0", "1"]'}
-   if"/markets/wb2"in url:return{"closed":True,"outcomePrices":'["1", "0"]'}
-   if"/markets/wb1"in url or"/markets/wb3"in url:return{"closed":True,"outcomePrices":'["0", "1"]'}
-   return None
-  monkeypatch.setattr(d,"fetch_json",b);j=await d.open_shadow_two_leg_box(sleeve="C1_BINARY_COMPLETE_SET",dedupe_key="C1_TEST_1",asset="BTC",title="BTC > 84k [YES+NO Complete Set]",leg_a={"token_id":"tok_c1_y","side":"YES","market_id":"m_c1","fee_rate":.07},leg_b={"token_id":"tok_c1_n","side":"NO","market_id":"m_c1","fee_rate":.07},bk_a=c["tok_c1_y"],bk_b=c["tok_c1_n"],close_ts=time.time()-60.,max_box_cost_net=.994,extra={"market_id":"m_c1"});i=await d.open_shadow_two_leg_box(sleeve="M3_LADDER_MONO_BOX",dedupe_key="M3_TEST_1",asset="BTC",title="BTC Ladder Box [84000..85000]",leg_a={"token_id":"tok_m3_lo","side":"YES","market_id":"m_lo","fee_rate":.07},leg_b={"token_id":"tok_m3_hi","side":"NO","market_id":"m_hi","fee_rate":.07},bk_a=c["tok_m3_lo"],bk_b=c["tok_m3_hi"],close_ts=time.time()-60.,max_box_cost_net=.995,extra={"low_market_id":"m_lo","high_market_id":"m_hi","low_strike":8.4e4,"high_strike":8.5e4});h=await d.open_shadow_weather_slate(U,C["full_slate_arb"],close_ts=time.time()-60.);assert j is True and i is True and h is True;await d.manage_open_positions();g={p["sleeve"]:p for p in d.closed_positions};assert g["C1_BINARY_COMPLETE_SET"]["won"]is True and g["C1_BINARY_COMPLETE_SET"]["tier_pnls_usd"]["T1000"]>.0;assert g["M3_LADDER_MONO_BOX"]["won"]is True and g["M3_LADDER_MONO_BOX"]["status"]=="SETTLED_DOMINANCE_DOUBLE_2X";assert g["W3_WEATHER_SLATE_ARB"]["won"]is True and g["W3_WEATHER_SLATE_ARB"]["tier_pnls_usd"]["T1000"]>.0;f=await d.post_shadow_maker_entry(sleeve="M4_SHOCK_STRIKE_CATCHUP",dedupe_key="M4MKR_TEST",asset="BTC",title="BTC > 84500",side_label="YES",token_id="tok_m4_mkr",p_model=.62,close_ts=time.time()+7200.,extra={"market_id":"m_m4","strike":84500.,"is_downward":False},prefetched_book=c["tok_m4_mkr"],ttl_override_sec=3.5);assert f is True;e=next(iter(d.pending_maker_orders));d.pending_maker_orders[e]["created_ts"]-=1.2;c["tok_m4_mkr"]={"bids":[{"price":"0.50","size":"60"}],"asks":[{"price":"0.51","size":"80"}]};monkeypatch.setattr(a124,"evaluate_svi_digital_fair_value",lambda*a,**kw:{"p_yes":.62,"p_no":.38,"iv_annual":.45,"z_sigma":.5,"source":"TEST"});await d.manage_pending_maker_orders();assert any(p["sleeve"]=="M4_SHOCK_STRIKE_CATCHUP"for p in d.open_positions.values());d.write_state_files([{"sleeve":"D1_SAME_ORACLE_DOMINANCE_BOX","ask_vwap":.98,"net_edge":.02,"tte_sec":180.}]);assert"alpha124_shadow"in i()["daemons"]
- asyncio.run(q())
-def test_v42_seven_new_shadow_additions_and_quarantine(tmp_path,monkeypatch):
- import asyncio;import time;from src.polymarket_research import alpha_124_shadow_daemon as e;from src.polymarket_research.multistrike_svi_scalper import(build_negrisk_cross_box_bundles as h,parse_daily_updown_event as m,parse_multistrike_event as o,parse_negrisk_bracket_event as j);from src.polymarket_research.same_oracle_dominance_box import(build_crypto_price_query_url as i,determine_dominance_legs as l,parse_twap_candle_event as a,verify_same_oracle_pair as n,walk_equal_shares_multi_leg_box as g);from src.polymarket_research.weather_metar_engine import HIGH_VOLUME_WEATHER_SERIES as k,parse_weather_event as q;monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES","1")
- for K in("M4_SHOCK_STRIKE_CATCHUP","W2_ENSEMBLE_VALUE","W2_MAKER_OVERROUND","M1_SVI_MAKER_SCALP","M2_STRIKE_CONVERGENCE","P1_PREOPEN_MAKER_STRADDLE","S5M_CHAINLINK_SNIPER"):assert e.is_shadow_sleeve_quarantined(K)is True
- for I in("W1_SOLAR_PEAK_LOCK","D1_4H_DOMINANCE_BOX","D1_QUIET_BOOK_BOX","N1_NEGRISK_CROSS_BOX","U1_DAILY_UPDOWN_LOCK"):assert e.is_shadow_sleeve_quarantined(I)is False
- assert{"chengdu-daily-weather","beijing-daily-weather","seoul-daily-weather"}<=set(k);s=("This market will resolve to the highest temperature recorded at Chengdu Shuangliu International Airport according to https://aviationweather.gov/api/data/metar?ids=ZUUU on 27 Oct '26 (SPECI reports excluded).");v={"id":"ev_chengdu","title":"Highest temperature in Chengdu on October 27?","seriesSlug":"chengdu-daily-weather","description":s,"markets":[{"id":"m_zuuu_1","conditionId":"0xc1","groupItemTitle":"19°C or below","question":"19°C or below?","description":s,"endDate":"2026-10-27T16:00:00Z","clobTokenIds":'["tok_z1_y", "tok_z1_n"]'},{"id":"m_zuuu_2","conditionId":"0xc2","groupItemTitle":"20°C","question":"20°C?","description":s,"endDate":"2026-10-27T16:00:00Z","clobTokenIds":'["tok_z2_y", "tok_z2_n"]'},{"id":"m_zuuu_3","conditionId":"0xc3","groupItemTitle":"21°C","question":"21°C?","description":s,"endDate":"2026-10-27T16:00:00Z","clobTokenIds":'["tok_z3_y", "tok_z3_n"]'},{"id":"m_zuuu_4","conditionId":"0xc4","groupItemTitle":"22°C or higher","question":"22°C or higher?","description":s,"endDate":"2026-10-27T16:00:00Z","clobTokenIds":'["tok_z4_y", "tok_z4_n"]'}]};B=q(v,series_slug_hint="chengdu-daily-weather");assert B is not None and B.icao=="ZUUU"and B.unit=="C";H={"id":"ev_btc_4h","title":"Bitcoin Up or Down - Oct 26, 8:00AM-12:00PM ET","endDate":"2026-10-26T16:00:00Z","markets":[{"id":"m_btc_4h","conditionId":"0x4h","eventStartTime":"2026-10-26T12:00:00Z","endDate":"2026-10-26T16:00:00Z","outcomes":'["Up", "Down"]',"clobTokenIds":'["tok_4h_up", "tok_4h_dn"]',"feesEnabled":True,"feeSchedule":{"rate":.072,"exponent":1},"cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"resolutionSource":"https://data.chain.link/streams/btc-usd"}]};A={"id":"ev_btc_15m","title":"Bitcoin Up or Down - Oct 26, 11:45AM-12:00PM ET","endDate":"2026-10-26T16:00:00Z","markets":[{"id":"m_btc_15m","conditionId":"0x15m","eventStartTime":"2026-10-26T15:45:00Z","endDate":"2026-10-26T16:00:00Z","outcomes":'["Up", "Down"]',"clobTokenIds":'["tok_15m_up", "tok_15m_dn"]',"feesEnabled":True,"feeSchedule":{"rate":.072,"exponent":1},"cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"resolutionSource":"https://data.chain.link/streams/btc-usd"}]};G=a(H,"BTC","4h");z=a(A,"BTC","15m");assert G is not None and z is not None;J=i(G);assert"variant=fourhour"in J and"twapEnabled=true&twapLookbackSeconds=60"in J;assert n(G,z)is True;y=l(G,8e4,z,80500.);assert y is not None and y["regime"]=="4H_UP_PLUS_15M_DOWN";F={"id":"ev_ms","title":"Bitcoin above ___ on Oct 26?","endDate":"2026-10-26T16:00:00Z","markets":[{"id":"ms_72","conditionId":"0xms72","question":"Will the price of Bitcoin be above $72,000 on Oct 26?","endDate":"2026-10-26T16:00:00Z","clobTokenIds":'["ms72_y", "ms72_n"]'},{"id":"ms_74","conditionId":"0xms74","question":"Will the price of Bitcoin be above $74,000 on Oct 26?","endDate":"2026-10-26T16:00:00Z","clobTokenIds":'["ms74_y", "ms74_n"]'}]};E={"id":"ev_nr","title":"Bitcoin price on Oct 26?","endDate":"2026-10-26T16:00:00Z","markets":[{"id":"nr_lt72","conditionId":"0xnr1","groupItemTitle":"<72,000","question":"Will BTC be less than $72,000?","endDate":"2026-10-26T16:00:00Z","clobTokenIds":'["nr_lt72_y", "nr_lt72_n"]'},{"id":"nr_72_74","conditionId":"0xnr2","groupItemTitle":"72,000-74,000","question":"Will BTC be between $72,000 and $74,000?","endDate":"2026-10-26T16:00:00Z","clobTokenIds":'["nr_7274_y", "nr_7274_n"]'},{"id":"nr_gt74","conditionId":"0xnr3","groupItemTitle":">74,000","question":"Will BTC be greater than $74,000?","endDate":"2026-10-26T16:00:00Z","clobTokenIds":'["nr_gt74_y", "nr_gt74_n"]'}]};t=o(F,"BTC","btc-multi-strikes-weekly");r=j(E,"BTC","bitcoin-neg-risk-weekly");u=h(t,r);assert len(u)==6;x=[b for b in u if b["guaranteed_payout"]==1. and len(b["legs"])==3][0];w=g([{"asks":[{"price":"0.28","size":"80"}],"fee_rate":.07,"fee_exponent":1.},{"asks":[{"price":"0.30","size":"80"}],"fee_rate":.07,"fee_exponent":1.},{"asks":[{"price":"0.31","size":"80"}],"fee_rate":.07,"fee_exponent":1.}],target_budget_usd=1e2,guaranteed_payout_per_bundle=x["guaranteed_payout"],max_bundle_cost_net=.992);assert w["filled"]is True and w["guaranteed_min_profit_usd"]>3.;D={"id":"ev_u1","title":"Bitcoin Up or Down on October 27?","endDate":"2026-10-27T16:00:00Z","markets":[{"id":"m_u1","conditionId":"0xu1","eventStartTime":"2026-10-26T16:00:00Z","endDate":"2026-10-27T16:00:00Z","outcomes":'["Up", "Down"]',"clobTokenIds":'["u1_up", "u1_dn"]'}]};C=m(D,"BTC","btc-up-or-down-daily");assert C is not None and C.up_token=="u1_up"and C.down_token=="u1_dn"
- async def f():
-  monkeypatch.setattr(e,"STATE_FILE",tmp_path/"a124_v42_state.json");monkeypatch.setattr(e,"LEDGER_FILE",tmp_path/"a124_v42_ledger.jsonl");monkeypatch.setattr(e,"OPPS_FILE",tmp_path/"a124_v42_opps.json");d=e.Alpha124ShadowDaemon(single_scan=True);n=1793026680.;d.spots["BTC"]=8.4e4;d.spots["ETH"]=2500.;e=e.TwapCandleMarketSpec(asset="BTC",horizon="15m",market_id="m_pre_btc",condition_id="0xpreb",title="BTC PreOpen 15m",start_iso="2026-10-26T15:00:00Z",end_iso="2026-10-26T15:15:00Z",start_ts=1793026800.,end_ts=1793027700.,up_token="p1_btc_up",down_token="p1_btc_dn",fee_rate=.072,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/btc-usd");b=e.TwapCandleMarketSpec(asset="ETH",horizon="15m",market_id="m_pre_eth",condition_id="0xpree",title="ETH PreOpen 15m",start_iso="2026-10-26T15:00:00Z",end_iso="2026-10-26T15:15:00Z",start_ts=1793026800.,end_ts=1793027700.,up_token="p1_eth_up",down_token="p1_eth_dn",fee_rate=.072,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/eth-usd");d.preopen_15m_candles={"BTC_pre15m_1793026800":e,"ETH_pre15m_1793026800":b};m={"p1_btc_up":{"bids":[{"price":"0.49","size":"100"}],"asks":[{"price":"0.51","size":"100"}]},"p1_btc_dn":{"bids":[{"price":"0.49","size":"100"}],"asks":[{"price":"0.51","size":"100"}]},"p1_eth_up":{"bids":[{"price":"0.49","size":"100"}],"asks":[{"price":"0.51","size":"100"}]},"p1_eth_dn":{"bids":[{"price":"0.49","size":"100"}],"asks":[{"price":"0.51","size":"100"}]},"s5m_btc_up":{"bids":[{"price":"0.78","size":"600"}],"asks":[{"price":"0.80","size":"600"}]}}
-  async def a(url,timeout=5.):
-   if"/book?token_id="in url:return m.get(url.split("token_id=")[1])
-   return None
-  monkeypatch.setattr(d,"fetch_json",a);i=[];await d.scan_and_manage_preopen_maker_straddles(i,now_ts=n);assert len(d.pending_preopen_straddles)==0;monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES","0");await d.scan_and_manage_preopen_maker_straddles(i,now_ts=n);assert len(d.pending_preopen_straddles)==2;m["p1_btc_up"]["asks"]=[{"price":"0.48","size":"100"}];m["p1_btc_dn"]["asks"]=[{"price":"0.48","size":"100"}];m["p1_eth_up"]["asks"]=[{"price":"0.48","size":"100"}];m["p1_eth_up"]["bids"]=[{"price":"0.47","size":"100"}];await d.scan_and_manage_preopen_maker_straddles([],now_ts=1793026792.);assert any(p["sleeve"]=="P1_PREOPEN_MAKER_STRADDLE"for p in d.open_positions.values());f=[c for c in d.closed_positions if c["status"]=="PREOPEN_ONE_LEG_SCRATCH"];assert len(f)==1 and f[0]["tier_pnls_usd"]["T1000"]<.0;l=e.TwapCandleMarketSpec(asset="BTC",horizon="5m",market_id="m_s5m",condition_id="0xs5m",title="BTC 5m",start_iso="2026-10-26T14:55:00Z",end_iso="2026-10-26T15:00:00Z",start_ts=1793026500.,end_ts=1793026800.,up_token="s5m_btc_up",down_token="s5m_btc_dn",fee_rate=.072,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/btc-usd");d.s5m_candles={"BTC_5m_1793026800":l};d.chainlink_open_cache[f"BTC_5m_{int(l.start_ts)}"]=(l.end_ts,83800.);d.usd_direct_flags["BTC"]=False;await d.scan_s5m_chainlink_sniper([],now_ts=1793026710.);assert not any(p["sleeve"]=="S5M_CHAINLINK_SNIPER"for p in d.open_positions.values());d.usd_direct_flags["BTC"]=True;await d.scan_s5m_chainlink_sniper([],now_ts=1793026710.);assert any(p["sleeve"]=="S5M_CHAINLINK_SNIPER"for p in d.open_positions.values());d.spot_hist["ETH"].clear();d.usd_spot_hist["ETH"].clear();d.spot_hist["ETH"].append((1e2,2306.5));d.spot_hist["ETH"].append((110.,2309.5));h=d.get_return_bps("ETH",5.);assert h>12.5;g={"shares":13,"avail_a_shares":1e2,"avail_b_shares":1e2,"leg_a_walk":{"best_ask":.8},"leg_b_walk":{"best_ask":.16}};k={"bids":[{"price":"0.78","size":"100"}],"asks":[{"price":"0.80","size":"100"}]};j={"bids":[{"price":"0.14","size":"100"}],"asks":[{"price":"0.16","size":"100"}]};assert d._passes_quiet_book_filter("ETH",k,j,g,110.)is False
- asyncio.run(f())
-def test_oct27_0655_strike_inversion_and_antibox_veto(tmp_path):
- from src.polymarket_research.same_oracle_dominance_box import(TwapCandleMarketSpec as e,build_prev_5m_gamma_event_url as c,compute_dominance_box_payout_from_close as f,determine_dominance_legs as h,parse_authoritative_open_price as a,walk_equal_shares_dominance_box as g);from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor as i;w=e(asset="SOL",horizon="15m",market_id="6247248",condition_id="0xsol15",title="SOL 6:45-7:00AM ET",start_iso="2026-10-27T10:45:00Z",end_iso="2026-10-27T11:00:00Z",start_ts=1793097900.,end_ts=1793098800.,up_token="sol_15m_up",down_token="sol_15m_dn",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/sol-usd-twap-60s-streams");y=e(asset="SOL",horizon="5m",market_id="6247315",condition_id="0xsol5",title="SOL 6:55-7:00AM ET",start_iso="2026-10-27T10:55:00Z",end_iso="2026-10-27T11:00:00Z",start_ts=1793098500.,end_ts=1793098800.,up_token="sol_5m_up",down_token="sol_5m_dn",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/sol-usd-twap-60s-streams");assert c(w).endswith("slug=sol-updown-5m-1793097600");assert c(y).endswith("slug=sol-updown-5m-1793098200");assert a({"openPrice":99.9644420334347,"completed":False,"cached":True})is None;assert a({"openPrice":99.9644420334347,"completed":False,"cached":True},request_url="https://polymarket.com/api/crypto/crypto-price?symbol=SOL&variant=fifteen")is None;from src.polymarket_research.same_oracle_dominance_box import build_crypto_price_query_url as d,parse_closed_gamma_event_settlement as b;s=d(w);v=d(y);assert"twapEnabled=true&twapLookbackSeconds=60"in s;assert a({"openPrice":99.8571312195911,"completed":False,"cached":True},request_url=s)==99.8571312195911;assert a({"openPrice":99.97149156931644,"completed":False,"cached":True},request_url=v)==99.97149156931644;r=a([{"closed":True,"eventMetadata":{"finalPrice":99.8571312195911}}]);u=a([{"closed":True,"eventMetadata":{"finalPrice":99.97149156931644}}]);assert r==99.8571312195911 and u==99.97149156931644;k=[{"closed":True,"eventMetadata":{"priceToBeat":99.8571312195911,"finalPrice":99.90631053937364}}];l=[{"closed":True,"eventMetadata":{"priceToBeat":99.97149156931644,"finalPrice":99.90631053937364}}];assert b(k,"DOWN")==.0;assert b(l,"UP")==.0;assert b(k,"UP")+b(l,"DOWN")==2.;t=h(w,r,y,u,min_corridor_bps=3.);assert t is not None and t["regime"]=="15M_UP_PLUS_5M_DOWN";assert t["leg_a"]["opp_token_id"]=="sol_15m_dn"and t["leg_b"]["opp_token_id"]=="sol_5m_up";assert f(99.90631053937364,t["k_low"],t["k_high"])==2.;x=g(asks_a_raw=[{"price":"0.195","size":"100"}],asks_b_raw=[{"price":"0.574","size":"100"}],target_budget_usd=60.,max_box_cost_net=.985);assert x["filled"]is False and x["reason"]=="SUSPECT_INVERTED_ANTI_BOX";E=i(dry_run=True,ledger_path=tmp_path/"antibox.jsonl");o=E.execute_atomic_dominance_box(box_id="ANTI_BOX_VETO_TEST",leg_a_token_id="tok_a",leg_a_label="15M_DOWN",leg_a_limit_price=.22,leg_b_token_id="tok_b",leg_b_label="5M_UP",leg_b_limit_price=.48,shares=25,max_box_cost_net=.985);assert o["success"]is False and"ANTI_BOX_COST_FLOOR_VETO"in o["error"];n=E.execute_atomic_dominance_box(box_id="ETH_THINNER_FIRST",leg_a_token_id="eth_15m",leg_a_label="15M_LEG",leg_a_limit_price=.24,leg_b_token_id="eth_5m",leg_b_label="5M_LEG",leg_b_limit_price=.7,shares=25,max_box_cost_net=.985,leg_a_avail_shares=442.,leg_b_avail_shares=173.);assert n["success"]is True and n["leg_1"]["label"]=="5M_LEG";A=c(w);z=[{"slug":"sol-updown-5m-1793097600","closed":True,"eventMetadata":{"finalPrice":99.8571312195911}}];q=[{"slug":"sol-updown-5m-1793097300","closed":True,"eventMetadata":{"finalPrice":99.}}];assert a(z,request_url=A)==99.8571312195911;assert a(q,request_url=A)is None;import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124_fc;m=tmp_path/"fc_state.json";a124_fc.STATE_FILE=m;B=a124_fc.Alpha124ShadowDaemon(single_scan=True);p={}
- async def j(url,timeout=5.):
-  for b,a in p.items():
-   if f"token_id={b}"in url:return a
-  return None
- B.fetch_json=j;D={"opp_token_id":"oa","label":"A"};C={"opp_token_id":"ob","label":"B"};assert asyncio.run(B._passes_complement_anti_box_check({"label":"A"},{"label":"B"}))is False;assert asyncio.run(B._passes_complement_anti_box_check(D,C))is False;p["oa"]={"bids":[{"price":"0.40","size":"50"}]};p["ob"]={"bids":[]};assert asyncio.run(B._passes_complement_anti_box_check(D,C))is False;p["ob"]={"bids":[{"price":"0.55","size":"50"}]};assert asyncio.run(B._passes_complement_anti_box_check(D,C))is True;p["ob"]={"bids":[{"price":"0.61","size":"50"}]};assert asyncio.run(B._passes_complement_anti_box_check(D,C))is False;p["oa"]={"bids":[{"price":"0.985","size":"50"}],"asks":[{"price":"0.995","size":"50"}]};p["ob"]={"bids":[],"asks":[{"price":"0.030","size":"80"}]};assert asyncio.run(B._passes_complement_anti_box_check(D,C))is True;p["oa"]={"bids":[{"price":"0.960","size":"50"}],"asks":[{"price":"0.970","size":"50"}]};p["ob"]={"bids":[],"asks":[{"price":"0.100","size":"80"}]};assert asyncio.run(B._passes_complement_anti_box_check(D,C))is False
-def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path,monkeypatch):
- import asyncio;import time;from datetime import date;import src.polymarket_research.alpha_124_shadow_daemon as a124_exp;from src.polymarket_research.same_oracle_dominance_box import(DOMINANCE_ASSETS as k,MIN_CORRIDOR_BPS_BY_ASSET as f,build_crypto_price_query_url as o,determine_dominance_legs as a,parse_twap_candle_event as g);from src.polymarket_research.barrier_onetouch_svi_engine import detect_barrier_monotonicity_boxes as j;from src.polymarket_research.multistrike_svi_scalper import ZERO_FEE_PYTH_DAILY_SERIES as q;from src.polymarket_research.weather_metar_engine import(WeatherBucket as h,WeatherEventSpec as t,evaluate_weather_event_slate as n);assert set(k)=={"BTC","ETH","SOL","XRP","BNB","DOGE","HYPE"};assert len(q)==8;z={}
- for N,S,R in(("BNB","bnb","bnb-usd"),("DOGE","doge","doge-usd"),("HYPE","hype","hype-usd")):Y={"slug":f"{S}-updown-15m-1793100000","endDate":"2026-10-27T11:15:00Z","markets":[{"id":f"m15_{N}","conditionId":"0x"+"11"*32,"question":f"{N} Up or Down 15m","eventStartTime":"2026-10-27T11:00:00Z","endDate":"2026-10-27T11:15:00Z","resolutionSource":f"https://data.chain.link/streams/{R}-twap-60s-streams","cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"outcomes":'["Up", "Down"]',"clobTokenIds":f'["{N}_15_up", "{N}_15_dn"]',"orderMinSize":5,"feesEnabled":True,"feeSchedule":{"rate":.07,"exponent":1}}]};_a={"slug":f"{S}-updown-5m-1793100600","endDate":"2026-10-27T11:15:00Z","markets":[{"id":f"m5_{N}","conditionId":"0x"+"22"*32,"question":f"{N} Up or Down 5m","eventStartTime":"2026-10-27T11:10:00Z","endDate":"2026-10-27T11:15:00Z","resolutionSource":f"https://data.chain.link/streams/{R}-twap-60s-streams","cryptoMarketConfig":{"twapEnabled":True,"twapLookbackSeconds":60},"outcomes":'["Up", "Down"]',"clobTokenIds":f'["{N}_5_up", "{N}_5_dn"]',"orderMinSize":5,"feesEnabled":True,"feeSchedule":{"rate":.07,"exponent":1}}]};Z=g(Y,N,"15m");s5=g(_a,N,"5m");assert Z is not None and s5 is not None and Z.asset==N;assert f"symbol={N}"in o(Z);z[N]=(Z,s5)
- C,P=z["DOGE"];assert a(C,.2,P,.20007,min_corridor_bps=f["DOGE"])is None;assert a(C,.2,P,.20014,min_corridor_bps=f["DOGE"])is not None;monkeypatch.setattr(a124_exp,"STATE_FILE",tmp_path/"exp_state.json");monkeypatch.setattr(a124_exp,"LEDGER_FILE",tmp_path/"exp_ledger.jsonl");monkeypatch.setattr(a124_exp,"LIVE_ALPHA124_STATE_MIRROR_FILE",tmp_path/"exp_mirror.json");monkeypatch.setattr(a124_exp,"D1_LIVE_CANDIDATES_FILE",tmp_path/"exp_d1_cands.jsonl");W=a124_exp.Alpha124ShadowDaemon(single_scan=False);y=f"doge-updown-5m-{int(C.start_ts)-300}"
- async def i(url,timeout=5.):
-  if"crypto-price"in url:return None
-  if y in url:return[{"slug":y,"closed":True,"eventMetadata":{"finalPrice":.21456}}]
-  return None
- W.fetch_json=i;x=a124_exp.time.time
- try:a124_exp.time.time=lambda:C.start_ts+45.;V=asyncio.run(W.get_authoritative_open_strike(C));assert V==.21456
- finally:a124_exp.time.time=x
- K=[{"direction":"UP","strike":1e5,"ask_yes":.5,"ask_no":.52,"market_id":"m_lo","condition_id":"0x1","yes_token":"t_lo_y","no_token":"t_lo_n","end_ts":time.time()+3600},{"direction":"UP","strike":1.05e5,"ask_yes":.58,"ask_no":.43,"market_id":"m_hi","condition_id":"0x2","yes_token":"t_hi_y","no_token":"t_hi_n","end_ts":time.time()+3600},{"direction":"DOWN","strike":8e4,"ask_yes":.58,"ask_no":.44,"market_id":"m_dlo","condition_id":"0x3","yes_token":"t_dlo_y","no_token":"t_dlo_n","end_ts":time.time()+3600},{"direction":"DOWN","strike":8.5e4,"ask_yes":.5,"ask_no":.52,"market_id":"m_dhi","condition_id":"0x4","yes_token":"t_dhi_y","no_token":"t_dhi_n","end_ts":time.time()+3600}];F=j(K,fee_rate=.07,max_box_cost_net=.985);assert len(F)==2;assert{b["direction"]for b in F}=={"UP","DOWN"};b1=h("w1","c1","<=69F","NYC <= 69F","w1_y","w1_n","F",-float("inf"),69.);b2=h("w2","c2","70-71F","NYC 70-71F","w2_y","w2_n","F",70.,71.);b3=h("w3","c3",">=72F","NYC >= 72F","w3_y","w3_n","F",72.,float("inf"));X=t("W_EV_NO","nyc-oct-27","nyc-daily-weather","NYC High","KLGA","NYC",40.77,-73.87,"America/New_York",date(2026,10,27),"HIGH","F","zero_fees","2026-10-28T04:00:00Z",[b1,b2,b3]);U=n(X,[.34,.33,.33],{"w1":{"ask_yes":.42,"ask_yes_shares":50.,"ask_no":.62,"ask_no_shares":60.},"w2":{"ask_yes":.42,"ask_yes_shares":50.,"ask_no":.62,"ask_no_shares":60.},"w3":{"ask_yes":.42,"ask_yes_shares":50.,"ask_no":.62,"ask_no_shares":60.}},target_budget_usd=35.);E=U["full_slate_arb"];assert E is not None and E["mode"]=="FULL_SLATE_NO_COMPLEMENT_ARB";assert E["guaranteed_payout_per_set"]==2.;assert asyncio.run(W.open_shadow_weather_slate(X,E,time.time()-60.))is True
- async def l(url,timeout=5.):
-  if"/markets/w1"in url:return{"id":"w1","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["w1_y","w1_n"]',"outcomePrices":'["1","0"]'}
-  if"/markets/w2"in url:return{"id":"w2","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["w2_y","w2_n"]',"outcomePrices":'["0","1"]'}
-  if"/markets/w3"in url:return{"id":"w3","closed":True,"umaResolutionStatus":"resolved","clobTokenIds":'["w3_y","w3_n"]',"outcomePrices":'["0","1"]'}
-  return None
- W.fetch_json=l;asyncio.run(W.manage_open_positions());D=[c for c in W.closed_positions if c["sleeve"]=="W3_WEATHER_SLATE_ARB"];assert len(D)==1 and D[0]["won"]is True and D[0]["status"]=="SETTLED_WEATHER_SLATE_NX";assert D[0]["tier_pnls_usd"]["T100"]>.0;from dataclasses import replace as e;Q=time.time();C=e(C,end_ts=Q+180.);P=e(P,end_ts=Q+180.);O=a(C,.2,P,.2002,min_corridor_bps=5.);assert O is not None;J=O["leg_a"]["token_id"];I=O["leg_b"]["token_id"];B={J:{"bids":[{"price":"0.50","size":"80"}],"asks":[{"price":"0.53","size":"80"}]},I:{"bids":[{"price":"0.45","size":"220"}],"asks":[{"price":"0.46","size":"220"}]}}
- async def s(url,timeout=5.):
-  for b,a in B.items():
-   if b in url:return a
-  return None
- W.fetch_json=s;assert W.post_maker_anchor_candidate(C,P,O,B[J],B[I],now_ts=Q-2.)is True;assert len(W.pending_maker_anchors)==1;B[J]={"bids":[{"price":"0.50","size":"80"}],"asks":[{"price":"0.51","size":"40"}]};asyncio.run(W.manage_pending_maker_anchors(now_ts=Q));assert len(W.pending_maker_anchors)==0;H=[p for p in W.open_positions.values()if p["sleeve"]=="D1_MAKER_ANCHOR_BOX"];assert len(H)==1 and H[0]["extra"]["is_maker_anchor_box"]is True;u,A=z["BNB"];u=e(u,end_ts=Q+180.);A=e(A,end_ts=Q+180.);G=a(u,6e2,A,600.6,min_corridor_bps=5.);assert G is not None;w=G["leg_a"]["token_id"];v=G["leg_b"]["token_id"];B[w]={"bids":[{"price":"0.50","size":"80"}],"asks":[{"price":"0.53","size":"80"}]};B[v]={"bids":[{"price":"0.45","size":"220"}],"asks":[{"price":"0.46","size":"220"}]};assert W.post_maker_anchor_candidate(u,A,G,B[w],B[v],now_ts=Q-2.)is True;assert len(W.pending_maker_anchors)==1;B[v]={"bids":[{"price":"0.45","size":"5"}],"asks":[{"price":"0.46","size":"5"}]};asyncio.run(W.manage_pending_maker_anchors(now_ts=Q));assert len(W.pending_maker_anchors)==0;import json as _json_t;from src.polymarket_research.polymarket_terminal_recorder import ASSET_CONFIGS as d,PolymarketDualFeed1HRecorder as m
- for N in k:assert N in d;T=m(asset=N);assert T.coinbase_product==f"{N}-USD";assert T.telemetry_5m_file.name==f"polymarket_5m_telemetry_{N.lower()}.jsonl";assert T.telemetry_15m_file.name==f"polymarket_15m_telemetry_{N.lower()}.jsonl";assert T.telemetry_4h_file.name==f"polymarket_4h_telemetry_{N.lower()}.jsonl"
- assert d["HYPE"].get("futures_only_ref")is True;assert d["DOGE"]["series_slug"]=="doge-up-or-down-hourly";assert d["BNB"]["series_slug"]=="bnb-up-or-down-hourly";W._record_d1_corridor_telemetry("15m_5m",u,A,G,{"bids":[{"price":"0.50","size":"80"}],"asks":[{"price":"0.53","size":"80"}]},{"bids":[{"price":"0.45","size":"80"}],"asks":[{"price":"0.49","size":"80"}]},Q);M=tmp_path/"alpha124_market_telemetry.jsonl";assert M.exists();L=[_json_t.loads(ln)for ln in M.read_text(encoding="utf-8").splitlines()if ln.strip()];assert any(r["type"]=="D1_CORRIDOR"and r["asset"]=="BNB"and r["gross_box_l1"]==1.02 for r in L)
-def test_telemetry_compact_encoding_delta_dedupe_and_inode_safe_gzip_compactor(tmp_path,monkeypatch):
- import json as _json_c;import src.polymarket_research.alpha_124_shadow_daemon as a124;from scripts.honest_purged_wfo_optimizer import iter_jsonl_lines_with_archives as d;from scripts.polymarket_telemetry_compactor import compact_jsonl_file as c,is_protected_path as a;from src.polymarket_research.polymarket_terminal_recorder import L2OrderBook as j,_dumps_compact as b;v=j("tok_test");v.apply_snapshot(bids=[{"price":str(round(.49-.01*i,2)),"size":"120"}for i in range(15)],asks=[{"price":str(round(.51+.01*i,2)),"size":"120"}for i in range(15)]);t=v.last_book_update_ts+.5;s=v.get_metrics(obs_ts=t,compact=False);r=v.get_metrics(obs_ts=t,compact=True);assert"microprice_formula"in s and"vwap_$250"in s and len(s["raw_top_bids"])==15;assert"microprice_formula"not in r and"vwap_$250"not in r and len(r["raw_top_bids"])==10
- for k in("best_bid","best_ask","q_mid","q_micro","obi_l1","obi_depth","vwap_$20","vwap_$25","vwap_$50","effective_price_$50","fill_fees_$50"):assert r[k]==s[k]
- g=len(_json_c.dumps({"UP":s,"DOWN":s}).encode("utf-8"));f=len(b({"UP":r,"DOWN":r}).encode("utf-8"));assert f<.45*g;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"st.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"ldg.jsonl");monkeypatch.setattr(a124,"MARKET_TELEMETRY_FILE",tmp_path/"m_telem.jsonl");u=a124.Alpha124ShadowDaemon(single_scan=True);u._record_market_telemetry("W_SLATE_1",10.,{"type":"WEATHER_SLATE","sum_yes_l1":1.02},now_ts=1e3,sig=(1.02,));u._record_market_telemetry("W_SLATE_1",10.,{"type":"WEATHER_SLATE","sum_yes_l1":1.02},now_ts=1025.,sig=(1.02,));u._record_market_telemetry("W_SLATE_1",10.,{"type":"WEATHER_SLATE","sum_yes_l1":.99},now_ts=1040.,sig=(.99,));p=(tmp_path/"m_telem.jsonl").read_text(encoding="utf-8").splitlines();assert len(p)==2;assert a(tmp_path/"live_orders.jsonl")is True;assert a(tmp_path/"finalized_market_resolutions.jsonl")is True;assert a(tmp_path/"alpha124_shadow_ledger.jsonl")is True;assert a(tmp_path/"d1_live_box_candidates.jsonl")is True;assert a(tmp_path/"polymarket_hourly_telemetry.jsonl")is False;assert a(tmp_path/"alpha124_market_telemetry.jsonl")is False;assert a(tmp_path/"counterfactual_candidates.jsonl")is False;q=tmp_path/"polymarket";q.mkdir(parents=True,exist_ok=True);o=q/"polymarket_hourly_telemetry.jsonl";n=q/"polymarket_hourly_telemetry_eth.jsonl";e=[f"btc_{i}"for i in range(400)];o.write_text("".join(b({"seq":i,"id":f"btc_{i}","UP":r})+"\n"for i in range(400)),encoding="utf-8");n.write_text("".join(b({"seq":i,"id":f"eth_{i}","UP":r})+"\n"for i in range(400)),encoding="utf-8");m=c(o,hot_threshold_bytes=20000,keep_tail_bytes=15000,min_archive_bytes=10000);l=c(n,hot_threshold_bytes=20000,keep_tail_bytes=15000,min_archive_bytes=10000);assert m["status"]=="COMPACTED"and m["inode_preserved"]is True and m["compression_ratio_x"]>3.;assert l["status"]=="COMPACTED";assert o.stat().st_size<25000;h=[_json_c.loads(w)["id"]for w in d(q,"polymarket_hourly_telemetry.jsonl")if w.strip()];assert h==e
-def test_multi_vertical_zero_fee_expansion_sleeves(tmp_path,monkeypatch):
- import asyncio;import time;from datetime import date;from zoneinfo import ZoneInfo as v;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.barrier_onetouch_svi_engine import BarrierRungSpec as m;from src.polymarket_research.tradfi_sports_zero_fee_engine import(compute_effective_trading_hours as k,detect_nba_dominance_boxes as q,detect_pyth_calendar_inclusion_boxes as g,detect_pyth_close_vs_hit_boxes as l,parse_nba_zero_fee_event as s,parse_zero_fee_negrisk_slate as c);from src.polymarket_research.weather_metar_engine import(MetarObservation as j,WeatherBucket as f,WeatherEventSpec as u,compute_weather_probabilities as b,parse_hko_csv_observations as n,parse_weather_event as t);W="Date time,Automatic Weather Station,Air Temperature(degree Celsius)\n202610281020,Chek Lap Kok,28.7\n202610281020,HK Observatory,26.2\n";V="Date time,Automatic Weather Station,Max,Min\n202610281020,Chek Lap Kok,28.7,26.0\n202610281020,HK Observatory,26.3,24.8\n";M=n(W,V,date(2026,10,28));assert len(M)==3;assert max(o.temp_c for o in M)==26.3;assert min(o.temp_c for o in M)==24.8;assert M[-1].temp_c==26.2;U={"id":"ev_hko_1","title":"Highest temperature in Hong Kong on October 28?","endDate":"2026-10-28T16:00:00Z","markets":[{"id":f"hk_{i}","conditionId":f"0xhk_{i}","groupItemTitle":lbl,"description":"Resolves to highest temperature recorded by the Hong Kong Observatory on 28 Oct '26 via https://www.weather.gov.hk/en/cis/climat.htm","clobTokenIds":f'["hy_{i}", "hn_{i}"]',"feeType":"zero_fees","feesEnabled":True,"feeSchedule":{"rate":0}}for i,lbl in enumerate(["25°C or below","26°C","27°C","28°C or higher"])]};T=t(U);assert T is not None and T.icao=="HKO"and T.fee_type=="zero_fees";_b=v("America/New_York");B=[f("b0","c0","9°C or below","9-","y0","n0","C",float("-inf"),9.),f("b1","c1","10°C","10","y1","n1","C",10.,10.),f("b2","c2","11°C","11","y2","n2","C",11.,11.),f("b3","c3","12°C or higher","12+","y3","n3","C",12.,float("inf"))];S=u("ev_low","nyc-low","nyc-daily-lowest-temperature","Lowest temperature in NYC on October 28?","KLGA","NYC",40.7769,-73.874,"America/New_York",date(2026,10,28),"LOW","C","zero_fees","2026-10-29T04:00:00Z",B);_a=datetime(2026,10,28,6,0,tzinfo=_b);Z=datetime(2026,10,28,11,0,tzinfo=_b);L=[j("KLGA",_a.astimezone(timezone.utc),_a,10.1,True,"T0101"),j("KLGA",Z.astimezone(timezone.utc),Z,14.5,True,"T0145")];J={int(datetime(2026,10,28,h,0,tzinfo=_b).astimezone(timezone.utc).timestamp()):[13.5]*20 for h in range(12,24)};J[int(datetime(2026,10,29,0,0,tzinfo=_b).astimezone(timezone.utc).timestamp())]=[13.2]*20;R=b(S,Z.astimezone(timezone.utc),L,J);assert R["is_solar_lock"]is True and R["locked_bucket_idx"]==1;H=dict(J);H[int(datetime(2026,10,28,23,0,tzinfo=_b).astimezone(timezone.utc).timestamp())]=[10.8]*20;K=b(S,Z.astimezone(timezone.utc),L,H);assert K["is_solar_lock"]is False;G=datetime(2026,10,30,15,0,tzinfo=_b).timestamp();A=datetime(2026,11,2,10,30,tzinfo=_b).timestamp();assert abs(k(G,A,"EQUITY_RTH")-2.)<1e-6;F=g([{"asset":"WTI","direction":"UP","strike":105.,"fee_rate":.0,"start_ts":1e3,"end_ts":5e4,"ask_yes":.45,"ask_no":.56,"market_id":"w1","condition_id":"cw1","yes_token":"wy","no_token":"wn"},{"asset":"WTI","direction":"UP","strike":105.,"fee_rate":.0,"start_ts":9e2,"end_ts":2e5,"ask_yes":.42,"ask_no":.59,"market_id":"m1","condition_id":"cm1","yes_token":"my","no_token":"mn"}]);assert len(F)==1 and abs(F[0]["box_cost_net"]-.98)<1e-6;E=l(close_rows=[{"asset":"SPY","strike":775.,"is_downward":False,"fee_rate":.0,"end_ts":5e3,"ask_no":.55,"market_id":"c1","condition_id":"cc1","yes_token":"cy","no_token":"cn"}],hit_rows=[{"asset":"SPY","strike":775.,"direction":"UP","fee_rate":.0,"start_ts":1e3,"end_ts":9e3,"ask_yes":.43,"market_id":"h1","condition_id":"ch1","yes_token":"hy","no_token":"hn"}],now_ts=2e3);assert len(E)==1 and abs(E[0]["box_cost_net"]-.98)<1e-6;Q={"id":"nba_1","slug":"nba-bkn-bos","title":"Nets vs. Celtics","endDate":"2026-10-28T23:30:00Z","markets":[{"id":"ml","conditionId":"c_ml","sportsMarketType":"moneyline","question":"Nets vs. Celtics","outcomes":'["Nets", "Celtics"]',"clobTokenIds":'["t_nets_ml", "t_bos_ml"]',"feeType":"zero_fees","feesEnabled":True,"feeSchedule":{"rate":0}},{"id":"sp_bos","conditionId":"c_sp1","sportsMarketType":"spreads","question":"Spread: Celtics (-4.5)","outcomes":'["Celtics", "Nets"]',"line":-4.5,"clobTokenIds":'["t_bos_m45", "t_nets_p45"]',"feeType":"zero_fees","feesEnabled":True,"feeSchedule":{"rate":0}},{"id":"sp_1h","conditionId":"c_1h","sportsMarketType":"first_half_spreads","question":"1H Spread: Celtics (-2.5)","outcomes":'["Celtics", "Nets"]',"line":-2.5,"clobTokenIds":'["t_1h_a", "t_1h_b"]',"feeType":"zero_fees"},{"id":"tot_lo","conditionId":"c_tl","sportsMarketType":"totals","question":"Nets vs. Celtics: O/U 215.5","outcomes":'["Over", "Under"]',"line":215.5,"clobTokenIds":'["t_ov_215", "t_un_215"]',"feeType":"zero_fees"},{"id":"tot_hi","conditionId":"c_th","sportsMarketType":"totals","question":"Nets vs. Celtics: O/U 220.5","outcomes":'["Over", "Under"]',"line":220.5,"clobTokenIds":'["t_ov_220", "t_un_220"]',"feeType":"zero_fees"}]};P=s(Q,now_ts=1.79322e9);assert P is not None;assert all("1h"not in lg.token_id for lg in P.margin_legs);I=q(P,{"t_bos_ml":.56,"t_nets_p45":.425,"t_bos_m45":.58,"t_nets_ml":.4,"t_ov_215":.52,"t_un_220":.465},max_box_cost_net=.994);O={a["label"]for a in I};assert"Nets +4.5 + Celtics ML"in O;assert"Over 215.5 + Under 220.5"in O;assert not any("Nets ML"in lbl and"Celtics -4.5"in lbl for lbl in O),"Anti-box must never be emitted!";Y={"id":"nr_elon","title":"Elon tweets 48h?","negRisk":True,"endDate":"2026-10-30T16:00:00Z","markets":[{"id":"e0","closed":True,"outcomePrices":'["0", "1"]'},{"id":"e1","conditionId":"ce1","groupItemTitle":"40-64","clobTokenIds":'["ey1","en1"]',"feeType":"zero_fees"},{"id":"e2","conditionId":"ce2","groupItemTitle":"65-89","clobTokenIds":'["ey2","en2"]',"feeType":"zero_fees"},{"id":"e3","conditionId":"ce3","groupItemTitle":"90+","clobTokenIds":'["ey3","en3"]',"feeType":"zero_fees"}]};assert c(Y,"elon-tweets-48h")is not None;Y["markets"][0]["outcomePrices"]='["1", "0"]';assert c(Y,"elon-tweets-48h")is None;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"b4_st.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"b4_ldg.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"b4_opps.json")
- async def x():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);c=time.time();d.spots["BTC"]=84200.;d.barrier_rungs["m_b4"]=m(asset="BTC",horizon_group="WEEK",series_slug="btc-hit",event_id="ev_b4",market_id="m_b4",condition_id="0xcb4",group_label="↑ 85,000",question="Will BTC hit $85,000?",strike=8.5e4,direction="UP",start_ts=c-7200.,end_ts=c+86400.,yes_token="t_b4_y",no_token="t_b4_n",fee_rate=.07);d.barrier_rungs["m_b4_stale"]=m(asset="BTC",horizon_group="MONTH",series_slug="btc-hit",event_id="ev_b4",market_id="m_b4_stale",condition_id="0xcst",group_label="↑ 85,000",question="Will BTC reach $85,000 in Oct?",strike=8.5e4,direction="UP",start_ts=c-6e2,end_ts=c+86400.,yes_token="t_b4_stale_y",no_token="t_b4_stale_n",fee_rate=.07);d.barrier_ext_cache["ev_b4"]=(c,(85120.,83900.,84200.))
-  async def a(toks,timeout=3.):return{"t_b4_y":{"bids":[{"price":"0.95","size":"200"}],"asks":[{"price":"0.97","size":"200"}]},"t_b4_stale_y":{"bids":[{"price":"0.07","size":"200"}],"asks":[{"price":"0.085","size":"200"}]}}
-  monkeypatch.setattr(d,"fetch_books_batch",a);b=[];await d.scan_barrier_markets(b);assert any(p["sleeve"]=="B4_TOUCHED_BARRIER_WICK_LOCK"and p["dedupe_key"]=="B4_m_b4"for p in d.open_positions.values());assert not any(p["dedupe_key"]=="B4_m_b4_stale"for p in d.open_positions.values())
- asyncio.run(x());from src.polymarket_research.barrier_onetouch_svi_engine import parse_hit_event as w;from src.polymarket_research.tradfi_sports_zero_fee_engine import is_same_continuous_session as e;N={"id":"ev_oct","startDate":"2026-10-01T05:00:00Z","endDate":"2026-11-01T03:59:59Z","markets":[{"id":"m_init","conditionId":"c1","question":"Will ETH reach $3,000 in October?","groupItemTitle":"↑ 3,000","clobTokenIds":'["y1","n1"]',"startDate":"2026-10-01T05:00:00Z"},{"id":"m_minted","conditionId":"c2","question":"Will ETH reach $2,600 in October?","groupItemTitle":"↑ 2,600","clobTokenIds":'["y2","n2"]',"startDate":"2026-10-22T16:18:20Z","description":"from the creation of this market through 11:59 PM ET"}]};C={r.market_id:r for r in w(N,"ETH","MONTHLY","ethereum-hit-price-monthly")};assert C["m_minted"].start_ts>C["m_init"].start_ts+15*86400.;X=v("America/New_York");z=a124.datetime(2026,10,27,23,0,tzinfo=X).timestamp();D=a124.datetime(2026,10,30,14,0,tzinfo=X).timestamp();y=a124.datetime(2026,10,30,16,0,tzinfo=X).timestamp();assert not e(z,y,"EQUITY_RTH"),"Multi-day / overnight earnings gap must be vetoed!";assert e(D,y,"EQUITY_RTH"),"Friday same-session RTH final 2h must pass!"
-def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch,tmp_path):
- import asyncio;from datetime import datetime as r;from zoneinfo import ZoneInfo as x;from src.polymarket_research import alpha_124_shadow_daemon as t;from src.polymarket_research.macro_counting_ctf_engine import(ALL_FOMC_MASK as y,ALL_OIL_SENATE_MASK as u,build_fomc_truth_table_legs as q,build_oil_senate_truth_table_legs as j,detect_counting_subwindow_boxes as l,detect_d2_12pm_binance_boxes as o,evaluate_ai_elo_ci_lock as g,evaluate_counting_dead_no_locks as m,evaluate_locked_market_reward_carry as i,evaluate_pyth_catalyst_shock as e,find_cross_event_bitmask_boxes as c,parse_aaa_gas_html as v,parse_counting_slate_event as f,walk_equal_shares_overround_bids as k);from src.polymarket_research.redeem_settled_positions import(encode_ctf_merge_or_split_calldata as a,inspect_mergeable_complete_set as n);_a={"id":"ev_elon_7d","slug":"elon-musk-of-tweets-october-27-november-3","title":"Elon Musk # tweets October 27 - November 3, 2026?","endDate":"2026-11-03T17:00:00Z","description":"from October 27, 2026, 12:00 PM ET to November 3, 2026, 12:00 PM ET","markets":[{"id":"c7_0","closed":True,"groupItemTitle":"<40","outcomePrices":'["0","1"]'},{"id":"c7_1","conditionId":"0xc71","groupItemTitle":"40-64","clobTokenIds":'["t7_y1","t7_n1"]',"feeType":"zero_fees","rewardsMinSize":50,"rewardsMaxSpread":3.5},{"id":"c7_2","conditionId":"0xc72","groupItemTitle":"65-89","clobTokenIds":'["t7_y2","t7_n2"]',"feeType":"zero_fees"},{"id":"c7_3","conditionId":"0xc73","groupItemTitle":"140+","clobTokenIds":'["t7_yup","t7_nup"]',"feeType":"zero_fees"}]};T={"id":"ev_elon_48h","slug":"elon-musk-of-tweets-october-29-october-31","title":"Elon Musk # tweets October 29 - October 31, 2026?","endDate":"2026-10-31T16:00:00Z","description":"from October 29, 2026, 12:00 PM ET to October 31, 2026, 12:00 PM ET","markets":[{"id":"c2_0","conditionId":"0xc20","groupItemTitle":"<40","clobTokenIds":'["t2_ylo","t2_nlo"]',"feeType":"zero_fees"},{"id":"c2_1","conditionId":"0xc21","groupItemTitle":"40-89","clobTokenIds":'["t2_ym","t2_nm"]',"feeType":"zero_fees"},{"id":"c2_2","conditionId":"0xc22","groupItemTitle":"90+","clobTokenIds":'["t2_yup","t2_nup"]',"feeType":"zero_fees"}]};s7=f(_a,"elon-tweets","elonmusk");s2=f(T,"elon-tweets-48h","elonmusk");assert s7 is not None and s2 is not None and s7.gamma_closed_floor==40;S={s7.slug:{"total":68,"hourly":[(s7.window_start_ts+3600.,55)]}};N,_b=m(s7,S,safety_post_buffer=2);assert N==68 and[b.market_id for b in _b]==["c7_1"];rw=i(1.,.975,.99,50.,3.5,.0);assert rw["eligible"]is True and.975<=rw["resting_bid"]<=.985;F=l([s7,s2],{"t2_nup":.44,"t7_yup":.54},{"elonmusk":S},max_box_cost_net=.99);assert any(b["box_kind"]=="TW1_UPPER_SUBWINDOW"and abs(b["box_cost_net"]-.98)<1e-6 for b in F);E=[{"slug":"fed-decision-in-october-2026","endDate":"2026-10-29T18:00:00Z","markets":[{"id":"fo_p","conditionId":"0xfop","groupItemTitle":"No change","clobTokenIds":'["fop_y","fop_n"]',"feeType":"zero_fees"}]}];M=[{"slug":"fed-decisions-oct-jan","endDate":"2027-01-29T19:00:00Z","markets":[{"id":"fp_1","conditionId":"0xfp1","groupItemTitle":"Pause-Pause-Pause","clobTokenIds":'["fp1_y","fp1_n"]',"feeType":"zero_fees"},{"id":"fp_2","conditionId":"0xfp2","groupItemTitle":"Hike-Pause-Pause","clobTokenIds":'["fp2_y","fp2_n"]',"feeType":"zero_fees"},{"id":"fp_o","conditionId":"0xfpo","groupItemTitle":"Other","clobTokenIds":'["fpo_y","fpo_n"]',"feeType":"zero_fees"}]}];R=q(E,M);L=c(R,{"fop_y":.88,"fp1_n":.105},y,max_2leg_cost=.995);assert len(L)==1 and L[0]["n_legs"]==2 and L[0]["box_cost_net"]==.985;Q={"which-party-will-win-the-senate-in-2026":{"endDate":"2026-11-04T00:00:00Z","markets":[{"id":"sm_d","conditionId":"0xsmd","groupItemTitle":"Democratic Party","clobTokenIds":'["smd_y","smd_n"]',"feeType":"zero_fees"}]},"who-wins-the-senate-pending-oil-above-or-below-80-before-the-midterms":{"endDate":"2026-11-04T00:00:00Z","markets":[{"id":"s80_ld","conditionId":"0x80ld","groupItemTitle":"Oil < $80; D Senate","clobTokenIds":'["o80ld_y","o80ld_n"]',"feeType":"zero_fees"},{"id":"s80_gd","conditionId":"0x80gd","groupItemTitle":"Oil ≥ $80; D Senate","clobTokenIds":'["o80gd_y","o80gd_n"]',"feeType":"zero_fees"}]},"who-wins-the-senate-pending-oil-below-85-before-the-midterms":{"endDate":"2026-11-04T00:00:00Z","markets":[{"id":"s85_ld","conditionId":"0x85ld","groupItemTitle":"Oil < $85; D Senate","clobTokenIds":'["o85ld_y","o85ld_n"]',"feeType":"zero_fees"}]}};K=j(Q);D=c(K,{"o80ld_y":.01,"o80gd_y":.64,"smd_n":.335,"o80ld_n":.97,"o85ld_y":.015},u,max_2leg_cost=.995,max_3leg_cost=.995);assert any(b["n_legs"]==3 and abs(b["box_cost_net"]-.985)<1e-6 for b in D);assert any(b["n_legs"]==2 and abs(b["box_cost_net"]-.985)<1e-6 for b in D);_c=k([{"bids":[{"price":"0.52","size":"50"}],"fee_rate":.0,"fee_exponent":1.},{"bids":[{"price":"0.49","size":"50"}],"fee_rate":.0,"fee_exponent":1.}],target_mint_budget_usd=40.,min_net_proceeds_per_set=1.004);assert _c["filled"]is True and _c["net_proceeds_per_set"]==1.01;J="0x"+"ab"*32;from src.polymarket_research import redeem_settled_positions as O;_,C=a(J,25.,is_split=False,neg_risk=False);_,B=a(J,25.,is_split=True,neg_risk=False);_,I=a(J,25.,is_split=False,neg_risk=True);_,H=a(J,25.,is_split=True,neg_risk=True);assert C[:10]=="0x9e7212ad"and B[:10]=="0x72ce4275";assert I[:10]=="0xb10c5c17"and H[:10]=="0xa3d7da1d";monkeypatch.setattr(O,"get_token_balance_onchain",lambda addr,tok:12.5 if tok=="tok_y"else 15.);assert n("0x1111111111111111111111111111111111111111","tok_y","tok_n")==12.5;A='<div>Price as of 10/27/26</div><td>$4.2661</td><td>$4.2661</td><td>$4.7966</td><td>$5.1822</td><td>$5.5656</td><td>$3.2856</td><td>$4.2602</td>';Z=v(A);assert Z=={"as_of_date":"2026-10-27","current_regular":4.2661,"yesterday_regular":4.2602};from src.polymarket_research.tradfi_sports_zero_fee_engine import detect_pyth_calendar_inclusion_boxes as h,parse_pyth_hit_event as s;P={"id":"ev_nov","startDate":"2026-10-25T04:02:00Z","endDate":"2026-12-01T04:59:59Z","markets":[{"id":"6172752","conditionId":"0xnov","question":"Will WTI Crude Oil (WTI) hit (HIGH) $100 in November?","groupItemTitle":"↑ $100","clobTokenIds":'["ny","nn"]',"feeType":"zero_fees","description":"during a trading session of November 2026, any Pyth 1-minute candle"}]};Y=s(P,"WTI","MONTHLY","wti-hit");z=r(2026,10,28,12,0,tzinfo=x("America/New_York")).timestamp();assert len(Y)==1 and Y[0].start_ts>z;assert h([{"asset":"WTI","direction":"UP","strike":1e2,"start_ts":z-86400.,"end_ts":z+86400.,"ask_no":.4,"ask_yes":.6,"fee_rate":.0},{"asset":"WTI","direction":"UP","strike":1e2,"start_ts":Y[0].start_ts,"end_ts":Y[0].end_ts,"ask_no":.5,"ask_yes":.5,"fee_rate":.0}],now_ts=z)==[];ny=x("America/New_York");X=r(2026,10,28,10,31,tzinfo=ny).timestamp();W=r(2026,10,28,11,30,tzinfo=ny).timestamp();V=e("WTI",69.,70.2,71.,"UP",3.,.35,X);U=e("WTI",69.,70.2,71.,"UP",3.,.35,W);assert V["eligible"]is True and V["catalyst"]=="EIA_1030_PETROLEUM"and V["side"]=="YES";assert U["eligible"]is False;G=[{"organization":"Google","rating":1395,"rating_q025":1388,"rating_q975":1402},{"organization":"OpenAI","rating":1372,"rating_q025":1365,"rating_q975":1379}];assert g(G,1e3,5e4,3.6e4)["eligible"]is False,"Stale >6h snapshot must be rejected!";assert g(G,4.8e4,5e4,3.6e4)["eligible"]is True;d2=o({"asset":"BTC","market_id":"h1","condition_id":"0xh1","end_ts":1793203200.,"up_token":"h_up","down_token":"h_dn","fee_rate":.07},83800.,[{"market_id":"d1","condition_id":"0xd1","end_ts":1793203200.,"strike":84400.,"is_downward":False,"yes_token":"d_y","no_token":"d_n","fee_rate":.07}]);assert len(d2)==1 and d2[0]["leg_a"]["token_id"]=="h_up"and d2[0]["leg_b"]["token_id"]=="d_n";monkeypatch.setattr(t,"STATE_FILE",tmp_path/"zfa_st.json");monkeypatch.setattr(t,"LEDGER_FILE",tmp_path/"zfa_ldg.jsonl");monkeypatch.setattr(t,"OPPS_FILE",tmp_path/"zfa_opps.json")
- async def w():
-  d=t.Alpha124ShadowDaemon(single_scan=True);e=1.79322e9;h={"token_id":"za1","opp_token_id":"za2","condition_id":"0x1","side":"YES","label":"Nets +4.5","market_id":"m1","fee_rate":.0};g={"token_id":"zb1","opp_token_id":"zb2","condition_id":"0x2","side":"YES","label":"Celtics ML","market_id":"m2","fee_rate":.0};c={"bids":[{"price":"0.41","size":"200"}],"asks":[{"price":"0.45","size":"200"}]};b={"bids":[{"price":"0.54","size":"300"}],"asks":[{"price":"0.56","size":"300"}]};f=d.post_zero_fee_maker_anchor_box("SP1_NBA","NBA","ZFA_TEST_1",h,g,c,b,e+7200.,"Nets vs Celtics",e);assert f is True and d.pending_zero_fee_maker_anchors["ZFA_TEST_1"]["bid_px"]==.42
-  async def a(toks,timeout=3.):return{"za1":{"bids":[{"price":"0.41","size":"200"}],"asks":[{"price":"0.42","size":"200"}]},"zb1":{"bids":[{"price":"0.54","size":"300"}],"asks":[{"price":"0.56","size":"300"}]}}
-  monkeypatch.setattr(d,"fetch_books_batch",a);await d.manage_pending_zero_fee_maker_anchors(e+2.);assert any(p["sleeve"]in("ZF_INTRADAY_MAKER_BOX","ZERO_FEE_MAKER_ANCHOR_BOX")and p["entry_eff_px_t1000"]==.98 for p in d.open_positions.values())
- asyncio.run(w())
-def test_exp406_hardened_d1_maker_leg1_wfo_and_microstructure_shields(tmp_path,monkeypatch):
- import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.orderflow_wfo_simulators import calibrate_d1_maker_leg1_wfo as c;from src.polymarket_research.same_oracle_dominance_box import TwapCandleMarketSpec as a,determine_dominance_legs as b;u=c();assert u["sealed_holdout"]["legging_adjusted_pnl_usd"]>.0;assert u["sealed_holdout"]["scratches"]==0;assert u["sealed_holdout"]["legging_adjusted_pnl_usd"]>u["unguarded_maker_holdout_baseline"]["legging_adjusted_pnl_usd"];monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"m406_st.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"m406_ldg.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"m406_opps.json");monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES","0");d=a124.Alpha124ShadowDaemon(single_scan=True);l=1793226000.;s=a(asset="BTC",horizon="15m",market_id="m15_btc",condition_id="0xc15",title="BTC 15m",start_iso="2026-10-28T22:15:00Z",end_iso="2026-10-28T22:30:00Z",start_ts=l-700,end_ts=l+200,up_token="t15u",down_token="t15d",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams");z=a(asset="BTC",horizon="5m",market_id="m5_btc",condition_id="0xc5",title="BTC 5m",start_iso="2026-10-28T22:25:00Z",end_iso="2026-10-28T22:30:00Z",start_ts=l-100,end_ts=l+200,up_token="t5u",down_token="t5d",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/btc-usd-twap-60s-streams");r=b(s,8.1e4,z,81050.,min_corridor_bps=3.);assert r is not None;y,x=r["leg_a"]["token_id"],r["leg_b"]["token_id"];f={"bids":[{"price":"0.48","size":"20"}],"asks":[{"price":"0.49","size":"60"}]};j={"bids":[{"price":"0.48","size":"80"}],"asks":[{"price":"0.49","size":"80"}]};assert d.post_maker_anchor_candidate(s,z,r,f,f,now_ts=l)is False;d.spots["BTC"]=81025.;g={"bids":[{"price":"0.48","size":"90"}],"asks":[{"price":"0.49","size":"80"}]};assert d.post_maker_anchor_candidate(s,z,r,g,j,now_ts=l)is True;w=f"D1_MKR_BTC_{s.market_id}_{z.market_id}";assert d.pending_maker_anchors[w]["bid_px"]==.48 and d.pending_maker_anchors[w]["queue_front"]is False;e={y:g,x:j}
- async def h(toks,timeout=2.5):return{t:e[t]for t in toks if t in e}
- monkeypatch.setattr(d,"fetch_books_batch",h)
- if r["leg_a"]["side"]=="UP":d.spots["BTC"]=81025.*1.0003
- else:d.spots["BTC"]=81025.*.9997
- asyncio.run(d.manage_pending_maker_anchors(now_ts=l+.5));assert w in d.pending_maker_anchors,"Favorable spot move must NOT cancel resting anchor!"
- if r["leg_a"]["side"]=="UP":d.spots["BTC"]=81025.*.99965
- else:d.spots["BTC"]=81025.*1.00035
- asyncio.run(d.manage_pending_maker_anchors(now_ts=l+.8));assert w not in d.pending_maker_anchors,"Adverse spot move > 2.5 bps MUST cancel resting anchor at $0 cost!";v=a(asset="XRP",horizon="4h",market_id="m4_xrp",condition_id="0xx4",title="XRP 4h",start_iso="2026-10-28T20:00:00Z",end_iso="2026-10-29T00:00:00Z",start_ts=l-14000,end_ts=l+200,up_token="tx4u",down_token="tx4d",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/xrp-usd-twap-60s-streams");q=a(asset="XRP",horizon="15m",market_id="m15_xrp",condition_id="0xx15",title="XRP 15m",start_iso="2026-10-28T23:45:00Z",end_iso="2026-10-29T00:00:00Z",start_ts=l-700,end_ts=l+200,up_token="tx15u",down_token="tx15d",fee_rate=.07,fee_exponent=1.,neg_risk=False,twap_lookback_sec=60,resolution_source="https://data.chain.link/streams/xrp-usd-twap-60s-streams");k=b(v,.52,q,.522,min_corridor_bps=3.);assert k is not None;o,n=k["leg_a"]["token_id"],k["leg_b"]["token_id"];d.spots["XRP"]=.521;e[o]={"bids":[{"price":"0.963","size":"80"}],"asks":[{"price":"0.999","size":"80"}]};e[n]={"bids":[{"price":"0.018","size":"80"}],"asks":[{"price":"0.020","size":"80"}]};assert d.post_maker_anchor_candidate(v,q,k,e[o],e[n],now_ts=l)is True;m=f"D1_MKR_XRP_{v.market_id}_{q.market_id}";assert d.pending_maker_anchors[m]["bid_px"]==.964;e[o]={"bids":[{"price":"0.963","size":"80"}],"asks":[{"price":"0.964","size":"40"}]};asyncio.run(d.manage_pending_maker_anchors(now_ts=l+1.));i=[p for p in d.open_positions.values()if p["dedupe_key"]==m];assert len(i)==1 and i[0]["entry_eff_px_t1000"]<.988;assert i[0]["extra"]["legging_drag_usd_by_tier"]["T1000"]>.0
-def test_overround_bid_unwind_ctf_merge_and_corridor_preservation(tmp_path,monkeypatch):
- import asyncio;import time;import src.polymarket_research.alpha_124_shadow_daemon as a124;from src.polymarket_research.macro_counting_ctf_engine import walk_position_overround_bid_unwind as a;from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor as e;j=a([{"bids":[{"price":"0.52","size":"25"}],"fee_rate":.0,"fee_exponent":1.},{"bids":[{"price":"0.52","size":"15"}],"fee_rate":.0,"fee_exponent":1.}],exact_shares=25.,min_net_proceeds_per_set=1.005);assert j["filled"]is False,"Must reject partial unwind if any leg lacks 100% of exact_shares!";i=a([{"bids":[{"price":"0.52","size":"40"}],"fee_rate":.0,"fee_exponent":1.},{"bids":[{"price":"0.51","size":"40"}],"fee_rate":.0,"fee_exponent":1.}],exact_shares=25.,min_net_proceeds_per_set=1.005);assert i["filled"]is True;assert abs(i["net_proceeds_per_set"]-1.03)<1e-6;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"st_uw.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"ld_uw.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"op_uw.json");monkeypatch.setattr(a124,"LIVE_ALPHA124_STATE_MIRROR_FILE",tmp_path/"mirror_uw.json");d=a124.Alpha124ShadowDaemon(single_scan=True);l=time.time();d.open_positions["FED1_TEST"]={"position_id":"FED1_TEST","dedupe_key":"FED1_DK","sleeve":"FED1_CENTRAL_BANK_LP_BOX","asset_or_city":"FOMC","title":"FOMC 2-Leg Box","side":"BOX","token_id":"tok_fomc_a+tok_fomc_b","fee_rate":.0,"entry_ts":l-60.,"close_ts":l+2e3*3600.,"entry_eff_px_t1000":.99,"p_model_entry":1.,"tier_fills":{"T100":{"shares":10.,"spent_usd":9.9,"fee_usd":.0},"T1000":{"shares":25.,"spent_usd":24.75,"fee_usd":.0}},"extra":{"is_two_leg_box":True,"guaranteed_payout":1.,"leg_a":{"token_id":"tok_fomc_a","market_id":"m_fomc_1","side":"YES","fee_rate":.0},"leg_b":{"token_id":"tok_fomc_b","market_id":"m_fomc_2","side":"NO","fee_rate":.0}}};d.open_positions["D1_NEAR_TEST"]={"position_id":"D1_NEAR_TEST","dedupe_key":"D1_NEAR_DK","sleeve":"D1_SAME_ORACLE_DOMINANCE_BOX","asset_or_city":"BTC","title":"BTC 15m/5m Corridor Box","side":"BOX","token_id":"tok_d1_a+tok_d1_b","fee_rate":.07,"entry_ts":l-45.,"close_ts":l+120.,"entry_eff_px_t1000":.98,"p_model_entry":1.,"tier_fills":{"T1000":{"shares":25.,"spent_usd":24.5,"fee_usd":.0}},"extra":{"guaranteed_payout":1.,"leg_a":{"token_id":"tok_d1_a","market_id":"m_d1_1","side":"UP","fee_rate":.07},"leg_b":{"token_id":"tok_d1_b","market_id":"m_d1_2","side":"DOWN","fee_rate":.07}}};d.open_positions["C1_MERGE_TEST"]={"position_id":"C1_MERGE_TEST","dedupe_key":"C1_DK","sleeve":"C1_BINARY_COMPLETE_SET","asset_or_city":"BTC","title":"BTC Single-Condition Complete Set","side":"COMPLETE_SET","token_id":"tok_c1_y+tok_c1_n","fee_rate":.0,"entry_ts":l-30.,"close_ts":l+7200.,"entry_eff_px_t1000":.985,"p_model_entry":1.,"tier_fills":{"T1000":{"shares":20.,"spent_usd":19.7,"fee_usd":.0}},"extra":{"guaranteed_payout":1.,"leg_a":{"token_id":"tok_c1_y","market_id":"m_c1_same","side":"YES","fee_rate":.0},"leg_b":{"token_id":"tok_c1_n","market_id":"m_c1_same","side":"NO","fee_rate":.0}}};g={"tok_fomc_a":{"bids":[{"price":"0.52","size":"50"}],"asks":[{"price":"0.54","size":"50"}]},"tok_fomc_b":{"bids":[{"price":"0.51","size":"50"}],"asks":[{"price":"0.53","size":"50"}]},"tok_d1_a":{"bids":[{"price":"0.53","size":"50"}],"asks":[{"price":"0.54","size":"50"}]},"tok_d1_b":{"bids":[{"price":"0.52","size":"50"}],"asks":[{"price":"0.53","size":"50"}]},"tok_c1_y":{"bids":[{"price":"0.49","size":"50"}],"asks":[{"price":"0.50","size":"50"}]},"tok_c1_n":{"bids":[{"price":"0.49","size":"50"}],"asks":[{"price":"0.50","size":"50"}]}}
- async def b(url,timeout=2.5):
-  for b,a in g.items():
-   if f"token_id={b}"in url:return a
-  return None
- monkeypatch.setattr(d,"fetch_json",b);asyncio.run(d.manage_open_positions());assert"D1_NEAR_TEST"in d.open_positions,"Near-expiry D1 box must NOT unwind early on +3c overround; preserve $2.00 corridor!";assert"FED1_TEST"not in d.open_positions;assert"C1_MERGE_TEST"not in d.open_positions;f={c["position_id"]:c for c in d.closed_positions};assert f["FED1_TEST"]["status"]=="EARLY_OVERROUND_BID_UNWIND";assert abs(f["FED1_TEST"]["tier_pnls_usd"]["T1000"]-1.)<1e-6;assert f["C1_MERGE_TEST"]["status"]=="CTF_COMPLETE_SET_MERGED";assert abs(f["C1_MERGE_TEST"]["tier_pnls_usd"]["T1000"]-.3)<1e-6;n=e(dry_run=True,ledger_path=tmp_path/"merge_ex.jsonl");h="0x"+"cd"*32;k=n.merge_complete_set_positions(h,25.,neg_risk=False);m=n.merge_complete_set_positions(h,25.,neg_risk=True);assert k["merged"]is True and k["target_contract"].lower()==n.CTF_ADDRESS.lower();assert k["calldata"].startswith("0x9e7212ad");assert m["merged"]is True and m["target_contract"].lower()==n.NEG_RISK_ADAPTER_ADDRESS.lower();assert m["calldata"].startswith("0xb10c5c17")
-def test_d1_quiet_book_graduation_and_close_position_growth_tier_promotion(tmp_path,monkeypatch):
- import json;import time;import src.polymarket_research.polymarket_live_harvester as harvester_mod;from src.polymarket_research.polymarket_live_harvester import ExecutionStatus as a,PolymarketLiveHarvester as c;k=tmp_path/"live_pm";k.mkdir(parents=True,exist_ok=True);monkeypatch.setattr(harvester_mod,"DATA_DIR",k);monkeypatch.setattr(harvester_mod,"STATE_FILE",k/"live_harvester_state.json");monkeypatch.setenv("PM_DISABLE_NYSE_BLACKOUT","1");(k/"alpha124_shadow_state.json").write_text(json.dumps({"by_sleeve":{"D1_SAME_ORACLE_DOMINANCE_BOX":{"closed":5,"win_rate_pct":1e2,"realized_pnl_t1000_usd":15.,"legging_adjusted_pnl_t1000_usd":12.},"D1_QUIET_BOOK_BOX":{"closed":13,"win_rate_pct":1e2,"realized_pnl_t1000_usd":43.25,"legging_adjusted_pnl_t1000_usd":42.18}},"by_d1_asset":{}}),encoding="utf-8");h=c(dry_run=True,dynamic_sizing=True,hold_to_maturity=False,ticket_notional=12.,max_exposure=76.25,max_concurrent=2,allowed_assets={"BTC","ETH"});h.dry_run=False;h.executor.dry_run=False;h.executor.auth_mode="AUTHENTICATED_L2";h.executor.is_authenticated=True;h.executor.is_heartbeat_healthy=lambda:True;h.state_file=k/"live_harvester_state.json";h._startup_reconciled=True;h._last_known_collateral=138.98;h.high_water_mark_equity=138.98;h._update_equity_tier(138.98);assert h.current_equity_tier=="RECOVERY";q="111111111111111111111111111111";n="222222222222222222222222222222";p="333333333333333333333333333333";m="444444444444444444444444444444";o=time.time();i={"box_id":"D1_QUIET_BTC_1","dedupe_key":"D1_QB_BTC_1","box_type":"DOMINANCE","ts_unix":o,"expiry_ts":o+180.,"asset":"BTC","corridor_bps":8.,"k_low":8e4,"k_high":80064.,"is_quiet_book":True,"shares":25,"box_cost_net":.981,"max_box_cost_net":.985,"leg_a_token_id":q,"leg_a_opp_token_id":n,"leg_a_label":"15M_UP","leg_a_side":"UP","leg_a_horizon":"15m","leg_a_market_id":"610001","leg_a_condition_id":"0x"+"11"*32,"leg_a_strike":8e4,"leg_a_limit_price":.47,"leg_a_avail_shares":120.,"leg_a_fee_rate":.07,"leg_a_fee_exponent":1.,"leg_b_token_id":p,"leg_b_opp_token_id":m,"leg_b_label":"5M_DOWN","leg_b_side":"DOWN","leg_b_horizon":"5m","leg_b_market_id":"610002","leg_b_condition_id":"0x"+"22"*32,"leg_b_strike":80064.,"leg_b_limit_price":.47,"leg_b_avail_shares":120.,"leg_b_fee_rate":.07,"leg_b_fee_exponent":1.};d=h.maybe_execute_graduated_d1_box({**i,"sleeve_source":"D1_SAME_ORACLE_DOMINANCE_BOX","dedupe_key":"D1_CORE_BLK"});assert d["executed"]is False and d["reason"]=="D1_NOT_YET_8_OF_8_GRADUATED";j={q:{"asks":[{"price":"0.47","size":"120"}],"bids":[{"price":"0.45","size":"120"}]},p:{"asks":[{"price":"0.47","size":"120"}],"bids":[{"price":"0.45","size":"120"}]},n:{"asks":[{"price":"0.55","size":"120"}],"bids":[{"price":"0.52","size":"120"}]},m:{"asks":[{"price":"0.55","size":"120"}],"bids":[{"price":"0.47","size":"120"}]}};h.executor.get_market_book=lambda r:j[r];h._wallet_token_balance=lambda tid:(.0,h.ONCHAIN_SOURCE);e={}
- def b(**kw):e.update(kw);a=float(kw["shares"]);return{"success":True,"box_id":kw["box_id"],"shares":a,"leg_1":{"token_id":q,"label":kw["leg_a_label"],"price":.47,"orderID":"OID_QBA","raw":{"makingAmount":round(a*.47,2)}},"leg_2":{"token_id":p,"label":kw["leg_b_label"],"price":.47,"orderID":"OID_QBB","raw":{"makingAmount":round(a*.47,2)}}}
- h.executor.execute_atomic_dominance_box=b;g=h.maybe_execute_graduated_d1_box({**i,"sleeve_source":"D1_QUIET_BOOK_BOX"});assert g["executed"]is True;assert e["parallel_dispatch"]is False,"Tighter (0.975..0.985] quiet box must preserve sequential Leg-1 dispatch!";assert h.active_positions["D1_QUIET_BTC_1_L1"]["sleeve_source"]=="D1_QUIET_BOOK_BOX";h.active_positions.clear();h._last_known_collateral=108.78;h.active_positions["LIVE_WIN_141"]={"trade_id":"LIVE_WIN_141","token_id":"tok_eth_up","target_token":"UP","asset":"ETH","entry_price":.85,"entry_shares":35.,"remaining_shares":.0,"filled_exit_shares":35.,"notional_usd":29.75,"fee_usd":.45,"confirmed_realized_cash":32.9,"realized_exit_cash":32.9,"realized_exit_fee":.0,"entry_ts":o-120.,"candle_expiry_ts":o+1800.,"status":a.POSITION_CONFIRMED};l=h._close_position("LIVE_WIN_141",h.active_positions["LIVE_WIN_141"],a.FILLED,"MAKER_SCALP_FILLED_CLOB",won=True);assert abs(l-2.7)<1e-2;assert h.current_equity_tier=="GROWTH";assert abs(h.max_exposure-106.26)<1e-2;assert h.max_concurrent_positions==3;assert abs(h.dynamic_bankroll_pct-.26)<1e-6;f=json.loads((k/"live_harvester_state.json").read_text(encoding="utf-8"));assert f["equity_tier"]=="GROWTH";assert abs(float(f["max_exposure"])-106.26)<1e-2;assert int(f["max_concurrent_positions"])==3
-def test_bond1_uma_resolution_carry_onchain_and_settlement_guard(tmp_path,monkeypatch):
- import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124;import src.polymarket_research.uma_nba_endgame_engine as uma_mod;from src.polymarket_research.uma_nba_endgame_engine import(HALF_E18 as m,ONE_E18,is_objective_uma_market as b,verify_uma_onchain_proposal_sync as a);o={"id":"990001","conditionId":"0x"+"aa"*32,"questionID":"0x"+"bb"*32,"negRisk":True,"negRiskRequestID":"0x"+"cc"*32,"resolvedBy":"0x69c47De9D4D3Dad79590d61b9e05918E03775f24","closed":False,"archived":False,"acceptingOrders":True,"umaResolutionStatus":"proposed","umaResolutionStatuses":'["proposed"]',"outcomes":'["Yes", "No"]',"outcomePrices":'["0.004", "0.996"]',"clobTokenIds":'["tok_uma_yes", "tok_uma_no"]',"question":"Will the highest temperature in Tokyo be 21°C on October 28?","description":"Resolves via https://aviationweather.gov/api/data/metar?ids=RJTT routine METAR; SPECI excluded.","feesEnabled":False};A,y=b(o);assert A is True and y=="VERIFIED_PRIMARY_ORACLE";x,r=b({**o,"question":'Will Trump say "Tariff" during his speech?'});assert x is False and r=="SUBJECTIVE_OR_SPEECH_VETO";p,n=b({**o,"umaResolutionStatuses":'["proposed", "disputed", "proposed"]'});assert p is False and n=="PRIOR_DISPUTE_HISTORY";j,q=b({**o,"negRiskRequestID":""});assert j is False and q=="MISSING_REQUEST_ID"
- def g(req_ts,anc,reset=False):a=[b"\x00"*32 for _ in range(13)];a[1]=req_ts.to_bytes(32,"big");a[4]=(7200).to_bytes(32,"big");a[8]=(1 if reset else 0).to_bytes(32,"big");a[12]=(12*32).to_bytes(32,"big");b=b"\x00"*((32-len(anc)%32)%32);return"0x"+b"".join(a).hex()+len(anc).to_bytes(32,"big").hex()+(anc+b).hex()
- def f(proposer_hex,disputer_hex,prop_price,exp_ts):w=[b"\x00"*32 for _ in range(16)];w[0]=bytes.fromhex(proposer_hex.replace("0x","").rjust(64,"0"));w[1]=bytes.fromhex(disputer_hex.replace("0x","").rjust(64,"0"));w[10]=(7200).to_bytes(32,"big");a=prop_price if prop_price>=0 else(1<<256)+prop_price;w[11]=a.to_bytes(32,"big");w[13]=exp_ts.to_bytes(32,"big");return"0x"+b"".join(w).hex()
- v=1.7932e9;u=int(v+3600);s=b"q: title: Tokyo 21C, res_data: p1: 0, p2: 1, p3: 0.5.";i="0x"+"2c0367a9db231ddebd88a94b4f6461a6e47c58b1".rjust(64,"0");l="0x"+"11"*20;k={"oo_state":2,"disputer":uma_mod.ZERO_ADDR,"price":0,"reset":False,"exp":u}
- def c(rpc_url,payload,timeout=5.):
-  c=[]
-  for a in payload:
-   b=a["id"]
-   if b==1:c.append({"id":1,"result":g(1793190000,s,reset=k["reset"])})
-   elif b==2:c.append({"id":2,"result":i})
-   elif b==10:c.append({"id":10,"result":hex(k["oo_state"])})
-   elif b==11:c.append({"id":11,"result":f(l,k["disputer"],k["price"],k["exp"])})
-  return c
- uma_mod._OO_ADDR_CACHE.clear();monkeypatch.setattr(uma_mod,"_rpc_post",c);z=a(o,rpc_url="http://mock",now_ts=v);assert z["verified"]is True;assert z["win_index"]==1 and z["win_outcome_name"]=="No"and z["win_token"]=="tok_uma_no";k["disputer"]="0x"+"99"*20;assert a(o,rpc_url="http://mock",now_ts=v)["verified"]is False;k["disputer"]=uma_mod.ZERO_ADDR;k["price"]=m;assert a(o,rpc_url="http://mock",now_ts=v)["reason"]=="TIE_50_50_PROPOSAL_VETO";k["price"]=0;k["reset"]=True;assert a(o,rpc_url="http://mock",now_ts=v)["verified"]is False;k["reset"]=False;k["exp"]=int(v+7150);assert"PROPOSAL_TOO_FRESH"in a(o,rpc_url="http://mock",now_ts=v)["reason"];k["exp"]=u;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"b1_state.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"b1_ledger.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"b1_opps.json");h={"done":False}
- async def e():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);d.uma_proposed_markets={"990001":o};d.last_uma_discovery_ts=v
-  async def c(ts):d.uma_proposed_markets={"990001":o}
-  async def a(url,timeout=4.):
-   if"tok_uma_no"in url:return{"bids":[{"price":"0.991","size":"500"}],"asks":[{"price":"0.992","size":"500"}]}
-   if"tok_uma_yes"in url:return{"bids":[{"price":"0.001","size":"200"}],"asks":[{"price":"0.004","size":"500"}]}
-   if"/markets/990001"in url:
-    if h["done"]:return{**o,"closed":True,"umaResolutionStatus":"resolved","outcomePrices":'["0", "1"]'}
-    return{**o,"closed":False,"umaResolutionStatus":"proposed"}
-   return None
-  async def b(toks,timeout=3.5):return{t:await a(t)for t in toks}
-  monkeypatch.setattr(d,"discover_uma_proposed_markets",c);monkeypatch.setattr(d,"fetch_json",a);monkeypatch.setattr(d,"fetch_books_batch",b);e=[];await d.scan_uma_resolution_bonds(e,now_ts=v);assert len(d.open_positions)==1;g=next(iter(d.open_positions));f=d.open_positions[g];assert f["sleeve"]=="BOND1_UMA_RESOLUTION_CARRY";assert abs(float(f["entry_eff_px_t1000"])-.992)<1e-4;f["close_ts"]=time.time()-120.;await d.manage_open_positions();assert g in d.open_positions,"BOND1 must NEVER self-settle on CLOB best_bid >= 0.99 while UMA is still proposed!";h["done"]=True;await d.manage_open_positions();assert g not in d.open_positions;assert d.closed_positions[-1]["won"]is True;assert abs(d.closed_positions[-1]["tier_pnls_usd"]["T1000"]-round(120./.992-120.,2))<.05
- import time;asyncio.run(e())
-def test_w1_v2_cape_town_fact_and_low_trough_lock_cold_front_veto():
- from datetime import date;from src.polymarket_research.weather_metar_engine import(HIGH_VOLUME_WEATHER_SERIES as e,STATION_CATALOG as g,WeatherBucket as b,WeatherEventSpec as f,compute_weather_probabilities as a,parse_metar_line as d,parse_weather_event as c);assert"FACT"in g
- for x in("atlanta-daily-weather","san-francisco-daily-weather","seattle-daily-weather","amsterdam-daily-weather","cape-town-daily-weather","tokyo-daily-lowest-temperature"):assert x in e
- v={"id":"ev_fact_1","title":"Highest temperature in Cape Town on October 29?","series":[{"slug":"cape-town-daily-weather"}],"endDate":"2026-10-29T22:00:00Z","markets":[{"id":f"m_{i}","conditionId":f"0x{i}","groupItemTitle":y,"clobTokenIds":f'["y_{i}", "n_{i}"]',"description":"Resolves to the highest temperature recorded in a routine (METAR) observation for Cape Town International Airport (FACT) on October 29, 2026. SPECI reports are excluded."}for i,y in enumerate(["18°C or below","19°C","20°C","21°C or higher"])]};u=c(v);assert u is not None and u.icao=="FACT"and u.city=="Cape Town";l={**v,"markets":[{**m,"description":"Resolves via Wunderground station history for Cape Town (FACT)."}for m in v["markets"]]};assert c(l,allow_historical_same_station=False)is None;r=datetime(2026,10,29,2,0,tzinfo=timezone.utc);k=d("METAR RJTT 282000Z 34008KT 9999 FEW030 12/06 Q1018 RMK T01200060","RJTT",r,"Asia/Tokyo");q=d("METAR RJTT 290200Z 02009KT 9999 FEW035 15/07 Q1019 RMK T01540070","RJTT",r,"Asia/Tokyo");assert k is not None and q is not None;t=[b("b1","c1","11°C or below","11C-","y1","n1","C",float("-inf"),11.),b("b2","c2","12°C","12C","y2","n2","C",12.,12.),b("b3","c3","13°C","13C","y3","n3","C",13.,13.),b("b4","c4","14°C or higher","14C+","y4","n4","C",14.,float("inf"))];w=f(event_id="ev_rjtt_low",slug="tokyo-low-oct-29",series_slug="tokyo-daily-lowest-temperature",title="Lowest temperature in Tokyo on October 29?",icao="RJTT",city="Tokyo",lat=35.5523,lon=139.7798,tz_name="Asia/Tokyo",obs_date=date(2026,10,29),metric="LOW",unit="C",fee_type="zero_fees",end_date_iso="2026-10-29T15:00:00Z",buckets=t);s=int(r.timestamp());p={s+h*3600:[15.5+.02*m for m in range(40)]for h in range(0,14)};o=a(w,r,[k,q],p);assert o["is_solar_lock"]is True and o["locked_bucket_idx"]==1 and o["p_locked_bucket"]>=.93;j={s+h*3600:([13.2+.05*m for m in range(40)]if h==11 else[15.5 for _ in range(40)])for h in range(0,14)};n=a(w,r,[k,q],j);assert n["is_solar_lock"]is False
-def test_sp2_nba_endgame_lock_espn_parser_and_overtime_trap_veto():from src.polymarket_research.tradfi_sports_zero_fee_engine import NbaGameSpec as i,NbaOutcomeLeg as b;from src.polymarket_research.uma_nba_endgame_engine import(LiveNbaGameState as d,evaluate_nba_endgame_locks as a,match_nba_live_game as g,parse_espn_nba_scoreboard as f,verify_uma_against_nba_live as e);j={"events":[{"id":"401700001","date":"2026-10-29T00:00Z","competitions":[{"date":"2026-10-29T00:00Z","status":{"clock":35.,"displayClock":"0:35","period":4,"type":{"state":"in","completed":False}},"competitors":[{"homeAway":"home","score":"114","team":{"name":"Celtics","abbreviation":"BOS"}},{"homeAway":"away","score":"103","team":{"name":"Heat","abbreviation":"MIA"}}]}]}]};w=f(j);assert len(w)==1 and w[0].home_score==114 and w[0].away_score==103 and w[0].clock_sec==35.;u=1793232000.;w[0].start_ts=u;y=i(event_id="nba_1",slug="nba-mia-bos",title="Heat vs. Celtics",team_a="Heat",team_b="Celtics",tipoff_ts=u,settle_est_ts=u+9600.,margin_legs=[b("m_ml","c_ml","moneyline","tok_mia","tok_bos",0,"YES","ML Heat","GT",.0),b("m_ml","c_ml","moneyline","tok_bos","tok_mia",1,"NO","ML Celtics","LT",.0),b("m_sp","c_sp","spreads","tok_mia_p75","tok_bos_m75",0,"YES","Heat +7.5","GT",-7.5),b("m_sp","c_sp","spreads","tok_bos_m75","tok_mia_p75",1,"NO","Celtics -7.5","LT",-7.5)],total_legs=[b("m_tot","c_tot","totals","tok_ov","tok_un",0,"YES","Over 214.5","OVER",214.5),b("m_tot","c_tot","totals","tok_un","tok_ov",1,"NO","Under 214.5","UNDER",214.5)]);q=g(y,w);assert q is not None;x,t,s=q;assert t==103 and s==114;p,o=e({"question":"Heat vs. Celtics","sportsMarketType":"moneyline","outcomes":'["Heat", "Celtics"]',"gameStartTime":"2026-10-29T00:00:00Z"},1,w);assert p is False and o=="NBA_GAME_NOT_FINAL_YET";n=a(y,x,t,s);h={c["leg"].display_label:c for c in n};assert"Over 214.5"in h and h["Over 214.5"]["mode"]=="LIVE_TOTAL_OVER_LOCKED";assert"ML Celtics"in h and h["ML Celtics"]["p_lock"]>=.993;assert"Celtics -7.5"not in h;r=d("401",u,"in",False,4,10.,"Celtics","BOS",105,"Heat","MIA",105);l=a(y,r,105,105);assert all(c["leg"].display_label!="Heat +7.5"for c in l),"Must veto +7.5 spread when tied (Overtime trap)!";v=d("401",u,"post",True,4,.0,"Celtics","BOS",114,"Heat","MIA",103);m=a(y,v,103,114);k={c["leg"].display_label for c in m};assert{"ML Celtics","Celtics -7.5","Over 214.5"}<=k
-def test_focus_upgrades_locked_maker_depth_cap_and_tight_zf_boxes(tmp_path,monkeypatch):
- import asyncio;import io;import json;import time;import urllib.request;import src.polymarket_research.alpha_124_shadow_daemon as a124;import src.polymarket_research.uma_nba_endgame_engine as u_eng;monkeypatch.setattr(a124,"STATE_FILE",tmp_path/"foc_st.json");monkeypatch.setattr(a124,"LEDGER_FILE",tmp_path/"foc_ldg.jsonl");monkeypatch.setattr(a124,"OPPS_FILE",tmp_path/"foc_opps.json");monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES","0");seen_urls=[]
- class _FakeResp(io.BytesIO):
-  def __enter__(self):return self
-  def __exit__(self,*args):pass
- def _fake_urlopen(req,timeout=4.5):u=req.full_url if hasattr(req,"full_url")else str(req);seen_urls.append(u);a="401_YEST"if len(seen_urls)==1 else"401_TODAY";b={"events":[{"id":a,"date":"2026-10-29T02:00Z","status":{"period":4,"clock":18.,"type":{"state":"in","completed":False}},"competitions":[{"competitors":[{"homeAway":"home","score":"112","team":{"shortDisplayName":"Lakers","abbreviation":"LAL"}},{"homeAway":"away","score":"101","team":{"shortDisplayName":"Suns","abbreviation":"PHX"}}]}]}]};return _FakeResp(json.dumps(b).encode("utf-8"))
- monkeypatch.setattr(urllib.request,"urlopen",_fake_urlopen);games_dual=u_eng.fetch_espn_nba_scoreboard_sync(now_ts=1.79325e9);assert len(seen_urls)==2 and all("?dates="in u for u in seen_urls);assert{g.game_id for g in games_dual}=={"401_YEST","401_TODAY"}
- async def _run_focus():
-  d=a124.Alpha124ShadowDaemon(single_scan=True);u=time.time();e={"bids":[{"price":"0.60","size":"50"}],"asks":[{"price":"0.768","size":"24.0"}]};b={"bids":[{"price":"0.87","size":"120"}],"asks":[]};c={"bids":[{"price":"0.991","size":"500"}],"asks":[]};g={"uma_created_ts":u}
-  async def a(url,timeout=3.):
-   if"token_id=tok_nzwn_y"in url:return e
-   if"token_id=tok_uma_w"in url:return c
-   if"token_id=tok_uma_l"in url:return{"bids":[{"price":"0.001","size":"100"}],"asks":[]}
-   if"token_id=tok_limc_y"in url:return b
-   if"data-api.polymarket.com/trades?market=0xcond_uma"in url:a=int(g["uma_created_ts"]);return[{"timestamp":a-5,"asset":"tok_uma_w","price":.99,"size":500,"transactionHash":"0xold"},{"timestamp":a+5,"asset":"tok_uma_w","price":.992,"size":25.,"transactionHash":"0xfresh"}]
-   return[]
-  monkeypatch.setattr(d,"fetch_json",a);t=await d.open_shadow_position(sleeve="W1_LOW_TROUGH_LOCK",dedupe_key="W1LOW_NZWN_13C",asset_or_city="Wellington_NZWN",title="Wellington Lowest Temp [13°C]",side_label="YES",token_id="tok_nzwn_y",fee_rate=.0,p_model=.99,close_ts=u+14400.,extra={"condition_id":"0xcond_nzwn"},prefetched_book=e);assert t is True;s=next(p for p in d.open_positions.values()if p["dedupe_key"]=="W1LOW_NZWN_13C");assert s["tier_fills"]["T100"]["spent_usd"]==15.;assert s["tier_fills"]["T1000"]["spent_usd"]==18.43;assert s["tier_fills"]["T1000"]["depth_capped"]is True;h=await d.post_shadow_maker_entry(sleeve="W1_LOW_TROUGH_LOCK",dedupe_key="W1LOW_LIMC_5C",asset="Milan_LIMC",title="Milan Lowest Temp [5°C]",side_label="YES",token_id="tok_limc_y",p_model=.99,close_ts=u+21600.,extra={"condition_id":"0xcond_limc","opp_token_id":"tok_limc_n"},prefetched_book=b);assert h is True;r=next(v for v in d.pending_maker_orders.values()if v["dedupe_key"]=="W1LOW_LIMC_5C");assert r["resting_bid"]==.88 and r["queue_ahead_usd"]==.0;f=await d.post_shadow_maker_entry(sleeve="BOND1_UMA_RESOLUTION_CARRY",dedupe_key="BOND1_NBA_FIN",asset="SPORTS",title="Celtics vs Heat [Celtics]",side_label="YES",token_id="tok_uma_w",p_model=1.,close_ts=u+3600.,extra={"condition_id":"0xcond_uma","opp_token_id":"tok_uma_l"},prefetched_book=c);assert f is True;l=next(v for v in d.pending_maker_orders.values()if v["dedupe_key"]=="BOND1_NBA_FIN");assert l["resting_bid"]==.992;l["created_ts"]=u-20.;r["created_ts"]=u-20.;g["uma_created_ts"]=l["created_ts"];await d.manage_pending_maker_orders();k=[p for p in d.open_positions.values()if p["dedupe_key"]=="BOND1_NBA_FIN"];assert len(k)==1;assert k[0]["maker_tp_px"]is None;assert k[0]["extra"].get("filled_via_trade_tape")is True;assert k[0]["tier_fills"]["T100"]["shares"]==round(20./.992,4);assert k[0]["tier_fills"]["T1000"]["shares"]==25.;q={"token_id":"sp1_a","opp_token_id":"sp1_ao","condition_id":"0xsp1","side":"YES","label":"Suns +4.5","market_id":"msp1","fee_rate":.0};o={"token_id":"sp1_b","opp_token_id":"sp1_bo","condition_id":"0xsp2","side":"YES","label":"Lakers -2.5","market_id":"msp2","fee_rate":.0};j={"bids":[{"price":"0.43","size":"120"}],"asks":[{"price":"0.44","size":"100"}]};i={"bids":[{"price":"0.43","size":"120"}],"asks":[{"price":"0.55","size":"100"}]};i["bids"]=[{"price":"0.54","size":"120"}];n=d.post_zero_fee_maker_anchor_box("SP1_NBA","NBA","ZFA_TIGHT_1C",q,o,j,i,u+5400.,"Suns vs Lakers",u);assert n is True;m=d.pending_zero_fee_maker_anchors["ZFA_TIGHT_1C"];assert m["queue_front"]is False and m["pair_est"]==.98
- asyncio.run(_run_focus())
-def test_sp3_sports_corridor_and_negrisk_convert_sleeves(monkeypatch,tmp_path):
- from src.polymarket_research.tradfi_sports_zero_fee_engine import(parse_multi_sport_corridor_event as d,detect_multi_sport_corridor_boxes as b,parse_negrisk_convert_event as f,detect_negrisk_no_pair_boxes as e,detect_negrisk_convert_positions_arbs as a);from src.polymarket_research.alpha_124_shadow_daemon import Alpha124ShadowDaemon as h;s={"id":"ev_sp3_1","slug":"nfl-kc-buf-2027-11-01","title":"Chiefs vs. Bills","endDate":"2027-11-02T01:00:00Z","markets":[{"id":"901001","conditionId":"0xc1","sportsMarketType":"spreads","line":-2.5,"question":"Spread: Chiefs (-2.5)","outcomes":'["Chiefs", "Bills"]',"clobTokenIds":'["111111111111111111111", "111111111111111111112"]',"feeType":"sports_fees_nfl_cfb_oct26","feesEnabled":True},{"id":"901002","conditionId":"0xc2","sportsMarketType":"spreads","line":-6.5,"question":"Spread: Chiefs (-6.5)","outcomes":'["Chiefs", "Bills"]',"clobTokenIds":'["222222222222222222221", "222222222222222222222"]',"feeType":"sports_fees_nfl_cfb_oct26","feesEnabled":True},{"id":"901003","conditionId":"0xc3","sportsMarketType":"totals","line":44.5,"question":"Chiefs vs. Bills: O/U 44.5","outcomes":'["Over", "Under"]',"clobTokenIds":'["333333333333333333331", "333333333333333333332"]',"feeType":"sports_fees_nfl_cfb_oct26","feesEnabled":True},{"id":"901004","conditionId":"0xc4","sportsMarketType":"totals","line":48.5,"question":"Chiefs vs. Bills: O/U 48.5","outcomes":'["Over", "Under"]',"clobTokenIds":'["444444444444444444441", "444444444444444444442"]',"feeType":"sports_fees_nfl_cfb_oct26","feesEnabled":True},{"id":"901005","conditionId":"0xc5","sportsMarketType":"totals","line":46.,"question":"Chiefs vs. Bills: O/U 46.0","outcomes":'["Over", "Under"]',"clobTokenIds":'["555555555555555555551", "555555555555555555552"]',"feeType":"sports_fees_nfl_cfb_oct26","feesEnabled":True}]};v=d(s);assert v is not None and v.sport=="NFL";assert len(v.legs)==8;assert"901005"not in{lg.market_id for lg in v.legs};assert all(abs(lg.fee_rate-.03)<1e-9 for lg in v.legs);i={"111111111111111111111":.46,"222222222222222222222":.49,"333333333333333333331":.47,"444444444444444444442":.48};r=b(v,i,max_box_cost_net=.985);assert len(r)==2;assert all(.95<c["box_cost_net"]<=.985 for c in r);z={"id":"ev_nba_1h","slug":"nba-bos-mia-2027-11-01","title":"Celtics vs. Heat","endDate":"2027-11-02T01:00:00Z","markets":[{"id":"902001","conditionId":"0xn1","sportsMarketType":"first_half_spreads","line":-1.5,"question":"1H Spread: Celtics (-1.5)","outcomes":'["Celtics", "Heat"]',"clobTokenIds":'["611111111111111111111", "611111111111111111112"]',"feesEnabled":False},{"id":"902002","conditionId":"0xn2","sportsMarketType":"first_half_spreads","line":-4.5,"question":"1H Spread: Celtics (-4.5)","outcomes":'["Celtics", "Heat"]',"clobTokenIds":'["622222222222222222221", "622222222222222222222"]',"feesEnabled":False},{"id":"902003","conditionId":"0xn3","sportsMarketType":"spreads","line":-3.5,"question":"Spread: Celtics (-3.5)","outcomes":'["Celtics", "Heat"]',"clobTokenIds":'["633333333333333333331", "633333333333333333332"]',"feesEnabled":False},{"id":"902004","conditionId":"0xn4","sportsMarketType":"spreads","line":-7.5,"question":"Spread: Celtics (-7.5)","outcomes":'["Celtics", "Heat"]',"clobTokenIds":'["644444444444444444441", "644444444444444444442"]',"feesEnabled":False}]};u=d(z,skip_nba_fg_zero_fee=True);t={"611111111111111111111":.48,"622222222222222222222":.49,"633333333333333333331":.48,"644444444444444444442":.49};q=b(u,t,max_box_cost_net=.988);assert len(q)==1 and q[0]["scope"]=="1H:SPREAD";k={"id":"ev_nr_closed","slug":"fed-chair-vote-margin","title":"Vote Margin Partition","enableNegRisk":True,"negRiskAugmented":False,"negRiskMarketID":"0x"+"ab"*32,"endDate":"2027-11-05T18:00:00Z","markets":[{"id":"910001","conditionId":"0xd1","negRisk":True,"groupItemTitle":"Bucket A","questionID":"0x"+"ab"*31+"00","clobTokenIds":'["711111111111111111111", "711111111111111111112"]',"feesEnabled":False},{"id":"910002","conditionId":"0xd2","negRisk":True,"groupItemTitle":"Bucket B","questionID":"0x"+"ab"*31+"01","clobTokenIds":'["722222222222222222221", "722222222222222222222"]',"feesEnabled":False},{"id":"910003","conditionId":"0xd3","negRisk":True,"groupItemTitle":"Bucket C","questionID":"0x"+"ab"*31+"02","clobTokenIds":'["733333333333333333331", "733333333333333333332"]',"feesEnabled":False}]};p=f(k);assert p is not None and p.is_closed_convert_safe is True;y={"711111111111111111112":{"asks":[{"price":"0.46","size":"100"}]},"722222222222222222222":{"asks":[{"price":"0.51","size":"100"}]},"733333333333333333331":{"bids":[{"price":"0.08","size":"100"}]},"733333333333333333332":{"asks":[{"price":"0.94","size":"100"}]}};m={"711111111111111111112":.46,"722222222222222222222":.51,"733333333333333333332":.94};j=e(p,m,max_box_cost_net=.99);assert len(j)==1 and abs(j[0]["box_cost_net"]-.97)<1e-6;l=a(p,y,min_net_edge_per_share=.012);assert len(l)>=1 and l[0]["net_edge_per_share"]>.08;o=dict(k,id="ev_nr_aug",negRiskAugmented=True);x=f(o);assert x is not None and x.is_closed_convert_safe is False;assert len(e(x,m,max_box_cost_net=.99))==1;assert a(x,y,min_net_edge_per_share=.012)==[];import asyncio;import src.polymarket_research.alpha_124_shadow_daemon as a124_mod;monkeypatch.setattr(a124_mod,"STATE_FILE",tmp_path/"a124_q.json");monkeypatch.setattr(a124_mod,"LEDGER_FILE",tmp_path/"a124_q_ledger.jsonl");monkeypatch.setenv("PM_QUARANTINE_LOSING_SLEEVES","1");w=h(single_scan=False);w.twap_candles={"dummy":1};asyncio.run(w.scan_exact_twap_locks([]));assert w.twap_candles=={};w._apply_ws_book_snapshot("tok_lazy",[{"price":"0.45","size":"50"}],[{"price":"0.47","size":"50"}],1e3);assert w._apply_ws_price_changes("tok_lazy",[{"price":"0.46","size":"60","side":"BUY"}],1001.)is True;assert"tok_lazy"in w._ws_books._dirty;A=w._ws_books["tok_lazy"];assert A[0]==1001. and A[1]["bids"][0]["price"]=="0.4600"
- async def g(toks,timeout=3.):return y
- w.fetch_books_batch=g;n=[];assert asyncio.run(w.execute_negrisk_convert_positions_arb(p,l[0],y,n))is True;assert w.closed_positions[-1]["sleeve"]=="NR_CONV_NO_BASKET_ARB"and w.closed_positions[-1]["won"]is True
-def test_riskless_frontier_v2_all_six_sleeves(monkeypatch,tmp_path):
- from src.polymarket_research.riskless_frontier_v2_engine import(MOOV2_ORACLE_ADDR as w,build_lp1_bop_2026_truth_legs as u,build_lp1_nba_exact_margin_bundle as n,detect_nr2_convert_no_subset_arbs as o,detect_soc1_regulation_boxes as e,detect_sp4_milestone_ladder_boxes as p,evaluate_api1_esports_bo3_opportunities as h,evaluate_sp4_ingame_clinch_locks as a,find_state_matrix_dominance_boxes as d,link_and_parse_soccer_regulation_trees as j,parse_espn_nba_boxscore_players as s,parse_esports_bo3_event as g,parse_nba_player_props_from_event as q,verify_bond2_moov2_final_hour_sync as b);from src.polymarket_research.tradfi_sports_zero_fee_engine import(detect_negrisk_convert_positions_arbs as l,parse_negrisk_convert_event as f);from src.polymarket_research.uma_nba_endgame_engine import LiveNbaGameState as r;import src.polymarket_research.riskless_frontier_v2_engine as rfv2;W={"id":"ev_nr5","slug":"closed-5way-slate","title":"Closed 5-Way Slate","enableNegRisk":True,"negRiskAugmented":False,"negRiskMarketID":"0x"+"cd"*32,"endDate":"2026-11-10T18:00:00Z","markets":[{"id":f"92000{i}","conditionId":f"0xe{i}","negRisk":True,"active":True,"groupItemTitle":f"Contender {i}","questionID":"0x"+"cd"*31+f"0{i}","clobTokenIds":f'["8{i}1111111111111111111", "8{i}2222222222222222222"]',"feesEnabled":False}for i in range(5)]};_f=f(W);assert _f is not None and _f.is_closed_convert_safe is True;_b={**W,"markets":[*W["markets"][:4],{**W["markets"][4],"groupItemTitle":"Party A"}]};assert f(_b).is_closed_convert_safe is False;O={"802222222222222222222":{"asks":[{"price":"0.48","size":"100"}]},"812222222222222222222":{"asks":[{"price":"0.56","size":"100"}]},"821111111111111111111":{"bids":[{"price":"0.08","size":"100"}]},"831111111111111111111":{"bids":[]},"841111111111111111111":{"bids":[]}};assert l(_f,O)==[];I=o(_f,O,target_budget_usd=1e2);assert len(I)==1;assert I[0]["m_no_legs"]==2 and I[0]["retained_tail_count"]==2;assert abs(I[0]["net_edge_per_share"]-.04)<1e-4;V={"id":"ev_nba_sp4","slug":"nba-sas-uta-2026-10-30","title":"Spurs vs. Jazz","startTime":"2026-10-30T23:00:00Z","markets":[{"id":"p1","conditionId":"0xc1","sportsMarketType":"points","line":23.5,"feeType":"zero_fees","groupItemTitle":"Victor Wembanyama: Points O/U 23.5","outcomes":'["Yes", "No"]',"clobTokenIds":'["90011", "90012"]'},{"id":"p2","conditionId":"0xc2","sportsMarketType":"points","line":27.5,"feeType":"zero_fees","groupItemTitle":"Victor Wembanyama: Points O/U 27.5","outcomes":'["Yes", "No"]',"clobTokenIds":'["90021", "90022"]'}]};U=q(V);assert U is not None;_e=p(U,{"90011":.61,"90022":.37},max_box_cost_net=.992);assert len(_e)==1 and abs(_e[0]["box_cost_net"]-.98)<1e-6;C={"boxscore":{"players":[{"statistics":[{"keys":["minutes","points","rebounds","assists","threePointFieldGoalsMade-threePointFieldGoalsAttempted"],"athletes":[{"athlete":{"displayName":"Victor Wembanyama"},"didNotPlay":False,"stats":["28","24","9","4","3-7"]},{"athlete":{"displayName":"DNP Bench"},"didNotPlay":True,"stats":["0","30","0","0","0-0"]}]}]}]}};N=s(C);assert"dnp bench"not in N and N["victor wembanyama"]["points"]==24;_d=r("g1",1e3,"in",False,3,120.,"Jazz","UTA",80,"Spurs","SAS",84);T=r("g1",1e3,"post",True,4,.0,"Jazz","UTA",102,"Spurs","SAS",108);assert a(U,_d,N)==[];assert len(a(U,T,N))==1;N["victor wembanyama"]["points"]=25;assert len(a(U,_d,N))==1;monkeypatch.setattr(rfv2,"verify_uma_onchain_proposal_sync",lambda m,**kw:{"verified":True,"adapter":"0x65070be91477460d8a7aeeb94ef92fe056c2f2a7","oo_address":w,"proposer":"0x"+"11"*20,"proposal_age_sec":4200.,"rem_challenge_sec":1800.,"win_index":0,"win_label":"YES","win_outcome_name":"Yes","win_token":"t_w","lose_token":"t_l","expiration_ts":5e3,"fee_rate":.0,"fee_exponent":1.,"domain":"SPORTS_POINTS","oo_state":2});monkeypatch.setattr(rfv2,"verify_proposer_whitelisted_sync",lambda addr,**kw:addr.endswith("1111"));assert b({"id":"m_b2"})["verified"]is True;monkeypatch.setattr(rfv2,"verify_proposer_whitelisted_sync",lambda addr,**kw:False);assert b({"id":"m_b2"})["reason"]=="PROPOSER_NOT_WHITELISTED";S={"id":"s3","slug":"epl-ars-che-2026-11-01","title":"Arsenal vs. Chelsea","gameId":"99001","negRisk":True,"negRiskAugmented":False,"negRiskMarketID":"0x"+"ef"*32,"startTime":"2026-11-01T16:30:00Z","markets":[{"id":"s_h","conditionId":"0x1","sportsMarketType":"moneyline","feeType":"sports_fees_v3","groupItemTitle":"Arsenal","question":"Will Arsenal win?","outcomes":'["Yes","No"]',"clobTokenIds":'["sh1","sh2"]',"questionID":"0x"+"ef"*31+"00"},{"id":"s_d","conditionId":"0x2","sportsMarketType":"moneyline","feeType":"sports_fees_v3","groupItemTitle":"Draw","question":"Will Arsenal vs Chelsea end in a draw?","outcomes":'["Yes","No"]',"clobTokenIds":'["sd1","sd2"]',"questionID":"0x"+"ef"*31+"01"},{"id":"s_a","conditionId":"0x3","sportsMarketType":"moneyline","feeType":"sports_fees_v3","groupItemTitle":"Chelsea","question":"Will Chelsea win?","outcomes":'["Yes","No"]',"clobTokenIds":'["sa1","sa2"]',"questionID":"0x"+"ef"*31+"02"}]};R={"id":"s_mm","slug":"epl-ars-che-2026-11-01-more-markets","gameId":"99001","negRisk":False,"markets":[{"id":"s_o05","conditionId":"0x4","sportsMarketType":"totals","line":.5,"feeType":"sports_fees_v3","groupItemTitle":"O/U 0.5","question":"O/U 0.5","outcomes":'["Over","Under"]',"clobTokenIds":'["so1","so2"]'}]};_a=j([S,R]);assert"99001"in _a and _a["99001"].over05_leg is not None;assert e(_a["99001"],{},{"sd1":.22,"so1":.76},max_2leg_cost_net=.988)["two_leg_boxes"]==[];assert len(e(_a["99001"],{},{"sd1":.2,"so1":.75},max_2leg_cost_net=.988)["two_leg_boxes"])==1;H=u({"balance-of-power-2026-midterms":{"markets":[{"id":"b1","conditionId":"0xb1","question":"2026 Balance of Power: D Senate, D House","feeType":"zero_fees","endDate":"2026-11-04T00:00:00Z","clobTokenIds":'["by1","bn1"]'},{"id":"b5","conditionId":"0xb5","question":"2026 Balance of Power: Other","feeType":"zero_fees","endDate":"2026-11-04T00:00:00Z","clobTokenIds":'["by5","bn5"]'}]},"which-party-will-win-the-senate-in-2026":{"markets":[{"id":"s1","conditionId":"0xs1","groupItemTitle":"Democratic Party","feeType":"zero_fees","endDate":"2026-11-04T00:00:00Z","clobTokenIds":'["sy1","sn1"]'}]}});M=d(H,{"bn1":.3,"sy1":.67},max_2leg_cost_net=.993);assert len(M)==1 and M[0]["min_payout"]==1. and M[0]["jackpot_states"]==2;Z={"id":"np1","slug":"nba-bos-nyk-2026-10-30","title":"Celtics vs. Knicks","startTime":"2026-10-30T23:30:00Z","markets":[{"id":"ml1","conditionId":"0xm1","sportsMarketType":"moneyline","feeType":"zero_fees","outcomes":'["Celtics","Knicks"]',"clobTokenIds":'["mla","mlb"]'}]};G=[("Celtics","1-5"),("Celtics","6-10"),("Celtics","11-15"),("Celtics","16-20"),("Celtics","21+"),("Knicks","1-5"),("Knicks","6-10"),("Knicks","11-15"),("Knicks","16-20"),("Knicks","21+")];Q={"id":"ne1","slug":"nba-bos-nyk-2026-10-30-exact-margin","negRisk":True,"negRiskAugmented":False,"negRiskMarketID":"0x"+"aa"*32,"markets":[{"id":f"em{k}","conditionId":f"0xem{k}","feeType":"zero_fees","groupItemTitle":f"Exact Margin: {tm} by {bd}","clobTokenIds":f'["emy{k}","emn{k}"]',"questionID":"0x"+"aa"*31+f"{k:02x}"}for k,(tm,bd)in enumerate(G)]+[{"id":"em10","conditionId":"0xem10","feeType":"zero_fees","groupItemTitle":"Other","clobTokenIds":'["emy10","emn10"]',"questionID":"0x"+"aa"*31+"0a"}]};B=n(Z,Q);assert B is not None and len(B["legs"])==24;L=d(B["legs"],{"mla":.58,"emn1":.4},max_2leg_cost_net=.993);assert len(L)==1 and L[0]["min_payout"]==1. and L[0]["max_payout"]==2.;K={"id":"esp1","slug":"cs2-navi-faze-2026-10-30","title":"Counter-Strike: NAVI vs FaZe (BO3)","startTime":"2026-10-30T20:00:00Z","markets":[{"id":"eml","conditionId":"0x1","sportsMarketType":"moneyline","feeType":"sports_fees_v2","outcomes":'["NAVI","FaZe"]',"clobTokenIds":'["mla_e","mlb_e"]'},{"id":"ehc","conditionId":"0x2","sportsMarketType":"map_handicap","line":-1.5,"feeType":"sports_fees_v2","groupItemTitle":"Map Handicap: NAVI (-1.5) vs FaZe (+1.5)","description":'This market will resolve to "NAVI" if NAVI wins 2 or more maps than FaZe',"outcomes":'["NAVI","FaZe"]',"clobTokenIds":'["hcm_e","hcp_e"]'},{"id":"em1","conditionId":"0x3","sportsMarketType":"child_moneyline","feeType":"sports_fees_v2","groupItemTitle":"Map 1 Winner","outcomes":'["NAVI","FaZe"]',"clobTokenIds":'["m1a_e","m1b_e"]',"outcomePrices":'["0", "1"]',"closed":True}]};P=g(K);assert P is not None and P.hc_fav_is_a is True and P.map1_resolved_winner=="B";J={**K,"title":"NAVI vs FaZe (BO5)","markets":[*K["markets"],{"id":"em4","sportsMarketType":"child_moneyline","groupItemTitle":"Map 4 Winner"}]};assert g(J)is None;F=h(P,{},{"mla_e":.55,"hcp_e":.41},max_middle_cost_net=.988);assert len(F["single_leg_locks"])==1 and F["single_leg_locks"][0]["token_id"]=="hcp_e";assert len(F["two_leg_boxes"])==1 and F["two_leg_boxes"][0]["post_m1_forfeit_immune"]is True;import asyncio;import json;import time as _time_m;import src.polymarket_research.alpha_124_shadow_daemon as a124_mod;E=tmp_path/"d1_cands.jsonl";monkeypatch.setattr(a124_mod,"STATE_FILE",tmp_path/"a124_fv2.json");monkeypatch.setattr(a124_mod,"LEDGER_FILE",tmp_path/"a124_fv2_ledger.jsonl");monkeypatch.setattr(a124_mod,"MARKET_TELEMETRY_FILE",tmp_path/"a124_fv2_telem.jsonl");monkeypatch.setattr(a124_mod,"D1_LIVE_CANDIDATES_FILE",E);Y=a124_mod.Alpha124ShadowDaemon(single_scan=True);X=_time_m.time();U.settle_est_ts=X+7200.
- for _c in B["legs"]:_c["end_ts"]=X+7200.
- B["end_ts"]=X+7200.;Y.nba_prop_slates={U.event_id:U};Y.lp1_nba_em_bundles={B["event_id"]:B};A={"90011":{"bids":[{"price":"0.60","size":"150"}],"asks":[{"price":"0.62","size":"150"}]},"90012":{"bids":[{"price":"0.36","size":"150"}],"asks":[{"price":"0.38","size":"150"}]},"90021":{"bids":[{"price":"0.62","size":"150"}],"asks":[{"price":"0.65","size":"150"}]},"90022":{"bids":[{"price":"0.33","size":"150"}],"asks":[{"price":"0.35","size":"150"}]},"mla":{"bids":[{"price":"0.56","size":"200"}],"asks":[{"price":"0.58","size":"200"}]},"mlb":{"bids":[{"price":"0.40","size":"200"}],"asks":[{"price":"0.42","size":"200"}]},"emy1":{"bids":[{"price":"0.58","size":"200"}],"asks":[{"price":"0.60","size":"200"}]},"emn1":{"bids":[{"price":"0.38","size":"200"}],"asks":[{"price":"0.40","size":"200"}]}}
- async def v(toks,timeout=3.5):return{t:A[t]for t in toks if t in A}
- Y.fetch_books_batch=v;D=[];asyncio.run(Y._scan_frontier_v2_sleeves(D,X));z=[json.loads(x)for x in E.read_text(encoding="utf-8").splitlines()if x.strip()];y={c["sleeve_source"]for c in z};assert"SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK"in y;assert"LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX"in y
-if __name__=="__main__":test_polymarket_weather_rounding_spec_examples();test_metar_parser_speci_and_t_remark();test_bucket_bounds_parser();test_barrier_and_svi_monotonicity();test_exact_twap_lock_engine_math_and_whipsaw_guard();print("ALL ALPHA-124 ORACLE & PRICING UNIT TESTS PASSED!")

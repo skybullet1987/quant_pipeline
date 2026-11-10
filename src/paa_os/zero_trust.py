@@ -58,6 +58,25 @@ def _resolve_git_exe() -> str:
             return cand
     return "git"
 
+
+def _parse_session_c_verdict(raw_c: str) -> bool:
+    """Fail-closed JSON parser for Session C independent diff review verdicts."""
+    txt = str(raw_c or "").strip()
+    if not txt or "protected_file" in txt.lower():
+        return False
+    if txt.startswith("```"):
+        txt = "\n".join(ln for ln in txt.splitlines() if not ln.strip().startswith("```")).strip()
+    s_idx = txt.find("{")
+    e_idx = txt.rfind("}")
+    if not (0 <= s_idx < e_idx):
+        return False
+    try:
+        parsed = json.loads(txt[s_idx : e_idx + 1])
+    except Exception:
+        return False
+    return isinstance(parsed, dict) and parsed.get("approved") is True
+
+
 PIPELINE_ROOT = Path(__file__).resolve().parents[2]
 
 TIER_A_POLICY_FILES = (
@@ -948,8 +967,8 @@ class DeterministicVerificationController:
                     context_packet=pkt_c,
                     task_record=task,
                 )
-                raw_c = res_c.get("response", "")
-                approved_c = '"approved": false' not in raw_c.lower() and "protected_file" not in raw_c.lower()
+                raw_c = str(res_c.get("response") or "")
+                approved_c = _parse_session_c_verdict(raw_c)
                 rev_receipt = {
                     "session_conversation_id": res_c.get("conversation_id"),
                     "fresh_session": True,

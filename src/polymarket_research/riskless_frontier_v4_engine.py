@@ -756,6 +756,103 @@ def evaluate_aff1_frozen_subperiod_opportunities(
                 "close_ts": fp.settle_est_ts,
             })
 
+    # ------------------------------------------------------------------
+    # 1E. Settled Subperiod & Post-Final `.5`-Hook `TOTAL`/`TEAM_TOTAL`/`SPREAD` Locks (`p_lock = 1.0`)
+    # ------------------------------------------------------------------
+    seen_settled_mids = {str(x["market_id"]) for x in single_leg_locks}
+
+    def _emit_settled_scope_locks(scope: str, a_pts: int, h_pts: int) -> None:
+        tot_pts = float(a_pts + h_pts)
+        margin = float(a_pts - h_pts)
+        mode_s = "AFF1_FINAL_SUBPERIOD_LOCK" if is_final else f"AFF1_{scope}_SETTLED_LOCK"
+        for sm in bundle.markets:
+            if sm.period_scope != scope or sm.line is None or sm.market_id in seen_settled_mids:
+                continue
+            ln = float(sm.line)
+            win_tok: Optional[str] = None
+            opp_tok: Optional[str] = None
+            side_lbl: Optional[str] = None
+            stat_lbl = ""
+            if sm.kind == "TOTAL" and abs(tot_pts - ln) >= 0.49:
+                win_over = tot_pts > ln
+                win_tok = sm.tok_0 if win_over else sm.tok_1
+                opp_tok = sm.tok_1 if win_over else sm.tok_0
+                side_lbl = sm.out_0 if win_over else sm.out_1
+                stat_lbl = f"{scope} Total={int(tot_pts)} vs {ln:g}"
+            elif sm.kind == "TEAM_TOTAL" and sm.team_side in (bundle.away_team, bundle.home_team):
+                tm_pts = float(a_pts if sm.team_side == bundle.away_team else h_pts)
+                if abs(tm_pts - ln) >= 0.49:
+                    win_over = tm_pts > ln
+                    win_tok = sm.tok_0 if win_over else sm.tok_1
+                    opp_tok = sm.tok_1 if win_over else sm.tok_0
+                    side_lbl = sm.out_0 if win_over else sm.out_1
+                    stat_lbl = f"{scope} {sm.team_side.title()}={int(tm_pts)} vs {ln:g}"
+            elif sm.kind == "SPREAD":
+                sp_legs = _spread_signed_legs(sm, bundle.away_team)
+                if len(sp_legs) == 2 and abs(margin - float(sp_legs[0][1])) >= 0.49:
+                    for op_s, th_s, lg_s in sp_legs:
+                        if (op_s == "GT" and margin > th_s) or (op_s == "LT" and margin < th_s):
+                            win_tok = str(lg_s["token_id"])
+                            opp_tok = str(lg_s["opp_token_id"])
+                            side_lbl = str(lg_s["label"])
+                            stat_lbl = f"{scope} Margin={a_pts}-{h_pts} ({margin:+.0f} vs {th_s:+.1f})"
+                            break
+            if win_tok and opp_tok and side_lbl:
+                seen_settled_mids.add(sm.market_id)
+                single_leg_locks.append({
+                    "mode": mode_s,
+                    "sport": bundle.sport,
+                    "event_id": bundle.event_id,
+                    "market_id": sm.market_id,
+                    "condition_id": sm.condition_id,
+                    "token_id": win_tok,
+                    "opp_token_id": opp_tok,
+                    "side_label": side_lbl,
+                    "display_label": f"{bundle.title} {sm.display_title} -> {side_lbl} [{stat_lbl}]",
+                    "fee_rate": sm.fee_rate,
+                    "fee_exponent": sm.fee_exponent,
+                    "neg_risk": bool(sm.neg_risk),
+                    "p_lock": 1.0,
+                    "close_ts": sm.settle_est_ts,
+                })
+
+    if q1_pair is not None:
+        _emit_settled_scope_locks("Q1", int(q1_pair[0]), int(q1_pair[1]))
+    q2_ended_lk = (2 in ls_a and 2 in ls_h) and (is_final or is_ht or period >= 3)
+    q2_pair_lk = freeze_tracker.confirm_frozen_pair(
+        bundle.sport, gid, "Q2_ONLY", int(ls_a.get(2, 0)), int(ls_h.get(2, 0)),
+        period_ended=q2_ended_lk, now_ts=now_ts, freeze_confirm_sec=freeze_confirm_sec,
+        instant_settled=(is_final or period >= 4),
+    )
+    if q2_pair_lk is not None:
+        _emit_settled_scope_locks("Q2", int(q2_pair_lk[0]), int(q2_pair_lk[1]))
+    h1_ended_all = (1 in ls_a and 2 in ls_a and 1 in ls_h and 2 in ls_h) and (is_final or is_ht or period >= 3)
+    h1_pair_all = freeze_tracker.confirm_frozen_pair(
+        bundle.sport, gid, "1H_LOCK",
+        int(ls_a.get(1, 0)) + int(ls_a.get(2, 0)),
+        int(ls_h.get(1, 0)) + int(ls_h.get(2, 0)),
+        period_ended=h1_ended_all, now_ts=now_ts, freeze_confirm_sec=freeze_confirm_sec,
+        instant_settled=(is_final or period >= 4),
+    )
+    if h1_pair_all is not None:
+        _emit_settled_scope_locks("1H", int(h1_pair_all[0]), int(h1_pair_all[1]))
+    q3_ended_lk = (3 in ls_a and 3 in ls_h) and (is_final or period >= 4)
+    q3_pair_lk = freeze_tracker.confirm_frozen_pair(
+        bundle.sport, gid, "Q3_ONLY", int(ls_a.get(3, 0)), int(ls_h.get(3, 0)),
+        period_ended=q3_ended_lk, now_ts=now_ts, freeze_confirm_sec=freeze_confirm_sec,
+        instant_settled=is_final,
+    )
+    if q3_pair_lk is not None:
+        _emit_settled_scope_locks("Q3", int(q3_pair_lk[0]), int(q3_pair_lk[1]))
+    if is_final:
+        fin_pair_lk = freeze_tracker.confirm_frozen_pair(
+            bundle.sport, gid, "FINAL_FG", away_sc, home_sc,
+            period_ended=True, now_ts=now_ts, freeze_confirm_sec=freeze_confirm_sec,
+            instant_settled=False,
+        )
+        if fin_pair_lk is not None:
+            _emit_settled_scope_locks("FG", int(fin_pair_lk[0]), int(fin_pair_lk[1]))
+
     two_leg_boxes.sort(key=lambda x: float(x["box_cost_net"]))
     three_leg_boxes.sort(key=lambda x: float(x["box_cost_net"]))
     return {

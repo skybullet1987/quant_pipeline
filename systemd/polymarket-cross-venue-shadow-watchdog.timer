@@ -1,0 +1,12 @@
+[Unit]
+Description=Dominus Stage G Shadow Watchdog Periodic Timer (Every 60s)
+
+[Timer]
+OnStartupSec=60s
+OnCalendar=*-*-* *:*:35
+AccuracySec=5s
+Persistent=true
+Unit=polymarket-cross-venue-shadow-watchdog.service
+
+[Install]
+WantedBy=timers.target

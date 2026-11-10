@@ -1,0 +1,18 @@
+[Unit]
+Description=Dominus Stage G Shadow Watchdog & SQLite Checkpoint Verifier
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/polymarket-shadow.env
+MemoryMax=96M
+CPUQuota=10%
+Nice=19
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/skybullet1987/quant_pipeline/data/cross_venue_shadow
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python scripts/shadow_cross_venue_riskless_probe.py --watchdog-check --env-file /etc/polymarket-shadow.env --allow-missing-env-file

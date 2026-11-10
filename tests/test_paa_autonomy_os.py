@@ -282,6 +282,25 @@ def test_permission_classes_diff_blocking_and_credential_stripping(tmp_path: Pat
     assert any("EXPOSURE_INCREASED" in v for v in viol_2)
     assert any("NEW_LIVE_ASSET_ACTIVATION" in v for v in viol_2)
 
+    # 3b. Weakening strict_pure_riskless_mode or enabling BOND1 / PreSplit unattended MUST fail diff audit
+    base_pure = copy.deepcopy(DEFAULT_HOLISTIC_CONFIG)
+    base_pure["riskless_boxes"]["strict_pure_riskless_mode"] = True
+    base_pure["riskless_boxes"]["strict_zero_legging_pre_split_lock"] = True
+    base_pure["riskless_boxes"]["enable_single_leg_maker_bond1"] = False
+    base_pure["riskless_boxes"]["enable_pre_split_overround_gun"] = False
+    cand_pure = copy.deepcopy(base_pure)
+    cand_pure["riskless_boxes"]["strict_pure_riskless_mode"] = False
+    cand_pure["riskless_boxes"]["enable_single_leg_maker_bond1"] = True
+    ok_d3, viol_3 = gate.inspect_candidate_diff(
+        changed_files=["config/polymarket_strategy_and_risk.json"],
+        diff_text="",
+        baseline_cfg=base_pure,
+        candidate_cfg=cand_pure,
+    )
+    assert ok_d3 is False
+    assert any("strict_pure_riskless_mode" in v for v in viol_3)
+    assert any("enable_single_leg_maker_bond1" in v for v in viol_3)
+
     # 4. HeadlessAgentRunner MUST block non-plan execution targeting live_repo_root
     db = PAATaskDB(tmp_path / "paa.db")
     budget = BudgetManager(db, autonomy_cfg=cfg)

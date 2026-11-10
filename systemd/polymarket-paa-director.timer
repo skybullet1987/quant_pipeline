@@ -2,8 +2,8 @@
 Description=PAA 15-Minute Autonomous Director Timer
 
 [Timer]
-OnBootSec=90s
-OnUnitActiveSec=15min
+OnStartupSec=90s
+OnCalendar=*-*-* *:00/15:45
 AccuracySec=15s
 Persistent=true
 Unit=polymarket-paa-director.service

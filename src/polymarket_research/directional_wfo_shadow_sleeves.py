@@ -389,6 +389,10 @@ class DirectionalWfoShadowManager:
         """Evaluates incoming live shock trigger for `SLEEVE_HYBRID_ZSPLIT_SHADOW`."""
         if historical:
             return False
+        if self.production_mode:
+            from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+            if not bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("shadow_governance", {}).get("enable_hybrid_zsplit_shadow", True)):
+                return False
         m_id = str(shock.get("market_id") or "")
         if not m_id or m_id in self.hz_open or m_id in self.hz_pending or m_id in self.hz_settled_markets:
             return False
@@ -1357,13 +1361,21 @@ class DirectionalWfoShadowManager:
             return
         now_u = time.time()
 
-        # 1a/1b. Tail BTC & SOL 5m telemetry only in non-production test mode (killed in v5.0 live governance)
-        if not self.production_mode:
+        _sg_poll = {}
+        if self.production_mode:
+            from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+            _sg_poll = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("shadow_governance", {}) or {}
+
+        # 1a/1b. Tail BTC & SOL 5m telemetry in non-production test mode or when explicitly enabled in shadow_governance
+        _b5_on = bool(_sg_poll.get("enable_btc_5m_sniper_shadow", _sg_poll.get("enable_btc_5m_shadow", False)))
+        _s5_on = bool(_sg_poll.get("enable_sol_5m_canary_shadow", _sg_poll.get("enable_sol_5m_shadow", False)))
+        if (not self.production_mode) or _b5_on:
             for row in self._tail_jsonl_file(self.b5_telem_file, "b5_file_pos"):
                 self._ingest_btc_5m_telemetry_tick(row)
                 m_id = str(row.get("market_id") or "")
                 if m_id in self.b5_pending:
                     self.b5_pending[m_id]["latest_tick"] = row
+        if (not self.production_mode) or _s5_on:
             for row in self._tail_jsonl_file(self.s5_telem_file, "s5_file_pos"):
                 self._ingest_sol_5m_telemetry_tick(row)
                 m_id = str(row.get("market_id") or "")
@@ -1371,11 +1383,12 @@ class DirectionalWfoShadowManager:
                     self.s5_pending[m_id]["latest_tick"] = row
 
         # 1c. Tail XAU 15m telemetry (when recorded) for Candidate D entries + exits
-        for row in self._tail_jsonl_file(self.xau_telem_file, "xau_file_pos"):
-            self.ingest_xau_15m_tick(row)
-            m_id = str(row.get("market_id") or "")
-            if m_id in self.xau_pending:
-                self.xau_pending[m_id]["latest_tick"] = row
+        if (not self.production_mode) or bool(_sg_poll.get("enable_xau_15m_maker_shadow", True)):
+            for row in self._tail_jsonl_file(self.xau_telem_file, "xau_file_pos"):
+                self.ingest_xau_15m_tick(row)
+                m_id = str(row.get("market_id") or "")
+                if m_id in self.xau_pending:
+                    self.xau_pending[m_id]["latest_tick"] = row
 
         # 2. Tail 15m + 1h BTC/ETH telemetry so open Hybrid z-Split positions get continuous exit ticks
         hz_telem_streams = (

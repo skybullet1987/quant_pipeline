@@ -99,6 +99,11 @@ def check_operational_status(
         "polymarket-alpha124-shadow.service",
         "polymarket-recorder.service",
     }
+    if sys.platform.startswith("linux") and (
+        Path.home() / ".config" / "systemd" / "user" / "polymarket-cross-venue-shadow.service"
+    ).exists():
+        units.append("polymarket-cross-venue-shadow.service")
+        safe_auto_restart_units.add("polymarket-cross-venue-shadow.service")
     if not rl_only:
         units.extend([
             "polymarket-trader.service",
@@ -310,13 +315,39 @@ def reconcile_closed_position_record(c: Dict[str, Any]) -> Tuple[Dict[str, Any],
         c_norm["realized_pnl_usd"] = pnl
         c_norm["wallet_reconciled"] = True
         was_reconciled = True
+    elif (
+        not bool(c.get("won"))
+        and raw_pnl_c == 0.0
+        and str(c.get("status") or "").upper() in {"SETTLED", "FILLED"}
+        and not bool(c.get("exit_cash_estimated", False))
+        and float(c.get("estimated_exit_cash", 0.0) or 0.0) <= 0.0
+        and not (c.get("box_legs_summary") or [])
+        and notional > 0.0
+        and float(c.get("confirmed_realized_cash", c.get("realized_exit_cash", 0.0)) or 0.0) > 0.0
+    ):
+        _entry_cash_fee = (
+            float(c.get("entry_fee_cash_usd", 0.0) or 0.0)
+            if str(c.get("entry_fee_asset") or "").upper() == "SHARES"
+            else float(c.get("entry_fee_cash_usd", c.get("fee_usd", 0.0)) or 0.0)
+        )
+        _conf_cash = float(c.get("confirmed_realized_cash", c.get("realized_exit_cash", 0.0)) or 0.0)
+        _exact_pnl = round(_conf_cash - notional - _entry_cash_fee - float(c.get("realized_exit_fee", 0.0) or 0.0), 4)
+        if 0.0 < _exact_pnl < 0.01:
+            pnl = _exact_pnl
+            c_norm["net_pnl_usd"] = pnl
+            c_norm["realized_pnl_usd"] = pnl
+            c_norm["won"] = True
+            c_norm["wallet_reconciled"] = True
+            was_reconciled = True
+        else:
+            c_norm["net_pnl_usd"] = pnl
     else:
         c_norm["net_pnl_usd"] = pnl
 
     return c_norm, pnl, raw_pnl_c, was_reconciled
 
 
-def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any]:
+def reconcile_authoritative_ledger(live_rpc_check: bool = True, data_dir: Optional[Path] = None) -> Dict[str, Any]:
     """
     Produces the PAA Section 8 Authoritative Financial Ledger:
       Verified Net Profit = Realized Trading PnL - Fees - Slippage - Execution Costs - Operational Costs
@@ -325,7 +356,8 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
     already auto-redeemed confirmed terminal-hold winners to real wallet cash flows.
     """
     now = time.time()
-    st_path = DATA_PM / "live_harvester_state.json"
+    eff_data_dir = Path(data_dir) if data_dir is not None else DATA_PM
+    st_path = eff_data_dir / "live_harvester_state.json"
     st = json.loads(st_path.read_text(encoding="utf-8")) if st_path.exists() else {}
     closed = st.get("closed_positions") or []
     active = st.get("active_positions") or {}
@@ -419,6 +451,8 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
             rec_g["losses"] += 1
 
     onchain_pusd: Optional[float] = None
+    onchain_pusd_only: Optional[float] = None
+    onchain_usdce_only: Optional[float] = None
     onchain_tok_balances: Dict[str, float] = {}
     open_pos_audit: List[Dict[str, Any]] = []
     watchdog_alerts: List[str] = []
@@ -461,7 +495,9 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
                 if isinstance(rj, list):
                     rmap = {str(x.get("id")): str(x.get("result") or "") for x in rj if isinstance(x, dict)}
                     if rmap.get("pusd", "").startswith("0x") and rmap.get("usdce", "").startswith("0x"):
-                        onchain_pusd = (int(rmap["pusd"], 16) + int(rmap["usdce"], 16)) / 1e6
+                        onchain_pusd_only = int(rmap["pusd"], 16) / 1e6
+                        onchain_usdce_only = int(rmap["usdce"], 16) / 1e6
+                        onchain_pusd = onchain_pusd_only + onchain_usdce_only
                         for tk in tok_ids_seen:
                             r_hex = rmap.get(f"tok:{tk}", "")
                             if r_hex.startswith("0x"):
@@ -573,15 +609,70 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
         resting_maker_exit_value += ps_paired_val
 
     cash_usd = float(onchain_pusd if onchain_pusd is not None else (st.get("live_bankroll") or 0.0))
+    pusd_only_usd = float(onchain_pusd_only if onchain_pusd_only is not None else cash_usd)
+    usdce_only_usd = float(onchain_usdce_only if onchain_usdce_only is not None else 0.0)
     nav_mark_to_bid = round(cash_usd + mark_to_bid_value, 4)
     nav_resting_maker = round(cash_usd + resting_maker_exit_value, 4)
     nav_cost_basis = round(cash_usd + cost_basis_open, 4)
-    hwm = float(st.get("high_water_mark_equity") or nav_cost_basis)
+    _net_wd_pac = 0.0
+    try:
+        from src.polymarket_research.economic_attribution_ledger import load_external_cashflows_summary
+        _cf_pac = load_external_cashflows_summary(PIPELINE_ROOT)
+        _net_wd_pac = max(0.0, -float(_cf_pac.get("net_deposits_post_lock_usd") or 0.0))
+    except Exception:
+        _net_wd_pac = 0.0
+    _raw_hwm = float(st.get("high_water_mark_equity") or 0.0)
+    hwm = max(nav_cost_basis, (_raw_hwm - _net_wd_pac) if _raw_hwm > 0.0 else nav_cost_basis)
+    _pend_map_l = st.get("pending_entry_intents") or {}
+    _pend_cnt_l = sum(1 for v in _pend_map_l.values() if isinstance(v, dict))
+    _clob_open_cnt = verified_resting_orders + _pend_cnt_l
+    if eff_data_dir == (PIPELINE_ROOT / "data" / "polymarket"):
+        _ord_cache_l = Path("/tmp/dominus_clob_open_orders_cache.json")
+        if _ord_cache_l.exists() and (now - _ord_cache_l.stat().st_mtime) <= 90.0:
+            try:
+                _raw_ords_l = json.loads(_ord_cache_l.read_text(encoding="utf-8"))
+                if isinstance(_raw_ords_l, list):
+                    _tracked_oids_l = {
+                        str(v).strip()
+                        for _rec_l in (*_pend_map_l.values(), *active.values())
+                        if isinstance(_rec_l, dict)
+                        for v in (
+                            _rec_l.get("entry_order_id"),
+                            _rec_l.get("order_id"),
+                            _rec_l.get("exit_order_id"),
+                            _rec_l.get("unwind_order_id"),
+                            _rec_l.get("maker_order_id"),
+                        )
+                        if v
+                    }
+                    _live_cache_cnt = 0
+                    for _o_l in _raw_ords_l:
+                        if (
+                            not isinstance(_o_l, dict)
+                            or str(_o_l.get("status") or "").upper() not in ("LIVE", "OPEN")
+                            or max(0.0, float(_o_l.get("original_size") or 0.0) - float(_o_l.get("size_matched") or 0.0)) <= 0.001
+                        ):
+                            continue
+                        _oid_l = str(_o_l.get("id") or _o_l.get("orderID") or "").strip()
+                        _ct_raw = _o_l.get("created_at")
+                        _ct_s = 0.0
+                        if isinstance(_ct_raw, (int, float)):
+                            _ct_s = float(_ct_raw) / 1000.0 if float(_ct_raw) > 1e12 else float(_ct_raw)
+                        elif isinstance(_ct_raw, str) and _ct_raw.strip().isdigit():
+                            _ct_s = float(_ct_raw) / 1000.0 if float(_ct_raw) > 1e12 else float(_ct_raw)
+                        if _ct_s > 0.0 and (now - _ct_s) > 3600.0 and (not _oid_l or _oid_l not in _tracked_oids_l):
+                            continue
+                        _live_cache_cnt += 1
+                    _clob_open_cnt = max(_clob_open_cnt, _live_cache_cnt)
+            except Exception:
+                pass
 
     return {
         "reconciled_at_utc": _utc_now_iso(),
         "wallet_address": wallet_addr,
         "free_cash_pusd": round(cash_usd, 6),
+        "free_cash_pusd_only": round(pusd_only_usd, 6),
+        "free_cash_usdce_unwrapped": round(usdce_only_usd, 6),
         "open_cost_basis_usd": round(cost_basis_open, 4),
         "open_mark_to_bid_usd": round(mark_to_bid_value, 4),
         "open_resting_maker_value_usd": round(resting_maker_exit_value, 4),
@@ -597,7 +688,7 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True) -> Dict[str, Any
         "total_realized_fees_paid_usd": round(total_fees_usd, 4),
         "unrealized_pnl_mark_to_bid_usd": round(mark_to_bid_value - cost_basis_open, 4),
         "unrealized_pnl_at_maker_ask_usd": round(resting_maker_exit_value - cost_basis_open, 4),
-        "clob_open_orders_count": verified_resting_orders + len(st.get("pending_entry_intents") or {}),
+        "clob_open_orders_count": _clob_open_cnt,
         "open_positions": open_pos_audit,
         "phantom_unfilled_records": phantom_records,
         "live_by_sleeve": by_sleeve_live,
@@ -622,6 +713,87 @@ def _load_riskless_governance_flags(repo_root: Optional[Path] = None) -> Tuple[b
         except Exception:
             pass
     return riskless_only, paused_sleeves
+
+
+def sync_machine_gun_telemetry_snapshot(
+    data_dir: Optional[Path] = None,
+    repo_root: Optional[Path] = None,
+) -> Dict[str, Any]:
+    """
+    Exports deterministic Machine-Gun Riskless (`src/polymarket_research/riskless_machine_gun_engine.py`)
+    sleeve telemetry to `machine_gun_riskless_status.json` so PAA scorecards, Researcher, and Director
+    track live/shadow Machine-Gun primitives and strict-pure-riskless quarantine gates without manual glue.
+    """
+    ddir = Path(data_dir) if data_dir is not None else DATA_PM
+    root = Path(repo_root) if repo_root is not None else PIPELINE_ROOT
+    ddir.mkdir(parents=True, exist_ok=True)
+
+    a124_p = ddir / "alpha124_shadow_state.json"
+    a124 = json.loads(a124_p.read_text(encoding="utf-8")) if a124_p.exists() else {}
+    by_sl_sh = a124.get("by_sleeve") if isinstance(a124, dict) else {}
+    if not isinstance(by_sl_sh, dict):
+        by_sl_sh = {}
+    open_sh = a124.get("open_positions") if isinstance(a124, dict) else {}
+    open_cnt = Counter(
+        p.get("sleeve")
+        for p in (open_sh.values() if isinstance(open_sh, dict) else (open_sh or []))
+        if isinstance(p, dict)
+    )
+
+    cfg_p = root / "config" / "polymarket_strategy_and_risk.json"
+    rb_cfg: Dict[str, Any] = {}
+    if cfg_p.exists():
+        try:
+            rb_cfg = dict((json.loads(cfg_p.read_text(encoding="utf-8")).get("riskless_boxes")) or {})
+        except Exception:
+            rb_cfg = {}
+
+    mg_canonical_sleeves = (
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_4H_DOMINANCE_BOX",
+        "C1_BINARY_COMPLETE_SET",
+        "NR2_CONVERT_NO_SUBSET_ARB",
+        "NR_M1_DEAD_SEED_OVERROUND",
+    )
+    by_sleeve_out: Dict[str, Dict[str, Any]] = {}
+    for sl_k in mg_canonical_sleeves:
+        rec = by_sl_sh.get(sl_k) if isinstance(by_sl_sh.get(sl_k), dict) else {}
+        w_n = int(rec.get("wins", 0) or 0)
+        l_n = int(rec.get("losses", 0) or 0)
+        c_n = int(rec.get("closed", w_n + l_n) or 0)
+        by_sleeve_out[sl_k] = {
+            "closed": c_n,
+            "wins": w_n,
+            "losses": l_n,
+            "open": int(open_cnt.get(sl_k, int(rec.get("open", 0) or 0))),
+            "win_rate_pct": round(100.0 * w_n / c_n, 2) if c_n > 0 else 100.0,
+            "realized_pnl_t1000_usd": round(
+                float(rec.get("realized_pnl_t1000_usd", rec.get("pnl_t1000_usd", 0.0)) or 0.0), 4
+            ),
+        }
+
+    doc = {
+        "generated_at_utc": _utc_now_iso(),
+        "engine": "riskless_machine_gun_engine",
+        "strict_pure_riskless_mode": bool(rb_cfg.get("strict_pure_riskless_mode", True)),
+        "strict_zero_legging_pre_split_lock": bool(rb_cfg.get("strict_zero_legging_pre_split_lock", True)),
+        "quarantined_engines": {
+            "PRE_SPLIT_INVENTORY_GUN": (
+                "QUARANTINED_STRICT_ZERO_LEGGING_LOCK"
+                if bool(rb_cfg.get("strict_zero_legging_pre_split_lock", True))
+                and not bool(rb_cfg.get("enable_pre_split_overround_gun", False))
+                else "ACTIVE"
+            ),
+            "NR3_SYNTHETIC_ALL_YES_OVERROUND": (
+                "QUARANTINED_PURE_RISKLESS_MODE"
+                if not bool(rb_cfg.get("enable_nr3_synthetic_overround", False))
+                else "ACTIVE"
+            ),
+        },
+        "by_sleeve": by_sleeve_out,
+    }
+    _atomic_write_json(ddir / "machine_gun_riskless_status.json", doc)
+    return doc
 
 
 def discover_machine_gun_sleeves(data_dir: Optional[Path] = None) -> Dict[str, Dict[str, Any]]:
@@ -694,11 +866,25 @@ def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = 
     for mg_k, mg_v in mg_discovered.items():
         by_sl_shadow.setdefault(mg_k, mg_v)
 
+    from src.polymarket_research.stage_c_zero_loss_velocity import PURE_RISKLESS_ALLOWED_LIVE_SLEEVES
+
     open_sh = a124.get("open_positions") or {}
     open_cnt_by_sl = Counter(
         p.get("sleeve") for p in (open_sh.values() if isinstance(open_sh, dict) else open_sh) if isinstance(p, dict)
     )
     riskless_only_mode, paused_sleeves = _load_riskless_governance_flags()
+    strict_pure_rl_mode = False
+    _strat_cfg_p = PIPELINE_ROOT / "config" / "polymarket_strategy_and_risk.json"
+    if _strat_cfg_p.exists():
+        try:
+            strict_pure_rl_mode = bool(
+                ((json.loads(_strat_cfg_p.read_text(encoding="utf-8")).get("riskless_boxes")) or {}).get(
+                    "strict_pure_riskless_mode", False
+                )
+            )
+        except Exception:
+            strict_pure_rl_mode = False
+    mg_upper = {str(k).upper() for k in mg_discovered.keys()}
     directional_sleeves = {"SLEEVE_1_CORE_302", "SLEEVE_1_SUBHOURLY_15M"}
 
     live_map = ledger.get("live_by_sleeve") or ledger.get("by_sleeve_live") or {}
@@ -706,6 +892,7 @@ def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = 
     rows: List[Dict[str, Any]] = []
     grad8_live_ready: List[str] = []
     near_grad8_sleeves: List[Dict[str, Any]] = []
+    held_shadow_pure_sleeves: List[str] = []
     pure_rl_trades, pure_rl_wins, pure_rl_losses, pure_rl_pnl = 0, 0, 0, 0.0
 
     for sl in all_sleeves:
@@ -725,10 +912,28 @@ def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = 
 
         is_paused_rl = sl.upper() in paused_sleeves
         is_dir_sl = sl in directional_sleeves
-        is_grad8 = (sh_w >= 8 and sh_l == 0 and sh_pnl >= 0.0 and not is_paused_rl and lv_l == 0 and not is_dir_sl)
+        is_held_pure_rl = (
+            strict_pure_rl_mode
+            and not is_dir_sl
+            and not is_paused_rl
+            and sl.upper() not in PURE_RISKLESS_ALLOWED_LIVE_SLEEVES
+            and sl.upper() not in mg_upper
+            and not sl.upper().startswith("MG_RISKLESS")
+        )
+        is_grad8 = (
+            sh_w >= 8
+            and sh_l == 0
+            and sh_pnl >= 0.0
+            and not is_paused_rl
+            and not is_held_pure_rl
+            and lv_l == 0
+            and not is_dir_sl
+        )
         if is_grad8:
             grad8_live_ready.append(sl)
-        elif 5 <= sh_w < 8 and sh_l == 0 and sh_pnl > 0.0 and not is_paused_rl and not is_dir_sl:
+        elif is_held_pure_rl and sh_w >= 5 and sh_l == 0 and sh_pnl > 0.0:
+            held_shadow_pure_sleeves.append(sl)
+        elif 5 <= sh_w < 8 and sh_l == 0 and sh_pnl > 0.0 and not is_paused_rl and not is_held_pure_rl and not is_dir_sl:
             near_grad8_sleeves.append({"sleeve": sl, "wins": sh_w, "needed_for_grad8": 8 - sh_w, "shadow_pnl_t1000_usd": round(sh_pnl, 2)})
 
         if not is_dir_sl and not is_paused_rl and lv_n > 0:
@@ -743,6 +948,8 @@ def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = 
             status_tag = "PAUSED_FEE_SPORTS_LEGGING_GUARD"
         elif is_grad8:
             status_tag = "LIVE_AUTHORIZED_GRAD8_100WR"
+        elif is_held_pure_rl and sh_l == 0 and sh_w > 0:
+            status_tag = "HELD_SHADOW_ONLY_PURE_RISKLESS_LOCK"
         elif is_dir_sl:
             status_tag = "LIVE_V542_WFO_GATED"
         elif sh_l > 0:
@@ -776,7 +983,9 @@ def build_strategy_scorecard(ledger: Dict[str, Any], data_dir: Optional[Path] = 
         "generated_at_utc": _utc_now_iso(),
         "operating_mode": "RISKLESS_PAA" if riskless_only_mode else "HYBRID_PAA",
         "riskless_only_mode": riskless_only_mode,
+        "strict_pure_riskless_mode": strict_pure_rl_mode,
         "paused_riskless_sleeves": sorted(paused_sleeves),
+        "held_shadow_only_pure_riskless_sleeves": sorted(held_shadow_pure_sleeves),
         "total_sleeves_tracked": len(rows),
         "grad8_live_authorized_sleeves": grad8_live_ready,
         "near_grad8_zero_loss_sleeves": near_grad8_sleeves,
@@ -829,6 +1038,14 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
     clob_reward_pools: List[Dict[str, Any]] = []
     negrisk_arbs: List[Dict[str, Any]] = []
     maker_anchor_slate_arbs: List[Dict[str, Any]] = []
+    _, _paused_scan_sl = _load_riskless_governance_flags()
+    _strat_scan_p = PIPELINE_ROOT / "config" / "polymarket_strategy_and_risk.json"
+    _rb_scan = (
+        (json.loads(_strat_scan_p.read_text(encoding="utf-8")).get("riskless_boxes") or {})
+        if _strat_scan_p.exists()
+        else {}
+    )
+    _sll_maker_en = bool(_rb_scan.get("enable_single_leg_maker_bond1", True))
 
     for ev in events:
         if not isinstance(ev, dict):
@@ -884,7 +1101,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                         "liquidity_usd": round(liq, 0),
                         "volume_24h_usd": round(v24, 0),
                         "zero_maker_fee": True,
-                        "authorized_live": True,
+                        "authorized_live": _sll_maker_en and ("BOND1_UMA_RESOLUTION_CARRY" not in _paused_scan_sl),
                     })
 
             # 2. Post-Clinch 0%-Fee Maker Sweeper (`MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER`)
@@ -905,7 +1122,7 @@ def scan_entire_polymarket_universe(max_events: int = 1200) -> Dict[str, Any]:
                     "rem_hours": round(rem_h, 2),
                     "liquidity_usd": round(liq, 0),
                     "volume_24h_usd": round(v24, 0),
-                    "authorized_live": True,
+                    "authorized_live": _sll_maker_en and ("MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" not in _paused_scan_sl),
                 })
 
             # 3. Intraday <= 8h unclinched carry (tracked SOLELY to log explicit Riskless-PAA rejection!)
@@ -1330,6 +1547,7 @@ def main() -> int:
     args = parser.parse_args()
 
     op_status, new_inc = check_operational_status(auto_recover_safe=not args.no_auto_recover)
+    sync_machine_gun_telemetry_snapshot()
     ledger = reconcile_authoritative_ledger(live_rpc_check=True)
     scorecard = build_strategy_scorecard(ledger)
     opp_ranking = scan_entire_polymarket_universe(max_events=args.max_events)

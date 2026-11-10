@@ -34,7 +34,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 CORE_LIVE_DOMINANCE_ASSETS: Tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")
-EXPANSION_DOMINANCE_ASSETS: Tuple[str, ...] = ("BNB", "DOGE", "HYPE")
+EXPANSION_DOMINANCE_ASSETS: Tuple[str, ...] = ("BNB", "DOGE", "HYPE", "ZEC")
 DOMINANCE_ASSETS: Tuple[str, ...] = CORE_LIVE_DOMINANCE_ASSETS + EXPANSION_DOMINANCE_ASSETS
 
 DOMINANCE_SERIES_SLUGS: Dict[str, Dict[str, str]] = {
@@ -45,6 +45,7 @@ DOMINANCE_SERIES_SLUGS: Dict[str, Dict[str, str]] = {
     "BNB": {"4h": "bnb-up-or-down-4h", "15m": "bnb-up-or-down-15m", "5m": "bnb-up-or-down-5m"},
     "DOGE": {"4h": "doge-up-or-down-4h", "15m": "doge-up-or-down-15m", "5m": "doge-up-or-down-5m"},
     "HYPE": {"4h": "hype-up-or-down-4h", "15m": "hype-up-or-down-15m", "5m": "hype-up-or-down-5m"},
+    "ZEC": {"4h": "zec-up-or-down-4h", "15m": "zec-up-or-down-15m", "5m": "zec-up-or-down-5m"},
 }
 
 METAL_DOMINANCE_ASSETS: Tuple[str, ...] = ("XAU", "XAG")
@@ -61,6 +62,7 @@ EMPIRICAL_BOX_ASSET_CAPS_USD: Dict[str, float] = {
     "BNB": 22.0,
     "HYPE": 15.0,
     "DOGE": 15.0,
+    "ZEC": 10.0,
     "XAU": 22.0,
     "XAG": 22.0,
 }
@@ -73,9 +75,36 @@ MIN_CORRIDOR_BPS_BY_ASSET: Dict[str, float] = {
     "BNB": 5.0,
     "DOGE": 5.0,
     "HYPE": 5.0,
+    "ZEC": 6.0,
     "XAU": 4.0,
     "XAG": 4.0,
 }
+
+
+def build_deterministic_updown_event_slug(asset: str, horizon: str, window_end_ts: float) -> Optional[str]:
+    """
+    Constructs Polymarket's deterministic Chainlink Up/Down event slug
+    `{coin}-updown-{5m|15m|4h}-{window_start_unix}` so newly rolled `4h`/`15m`/`5m`
+    candles (including `BNB`, `DOGE`, `HYPE`, `ZEC`) are discovered even when Gamma's
+    `series_slug` index lags at boundary rollovers.
+    """
+    dur = HORIZON_TO_DURATION_SEC.get(str(horizon or "").strip().lower())
+    sym = str(asset or "").strip().upper()
+    prefix_map = {
+        "BTC": "btc",
+        "ETH": "eth",
+        "SOL": "sol",
+        "XRP": "xrp",
+        "BNB": "bnb",
+        "DOGE": "doge",
+        "HYPE": "hype",
+        "ZEC": "zec",
+    }
+    pfx = prefix_map.get(sym)
+    if not dur or not pfx or float(window_end_ts or 0.0) <= dur:
+        return None
+    start_unix = int(round(float(window_end_ts) - float(dur)))
+    return f"{pfx}-updown-{str(horizon).strip().lower()}-{start_unix}"
 
 POLYMARKET_CRYPTO_PRICE_URL = "https://polymarket.com/api/crypto/crypto-price"
 GAMMA_EVENTS_URL = "https://gamma-api.polymarket.com/events"

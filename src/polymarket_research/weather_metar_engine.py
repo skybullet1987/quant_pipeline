@@ -107,6 +107,23 @@ HKO_RHRREAD_URL = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?d
 _T_REMARK_RE = re.compile(r"(?:^|\s)T([01])(\d{3})(?:\d{4}|////)(?=\s|$)")
 _BODY_TEMP_RE = re.compile(r"(?:^|\s)(M?\d{2})/(?:M?\d{2}|//)(?=\s|$)")
 _METAR_TS_RE = re.compile(r"\b(\d{2})(\d{2})(\d{2})Z\b")
+_SYNOPTIC_6H_MAX_RE = re.compile(r"(?:^|\s)1([01])(\d{3})(?=\s|$)")
+_SYNOPTIC_6H_MIN_RE = re.compile(r"(?:^|\s)2([01])(\d{3})(?=\s|$)")
+_SYNOPTIC_24H_EXT_RE = re.compile(r"(?:^|\s)4([01])(\d{3})([01])(\d{3})(?=\s|$)")
+_ASOS_AO_RE = re.compile(r"\bAO[12]\b")
+
+
+def _build_us_asos_valid_tenths_int() -> frozenset[int]:
+    """Exact integer tenths-of-°C lattice reachable by FMH-1 Table 12-2 whole-°F -> 0.1°C ASOS conversion."""
+    out: set[int] = set()
+    for f_int in range(-130, 165):
+        raw_t = ((f_int - 32) * 50.0) / 9.0
+        t_int = int(math.floor(raw_t + 0.5 + 1e-12)) if raw_t >= 0.0 else -int(math.floor(-raw_t + 0.5 + 1e-12))
+        out.add(t_int)
+    return frozenset(out)
+
+
+US_ASOS_VALID_TENTHS_INT: frozenset[int] = _build_us_asos_valid_tenths_int()
 _CONVECTIVE_WX_RE = re.compile(
     r"(?:^|\s)(?:[-+]|VC)?(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)(?:TS|SH|RA|DZ|SN|SG|PL|GR|GS)*\b"
     r"|(?:FEW|SCT|BKN|OVC)\d{3}(?:CB|TCU)\b"
@@ -326,6 +343,7 @@ class WeatherBucket:
     neg_risk: Optional[bool] = None  # Gamma `negRisk`; None = unknown (blocks LIVE C1 emits)
     rewards_min_size: float = 0.0
     rewards_max_spread: float = 0.0
+    question_index: Optional[int] = None
     def contains_rounded(self, rounded_int: int) -> bool:
         return self.low_bound <= rounded_int <= self.high_bound
 
@@ -359,6 +377,11 @@ class MetarObservation:
     raw_line: str
     has_convective_precip: bool = False
     is_corrected: bool = False
+    is_anomalous: bool = False
+    rmk_6h_max_c: Optional[float] = None
+    rmk_6h_min_c: Optional[float] = None
+    rmk_24h_max_c: Optional[float] = None
+    rmk_24h_min_c: Optional[float] = None
 
 
 def round_half_up_polymarket(val: float) -> int:
@@ -462,27 +485,53 @@ def parse_metar_line(
             return None
         utc_dt = min(candidates, key=lambda c: abs((c - ref_utc).total_seconds()))
 
-    # 1. Check 8-digit T-remark (only in RMK section if RMK is present)
-    rmk_part = upper.split("RMK", 1)[1] if "RMK" in upper else upper
+    # 1. Parse body integer °C (before RMK) + 8-digit T-remark (in RMK section if RMK is present)
+    has_rmk = "RMK" in upper
+    body_part, rmk_part = upper.split("RMK", 1) if has_rmk else (upper, upper)
+    m_body = _BODY_TEMP_RE.search(body_part)
+    body_temp_c: Optional[float] = None
+    if m_body:
+        grp = m_body.group(1)
+        body_temp_c = -float(int(grp[1:])) if grp.startswith("M") else float(int(grp))
+
+    icao_u = icao.upper()
+    is_anomalous = False
     m_rem = _T_REMARK_RE.search(rmk_part)
     if m_rem:
-        sign = -1.0 if m_rem.group(1) == "1" else 1.0
-        temp_c = sign * (int(m_rem.group(2)) / 10.0)
+        tenths_signed = (-1 if m_rem.group(1) == "1" else 1) * int(m_rem.group(2))
+        temp_c = tenths_signed / 10.0
         has_t = True
+        if len(icao_u) == 4 and icao_u.startswith("K") and tenths_signed not in US_ASOS_VALID_TENTHS_INT:
+            is_anomalous = True
+        if body_temp_c is not None and abs(temp_c - body_temp_c) > 0.65:
+            is_anomalous = True
     else:
-        # 2. Fallback to body temperature group before RMK
-        body_part = upper.split("RMK", 1)[0]
-        m_body = _BODY_TEMP_RE.search(body_part)
-        if not m_body:
+        if body_temp_c is None:
             return None
-        grp = m_body.group(1)
-        temp_c = -float(int(grp[1:])) if grp.startswith("M") else float(int(grp))
+        temp_c = body_temp_c
         has_t = False
+
+    rmk_6h_max_c: Optional[float] = None
+    rmk_6h_min_c: Optional[float] = None
+    rmk_24h_max_c: Optional[float] = None
+    rmk_24h_min_c: Optional[float] = None
+    if has_rmk and _ASOS_AO_RE.search(rmk_part):
+        if utc_dt.hour in (23, 0, 5, 6, 11, 12, 17, 18):
+            m_6x = _SYNOPTIC_6H_MAX_RE.search(rmk_part)
+            if m_6x:
+                rmk_6h_max_c = (-1.0 if m_6x.group(1) == "1" else 1.0) * (int(m_6x.group(2)) / 10.0)
+            m_6n = _SYNOPTIC_6H_MIN_RE.search(rmk_part)
+            if m_6n:
+                rmk_6h_min_c = (-1.0 if m_6n.group(1) == "1" else 1.0) * (int(m_6n.group(2)) / 10.0)
+        m_24 = _SYNOPTIC_24H_EXT_RE.search(rmk_part)
+        if m_24:
+            rmk_24h_max_c = (-1.0 if m_24.group(1) == "1" else 1.0) * (int(m_24.group(2)) / 10.0)
+            rmk_24h_min_c = (-1.0 if m_24.group(3) == "1" else 1.0) * (int(m_24.group(4)) / 10.0)
 
     local_dt = utc_dt.astimezone(ZoneInfo(tz_name))
     has_precip = bool(_CONVECTIVE_WX_RE.search(upper))
     return MetarObservation(
-        icao=icao.upper(),
+        icao=icao_u,
         utc_dt=utc_dt,
         local_dt=local_dt,
         temp_c=temp_c,
@@ -490,7 +539,52 @@ def parse_metar_line(
         raw_line=line,
         has_convective_precip=has_precip,
         is_corrected=is_cor,
+        is_anomalous=is_anomalous,
+        rmk_6h_max_c=rmk_6h_max_c,
+        rmk_6h_min_c=rmk_6h_min_c,
+        rmk_24h_max_c=rmk_24h_max_c,
+        rmk_24h_min_c=rmk_24h_min_c,
     )
+
+
+def has_metar_oracle_contradiction(obs_seq: List[MetarObservation]) -> bool:
+    """
+    Detects physically invalid US ASOS T-remarks (e.g. KMIA T02240211 = 22.4°C not in FMH-1 °F->0.1°C table),
+    body-vs-T-group mismatches (>0.65°C), or synoptic 6h (`1sTTT`/`2sTTT`) / 24h (`4sTTTsTTT`) summary remarks
+    that contradict an intraday hourly METAR inside the covered window (e.g. `20233` = 23.3°C > `T0224` = 22.4°C).
+    """
+    if not obs_seq:
+        return False
+    for o in obs_seq:
+        if bool(getattr(o, "is_anomalous", False)):
+            return True
+    for o_syn in obs_seq:
+        t_syn = getattr(o_syn, "utc_dt", None)
+        if t_syn is None:
+            continue
+        c6_max = getattr(o_syn, "rmk_6h_max_c", None)
+        c6_min = getattr(o_syn, "rmk_6h_min_c", None)
+        c24_max = getattr(o_syn, "rmk_24h_max_c", None)
+        c24_min = getattr(o_syn, "rmk_24h_min_c", None)
+        if c6_max is None and c6_min is None and c24_max is None and c24_min is None:
+            continue
+        for o_prev in obs_seq:
+            t_prev = getattr(o_prev, "utc_dt", None)
+            tc_prev = getattr(o_prev, "temp_c", None)
+            if t_prev is None or tc_prev is None:
+                continue
+            dt_s = (t_syn - t_prev).total_seconds()
+            if 0.0 <= dt_s <= 21300.0:
+                if c6_max is not None and float(tc_prev) > float(c6_max) + 0.15:
+                    return True
+                if c6_min is not None and float(tc_prev) < float(c6_min) - 0.15:
+                    return True
+            if 0.0 <= dt_s <= 85800.0:
+                if c24_max is not None and float(tc_prev) > float(c24_max) + 0.15:
+                    return True
+                if c24_min is not None and float(tc_prev) < float(c24_min) - 0.15:
+                    return True
+    return False
 
 
 def parse_obs_date_from_event(title: str, desc: str, end_date_iso: str) -> Optional[date]:
@@ -629,6 +723,13 @@ def parse_weather_event(
         b_fee_exp = float(m_fee_sched.get("exponent") or 1.0)
         raw_nr = m.get("negRisk") if m.get("negRisk") is not None else ev.get("negRisk")
         b_neg_risk = bool(raw_nr) if raw_nr is not None else None
+        qid_raw = str(m.get("questionID") or "").strip()
+        b_q_idx: Optional[int] = None
+        if qid_raw.startswith("0x") and len(qid_raw) == 66:
+            try:
+                b_q_idx = int(qid_raw[-2:], 16)
+            except ValueError:
+                b_q_idx = None
 
         buckets.append(
             WeatherBucket(
@@ -647,6 +748,7 @@ def parse_weather_event(
                 neg_risk=b_neg_risk,
                 rewards_min_size=float(m.get("rewardsMinSize") or 0.0),
                 rewards_max_spread=float(m.get("rewardsMaxSpread") or 0.0),
+                question_index=b_q_idx,
             )
         )
 
@@ -877,6 +979,8 @@ def compute_weather_probabilities(
     valid_obs = [o for o in metars_so_far if o.utc_dt <= eval_utc and o.local_dt.date() == spec.obs_date]
     has_obs = len(valid_obs) > 0
     latest_obs = valid_obs[-1] if has_obs else None
+    has_corrected_obs = any(bool(getattr(o, "is_corrected", False)) for o in valid_obs)
+    has_oracle_contradiction = has_metar_oracle_contradiction(valid_obs)
 
     if has_obs:
         if spec.metric == "HIGH":
@@ -1062,16 +1166,23 @@ def compute_weather_probabilities(
                 and p_locked_bucket >= 0.93
             )
             if (
-                past_trough_late
-                and p_locked_bucket >= 0.90
-                and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0)
-            ) or morning_trough_safe:
+                (
+                    past_trough_late
+                    and p_locked_bucket >= 0.90
+                    and (eval_local.date() > spec.obs_date or warming_cushion_c >= 1.0)
+                )
+                or morning_trough_safe
+            ):
                 is_solar_lock_window = True
+        if has_corrected_obs or has_oracle_contradiction:
+            is_solar_lock_window = False
 
     return {
         "probs": probs,
         "has_obs": has_obs,
         "obs_count": len(valid_obs),
+        "has_corrected_obs": has_corrected_obs,
+        "has_oracle_contradiction": has_oracle_contradiction,
         "latest_temp_c": latest_obs.temp_c if latest_obs else None,
         "running_ext_c": running_ext_c,
         "running_ext_int": running_ext_int,

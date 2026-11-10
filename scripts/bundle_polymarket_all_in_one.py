@@ -44,7 +44,6 @@ MODULES = [
 ]
 
 _FUTURE_RE = re.compile(r"^(from\s+__future__\s+import\s+[^\n]+)$", flags=re.MULTILINE)
-_KEEP_COMMENT_RE = re.compile(r"Lifted|^#!")
 
 
 def transform_module(rel_path: str, code: str) -> str:
@@ -57,7 +56,7 @@ def transform_module(rel_path: str, code: str) -> str:
         elif rel_path.endswith(".service"):
             code = "\n".join(ln for ln in code.splitlines() if ln.strip() and not ln.lstrip().startswith("#"))
         return f"{var_name}=r'''\n{code.strip()}\n'''\n"
-    clean_code = _FUTURE_RE.sub(r"# \1  # (Lifted to top of consolidated bundle)", code)
+    clean_code = _FUTURE_RE.sub("", code)
     lines = clean_code.splitlines(keepends=True)
     drop_lines = set()
     replace_pass: dict[int, str] = {}
@@ -113,11 +112,9 @@ def transform_module(rel_path: str, code: str) -> str:
             idx = tok.start[0] - 1
             if idx in drop_lines or idx in replace_pass:
                 continue
-            ln = lines[idx]
-            if ln.lstrip().startswith("#"):
-                if not _KEEP_COMMENT_RE.search(ln):
-                    drop_lines.add(idx)
-            elif not _KEEP_COMMENT_RE.search(tok.string):
+            if lines[idx].lstrip().startswith("#"):
+                drop_lines.add(idx)
+            else:
                 inline_strip[idx] = tok.start[1]
     out_lines = []
     for i, ln in enumerate(lines):
@@ -129,7 +126,7 @@ def transform_module(rel_path: str, code: str) -> str:
         if i in inline_strip:
             ln = ln[: inline_strip[i]].rstrip() + "\n"
         out_lines.append(ln)
-    compacted = re.sub(r"\n(?:[ \t]*\n)+", "\n", "".join(out_lines))
+    compacted = re.sub(r"\n(?:[ \t]*\n)+", "\n", "".join(out_lines)).lstrip("\r\n")
     nl_rows = {
         tok.start[0] - 1
         for tok in tokenize.generate_tokens(io.StringIO(compacted).readline)
@@ -147,6 +144,21 @@ def transform_module(rel_path: str, code: str) -> str:
         compacted = "".join(joined)
     try:
         t_ann = ast.parse(compacted)
+        cls_ann_ids: set[int] = set()
+        def _collect_cls_anns(stmts):
+            for st_c in stmts:
+                if isinstance(st_c, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if isinstance(st_c, ast.AnnAssign):
+                    cls_ann_ids.add(id(st_c))
+                for ch_c in ast.iter_child_nodes(st_c):
+                    if not isinstance(ch_c, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                        if isinstance(ch_c, ast.AnnAssign):
+                            cls_ann_ids.add(id(ch_c))
+                        _collect_cls_anns(list(ast.iter_child_nodes(ch_c)))
+        for cls_n in ast.walk(t_ann):
+            if isinstance(cls_n, ast.ClassDef):
+                _collect_cls_anns(cls_n.body)
         ann_spans: dict[int, list[tuple[int, int]]] = {}
         c_b_lines = [ln.encode("utf-8") for ln in compacted.splitlines(keepends=True)]
         for nd in ast.walk(t_ann):
@@ -171,6 +183,7 @@ def transform_module(rel_path: str, code: str) -> str:
                             ann_spans.setdefault(r_i, []).append((p_col, ag.annotation.end_col_offset))
             elif (
                 isinstance(nd, ast.AnnAssign)
+                and id(nd) not in cls_ann_ids
                 and nd.value is not None
                 and isinstance(nd.target, (ast.Name, ast.Attribute))
                 and nd.lineno == nd.annotation.lineno == nd.annotation.end_lineno
@@ -628,21 +641,79 @@ def transform_module(rel_path: str, code: str) -> str:
                 out_n.append(cur_n)
                 stack.extend(ast.iter_child_nodes(cur_n))
             return out_n, nested_defs
+        def _safe_locals_pinned(fn_root):
+            par = {}
+            for p_n in ast.walk(fn_root):
+                for ch_n in ast.iter_child_nodes(p_n):
+                    par[id(ch_n)] = p_n
+            pinned = set()
+            for nd_l in ast.walk(fn_root):
+                if isinstance(nd_l, ast.Name) and nd_l.id == "locals":
+                    if isinstance(nd_l.ctx, ast.Store):
+                        return None
+                    p1 = par.get(id(nd_l))
+                    if not (isinstance(p1, ast.Call) and p1.func is nd_l and not p1.args and not p1.keywords):
+                        return None
+                    p2 = par.get(id(p1))
+                    if (
+                        isinstance(p2, ast.Compare)
+                        and len(p2.ops) == 1
+                        and isinstance(p2.ops[0], (ast.In, ast.NotIn))
+                        and len(p2.comparators) == 1
+                        and p2.comparators[0] is p1
+                        and isinstance(p2.left, ast.Constant)
+                        and isinstance(p2.left.value, str)
+                    ):
+                        pinned.add(p2.left.value)
+                    elif isinstance(p2, ast.Attribute) and p2.value is p1 and p2.attr == "get":
+                        p3 = par.get(id(p2))
+                        if (
+                            isinstance(p3, ast.Call)
+                            and p3.func is p2
+                            and 1 <= len(p3.args) <= 2
+                            and not p3.keywords
+                            and isinstance(p3.args[0], ast.Constant)
+                            and isinstance(p3.args[0].value, str)
+                        ):
+                            pinned.add(p3.args[0].value)
+                        else:
+                            return None
+                    else:
+                        return None
+            return pinned
+        anc_reserved: dict[int, set[str]] = {}
+        anc_renamed_old: dict[int, set[str]] = {}
         for fn_nd in ast.walk(t_lv):
             if not isinstance(fn_nd, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             full_nodes = [x for st_fn in fn_nd.body for x in ast.walk(st_fn)]
-            if any(isinstance(x, (ast.Global, ast.Nonlocal, ast.ClassDef)) for x in full_nodes):
+            if any(isinstance(x, ast.ClassDef) for x in full_nodes):
                 continue
             all_names = {x.id for x in full_nodes if isinstance(x, ast.Name)}
-            if all_names & {"locals", "vars", "eval", "exec", "dir"}:
+            if all_names & {"vars", "eval", "exec", "dir"}:
                 continue
+            locals_pinned: set[str] = set()
+            if "locals" in all_names:
+                lp_res = _safe_locals_pinned(fn_nd)
+                if lp_res is None:
+                    continue
+                locals_pinned = lp_res
+            anc_res = anc_reserved.get(id(fn_nd), set())
+            anc_old = anc_renamed_old.get(id(fn_nd), set())
+            global_nonlocal_ids = {
+                nm for x in full_nodes if isinstance(x, (ast.Global, ast.Nonlocal)) for nm in x.names
+            }
             sub_nodes, nested_defs = _shallow_walk(fn_nd.body)
             nested_scopes = [x for x in sub_nodes if isinstance(x, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))]
             nested_eh_names = {
                 y.name for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.ExceptHandler) and y.name
             }
-            eh_nodes = [x for x in sub_nodes if isinstance(x, ast.ExceptHandler) and x.name and len(x.name) >= 2]
+            nested_subdef_names = {
+                y.name
+                for ndf in nested_defs
+                for y in ast.walk(ndf)
+                if isinstance(y, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and y is not ndf
+            }
             all_arg_names = {x.arg for x in full_nodes if isinstance(x, ast.arg)}
             comp_bound_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
@@ -650,16 +721,50 @@ def transform_module(rel_path: str, code: str) -> str:
                 | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name) and isinstance(y.ctx, ast.Store)}
                 | {y.arg for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.arg)}
                 | nested_eh_names
+                | nested_subdef_names
+                | global_nonlocal_ids
+                | locals_pinned
+                | anc_old
             )
+            p_names = {a.arg for a in (fn_nd.args.posonlyargs + fn_nd.args.args + fn_nd.args.kwonlyargs + ([fn_nd.args.vararg] if fn_nd.args.vararg else []) + ([fn_nd.args.kwarg] if fn_nd.args.kwarg else []))}
+            imp_names = {al.asname or al.name.split(".")[0] for x in full_nodes if isinstance(x, (ast.Import, ast.ImportFrom)) for al in x.names}
+            store_names = {x.id for x in full_nodes if isinstance(x, ast.Name) and isinstance(x.ctx, ast.Store)}
+            eh_nodes = []
+            for x in sub_nodes:
+                if isinstance(x, ast.ExceptHandler) and x.name:
+                    eh_used = {y.id for st_e in x.body for y in ast.walk(st_e) if isinstance(y, ast.Name)}
+                    if (
+                        x.name not in eh_used
+                        and x.name not in store_names
+                        and x.name not in p_names
+                        and x.name not in imp_names
+                        and x.name not in comp_bound_ids
+                        and x.type is not None
+                        and x.type.end_lineno == x.lineno
+                        and x.type.end_col_offset is not None
+                    ):
+                        r_eu = x.lineno - 1
+                        lb_eu = lv_b[r_eu]
+                        c_start = x.type.end_col_offset
+                        c_eu = lb_eu.find(b":", c_start)
+                        if c_eu > c_start:
+                            m_eu = re.match(
+                                rb"\s*\bas\s+" + re.escape(x.name.encode("utf-8")) + rb"(?=\s*:)",
+                                lb_eu[c_start:c_eu + 1],
+                            )
+                            if m_eu:
+                                lv_edits.setdefault(r_eu, []).append((c_start + m_eu.start(), c_start + m_eu.end(), b""))
+                                continue
+                    if len(x.name) >= 2:
+                        eh_nodes.append(x)
             nested_ids = (
                 {y.id for ns in nested_scopes for y in ast.walk(ns) if isinstance(y, ast.Name)}
                 | {y.id for ndf in nested_defs for y in ast.walk(ndf) if isinstance(y, ast.Name)}
                 | comp_bound_ids
                 | all_arg_names
             )
-            p_names = {a.arg for a in (fn_nd.args.posonlyargs + fn_nd.args.args + fn_nd.args.kwonlyargs + ([fn_nd.args.vararg] if fn_nd.args.vararg else []) + ([fn_nd.args.kwarg] if fn_nd.args.kwarg else []))}
-            imp_names = {al.asname or al.name.split(".")[0] for x in full_nodes if isinstance(x, (ast.Import, ast.ImportFrom)) for al in x.names}
-            used_all = all_names | p_names | imp_names | nested_ids | {eh.name for eh in eh_nodes} | {ndf.name for ndf in nested_defs}
+            all_def_names = {x.name for x in full_nodes if isinstance(x, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}
+            used_all = all_names | p_names | imp_names | nested_ids | {eh.name for eh in eh_nodes} | {ndf.name for ndf in nested_defs} | all_def_names | anc_res
             stored = {}
             self_arg_nd = (
                 fn_nd.args.args[0]
@@ -733,6 +838,13 @@ def transform_module(rel_path: str, code: str) -> str:
                         used_all.add(short_nm)
                         ren_map[old_nm] = short_nm.encode("ascii")
                         break
+            if ren_map:
+                new_shorts = {v.decode("ascii") for v in ren_map.values()}
+                new_olds = set(ren_map.keys())
+                for sub_fn in full_nodes:
+                    if isinstance(sub_fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        anc_reserved.setdefault(id(sub_fn), set()).update(new_shorts)
+                        anc_renamed_old.setdefault(id(sub_fn), set()).update(new_olds)
             if self_arg_nd is not None and self_arg_nd.arg in ren_map and self_arg_nd.lineno == self_arg_nd.end_lineno and self_arg_nd.end_col_offset is not None:
                 r_sa = self_arg_nd.lineno - 1
                 s_b = self_arg_nd.arg.encode("utf-8")
@@ -777,7 +889,7 @@ def transform_module(rel_path: str, code: str) -> str:
                 if sum(1 for z in ast.walk(ns) if isinstance(z, (ast.Lambda, ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp))) != 1:
                     continue
                 ns_ids = {id(z) for z in ast.walk(ns)}
-                outer_names = {x.id for x in sub_nodes if isinstance(x, ast.Name) and id(x) not in ns_ids} | p_names | imp_names | set(ren_map.keys())
+                outer_names = {x.id for x in sub_nodes if isinstance(x, ast.Name) and id(x) not in ns_ids} | p_names | imp_names | set(ren_map.keys()) | anc_old
                 iter0_names = {z.id for z in ast.walk(ns.generators[0].iter) if isinstance(z, ast.Name)} if hasattr(ns, "generators") and ns.generators else set()
                 ns_bound = {z.id for z in ast.walk(ns) if isinstance(z, ast.Name) and isinstance(z.ctx, ast.Store)}
                 lam_args = [a for a in (ns.args.posonlyargs + ns.args.args) if len(a.arg) >= 2] if isinstance(ns, ast.Lambda) and not ns.args.kwonlyargs and not ns.args.vararg and not ns.args.kwarg and not ns.args.defaults else []
@@ -817,7 +929,29 @@ def transform_module(rel_path: str, code: str) -> str:
                 lv_b[r_lv] = lb_lv
             cand_lv = b"".join(lv_b).decode("utf-8")
             compile(cand_lv, rel_path, "exec")
+            import symtable as _symtable
+            def _verify_symtable_invariance(sb, sa) -> None:
+                if sb.get_type() != sa.get_type() or len(sb.get_children()) != len(sa.get_children()):
+                    raise RuntimeError(f"Bundle symtable tree mismatch in {rel_path}:{sb.get_name()}")
+                if isinstance(sb, _symtable.Function):
+                    if (
+                        len(sb.get_frees()) != len(sa.get_frees())
+                        or len(sb.get_parameters()) != len(sa.get_parameters())
+                        or set(sb.get_globals()) != set(sa.get_globals())
+                    ):
+                        raise RuntimeError(
+                            f"Bundle symtable invariance failed in {rel_path}:{sb.get_name()} "
+                            f"(frees {sb.get_frees()} -> {sa.get_frees()}, globals {sb.get_globals()} -> {sa.get_globals()})"
+                        )
+                for cb, ca in zip(sb.get_children(), sa.get_children()):
+                    _verify_symtable_invariance(cb, ca)
+            _verify_symtable_invariance(
+                _symtable.symtable(compacted, rel_path, "exec"),
+                _symtable.symtable(cand_lv, rel_path, "exec"),
+            )
             compacted = cand_lv
+    except RuntimeError:
+        raise
     except Exception:
         pass
     try:

@@ -36,6 +36,7 @@ if str(PIPELINE_ROOT) not in sys.path:
 from scripts.paa_autonomous_controller import (
     build_strategy_scorecard,
     reconcile_authoritative_ledger,
+    sync_machine_gun_telemetry_snapshot,
 )
 from scripts.weekly_wfo_governance import evaluate_ledger_file
 from src.paa_os.accountant import PAAAccountant
@@ -115,9 +116,11 @@ def cmd_scan_cycle(args: argparse.Namespace) -> int:
         print(json.dumps({"status": "PAUSED_BY_MASTER_STOP"}, indent=2))
         return 0
     budget = BudgetManager(db, autonomy_cfg=cfg)
+    sync_machine_gun_telemetry_snapshot(PIPELINE_ROOT / "data" / "polymarket")
     researcher = PAAResearcher(db, budget, autonomy_cfg=cfg)
     res = researcher.run_research_cycle(max_events=args.max_events)
-    fin = reconcile_authoritative_ledger(live_rpc_check=False)
+    fin = reconcile_authoritative_ledger(live_rpc_check=not getattr(args, "offline", False))
+    _atomic_write_json(PIPELINE_ROOT / "data" / "polymarket" / "paa" / "authoritative_financial_ledger.json", fin)
     scorecard = build_strategy_scorecard(fin)
     _atomic_write_json(PIPELINE_ROOT / "data" / "polymarket" / "paa" / "strategy_inventory_and_scorecard.json", scorecard)
     print(json.dumps({"status": "OK", "research": res, "sleeves_tracked": scorecard["total_sleeves_tracked"]}, indent=2, default=str))

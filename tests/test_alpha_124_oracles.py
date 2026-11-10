@@ -2007,8 +2007,8 @@ def test_riskless_expansion_7coins_b3_w3no_pyth_and_maker_anchor(tmp_path, monke
         evaluate_weather_event_slate,
     )
 
-    # 1. 7-coin Dominance catalog (BNB, DOGE, HYPE) + 5.0 bps expansion corridor guard
-    assert set(DOMINANCE_ASSETS) == {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE"}
+    # 1. 8-coin Dominance catalog (BNB, DOGE, HYPE, ZEC) + expansion corridor guard
+    assert set(DOMINANCE_ASSETS) == {"BTC", "ETH", "SOL", "XRP", "BNB", "DOGE", "HYPE", "ZEC"}
     assert len(ZERO_FEE_PYTH_DAILY_SERIES) == 8
     specs_exp = {}
     for sym, slug_p, stream in (
@@ -2438,7 +2438,8 @@ def test_multi_vertical_zero_fee_expansion_sleeves(tmp_path: Path, monkeypatch) 
     nr_ev["markets"][0]["outcomePrices"] = '["1", "0"]'
     assert parse_zero_fee_negrisk_slate(nr_ev, "elon-tweets-48h") is None
 
-    # 5. B4_TOUCHED_BARRIER_WICK_LOCK finalized-1m sweep in Alpha124ShadowDaemon
+    # 5. B4_TOUCHED_BARRIER_WICK_LOCK finalized-1m sweep in Alpha124ShadowDaemon (explicitly unquarantined for legacy unit test)
+    monkeypatch.setenv("PM_UNQUARANTINE_B4_WICK_LOCK", "1")
     monkeypatch.setattr(a124, "STATE_FILE", tmp_path / "b4_st.json")
     monkeypatch.setattr(a124, "LEDGER_FILE", tmp_path / "b4_ldg.jsonl")
     monkeypatch.setattr(a124, "OPPS_FILE", tmp_path / "b4_opps.json")

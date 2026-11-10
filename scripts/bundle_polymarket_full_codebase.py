@@ -50,8 +50,14 @@ CORE_V393_MODULES: List[Tuple[str, str]] = [
     ("src/polymarket_research/holistic_strategy_governance.py", "v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine"),
     ("src/polymarket_research/polymarket_live_harvester.py", "v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor"),
     ("src/polymarket_research/polymarket_live_executor.py", "CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer"),
-    ("src/polymarket_research/polymarket_ws_streams.py", "Sub-ms CLOB Market & Authenticated User L2 WebSocket Trackers (Monotonic Order & Maker-Leg Fill Cache)"),
+    ("src/polymarket_research/riskless_machine_gun_engine.py", "v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)"),
+    ("src/polymarket_research/riskless_protocol_v2_expansion.py", "v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)"),
+    ("src/polymarket_research/polymarket_ws_streams.py", "Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers"),
+    ("src/polymarket_research/polymarket_direct_feeds.py", "Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers"),
     ("src/polymarket_research/latency_trace.py", "Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry"),
+    ("src/polymarket_research/economic_attribution_ledger.py", "Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine"),
+    ("src/polymarket_research/stage_c_zero_loss_velocity.py", "Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell"),
+    ("src/polymarket_research/synthetic_maker_quoter.py", "Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker"),
     ("src/polymarket_research/polymarket_terminal_recorder.py", "Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder"),
     ("src/polymarket_research/deribit_svi_surface.py", "Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine"),
     ("src/polymarket_research/polymarket_paper_trader.py", "Forward Paper Trader & Production-Parity Simulation Engine"),
@@ -92,9 +98,6 @@ ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
     ("scripts/polymarket_daily_projections.py", "Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker"),
     ("scripts/alpha124_status.py", "Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector"),
     ("scripts/polymarket_scorecard_snapshot.py", "Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot"),
-
-    # 7. ALPHA-124 & MULTI-VERTICAL ORACLE UNIT TEST SUITE
-    ("tests/test_alpha_124_oracles.py", "Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet"),
 ]
 
 EXP316_MODULES: List[Tuple[str, str]] = [
@@ -102,11 +105,20 @@ EXP316_MODULES: List[Tuple[str, str]] = [
 ]
 
 HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [
+    ("tests/test_alpha_124_oracles.py", "Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet"),
     ("tests/test_polymarket_wfo_5fixes.py", "Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation"),
     ("tests/test_zero_trust_forensic_audit.py", "Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync"),
     ("tests/test_riskless_frontier_v4.py", "Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves"),
     ("tests/test_v530_forensic_plumbing_fixes.py", "Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine"),
     ("tests/test_v531_qa_audit_fixes.py", "Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing"),
+    ("tests/test_v550_zero_loss_frontier_and_velocity.py", "Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity"),
+    ("tests/test_v560_fill_rate_and_profit_growth.py", "Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue"),
+    ("tests/test_v570_ms_velocity_and_ws_sniper.py", "Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling"),
+    ("tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py", "Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds"),
+    ("tests/test_stage_b_economic_attribution.py", "Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs"),
+    ("tests/test_stage_c_zero_loss_velocity.py", "Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell"),
+    ("tests/test_priority0_live_leak_fixes.py", "Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)"),
+    ("tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py", "Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks"),
 ]
 
 _FUTURE_RE = re.compile(r"^(from\s+__future__\s+import\s+[^\n]+)$", flags=re.MULTILINE)

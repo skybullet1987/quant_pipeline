@@ -180,7 +180,7 @@ class PAAResearcher:
                 metrics=cl_c,
                 succeeded=ok_cl,
                 verdict="PROMOTED_CANDIDATE" if ok_cl else "REJECTED_THIN_POST_CLINCH_EDGE",
-                notes="Authorized live under MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER when p_lock >= 0.999.",
+                notes="Tracked in shadow under MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER; live execution gated by strict_pure_riskless_mode.",
                 evidence_stage=EvidenceStage.SHADOW_VALIDATED.value if ok_cl else EvidenceStage.HYPOTHESIS.value,
                 epistemic_status=EpistemicStatus.OBSERVATION.value,
             )

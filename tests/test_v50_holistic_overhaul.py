@@ -232,7 +232,7 @@ def test_v51_unleashed_full_throttle_tiers_slots_and_box_velocity(tmp_path, monk
     assert lim["tier"] == "UNLEASHED_LAUNCH"
     assert h.max_concurrent_positions == 4
     assert h._effective_directional_slot_cap() == 4
-    assert h.risk_controller.min_equity_floor_usd == pytest.approx(42.0)
+    assert h.risk_controller.min_equity_floor_usd == pytest.approx(62.0)
     assert h.risk_controller.max_consecutive_losses == 4
 
     # Correlation haircut on Slot #2 same-window same-direction vs $0.00 veto on opposite-direction
@@ -1139,7 +1139,7 @@ def test_v540_option_b_z90_px82_taker_only_routing(tmp_path, monkeypatch):
 
     plh.GLOBAL_GOVERNANCE_MANAGER.maybe_reload(force=True)
     snap = plh.GLOBAL_GOVERNANCE_MANAGER.snapshot
-    assert snap["schema_version"] == "5.4.5"
+    assert snap["schema_version"] == "5.5.0"
     assert snap["riskless_boxes"]["reward_harvester_cap_usd_seed"] == pytest.approx(12.0)
     assert snap["directional"]["enable_1h_shielded_maker"] is False
     assert snap["directional"]["enable_15m_subordinate_maker"] is True

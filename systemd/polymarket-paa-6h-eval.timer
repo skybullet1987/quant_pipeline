@@ -2,8 +2,8 @@
 Description=PAA 6-Hour Candidate Evaluation & Automated QA Timer
 
 [Timer]
-OnBootSec=10min
-OnUnitActiveSec=6h
+OnStartupSec=10min
+OnCalendar=*-*-* 00/6:11:00
 AccuracySec=1min
 Persistent=true
 Unit=polymarket-paa-6h-eval.service

@@ -264,8 +264,22 @@ class PermissionGate:
 
         b_bx = baseline_cfg.get("riskless_boxes") or {}
         c_bx = candidate_cfg.get("riskless_boxes") or {}
-        if bool(c_bx.get("enable_two_leg_maker_anchor_boxes")) and not bool(b_bx.get("enable_two_leg_maker_anchor_boxes")):
-            violations.append("UNGRADUATED_LIVE_ACTIVATION: enable_two_leg_maker_anchor_boxes is forbidden unattended")
+        for lock_true_k in ("strict_pure_riskless_mode", "strict_zero_legging_pre_split_lock"):
+            if bool(b_bx.get(lock_true_k)) and not bool(c_bx.get(lock_true_k, True)):
+                violations.append(f"RISK_CONTROL_WEAKENED: riskless_boxes.{lock_true_k} cannot be disabled without explicit approval")
+        for lock_false_k in (
+            "enable_two_leg_maker_anchor_boxes",
+            "enable_single_leg_maker_bond1",
+            "enable_pre_split_overround_gun",
+            "enable_ungraduated_v3_math_live",
+            "allow_nr0_multileg_dynamic_unpause",
+            "enable_s2_twap_lock_live",
+        ):
+            if bool(c_bx.get(lock_false_k)) and not bool(b_bx.get(lock_false_k)):
+                violations.append(f"UNGRADUATED_LIVE_ACTIVATION: {lock_false_k} is forbidden unattended")
+        for bx_ceil_k in ("d1_max_box_cost_net", "cm_b3_max_walk_cap", "d1_short_tte_max_box_cost_net"):
+            if bx_ceil_k in b_bx and bx_ceil_k in c_bx and float(c_bx[bx_ceil_k]) > float(b_bx[bx_ceil_k]) + 1e-6:
+                violations.append(f"PRICE_CEILING_RAISED: riskless_boxes.{bx_ceil_k} ({c_bx[bx_ceil_k]} > {b_bx[bx_ceil_k]})")
         b_paused_rb = {str(s).strip().upper() for s in (b_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
         c_paused_rb = {str(s).strip().upper() for s in (c_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
         unpaused_rb = sorted(b_paused_rb - c_paused_rb)

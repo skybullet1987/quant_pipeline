@@ -106,6 +106,102 @@ class PAAMonitor:
         except Exception as exc:
             return False, None, f"CLOB_CONNECTIVITY_LOST:{exc}"
 
+    def _probe_gamma_market_settlement(self, market_id: str, ttl_sec: float = 300.0) -> Optional[Dict[str, Any]]:
+        """
+        Lightweight cached Gamma `/markets/{market_id}` probe used ONLY on expired active positions
+        when `check_network=True` to distinguish genuinely settled-but-unredeemed CTF tokens (`closed=True`)
+        from markets awaiting UMA Optimistic Oracle challenge/dispute resolution (`closed=False`).
+        """
+        mid = str(market_id or "").strip()
+        if not mid.isdigit():
+            return None
+        cache_p = self.paa_dir / "gamma_post_expiry_status_cache.json"
+        now_u = time.time()
+        cache_doc: Dict[str, Any] = {}
+        if cache_p.exists():
+            try:
+                raw_c = json.loads(cache_p.read_text(encoding="utf-8"))
+                if isinstance(raw_c, dict):
+                    cache_doc = raw_c
+            except Exception:
+                cache_doc = {}
+        cached_item = cache_doc.get(mid)
+        if isinstance(cached_item, dict) and (now_u - float(cached_item.get("fetched_ts", 0.0) or 0.0)) <= ttl_sec:
+            return cached_item
+        try:
+            req = urllib.request.Request(
+                f"https://gamma-api.polymarket.com/markets/{mid}",
+                headers={"User-Agent": "DominusPAAMonitor/1.0"},
+            )
+            with urllib.request.urlopen(req, timeout=4.0) as resp:
+                m_doc = json.loads(resp.read().decode("utf-8"))
+            if not isinstance(m_doc, dict):
+                return None
+            rec = {
+                "market_id": mid,
+                "closed": bool(m_doc.get("closed", False)),
+                "uma_resolution_status": str(m_doc.get("umaResolutionStatus") or "").strip().lower(),
+                "accepting_orders": bool(m_doc.get("acceptingOrders", True)),
+                "fetched_ts": round(now_u, 2),
+            }
+            cache_doc[mid] = rec
+            if len(cache_doc) > 128:
+                oldest = sorted(cache_doc.keys(), key=lambda k: float((cache_doc.get(k) or {}).get("fetched_ts", 0.0)))[:32]
+                for ok_k in oldest:
+                    cache_doc.pop(ok_k, None)
+            _atomic_write_json(cache_p, cache_doc)
+            return rec
+        except Exception:
+            return cached_item if isinstance(cached_item, dict) else None
+
+    def _ensure_paa_schedule_units_active(self) -> List[str]:
+        """
+        Ensures installed PAA systemd user timers/path units cannot silently stay disabled
+        when running against the canonical production `paa_dir` and `PAA_MASTER_STOP` is absent.
+        """
+        reenabled: List[str] = []
+        if not sys.platform.startswith("linux") or self.master_stop_file.exists():
+            return reenabled
+        try:
+            if self.paa_dir.resolve() != PAA_DIR.resolve():
+                return reenabled
+        except Exception:
+            return reenabled
+        user_unit_dir = Path.home() / ".config" / "systemd" / "user"
+        if not user_unit_dir.exists():
+            return reenabled
+        expected_units = (
+            "polymarket-paa-monitor.timer",
+            "polymarket-paa-supervisor.timer",
+            "polymarket-paa-watchdog.timer",
+            "polymarket-paa-director.timer",
+            "polymarket-paa-director-event.path",
+            "polymarket-paa-hourly-opt.timer",
+            "polymarket-paa-6h-eval.timer",
+            "polymarket-paa-daily-report.timer",
+            "polymarket-paa-weekly-review.timer",
+            "polymarket-telemetry-compactor.timer",
+            "polymarket-cross-venue-shadow-watchdog.timer",
+        )
+        for u in expected_units:
+            if not (user_unit_dir / u).exists():
+                continue
+            rc, out = _sh(["systemctl", "--user", "show", "-p", "ActiveState,SubState", "--value", u], timeout=5.0)
+            parts_st = [x.strip() for x in out.splitlines() if x.strip()]
+            act_st = parts_st[0] if len(parts_st) >= 1 else ""
+            sub_st = parts_st[1] if len(parts_st) >= 2 else ""
+            if rc != 0 or act_st != "active":
+                _sh(["systemctl", "--user", "enable", "--now", u], timeout=10.0)
+                rc2, out2 = _sh(["systemctl", "--user", "is-active", u], timeout=5.0)
+                if rc2 == 0 and out2.strip() == "active":
+                    reenabled.append(u)
+                    self.db.log_event("monitor", "PAA_SCHEDULE_UNIT_REENABLED", {"unit": u, "state": "active"})
+            elif u.endswith(".timer") and sub_st == "elapsed":
+                _sh(["systemctl", "--user", "restart", u], timeout=10.0)
+                reenabled.append(u)
+                self.db.log_event("monitor", "PAA_SCHEDULE_UNIT_REENABLED", {"unit": u, "state": "restarted_from_elapsed"})
+        return reenabled
+
     def _check_vm_resources(self) -> List[str]:
         alerts: List[str] = []
         min_disk_gb = float(self.mon_cfg.get("min_free_disk_gb", 5.0))
@@ -279,14 +375,56 @@ class PAAMonitor:
 
                 # RISKLESS PAA Sentinel 2: Stale Unredeemed Post-Expiry CTF Position Watchdog
                 max_unred_s = float(rl_mandate.get("max_unredeemed_post_expiry_sec", 2700.0))
-                stale_unredeemed = []
+                stale_unredeemed: List[str] = []
+                pending_uma_settlement: List[Dict[str, Any]] = []
                 for tid_a, p_act in (st.get("active_positions") or {}).items():
                     if not isinstance(p_act, dict):
                         continue
                     exp_u = float(p_act.get("candle_expiry_ts", 0.0) or 0.0)
                     st_a = str(p_act.get("status") or "").upper()
-                    if exp_u > 0.0 and (now_u - exp_u) > max_unred_s and "DISPUTE" not in st_a:
-                        stale_unredeemed.append(tid_a)
+                    uma_local = str(p_act.get("uma_resolution_status") or "").strip().lower()
+                    if exp_u <= 0.0 or (now_u - exp_u) <= max_unred_s:
+                        continue
+                    mid_a = str(p_act.get("market_id") or "").strip()
+                    if "DISPUTE" in st_a or uma_local in {"disputed", "proposed", "pending"}:
+                        pending_uma_settlement.append(
+                            {
+                                "trade_id": tid_a,
+                                "market_id": mid_a,
+                                "uma_resolution_status": uma_local or "disputed",
+                                "closed": False,
+                            }
+                        )
+                        continue
+                    if check_network and mid_a.isdigit():
+                        g_probe = self._probe_gamma_market_settlement(mid_a)
+                        if isinstance(g_probe, dict) and not bool(g_probe.get("closed", False)):
+                            g_uma = str(g_probe.get("uma_resolution_status") or "").lower()
+                            if g_uma in {"disputed", "proposed", "pending"} or not bool(
+                                g_probe.get("accepting_orders", True)
+                            ):
+                                pending_uma_settlement.append(
+                                    {
+                                        "trade_id": tid_a,
+                                        "market_id": mid_a,
+                                        "uma_resolution_status": g_uma or "awaiting_settlement",
+                                        "closed": False,
+                                    }
+                                )
+                                continue
+                    stale_unredeemed.append(tid_a)
+                if pending_uma_settlement:
+                    self.db.upsert_verified_fact(
+                        fact_key="live.pending_uma_settlement_positions",
+                        category="EXCHANGE_OBSERVATION",
+                        value=pending_uma_settlement,
+                        epistemic_status="VERIFIED_FACT",
+                        source_type="GAMMA_MARKET_SETTLEMENT_PROBE",
+                        source_ref="gamma_post_expiry_status_cache.json",
+                        verified_by="PAAMonitor",
+                        ttl_sec=600.0,
+                        revalidation_rule="RECHECK_GAMMA_MARKET_EVERY_300S",
+                    )
                 if stale_unredeemed:
                     anomalies.append(f"UNREDEEMED_POST_EXPIRY_POSITIONS:{stale_unredeemed}")
                     _, created_r = self.db.enqueue_task(
@@ -303,9 +441,12 @@ class PAAMonitor:
                     if created_r:
                         event_wakeup_reasons.append("STALE_UNREDEEMED_CTF")
             except Exception:
-                pass
+                pending_uma_settlement = []
+        else:
+            pending_uma_settlement = []
 
-        # 5. Failed scheduled jobs & deployment rollback follow-ups
+        # 5. Failed scheduled jobs, disabled PAA schedule units & deployment rollback follow-ups
+        reenabled_paa_units = self._ensure_paa_schedule_units_active() if auto_recover_safe else []
         failed_units = self._check_failed_systemd_jobs()
         if failed_units:
             anomalies.append(f"FAILED_SYSTEMD_JOBS:{failed_units}")
@@ -364,6 +505,8 @@ class PAAMonitor:
             "accounting_ok": fin_snap["accounting_ok"],
             "free_cash_pusd": fin_snap["free_cash_pusd"],
             "nav_mark_to_bid_usd": fin_snap["nav_mark_to_bid_usd"],
+            "pending_uma_settlement_positions": pending_uma_settlement,
+            "reenabled_paa_schedule_units": reenabled_paa_units,
             "recovered_tasks": recovery,
             "dependency_checks": dep_res,
             "new_service_incidents": new_incidents,

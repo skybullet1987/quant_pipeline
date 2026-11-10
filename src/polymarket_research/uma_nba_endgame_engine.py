@@ -668,7 +668,7 @@ def evaluate_nba_endgame_locks(
                 out.append({
                     "leg": lg,
                     "mode": "POST_BUZZER_FINAL",
-                    "p_lock": 0.998,
+                    "p_lock": 0.999,
                     "cushion_pts": round(abs(margin - lg.threshold), 1),
                     "clock_sec": 0.0,
                     "period": game.period,
@@ -680,7 +680,7 @@ def evaluate_nba_endgame_locks(
                 out.append({
                     "leg": lg,
                     "mode": "POST_BUZZER_FINAL",
-                    "p_lock": 0.998,
+                    "p_lock": 0.999,
                     "cushion_pts": round(abs(total_pts - lg.threshold), 1),
                     "clock_sec": 0.0,
                     "period": game.period,
@@ -698,7 +698,7 @@ def evaluate_nba_endgame_locks(
                 out.append({
                     "leg": lg,
                     "mode": "LIVE_TOTAL_OVER_LOCKED",
-                    "p_lock": 0.997,
+                    "p_lock": 0.999,
                     "cushion_pts": round(total_pts - lg.threshold, 1),
                     "clock_sec": round(game.clock_sec, 1),
                     "period": game.period,
