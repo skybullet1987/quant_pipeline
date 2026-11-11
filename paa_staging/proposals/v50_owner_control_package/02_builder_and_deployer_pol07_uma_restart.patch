@@ -1,0 +1,22 @@
+--- a/src/paa_os/builder_and_deployer.py
++++ b/src/paa_os/builder_and_deployer.py
+@@ -654,15 +654,15 @@
+                         task_id=task_id,
+                     )
+                 else:
+-                    # Check live open positions before promoting any non-config code file
++                    # Check non-frozen live open positions before promoting any non-config code file (POL-07)
+                     st_f = self.data_dir / "live_harvester_state.json"
+                     open_cnt = 0
+                     if st_f.exists():
+                         try:
+                             st_j = json.loads(st_f.read_text(encoding="utf-8"))
+-                            open_cnt = int(st_j.get("active_positions_count") or len(st_j.get("active_positions") or {}))
+-                            if bool((st_j.get("pre_split_inventory_state") or {}).get("active")):
+-                                open_cnt += 1
++                            from audit_losing_trades import is_harvester_state_restart_safe
++                            safe_ok, blocking_ids = is_harvester_state_restart_safe(st_j)
++                            open_cnt = 0 if safe_ok else max(1, len(blocking_ids))
+                         except Exception:
+                             open_cnt = 1
+                     only_hot_reload_cfg = all(

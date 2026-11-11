@@ -88,8 +88,31 @@ _SUBJECTIVE_VETO_RE = re.compile(
 )
 _OBJECTIVE_ORACLE_RE = re.compile(
     r"(aviationweather\.gov|weather\.gov\.hk|wunderground\.com|binance\.com|chain\.link"
-    r"|pyth\.network|federalreserve\.gov|bls\.gov|gasprices\.aaa\.com|xtracker"
-    r"|nba\.com|nhl\.com|mlb\.com|nfl\.com|espn\.com|premierleague\.com|uefa\.com|atptour\.com|hlTV|lol\s*esports)",
+    r"|pyth\.network|federalreserve\.gov|bls\.gov|bea\.gov|census\.gov|eia\.gov|treasury\.gov"
+    r"|gasprices\.aaa\.com|boxofficemojo\.com|xtracker"
+    r"|nba\.com|wnba\.com|nhl\.com|mlb\.com|nfl\.com|ncaa\.com|espn\.com"
+    r"|premierleague\.com|uefa\.com|fifa\.com|fiba\.basketball|atptour\.com|wtatennis\.com"
+    r"|ufc\.com|pgatour\.com|formula1\.com|vlr\.gg|liquipedia\.net|lolesports\.com|hlTV|lol\s*esports)",
+    re.IGNORECASE,
+)
+_OFFICIAL_SPORTS_OR_ROSTER_CLAUSE_RE = re.compile(
+    r"(?:\bnext\s+team\s+.+?\s+officially\s+joins\s+by\b"
+    r"|\bofficially\s+(?:signs?\s+with|traded\s+to|joins)\b"
+    r"|\bmake\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:nfl|nba|mlb|nhl|mls|cfb|college\s+football)\s+playoffs\b"
+    r"|\bwin\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:super\s+bowl|nba\s+finals|world\s+series|stanley\s+cup"
+    r"|premier\s+league|champions\s+league|la\s+liga|serie\s+a|bundesliga|ligue\s+1"
+    r"|cfb\s+national\s+championship|college\s+football\s+playoff|heisman\s+trophy"
+    r"|afc|nfc|eastern\s+conference|western\s+conference"
+    r"|(?:afc|nfc)\s+(?:east|north|south|west))\b"
+    r"|\b(?:nfl|nba|mlb|nhl|premier\s+league|champions\s+league|ufc|formula\s+1|f1|valorant\s+champions\s+tour|vct|pro[\s\-]+football)\b"
+    r".*\b(?:regular\s+season|clean\s+sheet|relegated|top\s+4|playoffs?|championship|division|roster|offseason|next[\s\-]+team|transaction\s+wire|trade\s+deadline)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_NON_LEAGUE_POP_OR_POLITICS_VETO_RE = re.compile(
+    r"\b(?:election|presidential|senate|congress|house\s+of\s+representatives|governor|mayor|parliament|prime\s+minister"
+    r"|dancing\s+with\s+the\s+stars|bachelor|bachelorette|survivor|love\s+island|big\s+brother"
+    r"|oscar|academy\s+awards?|grammy|emmy|golden\s+globe|eurovision"
+    r"|gta\s+marathon|subathon|twitch|youtuber|streamer|tiktok|podcast)\b",
     re.IGNORECASE,
 )
 _SPORTS_TITLE_RE = re.compile(
@@ -184,6 +207,30 @@ def is_objective_uma_market(m: Dict[str, Any]) -> Tuple[bool, str]:
         return True, "VERIFIED_PRIMARY_ORACLE"
     if _SPORTS_TITLE_RE.search(q):
         return True, "SPORTS_MATCH_RULE"
+
+    # P1a: Strictly objective post-deadline or mathematically-eliminated (`NO >= $0.94`) official league/roster carries
+    slug_blob = f"{m.get('slug') or ''} {m.get('_ev_slug') or ''}\n{blob}"
+    if hist.count("proposed") <= 1 and not _NON_LEAGUE_POP_OR_POLITICS_VETO_RE.search(slug_blob):
+        if _OFFICIAL_SPORTS_OR_ROSTER_CLAUSE_RE.search(slug_blob):
+            now_chk = float(m.get("_eval_now_ts") or time.time())
+            end_ts_m = _parse_iso_ts(m.get("endDate")) or 0.0
+            if 0.0 < end_ts_m <= now_chk:
+                return True, "OFFICIAL_LEAGUE_POST_DEADLINE"
+            op_raw = _parse_json_list(m.get("outcomePrices"))
+            if (
+                len(outs) == 2
+                and outs[0].lower() == "yes"
+                and outs[1].lower() == "no"
+                and len(op_raw) == 2
+            ):
+                try:
+                    p_yes = float(op_raw[0])
+                    p_no = float(op_raw[1])
+                    if p_no >= 0.94 and p_yes <= 0.06:
+                        return True, "OFFICIAL_LEAGUE_ELIMINATED_NO"
+                except (TypeError, ValueError):
+                    pass
+
     return False, "NO_OBJECTIVE_DOMAIN_MATCH"
 
 
@@ -532,8 +579,10 @@ def parse_espn_nba_scoreboard(data: Dict[str, Any]) -> List[LiveNbaGameState]:
 
 def fetch_espn_nba_scoreboard_sync(timeout: float = 4.5, now_ts: Optional[float] = None) -> List[LiveNbaGameState]:
     """Fetches real-time NBA scoreboard across yesterday + today ET from ESPN (primary) with `cdn.nba.com` fallback."""
+    from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+
     hdrs = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    ny_dt = datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()), tz=ZoneInfo("America/New_York"))
+    ny_dt = datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()), tz=get_us_eastern_tz())
     date_tags = [(ny_dt - timedelta(days=1)).strftime("%Y%m%d"), ny_dt.strftime("%Y%m%d")]
     merged: Dict[str, LiveNbaGameState] = {}
     for ymd in dict.fromkeys(date_tags):

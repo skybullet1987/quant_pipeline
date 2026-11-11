@@ -325,9 +325,11 @@ def detect_ladder_monotonicity_boxes(
             ask_n_hi = float(hi.get("ask_no") or 1.0)
             if not (0.01 <= ask_y_lo <= 0.98 and 0.01 <= ask_n_hi <= 0.98):
                 continue
-            fee_1 = fee_rate * ask_y_lo * (1.0 - ask_y_lo)
-            fee_2 = fee_rate * ask_n_hi * (1.0 - ask_n_hi)
-            total_cost = ask_y_lo + ask_n_hi + fee_1 + fee_2
+            fr_lo = float(lo.get("fee_rate", fee_rate) or 0.0)
+            fr_hi = float(hi.get("fee_rate", fee_rate) or 0.0)
+            h_1 = min(0.50, max(0.0, fr_lo * (1.0 - ask_y_lo))) if fr_lo > 0.0 else 0.0
+            h_2 = min(0.50, max(0.0, fr_hi * (1.0 - ask_n_hi))) if fr_hi > 0.0 else 0.0
+            total_cost = (ask_y_lo / (1.0 - h_1)) + (ask_n_hi / (1.0 - h_2))
             if total_cost <= 0.996:
                 arbs.append({
                     "low_strike": lo["strike"],
@@ -570,8 +572,16 @@ def build_negrisk_cross_box_bundles(
     if abs(rungs[0].end_ts - brackets[0].end_ts) > 2.0:
         return []
 
+    ms_sorted: List[StrikeRungSpec] = sorted(
+        [r for r in rungs if not r.is_downward], key=lambda r: float(r.strike)
+    )
     ms_by_k: Dict[float, StrikeRungSpec] = {
-        round(float(r.strike), 4): r for r in rungs if not r.is_downward
+        round(float(r.strike), 4): r for r in ms_sorted
+    }
+    range_by_lo: Dict[float, NegRiskBracketSpec] = {
+        round(float(b.k_low), 4): b
+        for b in brackets
+        if b.bracket_kind == "RANGE" and b.k_low is not None and b.k_high is not None
     }
     bundles: List[Dict[str, Any]] = []
 
@@ -583,22 +593,45 @@ def build_negrisk_cross_box_bundles(
                 continue
 
         if br.bracket_kind == "LOWER_TAIL" and br.k_high is not None:
-            ms_r = ms_by_k.get(round(float(br.k_high), 4))
-            if ms_r is not None:
+            k_hi_round = round(float(br.k_high), 4)
+            ms_r = ms_by_k.get(k_hi_round)
+            # Zero-pin invariant: `NR_YES(<K_high) + MS_YES(>K_high)` pays `$0.00` at exact pin `S == K_high`!
+            # Prefer a strictly lower rung `MS_YES(>K_prev)` (`K_prev < K_high`, 2-leg pin-free overlap),
+            # or bridge `S == K_high` with the adjacent `RANGE` bracket `NR_YES([K_high, K_next])` (3-leg pin-free).
+            lower_ms = [r for r in ms_sorted if float(r.strike) < float(br.k_high) - 1e-6]
+            adj_rng = range_by_lo.get(k_hi_round)
+            if lower_ms:
+                ms_prev = lower_ms[-1]
                 bundles.append({
-                    "bundle_id": f"TAIL_LOW_YES_{br.market_id}_{ms_r.market_id}",
-                    "label": f"NR_YES(<{br.k_high:g})+MS_YES(>{ms_r.strike:g})",
+                    "bundle_id": f"TAIL_LOW_OVERLAP_YES_{br.market_id}_{ms_prev.market_id}",
+                    "label": f"NR_YES(<{br.k_high:g})+MS_YES(>{ms_prev.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
+                        {"token_id": ms_prev.yes_token, "opp_token_id": ms_prev.no_token, "condition_id": ms_prev.condition_id, "neg_risk": False, "strike": float(ms_prev.strike), "side": "YES", "market_id": ms_prev.market_id, "fee_rate": ms_prev.fee_rate, "label": f"MS_YES>{ms_prev.strike:g}"},
+                    ],
+                })
+            elif ms_r is not None and adj_rng is not None:
+                bundles.append({
+                    "bundle_id": f"TAIL_LOW_PIN_SAFE_BRIDGE_{br.market_id}_{adj_rng.market_id}_{ms_r.market_id}",
+                    "label": f"NR_YES(<{br.k_high:g})+NR_YES([{adj_rng.k_low:g},{adj_rng.k_high:g}])+MS_YES(>{ms_r.strike:g})",
+                    "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
+                    "end_ts": br.end_ts,
+                    "legs": [
+                        {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
+                        {"token_id": adj_rng.yes_token, "opp_token_id": adj_rng.no_token, "condition_id": adj_rng.condition_id, "neg_risk": True, "strike": float(adj_rng.k_high or br.k_high), "side": "YES", "market_id": adj_rng.market_id, "fee_rate": adj_rng.fee_rate, "label": f"NR_YES[{adj_rng.k_low:g}-{adj_rng.k_high:g}]"},
                         {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
                     ],
                 })
+            if ms_r is not None:
                 bundles.append({
                     "bundle_id": f"TAIL_LOW_NO_{br.market_id}_{ms_r.market_id}",
                     "label": f"NR_NO(<{br.k_high:g})+MS_NO(>{ms_r.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO<{br.k_high:g}"},
@@ -607,27 +640,46 @@ def build_negrisk_cross_box_bundles(
                 })
         elif br.bracket_kind == "UPPER_TAIL" and br.k_low is not None:
             ms_r = ms_by_k.get(round(float(br.k_low), 4))
+            q_low_u = (br.question or "").lower()
+            is_inclusive_upper = any(tok in q_low_u for tok in ("or above", "or higher", "at least", ">="))
             if ms_r is not None:
                 bundles.append({
                     "bundle_id": f"TAIL_HIGH_A_{br.market_id}_{ms_r.market_id}",
                     "label": f"NR_YES(>{br.k_low:g})+MS_NO(>{ms_r.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES>{br.k_low:g}"},
                         {"token_id": ms_r.no_token, "opp_token_id": ms_r.yes_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
                     ],
                 })
-                bundles.append({
-                    "bundle_id": f"TAIL_HIGH_B_{br.market_id}_{ms_r.market_id}",
-                    "label": f"NR_NO(>{br.k_low:g})+MS_YES(>{ms_r.strike:g})",
-                    "guaranteed_payout": 1.0,
-                    "end_ts": br.end_ts,
-                    "legs": [
-                        {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
-                        {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
-                    ],
-                })
+                lower_ms_u = [r for r in ms_sorted if float(r.strike) < float(br.k_low) - 1e-6]
+                if not is_inclusive_upper:
+                    bundles.append({
+                        "bundle_id": f"TAIL_HIGH_B_{br.market_id}_{ms_r.market_id}",
+                        "label": f"NR_NO(>{br.k_low:g})+MS_YES(>{ms_r.strike:g})",
+                        "guaranteed_payout": 1.0,
+                        "pin_free_verified": True,
+                        "end_ts": br.end_ts,
+                        "legs": [
+                            {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
+                            {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
+                        ],
+                    })
+                elif lower_ms_u:
+                    ms_prev_u = lower_ms_u[-1]
+                    bundles.append({
+                        "bundle_id": f"TAIL_HIGH_OVERLAP_B_{br.market_id}_{ms_prev_u.market_id}",
+                        "label": f"NR_NO(>={br.k_low:g})+MS_YES(>{ms_prev_u.strike:g})",
+                        "guaranteed_payout": 1.0,
+                        "pin_free_verified": True,
+                        "end_ts": br.end_ts,
+                        "legs": [
+                            {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>={br.k_low:g}"},
+                            {"token_id": ms_prev_u.yes_token, "opp_token_id": ms_prev_u.no_token, "condition_id": ms_prev_u.condition_id, "neg_risk": False, "strike": float(ms_prev_u.strike), "side": "YES", "market_id": ms_prev_u.market_id, "fee_rate": ms_prev_u.fee_rate, "label": f"MS_YES>{ms_prev_u.strike:g}"},
+                        ],
+                    })
         elif br.bracket_kind == "RANGE" and br.k_low is not None and br.k_high is not None:
             ms_lo = ms_by_k.get(round(float(br.k_low), 4))
             ms_hi = ms_by_k.get(round(float(br.k_high), 4))

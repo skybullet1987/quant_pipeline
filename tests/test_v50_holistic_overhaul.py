@@ -1027,7 +1027,7 @@ def test_v531_premature_uma_veto_bond1_taker_cap_and_disputed_lock_recycle(tmp_p
     res_valid = uee.verify_uma_onchain_proposal_sync(mkt_6476073, now_ts=1793639100.0)
     assert res_valid["verified"] is True and res_valid["win_outcome_name"] == "Up"
 
-    # 2. _finish_single_leg_lock enforces $45.00 bond1_per_market_cap_usd on $69.48 Seed bankroll (<= $45.00, NOT 52!)
+    # 2. _finish_single_leg_lock enforces Section 7(a) <=15% reconciled NAV cap ($10.42) on $69.48 Seed bankroll!
     h = PolymarketLiveHarvester(dry_run=True, allowed_assets={"BTC", "SOL", "ETH"})
     h.dry_run = False
     h.holistic_v5_live_mode = True
@@ -1067,7 +1067,7 @@ def test_v531_premature_uma_veto_bond1_taker_cap_and_disputed_lock_recycle(tmp_p
         dedupe_k="BOND1_6476073", retry_cd={}, now_ts=now_t, _rcfg=h.risk_config, own_grad=True,
     )
     assert out_1l["executed"] is True
-    assert len(snipe_notional) == 1 and 40.0 <= snipe_notional[0] <= 45.00
+    assert len(snipe_notional) == 1 and 5.0 <= snipe_notional[0] <= (69.48 * 0.15 + 0.05)
 
     # 3. Automatic UMA-disputed HTM lock profit-recycler unwinds 52 shares @ $0.998 -> +$0.13 net profit!
     h.active_positions.clear()

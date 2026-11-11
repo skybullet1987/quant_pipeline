@@ -102,6 +102,8 @@ ALPHA124_EXPANSION_MODULES: List[Tuple[str, str]] = [
 
 EXP316_MODULES: List[Tuple[str, str]] = [
     ("src/polymarket_research/exp316_macro_strike_shadow.py", "EXP-316 Isolated Multi-Strike Convergence Shadow Engine"),
+    ("src/polymarket_research/honest_riskless_backtester.py", "v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder"),
+    ("src/polymarket_research/riskless_expansion_v6_engines.py", "v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)"),
 ]
 
 HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [
@@ -119,6 +121,7 @@ HARVESTER_TEST_MODULES: List[Tuple[str, str]] = [
     ("tests/test_stage_c_zero_loss_velocity.py", "Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell"),
     ("tests/test_priority0_live_leak_fixes.py", "Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)"),
     ("tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py", "Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks"),
+    ("tests/test_riskless_remediation_and_8_new_engines.py", "Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines"),
 ]
 
 _FUTURE_RE = re.compile(r"^(from\s+__future__\s+import\s+[^\n]+)$", flags=re.MULTILINE)

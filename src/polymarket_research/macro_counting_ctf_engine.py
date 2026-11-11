@@ -401,8 +401,7 @@ def detect_counting_pruned_exhaustive_yes_slate(
             return None
         fr = float(br.fee_rate or 0.0)
         fe = float(br.fee_exponent or 1.0)
-        fee_ps = fr * ((w_px * (1.0 - w_px)) ** fe) if fr > 0.0 else 0.0
-        leg_eff = w_px + fee_ps
+        leg_eff = _net_unit_ask(w_px, fr, fe)
         total_cost_ps += leg_eff
         min_avail_sh = min(min_avail_sh, sum(s for _, s in asks[:3]))
         legs_out.append({
@@ -686,17 +685,45 @@ def build_fomc_truth_table_legs(
     return legs
 
 
-# 9-state Oil x Senate truth table: 3 Oil regimes (<80, [80,85), >=85) x 3 Senate winners (DEM, REP, OTHER)
-OIL_SENATE_STATES: List[Tuple[str, str]] = [
-    (o, p) for o in ("LT80", "B80_85", "GE85") for p in ("DEM", "REP", "OTHER")
+# 18-state Path-Extrema Oil x Senate truth table:
+# 6 valid `(min_oil_regime, max_oil_regime)` path pairs (`m <= M` over `LT80 < B80_85 < GE85`)
+# x 3 Senate winners (`DEM`, `REP`, `OTHER`). Prevents mixed upward/downward barrier whip-saw fallacies!
+_OIL_REGIME_RANK: Dict[str, int] = {"LT80": 0, "B80_85": 1, "GE85": 2}
+OIL_SENATE_STATES: List[Tuple[str, str, str]] = [
+    (m_reg, M_reg, p)
+    for m_reg in ("LT80", "B80_85", "GE85")
+    for M_reg in ("LT80", "B80_85", "GE85")
+    if _OIL_REGIME_RANK[m_reg] <= _OIL_REGIME_RANK[M_reg]
+    for p in ("DEM", "REP", "OTHER")
 ]
-ALL_OIL_SENATE_MASK: int = (1 << len(OIL_SENATE_STATES)) - 1  # 9-bit mask (511)
+ALL_OIL_SENATE_MASK: int = (1 << len(OIL_SENATE_STATES)) - 1  # 18-bit mask (262,143)
+
+
+def _infer_oil_barrier_polarity(slug_low: str, ev_desc: str, m_desc: str) -> str:
+    """
+    Classifies whether an Oil conditional market tests the path MINIMUM (`'DOWN_DIP'`: `min_t S_t < K`),
+    path MAXIMUM (`'UP_HIT'`: `max_t S_t >= K`), or terminal snapshot / symmetric regime (`'DOWN_DIP'` default
+    for `'below'`, `'UP_HIT'` for `'hit'/'reach'/'above'`):
+    """
+    blob = f"{ev_desc} {m_desc}".lower()
+    has_up_hit = any(w in blob for w in ("hit $", "hits $", "reach $", "reaches $", "rise above", "spike above", "trade at or above"))
+    has_dn_dip = any(w in blob for w in ("dip below", "dips below", "fall below", "falls below", "drop below", "trade below"))
+    if has_up_hit and not has_dn_dip:
+        return "UP_HIT"
+    if has_dn_dip and not has_up_hit:
+        return "DOWN_DIP"
+    # When rules text does not mix opposite barrier triggers, use canonical path-min (`m_reg`) consistently across slugs
+    # unless slug explicitly specifies an upward-only hit (`pending-oil-hits-` / `pending-oil-reaches-`).
+    if any(k in slug_low for k in ("oil-hits-", "oil-reaches-", "oil-above-85", "oil-above-90")):
+        return "UP_HIT"
+    return "DOWN_DIP"
 
 
 def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Maps `which-party-will-win-the-senate-in-2026` + `who-wins-the-senate-pending-oil-*` (`0%` fee)
-    into exact 9-bit masks over `{LT80, B80_85, GE85} x {DEM, REP, OTHER}`.
+    into exact 18-bit masks over `{(m_oil, M_oil): m_oil <= M_oil} x {DEM, REP, OTHER}`, eliminating
+    upward-hit vs downward-dip path-whipsaw false dominance while preserving true partitions & inclusions.
     """
     legs: List[Dict[str, Any]] = []
     for slug, ev in events_by_slug.items():
@@ -706,6 +733,7 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
         if end_ts <= 0:
             continue
         s_low = slug.lower()
+        ev_desc = str(ev.get("description") or "")
         for m in (ev.get("markets") or []):
             if m.get("closed"):
                 continue
@@ -715,12 +743,16 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
                 continue
             lbl = str(m.get("groupItemTitle") or m.get("question") or "").strip()
             ll = lbl.lower()
+            m_desc = str(m.get("description") or "")
+            # Reject cross-date mismatch if an Oil barrier window expires on a different date than Senate control
+            if "pending-oil" in s_low and any(bad_w in f"{ev_desc} {m_desc}".lower() for bad_w in ("end of 2026", "december 31")):
+                continue
             y_mask = 0
             if "which-party-will-win-the-senate" in s_low:
                 party = "DEM" if "democrat" in ll else ("REP" if "republican" in ll else None)
                 if not party:
                     continue
-                for idx, (_, p_st) in enumerate(OIL_SENATE_STATES):
+                for idx, (_, _, p_st) in enumerate(OIL_SENATE_STATES):
                     if p_st == party:
                         y_mask |= (1 << idx)
                 eg = "SENATE_MAIN"
@@ -731,17 +763,19 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
                 is_ge = "≥" in ll or ">=" in ll or "above" in ll or "greater" in ll
                 if not party or thresh not in (80, 85) or (is_lt == is_ge):
                     continue
-                for idx, (o_st, p_st) in enumerate(OIL_SENATE_STATES):
+                polarity = _infer_oil_barrier_polarity(s_low, ev_desc, m_desc)
+                for idx, (m_st, M_st, p_st) in enumerate(OIL_SENATE_STATES):
                     if p_st != party:
                         continue
+                    ref_oil = M_st if polarity == "UP_HIT" else m_st
                     oil_ok = (
-                        (o_st == "LT80" if is_lt else o_st in ("B80_85", "GE85"))
+                        (ref_oil == "LT80" if is_lt else ref_oil in ("B80_85", "GE85"))
                         if thresh == 80
-                        else (o_st in ("LT80", "B80_85") if is_lt else o_st == "GE85")
+                        else (ref_oil in ("LT80", "B80_85") if is_lt else ref_oil == "GE85")
                     )
                     if oil_ok:
                         y_mask |= (1 << idx)
-                eg = f"OIL_{thresh}_SENATE"
+                eg = f"OIL_{thresh}_{polarity}_SENATE"
             else:
                 continue
             mid = str(m.get("id") or "")
@@ -1160,6 +1194,23 @@ def evaluate_ai_elo_ci_lock(
     return {"eligible": True, "leader_org": top_org, "ci_gap": round(ci_gap, 2), "p_lock": round(p_lock, 4)}
 
 
+def _infer_binance_candle_close_offset_sec(spec: Dict[str, Any], is_hourly_updown: bool = False) -> float:
+    """
+    Computes exact oracle price-fix offset relative to `end_ts`:
+      - `11:00 AM - 12:00 PM ET` `1h` Up/Down candle closes at `11:59:59.999 ET` (`+0.0s` vs `12:00:00`).
+      - `12:00 PM ET` `1m` candle (`"1 minute candle"` / `"1m candle"` starting `12:00`) closes at `12:00:59.999 ET` (`+60.0s`)!
+      Preventing `11:59:59` vs `12:00:59` 60-second unhedged gap traps.
+    """
+    if "oracle_close_offset_sec" in spec and spec["oracle_close_offset_sec"] is not None:
+        return float(spec["oracle_close_offset_sec"])
+    desc_low = str(spec.get("description") or spec.get("resolution_rules") or spec.get("rules_text") or "").lower()
+    if any(tok in desc_low for tok in ("1 minute candle", "1-minute candle", "1m candle")):
+        return 60.0
+    if any(tok in desc_low for tok in ("1 hour candle", "1-hour candle", "1h candle")):
+        return 0.0
+    return 0.0 if is_hourly_updown else 0.0
+
+
 def detect_d2_12pm_binance_boxes(
     hourly_spec: Dict[str, Any],
     k_1h: float,
@@ -1168,17 +1219,24 @@ def detect_d2_12pm_binance_boxes(
 ) -> List[Dict[str, Any]]:
     """
     Same-Exchange `Binance USDT` `11:00-12:00 PM ET` `1h` Up/Down vs `12:00 PM ET` Daily/Multi-Strike
-    Corridor Dominance Detector (`|end_1h - end_12pm| <= 5s`, zero `USDT/USD` peg basis!).
+    Corridor Dominance Detector (`|fix_ts_1h - fix_ts_12pm| <= 1.0s`, zero `USDT/USD` peg basis!).
+    Rejects `11:59:59` (`1h` candle) vs `12:00:59` (`12:00 1m` candle) 60-second settlement mismatches!
     For `K_low < K_high`: buying `UP/YES(> K_low)` + `DOWN/NO(< K_high)` locks `$1.00` floor + `$2.00` corridor!
     """
     if k_1h <= 0:
         return []
     end_1h = float(hourly_spec["end_ts"])
+    fix_1h = end_1h + _infer_binance_candle_close_offset_sec(hourly_spec, is_hourly_updown=True)
+    iv_1h = str(hourly_spec.get("candle_interval") or "").strip().lower()
     out: List[Dict[str, Any]] = []
     for ts_sp in terminal_specs:
         if ts_sp.get("is_downward"):
             continue
-        if abs(float(ts_sp["end_ts"]) - end_1h) > 5.0:
+        iv_t = str(ts_sp.get("candle_interval") or "").strip().lower()
+        if iv_1h and iv_t and iv_1h != iv_t:
+            continue
+        fix_t = float(ts_sp["end_ts"]) + _infer_binance_candle_close_offset_sec(ts_sp, is_hourly_updown=False)
+        if abs(fix_t - fix_1h) > 1.0:
             continue
         k_t = float(ts_sp["strike"])
         if k_t <= 0:

@@ -1004,7 +1004,7 @@ def test_external_dual_audit_alpha124_and_oracle_regressions(tmp_path: Path, mon
     import json
     import time
     from datetime import date
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
     import src.polymarket_research.alpha_124_shadow_daemon as a124
     import src.polymarket_research.barrier_onetouch_svi_engine as b_eng
@@ -2282,7 +2282,7 @@ def test_multi_vertical_zero_fee_expansion_sleeves(tmp_path: Path, monkeypatch) 
     import asyncio
     import time
     from datetime import date
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
     import src.polymarket_research.alpha_124_shadow_daemon as a124
     from src.polymarket_research.barrier_onetouch_svi_engine import BarrierRungSpec
@@ -2510,7 +2510,7 @@ def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch, tmp_path) 
     """Verifies Phase-2 roadmap sleeves (`TW1`, `FED1`, `COND1`, `CTF_OVR`, `GAS1`, `CM_SHOCK`, `AI1`, `D2`, `ZF_MAKER`)."""
     import asyncio
     from datetime import datetime
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
     from src.polymarket_research import alpha_124_shadow_daemon as a124
     from src.polymarket_research.macro_counting_ctf_engine import (
         ALL_FOMC_MASK,

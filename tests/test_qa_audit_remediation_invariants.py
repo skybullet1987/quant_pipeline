@@ -1040,11 +1040,11 @@ def test_cross_venue_shadow_320m_ceiling_and_memory_compaction(tmp_path: Path) -
 
     unit_path = Path(__file__).resolve().parents[1] / "systemd" / "polymarket-cross-venue-shadow.service"
     unit_txt = unit_path.read_text(encoding="utf-8")
-    assert "MemoryHigh=280M" in unit_txt
-    assert "MemoryMax=320M" in unit_txt
-    rep_320 = validate_systemd_unit_text(unit_txt, str(unit_path))
-    assert rep_320.valid, rep_320.errors
-    rep_180 = validate_systemd_unit_text(unit_txt.replace("MemoryMax=320M", "MemoryMax=180M"), str(unit_path))
+    assert "MemoryHigh=450M" in unit_txt
+    assert "MemoryMax=512M" in unit_txt
+    rep_512 = validate_systemd_unit_text(unit_txt, str(unit_path))
+    assert rep_512.valid, rep_512.errors
+    rep_180 = validate_systemd_unit_text(unit_txt.replace("MemoryMax=512M", "MemoryMax=180M"), str(unit_path))
     assert rep_180.valid
 
     store = ShadowTelemetryStore(tmp_path / "cv_wd")
@@ -1378,7 +1378,8 @@ def test_cross_venue_sqlite_covering_index_prune_ws_close_safety_and_sigterm_pre
         store.ingest_markets([old_m], now_unix=now - 16 * 86_400)
         store.ingest_markets([fresh_m], now_unix=now - 2 * 86_400)
 
-        with sqlite3.connect(str(store.db_path)) as con:
+        import contextlib
+        with contextlib.closing(sqlite3.connect(str(store.db_path))) as con:
             plan_rows = con.execute(
                 "EXPLAIN QUERY PLAN SELECT COALESCE(AVG(total_depth_usd), 0.0) FROM orderbook_snapshots WHERE venue = 'polymarket' AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX')"
             ).fetchall()

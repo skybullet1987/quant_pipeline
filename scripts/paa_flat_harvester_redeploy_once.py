@@ -16,7 +16,11 @@ ROOT = Path("/home/skybullet1987/quant_pipeline")
 STATE = ROOT / "data/polymarket/live_harvester_state.json"
 LOG = ROOT / "data/paa_os/flat_redeploy_watcher.log"
 LOCK_FILE = Path("/tmp/paa_flat_harvester_redeploy.lock")
-ENV = {**os.environ, "XDG_RUNTIME_DIR": "/run/user/1001"}
+ENV = {
+    **os.environ,
+    "XDG_RUNTIME_DIR": os.environ.get("XDG_RUNTIME_DIR")
+    or (f"/run/user/{os.getuid()}" if hasattr(os, "getuid") else "/run/user/1001"),
+}
 _LOCK_FH = None
 
 
@@ -32,6 +36,10 @@ def log(msg: str) -> None:
 def _is_restart_safe_frozen_uma_lock(pos: dict, now_ts: float) -> bool:
     if not isinstance(pos, dict):
         return False
+    if str(pos.get("exit_order_status") or "").upper() == "UNWIND_RETRY_REQUIRED":
+        return False
+    if pos.get("is_legged_out_residual") and not pos.get("hold_to_maturity_lock"):
+        return False
     if pos.get("is_liquidating") or pos.get("exit_order_id") or pos.get("unwind_order_id"):
         return False
     if not (pos.get("is_single_leg_lock") or pos.get("is_dominance_box") or pos.get("hold_to_maturity_lock")):
@@ -39,7 +47,7 @@ def _is_restart_safe_frozen_uma_lock(pos: dict, now_ts: float) -> bool:
     exp_ts = float(pos.get("candle_expiry_ts") or 0.0)
     if exp_ts <= 0.0 or now_ts < exp_ts + 60.0:
         return False
-    uma_st = str(pos.get("umaResolutionStatus") or "").strip().lower()
+    uma_st = str(pos.get("umaResolutionStatus") or pos.get("uma_resolution_status") or "").strip().lower()
     anchor_ts = max(exp_ts, float(pos.get("entry_ts") or 0.0))
     return uma_st == "disputed" or now_ts >= anchor_ts + 14400.0
 
@@ -50,6 +58,8 @@ def _safe_to_restart(st: dict, now_ts: float | None = None) -> bool:
     if any(not _is_restart_safe_frozen_uma_lock(v, now_f) for v in act.values()):
         return False
     if bool((st.get("pre_split_inventory_state") or {}).get("active")):
+        return False
+    if float(st.get("_prepost_sll_reserved_usd") or 0.0) > 0.0:
         return False
     pend = st.get("pending_entry_intents") or {}
     # Resting post-only Maker anchors (`live_maker_anchor_inflight`) are cleanly preempted & canceled

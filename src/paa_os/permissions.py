@@ -94,6 +94,41 @@ def build_isolated_worker_env(
     return clean
 
 
+TIME_BOUNDED_PRIVILEGED_SCOPES = frozenset({
+    "INCREASE_CAPITAL_EXPOSURE",
+    "NEW_LIVE_TRADING_ACTIVATION",
+    "CREDENTIAL_OR_PERMISSION_EXPANSION",
+    "LIVE_PRODUCTION_PROMOTION",
+    "WALLET_TRANSFER_OR_WITHDRAWAL",
+    "DISABLE_RISK_CONTROLS",
+    "GEOGRAPHIC_OR_ELIGIBILITY_CHANGE",
+})
+
+
+def _map_violation_to_required_scope(violation: str) -> str:
+    v = str(violation or "")
+    if v.startswith("OVERRIDE_GEOGRAPHIC_COMPLIANCE"):
+        return "GEOGRAPHIC_OR_ELIGIBILITY_CHANGE"
+    if v.startswith((
+        "EXPOSURE_INCREASED",
+        "RISK_FLOOR_WEAKENED",
+        "RISK_CAP_EXCEEDED",
+        "RISK_CONTROL_WEAKENED",
+        "RISK_KEY_DELETED",
+        "PRICE_CEILING_RAISED",
+    )):
+        return "INCREASE_CAPITAL_EXPOSURE"
+    if v.startswith((
+        "NEW_LIVE_TRADING_ACTIVATION",
+        "NEW_LIVE_ASSET_ACTIVATION",
+        "UNGRADUATED_LIVE_ACTIVATION",
+    )):
+        return "NEW_LIVE_TRADING_ACTIVATION"
+    if v.startswith(("PROTECTED_FILE_MODIFIED:", "BINARY_OR_DATA_ARTIFACT_FORBIDDEN:")):
+        return "CREDENTIAL_OR_PERMISSION_EXPANSION"
+    return "CREDENTIAL_OR_PERMISSION_EXPANSION"
+
+
 def has_explicit_operator_approval(
     approval_scope: str,
     task_or_release_id: Optional[str] = None,
@@ -102,10 +137,14 @@ def has_explicit_operator_approval(
     """
     Checks for an explicit operator-created JSON approval record in `data/polymarket/paa/approvals/`.
     Autonomous agents are strictly forbidden from writing to `approvals/`.
+    Enforces `expires_at_utc` TTL (mandatory for wildcard `*` privileged scopes) and one-shot consumption.
     """
+    from datetime import datetime, timezone
+
     adir = Path(approvals_dir) if approvals_dir is not None else DEFAULT_APPROVALS_DIR
     if not adir.exists():
         return False, None
+    now_utc = datetime.now(timezone.utc)
     for f in sorted(adir.glob("*.json")):
         try:
             rec = json.loads(f.read_text(encoding="utf-8"))
@@ -113,8 +152,21 @@ def has_explicit_operator_approval(
                 continue
             if str(rec.get("approved_by") or "").strip().lower() in ("", "paa", "agent", "director", "auto"):
                 continue
+            consumed_at = str(rec.get("consumed_at_utc") or "").strip()
+            consumed_by = str(rec.get("consumed_by_release_id") or "").strip()
+            if consumed_at and (not task_or_release_id or consumed_by != str(task_or_release_id)):
+                continue
             scopes = rec.get("scopes") or []
             target = rec.get("target_id")
+            exp_raw = str(rec.get("expires_at_utc") or "").strip()
+            if exp_raw:
+                exp_dt = datetime.fromisoformat(exp_raw.replace("Z", "+00:00"))
+                if exp_dt.tzinfo is None:
+                    exp_dt = exp_dt.replace(tzinfo=timezone.utc)
+                if now_utc >= exp_dt:
+                    continue
+            elif (target in (None, "*") or "*" in scopes) and approval_scope in TIME_BOUNDED_PRIVILEGED_SCOPES:
+                continue
             if approval_scope in scopes or "*" in scopes:
                 if task_or_release_id is None or target in (None, "*", task_or_release_id):
                     return True, rec
@@ -142,6 +194,10 @@ class PermissionGate:
                     ".env",
                     "src/paa_os/permissions.py",
                     "src/paa_os/zero_trust.py",
+                    "src/paa_os/builder_and_deployer.py",
+                    "src/paa_os/accountant.py",
+                    "src/polymarket_research/cross_venue_shadow_deployment_gates.py",
+                    "src/polymarket_research/cross_venue_unblock_and_certification.py",
                     "src/polymarket_research/execute_approvals.py",
                     "src/polymarket_research/setup_polymarket_account.py",
                     "config/paa_master_mandate.md",
@@ -176,6 +232,7 @@ class PermissionGate:
         explicit_scopes = {
             "NEW_LIVE_TRADING_ACTIVATION",
             "INCREASE_CAPITAL_EXPOSURE",
+            "LIVE_PRODUCTION_PROMOTION",
             "WALLET_TRANSFER_OR_WITHDRAWAL",
             "CREDENTIAL_OR_PERMISSION_EXPANSION",
             "DISABLE_RISK_CONTROLS",
@@ -232,12 +289,17 @@ class PermissionGate:
             "daily_loss_pct_seed",
             "kelly_fraction_seed",
         ):
-            if cap_key in b_sz and cap_key in c_sz:
-                if float(c_sz[cap_key]) > float(b_sz[cap_key]) + 1e-6:
+            if cap_key in b_sz:
+                if cap_key not in c_sz:
+                    violations.append(f"RISK_KEY_DELETED: sizing_tiers.{cap_key}")
+                elif float(c_sz[cap_key]) > float(b_sz[cap_key]) + 1e-6:
                     violations.append(f"EXPOSURE_INCREASED: sizing_tiers.{cap_key} ({c_sz[cap_key]} > {b_sz[cap_key]})")
         for slot_key in ("dir_slots_seed", "dir_slots_recovery", "dir_slots_growth", "dir_slots_scale"):
-            if slot_key in b_sz and slot_key in c_sz and int(c_sz[slot_key]) > int(b_sz[slot_key]):
-                violations.append(f"EXPOSURE_INCREASED: sizing_tiers.{slot_key} ({c_sz[slot_key]} > {b_sz[slot_key]})")
+            if slot_key in b_sz:
+                if slot_key not in c_sz:
+                    violations.append(f"RISK_KEY_DELETED: sizing_tiers.{slot_key}")
+                elif int(c_sz[slot_key]) > int(b_sz[slot_key]):
+                    violations.append(f"EXPOSURE_INCREASED: sizing_tiers.{slot_key} ({c_sz[slot_key]} > {b_sz[slot_key]})")
 
         b_dir = baseline_cfg.get("directional") or {}
         c_dir = candidate_cfg.get("directional") or {}
@@ -258,9 +320,16 @@ class PermissionGate:
         new_assets = sorted(c_assets - b_assets)
         if new_assets:
             violations.append(f"NEW_LIVE_ASSET_ACTIVATION: {new_assets} requires explicit operator approval")
-        for px_key in ("max_taker_price_1h", "max_maker_price_1h", "max_taker_price_15m", "max_maker_price_15m"):
-            if px_key in b_dir and px_key in c_dir and float(c_dir[px_key]) > float(b_dir[px_key]) + 1e-6:
-                violations.append(f"PRICE_CEILING_RAISED: directional.{px_key} ({c_dir[px_key]} > {b_dir[px_key]})")
+        for px_key in ("max_taker_price_1h", "max_taker_price_15m", "max_maker_price_1h", "max_maker_price_15m"):
+            if px_key in b_dir:
+                if px_key not in c_dir:
+                    violations.append(f"RISK_KEY_DELETED: directional.{px_key}")
+                elif float(c_dir[px_key]) > float(b_dir[px_key]) + 1e-6:
+                    violations.append(f"PRICE_CEILING_RAISED: directional.{px_key} ({c_dir[px_key]} > {b_dir[px_key]})")
+
+        if bool((self.cfg.get("permissions") or {}).get("ontario_restriction_enforced", True)):
+            if bool(candidate_cfg.get("jurisdiction_override")) or bool(candidate_cfg.get("allow_restricted_jurisdiction")):
+                violations.append("OVERRIDE_GEOGRAPHIC_COMPLIANCE: restricted jurisdiction override forbidden")
 
         b_bx = baseline_cfg.get("riskless_boxes") or {}
         c_bx = candidate_cfg.get("riskless_boxes") or {}
@@ -278,8 +347,11 @@ class PermissionGate:
             if bool(c_bx.get(lock_false_k)) and not bool(b_bx.get(lock_false_k)):
                 violations.append(f"UNGRADUATED_LIVE_ACTIVATION: {lock_false_k} is forbidden unattended")
         for bx_ceil_k in ("d1_max_box_cost_net", "cm_b3_max_walk_cap", "d1_short_tte_max_box_cost_net"):
-            if bx_ceil_k in b_bx and bx_ceil_k in c_bx and float(c_bx[bx_ceil_k]) > float(b_bx[bx_ceil_k]) + 1e-6:
-                violations.append(f"PRICE_CEILING_RAISED: riskless_boxes.{bx_ceil_k} ({c_bx[bx_ceil_k]} > {b_bx[bx_ceil_k]})")
+            if bx_ceil_k in b_bx:
+                if bx_ceil_k not in c_bx:
+                    violations.append(f"RISK_KEY_DELETED: riskless_boxes.{bx_ceil_k}")
+                elif float(c_bx[bx_ceil_k]) > float(b_bx[bx_ceil_k]) + 1e-6:
+                    violations.append(f"PRICE_CEILING_RAISED: riskless_boxes.{bx_ceil_k} ({c_bx[bx_ceil_k]} > {b_bx[bx_ceil_k]})")
         b_paused_rb = {str(s).strip().upper() for s in (b_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
         c_paused_rb = {str(s).strip().upper() for s in (c_bx.get("paused_riskless_sleeves") or []) if str(s).strip()}
         unpaused_rb = sorted(b_paused_rb - c_paused_rb)
@@ -287,9 +359,8 @@ class PermissionGate:
             violations.append(f"NEW_LIVE_TRADING_ACTIVATION: unpausing {unpaused_rb} requires explicit operator approval")
 
         if violations:
-            ok_exp, _ = has_explicit_operator_approval("INCREASE_CAPITAL_EXPOSURE", release_id, self.approvals_dir)
-            ok_live, _ = has_explicit_operator_approval("NEW_LIVE_TRADING_ACTIVATION", release_id, self.approvals_dir)
-            if ok_exp and ok_live:
+            req_scopes = sorted({_map_violation_to_required_scope(v) for v in violations})
+            if all(has_explicit_operator_approval(sc, release_id, self.approvals_dir)[0] for sc in req_scopes):
                 return True, []
             return False, violations
         return True, []
@@ -315,6 +386,8 @@ class PermissionGate:
                 violations.append(f"PROTECTED_FILE_MODIFIED:{nf}")
             if "data/polymarket/paa/approvals" in nf:
                 violations.append(f"SELF_APPROVAL_TAMPERING_FORBIDDEN:{nf}")
+            if nf.endswith((".sqlite3", ".db", ".jsonl", ".parquet", ".pkl")) and not nf.startswith("tests/"):
+                violations.append(f"BINARY_OR_DATA_ARTIFACT_FORBIDDEN:{nf}")
 
         added_lines = [
             ln[1:]
@@ -332,7 +405,13 @@ class PermissionGate:
                 violations.extend(cfg_v)
 
         if violations:
-            ok_override, _ = has_explicit_operator_approval("CREDENTIAL_OR_PERMISSION_EXPANSION", release_id, self.approvals_dir)
-            if not ok_override:
+            non_overridable = any(
+                v.startswith(("SELF_APPROVAL_TAMPERING_FORBIDDEN:", "FORBIDDEN_CREDENTIAL_OR_TRANSFER_PATTERN:"))
+                for v in violations
+            )
+            if non_overridable:
+                return False, violations
+            req_scopes = sorted({_map_violation_to_required_scope(v) for v in violations})
+            if not all(has_explicit_operator_approval(sc, release_id, self.approvals_dir)[0] for sc in req_scopes):
                 return False, violations
         return True, []

@@ -113,7 +113,7 @@ class BudgetManager:
 
         # Prorated infrastructure cost for today (UTC hours elapsed * hourly VM rate)
         hours_elapsed_today = now.hour + (now.minute / 60.0) + (now.second / 3600.0)
-        vm_hr_rate = float(self.b_cfg.get("prorated_vm_hourly_cost_usd", 0.0730))
+        vm_hr_rate = float(self.b_cfg.get("prorated_vm_hourly_cost_usd", 0.0343))
         infra_today_usd = round(hours_elapsed_today * vm_hr_rate, 4)
 
         max_daily_calls = int(self.b_cfg.get("max_daily_ai_invocations", 96))

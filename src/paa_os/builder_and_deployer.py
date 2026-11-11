@@ -36,6 +36,7 @@ from src.paa_os.permissions import (
     PermissionClass,
     PermissionGate,
     build_isolated_worker_env,
+    has_explicit_operator_approval,
     load_autonomy_config,
 )
 from src.paa_os.task_db import PAATaskDB, utc_now_iso
@@ -383,6 +384,50 @@ class DeploymentController:
 
         return True, "ALL_CANARY_CHECKS_PASSED", (time.perf_counter() - t0) * 1000.0
 
+    def _is_live_promotion_blocked_by_proposal_only(
+        self,
+        *,
+        release_id: str,
+        task_id: Optional[str],
+        changed_files: List[str],
+    ) -> Tuple[bool, str]:
+        perm = self.cfg.get("permissions") or {}
+        norm = [f.replace("\\", "/").removeprefix("./").lstrip("/") for f in changed_files]
+        only_hot_reload_cfg = bool(norm) and all(f == "config/polymarket_strategy_and_risk.json" for f in norm)
+
+        proposal_only_active = bool(perm.get("proposal_only_live_promotion", False))
+        if only_hot_reload_cfg and not bool(perm.get("allow_auto_risk_tightening_hot_reload", True)):
+            proposal_only_active = True
+        if (not only_hot_reload_cfg) and not bool(perm.get("allow_auto_plumbing_bugfix_deploy", True)):
+            proposal_only_active = True
+
+        nav_floor = float(perm.get("proposal_only_below_nav_usd") or 0.0)
+        if not proposal_only_active and nav_floor > 0.0:
+            st_f = self.data_dir / "live_harvester_state.json"
+            if st_f.exists():
+                try:
+                    st_j = json.loads(st_f.read_text(encoding="utf-8"))
+                    live_nav = float(st_j.get("total_account_equity") or st_j.get("live_bankroll") or 0.0)
+                    if live_nav < nav_floor:
+                        proposal_only_active = True
+                except Exception:
+                    proposal_only_active = True
+
+        if not proposal_only_active:
+            return False, "AUTO_PROMOTE_ALLOWED"
+
+        ok_rel, _ = has_explicit_operator_approval(
+            "LIVE_PRODUCTION_PROMOTION", release_id, self.permission_gate.approvals_dir
+        )
+        ok_tsk = False
+        if task_id:
+            ok_tsk, _ = has_explicit_operator_approval(
+                "LIVE_PRODUCTION_PROMOTION", str(task_id), self.permission_gate.approvals_dir
+            )
+        if ok_rel or ok_tsk:
+            return False, "HUMAN_APPROVED"
+        return True, "PROPOSAL_ONLY_AWAITING_OPERATOR_APPROVAL"
+
     def ensure_baseline_staging_release(self, *, refresh_if_baseline: bool = False) -> Dict[str, Any]:
         """Seeds an initial `BASELINE` staging release (or advances a QA-verified `REL_BASELINE_*` pointer when requested)."""
         cur = self.get_active_staging_pointer()
@@ -588,52 +633,73 @@ class DeploymentController:
             target_env = "staging_canary_verified"
             live_status = "NOT_REQUESTED"
             if promote_to_live_files:
-                # Check live open positions before promoting any non-config code file
-                st_f = self.data_dir / "live_harvester_state.json"
-                open_cnt = 0
-                if st_f.exists():
-                    try:
-                        st_j = json.loads(st_f.read_text(encoding="utf-8"))
-                        open_cnt = int(st_j.get("active_positions_count") or len(st_j.get("active_positions") or {}))
-                        if bool((st_j.get("pre_split_inventory_state") or {}).get("active")):
-                            open_cnt += 1
-                    except Exception:
-                        open_cnt = 1
-                only_hot_reload_cfg = all(
-                    f.replace("\\", "/").removeprefix("./").lstrip("/") == "config/polymarket_strategy_and_risk.json"
-                    for f in changed_files
+                blocked_prop, prop_reason = self._is_live_promotion_blocked_by_proposal_only(
+                    release_id=rel_id,
+                    task_id=str(task_id) if task_id else None,
+                    changed_files=changed_files,
                 )
-                if open_cnt > 0 and not only_hot_reload_cfg:
-                    target_env = "staged_awaiting_flat_book"
-                    live_status = f"DEFERRED_OPEN_POSITIONS({open_cnt})"
+                if blocked_prop:
+                    target_env = "staged_proposal_awaiting_operator_approval"
+                    live_status = prop_reason
+                    self.db.log_event(
+                        "deployer",
+                        "DEPLOYMENT_STAGED_PROPOSAL_ONLY",
+                        {
+                            "release_id": rel_id,
+                            "task_id": task_id,
+                            "changed_files": changed_files,
+                            "staging_release_path": str(cand_rel_dir),
+                            "reason": prop_reason,
+                        },
+                        task_id=task_id,
+                    )
                 else:
-                    bkp_dir = self.live_backups_dir / rel_id
-                    bkp_dir.mkdir(parents=True, exist_ok=True)
-                    applied: List[str] = []
-                    try:
-                        for rel in changed_files:
-                            rel_norm = rel.replace("\\", "/").lstrip("./")
-                            src_f = cand_rel_dir / rel_norm
-                            dst_f = self.repo_root / rel_norm
-                            if dst_f.exists():
+                    # Check non-frozen live open positions before promoting any non-config code file (POL-07)
+                    st_f = self.data_dir / "live_harvester_state.json"
+                    open_cnt = 0
+                    if st_f.exists():
+                        try:
+                            st_j = json.loads(st_f.read_text(encoding="utf-8"))
+                            from audit_losing_trades import is_harvester_state_restart_safe
+                            safe_ok, blocking_ids = is_harvester_state_restart_safe(st_j)
+                            open_cnt = 0 if safe_ok else max(1, len(blocking_ids))
+                        except Exception:
+                            open_cnt = 1
+                    only_hot_reload_cfg = all(
+                        f.replace("\\", "/").removeprefix("./").lstrip("/") == "config/polymarket_strategy_and_risk.json"
+                        for f in changed_files
+                    )
+                    if open_cnt > 0 and not only_hot_reload_cfg:
+                        target_env = "staged_awaiting_flat_book"
+                        live_status = f"DEFERRED_OPEN_POSITIONS({open_cnt})"
+                    else:
+                        bkp_dir = self.live_backups_dir / rel_id
+                        bkp_dir.mkdir(parents=True, exist_ok=True)
+                        applied: List[str] = []
+                        try:
+                            for rel in changed_files:
+                                rel_norm = rel.replace("\\", "/").lstrip("./")
+                                src_f = cand_rel_dir / rel_norm
+                                dst_f = self.repo_root / rel_norm
+                                if dst_f.exists():
+                                    bkp_f = bkp_dir / rel_norm
+                                    bkp_f.parent.mkdir(parents=True, exist_ok=True)
+                                    shutil.copy2(dst_f, bkp_f)
+                                if src_f.exists():
+                                    dst_f.parent.mkdir(parents=True, exist_ok=True)
+                                    tmp_dst = dst_f.with_suffix(dst_f.suffix + ".paa_tmp")
+                                    shutil.copy2(src_f, tmp_dst)
+                                    tmp_dst.replace(dst_f)
+                                    applied.append(rel_norm)
+                            target_env = "live_promoted"
+                            live_status = "PROMOTED_AND_VERIFIED"
+                        except Exception as exc:
+                            for rel_norm in applied:
                                 bkp_f = bkp_dir / rel_norm
-                                bkp_f.parent.mkdir(parents=True, exist_ok=True)
-                                shutil.copy2(dst_f, bkp_f)
-                            if src_f.exists():
-                                dst_f.parent.mkdir(parents=True, exist_ok=True)
-                                tmp_dst = dst_f.with_suffix(dst_f.suffix + ".paa_tmp")
-                                shutil.copy2(src_f, tmp_dst)
-                                tmp_dst.replace(dst_f)
-                                applied.append(rel_norm)
-                        target_env = "live_promoted"
-                        live_status = "PROMOTED_AND_VERIFIED"
-                    except Exception as exc:
-                        for rel_norm in applied:
-                            bkp_f = bkp_dir / rel_norm
-                            dst_f = self.repo_root / rel_norm
-                            if bkp_f.exists():
-                                shutil.copy2(bkp_f, dst_f)
-                        raise RuntimeError(f"LIVE_FILE_PROMOTION_ROLLED_BACK:{exc}") from exc
+                                dst_f = self.repo_root / rel_norm
+                                if bkp_f.exists():
+                                    shutil.copy2(bkp_f, dst_f)
+                            raise RuntimeError(f"LIVE_FILE_PROMOTION_ROLLED_BACK:{exc}") from exc
 
             (cand_rel_dir / "RELEASE_MANIFEST.json").write_text(
                 json.dumps(

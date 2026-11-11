@@ -1711,23 +1711,27 @@ def test_maker_ttl_quiet_upgrades_1_to_4(tmp_path, monkeypatch):
             "ts_unix": time.time(),
         }
 
-    # --- 1. Ideas 1, 3, & 4: Concurrent 3-task spawn reserves pre-await, diversifies at $25/mkt, and steps up stale 0.990 -> 0.993 ---
-    for i in (1, 2, 3):
+    # --- 1. Ideas 1, 3, & 4 + v5.0 15% Event Cap: Concurrent spawn reserves pre-await, diversifies at <=15% NAV (10 sh @ $0.993), and steps up stale 0.990 -> 0.993 ---
+    for i in (1, 2, 3, 11, 12, 13):
         books[f"W{i}"] = {"asks": [{"price": "1.000", "size": "200"}], "bids": [{"price": "0.992", "size": "100"}]}
         books[f"L{i}"] = {"asks": [{"price": "0.015", "size": "200"}], "bids": [{"price": "0.002", "size": "200"}]}
 
-    async def _run_concurrent_3():
+    async def _run_concurrent_6():
         return await asyncio.gather(
             h.maybe_execute_graduated_single_leg_maker_lock(_cand("7001", "W1", "L1", 0.990)),
             h.maybe_execute_graduated_single_leg_maker_lock(_cand("7002", "W2", "L2", 0.990)),
             h.maybe_execute_graduated_single_leg_maker_lock(_cand("7003", "W3", "L3", 0.990)),
+            h.maybe_execute_graduated_single_leg_maker_lock(_cand("7011", "W11", "L11", 0.990)),
+            h.maybe_execute_graduated_single_leg_maker_lock(_cand("7012", "W12", "L12", 0.990)),
+            h.maybe_execute_graduated_single_leg_maker_lock(_cand("7013", "W13", "L13", 0.990)),
         )
 
-    r1, r2, r3 = asyncio.run(_run_concurrent_3())
-    assert len(posted_b1) == 2
-    assert posted_b1[0]["price"] == 0.993 and posted_b1[0]["sh"] == 25  # $25.00 // $0.993 = 25 sh (not 52!)
-    assert posted_b1[1]["price"] == 0.993 and posted_b1[1]["sh"] == 25
-    assert r3["executed"] is False and r3["reason"] == "INSUFFICIENT_MAKER_BOX_BUDGET"
+    conc_res = asyncio.run(_run_concurrent_6())
+    assert len(posted_b1) == 5
+    for pb in posted_b1:
+        assert pb["price"] == 0.993 and pb["sh"] == 10  # 15% * $69.23 = $10.38 // $0.993 = 10 sh
+    budget_rej = [r for r in conc_res if r.get("reason") == "INSUFFICIENT_MAKER_BOX_BUDGET"]
+    assert len(budget_rej) == 1 and budget_rej[0]["executed"] is False
     assert h._prepost_sll_reserved_usd == {}
 
     # --- 2. Idea 1: Whale queue veto (> $350 at tight 1-tick spread) & Outbid-above-cap veto (> $0.994) ---

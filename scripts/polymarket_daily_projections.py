@@ -441,17 +441,6 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "l1_daily_pnl_cap_usd": 30.0,
     },
     {
-        "sleeve": "NR2_CONVERT_NO_SUBSET_ARB",
-        "wave": "Wave 1 (0-Loss Math Live)",
-        "target_day": 1,
-        "min_days": 1.0,
-        "min_settled": 8,
-        "min_wr_pct": 100.0,
-        "source": "alpha124",
-        "stage1_ticket_usd": 25.0,
-        "l1_daily_pnl_cap_usd": 30.0,
-    },
-    {
         "sleeve": "CRY_INC1_INTRADAY_STRIKE_INCLUSION_BOX",
         "wave": "Wave 1 (0-Loss Math Live)",
         "target_day": 1,
@@ -670,17 +659,6 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "source": "alpha124",
         "stage1_ticket_usd": 15.0,
         "l1_daily_pnl_cap_usd": 25.0,
-    },
-    {
-        "sleeve": "CTF_OVERROUND_MINT_SELL",
-        "wave": "Wave 2 ($140 Pre-Split Gun)",
-        "target_day": 5,
-        "min_days": 0.5,
-        "min_settled": 8,
-        "min_wr_pct": 100.0,
-        "source": "alpha124",
-        "stage1_ticket_usd": 18.0,
-        "l1_daily_pnl_cap_usd": 28.0,
     },
 ]
 
@@ -1065,10 +1043,11 @@ def compute_live_equity_and_rates(
     and box-grouped economic trade win rates from `live_harvester_state.json`.
     """
     raw_total_eq = float(live_st.get("total_account_equity") or 0.0)
-    raw_bankroll = float(live_st.get("live_bankroll") or 0.0)
+    _raw_br_val = live_st.get("live_bankroll") if live_st.get("live_bankroll") is not None else live_st.get("bankroll")
+    raw_bankroll = float(_raw_br_val or 0.0)
     has_live_balance = (
         ("total_account_equity" in live_st and live_st.get("total_account_equity") is not None)
-        or ("live_bankroll" in live_st and live_st.get("live_bankroll") is not None)
+        or _raw_br_val is not None
     )
 
     active_pos = live_st.get("active_positions")
@@ -1154,13 +1133,37 @@ def compute_live_equity_and_rates(
     else:
         live_equity = float(fallback_equity)
 
+    def _is_unhedged_residual_leg(p: Dict[str, Any]) -> bool:
+        return (
+            bool(p.get("is_legged_out_residual"))
+            or str(p.get("box_type") or "").upper() == "MULTI_LEG_RESIDUAL"
+            or "_UNWRESID_" in str(p.get("trade_id") or "")
+        )
+
+    def _is_uma_disputed_position(p: Dict[str, Any]) -> bool:
+        if not isinstance(p, dict):
+            return False
+        if bool(p.get("uma_disputed") or p.get("is_uma_disputed") or p.get("disputed")):
+            return True
+        for k_st in ("umaResolutionStatus", "uma_resolution_status", "uma_status", "resolution_status"):
+            if "disput" in str(p.get(k_st) or "").strip().lower():
+                return True
+        return False
+
+    def _is_floor_haircut_leg(p: Dict[str, Any]) -> bool:
+        return _is_unhedged_residual_leg(p) or _is_uma_disputed_position(p)
+
+    has_floor_haircut = any(isinstance(x, dict) and _is_floor_haircut_leg(x) for x in active_legs)
     box_floor_val = 0.0
     for b_legs in box_legs_by_id.values():
-        if len(b_legs) >= 2:
+        if len(b_legs) >= 2 and not any(_is_floor_haircut_leg(x) for x in b_legs):
             paired_sh = min(float(x.get("remaining_shares", x.get("entry_shares", 0.0)) or 0.0) for x in b_legs)
             box_floor_val += max(paired_sh, sum(float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0) for x in b_legs))
         else:
-            box_floor_val += sum(float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0) for x in b_legs)
+            box_floor_val += sum(
+                0.0 if _is_floor_haircut_leg(x) else float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0)
+                for x in b_legs
+            )
 
     non_box_floor_val = 0.0
     for leg in active_legs:
@@ -1169,6 +1172,8 @@ def compute_live_equity_and_rates(
         bid_k = str(leg.get("box_id") or "").strip()
         if leg.get("is_dominance_box") and bid_k:
             continue
+        if _is_floor_haircut_leg(leg):
+            continue
         notional = float(leg.get("remaining_cost_basis", leg.get("notional_usd", 0.0)) or 0.0)
         if leg.get("is_single_leg_lock") or str(leg.get("box_type") or "").upper() == "SINGLE_LEG_LOCK" or str(leg.get("trade_id") or "").startswith(("WS_SNIPE_", "LOCK1_", "MKR_LOCK1_")):
             rem_sh = float(leg.get("remaining_shares", leg.get("entry_shares", 0.0)) or 0.0)
@@ -1176,8 +1181,9 @@ def compute_live_equity_and_rates(
         else:
             non_box_floor_val += notional
 
+    raw_floor_sum = raw_bankroll + non_box_floor_val + box_floor_val + locked_maker_usd
     locked_floor_equity = (
-        max(live_equity, raw_bankroll + non_box_floor_val + box_floor_val + locked_maker_usd)
+        (raw_floor_sum if has_floor_haircut else max(live_equity, raw_floor_sum))
         if has_live_balance
         else live_equity
     )

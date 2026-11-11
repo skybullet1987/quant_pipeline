@@ -382,7 +382,9 @@ class PAAMonitor:
                         continue
                     exp_u = float(p_act.get("candle_expiry_ts", 0.0) or 0.0)
                     st_a = str(p_act.get("status") or "").upper()
-                    uma_local = str(p_act.get("uma_resolution_status") or "").strip().lower()
+                    uma_local = str(
+                        p_act.get("umaResolutionStatus") or p_act.get("uma_resolution_status") or ""
+                    ).strip().lower()
                     if exp_u <= 0.0 or (now_u - exp_u) <= max_unred_s:
                         continue
                     mid_a = str(p_act.get("market_id") or "").strip()

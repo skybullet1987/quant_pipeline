@@ -602,8 +602,9 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
                 f"Expected non-riskless candidate to be BLOCKED: {non_riskless_cand}",
             )
 
-        # 4b. BLOCKS intraday unclinched W1 solar/trough ensemble forecasts (<1.0 p_model or rem_hours_count > 0)
-        # while still permitting post-day p_model == 1.0 clinched locks:
+        # 4b. BLOCKS intraday unclinched W1 solar, ALL single-leg W1_LOW_TROUGH_LOCK (evening cold-pool hazard),
+        # and non-invariant single-leg SP4 pre-settlement stat/subperiod clinches, while permitting post-day
+        # W1_SOLAR_PEAK_LOCK (p_model==1.0, rem_hours_count==0) and 2-leg .5-hook SP4 corridors:
         self.assertIsNotNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
@@ -614,19 +615,26 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
         self.assertIsNotNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
-                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 6},
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 0},
+                rb,
+            )
+        )
+        self.assertIsNotNone(
+            check_strict_pure_riskless_candidate_gate(
+                live_harv,
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "p_model": 0.9995},
                 rb,
             )
         )
         self.assertIsNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
-                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 0},
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_SOLAR_PEAK_LOCK", "p_model": 1.0, "rem_hours_count": 0},
                 rb,
             )
         )
 
-        # 5. PERMITS Row-2 zero-loss post-clinch / UMA / METAR-locked carries + 2-leg D1 / C1 / NR2 / m=1 NR_M1:
+        # 5. PERMITS Row-2 zero-loss post-clinch / UMA / METAR-locked carries + 2-leg D1 / C1 / SP4(.5-hook) / NR2 / m=1 NR_M1:
         for clean_cand in (
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY"},
             {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "p_model": 1.0},
@@ -635,7 +643,7 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "W_PRUNE1_DEAD_NO_BOND", "p_model": 1.0},
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "p_model": 1.0},
             {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP2_NBA_ENDGAME_LOCK", "p_model": 1.0},
-            {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "p_model": 0.9995},
+            {"box_type": "DOMINANCE", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "k_low": 0.5, "k_high": 1.5},
             {"box_type": "NEGRISK_CONVERT", "sleeve_source": "NR_M1_DEAD_SEED_OVERROUND", "convert_mode": "NR_M1_DEAD_SEED_OVERROUND", "no_legs": [{}]},
             {"box_type": "DOMINANCE", "sleeve_source": "D1_SAME_ORACLE_DOMINANCE_BOX", "k_low": 94500.0, "k_high": 95000.0},
             {"box_type": "DOMINANCE", "sleeve_source": "D1_QUIET_BOOK_BOX", "k_low": 2400.0, "k_high": 2410.0},

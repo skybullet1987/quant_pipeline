@@ -148,13 +148,30 @@ class TestPhase1LocalActionsAndDryRunProtocol(unittest.TestCase):
         self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_cfg, 89.0, grad_map))
         self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_cfg, 165.0, ungrad_map))
         self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_cfg, 165.0, grad_map))
-        # Explicit opt-in (`allow_nr0_multileg_dynamic_unpause=True`) + >= $150 + 8/8 0-loss graduated unpauses NR0 while keeping B4 paused
-        rb_optin = dict(rb_cfg, allow_nr0_multileg_dynamic_unpause=True)
-        eff = resolve_dynamic_paused_riskless_sleeves(rb_optin, 165.0, grad_map)
+        # Section 7(b): NR0 (>=3 legs) stays paused at $165.0 (<$500 NAV) AND at $520.0 when certified_multileg_3plus_live_enabled=False
+        rb_optin = dict(rb_cfg, allow_nr0_multileg_dynamic_unpause=True, certified_multileg_3plus_live_enabled=False)
+        self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_optin, 165.0, grad_map))
+        self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_optin, 520.0, grad_map))
+
+        # Unpauses ONLY at >= $500.0 NAV when BOTH allow_nr0_multileg_dynamic_unpause=True AND certified_multileg_3plus_live_enabled=True
+        rb_certified = dict(rb_optin, certified_multileg_3plus_live_enabled=True)
+        self.assertIn("NR0_ZERO_FEE_SLATE_ARB", resolve_dynamic_paused_riskless_sleeves(rb_certified, 165.0, grad_map))
+        eff = resolve_dynamic_paused_riskless_sleeves(rb_certified, 520.0, grad_map)
         self.assertNotIn("NR0_ZERO_FEE_SLATE_ARB", eff)
         self.assertIn("B4_TOUCHED_BARRIER_WICK_LOCK", eff)
 
-        harv = types.SimpleNamespace(enforce_pure_riskless_mode=True)
+        harv_165 = types.SimpleNamespace(
+            enforce_pure_riskless_mode=True,
+            _last_known_collateral=165.0,
+            active_positions={},
+            pending_entry_intents={},
+        )
+        harv_520 = types.SimpleNamespace(
+            enforce_pure_riskless_mode=True,
+            _last_known_collateral=520.0,
+            active_positions={},
+            pending_entry_intents={},
+        )
         ok_cand = {
             "box_type": "MULTI_LEG_BUNDLE",
             "sleeve_source": "NR0_ZERO_FEE_SLATE_ARB",
@@ -162,13 +179,16 @@ class TestPhase1LocalActionsAndDryRunProtocol(unittest.TestCase):
             "neg_risk_augmented": False,
             "legs": [{"token_id": f"t{i}"} for i in range(4)],
         }
-        # Blocked by default under strict_pure_riskless_mode; allowed only with explicit opt-in and closed <=6-leg partition
-        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv, ok_cand, rb_cfg))
-        self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv, ok_cand, rb_optin))
+        # Blocked below $500 NAV and above $500 NAV without certified_multileg_3plus_live_enabled=True;
+        # allowed at >= $500 NAV with explicit opt-in + certification + closed <=6-leg partition.
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv_520, ok_cand, rb_cfg))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv_520, ok_cand, rb_optin))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv_165, ok_cand, rb_certified))
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv_520, ok_cand, rb_certified))
         aug_cand = dict(ok_cand, neg_risk_augmented=True)
-        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv, aug_cand, rb_optin))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv_520, aug_cand, rb_certified))
         big_cand = dict(ok_cand, legs=[{"token_id": f"t{i}"} for i in range(8)])
-        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv, big_cand, rb_optin))
+        self.assertIsNotNone(check_strict_pure_riskless_candidate_gate(harv_520, big_cand, rb_certified))
 
     def test_action5_dry_run_protocol_precision_and_p0_gate_0_lock(self) -> None:
         self.assertTrue(DRY_RUN_ONLY)

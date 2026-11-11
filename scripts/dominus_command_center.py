@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 """
-DOMINUS — RISKLESS PAA COMMAND CENTER v6.1 (24/7 Zero-Overhead Local Web Dashboard & CLI).
+DOMINUS — RISKLESS PAA COMMAND CENTER v6.2 (24/7 Zero-Overhead Local Web Dashboard & CLI).
 
 Replaces heavy VM Chrome Remote Desktop (which consumed ~1.74 GB RAM + ~45% CPU on
 kraken-finland) with an institutional local command center at http://127.0.0.1:8787 that
 fetches bounded read-only JSON snapshots over SSH using 0 MB persistent VM RAM.
 
-v6.1 Architecture:
+v6.2 Architecture:
   - Penny-Exact Wallet-to-PnL Reconciliation ($60.92 Pure Riskless Lock Start + Post-Lock Cash Gain == Live Polygon pUSD)
   - 100% Riskless-First KPIs: Pure Riskless Live W/L, Post-Lock Zero-Loss Streak, On-Chain Cash & CLOB Quoting Utilization
   - Hero #1: Live Working CLOB Orders (with Cloudflare-safe Gamma title resolution & 1s live order-age tick) + Active Positions
-  - Hero #2: Live Riskless Opportunity Radar (Live Harvester IPC, Machine-Gun Auto-Discovery, BOND1 UMA Carry, MKR_LOCK1 Clinch, Locked Rewards, NegRisk Slate Arbs)
+  - Hero #2: Live Riskless Opportunity Radar (Live Harvester IPC, Machine-Gun, v6 Expansion & Stage G Cross-Venue, UMA Carry, Post-Clinch, Slate Arbs)
+  - Stage G Cross-Venue Shadow (STX Ontario CAD 0% Maker <-> ForecastEx USD, Deribit USDC, Limitless, SX Bet, Predict.fun) + 8 v6 Riskless Expansion Engines + CompactCandidateL2Recorder (<=12 MB/day)
   - Active-Riskless vs Historical-Legacy Filters on Strategy Breakdown & Closed Trades (with cached Gamma Market Questions)
-  - RISKLESS PAA Zero-Trust OS Telemetry (7/7 Active Fleet + 9 RTDS/SHM Feeds, 1s timer/TTL countdowns, Tier-A/B/C memory, 5-Gate Verifier)
+  - RISKLESS PAA Zero-Trust OS Telemetry (Active Fleet + 9 RTDS/SHM Feeds, 1s timer/TTL countdowns, Tier-A/B/C memory, 5-Gate Verifier)
 
 Usage:
   # Launch 24/7 auto-refreshing browser dashboard on Windows:
@@ -40,10 +41,12 @@ from typing import Any, Dict, Optional
 
 REMOTE_PROBE_PY = r"""# -*- coding: utf-8 -*-
 import calendar, json, os, pathlib, re, sqlite3, statistics, subprocess, sys, time, urllib.request
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
-
-_OTTAWA_TZ = ZoneInfo("America/Toronto")
+from datetime import datetime, timedelta, timezone
+try:
+    from zoneinfo import ZoneInfo
+    _OTTAWA_TZ = ZoneInfo("America/Toronto")
+except Exception:
+    _OTTAWA_TZ = timezone(timedelta(hours=-5), "EST")
 _HTTP_UA = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 
 def _to_ottawa_dt(val):
@@ -94,7 +97,7 @@ out = {
     "fetched_at_et": _now_et.strftime("%Y-%m-%d %H:%M:%S %Z"),
     "ottawa_tz_abbr": _now_et.strftime("%Z"),
     "unix_ts": time.time(),
-    "dashboard_version": "6.1.0",
+    "dashboard_version": "6.2.0",
 }
 
 # 1. Host load & memory
@@ -120,10 +123,12 @@ try:
 except Exception:
     out["mem_mb"] = {}
 
-# 2. Services (single batched systemctl call for consolidated Riskless PAA 7-unit topology)
+# 2. Services (single batched systemctl call for consolidated Riskless PAA + Stage G Cross-Venue topology)
 svcs = [
     "polymarket-live-harvester.service",
     "polymarket-alpha124-shadow.service",
+    "polymarket-cross-venue-shadow.service",
+    "polymarket-cross-venue-shadow-watchdog.timer",
     "polymarket-recorder.service",
     "polymarket-telemetry-compactor.timer",
     "polymarket-paa-monitor.timer",
@@ -284,6 +289,7 @@ if lh_path.exists():
     _clob_buy_quoting_usd = 0.0
     _resting_redeem_edge_usd = 0.0
     _clob_orders_ok = False
+    _orphan_orders_cnt = 0
     try:
         import contextlib, io as _io
         _ord_cache_p = pathlib.Path("/tmp/dominus_clob_open_orders_cache.json")
@@ -368,6 +374,7 @@ if lh_path.exists():
             _cts_dt = _to_ottawa_dt(_o.get("created_at"))
             _cts_o = _cts_dt.timestamp() if _cts_dt is not None else 0.0
             if _cts_o > 0.0 and (time.time() - _cts_o) > 3600.0 and (not _oid_cc or _oid_cc not in _tracked_oids_cc):
+                _orphan_orders_cnt += 1
                 continue
             _aid = str(_o.get("asset_id") or "")
             _side_o = str(_o.get("side") or "BUY").upper()
@@ -466,45 +473,91 @@ if lh_path.exists():
         )
     _free_cash_usd = round(max(0.0, _wallet_cash - _inflight_intents_usd), 2)
     _quoting_util_pct = round(min(100.0, 100.0 * _inflight_intents_usd / max(0.01, _wallet_cash)), 1) if _wallet_cash > 0 else 0.0
-    _act_map = s.get("active_positions") or {}
-    def _pos_live_book_val(p: dict) -> float:
-        if not isinstance(p, dict):
-            return 0.0
-        if _onchain_cash is not None:
-            if bool(p.get("_pre_redeemed_onchain")):
-                return 0.0
-            if str(p.get("pending_settlement_close_reason") or "").upper() in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}:
-                return 0.0
-        return float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0)
+    def _compute_cc_valuations(s_doc: dict, wallet_cash_v: float, onchain_cash_v) -> tuple[dict, float, float, float]:
+        act_m = s_doc.get("active_positions") or {}
 
-    _pending_synced_eq_usd = (
-        sum(
-            max(0.0, float(i.get("synced_equity_usd", 0.0) or 0.0))
-            for i in (s.get("pending_entry_intents") or {}).values()
-            if isinstance(i, dict)
+        def _pos_live_book_val(p: dict) -> float:
+            if not isinstance(p, dict):
+                return 0.0
+            if onchain_cash_v is not None:
+                if bool(p.get("_pre_redeemed_onchain")):
+                    return 0.0
+                if str(p.get("pending_settlement_close_reason") or "").upper() in {"MARKET_RESOLVED_LOSS", "EXPIRED_OUT_OF_MONEY"}:
+                    return 0.0
+            return float(p.get("remaining_cost_basis", p.get("notional_usd", 0.0)) or 0.0)
+
+        def _is_unhedged_resid_cc(p: dict) -> bool:
+            return (
+                isinstance(p, dict)
+                and (
+                    bool(p.get("is_legged_out_residual"))
+                    or str(p.get("box_type") or "").upper() == "MULTI_LEG_RESIDUAL"
+                    or "_UNWRESID_" in str(p.get("trade_id") or "")
+                )
+            )
+
+        def _is_uma_disputed_cc(p: dict) -> bool:
+            if not isinstance(p, dict):
+                return False
+            if bool(p.get("uma_disputed") or p.get("is_uma_disputed") or p.get("disputed")):
+                return True
+            for k_st in ("umaResolutionStatus", "uma_resolution_status", "uma_status", "resolution_status"):
+                if "disput" in str(p.get(k_st) or "").strip().lower():
+                    return True
+            return False
+
+        def _is_floor_zero_cc(p: dict) -> bool:
+            return _is_unhedged_resid_cc(p) or _is_uma_disputed_cc(p)
+
+        pending_synced = (
+            sum(
+                max(0.0, float(i.get("synced_equity_usd", 0.0) or 0.0))
+                for i in (s_doc.get("pending_entry_intents") or {}).values()
+                if isinstance(i, dict)
+            )
+            if onchain_cash_v is not None
+            else 0.0
         )
-        if _onchain_cash is not None
-        else 0.0
+        active_book_u = round(sum(_pos_live_book_val(p) for p in act_m.values() if isinstance(p, dict)) + pending_synced, 2)
+        live_eq_u = (
+            round(wallet_cash_v + active_book_u, 2)
+            if onchain_cash_v is not None
+            else round(float(s_doc.get("total_account_equity", 0.0) or 0.0), 2)
+        )
+        box_grps = {}
+        for p_act in act_m.values():
+            if (
+                isinstance(p_act, dict)
+                and p_act.get("is_dominance_box")
+                and p_act.get("box_id")
+                and not (onchain_cash_v is not None and p_act.get("_pre_redeemed_onchain"))
+            ):
+                box_grps.setdefault(str(p_act["box_id"]), []).append(p_act)
+        paired_ids = {
+            bid
+            for bid, legs in box_grps.items()
+            if len(legs) == 2
+            and not any(_is_floor_zero_cc(lg) for lg in legs)
+            and all(float(lg.get("custom_maker_exit_price") or 0.99) >= 0.95 for lg in legs)
+        }
+        redeem_floor_pos = (
+            sum(
+                min(float(lg.get("remaining_shares", lg.get("entry_shares", 0.0)) or 0.0) for lg in box_grps[bid])
+                for bid in paired_ids
+            )
+            + sum(
+                0.0 if _is_floor_zero_cc(p) else _pos_live_book_val(p)
+                for p in act_m.values()
+                if isinstance(p, dict) and str(p.get("box_id") or "") not in paired_ids
+            )
+            + pending_synced
+        )
+        guar_floor_u = round(wallet_cash_v + redeem_floor_pos, 2)
+        return act_m, active_book_u, live_eq_u, guar_floor_u
+
+    _act_map, _active_book_usd, _live_equity_usd, _guaranteed_redeem_equity_usd = _compute_cc_valuations(
+        s, _wallet_cash, _onchain_cash
     )
-    _active_book_usd = round(sum(_pos_live_book_val(p) for p in _act_map.values() if isinstance(p, dict)) + _pending_synced_eq_usd, 2)
-    _live_equity_usd = round(_wallet_cash + _active_book_usd, 2) if _onchain_cash is not None else round(float(s.get("total_account_equity", 0.0) or 0.0), 2)
-    _box_groups = {}
-    for _p_act in _act_map.values():
-        if isinstance(_p_act, dict) and _p_act.get("is_dominance_box") and _p_act.get("box_id") and not (_onchain_cash is not None and _p_act.get("_pre_redeemed_onchain")):
-            _box_groups.setdefault(str(_p_act["box_id"]), []).append(_p_act)
-    _paired_box_ids = {
-        bid for bid, legs in _box_groups.items()
-        if len(legs) == 2 and all(float(lg.get("custom_maker_exit_price") or 0.99) >= 0.95 for lg in legs)
-    }
-    _redeem_floor_positions = sum(
-        min(float(lg.get("remaining_shares", lg.get("entry_shares", 0.0)) or 0.0) for lg in _box_groups[bid])
-        for bid in _paired_box_ids
-    ) + sum(
-        _pos_live_book_val(p)
-        for p in _act_map.values()
-        if isinstance(p, dict) and str(p.get("box_id") or "") not in _paired_box_ids
-    ) + _pending_synced_eq_usd
-    _guaranteed_redeem_equity_usd = round(_wallet_cash + _redeem_floor_positions, 2)
     _ONCHAIN_WALLET_RECON = {
         "LIVE_6399804_1793391806_DOWN": {"pnl": -18.63, "notional": 18.63, "entry_px": 0.81},
     }
@@ -981,6 +1034,7 @@ if lh_path.exists():
         "state_bankroll_usd": round(_state_cash, 2),
         "onchain_verified": _onchain_cash is not None,
         "clob_orders_verified": _clob_orders_ok,
+        "orphan_orders_count": _orphan_orders_cnt,
         "equity_usd": _live_equity_usd,
         "mtm_bid_equity_usd": round(_wallet_cash + _mtm_bid_total, 2),
         "tp_target_equity_usd": round(_wallet_cash + _tp_val_total, 2),
@@ -1404,7 +1458,25 @@ if a_path.exists():
         "N1_NEGRISK_CROSS_BOX",
         "U1_DAILY_UPDOWN_LOCK",
         "W1_SOLAR_PEAK_LOCK",
+        "XV_SUBSET_NO_BOX",
+        "TAIL_BOUNDARY_001_ARB",
+        "BOND3_MULTISOURCE_DEAD_SPLIT",
+        "XV_FX_INVARIANT_CAD_USD_BOX",
+        "DERIBIT_VERTICAL_SUPER_REP",
+        "XV_HALFTIME_FREEZE_CORRIDOR",
+        "HEDGED_PRESPLIT_CONV_GUN",
+        "YIELD_STACKED_CARRY_BOX",
     ]
+    v6_expansion_sleeves = {
+        "XV_SUBSET_NO_BOX",
+        "TAIL_BOUNDARY_001_ARB",
+        "BOND3_MULTISOURCE_DEAD_SPLIT",
+        "XV_FX_INVARIANT_CAD_USD_BOX",
+        "DERIBIT_VERTICAL_SUPER_REP",
+        "XV_HALFTIME_FREEZE_CORRIDOR",
+        "HEDGED_PRESPLIT_CONV_GUN",
+        "YIELD_STACKED_CARRY_BOX",
+    }
     machine_gun_sleeves = []
     for _mg_pat in ("*machine_gun*.json", "*mg_riskless*.json"):
         for _mg_fp in sorted((root / "data/polymarket").glob(_mg_pat)):
@@ -1472,6 +1544,7 @@ if a_path.exists():
         elif (not _is_paused_rb) and 4 <= w_n < 8 and l_n == 0:
             near_grad8_cnt += 1
         is_v3 = slv in frontier_v3_grad8 or _is_mg
+        is_v6 = slv in v6_expansion_sleeves
         is_bridged = (not _is_paused_rb) and (slv in live_bridged_sleeves) and (l_n == 0 or g8_prom)
         is_live_slv = bool(g8_prom or is_bridged)
         if _is_paused_rb:
@@ -1483,6 +1556,9 @@ if a_path.exists():
         elif _is_mg:
             grad_lbl = f"MG G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
             tier_tag = "MACHINE_GUN"
+        elif is_v6:
+            grad_lbl = f"V6 G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
+            tier_tag = "V6_RISKLESS"
         elif is_v3:
             grad_lbl = f"V3 G8 ({min(w_n, 8)}/8)" if l_n == 0 else f"REVOKED ({w_n}/{l_n})"
             tier_tag = "V3_AUTO_G8"
@@ -1505,6 +1581,7 @@ if a_path.exists():
             "tier_tag": tier_tag,
             "is_live": is_live_slv,
             "is_machine_gun": _is_mg,
+            "is_v6": is_v6,
             "is_paused": _is_paused_rb,
         })
     # Sort sleeves so PROMOTED & high-win zero-loss sleeves surface at the top
@@ -1642,7 +1719,7 @@ radar_summary = {
     "events_scanned": 0,
     "fee_free_markets": 0,
     "fee_enabled_markets": 0,
-    "counts": {"LIVE_IPC": 0, "MACHINE_GUN": 0, "UMA_CARRY": 0, "POST_CLINCH": 0, "LOCKED_REWARD": 0, "SLATE_ARB": 0},
+    "counts": {"LIVE_IPC": 0, "MACHINE_GUN": 0, "V6_EXPANSION": 0, "UMA_CARRY": 0, "POST_CLINCH": 0, "LOCKED_REWARD": 0, "SLATE_ARB": 0},
     "top_bps_per_hr": 0.0,
 }
 
@@ -1862,10 +1939,128 @@ if rk_path.exists():
     except Exception:
         pass
 
+# 4d. Stage G Cross-Venue Shadow + 8 v6 Riskless Expansion Engines + CompactCandidateL2Recorder Telemetry
+_xv_dir = root / "data/cross_venue_shadow"
+_xv_health = {}
+_xv_grad = {}
+_v6_xv = {}
+_v6_a124 = {}
+for _jp, _jd in (
+    (_xv_dir / "shadow_service_health.json", "_xv_health"),
+    (_xv_dir / "shadow_graduation_report.json", "_xv_grad"),
+    (_xv_dir / "v6_expansion_telemetry.json", "_v6_xv"),
+    (root / "data/polymarket/v6_expansion_alpha124_telemetry.json", "_v6_a124"),
+):
+    if _jp.exists():
+        try:
+            locals()[_jd] = json.loads(_jp.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+if not _v6_a124 and isinstance(out.get("alpha124"), dict):
+    try:
+        if 'a' in locals() and isinstance(a, dict) and isinstance(a.get("v6_expansion"), dict):
+            _v6_a124 = a["v6_expansion"]
+    except Exception:
+        pass
+
+_l2_bytes_total = 0
+_l2_files_cnt = 0
+for _l2_root in (root / "data/polymarket/candidate_l2", _xv_dir / "candidate_l2"):
+    if _l2_root.exists():
+        try:
+            for _lf in _l2_root.rglob("*"):
+                if _lf.is_file():
+                    _l2_files_cnt += 1
+                    _l2_bytes_total += _lf.stat().st_size
+        except Exception:
+            pass
+
+_v6_meta = [
+    ("XV_SUBSET_NO_BOX", "Cross-Venue m=2 Subset NO Box (Cancel-Safe +$1 Outsider)"),
+    ("TAIL_BOUNDARY_001_ARB", "Polymarket 0.001-Tick Sub-Penny Parabolic Fee Collapse"),
+    ("BOND3_MULTISOURCE_DEAD_SPLIT", "Multi-Source MOOV2 Carry + Stage C2 Dead-Leg Split"),
+    ("XV_FX_INVARIANT_CAD_USD_BOX", "CA-ON Legal STX Ontario (CAD 0% Mkr) <-> ForecastEx (USD)"),
+    ("DERIBIT_VERTICAL_SUPER_REP", "Keyless Deribit Linear USDC 08:00 UTC Vertical Super-Rep"),
+    ("XV_HALFTIME_FREEZE_CORRIDOR", "Cross-Venue .5-Hook Halftime Freeze FG = S_1H + 2H"),
+    ("HEDGED_PRESPLIT_CONV_GUN", "Closed NegRisk NR3 Pre-Converted Overround + Shadow Split"),
+    ("YIELD_STACKED_CARRY_BOX", "Contractual Coupon Carry Box (ForecastEx 3.8% / vUSDT)"),
+]
+_v6_rows = []
+_v6_eval_tot = 0
+_v6_found_tot = 0
+_by_slv_ref = (a.get("by_sleeve") if ('a' in locals() and isinstance(a, dict)) else None) or {}
+for _sid, _sdesc in _v6_meta:
+    _ps_a = ((_v6_a124.get("per_sleeve") or {}).get(_sid)) or {}
+    _ps_x = ((_v6_xv.get("per_sleeve") or {}).get(_sid)) or {}
+    _ev_c = int(_ps_a.get("evaluated", 0) or 0) + int(_ps_x.get("evaluated", 0) or 0)
+    _fn_c = int(_ps_a.get("opportunities_found", 0) or 0) + int(_ps_x.get("opportunities_found", 0) or 0)
+    _cy_c = int(_ps_a.get("cycle_hits", 0) or 0) + int(_ps_x.get("cycle_hits", 0) or 0)
+    _sm = _by_slv_ref.get(_sid) or {}
+    _v6_eval_tot += _ev_c
+    _v6_found_tot += _fn_c
+    _v6_rows.append({
+        "strategy_id": _sid,
+        "desc": _sdesc,
+        "evaluated": _ev_c,
+        "opportunities_found": _fn_c,
+        "cycle_hits": _cy_c,
+        "shadow_open": int(_sm.get("open", 0) or 0),
+        "shadow_wins": int(_sm.get("wins", 0) or 0),
+        "shadow_losses": int(_sm.get("losses", 0) or 0),
+    })
+
+for _vhit in ((_v6_xv.get("top_opportunities") or []) + (_v6_a124.get("top_opportunities") or []))[:12]:
+    if not isinstance(_vhit, dict):
+        continue
+    _push_radar(
+        "V6_EXPANSION",
+        str(_vhit.get("strategy_id") or "V6_RISKLESS"),
+        str(_vhit.get("opportunity_id") or ""),
+        str(_vhit.get("title") or "v6 Verified Riskless Box"),
+        "+".join(_vhit.get("venues") or ["POLY"]),
+        float(_vhit.get("unit_cost") or 0.985),
+        float(_vhit.get("guaranteed_net_edge_bps") or 0.0),
+        float(_vhit.get("bps_per_hr") or 0.0),
+        float(_vhit.get("all_in_cost_usd") or 50.0),
+        _vhit.get("rem_hours", 1.0),
+        False,
+        ",".join(_vhit.get("jurisdiction_tags") or ["SHADOW_V6"]),
+    )
+
+_rec_a = _v6_a124.get("candidate_l2_recorder") or {}
+_rec_x = _v6_xv.get("candidate_l2_recorder") or {}
+_xv_age = round(max(0.0, _now_rad_u - float(_xv_health.get("checked_at_unix") or 0.0)), 1) if _xv_health.get("checked_at_unix") else None
+out["v6_expansion"] = {
+    "a124_cycles": int(_v6_a124.get("cycles_scanned", 0) or 0),
+    "cross_venue_cycles": int(_v6_xv.get("cycles_scanned", _xv_health.get("cycles_completed", 0)) or 0),
+    "evaluated_total": _v6_eval_tot,
+    "opportunities_total": _v6_found_tot,
+    "deribit_usdc_quotes": int(_v6_xv.get("deribit_usdc_quotes_cached", 0) or 0),
+    "engines": _v6_rows,
+    "l2_recorder": {
+        "archive_files": _l2_files_cnt,
+        "archive_mb": round(_l2_bytes_total / (1024.0 * 1024.0), 3),
+        "bytes_today": int(_rec_a.get("bytes_today", 0) or 0) + int(_rec_x.get("bytes_today", 0) or 0),
+        "daily_cap_mb": 12.0,
+        "frames_recorded": int(_rec_a.get("frames_recorded", 0) or 0) + int(_rec_x.get("frames_recorded", 0) or 0),
+        "budget_drops": int(_rec_a.get("budget_drops", 0) or 0) + int(_rec_x.get("budget_drops", 0) or 0),
+    },
+    "cross_venue_shadow": {
+        "service_healthy": bool(_xv_health.get("service_healthy", False)),
+        "network_mode": str(_xv_health.get("network_mode") or _v6_xv.get("network_mode") or "init"),
+        "data_origin": str(_xv_health.get("data_origin") or "-"),
+        "age_sec": _xv_age,
+        "cycles_completed": int(_xv_health.get("cycles_completed", 0) or 0),
+        "live_markets_seen": int(_v6_xv.get("live_markets_seen", 0) or 0),
+        "matched_pairs_seen": int(_v6_xv.get("matched_pairs_seen", 0) or 0),
+        "venue_health": (_xv_grad.get("venue_health") or _xv_health.get("venue_health") or {}),
+    },
+}
+
 radar_opps.sort(
     key=lambda x: (
         0 if x.get("authorized_live") else 1,
-        0 if x["bucket"] in ("LIVE_IPC", "MACHINE_GUN") else 1,
+        0 if x["bucket"] in ("LIVE_IPC", "MACHINE_GUN", "V6_EXPANSION") else 1,
         -float(x.get("bps_per_hr") or 0.0),
     )
 )
@@ -1967,6 +2162,7 @@ except Exception:
     paa_out["pid1_supervisor_timer"] = "unknown"
 
 if paa_db_p.exists():
+    _conn = None
     try:
         _conn = sqlite3.connect(f"file:{paa_db_p}?mode=ro", uri=True, timeout=3.0)
         _conn.row_factory = sqlite3.Row
@@ -2213,9 +2409,14 @@ if paa_db_p.exists():
                     "max_daily_ai_calls": 96,
                     "max_hourly_ai_calls": 8,
                 }
-        _conn.close()
     except Exception as _db_exc:
         paa_out["db_probe_warning"] = str(_db_exc)[:200]
+    finally:
+        if _conn is not None:
+            try:
+                _conn.close()
+            except Exception:
+                pass
 elif paa_dash_p.exists():
     try:
         pd_j = json.loads(paa_dash_p.read_text(encoding="utf-8"))
@@ -2253,7 +2454,7 @@ try:
         all_time_ai_cost_usd=float(_vf_sync.get("research_ai_cost_usd") or 0.0),
         daily_ai_cost_usd=float(_br_sb.get("daily_ai_cost_usd") or 0.0),
         accounting_discrepancy_usd=float(_vf_sync.get("accounting_discrepancy_usd") or 0.0),
-        orphan_orders_count=0,
+        orphan_orders_count=int(_pm_sb.get("orphan_orders_count") or 0),
         paused_sleeves=_paus_sb,
         data_dir=root / "data/polymarket",
         now_unix=now_probe_u,
@@ -2408,7 +2609,7 @@ HTML_PAGE = """<!DOCTYPE html>
     <h1>
       <span class="dot" id="live_dot"></span>
       <span>DOMINUS &mdash; RISKLESS PAA COMMAND CENTER</span>
-      <span class="lock-badge" id="hdr_mode_badge">100% PURE RISKLESS LOCK &bull; v6.1</span>
+      <span class="lock-badge" id="hdr_mode_badge">100% PURE RISKLESS LOCK &bull; v6.2</span>
     </h1>
     <div class="sub" id="meta">Connecting to kraken-finland over zero-RAM SSH pipe...</div>
   </div>
@@ -2423,6 +2624,7 @@ HTML_PAGE = """<!DOCTYPE html>
   <button class="tab-btn" id="tab_stageb" onclick="setViewTab('stageb')">Institutional Attribution &amp; Funnel</button>
   <button class="tab-btn" id="tab_orders" onclick="setViewTab('orders')">Live Orders &amp; Portfolio</button>
   <button class="tab-btn" id="tab_radar" onclick="setViewTab('radar')">Riskless Opportunity Radar</button>
+  <button class="tab-btn" id="tab_v6" onclick="setViewTab('v6')">v6 Expansion &amp; Cross-Venue (8)</button>
   <button class="tab-btn" id="tab_a124" onclick="setViewTab('a124')">Alpha-124 &amp; Machine-Gun Grad-8</button>
   <button class="tab-btn" id="tab_paa" onclick="setViewTab('paa')">RISKLESS PAA Zero-Trust OS</button>
   <button class="tab-btn" id="tab_forensics" onclick="setViewTab('forensics')">Execution &amp; Fleet Diagnostics</button>
@@ -2489,6 +2691,7 @@ HTML_PAGE = """<!DOCTYPE html>
       <button class="flt-btn active" id="rad_flt_ALL" onclick="setRadarFilter('ALL')">All Riskless</button>
       <button class="flt-btn" id="rad_flt_LIVE_IPC" onclick="setRadarFilter('LIVE_IPC')">Live Harvester IPC</button>
       <button class="flt-btn" id="rad_flt_MACHINE_GUN" onclick="setRadarFilter('MACHINE_GUN')">Machine-Gun</button>
+      <button class="flt-btn" id="rad_flt_V6_EXPANSION" onclick="setRadarFilter('V6_EXPANSION')">v6 &amp; Cross-Venue</button>
       <button class="flt-btn" id="rad_flt_UMA_CARRY" onclick="setRadarFilter('UMA_CARRY')">UMA Carry (BOND1)</button>
       <button class="flt-btn" id="rad_flt_POST_CLINCH" onclick="setRadarFilter('POST_CLINCH')">Post-Clinch (LOCK1)</button>
       <button class="flt-btn" id="rad_flt_LOCKED_REWARD" onclick="setRadarFilter('LOCKED_REWARD')">Locked Rewards</button>
@@ -2511,6 +2714,33 @@ HTML_PAGE = """<!DOCTYPE html>
         </tr>
       </thead>
       <tbody id="radar_rows"></tbody>
+    </table>
+  </div>
+</div>
+
+<!-- STAGE G CROSS-VENUE SHADOW + 8 v6 RISKLESS EXPANSION ENGINES + COMPACT CANDIDATE L2 RECORDER -->
+<div class="card" id="sec_v6_expansion" style="margin-bottom:15px;border-color:#2b4a70;">
+  <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+    <div>
+      <h2 style="margin:0;color:var(--cyan);">v6 Riskless Expansion Matrix (8 State-Dominance Engines) &amp; Stage G Cross-Venue Shadow</h2>
+      <div class="sub" style="margin-top:2px;">Strict Worst-Case State Dominance (<code>min V_T(&omega;) &gt; All-In Cost</code>) &bull; CA-ON Legal <code>STX CAD &harr; ForecastEx USD</code> &bull; Keyless Deribit <code>USDC</code> &bull; Bounded <code>&le;12 MB/day</code> Candidate L2 Recorder</div>
+    </div>
+    <span class="pill pill-info" id="v6_health_pill">Stage G + Alpha-124 Shadow Armed</span>
+  </div>
+  <div class="sf-strip" id="v6_strip"></div>
+  <div style="max-height:265px;overflow-y:auto;border:1px solid var(--border);border-radius:6px;">
+    <table>
+      <thead>
+        <tr>
+          <th>v6 Engine Sleeve</th>
+          <th>Mathematical Invariant &amp; Venue Scope</th>
+          <th>Evaluated</th>
+          <th>Verified Hits</th>
+          <th>Shadow W / L</th>
+          <th>Gate Status</th>
+        </tr>
+      </thead>
+      <tbody id="v6_engine_rows"></tbody>
     </table>
   </div>
 </div>
@@ -2554,6 +2784,7 @@ HTML_PAGE = """<!DOCTYPE html>
       </div>
       <div style="display:flex;gap:5px;">
         <button class="flt-btn active" id="a124_flt_focus" onclick="setA124Filter('focus')">Live &amp; Zero-Loss</button>
+        <button class="flt-btn" id="a124_flt_v6" onclick="setA124Filter('v6')">v6 Expansion (8)</button>
         <button class="flt-btn" id="a124_flt_all" onclick="setA124Filter('all')">All Sleeves</button>
       </div>
     </div>
@@ -2779,7 +3010,7 @@ let _lastMetaPrefix = '';
 
 function setViewTab(tab) {
   _viewTab = tab;
-  ['all', 'stageb', 'orders', 'radar', 'a124', 'paa', 'forensics'].forEach(k => {
+  ['all', 'stageb', 'orders', 'radar', 'v6', 'a124', 'paa', 'forensics'].forEach(k => {
     const b = document.getElementById('tab_' + k);
     if (b) b.className = 'tab-btn' + (k === tab ? ' active' : '');
   });
@@ -2790,6 +3021,7 @@ function setViewTab(tab) {
   show('sec_stageb', tab === 'all' || tab === 'stageb');
   show('sec_live_orders', tab === 'all' || tab === 'orders');
   show('sec_radar', tab === 'all' || tab === 'radar');
+  show('sec_v6_expansion', tab === 'all' || tab === 'v6' || tab === 'radar');
   show('sec_portfolio_a124', tab === 'all' || tab === 'orders' || tab === 'a124');
   show('sec_portfolio_card', tab === 'all' || tab === 'orders');
   show('sec_a124_card', tab === 'all' || tab === 'a124');
@@ -2799,6 +3031,49 @@ function setViewTab(tab) {
   }
   show('sec_paa', tab === 'all' || tab === 'paa');
   show('sec_forensics', tab === 'all' || tab === 'forensics');
+}
+
+function renderV6Expansion(v6) {
+  const d = v6 || {};
+  const xv = d.cross_venue_shadow || {};
+  const l2 = d.l2_recorder || {};
+  const pill = document.getElementById('v6_health_pill');
+  if (pill) {
+    const ok = Boolean(xv.service_healthy) || Number(d.a124_cycles || 0) > 0;
+    pill.className = 'pill ' + (ok ? 'pill-ok' : 'pill-warn');
+    pill.textContent = `Stage G (${xv.network_mode || 'init'}) #${xv.cycles_completed || 0} • A124 v6 #${d.a124_cycles || 0}`;
+  }
+  const strip = document.getElementById('v6_strip');
+  if (strip) {
+    const vh = xv.venue_health || {};
+    const vBadges = ['polymarket', 'stx_ontario', 'forecastex', 'limitless', 'sx_bet', 'predict_fun'].map(vn => {
+      const info = vh[vn] || {};
+      const st = String(info.status || info.verified_outcome_state || 'IDLE');
+      const cls = st.startsWith('OK') || st.includes('AUTHORIZED') ? 'pos' : 'sub';
+      return `<span class="${cls}">${esc(vn.replace('_ontario', ' CAD'))}:${esc(st.slice(0, 12))}</span>`;
+    }).join(' &bull; ');
+    const todayMb = (Number(l2.bytes_today || 0) / (1024 * 1024)).toFixed(2);
+    strip.innerHTML =
+      `<span class="sf-chip">Evaluated Pairs/Slates: <b>${(d.evaluated_total || 0).toLocaleString()}</b> &bull; Verified Hits: <b class="pos">${d.opportunities_total || 0}</b></span>` +
+      `<span class="sf-chip">Stage G Live Mkts: <b>${xv.live_markets_seen || 0}</b> (Matched Pairs: <b class="cyan">${xv.matched_pairs_seen || 0}</b> &bull; Deribit USDC Opts: <b>${d.deribit_usdc_quotes || 0}</b>)</span>` +
+      `<span class="sf-chip">Candidate L2 Recorder: <b class="pos">${todayMb} / ${Number(l2.daily_cap_mb || 12).toFixed(1)} MB/d</b> (${l2.frames_recorded || 0} frames &bull; ${Number(l2.archive_mb || 0).toFixed(2)} MB disk)</span>` +
+      `<span class="sf-chip">Venues: ${vBadges}</span>`;
+  }
+  const tb = document.getElementById('v6_engine_rows');
+  if (tb) {
+    const rows = d.engines || [];
+    tb.innerHTML = rows.map(r => {
+      const hitCls = r.opportunities_found > 0 ? 'pos' : 'sub';
+      return `<tr>
+        <td><b>${esc(r.strategy_id)}</b></td>
+        <td class="sub">${esc(r.desc)}</td>
+        <td><b>${Number(r.evaluated || 0).toLocaleString()}</b></td>
+        <td class="${hitCls}"><b>${r.opportunities_found || 0}</b>${r.cycle_hits > 0 ? ` <span class="cyan">(+${r.cycle_hits} now)</span>` : ''}</td>
+        <td><b>${r.shadow_wins || 0}W</b> / <span class="${r.shadow_losses > 0 ? 'neg' : 'sub'}">${r.shadow_losses || 0}L</span>${r.shadow_open > 0 ? ` <span class="cyan">(${r.shadow_open} open)</span>` : ''}</td>
+        <td><span class="pill ${r.shadow_wins >= 8 && r.shadow_losses === 0 ? 'pill-ok' : 'pill-info'}">${r.shadow_wins >= 8 && r.shadow_losses === 0 ? 'GRAD-8 READY' : 'SHADOW ARMED'}</span></td>
+      </tr>`;
+    }).join('') || '<tr><td colspan="6" class="sub">Awaiting first v6 daemon scan cycle...</td></tr>';
+  }
 }
 
 function renderStageBAttribution(sb) {
@@ -2902,7 +3177,7 @@ function renderStageBAttribution(sb) {
 
 function setRadarFilter(f) {
   _radarFilter = f;
-  ['ALL', 'LIVE_IPC', 'MACHINE_GUN', 'UMA_CARRY', 'POST_CLINCH', 'LOCKED_REWARD', 'SLATE_ARB'].forEach(k => {
+  ['ALL', 'LIVE_IPC', 'MACHINE_GUN', 'V6_EXPANSION', 'UMA_CARRY', 'POST_CLINCH', 'LOCKED_REWARD', 'SLATE_ARB'].forEach(k => {
     const b = document.getElementById('rad_flt_' + k);
     if (b) b.className = 'flt-btn' + (k === f ? ' active' : '');
   });
@@ -2920,7 +3195,7 @@ function setPmFilter(f) {
 
 function setA124Filter(f) {
   _a124Filter = f;
-  ['focus', 'all'].forEach(k => {
+  ['focus', 'v6', 'all'].forEach(k => {
     const b = document.getElementById('a124_flt_' + k);
     if (b) b.className = 'flt-btn' + (k === f ? ' active' : '');
   });
@@ -2948,6 +3223,7 @@ function ztPillClass(st) {
 function radarPill(bucket) {
   if (bucket === 'LIVE_IPC') return ['pill-ok', 'LIVE IPC'];
   if (bucket === 'MACHINE_GUN') return ['pill-mg', 'MACHINE-GUN'];
+  if (bucket === 'V6_EXPANSION') return ['pill-info', 'V6 / X-VENUE'];
   if (bucket === 'UMA_CARRY') return ['pill-info', 'UMA CARRY'];
   if (bucket === 'POST_CLINCH') return ['pill-ok', 'POST-CLINCH'];
   if (bucket === 'LOCKED_REWARD') return ['pill-warn', 'LOCKED + POOL'];
@@ -3162,14 +3438,16 @@ function renderPmTables(pm) {
 }
 
 function renderA124Sleeves(sleeves) {
-  const rows = _a124Filter === 'focus'
-    ? sleeves.filter(s => !s.is_paused && (s.is_live || s.is_machine_gun || (s.losses === 0 && (s.wins > 0 || s.open > 0 || s.pending_quotes > 0))))
-    : sleeves;
+  const rows = _a124Filter === 'v6'
+    ? sleeves.filter(s => Boolean(s.is_v6))
+    : (_a124Filter === 'focus'
+      ? sleeves.filter(s => !s.is_paused && (s.is_live || s.is_machine_gun || (s.losses === 0 && (s.wins > 0 || s.open > 0 || s.pending_quotes > 0))))
+      : sleeves);
   const tb = document.getElementById('a124_sleeves');
   if (!tb) return;
   tb.innerHTML = rows.map(s => {
     const qBadge = s.pending_quotes ? ` <span class="warn">(${s.pending_quotes}q)</span>` : '';
-    const mgBadge = s.is_machine_gun ? ` <span class="pill pill-mg" style="font-size:9.5px;padding:1px 5px;">MG</span>` : '';
+    const mgBadge = s.is_machine_gun ? ` <span class="pill pill-mg" style="font-size:9.5px;padding:1px 5px;">MG</span>` : (s.is_v6 ? ` <span class="pill pill-info" style="font-size:9.5px;padding:1px 5px;">V6</span>` : '');
     const gCls = s.tier_tag === 'PROMOTED' ? 'pos' : (s.tier_tag === 'MACHINE_GUN' ? 'cyan' : (s.tier_tag === 'PAUSED' ? 'neg' : (s.losses === 0 && s.wins >= 4 ? 'warn' : (s.is_live ? 'pos' : 'sub'))));
     const pct = Number(s.grad8_pct ?? (s.losses === 0 ? Math.min(100, Math.round(100 * Math.min(s.wins || 0, 8) / 8)) : 0));
     const barCol = s.tier_tag === 'PROMOTED' ? '#3fb950' : (s.losses > 0 ? '#f85149' : '#39d0d8');
@@ -3464,7 +3742,7 @@ async function refreshNow(force=false) {
 
     const modeBadge = document.getElementById('hdr_mode_badge');
     if (modeBadge) {
-      modeBadge.textContent = risklessOnly ? '100% PURE RISKLESS LOCK • v6.1' : `HYBRID MODE v${cfgVer}`;
+      modeBadge.textContent = risklessOnly ? '100% PURE RISKLESS LOCK • v6.2' : `HYBRID MODE v${cfgVer}`;
     }
 
     const syncEt = d.fetched_at_et || fmtOttawa(d.unix_ts || d.fetched_at_utc, 'full');
@@ -3477,6 +3755,7 @@ async function refreshNow(force=false) {
     renderStageBAttribution(d.stage_b_attribution || {});
     renderPaaAutonomy(paa, 0);
     renderRisklessRadar(rad);
+    renderV6Expansion(d.v6_expansion || {});
     renderLiveBook(pm, dcfg, cfgVer, 0);
     renderPmTables(pm);
 
@@ -3782,7 +4061,7 @@ class SnapshotCache:
             ],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
             text=True,
             encoding="utf-8",
             errors="replace",
@@ -3921,7 +4200,7 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
     rad_s = rad.get("summary") or {}
     a124 = d.get("alpha124") or {}
     print("=" * 84)
-    print(f" DOMINUS RISKLESS PAA COMMAND CENTER v6.0  |  {d.get('fetched_at_et') or d.get('fetched_at_utc')}")
+    print(f" DOMINUS RISKLESS PAA COMMAND CENTER v6.2  |  {d.get('fetched_at_et') or d.get('fetched_at_utc')}")
     print("=" * 84)
     print(
         f" Host Load (2 vCPU) : {la[0]} ({la[1]}, {la[2]})  |  "
@@ -4035,6 +4314,16 @@ def print_cli_summary(d: Dict[str, Any]) -> None:
             f"Decay[<5ms={dc_s.get('lt_5ms', 0)}, 5-15ms={dc_s.get('5_15ms', 0)}, 15-40ms={dc_s.get('15_40ms', 0)}, >40ms={dc_s.get('gt_40ms', 0)}] "
             f"Rung2Gate={db_s.get('rung2_migration_justified', False)}"
         )
+    v6 = d.get("v6_expansion") or {}
+    if v6:
+        xv_s = v6.get("cross_venue_shadow") or {}
+        l2_s = v6.get("l2_recorder") or {}
+        print("-" * 84)
+        print(
+            f" v6 EXPANSION & XV  : 8 Engines Evaluated={v6.get('evaluated_total', 0)} (Hits={v6.get('opportunities_total', 0)}) | "
+            f"StageG={xv_s.get('network_mode', 'init')} (Healthy={xv_s.get('service_healthy')}, Cycle #{xv_s.get('cycles_completed', 0)}, Pairs={xv_s.get('matched_pairs_seen', 0)}) | "
+            f"L2Recorder={l2_s.get('frames_recorded', 0)} frames ({l2_s.get('archive_mb', 0.0):.2f} MB / 12.0 MB cap)"
+        )
     print("=" * 84)
 
 
@@ -4057,7 +4346,7 @@ def _reclaim_existing_dashboard_port(port: int) -> None:
         req = urllib.request.Request(
             f"http://127.0.0.1:{port}/api/shutdown",
             data=b"",
-            headers={"Host": f"127.0.0.1:{port}"},
+            headers={"Host": f"127.0.0.1:{port}", "X-Dominus-Shutdown": "1"},
             method="POST",
         )
         with urllib.request.urlopen(req, timeout=1.0):
@@ -4170,7 +4459,11 @@ def main() -> None:
         def do_POST(self) -> None:
             if not self._is_allowed_local():
                 return
-            if self.path == "/api/shutdown" and (self.client_address[0] in ("127.0.0.1", "::1")):
+            if (
+                self.path == "/api/shutdown"
+                and (self.client_address[0] in ("127.0.0.1", "::1"))
+                and str(self.headers.get("X-Dominus-Shutdown") or "").strip() == "1"
+            ):
                 self._safe_send(200, "application/json; charset=utf-8", b'{"status":"shutting_down"}', no_store=True)
                 def _stop() -> None:
                     cache.close_stream()
@@ -4209,7 +4502,7 @@ def main() -> None:
     srv_ref["srv"] = srv
     srv.daemon_threads = True
     print(
-        f"Dominus Riskless PAA Command Center v6.1 running locally at {url} "
+        f"Dominus Riskless PAA Command Center v6.2 running locally at {url} "
         f"(host={args.host}, persistent gzipped SSH stream=5s, auto-sleep after 45s idle, Ctrl+C to stop)",
         flush=True,
     )

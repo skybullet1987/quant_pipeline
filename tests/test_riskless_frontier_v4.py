@@ -152,7 +152,7 @@ class TestP0DynamicFeeUnblinding(unittest.TestCase):
                 _mkt("tot2", "Celtics vs. Knicks: O/U 224.5", ["Over", "Under"], "t_o224", "t_u224", smt="totals", line=224.5),
             ],
         }
-        spec = parse_nba_zero_fee_event(ev)
+        spec = parse_nba_zero_fee_event(ev, now_ts=now)
         self.assertIsNotNone(spec)
         assert spec is not None
         self.assertEqual(len(spec.total_legs), 4)

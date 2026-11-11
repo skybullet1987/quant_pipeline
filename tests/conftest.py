@@ -57,7 +57,10 @@ def _polymarket_test_sandbox_isolation(request: pytest.FixtureRequest, tmp_path:
     for mod_name, attrs in (
         ("src.polymarket_research.polymarket_live_harvester", ("STATE_FILE", "PID_FILE", "COUNTERFACTUAL_CANDIDATES_FILE")),
         ("src.polymarket_research.polymarket_paper_trader", ("STATE_FILE", "SOL_SHADOW_STATE_FILE", "XRP_SHADOW_STATE_FILE")),
-        ("src.polymarket_research.alpha_124_shadow_daemon", ("STATE_FILE",)),
+        (
+            "src.polymarket_research.alpha_124_shadow_daemon",
+            ("STATE_FILE", "LOG_FILE", "OPPS_FILE", "LIVE_ALPHA124_STATE_MIRROR_FILE", "D1_LIVE_CANDIDATES_FILE"),
+        ),
     ):
         try:
             mod = __import__(mod_name, fromlist=["_"])

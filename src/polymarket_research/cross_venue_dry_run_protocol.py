@@ -267,6 +267,15 @@ def evaluate_forecastex_coupon_bond_carry(
     sh = max(0.0, float(shares))
     px = float(entry_price)
     days = max(0.0, float(hold_days))
+    if sh <= 0.0 or not (0.0 < px < 1.0):
+        return {
+            "pure_riskless_profitable": False,
+            "gross_cost_usd": 0.0,
+            "fee_usd": 0.0,
+            "coupon_usd": 0.0,
+            "net_profit_usd": 0.0,
+            "net_edge_bps": 0.0,
+        }
     gross_cost = sh * px
     fee_usd = forecastex_taker_fee_usd(sh, px, fee_per_contract_usd=fee_per_contract_usd)
     coupon_usd = gross_cost * float(annual_coupon_apy) * (days / 365.0)

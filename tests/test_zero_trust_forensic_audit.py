@@ -661,6 +661,7 @@ def test_v35_stale_recorder_monitor_alerts_once_per_window(tmp_path, monkeypatch
     assert len(stale) == 2 and {e["message"].split()[0] for e in stale} == {"BTC", "ETH"}  # one per asset, not per call
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM/SIGKILL semantics")
 def test_v35_sigterm_triggers_graceful_state_flush_and_clean_exit(tmp_path, monkeypatch):
     """#4/#5: a real SIGTERM makes run() flush state atomically (STOPPED_GRACEFULLY) and return (exit code 0 path)."""
     for name in ("TRIGGER_FILE", "SHOCK_FILE", "RESOLUTIONS_FILE", "PID_FILE", "STATE_FILE"):
@@ -679,6 +680,7 @@ def test_v35_sigterm_triggers_graceful_state_flush_and_clean_exit(tmp_path, monk
     assert h._shutdown_requested is True
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM/SIGKILL semantics")
 def test_v35_reload_script_graceful_terminate_and_position_guard(tmp_path, monkeypatch):
     """#5: SIGTERM-first stops (SIGKILL only for stragglers) and refusal to reload with open positions."""
     reload_mod = _load_script("reload_production_daemons")

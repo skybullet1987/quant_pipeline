@@ -551,10 +551,22 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True, data_dir: Option
         except Exception:
             pass
 
-        if onchain_sh is not None and onchain_sh > 0 and tok_tot_ledger_sh > 0:
-            eff_sh = sh * (float(onchain_sh) / tok_tot_ledger_sh)
+        is_pre_redeemed = bool(pos.get("_pre_redeemed_onchain"))
+        pos_status_u = str(pos.get("status") or "").upper()
+        is_settling_pos = pos_status_u in (
+            "MATCHED_PENDING_SETTLEMENT",
+            "AWAITING_ONCHAIN_SETTLEMENT",
+            "PENDING_CONFIRMATION",
+        )
+        if onchain_sh is not None:
+            if onchain_sh > 0 and tok_tot_ledger_sh > 0:
+                eff_sh = sh * (float(onchain_sh) / tok_tot_ledger_sh)
+            elif onchain_sh <= 0:
+                eff_sh = sh if is_settling_pos else 0.0
+            else:
+                eff_sh = float(onchain_sh)
         else:
-            eff_sh = float(onchain_sh) if (onchain_sh is not None and onchain_sh > 0) else sh
+            eff_sh = 0.0 if is_pre_redeemed else sh
         bid_val = round(eff_sh * best_bid, 4)
         mkr_val = round(eff_sh * tp_px, 4)
         mark_to_bid_value += bid_val
@@ -577,6 +589,9 @@ def reconcile_authoritative_ledger(live_rpc_check: bool = True, data_dir: Option
         open_pos_audit.append({
             "trade_id": tid,
             "token_id": tok,
+            "status": pos.get("status"),
+            "exit_order_status": pos.get("exit_order_status"),
+            "_pre_redeemed_onchain": is_pre_redeemed,
             "sleeve": pos.get("sleeve"),
             "market_id": pos.get("market_id"),
             "side": pos.get("target_token"),

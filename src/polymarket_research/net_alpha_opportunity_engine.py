@@ -24,9 +24,15 @@ from __future__ import annotations
 import json
 import math
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+try:
+    import orjson as _orjson
+except ImportError:  # pragma: no cover
+    _orjson = None  # type: ignore[assignment]
 
 _INV_SQRT2 = 0.7071067811865475
 
@@ -635,7 +641,12 @@ def read_global_positions_shm(max_age_sec: float = 120.0) -> Dict[str, Any]:
     if not path.exists():
         return {"daemons": {}}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        data = (
+            _orjson.loads(raw_bytes)
+            if _orjson is not None
+            else json.loads(raw_bytes.decode("utf-8"))
+        )
         if not isinstance(data, dict):
             return {"daemons": {}}
         daemons = data.get("daemons") or {}
@@ -656,6 +667,7 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
     so live & shadow sleeves coordinate correlation and synthetic corridor completions.
     """
     path = _global_positions_shm_path()
+    tmp: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         cur = read_global_positions_shm(max_age_sec=600.0)
@@ -675,11 +687,19 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
             })
         daemons[str(daemon_name)] = {"updated_ts": round(time.time(), 3), "positions": compact}
         payload = {"updated_at_ts": round(time.time(), 3), "daemons": daemons}
-        tmp = path.with_suffix(f".{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        if _orjson is not None:
+            tmp.write_bytes(_orjson.dumps(payload))
+        else:
+            tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
         os.replace(tmp, path)
         return True
     except Exception:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
         return False
 
 

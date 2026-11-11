@@ -254,7 +254,8 @@ def run_weather_backtest() -> Dict[str, Any]:
         brier_sum = 0.0
         brier_n = 0
         for sp, metars, _ in train_bundles:
-            tz = ZoneInfo(sp.tz_name)
+            from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo
+            tz = safe_zoneinfo(sp.tz_name)
             eval_local = datetime(sp.obs_date.year, sp.obs_date.month, sp.obs_date.day, 11, 0, tzinfo=tz)
             eval_u = eval_local.astimezone(timezone.utc)
             out = compute_weather_probabilities(sp, eval_u, metars, nwp_cache.get(sp.icao, {}), forecast_sigma_base_c=cand_sig)
@@ -276,7 +277,8 @@ def run_weather_backtest() -> Dict[str, Any]:
     EXEC_SPREAD_PENALTY = 0.010
 
     for sp, metars, clob_map in sorted(bundles, key=lambda x: x[0].obs_date):
-        tz = ZoneInfo(sp.tz_name)
+        from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo
+        tz = safe_zoneinfo(sp.tz_name)
         nwp_hr = nwp_cache.get(sp.icao, {})
         split = "TRAIN" if sp.obs_date <= date(2026, 10, 16) else "TEST"
 

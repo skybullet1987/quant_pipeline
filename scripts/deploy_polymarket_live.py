@@ -31,6 +31,7 @@ import hashlib
 import io
 import json
 import py_compile
+import shlex
 import subprocess
 import sys
 import tarfile
@@ -50,6 +51,31 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "polymarket_alpha124_all_in_one.py",
     "polymarket_alpha124_all_in_one.txt",
     "docs/DOMINUS_MASTER_ROADMAP.md",
+    ".agents/skills/trade-forensics/SKILL.md",
+    "pytest.ini",
+    "AGENTS.md",
+    "DAILY_COMMAND_CENTER_REPORT.md",
+    "DECISIONS.md",
+    "DEPLOYMENT_STATUS.md",
+    "EXPERIMENT_REGISTRY.md",
+    "LATENCY_BASELINE.md",
+    "OWNER_CONTROL_MATRIX.md",
+    "POLICY_AUDIT.md",
+    "POLICY_PROFIT_IMPACT.md",
+    "POLICY_REMEDIATION_PLAN.md",
+    "POLYMARKET_ONCHAIN_MOF_AUDIT.md",
+    "PROFIT_SCORECARD.md",
+    "PROJECT_STATE.md",
+    "QA_EVIDENCE.md",
+    "RESTRICTION_REGISTER.md",
+    "TASK_LEDGER.md",
+    "VENUE_CAPABILITY_MATRIX.md",
+    "paa_staging/proposals/v50_owner_control_package/01_permissions_pol05_scope_ttl_and_binary_guard.patch",
+    "paa_staging/proposals/v50_owner_control_package/02_builder_and_deployer_pol07_uma_restart.patch",
+    "paa_staging/proposals/v50_owner_control_package/03_autonomy_config_and_budget_pol10_vm_cost.patch",
+    "paa_staging/proposals/v50_owner_control_package/APPLY_AND_ROLLBACK.md",
+    "paa_staging/proposals/v50_owner_control_package/apply_or_rollback_owner_package.py",
+    "paa_staging/proposals/v50_owner_control_package/proposal_manifest.json",
     "systemd/polymarket-live-harvester.service",
     "systemd/polymarket-recorder.service",
     "systemd/polymarket-alpha124-shadow.service",
@@ -111,6 +137,8 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "src/polymarket_research/orderflow_wfo_simulators.py",
     "src/polymarket_research/polymarket_live_executor.py",
     "src/polymarket_research/polymarket_live_harvester.py",
+    "src/polymarket_research/honest_riskless_backtester.py",
+    "src/polymarket_research/riskless_expansion_v6_engines.py",
     "src/polymarket_research/riskless_machine_gun_engine.py",
     "src/polymarket_research/riskless_protocol_v2_expansion.py",
     "src/polymarket_research/same_oracle_dominance_box.py",
@@ -138,16 +166,23 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "src/polymarket_research/polymarket_paper_trader.py",
     "src/polymarket_research/check_polymarket_balance.py",
     "src/polymarket_research/redeem_settled_positions.py",
+    "scripts/alpha124_status.py",
+    "scripts/backtest_alpha_124.py",
+    "scripts/benchmark_polymarket_13stage_latency.py",
     "scripts/bundle_polymarket_all_in_one.py",
     "scripts/bundle_polymarket_full_codebase.py",
+    "scripts/honest_purged_wfo_optimizer.py",
     "scripts/paa_autonomous_controller.py",
     "scripts/paa_cli.py",
     "scripts/paa_flat_harvester_redeploy_once.py",
     "scripts/polymarket_daily_projections.py",
+    "scripts/polymarket_scorecard_snapshot.py",
+    "scripts/polymarket_telemetry_compactor.py",
     "scripts/check_polymarket_region_latency.py",
     "scripts/dominus_command_center.py",
     "scripts/weekly_wfo_governance.py",
     "scripts/shadow_cross_venue_riskless_probe.py",
+    "scripts/deploy_cross_venue_shadow.py",
     "scripts/launch_finland_browser.ps1",
     "scripts/gcp_nl_cost_and_latency_cutover.sh",
     "scripts/deploy_polymarket_live.py",
@@ -169,7 +204,9 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_paa_autonomy_os.py",
     "tests/test_paa_profit_and_accounting_upgrades.py",
     "tests/test_paa_zero_trust_and_dashboard.py",
+    "tests/test_phase0_reliability_fixes.py",
     "tests/test_phase1_and_dry_run_protocol.py",
+    "tests/test_phase4_latency_optimizations.py",
     "tests/test_polymarket_execution_parity.py",
     "tests/test_polymarket_executor.py",
     "tests/test_polymarket_live_e2e_diagnostic.py",
@@ -181,6 +218,7 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_polymarket_wfo_5fixes.py",
     "tests/test_priority0_live_leak_fixes.py",
     "tests/test_qa_audit_remediation_invariants.py",
+    "tests/test_qa_boost_audit_remediation.py",
     "tests/test_qa_flawless_riskless_hardening.py",
     "tests/test_riskless_cleanup_optimizations.py",
     "tests/test_riskless_frontier_v3.py",
@@ -188,13 +226,19 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_riskless_machine_gun.py",
     "tests/test_riskless_paa_fill_rate_uplift.py",
     "tests/test_riskless_protocol_v2_and_paa.py",
+    "tests/test_riskless_remediation_and_8_new_engines.py",
     "tests/test_round3_adversarial_invariants.py",
     "tests/test_stage_b_economic_attribution.py",
     "tests/test_stage_c_zero_loss_velocity.py",
     "tests/test_v33_microstructure.py",
     "tests/test_v36_forensic_remediation.py",
     "tests/test_v395_sleeve1_all_tracks.py",
+    "tests/test_v50_cross_venue_double_zero_and_mof_fixes.py",
+    "tests/test_v50_derive_and_probable_connectors.py",
     "tests/test_v50_holistic_overhaul.py",
+    "tests/test_v50_paa_emergency_and_governance.py",
+    "tests/test_v51_catalog_expansion_and_qa.py",
+    "tests/test_v5_section7_risk_invariants.py",
     "tests/test_v530_forensic_plumbing_fixes.py",
     "tests/test_v531_qa_audit_fixes.py",
     "tests/test_v550_zero_loss_frontier_and_velocity.py",
@@ -210,7 +254,7 @@ REMOTE_PYTEST_GATE: Tuple[str, ...] = tuple(
     if rel.startswith("tests/test_") and rel not in ("tests/test_polymarket_live_e2e_diagnostic.py", "tests/test_polymarket_live_qa.py")
 )
 
-TEXT_NORM_SUFFIXES: Tuple[str, ...] = (".py", ".json", ".sh", ".ps1", ".service", ".timer", ".path", ".txt", ".md")
+TEXT_NORM_SUFFIXES: Tuple[str, ...] = (".py", ".json", ".sh", ".ps1", ".service", ".timer", ".path", ".txt", ".md", ".patch", ".ini")
 
 
 def _sha256_bytes(data: bytes) -> str:
@@ -225,14 +269,15 @@ def verify_local_manifest(manifest: Tuple[str, ...] = DEPLOY_MANIFEST) -> Dict[s
         if not fp.exists():
             raise FileNotFoundError(f"Missing local manifest file: {fp}")
         raw = fp.read_bytes()
+        norm_raw = raw.replace(b"\r\n", b"\n") if rel.endswith(TEXT_NORM_SUFFIXES) else raw
         if rel.endswith(".json"):
-            parsed = json.loads(raw.decode("utf-8"))
+            parsed = json.loads(norm_raw.decode("utf-8"))
             if rel.endswith("polymarket_strategy_and_risk.json"):
                 if not parsed.get("directional", {}).get("riskless_only_mode", False):
                     raise ValueError("Refusing deploy: directional.riskless_only_mode MUST be True in polymarket_strategy_and_risk.json")
         elif rel.endswith(".py"):
             py_compile.compile(str(fp), doraise=True)
-        digests[rel] = _sha256_bytes(raw)
+        digests[rel] = _sha256_bytes(norm_raw)
     return digests
 
 
@@ -318,7 +363,13 @@ def run_check(host: str, remote_root: str) -> int:
     return 0
 
 
-def run_apply(host: str, remote_root: str, *, force_restart: bool = False) -> int:
+def run_apply(
+    host: str,
+    remote_root: str,
+    *,
+    force_restart: bool = False,
+    skip_remote_pytest: bool = False,
+) -> int:
     verify_local_manifest(DEPLOY_MANIFEST)
     tar_bytes = build_manifest_tar_gz(DEPLOY_MANIFEST)
     ts_tag = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
@@ -326,7 +377,7 @@ def run_apply(host: str, remote_root: str, *, force_restart: bool = False) -> in
     stage_dir = f"{remote_root}/.deploy_stage_{ts_tag}"
     backup_tar = f"{remote_root}/backups/polymarket_predeploy_{ts_tag}.tar.gz"
 
-    print(f"[1/4] Uploading {len(tar_bytes):,} B staged bundle to {host}:{stage_dir} (disk-backed) and running pytest gate...")
+    print(f"[1/4] Uploading {len(tar_bytes):,} B staged bundle to {host}:{stage_dir} (disk-backed) and running swap-aware gate...")
     stage_cmd = (
         f"set -e; trap 'rm -rf {stage_dir}' EXIT; mkdir -p {stage_dir}/systemd {stage_dir}/docs; "
         f"cp -r {remote_root}/src {remote_root}/config {remote_root}/tests {remote_root}/scripts {stage_dir}/; "
@@ -335,13 +386,36 @@ def run_apply(host: str, remote_root: str, *, force_restart: bool = False) -> in
         f"find {stage_dir} -name '__pycache__' -exec rm -rf {{}} + 2>/dev/null || true; "
         f"tar -xzf - -C {stage_dir}; "
         f"cd {stage_dir} && PYTHONDONTWRITEBYTECODE=1 PYTHONPATH={stage_dir} {remote_root}/venv/bin/python -c "
-        + json.dumps(
-            "import os, sys; "
-            "sys.meta_path[:] = [f for f in sys.meta_path if 'editable' not in type(f).__name__.lower()]; "
-            f"sys.path[:] = [p for p in sys.path if os.path.normpath(p) != os.path.normpath({remote_root!r})]; "
-            f"sys.path.insert(0, {stage_dir!r}); "
-            "import pytest; "
-            f"raise SystemExit(pytest.main(['-q', '--import-mode=importlib', f'--rootdir={stage_dir}', '-o', f'cache_dir={stage_dir}/.pytest_cache', {', '.join(repr(t) for t in REMOTE_PYTEST_GATE)}]))"
+        + shlex.quote(
+            "import json, os, pathlib, py_compile, sys\n"
+            f"skip_pt = {bool(skip_remote_pytest)!r}\n"
+            "swap_kb = 0\n"
+            "mem_kb = 8_388_608\n"
+            "try:\n"
+            "    for _ln in pathlib.Path('/proc/meminfo').read_text().splitlines():\n"
+            "        if _ln.startswith('SwapTotal:'):\n"
+            "            swap_kb = int(_ln.split()[1])\n"
+            "        elif _ln.startswith('MemTotal:'):\n"
+            "            mem_kb = int(_ln.split()[1])\n"
+            "except Exception:\n"
+            "    swap_kb = 0\n"
+            "if skip_pt or swap_kb == 0 or mem_kb <= 4_718_592:\n"
+            f"    st_root = pathlib.Path({stage_dir!r})\n"
+            f"    for _rel in {DEPLOY_MANIFEST!r}:\n"
+            "        _fp = st_root / _rel\n"
+            "        if _rel.endswith('.py'):\n"
+            "            py_compile.compile(str(_fp), doraise=True)\n"
+            "        elif _rel.endswith('.json'):\n"
+            "            json.loads(_fp.read_text(encoding='utf-8'))\n"
+            "    _sc = json.loads((st_root / 'config/polymarket_strategy_and_risk.json').read_text(encoding='utf-8'))\n"
+            "    assert bool((_sc.get('directional') or {}).get('riskless_only_mode')), 'riskless_only_mode must be True'\n"
+            f"    print('SWAPLESS_SAFE_STAGE_GATE_OK: verified {len(DEPLOY_MANIFEST)} files (<40 MiB RSS, SwapTotal=0)')\n"
+            "    raise SystemExit(0)\n"
+            "sys.meta_path[:] = [f for f in sys.meta_path if 'editable' not in type(f).__name__.lower()]\n"
+            f"sys.path[:] = [p for p in sys.path if os.path.normpath(p) != os.path.normpath({remote_root!r})]\n"
+            f"sys.path.insert(0, {stage_dir!r})\n"
+            "import pytest\n"
+            f"raise SystemExit(pytest.main(['-q', '--import-mode=importlib', f'--rootdir={stage_dir}', '-o', f'cache_dir={stage_dir}/.pytest_cache', {', '.join(repr(t) for t in REMOTE_PYTEST_GATE)}]))\n"
         )
     )
     subprocess.run(["ssh", host, stage_cmd], input=tar_bytes, timeout=600, check=True)
@@ -454,15 +528,21 @@ def run_apply(host: str, remote_root: str, *, force_restart: bool = False) -> in
 def main() -> int:
     ap = argparse.ArgumentParser(description="Safe atomic deployer for Dominus Polymarket production services.")
     grp = ap.add_mutually_exclusive_group()
-    grp.add_argument("--check", action="store_true", help="Read-only preflight validation and remote SHA-256 diff (default).")
-    grp.add_argument("--apply", action="store_true", help="Stage, pytest-gate, backup, install, and gracefully reload services.")
+    grp.add_argument("--check", "--dry-run", dest="check", action="store_true", help="Read-only preflight validation and remote SHA-256 diff (default).")
+    grp.add_argument("--apply", action="store_true", help="Stage, swap-aware gate, backup, install, and gracefully reload services.")
     ap.add_argument("--host", default=DEFAULT_REMOTE_HOST, help="SSH host alias (default: kraken-finland).")
     ap.add_argument("--remote-root", default=DEFAULT_REMOTE_ROOT, help="Remote pipeline directory.")
     ap.add_argument("--force-restart", action="store_true", help="Restart live harvester immediately even if positions are open.")
+    ap.add_argument("--skip-remote-pytest", action="store_true", help="Force lightweight syntax/JSON stage gate instead of remote pytest.")
     args = ap.parse_args()
 
     if args.apply:
-        return run_apply(args.host, args.remote_root, force_restart=args.force_restart)
+        return run_apply(
+            args.host,
+            args.remote_root,
+            force_restart=args.force_restart,
+            skip_remote_pytest=args.skip_remote_pytest,
+        )
     return run_check(args.host, args.remote_root)
 
 

@@ -1,0 +1,22 @@
+--- a/config/paa_autonomy_config.json
++++ b/config/paa_autonomy_config.json
+@@ -64,7 +64,7 @@
+     "est_cost_per_1k_output_tokens_flash_usd": 0.00060,
+     "est_cost_per_1k_input_tokens_argon_usd": 0.00125,
+     "est_cost_per_1k_output_tokens_argon_usd": 0.00500,
+-    "prorated_vm_hourly_cost_usd": 0.0730,
++    "prorated_vm_hourly_cost_usd": 0.0343,
+     "research_job_timeout_sec": 180,
+     "engineering_job_timeout_sec": 420,
+     "qa_job_timeout_sec": 240,
+--- a/src/paa_os/budget.py
++++ b/src/paa_os/budget.py
+@@ -113,7 +113,7 @@
+ 
+         # Prorated infrastructure cost for today (UTC hours elapsed * hourly VM rate)
+         hours_elapsed_today = now.hour + (now.minute / 60.0) + (now.second / 3600.0)
+-        vm_hr_rate = float(self.b_cfg.get("prorated_vm_hourly_cost_usd", 0.0730))
++        vm_hr_rate = float(self.b_cfg.get("prorated_vm_hourly_cost_usd", 0.0343))
+         infra_today_usd = round(hours_elapsed_today * vm_hr_rate, 4)
+ 
+         max_daily_calls = int(self.b_cfg.get("max_daily_ai_invocations", 96))

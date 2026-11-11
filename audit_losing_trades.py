@@ -40,7 +40,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
         else Path(AUDIT_LOCK_FILE)
     )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fh = open(lock_path, "a+b")
+    fh = open(lock_path, "r+b" if lock_path.exists() else "w+b")
     deadline = time.monotonic() + max(0.5, timeout_sec)
     locked = False
     try:
@@ -48,7 +48,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
             try:
                 if os.name == "nt":
                     import msvcrt
-                    fh.seek(0)
+                    fh.seek(0, os.SEEK_END)
                     if fh.tell() == 0:
                         fh.write(b"\x00")
                         fh.flush()
@@ -61,7 +61,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
                 break
             except OSError:
                 if time.monotonic() >= deadline:
-                    break
+                    raise TimeoutError(f"Timed out acquiring exclusive audit lock: {lock_path}")
                 time.sleep(0.05)
         yield
     finally:
@@ -417,15 +417,93 @@ def mark_audited(
     return entry
 
 
+def _is_restart_safe_frozen_uma_lock(pos: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+    """
+    Matches `scripts/paa_flat_harvester_redeploy_once.py:_is_restart_safe_frozen_uma_lock` and
+    `riskless_protocol_v2_expansion.py:is_post_expiry_uma_frozen_lock`: returns True ONLY for
+    passive post-expiry (`>= expiry + 60s`) UMA-disputed or `>= 4h` oracle-lagged positions
+    carrying zero active CLOB exit/unwind orders (`KMIA` Nov 7 safe-restart invariant `POL-07`).
+    """
+    if not isinstance(pos, dict):
+        return False
+    now_f = float(time.time() if now_ts is None else now_ts)
+    try:
+        from scripts.paa_flat_harvester_redeploy_once import _is_restart_safe_frozen_uma_lock as _flat_uma_lock
+        if _flat_uma_lock(pos, now_f):
+            return True
+    except Exception:
+        pass
+    if str(pos.get("exit_order_status") or "").upper() in ("UNWIND_RETRY_REQUIRED", "UNWIND_EXECUTION_OUTCOME_UNKNOWN", "PARTIAL_UNWIND_REMAINING"):
+        return False
+    if pos.get("is_legged_out_residual") and not pos.get("hold_to_maturity_lock") and str(pos.get("umaResolutionStatus") or "").strip().lower() != "disputed":
+        return False
+    if pos.get("is_liquidating") or pos.get("exit_order_id") or pos.get("unwind_order_id"):
+        return False
+    bt_frz = str(pos.get("box_type") or "").strip().upper()
+    if not (
+        pos.get("is_single_leg_lock")
+        or pos.get("is_dominance_box")
+        or pos.get("hold_to_maturity_lock")
+        or bt_frz in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK", "MULTI_LEG_RESIDUAL", "MULTI_LEG_BUNDLE", "DOMINANCE"}
+    ):
+        return False
+    exp_ts = float(pos.get("candle_expiry_ts") or 0.0)
+    if exp_ts <= 0.0 or now_f < exp_ts + 60.0:
+        return False
+    uma_st = str(pos.get("umaResolutionStatus") or pos.get("uma_resolution_status") or "").strip().lower()
+    anchor_ts = max(exp_ts, float(pos.get("entry_ts") or 0.0))
+    return uma_st == "disputed" or now_f >= anchor_ts + 14400.0
+
+
+def is_harvester_state_restart_safe(st: Dict[str, Any], now_ts: Optional[float] = None) -> tuple[bool, List[str]]:
+    """
+    Evaluates whether `live_harvester_state.json` is safe for a graceful `systemctl --user restart`:
+      - Allows restart when `active_positions` is empty OR consists solely of post-expiry frozen UMA locks
+        (such as the 4 disputed `KMIA` positions with `exit_order_id=None`, `unwind_order_id=None`).
+      - Fails closed on any pre-expiry trade, active exit/unwind order, `pre_split_inventory_state.active`,
+        `_prepost_sll_reserved_usd > 0`, non-maker `pending_entry_intents`, or missing position detail.
+    """
+    if not isinstance(st, dict):
+        return False, ["INVALID_STATE_PAYLOAD"]
+    now_f = float(time.time() if now_ts is None else now_ts)
+    blocking: List[str] = []
+    if bool((st.get("pre_split_inventory_state") or {}).get("active", False)):
+        blocking.append("PRE_SPLIT_INVENTORY_ACTIVE")
+    if float(st.get("_prepost_sll_reserved_usd") or 0.0) > 0.0:
+        blocking.append("PREPOST_SLL_RESERVED_USD_ACTIVE")
+    pend = st.get("pending_entry_intents") or {}
+    if isinstance(pend, dict):
+        for pk, pv in pend.items():
+            if isinstance(pv, dict) and not pv.get("live_maker_anchor_inflight"):
+                blocking.append(f"PENDING_ENTRY_INTENT:{pk}")
+
+    act = st.get("active_positions")
+    raw_cnt = int(
+        st.get("active_positions_count")
+        if st.get("active_positions_count") is not None
+        else (len(act) if isinstance(act, dict) else 0)
+    )
+    if raw_cnt > 0 and (not isinstance(act, dict) or len(act) < raw_cnt):
+        fallback_ids = [str(x) for x in (st.get("active_position_ids") or [])] or [f"UNSPECIFIED_OPEN_POSITIONS({raw_cnt})"]
+        blocking.extend(fallback_ids)
+    elif isinstance(act, dict):
+        for pid, pos in act.items():
+            if not _is_restart_safe_frozen_uma_lock(pos, now_f):
+                blocking.append(str(pid))
+
+    return (len(blocking) == 0), blocking
+
+
 def redeploy_daemon(force: bool = False) -> None:
     if not force:
         pre = fetch_kraken_live_state()["state"]
-        open_cnt = int(pre.get("active_positions_count", 0) or 0)
-        ps_active = bool((pre.get("pre_split_inventory_state") or {}).get("active", False))
-        if open_cnt > 0 or ps_active:
+        safe_ok, blocking_reasons = is_harvester_state_restart_safe(pre)
+        if not safe_ok:
+            open_cnt = int(pre.get("active_positions_count") or len(pre.get("active_positions") or {}))
+            ps_active = bool((pre.get("pre_split_inventory_state") or {}).get("active", False))
             raise RuntimeError(
-                f"Refusing to restart live harvester with {open_cnt} open position(s) / pre_split_active={ps_active}: "
-                f"{pre.get('active_position_ids', [])}. Wait until flat."
+                f"Refusing to restart live harvester with {open_cnt} open position(s) / pre_split_active={ps_active} "
+                f"(blocking={blocking_reasons}): {pre.get('active_position_ids', [])}. Wait until flat."
             )
 
     cmd = [
@@ -452,9 +530,10 @@ def redeploy_daemon(force: bool = False) -> None:
     if res.returncode != 0:
         raise RuntimeError(f"Redeploy on kraken-finland failed: {res.stderr or res.stdout}")
 
-    audit_st = load_audit_state()
-    audit_st["stats"]["total_redeployments"] = audit_st["stats"].get("total_redeployments", 0) + 1
-    save_audit_state(audit_st)
+    with _audit_state_lock():
+        audit_st = load_audit_state()
+        audit_st["stats"]["total_redeployments"] = audit_st["stats"].get("total_redeployments", 0) + 1
+        save_audit_state(audit_st)
     scan_res = scan_trades()
     print(json.dumps({"redeployed": True, "daemon_health": scan_res["daemon_health"]}, indent=2))
 

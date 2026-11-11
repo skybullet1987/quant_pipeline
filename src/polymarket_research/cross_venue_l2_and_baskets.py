@@ -24,7 +24,7 @@ import time
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from src.polymarket_research.cross_venue_riskless_shadow import (
-     CrossVenueRuleVerifier,
+    CrossVenueRuleVerifier,
     DEFAULT_EXTERNAL_GAS_USD,
     DEFAULT_RELAY_BRIDGE_DRAG_BPS,
     DEFAULT_WIRE_LATENCY_MS,
@@ -32,8 +32,12 @@ from src.polymarket_research.cross_venue_riskless_shadow import (
     NormalizedBinaryMarket,
     OrderLevel,
     RuleVerificationResult,
+    collateral_fx_ask_to_usd,
+    collateral_fx_settle_floor_to_usd,
     compute_venue_taker_fee_usd,
+    polymarket_v2_share_haircut_frac,
     relay_bridge_drag_usd,
+    sports_timestamps_compatible,
     walk_bids_for_unwind,
 )
 
@@ -176,6 +180,7 @@ def simulate_leg_l2_fill(
         fillable = max(0.0, min(q_shares, flow - queue_ahead))
         fillable = quantize_shares_floor(fillable, mkt.lot_size)
         cost = fillable * q_px
+        mkr_fee = compute_venue_taker_fee_usd(mkt, fillable, q_px) if mkt.venue.lower() == "stx_ontario" else 0.0
         return LegL2Simulation(
             venue=mkt.venue,
             market_slug=mkt.slug,
@@ -193,7 +198,7 @@ def simulate_leg_l2_fill(
             slippage_bps=0.0,
             market_impact_usd=0.0,
             gross_cost_usd=round(cost, 6),
-            fee_usd=0.0,  # Passive maker fee = 0% across Polymarket/Limitless/Predict.fun/SX Bet
+            fee_usd=round(mkr_fee, 6),
             quote_age_ms=age_ms,
             stale_rejected=False,
             available_book_shares=round(avail_sh, 4),
@@ -242,15 +247,29 @@ def simulate_leg_l2_fill(
     worst = top_px
     levels_used = 0
 
+    is_poly_v2_buy = mkt.venue.lower() == "polymarket" and mkt.fee_enabled and float(mkt.fee_rate_bps or 0.0) > 0.0
     for lvl in effective_levels:
         if lvl.price > max_limit + 1e-9:
             break
-        take = min(rem, lvl.size)
-        if take <= 1e-7:
-            continue
-        levels_used += 1
-        cost += take * lvl.price
-        fees += compute_venue_taker_fee_usd(mkt, take, lvl.price)
+        if is_poly_v2_buy:
+            h_frac = polymarket_v2_share_haircut_frac(lvl.price, mkt.fee_rate_bps)
+            keep_frac = max(0.50, 1.0 - h_frac)
+            take = min(rem, lvl.size * keep_frac)
+            if take <= 1e-7:
+                continue
+            levels_used += 1
+            gross_take = take / keep_frac
+            total_cash = gross_take * lvl.price
+            base_cost = take * lvl.price
+            cost += base_cost
+            fees += max(0.0, total_cash - base_cost)
+        else:
+            take = min(rem, lvl.size)
+            if take <= 1e-7:
+                continue
+            levels_used += 1
+            cost += take * lvl.price
+            fees += compute_venue_taker_fee_usd(mkt, take, lvl.price)
         worst = lvl.price
         rem -= take
         if rem <= 1e-7:
@@ -406,6 +425,8 @@ class Level2ExecutionSimulator:
         now_ms: Optional[int] = None,
         queue_ahead_fraction: float = 0.50,
         observed_trade_through_shares: Optional[float] = None,
+        venue_coupon_apy: Optional[Mapping[str, float]] = None,
+        min_guaranteed_hold_hours: Optional[float] = None,
     ) -> ThreeTierBasketEvaluation:
         cur_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
         cur_s = cur_ms / 1000.0
@@ -413,20 +434,30 @@ class Level2ExecutionSimulator:
         venues = tuple(lg.market.venue for lg in legs)
         distinct_venues = set(venues)
 
-        # --- TIER 1: Theoretical Top-of-Book ---
+        # --- TIER 1: Theoretical Top-of-Book (FX-adjusted to USD par units) ---
         l1_prices: List[float] = []
+        leg_fx_ask: List[float] = []
+        leg_fx_floor: List[float] = []
         for lg in legs:
             asks = lg.market.yes_asks if lg.side.upper() == "YES" else lg.market.no_asks
             px = lg.limit_price if lg.limit_price is not None else (asks[0].price if asks else 1.0)
-            l1_prices.append(px)
+            fx_a = collateral_fx_ask_to_usd(lg.market.collateral_asset)
+            fx_f = collateral_fx_settle_floor_to_usd(lg.market.collateral_asset)
+            leg_fx_ask.append(fx_a)
+            leg_fx_floor.append(fx_f)
+            l1_prices.append(px * (fx_a / max(fx_f, 1e-6)))
         l1_unit_cost = sum(l1_prices)
-        min_sh_floor = max(lg.market.min_shares for lg in legs) if legs else 5.0
+        min_sh_floor = max(lg.market.min_shares * f_f for lg, f_f in zip(legs, leg_fx_floor)) if legs else 5.0
         est_shares = max(min_sh_floor, math.floor(float(target_notional_usd) / max(l1_unit_cost, 0.10)))
         l1_fees = sum(
             0.0
-            if lg.execution_style.upper() == "PASSIVE_MAKER"
-            else compute_venue_taker_fee_usd(lg.market, est_shares, px)
-            for lg, px in zip(legs, l1_prices)
+            if (lg.execution_style.upper() == "PASSIVE_MAKER" and lg.market.venue.lower() != "stx_ontario")
+            else compute_venue_taker_fee_usd(
+                lg.market,
+                est_shares / max(f_f, 1e-6),
+                (lg.limit_price if lg.limit_price is not None else ((lg.market.yes_asks if lg.side.upper() == "YES" else lg.market.no_asks)[0].price if (lg.market.yes_asks if lg.side.upper() == "YES" else lg.market.no_asks) else 1.0)),
+            ) * f_a
+            for lg, f_a, f_f in zip(legs, leg_fx_ask, leg_fx_floor)
         )
         gross_theo_usd = (unit_payout_usd - l1_unit_cost) * est_shares
         gross_theo_bps = ((unit_payout_usd - l1_unit_cost) / max(l1_unit_cost, 1e-6)) * 10_000.0
@@ -441,15 +472,20 @@ class Level2ExecutionSimulator:
         # --- TIER 2: Simulated Executable L2 ---
         leg_sims: List[LegL2Simulation] = []
         max_leg_delay_ms = 0.0
-        for lg in legs:
+        for lg, f_f in zip(legs, leg_fx_floor):
             leg_delay = self.wire_latency_ms.get(lg.market.venue, 110.0) + (
                 0.0 if lg.execution_style.upper() == "PASSIVE_MAKER" else lg.market.taker_delay_ms
             )
             max_leg_delay_ms = max(max_leg_delay_ms, leg_delay)
             depl = min(0.60, self.latency_depletion_rate_per_sec * (leg_delay / 1000.0))
+            req_local_sh = (
+                math.ceil(est_shares / max(f_f, 1e-6))
+                if abs(f_f - 1.0) > 1e-6
+                else est_shares
+            )
             sim = simulate_leg_l2_fill(
                 lg,
-                est_shares,
+                req_local_sh,
                 now_ms=cur_ms,
                 max_quote_age_ms=self.max_quote_age_ms,
                 top_level_depletion_frac=depl,
@@ -459,31 +495,36 @@ class Level2ExecutionSimulator:
             leg_sims.append(sim)
 
         any_stale = any(s.stale_rejected for s in leg_sims)
-        hedged_sh = min((s.filled_shares for s in leg_sims), default=0.0)
-        max_filled_sh = max((s.filled_shares for s in leg_sims), default=0.0)
+        usd_par_filled = [s.filled_shares * f_f for s, f_f in zip(leg_sims, leg_fx_floor)]
+        hedged_sh = min(usd_par_filled, default=0.0)
+        max_filled_sh = max(usd_par_filled, default=0.0)
         unhedged_excess = max(0.0, max_filled_sh - hedged_sh)
 
         # Calculate cancel/requote unwind bleed for any excess filled shares on faster legs when a slower leg partially fills or fails
         unwind_bleed = 0.0
         if unhedged_excess > 1e-6:
-            for lg, sim in zip(legs, leg_sims):
-                excess_i = max(0.0, sim.filled_shares - hedged_sh)
-                if excess_i > 1e-6:
+            for lg, sim, f_a, f_f in zip(legs, leg_sims, leg_fx_ask, leg_fx_floor):
+                excess_usd_par = max(0.0, sim.filled_shares * f_f - hedged_sh)
+                if excess_usd_par > 1e-6:
+                    excess_local = excess_usd_par / max(f_f, 1e-6)
                     bids = lg.market.yes_bids if lg.side.upper() == "YES" else lg.market.no_bids
-                    proceeds, _ = walk_bids_for_unwind(bids, excess_i, lg.market)
-                    paid = excess_i * sim.vwap_price + (sim.fee_usd * (excess_i / max(sim.filled_shares, 1e-9)))
-                    unwind_bleed += max(0.0, paid - proceeds)
+                    proceeds_local, _ = walk_bids_for_unwind(bids, excess_local, lg.market)
+                    paid_usd = (
+                        excess_local * sim.vwap_price
+                        + (sim.fee_usd * (excess_local / max(sim.filled_shares, 1e-9)))
+                    ) * f_a
+                    unwind_bleed += max(0.0, paid_usd - proceeds_local * f_f)
 
-        # Pro-rate hedged portion of costs & fees
+        # Pro-rate hedged portion of costs & fees in USD
         hedged_gross_cost = 0.0
         hedged_fees = 0.0
         slippage_usd = 0.0
-        for sim in leg_sims:
+        for sim, f_a, f_f in zip(leg_sims, leg_fx_ask, leg_fx_floor):
             if hedged_sh > 0 and sim.filled_shares > 0:
-                frac = hedged_sh / sim.filled_shares
-                hedged_gross_cost += sim.gross_cost_usd * frac
-                hedged_fees += sim.fee_usd * frac
-                slippage_usd += sim.market_impact_usd * frac
+                frac = hedged_sh / max(sim.filled_shares * f_f, 1e-9)
+                hedged_gross_cost += sim.gross_cost_usd * f_a * frac
+                hedged_fees += sim.fee_usd * f_a * frac
+                slippage_usd += sim.market_impact_usd * f_a * frac
 
         gas_usd = sum(DEFAULT_EXTERNAL_GAS_USD.get(v, 0.005) for v in distinct_venues)
         bridge_usd = (
@@ -511,7 +552,22 @@ class Level2ExecutionSimulator:
                 leg_notional = (sim.gross_cost_usd / sim.filled_shares) * hedged_sh
                 basis_haircut += leg_notional * (bps / 10_000.0)
 
-        guaranteed_payout = hedged_sh * unit_payout_usd
+        coupon_credit_usd = 0.0
+        if venue_coupon_apy and hedged_sh > 0:
+            coupon_hold_h = (
+                max(0.0, float(min_guaranteed_hold_hours))
+                if min_guaranteed_hold_hours is not None
+                else max(0.0, lockup_hours - max_settle_delay)
+            )
+            for lg, sim, f_f in zip(legs, leg_sims, leg_fx_floor):
+                if sim.filled_shares > 0:
+                    v_apy = max(0.0, float(venue_coupon_apy.get(lg.market.venue.lower(), 0.0)))
+                    if v_apy > 0.0 and coupon_hold_h > 0.0:
+                        frac = hedged_sh / max(sim.filled_shares * f_f, 1e-9)
+                        leg_usd_mark = sim.gross_cost_usd * f_f * frac
+                        coupon_credit_usd += leg_usd_mark * v_apy * (coupon_hold_h / 8760.0)
+
+        guaranteed_payout = hedged_sh * unit_payout_usd + coupon_credit_usd
         total_friction = (
             hedged_fees + gas_usd + bridge_usd + carry_drag + basis_haircut + unwind_bleed
         )
@@ -748,18 +804,32 @@ class MultiVenueArbitrageAnalyzer:
                 by_rules_and_title.setdefault((m.rules_hash, t_key), []).append(m)
             if m.category == "sports" and m.asset:
                 by_sports.setdefault(m.asset, []).append(m)
-                bare_teams = m.asset.split("@", 1)[0]
-                if bare_teams:
-                    by_sports_teams.setdefault(bare_teams, []).append(m)
+                if (m.horizon or "match") == "match" and not m.asset.startswith("DERIVATIVE::"):
+                    bare_teams = m.asset.split("@", 1)[0]
+                    if bare_teams:
+                        by_sports_teams.setdefault(bare_teams, []).append(m)
             if m.category == "crypto" and m.asset and m.horizon and m.end_ts:
-                by_crypto.setdefault((m.asset, m.horizon, int(m.end_ts)), []).append(m)
+                by_crypto.setdefault((m.asset, m.horizon, int(m.end_ts), m.strike_price is not None), []).append(m)
 
         seen_pairs: set[Tuple[str, str]] = set()
         out_pairs: List[Tuple[NormalizedBinaryMarket, NormalizedBinaryMarket]] = []
 
-        def _add_pair(a: NormalizedBinaryMarket, b: NormalizedBinaryMarket) -> None:
+        def _sports_ts_compatible(a: NormalizedBinaryMarket, b: NormalizedBinaryMarket, *, explicit_link: bool) -> bool:
+            return sports_timestamps_compatible(a, b, explicit_link=explicit_link)[0]
+
+        def _add_pair(a: NormalizedBinaryMarket, b: NormalizedBinaryMarket, *, explicit_link: bool = False) -> None:
             if a.venue == b.venue:
                 return
+            if a.category == "crypto" or b.category == "crypto":
+                if (a.horizon or b.horizon) and (a.horizon or "") != (b.horizon or ""):
+                    return
+                if (a.strike_price is None) != (b.strike_price is None):
+                    return
+            if a.category == "sports" or b.category == "sports":
+                if (a.horizon or "match") != (b.horizon or "match"):
+                    return
+                if a.category == "sports" and b.category == "sports" and not _sports_ts_compatible(a, b, explicit_link=explicit_link):
+                    return
             # Enforce 1-to-1 cryptographic conditionId link whenever declared on multi-strike series
             if a.venue == "polymarket" and a.condition_id and b.polymarket_condition_ids:
                 if a.condition_id.lower() not in {c.lower() for c in b.polymarket_condition_ids}:
@@ -789,15 +859,18 @@ class MultiVenueArbitrageAnalyzer:
                 continue
             if m.external_slug and m.external_slug in by_slug:
                 for other in by_slug[m.external_slug]:
-                    _add_pair(m, other)
+                    _add_pair(m, other, explicit_link=True)
+            if m.slug and m.slug in by_slug:
+                for other in by_slug[m.slug]:
+                    _add_pair(m, other, explicit_link=False)
             m_ts = re.search(r"-(\d{10})$", m.slug)
             if m_ts and m.asset and m.horizon in ("5m", "15m"):
                 p_slug = f"{m.asset.lower()}-updown-{m.horizon}-{m_ts.group(1)}"
                 for other in by_slug.get(p_slug, ()):
-                    _add_pair(m, other)
+                    _add_pair(m, other, explicit_link=True)
             for cid in m.polymarket_condition_ids:
                 for other in by_cond.get(cid.lower(), ()):
-                    _add_pair(m, other)
+                    _add_pair(m, other, explicit_link=True)
             t_key = _canonical_title_key(m.title)
             if m.rules_hash and t_key:
                 for other in by_rules_and_title.get((m.rules_hash, t_key), ()):
@@ -805,12 +878,13 @@ class MultiVenueArbitrageAnalyzer:
             if m.category == "sports" and m.asset:
                 for other in by_sports.get(m.asset, ()):
                     _add_pair(m, other)
-                bare_teams = m.asset.split("@", 1)[0]
-                for other in by_sports_teams.get(bare_teams, ()):
-                    if not m.end_ts or not other.end_ts or abs(int(m.end_ts) - int(other.end_ts)) <= 36 * 3600:
-                        _add_pair(m, other)
+                if (m.horizon or "match") == "match" and not m.asset.startswith("DERIVATIVE::"):
+                    bare_teams = m.asset.split("@", 1)[0]
+                    for other in by_sports_teams.get(bare_teams, ()):
+                        if _sports_ts_compatible(m, other, explicit_link=False):
+                            _add_pair(m, other)
             if m.category == "crypto" and m.asset and m.horizon and m.end_ts:
-                for other in by_crypto.get((m.asset, m.horizon, int(m.end_ts)), ()):
+                for other in by_crypto.get((m.asset, m.horizon, int(m.end_ts), m.strike_price is not None), ()):
                     _add_pair(m, other)
 
         return out_pairs
@@ -877,7 +951,7 @@ class MultiVenueArbitrageAnalyzer:
                     cur_y = by_label_best_yes.get(lbl)
                     if cur_y is None or m.yes_asks[0].price < cur_y.yes_asks[0].price:
                         by_label_best_yes[lbl] = m
-                if m.no_asks and m.neg_risk:
+                if m.no_asks:
                     cur_n = by_label_best_no.get(lbl)
                     if cur_n is None or m.no_asks[0].price < cur_n.no_asks[0].price:
                         by_label_best_no[lbl] = m
@@ -908,25 +982,43 @@ class MultiVenueArbitrageAnalyzer:
                 else:
                     rejections.append({"group_id": gid, "reason": ev_yes.simulated_executable.status})
 
-            # (B) k-Leg NegRisk NO-Conversion Basket (`sum(NO_i) < $(k - 1)`, k >= 3)
-            if expected_k >= 3 and len(by_label_best_no) == expected_k:
-                ordered_no = [by_label_best_no[k] for k in sorted(by_label_best_no.keys())]
-                # Require single-venue NegRisk market group for atomic/deterministic NO conversion
-                if len({m.venue for m in ordered_no}) == 1:
-                    no_l1_sum = sum(m.no_asks[0].price for m in ordered_no)
-                    payout_units = float(expected_k - 1)
+            # (B) m-of-k Subset & Complete NegRisk NO-Dominance Baskets (`sum_{j=1}^m NO_j < $(m - 1)` for 2 <= m <= k)
+            # In ANY mutually-exclusive partition, at most ONE outcome occurs, so buying NO on ANY m >= 2 outcomes
+            # guarantees >= $(m - 1) payout (and $m.00 if an unbought outsider wins)!
+            if expected_k >= 3 and len(by_label_best_no) >= 2:
+                cheapest_no = sorted(by_label_best_no.values(), key=lambda m_x: m_x.no_asks[0].price)
+                for m_sub in range(2, len(cheapest_no) + 1):
+                    sub_no = cheapest_no[:m_sub]
+                    # For m == k full NegRisk conversion, keep legacy basket_id/type; for m < k subset dominance, require
+                    # cancel-rule safety (either m == 2 on 50-50 where $0.50+$0.50=$1.00, VOID, or single-venue NegRisk)
+                    same_venue_nr = (len({m_x.venue for m_x in sub_no}) == 1 and all(m_x.neg_risk for m_x in sub_no))
+                    cancel_safe_subset = (
+                        same_venue_nr
+                        or m_sub == 2 and all(m_x.cancel_rule in ("50_50", "VOID") for m_x in sub_no)
+                        or all(m_x.cancel_rule == "VOID" for m_x in sub_no)
+                    )
+                    if not cancel_safe_subset:
+                        continue
+                    no_l1_sum = sum(m_x.no_asks[0].price for m_x in sub_no)
+                    payout_units = float(m_sub - 1)
                     if no_l1_sum < payout_units:
+                        b_type = "NEGRISK_NO_CONVERSION" if (m_sub == expected_k and same_venue_nr) else "SUBSET_NO_DOMINANCE_BOX"
+                        b_id = (
+                            f"ML_NEGRISK_NO::{gid}::{expected_k}L"
+                            if (m_sub == expected_k and same_venue_nr)
+                            else f"ML_SUBSET_NO::{gid}::{m_sub}of{expected_k}L"
+                        )
                         ev_no = self.simulator.evaluate_basket(
-                            basket_id=f"ML_NEGRISK_NO::{gid}::{expected_k}L",
-                            basket_type="NEGRISK_NO_CONVERSION",
-                            legs=[LegSpec(market=m, side="NO") for m in ordered_no],
+                            basket_id=b_id,
+                            basket_type=b_type,
+                            legs=[LegSpec(market=m_x, side="NO") for m_x in sub_no],
                             target_notional_usd=self.clip_notional_usd * payout_units,
                             unit_payout_usd=payout_units,
                             now_ms=now_ms,
                         )
                         if ev_no.simulated_executable.executable:
                             evaluations.append(ev_no)
-                        else:
+                        elif m_sub == expected_k:
                             rejections.append({"group_id": gid, "reason": ev_no.simulated_executable.status})
 
         evaluations.sort(key=lambda e: e.capital_efficiency.efficiency_rank_score, reverse=True)

@@ -941,20 +941,31 @@ class DeterministicVerificationController:
 
         # --- SESSION C: Independent Stateless Diff Review (never receives Session B's self-praise!) ---
         if "session_c_review" not in completed_steps:
+            full_diff_c = str(cand_info.get("diff_text") or "")
+            max_review_diff_chars = 24000
+            diff_truncated_c = len(full_diff_c) > max_review_diff_chars
             pkt_c = context_mgr.build_fresh_session_packet(
                 task=task,
                 stage_role="SESSION_C_INDEPENDENT_REVIEW",
                 prior_verified_checkpoint={
                     "changed_files": cand_info["changed_files"],
                     "candidate_sha": cand_info["candidate_sha"],
+                    "diff_chars": len(full_diff_c),
                 },
-                untrusted_inputs=[("git_unified_diff", cand_info["diff_text"][:2500])],
+                untrusted_inputs=[("git_unified_diff", full_diff_c[:max_review_diff_chars])],
                 stage_instructions=(
                     "Independently audit the unified Git diff above against Tier-A policies. "
                     "Reply ONLY with valid JSON: `{\"approved\": true|false, \"findings\": \"...\"}`."
                 ),
             )
-            if use_live_headless_ai:
+            if diff_truncated_c:
+                rev_receipt = {
+                    "session_conversation_id": f"local_stateless_C_oversize_{task_id[-6:]}",
+                    "fresh_session": True,
+                    "approved": False,
+                    "findings": f"DIFF_EXCEEDS_STATELESS_REVIEW_ENVELOPE:{len(full_diff_c)}>{max_review_diff_chars}",
+                }
+            elif use_live_headless_ai:
                 res_c = agent_runner.invoke(
                     prompt=pkt_c["prompt"],
                     task_id=task_id,
@@ -1050,7 +1061,12 @@ class DeterministicVerificationController:
         )
 
         # Deterministic Verification Controller executes final 5-gate verification -> `VERIFIED_COMPLETE`!
-        staging_dir = Path(str((deployer.get_active_staging_pointer() or {}).get("release_path") or self.repo_root))
+        staging_ptr = (
+            (deployer.get_active_staging_pointer() or {}).get("release_path")
+            if rel_rec.get("state") == "DEPLOYED_VERIFIED"
+            else None
+        )
+        staging_dir = Path(str(staging_ptr)) if staging_ptr else self.repo_root
         final_task = self.verify_and_finalize_task(
             task_id,
             target_dir=staging_dir if staging_dir.exists() else self.repo_root,

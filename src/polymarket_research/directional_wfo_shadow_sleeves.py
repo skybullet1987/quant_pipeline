@@ -42,6 +42,8 @@ from src.polymarket_research.exact_twap_lock_engine import should_suppress_final
 from src.polymarket_research.polymarket_live_executor import calculate_taker_fee
 from src.polymarket_research.polymarket_live_harvester import evaluate_coinbase_venue_veto
 
+from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+
 SHADOW_INITIAL_CAPITAL = 500.0
 SHADOW_TICKET_USD = 15.0
 SHADOW_ELASTIC_USD = 12.0
@@ -51,7 +53,7 @@ TRANSIT_LATENCY_SEC = 0.50
 MAKER_TTL_SEC = 6.0
 SHIELD_DECAY_FRAC = 0.50
 Z_TAKER_CUT = 1.20
-_NY_TZ = ZoneInfo("America/New_York")
+_NY_TZ = get_us_eastern_tz()
 
 
 def compute_synthetic_xau_usd_anchor(

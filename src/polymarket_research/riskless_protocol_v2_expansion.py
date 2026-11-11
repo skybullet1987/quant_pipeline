@@ -43,6 +43,7 @@ import time
 import urllib.request
 from datetime import datetime, timedelta, timezone, tzinfo
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
 
@@ -95,12 +96,17 @@ def is_post_expiry_uma_frozen_lock(pos: Mapping[str, Any], now_ts: Optional[floa
     return uma_st == "disputed" or now_f >= anchor_ts + 14400.0
 
 
-class _USNewYorkFallbackTZ(tzinfo):
+class _USDSTFallbackTZ(tzinfo):
     """
-    Stdlib-pure US Eastern (`America/New_York`) `tzinfo` implementing exact US DST transitions
-    (2nd Sunday in March `07:00 UTC` -> 1st Sunday in November `06:00 UTC`) when Windows Python
+    Stdlib-pure North American (`US/Canada`) `tzinfo` implementing exact US DST transitions
+    (2nd Sunday in March `02:00` local -> 1st Sunday in November `02:00` local) when Windows Python
     lacks the `tzdata` IANA bundle.
     """
+
+    def __init__(self, std_hours: int = -5, std_name: str = "EST", dst_name: str = "EDT") -> None:
+        self._std_hours = int(std_hours)
+        self._std_name = str(std_name)
+        self._dst_name = str(dst_name)
 
     @staticmethod
     def _nth_sunday_day(year: int, month: int, n: int) -> int:
@@ -108,27 +114,94 @@ class _USNewYorkFallbackTZ(tzinfo):
         first_sun = 1 + ((6 - first_wd) % 7)
         return first_sun + 7 * (n - 1)
 
-    @classmethod
-    def _is_edt(cls, dt: Optional[datetime]) -> bool:
+    def _is_dst(self, dt: Optional[datetime]) -> bool:
         if dt is None:
             return False
         y = dt.year
-        dst_start_utc = datetime(y, 3, cls._nth_sunday_day(y, 3, 2), 7, 0, 0)
-        dst_end_utc = datetime(y, 11, cls._nth_sunday_day(y, 11, 1), 6, 0, 0)
+        start_day = self._nth_sunday_day(y, 3, 2)
+        end_day = self._nth_sunday_day(y, 11, 1)
         naive = dt.replace(tzinfo=None)
-        # Approximate local wall-time transition (02:00 EST -> +5h = 07:00 UTC; 02:00 EDT -> +4h = 06:00 UTC)
-        start_local = datetime(y, 3, dst_start_utc.day, 2, 0, 0)
-        end_local = datetime(y, 11, dst_end_utc.day, 1 if getattr(dt, "fold", 0) else 2, 0, 0)
+        start_local = datetime(y, 3, start_day, 2, 0, 0)
+        end_local = datetime(y, 11, end_day, 1 if getattr(dt, "fold", 0) else 2, 0, 0)
         return start_local <= naive < end_local
 
     def utcoffset(self, dt: Optional[datetime]) -> timedelta:
-        return timedelta(hours=-4 if self._is_edt(dt) else -5)
+        return timedelta(hours=(self._std_hours + 1) if self._is_dst(dt) else self._std_hours)
 
     def dst(self, dt: Optional[datetime]) -> timedelta:
-        return timedelta(hours=1 if self._is_edt(dt) else 0)
+        return timedelta(hours=1 if self._is_dst(dt) else 0)
 
     def tzname(self, dt: Optional[datetime]) -> str:
-        return "EDT" if self._is_edt(dt) else "EST"
+        return self._dst_name if self._is_dst(dt) else self._std_name
+
+
+_USNewYorkFallbackTZ = _USDSTFallbackTZ
+
+
+class _EUDSTFallbackTZ(tzinfo):
+    """Stdlib-pure European DST `tzinfo` (last Sunday in March 01:00 UTC -> last Sunday in October 01:00 UTC)."""
+
+    def __init__(self, std_hours: int = 0, std_name: str = "GMT", dst_name: str = "BST") -> None:
+        self._std_hours = int(std_hours)
+        self._std_name = str(std_name)
+        self._dst_name = str(dst_name)
+
+    @staticmethod
+    def _last_sunday_day(year: int, month: int) -> int:
+        next_m = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+        last_dt = next_m - timedelta(days=1)
+        return last_dt.day - ((last_dt.weekday() + 1) % 7)
+
+    def _is_dst(self, dt: Optional[datetime]) -> bool:
+        if dt is None:
+            return False
+        y = dt.year
+        s_day = self._last_sunday_day(y, 3)
+        e_day = self._last_sunday_day(y, 10)
+        naive = dt.replace(tzinfo=None)
+        start_local = datetime(y, 3, s_day, 1 + self._std_hours, 0, 0)
+        end_local = datetime(y, 10, e_day, (1 + self._std_hours) if getattr(dt, "fold", 0) else (2 + self._std_hours), 0, 0)
+        return start_local <= naive < end_local
+
+    def utcoffset(self, dt: Optional[datetime]) -> timedelta:
+        return timedelta(hours=(self._std_hours + 1) if self._is_dst(dt) else self._std_hours)
+
+    def dst(self, dt: Optional[datetime]) -> timedelta:
+        return timedelta(hours=1 if self._is_dst(dt) else 0)
+
+    def tzname(self, dt: Optional[datetime]) -> str:
+        return self._dst_name if self._is_dst(dt) else self._std_name
+
+
+_FALLBACK_TZ_MAP: Dict[str, tzinfo] = {
+    "America/New_York": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "US/Eastern": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Detroit": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Toronto": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Chicago": _USDSTFallbackTZ(-6, "CST", "CDT"),
+    "US/Central": _USDSTFallbackTZ(-6, "CST", "CDT"),
+    "America/Denver": _USDSTFallbackTZ(-7, "MST", "MDT"),
+    "America/Phoenix": timezone(timedelta(hours=-7), "MST"),
+    "America/Los_Angeles": _USDSTFallbackTZ(-8, "PST", "PDT"),
+    "US/Pacific": _USDSTFallbackTZ(-8, "PST", "PDT"),
+    "Europe/London": _EUDSTFallbackTZ(0, "GMT", "BST"),
+    "Europe/Paris": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Berlin": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Madrid": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Rome": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Asia/Tokyo": timezone(timedelta(hours=9), "JST"),
+    "Asia/Seoul": timezone(timedelta(hours=9), "KST"),
+    "Asia/Hong_Kong": timezone(timedelta(hours=8), "HKT"),
+    "Asia/Shanghai": timezone(timedelta(hours=8), "CST"),
+    "Asia/Singapore": timezone(timedelta(hours=8), "SGT"),
+    "Asia/Taipei": timezone(timedelta(hours=8), "CST"),
+    "Asia/Dubai": timezone(timedelta(hours=4), "GST"),
+    "Africa/Johannesburg": timezone(timedelta(hours=2), "SAST"),
+    "America/Sao_Paulo": timezone(timedelta(hours=-3), "BRT"),
+    "America/Argentina/Buenos_Aires": timezone(timedelta(hours=-3), "ART"),
+    "Australia/Sydney": timezone(timedelta(hours=11), "AEDT"),
+    "Pacific/Auckland": timezone(timedelta(hours=13), "NZDT"),
+}
 
 
 def get_us_eastern_tz() -> tzinfo:
@@ -136,20 +209,18 @@ def get_us_eastern_tz() -> tzinfo:
     try:
         return ZoneInfo("America/New_York")
     except Exception:
-        return _USNewYorkFallbackTZ()
+        return _FALLBACK_TZ_MAP["America/New_York"]
 
 
 def safe_zoneinfo(tz_name: Optional[str]) -> tzinfo:
-    """Resolves an IANA timezone with safe fallback to `_USNewYorkFallbackTZ` or `timezone.utc`."""
+    """Resolves an IANA timezone via OS `ZoneInfo` first, falling back to exact DST/fixed `tzinfo` when `tzdata` is absent."""
     nm = str(tz_name or "UTC").strip()
-    if not nm or nm.upper() == "UTC":
+    if not nm or nm.upper() in ("UTC", "ETC/UTC", "GMT"):
         return timezone.utc
     try:
         return ZoneInfo(nm)
     except Exception:
-        if nm in {"America/New_York", "US/Eastern", "America/Detroit", "America/Toronto"}:
-            return _USNewYorkFallbackTZ()
-        return timezone.utc
+        return _FALLBACK_TZ_MAP.get(nm, timezone.utc)
 
 
 def _iso_utc(ts: float) -> str:
@@ -177,6 +248,39 @@ def compute_exact_taker_fee_per_share(
     p = min(0.9999, max(0.0001, float(price)))
     exp = max(0.5, float(fee_exponent or 1.0))
     return r * ((p * (1.0 - p)) ** exp)
+
+
+def v2_net_buy_cost_per_share(
+    price: float,
+    fee_rate: float = 0.0,
+    fee_exponent: float = 1.0,
+) -> float:
+    """
+    Exact Polymarket Protocol V2 net-share-deducted BUY cost per 1.0 delivered outcome share:
+    `h(p) = r * ((p * (1 - p)) ** exp) / p`, so 1.0 net share requires `1 / (1 - h(p))` gross shares
+    costing `p / (1 - h(p))` USDC (`> p + fee_per_gross_share` whenever `r > 0`).
+    """
+    p = min(0.9999, max(0.0001, float(price)))
+    r = max(0.0, float(fee_rate or 0.0))
+    if r <= 0.0:
+        return float(price)
+    fee_ps = compute_exact_taker_fee_per_share(p, r, fee_exponent)
+    share_haircut = min(0.50, max(0.0, fee_ps / p))
+    return float(price) / max(0.50, 1.0 - share_haircut)
+
+
+def v2_net_sell_proceeds_per_share(
+    price: float,
+    fee_rate: float = 0.0,
+    fee_exponent: float = 1.0,
+) -> float:
+    """
+    Exact Polymarket Protocol V2 cash-deducted SELL proceeds per 1.0 outcome share sold:
+    `max(0.0, p - compute_exact_taker_fee_per_share(p, fee_rate, fee_exponent))`.
+    """
+    p = min(0.9999, max(0.0001, float(price)))
+    fee_ps = compute_exact_taker_fee_per_share(p, fee_rate, fee_exponent)
+    return max(0.0, float(price) - fee_ps)
 
 logger = logging.getLogger("RisklessProtocolV2Expansion")
 
@@ -290,6 +394,39 @@ def is_protocol_v2_market(market_or_event: Mapping[str, Any]) -> bool:
     return False
 
 
+_CONDITIONAL_OCCURRENCE_NEGRISK_RE = re.compile(
+    r"\b(?:ipo|initial\s+public\s+offering|acqui(?:sition|red|re)|merger|buyout|takeover"
+    r"|sold\s+in\s+(?:its|an|the)|at\s+what\s+(?:valuation|price)\s+will|deal\s+value|settlement\s+amount)\b",
+    re.IGNORECASE,
+)
+_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE = re.compile(
+    r"(?:\b(?:no\s+[a-z0-9]+|not\s+[a-z0-9]+|does\s+not|doesn't|will\s+not|won't|never|none|neither"
+    r"|nothing|other|cancelled|canceled|called\s+off|postponed)\b|^\s*0(?:\.0+)?\s*%?\s*$)",
+    re.IGNORECASE,
+)
+
+
+def is_conditional_negrisk_missing_catchall(
+    title_or_question: str,
+    labels: Sequence[str],
+) -> bool:
+    """
+    Detects non-augmented NegRisk slates conditioned on an uncertain corporate/deal event
+    (e.g., `"What % of Anthropic will be sold in its IPO?"` with `<4%..12%+` and NO `"No IPO"` slot)
+    where all `YES` brackets resolve to `$0.00` (Double-Zero!) if the underlying event does not occur.
+    """
+    hdr = str(title_or_question or "").strip()
+    if not hdr or not _CONDITIONAL_OCCURRENCE_NEGRISK_RE.search(hdr):
+        return False
+    clean_labels = [str(x or "").strip() for x in (labels or ()) if str(x or "").strip()]
+    if len(clean_labels) < 2:
+        return False
+    if any(_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE.search(lb) for lb in clean_labels):
+        return False
+    numeric_bracket_n = sum(1 for lb in clean_labels if re.search(r"[0-9%$]", lb))
+    return numeric_bracket_n >= 2
+
+
 def verify_v2_negrisk_other_partition(
     outcomes: Sequence[Mapping[str, Any]],
     *,
@@ -308,6 +445,7 @@ def verify_v2_negrisk_other_partition(
     other_indices: List[int] = []
     unnamed_indices: List[int] = []
     disabled_indices: List[int] = []
+    outcome_labels: List[str] = []
 
     for idx, item in enumerate(outcomes):
         label = str(
@@ -318,6 +456,7 @@ def verify_v2_negrisk_other_partition(
             or item.get("title")
             or ""
         ).strip()
+        outcome_labels.append(label)
         if bool(item.get("isPlaceholder") or item.get("is_placeholder") or item.get("placeholder")):
             unnamed_indices.append(idx)
             continue
@@ -356,6 +495,20 @@ def verify_v2_negrisk_other_partition(
             "reason": "AUGMENTED_NEGRISK_MISSING_SYNTHETIC_OTHER_INDEX",
             "is_protocol_v2": is_protocol_v2_market(meta),
             "is_augmented_negrisk": True,
+            "safe_for_all_yes_basket": False,
+            "total_partition_size": n,
+        }
+
+    meta_hdr = " ".join(
+        str(meta.get(k) or "")
+        for k in ("title", "question", "slug", "description")
+        if meta.get(k)
+    )
+    if not other_indices and is_conditional_negrisk_missing_catchall(meta_hdr, outcome_labels):
+        return False, {
+            "reason": "CONDITIONAL_EVENT_MISSING_NO_EVENT_CATCHALL",
+            "is_protocol_v2": is_protocol_v2_market(meta),
+            "is_augmented_negrisk": is_aug,
             "safe_for_all_yes_basket": False,
             "total_partition_size": n,
         }
@@ -642,9 +795,14 @@ def detect_nr4_nr5_optimal_tail_convert(
 
         no_cost = 9.99
         no_q = 0.0
+        no_net_avail_sz = no_ask_sz
         if 0.001 <= no_ask_raw <= 0.999 and no_ask_sz >= min_shares:
             no_q, _, _ = quantize_dynamic_tick_price(no_ask_raw, "BUY", shares=min_shares, mode="taker")
-            no_cost = no_q + compute_exact_taker_fee_per_share(no_q, f_rate, f_exp)
+            no_cost = v2_net_buy_cost_per_share(no_q, f_rate, f_exp)
+            if f_rate > 0.0 and no_cost > no_q:
+                no_net_avail_sz = no_ask_sz * (no_q / no_cost)
+            if no_net_avail_sz < min_shares:
+                no_cost = 9.99
 
         yes_net_bid = 0.0
         yes_q = 0.0
@@ -664,7 +822,7 @@ def detect_nr4_nr5_optimal_tail_convert(
                 "no_token_id": str(item.get("no_token_id") or item.get("token_id_no") or ""),
                 "no_ask_px": no_q,
                 "no_cost_net": no_cost,
-                "no_ask_size": no_ask_sz,
+                "no_ask_size": no_net_avail_sz,
                 "yes_bid_px": yes_q,
                 "yes_net_bid": yes_net_bid,
                 "yes_bid_size": yes_bid_sz,
@@ -812,14 +970,17 @@ def detect_nr6_cross_slate_surjection_box(
             if not (0.001 <= px <= 0.999 and sz >= min_shares and tok):
                 return None
             q_px, _, _ = quantize_dynamic_tick_price(px, "BUY", shares=min_shares, mode="taker")
+            nc_fl = v2_net_buy_cost_per_share(q_px, f_r, f_e)
             legs_to_buy.append(
                 {
                     "role": f"FINE_NO_{idx}",
                     "token_id": tok,
                     "condition_id": str(fl.get("condition_id") or ""),
                     "ask_px": q_px,
-                    "net_cost": q_px + compute_exact_taker_fee_per_share(q_px, f_r, f_e),
-                    "ask_size": sz,
+                    "net_cost": nc_fl,
+                    "ask_size": sz * (q_px / nc_fl) if (f_r > 0.0 and nc_fl > q_px) else sz,
+                    "fee_rate": f_r,
+                    "fee_exponent": f_e,
                 }
             )
         c_px = _sf(coarse_leg.get("yes_ask") or coarse_leg.get("ask"), 0.0)
@@ -830,14 +991,17 @@ def detect_nr6_cross_slate_surjection_box(
         if not (0.001 <= c_px <= 0.999 and c_sz >= min_shares and c_tok):
             return None
         qc_px, _, _ = quantize_dynamic_tick_price(c_px, "BUY", shares=min_shares, mode="taker")
+        nc_c = v2_net_buy_cost_per_share(qc_px, c_fr, c_fe)
         legs_to_buy.append(
             {
                 "role": "COARSE_YES",
                 "token_id": c_tok,
                 "condition_id": str(coarse_leg.get("condition_id") or ""),
                 "ask_px": qc_px,
-                "net_cost": qc_px + compute_exact_taker_fee_per_share(qc_px, c_fr, c_fe),
-                "ask_size": c_sz,
+                "net_cost": nc_c,
+                "ask_size": c_sz * (qc_px / nc_c) if (c_fr > 0.0 and nc_c > qc_px) else c_sz,
+                "fee_rate": c_fr,
+                "fee_exponent": c_fe,
             }
         )
     elif rel == "COARSE_COVERED_BY_UNION":
@@ -850,14 +1014,17 @@ def detect_nr6_cross_slate_surjection_box(
         if not (0.001 <= c_px <= 0.999 and c_sz >= min_shares and c_tok):
             return None
         qc_px, _, _ = quantize_dynamic_tick_price(c_px, "BUY", shares=min_shares, mode="taker")
+        nc_c = v2_net_buy_cost_per_share(qc_px, c_fr, c_fe)
         legs_to_buy.append(
             {
                 "role": "COARSE_NO",
                 "token_id": c_tok,
                 "condition_id": str(coarse_leg.get("condition_id") or ""),
                 "ask_px": qc_px,
-                "net_cost": qc_px + compute_exact_taker_fee_per_share(qc_px, c_fr, c_fe),
-                "ask_size": c_sz,
+                "net_cost": nc_c,
+                "ask_size": c_sz * (qc_px / nc_c) if (c_fr > 0.0 and nc_c > qc_px) else c_sz,
+                "fee_rate": c_fr,
+                "fee_exponent": c_fe,
             }
         )
         for idx, fl in enumerate(fine_legs):
@@ -869,14 +1036,17 @@ def detect_nr6_cross_slate_surjection_box(
             if not (0.001 <= px <= 0.999 and sz >= min_shares and tok):
                 return None
             q_px, _, _ = quantize_dynamic_tick_price(px, "BUY", shares=min_shares, mode="taker")
+            nc_fl = v2_net_buy_cost_per_share(q_px, f_r, f_e)
             legs_to_buy.append(
                 {
                     "role": f"FINE_YES_{idx}",
                     "token_id": tok,
                     "condition_id": str(fl.get("condition_id") or ""),
                     "ask_px": q_px,
-                    "net_cost": q_px + compute_exact_taker_fee_per_share(q_px, f_r, f_e),
-                    "ask_size": sz,
+                    "net_cost": nc_fl,
+                    "ask_size": sz * (q_px / nc_fl) if (f_r > 0.0 and nc_fl > q_px) else sz,
+                    "fee_rate": f_r,
+                    "fee_exponent": f_e,
                 }
             )
     else:
@@ -1755,6 +1925,8 @@ def compute_dynamic_riskless_tier_caps(
         max_evt_usd = round(min(45.0, max(20.0, eq * 0.28)), 2)
     else:
         max_evt_usd = round(min(150.0, max(45.0, eq * 0.32)), 2)
+    corr_nav_pct = min(0.15, max(0.01, float(cfg.get("max_correlated_oracle_event_nav_pct", 0.15) or 0.15)))
+    corr_evt_usd = round(max(0.0, eq) * corr_nav_pct, 4)
     return {
         "reward_harvester_cap_usd": rw_cap,
         "reward_unlocked": bool(eq >= rw_unlock),
@@ -1762,6 +1934,7 @@ def compute_dynamic_riskless_tier_caps(
         "pre_split_cap_usd": ps_cap,
         "max_concurrent_intents_per_event": max_per_evt,
         "max_event_notional_usd": max_evt_usd,
+        "max_correlated_oracle_event_notional_usd": corr_evt_usd,
     }
 
 
@@ -1796,19 +1969,113 @@ _ICAO_SUFFIX_RE = re.compile(
 _ICAO_ANY_SUFFIX_RE = re.compile(r"^(?:[A-Z][A-Z0-9_ -]*_)?(HKO|[A-Z]{4})$")
 
 
+_WEATHER_CONTEXT_RE = re.compile(
+    r"(?:\b(?:temperature|weather|metar|asos|wunderground|rainfall|snowfall|precipitation|celsius|fahrenheit)\b"
+    r"|°\s*[cf]\b|-daily-(?:weather|lowest-temperature|highest-temperature))",
+    re.IGNORECASE,
+)
+_WEATHER_CITY_ALIASES: Tuple[Tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE), icao_code)
+    for alias, icao_code in (
+        ("new york city", "KLGA"),
+        ("nyc", "KLGA"),
+        ("laguardia", "KLGA"),
+        ("miami", "KMIA"),
+        ("los angeles", "KLAX"),
+        ("san francisco", "KSFO"),
+        ("chicago", "KORD"),
+        ("dallas", "KDAL"),
+        ("houston", "KHOU"),
+        ("austin", "KAUS"),
+        ("atlanta", "KATL"),
+        ("seattle", "KSEA"),
+        ("denver", "KDEN"),
+        ("toronto", "CYYZ"),
+        ("london", "EGLC"),
+        ("paris", "LFPB"),
+        ("munich", "EDDM"),
+        ("madrid", "LEMD"),
+        ("milan", "LIMC"),
+        ("amsterdam", "EHAM"),
+        ("warsaw", "EPWA"),
+        ("helsinki", "EFHK"),
+        ("istanbul", "LTFM"),
+        ("ankara", "LTAC"),
+        ("moscow", "UUWW"),
+        ("tokyo", "RJTT"),
+        ("seoul", "RKSI"),
+        ("busan", "RKPK"),
+        ("hong kong", "HKO"),
+        ("singapore", "WSSS"),
+        ("beijing", "ZBAA"),
+        ("shanghai", "ZSPD"),
+        ("shenzhen", "ZGSZ"),
+        ("guangzhou", "ZGGG"),
+        ("wuhan", "ZHHH"),
+        ("chongqing", "ZUCK"),
+        ("chengdu", "ZUUU"),
+        ("qingdao", "ZSQD"),
+        ("jinan", "ZSJN"),
+        ("zhengzhou", "ZHCC"),
+        ("tel aviv", "LLBG"),
+        ("jeddah", "OEJN"),
+        ("karachi", "OPKC"),
+        ("lucknow", "VILK"),
+        ("manila", "RPLL"),
+        ("mexico city", "MMMX"),
+        ("panama city", "MPMG"),
+        ("buenos aires", "SAEZ"),
+        ("sao paulo", "SBGR"),
+        ("wellington", "NZWN"),
+        ("cape town", "FACT"),
+    )
+)
+
+
 def _extract_weather_icao_key(cand: Mapping[str, Any]) -> str:
+    """
+    Extracts canonical `EVTWX:<ICAO>:<12h_bucket>` across ALL sleeves unconditionally so weather
+    markets entering via `BOND1`, `UMA_READY1`, `MKR_LOCK1`, `NR0`, `MULTI_LEG_BUNDLE`, or `W_PRUNE1`
+    can NEVER bypass correlated weather-station/day concentration accounting via sleeve-name or asset aliases.
+    """
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     sl_u = str(cand.get("sleeve_source") or cand.get("sleeve") or "").strip().upper()
     ast_s = str(cand.get("asset") or "").strip().upper()
+    non_wx_tickers = {"GOLD", "SILV", "XAUU", "XAGU", "SP50", "NDX1", "CLIN", "HYPE", "DOGE", "USDT", "USDC"}
+    try:
+        from src.polymarket_research.weather_metar_engine import STATION_CATALOG as _WX_CAT, _SERIES_TO_ICAO as _WX_SERIES
+    except Exception:
+        _WX_CAT, _WX_SERIES = {}, {}
+    known_icaos = set(_WX_CAT.keys()) | set(_WX_SERIES.values()) | set(WUNDERGROUND_INTL_INTEGER_STATIONS) | {"HKO"}
+
     m_any = _ICAO_ANY_SUFFIX_RE.match(ast_s)
     if m_any:
         st_c = m_any.group(1)
-        if st_c == "HKO" or st_c in WUNDERGROUND_INTL_INTEGER_STATIONS:
+        if st_c in known_icaos and st_c not in non_wx_tickers:
             return f"EVTWX:{st_c}:{exp_i // 43200}"
     m_ic = _ICAO_SUFFIX_RE.match(ast_s)
-    if m_ic and (sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "_" in ast_s or len(ast_s) == 4):
-        if ast_s not in {"GOLD", "SILV", "XAUU", "XAGU", "SP50", "NDX1", "CLIN"}:
+    if m_ic and m_ic.group(1) not in non_wx_tickers:
+        if m_ic.group(1) in known_icaos or sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "_" in ast_s or len(ast_s) == 4:
             return f"EVTWX:{m_ic.group(1)}:{exp_i // 43200}"
+
+    blob_parts = [
+        str(cand.get(f) or "")
+        for f in ("event_slug", "slug", "market_slug", "series_slug", "question", "title", "leg_a_label", "trade_id", "box_id", "event_id")
+    ]
+    blob = " | ".join(p for p in blob_parts if p)
+    if not blob:
+        return ""
+    blob_low = blob.lower()
+    for ser_slug, ser_icao in _WX_SERIES.items():
+        if ser_slug in blob_low:
+            return f"EVTWX:{ser_icao}:{exp_i // 43200}"
+    for icao_cand in known_icaos:
+        if len(icao_cand) >= 3 and re.search(rf"(?:^|[^A-Z0-9]){re.escape(icao_cand)}(?:[^A-Z0-9]|$)", blob.upper()):
+            return f"EVTWX:{icao_cand}:{exp_i // 43200}"
+    if sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "WEATHER" in sl_u or "METAR" in sl_u or _WEATHER_CONTEXT_RE.search(blob):
+        for pat_city, city_icao in _WEATHER_CITY_ALIASES:
+            if pat_city.search(blob):
+                return f"EVTWX:{city_icao}:{exp_i // 43200}"
     return ""
 
 
@@ -1853,7 +2120,8 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            m_emb = _EMBEDDED_EVT_RE.match(v)
+            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 return f"EVT:{m_emb.group(1)}"
             continue
@@ -1861,7 +2129,8 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            m_dk = _DEDUPE_EVT_RE.match(dk_v) or _EMBEDDED_EVT_RE.match(dk_v)
+            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 return f"EVT:{m_dk.group(1)}"
     q_txt = str(cand.get("question") or "").strip()
@@ -1916,17 +2185,138 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     return f"MKT:{mid}" if mid else ""
 
 
-def extract_canonical_event_keys(cand: Optional[Mapping[str, Any]]) -> set[str]:
-    """Returns all canonical event group aliases (e.g. both `EVT:318559` and `EVTWX:KMIA:41530`) for cross-box deduplication."""
+def extract_canonical_event_keys(
+    cand: Optional[Mapping[str, Any]],
+    market_ids: Optional[Sequence[str]] = None,
+) -> set[str]:
+    """
+    Returns ALL canonical event/market/condition/weather aliases simultaneously (`EVT:*`, `MKT:*`,
+    `COND:*`, `EVTMATCH:*`, `EVTLBL:*`, `EVTWX:*`, `WSTAT:*`, `WXSTATION:*`) so follow-on sleeves
+    entering the same underlying market/condition/event without `event_id` can NEVER bypass the
+    `15%` reconciled NAV concentration cap via single-key mismatch.
+    """
     if not isinstance(cand, Mapping):
         return set()
     out: set[str] = set()
     pk = extract_sll_event_group_key(cand)
     if pk:
         out.add(pk)
+
+    egk = str(cand.get("event_group_key") or "").strip()
+    if egk:
+        egk_body = egk[4:] if egk.upper().startswith("EVT:") else egk
+        if not egk_body.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
+            out.add(egk if ":" in egk else f"EVT:{egk}")
+        else:
+            egk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", egk_body, flags=re.IGNORECASE)
+            m_egk = _EMBEDDED_EVT_RE.match(egk_clean)
+            if m_egk:
+                out.add(f"EVT:{m_egk.group(1)}")
+
+    for k in ("event_id", "parent_event_id", "neg_risk_market_id", "event_slug"):
+        v = str(cand.get(k) or "").strip()
+        if not v:
+            continue
+        if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
+            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            m_emb = _EMBEDDED_EVT_RE.match(v_clean)
+            if m_emb:
+                out.add(f"EVT:{m_emb.group(1)}")
+            continue
+        out.add(v if v.upper().startswith("EVT:") else f"EVT:{v}")
+
+    for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
+        dk_v = str(cand.get(dk_field) or "").strip()
+        if dk_v:
+            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
+            if m_dk:
+                out.add(f"EVT:{m_dk.group(1)}")
+
+    for m_raw in (
+        *(market_ids or ()),
+        cand.get("market_id"),
+        cand.get("leg_a_market_id"),
+        cand.get("leg_b_market_id"),
+    ):
+        ms = str(m_raw or "").strip()
+        if ms:
+            out.add(f"MKT:{ms}")
+    for seq_fld in ("legs", "no_legs"):
+        seq_v = cand.get(seq_fld)
+        if isinstance(seq_v, Sequence) and not isinstance(seq_v, (str, bytes)):
+            for lg in seq_v:
+                if isinstance(lg, Mapping):
+                    lms = str(lg.get("market_id") or "").strip()
+                    if lms:
+                        out.add(f"MKT:{lms}")
+                    lcs = str(lg.get("condition_id") or "").strip().lower()
+                    if lcs:
+                        out.add(f"COND:{lcs}")
+
+    for c_raw in (
+        cand.get("condition_id"),
+        cand.get("leg_a_condition_id"),
+        cand.get("leg_b_condition_id"),
+    ):
+        cs = str(c_raw or "").strip().lower()
+        if cs:
+            out.add(f"COND:{cs}")
+
+    exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
+    q_txt = str(cand.get("question") or "").strip()
+    if q_txt:
+        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
+        m_vs = re.search(
+            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
+            q_clean,
+            flags=re.IGNORECASE,
+        )
+        if m_vs:
+            t1 = re.sub(
+                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
+                "",
+                m_vs.group(1),
+            ).strip(" :-_|")
+            t2 = m_vs.group(2).strip(" :-_|")
+            if len(t1) >= 2 and len(t2) >= 2:
+                pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
+                out.add(f"EVTMATCH:{pair_k}:{exp_i // 7200}")
+
+    lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
+    ast_s = str(cand.get("asset") or "").strip().upper()
+    if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
+        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
+        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
+        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
+        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
+        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
+        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
+        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
+        m_lbl_vs = re.search(
+            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
+            base_lbl,
+            flags=re.IGNORECASE,
+        )
+        if m_lbl_vs:
+            lt1 = re.sub(
+                r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
+                "",
+                m_lbl_vs.group(1),
+            ).strip(" :-_|")
+            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            if len(lt1) >= 2 and len(lt2) >= 2:
+                pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
+                out.add(f"EVTMATCH:{pair_lk}:{exp_i // 7200}")
+
     wx_k = _extract_weather_icao_key(cand)
     if wx_k:
         out.add(wx_k)
+        parts_wx = wx_k.split(":")
+        if len(parts_wx) >= 2 and parts_wx[1]:
+            out.add(f"WXSTATION:{parts_wx[1]}")
+            if len(parts_wx) >= 3 and parts_wx[2]:
+                out.add(f"WSTAT:{parts_wx[1]}:{parts_wx[2]}")
     return out
 
 
@@ -1946,6 +2336,120 @@ def resolve_canonical_fee_source(fee_rate: float, sleeve_src: str = "", explicit
     return exp_s or "crypto_fees_v2"
 
 
+def compute_reconciled_concentration_nav_usd(harvester: Any, now_ts: Optional[float] = None) -> float:
+    """
+    Section 7(a)/(b) Authoritative Reconciled Mark-to-Bid NAV:
+      - Sums unencumbered exchange cash (`_last_known_collateral`), escrowed maker equity already
+        deducted on-chain (`pending_intents_synced_equity_usd`), and conservative open position value.
+      - Fails closed to `$0.00` when `_last_known_collateral is None` in live mode (`not dry_run`).
+      - NEVER inflates NAV with raw book cost of UMA-disputed (`umaResolutionStatus == 'disputed'`),
+        post-expiry UMA-frozen (`is_post_expiry_uma_frozen_lock`), legged-out residual (`MULTI_LEG_RESIDUAL` /
+        `is_legged_out_residual` / `_UNWRESID_`), or unresolved balance discrepancy positions (such as the
+        4 disputed KMIA positions locking `$50.51` book cost), valuing impaired positions strictly at
+        `min(notional_usd, remaining_shares * verified_best_bid)` (`$0.00` when no live bid exists).
+      - Applies ZERO artificial `$25.00` floor so concentration caps scale down proportionally with true NAV.
+    """
+    if harvester is None:
+        return 0.0
+    now_f = float(time.time() if now_ts is None else now_ts)
+    collat_raw = getattr(harvester, "_last_known_collateral", None)
+    if collat_raw is None:
+        collat_f = 75.0 if bool(getattr(harvester, "dry_run", False)) else 0.0
+    else:
+        try:
+            collat_f = float(collat_raw)
+        except (TypeError, ValueError):
+            collat_f = 0.0
+    if not math.isfinite(collat_f) or collat_f < 0.0:
+        collat_f = 0.0
+
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    open_val = 0.0
+    for p in act_pos.values():
+        if not isinstance(p, Mapping):
+            continue
+        st_u = str(p.get("status") or "").strip().upper()
+        if st_u == "AWAITING_ONCHAIN_SETTLEMENT" or p.get("resolved_winning_outcome") is not None:
+            continue
+        raw_not = _sf(p.get("notional_usd"), 0.0)
+        if raw_not <= 0.0:
+            continue
+        rem_sh = _sf(p.get("remaining_shares", p.get("entry_shares")), 0.0)
+        bid_px = _sf(p.get("best_bid", p.get("current_bid", p.get("mark_bid"))), 0.0)
+        is_impaired = bool(
+            str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed"
+            or is_post_expiry_uma_frozen_lock(p, now_f)
+            or bool(p.get("is_legged_out_residual"))
+            or str(p.get("box_type") or "").strip().upper() == "MULTI_LEG_RESIDUAL"
+            or "_UNWRESID_" in str(p.get("trade_id") or "").upper()
+            or st_u in {"UNRESOLVED_BALANCE_DISCREPANCY", "UNRESOLVED_SETTLEMENT", "EXPIRED_OUT_OF_MONEY"}
+        )
+        if is_impaired:
+            if rem_sh > 0.0 and 0.0 < bid_px <= 1.0:
+                open_val += min(raw_not, rem_sh * bid_px)
+        else:
+            if rem_sh > 0.0 and 0.0 < bid_px <= 1.0:
+                open_val += min(raw_not, rem_sh * bid_px)
+            else:
+                open_val += raw_not
+    escrowed_maker_eq = pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
+    return round(max(0.0, collat_f + open_val + escrowed_maker_eq), 4)
+
+
+def check_harvester_fail_closed_accounting_halt(
+    harvester: Any,
+    default_state_file: Optional[Path] = None,
+) -> List[str]:
+    """
+    Section 7(c) Fail-Closed Accounting Invariants:
+      1. Halts immediately if `ACCOUNTING_SAFEGUARD_ACTIVE.json` (`active: true`) was triggered by `PAAAccountant`.
+      2. Halts immediately on non-finite or negative `_last_known_collateral`.
+      3. Halts immediately on corrupt/negative `remaining_shares` or `notional_usd` in `active_positions`.
+    """
+    reasons: List[str] = []
+    if harvester is None:
+        return reasons
+    collat_raw = getattr(harvester, "_last_known_collateral", None)
+    if collat_raw is not None:
+        try:
+            cf = float(collat_raw)
+            if not math.isfinite(cf) or cf < -1e-6:
+                reasons.append("ACCOUNTING_INVALID_NEGATIVE_OR_NAN_COLLATERAL")
+        except (TypeError, ValueError):
+            reasons.append("ACCOUNTING_CORRUPT_COLLATERAL_STATE")
+
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    for tid, p in act_pos.items():
+        if not isinstance(p, Mapping):
+            reasons.append(f"ACCOUNTING_CORRUPT_POSITION_RECORD:{tid}")
+            continue
+        for fld in ("notional_usd", "remaining_shares"):
+            if fld in p and p.get(fld) is not None:
+                try:
+                    fv = float(p[fld])
+                    if not math.isfinite(fv) or fv < -1e-6:
+                        reasons.append(f"ACCOUNTING_NEGATIVE_POSITION_FIELD:{tid}:{fld}")
+                except (TypeError, ValueError):
+                    reasons.append(f"ACCOUNTING_NONNUMERIC_POSITION_FIELD:{tid}:{fld}")
+
+    sg_path = getattr(harvester, "accounting_safeguard_file", None)
+    if sg_path is None and default_state_file is not None:
+        try:
+            sg_path = Path(default_state_file).parent / "paa" / "ACCOUNTING_SAFEGUARD_ACTIVE.json"
+        except Exception:
+            sg_path = None
+    if sg_path is not None:
+        try:
+            sg_p = Path(sg_path)
+            if sg_p.exists():
+                sg_obj = json.loads(sg_p.read_text(encoding="utf-8"))
+                if not isinstance(sg_obj, Mapping) or sg_obj.get("active", True) is not False:
+                    reasons.append("PAA_ACCOUNTING_SAFEGUARD_HALT")
+        except Exception:
+            reasons.append("PAA_ACCOUNTING_SAFEGUARD_UNREADABLE_FAIL_CLOSED")
+    return reasons
+
+
 def check_per_event_concentration_cap(
     harvester: Any,
     cand: Optional[Mapping[str, Any]],
@@ -1957,17 +2461,25 @@ def check_per_event_concentration_cap(
     exclude_intent_ids: Optional[Sequence[str]] = None,
 ) -> Tuple[bool, str, float, str]:
     """
-    Unified cross-sleeve per-event slot & USD concentration guard across `WS_SNIPE`, Taker/Maker `SINGLE_LEG_LOCK`,
-    `MULTI_LEG_BUNDLE`, `NEGRISK_2LEG`, and `COMPLETE_SET`.
+    Unified cross-sleeve per-event slot & USD concentration guard across `WS_SNIPE`, `S2`, Taker/Maker
+    `SINGLE_LEG_LOCK`, `MULTI_LEG_BUNDLE`, `NEGRISK_CONVERT`, `NEGRISK_2LEG`, and `COMPLETE_SET`.
+    Enforces a hard `<= 15%` reconciled mark-to-bid NAV ceiling per correlated weather station/day OR
+    non-box oracle event aggregated across ALL strategies and sleeves without sleeve-name or standalone-MKT bypasses.
     Returns `(allowed, reject_reason, remaining_event_headroom_usd, primary_event_group_key)`.
     """
     evt_k = extract_sll_event_group_key(cand)
-    if harvester is None or not isinstance(cand, Mapping) or not evt_k:
+    cand_keys = extract_canonical_event_keys(cand, market_ids=market_ids)
+    if not evt_k and cand_keys:
+        evt_k = sorted(cand_keys)[0]
+    if harvester is None or not isinstance(cand, Mapping) or not cand_keys:
         return True, "", 9999.0, evt_k
     sl_src = str(cand.get("sleeve_source") or cand.get("sleeve") or "").strip()
     btype = str(cand.get("box_type") or "").strip().upper()
     rem_s = float(cand.get("rem_sec") or 9999.0)
-    if sl_src in FAST_GUN_S2_SLEEVES or (btype == "DOMINANCE" and rem_s <= 960.0 and sl_src == "D1_SAME_ORACLE_DOMINANCE_BOX"):
+    has_wx_key = any(str(k).startswith(("WSTAT:", "EVTWX:", "WXSTATION:")) for k in cand_keys)
+    # Only pure 2-leg opposing-outcome non-weather short-TTE D1 boxes skip single-oracle concentration caps;
+    # single-leg S2 and any weather-station candidate MUST ALWAYS pass the 15% reconciled NAV cap!
+    if btype == "DOMINANCE" and rem_s <= 960.0 and sl_src == "D1_SAME_ORACLE_DOMINANCE_BOX" and not has_wx_key:
         return True, "", 9999.0, evt_k
     ex = getattr(harvester, "executor", None)
     enforce = bool(
@@ -1993,7 +2505,6 @@ def check_per_event_concentration_cap(
         return True, "", 9999.0, evt_k
     now_f = float(time.time() if now_ts is None else now_ts)
     stalk_map = getattr(harvester, "_sll_event_stalk_until", None) or {}
-    cand_keys = extract_canonical_event_keys(cand)
     for ck in cand_keys:
         if float(stalk_map.get(ck, 0.0) or 0.0) > now_f:
             return False, "EVENT_STALKER_COOLDOWN", 0.0, evt_k
@@ -2002,17 +2513,20 @@ def check_per_event_concentration_cap(
     pend_int = getattr(harvester, "pending_entry_intents", None) or {}
     prepost_evts = getattr(harvester, "_prepost_sll_events", None) or {}
     excl_ids = {str(x).strip() for x in (exclude_intent_ids or ()) if str(x or "").strip()}
-    collat_raw = getattr(harvester, "_last_known_collateral", None)
-    collat_f = max(0.0, float(collat_raw if collat_raw is not None else 75.0))
-    open_eq = sum(
-        float(p.get("notional_usd", 0.0) or 0.0)
-        for p in act_pos.values()
-        if isinstance(p, Mapping) and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT" and p.get("resolved_winning_outcome") is None
-    )
-    tot_eq = max(25.0, collat_f + open_eq)
-    caps = compute_dynamic_riskless_tier_caps(tot_eq, rb_cfg)
+    reconciled_nav = compute_reconciled_concentration_nav_usd(harvester, now_f)
+    caps = compute_dynamic_riskless_tier_caps(reconciled_nav, rb_cfg)
     max_slots = int(caps.get("max_concurrent_intents_per_event", 1) or 1)
     max_evt_usd = float(caps.get("max_event_notional_usd", 25.0) or 25.0)
+    is_weather_or_non_box_oracle = bool(
+        has_wx_key or btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}
+    )
+    if is_weather_or_non_box_oracle:
+        corr_pct = min(0.15, max(0.01, float(rb_cfg.get("max_correlated_oracle_event_nav_pct", 0.15) or 0.15)))
+        corr_cap_usd = round(reconciled_nav * corr_pct, 4)
+        if float(rb_cfg.get("max_event_notional_usd", 0.0) or 0.0) > 0.0:
+            max_evt_usd = min(max_evt_usd, corr_cap_usd)
+        else:
+            max_evt_usd = corr_cap_usd
 
     mset = {str(m).strip() for m in (market_ids or ()) if str(m or "").strip()}
     if not mset:
@@ -2039,14 +2553,15 @@ def check_per_event_concentration_cap(
             other_mkt_slot_groups.add(grp_id)
 
     for ik, iv in pend_int.items():
-        if str(ik).strip() in excl_ids:
+        if str(ik).strip() in excl_ids or not isinstance(iv, Mapping):
             continue
-        if not isinstance(iv, Mapping) or not iv.get("live_maker_anchor_inflight"):
+        iv_notional = max(0.0, float(iv.get("notional_usd", 0.0) or 0.0))
+        if iv_notional <= 0.0 and not iv.get("live_maker_anchor_inflight"):
             continue
         i_keys = extract_canonical_event_keys(iv)
         if not (cand_keys & i_keys):
             continue
-        used_evt_usd += max(0.0, float(iv.get("notional_usd", 0.0) or 0.0))
+        used_evt_usd += iv_notional
         grp_id = f"INTENT:{iv.get('inflight_key') or ik}"
         seen_slot_groups.add(grp_id)
         i_mid = str(iv.get("market_id") or "").strip()
@@ -2067,11 +2582,17 @@ def check_per_event_concentration_cap(
         if not mset or pv_mid not in mset:
             other_mkt_slot_groups.add(grp_id)
 
-    is_standalone_mkt_only = bool(cand_keys) and all(str(k).startswith("MKT:") for k in cand_keys)
-    rem_evt_usd = 9999.0 if (is_standalone_mkt_only and used_evt_usd <= 0.0) else round(max(0.0, max_evt_usd - used_evt_usd), 4)
+    rem_evt_usd = round(max(0.0, max_evt_usd - used_evt_usd), 4)
     if len(other_mkt_slot_groups) >= max_slots:
         return False, "MAX_CONCURRENT_PER_EVENT_REACHED", rem_evt_usd, evt_k
-    if len(seen_slot_groups) >= max_slots and btype in {"SINGLE_LEG_MAKER_LOCK", "MULTI_LEG_BUNDLE", "NEGRISK_2LEG", "COMPLETE_SET"}:
+    if len(seen_slot_groups) >= max_slots and btype in {
+        "SINGLE_LEG_LOCK",
+        "SINGLE_LEG_MAKER_LOCK",
+        "MULTI_LEG_BUNDLE",
+        "NEGRISK_CONVERT",
+        "NEGRISK_2LEG",
+        "COMPLETE_SET",
+    }:
         return False, "MAX_CONCURRENT_PER_EVENT_REACHED", rem_evt_usd, evt_k
     if rem_evt_usd < float(min_headroom_usd):
         return False, "MAX_EVENT_NOTIONAL_CAP_REACHED", rem_evt_usd, evt_k
@@ -3445,8 +3966,8 @@ def detect_d1_telescoping_candle_bridge(
         return None
     qa, _, _ = quantize_dynamic_tick_price(px_a, "BUY", shares=5.0, mode="taker")
     qb, _, _ = quantize_dynamic_tick_price(px_b, "BUY", shares=5.0, mode="taker")
-    cost_a = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
-    cost_b = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
+    cost_a = v2_net_buy_cost_per_share(qa, fr_a, fe_a)
+    cost_b = v2_net_buy_cost_per_share(qb, fr_b, fe_b)
     total_cost = cost_a + cost_b
     net_edge = 1.0 - total_cost
     if net_edge < float(min_net_edge_usd):
@@ -3513,8 +4034,8 @@ def detect_b1_intraday_onetouch_noon_box(
     fr_b = float(fee_rate if fee_rate_noon is None else fee_rate_noon)
     fe_a = float(fee_exponent if fee_exponent_touch is None else fee_exponent_touch)
     fe_b = float(fee_exponent if fee_exponent_noon is None else fee_exponent_noon)
-    ca = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
-    cb = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
+    ca = v2_net_buy_cost_per_share(qa, fr_a, fe_a)
+    cb = v2_net_buy_cost_per_share(qb, fr_b, fe_b)
     net_edge = 1.0 - (ca + cb)
     if net_edge < float(min_net_edge_usd):
         return None
@@ -3569,6 +4090,7 @@ def detect_eq1_pyth_equity_dominance_box(
                     "yes_ask_size": ysz,
                     "no_ask_size": nsz,
                     "fee_rate": _sf(c.get("fee_rate"), 0.0),
+                    "fee_exponent": _sf(c.get("fee_exponent"), 1.0),
                 }
             )
     valid.sort(key=lambda r: r["strike"])
@@ -3586,8 +4108,8 @@ def detect_eq1_pyth_equity_dominance_box(
                 continue
             qa, _, _ = quantize_dynamic_tick_price(lo["yes_ask"], "BUY", shares=min_shares, mode="taker")
             qb, _, _ = quantize_dynamic_tick_price(hi["no_ask"], "BUY", shares=min_shares, mode="taker")
-            ca = qa + compute_exact_taker_fee_per_share(qa, lo["fee_rate"], 1.0)
-            cb = qb + compute_exact_taker_fee_per_share(qb, hi["fee_rate"], 1.0)
+            ca = v2_net_buy_cost_per_share(qa, lo["fee_rate"], lo["fee_exponent"])
+            cb = v2_net_buy_cost_per_share(qb, hi["fee_rate"], hi["fee_exponent"])
             edge = 1.0 - (ca + cb)
             if edge >= float(min_net_edge_usd):
                 boxes.append(
@@ -3597,8 +4119,8 @@ def detect_eq1_pyth_equity_dominance_box(
                         "asset": sym,
                         "strike_low": lo["strike"],
                         "strike_high": hi["strike"],
-                        "leg_a": {"token_id": lo["yes_token_id"], "condition_id": lo["condition_id"], "ask_px": qa},
-                        "leg_b": {"token_id": hi["no_token_id"], "condition_id": hi["condition_id"], "ask_px": qb},
+                        "leg_a": {"token_id": lo["yes_token_id"], "condition_id": lo["condition_id"], "ask_px": qa, "fee_rate": lo["fee_rate"], "fee_exponent": lo["fee_exponent"]},
+                        "leg_b": {"token_id": hi["no_token_id"], "condition_id": hi["condition_id"], "ask_px": qb, "fee_rate": hi["fee_rate"], "fee_exponent": hi["fee_exponent"]},
                         "cost_per_share": round(ca + cb, 6),
                         "net_edge_per_share": round(edge, 6),
                         "max_fillable_shares": round(min(lo["yes_ask_size"], hi["no_ask_size"]), 2),
@@ -3775,10 +4297,12 @@ def parse_routine_metar_temp_c(
     max_f = (temp_c + f_unc_c) * 9.0 / 5.0 + 32.0
     temp_f = temp_c * 9.0 / 5.0 + 32.0
 
+    has_maint_flag = bool("RMK" in txt.upper() and ("$" in txt.upper().split("RMK", 1)[1].split() or txt.rstrip().endswith("$")))
     return {
         "temp_c": round(temp_c, 2),
         "temp_f": round(temp_f, 2),
         "has_t_group": has_t_group,
+        "has_maintenance_indicator": has_maint_flag,
         "confirmed_floor_int_c": _round_half_away_from_zero(min_c),
         "confirmed_ceil_int_c": _round_half_away_from_zero(max_c),
         "confirmed_floor_int_f": _round_half_away_from_zero(min_f),
@@ -3982,6 +4506,19 @@ def compute_running_metar_extrema(
         ceil_hi = max(int(p["confirmed_ceil_int_f"]) for p in parsed)
         floor_lo = min(int(p["confirmed_floor_int_f"]) for p in parsed)
         ceil_lo = min(int(p["confirmed_ceil_int_f"]) for p in parsed)
+    speci_ceil_hi: Optional[int] = None
+    speci_floor_lo: Optional[int] = None
+    for raw_ln in metar_lines or ():
+        txt_sp = str(raw_ln or "").strip()
+        up_sp = txt_sp.upper().split()
+        if len(up_sp) >= 2 and up_sp[0] == "SPECI":
+            syn_routine = "METAR " + " ".join(up_sp[1:])
+            p_sp = parse_routine_metar_temp_c(syn_routine, station_icao=station_icao, unit=u, rules_text=rules_text)
+            if p_sp is not None:
+                sp_hi = int(p_sp["confirmed_ceil_int_c"] if u == "C" else p_sp["confirmed_ceil_int_f"])
+                sp_lo = int(p_sp["confirmed_floor_int_c"] if u == "C" else p_sp["confirmed_floor_int_f"])
+                speci_ceil_hi = sp_hi if speci_ceil_hi is None else max(speci_ceil_hi, sp_hi)
+                speci_floor_lo = sp_lo if speci_floor_lo is None else min(speci_floor_lo, sp_lo)
     return {
         "unit": u,
         "oracle_regime": rule_cfg["oracle_regime"],
@@ -3990,6 +4527,8 @@ def compute_running_metar_extrema(
         "confirmed_running_high_ceil": ceil_hi,
         "confirmed_running_low_floor": floor_lo,
         "confirmed_running_low_ceil": ceil_lo,
+        "speci_running_high_ceil": speci_ceil_hi,
+        "speci_running_low_floor": speci_floor_lo,
         "all_have_t_group": all(bool(p["has_t_group"]) for p in parsed),
     }
 
@@ -4043,7 +4582,11 @@ def detect_w_prune1_metar_slate_arb(
     ceil_hi = int(ext["confirmed_running_high_ceil"])
     floor_lo = int(ext["confirmed_running_low_floor"])
     ceil_lo = int(ext["confirmed_running_low_ceil"])
+    speci_ceil_hi = ext.get("speci_running_high_ceil")
+    speci_floor_lo = ext.get("speci_running_low_floor")
     loc_h, loc_m = int(local_hour_minute[0]), int(local_hour_minute[1])
+    ev_fr = _sf((event_meta or {}).get("fee_rate"), 0.0) if isinstance(event_meta, Mapping) else 0.0
+    ev_fe = _sf((event_meta or {}).get("fee_exponent"), 1.0) if isinstance(event_meta, Mapping) else 1.0
     signals: List[Dict[str, Any]] = []
 
     alive_legs: List[Dict[str, Any]] = []
@@ -4061,13 +4604,17 @@ def detect_w_prune1_metar_slate_arb(
         no_tok = str(b.get("no_token_id") or "").strip()
         yes_tok = str(b.get("yes_token_id") or "").strip()
         cid = str(b.get("condition_id") or "").strip()
+        b_fr = _sf(b.get("fee_rate"), ev_fr)
+        b_fe = _sf(b.get("fee_exponent"), ev_fe)
 
         is_dead_bracket = (high_i < floor_hi) if m_mode == "HIGH" else (low_i > ceil_lo)
         if is_dead_bracket:
             if 0.01 <= no_ask <= (1.0 - float(min_net_edge_usd)) and no_sz >= min_shares and no_tok:
                 q_no, _, _ = quantize_dynamic_tick_price(no_ask, "BUY", shares=min_shares, mode="taker")
-                edge_no = 1.0 - q_no
-                if edge_no >= float(min_net_edge_usd):
+                no_cost_net = v2_net_buy_cost_per_share(q_no, b_fr, b_fe)
+                edge_no = 1.0 - no_cost_net
+                net_no_sz = no_sz * (q_no / no_cost_net) if (b_fr > 0.0 and no_cost_net > q_no) else no_sz
+                if net_no_sz >= min_shares and edge_no >= float(min_net_edge_usd):
                     signals.append(
                         {
                             "sleeve": "W_PRUNE1_DEAD_NO_BOND",
@@ -4077,9 +4624,11 @@ def detect_w_prune1_metar_slate_arb(
                             "token_id": no_tok,
                             "condition_id": cid,
                             "ask_px": q_no,
+                            "fee_rate": b_fr,
+                            "fee_exponent": b_fe,
                             "p_model": 0.9999,
                             "net_edge_per_share": round(edge_no, 6),
-                            "max_fillable_shares": round(no_sz, 2),
+                            "max_fillable_shares": round(net_no_sz, 2),
                             "confirmed_running_high_floor": floor_hi,
                             "confirmed_running_low_ceil": ceil_lo,
                             "bracket_high": high_i,
@@ -4089,25 +4638,44 @@ def detect_w_prune1_metar_slate_arb(
         else:
             if 0.001 <= yes_ask <= 0.995 and yes_sz >= min_shares and yes_tok:
                 q_yes, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
-                alive_legs.append(
-                    {
-                        "token_id": yes_tok,
-                        "condition_id": cid,
-                        "ask_px": q_yes,
-                        "net_cost": q_yes,
-                        "ask_size": yes_sz,
-                        "low": low_i,
-                        "high": high_i,
-                    }
-                )
+                yes_cost_net = v2_net_buy_cost_per_share(q_yes, b_fr, b_fe)
+                net_yes_sz = yes_sz * (q_yes / yes_cost_net) if (b_fr > 0.0 and yes_cost_net > q_yes) else yes_sz
+                if net_yes_sz >= min_shares:
+                    alive_legs.append(
+                        {
+                            "token_id": yes_tok,
+                            "condition_id": cid,
+                            "ask_px": q_yes,
+                            "net_cost": yes_cost_net,
+                            "ask_size": net_yes_sz,
+                            "fee_rate": b_fr,
+                            "fee_exponent": b_fe,
+                            "low": low_i,
+                            "high": high_i,
+                        }
+                    )
+                else:
+                    alive_complete = False
             else:
                 alive_complete = False
 
             locked_val = floor_hi if (m_mode == "HIGH" and floor_hi == ceil_hi) else (floor_lo if (m_mode == "LOW" and floor_lo == ceil_lo) else None)
-            if bool(oracle_rule["allow_solar_lock"]) and (loc_h == 23 and loc_m >= 52) and locked_val is not None and low_i <= locked_val <= high_i:
+            speci_conflict = (
+                (m_mode == "HIGH" and speci_ceil_hi is not None and int(speci_ceil_hi) > high_i)
+                or (m_mode == "LOW" and speci_floor_lo is not None and int(speci_floor_lo) < low_i)
+            )
+            if (
+                bool(oracle_rule["allow_solar_lock"])
+                and not speci_conflict
+                and (loc_h == 23 and loc_m >= 52)
+                and locked_val is not None
+                and low_i <= locked_val <= high_i
+            ):
                 if 0.01 <= yes_ask <= (1.0 - float(min_net_edge_usd)) and yes_sz >= min_shares and yes_tok:
                     q_win, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
-                    if (1.0 - q_win) >= float(min_net_edge_usd):
+                    win_cost_net = v2_net_buy_cost_per_share(q_win, b_fr, b_fe)
+                    net_win_sz = yes_sz * (q_win / win_cost_net) if (b_fr > 0.0 and win_cost_net > q_win) else yes_sz
+                    if net_win_sz >= min_shares and (1.0 - win_cost_net) >= float(min_net_edge_usd):
                         signals.append(
                             {
                                 "sleeve": "W_SOLAR1_POST_2351_LOCK",
@@ -4117,9 +4685,11 @@ def detect_w_prune1_metar_slate_arb(
                                 "token_id": yes_tok,
                                 "condition_id": cid,
                                 "ask_px": q_win,
+                                "fee_rate": b_fr,
+                                "fee_exponent": b_fe,
                                 "p_model": 0.9995,
-                                "net_edge_per_share": round(1.0 - q_win, 6),
-                                "max_fillable_shares": round(yes_sz, 2),
+                                "net_edge_per_share": round(1.0 - win_cost_net, 6),
+                                "max_fillable_shares": round(net_win_sz, 2),
                                 "locked_high": locked_val,
                             }
                         )
@@ -4528,6 +5098,17 @@ def detect_dc1_double_chance_1x2_parity(
         qb_map = q_merged.get(k_1x2)
         if not isinstance(qa_map, Mapping) or not isinstance(qb_map, Mapping):
             continue
+        # Cancel-state parity guard: 3-Way NegRisk 1X2 (where postponement/abandonment resolves a designated
+        # outcome to $1.00 and Home/Away to $0.00) paired with standalone 50-50 binary Double Chance ($0.50)
+        # yields only $0.50 on abandonment! Reject whenever neg_risk or explicit cancel_rule is asymmetric.
+        nr_a = qa_map.get("neg_risk") if "neg_risk" in qa_map else qa_map.get("negRisk")
+        nr_b = qb_map.get("neg_risk") if "neg_risk" in qb_map else qb_map.get("negRisk")
+        if (nr_a is not None or nr_b is not None) and bool(nr_a) != bool(nr_b):
+            continue
+        cr_a = str(qa_map.get("cancel_rule") or "").strip().lower()
+        cr_b = str(qb_map.get("cancel_rule") or "").strip().lower()
+        if cr_a and cr_b and cr_a != cr_b:
+            continue
         if not _verify_soccer_score_grid_floor([pred_a, pred_b], expected_min_payout=1):
             continue
         pa = _sf(qa_map.get("yes_ask") or qa_map.get("ask"), 0.0)
@@ -4542,10 +5123,7 @@ def detect_dc1_double_chance_1x2_parity(
         qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
         fra, fea = _sf(qa_map.get("fee_rate"), 0.0), _sf(qa_map.get("fee_exponent"), 1.0)
         frb, feb = _sf(qb_map.get("fee_rate"), 0.0), _sf(qb_map.get("fee_exponent"), 1.0)
-        cost = (
-            qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
-            + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
-        )
+        cost = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
         edge = 1.0 - cost
         if edge >= float(min_net_edge_usd):
             out.append(
@@ -4620,10 +5198,7 @@ def detect_lp_comp1_sports_triangles(
                 qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
                 fra, fea = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
                 frb, feb = _sf(o15.get("fee_rate"), 0.0), _sf(o15.get("fee_exponent"), 1.0)
-                cost2 = (
-                    qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
-                    + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
-                )
+                cost2 = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
                 edge = 1.0 - cost2
                 if edge >= float(min_net_edge_usd):
                     exp_2 = max(_sf(btts_m.get("expiry_ts"), 0.0), _sf(o15.get("expiry_ts"), 0.0))
@@ -4674,9 +5249,9 @@ def detect_lp_comp1_sports_triangles(
                 fr1, fe1 = _sf(draw_m.get("fee_rate"), 0.0), _sf(draw_m.get("fee_exponent"), 1.0)
                 fr2, fe2 = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
                 fr3, fe3 = _sf(u15.get("fee_rate"), 0.0), _sf(u15.get("fee_exponent"), 1.0)
-                nc1 = qp1 + compute_exact_taker_fee_per_share(qp1, fr1, fe1)
-                nc2 = qp2 + compute_exact_taker_fee_per_share(qp2, fr2, fe2)
-                nc3 = qp3 + compute_exact_taker_fee_per_share(qp3, fr3, fe3)
+                nc1 = v2_net_buy_cost_per_share(qp1, fr1, fe1)
+                nc2 = v2_net_buy_cost_per_share(qp2, fr2, fe2)
+                nc3 = v2_net_buy_cost_per_share(qp3, fr3, fe3)
                 cost3 = nc1 + nc2 + nc3
                 edge3 = 1.0 - cost3
                 if edge3 >= float(min_net_edge_usd):
@@ -4756,20 +5331,23 @@ def detect_halftime_freeze_offset_box(
             )
         )
 
+    fr_ft, fe_ft = _sf(ft_market.get("fee_rate"), 0.0), _sf(ft_market.get("fee_exponent"), 1.0)
+    fr_h2, fe_h2 = _sf(h2_market.get("fee_rate"), 0.0), _sf(h2_market.get("fee_exponent"), 1.0)
     best: Optional[Dict[str, Any]] = None
     for ta, pa, tb, pb, sh in candidates:
         if not (ta and tb and sh >= min_shares and 0.005 <= pa <= 0.99 and 0.005 <= pb <= 0.99):
             continue
         qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
         qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-        edge = 1.0 - (qpa + qpb)
+        cost_ht = v2_net_buy_cost_per_share(qpa, fr_ft, fe_ft) + v2_net_buy_cost_per_share(qpb, fr_h2, fe_h2)
+        edge = 1.0 - cost_ht
         if edge >= float(min_net_edge_usd) and (best is None or edge > best["net_edge_per_share"]):
             best = {
                 "sleeve": "HALFTIME_FREEZE_OFFSET_BOX",
                 "box_type": "DOMINANCE",
-                "leg_a": {"token_id": ta, "condition_id": str(ft_market.get("condition_id") or ""), "ask_px": qpa},
-                "leg_b": {"token_id": tb, "condition_id": str(h2_market.get("condition_id") or ""), "ask_px": qpb},
-                "cost_per_share": round(qpa + qpb, 6),
+                "leg_a": {"token_id": ta, "condition_id": str(ft_market.get("condition_id") or ""), "ask_px": qpa, "fee_rate": fr_ft, "fee_exponent": fe_ft},
+                "leg_b": {"token_id": tb, "condition_id": str(h2_market.get("condition_id") or ""), "ask_px": qpb, "fee_rate": fr_h2, "fee_exponent": fe_h2},
+                "cost_per_share": round(cost_ht, 6),
                 "net_edge_per_share": round(edge, 6),
                 "max_fillable_shares": round(sh, 2),
             }
@@ -4809,7 +5387,10 @@ def detect_mention1_cumulative_ladder_box(
                 continue
             qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
             qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-            edge = 1.0 - (qpa + qpb)
+            fra, fea = _sf(lo.get("fee_rate"), 0.0), _sf(lo.get("fee_exponent"), 1.0)
+            frb, feb = _sf(hi.get("fee_rate"), 0.0), _sf(hi.get("fee_exponent"), 1.0)
+            cost_m = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
+            edge = 1.0 - cost_m
             if edge >= float(min_net_edge_usd):
                 out.append(
                     {
@@ -4818,9 +5399,9 @@ def detect_mention1_cumulative_ladder_box(
                         "term": str(lo.get("term") or ""),
                         "count_low": k_lo,
                         "count_high": k_hi,
-                        "leg_a": {"token_id": ta, "condition_id": str(lo.get("condition_id") or ""), "ask_px": qpa},
-                        "leg_b": {"token_id": tb, "condition_id": str(hi.get("condition_id") or ""), "ask_px": qpb},
-                        "cost_per_share": round(qpa + qpb, 6),
+                        "leg_a": {"token_id": ta, "condition_id": str(lo.get("condition_id") or ""), "ask_px": qpa, "fee_rate": fra, "fee_exponent": fea},
+                        "leg_b": {"token_id": tb, "condition_id": str(hi.get("condition_id") or ""), "ask_px": qpb, "fee_rate": frb, "fee_exponent": feb},
+                        "cost_per_share": round(cost_m, 6),
                         "net_edge_per_share": round(edge, 6),
                         "max_fillable_shares": round(sh, 2),
                     }
@@ -4875,15 +5456,13 @@ def scan_full_universe_c1_and_ctf_overround(
         if 0.002 <= ya <= 0.995 and 0.002 <= na <= 0.995 and min(ysz_a, nsz_a) >= min_shares:
             qya, _, _ = quantize_dynamic_tick_price(ya, "BUY", shares=min_shares, mode="taker")
             qna, _, _ = quantize_dynamic_tick_price(na, "BUY", shares=min_shares, mode="taker")
-            c_under = (
-                qya
-                + compute_exact_taker_fee_per_share(qya, f_r, f_e)
-                + qna
-                + compute_exact_taker_fee_per_share(qna, f_r, f_e)
-                + gas_sh
-            )
+            c_ya = v2_net_buy_cost_per_share(qya, f_r, f_e)
+            c_na = v2_net_buy_cost_per_share(qna, f_r, f_e)
+            c_under = c_ya + c_na + gas_sh
+            net_ysz = ysz_a * (qya / c_ya) if (f_r > 0.0 and c_ya > qya) else ysz_a
+            net_nsz = nsz_a * (qna / c_na) if (f_r > 0.0 and c_na > qna) else nsz_a
             edge_u = 1.0 - c_under
-            if edge_u >= float(min_underround_edge):
+            if min(net_ysz, net_nsz) >= min_shares and edge_u >= float(min_underround_edge):
                 c1_rec: Dict[str, Any] = {
                     "sleeve": "C1_BINARY_COMPLETE_SET",
                     "box_type": "COMPLETE_SET",
@@ -4896,7 +5475,7 @@ def scan_full_universe_c1_and_ctf_overround(
                     "fee_rate": f_r,
                     "cost_per_share": round(c_under, 6),
                     "net_edge_per_share": round(edge_u, 6),
-                    "max_fillable_shares": round(min(ysz_a, nsz_a), 2),
+                    "max_fillable_shares": round(min(net_ysz, net_nsz), 2),
                 }
                 if _sf(m.get("expiry_ts"), 0.0) > 0.0:
                     c1_rec["expiry_ts"] = _sf(m.get("expiry_ts"), 0.0)
@@ -5449,6 +6028,22 @@ def _execute_multi_leg_bundle_sync(
     sh = round(float(shares), 2)
     if sh < 5.0 or not (3 <= len(legs) <= 12):
         return {"success": False, "reason": "INVALID_MULTI_LEG_SPEC"}
+    if harvester is not None:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _GGM_MLB
+        from src.polymarket_research.stage_c_zero_loss_velocity import check_multileg_3plus_nav_and_certification_gate
+
+        _mlb_veto = check_multileg_3plus_nav_and_certification_gate(
+            harvester,
+            {
+                "box_type": "MULTI_LEG_BUNDLE",
+                "sleeve_source": sleeve_src,
+                "legs": list(legs),
+                "shares": sh,
+            },
+            _GGM_MLB.snapshot.get("riskless_boxes", {}),
+        )
+        if _mlb_veto is not None:
+            return {"success": False, "reason": _mlb_veto}
     ordered = sorted(
         legs,
         key=lambda r: (
@@ -5456,6 +6051,29 @@ def _execute_multi_leg_bundle_sync(
             _sf(r.get("ask_size"), 9999.0),
         ),
     )
+    # Pre-quantize common share size across all legs so sub-cent 0.001-tick legs (10-share CLOB steps)
+    # never quantize down mid-basket and self-trigger PARTIAL_LEG rollback!
+    if hasattr(executor, "execute_snipe_order") and not hasattr(executor, "execute_fok_order") and not hasattr(executor, "place_fok_order"):
+        try:
+            from src.polymarket_research.polymarket_live_executor import quantize_fok_buy_leg_size
+
+            common_sh = float(math.floor(sh))
+            for _chk_iter in range(6):
+                next_sh = common_sh
+                for lg_q in ordered:
+                    px_q, _, _ = quantize_dynamic_tick_price(_sf(lg_q.get("ask_px"), 0.0), "BUY", shares=next_sh, mode="taker")
+                    if px_q > 0.0:
+                        q_leg = quantize_fok_buy_leg_size(next_sh, px_q, round_up=False, prefer_integer_on_cent_tick=True)
+                        next_sh = min(next_sh, q_leg)
+                if next_sh >= common_sh - 1e-6 or next_sh < 5.0:
+                    common_sh = next_sh
+                    break
+                common_sh = next_sh
+            if common_sh < 5.0:
+                return {"success": False, "reason": "UNQUANTIZABLE_MULTI_LEG_LOT"}
+            sh = round(common_sh, 2)
+        except Exception:
+            pass
     filled: List[Tuple[Mapping[str, Any], Dict[str, Any]]] = []
     total_spent = 0.0
 
@@ -5465,8 +6083,12 @@ def _execute_multi_leg_bundle_sync(
         leg_fr = _sf(leg.get("fee_rate"), 0.0)
         leg_fe = _sf(leg.get("fee_exponent"), 1.0)
         px, _, _ = quantize_dynamic_tick_price(_sf(leg.get("ask_px"), 0.0), "BUY", shares=sh, mode="taker")
-        fee_ps = compute_exact_taker_fee_per_share(px, leg_fr, leg_fe)
-        gross_sh = round(sh * (px + fee_ps) / max(px, 0.01), 4) if (leg_fr > 0.0 and bool(leg.get("fee_in_shares", False))) else sh
+        net_cost_ps = v2_net_buy_cost_per_share(px, leg_fr, leg_fe)
+        gross_sh = (
+            round(sh * (net_cost_ps / max(px, 0.001)), 4)
+            if (leg_fr > 0.0 and bool(leg.get("fee_in_shares", True)))
+            else sh
+        )
         if hasattr(executor, "execute_fok_order"):
             raw_res = executor.execute_fok_order(tok, px, gross_sh * px, "BUY", neg_risk=leg_nr)
             ok = bool(isinstance(raw_res, Mapping) and raw_res.get("success"))
@@ -5490,15 +6112,15 @@ def _execute_multi_leg_bundle_sync(
                 market_fee_exponent=leg_fe,
                 max_price_ceiling=px,
                 max_ticket_cap=max(40.0, round(gross_sh * px + 2.0, 2)),
-                min_price_floor=0.01,
+                min_price_floor=0.001,
                 neg_risk=leg_nr,
                 max_book_buffer=0.0,
             )
             try:
                 o_res = executor.execute_snipe_order(
                     **_snipe_leg_kw,
-                    allow_partial_fak=True,
-                    min_order_shares=max(5.0, gross_sh * 0.50),
+                    allow_partial_fak=(idx == 0),
+                    min_order_shares=(5.0 if idx == 0 else max(5.0, round(gross_sh * 0.99, 2))),
                 )
             except TypeError:
                 o_res = executor.execute_snipe_order(**_snipe_leg_kw)
@@ -6413,6 +7035,20 @@ async def dispatch_protocol_v2_harvester_candidate(
     ex = getattr(harvester, "executor", None)
     if ex is None:
         return False
+    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _GGM_DP
+    from src.polymarket_research.stage_c_zero_loss_velocity import check_strict_pure_riskless_candidate_gate
+
+    if (
+        check_strict_pure_riskless_candidate_gate(
+            harvester, box, _GGM_DP.snapshot.get("riskless_boxes", {}), is_maker=False
+        )
+        is not None
+    ):
+        return False
+    _dp_ok, _, _dp_rem, _ = check_per_event_concentration_cap(harvester, box, now_ts=now_ts, min_headroom_usd=5.0)
+    if not _dp_ok:
+        return False
+    budget_usd = min(float(budget_usd), float(_dp_rem))
     btype = str(box.get("box_type") or "").upper()
     if btype == "CTF_OVERROUND":
         sh = math.floor(min(float(budget_usd), _sf(box.get("max_fillable_shares"), 6.0)) * 100.0) / 100.0
@@ -6483,6 +7119,8 @@ async def dispatch_protocol_v2_harvester_candidate(
             exp_ts=exp_ts,
             sleeve_src=sleeve_s,
             cand_asset=asset_s,
+            event_id=str(box.get("event_id") or ""),
+            event_group_key=extract_sll_event_group_key(box),
         )
         if res.get("success"):
             _register_bundle_leg_positions(
@@ -8966,7 +9604,8 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         )
         if bond1_used_u >= tot_eq * 0.45:
             return float(budget)
-    v5_p = get_unleashed_v5_tier_profile(tot_eq)
+    _prev_tier_h = getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
+    v5_p = get_unleashed_v5_tier_profile(tot_eq, previous_tier=_prev_tier_h)
     sll_pct = float(v5_p["bond1_free_cash_pct"])
     _ex_h = getattr(harvester, "executor", None)
     _gat_active = bool(
@@ -9004,7 +9643,7 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         collat_f = max(0.0, float(collat or 0.0) - inflight_u)
         cur_open_u = act_non_recv + inflight_u + pending_intents_synced_equity_usd(intents_view)
         tot_eq_sll = collat_f + cur_open_u
-        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll, previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         sll_pct_new = float(v5_sll["bond1_free_cash_pct"])
         zf_focus = _is_sll_zf_focus_enabled(harvester, enforce_b1_v53, gsn_s, tot_eq_sll)
         if zf_focus:
@@ -9123,7 +9762,7 @@ def pending_intents_synced_equity_usd(intents: Any) -> float:
             continue
         matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
         drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
-        posted_cap = max(matched, float(it.get("posted_notional_usd", 0.0) or 0.0))
+        posted_cap = max(matched, float(it.get("posted_notional_usd", it.get("notional_usd", 0.0)) or 0.0))
         # `drop_u` is actual wallet cash already deducted on-chain while resting; clamp to `posted_cap`
         # so equity stays invariant even during the sub-poll window before `matched_notional_usd` catches up.
         tot += min(posted_cap, drop_u) if drop_u > 0.0 else 0.0
@@ -9173,7 +9812,7 @@ def rebalance_pending_intent_collat_drops(intents: Any, *, now_ts: Optional[floa
             if surplus <= 1e-6:
                 break
             drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
-            cap_u = max(drop_u, float(it.get("posted_notional_usd", 0.0) or 0.0))
+            cap_u = max(drop_u, float(it.get("posted_notional_usd", it.get("notional_usd", 0.0)) or 0.0))
             room = max(0.0, cap_u - drop_u)
             if room > 1e-6:
                 add_u = min(room, surplus)
@@ -9400,7 +10039,7 @@ def compute_sll_entry_budget(
         from src.polymarket_research.holistic_strategy_governance import get_unleashed_v5_tier_profile
 
         tot_eq_sll = collat_f + cur_open_u
-        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll, previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         sll_pct = float(v5_sll["bond1_free_cash_pct"])
         zf_focus = _is_sll_zf_focus_enabled(harvester, enforce_b1_v53, gsn_s, tot_eq_sll)
         if zf_focus:
@@ -9635,12 +10274,27 @@ def eval_sll_fresh_book_and_peg(
         if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
     ])
     best_bid_pre = max((px for px, _ in bids_wf), default=0.0)
-    if any(
+    _bk_explicit_tk = 0.0
+    if isinstance(bk_win_f, Mapping):
+        try:
+            _bk_explicit_tk = float(bk_win_f.get("minimum_tick_size") or bk_win_f.get("tick_size") or 0.0)
+        except (TypeError, ValueError):
+            _bk_explicit_tk = 0.0
+    # Never overwrite an authoritative explicit CLOB `/book` `"minimum_tick_size": "0.01"` down to `0.001`
+    # (`HTTP 400` tick-size cache poisoning), while still unlocking `0.001` when `bk_win_f` has no explicit
+    # `>=0.01` ceiling and a real `>=0.95` sub-cent level sits on L2.
+    if (
+        best_bid_pre >= 0.95
+        and _bk_explicit_tk < 0.01
+        and any(abs(round(px * 100.0) - px * 100.0) > 1e-6 and px >= 0.95 for px, _ in (bids_wf + asks_wf))
+    ):
+        tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
+    elif tk_wf <= 0.0 and any(
         abs(round(px * 100.0) - px * 100.0) > 1e-6
         and (best_bid_pre < 0.95 or px >= 0.95)
         for px, _ in (bids_wf + asks_wf)
     ):
-        tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
+        tk_wf = 0.001
     elif tk_wf <= 0.0 and real_clob_sll:
         tk_wf = 0.01
     bids_of = [
@@ -9716,6 +10370,11 @@ def eval_sll_live_book_poll(
     buried_since_mono: Optional[float],
     collat_usd: float = 75.0,
 ) -> Tuple[str, Optional[float], Optional[float], str]:
+    if isinstance(candidate_box, Mapping):
+        if str(candidate_box.get("umaResolutionStatus") or "").strip().lower() == "disputed":
+            return "ADVERSE", None, buried_since_mono, "uma_disputed_mid_rest"
+        if bool(candidate_box.get("oracle_shock_veto") or candidate_box.get("news_shock_halt")):
+            return "ADVERSE", None, buried_since_mono, "oracle_or_news_shock_halt"
     opp_b_live = max(
         (
             float(x["price"] if isinstance(x, Mapping) else x[0])
@@ -9750,6 +10409,8 @@ def eval_sll_live_book_poll(
         tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
     if opp_b_live > opp_ceil_l or win_b_live < win_floor_l:
         return "ADVERSE", None, buried_since_mono, f"opp_bid=${opp_b_live:.4f}, win_bid=${win_b_live:.4f}"
+    if not is_s2_mkr and asks_wc and win_a_live < 0.999 and (win_a_live + opp_b_live) > 1.015:
+        return "ADVERSE", None, buried_since_mono, f"dual_book_shock_inversion:ask=${win_a_live:.4f}+opp=${opp_b_live:.4f}"
     if enforce_b1_v53:
         if win_b_live > posted_px + 1e-6:
             if isinstance(candidate_box, dict):
@@ -11517,6 +12178,8 @@ def register_clinched_ws_watch_cand_impl(harvester: Any, cand: Dict[str, Any], n
         mv = str(cand.get(meta_k) or prev_w.get(meta_k) or "").strip()
         if mv:
             w_rec[meta_k] = mv
+    if cand.get("rem_hours_count") is not None or prev_w.get("rem_hours_count") is not None:
+        w_rec["rem_hours_count"] = int(cand.get("rem_hours_count") if cand.get("rem_hours_count") is not None else prev_w.get("rem_hours_count") or 0)
     for s2_k in ("strike_open", "leg_a_strike", "sigma_1h", "twap_locked_mean", "twap_locked_weight", "s2_min_sigma_cushion"):
         if s2_k in cand and cand.get(s2_k) is not None:
             w_rec[s2_k] = cand.get(s2_k)
@@ -11659,7 +12322,16 @@ def evaluate_clinched_ws_book_snipe_impl(
     p_mod = float(w_ent.get("p_model") or 1.0)
     if eff_vwap > max_eff + 1e-6 or (p_mod - eff_vwap) < 0.002 - 1e-6:
         return None
-    collat_est = float(getattr(harvester, "_last_known_collateral", None) or 75.0)
+    _collat_ws_raw = getattr(harvester, "_last_known_collateral", None)
+    if _collat_ws_raw is None:
+        collat_est = 75.0 if bool(getattr(harvester, "dry_run", False)) else 0.0
+    else:
+        try:
+            collat_est = max(0.0, float(_collat_ws_raw))
+            if not math.isfinite(collat_est):
+                collat_est = 0.0
+        except (TypeError, ValueError):
+            collat_est = 0.0
     _liq_eq_ws = (
         collat_est
         + sum(
@@ -11681,6 +12353,7 @@ def evaluate_clinched_ws_book_snipe_impl(
             (sl_src_e in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES and sl_src_e != "MKR_REWARD_LOCKED_CARRY")
             or not bool(w_ent.get("hold_to_maturity", True))
         ),
+        previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH",
     )
     if not vel_ok:
         return None
@@ -12771,7 +13444,7 @@ async def _hv__attempt_live_phase3a_maker_rescue(
             self.get_position_market_value(p, time.time()) for p in self.active_positions.values()
         )
         if _eq_p3a > 0.0:
-            _p3a_prof = get_unleashed_v5_tier_profile(_eq_p3a)
+            _p3a_prof = get_unleashed_v5_tier_profile(_eq_p3a, previous_tier=getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
             _p3a_cap_usd = max(_p3a_cap_usd, round(_eq_p3a * float(_p3a_prof["alpha_notional"]), 2))
     rescue_notional = min(float(effective_notional), _p3a_cap_usd)
     if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
@@ -13064,6 +13737,7 @@ def _hv__finish_single_leg_lock(
 ) -> Dict[str, Any]:
     """Executes fresh dual-book verified single-leg deterministic lock inside _d1_inflight_exec_lock."""
     from src.polymarket_research.riskless_protocol_v2_expansion import (
+        _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES,
         _is_sll_zf_focus_enabled,
         check_per_event_concentration_cap,
         check_sll_cand_dispute_guard,
@@ -13187,7 +13861,26 @@ def _hv__finish_single_leg_lock(
     if self._is_v5_unleashed_active():
         _gsn_1l = GLOBAL_GOVERNANCE_MANAGER.snapshot
         _b1_gov_1l = _gsn_1l.get("riskless_boxes") or _gsn_1l.get("bond1_maker") or {}
-        _v5_1l = get_unleashed_v5_tier_profile(collat_f + cur_exp)
+        _prev_1l = getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
+        _v5_1l = get_unleashed_v5_tier_profile(collat_f + cur_exp, previous_tier=_prev_1l)
+        from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+        if (is_unmocked_live_clob_harvester(self) or getattr(self, "enforce_bond1_smart_queue", False)) and not s2_fast:
+            from src.polymarket_research.holistic_strategy_governance import passes_capital_velocity_hurdle
+
+            _vel_ok_1l, _vel_rsn_1l = passes_capital_velocity_hurdle(
+                box_type="SINGLE_LEG_LOCK",
+                sleeve_src=sleeve_src,
+                collat_usd=max(25.0, collat_f + cur_exp),
+                rem_tte_sec=max(1.0, exp_ts - now_ts),
+                box_cost_net=float(cand.get("box_cost_net") or cand.get("max_box_cost_net") or 0.994),
+                fast_recycle_eligible=(
+                    (sleeve_src in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES and sleeve_src != "MKR_REWARD_LOCKED_CARRY")
+                    or not bool(cand.get("hold_to_maturity", True))
+                ),
+                previous_tier=_prev_1l,
+            )
+            if not _vel_ok_1l:
+                return {"executed": False, "reason": _vel_rsn_1l}
         _b1_pct = float(_v5_1l["bond1_free_cash_pct"])
         _enforce_b1_tkr_cap = bool(
             getattr(self, "enforce_bond1_smart_queue", False)
@@ -13322,9 +14015,12 @@ def _hv__finish_single_leg_lock(
     tk_sz = resolve_harvester_sll_tick_size(
         self.executor, tok_a, cand, bk_win=raw_ba, mkt_ws=getattr(self, "_pos_market_ws", None),
         real_clob=not use_mock_lock_tk, custom_tk_fn=_cust_tk_1l, price_hint=worst_px, allow_sync_sdk=True,
-    ) or (cand.get("leg_a_tick_size") or 0.01 if use_mock_lock_tk else 0.01)
-    if not use_mock_lock_tk and any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual):
-        tk_sz = min(float(tk_sz or 0.001), 0.001)
+    )
+    if not tk_sz or float(tk_sz) <= 0.0:
+        if not use_mock_lock_tk and any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual):
+            tk_sz = 0.001
+        else:
+            tk_sz = cand.get("leg_a_tick_size") or 0.01 if use_mock_lock_tk else 0.01
     if hasattr(self.executor, "prewarm_token_market_cache"):
         self.executor.prewarm_token_market_cache(
             token_id=tok_a, tick_size=tk_sz if (use_mock_lock_tk or float(tk_sz or 0.01) < 0.01) else None, neg_risk=bool(cand.get("leg_a_neg_risk")),
@@ -13486,6 +14182,13 @@ def _hv__finish_negrisk_convert_arb(
     }
     if any(str(lg.get("market_id") or "") in busy for lg in raw_no_legs if lg.get("market_id")):
         return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+    _nr_mids = [str(lg.get("market_id") or "") for lg in raw_no_legs if lg.get("market_id")]
+    _evt_ok_nr, _evt_rsn_nr, _evt_rem_nr, _ = check_per_event_concentration_cap(
+        self, cand, market_ids=_nr_mids, now_ts=now_ts, min_headroom_usd=5.0
+    )
+    if not _evt_ok_nr:
+        return {"executed": False, "reason": _evt_rsn_nr}
 
     collat = getattr(self, "_last_known_collateral", None)
     _nr_inf_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
@@ -13528,7 +14231,7 @@ def _hv__finish_negrisk_convert_arb(
             collat_f = max(collat_f + float(_rec_nr.get("freed_cash_usd", 0.0)), max(0.0, float(collat or 0.0) - _nr_inf_u))
     cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p))
     if self._is_v5_unleashed_active():
-        _v5_nr = get_unleashed_v5_tier_profile(collat_f + cur_exp)
+        _v5_nr = get_unleashed_v5_tier_profile(collat_f + cur_exp, previous_tier=getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         _nr_pct = float(_v5_nr["bond1_free_cash_pct"])
         lot_cap_nr = max(75.0, round(collat_f * _nr_pct, 2)) if own_grad else float(_v5_nr["bridged_zero_fee_cap_usd"])
         budget = min(
@@ -13549,6 +14252,7 @@ def _hv__finish_negrisk_convert_arb(
         )
     from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
     budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)), reserve_u=0.50, override_legacy_cap=True)
+    budget = min(budget, float(_evt_rem_nr))
     if budget < 5.05:
         return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
 
@@ -13803,16 +14507,18 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
 
     own_asset_grad_m = True
     try:
-        st_path = DATA_DIR / "alpha124_shadow_state.json"
-        if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
-            alt_p = PIPELINE_ROOT / "data" / "alpha124" / "alpha124_shadow_state.json"
-            if alt_p.exists():
-                st_path = alt_p
-        if not st_path.exists() or (time.time() - st_path.stat().st_mtime) > 300.0:
-            return {"executed": False, "reason": "ALPHA124_STATE_MISSING_OR_STALE"}
-        st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
-        by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
-        by_da_map = st_raw.get("by_d1_asset") or {}
+        from src.polymarket_research.stage_c_zero_loss_velocity import load_alpha124_graduation_maps_with_lkg_cache
+
+        by_sl_map, by_da_map, _a124_err_m = load_alpha124_graduation_maps_with_lkg_cache(
+            self,
+            DATA_DIR,
+            PIPELINE_ROOT,
+            json_loads_fn=_json_loads,
+            stale_reason="ALPHA124_STATE_MISSING_OR_STALE",
+            missing_reason="ALPHA124_STATE_MISSING_OR_STALE",
+        )
+        if _a124_err_m is not None or by_sl_map is None or by_da_map is None:
+            return {"executed": False, "reason": _a124_err_m or "ALPHA124_STATE_MISSING_OR_STALE"}
 
         def _grad8_m(rec: Dict[str, Any]) -> bool:
             adj_p = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
@@ -13863,6 +14569,12 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
     }
     if mid_a in busy_mkts or mid_b in busy_mkts:
         return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+    _evt_ok_ma, _evt_rsn_ma, _evt_rem_ma, _ = check_per_event_concentration_cap(
+        self, candidate_box, market_ids=[mid_a, mid_b], now_ts=now_ts, min_headroom_usd=5.0
+    )
+    if not _evt_ok_ma:
+        return {"executed": False, "reason": _evt_rsn_ma}
 
     anc_is_a = bool(candidate_box.get("anchor_is_a", True))
     tok_anc, tok_hdg = (tok_a, tok_b) if anc_is_a else (tok_b, tok_a)
@@ -13954,7 +14666,14 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
     bridged_lot_cap = 18.0 if (own_mkr_grad and own_asset_grad_m) else 12.0
     if _is_rebate_mg:
         bridged_lot_cap = min(bridged_lot_cap, float(_gov_rb_ma.get("d1_rebate_maker_cap_usd", 12.0)))
-    budget = min(bridged_lot_cap, asset_cap, max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))), collat_f * 0.25, port_headroom_mkr)
+    budget = min(
+        bridged_lot_cap,
+        asset_cap,
+        max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))),
+        collat_f * 0.25,
+        port_headroom_mkr,
+        float(_evt_rem_ma),
+    )
     pair_est = anc_bid_px + hdg_lim_px + (fr_hdg * ((hdg_lim_px * (1.0 - hdg_lim_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0)
     if box_type == "ZERO_FEE_MAKER_ANCHOR" and exp_ts > 0.0 and (exp_ts - now_ts) > 3600.0 and pair_est > 0.986:
         return {"executed": False, "reason": f"LONG_HORIZON_VELOCITY_EV_FLOOR:{pair_est:.4f}"}

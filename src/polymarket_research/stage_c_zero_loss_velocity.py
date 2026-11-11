@@ -22,7 +22,7 @@ from decimal import Decimal, ROUND_CEILING
 import logging
 import math
 import time
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("StageCZeroLossVelocity")
 
@@ -82,9 +82,7 @@ POST_CLINCH_SINGLE_LEG_SLEEVES = frozenset(
         "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
         "W_PRUNE1_DEAD_NO_BOND",
         "W1_SOLAR_PEAK_LOCK",
-        "W1_LOW_TROUGH_LOCK",
         "SP2_NBA_ENDGAME_LOCK",
-        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
         "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",
         "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",
         "AFF1_FROZEN_SUBPERIOD_COLLAPSE",
@@ -102,6 +100,7 @@ PURE_RISKLESS_DOMINANCE_AND_MERGE_SLEEVES = frozenset(
         "C1_BINARY_COMPLETE_SET",
         "NR2_CONVERT_NO_SUBSET_ARB",
         "NR_M1_DEAD_SEED_OVERROUND",
+        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
     }
 )
 
@@ -124,18 +123,18 @@ def is_nr0_closed_partition_graduated_unlock(
     alpha124_by_sleeve: Optional[Mapping[str, Any]],
 ) -> bool:
     """
-    Returns True ONLY when `allow_nr0_multileg_dynamic_unpause` is explicitly enabled AND
-    `NR0_ZERO_FEE_SLATE_ARB` has achieved strict `8/8` (`0`-loss, `100%` WR, positive
-    legging-adjusted PnL) shadow graduation AND live equity meets `nr0_dynamic_unlock_equity_usd`
-    (default `$150.00`). Under `strict_pure_riskless_mode`, multi-leg sequential FAK bundles
-    remain locked OFF by default to prevent partial-basket `UNWRESID` legging losses.
+    Returns True ONLY when `allow_nr0_multileg_dynamic_unpause` AND explicit operator certification
+    `certified_multileg_3plus_live_enabled` are BOTH enabled, `NR0_ZERO_FEE_SLATE_ARB` has achieved
+    strict `8/8` (`0`-loss, `100%` WR, positive legging-adjusted PnL) shadow graduation, AND
+    reconciled live NAV meets `nr0_dynamic_unlock_equity_usd` (hard floor `$500.00`).
+    Crossing `$500` NAV NEVER automatically re-enables `>=3`-leg sequential bundles without certification.
     """
     cfg = rb_cfg if isinstance(rb_cfg, Mapping) else {}
-    if bool(cfg.get("strict_pure_riskless_mode", False)) and not bool(
-        cfg.get("allow_nr0_multileg_dynamic_unpause", False)
-    ):
+    if not bool(cfg.get("certified_multileg_3plus_live_enabled", False)):
         return False
-    min_eq = max(100.0, _sf(cfg.get("nr0_dynamic_unlock_equity_usd"), 150.0))
+    if not bool(cfg.get("allow_nr0_multileg_dynamic_unpause", False)):
+        return False
+    min_eq = max(500.0, _sf(cfg.get("nr0_dynamic_unlock_equity_usd"), 500.0))
     if _sf(total_equity_usd, 0.0) < min_eq:
         return False
     if not isinstance(alpha124_by_sleeve, Mapping):
@@ -184,10 +183,12 @@ def is_unmocked_live_clob_harvester(harvester: Any) -> bool:
     """
     True on the real-money L2 CLOB production Harvester (`dry_run=False`, real `executor.client`,
     no monkeypatched test stubs in `executor.__dict__`) OR when `enforce_pure_riskless_mode=True`
-    / `enforce_paused_riskless_sleeves=True` is explicitly set.
+    / `enforce_paused_riskless_sleeves=True` / `enforce_multileg_3plus_nav_gate=True` is explicitly set.
     """
-    if getattr(harvester, "enforce_pure_riskless_mode", False) or getattr(
-        harvester, "enforce_paused_riskless_sleeves", False
+    if (
+        getattr(harvester, "enforce_pure_riskless_mode", False)
+        or getattr(harvester, "enforce_paused_riskless_sleeves", False)
+        or getattr(harvester, "enforce_multileg_3plus_nav_gate", False)
     ):
         return True
     if getattr(harvester, "dry_run", True):
@@ -207,6 +208,160 @@ def is_unmocked_live_clob_harvester(harvester: Any) -> bool:
     return True
 
 
+def count_sequential_bundle_legs(candidate_box: Mapping[str, Any]) -> int:
+    """Counts non-atomic sequential CLOB execution legs required by a candidate box."""
+    if not isinstance(candidate_box, Mapping):
+        return 0
+    btype = str(candidate_box.get("box_type") or "").strip().upper()
+    if btype == "NEGRISK_CONVERT":
+        cm = str(candidate_box.get("convert_mode") or "").strip().upper()
+        no_legs = candidate_box.get("no_legs") or ()
+        yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
+        if cm == "NR_M1_DEAD_SEED_OVERROUND" and len(no_legs) == 1:
+            return 1
+        if cm == "NR2_PURE_CASH_CONVERT" and len(no_legs) == 2:
+            return 2
+        if cm == "NR3_SYNTHETIC_ALL_YES_OVERROUND":
+            return max(3, len(yes_sells))
+        return max(len(no_legs), len(no_legs) + len(yes_sells))
+    legs = candidate_box.get("legs") or ()
+    explicit_n = int(_sf(candidate_box.get("num_legs") or candidate_box.get("leg_count"), 0.0))
+    n = max(len(legs), explicit_n)
+    if btype == "MULTI_LEG_BUNDLE" and n == 0:
+        return 3
+    return n
+
+
+def _query_executor_verified_token_balance(harvester: Any, token_id: str) -> float:
+    """Queries `harvester.executor` directly so candidate-supplied JSON inventory cannot spoof wallet holdings."""
+    ex = getattr(harvester, "executor", None)
+    if ex is None or not token_id:
+        return 0.0
+    for meth_name in ("get_onchain_erc1155_balance", "get_conditional_balance", "get_token_balance"):
+        fn = getattr(ex, meth_name, None)
+        if not callable(fn):
+            continue
+        try:
+            raw_b = fn(token_id)
+            if isinstance(raw_b, (int, float)) and not isinstance(raw_b, bool) and math.isfinite(float(raw_b)):
+                return max(0.0, float(raw_b))
+        except Exception:
+            continue
+    return 0.0
+
+
+def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: Mapping[str, Any]) -> bool:
+    """
+    Section 7(b): Returns True ONLY if a `>=3`-leg bundle is demonstrably atomic on-chain via an
+    executor-verified Safe/multisend router (`NR3_ATOMIC_SAFE_SPLIT_CONVERT`, never unverified JSON flags
+    or sequential CLOB FOK loops) OR reconciled `active_positions` / executor-verified ERC-1155 wallet
+    inventory eliminates naked partial-basket exposure (at most 1 leg `unheld_legs <= 1` remains unheld,
+    so even a missed fill leaves zero unhedged partial-basket risk).
+    """
+    if not isinstance(candidate_box, Mapping):
+        return False
+    ex = getattr(harvester, "executor", None)
+    safe_atomic_router_ok = bool(
+        ex is not None
+        and (
+            callable(getattr(ex, "execute_nr3_atomic_safe_split_convert", None))
+            or (
+                int(_sf(getattr(ex, "signature_type", 1), 1.0)) in (2, 3)
+                and (
+                    bool(getattr(ex, "safe_atomic_router_verified", False))
+                    or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                )
+            )
+        )
+    )
+    if (
+        candidate_box.get("atomic_onchain_execution") is True
+        and candidate_box.get("atomic_router_verified") is True
+        and candidate_box.get("sequential_clob_legs") is not True
+        and str(candidate_box.get("convert_mode") or "").strip().upper() == "NR3_ATOMIC_SAFE_SPLIT_CONVERT"
+        and safe_atomic_router_ok
+    ):
+        return True
+    legs = candidate_box.get("legs") or ()
+    if not isinstance(legs, Sequence) or len(legs) < 3:
+        return False
+    req_sh = max(5.0, _sf(candidate_box.get("shares") or candidate_box.get("min_order_shares"), 5.0))
+    held_tokens: Dict[str, float] = {}
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    for p in act_pos.values():
+        if not isinstance(p, Mapping):
+            continue
+        if str(p.get("status") or "") != "POSITION_CONFIRMED":
+            continue
+        if str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed":
+            continue
+        tok = str(p.get("token_id") or "").strip()
+        rem_sh = _sf(p.get("remaining_shares", p.get("entry_shares")), 0.0)
+        if tok and rem_sh > 0.0:
+            held_tokens[tok] = held_tokens.get(tok, 0.0) + rem_sh
+    inv_map = candidate_box.get("verified_wallet_inventory")
+    if isinstance(inv_map, Mapping):
+        for tk, qty in inv_map.items():
+            tk_s = str(tk or "").strip()
+            attested_q = _sf(qty, 0.0)
+            if tk_s and attested_q > 0.0:
+                exec_verified_q = _query_executor_verified_token_balance(harvester, tk_s)
+                if exec_verified_q > 0.0:
+                    held_tokens[tk_s] = max(held_tokens.get(tk_s, 0.0), min(attested_q, exec_verified_q))
+    unheld_legs = 0
+    for lg in legs:
+        if not isinstance(lg, Mapping):
+            return False
+        ltok = str(lg.get("token_id") or "").strip()
+        cur_held = held_tokens.get(ltok, 0.0)
+        if ltok and cur_held < req_sh - 1e-6:
+            exec_bal = _query_executor_verified_token_balance(harvester, ltok)
+            if exec_bal > cur_held:
+                cur_held = exec_bal
+                held_tokens[ltok] = cur_held
+        if not ltok or cur_held < req_sh - 1e-6:
+            unheld_legs += 1
+    return unheld_legs <= 1
+
+
+def check_multileg_3plus_nav_and_certification_gate(
+    harvester: Any,
+    candidate_box: Mapping[str, Any],
+    rb_cfg: Optional[Mapping[str, Any]] = None,
+    *,
+    now_ts: Optional[float] = None,
+) -> Optional[str]:
+    """
+    Mandatory Section 7(b) Invariant:
+      - Below `$500` reconciled NAV, sequential multi-leg bundles of `>= 3` legs are HARD-DISABLED
+        UNCONDITIONALLY (even if `strict_pure_riskless_mode == False`!) unless execution is
+        demonstrably atomic on-chain OR existing verified inventory eliminates naked exposure.
+      - Above `$500` reconciled NAV, `>= 3` sequential legs are NEVER automatically re-enabled;
+        they remain HARD-BLOCKED until explicit `certified_multileg_3plus_live_enabled == True`.
+    """
+    if not isinstance(candidate_box, Mapping) or not is_unmocked_live_clob_harvester(harvester):
+        return None
+    seq_legs = count_sequential_bundle_legs(candidate_box)
+    if seq_legs < 3:
+        return None
+    if verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box):
+        return None
+    cfg = rb_cfg if isinstance(rb_cfg, Mapping) else {}
+    try:
+        from src.polymarket_research.riskless_protocol_v2_expansion import compute_reconciled_concentration_nav_usd
+
+        nav_usd = compute_reconciled_concentration_nav_usd(harvester, now_ts=now_ts)
+    except Exception:
+        collat_raw = getattr(harvester, "_last_known_collateral", None)
+        nav_usd = max(0.0, _sf(collat_raw, 0.0))
+    min_nav = max(500.0, _sf(cfg.get("multileg_3plus_min_reconciled_nav_usd"), 500.0))
+    if nav_usd < min_nav - 1e-6:
+        return f"PURE_RISKLESS_MULTILEG_3PLUS_BLOCKED_BELOW_500_NAV:nav={nav_usd:.2f}<{min_nav:.2f}:legs={seq_legs}"
+    if bool(cfg.get("certified_multileg_3plus_live_enabled", False)) is not True:
+        return f"PURE_RISKLESS_MULTILEG_3PLUS_UNCERTIFIED_ABOVE_500_NAV:nav={nav_usd:.2f}:legs={seq_legs}"
+    return None
+
+
 def check_strict_pure_riskless_candidate_gate(
     harvester: Any,
     candidate_box: Mapping[str, Any],
@@ -215,7 +370,8 @@ def check_strict_pure_riskless_candidate_gate(
     is_maker: bool = False,
 ) -> Optional[str]:
     """
-    Zero-Trust Riskless & Post-Clinch Firewall on live production (`strict_pure_riskless_mode == True`):
+    Zero-Trust Riskless & Post-Clinch Firewall on live production (`strict_pure_riskless_mode == True`),
+    plus unconditional Section 7(b) `<$500` NAV & certification gate on `>=3`-leg sequential bundles:
       1. Blocks unclinched 2-leg Maker Anchor boxes (`DOMINANCE_MAKER_ANCHOR`, `ZERO_FEE_MAKER_ANCHOR`),
          directional/cross-question corridors (`SOC2`, `SOC1`, `SP3`, `CM_B3`, `CAL1`, `B4`), pre-expiry
          `S2` / `W_SOLAR1`, midbook `MKR_REWARD_LOCKED_CARRY`, `MULTI_LEG_BUNDLE` (`>= 3` sequential legs),
@@ -230,6 +386,9 @@ def check_strict_pure_riskless_candidate_gate(
          - `C1_BINARY_COMPLETE_SET` (`1 YES + 1 NO == $1.00` on exact same `condition_id` / `market_id`)
     Returns `None` if allowed, or a deterministic rejection reason string if blocked.
     """
+    multileg_veto = check_multileg_3plus_nav_and_certification_gate(harvester, candidate_box, rb_cfg)
+    if multileg_veto is not None:
+        return multileg_veto
     if not isinstance(rb_cfg, Mapping) or not bool(rb_cfg.get("strict_pure_riskless_mode", False)):
         return None
     if not is_unmocked_live_clob_harvester(harvester):
@@ -237,6 +396,7 @@ def check_strict_pure_riskless_candidate_gate(
 
     btype = str(candidate_box.get("box_type") or ("SINGLE_LEG_MAKER_LOCK" if is_maker else "")).strip().upper()
     sl_src = str(candidate_box.get("sleeve_source") or candidate_box.get("sleeve") or "").strip().upper()
+    atomic_or_inv_ok = btype == "MULTI_LEG_BUNDLE" and verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box)
 
     # 1. Block unclinched 2-leg resting Maker Anchor boxes
     if btype in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "MAKER_ANCHOR", "SYNTHETIC_MAKER"} and not bool(
@@ -249,15 +409,16 @@ def check_strict_pure_riskless_candidate_gate(
         return f"PURE_RISKLESS_SINGLE_LEG_MAKER_DISABLED:{sl_src or btype}"
 
     nr0_closed_ok = (
-        bool(rb_cfg.get("allow_nr0_multileg_dynamic_unpause", False))
+        bool(rb_cfg.get("certified_multileg_3plus_live_enabled", False))
+        and bool(rb_cfg.get("allow_nr0_multileg_dynamic_unpause", False))
         and sl_src == "NR0_ZERO_FEE_SLATE_ARB"
         and bool(candidate_box.get("nr0_graduated_unlock_verified")) is True
         and candidate_box.get("neg_risk_augmented") is False
         and 2 <= len(candidate_box.get("legs") or candidate_box.get("no_legs") or ()) <= 6
     )
-    if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not nr0_closed_ok:
+    if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not (nr0_closed_ok or atomic_or_inv_ok):
         return f"PURE_RISKLESS_SLEEVE_BLOCKED:{sl_src}"
-    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and nr0_closed_ok):
+    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok)):
         return f"PURE_RISKLESS_SPECIAL_BOX_BLOCKED:{btype}"
 
     if btype == "NEGRISK_CONVERT":
@@ -269,7 +430,7 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         return f"PURE_RISKLESS_MULTI_LEG_CONVERT_BLOCKED:{cm or sl_src or len(no_legs)}"
 
-    if nr0_closed_ok:
+    if nr0_closed_ok or atomic_or_inv_ok:
         return None
 
     # 2. Row-2 UMA Proposed Carries & Post-Clinch Single-Leg / WS-Watchlist / Atomic Dead-Leg Split Locks
@@ -280,7 +441,7 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         if sl_src in POST_CLINCH_SINGLE_LEG_SLEEVES:
             p_mod = _sf(candidate_box.get("p_model"), 0.0)
-            if sl_src in {"W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK"}:
+            if sl_src == "W1_SOLAR_PEAK_LOCK":
                 rem_h_w1 = int(_sf(candidate_box.get("rem_hours_count"), 0.0))
                 if (
                     p_mod < 1.0
@@ -293,8 +454,42 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         return f"PURE_RISKLESS_SINGLE_LEG_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
 
+    # 2b. Graduated 2-leg 0%-fee CAL1 (cumulative deadline / scalar ladder) & COND1 (macro partition) boxes
+    if sl_src in {"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "COND1_MACRO_PARTITION_BOX"}:
+        if btype not in {"MACRO_DOMINANCE", "LADDER_MONO", "BARRIER_MONO", "COMPLETE_SET"}:
+            return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
+        fr_a_z = _sf(candidate_box.get("leg_a_fee_rate"), 0.0)
+        fr_b_z = _sf(candidate_box.get("leg_b_fee_rate"), fr_a_z)
+        if max(fr_a_z, fr_b_z) > 1e-9:
+            return f"PURE_RISKLESS_CAL1_COND1_REQUIRES_ZERO_FEE:{max(fr_a_z, fr_b_z):.4f}"
+        mid_a_z = str(candidate_box.get("leg_a_market_id") or "").strip()
+        mid_b_z = str(candidate_box.get("leg_b_market_id") or "").strip()
+        tok_a_z = str(candidate_box.get("leg_a_token_id") or "").strip()
+        tok_b_z = str(candidate_box.get("leg_b_token_id") or "").strip()
+        if tok_a_z and tok_b_z and tok_a_z == tok_b_z:
+            return "PURE_RISKLESS_DUPLICATE_TOKEN_LEGS"
+        if btype == "COMPLETE_SET":
+            cid_a_z = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
+            cid_b_z = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
+            if (cid_a_z and cid_b_z and cid_a_z != cid_b_z) or (mid_a_z and mid_b_z and mid_a_z != mid_b_z):
+                return "PURE_RISKLESS_C1_CONDITION_MISMATCH"
+        else:
+            if mid_a_z and mid_b_z and mid_a_z == mid_b_z:
+                return "PURE_RISKLESS_CROSS_MARKET_LADDER_SAME_MARKET"
+            k_lo_z = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
+            k_hi_z = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
+            if k_lo_z > 0.0 and k_hi_z > 0.0 and k_lo_z > k_hi_z + 1e-9:
+                return f"PURE_RISKLESS_INVERTED_DOMINANCE_STRIKES:{k_lo_z}>{k_hi_z}"
+        return None
+
     # 3. Enforce strict mathematical payoff-dominance allowlist on 2-leg boxes
-    if sl_src not in {"D1_SAME_ORACLE_DOMINANCE_BOX", "D1_4H_DOMINANCE_BOX", "D1_QUIET_BOOK_BOX", "C1_BINARY_COMPLETE_SET"}:
+    if sl_src not in {
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_4H_DOMINANCE_BOX",
+        "D1_QUIET_BOOK_BOX",
+        "C1_BINARY_COMPLETE_SET",
+        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+    }:
         return f"PURE_RISKLESS_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
     if btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
         return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
@@ -312,9 +507,102 @@ def check_strict_pure_riskless_candidate_gate(
     else:
         k_lo = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
         k_hi = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
-        if k_lo > 0.0 and k_hi > 0.0 and k_lo > k_hi + 1e-9:
+        if sl_src == "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":
+            # Require explicit .5-hook strict corridor L < U so ties/stat adjustments never double-zero
+            if k_hi <= k_lo + 1e-9 or abs((k_lo * 2.0) - round(k_lo * 2.0)) > 1e-6 or abs(k_lo - round(k_lo)) < 1e-6:
+                return f"PURE_RISKLESS_SP4_REQUIRES_HALF_HOOK_CORRIDOR:{k_lo}:{k_hi}"
+        elif k_lo > 0.0 and k_hi > 0.0 and k_lo > k_hi + 1e-9:
             return f"PURE_RISKLESS_INVERTED_DOMINANCE_STRIKES:{k_lo}>{k_hi}"
     return None
+
+
+def load_alpha124_graduation_maps_with_lkg_cache(
+    harvester: Any,
+    data_dir: Any,
+    pipeline_root: Any,
+    *,
+    json_loads_fn: Any = None,
+    stale_reason: str = "ALPHA124_STATE_STALE",
+    missing_reason: str = "NO_ALPHA124_STATE",
+    fresh_ttl_sec: float = 300.0,
+    max_lkg_age_sec: float = 86400.0,
+    now_ts: Optional[float] = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Reads `alpha124_shadow_state.json` graduation maps (`by_sleeve`, `by_d1_asset`) with a 24-hour
+    last-known-good (`LKG`) cache fallback when the shadow daemon stalls `> 300s`, failing closed
+    strictly past `max_lkg_age_sec` (`86400s` = `24h`).
+    """
+    import json as _json_mod
+    from pathlib import Path as _Path
+
+    loads_fn = json_loads_fn if callable(json_loads_fn) else _json_mod.loads
+    now_u = float(time.time() if now_ts is None else now_ts)
+    dd = _Path(data_dir)
+    pr = _Path(pipeline_root)
+    st_path = dd / "alpha124_shadow_state.json"
+    if not st_path.exists() and dd == (pr / "data" / "polymarket"):
+        alt_path = pr / "data" / "alpha124" / "alpha124_shadow_state.json"
+        if alt_path.exists():
+            st_path = alt_path
+
+    lkg_tup = getattr(harvester, "_a124_lkg_grad_snapshot", None) if harvester is not None else None
+    cache_tup = getattr(harvester, "_d1_grad_cache", "UNSET") if harvester is not None else None
+
+    if not st_path.exists():
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        return None, None, missing_reason
+
+    st_info = st_path.stat()
+    age_s = now_u - float(st_info.st_mtime)
+    if age_s > float(max_lkg_age_sec):
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        return None, None, stale_reason
+
+    manual_inv = float(getattr(harvester, "_a124_grad_cache_mtime", 0.0) or 0.0) if harvester is not None else 0.0
+    st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, manual_inv)
+    if isinstance(cache_tup, tuple) and len(cache_tup) == 3 and cache_tup[0] == st_key and manual_inv >= 0.0:
+        by_sl_map, by_da_map = cache_tup[1], cache_tup[2]
+        if harvester is not None and age_s <= float(fresh_ttl_sec):
+            harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+        return by_sl_map, by_da_map, None
+
+    try:
+        if harvester is not None and manual_inv < 0.0:
+            harvester._a124_grad_cache_mtime = 0.0
+            st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, 0.0)
+        st_raw = loads_fn(st_path.read_text(encoding="utf-8"))
+        if not isinstance(st_raw, Mapping):
+            raise ValueError("alpha124_shadow_state root must be JSON object")
+        by_sl_map = dict(st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {})
+        by_da_map = dict(st_raw.get("by_d1_asset") or {})
+        if harvester is not None:
+            harvester._d1_grad_cache = (st_key, by_sl_map, by_da_map)
+            harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+        return by_sl_map, by_da_map, None
+    except Exception:
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        if age_s > float(fresh_ttl_sec):
+            return None, None, stale_reason
+        raise
 
 
 class _PureRisklessEnforcedSentinel:
@@ -832,6 +1120,26 @@ def execute_clinched_dead_leg_split_arb(
     nr = bool(plan.get("neg_risk", False))
     q_sh = int(plan["shares"])
     min_px = float(plan["min_dead_sell_px"])
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+
+    sp_mid = str(plan.get("market_id") or candidate.get("leg_a_market_id") or candidate.get("market_id") or "").strip()
+    sp_cand = dict(candidate) if isinstance(candidate, Mapping) else {}
+    sp_cand.setdefault("condition_id", cid)
+    if sp_mid:
+        sp_cand.setdefault("market_id", sp_mid)
+    _ok_sp_evt, _rsn_sp_evt, _rem_sp_evt, _ = check_per_event_concentration_cap(
+        harvester,
+        sp_cand,
+        market_ids=([sp_mid] if sp_mid else None),
+        now_ts=now_u,
+        min_headroom_usd=5.0,
+        exclude_intent_ids=tuple(plan.get("exclude_intent_ids") or ()),
+    )
+    if not _ok_sp_evt:
+        return {"executed": False, "reason": _rsn_sp_evt or "MAX_EVENT_NOTIONAL_CAP_REACHED"}
+    q_sh = min(q_sh, int(math.floor(float(_rem_sp_evt))))
+    if q_sh < 5:
+        return {"executed": False, "reason": "MAX_EVENT_NOTIONAL_CAP_REACHED"}
 
     pre_dead_bal = 0.0
     pre_win_bal = 0.0

@@ -59,6 +59,13 @@ PAA_USER_TIMERS = [
     "polymarket-paa-weekly-review.timer",
 ]
 
+PAA_TRADING_AND_SHADOW_UNITS = [
+    "polymarket-live-harvester.service",
+    "polymarket-alpha124-shadow.service",
+    "polymarket-cross-venue-shadow.service",
+    "polymarket-cross-venue-shadow-watchdog.timer",
+]
+
 
 def _ensure_systemd_user_env() -> None:
     if sys.platform.startswith("linux"):
@@ -387,17 +394,100 @@ def cmd_enqueue(args: argparse.Namespace) -> int:
     return 0
 
 
+def _query_systemd_user_unit_statuses(units: List[str]) -> Dict[str, str]:
+    statuses: Dict[str, str] = {}
+    if not sys.platform.startswith("linux"):
+        return {u: "not_applicable_non_linux" for u in units}
+    for u in units:
+        res = subprocess.run(["systemctl", "--user", "is-active", u], capture_output=True, text=True)
+        statuses[u] = (res.stdout or res.stderr or "unknown").strip().splitlines()[0] if (res.stdout or res.stderr) else "unknown"
+    return statuses
+
+
+def _cancel_open_clob_orders_out_of_band(
+    data_dir: Path,
+    *,
+    force_cancel_exits: bool = False,
+    executor_factory: Any = None,
+) -> Dict[str, Any]:
+    """
+    Out-of-band CLOB order cancellation safety net for `emergency-stop --include-trading`.
+    Guarantees resting Maker entry bids (`BOND1`, `MKR_LOCK1`) are cancelled even if
+    `polymarket-live-harvester.service` was hung or dead before receiving `SIGTERM`,
+    while never selling/modifying held CTF tokens (`KMIA` disputed locks remain 100% untouched)
+    and preserving active position `exit_order_id` / `unwind_order_id` orders unless `force_cancel_exits=True`.
+    """
+    state_path = data_dir / "live_harvester_state.json"
+    if state_path.exists() and not force_cancel_exits:
+        try:
+            st = json.loads(state_path.read_text(encoding="utf-8"))
+            act = st.get("active_positions") or {}
+            resting_exit_ids = [
+                str(k)
+                for k, p in (act.items() if isinstance(act, dict) else [])
+                if isinstance(p, dict) and (p.get("exit_order_id") or p.get("unwind_order_id"))
+            ]
+            if resting_exit_ids:
+                return {
+                    "attempted": False,
+                    "ok": True,
+                    "skipped_reason": "ACTIVE_POSITION_EXIT_ORDER_PRESENT",
+                    "protected_position_ids": resting_exit_ids,
+                }
+        except Exception as exc:
+            return {"attempted": False, "ok": False, "error": f"STATE_READ_ERROR:{exc}"}
+
+    try:
+        if executor_factory is None:
+            try:
+                from dotenv import load_dotenv
+                env_file = PIPELINE_ROOT / ".env"
+                if env_file.exists():
+                    load_dotenv(env_file, override=False)
+            except Exception:
+                pass
+            from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+            executor = PolymarketLiveExecutor(dry_run=False)
+        else:
+            executor = executor_factory()
+        res = executor.cancel_all_orders()
+        ok = isinstance(res, dict) and ("error" not in res)
+        return {"attempted": True, "ok": ok, "result": res}
+    except Exception as exc:
+        return {"attempted": True, "ok": False, "error": str(exc)}
+
+
 def cmd_emergency_stop(args: argparse.Namespace) -> int:
     _ensure_systemd_user_env()
-    paa_dir = PIPELINE_ROOT / "data" / "polymarket" / "paa"
+    data_dir = PIPELINE_ROOT / "data" / "polymarket"
+    paa_dir = data_dir / "paa"
     paa_dir.mkdir(parents=True, exist_ok=True)
+    stopped_at = utc_now_iso()
+    include_trading = bool(getattr(args, "include_trading", False))
+    cancel_orders_arg = getattr(args, "cancel_orders", None)
+    should_cancel_orders = bool(include_trading if cancel_orders_arg is None else cancel_orders_arg)
+    force_cancel_exits = bool(getattr(args, "force_cancel_exits", False))
+
     stop_file = paa_dir / "PAA_MASTER_STOP"
-    payload = {
-        "stopped_at_utc": utc_now_iso(),
+    payload: Dict[str, Any] = {
+        "stopped_at_utc": stopped_at,
         "reason": args.reason,
-        "include_trading": bool(args.include_trading),
+        "include_trading": include_trading,
     }
     _atomic_write_json(stop_file, payload)
+
+    kill_switch_file: str | None = None
+    if include_trading:
+        ks_path = data_dir / "KILL_SWITCH"
+        _atomic_write_json(
+            ks_path,
+            {
+                "engaged_at_utc": stopped_at,
+                "reason": args.reason,
+                "source": "paa_cli.emergency-stop",
+            },
+        )
+        kill_switch_file = str(ks_path)
 
     stopped_units: List[str] = []
     if sys.platform.startswith("linux"):
@@ -405,14 +495,35 @@ def cmd_emergency_stop(args: argparse.Namespace) -> int:
             subprocess.run(["systemctl", "--user", "stop", u], capture_output=True, text=True)
             stopped_units.append(u)
         subprocess.run(["systemctl", "--user", "stop", "polymarket-paa-director.service"], capture_output=True, text=True)
-        if args.include_trading:
-            for tu in ("polymarket-live-harvester.service", "polymarket-alpha124-shadow.service"):
+        if include_trading:
+            for tu in PAA_TRADING_AND_SHADOW_UNITS:
                 subprocess.run(["systemctl", "--user", "stop", tu], capture_output=True, text=True)
                 stopped_units.append(tu)
 
-    db = PAATaskDB()
-    db.log_event("owner_control", "EMERGENCY_STOP_ENGAGED", {**payload, "stopped_units": stopped_units})
-    print(json.dumps({"status": "EMERGENCY_STOP_ENGAGED", "stop_file": str(stop_file), "stopped_units": stopped_units}, indent=2))
+    clob_cancel_report: Dict[str, Any] = {"attempted": False, "skipped_reason": "NOT_REQUESTED"}
+    if should_cancel_orders:
+        clob_cancel_report = _cancel_open_clob_orders_out_of_band(
+            data_dir,
+            force_cancel_exits=force_cancel_exits,
+            executor_factory=getattr(args, "_executor_factory", None),
+        )
+
+    db = PAATaskDB(db_path=paa_dir / "paa_tasks.db")
+    event_details = {
+        **payload,
+        "kill_switch_file": kill_switch_file,
+        "stopped_units": stopped_units,
+        "clob_order_cancel": clob_cancel_report,
+    }
+    db.log_event("owner_control", "EMERGENCY_STOP_ENGAGED", event_details)
+    out = {
+        "status": "EMERGENCY_STOP_ENGAGED",
+        "stop_file": str(stop_file),
+        "kill_switch_file": kill_switch_file,
+        "stopped_units": stopped_units,
+        "clob_order_cancel": clob_cancel_report,
+    }
+    print(json.dumps(out, indent=2))
     return 0
 
 
@@ -434,18 +545,59 @@ def cmd_zero_trust_status(args: argparse.Namespace) -> int:
 
 def cmd_resume(args: argparse.Namespace) -> int:
     _ensure_systemd_user_env()
-    stop_file = PIPELINE_ROOT / "data" / "polymarket" / "paa" / "PAA_MASTER_STOP"
+    data_dir = PIPELINE_ROOT / "data" / "polymarket"
+    paa_dir = data_dir / "paa"
+    paa_dir.mkdir(parents=True, exist_ok=True)
+    stop_file = paa_dir / "PAA_MASTER_STOP"
     if stop_file.exists():
         stop_file.unlink()
+
+    include_trading = bool(getattr(args, "include_trading", False))
+    ks_path = data_dir / "KILL_SWITCH"
+    kill_switch_cleared = False
+    if include_trading and ks_path.exists():
+        ks_path.unlink()
+        kill_switch_cleared = True
+
     started_units: List[str] = []
+    started_trading_units: List[str] = []
     if sys.platform.startswith("linux"):
         for u in PAA_USER_TIMERS:
             rc = subprocess.run(["systemctl", "--user", "enable", "--now", u], capture_output=True, text=True).returncode
             if rc == 0:
                 started_units.append(u)
-    db = PAATaskDB()
-    db.log_event("owner_control", "AUTONOMY_RESUMED", {"resumed_at_utc": utc_now_iso(), "started_units": started_units})
-    print(json.dumps({"status": "AUTONOMY_RESUMED", "started_units": started_units}, indent=2))
+        if include_trading:
+            for tu in PAA_TRADING_AND_SHADOW_UNITS:
+                cmd = ["systemctl", "--user", "enable", "--now", tu] if tu.endswith(".timer") else ["systemctl", "--user", "start", tu]
+                rc = subprocess.run(cmd, capture_output=True, text=True).returncode
+                if rc == 0:
+                    started_trading_units.append(tu)
+
+    trading_services_status = _query_systemd_user_unit_statuses(PAA_TRADING_AND_SHADOW_UNITS)
+    kill_switch_active = ks_path.exists()
+    inactive_trading = [
+        u for u, st in trading_services_status.items() if st not in ("active", "not_applicable_non_linux")
+    ]
+    warning: str | None = None
+    if kill_switch_active or (not include_trading and inactive_trading):
+        warning = (
+            "KILL_SWITCH remains active and/or trading/shadow units are not active; "
+            "pass --include-trading to clear KILL_SWITCH and restart trading & shadow services."
+        )
+
+    db = PAATaskDB(db_path=paa_dir / "paa_tasks.db")
+    out: Dict[str, Any] = {
+        "status": "AUTONOMY_AND_TRADING_RESUMED" if include_trading else "AUTONOMY_RESUMED",
+        "started_units": started_units,
+        "started_trading_units": started_trading_units,
+        "kill_switch_active": kill_switch_active,
+        "kill_switch_cleared": kill_switch_cleared,
+        "trading_services_status": trading_services_status,
+    }
+    if warning:
+        out["warning"] = warning
+    db.log_event("owner_control", "AUTONOMY_RESUMED", {"resumed_at_utc": utc_now_iso(), **out})
+    print(json.dumps(out, indent=2))
     return 0
 
 
@@ -503,10 +655,29 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_stop = sub.add_parser("emergency-stop", help="Safely halt PAA autonomous infrastructure")
     p_stop.add_argument("--reason", default="Manual owner emergency stop")
-    p_stop.add_argument("--include-trading", action="store_true", help="Also stop live & shadow trading services")
+    p_stop.add_argument("--include-trading", action="store_true", help="Also write KILL_SWITCH, stop live & shadow trading services, and cancel open CLOB entry orders")
+    p_stop.add_argument(
+        "--cancel-orders",
+        dest="cancel_orders",
+        action="store_true",
+        default=None,
+        help="Explicitly run out-of-band CLOB cancel_all_orders() (enabled automatically with --include-trading unless --no-cancel-orders is set)",
+    )
+    p_stop.add_argument(
+        "--no-cancel-orders",
+        dest="cancel_orders",
+        action="store_false",
+        help="Skip out-of-band CLOB cancel_all_orders() during --include-trading",
+    )
+    p_stop.add_argument(
+        "--force-cancel-exits",
+        action="store_true",
+        help="Cancel open CLOB orders even if an active position carries a resting exit_order_id/unwind_order_id",
+    )
     p_stop.set_defaults(func=cmd_emergency_stop)
 
-    p_res = sub.add_parser("resume", help="Clear master stop & re-enable PAA autonomous timers")
+    p_res = sub.add_parser("resume", help="Clear master stop & re-enable PAA autonomous timers (and trading with --include-trading)")
+    p_res.add_argument("--include-trading", action="store_true", help="Also clear KILL_SWITCH and restart live & shadow trading services")
     p_res.set_defaults(func=cmd_resume)
 
     return p

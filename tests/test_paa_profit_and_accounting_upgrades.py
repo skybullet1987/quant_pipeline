@@ -540,7 +540,7 @@ def test_bond1_velocity_upgrade_and_92pct_zero_loss_pool(tmp_path, monkeypatch):
     assert slow_ev.is_set() is True  # Slow 25 bps/hr order was preempted for 320 bps/hr fast order!
     assert len(posted) == 1
     assert posted[0][0] == "tok_win_fast"
-    assert posted[0][2] >= 26.0  # 46% per-market cap on $60.94 (~$28.03 -> 28 shares)
+    assert 5.0 <= posted[0][2] <= (60.94 * 0.15 + 0.02)  # Section 7(a) <=15% reconciled NAV cap on $60.94 ($9.14 -> 9 sh)
 
 
 def test_paa_director_proactive_profit_conversion_audit(tmp_path):

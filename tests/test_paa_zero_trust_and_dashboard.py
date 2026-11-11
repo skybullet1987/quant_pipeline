@@ -559,10 +559,13 @@ def test_cross_position_exit_fill_isolation_and_dashboard_v61_riskless_cleanup(t
     import scripts.paa_autonomous_controller as pac
     import src.polymarket_research.polymarket_live_harvester as plh
 
-    # 1. Command Center v6.1 probe syntax + 100% Riskless UI cleanup invariants
+    # 1. Command Center v6.2 probe syntax + 100% Riskless UI cleanup + v6 Expansion & Stage G invariants
     ast.parse(dcc.REMOTE_PROBE_PY)
-    assert '"dashboard_version": "6.1.0"' in dcc.REMOTE_PROBE_PY
+    assert '"dashboard_version": "6.2.0"' in dcc.REMOTE_PROBE_PY
     assert '"paa-system-supervisor.timer"' in dcc.REMOTE_PROBE_PY
+    assert '"polymarket-cross-venue-shadow.service"' in dcc.REMOTE_PROBE_PY
+    assert '"XV_FX_INVARIANT_CAD_USD_BOX"' in dcc.REMOTE_PROBE_PY
+    assert '"TAIL_BOUNDARY_001_ARB"' in dcc.REMOTE_PROBE_PY
     assert '"HYPE"' in dcc.REMOTE_PROBE_PY
     assert "apex-perp.service" not in dcc.REMOTE_PROBE_PY
     assert "polymarket-trader.service" not in dcc.REMOTE_PROBE_PY
@@ -570,6 +573,7 @@ def test_cross_position_exit_fill_isolation_and_dashboard_v61_riskless_cleanup(t
     assert "apex_hdr" not in dcc.HTML_PAGE
     assert "dir_shdw_meta" not in dcc.HTML_PAGE
     assert "100% PURE RISKLESS LOCK" in dcc.HTML_PAGE
+    assert 'id="sec_v6_expansion"' in dcc.HTML_PAGE
 
     # 2. PAA Controller normalization repairs pre-fix cross-position stolen SELL records (#91) without touching valid 2-leg D1 boxes (#64)
     raw_91 = {

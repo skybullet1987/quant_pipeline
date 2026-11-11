@@ -761,6 +761,20 @@ def evaluate_aff1_frozen_subperiod_opportunities(
     # ------------------------------------------------------------------
     seen_settled_mids = {str(x["market_id"]) for x in single_leg_locks}
 
+    def _is_narrow_halftime_scorer_review_risk(scope: str, abs_diff: float) -> bool:
+        """
+        During NBA/Basketball halftime intermission (`is_halftime=True` before Q3 tipoff), Secaucus
+        Official Scorer reviews buzzer-beaters & 2pt/3pt foot-on-line calls up to 8 minutes (`480s`) into
+        halftime. Any narrow `< 3.5pt` (`1`-possession) `Q2`/`1H` margin or total must wait `>= 480s`!
+        """
+        if not (is_ht and not is_final and period < 3 and scope in ("Q2", "1H") and abs_diff < 3.49):
+            return False
+        sc_key = "Q2_ONLY" if scope == "Q2" else "1H_LOCK"
+        rec = freeze_tracker._frozen_since.get((bundle.sport.upper(), str(gid), sc_key))
+        if rec is None:
+            return True
+        return (float(now_ts) - float(rec[1])) < 480.0
+
     def _emit_settled_scope_locks(scope: str, a_pts: int, h_pts: int) -> None:
         tot_pts = float(a_pts + h_pts)
         margin = float(a_pts - h_pts)
@@ -774,6 +788,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             side_lbl: Optional[str] = None
             stat_lbl = ""
             if sm.kind == "TOTAL" and abs(tot_pts - ln) >= 0.49:
+                if _is_narrow_halftime_scorer_review_risk(scope, abs(tot_pts - ln)):
+                    continue
                 win_over = tot_pts > ln
                 win_tok = sm.tok_0 if win_over else sm.tok_1
                 opp_tok = sm.tok_1 if win_over else sm.tok_0
@@ -782,6 +798,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             elif sm.kind == "TEAM_TOTAL" and sm.team_side in (bundle.away_team, bundle.home_team):
                 tm_pts = float(a_pts if sm.team_side == bundle.away_team else h_pts)
                 if abs(tm_pts - ln) >= 0.49:
+                    if _is_narrow_halftime_scorer_review_risk(scope, abs(tm_pts - ln)):
+                        continue
                     win_over = tm_pts > ln
                     win_tok = sm.tok_0 if win_over else sm.tok_1
                     opp_tok = sm.tok_1 if win_over else sm.tok_0
@@ -790,6 +808,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             elif sm.kind == "SPREAD":
                 sp_legs = _spread_signed_legs(sm, bundle.away_team)
                 if len(sp_legs) == 2 and abs(margin - float(sp_legs[0][1])) >= 0.49:
+                    if _is_narrow_halftime_scorer_review_risk(scope, abs(margin - float(sp_legs[0][1]))):
+                        continue
                     for op_s, th_s, lg_s in sp_legs:
                         if (op_s == "GT" and margin > th_s) or (op_s == "LT" and margin < th_s):
                             win_tok = str(lg_s["token_id"])

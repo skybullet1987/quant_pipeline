@@ -791,7 +791,11 @@ class TestResilienceFaultIsolationSQLiteRecoveryAndCampaignWindows(unittest.Test
                     eng,
                     authorized_venues={"forecastex", "limitless", "stx_ontario"},
                     blocked_venue_reasons={"polymarket": "TEST_GEOBLOCK", "sx_bet": "TEST_GEOBLOCK", "predict_fun": "TEST_GEOBLOCK"},
-                    env={"STX_API_KEY_ID": "test_key_id_present", "DOMINUS_NETWORK_MODE": "live_public"},
+                    env={
+                        "STX_API_KEY_ID": "test_key_id_present",
+                        "STX_APPS_DATA_TOKEN": "test_token",
+                        "DOMINUS_NETWORK_MODE": "live_public",
+                    },
                     transport=tr,
                 )
                 c1 = asyncio.run(col.run_single_cycle())

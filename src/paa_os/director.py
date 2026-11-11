@@ -522,7 +522,7 @@ class PAADirector:
                                     "tests/test_v50_holistic_overhaul.py",
                                     "tests/test_paa_profit_and_accounting_upgrades.py",
                                 ],
-                                "promote_to_live_files": bool((self.cfg.get("permissions") or {}).get("allow_auto_plumbing_bugfix_deploy", True)),
+                                "promote_to_live_files": bool((self.cfg.get("permissions") or {}).get("allow_auto_plumbing_bugfix_deploy", False)),
                             }
                         ]
                     },
@@ -667,7 +667,9 @@ class PAADirector:
                             continue
                         mid_item = str(p_rec.get("market_id") or "").strip()
                         st_item = str(p_rec.get("status") or "").upper()
-                        uma_item = str(p_rec.get("uma_resolution_status") or "").strip().lower()
+                        uma_item = str(
+                            p_rec.get("umaResolutionStatus") or p_rec.get("uma_resolution_status") or ""
+                        ).strip().lower()
                         g_info = gamma_cache.get(mid_item) if mid_item else None
                         if g_info is None and mid_item.isdigit() and payload.get("check_network", True):
                             g_info = mon_helper._probe_gamma_market_settlement(mid_item)
@@ -918,6 +920,7 @@ class PAADirector:
             "strategy_deployment_states": {
                 "total_sleeves_tracked": sc.get("total_sleeves_tracked", 0),
                 "riskless_only_mode": riskless_kpis["riskless_only_mode"],
+                "proposal_only_live_promotion": bool((self.cfg.get("permissions") or {}).get("proposal_only_live_promotion", False)),
                 "paused_riskless_sleeves": riskless_kpis["paused_riskless_sleeves"],
                 "grad8_live_authorized_sleeves": sc.get("grad8_live_authorized_sleeves", []),
                 "near_grad8_zero_loss_sleeves": riskless_kpis["near_grad8_zero_loss_sleeves"],
@@ -968,6 +971,13 @@ class PAADirector:
                     "New live trading sleeve activation requires explicit human approval & operator geographic eligibility verification.",
                     "Increasing capital exposure caps or lowering hard_ruin_floor_usd ($42.00) requires explicit human approval.",
                     "Live harvester daemon restarts require open_positions_count == 0 unless emergency override.",
+                    *(
+                        [
+                            "Live code/config promotion is locked to Proposal-Only (Draft in Staging, Ask Operator First) until explicit human approval JSON in data/polymarket/paa/approvals/."
+                        ]
+                        if bool((self.cfg.get("permissions") or {}).get("proposal_only_live_promotion", False))
+                        else []
+                    ),
                 ],
             },
         }

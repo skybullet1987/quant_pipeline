@@ -5508,7 +5508,7 @@ class PolymarketLiveExecutor:
 
         if shares_to_buy <= 0:
             err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
-            logger.warning(f"[{trade_id}] {err}")
+            logger.debug(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
                 order_id=None,
@@ -5655,18 +5655,32 @@ class PolymarketLiveExecutor:
                 _trace.stamp("qualify_end")
             qualify_ms = (t_qualify_end - t0) * 1000.0
 
-            # Fast hot-path tick size resolution: NEVER make synchronous REST GET calls during a shock
-            if token_id in self._tick_size_cache:
+            # Fast hot-path tick size resolution: avoid synchronous REST GET in [0.05, 0.95],
+            # but always verify authoritative tick size at Polymarket's 0.001 boundary (>=0.96 or <=0.04)
+            # and never poison _tick_size_cache with an unverified "0.01" fallback!
+            _at_subcent_snipe = (
+                worst_acceptable_px >= 0.96
+                or worst_acceptable_px <= 0.04
+                or abs(round(worst_acceptable_px, 2) - round(worst_acceptable_px, 4)) > 1e-6
+            )
+            if token_id in self._tick_size_cache and not (
+                _at_subcent_snipe and abs(float(self._tick_size_cache[token_id]) - 0.01) < 1e-9
+            ):
                 tick_size_str = str(self._tick_size_cache[token_id])
+            elif _at_subcent_snipe:
+                try:
+                    _resolved_tk = self.get_token_tick_size(token_id, worst_acceptable_px)
+                except TypeError:
+                    _resolved_tk = self.get_token_tick_size(token_id)
+                tick_size_str = str(_resolved_tk or "0.01")
             else:
                 tick_size_str = "0.01"
-                self._tick_size_cache[token_id] = 0.01
 
             fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
             eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
             self.prewarm_token_market_cache(
                 token_id=token_id,
-                tick_size=tick_size_str,
+                tick_size=tick_size_str if token_id in self._tick_size_cache else None,
                 neg_risk=eff_neg_risk,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
@@ -6367,7 +6381,7 @@ class PolymarketLiveExecutor:
 
         if shares_to_buy <= 0:
             err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
-            logger.warning(f"[{trade_id}] {err}")
+            logger.debug(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
                 order_id=None,

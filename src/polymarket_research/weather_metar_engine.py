@@ -32,7 +32,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
+from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
 logger = logging.getLogger("WeatherMetarEngine")
 
@@ -378,6 +378,7 @@ class MetarObservation:
     has_convective_precip: bool = False
     is_corrected: bool = False
     is_anomalous: bool = False
+    has_maintenance_indicator: bool = False
     rmk_6h_max_c: Optional[float] = None
     rmk_6h_min_c: Optional[float] = None
     rmk_24h_max_c: Optional[float] = None
@@ -530,6 +531,7 @@ def parse_metar_line(
 
     local_dt = utc_dt.astimezone(ZoneInfo(tz_name))
     has_precip = bool(_CONVECTIVE_WX_RE.search(upper))
+    has_maint = bool(has_rmk and ("$" in rmk_part.split() or rmk_part.rstrip().endswith("$")))
     return MetarObservation(
         icao=icao_u,
         utc_dt=utc_dt,
@@ -540,6 +542,7 @@ def parse_metar_line(
         has_convective_precip=has_precip,
         is_corrected=is_cor,
         is_anomalous=is_anomalous,
+        has_maintenance_indicator=has_maint,
         rmk_6h_max_c=rmk_6h_max_c,
         rmk_6h_min_c=rmk_6h_min_c,
         rmk_24h_max_c=rmk_24h_max_c,
@@ -980,6 +983,7 @@ def compute_weather_probabilities(
     has_obs = len(valid_obs) > 0
     latest_obs = valid_obs[-1] if has_obs else None
     has_corrected_obs = any(bool(getattr(o, "is_corrected", False)) for o in valid_obs)
+    has_maintenance_obs = any(bool(getattr(o, "has_maintenance_indicator", False)) for o in valid_obs)
     has_oracle_contradiction = has_metar_oracle_contradiction(valid_obs)
 
     if has_obs:
@@ -1174,7 +1178,7 @@ def compute_weather_probabilities(
                 or morning_trough_safe
             ):
                 is_solar_lock_window = True
-        if has_corrected_obs or has_oracle_contradiction:
+        if has_corrected_obs or has_oracle_contradiction or (has_maintenance_obs and rem_hours_count > 0):
             is_solar_lock_window = False
 
     return {
@@ -1182,6 +1186,7 @@ def compute_weather_probabilities(
         "has_obs": has_obs,
         "obs_count": len(valid_obs),
         "has_corrected_obs": has_corrected_obs,
+        "has_maintenance_obs": has_maintenance_obs,
         "has_oracle_contradiction": has_oracle_contradiction,
         "latest_temp_c": latest_obs.temp_c if latest_obs else None,
         "running_ext_c": running_ext_c,

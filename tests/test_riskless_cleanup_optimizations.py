@@ -151,11 +151,15 @@ def test_executor_hot_async_bridge_batch_fok_from_worker_thread() -> None:
 
     def _run_loop() -> None:
         asyncio.set_event_loop(loop)
+        cli = httpx.AsyncClient(transport=httpx.MockTransport(_handler))
         ex._hot_order_async_loop = loop
-        ex._hot_order_async_client = httpx.AsyncClient(transport=httpx.MockTransport(_handler))
+        ex._hot_order_async_client = cli
         ready.set()
         loop.run_forever()
-        loop.run_until_complete(ex._hot_order_async_client.aclose())
+        if hasattr(cli, "aclose"):
+            res_cl = cli.aclose()
+            if asyncio.iscoroutine(res_cl):
+                loop.run_until_complete(res_cl)
 
     t = threading.Thread(target=_run_loop, daemon=True)
     t.start()
@@ -204,15 +208,24 @@ def test_governance_riskless_only_and_systemd_lean_flags() -> None:
     assert "--no-ai" in dir_unit
     assert "--no-proactive-research" in dir_unit
 
+    import tempfile
+    import scripts.paa_autonomous_controller as pac_mod
     from scripts.paa_autonomous_controller import _is_riskless_only_config, check_operational_status
 
     assert _is_riskless_only_config() is True
-    with patch("scripts.paa_autonomous_controller.sys.platform", "linux"), patch(
-        "scripts.paa_autonomous_controller._sh", return_value=(0, "active")
-    ) as mock_sh:
-        op_rl, inc_rl = check_operational_status(auto_recover_safe=True, riskless_only=True)
-        checked_cmds = [c.args[0] for c in mock_sh.call_args_list]
-        assert not any("polymarket-trader.service" in cmd for cmd in checked_cmds)
-        assert not any("apex-perp.service" in cmd for cmd in checked_cmds)
-        assert op_rl["all_core_units_active"] is True
-        assert inc_rl == []
+    with tempfile.TemporaryDirectory() as _td_pac:
+        _fresh_a124 = Path(_td_pac) / "alpha124_shadow_state.json"
+        _fresh_a124.write_text("{}", encoding="utf-8")
+        with patch("scripts.paa_autonomous_controller.sys.platform", "linux"), patch.object(
+            pac_mod, "DATA_PM", Path(_td_pac)
+        ), patch.object(
+            pac_mod, "DATA_A124", Path(_td_pac)
+        ), patch(
+            "scripts.paa_autonomous_controller._sh", return_value=(0, "active")
+        ) as mock_sh:
+            op_rl, inc_rl = check_operational_status(auto_recover_safe=True, riskless_only=True)
+            checked_cmds = [c.args[0] for c in mock_sh.call_args_list]
+            assert not any("polymarket-trader.service" in cmd for cmd in checked_cmds)
+            assert not any("apex-perp.service" in cmd for cmd in checked_cmds)
+            assert op_rl["all_core_units_active"] is True
+            assert inc_rl == []

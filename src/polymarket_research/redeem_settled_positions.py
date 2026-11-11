@@ -180,29 +180,36 @@ def _is_flock_held(lock_path: Path) -> bool:
     if os.name == "nt":
         try:
             import msvcrt
-            with open(lock_path, "a+b") as fh:
+            with open(lock_path, "r+b") as fh:
+                fh.seek(0, os.SEEK_END)
+                if fh.tell() == 0:
+                    return False
                 fh.seek(0)
                 msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
                 fh.seek(0)
                 msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
             return False
+        except FileNotFoundError:
+            return False
         except OSError:
             return True
         except Exception:
-            return False
+            return lock_path.exists()
     try:
         import fcntl
     except ImportError:
         return False
     try:
-        with open(lock_path, "a+") as fh:
+        with open(lock_path, "r+") as fh:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        return False
+    except FileNotFoundError:
         return False
     except BlockingIOError:
         return True
     except OSError:
-        return False
+        return lock_path.exists()
 
 
 def audit_positions_and_redemptions(execute: bool = False, force: bool = False):

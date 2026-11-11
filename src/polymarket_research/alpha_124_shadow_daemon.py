@@ -310,6 +310,7 @@ from src.polymarket_research.riskless_protocol_v2_expansion import (
     detect_w_prune1_metar_slate_arb,
     evaluate_s2_rtds_exact_twap_integrator,
     passes_uma_bond_dispute_guard,
+    safe_zoneinfo,
     scan_full_universe_c1_and_ctf_overround,
 )
 
@@ -335,11 +336,28 @@ logging.basicConfig(
     format="[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger("Alpha124Shadow")
+
+
+def _attach_daemon_log_file_handler() -> None:
+    """Attaches persistent `LOG_FILE` handler strictly when running as a daemon CLI process, avoiding import-time file handle leaks."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    root_log = logging.getLogger()
+    target_path = str(LOG_FILE.resolve())
+    for h in root_log.handlers:
+        if isinstance(h, logging.FileHandler) and str(Path(h.baseFilename).resolve()) == target_path:
+            return
+    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    fh.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root_log.addHandler(fh)
 
 GAMMA_URL = "https://gamma-api.polymarket.com"
 CLOB_URL = "https://clob.polymarket.com"
@@ -642,6 +660,14 @@ for _v2_sl in (
     "C1_BINARY_COMPLETE_SET",
     "W_PRUNE1_METAR_SLATE_ARB",
     "W_PRUNE1_NR0_BASKET",
+    "XV_SUBSET_NO_BOX",
+    "TAIL_BOUNDARY_001_ARB",
+    "BOND3_MULTISOURCE_DEAD_SPLIT",
+    "XV_FX_INVARIANT_CAD_USD_BOX",
+    "DERIBIT_VERTICAL_SUPER_REP",
+    "XV_HALFTIME_FREEZE_CORRIDOR",
+    "HEDGED_PRESPLIT_CONV_GUN",
+    "YIELD_STACKED_CARRY_BOX",
 ):
     BANKROLL_TICKETS["T100"].setdefault(_v2_sl, 20.0)
     BANKROLL_TICKETS["T1000"].setdefault(_v2_sl, 110.0)
@@ -1055,23 +1081,118 @@ class Alpha124ShadowDaemon:
         for k in keys:
             self.inflight_keys.discard(k)
 
+    @staticmethod
+    def _release_unused_heap_memory() -> bool:
+        """Runs Python cyclic GC and returns freed glibc malloc arena pages to the OS (`F-01`)."""
+        import gc as _gc
+
+        _gc.collect()
+        if os.name != "nt":
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6")
+                return bool(libc.malloc_trim(0))
+            except Exception:
+                return False
+        return True
+
+    @staticmethod
+    def _slim_raw_gamma_event(ev: Dict[str, Any]) -> Dict[str, Any]:
+        """Strips multi-KB Gamma presentation/comment blobs from retained raw event dicts (`F-01`)."""
+        if not isinstance(ev, dict):
+            return {}
+        drop_ev = {
+            "description",
+            "image",
+            "icon",
+            "featuredImage",
+            "headerImage",
+            "tags",
+            "series",
+            "chats",
+            "cyom",
+            "templates",
+            "collections",
+            "categories",
+            "events",
+        }
+        drop_mkt = {
+            "description",
+            "image",
+            "icon",
+            "twitterCardImage",
+            "events",
+            "categories",
+            "tags",
+        }
+        slim = {k: v for k, v in ev.items() if k not in drop_ev}
+        raw_mkts = ev.get("markets")
+        if isinstance(raw_mkts, list):
+            slim["markets"] = [
+                {mk: mv for mk, mv in m.items() if mk not in drop_mkt}
+                for m in raw_mkts
+                if isinstance(m, dict)
+            ]
+        return slim
+
+    @staticmethod
+    def _slim_rest_book(bk: Dict[str, Any], max_levels: int = 25) -> Dict[str, Any]:
+        """Bounds cached CLOB REST L2 orderbooks to top `max_levels` best bids/asks (`F-01`)."""
+        if not isinstance(bk, dict):
+            return {}
+        bids_raw = bk.get("bids")
+        asks_raw = bk.get("asks")
+        has_deep_bids = isinstance(bids_raw, list) and len(bids_raw) > max_levels
+        has_deep_asks = isinstance(asks_raw, list) and len(asks_raw) > max_levels
+        if not has_deep_bids and not has_deep_asks:
+            return bk
+        slim = dict(bk)
+        if has_deep_bids:
+            parsed_b: List[Tuple[float, Dict[str, Any]]] = []
+            for r in bids_raw:
+                if isinstance(r, dict):
+                    try:
+                        px = float(r.get("price", 0.0) or 0.0)
+                        sz = float(r.get("size", 0.0) or 0.0)
+                        if px > 0.0 and sz > 0.0:
+                            parsed_b.append((px, r))
+                    except Exception:
+                        continue
+            parsed_b.sort(key=lambda kv: -kv[0])
+            slim["bids"] = [r for _, r in parsed_b[:max_levels]]
+        if has_deep_asks:
+            parsed_a: List[Tuple[float, Dict[str, Any]]] = []
+            for r in asks_raw:
+                if isinstance(r, dict):
+                    try:
+                        px = float(r.get("price", 0.0) or 0.0)
+                        sz = float(r.get("size", 0.0) or 0.0)
+                        if px > 0.0 and sz > 0.0:
+                            parsed_a.append((px, r))
+                    except Exception:
+                        continue
+            parsed_a.sort(key=lambda kv: kv[0])
+            slim["asks"] = [r for _, r in parsed_a[:max_levels]]
+        return slim
+
     def _evict_stale_caches(self, now_ts: Optional[float] = None) -> Dict[str, int]:
-        """Periodic 300s memory maintenance: evicts expired WS books & TTL caches without touching _grad8 fields."""
+        """Periodic memory maintenance: evicts expired WS/REST books, auxiliary TTL maps & trims heap (`F-01`)."""
         now = float(now_ts if now_ts is not None else time.time())
         ev_books = 0
         ev_caches = 0
-        if self._ws_subscribed_tokens:
-            keep_toks = set(self._ws_subscribed_tokens)
-            for p in (
-                *self.open_positions.values(),
-                *self.pending_maker_orders.values(),
-                *self.pending_maker_anchors.values(),
-                *self.pending_zero_fee_maker_anchors.values(),
-            ):
-                for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
-                    tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
-                    if tv:
-                        keep_toks.add(str(tv))
+        keep_toks: set[str] = set(self._ws_subscribed_tokens or ())
+        for p in (
+            *self.open_positions.values(),
+            *self.pending_maker_orders.values(),
+            *self.pending_maker_anchors.values(),
+            *self.pending_zero_fee_maker_anchors.values(),
+        ):
+            for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
+                tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
+                if tv:
+                    keep_toks.add(str(tv))
+        if keep_toks:
             for t_old in [t for t in list(self._ws_raw_levels.keys()) if t not in keep_toks]:
                 self._ws_raw_levels.pop(t_old, None)
                 self._ws_books.pop(t_old, None)
@@ -1089,12 +1210,58 @@ class Alpha124ShadowDaemon:
                 if not isinstance(v_rb, tuple) or (now - float(v_rb[0] or 0.0)) > 120.0:
                     rest_bk_cache.pop(k_rb, None)
                     ev_caches += 1
+            if len(rest_bk_cache) > 1000:
+                by_age = sorted(
+                    rest_bk_cache.items(),
+                    key=lambda kv: float(kv[1][0] or 0.0) if isinstance(kv[1], tuple) and kv[1] else 0.0,
+                )
+                for k_old_rb, _ in by_age[: len(rest_bk_cache) - 1000]:
+                    rest_bk_cache.pop(k_old_rb, None)
+                    ev_caches += 1
         rest_emp_map = self.__dict__.get("_rest_empty_books_ts")
         if isinstance(rest_emp_map, dict):
             for k_re, ts_re in list(rest_emp_map.items()):
                 if (now - float(ts_re or 0.0)) > 120.0:
                     rest_emp_map.pop(k_re, None)
                     ev_caches += 1
+        tk_b_ts_map = self.__dict__.get("_token_tick_boundary_ts")
+        if isinstance(tk_b_ts_map, dict):
+            for k_tb, ts_tb in list(tk_b_ts_map.items()):
+                if (now - float(ts_tb or 0.0)) > 1800.0 and k_tb not in keep_toks:
+                    tk_b_ts_map.pop(k_tb, None)
+                    ev_caches += 1
+        tk_sz_map = self.__dict__.get("_token_tick_sizes")
+        if isinstance(tk_sz_map, dict) and len(tk_sz_map) > 2500:
+            for k_tk in list(tk_sz_map.keys()):
+                if len(tk_sz_map) <= 2500:
+                    break
+                if k_tk not in keep_toks and (not isinstance(tk_b_ts_map, dict) or k_tk not in tk_b_ts_map):
+                    tk_sz_map.pop(k_tk, None)
+                    ev_caches += 1
+        ws_recon_map = self.__dict__.get("_ws_last_reconciled_ts")
+        if isinstance(ws_recon_map, dict) and len(ws_recon_map) > 2000:
+            for k_rc, ts_rc in list(ws_recon_map.items()):
+                if k_rc not in keep_toks and (now - float(ts_rc or 0.0)) > 600.0:
+                    ws_recon_map.pop(k_rc, None)
+                    ev_caches += 1
+        dead_q_map = self.__dict__.get("_ws_dead_q_by_event")
+        if isinstance(dead_q_map, dict) and dead_q_map:
+            active_nrc_ids = set((getattr(self, "negrisk_convert_slates", None) or {}).keys())
+            for eid_dq in list(dead_q_map.keys()):
+                if eid_dq not in active_nrc_ids:
+                    dead_q_map.pop(eid_dq, None)
+                    ev_caches += 1
+        for dyn_attr, dyn_ttl in (
+            ("_zf_maker_cooldown_until", 1800.0),
+            ("_anti_box_warn_ts", 3600.0),
+            ("_strike_fail_log_ts", 3600.0),
+        ):
+            dyn_map = self.__dict__.get(dyn_attr)
+            if isinstance(dyn_map, dict):
+                for k_d, ts_d in list(dyn_map.items()):
+                    if (now - float(ts_d or 0.0)) > dyn_ttl:
+                        dyn_map.pop(k_d, None)
+                        ev_caches += 1
         for c_map in (
             self.uma_onchain_cache,
             self.bond2_onchain_cache,
@@ -1145,8 +1312,7 @@ class Alpha124ShadowDaemon:
                     if kv:
                         protected.add(str(kv))
             self.entered_keys.intersection_update(protected)
-        import gc as _gc
-        _gc.collect()
+        self._release_unused_heap_memory()
         return {"evicted_books": ev_books, "evicted_cache_entries": ev_caches}
 
     def _record_market_telemetry(
@@ -1332,10 +1498,40 @@ class Alpha124ShadowDaemon:
             return True
         return False
 
+    @staticmethod
+    def _slim_closed_position_record(p: Dict[str, Any]) -> Dict[str, Any]:
+        """Retains strictly the scalar fields needed by _grad8, epoch filters, by_d1_asset, and dedupe protection."""
+        slim: Dict[str, Any] = {
+            "position_id": p.get("position_id"),
+            "dedupe_key": p.get("dedupe_key"),
+            "sleeve": p.get("sleeve"),
+            "asset_or_city": p.get("asset_or_city"),
+            "status": p.get("status"),
+            "entry_ts": p.get("entry_ts"),
+            "closed_ts": p.get("closed_ts"),
+            "entry_eff_px_t1000": p.get("entry_eff_px_t1000"),
+            "won": p.get("won"),
+            "tier_pnls_usd": p.get("tier_pnls_usd") or {},
+        }
+        if "legging_adjusted_tier_pnls_usd" in p:
+            slim["legging_adjusted_tier_pnls_usd"] = p.get("legging_adjusted_tier_pnls_usd") or {}
+        ex = p.get("extra")
+        if isinstance(ex, dict):
+            ex_slim = {k: ex[k] for k in ("event_id", "event_dedupe_key") if ex.get(k)}
+            if ex_slim:
+                slim["extra"] = ex_slim
+        return slim
+
     def _hydrate_state(self) -> None:
+        try:
+            import orjson as _orjson
+            _loads = _orjson.loads
+        except Exception:
+            _loads = json.loads
+
         if STATE_FILE.exists():
             try:
-                st = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                st = _loads(STATE_FILE.read_bytes())
                 self.started_at = st.get("started_at", self.started_at)
                 for p in st.get("open_positions", []):
                     if isinstance(p, dict) and p.get("position_id") and not self._is_leaked_unit_test_artifact(p):
@@ -1370,41 +1566,74 @@ class Alpha124ShadowDaemon:
                 logger.warning(f"State hydrate notice: {exc}")
 
         ledger_path = self._resolve_ledger_path()
+        already_cancelled_oids: set[str] = set()
         if ledger_path.exists():
             try:
+                # Pass 1: collect terminal closed position_ids & cancelled order_ids so Pass 2 never
+                # allocates full dict copies for the >99% of historical entries already closed/cancelled.
+                ledger_closed_pids: set[str] = {
+                    str(p.get("position_id"))
+                    for p in self.closed_positions
+                    if isinstance(p, dict) and p.get("position_id")
+                }
+                with open(ledger_path, "rb") as fb_pre:
+                    for raw_ln in fb_pre:
+                        if b"SHADOW_CLOSE" in raw_ln:
+                            try:
+                                r0 = _loads(raw_ln)
+                            except Exception:
+                                continue
+                            if isinstance(r0, dict) and r0.get("event") == "SHADOW_CLOSE" and r0.get("position_id"):
+                                ledger_closed_pids.add(str(r0["position_id"]))
+                        elif b"SHADOW_MAKER_CANCEL" in raw_ln:
+                            try:
+                                r0 = _loads(raw_ln)
+                            except Exception:
+                                continue
+                            if isinstance(r0, dict) and r0.get("event") == "SHADOW_MAKER_CANCEL" and r0.get("order_id"):
+                                already_cancelled_oids.add(str(r0["order_id"]))
+
                 ledger_open: Dict[str, Dict[str, Any]] = {}
                 ledger_maker: Dict[str, Dict[str, Any]] = {}
-                closed_ids = {str(p.get("position_id")) for p in self.closed_positions if isinstance(p, dict) and p.get("position_id")}
-                with open(ledger_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        if not line.strip():
+                closed_ids = {
+                    str(p.get("position_id"))
+                    for p in self.closed_positions
+                    if isinstance(p, dict) and p.get("position_id")
+                }
+                recent_dk_ring: Deque[str] = collections.deque(maxlen=4000)
+                recent_full_tail: Deque[Dict[str, Any]] = collections.deque(maxlen=50)
+                for p_init in self.closed_positions:
+                    recent_full_tail.append(p_init)
+
+                with open(ledger_path, "rb") as fb:
+                    for raw_ln in fb:
+                        if not raw_ln.strip():
                             continue
                         try:
-                            r = json.loads(line)
+                            r = _loads(raw_ln)
                         except Exception:
                             # Skip truncated/corrupt JSONL line without aborting ledger hydration (`F-19`)
                             continue
-                        if isinstance(r, dict) and self._is_leaked_unit_test_artifact(r):
+                        if not isinstance(r, dict) or self._is_leaked_unit_test_artifact(r):
                             continue
                         ev = r.get("event")
                         if ev in ("SHADOW_ENTRY", "SHADOW_CLOSE") and r.get("dedupe_key"):
-                            self.entered_keys.add(str(r["dedupe_key"]))
+                            recent_dk_ring.append(str(r["dedupe_key"]))
                         if ev == "SHADOW_ENTRY":
                             pid = str(r.get("position_id") or "")
-                            if pid:
-                                pos_rec = {k: v for k, v in r.items() if k != "event"}
-                                ledger_open[pid] = pos_rec
                             d_key = str(r.get("dedupe_key") or "")
-                            if d_key:
+                            if d_key and ledger_maker:
                                 for oid_k, m_v in list(ledger_maker.items()):
                                     if str(m_v.get("dedupe_key") or "") == d_key:
                                         ledger_maker.pop(oid_k, None)
                             ev_id = (r.get("extra") or {}).get("event_id")
                             if ev_id:
                                 if r.get("sleeve") == "W2_ENSEMBLE_VALUE":
-                                    self.entered_keys.add(f"W2_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2_EVENT_{ev_id}")
                                 elif r.get("sleeve") == "W2_MAKER_OVERROUND":
-                                    self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2M_EVENT_{ev_id}")
+                            if pid and pid not in ledger_closed_pids:
+                                ledger_open[pid] = {k: v for k, v in r.items() if k != "event"}
                         elif ev == "SHADOW_CLOSE":
                             pid = str(r.get("position_id") or "")
                             if pid:
@@ -1412,16 +1641,19 @@ class Alpha124ShadowDaemon:
                                 self.open_positions.pop(pid, None)
                                 if pid not in closed_ids:
                                     closed_ids.add(pid)
-                                    self.closed_positions.append({k: v for k, v in r.items() if k != "event"})
+                                    full_rec = {k: v for k, v in r.items() if k != "event"}
+                                    slim_rec = self._slim_closed_position_record(full_rec)
+                                    recent_full_tail.append(full_rec)
+                                    self.closed_positions.append(slim_rec)
                         elif ev == "SHADOW_MAKER_POST":
                             oid = str(r.get("order_id") or "")
-                            if oid:
+                            if oid and oid not in already_cancelled_oids:
                                 ledger_maker[oid] = {k: v for k, v in r.items() if k != "event"}
                                 if r.get("dedupe_key"):
-                                    self.entered_keys.add(str(r["dedupe_key"]))
+                                    recent_dk_ring.append(str(r["dedupe_key"]))
                                 ev_id = (r.get("extra") or {}).get("event_id")
                                 if ev_id and r.get("sleeve") == "W2_MAKER_OVERROUND":
-                                    self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2M_EVENT_{ev_id}")
                         elif ev == "SHADOW_MAKER_CANCEL":
                             oid = str(r.get("order_id") or "")
                             if oid:
@@ -1432,6 +1664,20 @@ class Alpha124ShadowDaemon:
                                 ev_id = ((m_old or r).get("extra") or {}).get("event_id")
                                 if ev_id and (m_old or r).get("sleeve") == "W2_MAKER_OVERROUND":
                                     self.entered_keys.discard(f"W2M_EVENT_{ev_id}")
+
+                self.entered_keys.update(recent_dk_ring)
+                # Restore full dicts strictly for the most recent <=50 closed records (`recent_closed_positions[-30:]`)
+                tail_by_pid: Dict[str, Dict[str, Any]] = {}
+                for full_t in recent_full_tail:
+                    full_t.pop("_slim_shadow_ref", None)
+                    t_pid = str(full_t.get("position_id") or "")
+                    if t_pid:
+                        tail_by_pid[t_pid] = full_t
+                if tail_by_pid:
+                    for idx_c, rec_c in enumerate(self.closed_positions):
+                        c_pid = str(rec_c.get("position_id") or "")
+                        if c_pid in tail_by_pid:
+                            self.closed_positions[idx_c] = tail_by_pid[c_pid]
 
                 for pid, pos_rec in ledger_open.items():
                     if pid not in self.open_positions and pid not in closed_ids:
@@ -1444,16 +1690,23 @@ class Alpha124ShadowDaemon:
 
         if self.closed_positions:
             self.closed_positions.sort(key=lambda p: float(p.get("closed_ts") or 0.0))
+            if len(self.closed_positions) > 50:
+                for idx_old in range(len(self.closed_positions) - 50):
+                    if "title" in self.closed_positions[idx_old] or "tier_fills" in self.closed_positions[idx_old]:
+                        self.closed_positions[idx_old] = self._slim_closed_position_record(self.closed_positions[idx_old])
 
         # Evict any lingering resting Maker orders belonging to quarantined losing sleeves
         for oid_q, m_q in list(self.pending_maker_orders.items()):
             if is_shadow_sleeve_quarantined(str(m_q.get("sleeve") or "")):
                 self.pending_maker_orders.pop(oid_q, None)
-                self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
+                if oid_q not in already_cancelled_oids:
+                    self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
         if is_shadow_sleeve_quarantined("P1_PREOPEN_MAKER_STRADDLE"):
             self.pending_preopen_straddles.clear()
         if is_shadow_sleeve_quarantined("ZERO_FEE_MAKER_ANCHOR_BOX"):
             self.pending_zero_fee_maker_anchors.clear()
+        import gc as _gc
+        _gc.collect()
 
     def _append_ledger(self, rec: Dict[str, Any]) -> None:
         ledger_path = self._resolve_ledger_path()
@@ -1464,7 +1717,7 @@ class Alpha124ShadowDaemon:
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(limit=40),
+                connector=aiohttp.TCPConnector(limit=24, enable_cleanup_closed=True),
                 headers={"User-Agent": "DominusAlpha124Shadow/1.0", "Accept": "application/json"},
                 max_line_size=65536,
                 max_field_size=65536,
@@ -1668,6 +1921,12 @@ class Alpha124ShadowDaemon:
             self._drop_ws_book(asset_id)
             return False
         if changed:
+            if len(bids_map) > 80:
+                for px_drop in sorted(bids_map.keys(), reverse=True)[50:]:
+                    bids_map.pop(px_drop, None)
+            if len(asks_map) > 80:
+                for px_drop in sorted(asks_map.keys())[50:]:
+                    asks_map.pop(px_drop, None)
             self.__dict__.setdefault("_ws_last_reconciled_ts", {})[asset_id] = now_ts
             if isinstance(self._ws_books, _LazyWsBooksDict):
                 self._ws_books.mark_dirty(asset_id, now_ts)
@@ -1750,7 +2009,7 @@ class Alpha124ShadowDaemon:
             for b_m in sp_cm.brackets:
                 _add_tok(b_m.get("no_token"), is_nr=True)
                 _add_tok(b_m.get("yes_token"), is_nr=True)
-        for uma_m in list(self.uma_proposed_markets.values())[:25]:
+        for uma_m in list(self.uma_proposed_markets.values())[:85]:
             if isinstance(uma_m, dict):
                 uma_tks = _parse_clob_tokens(uma_m)
                 if uma_tks:
@@ -1762,7 +2021,7 @@ class Alpha124ShadowDaemon:
         for zf_m in sorted(
             (self.__dict__.get("_ws_reactive_bin_metas") or ()),
             key=lambda m_z: float(m_z.get("end_ts") or (now_ts + 86400.0)),
-        )[:60]:
+        )[:110]:
             if float(zf_m.get("end_ts") or (now_ts + 86400.0)) > now_ts + 60.0:
                 _add_tok(zf_m.get("yes_token_id"), is_nr=True)
                 _add_tok(zf_m.get("no_token_id"), is_nr=True)
@@ -2232,22 +2491,23 @@ class Alpha124ShadowDaemon:
                                             tk_cache[aid_r] = str(tk_r)
                                             tk_b_ts[aid_r] = now_seed
                                             r["minimum_tick_size"] = str(tk_r)
-                                        out[aid_r] = r
-                                        rest_cache[aid_r] = (now_seed, r)
+                                        r_slim = self._slim_rest_book(r)
+                                        out[aid_r] = r_slim
+                                        rest_cache[aid_r] = (now_seed, r_slim)
                                         rest_empty_ts.pop(aid_r, None)
                                         reconciled_map[aid_r] = now_seed
                                         if use_ws and aid_r in self._ws_subscribed_tokens:
                                             if aid_r not in self._ws_raw_levels:
-                                                self._apply_ws_book_snapshot(aid_r, r.get("bids") or [], r.get("asks") or [], now_seed, from_rest=True)
+                                                self._apply_ws_book_snapshot(aid_r, r_slim.get("bids") or [], r_slim.get("asks") or [], now_seed, from_rest=True)
                                             else:
                                                 # Drift self-heal on 120s quiet reconciliation without polluting _ws_rest_seeded when aligned
                                                 lv_b, lv_a = self._ws_raw_levels[aid_r]
                                                 ws_bb = max(lv_b.keys()) if lv_b else 0.0
                                                 ws_ba = min(lv_a.keys()) if lv_a else 0.0
-                                                r_bb = max((round(float(x.get("price", 0) or 0), 4) for x in (r.get("bids") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
-                                                r_ba = min((round(float(x.get("price", 0) or 0), 4) for x in (r.get("asks") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
+                                                r_bb = max((round(float(x.get("price", 0) or 0), 4) for x in (r_slim.get("bids") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
+                                                r_ba = min((round(float(x.get("price", 0) or 0), 4) for x in (r_slim.get("asks") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
                                                 if abs(ws_bb - r_bb) > 1e-4 or abs(ws_ba - r_ba) > 1e-4:
-                                                    self._apply_ws_book_snapshot(aid_r, r.get("bids") or [], r.get("asks") or [], now_seed, from_rest=True)
+                                                    self._apply_ws_book_snapshot(aid_r, r_slim.get("bids") or [], r_slim.get("asks") or [], now_seed, from_rest=True)
                                 for t_req in chunk:
                                     if t_req not in seen_chunk:
                                         rest_empty_ts[t_req] = now_seed
@@ -2267,8 +2527,9 @@ class Alpha124ShadowDaemon:
                             tk_cache[t] = str(tk_b2)
                             tk_b_ts[t] = now_fb
                             bk["minimum_tick_size"] = str(tk_b2)
-                        out[t] = bk
-                        rest_cache[t] = (now_fb, bk)
+                        bk_slim = self._slim_rest_book(bk)
+                        out[t] = bk_slim
+                        rest_cache[t] = (now_fb, bk_slim)
                         reconciled_map[t] = now_fb
 
         chunks = [missing[idx : idx + 50] for idx in range(0, len(missing), 50)]
@@ -2695,14 +2956,23 @@ class Alpha124ShadowDaemon:
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=tennis&active=true&closed=false&order=volume24hr&ascending=false&limit=45", timeout=5.5),
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=midterms&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=politics&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=geopolitics&active=true&closed=false&order=volume24hr&ascending=false&limit=80", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=oil&active=true&closed=false&order=volume24hr&ascending=false&limit=50", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=ukraine&active=true&closed=false&order=volume24hr&ascending=false&limit=45", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=world&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
         )
         lp2_by_slug: Dict[str, Dict[str, Any]] = dict(bop_by_slug)
         for sl_l2, res_l2 in zip(lp2_slugs_all, fv3_res[: len(lp2_slugs_all)]):
             if isinstance(res_l2, list) and res_l2:
                 lp2_by_slug[sl_l2] = res_l2[0]
-        ten_raw = fv3_res[len(lp2_slugs_all)] if isinstance(fv3_res[len(lp2_slugs_all)], list) else []
-        mid_raw = fv3_res[len(lp2_slugs_all) + 1] if isinstance(fv3_res[len(lp2_slugs_all) + 1], list) else []
-        pol_raw = fv3_res[len(lp2_slugs_all) + 2] if isinstance(fv3_res[len(lp2_slugs_all) + 2], list) else []
+        _fv3_off = len(lp2_slugs_all)
+        ten_raw = fv3_res[_fv3_off] if isinstance(fv3_res[_fv3_off], list) else []
+        mid_raw = fv3_res[_fv3_off + 1] if isinstance(fv3_res[_fv3_off + 1], list) else []
+        pol_raw = fv3_res[_fv3_off + 2] if isinstance(fv3_res[_fv3_off + 2], list) else []
+        geo_raw = fv3_res[_fv3_off + 3] if isinstance(fv3_res[_fv3_off + 3], list) else []
+        oil_raw = fv3_res[_fv3_off + 4] if isinstance(fv3_res[_fv3_off + 4], list) else []
+        ukr_raw = fv3_res[_fv3_off + 5] if isinstance(fv3_res[_fv3_off + 5], list) else []
+        world_raw = fv3_res[_fv3_off + 6] if isinstance(fv3_res[_fv3_off + 6], list) else []
         for ev_mp in mid_raw + pol_raw:
             if isinstance(ev_mp, dict) and ev_mp.get("slug"):
                 lp2_by_slug.setdefault(str(ev_mp["slug"]), ev_mp)
@@ -2721,14 +2991,16 @@ class Alpha124ShadowDaemon:
         lp2_groups.extend(build_lp2_tossup_state_implication_groups(lp2_by_slug))
         self.lp2_implication_groups = lp2_groups
 
-        for ev_lp2_nr in lp2_by_slug.values():
+        for ev_lp2_nr in list(lp2_by_slug.values()) + geo_raw + oil_raw + ukr_raw + world_raw:
+            if not isinstance(ev_lp2_nr, dict):
+                continue
             sp_nrc_l2 = parse_negrisk_convert_event(ev_lp2_nr)
             if sp_nrc_l2 is not None and sp_nrc_l2.is_closed_convert_safe and sp_nrc_l2.end_ts > now_disc + 60 and len(sp_nrc_l2.brackets) <= 45:
                 self.negrisk_convert_slates[sp_nrc_l2.event_id] = sp_nrc_l2
 
         cal_found: Dict[str, CalendarOrScalarLadderSpec] = {}
         cal_seen_ids = set()
-        for ev_cal in top_vol_events_raw + mid_raw + pol_raw:
+        for ev_cal in top_vol_events_raw + mid_raw + pol_raw + geo_raw + oil_raw + ukr_raw + world_raw:
             if not isinstance(ev_cal, dict):
                 continue
             eid_c = str(ev_cal.get("id") or "")
@@ -2830,11 +3102,34 @@ class Alpha124ShadowDaemon:
                 top_vol_events_raw
                 + mid_raw
                 + pol_raw
+                + geo_raw
+                + oil_raw
+                + ukr_raw
+                + world_raw
                 + [e for lst in raw_by_series.values() for e in (lst or []) if isinstance(e, dict)],
                 now_disc,
+                max_markets=340,
             )
         else:
             self.zerofee_general_binaries = []
+
+        # Strip multi-KB Gamma presentation blobs & bound retained raw event caches (`F-01`)
+        self.lp2_events_by_slug = {
+            sl_k: self._slim_raw_gamma_event(ev_v)
+            for sl_k, ev_v in lp2_by_slug.items()
+            if isinstance(ev_v, dict)
+        }
+        self.multisport_raw_events = {
+            ev_id_k: (sp_tag_v, self._slim_raw_gamma_event(ev_v))
+            for ev_id_k, (sp_tag_v, ev_v) in list(ms_raw_found.items())[:24]
+            if isinstance(ev_v, dict)
+        }
+        self.gas_events_raw = {
+            gk: [self._slim_raw_gamma_event(ge) for ge in (gv or []) if isinstance(ge, dict)]
+            for gk, gv in self.gas_events_raw.items()
+        }
+        del top_vol_events_raw, w_tag_pages, soc_pages, esp_pages, mid_raw, pol_raw, geo_raw, oil_raw, ukr_raw, world_raw, fv4_sib_evts
+        self._release_unused_heap_memory()
 
         self.last_discovery_ts = time.time()
         logger.info(
@@ -2899,7 +3194,7 @@ class Alpha124ShadowDaemon:
 
     @staticmethod
     def extract_zerofee_general_binaries(
-        events: List[Dict[str, Any]], now_ts: float, max_markets: int = 220, *, include_neg_risk_subconditions: bool = True
+        events: List[Dict[str, Any]], now_ts: float, max_markets: int = 340, *, include_neg_risk_subconditions: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Extracts general `0%`-fee (`feesEnabled=False`, `fee_rate == 0.0`) two-outcome binary
@@ -2907,7 +3202,7 @@ class Alpha124ShadowDaemon:
         `NegRisk` sub-markets routed via `NEG_RISK_ADAPTER_V2_ADDRESS`) eligible for `$0.00`-gas
         Relayer V2 `mergePositions` complete-set & `CTF_OVERROUND` sweeping.
         """
-        by_cid: Dict[str, Tuple[Tuple[float, float], Dict[str, Any]]] = {}
+        by_cid: Dict[str, Tuple[Tuple[float, float, float], Dict[str, Any]]] = {}
         for ev in (events or []):
             if not isinstance(ev, dict) or bool(ev.get("closed")):
                 continue
@@ -2941,7 +3236,12 @@ class Alpha124ShadowDaemon:
                 if max(liq, vol24) < 500.0:
                     continue
                 rem_days = max(0.01, (end_ts - now_ts) / 86400.0)
-                rank_key = (0.0 if not is_nr else 0.5, min(rem_days, 30.0), -max(vol24, liq))
+                activity_score = (
+                    math.log1p(max(0.0, vol24) * 4.0 + max(0.0, liq))
+                    + (0.45 if not is_nr else 0.0)
+                    + (0.30 if rem_days <= 7.0 else (0.12 if rem_days <= 30.0 else 0.0))
+                )
+                rank_key = (-round(activity_score, 4), min(rem_days, 30.0), -max(vol24, liq))
                 asset_tag = ("ZF_" + (ev_slug.split("-")[0] or "GEN").upper()[:8]) if ev_slug else "ZEROFEE"
                 rec = {
                     "market_id": mid,
@@ -3684,7 +3984,7 @@ class Alpha124ShadowDaemon:
                 self.weather_events.pop(sp0.event_id, None)
                 continue
             try:
-                loc0 = now_utc.astimezone(ZoneInfo(sp0.tz_name))
+                loc0 = now_utc.astimezone(safe_zoneinfo(sp0.tz_name))
             except Exception:
                 loc0 = now_utc
             if (sp0.obs_date - loc0.date()).days > 1 and not self.single_scan:
@@ -3705,7 +4005,7 @@ class Alpha124ShadowDaemon:
             )
             if _w2_pruned:
                 try:
-                    eval_local = now_utc.astimezone(ZoneInfo(sp.tz_name))
+                    eval_local = now_utc.astimezone(safe_zoneinfo(sp.tz_name))
                 except Exception:
                     eval_local = now_utc
                 in_w1_window = eval_local.date() >= sp.obs_date
@@ -3856,7 +4156,7 @@ class Alpha124ShadowDaemon:
                                 # MUST NEVER emit live CLOB candidates while calendar day is still open (`rem_hours_count > 0`
                                 # or local date <= obs_date) or while the sleeve has any historical shadow losses.
                                 try:
-                                    _w1_local_date = datetime.fromtimestamp(now_s, tz=ZoneInfo(sp.tz_name)).date()
+                                    _w1_local_date = datetime.fromtimestamp(now_s, tz=safe_zoneinfo(sp.tz_name)).date()
                                 except Exception:
                                     _w1_local_date = sp.obs_date
                                 _w1_sl_rec = (self.by_sleeve.get(w1_sleeve) if hasattr(self, "by_sleeve") else None) or {}
@@ -3984,12 +4284,27 @@ class Alpha124ShadowDaemon:
                         and res.get("running_ext_c") is not None
                         and not res.get("has_corrected_obs")
                         and not res.get("has_oracle_contradiction")
+                        and not (int(res.get("rem_hours_count", 0) or 0) > 0 and res.get("has_maintenance_obs"))
                         and (end_ts - now_s) > 300.0
                     ):
-                        obs_int_w = celsius_to_market_int(float(res["running_ext_c"]), b_i.unit)
+                        from src.polymarket_research.riskless_protocol_v2_expansion import classify_weather_station_oracle_rule
+
+                        _w_rule_cfg = classify_weather_station_oracle_rule(
+                            sp.icao, unit=b_i.unit, rules_text=str(getattr(sp, "rules_text", "") or "")
+                        )
+                        _ext_c_raw = float(res["running_ext_c"])
+                        # Conservative rounding interval: if station uses body integer °C or is intraday before synoptic QC,
+                        # widen by +/-0.55°C so a 0.1°C T-remark vs body °C discrepancy can never prune a live bracket.
+                        _unc_w_c = (
+                            0.55
+                            if (bool(_w_rule_cfg.get("prefer_body_integer_c")) or int(res.get("rem_hours_count", 0) or 0) > 0)
+                            else 0.05
+                        )
+                        obs_floor_w = celsius_to_market_int(_ext_c_raw - _unc_w_c, b_i.unit)
+                        obs_ceil_w = celsius_to_market_int(_ext_c_raw + _unc_w_c, b_i.unit)
                         dead_no_w = (
-                            (sp.metric == "HIGH" and b_i.high_bound <= obs_int_w - 2)
-                            or (sp.metric == "LOW" and b_i.low_bound >= obs_int_w + 2)
+                            (sp.metric == "HIGH" and b_i.high_bound <= obs_floor_w - 2)
+                            or (sp.metric == "LOW" and b_i.low_bound >= obs_ceil_w + 2)
                         )
                         if dead_no_w:
                             bid_wn, _ = extract_best_bid(bk_n_i.get("bids") or [])
@@ -4097,6 +4412,7 @@ class Alpha124ShadowDaemon:
                                             "event_id": str(sp.event_id),
                                             "sleeve_source": "W_PRUNE1_DEAD_NO_BOND",
                                             "expiry_ts": float(end_ts),
+                                            "rem_hours_count": int(res.get("rem_hours_count", 0) or 0),
                                             "max_box_cost_net": 0.994,
                                             "max_opp_bid": 0.025,
                                             "hold_to_maturity": True,
@@ -8125,17 +8441,17 @@ class Alpha124ShadowDaemon:
         now_iso = datetime.fromtimestamp(now_ts - 5.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         need_5m = rem_4h <= 305.0
 
-        for asset in DOMINANCE_ASSETS:
+        async def _discover_4h_asset(asset: str) -> None:
             slugs = DOMINANCE_SERIES_SLUGS[asset]
             slug_4h = slugs.get("4h")
             if not slug_4h:
-                continue
+                return
             s4h_k_target = f"{asset}_4h_{target_end_ts}"
             p15_k = f"{asset}_4h15m_{target_end_ts}"
             p5_k = f"{asset}_4h5m_{target_end_ts}"
             if not in_terminal_15m:
                 if s4h_k_target in self.s4h_candles:
-                    continue
+                    return
                 ev4_only = await self.fetch_json(
                     f"{GAMMA_URL}/events?series_slug={slug_4h}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
                     timeout=4.0,
@@ -8159,9 +8475,9 @@ class Alpha124ShadowDaemon:
                             if sp4_de and abs(sp4_de.end_ts - target_end_ts) <= 2.0:
                                 eff_e = int(round(sp4_de.end_ts))
                                 self.s4h_candles[f"{asset}_4h_{eff_e}"] = sp4_de
-                continue
+                return
             if p15_k in self.dominance_4h_pairs and ((not need_5m) or p5_k in self.dominance_4h_pairs):
-                continue
+                return
 
             ev4_raw, ev15_raw = await asyncio.gather(
                 self.fetch_json(
@@ -8237,6 +8553,8 @@ class Alpha124ShadowDaemon:
                                 m5_4h_match = sp5_d
                 if m5_4h_match is not None:
                     self.dominance_4h_pairs[p5_k] = (m4_match, m5_4h_match)
+
+        await asyncio.gather(*(_discover_4h_asset(asset) for asset in DOMINANCE_ASSETS))
 
     async def _scan_4h_dominance_boxes(self, opps_out: List[Dict[str, Any]], now_ts: Optional[float] = None) -> None:
         from src.polymarket_research.riskless_protocol_v2_expansion import compute_min_4h_boundary_rem_sec
@@ -9866,6 +10184,10 @@ class Alpha124ShadowDaemon:
             )
 
     def write_state_files(self, opps: List[Dict[str, Any]]) -> None:
+        if len(self.closed_positions) > 60:
+            for _idx_sl in range(len(self.closed_positions) - 50):
+                if "title" in self.closed_positions[_idx_sl] or "tier_fills" in self.closed_positions[_idx_sl]:
+                    self.closed_positions[_idx_sl] = self._slim_closed_position_record(self.closed_positions[_idx_sl])
         if len(getattr(self, "authoritative_strike_cache", {})) > 2000:
             for _k in list(self.authoritative_strike_cache.keys())[:-1500]:
                 self.authoritative_strike_cache.pop(_k, None)
@@ -10015,6 +10337,7 @@ class Alpha124ShadowDaemon:
             "pending_maker_orders": list(self.pending_maker_orders.values()),
             "open_positions": list(self.open_positions.values()),
             "recent_closed_positions": self.closed_positions[-30:],
+            "v6_expansion": getattr(self, "_v6_expansion_stats", None),
         }
 
         tmp_s = STATE_FILE.with_suffix(".tmp")
@@ -10030,6 +10353,10 @@ class Alpha124ShadowDaemon:
                     json.dumps(
                         {
                             "updated_at_utc": state["updated_at_utc"],
+                            "started_at": self.started_at,
+                            "cycle_count": self.cycle_count,
+                            "open_positions_count": len(self.open_positions),
+                            "markets_monitored": state["markets_monitored"],
                             "by_sleeve": by_sleeve,
                             "per_strategy": by_sleeve,
                             "by_d1_asset": by_d1_asset,
@@ -10976,7 +11303,7 @@ class Alpha124ShadowDaemon:
             best_no_asks_nrc: Dict[str, float] = {}
             for t_nr, bk_nr in nrc_bks.items():
                 px_nr, sz_nr = self._best_ask_sz(bk_nr)
-                if px_nr < 1.0 and px_nr * sz_nr >= 8.0:
+                if px_nr < 1.0 and sz_nr >= 8.0 and px_nr * sz_nr >= 1.05:
                     best_no_asks_nrc[t_nr] = px_nr
             for sp_nrc in active_nrc:
                 pair_arbs = detect_negrisk_no_pair_boxes(sp_nrc, best_no_asks_nrc, max_box_cost_net=1.04)
@@ -11741,7 +12068,7 @@ class Alpha124ShadowDaemon:
         if active_cal:
             cal_toks = sorted({t for sp in active_cal for r in sp.rungs for t in (r.yes_token, r.no_token)})
             cal_bks = await self.fetch_books_batch(cal_toks, timeout=4.0)
-            cal_asks = {t: p for t, bk in cal_bks.items() for p, s in [self._best_ask_sz(bk)] if p < 1.0 and p * s >= 8.0}
+            cal_asks = {t: p for t, bk in cal_bks.items() for p, s in [self._best_ask_sz(bk)] if p < 1.0 and s >= 8.0 and p * s >= 1.05}
             for sp_cal in active_cal:
                 cal_boxes = detect_cal1_monotonic_boxes(sp_cal, cal_asks, max_box_cost_net=1.045)
                 if cal_boxes:
@@ -12655,7 +12982,7 @@ class Alpha124ShadowDaemon:
                     t: p
                     for t, bk in cry_bks.items()
                     for p, s in [self._best_ask_sz(bk)]
-                    if p < 1.0 and p * s >= 8.0
+                    if p < 1.0 and s >= 8.0 and p * s >= 1.05
                 }
                 for cbx in detect_cry_inc1_binance_inclusion_boxes(near_hits, near_closes, cry_asks, now, max_box_cost_net=0.992):
                     la_ci, lb_ci = cbx["leg_a"], cbx["leg_b"]
@@ -13534,17 +13861,23 @@ class Alpha124ShadowDaemon:
                 if isinstance(child_mkts, list):
                     ev_nr = item.get("negRisk")
                     ev_pid = str(item.get("id") or item.get("slug") or "").strip()
+                    ev_slg = str(item.get("slug") or "").strip()
                     for cm in child_mkts:
                         if not isinstance(cm, dict):
                             continue
                         mid_c = str(cm.get("id") or "").strip()
                         if not mid_c or mid_c in found:
                             continue
-                        if ("negRisk" not in cm and ev_nr is not None) or (ev_pid and "_parent_event_id" not in cm):
+                        if (
+                            ("negRisk" not in cm and ev_nr is not None)
+                            or (ev_pid and "_parent_event_id" not in cm)
+                            or (ev_slg and "_ev_slug" not in cm)
+                        ):
                             cm = {
                                 **cm,
                                 **({"negRisk": ev_nr} if ("negRisk" not in cm and ev_nr is not None) else {}),
                                 **({"_parent_event_id": ev_pid} if (ev_pid and "_parent_event_id" not in cm) else {}),
+                                **({"_ev_slug": ev_slg} if (ev_slg and "_ev_slug" not in cm) else {}),
                             }
                         ok_c, _ = is_objective_uma_market(cm)
                         if ok_c:
@@ -14373,6 +14706,13 @@ class Alpha124ShadowDaemon:
         from src.polymarket_research.riskless_protocol_v2_expansion import run_protocol_v2_daemon_scan
         await run_protocol_v2_daemon_scan(self, opps_out, now_ts=now_ts)
 
+    async def scan_v6_riskless_expansion_opportunities(
+        self, opps_out: List[Dict[str, Any]], now_ts: Optional[float] = None
+    ) -> None:
+        """Fault-isolated v6 Riskless Expansion scanner (`TAIL_BOUNDARY_001_ARB`, `BOND3`, `HEDGED_PRESPLIT_CONV_GUN`, `YIELD_STACKED_CARRY_BOX` + `CompactCandidateL2Recorder`)."""
+        from src.polymarket_research.riskless_expansion_v6_engines import run_v6_expansion_alpha124_scan
+        await run_v6_expansion_alpha124_scan(self, opps_out, now_ts=now_ts)
+
     async def _run_gatling_fast_gun_loop(self) -> None:
         """
         Dedicated non-blocking `<200ms` Gatling Fast-Gun background coroutine:
@@ -14427,6 +14767,10 @@ class Alpha124ShadowDaemon:
             await self.scan_protocol_v2_expansion_opportunities(ts_opps)
         except Exception as exc_v2:
             logger.warning(f"Background Protocol V2 scan notice: {exc_v2}")
+        try:
+            await self.scan_v6_riskless_expansion_opportunities(ts_opps)
+        except Exception as exc_v6:
+            logger.warning(f"Background v6 Riskless Expansion scan notice: {exc_v6}")
         self.cached_tradfi_sports_opps = ts_opps
 
     async def run_forever(self) -> None:
@@ -14451,7 +14795,13 @@ class Alpha124ShadowDaemon:
                         _lh_st_p = LIVE_POLYMARKET_DIR / "live_harvester_state.json"
                         if _lh_st_p.exists() and (t0 - _lh_st_p.stat().st_mtime) <= 600.0:
                             _lh_d = json.loads(_lh_st_p.read_text(encoding="utf-8"))
-                            _eq_v = float(_lh_d.get("total_account_equity_usd") or _lh_d.get("live_bankroll_usd") or 0.0)
+                            _eq_v = float(
+                                _lh_d.get("total_account_equity")
+                                or _lh_d.get("total_account_equity_usd")
+                                or _lh_d.get("live_bankroll")
+                                or _lh_d.get("live_bankroll_usd")
+                                or 0.0
+                            )
                             if _eq_v > 0.0:
                                 self.live_account_equity_usd = _eq_v
                     except Exception:
@@ -14465,6 +14815,9 @@ class Alpha124ShadowDaemon:
                 ):
                     self.last_discovery_ts = t0
                     self._bg_discovery_task = asyncio.create_task(self._run_bg_discovery())
+                if not self.single_scan and (t0 - float(self.__dict__.get("_last_mem_evict_ts") or 0.0)) >= 60.0:
+                    self.__dict__["_last_mem_evict_ts"] = t0
+                    self._evict_stale_caches(now_ts=t0)
 
                 # Reactive drain of any fresh Binance shock triggers before periodic scans
                 fresh_shocks = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=t0)
@@ -14499,6 +14852,7 @@ class Alpha124ShadowDaemon:
                     ts_opps: List[Dict[str, Any]] = []
                     await self.scan_tradfi_and_sports_markets(ts_opps)
                     await self.scan_protocol_v2_expansion_opportunities(ts_opps)
+                    await self.scan_v6_riskless_expansion_opportunities(ts_opps)
                     self.cached_tradfi_sports_opps = ts_opps
 
                     nba_opps: List[Dict[str, Any]] = []
@@ -14670,6 +15024,7 @@ class Alpha124ShadowDaemon:
 
 
 def main() -> None:
+    _attach_daemon_log_file_handler()
     parser = argparse.ArgumentParser(description="Polymarket Alpha-124 Shadow Daemon")
     parser.add_argument("--single-scan", action="store_true", help="Run one full scan cycle and exit")
     parser.add_argument("--riskless-bridge-only", action="store_true", help="Skip quarantined directional shock/sniper scans & disk telemetry")

@@ -15,7 +15,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import MagicMock
-from zoneinfo import ZoneInfo
+from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
 import pytest
 

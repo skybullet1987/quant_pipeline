@@ -122,8 +122,12 @@ class ShadowTelemetryStore:
         self.db_path = self.data_dir / db_filename
         self.state_path = self.data_dir / "shadow_engine_state.json"
         self.alerts_path = self.data_dir / "shadow_alerts.jsonl"
-        self._last_book_metrics: Dict[Tuple[str, str], Tuple[float, float]] = {}
+        self._last_book_metrics: Dict[
+            Tuple[str, str],
+            Tuple[float, float, Optional[float], Optional[float], Optional[float], Optional[float], float],
+        ] = {}
         self._last_snapshot_ts: Dict[Tuple[str, str], float] = {}
+        self._last_snapshot_hash: Dict[Tuple[str, str], str] = {}
         self._cached_window_summaries: Optional[Tuple[float, Dict[str, Dict[str, Any]]]] = None
         self.current_session_id: Optional[str] = None
         self._init_schema()
@@ -320,27 +324,42 @@ class ShadowTelemetryStore:
         *,
         now_unix: Optional[float] = None,
         retention_sec: float = 15 * 86_400,
+        l2_json_retention_sec: float = 48 * 3_600,
     ) -> int:
-        """Prunes telemetry rows strictly older than the 14-day campaign window (`default: 15d`), checkpoints WAL, and drops clean file cache."""
+        """
+        Prunes telemetry rows older than `retention_sec` (`default: 15d`), strips bulky `l2_json`
+        ladders older than `l2_json_retention_sec` (`default: 48h`) while preserving lightweight
+        snapshot rows for 7d/14d campaign counts, runs legacy empty-row cleanup at most once per
+        process lifetime (avoiding unindexed full-table scans every 20 cycles), checkpoints WAL,
+        and drops clean file cache.
+        """
         now = time.time() if now_unix is None else float(now_unix)
-        cutoff = now - max(float(CAMPAIGN_WINDOWS_SEC["14d"]) + 3_600.0, float(retention_sec))
+        cutoff = now - max(3_600.0, float(retention_sec))
+        l2_cutoff = now - max(3_600.0, float(l2_json_retention_sec))
         deleted = 0
         with self._connect() as conn:
             cur = conn.cursor()
-            cur.execute(
-                """
-                DELETE FROM orderbook_snapshots
-                WHERE total_depth_usd <= 0.0
-                  AND yes_best_ask IS NULL
-                  AND yes_best_bid IS NULL
-                  AND no_best_ask IS NULL
-                  AND no_best_bid IS NULL
-                """
-            )
-            deleted += max(0, int(cur.rowcount or 0))
+            if not getattr(self, "_legacy_empty_snapshots_cleaned", False):
+                cur.execute(
+                    """
+                    DELETE FROM orderbook_snapshots
+                    WHERE total_depth_usd <= 0.0
+                      AND yes_best_ask IS NULL
+                      AND yes_best_bid IS NULL
+                      AND no_best_ask IS NULL
+                      AND no_best_bid IS NULL
+                    """
+                )
+                deleted += max(0, int(cur.rowcount or 0))
+                self._legacy_empty_snapshots_cleaned = True
             for tbl in ("orderbook_snapshots", "rejected_opportunities", "api_connection_events"):
                 cur.execute(f"DELETE FROM {tbl} WHERE ts_unix < ?", (cutoff,))
                 deleted += max(0, int(cur.rowcount or 0))
+            if l2_cutoff > cutoff:
+                cur.execute(
+                    "UPDATE orderbook_snapshots SET l2_json = '{}' WHERE ts_unix < ? AND l2_json != '{}'",
+                    (l2_cutoff,),
+                )
             conn.commit()
             with contextlib.suppress(sqlite3.OperationalError):
                 cur.execute("PRAGMA wal_checkpoint(PASSIVE);")
@@ -410,13 +429,14 @@ class ShadowTelemetryStore:
             cur = conn.cursor()
             for m in markets:
                 metrics = m.compute_book_metrics()
-                prev = self._last_book_metrics.get((m.venue, m.market_id))
+                mkt_key = (m.venue, m.market_id)
+                yb = round(m.yes_bids[0].price, 6) if m.yes_bids else None
+                ya = round(m.yes_asks[0].price, 6) if m.yes_asks else None
+                nb = round(m.no_bids[0].price, 6) if m.no_bids else None
+                na = round(m.no_asks[0].price, 6) if m.no_asks else None
+                prev = self._last_book_metrics.get(mkt_key)
                 spread_delta = 0.0 if prev is None else round(metrics["yes_spread_bps"] - prev[0], 2)
                 depth_delta = 0.0 if prev is None else round(metrics["total_depth_usd"] - prev[1], 4)
-                self._last_book_metrics[(m.venue, m.market_id)] = (metrics["yes_spread_bps"], metrics["total_depth_usd"])
-                if len(self._last_book_metrics) > 4096:
-                    while len(self._last_book_metrics) > 3072:
-                        self._last_book_metrics.pop(next(iter(self._last_book_metrics)), None)
 
                 meta_json = json.dumps(
                     {
@@ -472,19 +492,6 @@ class ShadowTelemetryStore:
                 if not (m.yes_asks or m.yes_bids or m.no_asks or m.no_bids):
                     continue
 
-                if (
-                    m.data_origin == "REGULATORY_PUBLIC_DELAYED"
-                    and prev is not None
-                    and spread_delta == 0.0
-                    and depth_delta == 0.0
-                    and (now - self._last_snapshot_ts.get((m.venue, m.market_id), 0.0)) < 300.0
-                ):
-                    continue
-                self._last_snapshot_ts[(m.venue, m.market_id)] = now
-                if len(self._last_snapshot_ts) > 4096:
-                    while len(self._last_snapshot_ts) > 3072:
-                        self._last_snapshot_ts.pop(next(iter(self._last_snapshot_ts)), None)
-
                 l2_payload = (
                     json.dumps(
                         {
@@ -498,8 +505,50 @@ class ShadowTelemetryStore:
                     if store_l2_json
                     else "{}"
                 )
+                l2_sha1 = hashlib.sha1(l2_payload.encode("utf-8")).hexdigest()[:12]
+                bbo_unchanged = (
+                    prev is not None
+                    and len(prev) >= 7
+                    and prev[2] == yb
+                    and prev[3] == ya
+                    and prev[4] == nb
+                    and prev[5] == na
+                    and round(metrics["no_spread_bps"] - prev[6], 2) == 0.0
+                )
+                minor_depth_flicker = (
+                    prev is not None
+                    and abs(depth_delta) < max(5.0, 0.02 * min(prev[1], metrics["total_depth_usd"]))
+                )
+                if (
+                    m.data_origin in ("REGULATORY_PUBLIC_DELAYED", "LIVE_VERIFIED", "TESTNET_SANDBOX")
+                    and bbo_unchanged
+                    and spread_delta == 0.0
+                    and minor_depth_flicker
+                    and (now - self._last_snapshot_ts.get(mkt_key, 0.0)) < 600.0
+                ):
+                    continue
+                self._last_book_metrics[mkt_key] = (
+                    metrics["yes_spread_bps"],
+                    metrics["total_depth_usd"],
+                    yb,
+                    ya,
+                    nb,
+                    na,
+                    metrics["no_spread_bps"],
+                )
+                if len(self._last_book_metrics) > 4096:
+                    while len(self._last_book_metrics) > 3072:
+                        self._last_book_metrics.pop(next(iter(self._last_book_metrics)), None)
+                self._last_snapshot_ts[mkt_key] = now
+                self._last_snapshot_hash[mkt_key] = l2_sha1
+                if len(self._last_snapshot_ts) > 4096:
+                    while len(self._last_snapshot_ts) > 3072:
+                        ev_mk = next(iter(self._last_snapshot_ts))
+                        self._last_snapshot_ts.pop(ev_mk, None)
+                        self._last_snapshot_hash.pop(ev_mk, None)
+
                 q_ms = int(m.quote_ts_ms or int(now * 1000))
-                uid_raw = f"{m.venue}:{m.market_id}:{q_ms}:{hashlib.sha1(l2_payload.encode('utf-8')).hexdigest()[:12]}"
+                uid_raw = f"{m.venue}:{m.market_id}:{q_ms}:{l2_sha1}"
                 cur.execute(
                     """
                     INSERT OR IGNORE INTO orderbook_snapshots(
@@ -632,7 +681,7 @@ class ShadowTelemetryStore:
         now_unix: Optional[float] = None,
     ) -> bool:
         now = time.time() if now_unix is None else float(now_unix)
-        bucket_ts = int(now) // 3600 if stage == "MULTI_LEG_PARTITION" else int(now)
+        bucket_ts = int(now) // 3600 if stage == "MULTI_LEG_PARTITION" else int(now) // 300
         ruid = reject_uid or f"rej::{candidate_key}::{stage}::{reason}::{bucket_ts}"
         with self._connect() as conn:
             cur = conn.execute(
@@ -812,6 +861,68 @@ class ShadowTelemetryStore:
                 """
                 UPDATE arbitrage_signals
                 SET contaminated = 1,
+                    contamination_reason = 'PRE_FIX_SUBGAME_DERIVATIVE_OR_UNHYDRATED_SXBET'
+                WHERE ts_unix <= ?
+                  AND data_origin = 'LIVE_VERIFIED'
+                  AND COALESCE(contaminated, 0) = 0
+                  AND (
+                      basket_id LIKE '%-game1%'
+                      OR basket_id LIKE '%-game2%'
+                      OR basket_id LIKE '%-game3%'
+                      OR basket_id LIKE '%-game4%'
+                      OR basket_id LIKE '%-game5%'
+                      OR basket_id LIKE '%-map1%'
+                      OR basket_id LIKE '%-map2%'
+                      OR basket_id LIKE '%-map-1%'
+                      OR basket_id LIKE '%-map-2%'
+                  )
+                """,
+                (cutoff,),
+            )
+            newly_marked += max(0, int(cur.rowcount or 0))
+            sx_rows = cur.execute(
+                """
+                SELECT signal_uid, simulated_json
+                FROM arbitrage_signals
+                WHERE ts_unix <= ?
+                  AND data_origin = 'LIVE_VERIFIED'
+                  AND COALESCE(contaminated, 0) = 0
+                  AND venues_csv LIKE '%sx_bet%'
+                """,
+                (cutoff,),
+            ).fetchall()
+            synth_sx_uids: List[Tuple[str]] = []
+            for r in sx_rows:
+                try:
+                    sim_obj = json.loads(r["simulated_json"] or "{}")
+                except Exception:
+                    continue
+                legs = sim_obj.get("leg_simulations") if isinstance(sim_obj, Mapping) else None
+                if any(
+                    isinstance(lg, Mapping)
+                    and str(lg.get("venue") or "") == "sx_bet"
+                    and (
+                        bool(lg.get("is_synthetic_depth", False))
+                        or abs(float(lg.get("available_book_shares") or 0.0) - 100.0) < 1e-6
+                    )
+                    for lg in (legs or ())
+                ):
+                    synth_sx_uids.append((str(r["signal_uid"]),))
+            if synth_sx_uids:
+                cur.executemany(
+                    """
+                    UPDATE arbitrage_signals
+                    SET contaminated = 1,
+                        contamination_reason = 'PRE_FIX_SUBGAME_DERIVATIVE_OR_UNHYDRATED_SXBET'
+                    WHERE signal_uid = ?
+                    """,
+                    synth_sx_uids,
+                )
+                newly_marked += len(synth_sx_uids)
+            cur.execute(
+                """
+                UPDATE arbitrage_signals
+                SET contaminated = 1,
                     contamination_reason = 'PRE_FIX_CROSS_STRIKE_RULES_HASH_COLLISION'
                 WHERE ts_unix <= ?
                   AND data_origin = 'LIVE_VERIFIED'
@@ -825,11 +936,17 @@ class ShadowTelemetryStore:
                 """
                 UPDATE pairing_candidates
                 SET rule_passed = 0,
-                    rejection_reason = 'QUARANTINED_PRE_FIX_CROSS_STRIKE_RULES_HASH'
+                    rejection_reason = 'QUARANTINED_PRE_FIX_CROSS_STRIKE_OR_HORIZON_MISMATCH'
                 WHERE ts_unix <= ?
                   AND rule_passed = 1
-                  AND (venue_a = 'predict_fun' OR venue_b = 'predict_fun')
-                  AND (oracle_a = '' OR oracle_b = '')
+                  AND (
+                      ((venue_a = 'predict_fun' OR venue_b = 'predict_fun') AND (oracle_a = '' OR oracle_b = ''))
+                      OR (slug_a LIKE '%-5m-%' AND slug_b LIKE '%-15-min-%')
+                      OR (slug_a LIKE '%-15m-%' AND slug_b LIKE '%-5-min-%')
+                      OR (slug_a LIKE '%-above-%' AND slug_b LIKE '%-up-or-down-%')
+                      OR (slug_a LIKE '%-below-%' AND slug_b LIKE '%-up-or-down-%')
+                      OR ((slug_a LIKE '%-game1%' OR slug_a LIKE '%-game2%' OR slug_a LIKE '%-game3%') AND venue_b = 'sx_bet')
+                  )
                 """,
                 (cutoff,),
             )
@@ -1189,7 +1306,7 @@ class ShadowRuntimeWatchdog:
     ) -> None:
         self.store = store
         req_mb = float(memory_budget_mb)
-        if req_mb in (180.0, 320.0, 512.0) and get_process_rss_mb() >= 0.70 * req_mb:
+        if req_mb in (180.0, 320.0) and get_process_rss_mb() >= 0.70 * req_mb:
             req_mb = max(req_mb, round(get_process_rss_mb() + 96.0, 1))
         self.memory_budget_mb = req_mb
         self.stale_threshold_sec = float(stale_threshold_sec)

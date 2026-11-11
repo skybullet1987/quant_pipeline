@@ -248,11 +248,23 @@ class PAAAccountant:
         else:
             cash_diff = raw_cash_diff
         # Ignore transient settlement lag if an active position is in MATCHED_PENDING_SETTLEMENT / AWAITING_REDEMPTION
-        settling_open = any(
-            str(p.get("status") or "").upper() in ("MATCHED_PENDING_SETTLEMENT", "AWAITING_ONCHAIN_SETTLEMENT", "PENDING_CONFIRMATION")
-            for p in (st.get("active_positions") or {}).values()
+        _settling_statuses = ("MATCHED_PENDING_SETTLEMENT", "AWAITING_ONCHAIN_SETTLEMENT", "PENDING_CONFIRMATION")
+        act_pos_map = st.get("active_positions") or {}
+        settling_tids = {
+            str(tid)
+            for tid, p in act_pos_map.items()
+            if isinstance(p, dict) and str(p.get("status") or "").upper() in _settling_statuses
+        }
+        pre_redeemed_tids = {
+            str(tid)
+            for tid, p in act_pos_map.items()
             if isinstance(p, dict)
-        )
+            and (
+                bool(p.get("_pre_redeemed_onchain"))
+                or str(p.get("exit_order_status") or "").upper() == "AWAITING_REDEMPTION"
+            )
+        }
+        settling_open = len(settling_tids) > 0
         if cash_diff > thresh_usd and not settling_open:
             anomalies.append(
                 f"CASH_LEDGER_MISMATCH:onchain=${onchain_cash:.2f}_vs_state=${state_cash:.2f}(diff=${cash_diff:.2f}>${thresh_usd:.2f})"
@@ -263,27 +275,46 @@ class PAAAccountant:
         for idx_op, op in enumerate(ledger.get("open_positions") or []):
             if not isinstance(op, dict):
                 continue
-            tk_key = str(op.get("token_id") or "").strip() or f"__single__:{op.get('trade_id') or idx_op}"
+            tid_op = str(op.get("trade_id") or "")
+            tk_key = str(op.get("token_id") or "").strip() or f"__single__:{tid_op or idx_op}"
+            op_settling = (
+                tid_op in settling_tids
+                or str(op.get("status") or "").upper() in _settling_statuses
+            )
+            op_pre_redeemed = (
+                tid_op in pre_redeemed_tids
+                or bool(op.get("_pre_redeemed_onchain"))
+                or str(op.get("exit_order_status") or "").upper() == "AWAITING_REDEMPTION"
+            )
             grp = tok_groups.setdefault(
                 tk_key,
                 {
                     "trade_ids": [],
                     "shares_ledger": 0.0,
+                    "pre_redeemed_shares": 0.0,
                     "shares_onchain": op.get("shares_onchain"),
                     "best_bid": float(op.get("best_bid") or 0.50),
+                    "settling": False,
                 },
             )
-            grp["trade_ids"].append(str(op.get("trade_id") or ""))
-            grp["shares_ledger"] += float(op.get("shares_ledger") or 0.0)
+            grp["trade_ids"].append(tid_op)
+            sh_op = float(op.get("shares_ledger") or 0.0)
+            grp["shares_ledger"] += sh_op
+            if op_pre_redeemed:
+                grp["pre_redeemed_shares"] += sh_op
+            if op_settling:
+                grp["settling"] = True
             if grp["shares_onchain"] is None and op.get("shares_onchain") is not None:
                 grp["shares_onchain"] = op.get("shares_onchain")
             grp["best_bid"] = max(grp["best_bid"], float(op.get("best_bid") or 0.50))
 
         for grp in tok_groups.values():
             sh_led = float(grp["shares_ledger"] or 0.0)
+            sh_pre_red = float(grp.get("pre_redeemed_shares") or 0.0)
             sh_chain = grp["shares_onchain"]
-            if sh_chain is not None and not settling_open:
-                sh_diff = abs(sh_led - float(sh_chain))
+            if sh_chain is not None and not grp.get("settling", False):
+                eff_expected_sh = max(0.0, sh_led - sh_pre_red) if float(sh_chain) <= sh_tol else sh_led
+                sh_diff = min(abs(sh_led - float(sh_chain)), abs(eff_expected_sh - float(sh_chain)))
                 if sh_diff > sh_tol:
                     est_usd = sh_diff * max(0.50, float(grp["best_bid"] or 0.50))
                     max_share_usd_gap = max(max_share_usd_gap, est_usd)

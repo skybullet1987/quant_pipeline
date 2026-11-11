@@ -137,7 +137,7 @@ _NFL_EM_BAND_RE = re.compile(
 )
 _GENERIC_SPREAD_LINE_RE = re.compile(r"([+-]\d+\.5)\b")
 _SCALAR_MAG_RE = re.compile(
-    r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmb]|thousand|million|billion)?\b",
+    r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*(?<![a-zA-Z0-9_.\-])([0-9][0-9,]*(?:\.[0-9]+)?)(?![0-9,])\s*(?:([kmbt]|thousand|million|billion|trillion)\b)?(?!\.[0-9]|[a-zA-Z0-9_])",
     re.IGNORECASE,
 )
 _COVERED_CRYPTO_PYTH_SLUG_RE = re.compile(
@@ -546,7 +546,7 @@ def detect_lp2_seat_convert_implication_arbs(
             if wn is None:
                 ok_w = False
                 break
-            no_walks.append((q_idx, grp, n_tok, mid_m, wn))
+            no_walks.append((q_idx, grp, n_tok, fr_m, fe_m, mid_m, wn))
         if not ok_w:
             continue
 
@@ -558,9 +558,9 @@ def detect_lp2_seat_convert_implication_arbs(
             bundle_legs = [
                 {
                     "token_id": n_tok, "market_id": mid_m, "side": "NO",
-                    "label": f"NO[{grp}]", "fee_rate": 0.0, "fee_exponent": 1.0,
+                    "label": f"NO[{grp}]", "fee_rate": float(fr_m or 0.0), "fee_exponent": float(fe_m or 1.0),
                 }
-                for _, grp, n_tok, mid_m, _ in no_walks
+                for _, grp, n_tok, fr_m, fe_m, mid_m, _ in no_walks
             ] + [{
                 "token_id": rep_yes_tok, "market_id": str(m_rep.get("id") or ""),
                 "side": "YES", "label": f"YES[{desc_lbl}]",
@@ -1158,7 +1158,7 @@ def _canon_clause_stem(desc: str, group_title: str) -> Tuple[str, str]:
     if gt and len(gt) >= 2:
         s = s.replace(gt, " <RUNG> ")
     s = _MONTH_DATE_STRIP_RE.sub(" <DATE> ", s)
-    s = re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmb]|million|billion)?", " <STRIKE> ", s)
+    s = re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmbt]|thousand|million|billion|trillion)?\b", " <STRIKE> ", s)
     s = re.sub(
         r"\b(greater\s+than|at\s+least|more\s+than|above|over|exceeds?)\s+[0-9][0-9,]*(?:\.[0-9]+)?\s*%?",
         r"\1 <STRIKE>",
@@ -1177,22 +1177,41 @@ _MONTH_MAP_CAL1: Dict[str, int] = {
 
 
 def _parse_group_label_date_ts(lbl: str, ref_end_ts: float) -> Optional[float]:
-    m = re.search(
-        r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(20\d{2}))?\b",
-        str(lbl or ""),
-        re.IGNORECASE,
+    matches = list(
+        re.finditer(
+            r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(20\d{2}))?\b",
+            str(lbl or ""),
+            re.IGNORECASE,
+        )
     )
-    if not m:
+    if not matches:
         return None
+    m = matches[-1]
     mon = _MONTH_MAP_CAL1.get(m.group(1).lower())
     day = int(m.group(2))
     if not mon:
         return None
-    yr = int(m.group(3)) if m.group(3) else datetime.fromtimestamp(max(1.0, ref_end_ts), tz=timezone.utc).year
-    try:
-        return datetime(yr, mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
-    except ValueError:
+    ref_s = max(1.0, float(ref_end_ts))
+    if m.group(3):
+        try:
+            return datetime(int(m.group(3)), mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            return None
+    ref_yr = datetime.fromtimestamp(ref_s, tz=timezone.utc).year
+    causal_cands: List[float] = []
+    all_cands: List[float] = []
+    for cand_yr in (ref_yr - 1, ref_yr, ref_yr + 1):
+        try:
+            cand_ts = datetime(cand_yr, mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+        all_cands.append(cand_ts)
+        if cand_ts <= ref_s + 2.0 * 86400.0:
+            causal_cands.append(cand_ts)
+    pool = causal_cands if causal_cands else all_cands
+    if not pool:
         return None
+    return min(pool, key=lambda ts_c: abs(ts_c - ref_s))
 
 
 def _parse_scalar_strike(lbl: str) -> Optional[float]:
@@ -1204,7 +1223,12 @@ def _parse_scalar_strike(lbl: str) -> Optional[float]:
         return None
     val = float(m.group(1).replace(",", ""))
     unit = (m.group(2) or "").lower()
-    mult = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}.get(unit, 1.0)
+    mult = {
+        "k": 1e3, "thousand": 1e3,
+        "m": 1e6, "million": 1e6,
+        "b": 1e9, "billion": 1e9,
+        "t": 1e12, "trillion": 1e12,
+    }.get(unit, 1.0)
     return val * mult
 
 
@@ -1243,7 +1267,10 @@ def parse_cal1_monotonic_ladder_event(ev: Dict[str, Any], now_ts: Optional[float
             ladder_kind = "DEADLINE_BY"
     elif any(
         k in title_l
-        for k in ("fdv above", "total commitments", "market cap above", "box office", "revenue above", "rotten tomatoes", "tomatometer")
+        for k in (
+            "fdv above", "total commitments", "market cap above", "box office",
+            "revenue above", "rotten tomatoes", "tomatometer", "valuation",
+        )
     ):
         ladder_kind = "SCALAR_ABOVE"
 
@@ -1460,12 +1487,14 @@ def build_lp1_nfl_exact_margin_bundle(ev: Dict[str, Any], now_ts: Optional[float
         "neg_risk": ml_nr, "end_ts": end_ts, "payoff_vec": vb_ml, "strike": 0.0,
     })
 
-    # 2. Exact Margin YES & NO legs (0.5 on State 10 Canceled!)
+    # 2. Exact Margin YES & NO legs (State 10 Canceled: `0.5` on standalone binary, `0.0` on NegRisk `YES` / Tie-Other `NO`!)
     for st_i, (wk, lo, hi, m_em, tk_em, fr_e, fe_e, s_lbl) in enumerate(parsed_em):
-        v_y = [1.0 if s == st_i else 0.0 for s in range(10)] + [0.5]
-        v_n = [1.0 - v_y[s] for s in range(10)] + [0.5]
-        mid_e, cid_e = str(m_em.get("id") or ""), str(m_em.get("conditionId") or "")
         em_nr = bool(m_em.get("negRisk"))
+        cancel_y = 0.0 if em_nr else 0.5
+        cancel_n = (0.0 if wk in ("TIE", "OTHER") else 1.0) if em_nr else 0.5
+        v_y = [1.0 if s == st_i else 0.0 for s in range(10)] + [cancel_y]
+        v_n = [1.0 - v_y[s] for s in range(10)] + [cancel_n]
+        mid_e, cid_e = str(m_em.get("id") or ""), str(m_em.get("conditionId") or "")
         legs.append({
             "market_id": mid_e, "condition_id": cid_e, "token_id": tk_em[0], "opp_token_id": tk_em[1],
             "side": "YES", "label": f"EM_Y[{s_lbl}]", "fee_rate": fr_e, "fee_exponent": fe_e,

@@ -809,10 +809,41 @@ def walk_equal_shares_dominance_box(
         net_paired_sh = float(q_pairs)
         gross_sh_a = cand_gross_a
         gross_sh_b = cand_gross_b
+        actual_gross_spent = sp_ga + sp_gb
     else:
         net_paired_sh = math.floor(float(q_pairs) * (1.0 - h_max_w) * 100.0 + 1e-9) / 100.0
+        if net_paired_sh < 5.0 - 1e-9:
+            return {
+                "filled": False,
+                "reason": "NET_PAIRED_SHARES_BELOW_5SH_MIN",
+                "best_a": round(best_a, 4),
+                "best_b": round(best_b, 4),
+                "net_paired_shares": round(net_paired_sh, 4),
+                "avail_pair_shares": max_avail_pairs,
+            }
         gross_sh_a = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_a_w)) * 100.0 - 1e-9) / 100.0)
         gross_sh_b = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_b_w)) * 100.0 - 1e-9) / 100.0)
+        ok_ea, sp_ea = _fits_at_worst_px(capped_a, gross_sh_a, float(w_a["worst_px"]))
+        ok_eb, sp_eb = _fits_at_worst_px(capped_b, gross_sh_b, float(w_b["worst_px"]))
+        if not (ok_ea and ok_eb):
+            return {
+                "filled": False,
+                "reason": "DEPTH_CAP_GROSS_WALK_FAILED",
+                "best_a": round(best_a, 4),
+                "best_b": round(best_b, 4),
+                "avail_pair_shares": max_avail_pairs,
+            }
+        actual_gross_spent = sp_ea + sp_eb
+    # Exact V2 share-deducted unit cost per 1.0000 net delivered pair
+    actual_net_delivered = min(
+        gross_sh_a * max(1e-6, 1.0 - h_a_w),
+        gross_sh_b * max(1e-6, 1.0 - h_b_w),
+    )
+    exact_unit_cost_net = actual_gross_spent / max(1e-6, actual_net_delivered)
+    box_cost_net = max(box_cost_net, exact_unit_cost_net)
+    spent_total = actual_gross_spent
+    fee_total = max(0.0, actual_gross_spent - (net_paired_sh * (w_a["vwap"] + w_b["vwap"])))
+    all_in_total = actual_gross_spent
     min_leg_px = min(best_a, best_b)
     q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
     if q_pairs < q_floor or (gross_sh_a * best_a) < 1.0 - 1e-6 or (gross_sh_b * best_b) < 1.0 - 1e-6:
@@ -975,10 +1006,64 @@ def walk_equal_shares_multi_leg_box(
         all_in_total = spent_total + fee_total
         bundle_cost_net = all_in_total / float(q_sh)
 
-    # Polymarket $1 min marketable order: every leg must clear $1 at the final Q (else one-legged bundle).
+    # Compute exact per-leg V2 share-haircut gross-up so every leg delivers identical `net_paired_sh`
+    def _fits_multi_at_worst(asks_cap: List[Tuple[float, float]], req_sh: float, lim_px: float) -> Tuple[bool, float]:
+        rem_g = req_sh
+        sp_g = 0.0
+        for px_l, sz_l in asks_cap:
+            if px_l > lim_px + 1e-9:
+                break
+            tk_g = min(rem_g, sz_l)
+            if tk_g > 0.0:
+                sp_g += tk_g * px_l
+                rem_g -= tk_g
+                if rem_g <= 1e-8:
+                    return True, sp_g
+        return False, sp_g
+
+    haircuts = [float(w.get("share_haircut") or 0.0) for w in walks]
+    h_max_m = max(haircuts) if haircuts else 0.0
+    cand_gross_list = [
+        math.ceil((float(q_sh) / max(1e-6, 1.0 - h_i)) * 100.0 - 1e-9) / 100.0
+        for h_i in haircuts
+    ]
+    fits_all = [
+        _fits_multi_at_worst(capped, g_i, float(w_i["worst_px"]))
+        for capped, g_i, w_i in zip(capped_list, cand_gross_list, walks)
+    ]
+    if all(ok_i for ok_i, _ in fits_all) and sum(sp_i for _, sp_i in fits_all) <= float(target_budget_usd) * 1.02 + 1e-6:
+        net_paired_sh = float(q_sh)
+        leg_gross_shares = cand_gross_list
+        actual_bundle_spent = sum(sp_i for _, sp_i in fits_all)
+    else:
+        net_paired_sh = math.floor(float(q_sh) * (1.0 - h_max_m) * 100.0 + 1e-9) / 100.0
+        if net_paired_sh < 5.0 - 1e-9:
+            return {
+                "filled": False,
+                "reason": "NET_BUNDLE_SHARES_BELOW_5SH_MIN",
+                "avail_bundle_shares": max_avail_sh,
+            }
+        leg_gross_shares = [
+            min(float(q_sh), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_i)) * 100.0 - 1e-9) / 100.0)
+            for h_i in haircuts
+        ]
+        fits_cap = [
+            _fits_multi_at_worst(capped, g_i, float(w_i["worst_px"]))
+            for capped, g_i, w_i in zip(capped_list, leg_gross_shares, walks)
+        ]
+        if not all(ok_i for ok_i, _ in fits_cap):
+            return {"filled": False, "reason": "DEPTH_CAP_MULTI_LEG_WALK_FAILED", "avail_bundle_shares": max_avail_sh}
+        actual_bundle_spent = sum(sp_i for _, sp_i in fits_cap)
+
+    exact_bundle_cost_net = actual_bundle_spent / max(1e-6, net_paired_sh)
+    bundle_cost_net = max(bundle_cost_net, exact_bundle_cost_net)
+    spent_total = actual_bundle_spent
+    fee_total = max(0.0, actual_bundle_spent - net_paired_sh * sum(float(w["vwap"]) for w in walks))
+
+    # Polymarket $1 min marketable order: every leg must clear $1 at its gross order size (else one-legged bundle).
     min_leg_px = min(best_asks)
     q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
-    if q_sh < q_floor:
+    if q_sh < q_floor or any((g_i * b_i) < 1.0 - 1e-6 for g_i, b_i in zip(leg_gross_shares, best_asks)):
         return {
             "filled": False,
             "reason": "LEG_BELOW_1USD_MIN",
@@ -1000,13 +1085,15 @@ def walk_equal_shares_multi_leg_box(
     return {
         "filled": True,
         "shares": int(q_sh),
+        "net_paired_shares": round(net_paired_sh, 4),
+        "leg_gross_shares": [round(g_i, 2) for g_i in leg_gross_shares],
         "best_ask": round(sum(best_asks), 4),
-        "vwap": round(spent_total / float(q_sh), 5),
+        "vwap": round(spent_total / max(1e-6, net_paired_sh), 5),
         "eff_px": round(bundle_cost_net, 5),
         "box_cost_net": round(bundle_cost_net, 5),
         "guaranteed_payout_per_bundle": round(guaranteed_payout_per_bundle, 4),
         "riskless_floor_per_pair": round(floor_per_bundle, 5),
-        "guaranteed_min_profit_usd": round(float(q_sh) * floor_per_bundle, 4),
+        "guaranteed_min_profit_usd": round(net_paired_sh * floor_per_bundle, 4),
         "spent_usd": round(spent_total, 4),
         "fee_usd": round(fee_total, 4),
         "l1_usd": l1_bundle_usd,

@@ -456,13 +456,25 @@ def test_live_bottleneck_fixes_and_riskless_paa_box_grouping(tmp_path: Path) -> 
     gun = PreSplitInventoryGun()
     assert gun.min_free_cash_usd == 14.0
 
-    # 3. Capital velocity hurdle exempts COMPLETE_SET / CTF_OVERROUND / MULTI_LEG_BUNDLE
+    # 3. Capital velocity hurdle exempts COMPLETE_SET ONLY when merge_wallet_ok=True (#21.4), and always exempts CTF_OVERROUND
     assert (
         passes_capital_velocity_hurdle(
             box_type="COMPLETE_SET",
             collat_usd=61.01,
             rem_tte_sec=86400.0 * 14,
             box_cost_net=0.992,
+            merge_wallet_ok=False,
+            cfg=DEFAULT_HOLISTIC_CONFIG,
+        )[0]
+        is False
+    )
+    assert (
+        passes_capital_velocity_hurdle(
+            box_type="COMPLETE_SET",
+            collat_usd=61.01,
+            rem_tte_sec=86400.0 * 14,
+            box_cost_net=0.992,
+            merge_wallet_ok=True,
             cfg=DEFAULT_HOLISTIC_CONFIG,
         )[0]
         is True

@@ -334,7 +334,7 @@ class CredentialLifecycleManager:
             pf_testnet = v == "predict_fun" and (env.get("PREDICT_FUN_ENV") or "").strip().lower() == "testnet"
             if mode != "offline":
                 if v == "stx_ontario":
-                    req_cred = True
+                    req_cred = mode == "live_authenticated"
                 elif v == "predict_fun" and not pf_testnet:
                     req_cred = True
                 elif mode == "live_authenticated" and keys:
@@ -1110,20 +1110,27 @@ class VenueCertificationTracker:
                 rem_hours = round(max(0.0, CERTIFICATION_TARGET_HOURS - live_hours), 4)
                 pct_168h = round(min(100.0, (cum_ok / CERTIFICATION_TARGET_SECONDS) * 100.0), 4)
                 duration_done = cum_ok >= CERTIFICATION_TARGET_SECONDS
-                rss_ok = peak_rss <= 512.0
+                rss_ok_512 = peak_rss <= 512.0
 
                 gates = {
                     "duration_168h_complete": duration_done,
                     "uptime_ge_99pct": uptime_pct >= 99.0 if tot_obs > 0 else False,
                     "api_error_rate_le_2pct": err_rate_pct <= 2.0 if tot_cyc > 0 else False,
                     "G2_zero_double_zero_incidents": dz_count == 0,
-                    "rss_within_180mb_cgroup": rss_ok,
-                    "rss_within_320mb_cgroup": rss_ok,
-                    "rss_within_512mb_cgroup": rss_ok,
+                    "rss_within_180mb_cgroup": peak_rss <= 180.0,
+                    "rss_within_320mb_cgroup": peak_rss <= 320.0,
+                    "rss_within_512mb_cgroup": rss_ok_512,
                 }
+                core_gates_passed = (
+                    gates["duration_168h_complete"]
+                    and gates["uptime_ge_99pct"]
+                    and gates["api_error_rate_le_2pct"]
+                    and gates["G2_zero_double_zero_incidents"]
+                    and gates["rss_within_512mb_cgroup"]
+                )
 
                 dec = (auth_decisions or {}).get(v)
-                if duration_done and all(gates.values()):
+                if duration_done and core_gates_passed:
                     verdict = "CERTIFIED_168H"
                     milestone_stage = "STAGE_C_168H_FORMAL_GRADUATION"
                 elif cum_ok >= 48.0 * 3600.0:

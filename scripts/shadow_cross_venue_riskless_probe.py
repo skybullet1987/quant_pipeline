@@ -32,17 +32,20 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from src.polymarket_research.cross_venue_connectors import (
+    EXTENDED_SHADOW_VENUES,
+    evaluate_extended_venues_authorization,
+    hot_reload_extended_venue_collector,
+)
 from src.polymarket_research.cross_venue_riskless_shadow import (
     DEFAULT_RELAY_BRIDGE_DRAG_BPS,
     HonestCrossVenueShadowEngine,
     LiveCrossVenueShadowCollector,
 )
 from src.polymarket_research.cross_venue_shadow_deployment_gates import (
-    ALL_SHADOW_VENUES,
     ALLOWED_SHADOW_ENV_KEYS,
     EX_CONFIG,
     ShadowEnvValidationReport,
-    evaluate_all_venues_authorization,
     run_offline_shadow_cycle,
     validate_python_runtime_dependencies,
     validate_shadow_env_dict,
@@ -188,6 +191,10 @@ def _print_cycle_summary(summary: Dict[str, Any], as_json: bool) -> None:
         f"({vh.get('sx_bet', {}).get('status', 'NA')}) | "
         f"PredictFun={vh.get('predict_fun', {}).get('status', 'NA')} "
         f"({vh.get('predict_fun', {}).get('markets_parsed', 0)}) | "
+        f"Derive={vh.get('derive_xyz', {}).get('markets_parsed', 0)} "
+        f"({vh.get('derive_xyz', {}).get('status', 'NA')}) | "
+        f"Probable={vh.get('probable_markets', {}).get('markets_parsed', 0)} "
+        f"({vh.get('probable_markets', {}).get('status', 'NA')}) | "
         f"ForecastEx={vh.get('forecastex', {}).get('markets_parsed', 0)} "
         f"({vh.get('forecastex', {}).get('status', 'NA')}) | "
         f"STX={vh.get('stx_ontario', {}).get('markets_parsed', 0)} "
@@ -229,7 +236,7 @@ async def main_async(args: argparse.Namespace) -> int:
         if (args.network_disabled or env_map.get("DOMINUS_NETWORK_MODE", "").strip().lower() == "offline")
         else (env_map.get("DOMINUS_NETWORK_MODE", "live_public").strip().lower() or "live_public")
     )
-    auth_decisions = evaluate_all_venues_authorization(env_map, network_mode_override=effective_mode)
+    auth_decisions = evaluate_extended_venues_authorization(env_map, network_mode_override=effective_mode)
 
     if args.validate_config_only:
         all_ok = bool(env_report.valid and dep_report["stdlib_ready"] and (unit_report is None or unit_report.valid))
@@ -371,11 +378,11 @@ async def main_async(args: argparse.Namespace) -> int:
         blocked_reasons: Dict[str, str] = {}
         if effective_mode != "offline" and args.enforce_venue_auth:
             authorized_live_venues = {
-                v for v in ALL_SHADOW_VENUES if auth_decisions[v].effective_authorized
+                v for v in EXTENDED_SHADOW_VENUES if auth_decisions[v].effective_authorized
             }
             blocked_reasons = {
                 v: auth_decisions[v].status_code
-                for v in ALL_SHADOW_VENUES
+                for v in EXTENDED_SHADOW_VENUES
                 if not auth_decisions[v].effective_authorized
             }
             if not authorized_live_venues:
@@ -415,6 +422,15 @@ async def main_async(args: argparse.Namespace) -> int:
             else None
         )
 
+        if effective_mode != "offline":
+            write_shadow_health_snapshot(
+                engine.data_dir,
+                network_mode=effective_mode,
+                report=engine.build_graduation_report(),
+                auth_decisions=auth_decisions,
+                env_report=env_report,
+            )
+
         while not stop_event.is_set():
             cycle_idx += 1
             try:
@@ -425,10 +441,10 @@ async def main_async(args: argparse.Namespace) -> int:
                         new_map, new_rep = _load_and_validate_env(args)
                         if new_rep.valid:
                             last_env_mtime = cur_mtime
-                            new_auth = evaluate_all_venues_authorization(new_map, network_mode_override=effective_mode)
-                            for v_chk in ALL_SHADOW_VENUES:
+                            new_auth = evaluate_extended_venues_authorization(new_map, network_mode_override=effective_mode)
+                            for v_chk in EXTENDED_SHADOW_VENUES:
                                 if new_auth[v_chk] != auth_decisions.get(v_chk):
-                                    collector.credential_manager.hot_reload_single_venue_collector(collector, v_chk, new_map)
+                                    hot_reload_extended_venue_collector(collector, v_chk, new_map)
                             env_map = new_map
                             env_report = new_rep
                             auth_decisions = new_auth
@@ -438,6 +454,14 @@ async def main_async(args: argparse.Namespace) -> int:
                         auth_decisions=auth_decisions,
                         env_report=env_report,
                     )
+                    try:
+                        from src.polymarket_research.riskless_expansion_v6_engines import write_v6_offline_telemetry_snapshot
+
+                        summary["v6_expansion"] = write_v6_offline_telemetry_snapshot(
+                            engine.data_dir, cycles_completed=engine.cycles_completed
+                        )
+                    except Exception:
+                        pass
                     collector.certification_tracker.record_cycle_observation(
                         connector_snapshots=engine.venue_health,
                         network_mode="offline",
@@ -451,11 +475,32 @@ async def main_async(args: argparse.Namespace) -> int:
                         auth_decisions=auth_decisions,
                     )
                 else:
-                    cycle_task = asyncio.create_task(collector.run_single_cycle(), name=f"shadow-cycle-{cycle_idx}")
+                    async def _mid_cycle_heartbeat() -> None:
+                        # Refresh `shadow_service_health.json` every 30s during long multi-venue HTTP/SQLite cycles
+                        # (capped at 10 heartbeats = 300s so genuinely hung event-loop/IO tasks still trigger watchdog!)
+                        for _ in range(10):
+                            await asyncio.sleep(30.0)
+                            op_snaps = {v: collector.connectors[v].snapshot for v in collector.ALL_VENUES}
+                            write_shadow_health_snapshot(
+                                engine.data_dir,
+                                network_mode=effective_mode,
+                                report=engine.build_graduation_report(),
+                                auth_decisions=auth_decisions,
+                                env_report=env_report,
+                                connector_snapshots=op_snaps,
+                            )
+
+                    cycle_task = asyncio.create_task(
+                        asyncio.wait_for(collector.run_single_cycle(), timeout=600.0),
+                        name=f"shadow-cycle-{cycle_idx}",
+                    )
+                    hb_task = asyncio.create_task(_mid_cycle_heartbeat(), name=f"shadow-hb-{cycle_idx}")
                     stop_task = asyncio.create_task(stop_event.wait(), name="shadow-stop-wait")
                     done, pending = await asyncio.wait({cycle_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+                    hb_task.cancel()
                     for p_t in pending:
                         p_t.cancel()
+                    await asyncio.gather(hb_task, return_exceptions=True)
                     if stop_task in done and cycle_task not in done:
                         try:
                             await asyncio.wait_for(cycle_task, timeout=2.0)

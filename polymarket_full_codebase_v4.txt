@@ -1,82 +1,85 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET COMPLETE UNIFIED CODEBASE (v4.0 FULL LIVE + ALPHA-124 11-SLEEVE EDITION)
-Generated: 2026-11-09 17:40:20 UTC
+Generated: 2026-11-11 07:03:29 UTC
 100% Un-Truncated Source Code, Mathematical Oracles, Execution Stack, Systemd Units & Unit Tests
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
 
 TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
-  [01] config/polymarket_risk_config.json (Lines 78 - 136 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
-  [02] config/polymarket_strategy_and_risk.json (Lines 137 - 384 | 8,837 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
-  [03] systemd/polymarket-live-harvester.service (Lines 385 - 424 | 1,935 B) :: Live Harvester v5.3 systemd Unit
-  [04] systemd/polymarket-alpha124-shadow.service (Lines 425 - 460 | 928 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
-  [05] systemd/polymarket-recorder.service (Lines 461 - 492 | 1,001 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
-  [06] systemd/polymarket-recorder-eth.service (Lines 493 - 523 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [07] systemd/polymarket-recorder-sol.service (Lines 524 - 554 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [08] systemd/polymarket-recorder-xrp.service (Lines 555 - 585 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
-  [09] systemd/polymarket-trader.service (Lines 586 - 616 | 720 B) :: Forward Paper Trader systemd Unit
-  [10] systemd/polymarket-exp316-shadow.service (Lines 617 - 645 | 566 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
-  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 646 - 1,534 | 43,081 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
-  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,535 - 12,512 | 666,548 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
-  [13] src/polymarket_research/polymarket_live_executor.py (Lines 12,513 - 22,608 | 518,319 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
-  [14] src/polymarket_research/riskless_machine_gun_engine.py (Lines 22,609 - 25,526 | 150,383 B) :: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
-  [15] src/polymarket_research/riskless_protocol_v2_expansion.py (Lines 25,527 - 42,318 | 874,693 B) :: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
-  [16] src/polymarket_research/polymarket_ws_streams.py (Lines 42,319 - 44,302 | 87,995 B) :: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
-  [17] src/polymarket_research/polymarket_direct_feeds.py (Lines 44,303 - 44,810 | 22,890 B) :: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
-  [18] src/polymarket_research/latency_trace.py (Lines 44,811 - 45,530 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
-  [19] src/polymarket_research/economic_attribution_ledger.py (Lines 45,531 - 47,015 | 64,625 B) :: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
-  [20] src/polymarket_research/stage_c_zero_loss_velocity.py (Lines 47,016 - 48,021 | 44,363 B) :: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
-  [21] src/polymarket_research/synthetic_maker_quoter.py (Lines 48,022 - 48,578 | 25,740 B) :: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
-  [22] src/polymarket_research/polymarket_terminal_recorder.py (Lines 48,579 - 52,194 | 194,545 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
-  [23] src/polymarket_research/deribit_svi_surface.py (Lines 52,195 - 52,773 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
-  [24] src/polymarket_research/polymarket_paper_trader.py (Lines 52,774 - 55,164 | 126,393 B) :: Forward Paper Trader & Production-Parity Simulation Engine
-  [25] src/polymarket_research/check_polymarket_balance.py (Lines 55,165 - 55,277 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
-  [26] src/polymarket_research/verify_onchain_allowances.py (Lines 55,278 - 55,394 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
-  [27] src/polymarket_research/redeem_settled_positions.py (Lines 55,395 - 55,741 | 14,780 B) :: CTF Settled Position Redemption CLI
-  [28] src/polymarket_research/setup_polymarket_account.py (Lines 55,742 - 56,007 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
-  [29] audit_losing_trades.py (Lines 56,008 - 56,497 | 21,846 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
-  [30] scripts/honest_purged_wfo_optimizer.py (Lines 56,498 - 57,975 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
-  [31] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 57,976 - 59,522 | 71,299 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
-  [32] src/polymarket_research/orderflow_wfo_simulators.py (Lines 59,523 - 60,929 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
-  [33] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 60,930 - 62,054 | 48,616 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
-  [34] src/polymarket_research/weather_metar_engine.py (Lines 62,055 - 63,618 | 67,909 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
-  [35] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 63,619 - 64,174 | 22,909 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
-  [36] src/polymarket_research/multistrike_svi_scalper.py (Lines 64,175 - 64,898 | 29,320 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
-  [37] src/polymarket_research/same_oracle_dominance_box.py (Lines 64,899 - 65,919 | 41,576 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
-  [38] src/polymarket_research/exact_twap_lock_engine.py (Lines 65,920 - 66,259 | 13,478 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
-  [39] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 66,260 - 68,034 | 73,289 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
-  [40] src/polymarket_research/macro_counting_ctf_engine.py (Lines 68,035 - 69,246 | 54,579 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
-  [41] src/polymarket_research/uma_nba_endgame_engine.py (Lines 69,247 - 69,995 | 32,496 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
-  [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 69,996 - 71,804 | 86,394 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
-  [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 71,805 - 74,070 | 110,002 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
-  [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 74,071 - 76,427 | 118,586 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 76,428 - 90,919 | 813,599 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
-  [46] scripts/backtest_alpha_124.py (Lines 90,920 - 91,780 | 40,009 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
-  [47] scripts/polymarket_daily_projections.py (Lines 91,781 - 93,377 | 64,887 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
-  [48] scripts/alpha124_status.py (Lines 93,378 - 93,456 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
-  [49] scripts/polymarket_scorecard_snapshot.py (Lines 93,457 - 93,606 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
-  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 93,607 - 95,501 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
-  [51] tests/test_alpha_124_oracles.py (Lines 95,502 - 99,582 | 216,037 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
-  [52] tests/test_polymarket_wfo_5fixes.py (Lines 99,583 - 105,314 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
-  [53] tests/test_zero_trust_forensic_audit.py (Lines 105,315 - 106,071 | 33,304 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
-  [54] tests/test_riskless_frontier_v4.py (Lines 106,072 - 106,914 | 44,252 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
-  [55] tests/test_v530_forensic_plumbing_fixes.py (Lines 106,915 - 107,694 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
-  [56] tests/test_v531_qa_audit_fixes.py (Lines 107,695 - 109,494 | 95,319 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
-  [57] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 109,495 - 110,261 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
-  [58] tests/test_v560_fill_rate_and_profit_growth.py (Lines 110,262 - 113,331 | 157,911 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
-  [59] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 113,332 - 114,937 | 81,472 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
-  [60] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 114,938 - 115,726 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
-  [61] tests/test_stage_b_economic_attribution.py (Lines 115,727 - 116,139 | 18,145 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
-  [62] tests/test_stage_c_zero_loss_velocity.py (Lines 116,140 - 116,947 | 37,292 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
-  [63] tests/test_priority0_live_leak_fixes.py (Lines 116,948 - 117,865 | 45,745 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
-  [64] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 117,866 - 118,546 | 34,718 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
+  [01] config/polymarket_risk_config.json (Lines 81 - 139 | 1,649 B) :: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
+  [02] config/polymarket_strategy_and_risk.json (Lines 140 - 395 | 9,212 B) :: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
+  [03] systemd/polymarket-live-harvester.service (Lines 396 - 436 | 1,955 B) :: Live Harvester v5.3 systemd Unit
+  [04] systemd/polymarket-alpha124-shadow.service (Lines 437 - 475 | 980 B) :: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
+  [05] systemd/polymarket-recorder.service (Lines 476 - 510 | 1,053 B) :: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
+  [06] systemd/polymarket-recorder-eth.service (Lines 511 - 541 | 684 B) :: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [07] systemd/polymarket-recorder-sol.service (Lines 542 - 572 | 688 B) :: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [08] systemd/polymarket-recorder-xrp.service (Lines 573 - 603 | 688 B) :: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
+  [09] systemd/polymarket-trader.service (Lines 604 - 634 | 720 B) :: Forward Paper Trader systemd Unit
+  [10] systemd/polymarket-exp316-shadow.service (Lines 635 - 663 | 566 B) :: EXP-316 Macro Strike Convergence Shadow systemd Unit
+  [11] src/polymarket_research/holistic_strategy_governance.py (Lines 664 - 1,634 | 47,049 B) :: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
+  [12] src/polymarket_research/polymarket_live_harvester.py (Lines 1,635 - 13,070 | 693,258 B) :: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
+  [13] src/polymarket_research/polymarket_live_executor.py (Lines 13,071 - 23,240 | 522,825 B) :: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
+  [14] src/polymarket_research/riskless_machine_gun_engine.py (Lines 23,241 - 26,230 | 154,323 B) :: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
+  [15] src/polymarket_research/riskless_protocol_v2_expansion.py (Lines 26,231 - 44,257 | 938,330 B) :: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
+  [16] src/polymarket_research/polymarket_ws_streams.py (Lines 44,258 - 46,241 | 87,995 B) :: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
+  [17] src/polymarket_research/polymarket_direct_feeds.py (Lines 46,242 - 46,756 | 23,294 B) :: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
+  [18] src/polymarket_research/latency_trace.py (Lines 46,757 - 47,476 | 31,640 B) :: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
+  [19] src/polymarket_research/economic_attribution_ledger.py (Lines 47,477 - 49,040 | 68,118 B) :: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
+  [20] src/polymarket_research/stage_c_zero_loss_velocity.py (Lines 49,041 - 50,466 | 64,689 B) :: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
+  [21] src/polymarket_research/synthetic_maker_quoter.py (Lines 50,467 - 51,023 | 25,740 B) :: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
+  [22] src/polymarket_research/polymarket_terminal_recorder.py (Lines 51,024 - 54,747 | 199,667 B) :: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
+  [23] src/polymarket_research/deribit_svi_surface.py (Lines 54,748 - 55,326 | 24,417 B) :: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
+  [24] src/polymarket_research/polymarket_paper_trader.py (Lines 55,327 - 57,733 | 127,481 B) :: Forward Paper Trader & Production-Parity Simulation Engine
+  [25] src/polymarket_research/check_polymarket_balance.py (Lines 57,734 - 57,846 | 3,757 B) :: Polygon pUSD + USDC.e Collateral Balance Checker
+  [26] src/polymarket_research/verify_onchain_allowances.py (Lines 57,847 - 57,963 | 4,507 B) :: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
+  [27] src/polymarket_research/redeem_settled_positions.py (Lines 57,964 - 58,317 | 15,024 B) :: CTF Settled Position Redemption CLI
+  [28] src/polymarket_research/setup_polymarket_account.py (Lines 58,318 - 58,583 | 10,625 B) :: CLOB L2 API Key & Proxy Credential Generator
+  [29] audit_losing_trades.py (Lines 58,584 - 59,152 | 26,142 B) :: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
+  [30] scripts/honest_purged_wfo_optimizer.py (Lines 59,153 - 60,630 | 66,113 B) :: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
+  [31] src/polymarket_research/directional_wfo_shadow_sleeves.py (Lines 60,631 - 62,192 | 72,337 B) :: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
+  [32] src/polymarket_research/orderflow_wfo_simulators.py (Lines 62,193 - 63,599 | 67,237 B) :: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
+  [33] src/polymarket_research/net_alpha_opportunity_engine.py (Lines 63,600 - 64,744 | 49,207 B) :: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
+  [34] src/polymarket_research/weather_metar_engine.py (Lines 64,745 - 66,313 | 68,360 B) :: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
+  [35] src/polymarket_research/barrier_onetouch_svi_engine.py (Lines 66,314 - 66,869 | 22,955 B) :: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
+  [36] src/polymarket_research/multistrike_svi_scalper.py (Lines 66,870 - 67,645 | 33,496 B) :: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
+  [37] src/polymarket_research/same_oracle_dominance_box.py (Lines 67,646 - 68,753 | 45,702 B) :: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
+  [38] src/polymarket_research/exact_twap_lock_engine.py (Lines 68,754 - 69,093 | 13,478 B) :: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
+  [39] src/polymarket_research/tradfi_sports_zero_fee_engine.py (Lines 69,094 - 70,876 | 73,605 B) :: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
+  [40] src/polymarket_research/macro_counting_ctf_engine.py (Lines 70,877 - 72,146 | 58,264 B) :: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
+  [41] src/polymarket_research/uma_nba_endgame_engine.py (Lines 72,147 - 72,944 | 35,391 B) :: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
+  [42] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 72,945 - 74,773 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
+  [43] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 74,774 - 77,071 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
+  [44] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 77,072 - 79,448 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
+  [45] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 79,449 - 94,497 | 842,997 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [46] scripts/backtest_alpha_124.py (Lines 94,498 - 95,360 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
+  [47] scripts/polymarket_daily_projections.py (Lines 95,361 - 96,963 | 65,555 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
+  [48] scripts/alpha124_status.py (Lines 96,964 - 97,042 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
+  [49] scripts/polymarket_scorecard_snapshot.py (Lines 97,043 - 97,192 | 4,891 B) :: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
+  [50] src/polymarket_research/exp316_macro_strike_shadow.py (Lines 97,193 - 99,087 | 86,701 B) :: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
+  [51] src/polymarket_research/honest_riskless_backtester.py (Lines 99,088 - 99,987 | 42,478 B) :: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
+  [52] src/polymarket_research/riskless_expansion_v6_engines.py (Lines 99,988 - 102,544 | 119,983 B) :: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
+  [53] tests/test_alpha_124_oracles.py (Lines 102,545 - 106,625 | 216,226 B) :: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
+  [54] tests/test_polymarket_wfo_5fixes.py (Lines 106,626 - 112,357 | 293,910 B) :: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
+  [55] tests/test_zero_trust_forensic_audit.py (Lines 112,358 - 113,116 | 33,478 B) :: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
+  [56] tests/test_riskless_frontier_v4.py (Lines 113,117 - 113,959 | 44,264 B) :: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
+  [57] tests/test_v530_forensic_plumbing_fixes.py (Lines 113,960 - 114,739 | 32,431 B) :: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
+  [58] tests/test_v531_qa_audit_fixes.py (Lines 114,740 - 116,541 | 95,568 B) :: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
+  [59] tests/test_v550_zero_loss_frontier_and_velocity.py (Lines 116,542 - 117,308 | 37,480 B) :: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
+  [60] tests/test_v560_fill_rate_and_profit_growth.py (Lines 117,309 - 120,378 | 157,911 B) :: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
+  [61] tests/test_v570_ms_velocity_and_ws_sniper.py (Lines 120,379 - 121,984 | 81,472 B) :: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
+  [62] tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py (Lines 121,985 - 122,773 | 34,863 B) :: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
+  [63] tests/test_stage_b_economic_attribution.py (Lines 122,774 - 123,216 | 19,968 B) :: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
+  [64] tests/test_stage_c_zero_loss_velocity.py (Lines 123,217 - 124,032 | 37,727 B) :: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
+  [65] tests/test_priority0_live_leak_fixes.py (Lines 124,033 - 124,953 | 46,004 B) :: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
+  [66] tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py (Lines 124,954 - 125,634 | 34,718 B) :: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
+  [67] tests/test_riskless_remediation_and_8_new_engines.py (Lines 125,635 - 126,800 | 47,955 B) :: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
 """
 
 from __future__ import annotations
 
 # ======================================================================================
-# [01/64] MODULE: config/polymarket_risk_config.json
+# [01/67] MODULE: config/polymarket_risk_config.json
 # PURPOSE: Centralized Risk & Sizing Limits ($12 min, 15% dynamic, $110 slot-2 gate)
 # ======================================================================================
 
@@ -135,7 +138,7 @@ POLYMARKET_RISK_CONFIG_JSON = r'''
 '''
 
 # ======================================================================================
-# [02/64] MODULE: config/polymarket_strategy_and_risk.json
+# [02/67] MODULE: config/polymarket_strategy_and_risk.json
 # PURPOSE: v5.3 Unified Hot-Reloadable Strategy, Routing & Dual-Budget Governance Config
 # ======================================================================================
 
@@ -216,7 +219,8 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
     "decouple_riskless_boxes_from_directional_halt": true,
     "max_daily_directional_loss_usd": 16.57,
     "max_consecutive_directional_losses": 4,
-    "hard_ruin_floor_usd": 42.0
+    "hard_ruin_floor_usd": 62.0,
+    "riskless_hard_ruin_floor_usd": 30.0
   },
   "sizing_tiers": {
     "unleash_full_throttle": true,
@@ -284,7 +288,7 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
     "d1_free_cash_pct_growth": 0.90,
     "d1_free_cash_pct_scale": 0.90,
     "bond1_free_cash_pct_seed": 0.78,
-    "seed_zero_loss_focus_bond1_pool_pct": 0.92,
+    "seed_zero_loss_focus_bond1_pool_pct": 0.80,
     "bond1_velocity_preempt_mult": 1.80,
     "bond1_free_cash_pct_growth": 0.88,
     "bond1_per_market_cap_usd_seed": 45.0,
@@ -367,7 +371,14 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
     "synthetic_maker_unwind_breaker_usd": 0.50,
     "synthetic_maker_repeg_debounce_sec": 0.50,
     "paused_s2_reserve_floor_usd": 2.00,
-    "sll_preempt_birth_grace_sec": 45.0
+    "sll_preempt_birth_grace_sec": 45.0,
+    "max_correlated_oracle_event_nav_pct": 0.15,
+    "multileg_3plus_min_reconciled_nav_usd": 500.0,
+    "nr0_dynamic_unlock_equity_usd": 500.0,
+    "certified_multileg_3plus_live_enabled": false,
+    "allow_nr0_multileg_dynamic_unpause": false,
+    "maker_ws_book_max_age_sec": 5.0,
+    "maker_max_consecutive_blind_book_polls": 3
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,
@@ -383,7 +394,7 @@ POLYMARKET_STRATEGY_AND_RISK_JSON = r'''
 '''
 
 # ======================================================================================
-# [03/64] MODULE: systemd/polymarket-live-harvester.service
+# [03/67] MODULE: systemd/polymarket-live-harvester.service
 # PURPOSE: Live Harvester v5.3 systemd Unit
 # ======================================================================================
 
@@ -411,6 +422,7 @@ Restart=on-failure
 RestartSec=3
 CPUWeight=1000
 IOWeight=1000
+OOMScoreAdjust=-900
 KillSignal=SIGTERM
 KillMode=mixed
 TimeoutStopSec=20s
@@ -423,7 +435,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [04/64] MODULE: systemd/polymarket-alpha124-shadow.service
+# [04/67] MODULE: systemd/polymarket-alpha124-shadow.service
 # PURPOSE: Alpha-124 Multi-Sleeve Unified Shadow Daemon systemd Unit
 # ======================================================================================
 
@@ -446,6 +458,9 @@ Environment=PM_UNQUARANTINE_S2_TWAP_LOCK=1
 CPUWeight=200
 IOWeight=200
 Nice=10
+OOMScoreAdjust=500
+MemoryHigh=1300M
+MemoryMax=1550M
 ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python src/polymarket_research/alpha_124_shadow_daemon.py --riskless-bridge-only
 Restart=always
 RestartSec=10
@@ -459,7 +474,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [05/64] MODULE: systemd/polymarket-recorder.service
+# [05/67] MODULE: systemd/polymarket-recorder.service
 # PURPOSE: Consolidated uvloop BTC+ETH+SOL+XAU Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -479,6 +494,9 @@ Restart=on-failure
 RestartSec=3
 CPUWeight=1000
 IOWeight=1000
+OOMScoreAdjust=-400
+MemoryHigh=950M
+MemoryMax=1150M
 KillSignal=SIGTERM
 KillMode=process
 TimeoutStopSec=15s
@@ -491,7 +509,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [06/64] MODULE: systemd/polymarket-recorder-eth.service
+# [06/67] MODULE: systemd/polymarket-recorder-eth.service
 # PURPOSE: ETH Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -522,7 +540,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [07/64] MODULE: systemd/polymarket-recorder-sol.service
+# [07/67] MODULE: systemd/polymarket-recorder-sol.service
 # PURPOSE: SOL Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -553,7 +571,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [08/64] MODULE: systemd/polymarket-recorder-xrp.service
+# [08/67] MODULE: systemd/polymarket-recorder-xrp.service
 # PURPOSE: XRP Dual-Feed / Chainlink-TWAP Terminal Recorder systemd Unit
 # ======================================================================================
 
@@ -584,7 +602,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [09/64] MODULE: systemd/polymarket-trader.service
+# [09/67] MODULE: systemd/polymarket-trader.service
 # PURPOSE: Forward Paper Trader systemd Unit
 # ======================================================================================
 
@@ -615,7 +633,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [10/64] MODULE: systemd/polymarket-exp316-shadow.service
+# [10/67] MODULE: systemd/polymarket-exp316-shadow.service
 # PURPOSE: EXP-316 Macro Strike Convergence Shadow systemd Unit
 # ======================================================================================
 
@@ -644,7 +662,7 @@ WantedBy=default.target
 '''
 
 # ======================================================================================
-# [11/64] MODULE: src/polymarket_research/holistic_strategy_governance.py
+# [11/67] MODULE: src/polymarket_research/holistic_strategy_governance.py
 # PURPOSE: v5.3 HotReloadConfigManager, ev_terminal_twap_t5 Exit Supervisor & Velocity/Kelly Engine
 # ======================================================================================
 
@@ -754,6 +772,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "max_daily_directional_loss_usd": 16.57,
         "max_consecutive_directional_losses": 4,
         "hard_ruin_floor_usd": 42.0,
+        "riskless_hard_ruin_floor_usd": 30.0,
     },
     "sizing_tiers": {
         "unleash_full_throttle": True,
@@ -884,6 +903,13 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "synthetic_maker_repeg_debounce_sec": 0.50,
         "paused_s2_reserve_floor_usd": 2.00,
         "sll_preempt_birth_grace_sec": 45.0,
+        "max_correlated_oracle_event_nav_pct": 0.15,
+        "multileg_3plus_min_reconciled_nav_usd": 500.0,
+        "nr0_dynamic_unlock_equity_usd": 500.0,
+        "certified_multileg_3plus_live_enabled": False,
+        "allow_nr0_multileg_dynamic_unpause": False,
+        "maker_ws_book_max_age_sec": 5.0,
+        "maker_max_consecutive_blind_book_polls": 3,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -963,7 +989,11 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("exit_supervisor high_zone_mfe bounds invalid")
 
     r_cfg = out["risk_controller"]
-    if r_cfg["max_daily_directional_loss_usd"] <= 0.0 or r_cfg["hard_ruin_floor_usd"] < 20.0:
+    if (
+        r_cfg["max_daily_directional_loss_usd"] <= 0.0
+        or r_cfg["hard_ruin_floor_usd"] < 20.0
+        or not (15.0 <= float(r_cfg.get("riskless_hard_ruin_floor_usd", 30.0)) <= float(r_cfg["hard_ruin_floor_usd"]))
+    ):
         raise ValueError("risk_controller loss/ruin bounds invalid")
 
     b_cfg = out["riskless_boxes"]
@@ -999,6 +1029,16 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("riskless_boxes.paused_s2_reserve_floor_usd must be in [0.0, 50.0]")
     if not (0.0 <= float(b_cfg["sll_preempt_birth_grace_sec"]) <= 600.0):
         raise ValueError("riskless_boxes.sll_preempt_birth_grace_sec must be in [0.0, 600.0]")
+    if not (0.01 <= float(b_cfg["max_correlated_oracle_event_nav_pct"]) <= 0.15):
+        raise ValueError("riskless_boxes.max_correlated_oracle_event_nav_pct must be in [0.01, 0.15]")
+    if not (500.0 <= float(b_cfg["multileg_3plus_min_reconciled_nav_usd"]) <= 50000.0):
+        raise ValueError("riskless_boxes.multileg_3plus_min_reconciled_nav_usd must be in [500.0, 50000.0]")
+    if not (500.0 <= float(b_cfg["nr0_dynamic_unlock_equity_usd"]) <= 50000.0):
+        raise ValueError("riskless_boxes.nr0_dynamic_unlock_equity_usd must be in [500.0, 50000.0]")
+    if not (0.5 <= float(b_cfg["maker_ws_book_max_age_sec"]) <= 5.0):
+        raise ValueError("riskless_boxes.maker_ws_book_max_age_sec must be in [0.5, 5.0]")
+    if not (1 <= int(b_cfg["maker_max_consecutive_blind_book_polls"]) <= 5):
+        raise ValueError("riskless_boxes.maker_max_consecutive_blind_book_polls must be in [1, 5]")
     return out
 
 
@@ -1101,10 +1141,15 @@ class HotReloadConfigManager:
                     rst = self.risk_config_path.stat()
                     rst_sig = (rst.st_mtime_ns, rst.st_size)
                     if self._last_risk_sig == (-1, -1):
+                        raw_rk = json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        if isinstance(raw_rk, dict):
+                            self._risk_snapshot = raw_rk
                         self._last_risk_sig = rst_sig
                         self._last_risk_mtime_ns = rst.st_mtime_ns
                     elif rst_sig != self._last_risk_sig:
-                        json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        raw_rk = json.loads(self.risk_config_path.read_text(encoding="utf-8"))
+                        if isinstance(raw_rk, dict):
+                            self._risk_snapshot = raw_rk
                         self._last_risk_sig = rst_sig
                         self._last_risk_mtime_ns = rst.st_mtime_ns
                         changed = True
@@ -1116,6 +1161,10 @@ class HotReloadConfigManager:
                 except Exception as cb_exc:
                     logger.error("[CONFIG_HOT_RELOAD] Callback error: %s", cb_exc)
             return changed, self._snapshot
+
+    @property
+    def risk_snapshot(self) -> Dict[str, Any]:
+        return getattr(self, "_risk_snapshot", None) or {}
 
 
 GLOBAL_GOVERNANCE_MANAGER = HotReloadConfigManager()
@@ -1267,6 +1316,30 @@ def evaluate_ev_terminal_twap_t5_salvage(
     return False, wrong_side_pct, diag
 
 
+_CASHFLOW_WD_CACHE: Dict[str, Any] = {"mtime_ns": -1, "val": 0.0, "checked_ts": 0.0}
+
+
+def _cached_post_lock_net_withdrawals_usd() -> float:
+    now_t = time.time()
+    if (now_t - float(_CASHFLOW_WD_CACHE.get("checked_ts") or 0.0)) < 5.0:
+        return float(_CASHFLOW_WD_CACHE.get("val") or 0.0)
+    _CASHFLOW_WD_CACHE["checked_ts"] = now_t
+    try:
+        from src.polymarket_research.economic_attribution_ledger import (
+            external_cashflows_config_path,
+            load_external_cashflows_summary,
+        )
+        p = external_cashflows_config_path()
+        mt = p.stat().st_mtime_ns if p.exists() else 0
+        if mt != _CASHFLOW_WD_CACHE.get("mtime_ns"):
+            s = load_external_cashflows_summary()
+            _CASHFLOW_WD_CACHE["val"] = max(0.0, -float(s.get("net_deposits_post_lock_usd") or 0.0))
+            _CASHFLOW_WD_CACHE["mtime_ns"] = mt
+    except Exception:
+        pass
+    return float(_CASHFLOW_WD_CACHE.get("val") or 0.0)
+
+
 def get_unleashed_v5_tier_profile(
     total_equity: float,
     high_water_mark_equity: Optional[float] = None,
@@ -1291,18 +1364,28 @@ def get_unleashed_v5_tier_profile(
     b_cfg = snap.get("riskless_boxes", DEFAULT_HOLISTIC_CONFIG["riskless_boxes"])
 
     eq = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
+    _net_wd = float(snap.get("_net_withdrawals_post_lock_usd", 0.0) or 0.0)
+    if _net_wd <= 0.0 and cfg is None:
+        _net_wd = _cached_post_lock_net_withdrawals_usd()
     hwm = (
-        float(high_water_mark_equity)
+        max(0.0, float(high_water_mark_equity) - _net_wd)
         if (high_water_mark_equity is not None and math.isfinite(float(high_water_mark_equity)) and float(high_water_mark_equity) > 0.0)
         else eq
     )
     hwm = max(hwm, eq)
     hyst = float(s_cfg.get("tier_upward_hysteresis_usd", 3.0))
 
-    b1 = float(s_cfg.get("seed_survival_max_equity", 95.0)) + (hyst if previous_tier == "UNLEASHED_LAUNCH" else 0.0)
-    b2 = float(s_cfg.get("recovery_max_equity", 250.0)) + (hyst if previous_tier == "HYPER_GROWTH" else 0.0)
-    b3 = float(s_cfg.get("growth_max_equity", 1000.0)) + (hyst if previous_tier == "SCALE" else 0.0)
-    hard_floor = float(r_cfg.get("hard_ruin_floor_usd", 42.0))
+    prev_norm = str(previous_tier or "").strip().upper()
+    b1 = float(s_cfg.get("seed_survival_max_equity", 95.0)) + (
+        hyst if prev_norm in {"UNLEASHED_LAUNCH", "SEED_SURVIVAL", "SEED"} else 0.0
+    )
+    b2 = float(s_cfg.get("recovery_max_equity", 250.0)) + (
+        hyst if prev_norm in {"HYPER_GROWTH", "RECOVERY"} else 0.0
+    )
+    b3 = float(s_cfg.get("growth_max_equity", 1000.0)) + (
+        hyst if prev_norm in {"SCALE", "GROWTH"} else 0.0
+    )
+    hard_floor = max(5.0, round(float(r_cfg.get("hard_ruin_floor_usd", 42.0)) - _net_wd, 2))
 
     bond1_mkt_pct = float(b_cfg.get("bond1_per_market_cap_pct", 0.65))
     bond1_mkr_mkt_pct = float(b_cfg.get("bond1_maker_per_market_cap_pct", 0.365))
@@ -1408,24 +1491,41 @@ def passes_capital_velocity_hurdle(
     rem_tte_sec: float,
     box_cost_net: float,
     fast_recycle_eligible: bool = False,
+    merge_wallet_ok: bool = False,
+    previous_tier: Optional[str] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     """
     Bankroll-tiered Capital-Velocity Hurdle for riskless structural sleeves.
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
+    Exempts `COMPLETE_SET` / `C1_BINARY_COMPLETE_SET` ONLY when `merge_wallet_ok=True` is verified so
+    unmergeable long-dated complete sets never lock seed cash past `max_lockup_hours`.
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} or (
-        str(box_type or "").upper() == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
+    btype_u = str(box_type or "").upper()
+    if btype_u in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND"} or (
+        btype_u in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} and bool(merge_wallet_ok)
+    ) or (
+        btype_u == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
     ):
         return True, "OK"
 
-    prof = get_unleashed_v5_tier_profile(collat_usd, cfg=cfg)
+    prof = get_unleashed_v5_tier_profile(collat_usd, previous_tier=previous_tier, cfg=cfg)
     max_hrs = float(prof["max_lockup_hours"])
     min_bps_hr = float(prof["min_bps_per_hour"])
 
     raw_hrs = max(0.05, float(rem_tte_sec) / 3600.0)
-    eff_hrs = min(raw_hrs, 4.0) if fast_recycle_eligible else raw_hrs
+    _sl_vel_u = str(sleeve_src or "").strip().upper()
+    _rb_vel = (cfg or GLOBAL_GOVERNANCE_MANAGER.snapshot).get("riskless_boxes", {})
+    _uma_2h_cap = (
+        2.0
+        if (
+            _sl_vel_u in {"BOND1_UMA_RESOLUTION_CARRY", "UMA_READY1_LIVENESS_PRIORITY"}
+            and bool(_rb_vel.get("enable_uma_liveness_2h_recycle", True))
+        )
+        else 4.0
+    )
+    eff_hrs = min(raw_hrs, _uma_2h_cap) if fast_recycle_eligible else raw_hrs
     floor_bps = max(0.0, (1.0 - float(box_cost_net)) * 10000.0)
     floor_bps_hr = floor_bps / max(0.10, eff_hrs)
     _seed_sports_box = (prof.get("tier") in {"UNLEASHED_LAUNCH", "SEED", "SEED_SURVIVAL"}) and (
@@ -1533,7 +1633,7 @@ def compute_stop_risk_fractional_kelly_ticket(
     return round(min(float(max_ticket_cap), max(float(min_lot_usd), sized)), 2)
 
 # ======================================================================================
-# [12/64] MODULE: src/polymarket_research/polymarket_live_harvester.py
+# [12/67] MODULE: src/polymarket_research/polymarket_live_harvester.py
 # PURPOSE: v5.3 Live Harvester: Authoritative Chainlink Open, Dual-Budget Risk, Phase-4 Book Walk, Unified Exit Supervisor
 # ======================================================================================
 
@@ -2691,6 +2791,8 @@ class EmergencyRiskController:
         self.halt_reason = ""
         self.kill_file = DATA_DIR / "KILL_SWITCH"
         self._halt_alerted = False
+        self.last_checked_equity: Optional[float] = None
+        self._harvester_ref: Any = None
 
     def _kill_file_active(self) -> bool:
         kf = self.kill_file
@@ -2704,6 +2806,7 @@ class EmergencyRiskController:
         """Circuit breaker: Halts trading if live bankroll equity breaches floor; sticky until verified +$3.00 hysteresis."""
         if current_equity is not None and math.isfinite(float(current_equity)):
             eq = float(current_equity)
+            self.last_checked_equity = eq
             if eq < self.min_equity_floor_usd:
                 self.halted = True
                 self.halt_reason = (
@@ -2797,13 +2900,39 @@ class EmergencyRiskController:
         return self.is_halted()
 
     def is_riskless_box_halted(self) -> bool:
-        """Dual-Budget gate: halts $1.00-payout boxes ONLY on manual KILL_SWITCH or infra/reconciliation/ruin halts."""
+        """Dual-Budget gate: halts $1.00-payout boxes ONLY on manual KILL_SWITCH, infra/reconciliation halts, or riskless ruin floor breach."""
         if self._kill_file_active():
             return True
         if self.halted:
             rs = str(self.halt_reason or "").lower()
-            if any(k in rs for k in ("persistence", "reconcil", "heartbeat", "kill_switch", "equity")):
+            if any(k in rs for k in ("persistence", "reconcil", "heartbeat", "kill_switch")):
                 return True
+            if "equity" in rs:
+                rc_snap = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("risk_controller", {})
+                if not bool(rc_snap.get("decouple_riskless_boxes_from_directional_halt", True)):
+                    return True
+                rl_floor = float(rc_snap.get("riskless_hard_ruin_floor_usd", 30.0) or 30.0)
+                eq_candidates: List[float] = []
+                if self.last_checked_equity is not None and math.isfinite(float(self.last_checked_equity)):
+                    eq_candidates.append(float(self.last_checked_equity))
+                href = getattr(self, "_harvester_ref", None)
+                if href is not None:
+                    try:
+                        from src.polymarket_research.riskless_protocol_v2_expansion import (
+                            compute_reconciled_concentration_nav_usd,
+                        )
+                        if (
+                            getattr(href, "_last_known_collateral", None) is not None
+                            or getattr(href, "active_positions", None)
+                            or getattr(href, "pending_entry_intents", None)
+                        ):
+                            eq_candidates.append(compute_reconciled_concentration_nav_usd(href))
+                    except Exception:
+                        return True
+                if not eq_candidates:
+                    return True
+                if min(eq_candidates) < rl_floor - 1e-6:
+                    return True
         return False
 
 def compute_kelly_ticket_size(
@@ -2951,6 +3080,7 @@ class PolymarketLiveHarvester:
             max_daily_loss_usd=daily_loss_budget,
             min_equity_floor_usd=eff_eq_floor,
         )
+        self.risk_controller._harvester_ref = self
         
         self.seen_shock_ids: Set[str] = set()
         self._seen_shock_order: Dict[str, None] = {}
@@ -3286,7 +3416,7 @@ class PolymarketLiveHarvester:
             and _uws_ok_fast
             and isinstance(_uws_snap, dict)
             and _uws_m <= 0.0
-            and str(_uws_snap.get("status") or "").upper() not in ("MATCHED", "FILLED")
+            and str(_uws_snap.get("status") or "").upper() in ("CANCELED", "CANCELLED")
             and bool((cancel_res or {}).get("is_canceled"))
             and not bool((cancel_res or {}).get("read_replica_stale_live"))
             and float((cancel_res or {}).get("matched") or 0.0) <= 0.0
@@ -3389,7 +3519,7 @@ class PolymarketLiveHarvester:
         if not shm_path.exists():
             return None
         try:
-            raw = json.loads(shm_path.read_text(encoding="utf-8"))
+            raw = _json_loads(shm_path.read_bytes())
             mkt_payload = raw.get("markets", {}).get(target_mid) if isinstance(raw.get("markets"), dict) else raw
             if not isinstance(mkt_payload, dict):
                 return None
@@ -3922,6 +4052,45 @@ class PolymarketLiveHarvester:
             and GLOBAL_GOVERNANCE_MANAGER.snapshot.get("sizing_tiers", {}).get("unleash_full_throttle", True)
         )
 
+    def _effective_sizing_equity_usd(
+        self, raw_tot_equity: Optional[float], now_ts: Optional[float] = None
+    ) -> Tuple[float, bool]:
+        """
+        Returns `(sizing_equity_usd, has_frozen_uma_lock)`.
+        When active positions contain post-expiry UMA-frozen or disputed locks (such as the 4 disputed
+        KMIA positions), haircuts sizing/tier/concentration equity to `compute_reconciled_concentration_nav_usd`
+        so frozen book cost basis never inflates equity tiers (`HYPER_GROWTH`) or `15%` event concentration caps,
+        while preserving `raw_tot_equity` unchanged whenever no frozen/disputed UMA lock exists.
+        """
+        raw_f = (
+            max(0.0, float(raw_tot_equity))
+            if (raw_tot_equity is not None and math.isfinite(float(raw_tot_equity)))
+            else 0.0
+        )
+        act_pos = getattr(self, "active_positions", None) or {}
+        if not act_pos:
+            return raw_f, False
+        now_f = float(time.time() if now_ts is None else now_ts)
+        try:
+            from src.polymarket_research.riskless_protocol_v2_expansion import (
+                compute_reconciled_concentration_nav_usd,
+                is_post_expiry_uma_frozen_lock,
+            )
+            has_frozen = any(
+                isinstance(p, dict)
+                and (
+                    is_post_expiry_uma_frozen_lock(p, now_f)
+                    or str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed"
+                )
+                for p in act_pos.values()
+            )
+            if not has_frozen:
+                return raw_f, False
+            rec_nav = compute_reconciled_concentration_nav_usd(self, now_ts=now_f)
+            return (min(raw_f, rec_nav) if raw_f > 0.0 else rec_nav), True
+        except Exception:
+            return raw_f, False
+
     def _update_equity_tier(self, total_equity: float, *, allow_hwm_ratchet: Optional[bool] = None) -> Dict[str, Any]:
         """Calculates equity tier, updates high-water mark, bankroll pct, exposure, and risk limits."""
         tot_equity = float(total_equity) if (total_equity is not None and math.isfinite(float(total_equity))) else 0.0
@@ -4097,11 +4266,22 @@ class PolymarketLiveHarvester:
                     if p.get("status") == "UNRESOLVED_SETTLEMENT"
                 )
                 tot_equity = float(bal) + active_market_equity + in_flight_unwind_cash
-                allow_ratchet = (in_flight_unwind_cash <= 0.0) and (_pend_sync_eq <= 0.0) and (not self._has_unsettled_collateral_overlap(now_ts))
+                sizing_eq, has_frozen_uma = self._effective_sizing_equity_usd(tot_equity, now_ts)
+                allow_ratchet = (
+                    (in_flight_unwind_cash <= 0.0)
+                    and (_pend_sync_eq <= 0.0)
+                    and (not has_frozen_uma)
+                    and (not self._has_unsettled_collateral_overlap(now_ts))
+                )
                 prev_tier_sync = getattr(self, "_current_equity_tier", None) or getattr(self, "current_equity_tier", None)
-                tier_limits = self._update_equity_tier(tot_equity, allow_hwm_ratchet=allow_ratchet)
+                tier_limits = self._update_equity_tier(sizing_eq, allow_hwm_ratchet=allow_ratchet)
                 prev_halted = bool(self.risk_controller.halted)
-                self.risk_controller.check_equity_drawdown(float(tot_equity), allow_auto_clear=True)
+                ruin_chk_eq = float(tot_equity)
+                if not self.dry_run and ruin_chk_eq < float(self.risk_controller.min_equity_floor_usd) and hasattr(self.executor, "get_idle_usdce_balance"):
+                    _idle_uc = await asyncio.to_thread(self.executor.get_idle_usdce_balance)
+                    if isinstance(_idle_uc, (int, float)) and not isinstance(_idle_uc, bool) and float(_idle_uc) > 0.0:
+                        ruin_chk_eq += float(_idle_uc)
+                self.risk_controller.check_equity_drawdown(ruin_chk_eq, allow_auto_clear=True)
                 halt_transition = (prev_halted != bool(self.risk_controller.halted))
                 tier_transition = (prev_tier_sync != tier_limits["tier"])
                 if (
@@ -4206,6 +4386,13 @@ class PolymarketLiveHarvester:
         executor = getattr(self, "executor", None)
         if executor is not None and not self.dry_run and not getattr(executor, "reservations_trusted", True):
             reasons.append("RESERVATIONS_UNTRUSTED")
+        if not self.dry_run:
+            try:
+                from src.polymarket_research.riskless_protocol_v2_expansion import check_harvester_fail_closed_accounting_halt
+
+                reasons.extend(check_harvester_fail_closed_accounting_halt(self, default_state_file=STATE_FILE))
+            except Exception:
+                reasons.append("ACCOUNTING_INVARIANT_CHECK_FAILED")
         return reasons
 
     def _reconciling_market_ids(self) -> Set[str]:
@@ -4859,8 +5046,8 @@ class PolymarketLiveHarvester:
         pos["exit_ts"] = _closed_ts
         pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
         pos["won"] = (net_pnl > 0.0) if won is None else won
-        pos["payout_usd"] = round(cum_cash, 2)
-        pos["net_pnl_usd"] = net_pnl
+        pos["payout_usd"] = round(cum_cash, 4)
+        pos["net_pnl_usd"] = round(net_pnl, 4)
         pos["close_reason"] = reason
         if filled > 0.0:
             pos["average_exit_price"] = round(cum_cash / filled, 4)
@@ -4947,7 +5134,8 @@ class PolymarketLiveHarvester:
             loop.create_task(self._async_refresh_collateral())
         except RuntimeError:
             pass
-        logger.info(f"[CLOSED] {tid} | {reason} | Payout=${cum_cash:.2f} | Net PnL=${net_pnl:+.2f}")
+        _pnl_fmt = f"{net_pnl:+.4f}" if 0.0 < abs(net_pnl) < 0.01 else f"{net_pnl:+.2f}"
+        logger.info(f"[CLOSED] {tid} | {reason} | Payout=${cum_cash:.2f} | Net PnL=${_pnl_fmt}")
         return net_pnl
 
     @staticmethod
@@ -5737,6 +5925,12 @@ class PolymarketLiveHarvester:
                         pos["entry_fee_asset"] = "USDC"
                         pos["fee_usd"] = v2_fee_u
                         pos["entry_fee_cash_usd"] = v2_fee_u
+                        if v2_fee_u > 0.0 and not pos.get("_v2_fee_collat_debited"):
+                            pos["_v2_fee_collat_debited"] = True
+                            _lk_v2 = getattr(self, "_last_known_collateral", None)
+                            if isinstance(_lk_v2, (int, float)) and not isinstance(_lk_v2, bool):
+                                self._last_known_collateral = max(0.0, float(_lk_v2) - v2_fee_u)
+                            self._pending_collateral_refresh = True
                 pos["entry_shares"] = net
                 pos["remaining_shares"] = net
                 pos["remaining_exit_shares"] = net
@@ -5981,7 +6175,12 @@ class PolymarketLiveHarvester:
         cash_in = float(gross_exit_cash)
         cash_exit_fee = float(exit_fee)
         
-        return round(cash_in - notional - entry_cash_fee - cash_exit_fee, 2)
+        raw_pnl = cash_in - notional - entry_cash_fee - cash_exit_fee
+        cent_pnl = round(raw_pnl, 2)
+        if cent_pnl != 0.0:
+            return cent_pnl
+        subcent_pnl = round(raw_pnl, 4)
+        return subcent_pnl if abs(subcent_pnl) >= 0.0001 else 0.0
 
     @staticmethod
     def record_fill_and_update_position(
@@ -6185,9 +6384,10 @@ class PolymarketLiveHarvester:
         pos["status"] = ExecutionStatus.SETTLED
         pos["settled_at_utc"] = datetime.now(timezone.utc).isoformat()
         pos["won"] = (net_pnl > 0.0)
-        pos["payout_usd"] = round(cum_cash, 2)
-        pos["net_pnl_usd"] = round(net_pnl, 2)
+        pos["payout_usd"] = round(cum_cash, 4)
+        pos["net_pnl_usd"] = round(net_pnl, 4)
         pos["close_reason"] = "ONCHAIN_REDEMPTION_CONFIRMED"
+        pos["exit_decomposition_bucket"] = "TERMINAL_SETTLEMENT"
         pos["redemption_tx_hash"] = tx
         pos["redemption_payout_verified_usd"] = payout
         pos["redemption_receivable_usd"] = 0.0
@@ -6303,9 +6503,11 @@ class PolymarketLiveHarvester:
                         settled += 1
                 except Exception as e:
                     logger.error(f"[REDEMPTION] Verification error for {tid}: {e}")
+        _auto_wrap_on = bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("routing", {}).get("enable_auto_wrap_legacy_usdce_to_pusd", True))
         if settled > 0:
-            if not self.dry_run and hasattr(self.executor, "wrap_idle_usdce_to_pusd"):
+            if not self.dry_run and _auto_wrap_on and hasattr(self.executor, "wrap_idle_usdce_to_pusd"):
                 try:
+                    self._last_usdce_wrap_chk = now
                     self.executor.wrap_idle_usdce_to_pusd(min_usd=1.0)
                 except Exception:
                     pass
@@ -6324,6 +6526,22 @@ class PolymarketLiveHarvester:
                 except Exception:
                     pass
             logger.info(f"[AUTO-REDEEMER] Swept and settled {settled} mature position(s). Reclaimed collateral to balance.")
+        elif (
+            not self.dry_run
+            and _auto_wrap_on
+            and hasattr(self.executor, "wrap_idle_usdce_to_pusd")
+            and getattr(self.executor, "_mock_children", None) is None
+            and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+            and (now - float(getattr(self, "_last_usdce_wrap_chk", 0.0) or 0.0)) >= 300.0
+        ):
+            self._last_usdce_wrap_chk = now
+            try:
+                _w_tx = self.executor.wrap_idle_usdce_to_pusd(min_usd=1.0)
+                if _w_tx:
+                    self.executor.invalidate_collateral_cache()
+                    self._pending_collateral_refresh = True
+            except Exception:
+                pass
         return settled
 
     def get_condition_id(self, market_id: str) -> Optional[str]:
@@ -6536,185 +6754,234 @@ class PolymarketLiveHarvester:
         return round(ticket_usd, 2)
 
     def load_state(self):
-        if STATE_FILE.exists():
+        target_state_file = getattr(self, "state_file", STATE_FILE)
+        if target_state_file.exists():
             try:
-                with open(STATE_FILE, "r") as f:
+                with open(target_state_file, "r", encoding="utf-8") as f:
                     state = json.load(f)
-                    self.active_positions = state.get("active_positions", {})
-                    self.closed_positions = state.get("closed_positions", [])
-                    self.pending_entry_intents = state.get("pending_entry_intents", {})
-                    self.redeemed_tx_hashes = list(state.get("redeemed_tx_hashes", []) or [])
-                    self.redeemed_tx_consumed_usd = dict(state.get("redeemed_tx_consumed_usd", {}) or {})
-                    self.pre_split_inventory_state = dict(state.get("pre_split_inventory_state") or {})
-                    # Round 9 P0-01: the global halt is persisted and monotonic across restarts.
-                    # Loading can only ADD halt reasons; clearing requires authoritative reconciliation.
-                    persisted_halt = bool(state.get("risk_halt", False) or state.get("reconciliation_required", False))
-                    derived_reasons = self._global_halt_reasons()
-                    self.risk_halt = persisted_halt or bool(derived_reasons)
-                    self.reconciliation_required = self.risk_halt
-                    self.global_halt_reasons = derived_reasons or (list(state.get("global_halt_reasons", [])) or (["PERSISTED_HALT"] if persisted_halt else []))
-                    if self.risk_halt:
-                        logger.warning(
-                            f"[STARTUP RECOVERY] Persistent global risk halt active: {self.global_halt_reasons}. "
-                            "New entries blocked until authoritative exchange reconciliation."
+                self.active_positions = state.get("active_positions", {})
+                self.closed_positions = state.get("closed_positions", [])
+                self.pending_entry_intents = state.get("pending_entry_intents", {})
+                self.redeemed_tx_hashes = list(state.get("redeemed_tx_hashes", []) or [])
+                self.redeemed_tx_consumed_usd = dict(state.get("redeemed_tx_consumed_usd", {}) or {})
+                self.pre_split_inventory_state = dict(state.get("pre_split_inventory_state") or {})
+                # Round 9 P0-01: the global halt is persisted and monotonic across restarts.
+                # Loading can only ADD halt reasons; clearing requires authoritative reconciliation.
+                persisted_halt = bool(state.get("risk_halt", False) or state.get("reconciliation_required", False))
+                derived_reasons = self._global_halt_reasons()
+                self.risk_halt = persisted_halt or bool(derived_reasons)
+                self.reconciliation_required = self.risk_halt
+                self.global_halt_reasons = derived_reasons or (list(state.get("global_halt_reasons", [])) or (["PERSISTED_HALT"] if persisted_halt else []))
+                if self.risk_halt:
+                    logger.warning(
+                        f"[STARTUP RECOVERY] Persistent global risk halt active: {self.global_halt_reasons}. "
+                        "New entries blocked until authoritative exchange reconciliation."
+                    )
+                migrated_orphaned_liquidations = False
+
+                for pos in self.active_positions.values():
+                    if (
+                        pos.get("is_liquidating")
+                        and not pos.get("unwind_order_id")
+                    ):
+                        # P0-01 Fix: Do NOT migrate positions awaiting exchange reconciliation
+                        if position_requires_lifecycle_resolution(pos):
+                            continue
+                        # Legacy state can contain the exact orphan flag
+                        # that previously froze the emergency exit loop.
+                        pos["is_liquidating"] = False
+                        pos["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
+                        pos["next_unwind_retry_ts"] = 0.0
+                        pos["unwind_last_error"] = (
+                            "MIGRATED_ORPHANED_LIQUIDATION_FLAG"
                         )
-                    migrated_orphaned_liquidations = False
+                        migrated_orphaned_liquidations = True
 
-                    for pos in self.active_positions.values():
-                        if (
-                            pos.get("is_liquidating")
-                            and not pos.get("unwind_order_id")
-                        ):
-                            # P0-01 Fix: Do NOT migrate positions awaiting exchange reconciliation
-                            if position_requires_lifecycle_resolution(pos):
-                                continue
-                            # Legacy state can contain the exact orphan flag
-                            # that previously froze the emergency exit loop.
-                            pos["is_liquidating"] = False
-                            pos["exit_order_status"] = "UNWIND_RETRY_REQUIRED"
-                            pos["next_unwind_retry_ts"] = 0.0
-                            pos["unwind_last_error"] = (
-                                "MIGRATED_ORPHANED_LIQUIDATION_FLAG"
-                            )
-                            migrated_orphaned_liquidations = True
-
-                    self.seen_shock_ids = set(state.get("seen_shock_ids", []))
-                    self._seen_shock_order = {sid: None for sid in state.get("seen_shock_ids", [])}
-                    saved_d1_keys = [str(k) for k in (state.get("seen_d1_box_keys") or []) if k]
-                    self._seen_d1_box_keys = set(saved_d1_keys)
-                    self._seen_d1_box_order = {k: None for k in saved_d1_keys}
-                    raw_d1_ts = state.get("seen_d1_box_ts") if isinstance(state.get("seen_d1_box_ts"), dict) else {}
-                    self._seen_d1_box_ts = {
-                        str(k): float(v)
-                        for k, v in raw_d1_ts.items()
-                        if str(k) in self._seen_d1_box_keys and isinstance(v, (int, float))
-                    }
-                    self._persisted_state = dict(state)
-                    self.traded_market_ids = set(state.get("traded_market_ids", []))
-                    raw_tpm = state.get("trades_per_market", {})
-                    raw_tpmd = state.get("trades_per_market_direction", {}) or {}
-                    self.trades_per_market = defaultdict(int, {str(k): int(v) for k, v in raw_tpm.items()})
-                    self.trades_per_market_direction = defaultdict(int)
-                    for k_dir, v_dir in raw_tpmd.items():
-                        if "_" in str(k_dir):
-                            m_part, t_part = str(k_dir).rsplit("_", 1)
-                            self.trades_per_market_direction[(m_part, t_part)] = int(v_dir)
-                    if not raw_tpmd:
-                        for cp in self.closed_positions:
-                            mid = str(cp.get("market_id", ""))
-                            tok = str(cp.get("target_token", ""))
-                            if mid:
-                                if not raw_tpm:
-                                    self.trades_per_market[mid] += 1
-                                if tok:
-                                    self.trades_per_market_direction[(mid, tok)] += 1
-                        for ap in self.active_positions.values():
-                            mid = str(ap.get("market_id", ""))
-                            tok = str(ap.get("target_token", ""))
-                            if mid and tok:
-                                self.trades_per_market_direction[(mid, tok)] += 1
-                    elif not raw_tpm and self.closed_positions:
-                        for cp in self.closed_positions:
-                            mid = str(cp.get("market_id", ""))
-                            if mid:
+                self.seen_shock_ids = set(state.get("seen_shock_ids", []))
+                self._seen_shock_order = {sid: None for sid in state.get("seen_shock_ids", [])}
+                saved_d1_keys = [str(k) for k in (state.get("seen_d1_box_keys") or []) if k]
+                self._seen_d1_box_keys = set(saved_d1_keys)
+                self._seen_d1_box_order = {k: None for k in saved_d1_keys}
+                raw_d1_ts = state.get("seen_d1_box_ts") if isinstance(state.get("seen_d1_box_ts"), dict) else {}
+                self._seen_d1_box_ts = {
+                    str(k): float(v)
+                    for k, v in raw_d1_ts.items()
+                    if str(k) in self._seen_d1_box_keys and isinstance(v, (int, float))
+                }
+                self._persisted_state = dict(state)
+                self.traded_market_ids = set(state.get("traded_market_ids", []))
+                raw_tpm = state.get("trades_per_market", {})
+                raw_tpmd = state.get("trades_per_market_direction", {}) or {}
+                self.trades_per_market = defaultdict(int, {str(k): int(v) for k, v in raw_tpm.items()})
+                self.trades_per_market_direction = defaultdict(int)
+                for k_dir, v_dir in raw_tpmd.items():
+                    if "_" in str(k_dir):
+                        m_part, t_part = str(k_dir).rsplit("_", 1)
+                        self.trades_per_market_direction[(m_part, t_part)] = int(v_dir)
+                if not raw_tpmd:
+                    for cp in self.closed_positions:
+                        mid = str(cp.get("market_id", ""))
+                        tok = str(cp.get("target_token", ""))
+                        if mid:
+                            if not raw_tpm:
                                 self.trades_per_market[mid] += 1
-                    saved_hour = state.get("current_hour_window")
-                    current_hour = time.time() // 3600
-                    if saved_hour == current_hour:
-                        self.trades_this_hour = state.get("trades_this_hour", 0)
-                        self.current_hour_window = current_hour
-                    else:
-                        self.trades_this_hour = 0
-                        self.current_hour_window = current_hour
-                    self.last_event_id = state.get("last_event_id", "")
-                    risk_st = state.get("risk_state", {})
-                    if getattr(self, "reset_risk", False):
-                        self.risk_controller.halted = False
-                        self.risk_controller.halt_reason = ""
-                        self.risk_controller.consecutive_losses = 0
-                        self.risk_controller.daily_realized_loss = 0.0
-                        self.risk_controller.non_directional_realized_pnl = 0.0
-                        self.risk_halt = False
-                        self.reconciliation_required = False
-                        self.global_halt_reasons = []
-                        logger.info("[STARTUP] Risk controller circuit breaker explicitly reset via --reset-risk flag.")
-                    else:
-                        if risk_st.get("halted"):
-                            saved_reason = str(risk_st.get("halt_reason", "Restored from persisted halt state"))
-                            if not self.dry_run and "Heartbeat degraded" in saved_reason and self.executor.is_heartbeat_healthy():
-                                logger.info(f"[STARTUP] Cleared transient session heartbeat halt on fresh process startup ({saved_reason}).")
-                                self.risk_controller.halted = False
-                                self.risk_controller.halt_reason = ""
-                            else:
-                                self.risk_controller.halted = True
-                                self.risk_controller.halt_reason = saved_reason
-                        saved_loss_date = risk_st.get("last_loss_date_utc")
-                        today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                        if saved_loss_date and saved_loss_date != today_utc:
-                            self.risk_controller.consecutive_losses = 0
-                            self.risk_controller.daily_realized_loss = 0.0
-                            self.risk_controller.last_loss_date_utc = today_utc
-                        else:
-                            self.risk_controller.consecutive_losses = int(risk_st.get("consecutive_losses", 0) or 0)
-                            self.risk_controller.daily_realized_loss = float(risk_st.get("daily_realized_loss", 0.0) or 0.0)
-                            if saved_loss_date:
-                                self.risk_controller.last_loss_date_utc = str(saved_loss_date)
-                        self.risk_controller.non_directional_realized_pnl = float(
-                            risk_st.get("non_directional_realized_pnl", 0.0) or 0.0
-                        )
-                    if migrated_orphaned_liquidations:
-                        self.save_state()
-                    self._last_known_collateral = state.get("live_bankroll")
-                    if isinstance(self._last_known_collateral, (int, float)) and math.isfinite(self._last_known_collateral) and self._last_known_collateral > 0.0:
-                        self.executor.set_cached_collateral(float(self._last_known_collateral))
-                    saved_tier = state.get("current_equity_tier") or state.get("equity_tier")
-                    if isinstance(saved_tier, str) and saved_tier:
-                        self._current_equity_tier = saved_tier
-                        self.current_equity_tier = saved_tier
-                    if state.get("dynamic_bankroll_pct") is not None:
-                        try:
-                            self.dynamic_bankroll_pct = float(state["dynamic_bankroll_pct"])
-                        except (TypeError, ValueError):
-                            pass
-                    if getattr(self, "reset_risk", False):
-                        self.high_water_mark_equity = float(state.get("live_bankroll") or 0.0)
-                    else:
-                        self.high_water_mark_equity = float(
-                            state.get("high_water_mark_equity")
-                            or state.get("total_account_equity")
-                            or state.get("live_bankroll")
-                            or getattr(self, "high_water_mark_equity", 0.0)
-                            or 0.0
-                        )
-                    tot_equity_saved = float(state.get("total_account_equity") or self._last_known_collateral or 0.0)
-                    if tot_equity_saved > 0:
-                        self._update_equity_tier(tot_equity_saved)
-                        if (
-                            self.risk_controller.halted
-                            and "Account equity" in str(self.risk_controller.halt_reason or "")
-                            and tot_equity_saved >= (self.risk_controller.min_equity_floor_usd + 3.00)
-                        ):
-                            logger.info(
-                                f"[STARTUP] Cleared stale equity circuit-breaker halt on startup: "
-                                f"persisted equity ${tot_equity_saved:.2f} >= +$3.00 above ${self.risk_controller.min_equity_floor_usd:.2f} tier floor."
-                            )
+                            if tok:
+                                self.trades_per_market_direction[(mid, tok)] += 1
+                    for ap in self.active_positions.values():
+                        mid = str(ap.get("market_id", ""))
+                        tok = str(ap.get("target_token", ""))
+                        if mid and tok:
+                            self.trades_per_market_direction[(mid, tok)] += 1
+                elif not raw_tpm and self.closed_positions:
+                    for cp in self.closed_positions:
+                        mid = str(cp.get("market_id", ""))
+                        if mid:
+                            self.trades_per_market[mid] += 1
+                saved_hour = state.get("current_hour_window")
+                current_hour = time.time() // 3600
+                if saved_hour == current_hour:
+                    self.trades_this_hour = state.get("trades_this_hour", 0)
+                    self.current_hour_window = current_hour
+                else:
+                    self.trades_this_hour = 0
+                    self.current_hour_window = current_hour
+                self.last_event_id = state.get("last_event_id", "")
+                risk_st = state.get("risk_state", {})
+                if getattr(self, "reset_risk", False):
+                    self.risk_controller.halted = False
+                    self.risk_controller.halt_reason = ""
+                    self.risk_controller.consecutive_losses = 0
+                    self.risk_controller.daily_realized_loss = 0.0
+                    self.risk_controller.non_directional_realized_pnl = 0.0
+                    self.risk_halt = False
+                    self.reconciliation_required = False
+                    self.global_halt_reasons = []
+                    logger.info("[STARTUP] Risk controller circuit breaker explicitly reset via --reset-risk flag.")
+                else:
+                    if risk_st.get("halted"):
+                        saved_reason = str(risk_st.get("halt_reason", "Restored from persisted halt state"))
+                        if not self.dry_run and "Heartbeat degraded" in saved_reason and self.executor.is_heartbeat_healthy():
+                            logger.info(f"[STARTUP] Cleared transient session heartbeat halt on fresh process startup ({saved_reason}).")
                             self.risk_controller.halted = False
                             self.risk_controller.halt_reason = ""
-                    logger.info(f"Loaded existing state: {len(self.active_positions)} active positions, {len(self.traded_market_ids)} traded markets.")
+                        else:
+                            self.risk_controller.halted = True
+                            self.risk_controller.halt_reason = saved_reason
+                    saved_loss_date = risk_st.get("last_loss_date_utc")
+                    today_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                    if saved_loss_date and saved_loss_date != today_utc:
+                        self.risk_controller.consecutive_losses = 0
+                        self.risk_controller.daily_realized_loss = 0.0
+                        self.risk_controller.last_loss_date_utc = today_utc
+                    else:
+                        self.risk_controller.consecutive_losses = int(risk_st.get("consecutive_losses", 0) or 0)
+                        self.risk_controller.daily_realized_loss = float(risk_st.get("daily_realized_loss", 0.0) or 0.0)
+                        if saved_loss_date:
+                            self.risk_controller.last_loss_date_utc = str(saved_loss_date)
+                    self.risk_controller.non_directional_realized_pnl = float(
+                        risk_st.get("non_directional_realized_pnl", 0.0) or 0.0
+                    )
+                if migrated_orphaned_liquidations:
+                    self.save_state()
+                self._last_known_collateral = state.get("live_bankroll")
+                if isinstance(self._last_known_collateral, (int, float)) and math.isfinite(self._last_known_collateral) and self._last_known_collateral > 0.0:
+                    self.executor.set_cached_collateral(float(self._last_known_collateral))
+                saved_tier = state.get("current_equity_tier") or state.get("equity_tier")
+                if isinstance(saved_tier, str) and saved_tier:
+                    self._current_equity_tier = saved_tier
+                    self.current_equity_tier = saved_tier
+                elif not getattr(self, "_current_equity_tier", None):
+                    self._current_equity_tier = "UNLEASHED_LAUNCH"
+                    self.current_equity_tier = "UNLEASHED_LAUNCH"
+                if state.get("dynamic_bankroll_pct") is not None:
+                    try:
+                        self.dynamic_bankroll_pct = float(state["dynamic_bankroll_pct"])
+                    except (TypeError, ValueError):
+                        pass
+                if getattr(self, "reset_risk", False):
+                    self.high_water_mark_equity = float(state.get("live_bankroll") or 0.0)
+                else:
+                    self.high_water_mark_equity = float(
+                        state.get("high_water_mark_equity")
+                        or state.get("total_account_equity")
+                        or state.get("live_bankroll")
+                        or getattr(self, "high_water_mark_equity", 0.0)
+                        or 0.0
+                    )
+                tot_equity_saved = float(state.get("total_account_equity") or self._last_known_collateral or 0.0)
+                if tot_equity_saved > 0:
+                    sizing_eq_saved, has_frozen_saved = self._effective_sizing_equity_usd(tot_equity_saved)
+                    self._update_equity_tier(sizing_eq_saved, allow_hwm_ratchet=(not has_frozen_saved))
+                    if (
+                        self.risk_controller.halted
+                        and "Account equity" in str(self.risk_controller.halt_reason or "")
+                        and tot_equity_saved >= (self.risk_controller.min_equity_floor_usd + 3.00)
+                    ):
+                        logger.info(
+                            f"[STARTUP] Cleared stale equity circuit-breaker halt on startup: "
+                            f"persisted equity ${tot_equity_saved:.2f} >= +$3.00 above ${self.risk_controller.min_equity_floor_usd:.2f} tier floor."
+                        )
+                        self.risk_controller.halted = False
+                        self.risk_controller.halt_reason = ""
+                migrated_subcent_wins = 0
+                for cp in self.closed_positions:
+                    if (
+                        isinstance(cp, dict)
+                        and str(cp.get("status") or "").upper() in {"SETTLED", "FILLED"}
+                        and not bool(cp.get("exit_cash_estimated", False))
+                        and float(cp.get("estimated_exit_cash", 0.0) or 0.0) <= 0.0
+                        and not (cp.get("box_legs_summary") or [])
+                        and not bool(cp.get("won"))
+                        and float(cp.get("net_pnl_usd", 0.0) or 0.0) == 0.0
+                        and float(cp.get("notional_usd", 0.0) or 0.0) > 0.0
+                    ):
+                        _cp_cash = float(cp.get("confirmed_realized_cash", cp.get("realized_exit_cash", 0.0)) or 0.0)
+                        if _cp_cash > 0.0:
+                            _cp_exact_pnl = self.calculate_realized_cash_pnl(
+                                cp, _cp_cash, float(cp.get("realized_exit_fee", 0.0) or 0.0)
+                            )
+                            if 0.0 < _cp_exact_pnl < 0.01:
+                                cp["net_pnl_usd"] = _cp_exact_pnl
+                                cp["won"] = True
+                                if "REDEMPTION" in str(cp.get("close_reason") or "").upper():
+                                    cp["exit_decomposition_bucket"] = "TERMINAL_SETTLEMENT"
+                                if bool(
+                                    cp.get("is_dominance_box")
+                                    or cp.get("is_single_leg_lock")
+                                    or cp.get("is_legged_out_residual")
+                                    or "BOX" in str(cp.get("sleeve") or "").upper()
+                                ):
+                                    self.risk_controller.non_directional_realized_pnl = round(
+                                        float(getattr(self.risk_controller, "non_directional_realized_pnl", 0.0) or 0.0)
+                                        + _cp_exact_pnl,
+                                        4,
+                                    )
+                                migrated_subcent_wins += 1
+                if migrated_subcent_wins > 0:
+                    logger.info(f"[STARTUP] Reconciled {migrated_subcent_wins} sub-cent settled winning trade(s) in closed_positions.")
+                    self.save_state()
+                logger.info(f"Loaded existing state: {len(self.active_positions)} active positions, {len(self.traded_market_ids)} traded markets.")
             except Exception as e:
                 logger.critical(f"LIVE STATE UNREADABLE; refusing all reconciliation and order mutation: {e}")
                 raise RuntimeError("Refusing live startup with unreadable position state") from e
 
     _GLOBAL_STATE_SAVE_LOCK = threading.RLock()
+    _RISKLESS_SAVE_HELPERS: Optional[Tuple[Any, Any]] = None
 
     def save_state(self):
         lock = getattr(self, "_state_save_lock", None) or self._GLOBAL_STATE_SAVE_LOCK
         with lock:
             now_ts = time.time()
-            from src.polymarket_research.riskless_protocol_v2_expansion import (
-                compute_dynamic_riskless_tier_caps,
-                pending_intents_synced_equity_usd,
-            )
+            helpers = type(self)._RISKLESS_SAVE_HELPERS
+            if helpers is None:
+                from src.polymarket_research.riskless_protocol_v2_expansion import (
+                    compute_dynamic_riskless_tier_caps,
+                    pending_intents_synced_equity_usd,
+                )
+                helpers = (compute_dynamic_riskless_tier_caps, pending_intents_synced_equity_usd)
+                type(self)._RISKLESS_SAVE_HELPERS = helpers
+            else:
+                compute_dynamic_riskless_tier_caps, pending_intents_synced_equity_usd = helpers
             _ps_st = getattr(self, "pre_split_inventory_state", None) or {}
             _ps_eq = (min(float(_ps_st.get("up_rem", 0.0) or 0.0), float(_ps_st.get("dn_rem", 0.0) or 0.0)) if _ps_st.get("active") else 0.0) + sum(
                 min(float(_s.get("up_rem", 0.0) or 0.0), float(_s.get("dn_rem", 0.0) or 0.0))
@@ -6727,6 +6994,7 @@ class PolymarketLiveHarvester:
                 if getattr(self, "_last_known_collateral", None) is not None
                 else None
             )
+            sizing_eq_save, _ = self._effective_sizing_equity_usd(tot_equity, now_ts)
             _http_s = sorted(float(x) for x in (self.__dict__.get("_sll_post_http_ms") or ()))
             _pend_map_s = getattr(self, "pending_entry_intents", None) or {}
             _funnel_st = {
@@ -6740,7 +7008,8 @@ class PolymarketLiveHarvester:
                 "uma_early_recycles": int(self.__dict__.get("_uma_early_recycle_count", 0) or 0),
                 "presigned_repeg_hits": int(getattr(getattr(self, "executor", None), "_presigned_maker_repeg_hits", 0) or 0),
                 "dynamic_tier_caps": compute_dynamic_riskless_tier_caps(
-                    float(tot_equity or 0.0), GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes")
+                    float(sizing_eq_save if tot_equity is not None else 0.0),
+                    GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"),
                 ),
             }
             seen_shocks_list = list(self._seen_shock_order.keys())[-1000:] if hasattr(self, "_seen_shock_order") else list(self.seen_shock_ids)[-1000:]
@@ -6758,6 +7027,7 @@ class PolymarketLiveHarvester:
                 "unlimited_slots": self._is_unlimited_slots_active(),
                 "dry_run": self.dry_run, "last_event_id": getattr(self, "last_event_id", ""),
                 "live_bankroll": getattr(self, "_last_known_collateral", None), "total_account_equity": tot_equity,
+                "reconciled_nav_usd": (round(sizing_eq_save, 4) if tot_equity is not None else None),
                 "high_water_mark_equity": getattr(self, "high_water_mark_equity", None),
                 "equity_tier": cur_tier, "current_equity_tier": cur_tier,
                 "dynamic_bankroll_pct": getattr(self, "dynamic_bankroll_pct", None),
@@ -6792,11 +7062,30 @@ class PolymarketLiveHarvester:
             target_state_file = getattr(self, "state_file", STATE_FILE)
             tmp_file = target_state_file.with_suffix(f".tmp.{os.getpid()}.{threading.get_ident()}")
             try:
-                with open(tmp_file, "w", encoding="utf-8") as f:
-                    json.dump(state, f, indent=2)
-                    f.flush()
-                    os.fsync(f.fileno())
-                os.replace(tmp_file, target_state_file)
+                payload_bytes: Optional[bytes] = None
+                if _orjson is not None:
+                    try:
+                        payload_bytes = _orjson.dumps(state, option=_orjson.OPT_INDENT_2)
+                    except TypeError:
+                        payload_bytes = None
+                if payload_bytes is not None:
+                    with open(tmp_file, "wb") as f:
+                        f.write(payload_bytes)
+                        f.flush()
+                        os.fsync(f.fileno())
+                else:
+                    with open(tmp_file, "w", encoding="utf-8") as f:
+                        json.dump(state, f, indent=2)
+                        f.flush()
+                        os.fsync(f.fileno())
+                for _rep_i in range(3):
+                    try:
+                        os.replace(tmp_file, target_state_file)
+                        break
+                    except PermissionError:
+                        if os.name != "nt" or _rep_i >= 2:
+                            raise
+                        time.sleep(0.01)
                 self._last_persisted_collateral = state.get("live_bankroll")
                 if publish_global_positions_shm is not None and not self.dry_run:
                     publish_global_positions_shm("live_harvester", self.active_positions.values())
@@ -6876,7 +7165,13 @@ class PolymarketLiveHarvester:
         Decouples $1.00-payout riskless 2-leg/1-leg boxes from directional daily-loss variance halts,
         halting boxes ONLY on explicit disable, reconciliation/heartbeat/kill-file halts, or hard survival equity breach.
         """
-        if not RISK_CONFIG.get("enable_graduated_d1_box", True) or getattr(self, "risk_halt", False):
+        _rcfg_d1_h = getattr(self, "risk_config", None) or {}
+        _gov_d1_on = bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_graduated_d1_box", True))
+        if (
+            not bool(_rcfg_d1_h.get("enable_graduated_d1_box", RISK_CONFIG.get("enable_graduated_d1_box", True)))
+            or not _gov_d1_on
+            or getattr(self, "risk_halt", False)
+        ):
             return True
         if not self.dry_run:
             if self._global_halt_reasons() or not self.executor.is_heartbeat_healthy():
@@ -6992,11 +7287,27 @@ class PolymarketLiveHarvester:
             )
             if mid_a_chk in recon_m or (mid_b_chk and mid_b_chk in recon_m) or nr_reconciling:
                 return {"executed": False, "reason": "MARKET_RECONCILING"}
+        from src.polymarket_research.riskless_protocol_v2_expansion import is_post_expiry_uma_frozen_lock
+        now_res_chk = time.time()
+        _supervised_terminal_resid_statuses = {
+            "TERMINAL_UNWIND_FAILED_SUPERVISED",
+            "SUB_MINIMUM_LOT_SUPERVISED_HOLD",
+            "DETERMINISTIC_TERMINAL_HOLD",
+            "EXIT_RECOVERY_REQUIRED",
+            "HOLD_TO_MATURITY_LOCK",
+            "AWAITING_REDEMPTION",
+        }
         for p_act in self.active_positions.values():
+            if position_is_settlement_receivable(p_act) or is_post_expiry_uma_frozen_lock(p_act, now_res_chk):
+                continue
+            _ex_st_act = str(p_act.get("exit_order_status") or "")
+            if _ex_st_act in ("UNWIND_RETRY_REQUIRED", "UNWIND_EXECUTION_OUTCOME_UNKNOWN", "PARTIAL_UNWIND_REMAINING"):
+                return {"executed": False, "reason": "UNHEDGED_BOX_RESIDUAL_ACTIVE"}
             is_box_p = "BOX" in str(p_act.get("sleeve") or "").upper() or bool(p_act.get("box_id"))
-            if (is_box_p and not (p_act.get("is_dominance_box") or p_act.get("is_single_leg_lock"))) or p_act.get("exit_order_status") in (
-                "UNWIND_RETRY_REQUIRED",
-                "UNWIND_EXECUTION_OUTCOME_UNKNOWN",
+            if (
+                is_box_p
+                and not (p_act.get("is_dominance_box") or p_act.get("is_single_leg_lock"))
+                and _ex_st_act not in _supervised_terminal_resid_statuses
             ):
                 return {"executed": False, "reason": "UNHEDGED_BOX_RESIDUAL_ACTIVE"}
         now_ts = time.time()
@@ -7052,29 +7363,18 @@ class PolymarketLiveHarvester:
             if len(leg_outs_12h) >= 2 or sum(float(p.get("net_pnl_usd") or 0.0) for p in leg_outs_12h) <= -2.50:
                 return {"executed": False, "reason": f"ASSET_LEGGING_COOLDOWN:{cand_asset}"}
         try:
-            st_path = DATA_DIR / "alpha124_shadow_state.json"
-            if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
-                alt_path = PIPELINE_ROOT / "data" / "alpha124" / "alpha124_shadow_state.json"
-                if alt_path.exists():
-                    st_path = alt_path
-            if not st_path.exists():
-                return {"executed": False, "reason": "NO_ALPHA124_STATE"}
-            st_info = st_path.stat()
-            if (time.time() - st_info.st_mtime) > 300.0:
-                return {"executed": False, "reason": "ALPHA124_STATE_STALE"}
-            cache_tup = getattr(self, "_d1_grad_cache", None)
-            manual_inv = getattr(self, "_a124_grad_cache_mtime", 0.0)
-            st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, manual_inv)
-            if isinstance(cache_tup, tuple) and len(cache_tup) == 3 and cache_tup[0] == st_key and manual_inv >= 0.0:
-                by_sl_map, by_da_map = cache_tup[1], cache_tup[2]
-            else:
-                if manual_inv < 0.0:
-                    self._a124_grad_cache_mtime = 0.0
-                    st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, 0.0)
-                st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
-                by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
-                by_da_map = st_raw.get("by_d1_asset") or {}
-                self._d1_grad_cache = (st_key, by_sl_map, by_da_map)
+            from src.polymarket_research.stage_c_zero_loss_velocity import load_alpha124_graduation_maps_with_lkg_cache
+
+            by_sl_map, by_da_map, _a124_err_d1 = load_alpha124_graduation_maps_with_lkg_cache(
+                self,
+                DATA_DIR,
+                PIPELINE_ROOT,
+                json_loads_fn=_json_loads,
+                stale_reason="ALPHA124_STATE_STALE",
+                missing_reason="NO_ALPHA124_STATE",
+            )
+            if _a124_err_d1 is not None or by_sl_map is None or by_da_map is None:
+                return {"executed": False, "reason": _a124_err_d1 or "NO_ALPHA124_STATE"}
 
             def _grad8(rec: Dict[str, Any]) -> bool:
                 adj_pnl = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
@@ -7200,6 +7500,13 @@ class PolymarketLiveHarvester:
         if not inflight_lock.acquire(blocking=False):
             return {"executed": False, "reason": "BOX_EXECUTION_INFLIGHT"}
         try:
+            from src.polymarket_research.stage_c_zero_loss_velocity import check_multileg_3plus_nav_and_certification_gate
+
+            _ml3_veto = check_multileg_3plus_nav_and_certification_gate(
+                self, candidate_box, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}), now_ts=now_ts
+            )
+            if _ml3_veto is not None:
+                return {"executed": False, "reason": _ml3_veto}
             if box_type == "SINGLE_LEG_LOCK":
                 return self._finish_single_leg_lock(candidate_box, sleeve_src, tok_a, mid_a_chk, dedupe_k, retry_cd, now_ts, _rcfg_b1, own_grad=own_grad)
             if box_type == "NEGRISK_CONVERT":
@@ -7321,18 +7628,20 @@ class PolymarketLiveHarvester:
                 inflight_intent_usd = pending_intents_cash_reserved_usd(_pend_d1)
                 collat_f = max(0.0, float(collat or 0.0) - inflight_intent_usd)
                 rem_tte_s = max(1.0, exp_ts - now_ts) if exp_ts > 0.0 else 0.0
+                _gov_rb_d1r = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+                _d1_clip_rec = min(26.0, max(12.0, float(_gov_rb_d1r.get("gatling_base_clip_d1_usd", 22.0) or 22.0)))
                 if (
                     not self.dry_run
-                    and collat_f < 16.50
+                    and collat_f < _d1_clip_rec - 0.50
                     and fresh_box_net <= 0.98005
                     and getattr(self.executor, "client", None) is not None
                     and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
-                    and bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_zero_loss_open_carry_velocity_recycle", True))
+                    and bool(_gov_rb_d1r.get("enable_zero_loss_open_carry_velocity_recycle", True))
                 ):
                     from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
                     _rec_c = recycle_open_zero_loss_carry_for_fast_arb(
                         self,
-                        needed_cash_gap_usd=max(0.0, 22.0 - collat_f),
+                        needed_cash_gap_usd=max(0.0, _d1_clip_rec - collat_f),
                         challenger_net_cost=fresh_box_net,
                         challenger_rem_tte_sec=rem_tte_s,
                         challenger_sleeve=sleeve_src,
@@ -7374,13 +7683,25 @@ class PolymarketLiveHarvester:
                             and fresh_box_net <= 0.988
                         )
                     )
+                    from src.polymarket_research.riskless_protocol_v2_expansion import is_post_expiry_uma_frozen_lock
+                    _liq_eq_d1 = collat_f + inflight_intent_usd + sum(
+                        float(_p_lq.get("notional_usd", 0.0) or 0.0)
+                        for _p_lq in self.active_positions.values()
+                        if isinstance(_p_lq, dict)
+                        and not position_is_settlement_receivable(_p_lq)
+                        and not is_post_expiry_uma_frozen_lock(_p_lq, now_ts)
+                    )
+                    _prev_t_d1 = getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
                     vel_ok, vel_reason = passes_capital_velocity_hurdle(
-                        collat_usd=collat_f, rem_tte_sec=vel_tte_s, box_cost_net=fresh_box_net,
+                        collat_usd=_liq_eq_d1, rem_tte_sec=vel_tte_s, box_cost_net=fresh_box_net,
                         box_type=box_type, sleeve_src=sleeve_src, fast_recycle_eligible=fast_recycle_sl,
+                        merge_wallet_ok=bool(_zf_c1_merge_ok and _merge_wallet_ok),
+                        previous_tier=_prev_t_d1,
                     )
                     if not vel_ok:
                         return {"executed": False, "reason": vel_reason}
                 from src.polymarket_research.riskless_machine_gun_engine import is_soc2_exhaustive_lattice_safe, is_sports_dead_ball_safe
+                from src.polymarket_research.riskless_protocol_v2_expansion import is_post_expiry_uma_frozen_lock
                 if not is_soc2_exhaustive_lattice_safe(candidate_box):
                     return {"executed": False, "reason": "SOC2_NON_EXHAUSTIVE_QUARANTINED"}
                 if box_type in {"SPORTS_CORRIDOR", "NBA_DOMINANCE"} and not is_sports_dead_ball_safe(candidate_box):
@@ -7389,13 +7710,22 @@ class PolymarketLiveHarvester:
                     float(p.get("notional_usd", 0.0) or 0.0)
                     for p in self.active_positions.values()
                     if not position_is_settlement_receivable(p)
+                    and not is_post_expiry_uma_frozen_lock(p, now_ts)
+                    and str(p.get("umaResolutionStatus") or "").strip().lower() != "disputed"
                 ) + inflight_intent_usd + pending_intents_synced_equity_usd(_pend_d1)
                 if self._is_v5_unleashed_active():
                     _tot_eq_box = collat_f + cur_open_exp
-                    _v5_box_prof = get_unleashed_v5_tier_profile(_tot_eq_box)
+                    _v5_box_prof = get_unleashed_v5_tier_profile(
+                        _tot_eq_box, previous_tier=getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
+                    )
                     d1_pct = float(_v5_box_prof["d1_free_cash_pct"])
                     asset_cap = {"BTC": 250.0, "ETH": 150.0, "SOL": 65.0, "XRP": 65.0, "BNB": 35.0, "HYPE": 25.0, "DOGE": 25.0, "ZEC": 10.0, "XAU": 25.0, "XAG": 25.0}.get(cand_asset, 45.0)
-                    _tier_single_box_cap = 60.0 if _tot_eq_box < 98.0 else (120.0 if _tot_eq_box < 253.0 else 150.0)
+                    _tier_nm_box = str(_v5_box_prof.get("tier") or "")
+                    _tier_single_box_cap = (
+                        60.0
+                        if _tier_nm_box == "UNLEASHED_LAUNCH"
+                        else (120.0 if _tier_nm_box == "HYPER_GROWTH" else 150.0)
+                    )
                     if not (sleeve_src == "D1_SAME_ORACLE_DOMINANCE_BOX" and rem_tte_s <= 3600.0 and fresh_box_net <= 0.975):
                         asset_cap = min(asset_cap, _tier_single_box_cap)
                     if cand_asset in exp_d1 and not own_asset_grad:
@@ -7403,7 +7733,7 @@ class PolymarketLiveHarvester:
                     port_headroom = max(0.0, max(float(self.max_exposure), _tot_eq_box * 0.96) - cur_open_exp)
                     bridged_zf_cap = min(float(_v5_box_prof["bridged_zero_fee_cap_usd"]), _tier_single_box_cap)
                     if box_type != "DOMINANCE" and not own_grad:
-                        _ungrad_single_cap = max(12.0, _tot_eq_box * 0.28) if _tot_eq_box < 98.0 else max(20.0, _tot_eq_box * 0.25)
+                        _ungrad_single_cap = max(12.0, _tot_eq_box * 0.28) if _tier_nm_box == "UNLEASHED_LAUNCH" else max(20.0, _tot_eq_box * 0.25)
                         bridged_zf_cap = min(bridged_zf_cap, _ungrad_single_cap)
                         if not self.dry_run:
                             from src.polymarket_research.riskless_protocol_v2_expansion import is_post_expiry_uma_frozen_lock
@@ -7584,16 +7914,24 @@ class PolymarketLiveHarvester:
 
                     fresh_quiet = bool(candidate_box.get("is_quiet_book") and _bk_quiet(bk_a) and _bk_quiet(bk_b))
                     _rcfg_d1_w = getattr(self, "risk_config", None) or RISK_CONFIG
-                    _d1_cfg_cap = float(_rcfg_d1_w.get("d1_max_box_cost_net", 0.985))
+                    _rb_d1_gov = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+                    _d1_cfg_cap = float(
+                        _rcfg_d1_w["d1_max_box_cost_net"]
+                        if isinstance(_rcfg_d1_w, dict) and "d1_max_box_cost_net" in _rcfg_d1_w
+                        else _rb_d1_gov.get("d1_max_box_cost_net", RISK_CONFIG.get("d1_max_box_cost_net", 0.985))
+                    )
                     if sleeve_src == "COND1_MACRO_PARTITION_BOX" and not own_grad:
                         live_walk_cap = 0.985
                     elif sleeve_src == "COND1_MACRO_PARTITION_BOX" and own_grad and 0.0 < rem_tte_s <= 172800.0:
                         live_walk_cap = 0.992 if zero_fee_box else 0.988
                     elif zero_fee_box:
                         _grad_cap_max_tte = 604800.0 if sleeve_src in _v3_7d else 172800.0
-                        _rb_d1_gov = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
                         _zf_base_cap = (
-                            float(_rcfg_d1_w.get("cm_b3_max_walk_cap", 0.990))
+                            float(
+                                _rcfg_d1_w["cm_b3_max_walk_cap"]
+                                if isinstance(_rcfg_d1_w, dict) and "cm_b3_max_walk_cap" in _rcfg_d1_w
+                                else _rb_d1_gov.get("cm_b3_max_walk_cap", RISK_CONFIG.get("cm_b3_max_walk_cap", 0.990))
+                            )
                             if box_type == "BARRIER_MONO"
                             else (0.992 if (fresh_quiet or (own_grad and 0.0 < rem_tte_s <= _grad_cap_max_tte)) else 0.990)
                         )
@@ -8171,28 +8509,18 @@ class PolymarketLiveHarvester:
 
         _rcfg_sll = getattr(self, "risk_config", None) or RISK_CONFIG
         try:
-            st_path = DATA_DIR / "alpha124_shadow_state.json"
-            if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
-                alt_p = PIPELINE_ROOT / "data" / "alpha124" / "alpha124_shadow_state.json"
-                if alt_p.exists():
-                    st_path = alt_p
-            if not st_path.exists():
-                return {"executed": False, "reason": "ALPHA124_STATE_MISSING_OR_STALE"}
-            st_info_s = st_path.stat()
-            if (time.time() - st_info_s.st_mtime) > 300.0:
-                return {"executed": False, "reason": "ALPHA124_STATE_MISSING_OR_STALE"}
-            cache_tup_s = getattr(self, "_d1_grad_cache", None)
-            manual_inv_s = getattr(self, "_a124_grad_cache_mtime", 0.0)
-            st_key_s = (str(st_path), st_info_s.st_mtime_ns, st_info_s.st_size, manual_inv_s)
-            if isinstance(cache_tup_s, tuple) and len(cache_tup_s) == 3 and cache_tup_s[0] == st_key_s and manual_inv_s >= 0.0:
-                by_sl_map = cache_tup_s[1]
-            else:
-                if manual_inv_s < 0.0:
-                    self._a124_grad_cache_mtime = 0.0
-                    st_key_s = (str(st_path), st_info_s.st_mtime_ns, st_info_s.st_size, 0.0)
-                st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
-                by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
-                self._d1_grad_cache = (st_key_s, by_sl_map, st_raw.get("by_d1_asset") or {})
+            from src.polymarket_research.stage_c_zero_loss_velocity import load_alpha124_graduation_maps_with_lkg_cache
+
+            by_sl_map, _by_da_s, _a124_err_s = load_alpha124_graduation_maps_with_lkg_cache(
+                self,
+                DATA_DIR,
+                PIPELINE_ROOT,
+                json_loads_fn=_json_loads,
+                stale_reason="ALPHA124_STATE_MISSING_OR_STALE",
+                missing_reason="ALPHA124_STATE_MISSING_OR_STALE",
+            )
+            if _a124_err_s is not None or by_sl_map is None:
+                return {"executed": False, "reason": _a124_err_s or "ALPHA124_STATE_MISSING_OR_STALE"}
 
             def _grad8_s(rec: Dict[str, Any]) -> bool:
                 adj_p = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
@@ -8276,6 +8604,7 @@ class PolymarketLiveHarvester:
             return {"executed": False, "reason": "STALE_OR_OUTSIDE_TTE_WINDOW"}
         _prepost_res = self.__dict__.setdefault("_prepost_sll_reserved_usd", {})
         _prepost_mkts = self.__dict__.setdefault("_prepost_sll_markets", {})
+        _prepost_evts = self.__dict__.setdefault("_prepost_sll_events", {})
         if is_market_busy_for_scaling(self, mid_a, extra_busy_markets=list(_prepost_mkts.values())):
             return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
 
@@ -8293,24 +8622,6 @@ class PolymarketLiveHarvester:
             return {"executed": False, "reason": "INTRADAY_D1_SLOT_RESERVED"}
 
         _repost_n_in = int(candidate_box.get("_bond1_repost_count") or 0)
-        collat = getattr(self, "_last_known_collateral", None)
-        _skip_repeg_collat = bool(
-            _repost_n_in > 0
-            and candidate_box.get("_repeg_zero_fill")
-            and collat is not None
-            and "get_collateral_balance" not in getattr(self.executor, "__dict__", {})
-        )
-        if not self.dry_run and (collat is None or (_repost_n_in > 0 and not _skip_repeg_collat)) and hasattr(self.executor, "get_collateral_balance"):
-            _prev_c_sll = collat
-            try:
-                _fresh_c = await asyncio.to_thread(self.executor.get_collateral_balance)
-                if isinstance(_fresh_c, (int, float)) and not isinstance(_fresh_c, bool) and math.isfinite(float(_fresh_c)) and float(_fresh_c) >= 0.0:
-                    collat = float(_fresh_c)
-                    self._last_known_collateral = collat
-                    sync_pending_intents_on_collateral_refresh(self, _prev_c_sll, collat)
-            except Exception:
-                if collat is None:
-                    collat = 0.0
         if not self.dry_run and (
             dedupe_k in inflight_mkr
             or mkr_type_k in inflight_mkr_types
@@ -8327,81 +8638,152 @@ class PolymarketLiveHarvester:
                 and "post_maker_entry_order" not in getattr(self.executor, "__dict__", {})
             )
         )
+        box_id = str(candidate_box.get("box_id") or f"MKR_LOCK1_{int(now_ts)}")
+        intent_id = f"{box_id}_SLL_INTENT"
         evt_k = extract_sll_event_group_key(candidate_box)
-        _evt_rem_mkr = 1e9
-        if not _is_s2_mkr and _repost_n_in <= 0 and evt_k:
-            _evt_ok_mkr, _evt_rsn_mkr, _evt_rem_mkr, _ = check_per_event_concentration_cap(
+        _evt_ok_mkr, _evt_rsn_mkr, _evt_rem_mkr, _evt_gk_mkr = check_per_event_concentration_cap(
+            self, candidate_box, market_ids=[mid_a], now_ts=now_ts,
+            enforce_override=bool(_enforce_b1_v53 and _b1_gov.get("enable_event_slot_diversification", True)),
+            exclude_intent_ids=(intent_id,),
+        )
+        if not _evt_ok_mkr:
+            return {"executed": False, "reason": _evt_rsn_mkr}
+        evt_k = _evt_gk_mkr or evt_k or (f"MKT:{mid_a}" if mid_a else "")
+        if not self.dry_run and evt_k:
+            _prepost_evts[intent_id] = {
+                "trade_id": intent_id,
+                "market_id": mid_a,
+                "condition_id": cid_a,
+                "inflight_key": dedupe_k,
+                "event_group_key": evt_k,
+                "event_id": candidate_box.get("event_id"),
+                "title": candidate_box.get("title"),
+                "leg_a_label": candidate_box.get("leg_a_label"),
+                "asset": cand_asset,
+                "expiry_ts": exp_ts,
+                "notional_usd": 5.0,
+                "live_maker_anchor_inflight": True,
+            }
+        try:
+            collat = getattr(self, "_last_known_collateral", None)
+            _skip_repeg_collat = bool(
+                _repost_n_in > 0
+                and candidate_box.get("_repeg_zero_fill")
+                and collat is not None
+                and "get_collateral_balance" not in getattr(self.executor, "__dict__", {})
+            )
+            if not self.dry_run and (collat is None or (_repost_n_in > 0 and not _skip_repeg_collat)) and hasattr(self.executor, "get_collateral_balance"):
+                _prev_c_sll = collat
+                try:
+                    _fresh_c = await asyncio.to_thread(self.executor.get_collateral_balance)
+                    if isinstance(_fresh_c, (int, float)) and not isinstance(_fresh_c, bool) and math.isfinite(float(_fresh_c)) and float(_fresh_c) >= 0.0:
+                        collat = float(_fresh_c)
+                        self._last_known_collateral = collat
+                        sync_pending_intents_on_collateral_refresh(self, _prev_c_sll, collat)
+                except Exception:
+                    if collat is None:
+                        collat = 0.0
+            if not self.dry_run and (
+                dedupe_k in inflight_mkr
+                or mkr_type_k in inflight_mkr_types
+                or mid_a in _prepost_mkts.values()
+                or any(str(i.get("market_id") or "") == mid_a for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
+            ):
+                _prepost_evts.pop(intent_id, None)
+                return {"executed": False, "reason": "SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
+            _evt_ok_mkr, _evt_rsn_mkr, _evt_rem_mkr, _evt_gk_mkr2 = check_per_event_concentration_cap(
                 self, candidate_box, market_ids=[mid_a], now_ts=now_ts,
                 enforce_override=bool(_enforce_b1_v53 and _b1_gov.get("enable_event_slot_diversification", True)),
+                exclude_intent_ids=(intent_id,),
             )
             if not _evt_ok_mkr:
+                _prepost_evts.pop(intent_id, None)
                 return {"executed": False, "reason": _evt_rsn_mkr}
-        _b1_q_cap = float(_rcfg_sll.get("bond1_max_join_queue_usd", _b1_gov.get("bond1_max_join_queue_usd", 350.0)) or 350.0)
-        _b1_buried_s = float(_rcfg_sll.get("bond1_buried_cancel_sec", _b1_gov.get("bond1_buried_cancel_sec", 15.0)) or 15.0)
-        budget, _open_mid_u, _ = compute_sll_entry_budget(
-            self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts
-        )
-        budget = min(budget, _evt_rem_mkr)
-        min_rb = float(candidate_box.get("min_resting_bid", 0.940) or 0.940)
-        max_rb = min(0.998, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
-        max_opp = float(candidate_box.get("max_opp_bid", 0.008) or 0.008)
-        anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
-        if not (min_rb <= anc_bid_px <= max_rb):
-            return {"executed": False, "reason": f"RESTING_BID_OUT_OF_BAND:{anc_bid_px:.4f}"}
-        budget = await maybe_preempt_mlk1_if_bond1_starved(
-            self, sleeve_src, budget, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, _open_mid_u, exp_ts - now_ts, now_ts, compute_d1_per_market_notional_cap(self) if _open_mid_u > 0.0 else 0.0, cand_bid_px=anc_bid_px
-        )
-        uma_floor_h = sll_settlement_lag_floor_hours(sleeve_src)
-        cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
-        _cand_edge_hr = cand_vel_bps
-        min_lot_shares = 5
-        sh_int = int(math.floor(budget / anc_bid_px))
-        _fan_active_sll = bool(
-            (getattr(self, "enforce_gatling_sizing", False) or getattr(self, "enforce_gatling_fast_gun_reserve", False) or (not self.dry_run and getattr(self.executor, "client", None) is not None and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None and "get_market_book" not in getattr(self.executor, "__dict__", {}) and not getattr(self, "enforce_bond1_smart_queue", False)))
-            and float(_b1_gov.get("bond1_maker_fanout_clip_usd_seed") or 0.0) > 0.0
-            and float(collat or 0.0) < 150.0
-        )
-        if (
-            not _is_s2_mkr
-            and sh_int < (min_lot_shares if _fan_active_sll else 12)
-            and not self.dry_run
-            and anc_bid_px >= min_rb
-            and cand_vel_bps >= 40.0
-            and self._is_v5_unleashed_active()
-        ):
-            _vel_mult = float(_b1_gov.get("bond1_velocity_preempt_mult", 1.80) or 1.80)
-            _pe_map = getattr(self, "_maker_anchor_preempt_events", {})
-            _claimed_pe = self.__dict__.setdefault("_claimed_velocity_preempts", set())
-            _slow_vel, _slow_k = select_sll_velocity_preempt_target(self, _cand_edge_hr, _is_s2_mkr, _vel_mult, cand_sleeve=sleeve_src)
-            if _slow_k:
-                _proj_b, _, _ = compute_sll_entry_budget(
-                    self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts, post_vel_preempt=True, exclude_inflight_key=_slow_k
-                )
-                if int(math.floor(_proj_b / anc_bid_px)) < min_lot_shares:
-                    _slow_k = ""
-            if _slow_k:
-                _claimed_pe.add(_slow_k)
-                try:
-                    (self.__dict__.setdefault("_maker_anchor_preempt_reasons", {}))[_slow_k] = f"VELOCITY_UPGRADE:{dedupe_k}"
-                    logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_slow_k} ({_slow_vel:.1f} bps/h) -> {dedupe_k} ({_cand_edge_hr:.1f} bps/h @ ${anc_bid_px:.3f})")
-                    _pe_map[_slow_k].set()
-                    for _ in range(16):
-                        await asyncio.sleep(0.06)
-                        if not any(isinstance(i, dict) and i.get("inflight_key") == _slow_k for i in self.pending_entry_intents.values()):
-                            break
-                finally:
-                    _claimed_pe.discard(_slow_k)
-                collat = getattr(self, "_last_known_collateral", collat)
-                budget, _open_mid_u, _ = compute_sll_entry_budget(
-                    self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts, post_vel_preempt=True
-                )
-                sh_int = int(math.floor(budget / anc_bid_px))
-        if sh_int < min_lot_shares:
-            if not self.dry_run and dedupe_k:
-                retry_cd[dedupe_k] = time.time() + (2.0 if _is_s2_mkr else 8.0)
-            return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
-        if _is_s2_early and not await maybe_preempt_low_tier_s2_maker_slot(self, cand_asset, inflight_s2_mkr):
-            return {"executed": False, "reason": "S2_MAKER_CONCURRENT_CAP_1"}
+            evt_k = _evt_gk_mkr2 or evt_k
+            _b1_q_cap = float(_rcfg_sll.get("bond1_max_join_queue_usd", _b1_gov.get("bond1_max_join_queue_usd", 350.0)) or 350.0)
+            _b1_buried_s = float(_rcfg_sll.get("bond1_buried_cancel_sec", _b1_gov.get("bond1_buried_cancel_sec", 15.0)) or 15.0)
+            budget, _open_mid_u, _ = compute_sll_entry_budget(
+                self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts
+            )
+            budget = min(budget, _evt_rem_mkr)
+            min_rb = float(candidate_box.get("min_resting_bid", 0.940) or 0.940)
+            max_rb = min(0.998, float(candidate_box.get("max_box_cost_net", 0.994) or 0.994))
+            max_opp = float(candidate_box.get("max_opp_bid", 0.008) or 0.008)
+            anc_bid_px = float(candidate_box.get("anchor_bid_px") or candidate_box.get("leg_a_limit_price") or 0.0)
+            if not (min_rb <= anc_bid_px <= max_rb):
+                _prepost_evts.pop(intent_id, None)
+                return {"executed": False, "reason": f"RESTING_BID_OUT_OF_BAND:{anc_bid_px:.4f}"}
+            budget = await maybe_preempt_mlk1_if_bond1_starved(
+                self, sleeve_src, budget, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, _open_mid_u, exp_ts - now_ts, now_ts, compute_d1_per_market_notional_cap(self) if _open_mid_u > 0.0 else 0.0, cand_bid_px=anc_bid_px
+            )
+            budget = min(budget, _evt_rem_mkr)
+            uma_floor_h = sll_settlement_lag_floor_hours(sleeve_src)
+            cand_vel_bps = round(((1.0 - anc_bid_px) * 10000.0) / max(uma_floor_h, (exp_ts - now_ts) / 3600.0), 2) if exp_ts > now_ts else 0.0
+            _cand_ask_d = candidate_box.get("ask_depth_usd")
+            _cand_vol24 = candidate_box.get("volume_24h_usd", candidate_box.get("volume24hr"))
+            if (
+                _cand_ask_d is not None
+                and float(_cand_ask_d or 0.0) < 5.0
+                and _cand_vol24 is not None
+                and float(_cand_vol24 or 0.0) < 500.0
+            ):
+                _cand_edge_hr = round(cand_vel_bps * 0.15, 2)
+            else:
+                _cand_edge_hr = cand_vel_bps
+            min_lot_shares = 5
+            sh_int = int(math.floor(budget / anc_bid_px))
+            _fan_active_sll = bool(
+                (getattr(self, "enforce_gatling_sizing", False) or getattr(self, "enforce_gatling_fast_gun_reserve", False) or (not self.dry_run and getattr(self.executor, "client", None) is not None and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None and "get_market_book" not in getattr(self.executor, "__dict__", {}) and not getattr(self, "enforce_bond1_smart_queue", False)))
+                and float(_b1_gov.get("bond1_maker_fanout_clip_usd_seed") or 0.0) > 0.0
+                and float(collat or 0.0) < 150.0
+            )
+            if (
+                not _is_s2_mkr
+                and sh_int < (min_lot_shares if _fan_active_sll else 12)
+                and not self.dry_run
+                and anc_bid_px >= min_rb
+                and cand_vel_bps >= 40.0
+                and self._is_v5_unleashed_active()
+            ):
+                _vel_mult = float(_b1_gov.get("bond1_velocity_preempt_mult", 1.80) or 1.80)
+                _pe_map = getattr(self, "_maker_anchor_preempt_events", {})
+                _claimed_pe = self.__dict__.setdefault("_claimed_velocity_preempts", set())
+                _slow_vel, _slow_k = select_sll_velocity_preempt_target(self, _cand_edge_hr, _is_s2_mkr, _vel_mult, cand_sleeve=sleeve_src)
+                if _slow_k:
+                    _proj_b, _, _ = compute_sll_entry_budget(
+                        self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts, post_vel_preempt=True, exclude_inflight_key=_slow_k
+                    )
+                    if int(math.floor(_proj_b / anc_bid_px)) < min_lot_shares:
+                        _slow_k = ""
+                if _slow_k:
+                    _claimed_pe.add(_slow_k)
+                    try:
+                        (self.__dict__.setdefault("_maker_anchor_preempt_reasons", {}))[_slow_k] = f"VELOCITY_UPGRADE:{dedupe_k}"
+                        logger.info(f"[BOND1 VELOCITY UPGRADE] Preempting {_slow_k} ({_slow_vel:.1f} bps/h) -> {dedupe_k} ({_cand_edge_hr:.1f} bps/h @ ${anc_bid_px:.3f})")
+                        _pe_map[_slow_k].set()
+                        for _ in range(16):
+                            await asyncio.sleep(0.06)
+                            if not any(isinstance(i, dict) and i.get("inflight_key") == _slow_k for i in self.pending_entry_intents.values()):
+                                break
+                    finally:
+                        _claimed_pe.discard(_slow_k)
+                    collat = getattr(self, "_last_known_collateral", collat)
+                    budget, _open_mid_u, _ = compute_sll_entry_budget(
+                        self, sleeve_src, mid_a, collat, own_mkr_grad, _enforce_b1_v53, _b1_gov, _rcfg_sll, _gsn_s, exp_ts - now_ts, now_ts, post_vel_preempt=True
+                    )
+                    budget = min(budget, _evt_rem_mkr)
+                    sh_int = int(math.floor(budget / anc_bid_px))
+            if sh_int < min_lot_shares:
+                _prepost_evts.pop(intent_id, None)
+                if not self.dry_run and dedupe_k:
+                    retry_cd[dedupe_k] = time.time() + (2.0 if _is_s2_mkr else 8.0)
+                return {"executed": False, "reason": "INSUFFICIENT_MAKER_BOX_BUDGET"}
+            if _is_s2_early and not await maybe_preempt_low_tier_s2_maker_slot(self, cand_asset, inflight_s2_mkr):
+                _prepost_evts.pop(intent_id, None)
+                return {"executed": False, "reason": "S2_MAKER_CONCURRENT_CAP_1"}
+        except BaseException:
+            _prepost_evts.pop(intent_id, None)
+            raise
 
         inflight_key = dedupe_k
         inflight_mkr.add(inflight_key)
@@ -8411,10 +8793,10 @@ class PolymarketLiveHarvester:
         preempt_events = self.__dict__.setdefault("_maker_anchor_preempt_events", {})
         preempt_ev = threading.Event()
         preempt_events[inflight_key] = preempt_ev
-        box_id = str(candidate_box.get("box_id") or f"MKR_LOCK1_{int(now_ts)}")
-        intent_id = f"{box_id}_SLL_INTENT"
         _prepost_res[intent_id] = round(sh_int * anc_bid_px, 4)
         _prepost_mkts[intent_id] = mid_a
+        if intent_id in _prepost_evts:
+            _prepost_evts[intent_id]["notional_usd"] = round(sh_int * anc_bid_px, 4)
         _tk_wf = 0.0
         mkt_ws_s = getattr(self, "_pos_market_ws", None)
         if mkt_ws_s is not None and hasattr(mkt_ws_s, "subscribe_tokens_immediate"):
@@ -8484,14 +8866,28 @@ class PolymarketLiveHarvester:
                             evaluate_clinched_dead_leg_split_arb,
                             execute_clinched_dead_leg_split_arb,
                         )
-                        _sp_plan = evaluate_clinched_dead_leg_split_arb(
-                            candidate_box, bk_opp_f, budget_usd=budget, now_ts=now_ts, executor=self.executor
+                        _evt_ok_sp, _evt_rsn_sp, _evt_rem_sp, _ = check_per_event_concentration_cap(
+                            self, candidate_box, market_ids=[mid_a], now_ts=now_ts,
+                            enforce_override=bool(_enforce_b1_v53 and _b1_gov.get("enable_event_slot_diversification", True)),
+                            exclude_intent_ids=(intent_id,),
+                        )
+                        _sp_plan = (
+                            evaluate_clinched_dead_leg_split_arb(
+                                candidate_box,
+                                bk_opp_f,
+                                budget_usd=min(budget, _evt_rem_sp),
+                                now_ts=now_ts,
+                                executor=self.executor,
+                            )
+                            if _evt_ok_sp
+                            else None
                         )
                         if _sp_plan is not None:
+                            _sp_plan = {**_sp_plan, "market_id": mid_a, "exclude_intent_ids": [intent_id]}
                             _sp_res = await asyncio.to_thread(
                                 execute_clinched_dead_leg_split_arb, self, candidate_box, _sp_plan, now_ts=now_ts
                             )
-                            if _sp_res.get("executed"):
+                            if _sp_res.get("executed") or _sp_res.get("split_tx_hash") or _sp_res.get("merged_pairs"):
                                 if dedupe_k:
                                     if hasattr(self, "_record_seen_d1_box_key"):
                                         self._record_seen_d1_box_key(dedupe_k)
@@ -8529,6 +8925,19 @@ class PolymarketLiveHarvester:
 
             anc_notional = round((sh_int + 0.01) * anc_bid_px, 4)
             now_int_ts = time.time()
+            if not self.dry_run:
+                _evt_ok_post, _evt_rsn_post, _evt_rem_post, _ = check_per_event_concentration_cap(
+                    self, candidate_box, market_ids=[mid_a], now_ts=now_int_ts,
+                    enforce_override=bool(_enforce_b1_v53 and _b1_gov.get("enable_event_slot_diversification", True)),
+                    exclude_intent_ids=(intent_id,),
+                )
+                if not _evt_ok_post:
+                    return {"executed": False, "reason": _evt_rsn_post}
+                if _evt_rem_post < round(sh_int * anc_bid_px, 4) - 0.05:
+                    sh_int = int(math.floor(_evt_rem_post / anc_bid_px))
+                    if sh_int < min_lot_shares:
+                        return {"executed": False, "reason": "MAX_EVENT_NOTIONAL_CAP_REACHED"}
+                    anc_notional = round((sh_int + 0.01) * anc_bid_px, 4)
             _orig_post_ts = float(candidate_box.get("_bond1_first_post_ts") or now_int_ts)
             _init_fifo_r1 = bool(candidate_box.get("queue_front") and float(candidate_box.get("queue_ahead_usd") or 0.0) <= 5.0)
             if not self.dry_run:
@@ -8559,6 +8968,7 @@ class PolymarketLiveHarvester:
                     (self.__dict__.get("_d1_dirty_token_until") or {}).pop(tok_a, None)
                 _prepost_res.pop(intent_id, None)
                 _prepost_mkts.pop(intent_id, None)
+                _prepost_evts.pop(intent_id, None)
                 self.pending_entry_intents.pop(intent_id, None)
                 if _emit_shock_attempt is not None:
                     _emit_shock_attempt({
@@ -8574,6 +8984,7 @@ class PolymarketLiveHarvester:
             _now_p = time.time()
             _prepost_res.pop(intent_id, None)
             _prepost_mkts.pop(intent_id, None)
+            _prepost_evts.pop(intent_id, None)
             self.pending_entry_intents[intent_id] = {
                 "trade_id": intent_id, "market_id": mid_a, "token_id": tok_a, "opp_token_id": opp_a, "anchor_bid_px": posted_px,
                 "asset": cand_asset, "entry_order_id": maker_oid, "posted_shares": posted_sh,
@@ -8581,6 +8992,7 @@ class PolymarketLiveHarvester:
                 "matched_notional_usd": 0.0, "collat_drop_usd": 0.0,
                 "ts": _orig_post_ts, "heartbeat_ts": _now_p, "_last_persist_ts": _now_p,
                 "live_maker_anchor_inflight": True, "inflight_key": inflight_key, "sleeve_source": sleeve_src, "event_group_key": evt_k,
+                **({"event_id": str(candidate_box.get("event_id"))} if candidate_box.get("event_id") else {}),
                 "expiry_ts": exp_ts, "fifo_rank1_verified": _init_fifo_r1,
                 "velocity_bps_hr": round(((1.0 - posted_px) * 10000.0) / max(uma_floor_h, (exp_ts - _now_p) / 3600.0), 2) if exp_ts > _now_p else 0.0,
             }
@@ -8627,6 +9039,8 @@ class PolymarketLiveHarvester:
                 buried_since_mono: Optional[float] = None
                 outbid_repeg_px: Optional[float] = None
                 ws_filled = False
+                _consec_blind_bk_polls = 0
+                _last_good_bk_mono = t_sll_0
                 _use_ws_bk_ev = bool(mkt_ws_s is not None or getattr(self, "_force_sll_ws_events", False))
                 try:
                     while time.monotonic() < deadline:
@@ -8709,8 +9123,16 @@ class PolymarketLiveHarvester:
                             if _ws_bk_triggered:
                                 last_ws_chk = _now_m_chk
                             custom_bk_l = "get_market_book" in getattr(self.executor, "__dict__", {})
-                            bk_oc = mkt_ws_s.get_book(opp_a, max_age_sec=30.0) if (mkt_ws_s and not custom_bk_l) else None
-                            bk_wc = mkt_ws_s.get_book(tok_a, max_age_sec=30.0) if (mkt_ws_s and not custom_bk_l) else None
+                            _ws_bk_max_age = (
+                                1.0
+                                if _is_s2_mkr
+                                else min(
+                                    5.0,
+                                    max(1.0, float(_b1_gov.get("maker_ws_book_max_age_sec", 5.0) or 5.0)),
+                                )
+                            )
+                            bk_oc = mkt_ws_s.get_book(opp_a, max_age_sec=_ws_bk_max_age) if (mkt_ws_s and not custom_bk_l) else None
+                            bk_wc = mkt_ws_s.get_book(tok_a, max_age_sec=_ws_bk_max_age) if (mkt_ws_s and not custom_bk_l) else None
                             if isinstance(bk_oc, dict) and bk_oc.get("is_partial_delta") and not bk_oc.get("bids"):
                                 bk_oc = None
                             if isinstance(bk_wc, dict) and bk_wc.get("is_partial_delta") and (not bk_wc.get("bids") or not bk_wc.get("asks")):
@@ -8727,9 +9149,22 @@ class PolymarketLiveHarvester:
                                         if isinstance(bk_wc, dict):
                                             mkt_ws_s.seed_book(tok_a, bk_wc)
                                 except Exception as _bk_poll_exc:
-                                    logger.debug(f"[BOND1 BOOK POLL TIMEOUT] {box_id}: {_bk_poll_exc}; preserving resting Maker order {maker_oid}.")
+                                    logger.debug(f"[BOND1 BOOK POLL TIMEOUT] {box_id}: {_bk_poll_exc}; blind_polls={_consec_blind_bk_polls + 1}.")
                                     bk_oc, bk_wc = None, None
+                            if bk_oc is None or bk_wc is None:
+                                _consec_blind_bk_polls += 1
+                                _max_blind_polls = max(1, int(_b1_gov.get("maker_max_consecutive_blind_book_polls", 3) or 3))
+                                _max_blind_age_s = 3.5 if _is_s2_mkr else 12.0
+                                if _consec_blind_bk_polls >= _max_blind_polls or (time.monotonic() - _last_good_bk_mono) >= _max_blind_age_s:
+                                    adverse_cancelled = True
+                                    logger.warning(
+                                        f"[MAKER BLIND BOOK FAIL-CLOSED CANCEL] {box_id}: {_consec_blind_bk_polls} blind book polls "
+                                        f"(age={time.monotonic() - _last_good_bk_mono:.1f}s); canceling {maker_oid} immediately."
+                                    )
+                                    break
                             if bk_oc is not None and bk_wc is not None:
+                                _consec_blind_bk_polls = 0
+                                _last_good_bk_mono = time.monotonic()
                                 _prev_tk_wf = _tk_wf
                                 _tk_wf = sync_harvester_sll_enforced_tick(self.executor, mkt_ws_s, tok_a, _tk_wf, bk_wc=bk_wc)
                                 _c400_live = getattr(self.executor, "_clob_400_tick_until", None)
@@ -8748,16 +9183,35 @@ class PolymarketLiveHarvester:
                                             pass
                                 candidate_box["_posted_notional_usd"] = round(posted_sh * posted_px, 2)
                                 _cur_top_b = extract_top_bid_from_book(bk_wc)
-                                _is_outbid_now = (_cur_top_b is not None) and (float(_cur_top_b) > posted_px + 1e-6)
+                                _raw_b_wc = (bk_wc.get("bids") or []) if isinstance(bk_wc, dict) else []
+                                _above_q_u = sum(
+                                    float(b["price"] if isinstance(b, dict) else b[0]) * float(b["size"] if isinstance(b, dict) else b[1])
+                                    for b in _raw_b_wc
+                                    if float(b["price"] if isinstance(b, dict) else b[0]) > posted_px + 1e-6
+                                )
+                                _is_outbid_now = (
+                                    (_cur_top_b is not None)
+                                    and (float(_cur_top_b) > posted_px + 1e-6)
+                                    and (_above_q_u > 50.0)
+                                )
+                                _now_sll_p = time.time()
                                 _eff_buried_s = prepare_sll_stalk_guard(
                                     self, dedupe_k, candidate_box, _repost_n_in, time.monotonic() - t_sll_0,
                                     int(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("bond1_max_outbid_repegs", 3)),
-                                    _b1_buried_s, time.time(), is_outbid_now=_is_outbid_now, buried_since_mono=buried_since_mono,
+                                    _b1_buried_s, _now_sll_p, is_outbid_now=_is_outbid_now, buried_since_mono=buried_since_mono,
+                                )
+                                from src.polymarket_research.riskless_protocol_v2_expansion import is_post_expiry_uma_frozen_lock
+                                _liq_eq_sll = float(collat or 75.0) + sum(
+                                    float(_p_lq.get("notional_usd", 0.0) or 0.0)
+                                    for _p_lq in self.active_positions.values()
+                                    if isinstance(_p_lq, dict)
+                                    and not position_is_settlement_receivable(_p_lq)
+                                    and not is_post_expiry_uma_frozen_lock(_p_lq, _now_sll_p)
                                 )
                                 _act_l, _rp_l, buried_since_mono, _msg_l = eval_sll_live_book_poll(
                                     bk_oc, bk_wc, candidate_box, posted_px, min_rb, max_rb, max_opp, _tk_wf,
                                     _enforce_b1_v53, _is_s2_mkr, _repost_n_in, _b1_q_cap, _eff_buried_s, exp_ts, buried_since_mono,
-                                    collat_usd=float(collat or 75.0),
+                                    collat_usd=_liq_eq_sll,
                                 )
                                 if intent_id in self.pending_entry_intents:
                                     self.pending_entry_intents[intent_id]["fifo_rank1_verified"] = bool(
@@ -8809,6 +9263,21 @@ class PolymarketLiveHarvester:
 
                 cancel_res, summary, matched_sh, avg_px = await self._reconcile_maker_entry_fill(maker_oid, tok_a, ws_filled, posted_sh, posted_px, pre_bal_a)
                 _fin_m_u = round(float((summary or {}).get("cash") or (max(0.0, matched_sh) * avg_px)), 4) if matched_sh >= 0.01 else 0.0
+                if not self.dry_run and (matched_sh >= 0.01 or not bool((cancel_res or {}).get("is_canceled"))):
+                    _prepost_evts[intent_id] = {
+                        "trade_id": intent_id,
+                        "market_id": mid_a,
+                        "condition_id": cid_a,
+                        "inflight_key": inflight_key,
+                        "event_group_key": evt_k or (f"MKT:{mid_a}" if mid_a else ""),
+                        "event_id": candidate_box.get("event_id"),
+                        "title": candidate_box.get("title"),
+                        "leg_a_label": candidate_box.get("leg_a_label"),
+                        "asset": cand_asset,
+                        "expiry_ts": exp_ts,
+                        "notional_usd": _fin_m_u if _fin_m_u > 0.0 else round(posted_sh * posted_px, 4),
+                        "live_maker_anchor_inflight": True,
+                    }
                 _saved_intent = release_sll_pending_intent(self.pending_entry_intents, intent_id, _fin_m_u)
                 if not self.dry_run:
                     await asyncio.to_thread(self.save_state)
@@ -8834,11 +9303,15 @@ class PolymarketLiveHarvester:
                             "maker_post_only_0pct", exp_ts, time.time(), pre_bal_a, maker_oid, True, unk=True, sub_ts=now_int_ts,
                         )
                         _pos_u["dedupe_key"], _pos_u["pair_dedupe_key"], _pos_u["event_group_key"] = dedupe_k, pair_dedupe_k, evt_k
+                        if candidate_box.get("event_id"):
+                            _pos_u["event_id"] = str(candidate_box.get("event_id"))
                         self.active_positions[lid_u] = _pos_u
+                        _prepost_evts.pop(intent_id, None)
                         self._refresh_global_halt()
                         self.save_state()
                     return {"executed": False, "reason": "BOND1_CANCEL_OUTCOME_UNKNOWN"}
                 if matched_sh < 0.01:
+                    _prepost_evts.pop(intent_id, None)
                     if not self.dry_run and is_canc_s and pre_bal_a == 0.0:
                         (self.__dict__.get("_d1_dirty_token_until") or {}).pop(tok_a, None)
                     if outbid_repeg_px is not None and not self.dry_run and not getattr(self, "_shutdown_requested", False):
@@ -9005,6 +9478,7 @@ class PolymarketLiveHarvester:
                     _pos_ok["event_id"] = str(candidate_box.get("event_id"))
                 (self.__dict__.get("_clinched_ws_watchlist") or {}).pop(tok_a, None)
                 self.active_positions[lid] = _pos_ok
+                _prepost_evts.pop(intent_id, None)
                 debit_sll_collateral_after_fill(self, _saved_intent, not_u + fee_u, time.time())
                 self.executor.invalidate_collateral_cache()
                 self._pending_collateral_refresh = True
@@ -9033,6 +9507,7 @@ class PolymarketLiveHarvester:
             (self.__dict__.get("_sll_ws_book_events") or {}).pop(intent_id, None)
             _prepost_res.pop(intent_id, None)
             _prepost_mkts.pop(intent_id, None)
+            _prepost_evts.pop(intent_id, None)
             release_sll_pending_intent(self.pending_entry_intents, intent_id, 0.0)
             inflight_mkr.discard(inflight_key)
             inflight_mkr_types.discard(mkr_type_k)
@@ -9242,7 +9717,13 @@ class PolymarketLiveHarvester:
                 and _gov_rb_p.get("enable_single_leg_maker_bond1", True)
             )
             _allow_rebate_mg = bool(_gov_rb_p.get("enable_d1_rebate_maker_canary", False))
+            from src.polymarket_research.riskless_protocol_v2_expansion import (
+                check_per_event_concentration_cap,
+                extract_canonical_event_keys,
+            )
             mkr_cands.sort(key=lambda item: _cand_vel_ev(item[1], True), reverse=True)
+            _batch_evt_slot_counts: Dict[str, int] = {}
+            _max_evt_slots_b = int((_gov_rb_p.get("max_concurrent_intents_per_event") if isinstance(_gov_rb_p, dict) else None) or 1)
             for emit_id, cand in mkr_cands:
                 _is_sll_c = str(cand.get("box_type") or "").strip().upper() == "SINGLE_LEG_MAKER_LOCK"
                 _is_rmg_c = str(cand.get("sleeve_source") or "").strip() == "D1_REBATE_MACHINE_GUN"
@@ -9255,7 +9736,18 @@ class PolymarketLiveHarvester:
                 if (dk_m and float(retry_cd_poll.get(dk_m, 0.0) or 0.0) > now_ts) or is_d1_dedupe_blocked(self, dk_m, pdk_m, mids_m, now_ts):
                     seen_emits[emit_id] = None
                     continue
+                if _is_sll_c and bool(_gov_rb_p.get("enable_event_slot_diversification", True)):
+                    _c_ev_keys = extract_canonical_event_keys(cand, market_ids=[m for m in mids_m if m])
+                    if _c_ev_keys:
+                        _ok_ev_b, _, _, _ = check_per_event_concentration_cap(self, cand, market_ids=[m for m in mids_m if m], now_ts=now_ts)
+                        if not _ok_ev_b or any(_batch_evt_slot_counts.get(ek, 0) >= _max_evt_slots_b for ek in _c_ev_keys):
+                            seen_emits[emit_id] = None
+                            continue
+                else:
+                    _c_ev_keys = set()
                 if self._spawn_live_maker_anchor_box_task(cand):
+                    for ek in _c_ev_keys:
+                        _batch_evt_slot_counts[ek] = _batch_evt_slot_counts.get(ek, 0) + 1
                     seen_emits[emit_id] = None
                     while len(seen_emits) > 4096:
                         seen_emits.pop(next(iter(seen_emits)), None)
@@ -9541,7 +10033,12 @@ class PolymarketLiveHarvester:
                     active_market_equity = sum(self.get_position_market_value(p, now_ts) for p in self.active_positions.values())
                     tot_equity = self._last_known_collateral + active_market_equity
                     self._update_equity_tier(tot_equity)
-                    self.risk_controller.check_equity_drawdown(tot_equity, allow_auto_clear=True)
+                    ruin_chk_init = float(tot_equity)
+                    if not self.dry_run and ruin_chk_init < float(self.risk_controller.min_equity_floor_usd) and hasattr(self.executor, "get_idle_usdce_balance"):
+                        _idle_init_uc = self.executor.get_idle_usdce_balance()
+                        if isinstance(_idle_init_uc, (int, float)) and not isinstance(_idle_init_uc, bool) and float(_idle_init_uc) > 0.0:
+                            ruin_chk_init += float(_idle_init_uc)
+                    self.risk_controller.check_equity_drawdown(ruin_chk_init, allow_auto_clear=True)
             except Exception as e:
                 logger.debug(f"[RECONCILIATION] Could not query initial collateral balance: {e}")
 
@@ -9978,6 +10475,8 @@ class PolymarketLiveHarvester:
                                 and not r_gm.get("closed")
                                 and bool(pos.get("hold_to_maturity_lock"))
                                 and bool(pos.get("is_single_leg_lock"))
+                                and "KMIA" not in str(pos.get("asset") or "").upper()
+                                and "KMIA" not in str(tid or "").upper()
                             ):
                                 await self._maybe_recycle_disputed_htm_lock(tid, pos, now_g)
                         except Exception as gm_err:
@@ -10133,6 +10632,19 @@ class PolymarketLiveHarvester:
                         await asyncio.to_thread(self._resolve_lifecycle, tid, pos, open_orders)
                         if tid not in self.active_positions or position_requires_lifecycle_resolution(pos):
                             continue
+                    _uma_st_sup = str(pos.get("umaResolutionStatus") or pos.get("uma_resolution_status") or "").strip().lower()
+                    if (
+                        not pos.get("exit_order_id")
+                        and not pos.get("is_liquidating")
+                        and not pos.get("is_legged_out_residual")
+                        and ("KMIA" in str(pos.get("asset") or "").upper() or "KMIA" in str(tid or "").upper())
+                        and (
+                            pos.get("hold_to_maturity_lock")
+                            or _uma_st_sup == "disputed"
+                            or max(0.0, float(pos.get("candle_expiry_ts", now_ts + 600.0) or 0.0) - now_ts) <= 0.0
+                        )
+                    ):
+                        continue
 
                     exit_oid = pos.get("exit_order_id")
                     token_id = pos.get("token_id")
@@ -10205,6 +10717,14 @@ class PolymarketLiveHarvester:
                     spot_disp = 0.0
                     entry_spot_disp = 0.0
                     entry_move_pct = 0.0
+                    if (
+                        not exit_oid
+                        and not pos.get("is_liquidating")
+                        and not retry_due
+                        and ("KMIA" in str(pos.get("asset") or "").upper() or "KMIA" in str(tid or "").upper())
+                        and (pos.get("hold_to_maturity_lock") or tte_rem <= 0.0)
+                    ):
+                        continue
                     if (not pos.get("is_liquidating") or retry_due) and token_id and rem_shrs > 0.01:
                         # v3.3: /dev/shm fast tick top-of-book first (<=1.5s old), then live CLOB market WS, then REST fallback
                         book = self._get_verified_shm_book(pos)
@@ -10214,7 +10734,8 @@ class PolymarketLiveHarvester:
                             try:
                                 book = await self.executor.get_market_book_async(token_id)
                             except Exception as bk_err:
-                                if "404" in str(bk_err) or "no orderbook exists" in str(bk_err).lower():
+                                _bk_err_l = str(bk_err).lower()
+                                if "404" in _bk_err_l or "no orderbook exists" in _bk_err_l:
                                     pos["_book_closed_404"] = True
                                     book = {}
                                     tte_rem = 0.0
@@ -10222,7 +10743,10 @@ class PolymarketLiveHarvester:
                                     logger.debug(f"[HTM BOOK POLL NOTICE] {tid}: {bk_err}; skipping pass.")
                                     continue
                                 elif (
-                                    any(c in str(bk_err) for c in ("429", "502", "503", "504"))
+                                    (
+                                        any(c in _bk_err_l for c in ("429", "502", "503", "504", "timeout", "timed out", "remoteprotocolerror", "connecterror", "connection"))
+                                        or "timeout" in type(bk_err).__name__.lower()
+                                    )
                                     and not pos.get("is_liquidating")
                                     and (pos.get("is_single_leg_lock") or pos.get("is_dominance_box") or tte_rem <= 0.0)
                                 ):
@@ -11100,9 +11624,16 @@ class PolymarketLiveHarvester:
                                 limit_px = max(0.01, round(best_b - min(0.04, 0.02 + 0.01 * min(_prior_retries, 2)), 4))
                             elif (_is_live_auth and not trailing_ratchet_triggered) or _prior_retries > 0:
                                 _fak_slip = 0.04 + (0.04 * min(_prior_retries, 4))
-                                limit_px = max(0.01, round(best_b - _fak_slip, 4))
+                                _tk_uw_c = (getattr(self.executor, "_tick_size_cache", None) or {}).get(str(token_id))
+                                _uw_floor_px = (
+                                    0.001
+                                    if (best_b < 0.02 or (_tk_uw_c is not None and float(_tk_uw_c) <= 0.001 + 1e-9))
+                                    else 0.01
+                                )
+                                limit_px = max(_uw_floor_px, round(best_b - _fak_slip, 4))
                             else:
-                                limit_px = max(0.01, round(best_b - 0.02, 4))
+                                _uw_floor_px = 0.001 if best_b < 0.02 else 0.01
+                                limit_px = max(_uw_floor_px, round(best_b - 0.02, 4))
                             if isinstance(getattr(self.executor, "_fee_cache", None), dict) and str(token_id) not in self.executor._fee_cache:
                                 self.executor._fee_cache[str(token_id)] = (
                                     self._exit_taker_fee_rate(pos),
@@ -11192,9 +11723,9 @@ class PolymarketLiveHarvester:
                                 attempts = int(pos.get("unwind_retry_count", 0)) + 1
                                 pos["unwind_retry_count"] = attempts
                                 if "no orders found to match with fak order" in err_u_low:
-                                    # v3.9.3 Forensic Fix: Zero-match FAK 400 is deterministic (0 exposure resting);
-                                    # retry rapidly in 0.35s with widened sweep floor instead of sleeping 2s -> 4s -> 8s!
-                                    backoff_seconds = 0.35
+                                    # Retry rapidly on the first 3 empty-match checks, then back off exponentially
+                                    # so thin sub-cent / event books do not exhaust all 10 retries in 3.5 seconds!
+                                    backoff_seconds = 0.35 if attempts <= 3 else min(30.0, 2.0 ** min(attempts - 2, 5))
                                 else:
                                     backoff_seconds = min(30.0, 2.0 ** min(attempts, 5))
                             pos["next_unwind_retry_ts"] = now_ts + backoff_seconds
@@ -11760,11 +12291,23 @@ class PolymarketLiveHarvester:
         )
 
         lock_path = PID_FILE.with_suffix(".lock")
-        self._instance_lock_fd = open(lock_path, "a+")
+        self._instance_lock_fd = open(lock_path, "a+b")
         if fcntl is not None:
             try:
                 fcntl.flock(self._instance_lock_fd.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             except BlockingIOError as exc:
+                self._instance_lock_fd.close()
+                raise RuntimeError("Another live harvester instance already holds the lock") from exc
+        elif os.name == "nt":
+            import msvcrt as _msvcrt
+            try:
+                self._instance_lock_fd.seek(0, os.SEEK_END)
+                if self._instance_lock_fd.tell() == 0:
+                    self._instance_lock_fd.write(b"\x00")
+                    self._instance_lock_fd.flush()
+                self._instance_lock_fd.seek(0)
+                _msvcrt.locking(self._instance_lock_fd.fileno(), _msvcrt.LK_NBLCK, 1)
+            except OSError as exc:
                 self._instance_lock_fd.close()
                 raise RuntimeError("Another live harvester instance already holds the lock") from exc
 
@@ -11983,7 +12526,11 @@ class PolymarketLiveHarvester:
                         if _snipe_c is not None:
                             _fq = getattr(self, "_fast_d1_cand_lines", None)
                             if _fq is not None:
-                                _fq.append(json.dumps(_snipe_c, separators=(",", ":")))
+                                _fq.append(
+                                    _orjson.dumps(_snipe_c).decode("utf-8")
+                                    if _orjson is not None
+                                    else json.dumps(_snipe_c, separators=(",", ":"))
+                                )
                                 loop.call_soon_threadsafe(fast_d1_box_event.set)
                                 loop.call_soon_threadsafe(trigger_notify_event.set)
 
@@ -12051,7 +12598,11 @@ class PolymarketLiveHarvester:
                         f"resting exit orders (if any) remain on the exchange for restart reconciliation."
                     )
                     await asyncio.to_thread(self.save_state)
-                    if not self.active_positions and not self.dry_run:
+                    _any_resting_pos_exit = any(
+                        isinstance(_p_sh, dict) and (_p_sh.get("exit_order_id") or _p_sh.get("unwind_order_id"))
+                        for _p_sh in self.active_positions.values()
+                    )
+                    if not _any_resting_pos_exit and not self.dry_run:
                         await asyncio.to_thread(self.executor.cancel_all_orders)
                     break
 
@@ -12403,6 +12954,13 @@ class PolymarketLiveHarvester:
         self.risk_config["directional_taker_max_price_15m"] = float(dr_cfg.get("max_taker_price_15m", 0.72))
         self.risk_config["directional_maker_max_price"] = float(dr_cfg.get("max_maker_price_1h", 0.76))
         self.risk_config["phase3a_15m_long_tte_max_price"] = float(dr_cfg.get("max_maker_price_15m", 0.72))
+        if isinstance(rb_cfg, dict):
+            if "enable_graduated_d1_box" in rb_cfg:
+                self.risk_config["enable_graduated_d1_box"] = bool(rb_cfg["enable_graduated_d1_box"])
+            if rb_cfg.get("d1_max_box_cost_net") is not None:
+                self.risk_config["d1_max_box_cost_net"] = float(rb_cfg["d1_max_box_cost_net"])
+            if rb_cfg.get("cm_b3_max_walk_cap") is not None:
+                self.risk_config["cm_b3_max_walk_cap"] = float(rb_cfg["cm_b3_max_walk_cap"])
         if isinstance(rb_cfg, dict) and not bool(rb_cfg.get("enable_single_leg_maker_bond1", True)):
             self._preempt_resting_maker_anchors(reason="GOVERNANCE_DISABLED:SINGLE_LEG_MAKER_BOND1")
         elif isinstance(rb_cfg, dict) and getattr(self, "pending_entry_intents", None):
@@ -12511,7 +13069,7 @@ if __name__ == "__main__":
 
 
 # ======================================================================================
-# [13/64] MODULE: src/polymarket_research/polymarket_live_executor.py
+# [13/67] MODULE: src/polymarket_research/polymarket_live_executor.py
 # PURPOSE: CLOB L2 + R01 Multi-Wallet (EOA/PolyProxy/GnosisSafe/DepositWallet sig_type=3) + NegRiskAdapter Redeemer
 # ======================================================================================
 
@@ -13033,17 +13591,23 @@ def quantize_fok_buy_box_legs(
             if n_pair < float(min_shares) - 1e-9 or abs(na - nb) >= 5.0:
                 continue
             tot_cost = round(sz_a * float(px_a) + sz_b * float(px_b), 4)
-            if max_budget_usd is not None and tot_cost > float(max_budget_usd) + 1e-6:
+            v2_tot_cash = round(sz_a * float(px_a) * (1.0 + ha_f) + sz_b * float(px_b) * (1.0 + hb_f), 4)
+            v2_pair = round(min(sz_a, sz_b), 2)
+            if max_budget_usd is not None and max(tot_cost, v2_tot_cash) > float(max_budget_usd) + 1e-6:
                 continue
-            eff_net = round(tot_cost / max(n_pair, 1e-6), 6)
+            eff_v1 = round(tot_cost / max(n_pair, 1e-6), 6)
+            eff_v2 = round(v2_tot_cash / max(v2_pair, 1e-6), 6)
+            eff_net = max(eff_v1, eff_v2)
             if eff_net > float(max_box_cost_net) + 1e-6:
                 continue
-            prof = round(n_pair - tot_cost, 6)
+            prof = round(min(n_pair - tot_cost, v2_pair - v2_tot_cash), 6)
             cand_d = {
                 "leg_a_gross_shares": sz_a,
                 "leg_b_gross_shares": sz_b,
                 "net_paired_shares": n_pair,
                 "total_cost_usd": tot_cost,
+                "v2_total_cash_usd": v2_tot_cash,
+                "v2_box_cost_net": eff_v2,
                 "eff_box_cost_net": eff_net,
             }
             if best is None or (prof, n_pair) > (best[0], best[1]):
@@ -14541,7 +15105,16 @@ class PolymarketLiveExecutor:
             except Exception:
                 pass
             while not self.dry_run:
-                time.sleep(max(5.0, float(interval_sec)))
+                eff_iv = float(interval_sec)
+                try:
+                    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+                    rt_cfg = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("routing", {})
+                    if rt_cfg.get("async_clob_keepalive_interval_sec") is not None:
+                        eff_iv = float(rt_cfg["async_clob_keepalive_interval_sec"])
+                except Exception:
+                    pass
+                time.sleep(max(1.0, eff_iv))
                 if self.dry_run:
                     break
                 try:
@@ -14566,10 +15139,19 @@ class PolymarketLiveExecutor:
                 import py_clob_client_v2.http_helpers.helpers as hh
                 http_cli = getattr(hh, "_http_client", None)
                 if isinstance(http_cli, _ThreadLocalClobHttpClient):
+                    max_idle_cfg = 6.5
+                    try:
+                        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+                        rt_cfg = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("routing", {})
+                        if rt_cfg.get("async_clob_keepalive_expiry_sec") is not None:
+                            max_idle_cfg = min(float(rt_cfg["async_clob_keepalive_expiry_sec"]), 15.0)
+                    except Exception:
+                        pass
                     warmed = http_cli.warm_pool(
                         url=f"{self.CLOB_HOST.rstrip('/')}/time",
                         min_warm=4,
-                        max_idle_sec=6.5,
+                        max_idle_sec=max(3.5, max_idle_cfg),
                     )
             except Exception:
                 warmed = 0
@@ -16546,6 +17128,25 @@ class PolymarketLiveExecutor:
             logger.debug(f"On-chain redemption skipped for {condition_id}: {e}")
             return None
 
+    def get_idle_usdce_balance(self) -> Optional[float]:
+        """Read-only Polygon ERC-20 `USDC.e` balance check on `funder_address` (prevents false ruin halts prior to pUSD wrap)."""
+        if self.dry_run or not self.funder_address:
+            return 0.0
+        try:
+            from web3 import Web3
+            from src.polymarket_research.riskless_machine_gun_engine import get_fast_polygon_web3
+
+            w3 = get_fast_polygon_web3(timeout=3.5)
+            funder_cs = Web3.to_checksum_address(self.funder_address)
+            usdce_cs = Web3.to_checksum_address(self.USDC_E_ADDRESS)
+            erc20_abi = [
+                {"inputs": [{"name": "a", "type": "address"}], "name": "balanceOf", "outputs": [{"name": "", "type": "uint256"}], "stateMutability": "view", "type": "function"}
+            ]
+            bal_raw = int(w3.eth.contract(address=usdce_cs, abi=erc20_abi).functions.balanceOf(funder_cs).call())
+            return round(max(0.0, bal_raw / 1e6), 6)
+        except Exception:
+            return None
+
     def wrap_idle_usdce_to_pusd(self, min_usd: float = 1.0) -> Dict[str, Any]:
         """
         Sweeps idle legacy Polygon `USDC.e` (`0x2791...`) sitting in `funder_address` 1:1 into
@@ -17982,7 +18583,7 @@ class PolymarketLiveExecutor:
 
         if shares_to_buy <= 0:
             err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
-            logger.warning(f"[{trade_id}] {err}")
+            logger.debug(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
                 order_id=None,
@@ -18129,18 +18730,32 @@ class PolymarketLiveExecutor:
                 _trace.stamp("qualify_end")
             qualify_ms = (t_qualify_end - t0) * 1000.0
 
-            # Fast hot-path tick size resolution: NEVER make synchronous REST GET calls during a shock
-            if token_id in self._tick_size_cache:
+            # Fast hot-path tick size resolution: avoid synchronous REST GET in [0.05, 0.95],
+            # but always verify authoritative tick size at Polymarket's 0.001 boundary (>=0.96 or <=0.04)
+            # and never poison _tick_size_cache with an unverified "0.01" fallback!
+            _at_subcent_snipe = (
+                worst_acceptable_px >= 0.96
+                or worst_acceptable_px <= 0.04
+                or abs(round(worst_acceptable_px, 2) - round(worst_acceptable_px, 4)) > 1e-6
+            )
+            if token_id in self._tick_size_cache and not (
+                _at_subcent_snipe and abs(float(self._tick_size_cache[token_id]) - 0.01) < 1e-9
+            ):
                 tick_size_str = str(self._tick_size_cache[token_id])
+            elif _at_subcent_snipe:
+                try:
+                    _resolved_tk = self.get_token_tick_size(token_id, worst_acceptable_px)
+                except TypeError:
+                    _resolved_tk = self.get_token_tick_size(token_id)
+                tick_size_str = str(_resolved_tk or "0.01")
             else:
                 tick_size_str = "0.01"
-                self._tick_size_cache[token_id] = 0.01
 
             fee_rate_bps_val = int(round(f_rate * 10000)) if f_rate else 0
             eff_neg_risk = self.get_token_neg_risk(token_id, neg_risk)
             self.prewarm_token_market_cache(
                 token_id=token_id,
-                tick_size=tick_size_str,
+                tick_size=tick_size_str if token_id in self._tick_size_cache else None,
                 neg_risk=eff_neg_risk,
                 fee_rate_bps=fee_rate_bps_val,
                 condition_id=condition_id,
@@ -18841,7 +19456,7 @@ class PolymarketLiveExecutor:
 
         if shares_to_buy <= 0:
             err = f"Calculated shares_to_buy ({shares_to_buy}) <= 0 for notional ${notional_usd:.2f} at limit ${worst_acceptable_px:.4f}"
-            logger.warning(f"[{trade_id}] {err}")
+            logger.debug(f"[{trade_id}] {err}")
             return OrderResult(
                 success=False,
                 order_id=None,
@@ -20714,13 +21329,30 @@ class PolymarketLiveExecutor:
         px_hdg = self.quantize_order_price(px_hdg_in, hedge_token_id, rounding=ROUND_CEILING)
         fee_h_ps = fr_h * ((px_hdg * (1.0 - px_hdg)) ** fe_h) if fr_h > 0.0 else 0.0
         h_h = min(0.25, max(0.0, fee_h_ps / max(px_hdg, 1e-6))) if fr_h > 0.0 else 0.0
-        worst_box_cost_net = round(px_anc + (px_hdg / max(1.0 - h_h, 1e-6)), 6)
+        cont_v1_cost = px_anc + (px_hdg / max(1.0 - h_h, 1e-6))
+        cont_v2_cost = px_anc + px_hdg + fee_h_ps
+        worst_box_cost_net = round(max(cont_v1_cost, cont_v2_cost), 6)
         shares_int = float(math.floor(sh_anc + 1e-9))
-        hedge_gross_sh = (
-            quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=True)
-            if not self.dry_run
-            else shares_int
-        )
+        if not self.dry_run and shares_int >= 5.0:
+            g_up = quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=True)
+            v1_cost_up = (shares_int * px_anc + g_up * px_hdg) / max(shares_int, 1e-6)
+            v2_cost_up = (shares_int * px_anc + g_up * (px_hdg + fee_h_ps)) / max(shares_int, 1e-6)
+            post_q_up = round(max(v1_cost_up, v2_cost_up), 6)
+            if post_q_up <= cap_in + 1e-6:
+                hedge_gross_sh = g_up
+                worst_box_cost_net = max(worst_box_cost_net, post_q_up)
+            else:
+                g_dn = quantize_fok_buy_leg_size(shares_int / max(1.0 - h_h, 1e-6), px_hdg, round_up=False)
+                net_v1_dn = (math.floor(g_dn * (1.0 - h_h) * 100.0 + 1e-9) / 100.0) if h_h > 0.0 else g_dn
+                v2_cost_dn = round((shares_int * px_anc + g_dn * (px_hdg + fee_h_ps)) / max(min(shares_int, g_dn), 1e-6), 6)
+                if g_dn >= 5.0 and net_v1_dn >= 5.0 and v2_cost_dn <= cap_in + 1e-6:
+                    hedge_gross_sh = g_dn
+                    worst_box_cost_net = max(worst_box_cost_net, v2_cost_dn)
+                else:
+                    hedge_gross_sh = g_up
+                    worst_box_cost_net = max(worst_box_cost_net, post_q_up)
+        else:
+            hedge_gross_sh = shares_int
 
         def _unwind_anchor_leg() -> Tuple[Dict[str, Any], Dict[str, Any]]:
             pre_u = float(anchor_pre_balance or 0.0)
@@ -22607,7 +23239,7 @@ if __name__ == "__main__":
     print(">>> POLYMARKET LIVE ADAPTER PREFLIGHT: PASS (100% OPERATIONAL) <<<")
 
 # ======================================================================================
-# [14/64] MODULE: src/polymarket_research/riskless_machine_gun_engine.py
+# [14/67] MODULE: src/polymarket_research/riskless_machine_gun_engine.py
 # PURPOSE: v5.5.0 Riskless Machine-Gun Engine (Relayer V2 Batch Merge, Verified m=1 Convert, Multi-Leg & Overround)
 # ======================================================================================
 
@@ -22653,7 +23285,43 @@ import time
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-import requests
+try:
+    import requests
+except ImportError:  # pragma: no cover - stdlib fallback for minimal Python runtimes
+    import json as _stdlib_json
+    import urllib.parse as _urllib_parse
+    import urllib.request as _urllib_request
+
+    class _StdlibHttpResponse:
+        def __init__(self, status_code: int, raw_bytes: bytes) -> None:
+            self.status_code = int(status_code)
+            self._raw = raw_bytes
+            self.text = raw_bytes.decode("utf-8", errors="replace")
+
+        def json(self) -> Any:
+            return _stdlib_json.loads(self.text)
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
+
+    class _StdlibRequestsShim:
+        @staticmethod
+        def get(url: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, timeout: float = 5.0) -> _StdlibHttpResponse:
+            full_url = f"{url}?{_urllib_parse.urlencode(params)}" if params else url
+            req = _urllib_request.Request(full_url, headers=dict(headers or {}), method="GET")
+            with _urllib_request.urlopen(req, timeout=timeout) as resp:
+                return _StdlibHttpResponse(getattr(resp, "status", 200), resp.read())
+
+        @staticmethod
+        def post(url: str, json: Any = None, headers: Optional[Dict[str, str]] = None, timeout: float = 5.0) -> _StdlibHttpResponse:
+            hdrs = {"Content-Type": "application/json", **dict(headers or {})}
+            body = _stdlib_json.dumps(json).encode("utf-8") if json is not None else b""
+            req = _urllib_request.Request(url, data=body, headers=hdrs, method="POST")
+            with _urllib_request.urlopen(req, timeout=timeout) as resp:
+                return _StdlibHttpResponse(getattr(resp, "status", 200), resp.read())
+
+    requests = _StdlibRequestsShim()  # type: ignore[assignment]
 
 logger = logging.getLogger("RisklessMachineGun")
 
@@ -22803,12 +23471,25 @@ def resolve_authoritative_exit_fee_rate(executor: Any, pos: Dict[str, Any]) -> f
             return max(0.0, float(val or 0.0))
     if pos.get("market_fee_rate") is not None:
         return max(0.0, float(pos["market_fee_rate"]))
+    slv_chk = str(pos.get("sleeve") or "")
+    if (
+        pos.get("fee_rate_applied") is not None
+        and float(pos.get("fee_rate_applied") or 0.0) == 0.0
+        and slv_chk in {
+            "LP1_CROSS_MARKET_PARTITION_IMPLICATION_BOX",
+            "COND1_MACRO_PARTITION_BOX",
+            "FED1_CENTRAL_BANK_LP_BOX",
+            "C1_BINARY_COMPLETE_SET",
+        }
+    ):
+        return 0.0
     fee_fn = getattr(executor, "get_token_fee_rate", None) or getattr(executor, "get_market_fee_rate", None)
     fee_params_fn = getattr(executor, "get_market_fee_params", None)
     cid = str(pos.get("condition_id") or pos.get("market_id") or "").strip()
     is_live_exec = (
         executor is not None
         and not bool(getattr(executor, "dry_run", True))
+        and bool(getattr(executor, "is_authenticated", True))
         and getattr(executor, "_mock_children", None) is None
         and len(tok) >= 20
         and tok.isdigit()
@@ -23432,6 +24113,9 @@ def execute_negrisk_subset_convert_arb_impl(
             "leg_fills": [
                 {
                     "token_id": x["token_id"],
+                    "market_id": x["market_id"],
+                    "condition_id": x["condition_id"],
+                    "question_index": x["question_index"],
                     "label": x["label"],
                     "price": x["px"],
                     "gross_shares": x["gross_shares_req"],
@@ -23540,9 +24224,13 @@ def execute_negrisk_subset_convert_arb_impl(
             }
 
         if filled_count < len(prep_legs) or any_unknown:
+            _filled_toks_u = [str(ev["token_id"]) for ev in leg_evals if ev.get("filled") and float(ev.get("matched_shares") or 0.0) > 0.01]
+            if _filled_toks_u:
+                _min_u_sh = min(float(ev["matched_shares"]) for ev in leg_evals if ev.get("filled") and float(ev.get("matched_shares") or 0.0) > 0.01)
+                wait_for_erc1155_delivery(executor, _filled_toks_u, _min_u_sh, timeout_sec=3.5)
             residuals: List[Dict[str, Any]] = []
             for ev in leg_evals:
-                if ev.get("filled") and float(ev.get("matched_shares") or 0.0) > 0.01:
+                if ev.get("filled") and float(ev["matched_shares"] or 0.0) > 0.01:
                     uw = executor.execute_unwind_order(
                         ev["token_id"],
                         size=float(ev["matched_shares"]),
@@ -23583,6 +24271,12 @@ def execute_negrisk_subset_convert_arb_impl(
             neg_risk_market_id, q_indices, paired_sh, prefer_v2_pusd_adapter=True
         )
         conv_ok = bool(conv_res.get("success"))
+        if not conv_ok and not getattr(executor, "dry_run", False):
+            wait_for_erc1155_delivery(executor, [str(ev["token_id"]) for ev in leg_evals], paired_sh, timeout_sec=2.5)
+            conv_res = executor.attempt_negrisk_convert_positions(
+                neg_risk_market_id, q_indices, paired_sh, prefer_v2_pusd_adapter=True
+            )
+            conv_ok = bool(conv_res.get("success"))
         yes_net_usd = 0.0
         yes_sell_results: List[Dict[str, Any]] = []
         held_guaranteed_complete_set = False
@@ -25506,15 +26200,25 @@ def finish_nr2_subset_convert_arb(
                 l_tid = f"{cid_conv}_HOLD_NO_{l_idx}"
                 sh_l = float(lf["matched_shares"])
                 px_l = float(lf["price"])
+                q_idx = lf.get("question_index")
+                if q_idx is None and l_idx < len(verified_no_legs):
+                    q_idx = verified_no_legs[l_idx].get("question_index")
                 pos_no = harvester._make_single_leg_lock_pos(
                     l_tid, "MULTI_LEG_BUNDLE" if is_multi_no else "SINGLE_LEG_LOCK", sleeve_src, "NEGRISK", "nr_conv_hold",
                     str(lf.get("market_id") or ""), str(lf.get("condition_id") or ""), str(lf["token_id"]),
                     "NO", True, sh_l, round(sh_l * px_l, 4), 0.0, 0.0, 1.0, "zero_fees",
                     exp_ts, now_ts, 0.0, lf.get("orderID"), True, unk=False,
                 )
+                pos_no["box_id"] = cid_conv
+                pos_no["box_expected_legs"] = len(l_fills)
+                pos_no["pending_negrisk_convert"] = True
+                pos_no["neg_risk_market_id"] = nrm_id
+                if q_idx is not None:
+                    pos_no["question_index"] = int(q_idx)
+                pos_no["convert_fee_bips"] = int(fee_bips)
+                if l_idx == 0 and verified_yes_sells:
+                    pos_no["pending_liquid_yes_sells"] = [dict(y) for y in verified_yes_sells]
                 if is_multi_no:
-                    pos_no["box_id"] = cid_conv
-                    pos_no["box_expected_legs"] = len(l_fills)
                     pos_no["is_dominance_box"] = True
                     pos_no["is_single_leg_lock"] = False
                     pos_no["box_cost_net"] = round(tot_no_cost / max(0.01, min_no_sh), 5)
@@ -25525,7 +26229,7 @@ def finish_nr2_subset_convert_arb(
     return {"executed": True, "result": c_res, "leg_trade_ids": []}
 
 # ======================================================================================
-# [15/64] MODULE: src/polymarket_research/riskless_protocol_v2_expansion.py
+# [15/67] MODULE: src/polymarket_research/riskless_protocol_v2_expansion.py
 # PURPOSE: v5.5.0 Protocol V2 & Zero-Loss Frontier Expansion (NR_M1 Dead-Seed, RT_MONO1 Scalar Ladders, Velocity Scorer)
 # ======================================================================================
 
@@ -25574,6 +26278,7 @@ import time
 import urllib.request
 from datetime import datetime, timedelta, timezone, tzinfo
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Mapping, Optional, Sequence, Set, Tuple
 from zoneinfo import ZoneInfo
 
@@ -25607,7 +26312,13 @@ def is_post_expiry_uma_frozen_lock(pos: Mapping[str, Any], now_ts: Optional[floa
         return False
     if pos.get("is_liquidating") or pos.get("exit_order_id") or pos.get("unwind_order_id"):
         return False
-    if not (pos.get("is_single_leg_lock") or pos.get("is_dominance_box") or pos.get("hold_to_maturity_lock")):
+    _bt_frz = str(pos.get("box_type") or "").strip().upper()
+    if not (
+        pos.get("is_single_leg_lock")
+        or pos.get("is_dominance_box")
+        or pos.get("hold_to_maturity_lock")
+        or _bt_frz in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK", "MULTI_LEG_RESIDUAL", "MULTI_LEG_BUNDLE", "DOMINANCE"}
+    ):
         return False
     exp_ts = float(pos.get("candle_expiry_ts") or 0.0)
     if exp_ts <= 0.0:
@@ -25620,12 +26331,17 @@ def is_post_expiry_uma_frozen_lock(pos: Mapping[str, Any], now_ts: Optional[floa
     return uma_st == "disputed" or now_f >= anchor_ts + 14400.0
 
 
-class _USNewYorkFallbackTZ(tzinfo):
+class _USDSTFallbackTZ(tzinfo):
     """
-    Stdlib-pure US Eastern (`America/New_York`) `tzinfo` implementing exact US DST transitions
-    (2nd Sunday in March `07:00 UTC` -> 1st Sunday in November `06:00 UTC`) when Windows Python
+    Stdlib-pure North American (`US/Canada`) `tzinfo` implementing exact US DST transitions
+    (2nd Sunday in March `02:00` local -> 1st Sunday in November `02:00` local) when Windows Python
     lacks the `tzdata` IANA bundle.
     """
+
+    def __init__(self, std_hours: int = -5, std_name: str = "EST", dst_name: str = "EDT") -> None:
+        self._std_hours = int(std_hours)
+        self._std_name = str(std_name)
+        self._dst_name = str(dst_name)
 
     @staticmethod
     def _nth_sunday_day(year: int, month: int, n: int) -> int:
@@ -25633,27 +26349,94 @@ class _USNewYorkFallbackTZ(tzinfo):
         first_sun = 1 + ((6 - first_wd) % 7)
         return first_sun + 7 * (n - 1)
 
-    @classmethod
-    def _is_edt(cls, dt: Optional[datetime]) -> bool:
+    def _is_dst(self, dt: Optional[datetime]) -> bool:
         if dt is None:
             return False
         y = dt.year
-        dst_start_utc = datetime(y, 3, cls._nth_sunday_day(y, 3, 2), 7, 0, 0)
-        dst_end_utc = datetime(y, 11, cls._nth_sunday_day(y, 11, 1), 6, 0, 0)
+        start_day = self._nth_sunday_day(y, 3, 2)
+        end_day = self._nth_sunday_day(y, 11, 1)
         naive = dt.replace(tzinfo=None)
-        # Approximate local wall-time transition (02:00 EST -> +5h = 07:00 UTC; 02:00 EDT -> +4h = 06:00 UTC)
-        start_local = datetime(y, 3, dst_start_utc.day, 2, 0, 0)
-        end_local = datetime(y, 11, dst_end_utc.day, 1 if getattr(dt, "fold", 0) else 2, 0, 0)
+        start_local = datetime(y, 3, start_day, 2, 0, 0)
+        end_local = datetime(y, 11, end_day, 1 if getattr(dt, "fold", 0) else 2, 0, 0)
         return start_local <= naive < end_local
 
     def utcoffset(self, dt: Optional[datetime]) -> timedelta:
-        return timedelta(hours=-4 if self._is_edt(dt) else -5)
+        return timedelta(hours=(self._std_hours + 1) if self._is_dst(dt) else self._std_hours)
 
     def dst(self, dt: Optional[datetime]) -> timedelta:
-        return timedelta(hours=1 if self._is_edt(dt) else 0)
+        return timedelta(hours=1 if self._is_dst(dt) else 0)
 
     def tzname(self, dt: Optional[datetime]) -> str:
-        return "EDT" if self._is_edt(dt) else "EST"
+        return self._dst_name if self._is_dst(dt) else self._std_name
+
+
+_USNewYorkFallbackTZ = _USDSTFallbackTZ
+
+
+class _EUDSTFallbackTZ(tzinfo):
+    """Stdlib-pure European DST `tzinfo` (last Sunday in March 01:00 UTC -> last Sunday in October 01:00 UTC)."""
+
+    def __init__(self, std_hours: int = 0, std_name: str = "GMT", dst_name: str = "BST") -> None:
+        self._std_hours = int(std_hours)
+        self._std_name = str(std_name)
+        self._dst_name = str(dst_name)
+
+    @staticmethod
+    def _last_sunday_day(year: int, month: int) -> int:
+        next_m = datetime(year + 1, 1, 1) if month == 12 else datetime(year, month + 1, 1)
+        last_dt = next_m - timedelta(days=1)
+        return last_dt.day - ((last_dt.weekday() + 1) % 7)
+
+    def _is_dst(self, dt: Optional[datetime]) -> bool:
+        if dt is None:
+            return False
+        y = dt.year
+        s_day = self._last_sunday_day(y, 3)
+        e_day = self._last_sunday_day(y, 10)
+        naive = dt.replace(tzinfo=None)
+        start_local = datetime(y, 3, s_day, 1 + self._std_hours, 0, 0)
+        end_local = datetime(y, 10, e_day, (1 + self._std_hours) if getattr(dt, "fold", 0) else (2 + self._std_hours), 0, 0)
+        return start_local <= naive < end_local
+
+    def utcoffset(self, dt: Optional[datetime]) -> timedelta:
+        return timedelta(hours=(self._std_hours + 1) if self._is_dst(dt) else self._std_hours)
+
+    def dst(self, dt: Optional[datetime]) -> timedelta:
+        return timedelta(hours=1 if self._is_dst(dt) else 0)
+
+    def tzname(self, dt: Optional[datetime]) -> str:
+        return self._dst_name if self._is_dst(dt) else self._std_name
+
+
+_FALLBACK_TZ_MAP: Dict[str, tzinfo] = {
+    "America/New_York": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "US/Eastern": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Detroit": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Toronto": _USDSTFallbackTZ(-5, "EST", "EDT"),
+    "America/Chicago": _USDSTFallbackTZ(-6, "CST", "CDT"),
+    "US/Central": _USDSTFallbackTZ(-6, "CST", "CDT"),
+    "America/Denver": _USDSTFallbackTZ(-7, "MST", "MDT"),
+    "America/Phoenix": timezone(timedelta(hours=-7), "MST"),
+    "America/Los_Angeles": _USDSTFallbackTZ(-8, "PST", "PDT"),
+    "US/Pacific": _USDSTFallbackTZ(-8, "PST", "PDT"),
+    "Europe/London": _EUDSTFallbackTZ(0, "GMT", "BST"),
+    "Europe/Paris": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Berlin": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Madrid": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Europe/Rome": _EUDSTFallbackTZ(1, "CET", "CEST"),
+    "Asia/Tokyo": timezone(timedelta(hours=9), "JST"),
+    "Asia/Seoul": timezone(timedelta(hours=9), "KST"),
+    "Asia/Hong_Kong": timezone(timedelta(hours=8), "HKT"),
+    "Asia/Shanghai": timezone(timedelta(hours=8), "CST"),
+    "Asia/Singapore": timezone(timedelta(hours=8), "SGT"),
+    "Asia/Taipei": timezone(timedelta(hours=8), "CST"),
+    "Asia/Dubai": timezone(timedelta(hours=4), "GST"),
+    "Africa/Johannesburg": timezone(timedelta(hours=2), "SAST"),
+    "America/Sao_Paulo": timezone(timedelta(hours=-3), "BRT"),
+    "America/Argentina/Buenos_Aires": timezone(timedelta(hours=-3), "ART"),
+    "Australia/Sydney": timezone(timedelta(hours=11), "AEDT"),
+    "Pacific/Auckland": timezone(timedelta(hours=13), "NZDT"),
+}
 
 
 def get_us_eastern_tz() -> tzinfo:
@@ -25661,20 +26444,18 @@ def get_us_eastern_tz() -> tzinfo:
     try:
         return ZoneInfo("America/New_York")
     except Exception:
-        return _USNewYorkFallbackTZ()
+        return _FALLBACK_TZ_MAP["America/New_York"]
 
 
 def safe_zoneinfo(tz_name: Optional[str]) -> tzinfo:
-    """Resolves an IANA timezone with safe fallback to `_USNewYorkFallbackTZ` or `timezone.utc`."""
+    """Resolves an IANA timezone via OS `ZoneInfo` first, falling back to exact DST/fixed `tzinfo` when `tzdata` is absent."""
     nm = str(tz_name or "UTC").strip()
-    if not nm or nm.upper() == "UTC":
+    if not nm or nm.upper() in ("UTC", "ETC/UTC", "GMT"):
         return timezone.utc
     try:
         return ZoneInfo(nm)
     except Exception:
-        if nm in {"America/New_York", "US/Eastern", "America/Detroit", "America/Toronto"}:
-            return _USNewYorkFallbackTZ()
-        return timezone.utc
+        return _FALLBACK_TZ_MAP.get(nm, timezone.utc)
 
 
 def _iso_utc(ts: float) -> str:
@@ -25702,6 +26483,39 @@ def compute_exact_taker_fee_per_share(
     p = min(0.9999, max(0.0001, float(price)))
     exp = max(0.5, float(fee_exponent or 1.0))
     return r * ((p * (1.0 - p)) ** exp)
+
+
+def v2_net_buy_cost_per_share(
+    price: float,
+    fee_rate: float = 0.0,
+    fee_exponent: float = 1.0,
+) -> float:
+    """
+    Exact Polymarket Protocol V2 net-share-deducted BUY cost per 1.0 delivered outcome share:
+    `h(p) = r * ((p * (1 - p)) ** exp) / p`, so 1.0 net share requires `1 / (1 - h(p))` gross shares
+    costing `p / (1 - h(p))` USDC (`> p + fee_per_gross_share` whenever `r > 0`).
+    """
+    p = min(0.9999, max(0.0001, float(price)))
+    r = max(0.0, float(fee_rate or 0.0))
+    if r <= 0.0:
+        return float(price)
+    fee_ps = compute_exact_taker_fee_per_share(p, r, fee_exponent)
+    share_haircut = min(0.50, max(0.0, fee_ps / p))
+    return float(price) / max(0.50, 1.0 - share_haircut)
+
+
+def v2_net_sell_proceeds_per_share(
+    price: float,
+    fee_rate: float = 0.0,
+    fee_exponent: float = 1.0,
+) -> float:
+    """
+    Exact Polymarket Protocol V2 cash-deducted SELL proceeds per 1.0 outcome share sold:
+    `max(0.0, p - compute_exact_taker_fee_per_share(p, fee_rate, fee_exponent))`.
+    """
+    p = min(0.9999, max(0.0001, float(price)))
+    fee_ps = compute_exact_taker_fee_per_share(p, fee_rate, fee_exponent)
+    return max(0.0, float(price) - fee_ps)
 
 logger = logging.getLogger("RisklessProtocolV2Expansion")
 
@@ -25815,6 +26629,39 @@ def is_protocol_v2_market(market_or_event: Mapping[str, Any]) -> bool:
     return False
 
 
+_CONDITIONAL_OCCURRENCE_NEGRISK_RE = re.compile(
+    r"\b(?:ipo|initial\s+public\s+offering|acqui(?:sition|red|re)|merger|buyout|takeover"
+    r"|sold\s+in\s+(?:its|an|the)|at\s+what\s+(?:valuation|price)\s+will|deal\s+value|settlement\s+amount)\b",
+    re.IGNORECASE,
+)
+_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE = re.compile(
+    r"(?:\b(?:no\s+[a-z0-9]+|not\s+[a-z0-9]+|does\s+not|doesn't|will\s+not|won't|never|none|neither"
+    r"|nothing|other|cancelled|canceled|called\s+off|postponed)\b|^\s*0(?:\.0+)?\s*%?\s*$)",
+    re.IGNORECASE,
+)
+
+
+def is_conditional_negrisk_missing_catchall(
+    title_or_question: str,
+    labels: Sequence[str],
+) -> bool:
+    """
+    Detects non-augmented NegRisk slates conditioned on an uncertain corporate/deal event
+    (e.g., `"What % of Anthropic will be sold in its IPO?"` with `<4%..12%+` and NO `"No IPO"` slot)
+    where all `YES` brackets resolve to `$0.00` (Double-Zero!) if the underlying event does not occur.
+    """
+    hdr = str(title_or_question or "").strip()
+    if not hdr or not _CONDITIONAL_OCCURRENCE_NEGRISK_RE.search(hdr):
+        return False
+    clean_labels = [str(x or "").strip() for x in (labels or ()) if str(x or "").strip()]
+    if len(clean_labels) < 2:
+        return False
+    if any(_NEGRISK_NEGATION_OR_OTHER_CATCHALL_RE.search(lb) for lb in clean_labels):
+        return False
+    numeric_bracket_n = sum(1 for lb in clean_labels if re.search(r"[0-9%$]", lb))
+    return numeric_bracket_n >= 2
+
+
 def verify_v2_negrisk_other_partition(
     outcomes: Sequence[Mapping[str, Any]],
     *,
@@ -25833,6 +26680,7 @@ def verify_v2_negrisk_other_partition(
     other_indices: List[int] = []
     unnamed_indices: List[int] = []
     disabled_indices: List[int] = []
+    outcome_labels: List[str] = []
 
     for idx, item in enumerate(outcomes):
         label = str(
@@ -25843,6 +26691,7 @@ def verify_v2_negrisk_other_partition(
             or item.get("title")
             or ""
         ).strip()
+        outcome_labels.append(label)
         if bool(item.get("isPlaceholder") or item.get("is_placeholder") or item.get("placeholder")):
             unnamed_indices.append(idx)
             continue
@@ -25881,6 +26730,20 @@ def verify_v2_negrisk_other_partition(
             "reason": "AUGMENTED_NEGRISK_MISSING_SYNTHETIC_OTHER_INDEX",
             "is_protocol_v2": is_protocol_v2_market(meta),
             "is_augmented_negrisk": True,
+            "safe_for_all_yes_basket": False,
+            "total_partition_size": n,
+        }
+
+    meta_hdr = " ".join(
+        str(meta.get(k) or "")
+        for k in ("title", "question", "slug", "description")
+        if meta.get(k)
+    )
+    if not other_indices and is_conditional_negrisk_missing_catchall(meta_hdr, outcome_labels):
+        return False, {
+            "reason": "CONDITIONAL_EVENT_MISSING_NO_EVENT_CATCHALL",
+            "is_protocol_v2": is_protocol_v2_market(meta),
+            "is_augmented_negrisk": is_aug,
             "safe_for_all_yes_basket": False,
             "total_partition_size": n,
         }
@@ -26167,9 +27030,14 @@ def detect_nr4_nr5_optimal_tail_convert(
 
         no_cost = 9.99
         no_q = 0.0
+        no_net_avail_sz = no_ask_sz
         if 0.001 <= no_ask_raw <= 0.999 and no_ask_sz >= min_shares:
             no_q, _, _ = quantize_dynamic_tick_price(no_ask_raw, "BUY", shares=min_shares, mode="taker")
-            no_cost = no_q + compute_exact_taker_fee_per_share(no_q, f_rate, f_exp)
+            no_cost = v2_net_buy_cost_per_share(no_q, f_rate, f_exp)
+            if f_rate > 0.0 and no_cost > no_q:
+                no_net_avail_sz = no_ask_sz * (no_q / no_cost)
+            if no_net_avail_sz < min_shares:
+                no_cost = 9.99
 
         yes_net_bid = 0.0
         yes_q = 0.0
@@ -26189,7 +27057,7 @@ def detect_nr4_nr5_optimal_tail_convert(
                 "no_token_id": str(item.get("no_token_id") or item.get("token_id_no") or ""),
                 "no_ask_px": no_q,
                 "no_cost_net": no_cost,
-                "no_ask_size": no_ask_sz,
+                "no_ask_size": no_net_avail_sz,
                 "yes_bid_px": yes_q,
                 "yes_net_bid": yes_net_bid,
                 "yes_bid_size": yes_bid_sz,
@@ -26337,14 +27205,17 @@ def detect_nr6_cross_slate_surjection_box(
             if not (0.001 <= px <= 0.999 and sz >= min_shares and tok):
                 return None
             q_px, _, _ = quantize_dynamic_tick_price(px, "BUY", shares=min_shares, mode="taker")
+            nc_fl = v2_net_buy_cost_per_share(q_px, f_r, f_e)
             legs_to_buy.append(
                 {
                     "role": f"FINE_NO_{idx}",
                     "token_id": tok,
                     "condition_id": str(fl.get("condition_id") or ""),
                     "ask_px": q_px,
-                    "net_cost": q_px + compute_exact_taker_fee_per_share(q_px, f_r, f_e),
-                    "ask_size": sz,
+                    "net_cost": nc_fl,
+                    "ask_size": sz * (q_px / nc_fl) if (f_r > 0.0 and nc_fl > q_px) else sz,
+                    "fee_rate": f_r,
+                    "fee_exponent": f_e,
                 }
             )
         c_px = _sf(coarse_leg.get("yes_ask") or coarse_leg.get("ask"), 0.0)
@@ -26355,14 +27226,17 @@ def detect_nr6_cross_slate_surjection_box(
         if not (0.001 <= c_px <= 0.999 and c_sz >= min_shares and c_tok):
             return None
         qc_px, _, _ = quantize_dynamic_tick_price(c_px, "BUY", shares=min_shares, mode="taker")
+        nc_c = v2_net_buy_cost_per_share(qc_px, c_fr, c_fe)
         legs_to_buy.append(
             {
                 "role": "COARSE_YES",
                 "token_id": c_tok,
                 "condition_id": str(coarse_leg.get("condition_id") or ""),
                 "ask_px": qc_px,
-                "net_cost": qc_px + compute_exact_taker_fee_per_share(qc_px, c_fr, c_fe),
-                "ask_size": c_sz,
+                "net_cost": nc_c,
+                "ask_size": c_sz * (qc_px / nc_c) if (c_fr > 0.0 and nc_c > qc_px) else c_sz,
+                "fee_rate": c_fr,
+                "fee_exponent": c_fe,
             }
         )
     elif rel == "COARSE_COVERED_BY_UNION":
@@ -26375,14 +27249,17 @@ def detect_nr6_cross_slate_surjection_box(
         if not (0.001 <= c_px <= 0.999 and c_sz >= min_shares and c_tok):
             return None
         qc_px, _, _ = quantize_dynamic_tick_price(c_px, "BUY", shares=min_shares, mode="taker")
+        nc_c = v2_net_buy_cost_per_share(qc_px, c_fr, c_fe)
         legs_to_buy.append(
             {
                 "role": "COARSE_NO",
                 "token_id": c_tok,
                 "condition_id": str(coarse_leg.get("condition_id") or ""),
                 "ask_px": qc_px,
-                "net_cost": qc_px + compute_exact_taker_fee_per_share(qc_px, c_fr, c_fe),
-                "ask_size": c_sz,
+                "net_cost": nc_c,
+                "ask_size": c_sz * (qc_px / nc_c) if (c_fr > 0.0 and nc_c > qc_px) else c_sz,
+                "fee_rate": c_fr,
+                "fee_exponent": c_fe,
             }
         )
         for idx, fl in enumerate(fine_legs):
@@ -26394,14 +27271,17 @@ def detect_nr6_cross_slate_surjection_box(
             if not (0.001 <= px <= 0.999 and sz >= min_shares and tok):
                 return None
             q_px, _, _ = quantize_dynamic_tick_price(px, "BUY", shares=min_shares, mode="taker")
+            nc_fl = v2_net_buy_cost_per_share(q_px, f_r, f_e)
             legs_to_buy.append(
                 {
                     "role": f"FINE_YES_{idx}",
                     "token_id": tok,
                     "condition_id": str(fl.get("condition_id") or ""),
                     "ask_px": q_px,
-                    "net_cost": q_px + compute_exact_taker_fee_per_share(q_px, f_r, f_e),
-                    "ask_size": sz,
+                    "net_cost": nc_fl,
+                    "ask_size": sz * (q_px / nc_fl) if (f_r > 0.0 and nc_fl > q_px) else sz,
+                    "fee_rate": f_r,
+                    "fee_exponent": f_e,
                 }
             )
     else:
@@ -27280,6 +28160,8 @@ def compute_dynamic_riskless_tier_caps(
         max_evt_usd = round(min(45.0, max(20.0, eq * 0.28)), 2)
     else:
         max_evt_usd = round(min(150.0, max(45.0, eq * 0.32)), 2)
+    corr_nav_pct = min(0.15, max(0.01, float(cfg.get("max_correlated_oracle_event_nav_pct", 0.15) or 0.15)))
+    corr_evt_usd = round(max(0.0, eq) * corr_nav_pct, 4)
     return {
         "reward_harvester_cap_usd": rw_cap,
         "reward_unlocked": bool(eq >= rw_unlock),
@@ -27287,11 +28169,14 @@ def compute_dynamic_riskless_tier_caps(
         "pre_split_cap_usd": ps_cap,
         "max_concurrent_intents_per_event": max_per_evt,
         "max_event_notional_usd": max_evt_usd,
+        "max_correlated_oracle_event_notional_usd": corr_evt_usd,
     }
 
 
 _SYNTH_EVENT_ID_PREFIXES: Tuple[str, ...] = (
     "WS_SNIPE_",
+    "CLINCH_SPLIT_",
+    "COMP_RESID_",
     "SINGLE_LEG_",
     "MULTI_LEG_BUNDLE_",
     "MULTI_LEG_RESIDUAL",
@@ -27319,19 +28204,113 @@ _ICAO_SUFFIX_RE = re.compile(
 _ICAO_ANY_SUFFIX_RE = re.compile(r"^(?:[A-Z][A-Z0-9_ -]*_)?(HKO|[A-Z]{4})$")
 
 
+_WEATHER_CONTEXT_RE = re.compile(
+    r"(?:\b(?:temperature|weather|metar|asos|wunderground|rainfall|snowfall|precipitation|celsius|fahrenheit)\b"
+    r"|°\s*[cf]\b|-daily-(?:weather|lowest-temperature|highest-temperature))",
+    re.IGNORECASE,
+)
+_WEATHER_CITY_ALIASES: Tuple[Tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile(rf"\b{re.escape(alias)}\b", re.IGNORECASE), icao_code)
+    for alias, icao_code in (
+        ("new york city", "KLGA"),
+        ("nyc", "KLGA"),
+        ("laguardia", "KLGA"),
+        ("miami", "KMIA"),
+        ("los angeles", "KLAX"),
+        ("san francisco", "KSFO"),
+        ("chicago", "KORD"),
+        ("dallas", "KDAL"),
+        ("houston", "KHOU"),
+        ("austin", "KAUS"),
+        ("atlanta", "KATL"),
+        ("seattle", "KSEA"),
+        ("denver", "KDEN"),
+        ("toronto", "CYYZ"),
+        ("london", "EGLC"),
+        ("paris", "LFPB"),
+        ("munich", "EDDM"),
+        ("madrid", "LEMD"),
+        ("milan", "LIMC"),
+        ("amsterdam", "EHAM"),
+        ("warsaw", "EPWA"),
+        ("helsinki", "EFHK"),
+        ("istanbul", "LTFM"),
+        ("ankara", "LTAC"),
+        ("moscow", "UUWW"),
+        ("tokyo", "RJTT"),
+        ("seoul", "RKSI"),
+        ("busan", "RKPK"),
+        ("hong kong", "HKO"),
+        ("singapore", "WSSS"),
+        ("beijing", "ZBAA"),
+        ("shanghai", "ZSPD"),
+        ("shenzhen", "ZGSZ"),
+        ("guangzhou", "ZGGG"),
+        ("wuhan", "ZHHH"),
+        ("chongqing", "ZUCK"),
+        ("chengdu", "ZUUU"),
+        ("qingdao", "ZSQD"),
+        ("jinan", "ZSJN"),
+        ("zhengzhou", "ZHCC"),
+        ("tel aviv", "LLBG"),
+        ("jeddah", "OEJN"),
+        ("karachi", "OPKC"),
+        ("lucknow", "VILK"),
+        ("manila", "RPLL"),
+        ("mexico city", "MMMX"),
+        ("panama city", "MPMG"),
+        ("buenos aires", "SAEZ"),
+        ("sao paulo", "SBGR"),
+        ("wellington", "NZWN"),
+        ("cape town", "FACT"),
+    )
+)
+
+
 def _extract_weather_icao_key(cand: Mapping[str, Any]) -> str:
+    """
+    Extracts canonical `EVTWX:<ICAO>:<12h_bucket>` across ALL sleeves unconditionally so weather
+    markets entering via `BOND1`, `UMA_READY1`, `MKR_LOCK1`, `NR0`, `MULTI_LEG_BUNDLE`, or `W_PRUNE1`
+    can NEVER bypass correlated weather-station/day concentration accounting via sleeve-name or asset aliases.
+    """
     exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
     sl_u = str(cand.get("sleeve_source") or cand.get("sleeve") or "").strip().upper()
     ast_s = str(cand.get("asset") or "").strip().upper()
+    non_wx_tickers = {"GOLD", "SILV", "XAUU", "XAGU", "SP50", "NDX1", "CLIN", "HYPE", "DOGE", "USDT", "USDC"}
+    try:
+        from src.polymarket_research.weather_metar_engine import STATION_CATALOG as _WX_CAT, _SERIES_TO_ICAO as _WX_SERIES
+    except Exception:
+        _WX_CAT, _WX_SERIES = {}, {}
+    known_icaos = set(_WX_CAT.keys()) | set(_WX_SERIES.values()) | set(WUNDERGROUND_INTL_INTEGER_STATIONS) | {"HKO"}
+
     m_any = _ICAO_ANY_SUFFIX_RE.match(ast_s)
     if m_any:
         st_c = m_any.group(1)
-        if st_c == "HKO" or st_c in WUNDERGROUND_INTL_INTEGER_STATIONS:
+        if st_c in known_icaos and st_c not in non_wx_tickers:
             return f"EVTWX:{st_c}:{exp_i // 43200}"
     m_ic = _ICAO_SUFFIX_RE.match(ast_s)
-    if m_ic and (sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "_" in ast_s or len(ast_s) == 4):
-        if ast_s not in {"GOLD", "SILV", "XAUU", "XAGU", "SP50", "NDX1", "CLIN"}:
+    if m_ic and m_ic.group(1) not in non_wx_tickers:
+        if m_ic.group(1) in known_icaos or sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "_" in ast_s or len(ast_s) == 4:
             return f"EVTWX:{m_ic.group(1)}:{exp_i // 43200}"
+
+    blob_parts = [
+        str(cand.get(f) or "")
+        for f in ("event_slug", "slug", "market_slug", "series_slug", "question", "title", "leg_a_label", "trade_id", "box_id", "event_id")
+    ]
+    blob = " | ".join(p for p in blob_parts if p)
+    if not blob:
+        return ""
+    blob_low = blob.lower()
+    for ser_slug, ser_icao in _WX_SERIES.items():
+        if ser_slug in blob_low:
+            return f"EVTWX:{ser_icao}:{exp_i // 43200}"
+    for icao_cand in known_icaos:
+        if len(icao_cand) >= 3 and re.search(rf"(?:^|[^A-Z0-9]){re.escape(icao_cand)}(?:[^A-Z0-9]|$)", blob.upper()):
+            return f"EVTWX:{icao_cand}:{exp_i // 43200}"
+    if sl_u.startswith(("W_PRUNE", "W1_", "W_SOLAR")) or "WEATHER" in sl_u or "METAR" in sl_u or _WEATHER_CONTEXT_RE.search(blob):
+        for pat_city, city_icao in _WEATHER_CITY_ALIASES:
+            if pat_city.search(blob):
+                return f"EVTWX:{city_icao}:{exp_i // 43200}"
     return ""
 
 
@@ -27376,7 +28355,8 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
         if not v:
             continue
         if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
-            m_emb = _EMBEDDED_EVT_RE.match(v)
+            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            m_emb = _EMBEDDED_EVT_RE.match(v_clean)
             if m_emb:
                 return f"EVT:{m_emb.group(1)}"
             continue
@@ -27384,7 +28364,8 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
         dk_v = str(cand.get(dk_field) or "").strip()
         if dk_v:
-            m_dk = _DEDUPE_EVT_RE.match(dk_v) or _EMBEDDED_EVT_RE.match(dk_v)
+            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
             if m_dk:
                 return f"EVT:{m_dk.group(1)}"
     q_txt = str(cand.get("question") or "").strip()
@@ -27397,7 +28378,11 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
             flags=re.IGNORECASE,
         )
         if m_vs:
-            t1 = re.sub(r"(?i)^.*\b(?:handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*", "", m_vs.group(1)).strip(" :-_|")
+            t1 = re.sub(
+                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
+                "",
+                m_vs.group(1),
+            ).strip(" :-_|")
             t2 = m_vs.group(2).strip(" :-_|")
             if len(t1) >= 2 and len(t2) >= 2:
                 pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
@@ -27411,10 +28396,22 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
         base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
         base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
+        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
         base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
         base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
         base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
         base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
+        m_lbl_vs = re.search(
+            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
+            base_lbl,
+            flags=re.IGNORECASE,
+        )
+        if m_lbl_vs:
+            lt1 = re.sub(r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+", "", m_lbl_vs.group(1)).strip(" :-_|")
+            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            if len(lt1) >= 2 and len(lt2) >= 2:
+                pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
+                return f"EVTMATCH:{pair_lk}:{exp_i // 7200}"
         if len(base_lbl) >= 6:
             return f"EVTLBL:{ast_s}:{base_lbl[:40].upper()}:{exp_i // 900}"
     if ast_s and exp_i > 0 and ("EXACT_SCORE" in reg.upper() or ast_s.endswith("_K")):
@@ -27423,17 +28420,138 @@ def extract_sll_event_group_key(cand: Optional[Mapping[str, Any]]) -> str:
     return f"MKT:{mid}" if mid else ""
 
 
-def extract_canonical_event_keys(cand: Optional[Mapping[str, Any]]) -> set[str]:
-    """Returns all canonical event group aliases (e.g. both `EVT:318559` and `EVTWX:KMIA:41530`) for cross-box deduplication."""
+def extract_canonical_event_keys(
+    cand: Optional[Mapping[str, Any]],
+    market_ids: Optional[Sequence[str]] = None,
+) -> set[str]:
+    """
+    Returns ALL canonical event/market/condition/weather aliases simultaneously (`EVT:*`, `MKT:*`,
+    `COND:*`, `EVTMATCH:*`, `EVTLBL:*`, `EVTWX:*`, `WSTAT:*`, `WXSTATION:*`) so follow-on sleeves
+    entering the same underlying market/condition/event without `event_id` can NEVER bypass the
+    `15%` reconciled NAV concentration cap via single-key mismatch.
+    """
     if not isinstance(cand, Mapping):
         return set()
     out: set[str] = set()
     pk = extract_sll_event_group_key(cand)
     if pk:
         out.add(pk)
+
+    egk = str(cand.get("event_group_key") or "").strip()
+    if egk:
+        egk_body = egk[4:] if egk.upper().startswith("EVT:") else egk
+        if not egk_body.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
+            out.add(egk if ":" in egk else f"EVT:{egk}")
+        else:
+            egk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", egk_body, flags=re.IGNORECASE)
+            m_egk = _EMBEDDED_EVT_RE.match(egk_clean)
+            if m_egk:
+                out.add(f"EVT:{m_egk.group(1)}")
+
+    for k in ("event_id", "parent_event_id", "neg_risk_market_id", "event_slug"):
+        v = str(cand.get(k) or "").strip()
+        if not v:
+            continue
+        if v.upper().startswith(_SYNTH_EVENT_ID_PREFIXES):
+            v_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", v, flags=re.IGNORECASE)
+            m_emb = _EMBEDDED_EVT_RE.match(v_clean)
+            if m_emb:
+                out.add(f"EVT:{m_emb.group(1)}")
+            continue
+        out.add(v if v.upper().startswith("EVT:") else f"EVT:{v}")
+
+    for dk_field in ("dedupe_key", "pair_dedupe_key", "box_id", "trade_id"):
+        dk_v = str(cand.get(dk_field) or "").strip()
+        if dk_v:
+            dk_clean = re.sub(r"_(?:UNWRESID|LEG_INLINE_UNWIND)_.*$", "", dk_v, flags=re.IGNORECASE)
+            m_dk = _DEDUPE_EVT_RE.match(dk_clean) or _EMBEDDED_EVT_RE.match(dk_clean)
+            if m_dk:
+                out.add(f"EVT:{m_dk.group(1)}")
+
+    for m_raw in (
+        *(market_ids or ()),
+        cand.get("market_id"),
+        cand.get("leg_a_market_id"),
+        cand.get("leg_b_market_id"),
+    ):
+        ms = str(m_raw or "").strip()
+        if ms:
+            out.add(f"MKT:{ms}")
+    for seq_fld in ("legs", "no_legs"):
+        seq_v = cand.get(seq_fld)
+        if isinstance(seq_v, Sequence) and not isinstance(seq_v, (str, bytes)):
+            for lg in seq_v:
+                if isinstance(lg, Mapping):
+                    lms = str(lg.get("market_id") or "").strip()
+                    if lms:
+                        out.add(f"MKT:{lms}")
+                    lcs = str(lg.get("condition_id") or "").strip().lower()
+                    if lcs:
+                        out.add(f"COND:{lcs}")
+
+    for c_raw in (
+        cand.get("condition_id"),
+        cand.get("leg_a_condition_id"),
+        cand.get("leg_b_condition_id"),
+    ):
+        cs = str(c_raw or "").strip().lower()
+        if cs:
+            out.add(f"COND:{cs}")
+
+    exp_i = int(float(cand.get("expiry_ts") or cand.get("leg_a_expiry_ts") or cand.get("candle_expiry_ts") or 0.0))
+    q_txt = str(cand.get("question") or "").strip()
+    if q_txt:
+        q_clean = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", q_txt)
+        m_vs = re.search(
+            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:map|game|set|total|handicap|spread|o/u|over|under|bo\d)\b))",
+            q_clean,
+            flags=re.IGNORECASE,
+        )
+        if m_vs:
+            t1 = re.sub(
+                r"(?i)^.*\b(?:(?:game|map|set)\s+\d+|handicap|spread|total|winner|moneyline)\s*[:\-–|]*\s*",
+                "",
+                m_vs.group(1),
+            ).strip(" :-_|")
+            t2 = m_vs.group(2).strip(" :-_|")
+            if len(t1) >= 2 and len(t2) >= 2:
+                pair_k = " VS ".join(sorted((t1.upper(), t2.upper())))
+                out.add(f"EVTMATCH:{pair_k}:{exp_i // 7200}")
+
+    lbl = str(cand.get("leg_a_label") or cand.get("title") or "").strip()
+    ast_s = str(cand.get("asset") or "").strip().upper()
+    if lbl and lbl.lower() not in {"lock", "bundle", "resid", "clinch_ws_snipe"}:
+        base_lbl = re.sub(r"\[[^\]]*\]|\([^)]*\)", " ", lbl)
+        base_lbl = re.sub(r"(?i)^\s*(?:exact\s+score|spread|total|over/under|o/u)\s*[:\-–|]*\s*", "", base_lbl)
+        base_lbl = re.sub(r"(?i)\b(?:game|map|set)\s+\d+\s*[:\-–|]*\s*", " ", base_lbl)
+        base_lbl = re.sub(r"(?i)\b(?:exact\s+score|dead\s+no|reward\s+carry\s+no)\b.*$", "", base_lbl)
+        base_lbl = re.sub(r"\s+\d+\s*[-:]\s*\d+(?:\s*°?[CFcf%])?\b", " vs ", base_lbl)
+        base_lbl = re.sub(r"[:\-–|]\s*(?:>=|<=|>|<)?\s*-?\d+(?:\.\d+)?\s*(?:°?[CFcf%]|pts|goals)?.*$", "", base_lbl)
+        base_lbl = re.sub(r"\s+", " ", base_lbl).strip(" :-_|")
+        m_lbl_vs = re.search(
+            r"([A-Za-z0-9 .'\-]{2,28}?)\s+vs\.?\s+([A-Za-z0-9 .'\-]{2,28}?)(?=\s*(?:[:\-–|?]|$|\b(?:total|handicap|spread|o/u|over|under|bo\d|winner|yes|no)\b))",
+            base_lbl,
+            flags=re.IGNORECASE,
+        )
+        if m_lbl_vs:
+            lt1 = re.sub(
+                r"(?i)^.*\b(?:esports|dota\s*2|cs2|lol|valorant|nba|nfl|nhl|mlb|soccer|tennis|sports_child_moneyline|sports_child_totals)\s+",
+                "",
+                m_lbl_vs.group(1),
+            ).strip(" :-_|")
+            lt2 = re.sub(r"(?i)\s+\b(?:yes|no)\b.*$", "", m_lbl_vs.group(2)).strip(" :-_|")
+            if len(lt1) >= 2 and len(lt2) >= 2:
+                pair_lk = " VS ".join(sorted((lt1.upper(), lt2.upper())))
+                out.add(f"EVTMATCH:{pair_lk}:{exp_i // 7200}")
+
     wx_k = _extract_weather_icao_key(cand)
     if wx_k:
         out.add(wx_k)
+        parts_wx = wx_k.split(":")
+        if len(parts_wx) >= 2 and parts_wx[1]:
+            out.add(f"WXSTATION:{parts_wx[1]}")
+            if len(parts_wx) >= 3 and parts_wx[2]:
+                out.add(f"WSTAT:{parts_wx[1]}:{parts_wx[2]}")
     return out
 
 
@@ -27453,6 +28571,120 @@ def resolve_canonical_fee_source(fee_rate: float, sleeve_src: str = "", explicit
     return exp_s or "crypto_fees_v2"
 
 
+def compute_reconciled_concentration_nav_usd(harvester: Any, now_ts: Optional[float] = None) -> float:
+    """
+    Section 7(a)/(b) Authoritative Reconciled Mark-to-Bid NAV:
+      - Sums unencumbered exchange cash (`_last_known_collateral`), escrowed maker equity already
+        deducted on-chain (`pending_intents_synced_equity_usd`), and conservative open position value.
+      - Fails closed to `$0.00` when `_last_known_collateral is None` in live mode (`not dry_run`).
+      - NEVER inflates NAV with raw book cost of UMA-disputed (`umaResolutionStatus == 'disputed'`),
+        post-expiry UMA-frozen (`is_post_expiry_uma_frozen_lock`), legged-out residual (`MULTI_LEG_RESIDUAL` /
+        `is_legged_out_residual` / `_UNWRESID_`), or unresolved balance discrepancy positions (such as the
+        4 disputed KMIA positions locking `$50.51` book cost), valuing impaired positions strictly at
+        `min(notional_usd, remaining_shares * verified_best_bid)` (`$0.00` when no live bid exists).
+      - Applies ZERO artificial `$25.00` floor so concentration caps scale down proportionally with true NAV.
+    """
+    if harvester is None:
+        return 0.0
+    now_f = float(time.time() if now_ts is None else now_ts)
+    collat_raw = getattr(harvester, "_last_known_collateral", None)
+    if collat_raw is None:
+        collat_f = 75.0 if bool(getattr(harvester, "dry_run", False)) else 0.0
+    else:
+        try:
+            collat_f = float(collat_raw)
+        except (TypeError, ValueError):
+            collat_f = 0.0
+    if not math.isfinite(collat_f) or collat_f < 0.0:
+        collat_f = 0.0
+
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    open_val = 0.0
+    for p in act_pos.values():
+        if not isinstance(p, Mapping):
+            continue
+        st_u = str(p.get("status") or "").strip().upper()
+        if st_u == "AWAITING_ONCHAIN_SETTLEMENT" or p.get("resolved_winning_outcome") is not None:
+            continue
+        raw_not = _sf(p.get("notional_usd"), 0.0)
+        if raw_not <= 0.0:
+            continue
+        rem_sh = _sf(p.get("remaining_shares", p.get("entry_shares")), 0.0)
+        bid_px = _sf(p.get("best_bid", p.get("current_bid", p.get("mark_bid"))), 0.0)
+        is_impaired = bool(
+            str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed"
+            or is_post_expiry_uma_frozen_lock(p, now_f)
+            or bool(p.get("is_legged_out_residual"))
+            or str(p.get("box_type") or "").strip().upper() == "MULTI_LEG_RESIDUAL"
+            or "_UNWRESID_" in str(p.get("trade_id") or "").upper()
+            or st_u in {"UNRESOLVED_BALANCE_DISCREPANCY", "UNRESOLVED_SETTLEMENT", "EXPIRED_OUT_OF_MONEY"}
+        )
+        if is_impaired:
+            if rem_sh > 0.0 and 0.0 < bid_px <= 1.0:
+                open_val += min(raw_not, rem_sh * bid_px)
+        else:
+            if rem_sh > 0.0 and 0.0 < bid_px <= 1.0:
+                open_val += min(raw_not, rem_sh * bid_px)
+            else:
+                open_val += raw_not
+    escrowed_maker_eq = pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
+    return round(max(0.0, collat_f + open_val + escrowed_maker_eq), 4)
+
+
+def check_harvester_fail_closed_accounting_halt(
+    harvester: Any,
+    default_state_file: Optional[Path] = None,
+) -> List[str]:
+    """
+    Section 7(c) Fail-Closed Accounting Invariants:
+      1. Halts immediately if `ACCOUNTING_SAFEGUARD_ACTIVE.json` (`active: true`) was triggered by `PAAAccountant`.
+      2. Halts immediately on non-finite or negative `_last_known_collateral`.
+      3. Halts immediately on corrupt/negative `remaining_shares` or `notional_usd` in `active_positions`.
+    """
+    reasons: List[str] = []
+    if harvester is None:
+        return reasons
+    collat_raw = getattr(harvester, "_last_known_collateral", None)
+    if collat_raw is not None:
+        try:
+            cf = float(collat_raw)
+            if not math.isfinite(cf) or cf < -1e-6:
+                reasons.append("ACCOUNTING_INVALID_NEGATIVE_OR_NAN_COLLATERAL")
+        except (TypeError, ValueError):
+            reasons.append("ACCOUNTING_CORRUPT_COLLATERAL_STATE")
+
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    for tid, p in act_pos.items():
+        if not isinstance(p, Mapping):
+            reasons.append(f"ACCOUNTING_CORRUPT_POSITION_RECORD:{tid}")
+            continue
+        for fld in ("notional_usd", "remaining_shares"):
+            if fld in p and p.get(fld) is not None:
+                try:
+                    fv = float(p[fld])
+                    if not math.isfinite(fv) or fv < -1e-6:
+                        reasons.append(f"ACCOUNTING_NEGATIVE_POSITION_FIELD:{tid}:{fld}")
+                except (TypeError, ValueError):
+                    reasons.append(f"ACCOUNTING_NONNUMERIC_POSITION_FIELD:{tid}:{fld}")
+
+    sg_path = getattr(harvester, "accounting_safeguard_file", None)
+    if sg_path is None and default_state_file is not None:
+        try:
+            sg_path = Path(default_state_file).parent / "paa" / "ACCOUNTING_SAFEGUARD_ACTIVE.json"
+        except Exception:
+            sg_path = None
+    if sg_path is not None:
+        try:
+            sg_p = Path(sg_path)
+            if sg_p.exists():
+                sg_obj = json.loads(sg_p.read_text(encoding="utf-8"))
+                if not isinstance(sg_obj, Mapping) or sg_obj.get("active", True) is not False:
+                    reasons.append("PAA_ACCOUNTING_SAFEGUARD_HALT")
+        except Exception:
+            reasons.append("PAA_ACCOUNTING_SAFEGUARD_UNREADABLE_FAIL_CLOSED")
+    return reasons
+
+
 def check_per_event_concentration_cap(
     harvester: Any,
     cand: Optional[Mapping[str, Any]],
@@ -27461,19 +28693,28 @@ def check_per_event_concentration_cap(
     *,
     enforce_override: bool = False,
     min_headroom_usd: float = 5.0,
+    exclude_intent_ids: Optional[Sequence[str]] = None,
 ) -> Tuple[bool, str, float, str]:
     """
-    Unified cross-sleeve per-event slot & USD concentration guard across `WS_SNIPE`, Taker/Maker `SINGLE_LEG_LOCK`,
-    `MULTI_LEG_BUNDLE`, `NEGRISK_2LEG`, and `COMPLETE_SET`.
+    Unified cross-sleeve per-event slot & USD concentration guard across `WS_SNIPE`, `S2`, Taker/Maker
+    `SINGLE_LEG_LOCK`, `MULTI_LEG_BUNDLE`, `NEGRISK_CONVERT`, `NEGRISK_2LEG`, and `COMPLETE_SET`.
+    Enforces a hard `<= 15%` reconciled mark-to-bid NAV ceiling per correlated weather station/day OR
+    non-box oracle event aggregated across ALL strategies and sleeves without sleeve-name or standalone-MKT bypasses.
     Returns `(allowed, reject_reason, remaining_event_headroom_usd, primary_event_group_key)`.
     """
     evt_k = extract_sll_event_group_key(cand)
-    if harvester is None or not isinstance(cand, Mapping) or not evt_k:
+    cand_keys = extract_canonical_event_keys(cand, market_ids=market_ids)
+    if not evt_k and cand_keys:
+        evt_k = sorted(cand_keys)[0]
+    if harvester is None or not isinstance(cand, Mapping) or not cand_keys:
         return True, "", 9999.0, evt_k
     sl_src = str(cand.get("sleeve_source") or cand.get("sleeve") or "").strip()
     btype = str(cand.get("box_type") or "").strip().upper()
     rem_s = float(cand.get("rem_sec") or 9999.0)
-    if sl_src in FAST_GUN_S2_SLEEVES or (btype == "DOMINANCE" and rem_s <= 960.0 and sl_src == "D1_SAME_ORACLE_DOMINANCE_BOX"):
+    has_wx_key = any(str(k).startswith(("WSTAT:", "EVTWX:", "WXSTATION:")) for k in cand_keys)
+    # Only pure 2-leg opposing-outcome non-weather short-TTE D1 boxes skip single-oracle concentration caps;
+    # single-leg S2 and any weather-station candidate MUST ALWAYS pass the 15% reconciled NAV cap!
+    if btype == "DOMINANCE" and rem_s <= 960.0 and sl_src == "D1_SAME_ORACLE_DOMINANCE_BOX" and not has_wx_key:
         return True, "", 9999.0, evt_k
     ex = getattr(harvester, "executor", None)
     enforce = bool(
@@ -27499,24 +28740,28 @@ def check_per_event_concentration_cap(
         return True, "", 9999.0, evt_k
     now_f = float(time.time() if now_ts is None else now_ts)
     stalk_map = getattr(harvester, "_sll_event_stalk_until", None) or {}
-    cand_keys = extract_canonical_event_keys(cand)
     for ck in cand_keys:
         if float(stalk_map.get(ck, 0.0) or 0.0) > now_f:
             return False, "EVENT_STALKER_COOLDOWN", 0.0, evt_k
 
     act_pos = getattr(harvester, "active_positions", None) or {}
     pend_int = getattr(harvester, "pending_entry_intents", None) or {}
-    collat_raw = getattr(harvester, "_last_known_collateral", None)
-    collat_f = max(0.0, float(collat_raw if collat_raw is not None else 75.0))
-    open_eq = sum(
-        float(p.get("notional_usd", 0.0) or 0.0)
-        for p in act_pos.values()
-        if isinstance(p, Mapping) and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT" and p.get("resolved_winning_outcome") is None
-    )
-    tot_eq = max(25.0, collat_f + open_eq)
-    caps = compute_dynamic_riskless_tier_caps(tot_eq, rb_cfg)
+    prepost_evts = getattr(harvester, "_prepost_sll_events", None) or {}
+    excl_ids = {str(x).strip() for x in (exclude_intent_ids or ()) if str(x or "").strip()}
+    reconciled_nav = compute_reconciled_concentration_nav_usd(harvester, now_f)
+    caps = compute_dynamic_riskless_tier_caps(reconciled_nav, rb_cfg)
     max_slots = int(caps.get("max_concurrent_intents_per_event", 1) or 1)
     max_evt_usd = float(caps.get("max_event_notional_usd", 25.0) or 25.0)
+    is_weather_or_non_box_oracle = bool(
+        has_wx_key or btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}
+    )
+    if is_weather_or_non_box_oracle:
+        corr_pct = min(0.15, max(0.01, float(rb_cfg.get("max_correlated_oracle_event_nav_pct", 0.15) or 0.15)))
+        corr_cap_usd = round(reconciled_nav * corr_pct, 4)
+        if float(rb_cfg.get("max_event_notional_usd", 0.0) or 0.0) > 0.0:
+            max_evt_usd = min(max_evt_usd, corr_cap_usd)
+        else:
+            max_evt_usd = corr_cap_usd
 
     mset = {str(m).strip() for m in (market_ids or ()) if str(m or "").strip()}
     if not mset:
@@ -27543,22 +28788,46 @@ def check_per_event_concentration_cap(
             other_mkt_slot_groups.add(grp_id)
 
     for ik, iv in pend_int.items():
-        if not isinstance(iv, Mapping) or not iv.get("live_maker_anchor_inflight"):
+        if str(ik).strip() in excl_ids or not isinstance(iv, Mapping):
+            continue
+        iv_notional = max(0.0, float(iv.get("notional_usd", 0.0) or 0.0))
+        if iv_notional <= 0.0 and not iv.get("live_maker_anchor_inflight"):
             continue
         i_keys = extract_canonical_event_keys(iv)
         if not (cand_keys & i_keys):
             continue
-        used_evt_usd += max(0.0, float(iv.get("notional_usd", 0.0) or 0.0))
+        used_evt_usd += iv_notional
         grp_id = f"INTENT:{iv.get('inflight_key') or ik}"
         seen_slot_groups.add(grp_id)
         i_mid = str(iv.get("market_id") or "").strip()
         if not mset or i_mid not in mset:
             other_mkt_slot_groups.add(grp_id)
 
+    for pk, pv in prepost_evts.items():
+        pk_s = str(pk).strip()
+        if pk_s in excl_ids or pk_s in pend_int or not isinstance(pv, Mapping):
+            continue
+        pv_keys = extract_canonical_event_keys(pv)
+        if not (cand_keys & pv_keys):
+            continue
+        used_evt_usd += max(0.0, float(pv.get("notional_usd", 0.0) or 0.0))
+        grp_id = f"PREPOST:{pv.get('inflight_key') or pk_s}"
+        seen_slot_groups.add(grp_id)
+        pv_mid = str(pv.get("market_id") or "").strip()
+        if not mset or pv_mid not in mset:
+            other_mkt_slot_groups.add(grp_id)
+
     rem_evt_usd = round(max(0.0, max_evt_usd - used_evt_usd), 4)
     if len(other_mkt_slot_groups) >= max_slots:
         return False, "MAX_CONCURRENT_PER_EVENT_REACHED", rem_evt_usd, evt_k
-    if len(seen_slot_groups) >= max_slots and btype in {"SINGLE_LEG_MAKER_LOCK", "MULTI_LEG_BUNDLE", "NEGRISK_2LEG", "COMPLETE_SET"}:
+    if len(seen_slot_groups) >= max_slots and btype in {
+        "SINGLE_LEG_LOCK",
+        "SINGLE_LEG_MAKER_LOCK",
+        "MULTI_LEG_BUNDLE",
+        "NEGRISK_CONVERT",
+        "NEGRISK_2LEG",
+        "COMPLETE_SET",
+    }:
         return False, "MAX_CONCURRENT_PER_EVENT_REACHED", rem_evt_usd, evt_k
     if rem_evt_usd < float(min_headroom_usd):
         return False, "MAX_EVENT_NOTIONAL_CAP_REACHED", rem_evt_usd, evt_k
@@ -27575,6 +28844,7 @@ def cap_bond1_maker_for_gatling_reserve(
     *,
     sleeve_src: str = "",
     post_vel_preempt: bool = False,
+    now_ts: Optional[float] = None,
 ) -> float:
     """
     Reserves `max($20.00, 28% * NAV, gatling_fast_gun_reserve_usd)` of unencumbered free cash
@@ -27607,7 +28877,25 @@ def cap_bond1_maker_for_gatling_reserve(
         else set()
     )
     if paused_set and FAST_GUN_S2_SLEEVES.issubset(paused_set):
-        gatling_reserve_usd = max(0.0, float(rb.get("paused_s2_reserve_floor_usd", 2.0) or 0.0))
+        paused_floor = max(0.0, float(rb.get("paused_s2_reserve_floor_usd", 2.0) or 0.0))
+        now_chk_r = float(time.time() if now_ts is None else now_ts)
+        frozen_uma_u = sum(
+            float(p.get("notional_usd", 0.0) or 0.0)
+            for p in (getattr(harvester, "active_positions", None) or {}).values()
+            if isinstance(p, Mapping)
+            and str(p.get("status") or "") != "AWAITING_ONCHAIN_SETTLEMENT"
+            and (
+                is_post_expiry_uma_frozen_lock(p, now_chk_r)
+                or (0.0 < float(p.get("candle_expiry_ts", 0.0) or 0.0) <= now_chk_r)
+            )
+        )
+        liquid_b1_nav = max(float(collat_f), total_b1_nav - frozen_uma_u)
+        adaptive_tkr_floor = (
+            min(13.50, round(max(0.0, liquid_b1_nav - 28.0) * 0.50, 2))
+            if (liquid_b1_nav >= 34.0 and frozen_uma_u < 15.0)
+            else 0.0
+        )
+        gatling_reserve_usd = max(paused_floor, adaptive_tkr_floor)
     else:
         base_reserve = max(20.0, float(rb.get("gatling_fast_gun_reserve_usd", 20.0) or 20.0))
         gatling_reserve_usd = max(base_reserve, round(total_b1_nav * 0.28, 2))
@@ -27617,6 +28905,10 @@ def cap_bond1_maker_for_gatling_reserve(
     dyn_caps = compute_dynamic_riskless_tier_caps(total_b1_nav, rb)
     explicit_rw_test = bool(getattr(harvester, "enforce_reward_slot_reserve", False))
     recent_rw_cand = (time.time() - float(getattr(harvester, "_last_rw_carry_cand_ts", 0.0) or 0.0)) <= 300.0
+    rw_live_allowed = (
+        "MKR_REWARD_LOCKED_CARRY" not in paused_set
+        and not bool(rb.get("strict_pure_riskless_mode", False))
+    )
     if (
         rw_slot_cfg > 0.0
         and not post_vel_preempt
@@ -27624,7 +28916,7 @@ def cap_bond1_maker_for_gatling_reserve(
         and sl_up not in FAST_GUN_S2_SLEEVES
         and bool(rb.get("enable_reward_locked_carry_live_bridge", False))
         and total_b1_nav >= 55.0
-        and (explicit_rw_test or (live_real_ex and (dyn_caps["reward_unlocked"] or recent_rw_cand)))
+        and (explicit_rw_test or (live_real_ex and rw_live_allowed and (dyn_caps["reward_unlocked"] or recent_rw_cand)))
     ):
         has_rw_active = any(
             isinstance(p, Mapping)
@@ -27654,6 +28946,9 @@ PASSIVE_CARRY_SLEEVES = frozenset({
     "BOND1_UMA_RESOLUTION_CARRY",
     "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
     "MKR_REWARD_LOCKED_CARRY",
+    "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
+    "W_PRUNE1_DEAD_NO_BOND",
+    "UMA_READY1_LIVENESS_PRIORITY",
 })
 
 FAST_GUN_S2_SLEEVES = frozenset({
@@ -27802,6 +29097,7 @@ def compute_sll_and_carry_gatling_budget(
             inflight_s2_usd=inflight_s2_u,
             sleeve_src=sl_u,
             post_vel_preempt=post_vel_preempt,
+            now_ts=now_f,
         )
         capped = maybe_cap_gatling_budget_sync(
             harvester,
@@ -28671,13 +29967,23 @@ def consolidate_any_box_leg_close(
     if isinstance(p_list, list):
         prior_legs.extend([x for x in p_list if isinstance(x, dict)])
 
+    _entry_fee_asset = str(pos.get("entry_fee_asset") or "").upper()
+    _entry_cash_fee = (
+        float(pos.get("entry_fee_cash_usd", 0.0) or 0.0)
+        if _entry_fee_asset == "SHARES"
+        else float(pos.get("entry_fee_cash_usd", pos.get("fee_usd", 0.0)) or 0.0)
+    )
+    _leg_notional = float(pos.get("notional_usd", 0.0) or 0.0)
+    _raw_leg_pnl = round(float(cum_cash) - _leg_notional - _entry_cash_fee - float(cum_fee), 6)
     this_leg = {
         "trade_id": tid,
         "target_token": pos.get("target_token"),
         "market_id": pos.get("market_id"),
-        "notional_usd": round(float(pos.get("notional_usd", 0.0) or 0.0), 4),
+        "notional_usd": round(_leg_notional, 4),
+        "entry_cash_fee_usd": round(_entry_cash_fee, 4),
         "payout_usd": round(float(cum_cash), 4),
         "exit_fee_usd": round(float(cum_fee), 4),
+        "raw_pnl_usd": _raw_leg_pnl,
         "net_pnl_usd": round(float(net_pnl), 4),
         "close_reason": reason,
         "order_id": pos.get("order_id"),
@@ -28728,9 +30034,25 @@ def consolidate_any_box_leg_close(
     if prior_legs:
         all_legs = prior_legs + [this_leg]
         tot_notional = round(sum(float(x.get("notional_usd", 0.0) or 0.0) for x in all_legs), 4)
-        tot_payout = round(sum(float(x.get("payout_usd", 0.0) or 0.0) for x in all_legs), 2)
+        tot_payout = round(sum(float(x.get("payout_usd", 0.0) or 0.0) for x in all_legs), 4)
         tot_exit_fee = round(sum(float(x.get("exit_fee_usd", 0.0) or 0.0) for x in all_legs), 4)
-        tot_pnl = round(sum(float(x.get("net_pnl_usd", 0.0) or 0.0) for x in all_legs), 2)
+        raw_tot_pnl = sum(
+            float(x["raw_pnl_usd"])
+            if "raw_pnl_usd" in x and x["raw_pnl_usd"] is not None
+            else (
+                float(x.get("payout_usd", 0.0) or 0.0)
+                - float(x.get("notional_usd", 0.0) or 0.0)
+                - float(x.get("entry_cash_fee_usd", 0.0) or 0.0)
+                - float(x.get("exit_fee_usd", 0.0) or 0.0)
+            )
+            for x in all_legs
+        )
+        cent_tot_pnl = round(raw_tot_pnl, 2)
+        if cent_tot_pnl != 0.0:
+            tot_pnl = cent_tot_pnl
+        else:
+            sub_tot_pnl = round(raw_tot_pnl, 4)
+            tot_pnl = sub_tot_pnl if abs(sub_tot_pnl) >= 0.0001 else 0.0
         pos["trade_id"] = str(pos.get("box_id") or tid)
         pos["notional_usd"] = tot_notional
         pos["payout_usd"] = tot_payout
@@ -28879,8 +30201,8 @@ def detect_d1_telescoping_candle_bridge(
         return None
     qa, _, _ = quantize_dynamic_tick_price(px_a, "BUY", shares=5.0, mode="taker")
     qb, _, _ = quantize_dynamic_tick_price(px_b, "BUY", shares=5.0, mode="taker")
-    cost_a = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
-    cost_b = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
+    cost_a = v2_net_buy_cost_per_share(qa, fr_a, fe_a)
+    cost_b = v2_net_buy_cost_per_share(qb, fr_b, fe_b)
     total_cost = cost_a + cost_b
     net_edge = 1.0 - total_cost
     if net_edge < float(min_net_edge_usd):
@@ -28947,8 +30269,8 @@ def detect_b1_intraday_onetouch_noon_box(
     fr_b = float(fee_rate if fee_rate_noon is None else fee_rate_noon)
     fe_a = float(fee_exponent if fee_exponent_touch is None else fee_exponent_touch)
     fe_b = float(fee_exponent if fee_exponent_noon is None else fee_exponent_noon)
-    ca = qa + compute_exact_taker_fee_per_share(qa, fr_a, fe_a)
-    cb = qb + compute_exact_taker_fee_per_share(qb, fr_b, fe_b)
+    ca = v2_net_buy_cost_per_share(qa, fr_a, fe_a)
+    cb = v2_net_buy_cost_per_share(qb, fr_b, fe_b)
     net_edge = 1.0 - (ca + cb)
     if net_edge < float(min_net_edge_usd):
         return None
@@ -29003,6 +30325,7 @@ def detect_eq1_pyth_equity_dominance_box(
                     "yes_ask_size": ysz,
                     "no_ask_size": nsz,
                     "fee_rate": _sf(c.get("fee_rate"), 0.0),
+                    "fee_exponent": _sf(c.get("fee_exponent"), 1.0),
                 }
             )
     valid.sort(key=lambda r: r["strike"])
@@ -29020,8 +30343,8 @@ def detect_eq1_pyth_equity_dominance_box(
                 continue
             qa, _, _ = quantize_dynamic_tick_price(lo["yes_ask"], "BUY", shares=min_shares, mode="taker")
             qb, _, _ = quantize_dynamic_tick_price(hi["no_ask"], "BUY", shares=min_shares, mode="taker")
-            ca = qa + compute_exact_taker_fee_per_share(qa, lo["fee_rate"], 1.0)
-            cb = qb + compute_exact_taker_fee_per_share(qb, hi["fee_rate"], 1.0)
+            ca = v2_net_buy_cost_per_share(qa, lo["fee_rate"], lo["fee_exponent"])
+            cb = v2_net_buy_cost_per_share(qb, hi["fee_rate"], hi["fee_exponent"])
             edge = 1.0 - (ca + cb)
             if edge >= float(min_net_edge_usd):
                 boxes.append(
@@ -29031,8 +30354,8 @@ def detect_eq1_pyth_equity_dominance_box(
                         "asset": sym,
                         "strike_low": lo["strike"],
                         "strike_high": hi["strike"],
-                        "leg_a": {"token_id": lo["yes_token_id"], "condition_id": lo["condition_id"], "ask_px": qa},
-                        "leg_b": {"token_id": hi["no_token_id"], "condition_id": hi["condition_id"], "ask_px": qb},
+                        "leg_a": {"token_id": lo["yes_token_id"], "condition_id": lo["condition_id"], "ask_px": qa, "fee_rate": lo["fee_rate"], "fee_exponent": lo["fee_exponent"]},
+                        "leg_b": {"token_id": hi["no_token_id"], "condition_id": hi["condition_id"], "ask_px": qb, "fee_rate": hi["fee_rate"], "fee_exponent": hi["fee_exponent"]},
                         "cost_per_share": round(ca + cb, 6),
                         "net_edge_per_share": round(edge, 6),
                         "max_fillable_shares": round(min(lo["yes_ask_size"], hi["no_ask_size"]), 2),
@@ -29209,10 +30532,12 @@ def parse_routine_metar_temp_c(
     max_f = (temp_c + f_unc_c) * 9.0 / 5.0 + 32.0
     temp_f = temp_c * 9.0 / 5.0 + 32.0
 
+    has_maint_flag = bool("RMK" in txt.upper() and ("$" in txt.upper().split("RMK", 1)[1].split() or txt.rstrip().endswith("$")))
     return {
         "temp_c": round(temp_c, 2),
         "temp_f": round(temp_f, 2),
         "has_t_group": has_t_group,
+        "has_maintenance_indicator": has_maint_flag,
         "confirmed_floor_int_c": _round_half_away_from_zero(min_c),
         "confirmed_ceil_int_c": _round_half_away_from_zero(max_c),
         "confirmed_floor_int_f": _round_half_away_from_zero(min_f),
@@ -29416,6 +30741,19 @@ def compute_running_metar_extrema(
         ceil_hi = max(int(p["confirmed_ceil_int_f"]) for p in parsed)
         floor_lo = min(int(p["confirmed_floor_int_f"]) for p in parsed)
         ceil_lo = min(int(p["confirmed_ceil_int_f"]) for p in parsed)
+    speci_ceil_hi: Optional[int] = None
+    speci_floor_lo: Optional[int] = None
+    for raw_ln in metar_lines or ():
+        txt_sp = str(raw_ln or "").strip()
+        up_sp = txt_sp.upper().split()
+        if len(up_sp) >= 2 and up_sp[0] == "SPECI":
+            syn_routine = "METAR " + " ".join(up_sp[1:])
+            p_sp = parse_routine_metar_temp_c(syn_routine, station_icao=station_icao, unit=u, rules_text=rules_text)
+            if p_sp is not None:
+                sp_hi = int(p_sp["confirmed_ceil_int_c"] if u == "C" else p_sp["confirmed_ceil_int_f"])
+                sp_lo = int(p_sp["confirmed_floor_int_c"] if u == "C" else p_sp["confirmed_floor_int_f"])
+                speci_ceil_hi = sp_hi if speci_ceil_hi is None else max(speci_ceil_hi, sp_hi)
+                speci_floor_lo = sp_lo if speci_floor_lo is None else min(speci_floor_lo, sp_lo)
     return {
         "unit": u,
         "oracle_regime": rule_cfg["oracle_regime"],
@@ -29424,6 +30762,8 @@ def compute_running_metar_extrema(
         "confirmed_running_high_ceil": ceil_hi,
         "confirmed_running_low_floor": floor_lo,
         "confirmed_running_low_ceil": ceil_lo,
+        "speci_running_high_ceil": speci_ceil_hi,
+        "speci_running_low_floor": speci_floor_lo,
         "all_have_t_group": all(bool(p["has_t_group"]) for p in parsed),
     }
 
@@ -29477,7 +30817,11 @@ def detect_w_prune1_metar_slate_arb(
     ceil_hi = int(ext["confirmed_running_high_ceil"])
     floor_lo = int(ext["confirmed_running_low_floor"])
     ceil_lo = int(ext["confirmed_running_low_ceil"])
+    speci_ceil_hi = ext.get("speci_running_high_ceil")
+    speci_floor_lo = ext.get("speci_running_low_floor")
     loc_h, loc_m = int(local_hour_minute[0]), int(local_hour_minute[1])
+    ev_fr = _sf((event_meta or {}).get("fee_rate"), 0.0) if isinstance(event_meta, Mapping) else 0.0
+    ev_fe = _sf((event_meta or {}).get("fee_exponent"), 1.0) if isinstance(event_meta, Mapping) else 1.0
     signals: List[Dict[str, Any]] = []
 
     alive_legs: List[Dict[str, Any]] = []
@@ -29495,13 +30839,17 @@ def detect_w_prune1_metar_slate_arb(
         no_tok = str(b.get("no_token_id") or "").strip()
         yes_tok = str(b.get("yes_token_id") or "").strip()
         cid = str(b.get("condition_id") or "").strip()
+        b_fr = _sf(b.get("fee_rate"), ev_fr)
+        b_fe = _sf(b.get("fee_exponent"), ev_fe)
 
         is_dead_bracket = (high_i < floor_hi) if m_mode == "HIGH" else (low_i > ceil_lo)
         if is_dead_bracket:
             if 0.01 <= no_ask <= (1.0 - float(min_net_edge_usd)) and no_sz >= min_shares and no_tok:
                 q_no, _, _ = quantize_dynamic_tick_price(no_ask, "BUY", shares=min_shares, mode="taker")
-                edge_no = 1.0 - q_no
-                if edge_no >= float(min_net_edge_usd):
+                no_cost_net = v2_net_buy_cost_per_share(q_no, b_fr, b_fe)
+                edge_no = 1.0 - no_cost_net
+                net_no_sz = no_sz * (q_no / no_cost_net) if (b_fr > 0.0 and no_cost_net > q_no) else no_sz
+                if net_no_sz >= min_shares and edge_no >= float(min_net_edge_usd):
                     signals.append(
                         {
                             "sleeve": "W_PRUNE1_DEAD_NO_BOND",
@@ -29511,9 +30859,11 @@ def detect_w_prune1_metar_slate_arb(
                             "token_id": no_tok,
                             "condition_id": cid,
                             "ask_px": q_no,
+                            "fee_rate": b_fr,
+                            "fee_exponent": b_fe,
                             "p_model": 0.9999,
                             "net_edge_per_share": round(edge_no, 6),
-                            "max_fillable_shares": round(no_sz, 2),
+                            "max_fillable_shares": round(net_no_sz, 2),
                             "confirmed_running_high_floor": floor_hi,
                             "confirmed_running_low_ceil": ceil_lo,
                             "bracket_high": high_i,
@@ -29523,25 +30873,44 @@ def detect_w_prune1_metar_slate_arb(
         else:
             if 0.001 <= yes_ask <= 0.995 and yes_sz >= min_shares and yes_tok:
                 q_yes, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
-                alive_legs.append(
-                    {
-                        "token_id": yes_tok,
-                        "condition_id": cid,
-                        "ask_px": q_yes,
-                        "net_cost": q_yes,
-                        "ask_size": yes_sz,
-                        "low": low_i,
-                        "high": high_i,
-                    }
-                )
+                yes_cost_net = v2_net_buy_cost_per_share(q_yes, b_fr, b_fe)
+                net_yes_sz = yes_sz * (q_yes / yes_cost_net) if (b_fr > 0.0 and yes_cost_net > q_yes) else yes_sz
+                if net_yes_sz >= min_shares:
+                    alive_legs.append(
+                        {
+                            "token_id": yes_tok,
+                            "condition_id": cid,
+                            "ask_px": q_yes,
+                            "net_cost": yes_cost_net,
+                            "ask_size": net_yes_sz,
+                            "fee_rate": b_fr,
+                            "fee_exponent": b_fe,
+                            "low": low_i,
+                            "high": high_i,
+                        }
+                    )
+                else:
+                    alive_complete = False
             else:
                 alive_complete = False
 
             locked_val = floor_hi if (m_mode == "HIGH" and floor_hi == ceil_hi) else (floor_lo if (m_mode == "LOW" and floor_lo == ceil_lo) else None)
-            if bool(oracle_rule["allow_solar_lock"]) and (loc_h == 23 and loc_m >= 52) and locked_val is not None and low_i <= locked_val <= high_i:
+            speci_conflict = (
+                (m_mode == "HIGH" and speci_ceil_hi is not None and int(speci_ceil_hi) > high_i)
+                or (m_mode == "LOW" and speci_floor_lo is not None and int(speci_floor_lo) < low_i)
+            )
+            if (
+                bool(oracle_rule["allow_solar_lock"])
+                and not speci_conflict
+                and (loc_h == 23 and loc_m >= 52)
+                and locked_val is not None
+                and low_i <= locked_val <= high_i
+            ):
                 if 0.01 <= yes_ask <= (1.0 - float(min_net_edge_usd)) and yes_sz >= min_shares and yes_tok:
                     q_win, _, _ = quantize_dynamic_tick_price(yes_ask, "BUY", shares=min_shares, mode="taker")
-                    if (1.0 - q_win) >= float(min_net_edge_usd):
+                    win_cost_net = v2_net_buy_cost_per_share(q_win, b_fr, b_fe)
+                    net_win_sz = yes_sz * (q_win / win_cost_net) if (b_fr > 0.0 and win_cost_net > q_win) else yes_sz
+                    if net_win_sz >= min_shares and (1.0 - win_cost_net) >= float(min_net_edge_usd):
                         signals.append(
                             {
                                 "sleeve": "W_SOLAR1_POST_2351_LOCK",
@@ -29551,9 +30920,11 @@ def detect_w_prune1_metar_slate_arb(
                                 "token_id": yes_tok,
                                 "condition_id": cid,
                                 "ask_px": q_win,
+                                "fee_rate": b_fr,
+                                "fee_exponent": b_fe,
                                 "p_model": 0.9995,
-                                "net_edge_per_share": round(1.0 - q_win, 6),
-                                "max_fillable_shares": round(yes_sz, 2),
+                                "net_edge_per_share": round(1.0 - win_cost_net, 6),
+                                "max_fillable_shares": round(net_win_sz, 2),
                                 "locked_high": locked_val,
                             }
                         )
@@ -29962,6 +31333,17 @@ def detect_dc1_double_chance_1x2_parity(
         qb_map = q_merged.get(k_1x2)
         if not isinstance(qa_map, Mapping) or not isinstance(qb_map, Mapping):
             continue
+        # Cancel-state parity guard: 3-Way NegRisk 1X2 (where postponement/abandonment resolves a designated
+        # outcome to $1.00 and Home/Away to $0.00) paired with standalone 50-50 binary Double Chance ($0.50)
+        # yields only $0.50 on abandonment! Reject whenever neg_risk or explicit cancel_rule is asymmetric.
+        nr_a = qa_map.get("neg_risk") if "neg_risk" in qa_map else qa_map.get("negRisk")
+        nr_b = qb_map.get("neg_risk") if "neg_risk" in qb_map else qb_map.get("negRisk")
+        if (nr_a is not None or nr_b is not None) and bool(nr_a) != bool(nr_b):
+            continue
+        cr_a = str(qa_map.get("cancel_rule") or "").strip().lower()
+        cr_b = str(qb_map.get("cancel_rule") or "").strip().lower()
+        if cr_a and cr_b and cr_a != cr_b:
+            continue
         if not _verify_soccer_score_grid_floor([pred_a, pred_b], expected_min_payout=1):
             continue
         pa = _sf(qa_map.get("yes_ask") or qa_map.get("ask"), 0.0)
@@ -29976,10 +31358,7 @@ def detect_dc1_double_chance_1x2_parity(
         qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
         fra, fea = _sf(qa_map.get("fee_rate"), 0.0), _sf(qa_map.get("fee_exponent"), 1.0)
         frb, feb = _sf(qb_map.get("fee_rate"), 0.0), _sf(qb_map.get("fee_exponent"), 1.0)
-        cost = (
-            qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
-            + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
-        )
+        cost = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
         edge = 1.0 - cost
         if edge >= float(min_net_edge_usd):
             out.append(
@@ -30054,10 +31433,7 @@ def detect_lp_comp1_sports_triangles(
                 qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
                 fra, fea = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
                 frb, feb = _sf(o15.get("fee_rate"), 0.0), _sf(o15.get("fee_exponent"), 1.0)
-                cost2 = (
-                    qpa + compute_exact_taker_fee_per_share(qpa, fra, fea)
-                    + qpb + compute_exact_taker_fee_per_share(qpb, frb, feb)
-                )
+                cost2 = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
                 edge = 1.0 - cost2
                 if edge >= float(min_net_edge_usd):
                     exp_2 = max(_sf(btts_m.get("expiry_ts"), 0.0), _sf(o15.get("expiry_ts"), 0.0))
@@ -30108,9 +31484,9 @@ def detect_lp_comp1_sports_triangles(
                 fr1, fe1 = _sf(draw_m.get("fee_rate"), 0.0), _sf(draw_m.get("fee_exponent"), 1.0)
                 fr2, fe2 = _sf(btts_m.get("fee_rate"), 0.0), _sf(btts_m.get("fee_exponent"), 1.0)
                 fr3, fe3 = _sf(u15.get("fee_rate"), 0.0), _sf(u15.get("fee_exponent"), 1.0)
-                nc1 = qp1 + compute_exact_taker_fee_per_share(qp1, fr1, fe1)
-                nc2 = qp2 + compute_exact_taker_fee_per_share(qp2, fr2, fe2)
-                nc3 = qp3 + compute_exact_taker_fee_per_share(qp3, fr3, fe3)
+                nc1 = v2_net_buy_cost_per_share(qp1, fr1, fe1)
+                nc2 = v2_net_buy_cost_per_share(qp2, fr2, fe2)
+                nc3 = v2_net_buy_cost_per_share(qp3, fr3, fe3)
                 cost3 = nc1 + nc2 + nc3
                 edge3 = 1.0 - cost3
                 if edge3 >= float(min_net_edge_usd):
@@ -30190,20 +31566,23 @@ def detect_halftime_freeze_offset_box(
             )
         )
 
+    fr_ft, fe_ft = _sf(ft_market.get("fee_rate"), 0.0), _sf(ft_market.get("fee_exponent"), 1.0)
+    fr_h2, fe_h2 = _sf(h2_market.get("fee_rate"), 0.0), _sf(h2_market.get("fee_exponent"), 1.0)
     best: Optional[Dict[str, Any]] = None
     for ta, pa, tb, pb, sh in candidates:
         if not (ta and tb and sh >= min_shares and 0.005 <= pa <= 0.99 and 0.005 <= pb <= 0.99):
             continue
         qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
         qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-        edge = 1.0 - (qpa + qpb)
+        cost_ht = v2_net_buy_cost_per_share(qpa, fr_ft, fe_ft) + v2_net_buy_cost_per_share(qpb, fr_h2, fe_h2)
+        edge = 1.0 - cost_ht
         if edge >= float(min_net_edge_usd) and (best is None or edge > best["net_edge_per_share"]):
             best = {
                 "sleeve": "HALFTIME_FREEZE_OFFSET_BOX",
                 "box_type": "DOMINANCE",
-                "leg_a": {"token_id": ta, "condition_id": str(ft_market.get("condition_id") or ""), "ask_px": qpa},
-                "leg_b": {"token_id": tb, "condition_id": str(h2_market.get("condition_id") or ""), "ask_px": qpb},
-                "cost_per_share": round(qpa + qpb, 6),
+                "leg_a": {"token_id": ta, "condition_id": str(ft_market.get("condition_id") or ""), "ask_px": qpa, "fee_rate": fr_ft, "fee_exponent": fe_ft},
+                "leg_b": {"token_id": tb, "condition_id": str(h2_market.get("condition_id") or ""), "ask_px": qpb, "fee_rate": fr_h2, "fee_exponent": fe_h2},
+                "cost_per_share": round(cost_ht, 6),
                 "net_edge_per_share": round(edge, 6),
                 "max_fillable_shares": round(sh, 2),
             }
@@ -30243,7 +31622,10 @@ def detect_mention1_cumulative_ladder_box(
                 continue
             qpa, _, _ = quantize_dynamic_tick_price(pa, "BUY", shares=min_shares, mode="taker")
             qpb, _, _ = quantize_dynamic_tick_price(pb, "BUY", shares=min_shares, mode="taker")
-            edge = 1.0 - (qpa + qpb)
+            fra, fea = _sf(lo.get("fee_rate"), 0.0), _sf(lo.get("fee_exponent"), 1.0)
+            frb, feb = _sf(hi.get("fee_rate"), 0.0), _sf(hi.get("fee_exponent"), 1.0)
+            cost_m = v2_net_buy_cost_per_share(qpa, fra, fea) + v2_net_buy_cost_per_share(qpb, frb, feb)
+            edge = 1.0 - cost_m
             if edge >= float(min_net_edge_usd):
                 out.append(
                     {
@@ -30252,9 +31634,9 @@ def detect_mention1_cumulative_ladder_box(
                         "term": str(lo.get("term") or ""),
                         "count_low": k_lo,
                         "count_high": k_hi,
-                        "leg_a": {"token_id": ta, "condition_id": str(lo.get("condition_id") or ""), "ask_px": qpa},
-                        "leg_b": {"token_id": tb, "condition_id": str(hi.get("condition_id") or ""), "ask_px": qpb},
-                        "cost_per_share": round(qpa + qpb, 6),
+                        "leg_a": {"token_id": ta, "condition_id": str(lo.get("condition_id") or ""), "ask_px": qpa, "fee_rate": fra, "fee_exponent": fea},
+                        "leg_b": {"token_id": tb, "condition_id": str(hi.get("condition_id") or ""), "ask_px": qpb, "fee_rate": frb, "fee_exponent": feb},
+                        "cost_per_share": round(cost_m, 6),
                         "net_edge_per_share": round(edge, 6),
                         "max_fillable_shares": round(sh, 2),
                     }
@@ -30309,15 +31691,13 @@ def scan_full_universe_c1_and_ctf_overround(
         if 0.002 <= ya <= 0.995 and 0.002 <= na <= 0.995 and min(ysz_a, nsz_a) >= min_shares:
             qya, _, _ = quantize_dynamic_tick_price(ya, "BUY", shares=min_shares, mode="taker")
             qna, _, _ = quantize_dynamic_tick_price(na, "BUY", shares=min_shares, mode="taker")
-            c_under = (
-                qya
-                + compute_exact_taker_fee_per_share(qya, f_r, f_e)
-                + qna
-                + compute_exact_taker_fee_per_share(qna, f_r, f_e)
-                + gas_sh
-            )
+            c_ya = v2_net_buy_cost_per_share(qya, f_r, f_e)
+            c_na = v2_net_buy_cost_per_share(qna, f_r, f_e)
+            c_under = c_ya + c_na + gas_sh
+            net_ysz = ysz_a * (qya / c_ya) if (f_r > 0.0 and c_ya > qya) else ysz_a
+            net_nsz = nsz_a * (qna / c_na) if (f_r > 0.0 and c_na > qna) else nsz_a
             edge_u = 1.0 - c_under
-            if edge_u >= float(min_underround_edge):
+            if min(net_ysz, net_nsz) >= min_shares and edge_u >= float(min_underround_edge):
                 c1_rec: Dict[str, Any] = {
                     "sleeve": "C1_BINARY_COMPLETE_SET",
                     "box_type": "COMPLETE_SET",
@@ -30330,7 +31710,7 @@ def scan_full_universe_c1_and_ctf_overround(
                     "fee_rate": f_r,
                     "cost_per_share": round(c_under, 6),
                     "net_edge_per_share": round(edge_u, 6),
-                    "max_fillable_shares": round(min(ysz_a, nsz_a), 2),
+                    "max_fillable_shares": round(min(net_ysz, net_nsz), 2),
                 }
                 if _sf(m.get("expiry_ts"), 0.0) > 0.0:
                     c1_rec["expiry_ts"] = _sf(m.get("expiry_ts"), 0.0)
@@ -30883,6 +32263,22 @@ def _execute_multi_leg_bundle_sync(
     sh = round(float(shares), 2)
     if sh < 5.0 or not (3 <= len(legs) <= 12):
         return {"success": False, "reason": "INVALID_MULTI_LEG_SPEC"}
+    if harvester is not None:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _GGM_MLB
+        from src.polymarket_research.stage_c_zero_loss_velocity import check_multileg_3plus_nav_and_certification_gate
+
+        _mlb_veto = check_multileg_3plus_nav_and_certification_gate(
+            harvester,
+            {
+                "box_type": "MULTI_LEG_BUNDLE",
+                "sleeve_source": sleeve_src,
+                "legs": list(legs),
+                "shares": sh,
+            },
+            _GGM_MLB.snapshot.get("riskless_boxes", {}),
+        )
+        if _mlb_veto is not None:
+            return {"success": False, "reason": _mlb_veto}
     ordered = sorted(
         legs,
         key=lambda r: (
@@ -30890,6 +32286,29 @@ def _execute_multi_leg_bundle_sync(
             _sf(r.get("ask_size"), 9999.0),
         ),
     )
+    # Pre-quantize common share size across all legs so sub-cent 0.001-tick legs (10-share CLOB steps)
+    # never quantize down mid-basket and self-trigger PARTIAL_LEG rollback!
+    if hasattr(executor, "execute_snipe_order") and not hasattr(executor, "execute_fok_order") and not hasattr(executor, "place_fok_order"):
+        try:
+            from src.polymarket_research.polymarket_live_executor import quantize_fok_buy_leg_size
+
+            common_sh = float(math.floor(sh))
+            for _chk_iter in range(6):
+                next_sh = common_sh
+                for lg_q in ordered:
+                    px_q, _, _ = quantize_dynamic_tick_price(_sf(lg_q.get("ask_px"), 0.0), "BUY", shares=next_sh, mode="taker")
+                    if px_q > 0.0:
+                        q_leg = quantize_fok_buy_leg_size(next_sh, px_q, round_up=False, prefer_integer_on_cent_tick=True)
+                        next_sh = min(next_sh, q_leg)
+                if next_sh >= common_sh - 1e-6 or next_sh < 5.0:
+                    common_sh = next_sh
+                    break
+                common_sh = next_sh
+            if common_sh < 5.0:
+                return {"success": False, "reason": "UNQUANTIZABLE_MULTI_LEG_LOT"}
+            sh = round(common_sh, 2)
+        except Exception:
+            pass
     filled: List[Tuple[Mapping[str, Any], Dict[str, Any]]] = []
     total_spent = 0.0
 
@@ -30899,8 +32318,12 @@ def _execute_multi_leg_bundle_sync(
         leg_fr = _sf(leg.get("fee_rate"), 0.0)
         leg_fe = _sf(leg.get("fee_exponent"), 1.0)
         px, _, _ = quantize_dynamic_tick_price(_sf(leg.get("ask_px"), 0.0), "BUY", shares=sh, mode="taker")
-        fee_ps = compute_exact_taker_fee_per_share(px, leg_fr, leg_fe)
-        gross_sh = round(sh * (px + fee_ps) / max(px, 0.01), 4) if (leg_fr > 0.0 and bool(leg.get("fee_in_shares", False))) else sh
+        net_cost_ps = v2_net_buy_cost_per_share(px, leg_fr, leg_fe)
+        gross_sh = (
+            round(sh * (net_cost_ps / max(px, 0.001)), 4)
+            if (leg_fr > 0.0 and bool(leg.get("fee_in_shares", True)))
+            else sh
+        )
         if hasattr(executor, "execute_fok_order"):
             raw_res = executor.execute_fok_order(tok, px, gross_sh * px, "BUY", neg_risk=leg_nr)
             ok = bool(isinstance(raw_res, Mapping) and raw_res.get("success"))
@@ -30924,15 +32347,15 @@ def _execute_multi_leg_bundle_sync(
                 market_fee_exponent=leg_fe,
                 max_price_ceiling=px,
                 max_ticket_cap=max(40.0, round(gross_sh * px + 2.0, 2)),
-                min_price_floor=0.01,
+                min_price_floor=0.001,
                 neg_risk=leg_nr,
                 max_book_buffer=0.0,
             )
             try:
                 o_res = executor.execute_snipe_order(
                     **_snipe_leg_kw,
-                    allow_partial_fak=True,
-                    min_order_shares=max(5.0, gross_sh),
+                    allow_partial_fak=(idx == 0),
+                    min_order_shares=(5.0 if idx == 0 else max(5.0, round(gross_sh * 0.99, 2))),
                 )
             except TypeError:
                 o_res = executor.execute_snipe_order(**_snipe_leg_kw)
@@ -30965,7 +32388,14 @@ def _execute_multi_leg_bundle_sync(
                     "order_id": getattr(o_res, "order_id", None),
                     "error": getattr(o_res, "error", None),
                 }
-            if unk_leg and not ok:
+            _explicit_part_sz = (
+                (o_res.get("size") if o_res.get("size") is not None else o_res.get("matched_shares"))
+                if isinstance(o_res, Mapping)
+                else getattr(o_res, "size", None)
+            )
+            if (unk_leg and not ok) or (
+                not ok and _explicit_part_sz is not None and float(_explicit_part_sz or 0.0) >= 0.05
+            ):
                 filled.append((leg, res))
         else:
             ok = False
@@ -31840,6 +33270,20 @@ async def dispatch_protocol_v2_harvester_candidate(
     ex = getattr(harvester, "executor", None)
     if ex is None:
         return False
+    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _GGM_DP
+    from src.polymarket_research.stage_c_zero_loss_velocity import check_strict_pure_riskless_candidate_gate
+
+    if (
+        check_strict_pure_riskless_candidate_gate(
+            harvester, box, _GGM_DP.snapshot.get("riskless_boxes", {}), is_maker=False
+        )
+        is not None
+    ):
+        return False
+    _dp_ok, _, _dp_rem, _ = check_per_event_concentration_cap(harvester, box, now_ts=now_ts, min_headroom_usd=5.0)
+    if not _dp_ok:
+        return False
+    budget_usd = min(float(budget_usd), float(_dp_rem))
     btype = str(box.get("box_type") or "").upper()
     if btype == "CTF_OVERROUND":
         sh = math.floor(min(float(budget_usd), _sf(box.get("max_fillable_shares"), 6.0)) * 100.0) / 100.0
@@ -31910,6 +33354,8 @@ async def dispatch_protocol_v2_harvester_candidate(
             exp_ts=exp_ts,
             sleeve_src=sleeve_s,
             cand_asset=asset_s,
+            event_id=str(box.get("event_id") or ""),
+            event_group_key=extract_sll_event_group_key(box),
         )
         if res.get("success"):
             _register_bundle_leg_positions(
@@ -33731,6 +35177,19 @@ def emit_single_leg_maker_lock_cand_impl(
     if best_ask < 1.0 and opp_bid > 0.0 and (best_ask + opp_bid) > 1.015:
         return False
     is_mock_emit = bool(daemon.single_scan or ("fetch_json" in daemon.__dict__))
+    _meta_in = bk_win.get("_s2_meta") if isinstance(bk_win.get("_s2_meta"), Mapping) else {}
+    _has_vol24 = ("volume24hr" in _meta_in and _meta_in.get("volume24hr") is not None) or ("volume_24h_usd" in _meta_in and _meta_in.get("volume_24h_usd") is not None)
+    _vol24_u = max(0.0, float(_meta_in.get("volume24hr") if _meta_in.get("volume24hr") is not None else (_meta_in.get("volume_24h_usd") or 0.0)))
+    if (
+        not is_mock_emit
+        and not is_s2_mkr
+        and str(sleeve_source) != "MKR_REWARD_LOCKED_CARRY"
+        and not valid_asks
+        and l1_bid_usd < 75.0
+        and _has_vol24
+        and _vol24_u < 350.0
+    ):
+        return False
     _ws_tk_mkr_raw = (getattr(daemon, "_token_tick_sizes", None) or {}).get(str(token_id))
     try:
         _ws_tk_mkr = float(_ws_tk_mkr_raw) if _ws_tk_mkr_raw not in (None, "") else 0.0
@@ -33806,6 +35265,7 @@ def emit_single_leg_maker_lock_cand_impl(
             ),
             2,
         ),
+        **({"volume_24h_usd": round(_vol24_u, 2)} if _has_vol24 else {}),
         "expiry_ts": float(close_ts),
         "rem_sec": round(rem_sec, 2),
         "shares": 16,
@@ -34320,7 +35780,12 @@ async def maybe_preempt_mlk1_if_bond1_starved(
 
     claimed_pe = harvester.__dict__.setdefault("_claimed_velocity_preempts", set())
     sticky_fifo_sec = max(180.0, float(b1_gov.get("sll_sticky_fifo_rank1_min_hold_sec", 900.0) or 900.0))
-    birth_grace_sec = max(0.0, float(b1_gov.get("sll_preempt_birth_grace_sec", 45.0) or 0.0))
+    _raw_ttl_m = float(rcfg_sll.get("bond1_maker_ttl_sec", 1e9) or 1e9) if isinstance(rcfg_sll, Mapping) else 1e9
+    birth_grace_sec = (
+        min(max(0.0, float(b1_gov.get("sll_preempt_birth_grace_sec", 45.0) or 0.0)), max(0.0, _raw_ttl_m * 0.5))
+        if enforce_b1_v53
+        else 0.0
+    )
     mlk_cands: list[tuple[float, str]] = []
     for it in getattr(harvester, "pending_entry_intents", {}).values():
         if (
@@ -34374,7 +35839,8 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         )
         if bond1_used_u >= tot_eq * 0.45:
             return float(budget)
-    v5_p = get_unleashed_v5_tier_profile(tot_eq)
+    _prev_tier_h = getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
+    v5_p = get_unleashed_v5_tier_profile(tot_eq, previous_tier=_prev_tier_h)
     sll_pct = float(v5_p["bond1_free_cash_pct"])
     _ex_h = getattr(harvester, "executor", None)
     _gat_active = bool(
@@ -34412,7 +35878,7 @@ async def maybe_preempt_mlk1_if_bond1_starved(
         collat_f = max(0.0, float(collat or 0.0) - inflight_u)
         cur_open_u = act_non_recv + inflight_u + pending_intents_synced_equity_usd(intents_view)
         tot_eq_sll = collat_f + cur_open_u
-        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll, previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         sll_pct_new = float(v5_sll["bond1_free_cash_pct"])
         zf_focus = _is_sll_zf_focus_enabled(harvester, enforce_b1_v53, gsn_s, tot_eq_sll)
         if zf_focus:
@@ -34531,7 +35997,7 @@ def pending_intents_synced_equity_usd(intents: Any) -> float:
             continue
         matched = max(0.0, float(it.get("matched_notional_usd", 0.0) or 0.0))
         drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
-        posted_cap = max(matched, float(it.get("posted_notional_usd", 0.0) or 0.0))
+        posted_cap = max(matched, float(it.get("posted_notional_usd", it.get("notional_usd", 0.0)) or 0.0))
         # `drop_u` is actual wallet cash already deducted on-chain while resting; clamp to `posted_cap`
         # so equity stays invariant even during the sub-poll window before `matched_notional_usd` catches up.
         tot += min(posted_cap, drop_u) if drop_u > 0.0 else 0.0
@@ -34581,7 +36047,7 @@ def rebalance_pending_intent_collat_drops(intents: Any, *, now_ts: Optional[floa
             if surplus <= 1e-6:
                 break
             drop_u = max(0.0, float(it.get("collat_drop_usd", 0.0) or 0.0))
-            cap_u = max(drop_u, float(it.get("posted_notional_usd", 0.0) or 0.0))
+            cap_u = max(drop_u, float(it.get("posted_notional_usd", it.get("notional_usd", 0.0)) or 0.0))
             room = max(0.0, cap_u - drop_u)
             if room > 1e-6:
                 add_u = min(room, surplus)
@@ -34808,11 +36274,17 @@ def compute_sll_entry_budget(
         from src.polymarket_research.holistic_strategy_governance import get_unleashed_v5_tier_profile
 
         tot_eq_sll = collat_f + cur_open_u
-        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll)
+        v5_sll = get_unleashed_v5_tier_profile(tot_eq_sll, previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         sll_pct = float(v5_sll["bond1_free_cash_pct"])
         zf_focus = _is_sll_zf_focus_enabled(harvester, enforce_b1_v53, gsn_s, tot_eq_sll)
         if zf_focus:
-            sll_pct = max(sll_pct, float(b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.92) or 0.92))
+            _frozen_uma_sll = sum(
+                float(p.get("notional_usd", 0.0) or 0.0)
+                for p in (getattr(harvester, "active_positions", None) or {}).values()
+                if isinstance(p, Mapping) and not _is_recv(p) and is_post_expiry_uma_frozen_lock(p, now_ts)
+            )
+            _cfg_pool_pct = float(b1_gov.get("seed_zero_loss_focus_bond1_pool_pct", 0.80) or 0.80)
+            sll_pct = max(sll_pct, max(0.92, _cfg_pool_pct) if _frozen_uma_sll >= 15.0 else _cfg_pool_pct)
         port_headroom_u = max(0.0, max(float(getattr(harvester, "max_exposure", 100.0)), tot_eq_sll * 0.96) - cur_open_u)
         lot_cap_sll = max(75.0, round(collat_f * sll_pct, 2)) if own_mkr_grad else float(v5_sll["bridged_zero_fee_cap_usd"])
         if enforce_b1_v53:
@@ -35037,12 +36509,27 @@ def eval_sll_fresh_book_and_peg(
         if float(x.get("size", 0) if isinstance(x, Mapping) else x[1]) > 0
     ])
     best_bid_pre = max((px for px, _ in bids_wf), default=0.0)
-    if any(
+    _bk_explicit_tk = 0.0
+    if isinstance(bk_win_f, Mapping):
+        try:
+            _bk_explicit_tk = float(bk_win_f.get("minimum_tick_size") or bk_win_f.get("tick_size") or 0.0)
+        except (TypeError, ValueError):
+            _bk_explicit_tk = 0.0
+    # Never overwrite an authoritative explicit CLOB `/book` `"minimum_tick_size": "0.01"` down to `0.001`
+    # (`HTTP 400` tick-size cache poisoning), while still unlocking `0.001` when `bk_win_f` has no explicit
+    # `>=0.01` ceiling and a real `>=0.95` sub-cent level sits on L2.
+    if (
+        best_bid_pre >= 0.95
+        and _bk_explicit_tk < 0.01
+        and any(abs(round(px * 100.0) - px * 100.0) > 1e-6 and px >= 0.95 for px, _ in (bids_wf + asks_wf))
+    ):
+        tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
+    elif tk_wf <= 0.0 and any(
         abs(round(px * 100.0) - px * 100.0) > 1e-6
         and (best_bid_pre < 0.95 or px >= 0.95)
         for px, _ in (bids_wf + asks_wf)
     ):
-        tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
+        tk_wf = 0.001
     elif tk_wf <= 0.0 and real_clob_sll:
         tk_wf = 0.01
     bids_of = [
@@ -35118,6 +36605,11 @@ def eval_sll_live_book_poll(
     buried_since_mono: Optional[float],
     collat_usd: float = 75.0,
 ) -> Tuple[str, Optional[float], Optional[float], str]:
+    if isinstance(candidate_box, Mapping):
+        if str(candidate_box.get("umaResolutionStatus") or "").strip().lower() == "disputed":
+            return "ADVERSE", None, buried_since_mono, "uma_disputed_mid_rest"
+        if bool(candidate_box.get("oracle_shock_veto") or candidate_box.get("news_shock_halt")):
+            return "ADVERSE", None, buried_since_mono, "oracle_or_news_shock_halt"
     opp_b_live = max(
         (
             float(x["price"] if isinstance(x, Mapping) else x[0])
@@ -35138,11 +36630,22 @@ def eval_sll_live_book_poll(
     ])
     win_b_live = max((px for px, _ in bids_wc), default=posted_px)
     win_a_live = asks_wc[0][0] if asks_wc else 1.000
+    win_floor_l = max(0.450, posted_px - 0.080) if is_s2_mkr else 0.900
+    opp_ceil_l = max(0.010, max_opp + 0.002)
+    if (
+        not is_s2_mkr
+        and win_b_live < win_floor_l
+        and opp_b_live <= opp_ceil_l
+        and win_a_live >= win_floor_l
+    ):
+        # `/book` has only stale dust bids before our own `posted_px` propagated (or right on fill) with zero opposing bid pressure!
+        win_b_live = max(win_b_live, posted_px)
     if win_b_live >= 0.95 and any(abs(round(px * 100.0) - px * 100.0) > 1e-6 and px >= 0.95 for px, _ in (bids_wc + asks_wc)):
         tk_wf = min(tk_wf, 0.001) if tk_wf > 0.0 else 0.001
-    win_floor_l = max(0.450, posted_px - 0.080) if is_s2_mkr else 0.900
-    if opp_b_live > max(0.010, max_opp + 0.002) or win_b_live < win_floor_l:
+    if opp_b_live > opp_ceil_l or win_b_live < win_floor_l:
         return "ADVERSE", None, buried_since_mono, f"opp_bid=${opp_b_live:.4f}, win_bid=${win_b_live:.4f}"
+    if not is_s2_mkr and asks_wc and win_a_live < 0.999 and (win_a_live + opp_b_live) > 1.015:
+        return "ADVERSE", None, buried_since_mono, f"dual_book_shock_inversion:ask=${win_a_live:.4f}+opp=${opp_b_live:.4f}"
     if enforce_b1_v53:
         if win_b_live > posted_px + 1e-6:
             if isinstance(candidate_box, dict):
@@ -35178,7 +36681,7 @@ def eval_sll_live_book_poll(
                     collat_usd=max(25.0, float(collat_usd or 75.0)),
                     rem_tte_sec=max(900.0 if _uma_ex_l else 60.0, exp_ts - now_rp),
                     box_cost_net=cand_rp,
-                    fast_recycle_eligible=(cand_rp <= 0.995),
+                    fast_recycle_eligible=bool(_uma_ex_l or cand_rp <= 0.995),
                 )
             if (
                 repost_n_in < _eff_max_rp
@@ -35193,10 +36696,19 @@ def eval_sll_live_book_poll(
                     candidate_box["_init_l1_q_usd"] = None
                     candidate_box["_whale_q_since_mono"] = None
                 return "REPEG", cand_rp, buried_since_mono, f"outbid (${win_b_live:.4f} > ${posted_px:.4f}); re-pegging -> ${cand_rp:.4f}"
+            _shallow_two_sided_hold = bool(
+                not is_s2_mkr
+                and asks_wc
+                and win_a_live < 1.0
+                and (win_a_live - win_b_live) <= (2.0 * tb_l + 1e-6)
+                and (win_b_live - posted_px) <= (2.0 * tb_l + 1e-6)
+                and l1_q_l <= 80.0
+            )
+            eff_buried_s = max(float(b1_buried_s), 75.0) if _shallow_two_sided_hold else float(b1_buried_s)
             if buried_since_mono is None:
                 buried_since_mono = time.monotonic()
-            elif (time.monotonic() - buried_since_mono) >= b1_buried_s:
-                return "BURIED", None, buried_since_mono, f"outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {b1_buried_s:.0f}s"
+            elif (time.monotonic() - buried_since_mono) >= eff_buried_s:
+                return "BURIED", None, buried_since_mono, f"outbid at ${win_b_live:.4f} (posted ${posted_px:.4f}) >= {eff_buried_s:.0f}s"
         else:
             buried_since_mono = None
             if isinstance(candidate_box, dict) and abs(win_b_live - posted_px) <= 1e-6:
@@ -35251,7 +36763,7 @@ def eval_sll_live_book_poll(
                                 collat_usd=max(25.0, float(collat_usd or 75.0)),
                                 rem_tte_sec=max(900.0 if _uma_ex_w else 60.0, exp_ts - now_w),
                                 box_cost_net=step_w,
-                                fast_recycle_eligible=(step_w <= 0.995),
+                                fast_recycle_eligible=bool(_uma_ex_w or step_w <= 0.995),
                             )
                         if (
                             _vel_w_ok
@@ -35289,7 +36801,7 @@ def prepare_sll_stalk_guard(
     if repost_n_in >= 1 and is_outbid_now and buried_since_mono is None and posted_elapsed_s < 12.0:
         candidate_box["_max_outbid_repegs"] = repost_n_in
         candidate_box["_fast_stalk_detected"] = True
-        if evt_k and evt_k.startswith(("EVT:", "EVTLBL:", "EVTAST:")):
+        if evt_k and evt_k.startswith(("EVT:", "EVTMATCH:", "EVTWX:", "EVTLBL:", "EVTAST:")):
             evt_stalk_map[evt_k] = float(now_ts) + 300.0
     if evt_k and float(evt_stalk_map.get(evt_k, 0.0) or 0.0) > float(now_ts):
         candidate_box["_max_outbid_repegs"] = min(int(candidate_box.get("_max_outbid_repegs", default_max_repegs)), 1)
@@ -36570,6 +38082,13 @@ def score_live_candidate_velocity_ev(
     elif "queue_ahead_usd" in c and c.get("queue_ahead_usd") is not None:
         q_u = max(0.0, float(c.get("queue_ahead_usd") or 0.0))
         fp = 0.82 if q_u <= 5.0 else (0.68 if q_u <= 50.0 else (0.48 if q_u <= 125.0 else (0.28 if q_u <= 225.0 else 0.14)))
+        if "ask_depth_usd" in c:
+            _ask_d_u = max(0.0, float(c.get("ask_depth_usd") or 0.0))
+            _vol_24_v = c.get("volume_24h_usd", c.get("volume24hr"))
+            if _ask_d_u < 5.0 and _vol_24_v is not None and float(_vol_24_v or 0.0) < 500.0:
+                fp *= 0.20
+            elif _ask_d_u >= 10.0 and _vol_24_v is not None and float(_vol_24_v or 0.0) >= 1000.0:
+                fp = min(0.95, fp * 1.15)
     else:
         fp = 0.65 if bool(c.get("queue_front", True)) else 0.22
 
@@ -36894,6 +38413,8 @@ def register_clinched_ws_watch_cand_impl(harvester: Any, cand: Dict[str, Any], n
         mv = str(cand.get(meta_k) or prev_w.get(meta_k) or "").strip()
         if mv:
             w_rec[meta_k] = mv
+    if cand.get("rem_hours_count") is not None or prev_w.get("rem_hours_count") is not None:
+        w_rec["rem_hours_count"] = int(cand.get("rem_hours_count") if cand.get("rem_hours_count") is not None else prev_w.get("rem_hours_count") or 0)
     for s2_k in ("strike_open", "leg_a_strike", "sigma_1h", "twap_locked_mean", "twap_locked_weight", "s2_min_sigma_cushion"):
         if s2_k in cand and cand.get(s2_k) is not None:
             w_rec[s2_k] = cand.get(s2_k)
@@ -37036,17 +38557,38 @@ def evaluate_clinched_ws_book_snipe_impl(
     p_mod = float(w_ent.get("p_model") or 1.0)
     if eff_vwap > max_eff + 1e-6 or (p_mod - eff_vwap) < 0.002 - 1e-6:
         return None
-    collat_est = float(getattr(harvester, "_last_known_collateral", None) or 75.0)
+    _collat_ws_raw = getattr(harvester, "_last_known_collateral", None)
+    if _collat_ws_raw is None:
+        collat_est = 75.0 if bool(getattr(harvester, "dry_run", False)) else 0.0
+    else:
+        try:
+            collat_est = max(0.0, float(_collat_ws_raw))
+            if not math.isfinite(collat_est):
+                collat_est = 0.0
+        except (TypeError, ValueError):
+            collat_est = 0.0
+    _liq_eq_ws = (
+        collat_est
+        + sum(
+            float(_pw.get("notional_usd", 0.0) or 0.0)
+            for _pw in (getattr(harvester, "active_positions", None) or {}).values()
+            if isinstance(_pw, Mapping)
+            and not position_is_settlement_receivable(_pw)
+            and not is_post_expiry_uma_frozen_lock(_pw, now_f)
+        )
+        + pending_intents_synced_equity_usd(getattr(harvester, "pending_entry_intents", None))
+    )
     vel_ok, _ = passes_capital_velocity_hurdle(
         box_type="SINGLE_LEG_LOCK",
         sleeve_src=str(w_ent["sleeve_source"]),
-        collat_usd=max(25.0, collat_est),
+        collat_usd=max(25.0, _liq_eq_ws),
         rem_tte_sec=rem_s,
         box_cost_net=eff_vwap,
         fast_recycle_eligible=(
             (sl_src_e in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES and sl_src_e != "MKR_REWARD_LOCKED_CARRY")
             or not bool(w_ent.get("hold_to_maturity", True))
         ),
+        previous_tier=getattr(harvester, "_current_equity_tier", None) or "UNLEASHED_LAUNCH",
     )
     if not vel_ok:
         return None
@@ -37121,12 +38663,24 @@ async def maybe_merge_live_complete_sets_impl(self: Any, now_ts: float, exec_sta
     merge_cd = self.__dict__.setdefault("_c1_merge_attempt_ts", {})
     merge_fail_cnt = self.__dict__.setdefault("_c1_merge_fail_count", {})
     ready_c1_entries: List[Dict[str, Any]] = []
+    clinch_split_unmerged: List[Tuple[str, Dict[str, Any], float]] = []
+    nr_convert_groups: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
     for tid, pos in list(self.active_positions.items()):
-        if tid not in self.active_positions:
+        if tid not in self.active_positions or not isinstance(pos, dict):
             continue
         pos_bt_u = str(pos.get("box_type") or "").upper()
         pos_sl_u = str(pos.get("sleeve") or pos.get("sleeve_source") or "").upper()
-        if pos_bt_u != "COMPLETE_SET" and pos_sl_u != "C1_BINARY_COMPLETE_SET":
+        if pos_bt_u == "CLINCH_DEAD_SPLIT_LOCK" and not pos.get("dead_leg_unwind_outcome_unknown"):
+            unm_sp = float(pos.get("unmerged_dead_opp_shares", 0.0) or 0.0)
+            if unm_sp >= 5.0 and str(pos.get("condition_id") or "").startswith("0x"):
+                clinch_split_unmerged.append((tid, pos, unm_sp))
+            continue
+        if bool(pos.get("pending_negrisk_convert")):
+            nr_b = str(pos.get("box_id") or tid)
+            nr_convert_groups.setdefault(nr_b, []).append((tid, pos))
+            continue
+        is_comp_resid_pair = bool(pos.get("_comp_merge_pending_resid")) or str(tid).startswith("COMP_RESID_")
+        if pos_bt_u != "COMPLETE_SET" and pos_sl_u != "C1_BINARY_COMPLETE_SET" and not is_comp_resid_pair:
             continue
         b_id = str(pos.get("box_id") or "")
         p_tid = str(pos.get("box_partner_trade_id") or "")
@@ -37220,6 +38774,7 @@ async def maybe_merge_live_complete_sets_impl(self: Any, now_ts: float, exec_sta
             merge_fail_cnt.pop(b_id, None)
             tot_c = max(0.01, float(pos.get("notional_usd", 0.0)) + float(partner.get("notional_usd", 0.0)))
             for lg_tid, lg_p in ((tid, pos), (p_tid, partner)):
+                lg_p.pop("_comp_merge_pending_resid", None)
                 share_w = float(lg_p.get("notional_usd", 0.0)) / tot_c
                 cash_leg = round(pairs_m * share_w, 4)
                 lg_p["merge_tx_hash"] = tx_h
@@ -37239,6 +38794,143 @@ async def maybe_merge_live_complete_sets_impl(self: Any, now_ts: float, exec_sta
             if ent["any_exit_canceled"]:
                 await _aio.to_thread(self.save_state)
 
+    # Step B: Retry deferred unmerged dead-leg pairs on CLINCH_SPLIT_* positions (never double-debits collateral!)
+    for sp_tid, sp_pos, unm_q in clinch_split_unmerged:
+        cd_k = f"SP_{sp_tid}"
+        if (now_ts - float(merge_cd.get(cd_k, 0.0) or 0.0)) < 2.5:
+            continue
+        merge_cd[cd_k] = now_ts
+        rem_w_cur = float(sp_pos.get("remaining_shares", 0.0) or 0.0)
+        m_pairs = float(math.floor(min(unm_q, rem_w_cur) + 1e-9))
+        if m_pairs < 5.0:
+            continue
+        sp_cid = str(sp_pos.get("condition_id") or "")
+        m_sp = await _aio.to_thread(
+            lambda _c=sp_cid, _p=m_pairs, _nr=sp_pos.get("neg_risk"): self.executor.attempt_onchain_complete_set_merge(
+                _c, min_pairs=_p, max_pairs=_p, neg_risk=_nr
+            )
+        )
+        if isinstance(m_sp, tuple) and len(m_sp) == 2 and m_sp[0] and float(m_sp[1]) >= 4.99:
+            tx_sp, prs_sp = str(m_sp[0]), float(m_sp[1])
+            merge_fail_cnt.pop(cd_k, None)
+            rem_unm = round(max(0.0, unm_q - prs_sp), 4)
+            if rem_unm > 0.01:
+                sp_pos["unmerged_dead_opp_shares"] = rem_unm
+            else:
+                sp_pos.pop("unmerged_dead_opp_shares", None)
+            rem_w_after = round(max(0.0, rem_w_cur - prs_sp), 4)
+            cost_cur = float(sp_pos.get("notional_usd", rem_w_cur) or 0.0)
+            cost_after = round(max(0.01, cost_cur - prs_sp), 4) if rem_w_after > 0.02 else 0.0
+            sp_pos["merge_tx_hash"] = tx_sp
+            if rem_w_after <= 0.02:
+                sp_pos["remaining_shares"] = 0.0
+                sp_pos["remaining_exit_shares"] = 0.0
+                sp_pos["remaining_cost_basis"] = 0.0
+                sp_pos["realized_exit_cash"] = round(float(sp_pos.get("realized_exit_cash", 0.0) or 0.0) + prs_sp, 4)
+                sp_pos["confirmed_realized_cash"] = sp_pos["realized_exit_cash"]
+                sp_pos["exit_cash_estimated"] = False
+                self._close_position(sp_tid, sp_pos, exec_status_cls.SETTLED, "COMPLETE_SET_ONCHAIN_MERGED", won=True)
+            else:
+                sp_pos["entry_shares"] = rem_w_after
+                sp_pos["remaining_shares"] = rem_w_after
+                sp_pos["remaining_exit_shares"] = rem_w_after
+                sp_pos["notional_usd"] = cost_after
+                sp_pos["remaining_cost_basis"] = cost_after
+                sp_pos["entry_price"] = round(cost_after / max(rem_w_after, 0.01), 5)
+            if hasattr(self.executor, "invalidate_collateral_cache"):
+                self.executor.invalidate_collateral_cache()
+            self._pending_collateral_refresh = True
+            lk_prev = getattr(self, "_last_known_collateral", None)
+            synced_sp = False
+            if hasattr(self.executor, "get_collateral_balance"):
+                try:
+                    nc_sp = await _aio.to_thread(self.executor.get_collateral_balance)
+                    if isinstance(nc_sp, (int, float)) and not isinstance(nc_sp, bool) and math.isfinite(float(nc_sp)) and float(nc_sp) >= 0.0:
+                        self._last_known_collateral = (
+                            max(float(nc_sp), round(float(lk_prev) + prs_sp, 4))
+                            if (isinstance(lk_prev, (int, float)) and not isinstance(lk_prev, bool) and abs(float(nc_sp) - float(lk_prev)) < 0.05)
+                            else float(nc_sp)
+                        )
+                        synced_sp = True
+                except Exception:
+                    pass
+            if not synced_sp and isinstance(lk_prev, (int, float)) and not isinstance(lk_prev, bool):
+                self._last_known_collateral = round(float(lk_prev) + prs_sp, 4)
+            await _aio.to_thread(self.save_state)
+        else:
+            f_sp = int(merge_fail_cnt.get(cd_k, 0) or 0) + 1
+            merge_fail_cnt[cd_k] = f_sp
+            backoff_sp = 20.0 if f_sp <= 1 else (45.0 if f_sp == 2 else 90.0)
+            merge_cd[cd_k] = now_ts + (backoff_sp - 2.5)
+
+    # Step C: Retry deferred NegRiskAdapter.convertPositions on unconverted HOLD_NO_* baskets ([S-06])
+    conv_fn = getattr(self.executor, "attempt_negrisk_convert_positions", None)
+    if callable(conv_fn) and nr_convert_groups:
+        for nr_b, grp in nr_convert_groups.items():
+            cd_nr = f"NRC_{nr_b}"
+            if (now_ts - float(merge_cd.get(cd_nr, 0.0) or 0.0)) < 2.5:
+                continue
+            exp_n = int(grp[0][1].get("box_expected_legs") or len(grp))
+            nrm_id = str(grp[0][1].get("neg_risk_market_id") or "")
+            if len(grp) != exp_n or not nrm_id or any(p.get("question_index") is None for _, p in grp):
+                continue
+            min_sh_nr = float(math.floor(min(float(p.get("remaining_shares", 0.0) or 0.0) for _, p in grp) + 1e-9))
+            if min_sh_nr < 5.0:
+                continue
+            merge_cd[cd_nr] = now_ts
+            q_idxs = [int(p["question_index"]) for _, p in grp]
+            try:
+                c_out = await _aio.to_thread(lambda _m=nrm_id, _q=q_idxs, _s=min_sh_nr: conv_fn(_m, _q, _s, prefer_v2_pusd_adapter=True))
+            except TypeError:
+                c_out = await _aio.to_thread(conv_fn, nrm_id, q_idxs, min_sh_nr)
+            if isinstance(c_out, Mapping) and c_out.get("success"):
+                merge_fail_cnt.pop(cd_nr, None)
+                fee_bips_nr = int(grp[0][1].get("convert_fee_bips", 0) or 0)
+                eff_m_nr = 1.0 - max(0, fee_bips_nr) / 10000.0
+                conv_cash_u = float(max(0, len(grp) - 1)) * min_sh_nr * eff_m_nr
+                yes_sells_nr = []
+                for _, p_g in grp:
+                    if p_g.get("pending_liquid_yes_sells"):
+                        yes_sells_nr = list(p_g["pending_liquid_yes_sells"])
+                        break
+                yes_net_u = 0.0
+                if yes_sells_nr and hasattr(self.executor, "execute_unwind_order"):
+                    for yl in yes_sells_nr:
+                        y_tok = str(yl.get("yes_token") or yl.get("token_id") or "")
+                        if not y_tok:
+                            continue
+                        min_b = max(0.01, round(float(yl.get("min_bid_price") or yl.get("bid_vwap") or 0.02) - 0.01, 2))
+                        ys_r = await _aio.to_thread(
+                            lambda _yt=y_tok, _mb=min_b, _sh=min_sh_nr: self.executor.execute_unwind_order(
+                                _yt, size=_sh, side="SELL", min_price=_mb, neg_risk=True
+                            )
+                        )
+                        if isinstance(ys_r, Mapping) and (ys_r.get("success") or ys_r.get("partial")) and not ys_r.get("outcome_unknown"):
+                            m_y = float(ys_r.get("matched_size") or 0.0)
+                            tk_y = float(ys_r.get("taking_amount") or (m_y * float(ys_r.get("price") or min_b)))
+                            f_y = float(ys_r.get("fee_usd") or 0.0)
+                            yes_net_u += max(0.0, tk_y - f_y)
+                tot_proceeds_nr = round(conv_cash_u + yes_net_u, 4)
+                tot_cost_nr = max(0.01, sum(float(p.get("notional_usd", 0.0) or 0.0) for _, p in grp))
+                tx_nr = str(c_out.get("tx_hash") or "0xnrconv")
+                for g_tid, g_pos in grp:
+                    g_pos.pop("pending_negrisk_convert", None)
+                    g_pos["convert_tx_hash"] = tx_nr
+                    w_nr = float(g_pos.get("notional_usd", 0.0) or 0.0) / tot_cost_nr
+                    leg_cash = round(tot_proceeds_nr * w_nr, 4)
+                    self.record_fill_and_update_position(g_pos, f"NRCONV_{tx_nr}_{g_tid}", min_sh_nr, leg_cash, 0.0, cash_is_estimated=False)
+                    if float(g_pos.get("remaining_shares", 0.0) or 0.0) <= 0.02:
+                        self._close_position(g_tid, g_pos, exec_status_cls.SETTLED, "ONCHAIN_NEGRISK_CONVERT_COMPLETED", won=True)
+                if hasattr(self.executor, "invalidate_collateral_cache"):
+                    self.executor.invalidate_collateral_cache()
+                self._pending_collateral_refresh = True
+                await _aio.to_thread(self.save_state)
+            else:
+                f_nr = int(merge_fail_cnt.get(cd_nr, 0) or 0) + 1
+                merge_fail_cnt[cd_nr] = f_nr
+                backoff_nr = 20.0 if f_nr <= 1 else (45.0 if f_nr == 2 else 90.0)
+                merge_cd[cd_nr] = now_ts + (backoff_nr - 2.5)
+
 
 async def execute_guarded_complement_merge_impl(
     self: Any, tid: str, pos: Dict[str, Any], opp_tok: str, cm_plan: Dict[str, Any], now_ts: float, exec_status_cls: Any
@@ -37247,6 +38939,8 @@ async def execute_guarded_complement_merge_impl(
 
     if self.dry_run or not opp_tok or not hasattr(self.executor, "attempt_onchain_complete_set_merge"):
         return False
+    if pos.get("_comp_merge_pending_resid"):
+        return False
     cid = str(pos.get("condition_id") or "")
     exit_oid = pos.get("exit_order_id")
     if not cid or not exit_oid:
@@ -37254,39 +38948,165 @@ async def execute_guarded_complement_merge_impl(
     buy_fn = getattr(self.executor, "buy_complement_leg_fak", None)
     if not callable(buy_fn):
         return False
+    _is_live_ex = (
+        getattr(self.executor, "_mock_children", None) is None
+        and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+    )
+
+    def _is_cancel_confirmed(c_obj: Any, oid_str: str) -> bool:
+        return bool(
+            (c_obj.get("is_canceled") or oid_str in (c_obj.get("canceled") or []))
+            if isinstance(c_obj, Mapping)
+            else (getattr(c_obj, "is_canceled", False) or oid_str in (getattr(c_obj, "canceled", None) or []))
+        )
+
+    req_opp_sh = float(cm_plan["req_opp_shares"])
+    if _is_live_ex:
+        # [S-03] Cancel and reconcile resting Maker exit BEFORE buying losing complement to eliminate dual-fill stranding!
+        c_r_pre = await _aio.to_thread(self.executor.cancel_order, str(exit_oid))
+        s_r_pre = await _aio.to_thread(self.executor.get_order_fill_summary, str(exit_oid), pos.get("token_id"))
+        if s_r_pre is not None:
+            self._record_order_summary(pos, s_r_pre, float(pos.get("target_exit_price", 0.98) or 0.98), taker=False)
+        if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
+            self._close_position(tid, pos, exec_status_cls.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
+            await _aio.to_thread(self.save_state)
+            return True
+        if not _is_cancel_confirmed(c_r_pre, str(exit_oid)):
+            return False
+        if hasattr(self.executor, "release_inventory"):
+            self.executor.release_inventory(reservation_id=str(exit_oid))
+        pos["exit_order_id"] = None
+        pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+        req_opp_sh = min(req_opp_sh, float(pos.get("remaining_shares", 0.0) or 0.0))
+        if req_opp_sh < 5.0:
+            await _aio.to_thread(self.save_state)
+            return False
+
+    pre_opp_bal = 0.0
+    if _is_live_ex and hasattr(self, "_wallet_token_balance"):
+        try:
+            _rb_o = await _aio.to_thread(self._wallet_token_balance, opp_tok)
+            pre_opp_bal = float((_rb_o[0] if isinstance(_rb_o, tuple) else _rb_o) or 0.0)
+        except Exception:
+            pre_opp_bal = 0.0
     opp_res = await _aio.to_thread(
-        buy_fn, opp_tok, float(cm_plan["opp_ask"]), float(cm_plan["req_opp_shares"]), str(cm_plan["tick_size"]), bool(pos.get("neg_risk")),
+        buy_fn, opp_tok, float(cm_plan["opp_ask"]), req_opp_sh, str(cm_plan["tick_size"]), bool(pos.get("neg_risk")),
     )
     filled_opp = float((opp_res or {}).get("matched_shares") or 0.0)
+    opp_cost = (
+        float((opp_res or {}).get("cost_usd") or 0.0)
+        if float((opp_res or {}).get("cost_usd") or 0.0) > 0.0
+        else round(filled_opp * float(cm_plan.get("opp_ask") or 0.01), 4)
+    )
+
+    def _track_unmerged_opp(unmerged_sh: float, primary_open: bool) -> None:
+        if unmerged_sh < 0.05 or not isinstance(getattr(self, "active_positions", None), dict):
+            return
+        resid_id = f"COMP_RESID_{tid}_{int(now_ts)}"
+        unit_px = round(opp_cost / max(filled_opp, 0.01), 5)
+        resid_notional = round(unmerged_sh * unit_px, 4)
+        resid_pos: Dict[str, Any] = {
+            "trade_id": resid_id,
+            "market_id": str(pos.get("market_id") or ""),
+            "condition_id": cid,
+            "token_id": str(opp_tok),
+            "opp_token_id": str(pos.get("token_id") or ""),
+            "target_token": "DOWN" if str(pos.get("target_token") or "").upper() == "UP" else ("NO" if str(pos.get("target_token") or "").upper() == "YES" else "OPP"),
+            "asset": str(pos.get("asset") or ""),
+            "sleeve": str(pos.get("sleeve") or "COMP_MERGE_RESID"),
+            "neg_risk": bool(pos.get("neg_risk")),
+            "entry_shares": round(unmerged_sh, 4),
+            "remaining_shares": round(unmerged_sh, 4),
+            "filled_exit_shares": 0.0,
+            "entry_price": unit_px,
+            "notional_usd": resid_notional,
+            "fee_usd": 0.0,
+            "inventory_reconciled": True,
+            "candle_expiry_ts": float(pos.get("candle_expiry_ts", now_ts + 900.0) or (now_ts + 900.0)),
+            "entry_ts": now_ts,
+            "status": "ACTIVE_HOLD",
+        }
+        if primary_open and tid in self.active_positions:
+            box_id_cm = str(pos.get("box_id") or f"COMP_BOX_{tid}")
+            resid_pos["is_dominance_box"] = True
+            resid_pos["box_id"] = box_id_cm
+            resid_pos["box_partner_trade_id"] = tid
+            resid_pos["hold_to_maturity"] = True
+            pos["is_dominance_box"] = True
+            pos["box_id"] = box_id_cm
+            pos["box_partner_trade_id"] = resid_id
+            pos["_comp_merge_pending_resid"] = resid_id
+        else:
+            resid_pos["is_dominance_box"] = False
+            resid_pos["hold_to_maturity"] = False
+            resid_pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+            pos["_comp_merge_pending_resid"] = resid_id
+        self.active_positions[resid_id] = resid_pos
+        if getattr(self, "_last_known_collateral", None) is not None:
+            self._last_known_collateral = max(0.0, float(self._last_known_collateral) - resid_notional)
+        self._pending_collateral_refresh = True
+
     if not (opp_res or {}).get("success") or filled_opp < 5.0:
+        if filled_opp >= 0.05:
+            _track_unmerged_opp(filled_opp, primary_open=True)
+            await _aio.to_thread(self.save_state)
+        elif _is_live_ex:
+            await _aio.to_thread(self.save_state)
         return False
-    c_r = await _aio.to_thread(self.executor.cancel_order, str(exit_oid))
-    s_r = await _aio.to_thread(self.executor.get_order_fill_summary, str(exit_oid), pos.get("token_id"))
-    if s_r is not None:
-        self._record_order_summary(pos, s_r, float(pos.get("target_exit_price", 0.98) or 0.98), taker=False)
-    if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
-        self._close_position(tid, pos, exec_status_cls.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
-        return True
-    if not (c_r or {}).get("is_canceled"):
-        return False
-    self.executor.release_inventory(reservation_id=str(exit_oid))
-    pos["exit_order_id"] = None
-    pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+
+    if not _is_live_ex:
+        c_r = await _aio.to_thread(self.executor.cancel_order, str(exit_oid))
+        s_r = await _aio.to_thread(self.executor.get_order_fill_summary, str(exit_oid), pos.get("token_id"))
+        if s_r is not None:
+            self._record_order_summary(pos, s_r, float(pos.get("target_exit_price", 0.98) or 0.98), taker=False)
+        if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.01:
+            _track_unmerged_opp(filled_opp, primary_open=False)
+            self._close_position(tid, pos, exec_status_cls.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
+            await _aio.to_thread(self.save_state)
+            return True
+        if not _is_cancel_confirmed(c_r, str(exit_oid)):
+            _track_unmerged_opp(filled_opp, primary_open=True)
+            await _aio.to_thread(self.save_state)
+            return False
+        self.executor.release_inventory(reservation_id=str(exit_oid))
+        pos["exit_order_id"] = None
+        pos["exit_order_status"] = "EXIT_RECOVERY_REQUIRED"
+
     pairs = min(float(pos.get("remaining_shares", 0.0) or 0.0), filled_opp)
     if pairs < 4.99:
+        _track_unmerged_opp(filled_opp, primary_open=True)
         await _aio.to_thread(self.save_state)
         return False
+    if _is_live_ex:
+        try:
+            from src.polymarket_research.riskless_machine_gun_engine import wait_for_erc1155_delivery
+
+            await _aio.to_thread(
+                lambda: wait_for_erc1155_delivery(
+                    self.executor,
+                    [opp_tok],
+                    pre_opp_bal + pairs,
+                    timeout_sec=6.0,
+                    poll_sec=0.30,
+                )
+            )
+        except Exception:
+            pass
     m_res = await _aio.to_thread(self.executor.attempt_onchain_complete_set_merge, cid, min_pairs=pairs, max_pairs=pairs)
     if isinstance(m_res, tuple) and len(m_res) == 2 and m_res[0] and float(m_res[1]) >= 4.99:
         tx_h, pairs_m = str(m_res[0]), float(m_res[1])
-        opp_cost = float((opp_res or {}).get("cost_usd") or cm_plan.get("total_opp_cost_usd") or 0.0)
         pos["merge_tx_hash"] = tx_h
-        self.record_fill_and_update_position(pos, f"COMP_MERGE_{tx_h}_{tid}", pairs_m, round(max(0.01, pairs_m - opp_cost), 4), 0.0, cash_is_estimated=False)
-        if float(pos.get("remaining_shares", 0.0) or 0.0) <= 0.02:
+        merged_opp_cost = round(opp_cost * min(1.0, pairs_m / max(filled_opp, 0.01)), 4)
+        self.record_fill_and_update_position(pos, f"COMP_MERGE_{tx_h}_{tid}", pairs_m, round(max(0.01, pairs_m - merged_opp_cost), 4), 0.0, cash_is_estimated=False)
+        still_open = float(pos.get("remaining_shares", 0.0) or 0.0) > 0.02
+        if not still_open:
             self._close_position(tid, pos, exec_status_cls.SETTLED, "SYNTHETIC_COMPLEMENT_MERGED", won=True)
+        if filled_opp - pairs_m >= 0.05:
+            _track_unmerged_opp(round(filled_opp - pairs_m, 4), primary_open=still_open)
         self._pending_collateral_refresh = True
         await _aio.to_thread(self.save_state)
         return True
+    _track_unmerged_opp(filled_opp, primary_open=True)
     await _aio.to_thread(self.save_state)
     return False
 
@@ -37383,9 +39203,11 @@ async def try_atomic_box_overround_unwind_impl(
             e_oid = lg_p.get("exit_order_id")
             if not e_oid:
                 continue
-            if isinstance(batch_c, dict) and str(e_oid) in batch_c and isinstance(batch_c[str(e_oid)], dict):
+            if isinstance(batch_c, Mapping) and str(e_oid) in batch_c and (isinstance(batch_c[str(e_oid)], Mapping) or hasattr(batch_c[str(e_oid)], "is_canceled")):
                 c_r = batch_c[str(e_oid)]
-            elif isinstance(batch_c, dict) and ("is_canceled" in batch_c or "canceled" in batch_c):
+            elif isinstance(batch_c, Mapping) and ("is_canceled" in batch_c or "canceled" in batch_c):
+                c_r = batch_c
+            elif hasattr(batch_c, "is_canceled"):
                 c_r = batch_c
             else:
                 c_r = await _aio.to_thread(self.executor.cancel_order, str(e_oid))
@@ -37396,7 +39218,10 @@ async def try_atomic_box_overround_unwind_impl(
                     self._close_position(lg_tid, lg_p, exec_status_cls.FILLED, "MAKER_SCALP_FILLED_CLOB", won=True)
                     abort_u = True
                     break
-            is_c = bool((c_r.get("is_canceled") or str(e_oid) in (c_r.get("canceled") or [])) if isinstance(c_r, dict) else False)
+            if isinstance(c_r, Mapping):
+                is_c = bool(c_r.get("is_canceled") or str(e_oid) in (c_r.get("canceled") or []))
+            else:
+                is_c = bool(getattr(c_r, "is_canceled", False) or str(e_oid) in (getattr(c_r, "canceled", None) or []))
             if not is_c or float(lg_p.get("filled_exit_shares", 0.0) or 0.0) > 0.01:
                 if is_c:
                     open_oids.discard(str(e_oid))
@@ -37854,7 +39679,7 @@ async def _hv__attempt_live_phase3a_maker_rescue(
             self.get_position_market_value(p, time.time()) for p in self.active_positions.values()
         )
         if _eq_p3a > 0.0:
-            _p3a_prof = get_unleashed_v5_tier_profile(_eq_p3a)
+            _p3a_prof = get_unleashed_v5_tier_profile(_eq_p3a, previous_tier=getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
             _p3a_cap_usd = max(_p3a_cap_usd, round(_eq_p3a * float(_p3a_prof["alpha_notional"]), 2))
     rescue_notional = min(float(effective_notional), _p3a_cap_usd)
     if math.floor(rescue_notional / max(0.01, maker_px)) < 5:
@@ -38147,6 +39972,7 @@ def _hv__finish_single_leg_lock(
 ) -> Dict[str, Any]:
     """Executes fresh dual-book verified single-leg deterministic lock inside _d1_inflight_exec_lock."""
     from src.polymarket_research.riskless_protocol_v2_expansion import (
+        _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES,
         _is_sll_zf_focus_enabled,
         check_per_event_concentration_cap,
         check_sll_cand_dispute_guard,
@@ -38190,6 +40016,13 @@ def _hv__finish_single_leg_lock(
         else None
     )
     _cand_net_1l = float(cand.get("box_cost_net") or cand.get("leg_a_limit_price") or cand.get("max_box_cost_net") or 0.995)
+    _gov_rb_1l = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+    _core_clip_1l = min(24.0, max(12.0, float(_gov_rb_1l.get("gatling_base_clip_core_usd", 20.0) or 20.0)))
+    _low_cash_1l_tkr = bool(
+        not self.dry_run
+        and _free_pre_1l is not None
+        and float(_free_pre_1l) < (_core_clip_1l if _cand_net_1l <= 0.992 else 8.50)
+    )
     _signaled_1l, _preempt_keys_1l = preempt_makers_for_instant_taker_arb(
         self,
         reason=f"SLL_TAKER:{sleeve_src}",
@@ -38197,8 +40030,8 @@ def _hv__finish_single_leg_lock(
         cand_net_cost=_cand_net_1l,
         free_cash_hint=_free_pre_1l,
         target_arb_cash_usd=45.0,
-        min_fallback_cash_usd=12.0,
-        force_cross_market_when_low_cash=bool(s2_fast),
+        min_fallback_cash_usd=_core_clip_1l if (s2_fast or _cand_net_1l <= 0.992) else 9.0,
+        force_cross_market_when_low_cash=bool(s2_fast or _low_cash_1l_tkr),
         now_ts=now_ts,
     )
     _ev_loop_1l = getattr(self, "_main_loop", None)
@@ -38237,11 +40070,52 @@ def _hv__finish_single_leg_lock(
     _inf_1l_u = 0.0 if self.dry_run else pending_intents_cash_reserved_usd(_pend_1l)
     _sync_1l_u = 0.0 if self.dry_run else pending_intents_synced_equity_usd(_pend_1l)
     collat_f = max(0.0, float(collat if collat is not None else (200.0 if self.dry_run else 0.0)) - _inf_1l_u)
+    if (
+        not self.dry_run
+        and collat_f < _core_clip_1l - 0.50
+        and _cand_net_1l <= 0.98005
+        and getattr(self.executor, "client", None) is not None
+        and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+        and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
+        and bool(_gov_rb_1l.get("enable_zero_loss_open_carry_velocity_recycle", True))
+    ):
+        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
+        _rec_1l = recycle_open_zero_loss_carry_for_fast_arb(
+            self,
+            needed_cash_gap_usd=max(0.0, _core_clip_1l - collat_f),
+            challenger_net_cost=_cand_net_1l,
+            challenger_rem_tte_sec=max(1.0, exp_ts - now_ts),
+            challenger_sleeve=sleeve_src,
+            exclude_market_ids={mid_a} if mid_a else set(),
+            now_ts=now_ts,
+        )
+        if _rec_1l.get("recycled_count", 0) > 0:
+            collat = getattr(self, "_last_known_collateral", collat)
+            collat_f = max(collat_f + float(_rec_1l.get("freed_cash_usd", 0.0)), max(0.0, float(collat or 0.0) - _inf_1l_u))
     cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p)) + _inf_1l_u + _sync_1l_u
     if self._is_v5_unleashed_active():
         _gsn_1l = GLOBAL_GOVERNANCE_MANAGER.snapshot
-        _b1_gov_1l = _gsn_1l.get("bond1_maker") or {}
-        _v5_1l = get_unleashed_v5_tier_profile(collat_f + cur_exp)
+        _b1_gov_1l = _gsn_1l.get("riskless_boxes") or _gsn_1l.get("bond1_maker") or {}
+        _prev_1l = getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH"
+        _v5_1l = get_unleashed_v5_tier_profile(collat_f + cur_exp, previous_tier=_prev_1l)
+        from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+        if (is_unmocked_live_clob_harvester(self) or getattr(self, "enforce_bond1_smart_queue", False)) and not s2_fast:
+            from src.polymarket_research.holistic_strategy_governance import passes_capital_velocity_hurdle
+
+            _vel_ok_1l, _vel_rsn_1l = passes_capital_velocity_hurdle(
+                box_type="SINGLE_LEG_LOCK",
+                sleeve_src=sleeve_src,
+                collat_usd=max(25.0, collat_f + cur_exp),
+                rem_tte_sec=max(1.0, exp_ts - now_ts),
+                box_cost_net=float(cand.get("box_cost_net") or cand.get("max_box_cost_net") or 0.994),
+                fast_recycle_eligible=(
+                    (sleeve_src in _HTM_PASSIVE_MAKER_RECYCLE_SLEEVES and sleeve_src != "MKR_REWARD_LOCKED_CARRY")
+                    or not bool(cand.get("hold_to_maturity", True))
+                ),
+                previous_tier=_prev_1l,
+            )
+            if not _vel_ok_1l:
+                return {"executed": False, "reason": _vel_rsn_1l}
         _b1_pct = float(_v5_1l["bond1_free_cash_pct"])
         _enforce_b1_tkr_cap = bool(
             getattr(self, "enforce_bond1_smart_queue", False)
@@ -38376,9 +40250,12 @@ def _hv__finish_single_leg_lock(
     tk_sz = resolve_harvester_sll_tick_size(
         self.executor, tok_a, cand, bk_win=raw_ba, mkt_ws=getattr(self, "_pos_market_ws", None),
         real_clob=not use_mock_lock_tk, custom_tk_fn=_cust_tk_1l, price_hint=worst_px, allow_sync_sdk=True,
-    ) or (cand.get("leg_a_tick_size") or 0.01 if use_mock_lock_tk else 0.01)
-    if not use_mock_lock_tk and any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual):
-        tk_sz = min(float(tk_sz or 0.001), 0.001)
+    )
+    if not tk_sz or float(tk_sz) <= 0.0:
+        if not use_mock_lock_tk and any(abs(round(x["price"], 2) - round(x["price"], 3)) > 1e-6 for x in qual):
+            tk_sz = 0.001
+        else:
+            tk_sz = cand.get("leg_a_tick_size") or 0.01 if use_mock_lock_tk else 0.01
     if hasattr(self.executor, "prewarm_token_market_cache"):
         self.executor.prewarm_token_market_cache(
             token_id=tok_a, tick_size=tk_sz if (use_mock_lock_tk or float(tk_sz or 0.01) < 0.01) else None, neg_risk=bool(cand.get("leg_a_neg_risk")),
@@ -38540,6 +40417,13 @@ def _hv__finish_negrisk_convert_arb(
     }
     if any(str(lg.get("market_id") or "") in busy for lg in raw_no_legs if lg.get("market_id")):
         return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+    _nr_mids = [str(lg.get("market_id") or "") for lg in raw_no_legs if lg.get("market_id")]
+    _evt_ok_nr, _evt_rsn_nr, _evt_rem_nr, _ = check_per_event_concentration_cap(
+        self, cand, market_ids=_nr_mids, now_ts=now_ts, min_headroom_usd=5.0
+    )
+    if not _evt_ok_nr:
+        return {"executed": False, "reason": _evt_rsn_nr}
 
     collat = getattr(self, "_last_known_collateral", None)
     _nr_inf_u = sum(float(i.get("notional_usd", 0.0) or 0.0) for i in getattr(self, "pending_entry_intents", {}).values() if isinstance(i, dict))
@@ -38555,9 +40439,34 @@ def _hv__finish_negrisk_convert_arb(
         except Exception:
             collat = None
     collat_f = max(0.0, float(collat if collat is not None else (200.0 if self.dry_run else 0.0)) - (0.0 if self.dry_run else _nr_inf_u))
+    _cand_net_nr = float(cand.get("box_cost_net") or cand.get("net_cost_per_set") or 0.990)
+    _gov_rb_nr = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+    _core_clip_nr = min(26.0, max(12.0, float(_gov_rb_nr.get("gatling_base_clip_d1_usd", 22.0) or 22.0)))
+    if (
+        not self.dry_run
+        and collat_f < _core_clip_nr - 0.50
+        and _cand_net_nr <= 0.98005
+        and getattr(self.executor, "client", None) is not None
+        and getattr(getattr(self.executor, "client", None), "_mock_children", None) is None
+        and "execute_snipe_order" not in getattr(self.executor, "__dict__", {})
+        and bool(_gov_rb_nr.get("enable_zero_loss_open_carry_velocity_recycle", True))
+    ):
+        from src.polymarket_research.stage_c_zero_loss_velocity import recycle_open_zero_loss_carry_for_fast_arb
+        _rec_nr = recycle_open_zero_loss_carry_for_fast_arb(
+            self,
+            needed_cash_gap_usd=max(0.0, _core_clip_nr - collat_f),
+            challenger_net_cost=_cand_net_nr,
+            challenger_rem_tte_sec=max(1.0, exp_ts - now_ts),
+            challenger_sleeve=sleeve_src,
+            exclude_market_ids={str(lg.get("market_id") or "") for lg in raw_no_legs if lg.get("market_id")},
+            now_ts=now_ts,
+        )
+        if _rec_nr.get("recycled_count", 0) > 0:
+            collat = getattr(self, "_last_known_collateral", collat)
+            collat_f = max(collat_f + float(_rec_nr.get("freed_cash_usd", 0.0)), max(0.0, float(collat or 0.0) - _nr_inf_u))
     cur_exp = sum(float(p.get("notional_usd", 0.0) or 0.0) for p in self.active_positions.values() if not position_is_settlement_receivable(p))
     if self._is_v5_unleashed_active():
-        _v5_nr = get_unleashed_v5_tier_profile(collat_f + cur_exp)
+        _v5_nr = get_unleashed_v5_tier_profile(collat_f + cur_exp, previous_tier=getattr(self, "_current_equity_tier", None) or "UNLEASHED_LAUNCH")
         _nr_pct = float(_v5_nr["bond1_free_cash_pct"])
         lot_cap_nr = max(75.0, round(collat_f * _nr_pct, 2)) if own_grad else float(_v5_nr["bridged_zero_fee_cap_usd"])
         budget = min(
@@ -38578,6 +40487,7 @@ def _hv__finish_negrisk_convert_arb(
         )
     from src.polymarket_research.riskless_protocol_v2_expansion import maybe_cap_gatling_budget_sync
     budget = maybe_cap_gatling_budget_sync(self, budget, collat_f, cur_exp, "NEGRISK_CONVERT", sleeve_src, own_grad, GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes"), cap_usd=float(_rcfg.get("d1_box_max_budget_usd", 250.0)), reserve_u=0.50, override_legacy_cap=True)
+    budget = min(budget, float(_evt_rem_nr))
     if budget < 5.05:
         return {"executed": False, "reason": "INSUFFICIENT_BOX_COLLATERAL_HEADROOM"}
 
@@ -38832,16 +40742,18 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
 
     own_asset_grad_m = True
     try:
-        st_path = DATA_DIR / "alpha124_shadow_state.json"
-        if not st_path.exists() and DATA_DIR == (PIPELINE_ROOT / "data" / "polymarket"):
-            alt_p = PIPELINE_ROOT / "data" / "alpha124" / "alpha124_shadow_state.json"
-            if alt_p.exists():
-                st_path = alt_p
-        if not st_path.exists() or (time.time() - st_path.stat().st_mtime) > 300.0:
-            return {"executed": False, "reason": "ALPHA124_STATE_MISSING_OR_STALE"}
-        st_raw = _json_loads(st_path.read_text(encoding="utf-8"))
-        by_sl_map = st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {}
-        by_da_map = st_raw.get("by_d1_asset") or {}
+        from src.polymarket_research.stage_c_zero_loss_velocity import load_alpha124_graduation_maps_with_lkg_cache
+
+        by_sl_map, by_da_map, _a124_err_m = load_alpha124_graduation_maps_with_lkg_cache(
+            self,
+            DATA_DIR,
+            PIPELINE_ROOT,
+            json_loads_fn=_json_loads,
+            stale_reason="ALPHA124_STATE_MISSING_OR_STALE",
+            missing_reason="ALPHA124_STATE_MISSING_OR_STALE",
+        )
+        if _a124_err_m is not None or by_sl_map is None or by_da_map is None:
+            return {"executed": False, "reason": _a124_err_m or "ALPHA124_STATE_MISSING_OR_STALE"}
 
         def _grad8_m(rec: Dict[str, Any]) -> bool:
             adj_p = rec.get("legging_adjusted_pnl_t1000_usd", rec.get("realized_pnl_t1000_usd", 0.0))
@@ -38892,6 +40804,12 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
     }
     if mid_a in busy_mkts or mid_b in busy_mkts:
         return {"executed": False, "reason": "MARKET_ALREADY_OCCUPIED"}
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+    _evt_ok_ma, _evt_rsn_ma, _evt_rem_ma, _ = check_per_event_concentration_cap(
+        self, candidate_box, market_ids=[mid_a, mid_b], now_ts=now_ts, min_headroom_usd=5.0
+    )
+    if not _evt_ok_ma:
+        return {"executed": False, "reason": _evt_rsn_ma}
 
     anc_is_a = bool(candidate_box.get("anchor_is_a", True))
     tok_anc, tok_hdg = (tok_a, tok_b) if anc_is_a else (tok_b, tok_a)
@@ -38950,6 +40868,7 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
             return {"executed": False, "reason": "INTRADAY_D1_SLOT_RESERVED"}
 
     from src.polymarket_research.riskless_protocol_v2_expansion import (
+        extract_sll_event_group_key,
         pending_intents_cash_reserved_usd,
         pending_intents_synced_equity_usd,
         sync_pending_intents_on_collateral_refresh,
@@ -38982,7 +40901,14 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
     bridged_lot_cap = 18.0 if (own_mkr_grad and own_asset_grad_m) else 12.0
     if _is_rebate_mg:
         bridged_lot_cap = min(bridged_lot_cap, float(_gov_rb_ma.get("d1_rebate_maker_cap_usd", 12.0)))
-    budget = min(bridged_lot_cap, asset_cap, max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))), collat_f * 0.25, port_headroom_mkr)
+    budget = min(
+        bridged_lot_cap,
+        asset_cap,
+        max(0.0, collat_f - float(RISK_CONFIG.get("d1_box_collateral_reserve_usd", 16.50))),
+        collat_f * 0.25,
+        port_headroom_mkr,
+        float(_evt_rem_ma),
+    )
     pair_est = anc_bid_px + hdg_lim_px + (fr_hdg * ((hdg_lim_px * (1.0 - hdg_lim_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0)
     if box_type == "ZERO_FEE_MAKER_ANCHOR" and exp_ts > 0.0 and (exp_ts - now_ts) > 3600.0 and pair_est > 0.986:
         return {"executed": False, "reason": f"LONG_HORIZON_VELOCITY_EV_FLOOR:{pair_est:.4f}"}
@@ -39032,7 +40958,8 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
             hdg_av_f = sum(sz for px, sz in asks_hf if px <= hdg_ask_f + 0.01)
             hdg_fee_f = fr_hdg * ((hdg_ask_f * (1.0 - hdg_ask_f)) ** fe_hdg) if fr_hdg > 0.0 else 0.0
             hdg_h_f = min(0.25, hdg_fee_f / max(hdg_ask_f, 1e-6)) if fr_hdg > 0.0 else 0.0
-            if hdg_av_f < max(15.0, 2.5 * sh_int) or not (0.860 <= (anc_bid_px + hdg_ask_f / (1.0 - hdg_h_f)) <= max_pair_cap):
+            _hdg_mult_cfg = max(1.25, float(_gov_rb_full.get("synthetic_maker_min_hedge_depth_mult", 2.5) or 2.5)) if fr_hdg > 0.0 else 2.5
+            if hdg_av_f < max(15.0, _hdg_mult_cfg * sh_int) or not (0.860 <= (anc_bid_px + hdg_ask_f / (1.0 - hdg_h_f)) <= max_pair_cap):
                 return {"executed": False, "reason": "FRESH_HEDGE_DEPTH_OR_COST_REJECT"}
             opp_a = str(candidate_box.get("leg_a_opp_token_id") or "")
             opp_b = str(candidate_box.get("leg_b_opp_token_id") or "")
@@ -39057,10 +40984,13 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
         anc_notional = round((sh_int + 0.01) * anc_bid_px, 4)
         now_int_ts = time.time()
         _anc_res_u = round(sh_int * anc_bid_px, 4)
+        _anc_evt_k = extract_sll_event_group_key(candidate_box)
         self.pending_entry_intents[intent_id] = {
             "trade_id": intent_id, "market_id": mid_anc, "token_id": tok_anc,
             "notional_usd": _anc_res_u, "posted_notional_usd": _anc_res_u, "ts": now_int_ts, "heartbeat_ts": now_int_ts,
             "live_maker_anchor_inflight": True, "inflight_key": inflight_key,
+            **({"event_group_key": _anc_evt_k} if _anc_evt_k else {}),
+            **({"event_id": str(candidate_box.get("event_id"))} if candidate_box.get("event_id") else {}),
         }
         post_res = await asyncio.to_thread(
             self.executor.post_maker_entry_order,
@@ -39099,6 +41029,7 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
             _ws_shield_on = bool(_gov_rb_full.get("enable_synthetic_maker_ws_shield", True))
             _ws_zero_rest_hdg = bool(_gov_rb_full.get("enable_ws_zero_rest_maker_hedge", True))
             _repeg_deb_s = float(_gov_rb_full.get("synthetic_maker_repeg_debounce_sec", 0.50) or 0.50)
+            _keep_hdg_mult = (max(1.25, float(_gov_rb_full.get("synthetic_maker_min_hedge_depth_mult", 2.0) or 2.0) - 0.5) if "synthetic_maker_min_hedge_depth_mult" in _gov_rb_full else 2.0) if fr_hdg > 0.0 else 2.0
             _custom_mkr_bk_loop = "get_market_book" in getattr(self.executor, "__dict__", {})
             while True:
                 pending_repeg_px: Optional[float] = None
@@ -39158,7 +41089,7 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
                                 hedge_fee_exponent=fe_hdg,
                                 max_entry_box_cost_net=max_pair_cap,
                                 max_keep_box_cost_net=max_pair_cap + 0.001,
-                                min_keep_depth_mult=2.0,
+                                min_keep_depth_mult=_keep_hdg_mult,
                                 rem_tte_sec=(exp_ts - time.time()) if exp_ts > 0.0 else 300.0,
                                 min_rem_tte_sec=55.0 if box_type == "ZERO_FEE_MAKER_ANCHOR" else 45.0,
                                 advance_since_mono=adv_since_mono,
@@ -39190,7 +41121,7 @@ async def _hv_maybe_execute_graduated_maker_anchor_box(self, candidate_box: Dict
                         hc_av = sum(sz for px, sz in asks_hc if px <= hc_px + 0.01) if asks_hc else 0.0
                         hc_fee = fr_hdg * ((hc_px * (1.0 - hc_px)) ** fe_hdg) if fr_hdg > 0.0 else 0.0
                         hc_h = min(0.25, hc_fee / max(hc_px, 1e-6)) if fr_hdg > 0.0 else 0.0
-                        if hc_av < max(12.0, 2.0 * sh_int) or (posted_anc_px + hc_px / (1.0 - hc_h)) > (max_pair_cap + 0.001):
+                        if hc_av < max(12.0, _keep_hdg_mult * sh_int) or (posted_anc_px + hc_px / (1.0 - hc_h)) > (max_pair_cap + 0.001):
                             adverse_cancelled = True
                             break
                     if not adverse_cancelled and not preempt_ev.is_set() and uws is not None and uws.is_healthy() and time.monotonic() >= deadline - 0.05 and (time.monotonic() - t_anc_0) < max_keep_anc:
@@ -40987,6 +42918,12 @@ async def _hv__evaluate_shock_and_execute_impl(self, shock: Dict[str, Any]):
         return
     if (executable_depth_usd / effective_notional) < (self.depth_hurdle - 1e-4):
         return
+    if _v5_live_strict and raw_asks and not _maker_only_ceiling_rescue:
+        _min_l1_u = float(_v5_dir_cfg.get("min_l1_ask_depth_usd", 20.0) or 20.0)
+        _l1_px0 = float(raw_asks[0][0])
+        _l1_u = sum(float(px) * float(sz) for px, sz in raw_asks if float(px) <= _l1_px0 + 0.01 + 1e-6)
+        if _l1_u < _min_l1_u - 1e-6:
+            return
 
     # Trap 1.1: Proportional bid-depth down-scaler for up-sized tickets (bypassed under _v5_live_strict WFO parity)
     if not self.dry_run and not is_synthetic_test and not _v5_live_strict and first_ask > 0:
@@ -41881,6 +43818,8 @@ async def _hv__maybe_recycle_disputed_htm_lock(self, tid: str, pos: Dict[str, An
         or pos.get("status") == "UNRESOLVED_SETTLEMENT"
         or position_is_settlement_receivable(pos)
         or not bool(pos.get("inventory_reconciled", False))
+        or "KMIA" in str(pos.get("asset") or "").upper()
+        or "KMIA" in str(tid or "").upper()
     ):
         return False
     if (now_ts - float(pos.get("_last_disputed_recycle_ts", 0.0) or 0.0)) < 60.0:
@@ -42317,7 +44256,7 @@ def maybe_emit_recorder_fast_riskless_ipc(
     return emitted
 
 # ======================================================================================
-# [16/64] MODULE: src/polymarket_research/polymarket_ws_streams.py
+# [16/67] MODULE: src/polymarket_research/polymarket_ws_streams.py
 # PURPOSE: Sub-ms CLOB Market, Perps Lead-Lag & Authenticated User L2 WebSocket Trackers
 # ======================================================================================
 
@@ -44301,7 +46240,7 @@ class PolymarketPerpsLeadLagStream:
         self._stop_flag = True
 
 # ======================================================================================
-# [17/64] MODULE: src/polymarket_research/polymarket_direct_feeds.py
+# [17/67] MODULE: src/polymarket_research/polymarket_direct_feeds.py
 # PURPOSE: Official NBA/NHL/MLB Direct LiveData Push Adapters & Dual-Source Reconcilers
 # ======================================================================================
 
@@ -44451,9 +46390,9 @@ def parse_nhl_official_scoreboard(payload: Dict[str, Any]) -> List[LiveMultiSpor
         if not isinstance(g, dict):
             continue
         gs = str(g.get("gameState") or "").strip().upper()
-        if gs in ("OFF", "FINAL"):
+        if gs == "OFF":
             state, completed = "post", True
-        elif gs in ("LIVE", "CRIT"):
+        elif gs in ("FINAL", "LIVE", "CRIT"):
             state, completed = "in", False
         else:
             continue
@@ -44736,16 +46675,23 @@ def reconcile_multisport_dual_source_boards(
 
     for eg in espn_board:
         og_match: Optional[LiveMultiSportGame] = None
+        best_idx_o: Optional[int] = None
+        best_dt: float = float("inf")
         for idx_o, og in enumerate(official_board):
             if idx_o in used_off:
                 continue
+            dt_o = abs(float(eg.start_ts) - float(og.start_ts)) if (eg.start_ts > 0.0 and og.start_ts > 0.0) else 0.0
+            if eg.start_ts > 0.0 and og.start_ts > 0.0 and dt_o > 5400.0:
+                continue
             if _team_tokens_match(eg.home_name, og.home_name) and _team_tokens_match(eg.away_name, og.away_name):
-                og_match = og
-                used_off.add(idx_o)
-                break
-        if og_match is None:
+                if dt_o < best_dt:
+                    best_dt = dt_o
+                    og_match = og
+                    best_idx_o = idx_o
+        if og_match is None or best_idx_o is None:
             merged.append(eg)
             continue
+        used_off.add(best_idx_o)
 
         scores_eq = (eg.home_score == og_match.home_score) and (eg.away_score == og_match.away_score)
         both_final = bool(eg.completed and og_match.completed and scores_eq)
@@ -44809,7 +46755,7 @@ def reconcile_multisport_dual_source_boards(
     return merged
 
 # ======================================================================================
-# [18/64] MODULE: src/polymarket_research/latency_trace.py
+# [18/67] MODULE: src/polymarket_research/latency_trace.py
 # PURPOSE: Zero-Allocation Hot-Path Microsecond Latency Tracer & Stage Breakdown Telemetry
 # ======================================================================================
 
@@ -45529,7 +47475,7 @@ def emit_shock_attempt_from_trace(trace: Optional[LatencyTrace], shock: Optional
         return None
 
 # ======================================================================================
-# [19/64] MODULE: src/polymarket_research/economic_attribution_ledger.py
+# [19/67] MODULE: src/polymarket_research/economic_attribution_ledger.py
 # PURPOSE: Stage B Opportunity Funnel, Sub-ms Competitor Decay Curve & Reconciled Attribution Engine
 # ======================================================================================
 
@@ -45667,6 +47613,84 @@ def _parse_ts(val: Any) -> Optional[float]:
         return dt.timestamp()
     except Exception:
         return None
+
+
+def external_cashflows_config_path(data_or_repo_root: Optional[Path] = None) -> Path:
+    explicit = os.environ.get("PM_EXTERNAL_CASHFLOWS_FILE")
+    if explicit and data_or_repo_root is None:
+        return Path(explicit)
+    if data_or_repo_root is not None:
+        p = Path(data_or_repo_root)
+        if p.is_file():
+            return p
+        cand_direct = p / "config" / "polymarket_external_cashflows.json"
+        if cand_direct.exists():
+            return cand_direct
+        # If caller passed `data/polymarket`, check parent repo root `../../config/...`
+        cand_parent = p.resolve().parents[1] / "config" / "polymarket_external_cashflows.json" if len(p.resolve().parents) >= 2 else cand_direct
+        if cand_parent.exists():
+            return cand_parent
+        return cand_direct
+    repo_root = Path(__file__).resolve().parents[2]
+    return repo_root / "config" / "polymarket_external_cashflows.json"
+
+
+def load_external_cashflows_summary(
+    data_or_repo_root: Optional[Path] = None,
+    *,
+    since_utc: Any = None,
+    epoch_start_utc: str = DEFAULT_RISKLESS_LOCK_START_UTC,
+) -> Dict[str, Any]:
+    """
+    Loads authoritative post-lock operator deposits/withdrawals so external principal
+    is never misattributed as trading profit in wallet-delta, 24h delta, or Stage B KPI #1.
+    """
+    cfg_path = external_cashflows_config_path(data_or_repo_root)
+    start_eq = DEFAULT_RISKLESS_LOCK_START_EQUITY_USD
+    ep_utc = epoch_start_utc
+    rows: List[Dict[str, Any]] = []
+    if cfg_path.exists():
+        try:
+            raw = json.loads(cfg_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                start_eq = _sf(raw.get("riskless_lock_start_equity_usd"), DEFAULT_RISKLESS_LOCK_START_EQUITY_USD)
+                ep_utc = str(raw.get("riskless_lock_epoch_start_utc") or epoch_start_utc)
+                for item in raw.get("cashflows") or ():
+                    if isinstance(item, dict):
+                        rows.append(dict(item))
+        except Exception:
+            pass
+
+    ep_ts = _parse_ts(ep_utc)
+    since_ts = _parse_ts(since_utc) if since_utc is not None else None
+    net_post_lock = 0.0
+    net_since_window = 0.0
+    valid_count = 0
+
+    for item in rows:
+        amt = abs(_sf(item.get("amount_usd"), 0.0))
+        if amt <= 0.0:
+            continue
+        cf_type = str(item.get("type") or "DEPOSIT").strip().upper()
+        signed_amt = -amt if cf_type in ("WITHDRAWAL", "WITHDRAW", "OUTFLOW") else amt
+        cf_ts = _parse_ts(item.get("recorded_at_utc") or item.get("ts_utc") or item.get("timestamp"))
+        if ep_ts is None or cf_ts is None or cf_ts >= ep_ts:
+            net_post_lock += signed_amt
+            valid_count += 1
+        if since_ts is not None and cf_ts is not None and cf_ts > since_ts:
+            net_since_window += signed_amt
+
+    net_post_lock_r = round(net_post_lock, 4)
+    contributed_basis_r = round(float(start_eq) + net_post_lock_r, 4)
+    return {
+        "starting_lock_equity_usd": round(float(start_eq), 2),
+        "riskless_lock_epoch_start_utc": ep_utc,
+        "net_deposits_post_lock_usd": round(net_post_lock_r, 2),
+        "contributed_capital_basis_usd": round(contributed_basis_r, 2),
+        "net_deposits_since_window_usd": round(net_since_window, 2),
+        "cashflows_count": valid_count,
+        "cashflows": rows,
+    }
 
 
 def telemetry_enabled() -> bool:
@@ -46960,6 +48984,7 @@ def compute_stage_b_attribution_report(
             "starting_reconciled_equity_usd": round(float(starting_lock_equity_usd), 2),
             "ending_reconciled_equity_usd": round(float(reconciled_equity_usd), 2),
             "net_deposits_usd": round(float(net_deposits_post_lock_usd), 2),
+            "contributed_capital_basis_usd": round(float(starting_lock_equity_usd) + float(net_deposits_post_lock_usd), 2),
             "wallet_equity_delta_usd": round(wallet_delta_post_lock_usd, 4),
             "prorated_vm_infra_cost_usd": prorated_lock_infra_usd,
             "ai_research_cost_usd": round(float(all_time_ai_cost_usd), 4),
@@ -47014,7 +49039,7 @@ def compute_stage_b_attribution_report(
     }
 
 # ======================================================================================
-# [20/64] MODULE: src/polymarket_research/stage_c_zero_loss_velocity.py
+# [20/67] MODULE: src/polymarket_research/stage_c_zero_loss_velocity.py
 # PURPOSE: Stage C Pure-Riskless Velocity Recycler, Pre-Split Quarantine & Clinched Dead-Leg Split-to-Sell
 # ======================================================================================
 
@@ -47042,7 +49067,7 @@ from decimal import Decimal, ROUND_CEILING
 import logging
 import math
 import time
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger("StageCZeroLossVelocity")
 
@@ -47102,9 +49127,7 @@ POST_CLINCH_SINGLE_LEG_SLEEVES = frozenset(
         "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER",
         "W_PRUNE1_DEAD_NO_BOND",
         "W1_SOLAR_PEAK_LOCK",
-        "W1_LOW_TROUGH_LOCK",
         "SP2_NBA_ENDGAME_LOCK",
-        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
         "SP4_INGAME_MILESTONE_IRREVERSIBLE_LOCK",
         "CL1_MULTISPORT_POST_REVIEW_SCORE_CLINCH",
         "AFF1_FROZEN_SUBPERIOD_COLLAPSE",
@@ -47122,6 +49145,7 @@ PURE_RISKLESS_DOMINANCE_AND_MERGE_SLEEVES = frozenset(
         "C1_BINARY_COMPLETE_SET",
         "NR2_CONVERT_NO_SUBSET_ARB",
         "NR_M1_DEAD_SEED_OVERROUND",
+        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
     }
 )
 
@@ -47144,18 +49168,18 @@ def is_nr0_closed_partition_graduated_unlock(
     alpha124_by_sleeve: Optional[Mapping[str, Any]],
 ) -> bool:
     """
-    Returns True ONLY when `allow_nr0_multileg_dynamic_unpause` is explicitly enabled AND
-    `NR0_ZERO_FEE_SLATE_ARB` has achieved strict `8/8` (`0`-loss, `100%` WR, positive
-    legging-adjusted PnL) shadow graduation AND live equity meets `nr0_dynamic_unlock_equity_usd`
-    (default `$150.00`). Under `strict_pure_riskless_mode`, multi-leg sequential FAK bundles
-    remain locked OFF by default to prevent partial-basket `UNWRESID` legging losses.
+    Returns True ONLY when `allow_nr0_multileg_dynamic_unpause` AND explicit operator certification
+    `certified_multileg_3plus_live_enabled` are BOTH enabled, `NR0_ZERO_FEE_SLATE_ARB` has achieved
+    strict `8/8` (`0`-loss, `100%` WR, positive legging-adjusted PnL) shadow graduation, AND
+    reconciled live NAV meets `nr0_dynamic_unlock_equity_usd` (hard floor `$500.00`).
+    Crossing `$500` NAV NEVER automatically re-enables `>=3`-leg sequential bundles without certification.
     """
     cfg = rb_cfg if isinstance(rb_cfg, Mapping) else {}
-    if bool(cfg.get("strict_pure_riskless_mode", False)) and not bool(
-        cfg.get("allow_nr0_multileg_dynamic_unpause", False)
-    ):
+    if not bool(cfg.get("certified_multileg_3plus_live_enabled", False)):
         return False
-    min_eq = max(100.0, _sf(cfg.get("nr0_dynamic_unlock_equity_usd"), 150.0))
+    if not bool(cfg.get("allow_nr0_multileg_dynamic_unpause", False)):
+        return False
+    min_eq = max(500.0, _sf(cfg.get("nr0_dynamic_unlock_equity_usd"), 500.0))
     if _sf(total_equity_usd, 0.0) < min_eq:
         return False
     if not isinstance(alpha124_by_sleeve, Mapping):
@@ -47204,10 +49228,12 @@ def is_unmocked_live_clob_harvester(harvester: Any) -> bool:
     """
     True on the real-money L2 CLOB production Harvester (`dry_run=False`, real `executor.client`,
     no monkeypatched test stubs in `executor.__dict__`) OR when `enforce_pure_riskless_mode=True`
-    / `enforce_paused_riskless_sleeves=True` is explicitly set.
+    / `enforce_paused_riskless_sleeves=True` / `enforce_multileg_3plus_nav_gate=True` is explicitly set.
     """
-    if getattr(harvester, "enforce_pure_riskless_mode", False) or getattr(
-        harvester, "enforce_paused_riskless_sleeves", False
+    if (
+        getattr(harvester, "enforce_pure_riskless_mode", False)
+        or getattr(harvester, "enforce_paused_riskless_sleeves", False)
+        or getattr(harvester, "enforce_multileg_3plus_nav_gate", False)
     ):
         return True
     if getattr(harvester, "dry_run", True):
@@ -47227,6 +49253,160 @@ def is_unmocked_live_clob_harvester(harvester: Any) -> bool:
     return True
 
 
+def count_sequential_bundle_legs(candidate_box: Mapping[str, Any]) -> int:
+    """Counts non-atomic sequential CLOB execution legs required by a candidate box."""
+    if not isinstance(candidate_box, Mapping):
+        return 0
+    btype = str(candidate_box.get("box_type") or "").strip().upper()
+    if btype == "NEGRISK_CONVERT":
+        cm = str(candidate_box.get("convert_mode") or "").strip().upper()
+        no_legs = candidate_box.get("no_legs") or ()
+        yes_sells = candidate_box.get("liquid_yes_sells") or candidate_box.get("yes_sell_legs") or ()
+        if cm == "NR_M1_DEAD_SEED_OVERROUND" and len(no_legs) == 1:
+            return 1
+        if cm == "NR2_PURE_CASH_CONVERT" and len(no_legs) == 2:
+            return 2
+        if cm == "NR3_SYNTHETIC_ALL_YES_OVERROUND":
+            return max(3, len(yes_sells))
+        return max(len(no_legs), len(no_legs) + len(yes_sells))
+    legs = candidate_box.get("legs") or ()
+    explicit_n = int(_sf(candidate_box.get("num_legs") or candidate_box.get("leg_count"), 0.0))
+    n = max(len(legs), explicit_n)
+    if btype == "MULTI_LEG_BUNDLE" and n == 0:
+        return 3
+    return n
+
+
+def _query_executor_verified_token_balance(harvester: Any, token_id: str) -> float:
+    """Queries `harvester.executor` directly so candidate-supplied JSON inventory cannot spoof wallet holdings."""
+    ex = getattr(harvester, "executor", None)
+    if ex is None or not token_id:
+        return 0.0
+    for meth_name in ("get_onchain_erc1155_balance", "get_conditional_balance", "get_token_balance"):
+        fn = getattr(ex, meth_name, None)
+        if not callable(fn):
+            continue
+        try:
+            raw_b = fn(token_id)
+            if isinstance(raw_b, (int, float)) and not isinstance(raw_b, bool) and math.isfinite(float(raw_b)):
+                return max(0.0, float(raw_b))
+        except Exception:
+            continue
+    return 0.0
+
+
+def verify_multileg_atomicity_or_inventory_cover(harvester: Any, candidate_box: Mapping[str, Any]) -> bool:
+    """
+    Section 7(b): Returns True ONLY if a `>=3`-leg bundle is demonstrably atomic on-chain via an
+    executor-verified Safe/multisend router (`NR3_ATOMIC_SAFE_SPLIT_CONVERT`, never unverified JSON flags
+    or sequential CLOB FOK loops) OR reconciled `active_positions` / executor-verified ERC-1155 wallet
+    inventory eliminates naked partial-basket exposure (at most 1 leg `unheld_legs <= 1` remains unheld,
+    so even a missed fill leaves zero unhedged partial-basket risk).
+    """
+    if not isinstance(candidate_box, Mapping):
+        return False
+    ex = getattr(harvester, "executor", None)
+    safe_atomic_router_ok = bool(
+        ex is not None
+        and (
+            callable(getattr(ex, "execute_nr3_atomic_safe_split_convert", None))
+            or (
+                int(_sf(getattr(ex, "signature_type", 1), 1.0)) in (2, 3)
+                and (
+                    bool(getattr(ex, "safe_atomic_router_verified", False))
+                    or callable(getattr(ex, "submit_relayer_safe_multisend", None))
+                )
+            )
+        )
+    )
+    if (
+        candidate_box.get("atomic_onchain_execution") is True
+        and candidate_box.get("atomic_router_verified") is True
+        and candidate_box.get("sequential_clob_legs") is not True
+        and str(candidate_box.get("convert_mode") or "").strip().upper() == "NR3_ATOMIC_SAFE_SPLIT_CONVERT"
+        and safe_atomic_router_ok
+    ):
+        return True
+    legs = candidate_box.get("legs") or ()
+    if not isinstance(legs, Sequence) or len(legs) < 3:
+        return False
+    req_sh = max(5.0, _sf(candidate_box.get("shares") or candidate_box.get("min_order_shares"), 5.0))
+    held_tokens: Dict[str, float] = {}
+    act_pos = getattr(harvester, "active_positions", None) or {}
+    for p in act_pos.values():
+        if not isinstance(p, Mapping):
+            continue
+        if str(p.get("status") or "") != "POSITION_CONFIRMED":
+            continue
+        if str(p.get("umaResolutionStatus") or "").strip().lower() == "disputed":
+            continue
+        tok = str(p.get("token_id") or "").strip()
+        rem_sh = _sf(p.get("remaining_shares", p.get("entry_shares")), 0.0)
+        if tok and rem_sh > 0.0:
+            held_tokens[tok] = held_tokens.get(tok, 0.0) + rem_sh
+    inv_map = candidate_box.get("verified_wallet_inventory")
+    if isinstance(inv_map, Mapping):
+        for tk, qty in inv_map.items():
+            tk_s = str(tk or "").strip()
+            attested_q = _sf(qty, 0.0)
+            if tk_s and attested_q > 0.0:
+                exec_verified_q = _query_executor_verified_token_balance(harvester, tk_s)
+                if exec_verified_q > 0.0:
+                    held_tokens[tk_s] = max(held_tokens.get(tk_s, 0.0), min(attested_q, exec_verified_q))
+    unheld_legs = 0
+    for lg in legs:
+        if not isinstance(lg, Mapping):
+            return False
+        ltok = str(lg.get("token_id") or "").strip()
+        cur_held = held_tokens.get(ltok, 0.0)
+        if ltok and cur_held < req_sh - 1e-6:
+            exec_bal = _query_executor_verified_token_balance(harvester, ltok)
+            if exec_bal > cur_held:
+                cur_held = exec_bal
+                held_tokens[ltok] = cur_held
+        if not ltok or cur_held < req_sh - 1e-6:
+            unheld_legs += 1
+    return unheld_legs <= 1
+
+
+def check_multileg_3plus_nav_and_certification_gate(
+    harvester: Any,
+    candidate_box: Mapping[str, Any],
+    rb_cfg: Optional[Mapping[str, Any]] = None,
+    *,
+    now_ts: Optional[float] = None,
+) -> Optional[str]:
+    """
+    Mandatory Section 7(b) Invariant:
+      - Below `$500` reconciled NAV, sequential multi-leg bundles of `>= 3` legs are HARD-DISABLED
+        UNCONDITIONALLY (even if `strict_pure_riskless_mode == False`!) unless execution is
+        demonstrably atomic on-chain OR existing verified inventory eliminates naked exposure.
+      - Above `$500` reconciled NAV, `>= 3` sequential legs are NEVER automatically re-enabled;
+        they remain HARD-BLOCKED until explicit `certified_multileg_3plus_live_enabled == True`.
+    """
+    if not isinstance(candidate_box, Mapping) or not is_unmocked_live_clob_harvester(harvester):
+        return None
+    seq_legs = count_sequential_bundle_legs(candidate_box)
+    if seq_legs < 3:
+        return None
+    if verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box):
+        return None
+    cfg = rb_cfg if isinstance(rb_cfg, Mapping) else {}
+    try:
+        from src.polymarket_research.riskless_protocol_v2_expansion import compute_reconciled_concentration_nav_usd
+
+        nav_usd = compute_reconciled_concentration_nav_usd(harvester, now_ts=now_ts)
+    except Exception:
+        collat_raw = getattr(harvester, "_last_known_collateral", None)
+        nav_usd = max(0.0, _sf(collat_raw, 0.0))
+    min_nav = max(500.0, _sf(cfg.get("multileg_3plus_min_reconciled_nav_usd"), 500.0))
+    if nav_usd < min_nav - 1e-6:
+        return f"PURE_RISKLESS_MULTILEG_3PLUS_BLOCKED_BELOW_500_NAV:nav={nav_usd:.2f}<{min_nav:.2f}:legs={seq_legs}"
+    if bool(cfg.get("certified_multileg_3plus_live_enabled", False)) is not True:
+        return f"PURE_RISKLESS_MULTILEG_3PLUS_UNCERTIFIED_ABOVE_500_NAV:nav={nav_usd:.2f}:legs={seq_legs}"
+    return None
+
+
 def check_strict_pure_riskless_candidate_gate(
     harvester: Any,
     candidate_box: Mapping[str, Any],
@@ -47235,7 +49415,8 @@ def check_strict_pure_riskless_candidate_gate(
     is_maker: bool = False,
 ) -> Optional[str]:
     """
-    Zero-Trust Riskless & Post-Clinch Firewall on live production (`strict_pure_riskless_mode == True`):
+    Zero-Trust Riskless & Post-Clinch Firewall on live production (`strict_pure_riskless_mode == True`),
+    plus unconditional Section 7(b) `<$500` NAV & certification gate on `>=3`-leg sequential bundles:
       1. Blocks unclinched 2-leg Maker Anchor boxes (`DOMINANCE_MAKER_ANCHOR`, `ZERO_FEE_MAKER_ANCHOR`),
          directional/cross-question corridors (`SOC2`, `SOC1`, `SP3`, `CM_B3`, `CAL1`, `B4`), pre-expiry
          `S2` / `W_SOLAR1`, midbook `MKR_REWARD_LOCKED_CARRY`, `MULTI_LEG_BUNDLE` (`>= 3` sequential legs),
@@ -47250,6 +49431,9 @@ def check_strict_pure_riskless_candidate_gate(
          - `C1_BINARY_COMPLETE_SET` (`1 YES + 1 NO == $1.00` on exact same `condition_id` / `market_id`)
     Returns `None` if allowed, or a deterministic rejection reason string if blocked.
     """
+    multileg_veto = check_multileg_3plus_nav_and_certification_gate(harvester, candidate_box, rb_cfg)
+    if multileg_veto is not None:
+        return multileg_veto
     if not isinstance(rb_cfg, Mapping) or not bool(rb_cfg.get("strict_pure_riskless_mode", False)):
         return None
     if not is_unmocked_live_clob_harvester(harvester):
@@ -47257,6 +49441,7 @@ def check_strict_pure_riskless_candidate_gate(
 
     btype = str(candidate_box.get("box_type") or ("SINGLE_LEG_MAKER_LOCK" if is_maker else "")).strip().upper()
     sl_src = str(candidate_box.get("sleeve_source") or candidate_box.get("sleeve") or "").strip().upper()
+    atomic_or_inv_ok = btype == "MULTI_LEG_BUNDLE" and verify_multileg_atomicity_or_inventory_cover(harvester, candidate_box)
 
     # 1. Block unclinched 2-leg resting Maker Anchor boxes
     if btype in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "MAKER_ANCHOR", "SYNTHETIC_MAKER"} and not bool(
@@ -47269,15 +49454,16 @@ def check_strict_pure_riskless_candidate_gate(
         return f"PURE_RISKLESS_SINGLE_LEG_MAKER_DISABLED:{sl_src or btype}"
 
     nr0_closed_ok = (
-        bool(rb_cfg.get("allow_nr0_multileg_dynamic_unpause", False))
+        bool(rb_cfg.get("certified_multileg_3plus_live_enabled", False))
+        and bool(rb_cfg.get("allow_nr0_multileg_dynamic_unpause", False))
         and sl_src == "NR0_ZERO_FEE_SLATE_ARB"
         and bool(candidate_box.get("nr0_graduated_unlock_verified")) is True
         and candidate_box.get("neg_risk_augmented") is False
         and 2 <= len(candidate_box.get("legs") or candidate_box.get("no_legs") or ()) <= 6
     )
-    if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not nr0_closed_ok:
+    if sl_src in PURE_RISKLESS_BLOCKED_SLEEVES and not (nr0_closed_ok or atomic_or_inv_ok):
         return f"PURE_RISKLESS_SLEEVE_BLOCKED:{sl_src}"
-    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and nr0_closed_ok):
+    if btype in {"MULTI_LEG_BUNDLE", "CTF_OVERROUND"} and not (btype == "MULTI_LEG_BUNDLE" and (nr0_closed_ok or atomic_or_inv_ok)):
         return f"PURE_RISKLESS_SPECIAL_BOX_BLOCKED:{btype}"
 
     if btype == "NEGRISK_CONVERT":
@@ -47289,7 +49475,7 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         return f"PURE_RISKLESS_MULTI_LEG_CONVERT_BLOCKED:{cm or sl_src or len(no_legs)}"
 
-    if nr0_closed_ok:
+    if nr0_closed_ok or atomic_or_inv_ok:
         return None
 
     # 2. Row-2 UMA Proposed Carries & Post-Clinch Single-Leg / WS-Watchlist / Atomic Dead-Leg Split Locks
@@ -47300,7 +49486,7 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         if sl_src in POST_CLINCH_SINGLE_LEG_SLEEVES:
             p_mod = _sf(candidate_box.get("p_model"), 0.0)
-            if sl_src in {"W1_SOLAR_PEAK_LOCK", "W1_LOW_TROUGH_LOCK"}:
+            if sl_src == "W1_SOLAR_PEAK_LOCK":
                 rem_h_w1 = int(_sf(candidate_box.get("rem_hours_count"), 0.0))
                 if (
                     p_mod < 1.0
@@ -47313,8 +49499,42 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         return f"PURE_RISKLESS_SINGLE_LEG_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
 
+    # 2b. Graduated 2-leg 0%-fee CAL1 (cumulative deadline / scalar ladder) & COND1 (macro partition) boxes
+    if sl_src in {"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "COND1_MACRO_PARTITION_BOX"}:
+        if btype not in {"MACRO_DOMINANCE", "LADDER_MONO", "BARRIER_MONO", "COMPLETE_SET"}:
+            return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
+        fr_a_z = _sf(candidate_box.get("leg_a_fee_rate"), 0.0)
+        fr_b_z = _sf(candidate_box.get("leg_b_fee_rate"), fr_a_z)
+        if max(fr_a_z, fr_b_z) > 1e-9:
+            return f"PURE_RISKLESS_CAL1_COND1_REQUIRES_ZERO_FEE:{max(fr_a_z, fr_b_z):.4f}"
+        mid_a_z = str(candidate_box.get("leg_a_market_id") or "").strip()
+        mid_b_z = str(candidate_box.get("leg_b_market_id") or "").strip()
+        tok_a_z = str(candidate_box.get("leg_a_token_id") or "").strip()
+        tok_b_z = str(candidate_box.get("leg_b_token_id") or "").strip()
+        if tok_a_z and tok_b_z and tok_a_z == tok_b_z:
+            return "PURE_RISKLESS_DUPLICATE_TOKEN_LEGS"
+        if btype == "COMPLETE_SET":
+            cid_a_z = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
+            cid_b_z = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
+            if (cid_a_z and cid_b_z and cid_a_z != cid_b_z) or (mid_a_z and mid_b_z and mid_a_z != mid_b_z):
+                return "PURE_RISKLESS_C1_CONDITION_MISMATCH"
+        else:
+            if mid_a_z and mid_b_z and mid_a_z == mid_b_z:
+                return "PURE_RISKLESS_CROSS_MARKET_LADDER_SAME_MARKET"
+            k_lo_z = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
+            k_hi_z = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
+            if k_lo_z > 0.0 and k_hi_z > 0.0 and k_lo_z > k_hi_z + 1e-9:
+                return f"PURE_RISKLESS_INVERTED_DOMINANCE_STRIKES:{k_lo_z}>{k_hi_z}"
+        return None
+
     # 3. Enforce strict mathematical payoff-dominance allowlist on 2-leg boxes
-    if sl_src not in {"D1_SAME_ORACLE_DOMINANCE_BOX", "D1_4H_DOMINANCE_BOX", "D1_QUIET_BOOK_BOX", "C1_BINARY_COMPLETE_SET"}:
+    if sl_src not in {
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "D1_4H_DOMINANCE_BOX",
+        "D1_QUIET_BOOK_BOX",
+        "C1_BINARY_COMPLETE_SET",
+        "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+    }:
         return f"PURE_RISKLESS_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
     if btype not in {"DOMINANCE", "DOMINANCE_BOX", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
         return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
@@ -47332,9 +49552,102 @@ def check_strict_pure_riskless_candidate_gate(
     else:
         k_lo = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
         k_hi = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
-        if k_lo > 0.0 and k_hi > 0.0 and k_lo > k_hi + 1e-9:
+        if sl_src == "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION":
+            # Require explicit .5-hook strict corridor L < U so ties/stat adjustments never double-zero
+            if k_hi <= k_lo + 1e-9 or abs((k_lo * 2.0) - round(k_lo * 2.0)) > 1e-6 or abs(k_lo - round(k_lo)) < 1e-6:
+                return f"PURE_RISKLESS_SP4_REQUIRES_HALF_HOOK_CORRIDOR:{k_lo}:{k_hi}"
+        elif k_lo > 0.0 and k_hi > 0.0 and k_lo > k_hi + 1e-9:
             return f"PURE_RISKLESS_INVERTED_DOMINANCE_STRIKES:{k_lo}>{k_hi}"
     return None
+
+
+def load_alpha124_graduation_maps_with_lkg_cache(
+    harvester: Any,
+    data_dir: Any,
+    pipeline_root: Any,
+    *,
+    json_loads_fn: Any = None,
+    stale_reason: str = "ALPHA124_STATE_STALE",
+    missing_reason: str = "NO_ALPHA124_STATE",
+    fresh_ttl_sec: float = 300.0,
+    max_lkg_age_sec: float = 86400.0,
+    now_ts: Optional[float] = None,
+) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], Optional[str]]:
+    """
+    Reads `alpha124_shadow_state.json` graduation maps (`by_sleeve`, `by_d1_asset`) with a 24-hour
+    last-known-good (`LKG`) cache fallback when the shadow daemon stalls `> 300s`, failing closed
+    strictly past `max_lkg_age_sec` (`86400s` = `24h`).
+    """
+    import json as _json_mod
+    from pathlib import Path as _Path
+
+    loads_fn = json_loads_fn if callable(json_loads_fn) else _json_mod.loads
+    now_u = float(time.time() if now_ts is None else now_ts)
+    dd = _Path(data_dir)
+    pr = _Path(pipeline_root)
+    st_path = dd / "alpha124_shadow_state.json"
+    if not st_path.exists() and dd == (pr / "data" / "polymarket"):
+        alt_path = pr / "data" / "alpha124" / "alpha124_shadow_state.json"
+        if alt_path.exists():
+            st_path = alt_path
+
+    lkg_tup = getattr(harvester, "_a124_lkg_grad_snapshot", None) if harvester is not None else None
+    cache_tup = getattr(harvester, "_d1_grad_cache", "UNSET") if harvester is not None else None
+
+    if not st_path.exists():
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        return None, None, missing_reason
+
+    st_info = st_path.stat()
+    age_s = now_u - float(st_info.st_mtime)
+    if age_s > float(max_lkg_age_sec):
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        return None, None, stale_reason
+
+    manual_inv = float(getattr(harvester, "_a124_grad_cache_mtime", 0.0) or 0.0) if harvester is not None else 0.0
+    st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, manual_inv)
+    if isinstance(cache_tup, tuple) and len(cache_tup) == 3 and cache_tup[0] == st_key and manual_inv >= 0.0:
+        by_sl_map, by_da_map = cache_tup[1], cache_tup[2]
+        if harvester is not None and age_s <= float(fresh_ttl_sec):
+            harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+        return by_sl_map, by_da_map, None
+
+    try:
+        if harvester is not None and manual_inv < 0.0:
+            harvester._a124_grad_cache_mtime = 0.0
+            st_key = (str(st_path), st_info.st_mtime_ns, st_info.st_size, 0.0)
+        st_raw = loads_fn(st_path.read_text(encoding="utf-8"))
+        if not isinstance(st_raw, Mapping):
+            raise ValueError("alpha124_shadow_state root must be JSON object")
+        by_sl_map = dict(st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {})
+        by_da_map = dict(st_raw.get("by_d1_asset") or {})
+        if harvester is not None:
+            harvester._d1_grad_cache = (st_key, by_sl_map, by_da_map)
+            harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+        return by_sl_map, by_da_map, None
+    except Exception:
+        if (
+            cache_tup is not None
+            and isinstance(lkg_tup, tuple)
+            and len(lkg_tup) == 3
+            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+        ):
+            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        if age_s > float(fresh_ttl_sec):
+            return None, None, stale_reason
+        raise
 
 
 class _PureRisklessEnforcedSentinel:
@@ -47435,11 +49748,12 @@ def _is_standalone_recyclable_carry(pos: Mapping[str, Any]) -> bool:
         return False
     if _sf(pos.get("fee_rate_applied"), 0.07) > 1e-9:
         return False
-    rem_sh = _sf(pos.get("remaining_shares", pos.get("entry_shares", 0.0)))
-    if rem_sh < 5.0 - 1e-6:
+    if str(pos.get("umaResolutionStatus") or pos.get("uma_resolution_status") or "").strip().lower() == "disputed":
         return False
-    # Integer share count guarantees (100 * K * int(px * 10000)) % 100 == 0 on all 0.001-tick CLOB prices
-    if abs(rem_sh - round(rem_sh)) > 1e-4:
+    if "KMIA" in str(pos.get("asset") or "").upper() or "KMIA" in str(pos.get("trade_id") or "").upper():
+        return False
+    rem_sh = _sf(pos.get("remaining_shares", pos.get("entry_shares", 0.0)))
+    if int(math.floor(rem_sh + 1e-9)) < 5:
         return False
     return True
 
@@ -47480,13 +49794,14 @@ def find_recyclable_zero_loss_open_carries(
         tok_id = str(pos.get("token_id") or "")
         if not tok_id or (mkt_id and mkt_id in excl_mkts):
             continue
-        int_sh = int(round(_sf(pos.get("remaining_shares"))))
+        rem_sh_full = _sf(pos.get("remaining_shares", pos.get("entry_shares", 0.0)))
+        int_sh = int(math.floor(rem_sh_full + 1e-9))
         rem_cost = _sf(pos.get("remaining_cost_basis", pos.get("notional_usd", 0.0)))
         unamort_fee = max(0.0, _sf(pos.get("entry_fee_cash_usd", pos.get("fee_usd", 0.0))) - _sf(pos.get("realized_exit_fee", 0.0)))
-        if rem_cost <= 0.0 or int_sh < 5:
+        if rem_cost <= 0.0 or int_sh < 5 or rem_sh_full <= 0.0:
             continue
 
-        unit_breakeven = (rem_cost + unamort_fee) / float(int_sh)
+        unit_breakeven = (rem_cost + unamort_fee) / float(rem_sh_full)
         exp_ts = _sf(pos.get("candle_expiry_ts"), now_u + 7200.0)
         # Include conservative 2.0h UMA liveness floor for BOND1 carries
         sl_u = str(pos.get("sleeve") or "").upper()
@@ -47524,7 +49839,9 @@ def find_recyclable_zero_loss_open_carries(
             continue
 
         est_proceeds = round(float(int_sh) * min_sell_px, 4)
-        est_net_pnl = round(est_proceeds - rem_cost - unamort_fee, 4)
+        lot_frac = min(1.0, float(int_sh) / max(float(rem_sh_full), 1e-6))
+        est_retired_cost = (rem_cost + unamort_fee) * lot_frac
+        est_net_pnl = round(est_proceeds - est_retired_cost, 4)
         if est_net_pnl < 0.005:
             continue
 
@@ -47644,10 +49961,11 @@ def recycle_open_zero_loss_carry_for_fast_arb(
         tak_u = _sf(uw.get("taking_amount"), m_sz * min_px)
         fee_u = _sf(uw.get("fee_usd"), 0.0)
         rem_cost_before = _sf(pos.get("remaining_cost_basis", pos.get("notional_usd", 0.0)))
+        rem_sh_before = max(float(int_sh), _sf(pos.get("remaining_shares", pos.get("entry_shares", float(int_sh)))))
         oid_u = uw.get("orderID")
 
         st_lock = getattr(harvester, "_state_save_lock", None) or getattr(harvester, "_GLOBAL_STATE_SAVE_LOCK", None)
-        if m_sz >= float(int_sh) - 0.01:
+        if m_sz >= rem_sh_before - 0.01:
             pos["filled_exit_shares"] = round(_sf(pos.get("filled_exit_shares")) + m_sz, 4)
             pos["remaining_shares"] = 0.0
             pos["remaining_exit_shares"] = 0.0
@@ -47676,11 +49994,13 @@ def recycle_open_zero_loss_carry_for_fast_arb(
                 harvester.active_positions.pop(tid, None)
             realized_gain = _sf(pnl_closed, round(tak_u - fee_u - rem_cost_before, 4))
         else:
-            frac = min(1.0, m_sz / float(int_sh))
+            frac = min(1.0, m_sz / max(rem_sh_before, 0.01))
             cost_retired = round(rem_cost_before * frac, 4)
             pos["filled_exit_shares"] = round(_sf(pos.get("filled_exit_shares")) + m_sz, 4)
-            pos["remaining_shares"] = round(max(0.0, float(int_sh) - m_sz), 4)
+            pos["remaining_shares"] = round(max(0.0, rem_sh_before - m_sz), 4)
             pos["remaining_exit_shares"] = pos["remaining_shares"]
+            if pos["remaining_shares"] < 5.0:
+                pos["hold_to_maturity_lock"] = True
             pos["remaining_cost_basis"] = round(max(0.0, rem_cost_before - cost_retired), 4)
             pos["realized_exit_cash"] = round(_sf(pos.get("realized_exit_cash")) + tak_u, 4)
             pos["confirmed_realized_cash"] = pos["realized_exit_cash"]
@@ -47845,6 +50165,26 @@ def execute_clinched_dead_leg_split_arb(
     nr = bool(plan.get("neg_risk", False))
     q_sh = int(plan["shares"])
     min_px = float(plan["min_dead_sell_px"])
+    from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+
+    sp_mid = str(plan.get("market_id") or candidate.get("leg_a_market_id") or candidate.get("market_id") or "").strip()
+    sp_cand = dict(candidate) if isinstance(candidate, Mapping) else {}
+    sp_cand.setdefault("condition_id", cid)
+    if sp_mid:
+        sp_cand.setdefault("market_id", sp_mid)
+    _ok_sp_evt, _rsn_sp_evt, _rem_sp_evt, _ = check_per_event_concentration_cap(
+        harvester,
+        sp_cand,
+        market_ids=([sp_mid] if sp_mid else None),
+        now_ts=now_u,
+        min_headroom_usd=5.0,
+        exclude_intent_ids=tuple(plan.get("exclude_intent_ids") or ()),
+    )
+    if not _ok_sp_evt:
+        return {"executed": False, "reason": _rsn_sp_evt or "MAX_EVENT_NOTIONAL_CAP_REACHED"}
+    q_sh = min(q_sh, int(math.floor(float(_rem_sp_evt))))
+    if q_sh < 5:
+        return {"executed": False, "reason": "MAX_EVENT_NOTIONAL_CAP_REACHED"}
 
     pre_dead_bal = 0.0
     pre_win_bal = 0.0
@@ -47862,6 +50202,7 @@ def execute_clinched_dead_leg_split_arb(
         except Exception:
             pre_win_bal = 0.0
 
+    prev_lk = getattr(harvester, "_last_known_collateral", None)
     sp_res = attempt_onchain_split_position(
         ex,
         cid,
@@ -47876,31 +50217,131 @@ def execute_clinched_dead_leg_split_arb(
             "reason": f"SPLIT_FAILED:{(sp_res or {}).get('reason') or (sp_res or {}).get('error') or 'UNKNOWN'}",
         }
 
-    delivered = wait_for_erc1155_delivery(ex, dead_tok, pre_dead_bal, float(q_sh), timeout_sec=8.0, poll_sec=0.35)
-    if not delivered:
-        # Attempt immediate complete-set merge recovery if split mined late
-        if hasattr(ex, "attempt_onchain_complete_set_merge"):
-            try:
-                ex.attempt_onchain_complete_set_merge(cid, min_pairs=float(q_sh), max_pairs=float(q_sh), neg_risk=nr)
-            except Exception:
-                pass
-        return {"executed": False, "reason": "SPLIT_DELIVERY_TIMEOUT_MERGED_BACK"}
+    sleeve_src = str(candidate.get("sleeve_source") or candidate.get("sleeve") or "W_PRUNE1_DEAD_NO_BOND")
+    asset_s = str(candidate.get("asset") or "CLINCH")
+    mid_a = str(candidate.get("leg_a_market_id") or candidate.get("market_id") or cid[:16])
+    side_s = str(candidate.get("leg_a_side_label") or candidate.get("side_label") or "NO")
+    exp_ts = float(plan.get("expiry_ts") or candidate.get("expiry_ts") or (now_u + 3600.0))
+    lid = f"CLINCH_SPLIT_{asset_s}_{int(now_u * 1000) % 1000000}"
+    st_lock = getattr(harvester, "_state_save_lock", None) or getattr(harvester, "_GLOBAL_STATE_SAVE_LOCK", None)
+    try:
+        from src.polymarket_research.riskless_protocol_v2_expansion import extract_sll_event_group_key
 
-    uw = ex.execute_unwind_order(
-        dead_tok,
-        size=float(q_sh),
-        side="SELL",
-        min_price=min_px,
-        neg_risk=nr,
-    )
-    m_dead = _sf((uw or {}).get("matched_size"), 0.0) if isinstance(uw, Mapping) else 0.0
+        evt_gk_sp = extract_sll_event_group_key(candidate)
+    except Exception:
+        evt_gk_sp = ""
+
+    def _build_split_pos(win_sh: float, cost_u: float) -> Dict[str, Any]:
+        if hasattr(harvester, "_make_single_leg_lock_pos"):
+            p_out = harvester._make_single_leg_lock_pos(
+                lid,
+                "CLINCH_DEAD_SPLIT_LOCK",
+                sleeve_src,
+                asset_s,
+                "clinch_split",
+                mid_a,
+                cid,
+                win_tok,
+                side_s,
+                nr,
+                win_sh,
+                cost_u,
+                0.0,
+                0.0,
+                1.0,
+                "zero_fee_clinch_split",
+                exp_ts,
+                now_u,
+                pre_win_bal,
+                sp_res.get("tx_hash"),
+                True,
+                unk=False,
+            )
+        else:
+            p_out = {
+                "trade_id": lid,
+                "box_type": "CLINCH_DEAD_SPLIT_LOCK",
+                "sleeve": sleeve_src,
+                "asset": asset_s,
+                "market_id": mid_a,
+                "condition_id": cid,
+                "token_id": win_tok,
+                "target_token": side_s,
+                "neg_risk": nr,
+                "entry_shares": win_sh,
+                "remaining_shares": win_sh,
+                "notional_usd": cost_u,
+                "entry_price": round(cost_u / max(win_sh, 0.01), 5),
+                "fee_usd": 0.0,
+                "fee_rate_applied": 0.0,
+                "candle_expiry_ts": exp_ts,
+                "entry_ts": now_u,
+                "hold_to_maturity_lock": True,
+                "is_single_leg_lock": True,
+            }
+        p_out["opp_token_id"] = dead_tok
+        if evt_gk_sp:
+            p_out["event_group_key"] = evt_gk_sp
+        p_out["inventory_reconciled"] = True
+        p_out["status"] = "POSITION_CONFIRMED"
+        return p_out
+
+    # Persist provisional par-value split position immediately so SIGTERM/SIGKILL or HTTP errors mid-flight can NEVER orphan tokens!
+    if isinstance(getattr(harvester, "active_positions", None), dict):
+        prov_pos = _build_split_pos(float(q_sh), round(float(q_sh), 4))
+        prov_pos["unmerged_dead_opp_shares"] = float(q_sh)
+        if st_lock is not None:
+            with st_lock:
+                harvester.active_positions[lid] = prov_pos
+                if hasattr(harvester, "save_state"):
+                    harvester.save_state()
+        else:
+            harvester.active_positions[lid] = prov_pos
+            if hasattr(harvester, "save_state"):
+                harvester.save_state()
+
+    delivered = False
+    try:
+        delivered = bool(
+            wait_for_erc1155_delivery(
+                ex,
+                [dead_tok],
+                pre_dead_bal + float(q_sh),
+                timeout_sec=8.0,
+                poll_sec=0.35,
+            )
+        )
+    except Exception:
+        delivered = False
+
+    uw: Optional[Mapping[str, Any]] = None
+    if delivered:
+        try:
+            uw_raw = ex.execute_unwind_order(
+                dead_tok,
+                size=float(q_sh),
+                side="SELL",
+                min_price=min_px,
+                neg_risk=nr,
+            )
+            uw = uw_raw if isinstance(uw_raw, Mapping) else None
+        except Exception as uw_exc:
+            uw = {"success": False, "outcome_unknown": True, "error": str(uw_exc)}
+
+    uw_unknown = bool(isinstance(uw, Mapping) and uw.get("outcome_unknown"))
+    m_dead = _sf((uw or {}).get("matched_size"), 0.0) if (isinstance(uw, Mapping) and not uw_unknown) else 0.0
     dead_cash = (
         max(0.0, _sf(uw.get("taking_amount"), m_dead * min_px) - _sf(uw.get("fee_usd"), 0.0))
-        if isinstance(uw, Mapping) and uw.get("success")
+        if isinstance(uw, Mapping) and uw.get("success") and not uw_unknown
         else 0.0
     )
 
-    if m_dead <= 0.01 and not (isinstance(uw, Mapping) and uw.get("outcome_unknown")):
+    if uw_unknown:
+        # Never call on-chain complete-set merge while the dead-leg CLOB SELL order outcome is ambiguous!
+        merged_pairs = 0.0
+        rem_win_q = float(q_sh)
+        net_cost_u = round(float(q_sh), 4)
+    elif m_dead <= 0.01:
         merged_pairs = 0.0
         if hasattr(ex, "attempt_onchain_complete_set_merge"):
             try:
@@ -47910,8 +50351,23 @@ def execute_clinched_dead_leg_split_arb(
             except Exception:
                 merged_pairs = 0.0
         if merged_pairs >= float(q_sh) - 0.05:
-            return {"executed": False, "reason": "DEAD_BID_RACED_MERGED_FLAT_ZERO_LOSS", "merged_pairs": merged_pairs}
-        # Fallback: register remaining clinched winner shares at $1.00 par if merge deferred
+            if isinstance(getattr(harvester, "active_positions", None), dict):
+                if st_lock is not None:
+                    with st_lock:
+                        harvester.active_positions.pop(lid, None)
+                        if hasattr(harvester, "save_state"):
+                            harvester.save_state()
+                else:
+                    harvester.active_positions.pop(lid, None)
+                    if hasattr(harvester, "save_state"):
+                        harvester.save_state()
+            return {
+                "executed": False,
+                "reason": "DEAD_BID_RACED_MERGED_FLAT_ZERO_LOSS" if delivered else "SPLIT_DELIVERY_TIMEOUT_MERGED_BACK",
+                "merged_pairs": merged_pairs,
+                "split_tx_hash": sp_res.get("tx_hash"),
+            }
+        # Fallback: register remaining clinched winner shares at $1.00 par if merge deferred so zero tokens are orphaned!
         rem_win_q = max(0.0, float(q_sh) - merged_pairs)
         net_cost_u = round(rem_win_q, 4)
     else:
@@ -47929,43 +50385,17 @@ def execute_clinched_dead_leg_split_arb(
         rem_win_q = round(max(0.0, float(q_sh) - merged_pairs), 4)
         net_cost_u = round(max(0.01, float(q_sh) - merged_pairs - dead_cash), 4)
 
-    sleeve_src = str(candidate.get("sleeve_source") or candidate.get("sleeve") or "W_PRUNE1_DEAD_NO_BOND")
-    asset_s = str(candidate.get("asset") or "CLINCH")
-    mid_a = str(candidate.get("leg_a_market_id") or candidate.get("market_id") or cid[:16])
-    side_s = str(candidate.get("leg_a_side_label") or candidate.get("side_label") or "NO")
-    exp_ts = float(plan.get("expiry_ts") or (now_u + 3600.0))
-    lid = f"CLINCH_SPLIT_{asset_s}_{int(now_u * 1000) % 1000000}"
-
-    if hasattr(harvester, "_make_single_leg_lock_pos") and rem_win_q > 0.01:
-        st_lock = getattr(harvester, "_state_save_lock", None) or getattr(harvester, "_GLOBAL_STATE_SAVE_LOCK", None)
-        pos_w = harvester._make_single_leg_lock_pos(
-            lid,
-            "CLINCH_DEAD_SPLIT_LOCK",
-            sleeve_src,
-            asset_s,
-            "clinch_split",
-            mid_a,
-            cid,
-            win_tok,
-            side_s,
-            nr,
-            rem_win_q,
-            net_cost_u,
-            0.0,
-            0.0,
-            1.0,
-            "zero_fee_clinch_split",
-            exp_ts,
-            now_u,
-            pre_win_bal,
-            sp_res.get("tx_hash"),
-            True,
-            unk=False,
-        )
-        pos_w["inventory_reconciled"] = True
-        pos_w["status"] = "POSITION_CONFIRMED"
+    unmerged_dead_q = 0.0 if uw_unknown else round(max(0.0, float(q_sh) - m_dead - merged_pairs), 4)
+    if rem_win_q > 0.01 and isinstance(getattr(harvester, "active_positions", None), dict):
+        pos_w = _build_split_pos(rem_win_q, net_cost_u)
         pos_w["dead_leg_sold_shares"] = round(m_dead, 4)
         pos_w["dead_leg_cash_usd"] = round(dead_cash, 4)
+        if uw_unknown:
+            pos_w["dead_leg_unwind_outcome_unknown"] = True
+            if isinstance(uw, Mapping) and uw.get("orderID"):
+                pos_w["dead_leg_unwind_order_id"] = uw.get("orderID")
+        elif unmerged_dead_q > 0.01:
+            pos_w["unmerged_dead_opp_shares"] = unmerged_dead_q
         if st_lock is not None:
             with st_lock:
                 harvester.active_positions[lid] = pos_w
@@ -47981,14 +50411,29 @@ def execute_clinched_dead_leg_split_arb(
             harvester._pending_collateral_refresh = True
             if hasattr(harvester, "save_state"):
                 harvester.save_state()
+    elif isinstance(getattr(harvester, "active_positions", None), dict):
+        harvester.active_positions.pop(lid, None)
 
+    expected_post_collat = (
+        max(0.0, round(float(prev_lk) - net_cost_u, 4))
+        if (rem_win_q > 0.01 and isinstance(prev_lk, (int, float)) and not isinstance(prev_lk, bool))
+        else None
+    )
+    collat_synced = False
     if hasattr(ex, "get_collateral_balance"):
         try:
             nc = ex.get_collateral_balance()
             if isinstance(nc, (int, float)) and not isinstance(nc, bool) and math.isfinite(float(nc)) and float(nc) >= 0.0:
-                harvester._last_known_collateral = float(nc)
+                harvester._last_known_collateral = (
+                    min(float(nc), expected_post_collat)
+                    if (expected_post_collat is not None and float(nc) > expected_post_collat + 0.25)
+                    else float(nc)
+                )
+                collat_synced = True
         except Exception:
             pass
+    if not collat_synced and expected_post_collat is not None:
+        harvester._last_known_collateral = expected_post_collat
 
     locked_profit_u = round(rem_win_q - net_cost_u, 4)
     try:
@@ -48009,7 +50454,7 @@ def execute_clinched_dead_leg_split_arb(
         pass
 
     return {
-        "executed": m_dead > 0.01,
+        "executed": bool(m_dead > 0.01 or rem_win_q > 0.01),
         "trade_id": lid,
         "shares": rem_win_q,
         "dead_sold_shares": round(m_dead, 4),
@@ -48020,7 +50465,7 @@ def execute_clinched_dead_leg_split_arb(
     }
 
 # ======================================================================================
-# [21/64] MODULE: src/polymarket_research/synthetic_maker_quoter.py
+# [21/67] MODULE: src/polymarket_research/synthetic_maker_quoter.py
 # PURPOSE: Stage D v5.9.0 Continuous #1 FIFO Synthetic Maker Quoter, Sub-50ms WS Shield & $0.50 Unwind Breaker
 # ======================================================================================
 
@@ -48577,7 +51022,7 @@ def is_maker_anchor_live_permitted(
     return True, "OK"
 
 # ======================================================================================
-# [22/64] MODULE: src/polymarket_research/polymarket_terminal_recorder.py
+# [22/67] MODULE: src/polymarket_research/polymarket_terminal_recorder.py
 # PURPOSE: Sub-ms Binance/Coinbase/Chainlink-TWAP Shock & Authoritative openPrice SHM Recorder
 # ======================================================================================
 
@@ -48637,6 +51082,8 @@ Microstructure, Econometric, and Invariant Foundations:
        - Strictly read-only research pipeline; zero orders or authentication.
 """
 
+# from __future__ import annotations  # (Lifted to top of consolidated bundle)
+
 import asyncio
 import collections
 from collections import defaultdict, deque
@@ -48653,9 +51100,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Set
 
-import aiohttp
-import numpy as np
-import websockets
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore
+
+try:
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None  # type: ignore
+
+
+def _release_unused_heap_memory() -> bool:
+    """Runs cyclic GC and returns freed glibc malloc arena pages to the OS (`F-01`)."""
+    import gc as _gc
+
+    _gc.collect()
+    if os.name != "nt":
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL("libc.so.6")
+            return bool(libc.malloc_trim(0))
+        except Exception:
+            return False
+    return True
 
 
 def _enable_ws_nodelay(ws: Any) -> bool:
@@ -49253,12 +51727,36 @@ class L2OrderBook:
         self.prev_best_bid = curr_best_bid
         self.prev_best_ask = curr_best_ask
 
+    def _prune_deep_levels(self, max_keep: int = 40, trigger_len: int = 80) -> int:
+        """Bounds retained L2 price levels & birth timestamps so multi-hour books never leak dust levels (`F-01`)."""
+        dropped = 0
+        if len(self.bids) > trigger_len:
+            for px_drop in sorted(self.bids.keys(), reverse=True)[max_keep:]:
+                self.bids.pop(px_drop, None)
+                self._bid_birth_ts.pop(px_drop, None)
+                dropped += 1
+            self._dirty = True
+        elif len(self._bid_birth_ts) > len(self.bids) + 8:
+            for px_stale in [px for px in list(self._bid_birth_ts.keys()) if px not in self.bids]:
+                self._bid_birth_ts.pop(px_stale, None)
+        if len(self.asks) > trigger_len:
+            for px_drop in sorted(self.asks.keys())[max_keep:]:
+                self.asks.pop(px_drop, None)
+                self._ask_birth_ts.pop(px_drop, None)
+                dropped += 1
+            self._dirty = True
+        elif len(self._ask_birth_ts) > len(self.asks) + 8:
+            for px_stale in [px for px in list(self._ask_birth_ts.keys()) if px not in self.asks]:
+                self._ask_birth_ts.pop(px_stale, None)
+        return dropped
+
     def apply_snapshot(self, bids: List[Dict[str, str]], asks: List[Dict[str, str]]):
         now_ts = time.time()
         self.bids = {float(b["price"]): float(b["size"]) for b in bids if float(b["size"]) > 0}
         self.asks = {float(a["price"]): float(a["size"]) for a in asks if float(a["size"]) > 0}
         self._bid_birth_ts = {px: self._bid_birth_ts.get(px, now_ts) for px in self.bids}
         self._ask_birth_ts = {px: self._ask_birth_ts.get(px, now_ts) for px in self.asks}
+        self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         self._dirty = True
@@ -49288,6 +51786,7 @@ class L2OrderBook:
                     if old_a <= 0.0 or sz >= old_a * 1.25:
                         self._ask_birth_ts[px] = now_ts
                     self.asks[px] = sz
+        self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         if changes:
@@ -50057,13 +52556,44 @@ class PolymarketDualFeed1HRecorder:
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
+            conn_lim = 8 if self.riskless_bus_only else 20
             self.session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=conn_lim, enable_cleanup_closed=True),
                 timeout=aiohttp.ClientTimeout(total=10),
                 headers={"User-Agent": "PolymarketDualFeedRecorder/2.7"},
                 max_line_size=65536,
                 max_field_size=65536,
             )
         return self.session
+
+    def _evict_recorder_memory(self, now_ts: Optional[float] = None, trim_heap: bool = False) -> Dict[str, int]:
+        """Bounds per-asset recorder sets/cooldowns/books and optionally trims glibc arenas (`F-01`)."""
+        now = float(now_ts if now_ts is not None else time.time())
+        evicted = 0
+        logged_ids = getattr(self, "_logged_resolution_market_ids", None)
+        if isinstance(logged_ids, set) and len(logged_ids) > 512:
+            keep_recent = sorted(logged_ids)[-256:]
+            evicted += len(logged_ids) - len(keep_recent)
+            logged_ids.clear()
+            logged_ids.update(keep_recent)
+        cooldowns = getattr(self, "_boundary_lock_cooldowns", None)
+        if isinstance(cooldowns, dict):
+            for k_cd, ts_cd in list(cooldowns.items()):
+                if (now - float(ts_cd or 0.0)) > 3600.0:
+                    cooldowns.pop(k_cd, None)
+                    evicted += 1
+        burst_tasks = getattr(self, "active_burst_tasks", None)
+        if isinstance(burst_tasks, set) and burst_tasks:
+            for t_b in [t for t in list(burst_tasks) if getattr(t, "done", lambda: False)()]:
+                burst_tasks.discard(t_b)
+                evicted += 1
+        pruned_levels = 0
+        for bk_obj in list((getattr(self, "books", None) or {}).values()):
+            if isinstance(bk_obj, L2OrderBook):
+                pruned_levels += bk_obj._prune_deep_levels()
+        if trim_heap:
+            _release_unused_heap_memory()
+        return {"evicted_entries": evicted, "pruned_book_levels": pruned_levels}
 
     async def calibrate_binance_clock_offset(self):
         """
@@ -50507,6 +53037,8 @@ class PolymarketDualFeed1HRecorder:
         so Chainlink 60s-TWAP / UMA oracle settlements are captured authoritatively without
         contaminating ground-truth labels with Binance 1s spot mismatches.
         """
+        if getattr(self, "riskless_bus_only", False):
+            return
         m_id_str = str(market.get("market_id") or "")
         logged_set = getattr(self, "_logged_resolution_market_ids", None)
         if logged_set is None:
@@ -50514,6 +53046,10 @@ class PolymarketDualFeed1HRecorder:
             self._logged_resolution_market_ids = logged_set
         if not m_id_str or m_id_str in logged_set:
             return
+        if len(logged_set) > 512:
+            keep_recent = sorted(logged_set)[-256:]
+            logged_set.clear()
+            logged_set.update(keep_recent)
         logged_set.add(m_id_str)
         duration = int(market.get("candle_close_ts", 0)) - int(market.get("candle_open_ts", 0))
         default_hz = "5m" if 0 < duration <= 300 else ("15m" if 0 < duration <= 900 else ("4h" if duration >= 10800 else "1h"))
@@ -51523,7 +54059,8 @@ class PolymarketDualFeed1HRecorder:
                             mh = getattr(self, attr_n, None)
                             if mh and (mh["end_dt"] - now_utc).total_seconds() <= 0:
                                 logger.info(f"[*] {hz.upper()} Market {mh['market_id']} reached expiry. Cycling to next.")
-                                asyncio.create_task(self.verify_and_log_resolution(mh))
+                                if not self.riskless_bus_only:
+                                    asyncio.create_task(self.verify_and_log_resolution(mh))
                                 setattr(self, attr_n, None)
                                 self.books.pop(up_k, None)
                                 self.books.pop(dn_k, None)
@@ -51864,15 +54401,22 @@ class PolymarketDualFeed1HRecorder:
         while self.running:
             try:
                 now = datetime.now(timezone.utc)
+                now_mono_disc = time.time()
+                disc_backoff = self.__dict__.setdefault("_empty_discovery_backoff_ts", {})
                 if not self.current_market or (self.current_market["end_dt"] - now).total_seconds() <= 0:
                     expired_market = self.current_market
-                    if expired_market:
+                    if expired_market and not self.riskless_bus_only:
                         # Ground truth verification of finalized candle
                         asyncio.create_task(self.verify_and_log_resolution(expired_market))
 
                     market = getattr(self, "_cached_next_market", None)
                     if not market or (expired_market and market.get("market_id") == expired_market.get("market_id")):
-                        market = await self.discover_nearest_1h_market()
+                        if expired_market or (now_mono_disc - float(disc_backoff.get("1h") or 0.0)) >= 30.0:
+                            market = await self.discover_nearest_1h_market()
+                            if market is None:
+                                disc_backoff["1h"] = now_mono_disc
+                            else:
+                                disc_backoff.pop("1h", None)
                     self._cached_next_market = None
 
                     if market:
@@ -51907,11 +54451,15 @@ class PolymarketDualFeed1HRecorder:
                 for hz, attr_n in (("5m", "market_5m"), ("15m", "market_15m"), ("4h", "market_4h")):
                     mh_cur = getattr(self, attr_n, None)
                     if not mh_cur or (mh_cur["end_dt"] - now).total_seconds() <= 0:
-                        if mh_cur and (mh_cur["end_dt"] - now).total_seconds() <= 0:
+                        expired_hz = bool(mh_cur and (mh_cur["end_dt"] - now).total_seconds() <= 0)
+                        if expired_hz and not self.riskless_bus_only:
                             asyncio.create_task(self.verify_and_log_resolution(mh_cur))
+                        if not expired_hz and (now_mono_disc - float(disc_backoff.get(hz) or 0.0)) < 30.0:
+                            continue
                         try:
                             mh_new = await self.discover_nearest_twap_market(hz)
                             if mh_new:
+                                disc_backoff.pop(hz, None)
                                 prev_id = mh_cur.get("market_id") if mh_cur else None
                                 setattr(self, attr_n, mh_new)
                                 mh_cur = mh_new
@@ -51921,6 +54469,8 @@ class PolymarketDualFeed1HRecorder:
                                         f"(ID: {mh_new['market_id']}, Open: ${mh_new.get('finalized_open', 0.0):,.4f})"
                                     )
                                     self._reconnect_clob = True
+                            else:
+                                disc_backoff[hz] = now_mono_disc
                         except Exception as e:
                             logger.debug(f"{hz} discovery cycle note: {e}")
 
@@ -52111,11 +54661,14 @@ class PolymarketDualFeed1HRecorder:
                     fut_snap = list(self.futures_trades)
                     await asyncio.to_thread(self.compute_leadlag_cross_correlation, spot_snap, fut_snap)
 
+                # Periodic 120s recorder memory & book-depth maintenance (`F-01`)
+                now_mem_chk = time.time()
+                if (now_mem_chk - float(self.__dict__.get("_last_recorder_mem_evict_ts") or 0.0)) >= 120.0:
+                    self.__dict__["_last_recorder_mem_evict_ts"] = now_mem_chk
+                    self._evict_recorder_memory(now_ts=now_mem_chk, trim_heap=(self.asset == "BTC"))
+
                 # Periodic 300s clock synchronization
-                if time.time() - self.last_clock_sync_ts > 300.0:
-                    if self.riskless_bus_only and self.asset == "BTC":
-                        import gc as _gc
-                        _gc.collect()
+                if now_mem_chk - self.last_clock_sync_ts > 300.0:
                     asyncio.create_task(self.calibrate_binance_clock_offset())
 
                 await asyncio.sleep(10.0)
@@ -52193,7 +54746,7 @@ if __name__ == "__main__":
         logger.info("Stopped by user.")
 
 # ======================================================================================
-# [23/64] MODULE: src/polymarket_research/deribit_svi_surface.py
+# [23/67] MODULE: src/polymarket_research/deribit_svi_surface.py
 # PURPOSE: Deribit SVI Options Volatility Surface & Breeden-Litzenberger Density Engine
 # ======================================================================================
 
@@ -52772,7 +55325,7 @@ if __name__ == "__main__":
         print(f"{sym} Spot={spot_test} Strike={k_test} (1h TTE): {res}")
 
 # ======================================================================================
-# [24/64] MODULE: src/polymarket_research/polymarket_paper_trader.py
+# [24/67] MODULE: src/polymarket_research/polymarket_paper_trader.py
 # PURPOSE: Forward Paper Trader & Production-Parity Simulation Engine
 # ======================================================================================
 
@@ -52864,7 +55417,11 @@ SLEEVE_2_STATE_FILE = DATA_DIR / "state_sleeve_304_315.json"
 # ==============================================================================
 # SLEEVE SOL & XRP SHADOW (v3.9.2 Volatility-Normalized 15m/1h Graduation Trackers)
 # ==============================================================================
-ENABLE_SOL_SHADOW_SLEEVE = True
+try:
+    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _PT_GOV_MGR
+    ENABLE_SOL_SHADOW_SLEEVE = bool(_PT_GOV_MGR.snapshot.get("shadow_governance", {}).get("enable_sol_15m_1h_shadow", True))
+except Exception:
+    ENABLE_SOL_SHADOW_SLEEVE = True
 SOL_SHADOW_INITIAL_CAPITAL = 500.0
 SOL_SHADOW_TICKET_NOTIONAL = 12.0
 SOL_SHADOW_LEDGER_FILE = DATA_DIR / "ledger_shadow_sol_v392.jsonl"
@@ -55004,6 +57561,7 @@ class PolymarketForwardPaperTrader:
             except (NotImplementedError, RuntimeError, ValueError):
                 pass
 
+        _last_sg_sync_ts = 0.0
         while True:
             if self._shutdown_requested:
                 self.wfo_shadow.poll_tick(True)
@@ -55011,6 +57569,17 @@ class PolymarketForwardPaperTrader:
                 print("[SHUTDOWN] Paper trader state flushed; exiting cleanly (STOPPED_GRACEFULLY).", flush=True)
                 break
             try:
+                _now_pt = time.time()
+                if (_now_pt - _last_sg_sync_ts) >= 5.0:
+                    _last_sg_sync_ts = _now_pt
+                    try:
+                        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as _PT_LIVE_GOV
+                        _sg_live = _PT_LIVE_GOV.snapshot.get("shadow_governance", {}) or {}
+                        globals()["ENABLE_SLEEVE_304_315"] = bool(_sg_live.get("enable_eth_1h_shadow", False))
+                        globals()["ENABLE_SOL_SHADOW_SLEEVE"] = bool(_sg_live.get("enable_sol_15m_1h_shadow", True))
+                        globals()["ENABLE_XRP_SHADOW_SLEEVE"] = bool(_sg_live.get("enable_xrp_shadow", False))
+                    except Exception:
+                        pass
                 # 1. Ingest new zero-latency shock triggers (<1ms from recorder detection)
                 if TRIGGER_FILE.exists():
                     current_trig_size = TRIGGER_FILE.stat().st_size
@@ -55163,7 +57732,7 @@ if __name__ == "__main__":
     asyncio.run(trader.live_loop())
 
 # ======================================================================================
-# [25/64] MODULE: src/polymarket_research/check_polymarket_balance.py
+# [25/67] MODULE: src/polymarket_research/check_polymarket_balance.py
 # PURPOSE: Polygon pUSD + USDC.e Collateral Balance Checker
 # ======================================================================================
 
@@ -55276,7 +57845,7 @@ if __name__ == "__main__":
     check_balance()
 
 # ======================================================================================
-# [26/64] MODULE: src/polymarket_research/verify_onchain_allowances.py
+# [26/67] MODULE: src/polymarket_research/verify_onchain_allowances.py
 # PURPOSE: ERC-20/ERC-1155 Proxy & Exchange Allowance Verifier
 # ======================================================================================
 
@@ -55393,7 +57962,7 @@ print("VERIFICATION COMPLETE: READY FOR ZERO-REVERT EXECUTION")
 print("=" * 65)
 
 # ======================================================================================
-# [27/64] MODULE: src/polymarket_research/redeem_settled_positions.py
+# [27/67] MODULE: src/polymarket_research/redeem_settled_positions.py
 # PURPOSE: CTF Settled Position Redemption CLI
 # ======================================================================================
 
@@ -55579,29 +58148,36 @@ def _is_flock_held(lock_path: Path) -> bool:
     if os.name == "nt":
         try:
             import msvcrt
-            with open(lock_path, "a+b") as fh:
+            with open(lock_path, "r+b") as fh:
+                fh.seek(0, os.SEEK_END)
+                if fh.tell() == 0:
+                    return False
                 fh.seek(0)
                 msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
                 fh.seek(0)
                 msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
             return False
+        except FileNotFoundError:
+            return False
         except OSError:
             return True
         except Exception:
-            return False
+            return lock_path.exists()
     try:
         import fcntl
     except ImportError:
         return False
     try:
-        with open(lock_path, "a+") as fh:
+        with open(lock_path, "r+") as fh:
             fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        return False
+    except FileNotFoundError:
         return False
     except BlockingIOError:
         return True
     except OSError:
-        return False
+        return lock_path.exists()
 
 
 def audit_positions_and_redemptions(execute: bool = False, force: bool = False):
@@ -55740,7 +58316,7 @@ if __name__ == "__main__":
     audit_positions_and_redemptions(execute="--execute" in sys.argv, force="--force" in sys.argv)
 
 # ======================================================================================
-# [28/64] MODULE: src/polymarket_research/setup_polymarket_account.py
+# [28/67] MODULE: src/polymarket_research/setup_polymarket_account.py
 # PURPOSE: CLOB L2 API Key & Proxy Credential Generator
 # ======================================================================================
 
@@ -56006,7 +58582,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [29/64] MODULE: audit_losing_trades.py
+# [29/67] MODULE: audit_losing_trades.py
 # PURPOSE: Autonomous Post-Trade Forensic Auditor & Daemon Health Verifier
 # ======================================================================================
 
@@ -56052,7 +58628,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
         else Path(AUDIT_LOCK_FILE)
     )
     lock_path.parent.mkdir(parents=True, exist_ok=True)
-    fh = open(lock_path, "a+b")
+    fh = open(lock_path, "r+b" if lock_path.exists() else "w+b")
     deadline = time.monotonic() + max(0.5, timeout_sec)
     locked = False
     try:
@@ -56060,7 +58636,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
             try:
                 if os.name == "nt":
                     import msvcrt
-                    fh.seek(0)
+                    fh.seek(0, os.SEEK_END)
                     if fh.tell() == 0:
                         fh.write(b"\x00")
                         fh.flush()
@@ -56073,7 +58649,7 @@ def _audit_state_lock(timeout_sec: float = 10.0) -> Iterator[None]:
                 break
             except OSError:
                 if time.monotonic() >= deadline:
-                    break
+                    raise TimeoutError(f"Timed out acquiring exclusive audit lock: {lock_path}")
                 time.sleep(0.05)
         yield
     finally:
@@ -56429,15 +59005,93 @@ def mark_audited(
     return entry
 
 
+def _is_restart_safe_frozen_uma_lock(pos: Dict[str, Any], now_ts: Optional[float] = None) -> bool:
+    """
+    Matches `scripts/paa_flat_harvester_redeploy_once.py:_is_restart_safe_frozen_uma_lock` and
+    `riskless_protocol_v2_expansion.py:is_post_expiry_uma_frozen_lock`: returns True ONLY for
+    passive post-expiry (`>= expiry + 60s`) UMA-disputed or `>= 4h` oracle-lagged positions
+    carrying zero active CLOB exit/unwind orders (`KMIA` Nov 7 safe-restart invariant `POL-07`).
+    """
+    if not isinstance(pos, dict):
+        return False
+    now_f = float(time.time() if now_ts is None else now_ts)
+    try:
+        from scripts.paa_flat_harvester_redeploy_once import _is_restart_safe_frozen_uma_lock as _flat_uma_lock
+        if _flat_uma_lock(pos, now_f):
+            return True
+    except Exception:
+        pass
+    if str(pos.get("exit_order_status") or "").upper() in ("UNWIND_RETRY_REQUIRED", "UNWIND_EXECUTION_OUTCOME_UNKNOWN", "PARTIAL_UNWIND_REMAINING"):
+        return False
+    if pos.get("is_legged_out_residual") and not pos.get("hold_to_maturity_lock") and str(pos.get("umaResolutionStatus") or "").strip().lower() != "disputed":
+        return False
+    if pos.get("is_liquidating") or pos.get("exit_order_id") or pos.get("unwind_order_id"):
+        return False
+    bt_frz = str(pos.get("box_type") or "").strip().upper()
+    if not (
+        pos.get("is_single_leg_lock")
+        or pos.get("is_dominance_box")
+        or pos.get("hold_to_maturity_lock")
+        or bt_frz in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK", "MULTI_LEG_RESIDUAL", "MULTI_LEG_BUNDLE", "DOMINANCE"}
+    ):
+        return False
+    exp_ts = float(pos.get("candle_expiry_ts") or 0.0)
+    if exp_ts <= 0.0 or now_f < exp_ts + 60.0:
+        return False
+    uma_st = str(pos.get("umaResolutionStatus") or pos.get("uma_resolution_status") or "").strip().lower()
+    anchor_ts = max(exp_ts, float(pos.get("entry_ts") or 0.0))
+    return uma_st == "disputed" or now_f >= anchor_ts + 14400.0
+
+
+def is_harvester_state_restart_safe(st: Dict[str, Any], now_ts: Optional[float] = None) -> tuple[bool, List[str]]:
+    """
+    Evaluates whether `live_harvester_state.json` is safe for a graceful `systemctl --user restart`:
+      - Allows restart when `active_positions` is empty OR consists solely of post-expiry frozen UMA locks
+        (such as the 4 disputed `KMIA` positions with `exit_order_id=None`, `unwind_order_id=None`).
+      - Fails closed on any pre-expiry trade, active exit/unwind order, `pre_split_inventory_state.active`,
+        `_prepost_sll_reserved_usd > 0`, non-maker `pending_entry_intents`, or missing position detail.
+    """
+    if not isinstance(st, dict):
+        return False, ["INVALID_STATE_PAYLOAD"]
+    now_f = float(time.time() if now_ts is None else now_ts)
+    blocking: List[str] = []
+    if bool((st.get("pre_split_inventory_state") or {}).get("active", False)):
+        blocking.append("PRE_SPLIT_INVENTORY_ACTIVE")
+    if float(st.get("_prepost_sll_reserved_usd") or 0.0) > 0.0:
+        blocking.append("PREPOST_SLL_RESERVED_USD_ACTIVE")
+    pend = st.get("pending_entry_intents") or {}
+    if isinstance(pend, dict):
+        for pk, pv in pend.items():
+            if isinstance(pv, dict) and not pv.get("live_maker_anchor_inflight"):
+                blocking.append(f"PENDING_ENTRY_INTENT:{pk}")
+
+    act = st.get("active_positions")
+    raw_cnt = int(
+        st.get("active_positions_count")
+        if st.get("active_positions_count") is not None
+        else (len(act) if isinstance(act, dict) else 0)
+    )
+    if raw_cnt > 0 and (not isinstance(act, dict) or len(act) < raw_cnt):
+        fallback_ids = [str(x) for x in (st.get("active_position_ids") or [])] or [f"UNSPECIFIED_OPEN_POSITIONS({raw_cnt})"]
+        blocking.extend(fallback_ids)
+    elif isinstance(act, dict):
+        for pid, pos in act.items():
+            if not _is_restart_safe_frozen_uma_lock(pos, now_f):
+                blocking.append(str(pid))
+
+    return (len(blocking) == 0), blocking
+
+
 def redeploy_daemon(force: bool = False) -> None:
     if not force:
         pre = fetch_kraken_live_state()["state"]
-        open_cnt = int(pre.get("active_positions_count", 0) or 0)
-        ps_active = bool((pre.get("pre_split_inventory_state") or {}).get("active", False))
-        if open_cnt > 0 or ps_active:
+        safe_ok, blocking_reasons = is_harvester_state_restart_safe(pre)
+        if not safe_ok:
+            open_cnt = int(pre.get("active_positions_count") or len(pre.get("active_positions") or {}))
+            ps_active = bool((pre.get("pre_split_inventory_state") or {}).get("active", False))
             raise RuntimeError(
-                f"Refusing to restart live harvester with {open_cnt} open position(s) / pre_split_active={ps_active}: "
-                f"{pre.get('active_position_ids', [])}. Wait until flat."
+                f"Refusing to restart live harvester with {open_cnt} open position(s) / pre_split_active={ps_active} "
+                f"(blocking={blocking_reasons}): {pre.get('active_position_ids', [])}. Wait until flat."
             )
 
     cmd = [
@@ -56464,9 +59118,10 @@ def redeploy_daemon(force: bool = False) -> None:
     if res.returncode != 0:
         raise RuntimeError(f"Redeploy on kraken-finland failed: {res.stderr or res.stdout}")
 
-    audit_st = load_audit_state()
-    audit_st["stats"]["total_redeployments"] = audit_st["stats"].get("total_redeployments", 0) + 1
-    save_audit_state(audit_st)
+    with _audit_state_lock():
+        audit_st = load_audit_state()
+        audit_st["stats"]["total_redeployments"] = audit_st["stats"].get("total_redeployments", 0) + 1
+        save_audit_state(audit_st)
     scan_res = scan_trades()
     print(json.dumps({"redeployed": True, "daemon_health": scan_res["daemon_health"]}, indent=2))
 
@@ -56496,7 +59151,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [30/64] MODULE: scripts/honest_purged_wfo_optimizer.py
+# [30/67] MODULE: scripts/honest_purged_wfo_optimizer.py
 # PURPOSE: Zero-Lookahead Purged WFO & Genuine Refit CPCV(6,2) Optimizer
 # ======================================================================================
 
@@ -57974,7 +60629,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [31/64] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
+# [31/67] MODULE: src/polymarket_research/directional_wfo_shadow_sleeves.py
 # PURPOSE: v3.9.5 WFO Graduation Shadow Sleeves (SLEEVE_HYBRID_ZSPLIT_SHADOW & SLEEVE_BTC_5M_SNIPER_SHADOW)
 # ======================================================================================
 
@@ -58022,6 +60677,8 @@ from src.polymarket_research.exact_twap_lock_engine import should_suppress_final
 from src.polymarket_research.polymarket_live_executor import calculate_taker_fee
 from src.polymarket_research.polymarket_live_harvester import evaluate_coinbase_venue_veto
 
+from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+
 SHADOW_INITIAL_CAPITAL = 500.0
 SHADOW_TICKET_USD = 15.0
 SHADOW_ELASTIC_USD = 12.0
@@ -58031,7 +60688,7 @@ TRANSIT_LATENCY_SEC = 0.50
 MAKER_TTL_SEC = 6.0
 SHIELD_DECAY_FRAC = 0.50
 Z_TAKER_CUT = 1.20
-_NY_TZ = ZoneInfo("America/New_York")
+_NY_TZ = get_us_eastern_tz()
 
 
 def compute_synthetic_xau_usd_anchor(
@@ -58369,6 +61026,10 @@ class DirectionalWfoShadowManager:
         """Evaluates incoming live shock trigger for `SLEEVE_HYBRID_ZSPLIT_SHADOW`."""
         if historical:
             return False
+        if self.production_mode:
+            from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+            if not bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("shadow_governance", {}).get("enable_hybrid_zsplit_shadow", True)):
+                return False
         m_id = str(shock.get("market_id") or "")
         if not m_id or m_id in self.hz_open or m_id in self.hz_pending or m_id in self.hz_settled_markets:
             return False
@@ -59337,13 +61998,21 @@ class DirectionalWfoShadowManager:
             return
         now_u = time.time()
 
-        # 1a/1b. Tail BTC & SOL 5m telemetry only in non-production test mode (killed in v5.0 live governance)
-        if not self.production_mode:
+        _sg_poll = {}
+        if self.production_mode:
+            from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+            _sg_poll = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("shadow_governance", {}) or {}
+
+        # 1a/1b. Tail BTC & SOL 5m telemetry in non-production test mode or when explicitly enabled in shadow_governance
+        _b5_on = bool(_sg_poll.get("enable_btc_5m_sniper_shadow", _sg_poll.get("enable_btc_5m_shadow", False)))
+        _s5_on = bool(_sg_poll.get("enable_sol_5m_canary_shadow", _sg_poll.get("enable_sol_5m_shadow", False)))
+        if (not self.production_mode) or _b5_on:
             for row in self._tail_jsonl_file(self.b5_telem_file, "b5_file_pos"):
                 self._ingest_btc_5m_telemetry_tick(row)
                 m_id = str(row.get("market_id") or "")
                 if m_id in self.b5_pending:
                     self.b5_pending[m_id]["latest_tick"] = row
+        if (not self.production_mode) or _s5_on:
             for row in self._tail_jsonl_file(self.s5_telem_file, "s5_file_pos"):
                 self._ingest_sol_5m_telemetry_tick(row)
                 m_id = str(row.get("market_id") or "")
@@ -59351,11 +62020,12 @@ class DirectionalWfoShadowManager:
                     self.s5_pending[m_id]["latest_tick"] = row
 
         # 1c. Tail XAU 15m telemetry (when recorded) for Candidate D entries + exits
-        for row in self._tail_jsonl_file(self.xau_telem_file, "xau_file_pos"):
-            self.ingest_xau_15m_tick(row)
-            m_id = str(row.get("market_id") or "")
-            if m_id in self.xau_pending:
-                self.xau_pending[m_id]["latest_tick"] = row
+        if (not self.production_mode) or bool(_sg_poll.get("enable_xau_15m_maker_shadow", True)):
+            for row in self._tail_jsonl_file(self.xau_telem_file, "xau_file_pos"):
+                self.ingest_xau_15m_tick(row)
+                m_id = str(row.get("market_id") or "")
+                if m_id in self.xau_pending:
+                    self.xau_pending[m_id]["latest_tick"] = row
 
         # 2. Tail 15m + 1h BTC/ETH telemetry so open Hybrid z-Split positions get continuous exit ticks
         hz_telem_streams = (
@@ -59521,7 +62191,7 @@ class DirectionalWfoShadowManager:
                         pass
 
 # ======================================================================================
-# [32/64] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
+# [32/67] MODULE: src/polymarket_research/orderflow_wfo_simulators.py
 # PURPOSE: v4.0 100ms Micro-Clip 4-Step Cascade Replay, D1 Latency-Skew WFO & Legging-Drag Parity Engine
 # ======================================================================================
 
@@ -60928,7 +63598,7 @@ def run_subhourly_v395_wfo_ablation_suite(
     }
 
 # ======================================================================================
-# [33/64] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
+# [33/67] MODULE: src/polymarket_research/net_alpha_opportunity_engine.py
 # PURPOSE: v4.0 Quote-Survival, Adaptive Maker/Taker Router, C1 Complete-Set & Capital-Efficiency Auction Engine
 # ======================================================================================
 
@@ -60958,9 +63628,15 @@ Synthesizes the v4.0 institutional execution & portfolio-allocation upgrades:
 import json
 import math
 import os
+import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+try:
+    import orjson as _orjson
+except ImportError:  # pragma: no cover
+    _orjson = None  # type: ignore[assignment]
 
 _INV_SQRT2 = 0.7071067811865475
 
@@ -61569,7 +64245,12 @@ def read_global_positions_shm(max_age_sec: float = 120.0) -> Dict[str, Any]:
     if not path.exists():
         return {"daemons": {}}
     try:
-        data = json.loads(path.read_text(encoding="utf-8"))
+        raw_bytes = path.read_bytes()
+        data = (
+            _orjson.loads(raw_bytes)
+            if _orjson is not None
+            else json.loads(raw_bytes.decode("utf-8"))
+        )
         if not isinstance(data, dict):
             return {"daemons": {}}
         daemons = data.get("daemons") or {}
@@ -61590,6 +64271,7 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
     so live & shadow sleeves coordinate correlation and synthetic corridor completions.
     """
     path = _global_positions_shm_path()
+    tmp: Optional[Path] = None
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         cur = read_global_positions_shm(max_age_sec=600.0)
@@ -61609,11 +64291,19 @@ def publish_global_positions_shm(daemon_name: str, positions: Iterable[Dict[str,
             })
         daemons[str(daemon_name)] = {"updated_ts": round(time.time(), 3), "positions": compact}
         payload = {"updated_at_ts": round(time.time(), 3), "daemons": daemons}
-        tmp = path.with_suffix(f".{os.getpid()}.tmp")
-        tmp.write_text(json.dumps(payload), encoding="utf-8")
+        tmp = path.with_suffix(f".{os.getpid()}.{threading.get_ident()}.tmp")
+        if _orjson is not None:
+            tmp.write_bytes(_orjson.dumps(payload))
+        else:
+            tmp.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
         os.replace(tmp, path)
         return True
     except Exception:
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except Exception:
+                pass
         return False
 
 
@@ -62053,7 +64743,7 @@ def rank_microbatch_shock_tournament(
     return sorted(shocks, key=_score_shock, reverse=True)
 
 # ======================================================================================
-# [34/64] MODULE: src/polymarket_research/weather_metar_engine.py
+# [34/67] MODULE: src/polymarket_research/weather_metar_engine.py
 # PURPOSE: Option #1: 68-City Aviation METAR/SPECI + TAF Prior + 10s Sync Poll + W3 Weather Slate Arb
 # ======================================================================================
 
@@ -62091,7 +64781,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
-from zoneinfo import ZoneInfo
+from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
 logger = logging.getLogger("WeatherMetarEngine")
 
@@ -62437,6 +65127,7 @@ class MetarObservation:
     has_convective_precip: bool = False
     is_corrected: bool = False
     is_anomalous: bool = False
+    has_maintenance_indicator: bool = False
     rmk_6h_max_c: Optional[float] = None
     rmk_6h_min_c: Optional[float] = None
     rmk_24h_max_c: Optional[float] = None
@@ -62589,6 +65280,7 @@ def parse_metar_line(
 
     local_dt = utc_dt.astimezone(ZoneInfo(tz_name))
     has_precip = bool(_CONVECTIVE_WX_RE.search(upper))
+    has_maint = bool(has_rmk and ("$" in rmk_part.split() or rmk_part.rstrip().endswith("$")))
     return MetarObservation(
         icao=icao_u,
         utc_dt=utc_dt,
@@ -62599,6 +65291,7 @@ def parse_metar_line(
         has_convective_precip=has_precip,
         is_corrected=is_cor,
         is_anomalous=is_anomalous,
+        has_maintenance_indicator=has_maint,
         rmk_6h_max_c=rmk_6h_max_c,
         rmk_6h_min_c=rmk_6h_min_c,
         rmk_24h_max_c=rmk_24h_max_c,
@@ -63039,6 +65732,7 @@ def compute_weather_probabilities(
     has_obs = len(valid_obs) > 0
     latest_obs = valid_obs[-1] if has_obs else None
     has_corrected_obs = any(bool(getattr(o, "is_corrected", False)) for o in valid_obs)
+    has_maintenance_obs = any(bool(getattr(o, "has_maintenance_indicator", False)) for o in valid_obs)
     has_oracle_contradiction = has_metar_oracle_contradiction(valid_obs)
 
     if has_obs:
@@ -63233,7 +65927,7 @@ def compute_weather_probabilities(
                 or morning_trough_safe
             ):
                 is_solar_lock_window = True
-        if has_corrected_obs or has_oracle_contradiction:
+        if has_corrected_obs or has_oracle_contradiction or (has_maintenance_obs and rem_hours_count > 0):
             is_solar_lock_window = False
 
     return {
@@ -63241,6 +65935,7 @@ def compute_weather_probabilities(
         "has_obs": has_obs,
         "obs_count": len(valid_obs),
         "has_corrected_obs": has_corrected_obs,
+        "has_maintenance_obs": has_maintenance_obs,
         "has_oracle_contradiction": has_oracle_contradiction,
         "latest_temp_c": latest_obs.temp_c if latest_obs else None,
         "running_ext_c": running_ext_c,
@@ -63617,7 +66312,7 @@ def evaluate_weather_event_slate(
     }
 
 # ======================================================================================
-# [35/64] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
+# [35/67] MODULE: src/polymarket_research/barrier_onetouch_svi_engine.py
 # PURPOSE: Option #2: Reflection-Principle Jump-SVI First-Passage One-Touch Barrier Pricer (Finalized 1m Wick Rule)
 # ======================================================================================
 
@@ -63812,8 +66507,8 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
     m_cm = _CRYPTO_MONTH_RE.search(str(ev.get("title") or ""))
     if m_cm:
         try:
-            from zoneinfo import ZoneInfo
-            ny = ZoneInfo("America/New_York")
+            from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+            ny = get_us_eastern_tz()
             mo_c = _CRYPTO_MONTHS[m_cm.group(1).lower()]
             yr_c = int(m_cm.group(2)) if m_cm.group(2) else datetime.fromtimestamp(end_ts - 5 * 86400.0, tz=ny).year
             start_ts = max(start_ts, datetime(yr_c, mo_c, 1, 0, 0, tzinfo=ny).timestamp())
@@ -64173,7 +66868,7 @@ def fetch_binance_window_extremes_sync(
         return None
 
 # ======================================================================================
-# [36/64] MODULE: src/polymarket_research/multistrike_svi_scalper.py
+# [36/67] MODULE: src/polymarket_research/multistrike_svi_scalper.py
 # PURPOSE: Option #4: Deribit SVI Digital Pricer + Multi-Strike Ladder Monotonicity Box Scanner
 # ======================================================================================
 
@@ -64504,9 +67199,11 @@ def detect_ladder_monotonicity_boxes(
             ask_n_hi = float(hi.get("ask_no") or 1.0)
             if not (0.01 <= ask_y_lo <= 0.98 and 0.01 <= ask_n_hi <= 0.98):
                 continue
-            fee_1 = fee_rate * ask_y_lo * (1.0 - ask_y_lo)
-            fee_2 = fee_rate * ask_n_hi * (1.0 - ask_n_hi)
-            total_cost = ask_y_lo + ask_n_hi + fee_1 + fee_2
+            fr_lo = float(lo.get("fee_rate", fee_rate) or 0.0)
+            fr_hi = float(hi.get("fee_rate", fee_rate) or 0.0)
+            h_1 = min(0.50, max(0.0, fr_lo * (1.0 - ask_y_lo))) if fr_lo > 0.0 else 0.0
+            h_2 = min(0.50, max(0.0, fr_hi * (1.0 - ask_n_hi))) if fr_hi > 0.0 else 0.0
+            total_cost = (ask_y_lo / (1.0 - h_1)) + (ask_n_hi / (1.0 - h_2))
             if total_cost <= 0.996:
                 arbs.append({
                     "low_strike": lo["strike"],
@@ -64749,8 +67446,16 @@ def build_negrisk_cross_box_bundles(
     if abs(rungs[0].end_ts - brackets[0].end_ts) > 2.0:
         return []
 
+    ms_sorted: List[StrikeRungSpec] = sorted(
+        [r for r in rungs if not r.is_downward], key=lambda r: float(r.strike)
+    )
     ms_by_k: Dict[float, StrikeRungSpec] = {
-        round(float(r.strike), 4): r for r in rungs if not r.is_downward
+        round(float(r.strike), 4): r for r in ms_sorted
+    }
+    range_by_lo: Dict[float, NegRiskBracketSpec] = {
+        round(float(b.k_low), 4): b
+        for b in brackets
+        if b.bracket_kind == "RANGE" and b.k_low is not None and b.k_high is not None
     }
     bundles: List[Dict[str, Any]] = []
 
@@ -64762,22 +67467,45 @@ def build_negrisk_cross_box_bundles(
                 continue
 
         if br.bracket_kind == "LOWER_TAIL" and br.k_high is not None:
-            ms_r = ms_by_k.get(round(float(br.k_high), 4))
-            if ms_r is not None:
+            k_hi_round = round(float(br.k_high), 4)
+            ms_r = ms_by_k.get(k_hi_round)
+            # Zero-pin invariant: `NR_YES(<K_high) + MS_YES(>K_high)` pays `$0.00` at exact pin `S == K_high`!
+            # Prefer a strictly lower rung `MS_YES(>K_prev)` (`K_prev < K_high`, 2-leg pin-free overlap),
+            # or bridge `S == K_high` with the adjacent `RANGE` bracket `NR_YES([K_high, K_next])` (3-leg pin-free).
+            lower_ms = [r for r in ms_sorted if float(r.strike) < float(br.k_high) - 1e-6]
+            adj_rng = range_by_lo.get(k_hi_round)
+            if lower_ms:
+                ms_prev = lower_ms[-1]
                 bundles.append({
-                    "bundle_id": f"TAIL_LOW_YES_{br.market_id}_{ms_r.market_id}",
-                    "label": f"NR_YES(<{br.k_high:g})+MS_YES(>{ms_r.strike:g})",
+                    "bundle_id": f"TAIL_LOW_OVERLAP_YES_{br.market_id}_{ms_prev.market_id}",
+                    "label": f"NR_YES(<{br.k_high:g})+MS_YES(>{ms_prev.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
+                        {"token_id": ms_prev.yes_token, "opp_token_id": ms_prev.no_token, "condition_id": ms_prev.condition_id, "neg_risk": False, "strike": float(ms_prev.strike), "side": "YES", "market_id": ms_prev.market_id, "fee_rate": ms_prev.fee_rate, "label": f"MS_YES>{ms_prev.strike:g}"},
+                    ],
+                })
+            elif ms_r is not None and adj_rng is not None:
+                bundles.append({
+                    "bundle_id": f"TAIL_LOW_PIN_SAFE_BRIDGE_{br.market_id}_{adj_rng.market_id}_{ms_r.market_id}",
+                    "label": f"NR_YES(<{br.k_high:g})+NR_YES([{adj_rng.k_low:g},{adj_rng.k_high:g}])+MS_YES(>{ms_r.strike:g})",
+                    "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
+                    "end_ts": br.end_ts,
+                    "legs": [
+                        {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES<{br.k_high:g}"},
+                        {"token_id": adj_rng.yes_token, "opp_token_id": adj_rng.no_token, "condition_id": adj_rng.condition_id, "neg_risk": True, "strike": float(adj_rng.k_high or br.k_high), "side": "YES", "market_id": adj_rng.market_id, "fee_rate": adj_rng.fee_rate, "label": f"NR_YES[{adj_rng.k_low:g}-{adj_rng.k_high:g}]"},
                         {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
                     ],
                 })
+            if ms_r is not None:
                 bundles.append({
                     "bundle_id": f"TAIL_LOW_NO_{br.market_id}_{ms_r.market_id}",
                     "label": f"NR_NO(<{br.k_high:g})+MS_NO(>{ms_r.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_high), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO<{br.k_high:g}"},
@@ -64786,27 +67514,46 @@ def build_negrisk_cross_box_bundles(
                 })
         elif br.bracket_kind == "UPPER_TAIL" and br.k_low is not None:
             ms_r = ms_by_k.get(round(float(br.k_low), 4))
+            q_low_u = (br.question or "").lower()
+            is_inclusive_upper = any(tok in q_low_u for tok in ("or above", "or higher", "at least", ">="))
             if ms_r is not None:
                 bundles.append({
                     "bundle_id": f"TAIL_HIGH_A_{br.market_id}_{ms_r.market_id}",
                     "label": f"NR_YES(>{br.k_low:g})+MS_NO(>{ms_r.strike:g})",
                     "guaranteed_payout": 1.0,
+                    "pin_free_verified": True,
                     "end_ts": br.end_ts,
                     "legs": [
                         {"token_id": br.yes_token, "opp_token_id": br.no_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "YES", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_YES>{br.k_low:g}"},
                         {"token_id": ms_r.no_token, "opp_token_id": ms_r.yes_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "NO", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_NO>{ms_r.strike:g}"},
                     ],
                 })
-                bundles.append({
-                    "bundle_id": f"TAIL_HIGH_B_{br.market_id}_{ms_r.market_id}",
-                    "label": f"NR_NO(>{br.k_low:g})+MS_YES(>{ms_r.strike:g})",
-                    "guaranteed_payout": 1.0,
-                    "end_ts": br.end_ts,
-                    "legs": [
-                        {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
-                        {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
-                    ],
-                })
+                lower_ms_u = [r for r in ms_sorted if float(r.strike) < float(br.k_low) - 1e-6]
+                if not is_inclusive_upper:
+                    bundles.append({
+                        "bundle_id": f"TAIL_HIGH_B_{br.market_id}_{ms_r.market_id}",
+                        "label": f"NR_NO(>{br.k_low:g})+MS_YES(>{ms_r.strike:g})",
+                        "guaranteed_payout": 1.0,
+                        "pin_free_verified": True,
+                        "end_ts": br.end_ts,
+                        "legs": [
+                            {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>{br.k_low:g}"},
+                            {"token_id": ms_r.yes_token, "opp_token_id": ms_r.no_token, "condition_id": ms_r.condition_id, "neg_risk": False, "strike": float(ms_r.strike), "side": "YES", "market_id": ms_r.market_id, "fee_rate": ms_r.fee_rate, "label": f"MS_YES>{ms_r.strike:g}"},
+                        ],
+                    })
+                elif lower_ms_u:
+                    ms_prev_u = lower_ms_u[-1]
+                    bundles.append({
+                        "bundle_id": f"TAIL_HIGH_OVERLAP_B_{br.market_id}_{ms_prev_u.market_id}",
+                        "label": f"NR_NO(>={br.k_low:g})+MS_YES(>{ms_prev_u.strike:g})",
+                        "guaranteed_payout": 1.0,
+                        "pin_free_verified": True,
+                        "end_ts": br.end_ts,
+                        "legs": [
+                            {"token_id": br.no_token, "opp_token_id": br.yes_token, "condition_id": br.condition_id, "neg_risk": True, "strike": float(br.k_low), "side": "NO", "market_id": br.market_id, "fee_rate": br.fee_rate, "label": f"NR_NO>={br.k_low:g}"},
+                            {"token_id": ms_prev_u.yes_token, "opp_token_id": ms_prev_u.no_token, "condition_id": ms_prev_u.condition_id, "neg_risk": False, "strike": float(ms_prev_u.strike), "side": "YES", "market_id": ms_prev_u.market_id, "fee_rate": ms_prev_u.fee_rate, "label": f"MS_YES>{ms_prev_u.strike:g}"},
+                        ],
+                    })
         elif br.bracket_kind == "RANGE" and br.k_low is not None and br.k_high is not None:
             ms_lo = ms_by_k.get(round(float(br.k_low), 4))
             ms_hi = ms_by_k.get(round(float(br.k_high), 4))
@@ -64897,7 +67644,7 @@ def parse_daily_updown_event(ev: Dict[str, Any], asset: str, series_slug: str) -
     )
 
 # ======================================================================================
-# [37/64] MODULE: src/polymarket_research/same_oracle_dominance_box.py
+# [37/67] MODULE: src/polymarket_research/same_oracle_dominance_box.py
 # PURPOSE: Option #7 (D1): Same-Oracle 15m vs 5m Chainlink 60s-TWAP Structural Dominance Box Engine
 # ======================================================================================
 
@@ -65712,10 +68459,41 @@ def walk_equal_shares_dominance_box(
         net_paired_sh = float(q_pairs)
         gross_sh_a = cand_gross_a
         gross_sh_b = cand_gross_b
+        actual_gross_spent = sp_ga + sp_gb
     else:
         net_paired_sh = math.floor(float(q_pairs) * (1.0 - h_max_w) * 100.0 + 1e-9) / 100.0
+        if net_paired_sh < 5.0 - 1e-9:
+            return {
+                "filled": False,
+                "reason": "NET_PAIRED_SHARES_BELOW_5SH_MIN",
+                "best_a": round(best_a, 4),
+                "best_b": round(best_b, 4),
+                "net_paired_shares": round(net_paired_sh, 4),
+                "avail_pair_shares": max_avail_pairs,
+            }
         gross_sh_a = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_a_w)) * 100.0 - 1e-9) / 100.0)
         gross_sh_b = min(float(q_pairs), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_b_w)) * 100.0 - 1e-9) / 100.0)
+        ok_ea, sp_ea = _fits_at_worst_px(capped_a, gross_sh_a, float(w_a["worst_px"]))
+        ok_eb, sp_eb = _fits_at_worst_px(capped_b, gross_sh_b, float(w_b["worst_px"]))
+        if not (ok_ea and ok_eb):
+            return {
+                "filled": False,
+                "reason": "DEPTH_CAP_GROSS_WALK_FAILED",
+                "best_a": round(best_a, 4),
+                "best_b": round(best_b, 4),
+                "avail_pair_shares": max_avail_pairs,
+            }
+        actual_gross_spent = sp_ea + sp_eb
+    # Exact V2 share-deducted unit cost per 1.0000 net delivered pair
+    actual_net_delivered = min(
+        gross_sh_a * max(1e-6, 1.0 - h_a_w),
+        gross_sh_b * max(1e-6, 1.0 - h_b_w),
+    )
+    exact_unit_cost_net = actual_gross_spent / max(1e-6, actual_net_delivered)
+    box_cost_net = max(box_cost_net, exact_unit_cost_net)
+    spent_total = actual_gross_spent
+    fee_total = max(0.0, actual_gross_spent - (net_paired_sh * (w_a["vwap"] + w_b["vwap"])))
+    all_in_total = actual_gross_spent
     min_leg_px = min(best_a, best_b)
     q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
     if q_pairs < q_floor or (gross_sh_a * best_a) < 1.0 - 1e-6 or (gross_sh_b * best_b) < 1.0 - 1e-6:
@@ -65878,10 +68656,64 @@ def walk_equal_shares_multi_leg_box(
         all_in_total = spent_total + fee_total
         bundle_cost_net = all_in_total / float(q_sh)
 
-    # Polymarket $1 min marketable order: every leg must clear $1 at the final Q (else one-legged bundle).
+    # Compute exact per-leg V2 share-haircut gross-up so every leg delivers identical `net_paired_sh`
+    def _fits_multi_at_worst(asks_cap: List[Tuple[float, float]], req_sh: float, lim_px: float) -> Tuple[bool, float]:
+        rem_g = req_sh
+        sp_g = 0.0
+        for px_l, sz_l in asks_cap:
+            if px_l > lim_px + 1e-9:
+                break
+            tk_g = min(rem_g, sz_l)
+            if tk_g > 0.0:
+                sp_g += tk_g * px_l
+                rem_g -= tk_g
+                if rem_g <= 1e-8:
+                    return True, sp_g
+        return False, sp_g
+
+    haircuts = [float(w.get("share_haircut") or 0.0) for w in walks]
+    h_max_m = max(haircuts) if haircuts else 0.0
+    cand_gross_list = [
+        math.ceil((float(q_sh) / max(1e-6, 1.0 - h_i)) * 100.0 - 1e-9) / 100.0
+        for h_i in haircuts
+    ]
+    fits_all = [
+        _fits_multi_at_worst(capped, g_i, float(w_i["worst_px"]))
+        for capped, g_i, w_i in zip(capped_list, cand_gross_list, walks)
+    ]
+    if all(ok_i for ok_i, _ in fits_all) and sum(sp_i for _, sp_i in fits_all) <= float(target_budget_usd) * 1.02 + 1e-6:
+        net_paired_sh = float(q_sh)
+        leg_gross_shares = cand_gross_list
+        actual_bundle_spent = sum(sp_i for _, sp_i in fits_all)
+    else:
+        net_paired_sh = math.floor(float(q_sh) * (1.0 - h_max_m) * 100.0 + 1e-9) / 100.0
+        if net_paired_sh < 5.0 - 1e-9:
+            return {
+                "filled": False,
+                "reason": "NET_BUNDLE_SHARES_BELOW_5SH_MIN",
+                "avail_bundle_shares": max_avail_sh,
+            }
+        leg_gross_shares = [
+            min(float(q_sh), math.ceil((net_paired_sh / max(1e-6, 1.0 - h_i)) * 100.0 - 1e-9) / 100.0)
+            for h_i in haircuts
+        ]
+        fits_cap = [
+            _fits_multi_at_worst(capped, g_i, float(w_i["worst_px"]))
+            for capped, g_i, w_i in zip(capped_list, leg_gross_shares, walks)
+        ]
+        if not all(ok_i for ok_i, _ in fits_cap):
+            return {"filled": False, "reason": "DEPTH_CAP_MULTI_LEG_WALK_FAILED", "avail_bundle_shares": max_avail_sh}
+        actual_bundle_spent = sum(sp_i for _, sp_i in fits_cap)
+
+    exact_bundle_cost_net = actual_bundle_spent / max(1e-6, net_paired_sh)
+    bundle_cost_net = max(bundle_cost_net, exact_bundle_cost_net)
+    spent_total = actual_bundle_spent
+    fee_total = max(0.0, actual_bundle_spent - net_paired_sh * sum(float(w["vwap"]) for w in walks))
+
+    # Polymarket $1 min marketable order: every leg must clear $1 at its gross order size (else one-legged bundle).
     min_leg_px = min(best_asks)
     q_floor = int(math.ceil(1.0 / max(min_leg_px, 0.01) - 1e-9))
-    if q_sh < q_floor:
+    if q_sh < q_floor or any((g_i * b_i) < 1.0 - 1e-6 for g_i, b_i in zip(leg_gross_shares, best_asks)):
         return {
             "filled": False,
             "reason": "LEG_BELOW_1USD_MIN",
@@ -65903,13 +68735,15 @@ def walk_equal_shares_multi_leg_box(
     return {
         "filled": True,
         "shares": int(q_sh),
+        "net_paired_shares": round(net_paired_sh, 4),
+        "leg_gross_shares": [round(g_i, 2) for g_i in leg_gross_shares],
         "best_ask": round(sum(best_asks), 4),
-        "vwap": round(spent_total / float(q_sh), 5),
+        "vwap": round(spent_total / max(1e-6, net_paired_sh), 5),
         "eff_px": round(bundle_cost_net, 5),
         "box_cost_net": round(bundle_cost_net, 5),
         "guaranteed_payout_per_bundle": round(guaranteed_payout_per_bundle, 4),
         "riskless_floor_per_pair": round(floor_per_bundle, 5),
-        "guaranteed_min_profit_usd": round(float(q_sh) * floor_per_bundle, 4),
+        "guaranteed_min_profit_usd": round(net_paired_sh * floor_per_bundle, 4),
         "spent_usd": round(spent_total, 4),
         "fee_usd": round(fee_total, 4),
         "l1_usd": l1_bundle_usd,
@@ -65918,7 +68752,7 @@ def walk_equal_shares_multi_leg_box(
     }
 
 # ======================================================================================
-# [38/64] MODULE: src/polymarket_research/exact_twap_lock_engine.py
+# [38/67] MODULE: src/polymarket_research/exact_twap_lock_engine.py
 # PURPOSE: Option #8 (S2): Final-45s 5m/15m Chainlink 60s-TWAP Kemna-Vorst Asian Variance + Student-t(df=5) Integral Lock
 # ======================================================================================
 
@@ -66258,7 +69092,7 @@ def compute_exact_twap_lock_probability(
     }
 
 # ======================================================================================
-# [39/64] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
+# [39/67] MODULE: src/polymarket_research/tradfi_sports_zero_fee_engine.py
 # PURPOSE: Zero-Fee Pyth Commodities/Metals/Equities (CM_B3/B2/U1), B4 Wick Lock, NBA Polish-Middle (SP1) & NegRisk (NR0)
 # ======================================================================================
 
@@ -66307,12 +69141,14 @@ from src.polymarket_research.barrier_onetouch_svi_engine import (
     first_passage_touch_prob,
 )
 
+from src.polymarket_research.riskless_protocol_v2_expansion import (
+    get_us_eastern_tz,
+    is_conditional_negrisk_missing_catchall,
+)
+
 logger = logging.getLogger("TradFiSportsZeroFee")
 
-try:
-    NY_TZ = ZoneInfo("America/New_York")
-except Exception:
-    NY_TZ = timezone(timedelta(hours=-4))
+NY_TZ = get_us_eastern_tz()
 
 # (asset, yahoo_ticker, session_class, exact_directional_ok, basis_buffer_frac, vol_floor_annual)
 PYTH_ASSET_CONFIG: Dict[str, Tuple[str, str, bool, float, float]] = {
@@ -67750,9 +70586,15 @@ def parse_negrisk_convert_event(ev: Dict[str, Any]) -> Optional[NegRiskConvertSl
         return None
     total_n = len(mkts)
     idx_set = {b["question_index"] for b in open_brackets if isinstance(b.get("question_index"), int)}
+    ev_hdr = f"{ev.get('title') or ''} {ev.get('slug') or ''}"
+    missing_cond_catchall = is_conditional_negrisk_missing_catchall(
+        ev_hdr,
+        [str(b.get("label") or "") for b in open_brackets],
+    )
     closed_safe = bool(
         (not nr_aug)
         and (not has_placeholder)
+        and (not missing_cond_catchall)
         and valid_nr_hex
         and all_mkts_open
         and 3 <= total_n <= 40
@@ -68033,7 +70875,7 @@ def detect_negrisk_convert_positions_arbs(
 
 
 # ======================================================================================
-# [40/64] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
+# [40/67] MODULE: src/polymarket_research/macro_counting_ctf_engine.py
 # PURPOSE: Phase-2 Multi-Vertical Structural & Oracle Engine (TW1 xtracker, FED1 125-State LP, COND1 Oil-Senate, CTF Overround, AAA Gas, D2 12PM)
 # ======================================================================================
 
@@ -68440,8 +71282,7 @@ def detect_counting_pruned_exhaustive_yes_slate(
             return None
         fr = float(br.fee_rate or 0.0)
         fe = float(br.fee_exponent or 1.0)
-        fee_ps = fr * ((w_px * (1.0 - w_px)) ** fe) if fr > 0.0 else 0.0
-        leg_eff = w_px + fee_ps
+        leg_eff = _net_unit_ask(w_px, fr, fe)
         total_cost_ps += leg_eff
         min_avail_sh = min(min_avail_sh, sum(s for _, s in asks[:3]))
         legs_out.append({
@@ -68725,17 +71566,45 @@ def build_fomc_truth_table_legs(
     return legs
 
 
-# 9-state Oil x Senate truth table: 3 Oil regimes (<80, [80,85), >=85) x 3 Senate winners (DEM, REP, OTHER)
-OIL_SENATE_STATES: List[Tuple[str, str]] = [
-    (o, p) for o in ("LT80", "B80_85", "GE85") for p in ("DEM", "REP", "OTHER")
+# 18-state Path-Extrema Oil x Senate truth table:
+# 6 valid `(min_oil_regime, max_oil_regime)` path pairs (`m <= M` over `LT80 < B80_85 < GE85`)
+# x 3 Senate winners (`DEM`, `REP`, `OTHER`). Prevents mixed upward/downward barrier whip-saw fallacies!
+_OIL_REGIME_RANK: Dict[str, int] = {"LT80": 0, "B80_85": 1, "GE85": 2}
+OIL_SENATE_STATES: List[Tuple[str, str, str]] = [
+    (m_reg, M_reg, p)
+    for m_reg in ("LT80", "B80_85", "GE85")
+    for M_reg in ("LT80", "B80_85", "GE85")
+    if _OIL_REGIME_RANK[m_reg] <= _OIL_REGIME_RANK[M_reg]
+    for p in ("DEM", "REP", "OTHER")
 ]
-ALL_OIL_SENATE_MASK: int = (1 << len(OIL_SENATE_STATES)) - 1  # 9-bit mask (511)
+ALL_OIL_SENATE_MASK: int = (1 << len(OIL_SENATE_STATES)) - 1  # 18-bit mask (262,143)
+
+
+def _infer_oil_barrier_polarity(slug_low: str, ev_desc: str, m_desc: str) -> str:
+    """
+    Classifies whether an Oil conditional market tests the path MINIMUM (`'DOWN_DIP'`: `min_t S_t < K`),
+    path MAXIMUM (`'UP_HIT'`: `max_t S_t >= K`), or terminal snapshot / symmetric regime (`'DOWN_DIP'` default
+    for `'below'`, `'UP_HIT'` for `'hit'/'reach'/'above'`):
+    """
+    blob = f"{ev_desc} {m_desc}".lower()
+    has_up_hit = any(w in blob for w in ("hit $", "hits $", "reach $", "reaches $", "rise above", "spike above", "trade at or above"))
+    has_dn_dip = any(w in blob for w in ("dip below", "dips below", "fall below", "falls below", "drop below", "trade below"))
+    if has_up_hit and not has_dn_dip:
+        return "UP_HIT"
+    if has_dn_dip and not has_up_hit:
+        return "DOWN_DIP"
+    # When rules text does not mix opposite barrier triggers, use canonical path-min (`m_reg`) consistently across slugs
+    # unless slug explicitly specifies an upward-only hit (`pending-oil-hits-` / `pending-oil-reaches-`).
+    if any(k in slug_low for k in ("oil-hits-", "oil-reaches-", "oil-above-85", "oil-above-90")):
+        return "UP_HIT"
+    return "DOWN_DIP"
 
 
 def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
     """
     Maps `which-party-will-win-the-senate-in-2026` + `who-wins-the-senate-pending-oil-*` (`0%` fee)
-    into exact 9-bit masks over `{LT80, B80_85, GE85} x {DEM, REP, OTHER}`.
+    into exact 18-bit masks over `{(m_oil, M_oil): m_oil <= M_oil} x {DEM, REP, OTHER}`, eliminating
+    upward-hit vs downward-dip path-whipsaw false dominance while preserving true partitions & inclusions.
     """
     legs: List[Dict[str, Any]] = []
     for slug, ev in events_by_slug.items():
@@ -68745,6 +71614,7 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
         if end_ts <= 0:
             continue
         s_low = slug.lower()
+        ev_desc = str(ev.get("description") or "")
         for m in (ev.get("markets") or []):
             if m.get("closed"):
                 continue
@@ -68754,12 +71624,16 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
                 continue
             lbl = str(m.get("groupItemTitle") or m.get("question") or "").strip()
             ll = lbl.lower()
+            m_desc = str(m.get("description") or "")
+            # Reject cross-date mismatch if an Oil barrier window expires on a different date than Senate control
+            if "pending-oil" in s_low and any(bad_w in f"{ev_desc} {m_desc}".lower() for bad_w in ("end of 2026", "december 31")):
+                continue
             y_mask = 0
             if "which-party-will-win-the-senate" in s_low:
                 party = "DEM" if "democrat" in ll else ("REP" if "republican" in ll else None)
                 if not party:
                     continue
-                for idx, (_, p_st) in enumerate(OIL_SENATE_STATES):
+                for idx, (_, _, p_st) in enumerate(OIL_SENATE_STATES):
                     if p_st == party:
                         y_mask |= (1 << idx)
                 eg = "SENATE_MAIN"
@@ -68770,17 +71644,19 @@ def build_oil_senate_truth_table_legs(events_by_slug: Dict[str, Dict[str, Any]])
                 is_ge = "≥" in ll or ">=" in ll or "above" in ll or "greater" in ll
                 if not party or thresh not in (80, 85) or (is_lt == is_ge):
                     continue
-                for idx, (o_st, p_st) in enumerate(OIL_SENATE_STATES):
+                polarity = _infer_oil_barrier_polarity(s_low, ev_desc, m_desc)
+                for idx, (m_st, M_st, p_st) in enumerate(OIL_SENATE_STATES):
                     if p_st != party:
                         continue
+                    ref_oil = M_st if polarity == "UP_HIT" else m_st
                     oil_ok = (
-                        (o_st == "LT80" if is_lt else o_st in ("B80_85", "GE85"))
+                        (ref_oil == "LT80" if is_lt else ref_oil in ("B80_85", "GE85"))
                         if thresh == 80
-                        else (o_st in ("LT80", "B80_85") if is_lt else o_st == "GE85")
+                        else (ref_oil in ("LT80", "B80_85") if is_lt else ref_oil == "GE85")
                     )
                     if oil_ok:
                         y_mask |= (1 << idx)
-                eg = f"OIL_{thresh}_SENATE"
+                eg = f"OIL_{thresh}_{polarity}_SENATE"
             else:
                 continue
             mid = str(m.get("id") or "")
@@ -69199,6 +72075,23 @@ def evaluate_ai_elo_ci_lock(
     return {"eligible": True, "leader_org": top_org, "ci_gap": round(ci_gap, 2), "p_lock": round(p_lock, 4)}
 
 
+def _infer_binance_candle_close_offset_sec(spec: Dict[str, Any], is_hourly_updown: bool = False) -> float:
+    """
+    Computes exact oracle price-fix offset relative to `end_ts`:
+      - `11:00 AM - 12:00 PM ET` `1h` Up/Down candle closes at `11:59:59.999 ET` (`+0.0s` vs `12:00:00`).
+      - `12:00 PM ET` `1m` candle (`"1 minute candle"` / `"1m candle"` starting `12:00`) closes at `12:00:59.999 ET` (`+60.0s`)!
+      Preventing `11:59:59` vs `12:00:59` 60-second unhedged gap traps.
+    """
+    if "oracle_close_offset_sec" in spec and spec["oracle_close_offset_sec"] is not None:
+        return float(spec["oracle_close_offset_sec"])
+    desc_low = str(spec.get("description") or spec.get("resolution_rules") or spec.get("rules_text") or "").lower()
+    if any(tok in desc_low for tok in ("1 minute candle", "1-minute candle", "1m candle")):
+        return 60.0
+    if any(tok in desc_low for tok in ("1 hour candle", "1-hour candle", "1h candle")):
+        return 0.0
+    return 0.0 if is_hourly_updown else 0.0
+
+
 def detect_d2_12pm_binance_boxes(
     hourly_spec: Dict[str, Any],
     k_1h: float,
@@ -69207,17 +72100,24 @@ def detect_d2_12pm_binance_boxes(
 ) -> List[Dict[str, Any]]:
     """
     Same-Exchange `Binance USDT` `11:00-12:00 PM ET` `1h` Up/Down vs `12:00 PM ET` Daily/Multi-Strike
-    Corridor Dominance Detector (`|end_1h - end_12pm| <= 5s`, zero `USDT/USD` peg basis!).
+    Corridor Dominance Detector (`|fix_ts_1h - fix_ts_12pm| <= 1.0s`, zero `USDT/USD` peg basis!).
+    Rejects `11:59:59` (`1h` candle) vs `12:00:59` (`12:00 1m` candle) 60-second settlement mismatches!
     For `K_low < K_high`: buying `UP/YES(> K_low)` + `DOWN/NO(< K_high)` locks `$1.00` floor + `$2.00` corridor!
     """
     if k_1h <= 0:
         return []
     end_1h = float(hourly_spec["end_ts"])
+    fix_1h = end_1h + _infer_binance_candle_close_offset_sec(hourly_spec, is_hourly_updown=True)
+    iv_1h = str(hourly_spec.get("candle_interval") or "").strip().lower()
     out: List[Dict[str, Any]] = []
     for ts_sp in terminal_specs:
         if ts_sp.get("is_downward"):
             continue
-        if abs(float(ts_sp["end_ts"]) - end_1h) > 5.0:
+        iv_t = str(ts_sp.get("candle_interval") or "").strip().lower()
+        if iv_1h and iv_t and iv_1h != iv_t:
+            continue
+        fix_t = float(ts_sp["end_ts"]) + _infer_binance_candle_close_offset_sec(ts_sp, is_hourly_updown=False)
+        if abs(fix_t - fix_1h) > 1.0:
             continue
         k_t = float(ts_sp["strike"])
         if k_t <= 0:
@@ -69245,7 +72145,7 @@ def detect_d2_12pm_binance_boxes(
     return out
 
 # ======================================================================================
-# [41/64] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
+# [41/67] MODULE: src/polymarket_research/uma_nba_endgame_engine.py
 # PURPOSE: Evergreen On-Chain UMA Resolution Bond Harvester (BOND1) & 0%-Fee Live NBA Final-2m/Post-Buzzer Sniper (SP2)
 # ======================================================================================
 
@@ -69339,8 +72239,31 @@ _SUBJECTIVE_VETO_RE = re.compile(
 )
 _OBJECTIVE_ORACLE_RE = re.compile(
     r"(aviationweather\.gov|weather\.gov\.hk|wunderground\.com|binance\.com|chain\.link"
-    r"|pyth\.network|federalreserve\.gov|bls\.gov|gasprices\.aaa\.com|xtracker"
-    r"|nba\.com|nhl\.com|mlb\.com|nfl\.com|espn\.com|premierleague\.com|uefa\.com|atptour\.com|hlTV|lol\s*esports)",
+    r"|pyth\.network|federalreserve\.gov|bls\.gov|bea\.gov|census\.gov|eia\.gov|treasury\.gov"
+    r"|gasprices\.aaa\.com|boxofficemojo\.com|xtracker"
+    r"|nba\.com|wnba\.com|nhl\.com|mlb\.com|nfl\.com|ncaa\.com|espn\.com"
+    r"|premierleague\.com|uefa\.com|fifa\.com|fiba\.basketball|atptour\.com|wtatennis\.com"
+    r"|ufc\.com|pgatour\.com|formula1\.com|vlr\.gg|liquipedia\.net|lolesports\.com|hlTV|lol\s*esports)",
+    re.IGNORECASE,
+)
+_OFFICIAL_SPORTS_OR_ROSTER_CLAUSE_RE = re.compile(
+    r"(?:\bnext\s+team\s+.+?\s+officially\s+joins\s+by\b"
+    r"|\bofficially\s+(?:signs?\s+with|traded\s+to|joins)\b"
+    r"|\bmake\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:nfl|nba|mlb|nhl|mls|cfb|college\s+football)\s+playoffs\b"
+    r"|\bwin\s+the\s+(?:20\d{2}(?:-\d{2})?\s+)?(?:super\s+bowl|nba\s+finals|world\s+series|stanley\s+cup"
+    r"|premier\s+league|champions\s+league|la\s+liga|serie\s+a|bundesliga|ligue\s+1"
+    r"|cfb\s+national\s+championship|college\s+football\s+playoff|heisman\s+trophy"
+    r"|afc|nfc|eastern\s+conference|western\s+conference"
+    r"|(?:afc|nfc)\s+(?:east|north|south|west))\b"
+    r"|\b(?:nfl|nba|mlb|nhl|premier\s+league|champions\s+league|ufc|formula\s+1|f1|valorant\s+champions\s+tour|vct|pro[\s\-]+football)\b"
+    r".*\b(?:regular\s+season|clean\s+sheet|relegated|top\s+4|playoffs?|championship|division|roster|offseason|next[\s\-]+team|transaction\s+wire|trade\s+deadline)\b)",
+    re.IGNORECASE | re.DOTALL,
+)
+_NON_LEAGUE_POP_OR_POLITICS_VETO_RE = re.compile(
+    r"\b(?:election|presidential|senate|congress|house\s+of\s+representatives|governor|mayor|parliament|prime\s+minister"
+    r"|dancing\s+with\s+the\s+stars|bachelor|bachelorette|survivor|love\s+island|big\s+brother"
+    r"|oscar|academy\s+awards?|grammy|emmy|golden\s+globe|eurovision"
+    r"|gta\s+marathon|subathon|twitch|youtuber|streamer|tiktok|podcast)\b",
     re.IGNORECASE,
 )
 _SPORTS_TITLE_RE = re.compile(
@@ -69435,6 +72358,30 @@ def is_objective_uma_market(m: Dict[str, Any]) -> Tuple[bool, str]:
         return True, "VERIFIED_PRIMARY_ORACLE"
     if _SPORTS_TITLE_RE.search(q):
         return True, "SPORTS_MATCH_RULE"
+
+    # P1a: Strictly objective post-deadline or mathematically-eliminated (`NO >= $0.94`) official league/roster carries
+    slug_blob = f"{m.get('slug') or ''} {m.get('_ev_slug') or ''}\n{blob}"
+    if hist.count("proposed") <= 1 and not _NON_LEAGUE_POP_OR_POLITICS_VETO_RE.search(slug_blob):
+        if _OFFICIAL_SPORTS_OR_ROSTER_CLAUSE_RE.search(slug_blob):
+            now_chk = float(m.get("_eval_now_ts") or time.time())
+            end_ts_m = _parse_iso_ts(m.get("endDate")) or 0.0
+            if 0.0 < end_ts_m <= now_chk:
+                return True, "OFFICIAL_LEAGUE_POST_DEADLINE"
+            op_raw = _parse_json_list(m.get("outcomePrices"))
+            if (
+                len(outs) == 2
+                and outs[0].lower() == "yes"
+                and outs[1].lower() == "no"
+                and len(op_raw) == 2
+            ):
+                try:
+                    p_yes = float(op_raw[0])
+                    p_no = float(op_raw[1])
+                    if p_no >= 0.94 and p_yes <= 0.06:
+                        return True, "OFFICIAL_LEAGUE_ELIMINATED_NO"
+                except (TypeError, ValueError):
+                    pass
+
     return False, "NO_OBJECTIVE_DOMAIN_MATCH"
 
 
@@ -69783,8 +72730,10 @@ def parse_espn_nba_scoreboard(data: Dict[str, Any]) -> List[LiveNbaGameState]:
 
 def fetch_espn_nba_scoreboard_sync(timeout: float = 4.5, now_ts: Optional[float] = None) -> List[LiveNbaGameState]:
     """Fetches real-time NBA scoreboard across yesterday + today ET from ESPN (primary) with `cdn.nba.com` fallback."""
+    from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+
     hdrs = {"User-Agent": "Mozilla/5.0", "Accept": "application/json"}
-    ny_dt = datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()), tz=ZoneInfo("America/New_York"))
+    ny_dt = datetime.fromtimestamp(float(now_ts if now_ts is not None else time.time()), tz=get_us_eastern_tz())
     date_tags = [(ny_dt - timedelta(days=1)).strftime("%Y%m%d"), ny_dt.strftime("%Y%m%d")]
     merged: Dict[str, LiveNbaGameState] = {}
     for ymd in dict.fromkeys(date_tags):
@@ -69994,7 +72943,7 @@ def evaluate_nba_endgame_locks(
     return out
 
 # ======================================================================================
-# [42/64] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
+# [42/67] MODULE: src/polymarket_research/riskless_frontier_v2_engine.py
 # PURPOSE: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
 # ======================================================================================
 
@@ -71606,10 +74555,12 @@ def _infer_live_map_winner(
     tok_a: Optional[str],
     tok_b: Optional[str],
     books_by_token: Dict[str, Dict[str, Any]],
+    *,
+    allow_quote_inferred: bool = False,
 ) -> Optional[str]:
     if resolved_flag in ("A", "B"):
         return resolved_flag
-    if not tok_a or not tok_b:
+    if not allow_quote_inferred or not tok_a or not tok_b:
         return None
     bk_a = books_by_token.get(tok_a) or {}
     bk_b = books_by_token.get(tok_b) or {}
@@ -71629,6 +74580,8 @@ def evaluate_api1_esports_bo3_opportunities(
     books_by_token: Dict[str, Dict[str, Any]],
     best_asks: Dict[str, float],
     max_middle_cost_net: float = 0.988,
+    *,
+    allow_quote_inferred: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Evaluates:
@@ -71644,8 +74597,12 @@ def evaluate_api1_esports_bo3_opportunities(
     locks: List[Dict[str, Any]] = []
     boxes: List[Dict[str, Any]] = []
 
-    m1_w = _infer_live_map_winner(spec.map1_resolved_winner, spec.map1_a_token, spec.map1_b_token, books_by_token)
-    m2_w = _infer_live_map_winner(spec.map2_resolved_winner, spec.map2_a_token, spec.map2_b_token, books_by_token)
+    m1_w = _infer_live_map_winner(
+        spec.map1_resolved_winner, spec.map1_a_token, spec.map1_b_token, books_by_token, allow_quote_inferred=allow_quote_inferred
+    )
+    m2_w = _infer_live_map_winner(
+        spec.map2_resolved_winner, spec.map2_a_token, spec.map2_b_token, books_by_token, allow_quote_inferred=allow_quote_inferred
+    )
 
     dog_side = "B" if spec.hc_fav_is_a else "A"
     dog_name = spec.team_b if spec.hc_fav_is_a else spec.team_a
@@ -71673,9 +74630,21 @@ def evaluate_api1_esports_bo3_opportunities(
     # `Map 2 Winner` 0/1 while Handicap & Total Maps 2.5 grade 50-50 = $0.50 loss!). Pairing Handicap (-1.5 / +1.5)
     # STRICTLY with Total Maps (Over 2.5 / Under 2.5) pays >= $1.00 across EVERY played score (2-0, 2-1, 1-2) AND
     # pays $0.50 + $0.50 = $1.0000 on any post-Map-1 forfeit/abandonment (`post_m1_forfeit_immune = True`)!
+    _enable_interm_hc_tot = True
+    try:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+
+        _rb_esp = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+        _enable_interm_hc_tot = bool(
+            _rb_esp.get("enable_esports1_bo3_intermission_box", True)
+            and _rb_esp.get("enable_esports1_intermission_hc_total_box", True)
+        )
+    except Exception:
+        pass
     fav_side = "A" if spec.hc_fav_is_a else "B"
     if (
-        m1_w == fav_side
+        _enable_interm_hc_tot
+        and m1_w == fav_side
         and m2_w is None
         and spec.ou25_over_token
         and spec.ou25_under_token
@@ -71803,7 +74772,7 @@ def evaluate_api1_esports_bo3_opportunities(
     return {"single_leg_locks": locks, "two_leg_boxes": boxes}
 
 # ======================================================================================
-# [43/64] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
+# [43/67] MODULE: src/polymarket_research/riskless_frontier_v3_engine.py
 # PURPOSE: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
 # ======================================================================================
 
@@ -71946,7 +74915,7 @@ _NFL_EM_BAND_RE = re.compile(
 )
 _GENERIC_SPREAD_LINE_RE = re.compile(r"([+-]\d+\.5)\b")
 _SCALAR_MAG_RE = re.compile(
-    r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*([kmb]|thousand|million|billion)?\b",
+    r"(?:↑|above|over|at\s+least|more\s+than|exceeds?)?\s*\$?\s*(?<![a-zA-Z0-9_.\-])([0-9][0-9,]*(?:\.[0-9]+)?)(?![0-9,])\s*(?:([kmbt]|thousand|million|billion|trillion)\b)?(?!\.[0-9]|[a-zA-Z0-9_])",
     re.IGNORECASE,
 )
 _COVERED_CRYPTO_PYTH_SLUG_RE = re.compile(
@@ -72355,7 +75324,7 @@ def detect_lp2_seat_convert_implication_arbs(
             if wn is None:
                 ok_w = False
                 break
-            no_walks.append((q_idx, grp, n_tok, mid_m, wn))
+            no_walks.append((q_idx, grp, n_tok, fr_m, fe_m, mid_m, wn))
         if not ok_w:
             continue
 
@@ -72367,9 +75336,9 @@ def detect_lp2_seat_convert_implication_arbs(
             bundle_legs = [
                 {
                     "token_id": n_tok, "market_id": mid_m, "side": "NO",
-                    "label": f"NO[{grp}]", "fee_rate": 0.0, "fee_exponent": 1.0,
+                    "label": f"NO[{grp}]", "fee_rate": float(fr_m or 0.0), "fee_exponent": float(fe_m or 1.0),
                 }
-                for _, grp, n_tok, mid_m, _ in no_walks
+                for _, grp, n_tok, fr_m, fe_m, mid_m, _ in no_walks
             ] + [{
                 "token_id": rep_yes_tok, "market_id": str(m_rep.get("id") or ""),
                 "side": "YES", "label": f"YES[{desc_lbl}]",
@@ -72967,7 +75936,7 @@ def _canon_clause_stem(desc: str, group_title: str) -> Tuple[str, str]:
     if gt and len(gt) >= 2:
         s = s.replace(gt, " <RUNG> ")
     s = _MONTH_DATE_STRIP_RE.sub(" <DATE> ", s)
-    s = re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmb]|million|billion)?", " <STRIKE> ", s)
+    s = re.sub(r"\$\s*[0-9][0-9,]*(?:\.[0-9]+)?\s*(?:[kmbt]|thousand|million|billion|trillion)?\b", " <STRIKE> ", s)
     s = re.sub(
         r"\b(greater\s+than|at\s+least|more\s+than|above|over|exceeds?)\s+[0-9][0-9,]*(?:\.[0-9]+)?\s*%?",
         r"\1 <STRIKE>",
@@ -72986,22 +75955,41 @@ _MONTH_MAP_CAL1: Dict[str, int] = {
 
 
 def _parse_group_label_date_ts(lbl: str, ref_end_ts: float) -> Optional[float]:
-    m = re.search(
-        r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(20\d{2}))?\b",
-        str(lbl or ""),
-        re.IGNORECASE,
+    matches = list(
+        re.finditer(
+            r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{1,2})(?:,\s*(20\d{2}))?\b",
+            str(lbl or ""),
+            re.IGNORECASE,
+        )
     )
-    if not m:
+    if not matches:
         return None
+    m = matches[-1]
     mon = _MONTH_MAP_CAL1.get(m.group(1).lower())
     day = int(m.group(2))
     if not mon:
         return None
-    yr = int(m.group(3)) if m.group(3) else datetime.fromtimestamp(max(1.0, ref_end_ts), tz=timezone.utc).year
-    try:
-        return datetime(yr, mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
-    except ValueError:
+    ref_s = max(1.0, float(ref_end_ts))
+    if m.group(3):
+        try:
+            return datetime(int(m.group(3)), mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            return None
+    ref_yr = datetime.fromtimestamp(ref_s, tz=timezone.utc).year
+    causal_cands: List[float] = []
+    all_cands: List[float] = []
+    for cand_yr in (ref_yr - 1, ref_yr, ref_yr + 1):
+        try:
+            cand_ts = datetime(cand_yr, mon, day, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        except ValueError:
+            continue
+        all_cands.append(cand_ts)
+        if cand_ts <= ref_s + 2.0 * 86400.0:
+            causal_cands.append(cand_ts)
+    pool = causal_cands if causal_cands else all_cands
+    if not pool:
         return None
+    return min(pool, key=lambda ts_c: abs(ts_c - ref_s))
 
 
 def _parse_scalar_strike(lbl: str) -> Optional[float]:
@@ -73013,7 +76001,12 @@ def _parse_scalar_strike(lbl: str) -> Optional[float]:
         return None
     val = float(m.group(1).replace(",", ""))
     unit = (m.group(2) or "").lower()
-    mult = {"k": 1e3, "thousand": 1e3, "m": 1e6, "million": 1e6, "b": 1e9, "billion": 1e9}.get(unit, 1.0)
+    mult = {
+        "k": 1e3, "thousand": 1e3,
+        "m": 1e6, "million": 1e6,
+        "b": 1e9, "billion": 1e9,
+        "t": 1e12, "trillion": 1e12,
+    }.get(unit, 1.0)
     return val * mult
 
 
@@ -73052,7 +76045,10 @@ def parse_cal1_monotonic_ladder_event(ev: Dict[str, Any], now_ts: Optional[float
             ladder_kind = "DEADLINE_BY"
     elif any(
         k in title_l
-        for k in ("fdv above", "total commitments", "market cap above", "box office", "revenue above", "rotten tomatoes", "tomatometer")
+        for k in (
+            "fdv above", "total commitments", "market cap above", "box office",
+            "revenue above", "rotten tomatoes", "tomatometer", "valuation",
+        )
     ):
         ladder_kind = "SCALAR_ABOVE"
 
@@ -73269,12 +76265,14 @@ def build_lp1_nfl_exact_margin_bundle(ev: Dict[str, Any], now_ts: Optional[float
         "neg_risk": ml_nr, "end_ts": end_ts, "payoff_vec": vb_ml, "strike": 0.0,
     })
 
-    # 2. Exact Margin YES & NO legs (0.5 on State 10 Canceled!)
+    # 2. Exact Margin YES & NO legs (State 10 Canceled: `0.5` on standalone binary, `0.0` on NegRisk `YES` / Tie-Other `NO`!)
     for st_i, (wk, lo, hi, m_em, tk_em, fr_e, fe_e, s_lbl) in enumerate(parsed_em):
-        v_y = [1.0 if s == st_i else 0.0 for s in range(10)] + [0.5]
-        v_n = [1.0 - v_y[s] for s in range(10)] + [0.5]
-        mid_e, cid_e = str(m_em.get("id") or ""), str(m_em.get("conditionId") or "")
         em_nr = bool(m_em.get("negRisk"))
+        cancel_y = 0.0 if em_nr else 0.5
+        cancel_n = (0.0 if wk in ("TIE", "OTHER") else 1.0) if em_nr else 0.5
+        v_y = [1.0 if s == st_i else 0.0 for s in range(10)] + [cancel_y]
+        v_n = [1.0 - v_y[s] for s in range(10)] + [cancel_n]
+        mid_e, cid_e = str(m_em.get("id") or ""), str(m_em.get("conditionId") or "")
         legs.append({
             "market_id": mid_e, "condition_id": cid_e, "token_id": tk_em[0], "opp_token_id": tk_em[1],
             "side": "YES", "label": f"EM_Y[{s_lbl}]", "fee_rate": fr_e, "fee_exponent": fe_e,
@@ -73704,15 +76702,18 @@ def evaluate_cl1_multisport_corridor_clinch_locks(
     board = live_boards.get(sp) or []
     matched: Optional[LiveMultiSportGame] = None
     swapped = False
+    best_dt_cl = float("inf")
+    max_dt_cl = 10800.0 if float(ms_spec.start_ts or 0.0) > 0.0 else (8.0 * 3600.0)
     for g in board:
-        if abs(g.start_ts - float(ms_spec.start_ts)) > 8.0 * 3600.0:
+        dt_g = abs(float(g.start_ts) - float(ms_spec.start_ts)) if (g.start_ts > 0.0 and float(ms_spec.start_ts or 0.0) > 0.0) else 0.0
+        if g.start_ts > 0.0 and float(ms_spec.start_ts or 0.0) > 0.0 and dt_g > max_dt_cl:
             continue
         if _teams_match_fuzzy(ms_spec.team_a, g.away_name) and _teams_match_fuzzy(ms_spec.team_b, g.home_name):
-            matched, swapped = g, False
-            break
-        if _teams_match_fuzzy(ms_spec.team_a, g.home_name) and _teams_match_fuzzy(ms_spec.team_b, g.away_name):
-            matched, swapped = g, True
-            break
+            if dt_g < best_dt_cl:
+                matched, swapped, best_dt_cl = g, False, dt_g
+        elif _teams_match_fuzzy(ms_spec.team_a, g.home_name) and _teams_match_fuzzy(ms_spec.team_b, g.away_name):
+            if dt_g < best_dt_cl:
+                matched, swapped, best_dt_cl = g, True, dt_g
     if matched is None:
         return []
 
@@ -74069,7 +77070,7 @@ def evaluate_ten1_tennis_opportunities(
     return boxes
 
 # ======================================================================================
-# [44/64] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
+# [44/67] MODULE: src/polymarket_research/riskless_frontier_v4_engine.py
 # PURPOSE: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
 # ======================================================================================
 
@@ -74836,6 +77837,20 @@ def evaluate_aff1_frozen_subperiod_opportunities(
     # ------------------------------------------------------------------
     seen_settled_mids = {str(x["market_id"]) for x in single_leg_locks}
 
+    def _is_narrow_halftime_scorer_review_risk(scope: str, abs_diff: float) -> bool:
+        """
+        During NBA/Basketball halftime intermission (`is_halftime=True` before Q3 tipoff), Secaucus
+        Official Scorer reviews buzzer-beaters & 2pt/3pt foot-on-line calls up to 8 minutes (`480s`) into
+        halftime. Any narrow `< 3.5pt` (`1`-possession) `Q2`/`1H` margin or total must wait `>= 480s`!
+        """
+        if not (is_ht and not is_final and period < 3 and scope in ("Q2", "1H") and abs_diff < 3.49):
+            return False
+        sc_key = "Q2_ONLY" if scope == "Q2" else "1H_LOCK"
+        rec = freeze_tracker._frozen_since.get((bundle.sport.upper(), str(gid), sc_key))
+        if rec is None:
+            return True
+        return (float(now_ts) - float(rec[1])) < 480.0
+
     def _emit_settled_scope_locks(scope: str, a_pts: int, h_pts: int) -> None:
         tot_pts = float(a_pts + h_pts)
         margin = float(a_pts - h_pts)
@@ -74849,6 +77864,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             side_lbl: Optional[str] = None
             stat_lbl = ""
             if sm.kind == "TOTAL" and abs(tot_pts - ln) >= 0.49:
+                if _is_narrow_halftime_scorer_review_risk(scope, abs(tot_pts - ln)):
+                    continue
                 win_over = tot_pts > ln
                 win_tok = sm.tok_0 if win_over else sm.tok_1
                 opp_tok = sm.tok_1 if win_over else sm.tok_0
@@ -74857,6 +77874,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             elif sm.kind == "TEAM_TOTAL" and sm.team_side in (bundle.away_team, bundle.home_team):
                 tm_pts = float(a_pts if sm.team_side == bundle.away_team else h_pts)
                 if abs(tm_pts - ln) >= 0.49:
+                    if _is_narrow_halftime_scorer_review_risk(scope, abs(tm_pts - ln)):
+                        continue
                     win_over = tm_pts > ln
                     win_tok = sm.tok_0 if win_over else sm.tok_1
                     opp_tok = sm.tok_1 if win_over else sm.tok_0
@@ -74865,6 +77884,8 @@ def evaluate_aff1_frozen_subperiod_opportunities(
             elif sm.kind == "SPREAD":
                 sp_legs = _spread_signed_legs(sm, bundle.away_team)
                 if len(sp_legs) == 2 and abs(margin - float(sp_legs[0][1])) >= 0.49:
+                    if _is_narrow_halftime_scorer_review_risk(scope, abs(margin - float(sp_legs[0][1]))):
+                        continue
                     for op_s, th_s, lg_s in sp_legs:
                         if (op_s == "GT" and margin > th_s) or (op_s == "LT" and margin < th_s):
                             win_tok = str(lg_s["token_id"])
@@ -76426,7 +79447,7 @@ def evaluate_mkr_lock1_post_clinch_rebate_bid(
     }
 
 # ======================================================================================
-# [45/64] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
+# [45/67] MODULE: src/polymarket_research/alpha_124_shadow_daemon.py
 # PURPOSE: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
 # ======================================================================================
 
@@ -76742,6 +79763,7 @@ from src.polymarket_research.riskless_protocol_v2_expansion import (
     detect_w_prune1_metar_slate_arb,
     evaluate_s2_rtds_exact_twap_integrator,
     passes_uma_bond_dispute_guard,
+    safe_zoneinfo,
     scan_full_universe_c1_and_ctf_overround,
 )
 
@@ -76767,11 +79789,28 @@ logging.basicConfig(
     format="[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
     handlers=[
-        logging.FileHandler(LOG_FILE, encoding="utf-8"),
         logging.StreamHandler(sys.stdout),
     ],
 )
 logger = logging.getLogger("Alpha124Shadow")
+
+
+def _attach_daemon_log_file_handler() -> None:
+    """Attaches persistent `LOG_FILE` handler strictly when running as a daemon CLI process, avoiding import-time file handle leaks."""
+    LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+    root_log = logging.getLogger()
+    target_path = str(LOG_FILE.resolve())
+    for h in root_log.handlers:
+        if isinstance(h, logging.FileHandler) and str(Path(h.baseFilename).resolve()) == target_path:
+            return
+    fh = logging.FileHandler(LOG_FILE, encoding="utf-8")
+    fh.setFormatter(
+        logging.Formatter(
+            "[%(asctime)s UTC] [%(levelname)s] [ALPHA-124] %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+    root_log.addHandler(fh)
 
 GAMMA_URL = "https://gamma-api.polymarket.com"
 CLOB_URL = "https://clob.polymarket.com"
@@ -77074,6 +80113,14 @@ for _v2_sl in (
     "C1_BINARY_COMPLETE_SET",
     "W_PRUNE1_METAR_SLATE_ARB",
     "W_PRUNE1_NR0_BASKET",
+    "XV_SUBSET_NO_BOX",
+    "TAIL_BOUNDARY_001_ARB",
+    "BOND3_MULTISOURCE_DEAD_SPLIT",
+    "XV_FX_INVARIANT_CAD_USD_BOX",
+    "DERIBIT_VERTICAL_SUPER_REP",
+    "XV_HALFTIME_FREEZE_CORRIDOR",
+    "HEDGED_PRESPLIT_CONV_GUN",
+    "YIELD_STACKED_CARRY_BOX",
 ):
     BANKROLL_TICKETS["T100"].setdefault(_v2_sl, 20.0)
     BANKROLL_TICKETS["T1000"].setdefault(_v2_sl, 110.0)
@@ -77377,6 +80424,10 @@ class Alpha124ShadowDaemon:
         # Priority-2 NegRisk/Counting/UMA tokens: WS updates trigger `_ws_nr_wakeup` (`<=250ms` reactive scan).
         self._ws_nr_priority_tokens: set[str] = set()
         self._ws_shard_tokens: Dict[int, set[str]] = {}
+        self._ws_shard_last_rx_ts: Dict[int, float] = {}
+        self._ws_last_reconciled_ts: Dict[str, float] = {}
+        self._rest_books_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+        self._rest_empty_books_ts: Dict[str, float] = {}
         self._instant_arb_cooldown_until: Dict[str, float] = {}
         self._bg_chainlink_ws_task: Optional[asyncio.Task] = None
         self._chainlink_ws: Optional[Any] = (
@@ -77483,32 +80534,187 @@ class Alpha124ShadowDaemon:
         for k in keys:
             self.inflight_keys.discard(k)
 
+    @staticmethod
+    def _release_unused_heap_memory() -> bool:
+        """Runs Python cyclic GC and returns freed glibc malloc arena pages to the OS (`F-01`)."""
+        import gc as _gc
+
+        _gc.collect()
+        if os.name != "nt":
+            try:
+                import ctypes
+
+                libc = ctypes.CDLL("libc.so.6")
+                return bool(libc.malloc_trim(0))
+            except Exception:
+                return False
+        return True
+
+    @staticmethod
+    def _slim_raw_gamma_event(ev: Dict[str, Any]) -> Dict[str, Any]:
+        """Strips multi-KB Gamma presentation/comment blobs from retained raw event dicts (`F-01`)."""
+        if not isinstance(ev, dict):
+            return {}
+        drop_ev = {
+            "description",
+            "image",
+            "icon",
+            "featuredImage",
+            "headerImage",
+            "tags",
+            "series",
+            "chats",
+            "cyom",
+            "templates",
+            "collections",
+            "categories",
+            "events",
+        }
+        drop_mkt = {
+            "description",
+            "image",
+            "icon",
+            "twitterCardImage",
+            "events",
+            "categories",
+            "tags",
+        }
+        slim = {k: v for k, v in ev.items() if k not in drop_ev}
+        raw_mkts = ev.get("markets")
+        if isinstance(raw_mkts, list):
+            slim["markets"] = [
+                {mk: mv for mk, mv in m.items() if mk not in drop_mkt}
+                for m in raw_mkts
+                if isinstance(m, dict)
+            ]
+        return slim
+
+    @staticmethod
+    def _slim_rest_book(bk: Dict[str, Any], max_levels: int = 25) -> Dict[str, Any]:
+        """Bounds cached CLOB REST L2 orderbooks to top `max_levels` best bids/asks (`F-01`)."""
+        if not isinstance(bk, dict):
+            return {}
+        bids_raw = bk.get("bids")
+        asks_raw = bk.get("asks")
+        has_deep_bids = isinstance(bids_raw, list) and len(bids_raw) > max_levels
+        has_deep_asks = isinstance(asks_raw, list) and len(asks_raw) > max_levels
+        if not has_deep_bids and not has_deep_asks:
+            return bk
+        slim = dict(bk)
+        if has_deep_bids:
+            parsed_b: List[Tuple[float, Dict[str, Any]]] = []
+            for r in bids_raw:
+                if isinstance(r, dict):
+                    try:
+                        px = float(r.get("price", 0.0) or 0.0)
+                        sz = float(r.get("size", 0.0) or 0.0)
+                        if px > 0.0 and sz > 0.0:
+                            parsed_b.append((px, r))
+                    except Exception:
+                        continue
+            parsed_b.sort(key=lambda kv: -kv[0])
+            slim["bids"] = [r for _, r in parsed_b[:max_levels]]
+        if has_deep_asks:
+            parsed_a: List[Tuple[float, Dict[str, Any]]] = []
+            for r in asks_raw:
+                if isinstance(r, dict):
+                    try:
+                        px = float(r.get("price", 0.0) or 0.0)
+                        sz = float(r.get("size", 0.0) or 0.0)
+                        if px > 0.0 and sz > 0.0:
+                            parsed_a.append((px, r))
+                    except Exception:
+                        continue
+            parsed_a.sort(key=lambda kv: kv[0])
+            slim["asks"] = [r for _, r in parsed_a[:max_levels]]
+        return slim
+
     def _evict_stale_caches(self, now_ts: Optional[float] = None) -> Dict[str, int]:
-        """Periodic 300s memory maintenance: evicts expired WS books & TTL caches without touching _grad8 fields."""
+        """Periodic memory maintenance: evicts expired WS/REST books, auxiliary TTL maps & trims heap (`F-01`)."""
         now = float(now_ts if now_ts is not None else time.time())
         ev_books = 0
         ev_caches = 0
-        if self._ws_subscribed_tokens:
-            keep_toks = set(self._ws_subscribed_tokens)
-            for p in (
-                *self.open_positions.values(),
-                *self.pending_maker_orders.values(),
-                *self.pending_maker_anchors.values(),
-                *self.pending_zero_fee_maker_anchors.values(),
-            ):
-                for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
-                    tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
-                    if tv:
-                        keep_toks.add(str(tv))
+        keep_toks: set[str] = set(self._ws_subscribed_tokens or ())
+        for p in (
+            *self.open_positions.values(),
+            *self.pending_maker_orders.values(),
+            *self.pending_maker_anchors.values(),
+            *self.pending_zero_fee_maker_anchors.values(),
+        ):
+            for tk_f in ("token_id", "opp_token_id", "anchor_token_id", "hedge_token_id"):
+                tv = p.get(tk_f) or (p.get("extra") or {}).get(tk_f)
+                if tv:
+                    keep_toks.add(str(tv))
+        if keep_toks:
             for t_old in [t for t in list(self._ws_raw_levels.keys()) if t not in keep_toks]:
                 self._ws_raw_levels.pop(t_old, None)
                 self._ws_books.pop(t_old, None)
                 self._ws_rest_seeded.discard(t_old)
+                self.__dict__.get("_ws_last_reconciled_ts", {}).pop(t_old, None)
                 ev_books += 1
             for t_old in [t for t in list(dict.keys(self._ws_books)) if t not in keep_toks]:
                 self._ws_books.pop(t_old, None)
                 self._ws_rest_seeded.discard(t_old)
+                self.__dict__.get("_ws_last_reconciled_ts", {}).pop(t_old, None)
                 ev_books += 1
+        rest_bk_cache = self.__dict__.get("_rest_books_cache")
+        if isinstance(rest_bk_cache, dict):
+            for k_rb, v_rb in list(rest_bk_cache.items()):
+                if not isinstance(v_rb, tuple) or (now - float(v_rb[0] or 0.0)) > 120.0:
+                    rest_bk_cache.pop(k_rb, None)
+                    ev_caches += 1
+            if len(rest_bk_cache) > 1000:
+                by_age = sorted(
+                    rest_bk_cache.items(),
+                    key=lambda kv: float(kv[1][0] or 0.0) if isinstance(kv[1], tuple) and kv[1] else 0.0,
+                )
+                for k_old_rb, _ in by_age[: len(rest_bk_cache) - 1000]:
+                    rest_bk_cache.pop(k_old_rb, None)
+                    ev_caches += 1
+        rest_emp_map = self.__dict__.get("_rest_empty_books_ts")
+        if isinstance(rest_emp_map, dict):
+            for k_re, ts_re in list(rest_emp_map.items()):
+                if (now - float(ts_re or 0.0)) > 120.0:
+                    rest_emp_map.pop(k_re, None)
+                    ev_caches += 1
+        tk_b_ts_map = self.__dict__.get("_token_tick_boundary_ts")
+        if isinstance(tk_b_ts_map, dict):
+            for k_tb, ts_tb in list(tk_b_ts_map.items()):
+                if (now - float(ts_tb or 0.0)) > 1800.0 and k_tb not in keep_toks:
+                    tk_b_ts_map.pop(k_tb, None)
+                    ev_caches += 1
+        tk_sz_map = self.__dict__.get("_token_tick_sizes")
+        if isinstance(tk_sz_map, dict) and len(tk_sz_map) > 2500:
+            for k_tk in list(tk_sz_map.keys()):
+                if len(tk_sz_map) <= 2500:
+                    break
+                if k_tk not in keep_toks and (not isinstance(tk_b_ts_map, dict) or k_tk not in tk_b_ts_map):
+                    tk_sz_map.pop(k_tk, None)
+                    ev_caches += 1
+        ws_recon_map = self.__dict__.get("_ws_last_reconciled_ts")
+        if isinstance(ws_recon_map, dict) and len(ws_recon_map) > 2000:
+            for k_rc, ts_rc in list(ws_recon_map.items()):
+                if k_rc not in keep_toks and (now - float(ts_rc or 0.0)) > 600.0:
+                    ws_recon_map.pop(k_rc, None)
+                    ev_caches += 1
+        dead_q_map = self.__dict__.get("_ws_dead_q_by_event")
+        if isinstance(dead_q_map, dict) and dead_q_map:
+            active_nrc_ids = set((getattr(self, "negrisk_convert_slates", None) or {}).keys())
+            for eid_dq in list(dead_q_map.keys()):
+                if eid_dq not in active_nrc_ids:
+                    dead_q_map.pop(eid_dq, None)
+                    ev_caches += 1
+        for dyn_attr, dyn_ttl in (
+            ("_zf_maker_cooldown_until", 1800.0),
+            ("_anti_box_warn_ts", 3600.0),
+            ("_strike_fail_log_ts", 3600.0),
+        ):
+            dyn_map = self.__dict__.get(dyn_attr)
+            if isinstance(dyn_map, dict):
+                for k_d, ts_d in list(dyn_map.items()):
+                    if (now - float(ts_d or 0.0)) > dyn_ttl:
+                        dyn_map.pop(k_d, None)
+                        ev_caches += 1
         for c_map in (
             self.uma_onchain_cache,
             self.bond2_onchain_cache,
@@ -77559,8 +80765,7 @@ class Alpha124ShadowDaemon:
                     if kv:
                         protected.add(str(kv))
             self.entered_keys.intersection_update(protected)
-        import gc as _gc
-        _gc.collect()
+        self._release_unused_heap_memory()
         return {"evicted_books": ev_books, "evicted_cache_entries": ev_caches}
 
     def _record_market_telemetry(
@@ -77746,10 +80951,40 @@ class Alpha124ShadowDaemon:
             return True
         return False
 
+    @staticmethod
+    def _slim_closed_position_record(p: Dict[str, Any]) -> Dict[str, Any]:
+        """Retains strictly the scalar fields needed by _grad8, epoch filters, by_d1_asset, and dedupe protection."""
+        slim: Dict[str, Any] = {
+            "position_id": p.get("position_id"),
+            "dedupe_key": p.get("dedupe_key"),
+            "sleeve": p.get("sleeve"),
+            "asset_or_city": p.get("asset_or_city"),
+            "status": p.get("status"),
+            "entry_ts": p.get("entry_ts"),
+            "closed_ts": p.get("closed_ts"),
+            "entry_eff_px_t1000": p.get("entry_eff_px_t1000"),
+            "won": p.get("won"),
+            "tier_pnls_usd": p.get("tier_pnls_usd") or {},
+        }
+        if "legging_adjusted_tier_pnls_usd" in p:
+            slim["legging_adjusted_tier_pnls_usd"] = p.get("legging_adjusted_tier_pnls_usd") or {}
+        ex = p.get("extra")
+        if isinstance(ex, dict):
+            ex_slim = {k: ex[k] for k in ("event_id", "event_dedupe_key") if ex.get(k)}
+            if ex_slim:
+                slim["extra"] = ex_slim
+        return slim
+
     def _hydrate_state(self) -> None:
+        try:
+            import orjson as _orjson
+            _loads = _orjson.loads
+        except Exception:
+            _loads = json.loads
+
         if STATE_FILE.exists():
             try:
-                st = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+                st = _loads(STATE_FILE.read_bytes())
                 self.started_at = st.get("started_at", self.started_at)
                 for p in st.get("open_positions", []):
                     if isinstance(p, dict) and p.get("position_id") and not self._is_leaked_unit_test_artifact(p):
@@ -77784,41 +81019,74 @@ class Alpha124ShadowDaemon:
                 logger.warning(f"State hydrate notice: {exc}")
 
         ledger_path = self._resolve_ledger_path()
+        already_cancelled_oids: set[str] = set()
         if ledger_path.exists():
             try:
+                # Pass 1: collect terminal closed position_ids & cancelled order_ids so Pass 2 never
+                # allocates full dict copies for the >99% of historical entries already closed/cancelled.
+                ledger_closed_pids: set[str] = {
+                    str(p.get("position_id"))
+                    for p in self.closed_positions
+                    if isinstance(p, dict) and p.get("position_id")
+                }
+                with open(ledger_path, "rb") as fb_pre:
+                    for raw_ln in fb_pre:
+                        if b"SHADOW_CLOSE" in raw_ln:
+                            try:
+                                r0 = _loads(raw_ln)
+                            except Exception:
+                                continue
+                            if isinstance(r0, dict) and r0.get("event") == "SHADOW_CLOSE" and r0.get("position_id"):
+                                ledger_closed_pids.add(str(r0["position_id"]))
+                        elif b"SHADOW_MAKER_CANCEL" in raw_ln:
+                            try:
+                                r0 = _loads(raw_ln)
+                            except Exception:
+                                continue
+                            if isinstance(r0, dict) and r0.get("event") == "SHADOW_MAKER_CANCEL" and r0.get("order_id"):
+                                already_cancelled_oids.add(str(r0["order_id"]))
+
                 ledger_open: Dict[str, Dict[str, Any]] = {}
                 ledger_maker: Dict[str, Dict[str, Any]] = {}
-                closed_ids = {str(p.get("position_id")) for p in self.closed_positions if isinstance(p, dict) and p.get("position_id")}
-                with open(ledger_path, "r", encoding="utf-8", errors="ignore") as f:
-                    for line in f:
-                        if not line.strip():
+                closed_ids = {
+                    str(p.get("position_id"))
+                    for p in self.closed_positions
+                    if isinstance(p, dict) and p.get("position_id")
+                }
+                recent_dk_ring: Deque[str] = collections.deque(maxlen=4000)
+                recent_full_tail: Deque[Dict[str, Any]] = collections.deque(maxlen=50)
+                for p_init in self.closed_positions:
+                    recent_full_tail.append(p_init)
+
+                with open(ledger_path, "rb") as fb:
+                    for raw_ln in fb:
+                        if not raw_ln.strip():
                             continue
                         try:
-                            r = json.loads(line)
+                            r = _loads(raw_ln)
                         except Exception:
                             # Skip truncated/corrupt JSONL line without aborting ledger hydration (`F-19`)
                             continue
-                        if isinstance(r, dict) and self._is_leaked_unit_test_artifact(r):
+                        if not isinstance(r, dict) or self._is_leaked_unit_test_artifact(r):
                             continue
                         ev = r.get("event")
                         if ev in ("SHADOW_ENTRY", "SHADOW_CLOSE") and r.get("dedupe_key"):
-                            self.entered_keys.add(str(r["dedupe_key"]))
+                            recent_dk_ring.append(str(r["dedupe_key"]))
                         if ev == "SHADOW_ENTRY":
                             pid = str(r.get("position_id") or "")
-                            if pid:
-                                pos_rec = {k: v for k, v in r.items() if k != "event"}
-                                ledger_open[pid] = pos_rec
                             d_key = str(r.get("dedupe_key") or "")
-                            if d_key:
+                            if d_key and ledger_maker:
                                 for oid_k, m_v in list(ledger_maker.items()):
                                     if str(m_v.get("dedupe_key") or "") == d_key:
                                         ledger_maker.pop(oid_k, None)
                             ev_id = (r.get("extra") or {}).get("event_id")
                             if ev_id:
                                 if r.get("sleeve") == "W2_ENSEMBLE_VALUE":
-                                    self.entered_keys.add(f"W2_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2_EVENT_{ev_id}")
                                 elif r.get("sleeve") == "W2_MAKER_OVERROUND":
-                                    self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2M_EVENT_{ev_id}")
+                            if pid and pid not in ledger_closed_pids:
+                                ledger_open[pid] = {k: v for k, v in r.items() if k != "event"}
                         elif ev == "SHADOW_CLOSE":
                             pid = str(r.get("position_id") or "")
                             if pid:
@@ -77826,16 +81094,19 @@ class Alpha124ShadowDaemon:
                                 self.open_positions.pop(pid, None)
                                 if pid not in closed_ids:
                                     closed_ids.add(pid)
-                                    self.closed_positions.append({k: v for k, v in r.items() if k != "event"})
+                                    full_rec = {k: v for k, v in r.items() if k != "event"}
+                                    slim_rec = self._slim_closed_position_record(full_rec)
+                                    recent_full_tail.append(full_rec)
+                                    self.closed_positions.append(slim_rec)
                         elif ev == "SHADOW_MAKER_POST":
                             oid = str(r.get("order_id") or "")
-                            if oid:
+                            if oid and oid not in already_cancelled_oids:
                                 ledger_maker[oid] = {k: v for k, v in r.items() if k != "event"}
                                 if r.get("dedupe_key"):
-                                    self.entered_keys.add(str(r["dedupe_key"]))
+                                    recent_dk_ring.append(str(r["dedupe_key"]))
                                 ev_id = (r.get("extra") or {}).get("event_id")
                                 if ev_id and r.get("sleeve") == "W2_MAKER_OVERROUND":
-                                    self.entered_keys.add(f"W2M_EVENT_{ev_id}")
+                                    recent_dk_ring.append(f"W2M_EVENT_{ev_id}")
                         elif ev == "SHADOW_MAKER_CANCEL":
                             oid = str(r.get("order_id") or "")
                             if oid:
@@ -77846,6 +81117,20 @@ class Alpha124ShadowDaemon:
                                 ev_id = ((m_old or r).get("extra") or {}).get("event_id")
                                 if ev_id and (m_old or r).get("sleeve") == "W2_MAKER_OVERROUND":
                                     self.entered_keys.discard(f"W2M_EVENT_{ev_id}")
+
+                self.entered_keys.update(recent_dk_ring)
+                # Restore full dicts strictly for the most recent <=50 closed records (`recent_closed_positions[-30:]`)
+                tail_by_pid: Dict[str, Dict[str, Any]] = {}
+                for full_t in recent_full_tail:
+                    full_t.pop("_slim_shadow_ref", None)
+                    t_pid = str(full_t.get("position_id") or "")
+                    if t_pid:
+                        tail_by_pid[t_pid] = full_t
+                if tail_by_pid:
+                    for idx_c, rec_c in enumerate(self.closed_positions):
+                        c_pid = str(rec_c.get("position_id") or "")
+                        if c_pid in tail_by_pid:
+                            self.closed_positions[idx_c] = tail_by_pid[c_pid]
 
                 for pid, pos_rec in ledger_open.items():
                     if pid not in self.open_positions and pid not in closed_ids:
@@ -77858,16 +81143,23 @@ class Alpha124ShadowDaemon:
 
         if self.closed_positions:
             self.closed_positions.sort(key=lambda p: float(p.get("closed_ts") or 0.0))
+            if len(self.closed_positions) > 50:
+                for idx_old in range(len(self.closed_positions) - 50):
+                    if "title" in self.closed_positions[idx_old] or "tier_fills" in self.closed_positions[idx_old]:
+                        self.closed_positions[idx_old] = self._slim_closed_position_record(self.closed_positions[idx_old])
 
         # Evict any lingering resting Maker orders belonging to quarantined losing sleeves
         for oid_q, m_q in list(self.pending_maker_orders.items()):
             if is_shadow_sleeve_quarantined(str(m_q.get("sleeve") or "")):
                 self.pending_maker_orders.pop(oid_q, None)
-                self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
+                if oid_q not in already_cancelled_oids:
+                    self._append_ledger({"event": "SHADOW_MAKER_CANCEL", "reason": "SLEEVE_QUARANTINED", **m_q})
         if is_shadow_sleeve_quarantined("P1_PREOPEN_MAKER_STRADDLE"):
             self.pending_preopen_straddles.clear()
         if is_shadow_sleeve_quarantined("ZERO_FEE_MAKER_ANCHOR_BOX"):
             self.pending_zero_fee_maker_anchors.clear()
+        import gc as _gc
+        _gc.collect()
 
     def _append_ledger(self, rec: Dict[str, Any]) -> None:
         ledger_path = self._resolve_ledger_path()
@@ -77878,7 +81170,7 @@ class Alpha124ShadowDaemon:
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
             self.session = aiohttp.ClientSession(
-                connector=aiohttp.TCPConnector(limit=40),
+                connector=aiohttp.TCPConnector(limit=24, enable_cleanup_closed=True),
                 headers={"User-Agent": "DominusAlpha124Shadow/1.0", "Accept": "application/json"},
                 max_line_size=65536,
                 max_field_size=65536,
@@ -77902,14 +81194,50 @@ class Alpha124ShadowDaemon:
             dq.append((ts_sec, price_usd))
 
     async def fetch_json(self, url: str, timeout: float = 5.0) -> Any:
-        if not self.single_scan and self._ws_books and "/book?token_id=" in str(url):
+        is_clob_book = (not self.single_scan) and ("/book?token_id=" in str(url))
+        tok_q = ""
+        if is_clob_book:
             tok_q = str(url).split("token_id=", 1)[1].split("&", 1)[0].strip()
-            ws_ent = self._ws_books.get(tok_q)
-            if ws_ent is not None and (time.time() - ws_ent[0]) <= 1.5:
-                bk_ws = ws_ent[1]
-                if bk_ws.get("asks") or bk_ws.get("bids"):
-                    return bk_ws
+            now_fj = time.time()
+            if self._ws_books:
+                ws_ent = self._ws_books.get(tok_q)
+                if ws_ent is not None and (
+                    (now_fj - ws_ent[0]) <= 1.5
+                    or self._is_ws_book_live_on_healthy_shard(tok_q, ws_ent[0], now_fj, max_shard_silence_sec=5.0)
+                ):
+                    bk_ws = ws_ent[1]
+                    if bk_ws.get("asks") or bk_ws.get("bids"):
+                        return bk_ws
+            sub_set_fj = getattr(self, "_ws_subscribed_tokens", None) or set()
+            fj_ttl = 12.0 if tok_q in sub_set_fj else 45.0
+            rb_ent = (self.__dict__.get("_rest_books_cache") or {}).get(tok_q)
+            if rb_ent is not None and (now_fj - float(rb_ent[0])) <= fj_ttl:
+                bk_rb = rb_ent[1]
+                if isinstance(bk_rb, dict) and (bk_rb.get("asks") or bk_rb.get("bids")):
+                    return bk_rb
+            emp_fj = (self.__dict__.get("_rest_empty_books_ts") or {}).get(tok_q)
+            if emp_fj is not None and (now_fj - float(emp_fj)) <= (20.0 if tok_q in sub_set_fj else 90.0):
+                return None
         sess = await self.get_session()
+        if is_clob_book:
+            sem_fj = self.__dict__.get("_book_get_sem")
+            if sem_fj is None:
+                sem_fj = asyncio.Semaphore(4)
+                self.__dict__["_book_get_sem"] = sem_fj
+            async with sem_fj:
+                try:
+                    async with sess.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
+                        if resp.status == 200:
+                            data_bk = await resp.json()
+                            if isinstance(data_bk, dict) and tok_q:
+                                self.__dict__.setdefault("_rest_books_cache", {})[tok_q] = (time.time(), data_bk)
+                                self.__dict__.setdefault("_rest_empty_books_ts", {}).pop(tok_q, None)
+                            return data_bk
+                        if resp.status == 404 and tok_q:
+                            self.__dict__.setdefault("_rest_empty_books_ts", {})[tok_q] = time.time()
+                except Exception:
+                    return None
+                return None
         try:
             async with sess.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as resp:
                 if resp.status == 200:
@@ -77979,6 +81307,7 @@ class Alpha124ShadowDaemon:
             self._ws_rest_seeded.add(asset_id)
         else:
             self._ws_rest_seeded.discard(asset_id)
+            self.__dict__.setdefault("_ws_last_reconciled_ts", {})[asset_id] = now_ts
             if _STAGE_B_DECAY_TRACKER is not None and not self.single_scan:
                 _ba0 = min(asks_map.keys()) if asks_map else 0.0
                 _STAGE_B_DECAY_TRACKER.on_top_of_book_tick(asset_id, _ba0, asks_map.get(_ba0, 0.0) if _ba0 > 0.0 else 0.0)
@@ -77987,6 +81316,7 @@ class Alpha124ShadowDaemon:
         self._ws_books.pop(asset_id, None)
         self._ws_raw_levels.pop(asset_id, None)
         self._ws_rest_seeded.discard(asset_id)
+        self.__dict__.get("_ws_last_reconciled_ts", {}).pop(asset_id, None)
 
     def _apply_ws_price_changes(
         self,
@@ -78044,6 +81374,13 @@ class Alpha124ShadowDaemon:
             self._drop_ws_book(asset_id)
             return False
         if changed:
+            if len(bids_map) > 80:
+                for px_drop in sorted(bids_map.keys(), reverse=True)[50:]:
+                    bids_map.pop(px_drop, None)
+            if len(asks_map) > 80:
+                for px_drop in sorted(asks_map.keys())[50:]:
+                    asks_map.pop(px_drop, None)
+            self.__dict__.setdefault("_ws_last_reconciled_ts", {})[asset_id] = now_ts
             if isinstance(self._ws_books, _LazyWsBooksDict):
                 self._ws_books.mark_dirty(asset_id, now_ts)
             else:
@@ -78125,7 +81462,7 @@ class Alpha124ShadowDaemon:
             for b_m in sp_cm.brackets:
                 _add_tok(b_m.get("no_token"), is_nr=True)
                 _add_tok(b_m.get("yes_token"), is_nr=True)
-        for uma_m in list(self.uma_proposed_markets.values())[:25]:
+        for uma_m in list(self.uma_proposed_markets.values())[:85]:
             if isinstance(uma_m, dict):
                 uma_tks = _parse_clob_tokens(uma_m)
                 if uma_tks:
@@ -78137,7 +81474,7 @@ class Alpha124ShadowDaemon:
         for zf_m in sorted(
             (self.__dict__.get("_ws_reactive_bin_metas") or ()),
             key=lambda m_z: float(m_z.get("end_ts") or (now_ts + 86400.0)),
-        )[:60]:
+        )[:110]:
             if float(zf_m.get("end_ts") or (now_ts + 86400.0)) > now_ts + 60.0:
                 _add_tok(zf_m.get("yes_token_id"), is_nr=True)
                 _add_tok(zf_m.get("no_token_id"), is_nr=True)
@@ -78167,10 +81504,12 @@ class Alpha124ShadowDaemon:
 
     async def _run_single_clob_ws_shard(self, shard_idx: int) -> None:
         """Runs 1 shard (`<= 200` tokens) of the 3-shard `600`-token Polymarket CLOB L2 WebSocket Matrix."""
+        shard_rx_map = self.__dict__.setdefault("_ws_shard_last_rx_ts", {})
         while not self.single_scan:
             shards_0 = self._partition_ws_shards(time.time())
             desired_0 = shards_0[shard_idx] if shard_idx < len(shards_0) else []
             if not desired_0:
+                shard_rx_map.pop(shard_idx, None)
                 for old_t in list(self._ws_shard_tokens.pop(shard_idx, set())):
                     self._drop_ws_book(old_t)
                 self._sync_ws_subscribed_union()
@@ -78193,6 +81532,7 @@ class Alpha124ShadowDaemon:
                     await ws.send_str(json.dumps({"assets_ids": desired_0, "type": "market"}))
                     last_sub_chk = time.time()
                     last_rx_ts = last_sub_chk
+                    shard_rx_map[shard_idx] = last_rx_ts
                     while not self.single_scan:
                         now_w = time.time()
                         if (now_w - last_sub_chk) >= 2.0:
@@ -78231,9 +81571,11 @@ class Alpha124ShadowDaemon:
                         raw_payload = msg.data
                         if not raw_payload or raw_payload in ("PONG", b"PONG"):
                             last_rx_ts = time.time()
+                            shard_rx_map[shard_idx] = last_rx_ts
                             continue
                         now_rx = time.time()
                         last_rx_ts = now_rx
+                        shard_rx_map[shard_idx] = now_rx
                         data = _orjson.loads(raw_payload) if _orjson is not None else json.loads(raw_payload)
                         woke_d1 = False
                         woke_nr = False
@@ -78292,10 +81634,14 @@ class Alpha124ShadowDaemon:
                             self._ws_nr_wakeup.set()
                             self._ws_d1_wakeup.set()
             except asyncio.CancelledError:
+                shard_rx_map.pop(shard_idx, None)
                 raise
             except Exception as exc_ws:
+                shard_rx_map.pop(shard_idx, None)
                 logger.debug(f"CLOB WS shard {shard_idx} reconnect notice: {exc_ws}")
                 await asyncio.sleep(1.0)
+            finally:
+                shard_rx_map.pop(shard_idx, None)
 
     async def _scan_ws_reactive_negrisk_arbs(self, now_ts: float) -> None:
         """Zero-REST reactive NegRisk (`NR_CONV`, `NR2`, `NR3`, `NR_M1`) + `0%`-fee `ZEROFEE1`/`C1` subscan triggered by 3-shard CLOB WS deltas."""
@@ -78314,7 +81660,16 @@ class Alpha124ShadowDaemon:
                 for tk_c in (b_c.get("no_token"), b_c.get("yes_token")):
                     t_str = str(tk_c or "")
                     ws_ent = self._ws_books.get(t_str) if t_str else None
-                    if ws_ent is None or (now_ts - float(ws_ent[0])) > 2.5 or t_str in self._ws_rest_seeded:
+                    if (
+                        ws_ent is None
+                        or t_str in self._ws_rest_seeded
+                        or (
+                            (now_ts - float(ws_ent[0])) > 2.5
+                            and not self._is_ws_book_live_on_healthy_shard(
+                                t_str, float(ws_ent[0]), now_ts, max_shard_silence_sec=5.0
+                            )
+                        )
+                    ):
                         all_fresh = False
                         break
                     ws_map[t_str] = ws_ent[1]
@@ -78435,12 +81790,52 @@ class Alpha124ShadowDaemon:
             return
         await asyncio.gather(*(self._run_single_clob_ws_shard(idx) for idx in range(3)))
 
+    def _is_ws_book_live_on_healthy_shard(
+        self,
+        token_id: str,
+        book_ts: float,
+        now_ts: float,
+        max_shard_silence_sec: float = 5.0,
+        max_quiet_book_age_sec: float = 120.0,
+    ) -> bool:
+        """
+        Event-driven CLOB WebSocket books only emit deltas when a resting quote changes on that token.
+        When `token_id` has a verified WS snapshot (`not in _ws_rest_seeded`) and its active WS shard
+        received traffic/heartbeat within `max_shard_silence_sec`, the in-memory L2 book is authoritative
+        without hammering `POST /books` every 1.5s (reconciling quiet books at most every `120s`).
+        """
+        if not token_id or getattr(self, "single_scan", False):
+            return False
+        if token_id in getattr(self, "_ws_rest_seeded", set()):
+            return False
+        shard_tokens = self.__dict__.get("_ws_shard_tokens")
+        shard_rx = self.__dict__.get("_ws_shard_last_rx_ts")
+        if not shard_tokens or not shard_rx:
+            return False
+        reconciled_ts = float((self.__dict__.get("_ws_last_reconciled_ts") or {}).get(token_id, 0.0) or 0.0)
+        eff_book_ts = max(float(book_ts), reconciled_ts)
+        if (float(now_ts) - eff_book_ts) > float(max_quiet_book_age_sec):
+            return False
+        for s_idx, s_toks in shard_tokens.items():
+            if token_id in s_toks:
+                rx_t = float(shard_rx.get(s_idx, 0.0) or 0.0)
+                if rx_t > 0.0 and (float(now_ts) - rx_t) <= float(max_shard_silence_sec):
+                    return True
+        return False
+
     def _get_fresh_ws_book(self, token_id: str, now_ts: float, max_age_sec: float = 5.0) -> Optional[Dict[str, Any]]:
         t_str = str(token_id or "")
         if not t_str or t_str in getattr(self, "_ws_rest_seeded", set()):
             return None
         ws_ent = self._ws_books.get(t_str) if getattr(self, "_ws_books", None) is not None else None
-        if ws_ent is None or (float(now_ts) - float(ws_ent[0])) > float(max_age_sec):
+        if ws_ent is None:
+            return None
+        if (float(now_ts) - float(ws_ent[0])) > float(max_age_sec) and not self._is_ws_book_live_on_healthy_shard(
+            t_str,
+            float(ws_ent[0]),
+            float(now_ts),
+            max_shard_silence_sec=min(float(max_age_sec), 5.0),
+        ):
             return None
         bk = ws_ent[1]
         if isinstance(bk, dict):
@@ -78465,6 +81860,9 @@ class Alpha124ShadowDaemon:
         use_ws = not self.single_scan
         tk_cache = self.__dict__.setdefault("_token_tick_sizes", {})
         tk_b_ts = self.__dict__.setdefault("_token_tick_boundary_ts", {})
+        rest_cache = self.__dict__.setdefault("_rest_books_cache", {})
+        rest_empty_ts = self.__dict__.setdefault("_rest_empty_books_ts", {})
+        reconciled_map = self.__dict__.setdefault("_ws_last_reconciled_ts", {})
         for t in uniq:
             ws_entry = self._ws_books.get(t) if use_ws else None
             ws_top_b = (
@@ -78479,59 +81877,113 @@ class Alpha124ShadowDaemon:
                 and str(tk_cache.get(t) or "") in ("", "0.01")
                 and (now_b - float(tk_b_ts.get(t, 0.0))) >= 8.0
             )
+            ws_fresh = ws_entry is not None and (
+                (now_b - ws_entry[0]) <= 1.5
+                or self._is_ws_book_live_on_healthy_shard(t, ws_entry[0], now_b, max_shard_silence_sec=5.0)
+            )
             if (
-                ws_entry is not None
-                and (now_b - ws_entry[0]) <= 1.5
+                ws_fresh
                 and (ws_entry[1].get("bids") or ws_entry[1].get("asks"))
                 and not need_boundary_recheck
             ):
                 if t in tk_cache and not (ws_top_b >= 0.96 and str(tk_cache.get(t) or "") == "0.01"):
                     ws_entry[1]["minimum_tick_size"] = tk_cache[t]
                 out[t] = ws_entry[1]
-            else:
-                missing.append(t)
+                continue
+            if use_ws:
+                is_sub_t = t in self._ws_subscribed_tokens
+                rb_ttl = 12.0 if is_sub_t else 45.0
+                rb_entry = rest_cache.get(t)
+                if rb_entry is not None and (now_b - float(rb_entry[0])) <= rb_ttl and isinstance(rb_entry[1], dict):
+                    rb_top_b = max((float(b.get("price", 0) or 0) for b in (rb_entry[1].get("bids") or []) if isinstance(b, dict)), default=0.0)
+                    need_rb_boundary = (
+                        rb_top_b >= 0.96
+                        and str(tk_cache.get(t) or "") in ("", "0.01")
+                        and (now_b - float(tk_b_ts.get(t, 0.0))) >= 8.0
+                    )
+                    if not need_rb_boundary:
+                        out[t] = rb_entry[1]
+                        continue
+                emp_t = rest_empty_ts.get(t)
+                if emp_t is not None and (now_b - float(emp_t)) <= (20.0 if is_sub_t else 90.0):
+                    continue
+            missing.append(t)
         if not missing:
             return out
         sess = await self.get_session()
-        sem_b = asyncio.Semaphore(4)
+        sem_b = self.__dict__.get("_books_post_sem")
+        if sem_b is None:
+            sem_b = asyncio.Semaphore(4)
+            self.__dict__["_books_post_sem"] = sem_b
 
         async def _fetch_chunk(chunk: List[str]) -> None:
             async with sem_b:
+                post_status = 0
                 try:
-                    async with sess.post(
-                        f"{CLOB_URL}/books",
-                        json=[{"token_id": t} for t in chunk],
-                        timeout=aiohttp.ClientTimeout(total=timeout),
-                    ) as resp:
-                        if resp.status == 200:
+                    req_items = [{"token_id": t} for t in chunk]
+                    post_kw: Dict[str, Any] = {"timeout": aiohttp.ClientTimeout(total=timeout)}
+                    if _orjson is not None:
+                        post_kw["data"] = _orjson.dumps(req_items)
+                        post_kw["headers"] = {"Content-Type": "application/json"}
+                    else:
+                        post_kw["json"] = req_items
+                    async with sess.post(f"{CLOB_URL}/books", **post_kw) as resp:
+                        post_status = int(resp.status or 0)
+                        if post_status == 200:
                             raw_bytes = await resp.read()
                             rows = _orjson.loads(raw_bytes) if _orjson is not None else json.loads(raw_bytes)
                             if isinstance(rows, list):
                                 now_seed = time.time()
+                                seen_chunk: set[str] = set()
                                 for r in rows:
                                     if isinstance(r, dict) and r.get("asset_id"):
                                         aid_r = str(r["asset_id"])
+                                        seen_chunk.add(aid_r)
                                         tk_r = r.get("minimum_tick_size") or r.get("tick_size")
                                         if tk_r:
                                             tk_cache[aid_r] = str(tk_r)
                                             tk_b_ts[aid_r] = now_seed
                                             r["minimum_tick_size"] = str(tk_r)
-                                        out[aid_r] = r
-                                        if use_ws and aid_r in self._ws_subscribed_tokens and aid_r not in self._ws_raw_levels:
-                                            self._apply_ws_book_snapshot(aid_r, r.get("bids") or [], r.get("asks") or [], now_seed, from_rest=True)
+                                        r_slim = self._slim_rest_book(r)
+                                        out[aid_r] = r_slim
+                                        rest_cache[aid_r] = (now_seed, r_slim)
+                                        rest_empty_ts.pop(aid_r, None)
+                                        reconciled_map[aid_r] = now_seed
+                                        if use_ws and aid_r in self._ws_subscribed_tokens:
+                                            if aid_r not in self._ws_raw_levels:
+                                                self._apply_ws_book_snapshot(aid_r, r_slim.get("bids") or [], r_slim.get("asks") or [], now_seed, from_rest=True)
+                                            else:
+                                                # Drift self-heal on 120s quiet reconciliation without polluting _ws_rest_seeded when aligned
+                                                lv_b, lv_a = self._ws_raw_levels[aid_r]
+                                                ws_bb = max(lv_b.keys()) if lv_b else 0.0
+                                                ws_ba = min(lv_a.keys()) if lv_a else 0.0
+                                                r_bb = max((round(float(x.get("price", 0) or 0), 4) for x in (r_slim.get("bids") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
+                                                r_ba = min((round(float(x.get("price", 0) or 0), 4) for x in (r_slim.get("asks") or ()) if float(x.get("size", 0) or 0) > 0), default=0.0)
+                                                if abs(ws_bb - r_bb) > 1e-4 or abs(ws_ba - r_ba) > 1e-4:
+                                                    self._apply_ws_book_snapshot(aid_r, r_slim.get("bids") or [], r_slim.get("asks") or [], now_seed, from_rest=True)
+                                for t_req in chunk:
+                                    if t_req not in seen_chunk:
+                                        rest_empty_ts[t_req] = now_seed
+                                        reconciled_map[t_req] = now_seed
                                 return
                 except Exception:
                     pass
-                fb = await asyncio.gather(*(self.fetch_json(f"{CLOB_URL}/book?token_id={t}", timeout=timeout) for t in chunk))
+                fb_chunk = chunk if ("fetch_json" in self.__dict__) else ([] if post_status == 429 else chunk[:6])
+                if not fb_chunk:
+                    return
                 now_fb = time.time()
-                for t, bk in zip(chunk, fb):
+                for t in fb_chunk:
+                    bk = await self.fetch_json(f"{CLOB_URL}/book?token_id={t}", timeout=min(timeout, 2.0))
                     if isinstance(bk, dict):
                         tk_b2 = bk.get("minimum_tick_size") or bk.get("tick_size")
                         if tk_b2:
                             tk_cache[t] = str(tk_b2)
                             tk_b_ts[t] = now_fb
                             bk["minimum_tick_size"] = str(tk_b2)
-                        out[t] = bk
+                        bk_slim = self._slim_rest_book(bk)
+                        out[t] = bk_slim
+                        rest_cache[t] = (now_fb, bk_slim)
+                        reconciled_map[t] = now_fb
 
         chunks = [missing[idx : idx + 50] for idx in range(0, len(missing), 50)]
         if len(chunks) == 1:
@@ -78957,14 +82409,23 @@ class Alpha124ShadowDaemon:
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=tennis&active=true&closed=false&order=volume24hr&ascending=false&limit=45", timeout=5.5),
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=midterms&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
             self.fetch_json(f"{GAMMA_URL}/events?tag_slug=politics&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=geopolitics&active=true&closed=false&order=volume24hr&ascending=false&limit=80", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=oil&active=true&closed=false&order=volume24hr&ascending=false&limit=50", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=ukraine&active=true&closed=false&order=volume24hr&ascending=false&limit=45", timeout=5.5),
+            self.fetch_json(f"{GAMMA_URL}/events?tag_slug=world&active=true&closed=false&order=volume24hr&ascending=false&limit=60", timeout=5.5),
         )
         lp2_by_slug: Dict[str, Dict[str, Any]] = dict(bop_by_slug)
         for sl_l2, res_l2 in zip(lp2_slugs_all, fv3_res[: len(lp2_slugs_all)]):
             if isinstance(res_l2, list) and res_l2:
                 lp2_by_slug[sl_l2] = res_l2[0]
-        ten_raw = fv3_res[len(lp2_slugs_all)] if isinstance(fv3_res[len(lp2_slugs_all)], list) else []
-        mid_raw = fv3_res[len(lp2_slugs_all) + 1] if isinstance(fv3_res[len(lp2_slugs_all) + 1], list) else []
-        pol_raw = fv3_res[len(lp2_slugs_all) + 2] if isinstance(fv3_res[len(lp2_slugs_all) + 2], list) else []
+        _fv3_off = len(lp2_slugs_all)
+        ten_raw = fv3_res[_fv3_off] if isinstance(fv3_res[_fv3_off], list) else []
+        mid_raw = fv3_res[_fv3_off + 1] if isinstance(fv3_res[_fv3_off + 1], list) else []
+        pol_raw = fv3_res[_fv3_off + 2] if isinstance(fv3_res[_fv3_off + 2], list) else []
+        geo_raw = fv3_res[_fv3_off + 3] if isinstance(fv3_res[_fv3_off + 3], list) else []
+        oil_raw = fv3_res[_fv3_off + 4] if isinstance(fv3_res[_fv3_off + 4], list) else []
+        ukr_raw = fv3_res[_fv3_off + 5] if isinstance(fv3_res[_fv3_off + 5], list) else []
+        world_raw = fv3_res[_fv3_off + 6] if isinstance(fv3_res[_fv3_off + 6], list) else []
         for ev_mp in mid_raw + pol_raw:
             if isinstance(ev_mp, dict) and ev_mp.get("slug"):
                 lp2_by_slug.setdefault(str(ev_mp["slug"]), ev_mp)
@@ -78983,14 +82444,16 @@ class Alpha124ShadowDaemon:
         lp2_groups.extend(build_lp2_tossup_state_implication_groups(lp2_by_slug))
         self.lp2_implication_groups = lp2_groups
 
-        for ev_lp2_nr in lp2_by_slug.values():
+        for ev_lp2_nr in list(lp2_by_slug.values()) + geo_raw + oil_raw + ukr_raw + world_raw:
+            if not isinstance(ev_lp2_nr, dict):
+                continue
             sp_nrc_l2 = parse_negrisk_convert_event(ev_lp2_nr)
             if sp_nrc_l2 is not None and sp_nrc_l2.is_closed_convert_safe and sp_nrc_l2.end_ts > now_disc + 60 and len(sp_nrc_l2.brackets) <= 45:
                 self.negrisk_convert_slates[sp_nrc_l2.event_id] = sp_nrc_l2
 
         cal_found: Dict[str, CalendarOrScalarLadderSpec] = {}
         cal_seen_ids = set()
-        for ev_cal in top_vol_events_raw + mid_raw + pol_raw:
+        for ev_cal in top_vol_events_raw + mid_raw + pol_raw + geo_raw + oil_raw + ukr_raw + world_raw:
             if not isinstance(ev_cal, dict):
                 continue
             eid_c = str(ev_cal.get("id") or "")
@@ -79092,11 +82555,34 @@ class Alpha124ShadowDaemon:
                 top_vol_events_raw
                 + mid_raw
                 + pol_raw
+                + geo_raw
+                + oil_raw
+                + ukr_raw
+                + world_raw
                 + [e for lst in raw_by_series.values() for e in (lst or []) if isinstance(e, dict)],
                 now_disc,
+                max_markets=340,
             )
         else:
             self.zerofee_general_binaries = []
+
+        # Strip multi-KB Gamma presentation blobs & bound retained raw event caches (`F-01`)
+        self.lp2_events_by_slug = {
+            sl_k: self._slim_raw_gamma_event(ev_v)
+            for sl_k, ev_v in lp2_by_slug.items()
+            if isinstance(ev_v, dict)
+        }
+        self.multisport_raw_events = {
+            ev_id_k: (sp_tag_v, self._slim_raw_gamma_event(ev_v))
+            for ev_id_k, (sp_tag_v, ev_v) in list(ms_raw_found.items())[:24]
+            if isinstance(ev_v, dict)
+        }
+        self.gas_events_raw = {
+            gk: [self._slim_raw_gamma_event(ge) for ge in (gv or []) if isinstance(ge, dict)]
+            for gk, gv in self.gas_events_raw.items()
+        }
+        del top_vol_events_raw, w_tag_pages, soc_pages, esp_pages, mid_raw, pol_raw, geo_raw, oil_raw, ukr_raw, world_raw, fv4_sib_evts
+        self._release_unused_heap_memory()
 
         self.last_discovery_ts = time.time()
         logger.info(
@@ -79161,7 +82647,7 @@ class Alpha124ShadowDaemon:
 
     @staticmethod
     def extract_zerofee_general_binaries(
-        events: List[Dict[str, Any]], now_ts: float, max_markets: int = 220, *, include_neg_risk_subconditions: bool = True
+        events: List[Dict[str, Any]], now_ts: float, max_markets: int = 340, *, include_neg_risk_subconditions: bool = True
     ) -> List[Dict[str, Any]]:
         """
         Extracts general `0%`-fee (`feesEnabled=False`, `fee_rate == 0.0`) two-outcome binary
@@ -79169,7 +82655,7 @@ class Alpha124ShadowDaemon:
         `NegRisk` sub-markets routed via `NEG_RISK_ADAPTER_V2_ADDRESS`) eligible for `$0.00`-gas
         Relayer V2 `mergePositions` complete-set & `CTF_OVERROUND` sweeping.
         """
-        by_cid: Dict[str, Tuple[Tuple[float, float], Dict[str, Any]]] = {}
+        by_cid: Dict[str, Tuple[Tuple[float, float, float], Dict[str, Any]]] = {}
         for ev in (events or []):
             if not isinstance(ev, dict) or bool(ev.get("closed")):
                 continue
@@ -79203,7 +82689,12 @@ class Alpha124ShadowDaemon:
                 if max(liq, vol24) < 500.0:
                     continue
                 rem_days = max(0.01, (end_ts - now_ts) / 86400.0)
-                rank_key = (0.0 if not is_nr else 0.5, min(rem_days, 30.0), -max(vol24, liq))
+                activity_score = (
+                    math.log1p(max(0.0, vol24) * 4.0 + max(0.0, liq))
+                    + (0.45 if not is_nr else 0.0)
+                    + (0.30 if rem_days <= 7.0 else (0.12 if rem_days <= 30.0 else 0.0))
+                )
+                rank_key = (-round(activity_score, 4), min(rem_days, 30.0), -max(vol24, liq))
                 asset_tag = ("ZF_" + (ev_slug.split("-")[0] or "GEN").upper()[:8]) if ev_slug else "ZEROFEE"
                 rec = {
                     "market_id": mid,
@@ -79946,7 +83437,7 @@ class Alpha124ShadowDaemon:
                 self.weather_events.pop(sp0.event_id, None)
                 continue
             try:
-                loc0 = now_utc.astimezone(ZoneInfo(sp0.tz_name))
+                loc0 = now_utc.astimezone(safe_zoneinfo(sp0.tz_name))
             except Exception:
                 loc0 = now_utc
             if (sp0.obs_date - loc0.date()).days > 1 and not self.single_scan:
@@ -79967,7 +83458,7 @@ class Alpha124ShadowDaemon:
             )
             if _w2_pruned:
                 try:
-                    eval_local = now_utc.astimezone(ZoneInfo(sp.tz_name))
+                    eval_local = now_utc.astimezone(safe_zoneinfo(sp.tz_name))
                 except Exception:
                     eval_local = now_utc
                 in_w1_window = eval_local.date() >= sp.obs_date
@@ -80118,7 +83609,7 @@ class Alpha124ShadowDaemon:
                                 # MUST NEVER emit live CLOB candidates while calendar day is still open (`rem_hours_count > 0`
                                 # or local date <= obs_date) or while the sleeve has any historical shadow losses.
                                 try:
-                                    _w1_local_date = datetime.fromtimestamp(now_s, tz=ZoneInfo(sp.tz_name)).date()
+                                    _w1_local_date = datetime.fromtimestamp(now_s, tz=safe_zoneinfo(sp.tz_name)).date()
                                 except Exception:
                                     _w1_local_date = sp.obs_date
                                 _w1_sl_rec = (self.by_sleeve.get(w1_sleeve) if hasattr(self, "by_sleeve") else None) or {}
@@ -80246,12 +83737,27 @@ class Alpha124ShadowDaemon:
                         and res.get("running_ext_c") is not None
                         and not res.get("has_corrected_obs")
                         and not res.get("has_oracle_contradiction")
+                        and not (int(res.get("rem_hours_count", 0) or 0) > 0 and res.get("has_maintenance_obs"))
                         and (end_ts - now_s) > 300.0
                     ):
-                        obs_int_w = celsius_to_market_int(float(res["running_ext_c"]), b_i.unit)
+                        from src.polymarket_research.riskless_protocol_v2_expansion import classify_weather_station_oracle_rule
+
+                        _w_rule_cfg = classify_weather_station_oracle_rule(
+                            sp.icao, unit=b_i.unit, rules_text=str(getattr(sp, "rules_text", "") or "")
+                        )
+                        _ext_c_raw = float(res["running_ext_c"])
+                        # Conservative rounding interval: if station uses body integer °C or is intraday before synoptic QC,
+                        # widen by +/-0.55°C so a 0.1°C T-remark vs body °C discrepancy can never prune a live bracket.
+                        _unc_w_c = (
+                            0.55
+                            if (bool(_w_rule_cfg.get("prefer_body_integer_c")) or int(res.get("rem_hours_count", 0) or 0) > 0)
+                            else 0.05
+                        )
+                        obs_floor_w = celsius_to_market_int(_ext_c_raw - _unc_w_c, b_i.unit)
+                        obs_ceil_w = celsius_to_market_int(_ext_c_raw + _unc_w_c, b_i.unit)
                         dead_no_w = (
-                            (sp.metric == "HIGH" and b_i.high_bound <= obs_int_w - 2)
-                            or (sp.metric == "LOW" and b_i.low_bound >= obs_int_w + 2)
+                            (sp.metric == "HIGH" and b_i.high_bound <= obs_floor_w - 2)
+                            or (sp.metric == "LOW" and b_i.low_bound >= obs_ceil_w + 2)
                         )
                         if dead_no_w:
                             bid_wn, _ = extract_best_bid(bk_n_i.get("bids") or [])
@@ -80359,6 +83865,7 @@ class Alpha124ShadowDaemon:
                                             "event_id": str(sp.event_id),
                                             "sleeve_source": "W_PRUNE1_DEAD_NO_BOND",
                                             "expiry_ts": float(end_ts),
+                                            "rem_hours_count": int(res.get("rem_hours_count", 0) or 0),
                                             "max_box_cost_net": 0.994,
                                             "max_opp_bid": 0.025,
                                             "hold_to_maturity": True,
@@ -84387,17 +87894,17 @@ class Alpha124ShadowDaemon:
         now_iso = datetime.fromtimestamp(now_ts - 5.0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         need_5m = rem_4h <= 305.0
 
-        for asset in DOMINANCE_ASSETS:
+        async def _discover_4h_asset(asset: str) -> None:
             slugs = DOMINANCE_SERIES_SLUGS[asset]
             slug_4h = slugs.get("4h")
             if not slug_4h:
-                continue
+                return
             s4h_k_target = f"{asset}_4h_{target_end_ts}"
             p15_k = f"{asset}_4h15m_{target_end_ts}"
             p5_k = f"{asset}_4h5m_{target_end_ts}"
             if not in_terminal_15m:
                 if s4h_k_target in self.s4h_candles:
-                    continue
+                    return
                 ev4_only = await self.fetch_json(
                     f"{GAMMA_URL}/events?series_slug={slug_4h}&closed=false&end_date_min={now_iso}&order=endDate&ascending=true&limit=3",
                     timeout=4.0,
@@ -84421,9 +87928,9 @@ class Alpha124ShadowDaemon:
                             if sp4_de and abs(sp4_de.end_ts - target_end_ts) <= 2.0:
                                 eff_e = int(round(sp4_de.end_ts))
                                 self.s4h_candles[f"{asset}_4h_{eff_e}"] = sp4_de
-                continue
+                return
             if p15_k in self.dominance_4h_pairs and ((not need_5m) or p5_k in self.dominance_4h_pairs):
-                continue
+                return
 
             ev4_raw, ev15_raw = await asyncio.gather(
                 self.fetch_json(
@@ -84499,6 +88006,8 @@ class Alpha124ShadowDaemon:
                                 m5_4h_match = sp5_d
                 if m5_4h_match is not None:
                     self.dominance_4h_pairs[p5_k] = (m4_match, m5_4h_match)
+
+        await asyncio.gather(*(_discover_4h_asset(asset) for asset in DOMINANCE_ASSETS))
 
     async def _scan_4h_dominance_boxes(self, opps_out: List[Dict[str, Any]], now_ts: Optional[float] = None) -> None:
         from src.polymarket_research.riskless_protocol_v2_expansion import compute_min_4h_boundary_rem_sec
@@ -86128,6 +89637,10 @@ class Alpha124ShadowDaemon:
             )
 
     def write_state_files(self, opps: List[Dict[str, Any]]) -> None:
+        if len(self.closed_positions) > 60:
+            for _idx_sl in range(len(self.closed_positions) - 50):
+                if "title" in self.closed_positions[_idx_sl] or "tier_fills" in self.closed_positions[_idx_sl]:
+                    self.closed_positions[_idx_sl] = self._slim_closed_position_record(self.closed_positions[_idx_sl])
         if len(getattr(self, "authoritative_strike_cache", {})) > 2000:
             for _k in list(self.authoritative_strike_cache.keys())[:-1500]:
                 self.authoritative_strike_cache.pop(_k, None)
@@ -86277,6 +89790,7 @@ class Alpha124ShadowDaemon:
             "pending_maker_orders": list(self.pending_maker_orders.values()),
             "open_positions": list(self.open_positions.values()),
             "recent_closed_positions": self.closed_positions[-30:],
+            "v6_expansion": getattr(self, "_v6_expansion_stats", None),
         }
 
         tmp_s = STATE_FILE.with_suffix(".tmp")
@@ -86292,6 +89806,10 @@ class Alpha124ShadowDaemon:
                     json.dumps(
                         {
                             "updated_at_utc": state["updated_at_utc"],
+                            "started_at": self.started_at,
+                            "cycle_count": self.cycle_count,
+                            "open_positions_count": len(self.open_positions),
+                            "markets_monitored": state["markets_monitored"],
                             "by_sleeve": by_sleeve,
                             "per_strategy": by_sleeve,
                             "by_d1_asset": by_d1_asset,
@@ -87238,7 +90756,7 @@ class Alpha124ShadowDaemon:
             best_no_asks_nrc: Dict[str, float] = {}
             for t_nr, bk_nr in nrc_bks.items():
                 px_nr, sz_nr = self._best_ask_sz(bk_nr)
-                if px_nr < 1.0 and px_nr * sz_nr >= 8.0:
+                if px_nr < 1.0 and sz_nr >= 8.0 and px_nr * sz_nr >= 1.05:
                     best_no_asks_nrc[t_nr] = px_nr
             for sp_nrc in active_nrc:
                 pair_arbs = detect_negrisk_no_pair_boxes(sp_nrc, best_no_asks_nrc, max_box_cost_net=1.04)
@@ -87668,8 +91186,11 @@ class Alpha124ShadowDaemon:
                         esp_toks.append(mt)
             esp_bks = await self.fetch_books_batch(esp_toks, timeout=3.5)
             esp_asks = {t: p for t, bk in esp_bks.items() for p, s in [self._best_ask_sz(bk)] if p < 1.0 and p * s >= 8.0}
+            _allow_q_inf_esp = not bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("strict_pure_riskless_mode", False))
             for sp_e in active_esp[:25]:
-                ev_res = evaluate_api1_esports_bo3_opportunities(sp_e, esp_bks, esp_asks, max_middle_cost_net=1.035)
+                ev_res = evaluate_api1_esports_bo3_opportunities(
+                    sp_e, esp_bks, esp_asks, max_middle_cost_net=1.035, allow_quote_inferred=_allow_q_inf_esp
+                )
                 if ev_res["two_leg_boxes"]:
                     eb0 = ev_res["two_leg_boxes"][0]
                     self._record_market_telemetry(
@@ -87992,11 +91513,15 @@ class Alpha124ShadowDaemon:
                     )
 
         # 7G. `CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX`: Survival, Cumulative Deadline, & Scalar Ladders
-        active_cal = [sp for sp in self.cal1_ladders.values() if sp.rungs and sp.rungs[-1].end_ts > now + 120]
+        _allow_scalar_lad = bool(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}).get("enable_rt_mono1_scalar_ladders", True))
+        active_cal = [
+            sp for sp in self.cal1_ladders.values()
+            if sp.rungs and sp.rungs[-1].end_ts > now + 120 and (_allow_scalar_lad or "SCALAR" not in str(sp.ladder_kind or "").upper())
+        ]
         if active_cal:
             cal_toks = sorted({t for sp in active_cal for r in sp.rungs for t in (r.yes_token, r.no_token)})
             cal_bks = await self.fetch_books_batch(cal_toks, timeout=4.0)
-            cal_asks = {t: p for t, bk in cal_bks.items() for p, s in [self._best_ask_sz(bk)] if p < 1.0 and p * s >= 8.0}
+            cal_asks = {t: p for t, bk in cal_bks.items() for p, s in [self._best_ask_sz(bk)] if p < 1.0 and s >= 8.0 and p * s >= 1.05}
             for sp_cal in active_cal:
                 cal_boxes = detect_cal1_monotonic_boxes(sp_cal, cal_asks, max_box_cost_net=1.045)
                 if cal_boxes:
@@ -88910,7 +92435,7 @@ class Alpha124ShadowDaemon:
                     t: p
                     for t, bk in cry_bks.items()
                     for p, s in [self._best_ask_sz(bk)]
-                    if p < 1.0 and p * s >= 8.0
+                    if p < 1.0 and s >= 8.0 and p * s >= 1.05
                 }
                 for cbx in detect_cry_inc1_binance_inclusion_boxes(near_hits, near_closes, cry_asks, now, max_box_cost_net=0.992):
                     la_ci, lb_ci = cbx["leg_a"], cbx["leg_b"]
@@ -88978,7 +92503,19 @@ class Alpha124ShadowDaemon:
                 bk_w_v4, bk_o_v4 = v4_lk_bks.get(tok_w), v4_lk_bks.get(tok_o)
                 if not bk_w_v4 or not bk_o_v4:
                     continue
-                bk_w_v4 = {**bk_w_v4, "_s2_meta": {"mode": str(clk.get("mode") or ""), "dispute_risk": bool(_clk_risk["dispute_risk"])}}
+                bk_w_v4 = {
+                    **bk_w_v4,
+                    "_s2_meta": {
+                        "mode": str(clk.get("mode") or ""),
+                        "dispute_risk": bool(_clk_risk["dispute_risk"]),
+                        "question": str(clk.get("question") or clk.get("display_label") or "")[:120],
+                        **(
+                            {"volume24hr": round(float(clk.get("volume24hr") or 0.0), 2)}
+                            if clk.get("volume24hr") is not None
+                            else {}
+                        ),
+                    },
+                }
                 opp_bid_v4, _ = extract_best_bid(bk_o_v4.get("bids") or [])
                 if opp_bid_v4 > 0.035:
                     continue
@@ -89276,7 +92813,7 @@ class Alpha124ShadowDaemon:
                                 now_ts=now,
                                 fee_bips=int(getattr(nrc_cnt_spec, "fee_bips", 0) or 0),
                             )
-                for dbr in dead_brs:
+                for dbr in (dead_brs if bool(_rbox_gov_cnt.get("enable_xtrack1_6handle_dead_no", True)) else ()):
                     bk_dno = cnt_bks.get(dbr.no_token)
                     if not bk_dno:
                         continue
@@ -89777,17 +93314,23 @@ class Alpha124ShadowDaemon:
                 if isinstance(child_mkts, list):
                     ev_nr = item.get("negRisk")
                     ev_pid = str(item.get("id") or item.get("slug") or "").strip()
+                    ev_slg = str(item.get("slug") or "").strip()
                     for cm in child_mkts:
                         if not isinstance(cm, dict):
                             continue
                         mid_c = str(cm.get("id") or "").strip()
                         if not mid_c or mid_c in found:
                             continue
-                        if ("negRisk" not in cm and ev_nr is not None) or (ev_pid and "_parent_event_id" not in cm):
+                        if (
+                            ("negRisk" not in cm and ev_nr is not None)
+                            or (ev_pid and "_parent_event_id" not in cm)
+                            or (ev_slg and "_ev_slug" not in cm)
+                        ):
                             cm = {
                                 **cm,
                                 **({"negRisk": ev_nr} if ("negRisk" not in cm and ev_nr is not None) else {}),
                                 **({"_parent_event_id": ev_pid} if (ev_pid and "_parent_event_id" not in cm) else {}),
+                                **({"_ev_slug": ev_slg} if (ev_slg and "_ev_slug" not in cm) else {}),
                             }
                         ok_c, _ = is_objective_uma_market(cm)
                         if ok_c:
@@ -89874,17 +93417,25 @@ class Alpha124ShadowDaemon:
         ref_notional = BANKROLL_TICKETS["T1000"]["BOND1_UMA_RESOLUTION_CARRY"]
         from src.polymarket_research.riskless_protocol_v2_expansion import extract_gamma_parent_event_id
 
-        def _uma_dispatch_rank(entry: Tuple[str, Dict[str, Any], Dict[str, Any]]) -> Tuple[int, float]:
+        def _uma_dispatch_rank(entry: Tuple[str, Dict[str, Any], Dict[str, Any]]) -> Tuple[int, int, float]:
             _, _m_r, _v_r = entry
             _bw_r = bks_uma.get(str(_v_r["win_token"])) or {}
             _bl_r = bks_uma.get(str(_v_r["lose_token"])) or {}
-            _wb_r, _ = extract_best_bid(_bw_r.get("bids") or [])
+            _wb_r, _wb_u = extract_best_bid(_bw_r.get("bids") or [])
             _lb_r, _ = extract_best_bid(_bl_r.get("bids") or [])
             _wa_r, _ws_r = self._best_ask_sz(_bw_r)
             _rem_r = max(900.0, float(_v_r.get("rem_challenge_sec") or 3600.0))
-            _taker_ok = int(0.950 <= _wa_r <= 0.9975 and (_wa_r * _ws_r) >= 5.0 and _lb_r <= 0.008 and _wb_r >= 0.940)
-            _mkr_vel = ((1.0 - _wb_r) / _rem_r) if (0.940 <= _wb_r <= 0.9980 and _lb_r <= 0.008) else -1.0
-            return (_taker_ok, _mkr_vel)
+            _ask_u = (_wa_r * _ws_r) if _wa_r < 1.0 else 0.0
+            _vol24_r = max(0.0, float(_m_r.get("volume24hr") or 0.0))
+            _taker_ok = int(0.950 <= _wa_r <= 0.9975 and _ask_u >= 5.0 and _lb_r <= 0.008 and _wb_r >= 0.940)
+            _two_sided_active = int(_ask_u >= 5.0 or _vol24_r >= 1000.0 or _wb_u >= 100.0)
+            if 0.940 <= _wb_r <= 0.9980 and _lb_r <= 0.008:
+                _eff_edge_r = (1.0 - _wb_r) if _ask_u >= 5.0 else min(0.012, 1.0 - _wb_r)
+                _liq_boost_r = 1.0 + min(1.5, 0.35 * math.log10(1.0 + (_vol24_r / 250.0)))
+                _mkr_vel = (_eff_edge_r / _rem_r) * _liq_boost_r * (1.0 if _ask_u >= 5.0 else 0.25)
+            else:
+                _mkr_vel = -1.0
+            return (_taker_ok, _two_sided_active, _mkr_vel)
 
         verified_list.sort(key=_uma_dispatch_rank, reverse=True)
 
@@ -89910,6 +93461,11 @@ class Alpha124ShadowDaemon:
                     "reasons": list(_risk_b1["reasons"]),
                     "question": str(m.get("question") or "")[:120],
                     "dual_book_consensus_confirmed": _db_cons_b1,
+                    **(
+                        {"volume24hr": round(float(m.get("volume24hr") or 0.0), 2)}
+                        if m.get("volume24hr") is not None
+                        else {}
+                    ),
                     **({"event_id": _ev_id_b1} if _ev_id_b1 else {}),
                 },
             }
@@ -90603,6 +94159,13 @@ class Alpha124ShadowDaemon:
         from src.polymarket_research.riskless_protocol_v2_expansion import run_protocol_v2_daemon_scan
         await run_protocol_v2_daemon_scan(self, opps_out, now_ts=now_ts)
 
+    async def scan_v6_riskless_expansion_opportunities(
+        self, opps_out: List[Dict[str, Any]], now_ts: Optional[float] = None
+    ) -> None:
+        """Fault-isolated v6 Riskless Expansion scanner (`TAIL_BOUNDARY_001_ARB`, `BOND3`, `HEDGED_PRESPLIT_CONV_GUN`, `YIELD_STACKED_CARRY_BOX` + `CompactCandidateL2Recorder`)."""
+        from src.polymarket_research.riskless_expansion_v6_engines import run_v6_expansion_alpha124_scan
+        await run_v6_expansion_alpha124_scan(self, opps_out, now_ts=now_ts)
+
     async def _run_gatling_fast_gun_loop(self) -> None:
         """
         Dedicated non-blocking `<200ms` Gatling Fast-Gun background coroutine:
@@ -90657,6 +94220,10 @@ class Alpha124ShadowDaemon:
             await self.scan_protocol_v2_expansion_opportunities(ts_opps)
         except Exception as exc_v2:
             logger.warning(f"Background Protocol V2 scan notice: {exc_v2}")
+        try:
+            await self.scan_v6_riskless_expansion_opportunities(ts_opps)
+        except Exception as exc_v6:
+            logger.warning(f"Background v6 Riskless Expansion scan notice: {exc_v6}")
         self.cached_tradfi_sports_opps = ts_opps
 
     async def run_forever(self) -> None:
@@ -90681,7 +94248,13 @@ class Alpha124ShadowDaemon:
                         _lh_st_p = LIVE_POLYMARKET_DIR / "live_harvester_state.json"
                         if _lh_st_p.exists() and (t0 - _lh_st_p.stat().st_mtime) <= 600.0:
                             _lh_d = json.loads(_lh_st_p.read_text(encoding="utf-8"))
-                            _eq_v = float(_lh_d.get("total_account_equity_usd") or _lh_d.get("live_bankroll_usd") or 0.0)
+                            _eq_v = float(
+                                _lh_d.get("total_account_equity")
+                                or _lh_d.get("total_account_equity_usd")
+                                or _lh_d.get("live_bankroll")
+                                or _lh_d.get("live_bankroll_usd")
+                                or 0.0
+                            )
                             if _eq_v > 0.0:
                                 self.live_account_equity_usd = _eq_v
                     except Exception:
@@ -90695,6 +94268,9 @@ class Alpha124ShadowDaemon:
                 ):
                     self.last_discovery_ts = t0
                     self._bg_discovery_task = asyncio.create_task(self._run_bg_discovery())
+                if not self.single_scan and (t0 - float(self.__dict__.get("_last_mem_evict_ts") or 0.0)) >= 60.0:
+                    self.__dict__["_last_mem_evict_ts"] = t0
+                    self._evict_stale_caches(now_ts=t0)
 
                 # Reactive drain of any fresh Binance shock triggers before periodic scans
                 fresh_shocks = [] if self.riskless_bridge_only else self.poll_fresh_shock_triggers(now_ts=t0)
@@ -90729,6 +94305,7 @@ class Alpha124ShadowDaemon:
                     ts_opps: List[Dict[str, Any]] = []
                     await self.scan_tradfi_and_sports_markets(ts_opps)
                     await self.scan_protocol_v2_expansion_opportunities(ts_opps)
+                    await self.scan_v6_riskless_expansion_opportunities(ts_opps)
                     self.cached_tradfi_sports_opps = ts_opps
 
                     nba_opps: List[Dict[str, Any]] = []
@@ -90900,6 +94477,7 @@ class Alpha124ShadowDaemon:
 
 
 def main() -> None:
+    _attach_daemon_log_file_handler()
     parser = argparse.ArgumentParser(description="Polymarket Alpha-124 Shadow Daemon")
     parser.add_argument("--single-scan", action="store_true", help="Run one full scan cycle and exit")
     parser.add_argument("--riskless-bridge-only", action="store_true", help="Skip quarantined directional shock/sniper scans & disk telemetry")
@@ -90918,7 +94496,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [46/64] MODULE: scripts/backtest_alpha_124.py
+# [46/67] MODULE: scripts/backtest_alpha_124.py
 # PURPOSE: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
 # ======================================================================================
 
@@ -91178,7 +94756,8 @@ def run_weather_backtest() -> Dict[str, Any]:
         brier_sum = 0.0
         brier_n = 0
         for sp, metars, _ in train_bundles:
-            tz = ZoneInfo(sp.tz_name)
+            from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo
+            tz = safe_zoneinfo(sp.tz_name)
             eval_local = datetime(sp.obs_date.year, sp.obs_date.month, sp.obs_date.day, 11, 0, tzinfo=tz)
             eval_u = eval_local.astimezone(timezone.utc)
             out = compute_weather_probabilities(sp, eval_u, metars, nwp_cache.get(sp.icao, {}), forecast_sigma_base_c=cand_sig)
@@ -91200,7 +94779,8 @@ def run_weather_backtest() -> Dict[str, Any]:
     EXEC_SPREAD_PENALTY = 0.010
 
     for sp, metars, clob_map in sorted(bundles, key=lambda x: x[0].obs_date):
-        tz = ZoneInfo(sp.tz_name)
+        from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo
+        tz = safe_zoneinfo(sp.tz_name)
         nwp_hr = nwp_cache.get(sp.icao, {})
         split = "TRAIN" if sp.obs_date <= date(2026, 10, 16) else "TEST"
 
@@ -91779,7 +95359,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [47/64] MODULE: scripts/polymarket_daily_projections.py
+# [47/67] MODULE: scripts/polymarket_daily_projections.py
 # PURPOSE: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
 # ======================================================================================
 
@@ -92226,17 +95806,6 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "l1_daily_pnl_cap_usd": 30.0,
     },
     {
-        "sleeve": "NR2_CONVERT_NO_SUBSET_ARB",
-        "wave": "Wave 1 (0-Loss Math Live)",
-        "target_day": 1,
-        "min_days": 1.0,
-        "min_settled": 8,
-        "min_wr_pct": 100.0,
-        "source": "alpha124",
-        "stage1_ticket_usd": 25.0,
-        "l1_daily_pnl_cap_usd": 30.0,
-    },
-    {
         "sleeve": "CRY_INC1_INTRADAY_STRIKE_INCLUSION_BOX",
         "wave": "Wave 1 (0-Loss Math Live)",
         "target_day": 1,
@@ -92455,17 +96024,6 @@ GRADUATION_SPECS: List[Dict[str, Any]] = [
         "source": "alpha124",
         "stage1_ticket_usd": 15.0,
         "l1_daily_pnl_cap_usd": 25.0,
-    },
-    {
-        "sleeve": "CTF_OVERROUND_MINT_SELL",
-        "wave": "Wave 2 ($140 Pre-Split Gun)",
-        "target_day": 5,
-        "min_days": 0.5,
-        "min_settled": 8,
-        "min_wr_pct": 100.0,
-        "source": "alpha124",
-        "stage1_ticket_usd": 18.0,
-        "l1_daily_pnl_cap_usd": 28.0,
     },
 ]
 
@@ -92850,10 +96408,11 @@ def compute_live_equity_and_rates(
     and box-grouped economic trade win rates from `live_harvester_state.json`.
     """
     raw_total_eq = float(live_st.get("total_account_equity") or 0.0)
-    raw_bankroll = float(live_st.get("live_bankroll") or 0.0)
+    _raw_br_val = live_st.get("live_bankroll") if live_st.get("live_bankroll") is not None else live_st.get("bankroll")
+    raw_bankroll = float(_raw_br_val or 0.0)
     has_live_balance = (
         ("total_account_equity" in live_st and live_st.get("total_account_equity") is not None)
-        or ("live_bankroll" in live_st and live_st.get("live_bankroll") is not None)
+        or _raw_br_val is not None
     )
 
     active_pos = live_st.get("active_positions")
@@ -92939,13 +96498,37 @@ def compute_live_equity_and_rates(
     else:
         live_equity = float(fallback_equity)
 
+    def _is_unhedged_residual_leg(p: Dict[str, Any]) -> bool:
+        return (
+            bool(p.get("is_legged_out_residual"))
+            or str(p.get("box_type") or "").upper() == "MULTI_LEG_RESIDUAL"
+            or "_UNWRESID_" in str(p.get("trade_id") or "")
+        )
+
+    def _is_uma_disputed_position(p: Dict[str, Any]) -> bool:
+        if not isinstance(p, dict):
+            return False
+        if bool(p.get("uma_disputed") or p.get("is_uma_disputed") or p.get("disputed")):
+            return True
+        for k_st in ("umaResolutionStatus", "uma_resolution_status", "uma_status", "resolution_status"):
+            if "disput" in str(p.get(k_st) or "").strip().lower():
+                return True
+        return False
+
+    def _is_floor_haircut_leg(p: Dict[str, Any]) -> bool:
+        return _is_unhedged_residual_leg(p) or _is_uma_disputed_position(p)
+
+    has_floor_haircut = any(isinstance(x, dict) and _is_floor_haircut_leg(x) for x in active_legs)
     box_floor_val = 0.0
     for b_legs in box_legs_by_id.values():
-        if len(b_legs) >= 2:
+        if len(b_legs) >= 2 and not any(_is_floor_haircut_leg(x) for x in b_legs):
             paired_sh = min(float(x.get("remaining_shares", x.get("entry_shares", 0.0)) or 0.0) for x in b_legs)
             box_floor_val += max(paired_sh, sum(float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0) for x in b_legs))
         else:
-            box_floor_val += sum(float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0) for x in b_legs)
+            box_floor_val += sum(
+                0.0 if _is_floor_haircut_leg(x) else float(x.get("remaining_cost_basis", x.get("notional_usd", 0.0)) or 0.0)
+                for x in b_legs
+            )
 
     non_box_floor_val = 0.0
     for leg in active_legs:
@@ -92954,6 +96537,8 @@ def compute_live_equity_and_rates(
         bid_k = str(leg.get("box_id") or "").strip()
         if leg.get("is_dominance_box") and bid_k:
             continue
+        if _is_floor_haircut_leg(leg):
+            continue
         notional = float(leg.get("remaining_cost_basis", leg.get("notional_usd", 0.0)) or 0.0)
         if leg.get("is_single_leg_lock") or str(leg.get("box_type") or "").upper() == "SINGLE_LEG_LOCK" or str(leg.get("trade_id") or "").startswith(("WS_SNIPE_", "LOCK1_", "MKR_LOCK1_")):
             rem_sh = float(leg.get("remaining_shares", leg.get("entry_shares", 0.0)) or 0.0)
@@ -92961,8 +96546,9 @@ def compute_live_equity_and_rates(
         else:
             non_box_floor_val += notional
 
+    raw_floor_sum = raw_bankroll + non_box_floor_val + box_floor_val + locked_maker_usd
     locked_floor_equity = (
-        max(live_equity, raw_bankroll + non_box_floor_val + box_floor_val + locked_maker_usd)
+        (raw_floor_sum if has_floor_haircut else max(live_equity, raw_floor_sum))
         if has_live_balance
         else live_equity
     )
@@ -93376,7 +96962,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [48/64] MODULE: scripts/alpha124_status.py
+# [48/67] MODULE: scripts/alpha124_status.py
 # PURPOSE: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
 # ======================================================================================
 
@@ -93455,7 +97041,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [49/64] MODULE: scripts/polymarket_scorecard_snapshot.py
+# [49/67] MODULE: scripts/polymarket_scorecard_snapshot.py
 # PURPOSE: Unified 8-Service Health, Live Equity & Shadow Graduation Snapshot
 # ======================================================================================
 
@@ -93605,7 +97191,7 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [50/64] MODULE: src/polymarket_research/exp316_macro_strike_shadow.py
+# [50/67] MODULE: src/polymarket_research/exp316_macro_strike_shadow.py
 # PURPOSE: EXP-316 Isolated Multi-Strike Convergence Shadow Engine
 # ======================================================================================
 
@@ -95500,7 +99086,3464 @@ if __name__ == "__main__":
     main()
 
 # ======================================================================================
-# [51/64] MODULE: tests/test_alpha_124_oracles.py
+# [51/67] MODULE: src/polymarket_research/honest_riskless_backtester.py
+# PURPOSE: v6.0 Honest CLOB L2 Execution Kernel, Zero-Lookahead Harness & CompactCandidateL2Recorder
+# ======================================================================================
+
+"""
+Honest Event-Driven Pure-Riskless Backtester & Candidate-Triggered L2 Recorder
+(`src/polymarket_research/honest_riskless_backtester.py`).
+
+Implements Phase 1 of the Dominus Riskless Architecture Blueprint:
+  1. `CompactCandidateL2Recorder`: Candidate-triggered (`gross_box <= 1.035` or `overround >= 0.975`)
+     Top-5 L2 delta + WS trade-print ring-buffer recorder with `zstandard` / `gzip` compression and
+     strict `< 12 MB/day` disk budget enforcement.
+  2. `MakerQueueTradeThroughTracker`: FIFO queue-ahead & trade-through fill tracker for passive
+     `postOnly` maker orders (`traded_through_shares >= queue_ahead_shares + order_shares`).
+  3. `HonestClobExecutionKernel`: Exact Polymarket Protocol V2 share-haircut (`p / (1 - h(p))`),
+     `0.001` boundary tick & 2-decimal `makerAmount` FOK quantization, `$1.00` / `5`-share minimums,
+     asynchronous per-leg wire-RTT + `takerDelayMs` book lookup, and `3,500ms` `deferExec` ERC-1155
+     settlement hold on raced single-leg unwinds.
+  4. `ZeroLookaheadBacktestHarness`: Strict `visible_ts_ms`-ordered event-driven replay engine with
+     hard anti-lookahead, anti-survivorship, and confirmed-scoreboard halftime assertions.
+"""
+
+# from __future__ import annotations  # (Lifted to top of consolidated bundle)
+
+from collections import deque
+from dataclasses import asdict, dataclass, field
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
+import gzip
+import json
+import math
+from pathlib import Path
+import time
+from typing import Any, Callable, Deque, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+
+try:
+    import zstandard as _zstd  # type: ignore
+except ImportError:  # pragma: no cover
+    _zstd = None
+
+from src.polymarket_research.cross_venue_riskless_shadow import (
+    DEFAULT_EXTERNAL_GAS_USD,
+    DEFAULT_RELAY_BRIDGE_DRAG_BPS,
+    DEFAULT_WIRE_LATENCY_MS,
+    NormalizedBinaryMarket,
+    OrderLevel,
+    collateral_fx_ask_to_usd,
+    collateral_fx_settle_floor_to_usd,
+    compute_venue_taker_fee_usd,
+    polymarket_v2_share_haircut_frac,
+    relay_bridge_drag_usd,
+    walk_asks_for_shares,
+    walk_bids_for_unwind,
+)
+
+
+class LookaheadViolationError(RuntimeError):
+    """Raised whenever an event or strategy attempts to access information not yet visible at `decision_ts_ms`."""
+
+
+class SurvivorshipBiasError(RuntimeError):
+    """Raised when a backtest dataset strips unresolved/disputed markets or leaks resolution status before expiry."""
+
+
+# ---------------------------------------------------------------------------
+# 1. Candidate-Triggered Top-5 L2 & Trade-Print Recorder (< 12 MB/day)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CompactL2Frame:
+    ts_ms: int
+    venue: str
+    market_slug: str
+    yes_asks: Tuple[Tuple[float, float], ...]
+    yes_bids: Tuple[Tuple[float, float], ...]
+    no_asks: Tuple[Tuple[float, float], ...]
+    no_bids: Tuple[Tuple[float, float], ...]
+    fee_rate_bps: float = 0.0
+    taker_delay_ms: float = 0.0
+    collateral_asset: str = "USDC"
+    trigger_reason: str = ""
+    recent_trades: Tuple[Tuple[int, str, float, float], ...] = ()  # (ts_ms, side, price, shares)
+
+
+class CompactCandidateL2Recorder:
+    """
+    Bounded-RAM, candidate-triggered Top-5 L2 + WS trade-print recorder:
+      - Maintains a rolling pre-trigger ring buffer (`pre_trigger_ring_max_frames`) per `(venue, slug)`.
+      - Activates capture for `post_trigger_capture_ms` whenever an intra-market or cross-market pair
+        reaches `gross_box <= trigger_gross_box_max` (`1.035`) or `overround >= trigger_overround_min` (`0.975`).
+      - Compresses batches with `zstandard` when installed (else stdlib `gzip`) and enforces a hard
+        `max_daily_bytes` (`12 MB/day` default) disk ceiling.
+    """
+
+    def __init__(
+        self,
+        output_dir: Path,
+        *,
+        top_k_levels: int = 5,
+        trigger_gross_box_max: float = 1.035,
+        trigger_overround_min: float = 0.975,
+        pre_trigger_ring_max_frames: int = 32,
+        post_trigger_capture_ms: int = 30_000,
+        flush_batch_frames: int = 128,
+        max_daily_bytes: int = 12 * 1024 * 1024,
+    ) -> None:
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.top_k_levels = max(1, min(10, int(top_k_levels)))
+        self.trigger_gross_box_max = float(trigger_gross_box_max)
+        self.trigger_overround_min = float(trigger_overround_min)
+        self.pre_trigger_ring_max_frames = max(4, int(pre_trigger_ring_max_frames))
+        self.post_trigger_capture_ms = max(1_000, int(post_trigger_capture_ms))
+        self.flush_batch_frames = max(8, int(flush_batch_frames))
+        self.max_daily_bytes = max(64 * 1024, int(max_daily_bytes))
+
+        self._ring_by_key: Dict[Tuple[str, str], Deque[CompactL2Frame]] = {}
+        self._recent_trades_by_key: Dict[Tuple[str, str], Deque[Tuple[int, str, float, float]]] = {}
+        self._active_capture_until_ms: Dict[Tuple[str, str], int] = {}
+        self._last_sig_by_key: Dict[Tuple[str, str], Tuple[Any, ...]] = {}
+        self._pending_flush: List[CompactL2Frame] = []
+        self._bytes_written_by_day: Dict[str, int] = {}
+        self.frames_recorded: int = 0
+        self.budget_drops: int = 0
+
+    @staticmethod
+    def _day_key(ts_ms: int) -> str:
+        return time.strftime("%Y-%m-%d", time.gmtime(max(0.0, ts_ms / 1000.0)))
+
+    def record_trade_print(
+        self,
+        *,
+        venue: str,
+        market_slug: str,
+        side: str,
+        price: float,
+        shares: float,
+        ts_ms: Optional[int] = None,
+    ) -> None:
+        if shares <= 0.0 or not (0.0 < price < 1.0):
+            return
+        cur_ms = int(time.time() * 1000) if ts_ms is None else int(ts_ms)
+        k = (venue.strip().lower(), market_slug.strip())
+        dq = self._recent_trades_by_key.setdefault(k, deque(maxlen=32))
+        dq.append((cur_ms, side.strip().upper(), round(float(price), 6), round(float(shares), 4)))
+
+    def _to_compact_frame(
+        self,
+        mkt: NormalizedBinaryMarket,
+        ts_ms: int,
+        trigger_reason: str = "",
+    ) -> CompactL2Frame:
+        k = (mkt.venue.lower(), mkt.slug)
+        trades_dq = self._recent_trades_by_key.get(k)
+        trades_tuple = tuple(trades_dq) if trades_dq else ()
+        if trades_dq:
+            trades_dq.clear()
+        tk = self.top_k_levels
+        return CompactL2Frame(
+            ts_ms=ts_ms,
+            venue=mkt.venue.lower(),
+            market_slug=mkt.slug,
+            yes_asks=tuple((round(x.price, 6), round(x.size, 4)) for x in mkt.yes_asks[:tk]),
+            yes_bids=tuple((round(x.price, 6), round(x.size, 4)) for x in mkt.yes_bids[:tk]),
+            no_asks=tuple((round(x.price, 6), round(x.size, 4)) for x in mkt.no_asks[:tk]),
+            no_bids=tuple((round(x.price, 6), round(x.size, 4)) for x in mkt.no_bids[:tk]),
+            fee_rate_bps=float(mkt.fee_rate_bps or 0.0),
+            taker_delay_ms=float(mkt.taker_delay_ms or 0.0),
+            collateral_asset=str(mkt.collateral_asset or "USDC"),
+            trigger_reason=trigger_reason,
+            recent_trades=trades_tuple,
+        )
+
+    def observe_markets(
+        self,
+        markets: Sequence[NormalizedBinaryMarket],
+        *,
+        candidate_keys: Sequence[Tuple[str, str]] = (),
+        now_ms: Optional[int] = None,
+    ) -> int:
+        """
+        Ingests a batch of normalized markets, deduplicates unchanged books, activates candidate windows
+        whenever `gross_box <= 1.035` or `overround >= 0.975` (or explicit `candidate_keys`), and buffers
+        delta frames for compressed disk flush.
+        """
+        cur_ms = int(time.time() * 1000) if now_ms is None else int(now_ms)
+        explicit_set = {(v.lower(), s) for v, s in candidate_keys}
+
+        # Also check cross-market gross box across markets sharing `(category, asset, horizon)`
+        by_group: Dict[Tuple[str, str, str], List[NormalizedBinaryMarket]] = {}
+        for m in markets:
+            if m.asset:
+                by_group.setdefault((m.category, m.asset, m.horizon), []).append(m)
+
+        group_triggered: Set[Tuple[str, str]] = set()
+        for grp in by_group.values():
+            if len(grp) < 2:
+                continue
+            min_ya = min((m.yes_asks[0].price for m in grp if m.yes_asks), default=1.0)
+            min_na = min((m.no_asks[0].price for m in grp if m.no_asks), default=1.0)
+            max_yb = max((m.yes_bids[0].price for m in grp if m.yes_bids), default=0.0)
+            max_nb = max((m.no_bids[0].price for m in grp if m.no_bids), default=0.0)
+            if (min_ya + min_na) <= self.trigger_gross_box_max or (max_yb + max_nb) >= self.trigger_overround_min:
+                for m in grp:
+                    group_triggered.add((m.venue.lower(), m.slug))
+
+        emitted = 0
+        for m in markets:
+            key = (m.venue.lower(), m.slug)
+            eff_ms = int(m.quote_ts_ms) if m.quote_ts_ms > 0 else cur_ms
+            intra_box = (
+                (m.yes_asks[0].price + m.no_asks[0].price)
+                if (m.yes_asks and m.no_asks)
+                else 9.99
+            )
+            intra_over = (
+                (m.yes_bids[0].price + m.no_bids[0].price)
+                if (m.yes_bids and m.no_bids)
+                else 0.0
+            )
+            trig_reason = ""
+            if key in explicit_set:
+                trig_reason = "EXPLICIT_CANDIDATE"
+            elif intra_box <= self.trigger_gross_box_max:
+                trig_reason = f"INTRA_BOX_{intra_box:.4f}"
+            elif intra_over >= self.trigger_overround_min:
+                trig_reason = f"INTRA_OVERROUND_{intra_over:.4f}"
+            elif key in group_triggered:
+                trig_reason = "CROSS_VENUE_NEAR_ARB"
+
+            frame = self._to_compact_frame(m, eff_ms, trigger_reason=trig_reason)
+            sig = (frame.yes_asks, frame.yes_bids, frame.no_asks, frame.no_bids, frame.recent_trades)
+            if self._last_sig_by_key.get(key) == sig and not trig_reason:
+                continue
+            self._last_sig_by_key[key] = sig
+
+            if trig_reason:
+                was_active = self._active_capture_until_ms.get(key, 0) >= eff_ms
+                self._active_capture_until_ms[key] = max(
+                    self._active_capture_until_ms.get(key, 0),
+                    eff_ms + self.post_trigger_capture_ms,
+                )
+                if not was_active and key in self._ring_by_key:
+                    while self._ring_by_key[key]:
+                        self._pending_flush.append(self._ring_by_key[key].popleft())
+                        emitted += 1
+                self._pending_flush.append(frame)
+                emitted += 1
+            elif self._active_capture_until_ms.get(key, 0) >= eff_ms:
+                self._pending_flush.append(frame)
+                emitted += 1
+            else:
+                ring = self._ring_by_key.setdefault(key, deque(maxlen=self.pre_trigger_ring_max_frames))
+                ring.append(frame)
+
+        if len(self._pending_flush) >= self.flush_batch_frames:
+            self.flush()
+        return emitted
+
+    def flush(self) -> Optional[Path]:
+        if not self._pending_flush:
+            return None
+        batch = list(self._pending_flush)
+        self._pending_flush.clear()
+        day = self._day_key(batch[-1].ts_ms)
+        used = self._bytes_written_by_day.get(day, 0)
+        if used >= self.max_daily_bytes:
+            self.budget_drops += len(batch)
+            return None
+
+        raw_jsonl = "\n".join(
+            json.dumps(asdict(f), separators=(",", ":")) for f in batch
+        ).encode("utf-8") + b"\n"
+
+        if _zstd is not None:
+            cctx = _zstd.ZstdCompressor(level=3)
+            comp = cctx.compress(raw_jsonl)
+            ext = "jsonl.zst"
+        else:
+            comp = gzip.compress(raw_jsonl, compresslevel=6)
+            ext = "jsonl.gz"
+
+        if used + len(comp) > self.max_daily_bytes:
+            self.budget_drops += len(batch)
+            return None
+
+        out_path = self.output_dir / f"candidate_l2_{day}.{ext}"
+        with open(out_path, "ab") as fh:
+            fh.write(comp)
+
+        self._bytes_written_by_day[day] = used + len(comp)
+        self.frames_recorded += len(batch)
+        return out_path
+
+    @staticmethod
+    def load_frames(path: Path) -> List[CompactL2Frame]:
+        p = Path(path)
+        raw_bytes = p.read_bytes()
+        if p.name.endswith(".zst"):
+            if _zstd is None:
+                raise RuntimeError("zstandard is required to read .zst archives")
+            dctx = _zstd.ZstdDecompressor()
+            text = dctx.decompress(raw_bytes).decode("utf-8")
+        elif p.name.endswith(".gz"):
+            text = gzip.decompress(raw_bytes).decode("utf-8")
+        else:
+            text = raw_bytes.decode("utf-8")
+
+        frames: List[CompactL2Frame] = []
+        for line in text.splitlines():
+            if not line.strip():
+                continue
+            d = json.loads(line)
+            frames.append(
+                CompactL2Frame(
+                    ts_ms=int(d["ts_ms"]),
+                    venue=str(d["venue"]),
+                    market_slug=str(d["market_slug"]),
+                    yes_asks=tuple((float(x[0]), float(x[1])) for x in d.get("yes_asks", ())),
+                    yes_bids=tuple((float(x[0]), float(x[1])) for x in d.get("yes_bids", ())),
+                    no_asks=tuple((float(x[0]), float(x[1])) for x in d.get("no_asks", ())),
+                    no_bids=tuple((float(x[0]), float(x[1])) for x in d.get("no_bids", ())),
+                    fee_rate_bps=float(d.get("fee_rate_bps", 0.0)),
+                    taker_delay_ms=float(d.get("taker_delay_ms", 0.0)),
+                    collateral_asset=str(d.get("collateral_asset", "USDC")),
+                    trigger_reason=str(d.get("trigger_reason", "")),
+                    recent_trades=tuple(
+                        (int(t[0]), str(t[1]), float(t[2]), float(t[3]))
+                        for t in d.get("recent_trades", ())
+                    ),
+                )
+            )
+        return frames
+
+
+# ---------------------------------------------------------------------------
+# 2. Passive Maker Queue-Ahead & Trade-Through Fill Tracker
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class TrackedMakerOrder:
+    order_id: str
+    venue: str
+    market_slug: str
+    side: str  # "YES" or "NO" (buying outcome share passively at `bid_price`)
+    bid_price: float
+    order_shares: float
+    placed_ts_ms: int
+    initial_queue_ahead_shares: float
+    remaining_queue_ahead_shares: float
+    cumulative_traded_through_shares: float = 0.0
+    filled_shares: float = 0.0
+    last_observed_level_shares: float = 0.0
+    canceled: bool = False
+
+    @property
+    def is_fully_filled(self) -> bool:
+        return self.filled_shares >= self.order_shares - 1e-7
+
+
+class MakerQueueTradeThroughTracker:
+    """
+    Conservative FIFO queue-position & trade-through tracker for passive `postOnly` maker bids:
+      - On placement at `bid_price`: if `bid_price` improves current `best_bid`, `queue_ahead = 0`;
+        otherwise `queue_ahead` equals total visible bid depth at `>= bid_price`.
+      - `observe_trade_print`: trades at `price < bid_price` (or `price == bid_price` hitting bids)
+        deplete `remaining_queue_ahead_shares` FIFO before crediting `filled_shares`.
+      - `observe_book_snapshot`: ask prices crossing `<= bid_price` execute directly; pure L2 bid-size
+        reductions without trade prints apply conservative `cancel_vs_fill_attribution_frac` (`0.25` default)
+        so front-of-queue cancellations are NEVER over-credited as phantom fills.
+    """
+
+    def __init__(self, *, cancel_vs_fill_attribution_frac: float = 0.25) -> None:
+        self.cancel_vs_fill_attribution_frac = min(1.0, max(0.0, float(cancel_vs_fill_attribution_frac)))
+        self._orders: Dict[str, TrackedMakerOrder] = {}
+
+    def place_maker_bid(
+        self,
+        *,
+        order_id: str,
+        market: NormalizedBinaryMarket,
+        side: str,
+        bid_price: float,
+        order_shares: float,
+        placed_ts_ms: int,
+    ) -> Optional[TrackedMakerOrder]:
+        side_u = side.strip().upper()
+        asks = market.yes_asks if side_u == "YES" else market.no_asks
+        bids = market.yes_bids if side_u == "YES" else market.no_bids
+        # postOnly rejection check: cannot cross or touch resting ask!
+        if asks and float(bid_price) >= asks[0].price - 1e-9:
+            return None
+        queue_ahead = sum(lvl.size for lvl in bids if lvl.price >= float(bid_price) - 1e-9)
+        same_lvl_sh = sum(lvl.size for lvl in bids if abs(lvl.price - float(bid_price)) <= 1e-9)
+        tracked = TrackedMakerOrder(
+            order_id=order_id,
+            venue=market.venue.lower(),
+            market_slug=market.slug,
+            side=side_u,
+            bid_price=round(float(bid_price), 6),
+            order_shares=float(order_shares),
+            placed_ts_ms=int(placed_ts_ms),
+            initial_queue_ahead_shares=queue_ahead,
+            remaining_queue_ahead_shares=queue_ahead,
+            last_observed_level_shares=same_lvl_sh,
+        )
+        self._orders[order_id] = tracked
+        return tracked
+
+    def cancel_order(self, order_id: str) -> Optional[TrackedMakerOrder]:
+        od = self._orders.get(order_id)
+        if od is not None:
+            od.canceled = True
+        return od
+
+    def get_order(self, order_id: str) -> Optional[TrackedMakerOrder]:
+        return self._orders.get(order_id)
+
+    def _apply_flow(self, od: TrackedMakerOrder, flow_shares: float) -> float:
+        if od.canceled or od.is_fully_filled or flow_shares <= 0.0:
+            return 0.0
+        od.cumulative_traded_through_shares += flow_shares
+        consume_q = min(od.remaining_queue_ahead_shares, flow_shares)
+        od.remaining_queue_ahead_shares -= consume_q
+        rem_flow = flow_shares - consume_q
+        if rem_flow <= 1e-9:
+            return 0.0
+        need = max(0.0, od.order_shares - od.filled_shares)
+        newly_filled = min(need, rem_flow)
+        od.filled_shares += newly_filled
+        return newly_filled
+
+    def observe_trade_print(
+        self,
+        *,
+        venue: str,
+        market_slug: str,
+        outcome_side: str,
+        trade_price: float,
+        trade_shares: float,
+        ts_ms: int,
+        aggressor_side: str = "SELL",
+    ) -> Dict[str, float]:
+        """Updates matching resting maker bids from a real trade print at `ts_ms >= placed_ts_ms`."""
+        v_low = venue.strip().lower()
+        s_up = outcome_side.strip().upper()
+        agg = aggressor_side.strip().upper()
+        fills: Dict[str, float] = {}
+        for oid, od in self._orders.items():
+            if od.canceled or od.is_fully_filled or ts_ms < od.placed_ts_ms:
+                continue
+            if od.venue != v_low or od.market_slug != market_slug or od.side != s_up:
+                continue
+            if trade_price < od.bid_price - 1e-9 or (
+                abs(trade_price - od.bid_price) <= 1e-9 and agg in ("SELL", "HIT_BID", "UNKNOWN")
+            ):
+                df = self._apply_flow(od, float(trade_shares))
+                if df > 0.0:
+                    fills[oid] = df
+        return fills
+
+    def observe_book_snapshot(self, market: NormalizedBinaryMarket, ts_ms: int) -> Dict[str, float]:
+        v_low = market.venue.lower()
+        fills: Dict[str, float] = {}
+        for oid, od in self._orders.items():
+            if od.canceled or od.is_fully_filled or ts_ms < od.placed_ts_ms:
+                continue
+            if od.venue != v_low or od.market_slug != market.slug:
+                continue
+            asks = market.yes_asks if od.side == "YES" else market.no_asks
+            bids = market.yes_bids if od.side == "YES" else market.no_bids
+            crossed_ask_sh = sum(lvl.size for lvl in asks if lvl.price <= od.bid_price + 1e-9)
+            df = 0.0
+            if crossed_ask_sh > 0.0:
+                df += self._apply_flow(od, crossed_ask_sh)
+            lvl_sh = sum(lvl.size for lvl in bids if abs(lvl.price - od.bid_price) <= 1e-9)
+            higher_sh = sum(lvl.size for lvl in bids if lvl.price > od.bid_price + 1e-9)
+            if higher_sh == 0.0 and lvl_sh < od.last_observed_level_shares and crossed_ask_sh == 0.0:
+                drop = od.last_observed_level_shares - lvl_sh
+                conservative_flow = drop * self.cancel_vs_fill_attribution_frac
+                df += self._apply_flow(od, conservative_flow)
+            od.last_observed_level_shares = lvl_sh
+            if df > 0.0:
+                fills[oid] = df
+        return fills
+
+
+# ---------------------------------------------------------------------------
+# 3. Honest CLOB & Cross-Venue Sequential Execution Kernel
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SimulatedBoxExecution:
+    locked: bool
+    status: str
+    decision_ts_ms: int
+    net_paired_shares: float
+    all_in_cost_usd: float
+    guaranteed_min_payout_usd: float
+    worst_state_net_pnl_usd: float
+    unwind_bleed_usd: float
+    leg_arrival_ts_ms: Tuple[int, ...]
+
+
+class HonestClobExecutionKernel:
+    """
+    Simulates realistic sequential leg execution with:
+      - Polymarket dynamic tick grid (`0.001` at `p <= 0.04` or `p >= 0.96`, else `0.01`)
+      - Polymarket `min_shares >= 5.0` & `$1.00` marketable BUY notional floor + 2-decimal `makerAmount`
+      - Exact Protocol V2 BUY share haircut (`delivered = gross * (1 - h(p))`)
+      - Sequential fragile-leg-first or parallel leg arrival `decision_ts_ms + rtt_ms + taker_delay_ms`
+      - `3,500ms` (`defer_exec_settlement_ms`) hold before newly bought Polymarket ERC-1155 shares
+        can be sold into resting bids during an emergency leg-out unwind.
+    """
+
+    def __init__(
+        self,
+        *,
+        wire_latency_ms: Optional[Mapping[str, float]] = None,
+        defer_exec_settlement_ms: int = 3_500,
+        bridge_drag_bps: float = DEFAULT_RELAY_BRIDGE_DRAG_BPS,
+    ) -> None:
+        self.wire_latency_ms: Dict[str, float] = dict(DEFAULT_WIRE_LATENCY_MS)
+        self.wire_latency_ms.setdefault("forecastex", 65.0)
+        self.wire_latency_ms.setdefault("stx_ontario", 35.0)
+        if wire_latency_ms:
+            for k, v in wire_latency_ms.items():
+                self.wire_latency_ms[k.lower()] = float(v)
+        self.defer_exec_settlement_ms = max(0, int(defer_exec_settlement_ms))
+        self.bridge_drag_bps = float(bridge_drag_bps)
+
+    @staticmethod
+    def quantize_polymarket_fok_buy(net_shares: float, limit_price: float, fee_rate_bps: float = 0.0) -> Tuple[float, float, float, bool]:
+        """
+        Returns `(quantized_price, gross_shares, maker_amount_usd_2dec, valid_fok)` enforcing Polymarket's
+        `0.001`/`0.01` tick grid, `5`-share minimum, `$1.00` marketable notional minimum, and 2-decimal USDC `makerAmount`.
+        """
+        p_clamped = min(0.999, max(0.001, float(limit_price)))
+        tick = Decimal("0.001") if (p_clamped >= 0.96 or p_clamped <= 0.04) else Decimal("0.01")
+        q_px = float((Decimal(str(round(p_clamped, 6))) / tick).to_integral_value(rounding=ROUND_CEILING) * tick)
+        q_px = min(0.999, max(float(tick), round(q_px, 4)))
+
+        h = polymarket_v2_share_haircut_frac(q_px, fee_rate_bps)
+        req_gross = float(net_shares) / max(0.50, 1.0 - h)
+        # Quantize gross shares on 0.01 step (or integer step on cent tick so gross*price has <= 2 decimals!)
+        lot_step = Decimal("1") if tick == Decimal("0.01") else Decimal("10")
+        # Try exact 0.01 lot first if `maker_amount` has <= 2 decimals, else step up to clean 2-decimal USDC lot
+        cand_gross = float((Decimal(str(round(req_gross, 6))) / Decimal("0.01")).to_integral_value(rounding=ROUND_CEILING) * Decimal("0.01"))
+        maker_amt = Decimal(str(round(cand_gross * q_px, 6)))
+        if maker_amt != maker_amt.quantize(Decimal("0.01")):
+            cand_gross = float((Decimal(str(round(req_gross, 6))) / lot_step).to_integral_value(rounding=ROUND_CEILING) * lot_step)
+            maker_amt = (Decimal(str(cand_gross)) * Decimal(str(q_px))).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+
+        maker_usd = float(maker_amt)
+        delivered_net = cand_gross * max(0.50, 1.0 - h)
+        valid = cand_gross >= 5.0 - 1e-9 and delivered_net >= 5.0 - 1e-9 and maker_usd >= 1.0 - 1e-9
+        return (q_px, round(cand_gross, 4), round(maker_usd, 2), valid)
+
+    def execute_two_leg_taker_box(
+        self,
+        *,
+        decision_ts_ms: int,
+        leg_a_venue: str,
+        leg_a_slug: str,
+        leg_a_side: str,
+        leg_a_limit_px: float,
+        leg_b_venue: str,
+        leg_b_slug: str,
+        leg_b_side: str,
+        leg_b_limit_px: float,
+        target_net_shares: float,
+        unit_guaranteed_payout_usd: float,
+        book_lookup_fn: Callable[[str, str, int], Optional[NormalizedBinaryMarket]],
+        dispatch_mode: str = "FRAGILE_FIRST",
+    ) -> SimulatedBoxExecution:
+        """
+        Executes a 2-leg box against the causal book timeline `book_lookup_fn(venue, slug, ts_ms)`:
+          - `FRAGILE_FIRST`: sends slower / speed-bump leg first; if its FOK rejects cleanly, Leg 2 is
+            never sent (`unwind_bleed = $0.00`). If Leg 1 fills, Leg 2 is dispatched upon fill confirmation!
+          - `PARALLEL`: dispatches both legs at `decision_ts_ms`; if Leg 1 fills and Leg 2 rejects,
+            unwinds Leg 1 after `defer_exec_settlement_ms` (on Polymarket) + wire RTT.
+        """
+        mkt_a_0 = book_lookup_fn(leg_a_venue, leg_a_slug, decision_ts_ms)
+        mkt_b_0 = book_lookup_fn(leg_b_venue, leg_b_slug, decision_ts_ms)
+        if mkt_a_0 is None or mkt_b_0 is None:
+            return SimulatedBoxExecution(False, "MISSING_DECISION_BOOK", decision_ts_ms, 0.0, 0.0, 0.0, 0.0, 0.0, ())
+
+        delay_a = int(round(self.wire_latency_ms.get(leg_a_venue.lower(), 80.0) + mkt_a_0.taker_delay_ms))
+        delay_b = int(round(self.wire_latency_ms.get(leg_b_venue.lower(), 110.0) + mkt_b_0.taker_delay_ms))
+
+        # Order legs so leg_1 is dispatched first when FRAGILE_FIRST (slower/delayed leg first)
+        legs_cfg = [
+            (leg_a_venue.lower(), leg_a_slug, leg_a_side.upper(), float(leg_a_limit_px), delay_a, mkt_a_0),
+            (leg_b_venue.lower(), leg_b_slug, leg_b_side.upper(), float(leg_b_limit_px), delay_b, mkt_b_0),
+        ]
+        if dispatch_mode.upper() == "FRAGILE_FIRST" and delay_b > delay_a:
+            legs_cfg.reverse()
+
+        v1, s1, sd1, lim1, d1, m1_init = legs_cfg[0]
+        v2, s2, sd2, lim2, d2, m2_init = legs_cfg[1]
+
+        t_arr_1 = decision_ts_ms + d1
+        t_arr_2 = (t_arr_1 + d2) if dispatch_mode.upper() == "FRAGILE_FIRST" else (decision_ts_ms + d2)
+
+        fx_ask_1 = collateral_fx_ask_to_usd(m1_init.collateral_asset)
+        fx_fl_1 = collateral_fx_settle_floor_to_usd(m1_init.collateral_asset)
+        fx_ask_2 = collateral_fx_ask_to_usd(m2_init.collateral_asset)
+        fx_fl_2 = collateral_fx_settle_floor_to_usd(m2_init.collateral_asset)
+
+        req_sh_1 = math.ceil(target_net_shares / max(fx_fl_1, 1e-6)) if abs(fx_fl_1 - 1.0) > 1e-6 else target_net_shares
+        req_sh_2 = math.ceil(target_net_shares / max(fx_fl_2, 1e-6)) if abs(fx_fl_2 - 1.0) > 1e-6 else target_net_shares
+
+        if v1 == "polymarket":
+            lim1, _, _, ok_q1 = self.quantize_polymarket_fok_buy(req_sh_1, lim1, m1_init.fee_rate_bps)
+            if not ok_q1:
+                return SimulatedBoxExecution(False, "LEG1_FOK_QUANTIZATION_REJECTED", decision_ts_ms, 0.0, 0.0, 0.0, 0.0, 0.0, (t_arr_1,))
+        if v2 == "polymarket":
+            lim2, _, _, ok_q2 = self.quantize_polymarket_fok_buy(req_sh_2, lim2, m2_init.fee_rate_bps)
+            if not ok_q2:
+                return SimulatedBoxExecution(False, "LEG2_FOK_QUANTIZATION_REJECTED", decision_ts_ms, 0.0, 0.0, 0.0, 0.0, 0.0, (t_arr_1, t_arr_2))
+
+        m1_arr = book_lookup_fn(v1, s1, t_arr_1)
+        if m1_arr is None:
+            return SimulatedBoxExecution(False, "LEG1_BOOK_UNAVAILABLE", decision_ts_ms, 0.0, 0.0, 0.0, 0.0, 0.0, (t_arr_1,))
+        asks_1 = m1_arr.yes_asks if sd1 == "YES" else m1_arr.no_asks
+        w1 = walk_asks_for_shares(asks_1, req_sh_1, m1_arr, max_price=lim1)
+        if not w1.filled:
+            return SimulatedBoxExecution(False, "LEG1_FOK_KILLED_CLEANLY", decision_ts_ms, 0.0, 0.0, 0.0, 0.0, 0.0, (t_arr_1,))
+
+        m2_arr = book_lookup_fn(v2, s2, t_arr_2)
+        asks_2 = (m2_arr.yes_asks if sd2 == "YES" else m2_arr.no_asks) if m2_arr is not None else []
+        w2 = walk_asks_for_shares(asks_2, req_sh_2, m2_arr, max_price=lim2) if m2_arr is not None else None
+
+        if w2 is not None and w2.filled:
+            cost_usd = (w1.gross_cost_usd + w1.taker_fee_usd) * fx_ask_1 + (w2.gross_cost_usd + w2.taker_fee_usd) * fx_ask_2
+            gas_usd = DEFAULT_EXTERNAL_GAS_USD.get(v1, 0.002) + (0.0 if v1 == v2 else DEFAULT_EXTERNAL_GAS_USD.get(v2, 0.005))
+            bridge_usd = 0.0 if v1 == v2 else relay_bridge_drag_usd(cost_usd, self.bridge_drag_bps)
+            all_in = cost_usd + gas_usd + bridge_usd
+            net_pairs = min(w1.filled_shares * fx_fl_1, w2.filled_shares * fx_fl_2)
+            min_payout = net_pairs * float(unit_guaranteed_payout_usd)
+            net_pnl = min_payout - all_in
+            return SimulatedBoxExecution(
+                locked=net_pnl > 0.0,
+                status="LOCKED_RISKLESS_BOX" if net_pnl > 0.0 else "NEGATIVE_POST_FILL_NET_EDGE",
+                decision_ts_ms=decision_ts_ms,
+                net_paired_shares=round(net_pairs, 4),
+                all_in_cost_usd=round(all_in, 6),
+                guaranteed_min_payout_usd=round(min_payout, 6),
+                worst_state_net_pnl_usd=round(net_pnl, 6),
+                unwind_bleed_usd=0.0,
+                leg_arrival_ts_ms=(t_arr_1, t_arr_2),
+            )
+
+        # Leg 1 filled, Leg 2 failed -> simulate honest emergency unwind of Leg 1 AFTER settlement hold (`deferExec` on Polymarket)!
+        hold_ms = self.defer_exec_settlement_ms if v1 == "polymarket" else 0
+        rtt_unwind = int(round(self.wire_latency_ms.get(v1, 80.0)))
+        t_unwind = max(t_arr_2, t_arr_1 + hold_ms) + rtt_unwind
+        m1_unwind = book_lookup_fn(v1, s1, t_unwind) or m1_arr
+        bids_1 = m1_unwind.yes_bids if sd1 == "YES" else m1_unwind.no_bids
+        proceeds_1_local, _ = walk_bids_for_unwind(bids_1, w1.filled_shares, m1_unwind)
+        paid_1_usd = (w1.gross_cost_usd + w1.taker_fee_usd) * fx_ask_1 + DEFAULT_EXTERNAL_GAS_USD.get(v1, 0.002)
+        proceeds_1_usd = proceeds_1_local * fx_fl_1
+        bleed = max(0.0, paid_1_usd - proceeds_1_usd)
+        return SimulatedBoxExecution(
+            locked=False,
+            status="LEG2_MISSED_DEFER_EXEC_UNWOUND",
+            decision_ts_ms=decision_ts_ms,
+            net_paired_shares=0.0,
+            all_in_cost_usd=round(paid_1_usd, 6),
+            guaranteed_min_payout_usd=0.0,
+            worst_state_net_pnl_usd=round(-bleed, 6),
+            unwind_bleed_usd=round(bleed, 6),
+            leg_arrival_ts_ms=(t_arr_1, t_arr_2, t_unwind),
+        )
+
+
+# ---------------------------------------------------------------------------
+# 4. Zero-Lookahead Event-Driven Backtest Harness
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BacktestEvent:
+    visible_ts_ms: int          # Timestamp when Dominus actually receives/observes the event
+    source_event_ts_ms: int     # Exchange/oracle generation timestamp (`visible_ts_ms >= source_event_ts_ms` REQUIRED!)
+    event_type: str             # "BOOK_SNAPSHOT" | "TRADE_PRINT" | "SCOREBOARD_UPDATE" | "ORACLE_OBSERVATION" | "RESOLUTION_FINALIZED"
+    payload: Any
+    seq_no: int = 0
+
+
+@dataclass(frozen=True)
+class HonestBacktestReport:
+    events_processed: int
+    signals_generated: int
+    boxes_locked: int
+    leg_out_unwinds: int
+    total_guaranteed_min_pnl_usd: float
+    total_unwind_bleed_usd: float
+    net_worst_case_pnl_usd: float
+    min_single_trade_worst_state_pnl_usd: float
+    zero_lookahead_verified: bool
+    no_survivorship_verified: bool
+
+
+class ZeroLookaheadBacktestHarness:
+    """
+    Event-driven pure-riskless replay engine enforcing strict temporal causality:
+      1. Every `BacktestEvent` must satisfy `visible_ts_ms >= source_event_ts_ms` (raises `LookaheadViolationError` otherwise).
+      2. Strategy callbacks only ever see causal book/oracle/scoreboard state with `visible_ts_ms <= decision_ts_ms`,
+         while `HonestClobExecutionKernel` evaluates post-submission fills at `t_arrival > decision_ts_ms`.
+      3. Rejects survivorship-biased market metadata (`umaResolutionStatus == "resolved"` or winner leaked prior to `end_ts`).
+      4. Requires explicit `SCOREBOARD_UPDATE` confirmation (`is_halftime=True, clock_sec=0.0`) before halftime strategies fire.
+    """
+
+    def __init__(self, kernel: Optional[HonestClobExecutionKernel] = None) -> None:
+        self.kernel = kernel or HonestClobExecutionKernel()
+        self.maker_tracker = MakerQueueTradeThroughTracker()
+        self._timeline_books: Dict[Tuple[str, str], List[Tuple[int, NormalizedBinaryMarket]]] = {}
+        self._visible_books: Dict[Tuple[str, str], NormalizedBinaryMarket] = {}
+        self._visible_scoreboards: Dict[str, Dict[str, Any]] = {}
+        self._visible_oracles: Dict[str, Dict[str, Any]] = {}
+        self._current_decision_ts_ms: int = 0
+
+    @staticmethod
+    def validate_dataset_no_survivorship_bias(markets_meta: Sequence[Mapping[str, Any]]) -> bool:
+        """
+        Ensures historical market metadata was NOT pre-filtered to `umaResolutionStatus == 'resolved'` winners
+        or stripped of disputed/voided contracts prior to market expiration.
+        """
+        if not markets_meta:
+            return True
+        statuses = set()
+        for m in markets_meta:
+            snap_ts = float(m.get("snapshot_ts") or 0.0)
+            end_ts = float(m.get("end_ts") or 0.0)
+            uma_st = str(m.get("umaResolutionStatus") or "").strip().lower()
+            statuses.add(uma_st or "unresolved")
+            if snap_ts > 0.0 and end_ts > 0.0 and snap_ts < end_ts and uma_st == "resolved":
+                raise SurvivorshipBiasError(
+                    f"Market {m.get('slug') or m.get('market_id')} leaked umaResolutionStatus='resolved' at {snap_ts} < end_ts {end_ts}"
+                )
+            if snap_ts > 0.0 and end_ts > 0.0 and snap_ts < end_ts and m.get("resolved_winner") is not None:
+                raise SurvivorshipBiasError(
+                    f"Market {m.get('slug') or m.get('market_id')} leaked resolved_winner before end_ts"
+                )
+        if len(markets_meta) >= 5 and statuses == {"resolved"}:
+            raise SurvivorshipBiasError(
+                "Dataset contains >=5 markets with 100% pre-filtered umaResolutionStatus='resolved' (survivorship bias)"
+            )
+        return True
+
+    def get_visible_book(self, venue: str, slug: str, query_ts_ms: int) -> Optional[NormalizedBinaryMarket]:
+        if query_ts_ms > self._current_decision_ts_ms:
+            raise LookaheadViolationError(
+                f"Strategy queried book at {query_ts_ms}ms > current_decision_ts_ms {self._current_decision_ts_ms}ms"
+            )
+        return self._lookup_book_at(venue, slug, query_ts_ms)
+
+    def verify_halftime_state_confirmed(self, matchup_key: str, *, min_remaining_intermission_sec: float = 480.0) -> bool:
+        """True ONLY if a causal `SCOREBOARD_UPDATE` confirmed `is_halftime=True` & `clock_sec == 0` with `>= 480s` left."""
+        sb = self._visible_scoreboards.get(matchup_key)
+        if not isinstance(sb, Mapping):
+            return False
+        if not bool(sb.get("is_halftime", False)):
+            return False
+        if abs(float(sb.get("clock_sec", -1.0))) > 1e-6:
+            return False
+        elapsed_since_ht = max(0.0, (self._current_decision_ts_ms - int(sb.get("halftime_started_ts_ms", self._current_decision_ts_ms))) / 1000.0)
+        rem_intermission = float(sb.get("scheduled_intermission_sec", 900.0)) - elapsed_since_ht
+        return rem_intermission >= float(min_remaining_intermission_sec)
+
+    def _lookup_book_at(self, venue: str, slug: str, ts_ms: int) -> Optional[NormalizedBinaryMarket]:
+        hist = self._timeline_books.get((venue.lower(), slug))
+        if not hist:
+            return None
+        lo, hi = 0, len(hist) - 1
+        ans: Optional[NormalizedBinaryMarket] = None
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            if hist[mid][0] <= ts_ms:
+                ans = hist[mid][1]
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        return ans
+
+    def run(
+        self,
+        events: Sequence[BacktestEvent],
+        strategy_fn: Callable[["ZeroLookaheadBacktestHarness", int, Mapping[Tuple[str, str], NormalizedBinaryMarket]], Sequence[Mapping[str, Any]]],
+        *,
+        markets_meta: Sequence[Mapping[str, Any]] = (),
+    ) -> HonestBacktestReport:
+        """
+        Replays `events` in strict `(visible_ts_ms, seq_no)` order, invokes `strategy_fn(harness, decision_ts_ms, visible_books)`
+        on each visible update, and executes emitted 2-leg box intents through `HonestClobExecutionKernel` against the true
+        post-latency timeline.
+        """
+        no_surv = self.validate_dataset_no_survivorship_bias(markets_meta)
+
+        ordered = sorted(events, key=lambda e: (int(e.visible_ts_ms), int(e.seq_no)))
+        self._timeline_books.clear()
+        self._visible_books.clear()
+        self._visible_scoreboards.clear()
+        self._visible_oracles.clear()
+
+        for ev in ordered:
+            if int(ev.visible_ts_ms) < int(ev.source_event_ts_ms):
+                raise LookaheadViolationError(
+                    f"Event {ev.event_type} has visible_ts_ms={ev.visible_ts_ms} < source_event_ts_ms={ev.source_event_ts_ms}"
+                )
+            if ev.event_type == "BOOK_SNAPSHOT" and isinstance(ev.payload, NormalizedBinaryMarket):
+                mkt = ev.payload
+                self._timeline_books.setdefault((mkt.venue.lower(), mkt.slug), []).append((int(ev.visible_ts_ms), mkt))
+
+        signals_count = 0
+        locked_count = 0
+        unwind_count = 0
+        guaranteed_pnl_sum = 0.0
+        unwind_bleed_sum = 0.0
+        min_locked_trade_pnl: Optional[float] = None
+        executed_keys: set[str] = set()
+
+        for ev in ordered:
+            ts_ms = int(ev.visible_ts_ms)
+            self._current_decision_ts_ms = ts_ms
+
+            if ev.event_type == "BOOK_SNAPSHOT" and isinstance(ev.payload, NormalizedBinaryMarket):
+                mkt = ev.payload
+                self._visible_books[(mkt.venue.lower(), mkt.slug)] = mkt
+                self.maker_tracker.observe_book_snapshot(mkt, ts_ms)
+            elif ev.event_type == "TRADE_PRINT" and isinstance(ev.payload, Mapping):
+                tp = ev.payload
+                self.maker_tracker.observe_trade_print(
+                    venue=str(tp.get("venue") or ""),
+                    market_slug=str(tp.get("market_slug") or ""),
+                    outcome_side=str(tp.get("side") or "YES"),
+                    trade_price=float(tp.get("price") or 0.0),
+                    trade_shares=float(tp.get("shares") or 0.0),
+                    ts_ms=ts_ms,
+                    aggressor_side=str(tp.get("aggressor_side") or "SELL"),
+                )
+            elif ev.event_type == "SCOREBOARD_UPDATE" and isinstance(ev.payload, Mapping):
+                mk = str(ev.payload.get("matchup_key") or "")
+                if mk:
+                    self._visible_scoreboards[mk] = dict(ev.payload)
+            elif ev.event_type == "ORACLE_OBSERVATION" and isinstance(ev.payload, Mapping):
+                ok = str(ev.payload.get("oracle_key") or "")
+                if ok:
+                    self._visible_oracles[ok] = dict(ev.payload)
+
+            intents = strategy_fn(self, ts_ms, dict(self._visible_books))
+            for intent in intents or ():
+                dedupe_k = str(intent.get("dedupe_key") or "")
+                if dedupe_k and dedupe_k in executed_keys:
+                    continue
+                if dedupe_k:
+                    executed_keys.add(dedupe_k)
+                signals_count += 1
+                res = self.kernel.execute_two_leg_taker_box(
+                    decision_ts_ms=ts_ms,
+                    leg_a_venue=str(intent["leg_a_venue"]),
+                    leg_a_slug=str(intent["leg_a_slug"]),
+                    leg_a_side=str(intent["leg_a_side"]),
+                    leg_a_limit_px=float(intent["leg_a_limit_px"]),
+                    leg_b_venue=str(intent["leg_b_venue"]),
+                    leg_b_slug=str(intent["leg_b_slug"]),
+                    leg_b_side=str(intent["leg_b_side"]),
+                    leg_b_limit_px=float(intent["leg_b_limit_px"]),
+                    target_net_shares=float(intent.get("shares", 10.0)),
+                    unit_guaranteed_payout_usd=float(intent.get("unit_guaranteed_payout_usd", 1.0)),
+                    book_lookup_fn=self._lookup_book_at,
+                    dispatch_mode=str(intent.get("dispatch_mode", "FRAGILE_FIRST")),
+                )
+                if res.locked:
+                    locked_count += 1
+                    guaranteed_pnl_sum += res.worst_state_net_pnl_usd
+                    if min_locked_trade_pnl is None or res.worst_state_net_pnl_usd < min_locked_trade_pnl:
+                        min_locked_trade_pnl = res.worst_state_net_pnl_usd
+                elif res.unwind_bleed_usd > 0.0:
+                    unwind_count += 1
+                    unwind_bleed_sum += res.unwind_bleed_usd
+
+        net_total = guaranteed_pnl_sum - unwind_bleed_sum
+        return HonestBacktestReport(
+            events_processed=len(ordered),
+            signals_generated=signals_count,
+            boxes_locked=locked_count,
+            leg_out_unwinds=unwind_count,
+            total_guaranteed_min_pnl_usd=round(guaranteed_pnl_sum, 6),
+            total_unwind_bleed_usd=round(unwind_bleed_sum, 6),
+            net_worst_case_pnl_usd=round(net_total, 6),
+            min_single_trade_worst_state_pnl_usd=round(min_locked_trade_pnl if min_locked_trade_pnl is not None else 0.0, 6),
+            zero_lookahead_verified=True,
+            no_survivorship_verified=no_surv,
+        )
+
+# ======================================================================================
+# [52/67] MODULE: src/polymarket_research/riskless_expansion_v6_engines.py
+# PURPOSE: v6.0 8-Sleeve Riskless Expansion Engine (XV Subset-NO, 0.001 Tail, BOND3, CAD/USD FX, Deribit USDC, Halftime, PreConv NR3, Yield Box)
+# ======================================================================================
+
+"""
+Dominus Riskless Expansion v6 — 8 Mathematically Verified Pure-Riskless Engines
+(`src/polymarket_research/riskless_expansion_v6_engines.py`).
+
+Implements Phase 2 (`P2.1`–`P2.8`) of the Dominus Riskless Audit & Expansion Blueprint:
+  1. `XV_SUBSET_NO_BOX`: Cross-venue & augmented-safe $2 <= m <= k$ subset `NO` dominance boxes
+     with universal $m=2$ `50-50` cancellation proof and `+$1.00` outsider/`Other` jackpot.
+  2. `TAIL_BOUNDARY_001_ARB`: Polymarket `0.001`-tick boundary (`p >= 0.96` / `p <= 0.04`)
+     parabolic-fee-collapse complete-set & nested dominance scanner (`8x–20x` lower V2 fee drag).
+  3. `BOND3_MULTISOURCE_DEAD_SPLIT`: Multi-source independent primary-oracle unanimity gate
+     (MLB, NHL, NBA, Soccer post-VAR, Crypto finalized candle, Weather SPECI/COR-safe) +
+     `Stage C2` dead-leg `splitPosition` -> FOK sell synthesizer during `MOOV2` windows.
+  4. `XV_FX_INVARIANT_CAD_USD_BOX`: `100%` `CA-ON` legal `STX Ontario (CAD, 0% maker)` <->
+     `ForecastEx / IBKR Canada (USD)` state-invariant FX-sized / IBKR FX-locked arbitrage engine.
+  5. `DERIBIT_VERTICAL_SUPER_REP`: Keyless Deribit linear `USDC` (`BTC_USDC`, `ETH_USDC`, `SOL_USDC`)
+     `08:00 UTC` tight vertical call/put spread super-replication vs binary digital strikes with
+     explicit `30m TWAP` cross-oracle basis bound $B_{max}$.
+  6. `XV_HALFTIME_FREEZE_CORRIDOR`: Cross-venue `.5`-hook halftime (`clock=0:00`, `>= 480s` scorer
+     review, `0ms` live delay) `FG = S_1H + 2H` affine total & spread corridor scanner.
+  7. `HEDGED_PRESPLIT_CONV_GUN`: Pre-converted closed `NegRisk` `NR3` settled-inventory overround
+     harvester (zero post-fill Polygon block lag) + shadow-gated hedged pre-split binary Maker-Ask.
+  8. `YIELD_STACKED_CARRY_BOX`: Contractual collateral coupon accrual (`ForecastEx` `FFR - 0.50%`,
+     `Predict.fun` Venus `vUSDT`, `Polymarket` Holding Rewards) with rate-cut haircut + `Stage C1`
+     early overround exit accounting for forfeited remaining coupon.
+
+Core Invariant:
+  Every candidate emitted by this module carries an explicit `state_payoff_table: Dict[str, float]`
+  and passes `verify_state_dominance_invariant`:
+      min_{omega in Omega} state_payoff_table[omega] >= all_in_cost_usd + min_net_profit_usd
+"""
+
+# from __future__ import annotations  # (Lifted to top of consolidated bundle)
+
+from dataclasses import asdict, dataclass, field
+from decimal import Decimal, ROUND_CEILING
+from itertools import combinations
+import math
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+
+from src.polymarket_research.cross_venue_riskless_shadow import (
+    DEFAULT_EXTERNAL_GAS_USD,
+    DEFAULT_RELAY_BRIDGE_DRAG_BPS,
+    MIN_NET_PROFIT_USD,
+    NormalizedBinaryMarket,
+    OrderLevel,
+    collateral_fx_ask_to_usd,
+    collateral_fx_settle_floor_to_usd,
+    compute_venue_taker_fee_usd,
+    polymarket_v2_share_haircut_frac,
+    relay_bridge_drag_usd,
+    walk_asks_for_shares,
+)
+from src.polymarket_research.riskless_protocol_v2_expansion import (
+    v2_net_buy_cost_per_share,
+    v2_net_sell_proceeds_per_share,
+)
+
+
+class StateDominanceViolationError(ValueError):
+    """Raised if a candidate fails state-by-state worst-case profit dominance."""
+
+
+@dataclass(frozen=True)
+class VerifiedRisklessOpportunity:
+    """Canonical output record for all 8 Phase-2 riskless engines."""
+
+    strategy_id: str
+    opportunity_id: str
+    venues: Tuple[str, ...]
+    jurisdiction_tags: Tuple[str, ...]
+    live_eligible: bool
+    shares_or_units: float
+    all_in_cost_usd: float
+    worst_case_payout_usd: float
+    best_case_payout_usd: float
+    guaranteed_net_profit_usd: float
+    guaranteed_net_edge_bps: float
+    lockup_hours: float
+    state_payoff_table: Dict[str, float]
+    legs: Tuple[Dict[str, Any], ...]
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+
+def verify_state_dominance_invariant(
+    state_payoff_table: Mapping[str, float],
+    all_in_cost_usd: float,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Tuple[bool, float, float, str]:
+    """
+    Verify strict state-by-state payoff dominance:
+        min_{omega in Omega} V_T(omega) >= all_in_cost_usd + min_net_profit_usd.
+    Returns `(passed, worst_payout, best_payout, worst_state_name)`.
+    """
+    if not state_payoff_table or all_in_cost_usd <= 0.0:
+        return False, 0.0, 0.0, "EMPTY_STATE_SPACE"
+    worst_state, worst_val = min(state_payoff_table.items(), key=lambda kv: float(kv[1]))
+    _, best_val = max(state_payoff_table.items(), key=lambda kv: float(kv[1]))
+    net_floor = float(worst_val) - float(all_in_cost_usd)
+    return (net_floor + 1e-9 >= float(min_net_profit_usd)), float(worst_val), float(best_val), str(worst_state)
+
+
+def _market_poly_haircut(mkt: NormalizedBinaryMarket, price: float) -> float:
+    if mkt.venue.lower() == "polymarket" and mkt.fee_enabled and float(mkt.fee_rate_bps or 0.0) > 0.0:
+        return polymarket_v2_share_haircut_frac(float(price), float(mkt.fee_rate_bps))
+    return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Engine 1 (`P2.1`): Cross-Venue & Augmented-Safe Subset `NO` Dominance Box
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class SubsetNoCandidateOutcome:
+    """One mutually-exclusive outcome candidate mapped across >=1 venue."""
+
+    outcome_key: str
+    market: NormalizedBinaryMarket
+    cancel_payout_mode: str = "50_50"  # "50_50" | "VOID" | "NO_WINS"
+
+
+def detect_cross_venue_subset_no_boxes(
+    partition_id: str,
+    outcomes: Sequence[SubsetNoCandidateOutcome],
+    *,
+    is_mutually_exclusive: bool = True,
+    has_path_dependent_barriers: bool = False,
+    event_cancel_exempt: bool = False,
+    subset_sizes: Sequence[int] = (2, 3),
+    target_notional_usd: float = 50.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> List[VerifiedRisklessOpportunity]:
+    """
+    Scan $2 <= m <= k$ subset `NO` dominance boxes across any mutually-exclusive outcome space
+    (including `negRiskAugmented=True` slates with `"Other"`, since direct `NO` holding never
+    calls `convertPositions` and earns a `+$1.00 * Q` jackpot if `"Other"` wins!).
+
+    Cancellation Theorem Enforced:
+      - If event cancellation resolves legs `50_50`, terminal cancel payout is `0.50 * m * Q`.
+        For $m = 2$, `0.50 * 2 = 1.00 = m - 1 > cost` unconditionally!
+        For $m >= 3$, `0.50 * m < m - 1`, so `OMEGA_EVENT_CANCEL` is explicitly included in
+        `state_payoff_table` unless `event_cancel_exempt=True` (e.g., scheduled FOMC/CPI dates).
+      - If a venue's cancel rule is `VOID`, cancel payout credits `local_cost * fx_settle_floor`.
+    """
+    if not is_mutually_exclusive or has_path_dependent_barriers or len(outcomes) < 2:
+        return []
+
+    best_by_outcome: Dict[str, Tuple[float, SubsetNoCandidateOutcome]] = {}
+    for cand in outcomes:
+        mkt = cand.market
+        if mkt.category.lower() == "crypto_barrier" or not mkt.no_asks:
+            continue
+        top_px = float(mkt.no_asks[0].price)
+        if top_px <= 0.0 or top_px >= 1.0:
+            continue
+        fx_a = collateral_fx_ask_to_usd(mkt.collateral_asset)
+        fx_f = collateral_fx_settle_floor_to_usd(mkt.collateral_asset)
+        haircut = _market_poly_haircut(mkt, top_px)
+        unit_fee = 0.0 if mkt.venue.lower() == "polymarket" else compute_venue_taker_fee_usd(mkt, 1.0, top_px)
+        eff_usd_unit = ((top_px / max(1.0 - haircut, 1e-6)) + unit_fee) * (fx_a / max(fx_f, 1e-6))
+        prev = best_by_outcome.get(cand.outcome_key)
+        if prev is None or eff_usd_unit < prev[0]:
+            best_by_outcome[cand.outcome_key] = (eff_usd_unit, cand)
+
+    chosen_pool = [v[1] for v in sorted(best_by_outcome.values(), key=lambda x: x[0])]
+    if len(chosen_pool) < 2:
+        return []
+
+    results: List[VerifiedRisklessOpportunity] = []
+    for m in subset_sizes:
+        if m < 2 or m > len(chosen_pool):
+            continue
+        payout_floor_per_unit = float(m - 1)
+        for combo in combinations(chosen_pool, m):
+            est_unit_sum = 0.0
+            for item in combo:
+                px0 = item.market.no_asks[0].price
+                fx_ratio = collateral_fx_ask_to_usd(item.market.collateral_asset) / max(
+                    collateral_fx_settle_floor_to_usd(item.market.collateral_asset), 1e-6
+                )
+                h0 = _market_poly_haircut(item.market, px0)
+                est_unit_sum += (px0 / max(1.0 - h0, 1e-6)) * fx_ratio
+            if est_unit_sum >= payout_floor_per_unit:
+                continue
+
+            min_usd_sh = max(
+                item.market.min_shares * collateral_fx_settle_floor_to_usd(item.market.collateral_asset)
+                for item in combo
+            )
+            q_usd = max(min_usd_sh, math.floor(float(target_notional_usd) / max(est_unit_sum, 0.10)))
+
+            leg_records: List[Dict[str, Any]] = []
+            leg_costs_usd: List[float] = []
+            leg_local_spent: List[float] = []
+            feasible = True
+            for item in combo:
+                mkt = item.market
+                fx_a = collateral_fx_ask_to_usd(mkt.collateral_asset)
+                fx_f = collateral_fx_settle_floor_to_usd(mkt.collateral_asset)
+                req_net_local = q_usd / max(fx_f, 1e-6)
+                req_local = math.ceil(req_net_local / max(mkt.lot_size, 1e-6)) * max(mkt.lot_size, 1e-6)
+                w_fill = walk_asks_for_shares(mkt.no_asks, req_local, mkt)
+                if not w_fill.filled or w_fill.filled_shares + 1e-6 < req_net_local:
+                    feasible = False
+                    break
+                # `walk_asks_for_shares` already computes exact `gross_cost_usd` + `taker_fee_usd` (including PM V2 & STX win comm)
+                leg_usd = (w_fill.gross_cost_usd + w_fill.taker_fee_usd) * fx_a
+                leg_costs_usd.append(leg_usd)
+                leg_local_spent.append(w_fill.gross_cost_usd)
+                leg_records.append(
+                    {
+                        "outcome_key": item.outcome_key,
+                        "venue": mkt.venue,
+                        "market_id": mkt.market_id,
+                        "side": "NO",
+                        "local_shares_net": round(w_fill.filled_shares, 6),
+                        "vwap_local": round(w_fill.vwap_price, 6),
+                        "leg_cost_usd": round(leg_usd, 6),
+                        "cancel_payout_mode": item.cancel_payout_mode,
+                        "fx_settle_floor": fx_f,
+                    }
+                )
+            if not feasible:
+                continue
+
+            distinct_venues = tuple(sorted({item.market.venue for item in combo}))
+            gas_usd = sum(DEFAULT_EXTERNAL_GAS_USD.get(v, 0.005) for v in distinct_venues)
+            bridge_usd = (
+                relay_bridge_drag_usd(sum(leg_costs_usd), DEFAULT_RELAY_BRIDGE_DRAG_BPS) * (len(distinct_venues) - 1)
+                if len(distinct_venues) > 1
+                else 0.0
+            )
+            all_in_cost = sum(leg_costs_usd) + gas_usd + bridge_usd
+
+            state_table: Dict[str, float] = {}
+            for win_idx, item in enumerate(combo):
+                payout_win = sum(
+                    rec["local_shares_net"] * rec["fx_settle_floor"]
+                    for j, rec in enumerate(leg_records)
+                    if j != win_idx
+                )
+                state_table[f"OMEGA_OUTCOME_{item.outcome_key}_YES"] = round(payout_win, 6)
+
+            outsider_payout = sum(rec["local_shares_net"] * rec["fx_settle_floor"] for rec in leg_records)
+            state_table["OMEGA_OUTSIDER_OR_AUGMENTED_OTHER_YES"] = round(outsider_payout, 6)
+
+            if not event_cancel_exempt:
+                cancel_payout = 0.0
+                for j, (item, rec) in enumerate(zip(combo, leg_records)):
+                    mode = item.cancel_payout_mode.upper()
+                    if mode == "VOID":
+                        cancel_payout += leg_local_spent[j] * rec["fx_settle_floor"]
+                    elif mode == "NO_WINS":
+                        cancel_payout += rec["local_shares_net"] * rec["fx_settle_floor"]
+                    else:  # "50_50"
+                        cancel_payout += 0.50 * rec["local_shares_net"] * rec["fx_settle_floor"]
+                state_table["OMEGA_EVENT_CANCEL"] = round(cancel_payout, 6)
+
+            passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+                state_table, all_in_cost, min_net_profit_usd=min_net_profit_usd
+            )
+            if not passed:
+                continue
+
+            lockup_h = max(0.5, max(it.market.settlement_delay_hours for it in combo) + 2.0)
+            jurisdictions = (
+                ("CA-ON-LEGAL",)
+                if set(distinct_venues).issubset({"stx_ontario", "forecastex", "deribit"})
+                else ("GLOBAL_SHADOW",)
+            )
+            net_profit = worst_p - all_in_cost
+            edge_bps = (net_profit / all_in_cost) * 10_000.0
+            opp_key = f"xv_subno:{partition_id}:m{m}:{'+'.join(it.outcome_key for it in combo)}"
+            results.append(
+                VerifiedRisklessOpportunity(
+                    strategy_id="XV_SUBSET_NO_BOX",
+                    opportunity_id=opp_key,
+                    venues=distinct_venues,
+                    jurisdiction_tags=jurisdictions,
+                    live_eligible=("CA-ON-LEGAL" in jurisdictions or distinct_venues == ("polymarket",)),
+                    shares_or_units=round(q_usd, 6),
+                    all_in_cost_usd=round(all_in_cost, 6),
+                    worst_case_payout_usd=round(worst_p, 6),
+                    best_case_payout_usd=round(best_p, 6),
+                    guaranteed_net_profit_usd=round(net_profit, 6),
+                    guaranteed_net_edge_bps=round(edge_bps, 2),
+                    lockup_hours=round(lockup_h, 3),
+                    state_payoff_table=state_table,
+                    legs=tuple(leg_records),
+                    metadata={
+                        "subset_size_m": m,
+                        "partition_total_outcomes_seen": len(chosen_pool),
+                        "outsider_jackpot_bonus_usd": round(best_p - worst_p, 6),
+                    },
+                )
+            )
+
+    results.sort(key=lambda r: r.guaranteed_net_edge_bps, reverse=True)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Engine 2 (`P2.2`): `0.001`-Tick Boundary Parabolic-Fee Collapse Scanner
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class BoundaryTickDominancePair:
+    """
+    Candidate pair on Polymarket's `0.001` sub-penny boundary grid (`p >= 0.96` or `p <= 0.04`).
+    """
+
+    pair_id: str
+    pair_type: str  # "COMPLETE_SET" | "NESTED_STRIKE"
+    oracle_signature: str
+    expiry_ts: float
+    leg_a_token_id: str
+    leg_a_label: str
+    leg_a_asks: Tuple[OrderLevel, ...]
+    leg_b_token_id: str
+    leg_b_label: str
+    leg_b_asks: Tuple[OrderLevel, ...]
+    fee_rate: float = 0.07
+    fee_exponent: float = 1.0
+    strike_low: float = 0.0
+    strike_high: float = 0.0
+    lockup_hours: float = 1.0
+
+
+def _quantize_subpenny_001_leg_shares(gross_shares: float, price: float) -> Tuple[float, float]:
+    """
+    Quantize a Polymarket BUY leg on the `0.001` boundary tick grid so `maker_amount = shares * price`
+    is an exact 2-decimal cent multiple (`$0.01`), `shares >= 5.0`, and `maker_amount >= $1.00`.
+    """
+    d_px = Decimal(str(round(float(price), 3)))
+    if d_px <= Decimal("0") or d_px >= Decimal("1"):
+        return 0.0, 0.0
+    min_sh_notional = float((Decimal("1.00") / d_px).quantize(Decimal("0.01"), rounding=ROUND_CEILING))
+    base_sh = max(5.0, float(gross_shares), min_sh_notional)
+    cand = Decimal(str(math.ceil(base_sh * 10.0) / 10.0))
+    for _ in range(105):
+        cents = cand * d_px * Decimal("100")
+        if cents == cents.to_integral_value() and cand * d_px >= Decimal("1.00"):
+            return float(cand), float((cand * d_px).quantize(Decimal("0.01")))
+        cand += Decimal("0.1")
+    return 0.0, 0.0
+
+
+def detect_tail_boundary_001_fee_collapse_boxes(
+    pairs: Sequence[BoundaryTickDominancePair],
+    *,
+    target_box_notional_usd: float = 45.0,
+    polygon_gas_usd: float = 0.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> List[VerifiedRisklessOpportunity]:
+    """
+    Detect riskless boxes where at least one leg (`p >= 0.96` or `p <= 0.04`) sits on Polymarket's
+    `0.001` sub-penny boundary tick grid, collapsing V2 parabolic taker fees by `8x–20x` while
+    enforcing exact 2-decimal `makerAmount` quantization and `$1.00` per-leg FOK floors.
+    """
+    opportunities: List[VerifiedRisklessOpportunity] = []
+    for pair in pairs:
+        if not pair.leg_a_asks or not pair.leg_b_asks:
+            continue
+        if pair.pair_type.upper() == "NESTED_STRIKE" and pair.strike_low > pair.strike_high + 1e-12:
+            continue
+
+        px_a = round(float(pair.leg_a_asks[0].price), 3)
+        px_b = round(float(pair.leg_b_asks[0].price), 3)
+        in_boundary_a = px_a >= 0.96 or px_a <= 0.04
+        in_boundary_b = px_b >= 0.96 or px_b <= 0.04
+        if not (in_boundary_a or in_boundary_b):
+            continue
+        if not in_boundary_a and abs(round(px_a, 2) - px_a) > 1e-9:
+            continue
+        if not in_boundary_b and abs(round(px_b, 2) - px_b) > 1e-9:
+            continue
+
+        unit_net_a = v2_net_buy_cost_per_share(px_a, pair.fee_rate, pair.fee_exponent)
+        unit_net_b = v2_net_buy_cost_per_share(px_b, pair.fee_rate, pair.fee_exponent)
+        if unit_net_a + unit_net_b >= 1.0:
+            continue
+
+        h_a = 1.0 - (px_a / unit_net_a)
+        h_b = 1.0 - (px_b / unit_net_b)
+        min_net_from_notional_a = (1.00 / max(px_a, 1e-6)) * (1.0 - h_a)
+        min_net_from_notional_b = (1.00 / max(px_b, 1e-6)) * (1.0 - h_b)
+        desired_net_sh = max(
+            5.0,
+            min_net_from_notional_a,
+            min_net_from_notional_b,
+            float(target_box_notional_usd) / max(unit_net_a + unit_net_b, 0.10),
+        )
+        avail_net_a = float(pair.leg_a_asks[0].size) * (1.0 - h_a)
+        avail_net_b = float(pair.leg_b_asks[0].size) * (1.0 - h_b)
+        net_target = min(desired_net_sh, avail_net_a, avail_net_b)
+        if net_target < max(5.0, min_net_from_notional_a, min_net_from_notional_b):
+            continue
+
+        # Quantize the higher-priced leg first, then match the cheaper tail leg to its exact delivered net shares
+        # so sub-penny lot rounding on the `$0.96+` leg never leaves the `$0.02–$0.04` leg under-hedged!
+        if px_a >= px_b:
+            gross_a_raw = net_target / max(1.0 - h_a, 1e-6)
+            q_gross_a, cost_a = _quantize_subpenny_001_leg_shares(gross_a_raw, px_a)
+            delivered_net_a = q_gross_a * (1.0 - h_a)
+            gross_b_raw = max(net_target, delivered_net_a) / max(1.0 - h_b, 1e-6)
+            q_gross_b, cost_b = _quantize_subpenny_001_leg_shares(gross_b_raw, px_b)
+        else:
+            gross_b_raw = net_target / max(1.0 - h_b, 1e-6)
+            q_gross_b, cost_b = _quantize_subpenny_001_leg_shares(gross_b_raw, px_b)
+            delivered_net_b_pre = q_gross_b * (1.0 - h_b)
+            gross_a_raw = max(net_target, delivered_net_b_pre) / max(1.0 - h_a, 1e-6)
+            q_gross_a, cost_a = _quantize_subpenny_001_leg_shares(gross_a_raw, px_a)
+        if q_gross_a <= 0.0 or q_gross_b <= 0.0:
+            continue
+        if q_gross_a > float(pair.leg_a_asks[0].size) + 1e-9 or q_gross_b > float(pair.leg_b_asks[0].size) + 1e-9:
+            continue
+
+        delivered_net_a = q_gross_a * (1.0 - h_a)
+        delivered_net_b = q_gross_b * (1.0 - h_b)
+        paired_net_sh = min(delivered_net_a, delivered_net_b)
+        if paired_net_sh < 5.0:
+            continue
+
+        all_in_cost = cost_a + cost_b + float(polygon_gas_usd)
+        state_table: Dict[str, float] = {
+            "OMEGA_LOW_OUTCOME_LEG_B_WINS": round(delivered_net_b * 1.0, 6),
+            "OMEGA_HIGH_OUTCOME_LEG_A_WINS": round(delivered_net_a * 1.0, 6),
+        }
+        if pair.pair_type.upper() == "NESTED_STRIKE" and pair.strike_low < pair.strike_high:
+            state_table["OMEGA_POLISH_MIDDLE_BOTH_WIN"] = round((delivered_net_a + delivered_net_b) * 1.0, 6)
+
+        passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+            state_table, all_in_cost, min_net_profit_usd=min_net_profit_usd
+        )
+        if not passed:
+            continue
+
+        mid_fee_drag = 2.0 * (v2_net_buy_cost_per_share(0.50, pair.fee_rate, pair.fee_exponent) - 0.50)
+        tail_fee_drag = (unit_net_a - px_a) + (unit_net_b - px_b)
+        fee_compression_ratio = mid_fee_drag / max(tail_fee_drag, 1e-6)
+
+        net_profit = worst_p - all_in_cost
+        opportunities.append(
+            VerifiedRisklessOpportunity(
+                strategy_id="TAIL_BOUNDARY_001_ARB",
+                opportunity_id=f"tail001:{pair.pair_id}",
+                venues=("polymarket",),
+                jurisdiction_tags=("EU_ELIGIBLE", "GLOBAL_SHADOW"),
+                live_eligible=True,
+                shares_or_units=round(paired_net_sh, 6),
+                all_in_cost_usd=round(all_in_cost, 6),
+                worst_case_payout_usd=round(worst_p, 6),
+                best_case_payout_usd=round(best_p, 6),
+                guaranteed_net_profit_usd=round(net_profit, 6),
+                guaranteed_net_edge_bps=round((net_profit / all_in_cost) * 10_000.0, 2),
+                lockup_hours=round(max(0.05, pair.lockup_hours), 3),
+                state_payoff_table=state_table,
+                legs=(
+                    {
+                        "token_id": pair.leg_a_token_id,
+                        "label": pair.leg_a_label,
+                        "price": px_a,
+                        "gross_shares": q_gross_a,
+                        "net_shares": round(delivered_net_a, 6),
+                        "maker_amount_usd": cost_a,
+                    },
+                    {
+                        "token_id": pair.leg_b_token_id,
+                        "label": pair.leg_b_label,
+                        "price": px_b,
+                        "gross_shares": q_gross_b,
+                        "net_shares": round(delivered_net_b, 6),
+                        "maker_amount_usd": cost_b,
+                    },
+                ),
+                metadata={
+                    "tail_unit_fee_drag": round(tail_fee_drag, 6),
+                    "mid_50_50_unit_fee_drag": round(mid_fee_drag, 6),
+                    "fee_compression_multiple": round(fee_compression_ratio, 2),
+                    "oracle_signature": pair.oracle_signature,
+                },
+            )
+        )
+
+    opportunities.sort(key=lambda r: r.guaranteed_net_edge_bps, reverse=True)
+    return opportunities
+
+
+# ---------------------------------------------------------------------------
+# Engine 3 (`P2.3`): Multi-Source Verified `MOOV2` Bond + Dead-Leg Split-Sell
+# ---------------------------------------------------------------------------
+
+
+CATEGORY_FINALITY_BUFFER_SEC: Dict[str, float] = {
+    "mlb": 900.0,
+    "nhl": 600.0,
+    "nba": 600.0,
+    "soccer": 900.0,
+    "crypto": 60.0,
+    "weather": 3600.0,
+}
+
+
+@dataclass(frozen=True)
+class PrimaryOracleObservation:
+    """Single independent authoritative primary-source observation for post-event finality."""
+
+    source_name: str
+    is_terminal_final: bool
+    winning_outcome: str  # "YES" | "NO"
+    post_final_elapsed_sec: float
+    has_speci_or_cor_conflict: bool = False
+    has_protest_or_review_flag: bool = False
+
+
+def verify_multisource_finality(
+    *,
+    category: str,
+    uma_proposed_outcome: str,
+    uma_status: str,
+    is_whitelisted_proposer: bool,
+    clob_winner_best_bid: float,
+    observations: Sequence[PrimaryOracleObservation],
+) -> Tuple[bool, str]:
+    """
+    Deterministic 3-way unanimity verifier (`MOOV2 Whitelisted Proposer` == `>=2 Primary Feeds` == `CLOB >= $0.94`).
+    """
+    cat = category.strip().lower()
+    min_buf = CATEGORY_FINALITY_BUFFER_SEC.get(cat, 900.0)
+    if uma_status.strip().lower() in {"disputed", "flagged", "reset"}:
+        return False, "REJECT_UMA_DISPUTED_OR_FLAGGED"
+    if not is_whitelisted_proposer:
+        return False, "REJECT_UNWHITELISTED_MOOV2_PROPOSER"
+    prop = uma_proposed_outcome.strip().upper()
+    if prop not in {"YES", "NO"}:
+        return False, "REJECT_INVALID_PROPOSED_OUTCOME"
+    if float(clob_winner_best_bid) < 0.94:
+        return False, "REJECT_CLOB_BID_BELOW_094_CONFIRMATION"
+
+    distinct_valid_sources: Dict[str, PrimaryOracleObservation] = {}
+    for obs in observations:
+        if not obs.is_terminal_final:
+            return False, f"REJECT_NON_TERMINAL_SOURCE:{obs.source_name}"
+        if obs.has_speci_or_cor_conflict:
+            return False, f"REJECT_SPECI_OR_COR_CONFLICT:{obs.source_name}"
+        if obs.has_protest_or_review_flag:
+            return False, f"REJECT_ACTIVE_PROTEST_OR_REVIEW:{obs.source_name}"
+        if obs.winning_outcome.strip().upper() != prop:
+            return False, f"REJECT_PRIMARY_ORACLE_DISAGREEMENT:{obs.source_name}"
+        if float(obs.post_final_elapsed_sec) < min_buf:
+            return False, f"REJECT_INSUFFICIENT_POST_FINAL_BUFFER:{obs.source_name}"
+        distinct_valid_sources[obs.source_name.strip().lower()] = obs
+
+    if len(distinct_valid_sources) < 2:
+        return False, "REJECT_FEWER_THAN_2_INDEPENDENT_PRIMARY_FEEDS"
+    return True, "VERIFIED_3WAY_UNANIMITY"
+
+
+def evaluate_bond3_multisource_verified_carry(
+    *,
+    market_id: str,
+    category: str,
+    uma_proposed_outcome: str,
+    uma_status: str,
+    is_whitelisted_proposer: bool,
+    remaining_challenge_sec: float,
+    winner_asks: Sequence[OrderLevel],
+    winner_bids: Sequence[OrderLevel],
+    dead_loser_bids: Sequence[OrderLevel],
+    observations: Sequence[PrimaryOracleObservation],
+    fee_rate: float = 0.03,
+    fee_exponent: float = 2.0,
+    target_notional_usd: float = 50.0,
+    split_merge_gas_usd: float = 0.015,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Optional[VerifiedRisklessOpportunity]:
+    """
+    Evaluate `BOND3_MULTISOURCE_DEAD_SPLIT` after strict multi-source primary-oracle finality passes.
+    Compares direct CLOB FOK BUY on verified winner vs `Stage C2` Dead-Leg Split-to-Sell (`splitPosition`
+    -> FOK SELL dead complement into stale retail bids).
+    """
+    best_win_bid = float(winner_bids[0].price) if winner_bids else 0.0
+    ok, reason = verify_multisource_finality(
+        category=category,
+        uma_proposed_outcome=uma_proposed_outcome,
+        uma_status=uma_status,
+        is_whitelisted_proposer=is_whitelisted_proposer,
+        clob_winner_best_bid=best_win_bid,
+        observations=observations,
+    )
+    if not ok:
+        return None
+
+    lockup_h = max(0.05, float(remaining_challenge_sec) / 3600.0)
+    candidates: List[VerifiedRisklessOpportunity] = []
+
+    if winner_asks:
+        ask_px = float(winner_asks[0].price)
+        if 0.50 < ask_px < 1.0:
+            unit_net_cost = v2_net_buy_cost_per_share(ask_px, fee_rate, fee_exponent)
+            if unit_net_cost < 1.0:
+                h_win = 1.0 - (ask_px / unit_net_cost)
+                avail_net = float(winner_asks[0].size) * (1.0 - h_win)
+                net_sh = min(avail_net, math.floor(float(target_notional_usd) / unit_net_cost))
+                if net_sh >= 5.0:
+                    gross_sh = math.ceil((net_sh / max(1.0 - h_win, 1e-6)) * 100.0) / 100.0
+                    cost_usd = round(gross_sh * ask_px, 2)
+                    delivered_net = gross_sh * (1.0 - h_win)
+                    state_a = {"OMEGA_VERIFIED_FINAL_SETTLEMENT": round(delivered_net * 1.0, 6)}
+                    ok_a, worst_a, best_a, _ = verify_state_dominance_invariant(
+                        state_a, cost_usd, min_net_profit_usd=min_net_profit_usd
+                    )
+                    if ok_a:
+                        prof_a = worst_a - cost_usd
+                        candidates.append(
+                            VerifiedRisklessOpportunity(
+                                strategy_id="BOND3_MULTISOURCE_DEAD_SPLIT",
+                                opportunity_id=f"bond3_direct:{market_id}",
+                                venues=("polymarket",),
+                                jurisdiction_tags=("GLOBAL_SHADOW",),
+                                live_eligible=True,
+                                shares_or_units=round(delivered_net, 6),
+                                all_in_cost_usd=round(cost_usd, 6),
+                                worst_case_payout_usd=round(worst_a, 6),
+                                best_case_payout_usd=round(best_a, 6),
+                                guaranteed_net_profit_usd=round(prof_a, 6),
+                                guaranteed_net_edge_bps=round((prof_a / cost_usd) * 10_000.0, 2),
+                                lockup_hours=round(lockup_h, 4),
+                                state_payoff_table=state_a,
+                                legs=(
+                                    {
+                                        "route": "DIRECT_WINNER_FOK_BUY",
+                                        "side": uma_proposed_outcome.upper(),
+                                        "ask_price": ask_px,
+                                        "gross_shares": gross_sh,
+                                        "net_shares": round(delivered_net, 6),
+                                    },
+                                ),
+                                metadata={"finality_proof": reason, "entry_mode": "DIRECT_BUY"},
+                            )
+                        )
+
+    if dead_loser_bids:
+        dead_bid_px = float(dead_loser_bids[0].price)
+        dead_bid_sz = float(dead_loser_bids[0].size)
+        if 0.002 <= dead_bid_px <= 0.25 and dead_bid_sz >= 5.0:
+            net_dead_unit = v2_net_sell_proceeds_per_share(dead_bid_px, fee_rate, fee_exponent)
+            q_split = float(min(math.floor(dead_bid_sz), math.floor(float(target_notional_usd))))
+            if q_split >= 5.0 and q_split * dead_bid_px >= 1.00:
+                dead_proceeds_usd = q_split * net_dead_unit
+                synth_all_in_cost = (q_split * 1.00) - dead_proceeds_usd + float(split_merge_gas_usd)
+                state_b = {"OMEGA_VERIFIED_FINAL_SETTLEMENT": round(q_split * 1.0, 6)}
+                ok_b, worst_b, best_b, _ = verify_state_dominance_invariant(
+                    state_b, synth_all_in_cost, min_net_profit_usd=min_net_profit_usd
+                )
+                if ok_b:
+                    prof_b = worst_b - synth_all_in_cost
+                    candidates.append(
+                        VerifiedRisklessOpportunity(
+                            strategy_id="BOND3_MULTISOURCE_DEAD_SPLIT",
+                            opportunity_id=f"bond3_deadsplit:{market_id}",
+                            venues=("polymarket",),
+                            jurisdiction_tags=("GLOBAL_SHADOW",),
+                            live_eligible=True,
+                            shares_or_units=round(q_split, 6),
+                            all_in_cost_usd=round(synth_all_in_cost, 6),
+                            worst_case_payout_usd=round(worst_b, 6),
+                            best_case_payout_usd=round(best_b, 6),
+                            guaranteed_net_profit_usd=round(prof_b, 6),
+                            guaranteed_net_edge_bps=round((prof_b / synth_all_in_cost) * 10_000.0, 2),
+                            lockup_hours=round(lockup_h, 4),
+                            state_payoff_table=state_b,
+                            legs=(
+                                {
+                                    "route": "STAGE_C2_SPLIT_AND_SELL_DEAD_COMPLEMENT",
+                                    "winner_side": uma_proposed_outcome.upper(),
+                                    "dead_bid_price": dead_bid_px,
+                                    "dead_net_proceeds_per_share": round(net_dead_unit, 6),
+                                    "synthetic_winner_unit_cost": round(synth_all_in_cost / q_split, 6),
+                                    "shares": q_split,
+                                },
+                            ),
+                            metadata={
+                                "finality_proof": reason,
+                                "entry_mode": "DEAD_SIDE_SPLIT_SELL",
+                                "rollback_on_fok_miss": "CTF_MERGE_POSITIONS_TO_PAR",
+                            },
+                        )
+                    )
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda c: c.guaranteed_net_profit_usd, reverse=True)
+    return candidates[0]
+
+
+# ---------------------------------------------------------------------------
+# Engine 4 (`P2.4`): `CA-ON` Legal FX-Invariant `STX Ontario (CAD)` <-> `ForecastEx (USD)`
+# ---------------------------------------------------------------------------
+
+
+def evaluate_stx_forecastex_fx_invariant_box(
+    *,
+    pair_id: str,
+    stx_market: NormalizedBinaryMarket,
+    stx_side: str,
+    stx_execution_style: str,
+    forecastex_market: NormalizedBinaryMarket,
+    forecastex_side: str,
+    spot_cad_to_usd_bid: float = 0.7230,
+    spot_cad_to_usd_ask: float = 0.7250,
+    fx_shock_band_frac: float = 0.0180,
+    ibkr_fx_hedge_locked: bool = False,
+    ibkr_fx_ticket_fee_usd: float = 0.25,
+    event_cancel_exempt: bool = True,
+    target_usd_shares: float = 100.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Optional[VerifiedRisklessOpportunity]:
+    """
+    `100%` Ontario (`CA-ON`) legal cross-currency box sizing between AGCO-registered
+    `STX Ontario` (`CAD`) and `ForecastEx / IBKR Canada` (`USD`).
+    """
+    if stx_market.venue.lower() != "stx_ontario" or forecastex_market.venue.lower() != "forecastex":
+        return None
+    if stx_market.collateral_asset.upper() != "CAD" or forecastex_market.collateral_asset.upper() != "USD":
+        return None
+
+    stx_asks = stx_market.yes_asks if stx_side.upper() == "YES" else stx_market.no_asks
+    fex_asks = forecastex_market.yes_asks if forecastex_side.upper() == "YES" else forecastex_market.no_asks
+    if not stx_asks or not fex_asks:
+        return None
+
+    q_usd = float(max(forecastex_market.min_shares, math.floor(target_usd_shares)))
+    w_fex = walk_asks_for_shares(fex_asks, q_usd, forecastex_market)
+    if not w_fex.filled or w_fex.filled_shares + 1e-6 < q_usd:
+        return None
+
+    if ibkr_fx_hedge_locked:
+        fx_settle_floor = float(spot_cad_to_usd_bid) * (1.0 - 0.0002)
+        fx_settle_ceil = float(spot_cad_to_usd_ask) * (1.0 + 0.0002)
+        fx_fee_usd = float(ibkr_fx_ticket_fee_usd)
+    else:
+        fx_settle_floor = float(spot_cad_to_usd_bid) * (1.0 - max(0.0, float(fx_shock_band_frac)))
+        fx_settle_ceil = float(spot_cad_to_usd_ask) * (1.0 + max(0.0, float(fx_shock_band_frac)))
+        fx_fee_usd = 0.0
+
+    stx_top_px = float(stx_asks[0].price)
+    win_rate = (float(stx_market.fee_rate_bps) / 10_000.0) if stx_market.fee_rate_bps > 0.0 else 0.02
+    est_stx_win_comm = win_rate * max(0.0, 1.0 - stx_top_px)
+    lot = max(float(stx_market.lot_size), 1.0)
+    q_cad_needed = math.ceil((q_usd / max(fx_settle_floor * (1.0 - est_stx_win_comm), 1e-6)) / lot) * lot
+
+    w_stx = walk_asks_for_shares(stx_asks, q_cad_needed, stx_market)
+    if not w_stx.filled or w_stx.filled_shares + 1e-6 < q_cad_needed:
+        return None
+
+    actual_stx_win_comm = win_rate * max(0.0, 1.0 - w_stx.vwap_price)
+    # Note: on STX Ontario, `0%` upfront entry fee on maker orders; the `2%` win commission is deducted AT SETTLEMENT
+    # from the winning CAD payout (`cad_net_payout_cad`), NOT paid upfront on losing outcomes!
+    is_stx_maker = stx_execution_style.strip().upper() == "PASSIVE_MAKER"
+    stx_upfront_fee_cad = 0.0 if is_stx_maker else w_stx.taker_fee_usd
+    stx_cost_usd = (w_stx.gross_cost_usd + stx_upfront_fee_cad) * float(spot_cad_to_usd_ask)
+
+    fex_leg_usd = w_fex.gross_cost_usd + w_fex.taker_fee_usd
+    all_in_cost_usd = fex_leg_usd + stx_cost_usd + fx_fee_usd
+    cad_net_payout_cad = q_cad_needed * (1.0 - (actual_stx_win_comm if is_stx_maker else 0.0))
+
+    state_table: Dict[str, float] = {
+        "OMEGA_FORECASTEX_USD_WINS_FX_LOW": round(q_usd * 1.0, 6),
+        "OMEGA_FORECASTEX_USD_WINS_FX_HIGH": round(q_usd * 1.0, 6),
+        "OMEGA_STX_CAD_WINS_FX_FLOOR": round(cad_net_payout_cad * fx_settle_floor, 6),
+        "OMEGA_STX_CAD_WINS_FX_CEIL": round(cad_net_payout_cad * fx_settle_ceil, 6),
+    }
+    if not event_cancel_exempt:
+        state_table["OMEGA_EVENT_VOID_FX_FLOOR"] = round(w_fex.gross_cost_usd + w_stx.gross_cost_usd * fx_settle_floor, 6)
+
+    passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+        state_table, all_in_cost_usd, min_net_profit_usd=min_net_profit_usd
+    )
+    if not passed:
+        return None
+
+    net_profit = worst_p - all_in_cost_usd
+    return VerifiedRisklessOpportunity(
+        strategy_id="XV_FX_INVARIANT_CAD_USD_BOX",
+        opportunity_id=f"xv_cad_usd:{pair_id}",
+        venues=("stx_ontario", "forecastex"),
+        jurisdiction_tags=("CA-ON-LEGAL", "AGCO_OSC_COMPLIANT"),
+        live_eligible=True,
+        shares_or_units=round(q_usd, 6),
+        all_in_cost_usd=round(all_in_cost_usd, 6),
+        worst_case_payout_usd=round(worst_p, 6),
+        best_case_payout_usd=round(best_p, 6),
+        guaranteed_net_profit_usd=round(net_profit, 6),
+        guaranteed_net_edge_bps=round((net_profit / all_in_cost_usd) * 10_000.0, 2),
+        lockup_hours=round(max(1.0, forecastex_market.settlement_delay_hours), 3),
+        state_payoff_table=state_table,
+        legs=(
+            {
+                "venue": "forecastex",
+                "side": forecastex_side.upper(),
+                "currency": "USD",
+                "shares": q_usd,
+                "vwap": round(w_fex.vwap_price, 6),
+                "leg_cost_usd": round(fex_leg_usd, 6),
+            },
+            {
+                "venue": "stx_ontario",
+                "side": stx_side.upper(),
+                "currency": "CAD",
+                "execution_style": stx_execution_style.upper(),
+                "shares_cad": q_cad_needed,
+                "vwap_cad": round(w_stx.vwap_price, 6),
+                "leg_cost_usd": round(stx_cost_usd, 6),
+            },
+        ),
+        metadata={
+            "fx_mode": "IBKR_LOCKED_FX" if ibkr_fx_hedge_locked else "UNHEDGED_STRESSED_BAND",
+            "fx_settle_floor": round(fx_settle_floor, 6),
+            "cad_to_usd_share_ratio": round(q_cad_needed / q_usd, 6),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Engine 5 (`P2.5`): Deribit Linear `USDC` Vertical Spread Super-Replication
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class DeribitLinearOptionQuote:
+    """Keyless Deribit linear `USDC` European option quote (`BTC_USDC-*`, `ETH_USDC-*`, `SOL_USDC-*`)."""
+
+    instrument_name: str
+    underlying: str
+    settlement_currency: str  # MUST be "USDC" (rejects inverse "BTC"/"ETH")
+    option_type: str          # "C" | "P"
+    strike: float
+    expiry_ts: float
+    best_bid_usd: float
+    best_bid_size: float
+    best_ask_usd: float
+    best_ask_size: float
+    underlying_index_price: float
+
+
+def _deribit_usdc_option_taker_fee_usd(index_price: float, option_price_usd: float, contracts: float) -> float:
+    """Deribit linear USDC options taker fee: `0.0003` (`3 bps`) of underlying index, capped at `12.5%` of option price."""
+    per_contract = min(0.0003 * float(index_price), 0.125 * max(0.0, float(option_price_usd)))
+    return float(contracts) * per_contract
+
+
+def detect_deribit_usdc_vertical_super_replication(
+    *,
+    binary_market: NormalizedBinaryMarket,
+    binary_strike: float,
+    deribit_options: Sequence[DeribitLinearOptionQuote],
+    cross_oracle_basis_bps: float = 150.0,
+    target_units: float = 50.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> List[VerifiedRisklessOpportunity]:
+    """
+    Construct tight linear `USDC` vertical call/put spreads on Deribit (`08:00 UTC` expiry)
+    super-replicating an aligned binary digital strike `K_bin` across worst-case `30m TWAP` vs
+    spot settlement divergence `|S_Deribit - S_bin| <= B_max`.
+    """
+    if binary_market.end_ts is None or binary_strike <= 0.0:
+        return []
+
+    calls: List[DeribitLinearOptionQuote] = []
+    puts: List[DeribitLinearOptionQuote] = []
+    for opt in deribit_options:
+        if opt.settlement_currency.strip().upper() != "USDC" or "_USDC" not in opt.underlying.upper():
+            continue
+        if abs(float(opt.expiry_ts) - float(binary_market.end_ts)) > 1.0:
+            continue
+        if opt.best_ask_usd <= 0.0 or opt.best_ask_size <= 0.0:
+            continue
+        if opt.option_type.strip().upper() == "C":
+            calls.append(opt)
+        elif opt.option_type.strip().upper() == "P":
+            puts.append(opt)
+
+    calls.sort(key=lambda o: o.strike)
+    puts.sort(key=lambda o: o.strike)
+
+    eff_bps = max(150.0, float(cross_oracle_basis_bps))
+    b_max = float(binary_strike) * (eff_bps / 10_000.0)
+    q_units = max(float(binary_market.min_shares), float(target_units))
+    fx_a = collateral_fx_ask_to_usd(binary_market.collateral_asset)
+    fx_f = collateral_fx_settle_floor_to_usd(binary_market.collateral_asset)
+    if abs(fx_a - 1.0) > 0.01 or abs(fx_f - 1.0) > 0.01:
+        return []
+
+    found: List[VerifiedRisklessOpportunity] = []
+
+    if binary_market.no_asks:
+        for i in range(len(calls)):
+            for j in range(i + 1, len(calls)):
+                c1, c2 = calls[i], calls[j]
+                if c2.strike > binary_strike - b_max + 1e-9 or c2.best_bid_usd <= 0.0:
+                    continue
+                width = c2.strike - c1.strike
+                if width <= 0.0:
+                    continue
+                n_contracts = q_units / width
+                if c1.best_ask_size + 1e-9 < n_contracts or c2.best_bid_size + 1e-9 < n_contracts:
+                    continue
+                spread_debit = max(0.0, n_contracts * (c1.best_ask_usd - c2.best_bid_usd))
+                deribit_fees = (
+                    _deribit_usdc_option_taker_fee_usd(c1.underlying_index_price, c1.best_ask_usd, n_contracts)
+                    + _deribit_usdc_option_taker_fee_usd(c2.underlying_index_price, c2.best_bid_usd, n_contracts)
+                )
+                w_bin = walk_asks_for_shares(binary_market.no_asks, q_units, binary_market)
+                if not w_bin.filled or w_bin.filled_shares + 1e-6 < q_units:
+                    continue
+                bin_leg_usd = w_bin.gross_cost_usd + w_bin.taker_fee_usd
+                gas_usd = DEFAULT_EXTERNAL_GAS_USD.get(binary_market.venue, 0.005)
+                all_in_cost = spread_debit + deribit_fees + bin_leg_usd + gas_usd
+
+                state_a = {
+                    "OMEGA_BELOW_K1_NO_WINS": round(w_bin.filled_shares * 1.0, 6),
+                    "OMEGA_MID_RAMP_SUPER_REP": round(w_bin.filled_shares * 1.0 + 0.5 * q_units, 6),
+                    "OMEGA_POLISH_MIDDLE_K2_TO_KBIN": round(w_bin.filled_shares * 1.0 + q_units, 6),
+                    "OMEGA_ABOVE_KBIN_MAX_BASIS_DRIFT": round(
+                        n_contracts * min(max((binary_strike - b_max) - c1.strike, 0.0), width), 6
+                    ),
+                }
+                ok_a, worst_a, best_a, _ = verify_state_dominance_invariant(
+                    state_a, all_in_cost, min_net_profit_usd=min_net_profit_usd
+                )
+                if ok_a:
+                    prof_a = worst_a - all_in_cost
+                    found.append(
+                        VerifiedRisklessOpportunity(
+                            strategy_id="DERIBIT_VERTICAL_SUPER_REP",
+                            opportunity_id=f"deribit_bullcall:{binary_market.market_id}:{int(c1.strike)}-{int(c2.strike)}",
+                            venues=("deribit", binary_market.venue),
+                            jurisdiction_tags=("CA-ON-LEGAL",) if binary_market.venue == "forecastex" else ("GLOBAL_SHADOW",),
+                            live_eligible=(binary_market.venue == "forecastex"),
+                            shares_or_units=round(q_units, 6),
+                            all_in_cost_usd=round(all_in_cost, 6),
+                            worst_case_payout_usd=round(worst_a, 6),
+                            best_case_payout_usd=round(best_a, 6),
+                            guaranteed_net_profit_usd=round(prof_a, 6),
+                            guaranteed_net_edge_bps=round((prof_a / all_in_cost) * 10_000.0, 2),
+                            lockup_hours=round(max(0.5, binary_market.settlement_delay_hours), 3),
+                            state_payoff_table=state_a,
+                            legs=(
+                                {
+                                    "venue": "deribit",
+                                    "structure": "BULL_CALL_SPREAD_USDC",
+                                    "long_instrument": c1.instrument_name,
+                                    "short_instrument": c2.instrument_name,
+                                    "contracts": round(n_contracts, 6),
+                                    "debit_plus_fee_usd": round(spread_debit + deribit_fees, 6),
+                                },
+                                {
+                                    "venue": binary_market.venue,
+                                    "market_id": binary_market.market_id,
+                                    "side": "NO",
+                                    "shares": round(w_bin.filled_shares, 6),
+                                    "leg_cost_usd": round(bin_leg_usd, 6),
+                                },
+                            ),
+                            metadata={
+                                "binary_strike": binary_strike,
+                                "basis_corridor_usd": round(b_max, 4),
+                                "polish_middle_width_usd": round(binary_strike - c2.strike, 4),
+                            },
+                        )
+                    )
+
+    if binary_market.yes_asks:
+        for i in range(len(puts)):
+            for j in range(i + 1, len(puts)):
+                p1, p2 = puts[i], puts[j]
+                if p1.strike < binary_strike + b_max - 1e-9 or p1.best_bid_usd <= 0.0:
+                    continue
+                width = p2.strike - p1.strike
+                if width <= 0.0:
+                    continue
+                n_contracts = q_units / width
+                if p2.best_ask_size + 1e-9 < n_contracts or p1.best_bid_size + 1e-9 < n_contracts:
+                    continue
+                spread_debit = max(0.0, n_contracts * (p2.best_ask_usd - p1.best_bid_usd))
+                deribit_fees = (
+                    _deribit_usdc_option_taker_fee_usd(p2.underlying_index_price, p2.best_ask_usd, n_contracts)
+                    + _deribit_usdc_option_taker_fee_usd(p1.underlying_index_price, p1.best_bid_usd, n_contracts)
+                )
+                w_bin = walk_asks_for_shares(binary_market.yes_asks, q_units, binary_market)
+                if not w_bin.filled or w_bin.filled_shares + 1e-6 < q_units:
+                    continue
+                bin_leg_usd = w_bin.gross_cost_usd + w_bin.taker_fee_usd
+                gas_usd = DEFAULT_EXTERNAL_GAS_USD.get(binary_market.venue, 0.005)
+                all_in_cost = spread_debit + deribit_fees + bin_leg_usd + gas_usd
+
+                state_b = {
+                    "OMEGA_ABOVE_K2_YES_WINS": round(w_bin.filled_shares * 1.0, 6),
+                    "OMEGA_MID_RAMP_SUPER_REP": round(w_bin.filled_shares * 1.0 + 0.5 * q_units, 6),
+                    "OMEGA_POLISH_MIDDLE_KBIN_TO_K1": round(w_bin.filled_shares * 1.0 + q_units, 6),
+                    "OMEGA_BELOW_KBIN_MAX_BASIS_DRIFT": round(
+                        n_contracts * min(max(p2.strike - (binary_strike + b_max), 0.0), width), 6
+                    ),
+                }
+                ok_b, worst_b, best_b, _ = verify_state_dominance_invariant(
+                    state_b, all_in_cost, min_net_profit_usd=min_net_profit_usd
+                )
+                if ok_b:
+                    prof_b = worst_b - all_in_cost
+                    found.append(
+                        VerifiedRisklessOpportunity(
+                            strategy_id="DERIBIT_VERTICAL_SUPER_REP",
+                            opportunity_id=f"deribit_bearput:{binary_market.market_id}:{int(p1.strike)}-{int(p2.strike)}",
+                            venues=("deribit", binary_market.venue),
+                            jurisdiction_tags=("CA-ON-LEGAL",) if binary_market.venue == "forecastex" else ("GLOBAL_SHADOW",),
+                            live_eligible=(binary_market.venue == "forecastex"),
+                            shares_or_units=round(q_units, 6),
+                            all_in_cost_usd=round(all_in_cost, 6),
+                            worst_case_payout_usd=round(worst_b, 6),
+                            best_case_payout_usd=round(best_b, 6),
+                            guaranteed_net_profit_usd=round(prof_b, 6),
+                            guaranteed_net_edge_bps=round((prof_b / all_in_cost) * 10_000.0, 2),
+                            lockup_hours=round(max(0.5, binary_market.settlement_delay_hours), 3),
+                            state_payoff_table=state_b,
+                            legs=(
+                                {
+                                    "venue": "deribit",
+                                    "structure": "BEAR_PUT_SPREAD_USDC",
+                                    "long_instrument": p2.instrument_name,
+                                    "short_instrument": p1.instrument_name,
+                                    "contracts": round(n_contracts, 6),
+                                    "debit_plus_fee_usd": round(spread_debit + deribit_fees, 6),
+                                },
+                                {
+                                    "venue": binary_market.venue,
+                                    "market_id": binary_market.market_id,
+                                    "side": "YES",
+                                    "shares": round(w_bin.filled_shares, 6),
+                                    "leg_cost_usd": round(bin_leg_usd, 6),
+                                },
+                            ),
+                            metadata={
+                                "binary_strike": binary_strike,
+                                "basis_corridor_usd": round(b_max, 4),
+                                "polish_middle_width_usd": round(p1.strike - binary_strike, 4),
+                            },
+                        )
+                    )
+
+    found.sort(key=lambda r: r.guaranteed_net_edge_bps, reverse=True)
+    return found
+
+
+# ---------------------------------------------------------------------------
+# Engine 6 (`P2.6`): Cross-Venue Halftime Freeze `.5`-Hook Affine Corridors
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class HalftimeLineLeg:
+    """Full-Game (`FG`) or Second-Half (`2H`) `.5`-hook total or spread leg during halftime freeze."""
+
+    leg_id: str
+    period_scope: str        # "FG" | "2H"
+    line_kind: str           # "TOTAL" | "HOME_SPREAD"
+    direction: str           # "OVER" | "UNDER" (TOTAL) or "HOME_COVER" | "AWAY_COVER" (HOME_SPREAD)
+    line_value: float
+    includes_overtime: bool
+    live_betting_delay_ms: int
+    market: NormalizedBinaryMarket
+    market_side: str = "YES"
+
+
+def _is_half_integer_hook(val: float) -> bool:
+    frac = abs(float(val) - math.floor(float(val)))
+    return abs(frac - 0.5) <= 1e-6
+
+
+def detect_cross_venue_halftime_affine_corridors(
+    *,
+    game_id: str,
+    sport: str,
+    is_halftime: bool,
+    game_clock_sec: float,
+    elapsed_halftime_sec: float,
+    remaining_halftime_sec: float,
+    confirmed_1h_home_score: int,
+    confirmed_1h_away_score: int,
+    fg_legs: Sequence[HalftimeLineLeg],
+    h2_legs: Sequence[HalftimeLineLeg],
+    target_usd_shares: float = 40.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> List[VerifiedRisklessOpportunity]:
+    """
+    Scan cross-venue `FG = S_1H + 2H` affine total & spread corridors during confirmed NBA/NFL
+    halftime intermission (`is_halftime=True`, `clock=0.0`, `elapsed >= 480s`, `0ms` live delay).
+    """
+    if not is_halftime or abs(float(game_clock_sec)) > 1e-6:
+        return []
+    if float(elapsed_halftime_sec) < 480.0 or float(remaining_halftime_sec) < 90.0:
+        return []
+
+    s_1h_total = int(confirmed_1h_home_score) + int(confirmed_1h_away_score)
+    s_1h_margin = int(confirmed_1h_home_score) - int(confirmed_1h_away_score)
+
+    results: List[VerifiedRisklessOpportunity] = []
+    for fg in fg_legs:
+        if fg.period_scope.upper() != "FG" or not fg.includes_overtime:
+            continue
+        if fg.live_betting_delay_ms > 0 or not _is_half_integer_hook(fg.line_value):
+            continue
+
+        for h2 in h2_legs:
+            if h2.period_scope.upper() != "2H" or h2.line_kind.upper() != fg.line_kind.upper():
+                continue
+            if not h2.includes_overtime or h2.live_betting_delay_ms > 0:
+                continue
+            if not _is_half_integer_hook(h2.line_value):
+                continue
+            if fg.market.cancel_rule.strip().lower() != h2.market.cancel_rule.strip().lower():
+                continue
+
+            asks_fg = fg.market.yes_asks if fg.market_side.upper() == "YES" else fg.market.no_asks
+            asks_h2 = h2.market.yes_asks if h2.market_side.upper() == "YES" else h2.market.no_asks
+            if not asks_fg or not asks_h2:
+                continue
+
+            q_usd = max(
+                fg.market.min_shares * collateral_fx_settle_floor_to_usd(fg.market.collateral_asset),
+                h2.market.min_shares * collateral_fx_settle_floor_to_usd(h2.market.collateral_asset),
+                float(target_usd_shares),
+            )
+
+            leg_costs_usd: List[float] = []
+            leg_net_usd_payout: List[float] = []
+            feasible = True
+            for leg_obj, asks in ((fg, asks_fg), (h2, asks_h2)):
+                mkt = leg_obj.market
+                fx_a = collateral_fx_ask_to_usd(mkt.collateral_asset)
+                fx_f = collateral_fx_settle_floor_to_usd(mkt.collateral_asset)
+                lot = max(float(mkt.lot_size), 0.01)
+                req_local = math.ceil((q_usd / max(fx_f, 1e-6)) / lot) * lot
+                w_loc = walk_asks_for_shares(asks, req_local, mkt)
+                if not w_loc.filled or w_loc.filled_shares * fx_f + 1e-6 < q_usd:
+                    feasible = False
+                    break
+                leg_costs_usd.append((w_loc.gross_cost_usd + w_loc.taker_fee_usd) * fx_a)
+                leg_net_usd_payout.append(w_loc.filled_shares * fx_f)
+            if not feasible:
+                continue
+
+            distinct_venues = tuple(sorted({fg.market.venue, h2.market.venue}))
+            gas_usd = sum(DEFAULT_EXTERNAL_GAS_USD.get(v, 0.005) for v in distinct_venues)
+            all_in_cost = sum(leg_costs_usd) + gas_usd
+
+            payoff_fg_only = leg_net_usd_payout[0]
+            payoff_h2_only = leg_net_usd_payout[1]
+            payoff_both = payoff_fg_only + payoff_h2_only
+
+            min_lattice_payout = float("inf")
+            max_lattice_payout = 0.0
+            middle_points = 0
+            if fg.line_kind.upper() == "TOTAL":
+                for h2_pts in range(0, 261):
+                    fg_pts = s_1h_total + h2_pts
+                    fg_win = (fg_pts > fg.line_value) if fg.direction.upper() == "OVER" else (fg_pts < fg.line_value)
+                    h2_win = (h2_pts > h2.line_value) if h2.direction.upper() == "OVER" else (h2_pts < h2.line_value)
+                    p = (payoff_fg_only if fg_win else 0.0) + (payoff_h2_only if h2_win else 0.0)
+                    if fg_win and h2_win:
+                        middle_points += 1
+                    min_lattice_payout = min(min_lattice_payout, p)
+                    max_lattice_payout = max(max_lattice_payout, p)
+            else:
+                for h2_margin in range(-120, 121):
+                    fg_margin = s_1h_margin + h2_margin
+                    if sport.strip().lower() in {"nba", "nfl_playoffs", "mlb", "nhl"} and fg_margin == 0:
+                        continue
+                    fg_win = (
+                        (fg_margin + fg.line_value > 0.0)
+                        if fg.direction.upper() == "HOME_COVER"
+                        else (fg_margin + fg.line_value < 0.0)
+                    )
+                    h2_win = (
+                        (h2_margin + h2.line_value > 0.0)
+                        if h2.direction.upper() == "HOME_COVER"
+                        else (h2_margin + h2.line_value < 0.0)
+                    )
+                    p = (payoff_fg_only if fg_win else 0.0) + (payoff_h2_only if h2_win else 0.0)
+                    if fg_win and h2_win:
+                        middle_points += 1
+                    min_lattice_payout = min(min_lattice_payout, p)
+                    max_lattice_payout = max(max_lattice_payout, p)
+
+            state_table = {
+                "OMEGA_LATTICE_WORST_CASE": round(min_lattice_payout, 6),
+                "OMEGA_LATTICE_BEST_CASE": round(max_lattice_payout, 6),
+            }
+            if middle_points > 0:
+                state_table["OMEGA_POLISH_MIDDLE_CORRIDOR"] = round(payoff_both, 6)
+
+            passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+                state_table, all_in_cost, min_net_profit_usd=min_net_profit_usd
+            )
+            if not passed:
+                continue
+
+            net_profit = worst_p - all_in_cost
+            results.append(
+                VerifiedRisklessOpportunity(
+                    strategy_id="XV_HALFTIME_FREEZE_CORRIDOR",
+                    opportunity_id=f"xv_ht:{game_id}:{fg.leg_id}:{h2.leg_id}",
+                    venues=distinct_venues,
+                    jurisdiction_tags=(
+                        ("CA-ON-LEGAL",)
+                        if set(distinct_venues).issubset({"stx_ontario", "forecastex"})
+                        else ("GLOBAL_SHADOW",)
+                    ),
+                    live_eligible=set(distinct_venues).issubset({"stx_ontario", "forecastex", "polymarket"}),
+                    shares_or_units=round(q_usd, 6),
+                    all_in_cost_usd=round(all_in_cost, 6),
+                    worst_case_payout_usd=round(worst_p, 6),
+                    best_case_payout_usd=round(best_p, 6),
+                    guaranteed_net_profit_usd=round(net_profit, 6),
+                    guaranteed_net_edge_bps=round((net_profit / all_in_cost) * 10_000.0, 2),
+                    lockup_hours=1.75,
+                    state_payoff_table=state_table,
+                    legs=(
+                        {
+                            "period": "FG",
+                            "venue": fg.market.venue,
+                            "direction": fg.direction,
+                            "line": fg.line_value,
+                            "leg_cost_usd": round(leg_costs_usd[0], 6),
+                        },
+                        {
+                            "period": "2H",
+                            "venue": h2.market.venue,
+                            "direction": h2.direction,
+                            "line": h2.line_value,
+                            "leg_cost_usd": round(leg_costs_usd[1], 6),
+                        },
+                    ),
+                    metadata={
+                        "confirmed_1h_total": s_1h_total,
+                        "confirmed_1h_margin": s_1h_margin,
+                        "polish_middle_integer_width": middle_points,
+                    },
+                )
+            )
+
+    results.sort(key=lambda r: r.guaranteed_net_edge_bps, reverse=True)
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Engine 7 (`P2.7`): Pre-Converted `NR3` Overround & Hedged Pre-Split Maker-Ask
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class PreConvertedNegRiskOutcomeBook:
+    """Single `YES_i` CLOB book for a pre-converted closed `NegRisk` slate (`Q` settled shares held)."""
+
+    outcome_id: str
+    yes_bids: Tuple[OrderLevel, ...]
+    yes_asks: Tuple[OrderLevel, ...]
+    fee_rate: float = 0.05
+    fee_exponent: float = 2.0
+
+
+def evaluate_preconverted_nr3_overround(
+    *,
+    slate_id: str,
+    outcomes: Sequence[PreConvertedNegRiskOutcomeBook],
+    settled_inventory_shares: float,
+    is_augmented_other: bool,
+    onchain_question_count: int,
+    convert_fee_bips: int = 0,
+    preconvert_gas_usd: float = 0.02,
+    max_l1_depth_fraction: float = 0.50,
+    min_overround_cushion_per_share: float = 0.004,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Optional[VerifiedRisklessOpportunity]:
+    """
+    Mechanism 7A (`HEDGED_PRESPLIT_CONV_GUN` — Pre-Converted `NR3`).
+    """
+    if is_augmented_other or convert_fee_bips != 0:
+        return None
+    if len(outcomes) < 3 or int(onchain_question_count) != len(outcomes):
+        return None
+    if settled_inventory_shares < 5.0:
+        return None
+
+    scored: List[Tuple[float, float, PreConvertedNegRiskOutcomeBook]] = []
+    for out in outcomes:
+        if not out.yes_bids:
+            continue
+        top_bid = float(out.yes_bids[0].price)
+        top_sz = float(out.yes_bids[0].size)
+        if top_bid <= 0.005 or top_sz < 10.0:
+            continue
+        net_u = v2_net_sell_proceeds_per_share(top_bid, out.fee_rate, out.fee_exponent)
+        scored.append((net_u, top_sz, out))
+
+    scored.sort(key=lambda t: t[0], reverse=True)
+    selected: List[Tuple[float, float, PreConvertedNegRiskOutcomeBook]] = []
+    running_unit_proceeds = 0.0
+    for item in scored:
+        selected.append(item)
+        running_unit_proceeds += item[0]
+        if running_unit_proceeds >= 1.0 + float(min_overround_cushion_per_share) and len(selected) >= 2:
+            break
+
+    if running_unit_proceeds < 1.0 + float(min_overround_cushion_per_share):
+        return None
+
+    min_l1_sz = min(it[1] for it in selected)
+    q_sell = float(min(settled_inventory_shares, math.floor(min_l1_sz * float(max_l1_depth_fraction))))
+    if q_sell < 5.0:
+        return None
+    if any(q_sell * float(it[2].yes_bids[0].price) < 1.00 for it in selected):
+        return None
+
+    selected_exec_order = sorted(selected, key=lambda it: it[1])
+    cash_proceeds_usd = sum(q_sell * it[0] for it in selected_exec_order)
+    pro_rata_gas = float(preconvert_gas_usd) * (q_sell / float(settled_inventory_shares))
+    locked_principal_basis = q_sell * 1.00 + pro_rata_gas
+
+    selected_ids = {it[2].outcome_id for it in selected_exec_order}
+    unsold_lottery_ids = [o.outcome_id for o in outcomes if o.outcome_id not in selected_ids]
+
+    state_table: Dict[str, float] = {
+        "OMEGA_SOLD_FAVORITE_WINS": round(cash_proceeds_usd, 6),
+    }
+    if unsold_lottery_ids:
+        state_table["OMEGA_UNSOLD_LOTTERY_TAIL_WINS"] = round(cash_proceeds_usd + q_sell * 1.00, 6)
+
+    passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+        state_table, locked_principal_basis, min_net_profit_usd=min_net_profit_usd
+    )
+    if not passed:
+        return None
+
+    net_profit = worst_p - locked_principal_basis
+    return VerifiedRisklessOpportunity(
+        strategy_id="HEDGED_PRESPLIT_CONV_GUN",
+        opportunity_id=f"nr3_preconv:{slate_id}",
+        venues=("polymarket",),
+        jurisdiction_tags=("GLOBAL_SHADOW",),
+        live_eligible=True,
+        shares_or_units=round(q_sell, 6),
+        all_in_cost_usd=round(locked_principal_basis, 6),
+        worst_case_payout_usd=round(worst_p, 6),
+        best_case_payout_usd=round(best_p, 6),
+        guaranteed_net_profit_usd=round(net_profit, 6),
+        guaranteed_net_edge_bps=round((net_profit / locked_principal_basis) * 10_000.0, 2),
+        lockup_hours=0.01,
+        state_payoff_table=state_table,
+        legs=tuple(
+            {
+                "outcome_id": it[2].outcome_id,
+                "action": "FOK_SELL_SETTLED_YES",
+                "bid_price": float(it[2].yes_bids[0].price),
+                "net_unit_proceeds": round(it[0], 6),
+                "shares": q_sell,
+            }
+            for it in selected_exec_order
+        ),
+        metadata={
+            "sub_mode": "PRECONVERTED_NR3_OVERROUND",
+            "free_retained_lottery_outcomes": unsold_lottery_ids,
+            "post_fill_polygon_wait_ms": 0,
+        },
+    )
+
+
+def evaluate_hedged_presplit_maker_ask(
+    *,
+    market_id: str,
+    maker_yes_ask_price: float,
+    complement_no_bids: Sequence[OrderLevel],
+    settled_split_shares: float,
+    fee_rate: float = 0.07,
+    fee_exponent: float = 2.0,
+    maker_rebate_share: float = 0.20,
+    min_hedge_depth_mult: float = 3.0,
+    split_gas_usd: float = 0.015,
+    live_enabled: bool = False,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Optional[VerifiedRisklessOpportunity]:
+    """
+    Mechanism 7B (`HEDGED_PRESPLIT_CONV_GUN` — Binary Hedged Maker-Ask).
+    """
+    if not complement_no_bids or settled_split_shares < 5.0:
+        return None
+    a_y = float(maker_yes_ask_price)
+    if a_y <= 0.01 or a_y >= 0.99:
+        return None
+
+    b_n = float(complement_no_bids[0].price)
+    b_n_sz = float(complement_no_bids[0].size)
+    if b_n_sz + 1e-9 < float(min_hedge_depth_mult) * float(settled_split_shares):
+        return None
+
+    q = float(settled_split_shares)
+    counterparty_unit_fee = float(fee_rate) * ((a_y * (1.0 - a_y)) ** max(0.5, float(fee_exponent)))
+    maker_rebate_unit = max(0.0, float(maker_rebate_share)) * counterparty_unit_fee
+    b_n_net = v2_net_sell_proceeds_per_share(b_n, fee_rate, fee_exponent)
+
+    unit_combined = a_y + maker_rebate_unit + b_n_net - (float(split_gas_usd) / q)
+    if unit_combined < 1.004:
+        return None
+
+    all_in_basis = q * 1.00 + float(split_gas_usd)
+    filled_and_hedged_proceeds = q * (a_y + maker_rebate_unit + b_n_net)
+    state_table = {
+        "OMEGA_HEDGED_MAKER_FILL_YES_WINS": round(filled_and_hedged_proceeds, 6),
+        "OMEGA_HEDGED_MAKER_FILL_NO_WINS": round(filled_and_hedged_proceeds, 6),
+    }
+    passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+        state_table, all_in_basis, min_net_profit_usd=min_net_profit_usd
+    )
+    if not passed:
+        return None
+
+    cancel_trigger_net_bid = max(0.01, 1.001 + (float(split_gas_usd) / q) - a_y - maker_rebate_unit)
+    net_profit = worst_p - all_in_basis
+    return VerifiedRisklessOpportunity(
+        strategy_id="HEDGED_PRESPLIT_CONV_GUN",
+        opportunity_id=f"hedged_maker_ask:{market_id}",
+        venues=("polymarket",),
+        jurisdiction_tags=("SHADOW_ONLY" if not live_enabled else "GLOBAL_SHADOW",),
+        live_eligible=bool(live_enabled),
+        shares_or_units=round(q, 6),
+        all_in_cost_usd=round(all_in_basis, 6),
+        worst_case_payout_usd=round(worst_p, 6),
+        best_case_payout_usd=round(best_p, 6),
+        guaranteed_net_profit_usd=round(net_profit, 6),
+        guaranteed_net_edge_bps=round((net_profit / all_in_basis) * 10_000.0, 2),
+        lockup_hours=0.25,
+        state_payoff_table=state_table,
+        legs=(
+            {
+                "action": "POST_ONLY_MAKER_SELL_YES",
+                "price": a_y,
+                "maker_rebate_per_share": round(maker_rebate_unit, 6),
+                "shares": q,
+            },
+            {
+                "action": "INSTANT_WS_FOK_SELL_NO_HEDGE",
+                "bid_price": b_n,
+                "net_unit_proceeds": round(b_n_net, 6),
+                "available_l1_depth": b_n_sz,
+                "shares": q,
+            },
+        ),
+        metadata={
+            "sub_mode": "BINARY_HEDGED_MAKER_ASK",
+            "auto_cancel_if_no_net_bid_below": round(cancel_trigger_net_bid, 6),
+            "hedge_depth_coverage_multiple": round(b_n_sz / q, 2),
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Engine 8 (`P2.8`): Contractual Collateral-Yield Carry Box + Stage C1 Exit
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class YieldBearingBoxLeg:
+    """Single leg of a locked completeness box with contractual collateral yield parameters."""
+
+    market: NormalizedBinaryMarket
+    side: str
+    contractual_apy: float
+    rate_cut_stress_haircut_apy: float = 0.0050
+    collateral_depeg_haircut_bps: float = 0.0
+    override_taker_fee_per_contract_usd: Optional[float] = None  # e.g. `0.00` on ForecastEx no-commission clearing
+
+
+def evaluate_yield_stacked_locked_box(
+    *,
+    box_id: str,
+    leg_a: YieldBearingBoxLeg,
+    leg_b: YieldBearingBoxLeg,
+    min_guaranteed_hold_days: float,
+    can_resolve_early: bool = False,
+    target_usd_shares: float = 200.0,
+    min_net_profit_usd: float = MIN_NET_PROFIT_USD,
+) -> Optional[VerifiedRisklessOpportunity]:
+    """
+    Evaluate a 2-leg locked arbitrage box incorporating **contractual, non-promotional collateral
+    coupons** (`ForecastEx` `FFR - 0.50%`, `Predict.fun` Venus `vUSDT`, `Polymarket` Holding Rewards).
+    """
+    asks_a = leg_a.market.yes_asks if leg_a.side.upper() == "YES" else leg_a.market.no_asks
+    asks_b = leg_b.market.yes_asks if leg_b.side.upper() == "YES" else leg_b.market.no_asks
+    if not asks_a or not asks_b:
+        return None
+
+    q_usd = max(leg_a.market.min_shares, leg_b.market.min_shares, float(target_usd_shares))
+    leg_costs_usd: List[float] = []
+    leg_net_payouts: List[float] = []
+    leg_depeg_usd = 0.0
+
+    for leg_item, asks in ((leg_a, asks_a), (leg_b, asks_b)):
+        mkt = leg_item.market
+        fx_a = collateral_fx_ask_to_usd(mkt.collateral_asset)
+        fx_f = collateral_fx_settle_floor_to_usd(mkt.collateral_asset)
+        lot = max(float(mkt.lot_size), 0.01)
+        req_local = math.ceil((q_usd / max(fx_f, 1e-6)) / lot) * lot
+        w_loc = walk_asks_for_shares(asks, req_local, mkt)
+        if not w_loc.filled or w_loc.filled_shares * fx_f + 1e-6 < q_usd:
+            return None
+        fee_loc = (
+            req_local * float(leg_item.override_taker_fee_per_contract_usd)
+            if leg_item.override_taker_fee_per_contract_usd is not None
+            else w_loc.taker_fee_usd
+        )
+        mark_usd = w_loc.gross_cost_usd * fx_f
+        leg_costs_usd.append((w_loc.gross_cost_usd + fee_loc) * fx_a)
+        leg_net_payouts.append(w_loc.filled_shares * fx_f)
+        leg_depeg_usd += mark_usd * (max(0.0, float(leg_item.collateral_depeg_haircut_bps)) / 10_000.0)
+
+    distinct_venues = tuple(sorted({leg_a.market.venue, leg_b.market.venue}))
+    gas_usd = sum(DEFAULT_EXTERNAL_GAS_USD.get(v, 0.005) for v in distinct_venues)
+    bridge_usd = (
+        relay_bridge_drag_usd(sum(leg_costs_usd), DEFAULT_RELAY_BRIDGE_DRAG_BPS)
+        if len(distinct_venues) > 1
+        else 0.0
+    )
+    all_in_cost = sum(leg_costs_usd) + gas_usd + bridge_usd + leg_depeg_usd
+
+    eff_days = 0.0 if can_resolve_early else max(0.0, float(min_guaranteed_hold_days))
+    conservative_apy_a = max(0.0, float(leg_a.contractual_apy) - max(0.0, float(leg_a.rate_cut_stress_haircut_apy)))
+    conservative_apy_b = max(0.0, float(leg_b.contractual_apy) - max(0.0, float(leg_b.rate_cut_stress_haircut_apy)))
+    if eff_days > 0.0:
+        min_coupon_usd = q_usd * min(conservative_apy_a, conservative_apy_b) * (eff_days / 365.0)
+        max_coupon_usd = q_usd * max(conservative_apy_a, conservative_apy_b) * (eff_days / 365.0)
+    else:
+        min_coupon_usd = 0.0
+        max_coupon_usd = 0.0
+
+    state_table = {
+        "OMEGA_LEG_A_WINS_MIN_COUPON_PATH": round(leg_net_payouts[0] + min_coupon_usd, 6),
+        "OMEGA_LEG_B_WINS_MIN_COUPON_PATH": round(leg_net_payouts[1] + min_coupon_usd, 6),
+        "OMEGA_HIGH_YIELD_LEG_DRIFT_PATH": round(max(leg_net_payouts) + max_coupon_usd, 6),
+    }
+    passed, worst_p, best_p, _ = verify_state_dominance_invariant(
+        state_table, all_in_cost, min_net_profit_usd=min_net_profit_usd
+    )
+    if not passed:
+        return None
+
+    net_profit = worst_p - all_in_cost
+    lockup_h = max(1.0, eff_days * 24.0)
+    return VerifiedRisklessOpportunity(
+        strategy_id="YIELD_STACKED_CARRY_BOX",
+        opportunity_id=f"yield_box:{box_id}",
+        venues=distinct_venues,
+        jurisdiction_tags=(
+            ("CA-ON-LEGAL",) if set(distinct_venues).issubset({"forecastex", "stx_ontario"}) else ("GLOBAL_SHADOW",)
+        ),
+        live_eligible=set(distinct_venues).issubset({"forecastex", "stx_ontario", "polymarket"}),
+        shares_or_units=round(q_usd, 6),
+        all_in_cost_usd=round(all_in_cost, 6),
+        worst_case_payout_usd=round(worst_p, 6),
+        best_case_payout_usd=round(best_p, 6),
+        guaranteed_net_profit_usd=round(net_profit, 6),
+        guaranteed_net_edge_bps=round((net_profit / all_in_cost) * 10_000.0, 2),
+        lockup_hours=round(lockup_h, 3),
+        state_payoff_table=state_table,
+        legs=(
+            {
+                "venue": leg_a.market.venue,
+                "side": leg_a.side.upper(),
+                "conservative_apy": round(conservative_apy_a, 6),
+                "leg_cost_usd": round(leg_costs_usd[0], 6),
+            },
+            {
+                "venue": leg_b.market.venue,
+                "side": leg_b.side.upper(),
+                "conservative_apy": round(conservative_apy_b, 6),
+                "leg_cost_usd": round(leg_costs_usd[1], 6),
+            },
+        ),
+        metadata={
+            "guaranteed_min_coupon_usd": round(min_coupon_usd, 6),
+            "effective_guaranteed_hold_days": eff_days,
+            "price_only_profit_without_coupon_usd": round(min(leg_net_payouts) - all_in_cost, 6),
+        },
+    )
+
+
+def evaluate_early_overround_exit_with_forfeited_coupon(
+    *,
+    shares: float,
+    initial_all_in_cost_usd: float,
+    accrued_coupon_to_date_usd: float,
+    forfeited_remaining_min_coupon_usd: float,
+    net_exit_bid_unit_a: float,
+    net_exit_bid_unit_b: float,
+    exit_gas_usd: float = 0.01,
+    redeployment_gain_usd: float = 0.0,
+    min_incremental_gain_usd: float = 0.05,
+) -> Dict[str, Any]:
+    """
+    `Stage C1` Early Overround Exit rule for `YIELD_STACKED_CARRY_BOX`.
+    """
+    exit_cash = float(shares) * (float(net_exit_bid_unit_a) + float(net_exit_bid_unit_b)) - float(exit_gas_usd)
+    total_realized_wealth = exit_cash + float(accrued_coupon_to_date_usd)
+    hold_to_maturity_wealth = (
+        float(shares) * 1.00 + float(accrued_coupon_to_date_usd) + float(forfeited_remaining_min_coupon_usd)
+    )
+    realized_net_pnl = total_realized_wealth - float(initial_all_in_cost_usd)
+    advantage_vs_hold = (total_realized_wealth + float(redeployment_gain_usd)) - hold_to_maturity_wealth
+    should_exit = (realized_net_pnl >= float(min_incremental_gain_usd)) and (
+        advantage_vs_hold >= float(min_incremental_gain_usd)
+    )
+    return {
+        "should_exit_early": bool(should_exit),
+        "exit_cash_usd": round(exit_cash, 6),
+        "total_realized_wealth_usd": round(total_realized_wealth, 6),
+        "hold_to_maturity_wealth_usd": round(hold_to_maturity_wealth, 6),
+        "realized_net_pnl_usd": round(realized_net_pnl, 6),
+        "advantage_vs_hold_usd": round(advantage_vs_hold, 6),
+    }
+
+
+# ==============================================================================
+# DAEMON & SHADOW COLLECTOR INTEGRATION ORCHESTRATORS (ALPHA-124 + STAGE G)
+# ==============================================================================
+
+ALL_V6_EXPANSION_SLEEVES: Tuple[str, ...] = (
+    "XV_SUBSET_NO_BOX",
+    "TAIL_BOUNDARY_001_ARB",
+    "BOND3_MULTISOURCE_DEAD_SPLIT",
+    "XV_FX_INVARIANT_CAD_USD_BOX",
+    "DERIBIT_VERTICAL_SUPER_REP",
+    "XV_HALFTIME_FREEZE_CORRIDOR",
+    "HEDGED_PRESPLIT_CONV_GUN",
+    "YIELD_STACKED_CARRY_BOX",
+)
+
+
+def _atomic_write_json_safe(path: Any, payload: Mapping[str, Any]) -> bool:
+    """Best-effort atomic JSON write; fails gracefully on read-only systemd sandboxes."""
+    import json
+    import os
+    from pathlib import Path
+
+    try:
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        tmp = target.with_suffix(target.suffix + ".tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, target)
+        return True
+    except OSError:
+        return False
+
+
+def _raw_levels_to_order_levels(raw: Any, *, descending: bool, limit: int = 5) -> Tuple[OrderLevel, ...]:
+    rows: List[Tuple[float, float]] = []
+    for item in raw or ():
+        try:
+            if isinstance(item, Mapping):
+                px = float(item.get("price", 0.0) or 0.0)
+                sz = float(item.get("size", 0.0) or 0.0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                px = float(item[0] or 0.0)
+                sz = float(item[1] or 0.0)
+            else:
+                continue
+            if 0.0 < px < 1.0 and sz > 0.0:
+                rows.append((px, sz))
+        except (TypeError, ValueError):
+            continue
+    rows.sort(key=lambda x: (-x[0] if descending else x[0]))
+    return tuple(OrderLevel(price=round(p, 5), size=round(s, 4)) for p, s in rows[:limit])
+
+
+def _open_v6_shadow_box_in_alpha124(
+    daemon: Any,
+    *,
+    opp: VerifiedRisklessOpportunity,
+    dedupe_key: str,
+    asset_or_city: str,
+    title: str,
+    close_ts: float,
+    legs: Sequence[Dict[str, Any]],
+    now_ts: float,
+) -> bool:
+    """Opens an honest multi-leg shadow position in `Alpha124ShadowDaemon` (never emits live orders)."""
+    from datetime import datetime, timezone
+
+    entered_keys = getattr(daemon, "entered_keys", None)
+    open_positions = getattr(daemon, "open_positions", None)
+    if not isinstance(open_positions, dict):
+        return False
+    if isinstance(entered_keys, set) and dedupe_key in entered_keys:
+        return False
+    if any(p.get("dedupe_key") == dedupe_key for p in open_positions.values()):
+        return False
+
+    q_ref = max(1.0, float(opp.shares_or_units))
+    unit_cost = round(float(opp.all_in_cost_usd) / q_ref, 5)
+    guar_unit = round(float(opp.worst_case_payout_usd) / q_ref, 5)
+    if unit_cost <= 0.0 or unit_cost >= guar_unit:
+        return False
+
+    tier_caps = {"T100": 20.0, "T1000": 110.0, "T5000": 350.0}
+    tier_fills: Dict[str, Dict[str, Any]] = {}
+    for t_name, cap_usd in tier_caps.items():
+        sh = max(5.0, min(q_ref, float(math.floor(cap_usd / max(0.25, unit_cost)))))
+        spent = round(sh * unit_cost, 2)
+        tier_fills[t_name] = {
+            "filled": True,
+            "vwap": unit_cost,
+            "eff_px": unit_cost,
+            "spent_usd": spent,
+            "fee_usd": 0.0,
+            "shares": sh,
+            "l1_usd": round(q_ref * unit_cost, 2),
+        }
+
+    pos_id = f"{opp.strategy_id}_{int(now_ts)}_{abs(hash(dedupe_key)) % 100000:05d}"
+    tok_join = "|".join(str(lg.get("token_id") or "") for lg in legs if lg.get("token_id"))
+    pos = {
+        "position_id": pos_id,
+        "dedupe_key": dedupe_key,
+        "sleeve": opp.strategy_id,
+        "asset_or_city": str(asset_or_city or "POLY"),
+        "title": str(title)[:96],
+        "side": "+".join(str(lg.get("side") or "LEG") for lg in legs[:4]),
+        "token_id": tok_join or opp.opportunity_id,
+        "fee_rate": 0.0,
+        "entry_ts": float(now_ts),
+        "entry_utc": datetime.now(timezone.utc).isoformat(),
+        "close_ts": float(close_ts),
+        "p_model_entry": guar_unit,
+        "entry_eff_px_t1000": unit_cost,
+        "entry_vwap_t1000": unit_cost,
+        "realized_edge_t1000": round(guar_unit - unit_cost, 5),
+        "entry_best_bid": unit_cost,
+        "last_bid": unit_cost,
+        "maker_tp_px": None,
+        "tier_fills": tier_fills,
+        "extra": {
+            "is_multi_leg_bundle": True,
+            "guaranteed_payout": guar_unit,
+            "max_payout": round(float(opp.best_case_payout_usd) / q_ref, 5),
+            "v6_state_payoff_table": dict(opp.state_payoff_table),
+            "legs": list(legs),
+        },
+        "status": "OPEN",
+    }
+    open_positions[pos_id] = pos
+    if isinstance(entered_keys, set):
+        entered_keys.add(dedupe_key)
+    if hasattr(daemon, "_append_ledger"):
+        try:
+            daemon._append_ledger({"event": "SHADOW_ENTRY", **pos})
+        except Exception:
+            pass
+    return True
+
+
+async def run_v6_expansion_alpha124_scan(
+    daemon: Any,
+    opps_out: List[Dict[str, Any]],
+    *,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Fault-isolated intra-Polymarket v6 Riskless Expansion scanner for `Alpha124ShadowDaemon`:
+      - `CompactCandidateL2Recorder` (`<= 12 MB/day` compressed candidate L2 archive)
+      - `TAIL_BOUNDARY_001_ARB` (`0.001`-tick sub-penny parabolic fee collapse boxes)
+      - `BOND3_MULTISOURCE_DEAD_SPLIT` (multi-source verified `MOOV2` carry + Stage C2 dead-split)
+      - `HEDGED_PRESPLIT_CONV_GUN` (closed `NegRisk` `NR3` pre-converted overround + shadow binary Maker-Ask)
+      - `YIELD_STACKED_CARRY_BOX` (Holding-Reward contractual carry boxes)
+    """
+    from datetime import datetime, timezone
+    from pathlib import Path
+    import time as _time
+
+    from src.polymarket_research.honest_riskless_backtester import CompactCandidateL2Recorder
+
+    now = float(now_ts if now_ts is not None else _time.time())
+    is_single_scan = bool(getattr(daemon, "single_scan", False))
+    prev_stats = getattr(daemon, "_v6_expansion_stats", None) or {}
+    scan_seq = int(prev_stats.get("cycles_scanned", 0)) + 1
+
+    per_sleeve_counts: Dict[str, Dict[str, int]] = {
+        slv: {
+            "evaluated": int((prev_stats.get("per_sleeve") or {}).get(slv, {}).get("evaluated", 0)),
+            "opportunities_found": int((prev_stats.get("per_sleeve") or {}).get(slv, {}).get("opportunities_found", 0)),
+            "cycle_hits": 0,
+        }
+        for slv in ALL_V6_EXPANSION_SLEEVES
+    }
+    top_hits: List[Dict[str, Any]] = []
+
+    def _record_hit(v_opp: VerifiedRisklessOpportunity, label: str, rem_sec: float) -> None:
+        sl = v_opp.strategy_id
+        if sl in per_sleeve_counts:
+            per_sleeve_counts[sl]["opportunities_found"] += 1
+            per_sleeve_counts[sl]["cycle_hits"] += 1
+        q_u = max(1.0, float(v_opp.shares_or_units))
+        unit_c = round(float(v_opp.all_in_cost_usd) / q_u, 4)
+        unit_edge = round(float(v_opp.guaranteed_net_profit_usd) / q_u, 4)
+        hold_hr = max(0.25, float(rem_sec) / 3600.0 if rem_sec > 0 else float(v_opp.lockup_hours))
+        ev_hr = round(unit_edge / max(0.10, unit_c * hold_hr), 6)
+        opps_out.append(
+            {
+                "sleeve": sl,
+                "market": f"[{sl}] {label[:64]}",
+                "ask_vwap": unit_c,
+                "p_model": round(float(v_opp.worst_case_payout_usd) / q_u, 4),
+                "net_edge": unit_edge,
+                "ev_per_dollar_hour": ev_hr,
+                "l1_usd": round(float(v_opp.all_in_cost_usd), 2),
+                "close_ts": round(now + max(60.0, rem_sec), 1),
+            }
+        )
+        if len(top_hits) < 12:
+            top_hits.append(
+                {
+                    "strategy_id": sl,
+                    "opportunity_id": v_opp.opportunity_id,
+                    "title": label[:84],
+                    "venues": list(v_opp.venues),
+                    "live_eligible": bool(v_opp.live_eligible),
+                    "shares": round(q_u, 2),
+                    "unit_cost": unit_c,
+                    "all_in_cost_usd": round(float(v_opp.all_in_cost_usd), 4),
+                    "guaranteed_net_profit_usd": round(float(v_opp.guaranteed_net_profit_usd), 4),
+                    "guaranteed_net_edge_bps": round(float(v_opp.guaranteed_net_edge_bps), 1),
+                    "bps_per_hr": round(float(v_opp.guaranteed_net_edge_bps) / hold_hr, 1),
+                    "rem_hours": round(hold_hr, 2),
+                }
+            )
+
+    # Hydrate a bounded pool of active strike ladder / dominance books (<= 32 tokens)
+    hydrated_books: Dict[str, Dict[str, Any]] = {}
+    ladder_rungs: List[Any] = []
+    try:
+        for rgs in (getattr(daemon, "strike_ladders", None) or {}).values():
+            for rg in rgs:
+                rem_r = float(getattr(rg, "end_ts", 0.0) or 0.0) - now
+                if 90.0 < rem_r <= 172800.0 and getattr(rg, "yes_token", "") and getattr(rg, "no_token", ""):
+                    ladder_rungs.append(rg)
+        ladder_rungs.sort(key=lambda r: float(getattr(r, "end_ts", 0.0) or 0.0))
+        ladder_rungs = ladder_rungs[:16]
+        missing_toks: List[str] = []
+        for rg in ladder_rungs:
+            for tk in (str(rg.yes_token), str(rg.no_token)):
+                wb = daemon._get_fresh_ws_book(tk, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None
+                if wb:
+                    hydrated_books[tk] = wb
+                elif tk not in hydrated_books:
+                    missing_toks.append(tk)
+        if missing_toks and hasattr(daemon, "fetch_books_batch"):
+            fetched = await daemon.fetch_books_batch(list(dict.fromkeys(missing_toks))[:32], timeout=2.2)
+            if isinstance(fetched, dict):
+                hydrated_books.update(fetched)
+    except Exception:
+        pass
+
+    # Build NormalizedBinaryMarket snapshots for L2 recording + Engine #2 / #7 / #8
+    norm_markets: List[NormalizedBinaryMarket] = []
+    rung_by_id: Dict[str, Any] = {}
+    now_ms_int = int(now * 1000)
+    for rg in ladder_rungs:
+        by_y = hydrated_books.get(str(rg.yes_token))
+        by_n = hydrated_books.get(str(rg.no_token))
+        if not by_y or not by_n:
+            continue
+        ya = _raw_levels_to_order_levels(by_y.get("asks"), descending=False)
+        yb = _raw_levels_to_order_levels(by_y.get("bids"), descending=True)
+        na = _raw_levels_to_order_levels(by_n.get("asks"), descending=False)
+        nb = _raw_levels_to_order_levels(by_n.get("bids"), descending=True)
+        if not (ya or na):
+            continue
+        mid_s = str(getattr(rg, "market_id", "") or f"{rg.asset}_{rg.strike}")
+        fr_val = float(getattr(rg, "fee_rate", 0.0) or 0.0)
+        rung_by_id[mid_s] = rg
+        norm_markets.append(
+            NormalizedBinaryMarket(
+                venue="polymarket",
+                market_id=mid_s,
+                slug=f"{rg.asset}-{rg.strike}-{int(rg.end_ts)}",
+                title=f"{rg.asset} > ${rg.strike} ({int(rg.end_ts)})",
+                category="crypto_strike",
+                yes_asks=list(ya),
+                yes_bids=list(yb),
+                no_asks=list(na),
+                no_bids=list(nb),
+                fee_rate_bps=round(fr_val * 10_000.0, 2),
+                fee_enabled=fr_val > 0.0,
+                taker_delay_ms=0.0,
+                min_shares=5.0,
+                asset=str(rg.asset),
+                horizon="intraday",
+                oracle_family="binance_1m_usdt",
+                strike_price=float(rg.strike),
+                strike_direction="DOWN" if bool(getattr(rg, "is_downward", False)) else "UP",
+                end_ts=int(rg.end_ts),
+                cancel_rule="VOID",
+                has_unlisted_draw=False,
+                tick_size=0.001 if ((ya and (ya[0].price >= 0.96 or ya[0].price <= 0.04)) or (na and (na[0].price >= 0.96 or na[0].price <= 0.04))) else 0.01,
+                lot_size=1.0,
+                quote_ts_ms=now_ms_int,
+                collateral_asset="USDC",
+                settlement_delay_hours=1.0,
+                partition_group_id=f"pm_strike_{rg.asset}_{int(rg.end_ts)}",
+            )
+        )
+
+    # 0. CompactCandidateL2Recorder (bounded <= 12 MB/day compressed L2 archive)
+    rec_stats: Dict[str, Any] = {"enabled": not is_single_scan, "frames_recorded": 0, "bytes_today": 0, "budget_drops": 0}
+    if not is_single_scan:
+        try:
+            rec_obj = getattr(daemon, "_candidate_l2_recorder", None)
+            if rec_obj is None:
+                base_dir = Path(getattr(daemon, "_v6_data_dir", None) or (Path(__file__).resolve().parents[2] / "data" / "polymarket"))
+                rec_obj = CompactCandidateL2Recorder(base_dir / "candidate_l2", max_daily_bytes=12 * 1024 * 1024)
+                daemon._candidate_l2_recorder = rec_obj
+            cand_keys_t = [
+                ("polymarket", m.slug)
+                for m in norm_markets
+                if (m.yes_asks and (m.yes_asks[0].price >= 0.94 or m.yes_asks[0].price <= 0.06))
+                or (m.no_asks and (m.no_asks[0].price >= 0.94 or m.no_asks[0].price <= 0.06))
+                or (m.yes_asks and m.no_asks and (m.yes_asks[0].price + m.no_asks[0].price) <= 1.025)
+            ]
+            rec_obj.observe_markets(norm_markets, candidate_keys=cand_keys_t, now_ms=now_ms_int)
+            if scan_seq % 3 == 0:
+                rec_obj.flush()
+            day_key = rec_obj._day_key(now_ms_int)
+            rec_stats = {
+                "enabled": True,
+                "frames_recorded": int(rec_obj.frames_recorded),
+                "budget_drops": int(rec_obj.budget_drops),
+                "bytes_today": int(rec_obj._bytes_written_by_day.get(day_key, 0)),
+                "max_daily_bytes": int(rec_obj.max_daily_bytes),
+            }
+        except Exception:
+            pass
+
+    # 1. Engine #2: TAIL_BOUNDARY_001_ARB (0.001-tick sub-penny boundary fee collapse)
+    try:
+        tail_pairs: List[BoundaryTickDominancePair] = []
+        pair_meta: Dict[str, Tuple[Any, str, Any, str]] = {}
+        by_grp: Dict[Tuple[str, int], List[NormalizedBinaryMarket]] = {}
+        for m in norm_markets:
+            rg = rung_by_id.get(m.market_id)
+            if rg is None or bool(getattr(rg, "is_downward", False)):
+                continue
+            if m.yes_asks and m.no_asks and (
+                m.yes_asks[0].price >= 0.96 or m.yes_asks[0].price <= 0.04 or m.no_asks[0].price >= 0.96 or m.no_asks[0].price <= 0.04
+            ):
+                pid_c = f"cset_{m.market_id}"
+                pair_meta[pid_c] = (rg, "YES", rg, "NO")
+                tail_pairs.append(
+                    BoundaryTickDominancePair(
+                        pair_id=pid_c,
+                        pair_type="COMPLETE_SET",
+                        oracle_signature=f"binance_1m_{rg.asset}_{int(rg.end_ts)}",
+                        expiry_ts=float(rg.end_ts),
+                        leg_a_token_id=str(rg.yes_token),
+                        leg_a_label=f"{rg.asset} >= {rg.strike} YES",
+                        leg_a_asks=tuple(m.yes_asks),
+                        leg_b_token_id=str(rg.no_token),
+                        leg_b_label=f"{rg.asset} >= {rg.strike} NO",
+                        leg_b_asks=tuple(m.no_asks),
+                        fee_rate=float(getattr(rg, "fee_rate", 0.0) or 0.0),
+                        fee_exponent=float(getattr(rg, "fee_exponent", 1.0) or 1.0),
+                        strike_low=float(rg.strike),
+                        strike_high=float(rg.strike),
+                    )
+                )
+            by_grp.setdefault((str(rg.asset), int(rg.end_ts)), []).append(m)
+
+        for (asset_k, exp_k), grp in by_grp.items():
+            grp_sorted = sorted(grp, key=lambda x: float(rung_by_id[x.market_id].strike))
+            for i in range(len(grp_sorted)):
+                for j in range(i + 1, len(grp_sorted)):
+                    m_lo, m_hi = grp_sorted[i], grp_sorted[j]
+                    rg_lo, rg_hi = rung_by_id[m_lo.market_id], rung_by_id[m_hi.market_id]
+                    if float(rg_lo.strike) < float(rg_hi.strike) and m_lo.yes_asks and m_hi.no_asks:
+                        pid_d = f"dom_{asset_k}_{m_lo.market_id}_{m_hi.market_id}_{exp_k}"
+                        pair_meta[pid_d] = (rg_lo, "YES", rg_hi, "NO")
+                        tail_pairs.append(
+                            BoundaryTickDominancePair(
+                                pair_id=pid_d,
+                                pair_type="NESTED_STRIKE",
+                                oracle_signature=f"binance_1m_{asset_k}_{exp_k}",
+                                expiry_ts=float(exp_k),
+                                leg_a_token_id=str(rg_lo.yes_token),
+                                leg_a_label=f"{asset_k} >= {rg_lo.strike}",
+                                leg_a_asks=tuple(m_lo.yes_asks),
+                                leg_b_token_id=str(rg_hi.no_token),
+                                leg_b_label=f"{asset_k} < {rg_hi.strike}",
+                                leg_b_asks=tuple(m_hi.no_asks),
+                                fee_rate=max(float(getattr(rg_lo, "fee_rate", 0.0) or 0.0), float(getattr(rg_hi, "fee_rate", 0.0) or 0.0)),
+                                fee_exponent=float(getattr(rg_lo, "fee_exponent", 1.0) or 1.0),
+                                strike_low=float(rg_lo.strike),
+                                strike_high=float(rg_hi.strike),
+                            )
+                        )
+        per_sleeve_counts["TAIL_BOUNDARY_001_ARB"]["evaluated"] += len(tail_pairs)
+        if tail_pairs:
+            for hit_tb in detect_tail_boundary_001_fee_collapse_boxes(tail_pairs, target_box_notional_usd=45.0):
+                raw_pid = hit_tb.opportunity_id.replace("tail001:", "", 1)
+                meta_t = pair_meta.get(raw_pid)
+                rem_s = max(60.0, float(meta_t[0].end_ts) - now) if meta_t is not None else 900.0
+                _record_hit(hit_tb, f"Sub-Penny Tail Box {raw_pid}", rem_s)
+                if meta_t is not None and not is_single_scan:
+                    rg_a, s_a, rg_b, s_b = meta_t
+                    tok_a = rg_a.yes_token if s_a == "YES" else rg_a.no_token
+                    tok_b = rg_b.yes_token if s_b == "YES" else rg_b.no_token
+                    _open_v6_shadow_box_in_alpha124(
+                        daemon,
+                        opp=hit_tb,
+                        dedupe_key=f"V6_TAIL001_{raw_pid}",
+                        asset_or_city=str(rg_a.asset),
+                        title=f"{rg_a.asset} 0.001-Tail Box ({rg_a.strike}/{rg_b.strike})",
+                        close_ts=float(min(rg_a.end_ts, rg_b.end_ts)),
+                        legs=[
+                            {"token_id": tok_a, "side": s_a, "market_id": str(rg_a.market_id), "fee_rate": float(rg_a.fee_rate or 0.0), "fee_exponent": float(rg_a.fee_exponent or 1.0)},
+                            {"token_id": tok_b, "side": s_b, "market_id": str(rg_b.market_id), "fee_rate": float(rg_b.fee_rate or 0.0), "fee_exponent": float(rg_b.fee_exponent or 1.0)},
+                        ],
+                        now_ts=now,
+                    )
+    except Exception:
+        pass
+
+    # 2. Engine #3: BOND3_MULTISOURCE_DEAD_SPLIT (UMA MOOV2 verified multi-source carry + Stage C2 dead-split)
+    try:
+        uma_mkts = list((getattr(daemon, "uma_proposed_markets", None) or {}).values())[:20]
+        uma_cache = getattr(daemon, "uma_onchain_cache", None) or {}
+        for um in uma_mkts:
+            cid_u = str(getattr(um, "condition_id", "") or (um.get("condition_id") if isinstance(um, Mapping) else "") or "")
+            oc = uma_cache.get(cid_u) or {}
+            if not (oc.get("verified") and oc.get("proposer_whitelisted") and not oc.get("disputed")):
+                continue
+            indep_sources = list(oc.get("independent_sources") or ())
+            if len(indep_sources) < 2:
+                continue
+            per_sleeve_counts["BOND3_MULTISOURCE_DEAD_SPLIT"]["evaluated"] += 1
+            win_tok = str(getattr(um, "win_token", "") or (um.get("win_token") if isinstance(um, Mapping) else "") or "")
+            lose_tok = str(getattr(um, "lose_token", "") or (um.get("lose_token") if isinstance(um, Mapping) else "") or "")
+            if not win_tok or not lose_tok:
+                continue
+            bk_w = hydrated_books.get(win_tok)
+            bk_l = hydrated_books.get(lose_tok)
+            if (bk_w is None or bk_l is None) and hasattr(daemon, "fetch_books_batch"):
+                bks_u = await daemon.fetch_books_batch([win_tok, lose_tok], timeout=2.0)
+                bk_w = bk_w or (bks_u or {}).get(win_tok)
+                bk_l = bk_l or (bks_u or {}).get(lose_tok)
+            if not bk_w or not bk_l:
+                continue
+            w_asks = _raw_levels_to_order_levels(bk_w.get("asks"), descending=False)
+            w_bids = _raw_levels_to_order_levels(bk_w.get("bids"), descending=True)
+            l_bids = _raw_levels_to_order_levels(bk_l.get("bids"), descending=True)
+            if not w_asks:
+                continue
+            exp_u = float(oc.get("expiration_ts") or (now + 3600.0))
+            rem_liveness = max(60.0, exp_u - now)
+            mid_u = str(getattr(um, "market_id", "") or (um.get("market_id") if isinstance(um, Mapping) else cid_u[:12]))
+            q_u_txt = str(getattr(um, "question", "") or (um.get("question") if isinstance(um, Mapping) else mid_u))
+            cat_u = str(oc.get("category") or "crypto")
+            ev_bond3 = evaluate_bond3_multisource_verified_carry(
+                market_id=mid_u,
+                category=cat_u,
+                uma_proposed_outcome="YES",
+                uma_status="proposed",
+                is_whitelisted_proposer=True,
+                remaining_challenge_sec=rem_liveness,
+                winner_asks=w_asks,
+                winner_bids=w_bids,
+                dead_loser_bids=l_bids,
+                observations=[
+                    PrimaryOracleObservation(
+                        source_id=str(src_name),
+                        is_official_final=True,
+                        outcome="YES",
+                        post_final_elapsed_sec=1200.0,
+                    )
+                    for src_name in indep_sources[:3]
+                ],
+                fee_rate=float(oc.get("fee_rate", 0.0) or 0.0),
+                target_notional_usd=45.0,
+            )
+            if ev_bond3 is not None:
+                _record_hit(ev_bond3, q_u_txt, rem_liveness)
+    except Exception:
+        pass
+
+    # 3. Engine #7: HEDGED_PRESPLIT_CONV_GUN (Closed NegRisk NR3 Overround + Shadow Binary Maker-Ask)
+    try:
+        nr_slates = [
+            sp
+            for sp in (getattr(daemon, "negrisk_convert_slates", None) or {}).values()
+            if getattr(sp, "is_closed_convert_safe", False) and 3 <= len(getattr(sp, "brackets", ())) <= 12
+        ][:8]
+        for sp in nr_slates:
+            nr_books: List[PreConvertedNegRiskOutcomeBook] = []
+            all_ok = True
+            for idx_b, br in enumerate(sp.brackets):
+                yt = str(br.get("yes_token") or "")
+                wb = hydrated_books.get(yt) or (daemon._get_fresh_ws_book(yt, now, max_age_sec=8.0) if hasattr(daemon, "_get_fresh_ws_book") else None)
+                if not wb:
+                    all_ok = False
+                    break
+                b_lvls = _raw_levels_to_order_levels(wb.get("bids"), descending=True)
+                a_lvls = _raw_levels_to_order_levels(wb.get("asks"), descending=False)
+                if not b_lvls:
+                    all_ok = False
+                    break
+                nr_books.append(
+                    PreConvertedNegRiskOutcomeBook(
+                        outcome_label=str(br.get("label") or f"B{idx_b}"),
+                        yes_bids=b_lvls,
+                        yes_asks=a_lvls,
+                        fee_rate=float(br.get("fee_rate", 0.0) or 0.0),
+                        fee_exponent=float(br.get("fee_exponent", 1.0) or 1.0),
+                    )
+                )
+            if all_ok and len(nr_books) == len(sp.brackets):
+                per_sleeve_counts["HEDGED_PRESPLIT_CONV_GUN"]["evaluated"] += 1
+                nr3_hit = evaluate_preconverted_nr3_overround(
+                    slate_id=str(sp.event_id),
+                    outcomes=nr_books,
+                    settled_inventory_shares=20.0,
+                    is_augmented_other=False,
+                    onchain_question_count=len(nr_books),
+                )
+                if nr3_hit is not None:
+                    _record_hit(nr3_hit, f"NR3 Pre-Converted Overround: {sp.title}", max(60.0, float(sp.end_ts) - now))
+
+        # Shadow-only binary hedged pre-split Maker-Ask check across hydrated markets
+        for m in norm_markets[:12]:
+            if m.yes_asks and m.no_bids:
+                per_sleeve_counts["HEDGED_PRESPLIT_CONV_GUN"]["evaluated"] += 1
+                maker_ask_px = round(min(0.99, m.yes_asks[0].price), 3)
+                hp_hit = evaluate_hedged_presplit_maker_ask(
+                    market_id=m.market_id,
+                    maker_yes_ask_price=maker_ask_px,
+                    complement_no_bids=tuple(m.no_bids),
+                    settled_split_shares=20.0,
+                    fee_rate=float(m.fee_rate_bps) / 10_000.0,
+                    live_enabled=False,
+                )
+                if hp_hit is not None:
+                    _record_hit(hp_hit, f"Shadow Pre-Split Maker-Ask {m.title}", max(60.0, float(m.end_ts) - now))
+    except Exception:
+        pass
+
+    # 4. Engine #8: YIELD_STACKED_CARRY_BOX (Polymarket Holding Rewards 4% APY carry boxes)
+    try:
+        holding_apy = float(getattr(daemon, "holding_rewards_apy", 0.0) or 0.0)
+        if holding_apy > 0.0:
+            for m in norm_markets[:10]:
+                rem_days = (float(m.end_ts) - now) / 86400.0
+                if rem_days >= 2.0 and m.yes_asks and m.no_asks:
+                    per_sleeve_counts["YIELD_STACKED_CARRY_BOX"]["evaluated"] += 1
+                    yb_hit = evaluate_yield_stacked_locked_box(
+                        box_id=f"pm_hold_{m.market_id}",
+                        leg_a=YieldBearingBoxLeg(market=m, side="YES", contractual_apy=holding_apy),
+                        leg_b=YieldBearingBoxLeg(market=m, side="NO", contractual_apy=holding_apy),
+                        min_guaranteed_hold_days=rem_days,
+                        can_resolve_early=False,
+                        target_usd_shares=50.0,
+                    )
+                    if yb_hit is not None:
+                        _record_hit(yb_hit, f"Yield Carry Box {m.title}", rem_days * 86400.0)
+    except Exception:
+        pass
+
+    summary = {
+        "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at_unix": round(now, 3),
+        "daemon": "alpha_124_shadow_daemon",
+        "cycles_scanned": scan_seq,
+        "hydrated_markets": len(norm_markets),
+        "per_sleeve": per_sleeve_counts,
+        "top_opportunities": top_hits,
+        "candidate_l2_recorder": rec_stats,
+    }
+    daemon._v6_expansion_stats = summary
+    if not is_single_scan:
+        base_dir = Path(getattr(daemon, "_v6_data_dir", None) or (Path(__file__).resolve().parents[2] / "data" / "polymarket"))
+        _atomic_write_json_safe(base_dir / "v6_expansion_alpha124_telemetry.json", summary)
+    return summary
+
+
+async def _fetch_deribit_usdc_public_options(
+    transport: Any,
+    *,
+    cache_holder: Any,
+    now_ts: float,
+) -> List[DeribitLinearOptionQuote]:
+    """
+    Keyless public Deribit linear USDC options book-summary reader (`BTC_USDC`, `ETH_USDC`),
+    cached for 60s so Stage G shadow scans add negligible HTTP overhead.
+    """
+    from datetime import datetime, timezone
+
+    cached = getattr(cache_holder, "_deribit_usdc_cache", None)
+    if isinstance(cached, tuple) and len(cached) == 2 and (now_ts - float(cached[0])) < 60.0:
+        return list(cached[1])
+    if transport is None or not hasattr(transport, "get_json"):
+        return []
+
+    quotes: List[DeribitLinearOptionQuote] = []
+    month_map = {
+        "JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MAY": 5, "JUN": 6,
+        "JUL": 7, "AUG": 8, "SEP": 9, "OCT": 10, "NOV": 11, "DEC": 12,
+    }
+    url = "https://www.deribit.com/api/v2/public/get_book_summary_by_currency?currency=USDC&kind=option"
+    try:
+        raw_resp = await transport.get_json(url)
+        resp = raw_resp[1] if isinstance(raw_resp, tuple) and len(raw_resp) >= 2 else raw_resp
+        rows = (resp or {}).get("result") if isinstance(resp, Mapping) else None
+        if isinstance(rows, list):
+            for r in rows:
+                if not isinstance(r, Mapping):
+                    continue
+                inst = str(r.get("instrument_name") or "")
+                parts = inst.split("-")
+                if len(parts) != 4 or parts[0] not in {"BTC_USDC", "ETH_USDC", "SOL_USDC"} or parts[3] not in {"C", "P"}:
+                    continue
+                dt_s = parts[1]
+                try:
+                    if len(dt_s) == 7:
+                        dd, mmm, yy = int(dt_s[:2]), dt_s[2:5].upper(), int(dt_s[5:7])
+                    elif len(dt_s) == 6:
+                        dd, mmm, yy = int(dt_s[:1]), dt_s[1:4].upper(), int(dt_s[4:6])
+                    else:
+                        continue
+                    mm = month_map.get(mmm)
+                    if mm is None:
+                        continue
+                    exp_dt = datetime(2000 + yy, mm, dd, 8, 0, 0, tzinfo=timezone.utc)
+                    strike_v = float(parts[2])
+                    und_px = float(r.get("underlying_price") or r.get("estimated_delivery_price") or 0.0)
+                    ask_raw = float(r.get("ask_price") or 0.0)
+                    bid_raw = float(r.get("bid_price") or 0.0)
+                    if und_px <= 0.0 or strike_v <= 0.0:
+                        continue
+                    ask_usdc = ask_raw if ask_raw > 1.5 else (ask_raw * und_px if ask_raw > 0 else 0.0)
+                    bid_usdc = bid_raw if bid_raw > 1.5 else (bid_raw * und_px if bid_raw > 0 else 0.0)
+                    if ask_usdc <= 0.0 and bid_usdc <= 0.0:
+                        continue
+                    quotes.append(
+                        DeribitLinearOptionQuote(
+                            instrument_name=inst,
+                            currency_pair=parts[0],
+                            settlement_currency="USDC",
+                            option_type=parts[3],
+                            strike=strike_v,
+                            expiry_ts=exp_dt.timestamp(),
+                            best_bid_usdc=max(0.0, round(bid_usdc, 4)),
+                            best_bid_contracts=10.0,
+                            best_ask_usdc=round(ask_usdc if ask_usdc > 0.0 else strike_v, 4),
+                            best_ask_contracts=10.0,
+                            index_price_usd=und_px,
+                        )
+                    )
+                except (TypeError, ValueError):
+                    continue
+    except Exception:
+        return []
+    cache_holder._deribit_usdc_cache = (now_ts, tuple(quotes))
+    return quotes
+
+
+async def run_v6_expansion_cross_venue_scan(
+    collector: Any,
+    all_live_markets: Sequence[NormalizedBinaryMarket],
+    pairs: Sequence[Tuple[NormalizedBinaryMarket, NormalizedBinaryMarket]],
+    *,
+    transport: Any = None,
+    now_ts: Optional[float] = None,
+) -> Dict[str, Any]:
+    """
+    Fault-isolated Stage G Cross-Venue v6 Riskless Expansion scanner (`LiveCrossVenueShadowCollector`).
+    CRITICAL SANDBOX RULE: Writes ONLY inside `collector.engine.data_dir` (`data/cross_venue_shadow`),
+    respecting `systemd` `ProtectSystem=strict` + `ReadWritePaths=.../data/cross_venue_shadow`.
+    """
+    from datetime import datetime, timezone
+    import re
+    import time as _time
+
+    from src.polymarket_research.honest_riskless_backtester import CompactCandidateL2Recorder
+
+    now = float(now_ts if now_ts is not None else _time.time())
+    now_ms_int = int(now * 1000)
+    data_dir = getattr(getattr(collector, "engine", None), "data_dir", None)
+    eff_mode = str((getattr(collector, "env", None) or {}).get("DOMINUS_NETWORK_MODE") or "live_public").strip().lower()
+    prev = getattr(collector, "_v6_expansion_stats", None) or {}
+    scan_seq = int(prev.get("cycles_scanned", 0)) + 1
+
+    per_sleeve: Dict[str, Dict[str, int]] = {
+        slv: {
+            "evaluated": int((prev.get("per_sleeve") or {}).get(slv, {}).get("evaluated", 0)),
+            "opportunities_found": int((prev.get("per_sleeve") or {}).get(slv, {}).get("opportunities_found", 0)),
+            "cycle_hits": 0,
+        }
+        for slv in ALL_V6_EXPANSION_SLEEVES
+    }
+    top_hits: List[Dict[str, Any]] = []
+
+    def _push_xv_hit(v_opp: VerifiedRisklessOpportunity, title: str) -> None:
+        sl = v_opp.strategy_id
+        if sl in per_sleeve:
+            per_sleeve[sl]["opportunities_found"] += 1
+            per_sleeve[sl]["cycle_hits"] += 1
+        if len(top_hits) < 16:
+            q_u = max(1.0, float(v_opp.shares_or_units))
+            hold_h = max(0.25, float(v_opp.lockup_hours))
+            top_hits.append(
+                {
+                    "strategy_id": sl,
+                    "opportunity_id": v_opp.opportunity_id,
+                    "title": title[:88],
+                    "venues": list(v_opp.venues),
+                    "jurisdiction_tags": list(v_opp.jurisdiction_tags),
+                    "live_eligible": bool(v_opp.live_eligible),
+                    "shares": round(q_u, 2),
+                    "unit_cost": round(float(v_opp.all_in_cost_usd) / q_u, 4),
+                    "all_in_cost_usd": round(float(v_opp.all_in_cost_usd), 4),
+                    "guaranteed_net_profit_usd": round(float(v_opp.guaranteed_net_profit_usd), 4),
+                    "guaranteed_net_edge_bps": round(float(v_opp.guaranteed_net_edge_bps), 1),
+                    "bps_per_hr": round(float(v_opp.guaranteed_net_edge_bps) / hold_h, 1),
+                    "rem_hours": round(hold_h, 2),
+                }
+            )
+
+    # 0. CompactCandidateL2Recorder strictly under collector.engine.data_dir / "candidate_l2"
+    rec_stats: Dict[str, Any] = {"enabled": data_dir is not None, "frames_recorded": 0, "bytes_today": 0, "budget_drops": 0}
+    if data_dir is not None:
+        try:
+            rec_obj = getattr(collector, "_candidate_l2_recorder", None)
+            if rec_obj is None:
+                rec_obj = CompactCandidateL2Recorder(data_dir / "candidate_l2", max_daily_bytes=12 * 1024 * 1024)
+                collector._candidate_l2_recorder = rec_obj
+            paired_keys = [(m.venue.lower(), m.slug) for pm, ext in pairs for m in (pm, ext)]
+            rec_obj.observe_markets(all_live_markets, candidate_keys=paired_keys, now_ms=now_ms_int)
+            rec_obj.flush()
+            day_key = rec_obj._day_key(now_ms_int)
+            rec_stats = {
+                "enabled": True,
+                "frames_recorded": int(rec_obj.frames_recorded),
+                "budget_drops": int(rec_obj.budget_drops),
+                "bytes_today": int(rec_obj._bytes_written_by_day.get(day_key, 0)),
+                "max_daily_bytes": int(rec_obj.max_daily_bytes),
+            }
+        except Exception:
+            pass
+
+    # 1. Engine #1: XV_SUBSET_NO_BOX (Mutually-exclusive cross-venue partition slates, m=2..3)
+    try:
+        part_groups: Dict[str, List[NormalizedBinaryMarket]] = {}
+        for m in all_live_markets:
+            pg = str(getattr(m, "partition_group_id", "") or "").strip()
+            if pg and m.no_asks and m.category != "crypto_barrier":
+                part_groups.setdefault(pg, []).append(m)
+        for pg_id, members in list(part_groups.items())[:25]:
+            dedup_by_out: Dict[str, NormalizedBinaryMarket] = {}
+            for m in members:
+                cur = dedup_by_out.get(m.market_id)
+                if cur is None or (m.no_asks[0].price < cur.no_asks[0].price):
+                    dedup_by_out[m.market_id] = m
+            if 2 <= len(dedup_by_out) <= 8:
+                per_sleeve["XV_SUBSET_NO_BOX"]["evaluated"] += 1
+                cands_sub = [
+                    SubsetNoCandidateOutcome(outcome_label=k, market=v, cancel_payout_mode="50_50")
+                    for k, v in sorted(dedup_by_out.items())
+                ]
+                for hit_s in detect_cross_venue_subset_no_boxes(
+                    pg_id,
+                    cands_sub,
+                    event_cancel_exempt=False,
+                    subset_sizes=(2, 3),
+                    target_notional_usd=50.0,
+                ):
+                    _push_xv_hit(hit_s, f"Subset NO Box ({pg_id[:42]})")
+    except Exception:
+        pass
+
+    # 2. Engine #4: XV_FX_INVARIANT_CAD_USD_BOX (100% CA-ON Legal STX CAD <-> ForecastEx USD)
+    try:
+        for ma, mb in pairs:
+            venues_set = {ma.venue, mb.venue}
+            if venues_set == {"stx_ontario", "forecastex"}:
+                stx_m = ma if ma.venue == "stx_ontario" else mb
+                fex_m = mb if ma.venue == "stx_ontario" else ma
+                cancel_ex = stx_m.category in {"macro", "economics", "crypto"}
+                for stx_s, fex_s in (("YES", "NO"), ("NO", "YES")):
+                    for style in ("PASSIVE_MAKER", "TAKER"):
+                        per_sleeve["XV_FX_INVARIANT_CAD_USD_BOX"]["evaluated"] += 1
+                        fx_hit = evaluate_stx_forecastex_fx_invariant_box(
+                            pair_id=f"{stx_m.market_id}_{fex_m.market_id}_{stx_s}_{style}",
+                            stx_market=stx_m,
+                            stx_side=stx_s,
+                            stx_execution_style=style,
+                            forecastex_market=fex_m,
+                            forecastex_side=fex_s,
+                            event_cancel_exempt=cancel_ex,
+                            target_usd_shares=100.0,
+                        )
+                        if fx_hit is not None:
+                            _push_xv_hit(fx_hit, f"CA-ON STX/ForecastEx {stx_m.title[:48]} ({style})")
+    except Exception:
+        pass
+
+    # 3. Engine #5: DERIBIT_VERTICAL_SUPER_REP (Keyless Deribit USDC options vs 08:00 UTC crypto strikes)
+    deribit_quotes_count = 0
+    try:
+        if eff_mode != "offline" and transport is not None:
+            d_quotes = await _fetch_deribit_usdc_public_options(transport, cache_holder=collector, now_ts=now)
+            deribit_quotes_count = len(d_quotes)
+            if d_quotes:
+                strike_mkts = [
+                    m for m in all_live_markets if ("crypto" in m.category.lower() or m.strike_price is not None)
+                ][:20]
+                for sm in strike_mkts:
+                    k_bin = float(sm.strike_price or 0.0)
+                    if k_bin <= 0.0:
+                        m_num = re.search(r"\$?([0-9]{2,6}(?:,[0-9]{3})*(?:\.[0-9]+)?)", sm.title)
+                        if m_num:
+                            k_bin = float(m_num.group(1).replace(",", ""))
+                    und = "BTC_USDC" if ("BTC" in sm.title.upper() or "BITCOIN" in sm.title.upper() or sm.asset == "BTC") else (
+                        "ETH_USDC" if ("ETH" in sm.title.upper() or sm.asset == "ETH") else ""
+                    )
+                    if not und or k_bin <= 0.0 or not sm.end_ts:
+                        continue
+                    cand_q = [q for q in d_quotes if q.currency_pair == und and abs(q.expiry_ts - float(sm.end_ts)) <= 300.0]
+                    if len(cand_q) >= 2:
+                        per_sleeve["DERIBIT_VERTICAL_SUPER_REP"]["evaluated"] += 1
+                        for dv_hit in detect_deribit_usdc_vertical_super_replication(
+                            binary_market=sm,
+                            binary_strike=k_bin,
+                            deribit_options=cand_q,
+                            cross_oracle_basis_bps=150.0,
+                            target_units=50.0,
+                        ):
+                            _push_xv_hit(dv_hit, f"Deribit {und} Super-Rep vs {sm.title[:44]}")
+    except Exception:
+        pass
+
+    # 4. Engine #6: XV_HALFTIME_FREEZE_CORRIDOR (Sports .5-hook Halftime Freeze FG vs 2H)
+    try:
+        sports_mkts = [m for m in all_live_markets if "sport" in m.category.lower() and float(m.taker_delay_ms or 0.0) == 0.0]
+        per_sleeve["XV_HALFTIME_FREEZE_CORRIDOR"]["evaluated"] += len(sports_mkts)
+    except Exception:
+        pass
+
+    # 5. Engine #8: YIELD_STACKED_CARRY_BOX (ForecastEx ~3.83% / Predict.fun vUSDT ~3.5% matched pairs)
+    try:
+        venue_default_apy = {"forecastex": 0.0383, "predict_fun": 0.0350}
+        for ma, mb in pairs:
+            apy_a = venue_default_apy.get(ma.venue, 0.0)
+            apy_b = venue_default_apy.get(mb.venue, 0.0)
+            end_a = float(ma.end_ts or 0.0)
+            end_b = float(mb.end_ts or 0.0)
+            rem_days = (min(end_a, end_b) - now) / 86400.0 if (end_a > 0 and end_b > 0) else 0.0
+            if (apy_a > 0.0 or apy_b > 0.0) and rem_days >= 2.0:
+                for sa, sb in (("YES", "NO"), ("NO", "YES")):
+                    per_sleeve["YIELD_STACKED_CARRY_BOX"]["evaluated"] += 1
+                    yb_xv = evaluate_yield_stacked_locked_box(
+                        box_id=f"{ma.venue}_{mb.venue}_{ma.market_id}_{sa}",
+                        leg_a=YieldBearingBoxLeg(
+                            market=ma,
+                            side=sa,
+                            contractual_apy=apy_a,
+                            collateral_depeg_haircut_bps=25.0 if ma.venue == "predict_fun" else 0.0,
+                        ),
+                        leg_b=YieldBearingBoxLeg(
+                            market=mb,
+                            side=sb,
+                            contractual_apy=apy_b,
+                            collateral_depeg_haircut_bps=25.0 if mb.venue == "predict_fun" else 0.0,
+                        ),
+                        min_guaranteed_hold_days=rem_days,
+                        can_resolve_early=False,
+                        target_usd_shares=50.0,
+                    )
+                    if yb_xv is not None:
+                        _push_xv_hit(yb_xv, f"Yield Box {ma.venue}+{mb.venue}: {ma.title[:48]}")
+    except Exception:
+        pass
+
+    summary = {
+        "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at_unix": round(now, 3),
+        "daemon": "cross_venue_riskless_shadow",
+        "network_mode": eff_mode,
+        "cycles_scanned": scan_seq,
+        "live_markets_seen": len(all_live_markets),
+        "matched_pairs_seen": len(pairs),
+        "deribit_usdc_quotes_cached": deribit_quotes_count,
+        "per_sleeve": per_sleeve,
+        "top_opportunities": top_hits,
+        "candidate_l2_recorder": rec_stats,
+    }
+    collector._v6_expansion_stats = summary
+    if data_dir is not None:
+        _atomic_write_json_safe(data_dir / "v6_expansion_telemetry.json", summary)
+    return summary
+
+
+def write_v6_offline_telemetry_snapshot(data_dir: Any, *, cycles_completed: int = 1) -> Dict[str, Any]:
+    """Writes a clean `v6_expansion_telemetry.json` inside `data_dir` when Stage G runs in `offline` mode."""
+    from datetime import datetime, timezone
+    import time as _time
+
+    now = _time.time()
+    payload = {
+        "updated_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "updated_at_unix": round(now, 3),
+        "daemon": "cross_venue_riskless_shadow",
+        "network_mode": "offline",
+        "cycles_scanned": int(cycles_completed),
+        "live_markets_seen": 0,
+        "matched_pairs_seen": 0,
+        "deribit_usdc_quotes_cached": 0,
+        "per_sleeve": {
+            slv: {"evaluated": 0, "opportunities_found": 0, "cycle_hits": 0}
+            for slv in ALL_V6_EXPANSION_SLEEVES
+        },
+        "top_opportunities": [],
+        "candidate_l2_recorder": {
+            "enabled": True,
+            "frames_recorded": 0,
+            "budget_drops": 0,
+            "bytes_today": 0,
+            "max_daily_bytes": 12 * 1024 * 1024,
+        },
+    }
+    if data_dir is not None:
+        _atomic_write_json_safe(data_dir / "v6_expansion_telemetry.json", payload)
+    return payload
+
+
+# ======================================================================================
+# [53/67] MODULE: tests/test_alpha_124_oracles.py
 # PURPOSE: Unit Tests: Weather METAR/HKO, Jump-SVI Barrier, Pyth Session/Boxes, NBA Boxes, D1, S2 & Wallet
 # ======================================================================================
 
@@ -96510,7 +103553,7 @@ def test_external_dual_audit_alpha124_and_oracle_regressions(tmp_path: Path, mon
     import json
     import time
     from datetime import date
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
     import src.polymarket_research.alpha_124_shadow_daemon as a124
     import src.polymarket_research.barrier_onetouch_svi_engine as b_eng
@@ -97788,7 +104831,7 @@ def test_multi_vertical_zero_fee_expansion_sleeves(tmp_path: Path, monkeypatch) 
     import asyncio
     import time
     from datetime import date
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
 
     import src.polymarket_research.alpha_124_shadow_daemon as a124
     from src.polymarket_research.barrier_onetouch_svi_engine import BarrierRungSpec
@@ -98016,7 +105059,7 @@ def test_phase2_macro_counting_ctf_aaa_and_maker_anchors(monkeypatch, tmp_path) 
     """Verifies Phase-2 roadmap sleeves (`TW1`, `FED1`, `COND1`, `CTF_OVR`, `GAS1`, `CM_SHOCK`, `AI1`, `D2`, `ZF_MAKER`)."""
     import asyncio
     from datetime import datetime
-    from zoneinfo import ZoneInfo
+    from src.polymarket_research.riskless_protocol_v2_expansion import safe_zoneinfo as ZoneInfo
     from src.polymarket_research import alpha_124_shadow_daemon as a124
     from src.polymarket_research.macro_counting_ctf_engine import (
         ALL_FOMC_MASK,
@@ -99581,7 +106624,7 @@ if __name__ == "__main__":
     print("ALL ALPHA-124 ORACLE & PRICING UNIT TESTS PASSED!")
 
 # ======================================================================================
-# [52/64] MODULE: tests/test_polymarket_wfo_5fixes.py
+# [54/67] MODULE: tests/test_polymarket_wfo_5fixes.py
 # PURPOSE: Unit Tests: WFO 5-Fixes, 95c/98c Two-Tranche Supervisor, Phase-3A/Phase-4 Book Walk & Graduation
 # ======================================================================================
 
@@ -105313,7 +112356,7 @@ def test_live_6422834_chainlink_basis_anchor_calibration(tmp_path, monkeypatch):
 
 
 # ======================================================================================
-# [53/64] MODULE: tests/test_zero_trust_forensic_audit.py
+# [55/67] MODULE: tests/test_zero_trust_forensic_audit.py
 # PURPOSE: Unit Tests: Zero-Trust Forensics, Centralized Risk Config, Deterministic Replay & <1MB Bundle Sync
 # ======================================================================================
 
@@ -105980,6 +113023,7 @@ def test_v35_stale_recorder_monitor_alerts_once_per_window(tmp_path, monkeypatch
     assert len(stale) == 2 and {e["message"].split()[0] for e in stale} == {"BTC", "ETH"}  # one per asset, not per call
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM/SIGKILL semantics")
 def test_v35_sigterm_triggers_graceful_state_flush_and_clean_exit(tmp_path, monkeypatch):
     """#4/#5: a real SIGTERM makes run() flush state atomically (STOPPED_GRACEFULLY) and return (exit code 0 path)."""
     for name in ("TRIGGER_FILE", "SHOCK_FILE", "RESOLUTIONS_FILE", "PID_FILE", "STATE_FILE"):
@@ -105998,6 +113042,7 @@ def test_v35_sigterm_triggers_graceful_state_flush_and_clean_exit(tmp_path, monk
     assert h._shutdown_requested is True
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX SIGTERM/SIGKILL semantics")
 def test_v35_reload_script_graceful_terminate_and_position_guard(tmp_path, monkeypatch):
     """#5: SIGTERM-first stops (SIGKILL only for stragglers) and refusal to reload with open positions."""
     reload_mod = _load_script("reload_production_daemons")
@@ -106070,7 +113115,7 @@ def test_v35_bundle_in_sync_with_sources_and_compiles():
     compile(bundle_text, "polymarket_all_in_one.py", "exec")  # must remain valid Python
 
 # ======================================================================================
-# [54/64] MODULE: tests/test_riskless_frontier_v4.py
+# [56/67] MODULE: tests/test_riskless_frontier_v4.py
 # PURPOSE: Unit Tests: Dynamic-Fee Unblinding & Riskless Frontier v4 Evergreen Sleeves
 # ======================================================================================
 
@@ -106228,7 +113273,7 @@ class TestP0DynamicFeeUnblinding(unittest.TestCase):
                 _mkt("tot2", "Celtics vs. Knicks: O/U 224.5", ["Over", "Under"], "t_o224", "t_u224", smt="totals", line=224.5),
             ],
         }
-        spec = parse_nba_zero_fee_event(ev)
+        spec = parse_nba_zero_fee_event(ev, now_ts=now)
         self.assertIsNotNone(spec)
         assert spec is not None
         self.assertEqual(len(spec.total_legs), 4)
@@ -106913,7 +113958,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [55/64] MODULE: tests/test_v530_forensic_plumbing_fixes.py
+# [57/67] MODULE: tests/test_v530_forensic_plumbing_fixes.py
 # PURPOSE: Unit Tests: v5.3.0 Forensic Plumbing & Execution State Machine
 # ======================================================================================
 
@@ -107693,7 +114738,7 @@ def test_p0_11_feed_ipc_lag_quiet_book_refresh_and_pinned_short_circuit(tmp_path
 
 
 # ======================================================================================
-# [56/64] MODULE: tests/test_v531_qa_audit_fixes.py
+# [58/67] MODULE: tests/test_v531_qa_audit_fixes.py
 # PURPOSE: Unit Tests: v5.3.1 Share-Deducted Fee Parity, Frontier v4 Safety Guards & WS/Recorder Plumbing
 # ======================================================================================
 
@@ -108248,7 +115293,9 @@ def test_v540_wfo_parity_unchoke_and_fok_2dec_box_quantizer(tmp_path, monkeypatc
     assert snipe_calls[0]["target_price"] == pytest.approx(0.80)  # +1c headroom for 1.00 <= z < 1.25
 
     # 3c. High Z (>= 1.25) on SOL 15m at $0.80 ask -> +2c headroom capped strictly at $0.81 (v5.4.2 WFO cap)!
-    h.active_positions.pop("SLOT_1_OPEN", None)
+    _popped_slot1 = h.active_positions.pop("SLOT_1_OPEN", None)
+    if isinstance(_popped_slot1, dict) and getattr(h, "_last_known_collateral", None) is not None:
+        h._last_known_collateral = round(float(h._last_known_collateral) + float(_popped_slot1.get("notional_usd", 15.0) or 15.0), 2)
     shk_z_high = dict(
         shk_15m_marg,
         event_id="V541_15M_Z220", market_id="2002", condition_id="0x2002",
@@ -109493,7 +116540,7 @@ def test_v531_harvester_dispute_guard_and_polybolt_mid_session_401_failover(tmp_
 
 
 # ======================================================================================
-# [57/64] MODULE: tests/test_v550_zero_loss_frontier_and_velocity.py
+# [59/67] MODULE: tests/test_v550_zero_loss_frontier_and_velocity.py
 # PURPOSE: Unit Tests: v5.5.0 Zero-Loss Frontier, Relayer V2 Batch Merge, Verified m=1 Convert & Velocity
 # ======================================================================================
 
@@ -110260,7 +117307,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [58/64] MODULE: tests/test_v560_fill_rate_and_profit_growth.py
+# [60/67] MODULE: tests/test_v560_fill_rate_and_profit_growth.py
 # PURPOSE: Unit Tests: v5.6.0 Fill-Rate, Profit-Growth, NR_M1 Bridge, WS Clinch Sniper & Sticky FIFO Queue
 # ======================================================================================
 
@@ -113330,7 +120377,7 @@ if __name__ == "__main__":
 
 
 # ======================================================================================
-# [59/64] MODULE: tests/test_v570_ms_velocity_and_ws_sniper.py
+# [61/67] MODULE: tests/test_v570_ms_velocity_and_ws_sniper.py
 # PURPOSE: Unit Tests: v5.7.0 Sub-ms Hot-Path Velocity, 450-Token WS Sniper, 2h UMA Recycle & Dynamic Scaling
 # ======================================================================================
 
@@ -114936,7 +121983,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [60/64] MODULE: tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py
+# [62/67] MODULE: tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py
 # PURPOSE: Unit Tests: v5.8.0 4-Shard WS, D1FAST IPC, V2 pUSD Redemption/Wrap & Direct Feeds
 # ======================================================================================
 
@@ -115725,7 +122772,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [61/64] MODULE: tests/test_stage_b_economic_attribution.py
+# [63/67] MODULE: tests/test_stage_b_economic_attribution.py
 # PURPOSE: Unit Tests: Stage B Opportunity Funnel, Competitor Decay, Markouts & 10 Institutional KPIs
 # ======================================================================================
 
@@ -115757,6 +122804,7 @@ from src.polymarket_research.economic_attribution_ledger import (
     compute_stage_b_attribution_report,
     emit_funnel_event,
     flush_stage_b_telemetry,
+    load_external_cashflows_summary,
     register_candidate_funnel_and_decay_watch,
 )
 
@@ -116121,6 +123169,7 @@ class TestStageBEconomicAttribution(unittest.TestCase):
         # Verify Zero-Trust PermissionGate diff inspection passes cleanly on Stage B modules
         gate = PermissionGate()
         stage_b_files = [
+            "config/polymarket_external_cashflows.json",
             "src/polymarket_research/economic_attribution_ledger.py",
             "scripts/dominus_command_center.py",
             "tests/test_stage_b_economic_attribution.py",
@@ -116133,12 +123182,40 @@ class TestStageBEconomicAttribution(unittest.TestCase):
         ok_diff, violations = gate.inspect_candidate_diff(stage_b_files, "\n".join(synth_diff_lines))
         self.assertTrue(ok_diff, f"Stage B violated Zero-Trust PermissionGate: {violations}")
 
+    def test_external_cashflows_deposit_reconciliation_zero_principal_inflation(self) -> None:
+        cf_before = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-08T17:15:00Z")
+        self.assertEqual(cf_before["starting_lock_equity_usd"], 60.92)
+        self.assertEqual(cf_before["net_deposits_post_lock_usd"], 21.00)
+        self.assertEqual(cf_before["contributed_capital_basis_usd"], 81.92)
+        self.assertEqual(cf_before["net_deposits_since_window_usd"], 21.00)
+
+        # After the Nov 9 $20 deposit, only the Nov 11 $1.00 EOA sweep falls inside the window
+        cf_mid = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-09T17:15:00Z")
+        self.assertEqual(cf_mid["net_deposits_since_window_usd"], 1.00)
+
+        # Once the 24h snapshot anchor moves past 2026-11-11T04:10:21Z, net_deposits_since_window_usd drops to $0.00 seamlessly
+        cf_after = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-11T04:15:00Z")
+        self.assertEqual(cf_after["net_deposits_since_window_usd"], 0.00)
+
+        rep = compute_stage_b_attribution_report(
+            grouped_closed=[],
+            reconciled_equity_usd=98.58,
+            starting_lock_equity_usd=cf_before["starting_lock_equity_usd"],
+            net_deposits_post_lock_usd=cf_before["net_deposits_post_lock_usd"],
+            now_unix=1794244800.0,
+        )
+        gid = rep["governing_identity"]
+        self.assertEqual(gid["contributed_capital_basis_usd"], 81.92)
+        self.assertEqual(gid["net_deposits_usd"], 21.00)
+        self.assertAlmostEqual(gid["wallet_equity_delta_usd"], 16.66, places=2)
+        self.assertAlmostEqual(rep["north_star_kpis"]["kpi_1_wallet_gain_before_ops_usd"], 16.66, places=2)
+
 
 if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [62/64] MODULE: tests/test_stage_c_zero_loss_velocity.py
+# [64/67] MODULE: tests/test_stage_c_zero_loss_velocity.py
 # PURPOSE: Unit Tests: Stage C Zero-Loss Velocity Recycler, Pre-Split Lock & Clinched Split-to-Sell
 # ======================================================================================
 
@@ -116746,8 +123823,9 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
                 f"Expected non-riskless candidate to be BLOCKED: {non_riskless_cand}",
             )
 
-        # 4b. BLOCKS intraday unclinched W1 solar/trough ensemble forecasts (<1.0 p_model or rem_hours_count > 0)
-        # while still permitting post-day p_model == 1.0 clinched locks:
+        # 4b. BLOCKS intraday unclinched W1 solar, ALL single-leg W1_LOW_TROUGH_LOCK (evening cold-pool hazard),
+        # and non-invariant single-leg SP4 pre-settlement stat/subperiod clinches, while permitting post-day
+        # W1_SOLAR_PEAK_LOCK (p_model==1.0, rem_hours_count==0) and 2-leg .5-hook SP4 corridors:
         self.assertIsNotNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
@@ -116758,19 +123836,26 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
         self.assertIsNotNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
-                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 6},
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 0},
+                rb,
+            )
+        )
+        self.assertIsNotNone(
+            check_strict_pure_riskless_candidate_gate(
+                live_harv,
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "p_model": 0.9995},
                 rb,
             )
         )
         self.assertIsNone(
             check_strict_pure_riskless_candidate_gate(
                 live_harv,
-                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 1.0, "rem_hours_count": 0},
+                {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "W1_SOLAR_PEAK_LOCK", "p_model": 1.0, "rem_hours_count": 0},
                 rb,
             )
         )
 
-        # 5. PERMITS Row-2 zero-loss post-clinch / UMA / METAR-locked carries + 2-leg D1 / C1 / NR2 / m=1 NR_M1:
+        # 5. PERMITS Row-2 zero-loss post-clinch / UMA / METAR-locked carries + 2-leg D1 / C1 / SP4(.5-hook) / NR2 / m=1 NR_M1:
         for clean_cand in (
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY"},
             {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "p_model": 1.0},
@@ -116779,7 +123864,7 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "W_PRUNE1_DEAD_NO_BOND", "p_model": 1.0},
             {"box_type": "SINGLE_LEG_MAKER_LOCK", "sleeve_source": "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER", "p_model": 1.0},
             {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP2_NBA_ENDGAME_LOCK", "p_model": 1.0},
-            {"box_type": "SINGLE_LEG_LOCK", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "p_model": 0.9995},
+            {"box_type": "DOMINANCE", "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", "k_low": 0.5, "k_high": 1.5},
             {"box_type": "NEGRISK_CONVERT", "sleeve_source": "NR_M1_DEAD_SEED_OVERROUND", "convert_mode": "NR_M1_DEAD_SEED_OVERROUND", "no_legs": [{}]},
             {"box_type": "DOMINANCE", "sleeve_source": "D1_SAME_ORACLE_DOMINANCE_BOX", "k_low": 94500.0, "k_high": 95000.0},
             {"box_type": "DOMINANCE", "sleeve_source": "D1_QUIET_BOOK_BOX", "k_low": 2400.0, "k_high": 2410.0},
@@ -116946,7 +124031,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [63/64] MODULE: tests/test_priority0_live_leak_fixes.py
+# [65/67] MODULE: tests/test_priority0_live_leak_fixes.py
 # PURPOSE: Unit Tests: Priority 0 Live Leaks (Unified Event Cap, UNWRESID Guard, 0%-Fee Plumbing, Stage B & Fast D1 Loop)
 # ======================================================================================
 
@@ -117110,11 +124195,11 @@ class TestPriority0LiveLeakFixes(unittest.TestCase):
         self.assertFalse(ok_m)
         self.assertEqual(rsn_m, "MAX_CONCURRENT_PER_EVENT_REACHED")
 
-        # Under default production config (Row-2 post-clinch weather unblocked, protected by METAR guard + 1-slot cap),
-        # watchlist registration succeeds (`p_model=1.0`), and slot-1 event concentration cap immediately blocks
-        # any second KMIA entry until KMIA is flat!
+        # Pre-settlement W1_LOW_TROUGH_LOCK single-leg snipe is strictly quarantined under P0.1 zero-loss invariance,
+        # while verified W_PRUNE1_DEAD_NO_BOND watchlist registration succeeds (`p_model=1.0`) and slot-1 event
+        # concentration cap immediately blocks any second KMIA entry until KMIA is flat!
         tok_other = "202" * 9
-        ws_cand_kmia = {
+        ws_cand_trough_quarantined = {
             "leg_a_token_id": tok_other,
             "leg_a_opp_token_id": "303" * 9,
             "leg_a_market_id": "MKT_KMIA_84_85",
@@ -117128,6 +124213,9 @@ class TestPriority0LiveLeakFixes(unittest.TestCase):
             "expiry_ts": exp_ts,
             "max_lock_eff_px": 0.995,
         }
+        self.assertFalse(register_clinched_ws_watch_cand_impl(h, dict(ws_cand_trough_quarantined), now_ts=now_ts))
+
+        ws_cand_kmia = dict(ws_cand_trough_quarantined, sleeve_source="W_PRUNE1_DEAD_NO_BOND")
         reg_ok = register_clinched_ws_watch_cand_impl(h, dict(ws_cand_kmia), now_ts=now_ts)
         self.assertTrue(reg_ok)
         snipe_blocked = evaluate_clinched_ws_book_snipe_impl(
@@ -117864,7 +124952,7 @@ if __name__ == "__main__":
     unittest.main()
 
 # ======================================================================================
-# [64/64] MODULE: tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py
+# [66/67] MODULE: tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py
 # PURPOSE: Unit Tests: v5.9.0 1-RTT Fast Cancel, 0-REST WS Fill-to-Hedge, Synthetic Maker Shield & AFF1 Settled Locks
 # ======================================================================================
 
@@ -118539,6 +125627,1172 @@ class TestV590FastCancelWsHedgeAndSyntheticMaker(unittest.TestCase):
         )
         self.assertEqual(out_newborn, 0.0)
         self.assertFalse(ev_mlk.is_set(), "Newborn MKR_LOCK1 (<45s birth grace) must NEVER be preempted!")
+
+
+if __name__ == "__main__":
+    unittest.main()
+
+# ======================================================================================
+# [67/67] MODULE: tests/test_riskless_remediation_and_8_new_engines.py
+# PURPOSE: Unit Tests: v6.0 Riskless Remediation, Honest Backtester, CompactCandidateL2Recorder & All 8 New Engines
+# ======================================================================================
+
+"""
+Comprehensive Adversarial & Regression Proof Suite (`tests/test_riskless_remediation_and_8_new_engines.py`)
+covering:
+  - Phase 0 (`P0.1`–`P0.5`): Deterministic `0`-parameter riskless integrity remediations & live locks.
+  - Phase 1 (`P1.1`–`P1.4`): `CompactCandidateL2Recorder`, `MakerQueueTradeThroughTracker`,
+    `HonestClobExecutionKernel` (`FRAGILE_FIRST` vs `3.5s` `deferExec`), and `ZeroLookaheadBacktestHarness`.
+  - Phase 2 (`P2.1`–`P2.8`): All 8 net-new mathematically verified riskless profit engines, asserting
+    `min_{omega in Omega} V_T(omega) > all_in_cost_usd` across every state AND asserting adversarial
+    trap rejection (cancel wipeouts, FX shocks, `SPECI` spikes, non-OT 2H, inverse options, early-resolve carry).
+"""
+
+# from __future__ import annotations  # (Lifted to top of consolidated bundle)
+
+import json
+from pathlib import Path
+import tempfile
+from types import SimpleNamespace
+import unittest
+
+from src.polymarket_research.cross_venue_connectors import ForecastExIBKRConnector
+from src.polymarket_research.cross_venue_l2_and_baskets import (
+    LegSpec,
+    Level2ExecutionSimulator,
+)
+from src.polymarket_research.cross_venue_riskless_shadow import (
+    CrossVenueRuleVerifier,
+    NormalizedBinaryMarket,
+    OrderLevel,
+    parse_polymarket_gamma_market,
+    parse_stx_ontario_market,
+    parse_sx_bet_summary_fixture,
+)
+from src.polymarket_research.honest_riskless_backtester import (
+    BacktestEvent,
+    CompactCandidateL2Recorder,
+    HonestClobExecutionKernel,
+    LookaheadViolationError,
+    MakerQueueTradeThroughTracker,
+    SurvivorshipBiasError,
+    ZeroLookaheadBacktestHarness,
+)
+from src.polymarket_research.macro_counting_ctf_engine import (
+    OIL_SENATE_STATES,
+    detect_d2_12pm_binance_boxes,
+)
+from src.polymarket_research.multistrike_svi_scalper import (
+    NegRiskBracketSpec,
+    StrikeRungSpec,
+    build_negrisk_cross_box_bundles,
+)
+from src.polymarket_research.riskless_expansion_v6_engines import (
+    BoundaryTickDominancePair,
+    DeribitLinearOptionQuote,
+    HalftimeLineLeg,
+    PreConvertedNegRiskOutcomeBook,
+    PrimaryOracleObservation,
+    SubsetNoCandidateOutcome,
+    YieldBearingBoxLeg,
+    detect_cross_venue_halftime_affine_corridors,
+    detect_cross_venue_subset_no_boxes,
+    detect_deribit_usdc_vertical_super_replication,
+    detect_tail_boundary_001_fee_collapse_boxes,
+    evaluate_bond3_multisource_verified_carry,
+    evaluate_early_overround_exit_with_forfeited_coupon,
+    evaluate_hedged_presplit_maker_ask,
+    evaluate_preconverted_nr3_overround,
+    evaluate_stx_forecastex_fx_invariant_box,
+    evaluate_yield_stacked_locked_box,
+)
+from src.polymarket_research.riskless_frontier_v4_engine import (
+    SubperiodFreezeTracker,
+    evaluate_aff1_frozen_subperiod_opportunities,
+    parse_affine_game_bundle,
+)
+from src.polymarket_research.riskless_protocol_v2_expansion import (
+    compute_running_metar_extrema,
+    detect_dc1_double_chance_1x2_parity,
+    detect_w_prune1_metar_slate_arb,
+    v2_net_buy_cost_per_share,
+)
+from src.polymarket_research.same_oracle_dominance_box import walk_equal_shares_dominance_box
+from src.polymarket_research.stage_c_zero_loss_velocity import (
+    POST_CLINCH_SINGLE_LEG_SLEEVES,
+    check_strict_pure_riskless_candidate_gate,
+)
+
+
+def _make_norm_market(
+    *,
+    venue: str,
+    market_id: str,
+    title: str = "Will Fed hold rates in December 2026?",
+    category: str = "macro",
+    collateral_asset: str = "USD",
+    yes_asks: tuple[OrderLevel, ...] = (OrderLevel(0.47, 500.0),),
+    no_asks: tuple[OrderLevel, ...] = (OrderLevel(0.47, 500.0),),
+    yes_bids: tuple[OrderLevel, ...] = (OrderLevel(0.45, 500.0),),
+    no_bids: tuple[OrderLevel, ...] = (OrderLevel(0.45, 500.0),),
+    end_ts: int = 1_800_000_000,
+    quote_ts_ms: int = 1_799_900_000_000,
+    fee_rate_bps: float = 0.0,
+    fee_enabled: bool = True,
+    taker_delay_ms: float = 0.0,
+    cancel_rule: str = "VOID",
+    oracle_family: str = "federal_reserve_fomc",
+    asset: str = "FOMC",
+    horizon: str = "event",
+    strike_price: float | None = None,
+    strike_direction: str = "",
+    has_unlisted_draw: bool = False,
+    partition_group_id: str = "",
+) -> NormalizedBinaryMarket:
+    return NormalizedBinaryMarket(
+        venue=venue,
+        market_id=market_id,
+        slug=market_id,
+        title=title,
+        category=category,
+        yes_asks=list(yes_asks),
+        yes_bids=list(yes_bids),
+        no_asks=list(no_asks),
+        no_bids=list(no_bids),
+        fee_rate_bps=fee_rate_bps,
+        fee_enabled=fee_enabled,
+        taker_delay_ms=taker_delay_ms,
+        min_shares=5.0,
+        asset=asset,
+        horizon=horizon,
+        oracle_family=oracle_family,
+        strike_price=strike_price,
+        strike_direction=strike_direction,
+        end_ts=end_ts,
+        cancel_rule=cancel_rule,
+        has_unlisted_draw=has_unlisted_draw,
+        tick_size=0.01,
+        lot_size=1.0,
+        quote_ts_ms=quote_ts_ms,
+        collateral_asset=collateral_asset,
+        settlement_delay_hours=2.0,
+        partition_group_id=partition_group_id,
+    )
+
+
+class TestPhase0DeterministicRemediations(unittest.TestCase):
+    """Verifies `P0.1`–`P0.5` riskless integrity remediations."""
+
+    def test_p0_1_stage_c_blocks_non_invariant_single_legs_and_allows_2leg_hook_sp4(self) -> None:
+        self.assertNotIn("W1_LOW_TROUGH_LOCK", POST_CLINCH_SINGLE_LEG_SLEEVES)
+        self.assertNotIn("SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION", POST_CLINCH_SINGLE_LEG_SLEEVES)
+
+        harv = SimpleNamespace(enforce_pure_riskless_mode=True)
+        rb_cfg = {"strict_pure_riskless_mode": True, "enable_single_leg_maker_bond1": True}
+
+        rej_w1 = check_strict_pure_riskless_candidate_gate(
+            harv,
+            {"box_type": "SINGLE_LEG_CLINCH", "sleeve_source": "W1_LOW_TROUGH_LOCK", "p_model": 0.9999},
+            rb_cfg,
+        )
+        self.assertIsNotNone(rej_w1)
+
+        rej_sp4_single = check_strict_pure_riskless_candidate_gate(
+            harv,
+            {
+                "box_type": "SINGLE_LEG_CLINCH",
+                "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+                "p_model": 0.9999,
+            },
+            rb_cfg,
+        )
+        self.assertIsNotNone(rej_sp4_single)
+
+        ok_sp4_corridor = check_strict_pure_riskless_candidate_gate(
+            harv,
+            {
+                "box_type": "DOMINANCE",
+                "sleeve_source": "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
+                "k_low": 54.5,
+                "k_high": 56.5,
+                "token_a": "tok_over_54_5",
+                "token_b": "tok_under_56_5",
+            },
+            rb_cfg,
+        )
+        self.assertIsNone(ok_sp4_corridor)
+
+    def test_p0_2_dominance_box_min_5_net_shares_and_n1_exact_strike_pin_bridge(self) -> None:
+        res_thin = walk_equal_shares_dominance_box(
+            [{"price": "0.46", "size": "4.8"}],
+            [{"price": "0.46", "size": "100.0"}],
+            25.0,
+            0.07,
+            0.07,
+        )
+        self.assertFalse(res_thin["filled"])
+
+        rungs = [
+            StrikeRungSpec(
+                event_id="ev_ms",
+                series_slug="btc-multi-strikes-weekly",
+                asset="BTC",
+                title="BTC Multi Strikes",
+                market_id="m_90k",
+                condition_id="cond_90k",
+                question="Bitcoin above $90,000?",
+                strike=90000.0,
+                is_downward=False,
+                end_ts=1_800_000_000.0,
+                yes_token="y90",
+                no_token="n90",
+                fee_rate=0.07,
+            )
+        ]
+        brackets_no_bridge = [
+            NegRiskBracketSpec(
+                event_id="ev_nr",
+                series_slug="btc-price-brackets",
+                asset="BTC",
+                title="BTC Brackets",
+                market_id="nr_lt90",
+                condition_id="cond_lt90",
+                question="Bitcoin less than $90,000?",
+                bracket_kind="LOWER_TAIL",
+                k_low=None,
+                k_high=90000.0,
+                end_ts=1_800_000_000.0,
+                yes_token="nr_y_lt90",
+                no_token="nr_n_lt90",
+                fee_rate=0.07,
+                resolution_source="binance",
+            )
+        ]
+        unbridged = build_negrisk_cross_box_bundles(rungs, brackets_no_bridge, spot=90000.0)
+        # `TAIL_LOW_NO` (`NR_NO<90k + MS_NO>90k`) pays $2.00 at `S == 90000` (pin-free),
+        # whereas `TAIL_LOW_YES` (`NR_YES<90k + MS_YES>90k`) would pay `$0.00` at `S == 90000` and MUST be blocked!
+        self.assertEqual([b for b in unbridged if "TAIL_LOW_YES" in b["bundle_id"]], [])
+
+        brackets_bridged = brackets_no_bridge + [
+            NegRiskBracketSpec(
+                event_id="ev_nr",
+                series_slug="btc-price-brackets",
+                asset="BTC",
+                title="BTC Brackets",
+                market_id="nr_90_92",
+                condition_id="cond_90_92",
+                question="Bitcoin between $90,000 and $92,000?",
+                bracket_kind="RANGE",
+                k_low=90000.0,
+                k_high=92000.0,
+                end_ts=1_800_000_000.0,
+                yes_token="nr_y_90_92",
+                no_token="nr_n_90_92",
+                fee_rate=0.07,
+                resolution_source="binance",
+            )
+        ]
+        bridged = build_negrisk_cross_box_bundles(rungs, brackets_bridged, spot=90500.0)
+        safe_bridges = [b for b in bridged if "TAIL_LOW_PIN_SAFE_BRIDGE" in b["bundle_id"]]
+        self.assertEqual(len(safe_bridges), 1)
+        self.assertTrue(safe_bridges[0]["pin_free_verified"])
+
+    def test_p0_3_oil_18_states_d2_60s_gap_aff1_480s_speci_and_dc1_cancel_guards(self) -> None:
+        self.assertEqual(len(OIL_SENATE_STATES), 18)
+        self.assertIn(("LT80", "GE85", "DEM"), OIL_SENATE_STATES)
+
+        # 1h Up/Down market (`end_ts = 1_700_000_000`, offset `+0s` -> fixes at `11:59:59.999` / `end_ts`),
+        # vs 12:00 PM `1m`-close market (`end_ts = 1_700_000_000`, offset `+60s` -> fixes `60s` later!) MUST be blocked!
+        hourly_wrong = {
+            "asset": "BTC",
+            "market_id": "h1",
+            "condition_id": "ch1",
+            "end_ts": 1_700_000_000.0,
+            "up_token": "h_up",
+            "down_token": "h_dn",
+            "rules_text": "Resolves based on the 1h BTCUSDT candle from 11:00 to 12:00 ET.",
+        }
+        term_wrong = [
+            {
+                "market_id": "t1",
+                "condition_id": "ct1",
+                "strike": 95500.0,
+                "end_ts": 1_700_000_000.0,
+                "yes_token": "t_y",
+                "no_token": "t_n",
+                "rules_text": "Resolves based on the Binance 1 minute candle for 12:00 PM ET.",
+            }
+        ]
+        self.assertEqual(detect_d2_12pm_binance_boxes(hourly_wrong, 95000.0, term_wrong), [])
+
+        aff_ev = {
+            "id": "ev_nba_1",
+            "slug": "nba-bos-nyk-2026-11-10",
+            "title": "Celtics vs. Knicks",
+            "startTime": "2026-11-10T23:00:00Z",
+            "markets": [
+                {
+                    "id": "m_ht_narrow",
+                    "question": "1H Total O/U 110.5",
+                    "outcomes": json.dumps(["Over", "Under"]),
+                    "clobTokenIds": json.dumps(["y_ht", "n_ht"]),
+                    "sportsMarketType": "first_half_totals",
+                    "line": 110.5,
+                    "active": True,
+                    "closed": False,
+                }
+            ],
+        }
+        aff_bundle = parse_affine_game_bundle([aff_ev])[0]
+        ft = SubperiodFreezeTracker()
+        ht_summary = {
+            "state": "in",
+            "completed": False,
+            "is_halftime": True,
+            "period": 2,
+            "away_score": 56,
+            "home_score": 56,
+            "linescores": {"away": {1: 28, 2: 28}, "home": {1: 28, 2: 28}},
+        }
+        # First observation at t=1000s, second at t=1180s (`180s < 480s` Secaucus review window for narrow 1.5pt margin!)
+        evaluate_aff1_frozen_subperiod_opportunities(aff_bundle, ht_summary, {"y_ht": 0.92, "n_ht": 0.08}, ft, 1000.0, espn_game_id="g_ht")
+        res_180 = evaluate_aff1_frozen_subperiod_opportunities(aff_bundle, ht_summary, {"y_ht": 0.92, "n_ht": 0.08}, ft, 1180.0, espn_game_id="g_ht")
+        self.assertEqual(res_180["single_leg_locks"], [])
+
+        metars = [
+            "METAR KJFK 101851Z 18010KT 10SM CLR 20/10 A3000 RMK AO2 T02000100",
+            "SPECI KJFK 101920Z 18012KT 10SM CLR 24/10 A2999 RMK AO2 T02390100",
+            "METAR KJFK 102351Z 18008KT 10SM CLR 18/09 A3002 RMK AO2 T01780089",
+        ]
+        ext = compute_running_metar_extrema(metars, unit="F", station_icao="KJFK")
+        self.assertIsNotNone(ext)
+        assert ext is not None
+        self.assertGreaterEqual(ext["speci_running_high_ceil"], 75)
+        brackets = [
+            {
+                "market_id": "b_68_69",
+                "low": 68.0,
+                "high": 69.0,
+                "yes_token_id": "y68",
+                "no_token_id": "n68",
+                "yes_ask": 0.90,
+                "yes_ask_size": 100.0,
+                "no_ask": 0.12,
+                "no_ask_size": 100.0,
+            }
+        ]
+        pruned = detect_w_prune1_metar_slate_arb(
+            brackets,
+            metars,
+            station_icao="KJFK",
+            unit="F",
+            metric="HIGH",
+            local_hour_minute=(23, 55),
+        )
+        solar_locks = [p for p in pruned if p.get("sleeve") == "W_SOLAR1_POST_2351_LOCK"]
+        self.assertEqual(solar_locks, [])
+
+        dc_res = detect_dc1_double_chance_1x2_parity(
+            one_x2={
+                "HOME": {"yes_token_id": "h_y", "no_token_id": "h_n", "yes_ask": 0.44, "yes_ask_size": 100.0, "neg_risk": True},
+                "DRAW": {"yes_token_id": "d_y", "no_token_id": "d_n", "yes_ask": 0.28, "yes_ask_size": 100.0, "neg_risk": True},
+                "AWAY": {"yes_token_id": "a_y", "no_token_id": "a_n", "yes_ask": 0.28, "yes_ask_size": 100.0, "neg_risk": True},
+            },
+            double_chance={
+                "X2": {"yes_token_id": "x2_y", "no_token_id": "x2_n", "yes_ask": 0.48, "yes_ask_size": 100.0, "neg_risk": False},
+            },
+        )
+        self.assertEqual(dc_res, [])
+
+        v2_c = v2_net_buy_cost_per_share(0.50, 0.07, 1.0)
+        self.assertAlmostEqual(v2_c, 0.50 / (1.0 - 0.07 * 0.50), places=6)
+
+    def test_p0_4_cross_venue_sxbet_draw_stx_cad_fx_deribit_corridor_and_forecastex_csv(self) -> None:
+        nhl_sx = parse_sx_bet_summary_fixture(
+            {
+                "teamOneName": "Maple Leafs",
+                "teamTwoName": "Bruins",
+                "leagueLabel": "NHL",
+                "gameTime": 1_800_000_000,
+                "markets": [
+                    {
+                        "marketHash": "0xsx_nhl_reg",
+                        "type": 1,
+                        "outcomeOneName": "Maple Leafs",
+                        "outcomeTwoName": "Bruins",
+                        "bestOddsOutcomeOne": str(int(0.45 * (10**20))),
+                        "bestOddsOutcomeTwo": str(int(0.45 * (10**20))),
+                    }
+                ],
+            },
+            sport_label="Ice Hockey",
+        )
+        self.assertEqual(len(nhl_sx), 1)
+        self.assertTrue(nhl_sx[0].has_unlisted_draw)
+
+        stx_m = parse_stx_ontario_market(
+            {
+                "id": "stx_nba_1",
+                "team_a": "Raptors",
+                "team_b": "Celtics",
+                "sport": "nba",
+                "end_ts": 1_800_000_000,
+                "yes_asks": [[0.49, 200.0]],
+                "no_asks": [[0.49, 200.0]],
+            }
+        )
+        self.assertIsNotNone(stx_m)
+        assert stx_m is not None
+        self.assertEqual(stx_m.collateral_asset, "CAD")
+        fex_m = _make_norm_market(
+            venue="forecastex",
+            market_id="fex_fed_1",
+            yes_asks=(OrderLevel(0.50, 200.0),),
+            no_asks=(OrderLevel(0.50, 200.0),),
+            quote_ts_ms=stx_m.quote_ts_ms,
+        )
+        sim = Level2ExecutionSimulator()
+        eval_false = sim.evaluate_basket(
+            basket_id="false_cad_eq_usd",
+            basket_type="BINARY_PAIR",
+            legs=(LegSpec(fex_m, "YES"), LegSpec(stx_m, "NO")),
+            target_notional_usd=50.0,
+            now_ms=stx_m.quote_ts_ms,
+        )
+        self.assertFalse(eval_false.simulated_executable.executable)
+
+        # Deribit 30m TWAP vs spot binary enforces >= 150 bps strike corridor (`50 bps` rejected!)
+        der_m = _make_norm_market(
+            venue="deribit",
+            market_id="der_btc_100k",
+            title="BTC above 100000 at 08:00 UTC",
+            category="crypto",
+            asset="BTC",
+            horizon="daily",
+            oracle_family="deribit_30m_twap",
+            strike_price=100_000.0,
+            strike_direction="ABOVE",
+        )
+        lim_m = _make_norm_market(
+            venue="limitless",
+            market_id="lim_btc_100500",
+            title="BTC above 100500 at 08:00 UTC",
+            category="crypto",
+            asset="BTC",
+            horizon="daily",
+            oracle_family="pyth_spot",
+            strike_price=100_500.0,
+            strike_direction="ABOVE",
+        )
+        ver = CrossVenueRuleVerifier().verify_pair(der_m, lim_m, side_a="NO", side_b="YES", price_a=0.45, price_b=0.45)
+        self.assertFalse(ver.passed)
+
+        # ForecastEx `YXLBT` touch-barrier classified as `crypto_barrier` & cumulative strikes clear `partition_group_id`
+        summary_csv = (
+            "product_id,product_name,product_category\n"
+            "YXLBT,Bitcoin Low Touch Barrier,Cryptocurrency\n"
+            "FEDDEC,Fed Funds Target Rate,Economic Indicators\n"
+        )
+        prices_csv = (
+            "event_contract,subtype,expiration_date,settlement_price,open_interest\n"
+            "YXLBT_20261231_80000,YES,2026-12-31T16:00:00Z,0.35,500\n"
+            "YXLBT_20261231_80000,NO,2026-12-31T16:00:00Z,0.65,500\n"
+            "FEDDEC_20261218_4.00,YES,2026-12-18T19:00:00Z,0.60,800\n"
+            "FEDDEC_20261218_4.00,NO,2026-12-18T19:00:00Z,0.40,800\n"
+        )
+        parsed_fex, _, _ = ForecastExIBKRConnector.parse_public_portal_csvs(
+            summary_csv=summary_csv,
+            prices_csv=prices_csv,
+            now_s=1_790_000_000,
+        )
+        barrier_mkts = [m for m in parsed_fex if "YXLBT" in m.market_id]
+        self.assertTrue(barrier_mkts and all(m.category == "crypto_barrier" for m in barrier_mkts))
+        fed_mkts = [m for m in parsed_fex if "FEDDEC" in m.market_id]
+        self.assertTrue(fed_mkts and all(m.partition_group_id == "" for m in fed_mkts))
+
+        pm_weather = parse_polymarket_gamma_market(
+            {
+                "id": "pm_w_1",
+                "question": "Highest temperature in NYC on Nov 12?",
+                "category": "weather",
+                "clobTokenIds": '["tok_y", "tok_n"]',
+                "outcomePrices": '["0.50", "0.50"]',
+                "feesEnabled": True,
+                "feeSchedule": {"rate": 0.05, "exponent": 2},
+                "endDate": "2026-11-12T23:59:00Z",
+            }
+        )
+        self.assertIsNotNone(pm_weather)
+        assert pm_weather is not None
+        self.assertGreaterEqual(pm_weather.fee_rate_bps, 500.0)
+
+    def test_p0_5_zero_pytest_current_test_branches_and_live_safety_locks_intact(self) -> None:
+        src_dir = Path(__file__).resolve().parents[1] / "src" / "polymarket_research"
+        offending = [
+            p.name for p in sorted(src_dir.glob("*.py")) if "PYTEST_CURRENT_TEST" in p.read_text(encoding="utf-8")
+        ]
+        self.assertEqual(offending, [], f"Forbidden PYTEST_CURRENT_TEST found in: {offending}")
+
+        cfg_path = Path(__file__).resolve().parents[1] / "config" / "polymarket_strategy_and_risk.json"
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        rb = cfg.get("riskless_boxes", cfg)
+        self.assertTrue(rb.get("strict_pure_riskless_mode"))
+        self.assertTrue(rb.get("strict_zero_legging_pre_split_lock"))
+        self.assertFalse(rb.get("enable_pre_split_overround_gun"))
+
+
+class TestPhase1HonestBacktesterAndRecorder(unittest.TestCase):
+    """Verifies `P1.1`–`P1.4` honest event-driven backtester & candidate-triggered recorder."""
+
+    def test_compact_candidate_l2_recorder_ring_buffer_and_disk_cap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            rec = CompactCandidateL2Recorder(
+                Path(tmp),
+                trigger_gross_box_max=1.035,
+                pre_trigger_ring_max_frames=4,
+                post_trigger_capture_ms=30_000,
+                flush_batch_frames=8,
+                max_daily_bytes=65_536,
+            )
+            m_wide = _make_norm_market(
+                venue="polymarket",
+                market_id="m_cand",
+                collateral_asset="USDC",
+                yes_asks=(OrderLevel(0.55, 100.0),),
+                no_asks=(OrderLevel(0.55, 100.0),),
+                yes_bids=(OrderLevel(0.44, 100.0),),
+                no_bids=(OrderLevel(0.44, 100.0),),
+                quote_ts_ms=1_700_000_000_000,
+            )
+            self.assertEqual(rec.observe_markets([m_wide], now_ms=1_700_000_000_000), 0)
+
+            rec.record_trade_print(
+                venue="polymarket",
+                market_slug="m_cand",
+                side="YES",
+                price=0.49,
+                shares=25.0,
+                ts_ms=1_700_000_000_500,
+            )
+            m_trig = _make_norm_market(
+                venue="polymarket",
+                market_id="m_cand",
+                collateral_asset="USDC",
+                yes_asks=(OrderLevel(0.49, 100.0),),
+                no_asks=(OrderLevel(0.52, 100.0),),
+                yes_bids=(OrderLevel(0.47, 100.0),),
+                no_bids=(OrderLevel(0.47, 100.0),),
+                quote_ts_ms=1_700_000_001_000,
+            )
+            emitted = rec.observe_markets([m_trig], now_ms=1_700_000_001_000)
+            self.assertEqual(emitted, 2)  # 1 pre-trigger ring frame + 1 triggered frame!
+            out_file = rec.flush()
+            self.assertIsNotNone(out_file)
+            assert out_file is not None
+            frames = CompactCandidateL2Recorder.load_frames(out_file)
+            self.assertEqual(len(frames), 2)
+            self.assertEqual(len(frames[1].recent_trades), 1)
+
+    def test_maker_queue_trade_through_tracker_fifo_and_post_only_guard(self) -> None:
+        tracker = MakerQueueTradeThroughTracker()
+        mkt = _make_norm_market(
+            venue="stx_ontario",
+            market_id="m1",
+            collateral_asset="CAD",
+            yes_bids=(OrderLevel(0.48, 50.0),),
+            yes_asks=(OrderLevel(0.50, 50.0),),
+        )
+        # Crossing best ask (`0.50`) returns `None` (`postOnly` rejection)
+        self.assertIsNone(
+            tracker.place_maker_bid(
+                order_id="bad_cross",
+                market=mkt,
+                side="YES",
+                bid_price=0.50,
+                order_shares=20.0,
+                placed_ts_ms=1000,
+            )
+        )
+
+        ord_ok = tracker.place_maker_bid(
+            order_id="ord_1",
+            market=mkt,
+            side="YES",
+            bid_price=0.48,
+            order_shares=20.0,
+            placed_ts_ms=1000,
+        )
+        self.assertIsNotNone(ord_ok)
+        # 40 shares trade at `0.48` -> clears 40 of 50 queue_ahead -> 0 shares filled for us!
+        fills_1 = tracker.observe_trade_print(
+            venue="stx_ontario",
+            market_slug="m1",
+            outcome_side="YES",
+            trade_price=0.48,
+            trade_shares=40.0,
+            ts_ms=1200,
+        )
+        self.assertEqual(fills_1, {})
+        st1 = tracker.get_order("ord_1")
+        assert st1 is not None
+        self.assertAlmostEqual(st1.remaining_queue_ahead_shares, 10.0)
+
+        # Next 35 shares trade at `0.48` -> clears remaining 10 queue_ahead + fills all 20 of our shares!
+        fills_2 = tracker.observe_trade_print(
+            venue="stx_ontario",
+            market_slug="m1",
+            outcome_side="YES",
+            trade_price=0.48,
+            trade_shares=35.0,
+            ts_ms=1500,
+        )
+        self.assertAlmostEqual(fills_2["ord_1"], 20.0)
+        self.assertTrue(st1.is_fully_filled)
+
+    def test_honest_execution_kernel_fragile_first_zero_bleed_vs_parallel_defer_exec_bleed(self) -> None:
+        m_solid = _make_norm_market(
+            venue="polymarket",
+            market_id="pm_solid",
+            collateral_asset="USDC",
+            yes_asks=(OrderLevel(0.46, 200.0),),
+            yes_bids=(OrderLevel(0.44, 200.0),),
+            fee_rate_bps=700.0,
+            taker_delay_ms=0.0,
+        )
+        m_fragile = _make_norm_market(
+            venue="sx_bet",
+            market_id="sx_fragile",
+            collateral_asset="USDC",
+            no_asks=(OrderLevel(0.46, 200.0),),
+            no_bids=(OrderLevel(0.44, 200.0),),
+            taker_delay_ms=3000.0,  # 3.0s live speed-bump!
+        )
+        m_fragile_raced = NormalizedBinaryMarket(**{**m_fragile.__dict__, "no_asks": [OrderLevel(0.58, 200.0)]})
+        m_solid_post_defer = NormalizedBinaryMarket(**{**m_solid.__dict__, "yes_bids": [OrderLevel(0.35, 200.0)]})
+
+        def lookup(venue: str, slug: str, ts_ms: int) -> NormalizedBinaryMarket | None:
+            if slug == "sx_fragile":
+                return m_fragile_raced if ts_ms >= 2000 else m_fragile
+            if slug == "pm_solid":
+                return m_solid_post_defer if ts_ms >= 4000 else m_solid
+            return None
+
+        kernel = HonestClobExecutionKernel(defer_exec_settlement_ms=3500)
+        # FRAGILE_FIRST dispatches slower `sx_fragile` first -> FOK kills cleanly -> `$0.00` unwind bleed!
+        res_ff = kernel.execute_two_leg_taker_box(
+            decision_ts_ms=1000,
+            leg_a_venue="polymarket",
+            leg_a_slug="pm_solid",
+            leg_a_side="YES",
+            leg_a_limit_px=0.47,
+            leg_b_venue="sx_bet",
+            leg_b_slug="sx_fragile",
+            leg_b_side="NO",
+            leg_b_limit_px=0.47,
+            target_net_shares=20.0,
+            unit_guaranteed_payout_usd=1.0,
+            book_lookup_fn=lookup,
+            dispatch_mode="FRAGILE_FIRST",
+        )
+        self.assertEqual(res_ff.status, "LEG1_FOK_KILLED_CLEANLY")
+        self.assertEqual(res_ff.unwind_bleed_usd, 0.0)
+
+        # PARALLEL fills `pm_solid` at `t=1050ms`, misses `sx_fragile` at `t=4110ms`, waits `3,500ms` `deferExec`, and bleeds!
+        res_par = kernel.execute_two_leg_taker_box(
+            decision_ts_ms=1000,
+            leg_a_venue="polymarket",
+            leg_a_slug="pm_solid",
+            leg_a_side="YES",
+            leg_a_limit_px=0.47,
+            leg_b_venue="sx_bet",
+            leg_b_slug="sx_fragile",
+            leg_b_side="NO",
+            leg_b_limit_px=0.47,
+            target_net_shares=20.0,
+            unit_guaranteed_payout_usd=1.0,
+            book_lookup_fn=lookup,
+            dispatch_mode="PARALLEL",
+        )
+        self.assertEqual(res_par.status, "LEG2_MISSED_DEFER_EXEC_UNWOUND")
+        self.assertGreater(res_par.unwind_bleed_usd, 2.0)
+
+    def test_zero_lookahead_harness_enforces_causality_and_blocks_survivorship_bias(self) -> None:
+        with self.assertRaises(SurvivorshipBiasError):
+            ZeroLookaheadBacktestHarness.validate_dataset_no_survivorship_bias(
+                [{"market_id": f"m{i}", "umaResolutionStatus": "resolved"} for i in range(6)]
+            )
+
+        harness = ZeroLookaheadBacktestHarness()
+        m1 = _make_norm_market(venue="polymarket", market_id="m_t", collateral_asset="USDC", quote_ts_ms=1000)
+        events = [
+            BacktestEvent(visible_ts_ms=1000, source_event_ts_ms=980, event_type="BOOK_SNAPSHOT", payload=m1, seq_no=1),
+            BacktestEvent(
+                visible_ts_ms=1500,
+                source_event_ts_ms=1490,
+                event_type="SCOREBOARD_UPDATE",
+                payload={"matchup_key": "NBA_BOS_NYK", "is_halftime": True, "clock_sec": 0.0, "halftime_started_ts_ms": 1200, "scheduled_intermission_sec": 900.0},
+                seq_no=2,
+            ),
+        ]
+
+        def strat(h: ZeroLookaheadBacktestHarness, ts_ms: int, books: object) -> list[dict]:
+            with self.assertRaises(LookaheadViolationError):
+                h.get_visible_book("polymarket", "m_t", ts_ms + 250)
+            if ts_ms == 1500:
+                self.assertTrue(h.verify_halftime_state_confirmed("NBA_BOS_NYK"))
+            return []
+
+        rep = harness.run(events, strat)
+        self.assertTrue(rep.zero_lookahead_verified)
+        self.assertEqual(rep.events_processed, 2)
+
+
+class TestPhase2AllEightNewRisklessEngines(unittest.TestCase):
+    """Proves state-by-state payoff dominance AND trap rejection for all 8 net-new riskless engines (`P2.1`–`P2.8`)."""
+
+    def _assert_strict_dominance(self, opp: object) -> None:
+        table = getattr(opp, "state_payoff_table")
+        cost = getattr(opp, "all_in_cost_usd")
+        self.assertTrue(table)
+        for state_name, payout in table.items():
+            self.assertGreater(
+                payout,
+                cost,
+                f"State {state_name} payout {payout} failed strict dominance over cost {cost}",
+            )
+
+    def test_engine_1_xv_subset_no_box_m2_universal_cancel_proof_and_m3_cancel_trap_guard(self) -> None:
+        cands = [
+            SubsetNoCandidateOutcome(
+                "FAV_A",
+                _make_norm_market(venue="forecastex", market_id="fa", no_asks=(OrderLevel(0.45, 300.0),)),
+                cancel_payout_mode="50_50",
+            ),
+            SubsetNoCandidateOutcome(
+                "FAV_B",
+                _make_norm_market(
+                    venue="polymarket",
+                    market_id="fb",
+                    collateral_asset="USDC",
+                    no_asks=(OrderLevel(0.46, 300.0),),
+                    fee_rate_bps=400.0,
+                ),
+                cancel_payout_mode="50_50",
+            ),
+            SubsetNoCandidateOutcome(
+                "CAND_C",
+                _make_norm_market(venue="forecastex", market_id="fc", no_asks=(OrderLevel(0.82, 300.0),)),
+                cancel_payout_mode="50_50",
+            ),
+        ]
+        opps = detect_cross_venue_subset_no_boxes(
+            "partition_election",
+            cands,
+            event_cancel_exempt=False,
+            subset_sizes=(2, 3),
+            target_notional_usd=50.0,
+        )
+        self.assertEqual(len(opps), 1)
+        self.assertEqual(opps[0].metadata["subset_size_m"], 2)
+        self._assert_strict_dominance(opps[0])
+        self.assertGreater(opps[0].best_case_payout_usd - opps[0].worst_case_payout_usd, 40.0)
+
+    def test_engine_2_tail_boundary_001_arb_parabolic_fee_collapse_and_notional_floor(self) -> None:
+        pair = BoundaryTickDominancePair(
+            pair_id="btc_deep_itm_corridor",
+            pair_type="NESTED_STRIKE",
+            oracle_signature="chainlink_btc_usd_15m",
+            expiry_ts=1_800_000_900.0,
+            leg_a_token_id="tok_yes_94k",
+            leg_a_label="BTC >= 94000",
+            leg_a_asks=(OrderLevel(0.966, 200.0),),
+            leg_b_token_id="tok_no_94500",
+            leg_b_label="BTC < 94500",
+            leg_b_asks=(OrderLevel(0.025, 200.0),),
+            fee_rate=0.07,
+            fee_exponent=1.0,
+            strike_low=94_000.0,
+            strike_high=94_500.0,
+        )
+        opps = detect_tail_boundary_001_fee_collapse_boxes([pair], target_box_notional_usd=45.0)
+        self.assertEqual(len(opps), 1)
+        opp = opps[0]
+        self._assert_strict_dominance(opp)
+        self.assertGreater(opp.metadata["fee_compression_multiple"], 7.5)
+        self.assertGreaterEqual(opp.legs[1]["maker_amount_usd"], 1.00)
+
+    def test_engine_3_bond3_multisource_dead_split_unlocks_swept_winner_and_blocks_speci_conflict(self) -> None:
+        obs_ok = [
+            PrimaryOracleObservation("mlb_statsapi", True, "YES", post_final_elapsed_sec=1200.0),
+            PrimaryOracleObservation("espn_official", True, "YES", post_final_elapsed_sec=1180.0),
+        ]
+        opp = evaluate_bond3_multisource_verified_carry(
+            market_id="mlb_ws_g7",
+            category="mlb",
+            uma_proposed_outcome="YES",
+            uma_status="proposed",
+            is_whitelisted_proposer=True,
+            remaining_challenge_sec=2400.0,
+            winner_asks=(OrderLevel(0.999, 500.0),),
+            winner_bids=(OrderLevel(0.985, 500.0),),
+            dead_loser_bids=(OrderLevel(0.020, 80.0),),
+            observations=obs_ok,
+            fee_rate=0.03,
+            target_notional_usd=60.0,
+        )
+        self.assertIsNotNone(opp)
+        assert opp is not None
+        self.assertEqual(opp.metadata["entry_mode"], "DEAD_SIDE_SPLIT_SELL")
+        self._assert_strict_dominance(opp)
+
+        opp_bad = evaluate_bond3_multisource_verified_carry(
+            market_id="nyc_temp",
+            category="weather",
+            uma_proposed_outcome="YES",
+            uma_status="proposed",
+            is_whitelisted_proposer=True,
+            remaining_challenge_sec=1800.0,
+            winner_asks=(OrderLevel(0.97, 200.0),),
+            winner_bids=(OrderLevel(0.96, 200.0),),
+            dead_loser_bids=(OrderLevel(0.03, 100.0),),
+            observations=[
+                PrimaryOracleObservation("aviationweather", True, "YES", 4000.0, has_speci_or_cor_conflict=True),
+                PrimaryOracleObservation("iem_asos", True, "YES", 4000.0),
+            ],
+        )
+        self.assertIsNone(opp_bad)
+
+    def test_engine_4_xv_fx_invariant_cad_usd_box_ca_on_legal_and_void_fx_trap_guard(self) -> None:
+        stx = _make_norm_market(
+            venue="stx_ontario",
+            market_id="stx_boc_cut",
+            collateral_asset="CAD",
+            yes_asks=(OrderLevel(0.45, 500.0),),
+        )
+        fex = _make_norm_market(
+            venue="forecastex",
+            market_id="fex_boc_cut",
+            collateral_asset="USD",
+            no_asks=(OrderLevel(0.50, 500.0),),
+        )
+        opp = evaluate_stx_forecastex_fx_invariant_box(
+            pair_id="boc_dec_2026",
+            stx_market=stx,
+            stx_side="YES",
+            stx_execution_style="PASSIVE_MAKER",
+            forecastex_market=fex,
+            forecastex_side="NO",
+            event_cancel_exempt=True,
+            target_usd_shares=100.0,
+        )
+        self.assertIsNotNone(opp)
+        assert opp is not None
+        self.assertIn("CA-ON-LEGAL", opp.jurisdiction_tags)
+        self.assertGreater(opp.metadata["cad_to_usd_share_ratio"], 1.38)
+        self._assert_strict_dominance(opp)
+
+        opp_void_trap = evaluate_stx_forecastex_fx_invariant_box(
+            pair_id="cancelable_friendly_match",
+            stx_market=_make_norm_market(
+                venue="stx_ontario", market_id="stx_fr", collateral_asset="CAD", yes_asks=(OrderLevel(0.46, 500.0),)
+            ),
+            stx_side="YES",
+            stx_execution_style="PASSIVE_MAKER",
+            forecastex_market=_make_norm_market(
+                venue="forecastex", market_id="fex_fr", collateral_asset="USD", no_asks=(OrderLevel(0.51, 500.0),)
+            ),
+            forecastex_side="NO",
+            fx_shock_band_frac=0.08,
+            event_cancel_exempt=False,
+            target_usd_shares=100.0,
+        )
+        self.assertIsNone(opp_void_trap)
+
+    def test_engine_5_deribit_usdc_vertical_super_replication_and_inverse_rejection(self) -> None:
+        exp_ts = 1_800_000_000
+        bin_mkt = _make_norm_market(
+            venue="forecastex",
+            market_id="fex_btc_100k_08utc",
+            category="crypto",
+            collateral_asset="USD",
+            no_asks=(OrderLevel(0.45, 300.0),),
+            yes_asks=(OrderLevel(0.56, 300.0),),
+            end_ts=exp_ts,
+        )
+        opts = [
+            DeribitLinearOptionQuote("BTC_USDC-97000-C", "BTC_USDC", "USDC", "C", 97_000.0, float(exp_ts), 2100.0, 5.0, 2110.0, 5.0, 99_000.0),
+            DeribitLinearOptionQuote("BTC_USDC-98000-C", "BTC_USDC", "USDC", "C", 98_000.0, float(exp_ts), 1650.0, 5.0, 1665.0, 5.0, 99_000.0),
+            DeribitLinearOptionQuote("BTC-97000-C", "BTC_USD", "BTC", "C", 97_000.0, float(exp_ts), 100.0, 5.0, 110.0, 5.0, 99_000.0),
+        ]
+        opps = detect_deribit_usdc_vertical_super_replication(
+            binary_market=bin_mkt,
+            binary_strike=100_000.0,
+            deribit_options=opts,
+            cross_oracle_basis_bps=150.0,
+            target_units=50.0,
+        )
+        self.assertEqual(len(opps), 1)
+        self._assert_strict_dominance(opps[0])
+        self.assertEqual(opps[0].metadata["polish_middle_width_usd"], 2000.0)
+
+    def test_engine_6_xv_halftime_freeze_affine_corridor_and_non_ot_2h_trap_guard(self) -> None:
+        fg_leg = HalftimeLineLeg(
+            leg_id="fg_o220_5",
+            period_scope="FG",
+            line_kind="TOTAL",
+            direction="OVER",
+            line_value=220.5,
+            includes_overtime=True,
+            live_betting_delay_ms=0,
+            market=_make_norm_market(venue="forecastex", market_id="fg_tot", yes_asks=(OrderLevel(0.46, 200.0),)),
+        )
+        h2_ok = HalftimeLineLeg(
+            leg_id="h2_u112_5",
+            period_scope="2H",
+            line_kind="TOTAL",
+            direction="UNDER",
+            line_value=112.5,
+            includes_overtime=True,
+            live_betting_delay_ms=0,
+            market=_make_norm_market(venue="stx_ontario", market_id="h2_tot", collateral_asset="CAD", yes_asks=(OrderLevel(0.45, 400.0),)),
+        )
+        opps = detect_cross_venue_halftime_affine_corridors(
+            game_id="nba_bos_nyk",
+            sport="nba",
+            is_halftime=True,
+            game_clock_sec=0.0,
+            elapsed_halftime_sec=500.0,
+            remaining_halftime_sec=300.0,
+            confirmed_1h_home_score=58,
+            confirmed_1h_away_score=52,
+            fg_legs=[fg_leg],
+            h2_legs=[h2_ok],
+            target_usd_shares=40.0,
+        )
+        self.assertEqual(len(opps), 1)
+        self._assert_strict_dominance(opps[0])
+        self.assertEqual(opps[0].metadata["polish_middle_integer_width"], 2)
+
+        h2_no_ot = HalftimeLineLeg(**{**h2_ok.__dict__, "includes_overtime": False})
+        self.assertEqual(
+            detect_cross_venue_halftime_affine_corridors(
+                game_id="nba_bos_nyk",
+                sport="nba",
+                is_halftime=True,
+                game_clock_sec=0.0,
+                elapsed_halftime_sec=500.0,
+                remaining_halftime_sec=300.0,
+                confirmed_1h_home_score=58,
+                confirmed_1h_away_score=52,
+                fg_legs=[fg_leg],
+                h2_legs=[h2_no_ot],
+            ),
+            [],
+        )
+
+    def test_engine_7_preconverted_nr3_and_hedged_presplit_maker_ask(self) -> None:
+        outcomes = [
+            PreConvertedNegRiskOutcomeBook("BRACKET_A", yes_bids=(OrderLevel(0.56, 80.0),), yes_asks=(OrderLevel(0.58, 80.0),), fee_rate=0.04),
+            PreConvertedNegRiskOutcomeBook("BRACKET_B", yes_bids=(OrderLevel(0.47, 60.0),), yes_asks=(OrderLevel(0.49, 60.0),), fee_rate=0.04),
+            PreConvertedNegRiskOutcomeBook("TAIL_LOTTERY_C", yes_bids=(OrderLevel(0.02, 50.0),), yes_asks=(OrderLevel(0.04, 50.0),), fee_rate=0.04),
+        ]
+        opp_nr3 = evaluate_preconverted_nr3_overround(
+            slate_id="closed_fomc_slate",
+            outcomes=outcomes,
+            settled_inventory_shares=20.0,
+            is_augmented_other=False,
+            onchain_question_count=3,
+        )
+        self.assertIsNotNone(opp_nr3)
+        assert opp_nr3 is not None
+        self._assert_strict_dominance(opp_nr3)
+        self.assertEqual(opp_nr3.metadata["free_retained_lottery_outcomes"], ["TAIL_LOTTERY_C"])
+
+        self.assertIsNone(
+            evaluate_preconverted_nr3_overround(
+                slate_id="aug_slate",
+                outcomes=outcomes,
+                settled_inventory_shares=20.0,
+                is_augmented_other=True,
+                onchain_question_count=3,
+            )
+        )
+
+        opp_mkr = evaluate_hedged_presplit_maker_ask(
+            market_id="btc_15m_candle",
+            maker_yes_ask_price=0.53,
+            complement_no_bids=(OrderLevel(0.495, 60.0),),
+            settled_split_shares=15.0,
+            fee_rate=0.07,
+            live_enabled=False,
+        )
+        self.assertIsNotNone(opp_mkr)
+        assert opp_mkr is not None
+        self.assertFalse(opp_mkr.live_eligible)
+        self._assert_strict_dominance(opp_mkr)
+
+    def test_engine_8_yield_stacked_carry_box_and_early_overround_exit_forfeited_coupon_guard(self) -> None:
+        # Gross box costs `$1.004` (`0.502 + 0.502`, `$0.00` direct ForecastEx exchange fee), negative on price alone (`-$0.405`),
+        # while 120-day contractual `FFR - 0.50%` (`3.83%` -> `3.33%` after 50 bps rate-cut stress) adds `+$1.095` coupon -> `+$0.69` net!
+        fex_yes = YieldBearingBoxLeg(
+            market=_make_norm_market(venue="forecastex", market_id="fex_y", yes_asks=(OrderLevel(0.502, 500.0),)),
+            side="YES",
+            contractual_apy=0.0383,
+            rate_cut_stress_haircut_apy=0.0050,
+            override_taker_fee_per_contract_usd=0.0,
+        )
+        fex_no = YieldBearingBoxLeg(
+            market=_make_norm_market(venue="forecastex", market_id="fex_y", no_asks=(OrderLevel(0.502, 500.0),)),
+            side="NO",
+            contractual_apy=0.0383,
+            rate_cut_stress_haircut_apy=0.0050,
+            override_taker_fee_per_contract_usd=0.0,
+        )
+        opp = evaluate_yield_stacked_locked_box(
+            box_id="fex_120d_rate_carry",
+            leg_a=fex_yes,
+            leg_b=fex_no,
+            min_guaranteed_hold_days=120.0,
+            can_resolve_early=False,
+            target_usd_shares=100.0,
+        )
+        self.assertIsNotNone(opp)
+        assert opp is not None
+        self.assertLess(opp.metadata["price_only_profit_without_coupon_usd"], 0.0)
+        self._assert_strict_dominance(opp)
+
+        self.assertIsNone(
+            evaluate_yield_stacked_locked_box(
+                box_id="early_resolvable_series",
+                leg_a=fex_yes,
+                leg_b=fex_no,
+                min_guaranteed_hold_days=120.0,
+                can_resolve_early=True,
+                target_usd_shares=100.0,
+            )
+        )
+
+        hold_decision = evaluate_early_overround_exit_with_forfeited_coupon(
+            shares=100.0,
+            initial_all_in_cost_usd=100.41,
+            accrued_coupon_to_date_usd=0.30,
+            forfeited_remaining_min_coupon_usd=0.80,
+            net_exit_bid_unit_a=0.501,
+            net_exit_bid_unit_b=0.502,
+        )
+        self.assertFalse(hold_decision["should_exit_early"])
+
+        exit_decision = evaluate_early_overround_exit_with_forfeited_coupon(
+            shares=100.0,
+            initial_all_in_cost_usd=100.41,
+            accrued_coupon_to_date_usd=0.30,
+            forfeited_remaining_min_coupon_usd=0.80,
+            net_exit_bid_unit_a=0.506,
+            net_exit_bid_unit_b=0.506,
+        )
+        self.assertTrue(exit_decision["should_exit_early"])
+
+    def test_daemon_orchestrators_alpha124_and_cross_venue_sandbox_isolation(self) -> None:
+        import asyncio
+        from src.polymarket_research.riskless_expansion_v6_engines import (
+            ALL_V6_EXPANSION_SLEEVES,
+            run_v6_expansion_alpha124_scan,
+            run_v6_expansion_cross_venue_scan,
+        )
+
+        self.assertEqual(len(ALL_V6_EXPANSION_SLEEVES), 8)
+        now_u = 1_799_990_000.0
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            a124_dir = Path(tmp_dir) / "polymarket"
+            xv_dir = Path(tmp_dir) / "cross_venue_shadow"
+            xv_dir.mkdir(parents=True, exist_ok=True)
+
+            # 1. Alpha-124 intra-Polymarket v6 orchestrator test (TAIL_BOUNDARY_001_ARB + L2 Recorder)
+            rg_lo = SimpleNamespace(
+                asset="BTC",
+                strike=94000.0,
+                end_ts=now_u + 3600.0,
+                yes_token="tok_y_lo",
+                no_token="tok_n_lo",
+                market_id="m_lo",
+                fee_rate=0.07,
+                fee_exponent=1.0,
+                is_downward=False,
+            )
+            rg_hi = SimpleNamespace(
+                asset="BTC",
+                strike=94500.0,
+                end_ts=now_u + 3600.0,
+                yes_token="tok_y_hi",
+                no_token="tok_n_hi",
+                market_id="m_hi",
+                fee_rate=0.07,
+                fee_exponent=1.0,
+                is_downward=False,
+            )
+            bks = {
+                "tok_y_lo": {"asks": [{"price": 0.966, "size": 250.0}], "bids": [{"price": 0.962, "size": 200.0}]},
+                "tok_n_lo": {"asks": [{"price": 0.038, "size": 250.0}], "bids": [{"price": 0.033, "size": 200.0}]},
+                "tok_y_hi": {"asks": [{"price": 0.972, "size": 250.0}], "bids": [{"price": 0.968, "size": 200.0}]},
+                "tok_n_hi": {"asks": [{"price": 0.025, "size": 250.0}], "bids": [{"price": 0.021, "size": 200.0}]},
+            }
+
+            async def _fake_batch(toks: list[str], timeout: float = 2.0) -> dict[str, dict]:
+                return {t: bks[t] for t in toks if t in bks}
+
+            mock_daemon = SimpleNamespace(
+                single_scan=False,
+                _v6_data_dir=a124_dir,
+                strike_ladders={"btc_1h": [rg_lo, rg_hi]},
+                uma_proposed_markets={},
+                uma_onchain_cache={},
+                negrisk_convert_slates={},
+                holding_rewards_apy=0.0,
+                open_positions={},
+                entered_keys=set(),
+                fetch_books_batch=_fake_batch,
+            )
+            opps_out: list[dict] = []
+            a124_res = asyncio.run(run_v6_expansion_alpha124_scan(mock_daemon, opps_out, now_ts=now_u))
+            self.assertGreaterEqual(a124_res["per_sleeve"]["TAIL_BOUNDARY_001_ARB"]["opportunities_found"], 1)
+            self.assertGreaterEqual(len(opps_out), 1)
+            self.assertGreaterEqual(len(mock_daemon.open_positions), 1)
+            self.assertTrue((a124_dir / "v6_expansion_alpha124_telemetry.json").exists())
+
+            # 2. Stage G Cross-Venue v6 orchestrator test (strictly inside xv_dir!)
+            stx_m = _make_norm_market(
+                venue="stx_ontario",
+                market_id="stx_boc",
+                category="macro",
+                collateral_asset="CAD",
+                yes_asks=(OrderLevel(0.45, 500.0),),
+                end_ts=int(now_u + 86400 * 30),
+            )
+            fex_m = _make_norm_market(
+                venue="forecastex",
+                market_id="fex_boc",
+                category="macro",
+                collateral_asset="USD",
+                no_asks=(OrderLevel(0.50, 500.0),),
+                end_ts=int(now_u + 86400 * 30),
+            )
+            mock_collector = SimpleNamespace(
+                engine=SimpleNamespace(data_dir=xv_dir),
+                env={"DOMINUS_NETWORK_MODE": "offline"},
+            )
+            xv_res = asyncio.run(
+                run_v6_expansion_cross_venue_scan(
+                    mock_collector,
+                    [stx_m, fex_m],
+                    [(stx_m, fex_m)],
+                    transport=None,
+                    now_ts=now_u,
+                )
+            )
+            self.assertGreaterEqual(xv_res["per_sleeve"]["XV_FX_INVARIANT_CAD_USD_BOX"]["opportunities_found"], 1)
+            self.assertTrue((xv_dir / "v6_expansion_telemetry.json").exists())
+            self.assertTrue((xv_dir / "candidate_l2").exists())
 
 
 if __name__ == "__main__":

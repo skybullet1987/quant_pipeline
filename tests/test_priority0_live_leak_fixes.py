@@ -158,11 +158,11 @@ class TestPriority0LiveLeakFixes(unittest.TestCase):
         self.assertFalse(ok_m)
         self.assertEqual(rsn_m, "MAX_CONCURRENT_PER_EVENT_REACHED")
 
-        # Under default production config (Row-2 post-clinch weather unblocked, protected by METAR guard + 1-slot cap),
-        # watchlist registration succeeds (`p_model=1.0`), and slot-1 event concentration cap immediately blocks
-        # any second KMIA entry until KMIA is flat!
+        # Pre-settlement W1_LOW_TROUGH_LOCK single-leg snipe is strictly quarantined under P0.1 zero-loss invariance,
+        # while verified W_PRUNE1_DEAD_NO_BOND watchlist registration succeeds (`p_model=1.0`) and slot-1 event
+        # concentration cap immediately blocks any second KMIA entry until KMIA is flat!
         tok_other = "202" * 9
-        ws_cand_kmia = {
+        ws_cand_trough_quarantined = {
             "leg_a_token_id": tok_other,
             "leg_a_opp_token_id": "303" * 9,
             "leg_a_market_id": "MKT_KMIA_84_85",
@@ -176,6 +176,9 @@ class TestPriority0LiveLeakFixes(unittest.TestCase):
             "expiry_ts": exp_ts,
             "max_lock_eff_px": 0.995,
         }
+        self.assertFalse(register_clinched_ws_watch_cand_impl(h, dict(ws_cand_trough_quarantined), now_ts=now_ts))
+
+        ws_cand_kmia = dict(ws_cand_trough_quarantined, sleeve_source="W_PRUNE1_DEAD_NO_BOND")
         reg_ok = register_clinched_ws_watch_cand_impl(h, dict(ws_cand_kmia), now_ts=now_ts)
         self.assertTrue(reg_ok)
         snipe_blocked = evaluate_clinched_ws_book_snipe_impl(

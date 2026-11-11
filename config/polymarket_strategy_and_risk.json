@@ -73,7 +73,8 @@
     "decouple_riskless_boxes_from_directional_halt": true,
     "max_daily_directional_loss_usd": 16.57,
     "max_consecutive_directional_losses": 4,
-    "hard_ruin_floor_usd": 62.0
+    "hard_ruin_floor_usd": 62.0,
+    "riskless_hard_ruin_floor_usd": 30.0
   },
   "sizing_tiers": {
     "unleash_full_throttle": true,
@@ -224,7 +225,14 @@
     "synthetic_maker_unwind_breaker_usd": 0.50,
     "synthetic_maker_repeg_debounce_sec": 0.50,
     "paused_s2_reserve_floor_usd": 2.00,
-    "sll_preempt_birth_grace_sec": 45.0
+    "sll_preempt_birth_grace_sec": 45.0,
+    "max_correlated_oracle_event_nav_pct": 0.15,
+    "multileg_3plus_min_reconciled_nav_usd": 500.0,
+    "nr0_dynamic_unlock_equity_usd": 500.0,
+    "certified_multileg_3plus_live_enabled": false,
+    "allow_nr0_multileg_dynamic_unpause": false,
+    "maker_ws_book_max_age_sec": 5.0,
+    "maker_max_consecutive_blind_book_polls": 3
   },
   "shadow_governance": {
     "enable_btc_5m_sniper_shadow": false,

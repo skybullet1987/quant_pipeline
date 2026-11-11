@@ -722,7 +722,7 @@ def test_user_ws_cache_maker_leg_delta_monotonic_terminal_and_reconnect_guard():
     assert snap["size_matched"] == 12.0
 
     # Reconnect without REST seed: pre-disconnect order snapshot MUST return None (fail-closed)
-    time.sleep(0.01)
+    time.sleep(0.03)
     ws._connected_since_mono = time.monotonic()
     ws._seeded_since_connect = False
     ws._last_rx_mono = time.monotonic()
@@ -804,7 +804,7 @@ def test_of16_worker_thread_spawn_fast_confirm_and_unsorted_bids_reprice(tmp_pat
 
     async def _fake_fast_confirm(tid: str):
         called_tids.append(tid)
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0.04)
 
     h._fast_confirm_and_post_maker_exit = _fake_fast_confirm
 

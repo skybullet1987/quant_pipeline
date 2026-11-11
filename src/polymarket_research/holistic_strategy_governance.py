@@ -104,6 +104,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "max_daily_directional_loss_usd": 16.57,
         "max_consecutive_directional_losses": 4,
         "hard_ruin_floor_usd": 42.0,
+        "riskless_hard_ruin_floor_usd": 30.0,
     },
     "sizing_tiers": {
         "unleash_full_throttle": True,
@@ -234,6 +235,13 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "synthetic_maker_repeg_debounce_sec": 0.50,
         "paused_s2_reserve_floor_usd": 2.00,
         "sll_preempt_birth_grace_sec": 45.0,
+        "max_correlated_oracle_event_nav_pct": 0.15,
+        "multileg_3plus_min_reconciled_nav_usd": 500.0,
+        "nr0_dynamic_unlock_equity_usd": 500.0,
+        "certified_multileg_3plus_live_enabled": False,
+        "allow_nr0_multileg_dynamic_unpause": False,
+        "maker_ws_book_max_age_sec": 5.0,
+        "maker_max_consecutive_blind_book_polls": 3,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -313,7 +321,11 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("exit_supervisor high_zone_mfe bounds invalid")
 
     r_cfg = out["risk_controller"]
-    if r_cfg["max_daily_directional_loss_usd"] <= 0.0 or r_cfg["hard_ruin_floor_usd"] < 20.0:
+    if (
+        r_cfg["max_daily_directional_loss_usd"] <= 0.0
+        or r_cfg["hard_ruin_floor_usd"] < 20.0
+        or not (15.0 <= float(r_cfg.get("riskless_hard_ruin_floor_usd", 30.0)) <= float(r_cfg["hard_ruin_floor_usd"]))
+    ):
         raise ValueError("risk_controller loss/ruin bounds invalid")
 
     b_cfg = out["riskless_boxes"]
@@ -349,6 +361,16 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("riskless_boxes.paused_s2_reserve_floor_usd must be in [0.0, 50.0]")
     if not (0.0 <= float(b_cfg["sll_preempt_birth_grace_sec"]) <= 600.0):
         raise ValueError("riskless_boxes.sll_preempt_birth_grace_sec must be in [0.0, 600.0]")
+    if not (0.01 <= float(b_cfg["max_correlated_oracle_event_nav_pct"]) <= 0.15):
+        raise ValueError("riskless_boxes.max_correlated_oracle_event_nav_pct must be in [0.01, 0.15]")
+    if not (500.0 <= float(b_cfg["multileg_3plus_min_reconciled_nav_usd"]) <= 50000.0):
+        raise ValueError("riskless_boxes.multileg_3plus_min_reconciled_nav_usd must be in [500.0, 50000.0]")
+    if not (500.0 <= float(b_cfg["nr0_dynamic_unlock_equity_usd"]) <= 50000.0):
+        raise ValueError("riskless_boxes.nr0_dynamic_unlock_equity_usd must be in [500.0, 50000.0]")
+    if not (0.5 <= float(b_cfg["maker_ws_book_max_age_sec"]) <= 5.0):
+        raise ValueError("riskless_boxes.maker_ws_book_max_age_sec must be in [0.5, 5.0]")
+    if not (1 <= int(b_cfg["maker_max_consecutive_blind_book_polls"]) <= 5):
+        raise ValueError("riskless_boxes.maker_max_consecutive_blind_book_polls must be in [1, 5]")
     return out
 
 
@@ -685,9 +707,16 @@ def get_unleashed_v5_tier_profile(
     hwm = max(hwm, eq)
     hyst = float(s_cfg.get("tier_upward_hysteresis_usd", 3.0))
 
-    b1 = float(s_cfg.get("seed_survival_max_equity", 95.0)) + (hyst if previous_tier == "UNLEASHED_LAUNCH" else 0.0)
-    b2 = float(s_cfg.get("recovery_max_equity", 250.0)) + (hyst if previous_tier == "HYPER_GROWTH" else 0.0)
-    b3 = float(s_cfg.get("growth_max_equity", 1000.0)) + (hyst if previous_tier == "SCALE" else 0.0)
+    prev_norm = str(previous_tier or "").strip().upper()
+    b1 = float(s_cfg.get("seed_survival_max_equity", 95.0)) + (
+        hyst if prev_norm in {"UNLEASHED_LAUNCH", "SEED_SURVIVAL", "SEED"} else 0.0
+    )
+    b2 = float(s_cfg.get("recovery_max_equity", 250.0)) + (
+        hyst if prev_norm in {"HYPER_GROWTH", "RECOVERY"} else 0.0
+    )
+    b3 = float(s_cfg.get("growth_max_equity", 1000.0)) + (
+        hyst if prev_norm in {"SCALE", "GROWTH"} else 0.0
+    )
     hard_floor = max(5.0, round(float(r_cfg.get("hard_ruin_floor_usd", 42.0)) - _net_wd, 2))
 
     bond1_mkt_pct = float(b_cfg.get("bond1_per_market_cap_pct", 0.65))
@@ -794,19 +823,26 @@ def passes_capital_velocity_hurdle(
     rem_tte_sec: float,
     box_cost_net: float,
     fast_recycle_eligible: bool = False,
+    merge_wallet_ok: bool = False,
+    previous_tier: Optional[str] = None,
     cfg: Optional[Dict[str, Any]] = None,
 ) -> Tuple[bool, str]:
     """
     Bankroll-tiered Capital-Velocity Hurdle for riskless structural sleeves.
     Fixes the legacy `and` bug (where 185 bps over 72h bypassed `min_floor_bps_per_hour`) by enforcing
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
+    Exempts `COMPLETE_SET` / `C1_BINARY_COMPLETE_SET` ONLY when `merge_wallet_ok=True` is verified so
+    unmergeable long-dated complete sets never lock seed cash past `max_lockup_hours`.
     """
-    if str(box_type or "").upper() in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND", "COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} or (
-        str(box_type or "").upper() == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
+    btype_u = str(box_type or "").upper()
+    if btype_u in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND"} or (
+        btype_u in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} and bool(merge_wallet_ok)
+    ) or (
+        btype_u == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
     ):
         return True, "OK"
 
-    prof = get_unleashed_v5_tier_profile(collat_usd, cfg=cfg)
+    prof = get_unleashed_v5_tier_profile(collat_usd, previous_tier=previous_tier, cfg=cfg)
     max_hrs = float(prof["max_lockup_hours"])
     min_bps_hr = float(prof["min_bps_per_hour"])
 

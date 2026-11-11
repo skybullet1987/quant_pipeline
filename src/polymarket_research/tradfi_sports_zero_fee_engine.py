@@ -43,12 +43,14 @@ from src.polymarket_research.barrier_onetouch_svi_engine import (
     first_passage_touch_prob,
 )
 
+from src.polymarket_research.riskless_protocol_v2_expansion import (
+    get_us_eastern_tz,
+    is_conditional_negrisk_missing_catchall,
+)
+
 logger = logging.getLogger("TradFiSportsZeroFee")
 
-try:
-    NY_TZ = ZoneInfo("America/New_York")
-except Exception:
-    NY_TZ = timezone(timedelta(hours=-4))
+NY_TZ = get_us_eastern_tz()
 
 # (asset, yahoo_ticker, session_class, exact_directional_ok, basis_buffer_frac, vol_floor_annual)
 PYTH_ASSET_CONFIG: Dict[str, Tuple[str, str, bool, float, float]] = {
@@ -1486,9 +1488,15 @@ def parse_negrisk_convert_event(ev: Dict[str, Any]) -> Optional[NegRiskConvertSl
         return None
     total_n = len(mkts)
     idx_set = {b["question_index"] for b in open_brackets if isinstance(b.get("question_index"), int)}
+    ev_hdr = f"{ev.get('title') or ''} {ev.get('slug') or ''}"
+    missing_cond_catchall = is_conditional_negrisk_missing_catchall(
+        ev_hdr,
+        [str(b.get("label") or "") for b in open_brackets],
+    )
     closed_safe = bool(
         (not nr_aug)
         and (not has_placeholder)
+        and (not missing_cond_catchall)
         and valid_nr_hex
         and all_mkts_open
         and 3 <= total_n <= 40

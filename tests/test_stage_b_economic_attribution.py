@@ -407,24 +407,28 @@ class TestStageBEconomicAttribution(unittest.TestCase):
     def test_external_cashflows_deposit_reconciliation_zero_principal_inflation(self) -> None:
         cf_before = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-08T17:15:00Z")
         self.assertEqual(cf_before["starting_lock_equity_usd"], 60.92)
-        self.assertEqual(cf_before["net_deposits_post_lock_usd"], 20.00)
-        self.assertEqual(cf_before["contributed_capital_basis_usd"], 80.92)
-        self.assertEqual(cf_before["net_deposits_since_window_usd"], 20.00)
+        self.assertEqual(cf_before["net_deposits_post_lock_usd"], 21.00)
+        self.assertEqual(cf_before["contributed_capital_basis_usd"], 81.92)
+        self.assertEqual(cf_before["net_deposits_since_window_usd"], 21.00)
 
-        # Once the 24h snapshot anchor moves past 17:14:25Z, net_deposits_since_window_usd drops to $0.00 seamlessly
-        cf_after = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-09T17:15:00Z")
+        # After the Nov 9 $20 deposit, only the Nov 11 $1.00 EOA sweep falls inside the window
+        cf_mid = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-09T17:15:00Z")
+        self.assertEqual(cf_mid["net_deposits_since_window_usd"], 1.00)
+
+        # Once the 24h snapshot anchor moves past 2026-11-11T04:10:21Z, net_deposits_since_window_usd drops to $0.00 seamlessly
+        cf_after = load_external_cashflows_summary(REPO_ROOT, since_utc="2026-11-11T04:15:00Z")
         self.assertEqual(cf_after["net_deposits_since_window_usd"], 0.00)
 
         rep = compute_stage_b_attribution_report(
             grouped_closed=[],
-            reconciled_equity_usd=97.58,
+            reconciled_equity_usd=98.58,
             starting_lock_equity_usd=cf_before["starting_lock_equity_usd"],
             net_deposits_post_lock_usd=cf_before["net_deposits_post_lock_usd"],
             now_unix=1794244800.0,
         )
         gid = rep["governing_identity"]
-        self.assertEqual(gid["contributed_capital_basis_usd"], 80.92)
-        self.assertEqual(gid["net_deposits_usd"], 20.00)
+        self.assertEqual(gid["contributed_capital_basis_usd"], 81.92)
+        self.assertEqual(gid["net_deposits_usd"], 21.00)
         self.assertAlmostEqual(gid["wallet_equity_delta_usd"], 16.66, places=2)
         self.assertAlmostEqual(rep["north_star_kpis"]["kpi_1_wallet_gain_before_ops_usd"], 16.66, places=2)
 

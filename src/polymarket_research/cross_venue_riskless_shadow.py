@@ -70,6 +70,9 @@ LIMITLESS_API_URL = "https://api.limitless.exchange"
 SX_BET_API_URL = "https://api.sx.bet"
 PREDICT_FUN_MAINNET_URL = "https://api.predict.fun/v1"
 PREDICT_FUN_TESTNET_URL = "https://api-testnet.predict.fun/v1"
+PROBABLE_MARKET_API_URL = "https://market-api.probable.markets/public/api/v1"
+PROBABLE_CLOB_API_URL = "https://api.probable.markets/public/api/v1"
+DERIVE_V3_WS_URL = "wss://api.derive.xyz/v3/ws"
 
 # Empirical one-way / order-ack latency defaults from quant-pipeline-finland (europe-north1-b)
 DEFAULT_WIRE_LATENCY_MS: Dict[str, float] = {
@@ -77,6 +80,8 @@ DEFAULT_WIRE_LATENCY_MS: Dict[str, float] = {
     "limitless": 115.0,      # Finland -> Cloudflare -> AWS us-east-1 (Base sequencer)
     "sx_bet": 95.0,          # Finland -> SX Rollup edge API
     "predict_fun": 246.0,    # Finland -> AWS ap-northeast-1 Tokyo (~1.74 ms w/ Tokyo relay)
+    "derive_xyz": 135.0,     # Finland -> Derive v3 OP-Stack WS sequencer
+    "probable_markets": 220.0,  # Finland -> Probable BNB Chain CLOB edge
     "forecastex": 65.0,      # Direct North America / IBKR Gateway
     "stx_ontario": 35.0,     # Direct Ontario / AGCO gateway
 }
@@ -88,6 +93,8 @@ DEFAULT_EXTERNAL_GAS_USD: Dict[str, float] = {
     "predict_fun": 0.008,    # BNB Chain CTF split/merge or approval amortization
     "sx_bet": 0.000,         # Gasless EIP-2612 + off-chain OBv3 matching/cancel
     "limitless": 0.005,      # Base L2 CTF split/merge amortization
+    "derive_xyz": 1.050,     # Derive 2-leg option base fee (2 * $0.50) + OP-Stack L2 gas
+    "probable_markets": 0.010,  # Gasless BNB CLOB + amortized CTF merge gas
     "forecastex": 0.000,     # Off-chain CFTC/CIRO clearinghouse
     "stx_ontario": 0.000,    # Off-chain AGCO/iGO P2P matching
 }
@@ -102,6 +109,48 @@ LIMITLESS_SHARE_SCALE = 1_000_000.0    # Limitless 6-decimal USDC / CTF share sc
 # ---------------------------------------------------------------------------
 # Exact Multi-Venue Fee, Rebate & L2 Walk Math
 # ---------------------------------------------------------------------------
+
+DEFAULT_FX_ASK_TO_USD: Dict[str, float] = {
+    "USD": 1.0,
+    "USDC": 1.0,
+    "USDC.E": 1.0,
+    "USDT": 1.0,
+    "VUSDT": 1.0,
+    "CAD": 0.725,  # Conservative CAD->USD entry outlay conversion rate (spot + FX spread)
+}
+
+DEFAULT_FX_SETTLE_FLOOR_TO_USD: Dict[str, float] = {
+    "USD": 1.0,
+    "USDC": 1.0,
+    "USDC.E": 1.0,
+    "USDT": 1.0,
+    "VUSDT": 1.0,
+    "CAD": 0.710,  # Conservative CAD->USD settlement liquidation floor (absorbs adverse CAD shock)
+}
+
+
+def collateral_fx_ask_to_usd(asset: str, fx_map: Optional[Mapping[str, float]] = None) -> float:
+    key = str(asset or "USDC").strip().upper()
+    src = fx_map if fx_map is not None else DEFAULT_FX_ASK_TO_USD
+    return float(src.get(key, DEFAULT_FX_ASK_TO_USD.get(key, 1.0)))
+
+
+def collateral_fx_settle_floor_to_usd(asset: str, fx_map: Optional[Mapping[str, float]] = None) -> float:
+    key = str(asset or "USDC").strip().upper()
+    src = fx_map if fx_map is not None else DEFAULT_FX_SETTLE_FLOOR_TO_USD
+    return float(src.get(key, DEFAULT_FX_SETTLE_FLOOR_TO_USD.get(key, 1.0)))
+
+
+def polymarket_v2_share_haircut_frac(price: float, fee_rate_bps: float = 0.0) -> float:
+    """
+    Polymarket Protocol V2 BUY share haircut `h(p) = fee_usd_per_gross_share / p = rate * (1 - p)`.
+    Delivering `1.0` net outcome share requires `1 / (1 - h(p))` gross shares on the ask book.
+    """
+    if price <= 0.0 or price >= 1.0 or float(fee_rate_bps or 0.0) <= 0.0:
+        return 0.0
+    rate = float(fee_rate_bps) / 10_000.0
+    return min(0.50, max(0.0, rate * (1.0 - float(price))))
+
 
 def polymarket_taker_fee_usd(
     shares: float,
@@ -206,6 +255,46 @@ def stx_ontario_win_commission_usd(shares: float, price: float, win_commission_r
     return max(0.0, shares * (1.0 - price) * float(win_commission_rate))
 
 
+def probable_markets_taker_fee_usd(
+    shares: float,
+    price: float,
+    fee_rate_bps: float = 175.0,
+    fee_enabled: bool = True,
+) -> float:
+    """
+    Probable Markets (`probable.markets` BNB Chain CTF CLOB) taker fee:
+      - Maker (`postOnly`): `0.00%`.
+      - Taker: parabolic `max(0.0001, max_rate * 4 * p * (1 - p))` applied to trade notional `shares * p`
+        (`1.75%` max at `p = 0.50`, `0.01%` minimum floor near `0` or `1`).
+    """
+    if not fee_enabled or shares <= 0.0 or price <= 0.0 or price >= 1.0:
+        return 0.0
+    max_rate = max(0.0, float(fee_rate_bps or 175.0) / 10_000.0)
+    if max_rate <= 0.0:
+        return 0.0
+    eff_rate = max(0.0001, max_rate * 4.0 * price * (1.0 - price))
+    return max(0.0, shares * price * eff_rate)
+
+
+def derive_xyz_taker_fee_usd(
+    shares: float,
+    price: float,
+    fee_rate_bps: float = 120.0,
+    fee_enabled: bool = True,
+) -> float:
+    """
+    Derive (`derive.xyz` v3 Options CLOB) proportional 2-leg call-spread taker fee per `$1.00`-par share:
+      - Derive charges `taker_fee_rate * S_index` per `1.0` option contract (capped at `12.5%` of option premium)
+        plus `$0.50` fixed `base_fee` per leg (captured in `DEFAULT_EXTERNAL_GAS_USD['derive_xyz'] = $1.05`).
+      - `market.fee_rate_bps` stores `(2 * taker_fee_rate * S_ref / spread_width) * 10_000`, capped at `25%` of
+        synthetic digital price across the two legs.
+    """
+    if not fee_enabled or shares <= 0.0 or price <= 0.0 or price >= 1.0:
+        return 0.0
+    per_share_fee = max(0.0, float(fee_rate_bps or 0.0) / 10_000.0)
+    return max(0.0, shares * min(0.25 * price, per_share_fee))
+
+
 def relay_bridge_drag_usd(notional_usd: float, bridge_bps: float = DEFAULT_RELAY_BRIDGE_DRAG_BPS) -> float:
     """Amortized cross-L2 Relay.link intent rebalance drag (`2.75 bps` = `$0.055` per `$200`)."""
     if notional_usd <= 0.0 or bridge_bps <= 0.0:
@@ -233,6 +322,20 @@ def compute_venue_taker_fee_usd(market: "NormalizedBinaryMarket", shares: float,
         )
     if v == "sx_bet":
         return sx_bet_taker_fee_usd(shares, price)
+    if v == "probable_markets":
+        return probable_markets_taker_fee_usd(
+            shares,
+            price,
+            fee_rate_bps=market.fee_rate_bps,
+            fee_enabled=market.fee_enabled,
+        )
+    if v == "derive_xyz":
+        return derive_xyz_taker_fee_usd(
+            shares,
+            price,
+            fee_rate_bps=market.fee_rate_bps,
+            fee_enabled=market.fee_enabled,
+        )
     if v == "forecastex":
         return forecastex_taker_fee_usd(shares, price)
     if v == "stx_ontario":
@@ -268,8 +371,10 @@ def walk_asks_for_shares(
     asks: Sequence[OrderLevel],
     target_shares: float,
     market: "NormalizedBinaryMarket",
+    *,
+    max_price: Optional[float] = None,
 ) -> L2WalkFill:
-    """Walks sorted ask levels to buy exact `target_shares`, computing exact per-level taker fees."""
+    """Walks sorted ask levels to buy exact `target_shares` up to optional FOK `max_price`, computing exact per-level taker fees."""
     clean = sorted(
         [lvl for lvl in asks if 0.0001 < lvl.price < 0.9999 and lvl.size > 1e-6],
         key=lambda x: x.price,
@@ -283,10 +388,24 @@ def walk_asks_for_shares(
     cost = 0.0
     fees = 0.0
     worst = clean[0].price
+    is_poly_v2_buy = market.venue.lower() == "polymarket" and market.fee_enabled and float(market.fee_rate_bps or 0.0) > 0.0
     for lvl in clean:
-        take = min(rem, lvl.size)
-        cost += take * lvl.price
-        fees += compute_venue_taker_fee_usd(market, take, lvl.price)
+        if max_price is not None and lvl.price > float(max_price) + 1e-9:
+            break
+        if is_poly_v2_buy:
+            h_frac = polymarket_v2_share_haircut_frac(lvl.price, market.fee_rate_bps)
+            keep_frac = max(0.50, 1.0 - h_frac)
+            max_net_from_lvl = lvl.size * keep_frac
+            take = min(rem, max_net_from_lvl)
+            gross_take = take / keep_frac
+            total_lvl_cash = gross_take * lvl.price
+            base_cost = take * lvl.price
+            cost += base_cost
+            fees += max(0.0, total_lvl_cash - base_cost)
+        else:
+            take = min(rem, lvl.size)
+            cost += take * lvl.price
+            fees += compute_venue_taker_fee_usd(market, take, lvl.price)
         worst = lvl.price
         rem -= take
         if rem <= 1e-7:
@@ -377,6 +496,7 @@ class NormalizedBinaryMarket:
     oracle_stream_url: str = ""       # e.g. "https://data.chain.link/streams/btc-usd-twap-60s-streams"
     spot_reference_usd: float = 0.0
     strike_price: Optional[float] = None
+    strike_direction: str = ""        # "" / "ABOVE" (YES pays >= K) vs "BELOW" (YES pays <= K)
     start_ts: Optional[int] = None
     end_ts: Optional[int] = None
     cancel_rule: str = "50_50"        # "50_50" (Polymarket) vs "VOID" (SX Bet / Betfair / Matchbook)
@@ -410,6 +530,7 @@ class NormalizedBinaryMarket:
     partition_label: str = ""         # Canonical mutually-exclusive outcome label within partition
     partition_expected_legs: int = 0  # Expected total mutually-exclusive outcomes in exhaustive slate
     data_origin: str = "LIVE_VERIFIED"  # "LIVE_VERIFIED" | "OFFLINE_SYNTHETIC" | "REGULATORY_PUBLIC_DELAYED"
+    is_synthetic_depth: bool = False  # True when top-of-book depth is a summary placeholder awaiting L2 hydration
     outcomes_canonicalized: bool = False
 
     def has_crossed_or_invalid_book(self) -> bool:
@@ -561,13 +682,13 @@ def infer_crypto_oracle_signature(title: str, description: str, slug: str = "") 
             break
 
     horizon = ""
-    if "15-min" in blob or "15m-" in blob or "15 min" in blob:
+    if any(tok in blob for tok in ("15-min", "15m-", "-15m", "15 min", "15-minute", "15minute")):
         horizon = "15m"
-    elif "5-min" in blob or "5m-" in blob or "5 min" in blob:
+    elif any(tok in blob for tok in ("5-min", "5m-", "-5m", "5 min", "5-minute", "5minute")):
         horizon = "5m"
-    elif "4h" in blob or "4 hour" in blob or "4-hour" in blob:
+    elif any(tok in blob for tok in ("4h", "4 hour", "4-hour")):
         horizon = "4h"
-    elif "hourly" in blob or "1 hour" in blob or "1h" in blob or "pm-et" in blob or "am-et" in blob:
+    elif any(tok in blob for tok in ("hourly", "1 hour", "1-hour", "1h", "pm-et", "am-et")):
         horizon = "1h"
     elif "daily" in blob or "-on-" in slug.lower():
         horizon = "daily"
@@ -584,7 +705,62 @@ def infer_crypto_oracle_signature(title: str, description: str, slug: str = "") 
         return (asset, horizon, "cf_brti_60s", "")
     if "deribit" in blob:
         return (asset, horizon, "deribit_30m_twap", "")
+    if "derive.xyz" in blob or "derive_30m_twap" in blob:
+        return (asset, horizon, "derive_30m_twap", "")
     return (asset, horizon, "", "")
+
+
+def is_relative_up_or_down_crypto(slug: str, title: str) -> bool:
+    """Returns True for relative candle markets (`Up or Down`, `updown`) whose reference open is dynamic rather than a fixed barrier strike."""
+    blob = f"{slug or ''} {title or ''}".lower()
+    return any(tok in blob for tok in ("up or down", "up-or-down", "updown", "up-down"))
+
+
+_CRYPTO_STRIKE_ABOVE_RE = re.compile(
+    r"(?:above|over|exceeds?|reach(?:es)?|>=|>)\s*\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([kKmM])?\b",
+    re.IGNORECASE,
+)
+_CRYPTO_STRIKE_BELOW_RE = re.compile(
+    r"(?:below|under|less\s+than|dips?\s+to|<=|<)\s*\$?\s*(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\s*([kKmM])?\b",
+    re.IGNORECASE,
+)
+
+
+def extract_crypto_strike_and_direction(title: str, description: str = "") -> Tuple[Optional[float], str]:
+    """
+    Extracts `(strike_price, strike_direction)` (`"ABOVE"` / `"BELOW"`) for single-barrier crypto strike markets.
+    Returns `(None, "")` for relative Up/Down candles and dual-barrier race markets (`$X or $Y first`).
+    """
+    txt = (title or "").strip()
+    if not txt:
+        return (None, "")
+    low = txt.lower()
+    if "up or down" in low or "updown" in low or (" or " in low and "first" in low):
+        return (None, "")
+
+    def _parse_num(num_s: str, suffix: str) -> Optional[float]:
+        try:
+            val = float(num_s.replace(",", ""))
+        except ValueError:
+            return None
+        suf = (suffix or "").lower()
+        if suf == "k":
+            val *= 1_000.0
+        elif suf == "m":
+            val *= 1_000_000.0
+        return val if val > 0.0 else None
+
+    m_below = _CRYPTO_STRIKE_BELOW_RE.search(txt)
+    m_above = _CRYPTO_STRIKE_ABOVE_RE.search(txt)
+    if m_below and not m_above:
+        val = _parse_num(m_below.group(1), m_below.group(2) or "")
+        if val is not None:
+            return (val, "BELOW")
+    if m_above and not m_below:
+        val = _parse_num(m_above.group(1), m_above.group(2) or "")
+        if val is not None:
+            return (val, "ABOVE")
+    return (None, "")
 
 
 # ---------------------------------------------------------------------------
@@ -615,6 +791,15 @@ class CrossVenueRuleVerifier:
         self.min_cross_oracle_basis_pct = float(min_cross_oracle_basis_pct)
         self.walkover_50_50_max_px = float(walkover_50_50_max_px)
 
+    @staticmethod
+    def _effective_strike_tail(mkt: NormalizedBinaryMarket, bought_side: str) -> str:
+        """Returns `'ABOVE'` if `bought_side` pays on `[K, +inf)` else `'BELOW'` (`(-inf, K]`)."""
+        raw_dir = (mkt.strike_direction or "ABOVE").strip().upper()
+        is_below_contract = raw_dir == "BELOW"
+        if bought_side.strip().upper() == "YES":
+            return "BELOW" if is_below_contract else "ABOVE"
+        return "ABOVE" if is_below_contract else "BELOW"
+
     def verify_pair(
         self,
         leg_a: NormalizedBinaryMarket,
@@ -631,12 +816,21 @@ class CrossVenueRuleVerifier:
         cancel_windfall = 0.0
 
         # Ensure opposite logical outcomes unless strike corridor super-replication is used
+        both_have_strikes = leg_a.strike_price is not None and leg_b.strike_price is not None
         same_strike = (
-            leg_a.strike_price is None
-            or leg_b.strike_price is None
-            or abs(float(leg_a.strike_price) - float(leg_b.strike_price)) < 1e-6
+            (leg_a.strike_price is None and leg_b.strike_price is None)
+            or (both_have_strikes and abs(float(leg_a.strike_price) - float(leg_b.strike_price)) < 1e-6)
         )
-        if same_strike and side_a.upper() == side_b.upper():
+        if both_have_strikes:
+            tail_a = self._effective_strike_tail(leg_a, side_a)
+            tail_b = self._effective_strike_tail(leg_b, side_b)
+            if tail_a == tail_b:
+                failures.append(
+                    "GATE1_IDENTICAL_SIDE_NOT_HEDGED"
+                    if same_strike
+                    else "GATE2_CORRIDOR_REQUIRES_YES_LOW_AND_NO_HIGH"
+                )
+        elif same_strike and side_a.upper() == side_b.upper():
             failures.append("GATE1_IDENTICAL_SIDE_NOT_HEDGED")
 
         # -------------------------------------------------------------------
@@ -652,26 +846,40 @@ class CrossVenueRuleVerifier:
                     f"GATE1_TEAM_OUTCOME_ORDER_MISMATCH({leg_a.yes_label}!={leg_b.yes_label})"
                 )
 
-        if leg_a.end_ts and leg_b.end_ts:
-            skew = abs(int(leg_a.end_ts) - int(leg_b.end_ts))
+        explicitly_linked_cond = bool(
+            (leg_a.condition_id and leg_a.condition_id.lower() in {c.lower() for c in leg_b.polymarket_condition_ids})
+            or (leg_b.condition_id and leg_b.condition_id.lower() in {c.lower() for c in leg_a.polymarket_condition_ids})
+        )
+        explicitly_linked_slug = bool(
+            (leg_a.external_slug and leg_b.venue == "polymarket" and leg_a.external_slug == leg_b.slug)
+            or (leg_b.external_slug and leg_a.venue == "polymarket" and leg_b.external_slug == leg_a.slug)
+        )
+
+        if leg_a.category == "sports" and leg_b.category == "sports":
+            sp_ok, sp_err = sports_timestamps_compatible(
+                leg_a,
+                leg_b,
+                explicit_link=(explicitly_linked_slug or explicitly_linked_cond),
+            )
+            if not sp_ok and sp_err:
+                failures.append(sp_err)
+        elif leg_a.end_ts and leg_b.end_ts:
+            ts_a = int(leg_a.end_ts)
+            ts_b = int(leg_b.end_ts)
+            skew = abs(ts_a - ts_b)
             if leg_a.category == "crypto" or leg_b.category == "crypto":
                 allowed_skew = 0
-            elif leg_a.category == "sports" and leg_b.category == "sports":
-                # Sports venues report tip-off (`gameStartTime`) vs +24h expiration buffer
-                allowed_skew = 36 * 3600
+                if skew > allowed_skew:
+                    failures.append(f"GATE1_TIMESTAMP_MISMATCH({skew}s>{allowed_skew}s)")
             else:
                 allowed_skew = max_end_ts_skew_sec
-            if skew > allowed_skew:
-                failures.append(f"GATE1_TIMESTAMP_MISMATCH({skew}s>{allowed_skew}s)")
+                if skew > allowed_skew:
+                    failures.append(f"GATE1_TIMESTAMP_MISMATCH({skew}s>{allowed_skew}s)")
 
         if leg_a.clarification_count > 0 or leg_b.clarification_count > 0:
             if not (leg_a.rules_hash and leg_b.rules_hash and leg_a.rules_hash == leg_b.rules_hash):
                 failures.append("GATE1_UMA_CLARIFICATION_DRIFT")
 
-        explicitly_linked_cond = bool(
-            (leg_a.condition_id and leg_a.condition_id.lower() in {c.lower() for c in leg_b.polymarket_condition_ids})
-            or (leg_b.condition_id and leg_b.condition_id.lower() in {c.lower() for c in leg_a.polymarket_condition_ids})
-        )
         if leg_a.venue == "polymarket" and leg_a.condition_id and leg_b.polymarket_condition_ids:
             if leg_a.condition_id.lower() not in {c.lower() for c in leg_b.polymarket_condition_ids}:
                 failures.append("GATE1_CONDITION_ID_STRIKE_MISMATCH")
@@ -687,8 +895,15 @@ class CrossVenueRuleVerifier:
         if both_crypto:
             if leg_a.asset and leg_b.asset and leg_a.asset != leg_b.asset:
                 failures.append(f"GATE1_ASSET_MISMATCH({leg_a.asset}!={leg_b.asset})")
-            if leg_a.horizon and leg_b.horizon and leg_a.horizon != leg_b.horizon:
-                failures.append(f"GATE1_HORIZON_MISMATCH({leg_a.horizon}!={leg_b.horizon})")
+            if (leg_a.horizon or leg_b.horizon) and (leg_a.horizon or "") != (leg_b.horizon or ""):
+                if not (explicitly_linked_cond and same_rules_sha256):
+                    failures.append(f"GATE1_HORIZON_MISMATCH({leg_a.horizon or 'UNKNOWN'}!={leg_b.horizon or 'UNKNOWN'})")
+            rel_a = is_relative_up_or_down_crypto(leg_a.slug, leg_a.title)
+            rel_b = is_relative_up_or_down_crypto(leg_b.slug, leg_b.title)
+            if rel_a != rel_b:
+                failures.append("GATE1_RELATIVE_CANDLE_VS_FIXED_STRIKE_MISMATCH")
+            if (leg_a.strike_price is None) != (leg_b.strike_price is None):
+                failures.append("GATE1_MISSING_CRYPTO_STRIKE")
             if not leg_a.oracle_family or not leg_b.oracle_family:
                 if not (explicitly_linked_cond and same_rules_sha256 and leg_a.clarification_count == 0 and leg_b.clarification_count == 0):
                     failures.append("GATE1_UNKNOWN_CRYPTO_ORACLE")
@@ -699,6 +914,15 @@ class CrossVenueRuleVerifier:
                     and leg_a.oracle_stream_url != leg_b.oracle_stream_url
                 ):
                     failures.append("GATE1_CHAINLINK_STREAM_URL_MISMATCH")
+                if both_have_strikes:
+                    tail_a = self._effective_strike_tail(leg_a, side_a)
+                    tail_b = self._effective_strike_tail(leg_b, side_b)
+                    if tail_a != tail_b:
+                        above_strike = float(leg_a.strike_price if tail_a == "ABOVE" else leg_b.strike_price)
+                        below_strike = float(leg_b.strike_price if tail_b == "BELOW" else leg_a.strike_price)
+                        corridor_width = below_strike - above_strike
+                        if corridor_width + 1e-9 < 0.0:
+                            failures.append(f"GATE2_NEGATIVE_STRIKE_CORRIDOR(dK={corridor_width:.2f}<0)")
             else:
                 # ---------------------------------------------------------------
                 # GATE 2: Cross-Oracle Strike Dominance Corridor (`dK >= B_max`)
@@ -708,24 +932,37 @@ class CrossVenueRuleVerifier:
                         f"GATE1_CROSS_ORACLE_NO_STRIKE_CORRIDOR({leg_a.oracle_family}!={leg_b.oracle_family})"
                     )
                 else:
-                    # Must buy YES (> K_low) on one venue and NO (< K_high) on the other with K_high - K_low >= B_max
-                    yes_strike = leg_a.strike_price if side_a.upper() == "YES" else leg_b.strike_price
-                    no_strike = leg_b.strike_price if side_b.upper() == "NO" else leg_a.strike_price
-                    if side_a.upper() == side_b.upper():
-                        failures.append("GATE2_CORRIDOR_REQUIRES_YES_LOW_AND_NO_HIGH")
+                    # Must cover [K_low, +inf) on one venue and (-inf, K_high] on the other with K_high - K_low >= B_max
+                    tail_a = self._effective_strike_tail(leg_a, side_a)
+                    tail_b = self._effective_strike_tail(leg_b, side_b)
+                    if tail_a == tail_b:
+                        if "GATE2_CORRIDOR_REQUIRES_YES_LOW_AND_NO_HIGH" not in failures and "GATE1_IDENTICAL_SIDE_NOT_HEDGED" not in failures:
+                            failures.append("GATE2_CORRIDOR_REQUIRES_YES_LOW_AND_NO_HIGH")
                     else:
-                        corridor_width = float(no_strike) - float(yes_strike)
-                        ref_spot = max(leg_a.spot_reference_usd, leg_b.spot_reference_usd, float(yes_strike))
-                        b_max = self.min_cross_oracle_basis_pct * ref_spot
+                        above_strike = float(leg_a.strike_price if tail_a == "ABOVE" else leg_b.strike_price)
+                        below_strike = float(leg_b.strike_price if tail_b == "BELOW" else leg_a.strike_price)
+                        corridor_width = below_strike - above_strike
+                        ref_spot = max(leg_a.spot_reference_usd, leg_b.spot_reference_usd, above_strike, below_strike)
+                        has_30m_twap = any(
+                            ("deribit" in (ofam or "").lower() or "30m_twap" in (ofam or "").lower())
+                            for ofam in (leg_a.oracle_family, leg_b.oracle_family)
+                        )
+                        eff_basis_pct = (
+                            max(self.min_cross_oracle_basis_pct, 0.0150)
+                            if has_30m_twap
+                            else self.min_cross_oracle_basis_pct
+                        )
+                        b_max = eff_basis_pct * ref_spot
                         if corridor_width + 1e-9 < b_max:
                             failures.append(
                                 f"GATE2_INSUFFICIENT_ORACLE_CORRIDOR(dK={corridor_width:.2f}<B_max={b_max:.2f})"
                             )
         else:
-            # Non-crypto markets: verify explicit cross-link, deterministic sports box-score, or exact rules_hash + strike parity
+            # Non-crypto markets: verify explicit cross-link (matching target Polymarket slug/conditionId),
+            # deterministic sports box-score, or exact rules_hash + strike parity
             explicitly_linked = (
-                (leg_a.is_poly_arbitrage and bool(leg_a.rules_hash))
-                or (leg_b.is_poly_arbitrage and bool(leg_b.rules_hash))
+                (leg_a.is_poly_arbitrage and bool(leg_a.rules_hash) and explicitly_linked_slug)
+                or (leg_b.is_poly_arbitrage and bool(leg_b.rules_hash) and explicitly_linked_slug)
                 or explicitly_linked_cond
             )
             same_rules_hash = bool(leg_a.rules_hash and leg_b.rules_hash and leg_a.rules_hash == leg_b.rules_hash)
@@ -737,9 +974,12 @@ class CrossVenueRuleVerifier:
                 nums_b = re.findall(r"\d+(?:\.\d+)?", (leg_b.title or "").replace(",", ""))
                 if nums_a != nums_b:
                     failures.append(f"GATE1_BOILERPLATE_RULES_STRIKE_MISMATCH({nums_a}!={nums_b})")
-            if leg_a.category == "sports" and leg_b.category == "sports":
+            if leg_a.category == "sports" or leg_b.category == "sports":
                 if (leg_a.horizon or "match") != (leg_b.horizon or "match"):
                     failures.append(f"GATE1_SPORTS_LINE_TYPE_MISMATCH({leg_a.horizon}!={leg_b.horizon})")
+                if is_sports_derivative_line(leg_a.slug, leg_a.title) != is_sports_derivative_line(leg_b.slug, leg_b.title):
+                    if f"GATE1_SPORTS_LINE_TYPE_MISMATCH({leg_a.horizon}!={leg_b.horizon})" not in failures:
+                        failures.append("GATE1_SPORTS_SUBGAME_OR_DERIVATIVE_MISMATCH")
 
         # -------------------------------------------------------------------
         # GATE 3: 50-50 Cancellation / Walkover Windfall Ceiling & 3-Way Draw Guard
@@ -891,23 +1131,115 @@ class ReadOnlyHttpClient:
 
 _SPORTS_DERIVATIVE_SLUG_TOKENS: Tuple[str, ...] = (
     "-spread-", "-total-", "-1h-", "-2h-", "-1p-", "-2p-", "-3p-",
-    "-q1-", "-q2-", "-q3-", "-q4-", "-f5-", "-set1", "-set2", "-map1", "-map2",
+    "-q1-", "-q2-", "-q3-", "-q4-", "-f5-",
+    "-set1", "-set2", "-set3", "-set4", "-set5",
+    "-set-1", "-set-2", "-set-3", "-set-4", "-set-5",
+    "-map1", "-map2", "-map3", "-map4", "-map5",
+    "-map-1", "-map-2", "-map-3", "-map-4", "-map-5",
+    "-game1", "-game2", "-game3", "-game4", "-game5", "-game6", "-game7",
+    "-game-1", "-game-2", "-game-3", "-game-4", "-game-5", "-game-6", "-game-7",
+    "-g1-", "-g2-", "-g3-", "-first-blood",
     "-handicap", "-puckline", "-runline", "-over-", "-under-",
 )
 _SPORTS_DERIVATIVE_TITLE_TOKENS: Tuple[str, ...] = (
     "spread:", "handicap", "1st half", "2nd half", "first half",
     "1st period", "2nd period", "3rd period", "1st quarter", "1st 5 innings",
-    "set 1", "set 2", "map 1", "map 2", "o/u ", "over/under", "(-", "(+",
+    "set 1", "set 2", "set 3", "set 4", "set 5",
+    "map 1", "map 2", "map 3", "map 4", "map 5",
+    "game 1", "game 2", "game 3", "game 4", "game 5", "game 6", "game 7",
+    "1st map", "2nd map", "3rd map", "1st game", "2nd game", "3rd game", "1st set", "2nd set",
+    "first blood", "total kills", "total maps", "total games", "race to ",
+    "o/u ", "over/under", "(-", "(+",
 )
 
 
 def is_sports_derivative_line(slug: str, title: str) -> bool:
-    """Detects point spreads, pucklines, runlines, totals, and partial-period/set markets so they never pair with full-game moneylines."""
+    """Detects point spreads, pucklines, runlines, totals, and partial-period/set/map/game markets so they never pair with full-game moneylines."""
     s_low = (slug or "").lower()
     t_low = (title or "").lower()
     return any(tok in s_low for tok in _SPORTS_DERIVATIVE_SLUG_TOKENS) or any(
         tok in t_low for tok in _SPORTS_DERIVATIVE_TITLE_TOKENS
     )
+
+
+def has_esports_or_two_game_draw_hazard(slug: str, title: str, desc: str = "") -> bool:
+    """Detects Best-of-2 (`BO2`, `best of 2`, `-dh2-`) series where a 1-1 tie creates an unhedged draw partition."""
+    blob = f"{slug or ''} {title or ''} {desc or ''}".lower()
+    return any(tok in blob for tok in ("-bo2", "(bo2)", " bo2 ", "best of 2", "best-of-2", "-dh2-"))
+
+
+_SPORTS_ISO_DATE_RE = re.compile(r"(?:^|[^0-9])(20\d{2}-\d{2}-\d{2})(?:$|[^0-9])")
+_SPORTS_STX_DATE_RE = re.compile(
+    r"\bSTX[A-Z0-9]*-(\d{2})(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)(\d{2})\d{4}",
+    flags=re.IGNORECASE,
+)
+_MONTH_ABBR_TO_NUM: Dict[str, str] = {
+    "JAN": "01", "FEB": "02", "MAR": "03", "APR": "04", "MAY": "05", "JUN": "06",
+    "JUL": "07", "AUG": "08", "SEP": "09", "OCT": "10", "NOV": "11", "DEC": "12",
+}
+_SPORTS_TIPOFF_VENUES: frozenset[str] = frozenset({"polymarket", "sx_bet", "stx_ontario"})
+_SPORTS_POSTGAME_24H_VENUES: frozenset[str] = frozenset({"limitless", "predict_fun"})
+
+
+def extract_sports_calendar_date(slug: str, market_id: str = "", external_slug: str = "") -> str:
+    """Extracts an explicit game calendar date (`YYYY-MM-DD`) from Polymarket/Limitless slugs or STX symbols."""
+    blob = f"{slug or ''} {market_id or ''} {external_slug or ''}"
+    m_iso = _SPORTS_ISO_DATE_RE.search(blob)
+    if m_iso:
+        return m_iso.group(1)
+    m_stx = _SPORTS_STX_DATE_RE.search(blob)
+    if m_stx:
+        yy, mon, dd = m_stx.group(1), m_stx.group(2).upper(), m_stx.group(3)
+        mm = _MONTH_ABBR_TO_NUM.get(mon)
+        if mm:
+            return f"20{yy}-{mm}-{dd}"
+    return ""
+
+
+def sports_timestamps_compatible(
+    leg_a: NormalizedBinaryMarket,
+    leg_b: NormalizedBinaryMarket,
+    *,
+    explicit_link: bool = False,
+) -> Tuple[bool, str]:
+    """
+    Verifies sports calendar-date and venue-normalized tip-off compatibility.
+    Tip-off venues (`polymarket`, `sx_bet`, `stx_ontario`) store `tip_ts`, whereas post-game
+    settlement venues (`limitless`, `predict_fun`) set `expirationTimestamp = tip_ts + 86_400s` (`+24h`).
+    Normalizing `exp_ts - 86_400` preserves genuine same-night `+24h` pairs while blocking
+    Night-1 Limitless (`T1 + 24h`) vs Night-2 tip-off (`T2 ≈ T1 + 24h`).
+    """
+    date_a = extract_sports_calendar_date(leg_a.slug, leg_a.market_id, leg_a.external_slug)
+    date_b = extract_sports_calendar_date(leg_b.slug, leg_b.market_id, leg_b.external_slug)
+    if date_a and date_b and date_a != date_b:
+        return False, f"GATE1_SPORTS_DATE_MISMATCH({date_a}!={date_b})"
+    if not leg_a.end_ts or not leg_b.end_ts:
+        return True, ""
+    ts_a, ts_b = int(leg_a.end_ts), int(leg_b.end_ts)
+    a_tip = leg_a.venue in _SPORTS_TIPOFF_VENUES
+    b_tip = leg_b.venue in _SPORTS_TIPOFF_VENUES
+    a_post = leg_a.venue in _SPORTS_POSTGAME_24H_VENUES
+    b_post = leg_b.venue in _SPORTS_POSTGAME_24H_VENUES
+    if (a_tip and b_tip) or (a_post and b_post):
+        skew = abs(ts_a - ts_b)
+        if skew > 6 * 3600:
+            return False, f"GATE1_TIMESTAMP_MISMATCH({skew}s>21600s)"
+        return True, ""
+    if (a_tip and b_post) or (b_tip and a_post):
+        tip_ts = ts_a if a_tip else ts_b
+        exp_ts = ts_b if a_tip else ts_a
+        est_tip_skew = abs((exp_ts - 86_400) - tip_ts)
+        same_exp_linked = bool(explicit_link and abs(exp_ts - tip_ts) <= 6 * 3600)
+        if est_tip_skew > 6 * 3600 and not same_exp_linked:
+            return (
+                False,
+                f"GATE1_TIMESTAMP_MISMATCH(est_tip_skew={est_tip_skew}s>21600s,delta_exp={exp_ts - tip_ts}s)",
+            )
+        return True, ""
+    skew = abs(ts_a - ts_b)
+    if skew > 12 * 3600:
+        return False, f"GATE1_TIMESTAMP_MISMATCH({skew}s>43200s)"
+    return True, ""
 
 
 def parse_limitless_market(raw: Mapping[str, Any], orderbook: Optional[Mapping[str, Any]] = None) -> Optional[NormalizedBinaryMarket]:
@@ -955,7 +1287,7 @@ def parse_limitless_market(raw: Mapping[str, Any], orderbook: Optional[Mapping[s
         meta.get("takerDelayMs") if meta.get("takerDelayMs") is not None else (settings.get("takerDelayMs") or 0.0)
     )
     strike_price: Optional[float] = None
-    if meta.get("openPrice") not in (None, ""):
+    if meta.get("openPrice") not in (None, "") and not is_relative_up_or_down_crypto(slug, title):
         try:
             strike_price = float(meta["openPrice"])
         except (TypeError, ValueError):
@@ -1019,8 +1351,11 @@ def parse_limitless_market(raw: Mapping[str, Any], orderbook: Optional[Mapping[s
                 break
         parts = re.split(r"\s+vs\.?\s+", title, maxsplit=1, flags=re.IGNORECASE)
         if len(parts) == 2:
-            yes_lbl, no_lbl = parts[0].strip(), parts[1].strip()
-            base_mk = canonical_matchup_key(yes_lbl, no_lbl, end_ts)
+            raw_t1 = parts[0].strip()
+            raw_t2 = re.split(r"\s+-\s+", parts[1], maxsplit=1)[0].strip()
+            yes_lbl, no_lbl = raw_t1, raw_t2
+            est_tip_ts = (end_ts - 86_400) if end_ts else None
+            base_mk = canonical_matchup_key(yes_lbl, no_lbl, est_tip_ts)
             if is_sports_derivative_line(slug, title):
                 asset = f"DERIVATIVE::{slug}::{base_mk}"
                 horizon = "spread_or_period"
@@ -1033,7 +1368,15 @@ def parse_limitless_market(raw: Mapping[str, Any], orderbook: Optional[Mapping[s
                 y_tok, n_tok = n_tok, y_tok
                 y_asks, n_asks = n_asks, y_asks
                 y_bids, n_bids = n_bids, y_bids
+    elif category != "crypto" and is_sports_derivative_line(slug, title):
+        horizon = "spread_or_period"
 
+    strike_dir = ""
+    if category == "crypto":
+        inf_k, inf_dir = extract_crypto_strike_and_direction(title, desc)
+        if strike_price is None and inf_k is not None:
+            strike_price = inf_k
+        strike_dir = inf_dir
     return NormalizedBinaryMarket(
         venue="limitless",
         market_id=str(raw.get("id") or slug),
@@ -1057,9 +1400,11 @@ def parse_limitless_market(raw: Mapping[str, Any], orderbook: Optional[Mapping[s
         oracle_stream_url=stream_url,
         end_ts=end_ts,
         strike_price=strike_price,
+        strike_direction=strike_dir,
         cancel_rule="50_50",
         tennis_retirement_rule="ONE_BALL" if sport == "tennis" else "NA",
         sport=sport,
+        has_unlisted_draw=(sport == "soccer") or has_esports_or_two_game_draw_hazard(slug, title, desc),
         condition_id=str(raw.get("conditionId") or ""),
         is_poly_arbitrage=bool(meta.get("isPolyArbitrage")),
         external_slug=str(meta.get("externalSlug") or raw.get("externalSlug") or ""),
@@ -1164,12 +1509,20 @@ def parse_sx_bet_summary_fixture(
             yes_lbl, no_lbl = str(m.get("outcomeTwoName") or team_two), str(m.get("outcomeOneName") or team_one)
             y_ask, y_bid, n_ask, n_bid = ask_2, bid_2, ask_1, bid_1
 
-        has_unlisted_draw = sport == "soccer"
+        m_slug = str(m.get("marketHash") or fixture.get("id"))
+        m_title = str(m.get("marketName") or m.get("group1") or f"{team_one} vs {team_two}")
+        is_deriv = is_sports_derivative_line(m_slug, m_title)
+        has_unlisted_draw = (
+            (sport == "soccer")
+            or (mtype_id == 1)
+            or (mtype in ("1X2", "THREE_WAY"))
+            or has_esports_or_two_game_draw_hazard(m_slug, m_title, lg_low)
+        )
         out.append(
             NormalizedBinaryMarket(
                 venue="sx_bet",
-                market_id=str(m.get("marketHash") or fixture.get("id")),
-                slug=str(m.get("marketHash") or fixture.get("id")),
+                market_id=m_slug,
+                slug=m_slug,
                 title=f"{team_one} vs {team_two}",
                 category="sports",
                 yes_label=yes_lbl,
@@ -1183,8 +1536,8 @@ def parse_sx_bet_summary_fixture(
                 taker_delay_ms=betting_delay_ms if game_live else 0.0,
                 min_shares=5.0,
                 supports_split_merge=False,
-                asset=match_key,
-                horizon="match",
+                asset=f"DERIVATIVE::{m_slug}::{match_key}" if is_deriv else match_key,
+                horizon="spread_or_period" if is_deriv else "match",
                 oracle_family="official_boxscore",
                 end_ts=end_ts,
                 cancel_rule="VOID",
@@ -1194,8 +1547,9 @@ def parse_sx_bet_summary_fixture(
                 is_player_prop=str(m.get("betGroup") or "") == "player-props",
                 is_listed_pitcher=False,
                 game_live=game_live,
-                player_participated=game_live,
+                player_participated=bool(m.get("playerParticipated", False)),
                 has_unlisted_draw=has_unlisted_draw,
+                is_synthetic_depth=True,
             )
         )
     return out
@@ -1236,9 +1590,16 @@ def parse_predict_fun_market(
             if sp_tok in blob and yes_lbl.lower() not in _generic and no_lbl.lower() not in _generic:
                 category = "sports"
                 sport = sp_val
-                asset = canonical_matchup_key(yes_lbl, no_lbl, None)
-                horizon = "match"
+                base_mk = canonical_matchup_key(yes_lbl, no_lbl, None)
+                if is_sports_derivative_line(slug, title):
+                    asset = f"DERIVATIVE::{slug}::{base_mk}"
+                    horizon = "spread_or_period"
+                else:
+                    asset = base_mk
+                    horizon = "match"
                 break
+        if category != "sports" and is_sports_derivative_line(slug, title):
+            horizon = "spread_or_period"
 
     yes_asks: List[OrderLevel] = []
     yes_bids: List[OrderLevel] = []
@@ -1273,6 +1634,18 @@ def parse_predict_fun_market(
                     target_list.append(OrderLevel(px, sz))
 
     pm_conds = [str(c).lower() for c in (raw.get("polymarketConditionIds") or []) if c]
+    raw_fee_bps = raw.get("feeRateBps")
+    pf_fee_bps = float(raw_fee_bps) if raw_fee_bps is not None else 200.0
+    pf_end_ts: Optional[int] = None
+    pf_end_raw = raw.get("endsAt") or raw.get("expirationDate") or raw.get("endDate")
+    if isinstance(pf_end_raw, (int, float)) and pf_end_raw > 0:
+        pf_end_ts = int(pf_end_raw // 1000) if pf_end_raw > 1e11 else int(pf_end_raw)
+    elif isinstance(pf_end_raw, str) and pf_end_raw.strip():
+        try:
+            pf_end_ts = int(datetime.fromisoformat(pf_end_raw.strip().replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            pf_end_ts = None
+    pf_strike, pf_strike_dir = extract_crypto_strike_and_direction(title, desc) if category == "crypto" else (None, "")
     mkt = NormalizedBinaryMarket(
         venue="predict_fun",
         market_id=mid,
@@ -1285,8 +1658,8 @@ def parse_predict_fun_market(
         yes_bids=sorted(yes_bids, key=lambda x: x.price, reverse=True),
         no_asks=sorted(no_asks, key=lambda x: x.price),
         no_bids=sorted(no_bids, key=lambda x: x.price, reverse=True),
-        fee_rate_bps=float(raw.get("feeRateBps") or 200.0),
-        fee_enabled=float(raw.get("feeRateBps") or 0.0) > 0.0,
+        fee_rate_bps=pf_fee_bps,
+        fee_enabled=pf_fee_bps > 0.0,
         taker_delay_ms=0.0,
         min_shares=5.0,
         supports_split_merge=True,
@@ -1295,9 +1668,12 @@ def parse_predict_fun_market(
         horizon=horizon,
         oracle_family=oracle_family or ("official_boxscore" if category == "sports" else ("uma" if pm_conds else "")),
         oracle_stream_url=stream_url,
+        strike_price=pf_strike,
+        strike_direction=pf_strike_dir,
+        end_ts=pf_end_ts,
         cancel_rule="50_50",
         sport=sport,
-        has_unlisted_draw=(sport == "soccer"),
+        has_unlisted_draw=(sport == "soccer") or has_esports_or_two_game_draw_hazard(slug, title, desc),
         condition_id=str(raw.get("conditionId") or "").lower(),
         polymarket_condition_ids=pm_conds,
         rules_hash=normalize_rules_sha256(desc),
@@ -1524,6 +1900,7 @@ def parse_stx_ontario_market(raw: Mapping[str, Any]) -> Optional[NormalizedBinar
         completed_sets=int(raw.get("completed_sets") or 0),
         game_live=is_live,
         has_unlisted_draw=(sport == "soccer"),
+        collateral_asset=str(raw.get("collateral_asset") or "CAD"),
     )
 
 
@@ -1598,14 +1975,32 @@ def parse_polymarket_gamma_market(
                 sport = sp_val
                 break
 
-    # Dynamic fee_rate_bps extraction (never hardcode blanket category fees!)
+    # Dynamic fee_rate_bps extraction across Polymarket V2 fee schedules (crypto, sports, weather, politics, macro)
+    fee_sched = raw.get("feeSchedule") if isinstance(raw.get("feeSchedule"), Mapping) else {}
+    fee_type = str(raw.get("feeType") or fee_sched.get("feeType") or fee_sched.get("type") or "").strip().lower()
     if fee_rate_bps_override is not None:
         fee_bps = float(fee_rate_bps_override)
     elif raw.get("takerBaseFee") is not None:
         tb = float(raw["takerBaseFee"])
         fee_bps = tb if tb >= 1.0 else tb * 10_000.0
-    elif raw.get("feesEnabled") is True and category == "crypto":
-        fee_bps = 700.0
+    elif fee_sched.get("rate") is not None or raw.get("feeRate") is not None:
+        fr_raw = float(fee_sched.get("rate") if fee_sched.get("rate") is not None else raw.get("feeRate"))
+        fee_bps = fr_raw if fr_raw >= 1.0 else fr_raw * 10_000.0
+    elif fee_type or raw.get("feesEnabled") is True:
+        if "crypto" in fee_type or category == "crypto":
+            fee_bps = 700.0
+        elif "sports_fees_v2" in fee_type:
+            fee_bps = 300.0
+        elif "politics" in fee_type:
+            fee_bps = 400.0
+        elif any(t in fee_type for t in ("sports", "weather", "economics", "macro", "tech", "culture")):
+            fee_bps = 500.0
+        elif category == "sports" and raw.get("feesEnabled") is True:
+            fee_bps = 500.0
+        elif raw.get("feesEnabled") is True:
+            fee_bps = 500.0
+        else:
+            fee_bps = 0.0
     else:
         fee_bps = 0.0
 
@@ -1646,6 +2041,7 @@ def parse_polymarket_gamma_market(
 
     yes_lbl, no_lbl = str(outcomes[0]), str(outcomes[1])
     y_tok, n_tok = str(tokens[0]), str(tokens[1])
+    pm_strike, pm_strike_dir = extract_crypto_strike_and_direction(title, desc) if category == "crypto" else (None, "")
 
     mkt = NormalizedBinaryMarket(
         venue="polymarket",
@@ -1668,16 +2064,420 @@ def parse_polymarket_gamma_market(
         horizon=horizon or ("match" if category == "sports" else ""),
         oracle_family=oracle_family or ("official_boxscore" if category == "sports" else "uma"),
         oracle_stream_url=stream_url,
+        strike_price=pm_strike,
+        strike_direction=pm_strike_dir,
         end_ts=end_ts,
         cancel_rule="50_50",
         tennis_retirement_rule="ONE_BALL" if sport == "tennis" else "NA",
         sport=sport,
+        has_unlisted_draw=(sport == "soccer") or has_esports_or_two_game_draw_hazard(slug, title, desc),
         condition_id=str(raw.get("conditionId") or "").lower(),
         rules_hash=normalize_rules_sha256(desc),
         yes_token_id=y_tok,
         no_token_id=n_tok,
     )
     return mkt.canonicalize_outcomes_idempotent()
+
+
+def parse_probable_market(
+    raw: Mapping[str, Any],
+    *,
+    yes_book: Optional[Mapping[str, Any]] = None,
+    no_book: Optional[Mapping[str, Any]] = None,
+    books_by_token_id: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> Optional[NormalizedBinaryMarket]:
+    """
+    Parses a live Probable Markets (`probable.markets` BNB Chain CTF CLOB) market dict
+    plus optional `/public/api/v1/book?token_id=...` L2 ladders.
+    Strictly filters out closed, archived, resolved, or disputed contracts.
+    """
+    if (
+        raw.get("closed") is True
+        or raw.get("archived") is True
+        or raw.get("resolved") is True
+        or raw.get("disputed") is True
+        or raw.get("active") is False
+    ):
+        return None
+
+    raw_outcomes = raw.get("outcomes")
+    outcomes: List[str] = (
+        json.loads(raw_outcomes)
+        if isinstance(raw_outcomes, str)
+        else [str(x) for x in (raw_outcomes or [])]
+    )
+    raw_clob_ids = raw.get("clobTokenIds")
+    token_ids: List[str] = (
+        [str(x) for x in json.loads(raw_clob_ids)]
+        if isinstance(raw_clob_ids, str) and raw_clob_ids.strip()
+        else [str(x) for x in (raw_clob_ids or [])]
+    )
+    tokens_arr = raw.get("tokens") if isinstance(raw.get("tokens"), list) else []
+    if len(token_ids) != 2 and len(tokens_arr) == 2:
+        token_ids = [
+            str((t.get("token_id") or t.get("tokenId") or t.get("id") or "")).strip()
+            for t in tokens_arr
+            if isinstance(t, Mapping)
+        ]
+        if len(outcomes) != 2:
+            outcomes = [
+                str((t.get("outcome") or t.get("name") or "")).strip()
+                for t in tokens_arr
+                if isinstance(t, Mapping)
+            ]
+    if len(token_ids) != 2 or not token_ids[0] or not token_ids[1]:
+        return None
+    if len(outcomes) != 2:
+        outcomes = ["Yes", "No"]
+
+    mid = str(raw.get("id") or raw.get("market_slug") or "")
+    slug = str(raw.get("market_slug") or raw.get("slug") or mid).strip()
+    title = str(raw.get("question") or raw.get("title") or slug).strip()
+    desc = str(raw.get("description") or "")
+    asset, horizon, oracle_family, stream_url = infer_crypto_oracle_signature(title, desc, slug)
+
+    end_ts: Optional[int] = None
+    end_iso = raw.get("endDate") or raw.get("end_date")
+    if isinstance(end_iso, (int, float)) and end_iso > 0:
+        end_ts = int(end_iso / 1000.0) if end_iso > 1e11 else int(end_iso)
+    elif isinstance(end_iso, str) and end_iso.strip():
+        try:
+            iso_norm = end_iso.strip().replace(" ", "T")
+            if iso_norm.endswith("+00"):
+                iso_norm = iso_norm + ":00"
+            end_ts = int(datetime.fromisoformat(iso_norm.replace("Z", "+00:00")).timestamp())
+        except ValueError:
+            end_ts = None
+
+    tags_raw = raw.get("tags") or []
+    tag_blob = " ".join(
+        str(t.get("slug") or t.get("label") or t) if isinstance(t, Mapping) else str(t)
+        for t in (tags_raw if isinstance(tags_raw, Sequence) and not isinstance(tags_raw, str) else [])
+    ).lower()
+    category = "crypto" if asset else "other"
+    sport = ""
+    match_key = ""
+    _generic = {"yes", "no", "up", "down", "over", "under", "true", "false"}
+    if not asset and outcomes[0].strip().lower() not in _generic:
+        category = "sports"
+        base_mk = canonical_matchup_key(outcomes[0], outcomes[1], end_ts)
+        if is_sports_derivative_line(slug, title):
+            match_key = f"DERIVATIVE::{slug}::{base_mk}"
+            horizon = "spread_or_period"
+        else:
+            match_key = base_mk
+            horizon = "match"
+    elif not asset and (" vs " in title.lower() or " vs. " in title.lower()):
+        parts = re.split(r"\s+vs\.?\s+", title, maxsplit=1, flags=re.IGNORECASE)
+        if len(parts) == 2 and any(sp_k in f"{slug} {title} {tag_blob}".lower() for sp_k in ("nba", "nfl", "nhl", "mlb", "tennis", "atp", "wta", "soccer", "epl", "ucl", "sports")):
+            category = "sports"
+            t1 = parts[0].strip()
+            t2 = re.split(r"[\?\|\-]", parts[1], maxsplit=1)[0].strip()
+            base_mk = canonical_matchup_key(t1, t2, end_ts)
+            if is_sports_derivative_line(slug, title):
+                match_key = f"DERIVATIVE::{slug}::{base_mk}"
+                horizon = "spread_or_period"
+            else:
+                match_key = base_mk
+                horizon = "match"
+
+    if category == "sports":
+        blob_sp = f"{slug} {title} {desc} {tag_blob}".lower()
+        for sp_tok, sp_val in (
+            ("nba", "nba"), ("nfl", "nfl"), ("nhl", "nhl"), ("mlb", "mlb"),
+            ("atp", "tennis"), ("wta", "tennis"), ("tennis", "tennis"),
+            ("epl", "soccer"), ("ucl", "soccer"), ("premier-league", "soccer"), ("soccer", "soccer"),
+        ):
+            if sp_tok in blob_sp:
+                sport = sp_val
+                break
+
+    def _book_levels(book: Optional[Mapping[str, Any]], side_key: str, desc_sort: bool) -> List[OrderLevel]:
+        if not isinstance(book, Mapping):
+            return []
+        lvls: List[OrderLevel] = []
+        for item in book.get(side_key) or []:
+            if isinstance(item, Mapping):
+                px = float(item.get("price") or 0.0)
+                sz = float(item.get("size") or item.get("amount") or 0.0)
+            elif isinstance(item, (list, tuple)) and len(item) >= 2:
+                px = float(item[0] or 0.0)
+                sz = float(item[1] or 0.0)
+            else:
+                continue
+            if 0.0 < px < 1.0 and sz > 0.0:
+                lvls.append(OrderLevel(round(px, 6), sz))
+        return sorted(lvls, key=lambda x: x.price, reverse=desc_sort)
+
+    eff_yes_book = books_by_token_id.get(token_ids[0]) if books_by_token_id is not None else yes_book
+    eff_no_book = books_by_token_id.get(token_ids[1]) if books_by_token_id is not None else no_book
+    y_asks = _book_levels(eff_yes_book, "asks", False)
+    y_bids = _book_levels(eff_yes_book, "bids", True)
+    n_asks = _book_levels(eff_no_book, "asks", False)
+    n_bids = _book_levels(eff_no_book, "bids", True)
+    hydrated = isinstance(eff_yes_book, Mapping) or isinstance(eff_no_book, Mapping)
+
+    # Derive binary CTF complement levels when only one token book was queried or returned
+    if eff_yes_book is not None and eff_no_book is None:
+        if not n_asks and y_bids:
+            n_asks = sorted([OrderLevel(round(1.0 - b.price, 6), b.size) for b in y_bids if 0.0 < 1.0 - b.price < 1.0], key=lambda x: x.price)
+        if not n_bids and y_asks:
+            n_bids = sorted([OrderLevel(round(1.0 - a.price, 6), a.size) for a in y_asks if 0.0 < 1.0 - a.price < 1.0], key=lambda x: x.price, reverse=True)
+
+    tick_sz = 0.001
+    min_sh = 5.0
+    neg_risk = bool(raw.get("neg_risk") or raw.get("negRisk"))
+    for bk in (eff_yes_book, eff_no_book):
+        if isinstance(bk, Mapping):
+            if bk.get("tick_size") is not None:
+                try:
+                    tick_sz = max(0.0001, float(bk["tick_size"]))
+                except (TypeError, ValueError):
+                    pass
+            if bk.get("min_order_size") is not None:
+                try:
+                    min_sh = max(1.0, float(bk["min_order_size"]))
+                except (TypeError, ValueError):
+                    pass
+            if bk.get("neg_risk") is not None:
+                neg_risk = neg_risk or bool(bk.get("neg_risk"))
+
+    strike_px, strike_dir = extract_crypto_strike_and_direction(title, desc) if category == "crypto" else (None, "")
+    fee_bps = float(raw.get("takerFeeBps") if raw.get("takerFeeBps") is not None else 175.0)
+    ev_id = str(raw.get("event_id") or "")
+    grp_lbl = str(raw.get("groupItemTitle") or "").strip()
+
+    mkt = NormalizedBinaryMarket(
+        venue="probable_markets",
+        market_id=mid or slug,
+        slug=slug,
+        title=title,
+        category=category,
+        yes_label=str(outcomes[0]),
+        no_label=str(outcomes[1]),
+        yes_asks=y_asks,
+        yes_bids=y_bids,
+        no_asks=n_asks,
+        no_bids=n_bids,
+        fee_rate_bps=fee_bps,
+        fee_enabled=fee_bps > 0.0,
+        taker_delay_ms=0.0,
+        min_shares=min_sh,
+        supports_split_merge=True,
+        asset=asset or match_key,
+        horizon=horizon or ("match" if category == "sports" else ""),
+        oracle_family=oracle_family or ("official_boxscore" if category == "sports" else "uma"),
+        oracle_stream_url=stream_url,
+        strike_price=strike_px,
+        strike_direction=strike_dir,
+        end_ts=end_ts,
+        cancel_rule="50_50",
+        tennis_retirement_rule="ONE_BALL" if sport == "tennis" else "NA",
+        sport=sport,
+        has_unlisted_draw=(sport == "soccer") or has_esports_or_two_game_draw_hazard(slug, title, desc),
+        condition_id=str(raw.get("condition_id") or raw.get("conditionId") or "").lower(),
+        external_slug=str(raw.get("polymarket_slug") or raw.get("externalSlug") or ""),
+        rules_hash=normalize_rules_sha256(desc),
+        yes_token_id=token_ids[0],
+        no_token_id=token_ids[1],
+        tick_size=tick_sz,
+        collateral_asset="USDT",
+        neg_risk=neg_risk,
+        partition_group_id=f"probable::{ev_id}" if (neg_risk and ev_id and grp_lbl) else "",
+        partition_label=grp_lbl,
+        is_synthetic_depth=not hydrated,
+    )
+    return mkt.canonicalize_outcomes_idempotent()
+
+
+def build_derive_dominance_markets(
+    instruments: Sequence[Mapping[str, Any]],
+    books_by_instrument: Mapping[str, Mapping[str, Any]],
+    *,
+    spot_by_currency: Optional[Mapping[str, float]] = None,
+    now_ts: Optional[int] = None,
+    quote_ts_ms: Optional[int] = None,
+) -> List[NormalizedBinaryMarket]:
+    """
+    Constructs pure-riskless `$1.00`-par Strike-`K` Centered Dual Call-Spread Dominance markets
+    from Derive v3 (`wss://api.derive.xyz/v3/ws`) European call option chains:
+      - For each interior strike `K` bracketed by `K_prev < K < K_next` on `(currency, expiry)`:
+          * `YES` (`S_T >= K`): Long Call Spread `[K_prev, K]` (`width_L = K - K_prev`):
+              `yes_ask = (Ask_C(K_prev) - Bid_C(K)) / width_L`, `$1`-par shares = `min(q_prev, q_K) * width_L`.
+              Guaranteed payoff `>= $1.00` for ALL `S_T >= K` (plus linear ramp bonus on `(K_prev, K)`).
+          * `NO` (`S_T <= K`): Collateralized Short Call Spread `[K, K_next]` (`width_R = K_next - K`):
+              `no_ask = 1 - (Bid_C(K) - Ask_C(K_next)) / width_R`, `$1`-par shares = `min(q_K, q_next) * width_R`.
+              Guaranteed payoff `>= $1.00` for ALL `S_T <= K` (plus linear ramp bonus on `(K, K_next)`).
+      - Uses `oracle_family = "derive_30m_twap"` so `CrossVenueRuleVerifier` Gate 2 automatically
+        enforces a `>= 1.50% * S_ref` cross-oracle strike corridor against spot-candle venues.
+    """
+    now_s = int(time.time()) if now_ts is None else int(now_ts)
+    q_ms = int(now_s * 1000) if quote_ts_ms is None else int(quote_ts_ms)
+
+    chains: Dict[Tuple[str, int], List[Tuple[float, str, Mapping[str, Any]]]] = {}
+    for inst in instruments:
+        if not isinstance(inst, Mapping):
+            continue
+        if inst.get("is_active") is False:
+            continue
+        if str(inst.get("instrument_type") or "option").lower() != "option":
+            continue
+        opt = inst.get("option_details") if isinstance(inst.get("option_details"), Mapping) else {}
+        opt_type = str(opt.get("option_type") or "").upper()
+        iname = str(inst.get("instrument_name") or "").strip()
+        if not opt_type and iname.endswith("-C"):
+            opt_type = "C"
+        if opt_type != "C" or not iname:
+            continue
+        try:
+            strike = float(opt.get("strike") if opt.get("strike") is not None else iname.split("-")[2])
+            expiry = int(opt.get("expiry") or 0)
+        except (TypeError, ValueError, IndexError):
+            continue
+        if strike <= 0.0 or expiry <= now_s:
+            continue
+        ccy = str(inst.get("base_currency") or iname.split("-", 1)[0] or "").strip().upper()
+        if not ccy:
+            continue
+        chains.setdefault((ccy, expiry), []).append((strike, iname, inst))
+
+    def _side_levels(book: Optional[Mapping[str, Any]], key: str, desc_sort: bool) -> List[Tuple[float, float]]:
+        if not isinstance(book, Mapping):
+            return []
+        out_lvls: List[Tuple[float, float]] = []
+        for row in book.get(key) or []:
+            if isinstance(row, (list, tuple)) and len(row) >= 2:
+                px, qty = float(row[0] or 0.0), float(row[1] or 0.0)
+            elif isinstance(row, Mapping):
+                px = float(row.get("price") or 0.0)
+                qty = float(row.get("amount") or row.get("size") or 0.0)
+            else:
+                continue
+            if px > 0.0 and qty > 0.0:
+                out_lvls.append((px, qty))
+        return sorted(out_lvls, key=lambda x: x[0], reverse=desc_sort)
+
+    markets: List[NormalizedBinaryMarket] = []
+    for (ccy, expiry), raw_chain in sorted(chains.items()):
+        dedup_by_k: Dict[float, Tuple[str, Mapping[str, Any]]] = {}
+        for k_val, iname, meta in raw_chain:
+            dedup_by_k[k_val] = (iname, meta)
+        sorted_k = sorted(dedup_by_k.keys())
+        if len(sorted_k) < 3:
+            continue
+
+        exp_dt = datetime.fromtimestamp(expiry, tz=timezone.utc)
+        exp_tag = exp_dt.strftime("%Y%m%d")
+        exp_iso = exp_dt.strftime("%Y-%m-%dT%H:%M:%SZ")
+        spot_ref = float((spot_by_currency or {}).get(ccy) or 0.0)
+
+        for idx in range(1, len(sorted_k) - 1):
+            k_prev = sorted_k[idx - 1]
+            k_mid = sorted_k[idx]
+            k_next = sorted_k[idx + 1]
+            w_l = k_mid - k_prev
+            w_r = k_next - k_mid
+            if w_l <= 0.0 or w_r <= 0.0:
+                continue
+
+            name_prev, _ = dedup_by_k[k_prev]
+            name_mid, meta_mid = dedup_by_k[k_mid]
+            name_next, _ = dedup_by_k[k_next]
+
+            bk_prev = books_by_instrument.get(name_prev)
+            bk_mid = books_by_instrument.get(name_mid)
+            bk_next = books_by_instrument.get(name_next)
+
+            asks_prev = _side_levels(bk_prev, "asks", False)
+            bids_prev = _side_levels(bk_prev, "bids", True)
+            asks_mid = _side_levels(bk_mid, "asks", False)
+            bids_mid = _side_levels(bk_mid, "bids", True)
+            asks_next = _side_levels(bk_next, "asks", False)
+            bids_next = _side_levels(bk_next, "bids", True)
+
+            y_asks: List[OrderLevel] = []
+            y_bids: List[OrderLevel] = []
+            n_asks: List[OrderLevel] = []
+            n_bids: List[OrderLevel] = []
+
+            if asks_prev and bids_mid:
+                ya_px = round((asks_prev[0][0] - bids_mid[0][0]) / w_l, 6)
+                ya_sh = min(asks_prev[0][1], bids_mid[0][1]) * w_l
+                if 0.001 < ya_px < 0.999 and ya_sh > 0.0:
+                    y_asks.append(OrderLevel(ya_px, round(ya_sh, 4)))
+            if bids_prev and asks_mid:
+                yb_px = round((bids_prev[0][0] - asks_mid[0][0]) / w_l, 6)
+                yb_sh = min(bids_prev[0][1], asks_mid[0][1]) * w_l
+                if 0.0005 < yb_px < (y_asks[0].price - 1e-6 if y_asks else 0.999) and yb_sh > 0.0:
+                    y_bids.append(OrderLevel(yb_px, round(yb_sh, 4)))
+
+            if bids_mid and asks_next:
+                na_px = round(1.0 - (bids_mid[0][0] - asks_next[0][0]) / w_r, 6)
+                na_sh = min(bids_mid[0][1], asks_next[0][1]) * w_r
+                if 0.001 < na_px < 0.999 and na_sh > 0.0:
+                    n_asks.append(OrderLevel(na_px, round(na_sh, 4)))
+            if asks_mid and bids_next:
+                nb_px = round(1.0 - (asks_mid[0][0] - bids_next[0][0]) / w_r, 6)
+                nb_sh = min(asks_mid[0][1], bids_next[0][1]) * w_r
+                if 0.0005 < nb_px < (n_asks[0].price - 1e-6 if n_asks else 0.999) and nb_sh > 0.0:
+                    n_bids.append(OrderLevel(nb_px, round(nb_sh, 4)))
+
+            if not y_asks and not n_asks:
+                continue
+
+            eff_spot = spot_ref if spot_ref > 0.0 else k_mid
+            taker_rate = float(meta_mid.get("taker_fee_rate") or 0.0003)
+            min_amt = float(meta_mid.get("minimum_amount") or 0.01)
+            amt_step = float(meta_mid.get("amount_step") or 0.0001)
+            tick_opt = float(meta_mid.get("tick_size") or 0.1)
+            narrow_w = min(w_l, w_r)
+            wide_w = max(w_l, w_r)
+            eff_fee_bps = round((2.0 * taker_rate * eff_spot / max(narrow_w, 1.0)) * 10_000.0, 4)
+
+            k_label = f"{int(k_mid)}" if abs(k_mid - round(k_mid)) < 1e-6 else f"{k_mid:g}"
+            slug = f"derive-{ccy.lower()}-{exp_tag}-{k_label}-above"
+            markets.append(
+                NormalizedBinaryMarket(
+                    venue="derive_xyz",
+                    market_id=f"DERIVE::{ccy}-{exp_tag}-{k_label}-DOM",
+                    slug=slug,
+                    title=(
+                        f"{ccy} >= ${k_mid:,.0f} at {exp_iso} "
+                        f"(Derive Dual Call-Spread [{k_prev:g},{k_mid:g},{k_next:g}])"
+                    ),
+                    category="crypto",
+                    yes_label="YES",
+                    no_label="NO",
+                    yes_asks=y_asks,
+                    yes_bids=y_bids,
+                    no_asks=n_asks,
+                    no_bids=n_bids,
+                    fee_rate_bps=eff_fee_bps,
+                    fee_enabled=True,
+                    taker_delay_ms=0.0,
+                    min_shares=round(max(5.0, min_amt * wide_w), 4),
+                    supports_split_merge=False,
+                    asset=ccy,
+                    horizon="daily",
+                    oracle_family="derive_30m_twap",
+                    spot_reference_usd=eff_spot,
+                    strike_price=float(k_mid),
+                    strike_direction="ABOVE",
+                    end_ts=expiry,
+                    cancel_rule="50_50",
+                    yes_token_id=f"{name_prev}|{name_mid}",
+                    no_token_id=f"{name_mid}|{name_next}",
+                    tick_size=round(max(0.0001, tick_opt / wide_w), 6),
+                    lot_size=round(max(0.01, amt_step * narrow_w), 6),
+                    quote_ts_ms=q_ms,
+                    collateral_asset=str(meta_mid.get("quote_currency") or "USDC"),
+                    settlement_delay_hours=0.5,
+                    data_origin="LIVE_VERIFIED",
+                    is_synthetic_depth=False,
+                    outcomes_canonicalized=True,
+                )
+            )
+    return markets
 
 
 # ---------------------------------------------------------------------------
@@ -1707,6 +2507,7 @@ class ShadowArbitrageCandidate:
     rule_check: RuleVerificationResult
     leg_a_entry_cost_usd: float = 0.0
     leg_b_entry_cost_usd: float = 0.0
+    shares_leg_b: float = 0.0
 
 
 @dataclass
@@ -1758,6 +2559,8 @@ class HonestCrossVenueShadowEngine:
         bridge_drag_bps: float = DEFAULT_RELAY_BRIDGE_DRAG_BPS,
         incremental_daily_vm_cost_usd: float = 0.25,  # ~$7.50/mo Tokyo micro-relay delta
         wire_latency_ms: Optional[Mapping[str, float]] = None,
+        fx_ask_to_usd: Optional[Mapping[str, float]] = None,
+        fx_settle_floor_to_usd: Optional[Mapping[str, float]] = None,
         data_dir: Optional[Path] = None,
         enable_durable_store: bool = True,
     ) -> None:
@@ -1770,6 +2573,15 @@ class HonestCrossVenueShadowEngine:
         if wire_latency_ms:
             for k, v in wire_latency_ms.items():
                 self.wire_latency_ms[k] = float(v)
+        self.fx_ask_to_usd: Dict[str, float] = dict(DEFAULT_FX_ASK_TO_USD)
+        if fx_ask_to_usd:
+            for k, v in fx_ask_to_usd.items():
+                self.fx_ask_to_usd[str(k).upper()] = float(v)
+        self.fx_settle_floor_to_usd: Dict[str, float] = dict(DEFAULT_FX_SETTLE_FLOOR_TO_USD)
+        if fx_settle_floor_to_usd:
+            for k, v in fx_settle_floor_to_usd.items():
+                self.fx_settle_floor_to_usd[str(k).upper()] = float(v)
+        self._passive_queue_book_cache: Dict[Tuple[str, str, str], Tuple[float, float]] = {}
 
         self.verifier = CrossVenueRuleVerifier()
         self.data_dir = Path(data_dir) if data_dir is not None else Path("data") / "cross_venue_shadow"
@@ -1780,6 +2592,7 @@ class HonestCrossVenueShadowEngine:
         # Cumulative shadow ledger state (restorable across restarts via ShadowTelemetryStore)
         self.cycles_completed = 0
         self.start_monotonic = time.monotonic()
+        self.campaign_started_unix: float = time.time()
         self.gross_candidates_seen = 0
         self.rule_gate_rejections = 0
         self.rule_gate_rejection_reasons: Dict[str, int] = {}
@@ -1821,6 +2634,9 @@ class HonestCrossVenueShadowEngine:
             )
             if saved and not skip_synthetic_in_live:
                 self.cycles_completed = int(saved.get("cycles_completed", 0))
+                saved_start = float(saved.get("campaign_started_unix") or 0.0)
+                if saved_start > 0.0:
+                    self.campaign_started_unix = min(self.campaign_started_unix, saved_start)
                 self.gross_candidates_seen = int(saved.get("gross_candidates_seen", 0))
                 self.rule_gate_rejections = int(saved.get("rule_gate_rejections", 0))
                 self.rule_gate_rejection_reasons = {
@@ -1859,7 +2675,7 @@ class HonestCrossVenueShadowEngine:
     ) -> List[ShadowArbitrageCandidate]:
         found: List[ShadowArbitrageCandidate] = []
         for m in markets:
-            if not m.supports_split_merge or m.venue == "polymarket":
+            if (not m.supports_split_merge and m.venue != "derive_xyz") or m.venue == "polymarket":
                 continue
             if not m.yes_asks or not m.no_asks or m.has_crossed_or_invalid_book():
                 continue
@@ -1874,7 +2690,7 @@ class HonestCrossVenueShadowEngine:
                 {
                     "sleeve": "XV_INTRA_SPLIT_MERGE",
                     "candidate_key": ckey,
-                    "box_type": "INTRA_MERGE",
+                    "box_type": "INTRA_BUTTERFLY_DOMINANCE" if m.venue == "derive_xyz" else "INTRA_MERGE",
                     "asset": m.asset or m.slug[:16].upper(),
                     "net_edge_bps": round((1.0 - best_sum) * 10_000.0, 2),
                 },
@@ -1887,7 +2703,7 @@ class HonestCrossVenueShadowEngine:
 
             gross_cost = w_yes.gross_cost_usd + w_no.gross_cost_usd
             fees = w_yes.taker_fee_usd + w_no.taker_fee_usd
-            gas = DEFAULT_EXTERNAL_GAS_USD.get(m.venue, 0.005)
+            gas = DEFAULT_EXTERNAL_GAS_USD.get(m.venue, 0.005) * (2.0 if m.venue == "derive_xyz" else 1.0)
             payout = shares * 1.0
             net_profit = payout - (gross_cost + fees + gas)
             if net_profit < MIN_NET_PROFIT_USD:
@@ -2005,10 +2821,20 @@ class HonestCrossVenueShadowEngine:
                                 )
                             continue
 
+                        fx_ask_a = collateral_fx_ask_to_usd(poly_m.collateral_asset, self.fx_ask_to_usd)
+                        fx_floor_a = collateral_fx_settle_floor_to_usd(poly_m.collateral_asset, self.fx_settle_floor_to_usd)
+                        fx_ask_b = collateral_fx_ask_to_usd(ext_m.collateral_asset, self.fx_ask_to_usd)
+                        fx_floor_b = collateral_fx_settle_floor_to_usd(ext_m.collateral_asset, self.fx_settle_floor_to_usd)
+
                         min_sh = max(poly_m.min_shares, ext_m.min_shares)
-                        shares = max(min_sh, math.floor(self.clip_notional_usd / max(l1_sum, 0.10)))
+                        eff_unit_usd = p_asks[0].price * fx_ask_a + e_asks[0].price * (fx_ask_b * (fx_floor_a / max(fx_floor_b, 1e-6)))
+                        shares = max(min_sh, math.floor(self.clip_notional_usd / max(eff_unit_usd, 0.10)))
+                        if abs(fx_floor_a - fx_floor_b) > 1e-6:
+                            shares_b = max(ext_m.min_shares, math.ceil((shares * fx_floor_a) / max(fx_floor_b, 1e-6)))
+                        else:
+                            shares_b = shares
                         wp = walk_asks_for_shares(p_asks, shares, poly_m)
-                        we = walk_asks_for_shares(e_asks, shares, ext_m)
+                        we = walk_asks_for_shares(e_asks, shares_b, ext_m)
                         if wp.filled and we.filled:
                             # Re-verify Gate 3 on worst L2 price paid on the 50-50 venue
                             rc_vwap = self.verifier.verify_pair(
@@ -2020,11 +2846,13 @@ class HonestCrossVenueShadowEngine:
                                 price_b=we.vwap_price,
                             )
                             if rc_vwap.passed:
-                                gross_cost = wp.gross_cost_usd + we.gross_cost_usd
-                                fees = wp.taker_fee_usd + we.taker_fee_usd
+                                leg_a_cost_usd = wp.gross_cost_usd * fx_ask_a
+                                leg_b_cost_usd = we.gross_cost_usd * fx_ask_b
+                                gross_cost = leg_a_cost_usd + leg_b_cost_usd
+                                fees = wp.taker_fee_usd * fx_ask_a + we.taker_fee_usd * fx_ask_b
                                 gas = DEFAULT_EXTERNAL_GAS_USD.get(poly_m.venue, 0.002) + DEFAULT_EXTERNAL_GAS_USD.get(ext_m.venue, 0.005)
                                 bridge = relay_bridge_drag_usd(gross_cost, self.bridge_drag_bps)
-                                payout = shares * 1.0
+                                payout = min(shares * fx_floor_a, shares_b * fx_floor_b)
                                 net_profit = payout - (gross_cost + fees + gas + bridge)
                                 if net_profit >= MIN_NET_PROFIT_USD:
                                     eff_delay = max(
@@ -2051,8 +2879,9 @@ class HonestCrossVenueShadowEngine:
                                         est_unsettled_rebate_usd=0.0,
                                         effective_delay_ms=eff_delay,
                                         rule_check=rc_vwap,
-                                        leg_a_entry_cost_usd=wp.gross_cost_usd,
-                                        leg_b_entry_cost_usd=we.gross_cost_usd,
+                                        leg_a_entry_cost_usd=leg_a_cost_usd,
+                                        leg_b_entry_cost_usd=leg_b_cost_usd,
+                                        shares_leg_b=shares_b,
                                     )
                                     self.executable_net_l2_count += 1
                                     self._append_funnel_event(
@@ -2084,22 +2913,38 @@ class HonestCrossVenueShadowEngine:
                             price_b=maker_px,
                         )
                         if rc_m.passed:
+                            fx_ask_a = collateral_fx_ask_to_usd(poly_m.collateral_asset, self.fx_ask_to_usd)
+                            fx_floor_a = collateral_fx_settle_floor_to_usd(poly_m.collateral_asset, self.fx_settle_floor_to_usd)
+                            fx_ask_b = collateral_fx_ask_to_usd(ext_m.collateral_asset, self.fx_ask_to_usd)
+                            fx_floor_b = collateral_fx_settle_floor_to_usd(ext_m.collateral_asset, self.fx_settle_floor_to_usd)
                             min_sh = max(poly_m.min_shares, ext_m.min_shares)
-                            shares = max(min_sh, math.floor(self.clip_notional_usd / max(p_asks[0].price + maker_px, 0.10)))
+                            eff_mkr_unit_usd = p_asks[0].price * fx_ask_a + maker_px * (fx_ask_b * (fx_floor_a / max(fx_floor_b, 1e-6)))
+                            shares = max(min_sh, math.floor(self.clip_notional_usd / max(eff_mkr_unit_usd, 0.10)))
+                            shares_b = (
+                                max(ext_m.min_shares, math.ceil((shares * fx_floor_a) / max(fx_floor_b, 1e-6)))
+                                if abs(fx_floor_a - fx_floor_b) > 1e-6
+                                else shares
+                            )
                             wp = walk_asks_for_shares(p_asks, shares, poly_m)
                             # Anchor safety rule: Polymarket L2 book must hold >= 4.0x our hedge notional!
                             if wp.filled and wp.total_book_notional_usd >= MIN_MAKER_ANCHOR_DEPTH_MULT * wp.gross_cost_usd:
-                                maker_cost = shares * maker_px
-                                gross_cost = wp.gross_cost_usd + maker_cost
-                                fees = wp.taker_fee_usd  # External leg is 0% postOnly Maker!
+                                maker_cost = shares_b * maker_px * fx_ask_b
+                                leg_a_cost = wp.gross_cost_usd * fx_ask_a
+                                gross_cost = leg_a_cost + maker_cost
+                                ext_win_fee = (
+                                    compute_venue_taker_fee_usd(ext_m, shares_b, maker_px) * fx_ask_b
+                                    if ext_m.venue == "stx_ontario"
+                                    else 0.0
+                                )
+                                fees = wp.taker_fee_usd * fx_ask_a + ext_win_fee
                                 gas = DEFAULT_EXTERNAL_GAS_USD.get(poly_m.venue, 0.002) + DEFAULT_EXTERNAL_GAS_USD.get(ext_m.venue, 0.005)
                                 bridge = relay_bridge_drag_usd(gross_cost, self.bridge_drag_bps)
-                                payout = shares * 1.0
+                                payout = min(shares * fx_floor_a, shares_b * fx_floor_b)
                                 net_profit = payout - (gross_cost + fees + gas + bridge)
                                 if net_profit >= MIN_NET_PROFIT_USD:
                                     est_rebate = (
                                         predict_fun_est_maker_rebate_usd(
-                                            shares,
+                                            shares_b,
                                             maker_px,
                                             fee_rate_bps=ext_m.fee_rate_bps,
                                             is_crypto_updown=(ext_m.category == "crypto"),
@@ -2128,8 +2973,9 @@ class HonestCrossVenueShadowEngine:
                                         est_unsettled_rebate_usd=est_rebate,
                                         effective_delay_ms=self.wire_latency_ms.get(poly_m.venue, 72.39),  # postOnly bypasses takerDelayMs!
                                         rule_check=rc_m,
-                                        leg_a_entry_cost_usd=wp.gross_cost_usd,
+                                        leg_a_entry_cost_usd=leg_a_cost,
                                         leg_b_entry_cost_usd=maker_cost,
+                                        shares_leg_b=shares_b,
                                     )
                                     self.executable_net_l2_count += 1
                                     found.append(cand_m)
@@ -2156,6 +3002,43 @@ class HonestCrossVenueShadowEngine:
     # -----------------------------------------------------------------------
     # 3. Honest Post-Latency & Queue-Ahead Fill Simulator
     # -----------------------------------------------------------------------
+    def estimate_passive_queue_and_trade_through(
+        self,
+        pre_market: Optional[NormalizedBinaryMarket],
+        post_market: Optional[NormalizedBinaryMarket],
+        *,
+        side: str,
+        maker_px: float,
+    ) -> Tuple[float, float]:
+        """
+        Estimates `(queue_ahead_shares, observed_trade_through_shares)` on a passive maker leg from
+        pre-cycle and post-cycle L2 books plus stateful top-bid/ask progression across cycles.
+        """
+        if pre_market is None:
+            return (50.0, 0.0)
+        bids_pre = pre_market.yes_bids if side.upper() == "YES" else pre_market.no_bids
+        queue_ahead = sum(lvl.size for lvl in bids_pre if lvl.price >= maker_px - 1e-9)
+        key = (pre_market.venue, pre_market.slug, side.upper())
+        prev_state = self._passive_queue_book_cache.get(key)
+        trade_through = 0.0
+
+        chk_mkt = post_market if post_market is not None else pre_market
+        asks_now = chk_mkt.yes_asks if side.upper() == "YES" else chk_mkt.no_asks
+        bids_now = chk_mkt.yes_bids if side.upper() == "YES" else chk_mkt.no_bids
+
+        # 1. Direct ask sweep at or below maker_px proves aggressive sell flow traded through our price
+        for alvl in asks_now:
+            if alvl.price <= maker_px + 1e-9:
+                trade_through += alvl.size
+        # 2. Stateful bid depletion across consecutive snapshots at >= maker_px
+        now_bid_at_or_above = sum(lvl.size for lvl in bids_now if lvl.price >= maker_px - 1e-9)
+        if prev_state is not None:
+            prev_maker_px, prev_bid_depth = prev_state
+            if abs(prev_maker_px - maker_px) <= 0.01 and prev_bid_depth > now_bid_at_or_above:
+                trade_through = max(trade_through, prev_bid_depth - now_bid_at_or_above)
+        self._passive_queue_book_cache[key] = (maker_px, max(queue_ahead, now_bid_at_or_above))
+        return (queue_ahead, trade_through)
+
     def simulate_honest_execution(
         self,
         candidate: ShadowArbitrageCandidate,
@@ -2200,9 +3083,14 @@ class HonestCrossVenueShadowEngine:
         bids_a = post_delay_market_a.yes_bids if candidate.side_a == "YES" else post_delay_market_a.no_bids
         asks_b = post_delay_market_b.yes_asks if candidate.side_b == "YES" else post_delay_market_b.no_asks
         bids_b = post_delay_market_b.yes_bids if candidate.side_b == "YES" else post_delay_market_b.no_bids
+        fx_ask_a = collateral_fx_ask_to_usd(post_delay_market_a.collateral_asset, self.fx_ask_to_usd)
+        fx_floor_a = collateral_fx_settle_floor_to_usd(post_delay_market_a.collateral_asset, self.fx_settle_floor_to_usd)
+        fx_ask_b = collateral_fx_ask_to_usd(post_delay_market_b.collateral_asset, self.fx_ask_to_usd)
+        fx_floor_b = collateral_fx_settle_floor_to_usd(post_delay_market_b.collateral_asset, self.fx_settle_floor_to_usd)
+        req_sh_b = candidate.shares_leg_b if candidate.shares_leg_b > 0.0 else candidate.shares
 
         if candidate.family == "XV_PASSIVE_MAKER_ANCHOR":
-            needed_flow = queue_ahead_shares + candidate.shares
+            needed_flow = queue_ahead_shares + req_sh_b
             if observed_trade_through_shares + 1e-7 < needed_flow:
                 outcome = HonestShadowExecutionOutcome(
                     candidate=candidate,
@@ -2221,11 +3109,11 @@ class HonestCrossVenueShadowEngine:
             maker_paid_usd = (
                 candidate.leg_b_entry_cost_usd
                 if candidate.leg_b_entry_cost_usd > 0.0
-                else max(0.01, candidate.gross_cost_usd - (wp_after.gross_cost_usd if wp_after.filled else 0.0))
+                else max(0.01, candidate.gross_cost_usd - (wp_after.gross_cost_usd * fx_ask_a if wp_after.filled else 0.0))
             )
             if wp_after.filled:
-                total_cost = wp_after.gross_cost_usd + maker_paid_usd
-                total_fees = wp_after.taker_fee_usd
+                total_cost = wp_after.gross_cost_usd * fx_ask_a + maker_paid_usd
+                total_fees = wp_after.taker_fee_usd * fx_ask_a
                 bridge = relay_bridge_drag_usd(total_cost, self.bridge_drag_bps)
                 net_pnl = candidate.guaranteed_min_payout_usd - (total_cost + total_fees + candidate.gas_usd + bridge)
                 if net_pnl > 0.0:
@@ -2250,7 +3138,8 @@ class HonestCrossVenueShadowEngine:
                     return outcome
 
             # Polymarket anchor moved adversely -> unwind filled Venue B leg into Venue B bids
-            proceeds_b, _ = walk_bids_for_unwind(bids_b, candidate.shares, post_delay_market_b)
+            proceeds_b_local, _ = walk_bids_for_unwind(bids_b, req_sh_b, post_delay_market_b)
+            proceeds_b = proceeds_b_local * fx_floor_b
             bleed = max(0.0, maker_paid_usd - proceeds_b)
             outcome = HonestShadowExecutionOutcome(
                 candidate=candidate,
@@ -2272,15 +3161,28 @@ class HonestCrossVenueShadowEngine:
             self.outcomes.append(outcome)
             return outcome
 
-        # Taker-Taker Box or Intra-Venue Complete-Set
-        wa_after = walk_asks_for_shares(asks_a, candidate.shares, post_delay_market_a)
-        wb_after = walk_asks_for_shares(asks_b, candidate.shares, post_delay_market_b)
+        # Taker-Taker Box or Intra-Venue Complete-Set (enforce FOK limit prices per leg in local currency)
+        sh_denom_a = max(candidate.shares * fx_ask_a, 1e-6)
+        sh_denom_b = max(req_sh_b * fx_ask_b, 1e-6)
+        max_px_a = (
+            min(0.9999, (candidate.leg_a_entry_cost_usd / sh_denom_a) + 0.01)
+            if candidate.leg_a_entry_cost_usd > 0.0
+            else None
+        )
+        max_px_b = (
+            min(0.9999, (candidate.leg_b_entry_cost_usd / sh_denom_b) + 0.01)
+            if candidate.leg_b_entry_cost_usd > 0.0
+            else None
+        )
+        wa_after = walk_asks_for_shares(asks_a, candidate.shares, post_delay_market_a, max_price=max_px_a)
+        wb_after = walk_asks_for_shares(asks_b, req_sh_b, post_delay_market_b, max_price=max_px_b)
 
         if wa_after.filled and wb_after.filled:
-            total_cost = wa_after.gross_cost_usd + wb_after.gross_cost_usd
-            total_fees = wa_after.taker_fee_usd + wb_after.taker_fee_usd
+            total_cost = wa_after.gross_cost_usd * fx_ask_a + wb_after.gross_cost_usd * fx_ask_b
+            total_fees = wa_after.taker_fee_usd * fx_ask_a + wb_after.taker_fee_usd * fx_ask_b
             bridge = 0.0 if candidate.venue_a == candidate.venue_b else relay_bridge_drag_usd(total_cost, self.bridge_drag_bps)
-            net_pnl = candidate.guaranteed_min_payout_usd - (total_cost + total_fees + candidate.gas_usd + bridge)
+            payout_after = min(candidate.shares * fx_floor_a, req_sh_b * fx_floor_b)
+            net_pnl = min(candidate.guaranteed_min_payout_usd, payout_after) - (total_cost + total_fees + candidate.gas_usd + bridge)
             if net_pnl > 0.0:
                 outcome = HonestShadowExecutionOutcome(
                     candidate=candidate,
@@ -2420,7 +3322,11 @@ class HonestCrossVenueShadowEngine:
         elapsed_days = (
             float(simulated_days)
             if simulated_days is not None and simulated_days > 0
-            else max((time.monotonic() - self.start_monotonic) / 86400.0, 1.0 / 1440.0)
+            else max(
+                (time.time() - self.campaign_started_unix) / 86400.0,
+                (time.monotonic() - self.start_monotonic) / 86400.0,
+                1.0 / 1440.0,
+            )
         )
         # Project conservative daily gain only when at least 1 hour (or explicit `simulated_days`) is observed
         scale_days = float(simulated_days) if simulated_days is not None else max(elapsed_days, 1.0)
@@ -2430,7 +3336,7 @@ class HonestCrossVenueShadowEngine:
             "G1_shadow_fill_realism_ge_85pct": bool(total_attempted >= 1 and realism_ratio >= 0.85),
             "G2_zero_double_zero_incidents": self.double_zero_incidents == 0,
             "G3_unwind_bleed_le_8pct_of_gross": bleed_pct <= 8.0,
-            "G4_p99_cancel_latency_lt_350ms": (0.0 < p99_ms < 350.0) if lat_sorted else True,
+            "G4_p99_cancel_latency_lt_350ms": (0.0 < p99_ms < 350.0) if lat_sorted else (simulated_days is not None),
             "G5_net_daily_gain_gt_0_50_usd": daily_net_gain > 0.50,
         }
         report = GraduationReport(
@@ -2470,6 +3376,7 @@ class HonestCrossVenueShadowEngine:
             self.telemetry_store.save_engine_checkpoint(
                 {
                     "checkpoint_data_scope": ckpt_scope,
+                    "campaign_started_unix": round(self.campaign_started_unix, 4),
                     "cycles_completed": self.cycles_completed,
                     "gross_candidates_seen": self.gross_candidates_seen,
                     "rule_gate_rejections": self.rule_gate_rejections,
@@ -2656,6 +3563,8 @@ class LiveCrossVenueShadowCollector:
         "limitless",
         "sx_bet",
         "predict_fun",
+        "derive_xyz",
+        "probable_markets",
         "forecastex",
         "stx_ontario",
     )
@@ -2673,10 +3582,12 @@ class LiveCrossVenueShadowCollector:
         transport: Any = None,
     ) -> None:
         from src.polymarket_research.cross_venue_connectors import (
+            DeriveOptionsConnector,
             ForecastExIBKRConnector,
             LimitlessConnector,
             PolymarketConnector,
             PredictFunConnector,
+            ProbableMarketsConnector,
             STXOntarioConnector,
             SXBetOBv3Connector,
         )
@@ -2718,6 +3629,8 @@ class LiveCrossVenueShadowCollector:
                 testnet_smoke=self.predict_testnet_smoke,
                 env=self.env,
             ),
+            "derive_xyz": DeriveOptionsConnector(env=self.env),
+            "probable_markets": ProbableMarketsConnector(env=self.env),
             "forecastex": ForecastExIBKRConnector(env=self.env),
             "stx_ontario": STXOntarioConnector(env=self.env),
         }
@@ -3068,7 +3981,9 @@ class LiveCrossVenueShadowCollector:
                         pm = by_cond[cid]
                         break
             if pm is None and ext.category == "sports" and ext.asset in by_sports_key:
-                pm = by_sports_key[ext.asset]
+                cand_pm = by_sports_key[ext.asset]
+                if sports_timestamps_compatible(cand_pm, ext, explicit_link=False)[0]:
+                    pm = cand_pm
             if pm is None and ext.category == "crypto" and ext.asset and ext.horizon and ext.end_ts:
                 pm = by_crypto_sig.get((ext.asset, ext.horizon, ext.end_ts))
 
@@ -3132,14 +4047,14 @@ class LiveCrossVenueShadowCollector:
         )
 
         async def _execute_with_transport(tr: Any) -> Dict[str, Any]:
-            primary_ext_venues = ("limitless", "sx_bet", "predict_fun", "forecastex")
+            primary_ext_venues = ("limitless", "sx_bet", "predict_fun", "probable_markets", "forecastex")
             primary_lists = await asyncio.gather(
                 *(self._poll_connector_isolated(v, tr) for v in primary_ext_venues)
             )
             by_venue: Dict[str, List[NormalizedBinaryMarket]] = dict(zip(primary_ext_venues, primary_lists))
 
             live_external: List[NormalizedBinaryMarket] = []
-            for v_name in ("limitless", "sx_bet", "forecastex"):
+            for v_name in ("limitless", "sx_bet", "probable_markets", "forecastex"):
                 live_external.extend(by_venue[v_name])
             # Strictly exclude Predict.fun TESTNET_SANDBOX markets from mainnet cross-venue matching;
             # include ONLY verified mainnet markets (`LIVE_VERIFIED` with `PREDICT_FUN_API_KEY` present).
@@ -3157,6 +4072,15 @@ class LiveCrossVenueShadowCollector:
 
             poly_markets = await self._poll_connector_isolated("polymarket", tr, hint_markets=live_external)
             by_venue["polymarket"] = poly_markets
+
+            derive_markets = await self._poll_connector_isolated(
+                "derive_xyz",
+                tr,
+                hint_markets=list(poly_markets) + list(live_external),
+            )
+            by_venue["derive_xyz"] = derive_markets
+            live_external.extend(derive_markets)
+
             all_live_markets = list(poly_markets) + list(live_external)
 
             pairs = self.analyzer.pair_all_venues(all_live_markets)
@@ -3188,7 +4112,25 @@ class LiveCrossVenueShadowCollector:
                 if markets_to_persist:
                     store.ingest_markets(markets_to_persist, store_l2_json=(disk_free_mb >= 256.0))
                 for ma, mb in pairs:
-                    store.record_pairing(ma, mb, rule_passed=True)
+                    rc_yn = self.engine.verifier.verify_pair(
+                        ma,
+                        mb,
+                        side_a="YES",
+                        side_b="NO",
+                        price_a=ma.yes_asks[0].price if ma.yes_asks else 0.45,
+                        price_b=mb.no_asks[0].price if mb.no_asks else 0.45,
+                    )
+                    rc_ny = self.engine.verifier.verify_pair(
+                        ma,
+                        mb,
+                        side_a="NO",
+                        side_b="YES",
+                        price_a=ma.no_asks[0].price if ma.no_asks else 0.45,
+                        price_b=mb.yes_asks[0].price if mb.yes_asks else 0.45,
+                    )
+                    pair_ok = bool(rc_yn.passed or rc_ny.passed)
+                    pair_rej = "" if pair_ok else (rc_yn.reason if rc_yn.gate_failures else rc_ny.reason)
+                    store.record_pairing(ma, mb, rule_passed=pair_ok, rejection_reason=pair_rej)
                 for mb_ev in multi_baskets:
                     store.record_signal(mb_ev, data_origin=session_origin if session_origin != "NONE" else "LIVE_VERIFIED")
                 for rj in multi_rejects:
@@ -3205,9 +4147,21 @@ class LiveCrossVenueShadowCollector:
 
             # Honest post-delay L2 re-verification batched ONCE per cycle across all non-maker candidates
             # (prevents O(N) sequential full-venue HTTP/WS polls when multiple pairs fire simultaneously).
+            eff_cycle_mode = (self.env.get("DOMINUS_NETWORK_MODE") or "live_public").strip().lower()
             pre_by_venue_slug: Dict[Tuple[str, str], NormalizedBinaryMarket] = {
                 (m.venue, m.slug): m for m in all_live_markets
             }
+
+            def _pair_data_origin(ma: Optional[NormalizedBinaryMarket], mb: Optional[NormalizedBinaryMarket]) -> str:
+                origins = {x.data_origin for x in (ma, mb) if x is not None}
+                if "OFFLINE_SYNTHETIC" in origins:
+                    return "OFFLINE_SYNTHETIC"
+                if "TESTNET_SANDBOX" in origins:
+                    return "TESTNET_SANDBOX"
+                if "REGULATORY_PUBLIC_DELAYED" in origins:
+                    return "REGULATORY_PUBLIC_DELAYED"
+                return "LIVE_VERIFIED"
+
             taker_cands = [c for c in all_cands if c.family != "XV_PASSIVE_MAKER_ANCHOR"]
             refetched_by_venue_slug: Dict[Tuple[str, str], NormalizedBinaryMarket] = {}
             if taker_cands:
@@ -3219,6 +4173,10 @@ class LiveCrossVenueShadowCollector:
                 involved = list(
                     dict.fromkeys(v for c in taker_cands for v in (c.venue_a, c.venue_b))
                 )
+                for inv_v in involved:
+                    conn_v = self.connectors.get(inv_v)
+                    if conn_v is not None and hasattr(conn_v, "clear_short_lived_book_cache"):
+                        conn_v.clear_short_lived_book_cache()
                 cand_slugs = {(c.venue_a, c.market_a_slug) for c in taker_cands} | {
                     (c.venue_b, c.market_b_slug) for c in taker_cands
                 }
@@ -3243,19 +4201,56 @@ class LiveCrossVenueShadowCollector:
                     for m_p in poly_refetched:
                         refetched_by_venue_slug[("polymarket", m_p.slug)] = m_p
 
+            if not hasattr(self, "_last_executed_cand_ts"):
+                self._last_executed_cand_ts = {}
+            now_exec_mono = time.monotonic()
+            if len(self._last_executed_cand_ts) > 1024:
+                self._last_executed_cand_ts = {
+                    k: ts for k, ts in self._last_executed_cand_ts.items() if (now_exec_mono - ts) < 600.0
+                }
+
             for cand in all_cands:
                 ma_pre = pre_by_venue_slug.get((cand.venue_a, cand.market_a_slug))
                 mb_pre = pre_by_venue_slug.get((cand.venue_b, cand.market_b_slug))
+                cand_origin = _pair_data_origin(ma_pre, mb_pre)
+                has_unhydrated_synth = any(bool(m and m.is_synthetic_depth) for m in (ma_pre, mb_pre))
+                allow_live_grad_exec = (
+                    eff_cycle_mode == "offline"
+                    or (
+                        cand_origin == "LIVE_VERIFIED"
+                        and not has_unhydrated_synth
+                        and (now_exec_mono - self._last_executed_cand_ts.get(cand.candidate_key, -999.0)) >= 300.0
+                    )
+                )
 
                 if cand.family == "XV_PASSIVE_MAKER_ANCHOR":
-                    self.engine.simulate_honest_execution(
-                        cand,
-                        post_delay_market_a=ma_pre,
-                        post_delay_market_b=mb_pre,
-                        observed_trade_through_shares=0.0,
-                        queue_ahead_shares=50.0,
+                    mb_post_mkr = refetched_by_venue_slug.get((cand.venue_b, cand.market_b_slug)) or mb_pre
+                    ma_post_mkr = refetched_by_venue_slug.get((cand.venue_a, cand.market_a_slug)) or ma_pre
+                    fx_b_mkr = collateral_fx_ask_to_usd(
+                        mb_pre.collateral_asset if mb_pre is not None else "USDC",
+                        self.engine.fx_ask_to_usd,
                     )
-                    ma_after, mb_after = ma_pre, mb_pre
+                    sh_b_mkr = cand.shares_leg_b if cand.shares_leg_b > 0.0 else cand.shares
+                    mkr_px_local = (
+                        round(cand.leg_b_entry_cost_usd / max(sh_b_mkr * fx_b_mkr, 1e-6), 6)
+                        if cand.leg_b_entry_cost_usd > 0.0
+                        else 0.50
+                    )
+                    q_ahead_sh, obs_tt_sh = self.engine.estimate_passive_queue_and_trade_through(
+                        mb_pre,
+                        mb_post_mkr,
+                        side=cand.side_b,
+                        maker_px=mkr_px_local,
+                    )
+                    if allow_live_grad_exec:
+                        self.engine.simulate_honest_execution(
+                            cand,
+                            post_delay_market_a=ma_post_mkr,
+                            post_delay_market_b=mb_post_mkr,
+                            observed_trade_through_shares=obs_tt_sh,
+                            queue_ahead_shares=q_ahead_sh,
+                        )
+                    ma_after, mb_after = ma_post_mkr, mb_post_mkr
                 else:
                     ma_after = refetched_by_venue_slug.get((cand.venue_a, cand.market_a_slug))
                     mb_after = (
@@ -3263,11 +4258,14 @@ class LiveCrossVenueShadowCollector:
                         if cand.venue_a == cand.venue_b
                         else refetched_by_venue_slug.get((cand.venue_b, cand.market_b_slug))
                     )
-                    self.engine.simulate_honest_execution(
-                        cand,
-                        post_delay_market_a=ma_after,
-                        post_delay_market_b=mb_after,
-                    )
+                    if allow_live_grad_exec:
+                        out_exec = self.engine.simulate_honest_execution(
+                            cand,
+                            post_delay_market_a=ma_after,
+                            post_delay_market_b=mb_after,
+                        )
+                        if out_exec.locked_complete_basket and eff_cycle_mode != "offline":
+                            self._last_executed_cand_ts[cand.candidate_key] = now_exec_mono
 
                 if ma_pre is not None and mb_pre is not None:
                     maker_limit_px = (
@@ -3292,16 +4290,25 @@ class LiveCrossVenueShadowCollector:
                         observed_trade_through_shares=0.0 if cand.family == "XV_PASSIVE_MAKER_ANCHOR" else None,
                     )
                     if store is not None:
-                        if ev2.simulated_executable.executable:
-                            store.record_signal(ev2, data_origin=ma_pre.data_origin)
+                        if (
+                            ev2.simulated_executable.executable
+                            and (eff_cycle_mode == "offline" or (cand_origin == "LIVE_VERIFIED" and not has_unhydrated_synth))
+                        ):
+                            store.record_signal(ev2, data_origin=cand_origin)
                         else:
+                            if ev2.simulated_executable.executable and eff_cycle_mode != "offline" and has_unhydrated_synth:
+                                rej_reason = "UNHYDRATED_SYNTHETIC_DEPTH_NON_EXECUTABLE"
+                            elif ev2.simulated_executable.executable and cand_origin != "LIVE_VERIFIED" and eff_cycle_mode != "offline":
+                                rej_reason = "DELAYED_PUBLIC_PROVENANCE_NON_EXECUTABLE"
+                            else:
+                                rej_reason = ev2.simulated_executable.status
                             store.record_rejection(
                                 candidate_key=cand.candidate_key,
                                 stage="L2_SIMULATOR",
-                                reason=ev2.simulated_executable.status,
+                                reason=rej_reason,
                                 venues=ev2.venues,
                                 gross_edge_bps=ev2.theoretical.gross_theoretical_edge_bps,
-                                data_origin=ma_pre.data_origin,
+                                data_origin=cand_origin,
                             )
                     if len(three_tier_previews) < 8:
                         three_tier_previews.append(asdict(ev2))
@@ -3318,10 +4325,10 @@ class LiveCrossVenueShadowCollector:
                 else None
             )
 
-            from src.polymarket_research.cross_venue_shadow_deployment_gates import evaluate_all_venues_authorization
+            from src.polymarket_research.cross_venue_connectors import evaluate_extended_venues_authorization
 
             eff_mode = (self.env.get("DOMINUS_NETWORK_MODE") or "live_public").strip().lower()
-            cur_auth = evaluate_all_venues_authorization(self.env, network_mode_override=eff_mode)
+            cur_auth = evaluate_extended_venues_authorization(self.env, network_mode_override=eff_mode)
             for v_k, dec_v in cur_auth.items():
                 if v_k in op_snaps:
                     op_snaps[v_k].verified_outcome_state = dec_v.verified_outcome_state
@@ -3363,6 +4370,19 @@ class LiveCrossVenueShadowCollector:
                 for pm, ext in pairs[:20]
             ]
 
+            v6_summary: Optional[Dict[str, Any]] = None
+            try:
+                from src.polymarket_research.riskless_expansion_v6_engines import run_v6_expansion_cross_venue_scan
+
+                v6_summary = await run_v6_expansion_cross_venue_scan(
+                    self,
+                    all_live_markets,
+                    pairs,
+                    transport=tr,
+                )
+            except Exception as exc_v6:
+                logger.debug("Stage G v6 expansion scan notice: %s", exc_v6)
+
             return {
                 "cycle": self.engine.cycles_completed,
                 "data_origin": session_origin,
@@ -3393,6 +4413,7 @@ class LiveCrossVenueShadowCollector:
                 "certification": cert_dict,
                 "blocker_registry": blk_dict,
                 "restriction_registry": rest_dict,
+                "v6_expansion": v6_summary,
                 "graduation_report": asdict(report),
             }
 

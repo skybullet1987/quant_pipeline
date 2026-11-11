@@ -40,7 +40,43 @@ import time
 from decimal import ROUND_CEILING, ROUND_FLOOR, Decimal
 from typing import Any, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
-import requests
+try:
+    import requests
+except ImportError:  # pragma: no cover - stdlib fallback for minimal Python runtimes
+    import json as _stdlib_json
+    import urllib.parse as _urllib_parse
+    import urllib.request as _urllib_request
+
+    class _StdlibHttpResponse:
+        def __init__(self, status_code: int, raw_bytes: bytes) -> None:
+            self.status_code = int(status_code)
+            self._raw = raw_bytes
+            self.text = raw_bytes.decode("utf-8", errors="replace")
+
+        def json(self) -> Any:
+            return _stdlib_json.loads(self.text)
+
+        def raise_for_status(self) -> None:
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}: {self.text[:200]}")
+
+    class _StdlibRequestsShim:
+        @staticmethod
+        def get(url: str, params: Optional[Dict[str, Any]] = None, headers: Optional[Dict[str, str]] = None, timeout: float = 5.0) -> _StdlibHttpResponse:
+            full_url = f"{url}?{_urllib_parse.urlencode(params)}" if params else url
+            req = _urllib_request.Request(full_url, headers=dict(headers or {}), method="GET")
+            with _urllib_request.urlopen(req, timeout=timeout) as resp:
+                return _StdlibHttpResponse(getattr(resp, "status", 200), resp.read())
+
+        @staticmethod
+        def post(url: str, json: Any = None, headers: Optional[Dict[str, str]] = None, timeout: float = 5.0) -> _StdlibHttpResponse:
+            hdrs = {"Content-Type": "application/json", **dict(headers or {})}
+            body = _stdlib_json.dumps(json).encode("utf-8") if json is not None else b""
+            req = _urllib_request.Request(url, data=body, headers=hdrs, method="POST")
+            with _urllib_request.urlopen(req, timeout=timeout) as resp:
+                return _StdlibHttpResponse(getattr(resp, "status", 200), resp.read())
+
+    requests = _StdlibRequestsShim()  # type: ignore[assignment]
 
 logger = logging.getLogger("RisklessMachineGun")
 

@@ -86,6 +86,8 @@ STAGE_G_MANAGED_FILES: Tuple[str, ...] = (
     "src/polymarket_research/cross_venue_unblock_and_certification.py",
     "src/polymarket_research/cross_venue_dry_run_protocol.py",
     "src/polymarket_research/economic_attribution_ledger.py",
+    "src/polymarket_research/honest_riskless_backtester.py",
+    "src/polymarket_research/riskless_expansion_v6_engines.py",
     "docs/KYB_AND_API_ONBOARDING_DOSSIERS.md",
     "scripts/shadow_cross_venue_riskless_probe.py",
     "scripts/deploy_cross_venue_shadow.py",
@@ -97,6 +99,8 @@ STAGE_G_MANAGED_FILES: Tuple[str, ...] = (
     "tests/test_action4_shadow_service_and_gates.py",
     "tests/test_action4_production_connectors_and_adversarial.py",
     "tests/test_cross_venue_riskless_shadow.py",
+    "tests/test_riskless_remediation_and_8_new_engines.py",
+    "tests/test_v50_derive_and_probable_connectors.py",
 )
 
 
@@ -227,6 +231,7 @@ def run_apply(
     *,
     reset_offline_env: bool = False,
     enable_authorized_live_public: bool = False,
+    skip_remote_pytest: bool = False,
 ) -> Dict[str, Any]:
     # 1. Local pre-flight validation
     unit_path = REPO_ROOT / "systemd" / "polymarket-cross-venue-shadow.service"
@@ -263,24 +268,44 @@ def run_apply(
     if rc_up != 0:
         raise RuntimeError(f"Staging upload failed: {err_up}")
 
-    # 3. Execute remote pytest gate in isolated staging overlay BEFORE modifying live repository
-    test_targets = " ".join(
-        t
-        for t in (
-            "tests/test_action4_shadow_service_and_gates.py",
-            "tests/test_action4_production_connectors_and_adversarial.py",
-            "tests/test_cross_venue_riskless_shadow.py",
+    # 3. Execute staging verification gate BEFORE modifying live repository
+    #    D-010 swapless host protection: never spawn heavy pytest (~650 MiB) on swapless hosts (`SwapTotal == 0`).
+    py_managed = " ".join(f for f in STAGE_G_MANAGED_FILES if f.endswith(".py") and (REPO_ROOT / f).exists())
+    if skip_remote_pytest:
+        gate_cmd = (
+            f"cd {stage_dir} && PYTHONPATH={stage_dir} {REMOTE_VENV_PY} -m py_compile {py_managed} && "
+            f"echo 'SKIPPED_REMOTE_PYTEST_PYCOMPILE_OK'"
         )
-        if (REPO_ROOT / t).exists()
-    )
+    else:
+        test_targets = " ".join(
+            t
+            for t in (
+                "tests/test_action4_shadow_service_and_gates.py",
+                "tests/test_action4_production_connectors_and_adversarial.py",
+                "tests/test_cross_venue_riskless_shadow.py",
+                "tests/test_riskless_remediation_and_8_new_engines.py",
+                "tests/test_v50_derive_and_probable_connectors.py",
+            )
+            if (REPO_ROOT / t).exists()
+        )
+        gate_cmd = (
+            f"cd {stage_dir} && "
+            f"SWAP_KB=$(awk '/^SwapTotal:/ {{print $2}}' /proc/meminfo 2>/dev/null || echo 0) && "
+            f"if [ \"${{SWAP_KB:-0}}\" = \"0\" ]; then "
+            f"  PYTHONPATH={stage_dir} {REMOTE_VENV_PY} -m py_compile {py_managed} && "
+            f"  echo 'SKIPPED_SWAPLESS_HOST_D010_PYCOMPILE_OK'; "
+            f"else "
+            f"  PYTHONPATH={stage_dir} {REMOTE_VENV_PY} -m pytest -q -o addopts='' {test_targets}; "
+            f"fi"
+        )
     rc_test, out_test, err_test = ssh_exec(
         host,
-        f"cd {stage_dir} && PYTHONPATH={stage_dir} {REMOTE_VENV_PY} -m pytest -q -o addopts='' {test_targets}",
+        gate_cmd,
         timeout_sec=180,
     )
     if rc_test != 0:
         ssh_exec(host, f"rm -rf {stage_dir}")
-        raise RuntimeError(f"Remote staging pytest gate FAILED (aborted before install):\n{out_test}\n{err_test}")
+        raise RuntimeError(f"Remote staging verification gate FAILED (aborted before install):\n{out_test}\n{err_test}")
 
     # 4. Create atomic rollback backup, install ONLY Stage G managed files, configure 0600 env, logrotate & user systemd units
     backup_archive = f"{REMOTE_BACKUP_DIR}/stage_g_shadow_{ts_tag}.tar.gz"
@@ -289,7 +314,7 @@ def run_apply(
     net_mode_val = "live_public" if enable_authorized_live_public else "offline"
     op_jur_val = "CA-ON" if enable_authorized_live_public else ""
     fex_pub_val = "1" if enable_authorized_live_public else "0"
-    pf_env_val = "testnet" if enable_authorized_live_public else "mainnet"
+    pf_env_val = (os.environ.get("PREDICT_FUN_ENV") or ("testnet" if enable_authorized_live_public else "mainnet")).strip()
 
     install_script = f"""
 set -euo pipefail
@@ -429,17 +454,19 @@ cat "{REMOTE_DATA_DIR}/shadow_service_health.json"
 
 
 def run_rollback(host: str, *, archive_path: str = "", dry_run: bool = False) -> Dict[str, Any]:
+    import shlex
+
     find_cmd = (
         f"ls -1t {REMOTE_BACKUP_DIR}/stage_g_shadow_*.tar.gz 2>/dev/null | head -n 1"
         if not archive_path
-        else f"ls -1 {archive_path}"
+        else f"ls -1 {shlex.quote(archive_path)}"
     )
     rc, out, err = ssh_exec(host, find_cmd)
     target = out.strip()
     if rc != 0 or not target:
         raise RuntimeError(f"No rollback archive found ({err.strip()})")
 
-    rc_list, list_out, _ = ssh_exec(host, f"tar tzf '{target}'")
+    rc_list, list_out, _ = ssh_exec(host, f"tar tzf {shlex.quote(target)}")
     archived_files = [ln.strip() for ln in list_out.splitlines() if ln.strip()]
     if dry_run:
         return {
@@ -563,7 +590,12 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     ap = argparse.ArgumentParser(description="Dominus Stage G Cross-Venue Shadow Deployment & Rollback Tool")
     ap.add_argument("--host", default="kraken-finland", help="SSH host alias (default: kraken-finland).")
     ap.add_argument("--check", action="store_true", help="Run remote host, dependency, and isolation pre-flight check.")
-    ap.add_argument("--apply", action="store_true", help="Stage, pytest-gate, backup, and deploy Stage G shadow units.")
+    ap.add_argument("--apply", action="store_true", help="Stage, verify, backup, and deploy Stage G shadow units.")
+    ap.add_argument(
+        "--skip-remote-pytest",
+        action="store_true",
+        help="Skip remote pytest and run lightweight py_compile in staging (mandatory on swapless D-010 hosts).",
+    )
     ap.add_argument("--reset-offline-env", action="store_true", help="Reset /etc/polymarket-shadow.env to clean offline template.")
     ap.add_argument(
         "--enable-authorized-live-public",
@@ -623,6 +655,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     args.host,
                     reset_offline_env=bool(args.reset_offline_env),
                     enable_authorized_live_public=bool(args.enable_authorized_live_public),
+                    skip_remote_pytest=bool(args.skip_remote_pytest),
                 ),
                 indent=2,
             )

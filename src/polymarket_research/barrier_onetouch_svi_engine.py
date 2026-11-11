@@ -189,8 +189,8 @@ def parse_hit_event(ev: Dict[str, Any], asset: str, horizon_group: str, series_s
     m_cm = _CRYPTO_MONTH_RE.search(str(ev.get("title") or ""))
     if m_cm:
         try:
-            from zoneinfo import ZoneInfo
-            ny = ZoneInfo("America/New_York")
+            from src.polymarket_research.riskless_protocol_v2_expansion import get_us_eastern_tz
+            ny = get_us_eastern_tz()
             mo_c = _CRYPTO_MONTHS[m_cm.group(1).lower()]
             yr_c = int(m_cm.group(2)) if m_cm.group(2) else datetime.fromtimestamp(end_ts - 5 * 86400.0, tz=ny).year
             start_ts = max(start_ts, datetime(yr_c, mo_c, 1, 0, 0, tzinfo=ny).timestamp())

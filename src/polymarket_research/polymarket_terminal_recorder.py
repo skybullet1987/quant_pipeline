@@ -54,6 +54,8 @@ Microstructure, Econometric, and Invariant Foundations:
        - Strictly read-only research pipeline; zero orders or authentication.
 """
 
+from __future__ import annotations
+
 import asyncio
 import collections
 from collections import defaultdict, deque
@@ -70,9 +72,36 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple, Set
 
-import aiohttp
-import numpy as np
-import websockets
+try:
+    import aiohttp
+except ImportError:  # pragma: no cover
+    aiohttp = None  # type: ignore
+
+try:
+    import numpy as np
+except ImportError:  # pragma: no cover
+    np = None  # type: ignore
+
+try:
+    import websockets
+except ImportError:  # pragma: no cover
+    websockets = None  # type: ignore
+
+
+def _release_unused_heap_memory() -> bool:
+    """Runs cyclic GC and returns freed glibc malloc arena pages to the OS (`F-01`)."""
+    import gc as _gc
+
+    _gc.collect()
+    if os.name != "nt":
+        try:
+            import ctypes
+
+            libc = ctypes.CDLL("libc.so.6")
+            return bool(libc.malloc_trim(0))
+        except Exception:
+            return False
+    return True
 
 
 def _enable_ws_nodelay(ws: Any) -> bool:
@@ -670,12 +699,36 @@ class L2OrderBook:
         self.prev_best_bid = curr_best_bid
         self.prev_best_ask = curr_best_ask
 
+    def _prune_deep_levels(self, max_keep: int = 40, trigger_len: int = 80) -> int:
+        """Bounds retained L2 price levels & birth timestamps so multi-hour books never leak dust levels (`F-01`)."""
+        dropped = 0
+        if len(self.bids) > trigger_len:
+            for px_drop in sorted(self.bids.keys(), reverse=True)[max_keep:]:
+                self.bids.pop(px_drop, None)
+                self._bid_birth_ts.pop(px_drop, None)
+                dropped += 1
+            self._dirty = True
+        elif len(self._bid_birth_ts) > len(self.bids) + 8:
+            for px_stale in [px for px in list(self._bid_birth_ts.keys()) if px not in self.bids]:
+                self._bid_birth_ts.pop(px_stale, None)
+        if len(self.asks) > trigger_len:
+            for px_drop in sorted(self.asks.keys())[max_keep:]:
+                self.asks.pop(px_drop, None)
+                self._ask_birth_ts.pop(px_drop, None)
+                dropped += 1
+            self._dirty = True
+        elif len(self._ask_birth_ts) > len(self.asks) + 8:
+            for px_stale in [px for px in list(self._ask_birth_ts.keys()) if px not in self.asks]:
+                self._ask_birth_ts.pop(px_stale, None)
+        return dropped
+
     def apply_snapshot(self, bids: List[Dict[str, str]], asks: List[Dict[str, str]]):
         now_ts = time.time()
         self.bids = {float(b["price"]): float(b["size"]) for b in bids if float(b["size"]) > 0}
         self.asks = {float(a["price"]): float(a["size"]) for a in asks if float(a["size"]) > 0}
         self._bid_birth_ts = {px: self._bid_birth_ts.get(px, now_ts) for px in self.bids}
         self._ask_birth_ts = {px: self._ask_birth_ts.get(px, now_ts) for px in self.asks}
+        self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         self._dirty = True
@@ -705,6 +758,7 @@ class L2OrderBook:
                     if old_a <= 0.0 or sz >= old_a * 1.25:
                         self._ask_birth_ts[px] = now_ts
                     self.asks[px] = sz
+        self._prune_deep_levels()
         self.last_book_update_ts = now_ts
         self.book_sequence_id += 1
         if changes:
@@ -1474,13 +1528,44 @@ class PolymarketDualFeed1HRecorder:
 
     async def get_session(self) -> aiohttp.ClientSession:
         if self.session is None or self.session.closed:
+            conn_lim = 8 if self.riskless_bus_only else 20
             self.session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(limit=conn_lim, enable_cleanup_closed=True),
                 timeout=aiohttp.ClientTimeout(total=10),
                 headers={"User-Agent": "PolymarketDualFeedRecorder/2.7"},
                 max_line_size=65536,
                 max_field_size=65536,
             )
         return self.session
+
+    def _evict_recorder_memory(self, now_ts: Optional[float] = None, trim_heap: bool = False) -> Dict[str, int]:
+        """Bounds per-asset recorder sets/cooldowns/books and optionally trims glibc arenas (`F-01`)."""
+        now = float(now_ts if now_ts is not None else time.time())
+        evicted = 0
+        logged_ids = getattr(self, "_logged_resolution_market_ids", None)
+        if isinstance(logged_ids, set) and len(logged_ids) > 512:
+            keep_recent = sorted(logged_ids)[-256:]
+            evicted += len(logged_ids) - len(keep_recent)
+            logged_ids.clear()
+            logged_ids.update(keep_recent)
+        cooldowns = getattr(self, "_boundary_lock_cooldowns", None)
+        if isinstance(cooldowns, dict):
+            for k_cd, ts_cd in list(cooldowns.items()):
+                if (now - float(ts_cd or 0.0)) > 3600.0:
+                    cooldowns.pop(k_cd, None)
+                    evicted += 1
+        burst_tasks = getattr(self, "active_burst_tasks", None)
+        if isinstance(burst_tasks, set) and burst_tasks:
+            for t_b in [t for t in list(burst_tasks) if getattr(t, "done", lambda: False)()]:
+                burst_tasks.discard(t_b)
+                evicted += 1
+        pruned_levels = 0
+        for bk_obj in list((getattr(self, "books", None) or {}).values()):
+            if isinstance(bk_obj, L2OrderBook):
+                pruned_levels += bk_obj._prune_deep_levels()
+        if trim_heap:
+            _release_unused_heap_memory()
+        return {"evicted_entries": evicted, "pruned_book_levels": pruned_levels}
 
     async def calibrate_binance_clock_offset(self):
         """
@@ -1924,6 +2009,8 @@ class PolymarketDualFeed1HRecorder:
         so Chainlink 60s-TWAP / UMA oracle settlements are captured authoritatively without
         contaminating ground-truth labels with Binance 1s spot mismatches.
         """
+        if getattr(self, "riskless_bus_only", False):
+            return
         m_id_str = str(market.get("market_id") or "")
         logged_set = getattr(self, "_logged_resolution_market_ids", None)
         if logged_set is None:
@@ -1931,6 +2018,10 @@ class PolymarketDualFeed1HRecorder:
             self._logged_resolution_market_ids = logged_set
         if not m_id_str or m_id_str in logged_set:
             return
+        if len(logged_set) > 512:
+            keep_recent = sorted(logged_set)[-256:]
+            logged_set.clear()
+            logged_set.update(keep_recent)
         logged_set.add(m_id_str)
         duration = int(market.get("candle_close_ts", 0)) - int(market.get("candle_open_ts", 0))
         default_hz = "5m" if 0 < duration <= 300 else ("15m" if 0 < duration <= 900 else ("4h" if duration >= 10800 else "1h"))
@@ -2940,7 +3031,8 @@ class PolymarketDualFeed1HRecorder:
                             mh = getattr(self, attr_n, None)
                             if mh and (mh["end_dt"] - now_utc).total_seconds() <= 0:
                                 logger.info(f"[*] {hz.upper()} Market {mh['market_id']} reached expiry. Cycling to next.")
-                                asyncio.create_task(self.verify_and_log_resolution(mh))
+                                if not self.riskless_bus_only:
+                                    asyncio.create_task(self.verify_and_log_resolution(mh))
                                 setattr(self, attr_n, None)
                                 self.books.pop(up_k, None)
                                 self.books.pop(dn_k, None)
@@ -3281,15 +3373,22 @@ class PolymarketDualFeed1HRecorder:
         while self.running:
             try:
                 now = datetime.now(timezone.utc)
+                now_mono_disc = time.time()
+                disc_backoff = self.__dict__.setdefault("_empty_discovery_backoff_ts", {})
                 if not self.current_market or (self.current_market["end_dt"] - now).total_seconds() <= 0:
                     expired_market = self.current_market
-                    if expired_market:
+                    if expired_market and not self.riskless_bus_only:
                         # Ground truth verification of finalized candle
                         asyncio.create_task(self.verify_and_log_resolution(expired_market))
 
                     market = getattr(self, "_cached_next_market", None)
                     if not market or (expired_market and market.get("market_id") == expired_market.get("market_id")):
-                        market = await self.discover_nearest_1h_market()
+                        if expired_market or (now_mono_disc - float(disc_backoff.get("1h") or 0.0)) >= 30.0:
+                            market = await self.discover_nearest_1h_market()
+                            if market is None:
+                                disc_backoff["1h"] = now_mono_disc
+                            else:
+                                disc_backoff.pop("1h", None)
                     self._cached_next_market = None
 
                     if market:
@@ -3324,11 +3423,15 @@ class PolymarketDualFeed1HRecorder:
                 for hz, attr_n in (("5m", "market_5m"), ("15m", "market_15m"), ("4h", "market_4h")):
                     mh_cur = getattr(self, attr_n, None)
                     if not mh_cur or (mh_cur["end_dt"] - now).total_seconds() <= 0:
-                        if mh_cur and (mh_cur["end_dt"] - now).total_seconds() <= 0:
+                        expired_hz = bool(mh_cur and (mh_cur["end_dt"] - now).total_seconds() <= 0)
+                        if expired_hz and not self.riskless_bus_only:
                             asyncio.create_task(self.verify_and_log_resolution(mh_cur))
+                        if not expired_hz and (now_mono_disc - float(disc_backoff.get(hz) or 0.0)) < 30.0:
+                            continue
                         try:
                             mh_new = await self.discover_nearest_twap_market(hz)
                             if mh_new:
+                                disc_backoff.pop(hz, None)
                                 prev_id = mh_cur.get("market_id") if mh_cur else None
                                 setattr(self, attr_n, mh_new)
                                 mh_cur = mh_new
@@ -3338,6 +3441,8 @@ class PolymarketDualFeed1HRecorder:
                                         f"(ID: {mh_new['market_id']}, Open: ${mh_new.get('finalized_open', 0.0):,.4f})"
                                     )
                                     self._reconnect_clob = True
+                            else:
+                                disc_backoff[hz] = now_mono_disc
                         except Exception as e:
                             logger.debug(f"{hz} discovery cycle note: {e}")
 
@@ -3528,11 +3633,14 @@ class PolymarketDualFeed1HRecorder:
                     fut_snap = list(self.futures_trades)
                     await asyncio.to_thread(self.compute_leadlag_cross_correlation, spot_snap, fut_snap)
 
+                # Periodic 120s recorder memory & book-depth maintenance (`F-01`)
+                now_mem_chk = time.time()
+                if (now_mem_chk - float(self.__dict__.get("_last_recorder_mem_evict_ts") or 0.0)) >= 120.0:
+                    self.__dict__["_last_recorder_mem_evict_ts"] = now_mem_chk
+                    self._evict_recorder_memory(now_ts=now_mem_chk, trim_heap=(self.asset == "BTC"))
+
                 # Periodic 300s clock synchronization
-                if time.time() - self.last_clock_sync_ts > 300.0:
-                    if self.riskless_bus_only and self.asset == "BTC":
-                        import gc as _gc
-                        _gc.collect()
+                if now_mem_chk - self.last_clock_sync_ts > 300.0:
                     asyncio.create_task(self.calibrate_binance_clock_offset())
 
                 await asyncio.sleep(10.0)
