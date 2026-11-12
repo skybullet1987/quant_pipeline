@@ -58,6 +58,8 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "DECISIONS.md",
     "DEPLOYMENT_STATUS.md",
     "EXPERIMENT_REGISTRY.md",
+    "FULL_THROTTLE_DASHBOARD.md",
+    "FULL_THROTTLE_STRATEGY_AND_PROJECTIONS_REPORT.md",
     "LATENCY_BASELINE.md",
     "OWNER_CONTROL_MATRIX.md",
     "POLICY_AUDIT.md",
@@ -68,7 +70,9 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "PROJECT_STATE.md",
     "QA_EVIDENCE.md",
     "RESTRICTION_REGISTER.md",
+    "SYSTEM_AUDIT_BASELINE.md",
     "TASK_LEDGER.md",
+    "UNIVERSE_COVERAGE_AUDIT.md",
     "VENUE_CAPABILITY_MATRIX.md",
     "paa_staging/proposals/v50_owner_control_package/01_permissions_pol05_scope_ttl_and_binary_guard.patch",
     "paa_staging/proposals/v50_owner_control_package/02_builder_and_deployer_pol07_uma_restart.patch",
@@ -103,6 +107,8 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "systemd/polymarket-cross-venue-shadow.service",
     "systemd/polymarket-cross-venue-shadow-watchdog.service",
     "systemd/polymarket-cross-venue-shadow-watchdog.timer",
+    "systemd/polymarket-full-throttle-sweep.service",
+    "systemd/polymarket-full-throttle-sweep.timer",
     "config/polymarket_risk_config.json",
     "config/polymarket_strategy_and_risk.json",
     "config/polymarket_external_cashflows.json",
@@ -159,18 +165,28 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "src/polymarket_research/cross_venue_telemetry_and_watchdog.py",
     "src/polymarket_research/cross_venue_unblock_and_certification.py",
     "src/polymarket_research/deribit_svi_surface.py",
+    "src/polymarket_research/detectors_complete_set_and_negrisk.py",
+    "src/polymarket_research/detectors_logical_and_specialized.py",
+    "src/polymarket_research/detectors_microstructure_and_portfolio.py",
     "src/polymarket_research/directional_wfo_shadow_sleeves.py",
     "src/polymarket_research/exp316_macro_strike_shadow.py",
+    "src/polymarket_research/full_throttle_pipeline.py",
+    "src/polymarket_research/full_universe_discovery.py",
+    "src/polymarket_research/market_proposition_graph.py",
     "src/polymarket_research/multistrike_svi_scalper.py",
     "src/polymarket_research/net_alpha_opportunity_engine.py",
     "src/polymarket_research/polymarket_paper_trader.py",
+    "src/polymarket_research/universal_arb_verifier.py",
     "src/polymarket_research/check_polymarket_balance.py",
     "src/polymarket_research/redeem_settled_positions.py",
+    "src/polymarket_research/v6_restriction_and_capital_allocator.py",
+    "src/polymarket_research/order_sizing_experiments.py",
     "scripts/alpha124_status.py",
     "scripts/backtest_alpha_124.py",
     "scripts/benchmark_polymarket_13stage_latency.py",
     "scripts/bundle_polymarket_all_in_one.py",
     "scripts/bundle_polymarket_full_codebase.py",
+    "scripts/generate_full_throttle_dashboard.py",
     "scripts/honest_purged_wfo_optimizer.py",
     "scripts/paa_autonomous_controller.py",
     "scripts/paa_cli.py",
@@ -178,6 +194,8 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "scripts/polymarket_daily_projections.py",
     "scripts/polymarket_scorecard_snapshot.py",
     "scripts/polymarket_telemetry_compactor.py",
+    "scripts/run_dominus_full_throttle.py",
+    "scripts/sweep_full_universe_registry.py",
     "scripts/check_polymarket_region_latency.py",
     "scripts/dominus_command_center.py",
     "scripts/weekly_wfo_governance.py",
@@ -185,7 +203,10 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "scripts/deploy_cross_venue_shadow.py",
     "scripts/launch_finland_browser.ps1",
     "scripts/gcp_nl_cost_and_latency_cutover.sh",
+    "scripts/run_v6_counterfactual_opportunity_audit.py",
+    "scripts/run_sizing_experiments.py",
     "scripts/deploy_polymarket_live.py",
+    "tests/__init__.py",
     "tests/conftest.py",
     "tests/test_action4_production_connectors_and_adversarial.py",
     "tests/test_action4_shadow_service_and_gates.py",
@@ -195,9 +216,14 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_apex_v5_fixes_and_parity.py",
     "tests/test_cloud_spend_egress_and_probe_hardening.py",
     "tests/test_cross_venue_riskless_shadow.py",
+    "tests/test_detectors_complete_set_and_negrisk.py",
+    "tests/test_detectors_logical_and_specialized.py",
+    "tests/test_detectors_microstructure_and_portfolio.py",
     "tests/test_directional_wfo_shadow_sleeves.py",
     "tests/test_experiments_polymarket.py",
     "tests/test_forensic_audit_v6_fixes.py",
+    "tests/test_full_throttle_pipeline_and_dashboard.py",
+    "tests/test_full_universe_discovery.py",
     "tests/test_latency_trace.py",
     "tests/test_maker_queue_and_uma_fixes.py",
     "tests/test_orderflow_hardening.py",
@@ -230,9 +256,11 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_round3_adversarial_invariants.py",
     "tests/test_stage_b_economic_attribution.py",
     "tests/test_stage_c_zero_loss_velocity.py",
+    "tests/test_universal_arb_verifier_and_graph.py",
     "tests/test_v33_microstructure.py",
     "tests/test_v36_forensic_remediation.py",
     "tests/test_v395_sleeve1_all_tracks.py",
+    "tests/test_v50_alpha124_threadpool_and_bond1_stalk_fix.py",
     "tests/test_v50_cross_venue_double_zero_and_mof_fixes.py",
     "tests/test_v50_derive_and_probable_connectors.py",
     "tests/test_v50_holistic_overhaul.py",
@@ -246,6 +274,11 @@ DEPLOY_MANIFEST: Tuple[str, ...] = (
     "tests/test_v570_ms_velocity_and_ws_sniper.py",
     "tests/test_v580_sharded_ws_d1fast_pusd_and_direct_feeds.py",
     "tests/test_v590_fast_cancel_ws_hedge_and_synthetic_maker.py",
+    "tests/test_v60_restriction_reassessment_and_allocator.py",
+    "tests/test_v6_sizing_experiments.py",
+    "tests/test_v6_portfolio_risk_allocator.py",
+    "tests/test_v6_full_system_qa.py",
+    "tests/test_v6_system_optimizations.py",
     "tests/test_zero_trust_forensic_audit.py",
 )
 
@@ -311,7 +344,7 @@ def inspect_remote_state(host: str, remote_root: str, manifest: Tuple[str, ...])
         "        hashes[rel] = None\n"
         "env = {**os.environ, 'XDG_RUNTIME_DIR': f'/run/user/{os.getuid()}'}\n"
         "svcs = {}\n"
-        "for s in ('polymarket-live-harvester.service', 'polymarket-alpha124-shadow.service', 'polymarket-recorder.service', 'polymarket-cross-venue-shadow.service'):\n"
+        "for s in ('polymarket-live-harvester.service', 'polymarket-alpha124-shadow.service', 'polymarket-recorder.service', 'polymarket-cross-venue-shadow.service', 'polymarket-full-throttle-sweep.timer'):\n"
         "    r = subprocess.run(['systemctl', '--user', 'is-active', s], env=env, capture_output=True, text=True)\n"
         "    svcs[s] = r.stdout.strip() or r.stderr.strip()\n"
         "st_p = root / 'data/polymarket/live_harvester_state.json'\n"
@@ -370,7 +403,13 @@ def run_apply(
     force_restart: bool = False,
     skip_remote_pytest: bool = False,
 ) -> int:
-    verify_local_manifest(DEPLOY_MANIFEST)
+    local_digests = verify_local_manifest(DEPLOY_MANIFEST)
+    pre_rem = inspect_remote_state(host, remote_root, DEPLOY_MANIFEST)
+    pre_hashes = pre_rem.get("hashes") or {}
+    cv_code_changed = any(
+        "cross_venue" in rel and pre_hashes.get(rel) != local_digests.get(rel)
+        for rel in DEPLOY_MANIFEST
+    )
     tar_bytes = build_manifest_tar_gz(DEPLOY_MANIFEST)
     ts_tag = time.strftime("%Y%m%d_%H%M%S", time.gmtime())
     # Disk-backed staging directory (never /tmp tmpfs RAM on the 3.8 GiB VM!)
@@ -452,6 +491,7 @@ def run_apply(
         "    'polymarket-telemetry-compactor.service', 'polymarket-telemetry-compactor.timer',\n"
         "    'polymarket-cross-venue-shadow.service',\n"
         "    'polymarket-cross-venue-shadow-watchdog.service', 'polymarket-cross-venue-shadow-watchdog.timer',\n"
+        "    'polymarket-full-throttle-sweep.service', 'polymarket-full-throttle-sweep.timer',\n"
         "}\n"
         "if user_sysd.exists():\n"
         "    for u_src in sorted((root / 'systemd').iterdir()):\n"
@@ -489,7 +529,8 @@ def run_apply(
         "        if r_exp.stdout.strip() == 'active':\n"
         "            subprocess.run(['systemctl', '--user', 'restart', 'polymarket-exp316-shadow.service'], env=env, check=True)\n"
         "r_cv = subprocess.run(['systemctl', '--user', 'is-active', 'polymarket-cross-venue-shadow.service'], env=env, capture_output=True, text=True)\n"
-        "if r_cv.stdout.strip() == 'active' or 'polymarket-cross-venue-shadow.service' in changed_units:\n"
+        f"cv_changed = {bool(cv_code_changed)!r}\n"
+        "if (cv_changed and r_cv.stdout.strip() == 'active') or 'polymarket-cross-venue-shadow.service' in changed_units:\n"
         "    if (user_sysd / 'polymarket-cross-venue-shadow.service').exists():\n"
         "        subprocess.run(['systemctl', '--user', 'restart', 'polymarket-cross-venue-shadow.service'], env=env, check=True)\n"
         "subprocess.run(['systemctl', '--user', 'restart', 'polymarket-alpha124-shadow.service'], env=env, check=True)\n"
@@ -509,7 +550,8 @@ def run_apply(
         "s2 = subprocess.run(['systemctl', '--user', 'is-active', 'polymarket-live-harvester.service'], env=env, capture_output=True, text=True).stdout.strip()\n"
         "s3 = subprocess.run(['systemctl', '--user', 'is-active', 'polymarket-recorder.service'], env=env, capture_output=True, text=True).stdout.strip()\n"
         "s4 = subprocess.run(['systemctl', '--user', 'is-active', 'polymarket-cross-venue-shadow.service'], env=env, capture_output=True, text=True).stdout.strip()\n"
-        "print(json.dumps({'harvester_deploy_mode': mode, 'alpha124_shadow': s1, 'live_harvester': s2, 'recorder': s3, 'cross_venue_shadow': s4, 'changed_units': sorted(changed_units), 'backup': "
+        "s5 = subprocess.run(['systemctl', '--user', 'is-active', 'polymarket-full-throttle-sweep.timer'], env=env, capture_output=True, text=True).stdout.strip()\n"
+        "print(json.dumps({'harvester_deploy_mode': mode, 'alpha124_shadow': s1, 'live_harvester': s2, 'recorder': s3, 'cross_venue_shadow': s4, 'full_throttle_timer': s5, 'changed_units': sorted(changed_units), 'backup': "
         f"{backup_tar!r}"
         "}))\n"
     )

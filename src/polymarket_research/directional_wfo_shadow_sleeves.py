@@ -284,7 +284,10 @@ class DirectionalWfoShadowManager:
                     for ln in f:
                         if not ln.strip():
                             continue
-                        row = json.loads(ln)
+                        try:
+                            row = json.loads(ln)
+                        except Exception:
+                            continue
                         tid = str(row.get("trade_id") or "")
                         mid = str(row.get("market_id") or "")
                         if tid and tid not in id_set:
@@ -542,10 +545,11 @@ class DirectionalWfoShadowManager:
             b1 = int(ts // 60)
             if b1 > self._btc_last_1m_bkt:
                 if self._btc_last_1m_spot > 0:
+                    dt_mins = max(1, b1 - self._btc_last_1m_bkt) if self._btc_last_1m_bkt > 0 else 1
                     r1 = math.log(sp / self._btc_last_1m_spot)
                     self._btc_sigma_1h = max(
                         0.0020,
-                        min(0.0200, math.sqrt(0.94 * (self._btc_sigma_1h ** 2) + 0.06 * (60.0 * r1 * r1))),
+                        min(0.0200, math.sqrt(0.94 * (self._btc_sigma_1h ** 2) + 0.06 * ((60.0 / dt_mins) * r1 * r1))),
                     )
                 self._btc_last_1m_spot = sp
                 self._btc_last_1m_bkt = b1
@@ -642,10 +646,11 @@ class DirectionalWfoShadowManager:
             b1 = int(ts // 60)
             if b1 > self._sol_last_1m_bkt:
                 if self._sol_last_1m_spot > 0:
+                    dt_mins = max(1, b1 - self._sol_last_1m_bkt) if self._sol_last_1m_bkt > 0 else 1
                     r1 = math.log(sp / self._sol_last_1m_spot)
                     self._sol_sigma_1h = max(
                         0.0040,
-                        min(0.0300, math.sqrt(0.94 * (self._sol_sigma_1h ** 2) + 0.06 * (60.0 * r1 * r1))),
+                        min(0.0300, math.sqrt(0.94 * (self._sol_sigma_1h ** 2) + 0.06 * ((60.0 / dt_mins) * r1 * r1))),
                     )
                 self._sol_last_1m_spot = sp
                 self._sol_last_1m_bkt = b1
@@ -766,10 +771,11 @@ class DirectionalWfoShadowManager:
         b1 = int(ts // 60)
         if b1 > self._xau_last_1m_bkt:
             if self._xau_last_1m_spot > 0:
+                dt_mins = max(1, b1 - self._xau_last_1m_bkt) if self._xau_last_1m_bkt > 0 else 1
                 r1 = math.log(xau_usd / self._xau_last_1m_spot)
                 self._xau_sigma_1h = max(
                     0.0010,
-                    min(0.0120, math.sqrt(0.94 * (self._xau_sigma_1h ** 2) + 0.06 * (60.0 * r1 * r1))),
+                    min(0.0120, math.sqrt(0.94 * (self._xau_sigma_1h ** 2) + 0.06 * ((60.0 / dt_mins) * r1 * r1))),
                 )
             self._xau_last_1m_spot = xau_usd
             self._xau_last_1m_bkt = b1

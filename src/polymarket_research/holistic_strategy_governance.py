@@ -64,7 +64,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "max_spread": 0.03,
         "respect_configured_exit_policy_on_safe": True,
         "min_live_equity_for_unhedged_directional_usd": 150.0,
-        "riskless_only_mode": False,
+        "riskless_only_mode": True,
     },
     "routing": {
         "z_immediate_taker_cut": 1.00,
@@ -170,8 +170,8 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "reward_reserved_slot_usd_seed": 0.0,
         "box_collateral_reserve_usd": 0.0,
         "max_concurrent_riskless_boxes": 10,
-        "seed_max_lockup_hours": 8.0,
-        "seed_min_bps_per_hour": 15.0,
+        "seed_max_lockup_hours": 24.0,
+        "seed_min_bps_per_hour": 7.5,
         "recovery_max_lockup_hours": 48.0,
         "recovery_min_bps_per_hour": 5.0,
         "growth_max_lockup_hours": 72.0,
@@ -202,7 +202,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "enable_xtrack1_expanded_handles": True,
         "enable_xtrack1_6handle_dead_no": True,
         "enable_zerofee1_mergeable_sweeper": True,
-        "zerofee1_min_net_edge_bps": 45.0,
+        "zerofee1_min_net_edge_bps": 15.0,
         "enable_esports1_bo3_intermission_box": True,
         "enable_esports1_intermission_hc_total_box": True,
         "enable_rt_mono1_scalar_ladders": True,
@@ -213,7 +213,7 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "sll_sticky_fifo_rank1_min_hold_sec": 900.0,
         "bond1_max_outbid_repegs": 3,
         "enable_ws_clinch_sniper": True,
-        "ws_clinch_watchlist_max_tokens": 450,
+        "ws_clinch_watchlist_max_tokens": 900,
         "enable_uma_liveness_2h_recycle": True,
         "enable_event_slot_diversification": True,
         "reward_dynamic_unlock_equity_usd": 125.0,
@@ -242,6 +242,11 @@ DEFAULT_HOLISTIC_CONFIG: Dict[str, Any] = {
         "allow_nr0_multileg_dynamic_unpause": False,
         "maker_ws_book_max_age_sec": 5.0,
         "maker_max_consecutive_blind_book_polls": 3,
+        "ipc_candidate_max_age_sec": 60.0,
+        "ipc_subhourly_d1_max_age_sec": 15.0,
+        "bond1_postonly_requote_delay_sec": 1.0,
+        "enable_inventory_backed_maker_completion": True,
+        "ft_funnel_persist_interval_sec": 5.0,
     },
     "shadow_governance": {
         "enable_btc_5m_sniper_shadow": False,
@@ -341,8 +346,8 @@ def _deep_merge_validated(defaults: Dict[str, Any], raw: Dict[str, Any]) -> Dict
         raise ValueError("riskless_boxes.sll_sticky_fifo_rank1_min_hold_sec must be in [30.0, 3600.0]")
     if not (1 <= int(b_cfg["bond1_max_outbid_repegs"]) <= 10):
         raise ValueError("riskless_boxes.bond1_max_outbid_repegs must be in [1, 10]")
-    if not (4 <= int(b_cfg["ws_clinch_watchlist_max_tokens"]) <= 460):
-        raise ValueError("riskless_boxes.ws_clinch_watchlist_max_tokens must be in [4, 460]")
+    if not (4 <= int(b_cfg["ws_clinch_watchlist_max_tokens"]) <= 1500):
+        raise ValueError("riskless_boxes.ws_clinch_watchlist_max_tokens must be in [4, 1500]")
     if not (50.0 <= float(b_cfg["reward_dynamic_unlock_equity_usd"]) <= 5000.0):
         raise ValueError("riskless_boxes.reward_dynamic_unlock_equity_usd must be in [50.0, 5000.0]")
     if not (50.0 <= float(b_cfg["pre_split_dynamic_unlock_equity_usd"]) <= 5000.0):
@@ -734,7 +739,7 @@ def get_unleashed_v5_tier_profile(
         bond1_mkt_cap = min(float(b_cfg.get("bond1_per_market_cap_usd_seed", 45.0)), round(eq * bond1_mkt_pct, 2))
         bridged_zf_cap = float(b_cfg.get("bridged_zero_fee_cap_usd_seed", 60.0))
         max_lockup_h = float(b_cfg.get("seed_max_lockup_hours", 24.0))
-        min_bps_hr = float(b_cfg.get("seed_min_bps_per_hour", 8.0))
+        min_bps_hr = float(b_cfg.get("seed_min_bps_per_hour", 7.5))
         min_floor = hard_floor
     elif eq < b2:
         tier_name = "HYPER_GROWTH"
@@ -826,6 +831,9 @@ def passes_capital_velocity_hurdle(
     merge_wallet_ok: bool = False,
     previous_tier: Optional[str] = None,
     cfg: Optional[Dict[str, Any]] = None,
+    use_dynamic_opportunity_cost: bool = False,
+    utilization_frac: float = 0.0,
+    competing_top_bps_per_hr: float = 0.0,
 ) -> Tuple[bool, str]:
     """
     Bankroll-tiered Capital-Velocity Hurdle for riskless structural sleeves.
@@ -833,12 +841,36 @@ def passes_capital_velocity_hurdle(
     BOTH maximum lockup hours AND minimum annualized/hourly net edge (`OR` rejection).
     Exempts `COMPLETE_SET` / `C1_BINARY_COMPLETE_SET` ONLY when `merge_wallet_ok=True` is verified so
     unmergeable long-dated complete sets never lock seed cash past `max_lockup_hours`.
+    When `use_dynamic_opportunity_cost=True` (v6.0 `R-09`/`R-43`), replaces both the unconditional
+    `DOMINANCE` infinite-maturity exemption AND rigid `24h` maturity cliffs with smooth endogenous
+    capital opportunity-cost pricing `lambda_cap(utilization, competing_top_bps_per_hr)`.
     """
     btype_u = str(box_type or "").upper()
-    if btype_u in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND"} or (
-        btype_u in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} and bool(merge_wallet_ok)
-    ) or (
-        btype_u == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0
+    _sl_vel_u = str(sleeve_src or "").strip().upper()
+    _c1_merge_ready = bool(merge_wallet_ok) and (
+        btype_u in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"} or _sl_vel_u == "C1_BINARY_COMPLETE_SET"
+    )
+    if use_dynamic_opportunity_cost:
+        if (
+            btype_u in {"NEGRISK_CONVERT", "CTF_OVERROUND"}
+            or _c1_merge_ready
+            or (btype_u == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0)
+        ):
+            return True, "OK"
+        raw_hrs_dyn = max(0.05, float(rem_tte_sec) / 3600.0)
+        eff_hrs_dyn = min(raw_hrs_dyn, 2.0) if fast_recycle_eligible else raw_hrs_dyn
+        floor_bps_dyn = max(0.0, (1.0 - float(box_cost_net)) * 10000.0)
+        floor_bps_hr_dyn = floor_bps_dyn / max(0.05, eff_hrs_dyn)
+        u_clamped = min(1.0, max(0.0, float(utilization_frac)))
+        lam_bps_hr = max(0.50 + 17.50 * (u_clamped ** 2), 0.50 * max(0.0, float(competing_top_bps_per_hr)) * u_clamped)
+        if floor_bps_hr_dyn < lam_bps_hr - 1e-6:
+            return False, f"BELOW_DYNAMIC_OPPORTUNITY_COST:{floor_bps_hr_dyn:.4f}bps_hr<{lam_bps_hr:.4f}bps_hr"
+        return True, "OK"
+
+    if (
+        btype_u in {"DOMINANCE", "NEGRISK_CONVERT", "CTF_OVERROUND"}
+        or _c1_merge_ready
+        or (btype_u == "SINGLE_LEG_LOCK" and float(rem_tte_sec) <= 60.0)
     ):
         return True, "OK"
 
@@ -847,12 +879,11 @@ def passes_capital_velocity_hurdle(
     min_bps_hr = float(prof["min_bps_per_hour"])
 
     raw_hrs = max(0.05, float(rem_tte_sec) / 3600.0)
-    _sl_vel_u = str(sleeve_src or "").strip().upper()
     _rb_vel = (cfg or GLOBAL_GOVERNANCE_MANAGER.snapshot).get("riskless_boxes", {})
     _uma_2h_cap = (
         2.0
         if (
-            _sl_vel_u in {"BOND1_UMA_RESOLUTION_CARRY", "UMA_READY1_LIVENESS_PRIORITY"}
+            _sl_vel_u in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY", "UMA_READY1_LIVENESS_PRIORITY"}
             and bool(_rb_vel.get("enable_uma_liveness_2h_recycle", True))
         )
         else 4.0

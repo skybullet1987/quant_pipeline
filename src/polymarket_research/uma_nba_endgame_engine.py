@@ -234,13 +234,19 @@ def is_objective_uma_market(m: Dict[str, Any]) -> Tuple[bool, str]:
     return False, "NO_OBJECTIVE_DOMAIN_MATCH"
 
 
-def _rpc_post(rpc_url: str, payload: Any, timeout: float = 5.0) -> Any:
+def _rpc_post(rpc_url: str, payload: Any, timeout: float = 2.5) -> Any:
     body = json.dumps(payload).encode("utf-8")
     urls = [rpc_url]
     if rpc_url == DEFAULT_POLYGON_RPC:
         urls.extend(u for u in FALLBACK_POLYGON_RPCS if u != rpc_url)
+    per_timeout = max(0.8, float(timeout))
+    deadline = time.monotonic() + max(per_timeout, 4.5)
     last_exc: Optional[Exception] = None
-    for u in urls:
+    for idx, u in enumerate(urls):
+        rem = deadline - time.monotonic()
+        if idx > 0 and rem <= 0.4:
+            break
+        try_timeout = min(per_timeout, max(0.8, rem))
         try:
             req = urllib.request.Request(
                 u,
@@ -248,7 +254,7 @@ def _rpc_post(rpc_url: str, payload: Any, timeout: float = 5.0) -> Any:
                 headers={"Content-Type": "application/json", "User-Agent": "DominusUmaVerifier/1.0"},
                 method="POST",
             )
-            return json.loads(urllib.request.urlopen(req, timeout=timeout).read().decode("utf-8"))
+            return json.loads(urllib.request.urlopen(req, timeout=try_timeout).read().decode("utf-8"))
         except Exception as exc:
             last_exc = exc
     raise last_exc if last_exc is not None else RuntimeError("RPC_FAILED")

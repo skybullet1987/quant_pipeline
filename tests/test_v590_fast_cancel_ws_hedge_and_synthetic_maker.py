@@ -29,6 +29,22 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+import types as _types
+for _opt_mod, _attrs in (
+    ("dotenv", {"load_dotenv": lambda *a, **kw: False}),
+    ("requests", {"Session": object, "get": None, "post": None}),
+    ("httpx", {"AsyncClient": object, "Client": object}),
+    ("urllib3", {}),
+    ("urllib3.connection", {"HTTPConnection": type("HTTPConnection", (), {"default_socket_options": []})}),
+):
+    try:
+        __import__(_opt_mod)
+    except ModuleNotFoundError:
+        _m = _types.ModuleType(_opt_mod)
+        for _k, _v in _attrs.items():
+            setattr(_m, _k, _v)
+        sys.modules[_opt_mod] = _m
+
 
 class _StubClobClient:
     """Deterministic non-MagicMock CLOB client stub for testing real `cancel_order_fast` & WS paths."""
@@ -601,14 +617,23 @@ class TestV590FastCancelWsHedgeAndSyntheticMaker(unittest.TestCase):
         sh3 = int(b_slot3 // 0.992)
         self.assertGreaterEqual(sh3, 5)
 
-        # 2. If S2 is unpaused, the $21.56 (`max($20, 28% * $77.01)`) Fast-Gun reserve automatically re-engages
+        # 2. If S2 is unpaused, the $20.00+ (`max($20, 28% * reconciled_nav)`) Fast-Gun reserve automatically re-engages:
+        #    - Under `F-02`/`D-001` (4 post-expiry Miami positions excluded from active sizing NAV -> $26.50 reconciled NAV),
+        #      unpausing S2 caps slot 1 at $6.50 ($26.50 - $20.00 < $8.00) and leaves $0.55 (<5 shares) for slot 2;
+        #      at $24.50 free cash (or when non-frozen exposure brings reconciled NAV to $77.01 -> $21.56 reserve),
+        #      even slot 1 is strictly <5 shares!
         rb_s2_live = dict(rb)
         rb_s2_live["paused_riskless_sleeves"] = [
             s for s in rb["paused_riskless_sleeves"] if s not in {"S2_RTDS_EXACT_TWAP_INTEGRATOR", "S2_EXACT_TWAP_LOCK"}
         ]
         harv.pending_entry_intents.clear()
-        b_unpaused, _, _ = compute_sll_entry_budget(
+        b_unpaused_2650, _, _ = compute_sll_entry_budget(
             harv, "BOND1_UMA_RESOLUTION_CARRY", "m_b1_1", 26.50, True, True, rb_s2_live, rcfg_b1, gsn, 3600.0, now_ts
+        )
+        self.assertAlmostEqual(b_unpaused_2650, 6.50, places=2)
+        self.assertLess(b_unpaused_2650, b_slot1)
+        b_unpaused, _, _ = compute_sll_entry_budget(
+            harv, "BOND1_UMA_RESOLUTION_CARRY", "m_b1_1", 24.50, True, True, rb_s2_live, rcfg_b1, gsn, 3600.0, now_ts
         )
         self.assertLess(int(b_unpaused // 0.992), 5)
 
@@ -633,7 +658,7 @@ class TestV590FastCancelWsHedgeAndSyntheticMaker(unittest.TestCase):
                 harv,
                 "BOND1_UMA_RESOLUTION_CARRY",
                 0.0,
-                26.28,
+                24.28,
                 True,
                 True,
                 rb_s2_live,

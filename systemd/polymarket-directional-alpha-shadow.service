@@ -1,0 +1,43 @@
+[Unit]
+Description=Dominus Directional Alpha Read-Only Forward Shadow Daemon (7 Locked Sleeves, Zero Credentials)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Environment=PYTHONPATH=/home/skybullet1987/quant_pipeline/src
+Environment=PAA_SIGNING_DISABLED=1
+Environment=MALLOC_ARENA_MAX=2
+
+# Strict swapless Finland VM fence (D-010: 3,907 MiB RAM, MemorySwapMax=0B, sacrifice shadow first on pressure):
+MemoryHigh=110M
+MemoryMax=140M
+MemorySwapMax=0
+CPUWeight=40
+IOWeight=50
+Nice=10
+OOMScoreAdjust=600
+
+# Kernel filesystem & privilege isolation (zero .env loading; write access strictly restricted to data/directional_alpha):
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/skybullet1987/quant_pipeline/data/directional_alpha
+
+StandardOutput=append:/home/skybullet1987/quant_pipeline/data/directional_alpha/directional_shadow.log
+StandardError=append:/home/skybullet1987/quant_pipeline/data/directional_alpha/directional_shadow.log
+
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python scripts/directional_alpha/run_directional_shadow_daemon.py --bankroll-usd 500 --interval-sec 60 --max-markets 96
+Restart=on-failure
+RestartSec=15
+RestartPreventExitStatus=78
+KillSignal=SIGTERM
+KillMode=process
+TimeoutStopSec=15s
+
+[Install]
+WantedBy=default.target

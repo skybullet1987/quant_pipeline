@@ -43,7 +43,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.execution.exchange_gateway import HyperliquidGateway
+try:
+    from src.execution.exchange_gateway import HyperliquidGateway
+except ImportError as _apex_imp_err:
+    pytest.skip(f"APEX Hyperliquid dependencies not installed: {_apex_imp_err}", allow_module_level=True)
 from src.execution.production_apex_daemon import (
     ADMIN_RESET_TOKEN,
     MAX_SINGLE_ALT_WEIGHT,

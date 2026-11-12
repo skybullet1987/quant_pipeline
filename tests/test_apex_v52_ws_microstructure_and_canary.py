@@ -14,8 +14,11 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from scripts.apex_mainnet_canary_preflight import evaluate_canary_readiness
-from src.execution.exchange_gateway import HyperliquidGateway
+try:
+    from scripts.apex_mainnet_canary_preflight import evaluate_canary_readiness
+    from src.execution.exchange_gateway import HyperliquidGateway
+except ImportError as _apex_imp_err:
+    pytest.skip(f"APEX Hyperliquid dependencies not installed: {_apex_imp_err}", allow_module_level=True)
 from src.execution.ws_market_cache import (
     HyperliquidWsMarketCache,
     compute_l2_microstructure,

@@ -178,6 +178,156 @@ UMA_POST_EVENT_CARRY_SLEEVES = frozenset(
     }
 )
 
+DISPUTED_KMIA_MARKET_IDS = frozenset({"6707503", "6707502"})
+
+FULL_THROTTLE_CERTIFIED_2LEG_SLEEVES = frozenset(
+    {
+        "C1_BINARY_COMPLETE_SET",
+        "C1_SPLIT_AND_SELL_OVERROUND",
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+        "COND1_MACRO_PARTITION_BOX",
+        "NR2_2LEG_CONVERT_NO_SUBSET_ARB",
+        "FT_DUP1_EXACT_CROSS_EVENT_BOX",
+        "FT_STRIKE1_VERIFIED_DOMINANCE_BOX",
+        "XV_SUBSET_NO_2LEG_BOX",
+    }
+)
+
+FULL_THROTTLE_EXCLUSIVE_SLEEVES = frozenset(
+    {
+        "C1_SPLIT_AND_SELL_OVERROUND",
+        "NR2_2LEG_CONVERT_NO_SUBSET_ARB",
+        "FT_DUP1_EXACT_CROSS_EVENT_BOX",
+        "FT_STRIKE1_VERIFIED_DOMINANCE_BOX",
+        "XV_SUBSET_NO_2LEG_BOX",
+    }
+)
+
+
+def check_d001_disputed_kmia_guard(candidate_box: Mapping[str, Any]) -> Optional[str]:
+    """D-001: Hard-blocks any interaction with disputed KMIA markets (6707503, 6707502) or UMA-disputed candidates."""
+    if not isinstance(candidate_box, Mapping):
+        return None
+    uma_st = str(candidate_box.get("umaResolutionStatus") or candidate_box.get("uma_resolution_status") or "").strip().lower()
+    if uma_st == "disputed":
+        return "D001_UMA_DISPUTED_CANDIDATE_BLOCKED"
+    mids = [
+        str(candidate_box.get("market_id") or "").strip(),
+        str(candidate_box.get("leg_a_market_id") or "").strip(),
+        str(candidate_box.get("leg_b_market_id") or "").strip(),
+    ]
+    for seq_key in ("legs", "no_legs", "yes_sell_legs"):
+        for item in candidate_box.get(seq_key) or ():
+            if isinstance(item, Mapping):
+                mids.append(str(item.get("market_id") or "").strip())
+    for mid in mids:
+        if mid in DISPUTED_KMIA_MARKET_IDS:
+            return f"D001_DISPUTED_KMIA_MARKET_BLOCKED:{mid}"
+    return None
+
+
+def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool:
+    """
+    Returns True iff `candidate_box` is a proof-certified Full-Throttle structural lock (`CLASS_A` or
+    `<=2`-leg `CLASS_B`) with `rule_verified == True`, `min_state_net_payoff_usd > 0` net of V2 fees,
+    `leg_count <= 2`, and valid leg/market invariants (`D-001` & `D-007` compliant).
+    """
+    if not isinstance(candidate_box, Mapping) or check_d001_disputed_kmia_guard(candidate_box) is not None:
+        return False
+    sl_src = str(candidate_box.get("sleeve_source") or candidate_box.get("sleeve") or "").strip().upper()
+    if sl_src not in FULL_THROTTLE_CERTIFIED_2LEG_SLEEVES:
+        return False
+    opp_cls = str(candidate_box.get("opportunity_class") or "").strip().upper()
+    if opp_cls and opp_cls not in {"CLASS_A", "CLASS_B"}:
+        return False
+    if candidate_box.get("rule_verified") is not True:
+        return False
+    if _sf(candidate_box.get("min_state_net_payoff_usd"), 0.0) <= 0.0:
+        return False
+    if count_sequential_bundle_legs(candidate_box) > 2 or int(_sf(candidate_box.get("leg_count"), 2.0)) > 2:
+        return False
+    if len(candidate_box.get("legs") or ()) > 2 or len(candidate_box.get("no_legs") or ()) > 2:
+        return False
+    btype = str(candidate_box.get("box_type") or "").strip().upper()
+    if btype in {"DOMINANCE_MAKER_ANCHOR", "ZERO_FEE_MAKER_ANCHOR", "MAKER_ANCHOR", "SYNTHETIC_MAKER"}:
+        return False
+    c_net = _sf(candidate_box.get("box_cost_net"), 0.0)
+    if btype != "CTF_OVERROUND" and c_net >= 1.0:
+        return False
+    if sl_src == "C1_SPLIT_AND_SELL_OVERROUND" or btype == "CTF_OVERROUND":
+        cid = str(candidate_box.get("condition_id") or candidate_box.get("leg_a_condition_id") or "").strip()
+        yt = str(candidate_box.get("yes_token_id") or candidate_box.get("leg_a_token_id") or "").strip()
+        nt = str(candidate_box.get("no_token_id") or candidate_box.get("leg_b_token_id") or "").strip()
+        return bool(sl_src == "C1_SPLIT_AND_SELL_OVERROUND" and btype == "CTF_OVERROUND" and cid and yt and nt and yt != nt)
+    if sl_src == "NR2_2LEG_CONVERT_NO_SUBSET_ARB" or btype == "NEGRISK_CONVERT":
+        cm = str(candidate_box.get("convert_mode") or "NR2_PURE_CASH_CONVERT").strip().upper()
+        no_legs = candidate_box.get("no_legs") or ()
+        return bool(btype == "NEGRISK_CONVERT" and cm == "NR2_PURE_CASH_CONVERT" and len(no_legs) == 2)
+    mid_a = str(candidate_box.get("leg_a_market_id") or "").strip()
+    mid_b = str(candidate_box.get("leg_b_market_id") or "").strip()
+    tok_a = str(candidate_box.get("leg_a_token_id") or "").strip()
+    tok_b = str(candidate_box.get("leg_b_token_id") or "").strip()
+    if tok_a and tok_b and tok_a == tok_b:
+        return False
+    if btype in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"} and sl_src in {
+        "C1_BINARY_COMPLETE_SET",
+        "D1_SAME_ORACLE_DOMINANCE_BOX",
+        "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+    }:
+        partner_tok = str(
+            candidate_box.get("partner_held_token_id")
+            or candidate_box.get("leg_b_token_id")
+            or (candidate_box.get("leg_a_opp_token_id") if sl_src == "C1_BINARY_COMPLETE_SET" else "")
+            or ""
+        ).strip()
+        inv_m = candidate_box.get("verified_wallet_inventory")
+        has_inv_hint = (
+            (isinstance(inv_m, Mapping) and _sf(inv_m.get(partner_tok), 0.0) > 0.0)
+            or bool(candidate_box.get("inventory_backed_completion"))
+            or bool(candidate_box.get("partner_held_token_id"))
+            or sl_src == "C1_BINARY_COMPLETE_SET"
+        )
+        t_e_1l = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
+        t_l_1l = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
+        k_lo_1l = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
+        k_hi_1l = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
+        if (t_e_1l > 0.0 and t_l_1l > 0.0 and t_e_1l > t_l_1l + 1e-6) or (
+            k_lo_1l > 0.0 and k_hi_1l > 0.0 and k_lo_1l > k_hi_1l + 1e-9
+        ):
+            return False
+        return bool(tok_a and partner_tok and tok_a != partner_tok and has_inv_hint)
+    if sl_src == "C1_BINARY_COMPLETE_SET" or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
+        cid_a = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
+        cid_b = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
+        if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b):
+            return False
+        return btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}
+    if bool(candidate_box.get("neg_risk_augmented", False)):
+        return False
+    t_early_ft = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
+    t_late_ft = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
+    if t_early_ft > 0.0 and t_late_ft > 0.0 and t_early_ft > t_late_ft + 1e-6:
+        return False
+    if btype not in {
+        "DOMINANCE",
+        "DOMINANCE_BOX",
+        "MACRO_DOMINANCE",
+        "LADDER_MONO",
+        "BARRIER_MONO",
+        "NEGRISK_2LEG",
+        "CROSS_BASIS_DOMINANCE",
+        "EXACT_EQUIVALENCE",
+    }:
+        return False
+    if mid_a and mid_b and mid_a == mid_b:
+        return False
+    k_lo = _sf(candidate_box.get("k_low", candidate_box.get("leg_a_strike")), 0.0)
+    k_hi = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
+    if k_lo > 0.0 and k_hi > 0.0 and k_lo > k_hi + 1e-9:
+        return False
+    return True
+
 
 def is_unmocked_live_clob_harvester(harvester: Any) -> bool:
     """
@@ -386,9 +536,15 @@ def check_strict_pure_riskless_candidate_gate(
          - `C1_BINARY_COMPLETE_SET` (`1 YES + 1 NO == $1.00` on exact same `condition_id` / `market_id`)
     Returns `None` if allowed, or a deterministic rejection reason string if blocked.
     """
+    d001_veto = check_d001_disputed_kmia_guard(candidate_box)
+    if d001_veto is not None:
+        return d001_veto
     multileg_veto = check_multileg_3plus_nav_and_certification_gate(harvester, candidate_box, rb_cfg)
     if multileg_veto is not None:
         return multileg_veto
+    opp_cls = str(candidate_box.get("opportunity_class") or "").strip().upper() if isinstance(candidate_box, Mapping) else ""
+    if opp_cls and opp_cls not in {"CLASS_A", "CLASS_B"}:
+        return f"PURE_RISKLESS_OPPORTUNITY_CLASS_BLOCKED:{opp_cls}"
     if not isinstance(rb_cfg, Mapping) or not bool(rb_cfg.get("strict_pure_riskless_mode", False)):
         return None
     if not is_unmocked_live_clob_harvester(harvester):
@@ -407,6 +563,70 @@ def check_strict_pure_riskless_candidate_gate(
     # Honor explicit operator toggle on single-leg Maker resting anchors (`enable_single_leg_maker_bond1`)
     if (is_maker or btype == "SINGLE_LEG_MAKER_LOCK") and not bool(rb_cfg.get("enable_single_leg_maker_bond1", True)):
         return f"PURE_RISKLESS_SINGLE_LEG_MAKER_DISABLED:{sl_src or btype}"
+
+    _inv_mkr_comp_ok = bool(
+        is_maker
+        and btype == "SINGLE_LEG_MAKER_LOCK"
+        and bool(rb_cfg.get("enable_inventory_backed_maker_completion", True))
+        and sl_src in {
+            "C1_BINARY_COMPLETE_SET",
+            "D1_SAME_ORACLE_DOMINANCE_BOX",
+            "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+        }
+    )
+    if (
+        (not is_maker or _inv_mkr_comp_ok)
+        and sl_src in FULL_THROTTLE_CERTIFIED_2LEG_SLEEVES
+        and (
+            bool(candidate_box.get("full_throttle_bridge"))
+            or candidate_box.get("rule_verified") is True
+            or sl_src in FULL_THROTTLE_EXCLUSIVE_SLEEVES
+            or bool(opp_cls)
+        )
+    ):
+        if candidate_box.get("rule_verified") is not True:
+            return "PURE_RISKLESS_FT_RULE_UNVERIFIED"
+        if _sf(candidate_box.get("min_state_net_payoff_usd"), 0.0) <= 0.0:
+            return "PURE_RISKLESS_FT_NON_POSITIVE_MIN_STATE_PAYOFF"
+        ft_legs = max(count_sequential_bundle_legs(candidate_box), int(_sf(candidate_box.get("leg_count"), 0.0)))
+        if ft_legs > 2:
+            return f"PURE_RISKLESS_FT_LEG_COUNT_EXCEEDED:{ft_legs}"
+        t_early_chk = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
+        t_late_chk = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
+        if t_early_chk > 0.0 and t_late_chk > 0.0 and t_early_chk > t_late_chk + 1e-6:
+            return f"PURE_RISKLESS_INVERTED_CALENDAR_DEADLINES:{t_early_chk}>{t_late_chk}"
+        if not is_verified_full_throttle_2leg_box(candidate_box):
+            return f"PURE_RISKLESS_FT_BOX_INVARIANTS_FAILED:{sl_src or btype}"
+        if btype in {"SINGLE_LEG_LOCK", "SINGLE_LEG_MAKER_LOCK"}:
+            opp_tid_c1 = str(
+                candidate_box.get("partner_held_token_id")
+                or candidate_box.get("leg_b_token_id")
+                or (candidate_box.get("leg_a_opp_token_id") if sl_src == "C1_BINARY_COMPLETE_SET" else "")
+                or ""
+            ).strip()
+            req_sh_c1 = max(1e-6, _sf(candidate_box.get("net_paired_shares", candidate_box.get("min_order_shares", candidate_box.get("shares"))), 1.0))
+            from src.polymarket_research.riskless_protocol_v2_expansion import resolve_unencumbered_partner_inventory_and_leg_cap
+
+            held_opp_sh, p_cost_ps, leg_cap_c1 = resolve_unencumbered_partner_inventory_and_leg_cap(
+                harvester, candidate_box, opp_tid_c1, default_max_box_net=0.994 if is_maker else 0.995, verify_wallet=True
+            )
+            if not opp_tid_c1 or held_opp_sh + 1e-6 < req_sh_c1:
+                return f"PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY:{opp_tid_c1}:{held_opp_sh:.4f}<{req_sh_c1:.4f}"
+            cand_px_c1 = _sf(
+                candidate_box.get("anchor_bid_px") if is_maker else candidate_box.get("leg_a_limit_price", candidate_box.get("anchor_bid_px")),
+                0.0,
+            )
+            if leg_cap_c1 <= 0.01 or (cand_px_c1 > 0.0 and cand_px_c1 > leg_cap_c1 + 1e-6):
+                return f"PURE_RISKLESS_PARTNER_PAIR_COST_EXCEEDED:px={cand_px_c1:.4f}>cap={leg_cap_c1:.4f}:partner_ps={p_cost_ps:.4f}"
+        if isinstance(getattr(harvester, "active_positions", None), Mapping) and _sf(getattr(harvester, "_last_known_collateral", None), 0.0) > 0.0:
+            from src.polymarket_research.riskless_protocol_v2_expansion import check_per_event_concentration_cap
+
+            evt_ok_ft, evt_rsn_ft, _, _ = check_per_event_concentration_cap(
+                harvester, candidate_box, enforce_override=True, min_headroom_usd=4.50
+            )
+            if not evt_ok_ft:
+                return evt_rsn_ft
+        return None
 
     nr0_closed_ok = (
         bool(rb_cfg.get("certified_multileg_3plus_live_enabled", False))
@@ -441,6 +661,8 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         if sl_src in POST_CLINCH_SINGLE_LEG_SLEEVES:
             p_mod = _sf(candidate_box.get("p_model"), 0.0)
+            if candidate_box.get("dual_source_wu_metar_verified") is False:
+                return f"PURE_RISKLESS_WEATHER_SINGLE_SOURCE_PROXY_BLOCKED:{sl_src}"
             if sl_src == "W1_SOLAR_PEAK_LOCK":
                 rem_h_w1 = int(_sf(candidate_box.get("rem_hours_count"), 0.0))
                 if (
@@ -454,14 +676,22 @@ def check_strict_pure_riskless_candidate_gate(
             return None
         return f"PURE_RISKLESS_SINGLE_LEG_SLEEVE_NOT_ALLOWLISTED:{sl_src or 'UNKNOWN'}"
 
-    # 2b. Graduated 2-leg 0%-fee CAL1 (cumulative deadline / scalar ladder) & COND1 (macro partition) boxes
+    # 2b. Graduated 2-leg CAL1 (cumulative deadline / scalar ladder) & COND1 (macro partition) boxes
     if sl_src in {"CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX", "COND1_MACRO_PARTITION_BOX"}:
         if btype not in {"MACRO_DOMINANCE", "LADDER_MONO", "BARRIER_MONO", "COMPLETE_SET"}:
             return f"PURE_RISKLESS_BOX_TYPE_NOT_ALLOWLISTED:{btype or 'UNKNOWN'}"
         fr_a_z = _sf(candidate_box.get("leg_a_fee_rate"), 0.0)
         fr_b_z = _sf(candidate_box.get("leg_b_fee_rate"), fr_a_z)
-        if max(fr_a_z, fr_b_z) > 1e-9:
+        has_fee_adjusted_proof = (
+            candidate_box.get("rule_verified") is True
+            and _sf(candidate_box.get("min_state_net_payoff_usd", candidate_box.get("net_floor_edge_usd")), -1.0) > 0.0
+        )
+        if max(fr_a_z, fr_b_z) > 1e-9 and not has_fee_adjusted_proof:
             return f"PURE_RISKLESS_CAL1_COND1_REQUIRES_ZERO_FEE:{max(fr_a_z, fr_b_z):.4f}"
+        t_early_z = _sf(candidate_box.get("t_early_ts", candidate_box.get("leg_a_deadline_ts")), 0.0)
+        t_late_z = _sf(candidate_box.get("t_late_ts", candidate_box.get("leg_b_deadline_ts")), 0.0)
+        if t_early_z > 0.0 and t_late_z > 0.0 and t_early_z > t_late_z + 1e-6:
+            return f"PURE_RISKLESS_INVERTED_CALENDAR_DEADLINES:{t_early_z}>{t_late_z}"
         mid_a_z = str(candidate_box.get("leg_a_market_id") or "").strip()
         mid_b_z = str(candidate_box.get("leg_b_market_id") or "").strip()
         tok_a_z = str(candidate_box.get("leg_a_token_id") or "").strip()
@@ -480,6 +710,19 @@ def check_strict_pure_riskless_candidate_gate(
             k_hi_z = _sf(candidate_box.get("k_high", candidate_box.get("leg_b_strike")), 0.0)
             if k_lo_z > 0.0 and k_hi_z > 0.0 and k_lo_z > k_hi_z + 1e-9:
                 return f"PURE_RISKLESS_INVERTED_DOMINANCE_STRIKES:{k_lo_z}>{k_hi_z}"
+        return None
+
+    # 2c. R-02 Independent Mathematical State-Space Proof Admission (deprecates rigid name allowlists
+    # when exhaustive rule equivalence + fee-adjusted worst-case floor > 0 is independently proven!)
+    if (
+        candidate_box.get("rule_verified") is True
+        and _sf(candidate_box.get("min_state_net_payoff_usd"), -1.0) > 0.0
+        and not bool(candidate_box.get("neg_risk_augmented", False))
+    ):
+        tok_a_p = str(candidate_box.get("leg_a_token_id") or "").strip()
+        tok_b_p = str(candidate_box.get("leg_b_token_id") or "").strip()
+        if tok_a_p and tok_b_p and tok_a_p == tok_b_p:
+            return "PURE_RISKLESS_DUPLICATE_TOKEN_LEGS"
         return None
 
     # 3. Enforce strict mathematical payoff-dominance allowlist on 2-leg boxes
@@ -548,27 +791,44 @@ def load_alpha124_graduation_maps_with_lkg_cache(
 
     lkg_tup = getattr(harvester, "_a124_lkg_grad_snapshot", None) if harvester is not None else None
     cache_tup = getattr(harvester, "_d1_grad_cache", "UNSET") if harvester is not None else None
+    lkg_sidecar = dd / "alpha124_graduation_lkg_cache.json"
 
-    if not st_path.exists():
+    def _resolve_valid_lkg(min_newer_than_ts: float = -1.0) -> Optional[Tuple[float, Dict[str, Any], Dict[str, Any]]]:
+        if cache_tup is None:
+            return None
         if (
-            cache_tup is not None
-            and isinstance(lkg_tup, tuple)
+            isinstance(lkg_tup, tuple)
             and len(lkg_tup) == 3
             and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
+            and float(lkg_tup[0]) > min_newer_than_ts
         ):
-            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+            return float(lkg_tup[0]), dict(lkg_tup[1]), dict(lkg_tup[2])
+        if lkg_sidecar.exists():
+            try:
+                sc_raw = loads_fn(lkg_sidecar.read_text(encoding="utf-8"))
+                sc_ts = _sf(sc_raw.get("mtime"), 0.0) if isinstance(sc_raw, Mapping) else 0.0
+                if sc_ts > 0.0 and (now_u - sc_ts) <= float(max_lkg_age_sec) and sc_ts > min_newer_than_ts:
+                    sc_sl = dict(sc_raw.get("by_sleeve") or {})
+                    sc_da = dict(sc_raw.get("by_d1_asset") or {})
+                    if harvester is not None:
+                        harvester._a124_lkg_grad_snapshot = (sc_ts, sc_sl, sc_da)
+                    return sc_ts, sc_sl, sc_da
+            except Exception:
+                pass
+        return None
+
+    if not st_path.exists():
+        lkg_fb = _resolve_valid_lkg()
+        if lkg_fb is not None:
+            return lkg_fb[1], lkg_fb[2], None
         return None, None, missing_reason
 
     st_info = st_path.stat()
     age_s = now_u - float(st_info.st_mtime)
     if age_s > float(max_lkg_age_sec):
-        if (
-            cache_tup is not None
-            and isinstance(lkg_tup, tuple)
-            and len(lkg_tup) == 3
-            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
-        ):
-            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        lkg_fb = _resolve_valid_lkg(min_newer_than_ts=float(st_info.st_mtime))
+        if lkg_fb is not None:
+            return lkg_fb[1], lkg_fb[2], None
         return None, None, stale_reason
 
     manual_inv = float(getattr(harvester, "_a124_grad_cache_mtime", 0.0) or 0.0) if harvester is not None else 0.0
@@ -588,18 +848,53 @@ def load_alpha124_graduation_maps_with_lkg_cache(
             raise ValueError("alpha124_shadow_state root must be JSON object")
         by_sl_map = dict(st_raw.get("by_sleeve") or st_raw.get("per_strategy") or {})
         by_da_map = dict(st_raw.get("by_d1_asset") or {})
+        # R-03 Cold-Boot Protection: if `alpha124` restarted (`cycles == 0` / zeroed sleeve slots),
+        # merge previously verified LKG records ONLY for slots where fresh `closed == 0` AND `losses == 0`,
+        # so fresh `losses > 0` ALWAYS revoke graduation immediately while avoiding cold-boot wipeout!
+        if cache_tup is not None:
+            lkg_boot = _resolve_valid_lkg()
+            if lkg_boot is not None:
+                for sl_k, lkg_v in (lkg_boot[1] or {}).items():
+                    if not isinstance(lkg_v, Mapping):
+                        continue
+                    cur_v = by_sl_map.get(sl_k)
+                    cur_closed = int(_sf(cur_v.get("closed"), 0.0)) if isinstance(cur_v, Mapping) else 0
+                    cur_losses = int(_sf(cur_v.get("losses"), 0.0)) if isinstance(cur_v, Mapping) else 0
+                    if cur_closed == 0 and cur_losses == 0 and int(_sf(lkg_v.get("losses"), 0.0)) == 0 and int(_sf(lkg_v.get("closed"), 0.0)) > 0:
+                        by_sl_map[sl_k] = dict(lkg_v)
+                for da_k, lkg_dv in (lkg_boot[2] or {}).items():
+                    if not isinstance(lkg_dv, Mapping):
+                        continue
+                    cur_dv = by_da_map.get(da_k)
+                    cur_dc = int(_sf(cur_dv.get("closed"), 0.0)) if isinstance(cur_dv, Mapping) else 0
+                    cur_dl = int(_sf(cur_dv.get("losses"), 0.0)) if isinstance(cur_dv, Mapping) else 0
+                    if cur_dc == 0 and cur_dl == 0 and int(_sf(lkg_dv.get("losses"), 0.0)) == 0 and int(_sf(lkg_dv.get("closed"), 0.0)) > 0:
+                        by_da_map[da_k] = dict(lkg_dv)
+        has_nonzero_grad = any(
+            isinstance(v, Mapping) and int(_sf(v.get("closed"), 0.0)) > 0
+            for v in by_sl_map.values()
+        )
         if harvester is not None:
             harvester._d1_grad_cache = (st_key, by_sl_map, by_da_map)
-            harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+            if has_nonzero_grad or lkg_tup is None:
+                harvester._a124_lkg_grad_snapshot = (float(st_info.st_mtime), by_sl_map, by_da_map)
+        if has_nonzero_grad and age_s <= float(fresh_ttl_sec):
+            try:
+                import os as _os_lkg
+
+                tmp_sc = dd / "alpha124_graduation_lkg_cache.tmp"
+                tmp_sc.write_text(
+                    _json_mod.dumps({"mtime": float(st_info.st_mtime), "by_sleeve": by_sl_map, "by_d1_asset": by_da_map}),
+                    encoding="utf-8",
+                )
+                _os_lkg.replace(tmp_sc, lkg_sidecar)
+            except Exception:
+                pass
         return by_sl_map, by_da_map, None
     except Exception:
-        if (
-            cache_tup is not None
-            and isinstance(lkg_tup, tuple)
-            and len(lkg_tup) == 3
-            and (now_u - float(lkg_tup[0])) <= float(max_lkg_age_sec)
-        ):
-            return dict(lkg_tup[1]), dict(lkg_tup[2]), None
+        lkg_fb = _resolve_valid_lkg()
+        if lkg_fb is not None:
+            return lkg_fb[1], lkg_fb[2], None
         if age_s > float(fresh_ttl_sec):
             return None, None, stale_reason
         raise
@@ -688,6 +983,8 @@ def _is_standalone_recyclable_carry(pos: Mapping[str, Any]) -> bool:
         return False
     if bool(pos.get("is_dominance_box")) or not bool(pos.get("is_single_leg_lock", False)):
         return False
+    if bool(pos.get("inventory_backed_completion")) or str(pos.get("partner_held_token_id") or "").strip():
+        return False
     if str(pos.get("box_partner_trade_id") or "").strip():
         return False
     b_type = str(pos.get("box_type") or "").strip().upper()
@@ -711,6 +1008,39 @@ def _is_standalone_recyclable_carry(pos: Mapping[str, Any]) -> bool:
     if int(math.floor(rem_sh + 1e-9)) < 5:
         return False
     return True
+
+
+def _collect_pledged_partner_token_ids(harvester: Any) -> set[str]:
+    """Returns token IDs currently backing an active, resting, or pre-post `inventory_backed_completion` (`BUG-W3-MP-2C`)."""
+    out: set[str] = set()
+    if harvester is None:
+        return out
+    act_map = getattr(harvester, "active_positions", None) or {}
+    if isinstance(act_map, Mapping):
+        for p in act_map.values():
+            if not isinstance(p, Mapping):
+                continue
+            st_u = str(p.get("status") or "").strip().upper()
+            if st_u == "AWAITING_ONCHAIN_SETTLEMENT" or p.get("resolved_winning_outcome") is not None:
+                continue
+            pt = str(p.get("partner_held_token_id") or "").strip()
+            if pt:
+                out.add(pt)
+    pend_map = getattr(harvester, "pending_entry_intents", None) or {}
+    if isinstance(pend_map, Mapping):
+        for it in pend_map.values():
+            if isinstance(it, Mapping):
+                pt = str(it.get("partner_held_token_id") or "").strip()
+                if pt:
+                    out.add(pt)
+    prepost_map = getattr(harvester, "_prepost_partner_pledged_shares", None) or {}
+    if isinstance(prepost_map, Mapping):
+        for pv in prepost_map.values():
+            if isinstance(pv, tuple) and len(pv) >= 1:
+                pt = str(pv[0] or "").strip()
+                if pt:
+                    out.add(pt)
+    return out
 
 
 def find_recyclable_zero_loss_open_carries(
@@ -738,6 +1068,7 @@ def find_recyclable_zero_loss_open_carries(
     challenger_bps_hr = challenger_edge_bps / chal_hrs
 
     excl_mkts = {str(m) for m in (exclude_market_ids or set()) if m}
+    pledged_partner_toks = _collect_pledged_partner_token_ids(harvester)
     ex = getattr(harvester, "executor", None)
     act_map = getattr(harvester, "active_positions", None) or {}
     candidates: List[Dict[str, Any]] = []
@@ -747,7 +1078,7 @@ def find_recyclable_zero_loss_open_carries(
             continue
         mkt_id = str(pos.get("market_id") or "")
         tok_id = str(pos.get("token_id") or "")
-        if not tok_id or (mkt_id and mkt_id in excl_mkts):
+        if not tok_id or tok_id in pledged_partner_toks or (mkt_id and mkt_id in excl_mkts):
             continue
         rem_sh_full = _sf(pos.get("remaining_shares", pos.get("entry_shares", 0.0)))
         int_sh = int(math.floor(rem_sh_full + 1e-9))
@@ -866,6 +1197,8 @@ def recycle_open_zero_loss_carry_for_fast_arb(
         if not isinstance(pos, dict) or not _is_standalone_recyclable_carry(pos):
             continue
         tok_id = c["token_id"]
+        if tok_id in _collect_pledged_partner_token_ids(harvester):
+            continue
         int_sh = int(c["shares"])
         min_px = float(c["min_sell_px"])
 

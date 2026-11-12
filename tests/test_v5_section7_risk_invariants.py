@@ -906,6 +906,642 @@ class TestV5Section7RiskInvariants(unittest.TestCase):
         )
         self.assertTrue(ok_mergeable)
 
+    def test_07_wave3_disputed_kmia_equity_exclusion_postonly_requote_and_ft_funnel(self) -> None:
+        from collections import defaultdict
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+        from src.polymarket_research.riskless_protocol_v2_expansion import (
+            compute_sll_entry_budget,
+            is_disputed_or_frozen_uma_position,
+        )
+        import src.polymarket_research.polymarket_live_harvester as hv_mod
+
+        now_ts = 1_800_100_000.0
+        kmia_disputed = {
+            "WS_SNIPE_Miami_KMIA_242960": {
+                "market_id": "6707503",
+                "token_id": "9991",
+                "notional_usd": 34.65,
+                "remaining_shares": 35.0,
+                "candle_expiry_ts": now_ts - 86400.0,
+                "umaResolutionStatus": "disputed",
+            },
+            "MULTI_LEG_BUNDLE_LIVE_KMIA_UNWRESID": {
+                "trade_id": "MULTI_LEG_BUNDLE_LIVE_KMIA_1794113999_318559_UNWRESID_20116898_1794111898",
+                "market_id": "6707502",
+                "token_id": "9992",
+                "notional_usd": 15.86,
+                "remaining_shares": 17.0,
+                "candle_expiry_ts": now_ts - 86400.0,
+                "umaResolutionStatus": "disputed",
+            },
+        }
+        for pos in kmia_disputed.values():
+            self.assertTrue(is_disputed_or_frozen_uma_position(pos, now_ts))
+
+        # 1. `$48.70` cash + `$50.51` disputed KMIA MUST stay in `UNLEASHED_LAUNCH` (`tot_eq_sll == $48.70`, NOT `$99.21`):
+        cfg = dict(GLOBAL_GOVERNANCE_MANAGER.snapshot)
+        b1_gov = dict(cfg.get("riskless_boxes", {}))
+        harv_sz = types.SimpleNamespace(
+            dry_run=False,
+            max_exposure=100.0,
+            _current_equity_tier="UNLEASHED_LAUNCH",
+            enforce_seed_zero_loss_focus=True,
+            enforce_gatling_sizing=True,
+            active_positions=dict(kmia_disputed),
+            pending_entry_intents={},
+            executor=types.SimpleNamespace(dry_run=False, client=object()),
+            _is_v5_unleashed_active=lambda: True,
+        )
+        b_kmia, _, pct_kmia = compute_sll_entry_budget(
+            harv_sz, "BOND1_UMA_RESOLUTION_CARRY", "MKT_NEW_1", 48.70, False, True, b1_gov, {}, cfg, 3600.0, now_ts
+        )
+        harv_clean = types.SimpleNamespace(**{**harv_sz.__dict__, "active_positions": {}})
+        b_clean, _, _ = compute_sll_entry_budget(
+            harv_clean, "BOND1_UMA_RESOLUTION_CARRY", "MKT_NEW_1", 48.70, False, True, b1_gov, {}, cfg, 3600.0, now_ts
+        )
+        self.assertGreaterEqual(pct_kmia, 0.92)
+        # Disputed KMIA must NOT inflate clip sizing above the `$48.70` Seed fanout clip (`$8.92`):
+        self.assertLessEqual(b_kmia, 9.00)
+        self.assertAlmostEqual(b_kmia, b_clean, places=2)
+
+        # 2. `D-001` non-interference blocks any execution targeting `6707502` or `6707503`:
+        h_d001 = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+        h_d001.dry_run = False
+        h_d001._is_d1_box_halted = lambda: False
+        out_kmia_mkr = asyncio.run(
+            h_d001.maybe_execute_graduated_single_leg_maker_lock(
+                {
+                    "box_type": "SINGLE_LEG_MAKER_LOCK",
+                    "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                    "leg_a_market_id": "6707503",
+                    "leg_a_token_id": "111",
+                    "leg_a_opp_token_id": "222",
+                }
+            )
+        )
+        self.assertEqual(out_kmia_mkr["reason"], "D001_DISPUTED_KMIA_NON_INTERFERENCE")
+
+        # 3. `#64` Bug #2: early CLOB `terminal=True` (`matched=0`) after re-peg triggers `BOND1_MAKER_POSTONLY_REQUOTE` + auto-requote:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp_p = Path(tmpdir)
+            (tmp_p / "alpha124_shadow_state.json").write_text(
+                json.dumps(
+                    {
+                        "by_sleeve": {
+                            "D1_SAME_ORACLE_DOMINANCE_BOX": {
+                                "closed": 12,
+                                "losses": 0,
+                                "win_rate_pct": 100.0,
+                                "realized_pnl_t1000_usd": 8.0,
+                                "legging_adjusted_pnl_t1000_usd": 8.0,
+                            },
+                            "BOND1_UMA_RESOLUTION_CARRY": {
+                                "closed": 10,
+                                "losses": 0,
+                                "win_rate_pct": 100.0,
+                                "realized_pnl_t1000_usd": 4.0,
+                                "legging_adjusted_pnl_t1000_usd": 4.0,
+                            },
+                        },
+                        "by_d1_asset": {},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            orig_dd = hv_mod.DATA_DIR
+            hv_mod.DATA_DIR = tmp_p
+            try:
+                spawned_requotes: list[dict] = []
+
+                class _EarlyTermExec:
+                    dry_run = False
+                    auth_mode = "LIVE"
+                    client = object()
+
+                    def get_collateral_balance(self) -> float:
+                        return 48.70
+
+                    def get_market_book(self, tid: str) -> dict:
+                        if tid == "TOK_WIN_RP":
+                            return {
+                                "bids": [{"price": "0.995", "size": "20"}],
+                                "asks": [{"price": "0.999", "size": "40"}],
+                                "minimum_tick_size": "0.001",
+                            }
+                        return {"bids": [{"price": "0.001", "size": "50"}], "asks": [{"price": "0.999", "size": "50"}]}
+
+                    def post_maker_entry_order(self, **kw: object) -> dict:
+                        return {"success": True, "orderID": "OID_REPEG_1", "price": kw["price"], "shares": 7.0}
+
+                    def get_order_fill_summary(self, _oid: str, _tid: str) -> dict:
+                        # Simulate Polymarket CLOB async `postOnly` cancel (`terminal=True`, `matched=0`) at `1.5s`:
+                        return {"matched": 0.0, "avg_price": 0.0, "cash": 0.0, "fee": 0.0, "terminal": True}
+
+                    def cancel_order(self, _oid: str, **_kw: object) -> dict:
+                        return {"is_canceled": True, "outcome": "CANCELED"}
+
+                h_rp = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+                h_rp.dry_run = False
+                h_rp._startup_reconciled = True
+                h_rp.max_exposure = 100.0
+                h_rp._last_known_collateral = 48.70
+                h_rp.active_positions = {}
+                h_rp.pending_entry_intents = {}
+                h_rp.closed_positions = []
+                h_rp._state_save_lock = threading.Lock()
+                h_rp.executor = _EarlyTermExec()
+                h_rp._pos_market_ws = None
+                h_rp.risk_config = {"bond1_book_poll_sec": 5.0}
+                h_rp.save_state = lambda: None
+                h_rp._mark_token_pre_bal_dirty = lambda _t: None
+                h_rp._resolve_fast_pre_token_balance_async = lambda *_a, **_k: asyncio.sleep(0, result=0.0)
+                h_rp._wallet_token_balance = lambda _t: (0.0, "CLOB_BALANCE_API")
+                h_rp._is_d1_box_halted = lambda: False
+                h_rp._is_v5_live_strict = lambda: False
+                h_rp._is_v5_unleashed_active = lambda: True
+                h_rp._is_unlimited_slots_active = lambda: True
+                h_rp._global_halt_reasons = lambda: []
+                h_rp._reconciling_market_ids = lambda: set()
+                h_rp._active_box_ids = lambda: set()
+                h_rp._risk_bearing_positions = lambda: []
+                h_rp._spawn_live_maker_anchor_box_task = lambda c: (spawned_requotes.append(dict(c)) or True)
+
+                async def _run_rp_test() -> dict:
+                    now_live = time.time()
+                    res = await h_rp.maybe_execute_graduated_single_leg_maker_lock(
+                        {
+                            "box_id": "MKR_REPEG_TEST",
+                            "box_type": "SINGLE_LEG_MAKER_LOCK",
+                            "sleeve_source": "BOND1_UMA_RESOLUTION_CARRY",
+                            "asset": "SPORTS",
+                            "leg_a_market_id": "6963494",
+                            "leg_a_token_id": "TOK_WIN_RP",
+                            "leg_a_opp_token_id": "TOK_OPP_RP",
+                            "leg_a_side": "YES",
+                            "anchor_bid_px": 0.996,
+                            "max_box_cost_net": 0.997,
+                            "max_opp_bid": 0.008,
+                            "p_model": 1.0,
+                            "ts_unix": now_live - 25.0,  # 25s IPC age (`> 8.0s`, `<= 60.0s`) MUST also pass!
+                            "expiry_ts": now_live + 3600.0,
+                            "_bond1_repost_count": 1,
+                            "_bond1_first_post_ts": now_live - 10.0,
+                            "_repeg_zero_fill": True,
+                            "ws_books": {"stale": True},
+                            "ws_books_ts": now_live - 5.0,
+                        }
+                    )
+                    await asyncio.sleep(1.15)
+                    return res
+
+                out_rp = asyncio.run(_run_rp_test())
+                self.assertFalse(out_rp["executed"])
+                self.assertEqual(out_rp["reason"], "BOND1_MAKER_POSTONLY_REQUOTE")
+                self.assertEqual(len(spawned_requotes), 1)
+                self.assertEqual(spawned_requotes[0]["_bond1_repost_count"], 2)
+                self.assertNotIn("ws_books", spawned_requotes[0])
+
+                # 4. Verify `ft_live_funnel` & `live_riskless_funnel["ft_bridge_stats"]` round-trip in `save_state`/`load_state`:
+                st_file = tmp_p / "live_harvester_state.json"
+                h_f = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+                h_f.state_file = st_file
+                h_f.dry_run = False
+                h_f.ticket_notional = 8.0
+                h_f.dynamic_sizing = True
+                h_f.max_exposure = 100.0
+                h_f.max_concurrent_positions = 8
+                h_f._last_known_collateral = 48.70
+                h_f.active_positions = {}
+                h_f.pending_entry_intents = {}
+                h_f.closed_positions = []
+                h_f.seen_shock_ids = set()
+                h_f.traded_market_ids = set()
+                h_f.trades_per_market = defaultdict(int)
+                h_f.trades_per_market_direction = defaultdict(int)
+                h_f.trades_this_hour = 0
+                h_f.current_hour_window = 0
+                h_f._state_save_lock = threading.Lock()
+                h_f._is_unlimited_slots_active = lambda: True
+                h_f.risk_controller = types.SimpleNamespace(
+                    halted=False,
+                    halt_reason="",
+                    consecutive_losses=0,
+                    daily_realized_loss=0.0,
+                    non_directional_realized_pnl=17.93,
+                    is_halted=lambda: False,
+                )
+                cand_ft = {
+                    "box_id": "FT_CAL1_1",
+                    "box_type": "DOMINANCE",
+                    "sleeve_source": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                    "asset": "MACRO",
+                    "leg_a_market_id": "771100",
+                    "full_throttle_bridge": True,
+                    "rule_verified": True,
+                }
+                h_f._record_ft_candidate_funnel(cand_ft, stage="RECEIVED")
+                h_f._record_ft_candidate_funnel(cand_ft, stage="TAKER_EXECUTED", executed=True)
+                h_f.save_state()
+                saved = json.loads(st_file.read_text(encoding="utf-8"))
+                self.assertIn("ft_live_funnel", saved)
+                self.assertIn("ft_bridge_stats", saved["live_riskless_funnel"])
+                ft_saved = saved["ft_live_funnel"]
+                self.assertEqual(ft_saved["candidates_received"], 1)
+                self.assertEqual(ft_saved["ft_bridge_received"], 1)
+                self.assertEqual(ft_saved["taker_evaluated"], 1)
+                self.assertEqual(ft_saved["taker_executed"], 1)
+                self.assertEqual(
+                    ft_saved["by_sleeve"]["CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX"]["taker_executed"], 1
+                )
+            finally:
+                hv_mod.DATA_DIR = orig_dd
+
+    def test_08_bug_w3_mp1_harvester_maker_and_taker_pair_cost_and_double_pledge(self) -> None:
+        """
+        Adversarial regression lock for `BUG-W3-MP-1`:
+          1. When Partner Token B is held at `$0.62/sh` (`10` shares) and Token A's live book moves to
+             `0.42 / 0.45`, BOTH `maybe_execute_graduated_single_leg_maker_lock` (`enforce_b1_v53=True`
+             step-up attempt to `$0.43`) AND `_hv__finish_single_leg_lock` (Taker ask walk) VETO the trade
+             instead of locking in `$0.62 + $0.43 = $1.05 > $1.00`.
+          2. When `maybe_execute_graduated_single_leg_maker_lock` posts a valid `$0.35` resting completion
+             order, `pending_entry_intents` records `partner_held_token_id` and blocks a concurrent second
+             completion (`C1` / `CAL1`) from double-pledging the same `10` partner shares.
+        """
+        import asyncio
+        from collections import defaultdict
+        from datetime import datetime, timezone
+        from src.polymarket_research.polymarket_live_harvester import PolymarketLiveHarvester
+        from src.polymarket_research.riskless_protocol_v2_expansion import _hv__finish_single_leg_lock
+        import src.polymarket_research.polymarket_live_harvester as hv_mod
+
+        tok_a = "8888888888888888888881"
+        tok_b = "8888888888888888888882"
+        tok_c = "8888888888888888888883"
+        with tempfile.TemporaryDirectory() as td:
+            tmp_p = Path(td)
+            orig_dd = hv_mod.DATA_DIR
+            hv_mod.DATA_DIR = tmp_p
+            try:
+                (tmp_p / "alpha124_shadow_state.json").write_text(
+                    json.dumps({"updated_at_utc": datetime.now(timezone.utc).isoformat(), "sleeve_stats": {}}),
+                    encoding="utf-8",
+                )
+                books_state = {
+                    tok_a: {"bids": [{"price": "0.42", "size": "50"}], "asks": [{"price": "0.45", "size": "50"}]},
+                    tok_b: {"bids": [{"price": "0.55", "size": "50"}], "asks": [{"price": "0.59", "size": "50"}]},
+                    tok_c: {"bids": [{"price": "0.33", "size": "50"}], "asks": [{"price": "0.35", "size": "50"}]},
+                }
+                posted_orders: list = []
+                observed_intents: list = []
+                active_harv_ref: list = []
+
+                class _PairExec:
+                    dry_run = False
+                    client = None
+
+                    def get_collateral_balance(self) -> float:
+                        return 120.0
+
+                    def get_token_balance(self, tid: str) -> float:
+                        return 10.0 if tid == tok_b else 0.0
+
+                    def get_market_book(self, tid: str) -> dict:
+                        return books_state.get(tid, {"bids": [], "asks": []})
+
+                    def get_token_tick_size(self, _tid: str) -> float:
+                        return 0.01
+
+                    def post_maker_entry_order(self, **kwargs) -> dict:
+                        posted_orders.append(kwargs)
+                        return {
+                            "success": True,
+                            "orderID": f"OID_MP1_{len(posted_orders)}",
+                            "price": kwargs.get("price", kwargs.get("limit_price", 0.35)),
+                            "shares": kwargs.get("shares", 10),
+                        }
+
+                    def get_order_fill_summary(self, _oid: str, _tok: str) -> dict:
+                        if active_harv_ref:
+                            observed_intents.extend(dict(v) for v in active_harv_ref[0].pending_entry_intents.values())
+                        return {"matched": 0.0, "terminal": True}
+
+                    def cancel_order(self, _oid: str, **_kw) -> dict:
+                        return {"canceled": True, "outcome": "CANCELED"}
+
+                    def invalidate_collateral_cache(self) -> None:
+                        return None
+
+                def _new_harv() -> PolymarketLiveHarvester:
+                    h = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+                    h.dry_run = False
+                    h._startup_reconciled = True
+                    h.state_file = tmp_p / "harv_mp1_state.json"
+                    h.executor = _PairExec()
+                    h._pos_market_ws = None
+                    h.risk_config = {"bond1_book_poll_sec": 5.0}
+                    h.enforce_bond1_smart_queue = True
+                    h._last_known_collateral = 120.0
+                    h.max_exposure = 150.0
+                    h.max_concurrent_positions = 8
+                    h.ticket_notional = 8.0
+                    h.dynamic_sizing = True
+                    h.active_positions = {
+                        "HELD_PARTNER_B": {
+                            "trade_id": "HELD_PARTNER_B",
+                            "market_id": "910001",
+                            "token_id": tok_b,
+                            "remaining_shares": 10.0,
+                            "remaining_cost_basis": 6.20,
+                            "notional_usd": 6.20,
+                            "entry_fee_cash_usd": 0.0,
+                            "status": "POSITION_CONFIRMED",
+                        }
+                    }
+                    h.pending_entry_intents = {}
+                    h.closed_positions = []
+                    h.seen_shock_ids = set()
+                    h.traded_market_ids = set()
+                    h.trades_per_market = defaultdict(int)
+                    h.trades_per_market_direction = defaultdict(int)
+                    h.trades_this_hour = 0
+                    h.current_hour_window = 0
+                    h._state_save_lock = threading.Lock()
+                    h._is_d1_box_halted = lambda: False
+                    h._is_v5_live_strict = lambda: False
+                    h._is_unlimited_slots_active = lambda: True
+                    h._is_v5_unleashed_active = lambda: True
+                    h._global_halt_reasons = lambda: []
+                    h._reconciling_market_ids = lambda: set()
+                    h._active_box_ids = lambda: set()
+                    h._risk_bearing_positions = lambda: []
+                    h._mark_token_pre_bal_dirty = lambda _t: None
+                    h._wallet_token_balance = lambda _t: (0.0, "CLOB_BALANCE_API")
+                    async def _zero_pre(*_a, **_k) -> float:
+                        return 0.0
+                    h._resolve_fast_pre_token_balance_async = _zero_pre
+                    h._resolve_fast_pre_token_balance_sync = lambda *_a, **_k: 0.0
+                    h._spawn_live_maker_anchor_box_task = lambda _c: None
+                    h.save_state = lambda: None
+                    h.risk_controller = types.SimpleNamespace(
+                        halted=False, halt_reason="", consecutive_losses=0,
+                        daily_realized_loss=0.0, non_directional_realized_pnl=17.93, is_halted=lambda: False,
+                    )
+                    return h
+
+                now_ts = time.time()
+                h1 = _new_harv()
+
+                # 1a. Maker path: book moved to `0.42 / 0.45` while partner cost is `$0.62` (`cap = 0.374`) -> VETO, 0 orders posted!
+                res_mkr_bad = asyncio.run(
+                    h1.maybe_execute_graduated_single_leg_maker_lock(
+                        {
+                            "box_id": "MP1_MKR_STEPUP_VETO",
+                            "box_type": "SINGLE_LEG_MAKER_LOCK",
+                            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                            "asset": "MACRO",
+                            "leg_a_market_id": "910001",
+                            "leg_a_token_id": tok_a,
+                            "leg_a_opp_token_id": tok_b,
+                            "partner_held_token_id": tok_b,
+                            "anchor_bid_px": 0.35,
+                            "leg_a_max_price": 0.994,
+                            "max_box_cost_net": 0.994,
+                            "rule_verified": True,
+                            "min_state_net_payoff_usd": 0.05,
+                            "ts_unix": now_ts,
+                            "expiry_ts": now_ts + 7200.0,
+                        }
+                    )
+                )
+                self.assertFalse(res_mkr_bad["executed"])
+                self.assertEqual(len(posted_orders), 0)
+
+                # 1b. Taker path (`_hv__finish_single_leg_lock`): ask book is `0.45 > 0.374` -> VETO!
+                res_tkr_bad = _hv__finish_single_leg_lock(
+                    h1,
+                    {
+                        "box_id": "MP1_TKR_ASK_VETO",
+                        "box_type": "SINGLE_LEG_LOCK",
+                        "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                        "asset": "MACRO",
+                        "leg_a_market_id": "910001",
+                        "leg_a_token_id": tok_a,
+                        "leg_a_opp_token_id": tok_b,
+                        "partner_held_token_id": tok_b,
+                        "leg_a_limit_price": 0.995,
+                        "max_box_cost_net": 0.995,
+                        "rule_verified": True,
+                        "min_state_net_payoff_usd": 0.05,
+                        "ts_unix": now_ts,
+                        "expiry_ts": now_ts + 7200.0,
+                    },
+                    "C1_BINARY_COMPLETE_SET",
+                    tok_a,
+                    "910001",
+                    "DK_MP1_TKR",
+                    {},
+                    now_ts,
+                    {},
+                    True,
+                )
+                self.assertFalse(res_tkr_bad["executed"])
+                self.assertIn("FRESH_BOOK_WALK_REJECT", str(res_tkr_bad.get("reason")))
+
+                # 2. Double-pledge check: simulate a resting Maker completion intent pledging `8` of `10` shares of `tok_b`,
+                #    then verify a second Taker/Maker completion (`CAL1` on `tok_c` needing `>=5` shares) is immediately blocked!
+                h1.pending_entry_intents["INTENT_MP1_RESTING"] = {
+                    "trade_id": "INTENT_MP1_RESTING",
+                    "market_id": "910001",
+                    "token_id": tok_a,
+                    "partner_held_token_id": tok_b,
+                    "inventory_backed_completion": True,
+                    "posted_shares": 8.0,
+                    "notional_usd": 2.80,
+                    "live_maker_anchor_inflight": True,
+                }
+                res_dp_tkr = _hv__finish_single_leg_lock(
+                    h1,
+                    {
+                        "box_id": "MP1_CAL1_DP_VETO",
+                        "box_type": "SINGLE_LEG_LOCK",
+                        "sleeve_source": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                        "asset": "MACRO",
+                        "leg_a_market_id": "910002",
+                        "leg_a_token_id": tok_c,
+                        "leg_a_opp_token_id": "8888888888888888888889",
+                        "partner_held_token_id": tok_b,
+                        "leg_a_limit_price": 0.35,
+                        "max_box_cost_net": 0.995,
+                        "rule_verified": True,
+                        "min_state_net_payoff_usd": 0.05,
+                        "ts_unix": now_ts,
+                        "expiry_ts": now_ts + 7200.0,
+                    },
+                    "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+                    tok_c,
+                    "910002",
+                    "DK_MP1_CAL",
+                    {},
+                    now_ts,
+                    {},
+                    True,
+                )
+                self.assertFalse(res_dp_tkr["executed"])
+                self.assertEqual(res_dp_tkr.get("reason"), "PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY")
+
+                # 3. `BUG-W3-MP-2A` & `BUG-W3-MP-2B`: Pre-post early exits (`RESTING_BID_OUT_OF_BAND` & `GHOST_ZERO_VOLUME_BOOK`)
+                #    MUST NEVER leak `_prepost_partner_pledged_shares`, and `sh_int` MUST stay clamped to `_held_partner_mkr_sh`:
+                h2 = _new_harv()
+                h2.active_positions["HELD_PARTNER_B"]["remaining_shares"] = 6.0
+                h2.active_positions["HELD_PARTNER_B"]["remaining_cost_basis"] = 3.72
+                h2.active_positions["HELD_PARTNER_B"]["notional_usd"] = 3.72
+                h2.executor.get_token_balance = lambda tid: 6.0 if tid == tok_b else 0.0
+                h2.save_state = lambda: observed_intents.extend(dict(v) for v in h2.pending_entry_intents.values())
+                active_harv_ref.append(h2)
+                books_state[tok_a] = {"bids": [{"price": "0.34", "size": "50"}], "asks": [{"price": "0.38", "size": "50"}]}
+
+                res_oob = asyncio.run(
+                    h2.maybe_execute_graduated_single_leg_maker_lock(
+                        {
+                            "box_id": "MP2A_OOB",
+                            "box_type": "SINGLE_LEG_MAKER_LOCK",
+                            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                            "asset": "MACRO",
+                            "leg_a_market_id": "910001",
+                            "leg_a_token_id": tok_a,
+                            "leg_a_opp_token_id": tok_b,
+                            "partner_held_token_id": tok_b,
+                            "anchor_bid_px": 0.005,
+                            "leg_a_max_price": 0.994,
+                            "max_box_cost_net": 0.994,
+                            "rule_verified": True,
+                            "min_state_net_payoff_usd": 0.05,
+                            "ts_unix": now_ts,
+                            "expiry_ts": now_ts + 7200.0,
+                        }
+                    )
+                )
+                self.assertIn("RESTING_BID_OUT_OF_BAND", str(res_oob.get("reason")))
+                self.assertEqual(len(getattr(h2, "_prepost_partner_pledged_shares", {}) or {}), 0)
+
+                res_ghost = asyncio.run(
+                    h2.maybe_execute_graduated_single_leg_maker_lock(
+                        {
+                            "box_id": "MP2A_GHOST",
+                            "dedupe_key": "MP2A_GHOST_DK",
+                            "box_type": "SINGLE_LEG_MAKER_LOCK",
+                            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                            "asset": "MACRO",
+                            "leg_a_market_id": "910001",
+                            "leg_a_token_id": tok_a,
+                            "leg_a_opp_token_id": tok_b,
+                            "partner_held_token_id": tok_b,
+                            "anchor_bid_px": 0.35,
+                            "leg_a_max_price": 0.994,
+                            "max_box_cost_net": 0.994,
+                            "ask_depth_usd": 0.0,
+                            "volume_24h_usd": 0.0,
+                            "rule_verified": True,
+                            "min_state_net_payoff_usd": 0.05,
+                            "ts_unix": now_ts,
+                            "expiry_ts": now_ts + 7200.0,
+                        }
+                    )
+                )
+                self.assertEqual(res_ghost.get("reason"), "GHOST_ZERO_VOLUME_BOOK")
+                self.assertEqual(len(getattr(h2, "_prepost_partner_pledged_shares", {}) or {}), 0)
+
+                # Subsequent valid `$0.35` completion STILL has all `6` partner shares unencumbered and clamps notional to `<= 6.01 * $0.35`:
+                res_mkr_ok = asyncio.run(
+                    h2.maybe_execute_graduated_single_leg_maker_lock(
+                        {
+                            "box_id": "MP1_MKR_VALID_35",
+                            "box_type": "SINGLE_LEG_MAKER_LOCK",
+                            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                            "asset": "MACRO",
+                            "leg_a_market_id": "910001",
+                            "leg_a_token_id": tok_a,
+                            "leg_a_opp_token_id": tok_b,
+                            "partner_held_token_id": tok_b,
+                            "anchor_bid_px": 0.35,
+                            "leg_a_max_price": 0.994,
+                            "max_box_cost_net": 0.994,
+                            "rule_verified": True,
+                            "min_state_net_payoff_usd": 0.05,
+                            "ts_unix": now_ts,
+                            "expiry_ts": now_ts + 7200.0,
+                            "_bond1_repost_count": 1,
+                            "_bond1_first_post_ts": now_ts - 5.0,
+                            "_repeg_zero_fill": True,
+                        }
+                    )
+                )
+                self.assertEqual(len(posted_orders), 1, msg=str(res_mkr_ok))
+                self.assertLessEqual(float(posted_orders[0].get("price", posted_orders[0].get("limit_price", 0.0))), 0.374)
+                self.assertLessEqual(float(posted_orders[0].get("notional_usd", 99.0)), round(6.01 * 0.35, 4) + 1e-4)
+                self.assertTrue(any(it.get("partner_held_token_id") == tok_b for it in observed_intents))
+                self.assertEqual(len(getattr(h2, "_prepost_partner_pledged_shares", {}) or {}), 0)
+
+                # 4. `BUG-W3-MP-2C`: Valid `$0.35` Taker completion (`_hv__finish_single_leg_lock`) forces `hold_to_maturity=True` (`leg_trade_ids == []`):
+                h3 = _new_harv()
+                h3._record_seen_d1_box_key = lambda _k: None
+                h3._make_single_leg_lock_pos = lambda lid, bt, sl, ast, hz, mid, cid, tok, sd, nr, sh, nu, fu, fr, fe, fsrc, ets, nts, pb, oid, hmat, unk=False: {
+                    "trade_id": lid,
+                    "box_type": bt,
+                    "sleeve": sl,
+                    "market_id": mid,
+                    "token_id": tok,
+                    "remaining_shares": sh,
+                    "notional_usd": nu,
+                    "hold_to_maturity": hmat,
+                    "status": "POSITION_CONFIRMED",
+                }
+                h3.executor.execute_snipe_order = lambda **kw: types.SimpleNamespace(
+                    success=True,
+                    execution_status="MATCHED",
+                    size=10.0,
+                    price=0.35,
+                    notional_usd=3.50,
+                    fee_usd=0.0,
+                    order_id="OID_TKR_MP2C",
+                    details={},
+                    error="",
+                )
+                books_state[tok_a] = {"bids": [{"price": "0.33", "size": "50"}], "asks": [{"price": "0.35", "size": "50"}]}
+                res_tkr_ok = _hv__finish_single_leg_lock(
+                    h3,
+                    {
+                        "box_id": "MP2C_TKR_HTM",
+                        "box_type": "SINGLE_LEG_LOCK",
+                        "sleeve_source": "C1_BINARY_COMPLETE_SET",
+                        "asset": "MACRO",
+                        "leg_a_market_id": "910001",
+                        "leg_a_token_id": tok_a,
+                        "leg_a_opp_token_id": tok_b,
+                        "partner_held_token_id": tok_b,
+                        "leg_a_limit_price": 0.37,
+                        "max_box_cost_net": 0.995,
+                        "rule_verified": True,
+                        "min_state_net_payoff_usd": 0.05,
+                        "ts_unix": now_ts,
+                        "expiry_ts": now_ts + 7200.0,
+                    },
+                    "C1_BINARY_COMPLETE_SET",
+                    tok_a,
+                    "910001",
+                    "DK_MP2C_TKR",
+                    {},
+                    now_ts,
+                    {},
+                    True,
+                )
+                self.assertTrue(res_tkr_ok["executed"], msg=str(res_tkr_ok))
+                self.assertEqual(res_tkr_ok["leg_trade_ids"], [])
+                self.assertTrue(h3.active_positions["MP2C_TKR_HTM"]["hold_to_maturity"])
+                self.assertEqual(h3.active_positions["MP2C_TKR_HTM"]["partner_held_token_id"], tok_b)
+            finally:
+                hv_mod.DATA_DIR = orig_dd
+
 
 if __name__ == "__main__":
     unittest.main()

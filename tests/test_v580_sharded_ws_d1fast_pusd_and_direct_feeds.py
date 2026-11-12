@@ -53,7 +53,7 @@ class TestV580ShardedWsD1FastPusdAndDirectFeeds(unittest.TestCase):
         rb = validated["riskless_boxes"]
         self.assertFalse(rb["enable_two_leg_maker_anchor_boxes"])
         self.assertFalse(rb["enable_d1_rebate_maker_canary"])
-        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 450)
+        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 900)
 
         # v5.8.0 keys
         self.assertEqual(int(rb["ws_market_num_shards"]), 4)

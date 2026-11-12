@@ -1,0 +1,21 @@
+[Unit]
+Description=DOMINUS Full-Throttle 10-Stage Universe Shadow Sweep & Harvester Bridge
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/skybullet1987/quant_pipeline
+Environment="PYTHONPATH=/home/skybullet1987/quant_pipeline"
+Environment="PYTHONDONTWRITEBYTECODE=1"
+Environment="PYTHONUNBUFFERED=1"
+Environment="MALLOC_ARENA_MAX=2"
+Environment="MALLOC_MMAP_THRESHOLD_=65536"
+Environment="MALLOC_TRIM_THRESHOLD_=65536"
+Environment="PATH=/home/skybullet1987/.local/bin:/home/skybullet1987/quant_pipeline/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Nice=12
+CPUWeight=40
+IOWeight=40
+MemoryMax=220M
+MemorySwapMax=0
+TimeoutStartSec=540
+ExecStart=/home/skybullet1987/quant_pipeline/venv/bin/python -u scripts/run_dominus_full_throttle.py --cycles 2 --emit-harvester-candidates

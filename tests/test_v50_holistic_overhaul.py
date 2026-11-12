@@ -1154,8 +1154,8 @@ def test_v540_option_b_z90_px82_taker_only_routing(tmp_path, monkeypatch):
     assert snap["directional"]["max_tte_15m_taker_sec"] == pytest.approx(420.0)
     assert snap["routing"]["z_immediate_taker_cut"] == pytest.approx(1.00)
     assert snap["routing"]["maker_ttl_sec"] == pytest.approx(6.0)
-    assert snap["riskless_boxes"]["seed_max_lockup_hours"] == pytest.approx(8.0)
-    assert snap["riskless_boxes"]["seed_min_bps_per_hour"] == pytest.approx(15.0)
+    assert snap["riskless_boxes"]["seed_max_lockup_hours"] == pytest.approx(24.0)
+    assert snap["riskless_boxes"]["seed_min_bps_per_hour"] == pytest.approx(7.5)
 
     h = PolymarketLiveHarvester(dry_run=True, max_price_ceiling=0.82, max_tte=2400.0, allowed_assets={"BTC", "ETH", "SOL"})
     h.dry_run = False

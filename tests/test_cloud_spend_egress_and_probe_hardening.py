@@ -34,19 +34,25 @@ def _load_alpha124_daemon_cls() -> Any:
     added_shims: List[str] = []
     for mod_name in ("requests", "aiohttp"):
         try:
-            __import__(mod_name)
+            mod = __import__(mod_name)
+            if mod_name == "aiohttp" and not hasattr(mod, "ClientTimeout"):
+                mod.ClientTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+                mod.ClientWSTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+                mod.TCPConnector = object  # type: ignore[attr-defined]
         except ModuleNotFoundError:
             shim = types.ModuleType(mod_name)
             if mod_name == "aiohttp":
                 shim.ClientTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+                shim.ClientWSTimeout = lambda **kw: kw  # type: ignore[attr-defined]
                 shim.ClientSession = object  # type: ignore[attr-defined]
                 shim.TCPConnector = object  # type: ignore[attr-defined]
             sys.modules[mod_name] = shim
             added_shims.append(mod_name)
     try:
-        from src.polymarket_research.alpha_124_shadow_daemon import Alpha124ShadowDaemon
-
-        return Alpha124ShadowDaemon
+        import src.polymarket_research.alpha_124_shadow_daemon as _a124_mod
+        if getattr(_a124_mod, "aiohttp", None) is not None and not hasattr(_a124_mod.aiohttp, "ClientTimeout"):
+            _a124_mod.aiohttp.ClientTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+        return _a124_mod.Alpha124ShadowDaemon
     except Exception:
         for mod_name in added_shims:
             sys.modules.pop(mod_name, None)

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run DOMINUS Full-Throttle Universe Sweep every 15m (staggered off paa-watchdog)
+
+[Timer]
+OnStartupSec=95s
+OnCalendar=*:02,17,32,47:15
+AccuracySec=5s
+Persistent=true
+Unit=polymarket-full-throttle-sweep.service
+
+[Install]
+WantedBy=timers.target

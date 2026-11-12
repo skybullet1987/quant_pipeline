@@ -40,6 +40,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+for _opt_mod, _attrs in (
+    ("dotenv", {"load_dotenv": lambda *a, **kw: False}),
+    ("requests", {"Session": object, "get": None, "post": None}),
+    ("httpx", {"AsyncClient": object, "Client": object}),
+    ("urllib3", {}),
+    ("urllib3.connection", {"HTTPConnection": type("HTTPConnection", (), {"default_socket_options": []})}),
+):
+    try:
+        __import__(_opt_mod)
+    except ModuleNotFoundError:
+        _m = types.ModuleType(_opt_mod)
+        for _k, _v in _attrs.items():
+            setattr(_m, _k, _v)
+        sys.modules[_opt_mod] = _m
+
 
 class TestV560FillRateAndProfitGrowth(unittest.TestCase):
     def test_01_governance_additive_keys_and_strict_bounds_validation(self) -> None:
@@ -58,7 +73,7 @@ class TestV560FillRateAndProfitGrowth(unittest.TestCase):
         self.assertAlmostEqual(float(rb["sll_sticky_fifo_rank1_min_hold_sec"]), 900.0, places=2)
         self.assertEqual(int(rb["bond1_max_outbid_repegs"]), 3)
         self.assertTrue(bool(rb["enable_ws_clinch_sniper"]))
-        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 450)
+        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 900)
 
         mgr = HotReloadConfigManager(config_path=cfg_path)
         self.assertEqual(mgr.snapshot["riskless_boxes"]["bond1_max_outbid_repegs"], 3)
@@ -68,7 +83,7 @@ class TestV560FillRateAndProfitGrowth(unittest.TestCase):
             {"d1_short_tte_max_box_cost_net": 1.02},
             {"d1_short_tte_threshold_sec": 9999.0},
             {"bond1_max_outbid_repegs": 0},
-            {"ws_clinch_watchlist_max_tokens": 500},
+            {"ws_clinch_watchlist_max_tokens": 2000},
         ):
             with self.assertRaises(ValueError):
                 _deep_merge_validated(DEFAULT_HOLISTIC_CONFIG, {"riskless_boxes": bad_override})

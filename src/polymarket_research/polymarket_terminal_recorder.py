@@ -658,6 +658,8 @@ class L2OrderBook:
         self._bid_birth_ts: Dict[float, float] = {}
         self._ask_birth_ts: Dict[float, float] = {}
         self._empty_ask_since_ts: float = 0.0
+        self._metrics_cache_key: Optional[Tuple[int, float, bool]] = None
+        self._metrics_cache_payload: Optional[Dict[str, Any]] = None
 
     def _sorted_levels(self) -> Tuple[List[Tuple[float, float]], List[Tuple[float, float]]]:
         if self._dirty:
@@ -795,6 +797,24 @@ class L2OrderBook:
         compact: bool = False,
     ) -> Dict[str, Any]:
         t_now = obs_ts if obs_ts is not None else time.time()
+        # Tripartite Quote Ages (in milliseconds) — always computed from t_now
+        age_book_ms = round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None
+        age_bid_ms = round((t_now - self.last_best_bid_change_ts) * 1000.0, 1) if self.last_best_bid_change_ts > 0 else None
+        age_ask_ms = round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None
+
+        cache_key = (self.book_sequence_id, float(fee_rate), bool(compact))
+        if self._metrics_cache_key == cache_key and self._metrics_cache_payload is not None:
+            res = dict(self._metrics_cache_payload)
+            res["age_book_ms"] = age_book_ms
+            res["age_bid_ms"] = age_bid_ms
+            res["age_ask_ms"] = age_ask_ms
+            res["empty_ask_ms"] = (
+                round((t_now - self._empty_ask_since_ts) * 1000.0, 1)
+                if (not self.asks and getattr(self, "_empty_ask_since_ts", 0.0) > 0)
+                else None
+            )
+            return res
+
         sorted_bids, sorted_asks = self._sorted_levels()
 
         best_bid = sorted_bids[0][0] if sorted_bids else 0.0
@@ -803,10 +823,7 @@ class L2OrderBook:
         ask_sz_1 = sorted_asks[0][1] if sorted_asks else 0.0
 
         # Book Consistency Invariants
-        is_crossed = False
-        if best_bid > 0 and best_ask < 1.0 and best_bid >= best_ask:
-            is_crossed = True
-
+        is_crossed = bool(best_bid > 0 and best_ask < 1.0 and best_bid >= best_ask)
         spread = best_ask - best_bid
         q_mid = (best_bid + best_ask) / 2.0
 
@@ -835,50 +852,57 @@ class L2OrderBook:
         taker_fee = calculate_per_share_taker_fee(best_ask, fee_rate)
         executable_hurdle = best_ask + taker_fee
 
-        # Crossing Cost & Execution Surface across research ticket sizes (Points 1 & 8)
-        # Note: EV_terminal(C) = p_OOS - EffectivePrice(C). Using q_mid measures CrossingCost(C) = EffectivePrice(C) - q_mid.
+        # Single-pass O(L) Crossing Cost & Execution Surface across sorted ticket sizes
         execution_surface: Dict[str, Any] = {}
-        cap_levels = (20.0, 25.0, 50.0) if compact else TICKET_CAPACITY_LEVELS
-        for notional in cap_levels:
+        cap_levels = (20.0, 25.0, 50.0) if compact else sorted(TICKET_CAPACITY_LEVELS)
+        if sorted_asks:
             dollar_spent = 0.0
             shares_bought = 0.0
             total_fees = 0.0
-            for px, sz in sorted_asks:
-                fill_dollars = min(notional - dollar_spent, px * sz)
-                shares = fill_dollars / px
-                # Exact fill-level fee per consumed level: C_i * feeRate * p_i * (1 - p_i)
-                level_fee = shares * fee_rate * px * (1.0 - px)
-                dollar_spent += fill_dollars
-                shares_bought += shares
-                total_fees += level_fee
-                if dollar_spent >= notional - 1e-6:
-                    break
+            ask_idx = 0
+            n_asks = len(sorted_asks)
+            cur_px, cur_rem_sz = sorted_asks[0]
+            for notional in cap_levels:
+                while ask_idx < n_asks and dollar_spent < notional - 1e-6:
+                    lvl_notional = cur_px * cur_rem_sz
+                    need = notional - dollar_spent
+                    if lvl_notional <= need:
+                        shares = cur_rem_sz
+                        fill_dollars = lvl_notional
+                        dollar_spent += fill_dollars
+                        shares_bought += shares
+                        total_fees += shares * fee_rate * cur_px * (1.0 - cur_px)
+                        ask_idx += 1
+                        if ask_idx < n_asks:
+                            cur_px, cur_rem_sz = sorted_asks[ask_idx]
+                    else:
+                        shares = need / cur_px
+                        dollar_spent += need
+                        shares_bought += shares
+                        total_fees += shares * fee_rate * cur_px * (1.0 - cur_px)
+                        cur_rem_sz -= shares
 
-            if shares_bought > 0:
-                vwap_val = round(dollar_spent / shares_bought, 4)
-                effective_px = round((dollar_spent + total_fees) / shares_bought, 4)
-                crossing_cost = round(effective_px - q_mid, 4)
-                # Enforce VWAP buy sweep invariant: VWAP >= best_ask
-                if vwap_val < best_ask - 1e-4:
-                    vwap_val = round(best_ask, 4)
-                execution_surface[f"vwap_${int(notional)}"] = vwap_val
-                if not compact:
-                    execution_surface[f"effective_price_${int(notional)}"] = effective_px
-                    execution_surface[f"crossing_cost_${int(notional)}"] = crossing_cost
-                    execution_surface[f"fill_fees_${int(notional)}"] = round(total_fees, 5)
-                elif notional == 50.0:
-                    execution_surface["effective_price_$50"] = effective_px
-                    execution_surface["fill_fees_$50"] = round(total_fees, 5)
-            elif not compact:
+                if shares_bought > 0:
+                    vwap_val = round(dollar_spent / shares_bought, 4)
+                    effective_px = round((dollar_spent + total_fees) / shares_bought, 4)
+                    crossing_cost = round(effective_px - q_mid, 4)
+                    if vwap_val < best_ask - 1e-4:
+                        vwap_val = round(best_ask, 4)
+                    execution_surface[f"vwap_${int(notional)}"] = vwap_val
+                    if not compact:
+                        execution_surface[f"effective_price_${int(notional)}"] = effective_px
+                        execution_surface[f"crossing_cost_${int(notional)}"] = crossing_cost
+                        execution_surface[f"fill_fees_${int(notional)}"] = round(total_fees, 5)
+                    elif notional == 50.0:
+                        execution_surface["effective_price_$50"] = effective_px
+                        execution_surface["fill_fees_$50"] = round(total_fees, 5)
+        elif not compact:
+            for notional in cap_levels:
                 execution_surface[f"vwap_${int(notional)}"] = None
                 execution_surface[f"effective_price_${int(notional)}"] = None
                 execution_surface[f"crossing_cost_${int(notional)}"] = None
                 execution_surface[f"fill_fees_${int(notional)}"] = None
 
-        # Tripartite Quote Ages (in milliseconds)
-        age_book_ms = round((t_now - self.last_book_update_ts) * 1000.0, 1) if self.last_book_update_ts > 0 else None
-        age_bid_ms = round((t_now - self.last_best_bid_change_ts) * 1000.0, 1) if self.last_best_bid_change_ts > 0 else None
-        age_ask_ms = round((t_now - self.last_best_ask_change_ts) * 1000.0, 1) if self.last_best_ask_change_ts > 0 else None
         empty_ask_ms = (
             round((t_now - self._empty_ask_since_ts) * 1000.0, 1)
             if (not sorted_asks and getattr(self, "_empty_ask_since_ts", 0.0) > 0)
@@ -886,7 +910,7 @@ class L2OrderBook:
         )
 
         if compact:
-            return {
+            static_payload: Dict[str, Any] = {
                 "best_bid": round(best_bid, 4),
                 "best_ask": round(best_ask, 4),
                 "bid_size_l1": round(bid_sz_1, 2),
@@ -909,32 +933,36 @@ class L2OrderBook:
                 "raw_top_bids": sorted_bids[:10],
                 "raw_top_asks": sorted_asks[:10],
             }
+        else:
+            static_payload = {
+                "best_bid": round(best_bid, 4),
+                "best_ask": round(best_ask, 4),
+                "bid_size_l1": round(bid_sz_1, 2),
+                "ask_size_l1": round(ask_sz_1, 2),
+                "spread": round(spread, 4),
+                "q_mid": round(q_mid, 4),
+                "q_micro": round(q_micro, 4),
+                "obi_l1": round(obi_l1, 3),
+                "obi_depth": round(obi_depth, 3),
+                "obi_depth_levels": self.obi_depth_levels,
+                "microprice_formula": self.microprice_formula,
+                "book_sequence_id": self.book_sequence_id,
+                "book_timestamp": self.last_book_update_ts,
+                "is_crossed": is_crossed,
+                "age_book_ms": age_book_ms,
+                "age_bid_ms": age_bid_ms,
+                "age_ask_ms": age_ask_ms,
+                "empty_ask_ms": empty_ask_ms,
+                "taker_fee": round(taker_fee, 5),
+                "executable_hurdle": round(executable_hurdle, 5),
+                **execution_surface,
+                "raw_top_bids": sorted_bids[:15],
+                "raw_top_asks": sorted_asks[:15],
+            }
 
-        return {
-            "best_bid": round(best_bid, 4),
-            "best_ask": round(best_ask, 4),
-            "bid_size_l1": round(bid_sz_1, 2),
-            "ask_size_l1": round(ask_sz_1, 2),
-            "spread": round(spread, 4),
-            "q_mid": round(q_mid, 4),
-            "q_micro": round(q_micro, 4),
-            "obi_l1": round(obi_l1, 3),
-            "obi_depth": round(obi_depth, 3),
-            "obi_depth_levels": self.obi_depth_levels,
-            "microprice_formula": self.microprice_formula,
-            "book_sequence_id": self.book_sequence_id,
-            "book_timestamp": self.last_book_update_ts,
-            "is_crossed": is_crossed,
-            "age_book_ms": age_book_ms,
-            "age_bid_ms": age_bid_ms,
-            "age_ask_ms": age_ask_ms,
-            "empty_ask_ms": empty_ask_ms,
-            "taker_fee": round(taker_fee, 5),
-            "executable_hurdle": round(executable_hurdle, 5),
-            **execution_surface,
-            "raw_top_bids": sorted_bids[:15],
-            "raw_top_asks": sorted_asks[:15]
-        }
+        self._metrics_cache_key = cache_key
+        self._metrics_cache_payload = static_payload
+        return dict(static_payload)
 
 
 class PolymarketDualFeed1HRecorder:
@@ -2947,17 +2975,15 @@ class PolymarketDualFeed1HRecorder:
                     f"Connecting to Polymarket CLOB WS ({CLOB_WS_URL}) for market {sub_lbl} "
                     f"tokens ({list(subscribed_tokens.values())})..."
                 )
-                # Proactively seed any empty L2OrderBook from REST /book so SHM never has one-sided books
+                # Proactively seed any empty L2OrderBook via single batched POST /books so SHM never has one-sided books
                 try:
-                    session = await self.get_session()
-                    for tok_id, role_name in subscribed_tokens.items():
-                        bk_obj = self.books.get(role_name)
-                        if bk_obj is not None and (not bk_obj.bids or not bk_obj.asks):
-                            async with session.get(f"https://clob.polymarket.com/book?token_id={tok_id}", timeout=2.0) as r_bk:
-                                if r_bk.status == 200:
-                                    b_json = await r_bk.json()
-                                    if isinstance(b_json, dict):
-                                        bk_obj.apply_snapshot(b_json.get("bids", []), b_json.get("asks", []))
+                    empty_toks = [
+                        tok_id
+                        for tok_id, role_name in subscribed_tokens.items()
+                        if (bk_obj := self.books.get(role_name)) is not None and (not bk_obj.bids or not bk_obj.asks)
+                    ]
+                    if empty_toks:
+                        await self._refresh_quiet_books_batch(empty_toks, subscribed_tokens)
                 except Exception as seed_err:
                     logger.debug(f"Initial REST book seed notice: {seed_err}")
 
@@ -3093,7 +3119,11 @@ class PolymarketDualFeed1HRecorder:
                                 and role_q in self.books
                                 and (
                                     (now_loop - self.books[role_q].last_book_update_ts) >= 1.8
-                                    or (self.books[role_q].bids and self.books[role_q].asks and max(self.books[role_q].bids) >= min(self.books[role_q].asks))
+                                    or (
+                                        self.books[role_q].prev_best_bid[0] > 0.0
+                                        and self.books[role_q].prev_best_ask[0] < 1.0
+                                        and self.books[role_q].prev_best_bid[0] >= self.books[role_q].prev_best_ask[0]
+                                    )
                                 )
                             ]
                             if quiet_toks:

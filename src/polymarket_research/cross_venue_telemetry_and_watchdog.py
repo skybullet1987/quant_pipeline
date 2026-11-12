@@ -128,6 +128,7 @@ class ShadowTelemetryStore:
         ] = {}
         self._last_snapshot_ts: Dict[Tuple[str, str], float] = {}
         self._last_snapshot_hash: Dict[Tuple[str, str], str] = {}
+        self._catalog_meta_cache: Dict[Tuple[str, str], Tuple[Tuple[Any, ...], str]] = {}
         self._cached_window_summaries: Optional[Tuple[float, Dict[str, Dict[str, Any]]]] = None
         self.current_session_id: Optional[str] = None
         self._init_schema()
@@ -425,19 +426,34 @@ class ShadowTelemetryStore:
         """Persists market catalog entries & L2 order-book snapshots with spread/liquidity deltas."""
         now = time.time() if now_unix is None else float(now_unix)
         inserted = 0
-        with self._connect() as conn:
-            cur = conn.cursor()
-            for m in markets:
-                metrics = m.compute_book_metrics()
-                mkt_key = (m.venue, m.market_id)
-                yb = round(m.yes_bids[0].price, 6) if m.yes_bids else None
-                ya = round(m.yes_asks[0].price, 6) if m.yes_asks else None
-                nb = round(m.no_bids[0].price, 6) if m.no_bids else None
-                na = round(m.no_asks[0].price, 6) if m.no_asks else None
-                prev = self._last_book_metrics.get(mkt_key)
-                spread_delta = 0.0 if prev is None else round(metrics["yes_spread_bps"] - prev[0], 2)
-                depth_delta = 0.0 if prev is None else round(metrics["total_depth_usd"] - prev[1], 4)
+        catalog_rows: List[Tuple[Any, ...]] = []
+        snapshot_rows: List[Tuple[Any, ...]] = []
 
+        for m in markets:
+            metrics = m.compute_book_metrics()
+            mkt_key = (m.venue, m.market_id)
+            yb = round(m.yes_bids[0].price, 6) if m.yes_bids else None
+            ya = round(m.yes_asks[0].price, 6) if m.yes_asks else None
+            nb = round(m.no_bids[0].price, 6) if m.no_bids else None
+            na = round(m.no_asks[0].price, 6) if m.no_asks else None
+            prev = self._last_book_metrics.get(mkt_key)
+            spread_delta = 0.0 if prev is None else round(metrics["yes_spread_bps"] - prev[0], 2)
+            depth_delta = 0.0 if prev is None else round(metrics["total_depth_usd"] - prev[1], 4)
+
+            meta_sig = (
+                m.yes_label,
+                m.no_label,
+                m.fee_rate_bps,
+                m.taker_delay_ms,
+                m.tick_size,
+                m.lot_size,
+                m.cancel_rule,
+                m.partition_group_id,
+            )
+            cached_meta = self._catalog_meta_cache.get(mkt_key)
+            if cached_meta is not None and cached_meta[0] == meta_sig:
+                meta_json = cached_meta[1]
+            else:
                 meta_json = json.dumps(
                     {
                         "yes_label": m.yes_label,
@@ -451,135 +467,153 @@ class ShadowTelemetryStore:
                     },
                     separators=(",", ":"),
                 )
-                cur.execute(
-                    """
-                    INSERT INTO market_catalog(
-                        venue, market_id, slug, title, category, oracle_family, rules_hash, end_ts,
-                        collateral_asset, suspended, expired, data_origin, first_seen_unix, last_seen_unix, metadata_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(venue, market_id) DO UPDATE SET
-                        slug=excluded.slug,
-                        title=excluded.title,
-                        category=excluded.category,
-                        oracle_family=excluded.oracle_family,
-                        rules_hash=excluded.rules_hash,
-                        end_ts=excluded.end_ts,
-                        suspended=excluded.suspended,
-                        expired=excluded.expired,
-                        data_origin=excluded.data_origin,
-                        last_seen_unix=excluded.last_seen_unix,
-                        metadata_json=excluded.metadata_json
-                    """,
-                    (
-                        m.venue,
-                        m.market_id,
-                        m.slug,
-                        m.title,
-                        m.category,
-                        m.oracle_family,
-                        m.rules_hash,
-                        m.end_ts,
-                        m.collateral_asset,
-                        1 if m.suspended else 0,
-                        1 if m.expired else 0,
-                        m.data_origin,
-                        now,
-                        now,
-                        meta_json,
-                    ),
-                )
+                self._catalog_meta_cache[mkt_key] = (meta_sig, meta_json)
+                if len(self._catalog_meta_cache) > 4096:
+                    while len(self._catalog_meta_cache) > 3072:
+                        self._catalog_meta_cache.pop(next(iter(self._catalog_meta_cache)), None)
 
-                if not (m.yes_asks or m.yes_bids or m.no_asks or m.no_bids):
-                    continue
+            catalog_rows.append(
+                (
+                    m.venue,
+                    m.market_id,
+                    m.slug,
+                    m.title,
+                    m.category,
+                    m.oracle_family,
+                    m.rules_hash,
+                    m.end_ts,
+                    m.collateral_asset,
+                    1 if m.suspended else 0,
+                    1 if m.expired else 0,
+                    m.data_origin,
+                    now,
+                    now,
+                    meta_json,
+                )
+            )
 
-                l2_payload = (
-                    json.dumps(
-                        {
-                            "ya": [[round(x.price, 6), round(x.size, 4)] for x in m.yes_asks[:10]],
-                            "yb": [[round(x.price, 6), round(x.size, 4)] for x in m.yes_bids[:10]],
-                            "na": [[round(x.price, 6), round(x.size, 4)] for x in m.no_asks[:10]],
-                            "nb": [[round(x.price, 6), round(x.size, 4)] for x in m.no_bids[:10]],
-                        },
-                        separators=(",", ":"),
-                    )
-                    if store_l2_json
-                    else "{}"
+            if not (m.yes_asks or m.yes_bids or m.no_asks or m.no_bids):
+                continue
+
+            bbo_unchanged = (
+                prev is not None
+                and len(prev) >= 7
+                and prev[2] == yb
+                and prev[3] == ya
+                and prev[4] == nb
+                and prev[5] == na
+                and round(metrics["no_spread_bps"] - prev[6], 2) == 0.0
+            )
+            minor_depth_flicker = (
+                prev is not None
+                and abs(depth_delta) < max(5.0, 0.02 * min(prev[1], metrics["total_depth_usd"]))
+            )
+            if (
+                m.data_origin in ("REGULATORY_PUBLIC_DELAYED", "LIVE_VERIFIED", "TESTNET_SANDBOX")
+                and bbo_unchanged
+                and spread_delta == 0.0
+                and minor_depth_flicker
+                and (now - self._last_snapshot_ts.get(mkt_key, 0.0)) < 600.0
+            ):
+                continue
+
+            l2_payload = (
+                json.dumps(
+                    {
+                        "ya": [[round(x.price, 6), round(x.size, 4)] for x in m.yes_asks[:10]],
+                        "yb": [[round(x.price, 6), round(x.size, 4)] for x in m.yes_bids[:10]],
+                        "na": [[round(x.price, 6), round(x.size, 4)] for x in m.no_asks[:10]],
+                        "nb": [[round(x.price, 6), round(x.size, 4)] for x in m.no_bids[:10]],
+                    },
+                    separators=(",", ":"),
                 )
-                l2_sha1 = hashlib.sha1(l2_payload.encode("utf-8")).hexdigest()[:12]
-                bbo_unchanged = (
-                    prev is not None
-                    and len(prev) >= 7
-                    and prev[2] == yb
-                    and prev[3] == ya
-                    and prev[4] == nb
-                    and prev[5] == na
-                    and round(metrics["no_spread_bps"] - prev[6], 2) == 0.0
-                )
-                minor_depth_flicker = (
-                    prev is not None
-                    and abs(depth_delta) < max(5.0, 0.02 * min(prev[1], metrics["total_depth_usd"]))
-                )
-                if (
-                    m.data_origin in ("REGULATORY_PUBLIC_DELAYED", "LIVE_VERIFIED", "TESTNET_SANDBOX")
-                    and bbo_unchanged
-                    and spread_delta == 0.0
-                    and minor_depth_flicker
-                    and (now - self._last_snapshot_ts.get(mkt_key, 0.0)) < 600.0
-                ):
-                    continue
-                self._last_book_metrics[mkt_key] = (
+                if store_l2_json
+                else "{}"
+            )
+            l2_sha1 = hashlib.sha1(l2_payload.encode("utf-8")).hexdigest()[:12]
+            self._last_book_metrics[mkt_key] = (
+                metrics["yes_spread_bps"],
+                metrics["total_depth_usd"],
+                yb,
+                ya,
+                nb,
+                na,
+                metrics["no_spread_bps"],
+            )
+            if len(self._last_book_metrics) > 4096:
+                while len(self._last_book_metrics) > 3072:
+                    self._last_book_metrics.pop(next(iter(self._last_book_metrics)), None)
+            self._last_snapshot_ts[mkt_key] = now
+            self._last_snapshot_hash[mkt_key] = l2_sha1
+            if len(self._last_snapshot_ts) > 4096:
+                while len(self._last_snapshot_ts) > 3072:
+                    ev_mk = next(iter(self._last_snapshot_ts))
+                    self._last_snapshot_ts.pop(ev_mk, None)
+                    self._last_snapshot_hash.pop(ev_mk, None)
+
+            q_ms = int(m.quote_ts_ms or int(now * 1000))
+            uid_raw = f"{m.venue}:{m.market_id}:{q_ms}:{l2_sha1}"
+            snapshot_rows.append(
+                (
+                    uid_raw,
+                    now,
+                    q_ms,
+                    m.venue,
+                    m.market_id,
+                    m.slug,
+                    m.yes_bids[0].price if m.yes_bids else None,
+                    m.yes_asks[0].price if m.yes_asks else None,
+                    m.no_bids[0].price if m.no_bids else None,
+                    m.no_asks[0].price if m.no_asks else None,
                     metrics["yes_spread_bps"],
-                    metrics["total_depth_usd"],
-                    yb,
-                    ya,
-                    nb,
-                    na,
                     metrics["no_spread_bps"],
+                    metrics["total_depth_usd"],
+                    spread_delta,
+                    depth_delta,
+                    m.data_origin,
+                    l2_payload,
                 )
-                if len(self._last_book_metrics) > 4096:
-                    while len(self._last_book_metrics) > 3072:
-                        self._last_book_metrics.pop(next(iter(self._last_book_metrics)), None)
-                self._last_snapshot_ts[mkt_key] = now
-                self._last_snapshot_hash[mkt_key] = l2_sha1
-                if len(self._last_snapshot_ts) > 4096:
-                    while len(self._last_snapshot_ts) > 3072:
-                        ev_mk = next(iter(self._last_snapshot_ts))
-                        self._last_snapshot_ts.pop(ev_mk, None)
-                        self._last_snapshot_hash.pop(ev_mk, None)
+            )
 
-                q_ms = int(m.quote_ts_ms or int(now * 1000))
-                uid_raw = f"{m.venue}:{m.market_id}:{q_ms}:{l2_sha1}"
-                cur.execute(
-                    """
-                    INSERT OR IGNORE INTO orderbook_snapshots(
-                        event_uid, ts_unix, quote_ts_ms, venue, market_id, slug,
-                        yes_best_bid, yes_best_ask, no_best_bid, no_best_ask,
-                        yes_spread_bps, no_spread_bps, total_depth_usd, spread_delta_bps, depth_delta_usd,
-                        data_origin, l2_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        uid_raw,
-                        now,
-                        q_ms,
-                        m.venue,
-                        m.market_id,
-                        m.slug,
-                        m.yes_bids[0].price if m.yes_bids else None,
-                        m.yes_asks[0].price if m.yes_asks else None,
-                        m.no_bids[0].price if m.no_bids else None,
-                        m.no_asks[0].price if m.no_asks else None,
-                        metrics["yes_spread_bps"],
-                        metrics["no_spread_bps"],
-                        metrics["total_depth_usd"],
-                        spread_delta,
-                        depth_delta,
-                        m.data_origin,
-                        l2_payload,
-                    ),
-                )
-                if cur.rowcount > 0:
-                    inserted += 1
+        if catalog_rows or snapshot_rows:
+            with self._connect() as conn:
+                cur = conn.cursor()
+                if catalog_rows:
+                    cur.executemany(
+                        """
+                        INSERT INTO market_catalog(
+                            venue, market_id, slug, title, category, oracle_family, rules_hash, end_ts,
+                            collateral_asset, suspended, expired, data_origin, first_seen_unix, last_seen_unix, metadata_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ON CONFLICT(venue, market_id) DO UPDATE SET
+                            slug=excluded.slug,
+                            title=excluded.title,
+                            category=excluded.category,
+                            oracle_family=excluded.oracle_family,
+                            rules_hash=excluded.rules_hash,
+                            end_ts=excluded.end_ts,
+                            suspended=excluded.suspended,
+                            expired=excluded.expired,
+                            data_origin=excluded.data_origin,
+                            last_seen_unix=excluded.last_seen_unix,
+                            metadata_json=excluded.metadata_json
+                        """,
+                        catalog_rows,
+                    )
+                if snapshot_rows:
+                    cur.executemany(
+                        """
+                        INSERT OR IGNORE INTO orderbook_snapshots(
+                            event_uid, ts_unix, quote_ts_ms, venue, market_id, slug,
+                            yes_best_bid, yes_best_ask, no_best_bid, no_best_ask,
+                            yes_spread_bps, no_spread_bps, total_depth_usd, spread_delta_bps, depth_delta_usd,
+                            data_origin, l2_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        snapshot_rows,
+                    )
+                    if cur.rowcount > 0:
+                        inserted = int(cur.rowcount)
 
         return inserted
 
@@ -1171,76 +1205,110 @@ class ShadowTelemetryStore:
                     if val > 0:
                         rej_by_win[w_key][rsn] = rej_by_win[w_key].get(rsn, 0) + val
 
+            # Single-pass fetches over 14d for collection_sessions, arbitrage_signals, api_connection_events, and market_resolutions
+            sess_rows_14d = cur.execute(
+                """
+                SELECT started_unix, COALESCE(ended_unix, last_heartbeat_unix) AS stop_u
+                FROM collection_sessions
+                WHERE COALESCE(ended_unix, last_heartbeat_unix) >= ?
+                  AND data_origin IN ('LIVE_VERIFIED', 'REGULATORY_PUBLIC_DELAYED')
+                """,
+                (cut_14d,),
+            ).fetchall()
+            sess_intervals_14d = [(float(r["started_unix"]), float(r["stop_u"])) for r in sess_rows_14d]
+
+            sig_agg = cur.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN 1 ELSE 0 END) AS l_c_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN sim_exec_edge_usd ELSE 0.0 END), 0.0) AS l_sim_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS l_obs_1h,
+                    SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN 1 ELSE 0 END) AS q_c_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN gross_theo_edge_usd ELSE 0.0 END), 0.0) AS q_gr_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS q_obs_1h,
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') THEN 1 ELSE 0 END) AS s_c_1h,
+
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN 1 ELSE 0 END) AS l_c_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN sim_exec_edge_usd ELSE 0.0 END), 0.0) AS l_sim_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS l_obs_24h,
+                    SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN 1 ELSE 0 END) AS q_c_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN gross_theo_edge_usd ELSE 0.0 END), 0.0) AS q_gr_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS q_obs_24h,
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') THEN 1 ELSE 0 END) AS s_c_24h,
+
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN 1 ELSE 0 END) AS l_c_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN sim_exec_edge_usd ELSE 0.0 END), 0.0) AS l_sim_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS l_obs_7d,
+                    SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN 1 ELSE 0 END) AS q_c_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN gross_theo_edge_usd ELSE 0.0 END), 0.0) AS q_gr_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? AND COALESCE(contaminated, 0) = 1 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS q_obs_7d,
+                    SUM(CASE WHEN ts_unix >= ? AND data_origin IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') THEN 1 ELSE 0 END) AS s_c_7d,
+
+                    SUM(CASE WHEN data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN 1 ELSE 0 END) AS l_c_14d,
+                    COALESCE(SUM(CASE WHEN data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN sim_exec_edge_usd ELSE 0.0 END), 0.0) AS l_sim_14d,
+                    COALESCE(SUM(CASE WHEN data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') AND COALESCE(contaminated, 0) = 0 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS l_obs_14d,
+                    SUM(CASE WHEN COALESCE(contaminated, 0) = 1 THEN 1 ELSE 0 END) AS q_c_14d,
+                    COALESCE(SUM(CASE WHEN COALESCE(contaminated, 0) = 1 THEN gross_theo_edge_usd ELSE 0.0 END), 0.0) AS q_gr_14d,
+                    COALESCE(SUM(CASE WHEN COALESCE(contaminated, 0) = 1 THEN obs_net_pnl_usd ELSE 0.0 END), 0.0) AS q_obs_14d,
+                    SUM(CASE WHEN data_origin IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX') THEN 1 ELSE 0 END) AS s_c_14d
+                FROM arbitrage_signals
+                WHERE ts_unix >= ?
+                """,
+                (
+                    cut_1h, cut_1h, cut_1h, cut_1h, cut_1h, cut_1h, cut_1h,
+                    cut_24h, cut_24h, cut_24h, cut_24h, cut_24h, cut_24h, cut_24h,
+                    cut_7d, cut_7d, cut_7d, cut_7d, cut_7d, cut_7d, cut_7d,
+                    cut_14d,
+                ),
+            ).fetchone()
+
+            api_agg = cur.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS e_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN downtime_sec ELSE 0.0 END), 0.0) AS d_1h,
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS e_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN downtime_sec ELSE 0.0 END), 0.0) AS d_24h,
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS e_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN downtime_sec ELSE 0.0 END), 0.0) AS d_7d,
+                    COUNT(*) AS e_14d,
+                    COALESCE(SUM(downtime_sec), 0.0) AS d_14d
+                FROM api_connection_events
+                WHERE ts_unix >= ? AND fault_class != 'NONE'
+                """,
+                (cut_1h, cut_1h, cut_24h, cut_24h, cut_7d, cut_7d, cut_14d),
+            ).fetchone()
+
+            res_agg = cur.execute(
+                """
+                SELECT
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS c_1h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN simulated_realized_pnl_usd ELSE 0.0 END), 0.0) AS p_1h,
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS c_24h,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN simulated_realized_pnl_usd ELSE 0.0 END), 0.0) AS p_24h,
+                    SUM(CASE WHEN ts_unix >= ? THEN 1 ELSE 0 END) AS c_7d,
+                    COALESCE(SUM(CASE WHEN ts_unix >= ? THEN simulated_realized_pnl_usd ELSE 0.0 END), 0.0) AS p_7d,
+                    COUNT(*) AS c_14d,
+                    COALESCE(SUM(simulated_realized_pnl_usd), 0.0) AS p_14d
+                FROM market_resolutions
+                WHERE ts_unix >= ? AND data_origin != 'OFFLINE_SYNTHETIC'
+                """,
+                (cut_1h, cut_1h, cut_24h, cut_24h, cut_7d, cut_7d, cut_14d),
+            ).fetchone()
+
             for label, win_sec in CAMPAIGN_WINDOWS_SEC.items():
                 cutoff = now - float(win_sec)
-                sess_rows = cur.execute(
-                    """
-                    SELECT started_unix, COALESCE(ended_unix, last_heartbeat_unix) AS stop_u, data_origin
-                    FROM collection_sessions
-                    WHERE COALESCE(ended_unix, last_heartbeat_unix) >= ?
-                    """,
-                    (cutoff,),
-                ).fetchall()
-
-                live_intervals: List[Tuple[float, float]] = []
-                for r in sess_rows:
-                    if str(r["data_origin"]) in ("LIVE_VERIFIED", "REGULATORY_PUBLIC_DELAYED"):
-                        a = max(cutoff, float(r["started_unix"]))
-                        b = min(now, float(r["stop_u"]))
-                        if b > a:
-                            live_intervals.append((a, b))
-
+                live_intervals = [
+                    (max(cutoff, s_u), min(now, e_u))
+                    for s_u, e_u in sess_intervals_14d
+                    if e_u >= cutoff and min(now, e_u) > max(cutoff, s_u)
+                ]
                 live_sec = self._merge_intervals(live_intervals)
                 gap_sec = max(0.0, float(win_sec) - live_sec)
                 cov_pct = round((live_sec / float(win_sec)) * 100.0, 4)
 
                 live_snaps = live_snaps_by_win[label]
                 synth_snaps = synth_snaps_by_win[label]
-                live_sigs = cur.execute(
-                    """
-                    SELECT COUNT(*) AS c,
-                           COALESCE(SUM(sim_exec_edge_usd), 0.0) AS sim_sum,
-                           COALESCE(SUM(obs_net_pnl_usd), 0.0) AS obs_sum
-                    FROM arbitrage_signals
-                    WHERE ts_unix >= ?
-                      AND data_origin NOT IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX')
-                      AND COALESCE(contaminated, 0) = 0
-                    """,
-                    (cutoff,),
-                ).fetchone()
-                quarantined_sigs = cur.execute(
-                    """
-                    SELECT COUNT(*) AS c,
-                           COALESCE(SUM(gross_theo_edge_usd), 0.0) AS gross_sum,
-                           COALESCE(SUM(obs_net_pnl_usd), 0.0) AS obs_sum
-                    FROM arbitrage_signals
-                    WHERE ts_unix >= ?
-                      AND COALESCE(contaminated, 0) = 1
-                    """,
-                    (cutoff,),
-                ).fetchone()
-                synth_sigs = int(
-                    cur.execute(
-                        "SELECT COUNT(*) FROM arbitrage_signals WHERE ts_unix >= ? AND data_origin IN ('OFFLINE_SYNTHETIC', 'TESTNET_SANDBOX')",
-                        (cutoff,),
-                    ).fetchone()[0]
-                )
-                api_err = cur.execute(
-                    """
-                    SELECT COUNT(*) AS errs, COALESCE(SUM(downtime_sec), 0.0) AS down_s
-                    FROM api_connection_events
-                    WHERE ts_unix >= ? AND fault_class != 'NONE'
-                    """,
-                    (cutoff,),
-                ).fetchone()
-                res_row = cur.execute(
-                    """
-                    SELECT COUNT(*) AS c, COALESCE(SUM(simulated_realized_pnl_usd), 0.0) AS pnl
-                    FROM market_resolutions
-                    WHERE ts_unix >= ? AND data_origin != 'OFFLINE_SYNTHETIC'
-                    """,
-                    (cutoff,),
-                ).fetchone()
 
                 summaries[label] = {
                     "window_seconds": win_sec,
@@ -1249,18 +1317,18 @@ class ShadowTelemetryStore:
                     "live_coverage_pct": cov_pct,
                     "live_snapshots_ingested": live_snaps,
                     "synthetic_offline_snapshots_segregated": synth_snaps,
-                    "live_executable_signals": int(live_sigs["c"]),
-                    "quarantined_contaminated_signals": int(quarantined_sigs["c"]),
-                    "quarantined_phantom_gross_usd": round(float(quarantined_sigs["gross_sum"]), 4),
-                    "quarantined_phantom_observed_pnl_usd": round(float(quarantined_sigs["obs_sum"]), 4),
-                    "synthetic_offline_signals_segregated": synth_sigs,
-                    "live_simulated_executable_edge_usd": round(float(live_sigs["sim_sum"]), 4),
-                    "live_observed_post_delay_pnl_usd": round(float(live_sigs["obs_sum"]), 4),
+                    "live_executable_signals": int(sig_agg[f"l_c_{label}"] or 0),
+                    "quarantined_contaminated_signals": int(sig_agg[f"q_c_{label}"] or 0),
+                    "quarantined_phantom_gross_usd": round(float(sig_agg[f"q_gr_{label}"] or 0.0), 4),
+                    "quarantined_phantom_observed_pnl_usd": round(float(sig_agg[f"q_obs_{label}"] or 0.0), 4),
+                    "synthetic_offline_signals_segregated": int(sig_agg[f"s_c_{label}"] or 0),
+                    "live_simulated_executable_edge_usd": round(float(sig_agg[f"l_sim_{label}"] or 0.0), 4),
+                    "live_observed_post_delay_pnl_usd": round(float(sig_agg[f"l_obs_{label}"] or 0.0), 4),
                     "live_rejected_reasons": dict(rej_by_win.get(label, {})),
-                    "api_error_events": int(api_err["errs"]),
-                    "connection_downtime_sec": round(float(api_err["down_s"]), 2),
-                    "live_resolutions_tracked": int(res_row["c"]),
-                    "live_resolution_realized_pnl_usd": round(float(res_row["pnl"]), 4),
+                    "api_error_events": int(api_agg[f"e_{label}"] or 0),
+                    "connection_downtime_sec": round(float(api_agg[f"d_{label}"] or 0.0), 2),
+                    "live_resolutions_tracked": int(res_agg[f"c_{label}"] or 0),
+                    "live_resolution_realized_pnl_usd": round(float(res_agg[f"p_{label}"] or 0.0), 4),
                 }
 
         if now_unix is None:

@@ -416,40 +416,96 @@ def _cancel_open_clob_orders_out_of_band(
     `polymarket-live-harvester.service` was hung or dead before receiving `SIGTERM`,
     while never selling/modifying held CTF tokens (`KMIA` disputed locks remain 100% untouched)
     and preserving active position `exit_order_id` / `unwind_order_id` orders unless `force_cancel_exits=True`.
+    v6.0 (`R-08`): When active positions carry protective `exit_order_id`/`unwind_order_id` AND the
+    executor exposes `get_open_orders` + `cancel_order`, selectively cancels all non-exit open CLOB
+    orders (such as resting `BUY` entry anchors) while leaving protective exit orders intact.
     """
+    resting_exit_pos_ids: List[str] = []
+    protected_exit_oids: set[str] = set()
     state_path = data_dir / "live_harvester_state.json"
     if state_path.exists() and not force_cancel_exits:
         try:
             st = json.loads(state_path.read_text(encoding="utf-8"))
             act = st.get("active_positions") or {}
-            resting_exit_ids = [
-                str(k)
-                for k, p in (act.items() if isinstance(act, dict) else [])
-                if isinstance(p, dict) and (p.get("exit_order_id") or p.get("unwind_order_id"))
-            ]
-            if resting_exit_ids:
-                return {
-                    "attempted": False,
-                    "ok": True,
-                    "skipped_reason": "ACTIVE_POSITION_EXIT_ORDER_PRESENT",
-                    "protected_position_ids": resting_exit_ids,
-                }
+            for k, p in (act.items() if isinstance(act, dict) else []):
+                if not isinstance(p, dict):
+                    continue
+                ex_id = str(p.get("exit_order_id") or "").strip()
+                uw_id = str(p.get("unwind_order_id") or "").strip()
+                if ex_id or uw_id:
+                    resting_exit_pos_ids.append(str(k))
+                    if ex_id:
+                        protected_exit_oids.add(ex_id)
+                    if uw_id:
+                        protected_exit_oids.add(uw_id)
         except Exception as exc:
             return {"attempted": False, "ok": False, "error": f"STATE_READ_ERROR:{exc}"}
 
     try:
         if executor_factory is None:
-            try:
-                from dotenv import load_dotenv
-                env_file = PIPELINE_ROOT / ".env"
-                if env_file.exists():
-                    load_dotenv(env_file, override=False)
-            except Exception:
-                pass
-            from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
-            executor = PolymarketLiveExecutor(dry_run=False)
+            if resting_exit_pos_ids and not force_cancel_exits:
+                try:
+                    from dotenv import load_dotenv
+                    env_file = PIPELINE_ROOT / ".env"
+                    if env_file.exists():
+                        load_dotenv(env_file, override=False)
+                except Exception:
+                    pass
+                from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+                executor = PolymarketLiveExecutor(dry_run=False)
+            else:
+                try:
+                    from dotenv import load_dotenv
+                    env_file = PIPELINE_ROOT / ".env"
+                    if env_file.exists():
+                        load_dotenv(env_file, override=False)
+                except Exception:
+                    pass
+                from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor
+                executor = PolymarketLiveExecutor(dry_run=False)
         else:
             executor = executor_factory()
+
+        if resting_exit_pos_ids and not force_cancel_exits:
+            get_open_fn = getattr(executor, "get_open_orders", None)
+            cancel_one_fn = getattr(executor, "cancel_order", None)
+            if callable(get_open_fn) and callable(cancel_one_fn):
+                open_orders = get_open_fn() or []
+                canceled_ids: List[str] = []
+                preserved_ids: List[str] = []
+                errors: List[str] = []
+                for ord_rec in open_orders:
+                    oid = str(
+                        (ord_rec.get("id") or ord_rec.get("orderID") or ord_rec.get("order_id") or "")
+                        if isinstance(ord_rec, dict)
+                        else ord_rec
+                    ).strip()
+                    if not oid:
+                        continue
+                    if oid in protected_exit_oids:
+                        preserved_ids.append(oid)
+                        continue
+                    try:
+                        cancel_one_fn(oid)
+                        canceled_ids.append(oid)
+                    except Exception as c_err:
+                        errors.append(f"{oid}:{c_err}")
+                return {
+                    "attempted": True,
+                    "ok": len(errors) == 0,
+                    "mode": "SELECTIVE_ENTRY_CANCEL_PRESERVING_EXITS",
+                    "canceled_order_ids": canceled_ids,
+                    "preserved_exit_order_ids": preserved_ids,
+                    "protected_position_ids": resting_exit_pos_ids,
+                    "errors": errors,
+                }
+            return {
+                "attempted": False,
+                "ok": True,
+                "skipped_reason": "ACTIVE_POSITION_EXIT_ORDER_PRESENT",
+                "protected_position_ids": resting_exit_pos_ids,
+            }
+
         res = executor.cancel_all_orders()
         ok = isinstance(res, dict) and ("error" not in res)
         return {"attempted": True, "ok": ok, "result": res}
@@ -548,11 +604,31 @@ def cmd_resume(args: argparse.Namespace) -> int:
     data_dir = PIPELINE_ROOT / "data" / "polymarket"
     paa_dir = data_dir / "paa"
     paa_dir.mkdir(parents=True, exist_ok=True)
+    include_trading = bool(getattr(args, "include_trading", False))
+    force_override_safeguard = bool(getattr(args, "force_override_safeguard", False))
+
+    # v6.0 (`R-08`): Refuse to clear KILL_SWITCH or resume live trading if ACCOUNTING_SAFEGUARD_ACTIVE.json
+    # is currently latched, unless explicit `--force-override-safeguard` is passed by the human owner.
+    sg_file = paa_dir / "ACCOUNTING_SAFEGUARD_ACTIVE.json"
+    if include_trading and sg_file.exists() and not force_override_safeguard:
+        try:
+            sg_obj = json.loads(sg_file.read_text(encoding="utf-8"))
+            sg_active = not isinstance(sg_obj, dict) or sg_obj.get("active", True) is not False
+        except Exception:
+            sg_active = True
+        if sg_active:
+            err_out = {
+                "status": "BLOCKED_ACCOUNTING_SAFEGUARD_ACTIVE",
+                "safeguard_file": str(sg_file),
+                "error": "Reconcile wallet vs state discrepancy first or pass --force-override-safeguard.",
+            }
+            print(json.dumps(err_out, indent=2))
+            return 2
+
     stop_file = paa_dir / "PAA_MASTER_STOP"
     if stop_file.exists():
         stop_file.unlink()
 
-    include_trading = bool(getattr(args, "include_trading", False))
     ks_path = data_dir / "KILL_SWITCH"
     kill_switch_cleared = False
     if include_trading and ks_path.exists():
@@ -599,6 +675,139 @@ def cmd_resume(args: argparse.Namespace) -> int:
     db.log_event("owner_control", "AUTONOMY_RESUMED", {"resumed_at_utc": utc_now_iso(), **out})
     print(json.dumps(out, indent=2))
     return 0
+
+
+def _verify_human_owner_cli_session(args: argparse.Namespace) -> Tuple[bool, str]:
+    """
+    v6.0 (`R-05` Anti-Self-Approval Invariant):
+    Hard-blocks autonomous worker subprocesses (`PAA_SIGNING_DISABLED == '1'`, `PAA_WORKER_ROLE` set,
+    or non-interactive stdin) from granting, revoking, consuming, or promoting owner approvals.
+    """
+    if os.environ.get("PAA_SIGNING_DISABLED", "").strip() == "1":
+        return False, "FORBIDDEN_ISOLATED_WORKER_SUBPROCESS"
+    if os.environ.get("PAA_WORKER_ROLE", "").strip():
+        return False, "FORBIDDEN_AUTONOMOUS_WORKER_ROLE"
+    is_tty = bool(getattr(sys.stdin, "isatty", lambda: False)()) or bool(
+        getattr(args, "_interactive_tty_verified", False)
+    )
+    if not is_tty:
+        return False, "FORBIDDEN_NON_INTERACTIVE_SESSION_REQUIRES_HUMAN_TTY"
+    return True, "OK"
+
+
+def cmd_approvals(args: argparse.Namespace) -> int:
+    """Human-owner approval lifecycle CLI (`list`, `grant`, `revoke`, `consume`)."""
+    from datetime import datetime, timedelta, timezone
+
+    approvals_dir = PIPELINE_ROOT / "data" / "polymarket" / "paa" / "approvals"
+    approvals_dir.mkdir(parents=True, exist_ok=True)
+    action = str(getattr(args, "approval_action", "list") or "list").strip().lower()
+
+    if action == "list":
+        gate = PermissionGate()
+        records: List[Dict[str, Any]] = []
+        for fp in sorted(approvals_dir.glob("*.json")):
+            scope = fp.stem
+            try:
+                raw = json.loads(fp.read_text(encoding="utf-8"))
+            except Exception as exc:
+                records.append({"scope": scope, "valid": False, "error": f"MALFORMED_JSON:{exc}"})
+                continue
+            valid = gate.has_owner_approval(scope)
+            records.append({"scope": scope, "valid_now": valid, "record": raw})
+        print(json.dumps({"checked_at_utc": utc_now_iso(), "approvals": records}, indent=2))
+        return 0
+
+    human_ok, human_rsn = _verify_human_owner_cli_session(args)
+    if not human_ok:
+        print(json.dumps({"status": "DENIED", "reason": human_rsn}, indent=2))
+        return 3
+
+    all_owner_scopes = bool(getattr(args, "all_owner_scopes", False))
+    scope_raw = str(getattr(args, "scope", "") or "").strip()
+    if action == "grant" and all_owner_scopes:
+        scopes_to_grant = [
+            "INCREASE_CAPITAL_EXPOSURE",
+            "NEW_LIVE_TRADING_ACTIVATION",
+            "CREDENTIAL_OR_PERMISSION_EXPANSION",
+            "LIVE_PRODUCTION_PROMOTION",
+        ]
+    else:
+        if not scope_raw:
+            print(json.dumps({"status": "ERROR", "reason": "MISSING_APPROVAL_SCOPE"}, indent=2))
+            return 2
+        scopes_to_grant = [scope_raw]
+
+    safe_scope = "".join(c for c in scopes_to_grant[0] if c.isalnum() or c in ("_", "-"))
+    target_fp = approvals_dir / f"{safe_scope}.json"
+    now_dt = datetime.now(timezone.utc)
+    now_iso = now_dt.isoformat()
+    db = PAATaskDB(db_path=PIPELINE_ROOT / "data" / "polymarket" / "paa" / "paa_tasks.db")
+
+    if action == "grant":
+        ttl_hours = min(168.0, max(0.25, float(getattr(args, "ttl_hours", 24.0) or 24.0)))
+        exp_iso = (now_dt + timedelta(hours=ttl_hours)).isoformat()
+        granted_files: List[str] = []
+        granted_records: List[Dict[str, Any]] = []
+        for raw_sc in scopes_to_grant:
+            sc_clean = "".join(c for c in raw_sc if c.isalnum() or c in ("_", "-"))
+            sc_fp = approvals_dir / f"{sc_clean}.json"
+            rec: Dict[str, Any] = {
+                "scope": sc_clean,
+                "approved": True,
+                "approved_by": str(getattr(args, "approved_by", "human_owner") or "human_owner"),
+                "approved_at_utc": now_iso,
+                "expires_at_utc": exp_iso,
+                "reason": str(getattr(args, "reason", "Explicit owner CLI grant") or "Explicit owner CLI grant"),
+                "revoked": False,
+                "consumed_at_utc": None,
+                "consumed_by_release_id": None,
+            }
+            rel_id = getattr(args, "release_id", None)
+            sha_v = getattr(args, "git_sha", None)
+            if rel_id:
+                rec["release_id"] = str(rel_id)
+            if sha_v:
+                rec["git_sha"] = str(sha_v)
+            _atomic_write_json(sc_fp, rec)
+            db.log_event("owner_control", "OWNER_APPROVAL_GRANTED", rec)
+            granted_files.append(str(sc_fp))
+            granted_records.append(rec)
+        if len(granted_records) == 1:
+            print(json.dumps({"status": "GRANTED", "approval_file": granted_files[0], "record": granted_records[0]}, indent=2))
+        else:
+            print(json.dumps({"status": "GRANTED_SINGLE_PASS_BUNDLE", "approval_files": granted_files, "records": granted_records}, indent=2))
+        return 0
+
+    if not target_fp.exists():
+        print(json.dumps({"status": "NOT_FOUND", "scope": safe_scope}, indent=2))
+        return 1
+
+    existing = json.loads(target_fp.read_text(encoding="utf-8"))
+    if action == "revoke":
+        existing["revoked"] = True
+        existing["approved"] = False
+        existing["revoked_at_utc"] = now_iso
+        existing["revoke_reason"] = str(getattr(args, "reason", "Owner CLI revocation") or "Owner CLI revocation")
+        _atomic_write_json(target_fp, existing)
+        db.log_event("owner_control", "OWNER_APPROVAL_REVOKED", existing)
+        print(json.dumps({"status": "REVOKED", "approval_file": str(target_fp), "record": existing}, indent=2))
+        return 0
+
+    if action == "consume":
+        rel_req = str(getattr(args, "release_id", "") or "").strip()
+        if not rel_req:
+            print(json.dumps({"status": "ERROR", "reason": "CONSUME_REQUIRES_RELEASE_ID"}, indent=2))
+            return 2
+        existing["consumed_at_utc"] = now_iso
+        existing["consumed_by_release_id"] = rel_req
+        _atomic_write_json(target_fp, existing)
+        db.log_event("owner_control", "OWNER_APPROVAL_CONSUMED", existing)
+        print(json.dumps({"status": "CONSUMED", "approval_file": str(target_fp), "record": existing}, indent=2))
+        return 0
+
+    print(json.dumps({"status": "ERROR", "reason": f"UNKNOWN_ACTION:{action}"}, indent=2))
+    return 2
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -678,7 +887,27 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_res = sub.add_parser("resume", help="Clear master stop & re-enable PAA autonomous timers (and trading with --include-trading)")
     p_res.add_argument("--include-trading", action="store_true", help="Also clear KILL_SWITCH and restart live & shadow trading services")
+    p_res.add_argument(
+        "--force-override-safeguard",
+        action="store_true",
+        help="Explicitly override an active ACCOUNTING_SAFEGUARD_ACTIVE.json lock during --include-trading resume",
+    )
     p_res.set_defaults(func=cmd_resume)
+
+    p_app = sub.add_parser("approvals", help="Inspect or manage human-owner approval records (R-05 / D-011)")
+    p_app.add_argument("approval_action", choices=["list", "grant", "revoke", "consume"], nargs="?", default="list")
+    p_app.add_argument("--scope", default="", help="Approval scope name (e.g. LIVE_PRODUCTION_PROMOTION)")
+    p_app.add_argument(
+        "--all-owner-scopes",
+        action="store_true",
+        help="Single-pass Owner authorization granting all 4 governance scopes without repeated approval prompts",
+    )
+    p_app.add_argument("--ttl-hours", type=float, default=24.0, help="Expiration TTL in hours (0.25..168.0)")
+    p_app.add_argument("--release-id", default=None, help="Bind or consume approval for a specific release_id")
+    p_app.add_argument("--git-sha", default=None, help="Bind approval to a specific git SHA")
+    p_app.add_argument("--approved-by", default="human_owner", help="Human owner identifier")
+    p_app.add_argument("--reason", default="Explicit owner CLI action", help="Audit log reason")
+    p_app.set_defaults(func=cmd_approvals)
 
     return p
 

@@ -22,13 +22,18 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+import tests as _tests_bootstrap  # noqa: F401, E402
+
 for _opt_net_mod in ("requests", "aiohttp"):
     try:
         __import__(_opt_net_mod)
     except ImportError:
         _stub = types.ModuleType(_opt_net_mod)
         _stub.Session = object  # type: ignore[attr-defined]
-        _stub.ClientSession = object  # type: ignore[attr-defined]
+        _stub.ClientSession = lambda *_a, **_kw: types.SimpleNamespace(close=lambda: None)  # type: ignore[attr-defined]
+        _stub.ClientTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+        _stub.ClientWSTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+        _stub.TCPConnector = lambda **kw: kw  # type: ignore[attr-defined]
         sys.modules[_opt_net_mod] = _stub
 
 from scripts.deploy_cross_venue_shadow import (

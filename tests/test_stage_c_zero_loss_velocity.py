@@ -805,6 +805,530 @@ class TestStageCZeroLossVelocity(unittest.TestCase):
             )
         )
 
+    def test_08_wave3_inventory_backed_completion_and_missing_opp_token_resolver(self) -> None:
+        from unittest.mock import patch
+        from src.polymarket_research.holistic_strategy_governance import (
+            GLOBAL_GOVERNANCE_MANAGER,
+            passes_capital_velocity_hurdle,
+        )
+        from src.polymarket_research.riskless_protocol_v2_expansion import resolve_missing_opp_token_id
+        from src.polymarket_research.stage_c_zero_loss_velocity import check_strict_pure_riskless_candidate_gate
+
+        rb = dict(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}))
+        tok_yes = "1111111111111111111111"
+        tok_no = "2222222222222222222222"
+        tok_cal_late = "3333333333333333333333"
+        tok_cal_early = "4444444444444444444444"
+
+        # 1. Unheld inventory-backed completion MUST be blocked fail-closed:
+        empty_harv = types.SimpleNamespace(
+            dry_run=False,
+            active_positions={},
+            executor=types.SimpleNamespace(
+                dry_run=False,
+                client=object(),
+                get_conditional_token_balance=lambda _t: 0.0,
+            ),
+        )
+        cand_c1_mkr = {
+            "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+            "leg_a_token_id": tok_no,
+            "leg_a_opp_token_id": tok_yes,
+            "partner_held_token_id": tok_yes,
+            "rule_verified": True,
+            "min_state_net_payoff_usd": 0.08,
+            "min_order_shares": 5.0,
+        }
+        self.assertIn(
+            "PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY",
+            str(check_strict_pure_riskless_candidate_gate(empty_harv, cand_c1_mkr, rb, is_maker=True)),
+        )
+
+        # Disputed KMIA shares MUST NEVER count as usable partner inventory (`D-001`):
+        kmia_only_harv = types.SimpleNamespace(
+            dry_run=False,
+            active_positions={
+                "KMIA_DISP": {
+                    "market_id": "6707503",
+                    "token_id": tok_yes,
+                    "remaining_shares": 35.0,
+                    "notional_usd": 34.65,
+                    "umaResolutionStatus": "disputed",
+                }
+            },
+            executor=types.SimpleNamespace(
+                dry_run=False,
+                client=object(),
+                get_conditional_token_balance=lambda _t: 35.0,
+            ),
+        )
+        self.assertIn(
+            "PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY",
+            str(check_strict_pure_riskless_candidate_gate(kmia_only_harv, cand_c1_mkr, rb, is_maker=True)),
+        )
+
+        # Verified non-disputed partner shares unlock BOTH passive maker (`LIVE_MAKER_ENTRY`) and taker completion:
+        held_harv = types.SimpleNamespace(
+            dry_run=False,
+            active_positions={
+                "HELD_YES_1": {
+                    "market_id": "990001",
+                    "token_id": tok_yes,
+                    "remaining_shares": 10.0,
+                    "notional_usd": 5.20,
+                },
+                "HELD_CAL_EARLY": {
+                    "market_id": "990002",
+                    "token_id": tok_cal_early,
+                    "remaining_shares": 8.0,
+                    "notional_usd": 3.20,
+                },
+            },
+            executor=types.SimpleNamespace(
+                dry_run=False,
+                client=object(),
+                get_conditional_token_balance=lambda tid: 10.0 if tid == tok_yes else (8.0 if tid == tok_cal_early else 0.0),
+            ),
+        )
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(held_harv, cand_c1_mkr, rb, is_maker=True))
+        self.assertIsNone(
+            check_strict_pure_riskless_candidate_gate(
+                held_harv,
+                {**cand_c1_mkr, "box_type": "SINGLE_LEG_LOCK"},
+                rb,
+                is_maker=False,
+            )
+        )
+        cand_cal_mkr = {
+            "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "sleeve_source": "CAL1_DEADLINE_SURVIVAL_AND_SCALAR_LADDER_BOX",
+            "leg_a_token_id": tok_cal_late,
+            "leg_a_opp_token_id": "5555555555555555555555",
+            "partner_held_token_id": tok_cal_early,
+            "leg_a_expiry_ts": 2000000.0,
+            "leg_b_expiry_ts": 1900000.0,
+            "rule_verified": True,
+            "min_state_net_payoff_usd": 0.06,
+            "min_order_shares": 5.0,
+        }
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(held_harv, cand_cal_mkr, rb, is_maker=True))
+
+        # 2. `resolve_missing_opp_token_id` resolves binary complement tokens and caches bidirectionally:
+        class _FakeResp:
+            def __init__(self, body: bytes) -> None:
+                self._body = body
+
+            def read(self) -> bytes:
+                return self._body
+
+            def __enter__(self) -> "_FakeResp":
+                return self
+
+            def __exit__(self, *args: object) -> None:
+                return None
+
+        gamma_payload = json.dumps({"id": "881122", "clobTokenIds": json.dumps([tok_yes, tok_no])}).encode("utf-8")
+        cache_holder = types.SimpleNamespace()
+        with patch("urllib.request.urlopen", return_value=_FakeResp(gamma_payload)) as mock_uo:
+            resolved_opp = resolve_missing_opp_token_id(cache_holder, "881122", "0xabc123456789", tok_yes)
+            self.assertEqual(resolved_opp, tok_no)
+            self.assertEqual(mock_uo.call_count, 1)
+            # Reverse lookup hits in-memory cache with 0 additional HTTP calls:
+            self.assertEqual(resolve_missing_opp_token_id(cache_holder, "881122", "0xabc123456789", tok_no), tok_yes)
+            self.assertEqual(mock_uo.call_count, 1)
+
+        # 3. `passes_capital_velocity_hurdle` unlocks merge-backed `SINGLE_LEG_LOCK` `C1` & `2.0h` `BOND2`:
+        ok_sll_c1, _ = passes_capital_velocity_hurdle(
+            box_type="SINGLE_LEG_LOCK",
+            sleeve_src="C1_BINARY_COMPLETE_SET",
+            collat_usd=48.70,
+            rem_tte_sec=14.0 * 86400.0,
+            box_cost_net=0.985,
+            fast_recycle_eligible=False,
+            merge_wallet_ok=True,
+        )
+        self.assertTrue(ok_sll_c1)
+        ok_b2, _ = passes_capital_velocity_hurdle(
+            box_type="SINGLE_LEG_MAKER_LOCK",
+            sleeve_src="BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY",
+            collat_usd=48.70,
+            rem_tte_sec=1800.0,
+            box_cost_net=0.996,
+            fast_recycle_eligible=True,
+        )
+        self.assertTrue(ok_b2)
+
+    def test_09_bug_w3_mp1_partner_cost_clamp_and_double_pledge_veto(self) -> None:
+        from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
+        from src.polymarket_research.riskless_protocol_v2_expansion import (
+            resolve_unencumbered_partner_inventory_and_leg_cap,
+        )
+        from src.polymarket_research.stage_c_zero_loss_velocity import check_strict_pure_riskless_candidate_gate
+
+        rb = dict(GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {}))
+        tok_a = "7777777777777777777771"
+        tok_b = "7777777777777777777772"
+
+        # 1. Partner Token B held at `$0.62/sh` (`$6.20` for `10` sh) clamps Leg A cap to `0.994 - 0.62 = 0.3740`:
+        harv = types.SimpleNamespace(
+            dry_run=False,
+            active_positions={
+                "PARTNER_B_62": {
+                    "market_id": "889900",
+                    "token_id": tok_b,
+                    "remaining_shares": 10.0,
+                    "remaining_cost_basis": 6.20,
+                    "entry_fee_cash_usd": 0.0,
+                }
+            },
+            pending_entry_intents={},
+            executor=types.SimpleNamespace(
+                dry_run=False,
+                client=object(),
+                get_token_balance=lambda tid: 10.0 if tid == tok_b else 0.0,
+            ),
+        )
+        sh_free, cost_ps, leg_cap = resolve_unencumbered_partner_inventory_and_leg_cap(
+            harv,
+            {"anchor_bid_px": 0.35, "leg_a_max_price": 0.994, "max_box_cost_net": 0.994},
+            tok_b,
+            default_max_box_net=0.994,
+        )
+        self.assertAlmostEqual(sh_free, 10.0, places=4)
+        self.assertAlmostEqual(cost_ps, 0.62, places=4)
+        self.assertAlmostEqual(leg_cap, 0.3740, places=4)
+
+        # `$0.62 + $0.43 = $1.05 > $1.00` MUST be rejected at the pure-riskless gate:
+        bad_cand = {
+            "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "sleeve_source": "C1_BINARY_COMPLETE_SET",
+            "leg_a_token_id": tok_a,
+            "leg_a_opp_token_id": tok_b,
+            "partner_held_token_id": tok_b,
+            "anchor_bid_px": 0.43,
+            "max_box_cost_net": 0.994,
+            "rule_verified": True,
+            "min_state_net_payoff_usd": 0.05,
+            "min_order_shares": 5.0,
+        }
+        veto_pair = check_strict_pure_riskless_candidate_gate(harv, bad_cand, rb, is_maker=True)
+        self.assertIn("PURE_RISKLESS_PARTNER_PAIR_COST_EXCEEDED", str(veto_pair))
+
+        # `$0.62 + $0.35 = $0.97 <= $0.994` passes when unpledged:
+        good_cand = {**bad_cand, "anchor_bid_px": 0.35}
+        self.assertIsNone(check_strict_pure_riskless_candidate_gate(harv, good_cand, rb, is_maker=True))
+
+        # 2. Resting `pending_entry_intents` pledging `7` shares of `tok_b` leaves only `3 < 5` shares -> VETO double-pledge:
+        harv.pending_entry_intents["RESTING_COMP_1"] = {
+            "trade_id": "RESTING_COMP_1",
+            "partner_held_token_id": tok_b,
+            "posted_shares": 7.0,
+        }
+        veto_dp1 = check_strict_pure_riskless_candidate_gate(harv, good_cand, rb, is_maker=True)
+        self.assertIn("PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY", str(veto_dp1))
+
+        # 3. Open `inventory_backed_completion` or already-paired `is_dominance_box` also blocks double-pledging:
+        harv.pending_entry_intents.clear()
+        harv.active_positions["OPEN_COMP_1"] = {
+            "market_id": "889901",
+            "token_id": "7777777777777777777779",
+            "remaining_shares": 6.0,
+            "inventory_backed_completion": True,
+            "partner_held_token_id": tok_b,
+        }
+        veto_dp2 = check_strict_pure_riskless_candidate_gate(harv, good_cand, rb, is_maker=True)
+        self.assertIn("PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY", str(veto_dp2))
+
+        harv.active_positions = {
+            "PAIRED_DOM_B": {
+                "market_id": "889900",
+                "token_id": tok_b,
+                "remaining_shares": 10.0,
+                "remaining_cost_basis": 4.00,
+                "is_dominance_box": True,
+                "box_partner_trade_id": "PAIRED_DOM_A",
+            }
+        }
+        veto_dp3 = check_strict_pure_riskless_candidate_gate(harv, good_cand, rb, is_maker=True)
+        self.assertIn("PURE_RISKLESS_UNVERIFIED_OPP_INVENTORY", str(veto_dp3))
+
+        # 4. `BUG-W3-MP-2C`: Open-carry recycler MUST NEVER sell an `inventory_backed_completion` leg OR
+        #    a partner position whose `token_id` is pledged in `active_positions` / `pending_entry_intents` / `_prepost_partner_pledged_shares`:
+        from src.polymarket_research.stage_c_zero_loss_velocity import (
+            _is_standalone_recyclable_carry,
+            find_recyclable_zero_loss_open_carries,
+        )
+
+        now_r = 1800000000.0
+        partner_carry_pos = {
+            "trade_id": "PARTNER_CARRY_B",
+            "market_id": "889900",
+            "token_id": tok_b,
+            "sleeve": "BOND1_UMA_RESOLUTION_CARRY",
+            "box_type": "SINGLE_LEG_MAKER_LOCK",
+            "is_single_leg_lock": True,
+            "is_dominance_box": False,
+            "inventory_reconciled": True,
+            "status": "POSITION_CONFIRMED",
+            "fee_rate_applied": 0.0,
+            "remaining_shares": 10.0,
+            "remaining_cost_basis": 9.80,
+            "notional_usd": 9.80,
+            "candle_expiry_ts": now_r + 72000.0,
+        }
+        self.assertTrue(_is_standalone_recyclable_carry(partner_carry_pos))
+        self.assertFalse(_is_standalone_recyclable_carry({**partner_carry_pos, "inventory_backed_completion": True}))
+        self.assertFalse(_is_standalone_recyclable_carry({**partner_carry_pos, "partner_held_token_id": tok_a}))
+
+        rec_harv = types.SimpleNamespace(
+            dry_run=False,
+            active_positions={"PARTNER_CARRY_B": dict(partner_carry_pos)},
+            pending_entry_intents={},
+            _prepost_partner_pledged_shares={},
+            executor=types.SimpleNamespace(),
+        )
+        bk_fn = lambda tid: {"bids": [{"price": 0.990, "size": 50.0}], "asks": [{"price": 0.999, "size": 50.0}]} if tid == tok_b else None
+        # Unpledged -> recyclable:
+        self.assertEqual(
+            len(
+                find_recyclable_zero_loss_open_carries(
+                    rec_harv, challenger_net_cost=0.97, challenger_rem_tte_sec=900.0, book_lookup_fn=bk_fn, now_ts=now_r
+                )
+            ),
+            1,
+        )
+        # Pledged in `pending_entry_intents` -> NOT recyclable:
+        rec_harv.pending_entry_intents["INT_1"] = {"partner_held_token_id": tok_b, "posted_shares": 10.0}
+        self.assertEqual(
+            find_recyclable_zero_loss_open_carries(
+                rec_harv, challenger_net_cost=0.97, challenger_rem_tte_sec=900.0, book_lookup_fn=bk_fn, now_ts=now_r
+            ),
+            [],
+        )
+        # Pledged in `active_positions` -> NOT recyclable:
+        rec_harv.pending_entry_intents.clear()
+        rec_harv.active_positions["COMP_A"] = {
+            "trade_id": "COMP_A",
+            "token_id": tok_a,
+            "status": "POSITION_CONFIRMED",
+            "inventory_backed_completion": True,
+            "partner_held_token_id": tok_b,
+            "remaining_shares": 10.0,
+        }
+        self.assertEqual(
+            find_recyclable_zero_loss_open_carries(
+                rec_harv, challenger_net_cost=0.97, challenger_rem_tte_sec=900.0, book_lookup_fn=bk_fn, now_ts=now_r
+            ),
+            [],
+        )
+
+    def test_10_wave31_fast_d1_halt_no_spin_and_prereed_gamma_fastpath(self) -> None:
+        import asyncio
+        from collections import deque
+        from src.polymarket_research import polymarket_live_harvester as hv_mod
+        from src.polymarket_research.polymarket_live_harvester import ExecutionStatus, PolymarketLiveHarvester
+
+        # 1. Regression for `_fast_d1_consumer_loop` & `_fast_trigger_consumer_loop` halt-spin (`02:03:06 UTC` incident):
+        async def _verify_no_spin() -> None:
+            d1_ev = asyncio.Event()
+            shk_ev = asyncio.Event()
+            sup_ticks = 0
+            poll_calls = 0
+
+            class _LoopStub:
+                _shutdown_requested = False
+
+                def __init__(self) -> None:
+                    self._fast_d1_cand_lines = deque(['{"box_type":"SINGLE_LEG_MAKER_LOCK"}'])
+                    self._fast_trigger_lines = deque(["1", "2"])
+                    self._halted = True
+                    self._last_d1_cand_poll = 0.0
+
+                def _is_d1_box_halted(self) -> bool:
+                    return self._halted
+
+                def _is_riskless_only_mode(self) -> bool:
+                    return False
+
+                async def _poll_d1_live_box_candidates(self, _now: float) -> int:
+                    nonlocal poll_calls
+                    poll_calls += 1
+                    self._fast_d1_cand_lines.clear()
+                    return 0
+
+                async def _drain_and_dispatch_shock_triggers(self, **_kw: object) -> None:
+                    if self._fast_trigger_lines:
+                        self._fast_trigger_lines.popleft()
+
+            stub = _LoopStub()
+            t_d1 = asyncio.create_task(PolymarketLiveHarvester._fast_d1_consumer_loop(stub, d1_ev))
+            t_shk = asyncio.create_task(PolymarketLiveHarvester._fast_trigger_consumer_loop(stub, shk_ev, None))
+            try:
+                for _ in range(6):
+                    await asyncio.sleep(0.01)
+                    sup_ticks += 1
+                self.assertGreaterEqual(sup_ticks, 6)
+                self.assertEqual(len(stub._fast_d1_cand_lines), 0)
+                self.assertEqual(poll_calls, 0)
+                # Unhalt + push candidate -> drains cleanly without spinning:
+                stub._halted = False
+                stub._fast_d1_cand_lines.append('{"box_type":"SINGLE_LEG_MAKER_LOCK"}')
+                d1_ev.set()
+                await asyncio.sleep(0.02)
+                self.assertGreaterEqual(poll_calls, 1)
+                self.assertEqual(len(stub._fast_d1_cand_lines), 0)
+            finally:
+                stub._shutdown_requested = True
+                d1_ev.set()
+                shk_ev.set()
+                await asyncio.gather(t_d1, t_shk)
+
+        asyncio.run(_verify_no_spin())
+
+        # 2. Regression for `6701947` `0.00`-share pre-redeem detection + `8.0s` `is_single_leg_lock` Gamma poll + `D-001` `KMIA`:
+        now_w = time.time()
+        tok_win = "6701947000000000000002"
+        tok_opp = "6701947000000000000001"
+        tok_sll8 = "6701999000000000000001"
+        tok_kmia = "6707503000000000000002"
+        gamma_hits: list[str] = []
+        applied_res: list[tuple[str, str]] = []
+
+        class _FakeGammaResp:
+            def __init__(self, payload: dict) -> None:
+                self._payload = payload
+
+            def json(self) -> dict:
+                return self._payload
+
+        def _fake_gamma_get(url: str, timeout: float = 3.0) -> _FakeGammaResp:
+            mid = url.rsplit("/", 1)[-1]
+            gamma_hits.append(mid)
+            if mid == "6701947":
+                return _FakeGammaResp(
+                    {
+                        "id": "6701947",
+                        "closed": True,
+                        "umaResolutionStatus": "resolved",
+                        "outcomePrices": json.dumps(["0", "1"]),
+                        "clobTokenIds": json.dumps([tok_opp, tok_win]),
+                    }
+                )
+            return _FakeGammaResp({"id": mid, "closed": False, "umaResolutionStatus": "proposed"})
+
+        h = PolymarketLiveHarvester.__new__(PolymarketLiveHarvester)
+        h.dry_run = False
+        h.ONCHAIN_SOURCE = "POLYGON_ERC1155_ONCHAIN"
+        h.tte_cancel_window = 15.0
+        h.last_res_file_pos = 0
+        h._last_redemption_poll = now_w
+        h._last_usdce_wrap_check_ts = now_w
+        h._pre_split_gun = types.SimpleNamespace(tick=lambda *_a, **_kw: asyncio.sleep(0))
+        h._pos_market_ws = None
+        h.pending_entry_intents = {}
+        h.closed_positions = []
+        h.executor = types.SimpleNamespace(
+            auth_mode="LIVE",
+            _sync_session=types.SimpleNamespace(get=_fake_gamma_get),
+            get_market_book_async=lambda _t: asyncio.sleep(0, result={"bids": [{"price": "0.997", "size": "50"}], "asks": []}),
+        )
+        h._strict_open_orders = lambda: []
+        h._maybe_merge_live_complete_sets = lambda _n: asyncio.sleep(0)
+        h._try_atomic_box_overround_unwind = lambda _n, _o: asyncio.sleep(0)
+        h.poll_onchain_redemptions = lambda _f=False: None
+        h._refresh_global_halt = lambda: None
+        h._attempt_maker_exit_post = lambda _tid, _p: False
+        h._get_verified_shm_book = lambda _p: {"bids": [{"price": 0.997, "size": 50.0}], "asks": []}
+        h._wallet_token_balance = lambda tid: (
+            (0.0, h.ONCHAIN_SOURCE)
+            if tid == tok_win
+            else ((7.0, h.ONCHAIN_SOURCE) if tid == tok_sll8 else (35.0, h.ONCHAIN_SOURCE))
+        )
+
+        async def _rec_res(tid: str, pos: dict, outcome: str) -> None:
+            applied_res.append((tid, outcome))
+            h.active_positions.pop(tid, None)
+
+        h._apply_market_resolution = _rec_res
+        h.active_positions = {
+            "MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1794449488_01947": {
+                "trade_id": "MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1794449488_01947",
+                "market_id": "6701947",
+                "token_id": tok_win,
+                "target_token": "NO",
+                "status": ExecutionStatus.POSITION_CONFIRMED,
+                "inventory_reconciled": True,
+                "is_single_leg_lock": True,
+                "hold_to_maturity_lock": True,
+                "entry_ts": now_w - 20.0,  # < 45s after entry!
+                "candle_expiry_ts": now_w + 3600.0,
+                "_last_gamma_res_poll": now_w - 2.0,  # polled only 2s ago!
+                "_last_htm_prereed_chk": now_w - 15.0,
+                "entry_price": 0.997,
+                "entry_shares": 7.0,
+                "remaining_shares": 7.0,
+            },
+            "SLL_8SEC_POLL": {
+                "trade_id": "SLL_8SEC_POLL",
+                "market_id": "6701999",
+                "token_id": tok_sll8,
+                "target_token": "YES",
+                "status": ExecutionStatus.POSITION_CONFIRMED,
+                "inventory_reconciled": True,
+                "is_single_leg_lock": True,
+                "hold_to_maturity_lock": True,
+                "entry_ts": now_w - 60.0,
+                "candle_expiry_ts": now_w + 3600.0,
+                "_last_gamma_res_poll": now_w - 9.0,  # 9s >= new 8.0s _poll_iv (would have skipped under old 30.0s!)
+                "_last_htm_prereed_chk": now_w,
+                "entry_price": 0.996,
+                "entry_shares": 7.0,
+                "remaining_shares": 7.0,
+            },
+            "WS_SNIPE_Miami_KMIA_242960": {
+                "trade_id": "WS_SNIPE_Miami_KMIA_242960",
+                "asset": "Miami_KMIA",
+                "market_id": "6707503",
+                "token_id": tok_kmia,
+                "status": ExecutionStatus.POSITION_CONFIRMED,
+                "is_single_leg_lock": True,
+                "hold_to_maturity_lock": True,
+                "umaResolutionStatus": "disputed",
+                "entry_ts": now_w - 86400.0,
+                "candle_expiry_ts": now_w - 80000.0,
+                "_last_gamma_res_poll": now_w,
+                "remaining_shares": 35.0,
+                "exit_order_id": None,
+                "unwind_order_id": None,
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as tmp_d:
+            orig_dd = hv_mod.DATA_DIR
+            hv_mod.DATA_DIR = Path(tmp_d)
+            try:
+                # Tick 1: `SLL_8SEC_POLL` polls at 9.0s (`>= 8.0s`), AND `6701947` detects `0.0` ERC-1155 shares -> arms `_zero_bal_gamma_urgent`:
+                asyncio.run(h.check_resolutions_and_manage_positions())
+                self.assertIn("6701999", gamma_hits)
+                pos_670 = h.active_positions["MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1794449488_01947"]
+                self.assertEqual(pos_670["_last_gamma_res_poll"], 0.0)
+                self.assertTrue(pos_670.get("_zero_bal_gamma_urgent"))
+
+                # Tick 2 (immediately next tick): `6701947` polls Gamma despite `entry_ts` < 45s and resolves as `"NO"` win:
+                asyncio.run(h.check_resolutions_and_manage_positions())
+                self.assertIn("6701947", gamma_hits)
+                self.assertEqual(applied_res, [("MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1794449488_01947", "NO")])
+                self.assertNotIn("MKR_LOCK1_LIVE_SPORTS_MONEYLINE_1794449488_01947", h.active_positions)
+
+                # `D-001`: Disputed `KMIA` (`6707503`) remains 100% untouched:
+                kmia_after = h.active_positions["WS_SNIPE_Miami_KMIA_242960"]
+                self.assertIsNone(kmia_after.get("exit_order_id"))
+                self.assertIsNone(kmia_after.get("unwind_order_id"))
+                self.assertNotIn("_last_htm_prereed_chk", kmia_after)
+            finally:
+                hv_mod.DATA_DIR = orig_dd
+
 
 if __name__ == "__main__":
     unittest.main()

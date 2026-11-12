@@ -538,6 +538,169 @@ class TestV51CatalogExpansionAndQA(unittest.TestCase):
 
         self.assertTrue(asyncio.run(_check_close()))
 
+    def test_08_wave3_alpha124_state_mirror_uma_decoupling_and_rest_cache_cap(self) -> None:
+        import inspect
+        import re
+        import src.polymarket_research.alpha_124_shadow_daemon as a124_mod
+
+        with tempfile.TemporaryDirectory() as td:
+            td_path = Path(td)
+            main_st = td_path / "alpha124_shadow_state.json"
+            mir_st = td_path / "mirror" / "alpha124_shadow_state.json"
+            with (
+                mock.patch.object(a124_mod, "STATE_FILE", main_st),
+                mock.patch.object(a124_mod, "LIVE_ALPHA124_STATE_MIRROR_FILE", mir_st),
+            ):
+                d = a124_mod.Alpha124ShadowDaemon(single_scan=True)
+                d.uma_proposed_markets = {
+                    "6947122": {"id": "6947122", "bestBid": 0.993, "bestAsk": 0.996},
+                    "6947123": {"id": "6947123", "bestBid": 0.50, "bestAsk": 0.52},
+                }
+                d.zerofee_general_binaries = [("m1", "c1", "y1", "n1", "q1", time.time() + 3600.0)] * 5
+                d.negrisk_convert_slates = {"s1": object(), "s2": object()}
+                d.cal1_ladders = {"l1": object()}
+                d._ws_subscribed_tokens = {"t1", "t2", "t3"}
+                d._ws_shard_tokens = {0: ["t1", "t2"], 1: ["t3"]}
+                d._record_live_bridge_emit("BOND1_UMA_RESOLUTION_CARRY", True)
+                d._record_live_bridge_emit("C1_BINARY_COMPLETE_SET", True)
+                d._record_live_bridge_emit("C1_BINARY_COMPLETE_SET", False)
+                d.write_state_files()
+
+            self.assertTrue(main_st.exists())
+            self.assertTrue(mir_st.exists())
+            for p_chk in (main_st, mir_st):
+                st_j = json.loads(p_chk.read_text(encoding="utf-8"))
+                self.assertGreater(float(st_j.get("updated_ts") or 0.0), 1_700_000_000.0)
+                cat = st_j["catalog_counts"]
+                self.assertEqual(cat["zerofee_binaries"], 5)
+                self.assertEqual(cat["uma_proposed"], 2)
+                self.assertEqual(cat["uma_hot_bonds"], 1)
+                self.assertEqual(cat["negrisk_convert_slates"], 2)
+                self.assertEqual(cat["cal1_ladders"], 1)
+                self.assertEqual(cat["ws_subscribed_tokens"], 3)
+                self.assertEqual(cat["ws_shards_active"], 2)
+                self.assertIn("maker_pending", cat)
+                lbt = st_j["live_bridge_telemetry"]
+                self.assertEqual(lbt["emitted_total"], 2)
+                self.assertEqual(
+                    lbt["emitted_by_sleeve"],
+                    {"BOND1_UMA_RESOLUTION_CARRY": 1, "C1_BINARY_COMPLETE_SET": 1},
+                )
+
+            self.assertTrue(inspect.iscoroutinefunction(a124_mod.Alpha124ShadowDaemon._run_bg_uma_bonds))
+            self.assertTrue(inspect.iscoroutinefunction(a124_mod.Alpha124ShadowDaemon._run_bg_state_heartbeat))
+
+            # BUG-W3-DISC-1 lock: reconciled_nav_usd / locked_floor_equity / live_bankroll prioritized over $99.21 book equity
+            self.assertAlmostEqual(
+                a124_mod.Alpha124ShadowDaemon._extract_reconciled_live_equity_usd(
+                    {"total_account_equity": 99.21, "reconciled_nav_usd": 48.83, "live_bankroll": 41.74}
+                ),
+                48.83,
+                places=2,
+            )
+            self.assertAlmostEqual(
+                a124_mod.Alpha124ShadowDaemon._extract_reconciled_live_equity_usd(
+                    {"total_account_equity": 99.21, "live_bankroll": 48.70}
+                ),
+                48.70,
+                places=2,
+            )
+            self.assertAlmostEqual(
+                a124_mod.Alpha124ShadowDaemon._extract_reconciled_live_equity_usd(
+                    {"total_account_equity": 75.00}
+                ),
+                75.00,
+                places=2,
+            )
+
+            # BUG-W3-DISC-2 lock: all relative markdown links in owned Wave 3 reports resolve on disk
+            root_dir = Path(__file__).resolve().parent.parent
+            for md_name in ("FULL_THROTTLE_STRATEGY_AND_PROJECTIONS_REPORT.md", "DAILY_COMMAND_CENTER_REPORT.md"):
+                md_txt = (root_dir / md_name).read_text(encoding="utf-8")
+                for m_lnk in re.finditer(r"\]\(([^)#]+)(?:#[^)]*)?\)", md_txt):
+                    rel_t = m_lnk.group(1).strip()
+                    if rel_t.startswith(("http://", "https://", "file://", "conversation://")):
+                        continue
+                    self.assertTrue((root_dir / rel_t).exists(), f"Broken link in {md_name}: {rel_t}")
+
+    def test_09_wave3_v52_projections_d009_floor_anchor_and_post_vm_horizons(self) -> None:
+        from scripts.polymarket_daily_projections import build_live_projections
+
+        disputed_prod_state = {
+            "live_bankroll": 41.7441,
+            "total_account_equity": 99.2051,
+            "reconciled_nav_usd": 48.8341,
+            "high_water_mark_equity": 102.78,
+            "collateral_source": "CLOB_BALANCE_API",
+            "collateral_includes_resting_maker": False,
+            "pending_entry_intents": {
+                "BOND1_MKR_6947122": {
+                    "live_maker_anchor_inflight": True,
+                    "entry_order_id": "0xOID6947122",
+                    "notional_usd": 6.9510,
+                }
+            },
+            "active_positions": {
+                "WS_SNIPE_Miami_KMIA_242960": {
+                    "trade_id": "WS_SNIPE_Miami_KMIA_242960",
+                    "box_type": "SINGLE_LEG_LOCK",
+                    "is_single_leg_lock": True,
+                    "umaResolutionStatus": "disputed",
+                    "entry_shares": 35.0,
+                    "remaining_shares": 35.0,
+                    "notional_usd": 33.85,
+                    "remaining_cost_basis": 33.85,
+                },
+                "MULTI_LEG_BUNDLE_LIVE_KMIA_UNWRESID_1": {
+                    "trade_id": "MULTI_LEG_BUNDLE_LIVE_KMIA_1794113999_318559_UNWRESID_20116898_1794111898",
+                    "box_type": "MULTI_LEG_RESIDUAL",
+                    "is_legged_out_residual": True,
+                    "umaResolutionStatus": "disputed",
+                    "entry_shares": 17.0,
+                    "remaining_shares": 17.0,
+                    "notional_usd": 16.66,
+                    "remaining_cost_basis": 16.66,
+                },
+            },
+            "closed_positions": [],
+        }
+
+        proj = build_live_projections(
+            days=90,
+            riskless_only=True,
+            strict_pure_riskless=False,
+            live_state_override=disputed_prod_state,
+        )
+        self.assertEqual(proj["model_version"], "v5.2_full_throttle_riskless_velocity")
+        anc = proj["anchor_live_state"]
+        self.assertAlmostEqual(anc["reconciled_floor_nav_usd"], 48.70, places=2)
+        self.assertAlmostEqual(anc["mark_to_bid_nav_usd"], 48.83, places=2)
+        self.assertAlmostEqual(anc["persisted_book_equity_usd"], 99.21, places=2)
+        self.assertAlmostEqual(anc["compounding_anchor_equity_usd"], 48.70, places=2)
+        self.assertAlmostEqual(anc["live_equity_usd"], 48.70, places=2)
+
+        # Day 1 compounds from $48.70 floor (NOT $99.21 persisted book equity!)
+        self.assertEqual(len(proj["day_by_day_schedule"]), 90)
+        d1 = proj["day_by_day_schedule"][0]
+        self.assertLess(d1["p50_end_equity_usd"], 55.0)
+        self.assertGreater(proj["milestone_eta_days"]["usd_100"]["p50_day"], 10)
+
+        for hk in ("day_1", "day_7", "day_30", "day_60", "day_90"):
+            h = proj["summary_horizons_usd"][hk]
+            self.assertLess(h["p25_equity"], h["p50_equity"])
+            self.assertLess(h["p50_equity"], h["p75_equity"])
+            self.assertGreater(h["p25_net_after_vm_usd"], 0.0)
+            self.assertGreater(h["p50_net_after_vm_usd"], h["p25_net_after_vm_usd"])
+            self.assertGreater(h["p75_net_after_vm_usd"], h["p50_net_after_vm_usd"])
+
+        for mk in ("usd_150", "usd_253", "usd_500", "usd_5000"):
+            eta = proj["milestone_eta_days"][mk]
+            self.assertIsInstance(eta.get("p75_day"), int)
+            self.assertIsInstance(eta.get("p50_day"), int)
+            self.assertIsInstance(eta.get("p25_day"), int)
+            self.assertLessEqual(eta["p75_day"], eta["p50_day"])
+            self.assertLessEqual(eta["p50_day"], eta["p25_day"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -131,8 +131,14 @@ class TestPhase4LatencyOptimizations(unittest.TestCase):
 
             parsed_fast = json.loads(st_fast.read_text(encoding="utf-8"))
             parsed_std = json.loads(st_std.read_text(encoding="utf-8"))
-            parsed_fast.pop("updated_at_utc", None)
-            parsed_std.pop("updated_at_utc", None)
+            for doc in (parsed_fast, parsed_std):
+                doc.pop("updated_at_utc", None)
+                if isinstance(doc.get("ft_live_funnel"), dict):
+                    doc["ft_live_funnel"].pop("updated_at_utc", None)
+                if isinstance(doc.get("live_riskless_funnel"), dict) and isinstance(
+                    doc["live_riskless_funnel"].get("ft_bridge_stats"), dict
+                ):
+                    doc["live_riskless_funnel"]["ft_bridge_stats"].pop("updated_at_utc", None)
             self.assertEqual(parsed_fast, parsed_std)
             self.assertEqual(parsed_fast["closed_positions_count"], 15)
             self.assertEqual(parsed_fast["live_bankroll"], 47.38)

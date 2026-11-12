@@ -14,20 +14,28 @@ Comprehensive, non-destructive test suite verifying:
 import json
 import os
 import sys
+import tempfile
 import time
+import unittest
 from pathlib import Path
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_a, **_kw):  # type: ignore[misc]
+        return False
 
 PIPELINE_ROOT = Path(__file__).resolve().parent.parent
+if str(PIPELINE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PIPELINE_ROOT))
 load_dotenv(PIPELINE_ROOT / ".env")
 
+from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor, OrderResult
 try:
     from py_clob_client.client import ClobClient
     from py_clob_client.clob_types import ApiCreds
-    from src.polymarket_research.polymarket_live_executor import PolymarketLiveExecutor, OrderResult
-except ImportError as e:
-    print(f"[ERROR] Import failure: {e}")
-    sys.exit(1)
+except ImportError:
+    ClobClient = None  # type: ignore[assignment]
+    ApiCreds = None  # type: ignore[assignment]
 
 
 def run_qa_suite():
@@ -165,5 +173,61 @@ def run_qa_suite():
     print("=" * 80)
 
 
+class TestPolymarketLiveQaPreDeployment(unittest.TestCase):
+    def test_pre_trade_depth_guard_dynamic_fee_and_dry_run_ledger(self) -> None:
+        with tempfile.TemporaryDirectory() as td:
+            qa_ledger = Path(td) / "qa_test_ledger.jsonl"
+            dry_run_executor = PolymarketLiveExecutor(dry_run=True, ledger_path=str(qa_ledger))
+
+            mock_thin_book = {
+                "asks": [{"price": "0.78", "size": "10.0"}],
+                "bids": [{"price": "0.76", "size": "10.0"}],
+            }
+            passed, ratio, _ = dry_run_executor.verify_pre_trade_depth(
+                mock_thin_book, target_notional_usd=50.0, side="BUY"
+            )
+            self.assertFalse(passed, f"Thin book should have failed depth check! Ratio: {ratio}")
+
+            mock_deep_book = {
+                "asks": [
+                    {"price": "0.78", "size": "100.0"},
+                    {"price": "0.79", "size": "100.0"},
+                ],
+                "bids": [],
+            }
+            passed, ratio, _ = dry_run_executor.verify_pre_trade_depth(
+                mock_deep_book, target_notional_usd=50.0, side="BUY"
+            )
+            self.assertTrue(passed, f"Deep book should have passed depth check! Ratio: {ratio}")
+
+            fee_rate, fee_usd = dry_run_executor.calculate_dynamic_crypto_fee(entry_price=0.77, notional_usd=100.0)
+            self.assertAlmostEqual(fee_rate, 0.0161, places=4)
+            self.assertAlmostEqual(fee_usd, 1.61, places=4)
+
+            fee_rate_90, fee_usd_90 = dry_run_executor.calculate_dynamic_crypto_fee(entry_price=0.90, notional_usd=100.0)
+            self.assertAlmostEqual(fee_rate_90, 0.007, places=4)
+            self.assertAlmostEqual(fee_usd_90, 0.70, places=4)
+
+            dry_run_executor.get_market_book = lambda _tid: {  # type: ignore[method-assign]
+                "asks": [{"price": "0.78", "size": "250.0"}],
+                "bids": [{"price": "0.77", "size": "250.0"}],
+            }
+            sim_result = dry_run_executor.execute_snipe_order(
+                trade_id="QA_TRADE_001",
+                token_id="999000111222333",
+                target_token="YES",
+                notional_usd=100.0,
+                target_price=0.78,
+            )
+            self.assertIn("DRY_RUN", sim_result.mode)
+            self.assertTrue(qa_ledger.exists())
+            ledger_line = json.loads(qa_ledger.read_text(encoding="utf-8").splitlines()[0])
+            self.assertIn("DRY_RUN", ledger_line["mode"])
+            self.assertEqual(ledger_line["notional_usd"], 100.0)
+
+
 if __name__ == "__main__":
+    if ClobClient is None:
+        print("[ERROR] Import failure: No module named 'py_clob_client'")
+        sys.exit(1)
     run_qa_suite()

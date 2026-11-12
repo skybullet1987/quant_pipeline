@@ -46,7 +46,13 @@ XRP_SHADOW_FILE = PIPELINE_ROOT / "data" / "polymarket" / "state_shadow_xrp_v392
 PHASE34_TRACKER_FILE = PIPELINE_ROOT / "data" / "polymarket" / "shadow_phase3_4_tracker.jsonl"
 RISK_CONFIG_FILE = PIPELINE_ROOT / "config" / "polymarket_risk_config.json"
 STRATEGY_RISK_CONFIG_FILE = PIPELINE_ROOT / "config" / "polymarket_strategy_and_risk.json"
+UNIVERSE_COVERAGE_FILE = PIPELINE_ROOT / "data" / "universe" / "coverage_snapshot.json"
+FULL_THROTTLE_DASHBOARD_FILE = PIPELINE_ROOT / "data" / "full_throttle" / "pipeline" / "dashboard_latest.json"
 OUTPUT_JSON_FILE = PIPELINE_ROOT / "data" / "polymarket" / "live_daily_projections.json"
+
+# Fixed kraken-finland GCP europe-north1-b infrastructure cost ($24.67 / 30 days = $0.8223/day)
+FINLAND_VM_COST_USD_PER_MONTH = 24.67
+FINLAND_VM_COST_USD_PER_DAY = 0.8223
 
 QUARANTINED_SLEEVES = frozenset({
     "M4_SHOCK_STRIKE_CATCHUP",
@@ -888,57 +894,70 @@ def simulate_single_day_net_pnl(
 
     if is_pure_riskless:
         taker_race_mult = {
-            "P25_CONSERVATIVE": 0.52,
+            "P25_CONSERVATIVE": 0.55,
             "P50_BASE_FINLAND": 1.00,
-            "P75_LONDON_UPSIDE": 1.82,
+            "P75_LONDON_UPSIDE": 1.72,
         }[scenario]
         maker_vel_mult = {
             "P25_CONSERVATIVE": 0.58,
             "P50_BASE_FINLAND": 1.00,
-            "P75_LONDON_UPSIDE": 1.48,
+            "P75_LONDON_UPSIDE": 1.50,
         }[scenario]
 
-        # Working-capital-conserving allocation (concurrent resting + split capital <= 92% of equity;
-        # instant Cancel-on-Arb D1/S2/C1 sweeps preempt BOND1 makers briefly and deduct preemption time).
+        # Working-capital-conserving v5.2 Full-Throttle allocation:
+        # Total concurrent resting + split capital <= 92% of reconciled floor NAV (D-009) and
+        # <= 15% per correlated event/weather station (D-006) across up to 6 uncorrelated event slots.
         active_wc_pool = max(10.0, equity_start * 0.92)
-        rw_notional = min(85.0, max(21.0, equity_start * 0.175)) if equity_start >= 125.0 else 0.0
+        rw_notional = min(75.0, max(18.0, equity_start * 0.16)) if equity_start >= 125.0 else 0.0
         ps_lot = min(60.0, max(15.0, equity_start * 0.12)) if equity_start >= 140.0 else 0.0
+        xv_lot = min(110.0, max(25.0, equity_start * 0.15)) if equity_start >= 253.0 else 0.0
+        nr3_lot = min(140.0, max(35.0, equity_start * 0.14)) if equity_start >= 500.0 else 0.0
 
-        # 1. Event-Diversified BOND1 / BOND2 / UMA_READY1 / W_PRUNE1 Carry (<=92% pool net of Tier-1/2 unlocks)
-        carry_pool = min(220.0, max(10.0, active_wc_pool - rw_notional - ps_lot))
-        carry_time_share = 0.88  # 12% intraday duty-cycle deducted when Cancel-on-Arb preempts makers
-        carry_turns = 2.40 * carry_time_share * maker_vel_mult * (1.0 + 0.35 * (cmult - 1.0))
-        cap_carry_r = {"P25_CONSERVATIVE": 8.0, "P50_BASE_FINLAND": 14.5, "P75_LONDON_UPSIDE": 23.5}[scenario]
-        pnl_carry_r = min(cap_carry_r, carry_pool * carry_turns * (0.0045 * _depth_decay(carry_pool * 0.25, knee_usd=85.0)))
+        # 1. Event-Diversified 606-Market UMA BOND1 (18s independent loop, 0% maker + <1h taker) + BOND2 + W_PRUNE1
+        carry_pool = min(240.0, max(10.0, active_wc_pool - rw_notional - ps_lot - 0.50 * xv_lot))
+        carry_time_share = 0.86  # 14% intraday duty-cycle deducted when <70ms Cancel-on-Arb preempts makers
+        carry_turns = 1.85 * carry_time_share * maker_vel_mult * (1.0 + 0.30 * (cmult - 1.0))
+        cap_carry_r = {"P25_CONSERVATIVE": 7.5, "P50_BASE_FINLAND": 13.5, "P75_LONDON_UPSIDE": 22.0}[scenario]
+        pnl_carry_r = min(
+            cap_carry_r,
+            carry_pool * carry_turns * (0.0058 * _depth_decay(carry_pool * 0.20, knee_usd=85.0)),
+        )
 
-        # 2. S2 RTDS Exact TWAP (Tier-1 BTC/ETH/SOL/XRP T-28s S2MKR + Taker) + WS Clinch Sniper
-        t_s2 = min(95.0, max(9.0, equity_start * 0.36))
-        s2_fills = 2.55 * (0.45 * maker_vel_mult + 0.55 * taker_race_mult) * (1.0 + 0.30 * (cmult - 1.0))
-        cap_s2 = {"P25_CONSERVATIVE": 11.5, "P50_BASE_FINLAND": 21.0, "P75_LONDON_UPSIDE": 36.5}[scenario]
-        pnl_s2 = min(cap_s2, t_s2 * s2_fills * (0.0096 * _depth_decay(t_s2, knee_usd=70.0)))
+        # 2. Live WS Clinch Sniper (MKR_LOCK1 / SP2 / CL1 on 5x250=1,250 WS tokens; paused S2 TWAP = $0)
+        t_clinch = min(65.0, max(6.5, equity_start * 0.24))
+        clinch_fills = 1.65 * (0.50 * maker_vel_mult + 0.50 * taker_race_mult) * (1.0 + 0.25 * (cmult - 1.0))
+        cap_s2 = {"P25_CONSERVATIVE": 6.5, "P50_BASE_FINLAND": 12.0, "P75_LONDON_UPSIDE": 21.0}[scenario]
+        pnl_s2 = min(cap_s2, t_clinch * clinch_fills * (0.0105 * _depth_decay(t_clinch, knee_usd=70.0)))
 
-        # 3. D1 Same-Oracle & Quiet Boxes (with <70ms Batch Cancel-on-Arb freeing up to $45+ clip on >=200 bps arbs)
-        d1_cap_r = 60.0 if equity_start < 98.0 else (120.0 if equity_start < 253.0 else (160.0 if equity_start < 1003.0 else 220.0))
-        t_d1_r = min(d1_cap_r, max(14.0, equity_start * 0.58))
-        d1_fills_r = 0.82 * taker_race_mult * (1.0 + 0.42 * (cmult - 1.0))
-        cap_d1_r = {"P25_CONSERVATIVE": 17.0, "P50_BASE_FINLAND": 32.0, "P75_LONDON_UPSIDE": 59.0}[scenario]
-        pnl_d1_r = min(cap_d1_r, t_d1_r * d1_fills_r * (0.0255 * _depth_decay(t_d1_r, knee_usd=75.0)))
+        # 3. D1 Same-Oracle & Quiet-Book Boxes (9 crypto + XAU/XAG with <70ms Selective Batch Cancel-on-Arb)
+        d1_cap_r = 60.0 if equity_start < 98.0 else (120.0 if equity_start < 253.0 else (165.0 if equity_start < 1003.0 else 220.0))
+        t_d1_r = min(d1_cap_r, max(7.3, equity_start * 0.42))
+        d1_fills_r = 1.45 * taker_race_mult * (1.0 + 0.38 * (cmult - 1.0))
+        cap_d1_r = {"P25_CONSERVATIVE": 15.0, "P50_BASE_FINLAND": 28.5, "P75_LONDON_UPSIDE": 52.0}[scenario]
+        pnl_d1_r = min(cap_d1_r, t_d1_r * d1_fills_r * (0.0215 * _depth_decay(t_d1_r, knee_usd=75.0)))
 
-        # 4. V3 0-Loss Math Corridors (SP1, TEN1, CAL1, COND1), NR_M1 Convert & ~2.5s Instant C1 Complete-Set Merge
-        zf_cap_r = 55.0 if equity_start < 98.0 else (105.0 if equity_start < 253.0 else 155.0)
-        t_zf_r = min(zf_cap_r, max(12.0, equity_start * 0.40))
-        zf_fills_r = 0.78 * taker_race_mult * cmult
-        cap_zf_r = {"P25_CONSERVATIVE": 11.5, "P50_BASE_FINLAND": 21.0, "P75_LONDON_UPSIDE": 36.5}[scenario]
-        pnl_zf_r = min(cap_zf_r, t_zf_r * zf_fills_r * (0.0205 * _depth_decay(t_zf_r, knee_usd=80.0)))
+        # 4. Full-Throttle CLASS_A/B 2-Leg Bridge (FT_DUP1, FT_STRIKE1, CAL1 71 ladders, COND1, NR2 m=2)
+        #    + 1,200 Zero-Fee General Binaries (>=15 bps C1/ZEROFEE1 + $0-gas Relayer V2 mergePositions)
+        zf_cap_r = 55.0 if equity_start < 98.0 else (110.0 if equity_start < 253.0 else 165.0)
+        t_zf_r = min(zf_cap_r, max(7.3, equity_start * 0.32))
+        zf_fills_r = 2.65 * (0.35 * maker_vel_mult + 0.65 * taker_race_mult) * cmult
+        cap_zf_r = {"P25_CONSERVATIVE": 12.0, "P50_BASE_FINLAND": 22.5, "P75_LONDON_UPSIDE": 38.0}[scenario]
+        pnl_zf_r = min(cap_zf_r, t_zf_r * zf_fills_r * (0.0145 * _depth_decay(t_zf_r, knee_usd=80.0)))
 
-        # 5. Dynamic Equity-Gated Riskless Unlocks ($125 MKR_REWARD 17.5%/$21 + $140 BTC Pre-Split 12%/$15-$60)
+        # 5. Dynamic Equity-Gated Riskless Unlocks ($125 MKR_REWARD/Family L + $140 Pre-Split Gun + $253 Stage G + $500 NR3+)
         pnl_unlock = 0.0
         if rw_notional > 0.0:
-            pnl_unlock += rw_notional * 0.0145 * maker_vel_mult
+            pnl_unlock += rw_notional * 0.0135 * maker_vel_mult
         if ps_lot > 0.0:
-            ps_cycles = 2.20 * (0.40 * maker_vel_mult + 0.60 * taker_race_mult)
-            cap_ps = {"P25_CONSERVATIVE": 8.5, "P50_BASE_FINLAND": 15.5, "P75_LONDON_UPSIDE": 26.5}[scenario]
+            ps_cycles = 2.10 * (0.40 * maker_vel_mult + 0.60 * taker_race_mult)
+            cap_ps = {"P25_CONSERVATIVE": 8.0, "P50_BASE_FINLAND": 14.5, "P75_LONDON_UPSIDE": 25.0}[scenario]
             pnl_unlock += min(cap_ps, ps_lot * ps_cycles * (0.0115 * _depth_decay(ps_lot, knee_usd=75.0)))
+        if xv_lot > 0.0:
+            cap_xv = {"P25_CONSERVATIVE": 5.5, "P50_BASE_FINLAND": 10.5, "P75_LONDON_UPSIDE": 18.0}[scenario]
+            pnl_unlock += min(cap_xv, xv_lot * 1.35 * maker_vel_mult * (0.0110 * _depth_decay(xv_lot, knee_usd=95.0)))
+        if nr3_lot > 0.0:
+            cap_nr3 = {"P25_CONSERVATIVE": 6.5, "P50_BASE_FINLAND": 12.5, "P75_LONDON_UPSIDE": 22.0}[scenario]
+            pnl_unlock += min(cap_nr3, nr3_lot * 1.15 * taker_race_mult * (0.0140 * _depth_decay(nr3_lot, knee_usd=95.0)))
 
         breakdown_r: Dict[str, float] = {
             "BOND1_and_BOND2_uma_resolution_carry": round(pnl_carry_r, 2),
@@ -948,15 +967,17 @@ def simulate_single_day_net_pnl(
             "dynamic_tier_unlock_sleeves": round(pnl_unlock, 2),
         }
         if equity_start >= 1003.0:
-            milestone_r = "INSTITUTIONAL_RISKLESS (>=$1,003): Full 5-Engine Zero-Loss Stack ($160-$220 Box Caps + Pre-Split Gun)"
+            milestone_r = "INSTITUTIONAL_RISKLESS (>=$1,003): Full-Throttle 14-Family Stack ($165-$220 Caps + Stage G + Atomic NR3+)"
+        elif equity_start >= 500.0:
+            milestone_r = "MULTILEG_ATOMIC_UNLOCKED ($500-$1,003): >=3-Leg Atomic NegRisk + Stage G Cross-Venue + Pre-Split Gun"
         elif equity_start >= 253.0:
-            milestone_r = "SCALE_RISKLESS ($253-$1,003): $120-$160 D1/C1 Caps + Multi-Asset Pre-Split Overround Gun + 88% BOND1"
+            milestone_r = "SCALE_RISKLESS ($253-$500): Stage G CA-ON Cross-Venue Candidate + $120 D1/C1 Caps + Pre-Split Gun"
         elif equity_start >= 140.0:
-            milestone_r = "TIER_2_UNLOCKED (>=$140): Pre-Split Atomic Overround Gun + MKR_REWARD Carry + Full Riskless Stack"
+            milestone_r = "TIER_2_UNLOCKED (>=$140): Pre-Split Atomic Overround Gun + MKR_REWARD/Family L + Full-Throttle 2-Leg"
         elif equity_start >= 125.0:
-            milestone_r = "TIER_1_UNLOCKED ($125-$140): MKR_REWARD_LOCKED_CARRY Live + Cancel-on-Arb D1/S2 ($140 Pre-Split Next)"
+            milestone_r = "TIER_1_UNLOCKED ($125-$140): MKR_REWARD_LOCKED_CARRY + Family L Hedged Maker ($140 Pre-Split Next)"
         else:
-            milestone_r = "SEED_PURE_RISKLESS (<$125): 0-Loss 5-Engine Velocity (Tier-1 S2MKR T-28s + <70ms Cancel-on-Arb + BOND1)"
+            milestone_r = "SEED_FULL_THROTTLE_RISKLESS (<$125): 606-UMA 18s BOND1 + 1,200-Bin 15bps C1 Merge + FT CLASS_A/B + D1"
         return round(sum(breakdown_r.values()), 2), breakdown_r, milestone_r
 
     fills_dir_base = {
@@ -1245,10 +1266,12 @@ def _simulate_cash_horizon(
     scale_up_thr: float,
     *,
     strict_pure_riskless: bool = False,
-) -> Dict[str, Dict[str, float]]:
+    start_date: Optional[Any] = None,
+) -> Dict[str, Dict[str, Any]]:
     scenarios = ("P25_CONSERVATIVE", "P50_BASE_FINLAND", "P75_LONDON_UPSIDE")
     eq_map = {sc: float(start_cash) for sc in scenarios}
-    out: Dict[str, Dict[str, float]] = {}
+    base_dt = start_date if start_date is not None else datetime.now(timezone.utc).date()
+    out: Dict[str, Dict[str, Any]] = {}
     for d in range(1, max(days_n, 365) + 1):
         p50_day = 0.0
         for sc in scenarios:
@@ -1263,25 +1286,94 @@ def _simulate_cash_horizon(
             eq_map[sc] = round(eq_map[sc] + pnl_d, 2)
             if sc == "P50_BASE_FINLAND":
                 p50_day = pnl_d
-        if d in (1, 7, 14, 30, 60, 90, 180, 365):
+        if d in (1, 4, 7, 10, 14, 21, 30, 60, 90, 180, 365):
+            vm_cum = round(FINLAND_VM_COST_USD_PER_DAY * d, 2)
+            p25_net = round(eq_map["P25_CONSERVATIVE"] - float(start_cash), 2)
+            p50_net = round(eq_map["P50_BASE_FINLAND"] - float(start_cash), 2)
+            p75_net = round(eq_map["P75_LONDON_UPSIDE"] - float(start_cash), 2)
             out[f"day_{d}"] = {
+                "date_utc": (base_dt + timedelta(days=d - 1)).isoformat(),
                 "p25_equity": eq_map["P25_CONSERVATIVE"],
                 "p50_equity": eq_map["P50_BASE_FINLAND"],
                 "p75_equity": eq_map["P75_LONDON_UPSIDE"],
                 "p50_daily_pnl": p50_day,
-                "p50_net_profit": round(eq_map["P50_BASE_FINLAND"] - float(start_cash), 2),
+                "p25_net_profit": p25_net,
+                "p50_net_profit": p50_net,
+                "p75_net_profit": p75_net,
+                "vm_cost_cum_usd": vm_cum,
+                "p25_net_after_vm_usd": round(p25_net - vm_cum, 2),
+                "p50_net_after_vm_usd": round(p50_net - vm_cum, 2),
+                "p75_net_after_vm_usd": round(p75_net - vm_cum, 2),
             }
     return out
 
 
+def _compute_cash_milestone_etas(
+    start_cash: float,
+    scale_up_thr: float,
+    *,
+    strict_pure_riskless: bool = False,
+    max_days: int = 540,
+    start_date: Optional[Any] = None,
+) -> Dict[str, Dict[str, Any]]:
+    scenarios = ("P25_CONSERVATIVE", "P50_BASE_FINLAND", "P75_LONDON_UPSIDE")
+    targets = (100, 150, 250, 253, 500, 1000, 2500, 5000, 10000)
+    eta_map: Dict[str, Dict[str, Any]] = {f"usd_{m}": {} for m in targets}
+    eq_map = {sc: float(start_cash) for sc in scenarios}
+    base_dt = start_date if start_date is not None else datetime.now(timezone.utc).date()
+    for d in range(1, max_days + 1):
+        dt_str = (base_dt + timedelta(days=d - 1)).isoformat()
+        for sc in scenarios:
+            pnl_d, _, _ = simulate_single_day_net_pnl(
+                d,
+                max(10.0, eq_map[sc]),
+                sc,
+                scale_up_threshold=scale_up_thr,
+                riskless_only=True,
+                strict_pure_riskless=strict_pure_riskless,
+            )
+            eq_map[sc] = round(eq_map[sc] + pnl_d, 2)
+            short_k = sc.split("_")[0].lower()
+            for m in targets:
+                mk = f"usd_{m}"
+                if f"{short_k}_day" not in eta_map[mk] and eq_map[sc] >= float(m):
+                    eta_map[mk][f"{short_k}_day"] = d
+                    eta_map[mk][f"{short_k}_date_utc"] = dt_str
+    return eta_map
+
+
+def _load_full_throttle_telemetry() -> Dict[str, Any]:
+    cov = _load_json(UNIVERSE_COVERAGE_FILE)
+    ftd = _load_json(FULL_THROTTLE_DASHBOARD_FILE)
+    univ = cov.get("universe_summary") if isinstance(cov, dict) else {}
+    if not isinstance(univ, dict):
+        univ = {}
+    ft_univ = (ftd.get("universe") or {}) if isinstance(ftd, dict) else {}
+    ft_opp = (ftd.get("opportunity_engine") or {}) if isinstance(ftd, dict) else {}
+    ft_mkr = (ftd.get("hedged_maker_shadow") or {}) if isinstance(ftd, dict) else {}
+    return {
+        "total_events": int(univ.get("total_events") or ft_univ.get("total_events") or 0),
+        "total_markets": int(univ.get("total_markets") or ft_univ.get("total_markets") or 0),
+        "active_orderbook_markets": int(
+            univ.get("active_orderbook_markets") or ft_univ.get("active_orderbook_markets") or 0
+        ),
+        "total_tokens": int(univ.get("total_tokens") or ft_univ.get("total_tokens") or 0),
+        "proposition_graph_edges": int(ft_opp.get("proposition_graph_edges") or 0),
+        "rule_trap_blocks": int(ft_opp.get("rule_trap_blocks") or 0),
+        "dormant_near_arbs": int(ft_opp.get("dormant_watchlist_count") or 0),
+        "family_l_shadow_pnl_usd": round(float(ft_mkr.get("realized_shadow_pnl_usd") or 0.0), 4),
+    }
+
+
 def build_live_projections(
-    days: int = 30,
+    days: int = 90,
     fallback_equity: float = 75.84,
     riskless_only: Optional[bool] = None,
     strict_pure_riskless: Optional[bool] = None,
+    live_state_override: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     now_utc = datetime.now(timezone.utc)
-    live_st = _load_json(LIVE_STATE_FILE)
+    live_st = live_state_override if isinstance(live_state_override, dict) else _load_json(LIVE_STATE_FILE)
     a124_st = _load_json(ALPHA124_STATE_FILE)
     exp316_st = _load_json(EXP316_STATE_FILE)
     sol_st = _load_json(SOL_SHADOW_FILE)
@@ -1289,6 +1381,7 @@ def build_live_projections(
     p3a_st = _load_phase3a_summary(PHASE34_TRACKER_FILE)
     risk_cfg = _load_json(RISK_CONFIG_FILE)
     strat_cfg = _load_json(STRATEGY_RISK_CONFIG_FILE)
+    ft_tel = _load_full_throttle_telemetry()
     is_pure_riskless = _is_riskless_only_mode_configured(strat_cfg) if riskless_only is None else bool(riskless_only)
     is_strict_math_only = (
         is_pure_riskless
@@ -1302,6 +1395,20 @@ def build_live_projections(
     frozen_single_leg_cost = eq_stats["frozen_single_leg_cost_usd"]
     hwm_equity = eq_stats["hwm_equity"]
     scale_up_thr = float(risk_cfg.get("scale_up_equity_threshold") or 110.0)
+
+    # D-009 Invariant: Never anchor pure-riskless compounding or milestone ETAs off persisted book equity
+    # ($97.89-$99.21) while disputed KMIA ($50.51) is hair-cut in `locked_floor_equity` ($47.38-$48.70).
+    compounding_anchor_usd = min(live_equity, locked_floor_equity) if is_pure_riskless else live_equity
+    raw_mtm_nav = live_st.get("reconciled_nav_usd")
+    mark_to_bid_nav_usd = (
+        float(raw_mtm_nav)
+        if (raw_mtm_nav is not None and float(raw_mtm_nav) > 0.0 and locked_floor_equity >= live_equity - 0.01)
+        else (
+            float(raw_mtm_nav)
+            if (raw_mtm_nav is not None and float(raw_mtm_nav) < live_equity - 0.01)
+            else locked_floor_equity
+        )
+    )
 
     closed_econ_n = eq_stats["economic_trades_count"]
     live_wins = eq_stats["economic_wins"]
@@ -1386,11 +1493,11 @@ def build_live_projections(
         )
 
     scenarios = ["P25_CONSERVATIVE", "P50_BASE_FINLAND", "P75_LONDON_UPSIDE"]
-    eq_track = {sc: live_equity for sc in scenarios}
+    eq_track = {sc: compounding_anchor_usd for sc in scenarios}
     start_date = now_utc.date()
 
-    sim_horizon = max(days, 365)
-    milestone_targets = (100, 250, 500, 1000, 2500, 5000, 10000)
+    sim_horizon = max(days, 540)
+    milestone_targets = (100, 150, 250, 253, 500, 1000, 2500, 5000, 10000)
     milestone_eta: Dict[str, Dict[str, Any]] = {f"usd_{m}": {} for m in milestone_targets}
     all_rows: List[Dict[str, Any]] = []
     for d in range(1, sim_horizon + 1):
@@ -1400,11 +1507,7 @@ def build_live_projections(
         base_breakdown: Dict[str, float] = {}
         for sc in scenarios:
             eq_prev = eq_track[sc]
-            deployable_eq_prev = (
-                max(10.0, eq_prev - frozen_single_leg_cost)
-                if (is_pure_riskless and frozen_single_leg_cost > 0.0)
-                else eq_prev
-            )
+            deployable_eq_prev = max(10.0, eq_prev)
             pnl_d, bdown, m_lbl = simulate_single_day_net_pnl(
                 d,
                 deployable_eq_prev,
@@ -1430,12 +1533,14 @@ def build_live_projections(
             if sc == "P50_BASE_FINLAND":
                 milestone_lbl = m_lbl
                 base_breakdown = bdown
+                row["p50_post_vm_daily_net_usd"] = round(pnl_d - FINLAND_VM_COST_USD_PER_DAY, 2)
                 row["p50_v393_ticket_usd"] = 0.0 if is_pure_riskless else compute_v541_ticket_size(eq_prev)
         row["active_regime_and_milestone"] = milestone_lbl
         row["p50_sleeve_pnl_breakdown_usd"] = base_breakdown
         all_rows.append(row)
 
     daily_rows = all_rows[:days]
+    has_disputed_haircut = bool(live_equity - locked_floor_equity > 0.05)
 
     payload = {
         "generated_at_utc": now_utc.isoformat(),
@@ -1443,7 +1548,7 @@ def build_live_projections(
             "v6.2.0_strict_pure_riskless_math_dominance_only"
             if is_strict_math_only
             else (
-                "v5.7.1_pure_riskless_5_engine_velocity"
+                "v5.2_full_throttle_riskless_velocity"
                 if is_pure_riskless
                 else "v5.4.1_high_z_sniper_plus_unleashed_zero_loss_boxes"
             )
@@ -1451,39 +1556,52 @@ def build_live_projections(
         "riskless_only_mode": is_pure_riskless,
         "strict_pure_riskless_mode": is_strict_math_only,
         "strict_pure_riskless_firewall_enabled": bool(
-            ((_load_json(STRATEGY_RISK_CONFIG_FILE).get("riskless_boxes")) or {}).get("strict_pure_riskless_mode", False)
+            ((strat_cfg.get("riskless_boxes")) or {}).get("strict_pure_riskless_mode", False)
         ),
         "row2_post_clinch_carries_enabled": bool(
-            ((_load_json(STRATEGY_RISK_CONFIG_FILE).get("riskless_boxes")) or {}).get("enable_single_leg_maker_bond1", True)
+            ((strat_cfg.get("riskless_boxes")) or {}).get("enable_single_leg_maker_bond1", True)
         ),
+        "vm_infra_cost_usd_per_month": FINLAND_VM_COST_USD_PER_MONTH,
+        "vm_infra_cost_usd_per_day": FINLAND_VM_COST_USD_PER_DAY,
         "quarantined_sleeves_excluded": sorted(QUARANTINED_SLEEVES),
         "anchor_live_state": {
-            "live_equity_usd": round(live_equity, 2),
+            "live_equity_usd": round(compounding_anchor_usd, 2),
+            "reconciled_floor_nav_usd": round(locked_floor_equity, 2),
+            "mark_to_bid_nav_usd": round(mark_to_bid_nav_usd, 2),
+            "persisted_book_equity_usd": round(live_equity, 2),
+            "compounding_anchor_equity_usd": round(compounding_anchor_usd, 2),
             "liquid_working_cash_usd": round(liquid_working_cash, 2),
             "frozen_single_leg_cost_usd": round(frozen_single_leg_cost, 2),
             "locked_box_payout_floor_equity_usd": round(locked_floor_equity, 2),
             "high_water_mark_usd": round(hwm_equity, 2),
+            "vm_infra_cost_usd_per_day": FINLAND_VM_COST_USD_PER_DAY,
+            "vm_breakeven_bps_per_hr": round(
+                (FINLAND_VM_COST_USD_PER_DAY / max(1.0, compounding_anchor_usd)) * 10000.0 / 24.0, 2
+            ),
             "riskless_only_mode": is_pure_riskless,
             "strict_pure_riskless_mode": is_strict_math_only,
-            "current_v393_ticket_usd": 0.0 if is_pure_riskless else compute_v541_ticket_size(live_equity),
-            "current_v540_btc_ticket_usd": 0.0 if is_pure_riskless else round(min(200.0, live_equity * (0.22 if live_equity < 98.0 else 0.26)), 2),
-            "current_v540_eth_sol_ticket_usd": 0.0 if is_pure_riskless else round(min(170.0, live_equity * (0.22 if live_equity < 98.0 else 0.26) * 0.85), 2),
-            "current_cancel_on_arb_max_sweep_usd": round(min(45.0, max(20.0, live_equity * 0.88)), 2),
-            "distance_to_125_reward_carry_unlock_usd": round(max(0.0, 125.0 - live_equity), 2),
-            "distance_to_140_presplit_overround_unlock_usd": round(max(0.0, 140.0 - live_equity), 2),
-            "distance_to_88_dynamic_sizing_usd": round(max(0.0, 88.0 - live_equity), 2),
-            "distance_to_98_hyper_growth_usd": round(max(0.0, 98.0 - live_equity), 2),
-            "distance_to_110_slot2_unlock_usd": round(max(0.0, 110.0 - live_equity), 2),
-            "distance_to_150_slot3_unlock_usd": round(max(0.0, 150.0 - live_equity), 2),
-            "distance_to_253_scale_tier_usd": round(max(0.0, 253.0 - live_equity), 2),
-            "distance_to_1003_institutional_tier_usd": round(max(0.0, 1003.0 - live_equity), 2),
+            "current_v393_ticket_usd": 0.0 if is_pure_riskless else compute_v541_ticket_size(compounding_anchor_usd),
+            "current_v540_btc_ticket_usd": 0.0 if is_pure_riskless else round(min(200.0, compounding_anchor_usd * (0.22 if compounding_anchor_usd < 98.0 else 0.26)), 2),
+            "current_v540_eth_sol_ticket_usd": 0.0 if is_pure_riskless else round(min(170.0, compounding_anchor_usd * (0.22 if compounding_anchor_usd < 98.0 else 0.26) * 0.85), 2),
+            "current_cancel_on_arb_max_sweep_usd": round(min(45.0, max(20.0, compounding_anchor_usd * 0.88)), 2),
+            "distance_to_125_reward_carry_unlock_usd": round(max(0.0, 125.0 - compounding_anchor_usd), 2),
+            "distance_to_140_presplit_overround_unlock_usd": round(max(0.0, 140.0 - compounding_anchor_usd), 2),
+            "distance_to_88_dynamic_sizing_usd": round(max(0.0, 88.0 - compounding_anchor_usd), 2),
+            "distance_to_98_hyper_growth_usd": round(max(0.0, 98.0 - compounding_anchor_usd), 2),
+            "distance_to_110_slot2_unlock_usd": round(max(0.0, 110.0 - compounding_anchor_usd), 2),
+            "distance_to_150_slot3_unlock_usd": round(max(0.0, 150.0 - compounding_anchor_usd), 2),
+            "distance_to_253_scale_tier_usd": round(max(0.0, 253.0 - compounding_anchor_usd), 2),
+            "distance_to_500_multileg_tier_usd": round(max(0.0, 500.0 - compounding_anchor_usd), 2),
+            "distance_to_1003_institutional_tier_usd": round(max(0.0, 1003.0 - compounding_anchor_usd), 2),
             "live_closed_trades": closed_econ_n,
             "live_closed_legs": eq_stats["closed_legs_count"],
             "live_wins": live_wins,
             "live_win_rate_pct": live_wr_pct,
             "alpha124_markets_monitored": a124_st.get("markets_monitored", {}),
+            "alpha124_catalog_counts": a124_st.get("catalog_counts", {}),
             "alpha124_open_shadow_positions": a124_st.get("open_positions_count", 0),
             "alpha124_resting_maker_bids": a124_st.get("pending_maker_orders_count", 0),
+            "full_throttle_universe_telemetry": ft_tel,
             "sol_shadow_settled": sol_st.get("total_trades_settled", 0),
             "sol_shadow_win_rate_pct": sol_st.get("win_rate_pct", 0.0),
             "phase3a_maker_settled": p3a_st.get("closed", 0),
@@ -1496,7 +1614,19 @@ def build_live_projections(
                 "p50_equity": all_rows[k - 1]["p50_end_equity_usd"],
                 "p75_equity": all_rows[k - 1]["p75_end_equity_usd"],
                 "p50_daily_pnl": all_rows[k - 1]["p50_daily_pnl_usd"],
-                "p50_net_profit": round(all_rows[k - 1]["p50_end_equity_usd"] - live_equity, 2),
+                "p25_net_profit": round(all_rows[k - 1]["p25_end_equity_usd"] - compounding_anchor_usd, 2),
+                "p50_net_profit": round(all_rows[k - 1]["p50_end_equity_usd"] - compounding_anchor_usd, 2),
+                "p75_net_profit": round(all_rows[k - 1]["p75_end_equity_usd"] - compounding_anchor_usd, 2),
+                "vm_cost_cum_usd": round(FINLAND_VM_COST_USD_PER_DAY * k, 2),
+                "p25_net_after_vm_usd": round(
+                    (all_rows[k - 1]["p25_end_equity_usd"] - compounding_anchor_usd) - FINLAND_VM_COST_USD_PER_DAY * k, 2
+                ),
+                "p50_net_after_vm_usd": round(
+                    (all_rows[k - 1]["p50_end_equity_usd"] - compounding_anchor_usd) - FINLAND_VM_COST_USD_PER_DAY * k, 2
+                ),
+                "p75_net_after_vm_usd": round(
+                    (all_rows[k - 1]["p75_end_equity_usd"] - compounding_anchor_usd) - FINLAND_VM_COST_USD_PER_DAY * k, 2
+                ),
             }
             for k in (1, 4, 7, 10, 14, 21, 30, 60, 90, 180, 365)
             if k <= len(all_rows)
@@ -1504,22 +1634,70 @@ def build_live_projections(
         "milestone_eta_days": milestone_eta,
         "post_nov14_miami_scenarios_usd": {
             "favorable_86_87f_payout_52usd": {
-                "starting_liquid_cash_usd": round(liquid_working_cash + 52.00, 2) if frozen_single_leg_cost > 0.0 else round(liquid_working_cash, 2),
+                "starting_liquid_cash_usd": round(compounding_anchor_usd + (52.00 if has_disputed_haircut else 0.0), 2),
                 "horizons": _simulate_cash_horizon(
-                    liquid_working_cash + (52.00 if frozen_single_leg_cost > 0.0 else 0.0),
+                    compounding_anchor_usd + (52.00 if has_disputed_haircut else 0.0),
                     days,
                     scale_up_thr,
                     strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+                "milestone_eta_days": _compute_cash_milestone_etas(
+                    compounding_anchor_usd + (52.00 if has_disputed_haircut else 0.0),
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
                 ),
             },
             "adverse_zero_payout_0usd": {
-                "starting_liquid_cash_usd": round(liquid_working_cash, 2),
-                "requires_circuit_breaker_floor_ack_below_48usd": bool(liquid_working_cash < 48.0),
+                "starting_liquid_cash_usd": round(compounding_anchor_usd, 2),
+                "requires_circuit_breaker_floor_ack_below_48usd": bool(compounding_anchor_usd < 48.0),
                 "horizons": _simulate_cash_horizon(
-                    liquid_working_cash,
+                    compounding_anchor_usd,
                     days,
                     scale_up_thr,
                     strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+                "milestone_eta_days": _compute_cash_milestone_etas(
+                    compounding_anchor_usd,
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+            },
+        },
+        "production_reconciled_48_70_floor_reference_usd": {
+            "adverse_floor_48_70_usd": {
+                "starting_floor_nav_usd": 48.70,
+                "horizons": _simulate_cash_horizon(
+                    48.70,
+                    days,
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+                "milestone_eta_days": _compute_cash_milestone_etas(
+                    48.70,
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+            },
+            "favorable_kmia_100_70_usd": {
+                "starting_floor_nav_usd": 100.70,
+                "horizons": _simulate_cash_horizon(
+                    100.70,
+                    days,
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
+                ),
+                "milestone_eta_days": _compute_cash_milestone_etas(
+                    100.70,
+                    scale_up_thr,
+                    strict_pure_riskless=is_strict_math_only,
+                    start_date=start_date,
                 ),
             },
         },
@@ -1527,8 +1705,8 @@ def build_live_projections(
             "P75 models lawful low-latency EU execution (~8-12ms RTT in Group-2 API-open regions such as GCP europe-west4 "
             "Netherlands or AWS eu-west-1 Dublin after verifying live POST /order via check_polymarket_region_latency.py "
             "--verify-post-only, while keeping manual Web UI access on Group-1 Finland europe-north1; or ~22-25ms RTT in "
-            "Group-1 Stockholm europe-north2). Never deploy unwhitelisted live order placement to Group-3 CLOB close-only "
-            "regions (UK eu-west-2, DE, FR, BE, CH, US, CA-ON)."
+            "Group-1 Stockholm europe-north2). Regulated cross-venue Stage G ($253+) uses strictly CA-ON-legal venues "
+            "(ForecastEx / IBKR Canada + STX Ontario) with 0% proxy/VPN spoofing."
         ),
         "live_riskless_funnel": live_st.get("live_riskless_funnel", {}),
         "sleeve_graduation_live_tracker": grad_tracker,
@@ -1537,7 +1715,7 @@ def build_live_projections(
     return payload
 
 
-def write_live_projections_atomic(days: int = 30) -> Dict[str, Any]:
+def write_live_projections_atomic(days: int = 90) -> Dict[str, Any]:
     payload = build_live_projections(days=days)
     OUTPUT_JSON_FILE.parent.mkdir(parents=True, exist_ok=True)
     tmp = OUTPUT_JSON_FILE.with_suffix(".tmp")
@@ -1551,10 +1729,11 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
     print(f"=== DOMINUS POLYMARKET LIVE DAY-BY-DAY PROJECTIONS [{payload.get('model_version')}] ({payload['generated_at_utc']}) ===")
     if payload.get("riskless_only_mode"):
         print(
-            f"Anchor Live Equity: ${anc['live_equity_usd']:.2f} (HWM ${anc['high_water_mark_usd']:.2f}) | "
+            f"Anchor Floor NAV: ${anc['reconciled_floor_nav_usd']:.2f} "
+            f"(MTM ${anc['mark_to_bid_nav_usd']:.2f} | Book ${anc['persisted_book_equity_usd']:.2f} | HWM ${anc['high_water_mark_usd']:.2f}) | "
             f"Live Epoch: {anc['live_wins']}W/{anc['live_closed_trades'] - anc['live_wins']}L ({anc['live_win_rate_pct']:.1f}% WR) | "
-            f"To $125 Reward Unlock: ${anc['distance_to_125_reward_carry_unlock_usd']:.2f} | "
-            f"To $140 Pre-Split Gun: ${anc['distance_to_140_presplit_overround_unlock_usd']:.2f}"
+            f"To $125 Reward: ${anc['distance_to_125_reward_carry_unlock_usd']:.2f} | "
+            f"To $140 Pre-Split: ${anc['distance_to_140_presplit_overround_unlock_usd']:.2f}"
         )
     else:
         print(
@@ -1570,10 +1749,11 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
             f"(Open={g['open_now']:2d}) | WR={g['win_rate_pct']:6.1f}% (req>={g['target_wr_pct']:5.1f}%) | "
             f"Ref PnL=${g['realized_pnl_t1000_usd']:+7.2f}"
         )
-    print("\n--- 30-Day Live-Anchored Compounding Schedule (Post-Purge Clean Roster, Depth-Capped) ---")
+    sched = payload["day_by_day_schedule"]
+    print(f"\n--- {len(sched)}-Day Reconciled-Floor-Anchored Compounding Schedule (Depth-Capped, Non-Cash Model) ---")
     print("Day | Date       | P25 Eq ($) | P50 Base Eq ($) | P50 Day PnL | P75 LowLat ($) | Active Regime / Graduation Milestone")
     print("-" * 122)
-    for r in payload["day_by_day_schedule"]:
+    for r in sched[:30]:
         print(
             f"D{r['day']:02d} | {r['date_utc']} | ${r['p25_end_equity_usd']:9.2f} | "
             f"${r['p50_end_equity_usd']:14.2f} | ${r['p50_daily_pnl_usd']:+10.2f} | "
@@ -1583,7 +1763,7 @@ def print_human_scorecard(payload: Dict[str, Any]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Live Polymarket Day-by-Day Projections & Graduation Tracker")
-    parser.add_argument("--days", type=int, default=30, help="Projection horizon in days")
+    parser.add_argument("--days", type=int, default=90, help="Projection horizon in days")
     parser.add_argument("--json-only", action="store_true", help="Print JSON payload instead of ASCII table")
     args = parser.parse_args()
     payload = write_live_projections_atomic(days=args.days)

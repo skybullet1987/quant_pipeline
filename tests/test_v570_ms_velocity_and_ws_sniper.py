@@ -20,6 +20,21 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+for _opt_mod, _attrs in (
+    ("dotenv", {"load_dotenv": lambda *a, **kw: False}),
+    ("requests", {"Session": object, "get": None, "post": None}),
+    ("httpx", {"AsyncClient": object, "Client": object}),
+    ("urllib3", {}),
+    ("urllib3.connection", {"HTTPConnection": type("HTTPConnection", (), {"default_socket_options": []})}),
+):
+    try:
+        __import__(_opt_mod)
+    except ModuleNotFoundError:
+        _m = types.ModuleType(_opt_mod)
+        for _k, _v in _attrs.items():
+            setattr(_m, _k, _v)
+        sys.modules[_opt_mod] = _m
+
 
 class TestV570MsVelocityAndWsSniper(unittest.TestCase):
     def test_01_governance_v570_keys_and_bounds(self) -> None:
@@ -33,7 +48,7 @@ class TestV570MsVelocityAndWsSniper(unittest.TestCase):
         raw = json.loads(cfg_path.read_text(encoding="utf-8"))
         self.assertTrue(bool(raw["directional"]["riskless_only_mode"]))
         rb = raw["riskless_boxes"]
-        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 450)
+        self.assertEqual(int(rb["ws_clinch_watchlist_max_tokens"]), 900)
         self.assertTrue(bool(rb["enable_uma_liveness_2h_recycle"]))
         self.assertTrue(bool(rb["enable_event_slot_diversification"]))
         self.assertAlmostEqual(float(rb["reward_dynamic_unlock_equity_usd"]), 125.0, places=2)
@@ -41,11 +56,11 @@ class TestV570MsVelocityAndWsSniper(unittest.TestCase):
 
         mgr = HotReloadConfigManager(config_path=cfg_path)
         snap_rb = mgr.snapshot["riskless_boxes"]
-        self.assertEqual(int(snap_rb["ws_clinch_watchlist_max_tokens"]), 450)
+        self.assertEqual(int(snap_rb["ws_clinch_watchlist_max_tokens"]), 900)
         self.assertTrue(bool(snap_rb["enable_uma_liveness_2h_recycle"]))
 
         for bad_override in (
-            {"ws_clinch_watchlist_max_tokens": 500},
+            {"ws_clinch_watchlist_max_tokens": 2000},
             {"reward_dynamic_unlock_equity_usd": 10.0},
             {"pre_split_dynamic_unlock_equity_usd": 9999.0},
         ):

@@ -27,7 +27,10 @@ for _opt_net_mod in ("requests", "aiohttp"):
     except ImportError:
         _stub = types.ModuleType(_opt_net_mod)
         _stub.Session = object  # type: ignore[attr-defined]
-        _stub.ClientSession = object  # type: ignore[attr-defined]
+        _stub.ClientSession = lambda *_a, **_kw: types.SimpleNamespace(close=lambda: None)  # type: ignore[attr-defined]
+        _stub.ClientTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+        _stub.ClientWSTimeout = lambda **kw: kw  # type: ignore[attr-defined]
+        _stub.TCPConnector = lambda **kw: kw  # type: ignore[attr-defined]
         sys.modules[_opt_net_mod] = _stub
 
 import scripts.polymarket_daily_projections as daily_proj

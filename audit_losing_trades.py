@@ -125,7 +125,11 @@ def load_audit_state() -> Dict[str, Any]:
                     audited[tid] = {"trade_id": tid, "verdict": "HISTORICAL_BASELINE"}
             return st
         except Exception:
-            pass
+            try:
+                backup_path = AUDIT_STATE_FILE.with_name(f"{AUDIT_STATE_FILE.name}.corrupt.{int(time.time())}")
+                os.replace(AUDIT_STATE_FILE, backup_path)
+            except Exception:
+                pass
     return {
         "updated_at": None,
         "audited_trades": {tid: {"trade_id": tid, "verdict": "HISTORICAL_BASELINE"} for tid in HISTORICAL_BASELINE_TRADES},

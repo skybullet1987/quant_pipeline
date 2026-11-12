@@ -24,8 +24,11 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from src.alpha.fracdiff_orthogonal_engine import compute_multi_beta_residual_momentum
-from src.execution.exchange_gateway import HyperliquidGateway
+try:
+    from src.alpha.fracdiff_orthogonal_engine import compute_multi_beta_residual_momentum
+    from src.execution.exchange_gateway import HyperliquidGateway
+except ImportError as _apex_imp_err:
+    pytest.skip(f"APEX Hyperliquid dependencies not installed: {_apex_imp_err}", allow_module_level=True)
 from src.execution.production_apex_daemon import (
     MAX_SINGLE_ALT_WEIGHT,
     PEAK_LEVERAGE,

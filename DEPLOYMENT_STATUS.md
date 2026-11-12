@@ -1,12 +1,45 @@
 # Dominus Deployment Status & Runtime Reality Reconciliation
 
-**Reconciled At:** Initial Baseline `2026-11-11 00:26 UTC` | Post-OOM Audit `00:51 UTC` | v5.0 Deploy `04:15 UTC` | 6-Venue Shadow `05:25 UTC` | **v5.1 Riskless Catalog Expansion & Full-Repo QA Deploy `2026-11-11 07:16 UTC`**  
-**Author:** Agent F (`@reliability`) & Principal Orchestrator (Post-Deploy Update)  
+**Reconciled At:** Initial Baseline `2026-11-11 00:26 UTC` | Post-OOM Audit `00:51 UTC` | v5.0 Deploy `04:15 UTC` | 6-Venue Shadow `05:25 UTC` | v5.1 Deploy `07:16 UTC` | Wave 2 Deploy `22:19 UTC` | Wave 3 Deploy `00:22 UTC` | Wave 3.1 Deploy `03:31 UTC` | **v6.0 Sizing, Capital Reservation Allocator, Full-System QA & Pipeline Optimization Deploy `2026-11-12 22:01 UTC`**  
+**Author:** Agent F (`@reliability`), Principal Orchestrator & `@bundle-deploy` (v6.0 Wave-2 Post-Deploy Update)  
 **Production Host:** `kraken-finland` (`quant-pipeline-finland.europe-north1-b.c.parnasa-498503.internal`, `/home/skybullet1987/quant_pipeline`)  
 **Local Workspace:** `C:/Users/Anton/source/repos/Dominus`  
-**Post-Deploy Parity (`07:16 UTC`):** **`203/203` `DEPLOY_MANIFEST` files (`0` diffs)** + `polymarket_full_codebase_v4.{py,txt}` synced (`SWAPLESS_SAFE_STAGE_GATE_OK`, `<40 MiB` RSS); `alpha124-shadow` monitoring `CAL1=74` ladders (`+236%`), `UMA=66..155` proposed markets (`+200%+`), `NRC=128` closed NegRisk slates, and `340` volume-ranked `0%`-fee binaries; **`4/4` disputed `KMIA` positions `100%` untouched** (`reconciled_nav_usd=$48.6951`, `current_equity_tier="UNLEASHED_LAUNCH"`).
+**Post-Deploy Parity (`22:01 UTC`):** **`236/236` `DEPLOY_MANIFEST` files (`0` diffs)** + `<1 MB` LF bundles (`polymarket_all_in_one.py` `940,792 B` `db8475c139ee`, `polymarket_alpha124_all_in_one.py` `962,040 B` `4afbce962050`, `polymarket_full_codebase_v4.py` `6,614,271 B` `c64eead5be65`) synced (`SWAPLESS_SAFE_STAGE_GATE_OK`, `<40 MiB` RSS; rollback tarball `backups/polymarket_predeploy_20261112_220017.tar.gz`); v6.0 `CapitalReservationLedger` + `HierarchicalRiskBudgetConfig` + `DynamicMarginalCapitalAllocator` + `order_sizing_experiments` + `QA-01..QA-06` + `sys-opt` deployed; `polymarket-live-harvester.service` (`MainPID=424220`, `NRestarts=0`, `risk_halt=False`, `live_bankroll=$41.972362`, `total_account_equity=$99.419362`) preserved uninterrupted with `ARMED_FLAT_BOOK_WATCHER(active_positions=5)` across the `1` open live `BOND1_UMA_RESOLUTION_CARRY` position (`MKR_LOCK1_LIVE_SPORTS_MAP_HANDICAP_1794505399_74696`, `$6.937`), `5` active Maker intents, and **`4/4` disputed `KMIA` positions `100%` untouched (`D-001`)**.
 
-### 0. Live Post-v5.1 Production Fleet (`systemctl --user show` at `2026-11-11 07:16 UTC` — `1,686 MiB` Available RAM, `0 B` Swap Used)
+### 0A-V6. Live Post-v6.0 Production Fleet (`systemctl --user show` at `2026-11-12 22:01 UTC` — `1,652.4 MiB` Available RAM, `0 B` Swap Used)
+
+| Service / Timer Unit | `ActiveState` / `Result` | `MainPID` (`22:01Z`) | `NRestarts` | `MemoryCurrent` / `MemoryPeak` | `CPUWeight` | `MemoryMax` (`MemorySwapMax`) | Rollback Backup |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`polymarket-live-harvester.service`** | `active` (`running`) | **`424220`** | **`0`** | `605.0 MiB` (`605.8 MiB` peak) | **`400`** | `infinity` (`0 B`) | `backups/polymarket_predeploy_20261112_220017.tar.gz` |
+| **`polymarket-alpha124-shadow.service`** | `active` (`running`) | **`499383`** | **`0`** | `867.1 MiB` (`867.1 MiB` peak) | **`50`** | **`1,100.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261112_220017.tar.gz` |
+| **`polymarket-recorder.service`** | `active` (`running`) | **`469477`** | **`4`** | `203.9 MiB` (`312.8 MiB` peak) | **`80`** | **`750.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261112_220017.tar.gz` |
+| **`polymarket-cross-venue-shadow.service`** | `active` (`running`) | **`499372`** | **`0`** | `95.5 MiB` (`103.6 MiB` peak) | **`50`** | **`450.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261112_220017.tar.gz` |
+| **`polymarket-full-throttle-sweep.timer`** | `active` (`waiting`) | *(timer)* | **`0`** | — | — | — (`*:02,17,32,47:15`) | [polymarket-full-throttle-sweep.timer](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.timer) |
+| **`polymarket-full-throttle-sweep.service`** | `inactive` (`Result=success`, `status=0`) | *(oneshot)* | **`0`** | `194.2 MiB` cgroup peak | **`40`** (`Nice=12`, `TimeoutStartSec=540`) | **`220.0 MiB`** (`0 B`) | [polymarket-full-throttle-sweep.service](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.service) |
+
+### 0A-W3. Historical Post-v5.2 Full-Throttle Wave 3.1 Fleet (`systemctl --user show` at `2026-11-12 03:31 UTC` — `1,722.5 MiB` Available RAM, `0 B` Swap Used)
+
+| Service / Timer Unit | `ActiveState` / `Result` | `MainPID` (`03:31Z`) | `NRestarts` | `MemoryCurrent` / `MemoryPeak` | `CPUWeight` | `MemoryMax` (`MemorySwapMax`) | Rollback Backup |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`polymarket-live-harvester.service`** | `active` (`running`) | **`424220`** | **`0`** | `248.7 MiB` (`253.9 MiB` peak) | **`400`** | `infinity` (`0 B`) | `backups/polymarket_predeploy_20261112_032241.tar.gz` |
+| **`polymarket-alpha124-shadow.service`** | `active` (`running`) | **`424065`** | **`0`** | `1,005.1 MiB` (`1,010.5 MiB` peak) | **`50`** | **`1,100.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261112_032241.tar.gz` |
+| **`polymarket-recorder.service`** | `active` (`running`) | **`422550`** | **`1`** | `215.5 MiB` (`229.6 MiB` peak) | **`80`** | **`750.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261112_002215.tar.gz` |
+| **`polymarket-cross-venue-shadow.service`** | `active` (`running`) | **`424714`** | **`4`** | `105.2 MiB` (`106.7 MiB` peak) | **`50`** | **`450.0 MiB`** (`0 B`) | `backups/stage_g_shadow_20261111T051929Z.tar.gz` |
+| **`polymarket-full-throttle-sweep.timer`** | `active` (`waiting`) | *(timer)* | **`0`** | — | — | — (`*:02,17,32,47:15`) | [polymarket-full-throttle-sweep.timer](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.timer) |
+| **`polymarket-full-throttle-sweep.service`** | `inactive` (`Result=success`, `status=0`) | *(oneshot)* | **`0`** | `191.3–198.3 MiB` cgroup peak | **`40`** (`Nice=12`, `TimeoutStartSec=540`) | **`220.0 MiB`** (`0 B`) | [polymarket-full-throttle-sweep.service](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.service) |
+
+### 0A. Historical Post-v5.2 Full-Throttle Wave 2 Fleet (`systemctl --user show` at `2026-11-11 22:19 UTC` — `1,377–1,497 MiB` Available RAM, `0 B` Swap Used)
+
+| Service / Timer Unit | `ActiveState` / `Result` | `MainPID` (`22:19Z`) | `NRestarts` | `MemoryCurrent` / `MemoryPeak` | `CPUWeight` | `MemoryMax` (`MemorySwapMax`) | Rollback Backup |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **`polymarket-live-harvester.service`** | `active` (`running`) | **`402046`** | **`0`** | `216.2 MiB` | **`400`** | `infinity` (`0 B`) | `backups/polymarket_predeploy_20261111_220442.tar.gz` |
+| **`polymarket-alpha124-shadow.service`** | `active` (`running`) | **`402043`** | **`0`** | `1,073.7 MiB` | **`50`** | **`1,100.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261111_214714.tar.gz` |
+| **`polymarket-recorder.service`** | `active` (`running`) | **`399830`** | **`0`** | `149.3 MiB` | **`80`** | **`750.0 MiB`** (`0 B`) | `backups/polymarket_predeploy_20261111_213439.tar.gz` |
+| **`polymarket-cross-venue-shadow.service`** | `active` (`running`) | **`385723`** | **`1`** | `399.9 MiB` | **`50`** | **`450.0 MiB`** (`0 B`) | `backups/stage_g_shadow_20261111T051929Z.tar.gz` |
+| **`polymarket-full-throttle-sweep.timer`** | `active` (`waiting`) | *(timer)* | **`0`** | — | — | — (`*:02,17,32,47:15`) | [polymarket-full-throttle-sweep.timer](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.timer) |
+| **`polymarket-full-throttle-sweep.service`** | `inactive` (`Result=success`, `status=0`) | *(oneshot)* | **`0`** | `96.72 MiB` RSS / **`179.9 MiB` cgroup peak** | **`40`** (`Nice=12`) | **`220.0 MiB`** (`0 B`) | [polymarket-full-throttle-sweep.service](file:///C:/Users/Anton/source/repos/Dominus/systemd/polymarket-full-throttle-sweep.service) |
+
+### 0. Historical Post-v5.1 Production Fleet (`systemctl --user show` at `2026-11-11 07:16 UTC` — `1,686 MiB` Available RAM, `0 B` Swap Used)
 
 | Service Unit | `ActiveState` | `MainPID` (`07:16Z`) | `NRestarts` | `MemoryCurrent` | `CPUWeight` | `MemoryMax` | Rollback Backup |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |

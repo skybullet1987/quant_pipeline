@@ -39,10 +39,35 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import socket
-from urllib3.connection import HTTPConnection
-import httpx
-import requests
-from dotenv import load_dotenv
+import types as _types
+try:
+    from urllib3.connection import HTTPConnection
+except ImportError:
+    class HTTPConnection:  # type: ignore[no-redef]
+        default_socket_options: List[Any] = []
+try:
+    import httpx
+except ImportError:
+    httpx = _types.SimpleNamespace(  # type: ignore[assignment]
+        Client=object,
+        AsyncClient=object,
+        Response=object,
+        Limits=lambda **kw: kw,
+        HTTPTransport=lambda **kw: kw,
+        HTTPError=Exception,
+        ConnectError=ConnectionError,
+        ConnectTimeout=TimeoutError,
+        PoolTimeout=TimeoutError,
+    )
+try:
+    import requests
+except ImportError:
+    requests = _types.SimpleNamespace(Session=object, get=None, post=None)  # type: ignore[assignment]
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    def load_dotenv(*_args: Any, **_kwargs: Any) -> bool:  # type: ignore[misc]
+        return False
 
 try:
     import orjson as _orjson
@@ -395,6 +420,8 @@ RISK_CONFIG: Dict[str, Any] = load_risk_config()
 
 try:
     import py_clob_client_v2
+    if getattr(py_clob_client_v2, "_IS_STDLIB_TEST_STUB", False):
+        raise ImportError("py_clob_client_v2 is stdlib test stub")
     import py_clob_client_v2.clob_types as _clob_types_mod
     from py_clob_client_v2.client import (
         ClobClient,
@@ -424,17 +451,130 @@ except ImportError:
     _clob_is_v2_order = None
     _clob_order_to_json_v1 = None
     _clob_order_to_json_v2 = None
-    PolyApiException = None
-    ApiCreds = None
-    OrderArgsV2 = None
-    MarketOrderArgsV2 = None
-    OrderType = None
-    AssetType = None
-    BalanceAllowanceParams = None
-    TradeParams = None
-    PartialCreateOrderOptions = None
-    FeeInfo = None
-    PostOrdersV2Args = None
+
+    class PolyApiException(Exception):  # type: ignore[no-redef]
+        def __init__(self, resp: Any = None, error_msg: Any = None) -> None:
+            self.status_code = getattr(resp, "status_code", None)
+            self.error_msg = error_msg if error_msg is not None else (getattr(resp, "text", None) or resp or "")
+            self.error_message = self.error_msg
+            super().__init__(f"PolyApiException[status_code={self.status_code}, error_message={self.error_msg}]")
+
+    class _FallbackClobStruct:
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            for k, v in kwargs.items():
+                setattr(self, k, v)
+
+    class ApiCreds(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(self, api_key: str = "", api_secret: str = "", api_passphrase: str = "", **kw: Any) -> None:
+            super().__init__(api_key=api_key, api_secret=api_secret, api_passphrase=api_passphrase, **kw)
+
+    class OrderArgsV2(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(
+            self,
+            price: float = 0.0,
+            size: float = 0.0,
+            side: str = "BUY",
+            token_id: str = "",
+            fee_rate_bps: int = 0,
+            nonce: int = 0,
+            expiration: int = 0,
+            taker: str = "0x0000000000000000000000000000000000000000",
+            **kw: Any,
+        ) -> None:
+            super().__init__(
+                price=price,
+                size=size,
+                side=side,
+                token_id=token_id,
+                fee_rate_bps=fee_rate_bps,
+                nonce=nonce,
+                expiration=expiration,
+                taker=taker,
+                **kw,
+            )
+
+    class MarketOrderArgsV2(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(
+            self,
+            token_id: str = "",
+            amount: float = 0.0,
+            side: str = "BUY",
+            price: float = 0.0,
+            fee_rate_bps: int = 0,
+            nonce: int = 0,
+            taker: str = "0x0000000000000000000000000000000000000000",
+            order_type: Any = "FOK",
+            **kw: Any,
+        ) -> None:
+            super().__init__(
+                token_id=token_id,
+                amount=amount,
+                side=side,
+                price=price,
+                fee_rate_bps=fee_rate_bps,
+                nonce=nonce,
+                taker=taker,
+                order_type=order_type,
+                **kw,
+            )
+
+    class OrderType:  # type: ignore[no-redef]
+        GTC = "GTC"
+        FOK = "FOK"
+        GTD = "GTD"
+        FAK = "FAK"
+
+    class AssetType:  # type: ignore[no-redef]
+        COLLATERAL = "COLLATERAL"
+        CONDITIONAL = "CONDITIONAL"
+
+    class BalanceAllowanceParams(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(self, asset_type: Any = None, token_id: Any = None, signature_type: int = -1, **kw: Any) -> None:
+            super().__init__(asset_type=asset_type, token_id=token_id, signature_type=signature_type, **kw)
+
+    class TradeParams(_FallbackClobStruct):  # type: ignore[no-redef]
+        pass
+
+    class PartialCreateOrderOptions(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(self, tick_size: Optional[str] = None, neg_risk: Optional[bool] = None, version: Optional[int] = None, **kw: Any) -> None:
+            super().__init__(tick_size=tick_size, neg_risk=neg_risk, version=version, **kw)
+
+    class FeeInfo(_FallbackClobStruct):  # type: ignore[no-redef]
+        pass
+
+    class PostOrdersV2Args(_FallbackClobStruct):  # type: ignore[no-redef]
+        def __init__(self, order: Any = None, orderType: Any = "FOK", **kw: Any) -> None:
+            super().__init__(order=order, orderType=orderType, **kw)
+
+    class RequestArgs(_FallbackClobStruct):
+        def __init__(self, method: str = "GET", request_path: str = "", body: Any = None, serialized_body: Optional[str] = None, **kw: Any) -> None:
+            super().__init__(method=method, request_path=request_path, body=body, serialized_body=serialized_body, **kw)
+
+    if "py_clob_client_v2" not in sys.modules:
+        _pkg_stub = _types.ModuleType("py_clob_client_v2")
+        _pkg_stub._IS_STDLIB_TEST_STUB = True  # type: ignore[attr-defined]
+        _exc_stub = _types.ModuleType("py_clob_client_v2.exceptions")
+        _exc_stub.PolyApiException = PolyApiException  # type: ignore[attr-defined]
+        _ct_stub = _types.ModuleType("py_clob_client_v2.clob_types")
+        for _nm, _obj in (
+            ("ApiCreds", ApiCreds),
+            ("OrderArgsV2", OrderArgsV2),
+            ("MarketOrderArgsV2", MarketOrderArgsV2),
+            ("OrderType", OrderType),
+            ("AssetType", AssetType),
+            ("BalanceAllowanceParams", BalanceAllowanceParams),
+            ("TradeParams", TradeParams),
+            ("PartialCreateOrderOptions", PartialCreateOrderOptions),
+            ("FeeInfo", FeeInfo),
+            ("PostOrdersV2Args", PostOrdersV2Args),
+            ("RequestArgs", RequestArgs),
+        ):
+            setattr(_ct_stub, _nm, _obj)
+        _pkg_stub.exceptions = _exc_stub  # type: ignore[attr-defined]
+        _pkg_stub.clob_types = _ct_stub  # type: ignore[attr-defined]
+        sys.modules["py_clob_client_v2"] = _pkg_stub
+        sys.modules["py_clob_client_v2.exceptions"] = _exc_stub
+        sys.modules["py_clob_client_v2.clob_types"] = _ct_stub
 
 # Institutional SDK Hard Pin Requirement
 EXPECTED_CLOB_V2 = "1.2.0"
@@ -5635,6 +5775,7 @@ class PolymarketLiveExecutor:
 
         # 4. Live CLOB Order Dispatch Branch
         order_submitted = False
+        tick_sz = 0.01
         try:
             # Pre-trade on-chain ERC-1155 balance snapshot for delta-aware settlement verification
             if prefetched_pre_balance is not None:
@@ -6503,6 +6644,7 @@ class PolymarketLiveExecutor:
             raise RuntimeError(f"LIVE ORDER REFUSED: Executor is in live real-money mode but unauthenticated ({self.auth_mode}).")
 
         order_submitted = False
+        tick_sz = 0.01
         try:
             if not self.dry_run:
                 if prefetched_pre_balance is not None and math.isfinite(float(prefetched_pre_balance)):
@@ -7297,11 +7439,21 @@ class PolymarketLiveExecutor:
                         re_sh = float(math.floor(notional_f / re_px)) if re_px >= min_price_floor else 0.0
                         if re_px >= min_price_floor and re_sh >= 5.0 and re_px < best_a - 1e-9:
                             quantized_price, shares_int = re_px, re_sh
-                            resp = _sign_and_post_maker(quantized_price, shares_int)
+                            try:
+                                resp = _sign_and_post_maker(quantized_price, shares_int)
+                            except Exception as re_post_exc:
+                                rp_msg = str(getattr(re_post_exc, "error_message", "") or str(re_post_exc))
+                                if any(k in rp_msg.lower() for k in ("crosses book", "post only", "post-only")):
+                                    order_submitted = False
+                                    resp = {"errorMsg": rp_msg}
+                                else:
+                                    raise
                             has_err = resp.get("errorMsg") or resp.get("error")
                             order_id = resp.get("orderID") or resp.get("id")
-                except Exception:
-                    pass
+                except Exception as repr_err:
+                    if order_submitted:
+                        raise
+                    logger.debug(f"Maker entry reprice skipped: {repr_err}")
             if has_err and order_id:
                 return {
                     "success": False,
@@ -8680,6 +8832,7 @@ class PolymarketLiveExecutor:
             return {"success": True, "orderID": mock_id, "mode": "DRY_RUN", "post_only": True}
 
         order_submitted = False
+        tick_sz = 0.01
         try:
             # Dynamically quantize price to token-specific tick size (ceiling rounding for maker sell)
             quantized_price = self.quantize_order_price(price, token_id, rounding=ROUND_CEILING)
@@ -8874,6 +9027,7 @@ class PolymarketLiveExecutor:
 
         quantized_size = float(Decimal(str(max(0.0, float(size or 0.0)))).quantize(Decimal("0.01"), rounding=ROUND_FLOOR))
         order_submitted = False
+        tick_sz = 0.01
         try:
             lot = Decimal("0.01")
             requested = Decimal(str(size)).quantize(lot, rounding=ROUND_FLOOR)
