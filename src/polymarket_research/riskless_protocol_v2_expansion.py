@@ -3879,6 +3879,7 @@ def is_market_busy_for_scaling(
     market_id: str,
     *,
     extra_busy_markets: Sequence[str] = (),
+    exclude_intent_ids: Sequence[str] = (),
 ) -> bool:
     """
     Returns True if `market_id` has an in-flight entry, pending settlement/exit/liquidation, un-reconciled inventory,
@@ -3890,8 +3891,14 @@ def is_market_busy_for_scaling(
         return False
     if mid in {str(x).strip() for x in (extra_busy_markets or ()) if str(x or "").strip()}:
         return True
+    excl_ids = {str(x).strip() for x in (exclude_intent_ids or ()) if str(x or "").strip()}
     pend_int = getattr(harvester, "pending_entry_intents", None) or {}
-    if any(isinstance(i, Mapping) and str(i.get("market_id") or "").strip() == mid for i in pend_int.values()):
+    if any(
+        str(ik).strip() not in excl_ids
+        and isinstance(i, Mapping)
+        and str(i.get("market_id") or "").strip() == mid
+        for ik, i in pend_int.items()
+    ):
         return True
     act_pos = getattr(harvester, "active_positions", None) or {}
     has_open_on_mkt = False
@@ -7414,7 +7421,10 @@ def finish_protocol_v2_special_box_sync(
         net_rev = (y_bid - compute_exact_taker_fee_per_share(y_bid, fr, fe)) + (n_bid - compute_exact_taker_fee_per_share(n_bid, fr, fe))
         if net_rev < min_ovr_rev:
             return {"executed": False, "reason": f"OVERROUND_GONE:{net_rev:.4f}"}
-        sh = math.floor(min(budget, min(y_sz, n_sz) / 1.15) * 100.0) / 100.0
+        from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+
+        bid_depth_cushion = 2.5 if is_unmocked_live_clob_harvester(harvester) else 1.15
+        sh = math.floor(min(budget, min(y_sz, n_sz) / bid_depth_cushion) * 100.0) / 100.0
         if sh < 5.0:
             return {"executed": False, "reason": "OVERROUND_MIN_SHARES"}
         has_custom_split = hasattr(ex, "split_collateral_to_complete_set")
@@ -7876,6 +7886,192 @@ async def dispatch_protocol_v2_harvester_candidate(
             await asyncio.to_thread(harvester.save_state)
             return True
     return False
+
+
+def walk_2l_live_clip_with_seed_fallback(
+    bk_a: Mapping[str, Any],
+    bk_b: Mapping[str, Any],
+    leg_a: Mapping[str, Any],
+    leg_b: Mapping[str, Any],
+    max_cap: float,
+    *,
+    min_box_cost_net: float = 0.0,
+    default_fee_rate: float = 0.0,
+    budgets: Sequence[float] = (20.0, 10.0, 7.25),
+) -> Dict[str, Any]:
+    """Walks 2-leg box liquidity across seed-aware clip budgets (`20 -> 10 -> 7.25`) so thin depth near 15% cap stays fillable."""
+    from src.polymarket_research.same_oracle_dominance_box import walk_equal_shares_dominance_box
+
+    asks_a = bk_a.get("asks") or []
+    asks_b = bk_b.get("asks") or []
+    fr_a = float(leg_a.get("fee_rate", default_fee_rate))
+    fr_b = float(leg_b.get("fee_rate", default_fee_rate))
+    fe_a = float(leg_a.get("fee_exponent", 1.0))
+    fe_b = float(leg_b.get("fee_exponent", 1.0))
+    last_res: Dict[str, Any] = {"filled": False}
+    for b_try in budgets:
+        res = walk_equal_shares_dominance_box(
+            asks_a,
+            asks_b,
+            float(b_try),
+            fr_a,
+            fr_b,
+            fee_exponent_a=fe_a,
+            fee_exponent_b=fe_b,
+            max_box_cost_net=max_cap,
+            min_shares=5,
+            min_box_notional_usd=4.85,
+            min_box_cost_net=min_box_cost_net,
+        )
+        last_res = res
+        if res.get("filled"):
+            return res
+    return last_res
+
+
+def build_c1_split_sell_overround_payload(
+    *,
+    market_id: str,
+    condition_id: str,
+    yes_token_id: str,
+    no_token_id: str,
+    yes_bid: float,
+    no_bid: float,
+    yes_bid_sz: float,
+    no_bid_sz: float,
+    fee_rate: float,
+    fee_exponent: float,
+    neg_risk: bool,
+    net_revenue_per_share: float,
+) -> Optional[Dict[str, Any]]:
+    """Builds strict Stage-C-compliant `C1_SPLIT_AND_SELL_OVERROUND` payload (`0%` fee, non-NegRisk, >=15sh depth)."""
+    if bool(neg_risk) or float(fee_rate or 0.0) > 1e-9:
+        return None
+    if float(net_revenue_per_share or 0.0) < 1.006 - 1e-9:
+        return None
+    max_sh = min(float(yes_bid_sz or 0.0), float(no_bid_sz or 0.0))
+    if max_sh < 15.0:
+        return None
+    mid_s = str(market_id or "").strip()
+    cid_s = str(condition_id or "").strip()
+    ytok = str(yes_token_id or "").strip()
+    ntok = str(no_token_id or "").strip()
+    if not mid_s or not cid_s or not ytok or not ntok or ytok == ntok:
+        return None
+    rev_ps = float(net_revenue_per_share)
+    return {
+        "opportunity_class": "CLASS_A",
+        "rule_verified": True,
+        "atomic_split_sell_rollback_verified": True,
+        "neg_risk": False,
+        "leg_a_neg_risk": False,
+        "fee_rate_verified": True,
+        "condition_id": cid_s,
+        "leg_a_condition_id": cid_s,
+        "leg_a_market_id": mid_s,
+        "leg_b_market_id": mid_s,
+        "leg_count": 2,
+        "leg_a_token_id": ytok,
+        "leg_b_token_id": ntok,
+        "yes_token_id": ytok,
+        "no_token_id": ntok,
+        "yes_bid": float(yes_bid),
+        "no_bid": float(no_bid),
+        "fee_rate": float(fee_rate),
+        "fee_exponent": float(fee_exponent or 1.0),
+        "leg_a_fee_rate": float(fee_rate),
+        "leg_b_fee_rate": float(fee_rate),
+        "max_fillable_shares": round(max_sh, 2),
+        "shares": max(5, int(math.floor(max_sh / 2.5))),
+        "legs": [
+            {"token_id": ytok, "side": "SELL", "outcome": "YES", "price": float(yes_bid), "size": float(yes_bid_sz)},
+            {"token_id": ntok, "side": "SELL", "outcome": "NO", "price": float(no_bid), "size": float(no_bid_sz)},
+        ],
+        "box_cost_net": round(2.0 - rev_ps, 4),
+        "min_state_net_payoff_usd": round((rev_ps - 1.0) * 5.0, 4),
+    }
+
+
+def emit_c1_split_sell_overround_from_scan(
+    daemon: Any,
+    src_row: Mapping[str, Any],
+    ov_hit: Mapping[str, Any],
+    now_ts: float,
+    *,
+    opps_out: Optional[List[Dict[str, Any]]] = None,
+) -> bool:
+    """Emits `CTF_OVERROUND` under unpaused canonical `C1_SPLIT_AND_SELL_OVERROUND` when depth/fee invariants pass."""
+    rev_ps = float(ov_hit.get("net_revenue_per_share") or ov_hit.get("net_proceeds_per_share") or 0.0)
+    max_sh = float(ov_hit.get("max_fillable_shares") or 0.0)
+    pl = build_c1_split_sell_overround_payload(
+        market_id=str(src_row.get("market_id") or ""),
+        condition_id=str(src_row.get("condition_id") or ""),
+        yes_token_id=str(src_row.get("yes_token_id") or ""),
+        no_token_id=str(src_row.get("no_token_id") or ""),
+        yes_bid=float(ov_hit.get("yes_bid") or 0.0),
+        no_bid=float(ov_hit.get("no_bid") or 0.0),
+        yes_bid_sz=max_sh,
+        no_bid_sz=max_sh,
+        fee_rate=float(src_row.get("fee_rate") or 0.0),
+        fee_exponent=float(src_row.get("fee_exponent") or 1.0),
+        neg_risk=bool(src_row.get("neg_risk")),
+        net_revenue_per_share=rev_ps,
+    )
+    if pl is None:
+        return False
+    if opps_out is not None:
+        opps_out.append({
+            "sleeve": "C1_SPLIT_AND_SELL_OVERROUND",
+            "market": f"{src_row['asset']} Binary Overround (${rev_ps:.4f})",
+            "ask_vwap": round(2.0 - rev_ps, 4),
+            "p_model": 1.0,
+            "net_edge": float(ov_hit["net_edge_per_share"]),
+            "l1_usd": round(max_sh, 2),
+        })
+    return bool(
+        daemon.emit_live_special_v2_box_candidate(
+            box_type="CTF_OVERROUND",
+            sleeve_source="C1_SPLIT_AND_SELL_OVERROUND",
+            asset=str(src_row["asset"]),
+            dedupe_key=f"CTFOVR_{src_row['market_id']}_{int(now_ts // 15)}",
+            close_ts=float(src_row["end_ts"]),
+            now_ts=now_ts,
+            payload=pl,
+        )
+    )
+
+
+def _set_preempt_event_threadsafe(harvester: Any, ev: Any) -> None:
+    loop_ref = getattr(harvester, "_main_loop", None)
+    if loop_ref is not None and loop_ref.is_running() and getattr(loop_ref, "_thread_id", None) != threading.get_ident():
+        loop_ref.call_soon_threadsafe(ev.set)
+    else:
+        ev.set()
+
+
+def is_slow_bond1_seed_slot_reserved(harvester: Any, sleeve_source: str, candidate_box: Mapping[str, Any]) -> bool:
+    """When unmocked live seed equity < $100, caps slow <120 bps/hr BOND1/BOND2 makers at 2 of 3 slots."""
+    if str(sleeve_source or "") not in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}:
+        return False
+    from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+
+    if not is_unmocked_live_clob_harvester(harvester):
+        return False
+    collat = float(getattr(harvester, "_last_known_collateral", 0.0) or 0.0)
+    if collat <= 0.0 or collat >= 100.0:
+        return False
+    now_f = time.time()
+    cand_vel = _estimate_intent_velocity_bps_hr(candidate_box, now_f)
+    if cand_vel >= 120.0:
+        return False
+    slow_bond_cnt = 0
+    for iv in (getattr(harvester, "pending_entry_intents", None) or {}).values():
+        if not (isinstance(iv, Mapping) and iv.get("live_maker_anchor_inflight")):
+            continue
+        if str(iv.get("sleeve_source") or "") in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}:
+            if _estimate_intent_velocity_bps_hr(iv, now_f) < 120.0:
+                slow_bond_cnt += 1
+    return slow_bond_cnt >= 2
 
 
 async def run_protocol_v2_daemon_scan(
@@ -8977,35 +9173,7 @@ async def run_protocol_v2_daemon_scan(
                     if not src_r:
                         continue
                     if ov_hit.get("sleeve") == "CTF_OVERROUND_MINT_SELL" and not src_r["neg_risk"]:
-                        rev_ps = float(ov_hit.get("net_revenue_per_share") or ov_hit.get("net_proceeds_per_share") or 1.005)
-                        opps_out.append({
-                            "sleeve": "CTF_OVERROUND_MINT_SELL",
-                            "market": f"{src_r['asset']} Binary Overround (${rev_ps:.4f})",
-                            "ask_vwap": round(2.0 - rev_ps, 4),
-                            "p_model": 1.0,
-                            "net_edge": float(ov_hit["net_edge_per_share"]),
-                            "l1_usd": round(float(ov_hit["max_fillable_shares"]), 2),
-                        })
-                        daemon.emit_live_special_v2_box_candidate(
-                            box_type="CTF_OVERROUND",
-                            sleeve_source="CTF_OVERROUND_MINT_SELL",
-                            asset=src_r["asset"],
-                            dedupe_key=f"CTFOVR_{src_r['market_id']}_{int(now // 15)}",
-                            close_ts=src_r["end_ts"],
-                            now_ts=now,
-                            payload={
-                                "condition_id": src_r["condition_id"],
-                                "leg_a_market_id": src_r["market_id"],
-                                "yes_token_id": src_r["yes_token_id"],
-                                "no_token_id": src_r["no_token_id"],
-                                "yes_bid": ov_hit["yes_bid"],
-                                "no_bid": ov_hit["no_bid"],
-                                "fee_rate": src_r["fee_rate"],
-                                "fee_exponent": src_r["fee_exponent"],
-                                "max_fillable_shares": ov_hit["max_fillable_shares"],
-                                "box_cost_net": round(2.0 - rev_ps, 4),
-                            },
-                        )
+                        emit_c1_split_sell_overround_from_scan(daemon, src_r, ov_hit, now, opps_out=opps_out)
                     elif ov_hit.get("sleeve") == "C1_BINARY_COMPLETE_SET":
                         is_zf_mergeable = (not bool(src_r["neg_risk"])) and float(src_r["fee_rate"] or 0.0) <= 1e-9
                         _c1_fee_merge_cap = _zf1_max_cost if (is_zf_mergeable and _en_zf1) else (0.9975 if (not bool(src_r["neg_risk"]) and _en_zf1) else 0.992)
@@ -9761,11 +9929,16 @@ def emit_single_leg_maker_lock_cand_impl(
     _zero_supply_ghost = (_has_tot_vol and _tot_vol_u < 25.0) or (
         _has_vol24 and _vol24_u < 25.0 and (not _has_tot_vol or _tot_vol_u < 50.0)
     )
+    _valid_ask_sh = sum(
+        float(a.get("size", 0.0) or 0.0)
+        for a in (valid_asks or [])
+        if isinstance(a, Mapping)
+    )
     if (
         not is_mock_emit
         and not is_s2_mkr
         and str(sleeve_source) != "MKR_REWARD_LOCKED_CARRY"
-        and not valid_asks
+        and (not valid_asks or (_zero_supply_ghost and _valid_ask_sh < 5.0))
         and (
             _zero_supply_ghost
             or (l1_bid_usd < 75.0 and (_has_vol24 or _has_tot_vol) and _eff_mkt_vol_u < 350.0)
@@ -10258,6 +10431,16 @@ def select_sll_velocity_preempt_target(
             return max(180.0, sticky_fifo_sec)
         if iv <= 35.0 and float(cand_edge_hr) >= max(iv * 8.0, iv + 200.0):
             return 30.0
+        if (
+            not fifo_rank1
+            and iv <= 75.0
+            and sl_it in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}
+            and float(cand_edge_hr) >= max(iv * 1.8, iv + 60.0)
+        ):
+            from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+
+            if is_unmocked_live_clob_harvester(harvester):
+                return 35.0
         if sl_it != "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER" and float(cand_edge_hr) >= max(iv * 5.0, iv + 250.0):
             return 45.0
         return 180.0
@@ -10319,6 +10502,18 @@ def select_sll_velocity_preempt_target(
         return 0.0, ""
     slow_vel, slow_k = min(slow_cands, key=lambda x: x[0])
     req_mult = max(3.0, float(vel_mult or 0.0))
+    from src.polymarket_research.stage_c_zero_loss_velocity import is_unmocked_live_clob_harvester
+
+    if is_unmocked_live_clob_harvester(harvester) and slow_vel <= 75.0:
+        for _iv_s in (getattr(harvester, "pending_entry_intents", None) or {}).values():
+            if (
+                isinstance(_iv_s, Mapping)
+                and str(_iv_s.get("inflight_key") or "") == str(slow_k)
+                and not bool(_iv_s.get("fifo_rank1_verified"))
+                and str(_iv_s.get("sleeve_source") or "") in {"BOND1_UMA_RESOLUTION_CARRY", "BOND2_MOOV2_WHITELIST_FINAL_HOUR_CARRY"}
+            ):
+                req_mult = 1.8
+                break
     if slow_k and slow_k in pe_map and float(cand_edge_hr) >= max(slow_vel * req_mult, slow_vel + 50.0):
         return slow_vel, slow_k
     return 0.0, ""
@@ -12561,7 +12756,7 @@ async def maybe_preempt_low_tier_s2_maker_slot(
 
 
 def _estimate_intent_velocity_bps_hr(it: Mapping[str, Any], now_ts: float) -> float:
-    ib = float(it.get("anchor_bid_px") or 0.0)
+    ib = float(it.get("anchor_bid_px") or it.get("box_cost_net") or it.get("leg_a_limit_price") or 0.0)
     ie = float(it.get("expiry_ts") or 0.0)
     sl_it = str(it.get("sleeve_source") or "")
     fl_h = sll_settlement_lag_floor_hours(sl_it)
@@ -12708,7 +12903,7 @@ def preempt_makers_for_instant_taker_arb(
         if ev_s is not None:
             if reason and ik_s not in reason_map:
                 reason_map[ik_s] = reason
-            ev_s.set()
+            _set_preempt_event_threadsafe(harvester, ev_s)
             selected_keys.add(ik_s)
             signaled += 1
     return signaled, selected_keys
@@ -13221,14 +13416,27 @@ def evaluate_clinched_ws_book_snipe_impl(
     mid_ws = str(w_ent.get("leg_a_market_id") or "").strip()
     dk_ws = str(w_ent.get("dedupe_key") or "").strip()
     pdk_ws = str(w_ent.get("pair_dedupe_key") or "").strip()
-    if mid_ws and is_market_busy_for_scaling(harvester, mid_ws):
+    pend_map_ws = getattr(harvester, "pending_entry_intents", None) or {}
+    resting_mkr_iids_ws = [
+        str(ik_w).strip()
+        for ik_w, iv_w in pend_map_ws.items()
+        if isinstance(iv_w, Mapping)
+        and bool(iv_w.get("live_maker_anchor_inflight"))
+        and str(iv_w.get("market_id") or "").strip() == mid_ws
+    ] if mid_ws else []
+    if mid_ws and is_market_busy_for_scaling(harvester, mid_ws, exclude_intent_ids=resting_mkr_iids_ws):
         cd_ws[str(tok_id)] = now_f + 3.0
         return None
     if dk_ws and is_d1_dedupe_blocked(harvester, dk_ws, pdk_ws, [mid_ws] if mid_ws else [], now_f):
         cd_ws[str(tok_id)] = now_f + 3.0
         return None
     evt_ok_ws, _, evt_rem_ws, evt_gk_ws = check_per_event_concentration_cap(
-        harvester, w_ent, market_ids=[mid_ws] if mid_ws else [], now_ts=now_f, min_headroom_usd=5.0
+        harvester,
+        w_ent,
+        market_ids=[mid_ws] if mid_ws else [],
+        now_ts=now_f,
+        min_headroom_usd=5.0,
+        exclude_intent_ids=resting_mkr_iids_ws,
     )
     if not evt_ok_ws:
         cd_ws[str(tok_id)] = now_f + 5.0
@@ -13380,6 +13588,11 @@ def evaluate_clinched_ws_book_snipe_impl(
         if s2_k in w_ent and w_ent.get(s2_k) is not None:
             cand_out[s2_k] = w_ent.get(s2_k)
     harvester.__dict__["_ws_clinch_snipe_emitted_count"] = int(harvester.__dict__.get("_ws_clinch_snipe_emitted_count", 0) or 0) + 1
+    if resting_mkr_iids_ws:
+        cand_out["_preempt_resting_maker_intent_ids"] = list(resting_mkr_iids_ws)
+        harvester.__dict__["_ws_clinch_snipe_preempt_emitted_count"] = int(
+            harvester.__dict__.get("_ws_clinch_snipe_preempt_emitted_count", 0) or 0
+        ) + 1
     if isinstance(bk_opp, dict):
         cand_out["ws_books"] = {str(tok_id): _trim_ws_books_top10({"_": bk_win})["_"], opp_tok: _trim_ws_books_top10({"_": bk_opp})["_"]}
         cand_out["ws_books_ts"] = round(now_f, 3)
@@ -19309,14 +19522,148 @@ def eval_ws_c1_complete_set_impl(
     }
 
 
+def _shm_side_levels(
+    side_d: Mapping[str, Any],
+    raw_key: str,
+    best_key: str,
+    sz_keys: Sequence[str],
+) -> List[Dict[str, float]]:
+    out: List[Dict[str, float]] = []
+    for lv in side_d.get(raw_key) or []:
+        try:
+            if isinstance(lv, Mapping):
+                px = float(lv.get("price", 0.0) or 0.0)
+                sz = float(lv.get("size", 0.0) or 0.0)
+            else:
+                px = float(lv[0])
+                sz = float(lv[1])
+            if px > 0.0 and sz > 0.0:
+                out.append({"price": px, "size": sz})
+        except Exception:
+            continue
+    if out:
+        return out
+    try:
+        bpx = float(side_d.get(best_key) or 0.0)
+    except Exception:
+        bpx = 0.0
+    if bpx > 0.0:
+        for sk in sz_keys:
+            try:
+                bsz = float(side_d.get(sk) or 0.0)
+            except Exception:
+                bsz = 0.0
+            if bsz > 0.0:
+                return [{"price": bpx, "size": bsz}]
+    return out
+
+
+def _iter_shm_tick_binary_books(tick: Mapping[str, Any], stem_asset: str) -> List[Tuple[float, Dict[str, Any], Dict[str, Any], Dict[str, Any]]]:
+    rows: List[Tuple[float, Dict[str, Any], Dict[str, Any], Dict[str, Any]]] = []
+    ts_fb = float(tick.get("ts_unix") or tick.get("timestamp_unix") or tick.get("ts") or 0.0)
+    asset_fb = str(tick.get("asset") or stem_asset or "").strip()
+    seen_pairs: Set[Tuple[str, str]] = set()
+
+    tok_a_flat = str(tick.get("yes_token_id") or tick.get("up_token_id") or "").strip()
+    tok_b_flat = str(tick.get("no_token_id") or tick.get("down_token_id") or "").strip()
+    mid_flat = str(tick.get("market_id") or "").strip()
+    if tok_a_flat and tok_b_flat and mid_flat:
+        seen_pairs.add((tok_a_flat, tok_b_flat))
+        asks_y = [{"price": float(tick.get("yes_ask") or tick.get("up_ask") or 0.0), "size": float(tick.get("yes_ask_sz") or tick.get("up_ask_sz") or 0.0)}]
+        asks_n = [{"price": float(tick.get("no_ask") or tick.get("down_ask") or 0.0), "size": float(tick.get("no_ask_sz") or tick.get("down_ask_sz") or 0.0)}]
+        bids_y = [{"price": float(tick.get("yes_bid") or tick.get("up_bid") or 0.0), "size": float(tick.get("yes_bid_sz") or tick.get("up_bid_sz") or 0.0)}]
+        bids_n = [{"price": float(tick.get("no_bid") or tick.get("down_bid") or 0.0), "size": float(tick.get("no_bid_sz") or tick.get("down_bid_sz") or 0.0)}]
+        rows.append((
+            ts_fb,
+            {
+                "leg_a_token_id": tok_a_flat, "leg_b_token_id": tok_b_flat,
+                "leg_a_market_id": mid_flat, "leg_b_market_id": mid_flat,
+                "leg_a_condition_id": str(tick.get("condition_id") or mid_flat),
+                "asset": asset_fb,
+                "expiry_ts": float(tick.get("expiry_ts") or 0.0),
+                "fee_rate_market": tick.get("fee_rate_market", tick.get("fee_rate")),
+                "event_id": str(tick.get("event_id") or ""),
+                "leg_a_neg_risk": bool(tick.get("neg_risk", False)),
+            },
+            {"asks": [lv for lv in asks_y if lv["price"] > 0.0 and lv["size"] > 0.0], "bids": [lv for lv in bids_y if lv["price"] > 0.0 and lv["size"] > 0.0]},
+            {"asks": [lv for lv in asks_n if lv["price"] > 0.0 and lv["size"] > 0.0], "bids": [lv for lv in bids_n if lv["price"] > 0.0 and lv["size"] > 0.0]},
+        ))
+
+    nested_entries: List[Tuple[str, Mapping[str, Any]]] = []
+    mkts_map = tick.get("markets")
+    if isinstance(mkts_map, Mapping):
+        for ent in mkts_map.values():
+            if isinstance(ent, Mapping):
+                nested_entries.append((str(ent.get("horizon") or ""), ent))
+    for hz_k in ("m5", "m15", "h1", "h4"):
+        sub_m = tick.get(hz_k)
+        if isinstance(sub_m, Mapping):
+            nested_entries.append((str(sub_m.get("horizon") or hz_k), sub_m))
+    if isinstance(tick.get("UP"), Mapping) and isinstance(tick.get("DOWN"), Mapping):
+        nested_entries.append(("1h", tick))
+
+    for hz_lbl, ent in nested_entries:
+        up_d = ent.get("UP") or ent.get("YES")
+        dn_d = ent.get("DOWN") or ent.get("NO")
+        if not isinstance(up_d, Mapping) or not isinstance(dn_d, Mapping):
+            continue
+        tok_a = str(up_d.get("token_id") or "").strip()
+        tok_b = str(dn_d.get("token_id") or "").strip()
+        if not tok_a or not tok_b or tok_a == tok_b or (tok_a, tok_b) in seen_pairs:
+            continue
+        mid_n = str(ent.get("market_id") or (tick.get("market_id") if hz_lbl in ("", "1h") else "") or "").strip()
+        if not mid_n:
+            continue
+        age_u = up_d.get("age_book_ms")
+        age_d = dn_d.get("age_book_ms")
+        if (age_u is not None and float(age_u) > 15000.0) or (age_d is not None and float(age_d) > 15000.0):
+            continue
+        seen_pairs.add((tok_a, tok_b))
+        ts_m = float(ent.get("timestamp_unix") or ent.get("ts_unix") or ent.get("ts") or ts_fb or 0.0)
+        exp_m = float(ent.get("expiry_ts") or (tick.get("expiry_ts_1h") if hz_lbl in ("", "1h") else 0.0) or 0.0)
+        fee_m = ent.get("fee_rate_market", ent.get("fee_rate"))
+        if fee_m is None:
+            fee_m = tick.get("fee_rate_market", tick.get("fee_rate"))
+        bk_y = {
+            "asks": _shm_side_levels(up_d, "raw_top_asks", "best_ask", ("best_ask_size", "best_ask_sz", "ask_sz", "size")),
+            "bids": _shm_side_levels(up_d, "raw_top_bids", "best_bid", ("best_bid_size", "best_bid_sz", "bid_sz", "size")),
+        }
+        bk_n = {
+            "asks": _shm_side_levels(dn_d, "raw_top_asks", "best_ask", ("best_ask_size", "best_ask_sz", "ask_sz", "size")),
+            "bids": _shm_side_levels(dn_d, "raw_top_bids", "best_bid", ("best_bid_size", "best_bid_sz", "bid_sz", "size")),
+        }
+        rows.append((
+            ts_m,
+            {
+                "leg_a_token_id": tok_a, "leg_b_token_id": tok_b,
+                "leg_a_market_id": mid_n, "leg_b_market_id": mid_n,
+                "leg_a_condition_id": str(ent.get("condition_id") or mid_n),
+                "asset": str(ent.get("asset") or asset_fb),
+                "expiry_ts": exp_m,
+                "fee_rate_market": fee_m,
+                "event_id": str(ent.get("event_id") or tick.get("event_id") or ""),
+                "leg_a_neg_risk": bool(ent.get("neg_risk", tick.get("neg_risk", False))),
+            },
+            bk_y,
+            bk_n,
+        ))
+    return rows
+
+
 def scan_shm_c1_pairs_impl(harvester: Any, now_ts: Optional[float] = None) -> int:
     import json as _json
     from pathlib import Path as _Path
+    from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER
 
     shm_dir = _Path(str(getattr(harvester, "_shm_dir", "/dev/shm")))
     if not shm_dir.is_dir():
         return 0
     now_f = float(time.time() if now_ts is None else now_ts)
+    rb_gov = GLOBAL_GOVERNANCE_MANAGER.snapshot.get("riskless_boxes", {})
+    paused_sl = {str(x).upper() for x in (rb_gov.get("paused_riskless_sleeves") or [])}
+    ex_obj = getattr(harvester, "executor", None)
+    peek_fee_fn = getattr(ex_obj, "peek_cached_fee_params", None) if ex_obj is not None else None
+    ovr_cd = harvester.__dict__.setdefault("_shm_c1_overround_cd", {})
     emitted = 0
     for p_tk in shm_dir.glob("pm_fast_tick_*.json"):
         try:
@@ -19326,39 +19673,81 @@ def scan_shm_c1_pairs_impl(harvester: Any, now_ts: Optional[float] = None) -> in
             tick = _json.loads(raw_b)
             if not isinstance(tick, dict):
                 continue
-            ts_u = float(tick.get("ts_unix") or 0.0)
-            if ts_u <= 0.0 or (now_f - ts_u) > 15.0:
-                continue
-            tok_a = str(tick.get("yes_token_id") or tick.get("up_token_id") or "").strip()
-            tok_b = str(tick.get("no_token_id") or tick.get("down_token_id") or "").strip()
-            mid = str(tick.get("market_id") or "").strip()
-            if not tok_a or not tok_b or not mid:
-                continue
-            cand_meta = {
-                "leg_a_token_id": tok_a, "leg_b_token_id": tok_b,
-                "leg_a_market_id": mid, "leg_b_market_id": mid,
-                "leg_a_condition_id": str(tick.get("condition_id") or mid),
-                "asset": str(tick.get("asset") or p_tk.stem.replace("pm_fast_tick_", "")),
-                "expiry_ts": float(tick.get("expiry_ts") or 0.0),
-                "fee_rate_market": tick.get("fee_rate_market"),
-                "event_id": str(tick.get("event_id") or ""),
-                "leg_a_neg_risk": bool(tick.get("neg_risk", False)),
-            }
-            if not register_c1_ws_pair_impl(harvester, cand_meta, now_ts=now_f):
-                continue
-            ya = float(tick.get("yes_ask") or tick.get("up_ask") or 0.0)
-            ysz = float(tick.get("yes_ask_sz") or tick.get("up_ask_sz") or 0.0)
-            na = float(tick.get("no_ask") or tick.get("down_ask") or 0.0)
-            nsz = float(tick.get("no_ask_sz") or tick.get("down_ask_sz") or 0.0)
-            if ya > 0.0 and ysz > 0.0 and na > 0.0 and nsz > 0.0:
-                snipe_c = eval_ws_c1_complete_set_impl(
-                    harvester, tok_a,
-                    bk_tok={"asks": [{"price": ya, "size": ysz}]},
-                    bk_other={"asks": [{"price": na, "size": nsz}]},
-                    now_ts=now_f,
-                )
-                if snipe_c is not None and harvester._enqueue_fast_d1_cand(snipe_c):
-                    emitted += 1
+            stem_ast = p_tk.stem.replace("pm_fast_tick_", "")
+            for ts_u, cand_meta, bk_y, bk_n in _iter_shm_tick_binary_books(tick, stem_ast):
+                if ts_u <= 0.0 or (now_f - ts_u) > 15.0 or (now_f - ts_u) < -2.0:
+                    continue
+                tok_a = str(cand_meta["leg_a_token_id"])
+                tok_b = str(cand_meta["leg_b_token_id"])
+                mid = str(cand_meta["leg_a_market_id"])
+                cid = str(cand_meta["leg_a_condition_id"])
+                if cand_meta.get("fee_rate_market") is None and callable(peek_fee_fn):
+                    try:
+                        p_fee = peek_fee_fn(cid, tok_a)
+                    except TypeError:
+                        try:
+                            p_fee = peek_fee_fn(cid=cid, tok=tok_a)
+                        except Exception:
+                            p_fee = None
+                    if isinstance(p_fee, (tuple, list)) and len(p_fee) >= 1 and p_fee[0] is not None:
+                        cand_meta["fee_rate_market"] = float(p_fee[0])
+                if not register_c1_ws_pair_impl(harvester, cand_meta, now_ts=now_f):
+                    continue
+                if bk_y.get("asks") and bk_n.get("asks"):
+                    snipe_c = eval_ws_c1_complete_set_impl(
+                        harvester, tok_a,
+                        bk_tok=bk_y,
+                        bk_other=bk_n,
+                        now_ts=now_f,
+                    )
+                    if snipe_c is not None and harvester._enqueue_fast_d1_cand(snipe_c):
+                        emitted += 1
+                pair_reg = (getattr(harvester, "_c1_pair_by_tok", None) or {}).get(tok_a)
+                eff_fr_ovr = cand_meta.get("fee_rate_market")
+                if (
+                    pair_reg
+                    and eff_fr_ovr is not None
+                    and "C1_SPLIT_AND_SELL_OVERROUND" not in paused_sl
+                    and bk_y.get("bids")
+                    and bk_n.get("bids")
+                    and not bool(pair_reg.get("neg_risk", cand_meta.get("leg_a_neg_risk", False)))
+                    and float(eff_fr_ovr) <= 1e-9
+                    and float(cand_meta.get("expiry_ts") or 0.0) - now_f >= 25.0
+                    and float(ovr_cd.get(mid, 0.0) or 0.0) <= now_f
+                    and not is_market_busy_for_scaling(harvester, mid)
+                ):
+                    by_lv = max((b for b in bk_y["bids"] if 0.01 <= b["price"] <= 0.99), key=lambda x: x["price"], default=None)
+                    bn_lv = max((b for b in bk_n["bids"] if 0.01 <= b["price"] <= 0.99), key=lambda x: x["price"], default=None)
+                    if by_lv and bn_lv and (by_lv["price"] + bn_lv["price"]) >= 1.006:
+                        pl_ovr = build_c1_split_sell_overround_payload(
+                            market_id=mid,
+                            condition_id=cid,
+                            yes_token_id=tok_a,
+                            no_token_id=tok_b,
+                            yes_bid=by_lv["price"],
+                            no_bid=bn_lv["price"],
+                            yes_bid_sz=by_lv["size"],
+                            no_bid_sz=bn_lv["size"],
+                            fee_rate=float(pair_reg.get("fee_rate") or 0.0),
+                            fee_exponent=1.0,
+                            neg_risk=False,
+                            net_revenue_per_share=by_lv["price"] + bn_lv["price"],
+                        )
+                        if pl_ovr is not None:
+                            cand_ov = dict(pl_ovr)
+                            cand_ov.update({
+                                "box_id": f"CTFOVR_SHM_{cand_meta['asset']}_{int(cand_meta['expiry_ts'])}_{mid[-6:]}",
+                                "box_type": "CTF_OVERROUND",
+                                "sleeve_source": "C1_SPLIT_AND_SELL_OVERROUND",
+                                "asset": str(cand_meta["asset"]),
+                                "dedupe_key": f"CTFOVR_{mid}_{int(now_f // 15)}",
+                                "pair_dedupe_key": f"CTFOVR_{mid}",
+                                "ts_unix": round(now_f, 3),
+                                "expiry_ts": float(cand_meta["expiry_ts"]),
+                            })
+                            if harvester._enqueue_fast_d1_cand(cand_ov):
+                                ovr_cd[mid] = now_f + 10.0
+                                emitted += 1
         except Exception:
             continue
     return emitted

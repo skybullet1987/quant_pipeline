@@ -2979,7 +2979,11 @@ class PolymarketLiveHarvester:
             if _ev_p is not None:
                 if reason and _ik not in reason_map:
                     reason_map[_ik] = reason
-                _ev_p.set()
+                _lr = getattr(self, "_main_loop", None)
+                if _lr is not None and _lr.is_running() and getattr(_lr, "_thread_id", None) != threading.get_ident():
+                    _lr.call_soon_threadsafe(_ev_p.set)
+                else:
+                    _ev_p.set()
                 signaled += 1
         return signaled
 
@@ -7539,12 +7543,14 @@ class PolymarketLiveHarvester:
         _is_s2_early = sleeve_src in {"S2_EXACT_TWAP_LOCK", "S2_RTDS_EXACT_TWAP_INTEGRATOR"}
         if _is_s2_early and not await maybe_preempt_low_tier_s2_maker_slot(self, cand_asset, inflight_s2_mkr):
             return {"executed": False, "reason": "S2_MAKER_CONCURRENT_CAP_1"}
+        from src.polymarket_research.riskless_protocol_v2_expansion import is_slow_bond1_seed_slot_reserved
         mkr_type_k = f"SINGLE_LEG_MAKER_LOCK:{mid_a}"
         sll_inflight_cnt = sum(1 for k in inflight_mkr_types if str(k).startswith("SINGLE_LEG_MAKER_LOCK:"))
         if (
             mkr_type_k in inflight_mkr_types
             or (not _is_s2_early and sll_inflight_cnt >= (8 if _unlim_mkr else 3))
             or len(inflight_mkr) >= ((12 if _is_s2_early else 10) if _unlim_mkr else (6 if _is_s2_early else 4))
+            or is_slow_bond1_seed_slot_reserved(self, sleeve_src, candidate_box)
         ):
             return {"executed": False, "reason": "SINGLE_LEG_MAKER_ALREADY_INFLIGHT"}
         if sleeve_src == "MKR_LOCK1_POST_CLINCH_REBATE_SWEEPER":

@@ -37,6 +37,7 @@ from __future__ import annotations
 import asyncio
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+import gc
 import hashlib
 import json
 import logging
@@ -4383,7 +4384,7 @@ class LiveCrossVenueShadowCollector:
             except Exception as exc_v6:
                 logger.debug("Stage G v6 expansion scan notice: %s", exc_v6)
 
-            return {
+            out_payload = {
                 "cycle": self.engine.cycles_completed,
                 "data_origin": session_origin,
                 "matched_cross_venue_pairs": len(pairs),
@@ -4416,6 +4417,20 @@ class LiveCrossVenueShadowCollector:
                 "v6_expansion": v6_summary,
                 "graduation_report": asdict(report),
             }
+            all_live_markets.clear()
+            pairs.clear()
+            intra_cands.clear()
+            cross_cands.clear()
+            multi_baskets.clear()
+            gc.collect()
+            try:
+                import ctypes as _ctypes
+
+                _libc = _ctypes.CDLL("libc.so.6")
+                _libc.malloc_trim(0)
+            except Exception:
+                pass
+            return out_payload
 
         if own_transport:
             async with transport as tr:

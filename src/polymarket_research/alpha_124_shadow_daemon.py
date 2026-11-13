@@ -2429,27 +2429,9 @@ class Alpha124ShadowDaemon:
                             max_box_cost_override=_zf_max_c,
                         )
                     elif _ov_z.get("sleeve") == "CTF_OVERROUND_MINT_SELL" and not _sr_z["neg_risk"]:
-                        _rev_z = float(_ov_z.get("net_revenue_per_share") or _ov_z.get("net_proceeds_per_share") or 1.005)
-                        self.emit_live_special_v2_box_candidate(
-                            box_type="CTF_OVERROUND",
-                            sleeve_source="CTF_OVERROUND_MINT_SELL",
-                            asset=_sr_z["asset"],
-                            dedupe_key=f"CTFOVR_{_sr_z['market_id']}_{int(now_ts // 15)}",
-                            close_ts=_sr_z["end_ts"],
-                            now_ts=now_ts,
-                            payload={
-                                "condition_id": _sr_z["condition_id"],
-                                "leg_a_market_id": _sr_z["market_id"],
-                                "yes_token_id": _sr_z["yes_token_id"],
-                                "no_token_id": _sr_z["no_token_id"],
-                                "yes_bid": _ov_z["yes_bid"],
-                                "no_bid": _ov_z["no_bid"],
-                                "fee_rate": _sr_z["fee_rate"],
-                                "fee_exponent": _sr_z["fee_exponent"],
-                                "max_fillable_shares": _ov_z["max_fillable_shares"],
-                                "box_cost_net": round(2.0 - _rev_z, 4),
-                            },
-                        )
+                        from src.polymarket_research.riskless_protocol_v2_expansion import emit_c1_split_sell_overround_from_scan
+
+                        emit_c1_split_sell_overround_from_scan(self, _sr_z, _ov_z, now_ts)
 
     async def _run_clob_d1_ws_loop(self) -> None:
         """Maintains a 5-shard (`1,250`-token) Polymarket CLOB Market WebSocket L2 book matrix."""
@@ -7199,7 +7181,7 @@ class Alpha124ShadowDaemon:
         asks_a, asks_b = bk_a.get("asks") or [], bk_b.get("asks") or []
         fr_a, fr_b = float(leg_a["fee_rate"]), float(leg_b["fee_rate"])
         fe_a, fe_b = float(leg_a["fee_exponent"]), float(leg_b["fee_exponent"])
-        for b_try in (float(primary_budget_usd), 10.00):
+        for b_try in (float(primary_budget_usd), 10.00, 7.25):
             w = walk_equal_shares_dominance_box(
                 asks_a, asks_b, b_try, fr_a, fr_b,
                 fee_exponent_a=fe_a, fee_exponent_b=fe_b,
@@ -7329,11 +7311,10 @@ class Alpha124ShadowDaemon:
 
     @staticmethod
     def _walk_2l_live_clip(bk_a: Dict[str, Any], bk_b: Dict[str, Any], leg_a: Dict[str, Any], leg_b: Dict[str, Any], max_cap: float, min_box_cost_net: float = 0.0) -> Dict[str, Any]:
-        return walk_equal_shares_dominance_box(
-            bk_a.get("asks") or [], bk_b.get("asks") or [], 20.0,
-            float(leg_a.get("fee_rate", CRYPTO_FEE_RATE)), float(leg_b.get("fee_rate", CRYPTO_FEE_RATE)),
-            fee_exponent_a=float(leg_a.get("fee_exponent", 1.0)), fee_exponent_b=float(leg_b.get("fee_exponent", 1.0)),
-            max_box_cost_net=max_cap, min_shares=5, min_box_notional_usd=4.85, min_box_cost_net=min_box_cost_net,
+        from src.polymarket_research.riskless_protocol_v2_expansion import walk_2l_live_clip_with_seed_fallback
+
+        return walk_2l_live_clip_with_seed_fallback(
+            bk_a, bk_b, leg_a, leg_b, max_cap, min_box_cost_net=min_box_cost_net, default_fee_rate=CRYPTO_FEE_RATE
         )
 
     def emit_live_two_leg_box_candidate(

@@ -98,6 +98,7 @@ PURE_RISKLESS_DOMINANCE_AND_MERGE_SLEEVES = frozenset(
         "D1_4H_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
         "C1_BINARY_COMPLETE_SET",
+        "ZEROFEE1_C1_COMPLETE_SET",
         "NR2_CONVERT_NO_SUBSET_ARB",
         "NR_M1_DEAD_SEED_OVERROUND",
         "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
@@ -324,7 +325,7 @@ def is_verified_full_throttle_2leg_box(candidate_box: Mapping[str, Any]) -> bool
         ):
             return False
         return bool(tok_a and partner_tok and tok_a != partner_tok and has_inv_hint)
-    if sl_src == "C1_BINARY_COMPLETE_SET" or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
+    if sl_src in {"C1_BINARY_COMPLETE_SET", "ZEROFEE1_C1_COMPLETE_SET"} or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
         cid_a = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
         cid_b = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
         if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b):
@@ -824,6 +825,7 @@ def check_strict_pure_riskless_candidate_gate(
         "D1_4H_DOMINANCE_BOX",
         "D1_QUIET_BOOK_BOX",
         "C1_BINARY_COMPLETE_SET",
+        "ZEROFEE1_C1_COMPLETE_SET",
         "SP1_NBA_ZERO_FEE_BOX",
         "SP4_SUBPERIOD_CLINCH_AND_PROP_EXPANSION",
     }:
@@ -836,7 +838,7 @@ def check_strict_pure_riskless_candidate_gate(
     mid_b = str(candidate_box.get("leg_b_market_id") or "").strip()
     tok_a = str(candidate_box.get("leg_a_token_id") or "").strip()
     tok_b = str(candidate_box.get("leg_b_token_id") or "").strip()
-    if sl_src == "C1_BINARY_COMPLETE_SET" or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
+    if sl_src in {"C1_BINARY_COMPLETE_SET", "ZEROFEE1_C1_COMPLETE_SET"} or btype in {"COMPLETE_SET", "C1_BINARY_COMPLETE_SET"}:
         cid_a = str(candidate_box.get("leg_a_condition_id") or "").strip().lower()
         cid_b = str(candidate_box.get("leg_b_condition_id") or "").strip().lower()
         if (cid_a and cid_b and cid_a != cid_b) or (mid_a and mid_b and mid_a != mid_b) or (tok_a and tok_b and tok_a == tok_b):

@@ -1419,8 +1419,12 @@ class PolymarketDualFeed1HRecorder:
                 mid = str(self.current_market.get("market_id"))
                 markets_map[mid] = {
                     "market_id": mid,
+                    "condition_id": self.current_market.get("condition_id"),
                     "asset": self.asset,
                     "horizon": "1h",
+                    "expiry_ts": snap.get("expiry_ts_1h"),
+                    "neg_risk": bool(self.current_market.get("neg_risk", False)),
+                    "fee_rate_market": 0.0 if (not getattr(self, "fee_enabled", True)) else self.fee_rate_market,
                     "timestamp_unix": now,
                     "spot_price": self.spot_price,
                     "futures_price": self.futures_price,
@@ -1437,11 +1441,14 @@ class PolymarketDualFeed1HRecorder:
             if mh and up_k in self.books and dn_k in self.books:
                 exp_h = mh["end_dt"].timestamp() if "end_dt" in mh else float(mh.get("expiry_ts") or 0.0)
                 tw_m, tw_w = self.get_settlement_twap_slice(exp_h, now) if exp_h > 0 else (0.0, 0.0)
+                fee_mh = mh.get("fee_metadata", {}).get("fee_rate_market")
                 snap[snap_k] = {
                     "market_id": mh.get("market_id"),
                     "condition_id": mh.get("condition_id"),
                     "horizon": hz,
                     "expiry_ts": exp_h,
+                    "neg_risk": bool(mh.get("neg_risk", False)),
+                    "fee_rate_market": fee_mh,
                     "finalized_open": mh.get("finalized_open", mh.get("finalized_15m_open")),
                     "finalized_15m_open": mh.get("finalized_15m_open"),
                     "authoritative_chainlink_open": mh.get("authoritative_chainlink_open"),
@@ -1457,6 +1464,8 @@ class PolymarketDualFeed1HRecorder:
                     "asset": self.asset,
                     "horizon": hz,
                     "expiry_ts": exp_h,
+                    "neg_risk": bool(mh.get("neg_risk", False)),
+                    "fee_rate_market": fee_mh,
                     "finalized_open": mh.get("finalized_open", mh.get("finalized_15m_open")),
                     "authoritative_chainlink_open": mh.get("authoritative_chainlink_open"),
                     "timestamp_unix": now,
@@ -1741,7 +1750,12 @@ class PolymarketDualFeed1HRecorder:
 
                     # Check dynamic fee parameters from market metadata
                     fee_schedule = m.get("feeSchedule", {})
-                    if isinstance(fee_schedule, dict) and "rate" in fee_schedule:
+                    self.fee_enabled = bool(m.get("feesEnabled", True))
+                    if not self.fee_enabled:
+                        self.fee_rate_market = 0.0
+                        self.fee_exponent = 1.0
+                        self.fee_source = "gamma_feesEnabled_false"
+                    elif isinstance(fee_schedule, dict) and "rate" in fee_schedule:
                         self.fee_rate_market = float(fee_schedule["rate"])
                         self.fee_exponent = float(fee_schedule.get("exponent", 1.0))
                         self.fee_source = f"gamma_feeSchedule_{m.get('feeType', 'crypto_fees_v2')}"
@@ -1755,7 +1769,6 @@ class PolymarketDualFeed1HRecorder:
                         self.fee_exponent = 1.0
                         self.fee_source = "polymarket_crypto_schedule_v1"
 
-                    self.fee_enabled = bool(m.get("feesEnabled", True))
                     self.fee_formula_version = str(m.get("feeType", "crypto_fees_v2"))
 
                     # Pre-populate spot and futures price via REST
@@ -1783,6 +1796,7 @@ class PolymarketDualFeed1HRecorder:
                     return {
                         "market_id": m_id,
                         "condition_id": condition_id,
+                        "neg_risk": bool(m.get("negRisk", False)),
                         "title": event.get("title"),
                         "question": m.get("question"),
                         "slug": event.get("slug"),
@@ -1871,7 +1885,9 @@ class PolymarketDualFeed1HRecorder:
                     fee_schedule = m.get("feeSchedule", {})
                     fee_rate = DEFAULT_FEE_RATE
                     fee_exp = 1.0
-                    if isinstance(fee_schedule, dict) and "rate" in fee_schedule:
+                    if m.get("feesEnabled") is False:
+                        fee_rate = 0.0
+                    elif isinstance(fee_schedule, dict) and "rate" in fee_schedule:
                         fee_rate = float(fee_schedule["rate"])
                         fee_exp = float(fee_schedule.get("exponent", 1.0))
                     elif m.get("takerBaseFee") is not None:
@@ -1890,6 +1906,7 @@ class PolymarketDualFeed1HRecorder:
                     return {
                         "market_id": m_id,
                         "condition_id": condition_id,
+                        "neg_risk": bool(m.get("negRisk", False)),
                         "horizon": hz,
                         "title": event.get("title"),
                         "question": m.get("question"),
@@ -2267,8 +2284,20 @@ class PolymarketDualFeed1HRecorder:
                     _enable_ws_nodelay(ws)
                     logger.info(f"[+] Subscribed to Binance Spot @trade stream ({self.binance_symbol}).")
                     burst_frames = 0
+                    idle_timeouts = 0
                     while self.running:
-                        first_str = await asyncio.wait_for(ws.recv(), timeout=15.0)
+                        try:
+                            first_str = await asyncio.wait_for(ws.recv(), timeout=15.0)
+                            idle_timeouts = 0
+                        except asyncio.TimeoutError:
+                            idle_timeouts += 1
+                            if idle_timeouts >= 3:
+                                raise
+                            try:
+                                await ws.ping()
+                            except Exception:
+                                raise
+                            continue
                         if not self.running:
                             break
                         frames = await _drain_ws_frames(ws, first_str, max_batch=64)
@@ -2315,8 +2344,20 @@ class PolymarketDualFeed1HRecorder:
                     _enable_ws_nodelay(ws)
                     logger.info(f"[+] Subscribed to Binance Futures @trade stream ({self.binance_symbol} unbatched /ws).")
                     burst_frames = 0
+                    idle_timeouts = 0
                     while self.running:
-                        first_str = await asyncio.wait_for(ws.recv(), timeout=15.0)
+                        try:
+                            first_str = await asyncio.wait_for(ws.recv(), timeout=15.0)
+                            idle_timeouts = 0
+                        except asyncio.TimeoutError:
+                            idle_timeouts += 1
+                            if idle_timeouts >= 3:
+                                raise
+                            try:
+                                await ws.ping()
+                            except Exception:
+                                raise
+                            continue
                         if not self.running:
                             break
                         frames = await _drain_ws_frames(ws, first_str, max_batch=64)
@@ -3599,7 +3640,7 @@ class PolymarketDualFeed1HRecorder:
                                     )
                                     self._reconnect_clob = True
                             else:
-                                disc_backoff[hz] = now_mono_disc
+                                disc_backoff[hz] = now_mono_disc + (3570.0 if (self.futures_only_ref and hz == "5m") else 0.0)
                         except Exception as e:
                             logger.debug(f"{hz} discovery cycle note: {e}")
 

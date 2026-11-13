@@ -1,7 +1,7 @@
 """
 ========================================================================================
 DOMINUS POLYMARKET ALPHA-124 EXPANSION + PROJECTIONS + TESTS (<1 MB AST-INVARIANT COMPANION BUNDLE)
-Generated: 2026-11-13 18:27:16 UTC
+Generated: 2026-11-13 20:35:37 UTC
 Pairs with polymarket_all_in_one.txt (<1 MB) for tools enforcing a 1 MB per-file upload cap
 Repository: C:/Users/Anton/source/repos/Dominus
 ========================================================================================
@@ -22,7 +22,7 @@ TABLE OF CONTENTS (Exact 1-Based Line Ranges & Raw Module Sizes):
   [13] src/polymarket_research/riskless_frontier_v2_engine.py (Lines 3,351 - 3,795 | 87,117 B) :: Riskless Frontier v2 Engine (NR2 Subset Convert + Free Tail, SP4 NBA Props, BOND2 Whitelisted MOOv2, SOC1 3-Way Soccer, LP1 Implication Matrix, API1 BO3 Esports)
   [14] src/polymarket_research/riskless_frontier_v3_engine.py (Lines 3,796 - 4,468 | 111,459 B) :: Riskless Frontier v3 Engine (NFL Exact Margin/Spread, Subperiod Clinch, Deadline Ladder, Tennis Retirement-Safe Corridor, Multi-Sport Post-Review Clinch)
   [15] src/polymarket_research/riskless_frontier_v4_engine.py (Lines 4,469 - 5,059 | 119,757 B) :: Riskless Frontier v4 Evergreen Engine (AFF1 Subperiod Collapse, SOC2 83-State Lattice, NFL_PRP1 Locks, SUM1 Frechet Triangles, CRY_INC1 Binance Inclusion, MKR_LOCK1)
-  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 5,060 - 9,049 | 880,889 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
+  [16] src/polymarket_research/alpha_124_shadow_daemon.py (Lines 5,060 - 9,049 | 879,607 B) :: Unified Multi-Vertical Shadow Daemon (Crypto, Weather METAR/HKO, Pyth Commodities/Metals/Equities, Sports, UMA Bonds, Frontier v2/v3/v4)
   [17] scripts/backtest_alpha_124.py (Lines 9,050 - 9,273 | 40,201 B) :: Zero-Lookahead Walk-Forward Calibration & Empirical Backtester for Alpha-124
   [18] scripts/polymarket_daily_projections.py (Lines 9,274 - 9,534 | 83,318 B) :: Live-Anchored Day-by-Day (D1..D30) Compounding & Sleeve Graduation Tracker
   [19] scripts/alpha124_status.py (Lines 9,535 - 9,562 | 3,091 B) :: Live Alpha-124 Multi-Sleeve Scorecard & Orderbook Opportunity Inspector
@@ -5742,41 +5742,41 @@ class Alpha124ShadowDaemon:
    except Exception:j.pop(shard_idx,None);await asyncio.sleep(1.)
    finally:j.pop(shard_idx,None)
  async def _scan_ws_reactive_negrisk_arbs(a,now_ts):
-  from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as c;from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as d;o=[];v=d.snapshot.get("riskless_boxes",{});f=a.__dict__.get("_ws_dead_q_by_event")or{}
+  from src.polymarket_research.riskless_machine_gun_engine import detect_nr3_synthetic_all_yes_overround as d;from src.polymarket_research.holistic_strategy_governance import GLOBAL_GOVERNANCE_MANAGER as e;p=[];v=e.snapshot.get("riskless_boxes",{});g=a.__dict__.get("_ws_dead_q_by_event")or{}
   for u in list(a.negrisk_convert_slates.values()):
    if not u.is_closed_convert_safe or u.end_ts<=now_ts+65. or len(u.brackets)>15:continue
-   t={};e=True
+   t={};f=True
    for N in u.brackets:
     for J in(N.get("no_token"),N.get("yes_token")):
      A=str(J or"");s=a._ws_books.get(A)if A else None
-     if(s is None or A in a._ws_rest_seeded or((now_ts-float(s[0]))>2.5 and not a._is_ws_book_live_on_healthy_shard(A,float(s[0]),now_ts,max_shard_silence_sec=5.))):e=False;break
+     if(s is None or A in a._ws_rest_seeded or((now_ts-float(s[0]))>2.5 and not a._is_ws_book_live_on_healthy_shard(A,float(s[0]),now_ts,max_shard_silence_sec=5.))):f=False;break
      t[A]=s[1]
-    if not e:break
-   if not e:continue
-   l=detect_negrisk_convert_positions_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
-   if l:await a.execute_negrisk_convert_positions_arb(u,l[0],t,o)
-   k=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in u.brackets)and(u.end_ts-now_ts)<=172800.);n=detect_nr2_convert_no_subset_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if k else.012,min_edge_with_yes_sell=.0085 if k else.015,min_shares=5 if k else 6)
-   if n:await a.execute_nr2_subset_convert_arb(u,n[0],t,o)
-   p=c(u,t,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
-   if p is not None:a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=u,dedupe_key=f"NR3_OVR_{u.event_id}",arb_hit=p,books_by_token=t,now_ts=now_ts)
-   r=f.get(u.event_id)
+    if not f:break
+   if not f:continue
+   m=detect_negrisk_convert_positions_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR_CONV_NO_BASKET_ARB"],min_net_edge_per_share=.005,min_shares=8)
+   if m:await a.execute_negrisk_convert_positions_arb(u,m[0],t,p)
+   l=(all(float(b.get("fee_rate",.0)or.0)<=1e-9 for b in u.brackets)and(u.end_ts-now_ts)<=172800.);o=detect_nr2_convert_no_subset_arbs(u,t,target_budget_usd=BANKROLL_TICKETS["T1000"]["NR2_CONVERT_NO_SUBSET_ARB"],min_edge_pure_cash=.006 if l else.012,min_edge_with_yes_sell=.0085 if l else.015,min_shares=5 if l else 6)
+   if o:await a.execute_nr2_subset_convert_arb(u,o[0],t,p)
+   q=d(u,t,target_budget_usd=30.,min_net_edge_per_set=.008,min_shares=5)
+   if q is not None:a.emit_live_negrisk_convert_candidate(sleeve_source="NR2_CONVERT_NO_SUBSET_ARB",spec=u,dedupe_key=f"NR3_OVR_{u.event_id}",arb_hit=q,books_by_token=t,now_ts=now_ts)
+   r=g.get(u.event_id)
    if r and bool(v.get("enable_nr_m1_dead_seed_fanout",True)):
     z=detect_nr_m1_dead_seed_fanout(u,r,t,fee_bips=int(getattr(u,"fee_bips",0)or 0),min_shares=5.,min_net_edge_usd=.0035)
     if z is not None:a.emit_live_negrisk_convert_candidate(sleeve_source="W_PRUNE1_DEAD_NO_BOND",spec=u,dedupe_key=f"NRM1_WS_{u.event_id}_Q{z['dead_question_index']}",arb_hit=z,books_by_token=t,now_ts=now_ts,fee_bips=int(getattr(u,"fee_bips",0)or 0))
-  j=a.__dict__.get("_ws_reactive_bin_metas")or()
-  if j and bool(v.get("enable_zerofee1_mergeable_sweeper",True)):
-   g=max(.001,float(v.get("zerofee1_min_net_edge_bps",15.)or 15.)/1e4);i=round(1.-g,4);m=[]
-   for M in j:
+  k=a.__dict__.get("_ws_reactive_bin_metas")or()
+  if k and bool(v.get("enable_zerofee1_mergeable_sweeper",True)):
+   h=max(.001,float(v.get("zerofee1_min_net_edge_bps",15.)or 15.)/1e4);j=round(1.-h,4);n=[]
+   for M in k:
     if float(M.get("end_ts")or(now_ts+86400.))<=now_ts+65.:continue
     L=a._get_fresh_ws_book(str(M["yes_token_id"]),now_ts,max_age_sec=2.5);K=a._get_fresh_ws_book(str(M["no_token_id"]),now_ts,max_age_sec=2.5)
-    if L and K:I,H=extract_best_bid(L.get("bids")or[]);G,F=extract_best_bid(K.get("bids")or[]);E,D=a._best_ask_sz(L);C,B=a._best_ask_sz(K);m.append({**M,"yes_bid":I,"yes_bid_size":(H/I)if I>0 else.0,"no_bid":G,"no_bid_size":(F/G)if G>0 else.0,"yes_ask":E if E<1. else.0,"yes_ask_size":D,"no_ask":C if C<1. else.0,"no_ask_size":B,"bk_yes":L,"bk_no":K})
-   if m:
-    h={x["condition_id"]:x for x in m}
-    for y in scan_full_universe_c1_and_ctf_overround(m,min_underround_edge=g,min_overround_edge=.0045):
-     w=h.get(str(y.get("condition_id")or""))
+    if L and K:I,H=extract_best_bid(L.get("bids")or[]);G,F=extract_best_bid(K.get("bids")or[]);E,D=a._best_ask_sz(L);C,B=a._best_ask_sz(K);n.append({**M,"yes_bid":I,"yes_bid_size":(H/I)if I>0 else.0,"no_bid":G,"no_bid_size":(F/G)if G>0 else.0,"yes_ask":E if E<1. else.0,"yes_ask_size":D,"no_ask":C if C<1. else.0,"no_ask_size":B,"bk_yes":L,"bk_no":K})
+   if n:
+    i={x["condition_id"]:x for x in n}
+    for y in scan_full_universe_c1_and_ctf_overround(n,min_underround_edge=h,min_overround_edge=.0045):
+     w=i.get(str(y.get("condition_id")or""))
      if not w:continue
-     if y.get("sleeve")=="C1_BINARY_COMPLETE_SET"and float(y["cost_per_share"])<=i+1e-6:a.emit_live_two_leg_box_candidate(box_type="COMPLETE_SET",sleeve_source="C1_BINARY_COMPLETE_SET",asset=w["asset"],dedupe_key=f"C1V2_{w['market_id']}",leg_a={"token_id":w["yes_token_id"],"opp_token_id":w["no_token_id"],"label":"YES","side":"YES","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},leg_b={"token_id":w["no_token_id"],"opp_token_id":w["yes_token_id"],"label":"NO","side":"NO","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},bk_a=w["bk_yes"],bk_b=w["bk_no"],close_ts=w["end_ts"],now_ts=now_ts,max_box_cost_override=i)
-     elif y.get("sleeve")=="CTF_OVERROUND_MINT_SELL"and not w["neg_risk"]:q=float(y.get("net_revenue_per_share")or y.get("net_proceeds_per_share")or 1.005);a.emit_live_special_v2_box_candidate(box_type="CTF_OVERROUND",sleeve_source="CTF_OVERROUND_MINT_SELL",asset=w["asset"],dedupe_key=f"CTFOVR_{w['market_id']}_{int(now_ts//15)}",close_ts=w["end_ts"],now_ts=now_ts,payload={"condition_id":w["condition_id"],"leg_a_market_id":w["market_id"],"yes_token_id":w["yes_token_id"],"no_token_id":w["no_token_id"],"yes_bid":y["yes_bid"],"no_bid":y["no_bid"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"max_fillable_shares":y["max_fillable_shares"],"box_cost_net":round(2.-q,4)})
+     if y.get("sleeve")=="C1_BINARY_COMPLETE_SET"and float(y["cost_per_share"])<=j+1e-6:a.emit_live_two_leg_box_candidate(box_type="COMPLETE_SET",sleeve_source="C1_BINARY_COMPLETE_SET",asset=w["asset"],dedupe_key=f"C1V2_{w['market_id']}",leg_a={"token_id":w["yes_token_id"],"opp_token_id":w["no_token_id"],"label":"YES","side":"YES","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},leg_b={"token_id":w["no_token_id"],"opp_token_id":w["yes_token_id"],"label":"NO","side":"NO","market_id":w["market_id"],"condition_id":w["condition_id"],"fee_rate":w["fee_rate"],"fee_exponent":w["fee_exponent"],"neg_risk":w["neg_risk"],"end_ts":w["end_ts"]},bk_a=w["bk_yes"],bk_b=w["bk_no"],close_ts=w["end_ts"],now_ts=now_ts,max_box_cost_override=j)
+     elif y.get("sleeve")=="CTF_OVERROUND_MINT_SELL"and not w["neg_risk"]:from src.polymarket_research.riskless_protocol_v2_expansion import emit_c1_split_sell_overround_from_scan as c;c(a,w,y,now_ts)
  async def _run_clob_d1_ws_loop(a):
   if a.single_scan:return
   await asyncio.gather(*(a._run_single_clob_ws_shard(b)for b in range(5)))
@@ -7016,7 +7016,7 @@ class Alpha124ShadowDaemon:
   return now_ts,float(close_ts-now_ts),b
  def _walk_d1_live_clip_with_fallback(self,bk_a,bk_b,leg_a,leg_b,*,primary_budget_usd,max_box_cost_net,is_4h_mixed):
   b,a=bk_a.get("asks")or[],bk_b.get("asks")or[];g,f=float(leg_a["fee_rate"]),float(leg_b["fee_rate"]);e,d=float(leg_a["fee_exponent"]),float(leg_b["fee_exponent"])
-  for c in(float(primary_budget_usd),10.):
+  for c in(float(primary_budget_usd),10.,7.25):
    w=walk_equal_shares_dominance_box(b,a,c,g,f,fee_exponent_a=e,fee_exponent_b=d,max_box_cost_net=max_box_cost_net,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=.86)
    if w.get("filled")and float(compute_d1_legging_drag_haircut(shares=float(w["shares"]),box_cost_net=float(w["box_cost_net"]),avail_a_shares=float(w["avail_a_shares"]),avail_b_shares=float(w["avail_b_shares"]),px_a=float(w["leg_a_walk"]["worst_px"]),px_b=float(w["leg_b_walk"]["worst_px"]),fee_rate_a=g,fee_rate_b=f,is_4h_mixed=is_4h_mixed).get("legging_adjusted_net_ev_per_pair")or.0)>.0:return w
   return{"filled":False}
@@ -7035,7 +7035,7 @@ class Alpha124ShadowDaemon:
   if ok:a._live_bridge_emits_total=int(getattr(a,"_live_bridge_emits_total",0)or 0)+1;b=a.__dict__.setdefault("_live_bridge_emits_by_sleeve",{});c=str(sleeve_source or"UNKNOWN");b[c]=int(b.get(c,0)or 0)+1;a._live_bridge_last_emit_ts=round(time.time(),3)
   return bool(ok)
  @staticmethod
- def _walk_2l_live_clip(bk_a,bk_b,leg_a,leg_b,max_cap,min_box_cost_net=.0):return walk_equal_shares_dominance_box(bk_a.get("asks")or[],bk_b.get("asks")or[],20.,float(leg_a.get("fee_rate",CRYPTO_FEE_RATE)),float(leg_b.get("fee_rate",CRYPTO_FEE_RATE)),fee_exponent_a=float(leg_a.get("fee_exponent",1.)),fee_exponent_b=float(leg_b.get("fee_exponent",1.)),max_box_cost_net=max_cap,min_shares=5,min_box_notional_usd=4.85,min_box_cost_net=min_box_cost_net)
+ def _walk_2l_live_clip(bk_a,bk_b,leg_a,leg_b,max_cap,min_box_cost_net=.0):from src.polymarket_research.riskless_protocol_v2_expansion import walk_2l_live_clip_with_seed_fallback as a;return a(bk_a,bk_b,leg_a,leg_b,max_cap,min_box_cost_net=min_box_cost_net,default_fee_rate=CRYPTO_FEE_RATE)
  def emit_live_two_leg_box_candidate(a,*,sleeve_source,box_type,asset,dedupe_key,leg_a,leg_b,bk_a,bk_b,close_ts,now_ts,k_low=1e2,k_high=1e2,max_box_cost_override=None,extra_fields=None):
   J=a._live_emit_preflight(dedupe_key,close_ts,now_ts,min_rem=25.,cooldown=15.)
   if J is None:return False

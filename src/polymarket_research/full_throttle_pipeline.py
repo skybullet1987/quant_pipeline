@@ -3326,6 +3326,36 @@ class HarvesterCandidateBridge:
         # verified `postOnly=True` maker locks for `polymarket-live-harvester.service`!
         if enable_passive_maker_bridge and events and max_maker_locks_per_cycle > 0:
             uma_candidates_ranked: List[Tuple[float, Dict[str, Any]]] = []
+            _occ_mids_ft: Set[str] = set()
+            _occ_evts_ft: Set[str] = set()
+            _occ_ek_fn = None
+            if (
+                eff_nav_usd < 150.0
+                and self.live_harvester_state_path.exists()
+                and self.candidates_jsonl_path.resolve().parent == self.live_harvester_state_path.resolve().parent
+            ):
+                try:
+                    if (time.time() - float(self.live_harvester_state_path.stat().st_mtime)) <= 900.0:
+                        from src.polymarket_research.riskless_protocol_v2_expansion import extract_canonical_event_keys
+
+                        _occ_ek_fn = extract_canonical_event_keys
+                        _st_ft = _loads_json_bytes(self.live_harvester_state_path.read_bytes())
+                        for _col_k in ("active_positions", "pending_entry_intents"):
+                            for _rec_ft in (_st_ft.get(_col_k) or {}).values():
+                                if not isinstance(_rec_ft, Mapping):
+                                    continue
+                                if _col_k == "active_positions" and (
+                                    str(_rec_ft.get("status") or "") in {"CLOSED", "SETTLED", "FILLED", "AWAITING_ONCHAIN_SETTLEMENT"}
+                                    or _rec_ft.get("resolved_winning_outcome") is not None
+                                ):
+                                    continue
+                                _m_occ = str(_rec_ft.get("market_id") or "").strip()
+                                if _m_occ:
+                                    _occ_mids_ft.add(_m_occ)
+                                for _ek_ft in _occ_ek_fn(_rec_ft):
+                                    _occ_evts_ft.add(_ek_ft)
+                except Exception:
+                    pass
             for ev in events:
                 ev_id_u = str(ev.get("id") or "").strip()
                 ev_slug_u = str(ev.get("slug") or "")
@@ -3333,11 +3363,14 @@ class HarvesterCandidateBridge:
                 ev_title_u = ev_title_raw_u.lower()
                 if "kmia" in ev_title_u:
                     continue
+                if _occ_evts_ft and _occ_ek_fn is not None and (_occ_ek_fn({"event_id": ev_id_u, "event_slug": ev_slug_u}) & _occ_evts_ft):
+                    skipped_reasons["MAKER_EVENT_CONCENTRATION_CAP_D007"] += 1
+                    continue
                 for m in ev.get("markets") or ():
                     if not isinstance(m, Mapping) or m.get("closed") or m.get("archived") or m.get("active") is False:
                         continue
                     mid_u = str(m.get("id") or m.get("market_id") or "").strip()
-                    if not mid_u or mid_u in FROZEN_DISPUTED_MARKET_IDS:
+                    if not mid_u or mid_u in FROZEN_DISPUTED_MARKET_IDS or mid_u in _occ_mids_ft:
                         continue
                     ust_u = str(m.get("umaResolutionStatus") or "").strip().lower()
                     if ust_u != "proposed" or m.get("enableOrderBook") is False:
@@ -3373,12 +3406,18 @@ class HarvesterCandidateBridge:
                     bk1_u = books.get(toks_u[1])
                     if bk0_u is None or bk1_u is None:
                         continue
-                    max_bid_cap = 0.998 if live_sec <= 3600.0 else 0.997
+                    max_bid_cap = 0.998 if live_sec <= 3600.0 else (0.996 if eff_nav_usd < 150.0 else 0.997)
                     raw_gm_tk = float(m.get("orderPriceMinTickSize") or 0.0)
+                    _has_vol24_u = "volume24hr" in m
+                    _vol24_ft = float(m.get("volume24hr") or 0.0)
+                    _min_vel_ft = max(self.min_velocity_bps_per_hr, 30.0 if eff_nav_usd < 150.0 else 15.0)
                     for idx_w in (0, 1):
                         win_bk = bk0_u if idx_w == 0 else bk1_u
                         opp_bk = bk1_u if idx_w == 0 else bk0_u
                         if not win_bk.bids:
+                            continue
+                        if _has_vol24_u and _vol24_ft < 30.0 and sum(float(a.size) for a in (win_bk.asks or ())) < 5.0:
+                            skipped_reasons["BOND1_GHOST_LOW_VOL_NO_ASKS"] += 1
                             continue
                         raw_bk_tk = float(win_bk.tick_size or 0.0)
                         if 0.0001 <= raw_bk_tk < 0.01:
@@ -3399,7 +3438,7 @@ class HarvesterCandidateBridge:
                             continue
                         rem_u = max(300.0, min(live_sec, 7200.0))
                         vel_bps_hr = ((1.0 - rest_bid) * 10_000.0) / (rem_u / 3600.0)
-                        if (vel_bps_hr + 1e-6) < max(self.min_velocity_bps_per_hr, 15.0):
+                        if (vel_bps_hr + 1e-6) < _min_vel_ft:
                             continue
                         out_lbls = _parse_json_list_safe(m.get("outcomes"))
                         side_lbl = str(out_lbls[idx_w]).upper() if idx_w < len(out_lbls) else ("YES" if idx_w == 0 else "NO")
